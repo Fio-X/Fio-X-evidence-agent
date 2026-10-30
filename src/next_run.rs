@@ -1849,6 +1849,7 @@ fn recipe_request(
     let meta = catalogue.table(&main.id).ok_or_else(|| ("fill", format!("the catalogue lists no {}", main.id)))?;
     fill["knobs"]["spec"]["kicker"] = json!(kicker);
     let title = catalogue.table_zh(&meta.id).map_err(|why| ("fill", why))?.unwrap_or_else(|| main.title.clone());
+    // no years here: the leaf footer marks only the table ids (spec.refs) and refuses any other digit in the line
     fill["knobs"]["spec"]["source"] = json!(source_line(meta.worldbank, &meta.id, &title, &[]));
     Ok(fill)
 }
@@ -2045,12 +2046,14 @@ fn measure_of(
 
 /// A chart's source line: the publisher the catalogue files the table under, its id (a World Bank indicator without its
 /// "@2") and title (its reviewed Chinese name where the knowledge group has one, Catalogue::table_zh; else as listed), and
-/// the years the chart draws, e.g. "欧盟统计局 sdg_07_40「Share of …」，2025 年".
+/// the years the chart draws, e.g. "欧盟统计局 sdg_07_40「Share of …」，2025 年". A title that holds a digit (any numeric
+/// character, Nd/Nl/No, as the leaf footer counts one: "65 岁及以上人口") is left out, since the leaf footer
+/// (scmp.footer) refuses a digit outside the table ids spec.refs marks; the id still names the table.
 fn source_line(worldbank: bool, id: &str, title: &str, times: &[String]) -> String {
     let publisher = publisher(worldbank);
     let id = id.split('@').next().unwrap_or(id);
     let mut line = format!("{publisher} {id}");
-    if !title.trim().is_empty() {
+    if !title.trim().is_empty() && !title.chars().any(char::is_numeric) {
         line.push_str(&format!("「{}」", title.trim()));
     }
     if let (Some(first), Some(last)) = (times.first(), times.last()) {
@@ -5339,6 +5342,37 @@ mod tests {
         );
         assert_eq!(source_line(false, "x", "T", &[]), "欧盟统计局 x「T」");
         assert_eq!(source_line(false, "x", " ", &[]), "欧盟统计局 x");
+    }
+
+    #[test]
+    fn a_source_line_leaves_out_a_title_that_holds_a_digit() {
+        let years = |list: &[&str]| list.iter().map(|t| t.to_string()).collect::<Vec<_>>();
+        // the q5 indicator: its title's "65" is no table id, so the leaf footer would refuse it
+        assert_eq!(
+            source_line(
+                true,
+                "SP.POP.65UP.TO.ZS@2",
+                "Population ages 65 and above (% of total population)",
+                &[]
+            ),
+            "世界银行 SP.POP.65UP.TO.ZS"
+        );
+        assert_eq!(
+            source_line(true, "SP.POP.65UP.TO.ZS", "65 岁及以上人口占比", &years(&["2000", "2023"])),
+            "世界银行 SP.POP.65UP.TO.ZS，2000–2023 年"
+        );
+        // a full-width digit, a CJK numeral counted as one (No), a Roman numeral (Nl) and an Arabic-Indic digit
+        for title in ["人口占比（６５岁）", "第①类", "Ⅳ期", "السكان ٦٥"] {
+            assert_eq!(source_line(false, "x", title, &[]), "欧盟统计局 x", "{title}");
+        }
+        // a title without a digit prints as before
+        assert_eq!(
+            source_line(false, "sdg_07_40", "可再生能源在最终能源消费总量中的占比（按部门）", &[]),
+            "欧盟统计局 sdg_07_40「可再生能源在最终能源消费总量中的占比（按部门）」"
+        );
+        // the leaf page's line (no years): once the id is taken out, no numeric character is left for the footer
+        let leaf = source_line(true, "SP.POP.65UP.TO.ZS", "Population ages 65 and above", &[]);
+        assert!(!leaf.replace("SP.POP.65UP.TO.ZS", "").chars().any(char::is_numeric));
     }
 
     #[test]
