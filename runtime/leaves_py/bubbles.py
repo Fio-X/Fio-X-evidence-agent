@@ -35,6 +35,7 @@ prod.KNOBS["bubbles"] = dict(
     r_max=(22, (12, 80, 2), "the radius scale: the largest circle's radius px (the others by area); a world map at 1100 wide should stay at 28 or less"), r_min=(3, (2, 8, 0.5), "smallest circle radius px"),
     label_top=(60, (0, 60, 1), "circles that carry a name and number (the biggest first; one that fits nowhere is dropped and listed); 60: every circle of a map up to 60"), size=(13, (13, 16, 0.5), "label size px"),
     label_gap=(4, (1, 12, 1), "px a label keeps clear of every circle and of its own"),
+    label_sep=(2, (2, 16, 1), "px a label keeps clear of every other label side by side (half that above and below)"),
     nudge=(6, (0, 16, 1), "px a circle may move off its point to clear its neighbours; a moved circle keeps a dot at its true point"),
     circle_gap=(1, (0, 6, 1), "px nudging keeps between neighbouring circles"),
     reach=(96, (0, 200, 8), "longest leader px from a circle to a label set off it; 0: no leaders"),
@@ -170,7 +171,7 @@ def cl_bubbles(f, occ):
             x, y = i["_at"]; dots.append((x, y, DOT_R)); occ.add((x - DOT_R, y - DOT_R, x + DOT_R, y + DOT_R), "bubbles")
             o.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{DOT_R}" fill="var(--t-title)" data-at="{esc(i["code"])}"/>')
     f.unlabeled, f.label_boxes, f.dropped = [], [], []
-    gap, reach, halo = k("label_gap"), k("reach"), ' stroke="var(--bg)" stroke-width="3" paint-order="stroke"'
+    gap, sep, reach, halo = k("label_gap"), k("label_sep"), k("reach"), ' stroke="var(--bg)" stroke-width="3" paint-order="stroke"'
     leads = []  # the points of every leader drawn (and of the land's hairline frame), which no label may sit on
     segs = []  # every leader drawn, as (a, b): no other leader may cross it
     if e:  # the hairline is a line the page's checks read: notes and labels keep off it
@@ -181,7 +182,7 @@ def cl_bubbles(f, occ):
     def free(bx, i):
         """A label box inside the picture, clear of every label drawn, every leader and every circle by label_gap (its own too)."""
         if bx[0] < 2 or bx[2] > W - 2 or bx[1] < f.top - 4 or bx[3] > H - 2: return False
-        if any(bx[0] < b[0][2] + 2 and b[0][0] < bx[2] + 2 and bx[1] < b[0][3] + 1 and b[0][1] < bx[3] + 1 for b in B.b): return False
+        if any(bx[0] < b[0][2] + sep and b[0][0] < bx[2] + sep and bx[1] < b[0][3] + sep / 2 and b[0][1] < bx[3] + sep / 2 for b in B.b): return False
         if any(bx[0] - 1 < px < bx[2] + 1 and bx[1] - 1 < py < bx[3] + 1 for px, py in leads): return False
         rings = [(*j["_xy"], j["_r"]) for j in f.items] + dots
         return not any(math.hypot(max(bx[0] - x, 0, x - bx[2]), max(bx[1] - y, 0, y - bx[3])) < r + gap for x, y, r in rings)
@@ -231,7 +232,9 @@ def cl_bubbles(f, occ):
     # first every label that fits beside its circle (biggest first), so a crowded centre's own labels stay close; then the
     # rest out on leaders, each the cheapest clear place (its leader's length, a place over the land counting land_cost px
     # more, so open room off the map's shapes comes first); what fits nowhere is dropped and listed
-    wanted = f.items[: int(k("label_top"))]; out_ = []
+    # the biggest and the smallest go first, as the page's story names the two ends; then the rest by size
+    ends = f.items[:1] + f.items[-1:] if len(f.items) > 1 else f.items[:1]
+    wanted = (ends + [i for i in f.items if i not in ends])[: int(k("label_top"))]; out_ = []
     for i in wanted:
         for anchor, tx, ty in beside(i):
             bx = box(i, anchor, tx, ty)

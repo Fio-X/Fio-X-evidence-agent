@@ -235,6 +235,14 @@
      "what": "px a label keeps clear of every circle and of its own"
     },
     {
+     "name": "label_sep",
+     "default": 2,
+     "min": 2,
+     "max": 16,
+     "step": 1,
+     "what": "px a label keeps clear of every other label side by side (half that above and below)"
+    },
+    {
      "name": "nudge",
      "default": 6,
      "min": 0,

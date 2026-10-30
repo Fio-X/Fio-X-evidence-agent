@@ -91,8 +91,10 @@ def leaf(Frame, cl, key, fixed=None):
 
 
 # The map panel of a column page (column.MAP_W wide): its leaves draw in one shared frame (mapkit.View over the hero's
-# leaves.bubbles.ext), the bubbles first, so the notes over them keep clear of every circle and label they claimed.
-MAP_STYLE = {"bubbles": {"projection": "view", "width": column.MAP_W}, "leader_notes": {"width": column.MAP_W}}
+# leaves.bubbles.ext), the bubbles first, so the notes over them keep clear of every circle and label they claimed. The bars
+# beside the map print every value, so the map names only its two ends and the biggest, MAP_LABELS in all, label_sep apart.
+MAP_LABELS = 12
+MAP_STYLE = {"bubbles": {"projection": "view", "width": column.MAP_W, "label_top": MAP_LABELS, "label_sep": 8}, "leader_notes": {"width": column.MAP_W}}
 MAP_LAYERS = ["bubbles", "leader_notes"]
 
 

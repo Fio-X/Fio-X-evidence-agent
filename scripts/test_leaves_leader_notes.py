@@ -68,14 +68,18 @@ def setup(rows=ROWS, labels=ZH2):
     geo.NE = SHP
 
 
-def style(**nst):
-    return {"bubbles": dict(run.MAP_STYLE["bubbles"]), "leader_notes": {**run.MAP_STYLE["leader_notes"], **nst}}
+# the bubbles knobs that label every circle, side by side as tight as the leaf allows: the crowded map the notes must clear
+FULL = {"label_top": 60, "label_sep": 2}
 
 
-def pair(d=D, occ=None, **nst):
+def style(full=False, **nst):
+    return {"bubbles": {**run.MAP_STYLE["bubbles"], **(FULL if full else {})}, "leader_notes": {**run.MAP_STYLE["leader_notes"], **nst}}
+
+
+def pair(d=D, occ=None, full=False, **nst):
     """bubbles in the shared view, then leader_notes, on one Occ: (bubbles' frame, notes' frame, the svg inner, the Occ)."""
     setup(); occ = occ or prod.Occ()
-    fb = bubbles.Frame({"data": dict(items=ITEMS, ext=d.get("ext", EXT)), "style": style()}); sb = bubbles.cl_bubbles(fb, occ)
+    fb = bubbles.Frame({"data": dict(items=ITEMS, ext=d.get("ext", EXT)), "style": style(full)}); sb = bubbles.cl_bubbles(fb, occ)
     fn = LN.Frame({"data": d, "style": style(**nst)}); sn = LN.cl_leader_notes(fn, occ)
     return fb, fn, sb + sn, occ
 
@@ -100,7 +104,7 @@ class LeaderNotes(unittest.TestCase):
         if cls.tmp: cls.tmp.cleanup()
 
     def test_the_notes_draw_over_the_bubbles_clear_of_what_they_claimed(self):
-        fb, fn, svg, occ = pair()
+        fb, fn, svg, occ = pair(full=True)
         with open(os.path.join(self.out, "eu-map-notes.svg"), "w", encoding="utf-8") as fh: fh.write(K.svg(svg, fb.W, fb.H, "map"))
         self.assertEqual(check_svg(svg), [])
         # one frame: the same size and projection; Luxembourg's note, in the crowded centre with every circle labelled, finds no
@@ -196,9 +200,9 @@ class LeaderNotes(unittest.TestCase):
         setup()
 
     def test_every_eu_circle_is_labelled_and_no_label_or_leader_covers_a_true_point_dot(self):
-        # the EU-27 with the default knobs: all 27 circles carry their name and number; the dot a nudged circle keeps at its
-        # true point is claimed in the Occ, and no label box and no leader drawn passes over it (but the leader of its own circle)
-        setup(); occ = prod.Occ(); f = bubbles.Frame({"data": dict(items=ITEMS, ext=EXT), "style": style()}); svg = bubbles.cl_bubbles(f, occ)
+        # the EU-27 with every circle asked for (FULL): all 27 circles carry their name and number; the dot a nudged circle keeps
+        # at its true point is claimed in the Occ, and no label box and no leader drawn passes over it (but the leader of its own circle)
+        setup(); occ = prod.Occ(); f = bubbles.Frame({"data": dict(items=ITEMS, ext=EXT), "style": style(True)}); svg = bubbles.cl_bubbles(f, occ)
         self.assertEqual((len(f.label_boxes), f.dropped), (len(ITEMS), []))
         dots = [(float(x), float(y), c) for x, y, c in re.findall(r'<circle cx="([\d.]+)" cy="([\d.]+)" r="[\d.]+" fill="var\(--t-title\)" data-at="([A-Z]+)"', svg)]
         self.assertTrue(dots)
@@ -334,10 +338,13 @@ class ColumnMap(unittest.TestCase):
         self.assertIn('data-layer="leader_notes"', page["html"])
 
     def test_crowded_bubbles_still_draw_and_say_exactly_which_labels_they_dropped(self):
-        # the EU-27 bubbles with label_top 12 and no leaders (reach 0): every circle drawn, and each of the twelve labels
-        # drawn or named in the reply's dropped list (the leaf's Frame.dropped), never both, never silently left off
+        # the EU-27 bubbles of the column page with its largest labels (size 16) and no leaders (reach 0; the page fixes
+        # label_top, the hero's style cannot raise it): every circle drawn, and each of the MAP_LABELS labels (the biggest and
+        # the smallest, then by size) drawn or named in the reply's dropped list (the leaf's Frame.dropped), never both, never
+        # silently left off
+        crowd = {"reach": 0, "size": 16}
         def styled(line):
-            req = json.loads(line); req["knobs"]["spec"]["hero"]["style"] = {"bubbles": {"label_top": 12, "reach": 0}}
+            req = json.loads(line); req["knobs"]["spec"]["hero"]["style"] = {"bubbles": crowd}
             return json.dumps(req, ensure_ascii=False)
         got = child([styled(l) for l in column_lines({"bubbles": dict(items=ITEMS, ext=EXT)})])[2]
         self.assertNotIn("refused", got)
@@ -346,14 +353,14 @@ class ColumnMap(unittest.TestCase):
         dropped = {d["id"]: d["why"] for d in got["dropped"]}
         self.assertTrue(dropped, "the crowded centre leaves a label with no place")
         self.assertEqual(set(dropped.values()), {"no free place for the label"})
-        top = sorted(VALUES, key=lambda c: -VALUES[c])[:12]
+        by_size = sorted(VALUES, key=lambda c: -VALUES[c]); top = by_size[:1] + by_size[-1:] + by_size[1:run.MAP_LABELS - 1]
         self.assertEqual((labelled | set(dropped), labelled & set(dropped)), (set(top), set()))
-        setup(); f = bubbles.Frame({"data": dict(items=ITEMS, ext=EXT), "style": {**style(), "bubbles": {**style()["bubbles"], "label_top": 12, "reach": 0}}})
+        setup(); f = bubbles.Frame({"data": dict(items=ITEMS, ext=EXT), "style": {**style(), "bubbles": {**style()["bubbles"], **crowd}}})
         bubbles.cl_bubbles(f, prod.Occ())
         self.assertEqual([{"id": c, "why": w} for c, w in f.dropped], got["dropped"])
         # with leaders (the default reach) the same crowded set labels more circles, each label still clear of every circle
         # and joined to its own by a leader that starts on that circle's edge
-        setup(); g = bubbles.Frame({"data": dict(items=ITEMS, ext=EXT), "style": style()}); svg = bubbles.cl_bubbles(g, prod.Occ())
+        setup(); g = bubbles.Frame({"data": dict(items=ITEMS, ext=EXT), "style": style(True)}); svg = bubbles.cl_bubbles(g, prod.Occ())
         self.assertLess(len(g.dropped), len(f.dropped))
         lines = [tuple(map(float, m)) for m in re.findall(r'<line x1="([\d.]+)" y1="([\d.]+)" x2="([\d.]+)" y2="([\d.]+)"', svg)]
         self.assertTrue(lines)
@@ -363,12 +370,14 @@ class ColumnMap(unittest.TestCase):
             self.assertEqual([j["code"] for j in g.items if ((max(b[0] - j["_xy"][0], 0, j["_xy"][0] - b[2])) ** 2 + (max(b[1] - j["_xy"][1], 0, j["_xy"][1] - b[3])) ** 2) ** 0.5 < j["_r"]], [], code)
 
     def test_the_eu_map_labels_most_circles_close_first_then_out_on_short_leaders(self):
-        # the EU-27 in the shared frame with the default knobs: the top label_top circles are each labelled or dropped; a label
-        # beside its circle has no leader, one set out has a leader from its own circle's edge no longer than reach
+        # the EU-27 in the column page's shared frame: its MAP_LABELS circles, the biggest and the smallest first, are each
+        # labelled (none dropped: the bars beside it print the rest); a label beside its circle has no leader, one set out has a
+        # leader from its own circle's edge no longer than reach
         setup(); occ = prod.Occ(); f = bubbles.Frame({"data": dict(items=ITEMS, ext=EXT), "style": style()}); svg = bubbles.cl_bubbles(f, occ)
-        top, reach = (bubbles.prod.KNOBS["bubbles"][k][0] for k in ("label_top", "reach"))
-        self.assertEqual(len(f.label_boxes) + len(f.dropped), min(top, len(ITEMS)))
-        self.assertGreater(len(f.label_boxes), 12)
+        reach = bubbles.prod.KNOBS["bubbles"]["reach"][0]
+        self.assertEqual((len(f.label_boxes), f.dropped), (run.MAP_LABELS, []))
+        ends = {max(VALUES, key=VALUES.get), min(VALUES, key=VALUES.get)}
+        self.assertLessEqual(ends, {c for c, _ in f.label_boxes})
         lines = [tuple(map(float, m)) for m in re.findall(r'<line x1="([\d.]+)" y1="([\d.]+)" x2="([\d.]+)" y2="([\d.]+)"', svg)]
         self.assertLess(len(lines), len(f.label_boxes))  # most labels sit beside their circles
         for x1, y1, x2, y2 in lines:
