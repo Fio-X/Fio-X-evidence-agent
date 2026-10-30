@@ -2804,6 +2804,20 @@ fn plan_record(question: &str, steps: &[(&str, &str)], step: &str, end: StepEnd)
         "trigger": if revision == 1 { "initial_goal" } else if end == StepEnd::Refused { "validation_failure" } else { "other" }, "steps": steps}))
 }
 
+/// Writes the page's pending group calls under the current step: the catalogue's (record_group_calls), then the visual
+/// group's calls of the leaf page (`calls`), in the order they were made.
+fn record_page_calls(
+    recorder: &mut Recorder<'_>,
+    catalogue: &dyn Catalogue,
+    calls: std::sync::Mutex<Vec<Value>>,
+) -> Result<(), Stop> {
+    record_group_calls(recorder, catalogue)?;
+    for event in calls.into_inner().unwrap_or_else(|e| e.into_inner()) {
+        recorder.program_event(crate::next_flow::GROUP_CALL_EVENT, event)?;
+    }
+    Ok(())
+}
+
 /// The first prompt: the question to the design pack's sheet, every step in order. Returns the answer text. `steps` is
 /// prepare_claims' spec: empty (the product) asks the model for the tables; a given spec skips that ask (an offline entry).
 pub async fn run_page<R: ToolRunner + Send + ?Sized>(
@@ -2832,7 +2846,14 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
         .name_measures(&titles, &page.charts)
         .with_scopes(&page.scopes)
         .with_periods(&page.times);
-    let worded = reword(recorder, model, question, &drafts, cancel).await?;
+    // a text step that stops leaves the recipe pick's group calls on record all the same, as a text step that passes does
+    let worded = match reword(recorder, model, question, &drafts, cancel).await {
+        Ok(worded) => worded,
+        Err(stopped) => {
+            record_page_calls(recorder, catalogue, calls)?;
+            return Err(stopped);
+        }
+    };
     let worded_out: Map<String, Value> = worded
         .iter()
         .map(|(t, w)| (format!("{t:?}"), json!(w)))
@@ -2845,10 +2866,7 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
     // the kicker names the lead chart's measure, as the old route's does without a scope
     let kicker = worded.get(&Target::Measure(0)).map_or("", String::as_str);
     let leaf = picked.and_then(|picked| leaf_page(recorder.run_dir(), picked, (question, (&title, &dek, kicker)), &calls));
-    record_group_calls(recorder, catalogue)?;
-    for event in calls.into_inner().unwrap_or_else(|e| e.into_inner()) {
-        recorder.program_event(crate::next_flow::GROUP_CALL_EVENT, event)?;
-    }
+    record_page_calls(recorder, catalogue, calls)?;
     match leaf {
         Ok(leaf) => {
             let (recipe, published) = (leaf.recipe.name.as_str(), &leaf.published);
@@ -7785,6 +7803,22 @@ for line in sys.stdin:
         let plan: Value = serde_json::from_str(&std::fs::read_to_string(ran.run.join(PLAN_FILE)).unwrap()).unwrap();
         let draw = plan["steps"].as_array().unwrap().iter().find(|s| s["id"] == "draw").unwrap();
         assert_eq!(draw["status"], "blocked", "{plan}");
+    }
+
+    /// A text step that stops the run still leaves the recipe pick's group calls on record: the pick runs before the text
+    /// step, and its recipe_layers call is written to the run's events even when the text step's reply stops the run (here
+    /// it holds a handed-over secret, the text reply's call id, which no other exchange of the run carries).
+    #[tokio::test]
+    async fn a_stopped_text_step_still_records_the_recipe_picks_group_calls() {
+        let ran = leaf_run_keyed(None, "", Vec::new(), "pass", vec!["toolu_x".to_string()]).await;
+        match &ran.result {
+            Err(Stop::SecretInExchange { step: "text", .. }) => {}
+            other => panic!("expected the text step to stop the run, got {other:?}"),
+        }
+        assert!(
+            ran.events.iter().any(|e| e["type"] == crate::next_flow::GROUP_CALL_EVENT && e["request"] == "recipe_layers"),
+            "no recipe_layers group call on record"
+        );
     }
 
     /// LEAF_CHILD_TWIN with the page's one headline (the completion gate's text check asks for one; no digit in it), so a
