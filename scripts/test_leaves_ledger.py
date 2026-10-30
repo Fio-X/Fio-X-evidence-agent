@@ -1,6 +1,7 @@
 """Self-test of the ring leaf's ledger printing (runtime/leaves_py/facts.py): with a ledger, a text's fact placeholders print
 the entry as given, marked with its src; a src the request lacks refuses instead of formatting a number; a record's cell
 names the request row it came from. Run: python3 -I scripts/test_leaves_ledger.py"""
+import hashlib
 import io
 import json
 import os
@@ -245,6 +246,26 @@ def column_request(values=(("SE", "65.4"), ("DE", "30.25"), ("BE", "14.9")), led
     return [line(phase="size"), line(layer="bignums"), line(layer="bars")]
 
 
+def change_request(ends=(("SE", "60.0", "65.4"), ("DE", "31.0", "30.25"), ("BE", "10.1", "14.9"))):
+    """A change page's lines as layer 1 sends them: two ends of one table, bars.measure change, each place's change its
+    family member with its unit (no big numbers)."""
+    rows = [{"src": f"series:sdg/A.PC.{g}:{t}:OBS_VALUE", "table": "sdg", "dims": {"freq": "A", "unit": "PC", "geo": g}, "time": t, "value": v}
+            for g, a, b in ends for t, v in (("2015", a), ("2025", b))]
+    by = sorted(ends, key=lambda e: float(e[1]) - float(e[2]))
+    spec = {"title": "标题", "dek": "导语", "kicker": "栏目", "source": "sdg", "refs": ["sdg"], "tables": {"sdg": {"id": "sdg"}},
+            "facts": {"val": {"each": "geo", "table": "sdg", "time": "2025", "fmt": "pc"}},
+            "fmts": {"pc": {"scale": 1, "dec": 2, "suffix": "%"}, "time": {}},
+            "hero": {"unit": "单位：个百分点", "style": {"bars": {"measure": "change"}},
+                     "data": {"chart": "bars", "by": "geo", "t0": "2015", "year": "2025", "family": "val", "ranked": [g for g, _, _ in by], "marks": ["BE"]}}}
+    ledger = {f"fact:val.{g}": f"{float(b) - float(a):+.2f} 个百分点" for g, a, b in ends}
+    ledger.update({"period:sdg:2015": "2015", "period:sdg:2025": "2025"})
+    knobs = {"spec": spec, "labels": {"SE": "瑞典", "DE": "德国", "BE": "比利时"}}
+    rows = rows + [{"src": k, "text": v} for k, v in ledger.items()]
+    line = lambda **kv: json.dumps({"node": "change", "panel": {"w": 1140, "h": 0, "frame": None}, "rows": rows, "knobs": knobs, **kv},
+                                   ensure_ascii=False)
+    return [line(phase="size"), line(layer="bars")]
+
+
 def child(lines):
     """run.py as layer 1 runs it: one reply per line."""
     out = subprocess.run([sys.executable, "-I", "-B", os.path.join(Words.LEAVES, "run.py")], input="\n".join(lines) + "\n",
@@ -274,6 +295,20 @@ class Column(unittest.TestCase):
         self.assertIn('<span data-src="period:sdg:2025">2025</span>', html)
         self.assertEqual(run.placeholders(html), [])
 
+    def test_the_column_and_change_pages_are_byte_for_byte_the_bars_pages_they_were(self):
+        """The column frame's main layer is its recipe's (run.MAIN), the bars on a column and a change page: their html is the
+        page built before the frame took a declared main layer (the sha256 of this page's html at that commit, the same
+        lines run through run.py), so the bars' page did not move when the frame stopped requiring them."""
+        def sha(lines, names):
+            got = child(lines)[1:]
+            self.assertFalse([g for g in got if "refused" in g], got)
+            layers = {n: g.get("svg") or g.get("html") for n, g in zip(names, got)}
+            html = child(lines + [json.dumps({"phase": "page", "layers": layers})])[-1]["html"]
+            return hashlib.sha256(html.encode("utf-8")).hexdigest()
+        self.assertEqual(sha(column_request(), ["bignums", "bars"]), "5522fd5c47087719d53bce3fec86b1e9211c224a6e804d9952fb63662bd12002")
+        self.assertEqual(sha(change_request(), ["bars"]), "243dc948bbd3dd2bc3838275a19640f5ae5dca2dcb7a8e96373269b535aefccd")
+        self.assertIn('<svg class="bars pub-chart"', child(change_request() + [json.dumps({"phase": "page", "layers": {"bars": child(change_request())[1]["svg"]}})])[-1]["html"])
+
     def test_a_column_page_with_no_big_numbers_gives_the_title_the_whole_header(self):
         # a column page with no big numbers: no box, the header wide (the title across the page), the title's scope bracket one piece
         lines = column_request()
@@ -299,7 +334,7 @@ class Column(unittest.TestCase):
             self.assertTrue(got["refused"][0].startswith(f"size: {why}"), got)
         lines = column_request()
         bad = json.loads(lines[0]); bad["node"] = "pie"
-        self.assertEqual(child([json.dumps(bad)])[0]["refused"], ["size: no page recipe pie; e.g. one of ring|column|change|scmp"])
+        self.assertEqual(child([json.dumps(bad)])[0]["refused"], ["size: no page recipe pie; e.g. one of ring|column|change|flow|scmp"])
         page = child(lines[:2] + [json.dumps({"phase": "page", "layers": {"bignums": "x"}})])[2]
         self.assertEqual(page["refused"], ["page: no layer bars"])
 

@@ -5471,7 +5471,7 @@ mod tests {
     #[test]
     fn each_recipe_reads_the_shape_by_its_own_conditions_and_its_nodes_fill_the_page() {
         let names: Vec<&str> = Hubs.recipes().iter().map(|r| r.name.as_str()).collect();
-        assert_eq!(names, ["scmp", "ring", "change", "column"]);
+        assert_eq!(names, ["scmp", "ring", "change", "column", "flow"]);
         let mut main = ring_rows("sdg", &[("freq", "A"), ("unit", "PC")], ("geo", &["SE", "BE", "DE", "FR", "EU27_2020"]), &["2025"]);
         for (r, v) in main.iter_mut().zip(["65.4", "14.9", "30.25", "20", "40"]) {
             r["value"] = json!(v);
@@ -8754,7 +8754,7 @@ for line in sys.stdin:
     #[test]
     fn only_a_recipe_with_a_strip_slot_asks_for_a_strip_and_a_strip_it_did_not_get_is_owed() {
         let slots: Vec<(&str, bool)> = Hubs.recipes().iter().map(|r| (r.name.as_str(), r.strip)).collect();
-        assert_eq!(slots, [("scmp", false), ("ring", false), ("change", true), ("column", true)]);
+        assert_eq!(slots, [("scmp", false), ("ring", false), ("change", true), ("column", true), ("flow", false)]);
         let energy = ["nrg_ind_ren".to_string()];
         let calls = std::sync::Mutex::new(Vec::new());
         for name in ["scmp", "ring"] {

@@ -22,12 +22,22 @@ class ColumnFrame:
     leaves' mapkit.View, when the page has one: the bars then start at x0 after it, bw wide). A place with no row at the
     year, a value below 0 or none above it refuses: the bars start at 0. With bars.measure change each value is the place's
     change from hero.data.t0 to the year (the later row less the earlier): a place with no row at either, or no place that
-    changed, refuses."""
-    def __init__(f, c, h, mv=None):
+    changed, refuses.
+    The page's main layer is its recipe's (run.MAIN): the bars, or a chart leaf of run.LEAF_LAYERS drawn across the page in
+    the bars' place, which reads only hero.data's year (and table) for the unit and year line; its picture's size is the
+    leaf's own, settled by sized once the leaf has drawn (a leaf settles its height while it draws). Such a page has no map
+    panel (the map stands beside the bars)."""
+    def __init__(f, c, h, mv=None, main="bars"):
         if FX.LEDGER is None: raise FX.Refused("column: the page prints from a ledger only")
         d = h["data"]; K = lambda k: prod.knob(h, "bars", k)
-        f.c, f.h, f.d = c, h, d
+        f.c, f.h, f.d, f.main = c, h, d, main
         f.table = d.get("table") or next(iter(c.spec["tables"]))
+        if main != "bars":
+            if mv: raise FX.Refused(f"column: the map panel stands beside the bars; a {main} page has none")
+            f.year, f.change, f.marks, f.mv, f.W, f.x0 = str(prod.need(d, "year")), False, set(), None, PAGE_W, 0
+            f.focus, f.noted, f.map_h = set(), set(), 0  # the accent marks bars only: a main leaf's page has no focus
+            f.bw = f.bh = f.H = None
+            return
         by, year = prod.need(d, "by"), str(prod.need(d, "year"))
         f.change = K("measure") == "change"
         at = lambda t: {r[by]: float(r["OBS_VALUE"]) for r in c.T[f.table] if r["TIME_PERIOD"] == t and by in r}
@@ -53,6 +63,12 @@ class ColumnFrame:
         f.top = K("top")
         f.bh = f.top + f.rh * len(f.vals) + 4
         f.H = max(f.bh, mv.H if mv else 0)
+
+    def sized(f, w, h):
+        """The main leaf's picture size (its Frame's W and H): the panel's height, and the svg the page places it in; a
+        picture wider than the page refuses."""
+        if w > f.W: raise FX.Refused(f"column: the {f.main} picture is {w} px wide, the page {f.W}")
+        f.bw, f.bh = w, h; f.H = h
 
 
 def focus(h):
@@ -222,21 +238,23 @@ COLUMN_LAYERS = dict(bignums=(cl_bignums, None), bars=(cl_bars, None))
 COLUMN_SVG = ["bars"]
 
 
-def column_shell(f, bars, unit, pic=""):
+def column_shell(f, bars, unit, pic="", main="bars"):
     """The column hero around its drawn bars: the unit and year line over the picture's svg, led by the page's scope when the
     hero names one (hero.scope: the aggregate's code, its name printed from the request's labels and marked with its name
     row, and the fact counting the places drawn, its number printed from the ledger; the words the word table's
     column.scope; a code the labels do not name prints no scope, never a raw word); with a map panel, the map's
     svg (`pic`, its layers; class cmap, as the page css places a .map absolutely) on the left and the bars' beside it, its
-    viewBox starting at x0 so each text stands where the panel placed it. After the year, when the page has a focus, the line
-    that says what the accent means (accent_key)."""
+    viewBox starting at x0 so each text stands where the panel placed it. The picture's svg is classed by the page's main layer
+    (`main`, the bars or the leaf in their place); a main leaf heads itself with its unit, so with no hero unit the line is
+    its year only. After the year, when the page has a focus, the line that says what the accent means (accent_key)."""
     year = word("date.y", y=FX.entry(f"period:{f.table}:{f.year}", "span", None))
     if f.change: year = word("column.change_years", a=FX.entry(f"period:{f.table}:{prod.need(f.d, 't0')}", "span", None), b=year)
     sc = f.h.get("scope")
     if sc and sc.get("code") in prod.NAMES: unit = word("column.scope", place=prod.named(sc["code"]), n=FX.entry(f"fact:{sc['count']}.n", "span", None)) + unit
-    bars = f'<svg class="bars" viewBox="{f.x0} 0 {f.bw} {f.bh:.0f}" width="{f.bw}" height="{f.bh:.0f}">{bars}</svg>'
+    bars = f'<svg class="{main}" viewBox="{f.x0} 0 {f.bw} {f.bh:.0f}" width="{f.bw}" height="{f.bh:.0f}">{bars}</svg>'
     if f.mv: bars = f'<div class="cm"><svg class="cmap" viewBox="0 0 {f.mv.W} {f.map_h}" width="{f.mv.W}" height="{f.map_h}">{pic}</svg>{bars}</div>'
-    return f'<div class="hero column"><div class="cu">{unit}{word("list.sep")}{year}{accent_key(f)}</div>{bars}</div>'
+    line = year if main != "bars" and not unit else f'{unit}{word("list.sep")}{year}'
+    return f'<div class="hero column"><div class="cu">{line}{accent_key(f)}</div>{bars}</div>'
 
 
 def accent_key(f):

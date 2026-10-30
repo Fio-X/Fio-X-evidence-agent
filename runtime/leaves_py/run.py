@@ -1,6 +1,6 @@
 """Second-layer leaf child for a page's panel (src/next_leaf.rs runs it, one child per panel, one JSON line per layer): the
-ring hero, the column page (column.py, with the chart leaves of LEAF_LAYERS over its frame) or the scmp page (scmp.py
-SCMP_LAYERS), by the page recipe each line names ("node").
+ring hero, the column page (column.py, with the chart leaves of LEAF_LAYERS over its frame, its main layer the recipe's
+MAIN) or the scmp page (scmp.py SCMP_LAYERS), by the page recipe each line names ("node").
 
 First, when layer 1 leaves the panel's height to the child: {"phase": "size", "panel", "rows", "knobs"} -> {"w", "h"}, the
 panel the ring frame lays out (layer 1 checks every text against it).
@@ -39,6 +39,7 @@ import leader_notes
 import mapkit
 import prod
 import rankbar
+import sankey
 import scmp
 import section_head
 import wbkit
@@ -73,6 +74,9 @@ DROPPED = []
 # main() sends back with its reply as r_used and r_steps, with the circles lifted to r_min on that scale (bubbles Frame.r_min_codes:
 # their areas no longer keep to it) as r_min_lifted and r_min_codes; layer 1 keeps all four on the panel and the flow writes them into the page's event.
 SCALE = {}
+# The size of the picture each leaf layer drew last (its Frame's W and H, None where it has none): a column page's main
+# leaf's is the panel's (main_size).
+DREW = {}
 
 
 def leaf(Frame, cl, key, fixed=None, by_hero=None):
@@ -89,6 +93,7 @@ def leaf(Frame, cl, key, fixed=None, by_hero=None):
         st = dict(f.h.get("style", {}))
         for node, kv in [*(fixed or {}).items(), *(by_hero(f.h) if by_hero else {}).items()]: st[node] = {**st.get(node, {}), **kv}
         fr = Frame({"data": d, "style": st}); out = cl(fr, occ)
+        DREW[key] = (getattr(fr, "W", None), getattr(fr, "H", None))
         dropped = getattr(fr, "dropped", None) or []
         DROPPED.extend({"id": str(c), "why": why} for c, why in dropped)
         if getattr(fr, "r_used", None) is not None:
@@ -130,16 +135,21 @@ LEAF_LAYERS = dict(section_head=leaf(section_head.Frame, section_head.cl_section
                    rankbar=leaf(rankbar.Frame, rankbar.cl_rankbar, "rankbar"),
                    bubbles=leaf(bubbles.Frame, bubbles.cl_bubbles, "bubbles", MAP_STYLE, focus_style),
                    bubble_key=(bubble_key, None),
-                   leader_notes=leaf(leader_notes.Frame, leader_notes.cl_leader_notes, "leader_notes", MAP_STYLE))
-LEAF_SVG = section_head.SECTION_HEAD_SVG + rankbar.RANKBAR_SVG + bubbles.BUBBLES_SVG + leader_notes.LEADER_NOTES_SVG
+                   leader_notes=leaf(leader_notes.Frame, leader_notes.cl_leader_notes, "leader_notes", MAP_STYLE),
+                   sankey=leaf(sankey.Frame, sankey.cl_sankey, "sankey"))
+LEAF_SVG = section_head.SECTION_HEAD_SVG + rankbar.RANKBAR_SVG + bubbles.BUBBLES_SVG + leader_notes.LEADER_NOTES_SVG + sankey.SANKEY_SVG
 
 
 # The page recipes this child draws: each one's layers (name -> (draw, reserve)) and which of them are svg.
 # The page recipes whose page places the illustration strip layer 1 gives it (column_page; the ring and scmp pages have no
 # slot and refuse one): knobs.py declares the slot on exactly these recipes, which layer 1 asks a strip for.
 STRIP_SLOT = ("column", "change")
-# The recipes a column page draws: column, and change (its bars the places' change between two years, bars.measure).
-COLUMN_KINDS = ("column", "change")
+# The main layer of each page recipe the column frame draws, the picture the page is built around (column_page; knobs.py
+# copies it into the recipe as `main`): the bars, or a chart leaf of LEAF_LAYERS in their place, across the page.
+MAIN = dict(column="bars", change="bars", flow="sankey")
+# The recipes a column page draws: column, change (its bars the places' change between two years, bars.measure), and flow
+# (a sankey across the page, its main).
+COLUMN_KINDS = tuple(MAIN)
 KINDS = dict(ring=(scmp.RING_LAYERS, scmp.RING_SVG), **{k: ({**column.COLUMN_LAYERS, **LEAF_LAYERS}, column.COLUMN_SVG + LEAF_SVG) for k in COLUMN_KINDS},
              scmp=(scmp.SCMP_LAYERS, scmp.SCMP_SVG))
 
@@ -157,7 +167,8 @@ class Panel:
         c = prod.Ctx(spec); h = spec["hero"]
         p.c, p.spec, p.occ = c, spec, prod.Occ()
         if p.node in COLUMN_KINDS:
-            p.f = column.ColumnFrame(c, h, map_view(h))
+            p.f = column.ColumnFrame(c, h, map_view(h), MAIN[p.node])
+            if MAIN[p.node] != "bars": p.f.sized(*main_size(p.f, MAIN[p.node]))
             # the room under the map the bubbles' key may stand in (bubbles.key_room); the map's svg grows into it only when the key does
             if p.f.mv: p.f.H = max(p.f.H, p.f.mv.H + bubbles.key_room(p.f))
             return
@@ -167,6 +178,13 @@ class Panel:
         if prod.knob(h, "frame", "gap_dir") == "auto": h = {**h, "_gapdir": scmp.empty_corner(c, h)}
         if scmp.title_in(h): h = {**h, "_title": scmp.page_head(c, spec)}
         p.f = scmp.RingFrame(c, h); p.f.wrap, p.f.mapout, p.f.ret = k.get("wrap", False), {}, {}
+
+
+def main_size(f, main):
+    """A column page's main leaf drawn once to measure it: its picture's size (DREW), which the leaf settles while it draws
+    and the panel takes before any layer line; what it drops is sent when its own layer line draws it."""
+    LEAF_LAYERS[main][0](f, prod.Occ()); DROPPED.clear()
+    return DREW[main]
 
 
 def map_view(h):
@@ -286,11 +304,11 @@ def page(panel, got, sizes=None):
 def column_page(panel, got, sizes):
     """The column page around its layers: the header (with the big numbers beside the title when its recipe draws bignums,
     their box tagged; the title alone across the whole page when not: wide), then under the unit and year line the map panel
-    (its layers in one svg, each tagged, when the hero has one) and the bars' picture beside it; the browser check's hooks
-    as the ring's (COLUMN_HOOKS). Under the hero, above the footer, the illustration strip when layer 1 gives one
+    (its layers in one svg, each tagged, when the hero has one) and the bars' picture beside it, or the main leaf's across
+    the page in their place (the recipe's main, MAIN); the browser check's hooks as the ring's (column_hooks). Under the hero, above the footer, the illustration strip when layer 1 gives one
     (illus_strip, its size in `sizes`): line art only, in its own svg, hidden from a screen reader."""
     f, spec = panel.f, panel.spec
-    need = (["bignums"] if "bignums" in got else []) + ["bars"] + (["illus_strip"] if "illus_strip" in got else [])
+    need = (["bignums"] if "bignums" in got else []) + [f.main] + (["illus_strip"] if "illus_strip" in got else [])
     if f.mv: need += [n for n in MAP_LAYERS if MAP_LEAVES.get(n, n) in (f.h.get("leaves") or {})]
     off = [f"page: {k} is not drawn by a leaf layer yet" for k in NOT_LEAF if spec.get(k)]
     off += [f"page: no layer {n}" for n in need if not isinstance(got.get(n), str)]
@@ -303,7 +321,7 @@ def column_page(panel, got, sizes):
     box = re.sub(r"^<(\w+)", r'<\1 data-layer="bignums"', got["bignums"], count=1) if "bignums" in got else None
     unit = FX.worded(spec, panel.c.F, "unit", spec["hero"]["unit"]) if spec["hero"].get("unit") else ""
     pic = "".join(f'<g data-layer="{n}">{got[n]}</g>' for n in MAP_LAYERS if n in need)
-    hero = hooked(column.column_shell(f, f'<g data-layer="bars">{got["bars"]}</g>', unit, pic), panel.c, spec, COLUMN_HOOKS)
+    hero = hooked(column.column_shell(f, f'<g data-layer="{f.main}">{got[f.main]}</g>', unit, pic, f.main), panel.c, spec, column_hooks(f.main))
     if isinstance(hero, list): return {"refused": hero}
     strip = column.strip_shell(got["illus_strip"], *wh) if "illus_strip" in got else ""
     html = scmp.shell(panel.c, spec, scmp.page_head(panel.c, spec, box=box, wide=box is None) + hero + strip, column.CSS)
@@ -349,10 +367,12 @@ HOOKS = (('<div class="hero ring"', '<div class="hero ring pub-visual" data-modu
          ('</div><script>', '<p id="desc-ring" hidden>{desc}</p></div><script>'))
 
 
-# The column page's hooks, as the ring's: its hero the module, its bars' svg the chart.
-COLUMN_HOOKS = (('<div class="hero column"', '<div class="hero column pub-visual" data-module-id="column"'),
-                ('<svg class="bars"', '<svg class="bars pub-chart" role="img" aria-label="{label}" aria-describedby="desc-column" tabindex="0"'),
-                ('</svg></div>', '</svg><p id="desc-column" hidden>{desc}</p></div>'))
+# The column page's hooks, as the ring's: its hero the module, its main layer's svg (the bars', or the leaf's in their place)
+# the chart.
+def column_hooks(main="bars"):
+    return (('<div class="hero column"', '<div class="hero column pub-visual" data-module-id="column"'),
+            (f'<svg class="{main}"', f'<svg class="{main} pub-chart" role="img" aria-label="{{label}}" aria-describedby="desc-column" tabindex="0"'),
+            ('</svg></div>', '</svg><p id="desc-column" hidden>{desc}</p></div>'))
 
 
 # The scmp page's hooks, as the ring's: its hero the module, the map's svg the chart.

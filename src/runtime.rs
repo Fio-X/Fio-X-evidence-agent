@@ -437,6 +437,7 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
         (runtime_dir.join("leaves_py/qa.js"), include_str!("../runtime/leaves_py/qa.js")),
         (runtime_dir.join("leaves_py/rankbar.py"), include_str!("../runtime/leaves_py/rankbar.py")),
         (runtime_dir.join("leaves_py/run.py"), include_str!("../runtime/leaves_py/run.py")),
+        (runtime_dir.join("leaves_py/sankey.py"), include_str!("../runtime/leaves_py/sankey.py")),
         (runtime_dir.join("leaves_py/scmp.py"), include_str!("../runtime/leaves_py/scmp.py")),
         (runtime_dir.join("leaves_py/section_head.py"), include_str!("../runtime/leaves_py/section_head.py")),
         (runtime_dir.join("leaves_py/text-line-clash.js"), include_str!("../runtime/leaves_py/text-line-clash.js")),

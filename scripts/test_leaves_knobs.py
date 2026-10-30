@@ -37,18 +37,30 @@ class Registry(unittest.TestCase):
 
     def test_a_recipe_holds_what_its_nodes_eat_and_exposes_only_real_knobs(self):
         t = knobs.table()
-        self.assertEqual([r["name"] for r in t["recipes"]], ["scmp", "ring", "change", "column"])
+        self.assertEqual([r["name"] for r in t["recipes"]], ["scmp", "ring", "change", "column", "flow"])
         ring = next(r for r in knobs.RECIPES if r["name"] == "ring")
         for bad in [dict(ring, eats=["annual"]), dict(ring, layers=["map", "pie"]), dict(ring, exposes=["ring.glow"]),
                     dict(ring, same_measure=[["map", "pie"]]), dict(ring, same_measure=[["map", "map"]])]:
             with self.assertRaises(SystemExit):
                 self._with(bad, t)
 
+    def test_a_column_frame_recipe_declares_its_pages_main_layer(self):
+        t = knobs.table()
+        self.assertEqual({r["name"]: r.get("main") for r in t["recipes"]},
+                         dict(scmp=None, ring=None, change="bars", column="bars", flow="sankey"))
+        self.assertEqual(knobs.run.MAIN, dict(column="bars", change="bars", flow="sankey"))
+        flow = next(r for r in knobs.RECIPES if r["name"] == "flow")
+        ring = next(r for r in knobs.RECIPES if r["name"] == "ring")
+        for bad in [dict(flow, main="bars"), {k: v for k, v in flow.items() if k != "main"}, dict(flow, layers=[]), dict(ring, main="map")]:
+            with self.assertRaises(SystemExit) as e:
+                self._with(bad, t)
+            self.assertIn("main", str(e.exception))
+
     def test_a_shape_condition_comes_after_the_ones_it_reads(self):
         t = knobs.table()
         column = next(r for r in knobs.RECIPES if r["name"] == "column")
         self.assertEqual((column["layers"], t["groups"]["column"]),
-                         (["bars", "bubbles", "leader_notes"], ["bignums", "bars", "section_head", "rankbar", "bubbles", "bubble_key", "leader_notes"]))
+                         (["bars", "bubbles", "leader_notes"], ["bignums", "bars", "section_head", "rankbar", "bubbles", "bubble_key", "leader_notes", "sankey"]))
         for eats in (["annual", "last_year", "one_place", "one_unit"], ["annual", "one_unit", "monthly_companion", "hub_origin"]):
             with self.assertRaises(SystemExit) as e:
                 self._with(dict(column, layers=[], eats=eats), t)

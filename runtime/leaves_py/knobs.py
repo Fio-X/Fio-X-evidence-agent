@@ -15,6 +15,7 @@ import leader_notes
 import prod
 import rankbar
 import run
+import sankey
 import scmp
 import section_head
 
@@ -31,8 +32,9 @@ READS = {"frame": [], "base": ["data"]}
 # drawn its main as (none: the shape alone decides), the program's picks over the shape and the claims (src/next_run.rs
 # PICK_RULES), the few knobs it exposes, its page's time window (the two picks it runs between; none: each layer its own),
 # the pairs of its layers that print the same measure by design (same_measure; none: no two may, src/next_run.rs
-# page_checks), and whether its page has a slot for the illustration strip (strip; none: no slot, layer 1 asks for no
-# strip and holds the page to none; run.STRIP_SLOT names the pages that place one).
+# page_checks), whether its page has a slot for the illustration strip (strip; none: no slot, layer 1 asks for no
+# strip and holds the page to none; run.STRIP_SLOT names the pages that place one), and, on a column frame page, its main
+# layer (main: the picture the page is built around, run.MAIN; none: the page is no column frame page).
 RECIPES = [
     dict(name="scmp", layers=["map", "strip", "bignums", "notes"],
          eats=["annual", "years_2", "hub_origin", "one_unit", "others_single", "monthly_companion"], charts=[],
@@ -44,11 +46,15 @@ RECIPES = [
     # the map its level at t1; a table of one year has no two ends and goes on to column
     dict(name="change", layers=["bubbles", "bars", "leader_notes"],
          eats=["annual", "years_2", "one_place", "one_unit", "last_year", "two_ends"],
-         charts=["choropleth", "horizontal_bar", "dumbbell", "line"], picks=["changed", "claim_marks"], exposes=[], strip=True),
+         charts=["choropleth", "horizontal_bar", "dumbbell", "line"], picks=["changed", "claim_marks"], exposes=[], strip=True,
+         main="bars"),
     dict(name="column", layers=["bars", "bubbles", "leader_notes"], eats=["annual", "one_place", "one_unit", "last_year"],
          charts=["choropleth", "horizontal_bar"], picks=["ranked", "claim_marks"], exposes=[],
          # TODO(item 5): goes once the map (bubbles) shows other values than the bars (src/next_leaf.rs leaves)
-         same_measure=[["bars", "bubbles"]], strip=True),
+         same_measure=[["bars", "bubbles"]], strip=True, main="bars"),
+    # a flow between two dimensions of one table (the registry's official pair, one unit) as a sankey across the column
+    # page, under the page's header and over its source line; no notes yet (the column page's notes point at a map)
+    dict(name="flow", layers=["sankey"], eats=["official_flow", "one_unit"], charts=[], picks=[], exposes=[], main="sankey"),
 ]
 # The shape conditions each node of a recipe needs its tables to meet; a recipe's conditions hold every one its layers'
 # nodes need.
@@ -56,7 +62,7 @@ EATS = dict(map=["hub_origin", "one_unit"], ring=["monthly_companion"], callouts
             bars=["annual", "one_place", "one_unit", "last_year"], bignums=["one_unit"], notes=["hub_origin", "one_unit"],
             strip=["monthly_companion"], section_head=[], rankbar=["annual", "one_place", "one_unit", "last_year"],
             bubbles=["annual", "one_place", "one_unit", "last_year"], bubble_key=["annual", "one_place", "one_unit", "last_year"],
-            leader_notes=["one_unit"])
+            leader_notes=["one_unit"], sankey=["official_flow", "one_unit"])
 # The nodes a node brings with it: every recipe that draws the node draws these right after it, in this order (a key to its
 # marks), so no recipe can draw the marks without them; a recipe that names one itself refuses.
 WITH = dict(bubbles=["bubble_key"])
@@ -120,7 +126,7 @@ def take(nodes, pages):
 def table():
     columns = run.KINDS["column"][0]  # the column page's own layers and the chart leaves over its frame (run.LEAF_LAYERS)
     groups = dict(map=list(prod.MAP_ORDER), ring=list(scmp.RING_LAYERS), charts=list(prod.CHARTS), column=list(columns),
-                  change=list(run.KINDS["change"][0]), scmp=list(scmp.SCMP_LAYERS))
+                  change=list(run.KINDS["change"][0]), flow=list(run.KINDS["flow"][0]), scmp=list(scmp.SCMP_LAYERS))
     reserve = {}
     for reg in (prod.MAP_LAYERS, scmp.RING_LAYERS, columns, scmp.SCMP_LAYERS):
         for n, (_, r) in reg.items():
@@ -139,8 +145,8 @@ def table():
 def recipes(nodes, groups):
     """RECIPES as checked, each with the nodes its layers bring (WITH) after them: each layer one its group holds and its node
     states what it eats, every condition a layer's node needs among the recipe's own, each condition after what it reads (NEEDS),
-    each exposed knob one its node has, and each same_measure pair two of its own layers, and a strip slot declared exactly where
-    its page places one (run.STRIP_SLOT)."""
+    each exposed knob one its node has, and each same_measure pair two of its own layers, a strip slot declared exactly where
+    its page places one (run.STRIP_SLOT), and a main layer declared exactly as its page's (run.MAIN), one of its own layers."""
     out = []
     for r in RECIPES:
         brought = [n for l in r["layers"] for n in WITH.get(l, [])]
@@ -171,6 +177,8 @@ def recipes(nodes, groups):
                 raise SystemExit(f"{r['name']}: same_measure {pair!r}; a pair is two of its own layers")
         if r.get("strip", False) not in (True, False) or r.get("strip", False) != (r["name"] in run.STRIP_SLOT):
             raise SystemExit(f"{r['name']}: strip {r.get('strip')!r}; its page {'places' if r['name'] in run.STRIP_SLOT else 'has no slot for'} the strip (run.STRIP_SLOT)")
+        if r.get("main") != run.MAIN.get(r["name"]) or ("main" in r and r["main"] not in r["layers"]):
+            raise SystemExit(f"{r['name']}: main {r.get('main')!r}; its page's main layer is {run.MAIN.get(r['name'])!r} (run.MAIN), one of its layers")
         out.append(r)
     return out
 
