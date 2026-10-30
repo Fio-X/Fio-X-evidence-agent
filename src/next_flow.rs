@@ -6245,12 +6245,15 @@ mod tests {
         .collect()
     }
 
+    /// One top5 call as the fake catalogue kept it: the question, the texts, the months flag and the latest year.
+    type Searched = (String, Vec<String>, bool, Option<i32>);
+
     /// A catalogue that returns these tables (or the uncovered level), flags "japan", and keeps what it was asked.
     struct FakeCatalogue {
         candidates: Vec<Candidate>,
         uncovered: Option<Uncovered>,
         source: Value,
-        searched: std::sync::Mutex<Vec<(String, Vec<String>, bool, Option<i32>)>>,
+        searched: std::sync::Mutex<Vec<Searched>>,
     }
 
     impl FakeCatalogue {
@@ -6435,7 +6438,7 @@ mod tests {
         tools: ScriptedTools,
         events: Events,
         history: Vec<Value>,
-        searched: Vec<(String, Vec<String>, bool, Option<i32>)>,
+        searched: Vec<Searched>,
     }
 
     /// Runs the fixed order on the q3-like spec in a fresh run folder holding these sheets, with scripted model replies, scripted
