@@ -54,8 +54,13 @@ const SPECS = [
   { ref: "data/a.csv", dimensions: ["geo", "siec"], measure: "OBS_VALUE", time: "TIME_PERIOD" },
   { ref: "data/b.csv", dimensions: ["country"], measure: "value", time: "date" },
 ];
-check("no alias: specs byte-identical to the base commit", () => {
-  for (const spec of SPECS) assert.equal(JSON.stringify(buildCandidates(spec)), JSON.stringify(baseMod.buildCandidates(spec)), JSON.stringify(spec));
+// Since the base the two sum kinds also cite a series (the slice they add, the one the rank or the change kinds cite); nothing else differs.
+const withSumSeries = (specs) => specs.map((s) => {
+  const like = { share_of_total: "rank_top", change_total: "change_largest_rise" }[s.kind];
+  return like && !s.series_sql ? { ...s, series_sql: specs.find((x) => x.kind === like).series_sql } : s;
+});
+check("no alias: specs byte-identical to the base commit (but for the sum kinds' series)", () => {
+  for (const spec of SPECS) assert.equal(JSON.stringify(buildCandidates(spec)), JSON.stringify(withSumSeries(baseMod.buildCandidates(spec))), JSON.stringify(spec));
 });
 check("alias names the entity column in every slice, operator and template", () => {
   for (const alias of ENTITY_ALIASES) {
