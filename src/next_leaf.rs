@@ -2139,8 +2139,8 @@ mod tests {
         // the big numbers' size, label lines and alignment with that, and their min, box width and cells a row after it; the
         // chart leaves over the column page's frame (section_head 8, rankbar 8, bubbles 19 with its label gap and spacing, leader
         // reach, land cost, nudge, circle gap and inset, two of them a list of codes), then the map panel's leader notes (6: a note
-        // never sits over the land, so it has no land cost; one a list of codes) last
-        assert_eq!((t.nodes.len(), knobs), (33, 133));
+        // never sits over the land, so it has no land cost; one a list of codes), and the bars' measure (level or change) last
+        assert_eq!((t.nodes.len(), knobs), (33, 134));
         let reserve: Vec<_> = t.nodes.iter().filter(|(_, l)| l.reserve).map(|(n, _)| n.as_str()).collect();
         assert_eq!(reserve, ["flows", "labels", "routes"]);
         let legacy: Vec<_> = t.legacy.iter().map(|(n, at)| (n.as_str(), at.join("."))).collect();

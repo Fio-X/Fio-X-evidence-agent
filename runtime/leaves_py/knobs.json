@@ -26,6 +26,15 @@
      "max": 40,
      "step": 1,
      "what": "space above the first bar"
+    },
+    {
+     "name": "measure",
+     "default": "level",
+     "options": [
+      "level",
+      "change"
+     ],
+     "what": "what a bar is: the place's level at the year, or its change from t0"
     }
    ],
    "eats": [

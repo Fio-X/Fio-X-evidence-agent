@@ -4,7 +4,8 @@ leaves.bubbles) the hero is two columns in one panel: the map (MAP_W wide, the m
 bars on the right of it (MAP_GAP after), each drawn where the panel places it. A column page prints from a
 ledger only: every number is an entry (facts.entry), the bars' values the family hero.data.family (<family>.<code>), the
 big numbers the facts hero.data names (hi, lo, gap, times), each name the request's label marked with its name row. Raw
-row values drive the bars' lengths only."""
+row values drive the bars' lengths only. With the knob bars.measure change (a page with two ends, hero.data.t0 and year) each
+bar is its place's change between the two years, a signed bar from 0, its value the family member with its unit."""
 import html, os, re, sys, unicodedata
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import facts as FX
@@ -19,32 +20,41 @@ class ColumnFrame:
     """What the column layers share: the ranked places (layer 1's order, kept as given) with their raw values at the year,
     the marked ones, and the panel's size: the page's width and the taller of the bars' rows and the map (`mv`, the map
     leaves' mapkit.View, when the page has one: the bars then start at x0 after it, bw wide). A place with no row at the
-    year, a value below 0 or none above it refuses: the bars start at 0."""
+    year, a value below 0 or none above it refuses: the bars start at 0. With bars.measure change each value is the place's
+    change from hero.data.t0 to the year (the later row less the earlier): a place with no row at either, or no place that
+    changed, refuses."""
     def __init__(f, c, h, mv=None):
         if FX.LEDGER is None: raise FX.Refused("column: the page prints from a ledger only")
         d = h["data"]; K = lambda k: prod.knob(h, "bars", k)
         f.c, f.h, f.d = c, h, d
         f.table = d.get("table") or next(iter(c.spec["tables"]))
         by, year = prod.need(d, "by"), str(prod.need(d, "year"))
-        at = {r[by]: float(r["OBS_VALUE"]) for r in c.T[f.table] if r["TIME_PERIOD"] == year and by in r}
-        off = [k for k in d["ranked"] if k not in at]
-        if off: raise FX.Refused(f"bars: no row at {year} for {', '.join(off)}")
-        f.vals = [(k, at[k]) for k in d["ranked"]]
-        if not f.vals or min(v for _, v in f.vals) < 0 or max(v for _, v in f.vals) <= 0:
+        f.change = K("measure") == "change"
+        at = lambda t: {r[by]: float(r["OBS_VALUE"]) for r in c.T[f.table] if r["TIME_PERIOD"] == t and by in r}
+        ends = [str(prod.need(d, "t0")), year] if f.change else [year]
+        rows = {t: at(t) for t in ends}
+        for t in ends:
+            off = [k for k in d["ranked"] if k not in rows[t]]
+            if off: raise FX.Refused(f"bars: no row at {t} for {', '.join(off)}")
+        f.vals = [(k, rows[year][k] - rows[ends[0]][k] if f.change else rows[year][k]) for k in d["ranked"]]
+        if f.change:
+            if not f.vals or all(v == 0 for _, v in f.vals): raise FX.Refused("bars: no place changed between the two years")
+        elif not f.vals or min(v for _, v in f.vals) < 0 or max(v for _, v in f.vals) <= 0:
             raise FX.Refused("bars: the values are not all 0 or more with one above 0")
         f.year, f.marks, f.size, f.rh = year, set(d.get("marks") or []), K("size"), K("row")
         f.mv, f.W = mv, PAGE_W
         f.x0 = mv.W + MAP_GAP if mv else 0; f.bw = f.W - f.x0
         f.lw = max(prod.tw(prod.NAME(k), f.size) for k, _ in f.vals) + 12  # the names' column, right-aligned to the bars
-        f.vw = max(prod.tw(FX.text(val_src(d, k)), f.size) for k, _ in f.vals) + 8  # room after the longest bar for its value
+        f.vw = max(prod.tw(FX.text(val_src(d, k, f.change)), f.size) for k, _ in f.vals) + 8  # room after the longest bar for its value
         f.top = K("top")
         f.bh = f.top + f.rh * len(f.vals) + 4
         f.H = max(f.bh, mv.H if mv else 0)
 
 
-def val_src(d, code):
-    """The ledger entry a bar's value prints: the family's member's bare number."""
-    return f"fact:{prod.need(d, 'family')}.{code}.n"
+def val_src(d, code, change=False):
+    """The ledger entry a bar's value prints: the family's member's bare number, under the unit line; a change with its own
+    unit (percentage points of a share), which the unit line does not name."""
+    return f"fact:{prod.need(d, 'family')}.{code}" + ("" if change else ".n")
 
 
 def html_named(code):
@@ -54,7 +64,8 @@ def html_named(code):
 
 def cl_bars(f, occ):
     """One bar per ranked place, largest first: the name before it, the value after it; a marked place in the accent. Drawn
-    from x0, where the panel places the bars."""
+    from x0, where the panel places the bars. With bars.measure change: cl_change_bars."""
+    if f.change: return cl_change_bars(f)
     o, mx, bw, lw = [], max(v for _, v in f.vals), f.bw - f.lw - f.vw, f.x0 + f.lw
     o.append(f'<line x1="{lw:.1f}" x2="{lw:.1f}" y1="{f.top}" y2="{f.top + f.rh * len(f.vals)}" stroke="var(--t-sec)" stroke-width="0.8"/>')
     for i, (k, v) in enumerate(f.vals):
@@ -67,8 +78,35 @@ def cl_bars(f, occ):
     return "".join(o)
 
 
+# A change bar's colour by its sign, the page's fall and rise colours (as prod's flow lines and halos); no change, the bar's.
+RISE, FALL = "var(--accent2)", "var(--accent)"
+
+
+def cl_change_bars(f):
+    """One signed bar per ranked place in layer 1's order (by its change, the largest rise first): from a zero line, a rise
+    to the right in the rise colour, a fall to the left in the fall colour, each bar's length its change on one scale; the
+    name before the bars, the value past each bar's end (on its side of the zero line); a marked place's name and value in
+    bold. The scale leaves room for a value on each side a bar runs to."""
+    o, lo, hi = [], min(0.0, min(v for _, v in f.vals)), max(0.0, max(v for _, v in f.vals))
+    neg, pos = (f.vw if lo < 0 else 0), (f.vw if hi > 0 else 0)
+    left, lw = f.x0 + f.lw + neg, f.x0 + f.lw
+    bw = f.bw - f.lw - neg - pos
+    z = left + -lo / (hi - lo) * bw
+    o.append(f'<line x1="{z:.1f}" x2="{z:.1f}" y1="{f.top}" y2="{f.top + f.rh * len(f.vals)}" stroke="var(--t-sec)" stroke-width="0.8"/>')
+    for i, (k, v) in enumerate(f.vals):
+        y, w, hi_ = f.top + i * f.rh, abs(v) / (hi - lo) * bw, k in f.marks
+        ink, weight = ("var(--t-title)", 700) if hi_ else ("var(--t-body)", 400)
+        mid, x = y + f.rh / 2, z if v >= 0 else z - w
+        tx, anchor = (z + w + 6, "start") if v >= 0 else (z - w - 6, "end")
+        o.append(f'<text x="{lw - 8:.1f}" y="{mid:.1f}" text-anchor="end" dominant-baseline="middle" font-size="{f.size}" fill="{ink}" font-weight="{weight}">{prod.named(k)}</text>'
+                 f'<rect x="{x:.1f}" y="{y + 3:.1f}" width="{w:.1f}" height="{f.rh - 6}" fill="{RISE if v > 0 else FALL if v < 0 else "var(--bar)"}"/>'
+                 f'<text x="{tx:.1f}" y="{mid:.1f}" text-anchor="{anchor}" dominant-baseline="middle" font-size="{f.size}" fill="{ink if hi_ else "var(--t-sec)"}" font-weight="{weight}">{FX.entry(val_src(f.d, k, True), "tspan", None)}</text>')
+    return "".join(o)
+
+
 prod.KNOBS["bars"] = dict(row=(24, (16, 40, 1), "row height of one bar"), size=(13, (9, 18, 0.5), "font size of the names and values"),
-                          top=(6, (0, 40, 1), "space above the first bar"))
+                          top=(6, (0, 40, 1), "space above the first bar"),
+                          measure=("level", ("level", "change"), "what a bar is: the place's level at the year, or its change from t0"))
 
 
 prod.KNOBS["bignums"] = dict(size=(36, (28, 64, 2), "number size in px"), label_lines=(2, (1, 3, 1), "lines a label may take; more refuses"),
@@ -167,6 +205,7 @@ def column_shell(f, bars, unit, pic=""):
     svg (`pic`, its layers; class cmap, as the page css places a .map absolutely) on the left and the bars' beside it, its
     viewBox starting at x0 so each text stands where the panel placed it."""
     year = word("date.y", y=FX.entry(f"period:{f.table}:{f.year}", "span", None))
+    if f.change: year = word("column.change_years", a=FX.entry(f"period:{f.table}:{prod.need(f.d, 't0')}", "span", None), b=year)
     sc = f.h.get("scope")
     if sc and sc.get("code") in prod.NAMES: unit = word("column.scope", place=prod.named(sc["code"]), n=FX.entry(f"fact:{sc['count']}.n", "span", None)) + unit
     bars = f'<svg class="bars" viewBox="{f.x0} 0 {f.bw} {f.bh:.0f}" width="{f.bw}" height="{f.bh:.0f}">{bars}</svg>'

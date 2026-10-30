@@ -1805,6 +1805,9 @@ fn bubbles_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
 /// highest ranked country how far it is above the lowest (the gap), at the lowest how many times it the highest is (the
 /// times); both facts as extremes declares them, the words the word table's (no number in them).
 fn leader_notes_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
+    if !f.shape.t0.is_empty() {
+        return change_notes_fill(f, out);
+    }
     // the notes print the gap and the times, not the two values
     let (hi, lo) = extremes(f, out, false)?;
     let (points, ext) = ranked_points(f, out)?;
@@ -1814,6 +1817,44 @@ fn leader_notes_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
     let notes = [note(hi, "column.note.hi", "gap"), note(lo, "column.note.lo", "times")];
     set_leaf(out, "leader_notes", json!({"ext": ext, "notes": notes}))
 }
+
+/// Two notes on the map of a page with two ends (hero.leaves.leader_notes, at the ranked countries' points as
+/// leader_notes_fill): at the first ranked country (changed: the largest rise) and the last (the largest fall), each its
+/// change from the minus family (change_families), the words the word table's, picked by the change's sign and the note's
+/// end (CHANGE_NOTES: never a rise named a fall). One ranked country gets one note.
+fn change_notes_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
+    change_families(f, out)?;
+    let (points, ext) = ranked_points(f, out)?;
+    let (shape, ranked) = (f.shape, &f.picks.ranked);
+    let (Some(first), Some(last)) = (ranked.first(), ranked.last()) else {
+        return Err(format!("main {} ranks no country", shape.main));
+    };
+    let at = |code: &str, t: &str| {
+        f.main.iter().find(|r| r["time"] == t && r["dims"][&shape.place] == code).and_then(row_value)
+    };
+    let mut notes = Vec::new();
+    for (code, most) in [(first, true), (last, false)].into_iter().take(ranked.len().min(2)) {
+        let change = at(code, &shape.year).zip(at(code, &shape.t0)).map(|(b, a)| b - a);
+        let change = change.ok_or_else(|| format!("leader notes: main {} has no two ends for {code}", shape.main))?;
+        let (_, word) = CHANGE_NOTES
+            .iter()
+            .find(|(of, _)| *of == (most, change.partial_cmp(&0.0).unwrap_or(std::cmp::Ordering::Equal)))
+            .ok_or_else(|| format!("leader notes: no word for the change of {code}"))?;
+        notes.push(json!({"at": points[code.as_str()], "name": code, "text": [{"word": word}],
+            "value_text": format!("fact:{}.{code}", CHANGE_FAMILIES[2])}));
+    }
+    set_leaf(out, "leader_notes", json!({"ext": ext, "notes": notes}))
+}
+
+/// The words of a change note by its end (true: the first ranked, the largest rise) and its change's sign.
+const CHANGE_NOTES: [((bool, std::cmp::Ordering), &str); 6] = [
+    ((true, std::cmp::Ordering::Greater), "column.note.rise_most"),
+    ((true, std::cmp::Ordering::Less), "column.note.fall_least"),
+    ((true, std::cmp::Ordering::Equal), "column.note.flat"),
+    ((false, std::cmp::Ordering::Less), "column.note.fall_most"),
+    ((false, std::cmp::Ordering::Greater), "column.note.rise_least"),
+    ((false, std::cmp::Ordering::Equal), "column.note.flat"),
+];
 
 /// The big numbers of a flow page (a focus and its years, no ranking): the focus's change, the total's change, the change of the
 /// top origin that grew most in volume (the focus aside) and the focus's peak month in the strip, each a fact the map or the
