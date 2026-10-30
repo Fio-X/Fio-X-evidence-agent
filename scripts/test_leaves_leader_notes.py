@@ -6,7 +6,8 @@ variables, note font >= 16, each note one line ending in its bold number (one to
 unit the second; one that fits one line drawn byte for byte as before; one too wide on two refused as before), in the sea when that costs less and over the land
 only off every circle and label (one with no room anywhere is dropped and named), its leader straight or with one bend (two
 only when no place has such a leader: the q6 page's walled-in Iraq, a room's door; a room without one, or past the layer's
-two-bend checks, still drops it, named), no
+two-bend checks, still drops it, named; each piece of it clear just where the forward walk against every box and circle
+found it), no
 note box on a circle or label the bubbles claimed (but its own point's), every EU
 circle labelled, no leader crossing another, no label or leader over a nudged circle's true-point dot, a blocked side gives
 way to the other; the column page lays the map beside the bars in one panel; a crowded map (the EU-27, a
@@ -17,10 +18,12 @@ import hashlib
 import json
 import math
 import os
+import random
 import re
 import subprocess
 import sys
 import tempfile
+import types
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -69,6 +72,20 @@ def leaders(svg):
 def segs(svg):
     """Every straight piece of every leader, as (x1, y1, x2, y2)."""
     return [(*a, *b) for path in leaders(svg) for a, b in zip(path, path[1:])]
+
+
+def lead_old(edge, end, pt, boxes, rings, cells):
+    """lead_clear as it was before it walked from the point end against what the piece's bounds reach: the forward walk, every
+    sample point against every box and circle (the reference its answers are held to)."""
+    steps = max(1, math.ceil(math.dist(edge, end) / 2))
+    for i in range(steps + 1):
+        a = (edge[0] + (end[0] - edge[0]) * i / steps, edge[1] + (end[1] - edge[1]) * i / steps)
+        if math.dist(a, pt) <= 10: continue
+        if any(a[0] - 3 < q[2] and a[0] + 3 > q[0] and a[1] - 3 < q[3] and a[1] + 3 > q[1] for q in boxes): return False
+        if any(math.dist(a, c[:2]) < c[2] + 2 for c in rings): return False
+        cx, cy = int(a[0] // LN.LEAD_GAP), int(a[1] // LN.LEAD_GAP)
+        if any(math.dist(a, q) < LN.LEAD_GAP for gx in (cx - 1, cx, cx + 1) for gy in (cy - 1, cy, cy + 1) for q in cells.get((gx, gy), ())): return False
+    return True
 
 
 def setup(rows=ROWS, labels=ZH2):
@@ -331,6 +348,71 @@ class LeaderNotes(unittest.TestCase):
             else: self.assertTrue(p[0][0] == p[1][0] and p[1][1] == p[2][1] == Y and p[2][0] == p[3][0], p)  # across the side's door
         f, svg, occ, _ = room("shut")
         self.assertEqual((f.dropped, svg), ([("DE", "no free place for the note")], '<g data-node="leader_notes"></g>'))
+
+    def test_a_leader_piece_walked_from_its_point_against_what_its_bounds_reach_answers_as_the_forward_walk_against_all(self):
+        # lead_clear walks a piece from its point end and tests a sample point only against the boxes and circles the piece's
+        # bounds reach (widened 1 px past what a point keeps off): its answer is, piece by piece, the one the forward walk against
+        # every box and circle gave (lead_old, the code before). The pieces: every one the layer asked of lead_clear on the q1, q6,
+        # change, crowded, walled-room and 30-circle Europe pages, and seeded random maps' pieces: random, zero-length, short,
+        # along a box's or circle's keep-off line or its widened bound (each side of it by 1e-9), through box corners, by the point
+        new = types.FunctionType(next(c for c in LN.cl_leader_notes.__code__.co_consts if getattr(c, "co_name", "") == "lead_clear"), vars(LN))
+        self.assertEqual(new.__code__.co_freevars, ())
+        calls, held = [], {}
+        def rec(frame, ev, _):
+            if frame.f_code is new.__code__:  # called at each call; it returns None, so no frame is traced line by line
+                l = frame.f_locals; calls.append((l["edge"], l["end"], l["pt"], *(held.setdefault(id(l[k]), l[k]) for k in ("boxes", "rings", "cells"))))
+        iso2 = {v: k for k, v in ISO3.items()}; ext = [-25, 20, 60, 70]; rnd = random.Random(1)
+        pick = sorted((c2, POINT[c3]) for c3, c2 in iso2.items() if c3 in POINT and c2 in ZH2 and ext[0] + 2 < POINT[c3][0] < ext[2] - 2 and ext[1] + 2 < POINT[c3][1] < ext[3] - 2)[:30]
+        def europe():
+            vals = {c: round(rnd.uniform(5, 60), 1) for c, _ in pick}; rows = [{"src": "fact:gap", "text": "54.8 个百分点"}]
+            for c, _ in pick: rows += [{"src": f"series:t/A.{c}:2023:OBS_VALUE", "table": "t", "dims": {"geo": c}, "time": "2023", "value": str(vals[c])}, {"src": f"fact:v.{c}", "text": f"{vals[c]}%"}]
+            K.setup(rows, ZH2, run.tables); geo.NE = SHP; occ = prod.Occ()
+            items = [dict(code=c, value=f"series:t/A.{c}:2023:OBS_VALUE", value_text=f"fact:v.{c}", lonlat=list(p)) for c, p in pick]
+            bubbles.cl_bubbles(bubbles.Frame({"data": dict(items=items, ext=ext), "style": {**style(), "bubbles": {**style()["bubbles"], "max_overlaps": 20}}}), occ)
+            LN.cl_leader_notes(LN.Frame({"data": dict(ext=ext, notes=[dict(at=list(p), name=c, value_text="fact:gap") for c, p in pick]), "style": style()}), occ)
+        every = [dict(at=POINT[ISO3[c]], name=c, value_text="fact:gap") for c in VALUES]
+        sys.settrace(rec)
+        try:
+            pair(); self.q6(); pair(dict(D, notes=every), label_count=12, note_size=22); europe()
+            setup(ROWS + [CHG]); occ = prod.Occ(); bubbles.cl_bubbles(bubbles.Frame({"data": dict(items=ITEMS, ext=EXT), "style": style()}), occ)
+            LN.cl_leader_notes(LN.Frame({"data": dict(D, notes=[NOTES[0], WIDE]), "style": style()}), occ)
+            self.test_a_note_in_a_walled_room_takes_two_bends_through_its_door_and_none_drops_without_one()
+        finally:
+            sys.settrace(None); setup()
+        calls = calls[::5]; page = len(calls)  # every 5th the layer asked
+        for m in range(8):  # seeded random maps
+            boxes = []; rings = []; cells = {}
+            for _ in range(rnd.randint(5, 60)):
+                x, y = rnd.uniform(0, 600), rnd.uniform(0, 400); boxes.append((x, y, x + rnd.uniform(1, 80), y + rnd.uniform(1, 30), "t"))
+            for _ in range(rnd.randint(3, 30)): rings.append((rnd.uniform(0, 600), rnd.uniform(0, 400), rnd.uniform(1, 30), None))
+            for _ in range(rnd.randint(0, 80)):
+                x, y = rnd.uniform(0, 600), rnd.uniform(0, 400); cells.setdefault((int(x // LN.LEAD_GAP), int(y // LN.LEAD_GAP)), []).append((x, y))
+            pts = [(rnd.uniform(0, 600), rnd.uniform(0, 400)) for _ in range(30)]
+            for _ in range(60):  # random, zero-length and short pieces, some ending at the point (as the layer's do), on the 6 px grid too
+                pt = rnd.choice(pts); a = (rnd.uniform(0, 600), rnd.uniform(0, 400)); g = (6 * rnd.randint(0, 100), 6 * rnd.randint(0, 66))
+                calls += [(a, pt, pt, boxes, rings, cells), (a, (rnd.uniform(0, 600), rnd.uniform(0, 400)), pt, boxes, rings, cells), (a, a, pt, boxes, rings, cells),
+                          (a, (a[0] + rnd.uniform(-2, 2), a[1] + rnd.uniform(-2, 2)), pt, boxes, rings, cells), (g, (g[0], pt[1]), pt, boxes, rings, cells), ((g[0], pt[1]), pt, pt, boxes, rings, cells)]
+            for q in boxes[:12]:  # along the 3 px keep-off line of each side and the widened bound (4 px), each side of it by 1e-9; through each corner
+                pt = rnd.choice(pts)
+                for d in (3, 4):
+                    for e in (-1e-9, 0, 1e-9):
+                        calls += [((q[2] + d + e, q[1] - 20), (q[2] + d + e, q[3] + 20), pt, boxes, rings, cells), ((q[0] - d - e, q[1] - 20), (q[0] - d - e, q[3] + 20), pt, boxes, rings, cells),
+                                  ((q[0] - 20, q[3] + d + e), (q[2] + 20, q[3] + d + e), pt, boxes, rings, cells), ((q[0] - 20, q[1] - d - e), (q[2] + 20, q[1] - d - e), pt, boxes, rings, cells)]
+                for cx, cy in ((q[0], q[1]), (q[2], q[1]), (q[0], q[3]), (q[2], q[3])):
+                    calls += [((cx - 15, cy - 15), (cx + 15, cy + 15), pt, boxes, rings, cells), ((cx - 15, cy + 15), (cx + 15, cy - 15), pt, boxes, rings, cells), ((cx - 30, cy - 4), (cx + 4, cy + 30), pt, boxes, rings, cells)]
+            for c in rings[:10]:  # along the r + 2 px keep-off line of each side and the widened bound (r + 3)
+                pt = rnd.choice(pts)
+                for d in (c[2] + 2, c[2] + 3):
+                    for e in (-1e-9, 0, 1e-9):
+                        calls += [((c[0] + d + e, c[1] - 40), (c[0] + d + e, c[1] + 40), pt, boxes, rings, cells), ((c[0] - d - e, c[1] - 40), (c[0] - d - e, c[1] + 40), pt, boxes, rings, cells),
+                                  ((c[0] - 40, c[1] + d + e), (c[0] + 40, c[1] + d + e), pt, boxes, rings, cells), ((c[0] + d + e, c[1] + d + e), (c[0] + d + e + 9, c[1] + d + e + 9), pt, boxes, rings, cells)]
+            for pt in pts[:10]:  # passing within 10 px of the point, through it, and on the 10 px skip's edge
+                for d in (0, 5, 9.999, 10, 10.001, 12):
+                    calls += [((pt[0] - 50, pt[1] + d), (pt[0] + 50, pt[1] + d), pt, boxes, rings, cells), ((pt[0] + d, pt[1] - 50), (pt[0] + d, pt[1]), pt, boxes, rings, cells)]
+        got = [(new(*c), lead_old(*c)) for c in calls]
+        self.assertEqual([i for i, (a, b) in enumerate(got) if a != b], [])
+        n, yes = len(got), sum(a for a, _ in got)  # 14506 pieces (5542 from the pages), 4700 clear
+        self.assertTrue(page > 3000 and n > 10000 and 0.1 < yes / n < 0.9, (page, n, yes))
 
     def test_a_note_too_wide_for_one_line_sets_its_number_and_unit_on_a_second_line(self):
         # beside Sweden's note on the bubbles' map: the name and the word on the first line, the bold number with its unit (its

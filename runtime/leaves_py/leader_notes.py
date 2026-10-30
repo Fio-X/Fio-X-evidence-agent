@@ -21,7 +21,8 @@ charged its 2 px steps times what each is tested against (boxes, circles, 9 lead
 two-bend budget per note only took the Europe sweep's 30 circles from 1.93 to 2.22 s and 60 from 1.34 to 1.91 (the deadline 2 s); shared, 1.97 and 1.37,
 the same notes dropped as before two bends; a count of pieces alone could not hold both (200 left the walled room's door unfound, it walks 568 short
 pieces; 500 cost the 60 circles 0.18 s), the charge does: the q6 page's Iraq takes 0.43 M, the room 0.33 M, the EU page's crossing test 1.2 M, a crowded map's first walled note spends
-the 1.5 M. Measured on the q1 and q6 column pages (replayed offline): sea only and straight kept 1 of
+the 1.5 M; each piece then walked from its point end against only what its bounds reach (lead_clear, the same answers) took the 30
+circles from 1.97 to 0.45 s, 50 from 0.72 to 0.11, the crowded EU map 2.49 to 0.63. Measured on the q1 and q6 column pages (replayed offline): sea only and straight kept 1 of
 their 4 notes, the bend alone 2, the land alone 3, both 4 (the sea first, whatever the length, gave a 400 px leader round the map);
 a note with no free place (no clear leader of up to two bends), or past label_count, is dropped and listed in Frame.dropped as (id, why), the id its name code (note<i>, its place in the
 request from 1, when it has none); the layer still draws, empty when every note was dropped (run.py sends the list back for layer 1 to keep in
@@ -107,9 +108,16 @@ def cl_leader_notes(f, occ):
     def lead_clear(edge, end, pt, boxes, rings, cells):
         """One straight piece of the leader, from `edge` to `end`, walked at 2 px steps, keeps 3 px off every claimed box, 2 px off
         every circle (`boxes`, `rings`: those but the ones its own point `pt` lies in; the leader ends on what it points at) and
-        LEAD_GAP px off every other leader (`cells`)."""
+        LEAD_GAP px off every other leader (`cells`). The answer is all of its sample points', so they are walked from the point end
+        (where the circles crowd, so a blocked piece stops within a few steps) and tested only against the boxes and circles the
+        piece's own bounds reach, widened 1 px past the 3 (and r + 2) a point is kept off (a dropped one could meet no point: the
+        same answer). Measured (the layer alone, median of 3): the Europe sweep's 30 circles from 1.97 to 0.45 s,
+        67 from 0.80 to 0.13, the crowded EU map (12 notes of 22 px) 2.49 to 0.63, the q6 page 0.10 to 0.02."""
         steps = max(1, math.ceil(math.dist(edge, end) / 2))
-        for i in range(steps + 1):
+        x0, x1, y0, y1 = min(edge[0], end[0]), max(edge[0], end[0]), min(edge[1], end[1]), max(edge[1], end[1])
+        boxes = [q for q in boxes if q[0] < x1 + 4 and q[2] > x0 - 4 and q[1] < y1 + 4 and q[3] > y0 - 4]
+        rings = [c for c in rings if x0 - c[2] - 3 <= c[0] <= x1 + c[2] + 3 and y0 - c[2] - 3 <= c[1] <= y1 + c[2] + 3]
+        for i in range(steps, -1, -1):
             a = (edge[0] + (end[0] - edge[0]) * i / steps, edge[1] + (end[1] - edge[1]) * i / steps)
             if math.dist(a, pt) <= 10: continue
             if any(a[0] - 3 < q[2] and a[0] + 3 > q[0] and a[1] - 3 < q[3] and a[1] + 3 > q[1] for q in boxes): return False
