@@ -6,11 +6,12 @@
 //! Input is one plain directory made by scripts/l5geo_inputs.py: toc.txt, metabase.txt, cl/*.tsv, wb-indicators.json,
 //! wb-countries.json, wb-countries-zh.json, nuts-2024-at.csv (original files, metabase unzipped).
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::Path;
+use std::sync::OnceLock;
 
 use anyhow::{Context, Result};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// BM25 parameters (v1 scorer).
 const K1: f64 = 1.2;
@@ -126,6 +127,28 @@ pub struct Candidate {
     pub s: f64,
     pub v: f64,
     pub coverage: Coverage,
+    /// Set when this is the annual twin of a monthly-only table the ranking reached (`top5`). Its score, s and v are those
+    /// of the place it holds: the monthly table's when it took that place.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub twin_of: Option<TwinOf>,
+}
+
+/// The monthly-only table a candidate stands for: the ranking reached `asked`, and `used`, the annual table of the same
+/// measure that monthly-twins.json registers for it (`found` as the file says how), is offered instead.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct TwinOf {
+    pub asked: String,
+    pub used: String,
+    pub found: String,
+    pub why: String,
+}
+
+/// A registered pair `top5` reached and did not swap, with the check that failed; the monthly table stays, as without the file.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct TwinRefused {
+    pub monthly: String,
+    pub annual: String,
+    pub why: String,
 }
 
 /// Why a question cannot be answered: it asks for `level_zh` inside `place_zh`, and neither catalog has that level there.
@@ -144,6 +167,9 @@ pub struct Ranking {
     pub uncovered: Option<Uncovered>,
     /// Best first; `top5` keeps 5, `rank` keeps every table that passed the filters.
     pub candidates: Vec<Candidate>,
+    /// `top5` only: the registered monthly-only tables it kept because their annual twin failed a check.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub twins_refused: Vec<TwinRefused>,
 }
 
 struct Doc {
@@ -249,6 +275,42 @@ pub fn wb_unit(id: &str) -> Option<Unit> {
             label: label.to_string(),
             kind: WB_UNIT_KINDS.iter().copied().find(|k| *k == kind),
         })
+    })
+}
+
+/// The Eurostat tables that hold monthly data only, each with the annual table of the same measure, built offline from the
+/// metabase (runtime/pi/assets/monthly-twins.json), compiled in so a broken file fails its test, not a run. A pair says
+/// nothing about a year being a sum of months: flow-families.json alone registers that, and this file is not read for it.
+const MONTHLY_TWINS: &str = include_str!("../runtime/pi/assets/monthly-twins.json");
+
+/// One pair of monthly-twins.json (its other fields are not read).
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+struct Twin {
+    monthly: String,
+    annual: String,
+    /// How the pair was found: by "id", "title" or "id+title".
+    found: String,
+    /// The dimensions both tables have, time left out.
+    dims: Vec<String>,
+    /// Per dimension, how many codes the annual table has beyond the monthly one's; a dimension not listed has none.
+    #[serde(default)]
+    extra_annual_codes: BTreeMap<String, usize>,
+    /// The monthly table's unit codes; none when it has no unit dimension.
+    #[serde(default)]
+    unit: Vec<String>,
+}
+
+/// The registered pairs, read once.
+fn monthly_twins() -> &'static [Twin] {
+    static TWINS: OnceLock<Vec<Twin>> = OnceLock::new();
+    TWINS.get_or_init(|| {
+        #[derive(Deserialize)]
+        struct File {
+            pairs: Vec<Twin>,
+        }
+        serde_json::from_str::<File>(MONTHLY_TWINS)
+            .expect("monthly-twins.json lists pairs")
+            .pairs
     })
 }
 
@@ -1187,6 +1249,7 @@ impl Catalog {
                     s: si,
                     v: vi,
                     coverage: self.coverage[i],
+                    twin_of: None,
                 }
             })
             .collect();
@@ -1220,13 +1283,156 @@ impl Catalog {
             places_zh,
             uncovered,
             candidates,
+            twins_refused: Vec::new(),
         }
     }
 
+    /// The first 5 of `rank`, a registered monthly-only table among them swapped for its annual twin (`twin_swap`) before
+    /// the model sees any.
     pub fn top5(&self, question_zh: &str, texts: &[String]) -> Ranking {
         let mut r = self.rank(question_zh, texts);
-        r.candidates.truncate(TOP);
+        let (candidates, refused) = self.twin_swap(std::mem::take(&mut r.candidates), monthly_twins());
+        r.candidates = candidates;
+        r.twins_refused = refused;
         r
+    }
+
+    /// The first TOP of `ranked` (best first, ids once each), each monthly-only table of `twins` whose annual twin passes
+    /// `twin_refusal` and this question's filters (is ranked too) replaced by it. The twin takes the monthly table's place
+    /// and scores; a twin ranked above its monthly table is offered once, in its own place, and the monthly one is dropped,
+    /// so the next table fills the five. A refused pair keeps the monthly table where it was, as without the file.
+    fn twin_swap(&self, ranked: Vec<Candidate>, twins: &[Twin]) -> (Vec<Candidate>, Vec<TwinRefused>) {
+        let mut out: Vec<Candidate> = Vec::new();
+        let mut refused = Vec::new();
+        for c in &ranked {
+            if out.len() == TOP {
+                break;
+            }
+            // A twin already offered in its monthly table's place.
+            if out.iter().any(|o| o.id == c.id) {
+                continue;
+            }
+            let Some(t) = twins.iter().find(|t| t.monthly == c.id) else {
+                out.push(c.clone());
+                continue;
+            };
+            let swap = ranked
+                .iter()
+                .find(|a| a.id == t.annual)
+                .ok_or_else(|| format!("{} is not among the tables this question's filters keep", t.annual))
+                .and_then(|a| self.twin_refusal(t).map_or(Ok(a), Err));
+            let a = match swap {
+                Ok(a) => a,
+                Err(why) => {
+                    refused.push(TwinRefused {
+                        monthly: t.monthly.clone(),
+                        annual: t.annual.clone(),
+                        why,
+                    });
+                    out.push(c.clone());
+                    continue;
+                }
+            };
+            let twin_of = |why: String| {
+                Some(TwinOf {
+                    asked: c.id.clone(),
+                    used: a.id.clone(),
+                    found: t.found.clone(),
+                    why,
+                })
+            };
+            let held = format!(
+                "{} holds monthly data only; {} is the annual table of the same measure (monthly-twins.json, found by {}), its dimensions and codes checked in this catalogue",
+                c.id, a.id, t.found
+            );
+            match out.iter_mut().find(|o| o.id == a.id) {
+                Some(o) => {
+                    if o.twin_of.is_none() {
+                        o.twin_of = twin_of(format!("{held}; it is ranked above {}, which is not offered", c.id));
+                    }
+                }
+                None => out.push(Candidate {
+                    id: a.id.clone(),
+                    title: a.title.clone(),
+                    coverage: a.coverage,
+                    twin_of: twin_of(held),
+                    ..c.clone()
+                }),
+            }
+        }
+        (out, refused)
+    }
+
+    /// Why the annual table of a registered pair cannot stand for its monthly one in this catalogue; None when it can. The
+    /// file was built from an older catalogue copy, so each pair is checked again here: both tables listed, the monthly one
+    /// holding monthly codes alone and the annual one annual codes, the same dimensions as the file names, every monthly
+    /// code (its unit codes too) in the annual table, and no more annual codes in a dimension than the file counts. A
+    /// failure only keeps the monthly table.
+    fn twin_refusal(&self, twin: &Twin) -> Option<String> {
+        fn freqs(t: &TableMeta) -> Vec<&str> {
+            t.freqs.iter().map(|(f, _, _)| f.as_str()).collect()
+        }
+        fn names(t: &TableMeta) -> BTreeSet<&str> {
+            t.dims.iter().map(|(d, _)| d.as_str()).collect()
+        }
+        let (Some(m), Some(a)) = (self.table(&twin.monthly), self.table(&twin.annual)) else {
+            return Some(format!(
+                "the catalogue does not list both {} and {}",
+                twin.monthly, twin.annual
+            ));
+        };
+        if freqs(&m) != ["M"] {
+            return Some(format!(
+                "{} is not monthly only: its time codes hold [{}]",
+                m.id,
+                freqs(&m).join(", ")
+            ));
+        }
+        if !freqs(&a).contains(&"A") {
+            return Some(format!(
+                "{} holds no annual data: its time codes hold [{}]",
+                a.id,
+                freqs(&a).join(", ")
+            ));
+        }
+        let named: BTreeSet<&str> = twin.dims.iter().map(String::as_str).collect();
+        if names(&m) != named || names(&a) != named {
+            let list = |s: BTreeSet<&str>| s.into_iter().collect::<Vec<_>>().join(", ");
+            return Some(format!(
+                "the dimensions differ: {} has [{}], {} has [{}], the file names [{}]",
+                m.id,
+                list(names(&m)),
+                a.id,
+                list(names(&a)),
+                list(named)
+            ));
+        }
+        let codes = |t: &TableMeta, dim: &str| -> HashSet<String> {
+            t.dims
+                .iter()
+                .find(|(d, _)| d == dim)
+                .map(|(_, cs)| cs.iter().map(|(c, _)| c.clone()).collect())
+                .unwrap_or_default()
+        };
+        for (dim, monthly) in &m.dims {
+            let annual = codes(&a, dim);
+            if let Some((c, _)) = monthly.iter().find(|(c, _)| !annual.contains(c)) {
+                return Some(format!("{} lacks the {dim} code {c} of {}", a.id, m.id));
+            }
+            let extra = annual.len() - monthly.len();
+            let allowed = twin.extra_annual_codes.get(dim).copied().unwrap_or(0);
+            if extra > allowed {
+                return Some(format!(
+                    "{} has {extra} {dim} codes beyond those of {}, the file counts {allowed}",
+                    a.id, m.id
+                ));
+            }
+        }
+        let units = codes(&a, "unit");
+        if let Some(u) = twin.unit.iter().find(|u| !units.contains(*u)) {
+            return Some(format!("{} lacks the unit {u}", a.id));
+        }
+        None
     }
 }
 
@@ -1871,6 +2077,213 @@ mod tests {
             2.0 * one[0].v,
             "texts add up before they are combined"
         );
+    }
+
+    /// The q6 pair as monthly-twins.json registers it (migr_asyappctzm monthly only, migr_asyappctza its annual twin with
+    /// the same codes) among other asylum tables, and nrg_cb_pem, monthly only with no registered twin, beside tables that
+    /// each differ from it in one way, for crafted pairs: nrg_pa_more (annual, two more geo codes), nrg_pa_op (annual, one
+    /// more dimension), nrg_pa_few (annual, a geo code fewer) and nrg_pq (quarterly).
+    fn twins_catalog() -> Catalog {
+        let toc = "\"title\"\t\"code\"\t\"type\"\n\"Database by themes\"\t\"data\"\t\"folder\"\n\
+                   \"    Asylum\"\t\"migr\"\t\"folder\"\n\
+                   \"        Asylum applicants by type, citizenship, age and sex - monthly data\"\t\"migr_asyappctzm\"\t\"table\"\n\
+                   \"        Asylum applicants by type, citizenship, age and sex - annual aggregated data\"\t\"migr_asyappctza\"\t\"table\"\n\
+                   \"        Asylum applicants considered to be unaccompanied minors\"\t\"migr_asyunaa\"\t\"table\"\n\
+                   \"        First instance decisions on applications by citizenship\"\t\"migr_asydcfsta\"\t\"table\"\n\
+                   \"        Beneficiaries of temporary protection at the end of the month by citizenship\"\t\"migr_asytpsm\"\t\"table\"\n\
+                   \"        First permits by reason\"\t\"migr_resfirst\"\t\"table\"\n\
+                   \"    Energy\"\t\"nrg\"\t\"folder\"\n\
+                   \"        Net electricity generation by type of fuel - monthly data\"\t\"nrg_cb_pem\"\t\"table\"\n\
+                   \"        Electricity generation by fuel and operator\"\t\"nrg_pa_op\"\t\"table\"\n\
+                   \"        Electricity generation by fuel in Germany\"\t\"nrg_pa_few\"\t\"table\"\n\
+                   \"        Electricity generation by fuel\"\t\"nrg_pa_more\"\t\"table\"\n\
+                   \"        Electricity generation by fuel - quarterly data\"\t\"nrg_pq\"\t\"table\"\n";
+        let asylum: &[(&str, &[&str])] = &[
+            ("age", &["TOTAL"]),
+            ("applicant", &["ASY_APP"]),
+            ("citizen", &["SY", "AF"]),
+            ("geo", &["EU27_2020", "DE"]),
+            ("sex", &["T"]),
+            ("unit", &["PER"]),
+        ];
+        let power: &[(&str, &[&str])] = &[("geo", &["DE", "FR"]), ("siec", &["TOTAL", "CF"]), ("unit", &["GWH"])];
+        let monthly: &[(&str, &[&str])] = &[("time", &["2026M08", "2008M01"])];
+        let annual: &[(&str, &[&str])] = &[("time", &["2025", "2008"])];
+        let mut metabase = String::new();
+        for (table, parts) in [
+            ("migr_asyappctzm", vec![asylum, monthly]),
+            ("migr_asyappctza", vec![asylum, annual]),
+            ("migr_asyunaa", vec![&[("geo", &["EU27_2020"][..])][..], annual]),
+            ("migr_asydcfsta", vec![&[("geo", &["EU27_2020"][..]), ("citizen", &["SY"][..])][..], annual]),
+            ("migr_asytpsm", vec![&[("geo", &["EU27_2020"][..])][..], monthly]),
+            ("migr_resfirst", vec![&[("geo", &["EU27_2020"][..])][..], annual]),
+            ("nrg_cb_pem", vec![power, &[("time", &["2026M08", "2016M01"][..])][..]]),
+            ("nrg_pa_op", vec![power, &[("operator", &["TOTAL"][..])][..], annual]),
+            ("nrg_pa_few", vec![&[("geo", &["DE"][..]), ("siec", &["TOTAL", "CF"][..]), ("unit", &["GWH"][..])][..], annual]),
+            ("nrg_pa_more", vec![&[("geo", &["DE", "FR", "IT", "ES"][..]), ("siec", &["TOTAL", "CF"][..]), ("unit", &["GWH"][..])][..], annual]),
+            ("nrg_pq", vec![power, &[("time", &["2024Q1", "2024Q2"][..])][..]]),
+        ] {
+            for (dim, codes) in parts.into_iter().flatten() {
+                for code in *codes {
+                    metabase.push_str(&format!("{table}\t{dim}\t{code}\n"));
+                }
+            }
+        }
+        Catalog::from_raw(&Raw {
+            toc: toc.into(),
+            metabase,
+            cl: vec![
+                ("geo".into(), "EU27_2020\tEuropean Union - 27 countries (from 2020)\r\nDE\tGermany\r\nFR\tFrance\r\nIT\tItaly\r\nES\tSpain\r\n".into()),
+                ("citizen".into(), "SY\tSyria\r\nAF\tAfghanistan\r\n".into()),
+                ("siec".into(), "TOTAL\tTotal\r\nCF\tCombustible fuels\r\n".into()),
+                ("unit".into(), "PER\tPerson\r\nGWH\tGigawatt-hour\r\n".into()),
+            ],
+            wb_indicators: json!([{}, []]),
+            wb_countries: json!([{}, []]),
+            wb_countries_zh: json!([{}, []]),
+            nuts: "\u{feff}CNTR_CODE,NUTS_ID\r\n".into(),
+        })
+    }
+
+    #[test]
+    fn a_monthly_only_table_is_offered_as_its_registered_annual_twin() {
+        let c = twins_catalog();
+        let q6 = "欧盟庇护申请的来源国";
+        // The monthly table ranks first and its twin second: the twin takes the first place and its scores, once, and the
+        // sixth table fills the five.
+        let t = texts(&["asylum applicants citizenship monthly"]);
+        let all = c.rank(q6, &t).candidates;
+        assert_eq!(ids(&all)[..2], ["migr_asyappctzm", "migr_asyappctza"]);
+        let r = c.top5(q6, &t);
+        let want: Vec<&str> = std::iter::once("migr_asyappctza")
+            .chain(ids(&all)[2..6].iter().copied())
+            .collect();
+        assert_eq!(ids(&r.candidates), want);
+        let first = &r.candidates[0];
+        assert_eq!(
+            (first.score, first.s, first.v, first.title.as_str()),
+            (all[0].score, all[0].s, all[0].v, all[1].title.as_str())
+        );
+        let twin = first.twin_of.as_ref().expect("the twin says what it stands for");
+        assert_eq!(
+            (twin.asked.as_str(), twin.used.as_str(), twin.found.as_str()),
+            ("migr_asyappctzm", "migr_asyappctza", "id")
+        );
+        assert!(r.candidates[1..].iter().all(|c| c.twin_of.is_none()));
+        assert!(r.twins_refused.is_empty());
+        // As the catalogue event records it: only the twin carries the new field.
+        let j = serde_json::to_value(&r).unwrap();
+        assert_eq!(j["candidates"][0]["twin_of"]["used"], "migr_asyappctza");
+        assert!(j["candidates"][1].get("twin_of").is_none());
+        assert!(j.get("twins_refused").is_none());
+
+        // The twin ranks above its monthly table: it keeps its own place and scores, and the monthly one is not offered.
+        let t = texts(&["asylum applicants citizenship annual aggregated"]);
+        let all = c.rank(q6, &t).candidates;
+        assert_eq!(ids(&all)[..2], ["migr_asyappctza", "migr_asyappctzm"]);
+        let r = c.top5(q6, &t);
+        let want: Vec<&str> = std::iter::once("migr_asyappctza")
+            .chain(ids(&all)[2..6].iter().copied())
+            .collect();
+        assert_eq!(ids(&r.candidates), want);
+        assert_eq!(r.candidates[0].score, all[0].score);
+        assert_eq!(
+            r.candidates[0].twin_of.as_ref().map(|t| t.asked.as_str()),
+            Some("migr_asyappctzm")
+        );
+    }
+
+    #[test]
+    fn a_monthly_only_table_with_no_registered_twin_ranks_as_before() {
+        let c = twins_catalog();
+        let q3 = "欧盟各国发电结构";
+        let t = texts(&["net electricity generation fuel monthly"]);
+        let mut all = c.rank(q3, &t);
+        assert_eq!(all.candidates[0].id, "nrg_cb_pem");
+        all.candidates.truncate(TOP);
+        assert_eq!(
+            serde_json::to_value(c.top5(q3, &t)).unwrap(),
+            serde_json::to_value(all).unwrap()
+        );
+    }
+
+    #[test]
+    fn a_registered_twin_that_fails_a_check_in_this_catalogue_is_not_swapped() {
+        let c = twins_catalog();
+        let t = texts(&["net electricity generation fuel monthly"]);
+        let ranked = c.rank("欧盟各国发电结构", &t).candidates;
+        assert!(ids(&ranked[..TOP]).contains(&"nrg_cb_pem"));
+        let pair = |annual: &str, dims: &[&str], extra: &[(&str, usize)], unit: &[&str]| Twin {
+            monthly: "nrg_cb_pem".into(),
+            annual: annual.into(),
+            found: "id".into(),
+            dims: dims.iter().map(|d| d.to_string()).collect(),
+            extra_annual_codes: extra.iter().map(|(d, n)| (d.to_string(), *n)).collect(),
+            unit: unit.iter().map(|u| u.to_string()).collect(),
+        };
+        let dims = ["geo", "siec", "unit"];
+        // Every monthly code in the annual table, with no more extra codes than the file counts: swapped.
+        let (got, refused) = c.twin_swap(ranked.clone(), &[pair("nrg_pa_more", &dims, &[("geo", 2)], &["GWH"])]);
+        assert!(refused.is_empty(), "{refused:?}");
+        assert_eq!(got.len(), TOP);
+        assert!(!ids(&got).contains(&"nrg_cb_pem"));
+        let twin: Vec<&Candidate> = got.iter().filter(|c| c.id == "nrg_pa_more").collect();
+        assert_eq!(twin.len(), 1);
+        assert_eq!(
+            twin[0].twin_of.as_ref().map(|t| t.asked.as_str()),
+            Some("nrg_cb_pem")
+        );
+        // Any check failing keeps the five as ranked, and says which.
+        let not_monthly = Twin {
+            monthly: "nrg_pa_more".into(),
+            ..pair("nrg_pa_op", &dims, &[], &["GWH"])
+        };
+        for (twin, why) in [
+            (
+                pair("nrg_pa_more", &dims, &[("geo", 1)], &["GWH"]),
+                "nrg_pa_more has 2 geo codes beyond those of nrg_cb_pem, the file counts 1",
+            ),
+            (pair("nrg_pa_op", &dims, &[], &["GWH"]), "the dimensions differ"),
+            (
+                pair("nrg_pa_op", &["geo", "operator", "siec", "unit"], &[], &["GWH"]),
+                "the dimensions differ",
+            ),
+            (pair("nrg_pa_few", &dims, &[], &["GWH"]), "nrg_pa_few lacks the geo code FR of nrg_cb_pem"),
+            (pair("nrg_pq", &dims, &[], &["GWH"]), "nrg_pq holds no annual data"),
+            (pair("nrg_pa_more", &dims, &[("geo", 2)], &["TJ"]), "nrg_pa_more lacks the unit TJ"),
+            (pair("nrg_no_such", &dims, &[], &[]), "nrg_no_such is not among the tables"),
+            (not_monthly, "nrg_pa_more is not monthly only"),
+        ] {
+            let (got, refused) = c.twin_swap(ranked.clone(), std::slice::from_ref(&twin));
+            assert_eq!(ids(&got), ids(&ranked[..TOP]), "{why}");
+            assert!(got.iter().all(|c| c.twin_of.is_none()), "{why}");
+            assert_eq!(refused.len(), 1, "{why}");
+            assert!(refused[0].why.contains(why), "{} vs {why}", refused[0].why);
+            assert_eq!(
+                (refused[0].monthly.as_str(), refused[0].annual.as_str()),
+                (twin.monthly.as_str(), twin.annual.as_str())
+            );
+        }
+    }
+
+    #[test]
+    fn monthly_twins_registers_each_monthly_table_once_with_another_annual_one() {
+        let twins = monthly_twins();
+        let file: serde_json::Value = serde_json::from_str(MONTHLY_TWINS).unwrap();
+        assert_eq!(twins.len(), file["pairs"].as_array().unwrap().len());
+        assert!(!twins.is_empty());
+        let monthly: HashSet<&str> = twins.iter().map(|t| t.monthly.as_str()).collect();
+        let annual: HashSet<&str> = twins.iter().map(|t| t.annual.as_str()).collect();
+        assert_eq!(monthly.len(), twins.len(), "a monthly table twice");
+        assert_eq!(annual.len(), twins.len(), "an annual table twice");
+        assert!(monthly.is_disjoint(&annual), "a table on both sides");
+        for t in twins {
+            assert!(["id", "title", "id+title"].contains(&t.found.as_str()), "{t:?}");
+            assert!(!t.dims.is_empty() && !t.dims.iter().any(|d| d == "time"), "{t:?}");
+            assert!(t.extra_annual_codes.keys().all(|d| t.dims.contains(d)), "{t:?}");
+            assert_eq!(t.unit.is_empty(), !t.dims.iter().any(|d| d == "unit"), "{t:?}");
+            assert!(!t.monthly.ends_with("@2") && !t.annual.ends_with("@2"), "{t:?}");
+        }
     }
 
     const ORIG: [(&str, &str); 8] = [

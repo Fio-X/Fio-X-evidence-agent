@@ -1,0 +1,453 @@
+{
+ "schema_version": 1,
+ "note": "Eurostat tables that exist only monthly and an annual table of the same measure with the same dimension names and the same code sets in every dimension, or (codes=annual_covers_monthly) every monthly code present in the annual table, with the extra annual codes counted (metabase), found by id rule (m->a, trailing m dropped) or by the same title but for 'monthly data' / 'annual data'. Built offline by build.py from the 10-26 catalogue copy; a pair says nothing about aggregation (a year is not a sum of months unless flow-families.json registers the family).",
+ "monthly_only_tables": 253,
+ "candidate_pairs": 80,
+ "pairs": [
+  {
+   "monthly": "apri_ap_him",
+   "annual": "apri_ap_hia",
+   "found": "id",
+   "codes": "annual_covers_monthly",
+   "extra_annual_codes": {
+    "geo": 7
+   },
+   "dims": [
+    "currency",
+    "geo",
+    "prod_apr"
+   ],
+   "unit": []
+  },
+  {
+   "monthly": "bop_eu6_m",
+   "annual": "bop_eu6_q",
+   "found": "title",
+   "codes": "annual_covers_monthly",
+   "extra_annual_codes": {
+    "bop_item": 104,
+    "partner": 22,
+    "sector10": 8,
+    "sectpart": 5,
+    "stk_flow": 2
+   },
+   "dims": [
+    "bop_item",
+    "currency",
+    "geo",
+    "partner",
+    "s_adj",
+    "sector10",
+    "sectpart",
+    "stk_flow"
+   ],
+   "unit": []
+  },
+  {
+   "monthly": "bop_euins6_m",
+   "annual": "bop_euins6_a",
+   "found": "id+title",
+   "codes": "annual_covers_monthly",
+   "extra_annual_codes": {
+    "bop_item": 11,
+    "geo": 16,
+    "partner": 19,
+    "sector10": 1,
+    "sectpart": 1
+   },
+   "dims": [
+    "bop_item",
+    "currency",
+    "geo",
+    "partner",
+    "sector10",
+    "sectpart",
+    "stk_flow"
+   ],
+   "unit": []
+  },
+  {
+   "monthly": "ert_bil_conv_m",
+   "annual": "ert_bil_conv_a",
+   "found": "id+title",
+   "codes": "same",
+   "extra_annual_codes": {},
+   "dims": [
+    "geo",
+    "statinfo"
+   ],
+   "unit": []
+  },
+  {
+   "monthly": "ert_bil_eur_m",
+   "annual": "ert_bil_eur_a",
+   "found": "id+title",
+   "codes": "annual_covers_monthly",
+   "extra_annual_codes": {
+    "currency": 111
+   },
+   "dims": [
+    "currency",
+    "statinfo",
+    "unit"
+   ],
+   "unit": [
+    "NAC"
+   ]
+  },
+  {
+   "monthly": "ert_eff_ic_m",
+   "annual": "ert_eff_ic_a",
+   "found": "id+title",
+   "codes": "annual_covers_monthly",
+   "extra_annual_codes": {
+    "exch_rt": 4
+   },
+   "dims": [
+    "exch_rt",
+    "geo",
+    "unit"
+   ],
+   "unit": [
+    "I15",
+    "I20"
+   ]
+  },
+  {
+   "monthly": "ert_h_eur_m",
+   "annual": "ert_h_eur_a",
+   "found": "id+title",
+   "codes": "same",
+   "extra_annual_codes": {},
+   "dims": [
+    "currency",
+    "statinfo",
+    "unit"
+   ],
+   "unit": [
+    "NAT"
+   ]
+  },
+  {
+   "monthly": "irt_euryld_m",
+   "annual": "irt_euryld_a",
+   "found": "id+title",
+   "codes": "same",
+   "extra_annual_codes": {},
+   "dims": [
+    "bonds",
+    "geo",
+    "maturity",
+    "yld_curv"
+   ],
+   "unit": []
+  },
+  {
+   "monthly": "irt_h_cgby_m",
+   "annual": "irt_h_cgby_a",
+   "found": "id+title",
+   "codes": "same",
+   "extra_annual_codes": {},
+   "dims": [
+    "geo",
+    "int_rt"
+   ],
+   "unit": []
+  },
+  {
+   "monthly": "irt_h_euryld_m",
+   "annual": "irt_h_euryld_a",
+   "found": "id+title",
+   "codes": "same",
+   "extra_annual_codes": {},
+   "dims": [
+    "geo",
+    "maturity",
+    "yld_curv"
+   ],
+   "unit": []
+  },
+  {
+   "monthly": "irt_h_mr3_m",
+   "annual": "irt_h_mr3_a",
+   "found": "id+title",
+   "codes": "same",
+   "extra_annual_codes": {},
+   "dims": [
+    "geo",
+    "int_rt"
+   ],
+   "unit": []
+  },
+  {
+   "monthly": "irt_lt_gby10_m",
+   "annual": "irt_lt_gby10_a",
+   "found": "id+title",
+   "codes": "same",
+   "extra_annual_codes": {},
+   "dims": [
+    "geo",
+    "maturity"
+   ],
+   "unit": []
+  },
+  {
+   "monthly": "irt_lt_mcby_m",
+   "annual": "irt_lt_mcby_a",
+   "found": "id+title",
+   "codes": "same",
+   "extra_annual_codes": {},
+   "dims": [
+    "geo",
+    "int_rt"
+   ],
+   "unit": []
+  },
+  {
+   "monthly": "migr_asyaccm",
+   "annual": "migr_asyacca",
+   "found": "id",
+   "codes": "same",
+   "extra_annual_codes": {},
+   "dims": [
+    "age",
+    "citizen",
+    "geo",
+    "sex",
+    "unit"
+   ],
+   "unit": [
+    "PER"
+   ]
+  },
+  {
+   "monthly": "migr_asyappctzm",
+   "annual": "migr_asyappctza",
+   "found": "id",
+   "codes": "same",
+   "extra_annual_codes": {},
+   "dims": [
+    "age",
+    "applicant",
+    "citizen",
+    "geo",
+    "sex",
+    "unit"
+   ],
+   "unit": [
+    "PER"
+   ]
+  },
+  {
+   "monthly": "migr_asytpfm",
+   "annual": "migr_asytpfa",
+   "found": "id",
+   "codes": "same",
+   "extra_annual_codes": {},
+   "dims": [
+    "age",
+    "citizen",
+    "geo",
+    "sex",
+    "unit"
+   ],
+   "unit": [
+    "PER"
+   ]
+  },
+  {
+   "monthly": "migr_asyumaccm",
+   "annual": "migr_asyumacca",
+   "found": "id",
+   "codes": "same",
+   "extra_annual_codes": {},
+   "dims": [
+    "age",
+    "citizen",
+    "geo",
+    "sex",
+    "unit"
+   ],
+   "unit": [
+    "PER"
+   ]
+  },
+  {
+   "monthly": "migr_asyumactm",
+   "annual": "migr_asyumacta",
+   "found": "id",
+   "codes": "same",
+   "extra_annual_codes": {},
+   "dims": [
+    "age",
+    "applicant",
+    "citizen",
+    "geo",
+    "sex",
+    "unit"
+   ],
+   "unit": [
+    "PER"
+   ]
+  },
+  {
+   "monthly": "migr_asyumtpfm",
+   "annual": "migr_asyumtpfa",
+   "found": "id",
+   "codes": "annual_covers_monthly",
+   "extra_annual_codes": {
+    "geo": 1
+   },
+   "dims": [
+    "age",
+    "citizen",
+    "geo",
+    "sex",
+    "unit"
+   ],
+   "unit": [
+    "PER"
+   ]
+  },
+  {
+   "monthly": "migr_asyumwitm",
+   "annual": "migr_asyumwita",
+   "found": "id",
+   "codes": "same",
+   "extra_annual_codes": {},
+   "dims": [
+    "age",
+    "citizen",
+    "geo",
+    "sex",
+    "unit",
+    "withdraw"
+   ],
+   "unit": [
+    "PER"
+   ]
+  },
+  {
+   "monthly": "migr_asywithm",
+   "annual": "migr_asywitha",
+   "found": "id",
+   "codes": "same",
+   "extra_annual_codes": {},
+   "dims": [
+    "age",
+    "citizen",
+    "geo",
+    "sex",
+    "unit",
+    "withdraw"
+   ],
+   "unit": [
+    "PER"
+   ]
+  },
+  {
+   "monthly": "nrg_chdd_m",
+   "annual": "nrg_chdd_a",
+   "found": "id+title",
+   "codes": "same",
+   "extra_annual_codes": {},
+   "dims": [
+    "geo",
+    "indic_nrg",
+    "unit"
+   ],
+   "unit": [
+    "NR"
+   ]
+  },
+  {
+   "monthly": "nrg_chddr2_m",
+   "annual": "nrg_chddr2_a",
+   "found": "id+title",
+   "codes": "same",
+   "extra_annual_codes": {},
+   "dims": [
+    "geo",
+    "indic_nrg",
+    "unit"
+   ],
+   "unit": [
+    "NR"
+   ]
+  },
+  {
+   "monthly": "nrg_stk_gasm",
+   "annual": "nrg_stk_gas",
+   "found": "id",
+   "codes": "annual_covers_monthly",
+   "extra_annual_codes": {
+    "geo": 2
+   },
+   "dims": [
+    "geo",
+    "siec",
+    "stk_flow",
+    "unit"
+   ],
+   "unit": [
+    "MIO_M3",
+    "TJ_GCV"
+   ]
+  },
+  {
+   "monthly": "nrg_te_gasm",
+   "annual": "nrg_te_gas",
+   "found": "id+title",
+   "codes": "annual_covers_monthly",
+   "extra_annual_codes": {
+    "geo": 2,
+    "partner": 1
+   },
+   "dims": [
+    "geo",
+    "partner",
+    "siec",
+    "unit"
+   ],
+   "unit": [
+    "MIO_M3",
+    "TJ_GCV"
+   ]
+  },
+  {
+   "monthly": "nrg_ti_gasm",
+   "annual": "nrg_ti_gas",
+   "found": "id+title",
+   "codes": "annual_covers_monthly",
+   "extra_annual_codes": {
+    "geo": 2,
+    "partner": 1
+   },
+   "dims": [
+    "geo",
+    "partner",
+    "siec",
+    "unit"
+   ],
+   "unit": [
+    "MIO_M3",
+    "TJ_GCV"
+   ]
+  },
+  {
+   "monthly": "prc_colc_extm",
+   "annual": "prc_colc_ext",
+   "found": "id",
+   "codes": "same",
+   "extra_annual_codes": {},
+   "dims": [
+    "coicop",
+    "geo",
+    "unit"
+   ],
+   "unit": [
+    "INX"
+   ]
+  }
+ ]
+}

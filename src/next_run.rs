@@ -7160,12 +7160,14 @@ mod tests {
                 s: 2.0,
                 v: 0.5,
                 coverage: crate::l5geo::Coverage::Europe,
+                twin_of: None,
             };
             crate::l5geo::Ranking {
                 scope: crate::l5geo::Scope::Europe,
                 places_zh: vec!["欧盟".into()],
                 uncovered: None,
                 candidates: vec![candidate],
+                twins_refused: Vec::new(),
             }
         }
         fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {

@@ -6133,6 +6133,7 @@ mod tests {
             s: 2.0,
             v: 0.5,
             coverage: Coverage::World,
+            twin_of: None,
         })
         .collect()
     }
@@ -6152,6 +6153,7 @@ mod tests {
                 places_zh: vec!["德国".into(), "法国".into()],
                 uncovered: self.uncovered.clone(),
                 candidates: self.candidates.clone(),
+                twins_refused: Vec::new(),
             }
         }
     }
