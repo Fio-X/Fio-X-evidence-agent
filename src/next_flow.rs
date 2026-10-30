@@ -2650,6 +2650,8 @@ pub const LEAF_REQUEST: &str = "request.json";
 pub struct Published {
     pub html_ref: String,
     pub html_sha256: String,
+    /// What the layers dropped (next_ledger::dropped_entry: src, why), as kept in the request's ledger, for the run's event.
+    pub dropped: Vec<(String, String)>,
 }
 
 /// The leaf page published at publications/<slug>/ of the run folder at `root`. The visual group draws and bakes it; its
@@ -2719,7 +2721,7 @@ pub fn publish_leaf_page(
         write(root, &dir.join("manifest.json"), text)
     })
     .map_err(io)?;
-    Ok(Published { html_ref, html_sha256 })
+    Ok(Published { html_ref, html_sha256, dropped: drawn.dropped })
 }
 
 fn matched_reply(reply: Result<next_visual::Reply, String>) -> Matched {

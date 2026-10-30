@@ -8,10 +8,13 @@ hero.data: {"ext": [lon0, lat0, lon1, lat1], "hub": {"lonlat": [lon, lat]}?, "na
 A note is one short line: its name (the request's label, marked with its name row) and/or its words (segments: literals without a digit, {"word": key},
 {"src": entry}), then value_text in bold, a ledger entry (the number). Nothing else is printed.
 Colours: --t-title the note, --t-sec the leader, --accent the highlighted note, --bg the text halo. A note is tried on a STEP px grid across the whole
-picture (side left or right: only at that edge); of the free boxes (off every claimed box and line, and never over the land: occ.land, set by bubbles in the
-shared frame, so a note sits only in the sea or the open margin) it takes the one whose leader is shortest; the leader runs from the
-box's nearest side (or an end or a corner, when that line is clear) and keeps 3 px off every claimed box and 2 px off every circle (occ.circles) but the ones its own point lies in (it ends on what it points at),
-and LEAD_GAP px off every other leader drawn (it crosses none);
+picture (side left or right: only at that edge); of the free boxes (off every claimed box and line) with a clear leader it takes the cheapest:
+the leader's length, plus LAND_COST px when the box sits over the land (occ.land, set by bubbles in the shared frame; the sea or the open margin
+is preferred, and a note over the land keeps its halo and stays off every circle, label and line) and BEND_COST px for a bend. The leader runs
+from the box's nearest side (or an end or a corner) straight, or with one right-angle bend (across, then down or up; or the other way), and keeps
+3 px off every claimed box and 2 px off every circle (occ.circles) but the ones its own point lies in (it ends on what it points at), and LEAD_GAP
+px off every other leader drawn (it crosses none). Measured on the q1 and q6 column pages (replayed offline): sea only and straight kept 1 of
+their 4 notes, the bend alone 2, the land alone 3, both 4 (the sea first, whatever the length, gave a 400 px leader round the map);
 a note with no free place, or past label_count, is dropped and listed in Frame.dropped as (id, why), the id its name code (note<i>, its place in the
 request from 1, when it has none); the layer still draws, empty when every note was dropped (run.py sends the list back for layer 1 to keep in
 the page's ledger).
@@ -34,6 +37,8 @@ NODE = "leader_notes"
 MAX_ROWS = 400
 STEP = 24  # px between the places a note is tried at across the picture
 LEAD_GAP = 3  # px a note's leader keeps off every other leader's points (sampled at 4 px at most: a crossing comes within 3 px)
+LAND_COST = 80  # px a note over the land costs against one in the sea or the open margin
+BEND_COST = 40  # px a leader's bend costs against a straight one
 TRIES = 600  # leaders walked per note, cheapest first: a crowded picture stays within the layer's deadline (next_leaf LAYER_DEADLINE)
 
 
@@ -83,13 +88,13 @@ def cl_leader_notes(f, occ):
             if t == "leader": g.setdefault((int(x // LEAD_GAP), int(y // LEAD_GAP)), []).append((x, y))
         return g
 
-    def lead_clear(edge, pt, boxes, rings, cells):
-        """The leader from the note to the point, walked at 2 px steps, keeps 3 px off every claimed box, 2 px off every
-        circle (`boxes`, `rings`: those but the ones its own point lies in; the leader ends on what it points at) and
+    def lead_clear(edge, end, pt, boxes, rings, cells):
+        """One straight piece of the leader, from `edge` to `end`, walked at 2 px steps, keeps 3 px off every claimed box, 2 px off
+        every circle (`boxes`, `rings`: those but the ones its own point `pt` lies in; the leader ends on what it points at) and
         LEAD_GAP px off every other leader (`cells`)."""
-        steps = max(1, math.ceil(math.dist(edge, pt) / 2))
+        steps = max(1, math.ceil(math.dist(edge, end) / 2))
         for i in range(steps + 1):
-            a = (edge[0] + (pt[0] - edge[0]) * i / steps, edge[1] + (pt[1] - edge[1]) * i / steps)
+            a = (edge[0] + (end[0] - edge[0]) * i / steps, edge[1] + (end[1] - edge[1]) * i / steps)
             if math.dist(a, pt) <= 10: continue
             if any(a[0] - 3 < q[2] and a[0] + 3 > q[0] and a[1] - 3 < q[3] and a[1] + 3 > q[1] for q in boxes): return False
             if any(math.dist(a, c[:2]) < c[2] + 2 for c in rings): return False
@@ -98,8 +103,9 @@ def cl_leader_notes(f, occ):
         return True
 
     def place(n):
-        """The note's place: of every free one-line box off the land (side auto: anywhere in the picture on a STEP px grid;
-        left or right: at that edge), the one whose leader is shortest and clear; None when none is."""
+        """The note's place: of every free one-line box (side auto: anywhere in the picture on a STEP px grid; left or right: at
+        that edge), the one whose clear leader (straight or with one bend) costs least (its
+        length, LAND_COST over the land, BEND_COST a bend); the leader is returned as its points, note end first. None when no box has one."""
         pt = n["_pt"]; w1 = n["_w"]; found = []
         x0s = [margin] if f.side == "left" else [W - margin - w1] if f.side == "right" else \
             sorted({*(margin + STEP * i for i in range(int((W - 2 * margin - w1) / STEP) + 1)), W - margin - w1})
@@ -110,30 +116,38 @@ def cl_leader_notes(f, occ):
                 if b1[0] < 0 or b1[2] > W or occ.hit(b1, pad=(1, 1)) or occ.on_line(b1, pad=1): continue
                 near = (min(max(pt[0], b1[0] - 3), b1[2] + 3), min(max(pt[1], b1[1] - 3), b1[3] + 3))  # the box's nearest side
                 if math.dist(near, pt) < 8: continue  # over its own point
-                if MK.on_land(land, b1): continue  # a note never sits over the land: only the sea or the open margin
+                over = MK.on_land(land, b1)
                 # the leader may leave from the nearest side, either end or a corner: a straight line from the nearest point
                 # may run through a neighbour that one from a corner passes
                 mid = (b1[1] + b1[3]) / 2
                 for edge in {near, (b1[0] - 3, mid), (b1[2] + 3, mid), (b1[0], b1[3] + 3), (b1[2], b1[3] + 3), (b1[0], b1[1] - 3), (b1[2], b1[1] - 3)}:
-                    found.append((math.dist(edge, pt), b1, y, edge))
+                    found.append((math.dist(edge, pt) + LAND_COST * over, b1, y, edge))
             y += lead / 2
         boxes = [q for q in occ.boxes if not (q[0] <= pt[0] <= q[2] and q[1] <= pt[1] <= q[3]) and tuple(q[:4]) not in squares]
         rings = [c for c in circles if math.dist(c[:2], pt) > c[2]]; cells = leader_cells()
-        for _, b1, y, edge in sorted(found, key=lambda c: c[0])[:TRIES]:
-            if lead_clear(edge, pt, boxes, rings, cells):
-                anchor = "end" if (b1[0] + b1[2]) / 2 > W / 2 else "start"  # a note right of the middle keeps to its right edge
-                return (b1[2] if anchor == "end" else b1[0]), anchor, y, b1, edge
-        return None
+        best = None  # (cost, b1, y, path); a box's straight cost is the least any of its leaders can cost, so the walk stops past the best
+        for low, b1, y, edge in sorted(found, key=lambda c: c[0])[:TRIES]:
+            if best and low >= best[0]: break
+            # straight, or one right-angle bend at the point's column or at its row
+            for path in ([edge, pt], [edge, (pt[0], edge[1]), pt], [edge, (edge[0], pt[1]), pt]):
+                cost = low - math.dist(edge, pt) + sum(math.dist(a, b) for a, b in zip(path, path[1:])) + BEND_COST * (len(path) - 2)
+                if (not best or cost < best[0]) and all(lead_clear(a, b, pt, boxes, rings, cells) for a, b in zip(path, path[1:])):
+                    best = (cost, b1, y, path)
+        if not best: return None
+        _, b1, y, path = best
+        anchor = "end" if (b1[0] + b1[2]) / 2 > W / 2 else "start"  # a note right of the middle keeps to its right edge
+        return (b1[2] if anchor == "end" else b1[0]), anchor, y, b1, path
 
     for n in keep:
         spot = place(n)
         if not spot: f.dropped.append((n["_id"], "no free place for the note")); continue
-        pt = n["_pt"]; x, anchor, y, b1, edge = spot
-        o.append(f'<line x1="{edge[0]:.1f}" y1="{edge[1]:.1f}" x2="{pt[0]:.1f}" y2="{pt[1]:.1f}" stroke="var(--t-sec)" stroke-width="0.8"/><circle cx="{pt[0]:.1f}" cy="{pt[1]:.1f}" r="2.5" fill="var(--t-title)"/>')
+        pt = n["_pt"]; x, anchor, y, b1, path = spot
+        o.append(f'<polyline points="{" ".join(f"{p[0]:.1f},{p[1]:.1f}" for p in path)}" fill="none" stroke="var(--t-sec)" stroke-width="0.8"/><circle cx="{pt[0]:.1f}" cy="{pt[1]:.1f}" r="2.5" fill="var(--t-title)"/>')
         halo = ' stroke="var(--bg)" stroke-width="3" paint-order="stroke"'
         o.append(K.txt(B, x, y, size, "var(--accent)" if acc(n) else "var(--t-title)", n["_inner"], n["_w"], anchor=anchor, weight=400, tag=f"note {n.get('name') or n.get('text')}", style=halo))
         occ.add(b1, "notes")
-        steps = max(2, math.ceil(math.dist(edge, pt) / 4)); occ.add_line([(edge[0] + (pt[0] - edge[0]) * i / steps, edge[1] + (pt[1] - edge[1]) * i / steps) for i in range(steps + 1)], "notes", "leader")
+        for a, b in zip(path, path[1:]):
+            steps = max(2, math.ceil(math.dist(a, b) / 4)); occ.add_line([(a[0] + (b[0] - a[0]) * i / steps, a[1] + (b[1] - a[1]) * i / steps) for i in range(steps + 1)], "notes", "leader")
     o.append("</g>")
     return "".join(o)
 

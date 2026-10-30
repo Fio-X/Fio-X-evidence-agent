@@ -2425,8 +2425,10 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
         Ok((recipe, published)) => {
             recorder.program_event(
                 RING_EVENT,
+                // what a layer could not place is on record in the run's events too, never only in the request beside the page
                 json!({"by": RING_ACTOR, "recipe": recipe, "published": published.html_ref,
-                    "html_sha256": published.html_sha256}),
+                    "html_sha256": published.html_sha256,
+                    "dropped": published.dropped.iter().map(|(what, why)| json!({"what": what, "why": why})).collect::<Vec<_>>()}),
             )?;
             let state = json!({"question": question, "route": recipe, "claims": verified, "worded": worded_out,
                 "published": published.html_ref, "html_sha256": published.html_sha256});
@@ -4175,7 +4177,8 @@ mod tests {
 
     /// The q1 shape's column page whose two leader notes both drop (the hero's style: label_count 0), drawn by the real leaf
     /// child (runtime/leaves_py/run.py), baked and checked by the twins: the notes layer is drawn empty, the page is
-    /// published, and the request beside it names both notes in its ledger as dropped, with why.
+    /// published, and the request beside it names both notes in its ledger as dropped, with why (and the publication the same
+    /// list, which the run's RING_EVENT records).
     #[test]
     fn a_column_page_whose_notes_all_drop_is_published_with_both_in_its_ledger() {
         let mut main = ring_rows("sdg", &[("freq", "A"), ("unit", "PC")], ("geo", &["SE", "BE", "DE", "FR", "EU27_2020"]), &["2025"]);
@@ -4243,6 +4246,9 @@ mod tests {
                 (&"dropped:leader_notes:SE".to_string(), &json!("past label_count")),
             ]
         );
+        // the same list comes back with the publication, for the run's RING_EVENT
+        let kept: Vec<(&String, &Value)> = published.dropped.iter().map(|(what, _)| (what, &request["ledger"][what])).collect();
+        assert_eq!(kept, dropped);
     }
 
     /// The q1 shape's column page with the strip the visual group draws for a renewable-energy table (the real strip child,

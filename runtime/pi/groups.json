@@ -1059,6 +1059,26 @@
     "visual"
    ],
    "note": "US state name table read by economy_names.mjs (knowledge) and by the tile map (us_states.mjs, visual)."
+  },
+  "runtime/leaves_js/illus_strip.cjs": {
+   "group": "visual",
+   "note": "New route: the illustration strip leaf child (the band of hand-drawn panels under the page), run by next_leaf.rs through the visual group's entry. Ownership only; no cross-group call is allowed by this row."
+  },
+  "runtime/leaves_js/pieces-energy.cjs": {
+   "group": "visual",
+   "note": "New route: the energy pieces the illustration strip draws (line drawings, one per piece name). Read only by illus_strip.cjs. Ownership only; no cross-group call is allowed by this row."
+  },
+  "runtime/leaves_js/pieces-energy.json": {
+   "group": "visual",
+   "note": "New route: the energy piece set's description (its pieces, cell widths and the tables it fits), read by next_visual.rs (include_str) to pick a set for the page; the set names its module for illus_strip.cjs. Ownership only; no cross-group call is allowed by this row."
+  },
+  "runtime/leaves_js/roughjs-4.6.6.cjs.js": {
+   "group": "visual",
+   "note": "Vendored rough.js 4.6.6 (the sketchy line style of the illustration strip), the file in the package whose integrity the lock holds. Read only by illus_strip.cjs. Ownership only; no cross-group call is allowed by this row."
+  },
+  "runtime/leaves_js/roughjs-4.6.6.LICENSE": {
+   "group": "visual",
+   "note": "The rough.js 4.6.6 licence, kept next to the vendored file."
   }
  },
  "artifact_kinds": {

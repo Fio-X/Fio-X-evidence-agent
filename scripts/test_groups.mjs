@@ -69,7 +69,7 @@ const commandNames = (() => {
   // Bare `news` (the interactive launcher) has no enum variant; it is registered as a command of the agent group (K213).
   return [...block.matchAll(/^    ([A-Z][A-Za-z0-9]*)\(/gm)].map((m) => m[1].replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase()).concat("interactive");
 })();
-const trackedFiles = spawnSync("git", ["-C", ROOT, "ls-files", "--cached", "--others", "--exclude-standard", "src", "runtime/pi"], { encoding: "utf8" }).stdout.split("\n").filter(Boolean);
+const trackedFiles = spawnSync("git", ["-C", ROOT, "ls-files", "--cached", "--others", "--exclude-standard", "src", "runtime/pi", "runtime/leaves_js"], { encoding: "utf8" }).stdout.split("\n").filter(Boolean);
 assert.ok(commandNames.length >= 7 && trackedFiles.length > 100, "found the commands and the tracked files");
 
 // ---- tools, under every profile, switches off and on ----------------------------------------------------------------------------
@@ -137,7 +137,7 @@ check(`tools: ${toolNames.length} registered across ${PROFILES.length} profiles,
 // ---- commands, files, duplicates, and the negative cases -----------------------------------------------------------------------
 assert.deepEqual(validate({ list: groups, text: RAW, commands: commandNames, tools: toolNames.concat(listed.filter((n) => !toolNames.includes(n))), files: trackedFiles }).filter((p) => !p.startsWith("tool listed but not present")), [], "groups.json covers what exists");
 check(`commands: ${commandNames.length}, each in one group (read from the Commands enum in src/cli.rs)`);
-check(`files: ${trackedFiles.length} tracked under src/ and runtime/pi/, each covered by exactly one entry or one directory rule (${Object.keys(groups.file_rules).length} rules), none missing, none extra`);
+check(`files: ${trackedFiles.length} tracked under src/, runtime/pi/ and runtime/leaves_js/, each covered by exactly one entry or one directory rule (${Object.keys(groups.file_rules).length} rules), none missing, none extra`);
 {
   const base = { list: groups, commands: commandNames, tools: listed, files: trackedFiles };
   assert.deepEqual(validate(base), [], "the real list passes its own validator");
