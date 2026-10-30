@@ -4246,8 +4246,9 @@ mod tests {
                 (&"dropped:leader_notes:SE".to_string(), &json!("past label_count")),
             ]
         );
-        // the same list comes back with the publication, for the run's RING_EVENT
-        let kept: Vec<(&String, &Value)> = published.dropped.iter().map(|(what, _)| (what, &request["ledger"][what])).collect();
+        // the same list comes back with the publication, for the run's RING_EVENT (in drawing order; the ledger is keyed)
+        let mut kept: Vec<(&String, &Value)> = published.dropped.iter().map(|(what, _)| (what, &request["ledger"][what])).collect();
+        kept.sort_by_key(|(what, _)| *what);
         assert_eq!(kept, dropped);
     }
 
