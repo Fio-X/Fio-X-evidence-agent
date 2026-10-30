@@ -1955,6 +1955,49 @@ mod tests {
         assert!(compute(&off, &ru).unwrap_err().contains("ch: minus names no family over siec as a (v1)"));
     }
 
+    /// A change family's facts as the flow writes them to a page's request (serde_json) and the completion gate reads them
+    /// back: each f64 comes back bit for bit, so the exact recheck finds every change computed from the rows. The four pairs
+    /// are the q1 page's whose differences print 17 digits (44.2 - 33.37 is 10.830000000000005).
+    #[test]
+    fn a_change_family_read_back_from_its_json_is_rechecked_bit_for_bit() {
+        let pairs = [("AT", 33.37, 44.2), ("DE", 14.885, 23.9), ("LU", 5.364, 20.2), ("LV", 37.138, 46.3)];
+        let mut rows = Vec::new();
+        for (geo, v0, v1) in pairs {
+            for (t, v) in [("2016", v0), ("2025", v1)] {
+                rows.push(cell(&format!("series:sdg_07_40/A.REN.PC.{geo}:{t}:OBS_VALUE"), "sdg_07_40", &[("geo", geo)], t, v));
+            }
+        }
+        let q = |t: &str| json!({"each": "geo", "table": "sdg_07_40", "time": t, "fmt": "pc"});
+        let mut sp = spec(
+            json!({"val0": q("2016"), "val1": q("2025"), "chg": {"op": "minus", "each": "geo", "a": "val1", "b": "val0", "fmt": "pp"}}),
+            None,
+        );
+        sp.fmts = json!({"pc": {"scale": 1, "dec": 1, "suffix": "%"}, "pp": {"scale": 1, "dec": 2, "suffix": " 个百分点"}, "time": {}});
+        let facts = compute(&sp, &rows).unwrap();
+        // the later end less the earlier, each read from its two value facts
+        for (geo, v0, v1) in pairs {
+            let ch = facts.iter().find(|f| f.key == format!("chg.{geo}")).unwrap();
+            assert_eq!((ch.v, &ch.reads[..]), (v1 - v0, &[format!("fact:val1.{geo}"), format!("fact:val0.{geo}")][..]));
+        }
+        let ledger = leaf_ledger(&sp, &rows, &facts).unwrap();
+        let text = serde_json::to_string_pretty(&json!({"spec": sp, "rows": rows, "facts": facts, "ledger": ledger})).unwrap();
+        // read back as the gate reads a page's request: the text to a value, then each part from it
+        let mut back: Value = serde_json::from_str(&text).unwrap();
+        let read: Vec<Fact> = serde_json::from_value(back["facts"].take()).unwrap();
+        let read_rows: Vec<Row> = serde_json::from_value(back["rows"].take()).unwrap();
+        let read_spec: Spec = serde_json::from_value(back["spec"].take()).unwrap();
+        let read_ledger: BTreeMap<String, String> = serde_json::from_value(back["ledger"].take()).unwrap();
+        let bits: Vec<(String, u64, u64)> = facts
+            .iter()
+            .zip(&read)
+            .filter(|(f, r)| f.v.to_bits() != r.v.to_bits())
+            .map(|(f, r)| (f.key.clone(), f.v.to_bits(), r.v.to_bits()))
+            .collect();
+        // the facts whose f64 came back with other bits, and what the recheck finds on what was read back
+        let off = recheck(&read_ledger, &read_spec, &read_rows, &read);
+        assert_eq!((bits, off), (Vec::new(), Vec::<String>::new()));
+    }
+
     #[test]
     fn a_family_is_one_fact_per_code_of_its_dimension() {
         let rows = partners();

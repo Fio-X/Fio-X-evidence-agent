@@ -5052,6 +5052,76 @@ mod tests {
         assert!(checks[2].passed && checks[2].warning.is_none(), "{:?}", checks[2]);
     }
 
+    /// The q1 change page over the four places whose changes print 17 digits (AT 33.37 to 44.2, DE 14.885 to 23.9, LU 5.364
+    /// to 20.2, LV 37.138 to 46.3), drawn by the real leaf child, baked and checked by the twins and published; then its
+    /// request read back from the run folder as the completion gate reads it: the whole-page check on the published bytes
+    /// with what was read back finds nothing, every change rechecked from the rows bit for bit.
+    #[test]
+    fn a_change_page_read_back_from_its_published_request_passes_the_whole_page_check() {
+        let change = recipe("change");
+        let places = ["AT", "DE", "LU", "LV"];
+        let mut main = ring_rows("sdg_07_40", &[("freq", "A"), ("unit", "PC")], ("geo", &places), &["2016", "2025"]);
+        for (r, v) in main.iter_mut().zip(["33.37", "44.2", "14.885", "23.9", "5.364", "20.2", "37.138", "46.3"]) {
+            r["value"] = json!(v);
+        }
+        let shape = shape_of(&change.eats, &[("sdg_07_40", &main[..])], &Hubs).unwrap();
+        let picks = picks_of(&change.picks, &shape, &main, &[]).unwrap();
+        let mut fill = fill_of(change, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语")).unwrap();
+        fill["knobs"]["shapes"] = json!("runtime/pi/assets/naturalearth-admin0-50m.geojson");
+        fill["knobs"]["spec"]["kicker"] = json!("栏目");
+        fill["knobs"]["spec"]["source"] = json!("来源");
+        let order: Vec<String> = fill["order"].as_array().unwrap().iter().filter_map(|l| l.as_str().map(str::to_string)).collect();
+        let calls = std::sync::Mutex::new(Vec::new());
+        let request = crate::next_visual::Request::LeafFill {
+            recipe: "change",
+            rows: fill["rows"].as_array().unwrap(),
+            knobs: &fill["knobs"],
+            order: &order,
+            runtime: Path::new("runtime"),
+        };
+        let page = match crate::next_flow::visual_call(&calls, "leaf_fill", request) {
+            Ok(crate::next_visual::Reply::Filled(page)) => page,
+            Ok(_) => panic!("not a filled page"),
+            Err(e) => panic!("leaf fill: {e}"),
+        };
+        let chg: Vec<(&str, f64)> = page.facts.iter().filter(|f| f.key.starts_with("chg.")).map(|f| (f.key.as_str(), f.v)).collect();
+        assert_eq!(chg, [("chg.AT", 44.2 - 33.37), ("chg.DE", 23.9 - 14.885), ("chg.LU", 20.2 - 5.364), ("chg.LV", 46.3 - 37.138)]);
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = {
+            let _command = crate::group_guard::command_for_test("investigate");
+            crate::artifact::InvestigationBundle::create(dir.path(), "leaf page").unwrap()
+        };
+        let _command = crate::group_guard::command_for_test("investigate");
+        let _doors = crate::group_guard::doors_for_test(true);
+        let bake = crate::next_leaf::Runner::python(Path::new("fixtures/next_leaf/bake_twin.py"));
+        let mut qa = crate::next_leaf::Runner::python(Path::new("fixtures/next_visual/qa_twin.py"));
+        qa.args.push("pass".into());
+        let leaf = crate::next_visual::LeafPage {
+            draw: &page.draw,
+            bake: &bake,
+            w: page.w,
+            h: page.h,
+            frame: page.frame.clone(),
+            layers: &page.layers,
+            ledger: &page.ledger,
+            refs: &page.refs,
+            facts: (&page.spec, &page.rows, &page.facts),
+            strip: None,
+        };
+        let plan = json!({"kind": "leaf_plan", "recipe": "change"});
+        let published = crate::next_flow::publish_leaf_page(&calls, &bundle.dir, "change", (&leaf, &plan), &qa).unwrap();
+        let html = std::fs::read_to_string(bundle.dir.join(&published.html_ref)).unwrap();
+        // read back as next_gate reads a published page's request: the text to a value, then each part from it
+        let text = std::fs::read_to_string(bundle.dir.join("publications/change").join(crate::next_flow::LEAF_REQUEST)).unwrap();
+        let mut back: Value = serde_json::from_str(&text).unwrap();
+        let spec: crate::next_facts::Spec = serde_json::from_value(back["spec"].take()).unwrap();
+        let rows: Vec<crate::next_facts::Row> = serde_json::from_value(back["rows"].take()).unwrap();
+        let facts: Vec<crate::next_facts::Fact> = serde_json::from_value(back["facts"].take()).unwrap();
+        let ledger: BTreeMap<String, String> = serde_json::from_value(back["ledger"].take()).unwrap();
+        let refs: Vec<String> = serde_json::from_value(back["refs"].take()).unwrap();
+        assert_eq!(crate::next_leaf::check_leaf_page(&html, &ledger, &refs, &spec, &rows, &facts), Vec::<String>::new());
+    }
+
     /// The q6 shape (asylum applicants by citizenship into the EU, one year) in registry order: the ring refuses it for its
     /// one year, the column page is the first recipe that reads it, its place the citizenship.
     #[test]
