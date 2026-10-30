@@ -3796,6 +3796,13 @@ fn ring_window(
 /// has a shape the visual group's rank draws with a filled template (next_run::FILLED_TEMPLATES). An option no years option
 /// draws is taken out of the draft, so the items and the fill number the rest from 2 on; a table left with none has no
 /// breakdown item. The event keeps the offered options and, for each left out, the shape and the reasons rank gave.
+///
+/// A split that takes the ring's window and draws with no filled template there (16 citizens over 5 years: more lines
+/// than a line chart holds) is tried once more without the window, for years option 1: the fill's years for a table with
+/// no window, the ones the question names, else the table's last year. When that draws (one varying dimension: a
+/// ranking), the split is kept with years option 1 and leaves the window (window_without), so the answer is filled as
+/// predicted; the offered option keeps both tries ("tried"). A split left out then keeps both in its "why", each marked
+/// with the "window" it was tried in.
 fn drawable_splits(
     draft: &mut next_params::Draft,
     n: usize,
@@ -3805,6 +3812,31 @@ fn drawable_splits(
 ) -> (Vec<Split>, Value) {
     let mut kept = Vec::new();
     let mut dropped = Vec::new();
+    // The splits kept only without the window: they leave it once every split is tried.
+    let mut unwindowed: Vec<String> = Vec::new();
+    let additive = |code: &str| catalogue.unit_additive(code);
+    // The fetch of split `i` with years option `y` under `draft`: Ok with its shape and the templates that draw it, Err with
+    // its shape and the reasons rank gave (or the fill's error).
+    let tried_years = |draft: &next_params::Draft, i: usize, y: usize| -> Result<Value, Value> {
+        let picks = BTreeMap::from([
+            (format!("t{n}.breakdown"), i + 2),
+            (format!("t{n}.{}", next_params::YEARS_KEY), y),
+        ]);
+        match next_params::predicted_shape(draft, n, &picks, places, this_year, &additive) {
+            Ok(shape) => {
+                let matched = catalogue.rank(&shape, &crate::next_run::FILLED_TEMPLATES, &[]);
+                let dims = shape.dims.iter().map(|d| json!([d.dim, d.members])).collect::<Vec<_>>();
+                if matched.candidates.is_empty() {
+                    Err(json!({"years": y, "shape": dims,
+                        "rejected": matched.rejected.iter().map(|r| format!("{:?}: {}", r.relation, r.reason)).collect::<Vec<_>>()}))
+                } else {
+                    Ok(json!({"years": y, "shape": dims,
+                        "drawn": matched.candidates.iter().map(|c| c.template()).collect::<Vec<_>>()}))
+                }
+            }
+            Err(e) => Err(json!({"years": y, "error": e})),
+        }
+    };
     for (i, dim) in draft.breakdown.iter().enumerate() {
         let mut years = Vec::new();
         let mut why = Vec::new();
@@ -3812,46 +3844,89 @@ fn drawable_splits(
         let windowed = draft.window_for(Some(dim.as_str())).is_some();
         let tried = if windowed { 1 } else { next_params::YEARS_OPTIONS.len() };
         for y in 1..=tried {
-            let picks = BTreeMap::from([
-                (format!("t{n}.breakdown"), i + 2),
-                (format!("t{n}.{}", next_params::YEARS_KEY), y),
-            ]);
-            let additive = |code: &str| catalogue.unit_additive(code);
-            match next_params::predicted_shape(draft, n, &picks, places, this_year, &additive) {
-                Ok(shape) => {
-                    let matched = catalogue.rank(&shape, &crate::next_run::FILLED_TEMPLATES, &[]);
-                    if matched.candidates.is_empty() {
-                        why.push(json!({"years": y, "shape": shape.dims.iter().map(|d| json!([d.dim, d.members])).collect::<Vec<_>>(),
-                            "rejected": matched.rejected.iter().map(|r| format!("{:?}: {}", r.relation, r.reason)).collect::<Vec<_>>()}));
-                    } else {
-                        years.push(y);
+            match tried_years(&*draft, i, y) {
+                Ok(_) => years.push(y),
+                Err(w) => why.push(w),
+            }
+        }
+        let mut both = Value::Null;
+        if windowed && years.is_empty() {
+            for w in &mut why {
+                w["window"] = json!("ring");
+            }
+            let window = draft.window.as_ref().expect("a windowed split has the draft's window");
+            match window_without(window, std::slice::from_ref(dim)) {
+                Ok(left) => {
+                    let own = next_params::Draft { window: left, ..draft.clone() };
+                    match tried_years(&own, i, 1) {
+                        Ok(mut w) => {
+                            w["window"] = json!("none");
+                            both = json!([why[0], w]);
+                            years.push(1);
+                            unwindowed.push(dim.clone());
+                        }
+                        Err(mut w) => {
+                            w["window"] = json!("none");
+                            why.push(w);
+                        }
                     }
                 }
-                Err(e) => why.push(json!({"years": y, "error": e})),
+                Err(e) => why.push(json!({"years": 1, "window": "none", "error": e})),
             }
         }
         if years.is_empty() {
             dropped.push(json!({"dim": dim, "why": why}));
         } else {
-            kept.push((dim.clone(), if windowed { Vec::new() } else { years }));
+            let in_window = !unwindowed.contains(dim);
+            kept.push((dim.clone(), if windowed && in_window { Vec::new() } else { years }, both));
         }
     }
-    draft.breakdown = kept.iter().map(|(dim, _)| dim.clone()).collect();
+    let left = draft
+        .window
+        .as_ref()
+        .filter(|_| !unwindowed.is_empty())
+        .map(|w| window_without(w, &unwindowed));
+    if let Some(Ok(left)) = left {
+        draft.window = left;
+    }
+    draft.breakdown = kept.iter().map(|(dim, _, _)| dim.clone()).collect();
+    let mut offered = Vec::new();
     let splits: Vec<Split> = kept
         .into_iter()
         .enumerate()
-        .map(|(i, (dim, years))| Split {
-            option: i + 2,
-            member: draft.members.iter().any(|(m, _, _)| *m == dim),
-            dim,
-            years,
+        .map(|(i, (dim, years, both))| {
+            let split = Split {
+                option: i + 2,
+                member: draft.members.iter().any(|(m, _, _)| *m == dim),
+                dim,
+                years,
+            };
+            let mut entry = json!({"option": split.option, "dim": split.dim, "years": split.years, "member": split.member});
+            if !both.is_null() {
+                entry["tried"] = both;
+            }
+            offered.push(entry);
+            split
         })
         .collect();
-    let offered: Vec<Value> = splits
-        .iter()
-        .map(|s| json!({"option": s.option, "dim": s.dim, "years": s.years, "member": s.member}))
-        .collect();
     (splits, json!({"offered": offered, "dropped": dropped}))
+}
+
+/// The window with the breakdowns `dims` left out of it, so their answers take the years the fill gives a table with no
+/// window; None when no answer is left to take it. Err when every answer takes the window (`only` is None): a Window
+/// cannot leave one split out and keep the no-breakdown answer in, so such a split keeps the ring's years.
+fn window_without(
+    window: &next_params::Window,
+    dims: &[String],
+) -> Result<Option<next_params::Window>, String> {
+    let Some(only) = &window.only else {
+        return Err("every answer of this table takes the ring's years, so a split cannot leave them".into());
+    };
+    let left: Vec<String> = only.iter().filter(|d| !dims.contains(*d)).cloned().collect();
+    Ok((!left.is_empty()).then(|| next_params::Window {
+        only: Some(left),
+        ..window.clone()
+    }))
 }
 
 /// One listed table after its held-series probe: its metadata with the codes no series holds left out (as listed when it
@@ -9168,5 +9243,161 @@ mod tests {
         assert_eq!(years(&twin, Some(24)), json!({"start": 2024, "end": 2026}));
         assert_eq!(years(&twin, None), json!({"start": 2020, "end": 2024}));
         assert_eq!(years(&hub_table(&[]), Some(60)), json!({"start": 2020, "end": 2024}), "no monthly span");
+    }
+
+    /// TOTAL and `count` two-letter codes: a place dimension (next_params::place_like) that has a total.
+    fn place_codes(count: usize) -> Vec<(String, String)> {
+        std::iter::once("TOTAL".to_string())
+            .chain((b'A'..=b'Z').flat_map(|a| (b'A'..=b'Z').map(move |b| String::from_utf8(vec![a, b]).unwrap())).take(count))
+            .map(|c| (c, String::new()))
+            .collect()
+    }
+
+    /// The ring's window (the leaf registry's 5 years and 60 months) on the splits `only`.
+    fn ring_on(only: Option<&[&str]>) -> next_params::Window {
+        next_params::Window {
+            years: 5,
+            months: 60,
+            hub: "EU27_2020".into(),
+            twin: "asy_m".into(),
+            only: only.map(|o| o.iter().map(|d| d.to_string()).collect()),
+        }
+    }
+
+    /// drawable_splits on table 1 of a region question, with the window `window`.
+    fn splits_with(draft: &mut next_params::Draft, window: next_params::Window) -> (Vec<Split>, Value) {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let catalogue = HubTables { twin: true, inner: offers_catalogue() };
+        draft.window = Some(window);
+        drawable_splits(draft, 1, &[Place::Region], 2026, &catalogue)
+    }
+
+    /// The fetch an answer with this split gets, its years as the program gives them (Split::program_years).
+    fn split_fetch(draft: &next_params::Draft, split: &Split) -> next_params::Filled {
+        let mut picks = BTreeMap::from([("t1.breakdown".to_string(), split.option)]);
+        if let Some(y) = split.program_years() {
+            picks.insert("t1.years".into(), y);
+        }
+        next_params::fill(draft, 1, &picks, &[Place::Region], 2026).unwrap()
+    }
+
+    /// q6: a citizen split fetched for the hub over the ring's 5 years is narrowed to 16 citizens, 16 lines no line chart
+    /// holds, so it fell back to the total. Without the window, for the table's last year, it is one varying dimension a
+    /// ranking draws: the split is kept with years option 1, leaves the window, and the answer is filled for that one year.
+    /// Red before: the split was dropped after the windowed try alone, so no split was offered.
+    #[test]
+    fn a_citizen_split_the_ring_window_refuses_is_kept_for_one_year() {
+        let mut table = hub_table(&[]);
+        table.dims[2] = ("citizen".into(), place_codes(100));
+        let mut draft = next_params::draft(table, &[], &[Place::Region]);
+        let (splits, event) = splits_with(&mut draft, ring_on(Some(&["citizen"][..])));
+        assert_eq!(splits, vec![Split { option: 2, dim: "citizen".into(), years: vec![1], member: false }]);
+        let tried = &event["offered"][0]["tried"];
+        assert_eq!(tried[0]["window"], "ring");
+        assert_eq!(tried[0]["shape"], json!([["citizen", 16], ["time", 5]]));
+        assert!(tried[0]["rejected"].as_array().unwrap().contains(&json!("Change: 16 lines; at most 8")), "{tried}");
+        assert_eq!(tried[1]["window"], "none");
+        assert_eq!(tried[1]["shape"], json!([["citizen", 20]]));
+        assert!(tried[1]["drawn"].as_array().unwrap().contains(&json!("horizontal_bar")), "{tried}");
+        assert_eq!(event["dropped"][0]["dim"], "sex");
+        // the only split on the window left it: no answer takes the ring's years
+        assert_eq!(draft.window, None);
+        assert_eq!(draft.breakdown, vec!["citizen".to_string()]);
+        let fetch = split_fetch(&draft, &splits[0]);
+        assert_eq!(fetch.args["years"], json!({"start": 2024, "end": 2024}));
+        assert_eq!(fetch.window, None);
+        assert_eq!(fetch.event["years"]["rule"], "split");
+        let geo = fetch.args["filters"].as_array().unwrap().iter().find(|f| f["dimension"] == "geo").unwrap().clone();
+        assert_eq!(geo["values"], json!(["EU27_2020"]));
+    }
+
+    /// The same rule on another split and another shape: a place dimension of 12 codes is not narrowed, so over 5 years it
+    /// is 12 lines; for one year a ranking draws it. A second split on the window that draws over 5 years (7 citizens) keeps
+    /// it, and only that split's answer takes the ring's years. Red before: the 12-code split was dropped (only citizen offered).
+    #[test]
+    fn another_place_split_the_ring_window_refuses_is_kept_for_one_year_and_the_others_keep_the_window() {
+        let mut table = hub_table(&[]);
+        table.dims.push(("c_birth".into(), place_codes(11)));
+        let mut draft = next_params::draft(table, &[], &[Place::Region]);
+        let (splits, event) = splits_with(&mut draft, ring_on(Some(&["citizen", "c_birth"][..])));
+        assert_eq!(
+            splits,
+            vec![
+                Split { option: 2, dim: "citizen".into(), years: Vec::new(), member: false },
+                Split { option: 3, dim: "c_birth".into(), years: vec![1], member: false },
+            ]
+        );
+        assert_eq!(event["offered"][0], json!({"option": 2, "dim": "citizen", "years": [], "member": false}));
+        let tried = &event["offered"][1]["tried"];
+        assert_eq!(tried[0]["shape"], json!([["c_birth", 12], ["time", 5]]));
+        assert!(tried[0]["rejected"].as_array().unwrap().contains(&json!("Change: 12 lines; at most 8")), "{tried}");
+        assert_eq!(tried[1]["shape"], json!([["c_birth", 12]]));
+        assert_eq!(draft.window, Some(ring_on(Some(&["citizen"][..]))));
+        assert_eq!(split_fetch(&draft, &splits[1]).args["years"], json!({"start": 2024, "end": 2024}));
+        let citizen = split_fetch(&draft, &splits[0]);
+        assert_eq!(citizen.args["years"], json!({"start": 2020, "end": 2024}));
+        assert_eq!(citizen.window, Some(ring_on(Some(&["citizen"][..]))));
+    }
+
+    /// A split no filled template draws over the ring's years nor for one year (a named partner pair varies too) is still
+    /// left out, its "why" holding both tries; the window is unchanged.
+    #[test]
+    fn a_split_refused_with_and_without_the_ring_window_is_dropped_with_both_reasons() {
+        let mut table = hub_table(&[]);
+        table.dims[2] = ("citizen".into(), place_codes(11));
+        table.dims.insert(2, ("partner".into(), ["TOTAL", "CN", "US", "JP"].iter().map(|c| (c.to_string(), String::new())).collect()));
+        let mut draft = next_params::draft(table, &[], &[Place::Region]);
+        draft.named = vec![("partner".into(), vec![("CN".into(), "CN".into()), ("US".into(), "US".into())])];
+        draft.breakdown.retain(|d| d != "partner");
+        let (splits, event) = splits_with(&mut draft, ring_on(Some(&["citizen"][..])));
+        assert_eq!(splits, Vec::new());
+        let citizen = event["dropped"].as_array().unwrap().iter().find(|d| d["dim"] == "citizen").unwrap().clone();
+        let why = citizen["why"].as_array().unwrap();
+        assert_eq!(why.len(), 2, "{citizen}");
+        assert_eq!(why[0]["window"], "ring");
+        assert_eq!(why[0]["shape"], json!([["partner", 2], ["citizen", 12], ["time", 5]]));
+        assert_eq!(why[1]["window"], "none");
+        assert_eq!(why[1]["shape"], json!([["partner", 2], ["citizen", 12]]));
+        assert!(why[1]["rejected"].as_array().unwrap().contains(&json!("Ranking: a bar ranking holds 1 varying dimension, not 2")), "{citizen}");
+        assert_eq!(draft.window, Some(ring_on(Some(&["citizen"][..]))));
+    }
+
+    /// A split the ring's window draws is offered as before: no second try, no "tried", the window unchanged; the splits
+    /// with no window keep their reasons with no "window" mark.
+    #[test]
+    fn a_split_the_ring_window_draws_is_offered_as_before() {
+        let mut draft = next_params::draft(hub_table(&[]), &[], &[Place::Region]);
+        let (splits, event) = splits_with(&mut draft, ring_on(Some(&["citizen"][..])));
+        assert_eq!(splits, vec![Split { option: 2, dim: "citizen".into(), years: Vec::new(), member: false }]);
+        assert_eq!(event["offered"], json!([{"option": 2, "dim": "citizen", "years": [], "member": false}]));
+        assert_eq!(draft.window, Some(ring_on(Some(&["citizen"][..]))));
+        let sex = &event["dropped"][0];
+        assert_eq!(sex["dim"], "sex");
+        assert!(sex["why"].as_array().unwrap().iter().all(|w| w.get("window").is_none()), "{sex}");
+    }
+
+    /// When every answer takes the window (a table of the hub alone), a split cannot leave it without taking the
+    /// no-breakdown answer out too: a category split the ring refuses (13 ages over 5 years) is left out as before, the
+    /// second try recorded as not possible, and the window is unchanged.
+    #[test]
+    fn a_split_cannot_leave_a_window_every_answer_takes() {
+        let mut table = hub_table(&[]);
+        table.dims[1].1.retain(|(c, _)| c == "EU27_2020");
+        table.dims[2] = (
+            "age".into(),
+            std::iter::once("TOTAL".to_string())
+                .chain((1..=12).map(|k| format!("Y{k:02}")))
+                .map(|c| (c, String::new()))
+                .collect(),
+        );
+        let mut draft = next_params::draft(table, &[], &[Place::Region]);
+        let (splits, event) = splits_with(&mut draft, ring_on(None));
+        assert_eq!(splits, vec![Split { option: 2, dim: "sex".into(), years: Vec::new(), member: false }]);
+        let age = &event["dropped"][0];
+        assert_eq!(age["dim"], "age");
+        assert_eq!(age["why"][0]["shape"], json!([["age", 13], ["time", 5]]));
+        assert_eq!(age["why"][1]["window"], "none");
+        assert!(age["why"][1]["error"].as_str().unwrap().contains("every answer"), "{age}");
+        assert_eq!(draft.window, Some(ring_on(None)));
     }
 }
