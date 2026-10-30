@@ -2655,13 +2655,33 @@ fn publication_vision_prompt(question: &str) -> String {
     )
 }
 
+/// Why each image review question is unanswered when its ask failed: a short line naming the kind of failure. A model
+/// failure's own error text stays in its reply, kept in the run's model exchanges, not here.
+fn vision_unanswered_why(failed: &Stop) -> String {
+    match failed {
+        Stop::Refused { problem, .. } => format!("the reply was refused twice: {problem}"),
+        Stop::NoReply { .. } => "no reply: the model gave no reply to the review".to_string(),
+        Stop::ModelFailed { .. } => {
+            "model call failed: the review's model call ended in an error or timed out; its reply is in the model exchanges"
+                .to_string()
+        }
+        Stop::Exchange { .. } => "exchange not recorded: the review's exchange could not be written".to_string(),
+        Stop::SecretInExchange { kind, .. } => {
+            format!("secret in exchange: the review's exchange held a secret ({}) and was not written", kind.name())
+        }
+        _ => "ask failed: the review could not be asked".to_string(),
+    }
+}
+
 /// The published leaf page's image review: the 1440 screenshot its PASS browser check wrote (publications/qa/<recipe>/),
 /// read from disk and shown to the model with only the question (ask_step_alone: none of the run's history goes with it),
 /// which answers VISION_QUESTIONS yes or no. Each answer is recorded in a PUBLICATION_VISION_EVENT and the plan, as advice
 /// only: a no or an unanswered question neither stops the run nor holds the page back, and none verifies it (the program's
-/// page checks do, verify.rs verify_publications). A reply refused in every round is the six unanswered, the run going on
-/// as with any review. Ok is the review's line for the run's answer; Err only when there is no screenshot to show, or the
-/// model gives no reply, fails or is cancelled.
+/// page checks do, verify.rs verify_publications). An ask that fails for any reason but the run's cancel (a reply refused in
+/// every round, no reply, a failed or timed-out model call, an exchange that could not be recorded) is the six unanswered,
+/// each naming the kind of failure (vision_unanswered_why), the run going on as with any review. Ok is the review's line for
+/// the run's answer; Err only when there is no 1440 screenshot to show (missing, or changed while read) or the run was
+/// cancelled.
 async fn leaf_vision(
     recorder: &mut Recorder<'_>,
     model: &mut (dyn Asker + '_),
@@ -2684,10 +2704,12 @@ async fn leaf_vision(
     let answers = match asked {
         Ok((_, Choice::Vision { answers })) => answers,
         Ok(_) => unreachable!("a vision check gives a vision choice"),
-        // a reply refused in every round is no verdict, and the review is advice: each question is recorded unanswered,
-        // under the last accepted model call, and the run goes on as with any review
-        Err(Stop::Refused { problem, .. }) if recorder.resume_under_last_accepted() => {
-            let why = format!("the reply was refused twice: {problem}");
+        // the run's cancel stops it here as anywhere
+        Err(stopped) if cancel.load(std::sync::atomic::Ordering::SeqCst) => return Err(stopped),
+        // any other failed ask is no verdict, and the review is advice: each question is recorded unanswered, naming the
+        // kind of failure, under the last accepted model call, and the run goes on as with any review
+        Err(failed) if recorder.resume_under_last_accepted() => {
+            let why = vision_unanswered_why(&failed);
             VISION_QUESTIONS.iter().map(|(id, _)| (*id, Verdict::Unanswered { why: why.clone() })).collect()
         }
         Err(stopped) => return Err(stopped),
@@ -3242,8 +3264,12 @@ mod tests {
         assert_eq!(MOVE_TEMPLATES[..], ["dumbbell"], "{frozen}");
     }
 
-    /// Replays scripted replies, one per request.
+    /// Replays scripted replies, one per request. A CANCEL_REPLY cancels the run as its user would, the model then answering
+    /// aborted, as a real model's reply to a cancelled request is.
     struct ScriptedAsker(std::collections::VecDeque<Value>);
+
+    /// The scripted reply that cancels the run (ScriptedAsker).
+    const CANCEL_REPLY: &str = "cancel the run";
 
     #[async_trait::async_trait]
     impl Asker for ScriptedAsker {
@@ -3254,9 +3280,14 @@ mod tests {
             &mut self,
             _history: &[Value],
             _tools: &[ToolDef],
-            _cancel: &AtomicBool,
+            cancel: &AtomicBool,
         ) -> Option<Value> {
-            self.0.pop_front()
+            let reply = self.0.pop_front()?;
+            if reply == CANCEL_REPLY {
+                cancel.store(true, std::sync::atomic::Ordering::SeqCst);
+                return Some(json!({"content": [], "stopReason": "aborted", "usage": {}}));
+            }
+            Some(reply)
         }
     }
 
@@ -7294,6 +7325,60 @@ for line in sys.stdin:
         std::fs::write(ran.run.join("events.jsonl"), without.join("\n") + "\n").unwrap();
         let gaps = crate::verify::publication_errors_of(&ran.run);
         assert!(gaps.iter().any(|g| g.contains("no passing page checks of its bytes")), "{gaps:?}");
+    }
+
+    /// The image review's ask failing on the model's side never stops the run: a model call ending in an error (a provider
+    /// failure, a timeout), an abort the run did not ask for, or no reply at all, are each recorded as the six questions
+    /// unanswered, naming the kind of failure, hung under the last accepted model call; the page is published, the plan's
+    /// review step kept blocked as for any review short of six yes, and the page verifies on its page checks alone.
+    #[tokio::test]
+    async fn a_published_leaf_page_whose_image_review_call_fails_or_gives_no_reply_is_still_published_six_unanswered() {
+        let failed = |stop: &str, error: &str| json!({"content": [], "stopReason": stop, "errorMessage": error, "usage": {}});
+        for (replies, kind) in [
+            (vec![failed("error", "HTTP 500 upstream failure")], "model call failed: "),
+            (vec![failed("error", "request timed out after 120s")], "model call failed: "),
+            (vec![failed("aborted", "aborted")], "model call failed: "),
+            (vec![], "no reply: "),
+        ] {
+            let ran = leaf_run_checked(Some(&headed_twin()), SDG_CSV, replies, "shot").await;
+            let answer = match &ran.result {
+                Ok(answer) => answer,
+                other => panic!("{kind} expected the page published past a failed review, got {other:?}"),
+            };
+            let ids: Vec<&str> = VISION_QUESTIONS.iter().map(|(id, _)| *id).collect();
+            assert!(answer.ends_with(&format!("answered 0 of 6 yes; no: none; unanswered: {}.", ids.join(", "))), "{answer}");
+            assert_eq!(ran.unasked, 0, "{kind}");
+            let reviews: Vec<&Value> = ran.events.iter().filter(|e| e["type"] == PUBLICATION_VISION_EVENT).collect();
+            assert_eq!(reviews.len(), 1, "{kind}");
+            assert_eq!((&reviews[0]["yes"], &reviews[0]["no"], &reviews[0]["unanswered"]), (&json!(0), &json!(0), &json!(6)));
+            assert_eq!(reviews[0]["auto_parent_call_id"], "toolu_x", "under the text step, the last accepted call");
+            for (got, id) in reviews[0]["answers"].as_array().unwrap().iter().zip(&ids) {
+                assert_eq!((&got["id"], &got["answer"]), (&json!(id), &json!("unanswered")));
+                let why = got["why"].as_str().unwrap();
+                assert!(why.starts_with(kind) && !why.contains("HTTP 500") && !why.contains("120s"), "{why}");
+            }
+            let plan: Value = serde_json::from_str(&std::fs::read_to_string(ran.run.join(PLAN_FILE)).unwrap()).unwrap();
+            assert_eq!(plan["steps"].as_array().unwrap().last().unwrap()["status"], "blocked", "{plan}");
+            assert!(ran.run.join("publications/column/index.html").is_file());
+            let lines: Vec<String> = ran.events.iter().map(Value::to_string).collect();
+            std::fs::write(ran.run.join("events.jsonl"), lines.join("\n") + "\n").unwrap();
+            let gaps = crate::verify::publication_errors_of(&ran.run);
+            assert!(gaps.is_empty(), "{kind} {gaps:?}");
+        }
+    }
+
+    /// The run's cancel still stops it at the image review: the model's aborted reply to a cancelled run records no review,
+    /// and the run stops on that reply, as at any step.
+    #[tokio::test]
+    async fn a_cancel_during_the_image_review_still_stops_the_run() {
+        let ran = leaf_run_checked(Some(&headed_twin()), SDG_CSV, vec![json!(CANCEL_REPLY)], "shot").await;
+        match &ran.result {
+            Err(Stop::ModelFailed { step: "vision", error }) => assert_eq!(error, "aborted"),
+            other => panic!("expected the cancelled run to stop at the image review, got {other:?}"),
+        }
+        assert_eq!(ran.unasked, 0);
+        assert!(ran.events.iter().all(|e| e["type"] != PUBLICATION_VISION_EVENT), "no review is recorded");
+        assert_eq!(ran.events.iter().filter(|e| e["type"] == PAGE_CHECKS_EVENT).count(), 1);
     }
 
     /// A published page whose leader notes dropped one passes the completion gate but fails notes_dropped: the run stops at
