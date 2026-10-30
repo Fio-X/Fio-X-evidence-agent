@@ -336,6 +336,39 @@ check("picks: literal ids only (number, numbered, # forms, unknown, duplicate, c
   check("the scoped claims register and verify through duckdb_query and record_claim");
 }
 
+// 10d. every kind has a series: the chart step reads a claim's computation_refs[1] (the rows its chart draws), and the claim cites one only when its
+// candidate has a series_sql. Every table form: plain, without time, two varying columns, an alias, a cut with and without its total, a scope.
+{
+  const head = "citizen,year,val";
+  const cutCsv = [head, "AF,2023,50", "VE,2023,40", "SY,2023,30", "AF,2015,20", "VE,2015,25", "SY,2015,5", "TOTAL,2023,200", "TOTAL,2015,90"].join("\n") + "\n";
+  const pairCsv = ["orig,dest,year,val", "DE,FR,2015,3", "DE,PL,2015,4", "FR,PL,2015,1", "DE,FR,2023,6", "DE,PL,2023,2", "FR,PL,2023,5"].join("\n") + "\n";
+  const isoCsv = ["country_iso2,year,val", "DE,2015,3", "FR,2015,4", "PL,2015,1", "DE,2023,6", "FR,2023,2", "PL,2023,5"].join("\n") + "\n";
+  const forms = [
+    ["plain", CSV, { dimensions: ["geo"], time: "year", times: 2 }],
+    ["no time", CSV.split("\n").filter((l) => !l.includes(",2015,")).join("\n"), { dimensions: ["geo"], times: 1 }],
+    ["two varying columns", pairCsv, { dimensions: ["orig", "dest"], time: "year", times: 2 }],
+    ["iso2 alias", isoCsv, { dimensions: ["country_iso2"], time: "year", times: 2, entity: "country_iso2" }],
+    ["cut with its total", cutCsv, { dimensions: ["citizen"], time: "year", times: 2, cut: { members: ["AF", "VE", "SY"], total: "TOTAL" } }],
+    ["cut without a total", cutCsv, { dimensions: ["citizen"], time: "year", times: 2, cut: { members: ["AF", "VE", "SY"], total: null } }],
+    ["scope", isoCsv, { dimensions: ["country_iso2"], time: "year", times: 2, scope: { prefix: "Among the most populous economies, " } }],
+  ];
+  const seen = new Set();
+  for (const [label, csv, form] of forms) {
+    const r = fresh(csv);
+    const { times, ...spec } = form;
+    for (const s of buildCandidates({ ref: r.ref, measure: "val", ...spec })) assert.ok(s.series_sql, `${label}: ${s.kind} has no series_sql`);
+    const out = await cand.programCandidates({ ref: r.ref, measure: "val", ...form, runSql: r.runSql, fill, seriesMaxRows: 80 });
+    assert.ok(out.conclusions.length > 0, `${label}: offers candidates`);
+    for (const c of out.conclusions) {
+      assert.ok(c.series_sql, `${label}: ${c.kind} is offered without a series`);
+      assert.ok((await r.runSql(c.series_sql)).length > 1, `${label}: ${c.kind} series draws more than one row`);
+      seen.add(c.kind);
+    }
+  }
+  assert.ok(["cut_members_largest_change", "cut_total_change", "change_largest_rise", "extreme_gap"].every((kind) => seen.has(kind)), [...seen].join(", "));
+  check(`every candidate kind has a series_sql, and every offered one draws its rows (${forms.length} table forms, ${seen.size} offered kinds)`);
+}
+
 // 11. data stop
 assert.equal(dataStop([{ ok: false, dataset: "A" }]), null);
 assert.deepEqual(dataStop([{ ok: false, dataset: "A" }, { ok: false, dataset: "A" }]), { status: "STOPPED", reason: "data_failed", step: "data_prepare", kept_artifacts: true, failures: 2 });

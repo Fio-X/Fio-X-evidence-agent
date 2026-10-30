@@ -24,7 +24,7 @@ const label = (name) => (/^[A-Za-z_]+$/.test(name) ? name.replace(/_/g, " ") : "
 
 /**
  * The candidate specs for a prepared data file: { ref: "data/<file>", dimensions: [varying columns, 1 to MAX_ENTITY_DIMS], measure, time? } (column names only; no rows are read here).
- * Returns [{ kind, claim_kind, sql, template, series_sql? }]. One rule builds every candidate: a SLICE (the rows an operator reads: one row per entity, at the latest time, or one
+ * Returns [{ kind, claim_kind, sql, template, series_sql }]. One rule builds every candidate: a SLICE (the rows an operator reads: one row per entity, at the latest time, or one
  * row per entity holding its move between the first and the last time; no aggregate, no ORDER BY ... LIMIT) and an OPERATOR over the slice (rank, gap, ratio, change, share). The
  * candidate SQL is the operator over `(slice)`; its series_sql is the slice itself, so a chart that shows the slice binds to the claim by the same SQL whatever the operator is.
  * An entity is the combination of the varying columns (a code, a country, a flow's origin and destination, a pair of dimensions); the module never asks what the chart will be.
@@ -88,7 +88,10 @@ export function buildCandidates(spec) {
     // time sorts first, so the filler refuses the null and the candidate is dropped: "the top N" never compares fewer than N.
     const ends = (who, codes) => `SELECT ${who}a.${m} AS from_value, b.${m} AS to_value, a.${t} AS from_year, b.${t} AS to_year FROM ${src} b LEFT JOIN ${src} a ON a.${ds[0]} = b.${ds[0]} AND a.${t} = ${earliest} WHERE b.${t} = ${latest} AND b.${ds[0]} ${codes}`;
     const memberEnds = () => ends(`b.${ds[0]} AS ${n}, `, `IN (${cut.members.map((code) => `'${code}'`).join(", ")})`);
-    const changes = t ? () => add("cut_members_largest_change", "quantitative", over(memberEnds(), `COUNT(*) OVER () AS members, ${n}, from_value, to_value, from_year, to_year`, ` ORDER BY from_value IS NULL DESC, ABS(to_value - from_value) DESC, ${n} LIMIT 1`), `Of the top {first.members} in {first.to_year}, {first.${n}} changed most: from {first.from_value} in {first.from_year} to {first.to_value}.`) : () => {};
+    // The series of both changes is the members' two ends (a move series, drawn first to last). The total row stays off it: its code is no member, so a
+    // chart that names its categories could not name it, and its scale is the sum of the members'.
+    const memberMoves = t ? `${memberEnds()} ORDER BY ${n}` : null;
+    const changes = t ? () => add("cut_members_largest_change", "quantitative", over(memberEnds(), `COUNT(*) OVER () AS members, ${n}, from_value, to_value, from_year, to_year`, ` ORDER BY from_value IS NULL DESC, ABS(to_value - from_value) DESC, ${n} LIMIT 1`), `Of the top {first.members} in {first.to_year}, {first.${n}} changed most: from {first.from_value} in {first.from_year} to {first.to_value}.`, memberMoves) : () => {};
     if ((cut.total ?? null) === null) {
       changes();
       return out;
@@ -98,19 +101,19 @@ export function buildCandidates(spec) {
     add("cut_top_share", "quantitative", over(level, `${n}, ROUND(value / NULLIF(${total}, 0) * 100, 1) AS share${yearCol}`, ` ORDER BY value DESC, ${n} LIMIT 1`), `{first.${n}} accounts for {first.share} percent of the total${inYear}.`, level);
     add("cut_members_share", "quantitative", over(level, `COUNT(*) AS members, ROUND(SUM(value) / NULLIF(${total}, 0) * 100, 1) AS share${t ? ", MAX(year) AS year" : ""}`), `The top {first.members} by ${word} together account for {first.share} percent of the total${inYear}.`, level);
     changes();
-    if (t) add("cut_total_change", "quantitative", ends("", `= '${cut.total}'`), `The total ${word} went from {first.from_value} in {first.from_year} to {first.to_value} in {first.to_year}.`);
+    if (t) add("cut_total_change", "quantitative", ends("", `= '${cut.total}'`), `The total ${word} went from {first.from_value} in {first.from_year} to {first.to_value} in {first.to_year}.`, memberMoves);
     return out;
   }
   add("rank_bottom", "comparative", top("ASC"), `{first.${n}} has the lowest ${word}${inYear}: {first.value}.`, level);
   add("extreme_gap", "quantitative", over(level, `MAX(value) - MIN(value) AS gap${t ? ", MAX(year) AS year" : ""}`), `The gap between the highest and the lowest ${word}${inYear} is {first.gap}.`, level);
   // "N times the lowest" reads only over positive values: a lowest at or below zero gives no ratio (null), so the filler drops it.
   add("top_to_bottom_ratio", "quantitative", over(level, `ROUND(MAX(value) / CASE WHEN MIN(value) > 0 THEN MIN(value) END, 1) AS ratio${t ? ", MAX(year) AS year" : ""}`), `The highest ${word}${inYear} is {first.ratio} times the lowest.`, level);
-  add("share_of_total", "quantitative", over(level, `${n}, ROUND(value / NULLIF((SELECT SUM(value) FROM (${level})), 0) * 100, 1) AS share${yearCol}`, ` ORDER BY value DESC, ${n} LIMIT 1`), `{first.${n}} accounts for {first.share} percent of the total${inYear}.`);
+  add("share_of_total", "quantitative", over(level, `${n}, ROUND(value / NULLIF((SELECT SUM(value) FROM (${level})), 0) * 100, 1) AS share${yearCol}`, ` ORDER BY value DESC, ${n} LIMIT 1`), `{first.${n}} accounts for {first.share} percent of the total${inYear}.`, level);
   if (t) {
     const by = (dir) => over(move, "*", ` ORDER BY change ${dir}, ${n} LIMIT 1`);
     add("change_largest_rise", "quantitative", by("DESC"), `{first.${n}} changed the most upward from {first.from_year} to {first.to_year}: from {first.from_value} to {first.to_value}.`, move);
     add("change_largest_fall", "quantitative", by("ASC"), `{first.${n}} changed the most downward, or rose the least, from {first.from_year} to {first.to_year}: from {first.from_value} to {first.to_value}.`, move);
-    add("change_total", "quantitative", `WITH a AS (SELECT SUM(${m}) AS total FROM ${src} WHERE ${t} = ${earliest}), b AS (SELECT SUM(${m}) AS total FROM ${src} WHERE ${t} = ${latest}) SELECT ROUND((b.total - a.total) / NULLIF(a.total, 0) * 100, 1) AS pct, ${earliest} AS from_year, ${latest} AS to_year FROM a, b`, `The total ${word} changed by {first.pct} percent from {first.from_year} to {first.to_year}.`);
+    add("change_total", "quantitative", `WITH a AS (SELECT SUM(${m}) AS total FROM ${src} WHERE ${t} = ${earliest}), b AS (SELECT SUM(${m}) AS total FROM ${src} WHERE ${t} = ${latest}) SELECT ROUND((b.total - a.total) / NULLIF(a.total, 0) * 100, 1) AS pct, ${earliest} AS from_year, ${latest} AS to_year FROM a, b`, `The total ${word} changed by {first.pct} percent from {first.from_year} to {first.to_year}.`, move);
   }
   return out;
 }
