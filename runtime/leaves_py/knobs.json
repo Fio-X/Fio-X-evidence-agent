@@ -1464,7 +1464,13 @@
     "ranked",
     "claim_marks"
    ],
-   "exposes": []
+   "exposes": [],
+   "same_measure": [
+    [
+     "bars",
+     "bubbles"
+    ]
+   ]
   }
  ]
 }

@@ -1879,7 +1879,8 @@ fn leaf_page(
     calls: &std::sync::Mutex<Vec<Value>>,
 ) -> Result<LeafPublished, (&'static str, &'static str, String)> {
     use crate::next_visual::{LeafPage, Reply, Request};
-    let (recipe, fill) = leaf_request(run_dir, prepared, drawn, catalogue, (question, words), calls)?;
+    let (picked, fill) = leaf_request(run_dir, prepared, drawn, catalogue, (question, words), calls)?;
+    let recipe = picked.name.as_str();
     let order: Vec<String> = fill["order"].as_array().into_iter().flatten().filter_map(|l| l.as_str().map(str::to_string)).collect();
     let rows = fill["rows"].as_array().map_or(&[][..], Vec::as_slice);
     let runtime = run_dir.join("runtime");
@@ -1919,13 +1920,13 @@ fn leaf_page(
         (recipe, stage, why)
     })?;
     let drawn = fill["drawn"].as_array().cloned().unwrap_or_default();
-    Ok(LeafPublished { recipe, published, drawn, strip: strip.is_some() })
+    Ok(LeafPublished { recipe: picked, published, drawn, strip: strip.is_some() })
 }
 
 /// A leaf page leaf_page published: its recipe, the publication, each row a layer prints a value of (fill_of's `drawn`) and
 /// whether the visual group gave the page a strip to place.
 struct LeafPublished {
-    recipe: &'static str,
+    recipe: &'static Recipe,
     published: crate::next_flow::Published,
     drawn: Vec<Value>,
     strip: bool,
@@ -1942,7 +1943,7 @@ fn leaf_request(
     catalogue: &dyn Catalogue,
     (question, words): (&str, (&str, &str, &str)),
     calls: &std::sync::Mutex<Vec<Value>>,
-) -> Result<(&'static str, Value), (&'static str, &'static str, String)> {
+) -> Result<(&'static Recipe, Value), (&'static str, &'static str, String)> {
     let mut missed = Vec::new();
     for recipe in catalogue.recipes() {
         match unanswered_views(calls, &recipe.name, question) {
@@ -1955,7 +1956,7 @@ fn leaf_request(
             Err(why) => return Err((recipe.name.as_str(), "shape", why)),
         }
         match recipe_request(run_dir, prepared, drawn, recipe, catalogue, words) {
-            Ok(fill) => return Ok((recipe.name.as_str(), fill)),
+            Ok(fill) => return Ok((recipe, fill)),
             Err(("shape", why)) => missed.push((recipe.name.as_str(), why)),
             Err((stage, why)) => return Err((recipe.name.as_str(), stage, why)),
         }
@@ -2386,16 +2387,13 @@ const PAGE_CHECKS_STAGE: &str = "checks";
 // a later WIP makes recipes declare their strip slot, and strip_placed reads that slot instead of this list
 const STRIP_RECIPES: &[&str] = &["column"];
 
-/// The layer pairs whose same values same_numbers_twice records without failing on them.
-// TODO(item 5): the column page's map (bubbles) and its bars show the same numbers; once item 5 gives one of them other
-// values, this list goes and the pair fails the check like any other
-const TWICE_KNOWN: &[(&str, &str)] = &[("bars", "bubbles")];
-
-/// One program check on a published page: its name, whether it passed and what it measured.
+/// One program check on a published page: its name, whether it passed, the warning it passed with (none: it raised none)
+/// and what it measured.
 #[derive(Debug)]
 struct PageCheck {
     name: &'static str,
     passed: bool,
+    warning: Option<String>,
     measured: Value,
 }
 
@@ -2403,13 +2401,16 @@ struct PageCheck {
 /// - notes_dropped: what its layers dropped (the publication's list, the request ledger's dropped entries), none passes;
 /// - strip_placed: on a recipe of STRIP_RECIPES given a strip (`strip`), the published html holds the layer illus_strip;
 /// - same_numbers_twice: no two layers print a value of the same row (one table, series and time; fill_of's `drawn`), each
-///   pair found named with its table, times and count, a pair of TWICE_KNOWN recorded as known and not failing.
-fn page_checks(recipe: &str, html: Option<&str>, dropped: &[(String, String)], strip: bool, drawn: &[Value]) -> Vec<PageCheck> {
+///   pair found named with its table, times and count; a pair the recipe declares (its same_measure, either order) is
+///   recorded as known, declared by the recipe, and passes with a warning; the same layers under another recipe fail.
+fn page_checks(recipe: &Recipe, html: Option<&str>, dropped: &[(String, String)], strip: bool, drawn: &[Value]) -> Vec<PageCheck> {
     let items: Vec<&str> = dropped.iter().map(|(what, _)| what.as_str()).collect();
-    let notes = PageCheck { name: "notes_dropped", passed: items.is_empty(), measured: json!({"count": items.len(), "items": items}) };
-    let asked = strip && STRIP_RECIPES.contains(&recipe);
+    let measured = json!({"count": items.len(), "items": items});
+    let notes = PageCheck { name: "notes_dropped", passed: items.is_empty(), warning: None, measured };
+    let asked = strip && STRIP_RECIPES.contains(&recipe.name.as_str());
     let placed = html.is_some_and(|h| h.contains(r#"data-layer="illus_strip""#));
-    let strip = PageCheck { name: "strip_placed", passed: !asked || placed, measured: json!({"asked": asked, "placed": placed}) };
+    let measured = json!({"asked": asked, "placed": placed});
+    let strip = PageCheck { name: "strip_placed", passed: !asked || placed, warning: None, measured };
     // each layer's rows by src, layers in fill order; a row's table and time as the fill gave them
     let mut layers: Vec<(&str, BTreeSet<&str>)> = Vec::new();
     let mut at: BTreeMap<&str, (&str, &str)> = BTreeMap::new();
@@ -2432,14 +2433,20 @@ fn page_checks(recipe: &str, html: Option<&str>, dropped: &[(String, String)], s
                 shared.0.insert(time);
                 shared.1 += 1;
             }
-            let known = TWICE_KNOWN.iter().any(|&(x, y)| (x, y) == (*a, *b) || (y, x) == (*a, *b));
+            let known = recipe.same_measure.iter().any(|(x, y)| {
+                let (x, y) = (x.as_str(), y.as_str());
+                (x, y) == (*a, *b) || (y, x) == (*a, *b)
+            });
+            let by = known.then_some(recipe.name.as_str());
             pairs.extend(by_table.into_iter().map(|(table, (times, values))| {
-                json!({"layers": [a, b], "table": table, "times": times, "values": values, "known": known})
+                json!({"layers": [a, b], "table": table, "times": times, "values": values, "known": known, "declared_by": by})
             }));
         }
     }
     let passed = pairs.iter().all(|p| p["known"] == true);
-    let twice = PageCheck { name: "same_numbers_twice", passed, measured: json!({"pairs": pairs}) };
+    let known = pairs.iter().filter(|p| p["known"] == true).count();
+    let warning = (known > 0).then(|| format!("{known} pair(s) print the same values, as the {} recipe declares", recipe.name));
+    let twice = PageCheck { name: "same_numbers_twice", passed, warning, measured: json!({"pairs": pairs}) };
     vec![notes, strip, twice]
 }
 
@@ -2524,7 +2531,7 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
     }
     match leaf {
         Ok(leaf) => {
-            let (recipe, published) = (leaf.recipe, &leaf.published);
+            let (recipe, published) = (leaf.recipe.name.as_str(), &leaf.published);
             recorder.program_event(
                 RING_EVENT,
                 // what a layer could not place is on record in the run's events too, never only in the request beside the page
@@ -2550,9 +2557,11 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
             }
             // what the program measures on the page is held before any model sees it: a failed check stops the run
             let html = std::fs::read_to_string(recorder.run_dir().join(&published.html_ref)).ok();
-            let checks = page_checks(recipe, html.as_deref(), &published.dropped, leaf.strip, &leaf.drawn);
-            let measured: Vec<Value> =
-                checks.iter().map(|c| json!({"name": c.name, "passed": c.passed, "measured": c.measured})).collect();
+            let checks = page_checks(leaf.recipe, html.as_deref(), &published.dropped, leaf.strip, &leaf.drawn);
+            let measured: Vec<Value> = checks
+                .iter()
+                .map(|c| json!({"name": c.name, "passed": c.passed, "warning": c.warning, "measured": c.measured}))
+                .collect();
             recorder.program_event(
                 PAGE_CHECKS_EVENT,
                 json!({"by": RING_ACTOR, "recipe": recipe, "published": published.html_ref,
@@ -4550,6 +4559,7 @@ mod tests {
             picks: r.picks.clone(),
             exposes: r.exposes.clone(),
             window: r.window.clone(),
+            same_measure: r.same_measure.clone(),
         }
     }
 
@@ -4700,7 +4710,7 @@ mod tests {
         let started = std::time::Instant::now();
         let request = leaf_request(&run, &[prepared], &["horizontal_bar"], &catalogue, ("", ("标题", "导语", "栏目")), &Default::default());
         let (recipe, fill) = match request {
-            Ok(got) => got,
+            Ok((recipe, fill)) => (recipe.name.as_str(), fill),
             Err((recipe, stage, why)) => panic!("stuck {recipe}-{stage} ms {}: {why}", started.elapsed().as_millis()),
         };
         println!("recipe {recipe} request ms {}", started.elapsed().as_millis());
@@ -6298,11 +6308,11 @@ mod tests {
         println!("main {main} file {} claims {} drawn {drawn:?} question {question}", prepared.file, prepared.claims.len());
         let got = leaf_request(&run, &[prepared], &drawn, &catalogue, (&question, ("标题", "导语", "栏目")), &Default::default());
         match &got {
-            Ok((recipe, fill)) => println!("WBRUN {main} recipe {recipe} request made, {} rows", fill["rows"].as_array().map_or(0, Vec::len)),
+            Ok((recipe, fill)) => println!("WBRUN {main} recipe {} request made, {} rows", recipe.name, fill["rows"].as_array().map_or(0, Vec::len)),
             Err((recipe, stage, why)) => println!("WBRUN {main} recipe {recipe} stopped at {stage}: {why}"),
         }
         let reached = match &got {
-            Ok((recipe, _)) => *recipe,
+            Ok((recipe, _)) => recipe.name.as_str(),
             Err((recipe, stage, _)) if *stage != "shape" => *recipe,
             Err((_, _, why)) => panic!("no recipe takes the shape: {why}"),
         };
@@ -6897,7 +6907,7 @@ for line in sys.stdin:
     #[test]
     fn a_page_with_nothing_dropped_or_drawn_twice_passes_every_page_check() {
         let drawn = [drawn_row("map", "SE", "2024"), drawn_row("ring", "SE", "2025-01")];
-        let checks = page_checks("ring", Some("<body></body>"), &[], false, &drawn);
+        let checks = page_checks(recipe("ring"), Some("<body></body>"), &[], false, &drawn);
         let got: Vec<(&str, bool)> = checks.iter().map(|c| (c.name, c.passed)).collect();
         assert_eq!(got, [("notes_dropped", true), ("strip_placed", true), ("same_numbers_twice", true)]);
         assert_eq!(checks[0].measured, json!({"count": 0, "items": []}));
@@ -6909,7 +6919,7 @@ for line in sys.stdin:
     #[test]
     fn a_dropped_note_fails_notes_dropped_with_its_count() {
         let dropped = [("dropped:leader_notes:SE".to_string(), "no free place".to_string())];
-        let checks = page_checks("column", Some("<body></body>"), &dropped, false, &[]);
+        let checks = page_checks(recipe("column"), Some("<body></body>"), &dropped, false, &[]);
         assert_eq!((checks[0].name, checks[0].passed), ("notes_dropped", false));
         assert_eq!(checks[0].measured, json!({"count": 1, "items": ["dropped:leader_notes:SE"]}));
         assert!(checks[1..].iter().all(|c| c.passed), "{checks:?}");
@@ -6919,35 +6929,59 @@ for line in sys.stdin:
     /// recipe that places no strip is not held to one it was given.
     #[test]
     fn a_column_page_given_a_strip_fails_strip_placed_unless_its_html_holds_it() {
-        let missing = page_checks("column", Some("<body><svg></svg></body>"), &[], true, &[]);
+        let missing = page_checks(recipe("column"), Some("<body><svg></svg></body>"), &[], true, &[]);
         assert_eq!((missing[1].name, missing[1].passed), ("strip_placed", false));
         assert_eq!(missing[1].measured, json!({"asked": true, "placed": false}));
-        let unread = page_checks("column", None, &[], true, &[]);
+        let unread = page_checks(recipe("column"), None, &[], true, &[]);
         assert!(!unread[1].passed);
-        let held = page_checks("column", Some(r#"<div class="illus-strip"><svg><g data-layer="illus_strip"></g></svg></div>"#), &[], true, &[]);
+        let held = page_checks(recipe("column"), Some(r#"<div class="illus-strip"><svg><g data-layer="illus_strip"></g></svg></div>"#), &[], true, &[]);
         assert_eq!((held[1].passed, &held[1].measured), (true, &json!({"asked": true, "placed": true})));
-        let ring = page_checks("ring", Some("<body></body>"), &[], true, &[]);
+        let ring = page_checks(recipe("ring"), Some("<body></body>"), &[], true, &[]);
         assert_eq!((ring[1].passed, &ring[1].measured), (true, &json!({"asked": false, "placed": false})));
     }
 
-    /// Two layers that print the same rows fail same_numbers_twice, the pair named with its table, times and count; the
-    /// known pair (TWICE_KNOWN: the column page's bars and bubbles) is recorded as known and does not fail.
+    /// Two layers that print the same rows fail same_numbers_twice, the pair named with its table, times and count, and
+    /// raise no warning.
     #[test]
-    fn two_layers_printing_the_same_rows_fail_same_numbers_twice_but_the_known_pair_is_recorded_only() {
+    fn two_layers_printing_the_same_rows_fail_same_numbers_twice() {
         let drawn = [drawn_row("map", "SE", "2024"), drawn_row("map", "BE", "2024"), drawn_row("ring", "SE", "2024"), drawn_row("ring", "SE", "2025")];
-        let checks = page_checks("ring", Some("<body></body>"), &[], false, &drawn);
-        assert_eq!((checks[2].name, checks[2].passed), ("same_numbers_twice", false));
+        let checks = page_checks(recipe("ring"), Some("<body></body>"), &[], false, &drawn);
+        assert_eq!((checks[2].name, checks[2].passed, &checks[2].warning), ("same_numbers_twice", false, &None));
         assert_eq!(
             checks[2].measured,
-            json!({"pairs": [{"layers": ["map", "ring"], "table": "sdg", "times": ["2024"], "values": 1, "known": false}]})
+            json!({"pairs": [{"layers": ["map", "ring"], "table": "sdg", "times": ["2024"], "values": 1, "known": false, "declared_by": null}]})
         );
-        let drawn: Vec<Value> = ["bars", "bubbles"].iter().flat_map(|l| ["SE", "BE"].map(|g| drawn_row(l, g, "2025"))).collect();
-        let checks = page_checks("column", Some("<body></body>"), &[], false, &drawn);
+    }
+
+    /// The pair the column recipe declares (knobs.json same_measure: its bars and bubbles) is recorded as known, declared by
+    /// the column recipe, and passes same_numbers_twice with a warning naming it.
+    #[test]
+    fn the_pair_the_column_recipe_declares_passes_same_numbers_twice_with_a_warning() {
+        assert_eq!(recipe("column").same_measure, [("bars".to_string(), "bubbles".to_string())]);
+        let drawn: Vec<Value> = ["bubbles", "bars"].iter().flat_map(|l| ["SE", "BE"].map(|g| drawn_row(l, g, "2025"))).collect();
+        let checks = page_checks(recipe("column"), Some("<body></body>"), &[], false, &drawn);
         assert!(checks[2].passed, "{checks:?}");
+        assert!(checks[2].warning.as_deref().is_some_and(|w| w.contains("the column recipe declares")), "{checks:?}");
         assert_eq!(
             checks[2].measured,
-            json!({"pairs": [{"layers": ["bars", "bubbles"], "table": "sdg", "times": ["2025"], "values": 2, "known": true}]})
+            json!({"pairs": [{"layers": ["bubbles", "bars"], "table": "sdg", "times": ["2025"], "values": 2, "known": true, "declared_by": "column"}]})
         );
+    }
+
+    /// A pair is known only by the page's own recipe and only as the layers it declares: the bars and bubbles under a recipe
+    /// that declares no pair fail, and so does another pair of the column page.
+    #[test]
+    fn a_pair_its_recipe_does_not_declare_fails_same_numbers_twice() {
+        let twice = |r: &str, layers: [&str; 2]| {
+            let drawn: Vec<Value> = layers.iter().map(|l| drawn_row(l, "SE", "2025")).collect();
+            page_checks(recipe(r), Some("<body></body>"), &[], false, &drawn).remove(2)
+        };
+        assert!(recipe("ring").same_measure.is_empty());
+        for (r, layers) in [("ring", ["bars", "bubbles"]), ("column", ["bars", "leader_notes"]), ("column", ["bubbles", "leader_notes"])] {
+            let check = twice(r, layers);
+            assert_eq!((check.passed, &check.warning), (false, &None), "{r} {layers:?}: {check:?}");
+            assert_eq!((&check.measured["pairs"][0]["known"], &check.measured["pairs"][0]["declared_by"]), (&json!(false), &Value::Null));
+        }
     }
 
     /// The q1 shape's column request keeps what each layer prints a value of: the bars and the bubbles each every ranked
@@ -6967,7 +7001,7 @@ for line in sys.stdin:
         assert_eq!(of("bars").len(), picks.ranked.len(), "{drawn:?}");
         assert_eq!(of("bars"), of("bubbles"));
         assert!(of("leader_notes").is_empty(), "{drawn:?}");
-        let checks = page_checks("column", Some("<body></body>"), &[], false, drawn);
+        let checks = page_checks(recipe("column"), Some("<body></body>"), &[], false, drawn);
         assert_eq!(checks[2].measured["pairs"][0]["layers"], json!(["bars", "bubbles"]));
     }
 
@@ -6988,6 +7022,9 @@ for line in sys.stdin:
             checks[0]["checks"].as_array().unwrap().iter().map(|c| (c["name"].as_str().unwrap(), c["passed"] == true)).collect();
         assert_eq!(got, [("notes_dropped", true), ("strip_placed", true), ("same_numbers_twice", true)]);
         assert_eq!(checks[0]["checks"][2]["measured"]["pairs"][0]["known"], true);
+        assert_eq!(checks[0]["checks"][2]["measured"]["pairs"][0]["declared_by"], "column");
+        assert!(checks[0]["checks"][2]["warning"].as_str().is_some_and(|w| w.contains("column")), "{:?}", checks[0]);
+        assert_eq!((&checks[0]["checks"][0]["warning"], &checks[0]["checks"][1]["warning"]), (&Value::Null, &Value::Null));
         match &ran.result {
             Err(Stop::Page { step: "publication_vision", why }) => assert!(why.contains("screenshot"), "{why}"),
             other => panic!("expected the image review to be reached, got {other:?}"),

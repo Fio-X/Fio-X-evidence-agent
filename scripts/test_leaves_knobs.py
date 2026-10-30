@@ -39,7 +39,8 @@ class Registry(unittest.TestCase):
         t = knobs.table()
         self.assertEqual([r["name"] for r in t["recipes"]], ["scmp", "ring", "column"])
         ring = next(r for r in knobs.RECIPES if r["name"] == "ring")
-        for bad in [dict(ring, eats=["annual"]), dict(ring, layers=["map", "pie"]), dict(ring, exposes=["ring.glow"])]:
+        for bad in [dict(ring, eats=["annual"]), dict(ring, layers=["map", "pie"]), dict(ring, exposes=["ring.glow"]),
+                    dict(ring, same_measure=[["map", "pie"]]), dict(ring, same_measure=[["map", "map"]])]:
             with self.assertRaises(SystemExit):
                 self._with(bad, t)
 

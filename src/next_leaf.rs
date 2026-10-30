@@ -111,7 +111,8 @@ pub struct Leaf {
 /// conditions its tables must meet, in the order they are checked; the charts the charts step must have drawn its main as
 /// (none: the shape alone decides); the program's picks over the shape and the claims; the knobs it exposes (node.knob); and
 /// its page's time window, the two picks it runs between (["t0", "t1"]: from t0's first month to t1's last), which every
-/// layer that reads a time keeps to (none: each layer its own).
+/// layer that reads a time keeps to (none: each layer its own); and the pairs of its layers that print the same measure by
+/// design (same_measure; none: no two may, next_run.rs page_checks).
 pub struct Recipe {
     pub name: String,
     pub layers: Vec<String>,
@@ -120,6 +121,7 @@ pub struct Recipe {
     pub picks: Vec<String>,
     pub exposes: Vec<String>,
     pub window: Vec<String>,
+    pub same_measure: Vec<(String, String)>,
 }
 
 const LEAVES: &str = include_str!("../runtime/leaves_py/knobs.json");
@@ -172,6 +174,12 @@ pub fn leaves() -> &'static Leaves {
             picks: words(&r["picks"]),
             exposes: words(&r["exposes"]),
             window: words(&r["window"]),
+            // TODO(item 5): the column page's map (bubbles) and its bars show the same numbers; once item 5 gives one of
+            // them other values, the column recipe's declaration goes, and with it page_checks' warning path
+            same_measure: r["same_measure"].as_array().into_iter().flatten().map(|p| match &words(p)[..] {
+                [a, b] => (a.clone(), b.clone()),
+                _ => panic!("knobs.json: a same_measure pair is two layers"),
+            }).collect(),
         });
         Leaves { nodes: nodes.collect(), groups: groups.collect(), legacy, recipes: recipes.collect() }
     })
