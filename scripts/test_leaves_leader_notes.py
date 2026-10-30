@@ -2,7 +2,8 @@
 shared view under leader_notes, run.py MAP_STYLE): the EU27 at their Natural Earth label points (runtime/pi/assets), test-only
 values and ledger texts (the first layer writes the real ones), names from the project's reviewed zh names. Both leaves draw
 on ONE Occ, bubbles first. Checks: run.drawn reads every text back, no digit outside a marked ledger run, only page colour
-variables, note font >= 16, each note one line ending in its bold number, in the sea when that costs less and over the land
+variables, note font >= 16, each note one line ending in its bold number (one too wide for that on two, its bold number and
+unit the second; one that fits one line drawn byte for byte as before; one too wide on two refused as before), in the sea when that costs less and over the land
 only off every circle and label (one with no room anywhere is dropped and named), its leader straight or with one bend, no
 note box on a circle or label the bubbles claimed (but its own point's), every EU
 circle labelled, no leader crossing another, no label or leader over a nudged circle's true-point dot, a blocked side gives
@@ -10,6 +11,7 @@ way to the other; the column page lays the map beside the bars in one panel; a c
 note each) still draws and its reply names exactly the notes it dropped, while one that drops every note refuses; and every
 refusal in the leaf's header. With LEAF_SVG_DIR set the svgs are kept there; else they go to a temporary folder that is removed.
 Run: python3 -I -B scripts/test_leaves_leader_notes.py"""
+import hashlib
 import json
 import os
 import re
@@ -50,6 +52,9 @@ NOTES = [dict(at=POINT["SWE"], name="SE", text=[{"word": "column.note.hi"}], val
          dict(at=POINT["LUX"], name="LU", text=[{"word": "column.note.lo"}], value_text="fact:times")]
 D = dict(ext=EXT, notes=NOTES)
 W = lambda t: [{"w": t}]
+# a change page's note (a name, its judgement word, the change, whose ledger text carries a long unit): wider than half the map on one line
+CHG = {"src": "fact:chg", "text": "1.55 吨二氧化碳当量/人"}  # test-only
+WIDE = dict(at=POINT["DEU"], name="CN", text=[{"word": "column.note.rise_most"}], value_text="fact:chg")
 
 
 def leaders(svg):
@@ -226,6 +231,66 @@ class LeaderNotes(unittest.TestCase):
         f = LN.Frame({"data": dict(D, notes=NOTES[:1]), "style": style(side="right")})
         LN.cl_leader_notes(f, occ)
         self.assertEqual(f.dropped, [("SE", "no free place for the note")])
+
+    def test_a_note_too_wide_for_one_line_sets_its_number_and_unit_on_a_second_line(self):
+        # beside Sweden's note on the bubbles' map: the name and the word on the first line, the bold number with its unit (its
+        # ledger entry, whole and marked) on the second, each within half the map, both at the box's edge; the one box claimed
+        # holds both lines, off every circle, label and other note, and no leader meets either line's glyph box (2 px in, as the
+        # page check reads it); the two lines' glyph boxes do not meet. Before the break the note refused (wider than half)
+        setup(ROWS + [CHG]); occ = prod.Occ(); size = 16
+        svg = bubbles.cl_bubbles(bubbles.Frame({"data": dict(items=ITEMS, ext=EXT), "style": style()}), occ)
+        f = LN.Frame({"data": dict(D, notes=[NOTES[0], WIDE]), "style": style()}); svg += LN.cl_leader_notes(f, occ)
+        setup()
+        self.assertEqual((check_svg(svg), f.dropped), ([], []))
+        head = f"{ZH2['CN']} {K.WD.WORDS['column.note.rise_most']}"
+        self.assertGreater(prod.tw(f"{head} {CHG['text']}", size), f.W / 2)  # one line would not fit
+        texts = run.drawn(svg.split('data-node="leader_notes"')[1])[0]
+        a, b = [t for t in texts if "name:" in t["src"] and t["src"].endswith(":CN")] + [t for t in texts if t["src"] == "fact:chg"]
+        self.assertEqual((a["text"], b["text"], a["anchor"], a["x"]), (head, CHG["text"], b["anchor"], b["x"]))
+        self.assertAlmostEqual(b["y"] - a["y"], size * LN.LINE, delta=0.11)
+        self.assertLessEqual(max(prod.tw(a["text"], size), prod.tw(b["text"], size) * 1.06), f.W / 2)
+        self.assertIn(f'<tspan font-weight="700"><tspan data-src="fact:chg">{CHG["text"]}</tspan></tspan></text>', svg)
+        self.assertLessEqual(a["y"] + 0.27 * size, b["y"] - 1.06 * size)
+        notes = [q for q in occ.boxes if q[4] == "notes"]; box = next(q for q in notes if q[1] - 0.01 <= a["y"] - 0.9 * size and b["y"] + 0.25 * size <= q[3] + 0.01)
+        glyphs = []
+        for t, k in ((a, 1), (b, 1.06)):
+            w = prod.tw(t["text"], size) * k; x0 = t["x"] if t["anchor"] == "start" else t["x"] - w
+            self.assertTrue(box[0] - 0.01 <= x0 and x0 + w <= box[2] + 0.01, (t["text"], box))
+            glyphs.append((x0 + 2, t["y"] - 1.06 * size + 2, x0 + w - 2, t["y"] + 0.27 * size - 2))
+        for q in [q for q in occ.boxes if q[4] == "bubbles"] + [q for q in notes if q is not box]:
+            self.assertFalse(box[0] < q[2] and q[0] < box[2] and box[1] < q[3] and q[1] < box[3], q)
+        for l in segs(svg):
+            n = max(2, int(((l[2] - l[0]) ** 2 + (l[3] - l[1]) ** 2) ** 0.5 / 1.5))
+            for g in glyphs:
+                self.assertFalse(any(g[0] < l[0] + (l[2] - l[0]) * t / n < g[2] and g[1] < l[1] + (l[3] - l[1]) * t / n < g[3] for t in range(n + 1)), l)
+        # through the leaf runner as layer 1 calls it: no refusal, both lines read back with their sources, and the page draws
+        def wide(line):
+            req = json.loads(line); req["rows"].append(CHG); req["knobs"]["labels"] = ZH2
+            if "leader_notes" in req["knobs"]["spec"]["hero"]["leaves"]: req["knobs"]["spec"]["hero"]["leaves"]["leader_notes"]["notes"] = [NOTES[0], WIDE]
+            return json.dumps(req, ensure_ascii=False)
+        lines = [wide(l) for l in column_lines({"bubbles": dict(items=ITEMS, ext=EXT), "leader_notes": D})]
+        size_, bars, bub, got = child(lines)
+        self.assertNotIn("refused", got)
+        self.assertEqual([t["text"] for t in got["texts"] if t["src"] == "fact:chg" or t["src"].endswith(":CN")], [head, CHG["text"]])
+        page = child(lines + [json.dumps({"phase": "page", "layers": {"bars": bars["svg"], "bubbles": bub["svg"], "leader_notes": got["svg"]}})])[4]
+        self.assertNotIn("refused", page)
+
+    def test_a_note_that_fits_one_line_draws_as_before(self):
+        # the q1 page's notes (a name, a word, a number with a short unit) fit one line: the layer, drawn alone on an empty Occ,
+        # is byte for byte the one drawn before the two-line break (its sha on the commit before it), one text per note
+        setup(); svg = LN.draw({"data": D, "style": style()})[0]
+        self.assertEqual((hashlib.sha256(svg.encode()).hexdigest(), svg.count("<text")), ("98a2a482ca787f8f00802d390fd2091906e511ba726c610eecaf6bef8db874fe", 2))
+
+    def test_a_note_too_wide_on_two_lines_refuses_as_before(self):
+        # the number's own line past half the map too: refused with the one-line message as before the break, its width and words
+        too = dict(CHG, text="1.55 " + "吨二氧化碳当量" * 4 + "/人"); size = 16
+        setup(ROWS + [too])
+        with self.assertRaises(Refused) as e: LN.Frame({"data": dict(D, notes=[WIDE]), "style": style()})
+        setup()
+        name, word = ZH2["CN"], K.WD.WORDS["column.note.rise_most"]; plain = f"{name} {word} {too['text']}"
+        wd = max(prod.tw(name, size) + size * 0.3 + prod.tw(word, size) + size * 0.3 + prod.tw(too["text"], size) * 1.06, prod.tw(plain, size))
+        self.assertGreater(prod.tw(too["text"], size) * 1.06, run.column.MAP_W / 2)
+        self.assertEqual(str(e.exception), f"leader_notes: note 1 is wider than half the picture at {size} px ({wd:.0f} px of {run.column.MAP_W / 2:.0f}, W {run.column.MAP_W}: '{plain}')")
 
     def test_the_refusals(self):
         for tag, d, nst, labels, why in [

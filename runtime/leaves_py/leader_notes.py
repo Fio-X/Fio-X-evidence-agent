@@ -6,7 +6,9 @@ never sit on a flow line or a label another layer claimed. Reused: prod.Occ (hit
 hero.data: {"ext": [lon0, lat0, lon1, lat1], "hub": {"lonlat": [lon, lat]}?, "name_kind": "place"|<kind>,
   "notes": [{"at": [lon, lat] | "hub", "name": code?, "text": segs?, "value_text": src?}]}     # at least a name or text; made by the program, never typed
 A note is one short line: its name (the request's label, marked with its name row) and/or its words (segments: literals without a digit, {"word": key},
-{"src": entry}), then value_text in bold, a ledger entry (the number). Nothing else is printed.
+{"src": entry}), then value_text in bold, a ledger entry (the number). Nothing else is printed. A note wider than half the picture on one line is
+set on two at its one fixed break, the name and words above, the bold value_text below (each line's own width by the same rule, each within half
+the picture; one box over both lines is placed and claimed, LINE em apart); a note without both, or still too wide, refuses.
 Colours: --t-title the note, --t-sec the leader, --accent the highlighted note, --bg the text halo. A note is tried on a STEP px grid across the whole
 picture (side left or right: only at that edge); of the free boxes (off every claimed box and line) with a clear leader it takes the cheapest:
 the leader's length, plus LAND_COST px when the box sits over the land (occ.land, set by bubbles in the shared frame; the sea or the open margin
@@ -19,7 +21,7 @@ a note with no free place, or past label_count, is dropped and listed in Frame.d
 request from 1, when it has none); the layer still draws, empty when every note was dropped (run.py sends the list back for layer 1 to keep in
 the page's ledger).
 Refuses: no notes, a note without a name or text, a point that is not [lon, lat] (or "hub" without a hub), a note under 16 px (note_size min), a note wider than
-half the picture, a missing label or ledger entry, a digit in a literal, a knob off its range."""
+half the picture (on two lines too), a missing label or ledger entry, a digit in a literal, a knob off its range."""
 import math
 import os
 import sys
@@ -39,6 +41,7 @@ STEP = 24  # px between the places a note is tried at across the picture
 LEAD_GAP = 3  # px a note's leader keeps off every other leader's points (sampled at 4 px at most: a crossing comes within 3 px)
 LAND_COST = 80  # px a note over the land costs against one in the sea or the open margin
 BEND_COST = 40  # px a leader's bend costs against a straight one
+LINE = 1.35  # em between a two-line note's baselines: the page check's glyph box (1.06 above, 0.27 below) of one line stays off the other's
 TRIES = 600  # leaders walked per note, cheapest first: a crowded picture stays within the layer's deadline (next_leaf LAYER_DEADLINE)
 
 
@@ -57,15 +60,18 @@ class Frame:
                 at = v.hub
             n["_pt"] = v.at(v.lonlat(at, f"leader_notes: note {i + 1}"))  # a place beyond the frame is pointed at where its flow line enters (found by pagecheck: the raw point lay outside the picture)
             if not n.get("name") and not n.get("text"): raise Refused(f"leader_notes: note {i + 1} has neither a name nor words")
-            parts, wd, plain = [], 0.0, []
+            parts, wd, plain, head = [], 0.0, [], 0.0
             if n.get("name"): nm = K.named(n["name"], kind); parts.append(nm[0]); wd += tw(nm[1], size); plain.append(nm[1])
             if n.get("text"):
                 inner, w_, p_ = MK.inline(n["text"], size, f"note {i + 1} text"); parts.append(inner); wd += w_ + (size * 0.3 if parts[:-1] else 0); plain.append(p_)
             if n.get("value_text"):  # the number last, bold (a bold glyph runs about 6% wider than tw's estimate)
-                val = K.ent(n["value_text"]); parts.append(f'<tspan font-weight="700">{val[0]}</tspan>'); wd += tw(val[1], size) * 1.06 + (size * 0.3 if parts[:-1] else 0); plain.append(val[1])
+                head = wd; val = K.ent(n["value_text"]); parts.append(f'<tspan font-weight="700">{val[0]}</tspan>'); wd += tw(val[1], size) * 1.06 + (size * 0.3 if parts[:-1] else 0); plain.append(val[1])
             # never narrower than layer 1 reads the line back (the whole text, its spaces included, by the same width rule)
-            n["_inner"], n["_w"] = " ".join(parts), max(wd, tw(" ".join(plain), size))
+            n["_inner"], n["_w"], n["_lines"] = " ".join(parts), max(wd, tw(" ".join(plain), size)), None
             wd = n["_w"]
+            if wd > f.W / 2 and n.get("value_text") and parts[:-1]:  # the one break: the name and words above, the bold number (its ledger entry, whole) below
+                lines = [(" ".join(parts[:-1]), max(head, tw(" ".join(plain[:-1]), size))), (parts[-1], tw(val[1], size) * 1.06)]; w2 = max(w for _, w in lines)
+                if w2 <= f.W / 2: n["_lines"], n["_w"], wd = lines, w2, w2
             if wd > f.W / 2: raise Refused(f"leader_notes: note {i + 1} is wider than half the picture at {size} px ({wd:.0f} px of {f.W / 2:.0f}, W {f.W}: '{' '.join(plain)}')")  # the words and widths recorded so a refused note can be read back
         f.hl = K.check_codes(NODE, k("highlight"), {n["name"] for n in notes if n.get("name")}) if k("highlight") else set()
         f.pal, f.side = k("palette"), k("side"); f.notes = notes; f.dropped = []
@@ -103,16 +109,16 @@ def cl_leader_notes(f, occ):
         return True
 
     def place(n):
-        """The note's place: of every free one-line box (side auto: anywhere in the picture on a STEP px grid; left or right: at
+        """The note's place: of every free box (one line, or both of a two-line note; side auto: anywhere in the picture on a STEP px grid; left or right: at
         that edge), the one whose clear leader (straight or with one bend) costs least (its
         length, LAND_COST over the land, BEND_COST a bend); the leader is returned as its points, note end first. None when no box has one."""
-        pt = n["_pt"]; w1 = n["_w"]; found = []
+        pt = n["_pt"]; w1 = n["_w"]; found = []; dy = size * LINE * (len(n["_lines"]) - 1) if n["_lines"] else 0  # a two-line note's box reaches its second line
         x0s = [margin] if f.side == "left" else [W - margin - w1] if f.side == "right" else \
             sorted({*(margin + STEP * i for i in range(int((W - 2 * margin - w1) / STEP) + 1)), W - margin - w1})
         y = size + 2
-        while y + size * 0.25 <= H:
+        while y + size * 0.25 + dy <= H:
             for x0 in x0s:
-                b1 = (x0, y - size * 0.9, x0 + w1, y + size * 0.25)
+                b1 = (x0, y - size * 0.9, x0 + w1, y + size * 0.25 + dy)
                 if b1[0] < 0 or b1[2] > W or occ.hit(b1, pad=(1, 1)) or occ.on_line(b1, pad=1): continue
                 near = (min(max(pt[0], b1[0] - 3), b1[2] + 3), min(max(pt[1], b1[1] - 3), b1[3] + 3))  # the box's nearest side
                 if math.dist(near, pt) < 8: continue  # over its own point
@@ -144,7 +150,8 @@ def cl_leader_notes(f, occ):
         pt = n["_pt"]; x, anchor, y, b1, path = spot
         o.append(f'<polyline points="{" ".join(f"{p[0]:.1f},{p[1]:.1f}" for p in path)}" fill="none" stroke="var(--t-sec)" stroke-width="0.8"/><circle cx="{pt[0]:.1f}" cy="{pt[1]:.1f}" r="2.5" fill="var(--t-title)"/>')
         halo = ' stroke="var(--bg)" stroke-width="3" paint-order="stroke"'
-        o.append(K.txt(B, x, y, size, "var(--accent)" if acc(n) else "var(--t-title)", n["_inner"], n["_w"], anchor=anchor, weight=400, tag=f"note {n.get('name') or n.get('text')}", style=halo))
+        for j, (inner, w) in enumerate(n["_lines"] or [(n["_inner"], n["_w"])]):  # each line at the box's edge, LINE em below the one above
+            o.append(K.txt(B, x, y + size * LINE * j, size, "var(--accent)" if acc(n) else "var(--t-title)", inner, w, anchor=anchor, weight=400, tag=f"note {n.get('name') or n.get('text')}", style=halo))
         occ.add(b1, "notes")
         for a, b in zip(path, path[1:]):
             steps = max(2, math.ceil(math.dist(a, b) / 4)); occ.add_line([(a[0] + (b[0] - a[0]) * i / steps, a[1] + (b[1] - a[1]) * i / steps) for i in range(steps + 1)], "notes", "leader")
