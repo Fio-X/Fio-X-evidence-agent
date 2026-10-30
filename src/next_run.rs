@@ -2383,6 +2383,16 @@ pub const PAGE_CHECKS_EVENT: &str = "next_page_checks";
 /// The stage a failed page check stops the run at, beside the completion gate's "gate".
 const PAGE_CHECKS_STAGE: &str = "checks";
 
+/// The smallest text a published page may set, in CSS px as rendered at 1440 wide (type-contrast.js min_font_px): our
+/// counted reference pages put the median smallest text at 11-12 px at that width, measured as glyph height from
+/// screenshots; a glyph is shorter than its font size, so a font-size floor of 11 is the looser reading of that band.
+const TYPE_FLOOR_PX: f64 = 11.0;
+
+/// The least contrast a text may have with what is drawn under it, body text and large text (at least 24 px, or 18.66 px
+/// bold): 4.5:1 and 3:1, WCAG 2.x SC 1.4.3 Contrast (Minimum), the ratio of relative luminances as WCAG 2.x defines it.
+const CONTRAST_FLOOR_BODY: f64 = 4.5;
+const CONTRAST_FLOOR_LARGE: f64 = 3.0;
+
 /// The recipes whose page places the illustration strip the visual group gives it (run.py column_page).
 // a later WIP makes recipes declare their strip slot, and strip_placed reads that slot instead of this list
 const STRIP_RECIPES: &[&str] = &["column"];
@@ -2402,8 +2412,20 @@ struct PageCheck {
 /// - strip_placed: on a recipe of STRIP_RECIPES given a strip (`strip`), the published html holds the layer illus_strip;
 /// - same_numbers_twice: no two layers print a value of the same row (one table, series and time; fill_of's `drawn`), each
 ///   pair found named with its table, times and count; a pair the recipe declares (its same_measure, either order) is
-///   recorded as known, declared by the recipe, and passes with a warning; the same layers under another recipe fail.
-fn page_checks(recipe: &Recipe, html: Option<&str>, dropped: &[(String, String)], strip: bool, drawn: &[Value]) -> Vec<PageCheck> {
+///   recorded as known, declared by the recipe, and passes with a warning; the same layers under another recipe fail;
+/// - type_size: the bake's type check (`type_measured`, type-contrast.js on the laid-out page) measured texts and the
+///   smallest of them is at least TYPE_FLOOR_PX;
+/// - text_contrast: it measured texts, and the least contrast of the body texts is at least CONTRAST_FLOOR_BODY and of the
+///   large ones CONTRAST_FLOOR_LARGE (a kind with no text measured has nothing to fall below).
+/// Both name the first texts below a floor; with no measurement both fail, measured {"measured": false}.
+fn page_checks(
+    recipe: &Recipe,
+    html: Option<&str>,
+    dropped: &[(String, String)],
+    strip: bool,
+    drawn: &[Value],
+    type_measured: Option<&Value>,
+) -> Vec<PageCheck> {
     let items: Vec<&str> = dropped.iter().map(|(what, _)| what.as_str()).collect();
     let measured = json!({"count": items.len(), "items": items});
     let notes = PageCheck { name: "notes_dropped", passed: items.is_empty(), warning: None, measured };
@@ -2447,7 +2469,28 @@ fn page_checks(recipe: &Recipe, html: Option<&str>, dropped: &[(String, String)]
     let known = pairs.iter().filter(|p| p["known"] == true).count();
     let warning = (known > 0).then(|| format!("{known} pair(s) print the same values, as the {} recipe declares", recipe.name));
     let twice = PageCheck { name: "same_numbers_twice", passed, warning, measured: json!({"pairs": pairs}) };
-    vec![notes, strip, twice]
+    let (size, contrast) = match type_measured {
+        Some(t) => {
+            let texts = t["texts"].as_u64().is_some_and(|n| n > 0);
+            // a number at the floor or above; null only where it may be, a kind of text the page has none of
+            let at = |key: &str, floor: f64, none: bool| match t.get(key) {
+                Some(Value::Null) => none,
+                Some(v) => v.as_f64().is_some_and(|v| v >= floor),
+                None => false,
+            };
+            let measured = json!({"min_font_px": t["min_font_px"], "floor_px": TYPE_FLOOR_PX, "texts": t["texts"], "below": t["below"]});
+            let size = PageCheck { name: "type_size", passed: texts && at("min_font_px", TYPE_FLOOR_PX, false), warning: None, measured };
+            let measured = json!({"min_contrast_body": t["min_contrast_body"], "min_contrast_large": t["min_contrast_large"],
+                "floor_body": CONTRAST_FLOOR_BODY, "floor_large": CONTRAST_FLOOR_LARGE, "texts": t["texts"], "below": t["below"]});
+            let passed = texts && at("min_contrast_body", CONTRAST_FLOOR_BODY, true) && at("min_contrast_large", CONTRAST_FLOOR_LARGE, true);
+            (size, PageCheck { name: "text_contrast", passed, warning: None, measured })
+        }
+        None => {
+            let unmeasured = |name: &'static str| PageCheck { name, passed: false, warning: None, measured: json!({"measured": false}) };
+            (unmeasured("type_size"), unmeasured("text_contrast"))
+        }
+    };
+    vec![notes, strip, twice, size, contrast]
 }
 
 /// The leaf page's plan (leaf_plan_ref): the recipe, the question, LEAF_PLAN_STEPS and the one delivery width the browser
@@ -2557,7 +2600,8 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
             }
             // what the program measures on the page is held before any model sees it: a failed check stops the run
             let html = std::fs::read_to_string(recorder.run_dir().join(&published.html_ref)).ok();
-            let checks = page_checks(leaf.recipe, html.as_deref(), &published.dropped, leaf.strip, &leaf.drawn);
+            let checks =
+                page_checks(leaf.recipe, html.as_deref(), &published.dropped, leaf.strip, &leaf.drawn, published.type_measured.as_ref());
             let measured: Vec<Value> = checks
                 .iter()
                 .map(|c| json!({"name": c.name, "passed": c.passed, "warning": c.warning, "measured": c.measured}))
@@ -6902,24 +6946,72 @@ for line in sys.stdin:
         json!({"layer": layer, "src": format!("series:sdg/A.PC.{geo}:{time}:OBS_VALUE"), "table": "sdg", "time": time})
     }
 
+    /// A type measurement as the bake gives it (type-contrast.js), every text at or above the floors.
+    fn typed() -> Value {
+        json!({"min_font_px": 12, "min_contrast_body": 7.2, "min_contrast_large": 3.4, "texts": 40, "below": []})
+    }
+
     /// A page that drops nothing, is given no strip and whose layers print no row twice passes every check, each named with
     /// what it measured.
     #[test]
     fn a_page_with_nothing_dropped_or_drawn_twice_passes_every_page_check() {
         let drawn = [drawn_row("map", "SE", "2024"), drawn_row("ring", "SE", "2025-01")];
-        let checks = page_checks(recipe("ring"), Some("<body></body>"), &[], false, &drawn);
+        let checks = page_checks(recipe("ring"), Some("<body></body>"), &[], false, &drawn, Some(&typed()));
         let got: Vec<(&str, bool)> = checks.iter().map(|c| (c.name, c.passed)).collect();
-        assert_eq!(got, [("notes_dropped", true), ("strip_placed", true), ("same_numbers_twice", true)]);
+        assert_eq!(
+            got,
+            [("notes_dropped", true), ("strip_placed", true), ("same_numbers_twice", true), ("type_size", true), ("text_contrast", true)]
+        );
         assert_eq!(checks[0].measured, json!({"count": 0, "items": []}));
         assert_eq!(checks[1].measured, json!({"asked": false, "placed": false}));
         assert_eq!(checks[2].measured, json!({"pairs": []}));
+        assert_eq!(checks[3].measured, json!({"min_font_px": 12, "floor_px": 11.0, "texts": 40, "below": []}));
+        assert_eq!(
+            checks[4].measured,
+            json!({"min_contrast_body": 7.2, "min_contrast_large": 3.4, "floor_body": 4.5, "floor_large": 3.0, "texts": 40, "below": []})
+        );
+    }
+
+    /// The type floors: a text under 11 px fails type_size, a body text under 4.5:1 or a large one under 3:1 fails
+    /// text_contrast, each naming the texts the bake listed; a page with no large text (or no body text) passes on the other
+    /// kind; a measurement of no text fails both, and with no measurement both fail, measured {"measured": false}.
+    #[test]
+    fn a_page_below_the_type_floors_or_unmeasured_fails_type_size_and_text_contrast() {
+        let with = |key: &str, v: Value| {
+            let mut t = typed();
+            t[key] = v;
+            let checks = page_checks(recipe("column"), Some("<body></body>"), &[], false, &[], Some(&t));
+            assert_eq!((checks[3].name, checks[4].name), ("type_size", "text_contrast"));
+            (checks[3].passed, checks[4].passed)
+        };
+        assert_eq!(with("min_font_px", json!(10.5)), (false, true));
+        assert_eq!(with("min_font_px", json!(11)), (true, true));
+        assert_eq!(with("min_contrast_body", json!(4.48)), (true, false));
+        assert_eq!(with("min_contrast_body", json!(4.5)), (true, true));
+        assert_eq!(with("min_contrast_large", json!(2.9)), (true, false));
+        assert_eq!(with("min_contrast_large", Value::Null), (true, true));
+        assert_eq!(with("min_contrast_body", Value::Null), (true, true));
+        assert_eq!(with("min_font_px", Value::Null), (false, true));
+        assert_eq!(with("min_contrast_body", json!("4.6")), (true, false));
+        assert_eq!(with("texts", json!(0)), (false, false));
+        let mut small = typed();
+        small["min_font_px"] = json!(9);
+        small["below"] = json!(["注 9px 12:1 bars"]);
+        let checks = page_checks(recipe("column"), Some("<body></body>"), &[], false, &[], Some(&small));
+        assert_eq!(checks[3].measured["below"], json!(["注 9px 12:1 bars"]));
+        assert_eq!(checks[4].measured["below"], json!(["注 9px 12:1 bars"]));
+        let unmeasured = page_checks(recipe("column"), Some("<body></body>"), &[], false, &[], None);
+        for check in &unmeasured[3..] {
+            assert_eq!((check.passed, &check.measured), (false, &json!({"measured": false})), "{check:?}");
+        }
+        assert!(unmeasured[..3].iter().all(|c| c.passed), "{unmeasured:?}");
     }
 
     /// A short note a layer dropped fails notes_dropped, which counts and names each one.
     #[test]
     fn a_dropped_note_fails_notes_dropped_with_its_count() {
         let dropped = [("dropped:leader_notes:SE".to_string(), "no free place".to_string())];
-        let checks = page_checks(recipe("column"), Some("<body></body>"), &dropped, false, &[]);
+        let checks = page_checks(recipe("column"), Some("<body></body>"), &dropped, false, &[], Some(&typed()));
         assert_eq!((checks[0].name, checks[0].passed), ("notes_dropped", false));
         assert_eq!(checks[0].measured, json!({"count": 1, "items": ["dropped:leader_notes:SE"]}));
         assert!(checks[1..].iter().all(|c| c.passed), "{checks:?}");
@@ -6929,14 +7021,14 @@ for line in sys.stdin:
     /// recipe that places no strip is not held to one it was given.
     #[test]
     fn a_column_page_given_a_strip_fails_strip_placed_unless_its_html_holds_it() {
-        let missing = page_checks(recipe("column"), Some("<body><svg></svg></body>"), &[], true, &[]);
+        let missing = page_checks(recipe("column"), Some("<body><svg></svg></body>"), &[], true, &[], Some(&typed()));
         assert_eq!((missing[1].name, missing[1].passed), ("strip_placed", false));
         assert_eq!(missing[1].measured, json!({"asked": true, "placed": false}));
-        let unread = page_checks(recipe("column"), None, &[], true, &[]);
+        let unread = page_checks(recipe("column"), None, &[], true, &[], Some(&typed()));
         assert!(!unread[1].passed);
-        let held = page_checks(recipe("column"), Some(r#"<div class="illus-strip"><svg><g data-layer="illus_strip"></g></svg></div>"#), &[], true, &[]);
+        let held = page_checks(recipe("column"), Some(r#"<div class="illus-strip"><svg><g data-layer="illus_strip"></g></svg></div>"#), &[], true, &[], Some(&typed()));
         assert_eq!((held[1].passed, &held[1].measured), (true, &json!({"asked": true, "placed": true})));
-        let ring = page_checks(recipe("ring"), Some("<body></body>"), &[], true, &[]);
+        let ring = page_checks(recipe("ring"), Some("<body></body>"), &[], true, &[], Some(&typed()));
         assert_eq!((ring[1].passed, &ring[1].measured), (true, &json!({"asked": false, "placed": false})));
     }
 
@@ -6945,7 +7037,7 @@ for line in sys.stdin:
     #[test]
     fn two_layers_printing_the_same_rows_fail_same_numbers_twice() {
         let drawn = [drawn_row("map", "SE", "2024"), drawn_row("map", "BE", "2024"), drawn_row("ring", "SE", "2024"), drawn_row("ring", "SE", "2025")];
-        let checks = page_checks(recipe("ring"), Some("<body></body>"), &[], false, &drawn);
+        let checks = page_checks(recipe("ring"), Some("<body></body>"), &[], false, &drawn, Some(&typed()));
         assert_eq!((checks[2].name, checks[2].passed, &checks[2].warning), ("same_numbers_twice", false, &None));
         assert_eq!(
             checks[2].measured,
@@ -6959,7 +7051,7 @@ for line in sys.stdin:
     fn the_pair_the_column_recipe_declares_passes_same_numbers_twice_with_a_warning() {
         assert_eq!(recipe("column").same_measure, [("bars".to_string(), "bubbles".to_string())]);
         let drawn: Vec<Value> = ["bubbles", "bars"].iter().flat_map(|l| ["SE", "BE"].map(|g| drawn_row(l, g, "2025"))).collect();
-        let checks = page_checks(recipe("column"), Some("<body></body>"), &[], false, &drawn);
+        let checks = page_checks(recipe("column"), Some("<body></body>"), &[], false, &drawn, Some(&typed()));
         assert!(checks[2].passed, "{checks:?}");
         assert!(checks[2].warning.as_deref().is_some_and(|w| w.contains("the column recipe declares")), "{checks:?}");
         assert_eq!(
@@ -6974,7 +7066,7 @@ for line in sys.stdin:
     fn a_pair_its_recipe_does_not_declare_fails_same_numbers_twice() {
         let twice = |r: &str, layers: [&str; 2]| {
             let drawn: Vec<Value> = layers.iter().map(|l| drawn_row(l, "SE", "2025")).collect();
-            page_checks(recipe(r), Some("<body></body>"), &[], false, &drawn).remove(2)
+            page_checks(recipe(r), Some("<body></body>"), &[], false, &drawn, Some(&typed())).remove(2)
         };
         assert!(recipe("ring").same_measure.is_empty());
         for (r, layers) in [("ring", ["bars", "bubbles"]), ("column", ["bars", "leader_notes"]), ("column", ["bubbles", "leader_notes"])] {
@@ -7001,7 +7093,7 @@ for line in sys.stdin:
         assert_eq!(of("bars").len(), picks.ranked.len(), "{drawn:?}");
         assert_eq!(of("bars"), of("bubbles"));
         assert!(of("leader_notes").is_empty(), "{drawn:?}");
-        let checks = page_checks(recipe("column"), Some("<body></body>"), &[], false, drawn);
+        let checks = page_checks(recipe("column"), Some("<body></body>"), &[], false, drawn, Some(&typed()));
         assert_eq!(checks[2].measured["pairs"][0]["layers"], json!(["bars", "bubbles"]));
     }
 
@@ -7020,8 +7112,14 @@ for line in sys.stdin:
         assert_eq!((checks[0]["by"].as_str(), checks[0]["recipe"].as_str()), (Some(RING_ACTOR), Some("column")));
         let got: Vec<(&str, bool)> =
             checks[0]["checks"].as_array().unwrap().iter().map(|c| (c["name"].as_str().unwrap(), c["passed"] == true)).collect();
-        assert_eq!(got, [("notes_dropped", true), ("strip_placed", true), ("same_numbers_twice", true)]);
+        assert_eq!(
+            got,
+            [("notes_dropped", true), ("strip_placed", true), ("same_numbers_twice", true), ("type_size", true), ("text_contrast", true)]
+        );
         assert_eq!(checks[0]["checks"][2]["measured"]["pairs"][0]["known"], true);
+        // the bake twin's type, carried from the bake to the event
+        assert_eq!(checks[0]["checks"][3]["measured"]["min_font_px"], 12, "{:?}", checks[0]);
+        assert_eq!(checks[0]["checks"][4]["measured"]["min_contrast_body"], 12.63, "{:?}", checks[0]);
         assert_eq!(checks[0]["checks"][2]["measured"]["pairs"][0]["declared_by"], "column");
         assert!(checks[0]["checks"][2]["warning"].as_str().is_some_and(|w| w.contains("column")), "{:?}", checks[0]);
         assert_eq!((&checks[0]["checks"][0]["warning"], &checks[0]["checks"][1]["warning"]), (&Value::Null, &Value::Null));

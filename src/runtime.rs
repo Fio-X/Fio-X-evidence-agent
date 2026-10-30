@@ -442,6 +442,7 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
         (runtime_dir.join("leaves_py/text-line-clash.js"), include_str!("../runtime/leaves_py/text-line-clash.js")),
         (runtime_dir.join("leaves_py/text-line-hits.js"), include_str!("../runtime/leaves_py/text-line-hits.js")),
         (runtime_dir.join("leaves_py/tokens.css"), include_str!("../runtime/leaves_py/tokens.css")),
+        (runtime_dir.join("leaves_py/type-contrast.js"), include_str!("../runtime/leaves_py/type-contrast.js")),
         (runtime_dir.join("leaves_py/wbkit.py"), include_str!("../runtime/leaves_py/wbkit.py")),
         (runtime_dir.join("leaves_py/words.py"), include_str!("../runtime/leaves_py/words.py")),
         (runtime_dir.join("leaves_py/words.zh.json"), include_str!("../runtime/leaves_py/words.zh.json")),

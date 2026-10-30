@@ -1,9 +1,10 @@
 """Bake: one page laid out once in headless Chrome, its layout scripts run and then dropped, so the page keeps only the
-renderer's ready script. One JSON line in {"html", "ready", "width"}, one line out {"html", "ms"} or {"error"}.
+renderer's ready script. One JSON line in {"html", "ready", "width"}, one line out {"html", "ms", "type"} or {"error"}.
 The page is opened from a local file with every host unresolvable and, while it bakes, a content policy that blocks every
 request it would make; each blocked request is left on the page as a mark and any mark is an error, never let through.
 Once laid out, the page's text is checked where Chrome put it (QA below: out of its svg, over another text, on a line, over a
 box edge, past the page's width), html layers included; any finding is an error, but for the two the line rule lets through (LINE_RULE).
+Every text's size and contrast are measured there too and returned as "type", for layer 1 to hold to its floors (TYPE below).
 Layer 1 compares the texts before and after (next_leaf::bake)."""
 import hashlib, json, os, re, shutil, subprocess, sys, tempfile, time
 from html import unescape as html_unescape
@@ -34,11 +35,17 @@ CHARSET = '<meta charset="utf-8">'
 #     qa-layers.js's line test kept per path, the same way: its findings must equal qa-layers.js's line findings one for one.
 #   page-width.js: this repo's own (not the prototype's): a text laid out past the page's content box, left or right, html
 #     and svg alike (a big number running past the page passed every check above).
+#   type-contrast.js: this repo's own: every visible text's size as rendered and its contrast with what is drawn under it
+#     (WCAG 2.x), measured and not judged here: its result is the bake's "type" (TYPE), which layer 1 holds to its floors
+#     (next_run page_checks); a check that fails or leaves no result is a bake error, never a page let through unmeasured.
 QA = {"qa.js": "226ea0d3d9c9897f9e51c113de2af2fdb95c40f99f01515dc3018c2e9becc218",
       "qa-layers.js": "3fa54e3d6cf17818d3042bb2b6e31dbbb7ed7d5f2a268547e6417aee24a2f26d",
       "text-line-clash.js": "130b7d0fa07d606b9115b587a89516a7b078a970735d7294227acae68f220ef4",
       "text-line-hits.js": "34a93b56c7ce40783bb7d904cfc99306cdabb8e6a67e97e0143aa881fa826563",
-      "page-width.js": "157b1eb25ccbedf7a34c4b85d5af90089eba5da85d5b9b6b10f4c1ba70ebc641"}
+      "page-width.js": "157b1eb25ccbedf7a34c4b85d5af90089eba5da85d5b9b6b10f4c1ba70ebc641",
+      "type-contrast.js": "7cf3d791e35659d4128bbe5a4da025d0ad407a355d3891827ba1c48fc956b57f"}
+# The keys of type-contrast.js's result, each of which the bake's "type" must hold.
+TYPE = ("min_font_px", "min_contrast_body", "min_contrast_large", "texts", "below")
 BASE = "map.base"  # the base map's layer: its borders and coastlines are background (the sea box's edge is not)
 
 def own(h):
@@ -92,6 +99,7 @@ def checks():
             f'try{{mark("data-bake-lines",({src["text-line-clash.js"]})())}}catch(e){{add("line: failed: "+e)}}'
             f'try{{mark("data-bake-hits",({src["text-line-hits.js"]})())}}catch(e){{add("line hits: failed: "+e)}}'
             f'try{{var r=({src["page-width.js"]})();if(r!=="clean")r.split("\\n").forEach(function(s){{add("page: "+s)}})}}catch(e){{add("page: failed: "+e)}}'
+            f'try{{mark("data-bake-type",({src["type-contrast.js"]})())}}catch(e){{add("type: failed: "+e)}}'
             'f.forEach(function(s){mark("data-bake-qa",s)});mark("data-bake-qa-ran","1")},1500)})</script>')
 
 def chrome(env=None):
@@ -156,11 +164,16 @@ def bake(req):
         except ValueError as e: return {"error": str(e)}
     elif not found: return {"error": "the line checks left no result on the laid-out page"}
     if found: return {"error": f"the laid-out page has {len(found)} layout finding(s): " + "; ".join(found[:6])}
-    dom = re.sub(r'<meta data-bake-(?:qa-ran|lines|hits|layers)="[^"]*">', "", dom)
+    typed = got("data-bake-type")
+    try: measured = json.loads(typed[0]) if len(typed) == 1 else None
+    except ValueError: measured = None
+    if not isinstance(measured, dict) or any(k not in measured for k in TYPE):
+        return {"error": "the type check left no result on the laid-out page"}
+    dom = re.sub(r'<meta data-bake-(?:qa-ran|lines|hits|layers|type)="[^"]*">', "", dom)
     dom = re.sub(r'<meta data-bake="1"[^>]*>', "", dom, count=1)
     kept = re.sub(r"<script\b[^>]*>(.*?)</script>", lambda m: m.group(0) if m.group(1) == req["ready"] else "", dom, flags=re.S)
     lead = "<!doctype html>" if req["html"].lstrip()[:15].lower() == "<!doctype html>" else ""
-    return {"html": lead + kept, "ms": ms}
+    return {"html": lead + kept, "ms": ms, "type": measured}
 
 if __name__ == "__main__":
     for line in sys.stdin:

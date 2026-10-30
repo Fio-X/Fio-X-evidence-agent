@@ -175,12 +175,13 @@ pub struct LeafPage<'a> {
 }
 
 /// A leaf page drawn and baked: the baked page, the one the browser check and the manifest are to name, the leaf child's
-/// records, and a ledger entry (src, text; next_ledger::dropped_entry, never printed) for each thing a layer dropped, which
-/// the flow keeps with the page's request.
+/// records, a ledger entry (src, text; next_ledger::dropped_entry, never printed) for each thing a layer dropped, which
+/// the flow keeps with the page's request, and what the bake measured of its type (next_leaf::Baked).
 pub struct LeafDrawn {
     pub html: String,
     pub records: Vec<Record>,
     pub dropped: Vec<(String, String)>,
+    pub type_measured: Option<Value>,
 }
 
 /// A leaf page as LeafFill built it, owned but for the layer names: the flow lends it as a LeafPage with its draw and bake
@@ -378,6 +379,7 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
                 html: baked.html,
                 records,
                 dropped: panel.dropped.iter().map(|d| dropped_entry(&d.layer, &d.id, &d.why)).collect(),
+                type_measured: baked.type_measured,
             })
         }
         Request::LeafFill { recipe, rows, knobs, order, runtime } => Reply::Filled(fill(recipe, rows, knobs, order, runtime)?),

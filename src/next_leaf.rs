@@ -1246,6 +1246,10 @@ fn read(html: &str) -> Result<Read, String> {
 pub struct Baked {
     pub html: String,
     pub ms: u128,
+    /// What the bake's type check (runtime/leaves_py/type-contrast.js) measured on the laid-out page: {min_font_px,
+    /// min_contrast_body, min_contrast_large, texts, below}, held to its floors by the page checks (next_run page_checks).
+    /// None when the reply holds no such object, which those checks fail.
+    pub type_measured: Option<Value>,
 }
 
 pub fn bake(runner: &Runner, html: &str, ready: &str, width: u32) -> Result<Baked, String> {
@@ -1299,6 +1303,7 @@ pub fn bake(runner: &Runner, html: &str, ready: &str, width: u32) -> Result<Bake
     Ok(Baked {
         html: baked,
         ms: started.elapsed().as_millis(),
+        type_measured: Some(reply["type"].clone()).filter(Value::is_object),
     })
 }
 
@@ -1610,6 +1615,7 @@ mod tests {
         let twin = Runner::python(Path::new("fixtures/next_leaf/bake_twin.py"));
         let baked = bake(&twin, LAID, "READY", 1440).unwrap();
         assert!(!baked.html.contains("layout()") && baked.html.contains("<script>READY</script>"));
+        assert!(baked.type_measured.as_ref().is_some_and(|t| t["below"] == json!([])), "{:?}", baked.type_measured);
         assert!(baked.html.contains("<path"));
         let tampered = format!("{LAID}<!--tamper-->");
         let why = bake(&twin, &tampered, "READY", 1440).err().unwrap();
@@ -1642,6 +1648,9 @@ mod tests {
         assert_eq!(baked.html.matches("<script").count(), 1);
         assert!(baked.html.contains(&format!("<script>{ready}</script>")));
         assert!(!baked.html.contains("data-bake"));
+        // the type check measured the one text, black on white at the default size
+        let typed = baked.type_measured.as_ref().expect("the bake's type");
+        assert_eq!((&typed["texts"], &typed["min_font_px"], &typed["min_contrast_body"]), (&json!(1), &json!(16), &json!(21)));
         let asks = page.replace("<svg>", "<img src=\"http://example.invalid/a.png\"><svg>");
         let why = bake(&real, &asks, ready, 1440).err().unwrap();
         assert_eq!(why, "bake: the page asked for http://example.invalid/a.png");

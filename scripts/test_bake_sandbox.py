@@ -1,7 +1,8 @@
 """Self-test of how the bake starts Chrome (runtime/leaves_py/bake.py command, sandboxed): Chrome keeps its own sandbox
 unless this process is already inside an OS sandbox, and only then is it started with --no-sandbox; every other flag, the
 guard among them, is the same both ways. On macOS a child started under sandbox-exec finds itself sandboxed. With a Chrome
-installed, the page-width check bakes two small pages: a text past the page's box and a page with no box both fail.
+installed, the page-width check bakes two small pages: a text past the page's box and a page with no box both fail; and the
+type check measures each text's size as rendered and its contrast with what is drawn under it, returned as the bake's "type".
 Run: python3 -I -B scripts/test_bake_sandbox.py"""
 import os
 import shutil
@@ -78,6 +79,43 @@ class PageWidth(unittest.TestCase):
     def test_a_page_with_no_page_box_fails_instead_of_passing(self):
         got = self.baked('<div class="main"><p>标题</p></div>')
         self.assertIn("page: no page box (.pg) to check the width against", got.get("error", ""))
+
+
+@unittest.skipUnless(bake.chrome(), "no Chrome to bake in")
+class TypeContrast(unittest.TestCase):
+    def typed(self, body):
+        got = bake.bake({"html": f'<!doctype html><meta charset="utf-8"><body style="margin:0"><div class="pg" style="width:1200px">{body}</div></body>', "ready": "", "width": 1440})
+        self.assertIn("type", got, got.get("error"))
+        self.assertNotIn("data-bake", got["html"])
+        return got["type"]
+
+    def test_black_text_on_white_is_measured_and_passes(self):
+        got = self.typed('<p style="font-size:16px;color:#000">标题</p>')
+        self.assertEqual(got, {"min_font_px": 16, "min_contrast_body": 21, "min_contrast_large": None, "texts": 1, "below": []})
+
+    def test_small_and_pale_texts_are_listed_with_their_layer(self):
+        got = self.typed('<div data-layer="notes"><p style="font-size:10px">小字</p><p style="font-size:14px;color:#777">灰字</p>'
+                         '<h1 style="font-size:30px;color:#bbb">大标题</h1></div>')
+        self.assertEqual((got["min_font_px"], got["min_contrast_body"], got["min_contrast_large"], got["texts"]), (10, 4.48, 1.92, 3))
+        self.assertEqual(got["below"], ["小字 10px 21:1 notes", "灰字 14px 4.48:1 notes", "大标题 30px 1.92:1 notes"])
+
+    def test_svg_text_is_sized_as_rendered_and_read_against_the_shape_under_it(self):
+        # the viewBox halves every size; the dark text sits on the dark box, the halo text on its own white stroke
+        got = self.typed('<svg width="600" height="300" viewBox="0 0 1200 600" data-layer="map"><rect width="1200" height="600" fill="#123456"/>'
+                         '<text x="20" y="60" font-size="28" fill="#fff">白字</text><text x="20" y="160" font-size="28" fill="#1a3a5a">暗字</text>'
+                         '<text x="20" y="260" font-size="40" fill="#000" stroke="#fff" stroke-width="6" paint-order="stroke">晕</text></svg>')
+        self.assertEqual((got["min_font_px"], got["min_contrast_body"], got["texts"]), (14, 1.09, 3))
+        self.assertEqual(got["below"], ["暗字 14px 1.09:1 map"])
+
+    def test_hidden_texts_are_not_measured_and_a_low_one_is_scrolled_to(self):
+        got = self.typed('<p style="display:none;font-size:8px">藏</p><p style="visibility:hidden;font-size:8px">藏</p>'
+                         '<p style="opacity:0;font-size:8px">藏</p><div style="height:2000px"></div><p style="color:#999;background:#eee">底部</p>')
+        self.assertEqual((got["texts"], got["below"]), (1, ["底部 16px 2.46:1 -"]))
+
+    def test_a_type_check_with_no_result_is_a_bake_error(self):
+        with mock.patch.object(bake, "TYPE", bake.TYPE + ("missing",)):
+            got = bake.bake({"html": '<!doctype html><meta charset="utf-8"><div class="pg"><p>标题</p></div>', "ready": "", "width": 800})
+        self.assertEqual(got, {"error": "the type check left no result on the laid-out page"})
 
 
 if __name__ == "__main__":

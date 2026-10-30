@@ -2652,6 +2652,8 @@ pub struct Published {
     pub html_sha256: String,
     /// What the layers dropped (next_ledger::dropped_entry: src, why), as kept in the request's ledger, for the run's event.
     pub dropped: Vec<(String, String)>,
+    /// What the bake measured of the page's type (next_leaf::Baked), for the page checks; none, both of them fail.
+    pub type_measured: Option<Value>,
 }
 
 /// The leaf page published at publications/<slug>/ of the run folder at `root`. The visual group draws and bakes it; its
@@ -2721,7 +2723,7 @@ pub fn publish_leaf_page(
         write(root, &dir.join("manifest.json"), text)
     })
     .map_err(io)?;
-    Ok(Published { html_ref, html_sha256, dropped: drawn.dropped })
+    Ok(Published { html_ref, html_sha256, dropped: drawn.dropped, type_measured: drawn.type_measured })
 }
 
 fn matched_reply(reply: Result<next_visual::Reply, String>) -> Matched {
