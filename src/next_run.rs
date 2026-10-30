@@ -1918,8 +1918,9 @@ fn fill_of(
     hero.insert("unit".into(), json!(std::iter::once(format!("单位：{short}")).chain(notes).collect::<Vec<_>>().join("；")));
     fmts.insert("time".into(), json!({}));
     let mut tables = Map::new();
+    // each table's id as the source line prints it (printed_id), the one id of it the footer marks and the page check takes
     for t in [&shape.main, &shape.companion].into_iter().filter(|t| !t.is_empty()) {
-        tables.insert(t.clone(), json!({"id": t}));
+        tables.insert(t.clone(), json!({"id": printed_id(t)}));
     }
     // the page's scope (the aggregate the drawn places are members of, from the data) is named from the name table like
     // any place; with no reviewed name for it, or no count of the places drawn, the unit line names no scope
@@ -2246,15 +2247,20 @@ fn measure_of(
     }
 }
 
-/// A chart's source line: the publisher the catalogue files the table under, its id (a World Bank indicator without its
-/// "@2") and title (its reviewed Chinese name where the knowledge group has one, Catalogue::table_zh; else as listed), and
+/// A table's dataset id as a page names it: a World Bank indicator without its "@2" (SP.POP.65UP.TO.ZS@2 prints as
+/// SP.POP.65UP.TO.ZS), a Eurostat id as it is. The source line prints it, and the spec's table list gives it as the table's
+/// id (fill_of), which next_facts::leaf_refs takes as the id the leaf footer marks and the page check accepts: one string.
+fn printed_id(id: &str) -> &str {
+    id.split('@').next().unwrap_or(id)
+}
+
+/// A chart's source line: the publisher the catalogue files the table under, its id (printed_id) and title (its reviewed Chinese name where the knowledge group has one, Catalogue::table_zh; else as listed), and
 /// the years the chart draws, e.g. "欧盟统计局 sdg_07_40「Share of …」，2025 年". A title that holds a digit (any numeric
 /// character, Nd/Nl/No, as the leaf footer counts one: "65 岁及以上人口") is left out, since the leaf footer
 /// (scmp.footer) refuses a digit outside the table ids spec.refs marks; the id still names the table.
 fn source_line(worldbank: bool, id: &str, title: &str, times: &[String]) -> String {
     let publisher = publisher(worldbank);
-    let id = id.split('@').next().unwrap_or(id);
-    let mut line = format!("{publisher} {id}");
+    let mut line = format!("{publisher} {}", printed_id(id));
     if !title.trim().is_empty() && !title.chars().any(char::is_numeric) {
         line.push_str(&format!("「{}」", title.trim()));
     }
@@ -3311,7 +3317,7 @@ pub fn ranking_page_spec(
             key,
         });
     }
-    let id = table_id.split('@').next().unwrap_or(table_id).to_string();
+    let id = printed_id(table_id).to_string();
     let unit = unit_seg(
         &id,
         measure.unit_code.as_deref(),
@@ -5120,6 +5126,117 @@ mod tests {
         let ledger: BTreeMap<String, String> = serde_json::from_value(back["ledger"].take()).unwrap();
         let refs: Vec<String> = serde_json::from_value(back["refs"].take()).unwrap();
         assert_eq!(crate::next_leaf::check_leaf_page(&html, &ledger, &refs, &spec, &rows, &facts), Vec::<String>::new());
+    }
+
+    /// A World Bank table's page (its id SP.POP.65UP.TO.ZS@2, as the catalogue names it) under the source line the flow
+    /// writes for it ("世界银行 SP.POP.65UP.TO.ZS", the id as it prints, its title with a digit left out): drawn by the real
+    /// leaf child as a change page and as a column page, baked and checked by the twins and published, the footer marking
+    /// the printed id as the one table id the page names; the page read back passes the whole-page check with its refs. A
+    /// digit beside the id in the source line still refuses at the footer.
+    #[test]
+    fn a_world_bank_table_s_page_marks_the_id_its_source_line_prints() {
+        let table = "SP.POP.65UP.TO.ZS@2";
+        let line = source_line(true, table, "65 岁及以上人口占比", &[]);
+        assert_eq!(line, "世界银行 SP.POP.65UP.TO.ZS");
+        // the World Bank table as WbTable lists it (CHN, IND, USA; the unit wb-units.tsv registers for it), named as Hubs names
+        struct WbNamed;
+        impl Catalogue for WbNamed {
+            fn top5(&self, _: &str, _: &[String]) -> crate::l5geo::Ranking {
+                unreachable!()
+            }
+            fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
+                unreachable!()
+            }
+            fn source(&self) -> &Value {
+                &Value::Null
+            }
+            fn table(&self, id: &str) -> Option<crate::l5geo::TableMeta> {
+                WbTable { unit: Some("PC_POP"), listed: true }.table(id)
+            }
+            fn countries(&self, codes: &[String]) -> Result<Vec<String>, String> {
+                Hubs.countries(codes)
+            }
+            fn zh_names(&self, scheme: &str, codes: &[String]) -> Result<BTreeMap<String, String>, Vec<String>> {
+                Hubs.zh_names(scheme, codes)
+            }
+            fn members(&self, aggregate: &str) -> Result<Vec<String>, String> {
+                Hubs.members(aggregate)
+            }
+        }
+        let publish = |name: &str, years: &[&str], source: &str| -> Result<(String, Vec<String>), String> {
+            let r = recipe(name);
+            let mut main = Vec::new();
+            for (i, place) in ["CHN", "IND", "USA"].iter().enumerate() {
+                for (j, time) in years.iter().enumerate() {
+                    main.push(json!({"src": format!("series:{table}/{place}:{time}:value"), "table": table,
+                        "dims": {"country": place}, "time": time, "value": format!("{}.5", 10 + 3 * i + j)}));
+                }
+            }
+            let shape = shape_of(&r.eats, &[(table, &main[..])], &WbNamed).unwrap();
+            let picks = picks_of(&r.picks, &shape, &main, &[]).unwrap();
+            let mut fill = fill_of(r, &shape, &picks, (&main, &[]), &WbNamed, ("标题", "导语")).unwrap();
+            fill["knobs"]["shapes"] = json!("runtime/pi/assets/naturalearth-admin0-50m.geojson");
+            fill["knobs"]["spec"]["kicker"] = json!("栏目");
+            fill["knobs"]["spec"]["source"] = json!(source);
+            let order: Vec<String> = fill["order"].as_array().unwrap().iter().filter_map(|l| l.as_str().map(str::to_string)).collect();
+            let calls = std::sync::Mutex::new(Vec::new());
+            let request = crate::next_visual::Request::LeafFill {
+                recipe: name,
+                rows: fill["rows"].as_array().unwrap(),
+                knobs: &fill["knobs"],
+                order: &order,
+                runtime: Path::new("runtime"),
+            };
+            let page = match crate::next_flow::visual_call(&calls, "leaf_fill", request) {
+                Ok(crate::next_visual::Reply::Filled(page)) => page,
+                Ok(_) => panic!("not a filled page"),
+                Err(e) => panic!("leaf fill: {e}"),
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let bundle = {
+                let _command = crate::group_guard::command_for_test("investigate");
+                crate::artifact::InvestigationBundle::create(dir.path(), "leaf page").unwrap()
+            };
+            let _command = crate::group_guard::command_for_test("investigate");
+            let _doors = crate::group_guard::doors_for_test(true);
+            let bake = crate::next_leaf::Runner::python(Path::new("fixtures/next_leaf/bake_twin.py"));
+            let mut qa = crate::next_leaf::Runner::python(Path::new("fixtures/next_visual/qa_twin.py"));
+            qa.args.push("pass".into());
+            let leaf = crate::next_visual::LeafPage {
+                draw: &page.draw,
+                bake: &bake,
+                w: page.w,
+                h: page.h,
+                frame: page.frame.clone(),
+                layers: &page.layers,
+                ledger: &page.ledger,
+                refs: &page.refs,
+                facts: (&page.spec, &page.rows, &page.facts),
+                strip: None,
+            };
+            let plan = json!({"kind": "leaf_plan", "recipe": name});
+            let published = crate::next_flow::publish_leaf_page(&calls, &bundle.dir, name, (&leaf, &plan), &qa)?;
+            let html = std::fs::read_to_string(bundle.dir.join(&published.html_ref)).unwrap();
+            let text = std::fs::read_to_string(bundle.dir.join("publications").join(name).join(crate::next_flow::LEAF_REQUEST)).unwrap();
+            let mut back: Value = serde_json::from_str(&text).unwrap();
+            let spec: crate::next_facts::Spec = serde_json::from_value(back["spec"].take()).unwrap();
+            let rows: Vec<crate::next_facts::Row> = serde_json::from_value(back["rows"].take()).unwrap();
+            let facts: Vec<crate::next_facts::Fact> = serde_json::from_value(back["facts"].take()).unwrap();
+            let ledger: BTreeMap<String, String> = serde_json::from_value(back["ledger"].take()).unwrap();
+            let refs: Vec<String> = serde_json::from_value(back["refs"].take()).unwrap();
+            assert_eq!(crate::next_leaf::check_leaf_page(&html, &ledger, &refs, &spec, &rows, &facts), Vec::<String>::new());
+            Ok((html, refs))
+        };
+        for (name, years) in [("change", &["2016", "2025"][..]), ("column", &["2025"][..])] {
+            let (html, refs) = publish(name, years, &line).unwrap_or_else(|e| panic!("{name}: {e}"));
+            assert_eq!(refs, ["SP.POP.65UP.TO.ZS"], "{name}");
+            assert!(html.contains(r#"世界银行 <span data-ref="">SP.POP.65UP.TO.ZS</span>"#), "{name}: the footer marks the printed id");
+            // a digit outside the id still refuses, whether a year beside it or the id with its catalogue suffix
+            for stray in [format!("{line}，2016 年"), format!("世界银行 {table}")] {
+                let why = publish(name, years, &stray).unwrap_err();
+                assert!(why.contains("footer: the source holds a digit outside the table ids spec.refs names"), "{name} {stray}: {why}");
+            }
+        }
     }
 
     /// The q6 shape (asylum applicants by citizenship into the EU, one year) in registry order: the ring refuses it for its
