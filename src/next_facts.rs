@@ -40,8 +40,10 @@ pub fn table_id(t: &str) -> bool {
         Some(id) => (id, true),
         None => (t, false),
     };
+    // a dot only parts a World Bank id into non-empty pieces ("cities.csv@2", "X.@2" and "a..b@2" are none)
     id.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
         && id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-') || (dot && c == '.'))
+        && id.split('.').all(|part| !part.is_empty())
 }
 
 /// The table ids a leaf page may name in its sources: the dataset id each table of the request was read from (`"id"` in
@@ -2073,6 +2075,7 @@ mod tests {
         // a World Bank table by its catalogue name; a dot only with the World Bank's mark, never a path
         assert!(table_id("EN.GHG.CO2.PC.CE.AR5@2") && table_id("SP.POP.65UP.TO.ZS@2"));
         assert!(!table_id("cities.csv") && !table_id("data/cities.csv@2") && !table_id("@2") && !table_id("EN.X@3"));
+        assert!(!table_id("X.@2") && !table_id("a..b@2") && !table_id("EN.@2"));
         let mut path = rows.clone();
         path.push(row("data/mo.csv", "X", "2021-01", 1.0));
         assert_eq!(leaf_ledger(&s, &path, &facts).err().unwrap(), "series table data/mo.csv: its name must be a table id");

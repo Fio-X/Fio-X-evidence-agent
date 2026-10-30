@@ -4247,9 +4247,9 @@ mod tests {
             ]
         );
         // the same list comes back with the publication, for the run's RING_EVENT (in drawing order; the ledger is keyed)
-        let mut kept: Vec<(&String, &Value)> = published.dropped.iter().map(|(what, _)| (what, &request["ledger"][what])).collect();
+        let mut kept: Vec<(&String, Value)> = published.dropped.iter().map(|(what, why)| (what, json!(why))).collect();
         kept.sort_by_key(|(what, _)| *what);
-        assert_eq!(kept, dropped);
+        assert_eq!(kept, dropped.iter().map(|(what, why)| (*what, (*why).clone())).collect::<Vec<_>>());
     }
 
     /// The q1 shape's column page with the strip the visual group draws for a renewable-energy table (the real strip child,
