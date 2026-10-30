@@ -685,8 +685,8 @@ mod drive {
     /// stub (GoldAsker, test code only: the product's signatures and switches are as they are), the run folder under
     /// CF_WALK_DIR (a tmpd.sh folder). Prints "Q1WALK ..." lines, the last one the reading: the asks reached, the leaf page
     /// published or where it stuck, the completion gate's gaps on it ("gate 0 gaps, vision pending" when none and the vision
-    /// ask is reached), the seconds. A test reading, not a score: the stub gives no image verdict, so the walk never reads
-    /// VERIFIED; that comes only from a stand-in answering the vision ask on the real screenshot.
+    /// ask is reached), the seconds. A test reading, not a score: the stub stops at the image review, which is advice only;
+    /// a page verifies on the program's page checks of its bytes (verify.rs verify_publications), never on that review.
     ///
     ///     NEWS_CATALOG_DIR=.. NEWS_CLASSIFY_REFS=.. Q1WALK_GOLD=<gold-q1.json> NEXT_DRIVE_FETCH_FROM=<a finished q1 run> \
     ///     CF_WALK_DIR=<tmpd folder> cargo test --bins q1_walk -- --ignored --nocapture
@@ -746,8 +746,8 @@ mod drive {
             assert_eq!(again.as_deref(), Some(&gaps.iter().map(|g| g.to_string()).collect::<Vec<_>>()[..]), "flow gaps != completion gaps");
         }
         println!("Q1WALK stopped {}", stopped.chars().take(300).collect::<String>());
-        // the stub gives no image verdict: a page with no gap waits on the vision review, which only a stand-in that sees
-        // the screenshot answers
+        // the stub stops at the image review (advice only, answered by a stand-in that sees the screenshot): a page with no
+        // gap reads "vision pending"
         let gate = match last(crate::next_run::LEAF_GATE_EVENT) {
             Some(_) if gaps.is_empty() && model.asked.last().is_some_and(|s| s == "vision") => {
                 "gate 0 gaps, vision pending".to_string()

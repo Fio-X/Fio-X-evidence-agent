@@ -2656,8 +2656,9 @@ fn publication_vision_prompt(question: &str) -> String {
 /// read from disk and shown to the model with only the question (ask_step_alone: none of the run's history goes with it),
 /// which answers VISION_QUESTIONS yes or no. Each answer is recorded in a PUBLICATION_VISION_EVENT and the plan, as advice
 /// only: a no or an unanswered question neither stops the run nor holds the page back, and none verifies it (the program's
-/// page checks do, verify.rs verify_publications). Ok is the review's line for the run's answer; Err only when there is
-/// no screenshot to show or the model gives no review it can be read from.
+/// page checks do, verify.rs verify_publications). A reply refused in every round is the six unanswered, the run going on
+/// as with any review. Ok is the review's line for the run's answer; Err only when there is no screenshot to show, or the
+/// model gives no reply, fails or is cancelled.
 async fn leaf_vision(
     recorder: &mut Recorder<'_>,
     model: &mut (dyn Asker + '_),
@@ -2674,12 +2675,19 @@ async fn leaf_vision(
         return Err(stop("publication_vision", format!("{shot_ref} changed while it was read")));
     }
     let shot = json!({"type": "image", "data": base64_text(&bytes), "mimeType": "image/png"});
-    let Choice::Vision { answers } = recorder
+    let asked = recorder
         .ask_step_alone(model, &Ask::Vision, &publication_vision_prompt(question), std::slice::from_ref(&shot), cancel)
-        .await?
-        .1
-    else {
-        unreachable!("a vision check gives a vision choice")
+        .await;
+    let answers = match asked {
+        Ok((_, Choice::Vision { answers })) => answers,
+        Ok(_) => unreachable!("a vision check gives a vision choice"),
+        // a reply refused in every round is no verdict, and the review is advice: each question is recorded unanswered,
+        // under the last accepted model call, and the run goes on as with any review
+        Err(Stop::Refused { problem, .. }) if recorder.resume_under_last_accepted() => {
+            let why = format!("the reply was refused twice: {problem}");
+            VISION_QUESTIONS.iter().map(|(id, _)| (*id, Verdict::Unanswered { why: why.clone() })).collect()
+        }
+        Err(stopped) => return Err(stopped),
     };
     let ids = |word: &str| -> Vec<&str> { answers.iter().filter(|(_, v)| v.word() == word).map(|(id, _)| *id).collect() };
     let (yes, no, unanswered) = (ids("yes"), ids("no"), ids("unanswered"));
@@ -7210,6 +7218,46 @@ for line in sys.stdin:
             })
             .collect();
         std::fs::write(ran.run.join("events.jsonl"), failed.join("\n") + "\n").unwrap();
+        let gaps = crate::verify::publication_errors_of(&ran.run);
+        assert!(gaps.iter().any(|g| g.contains("no passing page checks of its bytes")), "{gaps:?}");
+    }
+
+    /// The image review never stops the run: a review reply refused in both rounds (no answers object) is recorded as the
+    /// six questions unanswered, naming the last refusal, hung under the last accepted model call; the page is published
+    /// as with any review, and verifies on its page checks alone.
+    #[tokio::test]
+    async fn a_published_leaf_page_whose_image_review_is_refused_twice_is_still_published_six_unanswered() {
+        let bad = || json!({"step": "vision", "answers": "looks fine"});
+        let ran = leaf_run_checked(Some(&headed_twin()), SDG_CSV, vec![call("toolu_r1", bad()), call("toolu_r2", bad())], "shot").await;
+        let answer = match &ran.result {
+            Ok(answer) => answer,
+            other => panic!("expected the page published past a refused review, got {other:?}"),
+        };
+        let ids: Vec<&str> = VISION_QUESTIONS.iter().map(|(id, _)| *id).collect();
+        assert!(
+            answer.ends_with(&format!("answered 0 of 6 yes; no: none; unanswered: {}.", ids.join(", "))),
+            "{answer}"
+        );
+        assert_eq!(ran.unasked, 0, "both rounds were asked");
+        let reviews: Vec<&Value> = ran.events.iter().filter(|e| e["type"] == PUBLICATION_VISION_EVENT).collect();
+        assert_eq!(reviews.len(), 1);
+        assert_eq!((&reviews[0]["yes"], &reviews[0]["no"], &reviews[0]["unanswered"]), (&json!(0), &json!(0), &json!(6)));
+        assert_eq!(reviews[0]["auto_parent_call_id"], "toolu_x", "under the text step, the last accepted call");
+        for (got, id) in reviews[0]["answers"].as_array().unwrap().iter().zip(&ids) {
+            assert_eq!((&got["id"], &got["answer"]), (&json!(id), &json!("unanswered")));
+            let why = got["why"].as_str().unwrap();
+            assert!(why.starts_with("the reply was refused twice: answers must map"), "{why}");
+        }
+        let plan: Value = serde_json::from_str(&std::fs::read_to_string(ran.run.join(PLAN_FILE)).unwrap()).unwrap();
+        assert_eq!(plan["steps"].as_array().unwrap().last().unwrap()["status"], "blocked", "{plan}");
+        assert!(ran.run.join("publications/column/index.html").is_file());
+        let lines: Vec<String> = ran.events.iter().map(Value::to_string).collect();
+        std::fs::write(ran.run.join("events.jsonl"), lines.join("\n") + "\n").unwrap();
+        let gaps = crate::verify::publication_errors_of(&ran.run);
+        assert!(gaps.is_empty(), "{gaps:?}");
+        let without: Vec<String> =
+            ran.events.iter().filter(|e| e["type"] != PAGE_CHECKS_EVENT).map(Value::to_string).collect();
+        std::fs::write(ran.run.join("events.jsonl"), without.join("\n") + "\n").unwrap();
         let gaps = crate::verify::publication_errors_of(&ran.run);
         assert!(gaps.iter().any(|g| g.contains("no passing page checks of its bytes")), "{gaps:?}");
     }
