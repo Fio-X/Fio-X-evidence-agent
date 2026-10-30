@@ -1624,8 +1624,12 @@ fn val_family<'a>(f: &Filling<'a>, out: &mut Filled) -> Result<Vec<&'a Value>, S
 /// prints (hero.scope): the count comes from the data, never typed.
 const DRAWN: &str = "drawn";
 
-/// One bar per ranked country. Rows and facts: the ranked countries' values (val_family) and how many they are (DRAWN).
+/// One bar per ranked country. Rows and facts: the ranked countries' values (val_family), or with two ends their change
+/// (change_families), and how many they are (DRAWN).
 fn bars_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
+    if !f.shape.t0.is_empty() {
+        return change_bars_fill(f, out);
+    }
     let (shape, picks) = (f.shape, f.picks);
     let (place, year) = (shape.place.as_str(), shape.year.as_str());
     val_family(f, out)?;
@@ -1635,6 +1639,65 @@ fn bars_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
         Filled::set(&mut out.data, "hero data", k, v.clone())?;
     }
     Ok(())
+}
+
+/// The families of a page with two ends (two_ends): each ranked country's value at the earlier end and at the later, and its
+/// change between them (the later less the earlier, a minus family: next_facts).
+const CHANGE_FAMILIES: [&str; 3] = ["val0", "val1", "chg"];
+
+/// The format key of a change that is no gap between two percentages: the unit's suffix, with the decimals of both ends.
+const CHANGE_FMT: &str = "chg";
+
+/// Each ranked country's value at the two ends and its change (CHANGE_FAMILIES), the change printed in percentage points
+/// when the unit prints as "%" (POINTS), else in the unit (CHANGE_FMT), with the most decimals the two ends' rows hold (at
+/// most COLUMN_DEC); the values at the ends in the unit's format as val_family prints them. Rows: the main's at both ends for
+/// the ranked countries, only read (a page prints each change, a fact of two rows, never a row's own value). Ok is the
+/// change's format key.
+fn change_families(f: &Filling, out: &mut Filled) -> Result<&'static str, String> {
+    let (shape, fmt) = (f.shape, f.fmt.as_str());
+    let place = shape.place.as_str();
+    let ends: Vec<&Value> = f
+        .main
+        .iter()
+        .filter(|r| r["time"] == shape.t0.as_str() || r["time"] == shape.year.as_str())
+        .filter(|r| r["dims"][place].as_str().is_some_and(|c| f.picks.ranked.iter().any(|k| k == c)))
+        .collect();
+    let dec = ends
+        .iter()
+        .filter_map(|r| r["value"].as_str())
+        .map(|v| v.split_once('.').map_or(0, |(_, d)| d.len()))
+        .max()
+        .unwrap_or(0)
+        .min(COLUMN_DEC);
+    out.reads(ends.iter().map(|r| (*r).clone()));
+    let [v0, v1, chg] = CHANGE_FAMILIES;
+    let (chg_fmt, chg_suffix) = if f.short == "%" { (POINTS.0, POINTS.1.to_string()) } else { (CHANGE_FMT, suffix(f.short)) };
+    for (key, q) in [
+        (v0, json!({"each": place, "table": shape.main, "time": shape.t0, "fmt": fmt})),
+        (v1, json!({"each": place, "table": shape.main, "time": shape.year, "fmt": fmt})),
+        (chg, json!({"op": "minus", "each": place, "a": v1, "b": v0, "fmt": chg_fmt})),
+    ] {
+        Filled::set(&mut out.facts, "fact", key, q)?;
+    }
+    let (_, at_t1) = ranked_rows(f);
+    Filled::set(&mut out.fmts, "format", fmt, json!({"scale": 1, "dec": at_t1, "suffix": suffix(f.short)}))?;
+    Filled::set(&mut out.fmts, "format", chg_fmt, json!({"scale": 1, "dec": dec, "suffix": chg_suffix}))?;
+    Ok(chg_fmt)
+}
+
+/// One signed bar per ranked country of a page with two ends, in the order changed ranks them: its change between t0 and t1
+/// (change_families), the bars' measure set to change (the visual knob bars.measure), and how many they are (DRAWN).
+fn change_bars_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
+    let (shape, picks) = (f.shape, f.picks);
+    let (place, year) = (shape.place.as_str(), shape.year.as_str());
+    change_families(f, out)?;
+    Filled::set(&mut out.facts, "fact", DRAWN, json!({"op": "n", "by": place, "table": shape.main, "time": year, "fmt": "n"}))?;
+    let data = json!({"chart": "bars", "by": place, "year": year, "t0": shape.t0, "family": CHANGE_FAMILIES[2],
+        "ranked": picks.ranked, "marks": picks.marks});
+    for (k, v) in data.as_object().into_iter().flatten() {
+        Filled::set(&mut out.data, "hero data", k, v.clone())?;
+    }
+    Filled::set(&mut out.hero, "hero key", "style", json!({"bars": {"measure": "change"}}))
 }
 
 /// The format of a gap between two percentages: percentage points, not a percentage.

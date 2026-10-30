@@ -139,7 +139,11 @@ pub fn compute(spec: &Spec, rows: &[Row]) -> Result<Vec<Fact>, String> {
     let mut off = Vec::new();
     for (key, q) in &spec.facts {
         if !q["each"].is_null() {
-            match family(key, q, spec, rows) {
+            let members = match q["op"].as_str() {
+                Some("minus") => minus_family(key, q, &queries, spec, rows),
+                _ => family(key, q, spec, rows),
+            };
+            match members {
                 Ok(fs) => out.extend(fs),
                 Err(e) => off.push(e),
             }
@@ -497,6 +501,55 @@ fn family(key: &str, q: &Value, spec: &Spec, rows: &[Row]) -> Result<Vec<Fact>, 
                 who: Vec::new(),
                 fmt: fmt.clone(),
                 reads: rs.iter().map(|r| r.src.clone()).collect(),
+            })
+        })
+        .collect()
+}
+
+/// A family of differences: per code of its `each` dimension, family `a`'s member less family `b`'s (`{"op": "minus",
+/// "each": dim, "a": family, "b": family, "fmt": format}`), keyed `<family>.<code>` in `a`'s order, each reading
+/// `fact:<a>.<code>` and `fact:<b>.<code>`. Err when `a` or `b` is no declared value family over the same dimension, either
+/// fails, or a code of either has no member in the other: no code is left out and no value guessed.
+fn minus_family(
+    key: &str,
+    q: &Value,
+    queries: &BTreeMap<&str, &Value>,
+    spec: &Spec,
+    rows: &[Row],
+) -> Result<Vec<Fact>, String> {
+    let each = word(key, &q["each"], "each")?;
+    let fmt = word(key, &q["fmt"], "fmt")?;
+    let side = |s: &str| -> Result<(String, Vec<(String, f64)>), String> {
+        let k = word(key, &q[s], s)?;
+        let of = queries
+            .get(k.as_str())
+            .filter(|of| of["each"].as_str() == Some(each.as_str()))
+            .ok_or_else(|| format!("{key}: minus names no family over {each} as {s} ({k})"))?;
+        let members = family(&k, of, spec, rows).map_err(|e| format!("{key}: {s} {k} fails ({e})"))?;
+        // a member's key is <family>.<code>
+        let codes = members.into_iter().map(|f| (f.key[k.len() + 1..].to_string(), f.v)).collect();
+        Ok((k, codes))
+    };
+    let ((a, of_a), (b, of_b)) = (side("a")?, side("b")?);
+    if let Some((code, _)) = of_b.iter().find(|(c, _)| !of_a.iter().any(|(k, _)| k == c)) {
+        return Err(format!("{key}: {b} has {code}, {a} has not"));
+    }
+    of_a.into_iter()
+        .map(|(code, va)| {
+            let vb = of_b
+                .iter()
+                .find(|(c, _)| *c == code)
+                .map(|(_, v)| *v)
+                .ok_or_else(|| format!("{key}: {a} has {code}, {b} has not"))?;
+            Ok(Fact {
+                key: format!("{key}.{code}"),
+                op: "minus".to_string(),
+                v: va - vb,
+                t: None,
+                n: None,
+                who: Vec::new(),
+                fmt: fmt.clone(),
+                reads: vec![format!("{FACT_SRC}{a}.{code}"), format!("{FACT_SRC}{b}.{code}")],
             })
         })
         .collect()
