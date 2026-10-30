@@ -4881,6 +4881,171 @@ mod tests {
         assert!(picks_of(&["guess".into()], &shape, &main, &claims).unwrap_err().starts_with("not this shape: no pick rule guess; e.g. one of "));
     }
 
+    /// A share across four countries and the EU over the years `values` gives ((geo, year) -> value; a pair it lacks has no
+    /// row), as the fetch of an annual table's ten years reads it.
+    fn ten_years(values: &[(&str, &str, &str)]) -> Vec<Value> {
+        let geo = ["SE", "BE", "DE", "FR", "EU27_2020"];
+        let years: BTreeSet<&str> = values.iter().map(|(_, y, _)| *y).collect();
+        let mut main = ring_rows("sdg", &[("freq", "A"), ("unit", "PC")], ("geo", &geo), &years.into_iter().collect::<Vec<_>>());
+        main.retain_mut(|r| match values.iter().find(|(g, y, _)| r["dims"]["geo"] == *g && r["time"] == *y) {
+            Some((_, _, v)) => {
+                r["value"] = json!(v);
+                true
+            }
+            None => false,
+        });
+        main
+    }
+
+    /// The q1 shape over ten years: 2013 lies before the span, 2015 misses DE (so it is passed over), 2016 and 2024 hold
+    /// every country; the changes by hand SE +16, DE +7.5, BE +5.5, FR -2.25.
+    fn q1_ten_years() -> Vec<Value> {
+        let mut values = vec![("SE", "2013", "40"), ("SE", "2015", "49"), ("BE", "2015", "8"), ("FR", "2015", "15")];
+        for (g, a, b) in [("SE", "50", "66"), ("BE", "8.5", "14"), ("DE", "14.9", "22.4"), ("FR", "15.5", "13.25"), ("EU27_2020", "17", "24.5")] {
+            values.extend([(g, "2016", a), (g, "2024", b)]);
+        }
+        ten_years(&values)
+    }
+
+    /// The first recipe that reads a table in registry order: one year is a column page (the change page has no two ends),
+    /// ten years with two ends a change page; its two ends are the last year and the earliest year in the span at which
+    /// every country with a last-year value has one, each year passed over kept with the countries it misses.
+    #[test]
+    fn a_ten_year_table_is_a_change_page_between_its_two_ends_and_one_year_stays_a_column_page() {
+        let first = |main: &[Value]| {
+            let tables = [("sdg", main)];
+            Hubs.recipes().iter().find(|r| shape_of(&r.eats, &tables, &Hubs).is_ok()).map(|r| r.name.clone())
+        };
+        let main = q1_ten_years();
+        assert_eq!(first(&main).as_deref(), Some("change"));
+        let one_year: Vec<Value> = main.iter().filter(|r| r["time"] == "2024").cloned().collect();
+        assert_eq!(first(&one_year).as_deref(), Some("column"));
+        let change = recipe("change");
+        assert_eq!(change.eats.last().map(String::as_str), Some("two_ends"));
+        let shape = shape_of(&change.eats, &[("sdg", &main[..])], &Hubs).unwrap();
+        assert_eq!((shape.t0.as_str(), shape.year.as_str()), ("2016", "2024"));
+        assert_eq!(shape.later, [("2015".to_string(), vec!["DE".to_string()])]);
+        // no year in the span holds every country: not this shape, and the column page takes it
+        let gappy: Vec<Value> = main.iter().filter(|r| r["time"] != "2016").cloned().collect();
+        assert_eq!(
+            shape_of(&change.eats, &[("sdg", &gappy[..])], &Hubs).unwrap_err(),
+            "not this shape: main sdg has no year from 2015 before 2024 at which every country with a value at 2024 has one"
+        );
+        assert_eq!(first(&gappy).as_deref(), Some("column"));
+        // a year before the span is never an end
+        let outside: Vec<Value> = main.iter().filter(|r| r["time"] == "2013" || r["time"] == "2024").cloned().collect();
+        assert!(shape_of(&change.eats, &[("sdg", &outside[..])], &Hubs).is_err());
+    }
+
+    /// changed ranks the countries by their change between the two ends, the largest rise first and a tie to code order, sets
+    /// the picks' two ends, and refuses a country twice at either end as ranked does.
+    #[test]
+    fn changed_ranks_by_the_change_between_the_two_ends() {
+        let change = recipe("change");
+        let main = q1_ten_years();
+        let shape = shape_of(&change.eats, &[("sdg", &main[..])], &Hubs).unwrap();
+        let claims = [("rank_top".to_string(), bound("c1", &[("country_iso2", json!("FR")), ("value", json!(13.25))]))];
+        let picks = picks_of(&change.picks, &shape, &main, &claims).unwrap();
+        assert_eq!(picks.ranked, ["SE", "DE", "BE", "FR"]);
+        assert_eq!((picks.t0.as_str(), picks.t1.as_str(), picks.marks.clone()), ("2016", "2024", vec!["FR".to_string()]));
+        // BE and DE both up 5.5 (8.5 to 14): by code
+        let mut tie = main.clone();
+        for r in tie.iter_mut().filter(|r| r["dims"]["geo"] == "DE") {
+            r["value"] = json!(if r["time"] == "2024" { "14" } else { "8.5" });
+        }
+        assert_eq!(picks_of(&change.picks, &shape, &tie, &[]).unwrap().ranked, ["SE", "BE", "DE", "FR"]);
+        let mut twice = main.clone();
+        twice.push(json!({"src": "series:sdg/x:2016:OBS_VALUE", "dims": {"freq": "A", "unit": "PC", "geo": "SE"}, "time": "2016", "value": "1"}));
+        assert_eq!(picks_of(&change.picks, &shape, &twice, &[]).unwrap_err(), "not this shape: main sdg holds SE twice at 2016");
+        // without two ends there is nothing to rank by
+        let column = recipe("column");
+        let level = shape_of(&column.eats, &[("sdg", &main[..])], &Hubs).unwrap();
+        assert_eq!(
+            picks_of(&["changed".into()], &level, &main, &[]).unwrap_err(),
+            "not this shape: the shape has no two ends: changed reads what two_ends sets"
+        );
+    }
+
+    /// The change page's request: the bubbles the level at t1 (val), the bars the change (val0, val1 and their minus family
+    /// chg, in percentage points of a share, only read from the rows), the notes the largest rise and fall, the bars' measure
+    /// knob set to change; then the page drawn by the real leaf child, baked and checked by the twins: signed bars in the rise
+    /// and fall colours, every change printed from its ledger entry as by hand, and no layer printing a row another prints.
+    #[test]
+    fn a_change_page_draws_each_place_s_change_from_its_minus_family() {
+        let change = recipe("change");
+        let main = q1_ten_years();
+        let shape = shape_of(&change.eats, &[("sdg", &main[..])], &Hubs).unwrap();
+        let picks = picks_of(&change.picks, &shape, &main, &[]).unwrap();
+        let mut fill = fill_of(change, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语")).unwrap();
+        assert_eq!(fill["ends"], json!({"t0": "2016", "t1": "2024", "rule": "two_ends", "span": 10, "later": [{"year": "2015", "missing": ["DE"]}]}));
+        let spec = &fill["knobs"]["spec"];
+        assert_eq!(spec["facts"]["chg"], json!({"op": "minus", "each": "geo", "a": "val1", "b": "val0", "fmt": "pp"}));
+        assert_eq!(spec["facts"]["val0"], json!({"each": "geo", "table": "sdg", "time": "2016", "fmt": "pc"}));
+        assert_eq!(spec["fmts"]["pp"], json!({"scale": 1, "dec": 2, "suffix": " 个百分点"}));
+        assert_eq!(spec["hero"]["style"], json!({"bars": {"measure": "change"}}));
+        assert_eq!(spec["hero"]["data"]["family"], "chg");
+        assert_eq!(spec["hero"]["data"]["t0"], "2016");
+        let said: Vec<(&str, &str, &str)> = spec["hero"]["leaves"]["leader_notes"]["notes"].as_array().unwrap().iter()
+            .map(|n| (n["name"].as_str().unwrap(), n["text"][0]["word"].as_str().unwrap(), n["value_text"].as_str().unwrap())).collect();
+        assert_eq!(said, [("SE", "column.note.rise_most", "fact:chg.SE"), ("FR", "column.note.fall_most", "fact:chg.FR")]);
+        // only the bubbles print a row's own value; the bars and notes print changes
+        let drawn = fill["drawn"].as_array().unwrap().clone();
+        assert!(drawn.iter().all(|d| d["layer"] == "bubbles" && d["time"] == "2024"), "{drawn:?}");
+
+        fill["knobs"]["shapes"] = json!("runtime/pi/assets/naturalearth-admin0-50m.geojson");
+        fill["knobs"]["spec"]["kicker"] = json!("栏目");
+        fill["knobs"]["spec"]["source"] = json!("来源");
+        let order: Vec<String> = fill["order"].as_array().unwrap().iter().filter_map(|l| l.as_str().map(str::to_string)).collect();
+        let calls = std::sync::Mutex::new(Vec::new());
+        let request = crate::next_visual::Request::LeafFill {
+            recipe: "change",
+            rows: fill["rows"].as_array().unwrap(),
+            knobs: &fill["knobs"],
+            order: &order,
+            runtime: Path::new("runtime"),
+        };
+        let page = match crate::next_flow::visual_call(&calls, "leaf_fill", request) {
+            Ok(crate::next_visual::Reply::Filled(page)) => page,
+            Ok(_) => panic!("not a filled page"),
+            Err(e) => panic!("leaf fill: {e}"),
+        };
+        // each change as by hand, at the two ends' most decimals
+        for (code, text) in [("SE", "16.00 个百分点"), ("DE", "7.50 个百分点"), ("BE", "5.50 个百分点"), ("FR", "-2.25 个百分点")] {
+            assert_eq!(page.ledger.get(&format!("fact:chg.{code}")).map(String::as_str), Some(text), "{code}");
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = {
+            let _command = crate::group_guard::command_for_test("investigate");
+            crate::artifact::InvestigationBundle::create(dir.path(), "leaf page").unwrap()
+        };
+        let _command = crate::group_guard::command_for_test("investigate");
+        let _doors = crate::group_guard::doors_for_test(true);
+        let bake = crate::next_leaf::Runner::python(Path::new("fixtures/next_leaf/bake_twin.py"));
+        let mut qa = crate::next_leaf::Runner::python(Path::new("fixtures/next_visual/qa_twin.py"));
+        qa.args.push("pass".into());
+        let leaf = crate::next_visual::LeafPage {
+            draw: &page.draw,
+            bake: &bake,
+            w: page.w,
+            h: page.h,
+            frame: page.frame.clone(),
+            layers: &page.layers,
+            ledger: &page.ledger,
+            refs: &page.refs,
+            facts: (&page.spec, &page.rows, &page.facts),
+            strip: None,
+        };
+        let plan = json!({"kind": "leaf_plan", "recipe": "change"});
+        let published = crate::next_flow::publish_leaf_page(&calls, &bundle.dir, "change", (&leaf, &plan), &qa).unwrap();
+        let html = std::fs::read_to_string(bundle.dir.join(&published.html_ref)).unwrap();
+        assert!(html.contains(r#"data-src="fact:chg.FR""#) && html.contains(r#"data-src="fact:chg.SE""#), "the bars print the changes");
+        assert!(html.contains(r#"fill="var(--accent)""#) && html.contains(r#"fill="var(--accent2)""#), "a fall and a rise colour");
+        assert!(html.contains(r#"text-anchor="end" dominant-baseline="middle" font-size="13" fill="var(--t-sec)" font-weight="400"><tspan data-src="fact:chg.FR""#), "the fall's value on its side");
+        assert!(html.contains(r#"data-src="period:sdg:2016""#), "the year line names the earlier end");
+        let checks = page_checks(change, Some(html.as_str()), &published.dropped, StripAsk::default(), &drawn, Some(&typed()));
+        assert!(checks[2].passed && checks[2].warning.is_none(), "{:?}", checks[2]);
+    }
+
     /// The q6 shape (asylum applicants by citizenship into the EU, one year) in registry order: the ring refuses it for its
     /// one year, the column page is the first recipe that reads it, its place the citizenship.
     #[test]

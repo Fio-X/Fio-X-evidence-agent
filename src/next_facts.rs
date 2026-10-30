@@ -1924,6 +1924,38 @@ mod tests {
     }
 
     #[test]
+    fn a_minus_family_is_each_code_s_later_value_less_its_earlier_and_reads_both() {
+        let rows = partners();
+        let q = |t: &str| json!({"each": "partner", "table": "imp", "time": t, "fmt": "m", "filter": {"siec": "a"}});
+        let sp = spec(
+            json!({"v0": q("2021"), "v1": q("2024"), "ch": {"op": "minus", "each": "partner", "a": "v1", "b": "v0", "fmt": "m"}}),
+            None,
+        );
+        // RU is the one code at both years: 300 - 1500 by hand; the others have no 2021 row, so the family refuses them
+        let both = |rows: &[Row]| -> Vec<Row> { rows.iter().filter(|r| r.dims.get("partner").is_some_and(|p| p == "RU")).cloned().collect() };
+        let ru = both(&rows);
+        let facts = compute(&sp, &ru).unwrap();
+        let ch = facts.iter().find(|f| f.key == "ch.RU").unwrap();
+        assert_eq!((ch.op.as_str(), ch.v, ch.fmt.as_str()), ("minus", 300.0 - 1500.0, "m"));
+        assert_eq!(ch.reads, ["fact:v1.RU", "fact:v0.RU"]);
+        assert_eq!(text(ch, &sp.fmts, false).unwrap(), "-12 亿");
+        let ledger: BTreeMap<String, String> = facts
+            .iter()
+            .flat_map(|f| [num(f, &sp.fmts, Part::Text).unwrap(), num(f, &sp.fmts, Part::Bare).unwrap()])
+            .map(|n| (n.src, n.text))
+            .collect();
+        assert_eq!(ledger["fact:ch.RU"], "-12 亿");
+        assert_eq!(recheck(&ledger, &sp, &ru, &facts), Vec::<String>::new());
+        // a code one end holds and the other not is refused, never left out
+        let kept: Vec<Row> = rows.iter().filter(|r| r.dims.get("siec").is_some_and(|s| s == "a")).cloned().collect();
+        let err = compute(&sp, &kept).unwrap_err();
+        assert!(err.contains("ch: v1 has NO, v0 has not"), "{err}");
+        // a side that is no family over the same dimension
+        let off = spec(json!({"v1": q("2024"), "ch": {"op": "minus", "each": "siec", "a": "v1", "b": "v1", "fmt": "m"}}), None);
+        assert!(compute(&off, &ru).unwrap_err().contains("ch: minus names no family over siec as a (v1)"));
+    }
+
+    #[test]
     fn a_family_is_one_fact_per_code_of_its_dimension() {
         let rows = partners();
         let sp = spec(
