@@ -5145,12 +5145,13 @@ fn verify_publications(root: &Path, report: &mut VerificationReport) -> Result<(
     if !dir.is_dir() {
         return Ok(());
     }
-    // The new route (it keeps its page state at runtime/next-page.json) has its page image reviewed after browser QA; a
-    // publication of it counts only with that review's pass, read from the run's events (next_run.rs records them).
-    let vision_passes = root
+    // The new route (it keeps its page state at runtime/next-page.json) measures its published page with the program's
+    // page checks; a publication of it counts only when those checks passed on its bytes, read from the run's events
+    // (next_run.rs PAGE_CHECKS_EVENT). Its page image review is the model's advice and grants nothing here.
+    let page_checks = root
         .join("runtime/next-page.json")
         .is_file()
-        .then(|| next_vision_passes(root));
+        .then(|| next_page_checks_events(root));
     // Sorted so the error list's publication order is deterministic across
     // filesystems, matching Python's sorted(publications_dir.iterdir()).
     let mut entries: Vec<PathBuf> = fs::read_dir(&dir)?
@@ -5186,8 +5187,8 @@ fn verify_publications(root: &Path, report: &mut VerificationReport) -> Result<(
         let manifest_ref = format!("publications/{dir_name}/manifest.json");
         // A leaf page of the new route (leaf_gate_event: kind, recipe folder and the flow's ring and gate events all agree) is
         // tied to its bytes by those events' sha256 instead of a sha-named folder, has its own plan (publications/plans/
-        // <recipe>.json, next_run.rs leaf_plan_ref) and no infographic lineage; the flow's gate findings and the page image
-        // review below take that lineage's place, and only when the gate found no gap. Anything else is checked as before.
+        // <recipe>.json, next_run.rs leaf_plan_ref) and no infographic lineage; the flow's gate findings and the program's page
+        // checks below take that lineage's place, and only when the gate found no gap. Anything else is checked as before.
         let leaf = leaf_gate_event(root, &dir_name, &manifest);
         for gap in leaf.iter().flatten() {
             report.error(format!("publication {manifest_ref}: {gap}"));
@@ -5405,6 +5406,14 @@ fn verify_publications(root: &Path, report: &mut VerificationReport) -> Result<(
         let Some(actual_html_sha256) = actual_html_sha256 else {
             continue;
         };
+        if let Some(gap) = page_checks
+            .as_deref()
+            .and_then(|events| next_page_checks_gap(events, &dir_name, html_ref, &actual_html_sha256))
+        {
+            report.error(format!(
+                "publication {manifest_ref} has no passing page checks of its bytes (next_page_checks): {gap}"
+            ));
+        }
         // Every linked report must independently verify - not just the
         // first one iteration happens to reach. read_dir's order is
         // filesystem-dependent, so a stale FAIL and a later PASS for the
@@ -5451,15 +5460,7 @@ fn verify_publications(root: &Path, report: &mut VerificationReport) -> Result<(
                     let status_ok = qa_report.get("status").and_then(Value::as_str) == Some("PASS");
                     let screenshots_ok =
                         verify_qa_screenshots(&qa_key_dir, &qa_report, &manifest_ref, report);
-                    let reviewed = vision_passes.as_ref().is_none_or(|passes| {
-                        next_vision_reviewed(passes, &manifest_ref, &qa_key_dir, &qa_report)
-                    });
-                    if !reviewed {
-                        report.error(format!(
-                            "publication {manifest_ref} has no passing page image review of its browser QA 1440 screenshot (next_publication_vision)"
-                        ));
-                    }
-                    if !(status_ok && screenshots_ok && reviewed) {
+                    if !(status_ok && screenshots_ok) {
                         passing = false;
                     }
                 }
@@ -5477,7 +5478,7 @@ fn verify_publications(root: &Path, report: &mut VerificationReport) -> Result<(
     Ok(())
 }
 
-/// A leaf page of the new route as the flow recorded it, read as data like next_vision_passes: Some(the gaps of its gate
+/// A leaf page of the new route as the flow recorded it, read as data like next_page_checks_events: Some(the gaps of its gate
 /// event, next_run.rs LEAF_GATE_EVENT) when the manifest says kind leaf_page, the run is the new route's
 /// (runtime/next-page.json), and the flow (by "flow", under a model call) recorded a ring page event (next_ring_page) for
 /// this folder as its recipe, this html_ref and this sha256; None leaves the publication to the old checks. No gate event
@@ -5513,48 +5514,45 @@ fn leaf_gate_event(root: &Path, dir: &str, manifest: &Value) -> Option<Vec<Strin
     }
 }
 
-/// The new route's passing page image reviews: every next_publication_vision event of the run's events.jsonl with
-/// passed true (a line that does not parse is no review).
-fn next_vision_passes(root: &Path) -> Vec<Value> {
+/// The new route's program page checks: every next_page_checks event of the run's events.jsonl the flow recorded (by
+/// "flow", under a model call), as leaf_gate_event reads its gate events; a line that does not parse is no event.
+fn next_page_checks_events(root: &Path) -> Vec<Value> {
     fs::read_to_string(root.join("events.jsonl"))
         .unwrap_or_default()
         .lines()
         .filter_map(|line| serde_json::from_str::<Value>(line).ok())
         .filter(|event| {
-            event["type"] == "next_publication_vision" && event["passed"] == Value::Bool(true)
+            event["type"] == "next_page_checks"
+                && event["by"] == "flow"
+                && event["auto_parent_call_id"].is_string()
         })
         .collect()
 }
 
-/// Whether one passing review is of this publication and this QA report and saw its 1440 screenshot: the event's
-/// image_sha256 is the hash of that file's bytes as it is on disk now.
-fn next_vision_reviewed(
-    passes: &[Value],
-    manifest_ref: &str,
-    qa_key_dir: &Path,
-    qa_report: &Value,
-) -> bool {
-    let Some(key) = qa_key_dir.file_name().and_then(|name| name.to_str()) else {
-        return false;
+/// What keeps the publication in publications/<dir>/ (its html at `html_ref`, `sha` the hash of those bytes on disk now)
+/// from the program's page checks, None when the flow's last page checks event of it measured those bytes and every check
+/// passed (passed true, not text): no event of it, an event of other bytes, no checks, or the checks that failed.
+fn next_page_checks_gap(events: &[Value], dir: &str, html_ref: &str, sha: &str) -> Option<String> {
+    let Some(event) = events
+        .iter()
+        .rev()
+        .find(|event| event["recipe"] == dir && event["published"] == html_ref)
+    else {
+        return Some("the flow recorded no page checks of it".to_string());
     };
-    let qa_ref = format!("publications/qa/{key}/browser-qa.json");
-    let shot = qa_report["screenshots"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .find(|entry| entry["width"] == 1440)
-        .and_then(|entry| entry["path"].as_str())
-        .filter(|name| {
-            !name.is_empty() && !name.contains(['/', '\\']) && *name != "." && *name != ".."
-        });
-    let Some(sha) = shot.and_then(|name| sha256_file(&qa_key_dir.join(name)).ok()) else {
-        return false;
+    if event["html_sha256"] != sha {
+        return Some("its page checks measured other bytes".to_string());
+    }
+    let checks = event["checks"].as_array().filter(|checks| !checks.is_empty());
+    let Some(checks) = checks else {
+        return Some("its page checks event holds no checks".to_string());
     };
-    passes.iter().any(|event| {
-        event["publication_manifest_ref"] == manifest_ref
-            && event["qa_ref"] == qa_ref.as_str()
-            && event["image_sha256"] == sha.as_str()
-    })
+    let failed: Vec<String> = checks
+        .iter()
+        .filter(|check| check["passed"] != Value::Bool(true))
+        .map(|check| check["name"].as_str().unwrap_or("?").to_string())
+        .collect();
+    (!failed.is_empty()).then(|| format!("failed {}", failed.join(", ")))
 }
 
 /// The gate this worktree adds: a top-level publication's
@@ -9675,60 +9673,94 @@ mod tests {
         assert!(errors.is_empty(), "{errors:?}");
     }
 
-    /// On the new route a publication counts only with a passing page image review of its own QA screenshot's bytes; the
-    /// old route (no runtime/next-page.json) is not asked for one.
+    /// The flow's program page checks of the fixture's publication (next_run.rs PAGE_CHECKS_EVENT): by the flow under a model
+    /// call, for publications/<dir>/index.html at `sha`, each check of `passed` passed or not.
+    fn page_checks_event(dir: &str, sha: &str, passed: &[bool]) -> Value {
+        let checks: Vec<Value> = passed
+            .iter()
+            .enumerate()
+            .map(|(i, p)| serde_json::json!({"name": format!("check{i}"), "passed": p, "measured": {}}))
+            .collect();
+        serde_json::json!({"type": "next_page_checks", "by": "flow", "auto_parent_call_id": "c5", "recipe": dir,
+            "published": format!("publications/{dir}/index.html"), "html_sha256": sha, "checks": checks})
+    }
+
+    /// The fixture's page image review (next_run.rs PUBLICATION_VISION_EVENT) of its QA screenshot, passing or not.
+    fn vision_event(manifest: &str, passed: bool) -> Value {
+        serde_json::json!({"type": "next_publication_vision", "passed": passed, "score": if passed { 90 } else { 40 },
+            "image_sha256": sha256_bytes(b"fake-screenshot-bytes"), "publication_manifest_ref": manifest,
+            "qa_ref": "publications/qa/q1/browser-qa.json"})
+    }
+
+    fn write_events(root: &Path, events: &[Value]) {
+        let lines: Vec<String> = events.iter().map(Value::to_string).collect();
+        fs::write(root.join("events.jsonl"), lines.join("\n") + "\n").unwrap();
+    }
+
+    /// On the new route a publication counts on the program's page checks of its bytes, never on the page image review: a
+    /// passing page checks event is enough beside a failing review (or none); the old route (no runtime/next-page.json) is
+    /// asked for neither.
     #[test]
-    fn a_next_route_publication_needs_a_passing_review_of_its_qa_screenshot() {
+    fn a_next_route_publication_counts_on_its_page_checks_not_its_image_review() {
         let (temp, key) = build_publication_fixture(true, true);
         let root = temp.path();
-        let shot = sha256_bytes(b"fake-screenshot-bytes");
-        let event = |passed: bool, sha: &str, manifest: &str, qa: &str| {
-            serde_json::json!({"type": "next_publication_vision", "passed": passed, "image_sha256": sha,
-                "publication_manifest_ref": manifest, "qa_ref": qa, "score": 90})
-            .to_string()
-        };
         let manifest = format!("publications/{key}/manifest.json");
-        let qa = "publications/qa/q1/browser-qa.json";
-        let named = |errors: &[String]| {
-            errors
-                .iter()
-                .any(|e| e.contains("no passing page image review"))
-        };
-        // No page state: the old route, no review asked for.
-        fs::write(root.join("events.jsonl"), "").unwrap();
+        // No page state: the old route, no page checks asked for.
+        write_events(root, &[vision_event(&manifest, false)]);
         assert!(publication_errors(root).is_empty());
         fs::create_dir_all(root.join("runtime")).unwrap();
         fs::write(root.join("runtime/next-page.json"), "{}").unwrap();
-        assert!(named(&publication_errors(root)), "no event");
-        for (line, why) in [
-            (event(false, &shot, &manifest, qa), "a failed review"),
-            (event(true, &sha256_bytes(b"other"), &manifest, qa), "another image"),
-            (event(true, &shot, "publications/other/manifest.json", qa), "another publication"),
-            (event(true, &shot, &manifest, "publications/qa/q2/browser-qa.json"), "another QA report"),
-            (serde_json::json!({"type": "next_publication_vision", "passed": "true", "image_sha256": shot, "publication_manifest_ref": manifest, "qa_ref": qa}).to_string(), "passed as text"),
+        for events in [
+            vec![page_checks_event(&key, &key, &[true, true]), vision_event(&manifest, false)],
+            vec![page_checks_event(&key, &key, &[true, true])],
         ] {
-            fs::write(root.join("events.jsonl"), format!("{line}\n")).unwrap();
+            write_events(root, &events);
             let errors = publication_errors(root);
-            assert!(named(&errors), "{why}: {errors:?}");
-            assert!(errors.iter().any(|e| e.contains("has no passing browser QA report")), "{why}");
+            assert!(errors.is_empty(), "{errors:?}");
         }
-        fs::write(
-            root.join("events.jsonl"),
-            format!("not json\n{}\n", event(true, &shot, &manifest, qa)),
-        )
-        .unwrap();
-        assert!(
-            publication_errors(root).is_empty(),
-            "{:?}",
-            publication_errors(root)
-        );
-        // The screenshot changed after its review: the review no longer counts.
-        fs::write(
-            root.join("publications/qa/q1/publication-1440.png"),
-            b"changed",
-        )
-        .unwrap();
-        assert!(named(&publication_errors(root)));
+        // a line that does not parse is no event, and does not hide the one that does
+        fs::write(root.join("events.jsonl"), format!("not json\n{}\n", page_checks_event(&key, &key, &[true]))).unwrap();
+        assert!(publication_errors(root).is_empty(), "{:?}", publication_errors(root));
+    }
+
+    /// A new-route publication without passing page checks of its own bytes is a gap, even with a passing image review: no
+    /// event, an event of other bytes or of another page, one failed check, a check passed as text, no checks, or an event
+    /// not recorded by the flow under a model call. The page changed after its checks: they no longer count.
+    #[test]
+    fn a_next_route_publication_without_passing_page_checks_is_a_gap_whatever_its_image_review() {
+        let (temp, key) = build_publication_fixture(true, true);
+        let root = temp.path();
+        let manifest = format!("publications/{key}/manifest.json");
+        fs::create_dir_all(root.join("runtime")).unwrap();
+        fs::write(root.join("runtime/next-page.json"), "{}").unwrap();
+        let named = |errors: &[String], want: &str| {
+            errors.iter().any(|e| e.contains("has no passing page checks of its bytes (next_page_checks)") && e.contains(want))
+        };
+        let mut as_text = page_checks_event(&key, &key, &[true]);
+        as_text["checks"][0]["passed"] = serde_json::json!("true");
+        let mut by_model = page_checks_event(&key, &key, &[true]);
+        by_model["by"] = serde_json::json!("model");
+        let mut no_parent = page_checks_event(&key, &key, &[true]);
+        no_parent.as_object_mut().unwrap().remove("auto_parent_call_id");
+        for (checks, want) in [
+            (None, "recorded no page checks"),
+            (Some(page_checks_event(&key, &sha256_bytes(b"other"), &[true])), "measured other bytes"),
+            (Some(page_checks_event("other", &key, &[true])), "recorded no page checks"),
+            (Some(page_checks_event(&key, &key, &[true, false, true])), "failed check1"),
+            (Some(as_text), "failed check0"),
+            (Some(page_checks_event(&key, &key, &[])), "holds no checks"),
+            (Some(by_model), "recorded no page checks"),
+            (Some(no_parent), "recorded no page checks"),
+        ] {
+            let events: Vec<Value> = checks.into_iter().chain([vision_event(&manifest, true)]).collect();
+            write_events(root, &events);
+            let errors = publication_errors(root);
+            assert!(named(&errors, want), "{want}: {errors:?}");
+        }
+        write_events(root, &[page_checks_event(&key, &key, &[true]), vision_event(&manifest, true)]);
+        assert!(publication_errors(root).is_empty());
+        fs::write(root.join(format!("publications/{key}/index.html")), "<html>changed</html>").unwrap();
+        assert!(named(&publication_errors(root), "measured other bytes"));
     }
 
     /// A leaf page of the new route (publications/<recipe>/, not sha-named) is taken as one only when the flow's ring page
@@ -9746,9 +9778,7 @@ mod tests {
         fs::copy(root.join("publications/plans/plan.json"), root.join("publications/plans/ring.json")).unwrap();
         fs::create_dir_all(root.join("runtime")).unwrap();
         fs::write(root.join("runtime/next-page.json"), "{}").unwrap();
-        let vision = serde_json::json!({"type": "next_publication_vision", "passed": true,
-            "image_sha256": sha256_bytes(b"fake-screenshot-bytes"), "publication_manifest_ref": "publications/ring/manifest.json",
-            "qa_ref": "publications/qa/q1/browser-qa.json"});
+        let checked = page_checks_event("ring", &key, &[true, true]);
         let ours = |kind: &str| {
             serde_json::json!({"type": kind, "by": "flow", "auto_parent_call_id": "c5", "recipe": "ring",
                 "published": "publications/ring/index.html", "html_sha256": key})
@@ -9759,7 +9789,7 @@ mod tests {
             gate
         };
         let run = |events: &[Value]| {
-            let lines: Vec<String> = std::iter::once(vision.clone()).chain(events.iter().cloned()).map(|e| e.to_string()).collect();
+            let lines: Vec<String> = std::iter::once(checked.clone()).chain(events.iter().cloned()).map(|e| e.to_string()).collect();
             fs::write(root.join("events.jsonl"), lines.join("\n") + "\n").unwrap();
             publication_errors(root)
         };

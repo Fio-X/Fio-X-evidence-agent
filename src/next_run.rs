@@ -2618,10 +2618,11 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
                     format!("{} page check(s) failed on the {recipe} page: {}", failed.len(), failed.join(" | ")),
                 ));
             }
-            let score = leaf_vision(recorder, model, question, recipe, &state, cancel).await?;
+            // the image review is the model's advice on the page: recorded, never a stop and never what verifies it
+            let review = leaf_vision(recorder, model, question, recipe, &state, cancel).await?;
             return Ok(format!(
-                "The {recipe} page is published at {} (sha256 {}); the browser check passed those bytes and the published page \
-                 passed the image review: score {score}/100.",
+                "The {recipe} page is published at {} (sha256 {}); the browser check and the program's page checks passed \
+                 those bytes. {review}",
                 published.html_ref, published.html_sha256
             ));
         }
@@ -2649,9 +2650,11 @@ fn publication_vision_prompt(question: &str) -> String {
     )
 }
 
-/// The published leaf page's image review (the completion gate's GAP-3): the 1440 screenshot its PASS browser check wrote
-/// (publications/qa/<recipe>/), read from disk, shown to the model; the verdict is recorded as a PUBLICATION_VISION_EVENT and
-/// in the plan, and can only hold the page back. Ok is the score of a pass.
+/// The published leaf page's image review: the 1440 screenshot its PASS browser check wrote (publications/qa/<recipe>/),
+/// read from disk, shown to the model; the verdict is recorded as a PUBLICATION_VISION_EVENT and in the plan, as advice
+/// only: a review short of its line (vision_passes) neither stops the run nor holds the page back, and none verifies it
+/// (the program's page checks do, verify.rs verify_publications). Ok is the review's line for the run's answer; Err only
+/// when there is no screenshot to show or the model gives no review.
 async fn leaf_vision(
     recorder: &mut Recorder<'_>,
     model: &mut (dyn Asker + '_),
@@ -2659,7 +2662,7 @@ async fn leaf_vision(
     recipe: &str,
     state: &Value,
     cancel: &AtomicBool,
-) -> Result<u64, Stop> {
+) -> Result<String, Stop> {
     let qa_ref = format!("publications/qa/{recipe}/browser-qa.json");
     let (shot_ref, shot_sha) = qa_screenshot(recorder.run_dir(), &json!(qa_ref)).map_err(|why| stop("publication_vision", why))?;
     let bytes = std::fs::read(recorder.run_dir().join(&shot_ref)).map_err(|e| stop("publication_vision", format!("{shot_ref}: {e}")))?;
@@ -2687,18 +2690,17 @@ async fn leaf_vision(
     let mut state = state.clone();
     state["publication_vision"] = json!({"passed": passed, "score": score});
     save_route_state(recorder.run_dir(), &LEAF_PLAN_STEPS, "publication_vision", passed, &state)?;
-    if !passed {
-        let seen: Vec<String> = issues
-            .iter()
-            .map(|i| format!("{}:{}", i["severity"].as_str().unwrap_or("?"), i["code"].as_str().unwrap_or("?")))
-            .collect();
-        let seen = if seen.is_empty() { "none".to_string() } else { seen.join(" | ") };
-        return Err(stop("publication_vision", format!("the published page did not pass the image review (score {score}; issues: {seen})")));
-    }
-    Ok(score)
+    let seen: Vec<String> = issues
+        .iter()
+        .map(|i| format!("{}:{}", i["severity"].as_str().unwrap_or("?"), i["code"].as_str().unwrap_or("?")))
+        .collect();
+    let seen = if seen.is_empty() { "none".to_string() } else { seen.join(" | ") };
+    let verdict = if passed { "at or above its line" } else { "short of its line" };
+    Ok(format!("The image review, advice only, scored it {score}/100, {verdict} (issues: {seen})."))
 }
 
-/// The pass line of the published page's image review: a score of at least 80, every rubric item at least 60, no blocker.
+/// The line of the published page's image review, recorded with its advice: a score of at least 80, every rubric item at
+/// least 60, no blocker.
 fn vision_passes(score: u64, rubric: &BTreeMap<String, u64>, issues: &[Value]) -> bool {
     score >= 80
         && rubric.values().all(|v| *v >= 60)
@@ -3334,7 +3336,7 @@ mod tests {
         );
     }
 
-    /// The image review holds its line: 80 overall, 60 on every rubric item, no blocker; anything short holds the page back.
+    /// The image review's line: 80 overall, 60 on every rubric item, no blocker; anything short is recorded as short of it.
     #[test]
     fn the_image_reviews_pass_only_on_the_line() {
         let rubric = |low: u64| {
@@ -6782,6 +6784,12 @@ for line in sys.stdin:
     /// The fetched file is written under data/<sha256 of `fetched_as`>.csv with SDG_CSV's bytes, so a `fetched_as` other
     /// than SDG_CSV is a file changed since its fetch.
     async fn leaf_run(draw_child: Option<&str>, fetched_as: &str, after_text: Vec<Value>) -> LeafRun {
+        leaf_run_checked(draw_child, fetched_as, after_text, "pass").await
+    }
+
+    /// leaf_run with the browser-check twin in `qa` mode (fixtures/next_visual/qa_twin.py): "pass" writes no screenshot,
+    /// "shot" passes and writes its 1440 screenshot for the image review to see.
+    async fn leaf_run_checked(draw_child: Option<&str>, fetched_as: &str, after_text: Vec<Value>, qa: &str) -> LeafRun {
         const SHEET: &str = "0123456789abcdef";
         let question = "欧盟各国可再生能源占比";
         let _command = crate::group_guard::command_for_test("investigate");
@@ -6846,7 +6854,7 @@ for line in sys.stdin:
         let qa_twin = std::fs::canonicalize("fixtures/next_visual/qa_twin.py").unwrap();
         std::fs::write(
             run.join("runtime/browser_qa.py"),
-            format!("import runpy, sys\nsys.argv = [sys.argv[0], \"pass\"] + sys.argv[1:]\nrunpy.run_path({:?}, run_name=\"__main__\")\n", qa_twin.display().to_string()),
+            format!("import runpy, sys\nsys.argv = [sys.argv[0], {qa:?}] + sys.argv[1:]\nrunpy.run_path({:?}, run_name=\"__main__\")\n", qa_twin.display().to_string()),
         )
         .unwrap();
         let mut replies = vec![
@@ -7127,6 +7135,35 @@ for line in sys.stdin:
             Err(Stop::Page { step: "publication_vision", why }) => assert!(why.contains("screenshot"), "{why}"),
             other => panic!("expected the image review to be reached, got {other:?}"),
         }
+    }
+
+    /// The image review is advice: a page past the gate and the page checks whose review falls short of its line (score 40,
+    /// a blocker) is still published, the review recorded as not passed with its score and issues, the plan's review step
+    /// refused, and the run's answer names the review as advice short of its line, never as passed.
+    #[tokio::test]
+    async fn a_published_leaf_page_whose_image_review_falls_short_is_still_published_the_review_kept_as_advice() {
+        let rubric: Map<String, Value> = crate::next_flow::VISION_RUBRIC.iter().map(|k| (k.to_string(), json!(30))).collect();
+        let vision = call("toolu_v", json!({"step": "vision", "score": 40, "confidence": 0.9, "rubric": rubric,
+            "issues": [{"severity": "blocker", "code": "clipped", "evidence": "the title is cut", "recommendation": "give it room"}]}));
+        let ran = leaf_run_checked(Some(&headed_twin()), SDG_CSV, vec![vision], "shot").await;
+        let answer = match &ran.result {
+            Ok(answer) => answer,
+            other => panic!("expected the page published past a failing review, got {other:?}"),
+        };
+        assert!(answer.contains("advice only, scored it 40/100, short of its line (issues: blocker:clipped)"), "{answer}");
+        assert!(!answer.contains("passed the image review"), "{answer}");
+        assert_eq!(ran.unasked, 0, "the review was asked");
+        let reviews: Vec<&Value> = ran.events.iter().filter(|e| e["type"] == PUBLICATION_VISION_EVENT).collect();
+        assert_eq!(reviews.len(), 1);
+        assert_eq!((&reviews[0]["passed"], &reviews[0]["score"]), (&json!(false), &json!(40)), "{}", reviews[0]);
+        assert_eq!(reviews[0]["issues"][0]["code"], "clipped");
+        let checks: Vec<&Value> = ran.events.iter().filter(|e| e["type"] == PAGE_CHECKS_EVENT).collect();
+        assert!(checks[0]["checks"].as_array().unwrap().iter().all(|c| c["passed"] == true), "{:?}", checks[0]);
+        let state = read_json(&ran.run, PAGE_STATE).unwrap();
+        assert_eq!(state["publication_vision"], json!({"passed": false, "score": 40}));
+        let plan: Value = serde_json::from_str(&std::fs::read_to_string(ran.run.join(PLAN_FILE)).unwrap()).unwrap();
+        assert_eq!(plan["steps"].as_array().unwrap().last().unwrap()["status"], "blocked", "{plan}");
+        assert!(ran.run.join("publications/column/index.html").is_file());
     }
 
     /// A published page whose leader notes dropped one passes the completion gate but fails notes_dropped: the run stops at
