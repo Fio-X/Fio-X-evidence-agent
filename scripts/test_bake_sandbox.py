@@ -144,6 +144,28 @@ class TypeContrast(unittest.TestCase):
             "(no colour known under it) map", "(outline only) map", "(no colour known under it) -", "(no colour known under it) -",
             "(::before text) -"], got)
 
+    def test_a_background_image_on_html_or_body_itself_leaves_a_text_over_it_unmeasured(self):
+        # html and body are read as the page ground, so their own image is caught there: a text it shows under is
+        # unmeasured, one on an opaque box over it is read against the box
+        for ground in ("html", "body"):
+            got = self.typed(f'<style>{ground}{{background-image:linear-gradient(#fff,#ddd)}}</style><p style="font-size:16px;color:#000">底图</p>'
+                             '<div style="background:#fff"><p style="font-size:16px;color:#000">白底</p></div>')
+            self.assertEqual((got["texts"], got["unmeasured"], got["min_contrast_body"]), (2, 1, 21), (ground, got))
+            self.assertEqual(got["below"], ["底图 16px unmeasured (image on the page ground) -"], (ground, got))
+
+    def test_a_text_painted_apart_from_its_colour_is_unmeasured(self):
+        # a -webkit-text-fill-color other than the color, a background clipped to the text (on the text's box or one holding
+        # it, its color transparent, which no longer hides it from the check); a text-fill colour equal to the color and an
+        # svg text, whose text-fill colour is its color by default, are read
+        got = self.typed('<p style="font-size:16px;color:#000;-webkit-text-fill-color:#eee">填色</p>'
+                         '<p style="font-size:16px;background-color:#000;-webkit-background-clip:text;background-clip:text;color:transparent">裁切</p>'
+                         '<div style="background-color:#000;-webkit-background-clip:text;background-clip:text;color:transparent"><span style="font-size:16px">子字</span></div>'
+                         '<p style="font-size:16px;color:#000;-webkit-text-fill-color:#000">同色</p>'
+                         '<svg width="200" height="40"><text x="10" y="30" font-size="16" fill="#000" color="#f00">矢量</text></svg>')
+        self.assertEqual((got["texts"], got["unmeasured"], got["min_contrast_body"]), (5, 3, 21), got)
+        self.assertEqual([b.split(" unmeasured ")[1] for b in got["below"]],
+                         ["(-webkit-text-fill-color) -", "(background-clip: text) -", "(background-clip: text) -"], got)
+
     def test_a_type_check_with_no_result_is_a_bake_error(self):
         with mock.patch.object(bake, "TYPE", bake.TYPE + ("missing",)):
             got = bake.bake({"html": '<!doctype html><meta charset="utf-8"><div class="pg"><p>标题</p></div>', "ready": "", "width": 800})

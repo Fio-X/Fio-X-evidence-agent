@@ -1,8 +1,10 @@
 (pure) => { // page check: every visible text as laid out (html and svg alike), its size as rendered and its contrast with what is drawn under it; measured here, judged by layer 1
   // A text whose contrast cannot be read is counted unmeasured, never read against the page ground instead: a fill by url()
   // (a gradient or pattern), an image, embedded content, a background image or an svg image/use under it before an opaque
-  // colour, no element at its point, a text drawn as an outline only (fill none, a stroke), and text a ::before or ::after
-  // prints; layer 1 fails text_contrast on any.
+  // colour, no element at its point, a background image on the page ground itself (html's or body's) where nothing opaque
+  // comes between, a text drawn as an outline only (fill none, a stroke), a text painted in a -webkit-text-fill-color other
+  // than the colour read or clipped to a background (background-clip: text), and text a ::before or ::after prints; layer 1
+  // fails text_contrast on any.
   // The floors layer 1 holds the numbers to (next_run.rs page_checks), here only to list the first texts below them:
   //   contrast 4.5:1 for body text, 3:1 for large text, large = at least 18pt (24px) or 14pt (18.66px) bold (700 and up):
   //     WCAG 2.x SC 1.4.3 Contrast (Minimum), its relative luminance and contrast ratio as WCAG 2.x defines them;
@@ -27,7 +29,15 @@
     : /^(img|canvas|video|iframe|object|embed)$/.test(name) || (!!backgroundImage && backgroundImage !== 'none');
   // an svg text with no fill that strokes its outline: seen, its contrast not read here
   const outlined = (fill, stroke, width) => fill === 'none' && !!stroke && stroke !== 'none' && parseFloat(width) > 0;
-  if (pure === 'pure') return { FONT, BODY, LARGE, luminance, ratio, large, over, parse, down, pseudoText, unreadable, outlined };
+  // why a text's paint is not the colour read (its color in html, its fill in svg), '' when it is: clipped to a background
+  // (background-clip: text on it or a box holding it, the background showing through the glyphs), or a
+  // -webkit-text-fill-color set apart from that colour (html: other than its color; svg: other than both its color, which
+  // the property takes by default, and its fill); the colours come as the same normalised form
+  const apart = (svg, textFill, color, fill, clipped) => clipped ? 'background-clip: text'
+    : (svg ? textFill !== color && textFill !== fill : textFill !== color) ? '-webkit-text-fill-color' : '';
+  // whether the page ground itself (html's or body's own background, painted under everything) holds an image
+  const groundImage = (htmlImage, bodyImage) => [htmlImage, bodyImage].some((v) => !!v && v !== 'none');
+  if (pure === 'pure') return { FONT, BODY, LARGE, luminance, ratio, large, over, parse, down, pseudoText, unreadable, outlined, apart, groundImage };
   // a computed colour Chrome does not give as rgb() (color(), oklch()...) is read back from a one-pixel canvas
   let cv; const seen = new Map();
   const rgba = (s) => { if (!seen.has(s)) seen.set(s, parse(s) || (() => { cv = cv || document.createElement('canvas').getContext('2d', { willReadFrequently: true }); cv.clearRect(0, 0, 1, 1); cv.fillStyle = '#000'; cv.fillStyle = s; cv.fillRect(0, 0, 1, 1); const d = cv.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2], d[3] / 255]; })()); return seen.get(s); };
@@ -35,6 +45,9 @@
   const doc = document.documentElement, rootBg = rgba(getComputedStyle(doc).backgroundColor);
   const bodyBg = document.body ? rgba(getComputedStyle(document.body).backgroundColor) : [0, 0, 0, 0];
   const canvas = over(rootBg[3] > 0 ? rootBg : bodyBg, [255, 255, 255]); // the page background: the root's, else the body's it takes, on white
+  // html and body are read as the canvas's colour (paint skips them as the canvas), so an image either sets on itself is
+  // known here: a text it shows under, nothing opaque between, is unmeasured
+  const ground = groundImage(getComputedStyle(doc).backgroundImage, document.body && getComputedStyle(document.body).backgroundImage);
   const SHAPES = new Set(['rect', 'circle', 'ellipse', 'path', 'polygon', 'polyline']);
   const SKIP = 'script, style, noscript, template, title, desc, defs, clipPath, mask, symbol, marker, pattern';
   // the colour one element paints at (x, y), alpha and opacity in; none when it paints nothing there, UNREAD when what it
@@ -58,16 +71,25 @@
   };
   // what is drawn under a text at (x, y): every element there below the text in paint order (its own element first, so its
   // own background counts), composited down to the first opaque one or the page background; when the text's element is not
-  // in the hit stack, the elements holding it or before it in the page stand in for the paint order; none (unmeasured) when
-  // nothing is hit there or an unreadable paint comes before an opaque colour
+  // in the hit stack, the elements holding it or before it in the page stand in for the paint order; why it is unmeasured (a
+  // string) when nothing is hit there, an unreadable paint comes before an opaque colour, or the composite reaches a page
+  // ground that holds an image
   const under = (p, x, y) => {
     const stack = document.elementsFromPoint(x, y), own = p.closest('text') || p, i = stack.findIndex((e) => e === p || e === own);
-    if (!stack.length) return null;
+    if (!stack.length) return 'no colour known under it';
     const below = i >= 0 ? stack.slice(i) : stack.filter((e) => e.contains(p) || e.compareDocumentPosition(p) & Node.DOCUMENT_POSITION_FOLLOWING);
     const layers = [];
-    for (const e of below) { const c = paint(e, x, y); if (!c) continue; if (c === UNREAD) return null; layers.push(c); if (c[3] >= 1) break; }
+    let opaque = false;
+    for (const e of below) { const c = paint(e, x, y); if (!c) continue; if (c === UNREAD) return 'no colour known under it'; layers.push(c); if (c[3] >= 1) { opaque = true; break; } }
+    if (!opaque && ground) return 'image on the page ground';
     return layers.reduceRight((acc, c) => over(c, acc), canvas);
   };
+  // whether a background is clipped to the text of an element: background-clip: text on it or on a box holding it
+  const clippedToText = (el) => {
+    for (let a = el; a && a.nodeType === 1; a = a.parentElement) { const c = getComputedStyle(a); if (c.backgroundClip === 'text' || c.webkitBackgroundClip === 'text') return true; }
+    return false;
+  };
+  const key = (v) => String(rgba(v));
   const out = { min_font_px: null, min_contrast_body: null, min_contrast_large: null, texts: 0, unmeasured: 0, below: [] };
   const least = (k, v) => { out[k] = out[k] === null ? v : Math.min(out[k], v); };
   const list = (t, px, k, el, why) => {
@@ -90,24 +112,27 @@
       const o = opa(p), g = document.createRange(); g.selectNodeContents(n);
       const box = () => [...g.getClientRects()].find((b) => b.width > 0 && b.height > 0);
       let r = box(); if (!r || o === 0) continue;
-      const known = !outline && !(svg && s.fill.startsWith('url')), c = known ? rgba(svg ? s.fill : s.color) : null;
+      // a text clipped to a background or painted in its own text-fill colour is checked first: its color may be transparent
+      const urlFill = svg && s.fill.startsWith('url');
+      const off = outline || urlFill ? '' : apart(svg, key(s.webkitTextFillColor), key(s.color), svg ? key(s.fill) : '', clippedToText(p));
+      const known = !outline && !urlFill && !off, c = known ? rgba(svg ? s.fill : s.color) : null;
       const a = known ? c[3] * (svg ? parseFloat(s.fillOpacity) : 1) * o : 1;
       if (a === 0) continue;
       // the size as rendered: an svg's user units scaled to its box (viewBox and transforms, getScreenCTM)
       const m = p instanceof SVGGraphicsElement ? p.getScreenCTM() : null;
       const px = parseFloat(s.fontSize) * (m ? Math.sqrt(Math.abs(m.a * m.d - m.b * m.c)) : 1), weight = parseFloat(s.fontWeight) || 400;
       out.texts += 1; least('min_font_px', px);
-      let k = null, why = outline ? 'outline only' : known ? '' : 'fill by url()';
+      let k = null, why = outline ? 'outline only' : off || (known ? '' : 'fill by url()');
       if (known) {
         let x = r.left + r.width / 2, y = r.top + r.height / 2;
         if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) { scrollTo(scrollX + x - innerWidth / 2, scrollY + y - innerHeight / 2); r = box(); x = r.left + r.width / 2; y = r.top + r.height / 2; }
         let back = under(p, x, y);
         // an svg text drawn over its own stroke (paint-order: stroke, a halo) reads against the stroke
-        if (back && svg && s.stroke !== 'none' && !s.stroke.startsWith('url') && parseFloat(s.strokeWidth) > 0 && /^stroke/.test(s.paintOrder)) {
+        if (Array.isArray(back) && svg && s.stroke !== 'none' && !s.stroke.startsWith('url') && parseFloat(s.strokeWidth) > 0 && /^stroke/.test(s.paintOrder)) {
           const h = rgba(s.stroke); back = over([h[0], h[1], h[2], h[3] * parseFloat(s.strokeOpacity) * o], back);
         }
-        if (back) { k = ratio(over([c[0], c[1], c[2], a], back), back); least(large(px, weight) ? 'min_contrast_large' : 'min_contrast_body', k); }
-        else why = 'no colour known under it';
+        if (Array.isArray(back)) { k = ratio(over([c[0], c[1], c[2], a], back), back); least(large(px, weight) ? 'min_contrast_large' : 'min_contrast_body', k); }
+        else why = back;
       }
       if (why) out.unmeasured += 1;
       if (why || px < FONT || (k !== null && k < (large(px, weight) ? LARGE : BODY))) list(t, px, k, p, why);

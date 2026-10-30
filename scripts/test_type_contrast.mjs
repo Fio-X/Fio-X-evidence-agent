@@ -2,7 +2,8 @@
 // The bake's type check (runtime/leaves_py/type-contrast.js), its pure parts without a browser: WCAG 2.x relative luminance
 // and contrast ratio against known pairs, the large-text rule at its edges, compositing a colour with alpha, the rgb() forms
 // Chrome computes, the floors it lists texts below, the rounding down of what it reports, and what it cannot read (an
-// unreadable paint, an outline-only text, a pseudo-element's text). The page part runs in Chrome only
+// unreadable paint, an outline-only text, a pseudo-element's text, a text painted apart from its colour, an image on the page
+// ground). The page part runs in Chrome only
 // (scripts/test_bake_sandbox.py).
 // Run: node scripts/test_type_contrast.mjs
 import assert from 'node:assert/strict';
@@ -10,7 +11,7 @@ import { readFileSync } from 'node:fs';
 
 const src = readFileSync(new URL('../runtime/leaves_py/type-contrast.js', import.meta.url), 'utf8');
 const check = (0, eval)(src);
-const { FONT, BODY, LARGE, luminance, ratio, large, over, parse, down, pseudoText, unreadable, outlined } = check('pure');
+const { FONT, BODY, LARGE, luminance, ratio, large, over, parse, down, pseudoText, unreadable, outlined, apart, groundImage } = check('pure');
 const round = (x) => Math.round(x * 100) / 100; // the known pairs below are given to two decimals
 let n = 0;
 const eq = (a, b, msg) => { assert.deepEqual(a, b, msg); n += 1; };
@@ -58,6 +59,15 @@ eq([outlined('none', 'rgb(0, 0, 0)', '1px'), outlined('none', 'none', '1px'), ou
 // a pseudo-element prints text when its content is a string or a generated value; none, normal and "" print nothing
 eq(['"注"', "'x'", 'counter(item)', 'attr(data-n)', 'open-quote'].map(pseudoText), [true, true, true, true, true], 'pseudo text');
 eq(['none', 'normal', '""', "''", '', undefined].map(pseudoText), [false, false, false, false, false, false], 'no pseudo text');
+// a text whose paint is not the colour read: clipped to a background (background-clip: text) whatever its colours, or a
+// -webkit-text-fill-color other than its color in html; in svg the property takes the color by default, so only one set
+// apart from both the color and the fill counts
+const BLACK = '0,0,0,1', RED = '255,0,0,1', CLEAR = '0,0,0,0';
+eq([apart(false, BLACK, BLACK, '', false), apart(false, RED, BLACK, '', false), apart(false, CLEAR, BLACK, '', false)], ['', '-webkit-text-fill-color', '-webkit-text-fill-color'], 'html text fill');
+eq([apart(false, BLACK, BLACK, '', true), apart(false, CLEAR, CLEAR, '', true), apart(true, BLACK, BLACK, RED, true)], ['background-clip: text', 'background-clip: text', 'background-clip: text'], 'clipped to a background');
+eq([apart(true, BLACK, BLACK, RED, false), apart(true, RED, BLACK, RED, false), apart(true, CLEAR, BLACK, RED, false)], ['', '', '-webkit-text-fill-color'], 'svg text fill');
+// a background image on html or body itself (an image or a gradient); none on both is a plain page ground
+eq([groundImage('url("bg.png")', 'none'), groundImage('none', 'linear-gradient(red, blue)'), groundImage('none', 'none'), groundImage('none', null)], [true, true, false, false], 'page ground image');
 // the page part is the same function called with no argument: a string of JSON in a browser, never the pure parts
 assert.equal(typeof check, 'function');
 console.log(`type-contrast pure parts: ${n} checks passed`);

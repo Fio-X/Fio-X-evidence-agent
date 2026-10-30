@@ -43,7 +43,7 @@ QA = {"qa.js": "226ea0d3d9c9897f9e51c113de2af2fdb95c40f99f01515dc3018c2e9becc218
       "text-line-clash.js": "130b7d0fa07d606b9115b587a89516a7b078a970735d7294227acae68f220ef4",
       "text-line-hits.js": "34a93b56c7ce40783bb7d904cfc99306cdabb8e6a67e97e0143aa881fa826563",
       "page-width.js": "157b1eb25ccbedf7a34c4b85d5af90089eba5da85d5b9b6b10f4c1ba70ebc641",
-      "type-contrast.js": "8327bcfd47166d42ed56358971698a10201ca072267585c9e19bce45d4b6b72d"}
+      "type-contrast.js": "a965bde748be6b980004ec7ddc6616b6f89fda7552c2a74c466f9d7d82d70bdb"}
 # The keys of type-contrast.js's result, each of which the bake's "type" must hold.
 TYPE = ("min_font_px", "min_contrast_body", "min_contrast_large", "texts", "unmeasured", "below")
 BASE = "map.base"  # the base map's layer: its borders and coastlines are background (the sea box's edge is not)
