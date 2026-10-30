@@ -4,7 +4,8 @@ values and ledger texts (the first layer writes the real ones), names from the p
 on ONE Occ, bubbles first. Checks: run.drawn reads every text back, no digit outside a marked ledger run, only page colour
 variables, note font >= 16, each note one line ending in its bold number (one too wide for that on two, its bold number and
 unit the second; one that fits one line drawn byte for byte as before; one too wide on two refused as before), in the sea when that costs less and over the land
-only off every circle and label (one with no room anywhere is dropped and named), its leader straight or with one bend, no
+only off every circle and label (one with no room anywhere is dropped and named), its leader straight or with one bend (two
+only when no place has such a leader: the q6 page's walled-in Iraq, a room's door; a room without one still drops it), no
 note box on a circle or label the bubbles claimed (but its own point's), every EU
 circle labelled, no leader crossing another, no label or leader over a nudged circle's true-point dot, a blocked side gives
 way to the other; the column page lays the map beside the bars in one panel; a crowded map (the EU-27, a
@@ -231,6 +232,79 @@ class LeaderNotes(unittest.TestCase):
         f = LN.Frame({"data": dict(D, notes=NOTES[:1]), "style": style(side="right")})
         LN.cl_leader_notes(f, occ)
         self.assertEqual(f.dropped, [("SE", "no free place for the note")])
+
+    def leads_clear(self, occ, svg):
+        """Every note leader in `svg` keeps off every box claimed in `occ` and every circle (but its own point's, within 10 px of
+        the point) and crosses no other leader drawn."""
+        paths = leaders(svg.split('data-node="leader_notes"')[1])
+        for path in paths:
+            px, py = path[-1]; own = [b for b in occ.boxes if b[0] <= px <= b[2] and b[1] <= py <= b[3]]
+            for (x1, y1), (x2, y2) in zip(path, path[1:]):
+                for t in range(101):
+                    x, y = x1 + (x2 - x1) * t / 100, y1 + (y2 - y1) * t / 100
+                    if ((x - px) ** 2 + (y - py) ** 2) ** 0.5 <= 10: continue
+                    self.assertEqual([b[:5] for b in occ.boxes if b not in own and b[0] < x < b[2] and b[1] < y < b[3]], [], (x, y))
+                    self.assertEqual([q[:3] for q in getattr(occ, "circles", []) if ((x - q[0]) ** 2 + (y - q[1]) ** 2) ** 0.5 < q[2] and ((px - q[0]) ** 2 + (py - q[1]) ** 2) ** 0.5 > q[2]], [], (x, y))
+        ls = segs(svg)
+        for a in range(len(ls)):
+            for b in range(a + 1, len(ls)):
+                p, q = ls[a], ls[b]
+                if min(((p[2 * i] - q[2 * j]) ** 2 + (p[2 * i + 1] - q[2 * j + 1]) ** 2) ** 0.5 for i in (0, 1) for j in (0, 1)) < 30: continue  # one circle's two, or one leader's own pieces
+                self.assertFalse(MK.crosses(p[:2], p[2:], q[:2], q[2:]), (p, q))
+        return paths
+
+    def test_a_note_walled_in_by_its_neighbours_takes_a_two_bend_leader(self):
+        # the q6 stand-in page (asylum applications to the EU by citizenship, 2025; its 20 values, Natural Earth points and the
+        # map extent layer 1 made, copied from that run): Iraq's note, in the Iraq/Syria/Turkey/Georgia cluster, found no clear
+        # straight or one-bend leader from any of its places and was dropped; now it takes the cheapest two-bend one, Afghanistan's
+        # stays as it was, and every leader keeps off every box, circle and other leader
+        v = dict(AF=112310, BD=37350, CD=17675, CO=21715, EG=25310, ER=12570, GE=15130, GN=14275, HT=14050, IQ=12485, MA=20205, ML=19910,
+                 PE=20150, PK=19250, SD=17375, SO=18340, SY=43290, TR=31010, UA=23935, VE=90950)  # test-only copies of the run's rows
+        at = dict(AF=(66.496586, 34.164262), BD=(89.684963, 24.214956), CD=(23.458829, -1.858167), CO=(-73.174347, 3.373111), EG=(29.445837, 26.186173),
+                  ER=(38.285566, 15.787401), GE=(43.735724, 41.870087), GN=(-10.016402, 10.618516), HT=(-72.224051, 19.263784), IQ=(43.26181, 33.09403),
+                  MA=(-7.187296, 31.650723), ML=(-2.038455, 18.692713), PE=(-72.90016, -12.976679), PK=(68.545632, 29.328389), SD=(29.260657, 16.330746),
+                  SO=(45.19238, 3.568925), SY=(38.277783, 35.006636), TR=(34.508268, 39.345388), UA=(32.140865, 49.724739), VE=(-64.599381, 7.182476))
+        ext = [-106.38254019874816, -36.17038598855728, 124.13352937983866, 73.24131058195306]
+        ranked = sorted(v, key=lambda c: -v[c]); rows = [{"src": "fact:gap", "text": "99,825 人"}, {"src": "fact:times", "text": "9.0倍"}]
+        for c in ranked:
+            rows += [{"src": f"series:t/A.{c}:2025:OBS_VALUE", "table": "t", "dims": {"freq": "A", "citizen": c}, "time": "2025", "value": str(v[c])}, {"src": f"fact:val.{c}.n", "text": f"{v[c]:,}"}]
+        items = [dict(code=c, value=f"series:t/A.{c}:2025:OBS_VALUE", value_text=f"fact:val.{c}.n", lonlat=list(at[c])) for c in ranked]
+        notes = [dict(at=list(at["AF"]), name="AF", text=[{"word": "column.note.hi"}], value_text="fact:gap"), dict(at=list(at["IQ"]), name="IQ", text=[{"word": "column.note.lo"}], value_text="fact:times")]
+        K.setup(rows, ZH2, run.tables); geo.NE = SHP; occ = prod.Occ()
+        svg = bubbles.cl_bubbles(bubbles.Frame({"data": dict(items=items, ext=ext), "style": style()}), occ)
+        f = LN.Frame({"data": dict(ext=ext, notes=notes), "style": style()}); svg += LN.cl_leader_notes(f, occ)
+        setup()
+        self.assertEqual((f.W, f.H, f.dropped, check_svg(svg)), (560, 284, [], []))
+        paths = self.leads_clear(occ, svg)
+        self.assertEqual(paths[0], [(451.5, 235.8), (451.5, 101.4), (420.0, 101.4)])  # Afghanistan's, one bend, as on the page
+        iq = paths[1]; self.assertEqual((len(iq), iq[-1]), (4, (363.5, 104.1)))  # Iraq's: across, along, across, its middle run on the grid
+        self.assertTrue(iq[0][1] == iq[1][1] and iq[1][0] == iq[2][0] and iq[2][1] == iq[3][1] and iq[1][0] % LN.GRID == 0, iq)
+
+    def test_a_note_in_a_walled_room_takes_two_bends_through_its_door_and_none_drops_without_one(self):
+        # a note's point in a room of claimed boxes on the EU frame: a door in the roof (the way in: across to the door's column, down
+        # it, across to the point under a shelf) and a door in the side (down to the door's row, across it, down to the point
+        # beside a wall); no straight or one-bend leader clears either, so the note was dropped. Each now takes two bends through its
+        # door. A room with no door still drops the note, named, and draws nothing
+        def room(door):
+            setup(); f = LN.Frame({"data": dict(D, notes=[dict(at=POINT["DEU"], name="DE", value_text="fact:gap")]), "style": style()})
+            px, py = f.notes[0]["_pt"]; occ = prod.Occ(); X, Y = LN.GRID * round((px + 24) / LN.GRID), LN.GRID * round((py - 9) / LN.GRID)
+            walls = dict(roof=[(px - 40, py - 34, px - 36, py + 12), (X + 6, py - 34, X + 10, py + 12), (px - 40, py + 8, X + 10, py + 12),
+                               (px - 40, py - 34, X - 6, py - 30), (px - 40, py - 14, X - 6, py - 10)],
+                         side=[(px - 12, Y - 20, px - 8, py + 34), (px - 12, Y - 20, px + 40, Y - 6), (px + 36, Y + 6, px + 40, py + 34),
+                               (px + 10, Y + 6, px + 14, py + 34), (px - 12, py + 30, px + 40, py + 34)],
+                         shut=[(px - 40, py - 34, px - 36, py + 12), (px + 36, py - 34, px + 40, py + 12), (px - 40, py + 8, px + 40, py + 12), (px - 40, py - 34, px + 40, py - 30)])[door]
+            for b in walls: occ.add(b, "test")
+            svg = LN.cl_leader_notes(f, occ)
+            return f, svg, occ, (X, Y)
+        for door, across in (("roof", True), ("side", False)):
+            f, svg, occ, (X, Y) = room(door)
+            self.assertEqual((f.dropped, check_svg(svg)), ([], []), door)
+            [p] = self.leads_clear(occ, svg)
+            self.assertEqual(len(p), 4, door)
+            if across: self.assertTrue(p[0][1] == p[1][1] and p[1][0] == p[2][0] == X and p[2][1] == p[3][1], p)  # down the roof's door
+            else: self.assertTrue(p[0][0] == p[1][0] and p[1][1] == p[2][1] == Y and p[2][0] == p[3][0], p)  # across the side's door
+        f, svg, occ, _ = room("shut")
+        self.assertEqual((f.dropped, svg), ([("DE", "no free place for the note")], '<g data-node="leader_notes"></g>'))
 
     def test_a_note_too_wide_for_one_line_sets_its_number_and_unit_on_a_second_line(self):
         # beside Sweden's note on the bubbles' map: the name and the word on the first line, the bold number with its unit (its
