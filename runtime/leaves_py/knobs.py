@@ -30,8 +30,9 @@ READS = {"frame": [], "base": ["data"]}
 # tables must meet, in the order they are checked (src/next_run.rs SHAPE_CONDITIONS), the charts the charts step must have
 # drawn its main as (none: the shape alone decides), the program's picks over the shape and the claims (src/next_run.rs
 # PICK_RULES), the few knobs it exposes, its page's time window (the two picks it runs between; none: each layer its own),
-# and the pairs of its layers that print the same measure by design (same_measure; none: no two may, src/next_run.rs
-# page_checks).
+# the pairs of its layers that print the same measure by design (same_measure; none: no two may, src/next_run.rs
+# page_checks), and whether its page has a slot for the illustration strip (strip; none: no slot, layer 1 asks for no
+# strip and holds the page to none; run.STRIP_SLOT names the pages that place one).
 RECIPES = [
     dict(name="scmp", layers=["map", "strip", "bignums", "notes"],
          eats=["annual", "years_2", "hub_origin", "one_unit", "others_single", "monthly_companion"], charts=[],
@@ -42,7 +43,7 @@ RECIPES = [
     dict(name="column", layers=["bars", "bubbles", "leader_notes"], eats=["annual", "one_place", "one_unit", "last_year"],
          charts=["choropleth", "horizontal_bar"], picks=["ranked", "claim_marks"], exposes=[],
          # TODO(item 5): goes once the map (bubbles) shows other values than the bars (src/next_leaf.rs leaves)
-         same_measure=[["bars", "bubbles"]]),
+         same_measure=[["bars", "bubbles"]], strip=True),
 ]
 # The shape conditions each node of a recipe needs its tables to meet; a recipe's conditions hold every one its layers'
 # nodes need.
@@ -129,7 +130,7 @@ def table():
 def recipes(nodes, groups):
     """RECIPES as checked: each layer one its group holds and its node states what it eats, every condition a layer's node
     needs among the recipe's own, each condition after what it reads (NEEDS), each exposed knob one its node has, and each
-    same_measure pair two of its own layers."""
+    same_measure pair two of its own layers, and a strip slot declared exactly where its page places one (run.STRIP_SLOT)."""
     for r in RECIPES:
         for i, e in enumerate(r["eats"]):
             for need in NEEDS.get(e, []):
@@ -153,6 +154,8 @@ def recipes(nodes, groups):
         for pair in r.get("same_measure", []):
             if len(pair) != 2 or pair[0] == pair[1] or not set(pair) <= set(r["layers"]):
                 raise SystemExit(f"{r['name']}: same_measure {pair!r}; a pair is two of its own layers")
+        if r.get("strip", False) not in (True, False) or r.get("strip", False) != (r["name"] in run.STRIP_SLOT):
+            raise SystemExit(f"{r['name']}: strip {r.get('strip')!r}; its page {'places' if r['name'] in run.STRIP_SLOT else 'has no slot for'} the strip (run.STRIP_SLOT)")
     return [dict(r) for r in RECIPES]
 
 

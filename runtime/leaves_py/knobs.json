@@ -1470,7 +1470,8 @@
      "bars",
      "bubbles"
     ]
-   ]
+   ],
+   "strip": true
   }
  ]
 }

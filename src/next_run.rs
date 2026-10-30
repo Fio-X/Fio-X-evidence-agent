@@ -1889,14 +1889,7 @@ fn leaf_page(
     let Reply::Filled(page) = crate::next_flow::visual_call(calls, "leaf_fill", request).map_err(|why| (recipe, "fill", why))? else {
         unreachable!("the visual group answered leaf_fill with another reply")
     };
-    // the strip under the page, by the piece set its tables have; a strip the visual group did not take leaves the page
-    // without one, its event saying why
-    let request = Request::IllusStrip { tables: &page.refs, width: page.w, runtime: &runtime };
-    let strip = match crate::next_flow::visual_call(calls, "illus_strip", request) {
-        Ok(Reply::Strip { strip, .. }) => strip,
-        Ok(_) => unreachable!("the visual group answered illus_strip with another reply"),
-        Err(_) => None,
-    };
+    let (strip, strip_ask) = page_strip(calls, picked, &page.refs, page.w, &runtime);
     let leaf = LeafPage {
         draw: &page.draw,
         bake: &page.bake,
@@ -1921,16 +1914,52 @@ fn leaf_page(
         (recipe, stage, why)
     })?;
     let drawn = fill["drawn"].as_array().cloned().unwrap_or_default();
-    Ok(LeafPublished { recipe: picked, published, drawn, strip: strip.is_some() })
+    Ok(LeafPublished { recipe: picked, published, drawn, strip: strip_ask })
+}
+
+/// What a page's illustration strip was asked of: whether its recipe has a slot for one (Recipe::strip), whether a strip
+/// was owed (the slot, and a piece set of the visual group that takes the page's tables) and whether the visual group gave
+/// one to place.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct StripAsk {
+    slot: bool,
+    asked: bool,
+    given: bool,
+}
+
+/// The strip under a page of `recipe` over `tables`, by the piece set its tables have, and what it was asked of. A recipe
+/// with no strip slot asks for none (its page would refuse one). With a slot: a reply of no strip is no piece set taking
+/// the tables, nothing owed; a strip the visual group refused or did not take (a piece set named the tables, or the sets
+/// could not be read) is owed and not given, so the page check strip_placed fails it, its event saying why.
+fn page_strip(
+    calls: &std::sync::Mutex<Vec<Value>>,
+    recipe: &Recipe,
+    tables: &[String],
+    width: f64,
+    runtime: &Path,
+) -> (Option<crate::next_leaf::Strip>, StripAsk) {
+    use crate::next_visual::{Reply, Request};
+    if !recipe.strip {
+        return (None, StripAsk::default());
+    }
+    let request = Request::IllusStrip { tables, width, runtime };
+    match crate::next_flow::visual_call(calls, "illus_strip", request) {
+        Ok(Reply::Strip { strip, .. }) => {
+            let given = strip.is_some();
+            (strip, StripAsk { slot: true, asked: given, given })
+        }
+        Ok(_) => unreachable!("the visual group answered illus_strip with another reply"),
+        Err(_) => (None, StripAsk { slot: true, asked: true, given: false }),
+    }
 }
 
 /// A leaf page leaf_page published: its recipe, the publication, each row a layer prints a value of (fill_of's `drawn`) and
-/// whether the visual group gave the page a strip to place.
+/// what its illustration strip was asked of.
 struct LeafPublished {
     recipe: &'static Recipe,
     published: crate::next_flow::Published,
     drawn: Vec<Value>,
-    strip: bool,
+    strip: StripAsk,
 }
 
 /// The first recipe of the leaf registry (the visual group's Recipes, in its order) that draws every view the question asks
@@ -2396,10 +2425,6 @@ const TYPE_FLOOR_PX: f64 = 11.0;
 const CONTRAST_FLOOR_BODY: f64 = 4.5;
 const CONTRAST_FLOOR_LARGE: f64 = 3.0;
 
-/// The recipes whose page places the illustration strip the visual group gives it (run.py column_page).
-// a later WIP makes recipes declare their strip slot, and strip_placed reads that slot instead of this list
-const STRIP_RECIPES: &[&str] = &["column"];
-
 /// One program check on a published page: its name, whether it passed, the warning it passed with (none: it raised none)
 /// and what it measured.
 #[derive(Debug)]
@@ -2412,7 +2437,8 @@ struct PageCheck {
 
 /// The program's checks on a published leaf page, each measured, none asked of a model:
 /// - notes_dropped: what its layers dropped (the publication's list, the request ledger's dropped entries), none passes;
-/// - strip_placed: on a recipe of STRIP_RECIPES given a strip (`strip`), the published html holds the layer illus_strip;
+/// - strip_placed: a strip owed (`strip`: its recipe's slot and a piece set that takes the tables, page_strip) was given
+///   and the published html holds the layer illus_strip; one owed and not given fails, whatever the html holds;
 /// - same_numbers_twice: no two layers print a value of the same row (one table, series and time; fill_of's `drawn`), each
 ///   pair found named with its table, times and count; a pair the recipe declares (its same_measure, either order) is
 ///   recorded as known, declared by the recipe, and passes with a warning; the same layers under another recipe fail;
@@ -2425,17 +2451,16 @@ fn page_checks(
     recipe: &Recipe,
     html: Option<&str>,
     dropped: &[(String, String)],
-    strip: bool,
+    strip: StripAsk,
     drawn: &[Value],
     type_measured: Option<&Value>,
 ) -> Vec<PageCheck> {
     let items: Vec<&str> = dropped.iter().map(|(what, _)| what.as_str()).collect();
     let measured = json!({"count": items.len(), "items": items});
     let notes = PageCheck { name: "notes_dropped", passed: items.is_empty(), warning: None, measured };
-    let asked = strip && STRIP_RECIPES.contains(&recipe.name.as_str());
     let placed = html.is_some_and(|h| h.contains(r#"data-layer="illus_strip""#));
-    let measured = json!({"asked": asked, "placed": placed});
-    let strip = PageCheck { name: "strip_placed", passed: !asked || placed, warning: None, measured };
+    let measured = json!({"slot": strip.slot, "asked": strip.asked, "given": strip.given, "placed": placed});
+    let strip = PageCheck { name: "strip_placed", passed: !strip.asked || (strip.given && placed), warning: None, measured };
     // each layer's rows by src, layers in fill order; a row's table and time as the fill gave them
     let mut layers: Vec<(&str, BTreeSet<&str>)> = Vec::new();
     let mut at: BTreeMap<&str, (&str, &str)> = BTreeMap::new();
@@ -4645,6 +4670,7 @@ mod tests {
             exposes: r.exposes.clone(),
             window: r.window.clone(),
             same_measure: r.same_measure.clone(),
+            strip: r.strip,
         }
     }
 
@@ -7036,14 +7062,14 @@ for line in sys.stdin:
     #[test]
     fn a_page_with_nothing_dropped_or_drawn_twice_passes_every_page_check() {
         let drawn = [drawn_row("map", "SE", "2024"), drawn_row("ring", "SE", "2025-01")];
-        let checks = page_checks(recipe("ring"), Some("<body></body>"), &[], false, &drawn, Some(&typed()));
+        let checks = page_checks(recipe("ring"), Some("<body></body>"), &[], StripAsk::default(), &drawn, Some(&typed()));
         let got: Vec<(&str, bool)> = checks.iter().map(|c| (c.name, c.passed)).collect();
         assert_eq!(
             got,
             [("notes_dropped", true), ("strip_placed", true), ("same_numbers_twice", true), ("type_size", true), ("text_contrast", true)]
         );
         assert_eq!(checks[0].measured, json!({"count": 0, "items": []}));
-        assert_eq!(checks[1].measured, json!({"asked": false, "placed": false}));
+        assert_eq!(checks[1].measured, json!({"slot": false, "asked": false, "given": false, "placed": false}));
         assert_eq!(checks[2].measured, json!({"pairs": []}));
         assert_eq!(checks[3].measured, json!({"min_font_px": 12, "floor_px": 11.0, "texts": 40, "below": []}));
         assert_eq!(
@@ -7060,7 +7086,7 @@ for line in sys.stdin:
         let with = |key: &str, v: Value| {
             let mut t = typed();
             t[key] = v;
-            let checks = page_checks(recipe("column"), Some("<body></body>"), &[], false, &[], Some(&t));
+            let checks = page_checks(recipe("column"), Some("<body></body>"), &[], StripAsk::default(), &[], Some(&t));
             assert_eq!((checks[3].name, checks[4].name), ("type_size", "text_contrast"));
             (checks[3].passed, checks[4].passed)
         };
@@ -7077,10 +7103,10 @@ for line in sys.stdin:
         let mut small = typed();
         small["min_font_px"] = json!(9);
         small["below"] = json!(["注 9px 12:1 bars"]);
-        let checks = page_checks(recipe("column"), Some("<body></body>"), &[], false, &[], Some(&small));
+        let checks = page_checks(recipe("column"), Some("<body></body>"), &[], StripAsk::default(), &[], Some(&small));
         assert_eq!(checks[3].measured["below"], json!(["注 9px 12:1 bars"]));
         assert_eq!(checks[4].measured["below"], json!(["注 9px 12:1 bars"]));
-        let unmeasured = page_checks(recipe("column"), Some("<body></body>"), &[], false, &[], None);
+        let unmeasured = page_checks(recipe("column"), Some("<body></body>"), &[], StripAsk::default(), &[], None);
         for check in &unmeasured[3..] {
             assert_eq!((check.passed, &check.measured), (false, &json!({"measured": false})), "{check:?}");
         }
@@ -7091,25 +7117,62 @@ for line in sys.stdin:
     #[test]
     fn a_dropped_note_fails_notes_dropped_with_its_count() {
         let dropped = [("dropped:leader_notes:SE".to_string(), "no free place".to_string())];
-        let checks = page_checks(recipe("column"), Some("<body></body>"), &dropped, false, &[], Some(&typed()));
+        let checks = page_checks(recipe("column"), Some("<body></body>"), &dropped, StripAsk::default(), &[], Some(&typed()));
         assert_eq!((checks[0].name, checks[0].passed), ("notes_dropped", false));
         assert_eq!(checks[0].measured, json!({"count": 1, "items": ["dropped:leader_notes:SE"]}));
         assert!(checks[1..].iter().all(|c| c.passed), "{checks:?}");
     }
 
-    /// The column page given a strip fails strip_placed when its html holds no layer illus_strip and passes when it does; a
-    /// recipe that places no strip is not held to one it was given.
+    /// A strip owed and given: its recipe's slot, a piece set that takes the tables, the visual group's strip.
+    const OWED: StripAsk = StripAsk { slot: true, asked: true, given: true };
+
+    /// A strip owed and given fails strip_placed when the page's html holds no layer illus_strip (or was not read) and passes
+    /// when it does; one owed and not given (the strip child refused, or did not run) fails even on html that holds one; a
+    /// slot no piece set fills, and a recipe with no slot, owe none.
     #[test]
-    fn a_column_page_given_a_strip_fails_strip_placed_unless_its_html_holds_it() {
-        let missing = page_checks(recipe("column"), Some("<body><svg></svg></body>"), &[], true, &[], Some(&typed()));
+    fn a_strip_owed_fails_strip_placed_unless_it_was_given_and_its_html_holds_it() {
+        let holds = r#"<div class="illus-strip"><svg><g data-layer="illus_strip"></g></svg></div>"#;
+        let missing = page_checks(recipe("column"), Some("<body><svg></svg></body>"), &[], OWED, &[], Some(&typed()));
         assert_eq!((missing[1].name, missing[1].passed), ("strip_placed", false));
-        assert_eq!(missing[1].measured, json!({"asked": true, "placed": false}));
-        let unread = page_checks(recipe("column"), None, &[], true, &[], Some(&typed()));
+        assert_eq!(missing[1].measured, json!({"slot": true, "asked": true, "given": true, "placed": false}));
+        let unread = page_checks(recipe("column"), None, &[], OWED, &[], Some(&typed()));
         assert!(!unread[1].passed);
-        let held = page_checks(recipe("column"), Some(r#"<div class="illus-strip"><svg><g data-layer="illus_strip"></g></svg></div>"#), &[], true, &[], Some(&typed()));
-        assert_eq!((held[1].passed, &held[1].measured), (true, &json!({"asked": true, "placed": true})));
-        let ring = page_checks(recipe("ring"), Some("<body></body>"), &[], true, &[], Some(&typed()));
-        assert_eq!((ring[1].passed, &ring[1].measured), (true, &json!({"asked": false, "placed": false})));
+        let held = page_checks(recipe("column"), Some(holds), &[], OWED, &[], Some(&typed()));
+        assert_eq!((held[1].passed, &held[1].measured), (true, &json!({"slot": true, "asked": true, "given": true, "placed": true})));
+        let failed = StripAsk { given: false, ..OWED };
+        let lost = page_checks(recipe("column"), Some(holds), &[], failed, &[], Some(&typed()));
+        assert_eq!((lost[1].passed, &lost[1].measured), (false, &json!({"slot": true, "asked": true, "given": false, "placed": true})));
+        let unfilled = StripAsk { slot: true, ..StripAsk::default() };
+        assert!(page_checks(recipe("column"), Some("<body></body>"), &[], unfilled, &[], Some(&typed()))[1].passed);
+        let ring = page_checks(recipe("ring"), Some("<body></body>"), &[], StripAsk::default(), &[], Some(&typed()));
+        assert_eq!((ring[1].passed, &ring[1].measured), (true, &json!({"slot": false, "asked": false, "given": false, "placed": false})));
+    }
+
+    /// Only the column recipe declares a strip slot (knobs.json, run.py STRIP_SLOT). A recipe with none asks the visual group
+    /// for no strip, even over an energy table a piece set takes, so its page (which would refuse a strip) still goes out; the
+    /// column recipe asks: over a table no piece set takes nothing is owed, and over an energy table whose strip child cannot
+    /// run (no runtime there) the strip is owed and not given, which strip_placed fails.
+    #[test]
+    fn only_a_recipe_with_a_strip_slot_asks_for_a_strip_and_a_strip_it_did_not_get_is_owed() {
+        let slots: Vec<(&str, bool)> = Hubs.recipes().iter().map(|r| (r.name.as_str(), r.strip)).collect();
+        assert_eq!(slots, [("scmp", false), ("ring", false), ("column", true)]);
+        let energy = ["nrg_ind_ren".to_string()];
+        let calls = std::sync::Mutex::new(Vec::new());
+        for name in ["scmp", "ring"] {
+            let (strip, ask) = page_strip(&calls, recipe(name), &energy, 1140.0, Path::new("runtime"));
+            assert_eq!((strip.is_none(), ask), (true, StripAsk::default()), "{name}");
+        }
+        assert!(calls.lock().unwrap().is_empty(), "no strip asked for a page with no slot");
+        let (strip, ask) = page_strip(&calls, recipe("column"), &["sdg".to_string()], 1140.0, Path::new("runtime"));
+        assert_eq!((strip.is_none(), ask), (true, StripAsk { slot: true, asked: false, given: false }));
+        let nowhere = tempfile::tempdir().unwrap();
+        let (strip, ask) = page_strip(&calls, recipe("column"), &energy, 1140.0, nowhere.path());
+        assert_eq!((strip.is_none(), ask), (true, StripAsk { slot: true, asked: true, given: false }));
+        let events = calls.lock().unwrap().clone();
+        let asked: Vec<(&str, &Value)> = events.iter().map(|e| (e["request"].as_str().unwrap_or(""), &e["ok"])).collect();
+        assert_eq!(asked, [("illus_strip", &json!(true)), ("illus_strip", &json!(false))], "{events:?}");
+        let checks = page_checks(recipe("column"), Some("<body></body>"), &[], ask, &[], Some(&typed()));
+        assert_eq!((checks[1].name, checks[1].passed), ("strip_placed", false));
     }
 
     /// Two layers that print the same rows fail same_numbers_twice, the pair named with its table, times and count, and
@@ -7117,7 +7180,7 @@ for line in sys.stdin:
     #[test]
     fn two_layers_printing_the_same_rows_fail_same_numbers_twice() {
         let drawn = [drawn_row("map", "SE", "2024"), drawn_row("map", "BE", "2024"), drawn_row("ring", "SE", "2024"), drawn_row("ring", "SE", "2025")];
-        let checks = page_checks(recipe("ring"), Some("<body></body>"), &[], false, &drawn, Some(&typed()));
+        let checks = page_checks(recipe("ring"), Some("<body></body>"), &[], StripAsk::default(), &drawn, Some(&typed()));
         assert_eq!((checks[2].name, checks[2].passed, &checks[2].warning), ("same_numbers_twice", false, &None));
         assert_eq!(
             checks[2].measured,
@@ -7131,7 +7194,7 @@ for line in sys.stdin:
     fn the_pair_the_column_recipe_declares_passes_same_numbers_twice_with_a_warning() {
         assert_eq!(recipe("column").same_measure, [("bars".to_string(), "bubbles".to_string())]);
         let drawn: Vec<Value> = ["bubbles", "bars"].iter().flat_map(|l| ["SE", "BE"].map(|g| drawn_row(l, g, "2025"))).collect();
-        let checks = page_checks(recipe("column"), Some("<body></body>"), &[], false, &drawn, Some(&typed()));
+        let checks = page_checks(recipe("column"), Some("<body></body>"), &[], StripAsk::default(), &drawn, Some(&typed()));
         assert!(checks[2].passed, "{checks:?}");
         assert!(checks[2].warning.as_deref().is_some_and(|w| w.contains("the column recipe declares")), "{checks:?}");
         assert_eq!(
@@ -7146,7 +7209,7 @@ for line in sys.stdin:
     fn a_pair_its_recipe_does_not_declare_fails_same_numbers_twice() {
         let twice = |r: &str, layers: [&str; 2]| {
             let drawn: Vec<Value> = layers.iter().map(|l| drawn_row(l, "SE", "2025")).collect();
-            page_checks(recipe(r), Some("<body></body>"), &[], false, &drawn, Some(&typed())).remove(2)
+            page_checks(recipe(r), Some("<body></body>"), &[], StripAsk::default(), &drawn, Some(&typed())).remove(2)
         };
         assert!(recipe("ring").same_measure.is_empty());
         for (r, layers) in [("ring", ["bars", "bubbles"]), ("column", ["bars", "leader_notes"]), ("column", ["bubbles", "leader_notes"])] {
@@ -7173,7 +7236,7 @@ for line in sys.stdin:
         assert_eq!(of("bars").len(), picks.ranked.len(), "{drawn:?}");
         assert_eq!(of("bars"), of("bubbles"));
         assert!(of("leader_notes").is_empty(), "{drawn:?}");
-        let checks = page_checks(recipe("column"), Some("<body></body>"), &[], false, drawn, Some(&typed()));
+        let checks = page_checks(recipe("column"), Some("<body></body>"), &[], StripAsk::default(), drawn, Some(&typed()));
         assert_eq!(checks[2].measured["pairs"][0]["layers"], json!(["bars", "bubbles"]));
     }
 

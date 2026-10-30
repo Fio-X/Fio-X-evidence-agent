@@ -111,8 +111,9 @@ pub struct Leaf {
 /// conditions its tables must meet, in the order they are checked; the charts the charts step must have drawn its main as
 /// (none: the shape alone decides); the program's picks over the shape and the claims; the knobs it exposes (node.knob); and
 /// its page's time window, the two picks it runs between (["t0", "t1"]: from t0's first month to t1's last), which every
-/// layer that reads a time keeps to (none: each layer its own); and the pairs of its layers that print the same measure by
-/// design (same_measure; none: no two may, next_run.rs page_checks).
+/// layer that reads a time keeps to (none: each layer its own); the pairs of its layers that print the same measure by
+/// design (same_measure; none: no two may, next_run.rs page_checks); and whether its page has a slot for the illustration
+/// strip (strip; run.py STRIP_SLOT places it): only then does the flow ask for one and hold the page to placing it.
 pub struct Recipe {
     pub name: String,
     pub layers: Vec<String>,
@@ -122,6 +123,7 @@ pub struct Recipe {
     pub exposes: Vec<String>,
     pub window: Vec<String>,
     pub same_measure: Vec<(String, String)>,
+    pub strip: bool,
 }
 
 const LEAVES: &str = include_str!("../runtime/leaves_py/knobs.json");
@@ -180,6 +182,10 @@ pub fn leaves() -> &'static Leaves {
                 [a, b] => (a.clone(), b.clone()),
                 _ => panic!("knobs.json: a same_measure pair is two layers"),
             }).collect(),
+            strip: match &r["strip"] {
+                Value::Null => false,
+                v => v.as_bool().expect("knobs.json: a recipe's strip is true or false"),
+            },
         });
         Leaves { nodes: nodes.collect(), groups: groups.collect(), legacy, recipes: recipes.collect() }
     })

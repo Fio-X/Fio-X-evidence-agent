@@ -107,6 +107,9 @@ LEAF_SVG = section_head.SECTION_HEAD_SVG + rankbar.RANKBAR_SVG + bubbles.BUBBLES
 
 
 # The page recipes this child draws: each one's layers (name -> (draw, reserve)) and which of them are svg.
+# The page recipes whose page places the illustration strip layer 1 gives it (column_page; the ring and scmp pages have no
+# slot and refuse one): knobs.py declares the slot on exactly these recipes, which layer 1 asks a strip for.
+STRIP_SLOT = ("column",)
 KINDS = dict(ring=(scmp.RING_LAYERS, scmp.RING_SVG), column=({**column.COLUMN_LAYERS, **LEAF_LAYERS}, column.COLUMN_SVG + LEAF_SVG),
              scmp=(scmp.SCMP_LAYERS, scmp.SCMP_SVG))
 
