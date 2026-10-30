@@ -1,9 +1,10 @@
 //! New route, flow group: from the question to the page. After prepare_claims, in the fixed order: each table's fetched file
 //! is read into its shape (knowledge group) and the registry's template is picked for it (visual group), both only through
-//! their group commands; the program drafts every page field (next_page) and the model rewords them once (Ask::Text); then
-//! the leaf page of the first recipe whose shape the tables have is filled, drawn, written through the visual group's door
-//! and checked in the browser (leaf_page). What the run decided is kept in PAGE_STATE, so the parent's completion prompts,
-//! each in a new child, go on from it instead of picking again.
+//! their group commands; the first recipe whose shape the tables have is picked (leaf_request), the program drafts every page
+//! field for what that page draws (next_page, page_lead) and the model rewords them once (Ask::Text); then the leaf page by
+//! that recipe is filled, drawn, written through the visual group's door and checked in the browser (leaf_page). What the
+//! run decided is kept in PAGE_STATE, so the parent's completion prompts, each in a new child, go on from it instead of
+//! picking again.
 //!
 //! A leaf page that stops at a stage stops the run there; no other route draws the page. On a published page the completion
 //! gate (next_gate::leaf_gaps) runs first and its gaps stop the run; then the model scores the page's browser screenshot,
@@ -1694,7 +1695,30 @@ fn change_bars_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
     for (k, v) in data.as_object().into_iter().flatten() {
         Filled::set(&mut out.data, "hero data", k, v.clone())?;
     }
-    Filled::set(&mut out.hero, "hero key", "style", json!({"bars": {"measure": "change"}}))
+    Filled::set(&mut out.hero, "hero key", "style", json!({"bars": {"measure": BARS_CHANGE}}))
+}
+
+/// The bars' measure (the visual knob bars.measure) of a page whose bars draw the change between its two ends.
+const BARS_CHANGE: &str = "change";
+
+/// The form a page's page-level fields are drafted for (next_page::draft_for): the first-to-last change when the picked
+/// recipe's bars draw the change between the two ends (its fill's bars.measure, change_bars_fill), so the title asks what
+/// the page shows; else, and with no recipe picked, the lead chart's (next_page::lead).
+fn page_lead(fill: Option<&Value>, charts: &[Chart]) -> Option<(Relation, View)> {
+    match fill {
+        Some(fill) if fill["knobs"]["spec"]["hero"]["style"]["bars"]["measure"] == BARS_CHANGE => {
+            Some((Relation::Change, View::FirstToLast))
+        }
+        _ => next_page::lead(charts),
+    }
+}
+
+/// The text step's title, dek and kicker in a page's fill (its spec), in place of the ones it was picked with.
+fn page_words(fill: &mut Value, (title, dek, kicker): (&str, &str, &str)) {
+    let spec = &mut fill["knobs"]["spec"];
+    spec["title"] = json!(title);
+    spec["dek"] = json!(dek);
+    spec["kicker"] = json!(kicker);
 }
 
 /// The format of a gap between two percentages: percentage points, not a percentage.
@@ -2042,8 +2066,8 @@ fn fetched_rows(run_dir: &Path, catalogue: &dyn Catalogue, id: &str, file: &str)
 /// The recipe a page stopped at when none of the registry's recipes reads its shape.
 const NO_RECIPE: &str = "leaf";
 
-/// The leaf page of the first table by the first recipe of the leaf registry that draws every view the question asks for
-/// and whose shape it has (leaf_request), then the
+/// The leaf page of the first table by the recipe leaf_request picked (the first of the leaf registry that draws every view
+/// the question asks for and whose shape it has), its fill given the text step's words (`words`, page_words), then the
 /// visual group's LeafFill by that recipe, the page drawn and baked by the run's own copy of the second layer
 /// (runtime/leaves_py, the children LeafFill names), written and checked in the browser (publish_leaf_page) under
 /// publications/<recipe>/. The visual group's calls are kept in `calls`. Ok is the recipe and the publication; Err is
@@ -2051,14 +2075,12 @@ const NO_RECIPE: &str = "leaf";
 /// when no recipe fits); nothing written before it is removed.
 fn leaf_page(
     run_dir: &Path,
-    prepared: &[Prepared],
-    drawn: &[&str],
-    catalogue: &dyn Catalogue,
+    (picked, mut fill): (&'static Recipe, Value),
     (question, words): (&str, (&str, &str, &str)),
     calls: &std::sync::Mutex<Vec<Value>>,
 ) -> Result<LeafPublished, (&'static str, &'static str, String)> {
     use crate::next_visual::{LeafPage, Reply, Request};
-    let (picked, fill) = leaf_request(run_dir, prepared, drawn, catalogue, (question, words), calls)?;
+    page_words(&mut fill, words);
     let recipe = picked.name.as_str();
     let order: Vec<String> = fill["order"].as_array().into_iter().flatten().filter_map(|l| l.as_str().map(str::to_string)).collect();
     let rows = fill["rows"].as_array().map_or(&[][..], Vec::as_slice);
@@ -2369,6 +2391,7 @@ pub async fn reword(
         fields,
         numbers,
         periods,
+        changes,
         ..
     } = &ask
     else {
@@ -2424,6 +2447,7 @@ pub async fn reword(
                 slots: Vec::new(),
                 numbers: numbers.clone(),
                 periods: periods.clone(),
+                changes: changes.clone(),
             };
             let mut kept = BTreeMap::new();
             let mut given = Map::new();
@@ -2440,6 +2464,7 @@ pub async fn reword(
                         slots: vec![id.clone()],
                         numbers: numbers.clone(),
                         periods: periods.clone(),
+                        changes: Vec::new(),
                     };
                     let alone = json!({"step": "text", "text": {}, "names": {id.as_str(): name}});
                     if !given.contains_key(id)
@@ -2793,10 +2818,17 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
     let prepared =
         prepare_claims(recorder, model, tools, question, steps, catalogue, cancel).await?;
     let page = charts(recorder, &prepared, catalogue)?;
+    let calls = std::sync::Mutex::new(Vec::new());
+    let drawn: Vec<&str> = page.templates.iter().filter_map(|t| t["chart_type"].as_str()).collect();
+    // The recipe is picked by the data's shape before the text step (its words go into the fill once worded, leaf_page), so
+    // the page-level fields are drafted for what the picked page draws: a page whose bars draw the change gets a title
+    // that asks a change. A pick that stopped stops the run after the text step, as before.
+    let picked = leaf_request(recorder.run_dir(), &prepared, &drawn, catalogue, (question, ("", "", "")), &calls);
+    let form = page_lead(picked.as_ref().ok().map(|(_, fill)| fill), &page.charts);
     let titles: Vec<String> = page.measures.iter().map(|m| m.name.clone()).collect();
     // No typed number on the page text, years included: the design pack's claim-template check refuses every one, so the
     // text step offers none (a year goes through a placeholder or is left out).
-    let drafts = next_page::draft(&page.claims, &page.charts, Vec::new())
+    let drafts = next_page::draft_for(&page.claims, &page.charts, Vec::new(), form)
         .name_measures(&titles, &page.charts)
         .with_scopes(&page.scopes)
         .with_periods(&page.times);
@@ -2812,9 +2844,7 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
     let dek = worded.get(&Target::PageDek).cloned().unwrap_or_default();
     // the kicker names the lead chart's measure, as the old route's does without a scope
     let kicker = worded.get(&Target::Measure(0)).map_or("", String::as_str);
-    let calls = std::sync::Mutex::new(Vec::new());
-    let drawn: Vec<&str> = page.templates.iter().filter_map(|t| t["chart_type"].as_str()).collect();
-    let leaf = leaf_page(recorder.run_dir(), &prepared, &drawn, catalogue, (question, (&title, &dek, kicker)), &calls);
+    let leaf = picked.and_then(|picked| leaf_page(recorder.run_dir(), picked, (question, (&title, &dek, kicker)), &calls));
     record_group_calls(recorder, catalogue)?;
     for event in calls.into_inner().unwrap_or_else(|e| e.into_inner()) {
         recorder.program_event(crate::next_flow::GROUP_CALL_EVENT, event)?;
@@ -3787,6 +3817,53 @@ mod tests {
         assert_eq!(fallback[0]["auto_parent_call_id"], "s1");
     }
 
+    /// q6's stand-in rewording on a change page: the title asking who is highest is refused in both rounds, so it goes back
+    /// to the change draft in the fallback (the rule holds there too), and the dek that passes alone is kept.
+    #[tokio::test]
+    async fn a_level_title_refused_on_a_change_page_goes_back_to_the_change_draft() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let dir = tempfile::tempdir().unwrap();
+        let run = dir.path().to_path_buf();
+        let charts = vec![Chart {
+            relation: Relation::Ranking,
+            view: View::Slice,
+            claim_ids: Vec::new(),
+            category: "geo".into(),
+            value: "value".into(),
+        }];
+        let drafts = next_page::draft_for(&[], &charts, Vec::new(), Some((Relation::Change, View::FirstToLast)));
+        let refused = json!({"step": "text", "text": {"1": "哪些国籍的人申请庇护最多", "2": "各国庇护申请从起始到最近的变化"}, "names": {}});
+        let mut model = ScriptedAsker(
+            vec![
+                call("s1", json!({"step": "search", "query": "asylum applicants"})),
+                call("t1", refused.clone()),
+                call("t2", refused),
+            ]
+            .into(),
+        );
+        let events: std::sync::Arc<std::sync::Mutex<Vec<Value>>> = Default::default();
+        let into = events.clone();
+        let mut sink = move |e: Value| into.lock().unwrap().push(e);
+        let mut recorder = Recorder::new(&mut sink, &run, Vec::new(), Vec::new());
+        let cancel = AtomicBool::new(false);
+        recorder
+            .ask_step(&mut model, &Ask::Search, "search words", &cancel)
+            .await
+            .unwrap();
+        let page = reword(&mut recorder, &mut model, "欧盟庇护申请的来源国", &drafts, &cancel)
+            .await
+            .unwrap();
+        drop(recorder);
+        assert_eq!(page[&Target::PageTitle], "变化多大");
+        assert_eq!(page[&Target::PageDek], "各国庇护申请从起始到最近的变化");
+        let events = events.lock().unwrap();
+        let fallback: Vec<&Value> = events.iter().filter(|e| e["type"] == TEXT_FALLBACK_EVENT).collect();
+        assert_eq!(fallback.len(), 1);
+        assert_eq!(fallback[0]["kept"], json!(["2"]));
+        assert!(fallback[0]["back_to_draft"].as_array().unwrap().contains(&json!("1")));
+        assert!(fallback[0]["problem"].as_str().unwrap().contains("asks a level"), "{}", fallback[0]["problem"]);
+    }
+
     /// The q1 page wording of the real batch of 10-27 (drafts and both answers as the model sent them). Answer 1 drops
     /// field 6's {first.year}; answer 2 is the same content with `text` and `names` sent as JSON strings.
     fn q1_drafts() -> Drafts {
@@ -3818,6 +3895,7 @@ mod tests {
                 (Target::Measure(1), "Renewable energy share".into()),
             ],
             has_scope: false,
+            change_title: false,
         }
     }
 
@@ -4947,6 +5025,67 @@ mod tests {
         }
         let shape = shape_of(&change.eats, &[("sdg", &long[..])], &Hubs).unwrap();
         assert_eq!((shape.t0.as_str(), shape.later.len()), ("2000", 0));
+    }
+
+    /// q1's and q6's stand-in pages: the change recipe won by shape and its bars drew each place's change, but the title was
+    /// drafted for the lead ranking ("谁领先，谁垫底") and reworded to who is highest. The recipe that wins now decides the
+    /// page-level frame (page_lead): a table with two ends (q1's ten years, q6's applicants by the country applied in over
+    /// the ring window) drafts the first-to-last change's title and refuses a level reword; the same table at one year is
+    /// the column page, drafted for its lead ranking, where a title asking who is highest passes.
+    #[test]
+    fn the_recipe_that_wins_decides_the_page_title_s_frame() {
+        let charts = vec![Chart {
+            relation: Relation::Ranking,
+            view: View::Slice,
+            claim_ids: Vec::new(),
+            category: "geo".into(),
+            value: "value".into(),
+        }];
+        let drafted = |table: &str, main: &[Value]| -> (String, Drafts) {
+            let tables = [(table, main)];
+            let r = Hubs.recipes().iter().find(|r| shape_of(&r.eats, &tables, &Hubs).is_ok()).unwrap();
+            let shape = shape_of(&r.eats, &tables, &Hubs).unwrap();
+            let picks = picks_of(&r.picks, &shape, main, &[]).unwrap();
+            let fill = fill_of(r, &shape, &picks, (main, &[]), &Hubs, ("", "")).unwrap();
+            let form = page_lead(Some(&fill), &charts);
+            (r.name.clone(), next_page::draft_for(&[], &charts, Vec::new(), form))
+        };
+        let fixed = [("freq", "A"), ("unit", "PER"), ("sex", "T"), ("age", "TOTAL"), ("citizen", "TOTAL")];
+        let mut q6 = ring_rows("migr", &fixed, ("geo", &["SE", "BE", "DE", "FR", "EU27_2020"]), &["2021", "2025"]);
+        let values = ["2900", "900", "1900", "3300", "14800", "23700", "10300", "15800", "63200", "91200"];
+        for (r, v) in q6.iter_mut().zip(values) {
+            r["value"] = json!(v);
+        }
+        let title = |drafts: &Drafts, wording: &str| {
+            drafts.ask(vec![]).check(&json!({"step": "text", "text": {"1": wording}, "names": {}}))
+        };
+        let change = shape_registry_frame(Relation::Change, View::FirstToLast);
+        for (table, main, level) in [
+            ("sdg", q1_ten_years(), "欧盟哪国可再生能源占比最高"),
+            ("migr", q6, "哪些国籍的人申请庇护最多"),
+        ] {
+            let (recipe, drafts) = drafted(table, &main);
+            assert_eq!(recipe, "change", "{table}");
+            assert_eq!(drafts.fields[0], (Target::PageTitle, change[0].to_string()), "{table}");
+            assert_eq!(drafts.fields[1], (Target::PageDek, change[1].to_string()), "{table}");
+            let refused = title(&drafts, level).unwrap_err();
+            assert!(refused.problem.contains("asks a level"), "{table}: {}", refused.problem);
+            assert_eq!(refused.allowed["text"]["1"], json!(change[0]), "{table}");
+            assert!(title(&drafts, "欧盟哪国的数值升得最多").is_ok(), "{table}");
+        }
+        let one_year: Vec<Value> = q1_ten_years().into_iter().filter(|r| r["time"] == "2024").collect();
+        let (recipe, drafts) = drafted("sdg", &one_year);
+        assert_eq!(recipe, "column");
+        let level = shape_registry_frame(Relation::Ranking, View::Slice);
+        assert_eq!(drafts.fields[0], (Target::PageTitle, level[0].to_string()));
+        assert!(title(&drafts, "欧盟哪国可再生能源占比最高").is_ok());
+        // no fill (no recipe picked): the lead chart's, as before
+        assert_eq!(page_lead(None, &charts), Some((Relation::Ranking, View::Slice)));
+    }
+
+    /// A FRAMES row of shape_registry by its relation and view.
+    fn shape_registry_frame(relation: Relation, view: View) -> [&'static str; 4] {
+        crate::shape_registry::FRAMES.iter().find(|(r, v, _)| (*r, *v) == (relation, view)).unwrap().2
     }
 
     /// changed ranks the countries by their change between the two ends, the largest rise first and a tie to code order, sets

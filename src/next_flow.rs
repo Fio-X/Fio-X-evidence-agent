@@ -346,11 +346,15 @@ pub enum Ask {
     /// year of a claim's row); any other typed number is refused, and so is a number in words (二十七, 两国, 三倍, 过半).
     /// `periods`: the page's time values that are not years (2026-08, a monthly table's): a time placeholder prints the
     /// whole period, so 年 right after one is refused (year_after_period); empty on an annual page.
+    /// `changes`: the fields that state a change (the title of a page whose bars draw the change between its two ends,
+    /// next_page Drafts::change_title): a wording there that asks a level with no change word is refused (level_question);
+    /// empty on any other page.
     Text {
         fields: BTreeMap<String, String>,
         slots: Vec<String>,
         numbers: Vec<String>,
         periods: Vec<String>,
+        changes: Vec<String>,
     },
     /// The image review of the published page's screenshot: each of VISION_QUESTIONS answered yes or no, with a one-line
     /// reason for a no. Advice only: the answer is recorded, it never stops a run and never verifies a page.
@@ -711,12 +715,13 @@ impl Ask {
                 slots,
                 numbers,
                 periods,
+                changes,
             } => {
                 json!({"type": "object", "additionalProperties": false, "required": ["step", "text", "names"],
                 "properties": {"step": step,
                     "text": {"type": "object", "additionalProperties": false,
                         "properties": fields.keys().map(|k| (k.clone(), json!({"type": "string"}))).collect::<Map<_, _>>(),
-                        "description": format!("field number -> revised wording; leave a field out to keep the draft; keep every {{placeholder}}; {}; {NUMBER_WORD_RULE}{}", typed_rule(numbers), period_rule(periods))},
+                        "description": format!("field number -> revised wording; leave a field out to keep the draft; keep every {{placeholder}}; {}; {NUMBER_WORD_RULE}{}{}", typed_rule(numbers), period_rule(periods), change_rule(changes))},
                     "names": {"type": "object", "additionalProperties": false, "required": slots,
                         "properties": slots.iter().map(|k| (k.clone(), json!({"type": "string"}))).collect::<Map<_, _>>(),
                         "description": format!("untranslated slot number -> Chinese name, at most {NAME_MAX_CHARS} characters, no number; {NUMBER_WORD_RULE}")}}})
@@ -793,12 +798,16 @@ impl Ask {
                 slots,
                 numbers,
                 periods,
+                changes,
             } => {
                 let mut allowed = json!({"step": "text",
                 "text": fields.iter().map(|(k, draft)| (k.clone(), json!(draft))).collect::<Map<_, _>>(), "names": slots,
                 "name_max_chars": NAME_MAX_CHARS, "numbers": numbers});
                 if !periods.is_empty() {
                     allowed["periods"] = json!(periods);
+                }
+                if !changes.is_empty() {
+                    allowed["changes"] = json!({"fields": changes, "words": CHANGE_WORDS});
                 }
                 allowed
             }
@@ -1089,6 +1098,7 @@ impl Ask {
                 slots,
                 numbers,
                 periods,
+                changes,
             } => {
                 let text = strings(&map["text"])
                     .ok_or_else(|| self.refuse("text must map field numbers to wording"))?;
@@ -1116,6 +1126,9 @@ impl Ask {
                     {
                         return Err(self
                             .refuse(format!("field '{id}': '{written}'{}", period_rule(periods))));
+                    }
+                    if let Some(level) = level_question(revised).filter(|_| changes.contains(id)) {
+                        return Err(self.refuse(format!("field '{id}': '{level}' asks a level{}", change_rule(changes))));
                     }
                 }
                 let names = strings(&map["names"])
@@ -1446,6 +1459,32 @@ fn period_rule(periods: &[String]) -> String {
     }
 }
 
+/// The rule of the fields that state a change (Ask::Text changes), said to the model in the ask and in a refusal; empty
+/// when no field does.
+fn change_rule(changes: &[String]) -> String {
+    if changes.is_empty() {
+        String::new()
+    } else {
+        format!("; {CHANGE_TITLE_RULE} (field {})", changes.join(", "))
+    }
+}
+
+/// The title rule of a page whose bars draw the change between its two ends, with its examples.
+pub const CHANGE_TITLE_RULE: &str = "this page draws how much each changed between its two ends, not who is highest, so its title asks a change: \
+     it names one (变化, 增, 减, 升, 降, 涨, 跌, or 从…到), e.g. '谁的变化最大' or '从起始到最近，谁升得最多', not '谁最高'";
+/// Words a title asks a level with (who is highest, most, first).
+pub const LEVEL_WORDS: [&str; 10] = ["最高", "最低", "最多", "最少", "最大", "最小", "领先", "垫底", "第一", "居首"];
+/// Words that name a change; 从 with 到 after it (从起始到最近) names one too.
+pub const CHANGE_WORDS: [&str; 10] = ["变", "增", "减", "升", "降", "涨", "跌", "提高", "扩大", "缩小"];
+
+/// The LEVEL_WORDS word a wording asks with when it names no change (no CHANGE_WORDS word, no 从 before a 到): on a page
+/// that draws the change, such a title asks what the page does not show.
+pub fn level_question(text: &str) -> Option<&'static str> {
+    let level = *LEVEL_WORDS.iter().find(|w| text.contains(**w))?;
+    let from_to = text.find('从').is_some_and(|at| text[at..].contains('到'));
+    (!from_to && !CHANGE_WORDS.iter().any(|w| text.contains(*w))).then_some(level)
+}
+
 /// The typed-number rule of the page text, the same as the design pack's claim-template check (newsroom.ts: "every number,
 /// years included, must be a placeholder"), with one example; the request, the schema and the refusal all say it in these words.
 pub const TYPED_NUMBER_RULE: &str =
@@ -1454,7 +1493,7 @@ pub const TYPED_NUMBER_RULE: &str =
 pub const NUMBER_WORD_RULE: &str = "no number in words either (二十七, 两国, 三倍, 两成, 过半)";
 /// Every wording the rules above suggest, each of which must pass the text and the names checks it is offered for.
 #[cfg(test)]
-pub const RULE_SUGGESTIONS: [&str; 1] = ["从起始到最近"];
+pub const RULE_SUGGESTIONS: [&str; 3] = ["从起始到最近", "谁的变化最大", "从起始到最近，谁升得最多"];
 
 /// The first number a text types that is not one of `allowed`.
 pub fn number_not_allowed(text: &str, allowed: &[String]) -> Option<String> {
@@ -4604,6 +4643,7 @@ mod tests {
             slots: vec!["s1".to_string()],
             numbers: vec!["2023".to_string()],
             periods: Vec::new(),
+            changes: Vec::new(),
         }
     }
 
@@ -5138,6 +5178,7 @@ mod tests {
             slots: Vec::new(),
             numbers: Vec::new(),
             periods: periods.iter().map(|p| p.to_string()).collect(),
+            changes: Vec::new(),
         };
         let answer = |t: &str| json!({"step": "text", "text": {"1": t}, "names": {}});
         let monthly = ask(&["2026-08"]);
@@ -5162,6 +5203,57 @@ mod tests {
             Some("{a.from_year}年".into())
         );
         assert_eq!(year_after_period("{first.yearly}年"), None);
+    }
+
+    /// q1's and q6's stand-in titles asked a level on a page whose bars drew the change: a LEVEL_WORDS word with no change
+    /// word (CHANGE_WORDS, or 从 before 到) is a level question, refused only in a field `changes` lists, with the rule, the
+    /// change words and the drafts in the reply; the schema says the rule on such a page only.
+    #[test]
+    fn a_level_question_is_refused_only_in_a_field_that_states_a_change() {
+        assert_eq!(level_question("哪国可再生能源占比最高"), Some("最高"));
+        assert_eq!(level_question("哪些国籍的人申请庇护最多"), Some("最多"));
+        assert_eq!(level_question("谁领先，谁垫底"), Some("领先"));
+        for change in [
+            "谁的变化最大",
+            "哪国升得最多",
+            "申请人数增加最多的国籍",
+            "从起始到最近，谁领先",
+            "走势如何",
+            "各国可再生能源占比",
+        ] {
+            assert_eq!(level_question(change), None, "{change}");
+        }
+        let ask = |changes: &[&str]| Ask::Text {
+            fields: BTreeMap::from([
+                ("1".to_string(), "变化多大".to_string()),
+                ("2".to_string(), "各自变了多少".to_string()),
+            ]),
+            slots: Vec::new(),
+            numbers: Vec::new(),
+            periods: Vec::new(),
+            changes: changes.iter().map(|c| c.to_string()).collect(),
+        };
+        let answer = |n: &str, t: &str| json!({"step": "text", "text": {n: t}, "names": {}});
+        let refused = ask(&["1"]).check(&answer("1", "哪国最高")).unwrap_err();
+        assert!(
+            refused.problem.starts_with("field '1': '最高' asks a level; "),
+            "{}",
+            refused.problem
+        );
+        assert!(refused.problem.contains(CHANGE_TITLE_RULE), "{}", refused.problem);
+        assert_eq!(
+            refused.allowed["changes"],
+            json!({"fields": ["1"], "words": CHANGE_WORDS})
+        );
+        assert_eq!(refused.allowed["text"]["1"], "变化多大");
+        assert_eq!(refused.example, json!({"step": "text", "text": {}, "names": {}}));
+        assert!(ask(&["1"]).check(&answer("1", "哪国升得最多")).is_ok());
+        assert!(ask(&["1"]).check(&answer("2", "哪国最高")).is_ok());
+        assert!(ask(&[]).check(&answer("1", "哪国最高")).is_ok());
+        assert!(ask(&[]).allowed().get("changes").is_none());
+        let described = |a: &Ask| a.schema()["properties"]["text"]["description"].as_str().unwrap().to_string();
+        assert!(described(&ask(&["1"])).contains(CHANGE_TITLE_RULE));
+        assert!(!described(&ask(&[])).contains(CHANGE_TITLE_RULE));
     }
 
     #[test]
@@ -5318,6 +5410,7 @@ mod tests {
             slots: vec!["s1".into()],
             numbers: Vec::new(),
             periods: Vec::new(),
+            changes: Vec::new(),
         };
         let good = json!({"step": "text", "text": json!({"1": "{first.name}居首"}).to_string(), "names": json!({"s1": "占比"}).to_string()});
         assert_eq!(text.decode(&good).1, vec!["text", "names"]);

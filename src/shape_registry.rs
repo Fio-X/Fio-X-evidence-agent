@@ -168,7 +168,8 @@ pub const FRAMES: [(Relation, View, [&str; 4]); 7] = [
 ];
 
 /// The chart forms the page renderer draws a card for (next_render Card): the page's title, dek, text and reader fields are
-/// drafted from the first chart of one of these forms (next_page lead), so the page never describes a chart it does not draw.
+/// drafted from the first chart of one of these forms (next_page lead), so the page never describes a chart it does not draw;
+/// a leaf page whose bars draw the change between its two ends drafts them for that change instead (next_run page_lead).
 /// A form gets its row when its card's node is in.
 pub const CARD_FORMS: [(Relation, View); 1] = [(Relation::Ranking, View::Slice)];
 

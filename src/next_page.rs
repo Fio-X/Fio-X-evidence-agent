@@ -7,7 +7,9 @@
 //! its number by value_from, and a claim with neither a body sentence nor the hero is unplaced. The drafts of page title, dek, chart headings and the text module carry neither placeholder nor number. The
 //! design pack's reader fields (reader problem, visual thesis, three candidate questions) are drafted from the lead chart's
 //! concept (shape_registry CONCEPTS; the lead is the first chart the page draws a card for, so these and the page title,
-//! dek and text never describe a chart left off the page) and reworded in the same ask, under the same rules. Pure.
+//! dek and text never describe a chart left off the page) and reworded in the same ask, under the same rules. A leaf page
+//! whose bars draw the change between its two ends gives its own form instead (draft_for, from next_run's pick of the
+//! recipe), so its title asks a change, and a reworded title that asks a level there is refused (Drafts::change_title). Pure.
 //!
 //! Left for the wiring (not done here): a wording refused REFUSED_ROUNDS times goes back to the draft for the refused field
 //! only, the other revised fields kept, and the fallback is written as one program event; with slots, an empty answer
@@ -19,7 +21,8 @@
 use std::collections::BTreeMap;
 
 use crate::next_flow::{
-    number_not_allowed, placeholders, worded_number, year_after_period, Ask, Choice,
+    level_question, number_not_allowed, placeholders, worded_number, year_after_period, Ask,
+    Choice,
 };
 use crate::shape_registry::{
     Concept, Relation, View, BODY_SENTENCES, CARD_FORMS, CONCEPTS, FRAMES, HERO_LABELS,
@@ -116,6 +119,9 @@ pub struct Drafts {
     pub slots: Vec<(Target, String)>,
     /// Some chart of the page has a Scope: a reworded field that ranks goes back to its draft (Drafts::scoped).
     pub has_scope: bool,
+    /// The page-level fields speak for the first-to-last change (draft_for): a reworded title that asks a level with no
+    /// change word is refused (Ask::Text changes, next_flow level_question).
+    pub change_title: bool,
 }
 
 /// The one placeholder of a claim template that holds its number: not a time column, not the chart's category column.
@@ -155,9 +161,23 @@ pub fn lead(charts: &[Chart]) -> Option<(Relation, View)> {
         .map(|c| (c.relation, c.view))
 }
 
-/// Drafts every page field from the picked claims and the sheet's charts. A claim on no chart gets no field.
+/// Drafts every page field from the picked claims and the sheet's charts, the page-level fields for the lead chart. A claim
+/// on no chart gets no field. The run drafts through draft_for, with the form its picked recipe draws.
+#[cfg(test)]
 pub fn draft(claims: &[Claim], charts: &[Chart], numbers: Vec<String>) -> Drafts {
-    let lead = lead(charts).unwrap_or((Relation::Ranking, View::Slice));
+    draft_for(claims, charts, numbers, lead(charts))
+}
+
+/// draft with the page-level fields (title, dek, text, reader fields) drafted for `form`: the form the page's main chart
+/// draws when the run knows it (a leaf page whose bars draw the change between its two ends), else the lead chart's; none,
+/// the ranking's. A page of the first-to-last change gets its change_title.
+pub fn draft_for(
+    claims: &[Claim],
+    charts: &[Chart],
+    numbers: Vec<String>,
+    form: Option<(Relation, View)>,
+) -> Drafts {
+    let lead = form.unwrap_or((Relation::Ranking, View::Slice));
     let mut fields = vec![
         (Target::PageTitle, frames(lead.0, lead.1)[0].to_string()),
         (Target::PageDek, frames(lead.0, lead.1)[1].to_string()),
@@ -221,6 +241,7 @@ pub fn draft(claims: &[Claim], charts: &[Chart], numbers: Vec<String>) -> Drafts
         unplaced,
         slots: Vec::new(),
         has_scope: false,
+        change_title: lead == (Relation::Change, View::FirstToLast),
     }
 }
 
@@ -325,7 +346,18 @@ impl Drafts {
             slots,
             numbers: self.numbers.clone(),
             periods: self.periods.clone(),
+            changes: self.changes(),
         }
+    }
+
+    /// The numbers of the fields that state a change: the title's on a change_title page, else none.
+    fn changes(&self) -> Vec<String> {
+        self.fields
+            .iter()
+            .position(|(t, _)| self.change_title && *t == Target::PageTitle)
+            .map(Self::number)
+            .into_iter()
+            .collect()
     }
 
     /// The page fields after a checked Text answer: a revised field in place of its draft, the rest as drafted. This step
@@ -369,8 +401,11 @@ impl Drafts {
                 || number_not_allowed(wording, &self.numbers).is_some()
                 || worded_number(wording).is_some()
                 || (!self.periods.is_empty() && year_after_period(wording).is_some())
+                || (self.change_title
+                    && *target == Target::PageTitle
+                    && level_question(wording).is_some())
             {
-                return Err(format!("{target:?}: the wording does not keep the draft's placeholders or types a number not allowed"));
+                return Err(format!("{target:?}: the wording does not keep the draft's placeholders, types a number not allowed or asks a level on a change page"));
             }
         }
         let mut out = out;
@@ -666,6 +701,105 @@ mod tests {
         assert!(drafts
             .revised(&Choice::Search { query: "x".into() })
             .is_err());
+    }
+
+    /// q1's and q6's stand-in pages: the bars drew each place's change between two ends, the title asked who is highest.
+    /// Drafted for the first-to-last change, the page-level fields are that frame's and concept's; a reworded title that asks
+    /// a level is refused with the allowed values (the drafts and the change words) and the rule's example, one that names
+    /// the change passes; revised refuses the level title of a choice that skipped the check.
+    #[test]
+    fn a_change_page_drafts_a_change_title_and_refuses_a_level_reword() {
+        let (claims, charts) = q1();
+        let drafts = draft_for(
+            &claims,
+            &charts,
+            Vec::new(),
+            Some((Relation::Change, View::FirstToLast)),
+        );
+        let field = |target: &Target| &drafts.fields.iter().find(|(t, _)| t == target).unwrap().1;
+        let change = frames(Relation::Change, View::FirstToLast);
+        assert_eq!(field(&Target::PageTitle), change[0]);
+        assert_eq!(field(&Target::PageDek), change[1]);
+        assert_eq!(field(&Target::Text), change[3]);
+        let reader = concept(Relation::Change, View::FirstToLast);
+        assert_eq!(field(&Target::ReaderProblem), reader.reader_problem);
+        assert_eq!(field(&Target::Question(0)), reader.questions[0]);
+        // the chart's own heading is still the ranking chart's
+        assert_eq!(field(&Target::Heading(0)), frames(Relation::Ranking, View::Slice)[2]);
+        assert!(drafts.change_title);
+        let ask = drafts.ask(vec![]);
+        let title = |wording: &str| {
+            ask.check(&json!({"step": "text", "text": {"1": wording}, "names": {}}))
+        };
+        for level in [
+            "欧盟哪国可再生能源占比最高",
+            "哪些国籍的人申请庇护最多",
+            "谁领先，谁垫底",
+        ] {
+            let refused = title(level).unwrap_err();
+            assert!(refused.problem.contains("asks a level"), "{level}: {}", refused.problem);
+            assert!(
+                refused.problem.contains(crate::next_flow::CHANGE_TITLE_RULE),
+                "{}",
+                refused.problem
+            );
+            assert_eq!(refused.allowed["text"]["1"], json!(change[0]));
+            assert_eq!(refused.allowed["changes"]["fields"], json!(["1"]));
+            assert_eq!(refused.example["step"], "text");
+        }
+        for change_question in [
+            "欧盟各国可再生能源占比变化多大",
+            "哪国可再生能源占比升得最多",
+            "从起始到最近，谁的庇护申请增加最多",
+            "庇护申请人数的变化",
+        ] {
+            assert!(title(change_question).is_ok(), "{change_question}");
+        }
+        // each wording the rules suggest passes here too, the change rule's examples among them
+        for suggested in crate::next_flow::RULE_SUGGESTIONS {
+            assert!(title(suggested).is_ok(), "{suggested}");
+        }
+        // only the title states the change: the dek and the reader questions may still say who is highest
+        assert!(ask
+            .check(&json!({"step": "text", "text": {"2": "哪国最高"}, "names": {}}))
+            .is_ok());
+        let unchecked = Choice::Text {
+            text: BTreeMap::from([("1".to_string(), "哪国可再生能源占比最高".to_string())]),
+            names: BTreeMap::new(),
+        };
+        assert!(drafts.revised(&unchecked).is_err());
+        let worded = Choice::Text {
+            text: BTreeMap::from([("1".to_string(), "哪国可再生能源占比升得最多".to_string())]),
+            names: BTreeMap::new(),
+        };
+        assert_eq!(
+            drafts.revised(&worded).unwrap()[&Target::PageTitle],
+            "哪国可再生能源占比升得最多"
+        );
+    }
+
+    /// A page of one year (the column page) is drafted for its lead ranking as before: the level frame, and a title that
+    /// asks who is highest passes.
+    #[test]
+    fn a_level_page_keeps_the_level_frame_and_a_title_that_asks_who_is_highest() {
+        let (claims, charts) = q1();
+        for drafts in [
+            draft(&claims, &charts, Vec::new()),
+            draft_for(&claims, &charts, Vec::new(), lead(&charts)),
+        ] {
+            assert_eq!(drafts.fields[0], (Target::PageTitle, frames(Relation::Ranking, View::Slice)[0].to_string()));
+            assert!(!drafts.change_title);
+            let ask = drafts.ask(vec![]);
+            assert!(ask
+                .check(&json!({"step": "text", "text": {"1": "欧盟哪国可再生能源占比最高"}, "names": {}}))
+                .is_ok());
+            assert!(ask
+                .check(&json!({"step": "text", "text": {"1": "2030年谁最高"}, "names": {}}))
+                .unwrap_err()
+                .allowed
+                .get("changes")
+                .is_none());
+        }
     }
 
     /// q4's and q5's hero: a scoped page sends a reworded superlative back to its draft, so the draft is Chinese, on the claim's
