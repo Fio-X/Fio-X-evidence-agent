@@ -12,7 +12,8 @@ Circles that overlap are nudged apart (nudge px at most, circle_gap px between t
 claimed in the Occ and kept clear by every label and leader like a circle.
 Label places are tried right, left, above, below of the circle for every labelled circle first (biggest first), so a crowded centre's labels stay
 close; the rest go out in free room on a thin leader from the circle's edge (sixteen directions, up to reach px), each at the cheapest clear place (the
-leader's length, land_cost px more over the land in the shared frame), its leader crossing no other leader; every place keeps label_gap px clear of every circle. A top-N label that fits nowhere is left off and listed in
+leader's length, land_cost px more over the land in the shared frame; of places that cost the same, the one toward the frame's centre first, so a
+circle on the frame's edge looks inward), its leader crossing no other leader; every place keeps label_gap px clear of every circle. A top-N label that fits nowhere is left off and listed in
 Frame.unlabeled, never put on a circle, and in Frame.dropped
 (code, "no free place for the label"), which run.py sends back so layer 1 keeps it in the page's ledger.
 Colours: --accent circles, --t-dark at LAND_OPACITY the land, --bg its outline, --t-title the labels' names and numbers (VALUE_INK).
@@ -188,8 +189,16 @@ def cl_bubbles(f, occ):
         rings = [(*j["_xy"], j["_r"]) for j in f.items] + dots
         return not any(math.hypot(max(bx[0] - x, 0, x - bx[2]), max(bx[1] - y, 0, y - bx[3])) < r + gap for x, y, r in rings)
 
+    mid = (W / 2, (f.top + H) / 2)  # the frame's centre: a label looks toward it first
+
+    def inward(i, c, s_):
+        """How far the direction (c, s_) from circle i points toward the frame's centre (each axis by the frame's half size)."""
+        dx, dy = (mid[0] - i["_xy"][0]) / (W / 2), (mid[1] - i["_xy"][1]) / max((H - f.top) / 2, 1)
+        return c * dx + s_ * dy
+
     def beside(i):
-        """(anchor, tx, ty) beside the circle, label_gap + 1 px off it: right, left, above, below."""
+        """(anchor, tx, ty) beside the circle, label_gap + 1 px off it: right, left, above, below. (Taking the side toward the
+        frame's centre first here drops labels of a crowded centre: the EU-27 with every circle labelled loses one.)"""
         x, y = i["_xy"]; r = i["_r"]; g = gap + 1
         return [("start", x + r + g, y - sz * 0.2), ("end", x - r - g, y - sz * 0.2), ("middle", x, y - r - g - sz * 1.65), ("middle", x, y + r + g + sz * 0.8)]
 
@@ -205,6 +214,11 @@ def cl_bubbles(f, occ):
                 # or level with the point
                 top = py + sz * BELOW_GAP if s_ > 0.3 else py - sz * 2.45 if s_ < -0.3 else py - sz * 1.2
                 yield anchor, px, top + sz * 0.8, ((x + r * c, y + r * s_), (px, py))
+
+    def unit(lead):
+        """The unit direction of a leader (from the circle's edge to the label)."""
+        (ax, ay), (bx_, by_) = lead; n = math.hypot(bx_ - ax, by_ - ay) or 1.0
+        return (bx_ - ax) / n, (by_ - ay) / n
 
     def clear_lead(i, a, b):
         """A leader that crosses no other circle, no true-point dot, no label drawn and no other leader."""
@@ -243,9 +257,10 @@ def cl_bubbles(f, occ):
         else: out_.append(i)
     ground = getattr(occ, "land", None) if f.v else None
     for i in out_:
-        found = sorted(((math.dist(*lead) + (k("land_cost") if MK.on_land(ground, bx) else 0), anchor, tx, ty, bx, lead)
-                        for anchor, tx, ty, lead in out(i) for bx in [box(i, anchor, tx, ty)] if free(bx, i)), key=lambda c: c[0])
-        for _, anchor, tx, ty, bx, lead in found:
+        # equal costs: the place toward the frame's centre first
+        found = sorted(((round(math.dist(*lead) + (k("land_cost") if MK.on_land(ground, bx) else 0), 6), -inward(i, *unit(lead)), anchor, tx, ty, bx, lead)
+                        for anchor, tx, ty, lead in out(i) for bx in [box(i, anchor, tx, ty)] if free(bx, i)), key=lambda c: c[:2])
+        for _, _, anchor, tx, ty, bx, lead in found:
             pts = clear_lead(i, *lead)
             if pts is not None: label(i, anchor, tx, ty, bx, lead, pts); break
         else:

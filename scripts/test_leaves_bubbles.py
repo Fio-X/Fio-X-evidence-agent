@@ -137,6 +137,117 @@ class Bubbles(unittest.TestCase):
 
 
 
+# layer 1's map extent for a column page (src/next_run.rs map_extent), as it computes it: the points' box, past each side as
+# far as the circle nearest it needs for its label beside it (radius, label_gap + 1, the wider of name and number, the
+# hairline inset + 2) and above or below it (radius, label_gap + 1, the label's two lines, inset + 2), MAP_PAD degrees at
+# least; px to degrees through the shared frame (mapkit.View, column.MAP_W wide), grown until it holds
+RS = open(os.path.join(HERE, "..", "src", "next_run.rs"), encoding="utf-8").read()
+RS_CONST = {k: float(v) for k, v in re.findall(r"^const (MAP_PAD|MAP_W_PX|BUBBLE_R_MAX_PX|BUBBLE_R_MIN_PX|BUBBLE_LABEL_PX|BUBBLE_LABEL_GAP_PX|MAP_INSET_PX): f64 = ([\d.]+);", RS, re.M)}
+
+
+def layer1_extent(points, labels, dec):
+    """points {code: [lon, lat]}, labels {code: (value, name)}: the extent layer 1 gives the map leaves."""
+    c = RS_CONST; W, sz = c["MAP_W_PX"], c["BUBBLE_LABEL_PX"]; vmax = max([v for v, _ in labels.values()] + [0.0])
+    room = []
+    for code, p in points.items():
+        v, name = labels[code]; r = max(c["BUBBLE_R_MAX_PX"] * math.sqrt(max(v, 0) / vmax), c["BUBBLE_R_MIN_PX"]) if vmax > 0 else c["BUBBLE_R_MIN_PX"]
+        w = max(prod.tw(name, sz), prod.tw(f"{v:,.{dec}f}", sz)); g, e = c["BUBBLE_LABEL_GAP_PX"] + 1, c["MAP_INSET_PX"] + 2
+        room.append((p, r + g + w + e, r + g + 2.45 * sz + e))
+    lo0, la0 = min(p[0] for p in points.values()), min(p[1] for p in points.values())
+    lo1, la1 = max(p[0] for p in points.values()), max(p[1] for p in points.values())
+    clamp = lambda x: [max(x[0], -180), max(x[1], -90), min(x[2], 180), min(x[3], 90)]
+    pad = c["MAP_PAD"]; ext = clamp([lo0 - pad, la0 - pad, lo1 + pad, la1 + pad])
+    for _ in range(64):
+        xp = W / (ext[2] - ext[0]); yp = xp / max(math.cos(math.radians((ext[1] + ext[3]) / 2 + 2)), 0.05)
+        side = lambda far, px, k: max([pad] + [q[k] / px - far(q[0]) for q in room])
+        nxt = clamp([min(ext[0], lo0 - side(lambda p: p[0] - lo0, xp, 1)), min(ext[1], la0 - side(lambda p: p[1] - la0, yp, 2)),
+                     max(ext[2], lo1 + side(lambda p: lo1 - p[0], xp, 1)), max(ext[3], la1 + side(lambda p: la1 - p[1], yp, 2))])
+        moved = any(abs(a - b) > 1e-9 for a, b in zip(nxt, ext)); ext = nxt
+        if not moved: break
+    return ext
+
+
+def map_set(values, dec, point_of, names):
+    """A column page's map leaf input for values {code: v}: the rows, the items (each at its Natural Earth label point) and names."""
+    rows, items = [], []
+    for c, v in values.items():
+        rows += [{"src": f"series:T/{c}:2025:OBS_VALUE", "table": "T", "dims": {"k": c}, "time": "2025", "value": v},
+                 {"src": f"fact:v.{c}", "text": f"{v:,.{dec}f}"}]
+        items.append(dict(code=c, value=f"series:T/{c}:2025:OBS_VALUE", value_text=f"fact:v.{c}", lonlat=point_of(c)))
+    return rows, items, {c: names[c] for c in values}
+
+
+def box_pad(items, pad=4.0):
+    """The extent layer 1 gave before: the points' box, a fixed pad of degrees past it."""
+    lo, la = [i["lonlat"][0] for i in items], [i["lonlat"][1] for i in items]
+    return [min(lo) - pad, min(la) - pad, max(lo) + pad, max(la) + pad]
+
+
+# the q5 change page's world map (test-only values as its page printed them): China's label found no place on the old extent
+Q5 = dict(USA=18.39, CHN=14.90, BRA=11.48, IDN=7.54, IND=7.38, BGD=6.67, PAK=4.36, NGA=3.07)
+# an EU table (iso2 codes, test-only values): Cyprus the biggest on the box's east and south edges, Portugal on its west,
+# Finland on its north
+EU2 = dict(CY=31.0, PT=24.6, FI=23.9, DK=20.8, ES=20.6, EE=21.0, MT=20.1, RO=19.8, IE=15.4, LU=15.0)
+NAMES2 = json.load(open(os.path.join(ASSETS, "economy-names.json"), encoding="utf-8"))["economies"]
+ISO3 = {e["iso2"]: e["iso3"] for e in NAMES2}
+ZH2 = {e["iso2"]: e["zh"] for e in NAMES2}
+
+
+class MapExtent(unittest.TestCase):
+    def draw(self, values, dec, point_of, names, ext=None, **style):
+        rows, items, labels = map_set(values, dec, point_of, names)
+        setup(rows, labels)
+        ext = ext or layer1_extent({i["code"]: i["lonlat"] for i in items}, {c: (v, labels[c]) for c, v in values.items()}, dec)
+        f = bubbles.Frame({"data": {"items": items, "ext": ext}, "style": {"bubbles": {**run.MAP_STYLE["bubbles"], **style}}})
+        svg = bubbles.cl_bubbles(f, prod.Occ())
+        self.assertEqual(check_svg(svg), [])
+        return f, items
+
+    def test_layer_1_draws_the_map_the_leaf_draws(self):
+        # the frame layer 1 measures its labels' room in is the column page's map panel as the leaf draws it: its width, and
+        # the bubbles' radius scale, label size, label gap and inset as run.MAP_STYLE leaves them
+        import column
+        style, knob = run.MAP_STYLE["bubbles"], lambda k: prod.KNOBS["bubbles"][k][0]
+        self.assertEqual(set(RS_CONST), {"MAP_PAD", "MAP_W_PX", "BUBBLE_R_MAX_PX", "BUBBLE_R_MIN_PX", "BUBBLE_LABEL_PX", "BUBBLE_LABEL_GAP_PX", "MAP_INSET_PX"})
+        self.assertEqual((style["projection"], style["width"]), ("view", column.MAP_W))
+        self.assertEqual(RS_CONST["MAP_W_PX"], column.MAP_W)
+        for rs, k in (("BUBBLE_R_MAX_PX", "r_max"), ("BUBBLE_R_MIN_PX", "r_min"), ("BUBBLE_LABEL_PX", "size"), ("BUBBLE_LABEL_GAP_PX", "label_gap"), ("MAP_INSET_PX", "inset")):
+            self.assertNotIn(k, style, k)
+            self.assertEqual(RS_CONST[rs], knob(k), k)
+
+    def test_a_world_tables_edge_circles_keep_their_labels(self):
+        # every circle labelled on the extent layer 1 gives, China's beside it on the box's east edge among them; on the old
+        # extent (a fixed 4 degrees past the box: some 11 px here) China's label found no place
+        f, items = self.draw(Q5, 2, POINT.get, ZH3)
+        self.assertEqual(f.dropped, [])
+        self.assertEqual(sorted(c for c, _ in f.label_boxes), sorted(Q5))
+        f, _ = self.draw(Q5, 2, POINT.get, ZH3, ext=box_pad(items))
+        self.assertEqual(f.dropped, [("CHN", "no free place for the label")])
+
+    def test_an_eu_tables_edge_circles_keep_their_labels(self):
+        f, _ = self.draw(EU2, 1, lambda c: POINT[ISO3[c]], ZH2)
+        self.assertEqual(f.dropped, [])
+        self.assertEqual(sorted(c for c, _ in f.label_boxes), sorted(EU2))
+
+    def test_a_map_whose_labels_fit_keeps_the_old_extent(self):
+        # a small box (four EU countries, as layer 1's column page test): 4 degrees already hold every label, so the extent is
+        # the old one to the bit
+        pts = {c: POINT[ISO3[c]] for c in ("SE", "DE", "FR", "BE")}
+        labels = {"SE": (65.4, "名SE"), "BE": (14.9, "名BE"), "DE": (30.25, "名DE"), "FR": (20.0, "名FR")}
+        self.assertEqual(layer1_extent(pts, labels, 2), box_pad([{"lonlat": p} for p in pts.values()]))
+
+    def test_of_leader_places_that_cost_the_same_the_one_toward_the_frames_centre_is_taken(self):
+        # one labelled circle right of the frame's centre, small circles on its four sides' label places: its label goes out
+        # on a leader, and of the clear places 16 px off (all over the land, the same cost) it takes one toward the centre
+        # (red before: there the tie went by float noise, to the place down and right, away from the centre)
+        at = {"CHN": [30, 10], "IND": [33.21, 9.79], "PAK": [26.79, 9.79], "BGD": [30, 13.0], "NPL": [30, 7.0]}
+        f, _ = self.draw(dict(CHN=14.9, IND=0.3, PAK=0.3, BGD=0.3, NPL=0.3), 2, at.get, ZH3, ext=[0, 0, 40, 20], label_top=1)
+        self.assertEqual(f.dropped, [])
+        (code, bx), = f.label_boxes
+        c = next(i for i in f.items if i["code"] == code)
+        self.assertLess(bx[2], c["_xy"][0])  # the label ends left of the circle's centre, toward the frame's middle
+
+
 def colour(hexs):
     return [int(hexs[k:k + 2], 16) / 255 for k in (1, 3, 5)]
 

@@ -1771,25 +1771,118 @@ fn extremes<'a>(f: &Filling<'a>, out: &mut Filled, prints: bool) -> Result<(&'a 
     Ok((hi, lo))
 }
 
-/// How far (degrees) a column page's map reaches past its countries' points on each side, clamped to the globe: a visual
-/// layout default, as RING_HUBS. No number here prints.
+/// How far (degrees) a column page's map reaches past its countries' points on each side at least, clamped to the globe: a
+/// visual layout default, as RING_HUBS. No number here prints.
 const MAP_PAD: f64 = 4.0;
+
+/// The column page's map panel as the second layer draws it (runtime/leaves_py: column.MAP_W, and the bubbles knobs' defaults
+/// under run.MAP_STYLE: r_max, r_min, size, label_gap, inset), for the room map_extent leaves each circle's label: visual layout
+/// defaults, as MAP_PAD; no number here prints. scripts/test_leaves_bubbles.py holds them to the leaf's own.
+const MAP_W_PX: f64 = 560.0;
+const BUBBLE_R_MAX_PX: f64 = 22.0;
+const BUBBLE_R_MIN_PX: f64 = 3.0;
+const BUBBLE_LABEL_PX: f64 = 13.0;
+const BUBBLE_LABEL_GAP_PX: f64 = 4.0;
+const MAP_INSET_PX: f64 = 12.0;
+
+/// A label's rough width at the bubbles' label size, as the second layer measures it (prod.tw): a CJK character the size,
+/// any other about half.
+fn label_px(s: &str) -> f64 {
+    s.chars().map(|c| if c as u32 > 0x2e7f { BUBBLE_LABEL_PX } else { 0.58 * BUBBLE_LABEL_PX }).sum()
+}
+
+/// A value as the bubbles print it bare (fact .n): `dec` places, a comma between thousands.
+fn printed_len(v: f64, dec: usize) -> usize {
+    let s = format!("{:.*}", dec, v.abs());
+    let int = s.split('.').next().map_or(0, str::len);
+    s.len() + int.saturating_sub(1) / 3 + usize::from(v < 0.0)
+}
+
+/// The room (px) a circle's label needs from the circle's point to the frame's edge, (beside, above or below): its radius,
+/// the label's gap and its width (the wider of the name and the number) to the left or right; its radius, the gap and the
+/// label's two lines above or below; each past the land's hairline inset, 2 px more for the leaf's own margins.
+fn label_room(r: f64, w: f64) -> (f64, f64) {
+    let edge = MAP_INSET_PX + 2.0;
+    let side = r + BUBBLE_LABEL_GAP_PX + 1.0 + w + edge;
+    (side, r + BUBBLE_LABEL_GAP_PX + 1.0 + 2.45 * BUBBLE_LABEL_PX + edge)
+}
+
+/// The map's extent: the points' box, past each side as far as the circle nearest it needs for its label there (label_room,
+/// each circle's radius by its value's area as the bubbles scale it; `labels` each circle's name and number), and MAP_PAD
+/// at least, clamped to the globe. The px become degrees through the frame the leaves project it in (mapkit.View over the
+/// extent, MAP_W_PX wide: a degree of longitude W / span px, of latitude that over the cosine of the middle latitude + 2),
+/// which the padding itself changes, so the padding is grown until it holds (it only grows, the globe bounds it).
+fn map_extent(points: &BTreeMap<String, [f64; 2]>, labels: &BTreeMap<String, (f64, String)>, dec: usize) -> [f64; 4] {
+    let vmax = labels.values().map(|(v, _)| *v).fold(0.0, f64::max);
+    let room: Vec<([f64; 2], (f64, f64))> = points
+        .iter()
+        .map(|(code, p)| {
+            let (r, w) = match labels.get(code) {
+                Some((v, name)) => {
+                    let r = match vmax > 0.0 {
+                        true => (BUBBLE_R_MAX_PX * (v.max(0.0) / vmax).sqrt()).max(BUBBLE_R_MIN_PX),
+                        false => BUBBLE_R_MIN_PX,
+                    };
+                    (r, label_px(name).max(printed_len(*v, dec) as f64 * label_px("0")))
+                }
+                None => (BUBBLE_R_MAX_PX, label_px(code)),
+            };
+            (*p, label_room(r, w))
+        })
+        .collect();
+    let least = |i: usize| points.values().map(|p| p[i]).fold(f64::INFINITY, f64::min);
+    let most = |i: usize| points.values().map(|p| p[i]).fold(f64::NEG_INFINITY, f64::max);
+    let (lon0, lat0, lon1, lat1) = (least(0), least(1), most(0), most(1));
+    let clamp = |e: [f64; 4]| [e[0].max(-180.0), e[1].max(-90.0), e[2].min(180.0), e[3].min(90.0)];
+    let mut ext = clamp([lon0 - MAP_PAD, lat0 - MAP_PAD, lon1 + MAP_PAD, lat1 + MAP_PAD]);
+    for _ in 0..64 {
+        let x_px = MAP_W_PX / (ext[2] - ext[0]);
+        let y_px = x_px / ((ext[1] + ext[3]) / 2.0 + 2.0).to_radians().cos().max(0.05);
+        // the degrees each side needs: the room of each point there, less how far inside the box's edge it already is
+        let side = |far: &dyn Fn(&[f64; 2]) -> f64, px: f64, beside: bool| {
+            room.iter().map(|(p, (h, v))| (if beside { *h } else { *v }) / px - far(p)).fold(MAP_PAD, f64::max)
+        };
+        let next = clamp([
+            ext[0].min(lon0 - side(&|p| p[0] - lon0, x_px, true)),
+            ext[1].min(lat0 - side(&|p| p[1] - lat0, y_px, false)),
+            ext[2].max(lon1 + side(&|p| lon1 - p[0], x_px, true)),
+            ext[3].max(lat1 + side(&|p| lat1 - p[1], y_px, false)),
+        ]);
+        let moved = next.iter().zip(ext).any(|(a, b)| (a - b).abs() > 1e-9);
+        ext = next;
+        if !moved {
+            break;
+        }
+    }
+    ext
+}
 
 /// The map table a page's points come from (the flow group refuses any other than its pinned hash): the page's request keeps
 /// each point with it (knobs.points, the visual group's ledger entries), so a replay of that table can be held to it.
 const POINT_TABLE: &str = "naturalearth-admin0-50m-attributes";
 
 /// The map point of each ranked country (the knowledge group's, through the catalogue, kept in `out` for knobs.points) and
-/// the map's extent: the points' box, MAP_PAD past it on each side, clamped to the globe. A country without a point refuses.
+/// the map's extent (map_extent: the points' box with room past each side for the labels of the circles nearest it, each
+/// circle's value its row at the year and its name the name table's, as the bubbles print them). A country without a point
+/// refuses.
 fn ranked_points(f: &Filling, out: &mut Filled) -> Result<(BTreeMap<String, [f64; 2]>, [f64; 4]), String> {
     let points = f.catalogue.place_points(&f.picks.ranked)?;
     out.points.extend(points.iter().map(|(c, p)| (c.clone(), *p)));
     if points.is_empty() {
         return Err(format!("main {} ranks no country to put on a map", f.shape.main));
     }
-    let least = |i: usize| points.values().map(|p| p[i]).fold(f64::INFINITY, f64::min);
-    let most = |i: usize| points.values().map(|p| p[i]).fold(f64::NEG_INFINITY, f64::max);
-    let ext = [(least(0) - MAP_PAD).max(-180.0), (least(1) - MAP_PAD).max(-90.0), (most(0) + MAP_PAD).min(180.0), (most(1) + MAP_PAD).min(90.0)];
+    let place = f.shape.place.as_str();
+    let (kept, dec) = ranked_rows(f);
+    // a name the table does not answer for is measured as its code (the leaf refuses a nameless place anyway)
+    let names = leaf_labels(&[], &f.picks.ranked, f.catalogue).unwrap_or_default();
+    let labels: BTreeMap<String, (f64, String)> = kept
+        .iter()
+        .filter_map(|r| {
+            let code = r["dims"][place].as_str()?;
+            Some((code.to_string(), (row_value(r)?, names.get(code).cloned().unwrap_or_else(|| code.to_string()))))
+        })
+        .collect();
+    let ext = map_extent(&points, &labels, dec);
     Ok((points, ext))
 }
 
@@ -4269,6 +4362,96 @@ mod tests {
         println!("labels {}", serde_json::to_string(&leaf_labels(rows, &members, &NamesOnly).unwrap()).unwrap());
     }
 
+    /// The room ranked_points' extent leaves each ranked country's label, by the real name table and map points (NamesOnly):
+    /// for each country (values as written, the decimals they hold), the px from its point to the frame's left, right, top
+    /// and bottom edges as the leaves project the extent (mapkit.View: MAP_W_PX wide, a degree of longitude W / span px, of
+    /// latitude that over the cosine of the middle latitude + 2), less what its label needs there: its radius by area, the
+    /// label gap + 1, the wider of its name and its number, the hairline inset + 2 beside it; its two lines instead of the
+    /// width above or below. A room under 0 is a label the frame has no place for on that side.
+    fn label_room_left(values: &[(&str, &str)]) -> Vec<(String, [f64; 4])> {
+        let main: Vec<Value> = values
+            .iter()
+            .map(|(c, v)| json!({"src": format!("series:t/{c}:2025:OBS_VALUE"), "table": "t", "dims": {"country": c}, "time": "2025", "value": v}))
+            .collect();
+        let shape = Shape { main: "t".into(), place: "country".into(), year: "2025".into(), ..Default::default() };
+        let picks = Picks { ranked: values.iter().map(|(c, _)| c.to_string()).collect(), ..Default::default() };
+        let f = Filling {
+            shape: &shape,
+            picks: &picks,
+            main: &main,
+            companion: &[],
+            catalogue: &NamesOnly,
+            fmt: "pc".into(),
+            short: "%",
+            window: None,
+        };
+        let (points, ext) = ranked_points(&f, &mut Filled::default()).unwrap();
+        let names = leaf_labels(&[], &picks.ranked, &NamesOnly).unwrap();
+        let vmax = values.iter().map(|(_, v)| v.parse::<f64>().unwrap()).fold(0.0, f64::max);
+        let x_px = MAP_W_PX / (ext[2] - ext[0]);
+        let y_px = x_px / ((ext[1] + ext[3]) / 2.0 + 2.0).to_radians().cos();
+        values
+            .iter()
+            .map(|(c, v)| {
+                let p = points[*c];
+                let r = (BUBBLE_R_MAX_PX * (v.parse::<f64>().unwrap() / vmax).sqrt()).max(BUBBLE_R_MIN_PX);
+                let w = label_px(&names[*c]).max(label_px(v));
+                let side = r + BUBBLE_LABEL_GAP_PX + 1.0 + w + MAP_INSET_PX + 2.0;
+                let up = r + BUBBLE_LABEL_GAP_PX + 1.0 + 2.45 * BUBBLE_LABEL_PX + MAP_INSET_PX + 2.0;
+                let room = [
+                    (p[0] - ext[0]) * x_px - side,
+                    (ext[2] - p[0]) * x_px - side,
+                    (ext[3] - p[1]) * y_px - up,
+                    (p[1] - ext[1]) * y_px - up,
+                ];
+                (c.to_string(), room)
+            })
+            .collect()
+    }
+
+    /// Every label has room on every side (no room under 0), and on each side some label has just the room it needs: the
+    /// map reaches no further than its labels ask (each of these sets asks more than MAP_PAD on every side).
+    fn assert_rooms_just_fit(rooms: &[(String, [f64; 4])]) {
+        for (code, room) in rooms {
+            assert!(room.iter().all(|r| *r >= -1e-6), "{code}: {room:?}");
+        }
+        for side in 0..4 {
+            let least = rooms.iter().map(|(_, r)| r[side]).fold(f64::INFINITY, f64::min);
+            assert!(least < 0.01, "side {side}: {rooms:?}");
+        }
+    }
+
+    /// A world table (iso3 codes, the q5 change page's countries, whose China label found no place): the points' box runs
+    /// from the United States to China and Indonesia, big circles on its edges, and the map leaves room past each for its
+    /// label beside it, and above and below every circle. Red on a fixed 4-degree pad by construction: over a box some 210
+    /// degrees wide, 4 degrees are about 11 px of the 560, China's label beside it needs about 77.
+    #[test]
+    fn a_world_maps_edge_circles_have_room_for_their_labels() {
+        let values = [("USA", "18.39"), ("CHN", "14.90"), ("BRA", "11.48"), ("IDN", "7.54"), ("IND", "7.38"), ("BGD", "6.67"), ("PAK", "4.36"), ("NGA", "3.07")];
+        assert_rooms_just_fit(&label_room_left(&values));
+    }
+
+    /// An EU table (iso2 codes): Cyprus the biggest circle on the box's east and south edges, Portugal on its west, Finland on
+    /// its north; every label has room beside it, above and below. Red on a fixed 4-degree pad by construction: over a box
+    /// some 41 degrees wide, 4 degrees are about 46 px, Cyprus's label beside it needs about 93.
+    #[test]
+    fn an_eu_maps_edge_circles_have_room_for_their_labels() {
+        let values = [("CY", "31.0"), ("PT", "24.6"), ("FI", "23.9"), ("DK", "20.8"), ("ES", "20.6"), ("EE", "21.0"), ("MT", "20.1"), ("RO", "19.8"), ("IE", "15.4"), ("LU", "15.0")];
+        assert_rooms_just_fit(&label_room_left(&values));
+    }
+
+    /// The bubbles' numbers as they print bare: the decimals asked, a comma between thousands, a minus sign; and the rough
+    /// width of a name, a CJK character the label size and any other about half.
+    #[test]
+    fn a_labels_width_counts_its_printed_number_and_its_name() {
+        assert_eq!(printed_len(18.39, 2), 5);
+        assert_eq!(printed_len(1234567.0, 1), 11);
+        assert_eq!(printed_len(-999.0, 0), 4);
+        assert_eq!(printed_len(-1000.0, 0), 6);
+        assert!((label_px("中国") - 2.0 * BUBBLE_LABEL_PX).abs() < 1e-9);
+        assert!((label_px("14.90") - 5.0 * 0.58 * BUBBLE_LABEL_PX).abs() < 1e-9);
+    }
+
     /// Two-letter codes are countries (EU aside); EU27_2020 and EA20 have members, only EU27_2020 a hub row.
     struct Hubs;
     impl Catalogue for Hubs {
@@ -4954,7 +5137,8 @@ mod tests {
         assert!(spec["hero"]["data"].get("hi").is_none());
         assert_eq!(spec["fmts"]["pc"], json!({"scale": 1, "dec": 2, "suffix": "%"}));
         assert_eq!(spec["fmts"]["pp"], json!({"scale": 1, "dec": 2, "suffix": " 个百分点"}));
-        // one circle per ranked country at its Natural Earth label point, the points' box MAP_PAD past it, the pinned table named
+        // one circle per ranked country at its Natural Earth label point, the points' box MAP_PAD past it (a box this small holds
+        // every label at that), the pinned table named
         let (bubbles, notes) = (&spec["hero"]["leaves"]["bubbles"], &spec["hero"]["leaves"]["leader_notes"]);
         let items = bubbles["items"].as_array().unwrap();
         assert_eq!(items.iter().map(|i| i["code"].as_str().unwrap()).collect::<Vec<_>>(), ["SE", "DE", "FR", "BE"]);
