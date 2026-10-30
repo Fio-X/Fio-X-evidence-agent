@@ -2943,7 +2943,12 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
     let worded = match reword(recorder, model, question, &drafts, cancel).await {
         Ok(worded) => worded,
         Err(stopped) => {
-            record_page_calls(recorder, catalogue, calls)?;
+            // The text step cleared the parent when it was asked and a stopped reply never set one: the calls hang under
+            // the last accepted model call, the one the pick ran under (the search step is accepted before any pick,
+            // prepare_claims). Under that parent a program event cannot fail, so the run returns the text step's stop.
+            if recorder.resume_under_last_accepted() {
+                record_page_calls(recorder, catalogue, calls)?;
+            }
             return Err(stopped);
         }
     };
