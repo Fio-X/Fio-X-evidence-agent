@@ -2666,9 +2666,6 @@ fn vision_unanswered_why(failed: &Stop) -> String {
                 .to_string()
         }
         Stop::Exchange { .. } => "exchange not recorded: the review's exchange could not be written".to_string(),
-        Stop::SecretInExchange { kind, .. } => {
-            format!("secret in exchange: the review's exchange held a secret ({}) and was not written", kind.name())
-        }
         _ => "ask failed: the review could not be asked".to_string(),
     }
 }
@@ -2680,8 +2677,8 @@ fn vision_unanswered_why(failed: &Stop) -> String {
 /// page checks do, verify.rs verify_publications). An ask that fails for any reason but the run's cancel (a reply refused in
 /// every round, no reply, a failed or timed-out model call, an exchange that could not be recorded) is the six unanswered,
 /// each naming the kind of failure (vision_unanswered_why), the run going on as with any review. Ok is the review's line for
-/// the run's answer; Err only when there is no 1440 screenshot to show (missing, or changed while read) or the run was
-/// cancelled.
+/// the run's answer; Err only when there is no 1440 screenshot to show (missing, or changed while read), the run was
+/// cancelled, or the exchange held a secret (nothing of it written): a secret is a hard line, never a review verdict.
 async fn leaf_vision(
     recorder: &mut Recorder<'_>,
     model: &mut (dyn Asker + '_),
@@ -2706,6 +2703,8 @@ async fn leaf_vision(
         Ok(_) => unreachable!("a vision check gives a vision choice"),
         // the run's cancel stops it here as anywhere
         Err(stopped) if cancel.load(std::sync::atomic::Ordering::SeqCst) => return Err(stopped),
+        // a secret in the exchange stops the run as at any step: nothing of the exchange was written
+        Err(stopped @ Stop::SecretInExchange { .. }) => return Err(stopped),
         // any other failed ask is no verdict, and the review is advice: each question is recorded unanswered, naming the
         // kind of failure, under the last accepted model call, and the run goes on as with any review
         Err(failed) if recorder.resume_under_last_accepted() => {
@@ -7364,6 +7363,30 @@ for line in sys.stdin:
             std::fs::write(ran.run.join("events.jsonl"), lines.join("\n") + "\n").unwrap();
             let gaps = crate::verify::publication_errors_of(&ran.run);
             assert!(gaps.is_empty(), "{kind} {gaps:?}");
+        }
+    }
+
+    /// A secret in the image review's reply still stops the run, as at any step: nothing of that exchange is written (no
+    /// exchange file, no exchange event), no review is recorded, and the stop names only the secret's kind.
+    #[tokio::test]
+    async fn a_secret_in_the_image_review_reply_still_stops_the_run_and_writes_nothing_of_it() {
+        let mut leaked = call("toolu_v", vision_reply(&[]));
+        leaked["content"].as_array_mut().unwrap().push(json!({"type": "text", "text": "Authorization: Bearer abcdefghijklmnopqrstuvwxyz0123"}));
+        let ran = leaf_run_checked(Some(&headed_twin()), SDG_CSV, vec![leaked], "shot").await;
+        match &ran.result {
+            Err(Stop::SecretInExchange { step: "vision", kind }) => assert_eq!(*kind, crate::next_flow::SecretKind::AuthorizationHeader),
+            other => panic!("expected the run to stop on the secret in the review's reply, got {other:?}"),
+        }
+        assert_eq!(ran.unasked, 0);
+        assert!(!ran.run.join("runtime/model-exchanges/toolu_v.json").exists());
+        let files: Vec<String> = std::fs::read_dir(ran.run.join("runtime/model-exchanges"))
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert!(files.iter().all(|f| !f.contains("toolu_v") && !f.starts_with("turn-")), "{files:?}");
+        for event in &ran.events {
+            let text = event.to_string();
+            assert!(!text.contains("abcdefghijklmnopqrstuvwxyz0123") && event["type"] != PUBLICATION_VISION_EVENT, "{text}");
         }
     }
 
