@@ -5468,7 +5468,18 @@ fn verify_publications(root: &Path, report: &mut VerificationReport) -> Result<(
                     let status_ok = qa_report.get("status").and_then(Value::as_str) == Some("PASS");
                     let screenshots_ok =
                         verify_qa_screenshots(&qa_key_dir, &qa_report, &manifest_ref, report);
-                    if !(status_ok && screenshots_ok) {
+                    // The new route's browser QA must have shot the page at 1440 and kept that shot: a report whose
+                    // screenshots list is missing or empty would otherwise pass verify_qa_screenshots untouched.
+                    let shot_1440_ok = match page_checks.is_some().then(|| next_qa_1440_gap(&qa_key_dir, &qa_report)) {
+                        Some(Some(gap)) => {
+                            report.error(format!(
+                                "publication {manifest_ref} browser QA has no 1440 screenshot it can stand on: {gap}"
+                            ));
+                            false
+                        }
+                        _ => true,
+                    };
+                    if !(status_ok && screenshots_ok && shot_1440_ok) {
                         passing = false;
                     }
                 }
@@ -5535,6 +5546,36 @@ fn next_page_checks_events(root: &Path) -> Vec<Value> {
                 && event["auto_parent_call_id"].is_string()
         })
         .collect()
+}
+
+/// What keeps a new-route browser QA report (publications/qa/<key>/browser-qa.json, `qa_key_dir` its folder) from vouching
+/// for its page's 1440 screenshot, None when it holds exactly one screenshots entry of width 1440, its path a plain file name
+/// in that folder, and the sha256 of the bytes read from that file now equals the entry's non-empty sha256. This is the
+/// strength the page image review's check (next_vision_reviewed, gone with 0d238a2e) held, kept as the program's own: a
+/// missing or empty list, no or two 1440 entries, an unsafe name, a file that cannot be read, or other bytes is a gap.
+fn next_qa_1440_gap(qa_key_dir: &Path, qa_report: &Value) -> Option<String> {
+    let shots: Vec<&Value> = qa_report["screenshots"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|entry| entry["width"] == 1440)
+        .collect();
+    let [shot] = shots.as_slice() else {
+        return Some(format!("it lists {} screenshots of width 1440, not one", shots.len()));
+    };
+    let Some(name) = shot["path"].as_str().filter(|name| {
+        !name.is_empty() && !name.contains(['/', '\\']) && *name != "." && *name != ".."
+    }) else {
+        return Some(format!("its 1440 screenshot has an invalid path: {}", shot["path"]));
+    };
+    let Some(recorded) = shot["sha256"].as_str().filter(|sha| !sha.is_empty()) else {
+        return Some(format!("its 1440 screenshot {name} records no sha256"));
+    };
+    match fs::read(qa_key_dir.join(name)) {
+        Ok(bytes) if sha256_bytes(&bytes) == recorded => None,
+        Ok(_) => Some(format!("its 1440 screenshot {name} on disk is not the bytes it recorded")),
+        Err(error) => Some(format!("its 1440 screenshot {name} cannot be read: {error}")),
+    }
 }
 
 /// What keeps the publication in publications/<dir>/ (its html at `html_ref`, `sha` the hash of those bytes on disk now)
@@ -9779,6 +9820,57 @@ mod tests {
         assert!(publication_errors(root).is_empty());
         fs::write(root.join(format!("publications/{key}/index.html")), "<html>changed</html>").unwrap();
         assert!(named(&publication_errors(root), "measured other bytes"));
+    }
+
+    /// A new-route publication's passing browser QA must hold exactly one 1440 screenshot whose bytes on disk hash to the
+    /// sha256 it recorded, whatever the image review said: a missing or empty screenshots list, two 1440 entries, a missing
+    /// file or other bytes is a gap. The old route (no runtime/next-page.json) is not asked for it.
+    #[test]
+    fn a_next_route_publication_needs_its_qa_1440_screenshot_on_disk() {
+        let (temp, key) = build_publication_fixture(true, true);
+        let root = temp.path();
+        let manifest = format!("publications/{key}/manifest.json");
+        let qa_path = root.join("publications/qa/q1/browser-qa.json");
+        let shot_path = root.join("publications/qa/q1/publication-1440.png");
+        let good: Value = serde_json::from_str(&fs::read_to_string(&qa_path).unwrap()).unwrap();
+        let named = |errors: &[String], want: &str| {
+            errors.iter().any(|e| e.contains("has no 1440 screenshot it can stand on") && e.contains(want))
+        };
+        let with_shots = |shots: Option<Value>| {
+            let mut qa = good.clone();
+            match shots {
+                Some(shots) => qa["screenshots"] = shots,
+                None => {
+                    qa.as_object_mut().unwrap().remove("screenshots");
+                }
+            }
+            fs::write(&qa_path, qa.to_string()).unwrap();
+        };
+        // The old route: a QA report with no screenshots list stays as it was.
+        with_shots(None);
+        assert!(publication_errors(root).is_empty(), "{:?}", publication_errors(root));
+        fs::create_dir_all(root.join("runtime")).unwrap();
+        fs::write(root.join("runtime/next-page.json"), "{}").unwrap();
+        write_events(root, &[page_checks_event(&key, &key, &[true]), vision_event(&manifest, true)]);
+        let one = good["screenshots"][0].clone();
+        for (shots, want) in [
+            (None, "lists 0 screenshots of width 1440"),
+            (Some(serde_json::json!([])), "lists 0 screenshots of width 1440"),
+            (Some(serde_json::json!([one.clone(), one.clone()])), "lists 2 screenshots of width 1440"),
+            (Some(serde_json::json!([{"width": 1440, "path": "../x.png", "sha256": one["sha256"]}])), "invalid path"),
+            (Some(serde_json::json!([{"width": 1440, "path": "publication-1440.png"}])), "records no sha256"),
+        ] {
+            with_shots(shots);
+            let errors = publication_errors(root);
+            assert!(named(&errors, want), "{want}: {errors:?}");
+            assert!(errors.iter().any(|e| e.contains("has no passing browser QA report")), "{errors:?}");
+        }
+        with_shots(Some(serde_json::json!([one])));
+        assert!(publication_errors(root).is_empty(), "{:?}", publication_errors(root));
+        fs::write(&shot_path, b"other-screenshot-bytes").unwrap();
+        assert!(named(&publication_errors(root), "is not the bytes it recorded"));
+        fs::remove_file(&shot_path).unwrap();
+        assert!(named(&publication_errors(root), "cannot be read"));
     }
 
     /// A leaf page of the new route (publications/<recipe>/, not sha-named) is taken as one only when the flow's ring page
