@@ -20,30 +20,6 @@
    "unit": []
   },
   {
-   "monthly": "bop_eu6_m",
-   "annual": "bop_eu6_q",
-   "found": "title",
-   "codes": "annual_covers_monthly",
-   "extra_annual_codes": {
-    "bop_item": 104,
-    "partner": 22,
-    "sector10": 8,
-    "sectpart": 5,
-    "stk_flow": 2
-   },
-   "dims": [
-    "bop_item",
-    "currency",
-    "geo",
-    "partner",
-    "s_adj",
-    "sector10",
-    "sectpart",
-    "stk_flow"
-   ],
-   "unit": []
-  },
-  {
    "monthly": "bop_euins6_m",
    "annual": "bop_euins6_a",
    "found": "id+title",
