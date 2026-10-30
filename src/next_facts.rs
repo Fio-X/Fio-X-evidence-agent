@@ -40,7 +40,9 @@ pub fn table_id(t: &str) -> bool {
         Some(id) => (id, true),
         None => (t, false),
     };
-    // a dot only parts a World Bank id into non-empty pieces ("cities.csv@2", "X.@2" and "a..b@2" are none)
+    // a dot only parts a World Bank id into non-empty pieces ("X.@2" and "a..b@2" are none); the pieces' characters are
+    // not ruled further (the catalogue's World Bank ids hold lower case, e.g. account.t.d.1), so "cities.csv@2" has
+    // the shape of one: what keeps a file's name off a page is leaf_refs, which takes only the request's own table ids
     id.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
         && id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-') || (dot && c == '.'))
         && id.split('.').all(|part| !part.is_empty())
@@ -2076,6 +2078,8 @@ mod tests {
         assert!(table_id("EN.GHG.CO2.PC.CE.AR5@2") && table_id("SP.POP.65UP.TO.ZS@2"));
         assert!(!table_id("cities.csv") && !table_id("data/cities.csv@2") && !table_id("@2") && !table_id("EN.X@3"));
         assert!(!table_id("X.@2") && !table_id("a..b@2") && !table_id("EN.@2"));
+        // shaped as a World Bank id with lower case, as the catalogue's are; only leaf_refs decides what a page may name
+        assert!(table_id("account.t.d.1@2") && table_id("cities.csv@2"));
         let mut path = rows.clone();
         path.push(row("data/mo.csv", "X", "2021-01", 1.0));
         assert_eq!(leaf_ledger(&s, &path, &facts).err().unwrap(), "series table data/mo.csv: its name must be a table id");

@@ -2324,13 +2324,22 @@ pub async fn reword(
     Ok(page)
 }
 
+/// How a step of the plan ended: passed, refused (the run stops there), or advised (it ran and gave advice that holds a no or
+/// an unanswered question, which stops nothing: the image review).
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum StepEnd {
+    Passed,
+    Refused,
+    Advised,
+}
+
 /// What the run decided, for the completion prompts (PAGE_STATE), and the run's plan of `steps` (LEAF_PLAN_STEPS) as of `step`
-/// (`ok`: that step passed).
-fn save_route_state(run_dir: &Path, steps: &[(&str, &str)], step: &str, ok: bool, state: &Value) -> Result<(), Stop> {
+/// (`end`: how that step ended).
+fn save_route_state(run_dir: &Path, steps: &[(&str, &str)], step: &str, end: StepEnd, state: &Value) -> Result<(), Stop> {
     let text = serde_json::to_string_pretty(state).map_err(|e| stop("state", e.to_string()))?;
     crate::group_guard::write(run_dir, &run_dir.join(PAGE_STATE), text)
         .map_err(|e| stop("state", format!("{PAGE_STATE}: {e}")))?;
-    let plan = plan_record(state["question"].as_str().unwrap_or(""), steps, step, ok)?;
+    let plan = plan_record(state["question"].as_str().unwrap_or(""), steps, step, end)?;
     let text = serde_json::to_string_pretty(&plan).map_err(|e| stop("state", e.to_string()))?;
     crate::group_guard::write(run_dir, &run_dir.join(PLAN_FILE), text)
         .map_err(|e| stop("state", format!("{PLAN_FILE}: {e}")))
@@ -2425,6 +2434,17 @@ const TYPE_FLOOR_PX: f64 = 11.0;
 const CONTRAST_FLOOR_BODY: f64 = 4.5;
 const CONTRAST_FLOOR_LARGE: f64 = 3.0;
 
+/// The published page as the page checks read it from disk, and the sha256 of the bytes read (none when they could not be
+/// read), which the checks event names: the html only when those bytes are the ones published (their hash the
+/// publication's) and text; else none, which strip_placed fails, so a page that changed or could not be read is never
+/// checked as the published one.
+fn checked_bytes(run_dir: &Path, published: &crate::next_flow::Published) -> (Option<String>, Option<String>) {
+    let read = std::fs::read(run_dir.join(&published.html_ref)).ok();
+    let sha = read.as_deref().map(crate::hash::sha256_bytes);
+    let html = read.filter(|_| sha.as_deref() == Some(published.html_sha256.as_str())).and_then(|b| String::from_utf8(b).ok());
+    (html, sha)
+}
+
 /// One program check on a published page: its name, whether it passed, the warning it passed with (none: it raised none)
 /// and what it measured.
 #[derive(Debug)]
@@ -2437,8 +2457,9 @@ struct PageCheck {
 
 /// The program's checks on a published leaf page, each measured, none asked of a model:
 /// - notes_dropped: what its layers dropped (the publication's list, the request ledger's dropped entries), none passes;
-/// - strip_placed: a strip owed (`strip`: its recipe's slot and a piece set that takes the tables, page_strip) was given
-///   and the published html holds the layer illus_strip; one owed and not given fails, whatever the html holds;
+/// - strip_placed: the published html was read (`html`, checked_bytes; none fails), and a strip owed (`strip`: its
+///   recipe's slot and a piece set that takes the tables, page_strip) was given and the html holds the layer illus_strip;
+///   one owed and not given fails, whatever the html holds;
 /// - same_numbers_twice: no two layers print a value of the same row (one table, series and time; fill_of's `drawn`), each
 ///   pair found named with its table, times and count; a pair the recipe declares (its same_measure, either order) is
 ///   recorded as known, declared by the recipe, and passes with a warning; the same layers under another recipe fail;
@@ -2461,8 +2482,9 @@ fn page_checks(
     let measured = json!({"count": items.len(), "items": items});
     let notes = PageCheck { name: "notes_dropped", passed: items.is_empty(), warning: None, measured };
     let placed = html.is_some_and(|h| h.contains(r#"data-layer="illus_strip""#));
-    let measured = json!({"slot": strip.slot, "asked": strip.asked, "given": strip.given, "placed": placed});
-    let strip = PageCheck { name: "strip_placed", passed: !strip.asked || (strip.given && placed), warning: None, measured };
+    let measured = json!({"html_read": html.is_some(), "slot": strip.slot, "asked": strip.asked, "given": strip.given, "placed": placed});
+    let passed = html.is_some() && (!strip.asked || (strip.given && placed));
+    let strip = PageCheck { name: "strip_placed", passed, warning: None, measured };
     // each layer's rows by src, layers in fill order; a row's table and time as the fill gave them
     let mut layers: Vec<(&str, BTreeSet<&str>)> = Vec::new();
     let mut at: BTreeMap<&str, (&str, &str)> = BTreeMap::new();
@@ -2540,9 +2562,10 @@ fn leaf_plan(question: &str, recipe: &str) -> Value {
 /// The first step of a route's plan that save_route_state records; the two before it (the claims and the text) are done by then.
 const SENDS_FROM: usize = 2;
 
-/// The plan in newsroom_update_plan's record shape (newsroom.ts): the steps before `step` completed, `step` completed or blocked
-/// by its send, the rest pending. The revision counts the sends recorded, so a later one replaces an earlier one.
-fn plan_record(question: &str, steps: &[(&str, &str)], step: &str, ok: bool) -> Result<Value, Stop> {
+/// The plan in newsroom_update_plan's record shape (newsroom.ts): the steps before `step` completed, `step` completed,
+/// blocked by its send (refused) or advised (it ran, and its advice holds a no; nothing was held back), the rest pending. The
+/// revision counts the sends recorded, so a later one replaces an earlier one.
+fn plan_record(question: &str, steps: &[(&str, &str)], step: &str, end: StepEnd) -> Result<Value, Stop> {
     let at = steps
         .iter()
         .position(|(id, _)| *id == step)
@@ -2554,8 +2577,11 @@ fn plan_record(question: &str, steps: &[(&str, &str)], step: &str, ok: bool) -> 
         .map(|(i, (id, action))| {
             let status = match i.cmp(&at) {
                 std::cmp::Ordering::Less => "completed",
-                std::cmp::Ordering::Equal if ok => "completed",
-                std::cmp::Ordering::Equal => "blocked",
+                std::cmp::Ordering::Equal => match end {
+                    StepEnd::Passed => "completed",
+                    StepEnd::Refused => "blocked",
+                    StepEnd::Advised => "advised",
+                },
                 std::cmp::Ordering::Greater => "pending",
             };
             json!({"id": id, "action": action, "status": status})
@@ -2564,8 +2590,8 @@ fn plan_record(question: &str, steps: &[(&str, &str)], step: &str, ok: bool) -> 
     let revision = at - SENDS_FROM + 1;
     Ok(json!({"schema_version": "0.7.0", "revision": revision,
         "updated_at": chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true), "goal": question,
-        "revision_note": format!("{step}: {}", if ok { "passed" } else { "refused" }),
-        "trigger": if revision == 1 { "initial_goal" } else if ok { "other" } else { "validation_failure" }, "steps": steps}))
+        "revision_note": format!("{step}: {}", match end { StepEnd::Passed => "passed", StepEnd::Refused => "refused", StepEnd::Advised => "advised" }),
+        "trigger": if revision == 1 { "initial_goal" } else if end == StepEnd::Refused { "validation_failure" } else { "other" }, "steps": steps}))
 }
 
 /// The first prompt: the question to the design pack's sheet, every step in order. Returns the answer text. `steps` is
@@ -2620,7 +2646,7 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
             )?;
             let state = json!({"question": question, "route": recipe, "claims": verified, "worded": worded_out,
                 "published": published.html_ref, "html_sha256": published.html_sha256});
-            save_route_state(recorder.run_dir(), &LEAF_PLAN_STEPS, "browser", true, &state)?;
+            save_route_state(recorder.run_dir(), &LEAF_PLAN_STEPS, "browser", StepEnd::Passed, &state)?;
             let gaps = leaf_gate_now(recorder.run_dir(), recipe, &prepared);
             recorder.program_event(
                 LEAF_GATE_EVENT,
@@ -2635,7 +2661,7 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
                 ));
             }
             // what the program measures on the page is held before any model sees it: a failed check stops the run
-            let html = std::fs::read_to_string(recorder.run_dir().join(&published.html_ref)).ok();
+            let (html, read_sha256) = checked_bytes(recorder.run_dir(), published);
             let checks =
                 page_checks(leaf.recipe, html.as_deref(), &published.dropped, leaf.strip, &leaf.drawn, published.type_measured.as_ref());
             let measured: Vec<Value> = checks
@@ -2645,7 +2671,7 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
             recorder.program_event(
                 PAGE_CHECKS_EVENT,
                 json!({"by": RING_ACTOR, "recipe": recipe, "published": published.html_ref,
-                    "html_sha256": published.html_sha256, "checks": measured}),
+                    "html_sha256": read_sha256, "checks": measured}),
             )?;
             let failed: Vec<String> = checks.iter().filter(|c| !c.passed).map(|c| format!("{} measured {}", c.name, c.measured)).collect();
             if !failed.is_empty() {
@@ -2670,7 +2696,7 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
             )?;
             let state = json!({"question": question, "route": recipe, "claims": verified, "worded": worded_out,
                 "stuck": format!("{recipe}-{stage}")});
-            save_route_state(recorder.run_dir(), &LEAF_PLAN_STEPS, stage, false, &state)?;
+            save_route_state(recorder.run_dir(), &LEAF_PLAN_STEPS, stage, StepEnd::Refused, &state)?;
             Err(stop(stage, format!("the {recipe} leaf page stopped at {stage}: {why}")))
         }
     }
@@ -2764,7 +2790,9 @@ async fn leaf_vision(
     )?;
     let mut state = state.clone();
     state["publication_vision"] = json!({"yes": yes, "no": no, "unanswered": unanswered});
-    save_route_state(recorder.run_dir(), &LEAF_PLAN_STEPS, "publication_vision", yes.len() == answers.len(), &state)?;
+    // the review is advice: a no or an unanswered question is recorded as advised, never as a step that blocked the run
+    let end = if yes.len() == answers.len() { StepEnd::Passed } else { StepEnd::Advised };
+    save_route_state(recorder.run_dir(), &LEAF_PLAN_STEPS, "publication_vision", end, &state)?;
     let list = |ids: &[&str]| if ids.is_empty() { "none".to_string() } else { ids.join(", ") };
     let open = if unanswered.is_empty() { String::new() } else { format!("; unanswered: {}", list(&unanswered)) };
     Ok(format!(
@@ -3351,7 +3379,7 @@ mod tests {
     #[test]
     fn the_plan_marks_each_send_and_the_file_verification_requires_is_written() {
         // A refused publication: the steps before it done, it blocked, the review after it still pending.
-        let plan = plan_record("q", &PLAN_STEPS, "publish", false).unwrap();
+        let plan = plan_record("q", &PLAN_STEPS, "publish", StepEnd::Refused).unwrap();
         let status: Vec<&str> = plan["steps"]
             .as_array()
             .unwrap()
@@ -3381,12 +3409,12 @@ mod tests {
             .unwrap()
             .iter()
             .all(|s| s["id"].is_string() && s["action"].is_string()));
-        let first = plan_record("q", &PLAN_STEPS, "sheet", true).unwrap();
+        let first = plan_record("q", &PLAN_STEPS, "sheet", StepEnd::Passed).unwrap();
         assert_eq!(
             (first["revision"].as_u64(), first["trigger"].as_str()),
             (Some(1), Some("initial_goal"))
         );
-        let last = plan_record("q", &PLAN_STEPS, "publication_vision", true).unwrap();
+        let last = plan_record("q", &PLAN_STEPS, "publication_vision", StepEnd::Passed).unwrap();
         assert!(last["steps"]
             .as_array()
             .unwrap()
@@ -3394,13 +3422,13 @@ mod tests {
             .all(|s| s["status"] == "completed"));
         // The claims and the text are no sends of their own, and an unknown step is refused.
         assert!(
-            plan_record("q", &PLAN_STEPS, "text", true).is_err() && plan_record("q", &PLAN_STEPS, "rerun", true).is_err()
+            plan_record("q", &PLAN_STEPS, "text", StepEnd::Passed).is_err() && plan_record("q", &PLAN_STEPS, "rerun", StepEnd::Passed).is_err()
         );
         // save_route_state writes the page state and the plan through the checked writer, under the story's own name for it.
         let _command = crate::group_guard::command_for_test("investigate");
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir(dir.path().join("runtime")).unwrap();
-        save_route_state(dir.path(), &LEAF_PLAN_STEPS, "shape", true, &json!({"question": "q"})).unwrap();
+        save_route_state(dir.path(), &LEAF_PLAN_STEPS, "shape", StepEnd::Passed, &json!({"question": "q"})).unwrap();
         let written: Value =
             serde_json::from_str(&std::fs::read_to_string(dir.path().join(PLAN_FILE)).unwrap())
                 .unwrap();
@@ -4295,7 +4323,7 @@ mod tests {
         let stopped = |prepared: &[Prepared]| recipe_request(dir.path(), prepared, &[], recipe(RING_RECIPE), &Hubs, ("", "", "")).unwrap_err();
         assert_eq!(stopped(&[]), ("shape", "not this shape: no table".to_string()));
         assert_eq!(stopped(&[main]), ("shape", "not this shape: main imp kept no companion".to_string()));
-        let plan = plan_record("q", &LEAF_PLAN_STEPS, "browser", true).unwrap();
+        let plan = plan_record("q", &LEAF_PLAN_STEPS, "browser", StepEnd::Passed).unwrap();
         let ids: Vec<&str> = plan["steps"].as_array().unwrap().iter().map(|s| s["id"].as_str().unwrap()).collect();
         assert_eq!(ids, ["claims", "text", "shape", "fill", "draw", "door", "browser", "publication_vision"]);
         let done: Vec<&Value> = plan["steps"].as_array().unwrap().iter().filter(|s| s["status"] == "completed").collect();
@@ -7077,8 +7105,10 @@ for line in sys.stdin:
             got,
             [("notes_dropped", true), ("strip_placed", true), ("same_numbers_twice", true), ("type_size", true), ("text_contrast", true)]
         );
+        // the five verify holds a publication's page checks event to, in its order
+        assert_eq!(checks.iter().map(|c| c.name).collect::<Vec<_>>(), crate::verify::NEXT_PAGE_CHECKS);
         assert_eq!(checks[0].measured, json!({"count": 0, "items": []}));
-        assert_eq!(checks[1].measured, json!({"slot": false, "asked": false, "given": false, "placed": false}));
+        assert_eq!(checks[1].measured, json!({"html_read": true, "slot": false, "asked": false, "given": false, "placed": false}));
         assert_eq!(checks[2].measured, json!({"pairs": []}));
         assert_eq!(checks[3].measured, json!({"min_font_px": 12, "floor_px": 11.0, "texts": 40, "below": []}));
         assert_eq!(
@@ -7152,18 +7182,18 @@ for line in sys.stdin:
         let holds = r#"<div class="illus-strip"><svg><g data-layer="illus_strip"></g></svg></div>"#;
         let missing = page_checks(recipe("column"), Some("<body><svg></svg></body>"), &[], OWED, &[], Some(&typed()));
         assert_eq!((missing[1].name, missing[1].passed), ("strip_placed", false));
-        assert_eq!(missing[1].measured, json!({"slot": true, "asked": true, "given": true, "placed": false}));
+        assert_eq!(missing[1].measured, json!({"html_read": true, "slot": true, "asked": true, "given": true, "placed": false}));
         let unread = page_checks(recipe("column"), None, &[], OWED, &[], Some(&typed()));
         assert!(!unread[1].passed);
         let held = page_checks(recipe("column"), Some(holds), &[], OWED, &[], Some(&typed()));
-        assert_eq!((held[1].passed, &held[1].measured), (true, &json!({"slot": true, "asked": true, "given": true, "placed": true})));
+        assert_eq!((held[1].passed, &held[1].measured), (true, &json!({"html_read": true, "slot": true, "asked": true, "given": true, "placed": true})));
         let failed = StripAsk { given: false, ..OWED };
         let lost = page_checks(recipe("column"), Some(holds), &[], failed, &[], Some(&typed()));
-        assert_eq!((lost[1].passed, &lost[1].measured), (false, &json!({"slot": true, "asked": true, "given": false, "placed": true})));
+        assert_eq!((lost[1].passed, &lost[1].measured), (false, &json!({"html_read": true, "slot": true, "asked": true, "given": false, "placed": true})));
         let unfilled = StripAsk { slot: true, ..StripAsk::default() };
         assert!(page_checks(recipe("column"), Some("<body></body>"), &[], unfilled, &[], Some(&typed()))[1].passed);
         let ring = page_checks(recipe("ring"), Some("<body></body>"), &[], StripAsk::default(), &[], Some(&typed()));
-        assert_eq!((ring[1].passed, &ring[1].measured), (true, &json!({"slot": false, "asked": false, "given": false, "placed": false})));
+        assert_eq!((ring[1].passed, &ring[1].measured), (true, &json!({"html_read": true, "slot": false, "asked": false, "given": false, "placed": false})));
     }
 
     /// Only the column recipe declares a strip slot (knobs.json, run.py STRIP_SLOT). A recipe with none asks the visual group
@@ -7193,6 +7223,33 @@ for line in sys.stdin:
         assert_eq!((checks[1].name, checks[1].passed), ("strip_placed", false));
     }
 
+    /// The page checks read the published page from disk: the bytes published come back with their hash; a file that is
+    /// gone, or changed since it was published, is no html (its hash, when read, is the one the event names), and a page
+    /// with no html read fails strip_placed whatever its recipe owes.
+    #[test]
+    fn the_page_checks_read_the_published_bytes_and_a_page_not_read_as_published_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let page = "<html><body>页</body></html>";
+        std::fs::create_dir_all(dir.path().join("publications/column")).unwrap();
+        std::fs::write(dir.path().join("publications/column/index.html"), page).unwrap();
+        let published = crate::next_flow::Published {
+            html_ref: "publications/column/index.html".into(),
+            html_sha256: crate::hash::sha256_bytes(page.as_bytes()),
+            dropped: Vec::new(),
+            type_measured: None,
+        };
+        let sha = Some(published.html_sha256.clone());
+        assert_eq!(checked_bytes(dir.path(), &published), (Some(page.to_string()), sha));
+        std::fs::write(dir.path().join("publications/column/index.html"), "<html>changed</html>").unwrap();
+        assert_eq!(checked_bytes(dir.path(), &published), (None, Some(crate::hash::sha256_bytes(b"<html>changed</html>"))));
+        std::fs::remove_file(dir.path().join("publications/column/index.html")).unwrap();
+        assert_eq!(checked_bytes(dir.path(), &published), (None, None));
+        for name in ["ring", "column"] {
+            let checks = page_checks(recipe(name), None, &[], StripAsk::default(), &[], Some(&typed()));
+            assert_eq!((checks[1].name, checks[1].passed, &checks[1].measured["html_read"]), ("strip_placed", false, &json!(false)));
+        }
+    }
+
     /// Two layers that print the same rows fail same_numbers_twice, the pair named with its table, times and count, and
     /// raise no warning.
     #[test]
@@ -7219,6 +7276,19 @@ for line in sys.stdin:
             checks[2].measured,
             json!({"pairs": [{"layers": ["bubbles", "bars"], "table": "sdg", "times": ["2025"], "values": 2, "known": true, "declared_by": "column"}]})
         );
+    }
+
+    /// Every recipe's declared same-measure pairs, pinned whole: a pair passes same_numbers_twice for every table of its
+    /// recipe, so a declaration is an exemption and each one added (or a recipe added) turns this test red until it is
+    /// reviewed here. Today only the column page's bars and bubbles (item 5 is to take that one away).
+    #[test]
+    fn every_recipe_s_same_measure_declarations_are_pinned() {
+        let declared: Vec<(&str, Vec<(&str, &str)>)> = Hubs
+            .recipes()
+            .iter()
+            .map(|r| (r.name.as_str(), r.same_measure.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect()))
+            .collect();
+        assert_eq!(declared, [("scmp", vec![]), ("ring", vec![]), ("column", vec![("bars", "bubbles")])]);
     }
 
     /// A pair is known only by the page's own recipe and only as the layers it declares: the bars and bubbles under a recipe
@@ -7331,7 +7401,9 @@ for line in sys.stdin:
                 "no": ["headline_finding", "single_focus", "no_unreadable_encoding"], "unanswered": []})
         );
         let plan: Value = serde_json::from_str(&std::fs::read_to_string(ran.run.join(PLAN_FILE)).unwrap()).unwrap();
-        assert_eq!(plan["steps"].as_array().unwrap().last().unwrap()["status"], "blocked", "{plan}");
+        // advice, not a stop: the review's step is advised, its note says so, and nothing was a validation failure
+        assert_eq!(plan["steps"].as_array().unwrap().last().unwrap()["status"], "advised", "{plan}");
+        assert_eq!((plan["revision_note"].as_str(), plan["trigger"].as_str()), (Some("publication_vision: advised"), Some("other")));
         assert!(ran.run.join("publications/column/index.html").is_file());
         // no history went with the review: its one request holds a single user message, the prompt and the screenshot
         let exchange: Value =
@@ -7396,7 +7468,7 @@ for line in sys.stdin:
             assert!(why.starts_with("the reply was refused twice: answers must map"), "{why}");
         }
         let plan: Value = serde_json::from_str(&std::fs::read_to_string(ran.run.join(PLAN_FILE)).unwrap()).unwrap();
-        assert_eq!(plan["steps"].as_array().unwrap().last().unwrap()["status"], "blocked", "{plan}");
+        assert_eq!(plan["steps"].as_array().unwrap().last().unwrap()["status"], "advised", "{plan}");
         assert!(ran.run.join("publications/column/index.html").is_file());
         let lines: Vec<String> = ran.events.iter().map(Value::to_string).collect();
         std::fs::write(ran.run.join("events.jsonl"), lines.join("\n") + "\n").unwrap();
@@ -7440,7 +7512,7 @@ for line in sys.stdin:
                 assert!(why.starts_with(kind) && !why.contains("HTTP 500") && !why.contains("120s"), "{why}");
             }
             let plan: Value = serde_json::from_str(&std::fs::read_to_string(ran.run.join(PLAN_FILE)).unwrap()).unwrap();
-            assert_eq!(plan["steps"].as_array().unwrap().last().unwrap()["status"], "blocked", "{plan}");
+            assert_eq!(plan["steps"].as_array().unwrap().last().unwrap()["status"], "advised", "{plan}");
             assert!(ran.run.join("publications/column/index.html").is_file());
             let lines: Vec<String> = ran.events.iter().map(Value::to_string).collect();
             std::fs::write(ran.run.join("events.jsonl"), lines.join("\n") + "\n").unwrap();

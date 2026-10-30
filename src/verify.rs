@@ -5578,9 +5578,14 @@ fn next_qa_1440_gap(qa_key_dir: &Path, qa_report: &Value) -> Option<String> {
     }
 }
 
+/// The program's checks on a new-route page, in the order the flow records them (next_run.rs page_checks): a page checks
+/// event names exactly these, so one the flow stopped recording (or a check that is not the program's) is a gap.
+pub(crate) const NEXT_PAGE_CHECKS: [&str; 5] = ["notes_dropped", "strip_placed", "same_numbers_twice", "type_size", "text_contrast"];
+
 /// What keeps the publication in publications/<dir>/ (its html at `html_ref`, `sha` the hash of those bytes on disk now)
-/// from the program's page checks, None when the flow's last page checks event of it measured those bytes and every check
-/// passed (passed true, not text): no event of it, an event of other bytes, no checks, or the checks that failed.
+/// from the program's page checks, None when the flow's last page checks event of it measured those bytes, names exactly
+/// NEXT_PAGE_CHECKS in order and every check passed (passed true, not text): no event of it, an event of other bytes, no
+/// checks, other checks than the program's, or the checks that failed.
 fn next_page_checks_gap(events: &[Value], dir: &str, html_ref: &str, sha: &str) -> Option<String> {
     let Some(event) = events
         .iter()
@@ -5596,6 +5601,10 @@ fn next_page_checks_gap(events: &[Value], dir: &str, html_ref: &str, sha: &str) 
     let Some(checks) = checks else {
         return Some("its page checks event holds no checks".to_string());
     };
+    let names: Vec<&str> = checks.iter().map(|check| check["name"].as_str().unwrap_or("?")).collect();
+    if names != NEXT_PAGE_CHECKS {
+        return Some(format!("its page checks are {}, not the program's {}", names.join(", "), NEXT_PAGE_CHECKS.join(", ")));
+    }
     let failed: Vec<String> = checks
         .iter()
         .filter(|check| check["passed"] != Value::Bool(true))
@@ -9724,11 +9733,10 @@ mod tests {
 
     /// The flow's program page checks of the fixture's publication (next_run.rs PAGE_CHECKS_EVENT): by the flow under a model
     /// call, for publications/<dir>/index.html at `sha`, each check of `passed` passed or not.
-    fn page_checks_event(dir: &str, sha: &str, passed: &[bool]) -> Value {
-        let checks: Vec<Value> = passed
+    fn page_checks_event(dir: &str, sha: &str, failed: &[&str]) -> Value {
+        let checks: Vec<Value> = NEXT_PAGE_CHECKS
             .iter()
-            .enumerate()
-            .map(|(i, p)| serde_json::json!({"name": format!("check{i}"), "passed": p, "measured": {}}))
+            .map(|name| serde_json::json!({"name": name, "passed": !failed.contains(name), "measured": {}}))
             .collect();
         serde_json::json!({"type": "next_page_checks", "by": "flow", "auto_parent_call_id": "c5", "recipe": dir,
             "published": format!("publications/{dir}/index.html"), "html_sha256": sha, "checks": checks})
@@ -9770,21 +9778,22 @@ mod tests {
         fs::create_dir_all(root.join("runtime")).unwrap();
         fs::write(root.join("runtime/next-page.json"), "{}").unwrap();
         for events in [
-            vec![page_checks_event(&key, &key, &[true, true]), vision_event(&manifest, false)],
-            vec![page_checks_event(&key, &key, &[true, true])],
+            vec![page_checks_event(&key, &key, &[]), vision_event(&manifest, false)],
+            vec![page_checks_event(&key, &key, &[])],
         ] {
             write_events(root, &events);
             let errors = publication_errors(root);
             assert!(errors.is_empty(), "{errors:?}");
         }
         // a line that does not parse is no event, and does not hide the one that does
-        fs::write(root.join("events.jsonl"), format!("not json\n{}\n", page_checks_event(&key, &key, &[true]))).unwrap();
+        fs::write(root.join("events.jsonl"), format!("not json\n{}\n", page_checks_event(&key, &key, &[]))).unwrap();
         assert!(publication_errors(root).is_empty(), "{:?}", publication_errors(root));
     }
 
     /// A new-route publication without passing page checks of its own bytes is a gap, even with a passing image review: no
-    /// event, an event of other bytes or of another page, one failed check, a check passed as text, no checks, or an event
-    /// not recorded by the flow under a model call. The page changed after its checks: they no longer count.
+    /// event, an event of other bytes or of another page, one failed check, a check passed as text, no checks, a check list
+    /// other than the program's five (one short, one renamed, two swapped), or an event not recorded by the flow under a
+    /// model call. The page changed after its checks: they no longer count.
     #[test]
     fn a_next_route_publication_without_passing_page_checks_is_a_gap_whatever_its_image_review() {
         let (temp, key) = build_publication_fixture(true, true);
@@ -9795,19 +9804,30 @@ mod tests {
         let named = |errors: &[String], want: &str| {
             errors.iter().any(|e| e.contains("has no passing page checks of its bytes (next_page_checks)") && e.contains(want))
         };
-        let mut as_text = page_checks_event(&key, &key, &[true]);
+        let mut as_text = page_checks_event(&key, &key, &[]);
         as_text["checks"][0]["passed"] = serde_json::json!("true");
-        let mut by_model = page_checks_event(&key, &key, &[true]);
+        let mut by_model = page_checks_event(&key, &key, &[]);
         by_model["by"] = serde_json::json!("model");
-        let mut no_parent = page_checks_event(&key, &key, &[true]);
+        let mut no_parent = page_checks_event(&key, &key, &[]);
         no_parent.as_object_mut().unwrap().remove("auto_parent_call_id");
+        let mut empty = page_checks_event(&key, &key, &[]);
+        empty["checks"] = serde_json::json!([]);
+        let mut one_short = page_checks_event(&key, &key, &[]);
+        one_short["checks"].as_array_mut().unwrap().pop();
+        let mut renamed = page_checks_event(&key, &key, &[]);
+        renamed["checks"][1]["name"] = serde_json::json!("strip_skipped");
+        let mut swapped = page_checks_event(&key, &key, &[]);
+        swapped["checks"].as_array_mut().unwrap().swap(3, 4);
         for (checks, want) in [
             (None, "recorded no page checks"),
-            (Some(page_checks_event(&key, &sha256_bytes(b"other"), &[true])), "measured other bytes"),
-            (Some(page_checks_event("other", &key, &[true])), "recorded no page checks"),
-            (Some(page_checks_event(&key, &key, &[true, false, true])), "failed check1"),
-            (Some(as_text), "failed check0"),
-            (Some(page_checks_event(&key, &key, &[])), "holds no checks"),
+            (Some(page_checks_event(&key, &sha256_bytes(b"other"), &[])), "measured other bytes"),
+            (Some(page_checks_event("other", &key, &[])), "recorded no page checks"),
+            (Some(page_checks_event(&key, &key, &["strip_placed"])), "failed strip_placed"),
+            (Some(as_text), "failed notes_dropped"),
+            (Some(empty), "holds no checks"),
+            (Some(one_short), "its page checks are notes_dropped, strip_placed, same_numbers_twice, type_size, not the program's"),
+            (Some(renamed), "strip_skipped"),
+            (Some(swapped), "type_size, not the program's"),
             (Some(by_model), "recorded no page checks"),
             (Some(no_parent), "recorded no page checks"),
         ] {
@@ -9816,7 +9836,7 @@ mod tests {
             let errors = publication_errors(root);
             assert!(named(&errors, want), "{want}: {errors:?}");
         }
-        write_events(root, &[page_checks_event(&key, &key, &[true]), vision_event(&manifest, true)]);
+        write_events(root, &[page_checks_event(&key, &key, &[]), vision_event(&manifest, true)]);
         assert!(publication_errors(root).is_empty());
         fs::write(root.join(format!("publications/{key}/index.html")), "<html>changed</html>").unwrap();
         assert!(named(&publication_errors(root), "measured other bytes"));
@@ -9851,7 +9871,7 @@ mod tests {
         assert!(publication_errors(root).is_empty(), "{:?}", publication_errors(root));
         fs::create_dir_all(root.join("runtime")).unwrap();
         fs::write(root.join("runtime/next-page.json"), "{}").unwrap();
-        write_events(root, &[page_checks_event(&key, &key, &[true]), vision_event(&manifest, true)]);
+        write_events(root, &[page_checks_event(&key, &key, &[]), vision_event(&manifest, true)]);
         let one = good["screenshots"][0].clone();
         for (shots, want) in [
             (None, "lists 0 screenshots of width 1440"),
@@ -9888,7 +9908,7 @@ mod tests {
         fs::copy(root.join("publications/plans/plan.json"), root.join("publications/plans/ring.json")).unwrap();
         fs::create_dir_all(root.join("runtime")).unwrap();
         fs::write(root.join("runtime/next-page.json"), "{}").unwrap();
-        let checked = page_checks_event("ring", &key, &[true, true]);
+        let checked = page_checks_event("ring", &key, &[]);
         let ours = |kind: &str| {
             serde_json::json!({"type": kind, "by": "flow", "auto_parent_call_id": "c5", "recipe": "ring",
                 "published": "publications/ring/index.html", "html_sha256": key})
