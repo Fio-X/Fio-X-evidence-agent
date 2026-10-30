@@ -66,7 +66,7 @@ class Frame:
             # never narrower than layer 1 reads the line back (the whole text, its spaces included, by the same width rule)
             n["_inner"], n["_w"] = " ".join(parts), max(wd, tw(" ".join(plain), size))
             wd = n["_w"]
-            if wd > f.W / 2: raise Refused(f"leader_notes: note {i + 1} is wider than half the picture at {size} px ({wd:.0f} px of {f.W / 2:.0f}, W {f.W}: 「{' '.join(plain)}」)")  # the words and widths recorded so a refused note can be read back
+            if wd > f.W / 2: raise Refused(f"leader_notes: note {i + 1} is wider than half the picture at {size} px ({wd:.0f} px of {f.W / 2:.0f}, W {f.W}: '{' '.join(plain)}')")  # the words and widths recorded so a refused note can be read back
         f.hl = K.check_codes(NODE, k("highlight"), {n["name"] for n in notes if n.get("name")}) if k("highlight") else set()
         f.pal, f.side = k("palette"), k("side"); f.notes = notes; f.dropped = []
 
