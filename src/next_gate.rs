@@ -28,11 +28,13 @@ const MODE_LAYERS: &[(&str, &[&str])] = &[
     ("network", &[]),
 ];
 
-/// One fetch the knowledge group recorded: the table, the file under data/ and the sha256 of the bytes it wrote there.
+/// One fetch the knowledge group recorded: the table, the file under data/, the sha256 of the bytes it wrote there and
+/// whether it is World Bank's (a table id ending "@2") rather than Eurostat's.
 pub struct Fetch {
     pub table: String,
     pub file: String,
     pub sha256: String,
+    pub worldbank: bool,
 }
 
 /// What the leaf page in publications/<dir>/ still lacks, or None when it is no leaf page of this run: its manifest says
@@ -153,8 +155,9 @@ pub fn unanswered_modes(question: &str, layers: &[String]) -> Vec<&'static str> 
 }
 
 /// The knowledge group's fetches as events.jsonl records them: a program-run (auto) DATA_PREPARE_TOOL call that ended
-/// without error and names a Eurostat dataset, its file and that file's sha256. A World Bank fetch is none: its rows are
-/// not re-read here, so a page over one is not passed.
+/// without error and names its provider, a dataset, its file and that file's sha256. A Eurostat dataset is its table (an id
+/// ending "@2" is none); a World Bank indicator is the table "<indicator>@2" (an indicator with an "@" is none). Any other
+/// provider is no fetch.
 fn fetches(root: &Path) -> Vec<Fetch> {
     std::fs::read_to_string(root.join("events.jsonl"))
         .unwrap_or_default()
@@ -165,14 +168,20 @@ fn fetches(root: &Path) -> Vec<Fetch> {
                 && e["toolName"] == crate::next_knowledge::DATA_PREPARE_TOOL
                 && e["auto"] == true
                 && e["isError"] == false
-                && e["result"]["details"]["provider"] == "eurostat"
         })
         .filter_map(|e| {
             let d = &e["result"]["details"];
+            let dataset = d["dataset"].as_str()?;
+            let (table, worldbank) = match d["provider"].as_str()? {
+                "eurostat" if !dataset.ends_with("@2") => (dataset.to_string(), false),
+                "worldbank" if !dataset.contains('@') => (format!("{dataset}@2"), true),
+                _ => return None,
+            };
             Some(Fetch {
-                table: d["dataset"].as_str()?.to_string(),
+                table,
                 file: d["filePath"].as_str()?.to_string(),
                 sha256: d["sha256"].as_str()?.to_string(),
+                worldbank,
             })
         })
         .collect()
@@ -180,7 +189,8 @@ fn fetches(root: &Path) -> Vec<Fetch> {
 
 /// N1(b): each row the page was checked against, as the knowledge group reads it again (SeriesRows) from a recorded fetch
 /// of its table whose file still holds the bytes the fetch recorded. A row no such file holds as it is, a table with no
-/// such fetch, or one source read two ways is a finding.
+/// such fetch, or one source read two ways is a finding. A World Bank table ("@2") is read only from a World Bank fetch and
+/// any other only from a Eurostat one.
 fn reread_gaps(root: &Path, rows: &[Row], fetched: &[Fetch]) -> Vec<String> {
     let calls = Mutex::new(Vec::new());
     let mut off = Vec::new();
@@ -193,6 +203,10 @@ fn reread_gaps(root: &Path, rows: &[Row], fetched: &[Fetch]) -> Vec<String> {
         }
         for fetch in files {
             let file = &fetch.file;
+            if fetch.worldbank != table.ends_with("@2") {
+                off.push(format!("the fetch of {table} in {file} is not its provider's"));
+                continue;
+            }
             if !file.starts_with("data/") || file.split('/').any(|part| part == ".." || part.is_empty()) {
                 off.push(format!("the fetch of {table} names {file}, not a file under data/"));
                 continue;
@@ -212,10 +226,10 @@ fn reread_gaps(root: &Path, rows: &[Row], fetched: &[Fetch]) -> Vec<String> {
                 off.push(format!("{file} is not text"));
                 continue;
             };
-            // SeriesRows reads only the id and whether the table is World Bank's; a recorded fetch here is Eurostat's
+            // SeriesRows reads only the id and whether the table is World Bank's
             let meta = TableMeta {
                 id: table.to_string(),
-                worldbank: false,
+                worldbank: fetch.worldbank,
                 dims: Vec::new(),
                 end_year: None,
                 places: Vec::new(),
@@ -474,7 +488,7 @@ mod tests {
         let sha = crate::hash::sha256_bytes(csv.as_bytes());
         std::fs::create_dir_all(dir.path().join("data")).unwrap();
         std::fs::write(dir.path().join(format!("data/{sha}.csv")), csv).unwrap();
-        let fetch = || vec![Fetch { table: "t".into(), file: format!("data/{sha}.csv"), sha256: sha.clone() }];
+        let fetch = || vec![Fetch { table: "t".into(), file: format!("data/{sha}.csv"), sha256: sha.clone(), worldbank: false }];
         let row = |value: f64| Row {
             src: "series:t/A.PC.AT:2025:OBS_VALUE".into(),
             table: "t".into(),
@@ -488,6 +502,81 @@ mod tests {
         let mut other = fetch();
         other[0].sha256 = "0".repeat(64);
         assert!(reread_gaps(dir.path(), &[row(44.2)], &other).iter().any(|g| g.contains("not the bytes")));
+    }
+
+    /// A World Bank fetch as the knowledge group records it, the file written under its sha256 in `root`: the events.jsonl
+    /// line (auto, no error) and the row its one cell is.
+    fn wb_run(root: &Path) -> (String, Value, Row) {
+        let csv = "country,country_name,region,date,value\nDEU,\"Germany\",\"Europe\",2024,22.9\n";
+        let sha = crate::hash::sha256_bytes(csv.as_bytes());
+        std::fs::create_dir_all(root.join("data")).unwrap();
+        std::fs::write(root.join(format!("data/{sha}.csv")), &csv).unwrap();
+        let event = json!({"type": "tool_execution_end", "toolName": crate::next_knowledge::DATA_PREPARE_TOOL, "auto": true,
+            "isError": false, "result": {"details": {"provider": "worldbank", "dataset": "SP.X",
+            "filePath": format!("data/{sha}.csv"), "sha256": sha}}});
+        let row = Row {
+            src: "series:SP.X@2/DEU:2024:value".into(),
+            table: "SP.X@2".into(),
+            dims: [("country".to_string(), "DEU".to_string())].into(),
+            time: "2024".into(),
+            value: 22.9,
+        };
+        (sha, event, row)
+    }
+
+    #[test]
+    fn a_world_bank_fetch_is_read_back_like_a_eurostat_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let (sha, event, row) = wb_run(dir.path());
+        let write = |events: &[Value]| {
+            let text: String = events.iter().map(|e| format!("{e}\n")).collect();
+            std::fs::write(dir.path().join("events.jsonl"), text).unwrap();
+        };
+        write(&[event.clone()]);
+        let got = fetches(dir.path());
+        assert_eq!(got.len(), 1);
+        assert_eq!((got[0].table.as_str(), got[0].worldbank, got[0].sha256.as_str()), ("SP.X@2", true, sha.as_str()));
+        let gaps = reread_gaps(dir.path(), &[row.clone()], &got);
+        assert!(gaps.is_empty(), "{gaps:?}");
+        // a value the file does not hold, and a row of a table no fetch read
+        let mut changed = row.clone();
+        changed.value = 23.0;
+        assert_eq!(reread_gaps(dir.path(), &[changed], &got), ["series:SP.X@2/DEU:2024:value: not as its fetched file holds it"]);
+        // a mismatched sha256, a missing file, a run the model made, an error, another provider: no read-back passes
+        let mut bad = event.clone();
+        bad["result"]["details"]["sha256"] = "0".repeat(64).into();
+        write(&[bad]);
+        assert!(reread_gaps(dir.path(), &[row.clone()], &fetches(dir.path())).iter().any(|g| g.contains("not the bytes")));
+        let mut gone = event.clone();
+        gone["result"]["details"]["filePath"] = "data/none.csv".into();
+        write(&[gone]);
+        assert!(reread_gaps(dir.path(), &[row.clone()], &fetches(dir.path())).iter().any(|g| g.starts_with("data/none.csv:")));
+        for (key, value) in [("auto", Value::Null), ("isError", true.into())] {
+            let mut not = event.clone();
+            not[key] = value;
+            write(&[not]);
+            assert!(fetches(dir.path()).is_empty());
+            assert!(reread_gaps(dir.path(), &[row.clone()], &fetches(dir.path()))[0].starts_with("no recorded fetch of SP.X@2"));
+        }
+        for (provider, dataset) in [("eurostat", "SP.X"), ("eurostat", "SP.X@2"), ("worldbank", "SP.X@2"), ("oecd", "SP.X")] {
+            let mut other = event.clone();
+            other["result"]["details"]["provider"] = provider.into();
+            other["result"]["details"]["dataset"] = dataset.into();
+            write(&[other]);
+            let gaps = reread_gaps(dir.path(), &[row.clone()], &fetches(dir.path()));
+            assert!(gaps[0].starts_with("no recorded fetch of SP.X@2"), "{provider} {dataset}: {gaps:?}");
+        }
+        // a fetch lent as Eurostat's for a World Bank table, or as World Bank's for a Eurostat one, is not read
+        let mut lent = fetches_of(&sha, "SP.X@2", false);
+        assert!(reread_gaps(dir.path(), &[row.clone()], &lent).iter().any(|g| g.contains("is not its provider's")));
+        lent = fetches_of(&sha, "t", true);
+        let mut eu = row;
+        eu.table = "t".into();
+        assert!(reread_gaps(dir.path(), &[eu], &lent).iter().any(|g| g.contains("is not its provider's")));
+    }
+
+    fn fetches_of(sha: &str, table: &str, worldbank: bool) -> Vec<Fetch> {
+        vec![Fetch { table: table.into(), file: format!("data/{sha}.csv"), sha256: sha.into(), worldbank }]
     }
 
     /// Every row a run's recorded fetches hold, whoever ran them: each DATA_PREPARE_TOOL end event without error that names

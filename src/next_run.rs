@@ -2304,8 +2304,8 @@ pub const LEAF_GATE_EVENT: &str = "next_leaf_gate";
 
 /// The completion gate on the page just published, with the fetches the flow itself holds (its events are not on disk
 /// yet): each prepared table's file and its companions', a file counted only under the content-addressed name its fetch
-/// gives it (data/<sha256>.<ext>), so other bytes there are no fetch of it. A World Bank table (an id ending "@2", as
-/// step_for reads it) is no fetch here, as the completion gate takes only Eurostat's (next_gate fetches): the gaps the flow
+/// gives it (data/<sha256>.<ext>), so other bytes there are no fetch of it. A table whose id ends "@2" (as step_for reads
+/// it) is a World Bank fetch, as the completion gate reads its recorded fetches (next_gate fetches): the gaps the flow
 /// records are the ones that gate finds again. Called once PAGE_STATE names the question the gate reads.
 fn leaf_gate_now(run_dir: &Path, recipe: &str, prepared: &[Prepared]) -> Vec<String> {
     let manifest = match read_json(run_dir, &format!("publications/{recipe}/manifest.json")) {
@@ -2317,11 +2317,11 @@ fn leaf_gate_now(run_dir: &Path, recipe: &str, prepared: &[Prepared]) -> Vec<Str
             .chain(p.companions.iter().map(|(id, file)| (id.as_str(), file.as_str())))
     });
     let fetched: Vec<crate::next_gate::Fetch> = files
-        .filter(|(table, _)| !table.ends_with("@2"))
         .filter_map(|(table, file)| {
             let sha256 = crate::hash::sha256_bytes(&std::fs::read(run_dir.join(file)).ok()?);
             let named = Path::new(file).file_stem().and_then(|s| s.to_str()) == Some(sha256.as_str());
-            named.then(|| crate::next_gate::Fetch { table: table.to_string(), file: file.to_string(), sha256 })
+            let worldbank = table.ends_with("@2");
+            named.then(|| crate::next_gate::Fetch { table: table.to_string(), file: file.to_string(), sha256, worldbank })
         })
         .collect();
     crate::next_gate::leaf_gaps(run_dir, recipe, &manifest, &fetched)
