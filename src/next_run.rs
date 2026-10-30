@@ -2485,6 +2485,7 @@ pub async fn reword(
         numbers,
         periods,
         changes,
+        scoped,
         ..
     } = &ask
     else {
@@ -2541,6 +2542,7 @@ pub async fn reword(
                 numbers: numbers.clone(),
                 periods: periods.clone(),
                 changes: changes.clone(),
+                scoped: scoped.clone(),
             };
             let mut kept = BTreeMap::new();
             let mut given = Map::new();
@@ -2558,6 +2560,7 @@ pub async fn reword(
                         numbers: numbers.clone(),
                         periods: periods.clone(),
                         changes: Vec::new(),
+                        scoped: Vec::new(),
                     };
                     let alone = json!({"step": "text", "text": {}, "names": {id.as_str(): name}});
                     if !given.contains_key(id)
@@ -2612,6 +2615,7 @@ pub async fn reword(
         Err(other) => return Err(other),
     };
     let revised = drafts.revised(&choice).map_err(|e| stop("text", e))?;
+    // The text check refused every wording that ranks on a scoped page, so this guard puts none back; if it ever does, it says so.
     let (page, back) = drafts.scoped(revised);
     if !back.is_empty() {
         recorder.program_event(
@@ -3986,6 +3990,82 @@ mod tests {
         assert_eq!(fallback[0]["kept"], json!(["2"]));
         assert!(fallback[0]["back_to_draft"].as_array().unwrap().contains(&json!("1")));
         assert!(fallback[0]["problem"].as_str().unwrap().contains("asks a level"), "{}", fallback[0]["problem"]);
+    }
+
+    /// A change page whose chart is scoped, reworded with `answers` one per round: the page and the run's events.
+    async fn reword_scoped(answers: Vec<Value>) -> (BTreeMap<Target, String>, Vec<Value>, Drafts) {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let dir = tempfile::tempdir().unwrap();
+        let charts = vec![Chart {
+            relation: Relation::Ranking,
+            view: View::Slice,
+            claim_ids: Vec::new(),
+            category: "country_iso2".into(),
+            value: "value".into(),
+        }];
+        let drafts = next_page::draft_for(&[], &charts, Vec::new(), Some((Relation::Change, View::FirstToLast)))
+            .with_scopes(&[Some(Scope {
+                text: "在人口最多的7个经济体中".into(),
+                record: "data/origins/c.json".into(),
+            })]);
+        assert!(drafts.has_scope);
+        let mut replies = vec![call("s1", json!({"step": "search", "query": "gdp growth"}))];
+        replies.extend(answers.into_iter().enumerate().map(|(i, a)| call(&format!("t{}", i + 1), a)));
+        let mut model = ScriptedAsker(replies.into());
+        let events: std::sync::Arc<std::sync::Mutex<Vec<Value>>> = Default::default();
+        let into = events.clone();
+        let mut sink = move |e: Value| into.lock().unwrap().push(e);
+        let mut recorder = Recorder::new(&mut sink, dir.path(), Vec::new(), Vec::new());
+        let cancel = AtomicBool::new(false);
+        recorder
+            .ask_step(&mut model, &Ask::Search, "search words", &cancel)
+            .await
+            .unwrap();
+        let page = reword(&mut recorder, &mut model, "人口大国的经济增长", &drafts, &cancel)
+            .await
+            .unwrap();
+        drop(recorder);
+        let events = events.lock().unwrap().clone();
+        (page, events, drafts)
+    }
+
+    /// A stand-in title on a scoped change page ranked (最多), was accepted, then put back unsaid. Now it is refused in the
+    /// round, the model words it again and its wording goes on the page; the guard puts nothing back.
+    #[tokio::test]
+    async fn a_ranking_title_on_a_scoped_page_is_refused_and_the_next_round_stands() {
+        let ranks = json!({"step": "text", "text": {"1": "从起始到最近，谁升得最多"}, "names": {}});
+        let faster = json!({"step": "text", "text": {"1": "从起始到最近，谁升得更快"}, "names": {}});
+        let (page, events, _) = reword_scoped(vec![ranks, faster]).await;
+        assert_eq!(page[&Target::PageTitle], "从起始到最近，谁升得更快");
+        // The model was told: round 1's tool result is an error naming the field, the word and the rule's example.
+        let refused: Vec<String> = events
+            .iter()
+            .filter(|e| e["type"] == "tool_execution_end" && e["isError"] == true)
+            .map(|e| e["result"]["content"].to_string())
+            .collect();
+        assert_eq!(refused.len(), 1, "{refused:?}");
+        assert!(refused[0].contains("field '1': '最多' ranks"), "{}", refused[0]);
+        assert!(refused[0].contains("从起始到最近，谁升得更快"), "{}", refused[0]);
+        assert!(!events.iter().any(|e| e["type"] == TEXT_FALLBACK_EVENT));
+        assert!(!events.iter().any(|e| e["type"] == SCOPE_FALLBACK_EVENT));
+    }
+
+    /// Ranked in both rounds: the title goes back to its draft through the text fallback, which says why; the scope guard
+    /// finds nothing left to put back.
+    #[tokio::test]
+    async fn a_title_that_ranks_in_every_round_on_a_scoped_page_goes_back_through_the_text_fallback() {
+        let ranks = json!({"step": "text", "text": {"1": "从起始到最近，谁升得最多", "2": "各国从起始到最近的变化"}, "names": {}});
+        let (page, events, drafts) = reword_scoped(vec![ranks.clone(), ranks]).await;
+        assert_eq!(page[&Target::PageTitle], drafts.fields[0].1);
+        assert_eq!(page[&Target::PageDek], "各国从起始到最近的变化");
+        let fallback: Vec<&Value> = events.iter().filter(|e| e["type"] == TEXT_FALLBACK_EVENT).collect();
+        assert_eq!(fallback.len(), 1);
+        assert_eq!(fallback[0]["kept"], json!(["2"]));
+        assert!(fallback[0]["back_to_draft"].as_array().unwrap().contains(&json!("1")));
+        let problem = fallback[0]["problem"].as_str().unwrap();
+        assert!(problem.starts_with("field '1': '最多' ranks; "), "{problem}");
+        assert!(problem.contains(crate::next_flow::SCOPE_RULE), "{problem}");
+        assert!(!events.iter().any(|e| e["type"] == SCOPE_FALLBACK_EVENT));
     }
 
     /// The q1 page wording of the real batch of 10-27 (drafts and both answers as the model sent them). Answer 1 drops

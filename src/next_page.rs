@@ -92,7 +92,7 @@ pub fn concept(relation: Relation, view: View) -> &'static Concept {
 }
 
 /// Words that rank: on a page with a chart whose places the program narrowed, "highest" holds only among the kept places,
-/// so a field keeps its draft when the model's wording holds one (the draft stands under the page's scope fields).
+/// so the text check refuses a reworded field that holds one (next_flow SCOPE_RULE); the draft stands under the scope fields.
 pub const SUPERLATIVES: [&str; 7] = ["最高", "最低", "领先", "垫底", "第一", "最多", "最少"];
 
 /// How the program chose a chart's places (a World Bank table narrowed by wb-rank-by.json): its own page field (the kicker
@@ -117,7 +117,7 @@ pub struct Drafts {
     pub unplaced: Vec<String>,
     /// The Text slots: per chart its measure, with the catalogue title the Chinese name is made from.
     pub slots: Vec<(Target, String)>,
-    /// Some chart of the page has a Scope: a reworded field that ranks goes back to its draft (Drafts::scoped).
+    /// Some chart of the page has a Scope: a reworded field that ranks is refused (Ask::Text scoped, Drafts::scoped).
     pub has_scope: bool,
     /// The page-level fields speak for the first-to-last change (draft_for): a reworded title that asks a level with no
     /// change word is refused (Ask::Text changes, next_flow level_question).
@@ -307,7 +307,8 @@ impl Drafts {
     }
 
     /// The revised fields, each whose wording differs from its draft and holds a SUPERLATIVES word the draft's again when
-    /// the page is scoped; returns the fields that went back. With no scope, the fields as given.
+    /// the page is scoped; returns the fields that went back. The text check refuses such a wording first (Ask::Text scoped),
+    /// so after it this finds none: a guard only, its put-back recorded (SCOPE_FALLBACK_EVENT). With no scope, as given.
     pub fn scoped(
         &self,
         mut out: BTreeMap<Target, String>,
@@ -347,6 +348,16 @@ impl Drafts {
             numbers: self.numbers.clone(),
             periods: self.periods.clone(),
             changes: self.changes(),
+            scoped: self.scoped_fields(),
+        }
+    }
+
+    /// The numbers of the fields a ranking word may not enter reworded: every field on a scoped page, else none.
+    fn scoped_fields(&self) -> Vec<String> {
+        if self.has_scope {
+            (0..self.fields.len()).map(Self::number).collect()
+        } else {
+            Vec::new()
         }
     }
 
@@ -997,6 +1008,14 @@ mod tests {
         }
     }
 
+    /// Fields where the model ranked (title, body, hero, a reader field), each with the SUPERLATIVES word the refusal names.
+    const RANKED: [(&str, &str, &str); 4] = [
+        ("1", "日本最低", "最低"),
+        ("4", "{min.value.name}垫底，为{min.value}。", "垫底"),
+        ("5", "{first.name}在{first.year}年最高。", "最高"),
+        ("7", "读者想知道哪个经济体最高", "最高"),
+    ];
+
     #[test]
     fn on_a_scoped_page_a_reworded_field_that_ranks_keeps_its_draft() {
         let (claims, charts) = q1();
@@ -1004,45 +1023,53 @@ mod tests {
             draft(&claims, &charts, q1_numbers()).with_scopes(&[None, Some(by_population())]);
         assert!(drafts.has_scope);
         let ask = drafts.ask(Vec::new());
-        // The model ranks in the title, the body, the hero and a reader field, and rewords the dek and the heading without ranking.
+        let one = |n: &str, wording: &str| json!({"step": "text", "names": {}, "text": {n: wording}});
+        // Refused at the check, so the model words it again: the field, the word, the rule and its example are said.
+        for (n, wording, word) in RANKED {
+            let refused = ask.check(&one(n, wording)).unwrap_err();
+            assert!(
+                refused.problem.starts_with(&format!("field '{n}': '{word}' ranks; ")),
+                "{n}: {}",
+                refused.problem
+            );
+            assert!(refused.problem.contains(crate::next_flow::SCOPE_RULE), "{}", refused.problem);
+            assert!(refused.problem.contains("'从起始到最近，谁升得更快'"), "{}", refused.problem);
+        }
+        // The rule's example passes on the same page, and so does every field as drafted (the body's draft ranks).
+        assert!(ask.check(&one("1", "从起始到最近，谁升得更快")).is_ok());
+        for (i, (_, text)) in drafts.fields.iter().enumerate() {
+            let n = (i + 1).to_string();
+            assert!(ask.check(&one(&n, text)).is_ok(), "{n}: {text}");
+        }
+        // An accepted answer that rewords without ranking goes on the page whole: the guard puts back nothing.
         let answer = ask
             .check(&json!({"step": "text", "names": {}, "text": {
-                "1": "日本最低",
+                "1": "从起始到最近，谁升得更快",
                 "2": "从高到低看各经济体",
-                "3": "按高低排列",
-                "4": "{min.value.name}垫底，为{min.value}。",
-                "5": "{first.name}在{first.year}年最高。",
-                "7": "读者想知道哪个经济体最高"}}))
+                "3": "按高低排列"}}))
             .unwrap();
         let (page, back) = drafts.scoped(drafts.revised(&answer).unwrap());
+        assert!(back.is_empty(), "{back:?}");
+        assert_eq!(page[&Target::PageTitle], "从起始到最近，谁升得更快");
+        assert_eq!(page[&Target::PageDek], "从高到低看各经济体");
+        assert_eq!(page[&Target::Heading(0)], "按高低排列");
+        // No field carries the scope: it is the page's own field, not model text.
+        assert!(page.values().all(|w| !w.contains("经济体中")));
+        // The guard still holds for a choice that never passed this check: each ranking field goes back to its draft.
+        let unchecked = Choice::Text {
+            text: RANKED.iter().map(|(n, w, _)| (n.to_string(), w.to_string())).collect(),
+            names: BTreeMap::new(),
+        };
+        let (page, back) = drafts.scoped(drafts.revised(&unchecked).unwrap());
         let field = |target: &Target| &drafts.fields.iter().find(|(t, _)| t == target).unwrap().1;
         let hero = Target::HeroLabel {
             claim_id: "c1".into(),
             value_from: "first.value".into(),
         };
-        assert_eq!(page[&Target::PageDek], "从高到低看各经济体");
-        assert_eq!(page[&Target::Heading(0)], "按高低排列");
-        for target in [
-            Target::PageTitle,
-            Target::Body(0),
-            hero.clone(),
-            Target::ReaderProblem,
-        ] {
+        for target in [Target::PageTitle, Target::Body(0), hero, Target::ReaderProblem] {
             assert_eq!(&page[&target], field(&target), "{target:?}");
         }
         assert_eq!(back.len(), 4, "{back:?}");
-        // No field carries the scope: it is the page's own field, not model text.
-        assert!(page.values().all(|w| !w.contains("经济体中")));
-        // The draft-only answer goes back nowhere.
-        let kept = drafts.scoped(
-            drafts
-                .revised(
-                    &ask.check(&json!({"step": "text", "names": {}, "text": {}}))
-                        .unwrap(),
-                )
-                .unwrap(),
-        );
-        assert!(kept.1.is_empty());
     }
 
     #[test]
@@ -1113,11 +1140,18 @@ mod tests {
         let unscoped = plain.clone().with_scopes(&[None]);
         assert_eq!(unscoped, plain);
         assert_eq!(plain.clone().with_scopes(&[]), plain);
-        let answer = plain
-            .ask(Vec::new())
+        let ask = plain.ask(Vec::new());
+        let answer = ask
             .check(&json!({"step": "text", "names": {}, "text": {"1": "日本最低", "7": "读者想知道哪个经济体最高"}}))
             .unwrap();
         let revised = plain.revised(&answer).unwrap();
         assert_eq!(plain.scoped(revised.clone()), (revised, Vec::new()));
+        // Every wording a scoped page refuses for ranking passes here, and the ask says no scope rule.
+        for (n, wording, _) in RANKED {
+            let one = json!({"step": "text", "names": {}, "text": {n: wording}});
+            assert!(ask.check(&one).is_ok(), "{n}: {wording}");
+        }
+        let described = ask.schema()["properties"]["text"]["description"].as_str().unwrap().to_string();
+        assert!(!described.contains(crate::next_flow::SCOPE_RULE), "{described}");
     }
 }
