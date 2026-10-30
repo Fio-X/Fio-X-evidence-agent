@@ -1374,6 +1374,14 @@
    "bubbles",
    "leader_notes"
   ],
+  "change": [
+   "bignums",
+   "bars",
+   "section_head",
+   "rankbar",
+   "bubbles",
+   "leader_notes"
+  ],
   "scmp": [
    "map",
    "strip",
@@ -1442,6 +1450,34 @@
     "ring.color",
     "names.font"
    ]
+  },
+  {
+   "name": "change",
+   "layers": [
+    "bubbles",
+    "bars",
+    "leader_notes"
+   ],
+   "eats": [
+    "annual",
+    "years_2",
+    "one_place",
+    "one_unit",
+    "last_year",
+    "two_ends"
+   ],
+   "charts": [
+    "choropleth",
+    "horizontal_bar",
+    "dumbbell",
+    "line"
+   ],
+   "picks": [
+    "changed",
+    "claim_marks"
+   ],
+   "exposes": [],
+   "strip": true
   },
   {
    "name": "column",

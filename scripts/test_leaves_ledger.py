@@ -299,7 +299,7 @@ class Column(unittest.TestCase):
             self.assertTrue(got["refused"][0].startswith(f"size: {why}"), got)
         lines = column_request()
         bad = json.loads(lines[0]); bad["node"] = "pie"
-        self.assertEqual(child([json.dumps(bad)])[0]["refused"], ["size: no page recipe pie; e.g. one of ring|column|scmp"])
+        self.assertEqual(child([json.dumps(bad)])[0]["refused"], ["size: no page recipe pie; e.g. one of ring|column|change|scmp"])
         page = child(lines[:2] + [json.dumps({"phase": "page", "layers": {"bignums": "x"}})])[2]
         self.assertEqual(page["refused"], ["page: no layer bars"])
 

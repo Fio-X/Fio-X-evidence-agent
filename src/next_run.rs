@@ -843,6 +843,10 @@ struct Shape {
     months: Vec<String>,
     /// The last year any of the place's countries has a row at.
     year: String,
+    /// The page's earlier end (two_ends; the later is `year`), and each year before it within the span that was passed over,
+    /// with the countries that have a value at `year` and none at it, in year order.
+    t0: String,
+    later: Vec<(String, Vec<String>)>,
 }
 
 /// A shape condition: it reads the main's dimensions (and the other tables, the main first) into the shape, or says what
@@ -859,6 +863,7 @@ const SHAPE_CONDITIONS: &[(&str, Condition)] = &[
     ("others_single", others_single),
     ("monthly_companion", monthly_companion),
     ("last_year", last_year),
+    ("two_ends", two_ends),
 ];
 
 /// The codes each dimension of a table's series rows holds, and its periods, both sorted.
@@ -1057,6 +1062,43 @@ fn last_year(s: &mut Shape, tables: &[(&str, &[Value])], _: &dyn Catalogue) -> R
     Ok(())
 }
 
+/// How many years back from the shape's year its earlier end may lie, that year counted: the program's last ten years of an
+/// annual table (next_params::YEARS_SPAN).
+const TWO_ENDS_SPAN: i32 = next_params::YEARS_SPAN;
+
+/// The page's two ends: the later the shape's year (last_year), the earlier the first year of the main, at most TWO_ENDS_SPAN
+/// years back counting the later, at which every country with a value at the later year has one too. Each year passed over
+/// is kept with the countries it misses (Shape::later), for the run's record. No such year before the later is not this
+/// shape (a table of one year goes on to a recipe of one year); a missing value is never filled in or estimated.
+fn two_ends(s: &mut Shape, tables: &[(&str, &[Value])], _: &dyn Catalogue) -> Result<(), String> {
+    let rows = tables[0].1;
+    let t1: i32 = s.year.parse().map_err(|_| format!("main {} has no last year", s.main))?;
+    let held = |t: &str| -> BTreeSet<String> {
+        rows.iter()
+            .filter(|r| r["time"] == t && row_value(r).is_some())
+            .filter_map(|r| r["dims"][&s.place].as_str().filter(|c| s.countries.iter().any(|k| k == c)))
+            .map(str::to_string)
+            .collect()
+    };
+    let at_t1 = held(&s.year);
+    let span = t1 - TWO_ENDS_SPAN + 1..t1;
+    let mut later = Vec::new();
+    let mut t0 = None;
+    for year in s.years.iter().filter(|y| is_year(y) && y.parse::<i32>().is_ok_and(|y| span.contains(&y))) {
+        let missing: Vec<String> = at_t1.difference(&held(year)).cloned().collect();
+        if missing.is_empty() {
+            t0 = Some(year.clone());
+            break;
+        }
+        later.push((year.clone(), missing));
+    }
+    let t0 = t0.ok_or_else(|| {
+        format!("main {} has no year from {} before {t1} at which every country with a value at {t1} has one", s.main, span.start)
+    })?;
+    (s.t0, s.later) = (t0, later);
+    Ok(())
+}
+
 /// The ring kind whose subject is the page's focus: the member of the cut that changed most between two years. The non-cut
 /// change_largest_rise/fall bind the same columns and never set the focus.
 const MEMBER_CHANGE: &str = "cut_members_largest_change";
@@ -1179,7 +1221,8 @@ struct Picks {
     t0: String,
     t1: String,
     top: Vec<String>,
-    /// The place's countries with a value at the shape's year, largest first, a tie to code order.
+    /// The place's countries with a value at the shape's year, largest first, a tie to code order (ranked); or by their change
+    /// between the shape's two ends, the largest rise first (changed).
     ranked: Vec<String>,
     /// The ranked countries the picked claims name, in claim order.
     marks: Vec<String>,
@@ -1190,7 +1233,8 @@ struct Picks {
 type PickRule = fn(&mut Picks, &Shape, &[Value], &[(String, Value)]) -> Result<(), String>;
 
 /// The pick rules a recipe names (knobs.json recipes[].picks), each once here, whatever recipe names it.
-const PICK_RULES: &[(&str, PickRule)] = &[("change_focus", change_focus), ("ranked", ranked), ("claim_marks", claim_marks)];
+const PICK_RULES: &[(&str, PickRule)] =
+    &[("change_focus", change_focus), ("ranked", ranked), ("changed", changed), ("claim_marks", claim_marks)];
 
 /// The page's picks by a recipe's rules, in its order.
 fn picks_of(rules: &[String], shape: &Shape, main: &[Value], claims: &[(String, Value)]) -> Result<Picks, String> {
@@ -1212,25 +1256,57 @@ fn change_focus(p: &mut Picks, shape: &Shape, main: &[Value], claims: &[(String,
     Ok(())
 }
 
-/// The place's countries with a value at the shape's year, largest first, a tie to code order; a country twice refuses.
-fn ranked(p: &mut Picks, shape: &Shape, main: &[Value], _: &[(String, Value)]) -> Result<(), String> {
-    let no = |why: String| format!("not this shape: {why}");
-    let (place, year) = (&shape.place, shape.year.as_str());
-    let mut ranked: Vec<(f64, String)> = main
+/// The place's countries' values at one year (each with a value there, in the main's order); a country twice refuses.
+fn values_at(shape: &Shape, main: &[Value], year: &str) -> Result<Vec<(f64, String)>, String> {
+    let place = &shape.place;
+    let values: Vec<(f64, String)> = main
         .iter()
         .filter(|r| r["time"] == year)
         .filter_map(|r| r["dims"][place].as_str().filter(|c| shape.countries.iter().any(|k| k == c)).zip(row_value(r)))
         .map(|(c, v)| (v, c.to_string()))
         .collect();
     let mut seen = BTreeSet::new();
-    if let Some((_, twice)) = ranked.iter().find(|(_, c)| !seen.insert(c.as_str())) {
-        return Err(no(format!("main {} holds {twice} twice at {year}", shape.main)));
+    if let Some((_, twice)) = values.iter().find(|(_, c)| !seen.insert(c.as_str())) {
+        return Err(format!("not this shape: main {} holds {twice} twice at {year}", shape.main));
     }
+    Ok(values)
+}
+
+/// The place's countries with a value at the shape's year, largest first, a tie to code order; a country twice refuses.
+fn ranked(p: &mut Picks, shape: &Shape, main: &[Value], _: &[(String, Value)]) -> Result<(), String> {
+    let no = |why: String| format!("not this shape: {why}");
+    let mut ranked = values_at(shape, main, &shape.year)?;
     ranked.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
     if ranked.is_empty() {
         return Err(no(format!("main {} ranks no country", shape.main)));
     }
     p.ranked = ranked.into_iter().map(|(_, c)| c).collect();
+    Ok(())
+}
+
+/// The place's countries with a value at the shape's later end, by their change from the earlier end (two_ends: the later
+/// value less the earlier, as the page's change facts compute it), the largest rise first, a tie to code order; and the two
+/// ends as the picks' t0 and t1. A country twice at either end refuses, as ranked, and so does one with no value at the
+/// earlier end (two_ends found every one a value there).
+fn changed(p: &mut Picks, shape: &Shape, main: &[Value], _: &[(String, Value)]) -> Result<(), String> {
+    let no = |why: String| format!("not this shape: {why}");
+    if shape.t0.is_empty() {
+        return Err(no("the shape has no two ends: changed reads what two_ends sets".into()));
+    }
+    let earlier = values_at(shape, main, &shape.t0)?;
+    let mut changed = Vec::new();
+    for (v1, code) in values_at(shape, main, &shape.year)? {
+        let Some((v0, _)) = earlier.iter().find(|(_, c)| *c == code) else {
+            return Err(no(format!("main {} has no value for {code} at {}", shape.main, shape.t0)));
+        };
+        changed.push((v1 - v0, code));
+    }
+    changed.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    if changed.is_empty() {
+        return Err(no(format!("main {} ranks no country", shape.main)));
+    }
+    p.ranked = changed.into_iter().map(|(_, c)| c).collect();
+    (p.t0, p.t1) = (shape.t0.clone(), shape.year.clone());
     Ok(())
 }
 
@@ -1765,7 +1841,13 @@ fn fill_of(
         .iter()
         .map(|(layer, r)| json!({"layer": layer, "src": r["src"], "table": r["table"], "time": r["time"]}))
         .collect();
-    Ok(json!({"order": recipe.layers, "rows": rows, "knobs": knobs, "drawn": drawn}))
+    let mut fill = json!({"order": recipe.layers, "rows": rows, "knobs": knobs, "drawn": drawn});
+    // the two ends the page runs between, and each earlier year passed over with the countries it misses, for the run's record
+    if !shape.t0.is_empty() {
+        let later: Vec<Value> = shape.later.iter().map(|(year, missing)| json!({"year": year, "missing": missing})).collect();
+        fill["ends"] = json!({"t0": shape.t0, "t1": shape.year, "rule": "two_ends", "span": TWO_ENDS_SPAN, "later": later});
+    }
+    Ok(fill)
 }
 
 /// The page's scope: of the main's place codes that are no country (an aggregate such as EU27_2020), one whose member list
@@ -1907,7 +1989,7 @@ fn leaf_page(
         (recipe, stage, why)
     })?;
     let drawn = fill["drawn"].as_array().cloned().unwrap_or_default();
-    Ok(LeafPublished { recipe: picked, published, drawn, strip: strip_ask })
+    Ok(LeafPublished { recipe: picked, published, drawn, strip: strip_ask, ends: fill.get("ends").cloned() })
 }
 
 /// What a page's illustration strip was asked of: whether its recipe has a slot for one (Recipe::strip), whether a strip
@@ -1946,13 +2028,15 @@ fn page_strip(
     }
 }
 
-/// A leaf page leaf_page published: its recipe, the publication, each row a layer prints a value of (fill_of's `drawn`) and
-/// what its illustration strip was asked of.
+/// A leaf page leaf_page published: its recipe, the publication, each row a layer prints a value of (fill_of's `drawn`),
+/// what its illustration strip was asked of and the two ends its page runs between (fill_of's `ends`; none for a page of
+/// one year).
 struct LeafPublished {
     recipe: &'static Recipe,
     published: crate::next_flow::Published,
     drawn: Vec<Value>,
     strip: StripAsk,
+    ends: Option<Value>,
 }
 
 /// The first recipe of the leaf registry (the visual group's Recipes, in its order) that draws every view the question asks
@@ -2629,13 +2713,14 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
     match leaf {
         Ok(leaf) => {
             let (recipe, published) = (leaf.recipe.name.as_str(), &leaf.published);
-            recorder.program_event(
-                RING_EVENT,
-                // what a layer could not place is on record in the run's events too, never only in the request beside the page
-                json!({"by": RING_ACTOR, "recipe": recipe, "published": published.html_ref,
-                    "html_sha256": published.html_sha256,
-                    "dropped": published.dropped.iter().map(|(what, why)| json!({"what": what, "why": why})).collect::<Vec<_>>()}),
-            )?;
+            // what a layer could not place is on record in the run's events too, never only in the request beside the page
+            let mut event = json!({"by": RING_ACTOR, "recipe": recipe, "published": published.html_ref,
+                "html_sha256": published.html_sha256,
+                "dropped": published.dropped.iter().map(|(what, why)| json!({"what": what, "why": why})).collect::<Vec<_>>()});
+            if let Some(ends) = &leaf.ends {
+                event["ends"] = ends.clone();
+            }
+            recorder.program_event(RING_EVENT, event)?;
             let state = json!({"question": question, "route": recipe, "claims": verified, "worded": worded_out,
                 "published": published.html_ref, "html_sha256": published.html_sha256});
             save_route_state(recorder.run_dir(), &LEAF_PLAN_STEPS, "browser", StepEnd::Passed, &state)?;
@@ -4632,7 +4717,7 @@ mod tests {
     #[test]
     fn each_recipe_reads_the_shape_by_its_own_conditions_and_its_nodes_fill_the_page() {
         let names: Vec<&str> = Hubs.recipes().iter().map(|r| r.name.as_str()).collect();
-        assert_eq!(names, ["scmp", "ring", "column"]);
+        assert_eq!(names, ["scmp", "ring", "change", "column"]);
         let mut main = ring_rows("sdg", &[("freq", "A"), ("unit", "PC")], ("geo", &["SE", "BE", "DE", "FR", "EU27_2020"]), &["2025"]);
         for (r, v) in main.iter_mut().zip(["65.4", "14.9", "30.25", "20", "40"]) {
             r["value"] = json!(v);
@@ -4709,6 +4794,7 @@ mod tests {
             [
                 ("scmp", Err("not this shape: main spans one year (2025)".to_string())),
                 ("ring", Err("not this shape: main spans one year (2025)".to_string())),
+                ("change", Err("not this shape: main spans one year (2025)".to_string())),
                 ("column", Ok("citizen PER 2025".to_string()))
             ]
         );
@@ -7222,7 +7308,7 @@ for line in sys.stdin:
     #[test]
     fn only_a_recipe_with_a_strip_slot_asks_for_a_strip_and_a_strip_it_did_not_get_is_owed() {
         let slots: Vec<(&str, bool)> = Hubs.recipes().iter().map(|r| (r.name.as_str(), r.strip)).collect();
-        assert_eq!(slots, [("scmp", false), ("ring", false), ("column", true)]);
+        assert_eq!(slots, [("scmp", false), ("ring", false), ("change", true), ("column", true)]);
         let energy = ["nrg_ind_ren".to_string()];
         let calls = std::sync::Mutex::new(Vec::new());
         for name in ["scmp", "ring"] {
@@ -7307,7 +7393,7 @@ for line in sys.stdin:
             .iter()
             .map(|r| (r.name.as_str(), r.same_measure.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect()))
             .collect();
-        assert_eq!(declared, [("scmp", vec![]), ("ring", vec![]), ("column", vec![("bars", "bubbles")])]);
+        assert_eq!(declared, [("scmp", vec![]), ("ring", vec![]), ("change", vec![]), ("column", vec![("bars", "bubbles")])]);
     }
 
     /// A pair is known only by the page's own recipe and only as the layers it declares: the bars and bubbles under a recipe

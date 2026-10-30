@@ -37,7 +37,7 @@ class Registry(unittest.TestCase):
 
     def test_a_recipe_holds_what_its_nodes_eat_and_exposes_only_real_knobs(self):
         t = knobs.table()
-        self.assertEqual([r["name"] for r in t["recipes"]], ["scmp", "ring", "column"])
+        self.assertEqual([r["name"] for r in t["recipes"]], ["scmp", "ring", "change", "column"])
         ring = next(r for r in knobs.RECIPES if r["name"] == "ring")
         for bad in [dict(ring, eats=["annual"]), dict(ring, layers=["map", "pie"]), dict(ring, exposes=["ring.glow"]),
                     dict(ring, same_measure=[["map", "pie"]]), dict(ring, same_measure=[["map", "map"]])]:
@@ -53,6 +53,12 @@ class Registry(unittest.TestCase):
             with self.assertRaises(SystemExit) as e:
                 self._with(dict(column, layers=[], eats=eats), t)
             self.assertIn("name it before", str(e.exception))
+        # two_ends reads the last year, which reads the place: named before it, or it can only refuse
+        change = next(r for r in knobs.RECIPES if r["name"] == "change")
+        self.assertEqual(change["eats"][-2:], ["last_year", "two_ends"])
+        with self.assertRaises(SystemExit) as e:
+            self._with(dict(change, layers=[], eats=["annual", "one_place", "two_ends", "last_year"]), t)
+        self.assertIn("name it before", str(e.exception))
 
     def _with(self, recipe, t):
         saved = knobs.RECIPES[:]

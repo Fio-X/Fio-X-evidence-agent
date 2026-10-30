@@ -109,8 +109,10 @@ LEAF_SVG = section_head.SECTION_HEAD_SVG + rankbar.RANKBAR_SVG + bubbles.BUBBLES
 # The page recipes this child draws: each one's layers (name -> (draw, reserve)) and which of them are svg.
 # The page recipes whose page places the illustration strip layer 1 gives it (column_page; the ring and scmp pages have no
 # slot and refuse one): knobs.py declares the slot on exactly these recipes, which layer 1 asks a strip for.
-STRIP_SLOT = ("column",)
-KINDS = dict(ring=(scmp.RING_LAYERS, scmp.RING_SVG), column=({**column.COLUMN_LAYERS, **LEAF_LAYERS}, column.COLUMN_SVG + LEAF_SVG),
+STRIP_SLOT = ("column", "change")
+# The recipes a column page draws: column, and change (its bars the places' change between two years, bars.measure).
+COLUMN_KINDS = ("column", "change")
+KINDS = dict(ring=(scmp.RING_LAYERS, scmp.RING_SVG), **{k: ({**column.COLUMN_LAYERS, **LEAF_LAYERS}, column.COLUMN_SVG + LEAF_SVG) for k in COLUMN_KINDS},
              scmp=(scmp.SCMP_LAYERS, scmp.SCMP_SVG))
 
 
@@ -126,7 +128,7 @@ class Panel:
         spec["fmts"]["bcm0"] = {"scale": 0.01, "dec": 0}  # as scmp.page sets it
         c = prod.Ctx(spec); h = spec["hero"]
         p.c, p.spec, p.occ = c, spec, prod.Occ()
-        if p.node == "column":
+        if p.node in COLUMN_KINDS:
             p.f = column.ColumnFrame(c, h, map_view(h)); return
         if k.get("shapes") is None: raise FX.Refused(f"the {p.node} page's request gives no shapes")
         if p.node == "scmp":
@@ -229,7 +231,7 @@ NOT_LEAF = ("top", "band", "strip", "row", "bignums")
 def page(panel, got, sizes=None):
     """The whole page around the layers the panel drew (`got`, layer -> svg or html), as scmp.page lays it out; a column
     page as column_page lays it out, with the pieces another child drew (`sizes`, layer -> [w, h]) among its layers."""
-    if panel.node == "column": return column_page(panel, got, sizes or {})
+    if panel.node in COLUMN_KINDS: return column_page(panel, got, sizes or {})
     if panel.node == "scmp": return scmp_page(panel, got)
     f, spec = panel.f, panel.spec; tin = bool(f.h.get("_title"))
     pic = [n for n in scmp.RING_SVG if not (n == "inset" and tin)]

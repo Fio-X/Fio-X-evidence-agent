@@ -40,6 +40,11 @@ RECIPES = [
     dict(name="ring", layers=["map", "ring", "callouts", "legend", "inset"],
          eats=["annual", "years_2", "hub_origin", "one_unit", "others_single", "monthly_companion"], charts=[],
          picks=["change_focus"], exposes=["frame.gap_dir", "frame.title_in", "ring.months", "ring.color", "names.font"]),
+    # two ends of a ten-year table: each place's change from t0 to t1 as signed bars (bars.measure change, set by layer 1),
+    # the map its level at t1; a table of one year has no two ends and goes on to column
+    dict(name="change", layers=["bubbles", "bars", "leader_notes"],
+         eats=["annual", "years_2", "one_place", "one_unit", "last_year", "two_ends"],
+         charts=["choropleth", "horizontal_bar", "dumbbell", "line"], picks=["changed", "claim_marks"], exposes=[], strip=True),
     dict(name="column", layers=["bars", "bubbles", "leader_notes"], eats=["annual", "one_place", "one_unit", "last_year"],
          charts=["choropleth", "horizontal_bar"], picks=["ranked", "claim_marks"], exposes=[],
          # TODO(item 5): goes once the map (bubbles) shows other values than the bars (src/next_leaf.rs leaves)
@@ -54,7 +59,7 @@ EATS = dict(map=["hub_origin", "one_unit"], ring=["monthly_companion"], callouts
 # What a shape condition reads that an earlier one writes (src/next_run.rs): each list is one need, met by any condition in
 # it standing before. A recipe that names the condition names one of each need first, or the condition can only refuse.
 NEEDS = dict(monthly_companion=[["hub_origin"], ["one_unit"]], others_single=[["hub_origin", "one_place"]],
-             last_year=[["one_place"]])
+             last_year=[["one_place"]], two_ends=[["last_year"]])
 
 
 def num(x):
@@ -111,7 +116,7 @@ def take(nodes, pages):
 def table():
     columns = run.KINDS["column"][0]  # the column page's own layers and the chart leaves over its frame (run.LEAF_LAYERS)
     groups = dict(map=list(prod.MAP_ORDER), ring=list(scmp.RING_LAYERS), charts=list(prod.CHARTS), column=list(columns),
-                  scmp=list(scmp.SCMP_LAYERS))
+                  change=list(run.KINDS["change"][0]), scmp=list(scmp.SCMP_LAYERS))
     reserve = {}
     for reg in (prod.MAP_LAYERS, scmp.RING_LAYERS, columns, scmp.SCMP_LAYERS):
         for n, (_, r) in reg.items():
