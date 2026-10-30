@@ -1611,14 +1611,24 @@ fn strings_of<'v>(value: &'v Value, out: &mut Vec<&'v str>) {
     }
 }
 
-/// The first secret in the serialized value or in any of its strings.
+/// The first secret in the serialized value or in any of its strings, a listed secret found anywhere coming before any
+/// header: a listed secret with a quote or a backslash in it reads escaped in the serialized value and only unescaped in
+/// its own string, after a header the serialized value shows, and the handed-over secret is the one kind the image review
+/// stops on (next_run.rs leaf_vision), so it must never be reported as a header seen first.
 pub fn secret_in(value: &Value, secrets: &[String]) -> Option<SecretKind> {
     let mut texts = Vec::new();
     strings_of(value, &mut texts);
     let whole = value.to_string();
-    std::iter::once(whole.as_str())
-        .chain(texts)
-        .find_map(|text| secret_in_text(text, secrets))
+    let all: Vec<&str> = std::iter::once(whole.as_str()).chain(texts).collect();
+    let listed = |text: &&str| {
+        secrets
+            .iter()
+            .any(|secret| !secret.is_empty() && listed_in(text, secret))
+    };
+    if all.iter().any(listed) {
+        return Some(SecretKind::Handoff);
+    }
+    all.into_iter().find_map(|text| secret_in_text(text, secrets))
 }
 
 /// A tool call id that can name a file in the run folder.
@@ -5794,6 +5804,20 @@ mod tests {
             assert!(!dir.path().join(EXCHANGE_DIR).join("toolu_s.json").exists());
             assert!(events.lock().unwrap().is_empty(), "{reply_text}");
         }
+    }
+
+    /// A listed secret is reported as the handed-over secret even where a header comes first: one with a quote in it reads
+    /// escaped in the serialized value, which shows the header, and only unescaped in its own string.
+    #[test]
+    fn a_listed_secret_is_reported_before_a_header_seen_first() {
+        let secrets = vec!["pa\"ss-0123".to_string()];
+        let value = json!({"text": "Authorization: x pa\"ss-0123"});
+        assert!(!value.to_string().contains("pa\"ss-0123"));
+        assert_eq!(secret_in(&value, &secrets), Some(SecretKind::Handoff));
+        assert_eq!(
+            secret_in(&json!({"text": "Authorization: x"}), &secrets),
+            Some(SecretKind::AuthorizationHeader)
+        );
     }
 
     #[tokio::test]
