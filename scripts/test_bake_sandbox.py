@@ -91,26 +91,58 @@ class TypeContrast(unittest.TestCase):
 
     def test_black_text_on_white_is_measured_and_passes(self):
         got = self.typed('<p style="font-size:16px;color:#000">标题</p>')
-        self.assertEqual(got, {"min_font_px": 16, "min_contrast_body": 21, "min_contrast_large": None, "texts": 1, "below": []})
+        self.assertEqual(got, {"min_font_px": 16, "min_contrast_body": 21, "min_contrast_large": None, "texts": 1, "unmeasured": 0, "below": []})
 
     def test_small_and_pale_texts_are_listed_with_their_layer(self):
+        # each value as reported, rounded down to two decimals (#777 on white is 4.478:1)
         got = self.typed('<div data-layer="notes"><p style="font-size:10px">小字</p><p style="font-size:14px;color:#777">灰字</p>'
                          '<h1 style="font-size:30px;color:#bbb">大标题</h1></div>')
-        self.assertEqual((got["min_font_px"], got["min_contrast_body"], got["min_contrast_large"], got["texts"]), (10, 4.48, 1.92, 3))
-        self.assertEqual(got["below"], ["小字 10px 21:1 notes", "灰字 14px 4.48:1 notes", "大标题 30px 1.92:1 notes"])
+        self.assertEqual((got["min_font_px"], got["min_contrast_body"], got["min_contrast_large"], got["texts"]), (10, 4.47, 1.91, 3))
+        self.assertEqual(got["below"], ["小字 10px 21:1 notes", "灰字 14px 4.47:1 notes", "大标题 30px 1.91:1 notes"])
 
     def test_svg_text_is_sized_as_rendered_and_read_against_the_shape_under_it(self):
         # the viewBox halves every size; the dark text sits on the dark box, the halo text on its own white stroke
         got = self.typed('<svg width="600" height="300" viewBox="0 0 1200 600" data-layer="map"><rect width="1200" height="600" fill="#123456"/>'
                          '<text x="20" y="60" font-size="28" fill="#fff">白字</text><text x="20" y="160" font-size="28" fill="#1a3a5a">暗字</text>'
                          '<text x="20" y="260" font-size="40" fill="#000" stroke="#fff" stroke-width="6" paint-order="stroke">晕</text></svg>')
-        self.assertEqual((got["min_font_px"], got["min_contrast_body"], got["texts"]), (14, 1.09, 3))
-        self.assertEqual(got["below"], ["暗字 14px 1.09:1 map"])
+        self.assertEqual((got["min_font_px"], got["min_contrast_body"], got["texts"]), (14, 1.08, 3))
+        self.assertEqual(got["below"], ["暗字 14px 1.08:1 map"])
 
     def test_hidden_texts_are_not_measured_and_a_low_one_is_scrolled_to(self):
         got = self.typed('<p style="display:none;font-size:8px">藏</p><p style="visibility:hidden;font-size:8px">藏</p>'
                          '<p style="opacity:0;font-size:8px">藏</p><div style="height:2000px"></div><p style="color:#999;background:#eee">底部</p>')
-        self.assertEqual((got["texts"], got["below"]), (1, ["底部 16px 2.46:1 -"]))
+        self.assertEqual((got["texts"], got["below"]), (1, ["底部 16px 2.45:1 -"]))
+
+    def test_what_it_reports_is_rounded_down_never_up_to_a_floor(self):
+        # #777 on white is 4.478:1: reported 4.47, under the 4.5 floor, never rounded up; and a 10.995 px text is 10.99 px
+        got = self.typed('<p style="font-size:14px;color:#777">灰字</p><p style="font-size:10.995px">小字</p>')
+        self.assertEqual((got["min_font_px"], got["min_contrast_body"], got["unmeasured"]), (10.99, 4.47, 0))
+        self.assertEqual(got["below"], ["灰字 14px 4.47:1 -", "小字 10.99px 21:1 -"])
+
+    def test_a_text_whose_contrast_cannot_be_read_is_counted_unmeasured_not_read_against_the_page(self):
+        # each text here is measured for size and counted unmeasured for contrast, never read against the white page:
+        # an svg text filled by a gradient, one over a pattern-filled box, one over an svg image, one over a use, an html
+        # text over an image and one over a background image, an outline-only svg text, and a ::before text
+        png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+        got = self.typed(
+            '<svg width="600" height="500" data-layer="map"><defs><linearGradient id="g"><stop offset="0" stop-color="#000"/>'
+            '<stop offset="1" stop-color="#444"/></linearGradient><pattern id="p" width="4" height="4" patternUnits="userSpaceOnUse">'
+            '<rect width="2" height="2" fill="#000"/></pattern><rect id="r" width="200" height="40" fill="#123"/></defs>'
+            '<text x="10" y="30" font-size="16" fill="url(#g)">渐变</text>'
+            '<rect x="0" y="50" width="200" height="40" fill="url(#p)"/><text x="10" y="80" font-size="16" fill="#000">花纹</text>'
+            f'<image x="0" y="100" width="200" height="40" href="{png}" preserveAspectRatio="none"/><text x="10" y="130" font-size="16" fill="#000">图像</text>'
+            '<use href="#r" x="0" y="150"/><text x="10" y="180" font-size="16" fill="#000">引用</text>'
+            '<text x="10" y="230" font-size="16" fill="none" stroke="#000" stroke-width="1">描边</text></svg>'
+            f'<div style="position:relative;height:40px"><img src="{png}" style="position:absolute;left:0;top:0;width:200px;height:40px">'
+            '<p style="position:relative;margin:0;font-size:16px;color:#000">照片</p></div>'
+            f'<p style="font-size:16px;color:#000;background-image:url({png})">底图</p>'
+            '<style>.n::before{content:"注";font-size:12px}</style><p class="n" style="font-size:16px;color:#000">正文</p>')
+        self.assertEqual((got["texts"], got["unmeasured"]), (9, 8), got)
+        self.assertEqual(got["min_contrast_body"], 21, got)  # only the one plain text (正文) is read
+        self.assertEqual([b.split(" unmeasured ")[1] if " unmeasured " in b else b for b in got["below"]], [
+            "(fill by url()) map", "(no colour known under it) map", "(no colour known under it) map",
+            "(no colour known under it) map", "(outline only) map", "(no colour known under it) -", "(no colour known under it) -",
+            "(::before text) -"], got)
 
     def test_a_type_check_with_no_result_is_a_bake_error(self):
         with mock.patch.object(bake, "TYPE", bake.TYPE + ("missing",)):

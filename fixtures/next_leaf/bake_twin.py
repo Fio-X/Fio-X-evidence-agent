@@ -6,7 +6,7 @@ import json, re, sys
 def typed(page):
     texts = len([t for t in re.findall(r">([^<]*)<", re.sub(r"<script\b[^>]*>.*?</script>", "", page, flags=re.S)) if t.strip()])
     return {"min_font_px": 12 if texts else None, "min_contrast_body": 12.63 if texts else None, "min_contrast_large": None,
-            "texts": texts, "below": []}
+            "texts": texts, "unmeasured": 0, "below": []}
 
 for line in sys.stdin:
     req = json.loads(line)

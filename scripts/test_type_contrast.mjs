@@ -1,14 +1,17 @@
 #!/usr/bin/env node
 // The bake's type check (runtime/leaves_py/type-contrast.js), its pure parts without a browser: WCAG 2.x relative luminance
 // and contrast ratio against known pairs, the large-text rule at its edges, compositing a colour with alpha, the rgb() forms
-// Chrome computes, and the floors it lists texts below. The page part runs in Chrome only (scripts/test_bake_sandbox.py).
+// Chrome computes, the floors it lists texts below, the rounding down of what it reports, and what it cannot read (an
+// unreadable paint, an outline-only text, a pseudo-element's text). The page part runs in Chrome only
+// (scripts/test_bake_sandbox.py).
 // Run: node scripts/test_type_contrast.mjs
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const src = readFileSync(new URL('../runtime/leaves_py/type-contrast.js', import.meta.url), 'utf8');
 const check = (0, eval)(src);
-const { FONT, BODY, LARGE, luminance, ratio, large, over, parse, round } = check('pure');
+const { FONT, BODY, LARGE, luminance, ratio, large, over, parse, down, pseudoText, unreadable, outlined } = check('pure');
+const round = (x) => Math.round(x * 100) / 100; // the known pairs below are given to two decimals
 let n = 0;
 const eq = (a, b, msg) => { assert.deepEqual(a, b, msg); n += 1; };
 
@@ -37,6 +40,24 @@ eq(parse('rgba(1, 2, 3, 0.25)'), [1, 2, 3, 0.25], 'rgba()');
 eq(parse('rgba(0, 0, 0, 0)'), [0, 0, 0, 0], 'transparent');
 eq(parse('rgb(1 2 3 / 50%)'), [1, 2, 3, 0.5], 'the space form');
 eq([parse('oklch(0.5 0.1 200)'), parse('#fff'), parse('none')], [null, null, null], 'not rgb()');
+// what it reports is rounded down to two decimals, never up: a value under a floor (each has two decimals) is reported
+// under it, one at or over it at or over it
+eq([down(4.495), down(4.4999), down(4.5), down(4.59258), down(10.995), down(11), down(21)], [4.49, 4.49, 4.5, 4.59, 10.99, 11, 21], 'down');
+eq([down(4.5 - 1e-12), down(0.07 * 100 / 100), down(2.05)], [4.5, 0.07, 2.05], 'float error at a floor');
+eq(down(ratio([119, 119, 119], [255, 255, 255])) < BODY && round(ratio([119, 119, 119], [255, 255, 255])) < BODY, true, '#777 stays under');
+eq([down(ratio([118, 118, 118], [255, 255, 255])) >= BODY], [true], '#767676 stays over');
+// a paint it cannot read as one colour: html images and embedded content, a background image (the svg root's too), an svg
+// image, use or foreignObject, a fill by url(); a plain shape, an html box or the svg root with a colour is read
+eq(['img', 'canvas', 'video', 'iframe', 'object', 'embed'].map((n) => unreadable(n, false, '', 'none')), [true, true, true, true, true, true], 'html media');
+eq([unreadable('div', false, '', 'url("a.png")'), unreadable('div', false, '', 'linear-gradient(red, blue)'), unreadable('div', false, '', 'none')], [true, true, false], 'background image');
+eq([unreadable('svg', true, 'rgb(0, 0, 0)', 'url("a.png")'), unreadable('svg', true, 'rgb(0, 0, 0)', 'none')], [true, false], 'the svg root');
+eq(['image', 'use', 'foreignObject'].map((n) => unreadable(n, true, 'rgb(0, 0, 0)', 'none')), [true, true, true], 'svg image, use, foreignObject');
+eq([unreadable('rect', true, 'url("#g")', 'none'), unreadable('path', true, 'url(#p)', 'none'), unreadable('rect', true, 'rgb(1, 2, 3)', 'none')], [true, true, false], 'fill by url()');
+// an outline-only text: no fill and a stroke of some width; no fill and no stroke is not seen at all
+eq([outlined('none', 'rgb(0, 0, 0)', '1px'), outlined('none', 'none', '1px'), outlined('none', 'rgb(0, 0, 0)', '0px'), outlined('rgb(0, 0, 0)', 'rgb(0, 0, 0)', '1px')], [true, false, false, false], 'outline only');
+// a pseudo-element prints text when its content is a string or a generated value; none, normal and "" print nothing
+eq(['"注"', "'x'", 'counter(item)', 'attr(data-n)', 'open-quote'].map(pseudoText), [true, true, true, true, true], 'pseudo text');
+eq(['none', 'normal', '""', "''", '', undefined].map(pseudoText), [false, false, false, false, false, false], 'no pseudo text');
 // the page part is the same function called with no argument: a string of JSON in a browser, never the pure parts
 assert.equal(typeof check, 'function');
 console.log(`type-contrast pure parts: ${n} checks passed`);

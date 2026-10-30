@@ -2444,8 +2444,10 @@ struct PageCheck {
 ///   recorded as known, declared by the recipe, and passes with a warning; the same layers under another recipe fail;
 /// - type_size: the bake's type check (`type_measured`, type-contrast.js on the laid-out page) measured texts and the
 ///   smallest of them is at least TYPE_FLOOR_PX;
-/// - text_contrast: it measured texts, and the least contrast of the body texts is at least CONTRAST_FLOOR_BODY and of the
-///   large ones CONTRAST_FLOOR_LARGE (a kind with no text measured has nothing to fall below).
+/// - text_contrast: it measured texts, none of them unmeasured (a text whose contrast it could not read: a url() fill, an
+///   image or unread paint under it, an outline-only text, a ::before/::after text), and the least contrast of the body
+///   texts is at least CONTRAST_FLOOR_BODY and of the large ones CONTRAST_FLOOR_LARGE (a kind with no text measured has
+///   nothing to fall below).
 /// Both name the first texts below a floor; with no measurement both fail, measured {"measured": false}.
 fn page_checks(
     recipe: &Recipe,
@@ -2509,8 +2511,14 @@ fn page_checks(
             let measured = json!({"min_font_px": t["min_font_px"], "floor_px": TYPE_FLOOR_PX, "texts": t["texts"], "below": t["below"]});
             let size = PageCheck { name: "type_size", passed: texts && at("min_font_px", TYPE_FLOOR_PX, false), warning: None, measured };
             let measured = json!({"min_contrast_body": t["min_contrast_body"], "min_contrast_large": t["min_contrast_large"],
-                "floor_body": CONTRAST_FLOOR_BODY, "floor_large": CONTRAST_FLOOR_LARGE, "texts": t["texts"], "below": t["below"]});
-            let passed = texts && at("min_contrast_body", CONTRAST_FLOOR_BODY, true) && at("min_contrast_large", CONTRAST_FLOOR_LARGE, true);
+                "floor_body": CONTRAST_FLOOR_BODY, "floor_large": CONTRAST_FLOOR_LARGE, "texts": t["texts"],
+                "unmeasured": t["unmeasured"], "below": t["below"]});
+            // a measurement that does not say how many texts it could not read counts as one that could not
+            let all_read = t["unmeasured"].as_u64() == Some(0);
+            let passed = texts
+                && all_read
+                && at("min_contrast_body", CONTRAST_FLOOR_BODY, true)
+                && at("min_contrast_large", CONTRAST_FLOOR_LARGE, true);
             (size, PageCheck { name: "text_contrast", passed, warning: None, measured })
         }
         None => {
@@ -4860,6 +4868,7 @@ mod tests {
                     println!("record {} {} {} ms {}", r.node, r.layer, r.outcome, r.ms);
                 }
                 println!("drawn page {} bytes ms {}", drawn.html.len(), started.elapsed().as_millis());
+                println!("type {}", drawn.type_measured.as_ref().map_or("none".to_string(), Value::to_string));
                 if let Ok(out) = std::env::var("LEAF_PAGE_OUT") {
                     std::fs::write(out, &drawn.html).unwrap();
                 }
@@ -7054,7 +7063,7 @@ for line in sys.stdin:
 
     /// A type measurement as the bake gives it (type-contrast.js), every text at or above the floors.
     fn typed() -> Value {
-        json!({"min_font_px": 12, "min_contrast_body": 7.2, "min_contrast_large": 3.4, "texts": 40, "below": []})
+        json!({"min_font_px": 12, "min_contrast_body": 7.2, "min_contrast_large": 3.4, "texts": 40, "unmeasured": 0, "below": []})
     }
 
     /// A page that drops nothing, is given no strip and whose layers print no row twice passes every check, each named with
@@ -7074,13 +7083,15 @@ for line in sys.stdin:
         assert_eq!(checks[3].measured, json!({"min_font_px": 12, "floor_px": 11.0, "texts": 40, "below": []}));
         assert_eq!(
             checks[4].measured,
-            json!({"min_contrast_body": 7.2, "min_contrast_large": 3.4, "floor_body": 4.5, "floor_large": 3.0, "texts": 40, "below": []})
+            json!({"min_contrast_body": 7.2, "min_contrast_large": 3.4, "floor_body": 4.5, "floor_large": 3.0, "texts": 40,
+                "unmeasured": 0, "below": []})
         );
     }
 
     /// The type floors: a text under 11 px fails type_size, a body text under 4.5:1 or a large one under 3:1 fails
     /// text_contrast, each naming the texts the bake listed; a page with no large text (or no body text) passes on the other
-    /// kind; a measurement of no text fails both, and with no measurement both fail, measured {"measured": false}.
+    /// kind; a text whose contrast was not read (or no count of them) fails text_contrast; a measurement of no text fails
+    /// both, and with no measurement both fail, measured {"measured": false}.
     #[test]
     fn a_page_below_the_type_floors_or_unmeasured_fails_type_size_and_text_contrast() {
         let with = |key: &str, v: Value| {
@@ -7100,6 +7111,13 @@ for line in sys.stdin:
         assert_eq!(with("min_font_px", Value::Null), (false, true));
         assert_eq!(with("min_contrast_body", json!("4.6")), (true, false));
         assert_eq!(with("texts", json!(0)), (false, false));
+        // a text whose contrast was not read fails text_contrast, and so does a measurement that does not count them
+        assert_eq!(with("unmeasured", json!(1)), (true, false));
+        assert_eq!(with("unmeasured", Value::Null), (true, false));
+        let mut uncounted = typed();
+        uncounted.as_object_mut().unwrap().remove("unmeasured");
+        let checks = page_checks(recipe("column"), Some("<body></body>"), &[], StripAsk::default(), &[], Some(&uncounted));
+        assert!(checks[3].passed && !checks[4].passed, "{checks:?}");
         let mut small = typed();
         small["min_font_px"] = json!(9);
         small["below"] = json!(["注 9px 12:1 bars"]);
