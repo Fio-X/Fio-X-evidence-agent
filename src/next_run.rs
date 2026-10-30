@@ -28,7 +28,7 @@ use crate::next_page::{self, Chart, Claim, Drafts, Scope, Target, TIME_COLUMNS};
 use crate::next_knowledge::{HubMiss, HubOrigin};
 use crate::next_params;
 use crate::next_render::{BarCard, BarRow, Card, Hero, Label, Num, PageSpec, Seg, LABEL_SRC};
-use crate::shape_registry::{Axis, PagePlan, Relation, View};
+use crate::shape_registry::{Axis, Finding, PagePlan, Relation, View, DEK_FINDINGS};
 
 /// The registry templates whose fields this flow fills from a series' columns (a category and a value column). The others
 /// are not offered to the ranking yet: a flow or a composition needs a third column. A map reads the bundled basemap.
@@ -1702,7 +1702,7 @@ fn change_bars_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
 const BARS_CHANGE: &str = "change";
 
 /// The form a page's page-level fields are drafted for (next_page::draft_for): the first-to-last change when the picked
-/// recipe's bars draw the change between the two ends (its fill's bars.measure, change_bars_fill), so the title asks what
+/// recipe's bars draw the change between the two ends (its fill's bars.measure, change_bars_fill), so the title names what
 /// the page shows; else, and with no recipe picked, the lead chart's (next_page::lead).
 fn page_lead(fill: Option<&Value>, charts: &[Chart]) -> Option<(Relation, View)> {
     match fill {
@@ -1713,12 +1713,126 @@ fn page_lead(fill: Option<&Value>, charts: &[Chart]) -> Option<(Relation, View)>
     }
 }
 
-/// The text step's title, dek and kicker in a page's fill (its spec), in place of the ones it was picked with.
+/// The text step's title, dek and kicker in a page's fill (its spec), in place of the ones it was picked with; each place
+/// name placeholder in the title and dek (finding_of) filled from the fill's labels (named_places).
 fn page_words(fill: &mut Value, (title, dek, kicker): (&str, &str, &str)) {
+    let labels = fill["knobs"]["labels"].clone();
     let spec = &mut fill["knobs"]["spec"];
-    spec["title"] = json!(title);
-    spec["dek"] = json!(dek);
+    spec["title"] = json!(named_places(title, &labels));
+    spec["dek"] = json!(named_places(dek, &labels));
     spec["kicker"] = json!(kicker);
+}
+
+/// The prefix of a place's name placeholder in a page's words, `{name.<code>}` (finding_of): the program writes the name of
+/// the code from the leaf labels (the knowledge group's name table) after the text step, so the model, which must keep every
+/// placeholder, never types which place a number on the page belongs to.
+const NAME_PLACEHOLDER: &str = "name.";
+
+/// `text` with each name placeholder the labels name replaced by that name. One they do not name stays as written, and the
+/// leaf refuses the page for it (run.py placeholders), never printing a code.
+fn named_places(text: &str, labels: &Value) -> String {
+    let open = format!("{{{NAME_PLACEHOLDER}");
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(at) = rest.find(&open) {
+        let body = &rest[at + open.len()..];
+        let Some(end) = body.find('}') else { break };
+        out.push_str(&rest[..at]);
+        match labels[&body[..end]].as_str() {
+            Some(name) => out.push_str(name),
+            None => out.push_str(&rest[at..at + open.len() + end + 1]),
+        }
+        rest = &body[end + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// The facts of a change finding (finding_of): its change, then its place's values at the earlier and the later end.
+const FINDING_FACTS: [&str; 3] = ["lead", "lead0", "lead1"];
+
+/// The page dek's finding (shape_registry DEK_FINDINGS) by what the page's facts and rows hold, as {"dek", "scoped"}: {name}
+/// and {other} become name placeholders of codes the labels name, {value} and {gap} facts the page declares. On a page with
+/// two ends whose bars draw the change (the minus family chg), the first ranked place's rise when it rose, else the last
+/// one's fall when it fell, its change a fact of its two ends' values (FINDING_FACTS: the later less the earlier for a rise,
+/// the earlier less the later for a fall, so it prints unsigned, in the change's format; rows already read). On a page of
+/// one year with the extremes (hi, lo, gap), the highest place against the lowest when they differ. On a flow page (a focus,
+/// nothing ranked), the origin with the largest value at t1 among every country outside the hub, when no other ties it and
+/// the map declares its share. None otherwise: the dek stays the frame's. Program rules only; no model word is read.
+fn finding_of(f: &Filling, out: &mut Filled, labels: &BTreeMap<String, String>) -> Result<Option<Value>, String> {
+    let (shape, picks) = (f.shape, f.picks);
+    let place = shape.place.as_str();
+    let named = |code: &str| labels.contains_key(code).then(|| format!("{{{NAME_PLACEHOLDER}{code}}}"));
+    let at = |code: &str, t: &str| f.main.iter().find(|r| r["time"] == t && r["dims"][place] == code).and_then(row_value);
+    let (finding, words): (Finding, Vec<(&str, String)>) = if !shape.t0.is_empty() {
+        if !out.facts.contains_key(CHANGE_FAMILIES[2]) {
+            return Ok(None);
+        }
+        let moved = |code: &String| at(code, &shape.year).zip(at(code, &shape.t0)).map(|(b, a)| (b - a, code.clone()));
+        let rise = picks.ranked.first().and_then(moved).filter(|(d, _)| *d > 0.0).map(|(_, c)| (Finding::Rise, c));
+        let fall = picks.ranked.last().and_then(moved).filter(|(d, _)| *d < 0.0).map(|(_, c)| (Finding::Fall, c));
+        let Some((finding, code)) = rise.or(fall) else { return Ok(None) };
+        let Some(name) = named(&code) else { return Ok(None) };
+        let [lead, early, late] = FINDING_FACTS;
+        let (a, b) = if finding == Finding::Rise { (late, early) } else { (early, late) };
+        let value = |t: &str| json!({"table": shape.main, "filter": filter(&[(place, code.as_str())]), "time": t, "fmt": f.fmt});
+        let chg_fmt = if f.short == "%" { POINTS.0 } else { CHANGE_FMT };
+        for (key, q) in [
+            (early, value(&shape.t0)),
+            (late, value(&shape.year)),
+            (lead, json!({"op": "minus", "a": a, "b": b, "fmt": chg_fmt})),
+        ] {
+            Filled::set(&mut out.facts, "fact", key, q)?;
+        }
+        let ends = |r: &&Value| r["dims"][place] == code.as_str() && (r["time"] == shape.t0.as_str() || r["time"] == shape.year.as_str());
+        out.reads(f.main.iter().filter(ends).cloned());
+        (finding, vec![("{name}", name), ("{value}", format!("{{{lead}}}"))])
+    } else if !picks.ranked.is_empty() {
+        if !["hi", "lo", "gap"].iter().all(|k| out.facts.contains_key(*k)) {
+            return Ok(None);
+        }
+        let (Some(hi), Some(lo)) = (picks.ranked.first(), picks.ranked.last()) else { return Ok(None) };
+        let higher = at(hi, &shape.year).zip(at(lo, &shape.year)).is_some_and(|(h, l)| h > l);
+        let (Some(name), Some(other)) = (named(hi), named(lo)) else { return Ok(None) };
+        if !higher {
+            return Ok(None);
+        }
+        (Finding::Level, vec![("{name}", name), ("{other}", other), ("{value}", "{hi}".into()), ("{gap}", "{gap}".into())])
+    } else if !picks.focus.is_empty() && picks.t1.len() > 2 {
+        let mut largest: Vec<(f64, &String)> = shape
+            .outside
+            .iter()
+            .filter_map(|c| {
+                f.main
+                    .iter()
+                    .find(|r| r["dims"][place] == c.as_str() && r["dims"]["geo"] == shape.hub.as_str() && r["time"] == picks.t1.as_str())
+                    .and_then(row_value)
+                    .map(|v| (v, c))
+            })
+            .collect();
+        // shape.outside is in code order and the sort is stable
+        largest.sort_by(|a, b| b.0.total_cmp(&a.0));
+        let Some(&(v, code)) = largest.first() else { return Ok(None) };
+        let share = flow_keys(picks, code)[3].clone();
+        if v <= 0.0 || largest.get(1).is_some_and(|(w, _)| *w == v) || !out.facts.contains_key(&share) {
+            return Ok(None);
+        }
+        let Some(name) = named(code) else { return Ok(None) };
+        (Finding::Share, vec![("{name}", name), ("{value}", format!("{{{share}}}"))])
+    } else {
+        return Ok(None);
+    };
+    let Some(&(_, plain, scoped)) = DEK_FINDINGS.iter().find(|(k, _, _)| *k == finding) else {
+        return Err(format!("no DEK_FINDINGS words for {finding:?}"));
+    };
+    let worded = |template: &str| words.iter().fold(template.to_string(), |text, (token, with)| text.replace(token, with));
+    Ok(Some(json!({"dek": worded(plain), "scoped": worded(scoped)})))
+}
+
+/// The dek finding a page's fill carries (finding_of), unscoped and scoped, as next_page Drafts::with_finding takes it.
+fn dek_finding(fill: &Value) -> Option<(String, String)> {
+    let finding = &fill["finding"];
+    Some((finding["dek"].as_str()?.to_string(), finding["scoped"].as_str()?.to_string()))
 }
 
 /// The format of a gap between two percentages: percentage points, not a percentage.
@@ -2030,6 +2144,13 @@ fn fill_of(
             node(&filling, &mut out).map_err(no)?;
         }
     }
+    // the page's scope (the aggregate the drawn places are members of, from the data) is named from the name table like
+    // any place; with no reviewed name for it, or no count of the places drawn, the unit line names no scope
+    let scope = scope_of(shape, picks, catalogue);
+    let named: Vec<String> = shape.members.iter().cloned().chain(scope.clone()).collect();
+    let labels = leaf_labels(&out.rows, &named, catalogue)?;
+    // the dek's finding reads only rows the nodes read already, so the labels hold every code it names
+    let finding = finding_of(&filling, &mut out, &labels).map_err(no)?;
     let Filled { drawn, rows, facts, mut fmts, data, mut hero, notes, points, .. } = out;
     hero.insert("data".into(), Value::Object(data));
     hero.insert("unit".into(), json!(std::iter::once(format!("单位：{short}")).chain(notes).collect::<Vec<_>>().join("；")));
@@ -2039,11 +2160,6 @@ fn fill_of(
     for t in [&shape.main, &shape.companion].into_iter().filter(|t| !t.is_empty()) {
         tables.insert(t.clone(), json!({"id": printed_id(t)}));
     }
-    // the page's scope (the aggregate the drawn places are members of, from the data) is named from the name table like
-    // any place; with no reviewed name for it, or no count of the places drawn, the unit line names no scope
-    let scope = scope_of(shape, picks, catalogue);
-    let named: Vec<String> = shape.members.iter().cloned().chain(scope.clone()).collect();
-    let labels = leaf_labels(&rows, &named, catalogue)?;
     if let Some(code) = scope.filter(|c| labels.contains_key(c) && facts.contains_key(DRAWN)) {
         hero.insert("scope".into(), json!({"code": code, "count": DRAWN}));
     }
@@ -2061,6 +2177,10 @@ fn fill_of(
         .map(|(layer, r)| json!({"layer": layer, "src": r["src"], "table": r["table"], "time": r["time"]}))
         .collect();
     let mut fill = json!({"order": recipe.layers, "rows": rows, "knobs": knobs, "drawn": drawn});
+    // the dek's finding stays with the flow, for the text step's draft (dek_finding); the page gets it as worded
+    if let Some(finding) = finding {
+        fill["finding"] = finding;
+    }
     // the two ends the page runs between, and each earlier year passed over with the countries it misses, for the run's record
     if !shape.t0.is_empty() {
         let later: Vec<Value> = shape.later.iter().map(|(year, missing)| json!({"year": year, "missing": missing})).collect();
@@ -2494,6 +2614,7 @@ pub async fn reword(
         periods,
         changes,
         scoped,
+        titles,
         ..
     } = &ask
     else {
@@ -2551,6 +2672,7 @@ pub async fn reword(
                 periods: periods.clone(),
                 changes: changes.clone(),
                 scoped: scoped.clone(),
+                titles: titles.clone(),
             };
             let mut kept = BTreeMap::new();
             let mut given = Map::new();
@@ -2569,6 +2691,7 @@ pub async fn reword(
                         periods: periods.clone(),
                         changes: Vec::new(),
                         scoped: Vec::new(),
+                        titles: Vec::new(),
                     };
                     let alone = json!({"step": "text", "text": {}, "names": {id.as_str(): name}});
                     if !given.contains_key(id)
@@ -2941,15 +3064,18 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
     let drawn: Vec<&str> = page.templates.iter().filter_map(|t| t["chart_type"].as_str()).collect();
     // The recipe is picked by the data's shape before the text step (its words go into the fill once worded, leaf_page), so
     // the page-level fields are drafted for what the picked page draws: a page whose bars draw the change gets a title
-    // that asks a change. A pick that stopped stops the run after the text step, as before.
+    // that names a change. A pick that stopped stops the run after the text step, as before.
     let picked = leaf_request(recorder.run_dir(), &prepared, &drawn, catalogue, (question, ("", "", "")), &calls);
     let form = page_lead(picked.as_ref().ok().map(|(_, fill)| fill), &page.charts);
     let titles: Vec<String> = page.measures.iter().map(|m| m.name.clone()).collect();
     // No typed number on the page text, years included: the design pack's claim-template check refuses every one, so the
     // text step offers none (a year goes through a placeholder or is left out).
+    // the dek is the picked recipe's finding on the page's own facts (finding_of), its numbers and names placeholders
+    let finding = picked.as_ref().ok().and_then(|(_, fill)| dek_finding(fill));
     let drafts = next_page::draft_for(&page.claims, &page.charts, Vec::new(), form)
         .name_measures(&titles, &page.charts)
         .with_scopes(&page.scopes)
+        .with_finding(finding)
         .with_periods(&page.times);
     // a text step that stops leaves the recipe pick's group calls on record all the same, as a text step that passes does
     let worded = match reword(recorder, model, question, &drafts, cancel).await {
@@ -3893,7 +4019,7 @@ mod tests {
         }];
         let numbers = vec!["2025".to_string()];
         let drafts = next_page::draft(&claims, &charts, numbers);
-        let refused = json!({"step": "text", "text": {"1": "欧盟各国可再生能源占比：谁领先", "3": "27国由高到低"}, "names": {}});
+        let refused = json!({"step": "text", "text": {"1": "欧盟各国可再生能源占比：北欧领先", "3": "27国由高到低"}, "names": {}});
         let mut model = ScriptedAsker(
             vec![
                 call("s1", json!({"step": "search", "query": "renewable share"})),
@@ -3921,7 +4047,7 @@ mod tests {
         .await
         .unwrap();
         drop(recorder);
-        assert_eq!(page[&Target::PageTitle], "欧盟各国可再生能源占比：谁领先");
+        assert_eq!(page[&Target::PageTitle], "欧盟各国可再生能源占比：北欧领先");
         let heading = &drafts
             .fields
             .iter()
@@ -3990,7 +4116,7 @@ mod tests {
             .await
             .unwrap();
         drop(recorder);
-        assert_eq!(page[&Target::PageTitle], "变化多大");
+        assert_eq!(page[&Target::PageTitle], "各方的变化");
         assert_eq!(page[&Target::PageDek], "各国庇护申请从起始到最近的变化");
         let events = events.lock().unwrap();
         let fallback: Vec<&Value> = events.iter().filter(|e| e["type"] == TEXT_FALLBACK_EVENT).collect();
@@ -4042,9 +4168,9 @@ mod tests {
     #[tokio::test]
     async fn a_ranking_title_on_a_scoped_page_is_refused_and_the_next_round_stands() {
         let ranks = json!({"step": "text", "text": {"1": "从起始到最近，谁升得最多"}, "names": {}});
-        let faster = json!({"step": "text", "text": {"1": "从起始到最近，谁升得更快"}, "names": {}});
+        let faster = json!({"step": "text", "text": {"1": "从起始到最近，人口大国增长加快"}, "names": {}});
         let (page, events, _) = reword_scoped(vec![ranks, faster]).await;
-        assert_eq!(page[&Target::PageTitle], "从起始到最近，谁升得更快");
+        assert_eq!(page[&Target::PageTitle], "从起始到最近，人口大国增长加快");
         // The model was told: round 1's tool result is an error naming the field, the word and the rule's example.
         let refused: Vec<String> = events
             .iter()
@@ -4053,7 +4179,7 @@ mod tests {
             .collect();
         assert_eq!(refused.len(), 1, "{refused:?}");
         assert!(refused[0].contains("field '1': '最多' ranks"), "{}", refused[0]);
-        assert!(refused[0].contains("从起始到最近，谁升得更快"), "{}", refused[0]);
+        assert!(refused[0].contains("各国可再生能源占比的变化"), "{}", refused[0]);
         assert!(!events.iter().any(|e| e["type"] == TEXT_FALLBACK_EVENT));
         assert!(!events.iter().any(|e| e["type"] == SCOPE_FALLBACK_EVENT));
     }
@@ -4754,9 +4880,13 @@ mod tests {
         let (main, monthly, shape, picks) = rows("MIO_M3");
         let fill = ring_fill(&shape, &picks, (&main, &monthly), &Hubs, ("标题", "导语")).unwrap();
         // the fill byte for byte as the ring filled it before the recipe registry (10-29): a move onto the registry changes none
-        // (what the visual group is sent; `drawn`, each layer's printed rows, stays with the flow for its page checks)
+        // (what the visual group is sent; `drawn`, each layer's printed rows, and the dek's `finding` stay with the flow, for
+        // its page checks and the text step's draft)
         let mut sent = fill.clone();
         let drawn = sent.as_object_mut().unwrap().remove("drawn").unwrap();
+        let finding = sent.as_object_mut().unwrap().remove("finding").unwrap();
+        // RU is the largest origin at t1 (NO and US are at 1): its share, which the map declares, and its name placeholder
+        assert_eq!(finding, json!({"dek": "{name.RU}最多，占{ru24_share}", "scoped": "所选各方中，{name.RU}居首，占{ru24_share}"}));
         assert_eq!(crate::hash::sha256_bytes(sent.to_string().as_bytes()), "d728a43088b98205718a7814a2ce0ef3572d9485fc8961926831fa471dafb5e8");
         assert!(drawn.as_array().unwrap().iter().all(|r| ["map", "ring"].contains(&r["layer"].as_str().unwrap())), "{drawn}");
         assert_eq!(fill["order"], json!(ring_order()));
@@ -5059,6 +5189,9 @@ mod tests {
         let shape = shape_of(&column.eats, &[("sdg", &main[..])], &Hubs).unwrap();
         let picks = picks_of(&column.picks, &shape, &main, &[]).unwrap();
         let mut fill = fill_of(column, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语")).unwrap();
+        // the dek is the finding, printed from the extremes' ledger entries though the notes that print the gap all drop
+        let dek = dek_finding(&fill).unwrap().0;
+        page_words(&mut fill, ("标题", &dek, "栏目"));
         fill["knobs"]["shapes"] = json!("runtime/pi/assets/naturalearth-admin0-50m.geojson");
         fill["knobs"]["spec"]["kicker"] = json!("栏目");
         fill["knobs"]["spec"]["source"] = json!("来源");
@@ -5103,6 +5236,7 @@ mod tests {
         let published = crate::next_flow::publish_leaf_page(&calls, &bundle.dir, "column", (&leaf, &plan), &qa).unwrap();
         let html = std::fs::read_to_string(bundle.dir.join(&published.html_ref)).unwrap();
         assert!(html.contains(r#"<g data-layer="leader_notes"><g data-node="leader_notes"></g></g>"#), "the notes layer is drawn empty");
+        assert!(html.contains("名SE最高，为") && html.contains(r#"data-src="fact:hi.n""#) && html.contains(r#"data-src="fact:gap.n""#), "the dek's finding");
         let request: Value = serde_json::from_str(
             &std::fs::read_to_string(bundle.dir.join("publications/column").join(crate::next_flow::LEAF_REQUEST)).unwrap(),
         )
@@ -5236,6 +5370,10 @@ mod tests {
         // the leader notes' hi, lo, gap and times, in no hero.data key
         assert_eq!(spec["facts"].as_object().unwrap().keys().collect::<Vec<_>>(), ["drawn", "gap", "hi", "lo", "times", "val"]);
         assert_eq!(spec["facts"]["drawn"], json!({"op": "n", "by": "geo", "table": "sdg", "time": "2025", "fmt": "n"}));
+        // the dek's finding: the highest place against the lowest, on the extremes the notes declare (no fact of its own),
+        // each place a name placeholder the labels name
+        assert_eq!(fill["finding"], json!({"dek": "{name.SE}最高，为{hi}，比最低的{name.BE}高{gap}",
+            "scoped": "所选各方中，{name.SE}居首，为{hi}，比{name.BE}高{gap}"}));
         assert!(spec["hero"]["data"].get("hi").is_none());
         assert_eq!(spec["fmts"]["pc"], json!({"scale": 1, "dec": 2, "suffix": "%"}));
         assert_eq!(spec["fmts"]["pp"], json!({"scale": 1, "dec": 2, "suffix": " 个百分点"}));
@@ -5335,7 +5473,8 @@ mod tests {
     /// drafted for the lead ranking ("谁领先，谁垫底") and reworded to who is highest. The recipe that wins now decides the
     /// page-level frame (page_lead): a table with two ends (q1's ten years, q6's applicants by the country applied in over
     /// the ring window) drafts the first-to-last change's title and refuses a level reword; the same table at one year is
-    /// the column page, drafted for its lead ranking, where a title asking who is highest passes.
+    /// the column page, drafted for its lead ranking, where a title saying who is highest passes. Either way a title that
+    /// asks is refused, and the dek is the fill's finding (the four stand-in deks restated the topic), which passes as kept.
     #[test]
     fn the_recipe_that_wins_decides_the_page_title_s_frame() {
         let charts = vec![Chart {
@@ -5352,7 +5491,7 @@ mod tests {
             let picks = picks_of(&r.picks, &shape, main, &[]).unwrap();
             let fill = fill_of(r, &shape, &picks, (main, &[]), &Hubs, ("", "")).unwrap();
             let form = page_lead(Some(&fill), &charts);
-            (r.name.clone(), next_page::draft_for(&[], &charts, Vec::new(), form))
+            (r.name.clone(), next_page::draft_for(&[], &charts, Vec::new(), form).with_finding(dek_finding(&fill)))
         };
         let fixed = [("freq", "A"), ("unit", "PER"), ("sex", "T"), ("age", "TOTAL"), ("citizen", "TOTAL")];
         let mut q6 = ring_rows("migr", &fixed, ("geo", &["SE", "BE", "DE", "FR", "EU27_2020"]), &["2021", "2025"]);
@@ -5363,26 +5502,34 @@ mod tests {
         let title = |drafts: &Drafts, wording: &str| {
             drafts.ask(vec![]).check(&json!({"step": "text", "text": {"1": wording}, "names": {}}))
         };
+        let dek = |drafts: &Drafts| drafts.ask(vec![]).check(&json!({"step": "text", "text": {"2": drafts.fields[1].1}, "names": {}}));
         let change = shape_registry_frame(Relation::Change, View::FirstToLast);
-        for (table, main, level) in [
-            ("sdg", q1_ten_years(), "欧盟哪国可再生能源占比最高"),
-            ("migr", q6, "哪些国籍的人申请庇护最多"),
+        // q1: SE rose most (50 to 66); q6: DE (14800 to 23700)
+        for (table, main, level, finding) in [
+            ("sdg", q1_ten_years(), "欧盟哪国可再生能源占比最高", "{name.SE}增幅最大，增加{lead}"),
+            ("migr", q6, "哪些国籍的人申请庇护最多", "{name.DE}增幅最大，增加{lead}"),
         ] {
             let (recipe, drafts) = drafted(table, &main);
             assert_eq!(recipe, "change", "{table}");
             assert_eq!(drafts.fields[0], (Target::PageTitle, change[0].to_string()), "{table}");
-            assert_eq!(drafts.fields[1], (Target::PageDek, change[1].to_string()), "{table}");
+            assert_eq!(drafts.fields[1], (Target::PageDek, finding.to_string()), "{table}");
+            assert!(dek(&drafts).is_ok(), "{table}");
             let refused = title(&drafts, level).unwrap_err();
             assert!(refused.problem.contains("asks a level"), "{table}: {}", refused.problem);
             assert_eq!(refused.allowed["text"]["1"], json!(change[0]), "{table}");
-            assert!(title(&drafts, "欧盟哪国的数值升得最多").is_ok(), "{table}");
+            assert!(title(&drafts, "北欧国家的数值升得最多").is_ok(), "{table}");
+            assert!(title(&drafts, "欧盟哪国的数值升得最多").is_err(), "{table}: a title that asks");
         }
         let one_year: Vec<Value> = q1_ten_years().into_iter().filter(|r| r["time"] == "2024").collect();
         let (recipe, drafts) = drafted("sdg", &one_year);
         assert_eq!(recipe, "column");
         let level = shape_registry_frame(Relation::Ranking, View::Slice);
         assert_eq!(drafts.fields[0], (Target::PageTitle, level[0].to_string()));
-        assert!(title(&drafts, "欧盟哪国可再生能源占比最高").is_ok());
+        // SE is highest at 2024 (66), FR lowest (13.25)
+        assert_eq!(drafts.fields[1], (Target::PageDek, "{name.SE}最高，为{hi}，比最低的{name.FR}高{gap}".to_string()));
+        assert!(dek(&drafts).is_ok());
+        assert!(title(&drafts, "瑞典可再生能源占比在欧盟最高").is_ok());
+        assert!(title(&drafts, "欧盟哪国可再生能源占比最高").is_err(), "a title that asks");
         // no fill (no recipe picked): the lead chart's, as before
         assert_eq!(page_lead(None, &charts), Some((Relation::Ranking, View::Slice)));
     }
@@ -5441,6 +5588,12 @@ mod tests {
         assert_eq!(spec["hero"]["style"], json!({"bars": {"measure": "change"}}));
         assert_eq!(spec["hero"]["data"]["family"], "chg");
         assert_eq!(spec["hero"]["data"]["t0"], "2016");
+        // the dek's finding: SE's rise, a fact of its two ends' values (the later less the earlier, in points), its rows
+        // the ones the bars already read
+        assert_eq!(fill["finding"], json!({"dek": "{name.SE}增幅最大，增加{lead}", "scoped": "所选各方中，{name.SE}增幅最大，增加{lead}"}));
+        assert_eq!(spec["facts"]["lead"], json!({"op": "minus", "a": "lead1", "b": "lead0", "fmt": "pp"}));
+        assert_eq!(spec["facts"]["lead0"], json!({"table": "sdg", "filter": {"geo": "SE"}, "time": "2016", "fmt": "pc"}));
+        assert_eq!(spec["facts"]["lead1"], json!({"table": "sdg", "filter": {"geo": "SE"}, "time": "2024", "fmt": "pc"}));
         let said: Vec<(&str, &str, &str)> = spec["hero"]["leaves"]["leader_notes"]["notes"].as_array().unwrap().iter()
             .map(|n| (n["name"].as_str().unwrap(), n["text"][0]["word"].as_str().unwrap(), n["value_text"].as_str().unwrap())).collect();
         assert_eq!(said, [("SE", "column.note.rise_most", "fact:chg.SE"), ("FR", "column.note.fall_most", "fact:chg.FR")]);
@@ -5448,6 +5601,10 @@ mod tests {
         let drawn = fill["drawn"].as_array().unwrap().clone();
         assert!(drawn.iter().all(|d| d["layer"] == "bubbles" && d["time"] == "2024"), "{drawn:?}");
 
+        // the page's words as the text step leaves them when the model keeps the drafts: the finding, its name filled
+        let dek = dek_finding(&fill).unwrap().0;
+        page_words(&mut fill, ("标题", &dek, "栏目"));
+        assert_eq!(fill["knobs"]["spec"]["dek"], "名SE增幅最大，增加{lead}");
         fill["knobs"]["shapes"] = json!("runtime/pi/assets/naturalearth-admin0-50m.geojson");
         fill["knobs"]["spec"]["kicker"] = json!("栏目");
         fill["knobs"]["spec"]["source"] = json!("来源");
@@ -5469,6 +5626,7 @@ mod tests {
         for (code, text) in [("SE", "16.00 个百分点"), ("DE", "7.50 个百分点"), ("BE", "5.50 个百分点"), ("FR", "-2.25 个百分点")] {
             assert_eq!(page.ledger.get(&format!("fact:chg.{code}")).map(String::as_str), Some(text), "{code}");
         }
+        assert_eq!(page.ledger.get("fact:lead").map(String::as_str), Some("16.00 个百分点"), "the dek's rise, as SE's bar");
         let dir = tempfile::tempdir().unwrap();
         let bundle = {
             let _command = crate::group_guard::command_for_test("investigate");
@@ -5500,6 +5658,7 @@ mod tests {
         assert_eq!(html.matches(r#"height="18" fill="var(--accent)""#).count(), 2, "only the two focus bars in the accent");
         assert!(html.contains(r#"text-anchor="end" dominant-baseline="middle" font-size="13" fill="var(--t-sec)" font-weight="400"><tspan data-src="fact:chg.FR""#), "the fall's value on its side");
         assert!(html.contains(r#"data-src="period:sdg:2016""#), "the year line names the earlier end");
+        assert!(html.contains("名SE增幅最大，增加") && html.contains(r#"data-src="fact:lead.n""#), "the dek's finding, its number a ledger entry");
         let checks = page_checks(change, Some(html.as_str()), &published.dropped, StripAsk::default(), &drawn, Some(&typed()));
         assert!(checks[2].passed && checks[2].warning.is_none(), "{:?}", checks[2]);
     }
@@ -5519,6 +5678,10 @@ mod tests {
         let shape = shape_of(&change.eats, &[("sdg_07_40", &main[..])], &Hubs).unwrap();
         let picks = picks_of(&change.picks, &shape, &main, &[]).unwrap();
         let mut fill = fill_of(change, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语")).unwrap();
+        // the dek is the finding (LU rose most, 5.364 to 20.2), so the whole-page check rechecks its number from the rows too
+        let dek = dek_finding(&fill).unwrap().0;
+        assert_eq!(dek, "{name.LU}增幅最大，增加{lead}");
+        page_words(&mut fill, ("标题", &dek, "栏目"));
         fill["knobs"]["shapes"] = json!("runtime/pi/assets/naturalearth-admin0-50m.geojson");
         fill["knobs"]["spec"]["kicker"] = json!("栏目");
         fill["knobs"]["spec"]["source"] = json!("来源");
@@ -5563,6 +5726,7 @@ mod tests {
         let plan = json!({"kind": "leaf_plan", "recipe": "change"});
         let published = crate::next_flow::publish_leaf_page(&calls, &bundle.dir, "change", (&leaf, &plan), &qa).unwrap();
         let html = std::fs::read_to_string(bundle.dir.join(&published.html_ref)).unwrap();
+        assert!(html.contains(r#"data-src="fact:lead.n""#), "the dek prints the rise from its ledger entry");
         // read back as next_gate reads a published page's request: the text to a value, then each part from it
         let text = std::fs::read_to_string(bundle.dir.join("publications/change").join(crate::next_flow::LEAF_REQUEST)).unwrap();
         let mut back: Value = serde_json::from_str(&text).unwrap();

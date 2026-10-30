@@ -155,16 +155,41 @@ impl Shape {
 }
 
 /// The page wording frames by relation: page title, page dek, chart heading, text module. Chinese, so a page that keeps
-/// the drafts reads as written; no number, no number in words, no placeholder; the text module says how to read the
-/// chart and over what it holds, never why (a cause is no verified claim). The model rewrites them for the topic.
+/// the drafts reads as written; no number, no number in words, no placeholder; the title a label, never a question (next_flow
+/// TITLE_RULE) and on the first-to-last change one that names the change (CHANGE_TITLE_RULE); the text module says how to
+/// read the chart and over what it holds, never why (a cause is no verified claim). The model rewrites them for the topic.
+/// The dek here is the fallback of a page whose facts give no DEK_FINDINGS sentence.
 pub const FRAMES: [(Relation, View, [&str; 4]); 7] = [
-    (Relation::Ranking, View::Slice, ["谁领先，谁垫底", "从最高到最低，看各自的位置", "由高到低", "读图：条形越长，数值越高，自上而下由高到低排列；各条是同一口径的数据。"]),
-    (Relation::Change, View::Slice, ["走势如何", "历年的变化路径和转折点", "随时间的变化", "读图：横轴是时间，纵轴是数值，线向上是增加、向下是减少；时间范围以图中最早和最近的时期为准。"]),
-    (Relation::Composition, View::Slice, ["由哪些部分构成", "各个部分及其占整体的份额", "整体的构成", "读图：每段的长短是该部分占整体的份额，各段合起来是整体；各部分是同一口径的数据。"]),
-    (Relation::Flow, View::Slice, ["流向哪里", "从来源到去向，看最大的流量", "从来源到去向", "读图：左侧是来源，右侧是去向，带子越宽流量越大；口径以所用数据表为准。"]),
-    (Relation::Map, View::Slice, ["哪里最高", "各地在地图上的对比", "各地对比", "读图：颜色越深，数值越高，灰色是没有数据；各地是同一口径的数据。"]),
-    (Relation::Change, View::FirstToLast, ["变化多大", "从起始时期到最近时期，各自变了多少", "从起始到最近", "读图：每行的连线连起该行成员在起始时期和最近时期的数值，图例标明哪端是哪个时期；连线越长，变化越大。"]),
-    (Relation::Distribution, View::Slice, ["如何分布", "多数数值落在哪里，哪些偏离", "数值的分布", "读图：每个格子的颜色表示一个数值，颜色越深数值越高；同行、同列之间可以直接比较。"]),
+    (Relation::Ranking, View::Slice, ["各方的高低排名", "从最高到最低，看各自的位置", "由高到低", "读图：条形越长，数值越高，自上而下由高到低排列；各条是同一口径的数据。"]),
+    (Relation::Change, View::Slice, ["历年走势", "历年的变化路径和转折点", "随时间的变化", "读图：横轴是时间，纵轴是数值，线向上是增加、向下是减少；时间范围以图中最早和最近的时期为准。"]),
+    (Relation::Composition, View::Slice, ["整体的构成与份额", "各个部分及其占整体的份额", "整体的构成", "读图：每段的长短是该部分占整体的份额，各段合起来是整体；各部分是同一口径的数据。"]),
+    (Relation::Flow, View::Slice, ["来源与去向", "从来源到去向，看最大的流量", "从来源到去向", "读图：左侧是来源，右侧是去向，带子越宽流量越大；口径以所用数据表为准。"]),
+    (Relation::Map, View::Slice, ["各地的高低分布", "各地在地图上的对比", "各地对比", "读图：颜色越深，数值越高，灰色是没有数据；各地是同一口径的数据。"]),
+    (Relation::Change, View::FirstToLast, ["各方的变化", "起止之间，各自变化的方向和幅度", "从起始到最近", "读图：每行的连线连起该行成员在起始时期和最近时期的数值，图例标明哪端是哪个时期；连线越长，变化越大。"]),
+    (Relation::Distribution, View::Slice, ["数值分布", "多数数值落在哪里，哪些偏离", "数值的分布", "读图：每个格子的颜色表示一个数值，颜色越深数值越高；同行、同列之间可以直接比较。"]),
+];
+
+/// What a page's dek finding says, by what its own facts hold (next_run finding_of picks it from the fill): the place whose
+/// change between the two ends is the largest rise, or with none rising the largest fall; the highest place of one year
+/// against the lowest; the origin with the largest share of a flow at its later year.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Finding {
+    Rise,
+    Fall,
+    Level,
+    Share,
+}
+
+/// The page dek's one finding sentence per Finding: unscoped, then a scoped page's wording (no next_page SUPERLATIVES word;
+/// "所选各方" points at the page's scope field, as SCOPED_WORDS does). next_run finding_of fills {name} and {other} with a
+/// place's name placeholder ({name.<code>}, the program's name of that code at the page's words), {value} and {gap} with
+/// facts the page declares, so every number prints from the ledger; no year is written (the page's unit line and legend
+/// name its times). Same rules as FRAMES but the placeholders.
+pub const DEK_FINDINGS: [(Finding, &str, &str); 4] = [
+    (Finding::Rise, "{name}增幅最大，增加{value}", "所选各方中，{name}增幅最大，增加{value}"),
+    (Finding::Fall, "{name}降幅最大，减少{value}", "所选各方中，{name}降幅最大，减少{value}"),
+    (Finding::Level, "{name}最高，为{value}，比最低的{other}高{gap}", "所选各方中，{name}居首，为{value}，比{other}高{gap}"),
+    (Finding::Share, "{name}最多，占{value}", "所选各方中，{name}居首，占{value}"),
 ];
 
 /// The chart forms the page renderer draws a card for (next_render Card): the page's title, dek, text and reader fields are
@@ -176,13 +201,11 @@ pub const CARD_FORMS: [(Relation, View); 1] = [(Relation::Ranking, View::Slice)]
 /// The scoped page's wording of each FRAMES and CONCEPTS draft that ranks (holds a next_page SUPERLATIVES word): on a page
 /// whose places the program narrowed, "highest" holds only among the kept places, so the draft says the order, not who
 /// leads. Same rules as FRAMES; "所选" points at the page's own scope field, never says it.
-pub const SCOPED_WORDS: [(&str, &str); 10] = [
-    ("谁领先，谁垫底", "同一口径下的高低次序"),
+pub const SCOPED_WORDS: [(&str, &str); 8] = [
     (
         "从最高到最低，看各自的位置",
         "从高到低排列，看所选各方的位置",
     ),
-    ("哪里最高", "各地的高低"),
     (
         "读者想知道在同样的口径下谁领先、谁落后，差距有多大。",
         "读者想知道所选各方在同样的口径下高低次序如何，差距有多大。",
