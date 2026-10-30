@@ -2248,10 +2248,11 @@ fn measure_of(
 }
 
 /// A table's dataset id as a page names it: a World Bank indicator without its "@2" (SP.POP.65UP.TO.ZS@2 prints as
-/// SP.POP.65UP.TO.ZS), a Eurostat id as it is. The source line prints it, and the spec's table list gives it as the table's
-/// id (fill_of), which next_facts::leaf_refs takes as the id the leaf footer marks and the page check accepts: one string.
+/// SP.POP.65UP.TO.ZS), as the other places strip it, and any other id (a Eurostat one) as it is. The source line prints it,
+/// and the spec's table list gives it as the table's id (fill_of), which next_facts::leaf_refs takes as the id the leaf
+/// footer marks and the page check accepts: one string.
 fn printed_id(id: &str) -> &str {
-    id.split('@').next().unwrap_or(id)
+    id.strip_suffix("@2").unwrap_or(id)
 }
 
 /// A chart's source line: the publisher the catalogue files the table under, its id (printed_id) and title (its reviewed Chinese name where the knowledge group has one, Catalogue::table_zh; else as listed), and
@@ -4128,7 +4129,7 @@ mod tests {
     /// The knowledge group's own name table and nothing else.
     struct NamesOnly;
     impl Catalogue for NamesOnly {
-        fn top5(&self, _: &str, _: &[String], _: bool) -> crate::l5geo::Ranking {
+        fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>) -> crate::l5geo::Ranking {
             unreachable!()
         }
         fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
@@ -4175,7 +4176,7 @@ mod tests {
     /// Two-letter codes are countries (EU aside); EU27_2020 and EA20 have members, only EU27_2020 a hub row.
     struct Hubs;
     impl Catalogue for Hubs {
-        fn top5(&self, _: &str, _: &[String], _: bool) -> crate::l5geo::Ranking {
+        fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>) -> crate::l5geo::Ranking {
             unreachable!()
         }
         fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
@@ -4434,7 +4435,7 @@ mod tests {
     /// Hubs, but the name table names no aggregate code: only two-letter codes have a name.
     struct NoAggregateNames;
     impl Catalogue for NoAggregateNames {
-        fn top5(&self, _: &str, _: &[String], _: bool) -> crate::l5geo::Ranking {
+        fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>) -> crate::l5geo::Ranking {
             unreachable!()
         }
         fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
@@ -4458,7 +4459,7 @@ mod tests {
     /// Hubs, but the EU's members are four and the euro area's two, so only the EU holds every place a page draws below.
     struct Scoped(bool);
     impl Catalogue for Scoped {
-        fn top5(&self, _: &str, _: &[String], _: bool) -> crate::l5geo::Ranking {
+        fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>) -> crate::l5geo::Ranking {
             unreachable!()
         }
         fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
@@ -5141,7 +5142,7 @@ mod tests {
         // the World Bank table as WbTable lists it (CHN, IND, USA; the unit wb-units.tsv registers for it), named as Hubs names
         struct WbNamed;
         impl Catalogue for WbNamed {
-            fn top5(&self, _: &str, _: &[String], _: bool) -> crate::l5geo::Ranking {
+            fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>) -> crate::l5geo::Ranking {
                 unreachable!()
             }
             fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
@@ -5551,7 +5552,7 @@ mod tests {
     fn a_country_code_chart_carries_the_tables_chinese_names_and_an_unknown_code_stops_it() {
         struct NoTables;
         impl Catalogue for NoTables {
-            fn top5(&self, _: &str, _: &[String], _: bool) -> crate::l5geo::Ranking {
+            fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>) -> crate::l5geo::Ranking {
                 unreachable!()
             }
             fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
@@ -5667,7 +5668,7 @@ mod tests {
     struct SixCountries;
 
     impl Catalogue for SixCountries {
-        fn top5(&self, _: &str, _: &[String], _: bool) -> crate::l5geo::Ranking {
+        fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>) -> crate::l5geo::Ranking {
             unreachable!()
         }
         fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
@@ -6039,7 +6040,7 @@ mod tests {
     fn a_measure_fetched_in_one_code_of_its_breakdown_is_named_for_that_code() {
         struct OneTable;
         impl Catalogue for OneTable {
-            fn top5(&self, _: &str, _: &[String], _: bool) -> crate::l5geo::Ranking {
+            fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>) -> crate::l5geo::Ranking {
                 unreachable!()
             }
             fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
@@ -6104,7 +6105,7 @@ mod tests {
     fn a_world_bank_measure_takes_its_registered_unit_and_a_eurostat_one_its_unit_filter() {
         struct Two;
         impl Catalogue for Two {
-            fn top5(&self, _: &str, _: &[String], _: bool) -> crate::l5geo::Ranking {
+            fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>) -> crate::l5geo::Ranking {
                 unreachable!()
             }
             fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
@@ -6910,7 +6911,7 @@ mod tests {
     struct WorldBank;
 
     impl Catalogue for WorldBank {
-        fn top5(&self, _: &str, _: &[String], _: bool) -> crate::l5geo::Ranking {
+        fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>) -> crate::l5geo::Ranking {
             unreachable!()
         }
         fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
@@ -6935,7 +6936,7 @@ mod tests {
     }
 
     impl Catalogue for WbTable {
-        fn top5(&self, _: &str, _: &[String], _: bool) -> crate::l5geo::Ranking {
+        fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>) -> crate::l5geo::Ranking {
             unreachable!()
         }
         fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
@@ -7339,7 +7340,7 @@ mod tests {
     /// its series rows (SDG_VALUES, as the knowledge group reads a fetched file), and Hubs' countries, names and members.
     struct OneTable;
     impl Catalogue for OneTable {
-        fn top5(&self, _: &str, _: &[String], _: bool) -> crate::l5geo::Ranking {
+        fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>) -> crate::l5geo::Ranking {
             let candidate = crate::l5geo::Candidate {
                 id: "sdg".into(),
                 title: "Share of renewable energy".into(),

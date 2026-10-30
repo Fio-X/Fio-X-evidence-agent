@@ -62,6 +62,9 @@ const SINCE_AFTER: [&str; 6] = ["以来", "至今", "到现在", "起", "相比"
 const RANGE_MARKS: [char; 7] = ['到', '至', '-', '–', '—', '~', '～'];
 /// The words that ask for months, not a year: each month of a span ("每月", "逐月", "月度") or the latest one ("上个月").
 const MONTH_WORDS: [&str; 12] = ["每月", "每个月", "逐月", "按月", "各月", "月度", "月份", "上个月", "上月", "本月", "这个月", "当月"];
+/// The words that ask for a part of a year, which months add up to and a year's figure cannot answer: a quarter ("一季度",
+/// "第三季度", "前三季度", "按季度"), a half ("上半年", "下半年", "近半年") or the year so far ("今年以来").
+const PART_YEAR_WORDS: [&str; 7] = ["季度", "半年", "今年以来", "今年至今", "今年迄今", "年初以来", "年初至今"];
 /// Codes kept when an open place dimension has more codes than a chart shows (newsroom_data_prepare narrow, rule "top"):
 /// the highest at the latest time, at most the chart's rows over the years.
 pub const NARROW_TOP: usize = 20;
@@ -242,24 +245,41 @@ pub fn question_years(question: &str, this_year: i32) -> Option<NamedYears> {
     None
 }
 
+/// The latest year a question names: the end of question_years' span (a year it runs on from or compares with running to
+/// this year). None for the last n years, counted back from the table's own last year, and for a question naming no years.
+/// The table pick keeps a monthly-only table rather than an annual twin that ends before it.
+pub fn question_latest_year(question: &str, this_year: i32) -> Option<i32> {
+    match question_years(question, this_year)? {
+        NamedYears::Span(_, to) => Some(to),
+        NamedYears::Last(_) => None,
+    }
+}
+
 /// Whether a question asks for months, read by rule from its words, spaces aside, as question_years reads its years (no
 /// model): a month it names by its number before 月 (1 to 12, in digits or Chinese numerals: "3 月", "2025 年十月"), a count
-/// of months ("几个月", "近三个月", "过去 6 个月"), or one of MONTH_WORDS. A 月 after no such number is none ("月薪", "岁月"),
-/// and a question naming years alone asks for none. The table pick then keeps a monthly-only table rather than its annual
-/// twin, which ends a year or two earlier.
+/// of months ("几个月", "近三个月", "过去 6 个月"), one of MONTH_WORDS, or a part of a year: one of PART_YEAR_WORDS or a
+/// quarter Q1 to Q4 after no Latin letter ("2025 Q1", "2025Q3"). A 月 after no such number is none ("月薪", "岁月"), and a
+/// question naming years alone asks for none. The table pick then keeps a monthly-only table rather than its annual twin,
+/// which ends a year or two earlier.
 pub fn question_months(question: &str) -> bool {
     let text: String = question.chars().filter(|c| !c.is_whitespace()).collect();
-    if text.contains("个月") || MONTH_WORDS.iter().any(|w| text.contains(w)) {
+    if text.contains("个月") || MONTH_WORDS.iter().chain(&PART_YEAR_WORDS).any(|w| text.contains(w)) {
         return true;
     }
     let chars: Vec<char> = text.chars().collect();
-    chars.iter().enumerate().any(|(i, c)| {
-        *c == '月' && {
-            let numeral = |c: &&char| c.is_ascii_digit() || "一二两三四五六七八九十".contains(**c);
-            let n = chars[..i].iter().rev().take_while(numeral).count();
-            count_of(&chars[i - n..i].iter().collect::<String>()).is_some_and(|m| (1..=12).contains(&m))
-        }
-    })
+    let quarter = chars.windows(2).enumerate().any(|(i, w)| {
+        matches!(w, ['Q' | 'q', '1'..='4'])
+            && (i == 0 || !chars[i - 1].is_ascii_alphabetic())
+            && !chars.get(i + 2).is_some_and(|c| c.is_ascii_digit())
+    });
+    quarter
+        || chars.iter().enumerate().any(|(i, c)| {
+            *c == '月' && {
+                let numeral = |c: &&char| c.is_ascii_digit() || "一二两三四五六七八九十".contains(**c);
+                let n = chars[..i].iter().rev().take_while(numeral).count();
+                count_of(&chars[i - n..i].iter().collect::<String>()).is_some_and(|m| (1..=12).contains(&m))
+            }
+        })
 }
 
 /// A count in digits, or in Chinese numerals up to 九十九 (十 ten, 两 two).
@@ -1780,10 +1800,24 @@ mod tests {
             "欧盟庇护申请逐月变化",
             "上个月欧盟各国失业率",
             "庇护申请的月度数据",
+            // a part of a year: a quarter, a half, the year so far
+            "2026 年一季度欧盟庇护申请的来源国",
+            "第三季度德国发电结构",
+            "2025 年前三季度各国天然气进口",
+            "按季度的通胀",
+            "2026 年上半年欧盟庇护申请",
+            "下半年各国失业率",
+            "近半年的天然气进口",
+            "今年以来欧盟庇护申请",
+            "年初至今的通胀",
+            "2025 Q1 欧盟庇护申请",
+            "2025Q4德国发电结构",
+            "q2 各国失业率",
         ] {
             assert!(question_months(s), "{s}");
         }
-        // years alone, a count of years, a 月 after no month number, a number off the months
+        // years alone, a count of years, a 月 after no month number, a number off the months, a Q after a letter or
+        // off the quarters, 半 or 季 in another word
         for s in [
             "2024 年欧盟庇护申请的来源国",
             "2015 年到 2024 年欧盟庇护申请",
@@ -1792,9 +1826,28 @@ mod tests {
             "月薪低于 1990 欧元",
             "13 月",
             "岁月",
+            "SQ1 型号的销量",
+            "Q5 各国失业率",
+            "Q12 各国失业率",
+            "欧盟半导体出口",
+            "两年半以来的通胀",
+            "季节性流感病例",
         ] {
             assert!(!question_months(s), "{s}");
         }
+    }
+
+    #[test]
+    fn the_latest_year_a_question_names_is_the_end_of_its_years() {
+        let q = |s: &str| question_latest_year(s, 2026);
+        assert_eq!(q("2026 年欧盟庇护申请的来源国"), Some(2026));
+        assert_eq!(q("2024 年欧盟庇护申请的来源国"), Some(2024));
+        assert_eq!(q("2015 年到 2024 年欧盟庇护申请"), Some(2024));
+        // one year run on from runs to this year
+        assert_eq!(q("2015 年以来欧盟庇护申请"), Some(2026));
+        // the last n years are counted back from the table's last year, and no year named is none
+        assert_eq!(q("近五年欧盟各国失业率"), None);
+        assert_eq!(q("欧盟庇护申请的来源国"), None);
     }
 
     #[test]
