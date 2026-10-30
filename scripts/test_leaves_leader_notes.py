@@ -5,7 +5,8 @@ on ONE Occ, bubbles first. Checks: run.drawn reads every text back, no digit out
 variables, note font >= 16, each note one line ending in its bold number (one too wide for that on two, its bold number and
 unit the second; one that fits one line drawn byte for byte as before; one too wide on two refused as before), in the sea when that costs less and over the land
 only off every circle and label (one with no room anywhere is dropped and named), its leader straight or with one bend (two
-only when no place has such a leader: the q6 page's walled-in Iraq, a room's door; a room without one still drops it), no
+only when no place has such a leader: the q6 page's walled-in Iraq, a room's door; a room without one, or past the layer's
+two-bend checks, still drops it, named), no
 note box on a circle or label the bubbles claimed (but its own point's), every EU
 circle labelled, no leader crossing another, no label or leader over a nudged circle's true-point dot, a blocked side gives
 way to the other; the column page lays the map beside the bars in one panel; a crowded map (the EU-27, a
@@ -254,11 +255,9 @@ class LeaderNotes(unittest.TestCase):
                 self.assertFalse(MK.crosses(p[:2], p[2:], q[:2], q[2:]), (p, q))
         return paths
 
-    def test_a_note_walled_in_by_its_neighbours_takes_a_two_bend_leader(self):
-        # the q6 stand-in page (asylum applications to the EU by citizenship, 2025; its 20 values, Natural Earth points and the
-        # map extent layer 1 made, copied from that run): Iraq's note, in the Iraq/Syria/Turkey/Georgia cluster, found no clear
-        # straight or one-bend leader from any of its places and was dropped; now it takes the cheapest two-bend one, Afghanistan's
-        # stays as it was, and every leader keeps off every box, circle and other leader
+    def q6(self):
+        """The q6 stand-in page (asylum applications to the EU by citizenship, 2025; its 20 values, Natural Earth points and the
+        map extent layer 1 made, copied from that run), bubbles then Afghanistan's and Iraq's notes on one Occ: (frame, svg, occ)."""
         v = dict(AF=112310, BD=37350, CD=17675, CO=21715, EG=25310, ER=12570, GE=15130, GN=14275, HT=14050, IQ=12485, MA=20205, ML=19910,
                  PE=20150, PK=19250, SD=17375, SO=18340, SY=43290, TR=31010, UA=23935, VE=90950)  # test-only copies of the run's rows
         at = dict(AF=(66.496586, 34.164262), BD=(89.684963, 24.214956), CD=(23.458829, -1.858167), CO=(-73.174347, 3.373111), EG=(29.445837, 26.186173),
@@ -275,6 +274,13 @@ class LeaderNotes(unittest.TestCase):
         svg = bubbles.cl_bubbles(bubbles.Frame({"data": dict(items=items, ext=ext), "style": style()}), occ)
         f = LN.Frame({"data": dict(ext=ext, notes=notes), "style": style()}); svg += LN.cl_leader_notes(f, occ)
         setup()
+        return f, svg, occ
+
+    def test_a_note_walled_in_by_its_neighbours_takes_a_two_bend_leader(self):
+        # the q6 page: Iraq's note, in the Iraq/Syria/Turkey/Georgia cluster, found no clear straight or one-bend leader from any
+        # of its places and was dropped; now it takes the cheapest two-bend one, Afghanistan's stays as it was, and every leader
+        # keeps off every box, circle and other leader
+        f, svg, occ = self.q6()
         self.assertEqual((f.W, f.H, f.dropped, check_svg(svg)), (560, 284, [], []))
         paths = self.leads_clear(occ, svg)
         self.assertEqual(paths[0], [(451.5, 235.8), (451.5, 101.4), (420.0, 101.4)])  # Afghanistan's, one bend, as on the page
@@ -287,6 +293,18 @@ class LeaderNotes(unittest.TestCase):
         for (x1, y1), (x2, y2) in zip(iq, iq[1:]):
             on = [p for p in mine if min(x1, x2) - 0.2 <= p[0] <= max(x1, x2) + 0.2 and min(y1, y2) - 0.2 <= p[1] <= max(y1, y2) + 0.2]
             self.assertGreaterEqual(len(on), math.dist((x1, y1), (x2, y2)) / 4, ((x1, y1), (x2, y2)))
+
+    def test_a_note_past_the_layers_two_bend_checks_is_dropped_and_named_not_placed(self):
+        # the layer's two-bend tests are one budget for all its notes: with none left, the q6 page's Iraq note (no straight or
+        # one-bend leader) drops with the usual reason and is listed, Afghanistan's draws as before; with the default it is placed
+        f0, svg0, _ = self.q6(); keep = LN.TWO_BEND_CHECKS
+        try:
+            LN.TWO_BEND_CHECKS = 0; f, svg, occ = self.q6()
+        finally:
+            LN.TWO_BEND_CHECKS = keep
+        self.assertEqual((f.dropped, check_svg(svg)), ([("IQ", "no free place for the note")], []))
+        self.assertEqual(self.leads_clear(occ, svg), [[(451.5, 235.8), (451.5, 101.4), (420.0, 101.4)]])  # Afghanistan's only, as on the page
+        self.assertNotIn("fact:times", svg); self.assertEqual((f0.dropped, "fact:times" in svg0), ([], True))
 
     def test_a_note_in_a_walled_room_takes_two_bends_through_its_door_and_none_drops_without_one(self):
         # a note's point in a room of claimed boxes on the EU frame: a door in the roof (the way in: across to the door's column, down

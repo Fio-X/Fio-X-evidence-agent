@@ -16,7 +16,12 @@ is preferred, and a note over the land keeps its halo and stays off every circle
 from the box's nearest side (or an end or a corner) straight, or with one right-angle bend (across, then down or up; or the other way), and keeps
 3 px off every claimed box and 2 px off every circle (occ.circles) but the ones its own point lies in (it ends on what it points at), and LEAD_GAP
 px off every other leader drawn (it crosses none); only a note none of whose places has such a leader tries two bends (across, along,
-across, or the mirror, the middle run on a GRID px grid, 2 BEND_COST). Measured on the q1 and q6 column pages (replayed offline): sea only and straight kept 1 of
+across, or the mirror, the middle run on a GRID px grid, 2 BEND_COST), while the layer's TWO_BEND_CHECKS last: one count for all its notes, each piece
+charged its 2 px steps times what each is tested against (boxes, circles, 9 leader cells), never the clock. Measured (the layer alone, median of 3): a
+two-bend budget per note only took the Europe sweep's 30 circles from 1.93 to 2.22 s and 60 from 1.34 to 1.91 (the deadline 2 s); shared, 1.97 and 1.37,
+the same notes dropped as before two bends; a count of pieces alone could not hold both (200 left the walled room's door unfound, it walks 568 short
+pieces; 500 cost the 60 circles 0.18 s), the charge does: the q6 page's Iraq takes 0.43 M, the room 0.33 M, the EU page's crossing test 1.2 M, a crowded map's first walled note spends
+the 1.5 M. Measured on the q1 and q6 column pages (replayed offline): sea only and straight kept 1 of
 their 4 notes, the bend alone 2, the land alone 3, both 4 (the sea first, whatever the length, gave a 400 px leader round the map);
 a note with no free place (no clear leader of up to two bends), or past label_count, is dropped and listed in Frame.dropped as (id, why), the id its name code (note<i>, its place in the
 request from 1, when it has none); the layer still draws, empty when every note was dropped (run.py sends the list back for layer 1 to keep in
@@ -46,6 +51,7 @@ LINE = 1.35  # em between a two-line note's baselines: the page check's glyph bo
 TRIES = 600  # leaders walked per note, cheapest first: a crowded picture stays within the layer's deadline (next_leaf LAYER_DEADLINE)
 GRID = 6  # px between the columns (rows) a two-bend leader's middle run is tried at
 TRIES2 = 600  # two-bend leader pieces walked per note at most (past its last runs, one per GRID column and row), when no straight or one-bend leader clears
+TWO_BEND_CHECKS = 1_500_000  # point tests the whole layer's two-bend leaders may make, shared by every note (a piece costs its 2 px steps times the boxes, circles and 9 leader cells each is tested against): past it a note with no straight or one-bend leader drops (q6's Iraq takes 0.43 M; 1.5 M cost the 30-circle Europe map 0.04 s)
 
 
 class Frame:
@@ -86,6 +92,7 @@ def cl_leader_notes(f, occ):
     items = sorted(f.notes, key=lambda n: (n["_pt"][1], str(n.get("name")))); keep, rest = items[: int(k("label_count"))], items[int(k("label_count")):]
     f.dropped += [(n["_id"], "past label_count") for n in rest]
     acc = lambda n: f.pal == "grey_accent" and n.get("name") in f.hl
+    left = TWO_BEND_CHECKS  # point tests the layer's two-bend leaders may still make, across all its notes
 
     # a circle a map layer drew (occ.circles: x, y, r and the box it claimed) is passed as the circle, not its square
     circles = getattr(occ, "circles", None) or []; squares = {c[3] for c in circles}
@@ -115,15 +122,23 @@ def cl_leader_notes(f, occ):
         """The cheapest clear leader with two right-angle bends from any of the `tried` boxes: across, along, across (its middle run at a
         GRID px column) or down, across, down (at a GRID px row), each run GRID px at least and off the note's own box, its cost as
         place's plus 2 BEND_COST. The last runs into the point are walked first, one per column and row; then the leaders through
-        the clear ones, cheapest first, each piece walked once, TRIES2 pieces at most. (cost, b1, y, path) or None."""
+        the clear ones, cheapest first, each piece walked once, TRIES2 pieces at most, while the layer's TWO_BEND_CHECKS last. (cost, b1, y, path) or None."""
+        nonlocal left
+        if left <= 0: return None  # the layer's two-bend checks are spent: the note drops
         seen = {}
-        def clear(a, b):
-            if (a, b) not in seen: seen[(a, b)] = lead_clear(a, b, pt, boxes, rings, cells)
+        load = len(boxes) + len(rings) + 9  # the tests lead_clear makes at a step at most
+        def clear(a, b):  # a piece walked is charged its tests at most against the layer's TWO_BEND_CHECKS; once they are spent none clears
+            nonlocal left
+            if (a, b) not in seen:
+                left -= (math.ceil(math.dist(a, b) / 2) + 1) * load
+                if left < 0: return False
+                seen[(a, b)] = lead_clear(a, b, pt, boxes, rings, cells)
             return seen[(a, b)]
         def own(a, b, q):  # an axis-aligned run passes through the note's own box
             return max(a[0], b[0]) > q[0] and min(a[0], b[0]) < q[2] and max(a[1], b[1]) > q[1] and min(a[1], b[1]) < q[3]
         cols = [m for m in range(GRID, int(W) - GRID // 2, GRID) if abs(m - pt[0]) >= GRID and clear((m, pt[1]), pt)]
         rows = [m for m in range(GRID, int(H) - GRID // 2, GRID) if abs(m - pt[1]) >= GRID and clear((pt[0], m), pt)]
+        if left <= 0: return None  # spent on the last runs
         paths = []
         for low, b1, y, (ex, ey) in tried:
             base = low - math.dist((ex, ey), pt) + 2 * BEND_COST
@@ -131,7 +146,7 @@ def cl_leader_notes(f, occ):
             paths += [(base + abs(m - ey) + abs(ex - pt[0]) + abs(pt[1] - m), len(paths) + i, b1, y, ((ex, ey), (ex, m), (pt[0], m), pt)) for i, m in enumerate(r for r in rows if abs(r - ey) >= GRID)]
         budget = len(seen) + TRIES2
         for cost, _, b1, y, path in sorted(paths):
-            if len(seen) >= budget: break
+            if len(seen) >= budget or left <= 0: break
             if not any(own(a, b, b1) for a, b in zip(path, path[1:])) and clear(path[1], path[2]) and clear(path[0], path[1]):
                 return (cost, b1, y, list(path))
         return None
