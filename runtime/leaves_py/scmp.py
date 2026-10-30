@@ -178,7 +178,7 @@ def rl_ring(f, occ):
                 if not occ.on_line(b, pad=1.5, own=f"year:{t[:4]}"): break
             o.append(f'<text data-on="year:{t[:4]}" x="{xl:.1f}" y="{yl:.1f}" font-size="{K("year_size")}" font-style="italic" fill="var(--t-sec)" text-anchor="start" dominant-baseline="middle" transform="{rot(ang(i + da), xl, yl)}">{t[:4] if FX.LEDGER is None else FX.entry(f"period:{f.h['ring']['q']['table']}:{t[:4]}", "tspan", None)}</text>')
         if t not in f.one:
-            xl, yl = pt(ang(i + 0.5), R1 + 8); o.append(f'<text x="{xl:.1f}" y="{yl:.1f}" font-size="10" fill="var(--t-sec)" text-anchor="middle" dominant-baseline="middle">{word("missing")}</text>')
+            xl, yl = pt(ang(i + 0.5), R1 + 8); o.append(f'<text x="{xl:.1f}" y="{yl:.1f}" font-size="11" fill="var(--t-sec)" text-anchor="middle" dominant-baseline="middle">{word("missing")}</text>')
     knock = [inset_spot(f)[-1]] if inset_spot(f) else []  # the inset (drawn above) is left clear
     for mk in f.h["ring"].get("marks", []):  # values written just outside the band at their month, rotated with it, in ink
         fa = c.F[mk["key"]]; a = f.t2a(fa["t"] + "-15") if fa.get("t") else None
@@ -191,7 +191,7 @@ def rl_ring(f, occ):
     return "".join(gd + o)  # faint guides beyond the band, open at the gap like the calendar, and broken where a value or the inset stands
 
 prod.KNOBS["ring"] = dict(color=("var(--ring, #e6765f)", ("var(--ring, #e6765f)", "#d8452f", "#c9a28e", "#8fa7b8"), "band color"), guides=(3, (0, 8, 1), "number of thin outer guide lines"),
-                          tick=(6, (0, 20, 1), "month tick length"), tick_year=(12, (0, 30, 1), "January tick length"), year_size=(10.5, (7, 16, 0.5), "year font size"), mark_size=(11, (8, 18, 0.5), "font size of numbers on the ring"),
+                          tick=(6, (0, 20, 1), "month tick length"), tick_year=(12, (0, 30, 1), "January tick length"), year_size=(11, (7, 16, 0.5), "year font size"), mark_size=(11, (8, 18, 0.5), "font size of numbers on the ring"),
                           years=(5, (2, 10, 1), "years of the annual main the page is fetched for, ending at its last year (layer 1 reads it)"),
                           months=(60, (24, 120, 1), "months the ring spans, ending at the monthly twin's last month (layer 1 reads it)"))
 

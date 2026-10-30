@@ -106,6 +106,12 @@ def proj(W, H, ext=EXT):
 # Node knobs: node -> {knob: (default, choices or (lo, hi, step), what it does)}. A page overrides any of them under
 # "style": {node: {knob: value}}; the preview (nodes.py) builds its sliders and menus from this table.
 KNOBS = {}
+# The map's place-name grey: the warm grey the names were set in (#9a968e, 2.1:1 on the member fill) at the same hue and
+# saturation, darkened until it keeps WCAG AA (4.5:1) on every default map fill (sea, land, member) and on the page ground
+# with room (5.1:1 on the member fill; an archived ring page measured 4.9:1 under its names);
+# a text size knob of the map, ring and scmp pages defaults to the page check's 11 px floor or above
+# (scripts/test_leaves_bubbles.py holds both).
+MAP_GREY = "#5c5852"
 def knob(cfg, node, k):  # style first; nodes in LEGACY also read the older top-level config key of the same name
     st = cfg.get("style", {}).get(node, {})
     return st[k] if k in st else cfg[k] if node in LEGACY and k in cfg else KNOBS[node][k][0]
@@ -274,8 +280,8 @@ def ml_route_names(m, occ):
         b, x, y, deg = pick; occ.add(b, "route_names")
         o.append(f'<text x="{x:.1f}" y="{y:.1f}" text-anchor="middle" dominant-baseline="central" font-size="{sz}"{" font-style=\"italic\"" if K("italic") == "yes" else ""} fill="{K("ink")}" stroke="{d.get("sea", "#fff")}" stroke-width="{K("halo")}" paint-order="stroke"{f" transform=\"rotate({deg:.1f} {x:.1f} {y:.1f})\"" if deg else ""} data-on="src:{esc(r["partner"])}"{FX.name_mark(r)}>{esc(nm)}</text>')
     return "".join(o) + (f'<g data-left="{esc("|".join(left))}"></g>' if left else "")  # names with no free spot, for the layer check
-KNOBS["route_names"] = dict(size=(10, (7, 16, 0.5), "font size"), italic=("yes", ("yes", "no"), "italic"), mode=("beside", ("beside", "along"), "placement: level beside the line / along the line"),
-                            gap=(3, (0, 14, 0.5), "distance from the line"), ink=("var(--t-sec)", ("var(--t-sec)", "var(--t-title)", "#9a968e"), "color"),
+KNOBS["route_names"] = dict(size=(11, (7, 16, 0.5), "font size"), italic=("yes", ("yes", "no"), "italic"), mode=("beside", ("beside", "along"), "placement: level beside the line / along the line"),
+                            gap=(3, (0, 14, 0.5), "distance from the line"), ink=("var(--t-body)", ("var(--t-body)", "var(--t-title)", MAP_GREY), "color"),
                             halo=(2.5, (0, 6, 0.5), "halo width"), drop=("skip", ("skip", "force"), "when it does not fit: skip / write anyway"))
 
 def ml_cities(m, occ):
@@ -297,7 +303,7 @@ def ml_cities(m, occ):
         o.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{dot}" fill="{K("ink")}"/><text x="{b[0]:.1f}" y="{b[3] - 2:.1f}" font-size="{sz}" fill="{K("ink")}"{FX.name_mark(r)}>{esc(nm)}</text>')
     return "".join(o)
 KNOBS["cities"] = dict(count=(12, (0, 40, 1), "at most this many"), which=("capitals", ("capitals", "all"), "capitals only / all"), min_pop=(0, (0, 500, 10), "minimum population (10,000s)"),
-                       size=(10, (7, 14, 0.5), "font size"), dot=(1.8, (0.5, 4, 0.1), "dot size"), ink=("var(--t-body)", ("var(--t-body)", "var(--t-sec)", "var(--t-title)"), "color"))
+                       size=(11, (7, 14, 0.5), "font size"), dot=(1.8, (0.5, 4, 0.1), "dot size"), ink=("var(--t-body)", ("var(--t-body)", "var(--t-title)", MAP_GREY), "color"))
 
 def ml_names(m, occ):
     """Place names on the base map (small grey type), kept clear of each other, of every box registered so far and, unless
@@ -313,7 +319,7 @@ def ml_names(m, occ):
         if not m.inside(b) or occ.hit(b, pad=(K("pad_x"), K("pad_y"))) or (K("lines") == "avoid" and occ.on_line(b, pad=2)): continue
         occ.add(b, "names"); o.append(f'<text x="{x:.1f}" y="{y:.1f}" text-anchor="middle" font-size="{sz}" letter-spacing="{tr}" fill="{K("ink")}"{' font-family="var(--serif)"' if K("font") == "serif" else ""}>{named(code)}</text>')
     return "".join(o)
-KNOBS["names"] = dict(size=(10.5, (7, 18, 0.5), "font size"), track=(2, (0, 8, 0.5), "letter spacing"), ink=("#9a968e", ("#9a968e", "#b5b1a9", "var(--t-sec)"), "color"),
+KNOBS["names"] = dict(size=(11, (7, 18, 0.5), "font size"), track=(2, (0, 8, 0.5), "letter spacing"), ink=(MAP_GREY, (MAP_GREY, "var(--t-body)", "var(--t-title)"), "color"),
                       font=("sans", ("sans", "serif"), "typeface: sans / serif"), pad_x=(6, (0, 20, 1), "horizontal padding"), pad_y=(4, (0, 16, 1), "vertical padding"),
                       hub_clear=(70, (0, 160, 5), "keep clear around the hub"), lines=("avoid", ("avoid", "cross"), "over lines: avoid / may cross"))
 
@@ -458,8 +464,8 @@ def inset_svg(m, g, x0, y0, w, note_below=False, soft=None):
         else: continue
         boxes.append(b)
         o.append(f'<text data-on="src:{esc(k)}" x="{b[0]:.1f}" y="{b[3] - 1.5:.1f}" font-size="{sz}" fill="var(--t-body)" stroke="{soft or "var(--bg)"}" stroke-width="2.5" paint-order="stroke">{named(k)}</text>')
-    o.append(f'<text x="{x0}" y="{y0 + h + 12:.1f}" font-size="10.5" fill="var(--t-sec)">{esc(inset_note(K("note")))}</text>' if note_below else
-             f'<text x="{x0}" y="{y0 - 5:.1f}" font-size="10.5" fill="var(--t-sec)">{esc(inset_note(K("note")))}</text>')
+    o.append(f'<text x="{x0}" y="{y0 + h + 12:.1f}" font-size="11" fill="var(--t-sec)">{esc(inset_note(K("note")))}</text>' if note_below else
+             f'<text x="{x0}" y="{y0 - 5:.1f}" font-size="11" fill="var(--t-sec)">{esc(inset_note(K("note")))}</text>')
     return "".join(o)
 
 def ml_inset(m, occ):
@@ -484,7 +490,7 @@ def ml_inset(m, occ):
 KNOBS["inset"] = dict(show=("auto", ("auto", "corner", "off"), "inset: auto looks for empty space in the main map first, corner puts it in a corner outside the ring"), corner=("auto", ("auto", "bl", "br", "tl", "tr"), "which corner"),
                            w_in=(190, (120, 300, 10), "width when placed inside the main map"), width=(250, (140, 360, 10), "width"), below_legend=(130, (40, 260, 5), "distance below the legend"), land=("#e4e0d8", ("#e4e0d8", "#ece9e3", "#d6d1c8"), "land color"),
                            ink=("var(--t-title)", ("var(--t-title)", "var(--t-sec)"), "line color"), line=(2.4, (0, 6, 0.2), "extra width of the thickest line"),
-                           size=(10, (8, 14, 0.5), "place-name font size"), feather=(7, (0, 20, 1), "edge fade when placed inside the main map"), note=("frame", ("frame", "locator"), "caption, a word-table key: inset.note.<key>"))
+                           size=(11, (8, 14, 0.5), "place-name font size"), feather=(7, (0, 20, 1), "edge fade when placed inside the main map"), note=("frame", ("frame", "locator"), "caption, a word-table key: inset.note.<key>"))
 
 def ml_labels_reserve(m, occ):  # room for the line-end labels, claimed before the names are placed
     for k in m.top:
@@ -664,7 +670,7 @@ def stack_area(c, d, W, H=240):
         mids[k] = (base[-1] + top[-1]) / 2; base = top
     for t in miss:
         i = times.index(t)
-        o.append(f'<text x="{px(i):.1f}" y="{H - mb - 4}" text-anchor="middle" font-size="10" fill="var(--t-sec)">{word("missing")} {FX.tlabel(t)}</text>')
+        o.append(f'<text x="{px(i):.1f}" y="{H - mb - 4}" text-anchor="middle" font-size="11" fill="var(--t-sec)">{word("missing")} {FX.tlabel(t)}</text>')
     last = []
     for k in order:
         if k in cols: last.append([py(mids[k]), k])
@@ -705,7 +711,7 @@ def profile(c, d, W, H=220):
     for v, src in axis_ticks(c, d):  # the value axis on the right: a faint hairline under the profile and its value beside it
         o.append(f'<line x1="{ml}" x2="{W - mr}" y1="{py(v):.1f}" y2="{py(v):.1f}" stroke="#e6e3dd" stroke-width="0.6"/>'
                  f'<line x1="{W - mr}" x2="{W - mr + 3}" y1="{py(v):.1f}" y2="{py(v):.1f}" stroke="var(--t-sec)" stroke-width="0.6"/>'
-                 f'<text x="{W - mr + 6}" y="{py(v):.1f}" font-size="10.5" fill="var(--t-sec)" dominant-baseline="middle">{FX.entry(src, "tspan", None)}</text>')
+                 f'<text x="{W - mr + 6}" y="{py(v):.1f}" font-size="11" fill="var(--t-sec)" dominant-baseline="middle">{FX.entry(src, "tspan", None)}</text>')
     def fill(src, col, op):
         run = []
         for i, t in enumerate(allt + [None]):
@@ -720,7 +726,7 @@ def profile(c, d, W, H=220):
     for t in allt:
         if t.endswith("-01"): o.append(f'<line x1="{px(allt.index(t)):.1f}" x2="{px(allt.index(t)):.1f}" y1="{py(0):.1f}" y2="{py(0) + 4:.1f}" stroke="var(--t-title)"/><text x="{px(allt.index(t)) + 3:.1f}" y="{H - 6}" font-size="11" fill="var(--t-sec)">{t[:4] if FX.LEDGER is None else FX.entry(f"period:{d['q']['table']}:{t[:4]}", "tspan", None)}</text>')
         if t not in one and times[0] < t < times[-1]:
-            if FX.LEDGER is None: o.append(f'<text x="{px(allt.index(t)):.1f}" y="{py(0) - 4:.1f}" text-anchor="middle" font-size="10" fill="var(--t-sec)">{word("missing")}</text>')
+            if FX.LEDGER is None: o.append(f'<text x="{px(allt.index(t)):.1f}" y="{py(0) - 4:.1f}" text-anchor="middle" font-size="11" fill="var(--t-sec)">{word("missing")}</text>')
             else: o.append(f'<line x1="{px(allt.index(t)):.1f}" x2="{px(allt.index(t)):.1f}" y1="{mt:.1f}" y2="{py(0):.1f}" stroke="var(--t-sec)" stroke-width="0.6" stroke-dasharray="2 2"/>')  # said in words beside the strip (a word has no ledger entry to mark it in svg)
     ends = {}  # label row -> right end of the last label in it
     for mk in d["marks"]:  # a note on the profile: leader from the value (a fact, or an event's month) up to a label row

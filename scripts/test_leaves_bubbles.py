@@ -187,6 +187,55 @@ class Contrast(unittest.TestCase):
             for ground in (root["--bg"], "#ffffff"):
                 self.assertGreaterEqual(contrast(colour(ink), colour(ground)), 4.5, f"{name} {ink} on {ground}")
 
+    # The knobs of the map, ring and scmp groups (knobs.json) that set a text's colour, and where that text sits: a map text on
+    # the map's fills, an html one beside the picture on the page ground; and the knobs named like a colour or a size that set
+    # no text, each with what it sets instead. A new knob of these groups with such a name is neither until it is listed.
+    TEXT_INKS = {("names", "ink"): "map", ("route_names", "ink"): "map", ("cities", "ink"): "map", ("callouts", "ink"): "page"}
+    NOT_TEXT = {("edge", "ink"): "the edge arrows' stroke", ("inset", "ink"): "the inset's flow lines",
+                ("ring", "color"): "the ring band's fill", ("labels", "fit"): "how the labels fit, not a size"}
+    TEXT_SIZES = {("names", "size"), ("route_names", "size"), ("cities", "size"), ("inset", "size"), ("labels", "size"),
+                  ("legend", "size"), ("ring", "year_size"), ("ring", "mark_size"), ("callouts", "head"), ("callouts", "body"),
+                  ("bignums", "size")}
+    OTHER_SIZES = {("bignums", "min"): "the big number's smallest size before its unit wraps"}
+
+    def knob_table(self):
+        table = json.load(open(os.path.join(HERE, "..", "runtime", "leaves_py", "knobs.json"), encoding="utf-8"))
+        groups = table["groups"]
+        nodes = sorted({n for g in ("map", "ring", "scmp") for n in groups[g]})
+        return table, {(n, k["name"]): k for n in nodes for k in table["nodes"].get(n, {}).get("knobs", [])}
+
+    def test_every_text_ink_knob_of_the_map_ring_and_scmp_pages_keeps_wcag_aa_where_its_text_sits(self):
+        # each text-colour knob's default and every option (a page may pick any), resolved from tokens.css under the page's
+        # own :root (scmp.PAGE_ROOT): at least 4.5:1 (WCAG 2 SC 1.4.3, body text) on the page ground and on #fff, and a map
+        # text also on each default fill of the base map it is drawn over (sea, land, member states); the same floor layer 1
+        # holds a baked page's measured text to
+        import scmp
+        root = {}
+        for css in (open(os.path.join(HERE, "..", "runtime", "leaves_py", "tokens.css"), encoding="utf-8").read(), scmp.PAGE_ROOT):
+            root.update(re.findall(r"(--[\w-]+):(#[0-9a-fA-F]{6})", css))
+        table, knobs = self.knob_table()
+        base = {k["name"]: k["default"] for k in table["nodes"]["base"]["knobs"]}
+        grounds = {"page": [root["--bg"], "#ffffff"], "map": [root["--bg"], "#ffffff", base["sea"], base["land"], base["member"]]}
+        named = {key for key in knobs if key[1] in ("ink", "color", "colour") or "fill" in key[1]}
+        self.assertEqual(named - set(self.NOT_TEXT), set(self.TEXT_INKS), "a colour knob of these groups is listed as text or not")
+        for key, where in self.TEXT_INKS.items():
+            k = knobs[key]
+            for ink in dict.fromkeys([k["default"], *k["options"]]):
+                hexs = root[re.fullmatch(r"var\((--[\w-]+)\)", ink).group(1)] if ink.startswith("var(") else ink
+                for ground in grounds[where]:
+                    self.assertGreaterEqual(contrast(colour(hexs), colour(ground)), 4.5, f"{key} {ink} on {ground}")
+        # the names' grey keeps its hue: the same warm grey family as the one it replaces
+        self.assertEqual(knobs[("names", "ink")]["default"], prod.MAP_GREY)
+
+    def test_every_text_size_knob_of_the_map_ring_and_scmp_pages_defaults_to_the_type_floor(self):
+        # the page check's smallest text, 11 px at 1440 wide (src/next_run.rs TYPE_FLOOR_PX); these pages draw their svg at
+        # one user unit a px, so a size knob's default is the size the check measures
+        _, knobs = self.knob_table()
+        named = {key for key in knobs if "size" in key[1] or key[1] in ("head", "body")}
+        self.assertEqual(named, self.TEXT_SIZES, "a size knob of these groups is listed as a text size")
+        for key in sorted(self.TEXT_SIZES | set(self.OTHER_SIZES)):
+            self.assertGreaterEqual(knobs[key]["default"], 11, f"{key}")
+
     def test_the_source_line_is_set_at_the_labels_floor_in_body_ink_and_the_page_ends_close_under_it(self):
         # a leaf page's shell (scmp.shell: the ring, column and scmp pages): the footer's rule that wins (the last in the page's
         # css) sets the source line at the labels' smallest size (the low end of the bars' and the map labels' size knobs) in an

@@ -438,7 +438,7 @@
     },
     {
      "name": "size",
-     "default": 10,
+     "default": 11,
      "min": 7,
      "max": 14,
      "step": 0.5,
@@ -457,8 +457,8 @@
      "default": "var(--t-body)",
      "options": [
       "var(--t-body)",
-      "var(--t-sec)",
-      "var(--t-title)"
+      "var(--t-title)",
+      "#5c5852"
      ],
      "what": "color"
     }
@@ -708,7 +708,7 @@
     },
     {
      "name": "size",
-     "default": 10,
+     "default": 11,
      "min": 8,
      "max": 14,
      "step": 0.5,
@@ -873,7 +873,7 @@
    "knobs": [
     {
      "name": "size",
-     "default": 10.5,
+     "default": 11,
      "min": 7,
      "max": 18,
      "step": 0.5,
@@ -889,11 +889,11 @@
     },
     {
      "name": "ink",
-     "default": "#9a968e",
+     "default": "#5c5852",
      "options": [
-      "#9a968e",
-      "#b5b1a9",
-      "var(--t-sec)"
+      "#5c5852",
+      "var(--t-body)",
+      "var(--t-title)"
      ],
      "what": "color"
     },
@@ -1069,7 +1069,7 @@
     },
     {
      "name": "year_size",
-     "default": 10.5,
+     "default": 11,
      "min": 7,
      "max": 16,
      "step": 0.5,
@@ -1109,7 +1109,7 @@
    "knobs": [
     {
      "name": "size",
-     "default": 10,
+     "default": 11,
      "min": 7,
      "max": 16,
      "step": 0.5,
@@ -1143,11 +1143,11 @@
     },
     {
      "name": "ink",
-     "default": "var(--t-sec)",
+     "default": "var(--t-body)",
      "options": [
-      "var(--t-sec)",
+      "var(--t-body)",
       "var(--t-title)",
-      "#9a968e"
+      "#5c5852"
      ],
      "what": "color"
     },

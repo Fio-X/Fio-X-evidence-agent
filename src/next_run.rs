@@ -4689,6 +4689,7 @@ mod tests {
                     println!("record {} {} {} ms {}", r.node, r.layer, r.outcome, r.ms);
                 }
                 println!("drawn page {} bytes ms {}", drawn.html.len(), started.elapsed().as_millis());
+                println!("type {}", drawn.type_measured.as_ref().map_or("none".to_string(), Value::to_string));
             }
             Ok(_) => panic!("not a leaf page"),
             Err(why) => {
@@ -4756,6 +4757,7 @@ mod tests {
                     println!("record {} {} {} ms {}", r.node, r.layer, r.outcome, r.ms);
                 }
                 println!("drawn page {} bytes ms {}", drawn.html.len(), started.elapsed().as_millis());
+                println!("type {}", drawn.type_measured.as_ref().map_or("none".to_string(), Value::to_string));
                 if let Ok(out) = std::env::var("LEAF_PAGE_OUT") {
                     std::fs::write(out, &drawn.html).unwrap();
                 }
