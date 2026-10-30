@@ -181,10 +181,12 @@ pub enum Request<'a> {
         table: &'a TableMeta,
         csv: &'a str,
     },
-    /// A fetched Eurostat SDMX-CSV file's rows as the leaf fill reads them, one per observed value in file order:
-    /// {src "series:<table>/<key>:<period>:OBS_VALUE", table, dims, time, value}, the key the row's codes between LAST UPDATE
-    /// and TIME_PERIOD joined by ".", the value as the file writes it. A cell with no value is left out; a value that is not
-    /// a finite number (NaN and inf included) stops the read, and so does a World Bank file.
+    /// A fetched file's rows as the leaf fill reads them, one per observed value in file order: {src, table, dims, time,
+    /// value}, the value as the file writes it. Eurostat SDMX-CSV: src "series:<table>/<key>:<period>:OBS_VALUE", the key the
+    /// row's codes between LAST UPDATE and TIME_PERIOD joined by "."; World Bank (the cells worldbank_csv reads): src
+    /// "series:<table>/<place>:<date>:value", dims the one place dimension "country" with its code as written (an aggregate
+    /// such as WLD kept, as Eurostat's EU27_2020 is). A cell with no value is left out; a value that is not a finite number
+    /// (NaN and inf included) stops the read.
     SeriesRows { table: &'a TableMeta, csv: &'a str },
     /// The companions kept: `rows` holds the fetched rows of the main and of each candidate that was fetched; a candidate
     /// with none is dropped. Each shortlisted candidate not kept comes back with why.
@@ -484,10 +486,21 @@ pub fn hub_origin(
     }
 }
 
-/// Request::SeriesRows: the file's columns as sdmx_csv reads them, each value kept as written.
+/// Request::SeriesRows: the file's columns as sdmx_csv reads them (a World Bank file's as worldbank_csv does, from the same
+/// cells), each value kept as written.
 fn series_rows(table: &TableMeta, csv: &str) -> Result<Vec<Value>, String> {
     if table.worldbank {
-        return Err(format!("{} is a World Bank table, not Eurostat SDMX-CSV", table.id));
+        return worldbank_cells(csv)?
+            .cells
+            .into_iter()
+            .map(|(line, place, date, v)| {
+                if !v.parse::<f64>().is_ok_and(f64::is_finite) {
+                    return Err(format!("line {line}: {WB_VALUE} {v} is not a number"));
+                }
+                Ok(json!({"src": format!("series:{}/{place}:{date}:{WB_VALUE}", table.id), "table": table.id,
+                    "dims": {WB_COUNTRY: place}, "time": date, "value": v}))
+            })
+            .collect();
     }
     let mut lines = csv.lines().filter(|l| !l.trim().is_empty());
     let header = fields(lines.next().ok_or("the fetched file is empty")?);
@@ -791,10 +804,15 @@ const WB_COUNTRY: &str = "country";
 const WB_DATE: &str = "date";
 const WB_VALUE: &str = "value";
 
-/// A fetched World Bank file as classify's input: one dimension, the country, with the codes the file holds in the catalogue's
-/// order (a code the catalogue does not list follows, in file order). The World Bank has no flags, so a row with no value is left
-/// out; a value that is not a number stops the read.
-fn worldbank_csv(table: &TableMeta, csv: &str) -> Result<TableInput, String> {
+/// A fetched World Bank file's cells: the place codes it holds in file order, and each cell with a value as (its line, place,
+/// date, value trimmed and as written). The World Bank has no flags, so a row with no value is no cell; a line short of the
+/// header stops the read. worldbank_csv and series_rows both read a World Bank file through it, so they read the same cells.
+struct WbCells {
+    places: Vec<String>,
+    cells: Vec<(usize, String, String, String)>,
+}
+
+fn worldbank_cells(csv: &str) -> Result<WbCells, String> {
     let mut lines = csv.lines().filter(|l| !l.trim().is_empty());
     let header = fields(lines.next().ok_or("the fetched file is empty")?);
     let at = |name: &str| {
@@ -804,8 +822,7 @@ fn worldbank_csv(table: &TableMeta, csv: &str) -> Result<TableInput, String> {
             .ok_or(format!("the fetched file has no {name} column"))
     };
     let (place, time, value) = (at(WB_COUNTRY)?, at(WB_DATE)?, at(WB_VALUE)?);
-    let mut in_file: Vec<String> = Vec::new();
-    let mut rows = Vec::new();
+    let mut read = WbCells { places: Vec::new(), cells: Vec::new() };
     for (n, line) in lines.enumerate() {
         let f = fields(line);
         if f.len() < header.len() {
@@ -816,20 +833,31 @@ fn worldbank_csv(table: &TableMeta, csv: &str) -> Result<TableInput, String> {
                 header.len()
             ));
         }
-        if !in_file.contains(&f[place]) {
-            in_file.push(f[place].clone());
+        if !read.places.contains(&f[place]) {
+            read.places.push(f[place].clone());
         }
-        let period = Some(f[time].clone()).filter(|p| !p.is_empty());
         match f[value].trim() {
             "" => {}
-            v => rows.push((
-                vec![f[place].clone()],
-                period,
-                v.parse::<f64>()
-                    .map_err(|_| format!("line {}: {WB_VALUE} {v} is not a number", n + 2))?,
-            )),
+            v => read.cells.push((n + 2, f[place].clone(), f[time].clone(), v.to_string())),
         }
     }
+    Ok(read)
+}
+
+/// A fetched World Bank file as classify's input: one dimension, the country, with the codes the file holds in the catalogue's
+/// order (a code the catalogue does not list follows, in file order). The World Bank has no flags, so a row with no value is left
+/// out; a value that is not a number stops the read.
+fn worldbank_csv(table: &TableMeta, csv: &str) -> Result<TableInput, String> {
+    let WbCells { places: in_file, cells } = worldbank_cells(csv)?;
+    let rows = cells
+        .into_iter()
+        .map(|(line, place, date, v)| {
+            let value = v
+                .parse::<f64>()
+                .map_err(|_| format!("line {line}: {WB_VALUE} {v} is not a number"))?;
+            Ok((vec![place], Some(date).filter(|p| !p.is_empty()), value))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
     let mut codes: Vec<String> = table
         .places
         .iter()
@@ -1052,7 +1080,8 @@ ESTAT:SDG_07_40(1.0),15/09/26 23:00:00,A,REN,PC,XX,2025,,m,
     }
 
     /// The q1 head read as series rows: one per value in file order (the quoted LAST UPDATE read whole, the cell that cannot
-    /// exist left out), the value as written; a World Bank table and a value that is not a finite number are refused.
+    /// exist left out), the value as written; a value that is not a finite number is refused, and so is the file read as a
+    /// World Bank table's (it has no country column).
     #[test]
     fn a_fetched_file_reads_as_series_rows_with_each_value_as_written() {
         let Ok(Reply::SeriesRows(rows)) = call(Request::SeriesRows { table: &meta(), csv: Q1_CSV }) else {
@@ -1065,7 +1094,10 @@ ESTAT:SDG_07_40(1.0),15/09/26 23:00:00,A,REN,PC,XX,2025,,m,
                 "dims": {"freq": "A", "nrg_bal": "REN", "unit": "PC", "geo": "EU27_2020"}, "time": "2025", "value": "25.2"})
         );
         let wb = TableMeta { worldbank: true, ..meta() };
-        assert!(call(Request::SeriesRows { table: &wb, csv: Q1_CSV }).is_err());
+        assert_eq!(
+            call(Request::SeriesRows { table: &wb, csv: Q1_CSV }).err().unwrap(),
+            "the fetched file has no country column"
+        );
         for cell in [",n/a,", ",NaN,", ",inf,"] {
             let bad = Q1_CSV.replace(",44.2,", cell);
             let why = call(Request::SeriesRows { table: &meta(), csv: &bad }).err().unwrap();
@@ -1216,6 +1248,51 @@ CHN,\"China\",\"East Asia & Pacific\",2023,
 WLD,\"World\",\"Aggregates\",2024,4.7
 IND,\"India\",\"South Asia\",2024,2.1
 ";
+
+    /// The q4 head read as series rows from the cells classify's input is read from: one per value in file order, the one
+    /// place dimension "country" with the code as written (the aggregate WLD kept, as Eurostat's EU27_2020 is; which codes
+    /// are countries is the shape's to say), the value as written; the row with no value left out, a value that is not a
+    /// finite number refused. Each row is a value classify reads, at the same place and year.
+    #[test]
+    fn a_world_bank_file_reads_as_series_rows_from_the_cells_classify_reads() {
+        let Ok(Reply::SeriesRows(rows)) = call(Request::SeriesRows { table: &wb_meta(), csv: Q4_CSV }) else {
+            panic!("no series rows")
+        };
+        assert_eq!(rows.len(), 5, "the row with no value is left out");
+        assert_eq!(
+            rows[0],
+            json!({"src": "series:EN.GHG.CO2.PC.CE.AR5@2/USA:2024:value", "table": "EN.GHG.CO2.PC.CE.AR5@2",
+                "dims": {"country": "USA"}, "time": "2024", "value": "13.8"})
+        );
+        let places: Vec<&str> = rows.iter().filter_map(|r| r["dims"]["country"].as_str()).collect();
+        assert_eq!(places, ["USA", "USA", "CHN", "WLD", "IND"]);
+        assert_eq!(rows[3]["src"], "series:EN.GHG.CO2.PC.CE.AR5@2/WLD:2024:value");
+        let input = sdmx_csv(&wb_meta(), Q4_CSV).unwrap();
+        let read: Vec<(String, String, f64)> = rows
+            .iter()
+            .map(|r| {
+                let text = |k: &str| r[k].as_str().unwrap().to_string();
+                (r["dims"]["country"].as_str().unwrap().to_string(), text("time"), text("value").parse().unwrap())
+            })
+            .collect();
+        let classified: Vec<(String, String, f64)> =
+            input.rows.iter().map(|(codes, period, v)| (codes[0].clone(), period.clone().unwrap(), *v)).collect();
+        assert_eq!(read, classified);
+        for cell in [",1x\n", ",NaN\n", ",inf\n"] {
+            let bad = Q4_CSV.replace(",13.8\n", cell);
+            let why = call(Request::SeriesRows { table: &wb_meta(), csv: &bad }).err().unwrap();
+            assert!(why.starts_with("line 2: value ") && why.ends_with(" is not a number"), "{why}");
+        }
+        let short = Q4_CSV.replace("USA,\"United States\",\"North America\",2023,14.1", "USA,2023");
+        assert_eq!(
+            call(Request::SeriesRows { table: &wb_meta(), csv: &short }).err().unwrap(),
+            "line 3 of the fetched file has 2 fields, the header 5"
+        );
+        assert_eq!(
+            call(Request::SeriesRows { table: &wb_meta(), csv: "" }).err().unwrap(),
+            "the fetched file is empty"
+        );
+    }
 
     #[test]
     fn a_world_bank_file_is_read_as_one_country_dimension_in_the_catalogue_order() {

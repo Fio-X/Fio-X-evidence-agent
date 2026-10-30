@@ -954,14 +954,32 @@ fn hub_origin(s: &mut Shape, _: &[(&str, &[Value])], catalogue: &dyn Catalogue) 
     Ok(())
 }
 
-/// One table across places: exactly one dimension but freq varies, and at least two of its codes are countries.
+/// The catalogue's table of a World Bank main (an id ending "@2", as step_for reads it); None for a Eurostat main. A World
+/// Bank id the catalogue does not list as a World Bank table refuses.
+fn worldbank_main(s: &Shape, catalogue: &dyn Catalogue) -> Result<Option<crate::l5geo::TableMeta>, String> {
+    if !s.main.ends_with("@2") {
+        return Ok(None);
+    }
+    match catalogue.table(&s.main) {
+        Some(meta) if meta.worldbank => Ok(Some(meta)),
+        _ => Err(format!("the catalogue lists no World Bank table {}", s.main)),
+    }
+}
+
+/// One table across places: exactly one dimension but freq varies, and at least two of its codes are countries (the
+/// knowledge group's Countries; for a World Bank main, the codes the catalogue lists among its countries, aggregates left
+/// out, as the fetch's places are read: TableMeta places).
 fn one_place(s: &mut Shape, _: &[(&str, &[Value])], catalogue: &dyn Catalogue) -> Result<(), String> {
     let varied: Vec<&String> = s.dims.iter().filter(|(d, c)| d.as_str() != "freq" && c.len() > 1).map(|(d, _)| d).collect();
     let [place] = varied.as_slice() else {
         return Err(format!("main {} varies on {varied:?}, not on one place dimension", s.main));
     };
     let place = place.to_string();
-    let countries = catalogue.countries(&s.dims[&place].iter().cloned().collect::<Vec<_>>())?;
+    let codes: Vec<String> = s.dims[&place].iter().cloned().collect();
+    let countries = match worldbank_main(s, catalogue)? {
+        Some(meta) => codes.into_iter().filter(|c| meta.places.iter().any(|(_, id)| id == c)).collect(),
+        None => catalogue.countries(&codes)?,
+    };
     if countries.len() < 2 {
         return Err(format!("main {place} holds {} countries, not two or more", countries.len()));
     }
@@ -969,9 +987,13 @@ fn one_place(s: &mut Shape, _: &[(&str, &[Value])], catalogue: &dyn Catalogue) -
     Ok(())
 }
 
-/// The main holds one unit.
-fn one_unit(s: &mut Shape, _: &[(&str, &[Value])], _: &dyn Catalogue) -> Result<(), String> {
-    s.unit = one_code(&s.dims, "unit").ok_or_else(|| format!("main {} has no single unit", s.main))?;
+/// The main holds one unit: its unit dimension's one code; a World Bank main, which has no unit dimension, the unit code the
+/// catalogue registers for its indicator (TableMeta unit, as measure_of takes it), and none registered refuses.
+fn one_unit(s: &mut Shape, _: &[(&str, &[Value])], catalogue: &dyn Catalogue) -> Result<(), String> {
+    s.unit = match worldbank_main(s, catalogue)? {
+        Some(meta) => meta.unit.map(|u| u.code).ok_or_else(|| format!("main {} has no registered unit", s.main))?,
+        None => one_code(&s.dims, "unit").ok_or_else(|| format!("main {} has no single unit", s.main))?,
+    };
     Ok(())
 }
 
@@ -5922,6 +5944,143 @@ mod tests {
                 ..SixCountries.table(id)?
             })
         }
+    }
+
+    /// A World Bank indicator as the catalogue lists it: three countries (aggregates left out), the unit wb-units.tsv registers
+    /// (`unit`, none when it has no row), or a table the catalogue does not list as World Bank's (`listed` false).
+    struct WbTable {
+        unit: Option<&'static str>,
+        listed: bool,
+    }
+
+    impl Catalogue for WbTable {
+        fn top5(&self, _: &str, _: &[String]) -> crate::l5geo::Ranking {
+            unreachable!()
+        }
+        fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
+            unreachable!()
+        }
+        fn source(&self) -> &Value {
+            &Value::Null
+        }
+        fn table(&self, id: &str) -> Option<crate::l5geo::TableMeta> {
+            Some(crate::l5geo::TableMeta {
+                id: id.into(),
+                worldbank: self.listed,
+                dims: Vec::new(),
+                end_year: None,
+                places: [("CN", "CHN"), ("IN", "IND"), ("US", "USA")].iter().map(|(i, c)| (i.to_string(), c.to_string())).collect(),
+                place_members: Vec::new(),
+                freqs: Vec::new(),
+                unit: self.unit.map(|code| crate::l5geo::Unit { code: code.into(), label: String::new(), kind: Some("rate") }),
+            })
+        }
+    }
+
+    /// A World Bank main's series rows (next_knowledge series_rows: the one place dimension "country", codes as written, the
+    /// aggregate WLD kept) take the column page's shape: the place is the country dimension, its countries the codes the
+    /// catalogue lists among its countries (WLD is none), the unit the indicator's registered code, the year the last any
+    /// country has a value at; the ranking ranks those countries only. No registered unit, or a table the catalogue does not
+    /// list as World Bank's, is refused by name; Countries is never asked of World Bank codes.
+    #[test]
+    fn a_world_bank_main_takes_the_column_shape_with_its_registered_unit() {
+        let id = "EN.GHG.CO2.PC.CE.AR5@2";
+        let row = |place: &str, time: &str, value: &str| {
+            json!({"src": format!("series:{id}/{place}:{time}:value"), "table": id, "dims": {"country": place},
+                "time": time, "value": value})
+        };
+        let rows = vec![
+            row("USA", "2024", "13.8"),
+            row("USA", "2023", "14.1"),
+            row("CHN", "2024", "9.2"),
+            row("WLD", "2025", "4.7"),
+            row("IND", "2024", "2.1"),
+        ];
+        let tables: Vec<(&str, &[Value])> = vec![(id, &rows)];
+        let eats: Vec<String> = ["annual", "one_place", "one_unit", "last_year"].map(String::from).to_vec();
+        let shape = shape_of(&eats, &tables, &WbTable { unit: Some("TCO2E_HAB"), listed: true }).unwrap();
+        assert_eq!(
+            (shape.place.as_str(), shape.countries.clone(), shape.unit.as_str(), shape.year.as_str()),
+            ("country", vec!["CHN".to_string(), "IND".into(), "USA".into()], "TCO2E_HAB", "2024")
+        );
+        let picks = picks_of(&["ranked".to_string()], &shape, &rows, &[]).unwrap();
+        assert_eq!(picks.ranked, ["USA", "CHN", "IND"]);
+        assert!(next_pack::unit_short(&shape.unit).is_some(), "the fill's unit line has a row for it");
+        assert_eq!(
+            shape_of(&eats, &tables, &WbTable { unit: None, listed: true }).unwrap_err(),
+            format!("not this shape: main {id} has no registered unit")
+        );
+        assert_eq!(
+            shape_of(&eats, &tables, &WbTable { unit: Some("TCO2E_HAB"), listed: false }).unwrap_err(),
+            format!("not this shape: the catalogue lists no World Bank table {id}")
+        );
+        let ring: Vec<String> = ["annual", "years_2", "hub_origin"].map(String::from).to_vec();
+        assert!(shape_of(&ring, &tables, &WbTable { unit: Some("TCO2E_HAB"), listed: true }).is_err());
+    }
+
+    /// The main of a stored World Bank run (a copy of its events.jsonl, claims.jsonl, data/, shadow/ and computations/ at
+    /// STORED_WB_RUN; the catalogue env as the product's; run with --ignored) as leaf_page asks for its page: the table of the
+    /// run's first next_chart event, prepared as its candidates and picks calls left it (file, sheet, claims; no companion),
+    /// drawn as the run's next_chart templates, under the question of its next_catalogue event; then leaf_request. Prints
+    /// each recipe's outcome: the recipe whose request was made, or the recipe and stage it stopped at, and why.
+    #[test]
+    #[ignore]
+    fn a_stored_world_bank_run_s_leaf_request() {
+        let run = std::path::PathBuf::from(std::env::var("STORED_WB_RUN").unwrap());
+        let catalogue = crate::next_flow::GroupCatalogue::from_env(|k| std::env::var(k).ok()).unwrap();
+        let events: Vec<Value> = std::fs::read_to_string(run.join("events.jsonl"))
+            .unwrap()
+            .lines()
+            .filter_map(|l| serde_json::from_str(l).ok())
+            .collect();
+        let question = events.iter().find(|e| e["type"] == "next_catalogue").unwrap()["question"].as_str().unwrap().to_string();
+        let charts: Vec<&Value> = events.iter().filter(|e| e["type"] == "next_chart").collect();
+        let main = charts[0]["table"].as_str().unwrap().to_string();
+        let drawn: Vec<&str> = charts
+            .iter()
+            .flat_map(|e| [e["template"].as_str(), e["second"]["template"].as_str()])
+            .flatten()
+            .collect();
+        let dataset = main.strip_suffix("@2").unwrap();
+        let (mut args, mut sheet, mut picked) = (Map::new(), String::new(), None);
+        for e in events.iter().filter(|e| e["toolName"] == "newsroom_data_prepare") {
+            if e["type"] == "tool_execution_start" {
+                args = e["args"].as_object().cloned().unwrap_or_default();
+                continue;
+            }
+            let d = &e["result"]["details"];
+            if e["type"] != "tool_execution_end" || d["dataset"] != dataset {
+                continue;
+            }
+            match d["mode"].as_str() {
+                Some("candidates") => sheet = d["sheet"].as_str().unwrap().to_string(),
+                Some("picks") => picked = Some((d["filePath"].as_str().unwrap().to_string(), d["claims"].as_array().cloned().unwrap())),
+                _ => {}
+            }
+        }
+        let (file, claims) = picked.unwrap();
+        let prepared = Prepared {
+            id: main.clone(),
+            title: String::new(),
+            file,
+            args,
+            sheet,
+            claims,
+            places_zh: Vec::new(),
+            companions: Vec::new(),
+        };
+        println!("main {main} file {} claims {} drawn {drawn:?} question {question}", prepared.file, prepared.claims.len());
+        let got = leaf_request(&run, &[prepared], &drawn, &catalogue, (&question, ("标题", "导语", "栏目")), &Default::default());
+        match &got {
+            Ok((recipe, fill)) => println!("WBRUN {main} recipe {recipe} request made, {} rows", fill["rows"].as_array().map_or(0, Vec::len)),
+            Err((recipe, stage, why)) => println!("WBRUN {main} recipe {recipe} stopped at {stage}: {why}"),
+        }
+        let reached = match &got {
+            Ok((recipe, _)) => *recipe,
+            Err((recipe, stage, _)) if *stage != "shape" => *recipe,
+            Err((_, _, why)) => panic!("no recipe takes the shape: {why}"),
+        };
+        assert_eq!(reached, "column");
     }
 
     // A second topic through the same nodes: a World Bank ranking of eight economies (q5, its share aged 65 and above).
