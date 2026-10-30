@@ -221,10 +221,10 @@ def drawn(svg):
 NOT_LEAF = ("top", "band", "strip", "row", "bignums")
 
 
-def page(panel, got):
+def page(panel, got, sizes=None):
     """The whole page around the layers the panel drew (`got`, layer -> svg or html), as scmp.page lays it out; a column
-    page as column_page lays it out."""
-    if panel.node == "column": return column_page(panel, got)
+    page as column_page lays it out, with the pieces another child drew (`sizes`, layer -> [w, h]) among its layers."""
+    if panel.node == "column": return column_page(panel, got, sizes or {})
     if panel.node == "scmp": return scmp_page(panel, got)
     f, spec = panel.f, panel.spec; tin = bool(f.h.get("_title"))
     pic = [n for n in scmp.RING_SVG if not (n == "inset" and tin)]
@@ -245,25 +245,30 @@ def page(panel, got):
     return {"refused": [f"page: the page still holds the placeholder {k}" for k in left]} if left else {"html": html}
 
 
-def column_page(panel, got):
+def column_page(panel, got, sizes):
     """The column page around its layers: the header (with the big numbers beside the title when its recipe draws bignums,
     their box tagged; the title alone across the whole page when not: wide), then under the unit and year line the map panel
     (its layers in one svg, each tagged, when the hero has one) and the bars' picture beside it; the browser check's hooks
-    as the ring's (COLUMN_HOOKS)."""
+    as the ring's (COLUMN_HOOKS). Under the hero, above the footer, the illustration strip when layer 1 gives one
+    (illus_strip, its size in `sizes`): line art only, in its own svg, hidden from a screen reader."""
     f, spec = panel.f, panel.spec
-    need = (["bignums"] if "bignums" in got else []) + ["bars"]
+    need = (["bignums"] if "bignums" in got else []) + ["bars"] + (["illus_strip"] if "illus_strip" in got else [])
     if f.mv: need += [n for n in MAP_LAYERS if n in (f.h.get("leaves") or {})]
     off = [f"page: {k} is not drawn by a leaf layer yet" for k in NOT_LEAF if spec.get(k)]
     off += [f"page: no layer {n}" for n in need if not isinstance(got.get(n), str)]
     off += [f"page: {n} is no layer the page places" for n in got if n not in need]
     if not off and "bignums" in got and not re.match(r"<\w", got["bignums"]): off.append("page: the big numbers have no root element to tag")
+    wh = sizes.get("illus_strip")
+    if "illus_strip" in got and not (isinstance(wh, list) and len(wh) == 2 and all(isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0 for v in wh)):
+        off.append("page: the illustration strip comes with no size [w, h]")
     if off: return {"refused": off}
     box = re.sub(r"^<(\w+)", r'<\1 data-layer="bignums"', got["bignums"], count=1) if "bignums" in got else None
     unit = FX.worded(spec, panel.c.F, "unit", spec["hero"]["unit"]) if spec["hero"].get("unit") else ""
     pic = "".join(f'<g data-layer="{n}">{got[n]}</g>' for n in MAP_LAYERS if n in need)
     hero = hooked(column.column_shell(f, f'<g data-layer="bars">{got["bars"]}</g>', unit, pic), panel.c, spec, COLUMN_HOOKS)
     if isinstance(hero, list): return {"refused": hero}
-    html = scmp.shell(panel.c, spec, scmp.page_head(panel.c, spec, box=box, wide=box is None) + hero, column.CSS)
+    strip = column.strip_shell(got["illus_strip"], *wh) if "illus_strip" in got else ""
+    html = scmp.shell(panel.c, spec, scmp.page_head(panel.c, spec, box=box, wide=box is None) + hero + strip, column.CSS)
     left = placeholders(html)
     return {"refused": [f"page: the page still holds the placeholder {k}" for k in left]} if left else {"html": html}
 
@@ -347,7 +352,7 @@ def main():
         elif req.get("phase") == "page":
             if off: out = {"refused": [f"page: {off}"]}
             else:
-                try: out = page(panel, req.get("layers") or {})
+                try: out = page(panel, req.get("layers") or {}, req.get("sizes") or {})
                 except FX.Refused as e: out = {"refused": [f"page: {e}"]}
         elif name not in layers: out = {"error": f"no {node} layer {name}"}
         elif off: out = {"refused": [f"{name}: {off}"]}

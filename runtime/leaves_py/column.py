@@ -174,6 +174,13 @@ def column_shell(f, bars, unit, pic=""):
     return f'<div class="hero column"><div class="cu">{unit}{word("list.sep")}{year}</div>{bars}</div>'
 
 
+def strip_shell(svg, w, h):
+    """The illustration strip under the hero: layer 1's strip (line art in the page's ink and accent, no text) in its own
+    svg, as wide as the hero, hidden from a screen reader (it says nothing the page does not)."""
+    return (f'<div class="illus-strip" aria-hidden="true"><svg viewBox="0 0 {w:g} {h:g}" width="{w:g}" height="{h:g}">'
+            f'<g data-layer="illus_strip">{svg}</g></svg></div>')
+
+
 # The header's second column is as wide as the big numbers' box (bignums.width), which sizes each number to its cell.
-CSS = """.hero.column{position:relative;width:1140px;margin:8px 0 30px}.hero.column .cu{font:400 12px/17px var(--sans);color:var(--t-sec);margin-bottom:6px}""" + \
+CSS = """.illus-strip{width:1140px;margin:0 0 24px}.illus-strip svg{display:block}""" + """.hero.column{position:relative;width:1140px;margin:8px 0 30px}.hero.column .cu{font:400 12px/17px var(--sans);color:var(--t-sec);margin-bottom:6px}""" + \
     ".hero.column .cm{display:flex;gap:%dpx;align-items:flex-start}.hero.column .cm svg{flex:none}" % MAP_GAP  # the map, the gap, the bars

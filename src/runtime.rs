@@ -405,6 +405,18 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
     let leaves_dir = runtime_dir.join("leaves_py");
     crate::group_guard::create_dir_all(artifact_dir, &leaves_dir)
         .with_context(|| format!("failed to create leaf runtime directory: {}", leaves_dir.display()))?;
+    // The illustration strip's child (next_leaf::strip), its piece sets and the rough.js bundle it draws with.
+    let strip_dir = runtime_dir.join("leaves_js");
+    crate::group_guard::create_dir_all(artifact_dir, &strip_dir)
+        .with_context(|| format!("failed to create strip runtime directory: {}", strip_dir.display()))?;
+    for (path, text) in [
+        (runtime_dir.join("leaves_js/illus_strip.cjs"), include_str!("../runtime/leaves_js/illus_strip.cjs")),
+        (runtime_dir.join("leaves_js/pieces-energy.cjs"), include_str!("../runtime/leaves_js/pieces-energy.cjs")),
+        (runtime_dir.join("leaves_js/pieces-energy.json"), include_str!("../runtime/leaves_js/pieces-energy.json")),
+        (runtime_dir.join("leaves_js/roughjs-4.6.6.cjs.js"), include_str!("../runtime/leaves_js/roughjs-4.6.6.cjs.js")),
+    ] {
+        write_if_changed(artifact_dir, &path, text)?;
+    }
     for (path, text) in [
         (runtime_dir.join("leaves_py/bake.py"), include_str!("../runtime/leaves_py/bake.py")),
         (runtime_dir.join("leaves_py/bubbles.py"), include_str!("../runtime/leaves_py/bubbles.py")),

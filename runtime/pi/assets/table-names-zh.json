@@ -1,0 +1,16 @@
+{
+ "schema_version": "0.1.0",
+ "rules": [
+  "zh = a Chinese name for a catalogue table, printed in a page's source line in place of the table's English title; the table id stays beside it.",
+  "Only names the project owner reviewed are listed (zh_source 'reviewed', with the review date); a name is never machine-translated into this file.",
+  "A table with no entry keeps its English title as the catalogue lists it."
+ ],
+ "tables": [
+  {
+   "id": "sdg_07_40",
+   "zh": "可再生能源在最终能源消费总量中的占比（按部门）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-30"
+  }
+ ]
+}

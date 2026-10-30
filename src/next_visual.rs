@@ -6,7 +6,7 @@
 //! group's door) and asks here whether the browser check passed those bytes.
 
 use crate::next_facts::{compute, leaf_ledger, leaf_refs, stored_request, Fact, Row, Spec};
-use crate::next_leaf::{bake_leaf_page, draw_page, leaves, Layer, Recipe, Record, Runner};
+use crate::next_leaf::{bake_leaf_page, draw_page_given, leaves, Layer, Recipe, Record, Runner, Strip};
 use crate::next_ledger::{check_numbers, dropped_entry, name_src, point_entry};
 use crate::next_nodes::{Kind, Style};
 use crate::next_render::{render, PageSpec, Rendered};
@@ -85,6 +85,48 @@ pub enum Request<'a> {
     /// Australia, not the Indian Ocean territories filed under AUS); a code the table has no point for is listed as missing,
     /// never guessed. Which iso3 a data code is, is the knowledge group's to say.
     PlacePoints { iso3: &'a [String] },
+    /// The illustration strip for a page of these tables (its refs), `width` wide: by the first piece set of PIECE_SETS that
+    /// names one of them, drawn by the strip child under `runtime` (the run's materialized runtime/) in the page's ink and
+    /// accent and taken only as line art in those (next_leaf::strip); none when no set names them. Nothing is written.
+    IllusStrip { tables: &'a [String], width: f64, runtime: &'a Path },
+}
+
+/// The illustration piece sets the second layer describes (runtime/leaves_js/pieces-<set>.json: its pieces, knobs and the
+/// tables it illustrates), in the order a page's tables are matched against them.
+const PIECE_SETS: &[&str] = &[include_str!("../runtime/leaves_js/pieces-energy.json")];
+
+/// The leaf pages' palette (scmp.shell puts it on every page): a strip strokes in its ink and accent by name, so the page
+/// colours it and no second copy of a colour is kept.
+const PAGE_TOKENS: &str = include_str!("../runtime/leaves_py/tokens.css");
+const STRIP_INK: &str = "--t-title";
+const STRIP_ACCENT: &str = "--accent";
+
+/// The strip of a page of `tables` and why: none when no piece set names one of them; Err when the set does not parse, the
+/// palette lacks a colour, or the strip is refused or not taken.
+fn illus_strip(tables: &[String], width: f64, runtime: &Path) -> Result<(Option<Strip>, String), String> {
+    let mut picked = None;
+    for text in PIECE_SETS {
+        let set: Value = serde_json::from_str(text).map_err(|e| format!("illus: a piece set does not parse: {e}"))?;
+        let named = set["tables"].as_array().into_iter().flatten().any(|t| t.as_str().is_some_and(|t| tables.iter().any(|x| x == t)));
+        if named {
+            picked = Some(set);
+            break;
+        }
+    }
+    let Some(set) = picked else {
+        return Ok((None, format!("illus: no piece set illustrates {}", tables.join(", "))));
+    };
+    let name = set["set"].as_str().unwrap_or_default().to_string();
+    let colours = [STRIP_INK, STRIP_ACCENT].map(|c| format!("var({c})"));
+    if let Some(c) = [STRIP_INK, STRIP_ACCENT].iter().find(|c| !PAGE_TOKENS.contains(&format!("{c}:"))) {
+        return Err(format!("illus: the page palette defines no {c}"));
+    }
+    let request = json!({"set": set, "width": width, "ink": colours[0], "accent": colours[1], "knobs": {}});
+    let runner = Runner::node(&runtime.join("leaves_js/illus_strip.cjs"));
+    let strip = crate::next_leaf::strip(&runner, &request, &colours.each_ref().map(String::as_str))
+        .map_err(|why| format!("illus: the {name} strip was not taken: {why}"))?;
+    let note = format!("illus: {name} drawn {}x{} in {} ms, left out {}: {}", strip.w, strip.h, strip.ms, strip.dropped.len(), strip.dropped.join("; "));
+    Ok((Some(strip), note))
 }
 
 /// The vendored Natural Earth admin-0 attributes (scripts/build_ne_attributes.mjs): each country's label point
@@ -128,6 +170,8 @@ pub struct LeafPage<'a> {
     pub ledger: &'a BTreeMap<String, String>,
     pub refs: &'a [String],
     pub facts: (&'a Spec, &'a [Row], &'a [Fact]),
+    /// The page's illustration strip (Request::IllusStrip), placed by the page as its layer illus_strip; none, no strip.
+    pub strip: Option<&'a Strip>,
 }
 
 /// A leaf page drawn and baked: the baked page, the one the browser check and the manifest are to name, the leaf child's
@@ -282,6 +326,8 @@ pub enum Reply<'a> {
     Layers(Option<Vec<String>>),
     /// What a published leaf page fails, one line each; empty when it passes.
     Rechecked(Vec<String>),
+    /// The page's illustration strip, none when no piece set names its tables, and what was drawn or why none.
+    Strip { strip: Option<Strip>, note: String },
     /// The label point of each iso3 asked that has one, the ones that have none in the order asked, and the table read.
     Points {
         points: BTreeMap<String, [f64; 2]>,
@@ -324,8 +370,9 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
             Reply::Page(page)
         }
         Request::LeafPage { page } => {
-            let (panel, html, records) =
-                draw_page(page.draw, page.w, page.h, page.frame.clone(), page.layers).map_err(|(_, why)| why.join("\n"))?;
+            let given: Vec<(&str, &Strip)> = page.strip.map(|s| ("illus_strip", s)).into_iter().collect();
+            let (panel, html, records) = draw_page_given(page.draw, page.w, page.h, page.frame.clone(), page.layers, &given)
+                .map_err(|(_, why)| why.join("\n"))?;
             let baked = bake_leaf_page(page.bake, &html, page.ledger, page.refs, page.facts).map_err(|off| off.join("\n"))?;
             Reply::Leaf(LeafDrawn {
                 html: baked.html,
@@ -378,6 +425,10 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
                 }
             }
             Reply::Points { points, missing, table: NE_ATTRIBUTES }
+        }
+        Request::IllusStrip { tables, width, runtime } => {
+            let (strip, note) = illus_strip(tables, width, runtime)?;
+            Reply::Strip { strip, note }
         }
     })
 }

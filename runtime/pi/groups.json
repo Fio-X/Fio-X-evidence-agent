@@ -844,6 +844,10 @@
    "group": "knowledge",
    "note": "New route: the registered Eurostat flow tables (id prefixes) whose monthly or quarterly rows sum to a whole year, the periods per year and the year share. Catalogue data read by next_params.rs (include_str) as a shared word list; nothing reads it at run time."
   },
+  "runtime/pi/assets/table-names-zh.json": {
+   "group": "knowledge",
+   "note": "New route: the reviewed Chinese name of each registered table the source line prints, each with the date it was reviewed. A word list read by the knowledge group (next_knowledge.rs, include_str) and asked of it through its TableZh request. Ownership only; no cross-group call is allowed by this row."
+  },
   "runtime/pi/assets/wb-rank-by.json": {
    "group": "agent",
    "note": "New route: the registered options for narrowing a World Bank table with every country open (n, the rank-year share, each option's rule, reference indicator and wording). Read by next_params.rs, next_run.rs and newsroom.ts, all agent group. Ownership only; no cross-group call is allowed by this row."
@@ -1170,6 +1174,11 @@
     "kind": "run_record",
     "exact": "runtime/leaves_py/",
     "note": "Created by runtime.rs materialize_extension (group_guard create_dir_all) to hold the new route's leaf children: a folder of the run bundle, no content of its own. Listed first so the folder itself is not read as the evidence or page folder it holds."
+   },
+   {
+    "kind": "run_record",
+    "exact": "runtime/leaves_js/",
+    "note": "Created by runtime.rs materialize_extension (group_guard create_dir_all) to hold the new route's illustration strip child: a folder of the run bundle, no content of its own. Listed first so the folder itself is not read as the evidence or page folder it holds."
    },
    {
     "kind": "materialized_runtime",
@@ -1760,6 +1769,31 @@
     "kind": "materialized_runtime",
     "exact": "runtime/leaves_py",
     "note": "The folder runtime.rs materialize_extension creates for the new route's leaf children (each file in it has its own exact row). Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/leaves_js",
+    "note": "The folder runtime.rs materialize_extension creates for the new route's illustration strip child (each file in it has its own exact row). Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/leaves_js/illus_strip.cjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/leaves_js/): the new route's illustration strip child. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/leaves_js/pieces-energy.cjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/leaves_js/): the new route's illustration strip child. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/leaves_js/pieces-energy.json",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/leaves_js/): the new route's illustration strip child. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/leaves_js/roughjs-4.6.6.cjs.js",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/leaves_js/): the new route's illustration strip child. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
    },
    {
     "kind": "materialized_runtime",

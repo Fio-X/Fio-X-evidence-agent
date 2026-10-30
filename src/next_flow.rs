@@ -2238,6 +2238,11 @@ pub trait Catalogue: Sync {
             next_knowledge::Request::ZhNames { scheme, codes },
         ))
     }
+    /// The reviewed Chinese name of a catalogue table through the knowledge group's command (TableZh); none when it lists
+    /// none, and the source line keeps the English title.
+    fn table_zh(&self, id: &str) -> Result<Option<String>, String> {
+        table_zh_reply(knowledge_call(&Mutex::new(Vec::new()), "table_zh", json!({"id": id}), next_knowledge::Request::TableZh { id }))
+    }
     /// The map point [lon, lat] of each code: its iso3 through the knowledge group's command (Iso3Of), then its point through
     /// the visual group's (PlacePoints), from the pinned Natural Earth attributes table only (NE_POINTS_SHA256); Err names the
     /// codes either step has nothing for, or a table that is not the pinned one.
@@ -2412,6 +2417,13 @@ fn place_points_reply(
     }
 }
 
+fn table_zh_reply(reply: Result<next_knowledge::Reply, String>) -> Result<Option<String>, String> {
+    match reply? {
+        next_knowledge::Reply::TableZh(name) => Ok(name),
+        _ => unreachable!("the knowledge group answered table_zh with another reply"),
+    }
+}
+
 fn zh_names_reply(
     reply: Result<next_knowledge::Reply, String>,
 ) -> Result<BTreeMap<String, String>, Vec<String>> {
@@ -2526,6 +2538,7 @@ pub(crate) fn knowledge_call<'a>(
         // A shape is not JSON; its debug text is kept, as the visual group's calls keep theirs.
         Ok(Reply::Shape(shape)) => json!({"shape": format!("{shape:?}")}),
         Ok(Reply::ZhNames { names, missing }) => json!({"names": names, "missing": missing}),
+        Ok(Reply::TableZh(name)) => json!({"zh": name}),
         Ok(Reply::Iso3 { iso3, missing }) => json!({"iso3": iso3, "missing": missing}),
         Ok(Reply::HeldProbe { url, .. }) => json!({"url": url}),
         Ok(Reply::Held(held)) => json!({"held": format!("{held:?}")}),
@@ -2586,6 +2599,7 @@ pub(crate) fn visual_call<'a>(
             format!("{kind} {recipe} {} {ledger:?}", crate::hash::sha256_bytes(html.as_bytes()))
         }
         Request::PlacePoints { iso3 } => format!("{kind} {iso3:?}"),
+        Request::IllusStrip { tables, width, runtime } => format!("{kind} {tables:?} {width} {}", runtime.display()),
     };
     let started = std::time::Instant::now();
     let reply = crate::group_guard::as_visual_call(|| next_visual::call(request));
@@ -2611,10 +2625,17 @@ pub(crate) fn visual_call<'a>(
         Ok(Reply::Points { points, missing, table }) => {
             format!("{points:?} {missing:?} {}", crate::hash::sha256_bytes(table.as_bytes()))
         }
+        Ok(Reply::Strip { strip, note }) => format!("{} {note}", strip.as_ref().map_or("", |s| s.svg.as_str())),
     };
-    let event = json!({"group": "visual", "request": kind,
+    let mut event = json!({"group": "visual", "request": kind,
         "request_sha256": crate::hash::sha256_bytes(asked.as_bytes()),
         "reply_sha256": crate::hash::sha256_bytes(kept.as_bytes()), "ms": ms, "ok": reply.is_ok()});
+    // the strip is the page's only piece that may be left off: what was drawn, or why none, is kept in its own words
+    match &reply {
+        Ok(Reply::Strip { note, .. }) => event["note"] = json!(note),
+        Err(why) if kind == "illus_strip" => event["note"] = json!(why),
+        _ => {}
+    }
     calls.lock().unwrap_or_else(|e| e.into_inner()).push(event);
     reply
 }
@@ -2977,6 +2998,10 @@ impl Catalogue for GroupCatalogue {
             json!({"scheme": scheme, "codes": codes}),
             next_knowledge::Request::ZhNames { scheme, codes },
         ))
+    }
+
+    fn table_zh(&self, id: &str) -> Result<Option<String>, String> {
+        table_zh_reply(knowledge_call(&self.calls, "table_zh", json!({"id": id}), next_knowledge::Request::TableZh { id }))
     }
 
     fn place_points(&self, codes: &[String]) -> Result<BTreeMap<String, [f64; 2]>, String> {
@@ -8393,6 +8418,7 @@ mod tests {
             ledger: &ledger,
             refs: &[],
             facts: (&spec, &[], &[]),
+            strip: None,
         };
         let plan = json!({"kind": "leaf_plan", "recipe": "column"});
         publish_leaf_page(&Mutex::new(Vec::new()), root, if open { "column" } else { "leaf" }, (&page, &plan), &check)

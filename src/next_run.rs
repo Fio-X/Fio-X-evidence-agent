@@ -1826,7 +1826,8 @@ fn recipe_request(
     }
     let meta = catalogue.table(&main.id).ok_or_else(|| ("fill", format!("the catalogue lists no {}", main.id)))?;
     fill["knobs"]["spec"]["kicker"] = json!(kicker);
-    fill["knobs"]["spec"]["source"] = json!(source_line(meta.worldbank, &meta.id, &main.title, &[]));
+    let title = catalogue.table_zh(&meta.id).map_err(|why| ("fill", why))?.unwrap_or_else(|| main.title.clone());
+    fill["knobs"]["spec"]["source"] = json!(source_line(meta.worldbank, &meta.id, &title, &[]));
     Ok(fill)
 }
 
@@ -1864,6 +1865,14 @@ fn leaf_page(
     let Reply::Filled(page) = crate::next_flow::visual_call(calls, "leaf_fill", request).map_err(|why| (recipe, "fill", why))? else {
         unreachable!("the visual group answered leaf_fill with another reply")
     };
+    // the strip under the page, by the piece set its tables have; a strip the visual group did not take leaves the page
+    // without one, its event saying why
+    let request = Request::IllusStrip { tables: &page.refs, width: page.w, runtime: &runtime };
+    let strip = match crate::next_flow::visual_call(calls, "illus_strip", request) {
+        Ok(Reply::Strip { strip, .. }) => strip,
+        Ok(_) => unreachable!("the visual group answered illus_strip with another reply"),
+        Err(_) => None,
+    };
     let leaf = LeafPage {
         draw: &page.draw,
         bake: &page.bake,
@@ -1874,6 +1883,7 @@ fn leaf_page(
         ledger: &page.ledger,
         refs: &page.refs,
         facts: (&page.spec, &page.rows, &page.facts),
+        strip: strip.as_ref(),
     };
     let plan = leaf_plan(question, recipe);
     let published = crate::next_flow::publish_leaf_page(calls, run_dir, recipe, (&leaf, &plan), &page.qa).map_err(|why| {
@@ -1983,7 +1993,11 @@ fn measure_of(
     times.sort();
     times.dedup();
     let name = measure_name(table, catalogue);
-    let source = meta.map(|meta| source_line(meta.worldbank, &meta.id, &table.title, &times));
+    // a broken name file stops the leaf page at its fill (recipe_request asks the same); here the title stays as listed
+    let source = meta.map(|meta| {
+        let title = catalogue.table_zh(&meta.id).ok().flatten().unwrap_or_else(|| table.title.clone());
+        source_line(meta.worldbank, &meta.id, &title, &times)
+    });
     next_pack::Measure {
         title: table.title.clone(),
         name,
@@ -1997,7 +2011,8 @@ fn measure_of(
 }
 
 /// A chart's source line: the publisher the catalogue files the table under, its id (a World Bank indicator without its
-/// "@2") and title as listed, and the years the chart draws, e.g. "欧盟统计局 sdg_07_40「Share of …」，2025 年".
+/// "@2") and title (its reviewed Chinese name where the knowledge group has one, Catalogue::table_zh; else as listed), and
+/// the years the chart draws, e.g. "欧盟统计局 sdg_07_40「Share of …」，2025 年".
 fn source_line(worldbank: bool, id: &str, title: &str, times: &[String]) -> String {
     let publisher = publisher(worldbank);
     let id = id.split('@').next().unwrap_or(id);
@@ -4209,6 +4224,7 @@ mod tests {
             ledger: &page.ledger,
             refs: &page.refs,
             facts: (&page.spec, &page.rows, &page.facts),
+            strip: None,
         };
         let plan = json!({"kind": "leaf_plan", "recipe": "column"});
         let published = crate::next_flow::publish_leaf_page(&calls, &bundle.dir, "column", (&leaf, &plan), &qa).unwrap();
@@ -4227,6 +4243,83 @@ mod tests {
                 (&"dropped:leader_notes:SE".to_string(), &json!("past label_count")),
             ]
         );
+    }
+
+    /// The q1 shape's column page with the strip the visual group draws for a renewable-energy table (the real strip child,
+    /// runtime/leaves_js/illus_strip.cjs) under the hero, drawn by the real leaf child, baked and checked by the twins: the
+    /// page holds the strip's bytes once as its layer illus_strip, in its own svg, above the footer. The page's own table (sdg)
+    /// is in no piece set: asked for it, the visual group gives no strip and says why.
+    #[test]
+    fn a_column_page_of_an_energy_table_carries_the_strip_and_another_table_gets_none() {
+        let mut main = ring_rows("sdg", &[("freq", "A"), ("unit", "PC")], ("geo", &["SE", "BE", "DE", "FR", "EU27_2020"]), &["2025"]);
+        for (r, v) in main.iter_mut().zip(["65.4", "14.9", "30.25", "20", "40"]) {
+            r["value"] = json!(v);
+        }
+        let column = recipe("column");
+        let shape = shape_of(&column.eats, &[("sdg", &main[..])], &Hubs).unwrap();
+        let picks = picks_of(&column.picks, &shape, &main, &[]).unwrap();
+        let mut fill = fill_of(column, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语")).unwrap();
+        fill["knobs"]["shapes"] = json!("runtime/pi/assets/naturalearth-admin0-50m.geojson");
+        fill["knobs"]["spec"]["kicker"] = json!("栏目");
+        fill["knobs"]["spec"]["source"] = json!("来源");
+        let order: Vec<String> = fill["order"].as_array().unwrap().iter().filter_map(|l| l.as_str().map(str::to_string)).collect();
+        let calls = std::sync::Mutex::new(Vec::new());
+        let request = crate::next_visual::Request::LeafFill {
+            recipe: "column",
+            rows: fill["rows"].as_array().unwrap(),
+            knobs: &fill["knobs"],
+            order: &order,
+            runtime: Path::new("runtime"),
+        };
+        let page = match crate::next_flow::visual_call(&calls, "leaf_fill", request) {
+            Ok(crate::next_visual::Reply::Filled(page)) => page,
+            Ok(_) => panic!("not a filled page"),
+            Err(e) => panic!("leaf fill: {e}"),
+        };
+        let strip_for = |tables: &[String]| {
+            let request = crate::next_visual::Request::IllusStrip { tables, width: page.w, runtime: Path::new("runtime") };
+            match crate::next_flow::visual_call(&calls, "illus_strip", request) {
+                Ok(crate::next_visual::Reply::Strip { strip, note }) => (strip, note),
+                Ok(_) => panic!("not a strip"),
+                Err(e) => panic!("illus strip: {e}"),
+            }
+        };
+        let (none, why) = strip_for(&page.refs);
+        assert_eq!((none, why.as_str()), (None, "illus: no piece set illustrates sdg"));
+        let (strip, note) = strip_for(&["nrg_ind_ren".to_string()]);
+        let strip = strip.expect("the energy set names nrg_ind_ren");
+        assert!(note.starts_with("illus: energy drawn 1140x225"), "{note}");
+        let events = calls.lock().unwrap().clone();
+        let notes: Vec<&Value> = events.iter().filter(|e| e["request"] == "illus_strip").map(|e| &e["note"]).collect();
+        assert_eq!(notes, [&json!("illus: no piece set illustrates sdg"), &json!(note)]);
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = {
+            let _command = crate::group_guard::command_for_test("investigate");
+            crate::artifact::InvestigationBundle::create(dir.path(), "leaf page").unwrap()
+        };
+        let _command = crate::group_guard::command_for_test("investigate");
+        let _doors = crate::group_guard::doors_for_test(true);
+        let bake = crate::next_leaf::Runner::python(Path::new("fixtures/next_leaf/bake_twin.py"));
+        let mut qa = crate::next_leaf::Runner::python(Path::new("fixtures/next_visual/qa_twin.py"));
+        qa.args.push("pass".into());
+        let leaf = crate::next_visual::LeafPage {
+            draw: &page.draw,
+            bake: &bake,
+            w: page.w,
+            h: page.h,
+            frame: page.frame.clone(),
+            layers: &page.layers,
+            ledger: &page.ledger,
+            refs: &page.refs,
+            facts: (&page.spec, &page.rows, &page.facts),
+            strip: Some(&strip),
+        };
+        let plan = json!({"kind": "leaf_plan", "recipe": "column"});
+        let published = crate::next_flow::publish_leaf_page(&calls, &bundle.dir, "column", (&leaf, &plan), &qa).unwrap();
+        let html = std::fs::read_to_string(bundle.dir.join(&published.html_ref)).unwrap();
+        let tagged = format!(r#"<svg viewBox="0 0 1140 225" width="1140" height="225"><g data-layer="illus_strip">{}</g></svg>"#, strip.svg);
+        assert_eq!(html.matches(&tagged).count(), 1, "the strip sits on the page once, in its own svg");
+        assert!(html.find(&tagged) < html.find("class=\"src\"").or(html.find("<footer")), "the strip is above the footer");
     }
 
     /// Every recipe's conditions in registry order on one table across places, one year (the q1 shape): the ring refuses it
@@ -4362,6 +4455,7 @@ mod tests {
             ledger: &page.ledger,
             refs: &page.refs,
             facts: (&page.spec, &page.rows, &page.facts),
+            strip: None,
         };
         let started = std::time::Instant::now();
         match crate::next_flow::visual_call(&calls, "leaf_page", crate::next_visual::Request::LeafPage { page: &leaf }) {
@@ -4428,6 +4522,7 @@ mod tests {
             ledger: &page.ledger,
             refs: &page.refs,
             facts: (&page.spec, &page.rows, &page.facts),
+            strip: None,
         };
         let started = std::time::Instant::now();
         match crate::next_flow::visual_call(&calls, "leaf_page", crate::next_visual::Request::LeafPage { page: &leaf }) {
@@ -4503,6 +4598,7 @@ mod tests {
             ledger: &page.ledger,
             refs: &page.refs,
             facts: (&page.spec, &page.rows, &page.facts),
+            strip: None,
         };
         let started = std::time::Instant::now();
         match crate::next_flow::visual_call(&calls, "leaf_page", crate::next_visual::Request::LeafPage { page: &leaf }) {

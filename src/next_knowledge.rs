@@ -46,6 +46,10 @@ use std::time::Duration;
 /// The vendored name table the visual group's economy_names.mjs reads (the same file, built from CLDR and the World Bank list).
 const ECONOMY_NAMES: &str = include_str!("../runtime/pi/assets/economy-names.json");
 
+/// The reviewed Chinese names of catalogue tables (table-names-zh.json): a source line prints one in place of the English
+/// title; a table it does not list keeps its English title.
+const TABLE_NAMES: &str = include_str!("../runtime/pi/assets/table-names-zh.json");
+
 /// Registry: Eurostat's SDMX 3.0 data endpoint. Its named filters (`c[geo]=DE,FR`) need no dimension order: the metabase
 /// lists a table's dimensions alphabetically, not in its DSD's order (30 of 30 sampled tables differ, 10-28), and a DSD call
 /// would add about 1.2 s per table.
@@ -127,6 +131,9 @@ pub enum Request<'a> {
         scheme: &'a str,
         codes: &'a [String],
     },
+    /// The reviewed Chinese name of a catalogue table (TABLE_NAMES), exact id only; none when the file lists none for it,
+    /// never translated.
+    TableZh { id: &'a str },
     /// The iso3 code of each code, from the name table only: two letters through its economies' and territories' iso2 to
     /// iso3 (Eurostat's EL and UK by its iso2 aliases), three capital letters as they are. A code it cannot map (an aggregate
     /// such as EU27_2020, an unknown two-letter code) is listed as missing, never guessed. Where a place lies on a map is the
@@ -222,6 +229,7 @@ pub enum Reply<'a> {
         names: BTreeMap<String, String>,
         missing: Vec<String>,
     },
+    TableZh(Option<String>),
     /// Each code mapped (code -> iso3), and the codes asked that have none, in the order asked.
     Iso3 {
         iso3: BTreeMap<String, String>,
@@ -325,6 +333,7 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
             }
             Reply::ZhNames { names, missing }
         }
+        Request::TableZh { id } => Reply::TableZh(table_names()?.get(id).cloned()),
         Request::Iso3Of { codes } => {
             let iso3_of = iso3_table()?;
             let (mut iso3, mut missing) = (BTreeMap::new(), Vec::new());
@@ -663,6 +672,30 @@ fn name_tables() -> Result<&'static NameTables, String> {
         .map_err(Clone::clone)
 }
 
+/// The reviewed table names by id (TABLE_NAMES): each entry an id, a name and zh_source "reviewed" with its date; any other
+/// entry, or an id twice, is a broken file.
+fn table_names() -> Result<&'static BTreeMap<String, String>, String> {
+    static NAMES: OnceLock<Result<BTreeMap<String, String>, String>> = OnceLock::new();
+    NAMES
+        .get_or_init(|| {
+            let file: Value = serde_json::from_str(TABLE_NAMES).map_err(|e| format!("table-names-zh.json: {e}"))?;
+            let mut names = BTreeMap::new();
+            for t in file["tables"].as_array().into_iter().flatten() {
+                let (Some(id), Some(zh), Some("reviewed"), Some(_)) =
+                    (t["id"].as_str(), t["zh"].as_str(), t["zh_source"].as_str(), t["reviewed"].as_str())
+                else {
+                    return Err(format!("table-names-zh.json: {t} is not an id with a reviewed name and its date"));
+                };
+                if names.insert(id.to_string(), zh.to_string()).is_some() {
+                    return Err(format!("table-names-zh.json: {id} is listed twice"));
+                }
+            }
+            Ok(names)
+        })
+        .as_ref()
+        .map_err(Clone::clone)
+}
+
 /// The name table's iso2 to iso3 (economy-names.json economies and territories, then its iso2 aliases EL and UK to their
 /// targets' iso3); an alias whose target has no iso3 is a broken table.
 fn iso3_table() -> Result<&'static BTreeMap<String, String>, String> {
@@ -950,6 +983,20 @@ mod tests {
             held_url("nrg_cb_pem", &filters),
             format!("{HELD_BASE}/nrg_cb_pem/1.0/*?attributes=none&measures=none&format=csvdata&c[freq]=M&c[geo]=DE,FR")
         );
+    }
+
+    /// sdg_07_40 has the name the owner reviewed; a table the file does not list has none (its English title stays), and
+    /// an id is matched exactly.
+    #[test]
+    fn a_table_gets_its_reviewed_chinese_name_or_none() {
+        let zh = |id: &str| match call(Request::TableZh { id }) {
+            Ok(Reply::TableZh(name)) => name,
+            _ => panic!("not a table name"),
+        };
+        assert_eq!(zh("sdg_07_40").as_deref(), Some("可再生能源在最终能源消费总量中的占比（按部门）"));
+        assert_eq!(zh("nrg_ind_ren"), None);
+        assert_eq!(zh("SDG_07_40"), None);
+        assert_eq!(zh("EG.FEC.RNEW.ZS@2"), None);
     }
 
     #[test]

@@ -774,7 +774,7 @@ pub fn draw(
     frame: Value,
     layers: &[Layer<'_>],
 ) -> Result<(Panel, Vec<Record>), Refused> {
-    drawn(runner, w, h, frame, layers, false).map(|(panel, _, records)| (panel, records))
+    drawn(runner, w, h, frame, layers, false, &[]).map(|(panel, _, records)| (panel, records))
 }
 
 /// The same panel, then the page around it from the same child: Rust sends the page line the fragments it took (layer ->
@@ -786,7 +786,20 @@ pub fn draw_page(
     frame: Value,
     layers: &[Layer<'_>],
 ) -> Result<(Panel, String, Vec<Record>), Refused> {
-    drawn(runner, w, h, frame, layers, true).map(|(panel, html, records)| (panel, html.unwrap_or_default(), records))
+    draw_page_given(runner, w, h, frame, layers, &[])
+}
+
+/// The same page with pieces another child drew and the first layer took (`given`: layer name and strip), each sent to the
+/// page line as a layer of the panel's own, with its size (`sizes`), and held on the page byte for byte like them.
+pub fn draw_page_given(
+    runner: &Runner,
+    w: f64,
+    h: f64,
+    frame: Value,
+    layers: &[Layer<'_>],
+    given: &[(&str, &Strip)],
+) -> Result<(Panel, String, Vec<Record>), Refused> {
+    drawn(runner, w, h, frame, layers, true, given).map(|(panel, html, records)| (panel, html.unwrap_or_default(), records))
 }
 
 /// Every way the page does not hold the layers as Rust took them. Each layer's bytes sit on the page exactly once, its root
@@ -961,6 +974,7 @@ fn drawn(
     frame: Value,
     layers: &[Layer<'_>],
     page: bool,
+    given: &[(&str, &Strip)],
 ) -> Result<(Panel, Option<String>, Vec<Record>), Refused> {
     let mut records = Vec::new();
     let (child, mut stdin, rx) = match start(runner) {
@@ -1073,9 +1087,14 @@ fn drawn(
     let mut html = None;
     if page {
         let started = Instant::now();
+        // a strip is svg: held in the svg the page puts it in, as a layer of that svg
+        panel.layers.extend(given.iter().map(|(name, s)| (name.to_string(), s.svg.clone(), false)));
         let sent: serde_json::Map<String, Value> =
             panel.layers.iter().map(|(n, f, _)| (n.clone(), json!(f))).collect();
-        let request = json!({"phase": "page", "layers": sent});
+        let mut request = json!({"phase": "page", "layers": sent});
+        if !given.is_empty() {
+            request["sizes"] = given.iter().map(|(name, s)| (name.to_string(), json!([s.w, s.h]))).collect();
+        }
         let taken = ask(&mut stdin, &rx, "page", &request, LAYER_DEADLINE)
             .map_err(|e| vec![e])
             .and_then(|r| {
@@ -1275,6 +1294,140 @@ pub fn bake(runner: &Runner, html: &str, ready: &str, width: u32) -> Result<Bake
     })
 }
 
+/// How long the illustration strip's child may take to draw its strip.
+pub const STRIP_DEADLINE: Duration = Duration::from_secs(5);
+
+/// A page's illustration strip as the strip child drew it (runtime/leaves_js/illus_strip.cjs) and the first layer took it:
+/// its paths and groups (no outer svg), its size, and what the child left out as too small to draw.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Strip {
+    pub svg: String,
+    pub w: f64,
+    pub h: f64,
+    pub dropped: Vec<String>,
+    pub ms: u128,
+}
+
+/// The strip one request draws, through one child started by `runner`: taken only when it is as wide as asked and
+/// `strip_faults` finds nothing on it (`colours`, the page's colour names it may stroke with). Err is every reason.
+pub fn strip(runner: &Runner, request: &Value, colours: &[&str]) -> Result<Strip, String> {
+    let started = Instant::now();
+    let (child, mut stdin, rx) = start(runner)?;
+    let reply = ask(&mut stdin, &rx, "strip", request, STRIP_DEADLINE);
+    drop(stdin);
+    stop(child);
+    let reply = reply?;
+    let refused = strs(&reply, "refused");
+    if !refused.is_empty() {
+        return Err(refused.join("\n"));
+    }
+    let (Some(svg), Some(w), Some(h)) = (reply["svg"].as_str(), reply["w"].as_f64(), reply["h"].as_f64()) else {
+        return Err("strip: the reply has no svg, w or h".into());
+    };
+    let mut off = strip_faults(svg, colours);
+    if Some(w) != request["width"].as_f64() || !(h > 0.0 && h.is_finite()) {
+        off.push(format!("strip: drawn {w}x{h}, asked {} wide", request["width"]));
+    }
+    if !off.is_empty() {
+        return Err(off.join("\n"));
+    }
+    Ok(Strip {
+        svg: svg.to_string(),
+        w,
+        h,
+        dropped: strs(&reply, "dropped"),
+        ms: started.elapsed().as_millis(),
+    })
+}
+
+/// Every way a strip is more than line art in the page's colours: it holds only `<g>` groups (a transform at most) and
+/// `<path/>` strokes (a path, a stroke of one of `colours`, its width, no fill, round caps and joins, a transform), balanced,
+/// with nothing between the tags but white space: no text, no other element, no link, script, style or colour of its own.
+pub fn strip_faults(svg: &str, colours: &[&str]) -> Vec<String> {
+    let transform = |v: &str| {
+        let num = |s: &str| s.parse::<f64>().is_ok_and(f64::is_finite);
+        let Some(rest) = v.strip_prefix("translate(") else { return false };
+        let Some((xy, rest)) = rest.split_once(')') else { return false };
+        let at = xy.split(',').collect::<Vec<_>>();
+        let scale = rest.is_empty() || rest.strip_prefix(" scale(").and_then(|r| r.strip_suffix(')')).is_some_and(num);
+        at.len() == 2 && at.iter().all(|s| num(s)) && scale
+    };
+    let mut off = Vec::new();
+    let (mut depth, mut rest) = (0usize, svg);
+    while !rest.is_empty() {
+        let lt = rest.find('<').unwrap_or(rest.len());
+        if !rest[..lt].trim().is_empty() {
+            off.push(format!("strip: text {:?} between the tags", &rest[..lt.min(40)]));
+            break;
+        }
+        rest = &rest[lt..];
+        if rest.is_empty() {
+            break;
+        }
+        let Some(gt) = rest.find('>') else {
+            off.push("strip: a tag is not closed".into());
+            break;
+        };
+        let tag = &rest[1..gt];
+        rest = &rest[gt + 1..];
+        if tag == "/g" {
+            if depth == 0 {
+                off.push("strip: a </g> closes no group".into());
+                break;
+            }
+            depth -= 1;
+            continue;
+        }
+        let (name, attrs, closed) = match tag.strip_suffix('/') {
+            Some(t) => (t.split(' ').next().unwrap_or(""), t, true),
+            None => (tag.split(' ').next().unwrap_or(""), tag, false),
+        };
+        let allowed: &[&str] = match (name, closed) {
+            ("g", false) => &["transform"],
+            ("path", true) => &["d", "stroke", "stroke-width", "fill", "stroke-linecap", "stroke-linejoin", "transform"],
+            _ => {
+                off.push(format!("strip: <{name}> is no element a strip draws; e.g. <path .../>"));
+                break;
+            }
+        };
+        let mut a = attrs[name.len()..].trim_end_matches('/').trim();
+        while !a.is_empty() {
+            let Some((key, after)) = a.split_once("=\"") else {
+                off.push(format!("strip: <{name}> has an attribute that is not key=\"value\": {:?}", &a[..a.len().min(40)]));
+                break;
+            };
+            let Some((value, after)) = after.split_once('"') else {
+                off.push(format!("strip: <{name}> {key} is not closed"));
+                break;
+            };
+            let ok = allowed.contains(&key)
+                && match key {
+                    "d" => value.chars().all(|c| c.is_ascii_digit() || " ,.-eEMCLQTZmclqtz".contains(c)),
+                    "stroke" => colours.contains(&value),
+                    "stroke-width" => value.parse::<f64>().is_ok_and(|w| w > 0.0 && w.is_finite()),
+                    "fill" => value == "none",
+                    "stroke-linecap" | "stroke-linejoin" => value == "round",
+                    "transform" => transform(value),
+                    _ => false,
+                };
+            if !ok {
+                off.push(format!("strip: <{name} {key}={value:?}> is not drawn by a strip; strokes only in {}", colours.join(" or ")));
+            }
+            a = after.trim_start();
+        }
+        if name == "path" && !attrs.contains(" stroke=\"") {
+            off.push("strip: a path names no stroke colour".into());
+        }
+        if name == "g" {
+            depth += 1;
+        }
+    }
+    if depth > 0 && off.is_empty() {
+        off.push(format!("strip: {depth} group(s) not closed"));
+    }
+    off
+}
+
 /// Every `{key}` placeholder left anywhere on a page, its scripts and styles included (a script may build one at run time,
 /// which only the baked page shows). A `${...}` refuses too: after the bake the page's one script is READY_JS, which has
 /// none, so nothing here is skipped (run.py's pre-bake scan still passes a layout script's `${...}`).
@@ -1394,6 +1547,36 @@ pub fn bake_leaf_page(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A strip is taken as line art in the page's colours only: groups and strokes pass; text, another element, a colour of
+    /// its own, a fill, a link, an odd transform, an unclosed group each refuse, naming what.
+    #[test]
+    fn a_strip_is_only_strokes_in_the_page_colours() {
+        let colours = ["var(--t-title)", "var(--accent)"];
+        let path = |attrs: &str| format!(r#"<path d="M0 1 C2.5 -3e-1, 4 5" {attrs}/>"#);
+        let ok = format!(
+            r#"<g transform="translate(316.00,47.38) scale(0.7190)">{}{}</g>{}"#,
+            path(r#"stroke="var(--t-title)" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round""#),
+            path(r#"stroke="var(--accent)" stroke-width="1.300""#),
+            path(r#"transform="translate(12.22,10.4) scale(1.4)" stroke="var(--t-title)" stroke-width="1.0""#),
+        );
+        assert_eq!(strip_faults(&ok, &colours), Vec::<String>::new());
+        let refused = |svg: &str| {
+            let off = strip_faults(svg, &colours);
+            assert!(!off.is_empty(), "{svg} passed");
+            off[0].clone()
+        };
+        assert!(refused(&format!("{ok}<text>3</text>")).contains("<text> is no element"));
+        assert!(refused(&format!("{ok} 44 ")).contains("text \" 44 \" between the tags"));
+        assert!(refused(&path(r##"stroke="#D0021B""##)).contains("stroke=\"#D0021B\""));
+        assert!(refused(&path(r#"stroke="var(--t-title)" fill="var(--accent)""#)).contains("fill"));
+        assert!(refused(&path(r#"stroke="var(--t-title)" href="x""#)).contains("href"));
+        assert!(refused(r#"<g transform="rotate(4)"></g>"#).contains("transform"));
+        assert!(refused(&path(r#"stroke-width="1""#)).contains("names no stroke colour"));
+        assert!(refused("<g>").contains("not closed"));
+        assert!(refused("<rect/>").contains("<rect> is no element"));
+        assert!(refused("<script/>").contains("<script> is no element"));
+    }
 
     const LAID: &str =
         "<!doctype html><p>德国 <b data-src=\"fact:a.n\">44</b>%</p><svg><g></g></svg>\
