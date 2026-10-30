@@ -352,29 +352,76 @@ pub enum Ask {
         numbers: Vec<String>,
         periods: Vec<String>,
     },
-    /// The image-aware critic's verdict on the published page's screenshot: a 0-100 score, every rubric item 0-100, a 0-1
-    /// confidence and up to VISION_ISSUES_MAX issues, each on one of `modules` (the page's module ids) or the whole page. The
-    /// record can only veto the page.
-    Vision { modules: Vec<String> },
+    /// The image review of the published page's screenshot: each of VISION_QUESTIONS answered yes or no, with a one-line
+    /// reason for a no. Advice only: the answer is recorded, it never stops a run and never verifies a page.
+    Vision,
 }
 
-/// The rubric of the image-aware critic (vision.mjs VISION_RUBRIC_KEYS).
-pub const VISION_RUBRIC: [&str; 10] = [
-    "hierarchy",
-    "legibility",
-    "composition",
-    "visual_coherence",
-    "typography",
-    "source_legibility",
-    "responsive_quality",
-    "illustration_integration",
-    "color_contrast",
-    "editorial_distinctiveness",
+/// The image review's yes/no questions, id -> the definition shown to the model, in the order asked and recorded. Whether
+/// the illustration fits the topic is left to a later step.
+pub const VISION_QUESTIONS: [(&str, &str); 6] = [
+    ("headline_finding", "the headline states one finding (a claim about the data), not just a topic"),
+    ("single_focus", "the page has one visual focal point and uses one accent colour for it"),
+    ("notes_answer_so_what", "every short note says why its number matters, not only what it is"),
+    ("legend_matches_marks", "every legend entry matches the marks it explains (colour, shape, size)"),
+    ("headline_matches_chart", "the headline and the main chart tell the same story"),
+    ("no_unreadable_encoding", "there is no encoding a reader cannot decode at a glance"),
 ];
-pub const VISION_ISSUES_MAX: usize = 8;
-/// The longest evidence or recommendation of one issue.
+/// The longest reason of a no.
 pub const VISION_TEXT_MAX: usize = 200;
-const VISION_SEVERITIES: [&str; 3] = ["blocker", "warning", "nit"];
+
+/// One image review question's answer as the program read it: anything but an exact yes, or an exact no with a one-line
+/// reason, is Unanswered (with why), never a yes.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Verdict {
+    Yes,
+    No { reason: String },
+    Unanswered { why: String },
+}
+
+impl Verdict {
+    /// The answer as recorded: yes, no or unanswered.
+    pub fn word(&self) -> &'static str {
+        match self {
+            Verdict::Yes => "yes",
+            Verdict::No { .. } => "no",
+            Verdict::Unanswered { .. } => "unanswered",
+        }
+    }
+}
+
+/// One image review answer (`id` a VISION_QUESTIONS id, `value` what the answer gave for it, None when it gave nothing),
+/// read strictly: an object of `answer` and, for a no, `reason`; answer exactly "yes" or "no"; a no's reason one line of 1
+/// to VISION_TEXT_MAX characters; no other key.
+fn verdict_of(value: Option<&Value>) -> Verdict {
+    let unanswered = |why: &str| Verdict::Unanswered { why: why.to_string() };
+    let Some(value) = value else {
+        return unanswered("not answered");
+    };
+    let Value::Object(fields) = value else {
+        return unanswered("the answer is not an object of answer and reason");
+    };
+    if let Some(key) = fields.keys().find(|k| !["answer", "reason"].contains(&k.as_str())) {
+        return Verdict::Unanswered { why: format!("unknown key '{key}'") };
+    }
+    let reason = match fields.get("reason") {
+        None => None,
+        Some(Value::String(text)) => Some(text.as_str()),
+        Some(_) => return unanswered("reason is not text"),
+    };
+    match fields.get("answer").and_then(Value::as_str) {
+        Some("yes") => Verdict::Yes,
+        Some("no") => match reason.map(str::trim) {
+            Some(text)
+                if !text.is_empty() && !text.contains(['\n', '\r']) && text.chars().count() <= VISION_TEXT_MAX =>
+            {
+                Verdict::No { reason: text.to_string() }
+            }
+            _ => Verdict::Unanswered { why: format!("a no needs a one-line reason of 1 to {VISION_TEXT_MAX} characters") },
+        },
+        _ => unanswered("answer is not exactly yes or no"),
+    }
+}
 
 /// The model's answer, checked.
 #[derive(Clone, Debug, PartialEq)]
@@ -397,12 +444,9 @@ pub enum Choice {
         text: BTreeMap<String, String>,
         names: BTreeMap<String, String>,
     },
-    /// Issues as {severity, code, module_id?, evidence, recommendation}, already checked.
+    /// Every VISION_QUESTIONS id with its verdict, in that order.
     Vision {
-        score: u64,
-        confidence: f64,
-        rubric: BTreeMap<String, u64>,
-        issues: Vec<Value>,
+        answers: Vec<(&'static str, Verdict)>,
     },
 }
 
@@ -604,7 +648,7 @@ impl Ask {
             Ask::Table { .. } => "table",
             Ask::Claims { .. } => "claims",
             Ask::Text { .. } => "text",
-            Ask::Vision { .. } => "vision",
+            Ask::Vision => "vision",
         }
     }
 
@@ -661,21 +705,16 @@ impl Ask {
                         "properties": slots.iter().map(|k| (k.clone(), json!({"type": "string"}))).collect::<Map<_, _>>(),
                         "description": format!("untranslated slot number -> Chinese name, at most {NAME_MAX_CHARS} characters, no number; {NUMBER_WORD_RULE}")}}})
             }
-            Ask::Vision { modules } => {
-                let mark = json!({"type": "integer", "minimum": 0, "maximum": 100});
-                json!({"type": "object", "additionalProperties": false, "required": ["step", "score", "confidence", "rubric", "issues"],
-                "properties": {"step": step, "score": {"type": "integer", "minimum": 0, "maximum": 100, "description": "the whole page, 0-100"},
-                    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
-                    "rubric": {"type": "object", "additionalProperties": false, "required": VISION_RUBRIC,
-                        "properties": VISION_RUBRIC.iter().map(|k| (k.to_string(), mark.clone())).collect::<Map<_, _>>()},
-                    "issues": {"type": "array", "maxItems": VISION_ISSUES_MAX, "items": {"type": "object", "additionalProperties": false,
-                        "required": ["severity", "code", "evidence", "recommendation"],
-                        "properties": {"severity": {"type": "string", "enum": VISION_SEVERITIES},
-                            "code": {"type": "string", "pattern": "^[a-z_]{1,40}$"},
-                            "module_id": {"type": "string", "enum": modules},
-                            "evidence": {"type": "string", "maxLength": VISION_TEXT_MAX, "description": "what is visible in the image"},
-                            "recommendation": {"type": "string", "maxLength": VISION_TEXT_MAX}}},
-                        "description": "visible defects only; blocker only for clipping, unreadable text, severe overlap or broken hierarchy"}}})
+            Ask::Vision => {
+                json!({"type": "object", "additionalProperties": false, "required": ["step", "answers"],
+                "properties": {"step": step, "answers": {"type": "object", "additionalProperties": false,
+                    "required": VISION_QUESTIONS.iter().map(|(id, _)| *id).collect::<Vec<_>>(),
+                    "properties": VISION_QUESTIONS.iter().map(|(id, definition)| (id.to_string(), json!({"type": "object",
+                        "additionalProperties": false, "required": ["answer"], "description": format!("yes if {definition}"),
+                        "properties": {"answer": {"type": "string", "enum": ["yes", "no"]},
+                            "reason": {"type": "string", "maxLength": VISION_TEXT_MAX,
+                                "description": "with no only: one line on what the image shows"}}}))).collect::<Map<_, _>>(),
+                    "description": "question id -> yes or no, judged only on what is visible in the image"}}})
             }
         }
     }
@@ -697,9 +736,15 @@ impl Ask {
             }
             Ask::Text { slots, .. } => json!({"step": "text", "text": {},
                 "names": slots.iter().map(|k| (k.clone(), json!("<中文名>"))).collect::<Map<_, _>>()}),
-            Ask::Vision { .. } => json!({"step": "vision", "score": 85, "confidence": 0.8,
-                "rubric": VISION_RUBRIC.iter().map(|k| (k.to_string(), json!(80))).collect::<Map<_, _>>(),
-                "issues": [{"severity": "warning", "code": "label_overlap", "evidence": "<what the image shows>", "recommendation": "<what to change>"}]}),
+            Ask::Vision => {
+                let mut answers: Map<String, Value> =
+                    VISION_QUESTIONS.iter().map(|(id, _)| (id.to_string(), json!({"answer": "yes"}))).collect();
+                answers.insert(
+                    VISION_QUESTIONS[5].0.to_string(),
+                    json!({"answer": "no", "reason": "<one line: what the image shows>"}),
+                );
+                json!({"step": "vision", "answers": answers})
+            }
         }
     }
 
@@ -741,11 +786,9 @@ impl Ask {
                 }
                 allowed
             }
-            Ask::Vision { modules } => {
-                json!({"step": "vision", "score": [0, 100], "confidence": [0, 1], "rubric": VISION_RUBRIC,
-                "rubric_item": [0, 100], "issues_max": VISION_ISSUES_MAX, "severity": VISION_SEVERITIES, "module_id": modules,
-                "text_max_chars": VISION_TEXT_MAX})
-            }
+            Ask::Vision => json!({"step": "vision",
+                "answers": VISION_QUESTIONS.iter().map(|(id, _)| (id.to_string(), json!(["yes", "no"]))).collect::<Map<_, _>>(),
+                "reason_max_chars": VISION_TEXT_MAX}),
         }
     }
 
@@ -764,6 +807,7 @@ impl Ask {
         let objects: &[&str] = match self {
             Ask::Text { .. } => &["text", "names"],
             Ask::Table { items, .. } if !items.is_empty() => &["params"],
+            Ask::Vision => &["answers"],
             _ => &[],
         };
         let mut args = args.clone();
@@ -796,7 +840,7 @@ impl Ask {
             Ask::Claims { relations, .. } if *relations > 1 => &["step", "pick", "relation"],
             Ask::Claims { .. } => &["step", "pick"],
             Ask::Text { .. } => &["step", "text", "names"],
-            Ask::Vision { .. } => &["step", "score", "confidence", "rubric", "issues"],
+            Ask::Vision => &["step", "answers"],
         };
         if let Some(key) = map.keys().find(|k| !keys.contains(&k.as_str())) {
             return Err(self.refuse(format!("unknown key '{key}'")));
@@ -1080,96 +1124,16 @@ impl Ask {
                 }
                 Ok(Choice::Text { text, names })
             }
-            Ask::Vision { modules } => {
-                let mark = |v: &Value| v.as_u64().filter(|n| *n <= 100);
-                let score = mark(&map["score"])
-                    .ok_or_else(|| self.refuse("score must be a whole number 0 to 100"))?;
-                let confidence = map["confidence"]
-                    .as_f64()
-                    .filter(|c| (0.0..=1.0).contains(c))
-                    .ok_or_else(|| self.refuse("confidence must be a number 0 to 1"))?;
-                let Value::Object(given) = &map["rubric"] else {
-                    return Err(
-                        self.refuse("rubric must map every rubric item to a whole number 0 to 100")
-                    );
+            // the reply's frame is refused as any other step's; within it, each question is read on its own (verdict_of)
+            Ask::Vision => {
+                let Value::Object(given) = &map["answers"] else {
+                    return Err(self.refuse("answers must map each question id to {answer, reason}"));
                 };
-                if let Some(key) = given.keys().find(|k| !VISION_RUBRIC.contains(&k.as_str())) {
-                    return Err(self.refuse(format!("rubric has no item '{key}'")));
-                }
-                let mut rubric = BTreeMap::new();
-                for key in VISION_RUBRIC {
-                    let value = given.get(key).and_then(mark).ok_or_else(|| {
-                        self.refuse(format!("rubric needs '{key}' as a whole number 0 to 100"))
-                    })?;
-                    rubric.insert(key.to_string(), value);
-                }
-                let issues = map["issues"]
-                    .as_array()
-                    .filter(|l| l.len() <= VISION_ISSUES_MAX)
-                    .ok_or_else(|| {
-                        self.refuse(format!(
-                            "issues must be a list of at most {VISION_ISSUES_MAX}"
-                        ))
-                    })?;
-                for (n, issue) in issues.iter().enumerate() {
-                    let Value::Object(fields) = issue else {
-                        return Err(self.refuse(format!("issue {} is not an object", n + 1)));
-                    };
-                    if let Some(key) = fields.keys().find(|k| {
-                        ![
-                            "severity",
-                            "code",
-                            "module_id",
-                            "evidence",
-                            "recommendation",
-                        ]
-                        .contains(&k.as_str())
-                    }) {
-                        return Err(self.refuse(format!("issue {}: unknown key '{key}'", n + 1)));
-                    }
-                    if !fields
-                        .get("severity")
-                        .and_then(Value::as_str)
-                        .is_some_and(|s| VISION_SEVERITIES.contains(&s))
-                    {
-                        return Err(self.refuse(format!(
-                            "issue {}: severity must be one of blocker, warning, nit",
-                            n + 1
-                        )));
-                    }
-                    let code = fields.get("code").and_then(Value::as_str).unwrap_or("");
-                    if code.is_empty()
-                        || code.len() > 40
-                        || !code.chars().all(|c| c.is_ascii_lowercase() || c == '_')
-                    {
-                        return Err(self.refuse(format!(
-                            "issue {}: code must be 1 to 40 lowercase letters or underscores",
-                            n + 1
-                        )));
-                    }
-                    if fields.get("module_id").is_some_and(|m| {
-                        !m.as_str().is_some_and(|m| modules.iter().any(|id| id == m))
-                    }) {
-                        return Err(self.refuse(format!(
-                            "issue {}: module_id must be one of the page's modules or left out",
-                            n + 1
-                        )));
-                    }
-                    for key in ["evidence", "recommendation"] {
-                        let text = fields.get(key).and_then(Value::as_str).unwrap_or("");
-                        if text.trim().is_empty() || text.chars().count() > VISION_TEXT_MAX {
-                            return Err(self.refuse(format!(
-                                "issue {}: {key} must be text of 1 to {VISION_TEXT_MAX} characters",
-                                n + 1
-                            )));
-                        }
-                    }
+                if let Some(key) = given.keys().find(|k| !VISION_QUESTIONS.iter().any(|(id, _)| id == k)) {
+                    return Err(self.refuse(format!("answers has no question '{key}'")));
                 }
                 Ok(Choice::Vision {
-                    score,
-                    confidence,
-                    rubric,
-                    issues: issues.clone(),
+                    answers: VISION_QUESTIONS.iter().map(|(id, _)| (*id, verdict_of(given.get(*id)))).collect(),
                 })
             }
         }
@@ -1771,6 +1735,33 @@ impl<'a> Recorder<'a> {
         images: &[Value],
         cancel: &AtomicBool,
     ) -> Result<(String, Choice), Stop> {
+        self.ask_in(model, ask, prompt, images, false, cancel).await
+    }
+
+    /// ask_step_seeing without the run's history: each request of this step holds only this step's own messages (the prompt
+    /// with its images and, after a refusal, the refused reply and what the program sent back), nothing asked or answered
+    /// before it. The run's history still records the step as any other.
+    pub async fn ask_step_alone(
+        &mut self,
+        model: &mut (dyn Asker + '_),
+        ask: &Ask,
+        prompt: &str,
+        images: &[Value],
+        cancel: &AtomicBool,
+    ) -> Result<(String, Choice), Stop> {
+        self.ask_in(model, ask, prompt, images, true, cancel).await
+    }
+
+    /// One step asked over the whole history, or with `alone` over this step's own messages only (ask_step_alone).
+    async fn ask_in(
+        &mut self,
+        model: &mut (dyn Asker + '_),
+        ask: &Ask,
+        prompt: &str,
+        images: &[Value],
+        alone: bool,
+        cancel: &AtomicBool,
+    ) -> Result<(String, Choice), Stop> {
         let step = ask.step();
         self.parent = None;
         self.step_from = self.history.len();
@@ -1786,12 +1777,13 @@ impl<'a> Recorder<'a> {
         let mut round = 0;
         loop {
             round += 1;
+            let sent = &self.history[if alone { self.step_from } else { 0 }..];
             let request = json!({
                 "tools": [{"name": tool.name, "description": tool.description, "parameters": tool.parameters}],
-                "history": self.history,
+                "history": sent,
             });
             let Some(mut reply) = model
-                .ask(&self.history, std::slice::from_ref(&tool), cancel)
+                .ask(sent, std::slice::from_ref(&tool), cancel)
                 .await
             else {
                 return Err(Stop::NoReply { step });
@@ -4978,6 +4970,74 @@ mod tests {
         assert!(ask.check(&json!([1])).is_err());
     }
 
+    /// The image review's answer, read strictly: every question yes; a no with its one-line reason; anything else on a
+    /// question (no such answer, a near-yes, a no without a one-line reason, another key) is that question unanswered,
+    /// never a yes. Only the reply's frame is refused: no answers object, or a question id that is not one of the six.
+    #[test]
+    fn the_image_review_reads_each_question_yes_no_or_unanswered() {
+        let reply = |answers: Vec<(&str, Value)>| {
+            json!({"step": "vision", "answers": answers.into_iter().map(|(k, v)| (k.to_string(), v)).collect::<Map<_, _>>()})
+        };
+        let ids: Vec<&str> = VISION_QUESTIONS.iter().map(|(id, _)| *id).collect();
+        let all_yes = || ids.iter().map(|id| (*id, json!({"answer": "yes"}))).collect::<Vec<_>>();
+        let verdicts = |args: &Value| match Ask::Vision.check(args) {
+            Ok(Choice::Vision { answers }) => answers,
+            other => panic!("expected a vision choice, got {other:?}"),
+        };
+        let got = verdicts(&reply(all_yes()));
+        assert_eq!(got.iter().map(|(id, _)| *id).collect::<Vec<_>>(), ids);
+        assert!(got.iter().all(|(_, v)| *v == Verdict::Yes), "{got:?}");
+        // a no with its reason, trimmed
+        let mut answers = all_yes();
+        answers[3].1 = json!({"answer": "no", "reason": " the red dots have no legend entry "});
+        let got = verdicts(&reply(answers));
+        assert_eq!(got[3], ("legend_matches_marks", Verdict::No { reason: "the red dots have no legend entry".into() }));
+        assert_eq!(got.iter().filter(|(_, v)| *v == Verdict::Yes).count(), 5);
+        // malformed answers: each of them unanswered, the rest read as given
+        let long = "x".repeat(VISION_TEXT_MAX + 1);
+        for bad in [
+            json!("yes"),
+            json!({"answer": "Yes"}),
+            json!({"answer": "yes "}),
+            json!({"answer": true}),
+            json!({"answer": "maybe"}),
+            json!({}),
+            json!({"answer": "no"}),
+            json!({"answer": "no", "reason": "  "}),
+            json!({"answer": "no", "reason": "two\nlines"}),
+            json!({"answer": "no", "reason": long}),
+            json!({"answer": "yes", "reason": 3}),
+            json!({"answer": "yes", "score": 90}),
+        ] {
+            let mut answers = all_yes();
+            answers[0].1 = bad.clone();
+            let got = verdicts(&reply(answers));
+            assert!(matches!(&got[0], ("headline_finding", Verdict::Unanswered { .. })), "{bad}: {got:?}");
+            assert!(got[1..].iter().all(|(_, v)| *v == Verdict::Yes), "{bad}: {got:?}");
+        }
+        // a question left out is unanswered
+        let got = verdicts(&reply(all_yes()[1..].to_vec()));
+        assert_eq!(got[0], ("headline_finding", Verdict::Unanswered { why: "not answered".into() }));
+        // the frame is refused: no answers object, an id not asked, the old score shape
+        assert!(Ask::Vision.check(&json!({"step": "vision", "answers": "yes"})).is_err());
+        assert!(Ask::Vision.check(&json!({"step": "vision", "answers": [true]})).is_err());
+        let mut extra = all_yes();
+        extra.push(("illustration_fits", json!({"answer": "yes"})));
+        let why = Ask::Vision.check(&reply(extra)).unwrap_err();
+        assert!(why.problem.contains("illustration_fits"), "{}", why.problem);
+        assert!(Ask::Vision.check(&json!({"step": "vision", "score": 95, "confidence": 0.9, "rubric": {}, "issues": []})).is_err());
+        // an answers object sent as JSON text is decoded once, as any object-typed value
+        let text = reply(all_yes())["answers"].to_string();
+        assert!(verdicts(&json!({"step": "vision", "answers": text})).iter().all(|(_, v)| *v == Verdict::Yes));
+        // the schema shows every question with its definition
+        let schema = Ask::Vision.schema();
+        assert_eq!(schema["properties"]["answers"]["required"], json!(ids));
+        assert_eq!(
+            schema["properties"]["answers"]["properties"]["single_focus"]["description"],
+            "yes if the page has one visual focal point and uses one accent colour for it"
+        );
+    }
+
     #[test]
     fn on_a_page_of_periods_no_year_word_follows_a_time_placeholder() {
         // A monthly table's time prints whole ("2026-08"), so "{first.year}年" would print "2026-08年": refused with the
@@ -5559,6 +5619,69 @@ mod tests {
         let exchanges = of_type(&events, EXCHANGE_EVENT);
         assert_eq!(exchanges[1]["tool_call_id"], Value::Null);
         assert_eq!(exchanges[1]["file"], format!("{EXCHANGE_DIR}/turn-2.json"));
+    }
+
+    /// Keeps every history it was asked over, and answers with the scripted replies.
+    struct HistoryAsker {
+        replies: std::collections::VecDeque<Value>,
+        asked: Vec<Vec<Value>>,
+    }
+
+    #[async_trait]
+    impl Asker for HistoryAsker {
+        fn route(&self) -> ModelRoute {
+            ModelRoute::Standin
+        }
+        async fn ask(&mut self, history: &[Value], _tools: &[ToolDef], _cancel: &AtomicBool) -> Option<Value> {
+            self.asked.push(history.to_vec());
+            self.replies.pop_front()
+        }
+    }
+
+    /// A step asked alone goes without the run's history: after a run history and an earlier step, each of its requests
+    /// holds only its own prompt (with its image) and, after a refusal, its refused reply and what the program sent back;
+    /// the request filed for it holds the same. The run's history still records the step.
+    #[tokio::test]
+    async fn a_step_asked_alone_sends_none_of_the_runs_history() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let dir = tempfile::tempdir().unwrap();
+        let (_events, mut sink) = collector();
+        let cancel = AtomicBool::new(false);
+        let earlier = vec![json!({"role": "user", "content": text_content("the question"), "timestamp": 1})];
+        let mut recorder = Recorder::new(&mut sink, dir.path(), Vec::new(), earlier);
+        let yes: Map<String, Value> = VISION_QUESTIONS.iter().map(|(id, _)| (id.to_string(), json!({"answer": "yes"}))).collect();
+        let mut model = HistoryAsker {
+            replies: vec![
+                call("toolu_s", json!({"step": "search", "query": "renewable energy"})),
+                call("toolu_r", json!({"step": "vision", "answers": "all good"})),
+                call("toolu_v", json!({"step": "vision", "answers": yes})),
+            ]
+            .into(),
+            asked: Vec::new(),
+        };
+        recorder.ask_step(&mut model, &Ask::Search, "search", &cancel).await.unwrap();
+        let image = json!({"type": "image", "data": "AAEC", "mimeType": "image/png"});
+        let (id, choice) = recorder
+            .ask_step_alone(&mut model, &Ask::Vision, "review the page", std::slice::from_ref(&image), &cancel)
+            .await
+            .unwrap();
+        assert_eq!(id, "toolu_v");
+        assert!(matches!(choice, Choice::Vision { .. }));
+        // the search went over the run's history; the review never did
+        assert_eq!(model.asked[0].len(), 2);
+        let first = &model.asked[1];
+        assert_eq!(first.len(), 1, "{first:?}");
+        assert_eq!(first[0]["content"], json!([{"type": "text", "text": "review the page"}, image]));
+        let second = &model.asked[2];
+        let roles: Vec<&str> = second.iter().map(|m| m["role"].as_str().unwrap()).collect();
+        assert_eq!(roles, ["user", "assistant", "toolResult"]);
+        assert_eq!(second[0], first[0]);
+        assert!(!second.iter().any(|m| m.to_string().contains("the question") || m.to_string().contains("toolu_s")));
+        let filed: Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.path().join(EXCHANGE_DIR).join("toolu_v.json")).unwrap()).unwrap();
+        assert_eq!(filed["request"]["history"], json!(second));
+        // the run's history keeps it all
+        assert_eq!(recorder.history().len(), 1 + 3 + 5);
     }
 
     #[tokio::test]

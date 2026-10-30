@@ -19,7 +19,7 @@ use serde_json::{json, Map, Value};
 use crate::agent_loop::ToolRunner;
 use crate::next_flow::{
     prepare_claims, record_group_calls, Ask, Asker, Catalogue, Choice, PrepareStep, Prepared,
-    Recorder, Stop,
+    Recorder, Stop, Verdict, VISION_QUESTIONS,
 };
 use crate::next_pack;
 use crate::next_leaf::Recipe;
@@ -2640,21 +2640,24 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
     }
 }
 
-/// The published page's image review prompt.
+/// The published page's image review prompt: the question the page answers and the six yes/no questions with their
+/// definitions (VISION_QUESTIONS); nothing else of the run.
 fn publication_vision_prompt(question: &str) -> String {
+    let questions: Vec<String> = VISION_QUESTIONS.iter().map(|(id, definition)| format!("- {id}: {definition}")).collect();
     format!(
-        "Question: {question}\nThe attached image is the browser screenshot of the published page, as a reader sees it. Judge only what is \
-         visible: score the page and every rubric item 0-100, give your confidence 0-1, and list the visible defects (blocker only for \
-         clipping, unreadable text, severe overlap or broken hierarchy). The page passes only with a score of at least 80, every rubric \
-         item at least 60 and no blocker."
+        "The page answers this question: {question}\nThe attached image is the browser screenshot of the published page, as a \
+         reader sees it. Judging only what is visible, answer each question below yes or no; for each no, give a one-line \
+         reason naming what the image shows.\n{}",
+        questions.join("\n")
     )
 }
 
 /// The published leaf page's image review: the 1440 screenshot its PASS browser check wrote (publications/qa/<recipe>/),
-/// read from disk, shown to the model; the verdict is recorded as a PUBLICATION_VISION_EVENT and in the plan, as advice
-/// only: a review short of its line (vision_passes) neither stops the run nor holds the page back, and none verifies it
-/// (the program's page checks do, verify.rs verify_publications). Ok is the review's line for the run's answer; Err only
-/// when there is no screenshot to show or the model gives no review.
+/// read from disk and shown to the model with only the question (ask_step_alone: none of the run's history goes with it),
+/// which answers VISION_QUESTIONS yes or no. Each answer is recorded in a PUBLICATION_VISION_EVENT and the plan, as advice
+/// only: a no or an unanswered question neither stops the run nor holds the page back, and none verifies it (the program's
+/// page checks do, verify.rs verify_publications). Ok is the review's line for the run's answer; Err only when there is
+/// no screenshot to show or the model gives no review it can be read from.
 async fn leaf_vision(
     recorder: &mut Recorder<'_>,
     model: &mut (dyn Asker + '_),
@@ -2671,40 +2674,40 @@ async fn leaf_vision(
         return Err(stop("publication_vision", format!("{shot_ref} changed while it was read")));
     }
     let shot = json!({"type": "image", "data": base64_text(&bytes), "mimeType": "image/png"});
-    let ask = Ask::Vision { modules: Vec::new() };
-    let Choice::Vision { score, confidence, rubric, issues } = recorder
-        .ask_step_seeing(model, &ask, &publication_vision_prompt(question), std::slice::from_ref(&shot), cancel)
+    let Choice::Vision { answers } = recorder
+        .ask_step_alone(model, &Ask::Vision, &publication_vision_prompt(question), std::slice::from_ref(&shot), cancel)
         .await?
         .1
     else {
         unreachable!("a vision check gives a vision choice")
     };
-    let issues: Vec<Value> = issues.into_iter().map(|mut i| { i["viewport"] = json!("desktop"); i }).collect();
-    let passed = vision_passes(score, &rubric, &issues);
+    let ids = |word: &str| -> Vec<&str> { answers.iter().filter(|(_, v)| v.word() == word).map(|(id, _)| *id).collect() };
+    let (yes, no, unanswered) = (ids("yes"), ids("no"), ids("unanswered"));
+    let recorded: Vec<Value> = answers
+        .iter()
+        .map(|(id, verdict)| match verdict {
+            Verdict::Yes => json!({"id": id, "answer": "yes"}),
+            Verdict::No { reason } => json!({"id": id, "answer": "no", "reason": reason}),
+            Verdict::Unanswered { why } => json!({"id": id, "answer": "unanswered", "why": why}),
+        })
+        .collect();
     recorder.program_event(
         PUBLICATION_VISION_EVENT,
         json!({"publication_manifest_ref": format!("publications/{recipe}/manifest.json"), "qa_ref": qa_ref,
-            "screenshot_ref": shot_ref, "image_sha256": shot_sha, "passed": passed,
-            "score": score, "confidence": confidence, "rubric": rubric, "issues": issues}),
+            "screenshot_ref": shot_ref, "image_sha256": shot_sha, "answers": recorded,
+            "yes": yes.len(), "no": no.len(), "unanswered": unanswered.len()}),
     )?;
     let mut state = state.clone();
-    state["publication_vision"] = json!({"passed": passed, "score": score});
-    save_route_state(recorder.run_dir(), &LEAF_PLAN_STEPS, "publication_vision", passed, &state)?;
-    let seen: Vec<String> = issues
-        .iter()
-        .map(|i| format!("{}:{}", i["severity"].as_str().unwrap_or("?"), i["code"].as_str().unwrap_or("?")))
-        .collect();
-    let seen = if seen.is_empty() { "none".to_string() } else { seen.join(" | ") };
-    let verdict = if passed { "at or above its line" } else { "short of its line" };
-    Ok(format!("The image review, advice only, scored it {score}/100, {verdict} (issues: {seen})."))
-}
-
-/// The line of the published page's image review, recorded with its advice: a score of at least 80, every rubric item at
-/// least 60, no blocker.
-fn vision_passes(score: u64, rubric: &BTreeMap<String, u64>, issues: &[Value]) -> bool {
-    score >= 80
-        && rubric.values().all(|v| *v >= 60)
-        && !issues.iter().any(|i| i["severity"] == "blocker")
+    state["publication_vision"] = json!({"yes": yes, "no": no, "unanswered": unanswered});
+    save_route_state(recorder.run_dir(), &LEAF_PLAN_STEPS, "publication_vision", yes.len() == answers.len(), &state)?;
+    let list = |ids: &[&str]| if ids.is_empty() { "none".to_string() } else { ids.join(", ") };
+    let open = if unanswered.is_empty() { String::new() } else { format!("; unanswered: {}", list(&unanswered)) };
+    Ok(format!(
+        "The image review, advice only, answered {} of {} yes; no: {}{open}.",
+        yes.len(),
+        answers.len(),
+        list(&no)
+    ))
 }
 
 /// The desktop screenshot the publication QA record (browser-qa.json) names, as a run-relative ref, and the sha256 of its bytes
@@ -3336,26 +3339,6 @@ mod tests {
         );
     }
 
-    /// The image review's line: 80 overall, 60 on every rubric item, no blocker; anything short is recorded as short of it.
-    #[test]
-    fn the_image_reviews_pass_only_on_the_line() {
-        let rubric = |low: u64| {
-            BTreeMap::from([
-                ("hierarchy".to_string(), 90),
-                ("legibility".to_string(), low),
-            ])
-        };
-        let warning = vec![json!({"severity": "warning", "code": "crowded"})];
-        assert!(vision_passes(80, &rubric(60), &warning));
-        assert!(!vision_passes(79, &rubric(90), &[]));
-        assert!(!vision_passes(95, &rubric(59), &[]));
-        assert!(!vision_passes(
-            95,
-            &rubric(90),
-            &[json!({"severity": "blocker", "code": "clipped"})]
-        ));
-    }
-
     /// The screenshot under review is known by its bytes: base64 encodes them exactly, and the QA record's 1440 file is hashed as
     /// read.
     #[test]
@@ -3390,6 +3373,21 @@ mod tests {
     fn call(id: &str, args: Value) -> Value {
         json!({"content": [{"type": "toolCall", "id": id, "name": CHOOSE_TOOL, "arguments": args}],
             "stopReason": "toolUse", "usage": {}})
+    }
+
+    /// An image review answer: every question yes but the `no` ones, each no with its reason.
+    fn vision_reply(no: &[(&str, &str)]) -> Value {
+        let answers: Map<String, Value> = VISION_QUESTIONS
+            .iter()
+            .map(|(id, _)| {
+                let answer = match no.iter().find(|(n, _)| n == id) {
+                    Some((_, reason)) => json!({"answer": "no", "reason": reason}),
+                    None => json!({"answer": "yes"}),
+                };
+                (id.to_string(), answer)
+            })
+            .collect();
+        json!({"step": "vision", "answers": answers})
     }
 
     /// The rewording refused in both rounds: the field that passes alone keeps the model's wording, the one with a typed
@@ -6896,7 +6894,7 @@ for line in sys.stdin:
     /// page is never shown for the image review.
     #[tokio::test]
     async fn a_published_leaf_page_with_gate_gaps_stops_at_the_gate_before_the_image_review() {
-        let vision = call("toolu_v", json!({"step": "vision", "score": 95, "confidence": 0.9, "rubric": {}, "issues": []}));
+        let vision = call("toolu_v", vision_reply(&[]));
         let ran = leaf_run(Some(LEAF_CHILD_TWIN), "other bytes", vec![vision]).await;
         let ring: Vec<&Value> = ran.events.iter().filter(|e| e["type"] == RING_EVENT).collect();
         assert_eq!(ring.len(), 1, "{:?}", ran.result);
@@ -7110,7 +7108,7 @@ for line in sys.stdin:
     /// the run goes on to the image review (which stops there: the browser-check twin writes no screenshot to show).
     #[tokio::test]
     async fn a_published_leaf_page_passing_every_page_check_goes_on_to_the_image_review() {
-        let vision = call("toolu_v", json!({"step": "vision", "score": 95, "confidence": 0.9, "rubric": {}, "issues": []}));
+        let vision = call("toolu_v", vision_reply(&[]));
         let ran = leaf_run(Some(&headed_twin()), SDG_CSV, vec![vision]).await;
         let gate: Vec<&Value> = ran.events.iter().filter(|e| e["type"] == LEAF_GATE_EVENT).collect();
         assert_eq!(gate.len(), 1, "{:?}", ran.result);
@@ -7137,33 +7135,83 @@ for line in sys.stdin:
         }
     }
 
-    /// The image review is advice: a page past the gate and the page checks whose review falls short of its line (score 40,
-    /// a blocker) is still published, the review recorded as not passed with its score and issues, the plan's review step
-    /// refused, and the run's answer names the review as advice short of its line, never as passed.
+    /// The image review is advice: a page past the gate and the page checks whose review answers three questions no is
+    /// still published, each answer recorded with its reason and the counts, the plan's review step blocked, and the run's
+    /// answer names the review as advice with its yes count and the ids answered no. The review is asked alone: its request
+    /// holds the prompt and the screenshot only, none of the run's earlier turns. And the page verifies on its page checks
+    /// alone: the review's three no answers leave no publication gap.
     #[tokio::test]
-    async fn a_published_leaf_page_whose_image_review_falls_short_is_still_published_the_review_kept_as_advice() {
-        let rubric: Map<String, Value> = crate::next_flow::VISION_RUBRIC.iter().map(|k| (k.to_string(), json!(30))).collect();
-        let vision = call("toolu_v", json!({"step": "vision", "score": 40, "confidence": 0.9, "rubric": rubric,
-            "issues": [{"severity": "blocker", "code": "clipped", "evidence": "the title is cut", "recommendation": "give it room"}]}));
-        let ran = leaf_run_checked(Some(&headed_twin()), SDG_CSV, vec![vision], "shot").await;
+    async fn a_published_leaf_page_whose_image_review_answers_three_no_is_still_published_the_review_kept_as_advice() {
+        let no = [
+            ("headline_finding", "the headline only names the topic"),
+            ("single_focus", "two accent colours compete"),
+            ("no_unreadable_encoding", "the bubble sizes cannot be told apart"),
+        ];
+        let ran = leaf_run_checked(Some(&headed_twin()), SDG_CSV, vec![call("toolu_v", vision_reply(&no))], "shot").await;
         let answer = match &ran.result {
             Ok(answer) => answer,
-            other => panic!("expected the page published past a failing review, got {other:?}"),
+            other => panic!("expected the page published past a review with three no, got {other:?}"),
         };
-        assert!(answer.contains("advice only, scored it 40/100, short of its line (issues: blocker:clipped)"), "{answer}");
-        assert!(!answer.contains("passed the image review"), "{answer}");
+        assert!(
+            answer.ends_with(
+                "The image review, advice only, answered 3 of 6 yes; no: headline_finding, single_focus, no_unreadable_encoding."
+            ),
+            "{answer}"
+        );
         assert_eq!(ran.unasked, 0, "the review was asked");
         let reviews: Vec<&Value> = ran.events.iter().filter(|e| e["type"] == PUBLICATION_VISION_EVENT).collect();
         assert_eq!(reviews.len(), 1);
-        assert_eq!((&reviews[0]["passed"], &reviews[0]["score"]), (&json!(false), &json!(40)), "{}", reviews[0]);
-        assert_eq!(reviews[0]["issues"][0]["code"], "clipped");
+        assert_eq!((&reviews[0]["yes"], &reviews[0]["no"], &reviews[0]["unanswered"]), (&json!(3), &json!(3), &json!(0)));
+        assert!(reviews[0].get("score").is_none() && reviews[0].get("passed").is_none(), "{}", reviews[0]);
+        let ids: Vec<&str> = reviews[0]["answers"].as_array().unwrap().iter().map(|a| a["id"].as_str().unwrap()).collect();
+        assert_eq!(ids, VISION_QUESTIONS.iter().map(|(id, _)| *id).collect::<Vec<_>>());
+        assert_eq!(reviews[0]["answers"][0], json!({"id": "headline_finding", "answer": "no", "reason": "the headline only names the topic"}));
+        assert_eq!(reviews[0]["answers"][2], json!({"id": "notes_answer_so_what", "answer": "yes"}));
         let checks: Vec<&Value> = ran.events.iter().filter(|e| e["type"] == PAGE_CHECKS_EVENT).collect();
         assert!(checks[0]["checks"].as_array().unwrap().iter().all(|c| c["passed"] == true), "{:?}", checks[0]);
         let state = read_json(&ran.run, PAGE_STATE).unwrap();
-        assert_eq!(state["publication_vision"], json!({"passed": false, "score": 40}));
+        assert_eq!(
+            state["publication_vision"],
+            json!({"yes": ["notes_answer_so_what", "legend_matches_marks", "headline_matches_chart"],
+                "no": ["headline_finding", "single_focus", "no_unreadable_encoding"], "unanswered": []})
+        );
         let plan: Value = serde_json::from_str(&std::fs::read_to_string(ran.run.join(PLAN_FILE)).unwrap()).unwrap();
         assert_eq!(plan["steps"].as_array().unwrap().last().unwrap()["status"], "blocked", "{plan}");
         assert!(ran.run.join("publications/column/index.html").is_file());
+        // no history went with the review: its one request holds a single user message, the prompt and the screenshot
+        let exchange: Value =
+            serde_json::from_str(&std::fs::read_to_string(ran.run.join("runtime/model-exchanges/toolu_v.json")).unwrap()).unwrap();
+        let sent = exchange["request"]["history"].as_array().unwrap();
+        assert_eq!(sent.len(), 1, "{sent:?}");
+        assert_eq!(sent[0]["role"], "user");
+        let blocks: Vec<&str> = sent[0]["content"].as_array().unwrap().iter().map(|b| b["type"].as_str().unwrap()).collect();
+        assert_eq!(blocks, ["text", "image"]);
+        let prompt = sent[0]["content"][0]["text"].as_str().unwrap();
+        assert!(prompt.contains("欧盟各国可再生能源占比") && prompt.contains("- legend_matches_marks: every legend entry"), "{prompt}");
+        // the text step's exchange, asked before, went with the whole history
+        let text: Value =
+            serde_json::from_str(&std::fs::read_to_string(ran.run.join("runtime/model-exchanges/toolu_x.json")).unwrap()).unwrap();
+        assert!(text["request"]["history"].as_array().unwrap().len() > 1);
+        // the verdict on the page rests on its page checks only: with the run's events, the three no leave no gap
+        let lines: Vec<String> = ran.events.iter().map(Value::to_string).collect();
+        std::fs::write(ran.run.join("events.jsonl"), lines.join("\n") + "\n").unwrap();
+        let gaps = crate::verify::publication_errors_of(&ran.run);
+        assert!(gaps.is_empty(), "{gaps:?}");
+        // and a failed page check is a gap, whatever the review answered
+        let failed: Vec<String> = ran
+            .events
+            .iter()
+            .map(|e| {
+                let mut e = e.clone();
+                if e["type"] == PAGE_CHECKS_EVENT {
+                    e["checks"][0]["passed"] = json!(false);
+                }
+                e.to_string()
+            })
+            .collect();
+        std::fs::write(ran.run.join("events.jsonl"), failed.join("\n") + "\n").unwrap();
+        let gaps = crate::verify::publication_errors_of(&ran.run);
+        assert!(gaps.iter().any(|g| g.contains("no passing page checks of its bytes")), "{gaps:?}");
     }
 
     /// A published page whose leader notes dropped one passes the completion gate but fails notes_dropped: the run stops at
@@ -7174,7 +7222,7 @@ for line in sys.stdin:
             r#""dropped": []}"#,
             r#""dropped": [{"id": "SE", "why": "no free place"}] if req["layer"] == "leader_notes" else []}"#,
         );
-        let vision = call("toolu_v", json!({"step": "vision", "score": 95, "confidence": 0.9, "rubric": {}, "issues": []}));
+        let vision = call("toolu_v", vision_reply(&[]));
         let ran = leaf_run(Some(&dropping), SDG_CSV, vec![vision]).await;
         let gate: Vec<&Value> = ran.events.iter().filter(|e| e["type"] == LEAF_GATE_EVENT).collect();
         assert_eq!(gate.len(), 1, "{:?}", ran.result);

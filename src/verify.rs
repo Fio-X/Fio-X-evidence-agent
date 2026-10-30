@@ -5140,6 +5140,14 @@ fn verify_qa_screenshots(
 /// existing on disk is not enough: every page ever rendered from it may
 /// have been rejected by a critic, moved to infographics/rejected/<key>/,
 /// with no top-level manifest left to bind.
+/// verify_publications' errors on the run at `root`, for the flow's tests.
+#[cfg(test)]
+pub(crate) fn publication_errors_of(root: &Path) -> Vec<String> {
+    let mut report = VerificationReport::default();
+    verify_publications(root, &mut report).unwrap();
+    report.errors
+}
+
 fn verify_publications(root: &Path, report: &mut VerificationReport) -> Result<()> {
     let dir = root.join("publications");
     if !dir.is_dir() {
@@ -9685,9 +9693,19 @@ mod tests {
             "published": format!("publications/{dir}/index.html"), "html_sha256": sha, "checks": checks})
     }
 
-    /// The fixture's page image review (next_run.rs PUBLICATION_VISION_EVENT) of its QA screenshot, passing or not.
-    fn vision_event(manifest: &str, passed: bool) -> Value {
-        serde_json::json!({"type": "next_publication_vision", "passed": passed, "score": if passed { 90 } else { 40 },
+    /// The fixture's page image review (next_run.rs PUBLICATION_VISION_EVENT) of its QA screenshot: its six questions all
+    /// answered yes, or three of them no.
+    fn vision_event(manifest: &str, all_yes: bool) -> Value {
+        let answers: Vec<Value> = crate::next_flow::VISION_QUESTIONS
+            .iter()
+            .enumerate()
+            .map(|(i, (id, _))| match all_yes || i % 2 == 1 {
+                true => serde_json::json!({"id": id, "answer": "yes"}),
+                false => serde_json::json!({"id": id, "answer": "no", "reason": "not on the page"}),
+            })
+            .collect();
+        let no = if all_yes { 0 } else { 3 };
+        serde_json::json!({"type": "next_publication_vision", "answers": answers, "yes": 6 - no, "no": no, "unanswered": 0,
             "image_sha256": sha256_bytes(b"fake-screenshot-bytes"), "publication_manifest_ref": manifest,
             "qa_ref": "publications/qa/q1/browser-qa.json"})
     }
