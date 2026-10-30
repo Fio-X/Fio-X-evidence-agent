@@ -32,10 +32,16 @@ const SERIES_SRC: &str = "series:";
 const RECORD_TEXT: &[&str] = &["source_name", "name_zh"];
 
 /// A table as a mark names it (`record:<table>/<i>`, `period:<table>:...`): its id, a letter first, then letters, digits,
-/// `_` or `-`. Never a file's path: the request's table list says where a table's file is, and no path goes on a page.
+/// `_` or `-`; or a World Bank table as the catalogue names it (l5geo: the indicator id, which may hold `.`, then `@2`,
+/// such as EN.GHG.CO2.PC.CE.AR5@2). Never a file's path: the request's table list says where a table's file is, and no
+/// path goes on a page.
 pub fn table_id(t: &str) -> bool {
-    t.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
-        && t.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
+    let (id, dot) = match t.strip_suffix("@2") {
+        Some(id) => (id, true),
+        None => (t, false),
+    };
+    id.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+        && id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-') || (dot && c == '.'))
 }
 
 /// The table ids a leaf page may name in its sources: the dataset id each table of the request was read from (`"id"` in
@@ -2064,6 +2070,9 @@ mod tests {
             assert_eq!(why, format!("{src}: a record row's table must be its table id (not a path) and its src must name it"));
         }
         assert!(table_id("MIGR_ASYAPPCTZM") && table_id("nrg-pc") && !table_id("2022") && !table_id("data/cities.csv"));
+        // a World Bank table by its catalogue name; a dot only with the World Bank's mark, never a path
+        assert!(table_id("EN.GHG.CO2.PC.CE.AR5@2") && table_id("SP.POP.65UP.TO.ZS@2"));
+        assert!(!table_id("cities.csv") && !table_id("data/cities.csv@2") && !table_id("@2") && !table_id("EN.X@3"));
         let mut path = rows.clone();
         path.push(row("data/mo.csv", "X", "2021-01", 1.0));
         assert_eq!(leaf_ledger(&s, &path, &facts).err().unwrap(), "series table data/mo.csv: its name must be a table id");
