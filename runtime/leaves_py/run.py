@@ -70,7 +70,8 @@ def fact_times(spec):
 # its reply; layer 1 (next_leaf take) keeps it on the panel and the flow writes it into the page's ledger.
 DROPPED = []
 # The radius scale the layer drew its circles at (bubbles Frame.r_used) and how many knob steps under its r_max that is, which
-# main() sends back with its reply as r_used and r_steps; layer 1 keeps both on the panel and the flow writes them into the page's event.
+# main() sends back with its reply as r_used and r_steps, with the circles lifted to r_min on that scale (bubbles Frame.r_min_codes:
+# their areas no longer keep to it) as r_min_lifted and r_min_codes; layer 1 keeps all four on the panel and the flow writes them into the page's event.
 SCALE = {}
 
 
@@ -90,7 +91,8 @@ def leaf(Frame, cl, key, fixed=None):
         dropped = getattr(fr, "dropped", None) or []
         DROPPED.extend({"id": str(c), "why": why} for c, why in dropped)
         if getattr(fr, "r_used", None) is not None:
-            SCALE.update(r_used=fr.r_used, r_steps=round((fr.k("r_max") - fr.r_used) / prod.KNOBS[key]["r_max"][1][2]))
+            SCALE.update(r_used=fr.r_used, r_steps=round((fr.k("r_max") - fr.r_used) / prod.KNOBS[key]["r_max"][1][2]),
+                         r_min_lifted=len(fr.r_min_codes), r_min_codes=list(fr.r_min_codes))
         return out
     return draw, None
 

@@ -11,6 +11,7 @@ import math
 import os
 import re
 import sys
+import types
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -279,6 +280,36 @@ class MapExtent(unittest.TestCase):
         for draw, values, pair in ((column_map, q5, "MCO/ITA"), (world_map, west, "ITA/SMR")):
             with self.assertRaises(Refused) as e: draw(values, nudge=0)
             self.assertIn(f"({pair}", str(e.exception)); self.assertIn("even at r_max 12", str(e.exception))
+
+    def test_the_reply_names_the_circles_lifted_to_r_min_on_the_scale_drawn(self):
+        # through the leaf runner as layer 1 calls it (run.LEAF_LAYERS: what main() adds to the bubbles reply): r_min_lifted and
+        # r_min_codes are the circles whose area-true radius on the scale drawn, r_used * sqrt(v / max), is under r_min, drawn at
+        # r_min and so off the scale by area. The q1-style EU-27 column map lifts none, at the default 22 and asked 60 (drawn at 40);
+        # a test-only copy with four small shares lifts all four at 22, and asked 60 it is drawn at 40, where three are under r_min
+        # (at 60 itself only Cyprus would be): the set grows as the scale steps down
+        q1 = dict(SE=66.4, FI=50.8, DK=44.9, LV=43.2, EE=38.5, PT=35.2, AT=33.8, LT=31.9, HR=28.1, RO=25.8, SI=25.1, EL=25.3, ES=24.9, FR=22.2,
+                  DE=21.5, IT=19.6, BG=22.5, CZ=18.6, PL=16.6, SK=17.0, CY=20.2, NL=17.4, HU=15.2, MT=15.1, IE=15.3, BE=14.7, LU=11.6)  # test-only
+        small = dict(q1, LU=0.3, MT=0.25, CY=0.1, IE=0.9)  # test-only
+        iso3, zh2, r_min = dict(ISO3, EL="GRC"), dict(ZH2, EL=ZH2["GR"]), prod.KNOBS["bubbles"]["r_min"][0]
+        under = lambda values, r: sorted(c for c, v in values.items() if r * math.sqrt(v / max(values.values())) < r_min)
+        def reply(values, **style):
+            rows, items, labels = map_set(values, 1, lambda c: POINT[iso3[c]], zh2); setup(rows, labels)
+            ext = layer1_extent({i["code"]: i["lonlat"] for i in items}, {c: (v, labels[c]) for c, v in values.items()}, 1)
+            run.SCALE.clear()
+            run.LEAF_LAYERS["bubbles"][0](types.SimpleNamespace(h={"leaves": {"bubbles": {"items": items, "ext": ext}}, "style": {"bubbles": style}}), prod.Occ())
+            return dict(run.SCALE)
+        for values, st, used, codes in ((q1, {}, 22, []), (q1, {"r_max": 60}, 40, []), (small, {}, 22, ["CY", "IE", "LU", "MT"]),
+                                        (small, {"r_max": 60}, 40, ["CY", "LU", "MT"])):
+            got = reply(values, **st)
+            self.assertEqual((got["r_used"], got["r_min_lifted"], got["r_min_codes"]), (used, len(codes), codes), st)
+            self.assertEqual(got["r_min_codes"], under(values, used), st)
+        self.assertEqual(under(small, 60), ["CY"])
+        # on the world map the Low Countries' set steps down to 12 (above): a test-only Luxembourg at 1.0, area-true 4.4 px at 22,
+        # is under r_min at 12 and so lifted, and only there
+        west = dict(LUX=1.0, BEL=20.9608828531757, DEU=23.7031981458429, FRA=22.5418906984086, NLD=20.8687702211484, ITA=25.0981380733118, SMR=23.1484101571226)
+        rows, items, labels = value_set(west, "2025", 1, "%"); setup(rows, labels)
+        fr = bubbles.Frame(hero(dict(E_DATA, items=items)))
+        self.assertEqual((fr.r_used, fr.r_min_codes, under(west, 12), under(west, 22)), (12, ["LUX"], ["LUX"], []))
 
     def test_maps_that_clear_at_r_max_draw_as_before(self):
         # the EU table above, a q1-style EU-27 column map, the q5 change page's world map and the world set: each clears at r_max,

@@ -120,6 +120,8 @@ class Frame:
                               "use extent=box with data.box on the crowded region or a map of that region")
             r_max -= step
         f.r_used = r_max  # the radius scale drawn (the largest circle's radius px): what a size legend or note about the circles reads, not the knob
+        # the circles drawn at r_min, not by area: their area-true radius on that scale is under it (more of them as the scale steps down)
+        f.r_min_codes = sorted(str(i["code"]) for i in items if r_max * math.sqrt(i["_v"] / mx) < k("r_min"))
         f.items, f.unlabeled, f.dropped = items, [], []
 
 

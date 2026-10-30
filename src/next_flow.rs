@@ -2730,7 +2730,7 @@ pub struct Published {
     pub dropped: Vec<(String, String)>,
     /// What the bake measured of the page's type (next_leaf::Baked), for the page checks; none, both of them fail.
     pub type_measured: Option<Value>,
-    /// The radius scales the layers drew at (next_leaf Panel::scales: layer, r_used, r_steps), for the run's event.
+    /// The radius scales the layers drew at (next_leaf Panel::scales: layer, r_used, r_steps, r_min_lifted, r_min_codes), for the run's event.
     pub scales: Vec<Value>,
 }
 

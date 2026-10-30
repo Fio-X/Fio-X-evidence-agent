@@ -660,7 +660,8 @@ class ColumnMap(unittest.TestCase):
     def test_the_bubbles_reply_says_the_radius_scale_it_drew_and_how_many_steps_under_r_max(self):
         # through the leaf runner as layer 1 calls it: the bubbles layer's reply carries r_used (the scale drawn, Frame.r_used) and
         # r_steps (knob steps under the r_max asked); at the default 22 the EU-27 clear, 0 steps; asked 60 they overlap and are
-        # drawn at 44, 8 steps of 2 under it; no other layer's reply carries either
+        # drawn at 44, 8 steps of 2 under it; with them r_min_lifted and r_min_codes, the circles under r_min on that scale (none
+        # here: the EU-27's least is 17% of the most); no other layer's reply carries any of the four
         for st, used, steps in (({}, 22, 0), ({"r_max": 60}, 44, 8)):
             def styled(line):
                 req = json.loads(line)
@@ -669,7 +670,9 @@ class ColumnMap(unittest.TestCase):
             size, bars, bub, notes = child([styled(l) for l in column_lines({"bubbles": dict(items=ITEMS, ext=EXT), "leader_notes": D})])
             self.assertNotIn("refused", bub)
             self.assertEqual((bub["r_used"], bub["r_steps"]), (used, steps), st)
-            self.assertEqual([k for g in (size, bars, notes) for k in ("r_used", "r_steps") if k in g], [], st)
+            lifted = sorted(c for c, v in VALUES.items() if used * math.sqrt(v / max(VALUES.values())) < prod.KNOBS["bubbles"]["r_min"][0])
+            self.assertEqual((bub["r_min_lifted"], bub["r_min_codes"]), (len(lifted), lifted), st)
+            self.assertEqual([k for g in (size, bars, notes) for k in ("r_used", "r_steps", "r_min_lifted", "r_min_codes") if k in g], [], st)
 
     def test_a_layer_that_drops_every_note_is_drawn_empty_and_the_page_goes_out(self):
         # label_count 0 (the hero's style): both notes past it. The layer is drawn, empty, its reply names both notes as
