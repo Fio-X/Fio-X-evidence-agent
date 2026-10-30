@@ -1,9 +1,11 @@
 """Self-test of the bubbles leaf (runtime/leaves_py/bubbles.py) on the Natural Earth land (runtime/pi/assets): a dispersed world
 set draws (test-only values), a crowded European set (World Bank 65+ share, scripts/fixtures/data_prepare/worldbank/q5.json)
-refuses at max_overlaps 0 and draws when allowed; each point is the place's Natural Earth label point; names from the
+refuses at max_overlaps 0 (no nudge, even at the r_max floor) and draws when allowed; circles that overlap at r_max
+are drawn on a smaller scale (r_used) until they clear, by area still, and maps that clear at r_max draw byte for byte as before; each point is the place's Natural Earth label point; names from the
 project's reviewed zh names. Each svg reads back with no `bad`, every digit sits inside a marked ledger run, no label sits on
 any circle or on another label (one that fits nowhere is listed in Frame.unlabeled, never moved onto a circle), and the
 refusals keep the leaf's rules. Run: python3 -I -B scripts/test_leaves_bubbles.py"""
+import hashlib
 import json
 import math
 import os
@@ -82,6 +84,7 @@ class Bubbles(unittest.TestCase):
         with self.assertRaises(Refused) as e:
             bubbles.draw(hero(E_DATA, nudge=0))
         self.assertIn("overlap by more than half", str(e.exception))
+        self.assertIn("even at r_max 12", str(e.exception))  # every smaller scale down to the knob's floor tried first
         svg, _, _ = bubbles.draw(hero(E_DATA, nudge=0, max_overlaps=20))
         self.assertEqual(check_svg(svg), [])
 
@@ -246,6 +249,53 @@ class MapExtent(unittest.TestCase):
         (code, bx), = f.label_boxes
         c = next(i for i in f.items if i["code"] == code)
         self.assertLess(bx[2], c["_xy"][0])  # the label ends left of the circle's centre, toward the frame's middle
+
+    def test_circles_that_overlap_at_r_max_are_drawn_smaller_until_they_clear(self):
+        # the q5 stand-in page's map (the eight highest 65+ shares, 2025, as its table held them, at Natural Earth label points, on
+        # layer 1's extent): at r_max 22 Monaco's and Italy's circles, 7.7 px apart, overlapped by 0.70 of the smaller even nudged
+        # and the page stopped. Now the scale steps down to r_used 18, where none overlaps by half; every radius still by area
+        q5 = dict(MCO=36.0110586578337, JPN=29.9940966737423, PRI=25.2728697076413, ITA=25.0981380733118, PRT=24.9426193763087,
+                  GRC=24.3998585549859, FIN=24.2018896456272, DEU=23.7031981458429)  # test-only copies of the run's top 8
+        # and on the world map (the default: equal earth, 1140 wide) the Low Countries, their neighbours and San Marino inside
+        # Italy (the same table's 2025 shares): it steps to the knob's floor
+        west = dict(LUX=15.8123957037476, BEL=20.9608828531757, DEU=23.7031981458429, FRA=22.5418906984086, NLD=20.8687702211484,
+                    ITA=25.0981380733118, SMR=23.1484101571226)
+        def column_map(values, **style):  # the column page's map panel on layer 1's extent
+            rows, items, labels = map_set(values, 1, POINT.get, ZH3); setup(rows, labels)
+            ext = layer1_extent({i["code"]: i["lonlat"] for i in items}, {c: (v, labels[c]) for c, v in values.items()}, 1)
+            return bubbles.Frame({"data": {"items": items, "ext": ext}, "style": {"bubbles": {**run.MAP_STYLE["bubbles"], **style}}})
+        def world_map(values, **style):
+            rows, items, labels = value_set(values, "2025", 1, "%"); setup(rows, labels)
+            return bubbles.Frame(hero(dict(E_DATA, items=items), **style))
+        for draw, values, used in ((column_map, q5, 18), (world_map, west, 12)):
+            fr = draw(values)
+            self.assertEqual((fr.r_used, fr.over), (used, []))
+            self.assertLessEqual(max(bubbles.lens(a, b) / (math.pi * min(a["_r"], b["_r"]) ** 2) for x, a in enumerate(fr.items) for b in fr.items[x + 1:]), 0.5)
+            top = max(fr.items, key=lambda i: i["_v"]); self.assertAlmostEqual(top["_r"], used)
+            for i in fr.items:
+                self.assertAlmostEqual(i["_r"] / top["_r"], math.sqrt(values[i["code"]] / values[top["code"]]), places=9)
+            self.assertEqual(check_svg(bubbles.cl_bubbles(fr, prod.Occ())), [])
+        # with no nudge neither clears even at the floor: both still refuse, saying so
+        for draw, values, pair in ((column_map, q5, "MCO/ITA"), (world_map, west, "ITA/SMR")):
+            with self.assertRaises(Refused) as e: draw(values, nudge=0)
+            self.assertIn(f"({pair}", str(e.exception)); self.assertIn("even at r_max 12", str(e.exception))
+
+    def test_maps_that_clear_at_r_max_draw_as_before(self):
+        # the EU table above, a q1-style EU-27 column map, the q5 change page's world map and the world set: each clears at r_max,
+        # r_used is the knob's, and the layer is byte for byte the one drawn before the smaller scales were tried (its sha then)
+        q1 = dict(SE=66.4, FI=50.8, DK=44.9, LV=43.2, EE=38.5, PT=35.2, AT=33.8, LT=31.9, HR=28.1, RO=25.8, SI=25.1, EL=25.3, ES=24.9, FR=22.2,
+                  DE=21.5, IT=19.6, BG=22.5, CZ=18.6, PL=16.6, SK=17.0, CY=20.2, NL=17.4, HU=15.2, MT=15.1, IE=15.3, BE=14.7, LU=11.6)  # test-only
+        iso3, zh2 = dict(ISO3, EL="GRC"), dict(ZH2, EL=ZH2["GR"])
+        for tag, values, dec, point_of, names, pin in (
+                ("eu", EU2, 1, lambda c: POINT[ISO3[c]], ZH2, "d90ba7ccc955cbafdccdd90cc2fddc235f5f6562706be1f8bda431195f796e08"),
+                ("q1", q1, 1, lambda c: POINT[iso3[c]], zh2, "8f5b6e4ac592a23fe776f8d07504c4158cc532c6ff3b76553b70d1cbfb02c4d5"),
+                ("q5-world", Q5, 2, POINT.get, ZH3, "8e18db6d5b9b56347d30d07f4a482e52a04286a69abd46a292947e5ffe8a151e")):
+            rows, items, labels = map_set(values, dec, point_of, names); setup(rows, labels)
+            ext = layer1_extent({i["code"]: i["lonlat"] for i in items}, {c: (v, labels[c]) for c, v in values.items()}, dec)
+            f = bubbles.Frame({"data": {"items": items, "ext": ext}, "style": {"bubbles": dict(run.MAP_STYLE["bubbles"])}})
+            self.assertEqual((f.r_used, hashlib.sha256(bubbles.cl_bubbles(f, prod.Occ()).encode()).hexdigest()), (22, pin), tag)
+        setup(W_ROWS, W_LABELS)
+        self.assertEqual(hashlib.sha256(bubbles.draw(hero(W_DATA, highlight="CHN"))[0].encode()).hexdigest(), "768bc24ec42f72e6d54b884f5365dd03370296f5c600ea4ba9a62d2ec097ded6")
 
 
 def colour(hexs):

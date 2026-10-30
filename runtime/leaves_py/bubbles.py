@@ -17,8 +17,11 @@ circle on the frame's edge looks inward), its leader crossing no other leader; e
 Frame.unlabeled, never put on a circle, and in Frame.dropped
 (code, "no free place for the label"), which run.py sends back so layer 1 keeps it in the page's ledger.
 Colours: --accent circles, --t-dark at LAND_OPACITY the land, --bg its outline, --t-title the labels' names and numbers (VALUE_INK).
+Circles drawn at r_max that still overlap by over half the smaller one in more pairs than max_overlaps (default 0) after the nudge are
+drawn smaller: r_max a knob step (2 px) less each round, down to the knob's floor (12), every radius (still by area), the nudge and the
+overlaps again; the scale drawn is Frame.r_used (r_max when that held), the one any legend or note of the circles' size must read.
 Refuses: no items, an item outside the extent or without a lon/lat point, a negative value, highlight naming a non-item, more pairs of
-circles overlapping by over half the smaller one than max_overlaps (default 0), no Natural Earth file, extent=box without a valid box,
+circles overlapping by over half the smaller one than max_overlaps even at the floor ("even at r_max 12"), no Natural Earth file, extent=box without a valid box,
 a missing name or ledger entry, a digit in a literal, a knob off its range."""
 import json
 import math
@@ -104,15 +107,19 @@ class Frame:
             if not (isinstance(ll, list) and len(ll) == 2 and -180 <= ll[0] <= 180 and -90 <= ll[1] <= 90): raise Refused(f"bubbles: {i['code']} has no lon/lat point")
             if not (box[0] <= ll[0] <= box[2] and box[1] <= ll[1] <= box[3]): raise Refused(f"bubbles: {i['code']} lies outside the extent")
         f.hl = K.check_codes(NODE, k("highlight"), {i["code"] for i in items}) if k("highlight") else set()
-        mx = max(i["_v"] for i in items) or 1.0
-        for i in items: i["_r"] = max(k("r_min"), k("r_max") * math.sqrt(i["_v"] / mx)); i["_at"] = i["_xy"] = f.xy(*i["lonlat"])
-        items.sort(key=lambda i: -i["_v"])
-        nudge(items, k("nudge"), k("circle_gap"))
-        f.over = [[items[a]["code"], items[b]["code"]] for a in range(len(items)) for b in range(a + 1, len(items))
-                  if lens(items[a], items[b]) > 0.5 * math.pi * min(items[a]["_r"], items[b]["_r"]) ** 2]
-        if len(f.over) > k("max_overlaps"):
-            raise Refused(f"bubbles: {len(f.over)} pairs of circles overlap by more than half the smaller one ({', '.join('/'.join(p) for p in f.over[:6])}), max_overlaps is {k('max_overlaps')}; "
-                          "use extent=box with data.box on the crowded region, a smaller r_max, or a map of that region")
+        mx = max(i["_v"] for i in items) or 1.0; r_max = k("r_max"); low, _, step = prod.KNOBS[NODE]["r_max"][1]
+        while True:  # at r_max, and only when that refuses, a step smaller each round down to the knob's floor: every radius, the nudge and the overlaps again
+            for i in items: i["_r"] = max(k("r_min"), r_max * math.sqrt(i["_v"] / mx)); i["_at"] = i["_xy"] = f.xy(*i["lonlat"])
+            items.sort(key=lambda i: -i["_v"])
+            nudge(items, k("nudge"), k("circle_gap"))
+            f.over = [[items[a]["code"], items[b]["code"]] for a in range(len(items)) for b in range(a + 1, len(items))
+                      if lens(items[a], items[b]) > 0.5 * math.pi * min(items[a]["_r"], items[b]["_r"]) ** 2]
+            if len(f.over) <= k("max_overlaps"): break
+            if r_max - step < low:
+                raise Refused(f"bubbles: {len(f.over)} pairs of circles overlap by more than half the smaller one ({', '.join('/'.join(p) for p in f.over[:6])}) even at r_max {r_max:g}, max_overlaps is {k('max_overlaps')}; "
+                              "use extent=box with data.box on the crowded region or a map of that region")
+            r_max -= step
+        f.r_used = r_max  # the radius scale drawn (the largest circle's radius px): what a size legend or note about the circles reads, not the knob
         f.items, f.unlabeled, f.dropped = items, [], []
 
 
