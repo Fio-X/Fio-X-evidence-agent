@@ -1062,14 +1062,12 @@ fn last_year(s: &mut Shape, tables: &[(&str, &[Value])], _: &dyn Catalogue) -> R
     Ok(())
 }
 
-/// How many years back from the shape's year its earlier end may lie, that year counted: the program's last ten years of an
-/// annual table (next_params::YEARS_SPAN).
-const TWO_ENDS_SPAN: i32 = next_params::YEARS_SPAN;
-
-/// The page's two ends: the later the shape's year (last_year), the earlier the first year of the main, at most TWO_ENDS_SPAN
-/// years back counting the later, at which every country with a value at the later year has one too. Each year passed over
-/// is kept with the countries it misses (Shape::later), for the run's record. No such year before the later is not this
-/// shape (a table of one year goes on to a recipe of one year); a missing value is never filled in or estimated.
+/// The page's two ends: the later the shape's year (last_year), the earlier the first year of the main at which every
+/// country with a value at the later year has one too. The main holds the years its fetch took (next_params: the ones the
+/// question names, from its first, else the last ten), so the earlier end is the question's first year when the data has
+/// every country there, and never cut to fewer years than were fetched. Each year passed over is kept with the countries it
+/// misses (Shape::later), for the run's record. No such year before the later is not this shape (a table of one year goes
+/// on to a recipe of one year); a missing value is never filled in or estimated.
 fn two_ends(s: &mut Shape, tables: &[(&str, &[Value])], _: &dyn Catalogue) -> Result<(), String> {
     let rows = tables[0].1;
     let t1: i32 = s.year.parse().map_err(|_| format!("main {} has no last year", s.main))?;
@@ -1081,10 +1079,9 @@ fn two_ends(s: &mut Shape, tables: &[(&str, &[Value])], _: &dyn Catalogue) -> Re
             .collect()
     };
     let at_t1 = held(&s.year);
-    let span = t1 - TWO_ENDS_SPAN + 1..t1;
     let mut later = Vec::new();
     let mut t0 = None;
-    for year in s.years.iter().filter(|y| is_year(y) && y.parse::<i32>().is_ok_and(|y| span.contains(&y))) {
+    for year in s.years.iter().filter(|y| is_year(y) && y.parse::<i32>().is_ok_and(|y| y < t1)) {
         let missing: Vec<String> = at_t1.difference(&held(year)).cloned().collect();
         if missing.is_empty() {
             t0 = Some(year.clone());
@@ -1093,7 +1090,7 @@ fn two_ends(s: &mut Shape, tables: &[(&str, &[Value])], _: &dyn Catalogue) -> Re
         later.push((year.clone(), missing));
     }
     let t0 = t0.ok_or_else(|| {
-        format!("main {} has no year from {} before {t1} at which every country with a value at {t1} has one", s.main, span.start)
+        format!("main {} has no year before {t1} at which every country with a value at {t1} has one", s.main)
     })?;
     (s.t0, s.later) = (t0, later);
     Ok(())
@@ -1949,7 +1946,8 @@ fn fill_of(
     // the two ends the page runs between, and each earlier year passed over with the countries it misses, for the run's record
     if !shape.t0.is_empty() {
         let later: Vec<Value> = shape.later.iter().map(|(year, missing)| json!({"year": year, "missing": missing})).collect();
-        fill["ends"] = json!({"t0": shape.t0, "t1": shape.year, "rule": "two_ends", "span": TWO_ENDS_SPAN, "later": later});
+        let from = shape.years.first().cloned().unwrap_or_default();
+        fill["ends"] = json!({"t0": shape.t0, "t1": shape.year, "rule": "two_ends", "fetched_from": from, "later": later});
     }
     Ok(fill)
 }
@@ -4897,8 +4895,8 @@ mod tests {
         main
     }
 
-    /// The q1 shape over ten years: 2013 lies before the span, 2015 misses DE (so it is passed over), 2016 and 2024 hold
-    /// every country; the changes by hand SE +16, DE +7.5, BE +5.5, FR -2.25.
+    /// The q1 shape over the years fetched: 2013 holds SE only and 2015 misses DE (so both are passed over), 2016 and 2024
+    /// hold every country; the changes by hand SE +16, DE +7.5, BE +5.5, FR -2.25.
     fn q1_ten_years() -> Vec<Value> {
         let mut values = vec![("SE", "2013", "40"), ("SE", "2015", "49"), ("BE", "2015", "8"), ("FR", "2015", "15")];
         for (g, a, b) in [("SE", "50", "66"), ("BE", "8.5", "14"), ("DE", "14.9", "22.4"), ("FR", "15.5", "13.25"), ("EU27_2020", "17", "24.5")] {
@@ -4908,8 +4906,9 @@ mod tests {
     }
 
     /// The first recipe that reads a table in registry order: one year is a column page (the change page has no two ends),
-    /// ten years with two ends a change page; its two ends are the last year and the earliest year in the span at which
-    /// every country with a last-year value has one, each year passed over kept with the countries it misses.
+    /// ten years with two ends a change page; its two ends are the last year and the earliest year fetched at which every
+    /// country with a last-year value has one (never cut to the last ten: a question's earlier first year is fetched), each
+    /// year passed over kept with the countries it misses.
     #[test]
     fn a_ten_year_table_is_a_change_page_between_its_two_ends_and_one_year_stays_a_column_page() {
         let first = |main: &[Value]| {
@@ -4924,17 +4923,23 @@ mod tests {
         assert_eq!(change.eats.last().map(String::as_str), Some("two_ends"));
         let shape = shape_of(&change.eats, &[("sdg", &main[..])], &Hubs).unwrap();
         assert_eq!((shape.t0.as_str(), shape.year.as_str()), ("2016", "2024"));
-        assert_eq!(shape.later, [("2015".to_string(), vec!["DE".to_string()])]);
-        // no year in the span holds every country: not this shape, and the column page takes it
+        let missed = |codes: &[&str]| codes.iter().map(|c| c.to_string()).collect::<Vec<_>>();
+        assert_eq!(shape.later, [("2013".to_string(), missed(&["BE", "DE", "FR"])), ("2015".to_string(), missed(&["DE"]))]);
+        // no earlier year holds every country: not this shape, and the column page takes it
         let gappy: Vec<Value> = main.iter().filter(|r| r["time"] != "2016").cloned().collect();
         assert_eq!(
             shape_of(&change.eats, &[("sdg", &gappy[..])], &Hubs).unwrap_err(),
-            "not this shape: main sdg has no year from 2015 before 2024 at which every country with a value at 2024 has one"
+            "not this shape: main sdg has no year before 2024 at which every country with a value at 2024 has one"
         );
         assert_eq!(first(&gappy).as_deref(), Some("column"));
-        // a year before the span is never an end
-        let outside: Vec<Value> = main.iter().filter(|r| r["time"] == "2013" || r["time"] == "2024").cloned().collect();
-        assert!(shape_of(&change.eats, &[("sdg", &outside[..])], &Hubs).is_err());
+        // a first year further back than ten (a question's "2000 年以来") is the earlier end when every country has it
+        let mut long = main.clone();
+        for g in ["SE", "BE", "DE", "FR"] {
+            long.push(json!({"src": format!("series:sdg/{g}:2000:OBS_VALUE"), "table": "sdg",
+                "dims": {"freq": "A", "unit": "PC", "geo": g}, "time": "2000", "value": "5"}));
+        }
+        let shape = shape_of(&change.eats, &[("sdg", &long[..])], &Hubs).unwrap();
+        assert_eq!((shape.t0.as_str(), shape.later.len()), ("2000", 0));
     }
 
     /// changed ranks the countries by their change between the two ends, the largest rise first and a tie to code order, sets
@@ -4977,7 +4982,8 @@ mod tests {
         let shape = shape_of(&change.eats, &[("sdg", &main[..])], &Hubs).unwrap();
         let picks = picks_of(&change.picks, &shape, &main, &[]).unwrap();
         let mut fill = fill_of(change, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语")).unwrap();
-        assert_eq!(fill["ends"], json!({"t0": "2016", "t1": "2024", "rule": "two_ends", "span": 10, "later": [{"year": "2015", "missing": ["DE"]}]}));
+        assert_eq!(fill["ends"], json!({"t0": "2016", "t1": "2024", "rule": "two_ends", "fetched_from": "2013",
+            "later": [{"year": "2013", "missing": ["BE", "DE", "FR"]}, {"year": "2015", "missing": ["DE"]}]}));
         let spec = &fill["knobs"]["spec"];
         assert_eq!(spec["facts"]["chg"], json!({"op": "minus", "each": "geo", "a": "val1", "b": "val0", "fmt": "pp"}));
         assert_eq!(spec["facts"]["val0"], json!({"each": "geo", "table": "sdg", "time": "2016", "fmt": "pc"}));

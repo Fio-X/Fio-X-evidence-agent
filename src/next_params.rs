@@ -54,8 +54,12 @@ pub const YEARS_OPTIONS: [&str; 2] = ["the latest year only", "the last ten year
 pub const ANNUAL_YEARS: usize = 2;
 /// The earliest year a question may name: a four-digit number before it is no year of a table.
 const NAMED_FROM: i32 = 1950;
-/// The words that run a question's one year on to now ("2015 年以来").
-const SINCE_WORDS: [&str; 3] = ["以来", "至今", "到现在"];
+/// The words that run a question's one year on to now: before the year ("比 1990 年", "较 2015 年") or after its 年
+/// ("2015 年以来", "与 2015 年相比").
+const SINCE_BEFORE: [&str; 5] = ["比", "较", "相比", "相较", "对比"];
+const SINCE_AFTER: [&str; 6] = ["以来", "至今", "到现在", "起", "相比", "比较"];
+/// The marks between the two years of a range ("2015 到 2024 年").
+const RANGE_MARKS: [char; 7] = ['到', '至', '-', '–', '—', '~', '～'];
 /// Codes kept when an open place dimension has more codes than a chart shows (newsroom_data_prepare narrow, rule "top"):
 /// the highest at the latest time, at most the chart's rows over the years.
 pub const NARROW_TOP: usize = 20;
@@ -184,26 +188,42 @@ pub enum NamedYears {
     Last(i32),
 }
 
-/// The years a question names, read by rule from its words (no model): every four-digit year from NAMED_FROM to this year
-/// gives the span from the earliest to the latest (one year with SINCE_WORDS after it runs to this year); else "近" / "过去" / "最近" before a count (digits, or 一 to 十, 两, 十一 to
-/// 九十九 in Chinese numerals) and "年" give the last that many years. None when it names no years.
+/// The years a question names, read by rule from its words, spaces aside (no model): a four-digit number from NAMED_FROM on
+/// directly before 年 ("2015 年"), or the first of a range written with a RANGE_MARKS ("2015 到 2024 年", "2015-2024 年"),
+/// is a year, and a four-digit number before anything else is none ("2000 美元", "2000 万"); the years give the span from the
+/// earliest to the latest, a later one than this year kept (the fill keeps the fetch to the table's last year). One year
+/// alone that the question runs on from or compares with (SINCE_BEFORE before it, SINCE_AFTER after its 年: "比 1990 年",
+/// "与 2015 年相比", "2015 年以来") runs to this year. Else "近" / "过去" / "最近" before a count (digits, or 一 to 十, 两,
+/// 十一 to 九十九 in Chinese numerals) and "年" give the last that many years. None when it names no years.
 pub fn question_years(question: &str, this_year: i32) -> Option<NamedYears> {
-    let chars: Vec<char> = question.chars().collect();
-    let mut years = Vec::new();
-    let mut i = 0;
-    while i < chars.len() {
+    let chars: Vec<char> = question.chars().filter(|c| !c.is_whitespace()).collect();
+    let four = |i: usize| -> Option<i32> {
         let run = chars[i..].iter().take_while(|c| c.is_ascii_digit()).count();
-        if run == 4 {
-            let y: i32 = chars[i..i + 4].iter().collect::<String>().parse().ok()?;
-            if (NAMED_FROM..=this_year).contains(&y) {
-                years.push(y);
+        let before = i > 0 && chars[i - 1].is_ascii_digit();
+        (run == 4 && !before).then(|| chars[i..i + 4].iter().collect::<String>().parse::<i32>().ok()).flatten().filter(|y| *y >= NAMED_FROM)
+    };
+    // each year with where its digits start and where the text after its 年 starts
+    let mut years: Vec<(i32, usize, usize)> = Vec::new();
+    for i in 0..chars.len() {
+        let Some(y) = four(i) else { continue };
+        match chars.get(i + 4) {
+            Some('年') => years.push((y, i, i + 5)),
+            Some(m) if RANGE_MARKS.contains(m) => {
+                if let Some(to) = four(i + 5).filter(|_| chars.get(i + 9) == Some(&'年')) {
+                    years.extend([(y, i, i + 5), (to, i + 5, i + 10)]);
+                }
             }
+            _ => {}
         }
-        i += run.max(1);
     }
-    if let (Some(a), Some(b)) = (years.iter().min(), years.iter().max()) {
-        let since = a == b && SINCE_WORDS.iter().any(|w| question.contains(w));
-        return Some(NamedYears::Span(*a, if since { this_year } else { *b }));
+    years.dedup();
+    if let (Some(a), Some(b)) = (years.iter().map(|y| y.0).min(), years.iter().map(|y| y.0).max()) {
+        let text = |r: std::ops::Range<usize>| chars[r].iter().collect::<String>();
+        let since = a == b
+            && years.iter().any(|&(_, at, after)| {
+                SINCE_BEFORE.iter().any(|w| text(0..at).ends_with(w)) || SINCE_AFTER.iter().any(|w| text(after..chars.len()).starts_with(w))
+            });
+        return Some(NamedYears::Span(a, if since { this_year.max(a) } else { b }));
     }
     let text: String = chars.iter().filter(|c| !c.is_whitespace()).collect();
     for lead in ["最近", "过去", "近"] {
@@ -1707,6 +1727,22 @@ mod tests {
         assert_eq!(q("5000 人以上"), None);
         assert_eq!(q("最近欧盟各国失业率"), None);
         assert_eq!(q("12345 年"), None);
+        // a four-digit number is a year only before 年 or in a range of years
+        assert_eq!(q("人均 GDP 超过 2000 美元的国家"), None);
+        assert_eq!(q("人口 2000 万以上的国家"), None);
+        assert_eq!(q("月薪低于 1990 欧元"), None);
+        assert_eq!(q("2015-2024 年各国失业率"), Some(NamedYears::Span(2015, 2024)));
+        assert_eq!(q("2015至2024年"), Some(NamedYears::Span(2015, 2024)));
+        assert_eq!(q("人口超过 2000 万的国家 2020 年的失业率"), Some(NamedYears::Span(2020, 2020)));
+        // a year later than this one is kept (the fill keeps the fetch to the table's last year)
+        assert_eq!(q("2020 年到 2030 年欧盟可再生能源"), Some(NamedYears::Span(2020, 2030)));
+        // one year compared with runs to this year, as one run on from
+        assert_eq!(q("欧盟各国碳排放比 1990 年下降多少"), Some(NamedYears::Span(1990, 2026)));
+        assert_eq!(q("与 2015 年相比各国失业率"), Some(NamedYears::Span(2015, 2026)));
+        assert_eq!(q("失业率较2015年上升的国家"), Some(NamedYears::Span(2015, 2026)));
+        assert_eq!(q("2015 年起"), Some(NamedYears::Span(2015, 2026)));
+        // a share (比重, 比例) is no comparison with the year
+        assert_eq!(q("2020 年可再生能源比重"), Some(NamedYears::Span(2020, 2020)));
     }
 
     #[test]
