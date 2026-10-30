@@ -573,13 +573,14 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
                     record_chain_reuse(&bundle.dir, base)?;
                 }
             }
-            let status = if !completion_gaps.is_empty() {
-                "failed"
-            } else if audit.has_agent_loop_evidence() {
-                "draft"
-            } else {
-                "incomplete"
-            };
+            // as for the first run: the new route's status comes from the program's own record, the old route's from the
+            // model's tool loop (investigate.rs run_status)
+            let status = crate::commands::investigate::run_status(
+                &completion_gaps,
+                crate::next_flow::next_enabled(),
+                audit.has_agent_loop_evidence(),
+                &bundle.dir,
+            );
             bundle.append_run_metric(
                 "continue",
                 reported_provider.as_deref(),

@@ -167,6 +167,33 @@ fn leaf_page_gaps(run_dir: &std::path::Path) -> Option<Vec<String>> {
     })
 }
 
+/// Whether the run's first published leaf page took the completion gate and passed it (leaf_page_gaps: the gate entered,
+/// on the page's manifest, the flow's ring event naming those bytes as published and the route state, and found no gap).
+pub(crate) fn leaf_page_gated(run_dir: &std::path::Path) -> bool {
+    leaf_page_gaps(run_dir).is_some_and(|gaps| gaps.is_empty())
+}
+
+/// The run's status for its manifest and run metric (investigate and continue alike), never "verified": only verify grants
+/// that. "failed" on any completion gap. Otherwise "draft" when the run shows the work was done, "incomplete" (and the
+/// qualification line) when it does not: the old route shows it by the model driving its own tool loop (`loop_evidence`,
+/// audit has_agent_loop_evidence), unchanged; the new route by the program's own record, its leaf page gated and passed
+/// (leaf_page_gated), since there the program drives every step and the model only picks, so no tool loop is ever seen.
+pub(crate) fn run_status(completion_gaps: &[String], next_route: bool, loop_evidence: bool, run_dir: &std::path::Path) -> &'static str {
+    if !completion_gaps.is_empty() {
+        "failed"
+    } else if next_route {
+        if leaf_page_gated(run_dir) {
+            "draft"
+        } else {
+            "incomplete"
+        }
+    } else if loop_evidence {
+        "draft"
+    } else {
+        "incomplete"
+    }
+}
+
 /// NEWSROOM_COMPLETION_PLAN_GAP=1 (exact "1", default off): a run that needs the complex-visual chain also
 /// has a gap while plan.json is missing, because verification refuses a story whose `files.plan` is not a
 /// file (src/verify.rs checks every `files` entry with `is_file()`, and artifact.rs always lists plan.json).
@@ -656,13 +683,7 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
             if next_route && !completion_gaps.is_empty() {
                 bundle.write_answer(&failure_answer(&completion_gap_error(&completion_gaps)))?;
             }
-            let status = if !completion_gaps.is_empty() {
-                "failed"
-            } else if audit.has_agent_loop_evidence() {
-                "draft"
-            } else {
-                "incomplete"
-            };
+            let status = run_status(&completion_gaps, next_route, audit.has_agent_loop_evidence(), &bundle.dir);
             bundle.append_run_metric(
                 "investigate",
                 reported_provider.as_deref(),
@@ -757,8 +778,9 @@ mod completion_tests {
         chart_critic_record_passed, completion_chain_required, completion_correction,
         completion_gap_error, completion_gap_hints_on, completion_plan_gap_on, completion_rerun_on,
         completion_retry_applies, completion_same_gaps_on, compose_allowed, effective_tool_profile,
-        gap_supplier, is_transient_completion_provider_error, lieflat_hidden_for,
-        missing_visual_modes, skip_completion_attempt, visual_completion_gaps_for_profile,
+        gap_supplier, is_transient_completion_provider_error, leaf_page_gated, leaf_page_gaps,
+        lieflat_hidden_for, missing_visual_modes, run_status, skip_completion_attempt,
+        visual_completion_gaps_for_profile,
         SentAttempt, COMPLETION_GAP_HINTS_ENV, COMPLETION_PLAN_GAP_ENV, COMPLETION_SAME_GAPS_ENV,
         PLAN_GAP_TEXT,
     };
@@ -974,8 +996,8 @@ mod completion_tests {
             .find("if next_route && !completion_gaps.is_empty() {\n                bundle.write_answer(&failure_answer(&completion_gap_error(&completion_gaps)))?;")
             .expect("new-route gap answer");
         let status = run
-            .find("let status = if !completion_gaps.is_empty() {\n                \"failed\"")
-            .expect("failed status");
+            .find("let status = run_status(&completion_gaps, next_route, audit.has_agent_loop_evidence(), &bundle.dir);")
+            .expect("the run's status");
         let returned = run
             .find("return Err(completion_gap_error(&completion_gaps));")
             .expect("gap error");
@@ -985,6 +1007,65 @@ mod completion_tests {
                 .count(),
             2
         );
+    }
+
+    /// The run's status (run_status), never the verified word: any gap fails; the old route drafts on the model's own tool
+    /// loop only, as before, whatever pages the run holds; the new route drafts only on its leaf page gated and passed,
+    /// whatever the tool loop shows, and is incomplete with no leaf page or one the gate found gaps in. A passing leaf page
+    /// is a draft in next_run.rs (a_published_leaf_page_that_passes_the_gate_makes_a_new_route_run_a_draft).
+    #[test]
+    fn the_run_status_takes_the_new_routes_gated_leaf_page_and_the_old_routes_tool_loop() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let gap = vec!["a gap".to_string()];
+        let empty = tempfile::tempdir().unwrap();
+        for next_route in [false, true] {
+            for loop_evidence in [false, true] {
+                assert_eq!(run_status(&gap, next_route, loop_evidence, empty.path()), "failed");
+            }
+        }
+        // the old route, as before
+        assert_eq!(run_status(&[], false, true, empty.path()), "draft");
+        assert_eq!(run_status(&[], false, false, empty.path()), "incomplete");
+        // the new route with no leaf page: incomplete, a tool loop or not
+        assert!(!leaf_page_gated(empty.path()));
+        assert_eq!(run_status(&[], true, true, empty.path()), "incomplete");
+        assert_eq!(run_status(&[], true, false, empty.path()), "incomplete");
+        // a leaf page the gate enters (its manifest, the flow's ring event naming its bytes, the route state) and finds gaps
+        // in (no request, no fetch): incomplete on the new route; the old route does not read it
+        let run = tempfile::tempdir().unwrap();
+        let html = "<h1>t</h1><p class=\"dek\">d</p>";
+        let sha = crate::hash::sha256_bytes(html.as_bytes());
+        for sub in ["publications/column", "publications/plans", "runtime"] {
+            fs::create_dir_all(run.path().join(sub)).unwrap();
+        }
+        fs::write(run.path().join("runtime/next-page.json"), r#"{"question": "q"}"#).unwrap();
+        fs::write(run.path().join("publications/column/index.html"), html).unwrap();
+        fs::write(run.path().join(crate::next_run::leaf_plan_ref("column")), r#"{"kind": "leaf_plan", "recipe": "column"}"#).unwrap();
+        fs::write(
+            run.path().join("publications/column/manifest.json"),
+            json!({"kind": "leaf_page", "html_ref": "publications/column/index.html", "html_sha256": sha}).to_string(),
+        )
+        .unwrap();
+        let ring = json!({"type": crate::next_run::RING_EVENT, "by": crate::next_run::RING_ACTOR,
+            "auto_parent_call_id": "c1", "recipe": "column", "published": "publications/column/index.html", "html_sha256": sha});
+        fs::write(run.path().join("events.jsonl"), format!("{ring}\n")).unwrap();
+        assert!(leaf_page_gaps(run.path()).is_some_and(|gaps| !gaps.is_empty()));
+        assert!(!leaf_page_gated(run.path()));
+        assert_eq!(run_status(&[], true, true, run.path()), "incomplete");
+        assert_eq!(run_status(&[], false, true, run.path()), "draft");
+        assert_eq!(run_status(&[], false, false, run.path()), "incomplete");
+        // the qualification line prints exactly on an incomplete status, and continue takes the same status
+        let src = include_str!("investigate.rs");
+        let body = &src[..src.find("#[cfg(test)]").unwrap()];
+        assert!(body.contains(
+            "if status == \"incomplete\" {\n                eprintln!(\n                    \"\\n[qualification] investigation completed without enough observable planning/tool evidence"
+        ));
+        assert_eq!(body.matches("[qualification] investigation completed without").count(), 1);
+        assert!(include_str!("continue_investigation.rs").contains("let status = crate::commands::investigate::run_status("));
+        // its words are failed, draft and incomplete: no "verified" in any case is returned by it
+        let at = body.find("pub(crate) fn run_status(").unwrap();
+        let status_fn = &body[at..at + body[at..].find("\n}\n").unwrap()];
+        assert!(!status_fn.to_ascii_lowercase().contains("verified"), "{status_fn}");
     }
 
     #[test]

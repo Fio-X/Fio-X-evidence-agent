@@ -7633,6 +7633,24 @@ for line in sys.stdin:
         }
     }
 
+    /// A new-route run whose leaf page is published and passes the completion gate, read back from the written run, is a
+    /// draft by the program's own record (commands/investigate.rs run_status), with no tool loop of the model in it; read as
+    /// the old route, which counts only the model's tool loop, the same run is incomplete. Never verified: that is verify's.
+    #[tokio::test]
+    async fn a_published_leaf_page_that_passes_the_gate_makes_a_new_route_run_a_draft() {
+        let ran = leaf_run_checked(Some(&headed_twin()), SDG_CSV, vec![call("toolu_v", vision_reply(&[]))], "shot").await;
+        assert!(ran.result.is_ok(), "{:?}", ran.result);
+        let lines: Vec<String> = ran.events.iter().map(Value::to_string).collect();
+        std::fs::write(ran.run.join("events.jsonl"), lines.join("\n") + "\n").unwrap();
+        // the completion gate re-reads the run as the flow's own gate did, through the same measured doors
+        let _command = crate::group_guard::command_for_test("investigate");
+        let _doors = crate::group_guard::doors_for_test(true);
+        assert!(crate::commands::investigate::leaf_page_gated(&ran.run));
+        assert_eq!(crate::commands::investigate::run_status(&[], true, false, &ran.run), "draft");
+        assert_eq!(crate::commands::investigate::run_status(&[], false, false, &ran.run), "incomplete");
+        assert_eq!(crate::commands::investigate::run_status(&["a gap".to_string()], true, false, &ran.run), "failed");
+    }
+
     /// The run's cancel still stops it at the image review: the model's aborted reply to a cancelled run records no review,
     /// and the run stops on that reply, as at any step.
     #[tokio::test]
