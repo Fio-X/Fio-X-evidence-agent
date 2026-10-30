@@ -7640,11 +7640,23 @@ for line in sys.stdin:
     async fn a_published_leaf_page_that_passes_the_gate_makes_a_new_route_run_a_draft() {
         let ran = leaf_run_checked(Some(&headed_twin()), SDG_CSV, vec![call("toolu_v", vision_reply(&[]))], "shot").await;
         assert!(ran.result.is_ok(), "{:?}", ran.result);
-        let lines: Vec<String> = ran.events.iter().map(Value::to_string).collect();
+        // the fetch twin (QueuedTools) gives only the mode, the sheet and the file; the knowledge group's fetch also records
+        // its provider, dataset and the file's sha256, which the completion gate reads back (next_gate fetches)
+        let mut events = ran.events.clone();
+        for event in events.iter_mut().filter(|e| e["type"] == "tool_execution_end" && e["toolName"] == crate::next_knowledge::DATA_PREPARE_TOOL) {
+            let details = &mut event["result"]["details"];
+            let file = details["filePath"].as_str().unwrap().to_string();
+            details["provider"] = json!("eurostat");
+            details["dataset"] = json!("sdg");
+            details["sha256"] = json!(crate::hash::sha256_bytes(&std::fs::read(ran.run.join(&file)).unwrap()));
+        }
+        let lines: Vec<String> = events.iter().map(Value::to_string).collect();
         std::fs::write(ran.run.join("events.jsonl"), lines.join("\n") + "\n").unwrap();
         // the completion gate re-reads the run as the flow's own gate did, through the same measured doors
         let _command = crate::group_guard::command_for_test("investigate");
         let _doors = crate::group_guard::doors_for_test(true);
+        let manifest = read_json(&ran.run, "publications/column/manifest.json").unwrap();
+        assert_eq!(crate::next_gate::leaf_gate(&ran.run, "column", &manifest), Some(Vec::new()), "the gate's reading of the written run");
         assert!(crate::commands::investigate::leaf_page_gated(&ran.run));
         assert_eq!(crate::commands::investigate::run_status(&[], true, false, &ran.run), "draft");
         assert_eq!(crate::commands::investigate::run_status(&[], false, false, &ran.run), "incomplete");
