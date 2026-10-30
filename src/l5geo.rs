@@ -140,10 +140,15 @@ pub struct TwinOf {
     pub asked: String,
     pub used: String,
     pub found: String,
+    /// The last period each table holds, in the metabase's own form ("2026M08", "2025"): what the swap costs in time, the
+    /// annual table often ending a year or two before the monthly one.
+    pub asked_end: String,
+    pub used_end: String,
     pub why: String,
 }
 
-/// A registered pair `top5` reached and did not swap, with the check that failed; the monthly table stays, as without the file.
+/// A registered pair `top5` reached and did not swap, with why (a check that failed, or the question asking for months);
+/// the monthly table stays, as without the file.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct TwinRefused {
     pub monthly: String,
@@ -167,7 +172,8 @@ pub struct Ranking {
     pub uncovered: Option<Uncovered>,
     /// Best first; `top5` keeps 5, `rank` keeps every table that passed the filters.
     pub candidates: Vec<Candidate>,
-    /// `top5` only: the registered monthly-only tables it kept because their annual twin failed a check.
+    /// `top5` only: the registered monthly-only tables it kept, their annual twin failing a check or the question asking
+    /// for months.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub twins_refused: Vec<TwinRefused>,
 }
@@ -1288,20 +1294,22 @@ impl Catalog {
     }
 
     /// The first 5 of `rank`, a registered monthly-only table among them swapped for its annual twin (`twin_swap`) before
-    /// the model sees any.
-    pub fn top5(&self, question_zh: &str, texts: &[String]) -> Ranking {
+    /// the model sees any, unless `months`: the caller read that the question asks for months (a month it names, the
+    /// latest months), which the annual table, ending a year or two earlier, cannot answer.
+    pub fn top5(&self, question_zh: &str, texts: &[String], months: bool) -> Ranking {
         let mut r = self.rank(question_zh, texts);
-        let (candidates, refused) = self.twin_swap(std::mem::take(&mut r.candidates), monthly_twins());
+        let (candidates, refused) = self.twin_swap(std::mem::take(&mut r.candidates), monthly_twins(), months);
         r.candidates = candidates;
         r.twins_refused = refused;
         r
     }
 
     /// The first TOP of `ranked` (best first, ids once each), each monthly-only table of `twins` whose annual twin passes
-    /// `twin_refusal` and this question's filters (is ranked too) replaced by it. The twin takes the monthly table's place
+    /// `twin_check` and this question's filters (is ranked too) replaced by it. The twin takes the monthly table's place
     /// and scores; a twin ranked above its monthly table is offered once, in its own place, and the monthly one is dropped,
-    /// so the next table fills the five. A refused pair keeps the monthly table where it was, as without the file.
-    fn twin_swap(&self, ranked: Vec<Candidate>, twins: &[Twin]) -> (Vec<Candidate>, Vec<TwinRefused>) {
+    /// so the next table fills the five. A refused pair keeps the monthly table where it was, as without the file; with
+    /// `months` every pair is refused so, unchecked, and the first TOP are those of `ranked`.
+    fn twin_swap(&self, ranked: Vec<Candidate>, twins: &[Twin], months: bool) -> (Vec<Candidate>, Vec<TwinRefused>) {
         let mut out: Vec<Candidate> = Vec::new();
         let mut refused = Vec::new();
         for c in &ranked {
@@ -1316,12 +1324,19 @@ impl Catalog {
                 out.push(c.clone());
                 continue;
             };
-            let swap = ranked
-                .iter()
-                .find(|a| a.id == t.annual)
-                .ok_or_else(|| format!("{} is not among the tables this question's filters keep", t.annual))
-                .and_then(|a| self.twin_refusal(t).map_or(Ok(a), Err));
-            let a = match swap {
+            let swap = if months {
+                Err(format!(
+                    "the question asks for months, which {} ends too early to answer, so the monthly table stays",
+                    t.annual
+                ))
+            } else {
+                ranked
+                    .iter()
+                    .find(|a| a.id == t.annual)
+                    .ok_or_else(|| format!("{} is not among the tables this question's filters keep", t.annual))
+                    .and_then(|a| self.twin_check(t).map(|ends| (a, ends)))
+            };
+            let (a, (asked_end, used_end)) = match swap {
                 Ok(a) => a,
                 Err(why) => {
                     refused.push(TwinRefused {
@@ -1338,11 +1353,13 @@ impl Catalog {
                     asked: c.id.clone(),
                     used: a.id.clone(),
                     found: t.found.clone(),
+                    asked_end: asked_end.clone(),
+                    used_end: used_end.clone(),
                     why,
                 })
             };
             let held = format!(
-                "{} holds monthly data only; {} is the annual table of the same measure (monthly-twins.json, found by {}), its dimensions and codes checked in this catalogue",
+                "{} holds monthly data only, to {asked_end}; {} is the annual table of the same measure (monthly-twins.json, found by {}), its dimensions and codes checked in this catalogue, to {used_end}",
                 c.id, a.id, t.found
             );
             match out.iter_mut().find(|o| o.id == a.id) {
@@ -1363,12 +1380,13 @@ impl Catalog {
         (out, refused)
     }
 
-    /// Why the annual table of a registered pair cannot stand for its monthly one in this catalogue; None when it can. The
-    /// file was built from an older catalogue copy, so each pair is checked again here: both tables listed, the monthly one
-    /// holding monthly codes alone and the annual one annual codes, the same dimensions as the file names, every monthly
-    /// code (its unit codes too) in the annual table, and no more annual codes in a dimension than the file counts. A
-    /// failure only keeps the monthly table.
-    fn twin_refusal(&self, twin: &Twin) -> Option<String> {
+    /// The data end periods (the monthly table's, the annual one's; the metabase's own form, 2026M08 and 2025) of a
+    /// registered pair whose annual table can stand for its monthly one in this catalogue; else why it cannot. The file was
+    /// built from an older catalogue copy, so each pair is checked again here: both tables listed, the monthly one holding
+    /// monthly codes alone and the annual one annual codes alone (as the file's builder requires), the same dimensions as
+    /// the file names, every monthly code (its unit codes too) in the annual table, and no more annual codes in a dimension
+    /// than the file counts. A failure only keeps the monthly table.
+    fn twin_check(&self, twin: &Twin) -> Result<(String, String), String> {
         fn freqs(t: &TableMeta) -> Vec<&str> {
             t.freqs.iter().map(|(f, _, _)| f.as_str()).collect()
         }
@@ -1376,29 +1394,29 @@ impl Catalog {
             t.dims.iter().map(|(d, _)| d.as_str()).collect()
         }
         let (Some(m), Some(a)) = (self.table(&twin.monthly), self.table(&twin.annual)) else {
-            return Some(format!(
+            return Err(format!(
                 "the catalogue does not list both {} and {}",
                 twin.monthly, twin.annual
             ));
         };
-        if freqs(&m) != ["M"] {
-            return Some(format!(
-                "{} is not monthly only: its time codes hold [{}]",
-                m.id,
-                freqs(&m).join(", ")
-            ));
-        }
-        if !freqs(&a).contains(&"A") {
-            return Some(format!(
-                "{} holds no annual data: its time codes hold [{}]",
-                a.id,
-                freqs(&a).join(", ")
-            ));
-        }
+        let (m_end, a_end) = match (m.freqs.as_slice(), a.freqs.as_slice()) {
+            ([(mf, _, m_end)], [(af, _, a_end)]) if mf == "M" && af == "A" => (m_end.clone(), a_end.clone()),
+            ([(mf, _, _)], _) if mf == "M" => {
+                let what = if freqs(&a).contains(&"A") { "more than annual data" } else { "no annual data" };
+                return Err(format!("{} holds {what}: its time codes hold [{}]", a.id, freqs(&a).join(", ")));
+            }
+            _ => {
+                return Err(format!(
+                    "{} is not monthly only: its time codes hold [{}]",
+                    m.id,
+                    freqs(&m).join(", ")
+                ))
+            }
+        };
         let named: BTreeSet<&str> = twin.dims.iter().map(String::as_str).collect();
         if names(&m) != named || names(&a) != named {
             let list = |s: BTreeSet<&str>| s.into_iter().collect::<Vec<_>>().join(", ");
-            return Some(format!(
+            return Err(format!(
                 "the dimensions differ: {} has [{}], {} has [{}], the file names [{}]",
                 m.id,
                 list(names(&m)),
@@ -1414,15 +1432,15 @@ impl Catalog {
                 .map(|(_, cs)| cs.iter().map(|(c, _)| c.clone()).collect())
                 .unwrap_or_default()
         };
-        for (dim, monthly) in &m.dims {
-            let annual = codes(&a, dim);
-            if let Some((c, _)) = monthly.iter().find(|(c, _)| !annual.contains(c)) {
-                return Some(format!("{} lacks the {dim} code {c} of {}", a.id, m.id));
+        for (dim, _) in &m.dims {
+            let (monthly, annual) = (codes(&m, dim), codes(&a, dim));
+            if let Some(c) = monthly.iter().find(|c| !annual.contains(*c)) {
+                return Err(format!("{} lacks the {dim} code {c} of {}", a.id, m.id));
             }
             let extra = annual.len() - monthly.len();
             let allowed = twin.extra_annual_codes.get(dim).copied().unwrap_or(0);
             if extra > allowed {
-                return Some(format!(
+                return Err(format!(
                     "{} has {extra} {dim} codes beyond those of {}, the file counts {allowed}",
                     a.id, m.id
                 ));
@@ -1430,9 +1448,9 @@ impl Catalog {
         }
         let units = codes(&a, "unit");
         if let Some(u) = twin.unit.iter().find(|u| !units.contains(*u)) {
-            return Some(format!("{} lacks the unit {u}", a.id));
+            return Err(format!("{} lacks the unit {u}", a.id));
         }
-        None
+        Ok((m_end, a_end))
     }
 }
 
@@ -1728,7 +1746,7 @@ mod tests {
             None,
             "a topic neither catalog has is left to the table pick"
         );
-        let r = c.top5("中国各省房价", &texts(&["energy"]));
+        let r = c.top5("中国各省房价", &texts(&["energy"]), false);
         assert!(r.uncovered.is_some() && r.candidates.is_empty());
     }
 
@@ -2082,7 +2100,7 @@ mod tests {
     /// The q6 pair as monthly-twins.json registers it (migr_asyappctzm monthly only, migr_asyappctza its annual twin with
     /// the same codes) among other asylum tables, and nrg_cb_pem, monthly only with no registered twin, beside tables that
     /// each differ from it in one way, for crafted pairs: nrg_pa_more (annual, two more geo codes), nrg_pa_op (annual, one
-    /// more dimension), nrg_pa_few (annual, a geo code fewer) and nrg_pq (quarterly).
+    /// more dimension), nrg_pa_few (annual, a geo code fewer), nrg_pq (quarterly) and nrg_pa_mix (annual and monthly).
     fn twins_catalog() -> Catalog {
         let toc = "\"title\"\t\"code\"\t\"type\"\n\"Database by themes\"\t\"data\"\t\"folder\"\n\
                    \"    Asylum\"\t\"migr\"\t\"folder\"\n\
@@ -2097,7 +2115,8 @@ mod tests {
                    \"        Electricity generation by fuel and operator\"\t\"nrg_pa_op\"\t\"table\"\n\
                    \"        Electricity generation by fuel in Germany\"\t\"nrg_pa_few\"\t\"table\"\n\
                    \"        Electricity generation by fuel\"\t\"nrg_pa_more\"\t\"table\"\n\
-                   \"        Electricity generation by fuel - quarterly data\"\t\"nrg_pq\"\t\"table\"\n";
+                   \"        Electricity generation by fuel - quarterly data\"\t\"nrg_pq\"\t\"table\"\n\
+                   \"        Electricity generation by fuel - annual and monthly data\"\t\"nrg_pa_mix\"\t\"table\"\n";
         let asylum: &[(&str, &[&str])] = &[
             ("age", &["TOTAL"]),
             ("applicant", &["ASY_APP"]),
@@ -2122,6 +2141,7 @@ mod tests {
             ("nrg_pa_few", vec![&[("geo", &["DE"][..]), ("siec", &["TOTAL", "CF"][..]), ("unit", &["GWH"][..])][..], annual]),
             ("nrg_pa_more", vec![&[("geo", &["DE", "FR", "IT", "ES"][..]), ("siec", &["TOTAL", "CF"][..]), ("unit", &["GWH"][..])][..], annual]),
             ("nrg_pq", vec![power, &[("time", &["2024Q1", "2024Q2"][..])][..]]),
+            ("nrg_pa_mix", vec![power, &[("time", &["2025", "2025M01"][..])][..]]),
         ] {
             for (dim, codes) in parts.into_iter().flatten() {
                 for code in *codes {
@@ -2154,7 +2174,7 @@ mod tests {
         let t = texts(&["asylum applicants citizenship monthly"]);
         let all = c.rank(q6, &t).candidates;
         assert_eq!(ids(&all)[..2], ["migr_asyappctzm", "migr_asyappctza"]);
-        let r = c.top5(q6, &t);
+        let r = c.top5(q6, &t, false);
         let want: Vec<&str> = std::iter::once("migr_asyappctza")
             .chain(ids(&all)[2..6].iter().copied())
             .collect();
@@ -2169,11 +2189,16 @@ mod tests {
             (twin.asked.as_str(), twin.used.as_str(), twin.found.as_str()),
             ("migr_asyappctzm", "migr_asyappctza", "id")
         );
+        // What the swap costs: the annual table ends at 2025, the monthly one at 2026M08, both in the record.
+        assert_eq!((twin.asked_end.as_str(), twin.used_end.as_str()), ("2026M08", "2025"));
+        assert!(twin.why.contains("to 2026M08") && twin.why.contains("to 2025"), "{}", twin.why);
         assert!(r.candidates[1..].iter().all(|c| c.twin_of.is_none()));
         assert!(r.twins_refused.is_empty());
         // As the catalogue event records it: only the twin carries the new field.
         let j = serde_json::to_value(&r).unwrap();
         assert_eq!(j["candidates"][0]["twin_of"]["used"], "migr_asyappctza");
+        assert_eq!(j["candidates"][0]["twin_of"]["asked_end"], "2026M08");
+        assert_eq!(j["candidates"][0]["twin_of"]["used_end"], "2025");
         assert!(j["candidates"][1].get("twin_of").is_none());
         assert!(j.get("twins_refused").is_none());
 
@@ -2181,7 +2206,7 @@ mod tests {
         let t = texts(&["asylum applicants citizenship annual aggregated"]);
         let all = c.rank(q6, &t).candidates;
         assert_eq!(ids(&all)[..2], ["migr_asyappctza", "migr_asyappctzm"]);
-        let r = c.top5(q6, &t);
+        let r = c.top5(q6, &t, false);
         let want: Vec<&str> = std::iter::once("migr_asyappctza")
             .chain(ids(&all)[2..6].iter().copied())
             .collect();
@@ -2194,6 +2219,33 @@ mod tests {
     }
 
     #[test]
+    fn a_question_asking_for_months_keeps_the_monthly_only_table() {
+        let c = twins_catalog();
+        let q6 = "2026 年 3 月欧盟庇护申请的来源国";
+        for t in [
+            texts(&["asylum applicants citizenship monthly"]),
+            texts(&["asylum applicants citizenship annual aggregated"]),
+        ] {
+            let mut all = c.rank(q6, &t);
+            assert!(ids(&all.candidates[..2]).contains(&"migr_asyappctzm"));
+            // months: the five as ranked, the monthly table in its place, the pair recorded as not swapped
+            let r = c.top5(q6, &t, true);
+            all.candidates.truncate(TOP);
+            assert_eq!(ids(&r.candidates), ids(&all.candidates));
+            assert!(r.candidates.iter().all(|c| c.twin_of.is_none()));
+            assert_eq!(r.twins_refused.len(), 1);
+            let refused = &r.twins_refused[0];
+            assert_eq!((refused.monthly.as_str(), refused.annual.as_str()), ("migr_asyappctzm", "migr_asyappctza"));
+            assert!(refused.why.contains("asks for months"), "{}", refused.why);
+            // the same question and words without months: swapped
+            let r = c.top5(q6, &t, false);
+            assert_eq!(r.candidates[0].id, "migr_asyappctza");
+            assert!(!ids(&r.candidates).contains(&"migr_asyappctzm"));
+            assert!(r.twins_refused.is_empty());
+        }
+    }
+
+    #[test]
     fn a_monthly_only_table_with_no_registered_twin_ranks_as_before() {
         let c = twins_catalog();
         let q3 = "欧盟各国发电结构";
@@ -2202,7 +2254,7 @@ mod tests {
         assert_eq!(all.candidates[0].id, "nrg_cb_pem");
         all.candidates.truncate(TOP);
         assert_eq!(
-            serde_json::to_value(c.top5(q3, &t)).unwrap(),
+            serde_json::to_value(c.top5(q3, &t, false)).unwrap(),
             serde_json::to_value(all).unwrap()
         );
     }
@@ -2223,7 +2275,7 @@ mod tests {
         };
         let dims = ["geo", "siec", "unit"];
         // Every monthly code in the annual table, with no more extra codes than the file counts: swapped.
-        let (got, refused) = c.twin_swap(ranked.clone(), &[pair("nrg_pa_more", &dims, &[("geo", 2)], &["GWH"])]);
+        let (got, refused) = c.twin_swap(ranked.clone(), &[pair("nrg_pa_more", &dims, &[("geo", 2)], &["GWH"])], false);
         assert!(refused.is_empty(), "{refused:?}");
         assert_eq!(got.len(), TOP);
         assert!(!ids(&got).contains(&"nrg_cb_pem"));
@@ -2250,11 +2302,12 @@ mod tests {
             ),
             (pair("nrg_pa_few", &dims, &[], &["GWH"]), "nrg_pa_few lacks the geo code FR of nrg_cb_pem"),
             (pair("nrg_pq", &dims, &[], &["GWH"]), "nrg_pq holds no annual data"),
+            (pair("nrg_pa_mix", &dims, &[], &["GWH"]), "nrg_pa_mix holds more than annual data"),
             (pair("nrg_pa_more", &dims, &[("geo", 2)], &["TJ"]), "nrg_pa_more lacks the unit TJ"),
             (pair("nrg_no_such", &dims, &[], &[]), "nrg_no_such is not among the tables"),
             (not_monthly, "nrg_pa_more is not monthly only"),
         ] {
-            let (got, refused) = c.twin_swap(ranked.clone(), std::slice::from_ref(&twin));
+            let (got, refused) = c.twin_swap(ranked.clone(), std::slice::from_ref(&twin), false);
             assert_eq!(ids(&got), ids(&ranked[..TOP]), "{why}");
             assert!(got.iter().all(|c| c.twin_of.is_none()), "{why}");
             assert_eq!(refused.len(), 1, "{why}");
@@ -2509,6 +2562,7 @@ mod tests {
         let r = c.top5(
             "德国能源从来源到各部门",
             &texts(&["energy balance supply sources to final consumption by sector Germany"]),
+            false,
         );
         println!(
             "top5 one query {:.3}s: {}",
@@ -2520,6 +2574,117 @@ mod tests {
             want["standin"].as_array().unwrap().len(),
             bad.len()
         );
+        assert!(bad.is_empty(), "{}", bad.join("\n"));
+    }
+
+    /// The registered twins on the real catalogue: each golden row of replay_v5geo (its phrasings and stand-in rows, both
+    /// scopes) and the 6 questions with their stand-in A words, and the rows of L5GEO_TWINS_ROWS when set (a TSV of label,
+    /// question, words), printed as one JSON line each with its first five before the swap and after it. A row may change
+    /// only by a registered monthly-only table giving way to its annual twin, the next ranked table filling the five. The
+    /// questions' top5 is timed with and without the swap.
+    /// L5GEO_DIR=<registry>/l5geo/catalog L5GEO_REPLAY=<registry> cargo test l5geo::tests::replay_v5geo_twins -- --include-ignored --nocapture
+    #[test]
+    #[ignore]
+    fn replay_v5geo_twins() {
+        let dir = std::path::PathBuf::from(std::env::var("L5GEO_DIR").expect("L5GEO_DIR"));
+        let reg = std::path::PathBuf::from(std::env::var("L5GEO_REPLAY").expect("L5GEO_REPLAY"));
+        let read = |p: &str| std::fs::read_to_string(reg.join(p)).unwrap();
+        let c = Catalog::load(&dir).unwrap();
+        let want: serde_json::Value = serde_json::from_str(&read("v5geo/out-v5geo.json")).unwrap();
+        let twins = monthly_twins();
+        let monthly: HashMap<&str, &str> = twins.iter().map(|t| (t.monthly.as_str(), t.annual.as_str())).collect();
+        let mut bad = Vec::new();
+        let mut changed = 0;
+        let mut rows = 0;
+        let mut row = |kind: &str, label: String, scope: &str, ranked: &[Candidate], after: &Ranking| {
+            let before = ids(&ranked[..ranked.len().min(TOP)]);
+            let got = ids(&after.candidates);
+            let removed: Vec<&str> = before.iter().copied().filter(|i| !got.contains(i)).collect();
+            let added: Vec<&str> = got.iter().copied().filter(|i| !before.contains(i)).collect();
+            for r in &removed {
+                if !monthly.contains_key(r) {
+                    bad.push(format!("{kind} {label} {scope}: {r} left the five and is no registered monthly table"));
+                }
+            }
+            let fills = ids(&ranked[TOP.min(ranked.len())..(TOP + removed.len()).min(ranked.len())]);
+            for a in &added {
+                if !removed.iter().any(|r| monthly.get(r) == Some(a)) && !fills.contains(a) {
+                    bad.push(format!("{kind} {label} {scope}: {a} joined the five as neither a twin nor the next ranked"));
+                }
+            }
+            for t in after.candidates.iter().filter_map(|c| c.twin_of.as_ref()) {
+                if monthly.get(t.asked.as_str()) != Some(&t.used.as_str()) || !before.contains(&t.asked.as_str()) {
+                    bad.push(format!("{kind} {label} {scope}: twin_of {t:?}"));
+                }
+            }
+            rows += 1;
+            changed += usize::from(before != got);
+            println!(
+                "twins {}",
+                json!({"kind": kind, "label": label, "scope": scope, "before": before, "after": got,
+                    "changed": before != got,
+                    "twins": after.candidates.iter().filter_map(|c| c.twin_of.as_ref()).collect::<Vec<_>>(),
+                    "refused": after.twins_refused})
+            );
+        };
+        let swapped = |ranked: &[Candidate]| {
+            let (candidates, twins_refused) = c.twin_swap(ranked.to_vec(), twins, false);
+            Ranking { scope: Scope::Europe, places_zh: Vec::new(), uncovered: None, candidates, twins_refused }
+        };
+        let scope_of = |q: &str| c.scope(ORIG.iter().find(|(k, _)| *k == q).unwrap().1).0;
+        for r in want["phrasings"].as_array().unwrap() {
+            let q = r["q"].as_str().unwrap();
+            let ph = texts(&[r["phrasing"].as_str().unwrap()]);
+            for (name, scope) in [("L5-none", Scope::Europe), ("L5geo", scope_of(q))] {
+                let ranked = c.rank_in(&ph, scope);
+                row("phrasing", format!("{q} {}", ph[0]), name, &ranked, &swapped(&ranked));
+            }
+        }
+        let a_file = read("standin-query-1025/A-one-query.txt");
+        let a: HashMap<&str, &str> = a_file.lines().filter_map(|l| l.split_once(": ")).collect();
+        let b_file = read("standin-query-1025/B-terms.jsonl");
+        let b: HashMap<String, serde_json::Value> = b_file
+            .lines()
+            .map(|l| serde_json::from_str::<serde_json::Value>(l).unwrap())
+            .map(|j| (j["id"].as_str().unwrap().to_lowercase(), j))
+            .collect();
+        for r in want["standin"].as_array().unwrap() {
+            let q = r["q"].as_str().unwrap();
+            let t: Vec<String> = if r["variant"] == "A" {
+                texts(&[a[q].trim()])
+            } else {
+                b[q]["terms"].as_array().unwrap().iter().map(|t| t.as_str().unwrap().to_string()).collect()
+            };
+            for (name, scope) in [("L5-none", Scope::Europe), ("L5geo", scope_of(q))] {
+                let ranked = c.rank_in(&t, scope);
+                let label = format!("{q} {} {}", r["variant"].as_str().unwrap(), t.join(" | "));
+                row("standin", label, name, &ranked, &swapped(&ranked));
+            }
+        }
+        let mut asked: Vec<(String, String, String)> =
+            ORIG.iter().map(|(q, zh)| (q.to_string(), zh.to_string(), a[q].trim().to_string())).collect();
+        if let Ok(path) = std::env::var("L5GEO_TWINS_ROWS") {
+            for line in std::fs::read_to_string(path).unwrap().lines() {
+                if let [label, question, words] = line.split('\t').collect::<Vec<_>>()[..] {
+                    asked.push((label.into(), question.into(), words.into()));
+                }
+            }
+        }
+        let ms = |t: std::time::Instant| t.elapsed().as_secs_f64() * 1000.0;
+        for (label, zh, words) in &asked {
+            let t = texts(&[words]);
+            let t0 = std::time::Instant::now();
+            let mut plain = c.rank(zh, &t);
+            plain.candidates.truncate(TOP);
+            let plain_ms = ms(t0);
+            let t1 = std::time::Instant::now();
+            let after = c.top5(zh, &t, false);
+            let swap_ms = ms(t1);
+            let ranked = c.rank(zh, &t).candidates;
+            println!("time {label} rank+truncate {plain_ms:.1} ms, top5 {swap_ms:.1} ms, refused {}", after.twins_refused.len());
+            row("question", format!("{label} {zh} {words}"), "top5", &ranked, &after);
+        }
+        println!("rows {rows}, changed {changed}");
         assert!(bad.is_empty(), "{}", bad.join("\n"));
     }
 }

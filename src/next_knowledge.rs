@@ -94,11 +94,13 @@ pub struct OpenedRefs {
 pub enum Request<'a> {
     /// Reads SOURCE.json first, so a wrong directory stops before the load; then the catalogue's original files.
     OpenCatalogue { dir: &'a Path },
-    /// The first five tables for the Chinese question and the English search texts, with the scope and places it judged.
+    /// The first five tables for the Chinese question and the English search texts, with the scope and places it judged;
+    /// `months` when the caller read that the question asks for months (a monthly-only table then keeps its place).
     Top5 {
         catalogue: &'a Opened,
         question: &'a str,
         texts: &'a [String],
+        months: bool,
     },
     /// English place names in the search texts that the question does not name.
     PlacesOutside {
@@ -273,7 +275,8 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
             catalogue,
             question,
             texts,
-        } => Reply::Ranking(catalogue.catalog.top5(question, texts)),
+            months,
+        } => Reply::Ranking(catalogue.catalog.top5(question, texts, months)),
         Request::PlacesOutside {
             catalogue,
             question,

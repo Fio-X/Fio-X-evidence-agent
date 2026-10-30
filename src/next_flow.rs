@@ -2111,8 +2111,10 @@ pub const GROUP_CALL_EVENT: &str = "next_group_call";
 
 /// The table catalogue the table pick reads. Ids are as the catalogue names them (a Eurostat code; World Bank "<indicator>@2").
 pub trait Catalogue: Sync {
-    /// The first five tables for the Chinese question and the English search texts, with the scope and places it judged.
-    fn top5(&self, question_zh: &str, texts: &[String]) -> Ranking;
+    /// The first five tables for the Chinese question and the English search texts, with the scope and places it judged;
+    /// `months` when the question asks for months (next_params::question_months), so a monthly-only table is offered as
+    /// itself, not as its annual twin.
+    fn top5(&self, question_zh: &str, texts: &[String], months: bool) -> Ranking;
     /// English place names in the search texts that the question does not name. Flagged in the event, never refused.
     fn places_outside(&self, question_zh: &str, texts: &[String]) -> Vec<String>;
     /// SOURCE.json of the catalogue directory: the original files it was made from and their hashes.
@@ -2890,17 +2892,19 @@ impl Catalogue for GroupCatalogue {
         }
     }
 
-    fn top5(&self, question_zh: &str, texts: &[String]) -> Ranking {
+    fn top5(&self, question_zh: &str, texts: &[String], months: bool) -> Ranking {
         let request = next_knowledge::Request::Top5 {
             catalogue: &self.opened,
             question: question_zh,
             texts,
+            months,
         };
-        match self.call(
-            "top5",
-            json!({"question": question_zh, "texts": texts}),
-            request,
-        ) {
+        // "months" only when set, so a call without it hashes as before.
+        let mut args = json!({"question": question_zh, "texts": texts});
+        if months {
+            args["months"] = json!(true);
+        }
+        match self.call("top5", args, request) {
             next_knowledge::Reply::Ranking(ranking) => ranking,
             _ => unreachable!("the knowledge group answered top5 with another reply"),
         }
@@ -4024,7 +4028,7 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
     };
     // The search words go to the catalogue and into this event only: no later prompt, fetch or page reads them.
     let texts = vec![query];
-    let ranking = catalogue.top5(question, &texts);
+    let ranking = catalogue.top5(question, &texts, next_params::question_months(question));
     recorder.program_event(
         CATALOGUE_EVENT,
         json!({"question": question, "texts": texts, "places_outside": catalogue.places_outside(question, &texts),
@@ -6143,7 +6147,7 @@ mod tests {
         candidates: Vec<Candidate>,
         uncovered: Option<Uncovered>,
         source: Value,
-        searched: std::sync::Mutex<Vec<(String, Vec<String>)>>,
+        searched: std::sync::Mutex<Vec<(String, Vec<String>, bool)>>,
     }
 
     impl FakeCatalogue {
@@ -6159,11 +6163,11 @@ mod tests {
     }
 
     impl Catalogue for FakeCatalogue {
-        fn top5(&self, question_zh: &str, texts: &[String]) -> Ranking {
+        fn top5(&self, question_zh: &str, texts: &[String], months: bool) -> Ranking {
             self.searched
                 .lock()
                 .unwrap()
-                .push((question_zh.to_string(), texts.to_vec()));
+                .push((question_zh.to_string(), texts.to_vec(), months));
             let mut ranking = self.ranking();
             ranking.candidates.truncate(5);
             ranking
@@ -6328,7 +6332,7 @@ mod tests {
         tools: ScriptedTools,
         events: Events,
         history: Vec<Value>,
-        searched: Vec<(String, Vec<String>)>,
+        searched: Vec<(String, Vec<String>, bool)>,
     }
 
     /// Runs the fixed order on the q3-like spec in a fresh run folder holding these sheets, with scripted model replies, scripted
@@ -6359,6 +6363,17 @@ mod tests {
         details: Vec<Value>,
         catalogue: FakeCatalogue,
     ) -> Drove {
+        drive_asking("德国和法国的发电量", sheets, replies, details, catalogue).await
+    }
+
+    /// As drive_in, for this question.
+    async fn drive_asking(
+        question: &str,
+        sheets: &[(&str, &[&str])],
+        replies: Vec<Value>,
+        details: Vec<Value>,
+        catalogue: FakeCatalogue,
+    ) -> Drove {
         let run = tempfile::tempdir().unwrap();
         let dir = run.path();
         for (key, ids) in sheets {
@@ -6377,7 +6392,7 @@ mod tests {
             &mut recorder,
             &mut model,
             &mut tools,
-            "德国和法国的发电量",
+            question,
             &steps,
             &catalogue,
             &cancel,
@@ -6430,7 +6445,8 @@ mod tests {
             drove.searched,
             [(
                 "德国和法国的发电量".to_string(),
-                vec!["electricity generation".to_string()]
+                vec!["electricity generation".to_string()],
+                false
             )]
         );
         // what the catalogue returned is kept whole, under the search answer, with the places flagged (not refused)
@@ -6683,6 +6699,41 @@ mod tests {
         assert_eq!(searched[0]["ranking"]["uncovered"]["level_zh"], "各县");
     }
 
+    /// The catalogue is told when the question asks for months (next_params::question_months), so a monthly-only table keeps
+    /// its place; a question naming a year alone is not, and its monthly-only table is offered as its annual twin.
+    #[tokio::test]
+    async fn the_catalogue_is_told_when_the_question_asks_for_months() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        for (question, months) in [
+            ("2026 年 3 月德国和法国的发电量", true),
+            ("最近几个月德国和法国的发电量", true),
+            ("2024 年德国和法国的发电量", false),
+        ] {
+            let drove = drive_asking(
+                question,
+                &[],
+                vec![search_reply()],
+                vec![],
+                FakeCatalogue {
+                    candidates: Vec::new(),
+                    uncovered: Some(Uncovered {
+                        place_zh: "日本".into(),
+                        level_zh: "各县".into(),
+                    }),
+                    source: json!({}),
+                    searched: Default::default(),
+                },
+            )
+            .await;
+            assert!(matches!(&drove.result, Err(Stop::NoTable(_))), "{:?}", drove.result);
+            assert_eq!(
+                drove.searched,
+                [(question.to_string(), vec!["electricity generation".to_string()], months)],
+                "{question}"
+            );
+        }
+    }
+
     /// The real catalogue: NEWS_CATALOG_DIR=<registry>/l5geo/catalog NEWS_CLASSIFY_REFS=<registry>/classify/refs cargo test next_flow::tests::the_real -- --include-ignored
     #[test]
     #[ignore]
@@ -6692,6 +6743,7 @@ mod tests {
         let ranking = catalogue.top5(
             "德国和法国的发电量",
             &["electricity generation".to_string()],
+            false,
         );
         println!("{}", serde_json::to_string(&ranking).unwrap());
         assert_eq!(ranking.candidates.len(), OFFERED_TABLES);
@@ -6728,7 +6780,7 @@ mod tests {
         }
         struct Queued(Mutex<Vec<Value>>);
         impl Catalogue for Queued {
-            fn top5(&self, _: &str, _: &[String]) -> Ranking {
+            fn top5(&self, _: &str, _: &[String], _: bool) -> Ranking {
                 unreachable!()
             }
             fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
@@ -6864,8 +6916,8 @@ mod tests {
     struct WithTable(FakeCatalogue, TableMeta);
 
     impl Catalogue for WithTable {
-        fn top5(&self, question_zh: &str, texts: &[String]) -> Ranking {
-            self.0.top5(question_zh, texts)
+        fn top5(&self, question_zh: &str, texts: &[String], months: bool) -> Ranking {
+            self.0.top5(question_zh, texts, months)
         }
         fn places_outside(&self, question_zh: &str, texts: &[String]) -> Vec<String> {
             self.0.places_outside(question_zh, texts)
@@ -7000,8 +7052,8 @@ mod tests {
     struct Probing(WithTable, Option<(u16, &'static str)>);
 
     impl Catalogue for Probing {
-        fn top5(&self, question_zh: &str, texts: &[String]) -> Ranking {
-            self.0.top5(question_zh, texts)
+        fn top5(&self, question_zh: &str, texts: &[String], months: bool) -> Ranking {
+            self.0.top5(question_zh, texts, months)
         }
         fn places_outside(&self, question_zh: &str, texts: &[String]) -> Vec<String> {
             self.0.places_outside(question_zh, texts)
@@ -7509,8 +7561,8 @@ mod tests {
     struct InTheEu(WithTable);
 
     impl Catalogue for InTheEu {
-        fn top5(&self, question_zh: &str, texts: &[String]) -> Ranking {
-            self.0.top5(question_zh, texts)
+        fn top5(&self, question_zh: &str, texts: &[String], months: bool) -> Ranking {
+            self.0.top5(question_zh, texts, months)
         }
         fn places_outside(&self, question_zh: &str, texts: &[String]) -> Vec<String> {
             self.0.places_outside(question_zh, texts)
@@ -7678,7 +7730,7 @@ mod tests {
                 continue;
             };
             let texts = vec![words.to_string()];
-            let ranking = catalogue.top5(question, &texts);
+            let ranking = catalogue.top5(question, &texts, next_params::question_months(question));
             let places = catalogue.places(question);
             let mut rows = Vec::new();
             for (i, t) in ranking.candidates.iter().take(OFFERED_TABLES).enumerate() {
@@ -7991,8 +8043,8 @@ mod tests {
     struct WithCompanions(FakeCatalogue);
 
     impl Catalogue for WithCompanions {
-        fn top5(&self, question_zh: &str, texts: &[String]) -> Ranking {
-            self.0.top5(question_zh, texts)
+        fn top5(&self, question_zh: &str, texts: &[String], months: bool) -> Ranking {
+            self.0.top5(question_zh, texts, months)
         }
         fn places_outside(&self, question_zh: &str, texts: &[String]) -> Vec<String> {
             self.0.places_outside(question_zh, texts)
@@ -8802,8 +8854,8 @@ mod tests {
     }
 
     impl Catalogue for HubTables {
-        fn top5(&self, question_zh: &str, texts: &[String]) -> Ranking {
-            self.inner.top5(question_zh, texts)
+        fn top5(&self, question_zh: &str, texts: &[String], months: bool) -> Ranking {
+            self.inner.top5(question_zh, texts, months)
         }
         fn places_outside(&self, question_zh: &str, texts: &[String]) -> Vec<String> {
             self.inner.places_outside(question_zh, texts)

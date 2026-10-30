@@ -60,6 +60,8 @@ const SINCE_BEFORE: [&str; 5] = ["比", "较", "相比", "相较", "对比"];
 const SINCE_AFTER: [&str; 6] = ["以来", "至今", "到现在", "起", "相比", "比较"];
 /// The marks between the two years of a range ("2015 到 2024 年").
 const RANGE_MARKS: [char; 7] = ['到', '至', '-', '–', '—', '~', '～'];
+/// The words that ask for months, not a year: each month of a span ("每月", "逐月", "月度") or the latest one ("上个月").
+const MONTH_WORDS: [&str; 12] = ["每月", "每个月", "逐月", "按月", "各月", "月度", "月份", "上个月", "上月", "本月", "这个月", "当月"];
 /// Codes kept when an open place dimension has more codes than a chart shows (newsroom_data_prepare narrow, rule "top"):
 /// the highest at the latest time, at most the chart's rows over the years.
 pub const NARROW_TOP: usize = 20;
@@ -238,6 +240,26 @@ pub fn question_years(question: &str, this_year: i32) -> Option<NamedYears> {
         }
     }
     None
+}
+
+/// Whether a question asks for months, read by rule from its words, spaces aside, as question_years reads its years (no
+/// model): a month it names by its number before 月 (1 to 12, in digits or Chinese numerals: "3 月", "2025 年十月"), a count
+/// of months ("几个月", "近三个月", "过去 6 个月"), or one of MONTH_WORDS. A 月 after no such number is none ("月薪", "岁月"),
+/// and a question naming years alone asks for none. The table pick then keeps a monthly-only table rather than its annual
+/// twin, which ends a year or two earlier.
+pub fn question_months(question: &str) -> bool {
+    let text: String = question.chars().filter(|c| !c.is_whitespace()).collect();
+    if text.contains("个月") || MONTH_WORDS.iter().any(|w| text.contains(w)) {
+        return true;
+    }
+    let chars: Vec<char> = text.chars().collect();
+    chars.iter().enumerate().any(|(i, c)| {
+        *c == '月' && {
+            let numeral = |c: &&char| c.is_ascii_digit() || "一二两三四五六七八九十".contains(**c);
+            let n = chars[..i].iter().rev().take_while(numeral).count();
+            count_of(&chars[i - n..i].iter().collect::<String>()).is_some_and(|m| (1..=12).contains(&m))
+        }
+    })
 }
 
 /// A count in digits, or in Chinese numerals up to 九十九 (十 ten, 两 two).
@@ -1743,6 +1765,36 @@ mod tests {
         assert_eq!(q("2015 年起"), Some(NamedYears::Span(2015, 2026)));
         // a share (比重, 比例) is no comparison with the year
         assert_eq!(q("2020 年可再生能源比重"), Some(NamedYears::Span(2020, 2020)));
+    }
+
+    #[test]
+    fn a_question_asking_for_months_is_read_by_rule() {
+        for s in [
+            "2026 年 3 月欧盟庇护申请的来源国",
+            "2025年十月欧盟各国失业率",
+            "12 月德国发电结构",
+            "最近几个月欧盟庇护申请",
+            "近三个月各国天然气进口",
+            "过去 6 个月的通胀",
+            "今年每月的庇护申请",
+            "欧盟庇护申请逐月变化",
+            "上个月欧盟各国失业率",
+            "庇护申请的月度数据",
+        ] {
+            assert!(question_months(s), "{s}");
+        }
+        // years alone, a count of years, a 月 after no month number, a number off the months
+        for s in [
+            "2024 年欧盟庇护申请的来源国",
+            "2015 年到 2024 年欧盟庇护申请",
+            "近五年欧盟各国失业率怎么变",
+            "欧盟庇护申请的来源国",
+            "月薪低于 1990 欧元",
+            "13 月",
+            "岁月",
+        ] {
+            assert!(!question_months(s), "{s}");
+        }
     }
 
     #[test]
