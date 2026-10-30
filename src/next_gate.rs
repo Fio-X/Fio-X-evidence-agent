@@ -489,4 +489,94 @@ mod tests {
         other[0].sha256 = "0".repeat(64);
         assert!(reread_gaps(dir.path(), &[row(44.2)], &other).iter().any(|g| g.contains("not the bytes")));
     }
+
+    /// Every row a run's recorded fetches hold, whoever ran them: each DATA_PREPARE_TOOL end event without error that names
+    /// a provider, a dataset, a file and its sha256, read with SeriesRows when the file still holds those bytes. A World Bank
+    /// dataset is its "@2" table. Rows are keyed by src; the first read of a src is kept.
+    fn recorded_rows(root: &Path) -> Vec<Row> {
+        let calls = Mutex::new(Vec::new());
+        let mut rows: BTreeMap<String, Row> = BTreeMap::new();
+        let events = std::fs::read_to_string(root.join("events.jsonl")).unwrap_or_default();
+        for e in events.lines().filter_map(|line| serde_json::from_str::<Value>(line).ok()) {
+            let d = &e["result"]["details"];
+            if e["type"] != "tool_execution_end"
+                || e["toolName"] != crate::next_knowledge::DATA_PREPARE_TOOL
+                || e["isError"] != false
+            {
+                continue;
+            }
+            let (Some(provider), Some(dataset), Some(file), Some(sha)) =
+                (d["provider"].as_str(), d["dataset"].as_str(), d["filePath"].as_str(), d["sha256"].as_str())
+            else {
+                continue;
+            };
+            if !file.starts_with("data/") || file.split('/').any(|p| p == ".." || p.is_empty()) {
+                continue;
+            }
+            let Ok(bytes) = std::fs::read(root.join(file)) else { continue };
+            if crate::hash::sha256_bytes(&bytes) != sha {
+                continue;
+            }
+            let Ok(csv) = String::from_utf8(bytes) else { continue };
+            let worldbank = provider == "worldbank";
+            let table = if worldbank { format!("{dataset}@2") } else { dataset.to_string() };
+            let meta = TableMeta {
+                id: table.clone(),
+                worldbank,
+                dims: Vec::new(),
+                end_year: None,
+                places: Vec::new(),
+                place_members: Vec::new(),
+                freqs: Vec::new(),
+                unit: None,
+            };
+            let args = json!({"table": table, "csv_sha256": sha});
+            let request = crate::next_knowledge::Request::SeriesRows { table: &meta, csv: &csv };
+            let Ok(crate::next_knowledge::Reply::SeriesRows(found)) = knowledge_call(&calls, "series_rows", args, request)
+            else {
+                continue;
+            };
+            for row in found {
+                let value = row["value"].as_str().and_then(|v| v.trim().parse::<f64>().ok());
+                let (Some(src), Some(value), Ok(dims)) = (
+                    row["src"].as_str(),
+                    value,
+                    serde_json::from_value::<BTreeMap<String, String>>(row["dims"].clone()),
+                ) else {
+                    continue;
+                };
+                rows.entry(src.to_string()).or_insert(Row {
+                    src: src.to_string(),
+                    table: table.clone(),
+                    dims,
+                    time: row["time"].as_str().unwrap_or_default().to_string(),
+                    value,
+                });
+            }
+        }
+        rows.into_values().collect()
+    }
+
+    /// The Germany replay (CLAUDE.md: a change to a check is first replayed on the Germany runs' events): for each run folder
+    /// named in NEXT_GATE_REPLAY_RUNS (one per line), the fetches the gate takes from its events.jsonl (fetches) and what
+    /// the read-back (reread_gaps) finds when held to every row the run's recorded fetches hold. One JSON line per run goes
+    /// to NEXT_GATE_REPLAY_OUT; a gate change must leave that file byte for byte as it was. It only reads the folders.
+    #[test]
+    #[ignore]
+    fn replay_germany_read_back() {
+        let runs = std::env::var("NEXT_GATE_REPLAY_RUNS").expect("NEXT_GATE_REPLAY_RUNS: run folders, one per line");
+        let out = std::env::var("NEXT_GATE_REPLAY_OUT").expect("NEXT_GATE_REPLAY_OUT: the verdict file to write");
+        let mut lines = String::new();
+        for run in runs.lines().map(str::trim).filter(|r| !r.is_empty()) {
+            let root = Path::new(run);
+            assert!(root.join("events.jsonl").is_file(), "{run}: no events.jsonl");
+            let fetched = fetches(root);
+            let rows = recorded_rows(root);
+            let gaps = reread_gaps(root, &rows, &fetched);
+            let taken: Vec<Value> = fetched.iter().map(|f| json!([f.table, f.file, f.sha256])).collect();
+            let verdict = json!({"run": run, "fetches": taken, "rows": rows.len(), "gaps": gaps});
+            lines.push_str(&format!("{verdict}\n"));
+        }
+        std::fs::write(out, lines).unwrap();
+    }
 }
