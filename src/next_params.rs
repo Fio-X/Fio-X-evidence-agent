@@ -1,8 +1,9 @@
 //! Flow side: the fetch parameters of a table the model picked, filled from the catalogue's own lists when no prepare spec
 //! is given. The program fills what the codes alone decide (a dimension with one code, a total code, the places the
-//! question names, the last year from the TOC); what only the question decides (the dimension the page breaks down by, a
-//! measure or unit with no total, one year or ten) is listed under the table in the table pick as numbered options, the
-//! model answering with numbers only. Every code a rule asks for is in the registry below. Pure: no file, no tool, no model.
+//! question names, the last year from the TOC, an annual table's years: the ones the question names, else the last ten);
+//! what only the question decides (the dimension the page breaks down by, a measure or unit with no total, one year or ten
+//! of a table that is not annual) is listed under the table in the table pick as numbered options, the model answering with
+//! numbers only. Every code a rule asks for is in the registry below. Pure: no file, no tool, no model.
 
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
@@ -48,6 +49,13 @@ pub const OPTIONS_MAX: usize = 8;
 /// The item every table has ("t<table number>.years").
 pub const YEARS_KEY: &str = "years";
 pub const YEARS_OPTIONS: [&str; 2] = ["the latest year only", "the last ten years"];
+/// The years option an annual table takes when the question names none: the last ten years, so a page can set the earliest
+/// year beside the latest (the row caps below still cut it to the latest year when the fetch would hold too many rows).
+pub const ANNUAL_YEARS: usize = 2;
+/// The earliest year a question may name: a four-digit number before it is no year of a table.
+const NAMED_FROM: i32 = 1950;
+/// The words that run a question's one year on to now ("2015 年以来").
+const SINCE_WORDS: [&str; 3] = ["以来", "至今", "到现在"];
 /// Codes kept when an open place dimension has more codes than a chart shows (newsroom_data_prepare narrow, rule "top"):
 /// the highest at the latest time, at most the chart's rows over the years.
 pub const NARROW_TOP: usize = 20;
@@ -163,6 +171,75 @@ pub struct Draft {
     /// Set by the flow before the pick for an annual table whose companion shortlist has a monthly twin, when the answer
     /// fills geo with one aggregate (the hub): those answers take the ring's years, not the years item.
     pub window: Option<Window>,
+    /// Set by the flow before the pick: the years the question names (question_years), which an annual table's fetch takes
+    /// before the program's own last ten years.
+    pub named_years: Option<NamedYears>,
+}
+
+/// The years a question names: a span of years it writes ("2015 年到 2024 年", one year alone a span of one), or the last
+/// n years ("近五年", "过去 10 年"), counted back from the table's last year.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum NamedYears {
+    Span(i32, i32),
+    Last(i32),
+}
+
+/// The years a question names, read by rule from its words (no model): every four-digit year from NAMED_FROM to this year
+/// gives the span from the earliest to the latest (one year with SINCE_WORDS after it runs to this year); else "近" / "过去" / "最近" before a count (digits, or 一 to 十, 两, 十一 to
+/// 九十九 in Chinese numerals) and "年" give the last that many years. None when it names no years.
+pub fn question_years(question: &str, this_year: i32) -> Option<NamedYears> {
+    let chars: Vec<char> = question.chars().collect();
+    let mut years = Vec::new();
+    let mut i = 0;
+    while i < chars.len() {
+        let run = chars[i..].iter().take_while(|c| c.is_ascii_digit()).count();
+        if run == 4 {
+            let y: i32 = chars[i..i + 4].iter().collect::<String>().parse().ok()?;
+            if (NAMED_FROM..=this_year).contains(&y) {
+                years.push(y);
+            }
+        }
+        i += run.max(1);
+    }
+    if let (Some(a), Some(b)) = (years.iter().min(), years.iter().max()) {
+        let since = a == b && SINCE_WORDS.iter().any(|w| question.contains(w));
+        return Some(NamedYears::Span(*a, if since { this_year } else { *b }));
+    }
+    let text: String = chars.iter().filter(|c| !c.is_whitespace()).collect();
+    for lead in ["最近", "过去", "近"] {
+        for (at, _) in text.match_indices(lead) {
+            let rest = &text[at + lead.len()..];
+            let count: String = rest.chars().take_while(|c| c.is_ascii_digit() || "一二两三四五六七八九十".contains(*c)).collect();
+            if rest[count.len()..].starts_with('年') {
+                if let Some(n) = count_of(&count).filter(|n| *n >= 1) {
+                    return Some(NamedYears::Last(n));
+                }
+            }
+        }
+    }
+    None
+}
+
+/// A count in digits, or in Chinese numerals up to 九十九 (十 ten, 两 two).
+fn count_of(s: &str) -> Option<i32> {
+    if !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()) {
+        return s.parse().ok();
+    }
+    let digit = |c: char| "一二三四五六七八九".find(c).map(|i| i as i32 / 3 + 1).or((c == '两').then_some(2));
+    let c: Vec<char> = s.chars().collect();
+    match c.as_slice() {
+        [d] => digit(*d).or((*d == '十').then_some(10)),
+        ['十', d] => Some(10 + digit(*d)?),
+        [d, '十'] => Some(digit(*d)? * 10),
+        [a, '十', b] => Some(digit(*a)? * 10 + digit(*b)?),
+        _ => None,
+    }
+}
+
+/// A table whose fetch is annual: a World Bank indicator, or a Eurostat table whose one freq to fetch is A. Its years are
+/// the program's (fill), never an item of the table pick.
+pub fn annual(table: &TableMeta) -> bool {
+    table.worldbank || table.freq().ok() == Some("A")
 }
 
 /// The years a hub table with a monthly twin is fetched for, from the leaf registry's ring knobs (not asked of the model).
@@ -388,6 +465,7 @@ pub fn draft(table: TableMeta, texts: &[String], places: &[Place]) -> Draft {
         ambiguous,
         places_open,
         window: None,
+        named_years: None,
     }
 }
 
@@ -397,13 +475,13 @@ fn split_member(d: &Draft, dim: &str) -> bool {
     d.breakdown.iter().any(|b| b == dim) && d.members.iter().any(|(m, _, _)| m == dim)
 }
 
-/// The items of table `n` (its number in the table pick) with their option labels: the years (none when every answer takes
-/// the draft's window), the economies a World Bank table with every country open keeps, its breakdown when it has a breakdown
+/// The items of table `n` (its number in the table pick) with their option labels: the years (only for a table that is not
+/// annual: an annual one's are the program's, fill), the economies a World Bank table with every country open keeps, its breakdown when it has a breakdown
 /// dimension, and each member dimension ("t<n>.years", "t<n>.places", "t<n>.breakdown", "t<n>.<dim>"). The breakdown's
 /// options say what the page then compares.
 pub fn items(n: usize, d: &Draft) -> Vec<(String, Vec<String>)> {
     let mut out = Vec::new();
-    if d.window.as_ref().is_none_or(|w| w.only.is_some()) {
+    if !annual(&d.table) {
         out.push((
             format!("t{n}.{YEARS_KEY}"),
             YEARS_OPTIONS.iter().map(|s| s.to_string()).collect(),
@@ -485,26 +563,6 @@ fn non_annual(table: &TableMeta) -> Option<String> {
     Some(format!("the table is {word} only, {first} to {last}"))
 }
 
-/// The breakdown options of table `n` that take the draft's window, said for its years item ("only when t1.breakdown is
-/// not 3: that one takes the last 5 years"); None when no option does.
-fn windowed(n: usize, d: &Draft) -> Option<String> {
-    let w = d.window.as_ref()?;
-    let options: Vec<String> = d
-        .breakdown
-        .iter()
-        .enumerate()
-        .filter(|(_, b)| d.window_for(Some(b.as_str())).is_some())
-        .map(|(i, _)| (i + 2).to_string())
-        .collect();
-    (!options.is_empty()).then(|| {
-        format!(
-            "only when t{n}.breakdown is not {}: that one takes the last {} years",
-            options.join(" or "),
-            w.years
-        )
-    })
-}
-
 /// The lines listed under table `n` in the table pick: each item with its numbered options; a member item a breakdown
 /// can take says when it is answered.
 pub fn lines(n: usize, d: &Draft, items: &[(String, Vec<String>)]) -> Vec<String> {
@@ -515,10 +573,9 @@ pub fn lines(n: usize, d: &Draft, items: &[(String, Vec<String>)]) -> Vec<String
             .filter(|dim| split_member(d, dim))
         {
             Some(dim) => lines.push(format!("   {key} (only when t{n}.breakdown is not {dim}):")),
-            None if *key == format!("t{n}.{YEARS_KEY}") => match (non_annual(&d.table), windowed(n, d)) {
-                (Some(span), _) => lines.push(format!("   {key} ({span}):")),
-                (None, Some(not)) => lines.push(format!("   {key} ({not}):")),
-                (None, None) => lines.push(format!("   {key}:")),
+            None if *key == format!("t{n}.{YEARS_KEY}") => match non_annual(&d.table) {
+                Some(span) => lines.push(format!("   {key} ({span}):")),
+                None => lines.push(format!("   {key}:")),
             },
             None => lines.push(format!("   {key}:")),
         }
@@ -708,18 +765,37 @@ pub fn fill(
         MAX_ROWS_EUROSTAT
     };
     let mut end = table.end_year.unwrap_or(this_year - 1);
-    let latest = if table.worldbank {
+    let mut latest = if table.worldbank {
         end - WB_LATEST_SPAN + 1
     } else {
         end
     };
-    let asked = pick(&format!("t{n}.{YEARS_KEY}"));
+    // An annual table's years are the program's: the ones the question names, else the last ten; a years option given for
+    // one is the program's own (a split that draws only with the latest year, next_flow). Any other table's are the item's.
+    let given = picks.get(&format!("t{n}.{YEARS_KEY}")).copied();
+    let window = draft.window_for(breakdown.as_deref());
+    let named = draft.named_years.filter(|_| annual(table) && window.is_none());
+    let (asked, rule) = match (window, named, annual(table), given) {
+        (Some(_), ..) => (given.unwrap_or(1), "window"),
+        (None, Some(_), ..) => (ANNUAL_YEARS, "question"),
+        (None, None, true, Some(k)) => (k, "split"),
+        (None, None, true, None) => (ANNUAL_YEARS, "annual"),
+        (None, None, false, k) => (k.unwrap_or(1), "model"),
+    };
     // The latest year of a registered flow table at M or Q is summed from its periods: the fetch starts a year earlier, so the latest
     // year every series holds whole is in the file whichever month each series ends at.
-    let window = draft.window_for(breakdown.as_deref());
     let summed = sum_year(table).filter(|_| asked != 2 && window.is_none());
     let mut start = if let Some(window) = window {
         end - window.years + 1
+    } else if let Some(named) = named {
+        // the question's years, kept to what the table has: no later than its last year
+        let (from, to) = match named {
+            NamedYears::Span(a, b) => (a, b),
+            NamedYears::Last(k) => (end - k + 1, end),
+        };
+        end = end.min(to);
+        latest = latest.min(end);
+        from.min(end)
     } else if asked == 2 {
         end - YEARS_SPAN + 1
     } else if summed.is_some() {
@@ -818,9 +894,12 @@ pub fn fill(
     let mut event = json!({
         "table": table.id, "args": args, "breakdown": breakdown, "open": open.map(|(d, _)| d),
         "years": match window {
-            None => json!({"option": asked, "end_from": if table.end_year.is_some() { "toc" } else { "this year - 1" }, "this_year": this_year}),
+            None => json!({"option": asked, "rule": rule, "named": named.map(|n| match n {
+                    NamedYears::Span(a, b) => json!({"from": a, "to": b}),
+                    NamedYears::Last(k) => json!({"last": k}),
+                }), "end_from": if table.end_year.is_some() { "toc" } else { "this year - 1" }, "this_year": this_year}),
             Some(w) => json!({"window": {"years": w.years, "months": w.months, "hub": w.hub, "twin": w.twin, "only": w.only, "source": WINDOW_SOURCE},
-                "end_from": if table.end_year.is_some() { "toc" } else { "this year - 1" }, "this_year": this_year}),
+                "rule": rule, "end_from": if table.end_year.is_some() { "toc" } else { "this year - 1" }, "this_year": this_year}),
         },
         "years_cut": years_cut, "estimate": rows_but_years * (end - start + 1) as u64, "limit": limit, "options_cut": cut,
         "places": places.iter().map(|p| match p { Place::Country(iso) => iso.clone(), Place::Region => "region".to_string() }).collect::<Vec<_>>(),
@@ -1570,11 +1649,11 @@ mod tests {
             p.extend(picks(extra));
             fill(d, 1, &p, &[Place::Region], 2026).unwrap()
         };
-        // No window: the years item as today, and the event says which option.
-        assert_eq!(items(1, &plain)[0].0, "t1.years");
-        let today = fill_k(&plain, &[("t1.years", 1)]);
-        assert_eq!(today.args["years"], json!({"start": 2024, "end": 2024}));
-        assert_eq!(today.event["years"]["option"], 1);
+        // No window: an annual table asks no years item; it takes the last ten, and the event says by which rule.
+        assert!(items(1, &plain).iter().all(|(key, _)| key != "t1.years"), "{:?}", items(1, &plain));
+        let today = fill_k(&plain, &[]);
+        assert_eq!(today.args["years"], json!({"start": 2015, "end": 2024}));
+        assert_eq!((&today.event["years"]["option"], &today.event["years"]["rule"]), (&json!(ANNUAL_YEARS), &json!("annual")));
         // A window on every answer: no years item; the fetch takes ring.years ending at the last year, and the event says
         // where from.
         let window = Window { years: 5, months: 60, hub: "EU27_2020".into(), twin: "migr_asyappctzm".into(), only: None };
@@ -1587,18 +1666,47 @@ mod tests {
             json!({"years": 5, "months": 60, "hub": "EU27_2020", "twin": "migr_asyappctzm", "only": null, "source": WINDOW_SOURCE})
         );
         assert!(filled.event["years"].get("option").is_none());
+        assert_eq!(filled.event["years"]["rule"], "window");
         // Its filters are the plain draft's: only the years differ.
         assert_eq!(filled.args["filters"], today.args["filters"]);
-        // A window on the citizen split only: the years item stays, says which option it does not apply to, and the
-        // other answers fill as today.
+        // A window on the citizen split only: still no years item; the split takes the window, the other answers the
+        // program's years (a years option the program gives, as for a split that draws only with the latest year, holds).
         let split = Draft { window: Some(Window { only: Some(vec!["citizen".into()]), ..window }), ..plain.clone() };
-        let its = items(1, &split);
-        assert_eq!(its[0].0, "t1.years");
-        assert_eq!(lines(1, &split, &its)[0], format!("   t1.years (only when t1.breakdown is not {k}: that one takes the last 5 years):"));
+        assert!(items(1, &split).iter().all(|(key, _)| key != "t1.years"));
         assert_eq!(fill_k(&split, &[]).args["years"], json!({"start": 2020, "end": 2024}));
-        let none = fill(&split, 1, &picks(&[("t1.breakdown", 1), ("t1.years", 1)]), &[Place::Region], 2026).unwrap();
-        assert_eq!(none.args["years"], json!({"start": 2024, "end": 2024}));
-        assert_eq!(none.event["years"]["option"], 1);
+        let none = fill(&split, 1, &picks(&[("t1.breakdown", 1)]), &[Place::Region], 2026).unwrap();
+        assert_eq!(none.args["years"], json!({"start": 2015, "end": 2024}));
+        let given = fill(&split, 1, &picks(&[("t1.breakdown", 1), ("t1.years", 1)]), &[Place::Region], 2026).unwrap();
+        assert_eq!(given.args["years"], json!({"start": 2024, "end": 2024}));
+        assert_eq!((&given.event["years"]["option"], &given.event["years"]["rule"]), (&json!(1), &json!("split")));
+        // Years the question names win over the ten, kept to the table's last year, and the event names them.
+        let named = |n: NamedYears| fill(&Draft { named_years: Some(n), ..plain.clone() }, 1, &picks(&[("t1.breakdown", 1)]), &[Place::Region], 2026).unwrap();
+        let span = named(NamedYears::Span(2018, 2026));
+        assert_eq!(span.args["years"], json!({"start": 2018, "end": 2024}));
+        assert_eq!((&span.event["years"]["rule"], &span.event["years"]["named"]), (&json!("question"), &json!({"from": 2018, "to": 2026})));
+        assert_eq!(named(NamedYears::Span(2021, 2021)).args["years"], json!({"start": 2021, "end": 2021}));
+        assert_eq!(named(NamedYears::Last(5)).args["years"], json!({"start": 2020, "end": 2024}));
+        // A window still wins over the question's years.
+        let ring = fill_k(&Draft { named_years: Some(NamedYears::Span(2010, 2011)), ..windowed.clone() }, &[]);
+        assert_eq!(ring.args["years"], json!({"start": 2020, "end": 2024}));
+    }
+
+    #[test]
+    fn the_years_a_question_names_are_read_by_rule() {
+        let q = |s: &str| question_years(s, 2026);
+        assert_eq!(q("2015 年到 2024 年欧盟各国可再生能源占比"), Some(NamedYears::Span(2015, 2024)));
+        assert_eq!(q("2024年欧盟各国失业率"), Some(NamedYears::Span(2024, 2024)));
+        assert_eq!(q("2015 年以来欧盟各国可再生能源占比"), Some(NamedYears::Span(2015, 2026)));
+        assert_eq!(q("近五年欧盟各国失业率怎么变"), Some(NamedYears::Last(5)));
+        assert_eq!(q("过去 10 年各国人均碳排放"), Some(NamedYears::Last(10)));
+        assert_eq!(q("最近十二年"), Some(NamedYears::Last(12)));
+        assert_eq!(q("近二十年"), Some(NamedYears::Last(20)));
+        // no year: a count that is no year, a four-digit number off the years, a time word without a count
+        assert_eq!(q("欧盟各国可再生能源占比"), None);
+        assert_eq!(q("人口超过 1000 万的国家"), None);
+        assert_eq!(q("5000 人以上"), None);
+        assert_eq!(q("最近欧盟各国失业率"), None);
+        assert_eq!(q("12345 年"), None);
     }
 
     #[test]
@@ -1818,29 +1926,22 @@ mod tests {
         let draft = draft(table, &[], &[]);
         let items = items(1, &draft);
         let keys: Vec<&str> = items.iter().map(|(k, _)| k.as_str()).collect();
-        assert_eq!(keys, ["t1.years", "t1.breakdown", "t1.nrg_bal"]);
+        // an annual table: its years are the program's, never an item
+        assert_eq!(keys, ["t1.breakdown", "t1.nrg_bal"]);
         let listed = lines(1, &draft, &items);
         assert_eq!(
-            listed[..3],
-            [
-                "   t1.years:",
-                "     1. the latest year only",
-                "     2. the last ten years"
-            ]
-        );
-        assert_eq!(
-            listed[4],
+            listed[1],
             "     1. none: one number per place, each item below keeps the one code picked"
         );
-        assert_eq!(listed[5], "     2. split by nrg_bal: each place × all 3 nrg_bal codes (e.g. label REN; label REN_TRA; label REN_ELC); leave out t1.nrg_bal");
+        assert_eq!(listed[2], "     2. split by nrg_bal: each place × all 3 nrg_bal codes (e.g. label REN; label REN_TRA; label REN_ELC); leave out t1.nrg_bal");
         assert_eq!(
-            listed[6],
+            listed[3],
             "   t1.nrg_bal (only when t1.breakdown is not nrg_bal):"
         );
         let filled = fill(
             &draft,
             1,
-            &picks(&[("t1.breakdown", 1), ("t1.nrg_bal", 3), ("t1.years", 2)]),
+            &picks(&[("t1.breakdown", 1), ("t1.nrg_bal", 3)]),
             &[Place::Region],
             2026,
         )
@@ -1850,6 +1951,7 @@ mod tests {
         assert_eq!(filled.event["dropped"].as_array().unwrap().len(), 24);
         assert_eq!(filter(&filled, "nrg_bal").unwrap(), ["REN_ELC"]);
         assert_eq!(filled.args["years"], json!({"start": 2015, "end": 2024}));
+        assert_eq!((&filled.event["years"]["rule"], &filled.event["years"]["option"]), (&json!("annual"), &json!(ANNUAL_YEARS)));
         assert_eq!(filled.event["open"], Value::Null);
     }
 
@@ -2129,12 +2231,13 @@ mod tests {
         let d = draft(world_bank(217), &[], &[]);
         assert!(d.places_open);
         let listed = items(1, &d);
-        assert_eq!(listed[1].0, "t1.places");
+        // a World Bank table is annual: no years item, the places item first
+        assert_eq!(listed[0].0, "t1.places");
         assert_eq!(
-            listed[1].1[2],
+            listed[0].1[2],
             "keep the 8 most populous economies (World Bank SP.POP.TOTL, the latest year both tables have)"
         );
-        assert_eq!(listed[1].1.len(), wb_rank_by().1.len());
+        assert_eq!(listed[0].1.len(), wb_rank_by().1.len());
         let narrow = |k: usize| {
             fill(
                 &d,

@@ -462,6 +462,15 @@ pub struct Split {
     pub member: bool,
 }
 
+impl Split {
+    /// The years option the program gives an answer with this split when the years are no item of its table (an annual
+    /// table: next_params fills its last ten years): the split's own when it draws only with the latest year; None when it
+    /// takes the ring's years or draws with the ten.
+    pub fn program_years(&self) -> Option<usize> {
+        (!self.years.is_empty() && !self.years.contains(&next_params::ANNUAL_YEARS)).then(|| self.years[0])
+    }
+}
+
 /// A listed table's held-series probe as the table pick checks it: after the answer, the fetch it asks for must hold a
 /// series the probe found (next_params::holds_series), since the per-dimension codes miss gaps between open dimensions (q3:
 /// unit PC is held, siec TOTAL is held, TOTAL in PC is not).
@@ -533,6 +542,7 @@ impl HeldCheck {
         splits: &[Split],
     ) -> Option<BTreeMap<String, usize>> {
         let years_key = format!("t{n}.{}", next_params::YEARS_KEY);
+        let years_asked = items.iter().any(|(k, _)| *k == years_key);
         let asked: Vec<&(String, usize)> = items.iter().filter(|(k, _)| *k != years_key).collect();
         let shaped = |mut params: BTreeMap<String, usize>| -> Option<BTreeMap<String, usize>> {
             if let Some(split) = splits
@@ -542,7 +552,13 @@ impl HeldCheck {
                 if split.member {
                     params.remove(&format!("t{n}.{}", split.dim));
                 }
-                if split.years.is_empty() {
+                if !years_asked {
+                    // the program's years, as the answer gets them (Split::program_years)
+                    match split.program_years() {
+                        Some(y) => params.insert(years_key.clone(), y),
+                        None => params.remove(&years_key),
+                    };
+                } else if split.years.is_empty() {
                     // a split that takes the ring's years leaves the years item out
                     params.remove(&years_key);
                 } else if !params
@@ -939,7 +955,7 @@ impl Ask {
                             params.remove(&item);
                             if split.years.is_empty() {
                                 params.remove(&years_key);
-                            } else {
+                            } else if params.contains_key(&years_key) {
                                 params.insert(years_key.clone(), json!(split.years));
                             }
                             params.insert(format!("t{n}.breakdown"), json!(split.option));
@@ -991,6 +1007,19 @@ impl Ask {
                         }
                     }
                 }
+                // A table whose years are no item (an annual one) takes the program's: a picked split that draws only with
+                // the latest year gets that option here, never from the model.
+                for &n in &picks {
+                    let years_key = format!("t{n}.{}", next_params::YEARS_KEY);
+                    if items.get(n - 1).is_some_and(|its| its.iter().any(|(k, _)| *k == years_key)) {
+                        continue;
+                    }
+                    let breakdown = params.get(&format!("t{n}.breakdown")).copied();
+                    let split = splits.get(n - 1).into_iter().flatten().find(|s| Some(s.option) == breakdown);
+                    if let Some(y) = split.and_then(Split::program_years) {
+                        params.insert(years_key, y);
+                    }
+                }
                 // The fetch the answer asks for must hold a series the probe found; refused only with an example that does.
                 for &n in &picks {
                     let Some(Some(check)) = held.get(n - 1) else {
@@ -1013,6 +1042,9 @@ impl Ask {
                     ) else {
                         continue;
                     };
+                    // the example names the items the model answers, not the years the program gives
+                    let example: BTreeMap<String, usize> =
+                        example.into_iter().filter(|(k, _)| items[n - 1].iter().any(|(i, _)| i == k)).collect();
                     let mut refused = refuse(format!(
                         "t{n}: Eurostat holds no series for {} (probed before the pick): pick a combination it holds, for example {}",
                         check.asked(n, &mine),
@@ -4049,6 +4081,7 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
     for (i, (_, d)) in drafts.iter_mut().enumerate() {
         if let Some(d) = d.as_mut() {
             d.window = ring_window(d, i + 1, &places, this_year, catalogue);
+            d.named_years = next_params::question_years(question, this_year);
         }
     }
     record_group_calls(recorder, catalogue)?;
@@ -4690,6 +4723,36 @@ mod tests {
             range.problem,
             "params needs item 't1.years' as one of its option numbers 1 to 2"
         );
+    }
+
+    #[test]
+    fn an_annual_table_s_split_that_draws_only_with_the_latest_year_gets_it_from_the_program() {
+        // the same table annual: no years item; a split that draws only with the latest year takes it, one that draws with
+        // ten years and no split take none (next_params fills the last ten)
+        let ask = |years: Vec<usize>| Ask::Table {
+            count: 1,
+            most: 1,
+            items: vec![vec![("t1.breakdown".into(), 2), ("t1.nrg_bal".into(), 4)]],
+            splits: vec![vec![Split { option: 2, dim: "nrg_bal".into(), years, member: true }]],
+            held: Vec::new(),
+        };
+        let split = json!({"step": "table", "pick": [1], "params": {"t1.breakdown": 2}});
+        assert_eq!(
+            ask(vec![1]).check(&split).unwrap(),
+            Choice::Table { picks: vec![1], params: BTreeMap::from([("t1.breakdown".into(), 2), ("t1.years".into(), 1)]) }
+        );
+        assert_eq!(
+            ask(vec![1, 2]).check(&split).unwrap(),
+            Choice::Table { picks: vec![1], params: BTreeMap::from([("t1.breakdown".into(), 2)]) }
+        );
+        let none = json!({"step": "table", "pick": [1], "params": {"t1.breakdown": 1, "t1.nrg_bal": 1}});
+        assert_eq!(
+            ask(vec![1]).check(&none).unwrap(),
+            Choice::Table { picks: vec![1], params: BTreeMap::from([("t1.breakdown".into(), 1), ("t1.nrg_bal".into(), 1)]) }
+        );
+        // the model's years for it is no item
+        let years = json!({"step": "table", "pick": [1], "params": {"t1.breakdown": 2, "t1.years": 1}});
+        assert_eq!(ask(vec![1]).check(&years).unwrap_err().problem, "params has no item 't1.years' among the items of the picked tables");
     }
 
     #[test]
@@ -6858,14 +6921,14 @@ mod tests {
         let (events, mut sink) = collector();
         let mut model = ScriptedAsker::new(vec![
             search_reply(),
-            // table 2 is nrg_bal_peh; t1.years is an item of a table not picked
+            // table 2 is nrg_bal_peh; t1.years is no item (the tables are annual: their years are the program's)
             call(
                 "toolu_t0",
                 json!({"step": "table", "pick": [2], "params": {"t1.years": 1}}),
             ),
             call(
                 "toolu_t",
-                json!({"step": "table", "pick": [2], "params": {"t2.years": 1, "t2.breakdown": 3, "t2.nrg_bal": 1}}),
+                json!({"step": "table", "pick": [2], "params": {"t2.breakdown": 3, "t2.nrg_bal": 1}}),
             ),
             call("toolu_c", json!({"step": "claims", "pick": [1, 2, 3]})),
         ]);
@@ -6910,15 +6973,14 @@ mod tests {
             json!({"dataset": "nrg_bal_peh", "filters": [
                 {"dimension": "freq", "values": ["A"]}, {"dimension": "nrg_bal", "values": ["GEP"]},
                 {"dimension": "unit", "values": ["GWH"]}, {"dimension": "geo", "values": ["DE"]}],
-                "years": {"start": 2024, "end": 2024}})
+                "years": {"start": 2015, "end": 2024}})
         );
         let events = events.lock().unwrap();
         let params = events.iter().find(|e| e["type"] == PARAMS_EVENT).unwrap();
         assert_eq!(params["params"], "model");
-        assert_eq!(
-            params["picks"],
-            json!({"t2.years": 1, "t2.breakdown": 3, "t2.nrg_bal": 1})
-        );
+        // the siec split draws with ten years, so the program gives it no years option of its own
+        assert_eq!(params["picks"], json!({"t2.breakdown": 3, "t2.nrg_bal": 1}));
+        assert_eq!(params["tables"][0]["years"]["rule"], "annual");
         assert_eq!(params["tables"][0]["open"], "siec");
         let breakdown = events
             .iter()
@@ -7516,7 +7578,8 @@ mod tests {
             call("toolu_t0", at_0730),
             call(
                 "toolu_t",
-                json!({"step": "table", "pick": [1], "params": {"t1.years": 1, "t1.nrg_bal": 1}}),
+                // the table is annual: its years are the program's, no item of the answer
+                json!({"step": "table", "pick": [1], "params": {"t1.nrg_bal": 1}}),
             ),
             call("toolu_c", json!({"step": "claims", "pick": [1, 2, 3]})),
         ]);
