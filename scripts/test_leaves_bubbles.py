@@ -293,7 +293,7 @@ class MapExtent(unittest.TestCase):
             rows, items, labels = map_set(values, dec, point_of, names); setup(rows, labels)
             ext = layer1_extent({i["code"]: i["lonlat"] for i in items}, {c: (v, labels[c]) for c, v in values.items()}, dec)
             f = bubbles.Frame({"data": {"items": items, "ext": ext}, "style": {"bubbles": dict(run.MAP_STYLE["bubbles"])}})
-            self.assertEqual((f.r_used, hashlib.sha256(bubbles.cl_bubbles(f, prod.Occ()).encode()).hexdigest()), (22, pin), tag)
+            self.assertEqual((f.r_used, hashlib.sha256(bubbles.cl_bubbles(f, prod.Occ()).encode()).hexdigest(), f.dropped), (22, pin, []), tag)
         setup(W_ROWS, W_LABELS)
         self.assertEqual(hashlib.sha256(bubbles.draw(hero(W_DATA, highlight="CHN"))[0].encode()).hexdigest(), "768bc24ec42f72e6d54b884f5365dd03370296f5c600ea4ba9a62d2ec097ded6")
 

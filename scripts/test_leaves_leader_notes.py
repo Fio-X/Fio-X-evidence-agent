@@ -14,6 +14,7 @@ refusal in the leaf's header. With LEAF_SVG_DIR set the svgs are kept there; els
 Run: python3 -I -B scripts/test_leaves_leader_notes.py"""
 import hashlib
 import json
+import math
 import os
 import re
 import subprocess
@@ -279,6 +280,13 @@ class LeaderNotes(unittest.TestCase):
         self.assertEqual(paths[0], [(451.5, 235.8), (451.5, 101.4), (420.0, 101.4)])  # Afghanistan's, one bend, as on the page
         iq = paths[1]; self.assertEqual((len(iq), iq[-1]), (4, (363.5, 104.1)))  # Iraq's: across, along, across, its middle run on the grid
         self.assertTrue(iq[0][1] == iq[1][1] and iq[1][0] == iq[2][0] and iq[2][1] == iq[3][1] and iq[1][0] % LN.GRID == 0, iq)
+        # its number is the ledger's entry, bold, as every note's; each of its three runs is claimed in the Occ as a leader (sampled
+        # 4 px apart at most), so a note or label after it keeps off it as off a straight one
+        self.assertIn('<tspan font-weight="700"><tspan data-src="fact:times">9.0倍</tspan></tspan></text>', svg)
+        mine = [(x, y) for x, y, l, t in occ.pts if (l, t) == ("notes", "leader")]
+        for (x1, y1), (x2, y2) in zip(iq, iq[1:]):
+            on = [p for p in mine if min(x1, x2) - 0.2 <= p[0] <= max(x1, x2) + 0.2 and min(y1, y2) - 0.2 <= p[1] <= max(y1, y2) + 0.2]
+            self.assertGreaterEqual(len(on), math.dist((x1, y1), (x2, y2)) / 4, ((x1, y1), (x2, y2)))
 
     def test_a_note_in_a_walled_room_takes_two_bends_through_its_door_and_none_drops_without_one(self):
         # a note's point in a room of claimed boxes on the EU frame: a door in the roof (the way in: across to the door's column, down
@@ -354,6 +362,17 @@ class LeaderNotes(unittest.TestCase):
         # is byte for byte the one drawn before the two-line break (its sha on the commit before it), one text per note
         setup(); svg = LN.draw({"data": D, "style": style()})[0]
         self.assertEqual((hashlib.sha256(svg.encode()).hexdigest(), svg.count("<text")), ("98a2a482ca787f8f00802d390fd2091906e511ba726c610eecaf6bef8db874fe", 2))
+
+    def test_the_q1_and_change_pages_notes_over_the_bubbles_draw_as_before_two_bends(self):
+        # over the EU bubbles: the q1 page's two notes, and a change page's (q4-style: a rise_most note on two lines beside
+        # Sweden's); each found a straight or one-bend leader, so each layer is byte for byte the one drawn before two bends were
+        # tried (its sha on the commit before them), nothing dropped
+        for notes, rows, pin in (([NOTES[0], NOTES[1]], ROWS, "e9c8281fae2c6bba17f6f980ef8cc0df2408a9911cce1b263f0d489035c7531a"),
+                                 ([NOTES[0], WIDE], ROWS + [CHG], "a3f79be867c910de50165963a89940e2e98f0f2f92f6cfeaad6698069f1ecc75")):
+            setup(rows); occ = prod.Occ(); bubbles.cl_bubbles(bubbles.Frame({"data": dict(items=ITEMS, ext=EXT), "style": style()}), occ)
+            f = LN.Frame({"data": dict(D, notes=notes), "style": style()}); svg = LN.cl_leader_notes(f, occ)
+            self.assertEqual((hashlib.sha256(svg.encode()).hexdigest(), f.dropped), (pin, []))
+        setup()
 
     def test_a_note_too_wide_on_two_lines_refuses_as_before(self):
         # the number's own line past half the map too: refused with the one-line message as before the break, its width and words
