@@ -523,17 +523,10 @@ pub fn charts(
             }
         }
         claim_rows.extend(made.claim_rows);
-        let mut measure = measure_of(table, catalogue, &made.times, made.charts[0].axis);
-        let scope = match narrowed(&run_dir, table).map_err(|e| stop("chart", e))? {
-            Some((scope, line)) => {
-                measure.source = Some(match measure.source.take() {
-                    Some(source) => format!("{source}；{line}"),
-                    None => line,
-                });
-                Some(scope)
-            }
-            None => None,
-        };
+        let measure = measure_of(table, catalogue, &made.times, made.charts[0].axis);
+        // the scope only: its selection line went on the measure's catalogue source line, which no renderer read (the leaf
+        // page writes its own, recipe_request; the ranking spec its own from scope_segs), so neither is kept here
+        let scope = narrowed(&run_dir, table).map_err(|e| stop("chart", e))?.map(|(scope, _)| scope);
         chart_times.extend(made.times);
         page.places.extend(made.places);
         for id in made.charts.iter().flat_map(|d| &d.chart.claim_ids) {
@@ -2056,11 +2049,6 @@ fn measure_of(
     times.sort();
     times.dedup();
     let name = measure_name(table, catalogue);
-    // a broken name file stops the leaf page at its fill (recipe_request asks the same); here the title stays as listed
-    let source = meta.map(|meta| {
-        let title = catalogue.table_zh(&meta.id).ok().flatten().unwrap_or_else(|| table.title.clone());
-        source_line(meta.worldbank, &meta.id, &title, &times)
-    });
     next_pack::Measure {
         title: table.title.clone(),
         name,
@@ -2069,7 +2057,6 @@ fn measure_of(
         kind,
         times,
         axis,
-        source,
     }
 }
 
@@ -5053,7 +5040,6 @@ mod tests {
             kind: Some("share"),
             times: Vec::new(),
             axis: Axis::Country,
-            source: None,
         };
         let drawn = |relation, category: &str, axis| Drawn {
             chart: chart(relation, category),
@@ -5815,7 +5801,6 @@ mod tests {
                 kind: None,
                 times: vec!["2025".into()],
                 axis: Axis::Country,
-                source: None,
             }],
             plans: Vec::new(),
             scopes: vec![None],
@@ -6539,7 +6524,6 @@ mod tests {
             kind: None,
             times: vec!["2025".into()],
             axis: Axis::Country,
-            source: None,
         };
         let page = Page {
             claims: [(top, "rank_top"), (bottom, "rank_bottom")]
@@ -6632,7 +6616,6 @@ mod tests {
             kind: None,
             times: vec!["2025".into()],
             axis: Axis::Country,
-            source: None,
         };
         let page = Page {
             claims: kinds

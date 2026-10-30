@@ -42,9 +42,6 @@ pub struct Measure {
     pub times: Vec<String>,
     /// What the chart lists along its category.
     pub axis: Axis,
-    /// The chart's source line from the catalogue: the publisher, the table's id and title, and the years the chart draws.
-    /// None when the catalogue does not list the table (the pack then writes its line from the data files).
-    pub source: Option<String>,
 }
 
 /// The measure kind of a Eurostat unit code (measure_semantics.mjs MEASURE_KINDS), by the prefixes classify.rs
