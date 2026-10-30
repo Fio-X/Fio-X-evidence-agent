@@ -720,6 +720,10 @@ mod drive {
         for gap in &gaps {
             println!("Q1WALK gap {gap}");
         }
+        // the program's page checks past the gate, each with what it measured
+        for check in last(crate::next_run::PAGE_CHECKS_EVENT).and_then(|e| e["checks"].as_array()).into_iter().flatten() {
+            println!("Q1WALK check {} passed {} measured {}", check["name"].as_str().unwrap_or("?"), check["passed"], check["measured"]);
+        }
         // the gaps the flow recorded are the ones the completion check finds again from the written run; a page the ring
         // event says was published always has the flow's gate event, so the comparison cannot be skipped for it
         let gate_event = match last(crate::next_run::RING_EVENT).filter(|e| e["published"].is_string()) {

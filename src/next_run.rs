@@ -1290,9 +1290,12 @@ fn window_of(recipe: &Recipe, picks: &Picks) -> Result<Option<(String, String)>,
 
 /// What the nodes of a page put into its request, bottom first: the rows each prints from, the facts it declares (computed by
 /// the visual group, never here), its formats, its keys of the hero's data and its other hero keys, and the notes after the
-/// unit. A key two nodes set to different values refuses the page.
+/// unit. A key two nodes set to different values refuses the page. `at` is the layer whose fill runs, and `drawn` each row a
+/// layer prints a value of, by that layer (page_checks' same_numbers_twice reads it).
 #[derive(Default)]
 struct Filled {
+    at: String,
+    drawn: Vec<(String, Value)>,
     rows: Vec<Value>,
     facts: Map<String, Value>,
     fmts: Map<String, Value>,
@@ -1313,8 +1316,14 @@ impl Filled {
             }
         }
     }
-    /// Rows a layer prints from, each once (by its src).
+    /// Rows a layer prints from, each once (by its src), each also kept in `drawn` under the layer at work.
     fn rows(&mut self, rows: impl IntoIterator<Item = Value>) {
+        let rows: Vec<Value> = rows.into_iter().collect();
+        self.drawn.extend(rows.iter().map(|r| (self.at.clone(), r.clone())));
+        self.reads(rows);
+    }
+    /// Rows a layer only computes from (its numbers are other facts), each once (by its src); none goes into `drawn`.
+    fn reads(&mut self, rows: impl IntoIterator<Item = Value>) {
         for r in rows {
             if !self.rows.iter().any(|k| k["src"] == r["src"]) {
                 self.rows.push(r);
@@ -1568,7 +1577,7 @@ fn bignums_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
     if f.picks.ranked.is_empty() && !f.picks.focus.is_empty() {
         return flow_bignums(f, out);
     }
-    extremes(f, out)?;
+    extremes(f, out, true)?;
     for k in ["hi", "lo", "gap", "times"] {
         Filled::set(&mut out.data, "hero data", k, json!(k))?;
     }
@@ -1577,14 +1586,19 @@ fn bignums_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
 
 /// The facts hi and lo (the highest and the lowest ranked country's value), gap (in percentage points when the unit prints
 /// as "%") and times (how many times the lowest the highest is); each with the decimals the bars print. Rows: the main's for
-/// the two at the year. Ok is the two countries' codes, highest first.
-fn extremes<'a>(f: &Filling<'a>, out: &mut Filled) -> Result<(&'a str, &'a str), String> {
+/// the two at the year, drawn when `prints` (the layer prints hi and lo themselves), else only read. Ok is the two
+/// countries' codes, highest first.
+fn extremes<'a>(f: &Filling<'a>, out: &mut Filled, prints: bool) -> Result<(&'a str, &'a str), String> {
     let (shape, picks, fmt) = (f.shape, f.picks, f.fmt.as_str());
     let (place, year) = (shape.place.as_str(), shape.year.as_str());
     let (Some(hi), Some(lo)) = (picks.ranked.first(), picks.ranked.last()) else {
         return Err(format!("main {} ranks no country", shape.main));
     };
-    out.rows(f.main.iter().filter(|r| r["time"] == year && (r["dims"][place] == hi.as_str() || r["dims"][place] == lo.as_str())).cloned());
+    let two = f.main.iter().filter(|r| r["time"] == year && (r["dims"][place] == hi.as_str() || r["dims"][place] == lo.as_str())).cloned();
+    match prints {
+        true => out.rows(two),
+        false => out.reads(two),
+    }
     let at = |code: &str| json!({"table": shape.main, "filter": {place: code}, "time": year, "fmt": fmt});
     let (_, dec) = ranked_rows(f);
     let gap_fmt = if f.short == "%" { POINTS.0 } else { fmt };
@@ -1659,7 +1673,8 @@ fn bubbles_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
 /// highest ranked country how far it is above the lowest (the gap), at the lowest how many times it the highest is (the
 /// times); both facts as extremes declares them, the words the word table's (no number in them).
 fn leader_notes_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
-    let (hi, lo) = extremes(f, out)?;
+    // the notes print the gap and the times, not the two values
+    let (hi, lo) = extremes(f, out, false)?;
     let (points, ext) = ranked_points(f, out)?;
     let note = |code: &str, word: &str, fact: &str| {
         json!({"at": points[code], "name": code, "text": [{"word": word}], "value_text": format!("fact:{fact}")})
@@ -1706,7 +1721,8 @@ fn flow_bignums(f: &Filling, out: &mut Filled) -> Result<(), String> {
 /// A page's request for the visual group's LeafFill by a recipe, as plain JSON {order, rows, knobs}: each of the recipe's
 /// layers' node fills (NODE_FILLS) in its order, over the shape, the picks and the rows, then what every page has: the
 /// unit's registered short form (a unit with none is refused) with the nodes' notes after it, the tables, the title and dek
-/// from the text step, and the place names of the rows. Err is "not this shape: <why>".
+/// from the text step, and the place names of the rows. Beside them `drawn`, each row a layer prints a value of ({layer,
+/// src, table, time}, in fill order), which the flow keeps for its page checks. Err is "not this shape: <why>".
 fn fill_of(
     recipe: &Recipe,
     shape: &Shape,
@@ -1723,10 +1739,11 @@ fn fill_of(
     let mut out = Filled::default();
     for layer in &recipe.layers {
         if let Some((_, node)) = NODE_FILLS.iter().find(|(n, _)| n == layer) {
+            out.at = layer.clone();
             node(&filling, &mut out).map_err(no)?;
         }
     }
-    let Filled { rows, facts, mut fmts, data, mut hero, notes, points } = out;
+    let Filled { drawn, rows, facts, mut fmts, data, mut hero, notes, points, .. } = out;
     hero.insert("data".into(), Value::Object(data));
     hero.insert("unit".into(), json!(std::iter::once(format!("单位：{short}")).chain(notes).collect::<Vec<_>>().join("；")));
     fmts.insert("time".into(), json!({}));
@@ -1750,7 +1767,12 @@ fn fill_of(
     if !points.is_empty() {
         knobs["points"] = json!({"table": POINT_TABLE, "sha256": crate::next_flow::NE_POINTS_SHA256, "at": points});
     }
-    Ok(json!({"order": recipe.layers, "rows": rows, "knobs": knobs}))
+    // what each layer prints a value of stays with the flow (the visual group is sent order, rows and knobs only)
+    let drawn: Vec<Value> = drawn
+        .iter()
+        .map(|(layer, r)| json!({"layer": layer, "src": r["src"], "table": r["table"], "time": r["time"]}))
+        .collect();
+    Ok(json!({"order": recipe.layers, "rows": rows, "knobs": knobs, "drawn": drawn}))
 }
 
 /// The page's scope: of the main's place codes that are no country (an aggregate such as EU27_2020), one whose member list
@@ -1855,7 +1877,7 @@ fn leaf_page(
     catalogue: &dyn Catalogue,
     (question, words): (&str, (&str, &str, &str)),
     calls: &std::sync::Mutex<Vec<Value>>,
-) -> Result<(&'static str, crate::next_flow::Published), (&'static str, &'static str, String)> {
+) -> Result<LeafPublished, (&'static str, &'static str, String)> {
     use crate::next_visual::{LeafPage, Reply, Request};
     let (recipe, fill) = leaf_request(run_dir, prepared, drawn, catalogue, (question, words), calls)?;
     let order: Vec<String> = fill["order"].as_array().into_iter().flatten().filter_map(|l| l.as_str().map(str::to_string)).collect();
@@ -1896,7 +1918,17 @@ fn leaf_page(
         };
         (recipe, stage, why)
     })?;
-    Ok((recipe, published))
+    let drawn = fill["drawn"].as_array().cloned().unwrap_or_default();
+    Ok(LeafPublished { recipe, published, drawn, strip: strip.is_some() })
+}
+
+/// A leaf page leaf_page published: its recipe, the publication, each row a layer prints a value of (fill_of's `drawn`) and
+/// whether the visual group gave the page a strip to place.
+struct LeafPublished {
+    recipe: &'static str,
+    published: crate::next_flow::Published,
+    drawn: Vec<Value>,
+    strip: bool,
 }
 
 /// The first recipe of the leaf registry (the visual group's Recipes, in its order) that draws every view the question asks
@@ -2342,6 +2374,75 @@ fn leaf_gate_now(run_dir: &Path, recipe: &str, prepared: &[Prepared]) -> Vec<Str
     crate::next_gate::leaf_gaps(run_dir, recipe, &manifest, &fetched)
 }
 
+/// What the program measures on the leaf page just published, once the completion gate holds nothing back and before the
+/// image review, recorded by the flow (by RING_ACTOR): {recipe, published, html_sha256, checks: [{name, passed, measured}]}
+/// (page_checks). One failed check stops the run at PAGE_CHECKS_STAGE; the page, its request and its data stay for the replay.
+pub const PAGE_CHECKS_EVENT: &str = "next_page_checks";
+
+/// The stage a failed page check stops the run at, beside the completion gate's "gate".
+const PAGE_CHECKS_STAGE: &str = "checks";
+
+/// The recipes whose page places the illustration strip the visual group gives it (run.py column_page).
+// a later WIP makes recipes declare their strip slot, and strip_placed reads that slot instead of this list
+const STRIP_RECIPES: &[&str] = &["column"];
+
+/// The layer pairs whose same values same_numbers_twice records without failing on them.
+// TODO(item 5): the column page's map (bubbles) and its bars show the same numbers; once item 5 gives one of them other
+// values, this list goes and the pair fails the check like any other
+const TWICE_KNOWN: &[(&str, &str)] = &[("bars", "bubbles")];
+
+/// One program check on a published page: its name, whether it passed and what it measured.
+#[derive(Debug)]
+struct PageCheck {
+    name: &'static str,
+    passed: bool,
+    measured: Value,
+}
+
+/// The program's checks on a published leaf page, each measured, none asked of a model:
+/// - notes_dropped: what its layers dropped (the publication's list, the request ledger's dropped entries), none passes;
+/// - strip_placed: on a recipe of STRIP_RECIPES given a strip (`strip`), the published html holds the layer illus_strip;
+/// - same_numbers_twice: no two layers print a value of the same row (one table, series and time; fill_of's `drawn`), each
+///   pair found named with its table, times and count, a pair of TWICE_KNOWN recorded as known and not failing.
+fn page_checks(recipe: &str, html: Option<&str>, dropped: &[(String, String)], strip: bool, drawn: &[Value]) -> Vec<PageCheck> {
+    let items: Vec<&str> = dropped.iter().map(|(what, _)| what.as_str()).collect();
+    let notes = PageCheck { name: "notes_dropped", passed: items.is_empty(), measured: json!({"count": items.len(), "items": items}) };
+    let asked = strip && STRIP_RECIPES.contains(&recipe);
+    let placed = html.is_some_and(|h| h.contains(r#"data-layer="illus_strip""#));
+    let strip = PageCheck { name: "strip_placed", passed: !asked || placed, measured: json!({"asked": asked, "placed": placed}) };
+    // each layer's rows by src, layers in fill order; a row's table and time as the fill gave them
+    let mut layers: Vec<(&str, BTreeSet<&str>)> = Vec::new();
+    let mut at: BTreeMap<&str, (&str, &str)> = BTreeMap::new();
+    for row in drawn {
+        let (Some(layer), Some(src)) = (row["layer"].as_str(), row["src"].as_str()) else { continue };
+        at.insert(src, (row["table"].as_str().unwrap_or(""), row["time"].as_str().unwrap_or("")));
+        match layers.iter_mut().find(|(l, _)| *l == layer) {
+            Some((_, srcs)) => {
+                srcs.insert(src);
+            }
+            None => layers.push((layer, BTreeSet::from([src]))),
+        }
+    }
+    let mut pairs = Vec::new();
+    for (i, (a, of_a)) in layers.iter().enumerate() {
+        for (b, of_b) in &layers[i + 1..] {
+            let mut by_table: BTreeMap<&str, (BTreeSet<&str>, usize)> = BTreeMap::new();
+            for (table, time) in of_a.intersection(of_b).map(|src| at[src]) {
+                let shared = by_table.entry(table).or_default();
+                shared.0.insert(time);
+                shared.1 += 1;
+            }
+            let known = TWICE_KNOWN.iter().any(|&(x, y)| (x, y) == (*a, *b) || (y, x) == (*a, *b));
+            pairs.extend(by_table.into_iter().map(|(table, (times, values))| {
+                json!({"layers": [a, b], "table": table, "times": times, "values": values, "known": known})
+            }));
+        }
+    }
+    let passed = pairs.iter().all(|p| p["known"] == true);
+    let twice = PageCheck { name: "same_numbers_twice", passed, measured: json!({"pairs": pairs}) };
+    vec![notes, strip, twice]
+}
+
 /// The leaf page's plan (leaf_plan_ref): the recipe, the question, LEAF_PLAN_STEPS and the one delivery width the browser
 /// check measures (QA_SPEC, 1440). The visual group writes it with the page's manifest (publish_leaf_page), as
 /// publications/plans/ is its folder.
@@ -2422,7 +2523,8 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
         recorder.program_event(crate::next_flow::GROUP_CALL_EVENT, event)?;
     }
     match leaf {
-        Ok((recipe, published)) => {
+        Ok(leaf) => {
+            let (recipe, published) = (leaf.recipe, &leaf.published);
             recorder.program_event(
                 RING_EVENT,
                 // what a layer could not place is on record in the run's events too, never only in the request beside the page
@@ -2444,6 +2546,23 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
                 return Err(stop(
                     "gate",
                     format!("the completion gate found {} gap(s) on the {recipe} page: {}", gaps.len(), gaps.join(" | ")),
+                ));
+            }
+            // what the program measures on the page is held before any model sees it: a failed check stops the run
+            let html = std::fs::read_to_string(recorder.run_dir().join(&published.html_ref)).ok();
+            let checks = page_checks(recipe, html.as_deref(), &published.dropped, leaf.strip, &leaf.drawn);
+            let measured: Vec<Value> =
+                checks.iter().map(|c| json!({"name": c.name, "passed": c.passed, "measured": c.measured})).collect();
+            recorder.program_event(
+                PAGE_CHECKS_EVENT,
+                json!({"by": RING_ACTOR, "recipe": recipe, "published": published.html_ref,
+                    "html_sha256": published.html_sha256, "checks": measured}),
+            )?;
+            let failed: Vec<String> = checks.iter().filter(|c| !c.passed).map(|c| format!("{} measured {}", c.name, c.measured)).collect();
+            if !failed.is_empty() {
+                return Err(stop(
+                    PAGE_CHECKS_STAGE,
+                    format!("{} page check(s) failed on the {recipe} page: {}", failed.len(), failed.join(" | ")),
                 ));
             }
             let score = leaf_vision(recorder, model, question, recipe, &state, cancel).await?;
@@ -3888,7 +4007,11 @@ mod tests {
         let (main, monthly, shape, picks) = rows("MIO_M3");
         let fill = ring_fill(&shape, &picks, (&main, &monthly), &Hubs, ("标题", "导语")).unwrap();
         // the fill byte for byte as the ring filled it before the recipe registry (10-29): a move onto the registry changes none
-        assert_eq!(crate::hash::sha256_bytes(fill.to_string().as_bytes()), "d728a43088b98205718a7814a2ce0ef3572d9485fc8961926831fa471dafb5e8");
+        // (what the visual group is sent; `drawn`, each layer's printed rows, stays with the flow for its page checks)
+        let mut sent = fill.clone();
+        let drawn = sent.as_object_mut().unwrap().remove("drawn").unwrap();
+        assert_eq!(crate::hash::sha256_bytes(sent.to_string().as_bytes()), "d728a43088b98205718a7814a2ce0ef3572d9485fc8961926831fa471dafb5e8");
+        assert!(drawn.as_array().unwrap().iter().all(|r| ["map", "ring"].contains(&r["layer"].as_str().unwrap())), "{drawn}");
         assert_eq!(fill["order"], json!(ring_order()));
         let kept = fill["rows"].as_array().unwrap();
         // RU NO US DE at three years, and RU's 63 months
@@ -6592,17 +6715,19 @@ for line in sys.stdin:
     sys.stdout.flush()
 "#;
 
+    /// The bytes of leaf_run's fetched `sdg` file.
+    const SDG_CSV: &str = "DATAFLOW,LAST UPDATE,freq,unit,geo,TIME_PERIOD,OBS_VALUE,OBS_FLAG\n\
+        ESTAT:SDG(1.0),x,A,PC,SE,2025,65.4,\nESTAT:SDG(1.0),x,A,PC,BE,2025,14.9,\n\
+        ESTAT:SDG(1.0),x,A,PC,DE,2025,30.25,\nESTAT:SDG(1.0),x,A,PC,FR,2025,20,\n";
+
     /// run_page over OneTable's `sdg` on the leaf route, offline: the fetch scripted (its candidate sheet, claims.jsonl and
     /// computations written as the fetch tool writes them), the model scripted (search, table, claims, text; then
     /// `after_text` replies, which a step past the text would take), the column page drawn by LEAF_CHILD_TWIN, baked by the
     /// bake twin and checked by the browser-check twin (pass) from the run's own runtime/, through the measured doors.
-    /// `draw_child`: whether runtime/leaves_py/run.py is there.
+    /// `draw_child`: runtime/leaves_py/run.py's source, none when it is not there.
     /// The fetched file is written under data/<sha256 of `fetched_as`>.csv with SDG_CSV's bytes, so a `fetched_as` other
     /// than SDG_CSV is a file changed since its fetch.
-    async fn leaf_run(draw_child: bool, fetched_as: &str, after_text: Vec<Value>) -> LeafRun {
-        const SDG_CSV: &str = "DATAFLOW,LAST UPDATE,freq,unit,geo,TIME_PERIOD,OBS_VALUE,OBS_FLAG\n\
-            ESTAT:SDG(1.0),x,A,PC,SE,2025,65.4,\nESTAT:SDG(1.0),x,A,PC,BE,2025,14.9,\n\
-            ESTAT:SDG(1.0),x,A,PC,DE,2025,30.25,\nESTAT:SDG(1.0),x,A,PC,FR,2025,20,\n";
+    async fn leaf_run(draw_child: Option<&str>, fetched_as: &str, after_text: Vec<Value>) -> LeafRun {
         const SHEET: &str = "0123456789abcdef";
         let question = "欧盟各国可再生能源占比";
         let _command = crate::group_guard::command_for_test("investigate");
@@ -6660,8 +6785,8 @@ for line in sys.stdin:
         }
         std::fs::write(run.join("claims.jsonl"), lines).unwrap();
         // the run's own second layer: the leaf child's twin, the bake twin and the browser-check twin
-        if draw_child {
-            std::fs::write(run.join("runtime/leaves_py/run.py"), LEAF_CHILD_TWIN).unwrap();
+        if let Some(child) = draw_child {
+            std::fs::write(run.join("runtime/leaves_py/run.py"), child).unwrap();
         }
         std::fs::copy("fixtures/next_leaf/bake_twin.py", run.join("runtime/leaves_py/bake.py")).unwrap();
         let qa_twin = std::fs::canonicalize("fixtures/next_visual/qa_twin.py").unwrap();
@@ -6710,7 +6835,7 @@ for line in sys.stdin:
     #[tokio::test]
     async fn a_published_leaf_page_with_gate_gaps_stops_at_the_gate_before_the_image_review() {
         let vision = call("toolu_v", json!({"step": "vision", "score": 95, "confidence": 0.9, "rubric": {}, "issues": []}));
-        let ran = leaf_run(true, "other bytes", vec![vision]).await;
+        let ran = leaf_run(Some(LEAF_CHILD_TWIN), "other bytes", vec![vision]).await;
         let ring: Vec<&Value> = ran.events.iter().filter(|e| e["type"] == RING_EVENT).collect();
         assert_eq!(ring.len(), 1, "{:?}", ran.result);
         assert_eq!((ring[0]["by"].as_str(), ring[0]["recipe"].as_str()), (Some(RING_ACTOR), Some("column")), "{:?}", ran.result);
@@ -6739,7 +6864,7 @@ for line in sys.stdin:
     /// what stuck, with no fallback, the plan marks the step blocked, and no other route's tool (the design pack) is run.
     #[tokio::test]
     async fn a_leaf_page_stopped_at_a_stage_stops_the_run_there_with_no_fallback() {
-        let ran = leaf_run(false, "", Vec::new()).await;
+        let ran = leaf_run(None, "", Vec::new()).await;
         match &ran.result {
             Err(Stop::Page { step: "draw", why }) => assert!(why.starts_with("the column leaf page stopped at draw: "), "{why}"),
             other => panic!("expected a draw stop, got {other:?}"),
@@ -6754,5 +6879,148 @@ for line in sys.stdin:
         let plan: Value = serde_json::from_str(&std::fs::read_to_string(ran.run.join(PLAN_FILE)).unwrap()).unwrap();
         let draw = plan["steps"].as_array().unwrap().iter().find(|s| s["id"] == "draw").unwrap();
         assert_eq!(draw["status"], "blocked", "{plan}");
+    }
+
+    /// LEAF_CHILD_TWIN with the page's one headline (the completion gate's text check asks for one; no digit in it), so a
+    /// page fetched as SDG_CSV passes the gate and reaches the page checks.
+    fn headed_twin() -> String {
+        LEAF_CHILD_TWIN.replace(r#""<body><svg>""#, r#""<body><h1>标题</h1><svg>""#)
+    }
+
+    /// A drawn row of page_checks' `drawn`, as fill_of keeps it.
+    fn drawn_row(layer: &str, geo: &str, time: &str) -> Value {
+        json!({"layer": layer, "src": format!("series:sdg/A.PC.{geo}:{time}:OBS_VALUE"), "table": "sdg", "time": time})
+    }
+
+    /// A page that drops nothing, is given no strip and whose layers print no row twice passes every check, each named with
+    /// what it measured.
+    #[test]
+    fn a_page_with_nothing_dropped_or_drawn_twice_passes_every_page_check() {
+        let drawn = [drawn_row("map", "SE", "2024"), drawn_row("ring", "SE", "2025-01")];
+        let checks = page_checks("ring", Some("<body></body>"), &[], false, &drawn);
+        let got: Vec<(&str, bool)> = checks.iter().map(|c| (c.name, c.passed)).collect();
+        assert_eq!(got, [("notes_dropped", true), ("strip_placed", true), ("same_numbers_twice", true)]);
+        assert_eq!(checks[0].measured, json!({"count": 0, "items": []}));
+        assert_eq!(checks[1].measured, json!({"asked": false, "placed": false}));
+        assert_eq!(checks[2].measured, json!({"pairs": []}));
+    }
+
+    /// A short note a layer dropped fails notes_dropped, which counts and names each one.
+    #[test]
+    fn a_dropped_note_fails_notes_dropped_with_its_count() {
+        let dropped = [("dropped:leader_notes:SE".to_string(), "no free place".to_string())];
+        let checks = page_checks("column", Some("<body></body>"), &dropped, false, &[]);
+        assert_eq!((checks[0].name, checks[0].passed), ("notes_dropped", false));
+        assert_eq!(checks[0].measured, json!({"count": 1, "items": ["dropped:leader_notes:SE"]}));
+        assert!(checks[1..].iter().all(|c| c.passed), "{checks:?}");
+    }
+
+    /// The column page given a strip fails strip_placed when its html holds no layer illus_strip and passes when it does; a
+    /// recipe that places no strip is not held to one it was given.
+    #[test]
+    fn a_column_page_given_a_strip_fails_strip_placed_unless_its_html_holds_it() {
+        let missing = page_checks("column", Some("<body><svg></svg></body>"), &[], true, &[]);
+        assert_eq!((missing[1].name, missing[1].passed), ("strip_placed", false));
+        assert_eq!(missing[1].measured, json!({"asked": true, "placed": false}));
+        let unread = page_checks("column", None, &[], true, &[]);
+        assert!(!unread[1].passed);
+        let held = page_checks("column", Some(r#"<div class="illus-strip"><svg><g data-layer="illus_strip"></g></svg></div>"#), &[], true, &[]);
+        assert_eq!((held[1].passed, &held[1].measured), (true, &json!({"asked": true, "placed": true})));
+        let ring = page_checks("ring", Some("<body></body>"), &[], true, &[]);
+        assert_eq!((ring[1].passed, &ring[1].measured), (true, &json!({"asked": false, "placed": false})));
+    }
+
+    /// Two layers that print the same rows fail same_numbers_twice, the pair named with its table, times and count; the
+    /// known pair (TWICE_KNOWN: the column page's bars and bubbles) is recorded as known and does not fail.
+    #[test]
+    fn two_layers_printing_the_same_rows_fail_same_numbers_twice_but_the_known_pair_is_recorded_only() {
+        let drawn = [drawn_row("map", "SE", "2024"), drawn_row("map", "BE", "2024"), drawn_row("ring", "SE", "2024"), drawn_row("ring", "SE", "2025")];
+        let checks = page_checks("ring", Some("<body></body>"), &[], false, &drawn);
+        assert_eq!((checks[2].name, checks[2].passed), ("same_numbers_twice", false));
+        assert_eq!(
+            checks[2].measured,
+            json!({"pairs": [{"layers": ["map", "ring"], "table": "sdg", "times": ["2024"], "values": 1, "known": false}]})
+        );
+        let drawn: Vec<Value> = ["bars", "bubbles"].iter().flat_map(|l| ["SE", "BE"].map(|g| drawn_row(l, g, "2025"))).collect();
+        let checks = page_checks("column", Some("<body></body>"), &[], false, &drawn);
+        assert!(checks[2].passed, "{checks:?}");
+        assert_eq!(
+            checks[2].measured,
+            json!({"pairs": [{"layers": ["bars", "bubbles"], "table": "sdg", "times": ["2025"], "values": 2, "known": true}]})
+        );
+    }
+
+    /// The q1 shape's column request keeps what each layer prints a value of: the bars and the bubbles each every ranked
+    /// country's row at the year, the leader notes none (they print the gap and the times, which they only compute from).
+    #[test]
+    fn a_column_request_keeps_the_rows_each_layer_prints_and_the_notes_print_none() {
+        let mut main = ring_rows("sdg", &[("freq", "A"), ("unit", "PC")], ("geo", &["SE", "BE", "DE", "FR", "EU27_2020"]), &["2025"]);
+        for (r, v) in main.iter_mut().zip(["65.4", "14.9", "30.25", "20", "40"]) {
+            r["value"] = json!(v);
+        }
+        let column = recipe("column");
+        let shape = shape_of(&column.eats, &[("sdg", &main[..])], &Hubs).unwrap();
+        let picks = picks_of(&column.picks, &shape, &main, &[]).unwrap();
+        let fill = fill_of(column, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语")).unwrap();
+        let drawn = fill["drawn"].as_array().unwrap();
+        let of = |layer: &str| -> BTreeSet<&str> { drawn.iter().filter(|r| r["layer"] == layer).filter_map(|r| r["src"].as_str()).collect() };
+        assert_eq!(of("bars").len(), picks.ranked.len(), "{drawn:?}");
+        assert_eq!(of("bars"), of("bubbles"));
+        assert!(of("leader_notes").is_empty(), "{drawn:?}");
+        let checks = page_checks("column", Some("<body></body>"), &[], false, drawn);
+        assert_eq!(checks[2].measured["pairs"][0]["layers"], json!(["bars", "bubbles"]));
+    }
+
+    /// A published leaf page the completion gate holds nothing back on goes through the page checks before the image
+    /// review: the flow records each check (here all passing, the bars and the bubbles' shared rows as the known pair) and
+    /// the run goes on to the image review (which stops there: the browser-check twin writes no screenshot to show).
+    #[tokio::test]
+    async fn a_published_leaf_page_passing_every_page_check_goes_on_to_the_image_review() {
+        let vision = call("toolu_v", json!({"step": "vision", "score": 95, "confidence": 0.9, "rubric": {}, "issues": []}));
+        let ran = leaf_run(Some(&headed_twin()), SDG_CSV, vec![vision]).await;
+        let gate: Vec<&Value> = ran.events.iter().filter(|e| e["type"] == LEAF_GATE_EVENT).collect();
+        assert_eq!(gate.len(), 1, "{:?}", ran.result);
+        assert_eq!(gate[0]["gaps"], json!([]), "{:?}", ran.result);
+        let checks: Vec<&Value> = ran.events.iter().filter(|e| e["type"] == PAGE_CHECKS_EVENT).collect();
+        assert_eq!(checks.len(), 1, "{:?}", ran.result);
+        assert_eq!((checks[0]["by"].as_str(), checks[0]["recipe"].as_str()), (Some(RING_ACTOR), Some("column")));
+        let got: Vec<(&str, bool)> =
+            checks[0]["checks"].as_array().unwrap().iter().map(|c| (c["name"].as_str().unwrap(), c["passed"] == true)).collect();
+        assert_eq!(got, [("notes_dropped", true), ("strip_placed", true), ("same_numbers_twice", true)]);
+        assert_eq!(checks[0]["checks"][2]["measured"]["pairs"][0]["known"], true);
+        match &ran.result {
+            Err(Stop::Page { step: "publication_vision", why }) => assert!(why.contains("screenshot"), "{why}"),
+            other => panic!("expected the image review to be reached, got {other:?}"),
+        }
+    }
+
+    /// A published page whose leader notes dropped one passes the completion gate but fails notes_dropped: the run stops at
+    /// the page checks naming what was measured, the image review is never asked, and the page and its request stay.
+    #[tokio::test]
+    async fn a_published_leaf_page_with_a_dropped_note_stops_at_the_page_checks_before_the_image_review() {
+        let dropping = headed_twin().replace(
+            r#""dropped": []}"#,
+            r#""dropped": [{"id": "SE", "why": "no free place"}] if req["layer"] == "leader_notes" else []}"#,
+        );
+        let vision = call("toolu_v", json!({"step": "vision", "score": 95, "confidence": 0.9, "rubric": {}, "issues": []}));
+        let ran = leaf_run(Some(&dropping), SDG_CSV, vec![vision]).await;
+        let gate: Vec<&Value> = ran.events.iter().filter(|e| e["type"] == LEAF_GATE_EVENT).collect();
+        assert_eq!(gate.len(), 1, "{:?}", ran.result);
+        assert_eq!(gate[0]["gaps"], json!([]), "{:?}", ran.result);
+        let checks: Vec<&Value> = ran.events.iter().filter(|e| e["type"] == PAGE_CHECKS_EVENT).collect();
+        assert_eq!(checks.len(), 1, "{:?}", ran.result);
+        assert_eq!(checks[0]["checks"][0]["passed"], false);
+        assert_eq!(checks[0]["checks"][0]["measured"], json!({"count": 1, "items": ["dropped:leader_notes:SE"]}));
+        match &ran.result {
+            Err(Stop::Page { step: PAGE_CHECKS_STAGE, why }) => {
+                assert!(why.starts_with("1 page check(s) failed on the column page: notes_dropped measured "), "{why}")
+            }
+            other => panic!("expected a page-checks stop, got {other:?}"),
+        }
+        assert_eq!(ran.unasked, 1);
+        assert!(!ran.events.iter().any(|e| e["type"] == PUBLICATION_VISION_EVENT || e["step"] == "vision"));
+        for kept in ["publications/column/index.html", "publications/column/request.json", "publications/column/manifest.json"] {
+            assert!(ran.run.join(kept).is_file(), "{kept} stays for the replay");
+        }
     }
 }
