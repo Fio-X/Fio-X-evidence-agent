@@ -1,5 +1,6 @@
-// Second-layer leaf child for a page's illustration strip (src/next_leaf.rs strip runs it): one numbered cell per piece of a
-// piece set, every piece standing on one shared ground line, drawn in rough.js line art. One JSON line in, one line out:
+// Second-layer leaf child for a page's illustration strip (src/next_leaf.rs strip runs it): one cell per piece of a piece
+// set, every piece standing on one shared ground line, drawn in rough.js line art; each cell's circled number only with the
+// marker knob on (off by default: no legend refers to the numbers yet). One JSON line in, one line out:
 //   in:  {"set": the set's own description (pieces-<set>.json: module, pieces with cell weights, knobs), "width",
 //         "ink", "accent": the page's colour names (var(--...)), "knobs": {name: value} (a missing one takes its default)}
 //   out: {"svg": the strip's paths and groups (no outer svg, no text), "w", "h", "dropped": what was too small to draw,

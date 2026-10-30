@@ -14,14 +14,14 @@
   {"name": "baseline", "default": 184, "min": 72, "max": 360, "step": 1, "what": "the shared ground line (px from the top; 0.6 to 0.9 of the height)"},
   {"name": "gap", "default": 12, "min": 0, "max": 40, "step": 1, "what": "room between two cells (px)"},
   {"name": "margin", "default": 8, "min": 0, "max": 24, "step": 1, "what": "room around a piece inside its cell (px)"},
-  {"name": "roughness", "default": 0.6, "min": 0.4, "max": 1.0, "step": 0.05, "what": "how rough the pen is"},
-  {"name": "seed", "default": 11, "min": 0, "max": 9999, "step": 1, "what": "the pen's seed: the same seed draws the same strip"},
+  {"name": "roughness", "default": 0.6, "min": 0.6, "max": 0.8, "step": 0.05, "what": "how rough the pen is (0.6 to 0.8, the hand-drawn range set for the strip)"},
+  {"name": "seed", "default": 11, "min": 1, "max": 9999, "step": 1, "what": "the pen's seed: the same seed draws the same strip (rough.js takes 0 as no seed, a new strip each time)"},
   {"name": "stroke_main", "default": 1.8, "min": 0.5, "max": 3, "step": 0.1, "what": "outline stroke (px)"},
   {"name": "stroke_mid", "default": 1.3, "min": 0.5, "max": 3, "step": 0.1, "what": "detail stroke (px)"},
   {"name": "stroke_fine", "default": 1.0, "min": 0.5, "max": 3, "step": 0.1, "what": "fine stroke (px)"},
   {"name": "stroke_hatch", "default": 0.9, "min": 0.5, "max": 3, "step": 0.1, "what": "ground hatch stroke (px)"},
   {"name": "stroke_wave", "default": 1.0, "min": 0.5, "max": 3, "step": 0.1, "what": "water and steam stroke (px)"},
   {"name": "min_feature", "default": 3, "min": 2, "max": 6, "step": 1, "what": "a closed shape or line smaller than this (px, as drawn) is left out and reported"},
-  {"name": "marker", "default": 1, "min": 0, "max": 1, "step": 1, "what": "1 draws each cell's circled number (strokes, no text), 0 none"}
+  {"name": "marker", "default": 0, "min": 0, "max": 1, "step": 1, "what": "1 draws each cell's circled number (strokes, no text), 0 none; off until a legend on the page refers to the numbers through the ledger"}
  ]
 }
