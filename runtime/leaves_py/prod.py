@@ -842,6 +842,10 @@ def width(area):
     _, c0, _, c1 = [int(x) for x in area.split("/")]
     n = c1 - c0; return round(n * COLW + (n - 1) * GAP)
 
+# This page's own colours over tokens.css (its accent also sets text: WCAG AA on white, scripts/test_leaves_bubbles.py).
+PAGE_ROOT = ":root{--accent:#c93f2b;--accent2:#3f6fb5;--bar:#d6d6d6}"
+
+
 def page(spec):
     spec["fmts"]["bcm0"] = {"scale": 0.01, "dec": 0}
     c = Ctx(spec); mods = []
@@ -850,7 +854,7 @@ def page(spec):
         cls = "mod" + (" big" if m.get("big") else "") + (" end" if m["kind"] == "结论" else "")
         mods.append(f'<section class="{cls}" style="grid-area:{m["area"]}"><div class="tag"><span class="no">{"①②③④⑤⑥⑦⑧⑨"[i]}</span>{m["name"]}</div>'
                     f'<div class="wh">{c.t(m["h"])}</div>{body}</section>')
-    css = open(os.path.join(FX.D, "tokens.css")).read() + ":root{--accent:#d8452f;--accent2:#3f6fb5;--bar:#d6d6d6}" + CSS
+    css = open(os.path.join(FX.D, "tokens.css")).read() + PAGE_ROOT + CSS
     return (f'<!doctype html><html lang="zh"><meta charset="utf-8"><title>{word("page.title")}</title><style>{css}</style><body><div class="pg">'
             f'<header><div class="kicker">{esc(spec["kicker"])}</div><h1>{c.t(spec["title"])}</h1><p class="dek">{c.t(spec["dek"])}</p></header>'
             f'<div class="grid">{"".join(mods)}</div>'

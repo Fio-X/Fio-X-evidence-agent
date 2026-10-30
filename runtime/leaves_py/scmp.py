@@ -362,10 +362,11 @@ def title_in(hero_):
     return "ring" in hero_ and prod.knob(hero_, "frame", "title_in") == "on" and hero_.get("_gapdir", GAPDIR.get(prod.knob(hero_, "frame", "gap_dir"))) != -90
 
 # The page's own colours over tokens.css (its ground --bg included), which every leaf page's styles carry.
-PAGE_ROOT = ":root{--accent:#d8452f;--accent2:#6b6b6b;--bar:#d6d6d6;--bg:#f8f6f3}"
+PAGE_ROOT = ":root{--accent:#c93f2b;--accent2:#6b6b6b;--bar:#d6d6d6;--bg:#f8f6f3}"
 # The source line under the page (over prod.CSS's footer): the page's text floor, the labels' smallest size (SOURCE_PX, the
-# low end of the bars' and the map labels' size knobs) in body ink (--t-body: WCAG AA 4.5:1 on the ground, which --t-sec is
-# not; scripts/test_leaves_bubbles.py computes both), and the page ends close under it. The source text itself is the spec's.
+# low end of the bars' and the map labels' size knobs) in body ink (--t-body; every text ink of the page, --t-sec and the
+# accent included, keeps WCAG AA 4.5:1 on the ground and on white: scripts/test_leaves_bubbles.py computes them), and the
+# page ends close under it. The source text itself is the spec's.
 SOURCE_PX = 13
 SOURCE_CSS = "footer{margin-top:12px;padding-top:10px;font:400 %dpx/20px var(--sans);color:var(--t-body)}.pg{padding-bottom:20px}" % SOURCE_PX
 

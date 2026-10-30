@@ -165,12 +165,27 @@ class Contrast(unittest.TestCase):
         ink = colour(root[bubbles.VALUE_INK])
         self.assertGreaterEqual(contrast(ink, land), 4.5)
         self.assertGreaterEqual(contrast(ink, ground), 4.5)
-        self.assertLess(contrast(colour(root["--t-sec"]), land), 4.5)  # the grey it replaces did not
+        self.assertGreaterEqual(contrast(colour(root["--t-sec"]), ground), 4.5)  # the grey it replaces keeps AA on the ground,
+        self.assertLess(contrast(colour(root["--t-sec"]), land), 4.5)  # but not on the land
         # and the drawn labels' numbers use it
         setup(W_ROWS, W_LABELS)
         svg, _, _ = bubbles.draw(hero(W_DATA))
         fills = set(re.findall(r'<text[^>]*fill="([^"]+)"[^>]*><tspan data-src="fact:v\.', svg))
         self.assertEqual(fills, {f"var({bubbles.VALUE_INK})"})
+
+    def test_every_text_ink_of_a_leaf_page_keeps_wcag_aa_on_the_page_ground_and_on_white(self):
+        # the inks a leaf page sets text in (title, body, dek, secondary, the page's accent), from tokens.css under the page's
+        # own :root (scmp.PAGE_ROOT), and prod.page's own accent (prod.PAGE_ROOT): each at least 4.5:1 (WCAG 2 SC 1.4.3, body text) on the
+        # ground and on #fff, the same floor layer 1 holds a baked page's measured text to
+        import scmp
+        root = {}
+        for css in (open(os.path.join(HERE, "..", "runtime", "leaves_py", "tokens.css"), encoding="utf-8").read(), scmp.PAGE_ROOT):
+            root.update(re.findall(r"(--[\w-]+):(#[0-9a-fA-F]{6})", css))
+        inks = {k: root[k] for k in ("--t-title", "--t-body", "--t-dek", "--t-sec", "--accent")}
+        inks["prod.page --accent"] = dict(re.findall(r"(--[\w-]+):(#[0-9a-fA-F]{6})", prod.PAGE_ROOT))["--accent"]
+        for name, ink in inks.items():
+            for ground in (root["--bg"], "#ffffff"):
+                self.assertGreaterEqual(contrast(colour(ink), colour(ground)), 4.5, f"{name} {ink} on {ground}")
 
     def test_the_source_line_is_set_at_the_labels_floor_in_body_ink_and_the_page_ends_close_under_it(self):
         # a leaf page's shell (scmp.shell: the ring, column and scmp pages): the footer's rule that wins (the last in the page's

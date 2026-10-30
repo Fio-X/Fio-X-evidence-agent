@@ -42,8 +42,8 @@ def check_svg(svg):
 
 
 def themed(svg, w, h):
-    css = ("<style>svg{--accent:#d8452f;--t-title:#292928;--t-dark:#1f1e1d;--t-body:#4d4d4d;--t-sec:#848484;--bar:#d4d4d4;"
-           "--empty:#e5e5e5;--bg:#fff;" + K.page_vars("#d8452f") + "}</style>")
+    css = ("<style>svg{--accent:#c93f2b;--t-title:#292928;--t-dark:#1f1e1d;--t-body:#4d4d4d;--t-sec:#707070;--bar:#d4d4d4;"
+           "--empty:#e5e5e5;--bg:#fff;" + K.page_vars("#c93f2b") + "}</style>")
     return svg.replace(">", f">{css}<rect width='{w}' height='{h}' fill='#fff'/>", 1)
 
 

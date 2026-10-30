@@ -47,7 +47,8 @@ prod.KNOBS["bubbles"] = dict(
     inset=(12, (0, 40, 2), "projection view: px the land stops inside the picture's edge, on a hairline frame, so it is not cut by the panel"))
 NODE = "bubbles"
 # The land: --t-dark at this opacity over the page ground. A label's number is VALUE_INK, which keeps WCAG AA (4.5:1) on both
-# the land and the ground (scripts/test_leaves_bubbles.py computes it from tokens.css and scmp.PAGE_ROOT); --t-sec does not.
+# the land and the ground (scripts/test_leaves_bubbles.py computes it from tokens.css and scmp.PAGE_ROOT); --t-sec keeps it on
+# the ground only, not on the land.
 LAND_OPACITY = 0.28
 VALUE_INK = "--t-title"
 DOT_R = 1.6  # the dot at a nudged circle's true point
