@@ -24,6 +24,7 @@ runMutants({
     { name: "sheet written where a computation reference can name it", find: 'export const SHEET_PREFIX = "shadow/candidate_sheet-";', replace: 'export const SHEET_PREFIX = "computations/candidate_sheet-";', mustSay: /strictly equal|Missing expected rejection/ },
     { name: "sheet written where a source reference can name it", find: 'export const SHEET_PREFIX = "shadow/candidate_sheet-";', replace: 'export const SHEET_PREFIX = "data/candidate_sheet-";', mustSay: /Missing expected rejection|strictly equal/ },
     { name: "rank_top tie left to file order", edits: [{ find: "` ORDER BY value ${dir}, ${n} LIMIT 1`", replace: "` ORDER BY value ${dir} LIMIT 1`" }, { find: "${where.length ? ` WHERE ${where.join(\" AND \")}` : \"\"} ORDER BY ${n}`", replace: "${where.length ? ` WHERE ${where.join(\" AND \")}` : \"\"}`" }], mustSay: /tie|ZZ|AA/ },
+    { name: "the cut total change offered without a series", find: "in {first.to_year}.`, memberMoves);", replace: "in {first.to_year}.`);", mustSay: /cut_total_change has no series_sql/ },
     { name: "writeSheet does not wait for the write", find: "  await write(path, record);", replace: "  write(path, record);", mustSay: /the sheet is the only new file|waits for the write/ },
   ],
 });
