@@ -2131,7 +2131,7 @@ fn composition_keys(group: &str, code: &str) -> [String; 3] {
 ///   conservation check, the same tolerance, never widened): a candidate whose do not is no bar, the next by total takes
 ///   its place, and one line by its name gives the gap (gap.<code>, a minus fact of its inputs' sum and its total, each a
 ///   fact over its own rows; what the gap may be is never said); more such places than a quarter of the bars, or fewer
-///   bars than asked while countries were left unfetched, refuses the page;
+///   bars than asked once one is left out, refuses the page;
 /// - one line states the cut (COMPOSITION_BARS counts the bars from their own total rows), and one names the main's other
 ///   countries with a total at the year in the same order (COMPOSITION_OTHERS counts them, each by its place name): the
 ///   candidates past the bars, then the countries never fetched; a place left out for its parts is never among them.
@@ -2168,7 +2168,7 @@ fn stacked100_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
         }
     }
     // a place left out for its parts is said and the next by total takes its bar; past a quarter of the bars, or short of
-    // them while countries were left unfetched, the page stops (a place the question names stops it too: recipe_request)
+    // them once one is left out, the page stops (a place the question names stops it too: recipe_request)
     if dropped.len() * 4 > target {
         let codes: Vec<&str> = dropped.iter().map(|(c, ..)| c.as_str()).collect();
         return Err(format!(
@@ -2179,7 +2179,7 @@ fn stacked100_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
             comp.total
         ));
     }
-    if drawn.len() < target && !shape.outside.is_empty() {
+    if !dropped.is_empty() && drawn.len() < target {
         return Err(format!(
             "stacked100: {} places add up at {year} after {} left out, short of {target}, and the sum inputs hold no next place",
             drawn.len(),
@@ -7140,6 +7140,14 @@ mod tests {
             .contains(&r["dims"]["geo"].as_str().unwrap())).collect();
         let err = q3_fill(&main, &cut).unwrap_err();
         assert!(err.contains("short of"), "{err}");
+        // a table of 22 countries, all fetched: three left out leave 19 bars, under a quarter, and the page still stops, never
+        // printing a cut of 19 as the largest 20
+        let (_, _, _, main, sums) = q3_tables(&[("FR", 100.0), ("IT", 100.0), ("ES", 100.0)]);
+        let kept = |r: &Value| r["dims"]["geo"] == "EU27_2020" || Q3_GEOS[..22].contains(&r["dims"]["geo"].as_str().unwrap());
+        let (main, sums): (Vec<Value>, Vec<Value>) =
+            (main.into_iter().filter(|r| kept(r)).collect(), sums.into_iter().filter(|r| kept(r)).collect());
+        let err = q3_fill(&main, &sums).unwrap_err();
+        assert!(err.contains("19 places add up") && err.contains("short of 20"), "{err}");
     }
 
     /// The q6 shape (asylum applicants by citizenship into the EU, one year) in registry order: the ring refuses it for its
