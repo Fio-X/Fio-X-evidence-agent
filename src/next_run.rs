@@ -6053,7 +6053,7 @@ mod tests {
     }
 
     /// The q6 shape (asylum applicants by citizenship into the EU, one year) in registry order: the ring refuses it for its
-    /// one year, the column page is the first recipe that reads it, its place the citizenship.
+    /// one year, the column page is the first recipe that reads it, its place the citizenship; the flow page wants a flow.
     #[test]
     fn a_one_year_table_across_citizenships_is_a_column_page_and_never_a_ring() {
         let fixed = [("freq", "A"), ("unit", "PER"), ("sex", "T"), ("age", "TOTAL"), ("geo", "EU27_2020")];
@@ -6070,7 +6070,11 @@ mod tests {
                 ("scmp", Err("not this shape: main spans one year (2025)".to_string())),
                 ("ring", Err("not this shape: main spans one year (2025)".to_string())),
                 ("change", Err("not this shape: main spans one year (2025)".to_string())),
-                ("column", Ok("citizen PER 2025".to_string()))
+                ("column", Ok("citizen PER 2025".to_string())),
+                (
+                    "flow",
+                    Err("not this shape: no shape condition official_flow; e.g. one of annual|years_2|hub_origin|one_place|one_unit|others_single|monthly_companion|last_year|two_ends".to_string())
+                )
             ]
         );
     }
@@ -8832,7 +8836,7 @@ for line in sys.stdin:
 
     /// Every recipe's declared same-measure pairs, pinned whole: a pair passes same_numbers_twice for every table of its
     /// recipe, so a declaration is an exemption and each one added (or a recipe added) turns this test red until it is
-    /// reviewed here. Today only the column page's bars and bubbles (item 5 is to take that one away).
+    /// reviewed here. Today only the column page's bars and bubbles (item 5 is to take that one away); the flow page declares none.
     #[test]
     fn every_recipe_s_same_measure_declarations_are_pinned() {
         let declared: Vec<(&str, Vec<(&str, &str)>)> = Hubs
@@ -8840,7 +8844,7 @@ for line in sys.stdin:
             .iter()
             .map(|r| (r.name.as_str(), r.same_measure.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect()))
             .collect();
-        assert_eq!(declared, [("scmp", vec![]), ("ring", vec![]), ("change", vec![]), ("column", vec![("bars", "bubbles")])]);
+        assert_eq!(declared, [("scmp", vec![]), ("ring", vec![]), ("change", vec![]), ("column", vec![("bars", "bubbles")]), ("flow", vec![])]);
     }
 
     /// A pair is known only by the page's own recipe and only as the layers it declares: the bars and bubbles under a recipe
