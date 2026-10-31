@@ -76,6 +76,59 @@ pub const PLACES_KEY: &str = "places";
 /// The registered Eurostat flow tables whose monthly or quarterly rows sum to a whole year (catalogue data of the knowledge group:
 /// id prefixes, periods per year, the year share), read as a shared word list.
 const FLOW_FAMILIES: &str = include_str!("../runtime/pi/assets/flow-families.json");
+/// The registered parts of Eurostat table dimensions (catalogue data of the knowledge group: per table and dimension its total
+/// code, aggregates and leaves with their parents), read as a shared word list. More tables are more rows of the same file.
+const ESTAT_PARTS: &str = include_str!("../runtime/pi/assets/estat-parts.tsv");
+/// The asset a split's registered codes came from, as the params event names it.
+pub const PARTS_SOURCE: &str = "estat-parts.tsv";
+/// The levels a registered part has: the dimension's whole, a subtotal of other parts, or a part of no other.
+pub const PART_LEVELS: [&str; 3] = ["total", "aggregate", "leaf"];
+
+/// One registered code of a table dimension (an estat-parts.tsv row): its level (PART_LEVELS) and the code it is a part of.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Part {
+    pub code: String,
+    pub level: String,
+    pub parent: Option<String>,
+}
+
+/// The registered parts of dimension `dim` of Eurostat table `table` (its id without "@2"), in file order; empty for a
+/// dimension the file does not register. Columns are found by the header's names.
+pub fn parts(table: &str, dim: &str) -> Vec<Part> {
+    static REGISTRY: OnceLock<Vec<(String, String, Part)>> = OnceLock::new();
+    let rows = REGISTRY.get_or_init(|| {
+        let mut lines = ESTAT_PARTS.lines();
+        let header: Vec<&str> = lines
+            .next()
+            .expect("estat-parts.tsv has a header")
+            .split('\t')
+            .collect();
+        let col = |name: &str| {
+            header
+                .iter()
+                .position(|h| *h == name)
+                .unwrap_or_else(|| panic!("estat-parts.tsv lacks {name}"))
+        };
+        let (t, d, c, l, p) = (col("table"), col("dim"), col("code"), col("level"), col("parent"));
+        lines
+            .filter(|line| !line.is_empty())
+            .map(|line| {
+                let fields: Vec<&str> = line.split('\t').collect();
+                let at = |i: usize| fields.get(i).copied().unwrap_or("").to_string();
+                let part = Part {
+                    code: at(c),
+                    level: at(l),
+                    parent: Some(at(p)).filter(|p| !p.is_empty()),
+                };
+                (at(t), at(d), part)
+            })
+            .collect()
+    });
+    rows.iter()
+        .filter(|(t, d, _)| t == table && d == dim)
+        .map(|(_, _, part)| part.clone())
+        .collect()
+}
 
 /// A summed year (newsroom_data_prepare sum_year): the periods a year holds, and the share of series that must hold it whole.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -652,7 +705,8 @@ pub fn lines(n: usize, d: &Draft, items: &[(String, Vec<String>)]) -> Vec<String
 }
 
 /// The fetch arguments of table `n` (its number in the table pick) from the answer (item key -> option number, every item answered) and the
-/// places the question names. Err when the table holds none of the named places.
+/// places the question names. A split by a dimension with registered parts (parts) fetches those codes, not every code.
+/// Err when the table holds none of the named places.
 pub fn fill(
     draft: &Draft,
     n: usize,
@@ -693,6 +747,10 @@ pub fn fill(
     // The places the question names that the table does not hold (a named country, or an EU member under a region
     // word): left out of the fetch and kept in the event, so the page cannot imply them.
     let mut dropped: Vec<String> = Vec::new();
+    // The split dimension fetched as its registered parts, with where they came from and each part's parent (the params
+    // event's "parts"), so a replay reads the hierarchy the fetch was asked with.
+    let mut parted: Vec<Value> = Vec::new();
+    let dataset = table.id.strip_suffix("@2").unwrap_or(&table.id);
     if table.worldbank {
         let mut ids = |isos: &mut dyn Iterator<Item = &str>| -> Vec<String> {
             isos.filter_map(|iso| {
@@ -740,7 +798,26 @@ pub fn fill(
                 continue;
             }
             if Some(dim) == breakdown.as_ref() {
-                open = Some((dim.clone(), codes.len()));
+                // A split by a dimension with registered parts (estat-parts.tsv) fetches the parts the table lists, its total
+                // among them, not every code; any other split leaves its dimension open.
+                let registered = parts(dataset, dim);
+                let listed: Vec<String> = registered
+                    .iter()
+                    .filter(|p| codes.iter().any(|(c, _)| *c == p.code))
+                    .map(|p| p.code.clone())
+                    .collect();
+                let whole = registered
+                    .iter()
+                    .any(|p| p.level == PART_LEVELS[0] && listed.contains(&p.code));
+                if whole && listed.len() > 1 {
+                    parted.push(json!({"dimension": dim, "source": PARTS_SOURCE, "codes": listed.len(),
+                        "registered": registered.len(), "from_codes": codes.len(),
+                        "unlisted": registered.iter().filter(|p| !listed.contains(&p.code)).map(|p| p.code.as_str()).collect::<Vec<_>>(),
+                        "parents": registered.iter().filter(|p| listed.contains(&p.code)).filter_map(|p| Some([p.code.as_str(), p.parent.as_deref()?])).collect::<Vec<_>>()}));
+                    put(&mut filters, dim, listed);
+                } else {
+                    open = Some((dim.clone(), codes.len()));
+                }
                 continue;
             }
             if dim == GEO_DIM {
@@ -929,10 +1006,7 @@ pub fn fill(
     if table.worldbank {
         args.insert("provider".into(), json!("worldbank"));
     }
-    args.insert(
-        "dataset".into(),
-        json!(table.id.strip_suffix("@2").unwrap_or(&table.id)),
-    );
+    args.insert("dataset".into(), json!(dataset));
     if !filters.is_empty() {
         args.insert("filters".into(), Value::Array(filters));
     }
@@ -967,6 +1041,9 @@ pub fn fill(
         "places": places.iter().map(|p| match p { Place::Country(iso) => iso.clone(), Place::Region => "region".to_string() }).collect::<Vec<_>>(),
         "dropped": dropped, "narrow": narrow,
     });
+    if !parted.is_empty() {
+        event["parts"] = json!(parted);
+    }
     if !draft.named.is_empty() {
         event["named"] = json!(draft.named);
     }
@@ -2458,5 +2535,197 @@ mod tests {
         assert!(!region.places_open);
         // A Eurostat table is never this item's.
         assert!(!draft_of(&[]).places_open);
+    }
+
+    /// The nrg_bal codes of nrg_bal_s the q2 stand-in run's probe found held for DE (the metabase's 95 but GIC2020-2030,
+    /// PEC2020-2030 and FEC2020-2030).
+    const Q2_NRG_BAL: &str = "PPRD RCV_RCY IMP EXP STK_CHG GAE INTMARB GIC INTAVI NRGSUP GIC_EED PEC_EED FEC_EED TI_E TI_EHG_E \
+        TI_CO_E TI_BF_E TI_GW_E TI_RPI_E TI_PF_E TI_BKBPB_E TI_CL_E TI_BNG_E TI_LBB_E TI_CPP_E TI_GTL_E TI_NSP_E TO TO_EHG TO_CO \
+        TO_BF TO_GW TO_RPI TO_PF TO_BKBPB TO_CL TO_BNG TO_LBB TO_CPP TO_GTL TO_NSP NRG_E NRG_EHG_E NRG_CM_E NRG_OIL_NG_E NRG_PF_E \
+        NRG_CO_E NRG_BKBPB_E NRG_GW_E NRG_BF_E NRG_PR_E NRG_NI_E NRG_CL_E NRG_LNG_E NRG_BIOG_E NRG_GTL_E NRG_CPP_E NRG_NSP_E DL AFC \
+        FC_NE FC_E FC_IND_E FC_IND_IS_E FC_IND_CPC_E FC_IND_NFM_E FC_IND_NMM_E FC_IND_TE_E FC_IND_MAC_E FC_IND_MQ_E FC_IND_FBT_E \
+        FC_IND_PPP_E FC_IND_WP_E FC_IND_CON_E FC_IND_TL_E FC_IND_NSP_E FC_TRA_E FC_TRA_RAIL_E FC_TRA_ROAD_E FC_TRA_DAVI_E \
+        FC_TRA_DNAVI_E FC_TRA_PIPE_E FC_TRA_NSP_E FC_OTH_E FC_OTH_CP_E FC_OTH_HH_E FC_OTH_AF_E FC_OTH_FISH_E FC_OTH_NSP_E STATDIFF \
+        GEP GHP";
+    const Q2_SIEC: [&str; 12] = [
+        "TOTAL", "C0000X0350-0370", "C0350-0370", "P1000", "S2000", "G3000", "O4000XBIO", "RA000", "W6100_6220", "N900H",
+        "E7000", "H8000",
+    ];
+
+    /// q2's table as the 10-31 stand-in run's table pick held it (nrg_bal_s, cut to three geo codes), under `id`.
+    fn q2_table(id: &str) -> TableMeta {
+        let nrg_bal: Vec<&str> = Q2_NRG_BAL.split_whitespace().collect();
+        assert_eq!(nrg_bal.len(), 92);
+        eurostat(
+            id,
+            vec![
+                dim("geo", &["EU27_2020", "DE", "FR"]),
+                dim("nrg_bal", &nrg_bal),
+                dim("siec", &Q2_SIEC),
+                dim("unit", &["KTOE", "GWH", "TJ"]),
+            ],
+        )
+    }
+
+    #[test]
+    fn the_registered_parts_have_one_total_their_parents_and_add_up_on_the_fixture() {
+        let mut pairs: Vec<(String, String)> = Vec::new();
+        for line in ESTAT_PARTS.lines().skip(1).filter(|l| !l.is_empty()) {
+            let f: Vec<&str> = line.split('\t').collect();
+            assert_eq!(f.len(), 9, "{line}");
+            let pair = (f[0].to_string(), f[1].to_string());
+            if !pairs.contains(&pair) {
+                pairs.push(pair);
+            }
+        }
+        assert!(pairs.contains(&("nrg_bal_s".into(), "siec".into())));
+        assert!(pairs.contains(&("nrg_bal_s".into(), "nrg_bal".into())));
+        for (table, dim) in &pairs {
+            let registered = parts(table, dim);
+            let codes: Vec<&str> = registered.iter().map(|p| p.code.as_str()).collect();
+            assert_eq!(
+                registered.iter().filter(|p| p.level == PART_LEVELS[0]).count(),
+                1,
+                "{table} {dim}: one total"
+            );
+            for p in &registered {
+                assert!(PART_LEVELS.contains(&p.level.as_str()), "{table} {dim} {}", p.code);
+                assert_eq!(codes.iter().filter(|c| **c == p.code).count(), 1, "{table} {dim} {} once", p.code);
+                match &p.parent {
+                    None => assert_eq!(p.level, PART_LEVELS[0], "{table} {dim} {}: only the total has no parent", p.code),
+                    Some(parent) => assert!(codes.contains(&parent.as_str()), "{table} {dim} {}: parent {parent}", p.code),
+                }
+            }
+        }
+        assert_eq!(parts("nrg_bal_s", "siec").len(), 12);
+        assert_eq!(parts("nrg_bal_s", "nrg_bal").len(), 9);
+        assert!(parts("nrg_bal_s", "unit").is_empty() && parts("nrg_bal_c", "siec").is_empty());
+        // On nrg_bal_s DE 2024 (KTOE): each fuel parent is the sum of its parts at FC_E, each sector parent at TOTAL; a code
+        // the file has no row for is the sum of its own parts (FC_OTH_E), else nothing (N900H in final consumption).
+        let fixture = include_str!("../scripts/fixtures/data_prepare/nrg_bal_s_DE_2024.tsv");
+        let value: BTreeMap<(String, String), f64> = fixture
+            .lines()
+            .filter(|l| !l.starts_with('#'))
+            .skip(1)
+            .map(|l| {
+                let f: Vec<&str> = l.split('\t').collect();
+                ((f[0].to_string(), f[1].to_string()), f[2].parse().unwrap())
+            })
+            .collect();
+        for (dim, at) in [("siec", "FC_E"), ("nrg_bal", "TOTAL")] {
+            let registered = parts("nrg_bal_s", dim);
+            fn of(code: &str, registered: &[Part], read: &dyn Fn(&str) -> Option<f64>) -> f64 {
+                read(code).unwrap_or_else(|| {
+                    registered
+                        .iter()
+                        .filter(|p| p.parent.as_deref() == Some(code))
+                        .map(|p| of(&p.code, registered, read))
+                        .sum()
+                })
+            }
+            let read = |code: &str| {
+                if dim == "siec" {
+                    value.get(&(at.to_string(), code.to_string())).copied()
+                } else {
+                    value.get(&(code.to_string(), at.to_string())).copied()
+                }
+            };
+            for p in registered.iter().filter(|p| p.level != "leaf") {
+                let Some(whole) = read(&p.code) else { continue };
+                let sum: f64 = registered
+                    .iter()
+                    .filter(|c| c.parent.as_deref() == Some(p.code.as_str()))
+                    .map(|c| of(&c.code, &registered, &read))
+                    .sum();
+                assert!((whole - sum).abs() < 0.005, "{dim} {}: {whole} vs parts {sum}", p.code);
+            }
+        }
+    }
+
+    /// q2 (德国能源从来源到各部门) as the 10-31 stand-in run answered the table pick: nrg_bal_s, t2.breakdown 2 (nrg_bal), t2.unit 1.
+    /// The run's fill left nrg_bal open (92 codes), and newsroom_data_prepare stopped at needs_narrowing (92 rows, a chart shows
+    /// 80); the program now fetches nrg_bal's registered parts and records where they came from. A siec split takes siec's.
+    #[test]
+    fn a_split_by_a_dimension_with_registered_parts_fetches_those_codes_and_q2_leaves_none_open() {
+        let de = [Place::Country("DE".into())];
+        let draft = draft(q2_table("nrg_bal_s"), &[], &de);
+        assert_eq!(draft.breakdown, ["nrg_bal", "siec"]);
+        let filled = fill(&draft, 2, &picks(&[("t2.breakdown", 2), ("t2.unit", 1)]), &de, 2026).unwrap();
+        let sectors: Vec<String> = parts("nrg_bal_s", "nrg_bal").into_iter().map(|p| p.code).collect();
+        assert_eq!(
+            sectors,
+            ["FC_E", "FC_IND_E", "FC_TRA_E", "FC_OTH_E", "FC_OTH_CP_E", "FC_OTH_HH_E", "FC_OTH_AF_E", "FC_OTH_FISH_E", "FC_OTH_NSP_E"]
+        );
+        assert_eq!(
+            filled.args,
+            *json!({"dataset": "nrg_bal_s", "filters": [
+                {"dimension": "freq", "values": ["A"]}, {"dimension": "nrg_bal", "values": sectors},
+                {"dimension": "siec", "values": ["TOTAL"]}, {"dimension": "unit", "values": ["KTOE"]},
+                {"dimension": "geo", "values": ["DE"]}],
+                "years": {"start": 2015, "end": 2024}})
+            .as_object()
+            .unwrap()
+        );
+        assert_eq!(filled.event["open"], Value::Null);
+        assert_eq!(filled.event["narrow"], Value::Null);
+        assert_eq!(filled.event["breakdown"], "nrg_bal");
+        assert_eq!(filled.event["estimate"], 90);
+        assert_eq!(
+            filled.event["parts"],
+            json!([{"dimension": "nrg_bal", "source": "estat-parts.tsv", "codes": 9, "registered": 9, "from_codes": 92, "unlisted": [],
+                "parents": [["FC_IND_E", "FC_E"], ["FC_TRA_E", "FC_E"], ["FC_OTH_E", "FC_E"], ["FC_OTH_CP_E", "FC_OTH_E"],
+                    ["FC_OTH_HH_E", "FC_OTH_E"], ["FC_OTH_AF_E", "FC_OTH_E"], ["FC_OTH_FISH_E", "FC_OTH_E"], ["FC_OTH_NSP_E", "FC_OTH_E"]]}])
+        );
+        // the siec split: siec's registered parts, nrg_bal the one code picked
+        let filled = fill(
+            &draft,
+            2,
+            &picks(&[("t2.breakdown", 3), ("t2.nrg_bal", 1), ("t2.unit", 1)]),
+            &de,
+            2026,
+        )
+        .unwrap();
+        assert_eq!(filter(&filled, "siec").unwrap(), Q2_SIEC);
+        assert_eq!(filter(&filled, "nrg_bal").unwrap().len(), 1);
+        assert_eq!(filled.event["open"], Value::Null);
+        assert_eq!(filled.event["parts"][0]["dimension"], "siec");
+        assert_eq!(filled.event["parts"][0]["source"], PARTS_SOURCE);
+        // a part the table does not list is left out and named; a table that lists not even the total is left open as before
+        let mut cut = q2_table("nrg_bal_s");
+        cut.dims[1].1.retain(|(c, _)| c != "FC_OTH_FISH_E");
+        let filled = fill(&draft_of_table(cut), 2, &picks(&[("t2.breakdown", 2), ("t2.unit", 1)]), &de, 2026).unwrap();
+        assert_eq!(filter(&filled, "nrg_bal").unwrap().len(), 8);
+        assert_eq!(filled.event["parts"][0]["unlisted"], json!(["FC_OTH_FISH_E"]));
+        let mut no_total = q2_table("nrg_bal_s");
+        no_total.dims[1].1.retain(|(c, _)| c != "FC_E");
+        let filled = fill(&draft_of_table(no_total), 2, &picks(&[("t2.breakdown", 2), ("t2.unit", 1)]), &de, 2026).unwrap();
+        assert_eq!(filled.event["open"], "nrg_bal");
+        assert!(filled.event.get("parts").is_none());
+        assert!(filter(&filled, "nrg_bal").is_none());
+    }
+
+    fn draft_of_table(table: TableMeta) -> Draft {
+        draft(table, &[], &[Place::Country("DE".into())])
+    }
+
+    /// A table with no registered parts fills as before: the same q2 answer on the same codes under another id gives the 10-31
+    /// run's fetch byte for byte (nrg_bal open), and its event names no parts.
+    #[test]
+    fn a_table_with_no_registered_parts_fills_as_before() {
+        let de = [Place::Country("DE".into())];
+        assert!(parts("nrg_bal_c", "nrg_bal").is_empty() && parts("nrg_bal_c", "siec").is_empty());
+        let draft = draft(q2_table("nrg_bal_c"), &[], &de);
+        let filled = fill(&draft, 2, &picks(&[("t2.breakdown", 2), ("t2.unit", 1)]), &de, 2026).unwrap();
+        // the run's next_params args, with only the dataset id changed
+        let run = json!({"dataset": "nrg_bal_c", "filters": [{"dimension": "freq", "values": ["A"]},
+            {"dimension": "siec", "values": ["TOTAL"]}, {"dimension": "unit", "values": ["KTOE"]}, {"dimension": "geo", "values": ["DE"]}],
+            "years": {"start": 2015, "end": 2024}});
+        assert_eq!(
+            serde_json::to_string(&Value::Object(filled.args.clone())).unwrap(),
+            serde_json::to_string(&run).unwrap()
+        );
+        assert_eq!(filled.event["open"], "nrg_bal");
+        assert_eq!(filled.event["estimate"], 920);
+        assert!(filled.event.get("parts").is_none());
     }
 }
