@@ -7553,6 +7553,7 @@ mod tests {
             tools.args[0],
             json!({"dataset": "nrg_bal_peh", "filters": [
                 {"dimension": "freq", "values": ["A"]}, {"dimension": "nrg_bal", "values": ["GEP"]},
+                {"dimension": "siec", "values": ["TOTAL", "G3000", "RA000"]},
                 {"dimension": "unit", "values": ["GWH"]}, {"dimension": "geo", "values": ["DE"]}],
                 "years": {"start": 2015, "end": 2024}})
         );
@@ -7562,7 +7563,9 @@ mod tests {
         // the siec split draws with ten years, so the program gives it no years option of its own
         assert_eq!(params["picks"], json!({"t2.breakdown": 3, "t2.nrg_bal": 1}));
         assert_eq!(params["tables"][0]["years"]["rule"], "annual");
-        assert_eq!(params["tables"][0]["open"], "siec");
+        // siec's parts are registered (estat-parts.tsv), so the split fetches the ones the table lists, in the file's order
+        assert_eq!(params["tables"][0]["open"], Value::Null);
+        assert_eq!(params["tables"][0]["parts"][0]["codes"], 3);
         let breakdown = events
             .iter()
             .find(|e| e["type"] == BREAKDOWN_EVENT)

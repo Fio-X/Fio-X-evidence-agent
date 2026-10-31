@@ -20,3 +20,78 @@ nrg_bal_c nrg_bal_s	nrg_bal	FC_OTH_HH_E	Final consumption - other sectors - hous
 nrg_bal_c nrg_bal_s	nrg_bal	FC_OTH_AF_E	Final consumption - other sectors - agriculture and forestry - energy use	leaf	FC_OTH_E						
 nrg_bal_c nrg_bal_s	nrg_bal	FC_OTH_FISH_E	Final consumption - other sectors - fishing - energy use	leaf	FC_OTH_E						
 nrg_bal_c nrg_bal_s	nrg_bal	FC_OTH_NSP_E	Final consumption - other sectors - not elsewhere specified - energy use	leaf	FC_OTH_E						
+nrg_bal_peh	siec	TOTAL	Total	total				sum of the leaves			
+nrg_bal_peh	siec	C0000X0350-0370	Solid fossil fuels	aggregate	TOTAL						
+nrg_bal_peh	siec	C0110	Anthracite	leaf	C0000X0350-0370	化石	fossil				
+nrg_bal_peh	siec	C0121	Coking coal	leaf	C0000X0350-0370	化石	fossil				
+nrg_bal_peh	siec	C0129	Other bituminous coal	leaf	C0000X0350-0370	化石	fossil				
+nrg_bal_peh	siec	C0210	Sub-bituminous coal	leaf	C0000X0350-0370	化石	fossil				
+nrg_bal_peh	siec	C0220	Lignite	leaf	C0000X0350-0370	化石	fossil				
+nrg_bal_peh	siec	C0311	Coke oven coke	leaf	C0000X0350-0370	化石	fossil				
+nrg_bal_peh	siec	C0312	Gas coke	leaf	C0000X0350-0370	化石	fossil				
+nrg_bal_peh	siec	C0320	Patent fuel	leaf	C0000X0350-0370	化石	fossil				
+nrg_bal_peh	siec	C0330	Brown coal briquettes	leaf	C0000X0350-0370	化石	fossil				
+nrg_bal_peh	siec	C0340	Coal tar	leaf	C0000X0350-0370	化石	fossil				
+nrg_bal_peh	siec	C0350-0370	Manufactured gases	aggregate	TOTAL						
+nrg_bal_peh	siec	C0350	Coke oven gas	leaf	C0350-0370	化石	fossil				
+nrg_bal_peh	siec	C0360	Gas works gas	leaf	C0350-0370	化石	fossil				
+nrg_bal_peh	siec	C0371	Blast furnace gas	leaf	C0350-0370	化石	fossil				
+nrg_bal_peh	siec	C0379	Other recovered gases	leaf	C0350-0370	化石	fossil				
+nrg_bal_peh	siec	P1000	Peat and peat products	aggregate	TOTAL						
+nrg_bal_peh	siec	P1100	Peat	leaf	P1000	化石	fossil				
+nrg_bal_peh	siec	P1200	Peat products	leaf	P1000	化石	fossil				
+nrg_bal_peh	siec	S2000	Oil shale and oil sands	leaf	TOTAL	化石	fossil				
+nrg_bal_peh	siec	G3000	Natural gas	leaf	TOTAL	化石	fossil				
+nrg_bal_peh	siec	O4000XBIO	Oil and petroleum products (excluding biofuel portion)	aggregate	TOTAL						
+nrg_bal_peh	siec	O4100_TOT	Crude oil	leaf	O4000XBIO	化石	fossil				
+nrg_bal_peh	siec	O4200	Natural gas liquids	leaf	O4000XBIO	化石	fossil				
+nrg_bal_peh	siec	O4300	Refinery feedstocks	leaf	O4000XBIO	化石	fossil				
+nrg_bal_peh	siec	O4400X4410	Additives and oxygenates (excluding biofuel portion)	leaf	O4000XBIO	化石	fossil				
+nrg_bal_peh	siec	O4500	Other hydrocarbons	leaf	O4000XBIO	化石	fossil				
+nrg_bal_peh	siec	O4610	Refinery gas	leaf	O4000XBIO	化石	fossil				
+nrg_bal_peh	siec	O4620	Ethane	leaf	O4000XBIO	化石	fossil				
+nrg_bal_peh	siec	O4630	Liquefied petroleum gases	leaf	O4000XBIO	化石	fossil				
+nrg_bal_peh	siec	O4640	Naphtha	leaf	O4000XBIO	化石	fossil				
+nrg_bal_peh	siec	O4651	Aviation gasoline	leaf	O4000XBIO	化石	fossil				
+nrg_bal_peh	siec	O4652XR5210B	Motor gasoline (excluding biofuel portion)	leaf	O4000XBIO	化石	fossil				
+nrg_bal_peh	siec	O4653	Gasoline-type jet fuel	leaf	O4000XBIO	化石	fossil				
+nrg_bal_peh	siec	O4661XR5230B	Kerosene-type jet fuel (excluding biofuel portion)	leaf	O4000XBIO	化石	fossil				
+nrg_bal_peh	siec	O4669	Other kerosene	leaf	O4000XBIO	化石	fossil				
+nrg_bal_peh	siec	O4671XR5220B	Gas oil and diesel oil (excluding biofuel portion)	leaf	O4000XBIO	化石	fossil				
+nrg_bal_peh	siec	O4680	Fuel oil	leaf	O4000XBIO	化石	fossil				
+nrg_bal_peh	siec	O4691	White spirit and special boiling point industrial spirits	leaf	O4000XBIO	化石	fossil				
+nrg_bal_peh	siec	O4692	Lubricants	leaf	O4000XBIO	化石	fossil				
+nrg_bal_peh	siec	O4693	Paraffin waxes	leaf	O4000XBIO	化石	fossil				
+nrg_bal_peh	siec	O4694	Petroleum coke	leaf	O4000XBIO	化石	fossil				
+nrg_bal_peh	siec	O4695	Bitumen	leaf	O4000XBIO	化石	fossil				
+nrg_bal_peh	siec	O4699	Other oil products n.e.c.	leaf	O4000XBIO	化石	fossil				
+nrg_bal_peh	siec	RA000	Renewables and biofuels	aggregate	TOTAL			= its renewable leaves; pumped hydro (RA130) is outside it			
+nrg_bal_peh	siec	RA100	Hydro	leaf	RA000	可再生	renewable				
+nrg_bal_peh	siec	RA130	Pumped hydro power	leaf	TOTAL	其他	other	pumped hydro: Eurostat keeps it outside RA000, so not renewable here			
+nrg_bal_peh	siec	RA200	Geothermal	leaf	RA000	可再生	renewable				
+nrg_bal_peh	siec	RA300	Wind	leaf	RA000	可再生	renewable				
+nrg_bal_peh	siec	RA410	Solar thermal	leaf	RA000	可再生	renewable				
+nrg_bal_peh	siec	RA420	Solar photovoltaic	leaf	RA000	可再生	renewable				
+nrg_bal_peh	siec	RA500	Tide, wave, ocean	leaf	RA000	可再生	renewable				
+nrg_bal_peh	siec	RA600	Ambient heat (heat pumps)	leaf	RA000	可再生	renewable				
+nrg_bal_peh	siec	R5110-5150_W6000RI	Primary solid biofuels	leaf	RA000	可再生	renewable				
+nrg_bal_peh	siec	R5160	Charcoal	leaf	RA000	可再生	renewable				
+nrg_bal_peh	siec	R5210P	Pure biogasoline	leaf	RA000	可再生	renewable				
+nrg_bal_peh	siec	R5210B	Blended biogasoline	leaf	RA000	可再生	renewable				
+nrg_bal_peh	siec	R5220P	Pure biodiesels	leaf	RA000	可再生	renewable				
+nrg_bal_peh	siec	R5220B	Blended biodiesels	leaf	RA000	可再生	renewable				
+nrg_bal_peh	siec	R5230P	Pure bio jet kerosene	leaf	RA000	可再生	renewable				
+nrg_bal_peh	siec	R5230B	Blended bio jet kerosene	leaf	RA000	可再生	renewable				
+nrg_bal_peh	siec	R5290	Other liquid biofuels	leaf	RA000	可再生	renewable				
+nrg_bal_peh	siec	R5300	Biogases	leaf	RA000	可再生	renewable				
+nrg_bal_peh	siec	W6100	Industrial waste (non-renewable)	leaf	W6100_6220	其他	other	non-renewable waste, kept in other (Eurostat has no fossil parent for it)			
+nrg_bal_peh	siec	W6210	Renewable municipal waste	leaf	RA000	可再生	renewable				
+nrg_bal_peh	siec	W6220	Non-renewable municipal waste	leaf	W6100_6220	其他	other	non-renewable municipal waste, kept in other			
+nrg_bal_peh	siec	W6100_6220	Non-renewable waste	aggregate	TOTAL						
+nrg_bal_peh	siec	N900H	Nuclear heat	leaf	TOTAL	核	nuclear	nuclear heat			
+nrg_bal_peh	siec	E7000	Electricity	leaf	TOTAL	其他	other	electricity			
+nrg_bal_peh	siec	H8000	Heat	leaf	TOTAL	其他	other	heat			
+nrg_bal_peh	siec	X9900	Other fuels n.e.c.	leaf	TOTAL	其他	other	other fuels n.e.c.			
+nrg_bal_peh	siec	BA100	Batteries	leaf	TOTAL	其他	other	batteries			
+nrg_bal_peh	siec	BIOE	Bioenergy	overlap				bioenergy subtotal: spans renewable leaves and non-renewable waste, so it is no part of the tree			
+nrg_bal_peh	siec	FE	Fossil energy	overlap				fossil energy subtotal: not the sum of the fossil leaves here (DE 2024: 215078 vs 210282 GWh), so it is no part of the tree			

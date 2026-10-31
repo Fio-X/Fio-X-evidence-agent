@@ -84,6 +84,9 @@ const ESTAT_PARTS: &str = include_str!("../runtime/pi/assets/estat-parts.tsv");
 pub const PARTS_SOURCE: &str = "estat-parts.tsv";
 /// The levels a registered part has: the dimension's whole, a subtotal of other parts, or a part of no other.
 pub const PART_LEVELS: [&str; 3] = ["total", "aggregate", "leaf"];
+/// The level of a registered subtotal that is no part of the tree (estat-parts.tsv): it overlaps the tree's parts (nrg_bal_peh
+/// BIOE spans renewable leaves and non-renewable waste), so it has no parent, is no parent, and `parts` never reads it as one.
+pub const OVERLAP_LEVEL: &str = "overlap";
 
 /// The sides a dimension's total row may name it in its table's registered flow (estat-parts.tsv column "flow"): the flow
 /// runs from the source dimension's parts to the target dimension's (nrg_bal_s: each fuel to each sector of final use).
@@ -92,13 +95,16 @@ pub const FLOW_SIDES: [&str; 2] = ["source", "target"];
 pub const FLOW_JOIN: char = '>';
 
 /// One registered code of a table dimension (an estat-parts.tsv row): its level (PART_LEVELS), the code it is a part of,
-/// on a total row the side of the table's flow the dimension is (FLOW_SIDES), and on a leaf the code of the flow's other
-/// dimension it is registered as left out of (column "excluded_from", with the published source that says so).
+/// on a total row the side of the table's flow the dimension is (FLOW_SIDES), on a leaf the code of the flow's other
+/// dimension it is registered as left out of (column "excluded_from", with the published source that says so), and on a leaf
+/// the group a composition sums it into (column "group_en": fossil, nuclear, renewable, other; its printed name is a reviewed
+/// one only, composition_groups).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Part {
     pub code: String,
     pub level: String,
     pub parent: Option<String>,
+    pub group: Option<String>,
     pub flow: Option<String>,
     pub excluded_from: Option<String>,
     pub excluded_source: Option<String>,
@@ -109,9 +115,45 @@ pub struct Part {
 pub fn parts(table: &str, dim: &str) -> Vec<Part> {
     registry()
         .iter()
-        .filter(|(t, d, _)| t == table && d == dim)
+        .filter(|(t, d, p)| t == table && d == dim && p.level != OVERLAP_LEVEL)
         .map(|(_, _, part)| part.clone())
         .collect()
+}
+
+/// The registered subtotals of dimension `dim` of `table` that overlap its tree (OVERLAP_LEVEL), in file order: never a part,
+/// a parent or a group's member, listed so a page can say they are left out.
+pub fn overlaps(table: &str, dim: &str) -> Vec<Part> {
+    registry()
+        .iter()
+        .filter(|(t, d, p)| t == table && d == dim && p.level == OVERLAP_LEVEL)
+        .map(|(_, _, part)| part.clone())
+        .collect()
+}
+
+/// The groups a composition of dimension `dim` of `table` sums its leaves into: each registered group (Part::group) with
+/// its leaves, in the order the file first names the group, the leaves in file order. The leaves are the dimension's leaves
+/// under its total (leaves_under_total), so each one counts once and they add up to the total. Empty when the file registers
+/// no group for the dimension; Err when a leaf under the total has none (it would be left out of every group) or when one
+/// group holds every leaf (a composition of one part shows nothing).
+pub fn composition_groups(table: &str, dim: &str) -> Result<Vec<(String, Vec<Part>)>, String> {
+    let leaves = leaves_under_total(table, dim);
+    if !leaves.iter().any(|p| p.group.is_some()) {
+        return Ok(Vec::new());
+    }
+    let mut groups: Vec<(String, Vec<Part>)> = Vec::new();
+    for leaf in leaves {
+        let Some(group) = leaf.group.clone() else {
+            return Err(format!("{PARTS_SOURCE}: {table} {dim} {} is a leaf with no group", leaf.code));
+        };
+        match groups.iter_mut().find(|(g, _)| *g == group) {
+            Some((_, members)) => members.push(leaf),
+            None => groups.push((group, vec![leaf])),
+        }
+    }
+    if groups.len() < 2 {
+        return Err(format!("{PARTS_SOURCE}: {table} {dim} has one group only"));
+    }
+    Ok(groups)
 }
 
 /// The source and target dimensions of the flow estat-parts.tsv registers for `table` (its id without "@2"): the dimensions
@@ -129,6 +171,12 @@ pub fn flow_dims(table: &str) -> Option<(String, String)> {
 /// The parts of dimension `dim` a flow of `table` draws: its leaves whose parents lead up to the dimension's total, so one
 /// level only (an aggregate is never drawn beside its own parts: FC_OTH_E would count twice) and the leaves add up to the total.
 pub fn flow_parts(table: &str, dim: &str) -> Vec<Part> {
+    leaves_under_total(table, dim)
+}
+
+/// The leaves of dimension `dim` of `table` whose parents lead up to its total, in file order (flow_parts,
+/// composition_groups): one level only, so they add up to the total.
+fn leaves_under_total(table: &str, dim: &str) -> Vec<Part> {
     let registered = parts(table, dim);
     let Some(total) = registered.iter().find(|p| p.level == PART_LEVELS[0]) else {
         return Vec::new();
@@ -220,7 +268,7 @@ fn registry() -> &'static Vec<(String, String, Part)> {
                 .unwrap_or_else(|| panic!("estat-parts.tsv lacks {name}"))
         };
         let (t, d, c, l, p, f) = (col("tables"), col("dim"), col("code"), col("level"), col("parent"), col("flow"));
-        let (x, xs) = (col("excluded_from"), col("excluded_source"));
+        let (x, xs, g) = (col("excluded_from"), col("excluded_source"), col("group_en"));
         lines
             .filter(|line| !line.is_empty())
             .flat_map(|line| {
@@ -230,6 +278,7 @@ fn registry() -> &'static Vec<(String, String, Part)> {
                     code: at(c),
                     level: at(l),
                     parent: Some(at(p)).filter(|p| !p.is_empty()),
+                    group: Some(at(g)).filter(|g| !g.is_empty()),
                     flow: Some(at(f)).filter(|f| !f.is_empty()),
                     excluded_from: Some(at(x)).filter(|x| !x.is_empty()),
                     excluded_source: Some(at(xs)).filter(|x| !x.is_empty()),
@@ -2788,6 +2837,7 @@ mod tests {
             assert!(pairs.contains(&(table.into(), "siec".into())));
             assert!(pairs.contains(&(table.into(), "nrg_bal".into())));
         }
+        assert!(pairs.contains(&("nrg_bal_peh".into(), "siec".into())));
         for (table, dim) in &pairs {
             let registered = parts(table, dim);
             let codes: Vec<&str> = registered.iter().map(|p| p.code.as_str()).collect();
@@ -2804,7 +2854,15 @@ mod tests {
                     Some(parent) => assert!(codes.contains(&parent.as_str()), "{table} {dim} {}: parent {parent}", p.code),
                 }
             }
+            // a subtotal that overlaps the tree is read apart: no part, no parent, no group, never a part's parent
+            for o in overlaps(table, dim) {
+                assert_eq!((o.parent.as_deref(), o.group.as_deref()), (None, None), "{table} {dim} {}", o.code);
+                assert!(!codes.contains(&o.code.as_str()), "{table} {dim} {}: an overlap is no part", o.code);
+            }
         }
+        assert_eq!(parts("nrg_bal_peh", "siec").len(), 73);
+        assert_eq!(overlaps("nrg_bal_peh", "siec").iter().map(|p| p.code.as_str()).collect::<Vec<_>>(), ["BIOE", "FE"]);
+        assert!(overlaps("nrg_bal_s", "siec").is_empty());
         assert_eq!(parts("nrg_bal_s", "siec").len(), 12);
         assert_eq!(parts("nrg_bal_s", "nrg_bal").len(), 9);
         assert!(parts("nrg_bal_s", "unit").is_empty() && parts("nrg_x", "siec").is_empty());
@@ -2851,6 +2909,69 @@ mod tests {
                 assert!((whole - sum).abs() < 0.005, "{dim} {}: {whole} vs parts {sum}", p.code);
             }
         }
+    }
+
+    /// q3 (欧盟各国发电结构): nrg_bal_peh's siec tree and its four groups on the fixture (gross electricity production, GWH,
+    /// 2024; DE, and EU27_2020 as the second shape). Each tree parent is the sum of its parts (a code with no row counts as
+    /// the sum of its own parts, else nothing); the leaves under the total, each in one group, sum to TOTAL, so the four group
+    /// sums do too. The tolerance is the sankey's conservation knob (sankey.tol, 1e-5 of the total): EU27_2020's aggregate
+    /// rows are rounded (its leaves are 0.633 GWh over its TOTAL of 2828734.401). BIOE and FE overlap the tree: neither is a
+    /// group's member.
+    #[test]
+    fn nrg_bal_peh_s_four_groups_add_up_to_its_total_on_two_shapes() {
+        let fixture = include_str!("../scripts/fixtures/data_prepare/nrg_bal_peh_GEP_2024.tsv");
+        let value: BTreeMap<(String, String), f64> = fixture
+            .lines()
+            .filter(|l| !l.starts_with('#'))
+            .skip(1)
+            .map(|l| {
+                let f: Vec<&str> = l.split('\t').collect();
+                ((f[0].to_string(), f[1].to_string()), f[2].parse().unwrap())
+            })
+            .collect();
+        let registered = parts("nrg_bal_peh", "siec");
+        let groups = composition_groups("nrg_bal_peh", "siec").unwrap();
+        let names: Vec<(&str, usize)> = groups.iter().map(|(g, m)| (g.as_str(), m.len())).collect();
+        assert_eq!(names, [("fossil", 40), ("renewable", 18), ("other", 7), ("nuclear", 1)]);
+        let leaves: Vec<&str> = groups.iter().flat_map(|(_, m)| m.iter().map(|p| p.code.as_str())).collect();
+        assert_eq!(leaves.len(), registered.iter().filter(|p| p.level == PART_LEVELS[2]).count());
+        assert!(!leaves.iter().any(|c| ["BIOE", "FE", "TOTAL", "RA000"].contains(c)));
+        let mut sums = Vec::new();
+        for geo in ["DE", "EU27_2020"] {
+            let read = |code: &str| value.get(&(geo.to_string(), code.to_string())).copied();
+            fn of(code: &str, registered: &[Part], read: &dyn Fn(&str) -> Option<f64>) -> f64 {
+                read(code).unwrap_or_else(|| {
+                    registered
+                        .iter()
+                        .filter(|p| p.parent.as_deref() == Some(code))
+                        .map(|p| of(&p.code, registered, read))
+                        .sum()
+                })
+            }
+            let total = read("TOTAL").unwrap();
+            let tol = 1e-5 * total;
+            for p in registered.iter().filter(|p| p.level != PART_LEVELS[2]) {
+                let Some(whole) = read(&p.code) else { continue };
+                let sum: f64 = registered
+                    .iter()
+                    .filter(|c| c.parent.as_deref() == Some(p.code.as_str()))
+                    .map(|c| of(&c.code, &registered, &read))
+                    .sum();
+                assert!((whole - sum).abs() <= tol, "{geo} {}: {whole} vs parts {sum}", p.code);
+            }
+            let by_group: Vec<f64> = groups.iter().map(|(_, m)| m.iter().filter_map(|p| read(&p.code)).sum()).collect();
+            assert!((by_group.iter().sum::<f64>() - total).abs() <= tol, "{geo}: groups {by_group:?} vs TOTAL {total}");
+            sums.push((geo, by_group.iter().map(|v| (v * 1000.0).round() / 1000.0).collect::<Vec<_>>(), total));
+        }
+        assert_eq!(
+            sums,
+            [
+                ("DE", vec![210282.0, 289417.0, 14310.0, 0.0], 514009.0),
+                ("EU27_2020", vec![786337.045, 1332512.227, 60339.919, 649545.843], 2828734.401)
+            ]
+        );
+        // a table with no registered parts has no groups
+        assert!(composition_groups("nrg_x", "siec").unwrap().is_empty());
     }
 
     /// q2 (德国能源从来源到各部门) as the 10-31 stand-in run answered the table pick: nrg_bal_s, t2.breakdown 2 (nrg_bal), t2.unit 1.

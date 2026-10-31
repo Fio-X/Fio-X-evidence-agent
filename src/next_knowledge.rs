@@ -1098,18 +1098,23 @@ mod tests {
         }
     }
 
-    /// Every code estat-parts.tsv registers for a dimension code-names-zh.json lists (each fuel and sector of the balance
-    /// tables, their totals and subtotal included) has a reviewed name, with its full name and its source beside it.
+    /// Every code estat-parts.tsv registers for a dimension code-names-zh.json lists in a family of tables with a registered
+    /// flow (each fuel and sector of the balance tables, their totals and subtotal included: a sankey prints each node's name)
+    /// has a reviewed name, with its full name and its source beside it. A family with no flow (nrg_bal_peh) is drawn as a
+    /// composition, which prints its groups' names only (composition_groups), never a code's: its codes need none here.
     #[test]
     fn every_registered_balance_code_has_a_reviewed_name() {
         let parts = include_str!("../runtime/pi/assets/estat-parts.tsv");
         let mut lines = parts.lines();
         let header: Vec<&str> = lines.next().unwrap().split('\t').collect();
         let at = |name: &str| header.iter().position(|h| *h == name).unwrap();
-        let (d, c) = (at("dim"), at("code"));
+        let (t, d, c, fl) = (at("tables"), at("dim"), at("code"), at("flow"));
+        let rows: Vec<Vec<&str>> = lines.filter(|l| !l.is_empty()).map(|l| l.split('\t').collect()).collect();
+        let flowing: Vec<&str> = rows.iter().filter(|f| f.get(fl).is_some_and(|v| !v.is_empty())).map(|f| f[t]).collect();
+        assert_eq!(flowing.iter().collect::<BTreeSet<_>>().len(), 1, "{flowing:?}");
         let names = code_names().unwrap();
         let mut seen = 0;
-        for f in lines.filter(|l| !l.is_empty()).map(|l| l.split('\t').collect::<Vec<&str>>()) {
+        for f in rows.iter().filter(|f| flowing.contains(&f[t])) {
             let Some(table) = names.get(f[d]) else { continue };
             assert!(table.get(f[c]).is_some_and(|zh| !zh.is_empty()), "{} {} has no reviewed name", f[d], f[c]);
             seen += 1;
