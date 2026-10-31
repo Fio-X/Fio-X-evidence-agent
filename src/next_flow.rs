@@ -9592,8 +9592,8 @@ mod tests {
     /// q2 (德国能源从来源到各部门) as the 10-31 stand-in's table pick held nrg_bal_s for DE: the pick offered splits by nrg_bal and
     /// by siec only, so a fuel x sector flow was never asked for. The table's flow is registered (estat-parts.tsv: siec -> nrg_bal),
     /// so a third split is offered, for the latest year only (with ten years a third dimension varies, which no flow holds): its
-    /// fetch is ranked against the flow recipe's sankey alone, and the answer fills both dimensions with their registered
-    /// leaves, none open.
+    /// fetch is ranked against the flow recipe's sankey alone, and the answer fills both dimensions with the registered
+    /// leaves the flow asks for (nuclear heat left out by the registry), none open.
     #[test]
     fn q2_s_flow_split_is_offered_for_the_latest_year_and_fills_both_part_lists() {
         let _command = crate::group_guard::command_for_test("investigate");
@@ -9629,13 +9629,14 @@ mod tests {
         let values = |dim: &str| {
             filled.args["filters"].as_array().unwrap().iter().find(|f| f["dimension"] == dim).map(|f| f["values"].clone())
         };
-        let leaves = |dim: &str| json!(next_params::flow_parts("nrg_bal_s", dim).into_iter().map(|p| p.code).collect::<Vec<_>>());
+        // the leaves the flow asks for: nuclear heat is left out by the registry, so 10 x 7
+        let leaves = |dim: &str| json!(next_params::flow_asked("nrg_bal_s", dim).unwrap().into_iter().map(|p| p.code).collect::<Vec<_>>());
         assert_eq!(values("siec"), Some(leaves("siec")));
         assert_eq!(values("nrg_bal"), Some(leaves("nrg_bal")));
         assert_eq!(values("geo"), Some(json!(["DE"])));
         assert_eq!(filled.args["years"], json!({"start": 2024, "end": 2024}));
         assert_eq!(filled.event["open"], Value::Null);
-        assert_eq!(filled.event["estimate"], 77);
+        assert_eq!(filled.event["estimate"], 70);
         // the same table under an id with no registered flow is offered the two splits it had
         let mut plain = next_params::draft(table("nrg_x"), &[], &de);
         assert_eq!(plain.breakdown, ["nrg_bal", "siec"]);

@@ -1,6 +1,6 @@
 //! New route, visual group: the page's facts, computed and formatted here so a second-layer leaf only prints the text it is
 //! handed. A fact is a declared query: an op over the request's rows (value, mean, peak, low, last, count, rest, n, zeros,
-//! unrowed) or over two
+//! unrowed, excluded) or over two
 //! other facts (share, change, times, minus, plus); nothing names a topic. Ported from the gas-1027 prototype's facts.py,
 //! whose output the tests compare text for text.
 //! A fact family (`each`: a dimension) is one value fact per code of that dimension, keyed `<family>.<code>`; the codes
@@ -34,6 +34,13 @@ pub const NOROW_SRC: &str = "norow:";
 
 /// The text of a NOROW_SRC entry.
 pub const NOROW_TEXT: &str = "no row";
+
+/// Where a pair an `excluded` fact names is kept in the ledger: `excluded:<code>><code>`, its text EXCLUDED_TEXT, one entry
+/// per pair, so each pair the registry leaves out of a flow is on record apart from a pair with no row and a zero flow.
+pub const EXCLUDED_SRC: &str = "excluded:";
+
+/// The text of an EXCLUDED_SRC entry.
+pub const EXCLUDED_TEXT: &str = "excluded by registry";
 
 /// Where a series row was read (the series, its row key, period and column): what makes its table one a page dates.
 const SERIES_SRC: &str = "series:";
@@ -444,6 +451,33 @@ fn one(
             let who: Vec<String> = ca.iter().flat_map(|x| cb.iter().map(move |y| (x, y))).filter(|(x, y)| !held(x, y)).map(|(x, y)| format!("{x}>{y}")).collect();
             if who.is_empty() {
                 return Err(format!("{key}: unrowed finds a row of every pair at {time}"));
+            }
+            f.v = who.len() as f64;
+            f.n = Some(who.len());
+            f.who = who;
+        }
+        // how many pairs of two dimensions (`by`) the registry leaves out (`pairs`, each [<code of the first>, <code of the
+        // second>]), each named in `who` as <a>><b>; refused when the selected rows hold a row of one at `time` (the data
+        // would contradict the registry) or when it names none
+        "excluded" => {
+            let time = word(key, &q["time"], "time")?;
+            let by: Vec<&str> = q["by"].as_array().map(|a| a.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
+            let [a, b] = by.as_slice() else {
+                return Err(format!("{key}: excluded takes two dimensions as by"));
+            };
+            let mut who = Vec::new();
+            for pair in q["pairs"].as_array().into_iter().flatten() {
+                let (Some(x), Some(y)) = (pair[0].as_str(), pair[1].as_str()) else {
+                    return Err(format!("{key}: excluded has a pair that is no two codes: {pair}"));
+                };
+                let at = |r: &&&Row| r.time == time && r.dims.get(*a).map(String::as_str) == Some(x) && r.dims.get(*b).map(String::as_str) == Some(y);
+                if let Some(r) = picked.iter().find(at) {
+                    return Err(format!("{key}: the registry leaves {x}>{y} out, and the row {} holds it", r.src));
+                }
+                who.push(format!("{x}>{y}"));
+            }
+            if who.is_empty() {
+                return Err(format!("{key}: excluded names no pair"));
             }
             f.v = who.len() as f64;
             f.n = Some(who.len());
@@ -1001,6 +1035,12 @@ pub fn leaf_ledger(
         if f.op == "unrowed" {
             for pair in &f.who {
                 out.insert(format!("{NOROW_SRC}{pair}"), NOROW_TEXT.to_string());
+            }
+        }
+        // each pair an excluded fact named
+        if f.op == "excluded" {
+            for pair in &f.who {
+                out.insert(format!("{EXCLUDED_SRC}{pair}"), EXCLUDED_TEXT.to_string());
             }
         }
         // each row a zeros fact counted, under its series src
@@ -2415,5 +2455,33 @@ mod tests {
         assert_eq!(recheck(&ledger, &spec, &rows, &facts), Vec::<String>::new());
         let none = Spec { facts: vec![("drawn".into(), json!({"op": "n", "by": "geo", "table": "t", "time": "2023", "fmt": "n"}))], ..spec };
         assert!(compute(&none, &rows).unwrap_err().contains("n has no row at 2023"));
+    }
+
+    /// excluded names each pair the registry leaves out of a flow, keeps each in the ledger as excluded by registry (apart from
+    /// a pair with no row), and refuses a pair the rows hold (the data would contradict the registry) and an empty list.
+    #[test]
+    fn excluded_names_the_registry_s_pairs_and_refuses_one_the_rows_hold() {
+        let row = |a: &str, b: &str, v: f64| Row {
+            src: format!("series:t/A.{a}.{b}:2024:OBS_VALUE"),
+            table: "t".into(),
+            dims: BTreeMap::from([("s".to_string(), a.to_string()), ("d".to_string(), b.to_string())]),
+            time: "2024".into(),
+            value: v,
+        };
+        let rows = vec![row("G", "IND", 5.0), row("G", "TRA", 0.0)];
+        let q = |pairs: Value| json!({"op": "excluded", "table": "t", "time": "2024", "by": ["s", "d"], "pairs": pairs, "fmt": "n"});
+        let spec = Spec { facts: vec![("x".into(), q(json!([["N", "IND"], ["N", "TRA"]])))], fmts: json!({}), members: None };
+        let facts = compute(&spec, &rows).unwrap();
+        assert_eq!((facts[0].v, facts[0].who.as_slice()), (2.0, &["N>IND".to_string(), "N>TRA".to_string()][..]));
+        assert!(facts[0].reads.is_empty());
+        let ledger = leaf_ledger(&spec, &rows, &facts).unwrap();
+        assert_eq!(ledger.get("excluded:N>IND").map(String::as_str), Some(EXCLUDED_TEXT));
+        assert_eq!(ledger.keys().filter(|k| k.starts_with(EXCLUDED_SRC)).count(), 2);
+        assert!(!ledger.keys().any(|k| k.starts_with(NOROW_SRC)));
+        assert_eq!(recheck(&ledger, &spec, &rows, &facts), Vec::<String>::new());
+        let held = Spec { facts: vec![("x".into(), q(json!([["G", "TRA"]])))], ..spec.clone() };
+        assert!(compute(&held, &rows).unwrap_err().contains("the registry leaves G>TRA out, and the row series:t/A.G.TRA:2024:OBS_VALUE holds it"));
+        let none = Spec { facts: vec![("x".into(), q(json!([])))], ..spec };
+        assert!(compute(&none, &rows).unwrap_err().contains("excluded names no pair"));
     }
 }
