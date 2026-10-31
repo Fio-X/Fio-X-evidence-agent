@@ -156,6 +156,20 @@ class Picture(unittest.TestCase):
                 frame(hero(bad), rows)
             self.assertIn(why, str(e.exception))
 
+    def test_on_a_page_every_text_the_picture_draws_names_its_src_the_totals_head_included(self):
+        # layer 1 refuses a panel text with no src (src/next_leaf.rs faults): the title, unit and the totals' head come as
+        # name rows, the others head around a count fact, as stacked100_fill sends them
+        names = [("name:frames:composition", "整体的构成"), ("name:unit_short_zh:GWH", "吉瓦时"),
+                 ("name:zh_names:siec:TOTAL", "合计"), ("fact:comp_others.n", "2")]
+        rows = ROWS + [{"src": f"fact:total.{g}.n", "text": f"{TAB[(g, 'TOTAL')]:,.0f}"} for g in GEOS] + [{"src": k, "text": t} for k, t in names]
+        page = dict(DATA, title=[{"src": names[0][0]}], unit=[{"src": names[1][0]}], total_head=[{"src": names[2][0]}],
+                    others={"head": [{"w": "其余 "}, {"src": names[3][0]}, {"w": " 个国家："}], "codes": ["FR", "PL"]},
+                    bars=[dict(b, total_text=f"fact:total.{b['code']}.n") for b in DATA["bars"]])
+        no_src = lambda svg: [g["text"] for g in run.drawn(svg)[0] if not g["src"]]
+        self.assertEqual(no_src(draw(hero(page), rows)[0]), [])
+        # a head of a literal word alone is a text with no src: the page refuses it
+        self.assertEqual(no_src(draw(hero(dict(page, total_head=W("合计"))), rows)[0]), ["合计"])
+
     def test_a_zero_part_draws_no_segment_and_goes_back_to_layer_1_as_dropped(self):
         # nuclear heat has a row of 0 for DE in 2024: its part draws no segment and is said, never left out unsaid
         self.assertEqual(TAB[("DE", "N900H")], 0.0)

@@ -2096,9 +2096,8 @@ fn frame_heading(relation: Relation) -> Result<&'static str, String> {
 }
 
 /// The words of a composition picture (stacked100_fill), each around a count the program computes (a fact, never a digit
-/// typed here): the head of the column of each bar's total, the line that states the cut (how many places the bars are, the
-/// largest totals) and the head of the places left out, named in the same order.
-const COMPOSITION_TOTAL_HEAD: &str = "合计";
+/// typed here): the line that states the cut (how many places the bars are, the largest totals) and the head of the places
+/// left out, named in the same order. The head of the column of each bar's total is the total code's reviewed name.
 const COMPOSITION_CUT_WORDS: (&str, &str) = ("图中为合计最大的 ", " 个国家，自上而下由大到小");
 const COMPOSITION_OTHERS_WORDS: (&str, &str) = ("其余 ", " 个国家（按合计由大到小）：");
 /// The words around the gap of a place left out of a composition because its groups do not add up to its total: its name
@@ -2257,7 +2256,18 @@ fn stacked100_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
             json!({"scale": 1, "dec": dec.unwrap_or(0).min(COMPOSITION_GAP_DEC), "suffix": suffix(f.short)}))?;
     }
     let mut data = json!({"bar_kind": "place", "part_kind": COMPOSITION_PART_KIND,
-        "parts": comp.groups.iter().map(|(g, _)| g.clone()).collect::<Vec<_>>(), "total_head": [{"w": COMPOSITION_TOTAL_HEAD}]});
+        "parts": comp.groups.iter().map(|(g, _)| g.clone()).collect::<Vec<_>>()});
+    // the head of the totals' column: the total code's reviewed name (code-names-zh.json), marked with its name row as every
+    // svg text is; a total the name table names none of refuses, never printed as a word typed here
+    let total_zh = f
+        .catalogue
+        .zh_names(&comp.dim, std::slice::from_ref(&comp.total))
+        .ok()
+        .and_then(|mut names| names.remove(&comp.total))
+        .ok_or_else(|| format!("stacked100: the name table gives no Chinese name for {} {}", comp.dim, comp.total))?;
+    let total_src = format!("{LABEL_SRC}zh_names:{}:{}", comp.dim, comp.total);
+    out.named.insert(total_src.clone(), json!(total_zh));
+    data["total_head"] = json!([{"src": total_src}]);
     // the places named under the picture: the candidates past the bars, then the countries never fetched, in total order;
     // a place left out for its parts is said on its own line, never among them
     let others: Vec<String> = unread.into_iter().cloned().chain(shape.outside.iter().cloned()).collect();
@@ -7072,6 +7082,15 @@ mod tests {
         let bars = leaf["bars"].as_array().unwrap();
         assert_eq!(bars.iter().map(|b| b["code"].clone()).collect::<Vec<_>>(), Q3_GEOS[..20].iter().map(|g| json!(g)).collect::<Vec<_>>());
         assert_eq!(leaf["parts"], json!(["fossil", "renewable", "other", "nuclear"]));
+        // every word of the picture is marked with where it is read: the totals' head is the total code's name row
+        assert_eq!(leaf["total_head"], json!([{"src": "name:zh_names:siec:TOTAL"}]));
+        assert_eq!(fill["knobs"]["named"]["name:zh_names:siec:TOTAL"], json!("名TOTAL"));
+        for words in [&leaf["title"], &leaf["unit"], &leaf["total_head"], &leaf["others"]["head"]]
+            .into_iter()
+            .chain(leaf["lines"].as_array().unwrap())
+        {
+            assert!(words.as_array().unwrap().iter().any(|w| w["src"].is_string()), "{words} holds no src");
+        }
         let rows = fill["rows"].as_array().unwrap();
         for bar in bars {
             let code = bar["code"].as_str().unwrap();
