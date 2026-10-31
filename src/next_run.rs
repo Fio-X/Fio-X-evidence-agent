@@ -2215,9 +2215,17 @@ fn stacked100_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
             }
             // the inputs are only read: the leaf draws their widths, the page prints the facts over them
             out.reads(held.iter().map(|r| (*r).clone()));
-            // a part whose every row is 0 is data, not a loss: no segment, declared with its rows (the leaf checks each is 0)
-            // and said in a line under the picture; no row at all stays empty (above), never said as 0
-            if held.iter().all(|r| row_value(r) == Some(0.0)) {
+            // a part whose every code has a row at the year and every row is 0 is data, not a loss: no segment, declared
+            // with its rows (the leaf and the page check zeros_declared hold each to 0) and said in a line under the picture.
+            // A part with no row at all, or whose rows are 0 while a code of it has none, is empty: a missing row is never
+            // said as 0
+            let every_code = codes.iter().all(|k| held.iter().any(|r| r["dims"][&comp.dim] == k.as_str()));
+            let all_zero = held.iter().all(|r| row_value(r) == Some(0.0));
+            if all_zero && !every_code {
+                empty.push(json!({"bar": code, "part": group}));
+                continue;
+            }
+            if all_zero {
                 let srcs: Vec<Value> = held.iter().map(|r| r["src"].clone()).collect();
                 zero.push(json!({"bar": code, "part": group, "cells": srcs}));
                 match zero_bars.iter_mut().find(|(g, _)| *g == *group) {
@@ -3164,7 +3172,7 @@ fn fill_of(
     // first), the places drawn, left out for their parts and named under the picture, and the countries never fetched
     if let (Some(comp), Some(cut)) = (&shape.composition, cut) {
         fill["composition"] = json!({"template": COMPOSITION_TEMPLATES[0], "dim": comp.dim, "total": comp.total,
-            "groups": comp.groups, "year": shape.year, "candidates": shape.countries, "bars": cut["bars"],
+            "groups": comp.groups, "year": shape.year, "place": shape.place, "candidates": shape.countries, "bars": cut["bars"],
             "dropped": cut["dropped"], "others": cut["others"], "zero": cut["zero"], "left_out": shape.outside});
     }
     // the dek's finding stays with the flow, for the text step's draft (dek_finding); the page gets it as worded. Its
@@ -3267,6 +3275,7 @@ fn recipe_request(
     let scoped = narrowed(run_dir, main).map_err(|why| ("fill", why))?.is_some();
     let mut fill = fill_of(recipe, &shape, &picks, (&main_rows, &comp_rows), catalogue, (title, dek), scoped)
         .map_err(|why| ("fill", why))?;
+    zero_rows(&mut fill, &comp_rows);
     if recipe.layers.iter().any(|l| l == "map" || l == "bubbles") {
         fill["knobs"]["shapes"] = json!(run_dir.join(RING_SHAPES));
     }
@@ -3428,47 +3437,85 @@ struct LeafPublished {
     drawn: Vec<Value>,
     strip: StripAsk,
     ends: Option<Value>,
-    /// The parts a composition declared 0 in a bar (stacked100_fill), each with its rows' values as the fill's rows hold
-    /// them (declared_zeros), which the page check zeros_declared holds to 0.
+    /// The parts a composition declared 0 in a bar (stacked100_fill), each read again from the fetched rows by its place,
+    /// codes and year (zero_rows, declared_zeros), which the page check zeros_declared holds to 0.
     zeros: Vec<Value>,
 }
 
-/// A composition's declared zero parts (its fill's composition record), each {bar, part, cells: [{src, value}]}: the value
-/// of each of its rows as the fill's rows (the fetched rows) hold it, null for a src no row has.
-fn declared_zeros(fill: &Value) -> Vec<Value> {
-    let rows = fill["rows"].as_array().map(Vec::as_slice).unwrap_or_default();
-    fill["composition"]["zero"]
-        .as_array()
-        .into_iter()
-        .flatten()
+/// Each part a composition declared 0 in a bar (its fill's composition record), read again from the fetched sum-input rows
+/// (`inputs`) by its dimensions, never by the srcs the fill listed: the rows at the record's year whose place is the bar
+/// and whose grouped dimension is each code of the part's group, kept in the fill as zero_rows, each {bar, part, declared:
+/// [the srcs the fill listed], codes: [{code, rows: [{src, value}]}]}. Called on the fill with the rows it was filled from.
+fn zero_rows(fill: &mut Value, inputs: &[Value]) {
+    let record = &fill["composition"];
+    let Some(zero) = record["zero"].as_array().filter(|z| !z.is_empty()) else { return };
+    let (place, dim, year) = (record["place"].as_str().unwrap_or_default(), record["dim"].as_str().unwrap_or_default(), &record["year"]);
+    let groups: Vec<(String, Vec<String>)> = serde_json::from_value(record["groups"].clone()).unwrap_or_default();
+    let read: Vec<Value> = zero
+        .iter()
         .map(|z| {
-            let cells: Vec<Value> = z["cells"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .map(|src| json!({"src": src, "value": rows.iter().find(|r| r["src"] == *src).and_then(row_value)}))
+            let codes = groups.iter().find(|(g, _)| z["part"] == g.as_str()).map(|(_, c)| c.clone()).unwrap_or_default();
+            let codes: Vec<Value> = codes
+                .iter()
+                .map(|code| {
+                    let rows: Vec<Value> = inputs
+                        .iter()
+                        .filter(|r| r["time"] == *year && r["dims"][place] == z["bar"] && r["dims"][dim] == code.as_str())
+                        .map(|r| json!({"src": r["src"], "value": row_value(r)}))
+                        .collect();
+                    json!({"code": code, "rows": rows})
+                })
                 .collect();
-            json!({"bar": z["bar"], "part": z["part"], "cells": cells})
+            json!({"bar": z["bar"], "part": z["part"], "declared": z["cells"], "codes": codes})
         })
-        .collect()
+        .collect();
+    fill["zero_rows"] = Value::Array(read);
+}
+
+/// A composition's declared zero parts as read again from the fetched rows (zero_rows); a fill that declares parts 0 and
+/// holds no such reading gives each part with no code read, which zeros_declared fails.
+fn declared_zeros(fill: &Value) -> Vec<Value> {
+    let read = fill["zero_rows"].as_array().cloned().unwrap_or_default();
+    let zero = fill["composition"]["zero"].as_array().cloned().unwrap_or_default();
+    if read.len() == zero.len() {
+        return read;
+    }
+    zero.iter().map(|z| json!({"bar": z["bar"], "part": z["part"], "declared": z["cells"], "codes": []})).collect()
 }
 
 /// zeros_declared, on a page that declares parts 0 (declared_zeros; none on any other page, which gets no such check): each
-/// declared part has rows and every one of them is 0 in the fetched data, so a part left out of a bar as 0 is one the data
-/// holds as 0, never a value dropped unsaid; one with a row above or below 0, or with no row, fails. A part a layer dropped
-/// (zero or not) still fails notes_dropped as before.
+/// declared part, read again from the fetched rows by its place, every code of its group and the year (zero_rows), has a
+/// row of every code and every row is 0, and the srcs the fill declared are exactly those rows; so a part left out of a bar
+/// as 0 is one the data holds as 0, never a missing row or a value dropped unsaid. A part with a code of no row, a row
+/// above or below 0, a declared src that is no row of that bar and part, or a row of it left out of the declaration, fails.
+/// A part a layer dropped (zero or not) still fails notes_dropped as before.
 fn zeros_check(zeros: &[Value]) -> Option<PageCheck> {
     if zeros.is_empty() {
         return None;
     }
-    let off: Vec<String> = zeros
-        .iter()
-        .filter(|z| {
-            let cells = z["cells"].as_array().map(Vec::as_slice).unwrap_or_default();
-            cells.is_empty() || cells.iter().any(|c| c["value"].as_f64() != Some(0.0))
-        })
-        .map(|z| format!("{}:{}", z["bar"].as_str().unwrap_or_default(), z["part"].as_str().unwrap_or_default()))
-        .collect();
+    let mut off: Vec<Value> = Vec::new();
+    for z in zeros {
+        let at = format!("{}:{}", z["bar"].as_str().unwrap_or_default(), z["part"].as_str().unwrap_or_default());
+        let codes = z["codes"].as_array().map(Vec::as_slice).unwrap_or_default();
+        let read: BTreeSet<&str> = codes.iter().flat_map(|c| c["rows"].as_array().into_iter().flatten()).filter_map(|r| r["src"].as_str()).collect();
+        let declared: BTreeSet<&str> = z["declared"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+        let why = if codes.is_empty() {
+            Some("its codes were not read again from the fetched rows".to_string())
+        } else if let Some(c) = codes.iter().find(|c| c["rows"].as_array().is_none_or(Vec::is_empty)) {
+            Some(format!("{} has no row", c["code"].as_str().unwrap_or_default()))
+        } else if codes.iter().flat_map(|c| c["rows"].as_array().into_iter().flatten()).any(|r| r["value"].as_f64() != Some(0.0)) {
+            Some("a row of it is not 0".to_string())
+        } else if declared != read {
+            let foreign: Vec<&&str> = declared.difference(&read).collect();
+            let left: Vec<&&str> = read.difference(&declared).collect();
+            Some(format!("declared {foreign:?} are no rows of it, its rows {left:?} are not declared"))
+        } else {
+            None
+        };
+        if let Some(why) = why {
+            off.push(json!({"part": at, "why": why}));
+        }
+    }
     let measured = json!({"count": zeros.len(), "declared": zeros, "not_zero": off});
     Some(PageCheck { name: "zeros_declared", passed: off.is_empty(), warning: None, measured })
 }
@@ -7367,19 +7414,21 @@ mod tests {
     #[test]
     fn a_part_that_is_zero_is_declared_and_said_and_the_page_check_holds_it_to_the_data() {
         let (_, _, _, main, sums) = q3_tables(&[]);
-        let fill = q3_fill(&main, &sums).unwrap();
+        let mut fill = q3_fill(&main, &sums).unwrap();
+        zero_rows(&mut fill, &sums);
         let zeros = declared_zeros(&fill);
         assert_eq!(zeros.len(), 20);
-        assert!(zeros.iter().all(|z| z["part"] == "nuclear" && z["cells"].as_array().unwrap().iter().all(|c| c["value"] == json!(0.0))));
+        let rows_of = |z: &Value| z["codes"][0]["rows"].as_array().unwrap().clone();
+        assert!(zeros.iter().all(|z| z["part"] == "nuclear" && rows_of(z).iter().all(|r| r["value"] == json!(0.0))));
         let check = zeros_check(&zeros).unwrap();
         assert_eq!((check.name, check.passed), ("zeros_declared", true));
-        // the declaration does not match the data: a declared row above 0, or a declared part with no row, fails
+        // the declaration does not match the data: a row above 0, or a part with no row, fails
         let mut off = zeros.clone();
-        off[0]["cells"][0]["value"] = json!(1.5);
+        off[0]["codes"][0]["rows"][0]["value"] = json!(1.5);
         let failed = zeros_check(&off).unwrap();
-        assert_eq!((failed.passed, &failed.measured["not_zero"]), (false, &json!(["DE:nuclear"])));
+        assert_eq!((failed.passed, &failed.measured["not_zero"][0]["part"]), (false, &json!("DE:nuclear")));
         let mut none = zeros.clone();
-        none[1]["cells"] = json!([]);
+        none[1]["codes"][0]["rows"] = json!([]);
         assert!(!zeros_check(&none).unwrap().passed);
         assert!(zeros_check(&[]).is_none(), "a page that declares no zero gets no such check");
 
@@ -7390,7 +7439,8 @@ mod tests {
         let fr = main.iter_mut().find(|r| r["dims"]["geo"] == "FR").unwrap();
         fr["value"] = json!(format!("{}", row_value(fr).unwrap() + 1000.0));
         sums.retain(|r| !nuclear(r, "IT"));
-        let fill = q3_fill(&main, &sums).unwrap();
+        let mut fill = q3_fill(&main, &sums).unwrap();
+        zero_rows(&mut fill, &sums);
         let leaf = &fill["knobs"]["spec"]["hero"]["leaves"]["stacked100"];
         let bar = |g: &str| leaf["bars"].as_array().unwrap().iter().find(|b| b["code"] == g).unwrap().clone();
         assert!(bar("FR")["cells"]["nuclear"].is_array(), "a part above 0 is drawn");
@@ -7402,6 +7452,90 @@ mod tests {
         let zero_line = names(&leaf["lines"][1]);
         assert!(!zero_line.contains(&"name:zh_names:iso2:FR".to_string()) && !zero_line.contains(&"name:zh_names:iso2:IT".to_string()));
         assert!(zeros_check(&declared_zeros(&fill)).unwrap().passed);
+    }
+
+    /// AT's fossil rows and its other rows set to 0 (its total less them): fossil has a row of every code, all 0, so it is
+    /// declared zero and named in a line; other is 0 on every row it has while E7000 has none (the table publishes none), so
+    /// it is empty, never declared zero and never said 0.
+    #[test]
+    fn a_group_with_a_code_of_no_row_is_never_declared_zero() {
+        let (_, _, _, mut main, mut sums) = q3_tables(&[]);
+        let groups = next_params::group_inputs("nrg_bal_peh", "siec").unwrap();
+        let codes_of = |g: &str| groups.iter().find(|(name, _)| name == g).unwrap().1.clone();
+        let (fossil, other) = (codes_of("fossil"), codes_of("other"));
+        assert!(other.contains(&"E7000".to_string()) && !sums.iter().any(|r| r["dims"]["siec"] == "E7000"));
+        let mut less = 0.0;
+        for r in sums.iter_mut().filter(|r| r["dims"]["geo"] == "AT") {
+            let code = r["dims"]["siec"].as_str().unwrap().to_string();
+            if fossil.contains(&code) || other.contains(&code) {
+                less += row_value(r).unwrap();
+                r["value"] = json!("0");
+            }
+        }
+        let total = main.iter_mut().find(|r| r["dims"]["geo"] == "AT").unwrap();
+        total["value"] = json!(format!("{}", row_value(total).unwrap() - less));
+        let mut fill = q3_fill(&main, &sums).unwrap();
+        zero_rows(&mut fill, &sums);
+        let leaf = &fill["knobs"]["spec"]["hero"]["leaves"]["stacked100"];
+        let at = |key: &str| -> Vec<String> {
+            leaf[key].as_array().unwrap().iter().filter(|z| z["bar"] == "AT").map(|z| z["part"].as_str().unwrap().to_string()).collect()
+        };
+        assert_eq!(at("zero"), ["fossil", "nuclear"]);
+        assert_eq!(at("empty"), ["other"]);
+        let lines = leaf["lines"].as_array().unwrap();
+        let said = |part: &str| lines.iter().any(|l| l[0]["src"] == format!("name:zh_names:siec_group:{part}"));
+        assert!(said("fossil") && said("nuclear") && !said("other"), "{lines:?}");
+        // every code of AT's fossil read again from the fetched rows, each 0, all of them declared
+        let zeros = declared_zeros(&fill);
+        let fossil_at = zeros.iter().find(|z| z["bar"] == "AT" && z["part"] == "fossil").unwrap();
+        assert_eq!(fossil_at["codes"].as_array().unwrap().len(), fossil.len());
+        assert!(zeros_check(&zeros).unwrap().passed);
+    }
+
+    /// zeros_declared reads each declared part again from the fetched rows by its place, its group's codes and its year: a
+    /// declared src of another bar, a row of the part left out of the declaration, a code with no row, a row not 0, and a
+    /// fill that declares zeros with no such reading each fail; the reading the fill made passes.
+    #[test]
+    fn zeros_declared_reads_each_zero_part_again_from_the_fetched_rows() {
+        let (_, _, _, mut main, mut sums) = q3_tables(&[]);
+        let groups = next_params::group_inputs("nrg_bal_peh", "siec").unwrap();
+        let fossil = groups.iter().find(|(name, _)| name == "fossil").unwrap().1.clone();
+        let mut less = 0.0;
+        for r in sums.iter_mut().filter(|r| r["dims"]["geo"] == "AT" && fossil.iter().any(|c| r["dims"]["siec"] == c.as_str())) {
+            less += row_value(r).unwrap();
+            r["value"] = json!("0");
+        }
+        let total = main.iter_mut().find(|r| r["dims"]["geo"] == "AT").unwrap();
+        total["value"] = json!(format!("{}", row_value(total).unwrap() - less));
+        let mut fill = q3_fill(&main, &sums).unwrap();
+        let unread = declared_zeros(&fill);
+        assert!(!zeros_check(&unread).unwrap().passed, "declared zeros with no reading of the fetched rows");
+        zero_rows(&mut fill, &sums);
+        let zeros = declared_zeros(&fill);
+        assert!(zeros_check(&zeros).unwrap().passed);
+        let i = zeros.iter().position(|z| z["bar"] == "AT" && z["part"] == "fossil").unwrap();
+        let fails = |zeros: Vec<Value>, why: &str| {
+            let check = zeros_check(&zeros).unwrap();
+            assert!(!check.passed, "{why}");
+            assert!(check.measured["not_zero"].to_string().contains("AT:fossil"), "{why}: {}", check.measured);
+        };
+        // a declared src that is no row of AT's fossil (FR's nuclear row in place of one of AT's)
+        let fr = sums.iter().find(|r| r["dims"]["geo"] == "FR" && r["dims"]["siec"] == "N900H").unwrap()["src"].clone();
+        let mut foreign = zeros.clone();
+        foreign[i]["declared"][0] = fr;
+        fails(foreign, "a src of another bar and part");
+        // a row of the part left out of the declaration
+        let mut left = zeros.clone();
+        left[i]["declared"].as_array_mut().unwrap().pop();
+        fails(left, "a row left out");
+        // a code with no row in the fetched rows
+        let mut missing = zeros.clone();
+        missing[i]["codes"][0]["rows"] = json!([]);
+        fails(missing, "a code with no row");
+        // a row that is not 0
+        let mut above = zeros.clone();
+        above[i]["codes"][1]["rows"][0]["value"] = json!(3.0);
+        fails(above, "a row above 0");
     }
 
     /// A composition page's finding: of its bars, the place whose first part (fossil, the leaf's accent) is the largest share
