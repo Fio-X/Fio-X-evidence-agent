@@ -2168,7 +2168,7 @@ fn stacked100_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
         }
     }
     // a place left out for its parts is said and the next by total takes its bar; past a quarter of the bars, or short of
-    // them once one is left out, the page stops (a place the question names stops it too: recipe_request)
+    // them once one is left out, the page stops (a place the question names stops it too: leaf_request)
     if dropped.len() * 4 > target {
         let codes: Vec<&str> = dropped.iter().map(|(c, ..)| c.as_str()).collect();
         return Err(format!(
@@ -3134,7 +3134,6 @@ fn recipe_request(
     let scoped = narrowed(run_dir, main).map_err(|why| ("fill", why))?.is_some();
     let mut fill = fill_of(recipe, &shape, &picks, (&main_rows, &comp_rows), catalogue, (title, dek), scoped)
         .map_err(|why| ("fill", why))?;
-    named_dropped(&fill, &main.places_zh, catalogue).map_err(|why| ("fill", why))?;
     if recipe.layers.iter().any(|l| l == "map" || l == "bubbles") {
         fill["knobs"]["shapes"] = json!(run_dir.join(RING_SHAPES));
     }
@@ -3167,15 +3166,23 @@ fn recipe_request(
 }
 
 /// A composition may leave out a place whose parts do not add up (stacked100_fill), never one the question names: Err when
-/// the reviewed name of a place it left out is among the place words the catalogue read in the question (Prepared
-/// places_zh). A place the name table names none of is no place the question can name by it.
-fn named_dropped(fill: &Value, places_zh: &[String], catalogue: &dyn Catalogue) -> Result<(), String> {
-    let dropped: Vec<String> = fill["composition"]["dropped"].as_array().into_iter().flatten().filter_map(|c| c.as_str().map(str::to_string)).collect();
-    for code in &dropped {
-        let scheme = if code.len() == 2 { "iso2" } else { "iso3" };
-        let Ok(names) = catalogue.zh_names(scheme, std::slice::from_ref(code)) else { continue };
-        if let Some(name) = names.get(code).filter(|n| places_zh.iter().any(|p| p == *n)) {
-            return Err(format!("stacked100: the question names {name} ({code}), whose groups do not add up to its total"));
+/// a place it left out is a country the knowledge group reads in the question (Place::Country, an iso2 code), compared by
+/// code, the iso code turned into Eurostat's where they differ (next_params::ESTAT_ISO: GR is EL), never by a name, which
+/// two name tables may write apart.
+fn named_dropped(fill: &Value, places: &[crate::l5geo::Place]) -> Result<(), String> {
+    let named: Vec<&str> = places
+        .iter()
+        .filter_map(|p| match p {
+            crate::l5geo::Place::Country(iso) => {
+                Some(next_params::ESTAT_ISO.iter().find(|(_, i)| *i == iso.as_str()).map_or(iso.as_str(), |(e, _)| *e))
+            }
+            crate::l5geo::Place::Region => None,
+        })
+        .collect();
+    let dropped = fill["composition"]["dropped"].as_array().into_iter().flatten().filter_map(Value::as_str);
+    for code in dropped {
+        if named.contains(&code) {
+            return Err(format!("stacked100: the question names {code}, whose groups do not add up to its total"));
         }
     }
     Ok(())
@@ -3313,7 +3320,11 @@ fn leaf_request(
             Err(why) => return Err((recipe.name.as_str(), "shape", why)),
         }
         match recipe_request(run_dir, prepared, drawn, recipe, catalogue, words) {
-            Ok(fill) => return Ok((recipe, fill)),
+            Ok(fill) => {
+                // a composition never leaves out a place the question names (the places the knowledge group reads in it)
+                named_dropped(&fill, &catalogue.places(question)).map_err(|why| (recipe.name.as_str(), "fill", why))?;
+                return Ok((recipe, fill));
+            }
             Err(("shape", why)) => missed.push((recipe.name.as_str(), why)),
             Err((stage, why)) => return Err((recipe.name.as_str(), stage, why)),
         }
@@ -7124,9 +7135,9 @@ mod tests {
         assert_eq!(lines[1], json!([{"src": "name:zh_names:iso2:PT"}, {"w": COMPOSITION_DROPPED_WORDS.0}, {"src": "fact:gap.PT"},
             {"w": COMPOSITION_DROPPED_WORDS.1}]));
         assert!(fill["rows"].as_array().unwrap().iter().any(|r| r["dims"]["geo"] == "PT"), "PT's rows are read for its line");
-        // a place the question names is never left out
-        assert!(named_dropped(&fill, &["名PT".to_string()], &Hubs).unwrap_err().contains("PT"));
-        assert!(named_dropped(&fill, &["欧盟".to_string()], &Hubs).is_ok());
+        // a place the question names is never left out (named_dropped, by code)
+        assert!(named_dropped(&fill, &[crate::l5geo::Place::Country("PT".into())]).unwrap_err().contains("PT"));
+        assert!(named_dropped(&fill, &[crate::l5geo::Place::Region, crate::l5geo::Place::Country("DE".into())]).is_ok());
         // more than a quarter of the bars left out: 6 of 20
         let six: Vec<(&str, f64)> = ["FR", "IT", "ES", "PL", "SE", "NL"].iter().map(|g| (*g, 100.0)).collect();
         let (_, _, _, main, sums) = q3_tables(&six);
@@ -7148,6 +7159,19 @@ mod tests {
             (main.into_iter().filter(|r| kept(r)).collect(), sums.into_iter().filter(|r| kept(r)).collect());
         let err = q3_fill(&main, &sums).unwrap_err();
         assert!(err.contains("19 places add up") && err.contains("short of 20"), "{err}");
+    }
+
+    /// A place the question names is never left out of a composition, read by code, not by name: a question that names Greece
+    /// (the knowledge group reads it GR, by iso) stops a page that left out Eurostat's EL, whatever either name table calls it;
+    /// a country the page kept, or a region, stops nothing.
+    #[test]
+    fn a_left_out_place_the_question_names_stops_the_page_by_its_code() {
+        use crate::l5geo::Place;
+        let fill = json!({"composition": {"dropped": ["EL", "PT"]}});
+        assert!(named_dropped(&fill, &[Place::Country("GR".into())]).unwrap_err().contains("EL"));
+        assert!(named_dropped(&fill, &[Place::Country("PT".into())]).unwrap_err().contains("PT"));
+        assert!(named_dropped(&fill, &[Place::Country("CZ".into()), Place::Region]).is_ok());
+        assert!(named_dropped(&json!({}), &[Place::Country("GR".into())]).is_ok(), "a page that is no composition left none out");
     }
 
     /// The q6 shape (asylum applicants by citizenship into the EU, one year) in registry order: the ring refuses it for its
