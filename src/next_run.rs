@@ -7096,13 +7096,14 @@ mod tests {
         assert_eq!(first.claims.len(), 1);
     }
 
-    /// A place whose parts do not add up to its total (PT's 2024 TOTAL is 0.631 GWh under them) is no bar: the 21st by total
+    /// A place whose parts do not add up to its total (PT's 2024 TOTAL is 0.631 GWh under them, 1.2e-5 of its 51089; here the
+    /// fixture's scaled PT is set 100 GWh under, 3.3e-4 of its total, past the same 1e-5) is no bar: the 21st by total
     /// takes its place, one line by its name gives the gap as a minus fact of two facts over its own rows, and it is never
     /// in the line of the other countries, which counts the rest again. The page still stops when more than a quarter of the
     /// bars are left out, when the question names a place left out, and when the bars fall short with countries unfetched.
     #[test]
     fn a_place_whose_parts_miss_its_total_is_said_and_the_next_by_total_takes_its_bar() {
-        let (_, _, _, main, sums) = q3_tables(&[("PT", 0.631)]);
+        let (_, _, _, main, sums) = q3_tables(&[("PT", 100.0)]);
         let fill = q3_fill(&main, &sums).unwrap();
         let spec = &fill["knobs"]["spec"];
         let leaf = &spec["hero"]["leaves"]["stacked100"];
@@ -7127,31 +7128,18 @@ mod tests {
         assert!(named_dropped(&fill, &["名PT".to_string()], &Hubs).unwrap_err().contains("PT"));
         assert!(named_dropped(&fill, &["欧盟".to_string()], &Hubs).is_ok());
         // more than a quarter of the bars left out: 6 of 20
-        let six: Vec<(&str, f64)> = ["FR", "IT", "ES", "PL", "SE", "NL"].iter().map(|g| (*g, 0.631)).collect();
+        let six: Vec<(&str, f64)> = ["FR", "IT", "ES", "PL", "SE", "NL"].iter().map(|g| (*g, 100.0)).collect();
         let (_, _, _, main, sums) = q3_tables(&six);
         assert!(q3_fill(&main, &sums).unwrap_err().contains("more than a quarter"), "six left out");
         // five is a quarter: the page goes out with the five next by total
         let (_, _, _, main, sums) = q3_tables(&six[..5]);
         assert_eq!(q3_fill(&main, &sums).unwrap()["knobs"]["spec"]["hero"]["leaves"]["stacked100"]["bars"].as_array().unwrap().len(), 20);
         // fewer bars than asked while countries were left unfetched: the sum inputs end before the bars are full
-        let (_, _, _, main, sums) = q3_tables(&[("PT", 0.631)]);
+        let (_, _, _, main, sums) = q3_tables(&[("PT", 100.0)]);
         let cut: Vec<Value> = sums.into_iter().filter(|r| !["RO", "EL", "HU", "BG", "DK", "SK", "IE", "HR", "SI", "LT", "EE", "LV", "CY"]
             .contains(&r["dims"]["geo"].as_str().unwrap())).collect();
         let err = q3_fill(&main, &cut).unwrap_err();
         assert!(err.contains("short of"), "{err}");
-    }
-        }
-        assert_eq!(leaf["others"]["codes"], json!(["SI", "LT"]));
-        assert_eq!(spec["facts"][COMPOSITION_OTHERS]["filter"]["geo"], json!(["SI", "LT"]));
-        assert_eq!(spec["facts"][COMPOSITION_BARS]["op"], "n");
-        assert_eq!(fill["composition"]["left_out"], json!(["SI", "LT"]));
-        // the page-level fields are drafted for the composition it draws, not the ranking the first fetch's chart is
-        assert_eq!(page_lead(Some(&fill), &[]), Some((Relation::Composition, View::Slice)));
-        let drafts = next_page::draft_for(&[], &[], Vec::new(), page_lead(Some(&fill), &[]));
-        let composition = crate::shape_registry::FRAMES.iter().find(|(r, v, _)| (*r, *v) == (Relation::Composition, View::Slice)).unwrap().2;
-        assert!(format!("{drafts:?}").contains(composition[0]), "{drafts:?}");
-        // the first fetch's claims are the page's only claims: the sum inputs carry none
-        assert_eq!(first.claims.len(), 1);
     }
 
     /// The q6 shape (asylum applicants by citizenship into the EU, one year) in registry order: the ring refuses it for its
