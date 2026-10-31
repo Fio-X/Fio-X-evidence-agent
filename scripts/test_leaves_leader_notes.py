@@ -64,6 +64,15 @@ W = lambda t: [{"w": t}]
 CHG = {"src": "fact:chg", "text": "1.55 吨二氧化碳当量/人"}  # test-only
 WIDE = dict(at=POINT["DEU"], name="CN", text=[{"word": "column.note.rise_most"}], value_text="fact:chg")
 
+# the q6 stand-in page (asylum applications to the EU by citizenship, 2025): its 20 values, their Natural Earth points and the map
+# extent layer 1 made, test-only copies of that run's rows
+Q6_VALUES = dict(AF=112310, BD=37350, CD=17675, CO=21715, EG=25310, ER=12570, GE=15130, GN=14275, HT=14050, IQ=12485, MA=20205, ML=19910,
+                 PE=20150, PK=19250, SD=17375, SO=18340, SY=43290, TR=31010, UA=23935, VE=90950)
+Q6_AT = dict(AF=(66.496586, 34.164262), BD=(89.684963, 24.214956), CD=(23.458829, -1.858167), CO=(-73.174347, 3.373111), EG=(29.445837, 26.186173),
+             ER=(38.285566, 15.787401), GE=(43.735724, 41.870087), GN=(-10.016402, 10.618516), HT=(-72.224051, 19.263784), IQ=(43.26181, 33.09403),
+             MA=(-7.187296, 31.650723), ML=(-2.038455, 18.692713), PE=(-72.90016, -12.976679), PK=(68.545632, 29.328389), SD=(29.260657, 16.330746),
+             SO=(45.19238, 3.568925), SY=(38.277783, 35.006636), TR=(34.508268, 39.345388), UA=(32.140865, 49.724739), VE=(-64.599381, 7.182476))
+Q6_EXT = [-106.38254019874816, -36.17038598855728, 124.13352937983866, 73.24131058195306]
 
 def leaders(svg):
     """Every leader drawn, as its points: a <line> (a bubble label's) and a <polyline> (a note's, straight or with one bend)."""
@@ -277,13 +286,7 @@ class LeaderNotes(unittest.TestCase):
     def q6(self):
         """The q6 stand-in page (asylum applications to the EU by citizenship, 2025; its 20 values, Natural Earth points and the
         map extent layer 1 made, copied from that run), bubbles then Afghanistan's and Iraq's notes on one Occ: (frame, svg, occ)."""
-        v = dict(AF=112310, BD=37350, CD=17675, CO=21715, EG=25310, ER=12570, GE=15130, GN=14275, HT=14050, IQ=12485, MA=20205, ML=19910,
-                 PE=20150, PK=19250, SD=17375, SO=18340, SY=43290, TR=31010, UA=23935, VE=90950)  # test-only copies of the run's rows
-        at = dict(AF=(66.496586, 34.164262), BD=(89.684963, 24.214956), CD=(23.458829, -1.858167), CO=(-73.174347, 3.373111), EG=(29.445837, 26.186173),
-                  ER=(38.285566, 15.787401), GE=(43.735724, 41.870087), GN=(-10.016402, 10.618516), HT=(-72.224051, 19.263784), IQ=(43.26181, 33.09403),
-                  MA=(-7.187296, 31.650723), ML=(-2.038455, 18.692713), PE=(-72.90016, -12.976679), PK=(68.545632, 29.328389), SD=(29.260657, 16.330746),
-                  SO=(45.19238, 3.568925), SY=(38.277783, 35.006636), TR=(34.508268, 39.345388), UA=(32.140865, 49.724739), VE=(-64.599381, 7.182476))
-        ext = [-106.38254019874816, -36.17038598855728, 124.13352937983866, 73.24131058195306]
+        v, at, ext = Q6_VALUES, Q6_AT, Q6_EXT
         ranked = sorted(v, key=lambda c: -v[c]); rows = [{"src": "fact:gap", "text": "99,825 人"}, {"src": "fact:times", "text": "9.0倍"}]
         for c in ranked:
             rows += [{"src": f"series:t/A.{c}:2025:OBS_VALUE", "table": "t", "dims": {"freq": "A", "citizen": c}, "time": "2025", "value": str(v[c])}, {"src": f"fact:val.{c}.n", "text": f"{v[c]:,}"}]
@@ -547,6 +550,26 @@ def column_lines(leaves, accent=None, change=False):
     return [line(phase="size"), line(layer="bars"), line(layer="bubbles"), line(layer="bubble_key"), line(layer="leader_notes")]
 
 
+
+def q6_lines(scoped):
+    """The q6 stand-in page's column lines as layer 1 sent them (the run's 20 values ranked, their circles, the key, Afghanistan's and
+    Iraq's notes, Afghanistan the dek's accent; the ledger's texts the run's): its note keys a cut's (scoped: next_run LEADER_NOTES,
+    the run's table the top 20 citizenships) or the plain ones."""
+    v = Q6_VALUES; ranked = sorted(v, key=lambda c: -v[c]); hi, lo = ("column.note.hi.scoped", "column.note.lo.scoped") if scoped else ("column.note.hi", "column.note.lo")
+    rows = [{"src": f"series:t/A.{c}:2025:OBS_VALUE", "table": "t", "dims": {"freq": "A", "citizen": c}, "time": "2025", "value": str(v[c])} for c in ranked]
+    ledger = {**{f"fact:val.{c}.n": f"{v[c]:,}" for c in ranked}, "fact:gap": "99,825 人", "fact:times": "9.0倍", "period:t:2025": "2025"}
+    items = [dict(code=c, value=f"series:t/A.{c}:2025:OBS_VALUE", value_text=f"fact:val.{c}.n", lonlat=list(Q6_AT[c])) for c in ranked]
+    notes = [dict(at=list(Q6_AT["AF"]), name="AF", text=[{"word": hi}], value_text="fact:gap"), dict(at=list(Q6_AT["IQ"]), name="IQ", text=[{"word": lo}], value_text="fact:times")]
+    data = {"chart": "bars", "by": "citizen", "year": "2025", "family": "val", "ranked": ranked, "marks": [], "accent": "AF"}
+    hero = {"unit": "单位：人", "data": data, "leaves": {"bubbles": dict(items=items, ext=Q6_EXT), "leader_notes": dict(ext=Q6_EXT, notes=notes)}}
+    spec = {"title": "标题", "dek": "导语", "kicker": "栏目", "source": "t", "refs": ["t"], "tables": {"t": {"id": "t"}},
+            "facts": {"val": {"each": "citizen", "table": "t", "time": "2025", "fmt": "per"}}, "fmts": {"per": {"scale": 1, "dec": 0, "suffix": " 人"}, "time": {}},
+            "hero": hero}
+    knobs = {"spec": spec, "labels": ZH2, "shapes": SHP}
+    rows = rows + [{"src": k, "text": t} for k, t in ledger.items()]
+    line = lambda **kv: json.dumps({"node": "column", "panel": {"w": 1140, "h": 0, "frame": None}, "rows": rows, "knobs": knobs, **kv}, ensure_ascii=False)
+    return [line(phase="size"), line(layer="bars"), line(layer="bubbles"), line(layer="bubble_key"), line(layer="leader_notes")]
+
 def child(lines):
     out = subprocess.run([sys.executable, "-I", "-B", os.path.join(LEAVES, "run.py")], input="\n".join(lines) + "\n", capture_output=True, text=True, check=True).stdout
     return [json.loads(l) for l in out.splitlines()]
@@ -779,6 +802,32 @@ class ColumnMap(unittest.TestCase):
         self.assertNotIn("refused", page)
         self.assertIn('<g data-layer="leader_notes"><g data-node="leader_notes"></g></g>', page["html"])
 
+
+    def test_a_cut_pages_scoped_notes_place_where_the_plain_ones_do(self):
+        # the q6 page (a cut: its table the top 20 citizenships, so its notes say the lowest and the highest are the selection's),
+        # through the leaf runner as layer 1 calls it: Iraq's note, walled in by Iraq, Syria, Turkey and Georgia, finds one free
+        # place, top right, on a two-bend leader. Measured on this replay: the scoped words before (比所选各方中最低者高 and
+        # 所选各方中最高者是它的, 307.5 and 286.4 px on one line, so each on two) dropped Iraq's note (no free place); Iraq's places
+        # at 222.4 px and not at 238.4 (with 比所选中最低者高 beside it), the plain one at 206.4. So the scoped words are short:
+        # Iraq's as wide as the plain one, Afghanistan's two glyphs wider (259.5 px, one line), and both notes place, scoped or
+        # plain, each one line ending in its bold number, nothing dropped
+        for scoped in (True, False):
+            size, bars, bub, key, notes = child(q6_lines(scoped))
+            self.assertEqual([g.get("refused") for g in (bars, bub, key, notes)], [None] * 4, scoped)
+            self.assertNotIn("dropped", notes, scoped)
+            hi, lo = (K.WD.WORDS[f"column.note.{e}{'.scoped' * scoped}"] for e in ("hi", "lo"))
+            self.assertEqual([(t["src"], t["text"]) for t in notes["texts"]],
+                             [("name:zh_names:iso2:AF+fact:gap", f"{ZH2['AF']} {hi} 99,825 人"), ("name:zh_names:iso2:IQ+fact:times", f"{ZH2['IQ']} {lo} 9.0倍")], scoped)
+            self.assertEqual(len(re.findall(r'<tspan font-weight="700"><tspan data-src="fact:(?:gap|times)"', notes["svg"])), 2, scoped)
+        # a cut's words name the selection (所选, as the dek's 所选各方中) and hold no digit
+        for e in ("hi", "lo"):
+            w = K.WD.WORDS[f"column.note.{e}.scoped"]
+            self.assertIn("所选", w); self.assertFalse(re.search(r"[0-9０-９]", w), w)
+        # the q1 shape (the EU-27, Sweden's and Luxembourg's notes) with a cut's keys: both notes place too
+        sc = [dict(n, text=[{"word": n["text"][0]["word"] + ".scoped"}]) for n in NOTES]
+        size, bars, bub, key, notes = child(column_lines({"bubbles": dict(items=ITEMS, ext=EXT), "leader_notes": dict(D, notes=sc)}))
+        self.assertEqual((notes.get("refused"), notes.get("dropped")), (None, None))
+        self.assertEqual(sorted(t["src"] for t in notes["texts"]), ["name:zh_names:iso2:LU+fact:times", "name:zh_names:iso2:SE+fact:gap"])
 
 if __name__ == "__main__":
     unittest.main()

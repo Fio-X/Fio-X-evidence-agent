@@ -2139,7 +2139,8 @@ fn leader_notes_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
 }
 
 /// The word keys of the two leader notes (the highest's, the lowest's): unscoped, then a narrowed main's, which say the
-/// lowest and the highest are the kept places' (所选各方中), as the scoped dek does.
+/// lowest and the highest are the kept places' (所选, as the scoped dek's 所选各方中), in few glyphs: a walled-in note has
+/// little room (scripts/test_leaves_leader_notes.py test_a_cut_pages_scoped_notes_place_where_the_plain_ones_do).
 const LEADER_NOTES: [(&str, &str); 2] = [
     ("column.note.hi", "column.note.lo"),
     ("column.note.hi.scoped", "column.note.lo.scoped"),
