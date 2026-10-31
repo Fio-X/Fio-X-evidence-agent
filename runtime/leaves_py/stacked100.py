@@ -18,18 +18,21 @@ hero.data (the data shape this leaf eats; on a column frame page, the hero's lea
             "share_text": {part: ledger src}}],     # the printed share of each part drawn (layer 1's fact)
   "empty": [{"bar": code, "part": code}]?,          # a part of a bar with no row at all: no segment, back in
                                                     # Frame.dropped as ("<bar>:<part>", "no row")
+  "zero": [{"bar": code, "part": code,              # a part of a bar whose every row is 0, declared by layer 1 (which
+            "cells": [series src, ...]}]?,          # says it in a line): no segment and no drop; each cell must be 0
   "total_head": segs?,                              # the total column's head, when the bars print their totals
   "others": {"head": segs, "codes": [code, ...]}?,  # the places left out of the bars, named under the picture in the
                                                     # order given (layer 1's), each by its label
   "lines": [segs, ...]?, "footnote": segs?}         # layer 1's lines under the picture, one line each
 segs: as wbkit.segs reads them; series src: a cell of the request's rows (geometry only); ledger src: a row {"src", "text"}.
-A part whose every cell is 0 draws no segment and goes back in Frame.dropped as ("<bar>:<part>", "zero").
+A part whose every cell is 0 and that layer 1 did not declare zero draws no segment and goes back in Frame.dropped as
+("<bar>:<part>", "zero"); a declared zero draws none and is no drop.
 Conservation (refuses): a bar's cells, laid end to end, end off its total by more than knob tol of the total (a leaf left out,
 or one counted twice).
 Colours: --accent the highlighted part, --seq-5, --seq-8, --seq-3, --seq-7, --seq-2 the others in turn (the old route's mid,
 darkest, light, dark, lightest greys), --t-title ink, --t-sec the lines, --bg the gaps between segments.
 Refuses: no bars, fewer than two parts, a part twice, a bar twice, a negative cell, a cell whose series the request lacks, a
-drawn part with no share_text, a part neither in cells nor empty, a highlight that is no part, a digit in a literal word, a text
+drawn part with no share_text, a part in none of cells, empty and zero, a zero cell that is not 0 or a zero also empty, a highlight that is no part, a digit in a literal word, a text
 that leaves the picture or overlaps another, a board too narrow (plot under 160 px), an others line over 3 lines."""
 import os
 import sys
@@ -76,6 +79,14 @@ class Frame:
         if not isinstance(empty, list) or not all(isinstance(e, dict) and set(e) == {"bar", "part"} for e in empty):
             raise Refused(f"stacked100: empty is {empty!r}; a list of {{'bar': code, 'part': code}}")
         none = {(e["bar"], e["part"]) for e in empty}
+        zero = d.get("zero") or []
+        if not isinstance(zero, list) or not all(isinstance(z, dict) and set(z) == {"bar", "part", "cells"} for z in zero):
+            raise Refused(f"stacked100: zero is {zero!r}; a list of {{'bar': code, 'part': code, 'cells': [series src]}}")
+        zeros = {(z["bar"], z["part"]) for z in zero}
+        if zeros & none: raise Refused(f"stacked100: {sorted(zeros & none)} are both empty and zero; no row is no zero")
+        for z in zero:
+            if not isinstance(z["cells"], list) or not z["cells"]: raise Refused(f"stacked100: zero {z['bar']}:{z['part']} names no cell")
+            if any(K.val(c) != 0 for c in z["cells"]): raise Refused(f"stacked100: zero {z['bar']}:{z['part']} has a cell that is not 0")
         f.dropped, f.rows = [], []
         tol = k("tol")
         for b in bars:
@@ -86,6 +97,9 @@ class Frame:
             if off: raise Refused(f"stacked100: bar {code} has cells of {off}, which are no parts")
             segs, end = [], 0.0
             for p in f.order:
+                if (code, p) in zeros:
+                    if p in cells: raise Refused(f"stacked100: zero names {code}:{p}, which has cells")
+                    continue  # declared 0 by layer 1 and said under the picture: data, not a drop
                 if (code, p) in none:
                     if p in cells: raise Refused(f"stacked100: empty names {code}:{p}, which has cells")
                     f.dropped.append((f"{code}:{p}", "no row")); continue

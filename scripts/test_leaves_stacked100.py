@@ -170,6 +170,27 @@ class Picture(unittest.TestCase):
         # a head of a literal word alone is a text with no src: the page refuses it
         self.assertEqual(no_src(draw(hero(dict(page, total_head=W("合计"))), rows)[0]), ["合计"])
 
+    def test_a_part_layer_1_declares_zero_draws_no_segment_and_is_no_drop_but_only_when_its_cells_are_0(self):
+        # DE's nuclear row is 0: layer 1 leaves it out of the cells and declares it zero with its row
+        bars = [dict(b, cells={p: c for p, c in b["cells"].items() if not (b["code"] == "DE" and p == "nuclear")}) for b in DATA["bars"]]
+        de = next(b for b in DATA["bars"] if b["code"] == "DE")
+        data = dict(DATA, bars=bars, zero=[{"bar": "DE", "part": "nuclear", "cells": de["cells"]["nuclear"]}])
+        f = frame(hero(data))
+        self.assertEqual(f.dropped, [])
+        svg = draw(hero(data))[0]
+        self.assertNotIn('data-part="DE:nuclear"', svg)
+        self.assertEqual(check_svg(svg), [])
+        # a declared zero whose cell is not 0, a zero also named empty, or one that keeps its cells: refused
+        fossil = de["cells"]["fossil"]
+        for bad, why in [(dict(data, zero=[{"bar": "DE", "part": "nuclear", "cells": fossil}]), "not 0"),
+                         (dict(data, empty=[{"bar": "DE", "part": "nuclear"}]), "both empty and zero"),
+                         (dict(data, bars=DATA["bars"]), "which has cells")]:
+            with self.assertRaises(Refused) as e:
+                frame(hero(bad))
+            self.assertIn(why, str(e.exception))
+        # with no declaration the 0 part is a drop, as before
+        self.assertEqual(frame(hero(dict(DATA))).dropped, [("DE:nuclear", "zero")])
+
     def test_a_zero_part_draws_no_segment_and_goes_back_to_layer_1_as_dropped(self):
         # nuclear heat has a row of 0 for DE in 2024: its part draws no segment and is said, never left out unsaid
         self.assertEqual(TAB[("DE", "N900H")], 0.0)

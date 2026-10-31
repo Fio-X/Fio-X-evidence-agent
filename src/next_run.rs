@@ -2103,6 +2103,9 @@ const COMPOSITION_OTHERS_WORDS: (&str, &str) = ("其余 ", " 个国家（按合�
 /// The words around the gap of a place left out of a composition because its groups do not add up to its total: its name
 /// before, the gap (a minus fact) between, and what became of its bar after.
 const COMPOSITION_DROPPED_WORDS: (&str, &str) = ("：各组之和与合计相差 ", "，未列入图中，由合计次大的国家递补");
+/// The words of the line that names, by its name, a part that is 0 in some bars (stacked100_fill): after the part's name,
+/// and between the places' names. A part with no row in a bar is no zero and is never said with these.
+const COMPOSITION_ZERO_WORDS: (&str, &str) = ("为零的国家：", "、");
 /// The format key of that gap, and the most decimals it prints with (the decimals its rows hold, at most these).
 const COMPOSITION_GAP_FMT: &str = "comp_gap";
 const COMPOSITION_GAP_DEC: usize = 3;
@@ -2190,6 +2193,7 @@ fn stacked100_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
     }
     let mut bars: Vec<Value> = Vec::new();
     let mut empty: Vec<Value> = Vec::new();
+    let (mut zero, mut zero_bars): (Vec<Value>, Vec<(String, Vec<String>)>) = Default::default();
     for code in &drawn {
         let total = total_row(code).expect("each drawn place's total row was read above");
         out.rows([total.clone()]);
@@ -2211,6 +2215,17 @@ fn stacked100_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
             }
             // the inputs are only read: the leaf draws their widths, the page prints the facts over them
             out.reads(held.iter().map(|r| (*r).clone()));
+            // a part whose every row is 0 is data, not a loss: no segment, declared with its rows (the leaf checks each is 0)
+            // and said in a line under the picture; no row at all stays empty (above), never said as 0
+            if held.iter().all(|r| row_value(r) == Some(0.0)) {
+                let srcs: Vec<Value> = held.iter().map(|r| r["src"].clone()).collect();
+                zero.push(json!({"bar": code, "part": group, "cells": srcs}));
+                match zero_bars.iter_mut().find(|(g, _)| *g == *group) {
+                    Some((_, bars)) => bars.push(code.to_string()),
+                    None => zero_bars.push((group.clone(), vec![code.to_string()])),
+                }
+                continue;
+            }
             cells.insert(group.clone(), held.iter().map(|r| r["src"].clone()).collect());
             let [_, sum_key, share_key] = composition_keys(group, code);
             let of = Value::Object(Map::from_iter([
@@ -2252,6 +2267,22 @@ fn stacked100_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
         let (before, after) = COMPOSITION_DROPPED_WORDS;
         lines.push(json!([{"src": format!("{LABEL_SRC}zh_names:{}:{code}", if code.len() == 2 { "iso2" } else { "iso3" })}, {"w": before}, {"src": format!("fact:{gap_key}")}, {"w": after}]));
     }
+    // each part 0 in some bars, by its name: the bars where it is 0, in total order, each by its place name; the fact
+    // zero.<group> counts their rows of 0 (each in the ledger with its series src as 0), never typed
+    for (group, bars) in &zero_bars {
+        let codes = &comp.groups.iter().find(|(g, _)| g == group).expect("a zero part is one of the groups").1;
+        let of = Value::Object(Map::from_iter([(place.to_string(), json!(bars)), (comp.dim.clone(), json!(codes))]));
+        Filled::set(&mut out.facts, "fact", &format!("zero.{group}"), json!({"op": "zeros", "table": main, "filter": of, "time": year, "fmt": "n"}))?;
+        let (after_part, sep) = COMPOSITION_ZERO_WORDS;
+        let mut line = vec![json!({"src": format!("{LABEL_SRC}zh_names:{COMPOSITION_PART_KIND}:{group}")}), json!({"w": after_part})];
+        for (k, code) in bars.iter().enumerate() {
+            if k > 0 {
+                line.push(json!({"w": sep}));
+            }
+            line.push(json!({"src": format!("{LABEL_SRC}zh_names:{}:{code}", if code.len() == 2 { "iso2" } else { "iso3" })}));
+        }
+        lines.push(Value::Array(line));
+    }
     if !dropped.is_empty() {
         let read: Vec<&Value> = dropped.iter().filter_map(|(c, ..)| total_row(c)).chain(f.companion.iter()).collect();
         let dec = read.iter().filter_map(|r| r["value"].as_str()).map(|v| v.split_once('.').map_or(0, |(_, d)| d.len())).max();
@@ -2282,7 +2313,7 @@ fn stacked100_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
             "codes": others});
     }
     let dropped_codes: Vec<&String> = dropped.iter().map(|(c, ..)| *c).collect();
-    out.composition = Some(json!({"bars": drawn, "dropped": dropped_codes, "others": others}));
+    out.composition = Some(json!({"bars": drawn, "dropped": dropped_codes, "others": others, "zero": zero.clone()}));
     let groups: Vec<String> = comp.groups.iter().map(|(g, _)| g.clone()).collect();
     let names = f.catalogue.zh_names(COMPOSITION_PART_KIND, &groups).map_err(|missing| {
         format!("stacked100: the name table gives no Chinese name for {COMPOSITION_PART_KIND} {}", missing.join(", "))
@@ -2305,6 +2336,9 @@ fn stacked100_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
     data["bars"] = Value::Array(bars);
     if !empty.is_empty() {
         data["empty"] = Value::Array(empty);
+    }
+    if !zero.is_empty() {
+        data["zero"] = Value::Array(zero);
     }
     data["lines"] = Value::Array(lines);
     out.unit_drawn = true;
@@ -3131,7 +3165,7 @@ fn fill_of(
     if let (Some(comp), Some(cut)) = (&shape.composition, cut) {
         fill["composition"] = json!({"template": COMPOSITION_TEMPLATES[0], "dim": comp.dim, "total": comp.total,
             "groups": comp.groups, "year": shape.year, "candidates": shape.countries, "bars": cut["bars"],
-            "dropped": cut["dropped"], "others": cut["others"], "left_out": shape.outside});
+            "dropped": cut["dropped"], "others": cut["others"], "zero": cut["zero"], "left_out": shape.outside});
     }
     // the dek's finding stays with the flow, for the text step's draft (dek_finding); the page gets it as worded. Its
     // headline is the fill's own key, which run_page makes the page's title (title_and_kicker)
@@ -3345,7 +3379,8 @@ fn leaf_page(
         (recipe, stage, why)
     })?;
     let drawn = fill["drawn"].as_array().cloned().unwrap_or_default();
-    Ok(LeafPublished { recipe: picked, published, drawn, strip: strip_ask, ends: fill.get("ends").cloned() })
+    let zeros = declared_zeros(&fill);
+    Ok(LeafPublished { recipe: picked, published, drawn, strip: strip_ask, ends: fill.get("ends").cloned(), zeros })
 }
 
 /// What a page's illustration strip was asked of: whether its recipe has a slot for one (Recipe::strip), whether a strip
@@ -3393,6 +3428,49 @@ struct LeafPublished {
     drawn: Vec<Value>,
     strip: StripAsk,
     ends: Option<Value>,
+    /// The parts a composition declared 0 in a bar (stacked100_fill), each with its rows' values as the fill's rows hold
+    /// them (declared_zeros), which the page check zeros_declared holds to 0.
+    zeros: Vec<Value>,
+}
+
+/// A composition's declared zero parts (its fill's composition record), each {bar, part, cells: [{src, value}]}: the value
+/// of each of its rows as the fill's rows (the fetched rows) hold it, null for a src no row has.
+fn declared_zeros(fill: &Value) -> Vec<Value> {
+    let rows = fill["rows"].as_array().map(Vec::as_slice).unwrap_or_default();
+    fill["composition"]["zero"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|z| {
+            let cells: Vec<Value> = z["cells"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|src| json!({"src": src, "value": rows.iter().find(|r| r["src"] == *src).and_then(row_value)}))
+                .collect();
+            json!({"bar": z["bar"], "part": z["part"], "cells": cells})
+        })
+        .collect()
+}
+
+/// zeros_declared, on a page that declares parts 0 (declared_zeros; none on any other page, which gets no such check): each
+/// declared part has rows and every one of them is 0 in the fetched data, so a part left out of a bar as 0 is one the data
+/// holds as 0, never a value dropped unsaid; one with a row above or below 0, or with no row, fails. A part a layer dropped
+/// (zero or not) still fails notes_dropped as before.
+fn zeros_check(zeros: &[Value]) -> Option<PageCheck> {
+    if zeros.is_empty() {
+        return None;
+    }
+    let off: Vec<String> = zeros
+        .iter()
+        .filter(|z| {
+            let cells = z["cells"].as_array().map(Vec::as_slice).unwrap_or_default();
+            cells.is_empty() || cells.iter().any(|c| c["value"].as_f64() != Some(0.0))
+        })
+        .map(|z| format!("{}:{}", z["bar"].as_str().unwrap_or_default(), z["part"].as_str().unwrap_or_default()))
+        .collect();
+    let measured = json!({"count": zeros.len(), "declared": zeros, "not_zero": off});
+    Some(PageCheck { name: "zeros_declared", passed: off.is_empty(), warning: None, measured })
 }
 
 /// The first recipe of the leaf registry (the visual group's Recipes, in its order) that draws every view the question asks
@@ -4155,8 +4233,9 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
             }
             // what the program measures on the page is held before any model sees it: a failed check stops the run
             let (html, read_sha256) = checked_bytes(recorder.run_dir(), published);
-            let checks =
+            let mut checks =
                 page_checks(leaf.recipe, html.as_deref(), &published.dropped, leaf.strip, &leaf.drawn, published.type_measured.as_ref());
+            checks.extend(zeros_check(&leaf.zeros));
             let measured: Vec<Value> = checks
                 .iter()
                 .map(|c| json!({"name": c.name, "passed": c.passed, "warning": c.warning, "measured": c.measured}))
@@ -7148,8 +7227,8 @@ mod tests {
     /// q3 (欧盟各国发电结构) from the total fetch to the page: the program's second fetch asks the 14 group inputs for the 20
     /// largest and 5 more (COMPOSITION_RESERVE), marked sum_input with the first fetch's file and sheet (no sheet, picks or
     /// narrow of its own, so its rows become no candidate: test_page_build_wiring section 18); the composition recipe is the
-    /// first that reads the shape, and its fill draws 20 bars of 4 parts (DE's nuclear row of 0 a dropped segment, not a
-    /// missing one), each part's cells the input rows its own sum fact filters; the 7 other countries are named in total
+    /// first that reads the shape, and its fill draws 20 bars of 4 parts (each bar's nuclear row of 0, as DE's, a part declared
+    /// zero and named in a line, not a segment), each other part's cells the input rows its own sum fact filters; the 7 other countries are named in total
     /// order, the 5 fetched past the bars first.
     #[test]
     fn q3_walks_from_the_total_fetch_through_the_sum_inputs_to_twenty_bars_of_four_groups() {
@@ -7180,7 +7259,9 @@ mod tests {
         let rows = fill["rows"].as_array().unwrap();
         for bar in bars {
             let code = bar["code"].as_str().unwrap();
-            assert_eq!(bar["cells"].as_object().unwrap().len(), 4, "{code}");
+            // three drawn parts and nuclear declared zero: every bar accounts for its 4 parts
+            assert_eq!(bar["cells"].as_object().unwrap().keys().collect::<Vec<_>>(), ["fossil", "other", "renewable"], "{code}");
+            assert!(leaf["zero"].as_array().unwrap().iter().any(|z| z["bar"] == code && z["part"] == "nuclear"), "{code}");
             for (group, cells) in bar["cells"].as_object().unwrap() {
                 let [_, sum_key, share_key] = composition_keys(group, code);
                 let fact = &spec["facts"][&sum_key];
@@ -7201,7 +7282,19 @@ mod tests {
         assert_eq!(leaf["others"]["codes"], json!(Q3_GEOS[20..]));
         assert_eq!(spec["facts"][COMPOSITION_OTHERS]["filter"]["geo"], json!(Q3_GEOS[20..]));
         assert_eq!(spec["facts"][COMPOSITION_BARS]["filter"]["geo"], json!(Q3_GEOS[..20]));
-        assert_eq!(leaf["lines"].as_array().unwrap().len(), 1, "the cut only: no place left out");
+        // the cut and the zero line: nuclear by its name, then the 20 bars' names in total order, no place left out
+        let lines = leaf["lines"].as_array().unwrap();
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        let mut zero_line = vec![json!({"src": "name:zh_names:siec_group:nuclear"}), json!({"w": COMPOSITION_ZERO_WORDS.0})];
+        for (k, g) in Q3_GEOS[..20].iter().enumerate() {
+            if k > 0 {
+                zero_line.push(json!({"w": COMPOSITION_ZERO_WORDS.1}));
+            }
+            zero_line.push(json!({"src": format!("name:zh_names:iso2:{g}")}));
+        }
+        assert_eq!(lines[1], Value::Array(zero_line));
+        assert_eq!(spec["facts"]["zero.nuclear"]["filter"], json!({"geo": Q3_GEOS[..20], "siec": ["N900H"]}));
+        assert_eq!(spec["facts"]["zero.nuclear"]["op"], "zeros");
         assert_eq!((&fill["composition"]["dropped"], &fill["composition"]["left_out"]), (&json!([]), &json!(Q3_GEOS[25..])));
         // the page-level fields are drafted for the composition it draws, not the ranking the first fetch's chart is
         assert_eq!(page_lead(Some(&fill), &[]), Some((Relation::Composition, View::Slice)));
@@ -7236,7 +7329,7 @@ mod tests {
         assert_eq!(spec["facts"]["total.PT"]["filter"], json!({"geo": "PT", "siec": "TOTAL"}));
         assert!(spec["fmts"][COMPOSITION_GAP_FMT]["dec"].as_u64().is_some_and(|d| d >= 1));
         let lines = leaf["lines"].as_array().unwrap();
-        assert_eq!(lines.len(), 2);
+        assert_eq!(lines.len(), 3, "the cut, PT's and the zero nuclear line");
         assert_eq!(lines[1], json!([{"src": "name:zh_names:iso2:PT"}, {"w": COMPOSITION_DROPPED_WORDS.0}, {"src": "fact:gap.PT"},
             {"w": COMPOSITION_DROPPED_WORDS.1}]));
         assert!(fill["rows"].as_array().unwrap().iter().any(|r| r["dims"]["geo"] == "PT"), "PT's rows are read for its line");
@@ -7264,6 +7357,51 @@ mod tests {
             (main.into_iter().filter(|r| kept(r)).collect(), sums.into_iter().filter(|r| kept(r)).collect());
         let err = q3_fill(&main, &sums).unwrap_err();
         assert!(err.contains("19 places add up") && err.contains("short of 20"), "{err}");
+    }
+
+    /// A part that is 0 in a bar is declared zero with its rows and said by name in one line, never a dropped segment; a
+    /// part with no row is no zero (it stays empty, which the leaf drops as no row, failing notes_dropped as before), and a
+    /// part above 0 is drawn. The page check zeros_declared passes when each declared part's rows are 0 in the fetched rows,
+    /// and fails when one is not, or has none. Two shapes: every bar's nuclear 0 (q3 2024), and FR's nuclear above 0 with
+    /// IT's nuclear row missing.
+    #[test]
+    fn a_part_that_is_zero_is_declared_and_said_and_the_page_check_holds_it_to_the_data() {
+        let (_, _, _, main, sums) = q3_tables(&[]);
+        let fill = q3_fill(&main, &sums).unwrap();
+        let zeros = declared_zeros(&fill);
+        assert_eq!(zeros.len(), 20);
+        assert!(zeros.iter().all(|z| z["part"] == "nuclear" && z["cells"].as_array().unwrap().iter().all(|c| c["value"] == json!(0.0))));
+        let check = zeros_check(&zeros).unwrap();
+        assert_eq!((check.name, check.passed), ("zeros_declared", true));
+        // the declaration does not match the data: a declared row above 0, or a declared part with no row, fails
+        let mut off = zeros.clone();
+        off[0]["cells"][0]["value"] = json!(1.5);
+        let failed = zeros_check(&off).unwrap();
+        assert_eq!((failed.passed, &failed.measured["not_zero"]), (false, &json!(["DE:nuclear"])));
+        let mut none = zeros.clone();
+        none[1]["cells"] = json!([]);
+        assert!(!zeros_check(&none).unwrap().passed);
+        assert!(zeros_check(&[]).is_none(), "a page that declares no zero gets no such check");
+
+        // FR's nuclear above 0 (its total by as much), IT's nuclear row gone
+        let (_, _, _, mut main, mut sums) = q3_tables(&[]);
+        let nuclear = |r: &Value, g: &str| r["dims"]["geo"] == g && r["dims"]["siec"] == "N900H";
+        sums.iter_mut().find(|r| nuclear(r, "FR")).unwrap()["value"] = json!("1000");
+        let fr = main.iter_mut().find(|r| r["dims"]["geo"] == "FR").unwrap();
+        fr["value"] = json!(format!("{}", row_value(fr).unwrap() + 1000.0));
+        sums.retain(|r| !nuclear(r, "IT"));
+        let fill = q3_fill(&main, &sums).unwrap();
+        let leaf = &fill["knobs"]["spec"]["hero"]["leaves"]["stacked100"];
+        let bar = |g: &str| leaf["bars"].as_array().unwrap().iter().find(|b| b["code"] == g).unwrap().clone();
+        assert!(bar("FR")["cells"]["nuclear"].is_array(), "a part above 0 is drawn");
+        assert!(bar("IT")["cells"]["nuclear"].is_null());
+        assert_eq!(leaf["empty"], json!([{"bar": "IT", "part": "nuclear"}]), "no row is empty, never zero");
+        let declared: Vec<&str> = leaf["zero"].as_array().unwrap().iter().map(|z| z["bar"].as_str().unwrap()).collect();
+        assert!(!declared.contains(&"FR") && !declared.contains(&"IT") && declared.len() == 18, "{declared:?}");
+        let names = |line: &Value| -> Vec<String> { line.as_array().unwrap().iter().filter_map(|w| w["src"].as_str().map(String::from)).collect() };
+        let zero_line = names(&leaf["lines"][1]);
+        assert!(!zero_line.contains(&"name:zh_names:iso2:FR".to_string()) && !zero_line.contains(&"name:zh_names:iso2:IT".to_string()));
+        assert!(zeros_check(&declared_zeros(&fill)).unwrap().passed);
     }
 
     /// A composition page's finding: of its bars, the place whose first part (fossil, the leaf's accent) is the largest share
