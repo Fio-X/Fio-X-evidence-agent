@@ -6,7 +6,8 @@ hero.data (the data shape this leaf eats; on a column frame page, the hero's lea
   "title": segs, "unit": segs,                      # the unit is written once, in the head, never on a node or a band
   "source_kind": "category", "target_kind": "category",     # name rows: name:zh_names:<kind>:<code> (a place: "place")
   "flows": [{"source": code, "target": code, "value": series src}],     # one row per flow, one unit, values >= 0; a code
-                                                    # is a source or a target, never both
+                                                    # is a source or a target, never both; a zero flow is not drawn
+                                                    # and goes back in Frame.dropped as ("<source>><target>", "zero")
   "node_text": {code: ledger src},                  # the printed value of every node that is not merged (source or target);
                                                     # a merged member needs none
   "totals": {"source": {code: series src}?, "target": {code: series src}?, "all": series src?}?,  # reported totals, checked
@@ -80,6 +81,9 @@ class Frame:
                 if not isinstance(r.get(key), str) or not r[key]: raise Refused(f"sankey: a flow lacks {key}; for example {{'source': 'O4000XBIO', 'target': 'FC_IND_E', 'value': 'series:T/a:2024:OBS_VALUE'}}")
             r["_v"] = K.val(r["value"])
             if r["_v"] < 0: raise Refused(f"sankey: flow {r['source']} -> {r['target']} is negative; a band cannot be drawn")
+        # a zero flow draws no band (and a code whose flows are all zero no node): each goes back to layer 1 as dropped
+        # (run.py leaf, DROPPED), never left out unsaid
+        f.dropped = [(f"{r['source']}>{r['target']}", "zero") for r in flows if r["_v"] == 0]
         flows = [r for r in flows if r["_v"] > 0]
         if not flows: raise Refused("sankey: every flow is zero")
         src_codes, tgt_codes = {r["source"] for r in flows}, {r["target"] for r in flows}

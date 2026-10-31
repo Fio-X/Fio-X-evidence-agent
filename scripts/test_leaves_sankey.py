@@ -231,13 +231,13 @@ class Refusals(unittest.TestCase):
         self.one(lambda d, rows: None, "too narrow|overlap|leaves|too small", width=480, height=240)
 
 
-def flow_request(leaves=None, style=None):
+def flow_request(leaves=None, style=None, base=None):
     """A flow page's lines as layer 1 sends them: the column frame with the sankey its main (run.MAIN), the sankey's data the
     hero's leaves.sankey, the year line's table and year hero.data."""
     spec = {"title": "标题", "dek": "导语", "kicker": "栏目", "source": "T", "refs": ["T"], "tables": {"T": {"id": "nrg_bal_s"}},
             "facts": {}, "fmts": {"time": {}},
             "hero": {"data": {"table": "T", "year": "2024"}, "leaves": leaves or {"sankey": DATA}, "style": style or {}}}
-    rows = ROWS + [{"src": "period:T:2024", "text": "2024"}]
+    rows = (base or ROWS) + [{"src": "period:T:2024", "text": "2024"}]
     knobs = {"spec": spec, "labels": NAMES}
     line = lambda **kv: json.dumps({"node": "flow", "panel": {"w": 1140, "h": 0, "frame": None}, "rows": rows, "knobs": knobs, **kv},
                                    ensure_ascii=False)
@@ -267,6 +267,21 @@ class FlowPage(unittest.TestCase):
         self.assertIn("<footer", html)
         self.assertNotIn('data-layer="bars"', html)
         self.assertEqual(run.placeholders(html), [])
+
+    def test_a_zero_flow_is_drawn_as_no_band_and_goes_back_to_layer_1_as_dropped(self):
+        # the reported totals hold the zeroed flow's old value, so they are left out here (conservation has its own tests)
+        data = {k: v for k, v in DATA.items() if k != "totals"}
+        flow = next(r for r in data["flows"] if r["source"] not in SMALL_S and r["target"] not in SMALL_T)
+        rows = copy.deepcopy(ROWS)
+        for r in rows:
+            if r["src"] == flow["value"]: r["value"] = 0.0
+        K.setup(ROWS, NAMES, run.tables)
+        self.assertEqual(sankey.Frame(hero(data)).dropped, [])
+        K.setup(rows, NAMES, run.tables)
+        self.assertEqual(sankey.Frame(hero(data)).dropped, [(f"{flow['source']}>{flow['target']}", "zero")])
+        size, pic = child(flow_request(leaves={"sankey": data}, base=rows))
+        self.assertEqual(pic["dropped"], [{"id": f"{flow['source']}>{flow['target']}", "why": "zero"}])
+        self.assertNotIn("dropped", child(flow_request())[1])
 
     def test_the_flow_page_refuses_notes_a_layer_it_lacks_and_a_picture_wider_than_the_page(self):
         lines = flow_request()
