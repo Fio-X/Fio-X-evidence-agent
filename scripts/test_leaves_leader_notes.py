@@ -11,7 +11,8 @@ found it), no
 note box on a circle or label the bubbles claimed (but its own point's), every EU
 circle labelled, no leader crossing another, no label or leader over a nudged circle's true-point dot, a blocked side gives
 way to the other; the column page lays the map beside the bars in one panel, the key to the circles (bubble_key) between the
-bubbles and the notes and no key without the bubbles, the accent on the focus' circles and bars alone and the kicker in the ink; a crowded map (the EU-27, a
+bubbles and the notes and no key without the bubbles, the accent on the dek's place's circle and bar alone (layer 1's hero.data.accent, on a
+level, a change and a bars-only page), the notes' other place in the dark grey, the unit line's legend for the accent, and the kicker in the ink; a crowded map (the EU-27, a
 note each) still draws and its reply names exactly the notes it dropped, while one that drops every note refuses; and every
 refusal in the leaf's header. With LEAF_SVG_DIR set the svgs are kept there; else they go to a temporary folder that is removed.
 Run: python3 -I -B scripts/test_leaves_leader_notes.py"""
@@ -514,16 +515,32 @@ class LeaderNotes(unittest.TestCase):
         self.assertIn("ledger only", str(e.exception))
 
 
-def column_lines(leaves):
+# A change page's earlier end (test-only): each place's value at 2016, so its change to 2023 is VALUES less this; SE rose most,
+# LU fell most (changed's order), the others rose a little.
+EARLIER = {c: round(v - (9.5 if c == "SE" else -3.25 if c == "LU" else 1.0 + i * 0.25), 2) for i, (c, v) in enumerate(VALUES.items())}
+
+
+def column_lines(leaves, accent=None, change=False):
     """A column page's size and layer lines with the map panel's leaves, as layer 1 sends them in the column recipe's order (next_run
     bubbles_fill and leader_notes_fill; the key to the circles, which comes with the bubbles, between them; the ledger as next_facts
-    makes it)."""
+    makes it); the place layer 1 names as the page's accent (fill_of: the dek's) when given. A change page's (change): the bars
+    each place's change from 2016 (EARLIER) to 2023, ranked by it (next_run change_bars_fill), the bars' measure change."""
     rows = [r for r in ROWS if r["src"].startswith("series:")]
     ledger = {**{f"fact:val.{c}.n": str(v) for c, v in VALUES.items()}, **{r["src"]: r["text"] for r in ROWS if "text" in r}, "period:t:2023": "2023"}
     ranked = sorted(VALUES, key=lambda c: -VALUES[c])
+    data = {"chart": "bars", "by": "geo", "year": "2023", "family": "val", "ranked": ranked, "marks": [], **({"accent": accent} if accent else {})}
+    hero = {"unit": "单位：%", "data": data, "leaves": leaves}
+    if change:
+        rows += [{"src": f"series:t/A.PC.{c}:2016:OBS_VALUE", "table": "t", "dims": {"freq": "A", "unit": "PC", "geo": c}, "time": "2016", "value": str(v)}
+                 for c, v in EARLIER.items()]
+        moved = {c: VALUES[c] - EARLIER[c] for c in VALUES}
+        ledger.update({f"fact:chg.{c}": f"{d:.2f} 个百分点" for c, d in moved.items()})
+        ledger["period:t:2016"] = "2016"
+        data.update(t0="2016", family="chg", ranked=sorted(VALUES, key=lambda c: -moved[c]))
+        hero["style"] = {"bars": {"measure": "change"}}
     spec = {"title": "标题", "dek": "导语", "kicker": "栏目", "source": "t", "refs": ["t"], "tables": {"t": {"id": "t"}},
             "facts": {"val": {"each": "geo", "table": "t", "time": "2023", "fmt": "pc"}}, "fmts": {"pc": {"scale": 1, "dec": 1, "suffix": "%"}, "time": {}},
-            "hero": {"unit": "单位：%", "data": {"chart": "bars", "by": "geo", "year": "2023", "family": "val", "ranked": ranked, "marks": []}, "leaves": leaves}}
+            "hero": hero}
     knobs = {"spec": spec, "labels": ZH2, "shapes": SHP}
     rows = rows + [{"src": k, "text": v} for k, v in ledger.items()]
     line = lambda **kv: json.dumps({"node": "column", "panel": {"w": 1140, "h": 0, "frame": None}, "rows": rows, "knobs": knobs, **kv}, ensure_ascii=False)
@@ -565,24 +582,62 @@ class ColumnMap(unittest.TestCase):
         page = child(lines + [json.dumps({"phase": "page", "layers": {"bars": bars["svg"], "bubble_key": key["svg"]}})])[2]
         self.assertEqual(page["refused"], ["page: bubble_key is no layer the page places"])
 
-    def test_the_accent_marks_only_the_focus_and_the_kicker_takes_the_ink(self):
-        # the q1-style page: its notes name SE and LU (the extremes). In the page every element filled or stroked in the accent is
-        # one of theirs: their two circles (by code) and their two bars; the kicker's last rule in the page's css (the one that
-        # wins: same selector weight or more, later) sets it in the title's ink, not the accent
-        lines = column_lines({"bubbles": dict(items=ITEMS, ext=EXT), "leader_notes": D})
-        size, bars, bub, key, notes = child(lines)
-        html = child(lines + [json.dumps({"phase": "page", "layers": {"bars": bars["svg"], "bubbles": bub["svg"], "bubble_key": key["svg"], "leader_notes": notes["svg"]}})])[5]["html"]
-        marked = re.findall(r'<(\w+)\b[^>]*(?:fill|stroke)="var\(--accent\)"[^>]*>', html)
-        self.assertEqual(sorted(marked), ["circle", "circle", "rect", "rect"])
-        self.assertEqual(sorted(re.findall(r'<circle [^>]*fill="var\(--accent\)"[^>]*data-code="(\w+)"', html)), ["LU", "SE"])
-        ranked = sorted(VALUES, key=lambda c: -VALUES[c]); rh = prod.KNOBS["bars"]["row"][0]; top = prod.KNOBS["bars"]["top"][0]
-        rows = sorted(round((float(y) - 3 - top) / rh) for y in re.findall(r'<rect x="[\d.]+" y="([\d.]+)"[^>]*fill="var\(--accent\)"', html))
-        self.assertEqual([ranked[i] for i in rows], ["SE", "LU"])
+    def page_of(self, lines):
+        """The page the child draws over the column lines' layers (the map panel's when the hero has one)."""
+        got = child(lines)
+        layers = dict(zip(["bars", "bubbles", "bubble_key", "leader_notes"][: len(got) - 1], [g["svg"] for g in got[1:]]))
+        self.assertEqual([g.get("refused") for g in got], [None] * len(got))
+        return child(lines + [json.dumps({"phase": "page", "layers": layers})])[len(lines)]["html"]
+
+    def marked(self, html, ink, ranked):
+        """The circles (by code) and the bars (by their row's place) filled or stroked in `ink`, and how many elements are."""
+        rh, top = prod.KNOBS["bars"]["row"][0], prod.KNOBS["bars"]["top"][0]
+        circles = sorted(re.findall(rf'<circle [^>]*fill="var\({ink}\)"[^>]*data-code="(\w+)"', html))
+        rows = sorted(round((float(y) - 3 - top) / rh) for y in re.findall(rf'<rect x="[\d.]+" y="([\d.]+)"[^>]*fill="var\({ink}\)"', html))
+        return circles, [ranked[i] for i in rows]
+
+    def test_the_accent_marks_only_the_dek_s_place_the_other_noted_place_takes_the_dark_grey_and_the_unit_line_says_so(self):
+        # the q1-style page (its notes name SE and LU, the extremes) and the q4-style change page (its notes SE's largest rise and
+        # LU's largest fall): layer 1 names SE, the dek's place, as the accent. In the page every element filled or stroked in the
+        # accent is SE's: its circle and its bar; LU keeps its note, its circle and bar in the dark grey; the unit line ends in the
+        # accent's legend, words only. The kicker's last rule in the page's css (the one that wins: same selector weight or more,
+        # later) sets it in the title's ink, not the accent
+        legend = re.compile(r'<div class="cu">(?:(?!</div>).)*<span class="ak">([^<]*)</span></div>')
+        chg = [dict(at=POINT["SWE"], name="SE", text=[{"word": "column.note.rise_most"}], value_text="fact:chg.SE"),
+               dict(at=POINT["LUX"], name="LU", text=[{"word": "column.note.fall_most"}], value_text="fact:chg.LU")]
+        for change, notes in ((False, D), (True, dict(D, notes=chg))):
+            lines = column_lines({"bubbles": dict(items=ITEMS, ext=EXT), "leader_notes": notes}, accent="SE", change=change)
+            ranked = json.loads(lines[0])["knobs"]["spec"]["hero"]["data"]["ranked"]
+            html = self.page_of(lines)
+            marked = re.findall(r'<(\w+)\b[^>]*(?:fill|stroke)="var\(--accent\)"[^>]*>', html)
+            self.assertEqual(sorted(marked), ["circle", "rect"], change)
+            self.assertEqual(self.marked(html, "--accent", ranked), (["SE"], ["SE"]), change)
+            self.assertEqual(self.marked(html, "--t-body", ranked), (["LU"], ["LU"]), change)
+            self.assertEqual(legend.findall(html), [K.WD.WORDS["column.accent"]], change)
+            self.assertFalse(re.search(r"[0-9０-９]", K.WD.WORDS["column.accent"]))
+            self.assertIn('data-src="fact:chg.LU"' if change else 'data-src="fact:times"', html)  # LU's note stays
         css = re.search(r"<style>(.*)</style>", html, re.S).group(1)
         rules = re.findall(r"(?:^|})\s*([^{}]*\.kicker)\{([^}]*)\}", css)
         self.assertEqual(rules[-1], (".hh .kicker", "color:var(--t-title)"))
         self.assertIn('<header class="hh', html)
         self.assertRegex(html, r'<header class="hh[^"]*"><div><div class="kicker">')
+        # no accent from layer 1 (no finding and no claim): nothing in the accent and no legend; both noted places dark grey
+        html = self.page_of(column_lines({"bubbles": dict(items=ITEMS, ext=EXT), "leader_notes": D}))
+        self.assertEqual(re.findall(r'(?:fill|stroke)="var\(--accent\)"', html), [])
+        self.assertEqual(self.marked(html, "--t-body", sorted(VALUES, key=lambda c: -VALUES[c])), (["LU", "SE"], ["SE", "LU"]))
+        self.assertIsNone(legend.search(html))
+
+    def test_on_a_column_page_without_a_map_the_accent_marks_the_one_bar_and_the_legend_says_so(self):
+        # bars alone (no map, no notes): the accent's place's bar alone in the accent, every other in the bars' grey; a place
+        # layer 1 names the page does not rank refuses
+        for change in (False, True):
+            lines = column_lines({}, accent="LU", change=change)[:2]
+            ranked = json.loads(lines[0])["knobs"]["spec"]["hero"]["data"]["ranked"]
+            html = self.page_of(lines)
+            self.assertEqual(self.marked(html, "--accent", ranked), ([], ["LU"]), change)
+            self.assertEqual(self.marked(html, "--t-body", ranked), ([], []), change)
+            self.assertIn(f'<span class="ak">{K.WD.WORDS["column.accent"]}</span></div>', html)
+        self.assertEqual(child(column_lines({}, accent="CN")[:1])[0]["refused"], ["size: column: the accent names CN, no place the page ranks"])
 
     def test_the_scope_leads_the_unit_line_by_its_reviewed_name_and_the_counted_number(self):
         # hero.scope: the aggregate's code and the fact counting the places drawn. The name prints from the request's labels

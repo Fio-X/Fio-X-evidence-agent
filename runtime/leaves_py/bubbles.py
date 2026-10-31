@@ -16,13 +16,13 @@ leader's length, land_cost px more over the land in the shared frame; of places 
 circle on the frame's edge looks inward), its leader crossing no other leader; every place keeps label_gap px clear of every circle. A top-N label that fits nowhere is left off and listed in
 Frame.unlabeled, never put on a circle, and in Frame.dropped
 (code, "no free place for the label"), which run.py sends back so layer 1 keeps it in the page's ledger.
-Colours: --accent the page's focus (the highlight knob: the circles the page's notes name, their names in bold), CIRCLE_INK every
-other circle, --t-dark at LAND_OPACITY the land, --bg its outline, --t-title the labels' names and numbers (VALUE_INK).
+Colours: --accent the page's focus (the highlight knob: the place the page's dek names, its name in bold), NOTED_INK the other
+places the page's notes name (the noted knob, their names in bold too), CIRCLE_INK every other circle, --t-dark at LAND_OPACITY the land, --bg its outline, --t-title the labels' names and numbers (VALUE_INK).
 Circles drawn at r_max that still overlap by over half the smaller one in more pairs than max_overlaps (default 0) after the nudge are
 drawn smaller: r_max a knob step (2 px) less each round, down to the knob's floor (12), every radius (still by area), the nudge and the
 overlaps again; the scale drawn is Frame.r_used (r_max when that held), the one any legend or note of the circles' size must read: the
 layer leaves it in the Occ (occ.scale) for the key drawn after it (bubble_key below), which every page drawing the bubbles draws with them.
-Refuses: no items, an item outside the extent or without a lon/lat point, a negative value, highlight naming a non-item, more pairs of
+Refuses: no items, an item outside the extent or without a lon/lat point, a negative value, highlight or noted naming a non-item, more pairs of
 circles overlapping by over half the smaller one than max_overlaps even at the floor ("even at r_max 12"), no Natural Earth file, extent=box without a valid box,
 a missing name or ledger entry, a digit in a literal, a knob off its range."""
 import json
@@ -49,6 +49,7 @@ prod.KNOBS["bubbles"] = dict(
     land_cost=(60, (0, 400, 10), "px of leader a label set off its circle over the land costs: open room off the map's shapes comes first"),
     title_size=(16, (12, 22, 1), "chart name size px"), simplify=(3, (1, 8, 1), "keep every n-th point of a coastline"),
     opacity=(0.85, (0.5, 1.0, 0.05), "circle opacity"), highlight=("", None, "comma list of codes in the accent, their names in bold: the page's focus"),
+    noted=("", None, "comma list of codes in a dark grey, their names in bold: the other places the page's notes name"),
     max_overlaps=(0, (0, 20, 1), "pairs of circles that may overlap by more than half the smaller (more refuses)"),
     width=(1140, (320, 1400, 10), "picture width in px"),
     inset=(12, (0, 40, 2), "projection view: px the land stops inside the picture's edge, on a hairline frame, so it is not cut by the panel"))
@@ -61,6 +62,8 @@ VALUE_INK = "--t-title"
 # A circle not in the page's focus: a grey of the page's ramp, so the accent marks the focus alone (a page keeps its accent to one
 # meaning); at the circles' opacity it stands out from the land under it.
 CIRCLE_INK = "--t-sec"
+# A circle the page's notes name besides its focus (noted): a dark grey of the page's, darker than CIRCLE_INK, never the accent.
+NOTED_INK = "--t-body"
 DOT_R = 1.6  # the dot at a nudged circle's true point
 BELOW_GAP = 0.3  # of the label size: a label set below its leader starts this far under the leader's end (a 13 px name's glyph box
 # reaches about 0.26 of its size above the box tw lays out; the page's line check, 2 px in from that glyph box, would meet the leader)
@@ -113,6 +116,7 @@ class Frame:
             if not (isinstance(ll, list) and len(ll) == 2 and -180 <= ll[0] <= 180 and -90 <= ll[1] <= 90): raise Refused(f"bubbles: {i['code']} has no lon/lat point")
             if not (box[0] <= ll[0] <= box[2] and box[1] <= ll[1] <= box[3]): raise Refused(f"bubbles: {i['code']} lies outside the extent")
         f.hl = K.check_codes(NODE, k("highlight"), {i["code"] for i in items}) if k("highlight") else set()
+        f.noted = K.check_codes(NODE, k("noted"), {i["code"] for i in items}) - f.hl if k("noted") else set()
         mx = max(i["_v"] for i in items) or 1.0; r_max = k("r_max"); low, _, step = prod.KNOBS[NODE]["r_max"][1]
         while True:  # at r_max, and only when that refuses, a step smaller each round down to the knob's floor: every radius, the nudge and the overlaps again
             for i in items: i["_r"] = max(k("r_min"), r_max * math.sqrt(i["_v"] / mx)); i["_at"] = i["_xy"] = f.xy(*i["lonlat"])
@@ -185,7 +189,7 @@ def cl_bubbles(f, occ):
         sq = (i["_xy"][0] - i["_r"], i["_xy"][1] - i["_r"], i["_xy"][0] + i["_r"], i["_xy"][1] + i["_r"]); occ.add(sq, "bubbles")
         if not hasattr(occ, "circles"): occ.circles = []
         occ.circles.append((i["_xy"][0], i["_xy"][1], i["_r"], sq))  # the circle itself, for a leader that may pass its square's corner
-        ink = "--accent" if i["code"] in f.hl else CIRCLE_INK
+        ink = "--accent" if i["code"] in f.hl else NOTED_INK if i["code"] in f.noted else CIRCLE_INK
         o.append(f'<circle cx="{i["_xy"][0]:.1f}" cy="{i["_xy"][1]:.1f}" r="{i["_r"]:.1f}" fill="var({ink})" fill-opacity="{k("opacity")}" data-code="{esc(i["code"])}"/>')
     dots = []  # a circle nudged off its point keeps a dot where the place is; no label, leader or note may cover it
     for i in f.items:
@@ -261,7 +265,7 @@ def cl_bubbles(f, occ):
             o.append(f'<line x1="{ax:.1f}" y1="{ay:.1f}" x2="{bx_:.1f}" y2="{by_:.1f}" stroke="var(--t-sec)" stroke-width="0.8"/>')
             leads.extend(pts); segs.append(lead); occ.add_line(list(pts), "bubbles", "leader")
         f.label_boxes.append((i["code"], bx)); occ.add(bx, "bubbles")
-        o.append(K.txt(B, tx, ty, sz, "var(--t-title)", i["_n"][0], tw(nm, sz), anchor=anchor, weight=700 if i["code"] in f.hl else 400, tag=f"name {i['code']}", style=halo))
+        o.append(K.txt(B, tx, ty, sz, "var(--t-title)", i["_n"][0], tw(nm, sz), anchor=anchor, weight=700 if i["code"] in f.hl | f.noted else 400, tag=f"name {i['code']}", style=halo))
         o.append(K.txt(B, tx, ty + sz * 1.4, sz, f"var({VALUE_INK})", vt[0], tw(vt[1], sz), anchor=anchor, tag=f"value {i['code']}", style=halo))
 
     # first every label that fits beside its circle (biggest first), so a crowded centre's own labels stay close; then the

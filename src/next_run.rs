@@ -1777,13 +1777,14 @@ fn printed(fmts: &Map<String, Value>, fmt: &str, v: f64) -> String {
 /// the change's format; rows already read). On a page of one year with the extremes (hi, lo, gap), the highest place against
 /// the lowest when they differ and no other ranked place ties either. On a flow page (a focus,
 /// nothing ranked), the origin with the largest value at t1 among every country outside the hub, when no other ties it and
-/// the map declares its share. None otherwise: the dek stays the frame's. Program rules only; no model word is read.
-fn finding_of(f: &Filling, out: &mut Filled, labels: &BTreeMap<String, String>) -> Result<Option<Value>, String> {
+/// the map declares its share. None otherwise: the dek stays the frame's. Beside the sentence, the code of the place its
+/// {name} names, the dek's subject (fill_of gives it the page's accent). Program rules only; no model word is read.
+fn finding_of(f: &Filling, out: &mut Filled, labels: &BTreeMap<String, String>) -> Result<Option<(Value, String)>, String> {
     let (shape, picks) = (f.shape, f.picks);
     let place = shape.place.as_str();
     let named = |code: &str| labels.contains_key(code).then(|| format!("{{{NAME_PLACEHOLDER}{code}}}"));
     let at = |code: &str, t: &str| f.main.iter().find(|r| r["time"] == t && r["dims"][place] == code).and_then(row_value);
-    let (finding, words): (Finding, Vec<(&str, String)>) = if !shape.t0.is_empty() {
+    let (finding, subject, words): (Finding, String, Vec<(&str, String)>) = if !shape.t0.is_empty() {
         if !out.facts.contains_key(CHANGE_FAMILIES[2]) {
             return Ok(None);
         }
@@ -1811,7 +1812,7 @@ fn finding_of(f: &Filling, out: &mut Filled, labels: &BTreeMap<String, String>) 
         let ends = |r: &&Value| r["dims"][place] == code.as_str() && (r["time"] == shape.t0.as_str() || r["time"] == shape.year.as_str());
         out.reads(f.main.iter().filter(ends).cloned());
         let (y0, y1) = (format!("{{{early}.t}}"), format!("{{{late}.t}}"));
-        (finding, vec![("{name}", name), ("{value}", format!("{{{lead}}}")), ("{y0}", y0), ("{y1}", y1)])
+        (finding, code, vec![("{name}", name), ("{value}", format!("{{{lead}}}")), ("{y0}", y0), ("{y1}", y1)])
     } else if !picks.ranked.is_empty() {
         if !["hi", "lo", "gap"].iter().all(|k| out.facts.contains_key(*k)) {
             return Ok(None);
@@ -1831,7 +1832,8 @@ fn finding_of(f: &Filling, out: &mut Filled, labels: &BTreeMap<String, String>) 
         let late = FINDING_FACTS[2];
         Filled::set(&mut out.facts, "fact", late, year_fact(&shape.main, filter(&[(place, hi.as_str())]), &shape.year, &f.fmt))?;
         let y1 = format!("{{{late}.t}}");
-        (Finding::Level, vec![("{name}", name), ("{other}", other), ("{value}", "{hi}".into()), ("{gap}", "{gap}".into()), ("{y1}", y1)])
+        let words = vec![("{name}", name), ("{other}", other), ("{value}", "{hi}".into()), ("{gap}", "{gap}".into()), ("{y1}", y1)];
+        (Finding::Level, hi.clone(), words)
     } else if !picks.focus.is_empty() && picks.t1.len() > 2 {
         let mut largest: Vec<(f64, &String)> = shape
             .outside
@@ -1856,7 +1858,7 @@ fn finding_of(f: &Filling, out: &mut Filled, labels: &BTreeMap<String, String>) 
         let at_hub = filter(&[(place, code.as_str()), ("geo", shape.hub.as_str())]);
         Filled::set(&mut out.facts, "fact", late, year_fact(&shape.main, at_hub, &picks.t1, &f.fmt))?;
         let y1 = format!("{{{late}.t}}");
-        (Finding::Share, vec![("{name}", name), ("{value}", format!("{{{share}}}")), ("{y1}", y1)])
+        (Finding::Share, code.clone(), vec![("{name}", name), ("{value}", format!("{{{share}}}")), ("{y1}", y1)])
     } else {
         return Ok(None);
     };
@@ -1864,7 +1866,7 @@ fn finding_of(f: &Filling, out: &mut Filled, labels: &BTreeMap<String, String>) 
         return Err(format!("no DEK_FINDINGS words for {finding:?}"));
     };
     let worded = |template: &str| words.iter().fold(template.to_string(), |text, (token, with)| text.replace(token, with));
-    Ok(Some(json!({"dek": worded(plain), "scoped": worded(scoped)})))
+    Ok(Some((json!({"dek": worded(plain), "scoped": worded(scoped)}), subject)))
 }
 
 /// The dek finding a page's fill carries (finding_of), unscoped and scoped, as next_page Drafts::with_finding takes it.
@@ -2189,6 +2191,12 @@ fn fill_of(
     let labels = leaf_labels(&out.rows, &named, catalogue)?;
     // the dek's finding reads only rows the nodes read already, so the labels hold every code it names
     let finding = finding_of(&filling, &mut out, &labels).map_err(no)?;
+    // the accent marks one place, the one the dek names: its finding's subject, or with the frame's dek (no finding) the first
+    // place the picked claims name (claim_marks); a page that ranks none of them marks none
+    let accent = finding.as_ref().map(|(_, code)| code).or(picks.marks.first()).filter(|c| picks.ranked.contains(c));
+    if let Some(code) = accent {
+        Filled::set(&mut out.data, "hero data", ACCENT, json!(code)).map_err(no)?;
+    }
     let Filled { drawn, rows, facts, mut fmts, data, mut hero, notes, points, .. } = out;
     hero.insert("data".into(), Value::Object(data));
     hero.insert("unit".into(), json!(std::iter::once(format!("单位：{short}")).chain(notes).collect::<Vec<_>>().join("；")));
@@ -2216,7 +2224,7 @@ fn fill_of(
         .collect();
     let mut fill = json!({"order": recipe.layers, "rows": rows, "knobs": knobs, "drawn": drawn});
     // the dek's finding stays with the flow, for the text step's draft (dek_finding); the page gets it as worded
-    if let Some(finding) = finding {
+    if let Some((finding, _)) = finding {
         fill["finding"] = finding;
     }
     // the two ends the page runs between, and each earlier year passed over with the countries it misses, for the run's record
@@ -2227,6 +2235,10 @@ fn fill_of(
     }
     Ok(fill)
 }
+
+/// The hero data key of the one place the page's accent marks (fill_of), as the leaf reads it (column.py focus): its bar and
+/// its circle in the accent, every other in the page's greys, and a legend line that says what the accent means.
+const ACCENT: &str = "accent";
 
 /// The page's scope: of the main's place codes that are no country (an aggregate such as EU27_2020), one whose member list
 /// (the knowledge group's) holds every ranked place, the one with the fewest members when several do; none when the data
@@ -5451,6 +5463,9 @@ mod tests {
         assert_eq!(said, [("SE", "column.note.hi", "fact:gap"), ("BE", "column.note.lo", "fact:times")]);
         assert_eq!(spec["hero"]["unit"], "单位：%");
         assert_eq!(spec["hero"]["data"]["marks"], json!(["BE"]));
+        // the accent marks the place the dek's finding names (SE, the highest) alone, not the lowest its other note names
+        // nor the place the claim marks
+        assert_eq!(spec["hero"]["data"]["accent"], "SE");
         assert_eq!(spec["tables"], json!({"sdg": {"id": "sdg"}}));
         assert!(fill["knobs"].get("members").is_none());
 
@@ -5601,7 +5616,7 @@ mod tests {
         };
         let column = recipe("column");
         let claims = [("rank_top".to_string(), bound("c1", &[("country_iso2", json!("BE")), ("value", json!(14.9))]))];
-        let level = |at: &[(&str, &str, &str)]| {
+        let level_fill = |at: &[(&str, &str, &str)]| {
             let mut main = ring_rows("sdg", &[("freq", "A"), ("unit", "PC")], ("geo", &["SE", "BE", "DE", "FR", "EU27_2020"]), &["2025"]);
             for (r, v) in main.iter_mut().zip(["65.4", "14.9", "30.25", "20", "40"]) {
                 r["value"] = json!(v);
@@ -5609,11 +5624,15 @@ mod tests {
             set(&mut main, at);
             let shape = shape_of(&column.eats, &[("sdg", &main[..])], &Hubs).unwrap();
             let picks = picks_of(&column.picks, &shape, &main, &claims).unwrap();
-            fill_of(column, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语")).unwrap().get("finding").cloned()
+            fill_of(column, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语")).unwrap()
         };
+        let level = |at: &[(&str, &str, &str)]| level_fill(at).get("finding").cloned();
         assert_eq!(level(&[]).unwrap()["dek"], "{lead1.t}，{name.SE}最高，为{hi}，比最低的{name.BE}高{gap}");
         assert_eq!(level(&[("DE", "2025", "65.4")]), None, "two highest");
         assert_eq!(level(&[("FR", "2025", "14.9")]), None, "two lowest");
+        // the accent: the finding's subject (SE); with the frame's dek (no finding) the place the first picked claim names (BE)
+        assert_eq!(level_fill(&[])["knobs"]["spec"]["hero"]["data"]["accent"], "SE");
+        assert_eq!(level_fill(&[("DE", "2025", "65.4")])["knobs"]["spec"]["hero"]["data"]["accent"], "BE");
 
         let change = recipe("change");
         let moved = |at: &[(&str, &str, &str)]| {
@@ -5625,6 +5644,13 @@ mod tests {
         };
         // SE up 16 (50 to 66); BE too
         assert_eq!(moved(&[("BE", "2024", "24.5")]), None, "two largest rises");
+        // no finding and no claim picked: the page marks no place in the accent
+        let mut tied = q1_ten_years();
+        set(&mut tied, &[("BE", "2024", "24.5")]);
+        let shape = shape_of(&change.eats, &[("sdg", &tied[..])], &Hubs).unwrap();
+        let picks = picks_of(&change.picks, &shape, &tied, &[]).unwrap();
+        let fill = fill_of(change, &shape, &picks, (&tied, &[]), &Hubs, ("标题", "导语")).unwrap();
+        assert!(fill["knobs"]["spec"]["hero"]["data"].get("accent").is_none());
         // e3: up 16 both, as the page prints them (16.00 个百分点), though 66.6 - 50.6 is 15.999999999999993 and 24.6 - 8.6 is 16
         assert_ne!(66.6_f64 - 50.6, 24.6 - 8.6);
         let alike = [("SE", "2016", "50.6"), ("SE", "2024", "66.6"), ("BE", "2016", "8.6"), ("BE", "2024", "24.6")];
@@ -5691,6 +5717,8 @@ mod tests {
         assert_eq!(spec["hero"]["style"], json!({"bars": {"measure": "change"}}));
         assert_eq!(spec["hero"]["data"]["family"], "chg");
         assert_eq!(spec["hero"]["data"]["t0"], "2016");
+        // the accent: the place the dek's finding names (SE's rise), not FR, whose fall the other note names
+        assert_eq!(spec["hero"]["data"]["accent"], "SE");
         // the dek's finding: SE's rise, a fact of its two ends' values (the later less the earlier, in points), its rows
         // the ones the bars already read
         assert_eq!(fill["finding"], json!({"dek": "{lead0.t}至{lead1.t}，{name.SE}增幅最大，增加{lead}",
@@ -5757,9 +5785,12 @@ mod tests {
         let published = crate::next_flow::publish_leaf_page(&calls, &bundle.dir, "change", (&leaf, &plan), &qa).unwrap();
         let html = std::fs::read_to_string(bundle.dir.join(&published.html_ref)).unwrap();
         assert!(html.contains(r#"data-src="fact:chg.FR""#) && html.contains(r#"data-src="fact:chg.SE""#), "the bars print the changes");
-        // the accent marks the notes' two places (SE's rise, FR's fall) alone; DE's and BE's rises take the rise grey
+        // the accent marks the dek's place (SE's rise) alone, the other note's place (FR's fall) the dark grey; DE's and BE's
+        // rises take the rise grey; the unit line says what the accent means
         assert!(html.contains(r#"fill="var(--accent)""#) && html.contains(r#"fill="var(--accent2)""#), "the focus colour and a rise colour");
-        assert_eq!(html.matches(r#"height="18" fill="var(--accent)""#).count(), 2, "only the two focus bars in the accent");
+        assert_eq!(html.matches(r#"height="18" fill="var(--accent)""#).count(), 1, "only the dek's bar in the accent");
+        assert_eq!(html.matches(r#"height="18" fill="var(--t-body)""#).count(), 1, "the other end's bar in the dark grey");
+        assert!(html.contains("红＝导语所指"), "the accent's legend line");
         assert!(html.contains(r#"text-anchor="end" dominant-baseline="middle" font-size="13" fill="var(--t-sec)" font-weight="400"><tspan data-src="fact:chg.FR""#), "the fall's value on its side");
         assert!(html.contains(r#"data-src="period:sdg:2016""#), "the year line names the earlier end");
         assert!(html.contains("名SE增幅最大，增加") && html.contains(r#"data-src="fact:lead.n""#), "the dek's finding, its number a ledger entry");

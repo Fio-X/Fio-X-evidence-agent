@@ -2145,11 +2145,11 @@ mod tests {
         // ring.years and ring.months (the ring's window, read by layer 1) are two of them; the column page's bignums and the
         // bars' row, size and top came with it; the scmp page's notes and strip nodes, the strip's height, gap and months and
         // the big numbers' size, label lines and alignment with that, and their min, box width and cells a row after it; the
-        // chart leaves over the column page's frame (section_head 8, rankbar 8, bubbles 19 with its label gap and spacing, leader
-        // reach, land cost, nudge, circle gap and inset, two of them a list of codes), then the map panel's leader notes (6: a note
-        // never sits over the land, so it has no land cost; one a list of codes), the bars' measure (level or change), and the
-        // bubbles' key (3: its text size, reference circles and line width)
-        assert_eq!((t.nodes.len(), knobs), (34, 137));
+        // chart leaves over the column page's frame (section_head 8, rankbar 8, bubbles 20 with its label gap and spacing, leader
+        // reach, land cost, nudge, circle gap, inset and the notes' other places (noted), three of them a list of codes), then
+        // the map panel's leader notes (6: a note never sits over the land, so it has no land cost; one a list of codes), the
+        // bars' measure (level or change), and the bubbles' key (3: its text size, reference circles and line width)
+        assert_eq!((t.nodes.len(), knobs), (34, 138));
         let reserve: Vec<_> = t.nodes.iter().filter(|(_, l)| l.reserve).map(|(n, _)| n.as_str()).collect();
         assert_eq!(reserve, ["flows", "labels", "routes"]);
         let legacy: Vec<_> = t.legacy.iter().map(|(n, at)| (n.as_str(), at.join("."))).collect();

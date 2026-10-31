@@ -2,8 +2,9 @@
 set draws (test-only values), a crowded European set (World Bank 65+ share, scripts/fixtures/data_prepare/worldbank/q5.json)
 refuses at max_overlaps 0 (no nudge, even at the r_max floor) and draws when allowed; circles that overlap at r_max
 are drawn on a smaller scale (r_used) until they clear, by area still, and maps that clear at r_max draw byte for byte as before; only the
-focus circles take the accent; the key drawn after the bubbles (bubble_key) names the measure and the map's year, its reference circles
-the map's own at their radii and values, its box claimed off every circle and label; each point is the place's Natural Earth label point; names from the
+focus circle takes the accent and the notes' other places the dark grey; the key drawn after the bubbles (bubble_key) names the measure and the map's year, its reference circles
+the map's own at their radii and values, its box claimed off every circle and label, the measure's name left out only when its
+line is wider in px than the map's rect; each point is the place's Natural Earth label point; names from the
 project's reviewed zh names. Each svg reads back with no `bad`, every digit sits inside a marked ledger run, no label sits on
 any circle or on another label (one that fits nowhere is listed in Frame.unlabeled, never moved onto a circle), and the
 refusals keep the leaf's rules. Run: python3 -I -B scripts/test_leaves_bubbles.py"""
@@ -342,8 +343,9 @@ KSPEC = {"facts": {"val": {"each": "geo", "table": "T", "time": "2025", "fmt": "
 KNAME = {"src": "name:catalogue:T:title", "text": "可再生能源在最终能源消费总量中的占比（按部门）"}
 
 
-def key_panel(measure=None, notes=(), panel_h=None, more=(), **key_style):
-    """The column page's map panel as run.py draws it: the bubbles (run.LEAF_LAYERS, the hero's focus its notes' places), then the
+def key_panel(measure=None, notes=(), panel_h=None, more=(), accent=None, **key_style):
+    """The column page's map panel as run.py draws it: the bubbles (run.LEAF_LAYERS, the hero's focus the place layer 1 names as
+    its accent, hero.data.accent, the other places its notes name noted), then the
     key over the panel's frame (table, year, spec, map view, height: the map's and the key's room under it, as run.Panel keeps it,
     or `panel_h`), on one Occ. Returns (panel, occ, bubbles svg)."""
     iso3, zh2 = dict(ISO3, EL="GRC"), dict(ZH2, EL=ZH2["GR"])
@@ -356,7 +358,7 @@ def key_panel(measure=None, notes=(), panel_h=None, more=(), **key_style):
     ext = layer1_extent({i["code"]: i["lonlat"] for i in items}, {c: (v, zh2[c]) for c, v in KQ1.items()}, 1)
     leaves = {"bubbles": dict(items=items, ext=ext, **({"measure": measure} if measure else {}))}
     if notes: leaves["leader_notes"] = {"ext": ext, "notes": [{"at": POINT[iso3[c]], "name": c} for c in notes]}
-    h = {"leaves": leaves, "data": {"marks": []}, "style": {"bubble_key": key_style} if key_style else {}}
+    h = {"leaves": leaves, "data": {"marks": [], **({"accent": accent} if accent else {})}, "style": {"bubble_key": key_style} if key_style else {}}
     mv = bubbles.MK.View({"data": leaves["bubbles"], "style": run.MAP_STYLE}, "bubbles"); mh = mv.H
     panel = types.SimpleNamespace(h=h, table="T", year="2025", c=types.SimpleNamespace(spec=KSPEC), mv=mv, H=mh, map_h=mh)
     panel.H = mh + bubbles.key_room(panel) if panel_h is None else panel_h  # as run.Panel keeps it under the map, unless given
@@ -419,6 +421,31 @@ class Key(unittest.TestCase):
         self.assertEqual("".join(t["text"] for t in texts if not t["src"].startswith("fact:")),
                          K.WD.WORDS["bubble_key.area_any"].format(y=K.WD.WORDS["date.y"].format(y="2025")))
 
+    def test_the_measure_falls_back_only_when_its_line_is_wider_than_the_maps_rect_whatever_its_characters(self):
+        # the fallback is measured in px (prod.tw) against the map's rect, never by counting characters: a short name (nine
+        # characters, as q4's measure) prints, and so does every name whose line (the words before it joined to it, as no line
+        # of words alone is drawn, and the mark after it) still fits the rect; one wider gives the words without it
+        src = "name:catalogue:T:n"
+        def said(name):
+            panel, occ, _ = key_panel([{"src": src}], more=[{"src": src, "text": name}])
+            texts = run.drawn(self.draw_key(panel, occ))[0]
+            most = panel.mv.W - 2 * (prod.KNOBS["bubbles"]["inset"][0] + bubbles.KEY_GAP + bubbles.KEY_PAD)
+            return "".join(t["text"] for t in texts if not t["src"].startswith("fact:")), most
+        year = K.WD.WORDS["date.y"].format(y="2025")
+        area = lambda m: K.WD.WORDS["bubble_key.area"].format(m=m, y=year)
+        self.assertEqual(said("人均二氧化碳排放量")[0], area("人均二氧化碳排放量"))
+        most = said("")[1]
+        line = lambda name: prod.tw(K.WD.WORDS["bubble_key.area"].split("{m}")[0] + name + "，", 12)
+        widest = max(n for n in range(1, 80) if line("量" * n) <= most)
+        self.assertGreater(widest, 30)  # far past any character count the key could hold at its width knob
+        for n in (widest - 1, widest):
+            self.assertEqual(said("量" * n)[0], area("量" * n), n)
+        self.assertEqual(said("量" * (widest + 1))[0], K.WD.WORDS["bubble_key.area_any"].format(y=year))
+        # a Latin name is measured as the page sets it, narrower than as many CJK characters: more of its characters fit
+        latin = max(n for n in range(1, 120) if line("m" * n) <= most)
+        self.assertGreater(latin, widest)
+        self.assertEqual(said("m" * latin)[0], area("m" * latin))
+
     def test_without_a_measure_the_key_says_what_the_area_is_at_the_year(self):
         panel, occ, _ = key_panel()
         texts = run.drawn(self.draw_key(panel, occ))[0]
@@ -449,13 +476,24 @@ class Key(unittest.TestCase):
         with self.assertRaises(Refused) as e: self.draw_key(panel, prod.Occ())
         self.assertIn("no bubbles layer drew before it", str(e.exception))
 
-    def test_only_the_focus_circles_take_the_accent(self):
-        # the page's focus (the places its notes name) in the accent, every other circle in the grey; no focus, none in the accent
+    def test_only_the_focus_circle_takes_the_accent_and_the_other_noted_place_the_dark_grey(self):
+        # the page's focus (the one place layer 1 names as its accent, the dek's) in the accent; the other place its notes name
+        # in the dark grey, its name in bold as the focus'; every other circle in the grey. No accent given: none in the accent,
+        # both noted places dark grey; no notes either, none in either
+        circles = lambda svg, ink: sorted(re.findall(rf'<circle [^>]*fill="var\({ink}\)"[^>]*data-code="(\w+)"', svg))
+        _, _, svg = key_panel(notes=("SE", "LU"), accent="SE")
+        self.assertEqual((circles(svg, "--accent"), circles(svg, bubbles.NOTED_INK)), (["SE"], ["LU"]))
+        self.assertEqual(len(circles(svg, bubbles.CIRCLE_INK)), len(KQ1) - 2)
+        self.assertNotEqual(bubbles.NOTED_INK, bubbles.CIRCLE_INK)
+        bold = re.findall(r'<text [^>]*font-weight="700"[^>]*><tspan data-src="name:[^"]*:(\w+)">', svg)
+        self.assertEqual(sorted(bold), ["LU", "SE"])
         _, _, svg = key_panel(notes=("SE", "LU"))
-        accent = re.findall(r'<circle [^>]*fill="var\(--accent\)"[^>]*data-code="(\w+)"', svg)
-        self.assertEqual(sorted(accent), ["LU", "SE"])
-        self.assertEqual(len(re.findall(rf'<circle [^>]*fill="var\({bubbles.CIRCLE_INK}\)"[^>]*data-code=', svg)), len(KQ1) - 2)
-        self.assertEqual(re.findall(r'(?:fill|stroke)="var\(--accent\)"', key_panel()[2]), [])
+        self.assertEqual((circles(svg, "--accent"), circles(svg, bubbles.NOTED_INK)), ([], ["LU", "SE"]))
+        self.assertEqual(re.findall(r'(?:fill|stroke)="var\(--(?:accent|t-body)\)"', key_panel()[2]), [])
+        # the noted knob names drawn codes only, as highlight does
+        setup(W_ROWS, W_LABELS)
+        with self.assertRaises(Refused) as e: bubbles.Frame(hero(W_DATA, noted="XXX"))
+        self.assertIn("codes the request does not hold", str(e.exception))
 
 
 FXT = lambda src: K.FX.text(src)

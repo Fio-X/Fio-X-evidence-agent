@@ -42,7 +42,9 @@ class ColumnFrame:
         elif not f.vals or min(v for _, v in f.vals) < 0 or max(v for _, v in f.vals) <= 0:
             raise FX.Refused("bars: the values are not all 0 or more with one above 0")
         f.year, f.marks, f.size, f.rh = year, set(d.get("marks") or []), K("size"), K("row")
-        f.focus = set(focus(h))
+        f.focus, f.noted = set(focus(h)), set(noted(h))
+        off = sorted(f.focus - set(d["ranked"]))
+        if off: raise FX.Refused(f"column: the accent names {', '.join(off)}, no place the page ranks")
         f.mv, f.W = mv, PAGE_W
         f.map_h = mv.H if mv else 0  # the map's svg height: the map's, or more when the bubbles' key stands under it (bubbles.cl_bubble_key)
         f.x0 = mv.W + MAP_GAP if mv else 0; f.bw = f.W - f.x0
@@ -54,12 +56,19 @@ class ColumnFrame:
 
 
 def focus(h):
-    """The page's focus, the places its accent marks in the bars and on the map: the ones the map's leader notes name (the
-    extremes the program put a note at, hero.leaves.leader_notes), in their order; on a page with no such note, its marked places
-    (hero.data.marks). The program's, never a model's: every other bar and circle takes the page's greys."""
+    """The page's focus, the one place its accent marks in the bars and on the map: the place the page's dek names, as layer 1
+    gives it (hero.data.accent: the dek finding's subject, or with the frame's dek the place the first picked claim names); none
+    when it gives none. The program's, never a model's: every other bar and circle takes the page's greys."""
+    a = (h.get("data") or {}).get("accent")
+    return [a] if isinstance(a, str) and a else []
+
+
+def noted(h):
+    """The other places the map's leader notes name (the extremes the program put a note at, hero.leaves.leader_notes) besides
+    the focus, in their order: each keeps its note, its bar and circle in the dark grey NOTED, never the accent."""
     notes = ((h.get("leaves") or {}).get("leader_notes") or {}).get("notes") or []
     named = [n["name"] for n in notes if isinstance(n, dict) and isinstance(n.get("name"), str)]
-    return list(dict.fromkeys(named)) or list((h.get("data") or {}).get("marks") or [])
+    return [c for c in dict.fromkeys(named) if c not in focus(h)]
 
 
 def val_src(d, code, change=False):
@@ -75,8 +84,8 @@ def html_named(code):
 
 def cl_bars(f, occ):
     """One bar per ranked place, largest first: the name before it, the value after it, a marked place's in bold; a bar of the
-    page's focus (focus) in the accent, the others in the bars' grey. Drawn from x0, where the panel places the bars. With
-    bars.measure change: cl_change_bars."""
+    page's focus (focus) in the accent, one the notes name besides it (noted) in the dark grey, the others in the bars' grey.
+    Drawn from x0, where the panel places the bars. With bars.measure change: cl_change_bars."""
     if f.change: return cl_change_bars(f)
     o, mx, bw, lw = [], max(v for _, v in f.vals), f.bw - f.lw - f.vw, f.x0 + f.lw
     o.append(f'<line x1="{lw:.1f}" x2="{lw:.1f}" y1="{f.top}" y2="{f.top + f.rh * len(f.vals)}" stroke="var(--t-sec)" stroke-width="0.8"/>')
@@ -85,20 +94,22 @@ def cl_bars(f, occ):
         ink, weight = ("var(--t-title)", 700) if hi else ("var(--t-body)", 400)
         mid = y + f.rh / 2
         o.append(f'<text x="{lw - 8:.1f}" y="{mid:.1f}" text-anchor="end" dominant-baseline="middle" font-size="{f.size}" fill="{ink}" font-weight="{weight}">{prod.named(k)}</text>'
-                 f'<rect x="{lw:.1f}" y="{y + 3:.1f}" width="{w:.1f}" height="{f.rh - 6}" fill="{FOCUS if k in f.focus else "var(--bar)"}"/>'
+                 f'<rect x="{lw:.1f}" y="{y + 3:.1f}" width="{w:.1f}" height="{f.rh - 6}" fill="{FOCUS if k in f.focus else NOTED if k in f.noted else "var(--bar)"}"/>'
                  f'<text x="{lw + w + 6:.1f}" y="{mid:.1f}" dominant-baseline="middle" font-size="{f.size}" fill="{ink if hi else "var(--t-sec)"}" font-weight="{weight}">{FX.entry(val_src(f.d, k), "tspan", None)}</text>')
     return "".join(o)
 
 
-# A bar of the page's focus (focus): the accent, which marks nothing else on the page. A change bar out of it by its sign, two of
-# the page's greys: a rise the darker, a fall the bars' own; no change, the bar's.
-FOCUS = "var(--accent)"
+# A bar of the page's focus (focus): the accent, which marks nothing else on the page; the legend line (accent_key) says so. A
+# bar of another place the notes name (noted): a dark grey of the page's, darker than any other bar's. A change bar out of
+# both by its sign, two of the page's greys: a rise the darker, a fall the bars' own; no change, the bar's.
+FOCUS, NOTED = "var(--accent)", "var(--t-body)"
 RISE, FALL = "var(--accent2)", "var(--bar)"
 
 
 def cl_change_bars(f):
     """One signed bar per ranked place in layer 1's order (by its change, the largest rise first): from a zero line, a rise
-    to the right in the rise colour, a fall to the left in the fall colour (a bar of the page's focus in the accent, either way),
+    to the right in the rise colour, a fall to the left in the fall colour (a bar of the page's focus in the accent, one the
+    notes name besides it in the dark grey, either way),
     each bar's length its change on one scale; the name before the bars, the value past each bar's end (on its side of the zero
     line); a marked place's name and value in bold. The scale leaves room for a value on each side a bar runs to."""
     o, lo, hi = [], min(0.0, min(v for _, v in f.vals)), max(0.0, max(v for _, v in f.vals))
@@ -113,7 +124,7 @@ def cl_change_bars(f):
         mid, x = y + f.rh / 2, z if v >= 0 else z - w
         tx, anchor = (z + w + 6, "start") if v >= 0 else (z - w - 6, "end")
         o.append(f'<text x="{lw - 8:.1f}" y="{mid:.1f}" text-anchor="end" dominant-baseline="middle" font-size="{f.size}" fill="{ink}" font-weight="{weight}">{prod.named(k)}</text>'
-                 f'<rect x="{x:.1f}" y="{y + 3:.1f}" width="{w:.1f}" height="{f.rh - 6}" fill="{FOCUS if k in f.focus else RISE if v > 0 else FALL if v < 0 else "var(--bar)"}"/>'
+                 f'<rect x="{x:.1f}" y="{y + 3:.1f}" width="{w:.1f}" height="{f.rh - 6}" fill="{FOCUS if k in f.focus else NOTED if k in f.noted else RISE if v > 0 else FALL if v < 0 else "var(--bar)"}"/>'
                  f'<text x="{tx:.1f}" y="{mid:.1f}" text-anchor="{anchor}" dominant-baseline="middle" font-size="{f.size}" fill="{ink if hi_ else "var(--t-sec)"}" font-weight="{weight}">{FX.entry(val_src(f.d, k, True), "tspan", None)}</text>')
     return "".join(o)
 
@@ -217,14 +228,23 @@ def column_shell(f, bars, unit, pic=""):
     row, and the fact counting the places drawn, its number printed from the ledger; the words the word table's
     column.scope; a code the labels do not name prints no scope, never a raw word); with a map panel, the map's
     svg (`pic`, its layers; class cmap, as the page css places a .map absolutely) on the left and the bars' beside it, its
-    viewBox starting at x0 so each text stands where the panel placed it."""
+    viewBox starting at x0 so each text stands where the panel placed it. After the year, when the page has a focus, the line
+    that says what the accent means (accent_key)."""
     year = word("date.y", y=FX.entry(f"period:{f.table}:{f.year}", "span", None))
     if f.change: year = word("column.change_years", a=FX.entry(f"period:{f.table}:{prod.need(f.d, 't0')}", "span", None), b=year)
     sc = f.h.get("scope")
     if sc and sc.get("code") in prod.NAMES: unit = word("column.scope", place=prod.named(sc["code"]), n=FX.entry(f"fact:{sc['count']}.n", "span", None)) + unit
     bars = f'<svg class="bars" viewBox="{f.x0} 0 {f.bw} {f.bh:.0f}" width="{f.bw}" height="{f.bh:.0f}">{bars}</svg>'
     if f.mv: bars = f'<div class="cm"><svg class="cmap" viewBox="0 0 {f.mv.W} {f.map_h}" width="{f.mv.W}" height="{f.map_h}">{pic}</svg>{bars}</div>'
-    return f'<div class="hero column"><div class="cu">{unit}{word("list.sep")}{year}</div>{bars}</div>'
+    return f'<div class="hero column"><div class="cu">{unit}{word("list.sep")}{year}{accent_key(f)}</div>{bars}</div>'
+
+
+def accent_key(f):
+    """The legend line of the accent, on a page with a focus (focus): a swatch in the accent, then the word table's column.accent
+    (words only: the accent marks the place the dek names); none without a focus, where nothing is in the accent."""
+    if not f.focus: return ""
+    if FX.digit(word("column.accent")): raise FX.Refused("column: the accent's legend holds a digit")
+    return f'<span class="ak">{word("column.accent")}</span>'
 
 
 def strip_shell(svg, w, h):
@@ -234,6 +254,8 @@ def strip_shell(svg, w, h):
             f'<g data-layer="illus_strip">{svg}</g></svg></div>')
 
 
-# The header's second column is as wide as the big numbers' box (bignums.width), which sizes each number to its cell.
+# The header's second column is as wide as the big numbers' box (bignums.width), which sizes each number to its cell. Then the
+# map, the gap and the bars; the accent's legend line (accent_key) after the year, its swatch in the accent.
 CSS = """.illus-strip{width:1140px;margin:0 0 24px}.illus-strip svg{display:block}""" + """.hero.column{position:relative;width:1140px;margin:8px 0 30px}.hero.column .cu{font:400 12px/17px var(--sans);color:var(--t-sec);margin-bottom:6px}""" + \
-    ".hero.column .cm{display:flex;gap:%dpx;align-items:flex-start}.hero.column .cm svg{flex:none}" % MAP_GAP  # the map, the gap, the bars
+    ".hero.column .cm{display:flex;gap:%dpx;align-items:flex-start}.hero.column .cm svg{flex:none}" % MAP_GAP + \
+    ".hero.column .ak{margin-left:16px;color:var(--t-body)}.hero.column .ak::before{content:'';display:inline-block;width:9px;height:9px;margin-right:5px;background:var(--accent);vertical-align:0}"

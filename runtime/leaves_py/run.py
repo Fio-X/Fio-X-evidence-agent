@@ -110,9 +110,11 @@ MAP_LEAVES = {"bubble_key": "bubbles"}
 
 
 def focus_style(h):
-    """The bubbles' highlight: the page's focus (column.focus) that the map draws a circle for, in the accent, as its bars."""
+    """The bubbles' highlight: the page's focus (column.focus) that the map draws a circle for, in the accent, as its bars; and
+    their noted: the other places the notes name (column.noted), in the dark grey, as their bars."""
     drawn = {i.get("code") for i in ((h.get("leaves") or {}).get("bubbles") or {}).get("items") or [] if isinstance(i, dict)}
-    return {"bubbles": {"highlight": ",".join(c for c in column.focus(h) if c in drawn)}}
+    return {"bubbles": {"highlight": ",".join(c for c in column.focus(h) if c in drawn),
+                        "noted": ",".join(c for c in column.noted(h) if c in drawn)}}
 
 
 def bubble_key(f, occ):

@@ -349,6 +349,12 @@
      "what": "comma list of codes in the accent, their names in bold: the page's focus"
     },
     {
+     "name": "noted",
+     "default": "",
+     "codes": true,
+     "what": "comma list of codes in a dark grey, their names in bold: the other places the page's notes name"
+    },
+    {
      "name": "max_overlaps",
      "default": 0,
      "min": 0,
