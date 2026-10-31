@@ -2109,6 +2109,9 @@ const COMPOSITION_GAP_DEC: usize = 3;
 /// The facts counting a composition's bars and the places left out (op n over their total rows at the year).
 const COMPOSITION_BARS: &str = "comp_bars";
 const COMPOSITION_OTHERS: &str = "comp_others";
+/// The fact of a composition's finding (finding_of, Finding::Part): the highlighted part's share of the total of the bar
+/// where it is largest, a share of that bar's sum and total facts; the dek and the headline print it.
+const COMPOSITION_TOP: &str = "comp_top";
 /// The name kind of a composition's parts: the knowledge group's name table of the registered groups (code-names-zh.json).
 const COMPOSITION_PART_KIND: &str = "siec_group";
 
@@ -2535,6 +2538,54 @@ fn finding_of(f: &Filling, out: &mut Filled, labels: &BTreeMap<String, String>) 
         Filled::set(&mut out.facts, "fact", late, year_fact(&shape.main, at_hub, &picks.t1, &f.fmt))?;
         let y1 = format!("{{{late}.t}}");
         (Finding::Share, code.clone(), vec![("{name}", name), ("{value}", format!("{{{share}}}")), ("{y1}", y1)])
+    } else if let (Some(comp), Some(cut)) = (&shape.composition, out.composition.clone()) {
+        // a composition: of its bars, the place whose highlighted part (the first group, the leaf's accent) is the largest
+        // share of its total, the share a fact over the part's sum and the total (stacked100_fill), named place and part
+        let Some((group, codes)) = comp.groups.first() else { return Ok(None) };
+        let year = shape.year.as_str();
+        let total_at = |code: &str| {
+            f.main
+                .iter()
+                .find(|r| r["time"] == year && r["dims"][place] == code && r["dims"][&comp.dim] == comp.total.as_str())
+                .and_then(row_value)
+                .filter(|t| *t > 0.0)
+        };
+        let part_at = |code: &str| -> Option<f64> {
+            let held: Vec<f64> = f
+                .companion
+                .iter()
+                .filter(|r| r["time"] == year && r["dims"][place] == code)
+                .filter(|r| r["dims"][&comp.dim].as_str().is_some_and(|c| codes.iter().any(|k| k == c)))
+                .filter_map(row_value)
+                .collect();
+            (!held.is_empty()).then(|| held.iter().sum())
+        };
+        let mut shares: Vec<(f64, String)> = cut["bars"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .filter_map(|c| Some((part_at(c)? / total_at(c)?, c.to_string())))
+            .collect();
+        shares.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+        let Some((top, code)) = shares.first().cloned() else { return Ok(None) };
+        // a share another bar prints alike (a whole percent, as a share fact prints) is no one's own
+        let pct = |v: f64| format!("{:.0}", v * 100.0);
+        if top <= 0.0 || shares.get(1).is_some_and(|(v, _)| pct(*v) == pct(top)) {
+            return Ok(None);
+        }
+        let [total_key, sum_key, _] = composition_keys(group, &code);
+        let (Some(place_name), Some(part_name)) = (named(&code), named(group)) else { return Ok(None) };
+        if !out.facts.contains_key(&sum_key) || !out.facts.contains_key(&total_key) {
+            return Ok(None);
+        }
+        Filled::set(&mut out.facts, "fact", COMPOSITION_TOP, json!({"op": "share", "a": sum_key, "b": total_key}))?;
+        let late = FINDING_FACTS[2];
+        let at_total = filter(&[(place, code.as_str()), (comp.dim.as_str(), comp.total.as_str())]);
+        Filled::set(&mut out.facts, "fact", late, year_fact(&shape.main, at_total, year, &f.fmt))?;
+        let y1 = format!("{{{late}.t}}");
+        let words = vec![("{name}", format!("{place_name}{part_name}")), ("{value}", format!("{{{COMPOSITION_TOP}}}")), ("{y1}", y1)];
+        (Finding::Part, code.clone(), words)
     } else {
         return Ok(None);
     };
@@ -2570,6 +2621,16 @@ fn title_and_kicker(fill: Option<&Value>, scoped: bool, label: &str, measure: &s
         Some(headline) => (headline.to_string(), measure.to_string()),
         None => (label.to_string(), measure.to_string()),
     }
+}
+
+/// The kicker of a composition page (its fill holds a composition record, stacked100_fill): the registry's title words of a
+/// composition at one period (shape_registry FRAMES), program words with no number; None for any other page.
+fn composition_kicker(fill: Option<&Value>) -> Option<&'static str> {
+    fill.filter(|fill| fill["composition"].is_object())?;
+    crate::shape_registry::FRAMES
+        .iter()
+        .find(|(r, v, _)| (*r, *v) == (Relation::Composition, View::Slice))
+        .map(|(_, _, words)| words[0])
 }
 
 /// The dek finding a page's fill carries (finding_of), unscoped and scoped, as next_page Drafts::with_finding takes it.
@@ -4029,6 +4090,8 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
     // kicker, as the old route's does without a scope
     let measure = worded.get(&Target::Measure(0)).map_or("", String::as_str);
     let headed = picked.as_ref().ok().map(|(_, fill)| fill);
+    // a composition page's kicker is the registry's words for a composition, never the first fetch's ranking measure
+    let label = composition_kicker(headed).unwrap_or(label);
     let (title, kicker) = title_and_kicker(headed, drafts.has_scope, label, measure);
     let leaf = picked.and_then(|picked| leaf_page(recorder.run_dir(), picked, (question, (&title, &dek, &kicker)), &calls));
     record_page_calls(recorder, catalogue, calls)?;
@@ -7178,6 +7241,39 @@ mod tests {
             (main.into_iter().filter(|r| kept(r)).collect(), sums.into_iter().filter(|r| kept(r)).collect());
         let err = q3_fill(&main, &sums).unwrap_err();
         assert!(err.contains("19 places add up") && err.contains("short of 20"), "{err}");
+    }
+
+    /// A composition page's finding: of its bars, the place whose first part (fossil, the leaf's accent) is the largest share
+    /// of its total; the dek and the headline name the place and the part by their name placeholders and print the share as a
+    /// fact over that bar's sum and total facts, never a typed number; the kicker is the registry's composition words. With
+    /// every bar's share alike as printed there is no finding, so no headline.
+    #[test]
+    fn a_composition_page_s_headline_names_the_place_whose_first_part_is_the_largest_share() {
+        let (_, _, _, mut main, mut sums) = q3_tables(&[]);
+        // the tables as fetched give every country DE's mix, so no bar's share is its own: no finding
+        let fill = q3_fill(&main, &sums).unwrap();
+        assert!(fill[HEADLINE].is_null() && fill["finding"].is_null(), "{}", fill["finding"]);
+        // IT's fossil inputs half again, its total by as much: IT's fossil share is the largest
+        let fossil = next_params::group_inputs("nrg_bal_peh", "siec").unwrap()[0].1.clone();
+        let mut more = 0.0;
+        for r in sums.iter_mut().filter(|r| r["dims"]["geo"] == "IT" && fossil.iter().any(|c| r["dims"]["siec"] == c.as_str())) {
+            let v = row_value(r).unwrap();
+            more += v / 2.0;
+            r["value"] = json!(format!("{}", v * 1.5));
+        }
+        let total = main.iter_mut().find(|r| r["dims"]["geo"] == "IT").unwrap();
+        total["value"] = json!(format!("{}", row_value(total).unwrap() + more));
+        let fill = q3_fill(&main, &sums).unwrap();
+        let spec = &fill["knobs"]["spec"];
+        assert_eq!(fill[HEADLINE]["title"], json!("{name.IT}{name.fossil}占比最高，达{comp_top}"));
+        assert_eq!(fill["finding"]["dek"], json!("{lead1.t}，{name.IT}{name.fossil}占比最高，为{comp_top}"));
+        assert_eq!(spec["facts"][COMPOSITION_TOP], json!({"op": "share", "a": "sum.fossil.IT", "b": "total.IT"}));
+        assert_eq!(spec["facts"]["lead1"]["filter"], json!({"geo": "IT", "siec": "TOTAL"}));
+        let frame = crate::shape_registry::FRAMES.iter().find(|(r, v, _)| (*r, *v) == (Relation::Composition, View::Slice)).unwrap().2;
+        assert_eq!(composition_kicker(Some(&fill)), Some(frame[0]));
+        let (title, kicker) = title_and_kicker(Some(&fill), false, composition_kicker(Some(&fill)).unwrap(), "发电总量");
+        assert_eq!((title.as_str(), kicker.as_str()), ("{name.IT}{name.fossil}占比最高，达{comp_top}", frame[0]));
+        assert_eq!(composition_kicker(Some(&json!({}))), None, "a page that is no composition keeps its own kicker");
     }
 
     /// A place the question names is never left out of a composition, read by code, not by name: a question that names Greece
