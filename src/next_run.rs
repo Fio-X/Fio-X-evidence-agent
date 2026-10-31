@@ -5704,6 +5704,10 @@ mod tests {
         let mut sent = fill.clone();
         let drawn = sent.as_object_mut().unwrap().remove("drawn").unwrap();
         let finding = sent.as_object_mut().unwrap().remove("finding").unwrap();
+        // the headline from the finding joins the fill (HEADLINES, the page's title): taken out like the dek's finding, the
+        // bytes sent are the ones before it
+        let headline = sent.as_object_mut().unwrap().remove(HEADLINE).unwrap();
+        assert_eq!(headline, json!({"title": "{name.RU}最多，占{ru24_share}", "scoped": "所选各方中{name.RU}居首，占{ru24_share}"}));
         // RU is the largest origin at t1 (NO and US are at 1): its share, which the map declares, its name placeholder and
         // the year of its value at t1 (lead1, the finding's own fact, kept out of the bytes compared)
         assert_eq!(finding, json!({"dek": "{lead1.t}，{name.RU}最多，占{ru24_share}", "scoped": "{lead1.t}，所选各方中，{name.RU}居首，占{ru24_share}"}));
