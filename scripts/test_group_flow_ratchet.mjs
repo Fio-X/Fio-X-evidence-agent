@@ -14,24 +14,42 @@
 //          each CJK line of a word file: a non-code file that a .rs agent file pulls in with include_str! (before its test
 //          cut) and that groups.json gives to no group (one owned by agent is scanned as itself; one owned by another group
 //          is that group's knowledge). Its lines count toward the including file and its route.
-//   kinds  each line naming a chart kind. The names are read at test time from the registries (registryKinds below: the
-//          node, group and recipe names in runtime/leaves_py/knobs.json, the piece files of runtime/leaves_py (*.py),
-//          runtime/leaves_js (*.cjs) and runtime/nodes (*.mjs), run.py MAIN, every *_TEMPLATES list and NODE_FILLS name in
-//          src/next_*.rs, shape_registry.rs Relation variants and templates) plus the word list P0a measured with
-//          (P0A_KINDS). A name matches any spelling: every identifier on the line (strings included) is split at `_`,
-//          case changes and digits, and a run of its parts joined in lower case that equals the name joined in lower case
-//          counts (choropleth, Sankey, Kind::Sankey, StackedBar100, stacked_bar_100, rankbar, sankey_fill). Ordinary
-//          words among the names (line, map, text, ...) over-count; the rule is fixed and only the trend matters.
+//   kinds  each line naming a chart kind. The names are read at test time from the registries (registryKinds below; a
+//          registry file, table or listing that is missing or yields no name fails the test): the node, group and recipe
+//          names (and recipe layers) of runtime/leaves_py/knobs.json, run.py MAIN and LEAF_LAYERS, every *_TEMPLATES list
+//          and NODE_FILLS name in src/next_*.rs, the NodeInfo and GroupInfo names in src/next_render.rs, shape_registry.rs
+//          Relation variants and their templates, plus the word list P0a measured with (P0A_KINDS). Names compare in lower
+//          case with every non-alphanumeric dropped (Sankey = sankey, stacked_bar_100 = StackedBar100 = stackedbar100).
+//          A line names a kind when (a) a string literal on it ("..", '..', `..`, or an escaped \"..\" inside one) is the
+//          name, (b) an enum path segment `::Name` is the name (Kind::Sankey, Relation::Map), or (c) for every name not in
+//          ORDINARY, a run of the parts of an identifier on it (strings included; split at `_`, case changes and digits)
+//          joined is the name (choropleth, SANKEY_FILL, rank_bar, StackedBar100, CHOROPLETH_FILL). ORDINARY holds the
+//          registry names that are everyday words of code (map, text, line, step, ...): they count by (a) and (b) only.
+//          BTreeMap and BTreeSet are no identifier match. Other ordinary words still over-count; only the trend matters.
 //          The baseline records its name set: counting uses that set, a registry name it lacks is red until --lower admits it
-//          (a reviewed baseline edit), and a name never leaves the set.
+//          (a reviewed baseline edit that may raise kinds by the lines the new name matches), and a name never leaves the set.
+//
+// What the scan does NOT count (known limits, kept as plain rules rather than closed):
+//   - any code line whose trimmed start is `//`, `*` or `/*`, so a code line that starts with `*` (a deref such as
+//     `*slot = "sankey"`) is skipped as if it were a comment;
+//   - everything in a .rs file from its first line starting `#[cfg(test)]` or `mod tests` on, even non-test code below it;
+//   - the continuation lines of a multi-line string: copy needs CJK and a quote on the same line, so a CJK line inside a
+//     multi-line string literal with no quote on it is not copy (word files and data files are counted line by line);
+//   - text a `{}` format placeholder fills in at run time, and any knowledge reached through a function call or constant
+//     defined outside the flow group;
+//   - copy or kind names moved into another group's files (or an include_str file that groups.json gives to another
+//     group): they leave this count, and the other group's own checks hold them;
+//   - a kind name glued into one lower-case word with no separator (rankbars, sankeys, choroplethmap) and a kind no
+//     registry or the P0a list names.
 //
 // The ratchet (scripts/fixtures/flow-ratchet.json holds the 8 totals, 4 counts x 2 routes, and the per-file counts):
 //   - a total above its baseline is red, naming the files that went up and the hit lines they do not have at git HEAD;
 //   - a total below its baseline is red too, "lower the baseline to N", so the ratchet stays tight; `--lower` rewrites the
 //     baseline file with the current counts, and refuses while any total is above its baseline. A total never goes up by
 //     hand edit without review.
-// Self-tests run first: rule samples, a new-route file copy with one extra chart-kind line (kinds goes up, red), a word file
-// copy with one extra CJK line (copy goes up, red), and a groups.json copy with one more agent file (scanned, red).
+// Self-tests run first: rule samples and kind spellings, every registry failing when it cannot be read, a new-route file copy
+// with one extra chart-kind line in each of several spellings (kinds goes up, red), a word file copy with one extra CJK line
+// (copy goes up, red), a knobs.json copy with one more node (a new name), and a groups.json copy with one more agent file.
 // Flags: --print (per-file counts), --at <sha> (measure a commit through git show, no baseline compare), --lower.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -48,45 +66,83 @@ export const CJK_RE = /[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/;
 // The P0a keyword set, kept so no name measured then leaves the count (treemap and dotgrid are in no registry yet).
 const P0A_KINDS = ["composition", "stacked100", "bubble", "bubbles", "sankey", "heatmap", "change_bars", "bars", "ring", "column", "treemap", "dotgrid", "map", "flow", "change"];
 export const normKind = (name) => String(name).toLowerCase().replace(/[^a-z0-9]/g, "");
+// Registry names that are also everyday words of code or English (`.map(`, `text`, `line`, `step`, ...). Matched in any
+// spelling inside an identifier they would count most lines, so they count only as a whole string literal ("map", "Map",
+// "line") or an enum path segment (Relation::Map, Kind::Line). Every other name also counts as a run of identifier parts.
+// The P0a words map, flow and change were counted this way then; the other P0a words keep the identifier match.
+export const ORDINARY = new Set(["text", "map", "names", "line", "step", "hero", "flow", "flows", "base", "profile", "change", "notes", "charts", "labels", "strip", "events", "header", "highlight", "edge", "legend", "ledger", "frame", "inset", "prose", "timeline", "routes", "illus", "ranking", "distribution", "cities"]);
+// Rust std type names whose parts spell a kind (BTreeMap is b+tree+map): never a chart kind, so no identifier match.
+const STD_TYPES = new Set(["BTreeMap", "BTreeSet"]);
 const PART_RE = /[A-Z]+(?![a-z])|[A-Z]?[a-z]+|[0-9]+/g;
-/** The kind names a code line names (normalized), any spelling. kinds: Set of normalized names. */
+const LITERAL_RE = /\\"((?:[^"\\]|\\(?!"))*)\\"|"((?:[^"\\]|\\.)*)"|'([^'\\\n]*)'|`([^`]*)`/g;
+/** The kind names a code line names (normalized), any spelling and case. kinds: Set of normalized names. */
 export function kindsIn(code, kinds) {
   const found = new Set();
+  const whole = (t) => { const k = normKind(t); if (kinds.has(k)) found.add(k); };
+  for (const m of code.matchAll(LITERAL_RE)) {
+    const body = m[1] ?? m[2] ?? m[3] ?? m[4];
+    whole(body);
+    for (const e of body.matchAll(/\\"([^"\\]*)\\"/g)) whole(e[1]);
+  }
+  for (const m of code.matchAll(/::([A-Z][A-Za-z0-9_]*)/g)) whole(m[1]);
   for (const token of code.match(/[A-Za-z0-9_]+/g) ?? []) {
+    if (STD_TYPES.has(token)) continue;
     const parts = token.split("_").flatMap((w) => w.match(PART_RE) ?? []).map((w) => w.toLowerCase());
     for (let i = 0; i < parts.length; i++) {
       let joined = "";
-      for (let j = i; j < parts.length; j++) { joined += parts[j]; if (kinds.has(joined)) found.add(joined); }
+      for (let j = i; j < parts.length; j++) { joined += parts[j]; if (kinds.has(joined) && !ORDINARY.has(joined)) found.add(joined); }
     }
   }
   return found;
 }
-/** The registered kind names: Map(normalized name -> where it was read). read(path) -> text|null; list(dir) -> file names. */
+/** The registered kind names: Map(normalized name -> where it was read). read(path) -> text|null; list(dir) -> names|null.
+ * Every registry must be there and must yield names: a missing file, table or listing fails here, never an empty set. */
 export function registryKinds(read, list) {
   const out = new Map();
   const add = (name, from) => { const k = normKind(name); if (k.length >= 2 && !/^[0-9]+$/.test(k) && !out.has(k)) out.set(k, from); };
-  const knobs = read("runtime/leaves_py/knobs.json");
-  assert.ok(knobs, "runtime/leaves_py/knobs.json is the node registry and must be read");
-  const kj = JSON.parse(knobs);
-  for (const part of ["nodes", "groups", "legacy"]) for (const k of Object.keys(kj[part] ?? {})) add(k, `knobs.json ${part}`);
-  for (const r of kj.recipes ?? []) { add(r.name, "knobs.json recipes"); for (const l of r.layers ?? []) add(l, "knobs.json recipes"); }
-  for (const [dir, ext] of [["runtime/leaves_py", ".py"], ["runtime/leaves_js", ".cjs"], ["runtime/nodes", ".mjs"]]) for (const f of list(dir)) if (f.endsWith(ext)) add(f.slice(0, -ext.length), `${dir} file`);
-  const main = /^MAIN\s*=\s*dict\(([^)]*)\)/m.exec(read("runtime/leaves_py/run.py") ?? "");
+  const need = (text, what) => { assert.ok(typeof text === "string" && text.length, `${what} is a kind registry and must be read`); return text; };
+  const took = (n, what) => assert.ok(n > 0, `${what} must yield at least one kind name`);
+  const kj = JSON.parse(need(read("runtime/leaves_py/knobs.json"), "runtime/leaves_py/knobs.json"));
+  let n = 0;
+  for (const part of ["nodes", "groups", "legacy"]) for (const k of Object.keys(kj[part] ?? {})) { add(k, `knobs.json ${part}`); n += 1; }
+  for (const r of kj.recipes ?? []) { add(r.name, "knobs.json recipes"); n += 1; for (const l of r.layers ?? []) add(l, "knobs.json recipes"); }
+  took(n, "knobs.json nodes, groups and recipes");
+  const run = need(read("runtime/leaves_py/run.py"), "runtime/leaves_py/run.py");
+  const main = /^MAIN\s*=\s*dict\(([^)]*)\)/m.exec(run);
   assert.ok(main, "run.py MAIN (the column recipes' main nodes) must be read");
-  for (const m of main[1].matchAll(/(\w+)\s*=\s*"(\w+)"/g)) { add(m[1], "run.py MAIN"); add(m[2], "run.py MAIN"); }
-  for (const f of list("src")) {
+  n = 0;
+  for (const m of main[1].matchAll(/(\w+)\s*=\s*"(\w+)"/g)) { add(m[1], "run.py MAIN"); add(m[2], "run.py MAIN"); n += 1; }
+  took(n, "run.py MAIN");
+  const leaves = /^LEAF_LAYERS\s*=\s*dict\(([\s\S]*?)\)\)\s*$/m.exec(run);
+  assert.ok(leaves, "run.py LEAF_LAYERS (the chart leaves a column page holds) must be read");
+  n = 0;
+  for (const m of `,${leaves[1]})`.matchAll(/(?:^|,)\s*(\w+)=/gm)) { add(m[1], "run.py LEAF_LAYERS"); n += 1; }
+  took(n, "run.py LEAF_LAYERS");
+  const src = list("src");
+  assert.ok(Array.isArray(src) && src.length, "src must be listed");
+  let templates = 0, fillNames = 0;
+  for (const f of src) {
     if (!/^next_\w*\.rs$/.test(f)) continue;
-    const text = read(`src/${f}`) ?? "";
-    for (const m of text.matchAll(/const\s+\w*TEMPLATES\s*:[^=]*=\s*&?\[([^\]]*)\]/g)) for (const q of m[1].matchAll(/"([^"]+)"/g)) add(q[1], `src/${f} templates`);
+    const text = need(read(`src/${f}`), `src/${f}`);
+    for (const m of text.matchAll(/const\s+\w*TEMPLATES\s*:[^=]*=\s*&?\[([^\]]*)\]/g)) for (const q of m[1].matchAll(/"([^"]+)"/g)) { add(q[1], `src/${f} templates`); templates += 1; }
     const fills = /\bNODE_FILLS\b[^=]*=\s*&?\[([\s\S]*?)\];/.exec(text);
-    if (fills) for (const q of fills[1].matchAll(/\(\s*"([^"]+)"\s*,/g)) add(q[1], `src/${f} NODE_FILLS`);
+    if (fills) for (const q of fills[1].matchAll(/\(\s*"([^"]+)"\s*,/g)) { add(q[1], `src/${f} NODE_FILLS`); fillNames += 1; }
   }
-  const shapes = read("src/shape_registry.rs");
-  assert.ok(shapes, "src/shape_registry.rs (relations and their templates) must be read");
+  took(templates, "the *_TEMPLATES lists of src/next_*.rs");
+  took(fillNames, "NODE_FILLS of src/next_*.rs");
+  const render = need(read("src/next_render.rs"), "src/next_render.rs");
+  n = 0;
+  for (const m of render.matchAll(/:\s*(NodeInfo|GroupInfo)\s*=\s*\1\s*\{\s*name:\s*"([^"]+)"/g)) { add(m[2], `next_render.rs ${m[1]}`); n += 1; }
+  took(n, "next_render.rs NodeInfo and GroupInfo");
+  const shapes = need(read("src/shape_registry.rs"), "src/shape_registry.rs");
   const rel = /pub enum Relation\s*\{([^}]*)\}/.exec(shapes);
   assert.ok(rel, "shape_registry.rs enum Relation must be read");
-  for (const v of rel[1].matchAll(/^\s*([A-Z]\w*)\s*,?\s*$/gm)) add(v[1], "shape_registry.rs Relation");
-  for (const q of shapes.matchAll(/\(Relation::\w+,[^)]*\)\s*=>\s*"([^"]+)"/g)) add(q[1], "shape_registry.rs template");
+  n = 0;
+  for (const v of rel[1].matchAll(/^\s*([A-Z]\w*)\s*,?\s*$/gm)) { add(v[1], "shape_registry.rs Relation"); n += 1; }
+  took(n, "shape_registry.rs enum Relation");
+  n = 0;
+  for (const q of shapes.matchAll(/\(Relation::\w+,[^)]*\)\s*=>\s*"([^"]+)"/g)) { add(q[1], "shape_registry.rs template"); n += 1; }
+  took(n, "shape_registry.rs relation templates");
   for (const k of P0A_KINDS) add(k, "P0a word list");
   return out;
 }
@@ -230,32 +286,43 @@ export function kindShares(m) {
 }
 const git = (...args) => execFileSync("git", ["-C", REPO, ...args], { encoding: "utf8", maxBuffer: 1 << 28, stdio: ["ignore", "pipe", "ignore"] });
 const diskRead = (p) => { const f = join(REPO, p); return existsSync(f) ? readFileSync(f, "utf8") : null; };
-const diskList = (d) => { const f = join(REPO, d); return existsSync(f) ? readdirSync(f) : []; };
+const diskList = (d) => { const f = join(REPO, d); return existsSync(f) ? readdirSync(f) : null; };
 const refRead = (sha) => (p) => { try { return git("show", `${sha}:${p}`); } catch { return null; } };
-const refList = (sha) => (d) => { try { return git("ls-tree", "--name-only", `${sha}:${d}`).split("\n").filter(Boolean); } catch { return []; } };
+const refList = (sha) => (d) => { try { return git("ls-tree", "--name-only", `${sha}:${d}`).split("\n").filter(Boolean); } catch { return null; } };
 const refHitsAt = (sha, groups, kinds) => { let m = null; return (f) => { m ??= measure(groups, refRead(sha), kinds); return m.hits[f]; }; };
 const argAfter = (flag) => { const at = process.argv.indexOf(flag); return at > 0 ? process.argv[at + 1] : null; };
 
 // ---- self-tests ----------------------------------------------------------------------------------------------------------------------------
 let checks = 0;
 const eq = (a, b, msg) => { assert.deepEqual(a, b, msg); checks += 1; };
-const SAMPLE_KINDS = new Set(["sankey", "bars", "ring", "map", "horizontal_bar", "stacked_bar_100", "rankbar"].map(normKind));
+const SAMPLE_KINDS = new Set(["sankey", "bars", "ring", "map", "horizontal_bar", "stacked_bar_100", "rankbar", "treemap"].map(normKind));
 const counts = (path, text) => { const g = scanText(path, text, SAMPLE_KINDS); return Object.fromEntries(COUNTS.map((c) => [c, g[c].length])); };
 eq(counts("src/next_x.rs", 'let k = "sankey";\n// let k = "bars";\nlet t = "\u4e2d\u6587";\nlet o = json!({"op": "fill"});\n#[cfg(test)]\nlet k = "ring";\n'), { nodes: 0, ops: 1, copy: 1, kinds: 1 }, "rs sample: comment skipped, cut at the test line");
-eq(counts("src/next_x.rs", 'const NODE_FILLS: &[(&str, F)] = &[\n    ("map", map_fill),\n    ("ring", ring_fill),\n];\nfn map_fill() {}\npub(crate) fn fill_of() {}\n'), { nodes: 4, ops: 0, copy: 0, kinds: 3 }, "NODE_FILLS entries and fill fns");
+eq(counts("src/next_x.rs", 'const NODE_FILLS: &[(&str, F)] = &[\n    ("map", map_fill),\n    ("ring", ring_fill),\n];\nfn map_fill() {}\npub(crate) fn fill_of() {}\n'), { nodes: 4, ops: 0, copy: 0, kinds: 2 }, "NODE_FILLS entries and fill fns (map is an ordinary word: only its literal counts)");
 eq(counts("src/next_x.rs", 'const NODE_FILLS: &[(&str, F)] = &[("map", map_fill), ("bars", bars_fill)];\nlet x = ("no", 1);\n'), { nodes: 2, ops: 0, copy: 0, kinds: 1 }, "a one-line NODE_FILLS table; a tuple after it is no entry");
 eq(counts("runtime/pi/x.mjs", "const t = '\u4e2d\u6587'; // ok\nconst u = x; // \u4e2d\u6587 note\n"), { nodes: 0, ops: 0, copy: 1, kinds: 0 }, "js quote kinds; CJK only in a trailing comment is no copy");
 eq(counts("runtime/pi/assets/x.tsv", "a\t\u4e2d\nb\tbars\n"), { nodes: 0, ops: 0, copy: 1, kinds: 0 }, "a data file counts copy only");
-for (const [code, want] of [["Kind::Sankey", ["sankey"]], ["SANKEY_FILL", ["sankey"]], ["StackedBar100", ["stackedbar100"]], ["HorizontalBar", ["horizontalbar"]], ["rank_bar", ["rankbar"]], ['"rankbar"', ["rankbar"]], ["to_string", []], ["mapped", []], ["barsX", ["bars"]], ["sankeys", []]])
+for (const [code, want] of [["Kind::Sankey", ["sankey"]], ["SANKEY_FILL", ["sankey"]], ["StackedBar100", ["stackedbar100"]], ["HorizontalBar", ["horizontalbar"]], ["rank_bar", ["rankbar"]], ['"rankbar"', ["rankbar"]], ["to_string", []], ["mapped", []], ["barsX", ["bars"]], ["sankeys", []], ["xs.iter().map(f)", []], ["let map = 1;", []], ['"Map"', ["map"]], ["Relation::Map", ["map"]], ['"{\\"kind\\": \\"SANKEY\\"}"', ["sankey"]], ["'stacked-bar-100'", ["stackedbar100"]], ["CHOROPLETH", []], ["BTreeMap<String, u32>", []]])
   eq([...kindsIn(code, SAMPLE_KINDS)], want, `kind spelling ${code}`);
+eq([...kindsIn("CHOROPLETH_FILL; choroplethLayer", new Set(["choropleth"]))], ["choropleth"], "kind spelling: upper snake and camel parts");
+eq(P0A_KINDS.map(normKind).filter((k) => ORDINARY.has(k)), ["map", "flow", "change"], "only the P0a words counted as literals then are ordinary now");
 
 const groups = JSON.parse(diskRead("runtime/pi/groups.json"));
 // a missing baseline is red; only --lower writes the first one
 const baseline = existsSync(BASELINE_PATH) ? JSON.parse(readFileSync(BASELINE_PATH, "utf8")) : null;
 assert.ok(baseline || process.argv.includes("--lower"), `no baseline at ${BASELINE_PATH.slice(REPO.length + 1)}`);
 const registry = registryKinds(diskRead, diskList);
-for (const n of ["choropleth", "rankbar", "sankey", "cards", "horizontalbar", "line"]) assert.ok(registry.has(n), `registries name ${n}`);
+for (const n of ["choropleth", "rankbar", "sankey", "stackedbar100", "horizontalbar", "line", "barcard", "dumbbell", "treemap"]) assert.ok(registry.has(n), `registries name ${n}`);
 checks += 1;
+// a registry that cannot be read fails; it never yields a smaller name set
+for (const [what, over, list] of [
+  ["knobs.json missing", { "runtime/leaves_py/knobs.json": null }, diskList],
+  ["run.py missing", { "runtime/leaves_py/run.py": null }, diskList],
+  ["run.py without MAIN", { "runtime/leaves_py/run.py": (diskRead("runtime/leaves_py/run.py") ?? "").replace(/^MAIN\s*=/m, "MAINX =") }, diskList],
+  ["shape_registry.rs missing", { "src/shape_registry.rs": null }, diskList],
+  ["next_render.rs missing", { "src/next_render.rs": null }, diskList],
+  ["src not listed", {}, (d) => (d === "src" ? null : diskList(d))],
+]) { assert.throws(() => registryKinds((p) => (p in over ? over[p] : diskRead(p)), list), assert.AssertionError, `registry ${what} must fail`); checks += 1; }
 const baseNames = new Map(Object.entries(baseline?.kind_names ?? {}));
 const newNames = [...registry].filter(([n]) => !baseNames.has(n));
 const countNames = baseline ? baseNames : registry;
@@ -265,8 +332,11 @@ assert.ok(disk.files > 0 && disk.scanned.new > 0 && disk.scanned.old > 0, `scann
 checks += 1;
 assert.ok(disk.words.length > 0, "at least one include_str word file is scanned");
 checks += 1;
-const selfBase = baselineOf(disk, "disk", countNames);
-const diskHits = (f) => disk.hits[f];
+// The mutants count with every name the registries and the baseline hold, so they hold before a baseline has its names.
+const selfNames = new Map([...registry, ...baseNames]);
+const self = measure(groups, diskRead, new Set(selfNames.keys()));
+const selfBase = baselineOf(self, "disk", selfNames);
+const diskHits = (f) => self.hits[f];
 const overlay = (over) => (p) => (p in over ? over[p] : diskRead(p));
 
 const cmp2str = (c) => c.rises.map((x) => `${x.route}/${x.count}`).join(",");
@@ -275,31 +345,30 @@ const cmp2str = (c) => c.rises.map((x) => `${x.route}/${x.count}`).join(",");
   const f = flowFiles(groups).find((p) => routeOf(p) === "new" && p.endsWith(".rs"));
   const text = diskRead(f);
   const extra = '    let kind = "treemap";';
-  const m = measure(groups, overlay({ [f]: `${extra}\n${text}` }), disk.kinds);
-  eq(m.totals.new.kinds, disk.totals.new.kinds + 1, `mutant 1: ${f} with one chart-kind line: kinds goes up by 1`);
+  const m = measure(groups, overlay({ [f]: `${extra}\n${text}` }), self.kinds);
+  eq(m.totals.new.kinds, self.totals.new.kinds + 1, `mutant 1: ${f} with one chart-kind line: kinds goes up by 1`);
   const cmp = compare(m, selfBase, diskHits);
   eq(cmp2str(cmp), "new/kinds", "mutant 1 is red on new kinds only");
   eq(cmp.rises[0].where.map((w) => [w.file, w.lines.map((h) => `${h.at}:${h.line}:${h.text}`)]), [[f, [`${f}:1:${extra.trim()}`]]], "mutant 1 names the file and the line");
   assert.match(describe(cmp), /UP new kinds/);
   // the same line after the test cut does not count
-  const after = measure(groups, overlay({ [f]: `${text}\n#[cfg(test)]\n${extra}\n` }), disk.kinds);
-  eq(after.totals.new.kinds, disk.totals.new.kinds, "mutant 1b: the same line inside the test part is not counted");
-  // mutant 1c: the registry names in other spellings, each one line, each red
-  for (const spelled of ['    let t = "choropleth";', '    let p = "rankbar";', '    let k = "Sankey";', "    Kind::Sankey => {}"]) {
-    const m2 = measure(groups, overlay({ [f]: `${spelled}\n${text}` }), new Set(registry.keys()));
-    const self2 = baselineOf(measure(groups, diskRead, new Set(registry.keys())), "disk", registry);
-    const c2 = compare(m2, self2, (p) => self2 && measure(groups, diskRead, new Set(registry.keys())).hits[p]);
-    eq([cmp2str(c2), c2.rises[0]?.where[0]?.lines.map((h) => h.text)], ["new/kinds", [spelled.trim()]], `mutant 1c: ${spelled.trim()} is red on new kinds`);
+  const after = measure(groups, overlay({ [f]: `${text}\n#[cfg(test)]\n${extra}\n` }), self.kinds);
+  eq(after.totals.new.kinds, self.totals.new.kinds, "mutant 1b: the same line inside the test part is not counted");
+  // mutant 1c: registry names in other spellings and cases, each one line, each red on new kinds and naming that line
+  for (const [spelled, name] of [['    let t = "choropleth";', "choropleth"], ['    let p = "rankbar";', "rankbar"], ['    let k = "Sankey";', "sankey"], ["    Kind::Sankey => {}", "sankey"], ['    let s = "stacked_bar_100";', "stackedbar100"], ["    Shape::StackedBar100 => {}", "stackedbar100"], ["    CHOROPLETH_FILL;", "choropleth"]]) {
+    const m2 = measure(groups, overlay({ [f]: `${spelled}\n${text}` }), self.kinds);
+    const c2 = compare(m2, selfBase, diskHits);
+    eq([cmp2str(c2), m2.totals.new.kinds - self.totals.new.kinds, c2.rises[0]?.where[0]?.lines.map((h) => [h.text, h.names.includes(name)])], ["new/kinds", 1, [[spelled.trim(), true]]], `mutant 1c: ${spelled.trim()} is red on new kinds as ${name}`);
   }
 }
 // mutant 2: a word file pulled in with include_str gains one CJK line
 {
-  const w = disk.words.find((x) => routeOf(x.includer) === "new") ?? disk.words[0];
+  const w = self.words.find((x) => routeOf(x.includer) === "new") ?? self.words[0];
   const route = routeOf(w.includer);
   const extra = '  "added": "\u65b0\u589e\u6587\u6848",';
   const text = diskRead(w.target);
-  const m = measure(groups, overlay({ [w.target]: text.replace("\n", `\n${extra}\n`) }));
-  eq(m.totals[route].copy, disk.totals[route].copy + 1, `mutant 2: ${w.target} (read by ${w.includer}) with one CJK line: copy goes up by 1`);
+  const m = measure(groups, overlay({ [w.target]: text.replace("\n", `\n${extra}\n`) }), self.kinds);
+  eq(m.totals[route].copy, self.totals[route].copy + 1, `mutant 2: ${w.target} (read by ${w.includer}) with one CJK line: copy goes up by 1`);
   const cmp = compare(m, selfBase, diskHits);
   eq(cmp.rises.map((x) => `${x.route}/${x.count}`), [`${route}/copy`], "mutant 2 is red on copy only");
   eq(cmp.rises[0].where.map((w2) => [w2.file, w2.lines.map((h) => `${h.at}:${h.line}`)]), [[w.includer, [`${w.target}:2`]]], "mutant 2 names the includer and the word file line");
@@ -315,10 +384,10 @@ const cmp2str = (c) => c.rises.map((x) => `${x.route}/${x.count}`).join(",");
 {
   const g2 = structuredClone(groups);
   g2.files["src/next_ratchet_probe.rs"] = { group: "agent" };
-  const m = measure(g2, overlay({ "src/next_ratchet_probe.rs": 'fn x() { json!({"op": "probe"}); }\n' }), disk.kinds);
-  eq([m.scanned.new, m.totals.new.ops], [disk.scanned.new + 1, disk.totals.new.ops + 1], "mutant 3: a new agent file is picked up from groups.json");
+  const m = measure(g2, overlay({ "src/next_ratchet_probe.rs": 'fn x() { json!({"op": "probe"}); }\n' }), self.kinds);
+  eq([m.scanned.new, m.totals.new.ops], [self.scanned.new + 1, self.totals.new.ops + 1], "mutant 3: a new agent file is picked up from groups.json");
   eq(compare(m, selfBase, diskHits).rises.map((x) => `${x.route}/${x.count}`), ["new/ops"], "mutant 3 is red on new ops");
-  eq(compare(measure(groups, overlay({ [Object.keys(disk.perFile)[0]]: "" }), disk.kinds), selfBase, diskHits).drops.length > 0, true, "an emptied file drops a count: red, lower the baseline");
+  eq(compare(measure(groups, overlay({ [Object.keys(self.perFile)[0]]: "" }), self.kinds), selfBase, diskHits).drops.length > 0, true, "an emptied file drops a count: red, lower the baseline");
 }
 
 // ---- the ratchet -----------------------------------------------------------------------------------------------------------------------------

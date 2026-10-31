@@ -1,23 +1,86 @@
 {
-  "measured_at": "4494b5fda6b700dd6ff372c74bba059a5b2dbd86",
-  "rules": "scripts/test_group_flow_ratchet.mjs header; totals and per_file may only go down",
+  "measured_at": "51bd69353d4231a37448b56bc95de6f044d1ed11",
+  "rules": "scripts/test_group_flow_ratchet.mjs header; totals and per_file may only go down; kind_names only grow, by --lower",
   "totals": {
     "new": {
       "nodes": 23,
       "ops": 30,
       "copy": 143,
-      "kinds": 164
+      "kinds": 308
     },
     "old": {
       "nodes": 0,
       "ops": 0,
       "copy": 224,
-      "kinds": 171
+      "kinds": 367
     }
   },
   "scanned": {
     "new": 11,
     "old": 43
+  },
+  "kind_names": {
+    "barcard": "next_render.rs GroupInfo",
+    "bars": "knobs.json nodes",
+    "base": "knobs.json nodes",
+    "bignums": "knobs.json nodes",
+    "bubble": "P0a word list",
+    "bubblekey": "knobs.json nodes",
+    "bubbles": "knobs.json nodes",
+    "callouts": "knobs.json nodes",
+    "change": "knobs.json groups",
+    "changebars": "P0a word list",
+    "charts": "knobs.json groups",
+    "choropleth": "src/next_run.rs templates",
+    "cities": "knobs.json nodes",
+    "column": "knobs.json groups",
+    "columnpage": "next_render.rs GroupInfo",
+    "composition": "knobs.json groups",
+    "distribution": "shape_registry.rs Relation",
+    "dotgrid": "P0a word list",
+    "dumbbell": "src/next_run.rs templates",
+    "edge": "knobs.json nodes",
+    "events": "knobs.json nodes",
+    "flow": "knobs.json groups",
+    "flowmap": "knobs.json nodes",
+    "flows": "knobs.json nodes",
+    "frame": "knobs.json nodes",
+    "header": "next_render.rs NodeInfo",
+    "heatmap": "shape_registry.rs template",
+    "hero": "next_render.rs NodeInfo",
+    "highlight": "next_render.rs NodeInfo",
+    "horizontalbar": "src/next_run.rs templates",
+    "illus": "knobs.json nodes",
+    "inset": "knobs.json nodes",
+    "labels": "knobs.json nodes",
+    "leadernotes": "knobs.json nodes",
+    "ledger": "knobs.json nodes",
+    "legend": "knobs.json nodes",
+    "line": "src/next_run.rs templates",
+    "map": "knobs.json nodes",
+    "minimaps": "knobs.json nodes",
+    "names": "knobs.json nodes",
+    "notes": "knobs.json nodes",
+    "profile": "knobs.json nodes",
+    "prose": "next_render.rs NodeInfo",
+    "rankbar": "knobs.json nodes",
+    "ranking": "shape_registry.rs Relation",
+    "ring": "knobs.json nodes",
+    "routenames": "knobs.json nodes",
+    "routes": "knobs.json nodes",
+    "sankey": "knobs.json nodes",
+    "scmp": "knobs.json groups",
+    "sectionhead": "knobs.json nodes",
+    "slope": "knobs.json nodes",
+    "stackarea": "knobs.json nodes",
+    "stacked100": "knobs.json nodes",
+    "stackedbar100": "src/next_run.rs templates",
+    "step": "knobs.json nodes",
+    "strip": "knobs.json nodes",
+    "text": "knobs.json nodes",
+    "timeline": "knobs.json nodes",
+    "treemap": "P0a word list",
+    "valuelabels": "next_render.rs NodeInfo"
   },
   "per_file": {
     "runtime/pi/assets/estat-narrow.json": {
@@ -29,29 +92,48 @@
     "runtime/pi/assets/wb-rank-by.json": {
       "copy": 8
     },
+    "runtime/pi/contract_text.mjs": {
+      "kinds": 1
+    },
     "runtime/pi/design_pack.mjs": {
       "copy": 37,
-      "kinds": 33
+      "kinds": 57
     },
     "runtime/pi/newsroom.ts": {
       "copy": 15,
-      "kinds": 98
+      "kinds": 209
+    },
+    "runtime/pi/tool_chain.mjs": {
+      "kinds": 1
+    },
+    "runtime/pi/tool_host.mjs": {
+      "kinds": 2
     },
     "runtime/pi/tool_host_schema.mjs": {
       "kinds": 1
     },
-    "src/commands/continue_investigation.rs": {
-      "copy": 1,
+    "src/agent_loop.rs": {
+      "kinds": 14
+    },
+    "src/anthropic_model.rs": {
+      "kinds": 16
+    },
+    "src/auto_checks.rs": {
       "kinds": 3
     },
+    "src/commands/continue_investigation.rs": {
+      "copy": 1,
+      "kinds": 4
+    },
     "src/compose_answer.rs": {
-      "copy": 17
+      "copy": 17,
+      "kinds": 1
     },
     "src/interactive.rs": {
       "copy": 13
     },
     "src/next_gate.rs": {
-      "kinds": 9
+      "kinds": 13
     },
     "src/next_pack.rs": {
       "kinds": 1
@@ -67,15 +149,30 @@
       "nodes": 23,
       "ops": 30,
       "copy": 98,
-      "kinds": 152
+      "kinds": 287
+    },
+    "src/next_serve.rs": {
+      "kinds": 5
+    },
+    "src/openai_model.rs": {
+      "kinds": 10
     },
     "src/prompt.rs": {
       "copy": 65,
-      "kinds": 30
+      "kinds": 38
     },
     "src/recipes.rs": {
       "copy": 76,
-      "kinds": 6
+      "kinds": 7
+    },
+    "src/repeat_failure.rs": {
+      "kinds": 1
+    },
+    "src/session_store.rs": {
+      "kinds": 1
+    },
+    "src/tool_host.rs": {
+      "kinds": 1
     }
   }
 }
