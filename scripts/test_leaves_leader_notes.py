@@ -650,6 +650,25 @@ class ColumnMap(unittest.TestCase):
         self.assertEqual(self.marked(html, "--t-body", sorted(VALUES, key=lambda c: -VALUES[c])), (["LU", "SE"], ["SE", "LU"]))
         self.assertIsNone(legend.search(html))
 
+    def test_a_change_note_that_compares_with_its_neighbour_prints_the_words_and_the_gap_entry(self):
+        # next_run change_notes_fill: the first ranked place's note says it is above the second by a gap, the last's that it is
+        # below the one before it, the gap a ledger entry (vs_hi, vs_lo) in bold after the words; both note words join with no
+        # blank, and the note is set within half the map (on two lines when the one is too wide), never refused
+        chg = [dict(at=POINT["SWE"], name="SE", text=[{"word": "column.note.rise_most"}, {"word": "column.note.vs_next"}], value_text="fact:vs_hi"),
+               dict(at=POINT["LUX"], name="LU", text=[{"word": "column.note.fall_most"}, {"word": "column.note.vs_prev"}], value_text="fact:vs_lo")]
+        gaps = {"fact:vs_hi": "2.3 个百分点", "fact:vs_lo": "0.4 个百分点"}
+        lines = []
+        for line in column_lines({"bubbles": dict(items=ITEMS, ext=EXT), "leader_notes": dict(D, notes=chg)}, accent="SE", change=True):
+            d = json.loads(line); d["rows"] = d["rows"] + [{"src": k, "text": v} for k, v in gaps.items()]; lines.append(json.dumps(d, ensure_ascii=False))
+        html = self.page_of(lines)
+        words = K.WD.WORDS
+        self.assertNotRegex(words["column.note.vs_next"] + words["column.note.vs_prev"], r"[0-9０-９]")
+        notes = re.search(r'<g data-layer="leader_notes">(.*?)</g>\s*</g>', html, re.S) or re.search(r'<g data-layer="leader_notes">(.*)', html, re.S)
+        plain = re.sub(r"<[^>]+>", " ", notes.group(1))
+        for name, w1, w2, k in (("SE", "column.note.rise_most", "column.note.vs_next", "fact:vs_hi"), ("LU", "column.note.fall_most", "column.note.vs_prev", "fact:vs_lo")):
+            self.assertIn(words[w1] + words[w2], plain, name)
+            self.assertIn(f'data-src="{k}"', html, name)
+
     def test_on_a_column_page_without_a_map_the_accent_marks_the_one_bar_and_the_legend_says_so(self):
         # bars alone (no map, no notes): the accent's place's bar alone in the accent, every other in the bars' grey; a place
         # layer 1 names the page does not rank refuses

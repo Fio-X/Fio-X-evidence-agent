@@ -1293,6 +1293,37 @@ mod tests {
         }
     }
 
+    /// The page title's headline (shape_registry HEADLINES, next_run finding_of fills it as the dek's finding): only the
+    /// tokens finding_of fills, the place's name in each; filled, it types no number, asks nothing and names no year; it
+    /// holds a comparison word or a fact placeholder (a number from the ledger) and a verb, so it states a conclusion, not a
+    /// label; its scoped wording holds SCOPE_MARK and no ranking word, as the scoped dek's.
+    #[test]
+    fn a_headline_states_its_finding_with_no_typed_number() {
+        use crate::shape_registry::HEADLINES;
+        let fill = |template: &str| {
+            template.replace("{name}", "{name.SE}").replace("{other}", "{name.BE}").replace("{value}", "{lead}")
+        };
+        const COMPARES: [&str; 4] = ["最", "比", "倍", "居首"];
+        const VERBS: [&str; 6] = ["增", "降", "是", "占", "居首", "比"];
+        for (finding, unscoped, scoped) in HEADLINES {
+            assert!(DEK_FINDINGS.iter().any(|(f, _, _)| *f == finding), "{finding:?}: a headline says a dek's finding");
+            for template in [unscoped, scoped] {
+                let tokens = placeholders(template).unwrap();
+                assert!(tokens.iter().all(|t| ["name", "other", "value", "times"].contains(&t.as_str())), "{template}");
+                assert!(tokens.contains("name"), "{template}");
+                assert_eq!(placeholders(unscoped).unwrap(), tokens, "{finding:?}: both wordings fill the same");
+                let said = fill(template);
+                assert!(typed_numbers(&said).is_empty() && worded_number(&said).is_none(), "{said}");
+                assert!(question_word(&said).is_none() && !said.contains('年'), "{said}");
+                let numbered = said.contains("{lead}") || said.contains("{times}");
+                assert!(numbered || COMPARES.iter().any(|w| said.contains(w)), "{said}: no comparison");
+                assert!(VERBS.iter().any(|w| said.contains(w)), "{said}: no verb");
+            }
+            assert!(scoped.starts_with(SCOPE_MARK), "{scoped}");
+            assert!(crate::next_flow::ranking_word(&fill(scoped)).is_none(), "{scoped}");
+        }
+    }
+
     #[test]
     fn with_no_scope_the_page_is_the_reworded_fields_as_before() {
         let (claims, charts) = q1();

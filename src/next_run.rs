@@ -6197,10 +6197,14 @@ mod tests {
         // placeholder the labels name, the year the period of its own fact lead1 (the highest's value at the year)
         assert_eq!(fill["finding"], json!({"dek": "{lead1.t}，{name.SE}最高，为{hi}，比最低的{name.BE}高{gap}",
             "scoped": "{lead1.t}，所选各方中，{name.SE}居首，为{hi}，比{name.BE}高{gap}"}));
+        // the title's headline says the same finding with the times the notes declare (HEADLINES), kept apart from the dek's
+        assert_eq!(fill[HEADLINE], json!({"title": "{name.SE}最高，是最低者{name.BE}的{times}",
+            "scoped": "所选各方中{name.SE}居首，是{name.BE}的{times}"}));
         assert_eq!(spec["facts"]["lead1"], json!({"op": "last", "table": "sdg", "filter": {"geo": "SE"}, "from": "2025", "to": "2025", "fmt": "pc"}));
         assert!(spec["hero"]["data"].get("hi").is_none());
         assert_eq!(spec["fmts"]["pc"], json!({"scale": 1, "dec": 2, "suffix": "%"}));
-        assert_eq!(spec["fmts"]["pp"], json!({"scale": 1, "dec": 2, "suffix": " 个百分点"}));
+        // a gap in points prints one decimal (POINTS_DEC), the values the two their rows hold
+        assert_eq!(spec["fmts"]["pp"], json!({"scale": 1, "dec": 1, "suffix": " 个百分点"}));
         // one circle per ranked country at its Natural Earth label point, the points' box MAP_PAD past it (a box this small holds
         // every label at that), the pinned table named
         let (bubbles, notes) = (&spec["hero"]["leaves"]["bubbles"], &spec["hero"]["leaves"]["leader_notes"]);
@@ -6472,7 +6476,7 @@ mod tests {
         let spec = &fill["knobs"]["spec"];
         assert_eq!(spec["facts"]["chg"], json!({"op": "minus", "each": "geo", "a": "val1", "b": "val0", "fmt": "pp"}));
         assert_eq!(spec["facts"]["val0"], json!({"each": "geo", "table": "sdg", "time": "2016", "fmt": "pc"}));
-        assert_eq!(spec["fmts"]["pp"], json!({"scale": 1, "dec": 2, "suffix": " 个百分点"}));
+        assert_eq!(spec["fmts"]["pp"], json!({"scale": 1, "dec": 1, "suffix": " 个百分点"}));
         assert_eq!(spec["hero"]["style"], json!({"bars": {"measure": "change"}}));
         assert_eq!(spec["hero"]["data"]["family"], "chg");
         assert_eq!(spec["hero"]["data"]["t0"], "2016");
@@ -6482,12 +6486,28 @@ mod tests {
         // the ones the bars already read
         assert_eq!(fill["finding"], json!({"dek": "{lead0.t}至{lead1.t}，{name.SE}增幅最大，增加{lead}",
             "scoped": "{lead0.t}至{lead1.t}，所选各方中，{name.SE}增幅最大，增加{lead}"}));
+        assert_eq!(fill[HEADLINE], json!({"title": "{name.SE}增幅最大", "scoped": "所选各方中{name.SE}增幅最大"}));
         assert_eq!(spec["facts"]["lead"], json!({"op": "minus", "a": "lead1", "b": "lead0", "fmt": "pp"}));
         assert_eq!(spec["facts"]["lead0"], json!({"op": "last", "table": "sdg", "filter": {"geo": "SE"}, "from": "2016", "to": "2016", "fmt": "pc"}));
         assert_eq!(spec["facts"]["lead1"], json!({"op": "last", "table": "sdg", "filter": {"geo": "SE"}, "from": "2024", "to": "2024", "fmt": "pc"}));
         let said: Vec<(&str, &str, &str)> = spec["hero"]["leaves"]["leader_notes"]["notes"].as_array().unwrap().iter()
             .map(|n| (n["name"].as_str().unwrap(), n["text"][0]["word"].as_str().unwrap(), n["value_text"].as_str().unwrap())).collect();
-        assert_eq!(said, [("SE", "column.note.rise_most", "fact:chg.SE"), ("FR", "column.note.fall_most", "fact:chg.FR")]);
+        // each note compares its place with its neighbour in the ranking: SE (up 16) with DE (up 7.5), FR (down 2.25) with BE
+        // (up 5.5), the number the gap between the two changes (change_gap), never the note's own change
+        assert_eq!(said, [("SE", "column.note.rise_most", "fact:vs_hi"), ("FR", "column.note.fall_most", "fact:vs_lo")]);
+        let notes = spec["hero"]["leaves"]["leader_notes"]["notes"].as_array().unwrap();
+        assert_eq!(notes[0]["text"][1], json!({"word": "column.note.vs_next"}));
+        assert_eq!(notes[1]["text"][1], json!({"word": "column.note.vs_prev"}));
+        let year = |code: &str, t: &str| json!({"op": "last", "table": "sdg", "filter": {"geo": code}, "from": t, "to": t, "fmt": "pc"});
+        for (key, higher, lower) in [("vs_hi", "SE", "DE"), ("vs_lo", "BE", "FR")] {
+            assert_eq!(spec["facts"][key], json!({"op": "minus", "a": format!("{key}_a"), "b": format!("{key}_b"), "fmt": "pp"}));
+            for (side, code) in [("a", higher), ("b", lower)] {
+                assert_eq!(spec["facts"][format!("{key}_{side}")],
+                    json!({"op": "minus", "a": format!("{key}_{side}1"), "b": format!("{key}_{side}0"), "fmt": "pp"}), "{key} {side}");
+                assert_eq!(spec["facts"][format!("{key}_{side}0")], year(code, "2016"), "{key} {side}");
+                assert_eq!(spec["facts"][format!("{key}_{side}1")], year(code, "2024"), "{key} {side}");
+            }
+        }
         // only the bubbles print a row's own value; the bars and notes print changes
         let drawn = fill["drawn"].as_array().unwrap().clone();
         assert!(drawn.iter().all(|d| d["layer"] == "bubbles" && d["time"] == "2024"), "{drawn:?}");
@@ -6514,10 +6534,14 @@ mod tests {
             Err(e) => panic!("leaf fill: {e}"),
         };
         // each change as by hand, at the two ends' most decimals
-        for (code, text) in [("SE", "16.00 个百分点"), ("DE", "7.50 个百分点"), ("BE", "5.50 个百分点"), ("FR", "-2.25 个百分点")] {
+        // each change as by hand, at one decimal (POINTS_DEC; -2.25 to the even digit)
+        for (code, text) in [("SE", "16.0 个百分点"), ("DE", "7.5 个百分点"), ("BE", "5.5 个百分点"), ("FR", "-2.2 个百分点")] {
             assert_eq!(page.ledger.get(&format!("fact:chg.{code}")).map(String::as_str), Some(text), "{code}");
         }
-        assert_eq!(page.ledger.get("fact:lead").map(String::as_str), Some("16.00 个百分点"), "the dek's rise, as SE's bar");
+        assert_eq!(page.ledger.get("fact:lead").map(String::as_str), Some("16.0 个百分点"), "the dek's rise, as SE's bar");
+        // the notes' gaps from the rows: 16 - 7.5 above DE, 5.5 - (-2.25) = 7.75 below BE (to the even digit up: 7.8)
+        assert_eq!(page.ledger.get("fact:vs_hi").map(String::as_str), Some("8.5 个百分点"), "the first note's gap");
+        assert_eq!(page.ledger.get("fact:vs_lo").map(String::as_str), Some("7.8 个百分点"), "the last note's gap");
         let dir = tempfile::tempdir().unwrap();
         let bundle = {
             let _command = crate::group_guard::command_for_test("investigate");
@@ -6544,6 +6568,8 @@ mod tests {
         let published = crate::next_flow::publish_leaf_page(&calls, &bundle.dir, "change", (&leaf, &plan), &qa).unwrap();
         let html = std::fs::read_to_string(bundle.dir.join(&published.html_ref)).unwrap();
         assert!(html.contains(r#"data-src="fact:chg.FR""#) && html.contains(r#"data-src="fact:chg.SE""#), "the bars print the changes");
+        assert!(html.contains(r#"data-src="fact:vs_hi""#) && html.contains(r#"data-src="fact:vs_lo""#), "the notes print the gaps");
+        assert!(html.contains("升幅最大，比第二名高") && html.contains("降幅最大，比倒数第二低"), "and say whom they compare with");
         // the accent marks the dek's place (SE's rise) alone, the other note's place (FR's fall) the dark grey; DE's and BE's
         // rises take the rise grey; the unit line says what the accent means
         assert!(html.contains(r#"fill="var(--accent)""#) && html.contains(r#"fill="var(--accent2)""#), "the focus colour and a rise colour");
@@ -6556,6 +6582,116 @@ mod tests {
         assert!(html.contains(r#"data-src="fact:lead0.t.y">2016</span>"#) && html.contains(r#"data-src="fact:lead1.t.y">2024</span>"#), "its years too");
         let checks = page_checks(change, Some(html.as_str()), &published.dropped, StripAsk::default(), &drawn, Some(&typed()));
         assert!(checks[2].passed && checks[2].warning.is_none(), "{:?}", checks[2]);
+    }
+
+    /// The q5-shaped change page (a World Bank share by iso3 country, CHN, IND, USA), the second shape beside q1's Eurostat
+    /// one: the title's headline names the finding's place, the dek's subject and the accent's; each note compares its place
+    /// with its neighbour in the ranking by a gap the ledger computes from the rows (CHN 3.75 above IND's 1, USA's 0.5 below
+    /// IND's), in points at one decimal; a tie (every change alike) keeps the note's own change. Then the page's title and
+    /// kicker as run_page sets them: the headline under the text step's label, the scoped wording on a scoped page, and with
+    /// no headline the label and the measure as before.
+    #[test]
+    fn a_world_bank_change_page_states_its_finding_and_its_notes_compare_neighbours() {
+        let table = "SP.POP.65UP.TO.ZS@2";
+        struct WbNamed;
+        impl Catalogue for WbNamed {
+            fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>) -> crate::l5geo::Ranking {
+                unreachable!()
+            }
+            fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
+                unreachable!()
+            }
+            fn source(&self) -> &Value {
+                &Value::Null
+            }
+            fn table(&self, id: &str) -> Option<crate::l5geo::TableMeta> {
+                WbTable { unit: Some("PC_POP"), listed: true }.table(id)
+            }
+            fn countries(&self, codes: &[String]) -> Result<Vec<String>, String> {
+                Hubs.countries(codes)
+            }
+            fn zh_names(&self, scheme: &str, codes: &[String]) -> Result<BTreeMap<String, String>, Vec<String>> {
+                Hubs.zh_names(scheme, codes)
+            }
+            fn members(&self, aggregate: &str) -> Result<Vec<String>, String> {
+                Hubs.members(aggregate)
+            }
+        }
+        let change = recipe("change");
+        let fill = |values: &[(&str, &str, &str)]| {
+            let main: Vec<Value> = values
+                .iter()
+                .map(|(place, time, v)| json!({"src": format!("series:{table}/{place}:{time}:value"), "table": table,
+                    "dims": {"country": place}, "time": time, "value": v}))
+                .collect();
+            let shape = shape_of(&change.eats, &[(table, &main[..])], &WbNamed).unwrap();
+            let picks = picks_of(&change.picks, &shape, &main, &[]).unwrap();
+            fill_of(change, &shape, &picks, (&main, &[]), &WbNamed, ("标题", "导语"), false).unwrap()
+        };
+        let apart = [("CHN", "2016", "10.5"), ("CHN", "2025", "14.25"), ("IND", "2016", "13.5"), ("IND", "2025", "14.5"),
+            ("USA", "2016", "16.5"), ("USA", "2025", "17.0")];
+        let mut page = fill(&apart);
+        let spec = &page["knobs"]["spec"];
+        assert_eq!(page[HEADLINE], json!({"title": "{name.CHN}增幅最大", "scoped": "所选各方中{name.CHN}增幅最大"}));
+        assert_eq!(spec["hero"]["data"]["accent"], "CHN");
+        assert_eq!(spec["fmts"]["pp"], json!({"scale": 1, "dec": 1, "suffix": " 个百分点"}));
+        let notes = spec["hero"]["leaves"]["leader_notes"]["notes"].as_array().unwrap();
+        let said: Vec<(&str, &Value, &str)> =
+            notes.iter().map(|n| (n["name"].as_str().unwrap(), &n["text"], n["value_text"].as_str().unwrap())).collect();
+        assert_eq!(said, [
+            ("CHN", &json!([{"word": "column.note.rise_most"}, {"word": "column.note.vs_next"}]), "fact:vs_hi"),
+            ("USA", &json!([{"word": "column.note.rise_least"}, {"word": "column.note.vs_prev"}]), "fact:vs_lo"),
+        ]);
+        assert_eq!(spec["facts"]["vs_lo_a0"], json!({"op": "last", "table": table, "filter": {"country": "IND"}, "from": "2016", "to": "2016", "fmt": "pc_pop"}));
+        assert_eq!(spec["facts"]["vs_lo_b1"], json!({"op": "last", "table": table, "filter": {"country": "USA"}, "from": "2025", "to": "2025", "fmt": "pc_pop"}));
+        // the gaps through the visual group's ledger, computed by next_facts from the rows
+        page["knobs"]["shapes"] = json!("runtime/pi/assets/naturalearth-admin0-50m.geojson");
+        page["knobs"]["spec"]["kicker"] = json!("栏目");
+        page["knobs"]["spec"]["source"] = json!("世界银行 SP.POP.65UP.TO.ZS");
+        let order: Vec<String> = page["order"].as_array().unwrap().iter().filter_map(|l| l.as_str().map(str::to_string)).collect();
+        let calls = std::sync::Mutex::new(Vec::new());
+        let request = crate::next_visual::Request::LeafFill {
+            recipe: "change",
+            rows: page["rows"].as_array().unwrap(),
+            knobs: &page["knobs"],
+            order: &order,
+            runtime: Path::new("runtime"),
+        };
+        let filled = match crate::next_flow::visual_call(&calls, "leaf_fill", request) {
+            Ok(crate::next_visual::Reply::Filled(filled)) => filled,
+            Ok(_) => panic!("not a filled page"),
+            Err(e) => panic!("leaf fill: {e}"),
+        };
+        // 3.75 - 1 = 2.75 to the even digit up, 1 - 0.5 = 0.5; CHN's own change 3.75 prints 3.8 on its bar
+        assert_eq!(filled.ledger.get("fact:vs_hi").map(String::as_str), Some("2.8 个百分点"));
+        assert_eq!(filled.ledger.get("fact:vs_lo").map(String::as_str), Some("0.5 个百分点"));
+        assert_eq!(filled.ledger.get("fact:chg.CHN").map(String::as_str), Some("3.8 个百分点"));
+
+        // a tie: every place up 1, so no gap to print and no largest rise to headline; each note keeps its own change
+        let alike = [("CHN", "2016", "10.5"), ("CHN", "2025", "11.5"), ("IND", "2016", "13.5"), ("IND", "2025", "14.5"),
+            ("USA", "2016", "16.5"), ("USA", "2025", "17.5")];
+        let tied = fill(&alike);
+        assert!(tied.get(HEADLINE).is_none() && tied.get("finding").is_none());
+        let notes = tied["knobs"]["spec"]["hero"]["leaves"]["leader_notes"]["notes"].as_array().unwrap();
+        let own: Vec<&str> = notes.iter().map(|n| n["value_text"].as_str().unwrap()).collect();
+        assert_eq!(own, ["fact:chg.CHN", "fact:chg.USA"]);
+        assert!(notes.iter().all(|n| n["text"].as_array().unwrap().len() == 1));
+        assert!(tied["knobs"]["spec"]["facts"].get("vs_hi").is_none());
+
+        // the title and the kicker run_page gives the page
+        let label = "各国老年人口占比的变化";
+        assert_eq!(title_and_kicker(Some(&page), false, label, "老年人口占比"), ("{name.CHN}增幅最大".into(), label.into()));
+        assert_eq!(title_and_kicker(Some(&page), true, label, "老年人口占比"), ("所选各方中{name.CHN}增幅最大".into(), label.into()));
+        assert_eq!(title_and_kicker(Some(&page), false, "", "老年人口占比"), ("{name.CHN}增幅最大".into(), "老年人口占比".into()));
+        assert_eq!(title_and_kicker(Some(&tied), false, label, "老年人口占比"), (label.into(), "老年人口占比".into()));
+        assert_eq!(title_and_kicker(None, false, label, "老年人口占比"), (label.into(), "老年人口占比".into()));
+        // the headline's names filled as the dek's are (page_words), so the page prints no placeholder of a name
+        let (title, kicker) = title_and_kicker(Some(&page), false, label, "老年人口占比");
+        let mut worded = page.clone();
+        page_words(&mut worded, (&title, "导语", &kicker));
+        let printed = worded["knobs"]["spec"]["title"].as_str().unwrap().to_string();
+        assert!(!printed.contains("{name.") && printed.ends_with("增幅最大"), "{printed}");
+        assert_eq!(worded["knobs"]["spec"]["kicker"], label);
     }
 
     /// The q1 change page over the four places whose changes print 17 digits (AT 33.37 to 44.2, DE 14.885 to 23.9, LU 5.364
