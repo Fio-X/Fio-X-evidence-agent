@@ -28,7 +28,7 @@ use crate::next_page::{self, Chart, Claim, Drafts, Scope, Target, TIME_COLUMNS};
 use crate::next_knowledge::{HubMiss, HubOrigin};
 use crate::next_params;
 use crate::next_render::{BarCard, BarRow, Card, Hero, Label, Num, PageSpec, Seg, LABEL_SRC};
-use crate::shape_registry::{Axis, Finding, PagePlan, Relation, View, DEK_FINDINGS};
+use crate::shape_registry::{Axis, Finding, PagePlan, Relation, View, DEK_FINDINGS, HEADLINES};
 
 /// The registry templates whose fields this flow fills from a series' columns (a category and a value column). The others
 /// are not offered to the ranking yet: a flow or a composition needs a third column. A map reads the bundled basemap.
@@ -2237,8 +2237,8 @@ const CHANGE_FAMILIES: [&str; 3] = ["val0", "val1", "chg"];
 const CHANGE_FMT: &str = "chg";
 
 /// Each ranked country's value at the two ends and its change (CHANGE_FAMILIES), the change printed in percentage points
-/// when the unit prints as "%" (POINTS), else in the unit (CHANGE_FMT), with the most decimals the two ends' rows hold (at
-/// most COLUMN_DEC); the values at the ends in the unit's format as val_family prints them. Rows: the main's at both ends for
+/// when the unit prints as "%" (POINTS, at most POINTS_DEC decimals), else in the unit (CHANGE_FMT), with the most decimals
+/// the two ends' rows hold (at most COLUMN_DEC); the values at the ends in the unit's format as val_family prints them. Rows: the main's at both ends for
 /// the ranked countries, only read (a page prints each change, a fact of two rows, never a row's own value). Ok is the
 /// change's format key.
 fn change_families(f: &Filling, out: &mut Filled) -> Result<&'static str, String> {
@@ -2260,6 +2260,7 @@ fn change_families(f: &Filling, out: &mut Filled) -> Result<&'static str, String
     out.reads(ends.iter().map(|r| (*r).clone()));
     let [v0, v1, chg] = CHANGE_FAMILIES;
     let (chg_fmt, chg_suffix) = if f.short == "%" { (POINTS.0, POINTS.1.to_string()) } else { (CHANGE_FMT, suffix(f.short)) };
+    let dec = if chg_fmt == POINTS.0 { dec.min(POINTS_DEC) } else { dec };
     for (key, q) in [
         (v0, json!({"each": place, "table": shape.main, "time": shape.t0, "fmt": fmt})),
         (v1, json!({"each": place, "table": shape.main, "time": shape.year, "fmt": fmt})),
@@ -2456,7 +2457,34 @@ fn finding_of(f: &Filling, out: &mut Filled, labels: &BTreeMap<String, String>) 
         return Err(format!("no DEK_FINDINGS words for {finding:?}"));
     };
     let worded = |template: &str| words.iter().fold(template.to_string(), |text, (token, with)| text.replace(token, with));
-    Ok(Some((json!({"dek": worded(plain), "scoped": worded(scoped)}), subject)))
+    let mut said = json!({"dek": worded(plain), "scoped": worded(scoped)});
+    // the headline says the same finding (HEADLINES); a level one compares the two ends by their times, a fact the page
+    // declares (extremes), so with no such fact there is no headline and the title stays the text step's label
+    let headline = HEADLINES.iter().find(|(k, _, _)| *k == finding);
+    if let Some(&(_, plain, scoped)) = headline.filter(|_| finding != Finding::Level || out.facts.contains_key(TIMES)) {
+        said[HEADLINE] = json!({"title": worded(plain), "scoped": worded(scoped)});
+    }
+    Ok(Some((said, subject)))
+}
+
+/// The key of a finding's headline (HEADLINES) beside its dek in finding_of's sentence; fill_of keeps it as the fill's own
+/// key, so the fill's finding stays the dek's two wordings (dek_finding).
+const HEADLINE: &str = "headline";
+
+/// The fact of how many times the lowest ranked place's value the highest's is (extremes), which a level headline prints.
+const TIMES: &str = "times";
+
+/// The page's title and kicker after the text step. With a headline (the fill's, finding_of: its scoped wording on a
+/// scoped page, as the dek's) the title is that conclusion and the kicker the text step's title (`label`, the label the
+/// model reworded: a field with no number and no placeholder, as a kicker prints); the lead chart's measure (`measure`)
+/// when the label is empty. With none the label is the title and the measure the kicker, as before headlines.
+fn title_and_kicker(fill: Option<&Value>, scoped: bool, label: &str, measure: &str) -> (String, String) {
+    let wording = if scoped { "scoped" } else { "title" };
+    match fill.and_then(|fill| fill[HEADLINE][wording].as_str()) {
+        Some(headline) if !label.trim().is_empty() => (headline.to_string(), label.to_string()),
+        Some(headline) => (headline.to_string(), measure.to_string()),
+        None => (label.to_string(), measure.to_string()),
+    }
 }
 
 /// The dek finding a page's fill carries (finding_of), unscoped and scoped, as next_page Drafts::with_finding takes it.
@@ -2467,6 +2495,10 @@ fn dek_finding(fill: &Value) -> Option<(String, String)> {
 
 /// The format of a gap between two percentages: percentage points, not a percentage.
 const POINTS: (&str, &str) = ("pp", " 个百分点");
+
+/// The most decimals a gap in percentage points prints with, whatever its rows hold: one, as statistical releases print a
+/// change in a share (a change of 16.85 points reads 16.9); a value's own format keeps the decimals its rows hold.
+const POINTS_DEC: usize = 1;
 
 /// The big numbers: the highest and the lowest ranked country's value, their gap and times (extremes) as hero.data's hi, lo,
 /// gap and times.
@@ -2509,7 +2541,7 @@ fn extremes<'a>(f: &Filling<'a>, out: &mut Filled, prints: bool) -> Result<(&'a 
     }
     Filled::set(&mut out.fmts, "format", fmt, json!({"scale": 1, "dec": dec, "suffix": suffix(f.short)}))?;
     if gap_fmt == POINTS.0 {
-        Filled::set(&mut out.fmts, "format", POINTS.0, json!({"scale": 1, "dec": dec, "suffix": POINTS.1}))?;
+        Filled::set(&mut out.fmts, "format", POINTS.0, json!({"scale": 1, "dec": dec.min(POINTS_DEC), "suffix": POINTS.1}))?;
     }
     Filled::set(&mut out.fmts, "format", "times", json!({"scale": 1, "dec": 1, "suffix": "倍"}))?;
     Ok((hi, lo))
@@ -2687,11 +2719,14 @@ const LEADER_NOTES: [(&str, &str); 2] = [
 ];
 
 /// Two notes on the map of a page with two ends (hero.leaves.leader_notes, at the ranked countries' points as
-/// leader_notes_fill): at the first ranked country (changed: the largest rise) and the last (the largest fall), each its
-/// change from the minus family (change_families), the words the word table's, picked by the change's sign and the note's
-/// end (CHANGE_NOTES: never a rise named a fall). One ranked country gets one note.
+/// leader_notes_fill): at the first ranked country (changed: the largest rise) and the last (the largest fall), the words
+/// the word table's, picked by the change's sign and the note's end (CHANGE_NOTES: never a rise named a fall). Each note
+/// compares its place with its neighbour in the ranking (CHANGE_VS: the first with the second, the last with the one before
+/// it): its number is the gap between their two changes, a fact of the rows (change_gap) as the page prints it; a note whose
+/// gap prints as none (a tie), with no neighbour, or whose words would not fit beside the map (note_fits), prints its own
+/// change from the minus family (change_families) instead. One ranked country gets one note.
 fn change_notes_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
-    change_families(f, out)?;
+    let chg_fmt = change_families(f, out)?;
     let (points, ext) = ranked_points(f, out)?;
     let (shape, ranked) = (f.shape, &f.picks.ranked);
     let (Some(first), Some(last)) = (ranked.first(), ranked.last()) else {
@@ -2700,6 +2735,7 @@ fn change_notes_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
     let at = |code: &str, t: &str| {
         f.main.iter().find(|r| r["time"] == t && r["dims"][&shape.place] == code).and_then(row_value)
     };
+    let names = leaf_labels(&[], ranked, f.catalogue).unwrap_or_default();
     let mut notes = Vec::new();
     for (code, most) in [(first, true), (last, false)].into_iter().take(ranked.len().min(2)) {
         let change = at(code, &shape.year).zip(at(code, &shape.t0)).map(|(b, a)| b - a);
@@ -2708,10 +2744,79 @@ fn change_notes_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
             .iter()
             .find(|(of, _)| *of == (most, change.partial_cmp(&0.0).unwrap_or(std::cmp::Ordering::Equal)))
             .ok_or_else(|| format!("leader notes: no word for the change of {code}"))?;
-        notes.push(json!({"at": points[code.as_str()], "name": code, "text": [{"word": word}],
-            "value_text": format!("fact:{}.{code}", CHANGE_FAMILIES[2])}));
+        let own = json!({"at": points[code.as_str()], "name": code, "text": [{"word": word}],
+            "value_text": format!("fact:{}.{code}", CHANGE_FAMILIES[2])});
+        // the first's neighbour is the second ranked, the last's the one before it, never the first itself
+        let (vs_word, key) = CHANGE_VS[usize::from(!most)];
+        let neighbour = match most {
+            true => ranked.get(1),
+            false => ranked.len().checked_sub(2).filter(|i| *i > 0).and_then(|i| ranked.get(i)),
+        };
+        let Some(other) = neighbour else {
+            notes.push(own);
+            continue;
+        };
+        let other_change = at(other, &shape.year).zip(at(other, &shape.t0)).map(|(b, a)| b - a);
+        let other_change = other_change.ok_or_else(|| format!("leader notes: main {} has no two ends for {other}", shape.main))?;
+        // the first's change less the second's, the one before the last's less the last's: never below 0 (changed ranks them)
+        let gap = if most { change - other_change } else { other_change - change };
+        let name = names.get(code.as_str()).map_or(code.as_str(), String::as_str);
+        let words = format!("{} {}{}", name, word_zh(word), word_zh(vs_word));
+        if printed(&out.fmts, chg_fmt, gap) == printed(&out.fmts, chg_fmt, 0.0) || !note_fits(&words) {
+            notes.push(own);
+            continue;
+        }
+        let (higher, lower) = if most { (code.as_str(), other.as_str()) } else { (other.as_str(), code.as_str()) };
+        change_gap(f, out, key, (higher, lower), chg_fmt)?;
+        notes.push(json!({"at": points[code.as_str()], "name": code, "text": [{"word": word}, {"word": vs_word}],
+            "value_text": format!("fact:{key}")}));
     }
     set_leaf(out, "leader_notes", json!({"ext": ext, "notes": notes}))
+}
+
+/// The comparison of a change note (change_notes_fill) by its end (the first ranked, then the last): the word-table key of
+/// the words after the note's own (no number: the gap is the note's number) and the fact key of the gap (change_gap). The
+/// first is above its neighbour by the gap, the last below its: the words say which neighbour and which way, the gap is
+/// never below 0, so no word depends on a sign.
+const CHANGE_VS: [(&str, &str); 2] = [("column.note.vs_next", "vs_hi"), ("column.note.vs_prev", "vs_lo")];
+
+/// The gap between two ranked places' changes as facts of the rows, keyed by `key`: each place's values at the two ends
+/// (`<key>_a0`, `<key>_a1` of the higher, `<key>_b0`, `<key>_b1` of the lower: op last over the one year), each change their
+/// minus (`<key>_a`, `<key>_b`), and `<key>` the higher's change less the lower's, in the change's format `chg_fmt`. Every
+/// one is next_facts' minus over value facts, so the page's ledger recomputes it from the rows like any other fact; the rows
+/// are the ends the bars already read.
+fn change_gap(f: &Filling, out: &mut Filled, key: &str, (higher, lower): (&str, &str), chg_fmt: &str) -> Result<(), String> {
+    let (shape, place) = (f.shape, f.shape.place.as_str());
+    for (side, code) in [("a", higher), ("b", lower)] {
+        let (early, late) = (format!("{key}_{side}0"), format!("{key}_{side}1"));
+        let value = |t: &str| year_fact(&shape.main, filter(&[(place, code)]), t, &f.fmt);
+        Filled::set(&mut out.facts, "fact", &early, value(&shape.t0))?;
+        Filled::set(&mut out.facts, "fact", &late, value(&shape.year))?;
+        Filled::set(&mut out.facts, "fact", &format!("{key}_{side}"), json!({"op": "minus", "a": late, "b": early, "fmt": chg_fmt}))?;
+        let ends = |r: &&Value| r["dims"][place] == code && (r["time"] == shape.t0.as_str() || r["time"] == shape.year.as_str());
+        out.reads(f.main.iter().filter(ends).cloned());
+    }
+    Filled::set(&mut out.facts, "fact", key, json!({"op": "minus", "a": format!("{key}_a"), "b": format!("{key}_b"), "fmt": chg_fmt}))
+}
+
+/// The leader notes' size (runtime/leaves_py leader_notes.py note_size's default, px) and the widest a note's one line may
+/// run beside the map: half the map panel (MAP_W_PX), as the leaf refuses a wider one. Visual layout defaults; no number
+/// here prints.
+const NOTE_PX: f64 = 16.0;
+
+/// Whether a note's first line (its name and words, as the leaf sets a note on two lines: the number below) fits in half the
+/// map panel at NOTE_PX by the leaf's rough width rule (prod.tw: a CJK character the size, any other about half).
+fn note_fits(words: &str) -> bool {
+    let w: f64 = words.chars().map(|c| if c as u32 > 0x2e7f { NOTE_PX } else { 0.58 * NOTE_PX }).sum();
+    w <= MAP_W_PX / 2.0
+}
+
+/// The words of a word-table key (runtime/leaves_py/words.zh.json, the leaf's table), for measuring a note; a key the table
+/// lacks measures as nothing (the leaf refuses it anyway).
+fn word_zh(key: &str) -> String {
+    static WORDS: std::sync::OnceLock<Map<String, Value>> = std::sync::OnceLock::new();
+    let words = WORDS.get_or_init(|| serde_json::from_str(include_str!("../runtime/leaves_py/words.zh.json")).unwrap_or_default());
+    words.get(key).and_then(Value::as_str).unwrap_or_default().to_string()
 }
 
 /// The words of a change note by its end (true: the first ranked, the largest rise) and its change's sign.
@@ -2853,8 +2958,12 @@ fn fill_of(
         fill["composition"] = json!({"template": COMPOSITION_TEMPLATES[0], "dim": comp.dim, "total": comp.total,
             "groups": comp.groups, "year": shape.year, "bars": shape.countries, "left_out": shape.outside});
     }
-    // the dek's finding stays with the flow, for the text step's draft (dek_finding); the page gets it as worded
-    if let Some((finding, _)) = finding {
+    // the dek's finding stays with the flow, for the text step's draft (dek_finding); the page gets it as worded. Its
+    // headline is the fill's own key, which run_page makes the page's title (title_and_kicker)
+    if let Some((mut finding, _)) = finding {
+        if let Some(headline) = finding.as_object_mut().and_then(|f| f.remove(HEADLINE)) {
+            fill[HEADLINE] = headline;
+        }
         fill["finding"] = finding;
     }
     // the two ends the page runs between, and each earlier year passed over with the countries it misses, for the run's record
@@ -3800,11 +3909,15 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
     let verified: BTreeSet<&str> = page.claims.iter().map(|c| c.id.as_str()).collect();
     // the scope (the EU) is not added to the title, where its bracket wrapped onto a line of its own: the unit line names it
     // with the count of places drawn (fill_of)
-    let title = worded.get(&Target::PageTitle).cloned().unwrap_or_default();
+    let label = worded.get(&Target::PageTitle).map_or("", String::as_str);
     let dek = worded.get(&Target::PageDek).cloned().unwrap_or_default();
-    // the kicker names the lead chart's measure, as the old route's does without a scope
-    let kicker = worded.get(&Target::Measure(0)).map_or("", String::as_str);
-    let leaf = picked.and_then(|picked| leaf_page(recorder.run_dir(), picked, (question, (&title, &dek, kicker)), &calls));
+    // the title states the finding's conclusion (the fill's headline, scoped as the dek is) with the text step's label above
+    // it as the kicker; a page with no headline keeps the label as its title and names the lead chart's measure as the
+    // kicker, as the old route's does without a scope
+    let measure = worded.get(&Target::Measure(0)).map_or("", String::as_str);
+    let headed = picked.as_ref().ok().map(|(_, fill)| fill);
+    let (title, kicker) = title_and_kicker(headed, drafts.has_scope, label, measure);
+    let leaf = picked.and_then(|picked| leaf_page(recorder.run_dir(), picked, (question, (&title, &dek, &kicker)), &calls));
     record_page_calls(recorder, catalogue, calls)?;
     match leaf {
         Ok(leaf) => {

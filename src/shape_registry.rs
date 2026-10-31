@@ -193,6 +193,19 @@ pub const DEK_FINDINGS: [(Finding, &str, &str); 4] = [
     (Finding::Share, "{y1}，{name}最多，占{value}", "{y1}，所选各方中，{name}居首，占{value}"),
 ];
 
+/// The page title's conclusion per Finding, unscoped then scoped (next_run finding_of fills it as it fills the dek's, and the
+/// page prints it as its h1, the text step's reworded label above it as the kicker): the dek's finding said as a headline,
+/// no year, with a comparison word or a number and a verb. {name}, {other} and {value} as in DEK_FINDINGS; {times} is the
+/// fact of how many times the lowest the highest is (next_run extremes), so a level headline compares the two ends by a
+/// number from the ledger. The scoped wording holds the scope's mark ("所选各方中") and no next_page SUPERLATIVES word, as
+/// DEK_FINDINGS' does. Same rules as FRAMES but the placeholders.
+pub const HEADLINES: [(Finding, &str, &str); 4] = [
+    (Finding::Rise, "{name}增幅最大", "所选各方中{name}增幅最大"),
+    (Finding::Fall, "{name}降幅最大", "所选各方中{name}降幅最大"),
+    (Finding::Level, "{name}最高，是最低者{other}的{times}", "所选各方中{name}居首，是{other}的{times}"),
+    (Finding::Share, "{name}最多，占{value}", "所选各方中{name}居首，占{value}"),
+];
+
 /// The chart forms the page renderer draws a card for (next_render Card): the page's title, dek, text and reader fields are
 /// drafted from the first chart of one of these forms (next_page lead), so the page never describes a chart it does not draw;
 /// a leaf page whose bars draw the change between its two ends drafts them for that change instead (next_run page_lead).

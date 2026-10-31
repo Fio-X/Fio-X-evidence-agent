@@ -44,6 +44,8 @@
  "column.note.fall_most": "降幅最大",
  "column.note.fall_least": "降幅最小",
  "column.note.flat": "没有变化",
+ "column.note.vs_next": "，比第二名高",
+ "column.note.vs_prev": "，比倒数第二低",
  "column.change_years": "柱：{a} 年至{b}的变化　地图：{b}",
  "column.scope": "{place} {n} 国　",
  "column.accent": "红＝导语所指",
