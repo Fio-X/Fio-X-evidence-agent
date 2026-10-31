@@ -2948,8 +2948,9 @@ mod tests {
     /// q2 as the 10-31 12:27 stand-in run answered it on the table it ranked first, nrg_bal_c with its catalogue codes (142
     /// nrg_bal, 72 siec): t1.breakdown 2 (nrg_bal), t1.unit 1 left nrg_bal open and stopped at needs_narrowing. The family's
     /// rows register nrg_bal_c too, so the split fetches the registered codes the table lists, and its flow is offered and
-    /// filled as nrg_bal_s's. On that run's DE 2024 rows (siec TOTAL; no fuel x sector values were fetched, so the fuel side is
-    /// not checked here) the sector leaves add up to FC_E, and FC_OTH_E's five parts to FC_OTH_E.
+    /// filled as nrg_bal_s's. On that run's DE 2024 rows (siec TOTAL) the sector leaves add up to FC_E, and FC_OTH_E's five parts
+    /// to FC_OTH_E; on the DE 2024 FC_E rows by fuel (fetched 10-31 for this check) the fuel leaves add up to siec TOTAL, nuclear
+    /// heat having no final-use row.
     #[test]
     fn nrg_bal_c_with_its_catalogue_codes_fills_the_family_s_registered_parts() {
         let de = [Place::Country("DE".into())];
@@ -2995,7 +2996,23 @@ mod tests {
             .filter(|p| p.parent.as_deref() == Some("FC_OTH_E"))
             .map(|p| value[p.code.as_str()])
             .sum();
-        for (whole, sum) in [(value["FC_E"], leaves), (value["FC_OTH_E"], other)] {
+        // the DE 2024 FC_E rows by fuel
+        let fixture = include_str!("../scripts/fixtures/data_prepare/nrg_bal_c_DE_2024_FC_E.tsv");
+        let by_fuel: BTreeMap<&str, f64> = fixture
+            .lines()
+            .filter(|l| !l.starts_with('#'))
+            .skip(1)
+            .map(|l| {
+                let f: Vec<&str> = l.split('\t').collect();
+                (f[1], f[2].parse().unwrap())
+            })
+            .collect();
+        let fuels = flow_parts("nrg_bal_c", "siec");
+        assert_eq!(fuels.len(), 11);
+        assert_eq!(fuels.iter().filter(|p| !by_fuel.contains_key(p.code.as_str())).map(|p| p.code.as_str()).collect::<Vec<_>>(), ["N900H"]);
+        let fuel_leaves: f64 = fuels.iter().filter_map(|p| by_fuel.get(p.code.as_str())).sum();
+        assert_eq!(by_fuel["TOTAL"], value["FC_E"]);
+        for (whole, sum) in [(value["FC_E"], leaves), (value["FC_OTH_E"], other), (by_fuel["TOTAL"], fuel_leaves)] {
             assert!((whole - sum).abs() <= crate::classify::TOLERANCE * whole, "{whole} vs parts {sum}");
         }
     }
