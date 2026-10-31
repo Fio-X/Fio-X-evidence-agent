@@ -1,22 +1,22 @@
-table	dim	code	name_en	level	parent	group_zh	group_en	note	flow
-nrg_bal_s	siec	TOTAL	Total	total				sum of the fuel families	source
-nrg_bal_s	siec	C0000X0350-0370	Solid fossil fuels	leaf	TOTAL	化石	fossil	coal and coal products, manufactured gases excluded	
-nrg_bal_s	siec	C0350-0370	Manufactured gases	leaf	TOTAL	化石	fossil		
-nrg_bal_s	siec	P1000	Peat and peat products	leaf	TOTAL	化石	fossil		
-nrg_bal_s	siec	S2000	Oil shale and oil sands	leaf	TOTAL	化石	fossil		
-nrg_bal_s	siec	G3000	Natural gas	leaf	TOTAL	化石	fossil		
-nrg_bal_s	siec	O4000XBIO	Oil and petroleum products (excluding biofuel portion)	leaf	TOTAL	化石	fossil		
-nrg_bal_s	siec	RA000	Renewables and biofuels	leaf	TOTAL	可再生	renewable		
-nrg_bal_s	siec	W6100_6220	Non-renewable waste	leaf	TOTAL	其他	other	non-renewable waste, kept in other (Eurostat has no fossil parent for it)	
-nrg_bal_s	siec	N900H	Nuclear heat	leaf	TOTAL	核	nuclear	no final consumption rows: nuclear heat is used in transformation	
-nrg_bal_s	siec	E7000	Electricity	leaf	TOTAL	其他	other	electricity	
-nrg_bal_s	siec	H8000	Heat	leaf	TOTAL	其他	other	heat	
-nrg_bal_s	nrg_bal	FC_E	Final consumption - energy use	total				= FC_IND_E + FC_TRA_E + FC_OTH_E	target
-nrg_bal_s	nrg_bal	FC_IND_E	Final consumption - industry sector - energy use	leaf	FC_E				
-nrg_bal_s	nrg_bal	FC_TRA_E	Final consumption - transport sector - energy use	leaf	FC_E				
-nrg_bal_s	nrg_bal	FC_OTH_E	Final consumption - other sectors - energy use	aggregate	FC_E			= FC_OTH_CP_E + FC_OTH_HH_E + FC_OTH_AF_E + FC_OTH_FISH_E + FC_OTH_NSP_E	
-nrg_bal_s	nrg_bal	FC_OTH_CP_E	Final consumption - other sectors - commercial and public services - energy use	leaf	FC_OTH_E				
-nrg_bal_s	nrg_bal	FC_OTH_HH_E	Final consumption - other sectors - households - energy use	leaf	FC_OTH_E				
-nrg_bal_s	nrg_bal	FC_OTH_AF_E	Final consumption - other sectors - agriculture and forestry - energy use	leaf	FC_OTH_E				
-nrg_bal_s	nrg_bal	FC_OTH_FISH_E	Final consumption - other sectors - fishing - energy use	leaf	FC_OTH_E				
-nrg_bal_s	nrg_bal	FC_OTH_NSP_E	Final consumption - other sectors - not elsewhere specified - energy use	leaf	FC_OTH_E				
+tables	dim	code	name_en	level	parent	group_zh	group_en	note	flow
+nrg_bal_c nrg_bal_s	siec	TOTAL	Total	total				sum of the fuel families	source
+nrg_bal_c nrg_bal_s	siec	C0000X0350-0370	Solid fossil fuels	leaf	TOTAL	化石	fossil	coal and coal products, manufactured gases excluded	
+nrg_bal_c nrg_bal_s	siec	C0350-0370	Manufactured gases	leaf	TOTAL	化石	fossil		
+nrg_bal_c nrg_bal_s	siec	P1000	Peat and peat products	leaf	TOTAL	化石	fossil		
+nrg_bal_c nrg_bal_s	siec	S2000	Oil shale and oil sands	leaf	TOTAL	化石	fossil		
+nrg_bal_c nrg_bal_s	siec	G3000	Natural gas	leaf	TOTAL	化石	fossil		
+nrg_bal_c nrg_bal_s	siec	O4000XBIO	Oil and petroleum products (excluding biofuel portion)	leaf	TOTAL	化石	fossil		
+nrg_bal_c nrg_bal_s	siec	RA000	Renewables and biofuels	leaf	TOTAL	可再生	renewable		
+nrg_bal_c nrg_bal_s	siec	W6100_6220	Non-renewable waste	leaf	TOTAL	其他	other	non-renewable waste, kept in other (Eurostat has no fossil parent for it)	
+nrg_bal_c nrg_bal_s	siec	N900H	Nuclear heat	leaf	TOTAL	核	nuclear	no final consumption rows: nuclear heat is used in transformation	
+nrg_bal_c nrg_bal_s	siec	E7000	Electricity	leaf	TOTAL	其他	other	electricity	
+nrg_bal_c nrg_bal_s	siec	H8000	Heat	leaf	TOTAL	其他	other	heat	
+nrg_bal_c nrg_bal_s	nrg_bal	FC_E	Final consumption - energy use	total				= FC_IND_E + FC_TRA_E + FC_OTH_E	target
+nrg_bal_c nrg_bal_s	nrg_bal	FC_IND_E	Final consumption - industry sector - energy use	leaf	FC_E				
+nrg_bal_c nrg_bal_s	nrg_bal	FC_TRA_E	Final consumption - transport sector - energy use	leaf	FC_E				
+nrg_bal_c nrg_bal_s	nrg_bal	FC_OTH_E	Final consumption - other sectors - energy use	aggregate	FC_E			= FC_OTH_CP_E + FC_OTH_HH_E + FC_OTH_AF_E + FC_OTH_FISH_E + FC_OTH_NSP_E	
+nrg_bal_c nrg_bal_s	nrg_bal	FC_OTH_CP_E	Final consumption - other sectors - commercial and public services - energy use	leaf	FC_OTH_E				
+nrg_bal_c nrg_bal_s	nrg_bal	FC_OTH_HH_E	Final consumption - other sectors - households - energy use	leaf	FC_OTH_E				
+nrg_bal_c nrg_bal_s	nrg_bal	FC_OTH_AF_E	Final consumption - other sectors - agriculture and forestry - energy use	leaf	FC_OTH_E				
+nrg_bal_c nrg_bal_s	nrg_bal	FC_OTH_FISH_E	Final consumption - other sectors - fishing - energy use	leaf	FC_OTH_E				
+nrg_bal_c nrg_bal_s	nrg_bal	FC_OTH_NSP_E	Final consumption - other sectors - not elsewhere specified - energy use	leaf	FC_OTH_E				

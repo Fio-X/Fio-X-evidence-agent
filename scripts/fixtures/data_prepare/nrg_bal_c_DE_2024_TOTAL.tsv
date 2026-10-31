@@ -1,0 +1,11 @@
+# Eurostat nrg_bal_c (complete energy balances), geo DE, 2024, unit KTOE, siec TOTAL: final energy consumption by sector (nrg_bal); from the SDMX-CSV dataset updated 2026-06-02, as a q2 stand-in run fetched it
+nrg_bal	siec	value
+FC_E	TOTAL	177745.064
+FC_IND_E	TOTAL	48368.387
+FC_TRA_E	TOTAL	49522.114
+FC_OTH_E	TOTAL	79854.563
+FC_OTH_CP_E	TOTAL	23800.773
+FC_OTH_HH_E	TOTAL	52455.834
+FC_OTH_AF_E	TOTAL	3520.360
+FC_OTH_FISH_E	TOTAL	17.216
+FC_OTH_NSP_E	TOTAL	60.381

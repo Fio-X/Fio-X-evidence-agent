@@ -9578,7 +9578,7 @@ mod tests {
         assert_eq!(filled.event["open"], Value::Null);
         assert_eq!(filled.event["estimate"], 77);
         // the same table under an id with no registered flow is offered the two splits it had
-        let mut plain = next_params::draft(table("nrg_bal_c"), &[], &de);
+        let mut plain = next_params::draft(table("nrg_x"), &[], &de);
         assert_eq!(plain.breakdown, ["nrg_bal", "siec"]);
         let (_, event) = drawable_splits(&mut plain, 1, &de, 2026, &catalogue);
         let dims: Vec<&Value> = event["offered"].as_array().unwrap().iter().map(|o| &o["dim"]).collect();

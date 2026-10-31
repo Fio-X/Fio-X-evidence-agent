@@ -76,8 +76,9 @@ pub const PLACES_KEY: &str = "places";
 /// The registered Eurostat flow tables whose monthly or quarterly rows sum to a whole year (catalogue data of the knowledge group:
 /// id prefixes, periods per year, the year share), read as a shared word list.
 const FLOW_FAMILIES: &str = include_str!("../runtime/pi/assets/flow-families.json");
-/// The registered parts of Eurostat table dimensions (catalogue data of the knowledge group: per table and dimension its total
-/// code, aggregates and leaves with their parents), read as a shared word list. More tables are more rows of the same file.
+/// The registered parts of Eurostat table dimensions (catalogue data of the knowledge group: per dimension of a family of tables
+/// that share its codelist, column "tables", its total code, aggregates and leaves with their parents), read as a shared word
+/// list. A table of the family takes the registered codes it lists. More tables are more names in a row or more rows.
 const ESTAT_PARTS: &str = include_str!("../runtime/pi/assets/estat-parts.tsv");
 /// The asset a split's registered codes came from, as the params event names it.
 pub const PARTS_SOURCE: &str = "estat-parts.tsv";
@@ -100,8 +101,8 @@ pub struct Part {
     pub flow: Option<String>,
 }
 
-/// The registered parts of dimension `dim` of Eurostat table `table` (its id without "@2"), in file order; empty for a
-/// dimension the file does not register.
+/// The registered parts of dimension `dim` of Eurostat table `table` (its id without "@2"; a row registers them for every table
+/// its "tables" names), in file order; empty for a dimension the file does not register.
 pub fn parts(table: &str, dim: &str) -> Vec<Part> {
     registry()
         .iter()
@@ -177,10 +178,10 @@ fn registry() -> &'static Vec<(String, String, Part)> {
                 .position(|h| *h == name)
                 .unwrap_or_else(|| panic!("estat-parts.tsv lacks {name}"))
         };
-        let (t, d, c, l, p, f) = (col("table"), col("dim"), col("code"), col("level"), col("parent"), col("flow"));
+        let (t, d, c, l, p, f) = (col("tables"), col("dim"), col("code"), col("level"), col("parent"), col("flow"));
         lines
             .filter(|line| !line.is_empty())
-            .map(|line| {
+            .flat_map(|line| {
                 let fields: Vec<&str> = line.split('\t').collect();
                 let at = |i: usize| fields.get(i).copied().unwrap_or("").to_string();
                 let part = Part {
@@ -189,7 +190,9 @@ fn registry() -> &'static Vec<(String, String, Part)> {
                     parent: Some(at(p)).filter(|p| !p.is_empty()),
                     flow: Some(at(f)).filter(|f| !f.is_empty()),
                 };
-                (at(t), at(d), part)
+                // one row registers the code for every table of its family (the tables that share the codelist)
+                let dim = at(d);
+                at(t).split_whitespace().map(|table| (table.to_string(), dim.clone(), part.clone())).collect::<Vec<_>>()
             })
             .collect()
     })
@@ -2685,13 +2688,17 @@ mod tests {
         for line in ESTAT_PARTS.lines().skip(1).filter(|l| !l.is_empty()) {
             let f: Vec<&str> = line.split('\t').collect();
             assert_eq!(f.len(), 10, "{line}");
-            let pair = (f[0].to_string(), f[1].to_string());
-            if !pairs.contains(&pair) {
-                pairs.push(pair);
+            for table in f[0].split_whitespace() {
+                let pair = (table.to_string(), f[1].to_string());
+                if !pairs.contains(&pair) {
+                    pairs.push(pair);
+                }
             }
         }
-        assert!(pairs.contains(&("nrg_bal_s".into(), "siec".into())));
-        assert!(pairs.contains(&("nrg_bal_s".into(), "nrg_bal".into())));
+        for table in ["nrg_bal_c", "nrg_bal_s"] {
+            assert!(pairs.contains(&(table.into(), "siec".into())));
+            assert!(pairs.contains(&(table.into(), "nrg_bal".into())));
+        }
         for (table, dim) in &pairs {
             let registered = parts(table, dim);
             let codes: Vec<&str> = registered.iter().map(|p| p.code.as_str()).collect();
@@ -2711,7 +2718,10 @@ mod tests {
         }
         assert_eq!(parts("nrg_bal_s", "siec").len(), 12);
         assert_eq!(parts("nrg_bal_s", "nrg_bal").len(), 9);
-        assert!(parts("nrg_bal_s", "unit").is_empty() && parts("nrg_bal_c", "siec").is_empty());
+        assert!(parts("nrg_bal_s", "unit").is_empty() && parts("nrg_x", "siec").is_empty());
+        // one row registers the code for the family: nrg_bal_c has nrg_bal_s's parts, and no copy of them
+        assert_eq!(parts("nrg_bal_c", "siec"), parts("nrg_bal_s", "siec"));
+        assert_eq!(parts("nrg_bal_c", "nrg_bal"), parts("nrg_bal_s", "nrg_bal"));
         // On nrg_bal_s DE 2024 (KTOE): each fuel parent is the sum of its parts at FC_E, each sector parent at TOTAL; a code
         // the file has no row for is the sum of its own parts (FC_OTH_E), else nothing (N900H in final consumption).
         let fixture = include_str!("../scripts/fixtures/data_prepare/nrg_bal_s_DE_2024.tsv");
@@ -2907,15 +2917,15 @@ mod tests {
         draft(table, &[], &[Place::Country("DE".into())])
     }
 
-    /// A table with no registered parts fills as before: the same q2 answer on the same codes under another id gives the 10-31
-    /// run's fetch byte for byte (nrg_bal open), and its event names no parts.
+    /// A table with no registered parts fills as before: the same q2 answer on the same codes under an unregistered id gives
+    /// the 10-31 run's fetch byte for byte (nrg_bal open), and its event names no parts.
     #[test]
     fn a_table_with_no_registered_parts_fills_as_before() {
         let de = [Place::Country("DE".into())];
-        assert!(parts("nrg_bal_c", "nrg_bal").is_empty() && parts("nrg_bal_c", "siec").is_empty());
-        let draft = draft(q2_table("nrg_bal_c"), &[], &de);
+        assert!(parts("nrg_x", "nrg_bal").is_empty() && parts("nrg_x", "siec").is_empty());
+        let draft = draft(q2_table("nrg_x"), &[], &de);
         // no registered flow: the two splits it had, and the same options under them as nrg_bal_s's but its flow
-        assert_eq!(flow_dims("nrg_bal_c"), None);
+        assert_eq!(flow_dims("nrg_x"), None);
         assert_eq!(draft.breakdown, ["nrg_bal", "siec"]);
         let registered = super::draft(q2_table("nrg_bal_s"), &[], &de);
         let mut options = items(2, &registered);
@@ -2923,7 +2933,7 @@ mod tests {
         assert_eq!(items(2, &draft), options);
         let filled = fill(&draft, 2, &picks(&[("t2.breakdown", 2), ("t2.unit", 1)]), &de, 2026).unwrap();
         // the run's next_params args, with only the dataset id changed
-        let run = json!({"dataset": "nrg_bal_c", "filters": [{"dimension": "freq", "values": ["A"]},
+        let run = json!({"dataset": "nrg_x", "filters": [{"dimension": "freq", "values": ["A"]},
             {"dimension": "siec", "values": ["TOTAL"]}, {"dimension": "unit", "values": ["KTOE"]}, {"dimension": "geo", "values": ["DE"]}],
             "years": {"start": 2015, "end": 2024}});
         assert_eq!(
@@ -2933,5 +2943,60 @@ mod tests {
         assert_eq!(filled.event["open"], "nrg_bal");
         assert_eq!(filled.event["estimate"], 920);
         assert!(filled.event.get("parts").is_none());
+    }
+
+    /// q2 as the 10-31 12:27 stand-in run answered it on the table it ranked first, nrg_bal_c with its catalogue codes (142
+    /// nrg_bal, 72 siec): t1.breakdown 2 (nrg_bal), t1.unit 1 left nrg_bal open and stopped at needs_narrowing. The family's
+    /// rows register nrg_bal_c too, so the split fetches the registered codes the table lists, and its flow is offered and
+    /// filled as nrg_bal_s's. On that run's DE 2024 rows (siec TOTAL; no fuel x sector values were fetched, so the fuel side is
+    /// not checked here) the sector leaves add up to FC_E, and FC_OTH_E's five parts to FC_OTH_E.
+    #[test]
+    fn nrg_bal_c_with_its_catalogue_codes_fills_the_family_s_registered_parts() {
+        let de = [Place::Country("DE".into())];
+        let listed = include_str!("../scripts/fixtures/data_prepare/nrg_bal_c_codes.tsv");
+        let of = |d: &str| -> Vec<&str> {
+            listed.lines().filter(|l| !l.starts_with('#')).skip(1).filter_map(|l| l.split_once('\t')).filter(|(x, _)| *x == d).map(|(_, c)| c).collect()
+        };
+        let (nrg_bal, siec) = (of("nrg_bal"), of("siec"));
+        assert_eq!((nrg_bal.len(), siec.len()), (142, 72));
+        let table = eurostat(
+            "nrg_bal_c",
+            vec![dim("geo", &["EU27_2020", "DE", "FR"]), dim("nrg_bal", &nrg_bal), dim("siec", &siec), dim("unit", &["KTOE", "GWH", "TJ"])],
+        );
+        let draft = draft(table, &[], &de);
+        assert_eq!(draft.breakdown, ["nrg_bal", "siec", "siec>nrg_bal"]);
+        let filled = fill(&draft, 1, &picks(&[("t1.breakdown", 2), ("t1.unit", 1)]), &de, 2026).unwrap();
+        let sectors: Vec<String> = parts("nrg_bal_c", "nrg_bal").into_iter().map(|p| p.code).collect();
+        assert_eq!(filter(&filled, "nrg_bal").unwrap(), sectors);
+        assert_eq!(filled.event["open"], Value::Null);
+        assert_eq!(filled.event["estimate"], 90);
+        assert_eq!(filled.event["parts"][0]["from_codes"], 142);
+        assert_eq!(filled.event["parts"][0]["unlisted"], json!([]));
+        // the flow: 11 x 7 leaves for the latest year, none open
+        let flow = fill(&draft, 1, &picks(&[("t1.breakdown", 4), ("t1.unit", 1), ("t1.years", 1)]), &de, 2026).unwrap();
+        assert_eq!(filter(&flow, "siec").unwrap().len(), 11);
+        assert_eq!(filter(&flow, "nrg_bal").unwrap().len(), 7);
+        assert_eq!(flow.event["open"], Value::Null);
+        assert_eq!(flow.event["estimate"], 77);
+        // the run's DE 2024 sector rows
+        let fixture = include_str!("../scripts/fixtures/data_prepare/nrg_bal_c_DE_2024_TOTAL.tsv");
+        let value: BTreeMap<&str, f64> = fixture
+            .lines()
+            .filter(|l| !l.starts_with('#'))
+            .skip(1)
+            .map(|l| {
+                let f: Vec<&str> = l.split('\t').collect();
+                (f[0], f[2].parse().unwrap())
+            })
+            .collect();
+        let leaves: f64 = flow_parts("nrg_bal_c", "nrg_bal").iter().map(|p| value[p.code.as_str()]).sum();
+        let other: f64 = parts("nrg_bal_c", "nrg_bal")
+            .iter()
+            .filter(|p| p.parent.as_deref() == Some("FC_OTH_E"))
+            .map(|p| value[p.code.as_str()])
+            .sum();
+        for (whole, sum) in [(value["FC_E"], leaves), (value["FC_OTH_E"], other)] {
+            assert!((whole - sum).abs() <= crate::classify::TOLERANCE * whole, "{whole} vs parts {sum}");
+        }
     }
 }

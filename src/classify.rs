@@ -1156,17 +1156,18 @@ pub fn classify(t: &TableInput, refs: &Refs, ask: &Ask) -> TableRoles {
 /// source or the target of its table's flow (column "flow").
 const ESTAT_PARTS: &str = include_str!("../runtime/pi/assets/estat-parts.tsv");
 
-/// The flow estat-parts.tsv registers for `dataset` (its id without "@2"): the source and the target dimension, each with
-/// its registered codes. None when the file registers no flow, or only one side of it.
+/// The flow estat-parts.tsv registers for `dataset` (its id without "@2", one of a row's "tables"): the source and the target
+/// dimension, each with its registered codes. None when the file registers no flow, or only one side of it.
 fn registered_flow(dataset: &str) -> Option<[(String, Vec<String>); 2]> {
     let mut lines = ESTAT_PARTS.lines();
     let header: Vec<&str> = lines.next()?.split('\t').collect();
     let col = |name: &str| header.iter().position(|h| *h == name);
-    let (t, d, c, l, f) = (col("table")?, col("dim")?, col("code")?, col("level")?, col("flow")?);
+    let (t, d, c, l, f) = (col("tables")?, col("dim")?, col("code")?, col("level")?, col("flow")?);
     let id = dataset.strip_suffix("@2").unwrap_or(dataset);
+    // a row registers its code for every table its "tables" names (a family that shares the codelist)
     let rows: Vec<Vec<&str>> = lines
         .map(|line| line.split('\t').collect::<Vec<&str>>())
-        .filter(|r| r.get(t) == Some(&id))
+        .filter(|r| r.get(t).is_some_and(|tables| tables.split_whitespace().any(|x| x == id)))
         .collect();
     let side = |s: &str| -> Option<(String, Vec<String>)> {
         let dim = rows.iter().find(|r| r.get(l) == Some(&"total") && r.get(f) == Some(&s))?[d];
@@ -1968,8 +1969,10 @@ mod tests {
             &[("siec", &t.dims[1].codes), ("nrg_bal", &t.dims[0].codes)],
         );
         assert_eq!(shape.official_flow, Some(("siec".to_string(), "nrg_bal".to_string())));
+        // nrg_bal_c is of the same family (one row registers both): the same rows read the same flow
+        assert_eq!(classify(&fixture_table("nrg_bal_c", &leaves), &refs(), &Ask::default()).flow, roles.flow);
         // unregistered: no flow, as before
-        let other = classify(&fixture_table("nrg_bal_c", &leaves), &refs(), &Ask::default());
+        let other = classify(&fixture_table("nrg_x", &leaves), &refs(), &Ask::default());
         assert_eq!(other.flow, None);
         assert!(!other.dims.iter().any(|d| d.roles.iter().any(|r| matches!(r.role, Role::FlowSource | Role::FlowTarget))));
         // a split by one dimension (siec TOTAL alone) is no flow
