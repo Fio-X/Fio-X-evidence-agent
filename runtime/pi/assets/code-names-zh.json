@@ -1,10 +1,262 @@
 {
  "schema_version": "0.1.0",
  "rules": [
-  "zh = a Chinese name for a code of a dimension that is no place (a fuel of siec, a sector of nrg_bal), printed on a page and marked with its name row name:zh_names:<dim>:<code>.",
+  "zh = the short Chinese name of a code of a dimension that is no place (a fuel of siec, a sector of nrg_bal), the one a page prints, marked with its name row name:zh_names:<dim>:<code>; zh_full = its full name, kept for reference and printed nowhere.",
   "dims lists the dimensions this file names codes of; a code of a listed dimension with no entry has no name, and a page that would print it stops, never printing the code or an English name.",
-  "Only names the project owner reviewed are listed (zh_source 'reviewed', with the review date); a name is never machine-translated into this file."
+  "Only names the project owner reviewed are listed (zh_source 'reviewed', with the review date); a name is never machine-translated into this file. basis says whether the name is the source's own term (official) or the project's translation of a code the source names otherwise (own translation), and source names the document it was checked against."
  ],
- "dims": ["siec", "nrg_bal"],
- "codes": []
+ "dims": [
+  "siec",
+  "nrg_bal"
+ ],
+ "codes": [
+  {
+   "dim": "siec",
+   "code": "TOTAL",
+   "en": "Total",
+   "zh": "合计",
+   "zh_full": "总计",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31",
+   "basis": "official",
+   "source": "https://unstats.un.org/unsd/energystats/methodology/documents/IRES-ch.pdf; UN, International Recommendations for Energy Statistics (IRES), Chinese edition, 2019",
+   "note": "IRES balance column 'total' (chapters 5 and 8)"
+  },
+  {
+   "dim": "siec",
+   "code": "C0000X0350-0370",
+   "en": "Solid fossil fuels",
+   "zh": "固体燃料",
+   "zh_full": "固体化石燃料（不含人造气）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31",
+   "basis": "own translation",
+   "source": "https://unstats.un.org/unsd/energystats/methodology/documents/IRES-ch.pdf; UN, International Recommendations for Energy Statistics (IRES), Chinese edition, 2019",
+   "note": "IRES names solid fossil fuels (the SIEC coal section); this Eurostat code leaves manufactured gases out, so its scope differs"
+  },
+  {
+   "dim": "siec",
+   "code": "C0350-0370",
+   "en": "Manufactured gases",
+   "zh": "人造气",
+   "zh_full": "人造气（煤气厂气、焦炉气、高炉气等）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31",
+   "basis": "own translation",
+   "source": "https://unstats.un.org/unsd/energystats/methodology/documents/IRES-ch.pdf; UN, International Recommendations for Energy Statistics (IRES), Chinese edition, 2019",
+   "note": "IRES lists only the member item gas works gas (and other manufactured gases for distribution), no group name"
+  },
+  {
+   "dim": "siec",
+   "code": "P1000",
+   "en": "Peat and peat products",
+   "zh": "泥炭",
+   "zh_full": "泥炭和泥炭制品",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31",
+   "basis": "official",
+   "source": "https://unstats.un.org/unsd/energystats/methodology/documents/IRES-ch.pdf; UN, International Recommendations for Energy Statistics (IRES), Chinese edition, 2019"
+  },
+  {
+   "dim": "siec",
+   "code": "S2000",
+   "en": "Oil shale and oil sands",
+   "zh": "油页岩",
+   "zh_full": "油页岩和油砂",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31",
+   "basis": "official",
+   "source": "https://unstats.un.org/unsd/energystats/methodology/documents/IRES-ch.pdf; UN, International Recommendations for Energy Statistics (IRES), Chinese edition, 2019",
+   "note": "IRES writes oil shale/oil sands"
+  },
+  {
+   "dim": "siec",
+   "code": "G3000",
+   "en": "Natural gas",
+   "zh": "天然气",
+   "zh_full": "天然气",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31",
+   "basis": "official",
+   "source": "https://unstats.un.org/unsd/energystats/methodology/documents/IRES-ch.pdf; UN, International Recommendations for Energy Statistics (IRES), Chinese edition, 2019"
+  },
+  {
+   "dim": "siec",
+   "code": "O4000XBIO",
+   "en": "Oil and petroleum products (excluding biofuel portion)",
+   "zh": "石油",
+   "zh_full": "石油及石油制品（不含生物燃料部分）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31",
+   "basis": "own translation",
+   "source": "https://unstats.un.org/unsd/energystats/methodology/documents/IRES-ch.pdf; UN, International Recommendations for Energy Statistics (IRES), Chinese edition, 2019",
+   "note": "IRES has the sections oil and oil products, no joint name; 'excluding the biofuel portion' is an own translation"
+  },
+  {
+   "dim": "siec",
+   "code": "RA000",
+   "en": "Renewables and biofuels",
+   "zh": "可再生能源",
+   "zh_full": "可再生能源和生物燃料",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31",
+   "basis": "own translation",
+   "source": "https://unstats.un.org/unsd/energystats/methodology/documents/IRES-ch.pdf; UN, International Recommendations for Energy Statistics (IRES), Chinese edition, 2019",
+   "note": "IRES has biofuels and renewable energy apart, no joint name"
+  },
+  {
+   "dim": "siec",
+   "code": "W6100_6220",
+   "en": "Non-renewable waste",
+   "zh": "不可再生废物",
+   "zh_full": "不可再生废物",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31",
+   "basis": "official",
+   "source": "https://unstats.un.org/unsd/energystats/methodology/documents/IRES-ch.pdf; UN, International Recommendations for Energy Statistics (IRES), Chinese edition, 2019",
+   "note": "IRES industrial waste: non-renewable waste; this Eurostat code is industrial and non-renewable municipal waste, a close scope"
+  },
+  {
+   "dim": "siec",
+   "code": "N900H",
+   "en": "Nuclear heat",
+   "zh": "核热",
+   "zh_full": "核热",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31",
+   "basis": "official",
+   "source": "https://unstats.un.org/unsd/energystats/methodology/documents/IRES-ch.pdf; UN, International Recommendations for Energy Statistics (IRES), Chinese edition, 2019",
+   "note": "IRES 5.64 nuclear heat"
+  },
+  {
+   "dim": "siec",
+   "code": "E7000",
+   "en": "Electricity",
+   "zh": "电力",
+   "zh_full": "电力",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31",
+   "basis": "official",
+   "source": "https://unstats.un.org/unsd/energystats/methodology/documents/IRES-ch.pdf; UN, International Recommendations for Energy Statistics (IRES), Chinese edition, 2019"
+  },
+  {
+   "dim": "siec",
+   "code": "H8000",
+   "en": "Heat",
+   "zh": "热力",
+   "zh_full": "热力",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31",
+   "basis": "official",
+   "source": "https://unstats.un.org/unsd/energystats/methodology/documents/IRES-ch.pdf; UN, International Recommendations for Energy Statistics (IRES), Chinese edition, 2019"
+  },
+  {
+   "dim": "nrg_bal",
+   "code": "FC_E",
+   "en": "Final consumption - energy use",
+   "zh": "能源消费",
+   "zh_full": "最终能源消费",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31",
+   "basis": "official",
+   "source": "https://unstats.un.org/unsd/energystats/methodology/documents/IRES-ch.pdf; UN, International Recommendations for Energy Statistics (IRES), Chinese edition, 2019",
+   "note": "IRES 5.5-5.6 final energy consumption; the short name is an abbreviation"
+  },
+  {
+   "dim": "nrg_bal",
+   "code": "FC_IND_E",
+   "en": "industry sector",
+   "zh": "工业",
+   "zh_full": "工业（制造业、建筑业和非燃料采矿业）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31",
+   "basis": "own translation",
+   "source": "https://unstats.un.org/unsd/energystats/methodology/documents/IRES-ch.pdf; UN, International Recommendations for Energy Statistics (IRES), Chinese edition, 2019",
+   "note": "IRES table 5.3 manufacturing, construction and non-fuel mining industries, no group name for industry; the short name follows common usage"
+  },
+  {
+   "dim": "nrg_bal",
+   "code": "FC_TRA_E",
+   "en": "transport sector",
+   "zh": "交通运输",
+   "zh_full": "交通运输业",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31",
+   "basis": "official",
+   "source": "https://unstats.un.org/unsd/energystats/methodology/documents/IRES-ch.pdf; UN, International Recommendations for Energy Statistics (IRES), Chinese edition, 2019",
+   "note": "IRES 5.6 recommended class transport"
+  },
+  {
+   "dim": "nrg_bal",
+   "code": "FC_OTH_E",
+   "en": "other sectors",
+   "zh": "其他行业",
+   "zh_full": "其他行业",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31",
+   "basis": "official",
+   "source": "https://unstats.un.org/unsd/energystats/methodology/documents/IRES-ch.pdf; UN, International Recommendations for Energy Statistics (IRES), Chinese edition, 2019",
+   "note": "IRES 5.6 other sectors"
+  },
+  {
+   "dim": "nrg_bal",
+   "code": "FC_OTH_CP_E",
+   "en": "commercial and public services",
+   "zh": "商业公服",
+   "zh_full": "商业和公共服务",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31",
+   "basis": "official",
+   "source": "https://unstats.un.org/unsd/energystats/methodology/documents/IRES-ch.pdf; UN, International Recommendations for Energy Statistics (IRES), Chinese edition, 2019",
+   "note": "IRES table 5.3; the short name is an abbreviation"
+  },
+  {
+   "dim": "nrg_bal",
+   "code": "FC_OTH_HH_E",
+   "en": "households",
+   "zh": "家庭",
+   "zh_full": "家庭",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31",
+   "basis": "official",
+   "source": "https://unstats.un.org/unsd/energystats/methodology/documents/IRES-ch.pdf; UN, International Recommendations for Energy Statistics (IRES), Chinese edition, 2019",
+   "note": "IRES table 5.3 households (ISIC 97-98)"
+  },
+  {
+   "dim": "nrg_bal",
+   "code": "FC_OTH_AF_E",
+   "en": "agriculture and forestry",
+   "zh": "农林业",
+   "zh_full": "农业、林业",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31",
+   "basis": "official",
+   "source": "https://unstats.un.org/unsd/energystats/methodology/documents/IRES-ch.pdf; UN, International Recommendations for Energy Statistics (IRES), Chinese edition, 2019",
+   "note": "IRES table 5.3; the short name is an abbreviation"
+  },
+  {
+   "dim": "nrg_bal",
+   "code": "FC_OTH_FISH_E",
+   "en": "fishing",
+   "zh": "渔业",
+   "zh_full": "渔业",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31",
+   "basis": "official",
+   "source": "https://unstats.un.org/unsd/energystats/methodology/documents/IRES-ch.pdf; UN, International Recommendations for Energy Statistics (IRES), Chinese edition, 2019",
+   "note": "IRES table 5.3"
+  },
+  {
+   "dim": "nrg_bal",
+   "code": "FC_OTH_NSP_E",
+   "en": "not elsewhere specified",
+   "zh": "其他未列明",
+   "zh_full": "其他未列明（含国防活动）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31",
+   "basis": "official",
+   "source": "https://unstats.un.org/unsd/energystats/methodology/documents/IRES-ch.pdf; UN, International Recommendations for Energy Statistics (IRES), Chinese edition, 2019",
+   "note": "IRES table 5.3 not elsewhere specified (including defence activities)"
+  }
+ ]
 }

@@ -1076,17 +1076,17 @@ mod tests {
     }
 
     /// A fuel or a sector (siec, nrg_bal: dimensions code-names-zh.json lists) is named only by a reviewed entry of that file,
-    /// in table-names-zh.json's form; none is reviewed yet, so every code is missing (a page stops, printing none), and a
-    /// scheme neither table lists is no table. A reviewed entry drops in as it is; an unreviewed one, a dimension the file does
-    /// not list or a code twice is a broken file.
+    /// in table-names-zh.json's form: its short name; a code it does not list is missing (a page stops, printing none), and a
+    /// scheme neither table lists is no table. An unreviewed entry, a dimension the file does not list or a code twice is a
+    /// broken file.
     #[test]
-    fn a_code_of_a_listed_dimension_is_named_only_by_a_reviewed_entry_and_none_is_reviewed_yet() {
-        let codes: Vec<String> = ["G3000", "E7000"].iter().map(|c| c.to_string()).collect();
+    fn a_code_of_a_listed_dimension_is_named_only_by_a_reviewed_entry() {
+        let codes: Vec<String> = ["G3000", "E7000", "XX"].iter().map(|c| c.to_string()).collect();
         let Ok(Reply::ZhNames { names, missing }) = call(Request::ZhNames { scheme: "siec", codes: &codes }) else {
             panic!("no names")
         };
-        assert!(names.is_empty());
-        assert_eq!(missing, ["G3000", "E7000"]);
+        assert_eq!((names["G3000"].as_str(), names["E7000"].as_str()), ("天然气", "电力"));
+        assert_eq!(missing, ["XX"]);
         assert!(call(Request::ZhNames { scheme: "unit", codes: &codes }).is_err());
         let file = |codes: &str| format!(r#"{{"dims": ["siec", "nrg_bal"], "codes": [{codes}]}}"#);
         let entry = |dim: &str, source: &str| format!(r#"{{"dim": "{dim}", "code": "G3000", "zh": "名", "zh_source": "{source}", "reviewed": "2026-10-31"}}"#);
@@ -1095,6 +1095,29 @@ mod tests {
         assert!(read["nrg_bal"].is_empty());
         for broken in [entry("siec", "machine"), entry("unit", "reviewed"), [entry("siec", "reviewed"), entry("siec", "reviewed")].join(",")] {
             assert!(read_code_names(&file(&broken)).is_err(), "{broken}");
+        }
+    }
+
+    /// Every code estat-parts.tsv registers for a dimension code-names-zh.json lists (each fuel and sector of the balance
+    /// tables, their totals and subtotal included) has a reviewed name, with its full name and its source beside it.
+    #[test]
+    fn every_registered_balance_code_has_a_reviewed_name() {
+        let parts = include_str!("../runtime/pi/assets/estat-parts.tsv");
+        let mut lines = parts.lines();
+        let header: Vec<&str> = lines.next().unwrap().split('\t').collect();
+        let at = |name: &str| header.iter().position(|h| *h == name).unwrap();
+        let (d, c) = (at("dim"), at("code"));
+        let names = code_names().unwrap();
+        let mut seen = 0;
+        for f in lines.filter(|l| !l.is_empty()).map(|l| l.split('\t').collect::<Vec<&str>>()) {
+            let Some(table) = names.get(f[d]) else { continue };
+            assert!(table.get(f[c]).is_some_and(|zh| !zh.is_empty()), "{} {} has no reviewed name", f[d], f[c]);
+            seen += 1;
+        }
+        assert_eq!(seen, 21);
+        let file: Value = serde_json::from_str(CODE_NAMES).unwrap();
+        for e in file["codes"].as_array().unwrap() {
+            assert!(e["zh_full"].as_str().is_some_and(|z| !z.is_empty()) && e["source"].as_str().is_some_and(|s| s.starts_with("https://")), "{e}");
         }
     }
 
