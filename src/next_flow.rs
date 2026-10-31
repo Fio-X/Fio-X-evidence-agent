@@ -3397,6 +3397,104 @@ pub const COMPANION_EVENT: &str = "next_companions";
 /// The event of a companion whose picked claims did not register: the table and why. The companion is left off the page; the
 /// page goes on with the main table and any other companion.
 pub const COMPANION_PICKS_EVENT: &str = "next_companion_picks";
+/// The event of a composition's second fetch (composition_fetch): the table, the dimension, the codes asked per group, the
+/// places asked (the first fetch's countries with the largest total at the year, at most next_params::NARROW_TOP), the
+/// year, the total code they were ranked by, how many countries were left out, and the file it gave.
+pub const COMPOSITION_FETCH_EVENT: &str = "next_composition_fetch";
+/// The mode newsroom_data_prepare answers a fetch the program marked sum_input with: rows kept as a file only.
+pub const SUM_INPUT_MODE: &str = "sum_input";
+
+/// The place dimension a composition ranks and asks its countries by.
+const COMPOSITION_PLACE: &str = "geo";
+
+/// The filter values a fetch's args ask dimension `dim` for (None when it asks no filter of it: every code).
+fn asked_values(args: &Map<String, Value>, dim: &str) -> Option<Vec<String>> {
+    let filter = args.get("filters")?.as_array()?.iter().find(|f| f["dimension"] == dim)?;
+    filter["values"].as_array()?.iter().map(|v| v.as_str().map(str::to_string)).collect()
+}
+
+/// The dimension of a Eurostat main whose fetch asked for its total code alone and whose registry has composition groups,
+/// with that total code and each group's input codes (next_params::group_inputs); None for any other fetch, and for one
+/// whose place dimension asks one code only (a composition across places needs two or more).
+fn composition_dim(main: &Prepared) -> Result<Option<(String, String, Vec<(String, Vec<String>)>)>, String> {
+    if main.id.ends_with("@2") || asked_values(&main.args, COMPOSITION_PLACE).is_some_and(|v| v.len() < 2) {
+        return Ok(None);
+    }
+    let dims: Vec<String> = main.args.get("filters").and_then(Value::as_array).into_iter().flatten()
+        .filter_map(|f| f["dimension"].as_str().map(str::to_string)).collect();
+    for dim in dims {
+        let total = next_params::parts(&main.id, &dim).into_iter().find(|p| p.level == next_params::PART_LEVELS[0]);
+        let Some(total) = total.filter(|t| asked_values(&main.args, &dim).is_some_and(|v| v == [t.code.clone()])) else {
+            continue;
+        };
+        let inputs = next_params::group_inputs(&main.id, &dim)?;
+        if !inputs.is_empty() {
+            return Ok(Some((dim, total.code, inputs)));
+        }
+    }
+    Ok(None)
+}
+
+/// The second fetch of a composition, made by the program after the claims pick, never chosen by a model: when the main's
+/// fetch asked a dimension with registered groups (next_params::group_inputs) for its total code alone, it asks the same
+/// table for each group's input codes (official codes the table publishes, at most one level under the total in the
+/// registry's tree), at the latest year any country holds a total at in the main's rows, for the countries with the largest
+/// total there (next_params::NARROW_TOP of them, largest first, a tie to code order; aggregates are no country), marked
+/// sum_input with the main's file and candidate sheet, so its rows become no candidate, sheet or claim (newsroom.ts
+/// sumInputProblem). The first fetch is unchanged and carries every claim. None when the main is no such fetch: a World
+/// Bank table, no dimension asked for its grouped total alone, or fewer than two countries with a total. Ok is the args and
+/// the event's fields beside the file.
+pub fn composition_fetch(
+    main: &Prepared,
+    rows: &[Value],
+    catalogue: &dyn Catalogue,
+) -> Result<Option<(Map<String, Value>, Value)>, String> {
+    let Some((dim, total, inputs)) = composition_dim(main)? else {
+        return Ok(None);
+    };
+    let filters: Vec<Value> = main.args.get("filters").and_then(Value::as_array).cloned().unwrap_or_default();
+    let place = COMPOSITION_PLACE;
+    let held: Vec<&Value> = rows
+        .iter()
+        .filter(|r| r["dims"][&dim] == total.as_str() && r["dims"][place].is_string())
+        .filter(|r| r["value"].as_str().and_then(|v| v.parse::<f64>().ok()).is_some_and(f64::is_finite))
+        .collect();
+    let codes: Vec<String> =
+        held.iter().filter_map(|r| r["dims"][place].as_str().map(str::to_string)).collect::<BTreeSet<_>>().into_iter().collect();
+    let countries = catalogue.countries(&codes)?;
+    let of_country = |r: &&&Value| r["dims"][place].as_str().is_some_and(|c| countries.iter().any(|k| k == c));
+    let Some(year) = held.iter().filter(of_country).filter_map(|r| r["time"].as_str()).max().map(str::to_string) else {
+        return Ok(None);
+    };
+    let mut ranked: Vec<(f64, String)> = held
+        .iter()
+        .filter(of_country)
+        .filter(|r| r["time"] == year.as_str())
+        .filter_map(|r| Some((r["value"].as_str()?.parse::<f64>().ok()?, r["dims"][place].as_str()?.to_string())))
+        .collect();
+    ranked.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    if ranked.len() < 2 {
+        return Ok(None);
+    }
+    let left_out = ranked.len().saturating_sub(next_params::NARROW_TOP);
+    let top: Vec<String> = ranked.into_iter().take(next_params::NARROW_TOP).map(|(_, c)| c).collect();
+    let all: Vec<String> = inputs.iter().flat_map(|(_, c)| c.iter().cloned()).collect();
+    let mut filters: Vec<Value> = filters.into_iter().filter(|f| f["dimension"] != dim.as_str() && f["dimension"] != place).collect();
+    filters.push(json!({"dimension": dim, "values": all}));
+    filters.push(json!({"dimension": place, "values": top}));
+    let mut args = main.args.clone();
+    for key in ["sheet", "picks", "narrow", "sum_year"] {
+        args.remove(key);
+    }
+    args.insert("filters".into(), Value::Array(filters));
+    let y: i64 = year.parse().map_err(|_| format!("{} has a total at {year}, not a year", main.id))?;
+    args.insert("years".into(), json!({"start": y, "end": y}));
+    args.insert("sum_input".into(), json!({"main": main.file, "sheet": main.sheet}));
+    let event = json!({"table": main.id, "dim": dim, "groups": inputs, "places": top, "year": year, "ranked_by": total,
+        "top": next_params::NARROW_TOP, "left_out": left_out});
+    Ok(Some((args, event)))
+}
+
 /// Tables one page takes, the main table's included (D8); a by-month twin of the main takes a place besides.
 pub const PAGE_TABLES_MAX: usize = 3;
 /// One companion fetch may take this long; past it the fetch is asked to stop, and the host ends it the normal way.
@@ -4651,7 +4749,46 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
             },
         });
     }
+    if let Some(main) = prepared.first_mut() {
+        composition_inputs(recorder, tools, catalogue, main, cancel).await?;
+    }
     Ok(prepared)
+}
+
+/// The composition's second fetch (composition_fetch) of the main, when it is one: fetched by the program, its file kept
+/// among the main's companions under the main's own id (a companion of the table itself is its sum inputs, read by the
+/// composition only: next_run sum_inputs), one COMPOSITION_FETCH_EVENT. A fetch that answers anything but SUM_INPUT_MODE
+/// stops the run as not prepared; nothing is fetched in its place.
+async fn composition_inputs<R: ToolRunner + Send + ?Sized>(
+    recorder: &mut Recorder<'_>,
+    tools: &mut R,
+    catalogue: &dyn Catalogue,
+    main: &mut Prepared,
+    cancel: &AtomicBool,
+) -> Result<(), Stop> {
+    let not_prepared = |why: String| Stop::NotPrepared { dataset: main.id.clone(), mode: SUM_INPUT_MODE.into(), why };
+    // a fetch that asks no grouped total alone, across places, asks for no second fetch and reads no file for it
+    if composition_dim(main).map_err(not_prepared)?.is_none() {
+        return Ok(());
+    }
+    let meta = catalogue.table(&main.id).ok_or_else(|| not_prepared(format!("the catalogue lists no {}", main.id)))?;
+    let csv = std::fs::read_to_string(recorder.run_dir.join(&main.file))
+        .map_err(|e| not_prepared(format!("the fetched file {}: {e}", main.file)))?;
+    let rows = catalogue.series_rows(&meta, &csv).map_err(not_prepared)?;
+    let fetch = composition_fetch(main, &rows, catalogue).map_err(not_prepared);
+    record_group_calls(recorder, catalogue)?;
+    let Some((args, mut event)) = fetch? else {
+        return Ok(());
+    };
+    let called = prepare_fetch(recorder, tools, catalogue, &main.id, &args, cancel).await?;
+    let (mode, file) = (mode_of(&called), called.details.as_ref().and_then(|d| d["filePath"].as_str()).map(String::from));
+    let (true, Some(file)) = (mode == SUM_INPUT_MODE, file) else {
+        return Err(Stop::NotPrepared { dataset: main.id.clone(), mode, why: reason(&called) });
+    };
+    event["file"] = json!(file);
+    recorder.program_event(COMPOSITION_FETCH_EVENT, event)?;
+    main.companions.push((main.id.clone(), file));
+    Ok(())
 }
 
 #[cfg(test)]
