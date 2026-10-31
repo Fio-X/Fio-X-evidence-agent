@@ -35,7 +35,7 @@ const BASELINE_PATH = join(REPO, "scripts/fixtures/flow-ratchet.json");
 export const COUNTS = ["nodes", "ops", "copy", "kinds"];
 export const ROUTES = ["new", "old"];
 
-export const CJK_RE = /[一-鿿　-〿＀-￯]/;
+export const CJK_RE = /[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/;
 const KIND = "composition|stacked100|bubbles?|sankey|heatmap|change_bars|bars|ring|column|treemap|dotgrid";
 export const KIND_RE = new RegExp(`(?<![A-Za-z0-9])(?:${KIND})(?![A-Za-z0-9])|"(?:map|flow|change)"|Relation::(?:Flow|Composition|Map|Change)\\b`);
 const OP_RE = /\\?"op\\?"\s*:/;
@@ -178,11 +178,11 @@ const argAfter = (flag) => { const at = process.argv.indexOf(flag); return at > 
 let checks = 0;
 const eq = (a, b, msg) => { assert.deepEqual(a, b, msg); checks += 1; };
 const counts = (path, text) => { const g = scanText(path, text); return Object.fromEntries(COUNTS.map((c) => [c, g[c].length])); };
-eq(counts("src/next_x.rs", 'let k = "sankey";\n// let k = "bars";\nlet t = "中文";\nlet o = json!({"op": "fill"});\n#[cfg(test)]\nlet k = "ring";\n'), { nodes: 0, ops: 1, copy: 1, kinds: 1 }, "rs sample: comment skipped, cut at the test line");
+eq(counts("src/next_x.rs", 'let k = "sankey";\n// let k = "bars";\nlet t = "\u4e2d\u6587";\nlet o = json!({"op": "fill"});\n#[cfg(test)]\nlet k = "ring";\n'), { nodes: 0, ops: 1, copy: 1, kinds: 1 }, "rs sample: comment skipped, cut at the test line");
 eq(counts("src/next_x.rs", 'const NODE_FILLS: &[(&str, F)] = &[\n    ("map", map_fill),\n    ("ring", ring_fill),\n];\nfn map_fill() {}\npub(crate) fn fill_of() {}\n'), { nodes: 4, ops: 0, copy: 0, kinds: 2 }, "NODE_FILLS entries and fill fns");
 eq(counts("src/next_x.rs", 'const NODE_FILLS: &[(&str, F)] = &[("map", map_fill), ("bars", bars_fill)];\nlet x = ("no", 1);\n'), { nodes: 2, ops: 0, copy: 0, kinds: 1 }, "a one-line NODE_FILLS table; a tuple after it is no entry");
-eq(counts("runtime/pi/x.mjs", "const t = '中文'; // ok\nconst u = x; // 中文 note\n"), { nodes: 0, ops: 0, copy: 1, kinds: 0 }, "js quote kinds; CJK only in a trailing comment is no copy");
-eq(counts("runtime/pi/assets/x.tsv", "a\t中\nb\tbars\n"), { nodes: 0, ops: 0, copy: 1, kinds: 0 }, "a data file counts copy only");
+eq(counts("runtime/pi/x.mjs", "const t = '\u4e2d\u6587'; // ok\nconst u = x; // \u4e2d\u6587 note\n"), { nodes: 0, ops: 0, copy: 1, kinds: 0 }, "js quote kinds; CJK only in a trailing comment is no copy");
+eq(counts("runtime/pi/assets/x.tsv", "a\t\u4e2d\nb\tbars\n"), { nodes: 0, ops: 0, copy: 1, kinds: 0 }, "a data file counts copy only");
 assert.ok(KIND_RE.test("change_bars") && KIND_RE.test("Relation::Flow") && !KIND_RE.test("rings2x") && !KIND_RE.test("columns"), "kind words are whole words");
 checks += 1;
 
@@ -216,7 +216,7 @@ const overlay = (over) => (p) => (p in over ? over[p] : diskRead(p));
 {
   const w = disk.words.find((x) => routeOf(x.includer) === "new") ?? disk.words[0];
   const route = routeOf(w.includer);
-  const extra = '  "added": "新增文案",';
+  const extra = '  "added": "\u65b0\u589e\u6587\u6848",';
   const text = diskRead(w.target);
   const m = measure(groups, overlay({ [w.target]: text.replace("\n", `\n${extra}\n`) }));
   eq(m.totals[route].copy, disk.totals[route].copy + 1, `mutant 2: ${w.target} (read by ${w.includer}) with one CJK line: copy goes up by 1`);
