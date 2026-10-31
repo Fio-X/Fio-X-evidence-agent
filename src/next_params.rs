@@ -2945,7 +2945,7 @@ mod tests {
         let excluded = flow_excluded("nrg_bal_s").unwrap();
         assert_eq!(excluded.iter().map(|p| (p.code.as_str(), p.excluded_from.as_deref())).collect::<Vec<_>>(), [("N900H", Some("FC_E"))]);
         let source = excluded[0].excluded_source.as_deref().unwrap();
-        for words in ["KS-HB-20-001", "https://ec.europa.eu/eurostat/documents/3217494/11099022/KS-HB-20-001-EN-N.pdf", "p.26", "p.16",
+        for words in ["KS-HB-20-001", "https://ec.europa.eu/eurostat/documents/3217494/11099022/KS-HB-20-001-EN-N.pdf", "PDF p.26 (printed p.24)", "PDF p.16 (printed p.14)",
             "Symbol \"Z\" means data are not applicable.", "Basis: the cell-by-cell Z flags, not a one-sentence definition."] {
             assert!(source.contains(words), "{words}");
         }
