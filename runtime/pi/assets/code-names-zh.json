@@ -1,0 +1,10 @@
+{
+ "schema_version": "0.1.0",
+ "rules": [
+  "zh = a Chinese name for a code of a dimension that is no place (a fuel of siec, a sector of nrg_bal), printed on a page and marked with its name row name:zh_names:<dim>:<code>.",
+  "dims lists the dimensions this file names codes of; a code of a listed dimension with no entry has no name, and a page that would print it stops, never printing the code or an English name.",
+  "Only names the project owner reviewed are listed (zh_source 'reviewed', with the review date); a name is never machine-translated into this file."
+ ],
+ "dims": ["siec", "nrg_bal"],
+ "codes": []
+}

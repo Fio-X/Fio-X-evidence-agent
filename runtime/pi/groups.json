@@ -848,6 +848,10 @@
    "group": "knowledge",
    "note": "New route: each Eurostat table that holds monthly data only with the annual table of the same measure (same dimensions; the annual codes cover the monthly ones, the extra ones counted), built offline from the metabase. Catalogue data read by l5geo.rs (include_str), which checks each pair again in the catalogue before offering the annual table; it says nothing about a year being a sum of months (flow-families.json alone registers that). Ownership only; no cross-group call is allowed by this row."
   },
+  "runtime/pi/assets/code-names-zh.json": {
+   "group": "knowledge",
+   "note": "New route: the reviewed Chinese name of each code of a dimension that is no place (siec fuels, nrg_bal sectors), in table-names-zh.json's form, each with the date it was reviewed; empty until the project owner reviews names. A word list read by the knowledge group (next_knowledge.rs, include_str) and asked of it through its ZhNames request with the dimension as the scheme. Ownership only; no cross-group call is allowed by this row."
+  },
   "runtime/pi/assets/table-names-zh.json": {
    "group": "knowledge",
    "note": "New route: the reviewed Chinese name of each registered table the source line prints, each with the date it was reviewed. A word list read by the knowledge group (next_knowledge.rs, include_str) and asked of it through its TableZh request. Ownership only; no cross-group call is allowed by this row."

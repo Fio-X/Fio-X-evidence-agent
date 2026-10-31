@@ -50,6 +50,10 @@ const ECONOMY_NAMES: &str = include_str!("../runtime/pi/assets/economy-names.jso
 /// title; a table it does not list keeps its English title.
 const TABLE_NAMES: &str = include_str!("../runtime/pi/assets/table-names-zh.json");
 
+/// The reviewed Chinese names of the codes of dimensions that are no place (code-names-zh.json, in table-names-zh.json's
+/// form): a page prints one marked name:zh_names:<dim>:<code>; a code of a listed dimension with no entry has no name.
+const CODE_NAMES: &str = include_str!("../runtime/pi/assets/code-names-zh.json");
+
 /// Registry: Eurostat's SDMX 3.0 data endpoint. Its named filters (`c[geo]=DE,FR`) need no dimension order: the metabase
 /// lists a table's dimensions alphabetically, not in its DSD's order (30 of 30 sampled tables differ, 10-28), and a DSD call
 /// would add about 1.2 s per table.
@@ -130,8 +134,9 @@ pub enum Request<'a> {
         /// What the matcher is asked; None asks the default.
         ask: Option<&'a classify::Ask>,
     },
-    /// The Chinese name of each code in the name table's `scheme` (iso2, Eurostat's EL and UK included, or iso3), exact match
-    /// only: a code the table does not hold is listed as missing, never translated or kept as it is.
+    /// The Chinese name of each code in the name table's `scheme` (iso2, Eurostat's EL and UK included, or iso3; or a dimension
+    /// code-names-zh.json lists, such as siec), exact match only: a code the table does not hold is listed as missing, never
+    /// translated or kept as it is.
     ZhNames {
         scheme: &'a str,
         codes: &'a [String],
@@ -325,9 +330,12 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
             Reply::Shape(classify::varying(&roles, &slice, &varying))
         }
         Request::ZhNames { scheme, codes } => {
-            let table = name_tables()?
-                .get(scheme)
-                .ok_or_else(|| format!("the name table has no scheme '{scheme}' (iso2 or iso3)"))?;
+            let table = match name_tables()?.get(scheme) {
+                Some(table) => table,
+                None => code_names()?.get(scheme).ok_or_else(|| {
+                    format!("the name table has no scheme '{scheme}' (iso2, iso3 or a dimension code-names-zh.json lists)")
+                })?,
+            };
             let (mut names, mut missing) = (BTreeMap::new(), Vec::new());
             for code in codes.iter().map(|c| c.trim()) {
                 match table.get(code) {
@@ -703,6 +711,36 @@ fn table_names() -> Result<&'static BTreeMap<String, String>, String> {
         .map_err(Clone::clone)
 }
 
+/// The reviewed code names by dimension (CODE_NAMES), read as table_names reads table-names-zh.json: each dimension of
+/// `dims` a table (empty while none is reviewed), each entry of `codes` a listed dimension, a code, a name and zh_source
+/// "reviewed" with its date; any other entry, or a code listed twice, is a broken file.
+fn code_names() -> Result<&'static BTreeMap<String, BTreeMap<String, String>>, String> {
+    static NAMES: OnceLock<Result<BTreeMap<String, BTreeMap<String, String>>, String>> = OnceLock::new();
+    NAMES.get_or_init(|| read_code_names(CODE_NAMES)).as_ref().map_err(Clone::clone)
+}
+
+/// A code-names-zh.json text read by dimension (code_names).
+fn read_code_names(text: &str) -> Result<BTreeMap<String, BTreeMap<String, String>>, String> {
+    let file: Value = serde_json::from_str(text).map_err(|e| format!("code-names-zh.json: {e}"))?;
+    let mut names: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
+    for dim in file["dims"].as_array().into_iter().flatten() {
+        let dim = dim.as_str().ok_or_else(|| format!("code-names-zh.json: dims holds {dim}, not a dimension id"))?;
+        names.insert(dim.to_string(), BTreeMap::new());
+    }
+    for c in file["codes"].as_array().into_iter().flatten() {
+        let (Some(dim), Some(code), Some(zh), Some("reviewed"), Some(_)) =
+            (c["dim"].as_str(), c["code"].as_str(), c["zh"].as_str(), c["zh_source"].as_str(), c["reviewed"].as_str())
+        else {
+            return Err(format!("code-names-zh.json: {c} is not a dimension's code with a reviewed name and its date"));
+        };
+        let table = names.get_mut(dim).ok_or_else(|| format!("code-names-zh.json: {c} names a dimension dims does not list"))?;
+        if table.insert(code.to_string(), zh.to_string()).is_some() {
+            return Err(format!("code-names-zh.json: {dim} {code} is listed twice"));
+        }
+    }
+    Ok(names)
+}
+
 /// The name table's iso2 to iso3 (economy-names.json economies and territories, then its iso2 aliases EL and UK to their
 /// targets' iso3); an alias whose target has no iso3 is a broken table.
 fn iso3_table() -> Result<&'static BTreeMap<String, String>, String> {
@@ -1035,6 +1073,29 @@ mod tests {
             codes: &codes
         })
         .is_err());
+    }
+
+    /// A fuel or a sector (siec, nrg_bal: dimensions code-names-zh.json lists) is named only by a reviewed entry of that file,
+    /// in table-names-zh.json's form; none is reviewed yet, so every code is missing (a page stops, printing none), and a
+    /// scheme neither table lists is no table. A reviewed entry drops in as it is; an unreviewed one, a dimension the file does
+    /// not list or a code twice is a broken file.
+    #[test]
+    fn a_code_of_a_listed_dimension_is_named_only_by_a_reviewed_entry_and_none_is_reviewed_yet() {
+        let codes: Vec<String> = ["G3000", "E7000"].iter().map(|c| c.to_string()).collect();
+        let Ok(Reply::ZhNames { names, missing }) = call(Request::ZhNames { scheme: "siec", codes: &codes }) else {
+            panic!("no names")
+        };
+        assert!(names.is_empty());
+        assert_eq!(missing, ["G3000", "E7000"]);
+        assert!(call(Request::ZhNames { scheme: "unit", codes: &codes }).is_err());
+        let file = |codes: &str| format!(r#"{{"dims": ["siec", "nrg_bal"], "codes": [{codes}]}}"#);
+        let entry = |dim: &str, source: &str| format!(r#"{{"dim": "{dim}", "code": "G3000", "zh": "名", "zh_source": "{source}", "reviewed": "2026-10-31"}}"#);
+        let read = read_code_names(&file(&entry("siec", "reviewed"))).unwrap();
+        assert_eq!(read["siec"]["G3000"], "名");
+        assert!(read["nrg_bal"].is_empty());
+        for broken in [entry("siec", "machine"), entry("unit", "reviewed"), [entry("siec", "reviewed"), entry("siec", "reviewed")].join(",")] {
+            assert!(read_code_names(&file(&broken)).is_err(), "{broken}");
+        }
     }
 
     /// A code's iso3 comes from the name table only: two letters through its iso2 (EL is Greece, UK Britain), three capital
