@@ -20,7 +20,7 @@ const DEK_MAX: usize = 300;
 /// answered on the new route.
 const MODE_LAYERS: &[(&str, &[&str])] = &[
     ("spatial", &["map"]),
-    ("flow", &["flows", "flowmap"]),
+    ("flow", &["flows", "flowmap", "sankey"]),
     ("trend", &["strip", "ring", "profile", "stack_area", "step"]),
     ("composition", &["stack_area"]),
     ("change", &["bars", "slope"]),
@@ -479,6 +479,9 @@ mod tests {
         assert_eq!(unanswered_modes("show it on a map", &layers(&["bignums", "bars"])), ["map/spatial"]);
         assert!(unanswered_modes("show it on a map", &layers(&["map", "strip"])).is_empty());
         assert_eq!(unanswered_modes("draw it as a network graph", &layers(&["map", "flows"])), ["network"]);
+        // a sankey question is answered by the flow page's sankey, and not by the column page's bars
+        assert!(unanswered_modes("draw it as a sankey", &layers(&["sankey"])).is_empty());
+        assert_eq!(unanswered_modes("draw it as a sankey", &layers(&["bignums", "bars"])), ["sankey/flow"]);
     }
 
     #[test]
