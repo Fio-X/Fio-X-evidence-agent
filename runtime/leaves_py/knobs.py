@@ -18,6 +18,7 @@ import run
 import sankey
 import scmp
 import section_head
+import stacked100
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "knobs.json")
 PAGE_OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "page_knobs.json")
@@ -62,7 +63,7 @@ EATS = dict(map=["hub_origin", "one_unit"], ring=["monthly_companion"], callouts
             bars=["annual", "one_place", "one_unit", "last_year"], bignums=["one_unit"], notes=["hub_origin", "one_unit"],
             strip=["monthly_companion"], section_head=[], rankbar=["annual", "one_place", "one_unit", "last_year"],
             bubbles=["annual", "one_place", "one_unit", "last_year"], bubble_key=["annual", "one_place", "one_unit", "last_year"],
-            leader_notes=["one_unit"], sankey=["official_flow", "one_unit"])
+            leader_notes=["one_unit"], sankey=["official_flow", "one_unit"], stacked100=["annual", "one_unit"])
 # The nodes a node brings with it: every recipe that draws the node draws these right after it, in this order (a key to its
 # marks), so no recipe can draw the marks without them; a recipe that names one itself refuses.
 WITH = dict(bubbles=["bubble_key"])

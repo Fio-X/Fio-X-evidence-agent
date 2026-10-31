@@ -22,7 +22,7 @@ const MODE_LAYERS: &[(&str, &[&str])] = &[
     ("spatial", &["map"]),
     ("flow", &["flows", "flowmap", "sankey"]),
     ("trend", &["strip", "ring", "profile", "stack_area", "step"]),
-    ("composition", &["stack_area"]),
+    ("composition", &["stack_area", "stacked100"]),
     ("change", &["bars", "slope"]),
     ("benchmark", &["bars", "slope"]),
     ("network", &[]),
@@ -482,6 +482,9 @@ mod tests {
         // a sankey question is answered by the flow page's sankey, and not by the column page's bars
         assert!(unanswered_modes("draw it as a sankey", &layers(&["sankey"])).is_empty());
         assert_eq!(unanswered_modes("draw it as a sankey", &layers(&["bignums", "bars"])), ["sankey/flow"]);
+        // a composition question is answered by the 100% stacked bars, and not by the bars alone
+        assert!(unanswered_modes("各国发电量的构成", &layers(&["stacked100"])).is_empty());
+        assert_eq!(unanswered_modes("各国发电量的构成", &layers(&["bignums", "bars"])), ["composition"]);
     }
 
     #[test]

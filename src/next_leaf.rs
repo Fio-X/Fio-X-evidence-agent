@@ -2149,8 +2149,9 @@ mod tests {
         // reach, land cost, nudge, circle gap, inset and the notes' other places (noted), three of them a list of codes), then
         // the map panel's leader notes (6: a note never sits over the land, so it has no land cost; one a list of codes), the
         // bars' measure (level or change), and the bubbles' key (3: its text size, reference circles and line width); the
-        // sankey over the flow page's frame last (10: its highlight a list of codes)
-        assert_eq!((t.nodes.len(), knobs), (35, 148));
+        // sankey over the flow page's frame (10: its highlight a list of codes), and the 100% stacked bars last (9: its
+        // highlight a list of codes)
+        assert_eq!((t.nodes.len(), knobs), (36, 157));
         let reserve: Vec<_> = t.nodes.iter().filter(|(_, l)| l.reserve).map(|(n, _)| n.as_str()).collect();
         assert_eq!(reserve, ["flows", "labels", "routes"]);
         let legacy: Vec<_> = t.legacy.iter().map(|(n, at)| (n.as_str(), at.join("."))).collect();
@@ -2164,7 +2165,7 @@ mod tests {
         let groups: Vec<_> = t.groups.keys().map(String::as_str).collect();
         assert_eq!(groups, ["change", "charts", "column", "flow", "map", "ring", "scmp"]);
         assert_eq!(t.groups["scmp"], ["map", "strip", "bignums", "notes"]);
-        assert_eq!(t.groups["column"], ["bignums", "bars", "section_head", "rankbar", "bubbles", "bubble_key", "leader_notes", "sankey"]);
+        assert_eq!(t.groups["column"], ["bignums", "bars", "section_head", "rankbar", "bubbles", "bubble_key", "leader_notes", "sankey", "stacked100"]);
         // a change page is a column page whose bars are the places' change (bars.measure); a flow page one whose main layer
         // is the sankey (run.py MAIN)
         assert_eq!(t.groups["change"], t.groups["column"]);

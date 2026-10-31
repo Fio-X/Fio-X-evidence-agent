@@ -41,6 +41,7 @@ import prod
 import rankbar
 import sankey
 import scmp
+import stacked100
 import section_head
 import wbkit
 from words import word
@@ -136,8 +137,10 @@ LEAF_LAYERS = dict(section_head=leaf(section_head.Frame, section_head.cl_section
                    bubbles=leaf(bubbles.Frame, bubbles.cl_bubbles, "bubbles", MAP_STYLE, focus_style),
                    bubble_key=(bubble_key, None),
                    leader_notes=leaf(leader_notes.Frame, leader_notes.cl_leader_notes, "leader_notes", MAP_STYLE),
-                   sankey=leaf(sankey.Frame, sankey.cl_sankey, "sankey"))
-LEAF_SVG = section_head.SECTION_HEAD_SVG + rankbar.RANKBAR_SVG + bubbles.BUBBLES_SVG + leader_notes.LEADER_NOTES_SVG + sankey.SANKEY_SVG
+                   sankey=leaf(sankey.Frame, sankey.cl_sankey, "sankey"),
+                   stacked100=leaf(stacked100.Frame, stacked100.cl_stacked100, "stacked100"))
+LEAF_SVG = (section_head.SECTION_HEAD_SVG + rankbar.RANKBAR_SVG + bubbles.BUBBLES_SVG + leader_notes.LEADER_NOTES_SVG + sankey.SANKEY_SVG
+            + stacked100.STACKED100_SVG)
 
 
 # The page recipes this child draws: each one's layers (name -> (draw, reserve)) and which of them are svg.
