@@ -2623,6 +2623,34 @@ fn title_and_kicker(fill: Option<&Value>, scoped: bool, label: &str, measure: &s
     }
 }
 
+/// A composition's scope on its text step: the cut its fill states under the picture (stacked100_fill's cut line and the
+/// line of the places left out), so a finding over its bars is said in its scoped wording ("所选各方中"), never as the
+/// highest of every place. Only whether a page has a scope is read (next_page Drafts::with_scopes); no narrow record
+/// stands behind it, the cut is the fill's.
+const COMPOSITION_SCOPE: &str = "图中各国";
+
+/// The page fields the text step rewords, drafted for the picked page (form: page_lead) with the fill's dek finding: the
+/// claims' fields, the charts' measures and their scopes; on a composition page (its fill holds a composition record) none
+/// of the claims or charts, which are the first fetch's totals and print nowhere on it, only the composition's draft and its
+/// finding over share facts, scoped when the cut left places out of the bars. The claims stay registered and checked as
+/// they were; the text step only no longer reads them there.
+fn text_drafts(page: &Page, form: Option<(Relation, View)>, titles: &[String], fill: Option<&Value>) -> Drafts {
+    let finding = fill.and_then(dek_finding);
+    match fill.filter(|fill| fill["composition"].is_object()) {
+        Some(fill) => {
+            let cut = &fill["composition"];
+            let left_out = ["others", "dropped", "left_out"].iter().any(|k| cut[*k].as_array().is_some_and(|a| !a.is_empty()));
+            let scopes = if left_out { vec![Some(Scope { text: COMPOSITION_SCOPE.into(), record: String::new() })] } else { Vec::new() };
+            next_page::draft_for(&[], &[], Vec::new(), form).with_scopes(&scopes).with_finding(finding).with_periods(&page.times)
+        }
+        None => next_page::draft_for(&page.claims, &page.charts, Vec::new(), form)
+            .name_measures(titles, &page.charts)
+            .with_scopes(&page.scopes)
+            .with_finding(finding)
+            .with_periods(&page.times),
+    }
+}
+
 /// The kicker of a composition page (its fill holds a composition record, stacked100_fill): the registry's title words of a
 /// composition at one period (shape_registry FRAMES), program words with no number; None for any other page.
 fn composition_kicker(fill: Option<&Value>) -> Option<&'static str> {
@@ -4057,12 +4085,7 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
     // No typed number on the page text, years included: the design pack's claim-template check refuses every one, so the
     // text step offers none (a year goes through a placeholder or is left out).
     // the dek is the picked recipe's finding on the page's own facts (finding_of), its numbers and names placeholders
-    let finding = picked.as_ref().ok().and_then(|(_, fill)| dek_finding(fill));
-    let drafts = next_page::draft_for(&page.claims, &page.charts, Vec::new(), form)
-        .name_measures(&titles, &page.charts)
-        .with_scopes(&page.scopes)
-        .with_finding(finding)
-        .with_periods(&page.times);
+    let drafts = text_drafts(&page, form, &titles, picked.as_ref().ok().map(|(_, fill)| fill));
     // a text step that stops leaves the recipe pick's group calls on record all the same, as a text step that passes does
     let worded = match reword(recorder, model, question, &drafts, cancel).await {
         Ok(worded) => worded,
@@ -7274,6 +7297,51 @@ mod tests {
         let (title, kicker) = title_and_kicker(Some(&fill), false, composition_kicker(Some(&fill)).unwrap(), "发电总量");
         assert_eq!((title.as_str(), kicker.as_str()), ("{name.IT}{name.fossil}占比最高，达{comp_top}", frame[0]));
         assert_eq!(composition_kicker(Some(&json!({}))), None, "a page that is no composition keeps its own kicker");
+    }
+
+    /// The text step's fields on a composition page hold none of the first fetch's total claims or its measure, only the
+    /// composition's draft and its finding over share facts (scoped: the cut left places out); any other page's fields are
+    /// drafted from its claims and charts as before.
+    #[test]
+    fn a_composition_page_s_text_step_reads_its_own_draft_not_the_total_claims() {
+        let claims = vec![Claim { id: "c1".into(), kind: "rank_top".into(), template: "{first.geo} has the highest OBS VALUE in {first.year}: {first.value}.".into() }];
+        let charts = vec![Chart { relation: Relation::Ranking, view: View::Slice, claim_ids: vec!["c1".into()], category: "geo".into(), value: "value".into() }];
+        let page = Page {
+            claims: claims.clone(),
+            charts: charts.clone(),
+            templates: Vec::new(),
+            sentences: BTreeMap::new(),
+            places: Vec::new(),
+            times: vec!["2024".into()],
+            measures: Vec::new(),
+            plans: Vec::new(),
+            scopes: vec![None],
+        };
+        let titles = vec!["发电总量".to_string()];
+        let finding = json!({"dek": "{lead1.t}，{name.IT}{name.fossil}占比最高，为{comp_top}",
+            "scoped": "{lead1.t}，所选各方中，{name.IT}{name.fossil}占比居首，为{comp_top}"});
+        let fill = json!({"composition": {"bars": ["DE", "IT"], "dropped": [], "others": ["MT"], "left_out": []}, "finding": finding});
+        let drafts = text_drafts(&page, page_lead(Some(&fill), &page.charts), &titles, Some(&fill));
+        let said: Vec<&str> = drafts.fields.iter().map(|(_, t)| t.as_str()).chain(drafts.slots.iter().map(|(_, t)| t.as_str())).collect();
+        let all = said.join("\n");
+        let ranking = crate::shape_registry::FRAMES.iter().find(|(r, v, _)| (*r, *v) == (Relation::Ranking, View::Slice)).unwrap().2;
+        assert!(!all.contains("发电总量") && !all.contains("first.") && !ranking.iter().any(|w| all.contains(w)), "{all}");
+        assert!(drafts.slots.is_empty(), "no measure of the first fetch to name");
+        assert!(drafts.has_scope && all.contains("所选各方中，{name.IT}{name.fossil}占比居首，为{comp_top}"), "{all}");
+        let composition = crate::shape_registry::FRAMES.iter().find(|(r, v, _)| (*r, *v) == (Relation::Composition, View::Slice)).unwrap().2;
+        assert!(composition.iter().any(|w| all.contains(w)), "{all}");
+        // every bar drawn, none left out: unscoped
+        let whole = json!({"composition": {"bars": ["DE", "IT"], "dropped": [], "others": [], "left_out": []}, "finding": finding});
+        assert!(!text_drafts(&page, page_lead(Some(&whole), &page.charts), &titles, Some(&whole)).has_scope);
+        // any other page: drafted from its claims and charts, as before
+        let column = json!({"knobs": {"spec": {"hero": {}}}});
+        let before = next_page::draft_for(&claims, &charts, Vec::new(), page_lead(Some(&column), &charts))
+            .name_measures(&titles, &charts)
+            .with_scopes(&page.scopes)
+            .with_finding(None)
+            .with_periods(&page.times);
+        assert_eq!(text_drafts(&page, page_lead(Some(&column), &charts), &titles, Some(&column)), before);
+        assert_eq!(text_drafts(&page, page_lead(None, &charts), &titles, None), before);
     }
 
     /// A place the question names is never left out of a composition, read by code, not by name: a question that names Greece
