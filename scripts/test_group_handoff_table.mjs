@@ -49,7 +49,8 @@ assert.deepEqual(problems, [], problems.join("\n"));
   const commands = new Set(Object.keys(g.loadGroups().commands));
   for (const r of table.rust) {
     for (const c of r.commands) assert.ok(commands.has(c), `${r.as}: ${c} is not a command in COMMAND_GROUPS`);
-    for (const c of r.not_measured) assert.ok(r.commands.includes(c), `${r.as}: not_measured ${c} is not a listed command`);
+    // a measured row may drop the key: group_guard.rs and groups.mjs both read a missing not_measured as none (as line 33 does)
+    for (const c of r.not_measured ?? []) assert.ok(r.commands.includes(c), `${r.as}: not_measured ${c} is not a listed command`);
     assert.ok(r.why && r.remove_when, `${r.as}: why / remove_when missing`);
   }
   // a passed verification record needs the VerifiedOutcome only src/commands/verify.rs can make: the field is private, no other file builds the struct

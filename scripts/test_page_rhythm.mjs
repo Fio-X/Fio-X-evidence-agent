@@ -122,14 +122,15 @@ for (const [name, sidecars, mods] of [
 }
 // Mobile is untouched.
 {
-  const { execFileSync } = await import('node:child_process');
   const { writeFileSync, rmSync } = await import('node:fs');
   const path = new URL('../runtime/pi/_parent_infographic.mjs', import.meta.url);
+  // Later deliberate changes the rhythm does not own (the footer) are carried into it: scripts/lib_parent_infographic.mjs.
+  const src = (await import('./lib_parent_infographic.mjs')).parentInfographicSource('a4d4cb0', new URL('..', import.meta.url).pathname);
   let parent = null;
-  try {
-    writeFileSync(path, execFileSync('git', ['show', 'a4d4cb0:runtime/pi/infographic.mjs'], { cwd: new URL('..', import.meta.url).pathname, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }));
+  if (src !== null) {
+    writeFileSync(path, src);
     try { parent = await import(path.href); } finally { rmSync(path); }
-  } catch { parent = null; }
+  }
   if (parent) {
     const spec = { ...page([chart, text('t1', ONE), stat('s1')]) };
     const a = composeInfographicBundle(spec, assets, { mobilePages: true });
@@ -182,15 +183,15 @@ function checkTiers(name, out) {
 }
 // The mobile page does not change with desktop spacing.
 {
-  const { execFileSync } = await import('node:child_process');
   const { writeFileSync, rmSync: rm } = await import('node:fs');
   const parentPath = new URL('../runtime/pi/_parent_rhythm.mjs', import.meta.url);
+  // the same carried-in later changes as above (scripts/lib_parent_infographic.mjs)
+  const src = (await import('./lib_parent_infographic.mjs')).parentInfographicSource('a4d4cb0', new URL('..', import.meta.url).pathname);
   let parent = null;
-  try {
-    const src = execFileSync('git', ['show', 'a4d4cb0:runtime/pi/infographic.mjs'], { cwd: new URL('..', import.meta.url).pathname, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  if (src !== null) {
     writeFileSync(parentPath, src);
     try { parent = await import(parentPath.href); } finally { rm(parentPath); }
-  } catch { parent = null; }
+  }
   if (parent) {
     for (const modules of [[header('h1'), chart, stat('s1'), text('t1', ONE), header('h2'), text('t2', LONG)], [chart, stat('s1'), stat('s2', { value: '8' }), text('t1', TWO)]]) {
       const spec = page(modules);

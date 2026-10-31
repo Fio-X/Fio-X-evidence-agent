@@ -3481,15 +3481,27 @@ const ZH_NAME_MODE_TEXT = {
   iso4217: { match: "ISO 4217 currency codes", none: "ISO 4217 currency code", readers: "bare currency codes", column: "ISO 4217 currency code column", target: "iso4217", alt: "" },
 };
 
+// A value the mode's table names by the entry's own code (iso3 KEN, iso2 DE), not by an alias (EU27_2020 -> EUU, UK -> GB).
+// The other modes have no aliases: a match is its own.
+function ownCodeOf(value, mode) {
+  const entry = economyEntryFor(value, mode);
+  if (!entry) return false;
+  return mode === "iso3" || mode === "iso2" ? entry[mode] === value : true;
+}
+
 function recognizableNameColumn(values, fields, { threshold = true } = {}) {
   if (threshold && values.length < 2) return null;
   const candidates = CATEGORY_NAME_MODES.map((mode, order) => ({
     mode,
     order,
     matched: values.length - unmappedEconomyNameValues(values, mode).length,
+    own: values.filter((value) => ownCodeOf(value, mode)).length,
     signalled: fields.some((field) => fieldNameSignalsMode(field, mode)),
   }));
-  candidates.sort((a, b) => b.matched - a.matched || Number(b.signalled) - Number(a.signalled) || a.order - b.order);
+  // A tie in matches goes first to the mode that matches more values by its own codes rather than by a documented alias: a
+  // Eurostat column of DE and EU27_2020 matches one value as iso2 (DE, a code) and one as iso3 (EU27_2020, an alias of EUU),
+  // and it is a two-letter column. Only the tie order moves; whether the column blocks rests on `matched` alone.
+  candidates.sort((a, b) => b.matched - a.matched || b.own - a.own || Number(b.signalled) - Number(a.signalled) || a.order - b.order);
   const best = candidates[0];
   return !threshold || (best.matched >= 2 && best.matched * 2 >= values.length) ? best : null;
 }
