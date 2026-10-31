@@ -1157,7 +1157,8 @@ pub fn classify(t: &TableInput, refs: &Refs, ask: &Ask) -> TableRoles {
 const ESTAT_PARTS: &str = include_str!("../runtime/pi/assets/estat-parts.tsv");
 
 /// The flow estat-parts.tsv registers for `dataset` (its id without "@2", one of a row's "tables"): the source and the target
-/// dimension, each with its registered codes. None when the file registers no flow, or only one side of it.
+/// dimension, each with its registered leaves (level "leaf": a total or a subtotal beside its own parts is no flow, it would
+/// count twice). None when the file registers no flow, or only one side of it.
 fn registered_flow(dataset: &str) -> Option<[(String, Vec<String>); 2]> {
     let mut lines = ESTAT_PARTS.lines();
     let header: Vec<&str> = lines.next()?.split('\t').collect();
@@ -1171,14 +1172,19 @@ fn registered_flow(dataset: &str) -> Option<[(String, Vec<String>); 2]> {
         .collect();
     let side = |s: &str| -> Option<(String, Vec<String>)> {
         let dim = rows.iter().find(|r| r.get(l) == Some(&"total") && r.get(f) == Some(&s))?[d];
-        let codes = rows.iter().filter(|r| r.get(d) == Some(&dim)).filter_map(|r| r.get(c)).map(|c| c.to_string()).collect();
+        let codes = rows
+            .iter()
+            .filter(|r| r.get(d) == Some(&dim) && r.get(l) == Some(&"leaf"))
+            .filter_map(|r| r.get(c))
+            .map(|c| c.to_string())
+            .collect();
         Some((dim.to_string(), codes))
     };
     Some([side("source")?, side("target")?])
 }
 
 /// dim-roles 2a: only directions the official metadata states become flow roles; a table whose flow the knowledge group
-/// registers (estat-parts.tsv) has it when both its dimensions hold two or more codes, every one a registered code.
+/// registers (estat-parts.tsv) has it when both its dimensions hold two or more codes, every one a registered leaf.
 fn flow(t: &TableInput, dims: &mut [DimRole], refs: &Refs, ask: &Ask) -> Option<Flow> {
     let at = |name: &str| t.dims.iter().position(|d| d.id.eq_ignore_ascii_case(name));
     let add = |dims: &mut [DimRole], src: usize, dst: usize, basis: &str| {
@@ -1980,6 +1986,17 @@ mod tests {
         assert_eq!(one.flow, None);
         // registered, but GIC, GEP, A and B are no registered codes
         assert_eq!(classify(&q2_like(), &refs(), &Ask::default()).flow, None);
+        // a total or a subtotal beside the leaves is no flow: FC_OTH_E with its own parts, FC_E, siec TOTAL
+        for (bal, siec) in [("FC_OTH_E", "G3000"), ("FC_E", "G3000"), ("FC_IND_E", "TOTAL")] {
+            let mut wider = fixture_table("nrg_bal_s", &leaves);
+            for (i, code) in [(0, bal), (1, siec)] {
+                if !wider.dims[i].codes.iter().any(|c| c == code) {
+                    wider.dims[i].codes.push(code.into());
+                }
+            }
+            wider.rows.push((s(&[bal, siec, "KTOE"]), Some("2024".into()), 1.0));
+            assert_eq!(classify(&wider, &refs(), &Ask::default()).flow, None, "{bal} x {siec}");
+        }
         // supply codes: the supply rule reads the flow first, with its own basis
         let mut supply = fixture_table("nrg_bal_s", &|bal, _| bal == "FC_E");
         supply.dims[0].codes = s(&["PPRD", "IMP", "FC_E"]);

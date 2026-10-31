@@ -463,7 +463,8 @@ pub enum Choice {
 /// One breakdown option of a listed table (t<n>.breakdown = `option`, 2 or more): the dimension it opens, the years options
 /// whose fetch gives a shape a filled template draws (the only ones allowed with it; none when the table asks no years,
 /// next_params::Draft::window), and whether t<n>.<dim> is an item, which the answer then leaves out (the breakdown takes
-/// every code of it).
+/// every code of it). A flow split ("siec>nrg_bal", next_params::flow_split) takes the leaves of both its dimensions: it is
+/// `member` when either is an item, and the answer leaves out each that is.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Split {
     pub option: usize,
@@ -473,6 +474,19 @@ pub struct Split {
 }
 
 impl Split {
+    /// The items of table `n` the split leaves out (its dimensions' t<n>.<dim>, next_params::split_dims), among `items`;
+    /// empty when it is no member split.
+    pub fn left_items(&self, n: usize, items: &[(String, usize)]) -> Vec<String> {
+        if !self.member {
+            return Vec::new();
+        }
+        next_params::split_dims(&self.dim)
+            .into_iter()
+            .map(|d| format!("t{n}.{d}"))
+            .filter(|key| items.iter().any(|(k, _)| k == key))
+            .collect()
+    }
+
     /// The years option the program gives an answer with this split when the years are no item of its table (an annual
     /// table: next_params fills its last ten years): the split's own when it draws only with the latest year; None when it
     /// takes the ring's years or draws with the ten.
@@ -559,8 +573,8 @@ impl HeldCheck {
                 .iter()
                 .find(|s| Some(&s.option) == params.get(&format!("t{n}.breakdown")))
             {
-                if split.member {
-                    params.remove(&format!("t{n}.{}", split.dim));
+                for item in split.left_items(n, items) {
+                    params.remove(&item);
                 }
                 if !years_asked {
                     // the program's years, as the answer gets them (Split::program_years)
@@ -970,14 +984,16 @@ impl Ask {
                     else {
                         continue;
                     };
-                    let (item, years_key) = (
-                        format!("t{n}.{}", split.dim),
+                    let (taken, years_key) = (
+                        split.left_items(n, items.get(n - 1).map_or(&[][..], Vec::as_slice)),
                         format!("t{n}.{}", next_params::YEARS_KEY),
                     );
                     let refuse_split = |problem: String| {
                         let mut refused = refuse(problem);
                         if let Some(params) = refused.allowed["params"].as_object_mut() {
-                            params.remove(&item);
+                            for item in &taken {
+                                params.remove(item);
+                            }
                             if split.years.is_empty() {
                                 params.remove(&years_key);
                             } else if params.contains_key(&years_key) {
@@ -997,10 +1013,17 @@ impl Ask {
                         }
                         left_out.push(years_key.clone());
                     }
-                    if split.member && given.contains_key(&item) {
+                    if let Some(item) = taken.iter().find(|item| given.contains_key(*item)) {
+                        let dim = &item[format!("t{n}.").len()..];
+                        // a flow split takes its dimensions' registered leaves, any other split every code of its one
+                        let takes = if next_params::flow_split(&split.dim).is_some() {
+                            format!("the registered {dim} leaves")
+                        } else {
+                            format!("every {dim} code")
+                        };
                         return Err(refuse_split(format!(
-                            "t{n}.breakdown {} ({}) takes every {} code, so {item} has no place: leave it out, or keep it and set t{n}.breakdown 1",
-                            split.option, split.dim, split.dim
+                            "t{n}.breakdown {} ({}) takes {takes}, so {item} has no place: leave it out, or keep it and set t{n}.breakdown 1",
+                            split.option, split.dim
                         )));
                     }
                     if let Some(years) = given.get(&years_key).and_then(Value::as_u64).filter(|y| {
@@ -1012,9 +1035,7 @@ impl Ask {
                             split.option, split.dim, split.years
                         )));
                     }
-                    if split.member {
-                        left_out.push(item);
-                    }
+                    left_out.extend(taken.iter().cloned());
                 }
                 let mut params = BTreeMap::new();
                 for (key, count) in wanted
@@ -4015,7 +4036,8 @@ fn drawable_splits(
         .map(|(i, (dim, years, both))| {
             let split = Split {
                 option: i + 2,
-                member: draft.members.iter().any(|(m, _, _)| *m == dim),
+                // a flow split's two dimensions: either one a member item
+                member: next_params::split_dims(&dim).iter().any(|d| draft.members.iter().any(|(m, _, _)| m == d)),
                 dim,
                 years,
             };
@@ -4972,6 +4994,42 @@ mod tests {
             range.problem,
             "params needs item 't1.years' as one of its option numbers 1 to 2"
         );
+    }
+
+    /// q2's flow split (siec>nrg_bal) fills both dimensions with their registered leaves, so the member item t1.nrg_bal was
+    /// asked and its answer ignored by the fill: a wasted answer. It is left out with the flow picked, and refused with the
+    /// allowed values and an example when given; with no split, or nrg_bal's own split, the items are as before.
+    #[test]
+    fn a_picked_flow_split_leaves_out_the_member_items_of_both_its_dimensions() {
+        let ask = Ask::Table {
+            count: 1,
+            most: 1,
+            items: vec![vec![("t1.breakdown".into(), 4), ("t1.nrg_bal".into(), 5)]],
+            splits: vec![vec![
+                Split { option: 2, dim: "nrg_bal".into(), years: vec![1, 2], member: true },
+                Split { option: 3, dim: "siec".into(), years: vec![1, 2], member: false },
+                Split { option: 4, dim: "siec>nrg_bal".into(), years: vec![1], member: true },
+            ]],
+            held: Vec::new(),
+        };
+        let given = ask.check(&json!({"step": "table", "pick": [1], "params": {"t1.breakdown": 4, "t1.nrg_bal": 2}})).unwrap_err();
+        assert_eq!(
+            given.problem,
+            "t1.breakdown 4 (siec>nrg_bal) takes the registered nrg_bal leaves, so t1.nrg_bal has no place: leave it out, or keep it and set t1.breakdown 1"
+        );
+        assert_eq!(given.allowed["params"], json!({"t1.breakdown": 4}));
+        assert_eq!(given.example, json!({"step": "table", "pick": [1], "params": {"t1.breakdown": 1, "t1.nrg_bal": 1}}));
+        // left out, the program gives the flow's years (the latest only)
+        assert_eq!(
+            ask.check(&json!({"step": "table", "pick": [1], "params": {"t1.breakdown": 4}})),
+            Ok(Choice::Table { picks: vec![1], params: BTreeMap::from([("t1.breakdown".into(), 4), ("t1.years".into(), 1)]) })
+        );
+        // the split by siec alone takes no member item: t1.nrg_bal is still asked
+        let missing = ask.check(&json!({"step": "table", "pick": [1], "params": {"t1.breakdown": 3}})).unwrap_err();
+        assert_eq!(missing.problem, "params needs item 't1.nrg_bal' as one of its option numbers 1 to 5");
+        assert!(ask.check(&json!({"step": "table", "pick": [1], "params": {"t1.breakdown": 1, "t1.nrg_bal": 3}})).is_ok());
+        let own = ask.check(&json!({"step": "table", "pick": [1], "params": {"t1.breakdown": 2, "t1.nrg_bal": 3}})).unwrap_err();
+        assert!(own.problem.starts_with("t1.breakdown 2 (nrg_bal) takes every nrg_bal code"), "{}", own.problem);
     }
 
     #[test]
@@ -9562,7 +9620,8 @@ mod tests {
         let mut draft = next_params::draft(table("nrg_bal_s"), &[], &de);
         let (splits, event) = drawable_splits(&mut draft, 1, &de, 2026, &catalogue);
         assert_eq!(event["dropped"], json!([]));
-        assert_eq!(event["offered"][2], json!({"option": 4, "dim": "siec>nrg_bal", "years": [1], "member": false}));
+        // nrg_bal is a member item (no total code), so the flow leaves t1.nrg_bal out as its own split does
+        assert_eq!(event["offered"][2], json!({"option": 4, "dim": "siec>nrg_bal", "years": [1], "member": true}));
         let flow = &splits[2];
         let mut picks = BTreeMap::from([("t1.breakdown".to_string(), flow.option), ("t1.unit".to_string(), 1)]);
         picks.insert("t1.years".into(), flow.program_years().unwrap());

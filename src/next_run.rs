@@ -37,8 +37,9 @@ pub const FILLED_TEMPLATES: [&str; 3] = ["horizontal_bar", "line", "choropleth"]
 /// FILLED_TEMPLATES, so a series of values, and the years options it is read for, gain no candidate from it.
 pub const MOVE_TEMPLATES: [&str; 1] = ["dumbbell"];
 /// The registry template whose relation (a flow) a flow split is offered for: the flow recipe draws it with its sankey leaf
-/// node (runtime/leaves_py run.py MAIN), not a template this flow fills. Kept apart from FILLED_TEMPLATES, so only a flow
-/// split (next_params::flow_split) is ranked against it and a series of values gains no candidate from it.
+/// node (runtime/leaves_py run.py MAIN; its data sankey_fill), not a template this flow fills. Kept apart from
+/// FILLED_TEMPLATES, so only a flow split (next_params::flow_split) and a fetched table with an official flow (group_charts)
+/// are ranked against it, and a series of values gains no candidate from it.
 pub const FLOW_TEMPLATES: [&str; 1] = ["sankey"];
 /// The first and the last value columns of a move series (claim_candidates.mjs `move`, with its change column).
 pub const MOVE_FROM: &str = "from_value";
@@ -133,7 +134,8 @@ fn view_of(columns: &[String]) -> View {
 
 /// The category and value columns of a series for its template. A move series (first-to-last) fills only a change: its category
 /// is its one column that is no value and no time, its value the last value (the first is MOVE_FROM). Otherwise the value is
-/// `value`; a ranking's category is its one column that is neither the value nor a time, a change's category is its time column.
+/// `value`; a ranking's category is its one column that is neither the value nor a time (a flow's too: its source and target
+/// joined in one entity column, claim_candidates.mjs), a change's category is its time column.
 fn fields(relation: Relation, view: View, columns: &[String]) -> Result<(String, String), String> {
     if view == View::FirstToLast {
         let values = [MOVE_FROM, MOVE_TO, MOVE_CHANGE];
@@ -167,7 +169,7 @@ fn fields(relation: Relation, view: View, columns: &[String]) -> Result<(String,
         }
     };
     match relation {
-        Relation::Ranking | Relation::Map => pick(&|c| !TIME_COLUMNS.contains(&c)),
+        Relation::Ranking | Relation::Map | Relation::Flow => pick(&|c| !TIME_COLUMNS.contains(&c)),
         Relation::Change => pick(&|c| TIME_COLUMNS.contains(&c)),
         other => Err(format!("{other:?} is not a template this flow fills")),
     }
@@ -404,6 +406,9 @@ fn group_charts(
         .flat_map(|p| p.series["rows"].as_array().cloned().unwrap_or_default())
         .collect();
     let mut matched = match view {
+        // a flow between two dimensions (the knowledge group's official pair) is drawn by the flow recipe's sankey only, as
+        // the table pick ranked its split (next_flow drawable_splits)
+        View::Slice if shape.official_flow.is_some() => catalogue.rank(&series_shape(shape, &series_rows), &FLOW_TEMPLATES, used),
         View::Slice => catalogue.rank(&series_shape(shape, &series_rows), &FILLED_TEMPLATES, used),
         View::FirstToLast => catalogue.rank_first_to_last(shape, &MOVE_TEMPLATES, used),
     };
@@ -900,6 +905,8 @@ struct Shape {
     /// with the countries that have a value at `year` and none at it, in year order.
     t0: String,
     later: Vec<(String, Vec<String>)>,
+    /// A flow page's two dimensions (official_flow): the source's codes flow to the target's, at `year`.
+    flow: Option<(String, String)>,
 }
 
 /// A shape condition: it reads the main's dimensions (and the other tables, the main first) into the shape, or says what
@@ -917,6 +924,7 @@ const SHAPE_CONDITIONS: &[(&str, Condition)] = &[
     ("monthly_companion", monthly_companion),
     ("last_year", last_year),
     ("two_ends", two_ends),
+    ("official_flow", official_flow),
 ];
 
 /// The codes each dimension of a table's series rows holds, and its periods, both sorted.
@@ -1146,6 +1154,36 @@ fn two_ends(s: &mut Shape, tables: &[(&str, &[Value])], _: &dyn Catalogue) -> Re
         format!("main {} has no year before {t1} at which every country with a value at {t1} has one", s.main)
     })?;
     (s.t0, s.later) = (t0, later);
+    Ok(())
+}
+
+/// A flow between two dimensions of the main: the pair the knowledge group registers for its table (next_params::flow_dims,
+/// the estat-parts.tsv word list that classify reads the fetched rows by), each side holding two or more codes and every one
+/// a registered leaf of its dimension (next_params::flow_parts: no total or subtotal beside its own parts, which would count
+/// twice), every other dimension but freq one code, and one year, the flow's (`year`). A registered leaf with no row is
+/// left to the fill, which says it (sankey_fill); a table with no registered flow is not this shape.
+fn official_flow(s: &mut Shape, _: &[(&str, &[Value])], _: &dyn Catalogue) -> Result<(), String> {
+    let id = s.main.strip_suffix("@2").unwrap_or(&s.main).to_string();
+    let (source, target) = next_params::flow_dims(&id).ok_or_else(|| format!("main {} has no registered flow", s.main))?;
+    for dim in [&source, &target] {
+        let leaves: Vec<String> = next_params::flow_parts(&id, dim).into_iter().map(|p| p.code).collect();
+        let codes: Vec<String> = s.dims.get(dim.as_str()).map(|c| c.iter().cloned().collect()).unwrap_or_default();
+        if codes.len() < 2 {
+            return Err(format!("main {} holds {} {dim} code(s), and a flow's side holds two or more", s.main, codes.len()));
+        }
+        let off: Vec<&str> = codes.iter().filter(|c| !leaves.contains(c)).map(String::as_str).collect();
+        if !off.is_empty() {
+            return Err(format!("main {} holds {dim} {}, which is no registered leaf of it", s.main, off.join(", ")));
+        }
+    }
+    if let Some((d, _)) = s.dims.iter().find(|(d, c)| **d != source && **d != target && d.as_str() != "freq" && c.len() > 1) {
+        return Err(format!("main {d} varies beside the flow from {source} to {target}"));
+    }
+    let year = match s.years.as_slice() {
+        [one] if is_year(one) => one.clone(),
+        years => return Err(format!("main {} spans {years:?}, and a flow is one year", s.main)),
+    };
+    (s.year, s.flow) = (year, Some((source, target)));
     Ok(())
 }
 
@@ -1425,6 +1463,12 @@ struct Filled {
     notes: Vec<String>,
     /// The map points the leaves draw places at (the knowledge group's, from the pinned table): knobs.points.
     points: BTreeMap<String, [f64; 2]>,
+    /// Names of codes that are no place, by code (knobs.labels, which the leaf reads a name from), and by the name row each
+    /// is marked with (knobs.named, which the ledger holds it to); the knowledge group's name table gave each.
+    labels: BTreeMap<String, String>,
+    named: Map<String, Value>,
+    /// A layer writes the unit in its own picture (the sankey's head), so the page's unit line does not write it again.
+    unit_drawn: bool,
 }
 
 impl Filled {
@@ -1468,6 +1512,7 @@ const NODE_FILLS: &[(&str, NodeFill)] = &[
     ("leader_notes", leader_notes_fill),
     ("notes", notes_fill),
     ("strip", strip_fill),
+    ("sankey", sankey_fill),
 ];
 
 /// A filter of a fact: dimension -> code.
@@ -1651,14 +1696,18 @@ fn ranked_rows<'a>(f: &Filling<'a>) -> (Vec<&'a Value>, usize) {
         .iter()
         .filter(|r| r["time"] == year && r["dims"][place].as_str().is_some_and(|c| f.picks.ranked.iter().any(|k| k == c)))
         .collect();
-    let dec = kept
-        .iter()
+    let dec = held_decimals(&kept);
+    (kept, dec)
+}
+
+/// The most decimals the rows' values hold, at most COLUMN_DEC.
+fn held_decimals(rows: &[&Value]) -> usize {
+    rows.iter()
         .filter_map(|r| r["value"].as_str())
         .map(|v| v.split_once('.').map_or(0, |(_, d)| d.len()))
         .max()
         .unwrap_or(0)
-        .min(COLUMN_DEC);
-    (kept, dec)
+        .min(COLUMN_DEC)
 }
 
 /// Each ranked country's value at the year: the main's rows for them, and the family `val` (keyed val.<code>, the code as
@@ -1691,6 +1740,130 @@ fn bars_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
         Filled::set(&mut out.data, "hero data", k, v.clone())?;
     }
     Ok(())
+}
+
+/// The fact keys of a flow picture's nodes by side (source, target): `<side>.<code>` a drawn node's value, `<side>_other` the
+/// merged node's (sankey_fill).
+const FLOW_NODES: [&str; 2] = ["from", "to"];
+
+/// The words of a flow picture's merged node by side (source, target): its name, and the head of its members' names under
+/// the picture. No number, no topic: what merged is named by the codes' own names.
+const FLOW_OTHER: [(&str, &str); 2] = [("其他来源", "其他来源包括："), ("其他去向", "其他去向包括：")];
+
+/// The flow picture's footnote: a node's value is the program's sum of the flows drawn from or to it (no reported total is
+/// fetched beside them, sankey_fill), so the page says so once.
+const FLOW_SUM_WORDS: &str = "各节点的数值是与其相连的各条流向之和";
+
+/// The flow across the page (hero.leaves.sankey, as runtime/leaves_py/sankey.py reads it), program rules over the shape
+/// official_flow read: one flow per row of the main at the flow's year, its width that row's series; each drawn node's value a
+/// fact the visual group computes as the sum of its rows (op value over the node's code), printed bare (.n), the unit written
+/// once in the picture's head (unit_drawn) and the hero's year line its table and year. On a side, the nodes whose sum is
+/// under the knob sankey.min_share of all the flows merge into one other node when two or more do (their sum one fact over
+/// their codes, their names listed under the picture); a node whose flows are all zero is given as its flows (the leaf
+/// draws no band and drops each, said); a registered leaf the main has no row of is named empty (the leaf drops it, said).
+/// The names are the knowledge group's name table's for each dimension (the leaf marks each with its name row
+/// name:zh_names:<dimension>:<code>); a code it names none of refuses, never printed as its code or in English. No total of
+/// either side is fetched (each would take the fetch past a chart's rows), so the nodes' values are the program's sums, which
+/// the footnote says (FLOW_SUM_WORDS), and the leaf has no reported total to check them against.
+fn sankey_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
+    let shape = f.shape;
+    let Some((source, target)) = &shape.flow else {
+        return Err(format!("sankey: main {} holds no flow", shape.main));
+    };
+    let (main, year, fmt) = (shape.main.as_str(), shape.year.as_str(), f.fmt.as_str());
+    let flows: Vec<&Value> = f
+        .main
+        .iter()
+        .filter(|r| r["time"] == year && r["dims"][source].is_string() && r["dims"][target].is_string())
+        .collect();
+    let mut total = 0.0;
+    for r in &flows {
+        total += row_value(r).ok_or_else(|| format!("sankey: the row {} holds no number", r["src"]))?;
+    }
+    if total <= 0.0 {
+        return Err(format!("sankey: main {main} holds no flow above zero at {year}"));
+    }
+    if f.short.chars().any(|c| c.is_ascii_digit()) {
+        return Err(format!("sankey: the unit {} holds a digit, and the picture's head prints words only", f.short));
+    }
+    out.rows(flows.iter().map(|r| (*r).clone()));
+    Filled::set(&mut out.fmts, "format", fmt, json!({"scale": 1, "dec": held_decimals(&flows), "suffix": suffix(f.short)}))?;
+    let min_share = f.catalogue.knob("sankey", "min_share")?;
+    let id = main.strip_suffix("@2").unwrap_or(main);
+    let mut data = json!({"title": [{"w": flow_heading()?}], "unit": [{"w": f.short}], "source_kind": source,
+        "target_kind": target, "footnote": [{"w": FLOW_SUM_WORDS}]});
+    data["flows"] = flows
+        .iter()
+        .map(|r| json!({"source": r["dims"][source], "target": r["dims"][target], "value": r["src"]}))
+        .collect();
+    let mut node_text = Map::new();
+    let mut empty = Map::new();
+    let sides = ["source", "target"].into_iter().zip([source, target]).zip(FLOW_NODES.into_iter().zip(FLOW_OTHER));
+    for ((side, dim), (node, (other, head))) in sides {
+        // the side's codes with the sum of their flows, in the rows' order
+        let mut sums: Vec<(String, f64)> = Vec::new();
+        for r in &flows {
+            let (code, v) = (r["dims"][dim].as_str().unwrap_or_default(), row_value(r).unwrap_or_default());
+            match sums.iter_mut().find(|(c, _)| c == code) {
+                Some((_, s)) => *s += v,
+                None => sums.push((code.to_string(), v)),
+            }
+        }
+        let small: Vec<&str> = sums.iter().filter(|(_, v)| *v > 0.0 && v / total < min_share).map(|(c, _)| c.as_str()).collect();
+        let merged = if small.len() >= 2 { small } else { Vec::new() };
+        let drawn: Vec<&str> = sums.iter().filter(|(c, v)| *v > 0.0 && !merged.contains(&c.as_str())).map(|(c, _)| c.as_str()).collect();
+        for code in &drawn {
+            let key = format!("{node}.{code}");
+            let q = json!({"op": "value", "table": main, "filter": filter(&[(dim.as_str(), *code)]), "time": year, "fmt": fmt});
+            Filled::set(&mut out.facts, "fact", &key, q)?;
+            node_text.insert(code.to_string(), json!(format!("fact:{key}.n")));
+        }
+        if !merged.is_empty() {
+            let key = format!("{node}_other");
+            let of = Value::Object(Map::from_iter([(dim.to_string(), json!(merged))]));
+            let q = json!({"op": "value", "table": main, "filter": of, "time": year, "fmt": fmt});
+            Filled::set(&mut out.facts, "fact", &key, q)?;
+            data[format!("other_{side}")] = json!({"name": [{"w": other}], "members": merged, "value_text": format!("fact:{key}.n"),
+                "members_head": [{"w": head}]});
+        }
+        let held: Vec<&str> = sums.iter().map(|(c, _)| c.as_str()).collect();
+        let none: Vec<String> = next_params::flow_parts(id, dim).into_iter().map(|p| p.code).filter(|c| !held.contains(&c.as_str())).collect();
+        if !none.is_empty() {
+            empty.insert(side.to_string(), json!(none));
+        }
+        // every code the picture names: its drawn nodes and the merged members
+        let named: Vec<String> = drawn.iter().chain(&merged).map(|c| c.to_string()).collect();
+        let names = f.catalogue.zh_names(dim, &named).map_err(|missing| {
+            format!("sankey: the name table gives no Chinese name for {dim} {}", missing.join(", "))
+        })?;
+        for (code, zh) in names {
+            out.named.insert(format!("{LABEL_SRC}zh_names:{dim}:{code}"), json!(zh));
+            match out.labels.get(&code) {
+                Some(was) if *was != zh => return Err(format!("sankey: code {code} has two names, {was} and {zh}")),
+                _ => {
+                    out.labels.insert(code, zh);
+                }
+            }
+        }
+    }
+    data["node_text"] = Value::Object(node_text);
+    if !empty.is_empty() {
+        data["empty"] = Value::Object(empty);
+    }
+    out.unit_drawn = true;
+    for (k, v) in [("table", json!(main)), ("year", json!(year))] {
+        Filled::set(&mut out.data, "hero data", k, v)?;
+    }
+    set_leaf(out, "sankey", data)
+}
+
+/// The flow picture's head: the registry's chart heading of a flow (shape_registry FRAMES), program words with no number.
+fn flow_heading() -> Result<&'static str, String> {
+    crate::shape_registry::FRAMES
+        .iter()
+        .find(|(r, v, _)| (*r, *v) == (Relation::Flow, View::Slice))
+        .map(|(_, _, words)| words[2])
+        .ok_or_else(|| "sankey: the registry has no flow heading".to_string())
 }
 
 /// The families of a page with two ends (two_ends): each ranked country's value at the earlier end and at the later, and its
@@ -2255,7 +2428,16 @@ fn fill_of(
     // any place; with no reviewed name for it, or no count of the places drawn, the unit line names no scope
     let scope = scope_of(shape, picks, catalogue);
     let named: Vec<String> = shape.members.iter().cloned().chain(scope.clone()).collect();
-    let labels = leaf_labels(&out.rows, &named, catalogue)?;
+    let mut labels = leaf_labels(&out.rows, &named, catalogue)?;
+    // the names a node gave for codes that are no place (a flow's fuels and sectors), by the knowledge group's name table
+    for (code, zh) in &out.labels {
+        match labels.get(code) {
+            Some(was) if was != zh => return Err(no(format!("code {code} is named both {was} and {zh}"))),
+            _ => {
+                labels.insert(code.clone(), zh.clone());
+            }
+        }
+    }
     // the dek's finding reads only rows the nodes read already, so the labels hold every code it names
     let finding = finding_of(&filling, &mut out, &labels).map_err(no)?;
     // the accent marks one place, the one the dek names: its finding's subject. The frame's dek (no finding) names no place,
@@ -2264,9 +2446,14 @@ fn fill_of(
     if let Some(code) = accent {
         Filled::set(&mut out.data, "hero data", ACCENT, json!(code)).map_err(no)?;
     }
-    let Filled { drawn, rows, facts, mut fmts, data, mut hero, notes, points, .. } = out;
+    let Filled { drawn, rows, facts, mut fmts, data, mut hero, notes, points, named: name_rows, unit_drawn, .. } = out;
     hero.insert("data".into(), Value::Object(data));
-    hero.insert("unit".into(), json!(std::iter::once(format!("单位：{short}")).chain(notes).collect::<Vec<_>>().join("；")));
+    // a layer that writes the unit in its own picture leaves the page's unit line to the year alone (column_page)
+    if !unit_drawn {
+        hero.insert("unit".into(), json!(std::iter::once(format!("单位：{short}")).chain(notes).collect::<Vec<_>>().join("；")));
+    } else if !notes.is_empty() {
+        return Err(no(format!("the unit is drawn in a layer's picture, so no unit line prints the notes {notes:?}")));
+    }
     fmts.insert("time".into(), json!({}));
     let mut tables = Map::new();
     // each table's id as the source line prints it (printed_id), the one id of it the footer marks and the page check takes
@@ -2278,6 +2465,9 @@ fn fill_of(
     }
     let spec = json!({"title": title, "dek": dek, "tables": tables, "facts": facts, "fmts": fmts, "hero": hero});
     let mut knobs = json!({"spec": spec, "labels": labels});
+    if !name_rows.is_empty() {
+        knobs["named"] = Value::Object(name_rows);
+    }
     if !shape.hub.is_empty() {
         knobs["members"] = json!(shape.members);
     }
@@ -2397,9 +2587,11 @@ fn recipe_request(
         _ => None,
     };
     if let Some(name) = measured {
-        let mut named = Map::new();
-        named.insert(src, json!(name));
-        fill["knobs"]["named"] = Value::Object(named);
+        // beside the names a node gave (fill_of), never in their place
+        let named = fill["knobs"].as_object_mut().expect("the fill's knobs are an object").entry("named").or_insert_with(|| json!({}));
+        if let Some(named) = named.as_object_mut() {
+            named.insert(src, json!(name));
+        }
     }
     let title = zh.unwrap_or_else(|| main.title.clone());
     // no years here: the leaf footer marks only the table ids (spec.refs) and refuses any other digit in the line
@@ -6076,12 +6268,293 @@ mod tests {
                 ("ring", Err("not this shape: main spans one year (2025)".to_string())),
                 ("change", Err("not this shape: main spans one year (2025)".to_string())),
                 ("column", Ok("citizen PER 2025".to_string())),
-                (
-                    "flow",
-                    Err("not this shape: no shape condition official_flow; e.g. one of annual|years_2|hub_origin|one_place|one_unit|others_single|monthly_companion|last_year|two_ends".to_string())
-                )
+                ("flow", Err("not this shape: main migr has no registered flow".to_string()))
             ]
         );
+    }
+
+    /// q2's flow fetch as the run reads it (next_params fill of the flow split: each fuel leaf to each sector leaf of final
+    /// use): the rows of nrg_bal_s DE 2024 (KTOE, the data_prepare fixture) at those pairs, as series rows of table `id`.
+    fn q2_flow_rows(id: &str) -> Vec<Value> {
+        let fixture = include_str!("../scripts/fixtures/data_prepare/nrg_bal_s_DE_2024.tsv");
+        let leaves = |dim: &str| next_params::flow_parts("nrg_bal_s", dim).into_iter().map(|p| p.code).collect::<Vec<_>>();
+        let (fuels, sectors) = (leaves("siec"), leaves("nrg_bal"));
+        fixture_rows(id, fixture, &|bal, siec| sectors.iter().any(|s| s == bal) && fuels.iter().any(|f| f == siec))
+    }
+
+    /// A data_prepare fixture's rows (nrg_bal, siec, value; DE 2024, KTOE) that `keep` takes, as series rows of table `id`.
+    fn fixture_rows(id: &str, fixture: &str, keep: &dyn Fn(&str, &str) -> bool) -> Vec<Value> {
+        fixture
+            .lines()
+            .filter(|l| !l.starts_with('#'))
+            .skip(1)
+            .filter_map(|l| {
+                let f: Vec<&str> = l.split('\t').collect();
+                keep(f[0], f[1]).then(|| {
+                    json!({"src": format!("series:{id}/A.{}.{}.KTOE.DE:2024:OBS_VALUE", f[0], f[1]), "table": id,
+                        "dims": {"freq": "A", "nrg_bal": f[0], "siec": f[1], "unit": "KTOE", "geo": "DE"}, "time": "2024", "value": f[2]})
+                })
+            })
+            .collect()
+    }
+
+    /// q2 (德国能源从来源到各部门) on its flow fetch: the flow recipe reads the registered pair siec -> nrg_bal, one unit and one
+    /// year, and its sankey node fills the picture by program rules: 69 flows, each width a series row; each node's value a
+    /// fact the visual group sums from its rows (no reported total is fetched); the fuels and sectors under min_share (3%)
+    /// merged into one other node per side, named under the picture; nuclear heat, a registered leaf with no row, named
+    /// empty; names from the name table of each dimension; the unit in the picture's head only. The real leaf child draws it,
+    /// the twins bake and check it, and the page is published with every zero flow and the empty node in its ledger as
+    /// dropped, which the page check notes_dropped then counts.
+    #[test]
+    fn q2_s_flow_rows_fill_a_sankey_page_whose_every_number_is_a_sum_layer_1_computes() {
+        let main = q2_flow_rows("nrg_bal_s");
+        assert_eq!(main.len(), 69);
+        let flow = recipe("flow");
+        assert_eq!((flow.layers.as_slice(), flow.eats.as_slice()), (&["sankey".to_string()][..], &["official_flow".to_string(), "one_unit".to_string()][..]));
+        let shape = shape_of(&flow.eats, &[("nrg_bal_s", &main[..])], &Hubs).unwrap();
+        assert_eq!(shape.flow, Some(("siec".to_string(), "nrg_bal".to_string())));
+        assert_eq!((shape.year.as_str(), shape.unit.as_str()), ("2024", "KTOE"));
+        let picks = picks_of(&flow.picks, &shape, &main, &[]).unwrap();
+        let mut fill = fill_of(flow, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false).unwrap();
+        assert_eq!(fill["order"], json!(["sankey"]));
+        assert_eq!(fill["rows"].as_array().unwrap().len(), 69);
+        assert!(fill.get("finding").is_none());
+        let spec = &fill["knobs"]["spec"];
+        let data = &spec["hero"]["leaves"]["sankey"];
+        let flows = data["flows"].as_array().unwrap();
+        assert_eq!(flows.len(), 69);
+        assert_eq!(flows[0], json!({"source": main[0]["dims"]["siec"], "target": main[0]["dims"]["nrg_bal"], "value": main[0]["src"]}));
+        let nodes: BTreeSet<&str> = data["node_text"].as_object().unwrap().keys().map(String::as_str).collect();
+        assert_eq!(
+            nodes,
+            BTreeSet::from(["G3000", "O4000XBIO", "RA000", "E7000", "H8000", "FC_IND_E", "FC_TRA_E", "FC_OTH_CP_E", "FC_OTH_HH_E"])
+        );
+        assert_eq!((data["node_text"]["G3000"].as_str(), data["node_text"]["FC_IND_E"].as_str()), (Some("fact:from.G3000.n"), Some("fact:to.FC_IND_E.n")));
+        // under 3% of all the flows: three fuels and three sectors, each side merged; peat and oil shale flow zero only, so they
+        // are neither a node nor a member (the leaf drops their flows)
+        assert_eq!(data["other_source"]["members"], json!(["C0000X0350-0370", "C0350-0370", "W6100_6220"]));
+        assert_eq!(data["other_target"]["members"], json!(["FC_OTH_AF_E", "FC_OTH_FISH_E", "FC_OTH_NSP_E"]));
+        assert_eq!(data["other_source"]["value_text"], "fact:from_other.n");
+        assert!(data["other_source"].get("value").is_none(), "no series holds the merged sum");
+        assert_eq!(data["other_target"]["name"], json!([{"w": "其他去向"}]));
+        assert_eq!(data["empty"], json!({"source": ["N900H"]}));
+        assert_eq!(data["title"], json!([{"w": "从来源到去向"}]));
+        assert_eq!(data["unit"], json!([{"w": "千吨油当量"}]));
+        assert_eq!(data["footnote"], json!([{"w": FLOW_SUM_WORDS}]));
+        assert_eq!((data["source_kind"].as_str(), data["target_kind"].as_str()), (Some("siec"), Some("nrg_bal")));
+        let facts = spec["facts"].as_object().unwrap();
+        assert_eq!(facts.len(), 11, "{facts:?}");
+        assert_eq!(facts["from.G3000"], json!({"op": "value", "table": "nrg_bal_s", "filter": {"siec": "G3000"}, "time": "2024", "fmt": "ktoe"}));
+        assert_eq!(facts["to_other"]["filter"], json!({"nrg_bal": ["FC_OTH_AF_E", "FC_OTH_FISH_E", "FC_OTH_NSP_E"]}));
+        assert_eq!(spec["fmts"]["ktoe"], json!({"scale": 1, "dec": 2, "suffix": " 千吨油当量"}));
+        // the unit is the picture's head alone; the year line reads the table and the year
+        assert!(spec["hero"].get("unit").is_none());
+        assert_eq!(spec["hero"]["data"], json!({"table": "nrg_bal_s", "year": "2024"}));
+        assert_eq!(fill["knobs"]["named"]["name:zh_names:siec:G3000"], "名G3000");
+        assert_eq!(fill["knobs"]["named"]["name:zh_names:nrg_bal:FC_OTH_FISH_E"], "名FC_OTH_FISH_E");
+        assert_eq!(fill["knobs"]["labels"]["W6100_6220"], "名W6100_6220");
+        let drawn: Vec<&str> = fill["drawn"].as_array().unwrap().iter().map(|d| d["layer"].as_str().unwrap()).collect();
+        assert_eq!((drawn.len(), drawn.iter().all(|l| *l == "sankey")), (69, true));
+
+        page_words(&mut fill, ("标题", "导语", "栏目"));
+        fill["knobs"]["spec"]["source"] = json!("来源");
+        let order: Vec<String> = fill["order"].as_array().unwrap().iter().filter_map(|l| l.as_str().map(str::to_string)).collect();
+        let calls = std::sync::Mutex::new(Vec::new());
+        let request = crate::next_visual::Request::LeafFill {
+            recipe: "flow",
+            rows: fill["rows"].as_array().unwrap(),
+            knobs: &fill["knobs"],
+            order: &order,
+            runtime: Path::new("runtime"),
+        };
+        let page = match crate::next_flow::visual_call(&calls, "leaf_fill", request) {
+            Ok(crate::next_visual::Reply::Filled(page)) => page,
+            Ok(_) => panic!("not a filled page"),
+            Err(e) => panic!("leaf fill: {e}"),
+        };
+        // each side's node values add up to all the flows: the merged node is its members' sum, nothing counted twice
+        let all: f64 = main.iter().filter_map(row_value).sum();
+        for side in FLOW_NODES {
+            let sum: f64 = page.facts.iter().filter(|f| f.key.starts_with(&format!("{side}.")) || f.key == format!("{side}_other")).map(|f| f.v).sum();
+            assert!((sum - all).abs() <= 1e-9 * all, "{side}: {sum} vs {all}");
+        }
+        let gas = page.facts.iter().find(|f| f.key == "from.G3000").unwrap();
+        assert_eq!(gas.reads.len(), 7, "one row per sector leaf");
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = {
+            let _command = crate::group_guard::command_for_test("investigate");
+            crate::artifact::InvestigationBundle::create(dir.path(), "leaf page").unwrap()
+        };
+        let _command = crate::group_guard::command_for_test("investigate");
+        let _doors = crate::group_guard::doors_for_test(true);
+        let bake = crate::next_leaf::Runner::python(Path::new("fixtures/next_leaf/bake_twin.py"));
+        let mut qa = crate::next_leaf::Runner::python(Path::new("fixtures/next_visual/qa_twin.py"));
+        qa.args.push("pass".into());
+        let leaf = crate::next_visual::LeafPage {
+            draw: &page.draw,
+            bake: &bake,
+            w: page.w,
+            h: page.h,
+            frame: page.frame.clone(),
+            layers: &page.layers,
+            ledger: &page.ledger,
+            refs: &page.refs,
+            facts: (&page.spec, &page.rows, &page.facts),
+            strip: None,
+        };
+        let plan = json!({"kind": "leaf_plan", "recipe": "flow"});
+        let published = crate::next_flow::publish_leaf_page(&calls, &bundle.dir, "flow", (&leaf, &plan), &qa).unwrap();
+        let html = std::fs::read_to_string(bundle.dir.join(&published.html_ref)).unwrap();
+        assert!(html.contains(r#"<g data-layer="sankey">"#), "the sankey is the page's main layer");
+        for src in ["fact:from.G3000.n", "fact:to_other.n", "name:zh_names:siec:G3000", "name:zh_names:nrg_bal:FC_OTH_NSP_E"] {
+            assert!(html.contains(&format!(r#"data-src="{src}""#)), "{src}");
+        }
+        assert!(html.contains("其他来源包括：") && html.contains(FLOW_SUM_WORDS), "the members and the footnote are said");
+        // every zero flow (37, peat's and oil shale's among them) and nuclear heat are dropped, each said in the ledger
+        let dropped: BTreeMap<&str, &str> = published.dropped.iter().map(|(what, why)| (what.as_str(), why.as_str())).collect();
+        assert_eq!(dropped.len(), 38, "{dropped:?}");
+        assert_eq!(dropped.get("dropped:sankey:N900H"), Some(&"no row"));
+        assert_eq!(dropped.values().filter(|w| **w == "zero").count(), 37);
+        let checks = page_checks(flow, Some(html.as_str()), &published.dropped, StripAsk::default(), fill["drawn"].as_array().unwrap(), None);
+        let notes = checks.iter().find(|c| c.name == "notes_dropped").unwrap();
+        assert_eq!((notes.passed, &notes.measured["count"]), (false, &json!(38)));
+        assert!(checks.iter().find(|c| c.name == "same_numbers_twice").unwrap().passed);
+    }
+
+    /// Hubs, but the name table names no code of `scheme`.
+    struct NoNamesOf(&'static str);
+    impl Catalogue for NoNamesOf {
+        fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>) -> crate::l5geo::Ranking {
+            unreachable!()
+        }
+        fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
+            unreachable!()
+        }
+        fn source(&self) -> &Value {
+            &Value::Null
+        }
+        fn countries(&self, codes: &[String]) -> Result<Vec<String>, String> {
+            Hubs.countries(codes)
+        }
+        fn zh_names(&self, scheme: &str, codes: &[String]) -> Result<BTreeMap<String, String>, Vec<String>> {
+            if scheme == self.0 { Err(codes.to_vec()) } else { Hubs.zh_names(scheme, codes) }
+        }
+        fn members(&self, aggregate: &str) -> Result<Vec<String>, String> {
+            Hubs.members(aggregate)
+        }
+    }
+
+    /// The flow shape takes any registered flow table, not one picture's: nrg_bal_c (the family's other table) on the same
+    /// rows fills the same nodes; a side of one code (nrg_bal_c's FC_E rows by fuel, its sector rows at siec TOTAL), a total or
+    /// a subtotal beside the leaves, another varying dimension, two years and a table with no registered flow are refused by
+    /// name. A side with one small node merges none; a dimension the name table names nothing of refuses the fill.
+    #[test]
+    fn the_flow_shape_takes_any_registered_flow_table_and_refuses_what_is_no_flow_by_name() {
+        let flow = recipe("flow");
+        let shape_for = |id: &str, rows: &[Value]| shape_of(&flow.eats, &[(id, rows)], &Hubs);
+        let filled = |id: &str, rows: &[Value], catalogue: &dyn Catalogue| {
+            let shape = shape_for(id, rows).unwrap();
+            fill_of(flow, &shape, &Picks::default(), (rows, &[]), catalogue, ("标题", "导语"), false)
+        };
+        let nodes = |fill: &Value| -> Vec<String> {
+            fill["knobs"]["spec"]["hero"]["leaves"]["sankey"]["node_text"].as_object().unwrap().keys().cloned().collect()
+        };
+        let (c, s) = (q2_flow_rows("nrg_bal_c"), q2_flow_rows("nrg_bal_s"));
+        assert_eq!(nodes(&filled("nrg_bal_c", &c, &Hubs).unwrap()), nodes(&filled("nrg_bal_s", &s, &Hubs).unwrap()));
+        let no = |id: &str, rows: &[Value]| shape_for(id, rows).unwrap_err();
+        let fc_e = include_str!("../scripts/fixtures/data_prepare/nrg_bal_c_DE_2024_FC_E.tsv");
+        let fuels: Vec<String> = next_params::flow_parts("nrg_bal_c", "siec").into_iter().map(|p| p.code).collect();
+        let by_fuel = fixture_rows("nrg_bal_c", fc_e, &|_, siec| fuels.iter().any(|f| f == siec));
+        assert_eq!(no("nrg_bal_c", &by_fuel), "not this shape: main nrg_bal_c holds 1 nrg_bal code(s), and a flow's side holds two or more");
+        let every_fuel = fixture_rows("nrg_bal_c", fc_e, &|_, _| true);
+        assert!(no("nrg_bal_c", &every_fuel).contains("which is no registered leaf of it"), "{}", no("nrg_bal_c", &every_fuel));
+        let total = include_str!("../scripts/fixtures/data_prepare/nrg_bal_c_DE_2024_TOTAL.tsv");
+        let by_sector = fixture_rows("nrg_bal_c", total, &|bal, _| bal != "FC_E");
+        assert_eq!(no("nrg_bal_c", &by_sector), "not this shape: main nrg_bal_c holds 1 siec code(s), and a flow's side holds two or more");
+        // a subtotal beside its own parts would count them twice
+        let mut other = s.clone();
+        let mut row = s[0].clone();
+        row["dims"]["nrg_bal"] = json!("FC_OTH_E");
+        row["src"] = json!("series:nrg_bal_s/A.FC_OTH_E.x.KTOE.DE:2024:OBS_VALUE");
+        other.push(row);
+        assert_eq!(no("nrg_bal_s", &other), "not this shape: main nrg_bal_s holds nrg_bal FC_OTH_E, which is no registered leaf of it");
+        let mut two_places = s.clone();
+        let mut fr = s[0].clone();
+        fr["dims"]["geo"] = json!("FR");
+        fr["src"] = json!("series:nrg_bal_s/fr:2024:OBS_VALUE");
+        two_places.push(fr);
+        assert_eq!(no("nrg_bal_s", &two_places), "not this shape: main geo varies beside the flow from siec to nrg_bal");
+        let mut two_years = s.clone();
+        let mut later = s[0].clone();
+        later["time"] = json!("2023");
+        later["src"] = json!("series:nrg_bal_s/x:2023:OBS_VALUE");
+        two_years.push(later);
+        assert_eq!(no("nrg_bal_s", &two_years), r#"not this shape: main nrg_bal_s spans ["2023", "2024"], and a flow is one year"#);
+        assert_eq!(no("nrg_x", &q2_flow_rows("nrg_x")), "not this shape: main nrg_x has no registered flow");
+        // one fuel under min_share is no merge (an other node takes two or more): it is drawn as its own node
+        let pairs = [("FC_IND_E", "G3000", "100"), ("FC_TRA_E", "G3000", "50"), ("FC_IND_E", "E7000", "60"), ("FC_TRA_E", "H8000", "1")];
+        let small: Vec<Value> = pairs
+            .iter()
+            .map(|(bal, siec, v)| json!({"src": format!("series:nrg_bal_s/{bal}.{siec}:2024:OBS_VALUE"), "table": "nrg_bal_s",
+                "dims": {"freq": "A", "nrg_bal": bal, "siec": siec, "unit": "KTOE", "geo": "DE"}, "time": "2024", "value": v}))
+            .collect();
+        let fill = filled("nrg_bal_s", &small, &Hubs).unwrap();
+        let data = &fill["knobs"]["spec"]["hero"]["leaves"]["sankey"];
+        assert_eq!(nodes(&fill), ["E7000", "FC_IND_E", "FC_TRA_E", "G3000", "H8000"]);
+        assert!(data.get("other_source").is_none() && data.get("other_target").is_none());
+        assert_eq!(data["empty"]["target"].as_array().unwrap().len(), 5);
+        assert_eq!(fill["knobs"]["spec"]["fmts"]["ktoe"]["dec"], 0);
+        // no Chinese name for a fuel: the fill refuses, naming the codes, never printing a code or an English name
+        let why = filled("nrg_bal_s", &small, &NoNamesOf("siec")).unwrap_err();
+        assert_eq!(why, "not this shape: sankey: the name table gives no Chinese name for siec G3000, E7000, H8000");
+    }
+
+    /// A fetched flow (classify's official pair siec -> nrg_bal, both varying) is ranked against the flow recipe's sankey
+    /// alone, so the charts step keeps the table, its chart's category the claims' one entity column; the same series with no
+    /// official pair is ranked against the filled templates and never gets the sankey.
+    #[test]
+    fn a_fetched_flow_series_is_ranked_against_the_sankey_alone_and_takes_its_entity_column() {
+        use crate::shape_registry::{Role, VaryingDim};
+        let _command = crate::group_guard::command_for_test("investigate");
+        let dim = |d: &str, n: usize, role: Role| VaryingDim {
+            dim: d.into(),
+            members: n,
+            roles: vec![role, Role::Category],
+            is_place: false,
+            iso_countries: false,
+            total_member: None,
+        };
+        let shape = crate::shape_registry::Shape {
+            dims: vec![dim("siec", 10, Role::FlowSource), dim("nrg_bal", 7, Role::FlowTarget)],
+            unit_additive: true,
+            official_flow: Some(("siec".into(), "nrg_bal".into())),
+        };
+        let series = json!({"columns": ["name", "value", "year"], "rows": [{"name": "G3000 / FC_IND_E", "value": 12046.5, "year": 2024},
+            {"name": "E7000 / FC_IND_E", "value": 17580.1, "year": 2024}]});
+        let picked = Picked {
+            claim: Claim { id: "c1".into(), kind: "rank_top".into(), template: String::new() },
+            own: json!({"rows": [{}]}),
+            series,
+        };
+        let table = Prepared {
+            id: "nrg_bal_s".into(),
+            title: String::new(),
+            file: String::new(),
+            args: Map::new(),
+            sheet: String::new(),
+            claims: Vec::new(),
+            places_zh: Vec::new(),
+            companions: Vec::new(),
+        };
+        let (drawn, event) = group_charts(&shape, &table, &Hubs, &[], View::Slice, &[&picked], true).unwrap();
+        assert_eq!(event["template"], "sankey");
+        let chart = &drawn[0].chart;
+        assert_eq!((chart.relation, chart.category.as_str(), chart.value.as_str()), (Relation::Flow, "name", "value"));
+        assert_eq!(template_of(chart, "c1", None)["chart_type"], "sankey");
+        let plain = crate::shape_registry::Shape { official_flow: None, ..shape.clone() };
+        if let Ok((_, event)) = group_charts(&plain, &table, &Hubs, &[], View::Slice, &[&picked], true) {
+            assert_ne!(event["template"], "sankey");
+        }
     }
 
     fn recipe_like(r: &Recipe) -> Recipe {

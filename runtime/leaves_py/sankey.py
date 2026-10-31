@@ -13,11 +13,15 @@ hero.data (the data shape this leaf eats; on a column frame page, the hero's lea
   "totals": {"source": {code: series src}?, "target": {code: series src}?, "all": series src?}?,  # reported totals, checked
   "other_source": {"name": segs,                    # where layer 1 merged sources: the other node's name,
                    "members": [code, ...],          # the merged sources (two or more, each a source of the flows, once each),
-                   "value": series src,             # the merged node's value, a series the request holds (layer 1's sum of
-                                                    # the members' flows, checked here),
+                   "value": series src?,            # the merged node's value, a series the request holds (layer 1's sum of
+                                                    # the members' flows, checked here); none: the members' flows are its
+                                                    # value, as every node's (layer 1 fetched no such series),
                    "value_text": ledger src,        # its printed value,
                    "members_head": segs}?,          # and the words that lead the members' names under the picture
   "other_target": {...}?,                           # the same for destinations
+  "empty": {"source": [code, ...]?, "target": [code, ...]?}?,   # the codes of a side layer 1 asked for and got no row of:
+                                                    # no node, each back in Frame.dropped as (code, "no row"), never a
+                                                    # zero node and never left out unsaid; a code of a flow refuses
   "footnote": segs?}                                # e.g. the rounding line, printed once under the picture
 segs: a list of {"w": words} (no digit) and {"src": ledger src} pieces, as wbkit.segs reads them; series src:
 "series:<table>/<codes>:<time>:OBS_VALUE", a cell of the request's rows (its value drives the geometry only); ledger src: a row
@@ -84,6 +88,13 @@ class Frame:
         # a zero flow draws no band (and a code whose flows are all zero no node): each goes back to layer 1 as dropped
         # (run.py leaf, DROPPED), never left out unsaid
         f.dropped = [(f"{r['source']}>{r['target']}", "zero") for r in flows if r["_v"] == 0]
+        coded = {r["source"] for r in flows} | {r["target"] for r in flows}
+        for side, codes in (d.get("empty") or {}).items():
+            if side not in ("source", "target") or not isinstance(codes, list) or not all(isinstance(c, str) and c for c in codes):
+                raise Refused(f"sankey: empty.{side} is {codes!r}; empty names a side's codes with no row, for example {{'source': ['N900H']}}")
+            flowing = sorted(set(codes) & coded)
+            if flowing: raise Refused(f"sankey: empty.{side} names {flowing}, which a flow has")
+            f.dropped += [(c, "no row") for c in codes]
         flows = [r for r in flows if r["_v"] > 0]
         if not flows: raise Refused("sankey: every flow is zero")
         src_codes, tgt_codes = {r["source"] for r in flows}, {r["target"] for r in flows}
@@ -105,8 +116,10 @@ class Frame:
         f.other = {}
         for side, small, col in (("source", f.src_small, by_s), ("target", f.tgt_small, by_t)):
             if small:
-                o = d[f"other_{side}"]; ov = K.val(o["value"]); K.ent(o["value_text"])
-                if abs(ov - sum(col[c] for c in small)) > tol: raise Refused(f"sankey: other_{side}'s series {ov} is not the merged nodes' sum {sum(col[c] for c in small)}")
+                o = d[f"other_{side}"]; K.ent(o["value_text"])
+                if "value" in o:  # a series layer 1 gave for the merged node is checked; none, the members' flows are its value
+                    ov = K.val(o["value"])
+                    if abs(ov - sum(col[c] for c in small)) > tol: raise Refused(f"sankey: other_{side}'s series {ov} is not the merged nodes' sum {sum(col[c] for c in small)}")
                 f.other[side] = o
         merged = {**{c: "_other" for c in f.src_small}, **{c: "_other" for c in f.tgt_small}}
         cell = {}

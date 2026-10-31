@@ -191,6 +191,15 @@ class Refusals(unittest.TestCase):
         self.one(m, "other_source's series")
         self.one(lambda d, rows: d["other_source"]["members"].pop(), "other_source's series")  # a member left out
 
+    def test_a_merged_node_without_a_series_takes_its_members_flows(self):
+        # layer 1 fetched no row of the merged node's sum: without a series, the members' flows are its value, as every
+        # node's, and the picture is the one drawn with the series; its printed value is still a ledger entry
+        data = copy.deepcopy(DATA)
+        for side in ("source", "target"): del data[f"other_{side}"]["value"]
+        self.assertEqual(draw(hero(data))[0], draw(hero(DATA))[0])
+        data["other_source"]["value_text"] = "fact:none"
+        with self.assertRaises(Refused): draw(hero(data))
+
     def test_an_other_node_of_fewer_than_two_members_twice_or_unknown(self):
         self.one(lambda d, rows: d["other_target"].update(members=SMALL_T[:1]), "two or more codes")
         self.one(lambda d, rows: d["other_target"].pop("members"), "two or more codes")
@@ -282,6 +291,21 @@ class FlowPage(unittest.TestCase):
         size, pic = child(flow_request(leaves={"sankey": data}, base=rows))
         self.assertEqual(pic["dropped"], [{"id": f"{flow['source']}>{flow['target']}", "why": "zero"}])
         self.assertNotIn("dropped", child(flow_request())[1])
+
+    def test_a_code_with_no_row_is_no_node_and_goes_back_to_layer_1_as_dropped(self):
+        # nuclear heat has no final-use row in the archived table: layer 1 names it empty, the leaf draws no node for it
+        self.assertNotIn("N900H", {r["source"] for r in DATA["flows"]})
+        data = dict(DATA, empty={"source": ["N900H"]})
+        K.setup(ROWS, NAMES, run.tables)
+        self.assertEqual(sankey.Frame(hero(data)).dropped, [("N900H", "no row")])
+        svg, _, _ = draw(hero(data))
+        self.assertEqual(svg, draw(hero(DATA))[0])  # nothing drawn for it
+        size, pic = child(flow_request(leaves={"sankey": data}))
+        self.assertEqual(pic["dropped"], [{"id": "N900H", "why": "no row"}])
+        # a code of a flow is no empty code; a side or a list that is none refuses
+        for empty, regex in (({"source": ["G3000"]}, "which a flow has"), ({"middle": ["N900H"]}, "empty.middle"),
+                             ({"target": "N900H"}, "empty.target")):
+            with self.assertRaisesRegex(Refused, regex): sankey.Frame(hero(dict(DATA, empty=empty)))
 
     def test_the_flow_page_refuses_notes_a_layer_it_lacks_and_a_picture_wider_than_the_page(self):
         lines = flow_request()

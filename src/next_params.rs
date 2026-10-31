@@ -666,10 +666,27 @@ pub fn draft(table: TableMeta, texts: &[String], places: &[Place]) -> Draft {
     }
 }
 
-/// A member dimension that is also a breakdown option: its item is answered only when the breakdown is not it (a
-/// breakdown takes every code of its dimension, so a code picked for it would have no place).
+/// The dimensions breakdown entry `entry` takes the codes of: its own dimension, or a flow split's two (flow_split).
+pub fn split_dims(entry: &str) -> Vec<&str> {
+    match flow_split(entry) {
+        Some((source, target)) => vec![source, target],
+        None => vec![entry],
+    }
+}
+
+/// The breakdown options that take member dimension `dim` (split_dims): its item is answered only when the breakdown is
+/// none of them (a breakdown takes every code of its dimension, a flow split its leaves, so a code picked for it would have
+/// no place). Empty for a dimension that is no member item or that no breakdown takes.
+fn splits_taking<'a>(d: &'a Draft, dim: &str) -> Vec<&'a str> {
+    if !d.members.iter().any(|(m, _, _)| m == dim) {
+        return Vec::new();
+    }
+    d.breakdown.iter().map(String::as_str).filter(|b| split_dims(b).contains(&dim)).collect()
+}
+
+/// A member dimension that is also a breakdown option, by itself or as a side of a flow split (splits_taking).
 fn split_member(d: &Draft, dim: &str) -> bool {
-    d.breakdown.iter().any(|b| b == dim) && d.members.iter().any(|(m, _, _)| m == dim)
+    !splits_taking(d, dim).is_empty()
 }
 
 /// The items of table `n` (its number in the table pick) with their option labels: the years (only for a table that is not
@@ -701,8 +718,14 @@ pub fn items(n: usize, d: &Draft) -> Vec<(String, Vec<String>)> {
         for dim in &d.breakdown {
             if let Some((source, target)) = flow_split(dim) {
                 let leaves = |side: &str| listed_flow_parts(&d.table, side).map_or(0, |l| l.len());
+                // a side that is a member item is answered by the flow's leaves, so its item is left out
+                let leave: String = [source, target]
+                    .iter()
+                    .filter(|side| d.members.iter().any(|(m, _, _)| m == *side))
+                    .map(|side| format!("; leave out t{n}.{side}"))
+                    .collect();
                 options.push(format!(
-                    "flow from {source} to {target}: each place × {} {source} parts × {} {target} parts, the leaves under each total (no total or subtotal drawn)",
+                    "flow from {source} to {target}: each place × {} {source} parts × {} {target} parts, the leaves under each total (no total or subtotal drawn){leave}",
                     leaves(source),
                     leaves(target)
                 ));
@@ -778,7 +801,10 @@ pub fn lines(n: usize, d: &Draft, items: &[(String, Vec<String>)]) -> Vec<String
             .strip_prefix(&format!("t{n}."))
             .filter(|dim| split_member(d, dim))
         {
-            Some(dim) => lines.push(format!("   {key} (only when t{n}.breakdown is not {dim}):")),
+            Some(dim) => lines.push(format!(
+                "   {key} (only when t{n}.breakdown is not {}):",
+                splits_taking(d, dim).join(" or ")
+            )),
             None if *key == format!("t{n}.{YEARS_KEY}") => match non_annual(&d.table) {
                 Some(span) => lines.push(format!("   {key} ({span}):")),
                 None => lines.push(format!("   {key}:")),
@@ -2842,8 +2868,12 @@ mod tests {
         let (_, options) = items(2, &draft).into_iter().find(|(k, _)| k == "t2.breakdown").unwrap();
         assert_eq!(
             options[3],
-            "flow from siec to nrg_bal: each place × 11 siec parts × 7 nrg_bal parts, the leaves under each total (no total or subtotal drawn)"
+            "flow from siec to nrg_bal: each place × 11 siec parts × 7 nrg_bal parts, the leaves under each total (no total or subtotal drawn); leave out t2.nrg_bal"
         );
+        // nrg_bal is a member item (no total code) that both its own split and the flow take; siec has TOTAL, so no item
+        let listed = lines(2, &draft, &items(2, &draft));
+        assert!(listed.contains(&"   t2.nrg_bal (only when t2.breakdown is not nrg_bal or siec>nrg_bal):".to_string()), "{listed:?}");
+        assert!(!listed.iter().any(|l| l.starts_with("   t2.siec")), "{listed:?}");
         let fuels: Vec<String> = flow_parts("nrg_bal_s", "siec").into_iter().map(|p| p.code).collect();
         let sectors: Vec<String> = flow_parts("nrg_bal_s", "nrg_bal").into_iter().map(|p| p.code).collect();
         assert_eq!(fuels, Q2_SIEC[1..].to_vec());
