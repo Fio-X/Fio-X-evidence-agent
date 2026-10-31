@@ -2191,9 +2191,9 @@ fn fill_of(
     let labels = leaf_labels(&out.rows, &named, catalogue)?;
     // the dek's finding reads only rows the nodes read already, so the labels hold every code it names
     let finding = finding_of(&filling, &mut out, &labels).map_err(no)?;
-    // the accent marks one place, the one the dek names: its finding's subject, or with the frame's dek (no finding) the first
-    // place the picked claims name (claim_marks); a page that ranks none of them marks none
-    let accent = finding.as_ref().map(|(_, code)| code).or(picks.marks.first()).filter(|c| picks.ranked.contains(c));
+    // the accent marks one place, the one the dek names: its finding's subject. The frame's dek (no finding) names no place,
+    // so that page marks none and prints no legend line for the accent; nor does a page that does not rank the subject
+    let accent = finding.as_ref().map(|(_, code)| code).filter(|c| picks.ranked.contains(c));
     if let Some(code) = accent {
         Filled::set(&mut out.data, "hero data", ACCENT, json!(code)).map_err(no)?;
     }
@@ -5630,9 +5630,9 @@ mod tests {
         assert_eq!(level(&[]).unwrap()["dek"], "{lead1.t}，{name.SE}最高，为{hi}，比最低的{name.BE}高{gap}");
         assert_eq!(level(&[("DE", "2025", "65.4")]), None, "two highest");
         assert_eq!(level(&[("FR", "2025", "14.9")]), None, "two lowest");
-        // the accent: the finding's subject (SE); with the frame's dek (no finding) the place the first picked claim names (BE)
+        // the accent: the finding's subject (SE); the frame's dek (no finding) names no place, so none, though a claim names BE
         assert_eq!(level_fill(&[])["knobs"]["spec"]["hero"]["data"]["accent"], "SE");
-        assert_eq!(level_fill(&[("DE", "2025", "65.4")])["knobs"]["spec"]["hero"]["data"]["accent"], "BE");
+        assert!(level_fill(&[("DE", "2025", "65.4")])["knobs"]["spec"]["hero"]["data"].get("accent").is_none());
 
         let change = recipe("change");
         let moved = |at: &[(&str, &str, &str)]| {

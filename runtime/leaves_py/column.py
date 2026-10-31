@@ -57,8 +57,8 @@ class ColumnFrame:
 
 def focus(h):
     """The page's focus, the one place its accent marks in the bars and on the map: the place the page's dek names, as layer 1
-    gives it (hero.data.accent: the dek finding's subject, or with the frame's dek the place the first picked claim names); none
-    when it gives none. The program's, never a model's: every other bar and circle takes the page's greys."""
+    gives it (hero.data.accent: the dek finding's subject); none when it gives none, as with the frame's dek, which names no
+    place. The program's, never a model's: every other bar and circle takes the page's greys."""
     a = (h.get("data") or {}).get("accent")
     return [a] if isinstance(a, str) and a else []
 
