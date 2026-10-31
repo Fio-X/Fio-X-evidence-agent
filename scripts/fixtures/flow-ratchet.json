@@ -1,5 +1,5 @@
 {
-  "measured_at": "51bd69353d4231a37448b56bc95de6f044d1ed11",
+  "measured_at": "7a91c492cfcdd752907b40d4d140782159a3e8f6",
   "rules": "scripts/test_group_flow_ratchet.mjs header; totals and per_file may only go down; kind_names only grow, by --lower",
   "totals": {
     "new": {
@@ -12,7 +12,7 @@
       "nodes": 0,
       "ops": 0,
       "copy": 224,
-      "kinds": 367
+      "kinds": 413
     }
   },
   "scanned": {
@@ -23,6 +23,7 @@
     "barcard": "next_render.rs GroupInfo",
     "bars": "knobs.json nodes",
     "base": "knobs.json nodes",
+    "basemap": "runtime/nodes run.mjs NODES",
     "bignums": "knobs.json nodes",
     "bubble": "P0a word list",
     "bubblekey": "knobs.json nodes",
@@ -42,6 +43,7 @@
     "edge": "knobs.json nodes",
     "events": "knobs.json nodes",
     "flow": "knobs.json groups",
+    "flowlines": "runtime/nodes run.mjs NODES",
     "flowmap": "knobs.json nodes",
     "flows": "knobs.json nodes",
     "frame": "knobs.json nodes",
@@ -97,11 +99,11 @@
     },
     "runtime/pi/design_pack.mjs": {
       "copy": 37,
-      "kinds": 57
+      "kinds": 61
     },
     "runtime/pi/newsroom.ts": {
       "copy": 15,
-      "kinds": 209
+      "kinds": 244
     },
     "runtime/pi/tool_chain.mjs": {
       "kinds": 1
@@ -110,6 +112,9 @@
       "kinds": 2
     },
     "runtime/pi/tool_host_schema.mjs": {
+      "kinds": 1
+    },
+    "runtime/pi/tool_registry.mjs": {
       "kinds": 1
     },
     "src/agent_loop.rs": {
@@ -159,7 +164,7 @@
     },
     "src/prompt.rs": {
       "copy": 65,
-      "kinds": 38
+      "kinds": 39
     },
     "src/recipes.rs": {
       "copy": 76,
@@ -173,6 +178,9 @@
     },
     "src/tool_host.rs": {
       "kinds": 1
+    },
+    "src/tool_registry.rs": {
+      "kinds": 5
     }
   }
 }

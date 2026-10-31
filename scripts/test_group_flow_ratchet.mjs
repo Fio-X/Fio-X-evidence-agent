@@ -18,7 +18,9 @@
 //          registry file, table or listing that is missing or yields no name fails the test): the node, group and recipe
 //          names (and recipe layers) of runtime/leaves_py/knobs.json, run.py MAIN and LEAF_LAYERS, every *_TEMPLATES list
 //          and NODE_FILLS name in src/next_*.rs, the NodeInfo and GroupInfo names in src/next_render.rs, shape_registry.rs
-//          Relation variants and their templates, plus the word list P0a measured with (P0A_KINDS). Names compare in lower
+//          Relation variants and their templates, the NODES keys of runtime/nodes/run.mjs when that folder is there (no commit
+//          tracks it yet; base_map and flow_lines came in from it on 11-01 and stay in the stored set below), plus the word
+//          list P0a measured with (P0A_KINDS). Names compare in lower
 //          case with every non-alphanumeric dropped (Sankey = sankey, stacked_bar_100 = StackedBar100 = stackedbar100).
 //          A line names a kind when (a) a string literal on it ("..", '..', `..`, or an escaped \"..\" inside one) is the
 //          name, (b) an enum path segment `::Name` is the name (Kind::Sankey, Relation::Map), or (c) for every name not in
@@ -118,6 +120,16 @@ export function registryKinds(read, list) {
   n = 0;
   for (const m of `,${leaves[1]})`.matchAll(/(?:^|,)\s*(\w+)=/gm)) { add(m[1], "run.py LEAF_LAYERS"); n += 1; }
   took(n, "run.py LEAF_LAYERS");
+  // runtime/nodes: the JS leaf nodes, the keys of run.mjs NODES (base_map, flow_lines, ...). The folder is not in every checkout
+  // (no commit tracks it yet): when it is there, run.mjs and its NODES must yield names, as every other registry; when it is
+  // not, its names still count through the baseline's stored set, which a name never leaves.
+  if (list("runtime/nodes") !== null) {
+    const nodes = /\bNODES\s*=\s*\{([^}]*)\}/.exec(need(read("runtime/nodes/run.mjs"), "runtime/nodes/run.mjs (runtime/nodes is there)"));
+    assert.ok(nodes, "runtime/nodes/run.mjs NODES must be read");
+    n = 0;
+    for (const m of nodes[1].matchAll(/(?:^|,)\s*["']?(\w+)["']?\s*(?=[:,]|$)/g)) { add(m[1], "runtime/nodes run.mjs NODES"); n += 1; }
+    took(n, "runtime/nodes run.mjs NODES");
+  }
   const src = list("src");
   assert.ok(Array.isArray(src) && src.length, "src must be listed");
   let templates = 0, fillNames = 0;
@@ -290,6 +302,9 @@ const diskList = (d) => { const f = join(REPO, d); return existsSync(f) ? readdi
 const refRead = (sha) => (p) => { try { return git("show", `${sha}:${p}`); } catch { return null; } };
 const refList = (sha) => (d) => { try { return git("ls-tree", "--name-only", `${sha}:${d}`).split("\n").filter(Boolean); } catch { return null; } };
 const refHitsAt = (sha, groups, kinds) => { let m = null; return (f) => { m ??= measure(groups, refRead(sha), kinds); return m.hits[f]; }; };
+// a runtime/nodes folder as the self-tests see it, whether or not this checkout has one
+const NODES_LIST = (d) => (d === "runtime/nodes" ? ["run.mjs"] : diskList(d));
+const NODES_RUN = 'import * as base_map from "./base_map.mjs";\nexport const NODES = { base_map, flow_lines, leader_notes, legend, "keyed_one": x };\n';
 const argAfter = (flag) => { const at = process.argv.indexOf(flag); return at > 0 ? process.argv[at + 1] : null; };
 
 // ---- self-tests ----------------------------------------------------------------------------------------------------------------------------
@@ -322,7 +337,16 @@ for (const [what, over, list] of [
   ["shape_registry.rs missing", { "src/shape_registry.rs": null }, diskList],
   ["next_render.rs missing", { "src/next_render.rs": null }, diskList],
   ["src not listed", {}, (d) => (d === "src" ? null : diskList(d))],
+  ["runtime/nodes there without run.mjs", { "runtime/nodes/run.mjs": null }, NODES_LIST],
+  ["runtime/nodes run.mjs without NODES", { "runtime/nodes/run.mjs": "export const DRAW = { base_map };\n" }, NODES_LIST],
+  ["runtime/nodes run.mjs with empty NODES", { "runtime/nodes/run.mjs": "export const NODES = {};\n" }, NODES_LIST],
 ]) { assert.throws(() => registryKinds((p) => (p in over ? over[p] : diskRead(p)), list), assert.AssertionError, `registry ${what} must fail`); checks += 1; }
+// runtime/nodes, when there, adds its NODES keys, and they count in any spelling (BASE_MAP, flow_lines, "leader_notes")
+{
+  const reg = registryKinds((p) => (p === "runtime/nodes/run.mjs" ? NODES_RUN : diskRead(p)), NODES_LIST);
+  eq(["basemap", "flowlines", "leadernotes", "legend", "keyedone"].map((k) => [k, reg.has(k)]), [["basemap", true], ["flowlines", true], ["leadernotes", true], ["legend", true], ["keyedone", true]], "runtime/nodes NODES keys are kind names");
+  eq([...kindsIn('let BASE_MAP = 1; flow_lines(x); f("leader_notes");', new Set(reg.keys()))].sort(), ["basemap", "flowlines", "leadernotes"], "runtime/nodes names count in any spelling");
+}
 const baseNames = new Map(Object.entries(baseline?.kind_names ?? {}));
 const newNames = [...registry].filter(([n]) => !baseNames.has(n));
 const countNames = baseline ? baseNames : registry;
