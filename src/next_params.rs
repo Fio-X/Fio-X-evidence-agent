@@ -121,7 +121,8 @@ pub fn parts(table: &str, dim: &str) -> Vec<Part> {
 }
 
 /// The registered subtotals of dimension `dim` of `table` that overlap its tree (OVERLAP_LEVEL), in file order: never a part,
-/// a parent or a group's member, listed so a page can say they are left out.
+/// a parent or a group's member, listed so a page can say they are left out. Only the tests read it yet.
+#[cfg(test)]
 pub fn overlaps(table: &str, dim: &str) -> Vec<Part> {
     registry()
         .iter()
