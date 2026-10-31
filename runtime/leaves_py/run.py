@@ -149,7 +149,7 @@ LEAF_SVG = (section_head.SECTION_HEAD_SVG + rankbar.RANKBAR_SVG + bubbles.BUBBLE
 STRIP_SLOT = ("column", "change")
 # The main layer of each page recipe the column frame draws, the picture the page is built around (column_page; knobs.py
 # copies it into the recipe as `main`): the bars, or a chart leaf of LEAF_LAYERS in their place, across the page.
-MAIN = dict(column="bars", change="bars", flow="sankey")
+MAIN = dict(column="bars", change="bars", flow="sankey", composition="stacked100")
 # The recipes a column page draws: column, change (its bars the places' change between two years, bars.measure), and flow
 # (a sankey across the page, its main).
 COLUMN_KINDS = tuple(MAIN)

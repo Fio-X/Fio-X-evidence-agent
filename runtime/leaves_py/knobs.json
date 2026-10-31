@@ -1501,7 +1501,8 @@
    ],
    "eats": [
     "annual",
-    "one_unit"
+    "one_unit",
+    "composition_groups"
    ]
   },
   "step": {
@@ -1616,6 +1617,17 @@
    "sankey",
    "stacked100"
   ],
+  "composition": [
+   "bignums",
+   "bars",
+   "section_head",
+   "rankbar",
+   "bubbles",
+   "bubble_key",
+   "leader_notes",
+   "sankey",
+   "stacked100"
+  ],
   "scmp": [
    "map",
    "strip",
@@ -1684,6 +1696,21 @@
     "ring.color",
     "names.font"
    ]
+  },
+  {
+   "name": "composition",
+   "layers": [
+    "stacked100"
+   ],
+   "eats": [
+    "annual",
+    "one_unit",
+    "composition_groups"
+   ],
+   "charts": [],
+   "picks": [],
+   "exposes": [],
+   "main": "stacked100"
   },
   {
    "name": "change",

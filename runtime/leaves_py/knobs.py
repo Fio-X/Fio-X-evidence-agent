@@ -43,6 +43,11 @@ RECIPES = [
     dict(name="ring", layers=["map", "ring", "callouts", "legend", "inset"],
          eats=["annual", "years_2", "hub_origin", "one_unit", "others_single", "monthly_companion"], charts=[],
          picks=["change_focus"], exposes=["frame.gap_dir", "frame.title_in", "ring.months", "ring.color", "names.font"]),
+    # a composition across places: one 100% bar per place of the main's sum-input fetch (its groups' input codes, the top
+    # places by total, layer 1's cut), each bar's total printed beside it; before change and column, which would read the
+    # main's totals alone, and only for a main the program fetched sum inputs for (composition_groups)
+    dict(name="composition", layers=["stacked100"], eats=["annual", "one_unit", "composition_groups"], charts=[], picks=[],
+         exposes=[], main="stacked100"),
     # two ends of a ten-year table: each place's change from t0 to t1 as signed bars (bars.measure change, set by layer 1),
     # the map its level at t1; a table of one year has no two ends and goes on to column
     dict(name="change", layers=["bubbles", "bars", "leader_notes"],
@@ -63,7 +68,7 @@ EATS = dict(map=["hub_origin", "one_unit"], ring=["monthly_companion"], callouts
             bars=["annual", "one_place", "one_unit", "last_year"], bignums=["one_unit"], notes=["hub_origin", "one_unit"],
             strip=["monthly_companion"], section_head=[], rankbar=["annual", "one_place", "one_unit", "last_year"],
             bubbles=["annual", "one_place", "one_unit", "last_year"], bubble_key=["annual", "one_place", "one_unit", "last_year"],
-            leader_notes=["one_unit"], sankey=["official_flow", "one_unit"], stacked100=["annual", "one_unit"])
+            leader_notes=["one_unit"], sankey=["official_flow", "one_unit"], stacked100=["annual", "one_unit", "composition_groups"])
 # The nodes a node brings with it: every recipe that draws the node draws these right after it, in this order (a key to its
 # marks), so no recipe can draw the marks without them; a recipe that names one itself refuses.
 WITH = dict(bubbles=["bubble_key"])
@@ -127,7 +132,8 @@ def take(nodes, pages):
 def table():
     columns = run.KINDS["column"][0]  # the column page's own layers and the chart leaves over its frame (run.LEAF_LAYERS)
     groups = dict(map=list(prod.MAP_ORDER), ring=list(scmp.RING_LAYERS), charts=list(prod.CHARTS), column=list(columns),
-                  change=list(run.KINDS["change"][0]), flow=list(run.KINDS["flow"][0]), scmp=list(scmp.SCMP_LAYERS))
+                  change=list(run.KINDS["change"][0]), flow=list(run.KINDS["flow"][0]), composition=list(run.KINDS["composition"][0]),
+                  scmp=list(scmp.SCMP_LAYERS))
     reserve = {}
     for reg in (prod.MAP_LAYERS, scmp.RING_LAYERS, columns, scmp.SCMP_LAYERS):
         for n, (_, r) in reg.items():

@@ -141,6 +141,21 @@ class Picture(unittest.TestCase):
         self.assertEqual([p for _, p in segs], ["renewable", "fossil", "other"])
         self.assertEqual(segs[0][0], "var(--accent)")
 
+    def test_each_bar_prints_its_total_from_the_ledger_in_a_column_or_none_does(self):
+        rows = ROWS + [{"src": f"fact:total.{g}.n", "text": f"{TAB[(g, 'TOTAL')]:,.0f}"} for g in GEOS]
+        data = dict(DATA, total_head=W("合计"), bars=[dict(b, total_text=f"fact:total.{b['code']}.n") for b in DATA["bars"]])
+        svg = draw(hero(data), rows)[0]
+        self.assertEqual(check_svg(svg), [])
+        for g in GEOS:
+            self.assertIn(f'data-src="fact:total.{g}.n"', svg)
+        plain = frame(hero(DATA))
+        self.assertEqual(frame(hero(data), rows).x0 > plain.x0, True)  # the column sits between the names and the bars
+        some = dict(data, bars=[data["bars"][0]] + [{k: v for k, v in b.items() if k != "total_text"} for b in data["bars"][1:]])
+        for bad, why in [(some, "some bars only"), ({k: v for k, v in data.items() if k != "total_head"}, "total_head is missing")]:
+            with self.assertRaises(K.Refused) as e:
+                frame(hero(bad), rows)
+            self.assertIn(why, str(e.exception))
+
     def test_a_zero_part_draws_no_segment_and_goes_back_to_layer_1_as_dropped(self):
         # nuclear heat has a row of 0 for DE in 2024: its part draws no segment and is said, never left out unsaid
         self.assertEqual(TAB[("DE", "N900H")], 0.0)

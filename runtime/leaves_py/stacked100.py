@@ -12,11 +12,13 @@ hero.data (the data shape this leaf eats; on a column frame page, the hero's lea
   "parts": [code, ...],                             # the parts in layer 1's order (two or more, each once)
   "bars": [{"code": code,                           # one bar per place, in layer 1's order (the leaf sorts nothing)
             "total": series src,                    # the place's total row: the bar's 100%
+            "total_text": ledger src?,              # the total printed in a column before the bar (every bar or none)
             "cells": {part: [series src, ...]},     # the leaf rows of each part the request holds: each cell's own
                                                     # width is its value over the total; no part's value is computed here
             "share_text": {part: ledger src}}],     # the printed share of each part drawn (layer 1's fact)
   "empty": [{"bar": code, "part": code}]?,          # a part of a bar with no row at all: no segment, back in
                                                     # Frame.dropped as ("<bar>:<part>", "no row")
+  "total_head": segs?,                              # the total column's head, when the bars print their totals
   "others": {"head": segs, "codes": [code, ...]}?,  # the places left out of the bars, named under the picture in the
                                                     # order given (layer 1's), each by its label
   "lines": [segs, ...]?, "footnote": segs?}         # layer 1's lines under the picture, one line each
@@ -101,7 +103,12 @@ class Frame:
                 segs.append((p, x0, end))
             if not segs: raise Refused(f"stacked100: bar {code} draws no segment")
             if abs(end - 1.0) > tol: raise Refused(f"stacked100: bar {code}'s cells end at {end:.6f} of its total, not 1 (tolerance {tol:g})")
-            f.rows.append(dict(code=code, segs=segs, share=b.get("share_text") or {}, name=K.named(code, d.get("bar_kind", "place"))))
+            tt = K.ent(b["total_text"]) if b.get("total_text") else None
+            f.rows.append(dict(code=code, segs=segs, share=b.get("share_text") or {}, total=tt, name=K.named(code, d.get("bar_kind", "place"))))
+        with_total = [r["total"] is not None for r in f.rows]
+        if any(with_total) and not all(with_total): raise Refused("stacked100: total_text is on some bars only; every bar prints its total or none")
+        f.totals = all(with_total)
+        if f.totals and not d.get("total_head"): raise Refused("stacked100: the bars print their totals and total_head is missing")
         f.part_kind = K.need(d, "part_kind")
         f.part_names = {p: K.named(p, f.part_kind) for p in parts}
         f.name_w = max(tw(r["name"][1], f.size) for r in f.rows) + 14
@@ -111,7 +118,8 @@ class Frame:
             f.col_w = max([tw(f.part_names[f.hl][1], f.size)] + [tw(t, f.size) for t in texts]) + 14
         else:
             f.col_w = 0
-        f.x0, f.x1 = 8 + f.name_w, f.W - 8 - f.col_w
+        f.tot_w = (max([tw(K.plain(d["total_head"], "total head"), f.size)] + [tw(r["total"][1], f.size) for r in f.rows]) + 14) if f.totals else 0
+        f.x0, f.x1 = 8 + f.name_w + f.tot_w, f.W - 8 - f.col_w
         if f.x1 - f.x0 < 160: raise Refused("stacked100: the board is too narrow for the names, the bars and the share column (plot under 160 px)")
         f.H = 0
 
@@ -142,6 +150,10 @@ def cl_stacked100(f, occ):
             o.append(f'<rect x="{x:.1f}" y="{y - size * 0.75:.1f}" width="{size * 0.8:.1f}" height="{size * 0.8:.1f}" fill="{f.fill[p]}"/>')
             o.append(K.txt(B, x + size + 4, y, size, "var(--t-title)", nm_svg, tw(nm, size), weight=700 if p == f.hl else 400, tag=f"key {p}"))
             x += wd + 14
+    if f.totals:
+        head = K.segs(d["total_head"], "total head")
+        hsvg = "".join(FX.entry(sg, "tspan", None) if sg else esc(t) for t, sg in head)
+        o.append(K.txt(B, f.x0 - 8, y, size, "var(--t-sec)", hsvg, tw(K.plain(d["total_head"], "total head"), size), anchor="end", tag="total head"))
     if f.column:
         nm_svg, nm = f.part_names[f.hl]
         o.append(K.txt(B, W - 8, y, size, "var(--accent)", nm_svg, tw(nm, size), anchor="end", weight=700, tag="column head"))
@@ -151,7 +163,9 @@ def cl_stacked100(f, occ):
         o.append(K.line(_px(f, q), top - 2, _px(f, q), bottom + 2))
     for i, r in enumerate(f.rows):
         y0 = top + i * pitch; yc = y0 + bh / 2 + size * 0.35
-        o.append(K.txt(B, f.x0 - 6, yc, size, "var(--t-title)", r["name"][0], tw(r["name"][1], size), anchor="end", weight=700, tag=f"name {r['code']}"))
+        o.append(K.txt(B, f.x0 - 6 - f.tot_w, yc, size, "var(--t-title)", r["name"][0], tw(r["name"][1], size), anchor="end", weight=700, tag=f"name {r['code']}"))
+        if f.totals:
+            o.append(K.txt(B, f.x0 - 8, yc, size, "var(--t-title)", r["total"][0], tw(r["total"][1], size), anchor="end", tag=f"total {r['code']}"))
         last = len(r["segs"]) - 1
         for j, (p, a, b) in enumerate(r["segs"]):
             xa, xb = _px(f, a), (f.x1 if j == last else _px(f, b))  # the last segment ends exactly at the 100% end
