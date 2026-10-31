@@ -25,7 +25,7 @@ use std::collections::BTreeMap;
 
 use crate::next_flow::{
     level_question, number_not_allowed, placeholders, question_word, worded_number,
-    year_after_period, Ask, Choice,
+    year_after_fact_period, year_after_period, Ask, Choice,
 };
 use crate::shape_registry::{
     Concept, Relation, View, BODY_SENTENCES, CARD_FORMS, CONCEPTS, FRAMES, HERO_LABELS,
@@ -441,6 +441,7 @@ impl Drafts {
                 || number_not_allowed(wording, &self.numbers).is_some()
                 || worded_number(wording).is_some()
                 || (!self.periods.is_empty() && year_after_period(wording).is_some())
+                || year_after_fact_period(wording).is_some()
                 || (self.change_title
                     && *target == Target::PageTitle
                     && level_question(wording).is_some())
@@ -1086,10 +1087,10 @@ mod tests {
                 refused.problem
             );
             assert!(refused.problem.contains(crate::next_flow::SCOPE_RULE), "{}", refused.problem);
-            assert!(refused.problem.contains("'各国可再生能源占比的变化'"), "{}", refused.problem);
+            assert!(refused.problem.contains("'各方数值的变化'"), "{}", refused.problem);
         }
         // The rule's example passes on the same page, and so does every field as drafted (the body's draft ranks).
-        assert!(ask.check(&one("1", "各国可再生能源占比的变化")).is_ok());
+        assert!(ask.check(&one("1", "各方数值的变化")).is_ok());
         for (i, (_, text)) in drafts.fields.iter().enumerate() {
             let n = (i + 1).to_string();
             assert!(ask.check(&one(&n, text)).is_ok(), "{n}: {text}");
@@ -1097,13 +1098,13 @@ mod tests {
         // An accepted answer that rewords without ranking goes on the page whole: the guard puts back nothing.
         let answer = ask
             .check(&json!({"step": "text", "names": {}, "text": {
-                "1": "各国可再生能源占比的变化",
+                "1": "各方数值的变化",
                 "2": "从高到低看各经济体",
                 "3": "按高低排列"}}))
             .unwrap();
         let (page, back) = drafts.scoped(drafts.revised(&answer).unwrap());
         assert!(back.is_empty(), "{back:?}");
-        assert_eq!(page[&Target::PageTitle], "各国可再生能源占比的变化");
+        assert_eq!(page[&Target::PageTitle], "各方数值的变化");
         assert_eq!(page[&Target::PageDek], "从高到低看各经济体");
         assert_eq!(page[&Target::Heading(0)], "按高低排列");
         // No field carries the scope: it is the page's own field, not model text.
@@ -1216,10 +1217,11 @@ mod tests {
     }
 
     /// The dek a run gives a page (next_run finding_of: DEK_FINDINGS on the picked recipe's own facts) as fill drafts it:
-    /// {name} a place's name placeholder, {value} and {gap} facts. Each finding replaces the frame's dek, its scoped wording on
-    /// a scoped page; the sentence types no number, says no "从起始到最近" and on a scoped page ranks nothing; kept or
-    /// reworded with its placeholders it passes, a reword that drops one or ranks on a scoped page is refused. None keeps
-    /// the frame's dek.
+    /// {name} a place's name placeholder, {value} and {gap} facts, {y0} and {y1} facts' periods. Each finding replaces the
+    /// frame's dek, its scoped wording on a scoped page; the sentence types no number, names its later year (and a change its
+    /// earlier) through a placeholder, says no "从起始到最近" and on a scoped page ranks nothing; kept or reworded with its
+    /// placeholders it passes, a reword that drops one, writes 年 after a period or ranks on a scoped page is refused. None
+    /// keeps the frame's dek.
     #[test]
     fn a_finding_is_the_dek_of_its_page_and_keeps_its_placeholders() {
         let (claims, charts) = q1();
@@ -1228,17 +1230,19 @@ mod tests {
                 .replace("{name}", "{name.SE}")
                 .replace("{other}", "{name.BE}")
                 .replace("{value}", "{lead}")
+                .replace("{y0}", "{lead0.t}")
+                .replace("{y1}", "{lead1.t}")
         };
         let dek = |drafts: &Drafts| drafts.fields.iter().find(|(t, _)| *t == Target::PageDek).unwrap().1.clone();
         let plain = draft(&claims, &charts, Vec::new());
         assert_eq!(dek(&plain.clone().with_finding(None)), frames(Relation::Ranking, View::Slice)[1]);
         let one = |n: &str, wording: &str| json!({"step": "text", "names": {}, "text": {n: wording}});
         for (finding, unscoped, scoped) in DEK_FINDINGS {
-            // only the tokens finding_of fills, the name and the value in every sentence
+            // only the tokens finding_of fills, the name, the value and the later year in every sentence
             for template in [unscoped, scoped] {
                 let tokens = placeholders(template).unwrap();
-                assert!(tokens.iter().all(|t| ["name", "other", "value", "gap"].contains(&t.as_str())), "{template}");
-                assert!(tokens.contains("name") && tokens.contains("value"), "{template}");
+                assert!(tokens.iter().all(|t| ["name", "other", "value", "gap", "y0", "y1"].contains(&t.as_str())), "{template}");
+                assert!(["name", "value", "y1"].iter().all(|t| tokens.contains(*t)), "{template}");
                 assert_eq!(placeholders(unscoped).unwrap(), tokens, "{finding:?}: both wordings fill the same");
             }
             let finding_of = Some((fill(unscoped), fill(scoped)));
@@ -1257,6 +1261,9 @@ mod tests {
                 let reworded = format!("据数据，{said}");
                 let page = drafts.revised(&ask.check(&one("2", &reworded)).unwrap()).unwrap();
                 assert_eq!(page[&Target::PageDek], reworded);
+                let doubled = said.replace("{lead1.t}", "{lead1.t}年");
+                let refused = ask.check(&one("2", &doubled)).unwrap_err();
+                assert!(refused.problem.contains(crate::next_flow::FACT_PERIOD_RULE), "{}", refused.problem);
                 let dropped = said.replace("{name.SE}", "瑞典");
                 assert!(ask.check(&one("2", &dropped)).unwrap_err().problem.contains("missing: [{name.SE}]"), "{dropped}");
                 let ranks = format!("{said}，居欧盟最高");

@@ -1145,6 +1145,9 @@ impl Ask {
                         return Err(self
                             .refuse(format!("field '{id}': '{written}'{}", period_rule(periods))));
                     }
+                    if let Some(written) = year_after_fact_period(revised) {
+                        return Err(self.refuse(format!("field '{id}': '{written}'; {FACT_PERIOD_RULE}")));
+                    }
                     if let Some(level) = level_question(revised).filter(|_| changes.contains(id)) {
                         return Err(self.refuse(format!("field '{id}': '{level}' asks a level{}", change_rule(changes))));
                     }
@@ -1458,19 +1461,33 @@ pub fn worded_number(text: &str) -> Option<String> {
 /// The first time placeholder of a text written with 年 right after it ("{first.year}年"), as written; a time
 /// placeholder is one whose column (its last part) is a TIME_COLUMNS column.
 pub fn year_after_period(text: &str) -> Option<String> {
+    year_after(text, |column| crate::next_page::TIME_COLUMNS.contains(&column))
+}
+
+/// The first fact period placeholder ("{lead1.t}", next_run finding_of) of a text written with 年 right after it, as
+/// written: the leaf prints a fact's period with its own 年 ("2024 年"), on every page.
+pub fn year_after_fact_period(text: &str) -> Option<String> {
+    year_after(text, |column| column == "t")
+}
+
+/// The first placeholder whose last part `timed` holds, written with 年 right after it (spaces aside), as written.
+fn year_after(text: &str, timed: impl Fn(&str) -> bool) -> Option<String> {
     let mut rest = text;
     while let Some(open) = rest.find('{') {
         let close = open + rest[open..].find('}')?;
         let name = &rest[open + 1..close];
         let column = name.rsplit('.').next().unwrap_or(name);
         let after = rest[close + 1..].trim_start();
-        if crate::next_page::TIME_COLUMNS.contains(&column) && after.starts_with('年') {
+        if timed(column) && after.starts_with('年') {
             return Some(format!("{}年", &rest[open..=close]));
         }
         rest = &rest[close + 1..];
     }
     None
 }
+
+/// The rule of a fact period placeholder, said in a refusal of year_after_fact_period.
+pub const FACT_PERIOD_RULE: &str = "a {<fact>.t} placeholder prints its year with 年 already, so write no 年 after it";
 
 /// The rule of a page whose time values are not years, said to the model in the ask and in a refusal; empty on an
 /// annual page.
@@ -1505,8 +1522,8 @@ fn change_rule(changes: &[String]) -> String {
 /// The title rule of a page whose bars draw the change between its two ends, with its examples, a label and a conclusion
 /// (none ranks or asks, so they pass on a scoped page and under TITLE_RULE too).
 pub const CHANGE_TITLE_RULE: &str = "this page draws how much each changed between its two ends, not who is highest, so its title names a \
-     change, as a label or a conclusion: it holds 变化, 增, 减, 升, 降, 涨, 跌 or 从…到, e.g. '各国可再生能源占比的变化' or \
-     '北欧国家占比升幅居前', not '各国占比最高'";
+     change, as a label or a conclusion: it holds 变化, 增, 减, 升, 降, 涨, 跌 or 从…到, e.g. '各方数值的变化' or \
+     '少数地区升幅居前', not '各地数值最高'";
 /// Words a title asks a level with (who is highest, most, first).
 pub const LEVEL_WORDS: [&str; 10] = ["最高", "最低", "最多", "最少", "最大", "最小", "领先", "垫底", "第一", "居首"];
 /// Words that name a change; 从 with 到 after it (从起始到最近) names one too.
@@ -1515,12 +1532,12 @@ pub const CHANGE_WORDS: [&str; 10] = ["变", "增", "减", "升", "降", "涨", 
 /// The rule of the fields of a scoped page (Ask::Text scoped), said to the model in the ask and in a refusal, with an
 /// example that passes; the words are next_page SUPERLATIVES.
 pub const SCOPE_RULE: &str = "this page's chart shows only the places the program kept, not all of them, so a ranking word \
-     (最高, 最低, 领先, 垫底, 第一, 最多, 最少) holds only among those: a reworded field names none, e.g. '各国可再生能源占比的变化'";
+     (最高, 最低, 领先, 垫底, 第一, 最多, 最少) holds only among those: a reworded field names none, e.g. '各方数值的变化'";
 
 /// The rule of the title field (Ask::Text titles), said to the model in the ask and in a refusal, with a label and a
 /// conclusion that pass (neither ranks, asks a level nor types a number); the words are QUESTION_WORDS.
-pub const TITLE_RULE: &str = "the title is a label (what the page is about, e.g. '欧盟各国可再生能源占比') or a conclusion (what \
-     the chart shows, e.g. '北欧国家占比居前'), never a question: no ？ or ?, and none of 为什么, 什么, 为何, 怎么, 怎样, 如何, 多少, \
+pub const TITLE_RULE: &str = "the title is a label (what the page is about, e.g. '各地的高低分布') or a conclusion (what \
+     the chart shows, e.g. '少数地区明显偏高'), never a question: no ？ or ?, and none of 为什么, 什么, 为何, 怎么, 怎样, 如何, 多少, \
      多大, 谁, 哪, 吗, 几";
 /// Words that make a wording ask; 几乎 (almost) is none of them. Longest first, so a refusal names the whole word.
 pub const QUESTION_WORDS: [&str; 12] = ["为什么", "什么", "为何", "怎么", "怎样", "如何", "多少", "多大", "谁", "哪", "吗", "几"];
@@ -1572,13 +1589,14 @@ pub fn level_question(text: &str) -> Option<&'static str> {
 /// The typed-number rule of the page text, the same as the design pack's claim-template check (newsroom.ts: "every number,
 /// years included, must be a placeholder"), with one example; the request, the schema and the refusal all say it in these words.
 pub const TYPED_NUMBER_RULE: &str =
-    "type no number, years included: a year goes through a {placeholder} the draft holds, or is left out (write 各国可再生能源占比的变化, not 2016年到2024年的变化)";
+    "type no number, years included: a year goes through a {placeholder} the draft holds, or is left out (write 各方数值的变化, not 2016年到2024年的变化)";
 /// The number-word rule of the page text, with the examples it refuses.
 pub const NUMBER_WORD_RULE: &str = "no number in words either (二十七, 两国, 三倍, 两成, 过半)";
-/// Every wording the rules above suggest (TYPED_NUMBER_RULE, CHANGE_TITLE_RULE, SCOPE_RULE, TITLE_RULE), each of which must
-/// pass the text and the names checks it is offered for, the title's on every page kind among them.
+/// Every wording the rules above suggest (TYPED_NUMBER_RULE, CHANGE_TITLE_RULE, SCOPE_RULE, TITLE_RULE), and only those, each
+/// of which must pass the text and the names checks it is offered for, the title's on every page kind among them. The rules
+/// go to the model on every question, so each is topic-neutral: no place, measure or topic of any one page.
 #[cfg(test)]
-pub const RULE_SUGGESTIONS: [&str; 4] = ["各国可再生能源占比的变化", "北欧国家占比升幅居前", "欧盟各国可再生能源占比", "北欧国家占比居前"];
+pub const RULE_SUGGESTIONS: [&str; 4] = ["各方数值的变化", "少数地区升幅居前", "各地的高低分布", "少数地区明显偏高"];
 
 /// The first number a text types that is not one of `allowed`.
 pub fn number_not_allowed(text: &str, allowed: &[String]) -> Option<String> {
@@ -5446,12 +5464,12 @@ mod tests {
         let refused = both.check(&answer("1", "从起始到最近，谁升得最多")).unwrap_err();
         assert!(refused.problem.starts_with("field '1': '最多' ranks; "), "{}", refused.problem);
         assert!(refused.problem.contains(SCOPE_RULE), "{}", refused.problem);
-        assert!(refused.problem.contains("'各国可再生能源占比的变化'"), "{}", refused.problem);
+        assert!(refused.problem.contains("'各方数值的变化'"), "{}", refused.problem);
         assert_eq!(
             refused.allowed["scoped"],
             json!({"fields": ["1", "2"], "words": crate::next_page::SUPERLATIVES})
         );
-        assert!(both.check(&answer("1", "各国可再生能源占比的变化")).is_ok());
+        assert!(both.check(&answer("1", "各方数值的变化")).is_ok());
         assert!(both.check(&answer("2", "{max.v.geo}最多")).is_ok(), "the draft as it stands");
         assert!(both.check(&answer("2", "{max.v.geo}居首")).is_ok());
         assert!(both.check(&answer("2", "{max.v.geo}领先")).is_err());
@@ -5531,13 +5549,20 @@ mod tests {
             assert_eq!(question_word(suggested), None, "{suggested}");
             assert!(every.check(&answer("1", suggested)).is_ok(), "{suggested}");
         }
-        // The rules' own examples (each after " '") are among the suggestions, but the one a rule says not to write.
+        // The rules' own examples (each after " '", and TYPED_NUMBER_RULE's after "write ") are the suggestions, but the one
+        // a rule says not to write; every suggestion is a rule's example.
+        let mut examples: Vec<&str> = Vec::new();
         for rule in [TITLE_RULE, CHANGE_TITLE_RULE, SCOPE_RULE] {
             let quoted: Vec<&str> = rule.split(" '").skip(1).filter_map(|q| q.split('\'').next()).collect();
             assert!(!quoted.is_empty(), "{rule}");
-            for example in quoted.iter().filter(|q| !q.contains('最')) {
-                assert!(RULE_SUGGESTIONS.contains(example), "{example}");
-            }
+            examples.extend(quoted.into_iter().filter(|q| !q.contains('最')));
+        }
+        examples.extend(TYPED_NUMBER_RULE.split("write ").nth(1).and_then(|w| w.split(',').next()));
+        for example in &examples {
+            assert!(RULE_SUGGESTIONS.contains(example), "{example}");
+        }
+        for suggested in RULE_SUGGESTIONS {
+            assert!(examples.contains(&suggested), "{suggested} is no rule's example");
         }
     }
 

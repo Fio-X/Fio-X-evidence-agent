@@ -1748,11 +1748,20 @@ fn named_places(text: &str, labels: &Value) -> String {
     out
 }
 
-/// The facts of a change finding (finding_of): its change, then its place's values at the earlier and the later end.
+/// The facts of a finding (finding_of): a change finding's change, then its place's values at the earlier and the later
+/// year; a level or a share finding declares the later only. Each value is read as the last period of a one-year window,
+/// so it carries its period: the dek names its year through {<fact>.t}, a ledger entry like every number.
 const FINDING_FACTS: [&str; 3] = ["lead", "lead0", "lead1"];
 
+/// A finding fact (FINDING_FACTS): the rows `filter` keeps of `table`, read at the year `t` only (op last over a window of
+/// that year), in the format `fmt`.
+fn year_fact(table: &str, filter: Value, t: &str, fmt: &str) -> Value {
+    json!({"op": "last", "table": table, "filter": filter, "from": t, "to": t, "fmt": fmt})
+}
+
 /// The page dek's finding (shape_registry DEK_FINDINGS) by what the page's facts and rows hold, as {"dek", "scoped"}: {name}
-/// and {other} become name placeholders of codes the labels name, {value} and {gap} facts the page declares. On a page with
+/// and {other} become name placeholders of codes the labels name, {value} and {gap} facts the page declares, {y0} and {y1}
+/// the periods of FINDING_FACTS read at the earlier and the later year (year_fact; rows already read). On a page with
 /// two ends whose bars draw the change (the minus family chg), the first ranked place's rise when it rose, else the last
 /// one's fall when it fell, its change a fact of its two ends' values (FINDING_FACTS: the later less the earlier for a rise,
 /// the earlier less the later for a fall, so it prints unsigned, in the change's format; rows already read). On a page of
@@ -1775,7 +1784,7 @@ fn finding_of(f: &Filling, out: &mut Filled, labels: &BTreeMap<String, String>) 
         let Some(name) = named(&code) else { return Ok(None) };
         let [lead, early, late] = FINDING_FACTS;
         let (a, b) = if finding == Finding::Rise { (late, early) } else { (early, late) };
-        let value = |t: &str| json!({"table": shape.main, "filter": filter(&[(place, code.as_str())]), "time": t, "fmt": f.fmt});
+        let value = |t: &str| year_fact(&shape.main, filter(&[(place, code.as_str())]), t, &f.fmt);
         let chg_fmt = if f.short == "%" { POINTS.0 } else { CHANGE_FMT };
         for (key, q) in [
             (early, value(&shape.t0)),
@@ -1786,7 +1795,8 @@ fn finding_of(f: &Filling, out: &mut Filled, labels: &BTreeMap<String, String>) 
         }
         let ends = |r: &&Value| r["dims"][place] == code.as_str() && (r["time"] == shape.t0.as_str() || r["time"] == shape.year.as_str());
         out.reads(f.main.iter().filter(ends).cloned());
-        (finding, vec![("{name}", name), ("{value}", format!("{{{lead}}}"))])
+        let (y0, y1) = (format!("{{{early}.t}}"), format!("{{{late}.t}}"));
+        (finding, vec![("{name}", name), ("{value}", format!("{{{lead}}}")), ("{y0}", y0), ("{y1}", y1)])
     } else if !picks.ranked.is_empty() {
         if !["hi", "lo", "gap"].iter().all(|k| out.facts.contains_key(*k)) {
             return Ok(None);
@@ -1797,7 +1807,10 @@ fn finding_of(f: &Filling, out: &mut Filled, labels: &BTreeMap<String, String>) 
         if !higher {
             return Ok(None);
         }
-        (Finding::Level, vec![("{name}", name), ("{other}", other), ("{value}", "{hi}".into()), ("{gap}", "{gap}".into())])
+        let late = FINDING_FACTS[2];
+        Filled::set(&mut out.facts, "fact", late, year_fact(&shape.main, filter(&[(place, hi.as_str())]), &shape.year, &f.fmt))?;
+        let y1 = format!("{{{late}.t}}");
+        (Finding::Level, vec![("{name}", name), ("{other}", other), ("{value}", "{hi}".into()), ("{gap}", "{gap}".into()), ("{y1}", y1)])
     } else if !picks.focus.is_empty() && picks.t1.len() > 2 {
         let mut largest: Vec<(f64, &String)> = shape
             .outside
@@ -1818,7 +1831,11 @@ fn finding_of(f: &Filling, out: &mut Filled, labels: &BTreeMap<String, String>) 
             return Ok(None);
         }
         let Some(name) = named(code) else { return Ok(None) };
-        (Finding::Share, vec![("{name}", name), ("{value}", format!("{{{share}}}"))])
+        let late = FINDING_FACTS[2];
+        let at_hub = filter(&[(place, code.as_str()), ("geo", shape.hub.as_str())]);
+        Filled::set(&mut out.facts, "fact", late, year_fact(&shape.main, at_hub, &picks.t1, &f.fmt))?;
+        let y1 = format!("{{{late}.t}}");
+        (Finding::Share, vec![("{name}", name), ("{value}", format!("{{{share}}}")), ("{y1}", y1)])
     } else {
         return Ok(None);
     };
@@ -4179,7 +4196,7 @@ mod tests {
             .collect();
         assert_eq!(refused.len(), 1, "{refused:?}");
         assert!(refused[0].contains("field '1': '最多' ranks"), "{}", refused[0]);
-        assert!(refused[0].contains("各国可再生能源占比的变化"), "{}", refused[0]);
+        assert!(refused[0].contains("各方数值的变化"), "{}", refused[0]);
         assert!(!events.iter().any(|e| e["type"] == TEXT_FALLBACK_EVENT));
         assert!(!events.iter().any(|e| e["type"] == SCOPE_FALLBACK_EVENT));
     }
@@ -4885,8 +4902,11 @@ mod tests {
         let mut sent = fill.clone();
         let drawn = sent.as_object_mut().unwrap().remove("drawn").unwrap();
         let finding = sent.as_object_mut().unwrap().remove("finding").unwrap();
-        // RU is the largest origin at t1 (NO and US are at 1): its share, which the map declares, and its name placeholder
-        assert_eq!(finding, json!({"dek": "{name.RU}最多，占{ru24_share}", "scoped": "所选各方中，{name.RU}居首，占{ru24_share}"}));
+        // RU is the largest origin at t1 (NO and US are at 1): its share, which the map declares, its name placeholder and
+        // the year of its value at t1 (lead1, the finding's own fact, kept out of the bytes compared)
+        assert_eq!(finding, json!({"dek": "{lead1.t}，{name.RU}最多，占{ru24_share}", "scoped": "{lead1.t}，所选各方中，{name.RU}居首，占{ru24_share}"}));
+        let lead1 = sent["knobs"]["spec"]["facts"].as_object_mut().unwrap().remove("lead1").unwrap();
+        assert_eq!(lead1, json!({"op": "last", "table": "imp", "filter": {"partner": "RU", "geo": "EU27_2020"}, "from": "2024", "to": "2024", "fmt": "mio_m3"}));
         assert_eq!(crate::hash::sha256_bytes(sent.to_string().as_bytes()), "d728a43088b98205718a7814a2ce0ef3572d9485fc8961926831fa471dafb5e8");
         assert!(drawn.as_array().unwrap().iter().all(|r| ["map", "ring"].contains(&r["layer"].as_str().unwrap())), "{drawn}");
         assert_eq!(fill["order"], json!(ring_order()));
@@ -4897,7 +4917,7 @@ mod tests {
         assert!(kept.iter().filter(|r| r["table"] == "impm").all(|r| r["dims"]["partner"] == "RU"));
         let spec = &fill["knobs"]["spec"];
         let mut keys: Vec<String> = spec["facts"].as_object().unwrap().keys().cloned().collect();
-        let mut want: Vec<String> = ["tot21", "tot24", "tot_ch", "ru_m_peak", "ru_last", "lab_t0", "lab_t1"].map(String::from).to_vec();
+        let mut want: Vec<String> = ["tot21", "tot24", "tot_ch", "ru_m_peak", "ru_last", "lab_t0", "lab_t1", "lead1"].map(String::from).to_vec();
         for c in ["ru", "no", "us"] {
             want.extend([format!("{c}21"), format!("{c}24"), format!("{c}24_share")]);
         }
@@ -5237,6 +5257,7 @@ mod tests {
         let html = std::fs::read_to_string(bundle.dir.join(&published.html_ref)).unwrap();
         assert!(html.contains(r#"<g data-layer="leader_notes"><g data-node="leader_notes"></g></g>"#), "the notes layer is drawn empty");
         assert!(html.contains("名SE最高，为") && html.contains(r#"data-src="fact:hi.n""#) && html.contains(r#"data-src="fact:gap.n""#), "the dek's finding");
+        assert!(html.contains(r#"data-src="fact:lead1.t.y">2025</span>"#), "its year");
         let request: Value = serde_json::from_str(
             &std::fs::read_to_string(bundle.dir.join("publications/column").join(crate::next_flow::LEAF_REQUEST)).unwrap(),
         )
@@ -5368,12 +5389,13 @@ mod tests {
         let spec = &fill["knobs"]["spec"];
         // no big numbers: the bars' and bubbles' family val and the count of places they draw (the unit line's scope), and
         // the leader notes' hi, lo, gap and times, in no hero.data key
-        assert_eq!(spec["facts"].as_object().unwrap().keys().collect::<Vec<_>>(), ["drawn", "gap", "hi", "lo", "times", "val"]);
+        assert_eq!(spec["facts"].as_object().unwrap().keys().collect::<Vec<_>>(), ["drawn", "gap", "hi", "lead1", "lo", "times", "val"]);
         assert_eq!(spec["facts"]["drawn"], json!({"op": "n", "by": "geo", "table": "sdg", "time": "2025", "fmt": "n"}));
-        // the dek's finding: the highest place against the lowest, on the extremes the notes declare (no fact of its own),
-        // each place a name placeholder the labels name
-        assert_eq!(fill["finding"], json!({"dek": "{name.SE}最高，为{hi}，比最低的{name.BE}高{gap}",
-            "scoped": "所选各方中，{name.SE}居首，为{hi}，比{name.BE}高{gap}"}));
+        // the dek's finding: the highest place against the lowest, on the extremes the notes declare, each place a name
+        // placeholder the labels name, the year the period of its own fact lead1 (the highest's value at the year)
+        assert_eq!(fill["finding"], json!({"dek": "{lead1.t}，{name.SE}最高，为{hi}，比最低的{name.BE}高{gap}",
+            "scoped": "{lead1.t}，所选各方中，{name.SE}居首，为{hi}，比{name.BE}高{gap}"}));
+        assert_eq!(spec["facts"]["lead1"], json!({"op": "last", "table": "sdg", "filter": {"geo": "SE"}, "from": "2025", "to": "2025", "fmt": "pc"}));
         assert!(spec["hero"]["data"].get("hi").is_none());
         assert_eq!(spec["fmts"]["pc"], json!({"scale": 1, "dec": 2, "suffix": "%"}));
         assert_eq!(spec["fmts"]["pp"], json!({"scale": 1, "dec": 2, "suffix": " 个百分点"}));
@@ -5506,8 +5528,8 @@ mod tests {
         let change = shape_registry_frame(Relation::Change, View::FirstToLast);
         // q1: SE rose most (50 to 66); q6: DE (14800 to 23700)
         for (table, main, level, finding) in [
-            ("sdg", q1_ten_years(), "欧盟哪国可再生能源占比最高", "{name.SE}增幅最大，增加{lead}"),
-            ("migr", q6, "哪些国籍的人申请庇护最多", "{name.DE}增幅最大，增加{lead}"),
+            ("sdg", q1_ten_years(), "欧盟哪国可再生能源占比最高", "{lead0.t}至{lead1.t}，{name.SE}增幅最大，增加{lead}"),
+            ("migr", q6, "哪些国籍的人申请庇护最多", "{lead0.t}至{lead1.t}，{name.DE}增幅最大，增加{lead}"),
         ] {
             let (recipe, drafts) = drafted(table, &main);
             assert_eq!(recipe, "change", "{table}");
@@ -5526,7 +5548,7 @@ mod tests {
         let level = shape_registry_frame(Relation::Ranking, View::Slice);
         assert_eq!(drafts.fields[0], (Target::PageTitle, level[0].to_string()));
         // SE is highest at 2024 (66), FR lowest (13.25)
-        assert_eq!(drafts.fields[1], (Target::PageDek, "{name.SE}最高，为{hi}，比最低的{name.FR}高{gap}".to_string()));
+        assert_eq!(drafts.fields[1], (Target::PageDek, "{lead1.t}，{name.SE}最高，为{hi}，比最低的{name.FR}高{gap}".to_string()));
         assert!(dek(&drafts).is_ok());
         assert!(title(&drafts, "瑞典可再生能源占比在欧盟最高").is_ok());
         assert!(title(&drafts, "欧盟哪国可再生能源占比最高").is_err(), "a title that asks");
@@ -5590,10 +5612,11 @@ mod tests {
         assert_eq!(spec["hero"]["data"]["t0"], "2016");
         // the dek's finding: SE's rise, a fact of its two ends' values (the later less the earlier, in points), its rows
         // the ones the bars already read
-        assert_eq!(fill["finding"], json!({"dek": "{name.SE}增幅最大，增加{lead}", "scoped": "所选各方中，{name.SE}增幅最大，增加{lead}"}));
+        assert_eq!(fill["finding"], json!({"dek": "{lead0.t}至{lead1.t}，{name.SE}增幅最大，增加{lead}",
+            "scoped": "{lead0.t}至{lead1.t}，所选各方中，{name.SE}增幅最大，增加{lead}"}));
         assert_eq!(spec["facts"]["lead"], json!({"op": "minus", "a": "lead1", "b": "lead0", "fmt": "pp"}));
-        assert_eq!(spec["facts"]["lead0"], json!({"table": "sdg", "filter": {"geo": "SE"}, "time": "2016", "fmt": "pc"}));
-        assert_eq!(spec["facts"]["lead1"], json!({"table": "sdg", "filter": {"geo": "SE"}, "time": "2024", "fmt": "pc"}));
+        assert_eq!(spec["facts"]["lead0"], json!({"op": "last", "table": "sdg", "filter": {"geo": "SE"}, "from": "2016", "to": "2016", "fmt": "pc"}));
+        assert_eq!(spec["facts"]["lead1"], json!({"op": "last", "table": "sdg", "filter": {"geo": "SE"}, "from": "2024", "to": "2024", "fmt": "pc"}));
         let said: Vec<(&str, &str, &str)> = spec["hero"]["leaves"]["leader_notes"]["notes"].as_array().unwrap().iter()
             .map(|n| (n["name"].as_str().unwrap(), n["text"][0]["word"].as_str().unwrap(), n["value_text"].as_str().unwrap())).collect();
         assert_eq!(said, [("SE", "column.note.rise_most", "fact:chg.SE"), ("FR", "column.note.fall_most", "fact:chg.FR")]);
@@ -5604,7 +5627,7 @@ mod tests {
         // the page's words as the text step leaves them when the model keeps the drafts: the finding, its name filled
         let dek = dek_finding(&fill).unwrap().0;
         page_words(&mut fill, ("标题", &dek, "栏目"));
-        assert_eq!(fill["knobs"]["spec"]["dek"], "名SE增幅最大，增加{lead}");
+        assert_eq!(fill["knobs"]["spec"]["dek"], "{lead0.t}至{lead1.t}，名SE增幅最大，增加{lead}");
         fill["knobs"]["shapes"] = json!("runtime/pi/assets/naturalearth-admin0-50m.geojson");
         fill["knobs"]["spec"]["kicker"] = json!("栏目");
         fill["knobs"]["spec"]["source"] = json!("来源");
@@ -5659,6 +5682,7 @@ mod tests {
         assert!(html.contains(r#"text-anchor="end" dominant-baseline="middle" font-size="13" fill="var(--t-sec)" font-weight="400"><tspan data-src="fact:chg.FR""#), "the fall's value on its side");
         assert!(html.contains(r#"data-src="period:sdg:2016""#), "the year line names the earlier end");
         assert!(html.contains("名SE增幅最大，增加") && html.contains(r#"data-src="fact:lead.n""#), "the dek's finding, its number a ledger entry");
+        assert!(html.contains(r#"data-src="fact:lead0.t.y">2016</span>"#) && html.contains(r#"data-src="fact:lead1.t.y">2024</span>"#), "its years too");
         let checks = page_checks(change, Some(html.as_str()), &published.dropped, StripAsk::default(), &drawn, Some(&typed()));
         assert!(checks[2].passed && checks[2].warning.is_none(), "{:?}", checks[2]);
     }
@@ -5680,7 +5704,7 @@ mod tests {
         let mut fill = fill_of(change, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语")).unwrap();
         // the dek is the finding (LU rose most, 5.364 to 20.2), so the whole-page check rechecks its number from the rows too
         let dek = dek_finding(&fill).unwrap().0;
-        assert_eq!(dek, "{name.LU}增幅最大，增加{lead}");
+        assert_eq!(dek, "{lead0.t}至{lead1.t}，{name.LU}增幅最大，增加{lead}");
         page_words(&mut fill, ("标题", &dek, "栏目"));
         fill["knobs"]["shapes"] = json!("runtime/pi/assets/naturalearth-admin0-50m.geojson");
         fill["knobs"]["spec"]["kicker"] = json!("栏目");
@@ -5726,7 +5750,7 @@ mod tests {
         let plan = json!({"kind": "leaf_plan", "recipe": "change"});
         let published = crate::next_flow::publish_leaf_page(&calls, &bundle.dir, "change", (&leaf, &plan), &qa).unwrap();
         let html = std::fs::read_to_string(bundle.dir.join(&published.html_ref)).unwrap();
-        assert!(html.contains(r#"data-src="fact:lead.n""#), "the dek prints the rise from its ledger entry");
+        assert!(html.contains(r#"data-src="fact:lead.n""#) && html.contains(r#"data-src="fact:lead0.t.y""#), "the dek prints the rise and its years from their ledger entries");
         // read back as next_gate reads a published page's request: the text to a value, then each part from it
         let text = std::fs::read_to_string(bundle.dir.join("publications/change").join(crate::next_flow::LEAF_REQUEST)).unwrap();
         let mut back: Value = serde_json::from_str(&text).unwrap();

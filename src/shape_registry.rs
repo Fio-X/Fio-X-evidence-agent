@@ -183,13 +183,14 @@ pub enum Finding {
 /// The page dek's one finding sentence per Finding: unscoped, then a scoped page's wording (no next_page SUPERLATIVES word;
 /// "所选各方" points at the page's scope field, as SCOPED_WORDS does). next_run finding_of fills {name} and {other} with a
 /// place's name placeholder ({name.<code>}, the program's name of that code at the page's words), {value} and {gap} with
-/// facts the page declares, so every number prints from the ledger; no year is written (the page's unit line and legend
-/// name its times). Same rules as FRAMES but the placeholders.
+/// facts the page declares, and {y0} and {y1} with the period placeholders of facts read at the earlier and the later year
+/// ({<fact>.t}, which the leaf prints with its 年 from the ledger), so every number and year prints from the ledger. Same
+/// rules as FRAMES but the placeholders.
 pub const DEK_FINDINGS: [(Finding, &str, &str); 4] = [
-    (Finding::Rise, "{name}增幅最大，增加{value}", "所选各方中，{name}增幅最大，增加{value}"),
-    (Finding::Fall, "{name}降幅最大，减少{value}", "所选各方中，{name}降幅最大，减少{value}"),
-    (Finding::Level, "{name}最高，为{value}，比最低的{other}高{gap}", "所选各方中，{name}居首，为{value}，比{other}高{gap}"),
-    (Finding::Share, "{name}最多，占{value}", "所选各方中，{name}居首，占{value}"),
+    (Finding::Rise, "{y0}至{y1}，{name}增幅最大，增加{value}", "{y0}至{y1}，所选各方中，{name}增幅最大，增加{value}"),
+    (Finding::Fall, "{y0}至{y1}，{name}降幅最大，减少{value}", "{y0}至{y1}，所选各方中，{name}降幅最大，减少{value}"),
+    (Finding::Level, "{y1}，{name}最高，为{value}，比最低的{other}高{gap}", "{y1}，所选各方中，{name}居首，为{value}，比{other}高{gap}"),
+    (Finding::Share, "{y1}，{name}最多，占{value}", "{y1}，所选各方中，{name}居首，占{value}"),
 ];
 
 /// The chart forms the page renderer draws a card for (next_render Card): the page's title, dek, text and reader fields are
