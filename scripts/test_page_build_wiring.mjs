@@ -830,4 +830,72 @@ const namesOther = (value) => String(value).split(/[^A-Za-z0-9_]/).find((word) =
   check("registration: the claim is the sentence filled from the recorded query's own rows; rows that differ from the sheet's sentence stop before anything is recorded");
 }
 
+// ---- 18. sum_input (new route, set by the program for a composition's second fetch): rows that only feed the program's sums ---------------------
+// comp_x: siec TOTAL and five parts by 20 places, one year; a part's value is 10 i + k, its TOTAL the parts' sum. The first fetch (TOTAL by
+// place, 20 rows) carries the candidates; the second (the five parts, 100 rows) is over the chart-row limit, refused as a normal fetch and
+// kept as sum inputs only when it names that first fetch's sheet and file: no sheet, no candidate, no claim comes of it.
+{
+  const PLACES = Array.from({ length: 20 }, (_, i) => `P${String(i + 1).padStart(2, "0")}`);
+  const PARTS = ["S1", "S2", "S3", "S4", "S5"];
+  const compCsv = (codes) => ["DATAFLOW,LAST UPDATE,freq,siec,geo,TIME_PERIOD,OBS_VALUE,OBS_FLAG", ...codes.flatMap((c) => PLACES.map((g, i) =>
+    `ESTAT:COMP(1.0),01/01/26 00:00:00,A,${c},${g},2023,${c === "TOTAL" ? PARTS.reduce((a, _, k) => a + 10 * (i + 1) + k + 1, 0) : 10 * (i + 1) + Number(c.slice(1))},`))].join("\n") + "\n";
+  routes.push(
+    [/\/datastructure\/ESTAT\/comp_/, () => Buffer.from(XML([["freq", "CL_F"], ["siec", "CL_SQ"], ["geo", "CL_PQ"]]))],
+    [/\/codelist\/ESTAT\/CL_SQ\//, () => Buffer.from(["TOTAL", ...PARTS].map((c) => `${c}\t${c === "TOTAL" ? "Total" : `Part ${c.slice(1)}`}`).join("\r\n") + "\r\n")],
+    [/\/codelist\/ESTAT\/CL_PQ\//, () => Buffer.from(PLACES.map((c) => `${c}\tPlace ${c.slice(1)}`).join("\r\n") + "\r\n")],
+    [/\/data\/comp_[xy]\/A\.TOTAL\.\?/, () => Buffer.from(compCsv(["TOTAL"]))],
+    [/\/data\/comp_[xy]\/A\.S1\+S2\+S3\+S4\+S5\.\?/, () => Buffer.from(compCsv(PARTS))],
+  );
+  const MAX_CHART_ROWS = Number(sourceText.match(/const MAX_CHART_ROWS = (\d+)/)[1]);
+  const t = register(ON).get("newsroom_data_prepare");
+  const ask = (dataset, siec, extra = {}) => t.execute("s1", { dataset, filters: [{ dimension: "freq", values: ["A"] }, { dimension: "siec", values: siec }], years: { start: 2023, end: 2023 }, ...extra });
+  const sheets = (dir) => Object.keys(tree(dir)).filter((f) => f.startsWith(cand.SHEET_PREFIX));
+  process.env.NEWSROOM_NEXT = "1";
+  try {
+    const dir = newRun();
+    const first = await ask("comp_x", ["TOTAL"]);
+    assert.equal(first.details.mode, "candidates", text(first).slice(0, 400));
+    const main = first.details.filePath, sheet = first.details.sheet;
+    const before = sheets(dir);
+    assert.deepEqual(before, [`${cand.SHEET_PREFIX}${sheet}.json`]);
+    // a normal fetch of the parts: over the chart-row limit, as before
+    const normal = await ask("comp_x", PARTS);
+    assert.equal(normal.details.mode, "needs_narrowing", text(normal).slice(0, 400));
+    assert.match(text(normal), new RegExp(`${PLACES.length * PARTS.length} rows and a chart shows at most ${MAX_CHART_ROWS}`));
+    // marked as sum inputs of the first fetch: the file only
+    const sum = await ask("comp_x", PARTS, { sum_input: { main, sheet } });
+    assert.equal(sum.details.mode, "sum_input", text(sum).slice(0, 400));
+    assert.equal(sum.details.rows, PLACES.length * PARTS.length);
+    assert.deepEqual(sum.details.sum_input, { main, sheet });
+    assert.notEqual(sum.details.filePath, main);
+    assert.equal(readFileSync(join(dir, sum.details.filePath), "utf8"), compCsv(PARTS));
+    assert.doesNotMatch(text(sum), /^c\d+: |Sheet |Candidate/m, "no candidate is listed");
+    assert.equal(sum.details.sheet, undefined);
+    assert.deepEqual(sheets(dir), before, "no sheet is written");
+    assert.deepEqual(claimsOf(dir), [], "no claim is registered");
+    // a marking that is not the program's first fetch is refused before any download, and the cap is never lifted for it
+    const refused = async (extra, why, dataset = "comp_x") => {
+      fetchCalls = [];
+      const out = await ask(dataset, PARTS, extra);
+      assert.equal(out.details.mode, "unresolved", `${why}: ${text(out).slice(0, 300)}`);
+      assert.match(text(out), new RegExp(why));
+      assert.deepEqual(fetchCalls.filter((u) => u.includes("/data/")), [], `${why}: nothing downloaded`);
+    };
+    await refused({ sum_input: { main, sheet: "0000000000000000" } }, "is no candidate sheet of this run");
+    await refused({ sum_input: { main: "data/other.csv", sheet } }, "holds no candidate that reads data/other.csv");
+    await refused({ sum_input: { main, sheet }, picks: ["c1", "c2", "c3"] }, "sum_input takes no picks");
+    await refused({ sum_input: { main, sheet }, sheet }, "sum_input takes no sheet");
+    await refused({ sum_input: { main } }, "sum_input.sheet must be");
+    await refused({ sum_input: { main, sheet } }, `is no file this run downloaded from comp_y`, "comp_y");
+    // another run holds no sheet of this one
+    newRun();
+    await refused({ sum_input: { main, sheet } }, "is no candidate sheet of this run");
+  } finally { delete process.env.NEWSROOM_NEXT; }
+  // the old route reads no sum_input: the same call is the normal fetch, over the limit
+  newRun();
+  const old = await ask("comp_x", PARTS, { sum_input: { main: "data/x.csv", sheet: "0000000000000000" } });
+  assert.equal(old.details.mode, "needs_narrowing", text(old).slice(0, 300));
+  check("sum_input: rows over the chart-row limit are kept as sum inputs of the first fetch's sheet and file only, with no sheet, candidate or claim; any other marking is refused before a download; a normal or old-route fetch keeps the limit");
+}
+
 console.log(`test_page_build_wiring: ${passed} checks passed`);

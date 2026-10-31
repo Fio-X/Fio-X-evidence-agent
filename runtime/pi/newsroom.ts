@@ -4829,8 +4829,43 @@ function pickedClaimBindings(claim: string, made: { template: string; text: stri
   return { claim_template: made.template, claim_bindings: made.bindings, recorded_by: "newsroom_data_prepare" };
 }
 
-// The page-build wrapper of newsroom_data_prepare: the same data steps as before, then R1 (candidates after a download) or R2 (the picked ids).
+// sum_input={main, sheet} (page build, new route; set by the program for a composition's second fetch, never chosen): the rows fetched are
+// the inputs of the sums the first layer computes into the page's ledger, so they become no candidate, no sheet and no claim, and no chart
+// draws them as they are; the candidate step's chart-row limit, which counts rows a chart or a claim shows, has nothing to count. Every other
+// check of the fetch stays. Refused before any download unless `sheet` is a candidate sheet of this run (the first fetch's, which carries the
+// claims under the chart-row limit) whose candidates read `main`, a file this run downloaded from the same dataset, and the call asks for no
+// sheet, picks, narrow or sum_year of its own. A fetch without sum_input is the normal one, its limit unchanged.
+const SUM_INPUT_MAIN = /^data\/[A-Za-z0-9._-]+$/;
+async function sumInputProblem(params: any): Promise<string | null> {
+  const input = params.sum_input;
+  if (!input || typeof input !== "object" || Array.isArray(input)) return "sum_input must be {main, sheet}";
+  if (typeof input.main !== "string" || !SUM_INPUT_MAIN.test(input.main)) return "sum_input.main must be a data file of this run (data/<name>)";
+  if (typeof input.sheet !== "string" || !/^[0-9a-f]{16}$/.test(input.sheet)) return "sum_input.sheet must be the 16-character key of a candidate sheet";
+  for (const key of ["sheet", "picks", "narrow", "sum_year"]) if (params[key] !== undefined) return `sum_input takes no ${key}: its rows are no candidates and are fetched as asked`;
+  const root = artifactRoot();
+  if (!root || typeof params.dataset !== "string") return "sum_input needs this run's folder and a dataset";
+  let sheet: any;
+  try { sheet = JSON.parse(await readFile(join(root, `${SHEET_PREFIX}${input.sheet}.json`), "utf8")); } catch { return `sum_input.sheet ${input.sheet} is no candidate sheet of this run`; }
+  const quoted = `'${input.main}'`;
+  if (sheet?.candidate_only !== true || !Array.isArray(sheet.candidates) || !sheet.candidates.some((c: any) => typeof c?.sql === "string" && c.sql.includes(quoted))) return `sum_input.sheet ${input.sheet} holds no candidate that reads ${input.main}`;
+  let names: string[] = [];
+  try { names = await readdir(join(root, "data/origins")); } catch {}
+  for (const name of names.filter((item) => item.endsWith(".json"))) {
+    let origin: any;
+    try { origin = JSON.parse(await readFile(join(root, "data/origins", name), "utf8")); } catch { continue; }
+    if (origin?.origin === "download" && origin.file === input.main && typeof origin.requested_url === "string" && origin.requested_url.includes(`/data/${params.dataset}/`)) return null;
+  }
+  return `sum_input.main ${input.main} is no file this run downloaded from ${params.dataset}`;
+}
+
+// The page-build wrapper of newsroom_data_prepare: the same data steps as before, then R1 (candidates after a download) or R2 (the picked ids);
+// a sum_input fetch (sumInputProblem) answers with its rows' file only.
 async function pageBuildPrepare(callId: string, params: any, signal?: AbortSignal, ctx?: unknown) {
+  const sumInput = nextRouteEnabled() && params?.sum_input !== undefined;
+  if (sumInput) {
+    const problem = await sumInputProblem(params);
+    if (problem) return pageBuildWithNext(textResult(`Dataset ${String(params.dataset ?? "")}: nothing downloaded; ${problem}.`, { mode: "unresolved", dataset: params.dataset ?? null }));
+  }
   const book = candidateCallBook(callId);
   const fill = (template: string, rows: Record<string, unknown>[]) => fillCandidate(template, rows);
   const runSql = (sql: string) => queryDuckDb(computationSql(sql), signal);
@@ -4842,6 +4877,10 @@ async function pageBuildPrepare(callId: string, params: any, signal?: AbortSigna
   };
   const onData = async (data: any) => {
     const failed = (mode: string, lines: string[]) => data.finish([...data.lines, ...lines], { ...data.details, mode });
+    if (sumInput) {
+      return data.finish([...data.lines, `Sum inputs: ${data.rows.length} rows kept for the sums the program computes from them (candidate sheet ${params.sum_input.sheet}, file ${params.sum_input.main}); no candidate, no claim, and no chart draws them as they are.`],
+        { ...data.details, mode: "sum_input", sum_input: { main: params.sum_input.main, sheet: params.sum_input.sheet } });
+    }
     const roles = detectRoles({ header: data.header, rows: data.rows, dimensions: data.dimensions, time: data.time, measure: data.measure, qualifiers: data.qualifiers, emptyStop: nextRouteEnabled() });
     if (!roles.ok) return failed(roles.empty ? "no_rows" : "needs_narrowing", [`No candidates: ${roles.problem}. Call newsroom_data_prepare again with the narrowed filters.`]);
     let made: { conclusions: any[]; dropped: any[]; narrowing?: string };
@@ -4965,7 +5004,11 @@ function registerDataPrepare(pi: ExtensionAPI) {
         ...(nextRouteEnabled() ? { sum_year: Type.Optional(Type.Object({
           n: Type.Number({ description: "Periods in a year: 12 (freq M) or 4 (freq Q)" }),
           share: Type.Number({ description: "The share of series that must hold the year whole" }),
-        }, { description: "Set by the program, not chosen: sum a registered flow table's periods to the latest whole year" })) } : {}),
+        }, { description: "Set by the program, not chosen: sum a registered flow table's periods to the latest whole year" })),
+          sum_input: Type.Optional(Type.Object({
+            main: Type.String({ description: "The data file of the first fetch, whose candidate sheet carries the claims" }),
+            sheet: Type.String({ description: "That first fetch's candidate sheet key" }),
+          }, { description: "Set by the program, not chosen: these rows are the inputs of sums the program computes, never candidates" })) } : {}),
       } : {}),
     }),
     async execute(id: string, params: any, signal?: AbortSignal, _onUpdate?: unknown, ctx?: unknown) {
