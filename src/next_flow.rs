@@ -332,7 +332,7 @@ pub enum Ask {
         items: Vec<Vec<(String, usize)>>,
         splits: Vec<Vec<Split>>,
         /// One per listed table: the series its held-series probe found (HeldCheck); None when it was not probed or the
-        /// probe gave no answer, and then nothing is checked.
+        /// probe gave no answer, and then nothing is checked until a fetch of it comes back with no row (no_rows_refused).
         held: Vec<Option<HeldCheck>>,
     },
     /// Claims of one or more tables, numbered on across the tables (`groups` holds each table's count, each at least
@@ -504,6 +504,9 @@ pub struct HeldCheck {
     pub places: Vec<Place>,
     pub this_year: i32,
     pub held: next_knowledge::Held,
+    /// The answers of this table (its t<n>. params, as the pick accepted them) whose fetch came back with no row
+    /// (prepare_claims): each holds no series whatever the probe said or whether it answered.
+    pub empty: Vec<BTreeMap<String, usize>>,
 }
 
 /// Single changes of the answer tried for an example before every combination is walked.
@@ -511,7 +514,13 @@ const HELD_EXAMPLE_TRIES: usize = 4096;
 
 impl HeldCheck {
     fn holds(&self, n: usize, params: &BTreeMap<String, usize>) -> bool {
-        next_params::holds_series(
+        // past a fetch of no row the probe may be unprobed (holds_series then answers true): an answer offered in its
+        // place must at least fill
+        let fills = self.empty.is_empty()
+            || next_params::fill(&self.draft, n, params, &self.places, self.this_year).is_ok();
+        !self.empty.contains(params)
+            && fills
+            && next_params::holds_series(
             &self.draft,
             n,
             params,
@@ -622,6 +631,95 @@ impl HeldCheck {
         }
         None
     }
+}
+
+/// The table pick's refusal of table `n` in the answer `params` (every table's, as the pick accepted them) when the fetch
+/// it asks for holds no series (HeldCheck::holds): an answer fetched with no row (HeldCheck::empty) is said so, any other
+/// as the probe found it; `refuse` gives what is allowed. None when the answer holds, or when no other answer does (then
+/// nothing is refused here: the fetch itself says what it finds).
+fn held_refused(
+    n: usize,
+    params: &BTreeMap<String, usize>,
+    check: &HeldCheck,
+    items: &[Vec<(String, usize)>],
+    splits: &[Vec<Split>],
+    refuse: &dyn Fn(String) -> Refused,
+) -> Option<Refused> {
+    let prefix = format!("t{n}.");
+    let mine: BTreeMap<String, usize> =
+        params.iter().filter(|(k, _)| k.starts_with(&prefix)).map(|(k, v)| (k.clone(), *v)).collect();
+    if check.holds(n, &mine) {
+        return None;
+    }
+    let table_items = items.get(n - 1).map_or(&[][..], Vec::as_slice);
+    let example = check.example(n, &mine, table_items, splits.get(n - 1).map_or(&[][..], Vec::as_slice))?;
+    // the example names the items the model answers, not the years the program gives
+    let example: BTreeMap<String, usize> =
+        example.into_iter().filter(|(k, _)| table_items.iter().any(|(i, _)| i == k)).collect();
+    let shown = example.iter().map(|(k, v)| format!("{k} {v}")).collect::<Vec<_>>().join(", ");
+    let mut refused = refuse(if check.empty.contains(&mine) {
+        let asked = check.asked(n, &mine);
+        let asked = if asked.is_empty() {
+            mine.iter().map(|(k, v)| format!("{k} {v}")).collect::<Vec<_>>().join(", ")
+        } else {
+            asked
+        };
+        format!(
+            "t{n}: the fetch of {asked} came back with no row (fetched after the pick): pick another combination, for example {shown}"
+        )
+    } else {
+        format!(
+            "t{n}: Eurostat holds no series for {} (probed before the pick): pick a combination it holds, for example {shown}",
+            check.asked(n, &mine)
+        )
+    });
+    if let Some(given) = refused.example["params"].as_object_mut() {
+        given.retain(|k, _| !k.starts_with(&prefix));
+        given.extend(example.iter().map(|(k, v)| (k.clone(), json!(v))));
+    }
+    Some(refused)
+}
+
+/// After the fetch of table `n` came back with no row: that answer (its t<n>. params in `params`, as the pick accepted them)
+/// joins the table's empty answers in `ask` (a table with no probe gets a HeldCheck that holds every other answer, as an
+/// unprobed one does), and the refusal the pick gives it then (held_refused), with what is allowed and an example. None,
+/// and `ask` as it was, when the table has no draft (its fetch was not filled from the pick) or no other answer is left.
+fn no_rows_refused(
+    ask: &mut Ask,
+    n: usize,
+    params: &BTreeMap<String, usize>,
+    draft: Option<&next_params::Draft>,
+    places: &[Place],
+    this_year: i32,
+) -> Option<Refused> {
+    let Ask::Table { items, splits, held, .. } = ask else {
+        return None;
+    };
+    let (items, splits): (&Vec<Vec<(String, usize)>>, &Vec<Vec<Split>>) = (items, splits);
+    let draft = draft?;
+    let prefix = format!("t{n}.");
+    let mine: BTreeMap<String, usize> =
+        params.iter().filter(|(k, _)| k.starts_with(&prefix)).map(|(k, v)| (k.clone(), *v)).collect();
+    let mut check = held.get(n - 1).cloned().flatten().unwrap_or_else(|| HeldCheck {
+        draft: draft.clone(),
+        places: places.to_vec(),
+        this_year,
+        held: next_knowledge::Held::Unprobed("no probe".into()),
+        empty: Vec::new(),
+    });
+    check.empty.push(mine);
+    let picks = [n];
+    let refuse = |problem: String| Refused {
+        problem,
+        allowed: table_answer(&picks, items, |count| json!((1..=count).collect::<Vec<_>>())),
+        example: table_answer(&picks, items, |_| json!(1)),
+    };
+    let refused = held_refused(n, params, &check, items, splits, &refuse)?;
+    if held.len() < n {
+        held.resize(n, None);
+    }
+    held[n - 1] = Some(check);
+    Some(refused)
 }
 
 /// A refused answer: what is wrong, what is allowed and one example; the check itself is never loosened.
@@ -1066,41 +1164,15 @@ impl Ask {
                         params.insert(years_key, y);
                     }
                 }
-                // The fetch the answer asks for must hold a series the probe found; refused only with an example that does.
+                // The fetch the answer asks for must hold a series the probe found, and must not be one fetched with no
+                // row; refused only with an example that does.
                 for &n in &picks {
                     let Some(Some(check)) = held.get(n - 1) else {
                         continue;
                     };
-                    let prefix = format!("t{n}.");
-                    let mine: BTreeMap<String, usize> = params
-                        .iter()
-                        .filter(|(k, _)| k.starts_with(&prefix))
-                        .map(|(k, v)| (k.clone(), *v))
-                        .collect();
-                    if check.holds(n, &mine) {
-                        continue;
+                    if let Some(refused) = held_refused(n, &params, check, items, splits, &refuse) {
+                        return Err(refused);
                     }
-                    let Some(example) = check.example(
-                        n,
-                        &mine,
-                        &items[n - 1],
-                        splits.get(n - 1).map_or(&[][..], Vec::as_slice),
-                    ) else {
-                        continue;
-                    };
-                    // the example names the items the model answers, not the years the program gives
-                    let example: BTreeMap<String, usize> =
-                        example.into_iter().filter(|(k, _)| items[n - 1].iter().any(|(i, _)| i == k)).collect();
-                    let mut refused = refuse(format!(
-                        "t{n}: Eurostat holds no series for {} (probed before the pick): pick a combination it holds, for example {}",
-                        check.asked(n, &mine),
-                        example.iter().map(|(k, v)| format!("{k} {v}")).collect::<Vec<_>>().join(", ")
-                    ));
-                    if let Some(shown) = refused.example["params"].as_object_mut() {
-                        shown.retain(|k, _| !k.starts_with(&prefix));
-                        shown.extend(example.iter().map(|(k, v)| (k.clone(), json!(v))));
-                    }
-                    return Err(refused);
                 }
                 Ok(Choice::Table { picks, params })
             }
@@ -3391,6 +3463,9 @@ pub const FETCH_RETRY_EVENT: &str = "next_fetch_retry";
 /// The event of a fetch that held no row in the years asked and was moved back by newsroom_data_prepare (its details.years_back): the
 /// dataset, the years asked, the window looked at and the year fetched instead.
 pub const YEARS_BACK_EVENT: &str = "next_years_back";
+/// The event of a table pick asked again after its fetch came back with no row (prepare_claims): the dataset, its table
+/// number, the answer, what the tool said and the refusal the model got back.
+pub const REPICK_EVENT: &str = "next_table_repick";
 /// The event of the companion stage (D8): the main table, each candidate the catalogue offered with its seconds and what
 /// came of it (fetched, or why it was dropped), the companions kept with their role, and the stage's seconds.
 pub const COMPANION_EVENT: &str = "next_companions";
@@ -4506,7 +4581,7 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
         "Question: {question}\nTables:\n{}\nPick the table, or up to {most} tables, that answer the question; 0 if none fits.{params_rule}",
         listed.join("\n")
     );
-    let ask = Ask::Table {
+    let mut ask = Ask::Table {
         count: offers.len(),
         most,
         items: items
@@ -4528,104 +4603,127 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
                     places: places.clone(),
                     this_year,
                     held: p.held.take()?,
+                    empty: Vec::new(),
                 })
             })
             .collect(),
     };
-    let (picks, params) = match recorder.ask_step(model, &ask, &prompt, cancel).await? {
-        (_, Choice::Table { picks, params }) => (picks, params),
-        (_, other) => unreachable!("the table step was answered with {other:?}"),
-    };
-    if picks.is_empty() {
-        return Err(Stop::NoTable(
-            "the model answered that none of the listed tables fits".into(),
-        ));
-    }
-    let ids: Vec<&String> = picks.iter().map(|n| &offers[n - 1].id).collect();
-    let chosen: Vec<(&String, PrepareStep)> = if steps.is_empty() {
-        ids.iter()
-            .copied()
-            .zip(fill_steps(
-                recorder, question, &picks, &drafts, &params, catalogue,
-            )?)
-            .collect()
-    } else {
-        ids.iter()
-            .map(|id| {
-                step_for(id, steps).cloned().map(|step| (*id, step)).ok_or_else(|| {
-                    Stop::TablePickNotWired(format!(
-                        "the fetch parameters of {id} are not wired: no {PREPARE_SPEC_ARG} step has that dataset"
-                    ))
-                })
-            })
-            .collect::<Result<_, _>>()?
-    };
-    let mut tables = Vec::new();
-    let mut main_file: Option<String> = None;
-    let mut main_narrowed: Option<Map<String, Value>> = None;
-    let mut main_window: Option<next_params::Window> = None;
-    let mut cut: Option<Cut> = None;
-    for (id, step) in chosen {
-        let mut args = step.args.clone();
-        let mut called = prepare_fetch(recorder, tools, catalogue, id, &args, cancel).await?;
-        if let Some(narrowed) = step
-            .narrowed
-            .as_ref()
-            .filter(|_| NARROWING_MODES.contains(&mode_of(&called).as_str()))
-        {
-            args = narrowed.clone();
-            called = prepare_fetch(recorder, tools, catalogue, id, &args, cancel).await?;
+    // A fetch of no row from an answer the pick filled is refused once as a combination with no series is before the fetch
+    // (held_refused, with that answer among the table's empty ones) and the pick is asked again; a second fetch of no row,
+    // or one with no other answer to offer, stops as before.
+    let asked = prompt;
+    let mut prompt = asked.clone();
+    let mut repicked = false;
+    let (mut tables, main_file, main_narrowed, main_window, cut) = 'pick: loop {
+        let (picks, params) = match recorder.ask_step(model, &ask, &prompt, cancel).await? {
+            (_, Choice::Table { picks, params }) => (picks, params),
+            (_, other) => unreachable!("the table step was answered with {other:?}"),
+        };
+        if picks.is_empty() {
+            return Err(Stop::NoTable(
+                "the model answered that none of the listed tables fits".into(),
+            ));
         }
-        if let Some(back) = called
-            .details
-            .as_ref()
-            .map(|d| &d["years_back"])
-            .filter(|b| b.is_object())
-        {
-            recorder.program_event(
-                YEARS_BACK_EVENT,
-                json!({"dataset": id, "asked": back["asked"], "window": back["window"], "used": back["used"], "why": "no row in the years asked"}),
-            )?;
-        }
-        match mode_of(&called).as_str() {
-            "candidates" => {}
-            "no_candidates" => {
-                return Err(Stop::TooFewClaims {
-                    dataset: id.clone(),
+        let ids: Vec<&String> = picks.iter().map(|n| &offers[n - 1].id).collect();
+        let chosen: Vec<(&String, PrepareStep)> = if steps.is_empty() {
+            ids.iter()
+                .copied()
+                .zip(fill_steps(
+                    recorder, question, &picks, &drafts, &params, catalogue,
+                )?)
+                .collect()
+        } else {
+            ids.iter()
+                .map(|id| {
+                    step_for(id, steps).cloned().map(|step| (*id, step)).ok_or_else(|| {
+                        Stop::TablePickNotWired(format!(
+                            "the fetch parameters of {id} are not wired: no {PREPARE_SPEC_ARG} step has that dataset"
+                        ))
+                    })
                 })
+                .collect::<Result<_, _>>()?
+        };
+        let mut tables = Vec::new();
+        let mut main_file: Option<String> = None;
+        let mut main_narrowed: Option<Map<String, Value>> = None;
+        let mut main_window: Option<next_params::Window> = None;
+        let mut cut: Option<Cut> = None;
+        for (k, (id, step)) in chosen.into_iter().enumerate() {
+            let mut args = step.args.clone();
+            let mut called = prepare_fetch(recorder, tools, catalogue, id, &args, cancel).await?;
+            if let Some(narrowed) = step
+                .narrowed
+                .as_ref()
+                .filter(|_| NARROWING_MODES.contains(&mode_of(&called).as_str()))
+            {
+                args = narrowed.clone();
+                called = prepare_fetch(recorder, tools, catalogue, id, &args, cancel).await?;
             }
-            mode => {
-                return Err(Stop::NotPrepared {
-                    dataset: id.clone(),
-                    mode: mode.to_string(),
-                    why: reason(&called),
-                })
-            }
-        }
-        let key = called
-            .details
-            .as_ref()
-            .and_then(|d| d["sheet"].as_str())
-            .unwrap_or("")
-            .to_string();
-        let candidates = read_sheet(&recorder.run_dir, id, &key)?;
-        if candidates.len() < CLAIMS_MIN {
-            return Err(Stop::TooFewClaims {
-                dataset: id.clone(),
-            });
-        }
-        if tables.is_empty() {
-            main_narrowed = step.narrowed.clone();
-            main_window = step.window.clone();
-            cut = main_cut(&args, called.details.as_ref());
-            main_file = called
+            if let Some(back) = called
                 .details
                 .as_ref()
-                .and_then(|d| d["filePath"].as_str())
-                .map(String::from);
+                .map(|d| &d["years_back"])
+                .filter(|b| b.is_object())
+            {
+                recorder.program_event(
+                    YEARS_BACK_EVENT,
+                    json!({"dataset": id, "asked": back["asked"], "window": back["window"], "used": back["used"], "why": "no row in the years asked"}),
+                )?;
+            }
+            match mode_of(&called).as_str() {
+                "candidates" => {}
+                "no_candidates" => {
+                    return Err(Stop::TooFewClaims {
+                        dataset: id.clone(),
+                    })
+                }
+                mode => {
+                    if mode == "no_rows" && steps.is_empty() && !repicked {
+                        let n = picks[k];
+                        let draft = drafts[n - 1].1.as_ref();
+                        if let Some(refused) = no_rows_refused(&mut ask, n, &params, draft, &places, this_year) {
+                            repicked = true;
+                            recorder.program_event(
+                                REPICK_EVENT,
+                                json!({"dataset": id, "table": n, "params": params, "why": reason(&called), "refused": refused.problem}),
+                            )?;
+                            prompt = format!("The table pick was fetched and refused: {}\n{asked}", refused.message());
+                            continue 'pick;
+                        }
+                    }
+                    return Err(Stop::NotPrepared {
+                        dataset: id.clone(),
+                        mode: mode.to_string(),
+                        why: reason(&called),
+                    })
+                }
+            }
+            let key = called
+                .details
+                .as_ref()
+                .and_then(|d| d["sheet"].as_str())
+                .unwrap_or("")
+                .to_string();
+            let candidates = read_sheet(&recorder.run_dir, id, &key)?;
+            if candidates.len() < CLAIMS_MIN {
+                return Err(Stop::TooFewClaims {
+                    dataset: id.clone(),
+                });
+            }
+            if tables.is_empty() {
+                main_narrowed = step.narrowed.clone();
+                main_window = step.window.clone();
+                cut = main_cut(&args, called.details.as_ref());
+                main_file = called
+                    .details
+                    .as_ref()
+                    .and_then(|d| d["filePath"].as_str())
+                    .map(String::from);
+            }
+            tables.push((id.clone(), args, key, candidates));
         }
-        tables.push((id.clone(), args, key, candidates));
-    }
+        break 'pick (tables, main_file, main_narrowed, main_window, cut);
+    };
     let mut companion_titles = BTreeMap::new();
     let mut companion_files = Vec::new();
     if let (Some((main, main_args, _, _)), Some(file)) = (tables.first().cloned(), main_file) {
@@ -7879,6 +7977,122 @@ mod tests {
         )
         .unwrap();
         assert_eq!(saved["reply"], json!({"status": 200, "body": Q3_HELD}));
+    }
+
+    /// q3's stop at the fetch (10-31: every probe past HELD_TIMEOUT, so nothing refused TOTAL in PC before it): the fetch's
+    /// no row refuses that answer through the table pick's own check, with what is allowed and an example; the same answer
+    /// again is refused by the check, and the one after it fetches. The probe here answers 400 (unprobed).
+    #[tokio::test]
+    async fn a_pick_fetched_with_no_row_is_refused_once_and_picked_again() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let catalogue = q3_probing(Some((400, "<S:Fault/>")));
+        let run = tempfile::tempdir().unwrap();
+        write_sheet(run.path(), SHEET_A, &["c1", "c2", "c3"]);
+        let (events, mut sink) = collector();
+        let in_pc = json!({"step": "table", "pick": [2], "params": {"t2.years": 1, "t2.breakdown": 1, "t2.unit": 2}});
+        let mut model = ScriptedAsker::new(vec![
+            search_reply(),
+            call("toolu_t", in_pc.clone()),
+            call("toolu_t1", in_pc),
+            call(
+                "toolu_t2",
+                json!({"step": "table", "pick": [2], "params": {"t2.years": 1, "t2.breakdown": 1, "t2.unit": 1}}),
+            ),
+            call("toolu_c", json!({"step": "claims", "pick": [1, 2, 3]})),
+        ]);
+        let mut tools = claims_tools();
+        tools.details.push_front(json!({"mode": "no_rows", "text": "These codes have no values in these years."}));
+        let cancel = AtomicBool::new(false);
+        let mut recorder = Recorder::new(&mut sink, run.path(), Vec::new(), Vec::new());
+        let result = prepare_claims(&mut recorder, &mut model, &mut tools, "德国各能源发电量", &[], &catalogue, &cancel).await;
+        let history = serde_json::to_string(recorder.history()).unwrap();
+        drop(recorder);
+        result.unwrap();
+        assert_eq!(of_type(&events, HELD_EVENT)[0]["tables"][1]["unprobed"], "HTTP 400");
+        let refused = "t2: the fetch of siec=TOTAL, unit=PC came back with no row (fetched after the pick)";
+        assert_eq!(history.matches(refused).count(), 2, "once after the fetch, once by the check: {history}");
+        assert!(history.contains("The table pick was fetched and refused"), "{history}");
+        let unit = |args: &Value| args["filters"].as_array().unwrap().iter().find(|f| f["dimension"] == "unit").unwrap()["values"].clone();
+        assert_eq!(tools.args.len(), 3, "the fetch of no row, the fetch after the second pick, the claims");
+        assert_eq!((unit(&tools.args[0]), unit(&tools.args[1])), (json!(["PC"]), json!(["GWH"])));
+        let repick = of_type(&events, REPICK_EVENT);
+        assert_eq!(repick.len(), 1);
+        assert_eq!((repick[0]["dataset"].as_str(), &repick[0]["table"]), (Some("nrg_bal_peh"), &json!(2)));
+        assert_eq!(repick[0]["params"], json!({"t2.breakdown": 1, "t2.unit": 2, "t2.years": 1}));
+    }
+
+    /// Another table and dimension with holes, which no probe covers (an annual table with no probe): heat in nrg_bal
+    /// fetched with no row is refused once and the pick asked again; when the second pick's fetch has no row either, the
+    /// table stops as before, after two fetches and one repick (a no row is never taken as rows).
+    #[tokio::test]
+    async fn a_second_fetch_with_no_row_stops_as_before() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let dims = [
+            ("nrg_bal", vec!["GEP", "GHP"]),
+            ("siec", vec!["TOTAL", "RA000", "G3000"]),
+            ("geo", vec!["DE"]),
+            ("unit", vec!["GWH"]),
+        ];
+        let meta = TableMeta {
+            id: "nrg_bal_peh".into(),
+            worldbank: false,
+            dims: dims
+                .into_iter()
+                .map(|(d, codes)| (d.to_string(), codes.into_iter().map(|c| (c.to_string(), String::new())).collect()))
+                .collect(),
+            end_year: Some(2024),
+            places: Vec::new(),
+            place_members: Vec::new(),
+            freqs: Vec::new(),
+            unit: None,
+        };
+        let catalogue = WithTable(
+            FakeCatalogue { candidates: offers(), uncovered: None, source: json!({}), searched: Default::default() },
+            meta,
+        );
+        let no_row = || json!({"mode": "no_rows", "text": "These codes have no values in these years."});
+        for second in [json!({"mode": "candidates", "sheet": SHEET_A, "conclusions": 3}), no_row()] {
+            let run = tempfile::tempdir().unwrap();
+            write_sheet(run.path(), SHEET_A, &["c1", "c2", "c3"]);
+            let (events, mut sink) = collector();
+            let mut model = ScriptedAsker::new(vec![
+                search_reply(),
+                call("toolu_t", json!({"step": "table", "pick": [2], "params": {"t2.breakdown": 3, "t2.nrg_bal": 2}})),
+                call("toolu_t2", json!({"step": "table", "pick": [2], "params": {"t2.breakdown": 3, "t2.nrg_bal": 1}})),
+                call("toolu_c", json!({"step": "claims", "pick": [1, 2, 3]})),
+            ]);
+            let stops = second["mode"] == "no_rows";
+            let mut tools = ScriptedTools {
+                details: vec![
+                    no_row(),
+                    second,
+                    json!({"mode": "picks", "claims": [{"candidate": "c1", "claim_id": "k1"}, {"candidate": "c2", "claim_id": "k2"}, {"candidate": "c3", "claim_id": "k3"}]}),
+                ]
+                .into(),
+                args: Vec::new(),
+            };
+            let cancel = AtomicBool::new(false);
+            let mut recorder = Recorder::new(&mut sink, run.path(), Vec::new(), Vec::new());
+            let result = prepare_claims(&mut recorder, &mut model, &mut tools, "德国的发电结构", &[], &catalogue, &cancel).await;
+            let history = serde_json::to_string(recorder.history()).unwrap();
+            drop(recorder);
+            assert!(of_type(&events, HELD_EVENT).is_empty(), "this catalogue probes nothing");
+            assert!(history.contains("came back with no row (fetched after the pick)"), "{history}");
+            let nrg_bal =
+                |args: &Value| args["filters"].as_array().unwrap().iter().find(|f| f["dimension"] == "nrg_bal").unwrap()["values"].clone();
+            assert_eq!((nrg_bal(&tools.args[0]), nrg_bal(&tools.args[1])), (json!(["GHP"]), json!(["GEP"])));
+            assert_eq!(of_type(&events, REPICK_EVENT).len(), 1);
+            if stops {
+                assert!(
+                    matches!(&result, Err(Stop::NotPrepared { mode, .. }) if mode == "no_rows"),
+                    "{result:?}"
+                );
+                assert_eq!(tools.args.len(), 2, "two fetches, no third pick");
+            } else {
+                result.unwrap();
+                assert_eq!(tools.args.len(), 3);
+            }
+        }
     }
 
     /// A probe that never answers is unprobed after HELD_TIMEOUT and the run goes on with the metabase codes: the same
