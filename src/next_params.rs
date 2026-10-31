@@ -5,7 +5,7 @@
 //! of a table that is not annual) is listed under the table in the table pick as numbered options, the model answering with
 //! numbers only. Every code a rule asks for is in the registry below. Pure: no file, no tool, no model.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
 
 use serde_json::{json, Map, Value};
@@ -154,6 +154,64 @@ pub fn composition_groups(table: &str, dim: &str) -> Result<Vec<(String, Vec<Par
         return Err(format!("{PARTS_SOURCE}: {table} {dim} has one group only"));
     }
     Ok(groups)
+}
+
+/// The codes a composition of dimension `dim` of `table` fetches for each of its groups (composition_groups), in the groups'
+/// order: from the total down, a code all of whose leaves are in one group is that group's input (an official subtotal such
+/// as RA000 for the renewables, or a leaf), and a code whose leaves span groups gives its children's inputs instead. So the
+/// inputs of a group add up to its leaves' sum, each leaf counted once, and every input is a code the table publishes. Empty
+/// when the dimension has no groups; Err as composition_groups, or when a group gets no input.
+pub fn group_inputs(table: &str, dim: &str) -> Result<Vec<(String, Vec<String>)>, String> {
+    let groups = composition_groups(table, dim)?;
+    if groups.is_empty() {
+        return Ok(Vec::new());
+    }
+    let registered = parts(table, dim);
+    let leaves: Vec<Part> = groups.iter().flat_map(|(_, members)| members.iter().cloned()).collect();
+    // the group of each leaf under a code (itself, for a leaf), each group once
+    fn groups_under(code: &str, registered: &[Part], leaves: &[Part], depth: usize) -> BTreeSet<String> {
+        let mut out = BTreeSet::new();
+        if depth > registered.len() {
+            return out;
+        }
+        if let Some(leaf) = leaves.iter().find(|l| l.code == code) {
+            out.extend(leaf.group.clone());
+            return out;
+        }
+        for child in registered.iter().filter(|p| p.parent.as_deref() == Some(code)) {
+            out.extend(groups_under(&child.code, registered, leaves, depth + 1));
+        }
+        out
+    }
+    let Some(total) = registered.iter().find(|p| p.level == PART_LEVELS[0]).map(|p| p.code.clone()) else {
+        return Ok(Vec::new());
+    };
+    let mut inputs: Vec<(String, Vec<String>)> = groups.iter().map(|(g, _)| (g.clone(), Vec::new())).collect();
+    let mut at = vec![(total, 0usize)];
+    while let Some((code, depth)) = at.pop() {
+        let children: Vec<&Part> = registered.iter().filter(|p| p.parent.as_deref() == Some(code.as_str())).collect();
+        for child in children {
+            let under = groups_under(&child.code, &registered, &leaves, depth + 1);
+            match under.iter().collect::<Vec<_>>()[..] {
+                [] => {}
+                [one] => {
+                    if let Some((_, codes)) = inputs.iter_mut().find(|(g, _)| g == one) {
+                        codes.push(child.code.clone());
+                    }
+                }
+                _ => at.push((child.code.clone(), depth + 1)),
+            }
+        }
+    }
+    // a mixed code's children are visited after its siblings: each group's inputs back in file order
+    let order = |c: &String| registered.iter().position(|p| p.code == *c).unwrap_or(usize::MAX);
+    for (_, codes) in inputs.iter_mut() {
+        codes.sort_by_key(order);
+    }
+    if let Some((g, _)) = inputs.iter().find(|(_, codes)| codes.is_empty()) {
+        return Err(format!("{PARTS_SOURCE}: {table} {dim} group {g} has no input code"));
+    }
+    Ok(inputs)
 }
 
 /// The source and target dimensions of the flow estat-parts.tsv registers for `table` (its id without "@2"): the dimensions
@@ -2972,6 +3030,28 @@ mod tests {
         );
         // a table with no registered parts has no groups
         assert!(composition_groups("nrg_x", "siec").unwrap().is_empty());
+        // the codes a composition fetches: each group's topmost codes under the total, official subtotals where the registry
+        // has one; on both shapes their published values add up to the group's leaves within the same tolerance
+        let inputs = group_inputs("nrg_bal_peh", "siec").unwrap();
+        assert_eq!(
+            inputs,
+            [
+                ("fossil", vec!["C0000X0350-0370", "C0350-0370", "P1000", "S2000", "G3000", "O4000XBIO"]),
+                ("renewable", vec!["RA000"]),
+                ("other", vec!["RA130", "W6100_6220", "E7000", "H8000", "X9900", "BA100"]),
+                ("nuclear", vec!["N900H"]),
+            ]
+            .map(|(g, codes)| (g.to_string(), codes.into_iter().map(String::from).collect::<Vec<_>>()))
+        );
+        assert_eq!(inputs.iter().map(|(_, c)| c.len()).sum::<usize>(), 14);
+        for (geo, by_group, total) in &sums {
+            let read = |code: &str| value.get(&(geo.to_string(), code.to_string())).copied();
+            for ((g, codes), want) in inputs.iter().zip(by_group) {
+                let got: f64 = codes.iter().filter_map(|c| read(c)).sum();
+                assert!((got - want).abs() <= 1e-5 * total, "{geo} {g}: inputs {got} vs leaves {want}");
+            }
+        }
+        assert!(group_inputs("nrg_x", "siec").unwrap().is_empty());
     }
 
     /// q2 (德国能源从来源到各部门) as the 10-31 stand-in run answered the table pick: nrg_bal_s, t2.breakdown 2 (nrg_bal), t2.unit 1.
