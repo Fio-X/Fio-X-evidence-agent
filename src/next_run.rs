@@ -36,6 +36,10 @@ pub const FILLED_TEMPLATES: [&str; 3] = ["horizontal_bar", "line", "choropleth"]
 /// The registry template a change claim's move series fills (its entity and the first and last value columns). Kept apart from
 /// FILLED_TEMPLATES, so a series of values, and the years options it is read for, gain no candidate from it.
 pub const MOVE_TEMPLATES: [&str; 1] = ["dumbbell"];
+/// The registry template whose relation (a flow) a flow split is offered for: the flow recipe draws it with its sankey leaf
+/// node (runtime/leaves_py run.py MAIN), not a template this flow fills. Kept apart from FILLED_TEMPLATES, so only a flow
+/// split (next_params::flow_split) is ranked against it and a series of values gains no candidate from it.
+pub const FLOW_TEMPLATES: [&str; 1] = ["sankey"];
 /// The first and the last value columns of a move series (claim_candidates.mjs `move`, with its change column).
 pub const MOVE_FROM: &str = "from_value";
 pub const MOVE_TO: &str = "to_value";
@@ -3935,6 +3939,7 @@ mod tests {
             "{frozen}"
         );
         assert_eq!(MOVE_TEMPLATES[..], ["dumbbell"], "{frozen}");
+        assert_eq!(FLOW_TEMPLATES[..], ["sankey"], "{frozen}");
     }
 
     /// Replays scripted replies, one per request. A CANCEL_REPLY cancels the run as its user would, the model then answering

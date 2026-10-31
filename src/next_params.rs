@@ -84,19 +84,87 @@ pub const PARTS_SOURCE: &str = "estat-parts.tsv";
 /// The levels a registered part has: the dimension's whole, a subtotal of other parts, or a part of no other.
 pub const PART_LEVELS: [&str; 3] = ["total", "aggregate", "leaf"];
 
-/// One registered code of a table dimension (an estat-parts.tsv row): its level (PART_LEVELS) and the code it is a part of.
+/// The sides a dimension's total row may name it in its table's registered flow (estat-parts.tsv column "flow"): the flow
+/// runs from the source dimension's parts to the target dimension's (nrg_bal_s: each fuel to each sector of final use).
+pub const FLOW_SIDES: [&str; 2] = ["source", "target"];
+/// What joins a flow split's two dimensions in its breakdown entry ("siec>nrg_bal"): no dimension id holds it.
+pub const FLOW_JOIN: char = '>';
+
+/// One registered code of a table dimension (an estat-parts.tsv row): its level (PART_LEVELS), the code it is a part of,
+/// and on a total row the side of the table's flow the dimension is (FLOW_SIDES).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Part {
     pub code: String,
     pub level: String,
     pub parent: Option<String>,
+    pub flow: Option<String>,
 }
 
 /// The registered parts of dimension `dim` of Eurostat table `table` (its id without "@2"), in file order; empty for a
-/// dimension the file does not register. Columns are found by the header's names.
+/// dimension the file does not register.
 pub fn parts(table: &str, dim: &str) -> Vec<Part> {
+    registry()
+        .iter()
+        .filter(|(t, d, _)| t == table && d == dim)
+        .map(|(_, _, part)| part.clone())
+        .collect()
+}
+
+/// The source and target dimensions of the flow estat-parts.tsv registers for `table` (its id without "@2"): the dimensions
+/// whose total row names them a FLOW_SIDES side. None when the file registers no flow, or only one side of it.
+pub fn flow_dims(table: &str) -> Option<(String, String)> {
+    let side = |s: &str| {
+        registry()
+            .iter()
+            .find(|(t, _, p)| t == table && p.level == PART_LEVELS[0] && p.flow.as_deref() == Some(s))
+            .map(|(_, d, _)| d.clone())
+    };
+    Some((side(FLOW_SIDES[0])?, side(FLOW_SIDES[1])?))
+}
+
+/// The parts of dimension `dim` a flow of `table` draws: its leaves whose parents lead up to the dimension's total, so one
+/// level only (an aggregate is never drawn beside its own parts: FC_OTH_E would count twice) and the leaves add up to the total.
+pub fn flow_parts(table: &str, dim: &str) -> Vec<Part> {
+    let registered = parts(table, dim);
+    let Some(total) = registered.iter().find(|p| p.level == PART_LEVELS[0]) else {
+        return Vec::new();
+    };
+    let under_total = |leaf: &Part| {
+        let mut at = leaf.parent.clone();
+        for _ in 0..registered.len() {
+            match at {
+                Some(code) if code == total.code => return true,
+                Some(code) => at = registered.iter().find(|p| p.code == code).and_then(|p| p.parent.clone()),
+                None => return false,
+            }
+        }
+        false
+    };
+    registered
+        .iter()
+        .filter(|p| p.level == PART_LEVELS[2] && under_total(p))
+        .cloned()
+        .collect()
+}
+
+/// A flow split's breakdown entry read back as its (source, target) dimensions; None for a split by one dimension.
+pub fn flow_split(entry: &str) -> Option<(&str, &str)> {
+    entry.split_once(FLOW_JOIN)
+}
+
+/// A flow split's leaves of one dimension that the table lists, in file order: None unless it lists every one of them
+/// (a leaf left out would leave the flows short of the total) and they are two or more.
+fn listed_flow_parts(table: &TableMeta, dim: &str) -> Option<Vec<String>> {
+    let dataset = table.id.strip_suffix("@2").unwrap_or(&table.id);
+    let codes = &table.dims.iter().find(|(d, _)| d == dim)?.1;
+    let leaves: Vec<String> = flow_parts(dataset, dim).into_iter().map(|p| p.code).collect();
+    (leaves.len() > 1 && leaves.iter().all(|l| codes.iter().any(|(c, _)| c == l))).then_some(leaves)
+}
+
+/// estat-parts.tsv read once, as (table, dimension, part) rows. Columns are found by the header's names.
+fn registry() -> &'static Vec<(String, String, Part)> {
     static REGISTRY: OnceLock<Vec<(String, String, Part)>> = OnceLock::new();
-    let rows = REGISTRY.get_or_init(|| {
+    REGISTRY.get_or_init(|| {
         let mut lines = ESTAT_PARTS.lines();
         let header: Vec<&str> = lines
             .next()
@@ -109,7 +177,7 @@ pub fn parts(table: &str, dim: &str) -> Vec<Part> {
                 .position(|h| *h == name)
                 .unwrap_or_else(|| panic!("estat-parts.tsv lacks {name}"))
         };
-        let (t, d, c, l, p) = (col("table"), col("dim"), col("code"), col("level"), col("parent"));
+        let (t, d, c, l, p, f) = (col("table"), col("dim"), col("code"), col("level"), col("parent"), col("flow"));
         lines
             .filter(|line| !line.is_empty())
             .map(|line| {
@@ -119,15 +187,12 @@ pub fn parts(table: &str, dim: &str) -> Vec<Part> {
                     code: at(c),
                     level: at(l),
                     parent: Some(at(p)).filter(|p| !p.is_empty()),
+                    flow: Some(at(f)).filter(|f| !f.is_empty()),
                 };
                 (at(t), at(d), part)
             })
             .collect()
-    });
-    rows.iter()
-        .filter(|(t, d, _)| t == table && d == dim)
-        .map(|(_, _, part)| part.clone())
-        .collect()
+    })
 }
 
 /// A summed year (newsroom_data_prepare sum_year): the periods a year holds, and the share of series that must hold it whole.
@@ -571,6 +636,20 @@ pub fn draft(table: TableMeta, texts: &[String], places: &[Place]) -> Draft {
         members.push((dim.clone(), offered, codes.len()));
     }
     breakdown.truncate(OPTIONS_MAX - 1);
+    // A table whose flow estat-parts.tsv registers, both its dimensions offered and every leaf of each listed, is offered
+    // one more split: the flow from each source leaf to each target leaf (fill, flow_parts).
+    let dataset = table.id.strip_suffix("@2").unwrap_or(&table.id);
+    if let Some((source, target)) = flow_dims(dataset) {
+        let offered = |d: &str| breakdown.iter().any(|b| b == d);
+        if breakdown.len() < OPTIONS_MAX - 1
+            && offered(&source)
+            && offered(&target)
+            && listed_flow_parts(&table, &source).is_some()
+            && listed_flow_parts(&table, &target).is_some()
+        {
+            breakdown.push(format!("{source}{FLOW_JOIN}{target}"));
+        }
+    }
     let places_open = table.worldbank && places.is_empty() && table.places.len() > MAX_CHART_ROWS;
     Draft {
         table,
@@ -617,6 +696,15 @@ pub fn items(n: usize, d: &Draft) -> Vec<(String, Vec<String>)> {
             "none: one number per place, each item below keeps the one code picked".to_string(),
         ];
         for dim in &d.breakdown {
+            if let Some((source, target)) = flow_split(dim) {
+                let leaves = |side: &str| listed_flow_parts(&d.table, side).map_or(0, |l| l.len());
+                options.push(format!(
+                    "flow from {source} to {target}: each place × {} {source} parts × {} {target} parts, the leaves under each total (no total or subtotal drawn)",
+                    leaves(source),
+                    leaves(target)
+                ));
+                continue;
+            }
             let codes = &d
                 .table
                 .dims
@@ -705,8 +793,9 @@ pub fn lines(n: usize, d: &Draft, items: &[(String, Vec<String>)]) -> Vec<String
 }
 
 /// The fetch arguments of table `n` (its number in the table pick) from the answer (item key -> option number, every item answered) and the
-/// places the question names. A split by a dimension with registered parts (parts) fetches those codes, not every code.
-/// Err when the table holds none of the named places.
+/// places the question names. A split by a dimension with registered parts (parts) fetches those codes, not every code; a
+/// flow split (flow_split) fetches the leaves of both its dimensions (flow_parts). Err when the table holds none of the named
+/// places, or a flow split's table does not list every leaf.
 pub fn fill(
     draft: &Draft,
     n: usize,
@@ -720,6 +809,7 @@ pub fn fill(
         1 => None,
         k => draft.breakdown.get(k - 2).cloned(),
     };
+    let flow = breakdown.as_deref().and_then(flow_split);
     // The named countries geo is filled from: those another dimension holds are that dimension's (Draft::named).
     let countries: Vec<&str> = places
         .iter()
@@ -795,6 +885,20 @@ pub fn fill(
                     dim,
                     held.iter().map(|(c, _)| c.clone()).collect(),
                 );
+                continue;
+            }
+            if let Some((source, _)) = flow.filter(|&(s, t)| dim == s || dim == t) {
+                // A flow split fetches the leaves of both its dimensions (flow_parts), so no total or subtotal is a flow
+                // beside its own parts; the totals they add up to are named, not fetched.
+                let leaves = listed_flow_parts(table, dim).ok_or_else(|| {
+                    format!("{dataset} does not list every registered leaf of {dim}, so its flow would fall short of the total")
+                })?;
+                let registered = parts(dataset, dim);
+                parted.push(json!({"dimension": dim, "source": PARTS_SOURCE, "codes": leaves.len(), "registered": registered.len(),
+                    "from_codes": codes.len(), "flow": if dim == source { FLOW_SIDES[0] } else { FLOW_SIDES[1] }, "level": PART_LEVELS[2],
+                    "totals": registered.iter().filter(|p| p.level != PART_LEVELS[2]).map(|p| p.code.as_str()).collect::<Vec<_>>(),
+                    "parents": registered.iter().filter(|p| leaves.contains(&p.code)).filter_map(|p| Some([p.code.as_str(), p.parent.as_deref()?])).collect::<Vec<_>>()}));
+                put(&mut filters, dim, leaves);
                 continue;
             }
             if Some(dim) == breakdown.as_ref() {
@@ -1044,6 +1148,9 @@ pub fn fill(
     if !parted.is_empty() {
         event["parts"] = json!(parted);
     }
+    if let Some((source, target)) = flow {
+        event["flow"] = json!({"source": source, "target": target, "from": PARTS_SOURCE});
+    }
     if !draft.named.is_empty() {
         event["named"] = json!(draft.named);
     }
@@ -1061,8 +1168,9 @@ pub fn fill(
 /// dimension with more than one code, the open dimension (its code count, or the top the tool narrows it to), and the
 /// time when more than one year is asked (a summed fetch is one year: its periods are summed to it). Roles are what the codes
 /// alone tell (a place, the time, else a category); a category whose total code is fetched with at least 3 other codes, in a unit
-/// `unit_additive` says adds up, is an unchecked additive category with that total. The knowledge group's classify judges the
-/// fetched rows again, and grants the tag only where the data adds up. Err as fill.
+/// `unit_additive` says adds up, is an unchecked additive category with that total. A flow split reports its registered pair as
+/// the official flow. The knowledge group's classify judges the fetched rows again, and grants the tag only where the data adds
+/// up. Err as fill.
 pub fn predicted_shape(
     draft: &Draft,
     n: usize,
@@ -1160,10 +1268,14 @@ pub fn predicted_shape(
             total_member: None,
         });
     }
+    // A flow split's pair is the flow estat-parts.tsv registers for the table (flow_dims), as classify reads it after the fetch.
+    let official_flow = filled.event["flow"]
+        .as_object()
+        .and_then(|f| Some((f.get("source")?.as_str()?.to_string(), f.get("target")?.as_str()?.to_string())));
     Ok(Shape {
         dims,
         unit_additive: false,
-        official_flow: None,
+        official_flow,
     })
 }
 
@@ -2572,7 +2684,7 @@ mod tests {
         let mut pairs: Vec<(String, String)> = Vec::new();
         for line in ESTAT_PARTS.lines().skip(1).filter(|l| !l.is_empty()) {
             let f: Vec<&str> = line.split('\t').collect();
-            assert_eq!(f.len(), 9, "{line}");
+            assert_eq!(f.len(), 10, "{line}");
             let pair = (f[0].to_string(), f[1].to_string());
             if !pairs.contains(&pair) {
                 pairs.push(pair);
@@ -2649,7 +2761,7 @@ mod tests {
     fn a_split_by_a_dimension_with_registered_parts_fetches_those_codes_and_q2_leaves_none_open() {
         let de = [Place::Country("DE".into())];
         let draft = draft(q2_table("nrg_bal_s"), &[], &de);
-        assert_eq!(draft.breakdown, ["nrg_bal", "siec"]);
+        assert_eq!(draft.breakdown, ["nrg_bal", "siec", "siec>nrg_bal"]);
         let filled = fill(&draft, 2, &picks(&[("t2.breakdown", 2), ("t2.unit", 1)]), &de, 2026).unwrap();
         let sectors: Vec<String> = parts("nrg_bal_s", "nrg_bal").into_iter().map(|p| p.code).collect();
         assert_eq!(
@@ -2704,6 +2816,93 @@ mod tests {
         assert!(filter(&filled, "nrg_bal").is_none());
     }
 
+    /// q2's flow (德国能源从来源到各部门): nrg_bal_s registers siec -> nrg_bal (estat-parts.tsv), so the draft offers one more
+    /// split, the flow. Its fill fetches the leaves of both dimensions, one level per side: FC_OTH_E's five parts and never
+    /// FC_OTH_E beside them, no TOTAL and no FC_E. For the latest year that is 11 x 7 = 77 pairs, within a chart's 80 rows, and
+    /// predicted_shape reports the registered pair as the flow. On the DE 2024 fixture the leaf flows add up to TOTAL at FC_E
+    /// (the fixture holds no FC_OTH_E row, so FC_OTH_E = its five parts is not checked here).
+    #[test]
+    fn a_flow_split_fetches_the_leaves_of_both_dimensions_and_they_add_up_to_the_total() {
+        let de = [Place::Country("DE".into())];
+        assert_eq!(flow_dims("nrg_bal_s"), Some(("siec".to_string(), "nrg_bal".to_string())));
+        let draft = draft(q2_table("nrg_bal_s"), &[], &de);
+        assert_eq!(draft.breakdown, ["nrg_bal", "siec", "siec>nrg_bal"]);
+        assert_eq!(flow_split("siec>nrg_bal"), Some(("siec", "nrg_bal")));
+        assert_eq!(flow_split("siec"), None);
+        let (_, options) = items(2, &draft).into_iter().find(|(k, _)| k == "t2.breakdown").unwrap();
+        assert_eq!(
+            options[3],
+            "flow from siec to nrg_bal: each place × 11 siec parts × 7 nrg_bal parts, the leaves under each total (no total or subtotal drawn)"
+        );
+        let fuels: Vec<String> = flow_parts("nrg_bal_s", "siec").into_iter().map(|p| p.code).collect();
+        let sectors: Vec<String> = flow_parts("nrg_bal_s", "nrg_bal").into_iter().map(|p| p.code).collect();
+        assert_eq!(fuels, Q2_SIEC[1..].to_vec());
+        assert_eq!(
+            sectors,
+            ["FC_IND_E", "FC_TRA_E", "FC_OTH_CP_E", "FC_OTH_HH_E", "FC_OTH_AF_E", "FC_OTH_FISH_E", "FC_OTH_NSP_E"]
+        );
+        let answer = picks(&[("t2.breakdown", 4), ("t2.unit", 1), ("t2.years", 1)]);
+        let filled = fill(&draft, 2, &answer, &de, 2026).unwrap();
+        assert_eq!(
+            filled.args,
+            *json!({"dataset": "nrg_bal_s", "filters": [
+                {"dimension": "freq", "values": ["A"]}, {"dimension": "nrg_bal", "values": sectors},
+                {"dimension": "siec", "values": fuels}, {"dimension": "unit", "values": ["KTOE"]},
+                {"dimension": "geo", "values": ["DE"]}],
+                "years": {"start": 2024, "end": 2024}})
+            .as_object()
+            .unwrap()
+        );
+        assert_eq!(filled.event["open"], Value::Null);
+        assert_eq!(filled.event["breakdown"], "siec>nrg_bal");
+        assert_eq!(filled.event["estimate"], 77);
+        assert_eq!(filled.event["flow"], json!({"source": "siec", "target": "nrg_bal", "from": PARTS_SOURCE}));
+        assert_eq!(filled.event["parts"][0]["dimension"], "nrg_bal");
+        assert_eq!(filled.event["parts"][0]["flow"], "target");
+        assert_eq!(filled.event["parts"][0]["totals"], json!(["FC_E", "FC_OTH_E"]));
+        assert_eq!(filled.event["parts"][1]["dimension"], "siec");
+        assert_eq!(filled.event["parts"][1]["flow"], "source");
+        assert_eq!(filled.event["parts"][1]["totals"], json!(["TOTAL"]));
+        let shape = predicted_shape(&draft, 2, &answer, &de, 2026, &|_| Some(true)).unwrap();
+        assert_eq!(shape.official_flow, Some(("siec".to_string(), "nrg_bal".to_string())));
+        let members: Vec<(&str, usize)> = shape.dims.iter().map(|d| (d.dim.as_str(), d.members)).collect();
+        assert_eq!(members, [("nrg_bal", 7), ("siec", 11)]);
+        assert!(shape.dims.iter().map(|d| d.members).product::<usize>() <= MAX_CHART_ROWS);
+        // a split by one dimension reports no flow
+        let one = predicted_shape(&draft, 2, &picks(&[("t2.breakdown", 3), ("t2.unit", 1), ("t2.years", 1)]), &de, 2026, &|_| Some(true));
+        assert_eq!(one.unwrap().official_flow, None);
+        // a table that leaves one leaf out is offered no flow, and a flow answer for it is refused, not short of the total
+        let mut cut = q2_table("nrg_bal_s");
+        cut.dims[1].1.retain(|(c, _)| c != "FC_OTH_FISH_E");
+        let short = draft_of_table(cut);
+        assert_eq!(short.breakdown, ["nrg_bal", "siec"]);
+        let forced = Draft { breakdown: draft.breakdown.clone(), ..short };
+        let refused = fill(&forced, 2, &answer, &de, 2026).unwrap_err();
+        assert!(refused.contains("does not list every registered leaf of nrg_bal"), "{refused}");
+        // On the DE 2024 fixture (KTOE): the 77 leaf pairs the fetch asks for hold 69 rows (no N900H row: nuclear heat has no
+        // final use; no FC_TRA_E x H8000 row), 32 of them non-zero, and their sum is TOTAL at FC_E within classify's tolerance.
+        let fixture = include_str!("../scripts/fixtures/data_prepare/nrg_bal_s_DE_2024.tsv");
+        let value: BTreeMap<(String, String), f64> = fixture
+            .lines()
+            .filter(|l| !l.starts_with('#'))
+            .skip(1)
+            .map(|l| {
+                let f: Vec<&str> = l.split('\t').collect();
+                ((f[0].to_string(), f[1].to_string()), f[2].parse().unwrap())
+            })
+            .collect();
+        let flows: Vec<f64> = sectors
+            .iter()
+            .flat_map(|s| fuels.iter().map(move |f| (s.clone(), f.clone())))
+            .filter_map(|pair| value.get(&pair).copied())
+            .collect();
+        assert_eq!(flows.len(), 69);
+        assert_eq!(flows.iter().filter(|v| **v != 0.0).count(), 32);
+        let total = value[&("FC_E".to_string(), "TOTAL".to_string())];
+        let sum: f64 = flows.iter().sum();
+        assert!((sum - total).abs() <= crate::classify::TOLERANCE * total, "flows {sum} vs total {total}");
+    }
+
     fn draft_of_table(table: TableMeta) -> Draft {
         draft(table, &[], &[Place::Country("DE".into())])
     }
@@ -2715,6 +2914,13 @@ mod tests {
         let de = [Place::Country("DE".into())];
         assert!(parts("nrg_bal_c", "nrg_bal").is_empty() && parts("nrg_bal_c", "siec").is_empty());
         let draft = draft(q2_table("nrg_bal_c"), &[], &de);
+        // no registered flow: the two splits it had, and the same options under them as nrg_bal_s's but its flow
+        assert_eq!(flow_dims("nrg_bal_c"), None);
+        assert_eq!(draft.breakdown, ["nrg_bal", "siec"]);
+        let registered = super::draft(q2_table("nrg_bal_s"), &[], &de);
+        let mut options = items(2, &registered);
+        options.iter_mut().find(|(k, _)| k == "t2.breakdown").unwrap().1.pop();
+        assert_eq!(items(2, &draft), options);
         let filled = fill(&draft, 2, &picks(&[("t2.breakdown", 2), ("t2.unit", 1)]), &de, 2026).unwrap();
         // the run's next_params args, with only the dataset id changed
         let run = json!({"dataset": "nrg_bal_c", "filters": [{"dimension": "freq", "values": ["A"]},

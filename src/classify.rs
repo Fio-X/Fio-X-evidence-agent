@@ -1152,7 +1152,32 @@ pub fn classify(t: &TableInput, refs: &Refs, ask: &Ask) -> TableRoles {
     }
 }
 
-/// dim-roles 2a: only directions the official metadata states become flow roles.
+/// The registered parts of Eurostat table dimensions (this group's catalogue data): a dimension's total row may name it the
+/// source or the target of its table's flow (column "flow").
+const ESTAT_PARTS: &str = include_str!("../runtime/pi/assets/estat-parts.tsv");
+
+/// The flow estat-parts.tsv registers for `dataset` (its id without "@2"): the source and the target dimension, each with
+/// its registered codes. None when the file registers no flow, or only one side of it.
+fn registered_flow(dataset: &str) -> Option<[(String, Vec<String>); 2]> {
+    let mut lines = ESTAT_PARTS.lines();
+    let header: Vec<&str> = lines.next()?.split('\t').collect();
+    let col = |name: &str| header.iter().position(|h| *h == name);
+    let (t, d, c, l, f) = (col("table")?, col("dim")?, col("code")?, col("level")?, col("flow")?);
+    let id = dataset.strip_suffix("@2").unwrap_or(dataset);
+    let rows: Vec<Vec<&str>> = lines
+        .map(|line| line.split('\t').collect::<Vec<&str>>())
+        .filter(|r| r.get(t) == Some(&id))
+        .collect();
+    let side = |s: &str| -> Option<(String, Vec<String>)> {
+        let dim = rows.iter().find(|r| r.get(l) == Some(&"total") && r.get(f) == Some(&s))?[d];
+        let codes = rows.iter().filter(|r| r.get(d) == Some(&dim)).filter_map(|r| r.get(c)).map(|c| c.to_string()).collect();
+        Some((dim.to_string(), codes))
+    };
+    Some([side("source")?, side("target")?])
+}
+
+/// dim-roles 2a: only directions the official metadata states become flow roles; a table whose flow the knowledge group
+/// registers (estat-parts.tsv) has it when both its dimensions hold two or more codes, every one a registered code.
 fn flow(t: &TableInput, dims: &mut [DimRole], refs: &Refs, ask: &Ask) -> Option<Flow> {
     let at = |name: &str| t.dims.iter().position(|d| d.id.eq_ignore_ascii_case(name));
     let add = |dims: &mut [DimRole], src: usize, dst: usize, basis: &str| {
@@ -1173,6 +1198,23 @@ fn flow(t: &TableInput, dims: &mut [DimRole], refs: &Refs, ask: &Ask) -> Option<
                 direction: FlowDirection::Official,
                 basis: basis.into(),
             });
+        }
+    }
+    if let Some([(source, from), (target, to)]) = registered_flow(&t.dataset) {
+        let within = |i: usize, codes: &[String]| {
+            t.dims[i].codes.len() > 1 && t.dims[i].codes.iter().all(|c| codes.contains(c))
+        };
+        if let (Some(src), Some(dst)) = (at(source.as_str()), at(target.as_str())) {
+            if within(src, from.as_slice()) && within(dst, to.as_slice()) {
+                let basis = "estat-parts.tsv: the registered flow of the table (each source part to each target part of final use; Eurostat energy balance guide, final consumption by fuel and sector)";
+                add(dims, src, dst, basis);
+                return Some(Flow {
+                    source_dim: t.dims[src].id.clone(),
+                    target_dim: t.dims[dst].id.clone(),
+                    direction: FlowDirection::Official,
+                    basis: basis.into(),
+                });
+            }
         }
     }
     if let (Some(partner), Some(geo)) = (at("partner"), at("geo")) {
@@ -1870,6 +1912,80 @@ mod tests {
             rows,
             zero_cells: Vec::new(),
         }
+    }
+
+    /// nrg_bal_s, `dataset`, fetched as the given rows of the data_prepare fixture (DE 2024, KTOE): nrg_bal, siec and unit.
+    fn fixture_table(dataset: &str, keep: &dyn Fn(&str, &str) -> bool) -> TableInput {
+        let fixture = include_str!("../scripts/fixtures/data_prepare/nrg_bal_s_DE_2024.tsv");
+        let mut rows = Vec::new();
+        let (mut bals, mut siecs): (Vec<String>, Vec<String>) = (Vec::new(), Vec::new());
+        for line in fixture.lines().filter(|l| !l.starts_with('#')).skip(1) {
+            let f: Vec<&str> = line.split('\t').collect();
+            if !keep(f[0], f[1]) {
+                continue;
+            }
+            for (codes, code) in [(&mut bals, f[0]), (&mut siecs, f[1])] {
+                if !codes.iter().any(|c| c == code) {
+                    codes.push(code.to_string());
+                }
+            }
+            rows.push((s(&[f[0], f[1], "KTOE"]), Some("2024".into()), f[2].parse::<f64>().unwrap()));
+        }
+        TableInput {
+            provider: "eurostat".into(),
+            dataset: dataset.into(),
+            dims: vec![
+                DimInput { id: "nrg_bal".into(), codes: bals },
+                DimInput { id: "siec".into(), codes: siecs },
+                DimInput { id: "unit".into(), codes: s(&["KTOE"]) },
+            ],
+            rows,
+            zero_cells: Vec::new(),
+        }
+    }
+
+    /// q2's flow fetch (each fuel leaf to each sector leaf of final use, the fixture's rows but its totals TOTAL and FC_E) holds
+    /// no PPRD or IMP, so the supply rule reads no flow; estat-parts.tsv registers siec -> nrg_bal for nrg_bal_s, so the flow is
+    /// read from it and the shape names the pair. The same rows under an unregistered id, a registered table's fetch with a code
+    /// the file does not register (q2_like), and a fetch with supply codes (the supply rule first) read as before.
+    #[test]
+    fn a_registered_final_use_flow_is_read_and_the_supply_rule_is_unchanged() {
+        let leaves = |bal: &str, siec: &str| bal != "FC_E" && siec != "TOTAL";
+        let t = fixture_table("nrg_bal_s", &leaves);
+        assert_eq!((t.dims[0].codes.len(), t.dims[1].codes.len(), t.rows.len()), (7, 10, 69));
+        let roles = classify(&t, &refs(), &Ask::default());
+        let flow = roles.flow.clone().unwrap();
+        assert_eq!(
+            (flow.source_dim.as_str(), flow.target_dim.as_str(), &flow.direction),
+            ("siec", "nrg_bal", &FlowDirection::Official)
+        );
+        assert!(flow.basis.starts_with("estat-parts.tsv"), "{}", flow.basis);
+        let tags = |dim: &str| roles.dims.iter().find(|d| d.dim == dim).unwrap().roles.iter().map(|r| r.role).collect::<Vec<_>>();
+        assert!(tags("siec").contains(&Role::FlowSource) && tags("nrg_bal").contains(&Role::FlowTarget));
+        let shape = varying(
+            &roles,
+            &Slice::from([("time".into(), "2024".into())]),
+            &[("siec", &t.dims[1].codes), ("nrg_bal", &t.dims[0].codes)],
+        );
+        assert_eq!(shape.official_flow, Some(("siec".to_string(), "nrg_bal".to_string())));
+        // unregistered: no flow, as before
+        let other = classify(&fixture_table("nrg_bal_c", &leaves), &refs(), &Ask::default());
+        assert_eq!(other.flow, None);
+        assert!(!other.dims.iter().any(|d| d.roles.iter().any(|r| matches!(r.role, Role::FlowSource | Role::FlowTarget))));
+        // a split by one dimension (siec TOTAL alone) is no flow
+        let one = classify(&fixture_table("nrg_bal_s", &|_, siec| siec == "TOTAL"), &refs(), &Ask::default());
+        assert_eq!(one.flow, None);
+        // registered, but GIC, GEP, A and B are no registered codes
+        assert_eq!(classify(&q2_like(), &refs(), &Ask::default()).flow, None);
+        // supply codes: the supply rule reads the flow first, with its own basis
+        let mut supply = fixture_table("nrg_bal_s", &|bal, _| bal == "FC_E");
+        supply.dims[0].codes = s(&["PPRD", "IMP", "FC_E"]);
+        for (bal, v) in [("PPRD", 1.0), ("IMP", 2.0)] {
+            supply.rows.push((s(&[bal, "TOTAL", "KTOE"]), Some("2024".into()), v));
+        }
+        let read = classify(&supply, &refs(), &Ask::default()).flow.unwrap();
+        assert_eq!((read.source_dim.as_str(), read.target_dim.as_str()), ("siec", "nrg_bal"));
+        assert!(read.basis.starts_with("方向表第 3 行"), "{}", read.basis);
     }
 
     #[test]

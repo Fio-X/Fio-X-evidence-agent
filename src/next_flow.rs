@@ -3904,7 +3904,8 @@ fn ring_window(
 }
 
 /// The breakdown options of table `n` the table pick offers: for each, the years options whose fetch (next_params::predicted_shape)
-/// has a shape the visual group's rank draws with a filled template (next_run::FILLED_TEMPLATES). An option no years option
+/// has a shape the visual group's rank draws with a filled template (next_run::FILLED_TEMPLATES), a flow split with the flow
+/// recipe's (next_run::FLOW_TEMPLATES). An option no years option
 /// draws is taken out of the draft, so the items and the fill number the rest from 2 on; a table left with none has no
 /// breakdown item. The event keeps the offered options and, for each left out, the shape and the reasons rank gave.
 ///
@@ -3935,7 +3936,13 @@ fn drawable_splits(
         ]);
         match next_params::predicted_shape(draft, n, &picks, places, this_year, &additive) {
             Ok(shape) => {
-                let matched = catalogue.rank(&shape, &crate::next_run::FILLED_TEMPLATES, &[]);
+                // a flow split is drawn by the flow recipe's sankey only; any other split by the filled templates
+                let templates: &[&str] = if next_params::flow_split(&draft.breakdown[i]).is_some() {
+                    &crate::next_run::FLOW_TEMPLATES
+                } else {
+                    &crate::next_run::FILLED_TEMPLATES
+                };
+                let matched = catalogue.rank(&shape, templates, &[]);
                 let dims = shape.dims.iter().map(|d| json!([d.dim, d.members])).collect::<Vec<_>>();
                 if matched.candidates.is_empty() {
                     Err(json!({"years": y, "shape": dims,
@@ -9522,6 +9529,60 @@ mod tests {
             picks.insert("t1.years".into(), y);
         }
         next_params::fill(draft, 1, &picks, &[Place::Region], 2026).unwrap()
+    }
+
+    /// q2 (德国能源从来源到各部门) as the 10-31 stand-in's table pick held nrg_bal_s for DE: the pick offered splits by nrg_bal and
+    /// by siec only, so a fuel x sector flow was never asked for. The table's flow is registered (estat-parts.tsv: siec -> nrg_bal),
+    /// so a third split is offered, for the latest year only (with ten years a third dimension varies, which no flow holds): its
+    /// fetch is ranked against the flow recipe's sankey alone, and the answer fills both dimensions with their registered
+    /// leaves, none open.
+    #[test]
+    fn q2_s_flow_split_is_offered_for_the_latest_year_and_fills_both_part_lists() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let codes = |c: &[&str]| c.iter().map(|c| (c.to_string(), String::new())).collect();
+        let table = |id: &str| TableMeta {
+            id: id.into(),
+            worldbank: false,
+            dims: vec![
+                ("geo".into(), codes(&["EU27_2020", "DE", "FR"])),
+                ("nrg_bal".into(), codes(&["PPRD", "GIC", "FC_E", "FC_IND_E", "FC_TRA_E", "FC_OTH_E", "FC_OTH_CP_E", "FC_OTH_HH_E",
+                    "FC_OTH_AF_E", "FC_OTH_FISH_E", "FC_OTH_NSP_E"])),
+                ("siec".into(), codes(&["TOTAL", "C0000X0350-0370", "C0350-0370", "P1000", "S2000", "G3000", "O4000XBIO", "RA000",
+                    "W6100_6220", "N900H", "E7000", "H8000"])),
+                ("unit".into(), codes(&["KTOE", "GWH", "TJ"])),
+            ],
+            end_year: Some(2024),
+            places: Vec::new(),
+            place_members: Vec::new(),
+            freqs: Vec::new(),
+            unit: None,
+        };
+        let de = [Place::Country("DE".into())];
+        let catalogue = offers_catalogue();
+        let mut draft = next_params::draft(table("nrg_bal_s"), &[], &de);
+        let (splits, event) = drawable_splits(&mut draft, 1, &de, 2026, &catalogue);
+        assert_eq!(event["dropped"], json!([]));
+        assert_eq!(event["offered"][2], json!({"option": 4, "dim": "siec>nrg_bal", "years": [1], "member": false}));
+        let flow = &splits[2];
+        let mut picks = BTreeMap::from([("t1.breakdown".to_string(), flow.option), ("t1.unit".to_string(), 1)]);
+        picks.insert("t1.years".into(), flow.program_years().unwrap());
+        let filled = next_params::fill(&draft, 1, &picks, &de, 2026).unwrap();
+        let values = |dim: &str| {
+            filled.args["filters"].as_array().unwrap().iter().find(|f| f["dimension"] == dim).map(|f| f["values"].clone())
+        };
+        let leaves = |dim: &str| json!(next_params::flow_parts("nrg_bal_s", dim).into_iter().map(|p| p.code).collect::<Vec<_>>());
+        assert_eq!(values("siec"), Some(leaves("siec")));
+        assert_eq!(values("nrg_bal"), Some(leaves("nrg_bal")));
+        assert_eq!(values("geo"), Some(json!(["DE"])));
+        assert_eq!(filled.args["years"], json!({"start": 2024, "end": 2024}));
+        assert_eq!(filled.event["open"], Value::Null);
+        assert_eq!(filled.event["estimate"], 77);
+        // the same table under an id with no registered flow is offered the two splits it had
+        let mut plain = next_params::draft(table("nrg_bal_c"), &[], &de);
+        assert_eq!(plain.breakdown, ["nrg_bal", "siec"]);
+        let (_, event) = drawable_splits(&mut plain, 1, &de, 2026, &catalogue);
+        let dims: Vec<&Value> = event["offered"].as_array().unwrap().iter().map(|o| &o["dim"]).collect();
+        assert_eq!(dims, [&json!("nrg_bal"), &json!("siec")]);
     }
 
     /// q6: a citizen split fetched for the hub over the ring's 5 years is narrowed to 16 citizens, 16 lines no line chart
