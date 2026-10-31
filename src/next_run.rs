@@ -4943,8 +4943,8 @@ mod tests {
         let Ok(crate::next_visual::Reply::Filled(page)) = crate::next_flow::visual_call(&calls, "leaf_fill", request) else {
             panic!("no filled page");
         };
-        // 18 declared; lab_t0 and lab_t1 each compute one fact per origin outside the hub (RU NO US)
-        assert_eq!((page.layers.len(), page.refs.as_slice(), page.facts.len()), (5, &["imp".to_string(), "impm".into()][..], 22));
+        // 19 declared (lead1 the dek finding's); lab_t0 and lab_t1 each compute one fact per origin outside the hub (RU NO US)
+        assert_eq!((page.layers.len(), page.refs.as_slice(), page.facts.len()), (5, &["imp".to_string(), "impm".into()][..], 23));
         // the total is the countries outside the hub (RU NO US); DE is a member, TOTAL and EXT_EU27_2020 are not rows
         let tot24 = page.facts.iter().find(|f| f.key == "tot24").unwrap();
         assert_eq!((tot24.v, tot24.n), (37843.285 + 1.0 + 1.0, Some(3)));
