@@ -2248,7 +2248,7 @@ fn stacked100_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
         let (a, b) = if sum > whole { (&sum_key, &total_key) } else { (&total_key, &sum_key) };
         Filled::set(&mut out.facts, "fact", &gap_key, json!({"op": "minus", "a": a, "b": b, "fmt": COMPOSITION_GAP_FMT}))?;
         let (before, after) = COMPOSITION_DROPPED_WORDS;
-        lines.push(json!([{"src": crate::next_ledger::name_src(code)}, {"w": before}, {"src": format!("fact:{gap_key}")}, {"w": after}]));
+        lines.push(json!([{"src": format!("{LABEL_SRC}zh_names:{}:{code}", if code.len() == 2 { "iso2" } else { "iso3" })}, {"w": before}, {"src": format!("fact:{gap_key}")}, {"w": after}]));
     }
     if !dropped.is_empty() {
         let read: Vec<&Value> = dropped.iter().filter_map(|(c, ..)| total_row(c)).chain(f.companion.iter()).collect();
