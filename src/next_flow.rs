@@ -3404,6 +3404,11 @@ pub const COMPOSITION_FETCH_EVENT: &str = "next_composition_fetch";
 /// The mode newsroom_data_prepare answers a fetch the program marked sum_input with: rows kept as a file only.
 pub const SUM_INPUT_MODE: &str = "sum_input";
 
+/// The places a composition's second fetch asks past its bars (next_params::NARROW_TOP), the next by total: a place whose
+/// groups do not add up to its total is left out of the bars and said, and the next takes its bar (next_run
+/// stacked100_fill); more left out than these, a quarter of the bars, stops the page.
+pub const COMPOSITION_RESERVE: usize = next_params::NARROW_TOP / 4;
+
 /// The place dimension a composition ranks and asks its countries by.
 const COMPOSITION_PLACE: &str = "geo";
 
@@ -3439,7 +3444,8 @@ fn composition_dim(main: &Prepared) -> Result<Option<(String, String, Vec<(Strin
 /// fetch asked a dimension with registered groups (next_params::group_inputs) for its total code alone, it asks the same
 /// table for each group's input codes (official codes the table publishes, at most one level under the total in the
 /// registry's tree), at the latest year any country holds a total at in the main's rows, for the countries with the largest
-/// total there (next_params::NARROW_TOP of them, largest first, a tie to code order; aggregates are no country), marked
+/// total there (next_params::NARROW_TOP of them and COMPOSITION_RESERVE more, largest first, a tie to code order; aggregates
+/// are no country), marked
 /// sum_input with the main's file and candidate sheet, so its rows become no candidate, sheet or claim (newsroom.ts
 /// sumInputProblem). The first fetch is unchanged and carries every claim. None when the main is no such fetch: a World
 /// Bank table, no dimension asked for its grouped total alone, or fewer than two countries with a total. Ok is the args and
@@ -3476,8 +3482,9 @@ pub fn composition_fetch(
     if ranked.len() < 2 {
         return Ok(None);
     }
-    let left_out = ranked.len().saturating_sub(next_params::NARROW_TOP);
-    let top: Vec<String> = ranked.into_iter().take(next_params::NARROW_TOP).map(|(_, c)| c).collect();
+    let asked = next_params::NARROW_TOP + COMPOSITION_RESERVE;
+    let left_out = ranked.len().saturating_sub(asked);
+    let top: Vec<String> = ranked.into_iter().take(asked).map(|(_, c)| c).collect();
     let all: Vec<String> = inputs.iter().flat_map(|(_, c)| c.iter().cloned()).collect();
     let mut filters: Vec<Value> = filters.into_iter().filter(|f| f["dimension"] != dim.as_str() && f["dimension"] != place).collect();
     filters.push(json!({"dimension": dim, "values": all}));
@@ -3491,7 +3498,7 @@ pub fn composition_fetch(
     args.insert("years".into(), json!({"start": y, "end": y}));
     args.insert("sum_input".into(), json!({"main": main.file, "sheet": main.sheet}));
     let event = json!({"table": main.id, "dim": dim, "groups": inputs, "places": top, "year": year, "ranked_by": total,
-        "top": next_params::NARROW_TOP, "left_out": left_out});
+        "top": next_params::NARROW_TOP, "reserve": COMPOSITION_RESERVE, "left_out": left_out});
     Ok(Some((args, event)))
 }
 

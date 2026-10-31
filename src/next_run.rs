@@ -1562,6 +1562,8 @@ struct Filled {
     unit_drawn: bool,
     /// How a flow picture accounted for each pair its fetch asked for (sankey_fill), for the run's record.
     flow_pairs: Option<FlowPairs>,
+    /// Which candidates a composition drew, left out for their parts, or named under it (stacked100_fill), for the record.
+    composition: Option<Value>,
 }
 
 impl Filled {
@@ -2099,6 +2101,12 @@ fn frame_heading(relation: Relation) -> Result<&'static str, String> {
 const COMPOSITION_TOTAL_HEAD: &str = "合计";
 const COMPOSITION_CUT_WORDS: (&str, &str) = ("图中为合计最大的 ", " 个国家，自上而下由大到小");
 const COMPOSITION_OTHERS_WORDS: (&str, &str) = ("其余 ", " 个国家（按合计由大到小）：");
+/// The words around the gap of a place left out of a composition because its groups do not add up to its total: its name
+/// before, the gap (a minus fact) between, and what became of its bar after.
+const COMPOSITION_DROPPED_WORDS: (&str, &str) = ("：各组之和与合计相差 ", "，未列入图中，由合计次大的国家递补");
+/// The format key of that gap, and the most decimals it prints with (the decimals its rows hold, at most these).
+const COMPOSITION_GAP_FMT: &str = "comp_gap";
+const COMPOSITION_GAP_DEC: usize = 3;
 /// The facts counting a composition's bars and the places left out (op n over their total rows at the year).
 const COMPOSITION_BARS: &str = "comp_bars";
 const COMPOSITION_OTHERS: &str = "comp_others";
@@ -2112,16 +2120,21 @@ fn composition_keys(group: &str, code: &str) -> [String; 3] {
 
 /// A composition across places (hero.leaves.stacked100, as runtime/leaves_py/stacked100.py reads it), program rules over
 /// the shape composition_groups read:
-/// - one bar per place the sum-input fetch asked (the shape's countries, largest total first), its 100% the main's total
-///   row, printed beside it (total.<code>, bare: the unit is written once in the picture's head);
+/// - one bar per place of the sum-input fetch's candidates (the shape's countries, largest total first) whose groups add up,
+///   at most next_params::NARROW_TOP, its 100% the main's total row, printed beside it (total.<code>, bare: the unit is
+///   written once in the picture's head);
 /// - in each bar one part per group, its cells the sum-input rows of the group's input codes (geometry only), its sum a
 ///   fact the visual group computes (op value over the place and the group's codes: sum.<group>.<code>) and its printed
 ///   share that sum over the total (op share: share.<group>.<code>); a group with no input row for the place is named
 ///   empty (the leaf drops it, said), and a group's sum is never a difference of other figures;
 /// - the groups' sums, as the rows hold them, must add up to the total within the knob stacked100.tol of it (the leaf's own
-///   conservation check, the same tolerance), or the page is refused: an input left out or counted twice is never drawn;
+///   conservation check, the same tolerance, never widened): a candidate whose do not is no bar, the next by total takes
+///   its place, and one line by its name gives the gap (gap.<code>, a minus fact of its inputs' sum and its total, each a
+///   fact over its own rows; what the gap may be is never said); more such places than a quarter of the bars, or fewer
+///   bars than asked while countries were left unfetched, refuses the page;
 /// - one line states the cut (COMPOSITION_BARS counts the bars from their own total rows), and one names the main's other
-///   countries with a total at the year in the same order (COMPOSITION_OTHERS counts them, each by its place name).
+///   countries with a total at the year in the same order (COMPOSITION_OTHERS counts them, each by its place name): the
+///   candidates past the bars, then the countries never fetched; a place left out for its parts is never among them.
 ///
 /// The groups are named by the knowledge group's name table (COMPOSITION_PART_KIND); a group it names none of refuses.
 fn stacked100_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
@@ -2134,17 +2147,55 @@ fn stacked100_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
         f.main.iter().find(|r| r["time"] == year && r["dims"][place] == code && r["dims"][&comp.dim] == comp.total.as_str())
     };
     let tol = f.catalogue.knob("stacked100", "tol")?;
-    let mut bars: Vec<Value> = Vec::new();
-    let mut empty: Vec<Value> = Vec::new();
+    // each candidate in total order: its groups' input rows and their sum, set against its total at the layer-1 tolerance
+    let target = next_params::NARROW_TOP.min(shape.countries.len());
+    let (mut drawn, mut dropped, mut unread): (Vec<&String>, Vec<(&String, f64, f64)>, Vec<&String>) = Default::default();
     for code in &shape.countries {
+        if drawn.len() == target {
+            unread.push(code);
+            continue;
+        }
         let total = total_row(code).ok_or_else(|| format!("stacked100: main {main} has no total row for {code} at {year}"))?;
         let whole = row_value(total).ok_or_else(|| format!("stacked100: the row {} holds no number", total["src"]))?;
+        let mut sum = 0.0;
+        for r in f.companion.iter().filter(|r| r["time"] == year && r["dims"][place] == code.as_str()) {
+            sum += row_value(r).ok_or_else(|| format!("stacked100: the row {} holds no number", r["src"]))?;
+        }
+        if (sum - whole).abs() > tol * whole.abs() {
+            dropped.push((code, sum, whole));
+        } else {
+            drawn.push(code);
+        }
+    }
+    // a place left out for its parts is said and the next by total takes its bar; past a quarter of the bars, or short of
+    // them while countries were left unfetched, the page stops (a place the question names stops it too: recipe_request)
+    if dropped.len() * 4 > target {
+        let codes: Vec<&str> = dropped.iter().map(|(c, ..)| c.as_str()).collect();
+        return Err(format!(
+            "stacked100: {} of the {target} places ({}) have groups that do not add up to their {} at {year} within {tol} of it, \
+             more than a quarter",
+            codes.len(),
+            codes.join(", "),
+            comp.total
+        ));
+    }
+    if drawn.len() < target && !shape.outside.is_empty() {
+        return Err(format!(
+            "stacked100: {} places add up at {year} after {} left out, short of {target}, and the sum inputs hold no next place",
+            drawn.len(),
+            dropped.len()
+        ));
+    }
+    let mut bars: Vec<Value> = Vec::new();
+    let mut empty: Vec<Value> = Vec::new();
+    for code in &drawn {
+        let total = total_row(code).expect("each drawn place's total row was read above");
         out.rows([total.clone()]);
         let [total_key, ..] = composition_keys("", code);
         let q = json!({"op": "value", "table": main, "filter": filter(&[(place, code.as_str()), (comp.dim.as_str(), comp.total.as_str())]),
             "time": year, "fmt": fmt});
         Filled::set(&mut out.facts, "fact", &total_key, q)?;
-        let (mut cells, mut share_text, mut sum) = (Map::new(), Map::new(), 0.0);
+        let (mut cells, mut share_text) = (Map::new(), Map::new());
         for (group, codes) in &comp.groups {
             let held: Vec<&Value> = f
                 .companion
@@ -2155,9 +2206,6 @@ fn stacked100_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
             if held.is_empty() {
                 empty.push(json!({"bar": code, "part": group}));
                 continue;
-            }
-            for r in &held {
-                sum += row_value(r).ok_or_else(|| format!("stacked100: the row {} holds no number", r["src"]))?;
             }
             // the inputs are only read: the leaf draws their widths, the page prints the facts over them
             out.reads(held.iter().map(|r| (*r).clone()));
@@ -2171,12 +2219,6 @@ fn stacked100_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
             Filled::set(&mut out.facts, "fact", &share_key, json!({"op": "share", "a": sum_key, "b": total_key}))?;
             share_text.insert(group.clone(), json!(format!("fact:{share_key}")));
         }
-        if (sum - whole).abs() > tol * whole.abs() {
-            return Err(format!(
-                "stacked100: {code}'s groups sum to {sum} at {year}, its total {} is {whole} (tolerance {tol} of it)",
-                comp.total
-            ));
-        }
         bars.push(json!({"code": code, "total": total["src"], "total_text": format!("fact:{total_key}.n"), "cells": cells,
             "share_text": share_text}));
     }
@@ -2186,18 +2228,48 @@ fn stacked100_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
         Value::Object(Map::from_iter([(place.to_string(), json!(codes)), (comp.dim.clone(), json!(comp.total))]))
     };
     let count = |codes: &[String]| json!({"op": "n", "by": place, "table": main, "filter": of_codes(codes), "time": year, "fmt": "n"});
-    Filled::set(&mut out.facts, "fact", COMPOSITION_BARS, count(&shape.countries))?;
+    let drawn: Vec<String> = drawn.into_iter().cloned().collect();
+    Filled::set(&mut out.facts, "fact", COMPOSITION_BARS, count(&drawn))?;
     let (before, after) = COMPOSITION_CUT_WORDS;
-    let lines = vec![json!([{"w": before}, {"src": format!("fact:{COMPOSITION_BARS}.n")}, {"w": after}])];
+    let mut lines = vec![json!([{"w": before}, {"src": format!("fact:{COMPOSITION_BARS}.n")}, {"w": after}])];
+    // each place left out for its parts, by its name: how far its groups' sum is from its total, a minus fact of two facts
+    // over its own rows (the larger first, so the gap prints as a size), printed with the decimals its rows hold
+    let all: Vec<&String> = comp.groups.iter().flat_map(|(_, c)| c).collect();
+    for (code, sum, whole) in &dropped {
+        let (sum_key, total_key, gap_key) = (format!("drop_sum.{code}"), format!("total.{code}"), format!("gap.{code}"));
+        let total = total_row(code).expect("each dropped place's total row was read above");
+        let inputs: Vec<&Value> = f.companion.iter().filter(|r| r["time"] == year && r["dims"][place] == code.as_str()).collect();
+        out.reads(std::iter::once(total.clone()).chain(inputs.iter().map(|r| (*r).clone())));
+        let of = Value::Object(Map::from_iter([(place.to_string(), json!(code)), (comp.dim.clone(), json!(all))]));
+        Filled::set(&mut out.facts, "fact", &sum_key, json!({"op": "value", "table": main, "filter": of, "time": year, "fmt": fmt}))?;
+        let q = json!({"op": "value", "table": main, "filter": filter(&[(place, code.as_str()), (comp.dim.as_str(), comp.total.as_str())]),
+            "time": year, "fmt": fmt});
+        Filled::set(&mut out.facts, "fact", &total_key, q)?;
+        let (a, b) = if sum > whole { (&sum_key, &total_key) } else { (&total_key, &sum_key) };
+        Filled::set(&mut out.facts, "fact", &gap_key, json!({"op": "minus", "a": a, "b": b, "fmt": COMPOSITION_GAP_FMT}))?;
+        let (before, after) = COMPOSITION_DROPPED_WORDS;
+        lines.push(json!([{"src": crate::next_ledger::name_src(code)}, {"w": before}, {"src": format!("fact:{gap_key}")}, {"w": after}]));
+    }
+    if !dropped.is_empty() {
+        let read: Vec<&Value> = dropped.iter().filter_map(|(c, ..)| total_row(c)).chain(f.companion.iter()).collect();
+        let dec = read.iter().filter_map(|r| r["value"].as_str()).map(|v| v.split_once('.').map_or(0, |(_, d)| d.len())).max();
+        Filled::set(&mut out.fmts, "format", COMPOSITION_GAP_FMT,
+            json!({"scale": 1, "dec": dec.unwrap_or(0).min(COMPOSITION_GAP_DEC), "suffix": suffix(f.short)}))?;
+    }
     let mut data = json!({"bar_kind": "place", "part_kind": COMPOSITION_PART_KIND,
         "parts": comp.groups.iter().map(|(g, _)| g.clone()).collect::<Vec<_>>(), "total_head": [{"w": COMPOSITION_TOTAL_HEAD}]});
-    if !shape.outside.is_empty() {
-        out.reads(shape.outside.iter().filter_map(|c| total_row(c)).cloned());
-        Filled::set(&mut out.facts, "fact", COMPOSITION_OTHERS, count(&shape.outside))?;
+    // the places named under the picture: the candidates past the bars, then the countries never fetched, in total order;
+    // a place left out for its parts is said on its own line, never among them
+    let others: Vec<String> = unread.into_iter().cloned().chain(shape.outside.iter().cloned()).collect();
+    if !others.is_empty() {
+        out.reads(others.iter().filter_map(|c| total_row(c)).cloned());
+        Filled::set(&mut out.facts, "fact", COMPOSITION_OTHERS, count(&others))?;
         let (before, after) = COMPOSITION_OTHERS_WORDS;
         data["others"] = json!({"head": [{"w": before}, {"src": format!("fact:{COMPOSITION_OTHERS}.n")}, {"w": after}],
-            "codes": shape.outside});
+            "codes": others});
     }
+    let dropped_codes: Vec<&String> = dropped.iter().map(|(c, ..)| *c).collect();
+    out.composition = Some(json!({"bars": drawn, "dropped": dropped_codes, "others": others}));
     let groups: Vec<String> = comp.groups.iter().map(|(g, _)| g.clone()).collect();
     let names = f.catalogue.zh_names(COMPOSITION_PART_KIND, &groups).map_err(|missing| {
         format!("stacked100: the name table gives no Chinese name for {COMPOSITION_PART_KIND} {}", missing.join(", "))
@@ -2914,7 +2986,7 @@ fn fill_of(
     if let Some(code) = accent {
         Filled::set(&mut out.data, "hero data", ACCENT, json!(code)).map_err(no)?;
     }
-    let Filled { drawn, rows, facts, mut fmts, data, mut hero, notes, points, named: name_rows, unit_drawn, flow_pairs, .. } = out;
+    let Filled { drawn, rows, facts, mut fmts, data, mut hero, notes, points, named: name_rows, unit_drawn, flow_pairs, composition: cut, .. } = out;
     hero.insert("data".into(), Value::Object(data));
     // a layer that writes the unit in its own picture leaves the page's unit line to the year alone (column_page)
     if !unit_drawn {
@@ -2952,11 +3024,12 @@ fn fill_of(
     if let Some(pairs) = flow_pairs {
         fill["pairs"] = json!(pairs);
     }
-    // a composition's cut, for the run's record: the template its relation is, the places drawn (largest total first) and
-    // the main's other countries left out, in the same order
-    if let Some(comp) = &shape.composition {
+    // a composition's cut, for the run's record: the template its relation is, the candidates fetched (largest total
+    // first), the places drawn, left out for their parts and named under the picture, and the countries never fetched
+    if let (Some(comp), Some(cut)) = (&shape.composition, cut) {
         fill["composition"] = json!({"template": COMPOSITION_TEMPLATES[0], "dim": comp.dim, "total": comp.total,
-            "groups": comp.groups, "year": shape.year, "bars": shape.countries, "left_out": shape.outside});
+            "groups": comp.groups, "year": shape.year, "candidates": shape.countries, "bars": cut["bars"],
+            "dropped": cut["dropped"], "others": cut["others"], "left_out": shape.outside});
     }
     // the dek's finding stays with the flow, for the text step's draft (dek_finding); the page gets it as worded. Its
     // headline is the fill's own key, which run_page makes the page's title (title_and_kicker)
@@ -3058,6 +3131,7 @@ fn recipe_request(
     let scoped = narrowed(run_dir, main).map_err(|why| ("fill", why))?.is_some();
     let mut fill = fill_of(recipe, &shape, &picks, (&main_rows, &comp_rows), catalogue, (title, dek), scoped)
         .map_err(|why| ("fill", why))?;
+    named_dropped(&fill, &main.places_zh, catalogue).map_err(|why| ("fill", why))?;
     if recipe.layers.iter().any(|l| l == "map" || l == "bubbles") {
         fill["knobs"]["shapes"] = json!(run_dir.join(RING_SHAPES));
     }
@@ -3087,6 +3161,21 @@ fn recipe_request(
     // no years here: the leaf footer marks only the table ids (spec.refs) and refuses any other digit in the line
     fill["knobs"]["spec"]["source"] = json!(source_line(meta.worldbank, &meta.id, &title, &[]));
     Ok(fill)
+}
+
+/// A composition may leave out a place whose parts do not add up (stacked100_fill), never one the question names: Err when
+/// the reviewed name of a place it left out is among the place words the catalogue read in the question (Prepared
+/// places_zh). A place the name table names none of is no place the question can name by it.
+fn named_dropped(fill: &Value, places_zh: &[String], catalogue: &dyn Catalogue) -> Result<(), String> {
+    let dropped: Vec<String> = fill["composition"]["dropped"].as_array().into_iter().flatten().filter_map(|c| c.as_str().map(str::to_string)).collect();
+    for code in &dropped {
+        let scheme = if code.len() == 2 { "iso2" } else { "iso3" };
+        let Ok(names) = catalogue.zh_names(scheme, std::slice::from_ref(code)) else { continue };
+        if let Some(name) = names.get(code).filter(|n| places_zh.iter().any(|p| p == *n)) {
+            return Err(format!("stacked100: the question names {name} ({code}), whose groups do not add up to its total"));
+        }
+    }
+    Ok(())
 }
 
 /// A fetched table file read as series rows by the knowledge group.
@@ -6884,14 +6973,15 @@ mod tests {
         }
     }
 
-    /// q3 (欧盟各国发电结构) on the nrg_bal_peh fixture (DE's gross electricity production in 2024, each country a multiple of
-    /// it so 22 countries and the EU aggregate rank apart): the first fetch is TOTAL by country; the program's second fetch
-    /// asks the 14 group inputs for the 20 largest, marked sum_input with the first fetch's file and sheet (no sheet, picks
-    /// or narrow of its own, so its rows become no candidate: test_page_build_wiring section 18); the composition recipe is
-    /// the first that reads the shape, and its fill draws 20 bars of 4 parts (DE's nuclear row of 0 a dropped segment, not
-    /// a missing one), each part's cells the input rows its own sum fact filters, the 2 countries left out named in total order.
-    #[test]
-    fn q3_walks_from_the_total_fetch_through_the_sum_inputs_to_twenty_bars_of_four_groups() {
+    /// The 27 countries of the q3 tables, in the order of their totals (largest first).
+    const Q3_GEOS: [&str; 27] = ["DE", "FR", "IT", "ES", "PL", "SE", "NL", "BE", "AT", "FI", "CZ", "PT", "RO", "EL", "HU", "BG",
+        "DK", "SK", "IE", "HR", "SI", "LT", "EE", "LV", "CY", "LU", "MT"];
+
+    /// q3's two fetches on the nrg_bal_peh fixture (DE's gross electricity production in 2024, each country a multiple of it so
+    /// the 27 rank apart, the EU aggregate beside them): the first fetch's TOTAL rows, the second fetch's args and event as
+    /// composition_fetch makes them, and its rows as the source would answer (every asked pair but E7000, which the table
+    /// holds none of). Each (country, gap) in `off` has its TOTAL that much under its parts, as PT's 2024 row is.
+    fn q3_tables(off: &[(&str, f64)]) -> (crate::next_flow::Prepared, Map<String, Value>, Value, Vec<Value>, Vec<Value>) {
         let fixture = include_str!("../scripts/fixtures/data_prepare/nrg_bal_peh_GEP_2024.tsv");
         let de: BTreeMap<&str, f64> = fixture
             .lines()
@@ -6902,14 +6992,14 @@ mod tests {
                 (f[0] == "DE").then(|| (f[1], f[2].parse().unwrap()))
             })
             .collect();
-        let geos = ["DE", "FR", "IT", "ES", "PL", "SE", "NL", "BE", "AT", "FI", "CZ", "PT", "RO", "EL", "HU", "BG", "DK", "SK",
-            "IE", "HR", "SI", "LT"];
-        let row = |geo: &str, code: &str, k: usize| {
-            let v = de[code] * (geos.len() - k) as f64 / geos.len() as f64;
+        let row = |geo: &str, code: &str| {
+            let k = Q3_GEOS.iter().position(|g| *g == geo).unwrap();
+            let gap = off.iter().find(|(g, _)| *g == geo && code == "TOTAL").map_or(0.0, |(_, d)| *d);
+            let v = de[code] * (Q3_GEOS.len() - k) as f64 / Q3_GEOS.len() as f64 - gap;
             json!({"src": format!("series:nrg_bal_peh/A.GEP.{code}.GWH.{geo}:2024:OBS_VALUE"), "table": "nrg_bal_peh",
                 "dims": {"freq": "A", "nrg_bal": "GEP", "siec": code, "unit": "GWH", "geo": geo}, "time": "2024", "value": format!("{v}")})
         };
-        let mut main: Vec<Value> = geos.iter().enumerate().map(|(k, g)| row(g, "TOTAL", k)).collect();
+        let mut main: Vec<Value> = Q3_GEOS.iter().map(|g| row(g, "TOTAL")).collect();
         main.push(json!({"src": "series:nrg_bal_peh/A.GEP.TOTAL.GWH.EU27_2020:2024:OBS_VALUE", "table": "nrg_bal_peh",
             "dims": {"freq": "A", "nrg_bal": "GEP", "siec": "TOTAL", "unit": "GWH", "geo": "EU27_2020"}, "time": "2024", "value": "2828734.401"}));
         let first = crate::next_flow::Prepared {
@@ -6925,38 +7015,50 @@ mod tests {
             companions: Vec::new(),
         };
         let (args, event) = crate::next_flow::composition_fetch(&first, &main, &Hubs).unwrap().unwrap();
-        assert_eq!(args["sum_input"], json!({"main": "data/main.csv", "sheet": "0123456789abcdef"}));
-        assert!(["sheet", "picks", "narrow", "sum_year"].iter().all(|k| !args.contains_key(*k)));
-        assert_eq!(args["years"], json!({"start": 2024, "end": 2024}));
-        let asked = |d: &str| args["filters"].as_array().unwrap().iter().find(|f| f["dimension"] == d).unwrap()["values"].clone();
-        let inputs: Vec<String> = serde_json::from_value(asked("siec")).unwrap();
-        let places: Vec<String> = serde_json::from_value(asked("geo")).unwrap();
-        assert_eq!((inputs.len(), places.len(), &places[..], &event["left_out"]), (14, 20, &geos[..20].iter().map(|g| g.to_string()).collect::<Vec<_>>()[..], &json!(2)));
-        // the second fetch as the source answers it: every asked pair with a row but E7000, which the table holds none of
-        let sums: Vec<Value> = places
-            .iter()
-            .flat_map(|g| {
-                let k = geos.iter().position(|x| x == g).unwrap();
-                inputs.iter().filter(|c| de.contains_key(c.as_str())).map(move |c| row(g, c, k)).collect::<Vec<_>>()
-            })
-            .collect();
-        assert_eq!(sums.len(), 20 * 13);
+        let asked = |d: &str| -> Vec<String> {
+            serde_json::from_value(args["filters"].as_array().unwrap().iter().find(|f| f["dimension"] == d).unwrap()["values"].clone()).unwrap()
+        };
+        let sums: Vec<Value> =
+            asked("geo").iter().flat_map(|g| asked("siec").into_iter().filter(|c| de.contains_key(c.as_str())).map(|c| row(g, &c)).collect::<Vec<_>>()).collect();
+        (first, args, event, main, sums)
+    }
+
+    /// The composition page's fill over q3's tables (q3_tables), by the recipe the registry tries first that reads them.
+    fn q3_fill(main: &[Value], sums: &[Value]) -> Result<Value, String> {
         let composition = recipe("composition");
-        let tables = [("nrg_bal_peh", &main[..]), ("nrg_bal_peh", &sums[..])];
+        let tables = [("nrg_bal_peh", main), ("nrg_bal_peh", sums)];
         let got: Vec<(&str, bool)> =
             Hubs.recipes().iter().map(|r| (r.name.as_str(), shape_of(&r.eats, &tables, &Hubs).is_ok())).collect();
         assert_eq!(got.iter().find(|(_, ok)| *ok).map(|(n, _)| *n), Some("composition"), "{got:?}");
         let shape = shape_of(&composition.eats, &tables, &Hubs).unwrap();
-        assert_eq!((shape.countries.len(), &shape.outside[..], shape.year.as_str()), (20, &["SI".to_string(), "LT".to_string()][..], "2024"));
-        let picks = picks_of(&composition.picks, &shape, &main, &[]).unwrap();
-        let fill = fill_of(composition, &shape, &picks, (&main, &sums), &Hubs, ("标题", "导语"), false).unwrap();
+        let picks = picks_of(&composition.picks, &shape, main, &[]).unwrap();
+        fill_of(composition, &shape, &picks, (main, sums), &Hubs, ("标题", "导语"), false)
+    }
+
+    /// q3 (欧盟各国发电结构) from the total fetch to the page: the program's second fetch asks the 14 group inputs for the 20
+    /// largest and 5 more (COMPOSITION_RESERVE), marked sum_input with the first fetch's file and sheet (no sheet, picks or
+    /// narrow of its own, so its rows become no candidate: test_page_build_wiring section 18); the composition recipe is the
+    /// first that reads the shape, and its fill draws 20 bars of 4 parts (DE's nuclear row of 0 a dropped segment, not a
+    /// missing one), each part's cells the input rows its own sum fact filters; the 7 other countries are named in total
+    /// order, the 5 fetched past the bars first.
+    #[test]
+    fn q3_walks_from_the_total_fetch_through_the_sum_inputs_to_twenty_bars_of_four_groups() {
+        let (first, args, event, main, sums) = q3_tables(&[]);
+        assert_eq!(args["sum_input"], json!({"main": "data/main.csv", "sheet": "0123456789abcdef"}));
+        assert!(["sheet", "picks", "narrow", "sum_year"].iter().all(|k| !args.contains_key(*k)));
+        assert_eq!(args["years"], json!({"start": 2024, "end": 2024}));
+        let asked = |d: &str| args["filters"].as_array().unwrap().iter().find(|f| f["dimension"] == d).unwrap()["values"].clone();
+        assert_eq!(asked("siec").as_array().unwrap().len(), 14);
+        assert_eq!(asked("geo"), json!(Q3_GEOS[..25]));
+        assert_eq!((&event["reserve"], &event["left_out"]), (&json!(5), &json!(2)));
+        assert_eq!(sums.len(), 25 * 13);
+        let fill = q3_fill(&main, &sums).unwrap();
         let spec = &fill["knobs"]["spec"];
         let leaf = &spec["hero"]["leaves"]["stacked100"];
         let bars = leaf["bars"].as_array().unwrap();
-        assert_eq!(bars.len(), 20);
+        assert_eq!(bars.iter().map(|b| b["code"].clone()).collect::<Vec<_>>(), Q3_GEOS[..20].iter().map(|g| json!(g)).collect::<Vec<_>>());
         assert_eq!(leaf["parts"], json!(["fossil", "renewable", "other", "nuclear"]));
         let rows = fill["rows"].as_array().unwrap();
-        let value_of = |src: &Value| rows.iter().find(|r| r["src"] == *src).and_then(row_value).unwrap();
         for bar in bars {
             let code = bar["code"].as_str().unwrap();
             assert_eq!(bar["cells"].as_object().unwrap().len(), 4, "{code}");
@@ -6973,10 +7075,63 @@ mod tests {
                     .map(|r| r["src"].as_str().unwrap())
                     .collect();
                 assert_eq!(srcs, selected, "{code} {group}");
-                assert!(cells.as_array().unwrap().iter().all(|c| value_of(c).is_finite()));
                 assert_eq!(bar["share_text"][group], json!(format!("fact:{share_key}")));
                 assert_eq!(spec["facts"][&share_key]["b"], json!(format!("total.{code}")));
             }
+        }
+        assert_eq!(leaf["others"]["codes"], json!(Q3_GEOS[20..]));
+        assert_eq!(spec["facts"][COMPOSITION_OTHERS]["filter"]["geo"], json!(Q3_GEOS[20..]));
+        assert_eq!(spec["facts"][COMPOSITION_BARS]["filter"]["geo"], json!(Q3_GEOS[..20]));
+        assert_eq!(leaf["lines"].as_array().unwrap().len(), 1, "the cut only: no place left out");
+        assert_eq!((&fill["composition"]["dropped"], &fill["composition"]["left_out"]), (&json!([]), &json!(Q3_GEOS[25..])));
+        // the first fetch's claims are the page's only claims: the sum inputs carry none
+        assert_eq!(first.claims.len(), 1);
+    }
+
+    /// A place whose parts do not add up to its total (PT's 2024 TOTAL is 0.631 GWh under them) is no bar: the 21st by total
+    /// takes its place, one line by its name gives the gap as a minus fact of two facts over its own rows, and it is never
+    /// in the line of the other countries, which counts the rest again. The page still stops when more than a quarter of the
+    /// bars are left out, when the question names a place left out, and when the bars fall short with countries unfetched.
+    #[test]
+    fn a_place_whose_parts_miss_its_total_is_said_and_the_next_by_total_takes_its_bar() {
+        let (_, _, _, main, sums) = q3_tables(&[("PT", 0.631)]);
+        let fill = q3_fill(&main, &sums).unwrap();
+        let spec = &fill["knobs"]["spec"];
+        let leaf = &spec["hero"]["leaves"]["stacked100"];
+        let bars: Vec<&str> = leaf["bars"].as_array().unwrap().iter().map(|b| b["code"].as_str().unwrap()).collect();
+        let want: Vec<&str> = Q3_GEOS[..21].iter().copied().filter(|g| *g != "PT").collect();
+        assert_eq!(bars, want);
+        assert_eq!(leaf["others"]["codes"], json!(Q3_GEOS[21..]));
+        assert_eq!(spec["facts"][COMPOSITION_OTHERS]["filter"]["geo"], json!(Q3_GEOS[21..]));
+        assert_eq!(fill["composition"]["dropped"], json!(["PT"]));
+        // the gap: the inputs' sum less the total, each a fact over PT's own rows, never a typed number
+        assert_eq!(spec["facts"]["gap.PT"], json!({"op": "minus", "a": "drop_sum.PT", "b": "total.PT", "fmt": COMPOSITION_GAP_FMT}));
+        let inputs: Vec<String> = serde_json::from_value(spec["facts"]["drop_sum.PT"]["filter"]["siec"].clone()).unwrap();
+        assert_eq!(inputs.len(), 14);
+        assert_eq!(spec["facts"]["total.PT"]["filter"], json!({"geo": "PT", "siec": "TOTAL"}));
+        assert!(spec["fmts"][COMPOSITION_GAP_FMT]["dec"].as_u64().is_some_and(|d| d >= 1));
+        let lines = leaf["lines"].as_array().unwrap();
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[1], json!([{"src": "name:zh_names:iso2:PT"}, {"w": COMPOSITION_DROPPED_WORDS.0}, {"src": "fact:gap.PT"},
+            {"w": COMPOSITION_DROPPED_WORDS.1}]));
+        assert!(fill["rows"].as_array().unwrap().iter().any(|r| r["dims"]["geo"] == "PT"), "PT's rows are read for its line");
+        // a place the question names is never left out
+        assert!(named_dropped(&fill, &["名PT".to_string()], &Hubs).unwrap_err().contains("PT"));
+        assert!(named_dropped(&fill, &["欧盟".to_string()], &Hubs).is_ok());
+        // more than a quarter of the bars left out: 6 of 20
+        let six: Vec<(&str, f64)> = ["FR", "IT", "ES", "PL", "SE", "NL"].iter().map(|g| (*g, 0.631)).collect();
+        let (_, _, _, main, sums) = q3_tables(&six);
+        assert!(q3_fill(&main, &sums).unwrap_err().contains("more than a quarter"), "six left out");
+        // five is a quarter: the page goes out with the five next by total
+        let (_, _, _, main, sums) = q3_tables(&six[..5]);
+        assert_eq!(q3_fill(&main, &sums).unwrap()["knobs"]["spec"]["hero"]["leaves"]["stacked100"]["bars"].as_array().unwrap().len(), 20);
+        // fewer bars than asked while countries were left unfetched: the sum inputs end before the bars are full
+        let (_, _, _, main, sums) = q3_tables(&[("PT", 0.631)]);
+        let cut: Vec<Value> = sums.into_iter().filter(|r| !["RO", "EL", "HU", "BG", "DK", "SK", "IE", "HR", "SI", "LT", "EE", "LV", "CY"]
+            .contains(&r["dims"]["geo"].as_str().unwrap())).collect();
+        let err = q3_fill(&main, &cut).unwrap_err();
+        assert!(err.contains("short of"), "{err}");
+    }
         }
         assert_eq!(leaf["others"]["codes"], json!(["SI", "LT"]));
         assert_eq!(spec["facts"][COMPOSITION_OTHERS]["filter"]["geo"], json!(["SI", "LT"]));
