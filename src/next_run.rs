@@ -1759,6 +1759,15 @@ fn year_fact(table: &str, filter: Value, t: &str, fmt: &str) -> Value {
     json!({"op": "last", "table": table, "filter": filter, "from": t, "to": t, "fmt": fmt})
 }
 
+/// A value as the page's format `fmt` prints it (facts.py: the value times its scale at its decimals), so two values the
+/// page prints alike tie though their floats differ (65.4 - 60.1 and 70.4 - 65.1); a format the page lacks prints it whole.
+fn printed(fmts: &Map<String, Value>, fmt: &str, v: f64) -> String {
+    match fmts.get(fmt) {
+        Some(m) => format!("{:.*}", m["dec"].as_u64().unwrap_or(0) as usize, v * m["scale"].as_f64().unwrap_or(1.0)),
+        None => v.to_string(),
+    }
+}
+
 /// The page dek's finding (shape_registry DEK_FINDINGS) by what the page's facts and rows hold, as {"dek", "scoped"}: {name}
 /// and {other} become name placeholders of codes the labels name, {value} and {gap} facts the page declares, {y0} and {y1}
 /// the periods of FINDING_FACTS read at the earlier and the later year (year_fact; rows already read). On a page with
@@ -1782,15 +1791,16 @@ fn finding_of(f: &Filling, out: &mut Filled, labels: &BTreeMap<String, String>) 
         let rise = picks.ranked.first().and_then(moved).filter(|(d, _)| *d > 0.0).map(|(d, c)| (Finding::Rise, d, c));
         let fall = picks.ranked.last().and_then(moved).filter(|(d, _)| *d < 0.0).map(|(d, c)| (Finding::Fall, d, c));
         let Some((finding, d, code)) = rise.or(fall) else { return Ok(None) };
-        // a change another ranked place shares is no one's largest
-        if picks.ranked.iter().filter(|c| **c != code).filter_map(moved).any(|(e, _)| e == d) {
+        let chg_fmt = if f.short == "%" { POINTS.0 } else { CHANGE_FMT };
+        // a change another ranked place shares as the page prints it is no one's largest
+        let alike = printed(&out.fmts, chg_fmt, d);
+        if picks.ranked.iter().filter(|c| **c != code).filter_map(moved).any(|(e, _)| printed(&out.fmts, chg_fmt, e) == alike) {
             return Ok(None);
         }
         let Some(name) = named(&code) else { return Ok(None) };
         let [lead, early, late] = FINDING_FACTS;
         let (a, b) = if finding == Finding::Rise { (late, early) } else { (early, late) };
         let value = |t: &str| year_fact(&shape.main, filter(&[(place, code.as_str())]), t, &f.fmt);
-        let chg_fmt = if f.short == "%" { POINTS.0 } else { CHANGE_FMT };
         for (key, q) in [
             (early, value(&shape.t0)),
             (late, value(&shape.year)),
@@ -1810,8 +1820,11 @@ fn finding_of(f: &Filling, out: &mut Filled, labels: &BTreeMap<String, String>) 
         let higher = at(hi, &shape.year).zip(at(lo, &shape.year)).filter(|(h, l)| h > l);
         let (Some(name), Some(other)) = (named(hi), named(lo)) else { return Ok(None) };
         let Some((top, low)) = higher else { return Ok(None) };
-        // a highest or a lowest value another ranked place shares is no one's own
-        let shared = |code: &String, v: f64| picks.ranked.iter().any(|c| c != code && at(c, &shape.year) == Some(v));
+        // a highest or a lowest value another ranked place shares as the page prints it is no one's own
+        let shared = |code: &String, v: f64| {
+            let alike = printed(&out.fmts, &f.fmt, v);
+            picks.ranked.iter().any(|c| c != code && at(c, &shape.year).is_some_and(|w| printed(&out.fmts, &f.fmt, w) == alike))
+        };
         if shared(hi, top) || shared(lo, low) {
             return Ok(None);
         }
@@ -5576,7 +5589,8 @@ mod tests {
 
     /// e3: the dek printed "{name}最高" or "{name}增幅最大" for one of two places with the same value or change. Two places
     /// tied at the highest or the lowest value of a column page, or at the largest rise or fall of a change page, give no
-    /// finding (the dek stays the frame's); one place alone at either end still gives its own.
+    /// finding (the dek stays the frame's), a tie as the page prints them, not as floats; one place alone at either end
+    /// still gives its own.
     #[test]
     fn a_tie_at_the_end_a_finding_names_gives_no_finding() {
         let set = |rows: &mut Vec<Value>, at: &[(&str, &str, &str)]| {
@@ -5611,6 +5625,11 @@ mod tests {
         };
         // SE up 16 (50 to 66); BE too
         assert_eq!(moved(&[("BE", "2024", "24.5")]), None, "two largest rises");
+        // e3: up 16 both, as the page prints them (16.00 个百分点), though 66.6 - 50.6 is 15.999999999999993 and 24.6 - 8.6 is 16
+        assert_ne!(66.6_f64 - 50.6, 24.6 - 8.6);
+        let alike = [("SE", "2016", "50.6"), ("SE", "2024", "66.6"), ("BE", "2016", "8.6"), ("BE", "2024", "24.6")];
+        assert_eq!(moved(&alike), None, "two rises the page prints alike");
+        assert_eq!(moved(&alike[..2]).unwrap()["dek"], "{lead0.t}至{lead1.t}，{name.SE}增幅最大，增加{lead}");
         // no place rises (FR flat): SE down 16, alone, then BE with it
         let falls = [("SE", "2016", "66"), ("SE", "2024", "50"), ("BE", "2016", "14"), ("BE", "2024", "8.5"), ("DE", "2016", "22.4"),
             ("DE", "2024", "14.9"), ("FR", "2024", "15.5")];
