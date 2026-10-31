@@ -2366,12 +2366,15 @@ const BARS_CHANGE: &str = "change";
 
 /// The form a page's page-level fields are drafted for (next_page::draft_for): the first-to-last change when the picked
 /// recipe's bars draw the change between the two ends (its fill's bars.measure, change_bars_fill), so the title names what
-/// the page shows; else, and with no recipe picked, the lead chart's (next_page::lead).
+/// the page shows; the composition at one period when it draws one (its fill's composition record, stacked100_fill), so
+/// a page of 100% bars is titled for the parts of each whole, never for the ranking its first fetch's chart is; else, and
+/// with no recipe picked, the lead chart's (next_page::lead).
 fn page_lead(fill: Option<&Value>, charts: &[Chart]) -> Option<(Relation, View)> {
     match fill {
         Some(fill) if fill["knobs"]["spec"]["hero"]["style"]["bars"]["measure"] == BARS_CHANGE => {
             Some((Relation::Change, View::FirstToLast))
         }
+        Some(fill) if fill["composition"].is_object() => Some((Relation::Composition, View::Slice)),
         _ => next_page::lead(charts),
     }
 }
@@ -7084,6 +7087,11 @@ mod tests {
         assert_eq!(spec["facts"][COMPOSITION_BARS]["filter"]["geo"], json!(Q3_GEOS[..20]));
         assert_eq!(leaf["lines"].as_array().unwrap().len(), 1, "the cut only: no place left out");
         assert_eq!((&fill["composition"]["dropped"], &fill["composition"]["left_out"]), (&json!([]), &json!(Q3_GEOS[25..])));
+        // the page-level fields are drafted for the composition it draws, not the ranking the first fetch's chart is
+        assert_eq!(page_lead(Some(&fill), &[]), Some((Relation::Composition, View::Slice)));
+        let drafts = next_page::draft_for(&[], &[], Vec::new(), page_lead(Some(&fill), &[]));
+        let composition = crate::shape_registry::FRAMES.iter().find(|(r, v, _)| (*r, *v) == (Relation::Composition, View::Slice)).unwrap().2;
+        assert!(format!("{drafts:?}").contains(composition[0]), "{drafts:?}");
         // the first fetch's claims are the page's only claims: the sum inputs carry none
         assert_eq!(first.claims.len(), 1);
     }
@@ -7137,6 +7145,11 @@ mod tests {
         assert_eq!(spec["facts"][COMPOSITION_OTHERS]["filter"]["geo"], json!(["SI", "LT"]));
         assert_eq!(spec["facts"][COMPOSITION_BARS]["op"], "n");
         assert_eq!(fill["composition"]["left_out"], json!(["SI", "LT"]));
+        // the page-level fields are drafted for the composition it draws, not the ranking the first fetch's chart is
+        assert_eq!(page_lead(Some(&fill), &[]), Some((Relation::Composition, View::Slice)));
+        let drafts = next_page::draft_for(&[], &[], Vec::new(), page_lead(Some(&fill), &[]));
+        let composition = crate::shape_registry::FRAMES.iter().find(|(r, v, _)| (*r, *v) == (Relation::Composition, View::Slice)).unwrap().2;
+        assert!(format!("{drafts:?}").contains(composition[0]), "{drafts:?}");
         // the first fetch's claims are the page's only claims: the sum inputs carry none
         assert_eq!(first.claims.len(), 1);
     }
