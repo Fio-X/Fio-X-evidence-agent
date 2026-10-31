@@ -2282,11 +2282,21 @@ fn recipe_request(
     fill["knobs"]["spec"]["kicker"] = json!(kicker);
     let zh = catalogue.table_zh(&meta.id).map_err(|why| ("fill", why))?;
     // the key to the map's circles (bubbles.py bubble_key) says what a circle's area is by the table's reviewed Chinese name,
-    // as words: one with a digit is left out, as the source line leaves it out, and the key then names no measure
-    if let Some(name) = zh.as_deref().map(str::trim).filter(|n| !n.is_empty() && !n.chars().any(char::is_numeric)) {
-        if let Some(bubbles) = fill.pointer_mut("/knobs/spec/hero/leaves/bubbles").and_then(Value::as_object_mut) {
-            bubbles.insert("measure".into(), json!([{"w": name}]));
+    // printed marked with its name row (an svg text holds a source), which knobs.named gives the visual group for the page's
+    // ledger beside the place names; a table with no reviewed name gives the key none
+    let src = format!("{LABEL_SRC}catalogue:{}:title", meta.id);
+    let bubbles = fill.pointer_mut("/knobs/spec/hero/leaves/bubbles").and_then(Value::as_object_mut);
+    let measured = match (zh.as_deref().map(str::trim).filter(|n| !n.is_empty()), bubbles) {
+        (Some(name), Some(bubbles)) => {
+            bubbles.insert("measure".into(), json!([{"src": src}]));
+            Some(name.to_string())
         }
+        _ => None,
+    };
+    if let Some(name) = measured {
+        let mut named = Map::new();
+        named.insert(src, json!(name));
+        fill["knobs"]["named"] = Value::Object(named);
     }
     let title = zh.unwrap_or_else(|| main.title.clone());
     // no years here: the leaf footer marks only the table ids (spec.refs) and refuses any other digit in the line

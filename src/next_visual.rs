@@ -241,6 +241,16 @@ fn fill<'a>(
             ledger.insert(name_src(code), name.to_string());
         }
     }
+    // the names of the page's own data that are no place (knobs.named, name row -> text: a table's reviewed title, which the
+    // map's key prints), marked and held to their entry the same way; anything but a name row with a text refuses
+    for (src, name) in knobs["named"].as_object().into_iter().flatten() {
+        match name.as_str() {
+            Some(name) if src.starts_with(crate::next_ledger::LABEL_SRC) => {
+                ledger.insert(src.clone(), name.to_string());
+            }
+            _ => return Err(format!("fill: knobs.named {src} is no name row ({}...) with a text", crate::next_ledger::LABEL_SRC)),
+        }
+    }
     // the map points the leaves draw places at (knobs.points, the flow's from the pinned table), kept as ledger entries
     // with the page's request: never printed, there for a replay of that table
     let points = &knobs["points"];

@@ -292,8 +292,10 @@ def cl_bubbles(f, occ):
 
 # bubble_key: the key to the circles, drawn right after the bubbles on every page that draws them (knobs.py WITH). Its words, the
 # word table's bubble_key.area: what a circle's area is (hero.leaves.bubbles.measure, the measure's own name as layer 1 gives it,
-# segments; without one, or one that takes more than KEY_LINES lines of `width`, bubble_key.area_any) at the map's year (the
-# panel's period entry, kept on one line with its word); under them up to `count` reference circles side by side on one bottom
+# segments: the table's reviewed name, one entry marked with its name row) at the map's year (the panel's period entry, kept on
+# one line with its word). Every line holds a source (layer 1 takes no svg text without one): a line of words alone joins the
+# next. Without a measure, or with one that takes more than KEY_LINES lines or a line wider than the map's rect holds,
+# bubble_key.area_any. Under the words up to `count` reference circles side by side on one bottom
 # line, each drawn at the radius one of the map's circles was drawn at by its area (occ.scale, never a lifted one) and labelled
 # under it with that circle's own ledger entry and the unit its family prints with (facts.unit): the largest, then the ones
 # nearest a quarter and a sixteenth of its area, one within KEY_SAME px of a radius kept left out. No number is the key's own.
@@ -302,7 +304,7 @@ def cl_bubbles(f, occ):
 # its words keep their contrast over the land. With no free box there, under the map, in the room the panel keeps for it
 # (key_room, run.Panel; the panel's map_h then grows to hold it); with no such room the key is dropped and named ("key", "no free
 # place for the key"). The box is claimed in the Occ (layer bubble_key), so the leader notes drawn after it keep clear of it.
-# Reads: the panel's frame f (its hero h, the table and year its map is drawn at, the page spec c.spec, its height H and map_h) and
+# Reads: the panel's frame f (its hero h, the table and year its map is drawn at, the page spec c.spec, its map view mv, height H and map_h) and
 # occ.scale; a key with no bubbles drawn before it refuses.
 prod.KNOBS["bubble_key"] = dict(
     size=(12, (11, 16, 0.5), "key text size px"),
@@ -346,15 +348,28 @@ def lay_units(units, size, max_w):
     return lines + [line] * bool(line)
 
 
+def sourced(lines):
+    """The lines with each line that holds no source (words alone) joined to the next one, the last such to the one before."""
+    out = []
+    for ln in lines:
+        if out and not any(s for _, s in out[-1]): out[-1] = out[-1] + ln
+        else: out.append(ln)
+    if len(out) > 1 and not any(s for _, s in out[-1]): out[-2:] = [out[-2] + out[-1]]
+    return out
+
+
 def key_lines(f):
-    """The key's words in lines at the width knob: bubble_key.area with the measure the bubbles' entry names, or bubble_key.area_any
-    without one or when that takes more than KEY_LINES lines; the year (date.y over the map's period entry) on one line."""
+    """The key's words in lines at the width knob, each holding a source (sourced): bubble_key.area with the measure the bubbles'
+    entry names, or bubble_key.area_any without one, or when that takes more than KEY_LINES lines or a line wider than the map's
+    rect holds (its width less the inset, KEY_GAP and KEY_PAD on both sides); the year (date.y over the map's period entry) on one line."""
     h = f.h; d = (h.get("leaves") or {}).get("bubbles") or {}
     sz, width = K.knob(h, KEY, "size"), K.knob(h, KEY, "width")
     if K.WD.WORDS["date.y"].count("{y}") != 1 or not K.WD.WORDS["date.y"].startswith("{y}"): raise Refused("bubble_key: the word date.y does not start with its year")
     year = (True, [{"src": f"period:{f.table}:{f.year}"}, *[{"w": w} for w in K.WD.WORDS["date.y"].split("{y}") if w]])
-    lines = lay_units(word_units("bubble_key.area", m=(False, d["measure"]), y=year), sz, width) if d.get("measure") else None
-    return lines if lines and len(lines) <= KEY_LINES else lay_units(word_units("bubble_key.area_any", y=year), sz, width)
+    most = f.mv.W - 2 * (K.knob(h, NODE, "inset") + KEY_GAP + KEY_PAD)
+    lines = sourced(lay_units(word_units("bubble_key.area", m=(False, d["measure"]), y=year), sz, width)) if d.get("measure") else None
+    if lines and len(lines) <= KEY_LINES and all(tw("".join(t for t, _ in ln).rstrip(), sz) <= most for ln in lines): return lines
+    return sourced(lay_units(word_units("bubble_key.area_any", y=year), sz, width))
 
 
 def key_room(f):

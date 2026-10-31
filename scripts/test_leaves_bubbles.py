@@ -337,13 +337,17 @@ class MapExtent(unittest.TestCase):
 KQ1 = dict(SE=66.4, FI=50.8, DK=44.9, LV=43.2, EE=38.5, PT=35.2, AT=33.8, LT=31.9, HR=28.1, RO=25.8, SI=25.1, EL=25.3, ES=24.9, FR=22.2,
            DE=21.5, IT=19.6, BG=22.5, CZ=18.6, PL=16.6, SK=17.0, CY=20.2, NL=17.4, HU=15.2, MT=15.1, IE=15.3, BE=14.7, LU=11.6)  # test-only
 KSPEC = {"facts": {"val": {"each": "geo", "table": "T", "time": "2025", "fmt": "pc"}}, "fmts": {"pc": {"scale": 1, "dec": 1, "suffix": "%"}}}
+# the measure as layer 1 gives it (next_run recipe_request): the table's reviewed name, one entry marked with its name row, its
+# text in the page's ledger (knobs.named); the q1 table's name, longer than one line of the key
+KNAME = {"src": "name:catalogue:T:title", "text": "可再生能源在最终能源消费总量中的占比（按部门）"}
 
 
-def key_panel(measure=None, notes=(), panel_h=None, **key_style):
+def key_panel(measure=None, notes=(), panel_h=None, more=(), **key_style):
     """The column page's map panel as run.py draws it: the bubbles (run.LEAF_LAYERS, the hero's focus its notes' places), then the
-    key over the panel's frame (table, year, spec, height), on one Occ. Returns (panel, occ, bubbles svg)."""
+    key over the panel's frame (table, year, spec, map view, height: the map's and the key's room under it, as run.Panel keeps it,
+    or `panel_h`), on one Occ. Returns (panel, occ, bubbles svg)."""
     iso3, zh2 = dict(ISO3, EL="GRC"), dict(ZH2, EL=ZH2["GR"])
-    rows, items = [{"src": "period:T:2025", "text": "2025"}], []
+    rows, items = [{"src": "period:T:2025", "text": "2025"}, KNAME, *more], []
     for c, v in KQ1.items():
         rows += [{"src": f"series:T/{c}:2025:OBS_VALUE", "table": "T", "dims": {"geo": c}, "time": "2025", "value": v},
                  {"src": f"fact:val.{c}.n", "text": f"{v:.1f}"}]
@@ -353,15 +357,16 @@ def key_panel(measure=None, notes=(), panel_h=None, **key_style):
     leaves = {"bubbles": dict(items=items, ext=ext, **({"measure": measure} if measure else {}))}
     if notes: leaves["leader_notes"] = {"ext": ext, "notes": [{"at": POINT[iso3[c]], "name": c} for c in notes]}
     h = {"leaves": leaves, "data": {"marks": []}, "style": {"bubble_key": key_style} if key_style else {}}
-    mh = bubbles.MK.View({"data": leaves["bubbles"], "style": run.MAP_STYLE}, "bubbles").H
-    panel = types.SimpleNamespace(h=h, table="T", year="2025", c=types.SimpleNamespace(spec=KSPEC), H=panel_h or mh, map_h=mh)
+    mv = bubbles.MK.View({"data": leaves["bubbles"], "style": run.MAP_STYLE}, "bubbles"); mh = mv.H
+    panel = types.SimpleNamespace(h=h, table="T", year="2025", c=types.SimpleNamespace(spec=KSPEC), mv=mv, H=mh, map_h=mh)
+    panel.H = mh + bubbles.key_room(panel) if panel_h is None else panel_h  # as run.Panel keeps it under the map, unless given
     occ = prod.Occ(); svg = run.LEAF_LAYERS["bubbles"][0](panel, occ)
     return panel, occ, svg
 
 
 class Key(unittest.TestCase):
     """The key to the circles (bubble_key), drawn after the bubbles over the column page's map panel."""
-    MEASURE = [{"w": "可再生能源占最终能源消费比重"}]  # test-only: a measure's reviewed name as layer 1 gives it
+    MEASURE = [{"src": KNAME["src"]}]
 
     def draw_key(self, panel, occ):
         run.DROPPED.clear()
@@ -373,11 +378,15 @@ class Key(unittest.TestCase):
         self.assertEqual((check_svg(svg), run.DROPPED), ([], []))
         texts = run.drawn(svg)[0]
         words = [t for t in texts if not t["src"].startswith("fact:")]
-        # the words: the word table's bubble_key.area, the measure's own name and the year as date.y prints it, its digits the
-        # period entry the unit line prints; wrapped at the width knob, none past it
-        self.assertEqual("".join(t["text"] for t in words), K.WD.WORDS["bubble_key.area"].format(m=self.MEASURE[0]["w"], y=K.WD.WORDS["date.y"].format(y="2025")))
-        self.assertEqual({t["src"] for t in words} - {""}, {"period:T:2025"})
-        self.assertTrue(all(prod.tw(t["text"], 12) <= prod.KNOBS["bubble_key"]["width"][0] for t in words))
+        # the words: the word table's bubble_key.area, the measure's own name marked with its name row (whole: an entry prints
+        # as its ledger gives it) and the year as date.y prints it, its digits the period entry the unit line prints; every line
+        # holds a source, as layer 1 takes an svg text (next_leaf faults: "has no src"), and none is wider than the map's rect holds
+        self.assertEqual("".join(t["text"] for t in words), K.WD.WORDS["bubble_key.area"].format(m=KNAME["text"], y=K.WD.WORDS["date.y"].format(y="2025")))
+        self.assertEqual({p for t in words for p in t["src"].split("+")}, {KNAME["src"], "period:T:2025"})
+        self.assertEqual([t["text"] for t in texts if not t["src"]], [])
+        self.assertIn(f'<tspan data-src="{KNAME["src"]}">{KNAME["text"]}</tspan>', svg)
+        most = panel.mv.W - 2 * (prod.KNOBS["bubbles"]["inset"][0] + bubbles.KEY_GAP + bubbles.KEY_PAD)
+        self.assertTrue(all(prod.tw(t["text"], 12) <= most for t in words))
         # each value: the map circle's own ledger entry, then its family's unit; the largest the map's largest, at r_used
         values = [t for t in texts if t["src"].startswith("fact:")]
         self.assertEqual([(t["src"], t["text"]) for t in values][0], ("fact:val.SE.n", "66.4%"))
@@ -389,11 +398,26 @@ class Key(unittest.TestCase):
         self.assertEqual(refs[0], occ.scale["r_used"])
         for t, r in zip(values, refs):
             self.assertEqual(r, drawn[t["src"].split(".")[1]], t)  # each reference circle at its own circle's radius on the map
-        # its box is claimed, inside the land's rect, off every circle and label the bubbles claimed
+        # its box is claimed off every circle and label the bubbles claimed: inside the land's rect, or (this one: the q1 name on one
+        # line takes the key wider than any free box on the EU map) under the map in the room the panel keeps, the map grown to it
         box = next(q for q in occ.boxes if q[4] == "bubble_key")
         x0, y0, x1, y1 = occ.scale["rect"]
-        self.assertTrue(x0 <= box[0] and y0 <= box[1] and box[2] <= x1 and box[3] <= y1, box)
+        inside = x0 <= box[0] and y0 <= box[1] and box[2] <= x1 and box[3] <= y1
+        self.assertTrue(inside or (box[1] > occ.scale["H"] and panel.map_h >= box[3] and box[3] <= panel.H), box)
         self.assertFalse(any(box[0] < q[2] and q[0] < box[2] and box[1] < q[3] and q[1] < box[3] for q in occ.boxes if q[4] == "bubbles"))
+
+    def test_a_line_of_words_alone_joins_the_next_so_every_key_text_holds_a_source(self):
+        # a measure given as words (no mark) wraps into a line with no entry in it: it joins the line after it, so no text of
+        # the key reaches layer 1 without a source; with the width knob at its floor the same; and a measure too wide for the
+        # map's rect on any line gives the words without it
+        for measure, st in (([{"w": KNAME["text"]}], {}), ([{"w": KNAME["text"]}], {"width": 120}), (self.MEASURE, {"width": 120})):
+            panel, occ, _ = key_panel(measure, **st)
+            texts = run.drawn(self.draw_key(panel, occ))[0]
+            self.assertEqual([t["text"] for t in texts if not t["src"]], [], (measure, st))
+        panel, occ, _ = key_panel([{"src": "name:catalogue:T:wide"}], more=[{"src": "name:catalogue:T:wide", "text": KNAME["text"] * 3}])
+        texts = run.drawn(self.draw_key(panel, occ))[0]
+        self.assertEqual("".join(t["text"] for t in texts if not t["src"].startswith("fact:")),
+                         K.WD.WORDS["bubble_key.area_any"].format(y=K.WD.WORDS["date.y"].format(y="2025")))
 
     def test_without_a_measure_the_key_says_what_the_area_is_at_the_year(self):
         panel, occ, _ = key_panel()
@@ -405,10 +429,11 @@ class Key(unittest.TestCase):
         self.assertEqual(self.draw_key(panel, occ).count('fill="none"'), 1)
 
     def test_with_no_free_box_on_the_map_the_key_goes_under_it_or_is_dropped_and_named(self):
-        # the whole map claimed: with the panel taller than the map (the bars' rows) the key stands under the map, which grows to
-        # hold it; with no room there it is dropped, named, and the layer drawn empty
+        # the whole map claimed: in the room the panel keeps under the map (run.Panel) the key stands under it, the map growing to
+        # hold it; with no room there (a panel of the map's height) it is dropped, named, and the layer drawn empty
         for taller in (True, False):
-            panel, occ, _ = key_panel(panel_h=1000 if taller else None)
+            panel, occ, _ = key_panel()
+            if not taller: panel.H = panel.mv.H
             occ.add((0, 0, occ.scale["W"], occ.scale["H"]), "test")
             svg = self.draw_key(panel, occ)
             if taller:
