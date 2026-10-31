@@ -1754,13 +1754,29 @@ const FLOW_OTHER: [(&str, &str); 2] = [("其他来源", "其他来源包括：")
 /// fetched beside them, sankey_fill), so the page says so once.
 const FLOW_SUM_WORDS: &str = "各节点的数值是与其相连的各条流向之和";
 
+/// The words around the count of the flows that are zero, after FLOW_SUM_WORDS in the footnote: 另有 N 个组合为零, N the
+/// fact FLOW_ZEROS (op zeros), never a digit typed here.
+const FLOW_ZERO_WORDS: (&str, &str) = ("；另有 ", " 个组合为零");
+
+/// The fact counting a flow picture's zero flows (op zeros over the flow's rows at its year).
+const FLOW_ZEROS: &str = "zero_flows";
+
+/// The name rows a flow picture's own words are marked with (every svg text names a source, next_leaf faults), each held to
+/// its text in the ledger (knobs.named): the head is the registry's flow heading, the unit the unit's registered short form
+/// (unit-short-zh.tsv), the footnote FLOW_SUM_WORDS.
+fn flow_word_srcs(unit: &str) -> [String; 3] {
+    [format!("{LABEL_SRC}frames:flow"), format!("{LABEL_SRC}unit_short_zh:{unit}"), format!("{LABEL_SRC}flow_words:sum")]
+}
+
 /// The flow across the page (hero.leaves.sankey, as runtime/leaves_py/sankey.py reads it), program rules over the shape
-/// official_flow read: one flow per row of the main at the flow's year, its width that row's series; each drawn node's value a
+/// official_flow read: one flow per row of the main at the flow's year above zero, its width that row's series (a flow of 0
+/// is data, not a loss: it is left out of the picture, read by the fact FLOW_ZEROS, which keeps each one in the ledger with
+/// its series src, and counted in one line under the picture, FLOW_ZERO_WORDS); each drawn node's value a
 /// fact the visual group computes as the sum of its rows (op value over the node's code), printed bare (.n), the unit written
 /// once in the picture's head (unit_drawn) and the hero's year line its table and year. On a side, the nodes whose sum is
 /// under the knob sankey.min_share of all the flows merge into one other node when two or more do (their sum one fact over
-/// their codes, their names listed under the picture); a node whose flows are all zero is given as its flows (the leaf
-/// draws no band and drops each, said); a registered leaf the main has no row of is named empty (the leaf drops it, said).
+/// their codes, their names listed under the picture); a code whose flows are all zero is no node (its flows are counted);
+/// a registered leaf the main has no row of is named empty (the leaf drops it, said).
 /// The names are the knowledge group's name table's for each dimension (the leaf marks each with its name row
 /// name:zh_names:<dimension>:<code>); a code it names none of refuses, never printed as its code or in English. No total of
 /// either side is fetched (each would take the fetch past a chart's rows), so the nodes' values are the program's sums, which
@@ -1783,15 +1799,26 @@ fn sankey_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
     if total <= 0.0 {
         return Err(format!("sankey: main {main} holds no flow above zero at {year}"));
     }
-    if f.short.chars().any(|c| c.is_ascii_digit()) {
-        return Err(format!("sankey: the unit {} holds a digit, and the picture's head prints words only", f.short));
-    }
+    let (zeros, flows): (Vec<&Value>, Vec<&Value>) = flows.into_iter().partition(|r| row_value(r) == Some(0.0));
     out.rows(flows.iter().map(|r| (*r).clone()));
+    // the zero flows are only read: the fact that counts them prints, never their values
+    out.reads(zeros.iter().map(|r| (*r).clone()));
     Filled::set(&mut out.fmts, "format", fmt, json!({"scale": 1, "dec": held_decimals(&flows), "suffix": suffix(f.short)}))?;
     let min_share = f.catalogue.knob("sankey", "min_share")?;
     let id = main.strip_suffix("@2").unwrap_or(main);
-    let mut data = json!({"title": [{"w": flow_heading()?}], "unit": [{"w": f.short}], "source_kind": source,
-        "target_kind": target, "footnote": [{"w": FLOW_SUM_WORDS}]});
+    let [head_src, unit_src, sum_src] = flow_word_srcs(&shape.unit);
+    for (src, text) in [(&head_src, flow_heading()?), (&unit_src, f.short), (&sum_src, FLOW_SUM_WORDS)] {
+        out.named.insert(src.clone(), json!(text));
+    }
+    let mut footnote = vec![json!({"src": sum_src})];
+    if !zeros.is_empty() {
+        let q = json!({"op": "zeros", "table": main, "time": year, "fmt": "n"});
+        Filled::set(&mut out.facts, "fact", FLOW_ZEROS, q)?;
+        let (before, after) = FLOW_ZERO_WORDS;
+        footnote.extend([json!({"w": before}), json!({"src": format!("fact:{FLOW_ZEROS}.n")}), json!({"w": after})]);
+    }
+    let mut data = json!({"title": [{"src": head_src}], "unit": [{"src": unit_src}], "source_kind": source,
+        "target_kind": target, "footnote": footnote});
     data["flows"] = flows
         .iter()
         .map(|r| json!({"source": r["dims"][source], "target": r["dims"][target], "value": r["src"]}))
@@ -1826,7 +1853,8 @@ fn sankey_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
             data[format!("other_{side}")] = json!({"name": [{"w": other}], "members": merged, "value_text": format!("fact:{key}.n"),
                 "members_head": [{"w": head}]});
         }
-        let held: Vec<&str> = sums.iter().map(|(c, _)| c.as_str()).collect();
+        // a code with rows, zero ones included, is held; only one with no row at all is empty
+        let held: Vec<&str> = flows.iter().chain(&zeros).filter_map(|r| r["dims"][dim].as_str()).collect();
         let none: Vec<String> = next_params::flow_parts(id, dim).into_iter().map(|p| p.code).filter(|c| !held.contains(&c.as_str())).collect();
         if !none.is_empty() {
             empty.insert(side.to_string(), json!(none));
@@ -6299,12 +6327,14 @@ mod tests {
     }
 
     /// q2 (德国能源从来源到各部门) on its flow fetch: the flow recipe reads the registered pair siec -> nrg_bal, one unit and one
-    /// year, and its sankey node fills the picture by program rules: 69 flows, each width a series row; each node's value a
-    /// fact the visual group sums from its rows (no reported total is fetched); the fuels and sectors under min_share (3%)
-    /// merged into one other node per side, named under the picture; nuclear heat, a registered leaf with no row, named
-    /// empty; names from the name table of each dimension; the unit in the picture's head only. The real leaf child draws it,
-    /// the twins bake and check it, and the page is published with every zero flow and the empty node in its ledger as
-    /// dropped, which the page check notes_dropped then counts.
+    /// year, and its sankey node fills the picture by program rules: of the 69 rows, the 32 above zero are flows, each width a
+    /// series row; the 37 zero ones are left out of the picture, counted by a fact (each in the ledger with its series src) and
+    /// said in one line under it; each node's value a fact the visual group sums from its rows (no reported total is
+    /// fetched); the fuels and sectors under min_share (3%) merged into one other node per side, named under the picture;
+    /// nuclear heat, a registered leaf with no row, named empty; names from the name table of each dimension; the unit in the
+    /// picture's head only, every word of the picture marked with its name row. The real leaf child draws it, the twins bake
+    /// and check it, and the page is published with the empty node alone dropped in its ledger: notes_dropped counts it, and
+    /// no zero flow.
     #[test]
     fn q2_s_flow_rows_fill_a_sankey_page_whose_every_number_is_a_sum_layer_1_computes() {
         let main = q2_flow_rows("nrg_bal_s");
@@ -6322,8 +6352,9 @@ mod tests {
         let spec = &fill["knobs"]["spec"];
         let data = &spec["hero"]["leaves"]["sankey"];
         let flows = data["flows"].as_array().unwrap();
-        assert_eq!(flows.len(), 69);
-        assert_eq!(flows[0], json!({"source": main[0]["dims"]["siec"], "target": main[0]["dims"]["nrg_bal"], "value": main[0]["src"]}));
+        assert_eq!(flows.len(), 32);
+        let first = main.iter().find(|r| row_value(r) != Some(0.0)).unwrap();
+        assert_eq!(flows[0], json!({"source": first["dims"]["siec"], "target": first["dims"]["nrg_bal"], "value": first["src"]}));
         let nodes: BTreeSet<&str> = data["node_text"].as_object().unwrap().keys().map(String::as_str).collect();
         assert_eq!(
             nodes,
@@ -6338,12 +6369,16 @@ mod tests {
         assert!(data["other_source"].get("value").is_none(), "no series holds the merged sum");
         assert_eq!(data["other_target"]["name"], json!([{"w": "其他去向"}]));
         assert_eq!(data["empty"], json!({"source": ["N900H"]}));
-        assert_eq!(data["title"], json!([{"w": "从来源到去向"}]));
-        assert_eq!(data["unit"], json!([{"w": "千吨油当量"}]));
-        assert_eq!(data["footnote"], json!([{"w": FLOW_SUM_WORDS}]));
+        assert_eq!(data["title"], json!([{"src": "name:frames:flow"}]));
+        assert_eq!(data["unit"], json!([{"src": "name:unit_short_zh:KTOE"}]));
+        assert_eq!(data["footnote"], json!([{"src": "name:flow_words:sum"}, {"w": "；另有 "}, {"src": "fact:zero_flows.n"}, {"w": " 个组合为零"}]));
+        for (src, text) in [("name:frames:flow", "从来源到去向"), ("name:unit_short_zh:KTOE", "千吨油当量"), ("name:flow_words:sum", FLOW_SUM_WORDS)] {
+            assert_eq!(fill["knobs"]["named"][src], text);
+        }
         assert_eq!((data["source_kind"].as_str(), data["target_kind"].as_str()), (Some("siec"), Some("nrg_bal")));
         let facts = spec["facts"].as_object().unwrap();
-        assert_eq!(facts.len(), 11, "{facts:?}");
+        assert_eq!(facts.len(), 12, "{facts:?}");
+        assert_eq!(facts[FLOW_ZEROS], json!({"op": "zeros", "table": "nrg_bal_s", "time": "2024", "fmt": "n"}));
         assert_eq!(facts["from.G3000"], json!({"op": "value", "table": "nrg_bal_s", "filter": {"siec": "G3000"}, "time": "2024", "fmt": "ktoe"}));
         assert_eq!(facts["to_other"]["filter"], json!({"nrg_bal": ["FC_OTH_AF_E", "FC_OTH_FISH_E", "FC_OTH_NSP_E"]}));
         assert_eq!(spec["fmts"]["ktoe"], json!({"scale": 1, "dec": 2, "suffix": " 千吨油当量"}));
@@ -6354,7 +6389,7 @@ mod tests {
         assert_eq!(fill["knobs"]["named"]["name:zh_names:nrg_bal:FC_OTH_FISH_E"], "名FC_OTH_FISH_E");
         assert_eq!(fill["knobs"]["labels"]["W6100_6220"], "名W6100_6220");
         let drawn: Vec<&str> = fill["drawn"].as_array().unwrap().iter().map(|d| d["layer"].as_str().unwrap()).collect();
-        assert_eq!((drawn.len(), drawn.iter().all(|l| *l == "sankey")), (69, true));
+        assert_eq!((drawn.len(), drawn.iter().all(|l| *l == "sankey")), (32, true), "the zero rows are read, never printed");
 
         page_words(&mut fill, ("标题", "导语", "栏目"));
         fill["knobs"]["spec"]["source"] = json!("来源");
@@ -6380,6 +6415,11 @@ mod tests {
         }
         let gas = page.facts.iter().find(|f| f.key == "from.G3000").unwrap();
         assert_eq!(gas.reads.len(), 7, "one row per sector leaf");
+        let zeros = page.facts.iter().find(|f| f.key == FLOW_ZEROS).unwrap();
+        assert_eq!((zeros.v, zeros.reads.len()), (37.0, 37));
+        let kept: Vec<&String> = page.ledger.keys().filter(|k| k.starts_with(crate::next_facts::ZERO_SRC)).collect();
+        assert_eq!(kept.len(), 37);
+        assert!(zeros.reads.iter().all(|src| page.ledger.get(&format!("{}{src}", crate::next_facts::ZERO_SRC)).map(String::as_str) == Some("0")));
         let dir = tempfile::tempdir().unwrap();
         let bundle = {
             let _command = crate::group_guard::command_for_test("investigate");
@@ -6410,14 +6450,12 @@ mod tests {
             assert!(html.contains(&format!(r#"data-src="{src}""#)), "{src}");
         }
         assert!(html.contains("其他来源包括：") && html.contains(FLOW_SUM_WORDS), "the members and the footnote are said");
-        // every zero flow (37, peat's and oil shale's among them) and nuclear heat are dropped, each said in the ledger
-        let dropped: BTreeMap<&str, &str> = published.dropped.iter().map(|(what, why)| (what.as_str(), why.as_str())).collect();
-        assert_eq!(dropped.len(), 38, "{dropped:?}");
-        assert_eq!(dropped.get("dropped:sankey:N900H"), Some(&"no row"));
-        assert_eq!(dropped.values().filter(|w| **w == "zero").count(), 37);
+        assert!(html.contains(r#"data-src="fact:zero_flows.n">37</tspan> 个组合为零"#), "the zero flows are counted under the picture");
+        // nuclear heat alone is dropped (no row); the zero flows (peat's and oil shale's among them) are data, never dropped
+        assert_eq!(published.dropped, [("dropped:sankey:N900H".to_string(), "no row".to_string())]);
         let checks = page_checks(flow, Some(html.as_str()), &published.dropped, StripAsk::default(), fill["drawn"].as_array().unwrap(), None);
         let notes = checks.iter().find(|c| c.name == "notes_dropped").unwrap();
-        assert_eq!((notes.passed, &notes.measured["count"]), (false, &json!(38)));
+        assert_eq!((notes.passed, &notes.measured["items"]), (false, &json!(["dropped:sankey:N900H"])));
         assert!(checks.iter().find(|c| c.name == "same_numbers_twice").unwrap().passed);
     }
 
@@ -6460,7 +6498,10 @@ mod tests {
             fill["knobs"]["spec"]["hero"]["leaves"]["sankey"]["node_text"].as_object().unwrap().keys().cloned().collect()
         };
         let (c, s) = (q2_flow_rows("nrg_bal_c"), q2_flow_rows("nrg_bal_s"));
-        assert_eq!(nodes(&filled("nrg_bal_c", &c, &Hubs).unwrap()), nodes(&filled("nrg_bal_s", &s, &Hubs).unwrap()));
+        let of_c = filled("nrg_bal_c", &c, &Hubs).unwrap();
+        assert_eq!(nodes(&of_c), nodes(&filled("nrg_bal_s", &s, &Hubs).unwrap()));
+        assert_eq!(of_c["knobs"]["spec"]["facts"][FLOW_ZEROS]["table"], "nrg_bal_c");
+        assert_eq!(of_c["knobs"]["spec"]["hero"]["leaves"]["sankey"]["flows"].as_array().unwrap().len(), 32);
         let no = |id: &str, rows: &[Value]| shape_for(id, rows).unwrap_err();
         let fc_e = include_str!("../scripts/fixtures/data_prepare/nrg_bal_c_DE_2024_FC_E.tsv");
         let fuels: Vec<String> = next_params::flow_parts("nrg_bal_c", "siec").into_iter().map(|p| p.code).collect();
@@ -6504,6 +6545,9 @@ mod tests {
         assert!(data.get("other_source").is_none() && data.get("other_target").is_none());
         assert_eq!(data["empty"]["target"].as_array().unwrap().len(), 5);
         assert_eq!(fill["knobs"]["spec"]["fmts"]["ktoe"]["dec"], 0);
+        // no flow of 0: nothing to count, and the footnote is the sum line alone
+        assert!(fill["knobs"]["spec"]["facts"].get(FLOW_ZEROS).is_none());
+        assert_eq!(data["footnote"], json!([{"src": "name:flow_words:sum"}]));
         // no Chinese name for a fuel: the fill refuses, naming the codes, never printing a code or an English name
         let why = filled("nrg_bal_s", &small, &NoNamesOf("siec")).unwrap_err();
         assert_eq!(why, "not this shape: sankey: the name table gives no Chinese name for siec G3000, E7000, H8000");

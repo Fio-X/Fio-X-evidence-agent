@@ -1,5 +1,5 @@
 //! New route, visual group: the page's facts, computed and formatted here so a second-layer leaf only prints the text it is
-//! handed. A fact is a declared query: an op over the request's rows (value, mean, peak, low, last, count, rest, n) or over two
+//! handed. A fact is a declared query: an op over the request's rows (value, mean, peak, low, last, count, rest, n, zeros) or over two
 //! other facts (share, change, times, minus, plus); nothing names a topic. Ported from the gas-1027 prototype's facts.py,
 //! whose output the tests compare text for text.
 //! A fact family (`each`: a dimension) is one value fact per code of that dimension, keyed `<family>.<code>`; the codes
@@ -22,6 +22,10 @@ pub const PERIOD_SRC: &str = "period:";
 
 /// Where a sourced record's cell is: `record:<table>/<i>` the row, then `:<column>` and `.y`, `.m`, `.d` a date's parts.
 pub const RECORD_SRC: &str = "record:";
+
+/// Where a row a `zeros` fact counted is kept in the ledger: `zero:<its series src>`, its text the row's value, one entry per
+/// row, so each flow a picture leaves out as zero is on record with the cell it was read from (never printed).
+pub const ZERO_SRC: &str = "zero:";
 
 /// Where a series row was read (the series, its row key, period and column): what makes its table one a page dates.
 const SERIES_SRC: &str = "series:";
@@ -398,6 +402,17 @@ fn one(
                 .iter()
                 .flat_map(|(_, _, s)| s.iter().cloned())
                 .collect();
+        }
+        // how many of the selected rows hold 0 at `time`: the flows a picture leaves out as zero, each one read
+        "zeros" => {
+            let time = word(key, &q["time"], "time")?;
+            let at: Vec<&Row> = picked.into_iter().filter(|r| r.time == time && r.value == 0.0).collect();
+            if at.is_empty() {
+                return Err(format!("{key}: zeros has no row of 0 at {time}"));
+            }
+            f.v = at.len() as f64;
+            f.n = Some(at.len());
+            f.reads = at.iter().map(|r| r.src.clone()).collect();
         }
         // how many codes of `by` the selected rows hold at `time`: the places a chart draws, counted from its own rows
         "n" => {
@@ -945,6 +960,13 @@ pub fn leaf_ledger(
             match ticks(f, &spec.fmts) {
                 Ok(ts) => out.extend(ts.into_iter().map(|n| (n.src, n.text))),
                 Err(e) => off.push(e),
+            }
+        }
+        // each row a zeros fact counted, under its series src
+        if f.op == "zeros" {
+            for src in &f.reads {
+                let v = rows.iter().find(|r| r.src == *src).map_or(0.0, |r| r.value);
+                out.insert(format!("{ZERO_SRC}{src}"), v.to_string());
             }
         }
         if f.t.is_some() {
