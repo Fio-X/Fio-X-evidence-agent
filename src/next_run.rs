@@ -5004,7 +5004,7 @@ mod tests {
             (main, monthly, shape, picks)
         };
         let (main, monthly, shape, picks) = rows("MIO_M3");
-        let fill = ring_fill(&shape, &picks, (&main, &monthly), &Hubs, ("标题", "导语"), false).unwrap();
+        let fill = ring_fill(&shape, &picks, (&main, &monthly), &Hubs, ("标题", "导语")).unwrap();
         // the fill byte for byte as the ring filled it before the recipe registry (10-29): a move onto the registry changes none
         // (what the visual group is sent; `drawn`, each layer's printed rows, and the dek's `finding` stay with the flow, for
         // its page checks and the text step's draft)
@@ -5261,7 +5261,7 @@ mod tests {
         let started = std::time::Instant::now();
         let (main, monthly, catalogue, shape, claims) = gas_fixture();
         let picks = ring_picks(&shape, &main, &claims).unwrap();
-        let fill = ring_fill(&shape, &picks, (&main, &monthly), &catalogue, ("标题", "导语"), false).unwrap();
+        let fill = ring_fill(&shape, &picks, (&main, &monthly), &catalogue, ("标题", "导语")).unwrap();
         // FILL_OUT: where to write the filled request, for the scan of its numbers
         if let Ok(out) = std::env::var("FILL_OUT") {
             std::fs::write(out, fill.to_string()).unwrap();
@@ -6096,7 +6096,7 @@ mod tests {
     fn the_gas_ring_page_through_the_leaf_children() {
         let (main, monthly, catalogue, shape, claims) = gas_fixture();
         let picks = ring_picks(&shape, &main, &claims).unwrap();
-        let mut fill = ring_fill(&shape, &picks, (&main, &monthly), &catalogue, ("标题", "导语"), false).unwrap();
+        let mut fill = ring_fill(&shape, &picks, (&main, &monthly), &catalogue, ("标题", "导语")).unwrap();
         fill["knobs"]["shapes"] = json!("runtime/pi/assets/naturalearth-admin0-50m.geojson");
         let order: Vec<String> = fill["order"].as_array().unwrap().iter().filter_map(|l| l.as_str().map(str::to_string)).collect();
         let calls = std::sync::Mutex::new(Vec::new());
