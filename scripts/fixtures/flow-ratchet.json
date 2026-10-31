@@ -1,0 +1,81 @@
+{
+  "measured_at": "4494b5fda6b700dd6ff372c74bba059a5b2dbd86",
+  "rules": "scripts/test_group_flow_ratchet.mjs header; totals and per_file may only go down",
+  "totals": {
+    "new": {
+      "nodes": 23,
+      "ops": 30,
+      "copy": 143,
+      "kinds": 164
+    },
+    "old": {
+      "nodes": 0,
+      "ops": 0,
+      "copy": 224,
+      "kinds": 171
+    }
+  },
+  "scanned": {
+    "new": 11,
+    "old": 43
+  },
+  "per_file": {
+    "runtime/pi/assets/estat-narrow.json": {
+      "copy": 6
+    },
+    "runtime/pi/assets/unit-short-zh.tsv": {
+      "copy": 24
+    },
+    "runtime/pi/assets/wb-rank-by.json": {
+      "copy": 8
+    },
+    "runtime/pi/design_pack.mjs": {
+      "copy": 37,
+      "kinds": 33
+    },
+    "runtime/pi/newsroom.ts": {
+      "copy": 15,
+      "kinds": 98
+    },
+    "runtime/pi/tool_host_schema.mjs": {
+      "kinds": 1
+    },
+    "src/commands/continue_investigation.rs": {
+      "copy": 1,
+      "kinds": 3
+    },
+    "src/compose_answer.rs": {
+      "copy": 17
+    },
+    "src/interactive.rs": {
+      "copy": 13
+    },
+    "src/next_gate.rs": {
+      "kinds": 9
+    },
+    "src/next_pack.rs": {
+      "kinds": 1
+    },
+    "src/next_page.rs": {
+      "copy": 3,
+      "kinds": 2
+    },
+    "src/next_params.rs": {
+      "copy": 4
+    },
+    "src/next_run.rs": {
+      "nodes": 23,
+      "ops": 30,
+      "copy": 98,
+      "kinds": 152
+    },
+    "src/prompt.rs": {
+      "copy": 65,
+      "kinds": 30
+    },
+    "src/recipes.rs": {
+      "copy": 76,
+      "kinds": 6
+    }
+  }
+}
