@@ -11,6 +11,444 @@
    "zh": "可再生能源在最终能源消费总量中的占比（按部门）",
    "zh_source": "reviewed",
    "reviewed": "2026-10-30"
+  },
+  {
+   "id": "apri_ap_hia",
+   "zh": "农业生产资料购买价格（绝对价格，旧编码，年度，1969 至 2005 年数据）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "bop_eu6_q",
+   "zh": "欧盟和欧元区国际收支（季度，国际收支手册第六版口径）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "bop_euins6_a",
+   "zh": "欧盟机构国际收支（年度，国际收支手册第六版口径）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "enpe_nrg_rnew",
+   "zh": "可再生能源在最终能源消费总量中的占比——欧洲睦邻政策东部伙伴国",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "enps_nrg_rnew",
+   "zh": "可再生能源在最终能源消费总量中的占比——欧洲睦邻政策南部伙伴国",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "env_ac_ch4fp",
+   "zh": "甲烷排放足迹（二氧化碳当量，FIGARO 应用）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "env_ac_co2fp",
+   "zh": "二氧化碳排放足迹（FIGARO 应用）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "env_ac_ghgfp",
+   "zh": "温室气体排放足迹（二氧化碳当量，FIGARO 应用）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "env_ac_hfcfp",
+   "zh": "氢氟碳化物排放足迹（二氧化碳当量，FIGARO 应用）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "env_ac_pfcfp",
+   "zh": "全氟化碳排放足迹（二氧化碳当量，FIGARO 应用）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "ert_bil_conv_a",
+   "zh": "欧元／欧洲货币单位固定序列换算系数（年度）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "ert_bil_eur_a",
+   "zh": "欧元／欧洲货币单位汇率（年度）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "ert_eff_ic_a",
+   "zh": "工业国有效汇率（年度）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "ert_h_eur_a",
+   "zh": "欧元区原成员国货币对欧元／欧洲货币单位汇率（年度）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "irt_euryld_a",
+   "zh": "欧元区收益率曲线（年度）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "irt_h_cgby_a",
+   "zh": "中央政府债券收益率（年度）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "irt_h_euryld_a",
+   "zh": "欧元区收益率曲线（年度，历史序列）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "irt_h_mr3_a",
+   "zh": "欧元区国家三个月利率（年度）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "irt_lt_gby10_a",
+   "zh": "十年期政府债券收益率（年度）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "irt_lt_mcby_a",
+   "zh": "欧洲经济货币联盟趋同标准序列（年度）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "migr_asyacca",
+   "zh": "按年龄、性别和国籍分列的适用加速程序已处理的庇护申请人（年度汇总）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "migr_asyappctza",
+   "zh": "按类型、国籍、年龄和性别分列的庇护申请人（年度汇总）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "migr_asyappctzm",
+   "zh": "按类型、国籍、年龄和性别分列的庇护申请人（月度）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "migr_asyctz",
+   "zh": "按国籍分列的庇护申请人（年度，截至 2007 年）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "migr_asytpfa",
+   "zh": "按国籍、年龄和性别分列的给予临时保护的决定（年度汇总）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "migr_asyumacca",
+   "zh": "按年龄、性别和国籍分列的适用加速程序已处理的无人陪伴未成年庇护申请人（年度汇总）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "migr_asyumacta",
+   "zh": "按类型、国籍、年龄和性别分列的无人陪伴未成年庇护申请人（年度汇总）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "migr_asyumactm",
+   "zh": "按类型、国籍、年龄和性别分列的无人陪伴未成年庇护申请人（月度）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "migr_asyumtpfa",
+   "zh": "按国籍、年龄和性别分列的给予无人陪伴未成年人临时保护的决定（年度汇总）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "migr_asyumwita",
+   "zh": "按国籍、年龄、性别和撤回类型分列的无人陪伴未成年人撤回的庇护申请（年度汇总）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "migr_asywitha",
+   "zh": "按国籍、年龄、性别和撤回类型分列的撤回的庇护申请（年度汇总）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "migr_asywithm",
+   "zh": "按国籍、年龄、性别和撤回类型分列的撤回的庇护申请（月度）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "nrg_bal_peh",
+   "zh": "按燃料类型分列的电力和衍生热生产",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "nrg_cb_pem",
+   "zh": "按燃料类型分列的净发电量（月度）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "nrg_chdd_a",
+   "zh": "按国家分列的制冷和取暖度日数（年度）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "nrg_chddr2_a",
+   "zh": "按 NUTS 三级区域分列的制冷和取暖度日数（年度）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "nrg_d_cv",
+   "zh": "按部门分列的终端能源消费——热值",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "nrg_d_hhq",
+   "zh": "住户能源消费——数量",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "nrg_ind_cotd",
+   "zh": "可再生能源总占比——详细构成",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "nrg_ind_difec",
+   "zh": "按部门分列的终端能源消费多样性指数",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "nrg_ind_esc",
+   "zh": "人均可用能源、能源供应和终端能源消费",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "nrg_ind_fecf",
+   "zh": "各类燃料在终端能源消费中的占比",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "nrg_ind_pehcf",
+   "zh": "可燃燃料的电力和衍生热总产量",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "nrg_ind_pehnf",
+   "zh": "非可燃燃料的电力和衍生热总产量",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "nrg_ind_ren",
+   "zh": "可再生能源占比",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "nrg_ind_resovsh",
+   "zh": "可再生能源在总占比中的构成",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "nrg_ind_ured",
+   "zh": "电力中的可再生能源占比——详细构成",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "nrg_ind_urhcd",
+   "zh": "供暖和制冷中的可再生能源占比——详细构成",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "nrg_ind_urtd",
+   "zh": "交通运输中的可再生能源占比——详细构成",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "nrg_inf_epct",
+   "zh": "可燃燃料发电装机容量",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "nrg_stk_gas",
+   "zh": "天然气库存水平（年度）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "nrg_te_gas",
+   "zh": "天然气出口（年度）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "nrg_ti_gas",
+   "zh": "天然气进口（年度）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "prc_colc_ext",
+   "zh": "欧盟以外（驻外工作地）生活费校正系数——指数（布鲁塞尔＝100）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "ten00124",
+   "zh": "按部门分列的终端能源消费",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "AG.CON.FERT.PT.ZS@2",
+   "zh": "化肥消费量（占化肥产量的百分比）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "AG.CON.FERT.ZS@2",
+   "zh": "化肥消费量（每公顷耕地千克数）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "AG.LND.AGRI.K2@2",
+   "zh": "农业用地面积（平方公里）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "AG.LND.AGRI.ZS@2",
+   "zh": "农业用地（占土地面积的百分比）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "AG.LND.ARBL.HA.PC@2",
+   "zh": "耕地（人均公顷数）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "EN.GHG.CO2.AG.MT.CE.AR5@2",
+   "zh": "农业二氧化碳排放量（百万吨二氧化碳当量）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "EN.GHG.CO2.FE.MT.CE.AR5@2",
+   "zh": "能源逸散排放的二氧化碳排放量（百万吨二氧化碳当量）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "EN.GHG.CO2.PC.CE.AR5@2",
+   "zh": "不含土地利用、土地利用变化和林业的人均二氧化碳排放量（吨二氧化碳当量／人）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "EN.GHG.CO2.WA.MT.CE.AR5@2",
+   "zh": "废弃物二氧化碳排放量（百万吨二氧化碳当量）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "SL.UEM.NEET.ME.ZS@2",
+   "zh": "不在教育、就业或培训的青年占比（占青年人口的百分比，国际劳工组织模型估计）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "SL.UEM.NEET.ZS@2",
+   "zh": "不在教育、就业或培训的青年占比（占青年人口的百分比）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "SP.POP.6569.FE.5Y@2",
+   "zh": "65 至 69 岁女性人口（占女性人口的百分比）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "SP.POP.65UP.FE.IN@2",
+   "zh": "65岁和65岁以上的人口总数，女性",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "SP.POP.65UP.FE.ZS@2",
+   "zh": "65 岁和 65 岁以上女性人口（占女性人口的百分比）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "SP.POP.65UP.MA.IN@2",
+   "zh": "65 岁和 65 岁以上人口总数，男性",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "SP.POP.65UP.MA.ZS@2",
+   "zh": "65 岁和 65 岁以上男性人口（占男性人口的百分比）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "SP.POP.65UP.TO@2",
+   "zh": "65岁和65岁以上的人口总数",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
+  },
+  {
+   "id": "SP.POP.65UP.TO.ZS@2",
+   "zh": "65岁和65岁以上的人口（占总人口的百分比）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31"
   }
  ]
 }

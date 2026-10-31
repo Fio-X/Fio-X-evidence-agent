@@ -7575,6 +7575,17 @@ mod tests {
         assert_eq!(source_line(false, "x", " ", &[]), "欧盟统计局 x");
     }
 
+    /// The reviewed table names that hold a digit (apri_ap_hia's years, the World Bank's 65) come through the knowledge
+    /// group's door as any reviewed name does, and the source line still prints no title for them: the digit check stays.
+    #[test]
+    fn a_reviewed_table_name_with_a_digit_still_prints_no_title() {
+        for (id, worldbank) in [("apri_ap_hia", false), ("SP.POP.65UP.TO.ZS@2", true)] {
+            let zh = Hubs.table_zh(id).unwrap().expect("a reviewed name");
+            assert!(zh.chars().any(char::is_numeric), "{zh}");
+            assert_eq!(source_line(worldbank, id, &zh, &[]), format!("{} {}", publisher(worldbank), printed_id(id)));
+        }
+    }
+
     #[test]
     fn a_source_line_leaves_out_a_title_that_holds_a_digit() {
         let years = |list: &[&str]| list.iter().map(|t| t.to_string()).collect::<Vec<_>>();

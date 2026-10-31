@@ -7,7 +7,8 @@
  ],
  "dims": [
   "siec",
-  "nrg_bal"
+  "nrg_bal",
+  "siec_group"
  ],
  "codes": [
   {
@@ -257,6 +258,54 @@
    "basis": "official",
    "source": "https://unstats.un.org/unsd/energystats/methodology/documents/IRES-ch.pdf; UN, International Recommendations for Energy Statistics (IRES), Chinese edition, 2019",
    "note": "IRES table 5.3 not elsewhere specified (including defence activities)"
+  },
+  {
+   "dim": "siec_group",
+   "code": "fossil",
+   "en": "fossil",
+   "zh": "化石能源",
+   "zh_full": "化石能源",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31",
+   "basis": "own translation",
+   "source": "https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1/codelist/ESTAT/SIEC?format=TSV&lang=en; Eurostat SIEC codelist, its leaves grouped in estat-parts.tsv (group_en)",
+   "note": "a composition's group of SIEC leaves (estat-parts.tsv group_en), named on the page"
+  },
+  {
+   "dim": "siec_group",
+   "code": "renewable",
+   "en": "renewable",
+   "zh": "可再生能源",
+   "zh_full": "可再生能源",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31",
+   "basis": "own translation",
+   "source": "https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1/codelist/ESTAT/SIEC?format=TSV&lang=en; Eurostat SIEC codelist, its leaves grouped in estat-parts.tsv (group_en)",
+   "note": "a composition's group of SIEC leaves (estat-parts.tsv group_en), named on the page"
+  },
+  {
+   "dim": "siec_group",
+   "code": "nuclear",
+   "en": "nuclear",
+   "zh": "核能",
+   "zh_full": "核能",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31",
+   "basis": "own translation",
+   "source": "https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1/codelist/ESTAT/SIEC?format=TSV&lang=en; Eurostat SIEC codelist, its leaves grouped in estat-parts.tsv (group_en)",
+   "note": "a composition's group of SIEC leaves (estat-parts.tsv group_en), named on the page"
+  },
+  {
+   "dim": "siec_group",
+   "code": "other",
+   "en": "other",
+   "zh": "其他",
+   "zh_full": "其他",
+   "zh_source": "reviewed",
+   "reviewed": "2026-10-31",
+   "basis": "own translation",
+   "source": "https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1/codelist/ESTAT/SIEC?format=TSV&lang=en; Eurostat SIEC codelist, its leaves grouped in estat-parts.tsv (group_en)",
+   "note": "a composition's group of SIEC leaves (estat-parts.tsv group_en), named on the page"
   }
  ]
 }

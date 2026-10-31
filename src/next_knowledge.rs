@@ -1030,8 +1030,9 @@ mod tests {
         );
     }
 
-    /// sdg_07_40 has the name the owner reviewed; a table the file does not list has none (its English title stays), and
-    /// an id is matched exactly.
+    /// sdg_07_40 and the 73 tables reviewed on 2026-10-31 have the names the owner reviewed; a table the file does not list
+    /// has none (its English title stays), and an id is matched exactly. Ten reviewed names hold a digit: they are listed as
+    /// reviewed, and the source line still prints none of them (next_run source_line, its digit check).
     #[test]
     fn a_table_gets_its_reviewed_chinese_name_or_none() {
         let zh = |id: &str| match call(Request::TableZh { id }) {
@@ -1039,9 +1040,34 @@ mod tests {
             _ => panic!("not a table name"),
         };
         assert_eq!(zh("sdg_07_40").as_deref(), Some("可再生能源在最终能源消费总量中的占比（按部门）"));
-        assert_eq!(zh("nrg_ind_ren"), None);
+        assert_eq!(zh("nrg_ind_ren").as_deref(), Some("可再生能源占比"));
+        assert_eq!(zh("nrg_x"), None);
         assert_eq!(zh("SDG_07_40"), None);
         assert_eq!(zh("EG.FEC.RNEW.ZS@2"), None);
+        let names = table_names().unwrap();
+        let digits: Vec<&str> = names.iter().filter(|(_, zh)| zh.chars().any(char::is_numeric)).map(|(id, _)| id.as_str()).collect();
+        assert_eq!((names.len(), digits.len()), (74, 10), "{digits:?}");
+        let file: Value = serde_json::from_str(TABLE_NAMES).unwrap();
+        let dated = |d: &str| file["tables"].as_array().unwrap().iter().filter(|t| t["reviewed"] == d).count();
+        assert_eq!((dated("2026-10-30"), dated("2026-10-31")), (1, 73));
+    }
+
+    /// A composition's four groups of SIEC leaves (estat-parts.tsv group_en) are named by reviewed entries of their own
+    /// dimension, siec_group, as a fuel is: the page prints a group by this name only.
+    #[test]
+    fn a_composition_group_is_named_by_a_reviewed_entry() {
+        let codes: Vec<String> = ["fossil", "renewable", "nuclear", "other", "coal"].iter().map(|c| c.to_string()).collect();
+        let Ok(Reply::ZhNames { names, missing }) = call(Request::ZhNames { scheme: "siec_group", codes: &codes }) else {
+            panic!("no names")
+        };
+        let got: Vec<(&str, &str)> = names.iter().map(|(c, z)| (c.as_str(), z.as_str())).collect();
+        assert_eq!(got, [("fossil", "化石能源"), ("nuclear", "核能"), ("other", "其他"), ("renewable", "可再生能源")]);
+        assert_eq!(missing, ["coal"]);
+        // every group a registered leaf is in has its name
+        let parts = include_str!("../runtime/pi/assets/estat-parts.tsv");
+        let groups: BTreeSet<&str> = parts.lines().skip(1).filter_map(|l| l.split('\t').nth(7)).filter(|g| !g.is_empty()).collect();
+        assert_eq!(groups.iter().copied().collect::<Vec<_>>(), ["fossil", "nuclear", "other", "renewable"]);
+        assert!(groups.iter().all(|g| code_names().unwrap()["siec_group"].contains_key(*g)));
     }
 
     #[test]
