@@ -55,6 +55,12 @@ pub const TEXT_FALLBACK_EVENT: &str = "next_text_fallback";
 pub const SCOPE_FALLBACK_EVENT: &str = "next_scope_fallback";
 /// The origin record of a World Bank table the program narrowed (newsroom.ts prepareWorldBank), under data/origins.
 const NARROW_ORIGIN: &str = "worldbank_narrow";
+/// The origin record of a Eurostat table the program narrowed to the top codes of its open dimension (newsroom.ts prepareData
+/// narrow), under data/origins.
+const ESTAT_NARROW_ORIGIN: &str = "eurostat_narrow";
+/// The page words of a Eurostat narrow (its scope, its selection line and the noun of each dimension): a registered word list,
+/// so no scope word is written in the code.
+const ESTAT_NARROW: &str = include_str!("../runtime/pi/assets/estat-narrow.json");
 /// The line of the parent's prompt the question follows (prompts/investigate.md); the question ends at the first blank line.
 const GOAL_MARK: &str = "Investigation goal:\n";
 
@@ -585,10 +591,10 @@ fn push_charts(
     }
 }
 
-/// The program's narrowing of a fetched table: the data/origins record of origin NARROW_ORIGIN whose file is the table's,
-/// read from the files, never from the tool's text. Its page words are wb-rank-by.json's for the record's option, with the
-/// count of economies the record keeps and its rank year: the scope, and the selection line that follows the chart's
-/// source. None when no record narrows this file; Err when the records cannot be read or two of them narrow it.
+/// The program's narrowing of a fetched table: the data/origins record of origin NARROW_ORIGIN or ESTAT_NARROW_ORIGIN whose
+/// file is the table's, read from the files, never from the tool's text. Its page words are the registered ones for the record
+/// (narrow_words), with the count of codes the record keeps and its rank time: the scope, and the selection line that follows
+/// the chart's source. None when no record narrows this file; Err when the records cannot be read or two of them narrow it.
 fn narrowed(run_dir: &Path, table: &Prepared) -> Result<Option<(Scope, String)>, String> {
     let Ok(entries) = std::fs::read_dir(run_dir.join("data/origins")) else {
         return Ok(None);
@@ -602,7 +608,8 @@ fn narrowed(run_dir: &Path, table: &Prepared) -> Result<Option<(Scope, String)>,
     for name in names {
         let rel = format!("data/origins/{name}");
         let record = read_json(run_dir, &rel)?;
-        if record["origin"] != NARROW_ORIGIN || record["file"] != table.file.as_str() {
+        let origin = record["origin"].as_str().unwrap_or("");
+        if ![NARROW_ORIGIN, ESTAT_NARROW_ORIGIN].contains(&origin) || record["file"] != table.file.as_str() {
             continue;
         }
         if let Some((first, _)) = &found {
@@ -613,30 +620,34 @@ fn narrowed(run_dir: &Path, table: &Prepared) -> Result<Option<(Scope, String)>,
     let Some((rel, record)) = found else {
         return Ok(None);
     };
-    let (option, members, at) = narrow_words(&rel, &record)?;
-    let n = members.to_string();
+    let words = narrow_words(&rel, &record)?;
+    let n = words.members.to_string();
     let scope = Scope {
-        text: option.zh_scope.replace("{n}", &n),
+        text: words.zh_scope.replace("{n}", &n),
         record: rel.clone(),
     };
     Ok(Some((
         scope,
-        option.zh_line.replace("{n}", &n).replace("{at}", &at),
+        words.zh_line.replace("{n}", &n).replace("{at}", &words.at),
     )))
 }
 
-/// What a narrow record (`rel`) says for the page: its wb-rank-by.json option, the count of economies it keeps and its rank
-/// year. Err when the option is not registered, or the record keeps no members or has no rank year.
-fn narrow_words(
-    rel: &str,
-    record: &Value,
-) -> Result<(&'static next_params::RankBy, usize, String), String> {
-    let key = record["option"].as_str().unwrap_or("");
-    let option = next_params::wb_rank_by()
-        .1
-        .iter()
-        .find(|o| o.key == key)
-        .ok_or_else(|| format!("{rel}: option {key:?} is not in wb-rank-by.json"))?;
+/// What a narrow record says for the page: its scope and selection line templates (`{n}` and `{at}` left to fill), the
+/// ranking indicator the line names as a table id, the count of codes the record keeps and its rank time.
+#[derive(Debug)]
+struct NarrowWords {
+    zh_scope: String,
+    zh_line: String,
+    by: Option<String>,
+    members: usize,
+    at: String,
+}
+
+/// The NarrowWords of a narrow record (`rel`): a World Bank record's wb-rank-by.json option; a Eurostat record's
+/// estat-narrow.json words, `{noun}` the noun of the record's dimension (noun_other for one it does not list), its line
+/// without `{at}` (zh_line_latest) when the rank time is not a year. Err when the option is not registered, or the record
+/// keeps no members or has no rank time.
+fn narrow_words(rel: &str, record: &Value) -> Result<NarrowWords, String> {
     let members = record["members"].as_array().map_or(0, Vec::len);
     let at = match &record["at"] {
         Value::String(at) => at.clone(),
@@ -648,7 +659,44 @@ fn narrow_words(
             "{rel}: the record keeps no members or has no rank year"
         ));
     }
-    Ok((option, members, at))
+    if record["origin"] == ESTAT_NARROW_ORIGIN {
+        let (zh_scope, zh_line) = estat_narrow_words(record["dimension"].as_str().unwrap_or(""), is_year(&at));
+        return Ok(NarrowWords { zh_scope, zh_line, by: None, members, at });
+    }
+    let key = record["option"].as_str().unwrap_or("");
+    let option = next_params::wb_rank_by()
+        .1
+        .iter()
+        .find(|o| o.key == key)
+        .ok_or_else(|| format!("{rel}: option {key:?} is not in wb-rank-by.json"))?;
+    Ok(NarrowWords {
+        zh_scope: option.zh_scope.clone(),
+        zh_line: option.zh_line.clone(),
+        by: option.by.clone(),
+        members,
+        at,
+    })
+}
+
+/// estat-narrow.json's scope and selection line for a narrow of `dimension`, its noun put in: the line with the rank year
+/// when `year` (the record's rank time is a year), else the one of the latest period. The file is compiled in, so a broken
+/// one fails its test, not a run.
+fn estat_narrow_words(dimension: &str, year: bool) -> (String, String) {
+    static WORDS: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
+    let asset = WORDS.get_or_init(|| serde_json::from_str(ESTAT_NARROW).expect("estat-narrow.json is JSON"));
+    let text = |key: &str| {
+        asset[key]
+            .as_str()
+            .unwrap_or_else(|| panic!("estat-narrow.json lacks {key}"))
+    };
+    let noun = asset["nouns"][dimension]
+        .as_str()
+        .unwrap_or_else(|| text("noun_other"));
+    let line = if year { text("zh_line") } else { text("zh_line_latest") };
+    (
+        text("zh_scope").replace("{noun}", noun),
+        line.replace("{noun}", noun),
+    )
 }
 
 /// A narrow record's page words (`template`: its option's zh_scope or zh_line) as pieces: `{n}` the count of economies the
@@ -723,18 +771,18 @@ struct ScopeSegs {
 fn scope_segs(run_dir: &Path, scope: &Scope) -> Result<ScopeSegs, String> {
     let rel = scope.record.as_str();
     let record = read_json(run_dir, rel)?;
-    let (option, members, at) = narrow_words(rel, &record)?;
-    if option.zh_scope.replace("{n}", &members.to_string()) != scope.text {
+    let words = narrow_words(rel, &record)?;
+    if words.zh_scope.replace("{n}", &words.members.to_string()) != scope.text {
         return Err(format!(
             "{rel}: the record does not give the scope {:?}",
             scope.text
         ));
     }
-    let by = option.by.as_deref();
+    let by = words.by.as_deref();
     Ok(ScopeSegs {
-        words: narrow_segs(rel, &option.zh_scope, members, &at, by)?,
-        line: narrow_segs(rel, &option.zh_line, members, &at, by)?,
-        by: by.map(str::to_string),
+        words: narrow_segs(rel, &words.zh_scope, words.members, &words.at, by)?,
+        line: narrow_segs(rel, &words.zh_line, words.members, &words.at, by)?,
+        by: words.by.clone(),
     })
 }
 
@@ -1332,7 +1380,8 @@ fn ring_from(months: &[String], span: i64) -> Option<String> {
 }
 
 /// What a node's fill reads: the page's shape and picks, the main's and the companion's series rows, the catalogue, the
-/// unit's format key and registered short form, and the page's time window (window_of) as its first and last month.
+/// unit's format key and registered short form, the page's time window (window_of) as its first and last month, and whether
+/// the program narrowed the main's places (a narrow record of its file, narrowed): its extremes are then the kept places'.
 struct Filling<'a> {
     shape: &'a Shape,
     picks: &'a Picks,
@@ -1342,6 +1391,7 @@ struct Filling<'a> {
     fmt: String,
     short: &'a str,
     window: Option<(String, String)>,
+    scoped: bool,
 }
 
 /// A recipe's time window over the picks, as its first and last month: ["t0", "t1"] runs from t0's January to t1's
@@ -2071,7 +2121,8 @@ fn bubbles_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
 
 /// Two notes on the map (hero.leaves.leader_notes), each at its country's point (ranked_points, the bubbles' extent): at the
 /// highest ranked country how far it is above the lowest (the gap), at the lowest how many times it the highest is (the
-/// times); both facts as extremes declares them, the words the word table's (no number in them).
+/// times); both facts as extremes declares them, the words the word table's (no number in them), its scoped words
+/// (LEADER_NOTES) on a narrowed main, whose lowest ranked place is the lowest of the kept places only.
 fn leader_notes_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
     if !f.shape.t0.is_empty() {
         return change_notes_fill(f, out);
@@ -2082,9 +2133,17 @@ fn leader_notes_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
     let note = |code: &str, word: &str, fact: &str| {
         json!({"at": points[code], "name": code, "text": [{"word": word}], "value_text": format!("fact:{fact}")})
     };
-    let notes = [note(hi, "column.note.hi", "gap"), note(lo, "column.note.lo", "times")];
+    let (hi_word, lo_word) = LEADER_NOTES[usize::from(f.scoped)];
+    let notes = [note(hi, hi_word, "gap"), note(lo, lo_word, "times")];
     set_leaf(out, "leader_notes", json!({"ext": ext, "notes": notes}))
 }
+
+/// The word keys of the two leader notes (the highest's, the lowest's): unscoped, then a narrowed main's, which say the
+/// lowest and the highest are the kept places' (所选各方中), as the scoped dek does.
+const LEADER_NOTES: [(&str, &str); 2] = [
+    ("column.note.hi", "column.note.lo"),
+    ("column.note.hi.scoped", "column.note.lo.scoped"),
+];
 
 /// Two notes on the map of a page with two ends (hero.leaves.leader_notes, at the ranked countries' points as
 /// leader_notes_fill): at the first ranked country (changed: the largest rise) and the last (the largest fall), each its
@@ -2163,7 +2222,9 @@ fn flow_bignums(f: &Filling, out: &mut Filled) -> Result<(), String> {
 /// layers' node fills (NODE_FILLS) in its order, over the shape, the picks and the rows, then what every page has: the
 /// unit's registered short form (a unit with none is refused) with the nodes' notes after it, the tables, the title and dek
 /// from the text step, and the place names of the rows. Beside them `drawn`, each row a layer prints a value of ({layer,
-/// src, table, time}, in fill order), which the flow keeps for its page checks. Err is "not this shape: <why>".
+/// src, table, time}, in fill order), which the flow keeps for its page checks. `scoped`: the program narrowed the main's
+/// places (a narrow record of its file), so the notes that name the extremes say they are the kept places'. Err is "not this
+/// shape: <why>".
 fn fill_of(
     recipe: &Recipe,
     shape: &Shape,
@@ -2171,12 +2232,13 @@ fn fill_of(
     (main, companion): (&[Value], &[Value]),
     catalogue: &dyn Catalogue,
     (title, dek): (&str, &str),
+    scoped: bool,
 ) -> Result<Value, String> {
     let no = |why: String| format!("not this shape: {why}");
     let short = next_pack::unit_short(&shape.unit)
         .ok_or_else(|| no(format!("unit {} has no row in {}", shape.unit, next_pack::UNIT_SHORT_ZH_TABLE)))?;
     let window = window_of(recipe, picks).map_err(no)?;
-    let filling = Filling { shape, picks, main, companion, catalogue, fmt: shape.unit.to_lowercase(), short, window };
+    let filling = Filling { shape, picks, main, companion, catalogue, fmt: shape.unit.to_lowercase(), short, window, scoped };
     let mut out = Filled::default();
     for layer in &recipe.layers {
         if let Some((_, node)) = NODE_FILLS.iter().find(|(n, _)| n == layer) {
@@ -2307,7 +2369,10 @@ fn recipe_request(
     let shape = shape_of(&recipe.eats, &tables, catalogue).map_err(shape_err)?;
     let claims = picked_claims(run_dir, main, &claim_records(run_dir).map_err(shape_err)?).map_err(shape_err)?;
     let picks = picks_of(&recipe.picks, &shape, &main_rows, &claims).map_err(shape_err)?;
-    let mut fill = fill_of(recipe, &shape, &picks, (&main_rows, &comp_rows), catalogue, (title, dek)).map_err(|why| ("fill", why))?;
+    // read from the main's narrow record, as the charts step reads the page's scope (narrowed), never from the tool's details
+    let scoped = narrowed(run_dir, main).map_err(|why| ("fill", why))?.is_some();
+    let mut fill = fill_of(recipe, &shape, &picks, (&main_rows, &comp_rows), catalogue, (title, dek), scoped)
+        .map_err(|why| ("fill", why))?;
     if recipe.layers.iter().any(|l| l == "map" || l == "bubbles") {
         fill["knobs"]["shapes"] = json!(run_dir.join(RING_SHAPES));
     }
@@ -3853,7 +3918,7 @@ mod tests {
     ) -> Result<Value, String> {
         let RingPicks { focus, t0, t1, top } = picks;
         let picks = Picks { focus: focus.clone(), t0: t0.clone(), t1: t1.clone(), top: top.clone(), ..Picks::default() };
-        fill_of(recipe(RING_RECIPE), shape, &picks, tables, catalogue, words)
+        fill_of(recipe(RING_RECIPE), shape, &picks, tables, catalogue, words, false)
     }
 
     /// The flow's filled lists are frozen with the design pack's template list (shape_registry
@@ -4671,6 +4736,7 @@ mod tests {
             fmt: "pc".into(),
             short: "%",
             window: None,
+            scoped: false,
         };
         let (points, ext) = ranked_points(&f, &mut Filled::default()).unwrap();
         let names = leaf_labels(&[], &picks.ranked, &NamesOnly).unwrap();
@@ -4938,7 +5004,7 @@ mod tests {
             (main, monthly, shape, picks)
         };
         let (main, monthly, shape, picks) = rows("MIO_M3");
-        let fill = ring_fill(&shape, &picks, (&main, &monthly), &Hubs, ("标题", "导语")).unwrap();
+        let fill = ring_fill(&shape, &picks, (&main, &monthly), &Hubs, ("标题", "导语"), false).unwrap();
         // the fill byte for byte as the ring filled it before the recipe registry (10-29): a move onto the registry changes none
         // (what the visual group is sent; `drawn`, each layer's printed rows, and the dek's `finding` stay with the flow, for
         // its page checks and the text step's draft)
@@ -5072,12 +5138,12 @@ mod tests {
         let picks = picks_of(&column.picks, &shape, &main, &[]).unwrap();
         assert_eq!(picks.ranked, ["DE", "FR", "IT"]);
         assert_eq!(scope_of(&shape, &picks, &Scoped(true)).as_deref(), Some("EU27_2020"));
-        let fill = fill_of(column, &shape, &picks, (&main, &[]), &Scoped(true), ("标题", "导语")).unwrap();
+        let fill = fill_of(column, &shape, &picks, (&main, &[]), &Scoped(true), ("标题", "导语"), false).unwrap();
         let spec = &fill["knobs"]["spec"];
         assert_eq!(spec["hero"]["scope"], json!({"code": "EU27_2020", "count": "drawn"}));
         assert_eq!(fill["knobs"]["labels"]["EU27_2020"], "名EU27_2020");
         assert_eq!(spec["title"], "标题");
-        let unnamed = fill_of(column, &shape, &picks, (&main, &[]), &Scoped(false), ("标题", "导语")).unwrap();
+        let unnamed = fill_of(column, &shape, &picks, (&main, &[]), &Scoped(false), ("标题", "导语"), false).unwrap();
         assert!(unnamed["knobs"]["spec"]["hero"].get("scope").is_none());
         assert!(unnamed["knobs"]["labels"].get("EU27_2020").is_none());
     }
@@ -5195,7 +5261,7 @@ mod tests {
         let started = std::time::Instant::now();
         let (main, monthly, catalogue, shape, claims) = gas_fixture();
         let picks = ring_picks(&shape, &main, &claims).unwrap();
-        let fill = ring_fill(&shape, &picks, (&main, &monthly), &catalogue, ("标题", "导语")).unwrap();
+        let fill = ring_fill(&shape, &picks, (&main, &monthly), &catalogue, ("标题", "导语"), false).unwrap();
         // FILL_OUT: where to write the filled request, for the scan of its numbers
         if let Ok(out) = std::env::var("FILL_OUT") {
             std::fs::write(out, fill.to_string()).unwrap();
@@ -5251,7 +5317,7 @@ mod tests {
         let column = recipe("column");
         let shape = shape_of(&column.eats, &[("sdg", &main[..])], &Hubs).unwrap();
         let picks = picks_of(&column.picks, &shape, &main, &[]).unwrap();
-        let mut fill = fill_of(column, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语")).unwrap();
+        let mut fill = fill_of(column, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false).unwrap();
         // the dek is the finding, printed from the extremes' ledger entries though the notes that print the gap all drop
         let dek = dek_finding(&fill).unwrap().0;
         page_words(&mut fill, ("标题", &dek, "栏目"));
@@ -5333,7 +5399,7 @@ mod tests {
         let column = recipe("column");
         let shape = shape_of(&column.eats, &[("sdg", &main[..])], &Hubs).unwrap();
         let picks = picks_of(&column.picks, &shape, &main, &[]).unwrap();
-        let mut fill = fill_of(column, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语")).unwrap();
+        let mut fill = fill_of(column, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false).unwrap();
         fill["knobs"]["shapes"] = json!("runtime/pi/assets/naturalearth-admin0-50m.geojson");
         fill["knobs"]["spec"]["kicker"] = json!("栏目");
         fill["knobs"]["spec"]["source"] = json!("来源");
@@ -5425,7 +5491,7 @@ mod tests {
 
         // the key to the circles comes with the bubbles (knobs.py WITH), drawn before the notes
         assert_eq!(column.layers, ["bars", "bubbles", "bubble_key", "leader_notes"]);
-        let fill = fill_of(column, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语")).unwrap();
+        let fill = fill_of(column, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false).unwrap();
         assert_eq!(fill["order"], json!(["bars", "bubbles", "bubble_key", "leader_notes"]));
         let rows = fill["rows"].as_array().unwrap();
         assert_eq!(rows.iter().map(|r| r["dims"]["geo"].as_str().unwrap()).collect::<Vec<_>>(), ["SE", "BE", "DE", "FR"]);
@@ -5557,7 +5623,7 @@ mod tests {
             let r = Hubs.recipes().iter().find(|r| shape_of(&r.eats, &tables, &Hubs).is_ok()).unwrap();
             let shape = shape_of(&r.eats, &tables, &Hubs).unwrap();
             let picks = picks_of(&r.picks, &shape, main, &[]).unwrap();
-            let fill = fill_of(r, &shape, &picks, (main, &[]), &Hubs, ("", "")).unwrap();
+            let fill = fill_of(r, &shape, &picks, (main, &[]), &Hubs, ("", ""), false).unwrap();
             let form = page_lead(Some(&fill), &charts);
             (r.name.clone(), next_page::draft_for(&[], &charts, Vec::new(), form).with_finding(dek_finding(&fill)))
         };
@@ -5624,7 +5690,7 @@ mod tests {
             set(&mut main, at);
             let shape = shape_of(&column.eats, &[("sdg", &main[..])], &Hubs).unwrap();
             let picks = picks_of(&column.picks, &shape, &main, &claims).unwrap();
-            fill_of(column, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语")).unwrap()
+            fill_of(column, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false).unwrap()
         };
         let level = |at: &[(&str, &str, &str)]| level_fill(at).get("finding").cloned();
         assert_eq!(level(&[]).unwrap()["dek"], "{lead1.t}，{name.SE}最高，为{hi}，比最低的{name.BE}高{gap}");
@@ -5640,7 +5706,7 @@ mod tests {
             set(&mut main, at);
             let shape = shape_of(&change.eats, &[("sdg", &main[..])], &Hubs).unwrap();
             let picks = picks_of(&change.picks, &shape, &main, &[]).unwrap();
-            fill_of(change, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语")).unwrap().get("finding").cloned()
+            fill_of(change, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false).unwrap().get("finding").cloned()
         };
         // SE up 16 (50 to 66); BE too
         assert_eq!(moved(&[("BE", "2024", "24.5")]), None, "two largest rises");
@@ -5649,7 +5715,7 @@ mod tests {
         set(&mut tied, &[("BE", "2024", "24.5")]);
         let shape = shape_of(&change.eats, &[("sdg", &tied[..])], &Hubs).unwrap();
         let picks = picks_of(&change.picks, &shape, &tied, &[]).unwrap();
-        let fill = fill_of(change, &shape, &picks, (&tied, &[]), &Hubs, ("标题", "导语")).unwrap();
+        let fill = fill_of(change, &shape, &picks, (&tied, &[]), &Hubs, ("标题", "导语"), false).unwrap();
         assert!(fill["knobs"]["spec"]["hero"]["data"].get("accent").is_none());
         // e3: up 16 both, as the page prints them (16.00 个百分点), though 66.6 - 50.6 is 15.999999999999993 and 24.6 - 8.6 is 16
         assert_ne!(66.6_f64 - 50.6, 24.6 - 8.6);
@@ -5707,7 +5773,7 @@ mod tests {
         let main = q1_ten_years();
         let shape = shape_of(&change.eats, &[("sdg", &main[..])], &Hubs).unwrap();
         let picks = picks_of(&change.picks, &shape, &main, &[]).unwrap();
-        let mut fill = fill_of(change, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语")).unwrap();
+        let mut fill = fill_of(change, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false).unwrap();
         assert_eq!(fill["ends"], json!({"t0": "2016", "t1": "2024", "rule": "two_ends", "fetched_from": "2013",
             "later": [{"year": "2013", "missing": ["BE", "DE", "FR"]}, {"year": "2015", "missing": ["DE"]}]}));
         let spec = &fill["knobs"]["spec"];
@@ -5813,7 +5879,7 @@ mod tests {
         }
         let shape = shape_of(&change.eats, &[("sdg_07_40", &main[..])], &Hubs).unwrap();
         let picks = picks_of(&change.picks, &shape, &main, &[]).unwrap();
-        let mut fill = fill_of(change, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语")).unwrap();
+        let mut fill = fill_of(change, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false).unwrap();
         // the dek is the finding (LU rose most, 5.364 to 20.2), so the whole-page check rechecks its number from the rows too
         let dek = dek_finding(&fill).unwrap().0;
         assert_eq!(dek, "{lead0.t}至{lead1.t}，{name.LU}增幅最大，增加{lead}");
@@ -5920,7 +5986,7 @@ mod tests {
             }
             let shape = shape_of(&r.eats, &[(table, &main[..])], &WbNamed).unwrap();
             let picks = picks_of(&r.picks, &shape, &main, &[]).unwrap();
-            let mut fill = fill_of(r, &shape, &picks, (&main, &[]), &WbNamed, ("标题", "导语")).unwrap();
+            let mut fill = fill_of(r, &shape, &picks, (&main, &[]), &WbNamed, ("标题", "导语"), false).unwrap();
             fill["knobs"]["shapes"] = json!("runtime/pi/assets/naturalearth-admin0-50m.geojson");
             fill["knobs"]["spec"]["kicker"] = json!("栏目");
             fill["knobs"]["spec"]["source"] = json!(source);
@@ -6030,7 +6096,7 @@ mod tests {
     fn the_gas_ring_page_through_the_leaf_children() {
         let (main, monthly, catalogue, shape, claims) = gas_fixture();
         let picks = ring_picks(&shape, &main, &claims).unwrap();
-        let mut fill = ring_fill(&shape, &picks, (&main, &monthly), &catalogue, ("标题", "导语")).unwrap();
+        let mut fill = ring_fill(&shape, &picks, (&main, &monthly), &catalogue, ("标题", "导语"), false).unwrap();
         fill["knobs"]["shapes"] = json!("runtime/pi/assets/naturalearth-admin0-50m.geojson");
         let order: Vec<String> = fill["order"].as_array().unwrap().iter().filter_map(|l| l.as_str().map(str::to_string)).collect();
         let calls = std::sync::Mutex::new(Vec::new());
@@ -6090,7 +6156,7 @@ mod tests {
         let scmp = recipe("scmp");
         let shape = shape_of(&scmp.eats, &[("nrg_ti_gas", &main), ("nrg_ti_gasm", &monthly)], &catalogue).unwrap();
         let picks = picks_of(&scmp.picks, &shape, &main, &claims).unwrap();
-        let mut fill = fill_of(scmp, &shape, &picks, (&main, &monthly), &catalogue, ("标题", "导语")).unwrap();
+        let mut fill = fill_of(scmp, &shape, &picks, (&main, &monthly), &catalogue, ("标题", "导语"), false).unwrap();
         fill["knobs"]["shapes"] = json!("runtime/pi/assets/naturalearth-admin0-50m.geojson");
         fill["knobs"]["spec"]["kicker"] = json!("栏目");
         fill["knobs"]["spec"]["source"] = json!("欧盟统计局 nrg_ti_gas、nrg_ti_gasm");
@@ -7038,6 +7104,143 @@ mod tests {
             narrowed(dir.path(), &table).unwrap().unwrap().1,
             "按 2024 年本指标取最低的 7 个经济体"
         );
+    }
+
+    /// A column page as run_page drafts it, from a run whose data/origins holds `records` and whose one table reads
+    /// data/t.csv: the scope read from the run's files (narrowed, as the charts step reads it), the fill's notes by it
+    /// (recipe_request), and the dek the fill's finding under the scope (with_scopes, then with_finding). Returns the scope,
+    /// the run folder, the dek, every drafted field's text, and each leader note's (place, word key).
+    fn cut_page(records: &[Value], main: &[Value]) -> (Option<Scope>, tempfile::TempDir, String, Vec<String>, Vec<(String, String)>) {
+        let dir = tempfile::tempdir().unwrap();
+        let origins = dir.path().join("data/origins");
+        std::fs::create_dir_all(&origins).unwrap();
+        for (i, record) in records.iter().enumerate() {
+            std::fs::write(origins.join(format!("{i}.json")), record.to_string()).unwrap();
+        }
+        let table = Prepared {
+            id: "t".into(),
+            title: "t".into(),
+            file: "data/t.csv".into(),
+            args: Map::new(),
+            sheet: String::new(),
+            claims: Vec::new(),
+            places_zh: Vec::new(),
+            companions: Vec::new(),
+        };
+        let scope = narrowed(dir.path(), &table).unwrap().map(|(scope, _)| scope);
+        let column = recipe("column");
+        let shape = shape_of(&column.eats, &[("t", main)], &Hubs).unwrap();
+        let picks = picks_of(&column.picks, &shape, main, &[]).unwrap();
+        let fill = fill_of(column, &shape, &picks, (main, &[]), &Hubs, ("标题", "导语"), scope.is_some()).unwrap();
+        let charts = vec![Chart {
+            relation: Relation::Ranking,
+            view: View::Slice,
+            claim_ids: Vec::new(),
+            category: shape.place.clone(),
+            value: "value".into(),
+        }];
+        let drafts = next_page::draft_for(&[], &charts, Vec::new(), page_lead(Some(&fill), &charts))
+            .with_scopes(&[scope.clone()])
+            .with_finding(dek_finding(&fill));
+        let dek = drafts.fields.iter().find(|(t, _)| *t == Target::PageDek).map(|(_, d)| d.clone()).unwrap();
+        let texts = drafts.fields.iter().map(|(_, d)| d.clone()).collect();
+        let notes = fill["knobs"]["spec"]["hero"]["leaves"]["leader_notes"]["notes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|n| (n["name"].as_str().unwrap().to_string(), n["text"][0]["word"].as_str().unwrap().to_string()))
+            .collect();
+        (scope, dir, dek, texts, notes)
+    }
+
+    /// A column page's rows at 2025 across four countries and the EU (SE highest, BE lowest).
+    fn column_rows() -> Vec<Value> {
+        let mut main = ring_rows("t", &[("freq", "A"), ("unit", "PC")], ("geo", &["SE", "BE", "DE", "FR", "EU27_2020"]), &["2025"]);
+        for (r, v) in main.iter_mut().zip(["65.4", "14.9", "30.25", "20", "40"]) {
+            r["value"] = json!(v);
+        }
+        main
+    }
+
+    /// q6 (asylum applicants in the EU by citizenship, 2025): the program kept the 20 citizenships with the most applicants of
+    /// 199 and refetched them with the total row, and the page said the 20th was the lowest, in the dek (「比最低的伊拉克高」)
+    /// and in the map's note: the narrow wrote no record, so the page had no scope. With its eurostat_narrow record the page is
+    /// scoped: the dek is DEK_FINDINGS' scoped wording, the notes the scoped word keys, and the scope (the kicker and the
+    /// chart's eyebrow) and its selection line estat-narrow.json's words, the count and the rank year read from the record; a
+    /// rank time that is no year takes the line of the latest period, and the noun is the record's dimension's.
+    #[test]
+    fn a_eurostat_cut_ranks_within_the_kept_places_in_its_dek_and_notes() {
+        // the q6 stand-in run's 20 values (scripts/test_leaves_leader_notes.py q6), and the total row the cut holds
+        let v = [
+            ("AF", "112310"), ("BD", "37350"), ("CD", "17675"), ("CO", "21715"), ("EG", "25310"), ("ER", "12570"), ("GE", "15130"),
+            ("GN", "14275"), ("HT", "14050"), ("IQ", "12485"), ("MA", "20205"), ("ML", "19910"), ("PE", "20150"), ("PK", "19250"),
+            ("SD", "17375"), ("SO", "18340"), ("SY", "43290"), ("TR", "31010"), ("UA", "23935"), ("VE", "90950"), ("TOTAL", "911290"),
+        ];
+        let codes: Vec<&str> = v.iter().map(|(c, _)| *c).collect();
+        let mut main = ring_rows("t", &[("freq", "A"), ("unit", "PER"), ("geo", "EU27_2020")], ("citizen", &codes[..]), &["2025"]);
+        for (r, (_, value)) in main.iter_mut().zip(v) {
+            r["value"] = json!(value);
+        }
+        let record = json!({"origin": ESTAT_NARROW_ORIGIN, "dataset": "migr_asyappctza", "file": "data/t.csv",
+            "dimension": "citizen", "rule": "top", "n": 20, "exclude": ["EXT_EU27_2020"], "total": "TOTAL", "total_held": true,
+            "at": "2025", "ranked": 199, "of": 199, "members": &codes[..20],
+            "first": {"file": "data/all.csv", "sha256": "0".repeat(64)}});
+        let (scope, dir, dek, texts, notes) = cut_page(&[record.clone()], &main);
+        let scope = scope.expect("the narrow record scopes the page");
+        assert_eq!(scope, Scope { text: "在本指标最高的20个国籍中".into(), record: "data/origins/0.json".into() });
+        assert_eq!(dek, "{lead1.t}，所选各方中，{name.AF}居首，为{hi}，比{name.IQ}高{gap}");
+        assert!(texts.iter().all(|t| !t.contains("最低的")), "{texts:?}");
+        assert_eq!(notes, [("AF".to_string(), "column.note.hi.scoped".to_string()), ("IQ".into(), "column.note.lo.scoped".into())]);
+        // the kicker and the eyebrow (ScopeSegs words) and the selection line, the count and the year read from the record
+        let segs = scope_segs(dir.path(), &scope).unwrap();
+        let count = Num { src: "data/origins/0.json:members".into(), value: 20.0, text: "20".into() };
+        let year = Num { src: "data/origins/0.json:at".into(), value: 2025.0, text: "2025".into() };
+        assert_eq!(segs.words, [Seg::Text("在本指标最高的".into()), Seg::Num(count.clone()), Seg::Text("个国籍中".into())]);
+        assert_eq!(
+            segs.line,
+            [Seg::Text("按 ".into()), Seg::Num(year), Seg::Text(" 年本指标取最高的 ".into()), Seg::Num(count.clone()), Seg::Text(" 个国籍".into())]
+        );
+        assert_eq!(segs.by, None);
+        // a month as the rank time (a table summed to years after the narrow): the latest period's line, no rank time printed
+        let mut monthly = record.clone();
+        monthly["at"] = json!("2025-12");
+        std::fs::write(dir.path().join(&scope.record), monthly.to_string()).unwrap();
+        let segs = scope_segs(dir.path(), &scope).unwrap();
+        assert_eq!(segs.line, [Seg::Text("按最近一期本指标取最高的 ".into()), Seg::Num(count), Seg::Text(" 个国籍".into())]);
+        // the noun is the record's dimension's, 项 for a dimension estat-narrow.json does not list
+        for (dimension, scope_text) in [("geo", "在本指标最高的20个国家和地区中"), ("partner", "在本指标最高的20项中")] {
+            let mut other = record.clone();
+            other["dimension"] = json!(dimension);
+            assert_eq!(narrow_words("r", &other).unwrap().zh_scope.replace("{n}", "20"), scope_text);
+        }
+    }
+
+    /// q5's shape: a World Bank table the program narrowed (wb-rank-by.json "top") gets the same scoped dek and notes as a
+    /// Eurostat cut; the rows are a column page's, the scope its narrow record's alone.
+    #[test]
+    fn a_world_bank_narrow_ranks_within_the_kept_places_in_its_dek_and_notes() {
+        let record = json!({"origin": NARROW_ORIGIN, "file": "data/t.csv", "option": "top",
+            "members": ["SE", "DE", "FR", "BE"], "at": "2025"});
+        let (scope, _dir, dek, texts, notes) = cut_page(&[record], &column_rows());
+        assert_eq!(scope.map(|s| s.text), Some("在本指标最高的4个经济体中".to_string()));
+        assert_eq!(dek, "{lead1.t}，所选各方中，{name.SE}居首，为{hi}，比{name.BE}高{gap}");
+        assert!(texts.iter().all(|t| !t.contains("最低的")), "{texts:?}");
+        assert_eq!(notes, [("SE".to_string(), "column.note.hi.scoped".to_string()), ("BE".into(), "column.note.lo.scoped".into())]);
+    }
+
+    /// A table no one cut (its own download record, and a cut of another file beside it): no scope, so no scope word on the
+    /// page, the plain dek that names the lowest, and the plain note keys.
+    #[test]
+    fn a_table_no_one_cut_ranks_among_all_in_its_dek_and_notes() {
+        let records = [
+            json!({"origin": "download", "file": "data/t.csv"}),
+            json!({"origin": ESTAT_NARROW_ORIGIN, "file": "data/other.csv", "dimension": "geo", "members": ["SE"], "at": "2025"}),
+        ];
+        let (scope, _dir, dek, texts, notes) = cut_page(&records, &column_rows());
+        assert_eq!(scope, None);
+        assert_eq!(dek, "{lead1.t}，{name.SE}最高，为{hi}，比最低的{name.BE}高{gap}");
+        assert!(texts.iter().all(|t| !t.contains(next_page::SCOPE_MARK) && !t.contains("所选")), "{texts:?}");
+        assert_eq!(notes, [("SE".to_string(), "column.note.hi".to_string()), ("BE".into(), "column.note.lo".into())]);
     }
 
     /// A ranking run: rank_top SE, rank_bottom BE, their gap and ratio, all of 2025, over a six-country series of shares.
@@ -8666,7 +8869,7 @@ for line in sys.stdin:
         let column = recipe("column");
         let shape = shape_of(&column.eats, &[("sdg", &main[..])], &Hubs).unwrap();
         let picks = picks_of(&column.picks, &shape, &main, &[]).unwrap();
-        let fill = fill_of(column, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语")).unwrap();
+        let fill = fill_of(column, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false).unwrap();
         let drawn = fill["drawn"].as_array().unwrap();
         let of = |layer: &str| -> BTreeSet<&str> { drawn.iter().filter(|r| r["layer"] == layer).filter_map(|r| r["src"].as_str()).collect() };
         assert_eq!(of("bars").len(), picks.ranked.len(), "{drawn:?}");

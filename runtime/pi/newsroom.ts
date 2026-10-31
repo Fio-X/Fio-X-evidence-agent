@@ -3458,7 +3458,8 @@ export async function inlineSourceNote(sourceRefs: string[], language?: string) 
   const labelOf = (origin: any) => [origin?.source_label, origin?.series_title].map((value) => inlineNoteText(value).replace(/\s*\[unit:[^\]]*\]$/, "").split(" — ")[0].trim()).find(Boolean) ?? "";
   const notes: string[] = [];
   for (const ref of dataRefs) {
-    const matching = origins.filter((item) => item?.file === ref);
+    // A Eurostat narrow record names the fetched file too, but says which codes the program kept, not where the file came from.
+    const matching = origins.filter((item) => item?.file === ref && item?.origin !== "eurostat_narrow");
     const origin = matching.find((item) => labelOf(item)) ?? matching[0];
     if (!origin) continue;
     let host = "";
@@ -4737,6 +4738,22 @@ async function prepareData(params: any, signal?: AbortSignal, opts: { pageBuild?
     columnAt = new Map(header.map((name, index) => [name, index]));
     rows = [header, ...parseCsvText(bytes.toString("utf8")).slice(1)];
   }
+  // New route: the narrow's record under data/origins, of the file the page's table reads (the summed file when the year was summed after the
+  // narrow, else the refetched one), as prepareWorldBank records its narrow: next_run reads the page's scope from it, never from these details.
+  if (narrowed && nextRouteEnabled()) {
+    const file = summed ? summed.csv : data;
+    const dimAt = first.columnAt.get(narrow.dimension)!;
+    // of: the codes of the narrowed dimension the first file holds, the total and the excluded codes aside (ranked: those with a value at `at`)
+    const of = new Set(first.rows.slice(1).map((row) => row[dimAt]).filter((code) => code !== narrow.total && !narrow.exclude.includes(code))).size;
+    narrowed.record = await writeProgramOrigin({
+      schema_version: "0.7.0", origin: "eurostat_narrow", dataset, ...narrowed, of,
+      first: { file: (narrowed.first as any).filePath, sha256: (narrowed.first as any).sha256, rows: (narrowed.first as any).rows },
+      rule_text: `the ${String(narrowed.dimension)} codes with the highest ${valueColumn} at ${timeId} ${String(narrowed.at)} (the latest in the first file), ties by code, at most ${narrow.n}; the total and the excluded codes never ranked; refetched with ${cut!.total ? `the total ${cut!.total}` : "no total row"}${summed ? `, then summed to whole years (${summed.record})` : ""}`,
+      fetched: { file: data.relativeFile, sha256: data.sha256 },
+      ...(summed ? { summed: summed.record } : {}),
+      sha256: file.sha256, file: file.relativeFile,
+    });
+  }
   const body = rows.length - 1;
   const columns = [...dims.map((dimension) => dimension.id), timeId, valueColumn];
   // Units: more than one in the file means the same other codes come once per unit; say so and pick none.
@@ -4772,7 +4789,7 @@ async function prepareData(params: any, signal?: AbortSignal, opts: { pageBuild?
     `Header checked: ${columns.join(", ")} in structure order; all ${body} rows hold only the requested codes. Other columns: ${header.filter((name) => !columns.includes(name)).join(", ")}.`,
   ];
   if (yearsBack) dataLines.push(`Years moved back by the program: no row for ${String((yearsBack.asked as any).start)}-${String((yearsBack.asked as any).end)} (${String((yearsBack.asked as any).filePath)}); over ${String((yearsBack.window as any).start)}-${String((yearsBack.window as any).end)} (${String((yearsBack.window as any).filePath)}) the latest value is at ${String(yearsBack.latest)}, so only ${start} was fetched. Write ${start} on the page, not the year asked.`);
-  if (narrowed) dataLines.push(`Narrowed ${String(narrowed.dimension)} by the program: the ${cut!.members.length} codes of the highest value at ${String(narrowed.at)} out of ${String(narrowed.ranked)} (excluded codes and the total left out), refetched with ${cut!.total ? `the total ${cut!.total}` : "no total row (the first file holds none)"}; the first file ${String((narrowed.first as any).filePath)} keeps every code.`);
+  if (narrowed) dataLines.push(`Narrowed ${String(narrowed.dimension)} by the program: the ${cut!.members.length} codes of the highest value at ${String(narrowed.at)} out of ${String(narrowed.ranked)} (excluded codes and the total left out), refetched with ${cut!.total ? `the total ${cut!.total}` : "no total row (the first file holds none)"}; the first file ${String((narrowed.first as any).filePath)} keeps every code${narrowed.record ? `; the choice is recorded in ${String(narrowed.record)}` : ""}.`);
   if (summed) dataLines.push(`Summed to whole years by the program: ${summed.whole} of ${summed.series} series hold all ${sumYear.n} periods of ${summed.year}, the latest year at least ${sumYear.share} of them hold whole; ${summed.leftOut.length} series left out, nothing filled in (named in ${summed.record}). Summed file: ${summed.csv.relativeFile} (${body} rows, ${timeId} is the year); the fetched file ${data.relativeFile} keeps every period. Write ${summed.year} on the page.`);
   const dataDetails = { mode: "data", dataset, estimate, rows: body, bytes: data.bytes.byteLength, filePath: summed ? summed.csv.relativeFile : data.relativeFile, sha256: summed ? summed.csv.sha256 : data.sha256, key, ...(narrowed ? { narrow: narrowed } : {}), ...(yearsBack ? { years_back: yearsBack } : {}),
     ...(summed ? { sum_year: { n: sumYear.n, share: sumYear.share, year: summed.year, series: summed.series, whole: summed.whole, left_out: summed.leftOut, record: summed.record, fetched: { filePath: data.relativeFile, sha256: data.sha256, rows: summed.fetched } } } : {}) };

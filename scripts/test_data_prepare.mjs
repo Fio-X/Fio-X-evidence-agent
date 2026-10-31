@@ -74,6 +74,14 @@ for (const [id, gaps] of [["toy_month", MONTH_GAP], ["toy_thin", { ...MONTH_GAP,
   routes.push([new RegExp(`/datastructure/ESTAT/${id}/`), () => Buffer.from(TOY_XML(MONTH_DIMS))]);
   routes.push([new RegExp(`/data/${id}/M\\.TOTAL\\+C0100\\.TJ\\.X1\\+A2\\.DE\\+FR\\?`), () => MONTHS(gaps)]);
 }
+// toy_nar: the same months with siec TOTAL and partner X1 fixed and geo left open (DE, FR), for a narrow to the top geo code (FR, the higher at
+// the latest month 2026-08), alone or then summed to whole years; a key with geo codes answers only those.
+routes.push([/\/datastructure\/ESTAT\/toy_nar\//, () => Buffer.from(TOY_XML(MONTH_DIMS))]);
+routes.push([/\/data\/toy_nar\/M\.TOTAL\.TJ\.X1\.([A-Z+]*)\?/, (m) => {
+  const [head, ...lines] = MONTHS({}).toString("utf8").trimEnd().split("\n");
+  const geos = m[1] ? m[1].split("+") : null;
+  return Buffer.from([head, ...lines.filter((line) => { const c = line.split(","); return c[3] === "TOTAL" && c[5] === "X1" && (!geos || geos.includes(c[6])); })].join("\n") + "\n");
+}]);
 let fetchCalls = [];
 globalThis.fetch = async (url, init) => {
   fetchCalls.push(String(url));
@@ -117,6 +125,20 @@ const pageBuildOn = async (fn) => {
   process.env.NEWSROOM_SPEED_PAGE_BUILD = "1";
   process.env.NEWSROOM_AGENT = "rust";
   try { return await fn(); } finally { delete process.env.NEWSROOM_NEXT; delete process.env.NEWSROOM_SPEED_PAGE_BUILD; delete process.env.NEWSROOM_AGENT; }
+};
+const NARROW_ASK = { dataset: "toy_nar", filters: [{ dimension: "freq", values: ["M"] }, { dimension: "siec", values: ["TOTAL"] }, { dimension: "unit", values: ["TJ"] }, { dimension: "partner", values: ["X1"] }], years: { start: 2025, end: 2026 }, narrow: { dimension: "geo", rule: "top", n: 1, exclude: [] } };
+// The eurostat_narrow record next_run reads a page's scope from: content-addressed under data/origins, named in details.narrow, of the file the
+// page's table reads (details.filePath, which next_flow keeps as the table's file), with the codes kept and left out and the first file.
+const narrowRecordOf = (dir, out) => {
+  const rel = out.details.narrow?.record;
+  if (typeof rel !== "string" || !existsSync(join(dir, rel))) return null;
+  const record = JSON.parse(readFileSync(join(dir, rel), "utf8"));
+  const named = rel === `data/origins/${createHash("sha256").update(JSON.stringify(record)).digest("hex")}.json`;
+  const held = record.origin === "eurostat_narrow" && record.file === out.details.filePath && record.sha256 === out.details.sha256 && sha256OfFile(join(dir, record.file)) === record.sha256
+    && record.dimension === "geo" && record.rule === "top" && record.n === 1 && JSON.stringify(record.members) === JSON.stringify(["FR"]) && JSON.stringify(record.left_out) === JSON.stringify(["DE"])
+    && record.ranked === 2 && record.of === 2 && record.at === "2026-08" && record.total === null && record.total_held === false
+    && record.first.file !== record.file && existsSync(join(dir, record.first.file)) && sha256OfFile(join(dir, record.first.file)) === record.first.sha256;
+  return named && held ? record : null;
 };
 const MONTH_ASK = (dataset) => ({ dataset, filters: [{ dimension: "freq", values: ["M"] }, { dimension: "siec", values: ["TOTAL", "C0100"] }, { dimension: "unit", values: ["TJ"] }, { dimension: "partner", values: ["X1", "A2"] }, { dimension: "geo", values: ["DE", "FR"] }], years: { start: 2025, end: 2026 }, sum_year: { n: 12, share: 0.8 } });
 
@@ -264,6 +286,33 @@ const checks = {
     newRun();
     const out = await registered(m).get("newsroom_data_prepare").execute("a", { ...MONTH_ASK("toy_month"), sum_year: { n: 4, share: 0.8 } });
     return out.details.mode === "unresolved" && /sum_year\.n 4 needs the one freq Q/.test(text(out)) && !fetchCalls.some((u) => u.includes("/data/"));
+  }),
+  // narrow (new route): the record names the refetched file, the one the page's table reads; the old route writes none
+  narrowRecord: async (m) => {
+    const record = await pageBuildOn(async () => {
+      const dir = newRun();
+      const out = await registered(m).get("newsroom_data_prepare").execute("a", NARROW_ASK);
+      const record = narrowRecordOf(dir, out);
+      return record && record.fetched.file === record.file && record.summed === undefined && /the choice is recorded in data\/origins\//.test(text(out)) ? record : null;
+    });
+    process.env.NEWSROOM_SPEED_PAGE_BUILD = "1";
+    process.env.NEWSROOM_AGENT = "rust";
+    try {
+      const dir = newRun();
+      const old = await registered(m).get("newsroom_data_prepare").execute("a", NARROW_ASK);
+      return record !== null && old.details.narrow?.members?.[0] === "FR" && old.details.narrow.record === undefined
+        && (!existsSync(join(dir, "data/origins")) || readdirSync(join(dir, "data/origins")).every((f) => !readFileSync(join(dir, "data/origins", f), "utf8").includes("eurostat_narrow")));
+    } finally { delete process.env.NEWSROOM_SPEED_PAGE_BUILD; delete process.env.NEWSROOM_AGENT; }
+  },
+  // narrow then sum_year: the page's table reads the summed file, so the record names it (next_run matches the record by that file), and
+  // the refetched file and the sum's record beside it
+  narrowSumYearRecord: async (m) => pageBuildOn(async () => {
+    const dir = newRun();
+    const out = await registered(m).get("newsroom_data_prepare").execute("a", { ...NARROW_ASK, sum_year: { n: 12, share: 0.8 } });
+    const record = narrowRecordOf(dir, out);
+    const s = out.details.sum_year;
+    return record !== null && s?.year === 2025 && s.whole === 1 && record.file !== record.fetched.file && record.fetched.file === s.fetched.filePath && record.summed === s.record
+      && JSON.parse(readFileSync(join(dir, s.record), "utf8")).file === record.file;
   }),
 };
 routes.push([/\/eurostat\/api\/dissemination\/sdmx\/2\.1\/datastructure\/ESTAT\/nrg_bal_c\/latest/, () => fixture("nrg_dsd.xml")]);
@@ -454,6 +503,8 @@ const mutants = [
   ["picks a year fewer than the share hold whole", swap("WHERE c >= ${share} * (SELECT", "WHERE c >= 0 * (SELECT"), "sumYearStops"],
   ["drops a series with no value unnamed", swap("header = true, all_varchar = true)`;", "header = true, all_varchar = true) WHERE ${q(value)} IS NOT NULL`;"), "sumYearBlank"],
   ["stops on an unreadable value", swap("TRY_CAST(${q(value)} AS DECIMAL(38, 10))", "CAST(${q(value)} AS DECIMAL(38, 10))"), "sumYearBlank"],
+  ["records the fetched file of a narrow whose year was summed", swap("const file = summed ? summed.csv : data;", "const file = data;"), "narrowSumYearRecord"],
+  ["records no narrow on the new route", swap("if (narrowed && nextRouteEnabled()) {", "if (false) {"), "narrowRecord"],
   ["takes any n for the freq", swap("freq?.length !== 1 || freq[0] !== SUM_YEAR_PERIODS[String(sumYear.n)] ?", "false ?"), "sumYearChecked"],
 ];
 const unitMutants = [

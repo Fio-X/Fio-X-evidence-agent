@@ -1,0 +1,12 @@
+{
+ "note": "New route (NEWSROOM_NEXT=1): the page words of a Eurostat table the program narrowed to the top codes of its open dimension (newsroom.ts prepareData narrow, rule top, recorded as an eurostat_narrow origin record). Read by next_run.rs (include_str) only. The model never writes these words; {n} and {at} come from the record.",
+ "zh_source": "zh_scope is a program field of the page: its kicker and the eyebrow of the narrowed chart's scene, never model text; {n} is the count of codes the narrow record keeps, {noun} the record's dimension's noun from nouns (noun_other for a dimension not listed). zh_line follows the chart's source line, {at} the record's rank time; a rank time that is not a year (a month or a quarter of a table summed to years after the narrow) takes zh_line_latest, true because the narrow ranks at the first file's latest time",
+ "zh_scope": "在本指标最高的{n}{noun}中",
+ "zh_line": "按 {at} 年本指标取最高的 {n} {noun}",
+ "zh_line_latest": "按最近一期本指标取最高的 {n} {noun}",
+ "nouns": {
+  "geo": "个国家和地区",
+  "citizen": "个国籍"
+ },
+ "noun_other": "项"
+}

@@ -103,9 +103,10 @@ pub const SUPERLATIVES: [&str; 7] = ["最高", "最低", "领先", "垫底", "�
 /// would say the place leads among all places (next_flow Ask::Text scoped).
 pub const SCOPE_MARK: &str = "所选各方中";
 
-/// How the program chose a chart's places (a World Bank table narrowed by wb-rank-by.json): its own page field (the kicker
-/// and the chart's eyebrow), never model text, so the model can neither drop nor change it. `text` names the count of places the
-/// narrow record keeps; `record` is that record (data/origins), the field's source.
+/// How the program chose a chart's places (a World Bank table narrowed by wb-rank-by.json, a Eurostat table cut to the top
+/// codes of its open dimension, estat-narrow.json's words): its own page field (the kicker and the chart's eyebrow), never
+/// model text, so the model can neither drop nor change it. `text` names the count of places the narrow record keeps;
+/// `record` is that record (data/origins), the field's source.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Scope {
     pub text: String,
