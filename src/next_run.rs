@@ -1763,9 +1763,10 @@ fn year_fact(table: &str, filter: Value, t: &str, fmt: &str) -> Value {
 /// and {other} become name placeholders of codes the labels name, {value} and {gap} facts the page declares, {y0} and {y1}
 /// the periods of FINDING_FACTS read at the earlier and the later year (year_fact; rows already read). On a page with
 /// two ends whose bars draw the change (the minus family chg), the first ranked place's rise when it rose, else the last
-/// one's fall when it fell, its change a fact of its two ends' values (FINDING_FACTS: the later less the earlier for a rise,
-/// the earlier less the later for a fall, so it prints unsigned, in the change's format; rows already read). On a page of
-/// one year with the extremes (hi, lo, gap), the highest place against the lowest when they differ. On a flow page (a focus,
+/// one's fall when it fell and no other ranked place's change ties it, its change a fact of its two ends' values
+/// (FINDING_FACTS: the later less the earlier for a rise, the earlier less the later for a fall, so it prints unsigned, in
+/// the change's format; rows already read). On a page of one year with the extremes (hi, lo, gap), the highest place against
+/// the lowest when they differ and no other ranked place ties either. On a flow page (a focus,
 /// nothing ranked), the origin with the largest value at t1 among every country outside the hub, when no other ties it and
 /// the map declares its share. None otherwise: the dek stays the frame's. Program rules only; no model word is read.
 fn finding_of(f: &Filling, out: &mut Filled, labels: &BTreeMap<String, String>) -> Result<Option<Value>, String> {
@@ -1778,9 +1779,13 @@ fn finding_of(f: &Filling, out: &mut Filled, labels: &BTreeMap<String, String>) 
             return Ok(None);
         }
         let moved = |code: &String| at(code, &shape.year).zip(at(code, &shape.t0)).map(|(b, a)| (b - a, code.clone()));
-        let rise = picks.ranked.first().and_then(moved).filter(|(d, _)| *d > 0.0).map(|(_, c)| (Finding::Rise, c));
-        let fall = picks.ranked.last().and_then(moved).filter(|(d, _)| *d < 0.0).map(|(_, c)| (Finding::Fall, c));
-        let Some((finding, code)) = rise.or(fall) else { return Ok(None) };
+        let rise = picks.ranked.first().and_then(moved).filter(|(d, _)| *d > 0.0).map(|(d, c)| (Finding::Rise, d, c));
+        let fall = picks.ranked.last().and_then(moved).filter(|(d, _)| *d < 0.0).map(|(d, c)| (Finding::Fall, d, c));
+        let Some((finding, d, code)) = rise.or(fall) else { return Ok(None) };
+        // a change another ranked place shares is no one's largest
+        if picks.ranked.iter().filter(|c| **c != code).filter_map(moved).any(|(e, _)| e == d) {
+            return Ok(None);
+        }
         let Some(name) = named(&code) else { return Ok(None) };
         let [lead, early, late] = FINDING_FACTS;
         let (a, b) = if finding == Finding::Rise { (late, early) } else { (early, late) };
@@ -1802,9 +1807,12 @@ fn finding_of(f: &Filling, out: &mut Filled, labels: &BTreeMap<String, String>) 
             return Ok(None);
         }
         let (Some(hi), Some(lo)) = (picks.ranked.first(), picks.ranked.last()) else { return Ok(None) };
-        let higher = at(hi, &shape.year).zip(at(lo, &shape.year)).is_some_and(|(h, l)| h > l);
+        let higher = at(hi, &shape.year).zip(at(lo, &shape.year)).filter(|(h, l)| h > l);
         let (Some(name), Some(other)) = (named(hi), named(lo)) else { return Ok(None) };
-        if !higher {
+        let Some((top, low)) = higher else { return Ok(None) };
+        // a highest or a lowest value another ranked place shares is no one's own
+        let shared = |code: &String, v: f64| picks.ranked.iter().any(|c| c != code && at(c, &shape.year) == Some(v));
+        if shared(hi, top) || shared(lo, low) {
             return Ok(None);
         }
         let late = FINDING_FACTS[2];
@@ -5564,6 +5572,50 @@ mod tests {
         assert!(title(&drafts, "欧盟哪国可再生能源占比最高").is_err(), "a title that asks");
         // no fill (no recipe picked): the lead chart's, as before
         assert_eq!(page_lead(None, &charts), Some((Relation::Ranking, View::Slice)));
+    }
+
+    /// e3: the dek printed "{name}最高" or "{name}增幅最大" for one of two places with the same value or change. Two places
+    /// tied at the highest or the lowest value of a column page, or at the largest rise or fall of a change page, give no
+    /// finding (the dek stays the frame's); one place alone at either end still gives its own.
+    #[test]
+    fn a_tie_at_the_end_a_finding_names_gives_no_finding() {
+        let set = |rows: &mut Vec<Value>, at: &[(&str, &str, &str)]| {
+            for (g, t, v) in at {
+                let row = rows.iter_mut().find(|r| r["dims"]["geo"] == *g && r["time"] == *t).unwrap();
+                row["value"] = json!(v);
+            }
+        };
+        let column = recipe("column");
+        let claims = [("rank_top".to_string(), bound("c1", &[("country_iso2", json!("BE")), ("value", json!(14.9))]))];
+        let level = |at: &[(&str, &str, &str)]| {
+            let mut main = ring_rows("sdg", &[("freq", "A"), ("unit", "PC")], ("geo", &["SE", "BE", "DE", "FR", "EU27_2020"]), &["2025"]);
+            for (r, v) in main.iter_mut().zip(["65.4", "14.9", "30.25", "20", "40"]) {
+                r["value"] = json!(v);
+            }
+            set(&mut main, at);
+            let shape = shape_of(&column.eats, &[("sdg", &main[..])], &Hubs).unwrap();
+            let picks = picks_of(&column.picks, &shape, &main, &claims).unwrap();
+            fill_of(column, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语")).unwrap().get("finding").cloned()
+        };
+        assert_eq!(level(&[]).unwrap()["dek"], "{lead1.t}，{name.SE}最高，为{hi}，比最低的{name.BE}高{gap}");
+        assert_eq!(level(&[("DE", "2025", "65.4")]), None, "two highest");
+        assert_eq!(level(&[("FR", "2025", "14.9")]), None, "two lowest");
+
+        let change = recipe("change");
+        let moved = |at: &[(&str, &str, &str)]| {
+            let mut main = q1_ten_years();
+            set(&mut main, at);
+            let shape = shape_of(&change.eats, &[("sdg", &main[..])], &Hubs).unwrap();
+            let picks = picks_of(&change.picks, &shape, &main, &[]).unwrap();
+            fill_of(change, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语")).unwrap().get("finding").cloned()
+        };
+        // SE up 16 (50 to 66); BE too
+        assert_eq!(moved(&[("BE", "2024", "24.5")]), None, "two largest rises");
+        // no place rises (FR flat): SE down 16, alone, then BE with it
+        let falls = [("SE", "2016", "66"), ("SE", "2024", "50"), ("BE", "2016", "14"), ("BE", "2024", "8.5"), ("DE", "2016", "22.4"),
+            ("DE", "2024", "14.9"), ("FR", "2024", "15.5")];
+        assert_eq!(moved(&falls).unwrap()["dek"], "{lead0.t}至{lead1.t}，{name.SE}降幅最大，减少{lead}");
+        assert_eq!(moved(&[&falls[..], &[("BE", "2016", "24.5")]].concat()), None, "two largest falls");
     }
 
     /// A FRAMES row of shape_registry by its relation and view.

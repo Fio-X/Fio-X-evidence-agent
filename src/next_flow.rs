@@ -1152,7 +1152,12 @@ impl Ask {
                         return Err(self.refuse(format!("field '{id}': '{level}' asks a level{}", change_rule(changes))));
                     }
                     // On a scoped page a ranking word holds only among the kept places: refused here, so the model words
-                    // it again, rather than put back after acceptance (next_page Drafts::scoped).
+                    // it again, rather than put back after acceptance (next_page Drafts::scoped). A draft that ranks under
+                    // the scope's own words (SCOPE_MARK) keeps them, with the draft as the example.
+                    let mark = crate::next_page::SCOPE_MARK;
+                    if scoped.contains(id) && revised != draft && draft.contains(mark) && !revised.contains(mark) {
+                        return Err(self.refuse(format!("field '{id}': drops '{mark}'{}, e.g. '{draft}'", scope_rule(scoped))));
+                    }
                     if let Some(word) =
                         ranking_word(revised).filter(|_| scoped.contains(id) && revised != draft)
                     {
@@ -1532,7 +1537,8 @@ pub const CHANGE_WORDS: [&str; 10] = ["变", "增", "减", "升", "降", "涨", 
 /// The rule of the fields of a scoped page (Ask::Text scoped), said to the model in the ask and in a refusal, with an
 /// example that passes; the words are next_page SUPERLATIVES.
 pub const SCOPE_RULE: &str = "this page's chart shows only the places the program kept, not all of them, so a ranking word \
-     (最高, 最低, 领先, 垫底, 第一, 最多, 最少) holds only among those: a reworded field names none, e.g. '各方数值的变化'";
+     (最高, 最低, 领先, 垫底, 第一, 最多, 最少) holds only among those: a reworded field names none, e.g. '各方数值的变化', and \
+     keeps 所选各方中 where its draft says it";
 
 /// The rule of the title field (Ask::Text titles), said to the model in the ask and in a refusal, with a label and a
 /// conclusion that pass (neither ranks, asks a level nor types a number); the words are QUESTION_WORDS.

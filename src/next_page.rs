@@ -98,6 +98,11 @@ pub fn concept(relation: Relation, view: View) -> &'static Concept {
 /// so the text check refuses a reworded field that holds one (next_flow SCOPE_RULE); the draft stands under the scope fields.
 pub const SUPERLATIVES: [&str; 7] = ["最高", "最低", "领先", "垫底", "第一", "最多", "最少"];
 
+/// The words a scoped draft holds its ranking under (shape_registry DEK_FINDINGS scoped: "所选各方中，{name}增幅最大"): 最大 and
+/// 居首 are no SUPERLATIVES word (the rules suggest them), so a reworded field whose draft holds these words keeps them, or it
+/// would say the place leads among all places (next_flow Ask::Text scoped).
+pub const SCOPE_MARK: &str = "所选各方中";
+
 /// How the program chose a chart's places (a World Bank table narrowed by wb-rank-by.json): its own page field (the kicker
 /// and the chart's eyebrow), never model text, so the model can neither drop nor change it. `text` names the count of places the
 /// narrow record keeps; `record` is that record (data/origins), the field's source.
@@ -324,8 +329,8 @@ impl Drafts {
         self
     }
 
-    /// The revised fields, each whose wording differs from its draft and holds a SUPERLATIVES word the draft's again when
-    /// the page is scoped; returns the fields that went back. The text check refuses such a wording first (Ask::Text scoped),
+    /// The revised fields, each whose wording differs from its draft and holds a SUPERLATIVES word, or drops the SCOPE_MARK
+    /// its draft holds, the draft's again when the page is scoped; returns the fields that went back. The text check refuses such a wording first (Ask::Text scoped),
     /// so after it this finds none: a guard only, its put-back recorded (SCOPE_FALLBACK_EVENT). With no scope, as given.
     pub fn scoped(
         &self,
@@ -337,7 +342,8 @@ impl Drafts {
         let mut back = Vec::new();
         for (target, draft) in &self.fields {
             if let Some(wording) = out.get_mut(target) {
-                if wording != draft && SUPERLATIVES.iter().any(|w| wording.contains(w)) {
+                let unmarked = draft.contains(SCOPE_MARK) && !wording.contains(SCOPE_MARK);
+                if wording != draft && (unmarked || SUPERLATIVES.iter().any(|w| wording.contains(w))) {
                     *wording = draft.clone();
                     back.push(target.clone());
                 }
@@ -1220,7 +1226,8 @@ mod tests {
     /// {name} a place's name placeholder, {value} and {gap} facts, {y0} and {y1} facts' periods. Each finding replaces the
     /// frame's dek, its scoped wording on a scoped page; the sentence types no number, names its later year (and a change its
     /// earlier) through a placeholder, says no "从起始到最近" and on a scoped page ranks nothing; kept or reworded with its
-    /// placeholders it passes, a reword that drops one, writes 年 after a period or ranks on a scoped page is refused. None
+    /// placeholders it passes, a reword that drops one, writes 年 after a period, or on a scoped page ranks or drops SCOPE_MARK
+    /// is refused. None
     /// keeps the frame's dek.
     #[test]
     fn a_finding_is_the_dek_of_its_page_and_keeps_its_placeholders() {
@@ -1268,6 +1275,19 @@ mod tests {
                 assert!(ask.check(&one("2", &dropped)).unwrap_err().problem.contains("missing: [{name.SE}]"), "{dropped}");
                 let ranks = format!("{said}，居欧盟最高");
                 assert_eq!(ask.check(&one("2", &ranks)).is_err(), drafts.has_scope, "{ranks}");
+                // e3: 增幅最大 and 居首 rank with no SUPERLATIVES word, so a scoped reword that drops the scope's words said the
+                // place led among all places: refused with the draft as the example, and put back by the guard unchecked
+                assert_eq!(said.contains(SCOPE_MARK), drafts.has_scope, "{said}");
+                let unmarked = said.replace(&format!("{SCOPE_MARK}，"), "");
+                let unmarked_refused = ask.check(&one("2", &unmarked));
+                assert_eq!(unmarked_refused.is_err(), drafts.has_scope, "{unmarked}");
+                if let Err(refused) = unmarked_refused {
+                    assert!(refused.problem.starts_with(&format!("field '2': drops '{SCOPE_MARK}'; ")), "{}", refused.problem);
+                    assert!(refused.problem.ends_with(&format!(", e.g. '{said}'")), "{}", refused.problem);
+                    let unchecked = Choice::Text { text: BTreeMap::from([("2".to_string(), unmarked.clone())]), names: BTreeMap::new() };
+                    let (page, back) = drafts.scoped(drafts.revised(&unchecked).unwrap());
+                    assert_eq!((page[&Target::PageDek].as_str(), back), (said.as_str(), vec![Target::PageDek]));
+                }
             }
         }
     }
