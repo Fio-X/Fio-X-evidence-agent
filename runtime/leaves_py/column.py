@@ -42,13 +42,24 @@ class ColumnFrame:
         elif not f.vals or min(v for _, v in f.vals) < 0 or max(v for _, v in f.vals) <= 0:
             raise FX.Refused("bars: the values are not all 0 or more with one above 0")
         f.year, f.marks, f.size, f.rh = year, set(d.get("marks") or []), K("size"), K("row")
+        f.focus = set(focus(h))
         f.mv, f.W = mv, PAGE_W
+        f.map_h = mv.H if mv else 0  # the map's svg height: the map's, or more when the bubbles' key stands under it (bubbles.cl_bubble_key)
         f.x0 = mv.W + MAP_GAP if mv else 0; f.bw = f.W - f.x0
         f.lw = max(prod.tw(prod.NAME(k), f.size) for k, _ in f.vals) + 12  # the names' column, right-aligned to the bars
         f.vw = max(prod.tw(FX.text(val_src(d, k, f.change)), f.size) for k, _ in f.vals) + 8  # room after the longest bar for its value
         f.top = K("top")
         f.bh = f.top + f.rh * len(f.vals) + 4
         f.H = max(f.bh, mv.H if mv else 0)
+
+
+def focus(h):
+    """The page's focus, the places its accent marks in the bars and on the map: the ones the map's leader notes name (the
+    extremes the program put a note at, hero.leaves.leader_notes), in their order; on a page with no such note, its marked places
+    (hero.data.marks). The program's, never a model's: every other bar and circle takes the page's greys."""
+    notes = ((h.get("leaves") or {}).get("leader_notes") or {}).get("notes") or []
+    named = [n["name"] for n in notes if isinstance(n, dict) and isinstance(n.get("name"), str)]
+    return list(dict.fromkeys(named)) or list((h.get("data") or {}).get("marks") or [])
 
 
 def val_src(d, code, change=False):
@@ -63,8 +74,9 @@ def html_named(code):
 
 
 def cl_bars(f, occ):
-    """One bar per ranked place, largest first: the name before it, the value after it; a marked place in the accent. Drawn
-    from x0, where the panel places the bars. With bars.measure change: cl_change_bars."""
+    """One bar per ranked place, largest first: the name before it, the value after it, a marked place's in bold; a bar of the
+    page's focus (focus) in the accent, the others in the bars' grey. Drawn from x0, where the panel places the bars. With
+    bars.measure change: cl_change_bars."""
     if f.change: return cl_change_bars(f)
     o, mx, bw, lw = [], max(v for _, v in f.vals), f.bw - f.lw - f.vw, f.x0 + f.lw
     o.append(f'<line x1="{lw:.1f}" x2="{lw:.1f}" y1="{f.top}" y2="{f.top + f.rh * len(f.vals)}" stroke="var(--t-sec)" stroke-width="0.8"/>')
@@ -73,20 +85,22 @@ def cl_bars(f, occ):
         ink, weight = ("var(--t-title)", 700) if hi else ("var(--t-body)", 400)
         mid = y + f.rh / 2
         o.append(f'<text x="{lw - 8:.1f}" y="{mid:.1f}" text-anchor="end" dominant-baseline="middle" font-size="{f.size}" fill="{ink}" font-weight="{weight}">{prod.named(k)}</text>'
-                 f'<rect x="{lw:.1f}" y="{y + 3:.1f}" width="{w:.1f}" height="{f.rh - 6}" fill="{"var(--accent)" if hi else "var(--bar)"}"/>'
-                 f'<text x="{lw + w + 6:.1f}" y="{mid:.1f}" dominant-baseline="middle" font-size="{f.size}" fill="{"var(--accent)" if hi else "var(--t-sec)"}" font-weight="{weight}">{FX.entry(val_src(f.d, k), "tspan", None)}</text>')
+                 f'<rect x="{lw:.1f}" y="{y + 3:.1f}" width="{w:.1f}" height="{f.rh - 6}" fill="{FOCUS if k in f.focus else "var(--bar)"}"/>'
+                 f'<text x="{lw + w + 6:.1f}" y="{mid:.1f}" dominant-baseline="middle" font-size="{f.size}" fill="{ink if hi else "var(--t-sec)"}" font-weight="{weight}">{FX.entry(val_src(f.d, k), "tspan", None)}</text>')
     return "".join(o)
 
 
-# A change bar's colour by its sign, the page's fall and rise colours (as prod's flow lines and halos); no change, the bar's.
-RISE, FALL = "var(--accent2)", "var(--accent)"
+# A bar of the page's focus (focus): the accent, which marks nothing else on the page. A change bar out of it by its sign, two of
+# the page's greys: a rise the darker, a fall the bars' own; no change, the bar's.
+FOCUS = "var(--accent)"
+RISE, FALL = "var(--accent2)", "var(--bar)"
 
 
 def cl_change_bars(f):
     """One signed bar per ranked place in layer 1's order (by its change, the largest rise first): from a zero line, a rise
-    to the right in the rise colour, a fall to the left in the fall colour, each bar's length its change on one scale; the
-    name before the bars, the value past each bar's end (on its side of the zero line); a marked place's name and value in
-    bold. The scale leaves room for a value on each side a bar runs to."""
+    to the right in the rise colour, a fall to the left in the fall colour (a bar of the page's focus in the accent, either way),
+    each bar's length its change on one scale; the name before the bars, the value past each bar's end (on its side of the zero
+    line); a marked place's name and value in bold. The scale leaves room for a value on each side a bar runs to."""
     o, lo, hi = [], min(0.0, min(v for _, v in f.vals)), max(0.0, max(v for _, v in f.vals))
     neg, pos = (f.vw if lo < 0 else 0), (f.vw if hi > 0 else 0)
     left, lw = f.x0 + f.lw + neg, f.x0 + f.lw
@@ -99,7 +113,7 @@ def cl_change_bars(f):
         mid, x = y + f.rh / 2, z if v >= 0 else z - w
         tx, anchor = (z + w + 6, "start") if v >= 0 else (z - w - 6, "end")
         o.append(f'<text x="{lw - 8:.1f}" y="{mid:.1f}" text-anchor="end" dominant-baseline="middle" font-size="{f.size}" fill="{ink}" font-weight="{weight}">{prod.named(k)}</text>'
-                 f'<rect x="{x:.1f}" y="{y + 3:.1f}" width="{w:.1f}" height="{f.rh - 6}" fill="{RISE if v > 0 else FALL if v < 0 else "var(--bar)"}"/>'
+                 f'<rect x="{x:.1f}" y="{y + 3:.1f}" width="{w:.1f}" height="{f.rh - 6}" fill="{FOCUS if k in f.focus else RISE if v > 0 else FALL if v < 0 else "var(--bar)"}"/>'
                  f'<text x="{tx:.1f}" y="{mid:.1f}" text-anchor="{anchor}" dominant-baseline="middle" font-size="{f.size}" fill="{ink if hi_ else "var(--t-sec)"}" font-weight="{weight}">{FX.entry(val_src(f.d, k, True), "tspan", None)}</text>')
     return "".join(o)
 
@@ -209,7 +223,7 @@ def column_shell(f, bars, unit, pic=""):
     sc = f.h.get("scope")
     if sc and sc.get("code") in prod.NAMES: unit = word("column.scope", place=prod.named(sc["code"]), n=FX.entry(f"fact:{sc['count']}.n", "span", None)) + unit
     bars = f'<svg class="bars" viewBox="{f.x0} 0 {f.bw} {f.bh:.0f}" width="{f.bw}" height="{f.bh:.0f}">{bars}</svg>'
-    if f.mv: bars = f'<div class="cm"><svg class="cmap" viewBox="0 0 {f.mv.W} {f.mv.H}" width="{f.mv.W}" height="{f.mv.H}">{pic}</svg>{bars}</div>'
+    if f.mv: bars = f'<div class="cm"><svg class="cmap" viewBox="0 0 {f.mv.W} {f.map_h}" width="{f.mv.W}" height="{f.map_h}">{pic}</svg>{bars}</div>'
     return f'<div class="hero column"><div class="cu">{unit}{word("list.sep")}{year}</div>{bars}</div>'
 
 

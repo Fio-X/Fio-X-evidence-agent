@@ -48,7 +48,7 @@ class Registry(unittest.TestCase):
         t = knobs.table()
         column = next(r for r in knobs.RECIPES if r["name"] == "column")
         self.assertEqual((column["layers"], t["groups"]["column"]),
-                         (["bars", "bubbles", "leader_notes"], ["bignums", "bars", "section_head", "rankbar", "bubbles", "leader_notes"]))
+                         (["bars", "bubbles", "leader_notes"], ["bignums", "bars", "section_head", "rankbar", "bubbles", "bubble_key", "leader_notes"]))
         for eats in (["annual", "last_year", "one_place", "one_unit"], ["annual", "one_unit", "monthly_companion", "hub_origin"]):
             with self.assertRaises(SystemExit) as e:
                 self._with(dict(column, layers=[], eats=eats), t)
@@ -59,6 +59,23 @@ class Registry(unittest.TestCase):
         with self.assertRaises(SystemExit) as e:
             self._with(dict(change, layers=[], eats=["annual", "one_place", "two_ends", "last_year"]), t)
         self.assertIn("name it before", str(e.exception))
+
+    def test_a_recipe_that_draws_the_bubbles_draws_their_key_right_after_them(self):
+        # knobs.WITH: the key to the circles comes with the bubbles in every recipe that draws them (column and change), right
+        # after them, and in none that does not (scmp, ring); it eats what the bubbles eat; a recipe naming it itself refuses
+        t = knobs.table()
+        layers = {r["name"]: r["layers"] for r in t["recipes"]}
+        for name, ls in layers.items():
+            if "bubbles" in ls: self.assertEqual(ls[ls.index("bubbles") + 1], "bubble_key", name)
+            else: self.assertNotIn("bubble_key", ls, name)
+        self.assertEqual((layers["column"], layers["change"]), (["bars", "bubbles", "bubble_key", "leader_notes"], ["bubbles", "bubble_key", "bars", "leader_notes"]))
+        self.assertEqual((layers["scmp"], layers["ring"]), (["map", "strip", "bignums", "notes"], ["map", "ring", "callouts", "legend", "inset"]))
+        self.assertEqual(t["nodes"]["bubble_key"]["eats"], t["nodes"]["bubbles"]["eats"])
+        self.assertEqual([k["name"] for k in t["nodes"]["bubble_key"]["knobs"]], ["size", "count", "width"])
+        column = next(r for r in knobs.RECIPES if r["name"] == "column")
+        with self.assertRaises(SystemExit) as e:
+            self._with(dict(column, layers=["bars", "bubbles", "bubble_key", "leader_notes"]), t)
+        self.assertIn("which its layers bring (WITH)", str(e.exception))
 
     def _with(self, recipe, t):
         saved = knobs.RECIPES[:]

@@ -2147,8 +2147,9 @@ mod tests {
         // the big numbers' size, label lines and alignment with that, and their min, box width and cells a row after it; the
         // chart leaves over the column page's frame (section_head 8, rankbar 8, bubbles 19 with its label gap and spacing, leader
         // reach, land cost, nudge, circle gap and inset, two of them a list of codes), then the map panel's leader notes (6: a note
-        // never sits over the land, so it has no land cost; one a list of codes), and the bars' measure (level or change) last
-        assert_eq!((t.nodes.len(), knobs), (33, 134));
+        // never sits over the land, so it has no land cost; one a list of codes), the bars' measure (level or change), and the
+        // bubbles' key (3: its text size, reference circles and line width)
+        assert_eq!((t.nodes.len(), knobs), (34, 137));
         let reserve: Vec<_> = t.nodes.iter().filter(|(_, l)| l.reserve).map(|(n, _)| n.as_str()).collect();
         assert_eq!(reserve, ["flows", "labels", "routes"]);
         let legacy: Vec<_> = t.legacy.iter().map(|(n, at)| (n.as_str(), at.join("."))).collect();
@@ -2162,7 +2163,7 @@ mod tests {
         let groups: Vec<_> = t.groups.keys().map(String::as_str).collect();
         assert_eq!(groups, ["change", "charts", "column", "map", "ring", "scmp"]);
         assert_eq!(t.groups["scmp"], ["map", "strip", "bignums", "notes"]);
-        assert_eq!(t.groups["column"], ["bignums", "bars", "section_head", "rankbar", "bubbles", "leader_notes"]);
+        assert_eq!(t.groups["column"], ["bignums", "bars", "section_head", "rankbar", "bubbles", "bubble_key", "leader_notes"]);
         // a change page is a column page whose bars are the places' change (bars.measure)
         assert_eq!(t.groups["change"], t.groups["column"]);
         assert!(matches!(t.nodes["bubbles"].info.knobs.iter().find(|k| k.name == "projection").map(|k| k.kind),

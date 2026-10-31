@@ -75,10 +75,11 @@ DROPPED = []
 SCALE = {}
 
 
-def leaf(Frame, cl, key, fixed=None):
+def leaf(Frame, cl, key, fixed=None, by_hero=None):
     """A chart leaf (wbkit's style) as a layer of a recipe's frame: its own Frame over the hero's leaves.<key> as its data,
-    with the hero's style (`fixed`, {node: {knob: value}}, over it: what the recipe's layout sets), and the series values read
-    from the request's tables (wbkit.read_values). A hero that names no leaves.<key> refuses the layer. What the leaf could
+    with the hero's style (`fixed`, {node: {knob: value}}, over it: what the recipe's layout sets; then `by_hero`'s, the knobs
+    the program reads off the hero itself, as the page's focus), and the series values read from the request's tables
+    (wbkit.read_values). A hero that names no leaves.<key> refuses the layer. What the leaf could
     not place (its Frame.dropped, (id, why) each) does not stop the layer: it goes back in DROPPED, even when that is all it
     was given (the layer is drawn empty, and the page still goes out with every dropped item in its ledger)."""
     def draw(f, occ):
@@ -86,7 +87,7 @@ def leaf(Frame, cl, key, fixed=None):
         if d is None: raise FX.Refused(f"the hero names no leaves.{key}")
         wbkit.read_values()
         st = dict(f.h.get("style", {}))
-        for node, kv in (fixed or {}).items(): st[node] = {**st.get(node, {}), **kv}
+        for node, kv in [*(fixed or {}).items(), *(by_hero(f.h) if by_hero else {}).items()]: st[node] = {**st.get(node, {}), **kv}
         fr = Frame({"data": d, "style": st}); out = cl(fr, occ)
         dropped = getattr(fr, "dropped", None) or []
         DROPPED.extend({"id": str(c), "why": why} for c, why in dropped)
@@ -102,13 +103,31 @@ def leaf(Frame, cl, key, fixed=None):
 # beside the map print every value, so the map names only its two ends and the biggest, MAP_LABELS in all, label_sep apart.
 MAP_LABELS = 12
 MAP_STYLE = {"bubbles": {"projection": "view", "width": column.MAP_W, "label_top": MAP_LABELS, "label_sep": 8}, "leader_notes": {"width": column.MAP_W}}
-MAP_LAYERS = ["bubbles", "leader_notes"]
+# The key to the circles comes with the bubbles (knobs.py WITH), drawn after them and before the notes, which keep clear of it.
+MAP_LAYERS = ["bubbles", "bubble_key", "leader_notes"]
+# The map layer drawn from another's leaves: the key reads the bubbles' entry.
+MAP_LEAVES = {"bubble_key": "bubbles"}
+
+
+def focus_style(h):
+    """The bubbles' highlight: the page's focus (column.focus) that the map draws a circle for, in the accent, as its bars."""
+    drawn = {i.get("code") for i in ((h.get("leaves") or {}).get("bubbles") or {}).get("items") or [] if isinstance(i, dict)}
+    return {"bubbles": {"highlight": ",".join(c for c in column.focus(h) if c in drawn)}}
+
+
+def bubble_key(f, occ):
+    """The key to the map's circles (bubbles.cl_bubble_key) over the panel's frame; a key it could not place goes back in
+    DROPPED, the layer drawn empty."""
+    out = bubbles.cl_bubble_key(f, occ)
+    DROPPED.extend({"id": c, "why": why} for c, why in f.key_dropped)
+    return out
 
 
 # The chart leaves a column page's frame holds beside its own layers, and which of them are svg.
 LEAF_LAYERS = dict(section_head=leaf(section_head.Frame, section_head.cl_section_head, "section_head"),
                    rankbar=leaf(rankbar.Frame, rankbar.cl_rankbar, "rankbar"),
-                   bubbles=leaf(bubbles.Frame, bubbles.cl_bubbles, "bubbles", MAP_STYLE),
+                   bubbles=leaf(bubbles.Frame, bubbles.cl_bubbles, "bubbles", MAP_STYLE, focus_style),
+                   bubble_key=(bubble_key, None),
                    leader_notes=leaf(leader_notes.Frame, leader_notes.cl_leader_notes, "leader_notes", MAP_STYLE))
 LEAF_SVG = section_head.SECTION_HEAD_SVG + rankbar.RANKBAR_SVG + bubbles.BUBBLES_SVG + leader_notes.LEADER_NOTES_SVG
 
@@ -136,7 +155,10 @@ class Panel:
         c = prod.Ctx(spec); h = spec["hero"]
         p.c, p.spec, p.occ = c, spec, prod.Occ()
         if p.node in COLUMN_KINDS:
-            p.f = column.ColumnFrame(c, h, map_view(h)); return
+            p.f = column.ColumnFrame(c, h, map_view(h))
+            # the room under the map the bubbles' key may stand in (bubbles.key_room); the map's svg grows into it only when the key does
+            if p.f.mv: p.f.H = max(p.f.H, p.f.mv.H + bubbles.key_room(p.f))
+            return
         if k.get("shapes") is None: raise FX.Refused(f"the {p.node} page's request gives no shapes")
         if p.node == "scmp":
             p.f = scmp.SquareFrame(c, h); return
@@ -267,7 +289,7 @@ def column_page(panel, got, sizes):
     (illus_strip, its size in `sizes`): line art only, in its own svg, hidden from a screen reader."""
     f, spec = panel.f, panel.spec
     need = (["bignums"] if "bignums" in got else []) + ["bars"] + (["illus_strip"] if "illus_strip" in got else [])
-    if f.mv: need += [n for n in MAP_LAYERS if n in (f.h.get("leaves") or {})]
+    if f.mv: need += [n for n in MAP_LAYERS if MAP_LEAVES.get(n, n) in (f.h.get("leaves") or {})]
     off = [f"page: {k} is not drawn by a leaf layer yet" for k in NOT_LEAF if spec.get(k)]
     off += [f"page: no layer {n}" for n in need if not isinstance(got.get(n), str)]
     off += [f"page: {n} is no layer the page places" for n in got if n not in need]

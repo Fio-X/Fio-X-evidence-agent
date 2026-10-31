@@ -95,11 +95,12 @@ pub enum Request<'a> {
 /// tables it illustrates), in the order a page's tables are matched against them.
 const PIECE_SETS: &[&str] = &[include_str!("../runtime/leaves_js/pieces-energy.json")];
 
-/// The leaf pages' palette (scmp.shell puts it on every page): a strip strokes in its ink and accent by name, so the page
-/// colours it and no second copy of a colour is kept.
+/// The leaf pages' palette (scmp.shell puts it on every page): a strip strokes in its ink and second pen by name, so the page
+/// colours it and no second copy of a colour is kept. The second pen (the request's "accent", each piece's one marked part)
+/// is a grey of the page's: the page's accent marks its focus alone (bubbles.py, column.py), never a drawing.
 const PAGE_TOKENS: &str = include_str!("../runtime/leaves_py/tokens.css");
 const STRIP_INK: &str = "--t-title";
-const STRIP_ACCENT: &str = "--accent";
+const STRIP_SECOND: &str = "--t-sec";
 
 /// The strip of a page of `tables` and why: none when no piece set names one of them; Err when the set does not parse, the
 /// palette lacks a colour, or the strip is refused or not taken.
@@ -117,8 +118,8 @@ fn illus_strip(tables: &[String], width: f64, runtime: &Path) -> Result<(Option<
         return Ok((None, format!("illus: no piece set illustrates {}", tables.join(", "))));
     };
     let name = set["set"].as_str().unwrap_or_default().to_string();
-    let colours = [STRIP_INK, STRIP_ACCENT].map(|c| format!("var({c})"));
-    if let Some(c) = [STRIP_INK, STRIP_ACCENT].iter().find(|c| !PAGE_TOKENS.contains(&format!("{c}:"))) {
+    let colours = [STRIP_INK, STRIP_SECOND].map(|c| format!("var({c})"));
+    if let Some(c) = [STRIP_INK, STRIP_SECOND].iter().find(|c| !PAGE_TOKENS.contains(&format!("{c}:"))) {
         return Err(format!("illus: the page palette defines no {c}"));
     }
     let request = json!({"set": set, "width": width, "ink": colours[0], "accent": colours[1], "knobs": {}});

@@ -1404,7 +1404,7 @@ impl Filled {
 type NodeFill = fn(&Filling, &mut Filled) -> Result<(), String>;
 
 /// The nodes that put something into a page's request, each once here, whatever recipe draws it; a layer with none here
-/// (callouts, legend, inset) prints from what the others put.
+/// (callouts, legend, inset, bubble_key) prints from what the others put.
 const NODE_FILLS: &[(&str, NodeFill)] = &[
     ("map", map_fill),
     ("ring", ring_node_fill),
@@ -2143,7 +2143,15 @@ fn recipe_request(
     }
     let meta = catalogue.table(&main.id).ok_or_else(|| ("fill", format!("the catalogue lists no {}", main.id)))?;
     fill["knobs"]["spec"]["kicker"] = json!(kicker);
-    let title = catalogue.table_zh(&meta.id).map_err(|why| ("fill", why))?.unwrap_or_else(|| main.title.clone());
+    let zh = catalogue.table_zh(&meta.id).map_err(|why| ("fill", why))?;
+    // the key to the map's circles (bubbles.py bubble_key) says what a circle's area is by the table's reviewed Chinese name,
+    // as words: one with a digit is left out, as the source line leaves it out, and the key then names no measure
+    if let Some(name) = zh.as_deref().map(str::trim).filter(|n| !n.is_empty() && !n.chars().any(char::is_numeric)) {
+        if let Some(bubbles) = fill.pointer_mut("/knobs/spec/hero/leaves/bubbles").and_then(Value::as_object_mut) {
+            bubbles.insert("measure".into(), json!([{"w": name}]));
+        }
+    }
+    let title = zh.unwrap_or_else(|| main.title.clone());
     // no years here: the leaf footer marks only the table ids (spec.refs) and refuses any other digit in the line
     fill["knobs"]["spec"]["source"] = json!(source_line(meta.worldbank, &meta.id, &title, &[]));
     Ok(fill)
@@ -5217,9 +5225,10 @@ mod tests {
         twice.push(json!({"src": "series:sdg/x:2025:OBS_VALUE", "dims": {"freq": "A", "unit": "PC", "geo": "SE"}, "time": "2025", "value": "1"}));
         assert_eq!(picks_of(&column.picks, &shape, &twice, &claims).unwrap_err(), "not this shape: main sdg holds SE twice at 2025");
 
-        assert_eq!(column.layers, ["bars", "bubbles", "leader_notes"]);
+        // the key to the circles comes with the bubbles (knobs.py WITH), drawn before the notes
+        assert_eq!(column.layers, ["bars", "bubbles", "bubble_key", "leader_notes"]);
         let fill = fill_of(column, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语")).unwrap();
-        assert_eq!(fill["order"], json!(["bars", "bubbles", "leader_notes"]));
+        assert_eq!(fill["order"], json!(["bars", "bubbles", "bubble_key", "leader_notes"]));
         let rows = fill["rows"].as_array().unwrap();
         assert_eq!(rows.iter().map(|r| r["dims"]["geo"].as_str().unwrap()).collect::<Vec<_>>(), ["SE", "BE", "DE", "FR"]);
         let spec = &fill["knobs"]["spec"];
@@ -5486,7 +5495,9 @@ mod tests {
         let published = crate::next_flow::publish_leaf_page(&calls, &bundle.dir, "change", (&leaf, &plan), &qa).unwrap();
         let html = std::fs::read_to_string(bundle.dir.join(&published.html_ref)).unwrap();
         assert!(html.contains(r#"data-src="fact:chg.FR""#) && html.contains(r#"data-src="fact:chg.SE""#), "the bars print the changes");
-        assert!(html.contains(r#"fill="var(--accent)""#) && html.contains(r#"fill="var(--accent2)""#), "a fall and a rise colour");
+        // the accent marks the notes' two places (SE's rise, FR's fall) alone; DE's and BE's rises take the rise grey
+        assert!(html.contains(r#"fill="var(--accent)""#) && html.contains(r#"fill="var(--accent2)""#), "the focus colour and a rise colour");
+        assert_eq!(html.matches(r#"height="18" fill="var(--accent)""#).count(), 2, "only the two focus bars in the accent");
         assert!(html.contains(r#"text-anchor="end" dominant-baseline="middle" font-size="13" fill="var(--t-sec)" font-weight="400"><tspan data-src="fact:chg.FR""#), "the fall's value on its side");
         assert!(html.contains(r#"data-src="period:sdg:2016""#), "the year line names the earlier end");
         let checks = page_checks(change, Some(html.as_str()), &published.dropped, StripAsk::default(), &drawn, Some(&typed()));

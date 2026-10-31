@@ -1,7 +1,9 @@
 """Self-test of the bubbles leaf (runtime/leaves_py/bubbles.py) on the Natural Earth land (runtime/pi/assets): a dispersed world
 set draws (test-only values), a crowded European set (World Bank 65+ share, scripts/fixtures/data_prepare/worldbank/q5.json)
 refuses at max_overlaps 0 (no nudge, even at the r_max floor) and draws when allowed; circles that overlap at r_max
-are drawn on a smaller scale (r_used) until they clear, by area still, and maps that clear at r_max draw byte for byte as before; each point is the place's Natural Earth label point; names from the
+are drawn on a smaller scale (r_used) until they clear, by area still, and maps that clear at r_max draw byte for byte as before; only the
+focus circles take the accent; the key drawn after the bubbles (bubble_key) names the measure and the map's year, its reference circles
+the map's own at their radii and values, its box claimed off every circle and label; each point is the place's Natural Earth label point; names from the
 project's reviewed zh names. Each svg reads back with no `bad`, every digit sits inside a marked ledger run, no label sits on
 any circle or on another label (one that fits nowhere is listed in Frame.unlabeled, never moved onto a circle), and the
 refusals keep the leaf's rules. Run: python3 -I -B scripts/test_leaves_bubbles.py"""
@@ -313,20 +315,125 @@ class MapExtent(unittest.TestCase):
 
     def test_maps_that_clear_at_r_max_draw_as_before(self):
         # the EU table above, a q1-style EU-27 column map, the q5 change page's world map and the world set: each clears at r_max,
-        # r_used is the knob's, and the layer is byte for byte the one drawn before the smaller scales were tried (its sha then)
+        # r_used is the knob's, and the layer is byte for byte the one drawn before the smaller scales were tried but for its circles'
+        # fill (its sha then, with every circle out of the focus in CIRCLE_INK where it was in the accent)
         q1 = dict(SE=66.4, FI=50.8, DK=44.9, LV=43.2, EE=38.5, PT=35.2, AT=33.8, LT=31.9, HR=28.1, RO=25.8, SI=25.1, EL=25.3, ES=24.9, FR=22.2,
                   DE=21.5, IT=19.6, BG=22.5, CZ=18.6, PL=16.6, SK=17.0, CY=20.2, NL=17.4, HU=15.2, MT=15.1, IE=15.3, BE=14.7, LU=11.6)  # test-only
         iso3, zh2 = dict(ISO3, EL="GRC"), dict(ZH2, EL=ZH2["GR"])
         for tag, values, dec, point_of, names, pin in (
-                ("eu", EU2, 1, lambda c: POINT[ISO3[c]], ZH2, "d90ba7ccc955cbafdccdd90cc2fddc235f5f6562706be1f8bda431195f796e08"),
-                ("q1", q1, 1, lambda c: POINT[iso3[c]], zh2, "8f5b6e4ac592a23fe776f8d07504c4158cc532c6ff3b76553b70d1cbfb02c4d5"),
-                ("q5-world", Q5, 2, POINT.get, ZH3, "8e18db6d5b9b56347d30d07f4a482e52a04286a69abd46a292947e5ffe8a151e")):
+                ("eu", EU2, 1, lambda c: POINT[ISO3[c]], ZH2, "89d06d554f33aa65a5a05e652f78b99c714c284f609bc080212e5e078886bb40"),
+                ("q1", q1, 1, lambda c: POINT[iso3[c]], zh2, "22f3ccee12660f3c215f676948c7729aa50c12f0837e36aa4e35f59638b3b550"),
+                ("q5-world", Q5, 2, POINT.get, ZH3, "7f6b7bdb647beb2ae8c81caabec9173e41dff0645c211874e6440e02e2f85024")):
             rows, items, labels = map_set(values, dec, point_of, names); setup(rows, labels)
             ext = layer1_extent({i["code"]: i["lonlat"] for i in items}, {c: (v, labels[c]) for c, v in values.items()}, dec)
             f = bubbles.Frame({"data": {"items": items, "ext": ext}, "style": {"bubbles": dict(run.MAP_STYLE["bubbles"])}})
             self.assertEqual((f.r_used, hashlib.sha256(bubbles.cl_bubbles(f, prod.Occ()).encode()).hexdigest(), f.dropped), (22, pin, []), tag)
         setup(W_ROWS, W_LABELS)
-        self.assertEqual(hashlib.sha256(bubbles.draw(hero(W_DATA, highlight="CHN"))[0].encode()).hexdigest(), "768bc24ec42f72e6d54b884f5365dd03370296f5c600ea4ba9a62d2ec097ded6")
+        self.assertEqual(hashlib.sha256(bubbles.draw(hero(W_DATA, highlight="CHN"))[0].encode()).hexdigest(), "256649e06393c4a99e9fecdc520ea52d76802183541bdf7e68cc53c632bf3251")
+
+
+# The key's fixture: a q1-style EU-27 column map (test-only values), each circle's value printed bare from its family member
+# (fact:val.<code>.n, as layer 1's bubbles_fill gives it) in a family whose format prints "%", the map's year a period entry.
+KQ1 = dict(SE=66.4, FI=50.8, DK=44.9, LV=43.2, EE=38.5, PT=35.2, AT=33.8, LT=31.9, HR=28.1, RO=25.8, SI=25.1, EL=25.3, ES=24.9, FR=22.2,
+           DE=21.5, IT=19.6, BG=22.5, CZ=18.6, PL=16.6, SK=17.0, CY=20.2, NL=17.4, HU=15.2, MT=15.1, IE=15.3, BE=14.7, LU=11.6)  # test-only
+KSPEC = {"facts": {"val": {"each": "geo", "table": "T", "time": "2025", "fmt": "pc"}}, "fmts": {"pc": {"scale": 1, "dec": 1, "suffix": "%"}}}
+
+
+def key_panel(measure=None, notes=(), panel_h=None, **key_style):
+    """The column page's map panel as run.py draws it: the bubbles (run.LEAF_LAYERS, the hero's focus its notes' places), then the
+    key over the panel's frame (table, year, spec, height), on one Occ. Returns (panel, occ, bubbles svg)."""
+    iso3, zh2 = dict(ISO3, EL="GRC"), dict(ZH2, EL=ZH2["GR"])
+    rows, items = [{"src": "period:T:2025", "text": "2025"}], []
+    for c, v in KQ1.items():
+        rows += [{"src": f"series:T/{c}:2025:OBS_VALUE", "table": "T", "dims": {"geo": c}, "time": "2025", "value": v},
+                 {"src": f"fact:val.{c}.n", "text": f"{v:.1f}"}]
+        items.append(dict(code=c, value=f"series:T/{c}:2025:OBS_VALUE", value_text=f"fact:val.{c}.n", lonlat=POINT[iso3[c]]))
+    setup(rows, {c: zh2[c] for c in KQ1})
+    ext = layer1_extent({i["code"]: i["lonlat"] for i in items}, {c: (v, zh2[c]) for c, v in KQ1.items()}, 1)
+    leaves = {"bubbles": dict(items=items, ext=ext, **({"measure": measure} if measure else {}))}
+    if notes: leaves["leader_notes"] = {"ext": ext, "notes": [{"at": POINT[iso3[c]], "name": c} for c in notes]}
+    h = {"leaves": leaves, "data": {"marks": []}, "style": {"bubble_key": key_style} if key_style else {}}
+    mh = bubbles.MK.View({"data": leaves["bubbles"], "style": run.MAP_STYLE}, "bubbles").H
+    panel = types.SimpleNamespace(h=h, table="T", year="2025", c=types.SimpleNamespace(spec=KSPEC), H=panel_h or mh, map_h=mh)
+    occ = prod.Occ(); svg = run.LEAF_LAYERS["bubbles"][0](panel, occ)
+    return panel, occ, svg
+
+
+class Key(unittest.TestCase):
+    """The key to the circles (bubble_key), drawn after the bubbles over the column page's map panel."""
+    MEASURE = [{"w": "可再生能源占最终能源消费比重"}]  # test-only: a measure's reviewed name as layer 1 gives it
+
+    def draw_key(self, panel, occ):
+        run.DROPPED.clear()
+        return run.LEAF_LAYERS["bubble_key"][0](panel, occ)
+
+    def test_the_key_names_the_measure_and_the_maps_year_and_its_circles_are_the_maps(self):
+        panel, occ, map_svg = key_panel(self.MEASURE)
+        svg = self.draw_key(panel, occ)
+        self.assertEqual((check_svg(svg), run.DROPPED), ([], []))
+        texts = run.drawn(svg)[0]
+        words = [t for t in texts if not t["src"].startswith("fact:")]
+        # the words: the word table's bubble_key.area, the measure's own name and the year as date.y prints it, its digits the
+        # period entry the unit line prints; wrapped at the width knob, none past it
+        self.assertEqual("".join(t["text"] for t in words), K.WD.WORDS["bubble_key.area"].format(m=self.MEASURE[0]["w"], y=K.WD.WORDS["date.y"].format(y="2025")))
+        self.assertEqual({t["src"] for t in words} - {""}, {"period:T:2025"})
+        self.assertTrue(all(prod.tw(t["text"], 12) <= prod.KNOBS["bubble_key"]["width"][0] for t in words))
+        # each value: the map circle's own ledger entry, then its family's unit; the largest the map's largest, at r_used
+        values = [t for t in texts if t["src"].startswith("fact:")]
+        self.assertEqual([(t["src"], t["text"]) for t in values][0], ("fact:val.SE.n", "66.4%"))
+        self.assertTrue(all(t["text"] == FXT(t["src"]) + "%" for t in values))
+        drawn = {c: float(r) for r, c in re.findall(r'<circle [^>]*r="([\d.]+)"[^>]*data-code="(\w+)"', map_svg)}
+        refs = [float(r) for r in re.findall(r'<circle [^>]*r="([\d.]+)" fill="none"', svg)]
+        self.assertEqual(len(refs), len(values))
+        self.assertGreaterEqual(len(refs), 2)
+        self.assertEqual(refs[0], occ.scale["r_used"])
+        for t, r in zip(values, refs):
+            self.assertEqual(r, drawn[t["src"].split(".")[1]], t)  # each reference circle at its own circle's radius on the map
+        # its box is claimed, inside the land's rect, off every circle and label the bubbles claimed
+        box = next(q for q in occ.boxes if q[4] == "bubble_key")
+        x0, y0, x1, y1 = occ.scale["rect"]
+        self.assertTrue(x0 <= box[0] and y0 <= box[1] and box[2] <= x1 and box[3] <= y1, box)
+        self.assertFalse(any(box[0] < q[2] and q[0] < box[2] and box[1] < q[3] and q[1] < box[3] for q in occ.boxes if q[4] == "bubbles"))
+
+    def test_without_a_measure_the_key_says_what_the_area_is_at_the_year(self):
+        panel, occ, _ = key_panel()
+        texts = run.drawn(self.draw_key(panel, occ))[0]
+        self.assertEqual("".join(t["text"] for t in texts if not t["src"].startswith("fact:")),
+                         K.WD.WORDS["bubble_key.area_any"].format(y=K.WD.WORDS["date.y"].format(y="2025")))
+        # one reference circle when the knob asks for one
+        panel, occ, _ = key_panel(count=1)
+        self.assertEqual(self.draw_key(panel, occ).count('fill="none"'), 1)
+
+    def test_with_no_free_box_on_the_map_the_key_goes_under_it_or_is_dropped_and_named(self):
+        # the whole map claimed: with the panel taller than the map (the bars' rows) the key stands under the map, which grows to
+        # hold it; with no room there it is dropped, named, and the layer drawn empty
+        for taller in (True, False):
+            panel, occ, _ = key_panel(panel_h=1000 if taller else None)
+            occ.add((0, 0, occ.scale["W"], occ.scale["H"]), "test")
+            svg = self.draw_key(panel, occ)
+            if taller:
+                box = next(q for q in occ.boxes if q[4] == "bubble_key")
+                self.assertGreater(box[1], occ.scale["H"])
+                self.assertEqual((panel.map_h, run.DROPPED), (math.ceil(box[3]), []))
+                self.assertEqual(check_svg(svg), [])
+            else:
+                self.assertEqual((svg, run.DROPPED), ('<g data-node="bubble_key"></g>', [{"id": "key", "why": "no free place for the key"}]))
+
+    def test_a_key_with_no_bubbles_drawn_before_it_refuses(self):
+        panel, _, _ = key_panel()
+        with self.assertRaises(Refused) as e: self.draw_key(panel, prod.Occ())
+        self.assertIn("no bubbles layer drew before it", str(e.exception))
+
+    def test_only_the_focus_circles_take_the_accent(self):
+        # the page's focus (the places its notes name) in the accent, every other circle in the grey; no focus, none in the accent
+        _, _, svg = key_panel(notes=("SE", "LU"))
+        accent = re.findall(r'<circle [^>]*fill="var\(--accent\)"[^>]*data-code="(\w+)"', svg)
+        self.assertEqual(sorted(accent), ["LU", "SE"])
+        self.assertEqual(len(re.findall(rf'<circle [^>]*fill="var\({bubbles.CIRCLE_INK}\)"[^>]*data-code=', svg)), len(KQ1) - 2)
+        self.assertEqual(re.findall(r'(?:fill|stroke)="var\(--accent\)"', key_panel()[2]), [])
+
+
+FXT = lambda src: K.FX.text(src)
 
 
 def colour(hexs):

@@ -55,7 +55,11 @@ RECIPES = [
 EATS = dict(map=["hub_origin", "one_unit"], ring=["monthly_companion"], callouts=[], legend=[], inset=[],
             bars=["annual", "one_place", "one_unit", "last_year"], bignums=["one_unit"], notes=["hub_origin", "one_unit"],
             strip=["monthly_companion"], section_head=[], rankbar=["annual", "one_place", "one_unit", "last_year"],
-            bubbles=["annual", "one_place", "one_unit", "last_year"], leader_notes=["one_unit"])
+            bubbles=["annual", "one_place", "one_unit", "last_year"], bubble_key=["annual", "one_place", "one_unit", "last_year"],
+            leader_notes=["one_unit"])
+# The nodes a node brings with it: every recipe that draws the node draws these right after it, in this order (a key to its
+# marks), so no recipe can draw the marks without them; a recipe that names one itself refuses.
+WITH = dict(bubbles=["bubble_key"])
 # What a shape condition reads that an earlier one writes (src/next_run.rs): each list is one need, met by any condition in
 # it standing before. A recipe that names the condition names one of each need first, or the condition can only refuse.
 NEEDS = dict(monthly_companion=[["hub_origin"], ["one_unit"]], others_single=[["hub_origin", "one_place"]],
@@ -133,10 +137,16 @@ def table():
 
 
 def recipes(nodes, groups):
-    """RECIPES as checked: each layer one its group holds and its node states what it eats, every condition a layer's node
-    needs among the recipe's own, each condition after what it reads (NEEDS), each exposed knob one its node has, and each
-    same_measure pair two of its own layers, and a strip slot declared exactly where its page places one (run.STRIP_SLOT)."""
+    """RECIPES as checked, each with the nodes its layers bring (WITH) after them: each layer one its group holds and its node
+    states what it eats, every condition a layer's node needs among the recipe's own, each condition after what it reads (NEEDS),
+    each exposed knob one its node has, and each same_measure pair two of its own layers, and a strip slot declared exactly where
+    its page places one (run.STRIP_SLOT)."""
+    out = []
     for r in RECIPES:
+        brought = [n for l in r["layers"] for n in WITH.get(l, [])]
+        if set(brought) & set(r["layers"]):
+            raise SystemExit(f"{r['name']}: names {sorted(set(brought) & set(r['layers']))}, which its layers bring (WITH)")
+        r = dict(r, layers=[n for l in r["layers"] for n in [l, *WITH.get(l, [])]])
         for i, e in enumerate(r["eats"]):
             for need in NEEDS.get(e, []):
                 if not set(need) & set(r["eats"][:i]):
@@ -161,7 +171,8 @@ def recipes(nodes, groups):
                 raise SystemExit(f"{r['name']}: same_measure {pair!r}; a pair is two of its own layers")
         if r.get("strip", False) not in (True, False) or r.get("strip", False) != (r["name"] in run.STRIP_SLOT):
             raise SystemExit(f"{r['name']}: strip {r.get('strip')!r}; its page {'places' if r['name'] in run.STRIP_SLOT else 'has no slot for'} the strip (run.STRIP_SLOT)")
-    return [dict(r) for r in RECIPES]
+        out.append(r)
+    return out
 
 
 def text():

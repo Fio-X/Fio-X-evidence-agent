@@ -16,16 +16,19 @@ leader's length, land_cost px more over the land in the shared frame; of places 
 circle on the frame's edge looks inward), its leader crossing no other leader; every place keeps label_gap px clear of every circle. A top-N label that fits nowhere is left off and listed in
 Frame.unlabeled, never put on a circle, and in Frame.dropped
 (code, "no free place for the label"), which run.py sends back so layer 1 keeps it in the page's ledger.
-Colours: --accent circles, --t-dark at LAND_OPACITY the land, --bg its outline, --t-title the labels' names and numbers (VALUE_INK).
+Colours: --accent the page's focus (the highlight knob: the circles the page's notes name, their names in bold), CIRCLE_INK every
+other circle, --t-dark at LAND_OPACITY the land, --bg its outline, --t-title the labels' names and numbers (VALUE_INK).
 Circles drawn at r_max that still overlap by over half the smaller one in more pairs than max_overlaps (default 0) after the nudge are
 drawn smaller: r_max a knob step (2 px) less each round, down to the knob's floor (12), every radius (still by area), the nudge and the
-overlaps again; the scale drawn is Frame.r_used (r_max when that held), the one any legend or note of the circles' size must read.
+overlaps again; the scale drawn is Frame.r_used (r_max when that held), the one any legend or note of the circles' size must read: the
+layer leaves it in the Occ (occ.scale) for the key drawn after it (bubble_key below), which every page drawing the bubbles draws with them.
 Refuses: no items, an item outside the extent or without a lon/lat point, a negative value, highlight naming a non-item, more pairs of
 circles overlapping by over half the smaller one than max_overlaps even at the floor ("even at r_max 12"), no Natural Earth file, extent=box without a valid box,
 a missing name or ledger entry, a digit in a literal, a knob off its range."""
 import json
 import math
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -45,7 +48,7 @@ prod.KNOBS["bubbles"] = dict(
     reach=(96, (0, 200, 8), "longest leader px from a circle to a label set off it; 0: no leaders"),
     land_cost=(60, (0, 400, 10), "px of leader a label set off its circle over the land costs: open room off the map's shapes comes first"),
     title_size=(16, (12, 22, 1), "chart name size px"), simplify=(3, (1, 8, 1), "keep every n-th point of a coastline"),
-    opacity=(0.85, (0.5, 1.0, 0.05), "circle opacity"), highlight=("", None, "comma list of codes in bold"),
+    opacity=(0.85, (0.5, 1.0, 0.05), "circle opacity"), highlight=("", None, "comma list of codes in the accent, their names in bold: the page's focus"),
     max_overlaps=(0, (0, 20, 1), "pairs of circles that may overlap by more than half the smaller (more refuses)"),
     width=(1140, (320, 1400, 10), "picture width in px"),
     inset=(12, (0, 40, 2), "projection view: px the land stops inside the picture's edge, on a hairline frame, so it is not cut by the panel"))
@@ -55,6 +58,9 @@ NODE = "bubbles"
 # the ground only, not on the land.
 LAND_OPACITY = 0.28
 VALUE_INK = "--t-title"
+# A circle not in the page's focus: a grey of the page's ramp, so the accent marks the focus alone (a page keeps its accent to one
+# meaning); at the circles' opacity it stands out from the land under it.
+CIRCLE_INK = "--t-sec"
 DOT_R = 1.6  # the dot at a nudged circle's true point
 BELOW_GAP = 0.3  # of the label size: a label set below its leader starts this far under the leader's end (a 13 px name's glyph box
 # reaches about 0.26 of its size above the box tw lays out; the page's line check, 2 px in from that glyph box, would meet the leader)
@@ -170,12 +176,17 @@ def cl_bubbles(f, occ):
     path = f'<path d="{shape}" fill="var(--t-dark)" fill-opacity="{LAND_OPACITY}" stroke="var(--bg)" stroke-width="0.4"/>'
     e = k("inset") if f.v else 0
     if f.v: occ.land = MK.land_rows(rings, (e, e, W - e, H - e))  # the shared frame: the notes over this map keep off its land
+    # what the key to the circles reads (bubble_key): the scale drawn, each circle drawn by its area (not lifted to r_min), largest
+    # first, as (code, value, radius, its ledger entry), the picture's size and the rect the land is drawn in
+    occ.scale = dict(r_used=f.r_used, W=W, H=H, rect=(e, e, W - e, H - e) if f.v else (0, f.top, W, H),
+                     circles=[(i["code"], i["_v"], i["_r"], i["value_text"]) for i in f.items if str(i["code"]) not in f.r_min_codes])
     o.append(MK.clipped(f.v, path, "bubblesframe", e) if f.v else path)
     for i in f.items:  # biggest first, so the small ones stay visible on top
         sq = (i["_xy"][0] - i["_r"], i["_xy"][1] - i["_r"], i["_xy"][0] + i["_r"], i["_xy"][1] + i["_r"]); occ.add(sq, "bubbles")
         if not hasattr(occ, "circles"): occ.circles = []
         occ.circles.append((i["_xy"][0], i["_xy"][1], i["_r"], sq))  # the circle itself, for a leader that may pass its square's corner
-        o.append(f'<circle cx="{i["_xy"][0]:.1f}" cy="{i["_xy"][1]:.1f}" r="{i["_r"]:.1f}" fill="var(--accent)" fill-opacity="{k("opacity")}" data-code="{esc(i["code"])}"/>')
+        ink = "--accent" if i["code"] in f.hl else CIRCLE_INK
+        o.append(f'<circle cx="{i["_xy"][0]:.1f}" cy="{i["_xy"][1]:.1f}" r="{i["_r"]:.1f}" fill="var({ink})" fill-opacity="{k("opacity")}" data-code="{esc(i["code"])}"/>')
     dots = []  # a circle nudged off its point keeps a dot where the place is; no label, leader or note may cover it
     for i in f.items:
         if math.dist(i["_xy"], i["_at"]) > 0.5:
@@ -279,8 +290,145 @@ def cl_bubbles(f, occ):
     return "".join(o)
 
 
+# bubble_key: the key to the circles, drawn right after the bubbles on every page that draws them (knobs.py WITH). Its words, the
+# word table's bubble_key.area: what a circle's area is (hero.leaves.bubbles.measure, the measure's own name as layer 1 gives it,
+# segments; without one, or one that takes more than KEY_LINES lines of `width`, bubble_key.area_any) at the map's year (the
+# panel's period entry, kept on one line with its word); under them up to `count` reference circles side by side on one bottom
+# line, each drawn at the radius one of the map's circles was drawn at by its area (occ.scale, never a lifted one) and labelled
+# under it with that circle's own ledger entry and the unit its family prints with (facts.unit): the largest, then the ones
+# nearest a quarter and a sixteenth of its area, one within KEY_SAME px of a radius kept left out. No number is the key's own.
+# Where: in the land's rect, KEY_GAP inside it, the first free box (off every box and line the Occ holds) of the corners, then along
+# the top and bottom edges and the sides (KEY_STEP px apart), a box off the land before one over it; on its own ground (--bg), so
+# its words keep their contrast over the land. With no free box there, under the map, in the room the panel keeps for it
+# (key_room, run.Panel; the panel's map_h then grows to hold it); with no such room the key is dropped and named ("key", "no free
+# place for the key"). The box is claimed in the Occ (layer bubble_key), so the leader notes drawn after it keep clear of it.
+# Reads: the panel's frame f (its hero h, the table and year its map is drawn at, the page spec c.spec, its height H and map_h) and
+# occ.scale; a key with no bubbles drawn before it refuses.
+prod.KNOBS["bubble_key"] = dict(
+    size=(12, (11, 16, 0.5), "key text size px"),
+    count=(3, (1, 3, 1), "reference circles at most: the largest, then the ones nearest a quarter and a sixteenth of its area"),
+    width=(220, (120, 400, 10), "widest line of the key's words px; longer words wrap"))
+KEY = "bubble_key"
+KEY_LINES = 3  # lines the key's words may take with the measure's name (more: the words without it)
+KEY_PAD = 8  # px of the key's own ground around what it draws
+KEY_GAP = 6  # px between the key's words and its circles, a circle and its value, two circles, and the key and the land's rect
+KEY_LINE = 1.35  # em between the baselines of the key's lines
+KEY_STEP = 24  # px between the places along an edge the key is tried at
+KEY_SAME = 2  # px: a reference circle within this of one kept would read as the same size
+
+
+def word_units(key, **fills):
+    """The word table's entry for key as break units (each a list of (text, src)): its literals and each {placeholder}'s segments
+    broken as wbkit.units_of breaks words, a placeholder given as ("one", segments) kept whole on one line; a unit starting with a
+    mark the language never starts a line with joins the one before. A placeholder given none refuses, as words.word does."""
+    out = []
+    for part in re.split(r"(\{\w+\})", K.WD.WORDS[key]):
+        if not re.fullmatch(r"\{\w+\}", part):
+            got = [(u, None) for u in K.units_of(part)]
+        elif part[1:-1] not in fills: raise Refused(f"the word {key} is given no {part[1:-1]}")
+        else:
+            whole, sg = fills[part[1:-1]]
+            sg = K.segs(sg, KEY)
+            got = [sg] if whole else [(u, s) for t, s in sg for u in ([t] if s else K.units_of(t))]
+        for u in [g if isinstance(g, list) else [g] for g in got]:
+            if out and u[0][0][:1] in K.NO_LINE_START: out[-1] = out[-1] + u
+            else: out.append(u)
+    return out
+
+
+def lay_units(units, size, max_w):
+    """Lines of break units, each line as many as fit max_w px (a unit's trailing space not counted at a line's end)."""
+    lines, line, cur = [], [], 0.0
+    for u in units:
+        t = "".join(x for x, _ in u)
+        if line and cur + tw(t.rstrip(), size) > max_w: lines.append(line); line, cur = [], 0.0
+        line += u; cur += tw(t, size)
+    return lines + [line] * bool(line)
+
+
+def key_lines(f):
+    """The key's words in lines at the width knob: bubble_key.area with the measure the bubbles' entry names, or bubble_key.area_any
+    without one or when that takes more than KEY_LINES lines; the year (date.y over the map's period entry) on one line."""
+    h = f.h; d = (h.get("leaves") or {}).get("bubbles") or {}
+    sz, width = K.knob(h, KEY, "size"), K.knob(h, KEY, "width")
+    if K.WD.WORDS["date.y"].count("{y}") != 1 or not K.WD.WORDS["date.y"].startswith("{y}"): raise Refused("bubble_key: the word date.y does not start with its year")
+    year = (True, [{"src": f"period:{f.table}:{f.year}"}, *[{"w": w} for w in K.WD.WORDS["date.y"].split("{y}") if w]])
+    lines = lay_units(word_units("bubble_key.area", m=(False, d["measure"]), y=year), sz, width) if d.get("measure") else None
+    return lines if lines and len(lines) <= KEY_LINES else lay_units(word_units("bubble_key.area_any", y=year), sz, width)
+
+
+def key_room(f):
+    """The height the key takes at most under the map, KEY_GAP over it: its words, the circles up to the bubbles' r_max (the scale
+    drawn is never larger) and a line of values under them. The panel keeps it (run.Panel), so a key no free box on the map
+    holds still has its place."""
+    sz = K.knob(f.h, KEY, "size")
+    return KEY_GAP + KEY_PAD * 2 + len(key_lines(f)) * sz * KEY_LINE + KEY_GAP + 2 * K.knob(f.h, NODE, "r_max") + KEY_GAP + sz * 1.05
+
+
+def unit_of(spec, src):
+    """The unit a family member's bare entry (fact:<family>.<code>.n) prints with, as facts.fill writes it after a bare number;
+    none for any other entry, or a unit holding a digit (a number prints from the ledger only)."""
+    m = re.fullmatch(r"fact:([a-z0-9_]+)\.[^.]+\.n", str(src))
+    q = (spec.get("facts") or {}).get(m[1]) if m else None
+    u = FX.unit(spec, q) if isinstance(q, dict) and "fmt" in q else ""
+    return "" if K.has_digit(u) else u
+
+
+def key_refs(circles, count):
+    """The reference circles of the key (occ.scale's, largest first): the largest, then for a quarter and a sixteenth of its area
+    the circle nearest it by radius, each once and none within KEY_SAME px of a radius kept; largest first."""
+    if not circles: return []
+    top = circles[0]; out = [top]
+    for frac in (0.25, 0.0625)[: int(count) - 1]:
+        left = [c for c in circles if all(abs(c[2] - o[2]) >= KEY_SAME for o in out)]
+        if left: out.append(min(left, key=lambda c: abs(c[2] - top[2] * math.sqrt(frac))))
+    return sorted(out, key=lambda c: -c[2])
+
+
+def cl_bubble_key(f, occ):
+    sc = getattr(occ, "scale", None)
+    if sc is None: raise Refused("bubble_key: no bubbles layer drew before it")
+    sz, lines = K.knob(f.h, KEY, "size"), key_lines(f)
+    refs = key_refs(sc["circles"], K.knob(f.h, KEY, "count"))
+    f.key_dropped, empty = [], f'<g data-node="{KEY}"></g>'
+    if not refs:
+        f.key_dropped.append(("key", "no circle drawn by its area")); return empty
+    spec = f.c.spec
+    vals = [(c, FX.entry(c[3], "tspan", None) + esc(unit_of(spec, c[3])), FX.text(c[3]) + unit_of(spec, c[3])) for c in refs]
+    slots = [max(2 * c[2], tw(p, sz)) for c, _, p in vals]  # each circle's column: its circle or its value, the wider
+    R, words_h = refs[0][2], len(lines) * sz * KEY_LINE
+    plain = lambda ln: "".join(t for t, _ in ln).rstrip()
+    bw = KEY_PAD * 2 + max(max(tw(plain(ln), sz) for ln in lines), sum(slots) + KEY_GAP * (len(slots) - 1))
+    bh = KEY_PAD * 2 + words_h + KEY_GAP + 2 * R + KEY_GAP + sz * 1.05
+    x0, y0, x1, y1 = sc["rect"]; g = KEY_GAP
+    xs = [x0 + g, x1 - g - bw]; ys = [y1 - g - bh, y0 + g]
+    along = lambda a, b: [a + KEY_STEP * n for n in range(1, int((b - a) // KEY_STEP) + 1)]
+    tries = [(x, y) for y in ys for x in xs] + [(x, y) for y in ys for x in along(xs[0], xs[1])] + [(x, y) for x in xs for y in along(ys[1], ys[0])]
+    boxes = [(x, y, x + bw, y + bh) for x, y in tries if x >= x0 + g - 0.01 and y >= y0 + g - 0.01 and x + bw <= x1 - g + 0.01 and y + bh <= y1 - g + 0.01]
+    free = [b for b in boxes if not occ.hit(b, pad=(4, 4)) and not occ.on_line(b, pad=3)]
+    land = getattr(occ, "land", None)
+    box = next((b for b in free if not MK.on_land(land, b)), free[0] if free else None)
+    H = getattr(f, "H", sc["H"])
+    if box is None and H - sc["H"] >= g + bh - 0.01:  # nowhere free on the map: under it, in the room the panel keeps there
+        box = (x0, sc["H"] + g, x0 + bw, sc["H"] + g + bh); f.map_h = max(getattr(f, "map_h", sc["H"]), math.ceil(box[3]))
+    if box is None:
+        f.key_dropped.append(("key", "no free place for the key")); return empty
+    occ.add(box, KEY)
+    B = K.Boxes(sc["W"], max(H, sc["H"])); x, y = box[0] + KEY_PAD, box[1] + KEY_PAD
+    o = [f'<rect x="{box[0]:.1f}" y="{box[1]:.1f}" width="{bw:.1f}" height="{bh:.1f}" fill="var(--bg)"/>']
+    for n, ln in enumerate(lines):
+        inner = "".join(FX.entry(s, "tspan", None) if s else esc(t) for t, s in ln)
+        o.append(K.txt(B, x, y + sz * 0.8 + n * sz * KEY_LINE, sz, "var(--t-body)", inner, tw(plain(ln), sz), tag=f"key line {n + 1}"))
+    yb = y + words_h + KEY_GAP + 2 * R  # the circles' one bottom line
+    for (c, inner, p), w in zip(vals, slots):
+        o.append(f'<circle cx="{x + w / 2:.1f}" cy="{yb - c[2]:.1f}" r="{c[2]:.1f}" fill="none" stroke="var(--t-sec)" stroke-width="0.8"/>')
+        o.append(K.txt(B, x + w / 2, yb + KEY_GAP + sz * 0.8, sz, f"var({VALUE_INK})", inner, tw(p, sz), anchor="middle", tag=f"key value {c[0]}"))
+        x += w + KEY_GAP
+    return f'<g data-node="{KEY}">' + "".join(o) + "</g>"
+
+
 BUBBLES_LAYERS = dict(bubbles=(cl_bubbles, None))
-BUBBLES_SVG = ["bubbles"]
+BUBBLES_SVG = ["bubbles", "bubble_key"]
 
 
 def draw(h):

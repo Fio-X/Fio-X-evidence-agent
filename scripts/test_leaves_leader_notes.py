@@ -10,7 +10,8 @@ two-bend checks, still drops it, named; each piece of it clear just where the fo
 found it), no
 note box on a circle or label the bubbles claimed (but its own point's), every EU
 circle labelled, no leader crossing another, no label or leader over a nudged circle's true-point dot, a blocked side gives
-way to the other; the column page lays the map beside the bars in one panel; a crowded map (the EU-27, a
+way to the other; the column page lays the map beside the bars in one panel, the key to the circles (bubble_key) between the
+bubbles and the notes and no key without the bubbles, the accent on the focus' circles and bars alone and the kicker in the ink; a crowded map (the EU-27, a
 note each) still draws and its reply names exactly the notes it dropped, while one that drops every note refuses; and every
 refusal in the leaf's header. With LEAF_SVG_DIR set the svgs are kept there; else they go to a temporary folder that is removed.
 Run: python3 -I -B scripts/test_leaves_leader_notes.py"""
@@ -451,10 +452,10 @@ class LeaderNotes(unittest.TestCase):
             if "leader_notes" in req["knobs"]["spec"]["hero"]["leaves"]: req["knobs"]["spec"]["hero"]["leaves"]["leader_notes"]["notes"] = [NOTES[0], WIDE]
             return json.dumps(req, ensure_ascii=False)
         lines = [wide(l) for l in column_lines({"bubbles": dict(items=ITEMS, ext=EXT), "leader_notes": D})]
-        size_, bars, bub, got = child(lines)
+        size_, bars, bub, key, got = child(lines)
         self.assertNotIn("refused", got)
         self.assertEqual([t["text"] for t in got["texts"] if t["src"] == "fact:chg" or t["src"].endswith(":CN")], [head, CHG["text"]])
-        page = child(lines + [json.dumps({"phase": "page", "layers": {"bars": bars["svg"], "bubbles": bub["svg"], "leader_notes": got["svg"]}})])[4]
+        page = child(lines + [json.dumps({"phase": "page", "layers": {"bars": bars["svg"], "bubbles": bub["svg"], "bubble_key": key["svg"], "leader_notes": got["svg"]}})])[5]
         self.assertNotIn("refused", page)
 
     def test_a_note_that_fits_one_line_draws_as_before(self):
@@ -514,8 +515,9 @@ class LeaderNotes(unittest.TestCase):
 
 
 def column_lines(leaves):
-    """A column page's size and layer lines with the map panel's leaves, as layer 1 sends them (next_run bubbles_fill and
-    leader_notes_fill; the ledger as next_facts makes it)."""
+    """A column page's size and layer lines with the map panel's leaves, as layer 1 sends them in the column recipe's order (next_run
+    bubbles_fill and leader_notes_fill; the key to the circles, which comes with the bubbles, between them; the ledger as next_facts
+    makes it)."""
     rows = [r for r in ROWS if r["src"].startswith("series:")]
     ledger = {**{f"fact:val.{c}.n": str(v) for c, v in VALUES.items()}, **{r["src"]: r["text"] for r in ROWS if "text" in r}, "period:t:2023": "2023"}
     ranked = sorted(VALUES, key=lambda c: -VALUES[c])
@@ -525,7 +527,7 @@ def column_lines(leaves):
     knobs = {"spec": spec, "labels": ZH2, "shapes": SHP}
     rows = rows + [{"src": k, "text": v} for k, v in ledger.items()]
     line = lambda **kv: json.dumps({"node": "column", "panel": {"w": 1140, "h": 0, "frame": None}, "rows": rows, "knobs": knobs, **kv}, ensure_ascii=False)
-    return [line(phase="size"), line(layer="bars"), line(layer="bubbles"), line(layer="leader_notes")]
+    return [line(phase="size"), line(layer="bars"), line(layer="bubbles"), line(layer="bubble_key"), line(layer="leader_notes")]
 
 
 def child(lines):
@@ -536,18 +538,51 @@ def child(lines):
 class ColumnMap(unittest.TestCase):
     def test_the_map_panel_stands_beside_the_bars_in_one_panel(self):
         lines = column_lines({"bubbles": dict(items=ITEMS, ext=EXT), "leader_notes": D})
-        size, bars, bub, notes = child(lines)
-        self.assertEqual((bub.get("refused"), notes.get("refused")), (None, None))
+        size, bars, bub, key, notes = child(lines)
+        self.assertEqual((bub.get("refused"), key.get("refused"), notes.get("refused")), (None, None, None))
         x0 = 560 + 40
         self.assertEqual(size["w"], 1140)
         self.assertGreater(size["h"], 24 * len(VALUES))  # the taller of the map and the bars
         self.assertTrue(all(t["x"] >= x0 for t in bars["texts"] if t["anchor"] != "end") and all(t["x"] > x0 for t in bars["texts"]))
-        self.assertTrue(all(t["x"] <= 560 for t in bub["texts"] + notes["texts"]))
-        page = child(lines + [json.dumps({"phase": "page", "layers": {"bars": bars["svg"], "bubbles": bub["svg"], "leader_notes": notes["svg"]}})])[4]
+        self.assertTrue(all(t["x"] <= 560 for t in bub["texts"] + key["texts"] + notes["texts"]))
+        page = child(lines + [json.dumps({"phase": "page", "layers": {"bars": bars["svg"], "bubbles": bub["svg"], "bubble_key": key["svg"], "leader_notes": notes["svg"]}})])[5]
         html = page["html"]
-        self.assertRegex(html, r'<svg class="cmap"[^>]*><g data-layer="bubbles">.*</g><g data-layer="leader_notes">.*</g></svg><svg class="bars pub-chart"')
+        self.assertRegex(html, r'<svg class="cmap"[^>]*><g data-layer="bubbles">.*</g><g data-layer="bubble_key">.*</g><g data-layer="leader_notes">.*</g></svg><svg class="bars pub-chart"')
         self.assertRegex(html, rf'class="bars pub-chart"[^>]*viewBox="{x0} 0 540 ')
         self.assertEqual(run.placeholders(html), [])
+
+    def test_a_map_with_bubbles_gets_their_key_and_a_page_without_them_none(self):
+        # with the bubbles the page places the key's layer between them and the notes, and the notes keep clear of its box; without
+        # them (bars alone) the page places no key: one given refuses
+        lines = column_lines({"bubbles": dict(items=ITEMS, ext=EXT), "leader_notes": D})
+        size, bars, bub, key, notes = child(lines)
+        self.assertEqual([k for k in ("refused", "dropped") if k in key], [])
+        self.assertTrue(key["texts"])
+        page = child(lines + [json.dumps({"phase": "page", "layers": {"bars": bars["svg"], "bubbles": bub["svg"], "leader_notes": notes["svg"]}})])[5]
+        self.assertEqual(page["refused"], ["page: no layer bubble_key"])
+        lines = column_lines({})[:2]
+        size, bars = child(lines)
+        page = child(lines + [json.dumps({"phase": "page", "layers": {"bars": bars["svg"], "bubble_key": key["svg"]}})])[2]
+        self.assertEqual(page["refused"], ["page: bubble_key is no layer the page places"])
+
+    def test_the_accent_marks_only_the_focus_and_the_kicker_takes_the_ink(self):
+        # the q1-style page: its notes name SE and LU (the extremes). In the page every element filled or stroked in the accent is
+        # one of theirs: their two circles (by code) and their two bars; the kicker's last rule in the page's css (the one that
+        # wins: same selector weight or more, later) sets it in the title's ink, not the accent
+        lines = column_lines({"bubbles": dict(items=ITEMS, ext=EXT), "leader_notes": D})
+        size, bars, bub, key, notes = child(lines)
+        html = child(lines + [json.dumps({"phase": "page", "layers": {"bars": bars["svg"], "bubbles": bub["svg"], "bubble_key": key["svg"], "leader_notes": notes["svg"]}})])[5]["html"]
+        marked = re.findall(r'<(\w+)\b[^>]*(?:fill|stroke)="var\(--accent\)"[^>]*>', html)
+        self.assertEqual(sorted(marked), ["circle", "circle", "rect", "rect"])
+        self.assertEqual(sorted(re.findall(r'<circle [^>]*fill="var\(--accent\)"[^>]*data-code="(\w+)"', html)), ["LU", "SE"])
+        ranked = sorted(VALUES, key=lambda c: -VALUES[c]); rh = prod.KNOBS["bars"]["row"][0]; top = prod.KNOBS["bars"]["top"][0]
+        rows = sorted(round((float(y) - 3 - top) / rh) for y in re.findall(r'<rect x="[\d.]+" y="([\d.]+)"[^>]*fill="var\(--accent\)"', html))
+        self.assertEqual([ranked[i] for i in rows], ["SE", "LU"])
+        css = re.search(r"<style>(.*)</style>", html, re.S).group(1)
+        rules = re.findall(r"(?:^|})\s*([^{}]*\.kicker)\{([^}]*)\}", css)
+        self.assertEqual(rules[-1], (".hh .kicker", "color:var(--t-title)"))
+        self.assertIn('<header class="hh', html)
+        self.assertRegex(html, r'<header class="hh[^"]*"><div><div class="kicker">')
 
     def test_the_scope_leads_the_unit_line_by_its_reviewed_name_and_the_counted_number(self):
         # hero.scope: the aggregate's code and the fact counting the places drawn. The name prints from the request's labels
@@ -580,7 +615,7 @@ class ColumnMap(unittest.TestCase):
             req = json.loads(line); req["knobs"]["spec"]["hero"]["style"] = {"leader_notes": {"label_count": 12, "note_size": 22}}
             return json.dumps(req, ensure_ascii=False)
         lines = [styled(l) for l in column_lines({"bubbles": dict(items=ITEMS, ext=EXT), "leader_notes": dict(D, notes=notes)})]
-        size, bars, bub, got = child(lines)
+        size, bars, bub, key, got = child(lines)
         self.assertNotIn("refused", got)
         drawn = {p.split(":")[-1] for t in got["texts"] for p in t["src"].split("+") if p.startswith("name:")}
         dropped = {d["id"]: d["why"] for d in got["dropped"]}
@@ -591,7 +626,7 @@ class ColumnMap(unittest.TestCase):
         setup(); f = LN.Frame({"data": dict(D, notes=notes), "style": style(label_count=12, note_size=22)}); occ = prod.Occ()
         bubbles.cl_bubbles(bubbles.Frame({"data": dict(items=ITEMS, ext=EXT), "style": style()}), occ); LN.cl_leader_notes(f, occ)
         self.assertEqual([{"id": c, "why": w} for c, w in f.dropped], got["dropped"])
-        page = child(lines + [json.dumps({"phase": "page", "layers": {"bars": bars["svg"], "bubbles": bub["svg"], "leader_notes": got["svg"]}})])[4]
+        page = child(lines + [json.dumps({"phase": "page", "layers": {"bars": bars["svg"], "bubbles": bub["svg"], "bubble_key": key["svg"], "leader_notes": got["svg"]}})])[5]
         self.assertNotIn("refused", page)
         self.assertIn('data-layer="leader_notes"', page["html"])
 
@@ -667,12 +702,12 @@ class ColumnMap(unittest.TestCase):
                 req = json.loads(line)
                 if st: req["knobs"]["spec"]["hero"]["style"] = {"bubbles": st}
                 return json.dumps(req, ensure_ascii=False)
-            size, bars, bub, notes = child([styled(l) for l in column_lines({"bubbles": dict(items=ITEMS, ext=EXT), "leader_notes": D})])
+            size, bars, bub, key, notes = child([styled(l) for l in column_lines({"bubbles": dict(items=ITEMS, ext=EXT), "leader_notes": D})])
             self.assertNotIn("refused", bub)
             self.assertEqual((bub["r_used"], bub["r_steps"]), (used, steps), st)
             lifted = sorted(c for c, v in VALUES.items() if used * math.sqrt(v / max(VALUES.values())) < prod.KNOBS["bubbles"]["r_min"][0])
             self.assertEqual((bub["r_min_lifted"], bub["r_min_codes"]), (len(lifted), lifted), st)
-            self.assertEqual([k for g in (size, bars, notes) for k in ("r_used", "r_steps", "r_min_lifted", "r_min_codes") if k in g], [], st)
+            self.assertEqual([k for g in (size, bars, key, notes) for k in ("r_used", "r_steps", "r_min_lifted", "r_min_codes") if k in g], [], st)
 
     def test_a_layer_that_drops_every_note_is_drawn_empty_and_the_page_goes_out(self):
         # label_count 0 (the hero's style): both notes past it. The layer is drawn, empty, its reply names both notes as
@@ -681,11 +716,11 @@ class ColumnMap(unittest.TestCase):
             req = json.loads(line); req["knobs"]["spec"]["hero"]["style"] = {"leader_notes": {"label_count": 0}}
             return json.dumps(req, ensure_ascii=False)
         lines = [styled(l) for l in column_lines({"bubbles": dict(items=ITEMS, ext=EXT), "leader_notes": D})]
-        size, bars, bub, got = child(lines)
+        size, bars, bub, key, got = child(lines)
         self.assertNotIn("refused", got)
         self.assertEqual((got["svg"], got["texts"]), ('<g data-node="leader_notes"></g>', []))
         self.assertEqual(got["dropped"], [{"id": "SE", "why": "past label_count"}, {"id": "LU", "why": "past label_count"}])
-        page = child(lines + [json.dumps({"phase": "page", "layers": {"bars": bars["svg"], "bubbles": bub["svg"], "leader_notes": got["svg"]}})])[4]
+        page = child(lines + [json.dumps({"phase": "page", "layers": {"bars": bars["svg"], "bubbles": bub["svg"], "bubble_key": key["svg"], "leader_notes": got["svg"]}})])[5]
         self.assertNotIn("refused", page)
         self.assertIn('<g data-layer="leader_notes"><g data-node="leader_notes"></g></g>', page["html"])
 
