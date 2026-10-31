@@ -1,5 +1,6 @@
 //! New route, visual group: the page's facts, computed and formatted here so a second-layer leaf only prints the text it is
-//! handed. A fact is a declared query: an op over the request's rows (value, mean, peak, low, last, count, rest, n, zeros) or over two
+//! handed. A fact is a declared query: an op over the request's rows (value, mean, peak, low, last, count, rest, n, zeros,
+//! unrowed) or over two
 //! other facts (share, change, times, minus, plus); nothing names a topic. Ported from the gas-1027 prototype's facts.py,
 //! whose output the tests compare text for text.
 //! A fact family (`each`: a dimension) is one value fact per code of that dimension, keyed `<family>.<code>`; the codes
@@ -26,6 +27,13 @@ pub const RECORD_SRC: &str = "record:";
 /// Where a row a `zeros` fact counted is kept in the ledger: `zero:<its series src>`, its text the row's value, one entry per
 /// row, so each flow a picture leaves out as zero is on record with the cell it was read from (never printed).
 pub const ZERO_SRC: &str = "zero:";
+
+/// Where a pair an `unrowed` fact counted is kept in the ledger: `norow:<code>><code>`, its text "no row", one entry per pair,
+/// so each pair asked for that the table holds no row of is on record (never printed).
+pub const NOROW_SRC: &str = "norow:";
+
+/// The text of a NOROW_SRC entry.
+pub const NOROW_TEXT: &str = "no row";
 
 /// Where a series row was read (the series, its row key, period and column): what makes its table one a page dates.
 const SERIES_SRC: &str = "series:";
@@ -413,6 +421,33 @@ fn one(
             f.v = at.len() as f64;
             f.n = Some(at.len());
             f.reads = at.iter().map(|r| r.src.clone()).collect();
+        }
+        // how many pairs of the listed codes of two dimensions (`by`, `codes`: each the first's code with the second's) the
+        // selected rows hold no row of at `time`, each pair named in `who` as <a>><b>; no row is read, so none is in `reads`
+        "unrowed" => {
+            let time = word(key, &q["time"], "time")?;
+            let words = |v: &Value, what: &str| -> Result<Vec<String>, String> {
+                v.as_array()
+                    .map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect::<Vec<_>>())
+                    .filter(|w| Some(w.len()) == v.as_array().map(Vec::len))
+                    .ok_or_else(|| format!("{key}: unrowed has no list of words as {what}"))
+            };
+            let by = words(&q["by"], "by")?;
+            let codes = q["codes"].as_array().ok_or_else(|| format!("{key}: unrowed has no lists as codes"))?;
+            let ([a, b], [ca, cb]) = (by.as_slice(), codes.as_slice()) else {
+                return Err(format!("{key}: unrowed takes two dimensions and a code list for each"));
+            };
+            let (ca, cb) = (words(ca, "codes")?, words(cb, "codes")?);
+            let held = |x: &str, y: &str| {
+                picked.iter().any(|r| r.time == time && r.dims.get(a).map(String::as_str) == Some(x) && r.dims.get(b).map(String::as_str) == Some(y))
+            };
+            let who: Vec<String> = ca.iter().flat_map(|x| cb.iter().map(move |y| (x, y))).filter(|(x, y)| !held(x, y)).map(|(x, y)| format!("{x}>{y}")).collect();
+            if who.is_empty() {
+                return Err(format!("{key}: unrowed finds a row of every pair at {time}"));
+            }
+            f.v = who.len() as f64;
+            f.n = Some(who.len());
+            f.who = who;
         }
         // how many codes of `by` the selected rows hold at `time`: the places a chart draws, counted from its own rows
         "n" => {
@@ -960,6 +995,12 @@ pub fn leaf_ledger(
             match ticks(f, &spec.fmts) {
                 Ok(ts) => out.extend(ts.into_iter().map(|n| (n.src, n.text))),
                 Err(e) => off.push(e),
+            }
+        }
+        // each pair an unrowed fact counted
+        if f.op == "unrowed" {
+            for pair in &f.who {
+                out.insert(format!("{NOROW_SRC}{pair}"), NOROW_TEXT.to_string());
             }
         }
         // each row a zeros fact counted, under its series src

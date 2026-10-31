@@ -292,6 +292,16 @@ class FlowPage(unittest.TestCase):
         self.assertEqual(pic["dropped"], [{"id": f"{flow['source']}>{flow['target']}", "why": "zero"}])
         self.assertNotIn("dropped", child(flow_request())[1])
 
+    def test_layer_1_s_lines_print_under_the_picture_one_line_each_every_digit_a_ledger_entry(self):
+        rows = ROWS + [{"src": "fact:z.n", "text": "37"}, {"src": "fact:u.n", "text": "1"}]
+        lines = [[{"w": "另有 "}, {"src": "fact:z.n"}, {"w": " 个组合为零"}], [{"w": "另有 "}, {"src": "fact:u.n"}, {"w": " 个组合在数据中没有记录"}]]
+        svg, _, h = draw(hero(dict(DATA, lines=lines)), rows)
+        self.assertEqual(check_svg(svg), [])
+        self.assertIn('<tspan data-src="fact:z.n">37</tspan> 个组合为零', svg)
+        self.assertGreater(h, draw(hero(DATA))[2])
+        for bad, regex in (("x", "lines is"), ([[{"w": "2 个"}]], "digit"), ([[{"w": "长" * 200}]], "line 1 takes")):
+            with self.assertRaisesRegex(Refused, regex): draw(hero(dict(DATA, lines=bad)), rows)
+
     def test_a_code_with_no_row_is_no_node_and_goes_back_to_layer_1_as_dropped(self):
         # nuclear heat has no final-use row in the archived table: layer 1 names it empty, the leaf draws no node for it
         self.assertNotIn("N900H", {r["source"] for r in DATA["flows"]})

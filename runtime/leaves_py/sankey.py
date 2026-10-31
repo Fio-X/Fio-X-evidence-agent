@@ -22,6 +22,9 @@ hero.data (the data shape this leaf eats; on a column frame page, the hero's lea
   "empty": {"source": [code, ...]?, "target": [code, ...]?}?,   # the codes of a side layer 1 asked for and got no row of:
                                                     # no node, each back in Frame.dropped as (code, "no row"), never a
                                                     # zero node and never left out unsaid; a code of a flow refuses
+  "lines": [segs, ...]?,                            # layer 1's lines under the picture, one line each (what it left out of
+                                                    # the flows and why: the pairs of 0, the pairs with no row, counted by
+                                                    # ledger entries), each refused when it would take a second line
   "footnote": segs?}                                # e.g. the rounding line, printed once under the picture
 segs: a list of {"w": words} (no digit) and {"src": ledger src} pieces, as wbkit.segs reads them; series src:
 "series:<table>/<codes>:<time>:OBS_VALUE", a cell of the request's rows (its value drives the geometry only); ledger src: a row
@@ -212,6 +215,12 @@ def cl_sankey(f, occ):
         for ln in rows:
             y += size * 1.5
             o.append(K.txt(B, 8, y, size, "var(--t-sec)", "".join(p[0] for p in ln), sum(tw(p[1], size) for p in ln), tag=f"members {side}"))
+    lines = d.get("lines") or []
+    if not isinstance(lines, list): raise Refused(f"sankey: lines is {lines!r}; lines is a list of segment lists")
+    for i, ln in enumerate(lines):
+        y += size * 1.5
+        a, _, _ = K.words(B, ln, f"line {i + 1}", 8, y, size, "var(--t-sec)", max_w=W - 16)
+        o.append(a)
     if d.get("footnote"):
         y += size * 1.5
         a, _, _ = K.words(B, d["footnote"], "footnote", 8, y, size, "var(--t-sec)", italic=True, max_w=W - 16)
