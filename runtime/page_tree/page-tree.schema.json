@@ -2866,12 +2866,9 @@
      ]
     },
     "palette": {
-     "description": "code -> colour, one map for every node under this frame.",
-     "type": "object",
-     "additionalProperties": {
-      "type": "string",
-      "pattern": "^#[0-9a-fA-F]{3,8}$"
-     }
+     "description": "A palette id of runtime/page_tree/palettes.json, one for every node under this frame. A page names a palette, never a colour: the core alone writes colours, from the palette file.",
+     "type": "string",
+     "pattern": "^[a-z][a-z0-9-]*$"
     }
    },
    "additionalProperties": false
@@ -2924,7 +2921,7 @@
    "pattern": "^[a-z][a-z0-9_]*(\\.[a-z0-9_]+)*$"
   },
   "KnobValue": {
-   "description": "A knob's value: a number (layout, never printed), a word-free option name, or a colour.",
+   "description": "A knob's value: a number (layout, never printed) or a word-free option name; never a colour (colours come only from the palette file).",
    "anyOf": [
     {
      "type": "number"
@@ -2934,7 +2931,7 @@
     },
     {
      "type": "string",
-     "pattern": "^(#[0-9a-fA-F]{3,8}|[A-Za-z_][A-Za-z0-9_.\\-]*)$"
+     "pattern": "^[A-Za-z_][A-Za-z0-9_.\\-]*$"
     }
    ]
   }

@@ -1,0 +1,881 @@
+{
+"id": "N3e",
+"group": "legend",
+"what": "a cell has no value but the legend has no nodata swatch",
+"expect": "nodata swatches",
+"case": {
+"id": "heat",
+"node": "heat_grid",
+"sid": "s1",
+"dec": 1,
+"scale": {
+"kind": "threshold",
+"encodes": "value",
+"cuts": {
+"rule": "quantile",
+"k": 5
+},
+"palette": "seq-slate",
+"no_data": "nodata",
+"printed": true
+},
+"registry": {
+"binding": "external",
+"marks": {
+"shape": "rect",
+"per": "item",
+"paint": {
+"scale": "s1"
+}
+},
+"scales": {
+"s1": {
+"kind": "threshold",
+"encodes": "value",
+"cuts": {
+"rule": "quantile",
+"k": 5
+},
+"palette": "seq-slate",
+"no_data": "nodata",
+"printed": true
+}
+}
+},
+"tree": {
+"body": {
+"kind": "Frame",
+"shared": {
+"palette": "seq-slate",
+"knobs": {
+"gap": 2
+}
+},
+"children": [
+{
+"kind": "Node",
+"id": "heat",
+"node": "heat_grid"
+}
+]
+}
+},
+"items": [
+{
+"id": "cell/CN/2015",
+"value": 6.9,
+"src": "fact:co2.CN.2015.n",
+"focus": true,
+"at": [
+0,
+0
+]
+},
+{
+"id": "cell/US/2015",
+"value": 15.6,
+"src": "fact:co2.US.2015.n",
+"focus": false,
+"at": [
+0,
+1
+]
+},
+{
+"id": "cell/IN/2015",
+"value": 1.6,
+"src": "fact:co2.IN.2015.n",
+"focus": false,
+"at": [
+0,
+2
+]
+},
+{
+"id": "cell/RU/2015",
+"value": 11.3,
+"src": "fact:co2.RU.2015.n",
+"focus": false,
+"at": [
+0,
+3
+]
+},
+{
+"id": "cell/JP/2015",
+"value": 9.2,
+"src": "fact:co2.JP.2015.n",
+"focus": false,
+"at": [
+0,
+4
+]
+},
+{
+"id": "cell/DE/2015",
+"value": 9.0,
+"src": "fact:co2.DE.2015.n",
+"focus": false,
+"at": [
+0,
+5
+]
+},
+{
+"id": "cell/ID/2015",
+"value": 2.0,
+"src": "fact:co2.ID.2015.n",
+"focus": false,
+"at": [
+0,
+6
+]
+},
+{
+"id": "cell/BR/2015",
+"value": 2.3,
+"src": "fact:co2.BR.2015.n",
+"focus": false,
+"at": [
+0,
+7
+]
+},
+{
+"id": "cell/CN/2016",
+"value": 7.02,
+"src": "fact:co2.CN.2016.n",
+"focus": true,
+"at": [
+1,
+0
+]
+},
+{
+"id": "cell/US/2016",
+"value": 15.35,
+"src": "fact:co2.US.2016.n",
+"focus": false,
+"at": [
+1,
+1
+]
+},
+{
+"id": "cell/IN/2016",
+"value": 1.65,
+"src": "fact:co2.IN.2016.n",
+"focus": false,
+"at": [
+1,
+2
+]
+},
+{
+"id": "cell/RU/2016",
+"value": 11.38,
+"src": "fact:co2.RU.2016.n",
+"focus": false,
+"at": [
+1,
+3
+]
+},
+{
+"id": "cell/JP/2016",
+"value": 9.02,
+"src": "fact:co2.JP.2016.n",
+"focus": false,
+"at": [
+1,
+4
+]
+},
+{
+"id": "cell/DE/2016",
+"value": 8.78,
+"src": "fact:co2.DE.2016.n",
+"focus": false,
+"at": [
+1,
+5
+]
+},
+{
+"id": "cell/ID/2016",
+"value": 2.06,
+"src": "fact:co2.ID.2016.n",
+"focus": false,
+"at": [
+1,
+6
+]
+},
+{
+"id": "cell/BR/2016",
+"value": 2.28,
+"src": "fact:co2.BR.2016.n",
+"focus": false,
+"at": [
+1,
+7
+]
+},
+{
+"id": "cell/CN/2017",
+"value": 7.14,
+"src": "fact:co2.CN.2017.n",
+"focus": true,
+"at": [
+2,
+0
+]
+},
+{
+"id": "cell/US/2017",
+"value": 15.1,
+"src": "fact:co2.US.2017.n",
+"focus": false,
+"at": [
+2,
+1
+]
+},
+{
+"id": "cell/IN/2017",
+"value": 1.7,
+"src": "fact:co2.IN.2017.n",
+"focus": false,
+"at": [
+2,
+2
+]
+},
+{
+"id": "cell/RU/2017",
+"value": 11.46,
+"src": "fact:co2.RU.2017.n",
+"focus": false,
+"at": [
+2,
+3
+]
+},
+{
+"id": "cell/JP/2017",
+"value": 8.84,
+"src": "fact:co2.JP.2017.n",
+"focus": false,
+"at": [
+2,
+4
+]
+},
+{
+"id": "cell/DE/2017",
+"value": 8.56,
+"src": "fact:co2.DE.2017.n",
+"focus": false,
+"at": [
+2,
+5
+]
+},
+{
+"id": "cell/ID/2017",
+"value": 2.12,
+"src": "fact:co2.ID.2017.n",
+"focus": false,
+"at": [
+2,
+6
+]
+},
+{
+"id": "cell/BR/2017",
+"value": 2.26,
+"src": "fact:co2.BR.2017.n",
+"focus": false,
+"at": [
+2,
+7
+]
+},
+{
+"id": "cell/CN/2018",
+"value": 7.26,
+"src": "fact:co2.CN.2018.n",
+"focus": true,
+"at": [
+3,
+0
+]
+},
+{
+"id": "cell/US/2018",
+"value": 14.85,
+"src": "fact:co2.US.2018.n",
+"focus": false,
+"at": [
+3,
+1
+]
+},
+{
+"id": "cell/IN/2018",
+"value": 1.75,
+"src": "fact:co2.IN.2018.n",
+"focus": false,
+"at": [
+3,
+2
+]
+},
+{
+"id": "cell/RU/2018",
+"value": 11.54,
+"src": "fact:co2.RU.2018.n",
+"focus": false,
+"at": [
+3,
+3
+]
+},
+{
+"id": "cell/JP/2018",
+"value": 8.66,
+"src": "fact:co2.JP.2018.n",
+"focus": false,
+"at": [
+3,
+4
+]
+},
+{
+"id": "cell/DE/2018",
+"value": 8.34,
+"src": "fact:co2.DE.2018.n",
+"focus": false,
+"at": [
+3,
+5
+]
+},
+{
+"id": "cell/ID/2018",
+"value": 2.18,
+"src": "fact:co2.ID.2018.n",
+"focus": false,
+"at": [
+3,
+6
+]
+},
+{
+"id": "cell/BR/2018",
+"value": 2.24,
+"src": "fact:co2.BR.2018.n",
+"focus": false,
+"at": [
+3,
+7
+]
+},
+{
+"id": "cell/CN/2019",
+"value": 7.38,
+"src": "fact:co2.CN.2019.n",
+"focus": true,
+"at": [
+4,
+0
+]
+},
+{
+"id": "cell/US/2019",
+"value": 14.6,
+"src": "fact:co2.US.2019.n",
+"focus": false,
+"at": [
+4,
+1
+]
+},
+{
+"id": "cell/IN/2019",
+"value": 1.8,
+"src": "fact:co2.IN.2019.n",
+"focus": false,
+"at": [
+4,
+2
+]
+},
+{
+"id": "cell/RU/2019",
+"value": 11.62,
+"src": "fact:co2.RU.2019.n",
+"focus": false,
+"at": [
+4,
+3
+]
+},
+{
+"id": "cell/JP/2019",
+"value": 8.48,
+"src": "fact:co2.JP.2019.n",
+"focus": false,
+"at": [
+4,
+4
+]
+},
+{
+"id": "cell/DE/2019",
+"value": 8.12,
+"src": "fact:co2.DE.2019.n",
+"focus": false,
+"at": [
+4,
+5
+]
+},
+{
+"id": "cell/ID/2019",
+"value": 2.24,
+"src": "fact:co2.ID.2019.n",
+"focus": false,
+"at": [
+4,
+6
+]
+},
+{
+"id": "cell/BR/2019",
+"value": 2.22,
+"src": "fact:co2.BR.2019.n",
+"focus": false,
+"at": [
+4,
+7
+]
+},
+{
+"id": "cell/CN/2020",
+"value": 7.5,
+"src": "fact:co2.CN.2020.n",
+"focus": true,
+"at": [
+5,
+0
+]
+},
+{
+"id": "cell/US/2020",
+"value": 14.35,
+"src": "fact:co2.US.2020.n",
+"focus": false,
+"at": [
+5,
+1
+]
+},
+{
+"id": "cell/IN/2020",
+"value": 1.85,
+"src": "fact:co2.IN.2020.n",
+"focus": false,
+"at": [
+5,
+2
+]
+},
+{
+"id": "cell/RU/2020",
+"value": 11.7,
+"src": "fact:co2.RU.2020.n",
+"focus": false,
+"at": [
+5,
+3
+]
+},
+{
+"id": "cell/JP/2020",
+"value": 8.3,
+"src": "fact:co2.JP.2020.n",
+"focus": false,
+"at": [
+5,
+4
+]
+},
+{
+"id": "cell/DE/2020",
+"value": 7.9,
+"src": "fact:co2.DE.2020.n",
+"focus": false,
+"at": [
+5,
+5
+]
+},
+{
+"id": "cell/ID/2020",
+"value": 2.3,
+"src": "fact:co2.ID.2020.n",
+"focus": false,
+"at": [
+5,
+6
+]
+},
+{
+"id": "cell/BR/2020",
+"value": 2.2,
+"src": "fact:co2.BR.2020.n",
+"focus": false,
+"at": [
+5,
+7
+]
+},
+{
+"id": "cell/CN/2021",
+"value": 7.62,
+"src": "fact:co2.CN.2021.n",
+"focus": true,
+"at": [
+6,
+0
+]
+},
+{
+"id": "cell/US/2021",
+"value": 14.1,
+"src": "fact:co2.US.2021.n",
+"focus": false,
+"at": [
+6,
+1
+]
+},
+{
+"id": "cell/IN/2021",
+"value": 1.9,
+"src": "fact:co2.IN.2021.n",
+"focus": false,
+"at": [
+6,
+2
+]
+},
+{
+"id": "cell/RU/2021",
+"value": 11.78,
+"src": "fact:co2.RU.2021.n",
+"focus": false,
+"at": [
+6,
+3
+]
+},
+{
+"id": "cell/JP/2021",
+"value": 8.12,
+"src": "fact:co2.JP.2021.n",
+"focus": false,
+"at": [
+6,
+4
+]
+},
+{
+"id": "cell/DE/2021",
+"value": 7.68,
+"src": "fact:co2.DE.2021.n",
+"focus": false,
+"at": [
+6,
+5
+]
+},
+{
+"id": "cell/ID/2021",
+"value": 2.36,
+"src": "fact:co2.ID.2021.n",
+"focus": false,
+"at": [
+6,
+6
+]
+},
+{
+"id": "cell/BR/2021",
+"value": 2.18,
+"src": "fact:co2.BR.2021.n",
+"focus": false,
+"at": [
+6,
+7
+]
+},
+{
+"id": "cell/CN/2022",
+"value": 7.74,
+"src": "fact:co2.CN.2022.n",
+"focus": true,
+"at": [
+7,
+0
+]
+},
+{
+"id": "cell/US/2022",
+"value": 13.85,
+"src": "fact:co2.US.2022.n",
+"focus": false,
+"at": [
+7,
+1
+]
+},
+{
+"id": "cell/IN/2022",
+"value": 1.95,
+"src": "fact:co2.IN.2022.n",
+"focus": false,
+"at": [
+7,
+2
+]
+},
+{
+"id": "cell/RU/2022",
+"value": 11.86,
+"src": "fact:co2.RU.2022.n",
+"focus": false,
+"at": [
+7,
+3
+]
+},
+{
+"id": "cell/JP/2022",
+"value": 7.94,
+"src": "fact:co2.JP.2022.n",
+"focus": false,
+"at": [
+7,
+4
+]
+},
+{
+"id": "cell/DE/2022",
+"value": 7.46,
+"src": "fact:co2.DE.2022.n",
+"focus": false,
+"at": [
+7,
+5
+]
+},
+{
+"id": "cell/ID/2022",
+"value": 2.42,
+"src": "fact:co2.ID.2022.n",
+"focus": false,
+"at": [
+7,
+6
+]
+},
+{
+"id": "cell/BR/2022",
+"value": 2.16,
+"src": "fact:co2.BR.2022.n",
+"focus": false,
+"at": [
+7,
+7
+]
+},
+{
+"id": "cell/CN/2023",
+"value": 7.86,
+"src": "fact:co2.CN.2023.n",
+"focus": true,
+"at": [
+8,
+0
+]
+},
+{
+"id": "cell/US/2023",
+"value": 13.6,
+"src": "fact:co2.US.2023.n",
+"focus": false,
+"at": [
+8,
+1
+]
+},
+{
+"id": "cell/IN/2023",
+"value": null,
+"src": "fact:co2.IN.2023.n",
+"focus": false,
+"at": [
+8,
+2
+]
+},
+{
+"id": "cell/RU/2023",
+"value": 11.94,
+"src": "fact:co2.RU.2023.n",
+"focus": false,
+"at": [
+8,
+3
+]
+},
+{
+"id": "cell/JP/2023",
+"value": 7.76,
+"src": "fact:co2.JP.2023.n",
+"focus": false,
+"at": [
+8,
+4
+]
+},
+{
+"id": "cell/DE/2023",
+"value": 7.24,
+"src": "fact:co2.DE.2023.n",
+"focus": false,
+"at": [
+8,
+5
+]
+},
+{
+"id": "cell/ID/2023",
+"value": 2.48,
+"src": "fact:co2.ID.2023.n",
+"focus": false,
+"at": [
+8,
+6
+]
+},
+{
+"id": "cell/BR/2023",
+"value": 2.14,
+"src": "fact:co2.BR.2023.n",
+"focus": false,
+"at": [
+8,
+7
+]
+}
+],
+"labels": [
+{
+"id": "row/CN",
+"x": -30,
+"y": 15,
+"src": "name:geo:CN",
+"text": "中国"
+},
+{
+"id": "col/2015",
+"x": 10,
+"y": -5,
+"src": "fact:year.2015",
+"text": "2015"
+}
+]
+},
+"palettes": {
+"$comment": "Visual group colour file (R11). Roles: one accent (the page's only saturated colour), base (an unselected mark), nodata (no row or a null value; never step 0), ink and white (text inside a painted mark: the core picks the one with the higher WCAG contrast), edge (outline of a painted mark whose step is under 3:1 on a page ground). grounds: the page backgrounds. sequential: per palette id, one explicit table per number of classes k = 3..9, light to dark, as ColorBrewer ships them. Colours are '#' and six lowercase hex digits, nothing else. Checked at load by palette_ok; made by works/r11-color-scale/gen_palette.py.",
+"roles": {
+"accent": "#c93f2b",
+"base": "#d6d6d6",
+"nodata": "#f0f0f0",
+"ink": "#292928",
+"white": "#ffffff",
+"edge": "#7f7f7f"
+},
+"grounds": [
+"#ffffff",
+"#f8f6f3"
+],
+"sequential": {
+"seq-slate": {
+"3": [
+"#d7e5e7",
+"#7fa4a9",
+"#024a52"
+],
+"4": [
+"#d7e5e7",
+"#9cb9bd",
+"#457177",
+"#024a52"
+],
+"5": [
+"#d7e5e7",
+"#abc4c8",
+"#7fa4a9",
+"#36676e",
+"#024a52"
+],
+"6": [
+"#d7e5e7",
+"#b4cace",
+"#91b0b5",
+"#51797f",
+"#2d6169",
+"#024a52"
+],
+"7": [
+"#d7e5e7",
+"#b9cfd2",
+"#9cb9bd",
+"#7fa4a9",
+"#457177",
+"#265d65",
+"#024a52"
+],
+"8": [
+"#d7e5e7",
+"#bed2d5",
+"#a5bfc3",
+"#8cadb2",
+"#739aa1",
+"#3d6b72",
+"#215a62",
+"#024a52"
+],
+"9": [
+"#d7e5e7",
+"#c1d4d7",
+"#abc4c8",
+"#95b4b8",
+"#7fa4a9",
+"#4c767c",
+"#36676e",
+"#1d5860",
+"#024a52"
+]
+}
+}
+},
+"svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" data-node=\"s1\">\n<text x=\"-30\" y=\"15\" data-id=\"row/CN\" data-src=\"name:geo:CN\" fill=\"#292928\">中国</text>\n<text x=\"10\" y=\"-5\" data-id=\"col/2015\" data-src=\"fact:year.2015\" fill=\"#292928\">2015</text>\n<rect x=\"0\" y=\"0\" width=\"40\" height=\"22\" data-id=\"cell/CN/2015\" data-paint=\"s1:1\" fill=\"#abc4c8\" stroke=\"#c93f2b\" stroke-width=\"2\"/>\n<text x=\"20.0\" y=\"15\" data-id=\"cell/CN/2015/t\" data-src=\"fact:co2.CN.2015.n\" fill=\"#292928\">6.9</text>\n<rect x=\"0\" y=\"22\" width=\"40\" height=\"22\" data-id=\"cell/US/2015\" data-paint=\"s1:4\" fill=\"#024a52\"/>\n<text x=\"20.0\" y=\"37\" data-id=\"cell/US/2015/t\" data-src=\"fact:co2.US.2015.n\" fill=\"#ffffff\">15.6</text>\n<rect x=\"0\" y=\"44\" width=\"40\" height=\"22\" data-id=\"cell/IN/2015\" data-paint=\"s1:0\" fill=\"#d7e5e7\" stroke=\"#7f7f7f\" stroke-width=\"0.5\"/>\n<text x=\"20.0\" y=\"59\" data-id=\"cell/IN/2015/t\" data-src=\"fact:co2.IN.2015.n\" fill=\"#292928\">1.6</text>\n<rect x=\"0\" y=\"66\" width=\"40\" height=\"22\" data-id=\"cell/RU/2015\" data-paint=\"s1:3\" fill=\"#36676e\"/>\n<text x=\"20.0\" y=\"81\" data-id=\"cell/RU/2015/t\" data-src=\"fact:co2.RU.2015.n\" fill=\"#ffffff\">11.3</text>\n<rect x=\"0\" y=\"88\" width=\"40\" height=\"22\" data-id=\"cell/JP/2015\" data-paint=\"s1:3\" fill=\"#36676e\"/>\n<text x=\"20.0\" y=\"103\" data-id=\"cell/JP/2015/t\" data-src=\"fact:co2.JP.2015.n\" fill=\"#ffffff\">9.2</text>\n<rect x=\"0\" y=\"110\" width=\"40\" height=\"22\" data-id=\"cell/DE/2015\" data-paint=\"s1:3\" fill=\"#36676e\"/>\n<text x=\"20.0\" y=\"125\" data-id=\"cell/DE/2015/t\" data-src=\"fact:co2.DE.2015.n\" fill=\"#ffffff\">9.0</text>\n<rect x=\"0\" y=\"132\" width=\"40\" height=\"22\" data-id=\"cell/ID/2015\" data-paint=\"s1:0\" fill=\"#d7e5e7\" stroke=\"#7f7f7f\" stroke-width=\"0.5\"/>\n<text x=\"20.0\" y=\"147\" data-id=\"cell/ID/2015/t\" data-src=\"fact:co2.ID.2015.n\" fill=\"#292928\">2.0</text>\n<rect x=\"0\" y=\"154\" width=\"40\" height=\"22\" data-id=\"cell/BR/2015\" data-paint=\"s1:1\" fill=\"#abc4c8\" stroke=\"#7f7f7f\" stroke-width=\"0.5\"/>\n<text x=\"20.0\" y=\"169\" data-id=\"cell/BR/2015/t\" data-src=\"fact:co2.BR.2015.n\" fill=\"#292928\">2.3</text>\n<rect x=\"40\" y=\"0\" width=\"40\" height=\"22\" data-id=\"cell/CN/2016\" data-paint=\"s1:1\" fill=\"#abc4c8\" stroke=\"#c93f2b\" stroke-width=\"2\"/>\n<text x=\"60.0\" y=\"15\" data-id=\"cell/CN/2016/t\" data-src=\"fact:co2.CN.2016.n\" fill=\"#292928\">7.0</text>\n<rect x=\"40\" y=\"22\" width=\"40\" height=\"22\" data-id=\"cell/US/2016\" data-paint=\"s1:4\" fill=\"#024a52\"/>\n<text x=\"60.0\" y=\"37\" data-id=\"cell/US/2016/t\" data-src=\"fact:co2.US.2016.n\" fill=\"#ffffff\">15.3</text>\n<rect x=\"40\" y=\"44\" width=\"40\" height=\"22\" data-id=\"cell/IN/2016\" data-paint=\"s1:0\" fill=\"#d7e5e7\" stroke=\"#7f7f7f\" stroke-width=\"0.5\"/>\n<text x=\"60.0\" y=\"59\" data-id=\"cell/IN/2016/t\" data-src=\"fact:co2.IN.2016.n\" fill=\"#292928\">1.6</text>\n<rect x=\"40\" y=\"66\" width=\"40\" height=\"22\" data-id=\"cell/RU/2016\" data-paint=\"s1:3\" fill=\"#36676e\"/>\n<text x=\"60.0\" y=\"81\" data-id=\"cell/RU/2016/t\" data-src=\"fact:co2.RU.2016.n\" fill=\"#ffffff\">11.4</text>\n<rect x=\"40\" y=\"88\" width=\"40\" height=\"22\" data-id=\"cell/JP/2016\" data-paint=\"s1:3\" fill=\"#36676e\"/>\n<text x=\"60.0\" y=\"103\" data-id=\"cell/JP/2016/t\" data-src=\"fact:co2.JP.2016.n\" fill=\"#ffffff\">9.0</text>\n<rect x=\"40\" y=\"110\" width=\"40\" height=\"22\" data-id=\"cell/DE/2016\" data-paint=\"s1:3\" fill=\"#36676e\"/>\n<text x=\"60.0\" y=\"125\" data-id=\"cell/DE/2016/t\" data-src=\"fact:co2.DE.2016.n\" fill=\"#ffffff\">8.8</text>\n<rect x=\"40\" y=\"132\" width=\"40\" height=\"22\" data-id=\"cell/ID/2016\" data-paint=\"s1:0\" fill=\"#d7e5e7\" stroke=\"#7f7f7f\" stroke-width=\"0.5\"/>\n<text x=\"60.0\" y=\"147\" data-id=\"cell/ID/2016/t\" data-src=\"fact:co2.ID.2016.n\" fill=\"#292928\">2.1</text>\n<rect x=\"40\" y=\"154\" width=\"40\" height=\"22\" data-id=\"cell/BR/2016\" data-paint=\"s1:1\" fill=\"#abc4c8\" stroke=\"#7f7f7f\" stroke-width=\"0.5\"/>\n<text x=\"60.0\" y=\"169\" data-id=\"cell/BR/2016/t\" data-src=\"fact:co2.BR.2016.n\" fill=\"#292928\">2.3</text>\n<rect x=\"80\" y=\"0\" width=\"40\" height=\"22\" data-id=\"cell/CN/2017\" data-paint=\"s1:1\" fill=\"#abc4c8\" stroke=\"#c93f2b\" stroke-width=\"2\"/>\n<text x=\"100.0\" y=\"15\" data-id=\"cell/CN/2017/t\" data-src=\"fact:co2.CN.2017.n\" fill=\"#292928\">7.1</text>\n<rect x=\"80\" y=\"22\" width=\"40\" height=\"22\" data-id=\"cell/US/2017\" data-paint=\"s1:4\" fill=\"#024a52\"/>\n<text x=\"100.0\" y=\"37\" data-id=\"cell/US/2017/t\" data-src=\"fact:co2.US.2017.n\" fill=\"#ffffff\">15.1</text>\n<rect x=\"80\" y=\"44\" width=\"40\" height=\"22\" data-id=\"cell/IN/2017\" data-paint=\"s1:0\" fill=\"#d7e5e7\" stroke=\"#7f7f7f\" stroke-width=\"0.5\"/>\n<text x=\"100.0\" y=\"59\" data-id=\"cell/IN/2017/t\" data-src=\"fact:co2.IN.2017.n\" fill=\"#292928\">1.7</text>\n<rect x=\"80\" y=\"66\" width=\"40\" height=\"22\" data-id=\"cell/RU/2017\" data-paint=\"s1:3\" fill=\"#36676e\"/>\n<text x=\"100.0\" y=\"81\" data-id=\"cell/RU/2017/t\" data-src=\"fact:co2.RU.2017.n\" fill=\"#ffffff\">11.5</text>\n<rect x=\"80\" y=\"88\" width=\"40\" height=\"22\" data-id=\"cell/JP/2017\" data-paint=\"s1:3\" fill=\"#36676e\"/>\n<text x=\"100.0\" y=\"103\" data-id=\"cell/JP/2017/t\" data-src=\"fact:co2.JP.2017.n\" fill=\"#ffffff\">8.8</text>\n<rect x=\"80\" y=\"110\" width=\"40\" height=\"22\" data-id=\"cell/DE/2017\" data-paint=\"s1:3\" fill=\"#36676e\"/>\n<text x=\"100.0\" y=\"125\" data-id=\"cell/DE/2017/t\" data-src=\"fact:co2.DE.2017.n\" fill=\"#ffffff\">8.6</text>\n<rect x=\"80\" y=\"132\" width=\"40\" height=\"22\" data-id=\"cell/ID/2017\" data-paint=\"s1:0\" fill=\"#d7e5e7\" stroke=\"#7f7f7f\" stroke-width=\"0.5\"/>\n<text x=\"100.0\" y=\"147\" data-id=\"cell/ID/2017/t\" data-src=\"fact:co2.ID.2017.n\" fill=\"#292928\">2.1</text>\n<rect x=\"80\" y=\"154\" width=\"40\" height=\"22\" data-id=\"cell/BR/2017\" data-paint=\"s1:1\" fill=\"#abc4c8\" stroke=\"#7f7f7f\" stroke-width=\"0.5\"/>\n<text x=\"100.0\" y=\"169\" data-id=\"cell/BR/2017/t\" data-src=\"fact:co2.BR.2017.n\" fill=\"#292928\">2.3</text>\n<rect x=\"120\" y=\"0\" width=\"40\" height=\"22\" data-id=\"cell/CN/2018\" data-paint=\"s1:2\" fill=\"#7fa4a9\" stroke=\"#c93f2b\" stroke-width=\"2\"/>\n<text x=\"140.0\" y=\"15\" data-id=\"cell/CN/2018/t\" data-src=\"fact:co2.CN.2018.n\" fill=\"#292928\">7.3</text>\n<rect x=\"120\" y=\"22\" width=\"40\" height=\"22\" data-id=\"cell/US/2018\" data-paint=\"s1:4\" fill=\"#024a52\"/>\n<text x=\"140.0\" y=\"37\" data-id=\"cell/US/2018/t\" data-src=\"fact:co2.US.2018.n\" fill=\"#ffffff\">14.8</text>\n<rect x=\"120\" y=\"44\" width=\"40\" height=\"22\" data-id=\"cell/IN/2018\" data-paint=\"s1:0\" fill=\"#d7e5e7\" stroke=\"#7f7f7f\" stroke-width=\"0.5\"/>\n<text x=\"140.0\" y=\"59\" data-id=\"cell/IN/2018/t\" data-src=\"fact:co2.IN.2018.n\" fill=\"#292928\">1.8</text>\n<rect x=\"120\" y=\"66\" width=\"40\" height=\"22\" data-id=\"cell/RU/2018\" data-paint=\"s1:3\" fill=\"#36676e\"/>\n<text x=\"140.0\" y=\"81\" data-id=\"cell/RU/2018/t\" data-src=\"fact:co2.RU.2018.n\" fill=\"#ffffff\">11.5</text>\n<rect x=\"120\" y=\"88\" width=\"40\" height=\"22\" data-id=\"cell/JP/2018\" data-paint=\"s1:3\" fill=\"#36676e\"/>\n<text x=\"140.0\" y=\"103\" data-id=\"cell/JP/2018/t\" data-src=\"fact:co2.JP.2018.n\" fill=\"#ffffff\">8.7</text>\n<rect x=\"120\" y=\"110\" width=\"40\" height=\"22\" data-id=\"cell/DE/2018\" data-paint=\"s1:3\" fill=\"#36676e\"/>\n<text x=\"140.0\" y=\"125\" data-id=\"cell/DE/2018/t\" data-src=\"fact:co2.DE.2018.n\" fill=\"#ffffff\">8.3</text>\n<rect x=\"120\" y=\"132\" width=\"40\" height=\"22\" data-id=\"cell/ID/2018\" data-paint=\"s1:1\" fill=\"#abc4c8\" stroke=\"#7f7f7f\" stroke-width=\"0.5\"/>\n<text x=\"140.0\" y=\"147\" data-id=\"cell/ID/2018/t\" data-src=\"fact:co2.ID.2018.n\" fill=\"#292928\">2.2</text>\n<rect x=\"120\" y=\"154\" width=\"40\" height=\"22\" data-id=\"cell/BR/2018\" data-paint=\"s1:1\" fill=\"#abc4c8\" stroke=\"#7f7f7f\" stroke-width=\"0.5\"/>\n<text x=\"140.0\" y=\"169\" data-id=\"cell/BR/2018/t\" data-src=\"fact:co2.BR.2018.n\" fill=\"#292928\">2.2</text>\n<rect x=\"160\" y=\"0\" width=\"40\" height=\"22\" data-id=\"cell/CN/2019\" data-paint=\"s1:2\" fill=\"#7fa4a9\" stroke=\"#c93f2b\" stroke-width=\"2\"/>\n<text x=\"180.0\" y=\"15\" data-id=\"cell/CN/2019/t\" data-src=\"fact:co2.CN.2019.n\" fill=\"#292928\">7.4</text>\n<rect x=\"160\" y=\"22\" width=\"40\" height=\"22\" data-id=\"cell/US/2019\" data-paint=\"s1:4\" fill=\"#024a52\"/>\n<text x=\"180.0\" y=\"37\" data-id=\"cell/US/2019/t\" data-src=\"fact:co2.US.2019.n\" fill=\"#ffffff\">14.6</text>\n<rect x=\"160\" y=\"44\" width=\"40\" height=\"22\" data-id=\"cell/IN/2019\" data-paint=\"s1:0\" fill=\"#d7e5e7\" stroke=\"#7f7f7f\" stroke-width=\"0.5\"/>\n<text x=\"180.0\" y=\"59\" data-id=\"cell/IN/2019/t\" data-src=\"fact:co2.IN.2019.n\" fill=\"#292928\">1.8</text>\n<rect x=\"160\" y=\"66\" width=\"40\" height=\"22\" data-id=\"cell/RU/2019\" data-paint=\"s1:4\" fill=\"#024a52\"/>\n<text x=\"180.0\" y=\"81\" data-id=\"cell/RU/2019/t\" data-src=\"fact:co2.RU.2019.n\" fill=\"#ffffff\">11.6</text>\n<rect x=\"160\" y=\"88\" width=\"40\" height=\"22\" data-id=\"cell/JP/2019\" data-paint=\"s1:3\" fill=\"#36676e\"/>\n<text x=\"180.0\" y=\"103\" data-id=\"cell/JP/2019/t\" data-src=\"fact:co2.JP.2019.n\" fill=\"#ffffff\">8.5</text>\n<rect x=\"160\" y=\"110\" width=\"40\" height=\"22\" data-id=\"cell/DE/2019\" data-paint=\"s1:2\" fill=\"#7fa4a9\" stroke=\"#7f7f7f\" stroke-width=\"0.5\"/>\n<text x=\"180.0\" y=\"125\" data-id=\"cell/DE/2019/t\" data-src=\"fact:co2.DE.2019.n\" fill=\"#292928\">8.1</text>\n<rect x=\"160\" y=\"132\" width=\"40\" height=\"22\" data-id=\"cell/ID/2019\" data-paint=\"s1:1\" fill=\"#abc4c8\" stroke=\"#7f7f7f\" stroke-width=\"0.5\"/>\n<text x=\"180.0\" y=\"147\" data-id=\"cell/ID/2019/t\" data-src=\"fact:co2.ID.2019.n\" fill=\"#292928\">2.2</text>\n<rect x=\"160\" y=\"154\" width=\"40\" height=\"22\" data-id=\"cell/BR/2019\" data-paint=\"s1:1\" fill=\"#abc4c8\" stroke=\"#7f7f7f\" stroke-width=\"0.5\"/>\n<text x=\"180.0\" y=\"169\" data-id=\"cell/BR/2019/t\" data-src=\"fact:co2.BR.2019.n\" fill=\"#292928\">2.2</text>\n<rect x=\"200\" y=\"0\" width=\"40\" height=\"22\" data-id=\"cell/CN/2020\" data-paint=\"s1:2\" fill=\"#7fa4a9\" stroke=\"#c93f2b\" stroke-width=\"2\"/>\n<text x=\"220.0\" y=\"15\" data-id=\"cell/CN/2020/t\" data-src=\"fact:co2.CN.2020.n\" fill=\"#292928\">7.5</text>\n<rect x=\"200\" y=\"22\" width=\"40\" height=\"22\" data-id=\"cell/US/2020\" data-paint=\"s1:4\" fill=\"#024a52\"/>\n<text x=\"220.0\" y=\"37\" data-id=\"cell/US/2020/t\" data-src=\"fact:co2.US.2020.n\" fill=\"#ffffff\">14.3</text>\n<rect x=\"200\" y=\"44\" width=\"40\" height=\"22\" data-id=\"cell/IN/2020\" data-paint=\"s1:0\" fill=\"#d7e5e7\" stroke=\"#7f7f7f\" stroke-width=\"0.5\"/>\n<text x=\"220.0\" y=\"59\" data-id=\"cell/IN/2020/t\" data-src=\"fact:co2.IN.2020.n\" fill=\"#292928\">1.9</text>\n<rect x=\"200\" y=\"66\" width=\"40\" height=\"22\" data-id=\"cell/RU/2020\" data-paint=\"s1:4\" fill=\"#024a52\"/>\n<text x=\"220.0\" y=\"81\" data-id=\"cell/RU/2020/t\" data-src=\"fact:co2.RU.2020.n\" fill=\"#ffffff\">11.7</text>\n<rect x=\"200\" y=\"88\" width=\"40\" height=\"22\" data-id=\"cell/JP/2020\" data-paint=\"s1:3\" fill=\"#36676e\"/>\n<text x=\"220.0\" y=\"103\" data-id=\"cell/JP/2020/t\" data-src=\"fact:co2.JP.2020.n\" fill=\"#ffffff\">8.3</text>\n<rect x=\"200\" y=\"110\" width=\"40\" height=\"22\" data-id=\"cell/DE/2020\" data-paint=\"s1:2\" fill=\"#7fa4a9\" stroke=\"#7f7f7f\" stroke-width=\"0.5\"/>\n<text x=\"220.0\" y=\"125\" data-id=\"cell/DE/2020/t\" data-src=\"fact:co2.DE.2020.n\" fill=\"#292928\">7.9</text>\n<rect x=\"200\" y=\"132\" width=\"40\" height=\"22\" data-id=\"cell/ID/2020\" data-paint=\"s1:1\" fill=\"#abc4c8\" stroke=\"#7f7f7f\" stroke-width=\"0.5\"/>\n<text x=\"220.0\" y=\"147\" data-id=\"cell/ID/2020/t\" data-src=\"fact:co2.ID.2020.n\" fill=\"#292928\">2.3</text>\n<rect x=\"200\" y=\"154\" width=\"40\" height=\"22\" data-id=\"cell/BR/2020\" data-paint=\"s1:1\" fill=\"#abc4c8\" stroke=\"#7f7f7f\" stroke-width=\"0.5\"/>\n<text x=\"220.0\" y=\"169\" data-id=\"cell/BR/2020/t\" data-src=\"fact:co2.BR.2020.n\" fill=\"#292928\">2.2</text>\n<rect x=\"240\" y=\"0\" width=\"40\" height=\"22\" data-id=\"cell/CN/2021\" data-paint=\"s1:2\" fill=\"#7fa4a9\" stroke=\"#c93f2b\" stroke-width=\"2\"/>\n<text x=\"260.0\" y=\"15\" data-id=\"cell/CN/2021/t\" data-src=\"fact:co2.CN.2021.n\" fill=\"#292928\">7.6</text>\n<rect x=\"240\" y=\"22\" width=\"40\" height=\"22\" data-id=\"cell/US/2021\" data-paint=\"s1:4\" fill=\"#024a52\"/>\n<text x=\"260.0\" y=\"37\" data-id=\"cell/US/2021/t\" data-src=\"fact:co2.US.2021.n\" fill=\"#ffffff\">14.1</text>\n<rect x=\"240\" y=\"44\" width=\"40\" height=\"22\" data-id=\"cell/IN/2021\" data-paint=\"s1:0\" fill=\"#d7e5e7\" stroke=\"#7f7f7f\" stroke-width=\"0.5\"/>\n<text x=\"260.0\" y=\"59\" data-id=\"cell/IN/2021/t\" data-src=\"fact:co2.IN.2021.n\" fill=\"#292928\">1.9</text>\n<rect x=\"240\" y=\"66\" width=\"40\" height=\"22\" data-id=\"cell/RU/2021\" data-paint=\"s1:4\" fill=\"#024a52\"/>\n<text x=\"260.0\" y=\"81\" data-id=\"cell/RU/2021/t\" data-src=\"fact:co2.RU.2021.n\" fill=\"#ffffff\">11.8</text>\n<rect x=\"240\" y=\"88\" width=\"40\" height=\"22\" data-id=\"cell/JP/2021\" data-paint=\"s1:2\" fill=\"#7fa4a9\" stroke=\"#7f7f7f\" stroke-width=\"0.5\"/>\n<text x=\"260.0\" y=\"103\" data-id=\"cell/JP/2021/t\" data-src=\"fact:co2.JP.2021.n\" fill=\"#292928\">8.1</text>\n<rect x=\"240\" y=\"110\" width=\"40\" height=\"22\" data-id=\"cell/DE/2021\" data-paint=\"s1:2\" fill=\"#7fa4a9\" stroke=\"#7f7f7f\" stroke-width=\"0.5\"/>\n<text x=\"260.0\" y=\"125\" data-id=\"cell/DE/2021/t\" data-src=\"fact:co2.DE.2021.n\" fill=\"#292928\">7.7</text>\n<rect x=\"240\" y=\"132\" width=\"40\" height=\"22\" data-id=\"cell/ID/2021\" data-paint=\"s1:1\" fill=\"#abc4c8\" stroke=\"#7f7f7f\" stroke-width=\"0.5\"/>\n<text x=\"260.0\" y=\"147\" data-id=\"cell/ID/2021/t\" data-src=\"fact:co2.ID.2021.n\" fill=\"#292928\">2.4</text>\n<rect x=\"240\" y=\"154\" width=\"40\" height=\"22\" data-id=\"cell/BR/2021\" data-paint=\"s1:1\" fill=\"#abc4c8\" stroke=\"#7f7f7f\" stroke-width=\"0.5\"/>\n<text x=\"260.0\" y=\"169\" data-id=\"cell/BR/2021/t\" data-src=\"fact:co2.BR.2021.n\" fill=\"#292928\">2.2</text>\n<rect x=\"280\" y=\"0\" width=\"40\" height=\"22\" data-id=\"cell/CN/2022\" data-paint=\"s1:2\" fill=\"#7fa4a9\" stroke=\"#c93f2b\" stroke-width=\"2\"/>\n<text x=\"300.0\" y=\"15\" data-id=\"cell/CN/2022/t\" data-src=\"fact:co2.CN.2022.n\" fill=\"#292928\">7.7</text>\n<rect x=\"280\" y=\"22\" width=\"40\" height=\"22\" data-id=\"cell/US/2022\" data-paint=\"s1:4\" fill=\"#024a52\"/>\n<text x=\"300.0\" y=\"37\" data-id=\"cell/US/2022/t\" data-src=\"fact:co2.US.2022.n\" fill=\"#ffffff\">13.8</text>\n<rect x=\"280\" y=\"44\" width=\"40\" height=\"22\" data-id=\"cell/IN/2022\" data-paint=\"s1:0\" fill=\"#d7e5e7\" stroke=\"#7f7f7f\" stroke-width=\"0.5\"/>\n<text x=\"300.0\" y=\"59\" data-id=\"cell/IN/2022/t\" data-src=\"fact:co2.IN.2022.n\" fill=\"#292928\">1.9</text>\n<rect x=\"280\" y=\"66\" width=\"40\" height=\"22\" data-id=\"cell/RU/2022\" data-paint=\"s1:4\" fill=\"#024a52\"/>\n<text x=\"300.0\" y=\"81\" data-id=\"cell/RU/2022/t\" data-src=\"fact:co2.RU.2022.n\" fill=\"#ffffff\">11.9</text>\n<rect x=\"280\" y=\"88\" width=\"40\" height=\"22\" data-id=\"cell/JP/2022\" data-paint=\"s1:2\" fill=\"#7fa4a9\" stroke=\"#7f7f7f\" stroke-width=\"0.5\"/>\n<text x=\"300.0\" y=\"103\" data-id=\"cell/JP/2022/t\" data-src=\"fact:co2.JP.2022.n\" fill=\"#292928\">7.9</text>\n<rect x=\"280\" y=\"110\" width=\"40\" height=\"22\" data-id=\"cell/DE/2022\" data-paint=\"s1:2\" fill=\"#7fa4a9\" stroke=\"#7f7f7f\" stroke-width=\"0.5\"/>\n<text x=\"300.0\" y=\"125\" data-id=\"cell/DE/2022/t\" data-src=\"fact:co2.DE.2022.n\" fill=\"#292928\">7.5</text>\n<rect x=\"280\" y=\"132\" width=\"40\" height=\"22\" data-id=\"cell/ID/2022\" data-paint=\"s1:1\" fill=\"#abc4c8\" stroke=\"#7f7f7f\" stroke-width=\"0.5\"/>\n<text x=\"300.0\" y=\"147\" data-id=\"cell/ID/2022/t\" data-src=\"fact:co2.ID.2022.n\" fill=\"#292928\">2.4</text>\n<rect x=\"280\" y=\"154\" width=\"40\" height=\"22\" data-id=\"cell/BR/2022\" data-paint=\"s1:1\" fill=\"#abc4c8\" stroke=\"#7f7f7f\" stroke-width=\"0.5\"/>\n<text x=\"300.0\" y=\"169\" data-id=\"cell/BR/2022/t\" data-src=\"fact:co2.BR.2022.n\" fill=\"#292928\">2.2</text>\n<rect x=\"320\" y=\"0\" width=\"40\" height=\"22\" data-id=\"cell/CN/2023\" data-paint=\"s1:2\" fill=\"#7fa4a9\" stroke=\"#c93f2b\" stroke-width=\"2\"/>\n<text x=\"340.0\" y=\"15\" data-id=\"cell/CN/2023/t\" data-src=\"fact:co2.CN.2023.n\" fill=\"#292928\">7.9</text>\n<rect x=\"320\" y=\"22\" width=\"40\" height=\"22\" data-id=\"cell/US/2023\" data-paint=\"s1:4\" fill=\"#024a52\"/>\n<text x=\"340.0\" y=\"37\" data-id=\"cell/US/2023/t\" data-src=\"fact:co2.US.2023.n\" fill=\"#ffffff\">13.6</text>\n<rect x=\"320\" y=\"44\" width=\"40\" height=\"22\" data-id=\"cell/IN/2023\" data-paint=\"s1:nodata\" fill=\"#f0f0f0\" stroke=\"#7f7f7f\" stroke-width=\"0.5\"/>\n<rect x=\"320\" y=\"66\" width=\"40\" height=\"22\" data-id=\"cell/RU/2023\" data-paint=\"s1:4\" fill=\"#024a52\"/>\n<text x=\"340.0\" y=\"81\" data-id=\"cell/RU/2023/t\" data-src=\"fact:co2.RU.2023.n\" fill=\"#ffffff\">11.9</text>\n<rect x=\"320\" y=\"88\" width=\"40\" height=\"22\" data-id=\"cell/JP/2023\" data-paint=\"s1:2\" fill=\"#7fa4a9\" stroke=\"#7f7f7f\" stroke-width=\"0.5\"/>\n<text x=\"340.0\" y=\"103\" data-id=\"cell/JP/2023/t\" data-src=\"fact:co2.JP.2023.n\" fill=\"#292928\">7.8</text>\n<rect x=\"320\" y=\"110\" width=\"40\" height=\"22\" data-id=\"cell/DE/2023\" data-paint=\"s1:2\" fill=\"#7fa4a9\" stroke=\"#7f7f7f\" stroke-width=\"0.5\"/>\n<text x=\"340.0\" y=\"125\" data-id=\"cell/DE/2023/t\" data-src=\"fact:co2.DE.2023.n\" fill=\"#292928\">7.2</text>\n<rect x=\"320\" y=\"132\" width=\"40\" height=\"22\" data-id=\"cell/ID/2023\" data-paint=\"s1:1\" fill=\"#abc4c8\" stroke=\"#7f7f7f\" stroke-width=\"0.5\"/>\n<text x=\"340.0\" y=\"147\" data-id=\"cell/ID/2023/t\" data-src=\"fact:co2.ID.2023.n\" fill=\"#292928\">2.5</text>\n<rect x=\"320\" y=\"154\" width=\"40\" height=\"22\" data-id=\"cell/BR/2023\" data-paint=\"s1:0\" fill=\"#d7e5e7\" stroke=\"#7f7f7f\" stroke-width=\"0.5\"/>\n<text x=\"340.0\" y=\"169\" data-id=\"cell/BR/2023/t\" data-src=\"fact:co2.BR.2023.n\" fill=\"#292928\">2.1</text>\n<g data-legend=\"s1\">\n<rect x=\"0\" y=\"300\" width=\"30\" height=\"10\" data-id=\"legend/s1/0\" data-paint=\"s1:0\" fill=\"#d7e5e7\" stroke=\"#7f7f7f\" stroke-width=\"0.5\"/>\n<rect x=\"30\" y=\"300\" width=\"30\" height=\"10\" data-id=\"legend/s1/1\" data-paint=\"s1:1\" fill=\"#abc4c8\" stroke=\"#7f7f7f\" stroke-width=\"0.5\"/>\n<rect x=\"60\" y=\"300\" width=\"30\" height=\"10\" data-id=\"legend/s1/2\" data-paint=\"s1:2\" fill=\"#7fa4a9\" stroke=\"#7f7f7f\" stroke-width=\"0.5\"/>\n<rect x=\"90\" y=\"300\" width=\"30\" height=\"10\" data-id=\"legend/s1/3\" data-paint=\"s1:3\" fill=\"#36676e\"/>\n<rect x=\"120\" y=\"300\" width=\"30\" height=\"10\" data-id=\"legend/s1/4\" data-paint=\"s1:4\" fill=\"#024a52\"/>\n<text x=\"30\" y=\"322\" data-id=\"legend/s1/cut1\" data-src=\"fact:s1.cut.1\" fill=\"#292928\">2.2</text>\n<text x=\"60\" y=\"322\" data-id=\"legend/s1/cut2\" data-src=\"fact:s1.cut.2\" fill=\"#292928\">7.2</text>\n<text x=\"90\" y=\"322\" data-id=\"legend/s1/cut3\" data-src=\"fact:s1.cut.3\" fill=\"#292928\">8.3</text>\n<text x=\"120\" y=\"322\" data-id=\"legend/s1/cut4\" data-src=\"fact:s1.cut.4\" fill=\"#292928\">11.6</text>\n</g></svg>",
+"got": [
+"paint_matches_scale: legend nodata swatches []; the core draws one (#f0f0f0) exactly when a cell has no value (True)"
+]
+}

@@ -7,7 +7,7 @@ export const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
 export const r1 = (v) => String(Math.round(v * 10) / 10 + 0); // one decimal, "-0" never printed
 export const r3 = (v) => Math.round(v * 1000) / 1000 + 0;
 export const COLORS = {
-  grey_accent: { land: "#e4e1da", sea: "#f7f6f2", border: "#ffffff", ink: "#333333", ghost: "#c9c9c9", edge: "#8a8a8a", accent: "#d8452f", text: "#222222", muted: "#6b6b6b" },
+  grey_accent: { land: "#e4e1da", sea: "#f7f6f2", border: "#ffffff", ink: "#333333", ghost: "#c9c9c9", edge: "#8a8a8a", accent: "#c93f2b", text: "#222222", muted: "#6b6b6b" },
   mono: { land: "#e4e1da", sea: "#f7f6f2", border: "#ffffff", ink: "#333333", ghost: "#c9c9c9", edge: "#8a8a8a", accent: "#333333", text: "#222222", muted: "#6b6b6b" },
 };
 export const FONT = "PingFang SC, Noto Sans CJK SC, sans-serif";

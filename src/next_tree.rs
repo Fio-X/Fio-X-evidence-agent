@@ -13,6 +13,7 @@
 //!      C5 the registry: an external node naming a check, channel, scale, relation, field kind, shape or frame the core does
 //!         not compute, or a tolerance above TOL_PX_MAX, a text farther from its mark than MAX_PX_MAX or a circle radius
 //!         above RADIUS_PX_MAX, is refused when the registry loads.
+//!      Colour (R11): the palette file passes palette_ok before anything else, and the page tree names no colour.
 //!   B  the node's reply: B0 the allow-list (geometry fields only, closed enums, finite numbers, issued ids only); B1 every
 //!      issued mark and text placed exactly once; B2 inside the frame; B3 each value-determined field equal to the core's
 //!      recomputation from the declared field -> channel -> scale (B4 a projected point); B5 each text next to its own mark;
@@ -646,6 +647,11 @@ fn word_c(c: char) -> bool {
 fn nonempty_all(s: &str, f: impl Fn(char) -> bool) -> bool {
     !s.is_empty() && s.chars().all(f)
 }
+/// A palette id (runtime/page_tree/palettes.json): lowercase letters, digits, hyphens, a letter first.
+fn palette_id(s: &str) -> bool {
+    let mut c = s.chars();
+    c.next().is_some_and(|c| c.is_ascii_lowercase()) && c.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
 fn ident_lower(s: &str) -> bool {
     let mut c = s.chars();
     c.next().is_some_and(|c| c.is_ascii_lowercase()) && c.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
@@ -654,15 +660,12 @@ fn ident_lower(s: &str) -> bool {
 /// The schema's patterns, each as a matcher (Python re.search; each is anchored at the start). None: a pattern this
 /// validator has no matcher for, which is an error.
 fn pattern_match(p: &str, s: &str) -> Option<bool> {
-    let hex = |t: &str| (3..=8).contains(&t.chars().count()) && t.chars().all(|c| c.is_ascii_hexdigit());
     let code = |c: char| word_c(c) || c == '.' || c == '-';
     Some(match p {
-        r"^#[0-9a-fA-F]{3,8}$" => full(s, |t| t.strip_prefix('#').is_some_and(hex)),
-        r"^(#[0-9a-fA-F]{3,8}|[A-Za-z_][A-Za-z0-9_.\-]*)$" => full(s, |t| {
-            t.strip_prefix('#').is_some_and(hex) || {
-                let mut c = t.chars();
-                c.next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_') && c.all(code)
-            }
+        r"^[a-z][a-z0-9-]*$" => full(s, palette_id),
+        r"^[A-Za-z_][A-Za-z0-9_.\-]*$" => full(s, |t| {
+            let mut c = t.chars();
+            c.next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_') && c.all(code)
         }),
         r"^(?!.*(一半|过半|大半|半数|减半|近半|逾半|超半|翻番|翻倍|数倍|[零〇一二两三四五六七八九十百千万亿几]\s*(倍|分之|个百分点|%|％)))[^0-9０-９]*$" => {
             let line = s.split('\n').next().unwrap_or("");
@@ -2163,6 +2166,7 @@ fn part_a(page: &J, inp: &J, reg: &J) -> (Vec<String>, Got, Option<J>) {
     let mut lerrs = lint(&page, &got, rpage.as_ref());
     words_lint(&page, &mut lerrs);
     shared_lint(&page, &got, &mut lerrs);
+    lerrs.extend(tree_colour_problems(&page, palettes()));
     if page.has("fragment") {
         lerrs.push("fragment: a node's merged page may not hold one".into());
     }
@@ -2954,6 +2958,264 @@ pub fn registry_problems(reg: &J) -> Vec<String> {
 }
 
 // ================================================================================================================
+// R11: colour (ADR R9 batch 1). A node returns no colour (B0); the core alone writes one, from the palette file
+// (runtime/page_tree/palettes.json), and the palette file is checked before any page uses it (palette_ok). A colour has
+// one spelling, '#' and six lowercase hex digits: another spelling means another writer, so it is refused even when it
+// names the same colour, and equality is string equality at every layer.
+// ================================================================================================================
+
+const PALETTES_TEXT: &str = include_str!("../runtime/page_tree/palettes.json");
+
+/// The visual group's colour file: roles, page grounds, and per palette id one table per number of classes.
+fn palettes() -> &'static J {
+    static P: std::sync::OnceLock<J> = std::sync::OnceLock::new();
+    P.get_or_init(|| parse(PALETTES_TEXT).expect("palettes.json parses"))
+}
+
+/// The colour roles, exactly these: one accent (the page's only saturated colour), base (an unselected mark), nodata
+/// (no row or a null value; never step 0), ink and white (text in a painted mark), edge (outline of a light mark).
+const ROLES: [&str; 6] = ["accent", "base", "nodata", "ink", "white", "edge"];
+/// ColorBrewer ships its sequential schemes with one table for each k = 3..9; the palette file does the same.
+const K_MIN: usize = 3;
+const K_MAX: usize = 9;
+/// WCAG 2.2 SC 1.4.3, text under 18 pt (14 pt bold), not rounded: 4.499 fails.
+const TEXT_MIN: f64 = 4.5;
+/// WCAG 2.2 SC 1.4.11, a graphical object against its adjacent colour.
+const NONTEXT_MIN: f64 = 3.0;
+/// The least adjacent-step Delta E 1976 of any ColorBrewer sequential table (BuGn k=8: 5.11), floored; and the same under
+/// Machado 2009 protan / deutan at severity 1.0 (BuGn k=8: 3.47), floored. A palette may be no harder to tell apart.
+const ADJ_DE_MIN: f64 = 5.1;
+const ADJ_DE_CVD_MIN: f64 = 3.4;
+/// LCh chroma caps from the repo's own ramps (ADR R9 3.2): data steps <= 30, neutral roles and grounds <= 6, the accent
+/// >= 50. Only the accent is saturated.
+const DATA_CHROMA_MAX: f64 = 30.0;
+const NEUTRAL_CHROMA_MAX: f64 = 6.0;
+const ACCENT_CHROMA_MIN: f64 = 50.0;
+/// Machado, Oliveira, Fernandes 2009, severity 1.0, applied to linear RGB.
+type Cvd = [[f64; 3]; 3];
+const CVDS: [(&str, Cvd); 2] = [
+    ("protan", [[0.152286, 1.052583, -0.204868], [0.114503, 0.786281, 0.099216], [-0.003882, -0.048116, 1.051998]]),
+    ("deutan", [[0.367322, 0.860646, -0.227968], [0.280085, 0.672501, 0.047413], [-0.011820, 0.042940, 0.968881]]),
+];
+
+/// The one spelling the core writes: '#' and six lowercase hex digits.
+fn canon_hex(s: &str) -> bool {
+    s.len() == 7 && s.starts_with('#') && s[1..].bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
+/// Linear RGB of a canonical colour (sRGB transfer, WCAG's 0.04045 knee).
+fn rgb_lin(h: &str) -> [f64; 3] {
+    [1, 3, 5].map(|i| {
+        let c = h.get(i..i + 2).and_then(|x| u8::from_str_radix(x, 16).ok()).unwrap_or(0) as f64 / 255.0;
+        if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
+    })
+}
+
+/// WCAG relative luminance.
+fn lum(h: &str) -> f64 {
+    let [r, g, b] = rgb_lin(h);
+    0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+/// WCAG contrast ratio, not rounded.
+fn contrast(a: &str, b: &str) -> f64 {
+    let (x, y) = (lum(a), lum(b));
+    (x.max(y) + 0.05) / (x.min(y) + 0.05)
+}
+
+/// CIE Lab (D65, 2 degree), optionally as a colour-vision deficiency sees it.
+fn lab(h: &str, cvd: Option<&Cvd>) -> [f64; 3] {
+    let mut l = rgb_lin(h);
+    if let Some(m) = cvd {
+        l = [0, 1, 2].map(|i| (m[i][0] * l[0] + m[i][1] * l[1] + m[i][2] * l[2]).clamp(0.0, 1.0));
+    }
+    let [r, g, b] = l;
+    let x = (0.4124564 * r + 0.3575761 * g + 0.1804375 * b) / 0.95047;
+    let y = 0.2126729 * r + 0.7151522 * g + 0.0721750 * b;
+    let z = (0.0193339 * r + 0.1191920 * g + 0.9503041 * b) / 1.08883;
+    let f = |t: f64| if t > 216.0 / 24389.0 { t.powf(1.0 / 3.0) } else { (24389.0 / 27.0 * t + 16.0) / 116.0 };
+    let (fx, fy, fz) = (f(x), f(y), f(z));
+    [116.0 * fy - 16.0, 500.0 * (fx - fy), 200.0 * (fy - fz)]
+}
+
+fn chroma(h: &str) -> f64 {
+    let [_, a, b] = lab(h, None);
+    a.hypot(b)
+}
+
+/// Delta E 1976 between two colours, optionally under a colour-vision deficiency.
+fn de76(a: &str, b: &str, cvd: Option<&Cvd>) -> f64 {
+    let (p, q) = (lab(a, cvd), lab(b, cvd));
+    ((p[0] - q[0]).powi(2) + (p[1] - q[1]).powi(2) + (p[2] - q[2]).powi(2)).sqrt()
+}
+
+/// palette_ok: every reason the colour file cannot be loaded; empty means it loads. The core runs it before any page it
+/// checks; a file with any problem stops them all.
+pub fn palette_problems(pf: &J) -> Vec<String> {
+    let mut top: Vec<&str> = pf.obj().iter().map(|(k, _)| k.as_str()).filter(|k| *k != "$comment").collect();
+    top.sort();
+    if top != ["grounds", "roles", "sequential"] {
+        return vec!["palette_ok: the file has exactly roles, grounds, sequential (and a $comment)".into()];
+    }
+    let mut out = Vec::new();
+    for (k, v) in pf.obj().iter().filter(|(k, _)| k != "$comment") {
+        for (path, x) in walk(v, &format!("$.{k}")) {
+            if !matches!(x, J::Obj(_) | J::Arr(_)) && !x.s().is_some_and(canon_hex) && !path.ends_with(".$comment") {
+                out.push(format!("palette_ok: {path} {} is not '#' and six lowercase hex digits", x.repr()));
+            }
+        }
+    }
+    if !out.is_empty() {
+        return out;
+    }
+    let (roles, grounds, seq) = (pf.g("roles"), pf.g("grounds"), pf.g("sequential"));
+    let mut names: Vec<&str> = roles.obj().iter().map(|(k, _)| k.as_str()).collect();
+    names.sort();
+    let mut want = ROLES.to_vec();
+    want.sort();
+    if names != want || !roles.obj().iter().all(|(_, v)| v.s().is_some()) || !grounds.arr().iter().all(|g| g.s().is_some()) || !seq.is_obj() {
+        return vec![format!(
+            "palette_ok: roles are exactly {} (one colour each), grounds a list of colours; got {}",
+            J::strs(&ROLES).repr(),
+            J::strs(&names).repr()
+        )];
+    }
+    let role = |r: &str| roles.g(r).s().unwrap_or("");
+    let gs: Vec<&str> = grounds.arr().iter().filter_map(J::s).collect();
+    if gs.is_empty() {
+        out.push("palette_ok: no page ground".into());
+    }
+    let (acc, edge) = (role("accent"), role("edge"));
+    if chroma(acc) < ACCENT_CHROMA_MIN {
+        out.push(format!("palette_ok: accent {acc} chroma {:.1} under {}", chroma(acc), py_float(ACCENT_CHROMA_MIN)));
+    }
+    for g in &gs {
+        if contrast(acc, g) < TEXT_MIN {
+            out.push(format!("palette_ok: accent {acc} on ground {g} is {:.2}:1, under {} (accent is printed as text)", contrast(acc, g), py_float(TEXT_MIN)));
+        }
+        if contrast(edge, g) < NONTEXT_MIN {
+            out.push(format!("palette_ok: edge {edge} on ground {g} is {:.2}:1, under {}", contrast(edge, g), py_float(NONTEXT_MIN)));
+        }
+    }
+    for r in ROLES.iter().filter(|r| **r != "accent") {
+        if chroma(role(r)) > NEUTRAL_CHROMA_MAX {
+            let c = chroma(role(r));
+            out.push(format!("palette_ok: role {r} {} is not neutral (chroma {c:.1} > {}); only the accent is saturated", role(r), py_float(NEUTRAL_CHROMA_MAX)));
+        }
+    }
+    for g in &gs {
+        if chroma(g) > NEUTRAL_CHROMA_MAX {
+            out.push(format!("palette_ok: ground {g} is not neutral"));
+        }
+    }
+    let taken: Vec<&str> = ROLES.iter().map(|r| role(r)).chain(gs.iter().copied()).collect();
+    let nd = role("nodata");
+    let k_of = |k: &str| k.parse::<usize>().ok().filter(|n| n.to_string() == k);
+    for (pid, by_k) in seq.obj() {
+        let p = format!("palette_ok: {pid}");
+        if !palette_id(pid) {
+            out.push(format!("{p}: id is not lowercase letters, digits, hyphens"));
+        }
+        let mut ks: Vec<&str> = by_k.obj().iter().map(|(k, _)| k.as_str()).collect();
+        ks.sort_by_key(|k| k_of(k).unwrap_or(usize::MAX));
+        let whole: Vec<String> = (K_MIN..=K_MAX).map(|k| k.to_string()).collect();
+        if !by_k.is_obj() || ks != whole {
+            out.push(format!("{p}: has tables {}; needs one for every k in {K_MIN}..{K_MAX}", J::strs(&ks).repr()));
+            continue;
+        }
+        for (k, table) in by_k.obj() {
+            let q = format!("{p} k={k}");
+            let cols: Vec<&str> = table.arr().iter().filter_map(J::s).collect();
+            if !table.is_arr() || Some(cols.len()) != k_of(k) {
+                out.push(format!("{q}: {} colours", cols.len()));
+                continue;
+            }
+            let l: Vec<f64> = cols.iter().map(|c| lab(c, None)[0]).collect();
+            if !l.windows(2).all(|w| w[0] > w[1]) {
+                let shown: Vec<String> = l.iter().map(|x| py_float(py_round(*x, 1))).collect();
+                out.push(format!("{q}: lightness does not fall step by step [{}]", shown.join(", ")));
+            }
+            for (i, w) in cols.windows(2).enumerate() {
+                let d = de76(w[0], w[1], None);
+                if d < ADJ_DE_MIN {
+                    out.push(format!("{q}: steps {i},{} dE76 {d:.2} under {}", i + 1, py_float(ADJ_DE_MIN)));
+                }
+                for (name, m) in &CVDS {
+                    let d = de76(w[0], w[1], Some(m));
+                    if d < ADJ_DE_CVD_MIN {
+                        out.push(format!("{q}: steps {i},{} under {name} dE76 {d:.2} under {}", i + 1, py_float(ADJ_DE_CVD_MIN)));
+                    }
+                }
+            }
+            for (i, c) in cols.iter().enumerate() {
+                if chroma(c) > DATA_CHROMA_MAX {
+                    out.push(format!("{q}: step {i} {c} chroma {:.1} over {}", chroma(c), py_float(DATA_CHROMA_MAX)));
+                }
+                let (ink, white) = (contrast(c, role("ink")), contrast(c, role("white")));
+                if ink.max(white) < TEXT_MIN {
+                    out.push(format!("{q}: step {i} {c}: ink {ink:.2}, white {white:.2}; no text colour reaches {}", py_float(TEXT_MIN)));
+                }
+                if taken.contains(c) {
+                    out.push(format!("{q}: step {i} {c} is also a role or ground colour"));
+                }
+                if de76(c, nd, None) < ADJ_DE_MIN || CVDS.iter().any(|(_, m)| de76(c, nd, Some(m)) < ADJ_DE_CVD_MIN) {
+                    out.push(format!("{q}: step {i} {c} too close to nodata {nd}"));
+                }
+            }
+        }
+    }
+    out
+}
+
+/// A colour written as a literal: '#' and 3 to 8 hex digits ending at a word boundary, or a CSS colour function (rgb,
+/// rgba, hsl, hsla, hwb, lab, lch, oklab, oklch, color) followed by '('.
+fn colour_literal(s: &str) -> bool {
+    let word = |c: char| c.is_alphanumeric() || c == '_';
+    let cs: Vec<char> = s.chars().collect();
+    for (i, c) in cs.iter().enumerate() {
+        if *c == '#' {
+            let run = cs[i + 1..].iter().take_while(|c| c.is_ascii_hexdigit()).count();
+            if (3..=8).contains(&run) && cs.get(i + 1 + run).is_none_or(|c| !word(*c)) {
+                return true;
+            }
+        } else if *c == '(' {
+            let mut name: Vec<char> = cs[..i].iter().rev().take_while(|c| word(**c)).copied().collect();
+            name.reverse();
+            let name: String = name.into_iter().collect::<String>().to_lowercase();
+            if ["rgb", "rgba", "hsl", "hsla", "hwb", "lab", "lch", "oklab", "oklch", "color"].contains(&name.as_str()) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// The page tree names no colour: no string outside its facts is a literal colour, and a frame's shared palette is a
+/// palette id of the palette file.
+fn tree_colour_problems(spec: &J, pf: &J) -> Vec<String> {
+    fn frames(n: &J, path: &str, pf: &J, out: &mut Vec<String>) {
+        if let Some(pal) = n.g("shared").get("palette") {
+            if !pal.s().is_some_and(|p| pf.g("sequential").has(p)) {
+                out.push(format!("tree: {path}.shared.palette {} is not a palette id of the palette file", pal.repr()));
+            }
+        }
+        for (i, c) in n.g("children").arr().iter().enumerate() {
+            frames(c, &format!("{path}.children[{i}]"), pf, out);
+        }
+    }
+    let mut out = Vec::new();
+    for (k, v) in spec.obj().iter().filter(|(k, _)| k != "facts") {
+        for (path, x) in walk(v, &format!("$.{k}")) {
+            if x.s().is_some_and(colour_literal) {
+                out.push(format!("tree: {path} {} is a literal colour; a page names a palette id, never a colour", x.repr()));
+            }
+        }
+    }
+    frames(spec.g("body"), "$.body", pf, &mut out);
+    out
+}
+
+// ================================================================================================================
 // The core's content: items expanded from the binding (C2), the words it prints and their boxes, the map projection,
 // the value-determined geometry, the requests it issues.
 // ================================================================================================================
@@ -3455,6 +3717,10 @@ pub struct Content {
 
 /// C1-C5 on the core's own spec: (failure lines, the content when it passed).
 pub fn content_problems(spec: &J, inp: &J, ext: &[String], reg: &J) -> (Vec<String>, Option<Content>) {
+    let pal = palette_problems(palettes());
+    if !pal.is_empty() {
+        return (pal, None);
+    }
     let mut errs = registry_problems(reg);
     let (a_errs, got, rpage) = part_a(spec, inp, reg);
     errs.extend(a_errs.into_iter().map(|x| format!("C1 {x}")));
@@ -4285,5 +4551,51 @@ mod tests {
         for bad in ["pi/x.mjs", "nodes/../pi/x.mjs", "nodes/x.json", "/nodes/x.mjs", "nodes/./x.py", "leaves_py/bake.py", "leaves_py/knobs.py"] {
             assert!(!runner_allowed(bad), "{bad}");
         }
+    }
+
+    // ---- R11: colour --------------------------------------------------------------------------------------------
+
+    fn r11_cases() -> Vec<(String, J)> {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/fixtures/r11");
+        let mut names: Vec<String> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).filter(|n| n.ends_with(".json")).collect();
+        names.sort();
+        names.into_iter().map(|n| (n.trim_end_matches(".json").to_string(), parse(&std::fs::read_to_string(dir.join(&n)).unwrap()).unwrap())).collect()
+    }
+
+    /// The shipped palette file passes palette_ok; each bad palette file of the prototype's cases (N5c, N8a-N8f) is
+    /// refused with the prototype's failure heads, line by line.
+    #[test]
+    fn next_tree_r11_palette_ok_loads_the_shipped_file_and_refuses_the_bad_ones() {
+        assert_eq!(palette_problems(palettes()), Vec::<String>::new());
+        let mut n = 0;
+        for (id, c) in r11_cases().into_iter().filter(|(id, _)| id == "N5c" || id.starts_with("N8")) {
+            let got = palette_problems(c.g("palettes"));
+            let proto: Vec<String> = c.g("got").arr().iter().map(st).collect();
+            assert_eq!(heads(&got), heads(&proto), "{id}: {got:?}");
+            assert!(got.iter().any(|e| e.contains(&st(c.g("expect")))), "{id}: {got:?}");
+            n += 1;
+        }
+        assert_eq!(n, 7);
+    }
+
+    /// One accent value across the repo's colour sources: tokens.css, the two leaf page roots and the JS nodes' colours
+    /// each declare exactly the palette file's accent wherever they declare a saturated accent.
+    #[test]
+    fn next_tree_r11_one_accent_value() {
+        let acc = st(palettes().g("roles").g("accent"));
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime");
+        let mut seen = Vec::new();
+        for (file, key) in [("leaves_py/tokens.css", "--accent:"), ("leaves_py/scmp.py", "--accent:"), ("leaves_py/prod.py", "--accent:"), ("nodes/common.mjs", "accent: \"")] {
+            let text = std::fs::read_to_string(root.join(file)).unwrap();
+            for (i, _) in text.match_indices(key) {
+                let v = text.get(i + key.len()..i + key.len() + 7).unwrap_or("");
+                if canon_hex(v) && chroma(v) <= NEUTRAL_CHROMA_MAX {
+                    continue;
+                }
+                seen.push((file, v.to_string()));
+            }
+        }
+        assert!(seen.len() >= 4, "{seen:?}");
+        assert!(seen.iter().all(|(_, v)| *v == acc), "{acc}: {seen:?}");
     }
 }

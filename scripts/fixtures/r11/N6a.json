@@ -1,0 +1,276 @@
+{
+"id": "N6a",
+"group": "cuts order",
+"what": "facts cuts 1, 10, 5, 20",
+"expect": "cuts_not_ascending",
+"case": {
+"id": "choro",
+"node": "area_map",
+"sid": "s2",
+"dec": 1,
+"scale": {
+"kind": "threshold",
+"encodes": "value",
+"cuts": {
+"rule": "facts",
+"from": [
+"fact:cut.0",
+"fact:cut.1",
+"fact:cut.2",
+"fact:cut.3"
+]
+},
+"palette": "seq-slate",
+"no_data": "nodata",
+"printed": false
+},
+"facts": {
+"cut.0": 1,
+"cut.1": 10,
+"cut.2": 5,
+"cut.3": 20
+},
+"registry": {
+"binding": "external",
+"marks": {
+"shape": "rect",
+"per": "item",
+"paint": {
+"scale": "s2"
+}
+},
+"scales": {
+"s2": {
+"kind": "threshold",
+"encodes": "value",
+"cuts": {
+"rule": "facts",
+"from": [
+"fact:cut.0",
+"fact:cut.1",
+"fact:cut.2",
+"fact:cut.3"
+]
+},
+"palette": "seq-slate",
+"no_data": "nodata",
+"printed": false
+}
+}
+},
+"tree": {
+"body": {
+"kind": "Frame",
+"children": [
+{
+"kind": "Node",
+"id": "map",
+"node": "area_map"
+}
+]
+}
+},
+"items": [
+{
+"id": "area/AT",
+"value": 3.2,
+"src": null,
+"focus": false,
+"at": [
+0,
+0
+]
+},
+{
+"id": "area/BE",
+"value": 0.0,
+"src": null,
+"focus": false,
+"at": [
+1,
+0
+]
+},
+{
+"id": "area/BG",
+"value": 7.5,
+"src": null,
+"focus": false,
+"at": [
+2,
+0
+]
+},
+{
+"id": "area/CY",
+"value": null,
+"src": null,
+"focus": false,
+"at": [
+3,
+0
+]
+},
+{
+"id": "area/CZ",
+"value": 12.0,
+"src": null,
+"focus": false,
+"at": [
+0,
+1
+]
+},
+{
+"id": "area/DE",
+"value": 21.4,
+"src": null,
+"focus": true,
+"at": [
+1,
+1
+]
+},
+{
+"id": "area/DK",
+"value": 4.9,
+"src": null,
+"focus": false,
+"at": [
+2,
+1
+]
+},
+{
+"id": "area/EE",
+"value": 9.99,
+"src": null,
+"focus": false,
+"at": [
+3,
+1
+]
+},
+{
+"id": "area/ES",
+"value": 15.5,
+"src": null,
+"focus": false,
+"at": [
+0,
+2
+]
+},
+{
+"id": "area/FI",
+"value": 1.0,
+"src": null,
+"focus": false,
+"at": [
+1,
+2
+]
+},
+{
+"id": "area/FR",
+"value": 30.2,
+"src": null,
+"focus": false,
+"at": [
+2,
+2
+]
+},
+{
+"id": "area/GR",
+"value": 5.0,
+"src": null,
+"focus": false,
+"at": [
+3,
+2
+]
+}
+],
+"labels": []
+},
+"palettes": {
+"$comment": "Visual group colour file (R11). Roles: one accent (the page's only saturated colour), base (an unselected mark), nodata (no row or a null value; never step 0), ink and white (text inside a painted mark: the core picks the one with the higher WCAG contrast), edge (outline of a painted mark whose step is under 3:1 on a page ground). grounds: the page backgrounds. sequential: per palette id, one explicit table per number of classes k = 3..9, light to dark, as ColorBrewer ships them. Colours are '#' and six lowercase hex digits, nothing else. Checked at load by palette_ok; made by works/r11-color-scale/gen_palette.py.",
+"roles": {
+"accent": "#c93f2b",
+"base": "#d6d6d6",
+"nodata": "#f0f0f0",
+"ink": "#292928",
+"white": "#ffffff",
+"edge": "#7f7f7f"
+},
+"grounds": [
+"#ffffff",
+"#f8f6f3"
+],
+"sequential": {
+"seq-slate": {
+"3": [
+"#d7e5e7",
+"#7fa4a9",
+"#024a52"
+],
+"4": [
+"#d7e5e7",
+"#9cb9bd",
+"#457177",
+"#024a52"
+],
+"5": [
+"#d7e5e7",
+"#abc4c8",
+"#7fa4a9",
+"#36676e",
+"#024a52"
+],
+"6": [
+"#d7e5e7",
+"#b4cace",
+"#91b0b5",
+"#51797f",
+"#2d6169",
+"#024a52"
+],
+"7": [
+"#d7e5e7",
+"#b9cfd2",
+"#9cb9bd",
+"#7fa4a9",
+"#457177",
+"#265d65",
+"#024a52"
+],
+"8": [
+"#d7e5e7",
+"#bed2d5",
+"#a5bfc3",
+"#8cadb2",
+"#739aa1",
+"#3d6b72",
+"#215a62",
+"#024a52"
+],
+"9": [
+"#d7e5e7",
+"#c1d4d7",
+"#abc4c8",
+"#95b4b8",
+"#7fa4a9",
+"#4c767c",
+"#36676e",
+"#1d5860",
+"#024a52"
+]
+}
+}
+},
+"svg": null,
+"got": [
+"refused: cuts_not_ascending: [1, 10, 5, 20]"
+]
+}

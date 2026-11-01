@@ -298,15 +298,16 @@ class Column(unittest.TestCase):
     def test_the_column_and_change_pages_are_byte_for_byte_the_bars_pages_they_were(self):
         """The column frame's main layer is its recipe's (run.MAIN), the bars on a column and a change page: their html is the
         page built before the frame took a declared main layer (the sha256 of this page's html at that commit, the same
-        lines run through run.py), so the bars' page did not move when the frame stopped requiring them."""
+        lines run through run.py; since R11 with tokens.css declaring the one accent #c93f2b, the only byte that moved), so the
+        bars' page did not move when the frame stopped requiring them."""
         def sha(lines, names):
             got = child(lines)[1:]
             self.assertFalse([g for g in got if "refused" in g], got)
             layers = {n: g.get("svg") or g.get("html") for n, g in zip(names, got)}
             html = child(lines + [json.dumps({"phase": "page", "layers": layers})])[-1]["html"]
             return hashlib.sha256(html.encode("utf-8")).hexdigest()
-        self.assertEqual(sha(column_request(), ["bignums", "bars"]), "5522fd5c47087719d53bce3fec86b1e9211c224a6e804d9952fb63662bd12002")
-        self.assertEqual(sha(change_request(), ["bars"]), "243dc948bbd3dd2bc3838275a19640f5ae5dca2dcb7a8e96373269b535aefccd")
+        self.assertEqual(sha(column_request(), ["bignums", "bars"]), "1bf9b3673b007f57917095c79935ec90181056ab945f5ff4c774bfc5286c6e36")
+        self.assertEqual(sha(change_request(), ["bars"]), "06a9bbe1ebc2f10f1a76167fb9f5b572bfdf229ce3b8b21685f4d1764a2f3bab")
         self.assertIn('<svg class="bars pub-chart"', child(change_request() + [json.dumps({"phase": "page", "layers": {"bars": child(change_request())[1]["svg"]}})])[-1]["html"])
 
     def test_a_column_page_with_no_big_numbers_gives_the_title_the_whole_header(self):

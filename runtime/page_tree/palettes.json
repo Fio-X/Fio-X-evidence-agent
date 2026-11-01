@@ -1,0 +1,75 @@
+{
+ "$comment": "Visual group colour file (R11). Roles: one accent (the page's only saturated colour), base (an unselected mark), nodata (no row or a null value; never step 0), ink and white (text inside a painted mark: the core picks the one with the higher WCAG contrast), edge (outline of a painted mark whose step is under 3:1 on a page ground). grounds: the page backgrounds. sequential: per palette id, one explicit table per number of classes k = 3..9, light to dark, as ColorBrewer ships them. Colours are '#' and six lowercase hex digits, nothing else. Read by src/next_tree.rs (include_str) and checked at load by palette_ok: a file that fails any threshold stops every page that paints.",
+ "roles": {
+  "accent": "#c93f2b",
+  "base": "#d6d6d6",
+  "nodata": "#f0f0f0",
+  "ink": "#292928",
+  "white": "#ffffff",
+  "edge": "#7f7f7f"
+ },
+ "grounds": [
+  "#ffffff",
+  "#f8f6f3"
+ ],
+ "sequential": {
+  "seq-slate": {
+   "3": [
+    "#d7e5e7",
+    "#7fa4a9",
+    "#024a52"
+   ],
+   "4": [
+    "#d7e5e7",
+    "#9cb9bd",
+    "#457177",
+    "#024a52"
+   ],
+   "5": [
+    "#d7e5e7",
+    "#abc4c8",
+    "#7fa4a9",
+    "#36676e",
+    "#024a52"
+   ],
+   "6": [
+    "#d7e5e7",
+    "#b4cace",
+    "#91b0b5",
+    "#51797f",
+    "#2d6169",
+    "#024a52"
+   ],
+   "7": [
+    "#d7e5e7",
+    "#b9cfd2",
+    "#9cb9bd",
+    "#7fa4a9",
+    "#457177",
+    "#265d65",
+    "#024a52"
+   ],
+   "8": [
+    "#d7e5e7",
+    "#bed2d5",
+    "#a5bfc3",
+    "#8cadb2",
+    "#739aa1",
+    "#3d6b72",
+    "#215a62",
+    "#024a52"
+   ],
+   "9": [
+    "#d7e5e7",
+    "#c1d4d7",
+    "#abc4c8",
+    "#95b4b8",
+    "#7fa4a9",
+    "#4c767c",
+    "#36676e",
+    "#1d5860",
+    "#024a52"
+   ]
+  }
+ }
+}
