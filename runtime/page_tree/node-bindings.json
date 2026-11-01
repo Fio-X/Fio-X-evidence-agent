@@ -27,7 +27,7 @@
   },
   "claim_marks": {"id": "marks", "kind": "named_rule", "rule": "marks_from_claims", "inputs": {"ranked": "ranked"}, "given": "$picks.marks"}
  },
- "recipes": {},
+ "recipes": {"column": ["bars"]},
  "nodes": {
   "bars": {
    "binding": "external",

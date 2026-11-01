@@ -1772,7 +1772,10 @@
     ]
    ],
    "strip": true,
-   "main": "bars"
+   "main": "bars",
+   "external": [
+    "bars"
+   ]
   },
   {
    "name": "flow",

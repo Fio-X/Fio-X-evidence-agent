@@ -99,20 +99,11 @@ def html_named(code):
 
 
 def cl_bars(f, occ):
-    """One bar per ranked place, largest first: the name before it, the value after it, a marked place's in bold; a bar of the
-    page's focus (focus) in the accent, one the notes name besides it (noted) in the dark grey, the others in the bars' grey.
-    Drawn from x0, where the panel places the bars. With bars.measure change: cl_change_bars."""
-    if f.change: return cl_change_bars(f)
-    o, mx, bw, lw = [], max(v for _, v in f.vals), f.bw - f.lw - f.vw, f.x0 + f.lw
-    o.append(f'<line x1="{lw:.1f}" x2="{lw:.1f}" y1="{f.top}" y2="{f.top + f.rh * len(f.vals)}" stroke="var(--t-sec)" stroke-width="0.8"/>')
-    for i, (k, v) in enumerate(f.vals):
-        y, w, hi = f.top + i * f.rh, v / mx * bw, k in f.marks
-        ink, weight = ("var(--t-title)", 700) if hi else ("var(--t-body)", 400)
-        mid = y + f.rh / 2
-        o.append(f'<text x="{lw - 8:.1f}" y="{mid:.1f}" text-anchor="end" dominant-baseline="middle" font-size="{f.size}" fill="{ink}" font-weight="{weight}">{prod.named(k)}</text>'
-                 f'<rect x="{lw:.1f}" y="{y + 3:.1f}" width="{w:.1f}" height="{f.rh - 6}" fill="{FOCUS if k in f.focus else NOTED if k in f.noted else "var(--bar)"}"/>'
-                 f'<text x="{lw + w + 6:.1f}" y="{mid:.1f}" dominant-baseline="middle" font-size="{f.size}" fill="{ink if hi else "var(--t-sec)"}" font-weight="{weight}">{FX.entry(val_src(f.d, k), "tspan", None)}</text>')
-    return "".join(o)
+    """The bars a page lays out itself: the change bars (bars.measure change, cl_change_bars). A level page's bars are laid
+    out by the bars node and drawn from the core's placed geometry (cl_bars_placed, the column recipe's external bars);
+    asked here, they refuse."""
+    if not f.change: raise FX.Refused("bars: a level page's bars are drawn from their placed geometry only (cl_bars_placed)")
+    return cl_change_bars(f)
 
 
 def cl_bars_placed(f, occ, placed):

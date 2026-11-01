@@ -16,6 +16,8 @@ import facts as FX  # noqa: E402
 import prod  # noqa: E402
 import run  # noqa: E402
 import words  # noqa: E402
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from test_leaf_placed import placed_lines  # noqa: E402
 
 SPEC = {"fmts": {"m": {"scale": 0.01, "dec": 0, "suffix": " 亿"}, "time": {"prefix": "截至"}}}
 F = {"ru": {"v": 15500.0, "t": "2022-09", "fmt": "m"}}
@@ -226,7 +228,8 @@ class Child(unittest.TestCase):
 
 
 def column_request(values=(("SE", "65.4"), ("DE", "30.25"), ("BE", "14.9")), ledger=None):
-    """A column page's lines as layer 1 sends them (next_run bars_fill and bignums_fill; ledger as next_facts makes it)."""
+    """A column page's lines as layer 1 sends them (next_run's fill and bignums_fill; ledger as next_facts makes it), its
+    bars bound external and placed where the core places them (placed_lines); a page whose frame refuses, as it is."""
     rows = [{"src": f"series:sdg/A.PC.{g}:2025:OBS_VALUE", "table": "sdg", "dims": {"freq": "A", "unit": "PC", "geo": g},
              "time": "2025", "value": v} for g, v in values]
     at = lambda g: {"table": "sdg", "filter": {"geo": g}, "time": "2025", "fmt": "pc"}
@@ -243,7 +246,11 @@ def column_request(values=(("SE", "65.4"), ("DE", "30.25"), ("BE", "14.9")), led
     rows = rows + [{"src": k, "text": v} for k, v in ledger.items()]
     line = lambda **kv: json.dumps({"node": "column", "panel": {"w": 1140, "h": 0, "frame": None}, "rows": rows, "knobs": knobs, **kv},
                                    ensure_ascii=False)
-    return [line(phase="size"), line(layer="bignums"), line(layer="bars")]
+    lines = [line(phase="size"), line(layer="bignums"), line(layer="bars")]
+    try:
+        return placed_lines(lines)
+    except FX.Refused:
+        return lines
 
 
 def change_request(ends=(("SE", "60.0", "65.4"), ("DE", "31.0", "30.25"), ("BE", "10.1", "14.9"))):

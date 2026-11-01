@@ -1669,7 +1669,7 @@ type NodeFill = fn(&Filling, &mut Filled) -> Result<(), String>;
 const NODE_FILLS: &[(&str, NodeFill)] = &[
     ("map", map_fill),
     ("ring", ring_node_fill),
-    ("bars", bars_fill),
+    ("bars", change_bars_fill),
     ("bignums", bignums_fill),
     ("bubbles", bubbles_fill),
     ("leader_notes", leader_notes_fill),
@@ -1888,23 +1888,6 @@ fn val_family<'a>(f: &Filling<'a>, out: &mut Filled) -> Result<Vec<&'a Value>, S
 /// The fact counting the places a column page draws (op n over its own ranked rows at the year), which the unit line's scope
 /// prints (hero.scope): the count comes from the data, never typed.
 const DRAWN: &str = "drawn";
-
-/// One bar per ranked country. Rows and facts: the ranked countries' values (val_family), or with two ends their change
-/// (change_families), and how many they are (DRAWN).
-fn bars_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
-    if !f.shape.t0.is_empty() {
-        return change_bars_fill(f, out);
-    }
-    let (shape, picks) = (f.shape, f.picks);
-    let (place, year) = (shape.place.as_str(), shape.year.as_str());
-    val_family(f, out)?;
-    Filled::set(&mut out.facts, "fact", DRAWN, json!({"op": "n", "by": place, "table": shape.main, "time": year, "fmt": "n"}))?;
-    let data = json!({"chart": "bars", "by": place, "year": year, "family": "val", "ranked": picks.ranked, "marks": picks.marks});
-    for (k, v) in data.as_object().into_iter().flatten() {
-        Filled::set(&mut out.data, "hero data", k, v.clone())?;
-    }
-    Ok(())
-}
 
 /// The fact keys of a flow picture's nodes by side (source, target): `<side>.<code>` a drawn node's value, `<side>_other` the
 /// merged node's (sankey_fill).
@@ -5029,6 +5012,31 @@ mod tests {
     fn ring_shape(tables: &[(&str, &[Value])], catalogue: &dyn Catalogue) -> Result<Shape, String> {
         shape_of(&recipe(RING_RECIPE).eats, tables, catalogue)
     }
+    /// fill_of as recipe_request calls it: a recipe that binds layers external declares them over its page input (the
+    /// visual group's generator, a throwaway record of its calls), which the fill keeps for draw_nodes.
+    #[allow(clippy::too_many_arguments)]
+    fn test_fill(
+        recipe: &Recipe,
+        shape: &Shape,
+        picks: &Picks,
+        (main, companion): (&[Value], &[Value]),
+        catalogue: &dyn Catalogue,
+        words: (&str, &str),
+        scoped: bool,
+    ) -> Result<Value, String> {
+        let page_in = (!recipe.external.is_empty()).then(|| page_input(recipe, shape, picks, main));
+        let calls = std::sync::Mutex::new(Vec::new());
+        let asked = Asked { calls: &calls, page_in: page_in.as_ref() };
+        let mut fill = fill_of(recipe, shape, picks, (main, companion), catalogue, words, scoped, Some(&asked))?;
+        if let Some(page_in) = page_in {
+            fill["page_in"] = page_in;
+            // and laid out where leaf_page lays them out, by the repository's own nodes
+            // the node's child runs in its own folder (next_leaf::ask_once), so its runtime is a whole path
+            draw_nodes(&mut fill, &recipe.external, &calls, &Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime"))?;
+        }
+        Ok(fill)
+    }
+
     fn ring_fill(
         shape: &Shape,
         picks: &RingPicks,
@@ -5038,7 +5046,7 @@ mod tests {
     ) -> Result<Value, String> {
         let RingPicks { focus, t0, t1, top } = picks;
         let picks = Picks { focus: focus.clone(), t0: t0.clone(), t1: t1.clone(), top: top.clone(), ..Picks::default() };
-        fill_of(recipe(RING_RECIPE), shape, &picks, tables, catalogue, words, false, None)
+        test_fill(recipe(RING_RECIPE), shape, &picks, tables, catalogue, words, false)
     }
 
     /// The flow's filled lists are frozen with the design pack's template list (shape_registry
@@ -6265,12 +6273,12 @@ mod tests {
         let picks = picks_of(&column.picks, &shape, &main, &[]).unwrap();
         assert_eq!(picks.ranked, ["DE", "FR", "IT"]);
         assert_eq!(scope_of(&shape, &picks, &Scoped(true)).as_deref(), Some("EU27_2020"));
-        let fill = fill_of(column, &shape, &picks, (&main, &[]), &Scoped(true), ("标题", "导语"), false, None).unwrap();
+        let fill = test_fill(column, &shape, &picks, (&main, &[]), &Scoped(true), ("标题", "导语"), false).unwrap();
         let spec = &fill["knobs"]["spec"];
         assert_eq!(spec["hero"]["scope"], json!({"code": "EU27_2020", "count": "drawn"}));
         assert_eq!(fill["knobs"]["labels"]["EU27_2020"], "名EU27_2020");
         assert_eq!(spec["title"], "标题");
-        let unnamed = fill_of(column, &shape, &picks, (&main, &[]), &Scoped(false), ("标题", "导语"), false, None).unwrap();
+        let unnamed = test_fill(column, &shape, &picks, (&main, &[]), &Scoped(false), ("标题", "导语"), false).unwrap();
         assert!(unnamed["knobs"]["spec"]["hero"].get("scope").is_none());
         assert!(unnamed["knobs"]["labels"].get("EU27_2020").is_none());
     }
@@ -6287,9 +6295,8 @@ mod tests {
         let mut picks = picks_of(&column.picks, &shape, &main, &[]).unwrap();
         picks.marks = tree["given"]["marks"].as_array().unwrap().iter().map(|c| c.as_str().unwrap().to_string()).collect();
         let words = ("标题", "导语");
-        let rust = fill_of(column, &shape, &picks, (&main, &[]), &Hubs, words, false, None).unwrap();
-        let mut external = column.clone();
-        external.external = vec!["bars".to_string()];
+        let rust: Value = serde_json::from_str(&std::fs::read_to_string(root.join("scripts/fixtures/p4a/q1-rust-fill.json")).unwrap()).unwrap();
+        let external = column.clone();
         let page_in = page_input(&external, &shape, &picks, &main);
         let calls = std::sync::Mutex::new(Vec::new());
         let asked = Asked { calls: &calls, page_in: Some(&page_in) };
@@ -6303,21 +6310,6 @@ mod tests {
             f
         });
         (rust, fill, calls.into_inner().unwrap())
-    }
-
-    /// The q1 column fill the rust bars_fill gives, frozen (scripts/fixtures/p4a/q1-rust-fill.json) so the declared bars
-    /// stay compared with it once bars_fill is gone: equal to the live fill, key by key. P4A_FREEZE=1 writes it afresh.
-    #[test]
-    fn q1_rust_fill_is_the_frozen_fixture() {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/fixtures/p4a/q1-rust-fill.json");
-        let (rust, _, _) = q1_fills(&crate::next_tree::bindings());
-        if std::env::var("P4A_FREEZE").is_ok_and(|v| v == "1") {
-            std::fs::write(&path, serde_json::to_string_pretty(&rust).unwrap() + "\n").unwrap();
-        }
-        let frozen: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        let mut differs = Vec::new();
-        fill_diff(&frozen, &rust, "fill", &mut differs);
-        assert!(differs.is_empty(), "{differs:#?}");
     }
 
     /// Key by key, every place two fills differ.
@@ -6588,7 +6580,7 @@ mod tests {
         let column = recipe("column");
         let shape = shape_of(&column.eats, &[("sdg", &main[..])], &Hubs).unwrap();
         let picks = picks_of(&column.picks, &shape, &main, &[]).unwrap();
-        let mut fill = fill_of(column, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false, None).unwrap();
+        let mut fill = test_fill(column, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false).unwrap();
         // the dek is the finding, printed from the extremes' ledger entries though the notes that print the gap all drop
         let dek = dek_finding(&fill).unwrap().0;
         page_words(&mut fill, ("标题", &dek, "栏目"));
@@ -6670,7 +6662,7 @@ mod tests {
         let column = recipe("column");
         let shape = shape_of(&column.eats, &[("sdg", &main[..])], &Hubs).unwrap();
         let picks = picks_of(&column.picks, &shape, &main, &[]).unwrap();
-        let mut fill = fill_of(column, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false, None).unwrap();
+        let mut fill = test_fill(column, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false).unwrap();
         fill["knobs"]["shapes"] = json!("runtime/pi/assets/naturalearth-admin0-50m.geojson");
         fill["knobs"]["spec"]["kicker"] = json!("栏目");
         fill["knobs"]["spec"]["source"] = json!("来源");
@@ -6762,7 +6754,7 @@ mod tests {
 
         // the key to the circles comes with the bubbles (knobs.py WITH), drawn before the notes
         assert_eq!(column.layers, ["bars", "bubbles", "bubble_key", "leader_notes"]);
-        let fill = fill_of(column, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false, None).unwrap();
+        let fill = test_fill(column, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false).unwrap();
         assert_eq!(fill["order"], json!(["bars", "bubbles", "bubble_key", "leader_notes"]));
         let rows = fill["rows"].as_array().unwrap();
         assert_eq!(rows.iter().map(|r| r["dims"]["geo"].as_str().unwrap()).collect::<Vec<_>>(), ["SE", "BE", "DE", "FR"]);
@@ -6898,7 +6890,7 @@ mod tests {
             let r = Hubs.recipes().iter().find(|r| shape_of(&r.eats, &tables, &Hubs).is_ok()).unwrap();
             let shape = shape_of(&r.eats, &tables, &Hubs).unwrap();
             let picks = picks_of(&r.picks, &shape, main, &[]).unwrap();
-            let fill = fill_of(r, &shape, &picks, (main, &[]), &Hubs, ("", ""), false, None).unwrap();
+            let fill = test_fill(r, &shape, &picks, (main, &[]), &Hubs, ("", ""), false).unwrap();
             let form = page_lead(Some(&fill), &charts);
             (r.name.clone(), next_page::draft_for(&[], &charts, Vec::new(), form).with_finding(dek_finding(&fill)))
         };
@@ -6965,7 +6957,7 @@ mod tests {
             set(&mut main, at);
             let shape = shape_of(&column.eats, &[("sdg", &main[..])], &Hubs).unwrap();
             let picks = picks_of(&column.picks, &shape, &main, &claims).unwrap();
-            fill_of(column, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false, None).unwrap()
+            test_fill(column, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false).unwrap()
         };
         let level = |at: &[(&str, &str, &str)]| level_fill(at).get("finding").cloned();
         assert_eq!(level(&[]).unwrap()["dek"], "{lead1.t}，{name.SE}最高，为{hi}，比最低的{name.BE}高{gap}");
@@ -6981,7 +6973,7 @@ mod tests {
             set(&mut main, at);
             let shape = shape_of(&change.eats, &[("sdg", &main[..])], &Hubs).unwrap();
             let picks = picks_of(&change.picks, &shape, &main, &[]).unwrap();
-            fill_of(change, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false, None).unwrap().get("finding").cloned()
+            test_fill(change, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false).unwrap().get("finding").cloned()
         };
         // SE up 16 (50 to 66); BE too
         assert_eq!(moved(&[("BE", "2024", "24.5")]), None, "two largest rises");
@@ -6990,7 +6982,7 @@ mod tests {
         set(&mut tied, &[("BE", "2024", "24.5")]);
         let shape = shape_of(&change.eats, &[("sdg", &tied[..])], &Hubs).unwrap();
         let picks = picks_of(&change.picks, &shape, &tied, &[]).unwrap();
-        let fill = fill_of(change, &shape, &picks, (&tied, &[]), &Hubs, ("标题", "导语"), false, None).unwrap();
+        let fill = test_fill(change, &shape, &picks, (&tied, &[]), &Hubs, ("标题", "导语"), false).unwrap();
         assert!(fill["knobs"]["spec"]["hero"]["data"].get("accent").is_none());
         // e3: up 16 both, as the page prints them (16.00 个百分点), though 66.6 - 50.6 is 15.999999999999993 and 24.6 - 8.6 is 16
         assert_ne!(66.6_f64 - 50.6, 24.6 - 8.6);
@@ -7048,7 +7040,7 @@ mod tests {
         let main = q1_ten_years();
         let shape = shape_of(&change.eats, &[("sdg", &main[..])], &Hubs).unwrap();
         let picks = picks_of(&change.picks, &shape, &main, &[]).unwrap();
-        let mut fill = fill_of(change, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false, None).unwrap();
+        let mut fill = test_fill(change, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false).unwrap();
         assert_eq!(fill["ends"], json!({"t0": "2016", "t1": "2024", "rule": "two_ends", "fetched_from": "2013",
             "later": [{"year": "2013", "missing": ["BE", "DE", "FR"]}, {"year": "2015", "missing": ["DE"]}]}));
         let spec = &fill["knobs"]["spec"];
@@ -7204,7 +7196,7 @@ mod tests {
                 .collect();
             let shape = shape_of(&change.eats, &[(table, &main[..])], &WbNamed).unwrap();
             let picks = picks_of(&change.picks, &shape, &main, &[]).unwrap();
-            fill_of(change, &shape, &picks, (&main, &[]), &WbNamed, ("标题", "导语"), false, None).unwrap()
+            test_fill(change, &shape, &picks, (&main, &[]), &WbNamed, ("标题", "导语"), false).unwrap()
         };
         let apart = [("CHN", "2016", "10.5"), ("CHN", "2025", "14.25"), ("IND", "2016", "13.5"), ("IND", "2025", "14.5"),
             ("USA", "2016", "16.5"), ("USA", "2025", "17.0")];
@@ -7286,7 +7278,7 @@ mod tests {
         }
         let shape = shape_of(&change.eats, &[("sdg_07_40", &main[..])], &Hubs).unwrap();
         let picks = picks_of(&change.picks, &shape, &main, &[]).unwrap();
-        let mut fill = fill_of(change, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false, None).unwrap();
+        let mut fill = test_fill(change, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false).unwrap();
         // the dek is the finding (LU rose most, 5.364 to 20.2), so the whole-page check rechecks its number from the rows too
         let dek = dek_finding(&fill).unwrap().0;
         assert_eq!(dek, "{lead0.t}至{lead1.t}，{name.LU}增幅最大，增加{lead}");
@@ -7393,7 +7385,7 @@ mod tests {
             }
             let shape = shape_of(&r.eats, &[(table, &main[..])], &WbNamed).unwrap();
             let picks = picks_of(&r.picks, &shape, &main, &[]).unwrap();
-            let mut fill = fill_of(r, &shape, &picks, (&main, &[]), &WbNamed, ("标题", "导语"), false, None).unwrap();
+            let mut fill = test_fill(r, &shape, &picks, (&main, &[]), &WbNamed, ("标题", "导语"), false).unwrap();
             fill["knobs"]["shapes"] = json!("runtime/pi/assets/naturalearth-admin0-50m.geojson");
             fill["knobs"]["spec"]["kicker"] = json!("栏目");
             fill["knobs"]["spec"]["source"] = json!(source);
@@ -7517,7 +7509,7 @@ mod tests {
         assert_eq!(got.iter().find(|(_, ok)| *ok).map(|(n, _)| *n), Some("composition"), "{got:?}");
         let shape = shape_of(&composition.eats, &tables, &Hubs).unwrap();
         let picks = picks_of(&composition.picks, &shape, main, &[]).unwrap();
-        fill_of(composition, &shape, &picks, (main, sums), &Hubs, ("标题", "导语"), false, None)
+        test_fill(composition, &shape, &picks, (main, sums), &Hubs, ("标题", "导语"), false)
     }
 
     /// q3 (欧盟各国发电结构) from the total fetch to the page: the program's second fetch asks the 14 group inputs for the 20
@@ -7954,7 +7946,7 @@ mod tests {
         assert_eq!(shape.flow, Some(("siec".to_string(), "nrg_bal".to_string())));
         assert_eq!((shape.year.as_str(), shape.unit.as_str()), ("2024", "KTOE"));
         let picks = picks_of(&flow.picks, &shape, &main, &[]).unwrap();
-        let mut fill = fill_of(flow, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false, None).unwrap();
+        let mut fill = test_fill(flow, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false).unwrap();
         assert_eq!(fill["order"], json!(["sankey"]));
         assert_eq!(fill["rows"].as_array().unwrap().len(), 69);
         assert!(fill.get("finding").is_none());
@@ -8064,7 +8056,7 @@ mod tests {
         // a fuel the flow asks for with no row left at all (peat's rows gone) is still an empty node, dropped as no row
         let no_peat: Vec<Value> = main.iter().filter(|r| r["dims"]["siec"] != "P1000").cloned().collect();
         let shape = shape_of(&flow.eats, &[("nrg_bal_s", &no_peat[..])], &Hubs).unwrap();
-        let mut fill = fill_of(flow, &shape, &picks, (&no_peat, &[]), &Hubs, ("标题", "导语"), false, None).unwrap();
+        let mut fill = test_fill(flow, &shape, &picks, (&no_peat, &[]), &Hubs, ("标题", "导语"), false).unwrap();
         assert_eq!(fill["knobs"]["spec"]["hero"]["leaves"]["sankey"]["empty"], json!({"source": ["P1000"]}));
         assert_eq!(fill["pairs"]["of_empty"], 7);
         let (dropped, _, checks) = flow_page(&mut fill, &|_| {});
@@ -8154,7 +8146,7 @@ mod tests {
         let shape_for = |id: &str, rows: &[Value]| shape_of(&flow.eats, &[(id, rows)], &Hubs);
         let filled = |id: &str, rows: &[Value], catalogue: &dyn Catalogue| {
             let shape = shape_for(id, rows).unwrap();
-            fill_of(flow, &shape, &Picks::default(), (rows, &[]), catalogue, ("标题", "导语"), false, None)
+            test_fill(flow, &shape, &Picks::default(), (rows, &[]), catalogue, ("标题", "导语"), false)
         };
         let nodes = |fill: &Value| -> Vec<String> {
             fill["knobs"]["spec"]["hero"]["leaves"]["sankey"]["node_text"].as_object().unwrap().keys().cloned().collect()
@@ -8263,7 +8255,7 @@ mod tests {
         let main = q2_flow_rows("nrg_bal_s");
         let flow = recipe("flow");
         let shape = shape_of(&flow.eats, &[("nrg_bal_s", &main[..])], &GroupNames).unwrap();
-        let fill = fill_of(flow, &shape, &Picks::default(), (&main, &[]), &GroupNames, ("标题", "导语"), false, None).unwrap();
+        let fill = test_fill(flow, &shape, &Picks::default(), (&main, &[]), &GroupNames, ("标题", "导语"), false).unwrap();
         let named = fill["knobs"]["named"].as_object().unwrap();
         for (src, zh) in [
             ("name:zh_names:siec:G3000", "天然气"),
@@ -8408,7 +8400,7 @@ mod tests {
         let scmp = recipe("scmp");
         let shape = shape_of(&scmp.eats, &[("nrg_ti_gas", &main), ("nrg_ti_gasm", &monthly)], &catalogue).unwrap();
         let picks = picks_of(&scmp.picks, &shape, &main, &claims).unwrap();
-        let mut fill = fill_of(scmp, &shape, &picks, (&main, &monthly), &catalogue, ("标题", "导语"), false, None).unwrap();
+        let mut fill = test_fill(scmp, &shape, &picks, (&main, &monthly), &catalogue, ("标题", "导语"), false).unwrap();
         fill["knobs"]["shapes"] = json!("runtime/pi/assets/naturalearth-admin0-50m.geojson");
         fill["knobs"]["spec"]["kicker"] = json!("栏目");
         fill["knobs"]["spec"]["source"] = json!("欧盟统计局 nrg_ti_gas、nrg_ti_gasm");
@@ -9394,7 +9386,7 @@ mod tests {
         let column = recipe("column");
         let shape = shape_of(&column.eats, &[("t", main)], &Hubs).unwrap();
         let picks = picks_of(&column.picks, &shape, main, &[]).unwrap();
-        let fill = fill_of(column, &shape, &picks, (main, &[]), &Hubs, ("标题", "导语"), scope.is_some(), None).unwrap();
+        let fill = test_fill(column, &shape, &picks, (main, &[]), &Hubs, ("标题", "导语"), scope.is_some()).unwrap();
         let charts = vec![Chart {
             relation: Relation::Ranking,
             view: View::Slice,
@@ -10677,7 +10669,22 @@ for line in sys.stdin:
         out = {"boxes": [], "lines": [], "refused": []}
     else:
         drawn.append(req["layer"])
-        out = {"svg": '<g data-layer="%s"></g>' % req["layer"], "texts": [], "lines": [], "frame": None, "refused": [], "dropped": []}
+        # an external layer is drawn where the core placed it (run.py layer_fn): its bars, then their texts
+        k = req.get("knobs") or {}
+        g = (k.get("placed") or {}).get(req["layer"]) if req["layer"] in (k.get("external") or []) else None
+        inner, texts = "", []
+        for it in (g or {}).get("items", []):
+            m = it["mark"]
+            inner += '<rect x="%.1f" y="%.1f" width="%.1f" height="%.1f"/>' % (m["x"], m["y"], m["w"], m["h"])
+        # each text printed as the leaf prints it: the place's name from its name row, the value from the src the core names
+        led = {r["src"]: r.get("text", "") for r in req.get("rows") or [] if isinstance(r, dict) and "src" in r}
+        for it in (g or {}).get("items", []):
+            for t in it["texts"]:
+                c = it["code"]
+                src = t["src"] if t["name"] == "value_text" else "name:zh_names:%s:%s" % ("iso2" if len(c) == 2 else "iso3", c)
+                inner += '<text x="%.1f" y="%.1f" text-anchor="%s" data-src="%s">%s</text>' % (t["x"], t["y"], t["anchor"], src, led.get(src, ""))
+                texts.append({"src": src, "text": led.get(src, ""), "x": t["x"], "y": t["y"], "size": 13, "anchor": t["anchor"], "baseline": "middle", "rot": 0.0})
+        out = {"svg": '<g data-layer="%s">%s</g>' % (req["layer"], inner), "texts": texts, "lines": [], "frame": None, "refused": [], "dropped": []}
     sys.stdout.write(json.dumps(out) + "\n")
     sys.stdout.flush()
 "#;
@@ -10767,6 +10774,8 @@ for line in sys.stdin:
             std::fs::write(run.join("runtime/leaves_py/run.py"), child).unwrap();
         }
         std::fs::copy("fixtures/next_leaf/bake_twin.py", run.join("runtime/leaves_py/bake.py")).unwrap();
+        // the column recipe's external bars are laid out by the run's copy of the bars node, as materialize writes it
+        std::fs::copy("runtime/leaves_py/bars_node.py", run.join("runtime/leaves_py/bars_node.py")).unwrap();
         let qa_twin = std::fs::canonicalize("fixtures/next_visual/qa_twin.py").unwrap();
         std::fs::write(
             run.join("runtime/browser_qa.py"),
@@ -11133,7 +11142,7 @@ for line in sys.stdin:
         let column = recipe("column");
         let shape = shape_of(&column.eats, &[("sdg", &main[..])], &Hubs).unwrap();
         let picks = picks_of(&column.picks, &shape, &main, &[]).unwrap();
-        let fill = fill_of(column, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false, None).unwrap();
+        let fill = test_fill(column, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false).unwrap();
         let drawn = fill["drawn"].as_array().unwrap();
         let of = |layer: &str| -> BTreeSet<&str> { drawn.iter().filter(|r| r["layer"] == layer).filter_map(|r| r["src"].as_str()).collect() };
         assert_eq!(of("bars").len(), picks.ranked.len(), "{drawn:?}");

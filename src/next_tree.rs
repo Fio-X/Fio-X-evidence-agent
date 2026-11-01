@@ -2405,7 +2405,7 @@ fn spec_diff(path: &str, want: &J, have: &J, knobs: &J, out: &mut Vec<String>) {
 }
 
 /// The input rows a resolved fact query reads (none for an op over two facts).
-fn fact_rows<'a>(q: &J, rows: &'a [J]) -> Vec<&'a J> {
+pub(crate) fn fact_rows<'a>(q: &J, rows: &'a [J]) -> Vec<&'a J> {
     if !q.has("table") {
         return vec![];
     }

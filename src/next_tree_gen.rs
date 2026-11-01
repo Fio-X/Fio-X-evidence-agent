@@ -14,6 +14,7 @@
 //! only by PAGE_IN_PATHS.
 
 use crate::next_tree::{self as core, st, Got, J};
+use std::collections::BTreeSet;
 use serde_json::Value;
 
 /// The page input paths a declaration template may read (`$shape.main`, ...); nothing else is substituted.
@@ -333,6 +334,42 @@ fn as_refs(v: &J, got: &Got, order: &[String], place: &str) -> Result<J, String>
     })
 }
 
+/// A fill fact held to the rows the page holds. The leaf computes a fact over the page's rows (fill.rows), the core over
+/// the whole page input: a fact whose query also reads input rows the page does not hold (an aggregate at the year, which
+/// no select ranks) takes the place filter of the select whose codes are just the page's, so both read the same rows. A
+/// fact with no such select, or still reading past the page's rows, refuses.
+fn held_to_page(key: &str, q: J, (inputs, held): (&[J], &[J]), got: &Got, order: &[String], place: &str) -> Result<J, String> {
+    let srcs: BTreeSet<String> = held.iter().map(|r| st(r.g("src"))).collect();
+    let past = |q: &J| -> Result<Vec<String>, String> {
+        let rq = core::resolved(q, got)?;
+        Ok(core::fact_rows(&rq, inputs).into_iter().map(|r| st(r.g("src"))).filter(|s| !srcs.contains(s)).collect())
+    };
+    let extra = past(&q)?;
+    if extra.is_empty() {
+        return Ok(q);
+    }
+    let no = |why: &str| format!("fact {key}: reads input rows the page does not hold {extra:?}, {why}");
+    if q.g("filter").has(place) {
+        return Err(no("past its own place filter"));
+    }
+    let codes: BTreeSet<String> = held.iter().filter(|r| r.g("table") == q.g("table")).map(|r| st(r.g("dims").g(place))).collect();
+    let sid = order
+        .iter()
+        .find(|sid| got.get(*sid).is_some_and(|c| c.arr().iter().map(st).collect::<BTreeSet<_>>() == codes))
+        .ok_or_else(|| no("and no select holds just the page's codes"))?;
+    let mut filter = q.g("filter").clone();
+    if !filter.is_obj() {
+        filter = J::Obj(vec![]);
+    }
+    filter.set(place, J::Str(format!("select:{sid}")));
+    let mut out = q;
+    out.set("filter", filter);
+    if !past(&out)?.is_empty() {
+        return Err(no(&format!("even held to select {sid}")));
+    }
+    Ok(out)
+}
+
 /// The registry's checks, per page and per external node, with the node's own select and family put in.
 fn checks_of(page_in: &J, reg: &J, body: &[J], external: &[String], unit: &J) -> J {
     let stop = |id: String, kind: &J, args: J| J::obj_of(vec![("id", J::Str(id)), ("kind", kind.clone()), ("args", args), ("on_fail", J::str("stop"))]);
@@ -388,7 +425,14 @@ pub(crate) fn tree_j(page_in: &J, fill: &J, reg: &J, external: &[String]) -> Res
     let shape = page_in.g("shape");
     let place = st(shape.g("place"));
     let spec = fill.g("knobs").g("spec");
-    let facts = J::Obj(spec.g("facts").obj().iter().map(|(k, q)| Ok((k.clone(), as_refs(q, &got, &order, &place)?))).collect::<Result<_, String>>()?);
+    let (inputs, held) = (page_in.g("rows").arr(), fill.g("rows").arr());
+    let facts = J::Obj(
+        spec.g("facts")
+            .obj()
+            .iter()
+            .map(|(k, q)| Ok((k.clone(), held_to_page(k, as_refs(q, &got, &order, &place)?, (inputs, held), &got, &order, &place)?)))
+            .collect::<Result<_, String>>()?,
+    );
     let mut fmts = spec.g("fmts").clone();
     let fmt = st(shape.g("fmt"));
     for layer in external {

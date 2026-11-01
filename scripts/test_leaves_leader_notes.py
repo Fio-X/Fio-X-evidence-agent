@@ -38,6 +38,8 @@ import mapkit as MK  # noqa: E402
 import prod  # noqa: E402
 import run  # noqa: E402
 import wbkit as K  # noqa: E402
+sys.path.insert(0, HERE)
+from test_leaf_placed import placed_lines  # noqa: E402
 from wbkit import Refused  # noqa: E402
 
 ASSETS = os.path.join(HERE, "..", "runtime", "pi", "assets")
@@ -628,7 +630,8 @@ def column_lines(leaves, accent=None, change=False):
     """A column page's size and layer lines with the map panel's leaves, as layer 1 sends them in the column recipe's order (next_run
     bubbles_fill and leader_notes_fill; the key to the circles, which comes with the bubbles, between them; the ledger as next_facts
     makes it); the place layer 1 names as the page's accent (fill_of: the dek's) when given. A change page's (change): the bars
-    each place's change from 2016 (EARLIER) to 2023, ranked by it (next_run change_bars_fill), the bars' measure change."""
+    each place's change from 2016 (EARLIER) to 2023, ranked by it (next_run change_bars_fill), the bars' measure change. A
+    level page's bars are bound external and placed where the core places them (placed_lines)."""
     rows = [r for r in ROWS if r["src"].startswith("series:")]
     ledger = {**{f"fact:val.{c}.n": str(v) for c, v in VALUES.items()}, **{r["src"]: r["text"] for r in ROWS if "text" in r}, "period:t:2023": "2023"}
     ranked = sorted(VALUES, key=lambda c: -VALUES[c])
@@ -648,7 +651,13 @@ def column_lines(leaves, accent=None, change=False):
     knobs = {"spec": spec, "labels": ZH2, "shapes": SHP}
     rows = rows + [{"src": k, "text": v} for k, v in ledger.items()]
     line = lambda **kv: json.dumps({"node": "column", "panel": {"w": 1140, "h": 0, "frame": None}, "rows": rows, "knobs": knobs, **kv}, ensure_ascii=False)
-    return [line(phase="size"), line(layer="bars"), line(layer="bubbles"), line(layer="bubble_key"), line(layer="leader_notes")]
+    lines = [line(phase="size"), line(layer="bars"), line(layer="bubbles"), line(layer="bubble_key"), line(layer="leader_notes")]
+    if change:
+        return lines
+    try:
+        return placed_lines(lines)
+    except prod.FX.Refused:  # a page whose frame refuses goes as it is, to be refused at its size line
+        return lines
 
 
 
@@ -669,7 +678,7 @@ def q6_lines(scoped):
     knobs = {"spec": spec, "labels": ZH2, "shapes": SHP}
     rows = rows + [{"src": k, "text": t} for k, t in ledger.items()]
     line = lambda **kv: json.dumps({"node": "column", "panel": {"w": 1140, "h": 0, "frame": None}, "rows": rows, "knobs": knobs, **kv}, ensure_ascii=False)
-    return [line(phase="size"), line(layer="bars"), line(layer="bubbles"), line(layer="bubble_key"), line(layer="leader_notes")]
+    return placed_lines([line(phase="size"), line(layer="bars"), line(layer="bubbles"), line(layer="bubble_key"), line(layer="leader_notes")])
 
 def q5_lines():
     """The q5 stand-in page's change-recipe lines as layer 1 sent them (next_run change_notes_fill): the bars each place's change
