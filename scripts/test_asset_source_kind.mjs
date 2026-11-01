@@ -12,7 +12,7 @@ import { stripTypeScriptTypes, createRequire } from "node:module";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const ROOT = fileURLToPath(new URL("..", import.meta.url));
+const ROOT = process.env.ASSET_SOURCE_KIND_ROOT ?? fileURLToPath(new URL("..", import.meta.url)); // a mutated copy when the mutants test runs this file as its child
 const results = [];
 const check = (name) => results.push(name);
 const stub = (dir, name, source) => {

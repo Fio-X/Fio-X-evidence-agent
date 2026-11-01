@@ -1,11 +1,15 @@
-// Mutations of the asset-source kind check (scripts/test_asset_source_kind.mjs must go red for each). Each edit is applied to the real file,
-// the test runs, and the file is put back (also on error). Offline.
-import { readFileSync, writeFileSync } from "node:fs";
+// Mutations of the asset-source kind check (scripts/test_asset_source_kind.mjs must go red for each). Each edit is applied to a copy of runtime/ and config/ in a
+// scratch directory (the repo files are never written), the test runs against the copy through ASSET_SOURCE_KIND_ROOT, and the copy is
+// put back (also on error) and deleted at the end. Offline.
+import { cpSync, readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
+import { makeTestTmp } from "./tmp_helper.mjs";
 
-const ROOT = fileURLToPath(new URL("..", import.meta.url));
+const REPO = fileURLToPath(new URL("..", import.meta.url));
+const ROOT = makeTestTmp("asset-source-kind-mutants-");
+for (const dir of ["runtime", "config"]) cpSync(join(REPO, dir), join(ROOT, dir), { recursive: true });
 const ART = "runtime/pi/art_direction.mjs", NEWS = "runtime/pi/newsroom.ts";
 const GATE = 'if (process.env.NEWSROOM_SPEED_DESIGN_PACK === "1") {\n              for (const typed of requirement.source_refs)';
 const MUTANTS = [
@@ -29,7 +33,7 @@ for (const [name, file, from, to] of MUTANTS) {
   let red = false, tail = "";
   try {
     writeFileSync(path, original.replace(from, () => to));
-    const run = spawnSync("node", ["scripts/test_asset_source_kind.mjs"], { cwd: ROOT, encoding: "utf8" });
+    const run = spawnSync("node", [join(REPO, "scripts", "test_asset_source_kind.mjs")], { cwd: REPO, env: { ...process.env, ASSET_SOURCE_KIND_ROOT: ROOT }, encoding: "utf8" });
     red = run.status !== 0; tail = (run.stderr.split("\n").find((l) => /AssertionError|Error:/.test(l)) ?? "").slice(0, 120);
   } finally { writeFileSync(path, original); }
   console.log(`  ${red ? "red " : "GREEN"} ${name}${red ? `  [${tail}]` : ""}`);
