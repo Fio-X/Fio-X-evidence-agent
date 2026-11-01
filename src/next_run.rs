@@ -6275,6 +6275,11 @@ mod tests {
         let fill = crate::next_tree::with_test_bindings(overlay.clone(), unused, || {
             fill_of(&external, &shape, &picks, (&main, &[]), &Hubs, words, false, Some(&asked))
         });
+        // as recipe_request keeps it, for draw_nodes
+        let fill = fill.map(|mut f| {
+            f["page_in"] = page_in.clone();
+            f
+        });
         (rust, fill, calls.into_inner().unwrap())
     }
 
@@ -6301,7 +6306,8 @@ mod tests {
         let mut overlay = crate::next_tree::parse(&std::fs::read_to_string(root.join("scripts/fixtures/p4a/registry-p4a.json")).unwrap()).unwrap();
         assert!(overlay.set_path(&["nodes", "bars", "declares", "tree_only"].map(String::from), crate::next_tree::J::strs(&["count"])));
         let (rust, fill, calls) = q1_fills(&overlay);
-        let fill = fill.unwrap_or_else(|e| panic!("the declared page: {e}"));
+        let mut fill = fill.unwrap_or_else(|e| panic!("the declared page: {e}"));
+        fill.as_object_mut().unwrap().remove("page_in");
         let mut differs = Vec::new();
         fill_diff(&rust, &fill, "fill", &mut differs);
         assert!(differs.is_empty(), "the declared fill differs from the rust bars': {differs:#?}");
@@ -6322,6 +6328,58 @@ mod tests {
         let picks = picks_of(&column.picks, &shape, &main, &[]).unwrap();
         let why = fill_of(&external, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false, Some(&asked)).unwrap_err();
         assert!(why.contains("no page input"), "{why}");
+    }
+
+    /// S3 (P4a): the q1 column page with its bars bound external over the production bindings, the whole path: fill_of
+    /// declares the bars (NodeDeclare), the words go in, draw_nodes asks the visual group's NodeDraw (the generator's page
+    /// tree, C1-C5, the real node runtime/leaves_py/bars_node.py, B0-B7) and the checked geometry lands in knobs.placed, one
+    /// item per ranked place in rank order. A twin that draws one bar 1 px wider stops at B3, one that swaps two names at
+    /// B5, one that answers late at the child's deadline; none falls back. Prints P4ATIME with the child's and the core's ms.
+    #[test]
+    fn external_bars_q1() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let overlay = crate::next_tree::bindings();
+        let (rust, fill, _) = q1_fills(&overlay);
+        let mut fill = fill.unwrap_or_else(|e| panic!("the declared page: {e}"));
+        page_words(&mut fill, ("标题", "导语", "标签"));
+        let runtime = root.join("runtime");
+        let draw = |runner: crate::next_leaf::Runner| {
+            let calls = std::sync::Mutex::new(Vec::new());
+            let mut f = fill.clone();
+            let out = crate::next_tree::with_test_bindings(overlay.clone(), runner, || draw_nodes(&mut f, &["bars".to_string()], &calls, &runtime));
+            (out.map(|_| f), calls.into_inner().unwrap())
+        };
+        let (drawn, calls) = draw(crate::next_leaf::Runner::python(&runtime.join("leaves_py/bars_node.py")));
+        let drawn = drawn.unwrap_or_else(|e| panic!("the external bars: {e}"));
+        let event = calls.iter().find(|e| e["request"] == "node_draw").expect("one node_draw event");
+        println!("P4ATIME bars child_ms={} recheck_ms={}", event["child_ms"], event["recheck_ms"]);
+        assert_eq!((event["ok"].as_bool(), event["failures"].as_u64()), (Some(true), Some(0)));
+        let items = drawn["knobs"]["placed"]["bars"]["items"].as_array().expect("placed bars");
+        let codes: Vec<&str> = items.iter().map(|i| i["code"].as_str().unwrap()).collect();
+        assert_eq!(codes, rust["knobs"]["spec"]["hero"]["data"]["ranked"].as_array().unwrap().iter().map(|c| c.as_str().unwrap()).collect::<Vec<_>>());
+        for it in items {
+            assert!(it["mark"]["w"].is_number() && it["texts"]["label"]["anchor"] == "end", "{it}");
+            assert_eq!(it["texts"]["value_text"]["src"], format!("fact:val.{}.n", it["code"].as_str().unwrap()));
+        }
+        // everything else of the fill is as the rust bars left it
+        let mut rest = drawn.clone();
+        rest["knobs"].as_object_mut().unwrap().remove("placed");
+        rest.as_object_mut().unwrap().remove("page_in");
+        let mut want = rust.clone();
+        page_words(&mut want, ("标题", "导语", "标签"));
+        let mut differs = Vec::new();
+        fill_diff(&want, &rest, "fill", &mut differs);
+        assert!(differs.is_empty(), "{differs:#?}");
+        let twin = root.join("scripts/fixtures/p4a/tamper_bars.py");
+        for (mode, head) in [("wider", "node bars: recheck: B3 node bars"), ("swap", "node bars: recheck: B5 node bars"), ("late", "node bars: the child")] {
+            let mut runner = crate::next_leaf::Runner::python(&twin);
+            runner.args.push(mode.to_string());
+            let (out, calls) = draw(runner);
+            let why = out.expect_err(mode);
+            assert!(why.starts_with(head), "{mode}: {why}");
+            let event = calls.iter().find(|e| e["request"] == "node_draw").expect("one node_draw event");
+            assert!(event["failures"].as_u64().unwrap() >= 1, "{mode}: {event}");
+        }
     }
 
     /// The ring page's layers are the leaf registry's ring group without events.

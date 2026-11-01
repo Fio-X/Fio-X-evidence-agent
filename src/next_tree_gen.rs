@@ -408,7 +408,7 @@ pub(crate) fn tree_j(page_in: &J, fill: &J, reg: &J, external: &[String]) -> Res
         body.push(node_of(&layer, page_in, reg, &got, &sels, Some(&after), frame_knobs(&layer, reg, fill))?);
     }
     let text = |k: &str, role: &str| {
-        J::obj_of(vec![("kind", J::str("Text")), ("role", J::str(role)), ("origin", J::str("text_step")), ("runs", runs_of(&st(spec.g(k))))])
+        J::obj_of(vec![("kind", J::str("Text")), ("role", J::str(role)), ("origin", J::str("text_step")), ("runs", runs_of(spec.g(k).s().unwrap_or("")))])
     };
     let unit = shape.g("unit").clone();
     let texts = J::obj_of(vec![

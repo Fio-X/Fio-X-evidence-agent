@@ -1,5 +1,91 @@
 {
- "$comment": "The external bindings the visual group's page tree core (src/next_tree.rs) lays over node-registry.json: frames (the core's frame and plot box), and per node its binding, runner (a code file under the run's runtime/nodes/ or runtime/leaves_py/), frame, items (how the core expands a node's items from its binds), marks (one shape per item or part; each shape field a declared field -> channel -> scale the core recomputes, or free and held by constraints) and texts. An external entry naming anything the core does not compute is refused when the registry loads (C5). P3 binds no production node external: the leaf registry (runtime/leaves_py/knobs.json binding) must name the same nodes, none.",
- "frames": {},
- "nodes": {}
+ "$comment": "The external bindings the visual group's page tree core (src/next_tree.rs) lays over node-registry.json: frames (the core's frame and plot box, or a rows frame the core lays out itself, K2), the pick rules the page tree generator (src/next_tree_gen.rs) writes as selects the core recomputes (picks), which layers each page recipe binds external (recipes; runtime/leaves_py/knobs.py writes them into knobs.json), and per node its binding, runner (a code file under the run's runtime/nodes/ or runtime/leaves_py/), frame, declares (what the generator writes for the flow's fill and the page tree), items (how the core expands a node's items from its binds), marks (one shape per item or part; each shape field a declared field -> channel -> scale the core recomputes, or free and held by constraints) and texts. An external entry naming anything the core does not compute is refused when the registry loads (C5). P4a-1: the bars, external on the column page only (the change page's bars stay rust until P4a-2); the rows frame repeats the column page leaf's own layout (column.py ColumnFrame: top, row and size are its knob defaults, the map panel before it 560 wide and 40 apart).",
+ "frames": {
+  "bars_rows": {
+   "kind": "rows",
+   "w": 1140,
+   "top": 6,
+   "row": 24,
+   "inset": 3,
+   "foot": 4,
+   "left": {"text": "label", "gap": 12},
+   "right": {"text": "value_text", "gap": 8},
+   "beside": {"leaves": "bubbles", "w": 560, "gap": 40}
+  }
+ },
+ "picks": {
+  "countries": {"id": "countries", "kind": "given", "source": "shape", "path": "shape.countries", "given": "$shape.countries"},
+  "ranked": {
+   "id": "ranked",
+   "kind": "rank",
+   "over": {"table": "$shape.main", "by": "$shape.place", "time": "$shape.year"},
+   "key": "value",
+   "order": "desc",
+   "only": "select:countries",
+   "tie": {"by": "code", "outcome": "order"},
+   "one_row_per_code": true
+  },
+  "claim_marks": {"id": "marks", "kind": "named_rule", "rule": "marks_from_claims", "inputs": {"ranked": "ranked"}, "given": "$picks.marks"}
+ },
+ "recipes": {},
+ "nodes": {
+  "bars": {
+   "binding": "external",
+   "runner": "leaves_py/bars_node.py",
+   "frame": "bars_rows",
+   "declares": {
+    "rows": "rows_of_select",
+    "facts": {
+     "val": {"each": "$shape.place", "table": "$shape.main", "time": "$shape.year", "fmt": "$shape.fmt"},
+     "drawn": {"op": "n", "by": "$shape.place", "table": "$shape.main", "time": "$shape.year", "fmt": "n"}
+    },
+    "fmt": {
+     "scale": 1,
+     "suffix": "$shape.suffix",
+     "dec_rule": {
+      "rule": "held_decimals",
+      "rows": {"table": "$shape.main", "filter": {"$shape.place": "select:ranked"}, "time": "$shape.year"},
+      "max": {"const": "COLUMN_DEC", "value": 2}
+     }
+    },
+    "binds": {
+     "chart": "bars",
+     "by": "$shape.place",
+     "year": "$shape.year",
+     "family": {"family": "val"},
+     "ranked": "select:ranked",
+     "marks": "select:marks",
+     "count": {"fact": "drawn"}
+    },
+    "binds_after_fill": {"accent": "$fill.accent"},
+    "tree_only": ["count"],
+    "leaf_stops": ["row_at_year", "value_domain", "accent_ranked"]
+   },
+   "items": {
+    "for_each": "binds.ranked",
+    "fields": {
+     "code": {"kind": "select_index"},
+     "value": {"kind": "row_of_code"},
+     "value_text": {"kind": "fact_template", "template": "{binds.family.family}.{code}.n"},
+     "focus": {"kind": "code_is", "ref": "binds.accent"}
+    }
+   },
+   "marks": {
+    "per": "item",
+    "shape": "rect",
+    "tol_px": 0.5,
+    "encode": [
+     {"fields": ["x", "w"], "channel": "length_right", "of": "value", "scale": {"kind": "linear", "domain": "zero_to_max", "range": "plot.x"}},
+     {"fields": ["y", "h"], "channel": "rows_y", "of": "item", "scale": {"kind": "rows", "domain": "items", "range": "plot.y"}}
+    ]
+   },
+   "texts": {
+    "size": 13,
+    "item": {
+     "label": {"near": "item", "from": "anchor", "max_px": 12},
+     "value_text": {"near": "item", "from": "anchor", "max_px": 12}
+    }
+   }
+  }
+ }
 }

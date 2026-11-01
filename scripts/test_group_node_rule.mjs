@@ -13,8 +13,8 @@
 //     the files it refuses as runners (NOT_NODES) are the entry's not_nodes, which the scan skips;
 //   - every node the page tree core binds external (runtime/page_tree/node-bindings.json) names a runner that is a code file
 //     under the entry's files with no `..` and is none of its not_nodes (a program step the scan skips is never a node),
-//     and the leaf registry (runtime/leaves_py/knobs.json binding) binds the same nodes
-//     external, each binding "external" (absent is rust);
+//     and the leaf registry binds layers external only by recipe (runtime/leaves_py/knobs.json recipes[].external, as the
+//     bindings' recipes say, each a node the core binds external; absent is rust), never by a node's own binding;
 //   - src/next_tree.rs is the visual group's and under cross_calls.rust_rule_next.files (its calls are held by
 //     scripts/test_group_module_calls.mjs);
 //   - not_nodes is exactly NOT_NODES_ALLOWED below, the two program steps the owner exempted (2026-11-01): one more, one
@@ -86,14 +86,17 @@ export function problemsOf({ groups, pinned, bindings, knobs, treeSrc, codeFiles
       out.push(`node-bindings.json ${name}: runner ${JSON.stringify(e.runner)} is not a code file under node_rule.files`);
     else if (notNodes.includes(rel)) out.push(`node-bindings.json ${name}: runner ${JSON.stringify(e.runner)} is under node_rule.not_nodes, a program step the scan skips, never a node`);
   }
-  const leafExternal = [];
-  for (const [name, n] of Object.entries(knobs.nodes ?? {})) {
-    if (n.binding == null) continue;
-    if (n.binding !== "external") out.push(`knobs.json ${name}: binding ${JSON.stringify(n.binding)}; only "external" (absent is rust)`);
-    else leafExternal.push(name);
-  }
+  // P4a: a recipe binds its external layers (knobs.json recipes[].external, written by knobs.py from node-bindings.json
+  // recipes); no leaf node carries a binding of its own, and every layer a recipe binds is a node the core binds external
+  for (const [name, n] of Object.entries(knobs.nodes ?? {}))
+    if (n.binding != null) out.push(`knobs.json ${name}: binding ${JSON.stringify(n.binding)}; only "external" through a recipe's external list (absent is rust)`);
   const coreExternal = external.map(([n]) => n).sort();
-  if (!same(leafExternal.sort(), coreExternal)) out.push(`knobs.json binds ${JSON.stringify(leafExternal)} external, node-bindings.json ${JSON.stringify(coreExternal)}`);
+  for (const r of knobs.recipes ?? []) {
+    const off = (r.external ?? []).filter((l) => !coreExternal.includes(l) || !(r.layers ?? []).includes(l));
+    const want = bindings.recipes?.[r.name] ?? [];
+    if (off.length || !same([...(r.external ?? [])].sort(), [...want].sort()))
+      out.push(`knobs.json binds ${JSON.stringify(r.external ?? [])} external on recipe ${r.name}, node-bindings.json recipes ${JSON.stringify(want)} of external nodes ${JSON.stringify(coreExternal)}`);
+  }
   if (groups.files?.["src/next_tree.rs"]?.group !== "visual") out.push("src/next_tree.rs is not the visual group's in groups.json");
   if (!(groups.cross_calls?.rust_rule_next?.files ?? []).includes("src/next_tree.rs")) out.push("src/next_tree.rs is not under cross_calls.rust_rule_next.files");
   return out;
@@ -136,7 +139,9 @@ const mutants = [
     i.bindings.nodes.bars = { binding: "external", runner: "leaves_py/words.zh.json" };
     i.knobs.nodes.bars = { ...(i.knobs.nodes.bars ?? {}), binding: "external" };
   }, "is not a code file under node_rule.files"],
-  ["the leaf registry binds a node external the core does not", (i) => (i.knobs.nodes.bars = { ...(i.knobs.nodes.bars ?? {}), binding: "external" }), "knobs.json binds"],
+  ["the leaf registry binds a layer external the core does not", (i) => (i.knobs.recipes.find((r) => r.name === "column").external = ["bubbles"]), "knobs.json binds"],
+  ["a recipe binds a layer the bindings' recipes do not", (i) => (i.knobs.recipes.find((r) => r.name === "change").external = ["bars"]), "knobs.json binds"],
+  ["a leaf node carries a binding of its own", (i) => (i.knobs.nodes.bars = { ...(i.knobs.nodes.bars ?? {}), binding: "external" }), "only \"external\" through a recipe"],
   ["a binding that is neither absent nor external", (i) => (i.knobs.nodes.bars = { ...(i.knobs.nodes.bars ?? {}), binding: "rust" }), "only \"external\""],
   ["not_nodes gains a third file", (i) => {
     i.groups.cross_calls.node_rule.not_nodes["runtime/leaves_py/bars.py"] = "x";

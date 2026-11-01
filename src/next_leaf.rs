@@ -109,8 +109,6 @@ pub struct Leaf {
     pub reserve: bool,
     /// The shape conditions the node needs its tables to meet (knobs.py EATS); none stated is empty.
     pub eats: Vec<String>,
-    /// knobs.json `binding`: "external" (declared and drawn through next_tree_gen), or none written (rust, the default).
-    pub external: bool,
 }
 
 /// A page recipe, a page's outermost composite node (knobs.py RECIPES): the layers its page draws, bottom first; the shape
@@ -131,7 +129,8 @@ pub struct Recipe {
     pub window: Vec<String>,
     pub same_measure: Vec<(String, String)>,
     pub strip: bool,
-    /// The recipe's layers whose node the registry binds external (knobs.json `binding`; none written is rust): the flow
+    /// The recipe's layers it binds external (knobs.json recipes[].external, which knobs.py writes from the page tree core's
+    /// bindings; none written is rust): the flow
     /// asks the visual group's NodeDeclare and NodeDraw for them instead of a rust fill.
     pub external: Vec<String>,
 }
@@ -169,12 +168,7 @@ pub fn leaves() -> &'static Leaves {
             let knobs: Vec<Knob> = n["knobs"].as_array().expect("knobs.json: knobs").iter().map(knob).collect();
             let info = NodeInfo { name: word(&json!(name)), needs: &[], knobs: Box::leak(knobs.into_boxed_slice()), inner: None };
             let reserve = n["reserve"].as_bool().expect("knobs.json: reserve");
-            let external = match &n["binding"] {
-                Value::Null => false,
-                Value::String(b) if b == "external" => true,
-                b => panic!("knobs.json: node {name} binding {b}: external, or none (rust)"),
-            };
-            (name.clone(), Leaf { info: Box::leak(Box::new(info)), reserve, eats: words(&n["eats"]), external })
+            (name.clone(), Leaf { info: Box::leak(Box::new(info)), reserve, eats: words(&n["eats"]) })
         });
         let legacy = t["legacy"].as_object().expect("knobs.json: legacy").iter().map(|(node, at)| {
             (node.clone(), at.as_array().expect("knobs.json: a path").iter().map(|p| word(p).to_string()).collect())
@@ -183,9 +177,6 @@ pub fn leaves() -> &'static Leaves {
         let groups = t["groups"].as_object().expect("knobs.json: groups").iter().map(|(name, layers)| {
             (name.clone(), layers.as_array().expect("knobs.json: a group").iter().map(|l| word(l).to_string()).collect())
         });
-        let bound = |layers: &[String]| -> Vec<String> {
-            layers.iter().filter(|l| t["nodes"][l.as_str()]["binding"].as_str() == Some("external")).cloned().collect()
-        };
         let recipes = t["recipes"].as_array().expect("knobs.json: recipes").iter().map(|r| Recipe {
             name: r["name"].as_str().expect("knobs.json: a recipe name").to_string(),
             layers: words(&r["layers"]),
@@ -204,7 +195,7 @@ pub fn leaves() -> &'static Leaves {
                 Value::Null => false,
                 v => v.as_bool().expect("knobs.json: a recipe's strip is true or false"),
             },
-            external: bound(&words(&r["layers"])),
+            external: words(&r["external"]),
         });
         Leaves { nodes: nodes.collect(), groups: groups.collect(), legacy, recipes: recipes.collect() }
     })

@@ -2814,8 +2814,12 @@ const CHECK_KINDS: [&str; 14] = [
 /// Every part of a scale is the core's; a registry may only add the declared constants (band padding, max radius).
 /// A channel the core recomputes: (name, its field sets, what it encodes, scale kind, domain, range).
 type Channel = (&'static str, &'static [&'static [&'static str]], &'static str, &'static str, &'static str, &'static str);
-const CHANNELS: [Channel; 6] = [
+const CHANNELS: [Channel; 8] = [
     ("length_up", &[&["h", "y"]], "value", "linear", "zero_to_max", "plot.y"),
+    // K1 (P4a): a bar from the plot's left edge, its length the value over the largest, across the plot's width
+    ("length_right", &[&["x", "w"]], "value", "linear", "zero_to_max", "plot.x"),
+    // K2 (P4a): one row per item down a rows frame, the mark inset from its row's top and bottom
+    ("rows_y", &[&["y", "h"]], "item", "rows", "items", "plot.y"),
     ("band_x", &[&["x", "w"]], "item", "band", "items", "plot.x"),
     ("band_y", &[&["y", "h"]], "item", "band", "items", "plot.y"),
     ("radius_area", &[&["r"]], "value", "sqrt", "zero_to_max", "max_px"),
@@ -2833,6 +2837,24 @@ const TOP: [&str; 2] = ["marks", "texts"];
 
 fn shape_fields(shape: &str) -> Option<&'static [&'static str]> {
     SHAPES.iter().find(|(s, _)| *s == shape).map(|(_, f)| *f)
+}
+
+/// K2: a frame of kind "rows" (one row per item, top down, the plot between a text column on each side) names every number
+/// the core lays it out by, and the two texts that size its columns are texts of the node; a channel rows_y needs such a
+/// frame, and a frame of any other kind is one the core cannot lay out.
+fn rows_frame_problem(fr: &J, e: &J) -> Option<String> {
+    let rows_y = e.g("marks").g("encode").arr().iter().any(|c| c.g("channel").s() == Some("rows_y"));
+    match fr.get("kind") {
+        None if rows_y => Some("channel rows_y needs a frame of kind rows".into()),
+        None => None,
+        Some(k) if k.s() != Some("rows") => Some(format!("kind {}: not one the core lays out", k.repr())),
+        Some(_) => {
+            let whole = ["w", "top", "row", "inset", "foot"].iter().all(|f| matches!(fr.g(f), J::Int(x) if *x >= 0));
+            let side = |s: &str| fr.g(s).g("gap").finite() && fr.g(s).g("text").s().is_some_and(|t| e.g("texts").g("item").has(t));
+            let ok = whole && side("left") && side("right") && fr.g("inset").num().unwrap_or(0.0) * 2.0 < fr.g("row").num().unwrap_or(0.0);
+            (!ok).then(|| "a rows frame needs whole w, top, row, inset (under half a row) and foot, and a left and right text of the node".into())
+        }
+    }
 }
 
 /// P1's node registry with an overlay over it: the overlay's frames, and each overlay node's fields set over P1's entry.
@@ -2892,6 +2914,9 @@ pub fn registry_problems(reg: &J) -> Vec<String> {
         }
         if !e.g("frame").s().is_some_and(|f| reg.g("frames").has(f)) {
             out.push(format!("{p} frame {}: not a registered frame", e.g("frame").repr()));
+        }
+        if let Some(why) = rows_frame_problem(reg.g("frames").g(&st(e.g("frame"))), e) {
+            out.push(format!("{p} frame {}: {why}", e.g("frame").repr()));
         }        let it = e.g("items");
         if !it.g("for_each").s().is_some_and(|f| FOR_EACH.contains(&f)) {
             out.push(format!("{p} items.for_each {}: not one the core expands", it.g("for_each").repr()));
@@ -3887,6 +3912,51 @@ fn py_round(x: f64, n: usize) -> f64 {
     format!("{x:.n$}").parse().unwrap_or(x)
 }
 
+/// K2: the column page leaf's width rule (prod.py tw, copied: a code point above U+2E7F 1 em, any other 0.58 em, summed
+/// glyph by glyph in that order). Only a rows frame is laid out by it, on the strings the core prints, never rounded.
+pub fn tw_leaf(text: &str, size: f64) -> f64 {
+    // Python's sum() over floats (3.12+) is Neumaier's compensated sum; the leaf's widths come from it, so this does the same.
+    let (mut s, mut c) = (0.0f64, 0.0f64);
+    for ch in text.chars() {
+        let x = if ch as u32 > 0x2E7F { size } else { 0.58 * size };
+        let t = s + x;
+        c += if s.abs() >= x.abs() { (s - t) + x } else { (x - t) + s };
+        s = t;
+    }
+    s + c
+}
+
+/// K2: a rows frame laid out as the column page's leaf lays out its bars (column.py ColumnFrame, its arithmetic in its
+/// order): the left column as wide as its widest text plus its gap, the right likewise, the frame starting at the node's
+/// knob x0 (0 without it) and the plot between the two columns, one row per item from top, the frame's foot under the last.
+/// Returns the frame {w, h}, the plot box and the numbers the node lays the rows out by {x0, lw, bw, top, row, inset}.
+fn rows_frame(fr: &J, n: &J, meta: &Meta, size: f64) -> Result<(J, J, J), String> {
+    let widest = |side: &str| -> Result<f64, String> {
+        let end = format!("/{}", st(fr.g(side).g("text")));
+        let gap = fr.g(side).g("gap").num().ok_or("rows frame gap")?;
+        let w = meta.texts.iter().filter(|t| t.0.ends_with(&end)).map(|t| tw_leaf(&t.1, size)).reduce(pmax).ok_or("rows frame: no text sizes a column")?;
+        Ok(w + gap)
+    };
+    let (lw, vw) = (widest("left")?, widest("right")?);
+    let x0 = n.g("knobs").get("x0").cloned().unwrap_or(J::Int(0));
+    let num = |v: &J, what: &str| v.num().ok_or_else(|| format!("rows frame: {what} is no number"));
+    let (w, x, top, row) = (num(fr.g("w"), "w")?, num(&x0, "x0")?, num(fr.g("top"), "top")?, num(fr.g("row"), "row")?);
+    let count = n.g("items").arr().len() as f64;
+    let bw = (w - x) - lw - vw;
+    let plot = J::Arr(vec![J::Num(x + lw), J::Num(top), J::Num(x + lw + bw), J::Num(top + row * count)]);
+    let h = top + row * count + num(fr.g("foot"), "foot")?;
+    let frame = J::obj_of(vec![("w", fr.g("w").clone()), ("h", J::Num(h))]);
+    let rows = J::obj_of(vec![
+        ("x0", x0),
+        ("lw", J::Num(lw)),
+        ("bw", J::Num(bw)),
+        ("top", fr.g("top").clone()),
+        ("row", fr.g("row").clone()),
+        ("inset", fr.g("inset").clone()),
+    ]);
+    Ok((frame, plot, rows))
+}
+
 /// The core's printed strings: facts formatted by their format record, names from the name table, word-table words.
 struct Words<'a> {
     fmts: &'a J,
@@ -4095,6 +4165,29 @@ pub fn expected(req: &J) -> Result<Expected, String> {
                     put(&mut out, i, &f[1], pin.at(1).num().ok_or("pin")?);
                 }
             }
+            "length_right" => {
+                // K1: from the plot's left edge, the value over the largest times the plot's width, divided then multiplied
+                let mut vmax = f64::NEG_INFINITY;
+                for m in ms {
+                    vmax = vmax.max(value(m, "value")?);
+                }
+                let bw = req.g("rows").g("bw").num().unwrap_or(x1 - x0);
+                for (i, m) in ms.iter().enumerate() {
+                    let v = value(m, "value")?;
+                    put(&mut out, i, "x", x0);
+                    put(&mut out, i, "w", if vmax > 0.0 { v / vmax * bw } else { 0.0 });
+                }
+            }
+            "rows_y" => {
+                // K2: item j's row from the plot's top, the mark inset from its row's top and bottom
+                let rows = req.g("rows");
+                let (row, inset) = (rows.g("row").num().ok_or("rows_y: no row")?, rows.g("inset").num().ok_or("rows_y: no inset")?);
+                for (i, m) in ms.iter().enumerate() {
+                    let j = order.iter().position(|o| *o == m.g("item")).expect("in order") as f64;
+                    put(&mut out, i, "y", y0 + j * row + inset);
+                    put(&mut out, i, "h", row - 2.0 * inset);
+                }
+            }
             "stack_x" => {
                 let mut cum: Vec<(J, f64)> = Vec::new();
                 for (i, m) in ms.iter().enumerate() {
@@ -4229,17 +4322,21 @@ fn issue(spec: &J, inp: &J, reg: &J, ext: &[String], got: &Got, rpage: &J) -> Re
             meta.paint = Some(paint_record(sid, e, fr, cells, &texts, &words, inp)?);
         }
         meta.tol_px = e.g("marks").g("tol_px").num().ok_or("tol_px")?;
-        reqs.push((
-            nid.clone(),
-            J::obj_of(vec![
-                ("node", n.g("node").clone()),
-                ("frame", J::obj_of(vec![("w", fr.g("w").clone()), ("h", fr.g("h").clone())])),
-                ("plot", fr.g("plot").clone()),
-                ("encode", enc.clone()),
-                ("marks", J::Arr(marks)),
-                ("texts", J::Arr(texts)),
-            ]),
-        ));
+        let mut req = J::obj_of(vec![
+            ("node", n.g("node").clone()),
+            ("frame", J::obj_of(vec![("w", fr.g("w").clone()), ("h", fr.g("h").clone())])),
+            ("plot", fr.g("plot").clone()),
+            ("encode", enc.clone()),
+            ("marks", J::Arr(marks)),
+            ("texts", J::Arr(texts)),
+        ]);
+        if fr.g("kind").s() == Some("rows") {
+            let (frame, plot, rows) = rows_frame(fr, n, &meta, tsize)?;
+            req.set("frame", frame);
+            req.set("plot", plot);
+            req.set("rows", rows);
+        }
+        reqs.push((nid.clone(), req));
         metas.insert(nid, meta);
     }
     Ok((reqs, metas))
@@ -5017,19 +5114,171 @@ mod tests {
         }
     }
 
-    /// The production bindings bind no node external (P3), the leaf registry's knobs.json names the same (none), and every
-    /// external entry would need a runner under the node folders.
+    /// The production bindings (P4a-1) bind the bars external and nothing else, pass C5, and name a runner under the node
+    /// folders; every recipe's external layers in the leaf registry (knobs.json, which knobs.py writes from the bindings'
+    /// recipes) are the bindings' own, of nodes the core binds external.
     #[test]
-    fn next_tree_production_binds_no_node_external() {
+    fn next_tree_production_binds_the_bars_external() {
         let o = bindings();
-        assert!(external_nodes(&o).is_empty(), "{:?}", external_nodes(&o));
-        assert!(registry_problems(&load_registry(&o)).is_empty());
-        let leaf: Vec<&String> = crate::next_leaf::leaves().nodes.iter().filter(|(_, l)| l.external).map(|(k, _)| k).collect();
-        assert!(leaf.is_empty(), "{leaf:?}");
+        assert_eq!(external_nodes(&o), ["bars"]);
+        assert_eq!(registry_problems(&load_registry(&o)), Vec::<String>::new());
+        assert!(runner_allowed(&st(o.g("nodes").g("bars").g("runner"))));
+        for r in &crate::next_leaf::leaves().recipes {
+            let want: Vec<String> = o.g("recipes").g(&r.name).arr().iter().map(st).collect();
+            assert_eq!(r.external, want, "recipe {}", r.name);
+            assert!(r.external.iter().all(|l| external_nodes(&o).contains(l)));
+        }
+        // the rows frame repeats the bars leaf's knob defaults (column.py ColumnFrame reads top, row and size)
+        let knob = |k: &str| match crate::next_leaf::leaves().nodes["bars"].info.knobs.iter().find(|x| x.name == k).map(|x| &x.kind) {
+            Some(crate::next_nodes::Kind::Range { default, .. }) => *default,
+            _ => panic!("bars.{k}"),
+        };
+        let fr = o.g("frames").g("bars_rows");
+        assert_eq!((fr.g("top").num(), fr.g("row").num()), (Some(knob("top")), Some(knob("row"))));
+        assert_eq!(o.g("nodes").g("bars").g("texts").g("size").num(), Some(knob("size")));
         assert!(runner_allowed("nodes/bars.mjs") && runner_allowed("leaves_py/bars.py"));
         for bad in ["pi/x.mjs", "nodes/../pi/x.mjs", "nodes/x.json", "/nodes/x.mjs", "nodes/./x.py", "leaves_py/bake.py", "leaves_py/knobs.py"] {
             assert!(!runner_allowed(bad), "{bad}");
         }
+    }
+
+    /// K1, K2 (P4a): the two kinds the real bars need. A registry naming them where the core does not compute them is
+    /// refused (a rows_y with no rows frame, a rows frame with a part missing, another frame kind, a channel the core has
+    /// not), as P3's core refused length_right itself; the production entry passes.
+    #[test]
+    fn next_tree_k1_k2_registry_refuses_what_it_cannot_lay_out() {
+        let heads = |o: &J| registry_problems(&load_registry(o));
+        let o = bindings();
+        assert!(heads(&o).is_empty());
+        let mut no_kind = o.clone();
+        no_kind.get_mut("frames").and_then(|f| f.get_mut("bars_rows")).unwrap().remove("kind");
+        assert!(heads(&no_kind).iter().any(|e| e.contains("channel rows_y needs a frame of kind rows")), "{:?}", heads(&no_kind));
+        let mut other = o.clone();
+        other.get_mut("frames").and_then(|f| f.get_mut("bars_rows")).unwrap().set("kind", J::str("columns"));
+        assert!(heads(&other).iter().any(|e| e.contains("not one the core lays out")));
+        for (field, v) in [("inset", J::Int(12)), ("row", J::Num(24.5)), ("foot", J::Null)] {
+            let mut bad = o.clone();
+            bad.get_mut("frames").and_then(|f| f.get_mut("bars_rows")).unwrap().set(field, v);
+            assert!(heads(&bad).iter().any(|e| e.contains("a rows frame needs")), "{field}");
+        }
+        let mut side = o.clone();
+        assert!(side.set_path(&["frames", "bars_rows", "left", "text"].map(String::from), J::str("share_text")));
+        assert!(heads(&side).iter().any(|e| e.contains("a rows frame needs")));
+        let mut chan = o.clone();
+        assert!(chan.set_path(&["nodes", "bars", "marks", "encode", "0", "channel"].map(String::from), J::str("length_left")));
+        assert!(heads(&chan).iter().any(|e| e.starts_with("C5 registry bars channel")));
+    }
+
+    /// K2's width rule is the leaf's (prod.py tw): equal bit for bit on every name and value the 14 column pages print, a
+    /// code point scan and a few scripts, at three sizes (scripts/fixtures/p4a/tw-leaf.json, Python's repr of prod.tw).
+    #[test]
+    fn next_tree_tw_leaf_is_the_leaf_rule_bit_for_bit() {
+        let f = parse(&std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/fixtures/p4a/tw-leaf.json")).unwrap()).unwrap();
+        let mut off = Vec::new();
+        for c in f.g("cases").arr() {
+            let w = tw_leaf(&st(c.at(0)), c.at(1).num().unwrap());
+            // Python's sum stays an int while every term is (no Latin char, an int size): the same number, printed bare
+            let int = (matches!(c.at(1), J::Int(_)) || st(c.at(0)).is_empty()) && st(c.at(0)).chars().all(|ch| ch as u32 > 0x2E7F);
+            let got = if int { format!("{}", w as i64) } else { py_float(w) };
+            if got != st(c.at(2)) {
+                off.push(format!("{:?} at {}: {got} != {}", st(c.at(0)), st(c.at(1)), st(c.at(2))));
+            }
+        }
+        assert!(off.is_empty() && f.g("cases").arr().len() > 400, "{off:?}");
+    }
+
+    /// K1, K2 on the 14 column pages of the replay list (scripts/fixtures/p4a/column-bars.json, from their published bars
+    /// layers): the rows frame the core lays out from the page's printed names and values, and the bars K1 and K2 recompute
+    /// on it, print every number the page printed (the axis, each name, bar x and width, value), as ColumnFrame did.
+    #[test]
+    fn next_tree_k1_k2_print_the_column_pages_numbers() {
+        let pages = parse(&std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/fixtures/p4a/column-bars.json")).unwrap()).unwrap();
+        let reg = load_registry(&bindings());
+        let e = reg.g("nodes").g("bars");
+        let fr = reg.g("frames").g("bars_rows");
+        let mut done = 0;
+        for p in pages.g("pages").arr() {
+            let sha = st(p.g("sha"));
+            let names: Vec<String> = p.g("names").arr().iter().map(st).collect();
+            let texts: Vec<String> = p.g("values_text").arr().iter().map(st).collect();
+            let mut meta = Meta::default();
+            for (i, (n, v)) in names.iter().zip(&texts).enumerate() {
+                meta.texts.push((format!("bars/{i}/label"), n.clone(), J::Null));
+                meta.texts.push((format!("bars/{i}/value_text"), v.clone(), J::Null));
+            }
+            let node = J::obj_of(vec![
+                ("knobs", J::obj_of(vec![("x0", p.g("x0").clone())])),
+                ("items", J::Arr(names.iter().map(|_| J::Obj(vec![])).collect())),
+            ]);
+            let (frame, plot, rows) = rows_frame(fr, &node, &meta, 13.0).unwrap();
+            let marks: Vec<J> = p.g("values").arr().iter().enumerate().map(|(i, v)| {
+                J::obj_of(vec![("id", J::Str(format!("bars/{i}"))), ("shape", J::str("rect")), ("item", J::Int(i as i64)), ("value", v.clone())])
+            }).collect();
+            let req = J::obj_of(vec![("frame", frame), ("plot", plot.clone()), ("rows", rows), ("encode", e.g("marks").g("encode").clone()), ("marks", J::Arr(marks))]);
+            let want = expected(&req).unwrap();
+            let left = plot.at(0).num().unwrap();
+            let mut printed = vec![format!("{left:.1}")];
+            for (_, f) in &want {
+                let get = |k: &str| f.iter().find(|(x, _)| x == k).unwrap().1;
+                printed.extend([format!("{:.1}", left - 8.0), format!("{:.1}", get("x")), format!("{:.1}", get("w")), format!("{:.1}", left + get("w") + 6.0)]);
+                assert_eq!(get("h"), 18.0, "{sha}");
+            }
+            let page: Vec<String> = p.g("printed").arr().iter().map(st).collect();
+            assert_eq!(printed, page, "{sha}");
+            done += 1;
+        }
+        assert_eq!(done, 14);
+    }
+
+    /// K1, K2 through B3 and B5: an honest reply passes; a bar 1 px longer, a bar moved to another row, or a name at another
+    /// bar stops.
+    #[test]
+    fn next_tree_k1_k2_hold_the_reply() {
+        let reg = load_registry(&bindings());
+        let e = reg.g("nodes").g("bars");
+        let fr = reg.g("frames").g("bars_rows");
+        let (names, vals) = (["瑞典", "芬兰", "丹麦"], [65.4, 53.0, 48.2]);
+        let mut meta = Meta { tol_px: 0.5, ..Meta::default() };
+        let mut texts = Vec::new();
+        for (i, n) in names.iter().enumerate() {
+            meta.marks.push((format!("bars/{i}"), i, None, false));
+            for (f, s) in [("label", n.to_string()), ("value_text", format!("{}", vals[i]))] {
+                let id = format!("bars/{i}/{f}");
+                texts.push(J::obj_of(vec![("id", J::str(&id)), ("w", J::Num(tw(&s, 13.0))), ("h", J::Num(14.95)), ("size", J::Int(13)),
+                    ("near", J::obj_of(vec![("marks", J::strs(&[format!("bars/{i}")])), ("from", J::str("anchor")), ("max_px", J::Int(12))]))]));
+                meta.texts.push((id, s, J::Null));
+            }
+        }
+        let node = J::obj_of(vec![("knobs", J::obj_of(vec![("x0", J::Int(600))])), ("items", J::Arr(vec![J::Obj(vec![]); 3]))]);
+        let (frame, plot, rows) = rows_frame(fr, &node, &meta, 13.0).unwrap();
+        let marks: Vec<J> = vals.iter().enumerate().map(|(i, v)| J::obj_of(vec![("id", J::Str(format!("bars/{i}"))), ("shape", J::str("rect")), ("item", J::Int(i as i64)), ("value", J::Num(*v))])).collect();
+        let req = J::obj_of(vec![("node", J::str("bars")), ("frame", frame), ("plot", plot), ("rows", rows), ("encode", e.g("marks").g("encode").clone()), ("marks", J::Arr(marks)), ("texts", J::Arr(texts))]);
+        let honest = {
+            let r = req.g("rows");
+            let (left, bw) = (600.0 + r.g("lw").num().unwrap(), r.g("bw").num().unwrap());
+            let mut m = Vec::new();
+            let mut t = Vec::new();
+            for (i, v) in vals.iter().enumerate() {
+                let (y, w) = (6.0 + 24.0 * i as f64, v / 65.4 * bw);
+                m.push((format!("bars/{i}"), J::obj_of(vec![("shape", J::str("rect")), ("x", J::Num(left)), ("y", J::Num(y + 3.0)), ("w", J::Num(w)), ("h", J::Int(18))])));
+                t.push((format!("bars/{i}/label"), J::obj_of(vec![("x", J::Num(left - 8.0)), ("y", J::Num(y + 12.0)), ("anchor", J::str("end"))])));
+                t.push((format!("bars/{i}/value_text"), J::obj_of(vec![("x", J::Num(left + w + 6.0)), ("y", J::Num(y + 12.0)), ("anchor", J::str("start"))])));
+            }
+            J::obj_of(vec![("marks", J::Obj(m)), ("texts", J::Obj(t))])
+        };
+        let fails = |r: &J| geometry_problems("bars", &req, r, &meta).unwrap();
+        assert_eq!(fails(&honest), Vec::<String>::new());
+        let mut longer = honest.clone();
+        let w = longer.g("marks").g("bars/1").g("w").num().unwrap();
+        assert!(longer.set_path(&["marks", "bars/1", "w"].map(String::from), J::Num(w + 1.0)));
+        assert!(fails(&longer).iter().any(|f| f.starts_with("B3 node bars bars/1.w")), "{:?}", fails(&longer));
+        let mut moved = honest.clone();
+        assert!(moved.set_path(&["marks", "bars/1", "y"].map(String::from), J::Num(57.0)));
+        assert!(fails(&moved).iter().any(|f| f.starts_with("B3 node bars bars/1.y")));
+        let mut swapped = honest.clone();
+        let (a, b) = (swapped.g("texts").g("bars/0/label").clone(), swapped.g("texts").g("bars/2/label").clone());
+        assert!(swapped.set_path(&["texts", "bars/0/label"].map(String::from), b) && swapped.set_path(&["texts", "bars/2/label"].map(String::from), a));
+        assert!(fails(&swapped).iter().any(|f| f.starts_with("B5 node bars bars/0/label")), "{:?}", fails(&swapped));
     }
 
     // ---- R11: colour --------------------------------------------------------------------------------------------
