@@ -74,6 +74,19 @@ Q6_AT = dict(AF=(66.496586, 34.164262), BD=(89.684963, 24.214956), CD=(23.458829
              SO=(45.19238, 3.568925), SY=(38.277783, 35.006636), TR=(34.508268, 39.345388), UA=(32.140865, 49.724739), VE=(-64.599381, 7.182476))
 Q6_EXT = [-106.38254019874816, -36.17038598855728, 124.13352937983866, 73.24131058195306]
 
+# the q5 stand-in page (the share of the population aged 65 and over, its change from 2016 to 2025, the 8 most populous
+# economies; the change recipe): its rows at both ends, the ledger texts its map and bars print and the map extent layer 1
+# made (next_run map_extent over the run's points, the Natural Earth label points of POINT, and its values), test-only
+# copies of that run's. Drawn from these the bubbles land on the run's page circle for circle (test below)
+Q5_TABLE = "SP.POP.65UP.TO.ZS@2"
+Q5_T1 = {'BGD': 6.66842350416686, 'BRA': 11.4803394567154, 'CHN': 14.9114314271952, 'IDN': 7.542769252795, 'IND': 7.37657146047502, 'NGA': 3.06953631021894, 'PAK': 4.36186248416949, 'USA': 18.387224828496}
+Q5_T0 = {'BGD': 5.07223834276104, 'BRA': 8.26857395268557, 'CHN': 10.4907994645602, 'IDN': 6.14856356267664, 'IND': 5.64173085340436, 'NGA': 2.96529179502844, 'PAK': 3.85041862791259, 'USA': 14.6147285118987}
+Q5_LEDGER = {"fact:chg.BGD": "1.6 个百分点", "fact:chg.BRA": "3.2 个百分点", "fact:chg.CHN": "4.4 个百分点", "fact:chg.IDN": "1.4 个百分点", "fact:chg.IND": "1.7 个百分点", "fact:chg.NGA": "0.1 个百分点",
+             "fact:chg.PAK": "0.5 个百分点", "fact:chg.USA": "3.8 个百分点", "fact:val.BGD.n": "6.67", "fact:val.BRA.n": "11.48", "fact:val.CHN.n": "14.91", "fact:val.IDN.n": "7.54", "fact:val.IND.n": "7.38",
+             "fact:val.NGA.n": "3.07", "fact:val.PAK.n": "4.36", "fact:val.USA.n": "18.39", "fact:vs_hi": "0.6 个百分点", "fact:vs_lo": "0.4 个百分点"}
+Q5_EXT = [-138.42850923508217, -46.07161912408526, 152.92737452319972, 75.80983012867088]
+ZH3 = {e["iso3"]: e["zh"] for e in NAMES["economies"]}
+
 def leaders(svg):
     """Every leader drawn, as its points: a <line> (a bubble label's) and a <polyline> (a note's, straight or with one bend)."""
     return [[tuple(map(float, m[:2])), tuple(map(float, m[2:]))] for m in re.findall(r'<line x1="([\d.]+)" y1="([\d.]+)" x2="([\d.]+)" y2="([\d.]+)"', svg)] + \
@@ -419,6 +432,94 @@ class LeaderNotes(unittest.TestCase):
         n, yes = len(got), sum(a for a, _ in got)  # 14506 pieces (5542 from the pages), 4700 clear
         self.assertTrue(page > 3000 and n > 10000 and 0.1 < yes / n < 0.9, (page, n, yes))
 
+    def q5(self, **knobs):
+        """The q5 stand-in page's map (q5_lines: its 8 circles in the shared frame, the run's focus and noted), then China's and
+        Nigeria's notes on one Occ, with LN's module knobs set as given for the draw: (frame, svg, occ)."""
+        lines, hero = q5_lines(); req = json.loads(lines[0]); keep = {k: getattr(LN, k) for k in knobs}
+        K.setup(req["rows"], req["knobs"]["labels"], run.tables); geo.NE = SHP; occ = prod.Occ()
+        st = style(); st["bubbles"].update(run.focus_style(hero)["bubbles"])
+        try:
+            for k, v in knobs.items(): setattr(LN, k, v)
+            svg = bubbles.cl_bubbles(bubbles.Frame({"data": hero["leaves"]["bubbles"], "style": st}), occ)
+            f = LN.Frame({"data": hero["leaves"]["leader_notes"], "style": st}); svg += LN.cl_leader_notes(f, occ)
+        finally:
+            for k, v in keep.items(): setattr(LN, k, v)
+            setup()
+        return f, svg, occ
+
+    def notes_clear(self, f, svg, occ):
+        """Every note drawn: each line a marked text (layer 1 takes none without a source) at 16 px at least, within half the
+        picture, starting with no closing mark; its box off every circle and every box the bubbles claimed; its leader ending
+        on its own point; no glyph (as the page check reads it, 2 px in) on any leader. Returns the notes' texts."""
+        part = svg.split('data-node="leader_notes"')[1]; texts = run.drawn(part)[0]
+        self.assertEqual(check_svg(part), [])
+        self.leads_clear(occ, svg)
+        for t in texts:
+            self.assertTrue(t["src"] and t["size"] >= 16 and t["text"][:1] not in K.NO_LINE_START, t)
+            self.assertLessEqual(prod.tw(t["text"], t["size"]), f.W / 2, t)
+        for b in [q for q in occ.boxes if q[4] == "notes"]:
+            self.assertEqual([q[:4] for q in occ.boxes if q[4] == "bubbles" and b[0] < q[2] and q[0] < b[2] and b[1] < q[3] and q[1] < b[3]], [], b)
+            self.assertEqual([c[:3] for c in occ.circles if math.hypot(max(b[0] - c[0], 0, c[0] - b[2]), max(b[1] - c[1], 0, c[1] - b[3])) < c[2]], [], b)
+        pts = {n["_id"]: n["_pt"] for n in f.notes}
+        ends = [p[-1] for p in leaders(part)]
+        self.assertEqual(len(ends), len(pts) - len(f.dropped))
+        for e in ends: self.assertTrue(any(math.dist(e, p) < 0.08 for p in pts.values()), e)
+        for m in re.finditer(r'<text x="([\d.]+)" y="([\d.]+)" font-size="([\d.]+)" text-anchor="(\w+)"[^>]*>(.*?)</text>', part):
+            x, y, sz, an, inner = float(m[1]), float(m[2]), float(m[3]), m[4], re.sub(r"<[^>]+>", "", m[5])
+            w = prod.tw(inner, sz); x0 = x if an == "start" else x - w
+            g = (x0 + 2, y - 1.06 * sz + 2, x0 + w - 2, y + 0.27 * sz - 2)
+            for l in segs(svg):
+                n = max(2, int(math.dist(l[:2], l[2:]) / 1.5))
+                self.assertFalse(any(g[0] < l[0] + (l[2] - l[0]) * t / n < g[2] and g[1] < l[1] + (l[3] - l[1]) * t / n < g[3] for t in range(n + 1)), (inner, l))
+        return texts
+
+    def test_a_note_with_no_room_at_its_own_break_moves_the_break_to_another_phrase_the_q5_page(self):
+        # the q5 page (a change page, 11-01): Nigeria's note (升幅最小，比倒数第二低 and its gap) is too wide for one line beside
+        # the map, and on two at the break before its number (249 px) no free box had a clear leader: the page stopped on
+        # notes_dropped (dropped:leader_notes:NGA, no free place for the note). With no other break (ALT_BREAKS 0) that is what
+        # the layer still does, China's note as on the run's page. Now the break moves to the phrase boundary after the
+        # comma (the comma stays above, as no line starts with it): 208 px, and the note places left of Nigeria's circle on a
+        # straight leader, off every circle and label; China's note is drawn byte for byte as before
+        f0, svg0, _ = self.q5(ALT_BREAKS=0)
+        self.assertEqual(f0.dropped, [("NGA", "no free place for the note")])
+        chn = [("name:zh_names:iso3:CHN", "中国 升幅最大，比第二名高", 449.3, 51.6), ("fact:vs_hi", "0.6 个百分点", 449.3, 73.2)]  # as the run's page drew them
+        self.assertEqual([(t["src"], t["text"], t["x"], t["y"]) for t in run.drawn(svg0.split('data-node="leader_notes"')[1])[0]], chn)
+        nga = next(n for n in f0.notes if n["_id"] == "NGA")
+        self.assertGreater(nga["_w"], 240); self.assertEqual(len(nga["_lines"]), 2)  # its own layout: two lines, the break before the number
+        f, svg, occ = self.q5()
+        self.assertEqual(f.dropped, [])
+        texts = self.notes_clear(f, svg, occ)
+        self.assertEqual([(t["src"], t["text"]) for t in texts], [c[:2] for c in chn] + [("name:zh_names:iso3:NGA", "尼日利亚 升幅最小，"), ("fact:vs_lo", "比倒数第二低 0.4 个百分点")])
+        self.assertEqual([(t["x"], t["y"]) for t in texts[:2]], [c[2:] for c in chn])
+        self.assertAlmostEqual(texts[3]["y"] - texts[2]["y"], 16 * LN.LINE, delta=0.11)
+        self.assertEqual(svg.split("</text>")[:2], svg0.split("</text>")[:2])  # China's note, its leader and both its lines
+        box = [q for q in occ.boxes if q[4] == "notes"][1]
+        self.assertLess(box[2] - box[0], nga["_w"] - 30)
+        self.assertIn('<tspan font-weight="700"><tspan data-src="fact:vs_lo">0.4 个百分点</tspan></tspan></text>', svg)
+
+    def test_a_crowded_column_map_note_breaks_between_its_name_and_number_when_one_line_has_no_room(self):
+        # the EU column map with a note at every country (a name and a number each), 18 px, label_count 12: with no other break
+        # Germany's and Belgium's notes find no free place; now Germany's, set on two lines (its name, then its bold number),
+        # places off every circle and label, and Belgium's alone is dropped and named
+        every = [dict(at=POINT[ISO3[c]], name=c, value_text="fact:gap") for c in VALUES]
+        def draw(**knobs):
+            keep = {k: getattr(LN, k) for k in knobs}
+            try:
+                for k, v in knobs.items(): setattr(LN, k, v)
+                return pair(dict(D, notes=every), label_count=12, note_size=18)
+            finally:
+                for k, v in keep.items(): setattr(LN, k, v)
+        no_place = lambda f: sorted(c for c, w in f.dropped if w == "no free place for the note")
+        self.assertEqual(no_place(draw(ALT_BREAKS=0)[1]), ["BE", "DE"])
+        fb, fn, svg, occ = draw()
+        self.assertEqual(no_place(fn), ["BE"])
+        texts = self.notes_clear(fn, svg, occ)
+        de = [(t["src"], t["text"]) for t in texts if t["src"].endswith(":DE")]
+        i = [t["src"] for t in texts].index("name:zh_names:iso2:DE")
+        self.assertEqual((de, texts[i + 1]["src"], texts[i + 1]["text"]), ([("name:zh_names:iso2:DE", ZH2["DE"])], "fact:gap", "54.8 个百分点"))
+        self.assertAlmostEqual(texts[i + 1]["y"] - texts[i]["y"], 18 * LN.LINE, delta=0.11)
+        self.assertEqual(texts[i]["x"], texts[i + 1]["x"])
+
     def test_a_note_too_wide_for_one_line_sets_its_number_and_unit_on_a_second_line(self):
         # beside Sweden's note on the bubbles' map: the name and the word on the first line, the bold number with its unit (its
         # ledger entry, whole and marked) on the second, each within half the map, both at the box's edge; the one box claimed
@@ -569,6 +670,26 @@ def q6_lines(scoped):
     rows = rows + [{"src": k, "text": t} for k, t in ledger.items()]
     line = lambda **kv: json.dumps({"node": "column", "panel": {"w": 1140, "h": 0, "frame": None}, "rows": rows, "knobs": knobs, **kv}, ensure_ascii=False)
     return [line(phase="size"), line(layer="bars"), line(layer="bubbles"), line(layer="bubble_key"), line(layer="leader_notes")]
+
+def q5_lines():
+    """The q5 stand-in page's change-recipe lines as layer 1 sent them (next_run change_notes_fill): the bars each place's change
+    2016 to 2025 ranked by it, a circle per place at its 2025 value, the key, and the two notes, each comparing its place with
+    its neighbour (China's rise most, above the second by fact:vs_hi; Nigeria's least, below the one before it by fact:vs_lo),
+    China the dek's accent. Returns (lines, hero)."""
+    ranked = sorted(Q5_T1, key=lambda c: -(Q5_T1[c] - Q5_T0[c]))
+    rows = [{"src": f"series:{Q5_TABLE}/{c}:{t}:value", "table": Q5_TABLE, "dims": {"country": c}, "time": t, "value": v[c]} for t, v in (("2025", Q5_T1), ("2016", Q5_T0)) for c in ranked]
+    items = [dict(code=c, value=f"series:{Q5_TABLE}/{c}:2025:value", value_text=f"fact:val.{c}.n", lonlat=POINT[c]) for c in ranked]
+    notes = [dict(at=POINT[ranked[0]], name=ranked[0], text=[{"word": "column.note.rise_most"}, {"word": "column.note.vs_next"}], value_text="fact:vs_hi"),
+             dict(at=POINT[ranked[-1]], name=ranked[-1], text=[{"word": "column.note.rise_least"}, {"word": "column.note.vs_prev"}], value_text="fact:vs_lo")]
+    data = {"chart": "bars", "by": "country", "year": "2025", "t0": "2016", "family": "chg", "ranked": ranked, "marks": [], "accent": ranked[0]}
+    hero = {"unit": "单位：%", "data": data, "style": {"bars": {"measure": "change"}}, "leaves": {"bubbles": dict(items=items, ext=Q5_EXT), "leader_notes": dict(ext=Q5_EXT, notes=notes)}}
+    spec = {"title": "标题", "dek": "导语", "kicker": "栏目", "source": "t", "refs": [Q5_TABLE], "tables": {Q5_TABLE: {"id": Q5_TABLE}},
+            "facts": {"val": {"each": "country", "table": Q5_TABLE, "time": "2025", "fmt": "pc"}}, "fmts": {"pc": {"scale": 1, "dec": 2, "suffix": "%"}, "time": {}}, "hero": hero}
+    knobs = {"spec": spec, "labels": {c: ZH3[c] for c in ranked}, "shapes": SHP}
+    rows = rows + [{"src": k, "text": t} for k, t in {**Q5_LEDGER, f"period:{Q5_TABLE}:2016": "2016", f"period:{Q5_TABLE}:2025": "2025"}.items()]
+    line = lambda **kv: json.dumps({"node": "change", "panel": {"w": 1140, "h": 0, "frame": None}, "rows": rows, "knobs": knobs, **kv}, ensure_ascii=False)
+    return [line(phase="size"), line(layer="bars"), line(layer="bubbles"), line(layer="bubble_key"), line(layer="leader_notes")], hero
+
 
 def child(lines):
     out = subprocess.run([sys.executable, "-I", "-B", os.path.join(LEAVES, "run.py")], input="\n".join(lines) + "\n", capture_output=True, text=True, check=True).stdout
@@ -821,6 +942,25 @@ class ColumnMap(unittest.TestCase):
         self.assertNotIn("refused", page)
         self.assertIn('<g data-layer="leader_notes"><g data-node="leader_notes"></g></g>', page["html"])
 
+
+    def test_the_q5_change_page_draws_both_notes_through_the_runner(self):
+        # the q5 page's lines (q5_lines) through the leaf runner as layer 1 calls it: the bubbles draw the run's circles (their
+        # centres and radii as on the run's page, so the input is the run's), the key stands under the map, and the notes'
+        # reply, which named Nigeria's note as dropped (the page check notes_dropped stopped the page), now drops none: both
+        # notes, each line marked; the page goes out
+        lines, _ = q5_lines()
+        size, bars, bub, key, notes = child(lines)
+        self.assertEqual([g.get("refused") for g in (size, bars, bub, key, notes)], [None] * 5)
+        self.assertEqual(re.findall(r'<circle cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)"[^>]*data-code="(\w+)"', bub["svg"]),
+                         [("78.7", "72.8", "22.0", "USA"), ("471.8", "86.2", "19.8", "CHN"), ("170.8", "176.6", "17.4", "BRA"), ("461.9", "154.2", "14.1", "IDN"),
+                          ("414.9", "109.1", "13.9", "IND"), ("442.5", "103.5", "13.2", "BGD"), ("396.0", "91.8", "10.7", "PAK"), ("280.5", "133.3", "9.0", "NGA")])
+        self.assertNotIn("dropped", notes)
+        self.assertEqual([(t["src"], t["text"]) for t in notes["texts"]],
+                         [("name:zh_names:iso3:CHN", "中国 升幅最大，比第二名高"), ("fact:vs_hi", "0.6 个百分点"), ("name:zh_names:iso3:NGA", "尼日利亚 升幅最小，"), ("fact:vs_lo", "比倒数第二低 0.4 个百分点")])
+        self.assertTrue(all(t["y"] - 1.06 * t["size"] >= 0 and t["y"] <= 245 for t in notes["texts"]))
+        page = child(lines + [json.dumps({"phase": "page", "layers": {"bars": bars["svg"], "bubbles": bub["svg"], "bubble_key": key["svg"], "leader_notes": notes["svg"]}})])[5]
+        self.assertNotIn("refused", page)
+        self.assertIn('data-src="fact:vs_lo"', page["html"])
 
     def test_a_cut_pages_scoped_notes_place_where_the_plain_ones_do(self):
         # the q6 page (a cut: its table the top 20 citizenships, so its notes say the lowest and the highest are the selection's),

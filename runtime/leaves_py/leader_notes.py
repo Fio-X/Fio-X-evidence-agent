@@ -24,7 +24,10 @@ pieces; 500 cost the 60 circles 0.18 s), the charge does: the q6 page's Iraq tak
 the 1.5 M; each piece then walked from its point end against only what its bounds reach (lead_clear, the same answers) took the 30
 circles from 1.97 to 0.45 s, 50 from 0.72 to 0.11, the crowded EU map 2.49 to 0.63. Measured on the q1 and q6 column pages (replayed offline): sea only and straight kept 1 of
 their 4 notes, the bend alone 2, the land alone 3, both 4 (the sea first, whatever the length, gave a 400 px leader round the map);
-a note with no free place (no clear leader of up to two bends), or past label_count, is dropped and listed in Frame.dropped as (id, why), the id its name code (note<i>, its place in the
+a note with no free place set as it is tries its other two-line breaks at a phrase boundary, narrowest first (breaks: the q5 change
+page's Nigeria note, 249 px at the break before its number, placed at 208 px after its comma; the EU map's crowded 18 px notes kept
+Germany's on two lines; no note of the q1, q6, change or crowded pages moved); a note with no free place in any of them (no
+clear leader of up to two bends), or past label_count, is dropped and listed in Frame.dropped as (id, why), the id its name code (note<i>, its place in the
 request from 1, when it has none); the layer still draws, empty when every note was dropped (run.py sends the list back for layer 1 to keep in
 the page's ledger).
 Refuses: no notes, a note without a name or text, a point that is not [lon, lat] (or "hub" without a hub), a note under 16 px (note_size min), a note wider than
@@ -52,6 +55,7 @@ LINE = 1.35  # em between a two-line note's baselines: the page check's glyph bo
 TRIES = 600  # leaders walked per note, cheapest first: a crowded picture stays within the layer's deadline (next_leaf LAYER_DEADLINE)
 GRID = 6  # px between the columns (rows) a two-bend leader's middle run is tried at
 TRIES2 = 600  # two-bend leader pieces walked per note at most (past its last runs, one per GRID column and row), when no straight or one-bend leader clears
+ALT_BREAKS = 3  # other two-line layouts (breaks) a note with no free place tries, narrowest first, before it drops
 TWO_BEND_CHECKS = 1_500_000  # point tests the whole layer's two-bend leaders may make, shared by every note (a piece costs its 2 px steps times the boxes, circles and 9 leader cells each is tested against): past it a note with no straight or one-bend leader drops (q6's Iraq takes 0.43 M; 1.5 M cost the 30-circle Europe map 0.04 s)
 
 
@@ -83,8 +87,42 @@ class Frame:
                 lines = [(" ".join(parts[:-1]), max(head, tw(" ".join(plain[:-1]), size))), (parts[-1], tw(val[1], size) * 1.06)]; w2 = max(w for _, w in lines)
                 if w2 <= f.W / 2: n["_lines"], n["_w"], wd = lines, w2, w2
             if wd > f.W / 2: raise Refused(f"leader_notes: note {i + 1} is wider than half the picture at {size} px ({wd:.0f} px of {f.W / 2:.0f}, W {f.W}: '{' '.join(plain)}')")  # the words and widths recorded so a refused note can be read back
+            n["_alts"] = breaks(nm if n.get("name") else None, K.segs(n["text"], f"note {i + 1} text") if n.get("text") else [], val if n.get("value_text") else None,
+                                size, f.W / 2, [l for l, _ in n["_lines"] or [(n["_inner"], 0)]])
         f.hl = K.check_codes(NODE, k("highlight"), {n["name"] for n in notes if n.get("name")}) if k("highlight") else set()
         f.pal, f.side = k("palette"), k("side"); f.notes = notes; f.dropped = []
+
+
+def breaks(name, sg, val, size, half, default):
+    """A note's other two-line layouts, tried in turn when its own one (one line, or two at the break before its number) has no
+    free place: the break moved to another phrase boundary, as editorial CJK wrapping sets it (by phrase, not by glyph: BudouX;
+    W3C clreq's line-start rule): after the name, between two of its word segments (each word or literal whole) or before the
+    number, never inside the name, a word or a ledger entry, and no line starts with a closing mark (line.no_start: a segment's
+    leading mark stays at the end of the line above, as wbkit.units_of keeps it). Each line keeps a marked text (the name, or a
+    ledger entry: layer 1 takes no text without a source), so a note of a name and a number alone breaks between the two. Each
+    line's width by the one-line rule (the parts a 0.3 em gap apart, the bold number 6% wider, never under tw of the whole
+    line), each within `half`; `default`, the note's own lines (inner only), left out. [(lines, width)], the narrowest
+    ALT_BREAKS first."""
+    toks = [(name[0], name[1], 0, True)] if name else []  # (inner, plain, part: name 0, words 1, number 2, marked)
+    for t, src in sg:
+        if src: toks.append((FX.entry(src, "tspan", None), t, 1, True)); continue
+        head = len(t) - len(t.lstrip(K.NO_LINE_START))  # a leading closing mark joins the words before it
+        if head and toks and toks[-1][2] == 1: p = toks.pop(); toks.append((p[0] + esc(t[:head]), p[1] + t[:head], 1, p[3])); t = t[head:]
+        if t: toks.append((esc(t), t, 1, False))
+    if val: toks.append((f'<tspan font-weight="700">{val[0]}</tspan>', val[1], 2, True))
+
+    def line(ts):
+        parts = [p for p in ([t for t in ts if t[2] == j] for j in (0, 1, 2)) if p]
+        plain = " ".join("".join(t[1] for t in p) for p in parts)
+        w = sum(tw("".join(t[1] for t in p), size) * (1.06 if p[0][2] == 2 else 1) for p in parts) + size * 0.3 * (len(parts) - 1)
+        return " ".join("".join(t[0] for t in p) for p in parts), max(w, tw(plain, size))
+    out = []
+    for j in range(1, len(toks)):
+        a, b = toks[:j], toks[j:]
+        if not (any(t[3] for t in a) and any(t[3] for t in b)) or b[0][1][:1] in K.NO_LINE_START or b[0][1][:1].isspace(): continue
+        lines = [line(a), line(b)]; w = max(x for _, x in lines)
+        if w <= half and [l for l, _ in lines] != default: out.append((w, j, lines))
+    return [(lines, w) for w, _, lines in sorted(out)[:ALT_BREAKS]]
 
 
 def cl_leader_notes(f, occ):
@@ -159,12 +197,12 @@ def cl_leader_notes(f, occ):
                 return (cost, b1, y, list(path))
         return None
 
-    def place(n):
-        """The note's place: of every free box (one line, or both of a two-line note; side auto: anywhere in the picture on a STEP px grid; left or right: at
+    def place(n, w1, lines):
+        """The note's place, set as `lines` (None: one line) `w1` px wide: of every free box (one line, or both of a two-line note; side auto: anywhere in the picture on a STEP px grid; left or right: at
         that edge), the one whose clear leader (straight or with one bend) costs least (its
         length, LAND_COST over the land, BEND_COST a bend; two_bends when none has one); the leader is returned as its points, note end
         first. None when no box has one."""
-        pt = n["_pt"]; w1 = n["_w"]; found = []; dy = size * LINE * (len(n["_lines"]) - 1) if n["_lines"] else 0  # a two-line note's box reaches its second line
+        pt = n["_pt"]; found = []; dy = size * LINE * (len(lines) - 1) if lines else 0  # a two-line note's box reaches its second line
         x0s = [margin] if f.side == "left" else [W - margin - w1] if f.side == "right" else \
             sorted({*(margin + STEP * i for i in range(int((W - 2 * margin - w1) / STEP) + 1)), W - margin - w1})
         y = size + 2
@@ -199,12 +237,15 @@ def cl_leader_notes(f, occ):
         return (b1[2] if anchor == "end" else b1[0]), anchor, y, b1, path
 
     for n in keep:
-        spot = place(n)
+        # its own layout first; with no free place, its other two-line breaks (breaks), narrowest first
+        for w1, lines in [(n["_w"], n["_lines"]), *((w, l) for l, w in n["_alts"])]:
+            spot = place(n, w1, lines)
+            if spot: break
         if not spot: f.dropped.append((n["_id"], "no free place for the note")); continue
         pt = n["_pt"]; x, anchor, y, b1, path = spot
         o.append(f'<polyline points="{" ".join(f"{p[0]:.1f},{p[1]:.1f}" for p in path)}" fill="none" stroke="var(--t-sec)" stroke-width="0.8"/><circle cx="{pt[0]:.1f}" cy="{pt[1]:.1f}" r="2.5" fill="var(--t-title)"/>')
         halo = ' stroke="var(--bg)" stroke-width="3" paint-order="stroke"'
-        for j, (inner, w) in enumerate(n["_lines"] or [(n["_inner"], n["_w"])]):  # each line at the box's edge, LINE em below the one above
+        for j, (inner, w) in enumerate(lines or [(n["_inner"], n["_w"])]):  # each line at the box's edge, LINE em below the one above
             o.append(K.txt(B, x, y + size * LINE * j, size, "var(--accent)" if acc(n) else "var(--t-title)", inner, w, anchor=anchor, weight=400, tag=f"note {n.get('name') or n.get('text')}", style=halo))
         occ.add(b1, "notes")
         for a, b in zip(path, path[1:]):
