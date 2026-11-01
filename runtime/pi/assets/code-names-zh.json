@@ -160,7 +160,7 @@
    "zh_source": "reviewed",
    "reviewed": "2026-11-01",
    "basis": "own translation",
-   "source": "Eurostat nrg_bal_peh, siec code BA100 (Batteries); the name was set by the project owner on 2026-11-01",
+   "source": "https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1/codelist/ESTAT/SIEC?format=TSV&lang=en; Eurostat SIEC code list, BA100 Batteries (used in nrg_bal_peh); the name was set by the project owner on 2026-11-01",
    "note": "Eurostat names the code only as Batteries; the short name says battery storage, the use the code counts. No full name was reviewed, so zh_full repeats the short name"
   },
   {
