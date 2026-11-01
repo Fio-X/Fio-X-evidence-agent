@@ -1285,6 +1285,21 @@ fn py_fixed(x: f64, dec: usize) -> String {
     format!("{x:.dec$}")
 }
 
+/// A fixed-point number with its whole part grouped by thousands with commas, as Python's format spec `,.{dec}f` writes
+/// it (the leaf's facts.fmt): "-1234567.5" is "-1,234,567.5".
+fn py_grouped(fixed: &str) -> String {
+    let (sign, rest) = fixed.strip_prefix('-').map_or(("", fixed), |r| ("-", r));
+    let (whole, frac) = rest.split_once('.').map_or((rest, None), |(w, f)| (w, Some(f)));
+    let mut out = String::new();
+    for (i, c) in whole.chars().enumerate() {
+        if i > 0 && (whole.len() - i) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    format!("{sign}{out}{}", frac.map_or(String::new(), |f| format!(".{f}")))
+}
+
 /// The selects recomputed over the page's rows, the checks max_dropped and fill_after_drop, then the page with every
 /// select reference resolved and its facts computed: (failures, recomputed results by select id, the resolved page).
 pub fn recheck(page: &J) -> (Vec<String>, Got, Option<J>) {
@@ -3995,7 +4010,10 @@ impl<'a> Words<'a> {
         if let Some(m) = f.s().and_then(|f| self.fmts.get(f)).filter(|m| m.has("dec")) {
             let scale = m.get("scale").map_or(Some(1.0), J::num).ok_or("scale")?;
             let dec = m.g("dec").num().ok_or("dec")? as usize;
-            return Ok(format!("{}{}", py_fixed(v * scale, dec), m.get("suffix").map_or(String::new(), st)));
+            // a key's .n part is the number without its unit, as the leaf's ledger prints fact:<key>.n (facts.py)
+            let bare = part == Some("n") || key.ends_with(".n");
+            let suffix = if bare { String::new() } else { m.get("suffix").map_or(String::new(), st) };
+            return Ok(format!("{}{suffix}", py_grouped(&py_fixed(v * scale, dec))));
         }
         if f.s() == Some("n") {
             return Ok(format!("{}", v.round_ties_even() as i64));
@@ -4926,6 +4944,22 @@ mod tests {
     fn read(name: &str) -> J {
         parse(&std::fs::read_to_string(fixtures().join(name)).unwrap_or_else(|e| panic!("{name}: {e}"))).unwrap_or_else(|e| panic!("{name}: {e}"))
     }
+    /// The core writes a number as the leaf's facts.fmt does: Python's `,.{dec}f` (outputs taken from Python 3.13).
+    #[test]
+    fn next_tree_numbers_group_by_thousands_as_the_leaf() {
+        for (x, dec, py) in [
+            (0.0, 1, "0.0"),
+            (12.5, 2, "12.50"),
+            (999.0, 0, "999"),
+            (1000.0, 0, "1,000"),
+            (112310.0, 0, "112,310"),
+            (552658.77, 2, "552,658.77"),
+            (-1234567.5, 1, "-1,234,567.5"),
+            (-0.04, 1, "-0.0"),
+        ] {
+            assert_eq!(py_grouped(&py_fixed(x, dec)), py, "{x} at {dec}");
+        }
+    }
     fn heads(errs: &[String]) -> Vec<String> {
         errs.iter().map(|e| e.split(':').next().unwrap_or("").to_string()).collect()
     }
@@ -5073,7 +5107,7 @@ mod tests {
         }
         println!("next_tree tamper geometry: {} cases, {} passed with the honest content, {} not as the prototype", total, passed, off.len());
         assert!(off.is_empty(), "{}", off.iter().take(12).cloned().collect::<Vec<_>>().join("\n"));
-        assert_eq!((total, passed), (all.g("total").num().unwrap() as i64, 887));
+        assert_eq!((total, passed), (all.g("total").num().unwrap() as i64, 890));
     }
 
     /// A text farther than MAX_PX_MAX from its mark, or a circle radius above RADIUS_PX_MAX, is refused when the registry
@@ -5625,7 +5659,10 @@ mod tests {
 
     /// The node SVG the core draws for every plan B fixture whose requests it issues (30 fixtures, 72 node SVGs, any reply)
     /// is byte for byte what it was before R11
-    /// (base f76026792f1e86f1ac7d2211293629449973c299): a mark no scale paints is drawn as it was.
+    /// (base f76026792f1e86f1ac7d2211293629449973c299): a mark no scale paints is drawn as it was. Re-measured when the
+    /// core came to print a number as the leaf does (P4a-1 S5b: a .n fact without its unit, the whole part grouped by
+    /// thousands): the only bytes that moved are 177 texts, 168 losing their '%' and 9 their gigawatt-hour unit with
+    /// "51089" written "51,089"; every other byte and every text's attributes as before.
     #[test]
     fn next_tree_r11_unpainted_svg_is_the_base_bytes() {
         let want = read("prototype-results.json");
@@ -5646,7 +5683,7 @@ mod tests {
             n += 1;
         }
         println!("next_tree r11 unpainted svg: {n} fixtures, {} svgs, sha256 {}", all.lines().count(), sha256_hex(&all));
-        // measured at R11 part 1, whose svg() is the base's
-        assert_eq!((n, all.lines().count(), sha256_hex(&all).as_str()), (30, 72, "5b8f40da4292fc31fddf397676d21db42425b601dff8f705320c4208e36c1a4d"));
+        // measured at R11 part 1, whose svg() is the base's; re-measured at S5b (numbers printed as the leaf prints them)
+        assert_eq!((n, all.lines().count(), sha256_hex(&all).as_str()), (30, 72, "cfd1b685951d4431b14ff8873a7e9109cc8404b303af00524f3881c5a334c39d"));
     }
 }
