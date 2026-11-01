@@ -8,6 +8,10 @@
 
 use std::collections::BTreeMap;
 
+use serde_json::Value;
+
+use crate::next_facts::{Fact, Spec};
+
 /// A number from the data: where it was read (a claim id and column, or a series, row key and column), its value (for the
 /// geometry) and its text as the data gives it (what the page prints).
 #[derive(Clone, Debug, PartialEq)]
@@ -506,6 +510,227 @@ pub fn saturated_colours(html: &str) -> Vec<String> {
     out
 }
 
+/// The relations a page may state over value facts (data-cmp) and the word-table keys whose words state each: a headline or
+/// note marked with one must print one of them. The words are the leaf's table, read here as data (include_str), so the
+/// check and the leaf hold the same few words.
+const RELATIONS: [(&str, &[&str]); 3] = [("max", &["column.note.vs_next"]), ("next", &["column.note.vs_next"]), ("gt", &["column.note.vs_next"])];
+
+/// The words of a relation, as the word table gives them, their leading and trailing punctuation trimmed.
+fn relation_words(rel: &str) -> Vec<String> {
+    static WORDS: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
+    let table = WORDS.get_or_init(|| serde_json::from_str(include_str!("../runtime/leaves_py/words.zh.json")).unwrap_or_default());
+    let keys = RELATIONS.iter().find(|(r, _)| *r == rel).map_or(&[][..], |(_, k)| *k);
+    keys.iter().filter_map(|k| table[*k].as_str()).map(|w| w.trim_matches(['\u{ff0c}', '\u{3001}', '\u{ff1b}']).to_string()).filter(|w| !w.is_empty()).collect()
+}
+
+/// An element of a page: its name, its attributes and the byte range of its inner html (empty for a void or self-closed one).
+struct El {
+    name: String,
+    attrs: Vec<(String, String)>,
+    inner: std::ops::Range<usize>,
+}
+
+impl El {
+    fn attr(&self, key: &str) -> Option<&str> {
+        self.attrs.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
+    }
+}
+
+/// Every element of the html in page order, nesting followed by name; comments, the doctype and the bodies of style and
+/// script skipped.
+fn elements(html: &str) -> Vec<El> {
+    let (mut out, mut open): (Vec<El>, Vec<usize>) = (Vec::new(), Vec::new());
+    let mut at = 0;
+    while let Some(lt) = html[at..].find('<').map(|i| at + i) {
+        if let Some(body) = html[lt..].strip_prefix("<!--") {
+            at = lt + 4 + comment_len(body).unwrap_or(body.len());
+            continue;
+        }
+        let Some(end) = tag_end(&html[lt..]) else { break };
+        let tag = &html[lt + 1..lt + end];
+        at = lt + end + 1;
+        if tag.starts_with('!') {
+            continue;
+        }
+        if let Some(name) = tag.strip_prefix('/') {
+            let name = name.trim().to_ascii_lowercase();
+            if let Some(i) = open.iter().rposition(|&o| out[o].name == name) {
+                open.drain(i..).for_each(|o| out[o].inner.end = lt);
+            }
+            continue;
+        }
+        let (name, attrs) = tag_parts(tag);
+        let shut = tag.trim_end().ends_with('/') || VOID.contains(&name.as_str());
+        out.push(El { name: name.clone(), attrs, inner: at..at });
+        if name == "style" || name == "script" {
+            let close = html[at..].to_ascii_lowercase().find(&format!("</{name}")).map_or(html.len(), |i| at + i);
+            if let Some(e) = out.last_mut() {
+                e.inner.end = close;
+            }
+            at = close;
+        } else if !shut {
+            open.push(out.len() - 1);
+        }
+    }
+    open.into_iter().for_each(|o| out[o].inner.end = html.len());
+    out
+}
+
+/// The text of an html fragment, character references read, leaving out what lies inside any element carrying `skip`.
+fn text_outside(frag: &str, skip: &str) -> String {
+    let inside: Vec<_> = elements(frag).into_iter().filter(|e| e.attr(skip).is_some()).map(|e| e.inner).collect();
+    let (mut out, mut at) = (String::new(), 0);
+    while at < frag.len() {
+        if frag[at..].starts_with('<') {
+            at += tag_end(&frag[at..]).map_or(frag.len() - at, |e| e + 1);
+            continue;
+        }
+        let next = frag[at..].find('<').map_or(frag.len(), |i| at + i);
+        if !inside.iter().any(|r| r.contains(&at)) {
+            out.push_str(&unescape(&frag[at..next]));
+        }
+        at = next;
+    }
+    out
+}
+
+/// The data-src values printed in an html fragment.
+fn printed(frag: &str) -> Vec<String> {
+    elements(frag).into_iter().filter_map(|e| e.attr("data-src").map(str::to_string)).collect()
+}
+
+/// The comparison set of a value fact, derived from the request's fact definitions alone (never from the page): every fact
+/// whose definition has op value and the same table, time and format, and a filter over the same one dimension (its value
+/// one code, or a list for a merged node). Empty when `key` is no such fact.
+fn family<'a>(key: &str, spec: &'a Spec) -> Vec<&'a str> {
+    let shape = |q: &Value| {
+        let filter = q.get("filter")?.as_object().filter(|f| f.len() == 1)?;
+        let dim = filter.keys().next()?.clone();
+        (q["op"] == "value").then(|| (q["table"].clone(), q["time"].clone(), q["fmt"].clone(), dim))
+    };
+    let Some(want) = spec.facts.iter().find(|(k, _)| k == key).and_then(|(_, q)| shape(q)) else {
+        return Vec::new();
+    };
+    let mut set: Vec<&str> = spec.facts.iter().filter(|(_, q)| shape(q).as_ref() == Some(&want)).map(|(k, _)| k.as_str()).collect();
+    set.sort_unstable();
+    set.dedup();
+    set
+}
+
+/// The fact key a ledger src prints (`fact:<k>.n` or `fact:<k>`), when `k` is a fact the request defines.
+fn fact_key<'a>(src: &str, spec: &'a Spec) -> Option<&'a str> {
+    let k = src.strip_prefix("fact:")?;
+    let known = |k: &str| spec.facts.iter().find(|(key, _)| key == k).map(|(key, _)| key.as_str());
+    known(k).or_else(|| k.strip_suffix(".n").and_then(known))
+}
+
+/// relation_holds: every element with data-cmp states one relation of value facts over a set this check derives from the
+/// request's fact definitions (spec.facts, family), never from the page:
+///   max   data-a is above every other fact of its set, printing differently from each;
+///   next  data-a is the max as above, and data-b the max of the rest of the set;
+///   gt    data-b is in data-a's set, data-a above it, printing differently.
+/// The element prints data-a (and data-b) as data-src and the name row of each one's own code (the code its filter holds; a
+/// merged node's list is exempt), so a number cannot stand under another node's name; its words (outside data-src) hold
+/// the relation's words. A set of fewer than two facts, or a fact of it with no computed value, refuses. A relation word in
+/// an h1 outside a data-cmp element refuses, and every text of a g[data-notes] group must carry data-cmp. One line per finding.
+pub fn check_relations(html: &str, ledger: &BTreeMap<String, String>, spec: &Spec, facts: &[Fact]) -> Vec<String> {
+    let mut off = Vec::new();
+    let els = elements(html);
+    let value = |k: &str| facts.iter().find(|f| f.key == k).map(|f| f.v);
+    let text = |k: &str| ledger.get(&format!("fact:{k}.n")).or_else(|| ledger.get(&format!("fact:{k}")));
+    let above = |a: &str, others: &[&str]| others.iter().all(|o| value(a) > value(o) && text(a) != text(o));
+    for g in els.iter().filter(|e| e.name == "g" && e.attr("data-notes").is_some()) {
+        for t in els.iter().filter(|t| t.name == "text" && g.inner.contains(&t.inner.start) && t.attr("data-cmp").is_none()) {
+            off.push(format!("note {:?}: no comparison marked (data-cmp)", text_outside(&html[t.inner.clone()], "\0")));
+        }
+    }
+    let words: Vec<String> = RELATIONS.iter().flat_map(|(r, _)| relation_words(r)).collect();
+    for h in els.iter().filter(|e| e.name == "h1") {
+        let bare = text_outside(&html[h.inner.clone()], "data-cmp");
+        off.extend(words.iter().filter(|w| bare.contains(w.as_str())).map(|w| format!("h1: the relation word {w:?} with no data-cmp")));
+    }
+    for e in els.iter().filter(|e| e.attr("data-cmp").is_some()) {
+        let body = &html[e.inner.clone()];
+        let shown = text_outside(body, "\0");
+        let rel = e.attr("data-cmp").unwrap_or_default();
+        let srcs: Vec<&str> = std::iter::once(e.attr("data-a")).chain((rel != "max").then(|| e.attr("data-b"))).flatten().collect();
+        if !RELATIONS.iter().any(|(r, _)| *r == rel) || srcs.len() != if rel == "max" { 1 } else { 2 } {
+            off.push(format!("{shown:?}: data-cmp {rel:?} is not max, next or gt with its entries"));
+            continue;
+        }
+        let seen = printed(body);
+        if srcs.iter().any(|s| !seen.iter().any(|p| p == s)) {
+            off.push(format!("{shown:?}: its compared entries {srcs:?} are not all printed in it"));
+            continue;
+        }
+        let Some(keys) = srcs.iter().map(|s| fact_key(s, spec)).collect::<Option<Vec<&str>>>() else {
+            off.push(format!("{shown:?}: {srcs:?} are not all defined facts"));
+            continue;
+        };
+        let set = family(keys[0], spec);
+        if set.len() < 2 {
+            off.push(format!("{shown:?}: {} has no comparison set", keys[0]));
+            continue;
+        }
+        if set.iter().any(|k| value(k).is_none()) {
+            off.push(format!("{shown:?}: a fact of {set:?} has no computed value"));
+            continue;
+        }
+        for k in &keys {
+            let def = spec.facts.iter().find(|(key, _)| key == k).map(|(_, q)| q);
+            let code = def.and_then(|q| q["filter"].as_object()).and_then(|f| f.values().next()).and_then(Value::as_str);
+            if let Some(code) = code.filter(|c| !seen.iter().any(|p| p.starts_with(LABEL_SRC) && p.ends_with(&format!(":{c}")))) {
+                off.push(format!("{shown:?}: {k} is printed without the name of its code {code}"));
+            }
+        }
+        let rest: Vec<&str> = set.iter().copied().filter(|k| *k != keys[0]).collect();
+        let holds = match rel {
+            "max" => above(keys[0], &rest),
+            "next" => {
+                let after: Vec<&str> = rest.iter().copied().filter(|k| *k != keys[1]).collect();
+                rest.contains(&keys[1]) && above(keys[0], &rest) && above(keys[1], &after)
+            }
+            _ => rest.contains(&keys[1]) && above(keys[0], &[keys[1]]),
+        };
+        if !holds {
+            let vs: Vec<f64> = set.iter().filter_map(|k| value(k)).collect();
+            off.push(format!("{shown:?}: {rel} does not hold over {keys:?} and its derived set {set:?} ({vs:?})"));
+        }
+        let said = text_outside(body, "data-src");
+        if !relation_words(rel).iter().any(|w| said.contains(w.as_str())) {
+            off.push(format!("{shown:?}: its words state no {rel} comparison"));
+        }
+    }
+    off
+}
+
+/// accent_named, on a page whose h1 states a relation (an element with data-cmp in it: a headline a leaf made from a
+/// finding): every mark (rect, path, polygon, circle) filled with the accent that names its entity (data-code) is named in
+/// the h1 or the dek (p.dek) by that code's name row. A page whose h1 states none is out of its scope (unscoped, the accent
+/// circles of the published column pages would refuse: their h1 names no code by its row).
+pub fn check_accent_named(html: &str) -> Vec<String> {
+    let els = elements(html);
+    let heads: Vec<&El> = els.iter().filter(|e| e.name == "h1").collect();
+    if !heads.iter().any(|h| els.iter().any(|e| e.attr("data-cmp").is_some() && h.inner.contains(&e.inner.start))) {
+        return Vec::new();
+    }
+    let dek = |e: &El| e.name == "p" && e.attr("class").is_some_and(|c| c.split_whitespace().any(|w| w == "dek"));
+    let named: Vec<String> =
+        els.iter().filter(|e| e.name == "h1" || dek(e)).flat_map(|e| printed(&html[e.inner.clone()])).collect();
+    let mut codes: Vec<&str> = els
+        .iter()
+        .filter(|e| matches!(e.name.as_str(), "rect" | "path" | "polygon" | "circle") && e.attr("fill") == Some("var(--accent)"))
+        .filter_map(|e| e.attr("data-code"))
+        .collect();
+    codes.sort_unstable();
+    codes.dedup();
+    codes
+        .into_iter()
+        .filter(|c| !named.iter().any(|p| p.starts_with(LABEL_SRC) && p.ends_with(&format!(":{c}"))))
+        .map(|c| format!("the accent marks {c}, which the h1 and the dek do not name"))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -803,5 +1028,216 @@ mod tests {
             saturated_colours(&html.replace("--bg:#ffffff", "--bg:#2a6fdb")),
             ["#eb0033", "#2a6fdb"]
         );
+    }
+
+    use serde_json::json;
+
+    // ---- relation_holds and accent_named (P5): a flow page's finding, the q2 run's numbers (DE 2024, ktoe), English names
+
+    /// The request's fact definitions, computed values and ledger of a two-sided flow: sources over siec, destinations over
+    /// nrg_bal, a merged node on each side, and one fact of another op.
+    fn flow_request() -> (Spec, Vec<Fact>, BTreeMap<String, String>) {
+        let nodes: [(&str, &str, Value, f64, &str, &str); 11] = [
+            ("from.O4000XBIO", "siec", json!("O4000XBIO"), 60699.059, "60,699.06", "Oil"),
+            ("from.G3000", "siec", json!("G3000"), 45028.241, "45,028.24", "Gas"),
+            ("from.E7000", "siec", json!("E7000"), 40566.981, "40,566.98", "Power"),
+            ("from.RA000", "siec", json!("RA000"), 16893.734, "16,893.73", "Renewables"),
+            ("from.H8000", "siec", json!("H8000"), 8682.741, "8,682.74", "Heat"),
+            ("from_other", "siec", json!(["C0000X0350-0370", "C0350-0370", "W6100_6220"]), 5874.307, "5,874.31", ""),
+            ("to.FC_OTH_HH_E", "nrg_bal", json!("FC_OTH_HH_E"), 52455.833, "52,455.83", "Homes"),
+            ("to.FC_TRA_E", "nrg_bal", json!("FC_TRA_E"), 49522.114, "49,522.11", "Transport"),
+            ("to.FC_IND_E", "nrg_bal", json!("FC_IND_E"), 48368.385, "48,368.38", "Industry"),
+            ("to.FC_OTH_CP_E", "nrg_bal", json!("FC_OTH_CP_E"), 23800.773, "23,800.77", "Services"),
+            ("to_other", "nrg_bal", json!(["FC_OTH_AF_E", "FC_OTH_FISH_E", "FC_OTH_NSP_E"]), 3597.958, "3,597.96", ""),
+        ];
+        let fact = |key: &str, op: &str, v: f64, fmt: &str| Fact {
+            key: key.into(),
+            op: op.into(),
+            v,
+            t: None,
+            n: None,
+            who: Vec::new(),
+            fmt: fmt.into(),
+            reads: Vec::new(),
+        };
+        let mut defs = vec![("zero_flows".to_string(), json!({"op": "zeros", "table": "nrg_bal_c", "time": "2024", "fmt": "n"}))];
+        let mut facts = vec![fact("zero_flows", "zeros", 12.0, "n")];
+        let mut ledger = BTreeMap::from([("name:unit_short_zh:KTOE".to_string(), "ktoe".to_string())]);
+        for (key, dim, code, v, text, name) in nodes {
+            defs.push((key.into(), json!({"op": "value", "table": "nrg_bal_c", "time": "2024", "fmt": "ktoe", "filter": {dim: code}})));
+            facts.push(fact(key, "value", v, "ktoe"));
+            ledger.insert(format!("fact:{key}.n"), text.into());
+            if let Some(code) = code.as_str() {
+                ledger.insert(format!("name:zh_names:{dim}:{code}"), name.into());
+            }
+        }
+        (Spec { facts: defs, fmts: json!({}), members: None }, facts, ledger)
+    }
+
+    /// A node's name and its value marked as the leaf prints them (svg: tspan, html: span), the value bold.
+    fn named_value(tag: &str, dim: &str, code: &str, name: &str, key: &str, text: &str) -> String {
+        let bold = if tag == "span" { ("<b class=\"n\">", "</b>") } else { ("<tspan font-weight=\"700\">", "</tspan>") };
+        format!("<{tag} data-src=\"name:zh_names:{dim}:{code}\">{name}</{tag}> {}<{tag} data-src=\"fact:{key}.n\">{text}</{tag}>{}", bold.0, bold.1)
+    }
+
+    /// The flow page with its finding as the prototype leaf draws it: the headline (max) in the h1, the subject's node in the
+    /// accent, one note (next) per side; the relation and paren words from the word table.
+    fn flow_page() -> String {
+        let above = format!("\u{ff0c}{}", relation_words("next")[0]);
+        let head = format!(
+            "<span data-cmp=\"max\" data-a=\"fact:from.O4000XBIO.n\">{} <span data-src=\"name:unit_short_zh:KTOE\">ktoe</span>{above}</span>",
+            named_value("span", "siec", "O4000XBIO", "Oil", "from.O4000XBIO", "60,699.06")
+        );
+        let note = |a: (&str, &str, &str, &str, &str), b: (&str, &str, &str, &str, &str)| {
+            format!(
+                "<text x=\"152.6\" y=\"546.0\" data-cmp=\"next\" data-a=\"fact:{}.n\" data-b=\"fact:{}.n\">{}{above}\u{ff08}{}\u{ff09}</text>",
+                a.3, b.3, named_value("tspan", a.0, a.1, a.2, a.3, a.4), named_value("tspan", b.0, b.1, b.2, b.3, b.4)
+            )
+        };
+        format!(
+            "<!doctype html><html><body><header><div class=\"kicker\">Energy from sources to sectors</div><h1>{head}</h1>\
+             <p class=\"dek\">From source to use</p></header><svg><g data-layer=\"sankey\">\
+             <rect x=\"147.6\" y=\"54\" width=\"14\" height=\"140\" fill=\"var(--accent)\" data-code=\"O4000XBIO\"/>\
+             <rect x=\"147.6\" y=\"204\" width=\"14\" height=\"103\" fill=\"var(--t-sec)\" data-code=\"G3000\"/>\
+             <rect x=\"990.4\" y=\"185\" width=\"14\" height=\"103\" fill=\"var(--t-sec)\" data-code=\"FC_TRA_E\"/>\
+             <g data-notes=\"finding\"><polyline points=\"144.6,124 144.6,541 149.6,541\" fill=\"none\"/>{}{}</g></g></svg>\
+             <script>{READY_JS}</script></body></html>",
+            note(("siec", "O4000XBIO", "Oil", "from.O4000XBIO", "60,699.06"), ("siec", "G3000", "Gas", "from.G3000", "45,028.24")),
+            note(("nrg_bal", "FC_OTH_HH_E", "Homes", "to.FC_OTH_HH_E", "52,455.83"), ("nrg_bal", "FC_TRA_E", "Transport", "to.FC_TRA_E", "49,522.11")),
+        )
+    }
+
+    /// The two new check kinds on a page, and the existing number check on it (which a must-fail below must pass).
+    fn new_checks(html: &str, facts: &[Fact]) -> (Vec<String>, Vec<String>) {
+        let (spec, _, ledger) = flow_request();
+        let mut off = check_relations(html, &ledger, &spec, facts);
+        off.extend(check_accent_named(html));
+        (off, check_numbers(html, &ledger, &[]))
+    }
+
+    #[test]
+    fn a_flow_finding_holds_over_the_set_its_fact_definitions_give() {
+        let (spec, facts, _) = flow_request();
+        assert_eq!(family("from.G3000", &spec), ["from.E7000", "from.G3000", "from.H8000", "from.O4000XBIO", "from.RA000", "from_other"]);
+        assert_eq!(family("to_other", &spec).len(), 5);
+        assert!(family("zero_flows", &spec).is_empty() && family("nothing", &spec).is_empty());
+        assert_eq!(fact_key("fact:from.G3000.n", &spec), Some("from.G3000"));
+        assert_eq!(fact_key("fact:from_other", &spec), Some("from_other"));
+        assert_eq!(fact_key("series:from.G3000", &spec), None);
+        assert_eq!(new_checks(&flow_page(), &facts), (Vec::<String>::new(), Vec::<String>::new()));
+        // a page with no relation marked is out of both checks' way, its accent unnamed included
+        let plain = "<h1>Energy</h1><svg><circle fill=\"var(--accent)\" data-code=\"DE\"/></svg>";
+        assert_eq!(new_checks(plain, &facts).0, Vec::<String>::new());
+    }
+
+    /// F6-F11, F18, F19 of the prototype: tampers the new checks refuse (some the number check refuses too).
+    #[test]
+    fn a_flow_finding_refuses_a_false_or_unmarked_relation() {
+        let (_, facts, _) = flow_request();
+        let page = flow_page();
+        let word = relation_words("next")[0].clone();
+        let refused = |html: &str| !new_checks(html, &facts).0.is_empty();
+        assert!(refused(&page.replacen(&word, "x", 2)), "F6 a note without its comparison word");
+        let swapped = page.replacen(
+            "data-a=\"fact:from.O4000XBIO.n\" data-b=\"fact:from.G3000.n\"",
+            "data-a=\"fact:from.G3000.n\" data-b=\"fact:from.O4000XBIO.n\"",
+            1,
+        );
+        assert!(refused(&swapped), "F7 a note's two entries swapped");
+        assert!(refused(&page.replacen("data-b=\"fact:from.G3000.n\"", "data-b=\"fact:from.O4000XBIO.n\"", 1)), "F8 compared with itself");
+        assert!(refused(&page.replacen(" data-cmp=\"next\"", "", 1)), "F9 a note with no comparison marked");
+        assert!(refused(&page.replacen("data-b=\"fact:from.G3000.n\"", "data-b=\"fact:from.E7000.n\"", 1)), "F10 an entry it does not print");
+        let moved = page.replacen("fill=\"var(--accent)\" data-code=\"O4000XBIO\"", "fill=\"var(--accent)\" data-code=\"G3000\"", 1);
+        assert!(refused(&moved), "F11 the accent on an entity the title does not name");
+        let lie = page
+            .replacen("data-cmp=\"max\" data-a=\"fact:from.O4000XBIO.n\"", "data-cmp=\"max\" data-a=\"fact:from.G3000.n\"", 1)
+            .replacen("name:zh_names:siec:O4000XBIO\">Oil<", "name:zh_names:siec:G3000\">Gas<", 1)
+            .replacen("data-src=\"fact:from.O4000XBIO.n\">60,699.06<", "data-src=\"fact:from.G3000.n\">45,028.24<", 1);
+        assert!(refused(&lie), "F18 the headline names a node that is not the largest");
+        let h1 = &page[page.find("<h1>").unwrap()..page.find("</h1>").unwrap()];
+        assert!(refused(&page.replacen(h1, &h1.replacen(&word, "x", 1), 1)), "F19 the headline's comparison word removed");
+    }
+
+    /// F20-F28 of the prototype: each refused by relation_holds or accent_named alone, the existing number check passing it.
+    #[test]
+    fn a_flow_finding_refused_by_the_new_checks_alone() {
+        let (_, facts, _) = flow_request();
+        let page = flow_page();
+        let h1 = page[page.find("<h1>").unwrap() + 4..page.find("</h1>").unwrap()].to_string();
+        let alone = |name: &str, html: &str, facts: &[Fact]| {
+            let (new, old) = new_checks(html, facts);
+            assert!(!new.is_empty() && old.is_empty(), "{name}: new {new:?} numbers {old:?}");
+        };
+        let word = relation_words("max")[0].clone();
+        let gas = format!(
+            "{} <span data-src=\"name:unit_short_zh:KTOE\">ktoe</span>\u{ff0c}{word}",
+            named_value("span", "siec", "G3000", "Gas", "from.G3000", "45,028.24")
+        );
+        let head = |inner: String| page.replacen(&h1, &inner, 1);
+        alone(
+            "F20 a short data-of that omits the true max",
+            &head(format!("<span data-cmp=\"max\" data-a=\"fact:from.G3000.n\" data-of=\"fact:from.G3000.n fact:from.E7000.n\">{gas}</span>")),
+            &facts,
+        );
+        alone(
+            "F21 max over a set from the other side",
+            &head(format!("<span data-cmp=\"max\" data-a=\"fact:from.G3000.n\" data-of=\"fact:from.G3000.n fact:to.FC_OTH_CP_E.n fact:to_other.n\">{gas}</span>")),
+            &facts,
+        );
+        let tied: Vec<Fact> =
+            facts.iter().cloned().map(|f| if f.key == "from.G3000" { Fact { v: 60699.059, ..f } } else { f }).collect();
+        alone("F22 gt where the two values tie", &page.replacen("data-cmp=\"next\"", "data-cmp=\"gt\"", 1), &tied);
+        alone("F23 next where the two values tie", &page, &tied);
+        let third = page.replacen("data-b=\"fact:from.G3000.n\"", "data-b=\"fact:from.E7000.n\"", 1).replacen(
+            &named_value("tspan", "siec", "G3000", "Gas", "from.G3000", "45,028.24"),
+            &named_value("tspan", "siec", "E7000", "Power", "from.E7000", "40,566.98"),
+            1,
+        );
+        alone("F24 the note's second is the third", &third, &facts);
+        let cross = page.replacen("data-b=\"fact:from.G3000.n\"", "data-b=\"fact:to.FC_TRA_E.n\"", 1).replacen(
+            &named_value("tspan", "siec", "G3000", "Gas", "from.G3000", "45,028.24"),
+            &named_value("tspan", "nrg_bal", "FC_TRA_E", "Transport", "to.FC_TRA_E", "49,522.11"),
+            1,
+        );
+        alone("F25 a note compared with a node of the other side", &cross, &facts);
+        let borrowed = page
+            .replacen("data-cmp=\"max\" data-a=\"fact:from.O4000XBIO.n\"", "data-cmp=\"max\" data-a=\"fact:to.FC_OTH_HH_E.n\"", 1)
+            .replacen("data-src=\"fact:from.O4000XBIO.n\">60,699.06<", "data-src=\"fact:to.FC_OTH_HH_E.n\">52,455.83<", 1);
+        alone("F26 the other side's true max under another node's name", &borrowed, &facts);
+        alone("F27 a relation word in the h1 with no data-cmp", &head(h1.replacen("<span data-cmp=\"max\" data-a=\"fact:from.O4000XBIO.n\">", "<span>", 1)), &facts);
+        let on_target = page.replacen("fill=\"var(--t-sec)\" data-code=\"FC_TRA_E\"", "fill=\"var(--accent)\" data-code=\"FC_TRA_E\"", 1);
+        assert_ne!(on_target, page);
+        alone("F28 the accent on a code the h1 does not name", &on_target, &facts);
+    }
+
+    /// The measure for P5 (run with --ignored): both new checks over published pages (P5_PAGES, one path per line) find
+    /// nothing; with P5_PAGE and P5_REQUEST (a page and the request.json it was checked against) the page passes them too.
+    #[test]
+    #[ignore]
+    fn relation_checks_over_stored_pages() {
+        let mut hits = 0;
+        let list = std::fs::read_to_string(std::env::var("P5_PAGES").unwrap()).unwrap();
+        let pages: Vec<&str> = list.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+        let none = Spec { facts: Vec::new(), fmts: json!({}), members: None };
+        for p in &pages {
+            let html = std::fs::read_to_string(p).unwrap();
+            let mut off = check_relations(&html, &BTreeMap::new(), &none, &[]);
+            off.extend(check_accent_named(&html));
+            hits += off.len();
+            off.iter().for_each(|f| println!("finding {p}: {f}"));
+        }
+        println!("P5 pages {} findings {hits}", pages.len());
+        if let (Ok(page), Ok(req)) = (std::env::var("P5_PAGE"), std::env::var("P5_REQUEST")) {
+            let html = std::fs::read_to_string(page).unwrap();
+            let req: Value = serde_json::from_str(&std::fs::read_to_string(req).unwrap()).unwrap();
+            let spec: Spec = serde_json::from_value(req["spec"].clone()).unwrap();
+            let facts: Vec<Fact> = serde_json::from_value(req["facts"].clone()).unwrap();
+            let ledger: BTreeMap<String, String> = serde_json::from_value(req["ledger"].clone()).unwrap();
+            let mut off = check_relations(&html, &ledger, &spec, &facts);
+            off.extend(check_accent_named(&html));
+            println!("P5 page findings {} {off:?}", off.len());
+            hits += off.len();
+        }
+        assert_eq!(hits, 0);
     }
 }
