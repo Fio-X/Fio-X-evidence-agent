@@ -157,6 +157,26 @@ KINDS = dict(ring=(scmp.RING_LAYERS, scmp.RING_SVG), **{k: ({**column.COLUMN_LAY
              scmp=(scmp.SCMP_LAYERS, scmp.SCMP_SVG))
 
 
+# The layers a leaf draws from the geometry the core placed and checked (knobs.placed[layer], src/next_tree.rs node_draw),
+# by layer: the ones a page recipe may bind external.
+PLACED_LAYERS = dict(bars=column.cl_bars_placed)
+
+
+def layer_fn(layers, name, knobs):
+    """What draws layer `name` of a panel, by its recipe's external layers (knobs.external, the visual group's copy of the
+    recipe's list in knobs.json; data, not a switch): a layer bound external is drawn only from its placed geometry
+    (PLACED_LAYERS), and with none it refuses, never falling back to the leaf's own layout; a layer not bound external
+    that comes with placed geometry refuses; any other is the recipe's own leaf."""
+    ext, placed = knobs.get("external") or [], knobs.get("placed") or {}
+    if name in ext:
+        if name not in PLACED_LAYERS: raise FX.Refused(f"the recipe binds {name} external and no leaf draws it from placed geometry")
+        g = placed.get(name)
+        if not isinstance(g, dict): raise FX.Refused(f"the recipe binds {name} external and the request gives no placed geometry for it")
+        return lambda f, occ: PLACED_LAYERS[name](f, occ, g)
+    if name in placed: raise FX.Refused(f"placed geometry for {name}, which the recipe does not bind external")
+    return layers[name][0]
+
+
 class Panel:
     """What one panel's lines share: the context, the recipe's frame and the occupancy table, built on the first line."""
     def __init__(p, req):
@@ -426,7 +446,7 @@ def main():
         else:
             try:
                 DROPPED.clear(); SCALE.clear()
-                s = layers[name][0](panel.f, panel.occ)
+                s = layer_fn(layers, name, req.get("knobs") or {})(panel.f, panel.occ)
                 out = {"svg" if name in svgs else "html": s}
                 if DROPPED: out["dropped"] = list(DROPPED)
                 out.update(SCALE)

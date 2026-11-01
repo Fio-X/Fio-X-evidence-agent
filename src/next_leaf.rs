@@ -256,6 +256,17 @@ pub fn check_style(hero: &Value) -> Vec<String> {
 }
 
 impl<'a> Layer<'a> {
+    /// The layer's name in its recipe.
+    pub fn name(&self) -> &str {
+        self.layer
+    }
+
+    /// The knobs the layer's child is given (the page's fill knobs, with the recipe's external layers and their placed
+    /// geometry, next_visual fill).
+    pub fn knobs(&self) -> &Value {
+        &self.knobs
+    }
+
     /// A layer of a registered leaf node or composite node: it reserves room first when the registry says the leaf does
     /// (a composite reserves none itself), and the page's knob values (`knobs.spec.hero`) are checked against the registry
     /// before any leaf runs.

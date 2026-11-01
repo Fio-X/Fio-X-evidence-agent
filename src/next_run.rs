@@ -4047,6 +4047,11 @@ pub fn leaf_plan_ref(recipe: &str) -> String {
 /// (by RING_ACTOR) for verification to read as data (verify.rs leaf_gate_event): {recipe, published, html_sha256, gaps}.
 pub const LEAF_GATE_EVENT: &str = "next_leaf_gate";
 
+/// What the visual group's drawn check compared on each external layer of the page just published ({layer, compared,
+/// failed}), recorded by the flow; a page that failed it was never published (next_visual drawn_checked).
+/// Not one of the page checks (PAGE_CHECKS_EVENT).
+pub const DRAWN_CHECKED_EVENT: &str = "next_drawn_checked";
+
 /// The completion gate on the page just published, with the fetches the flow itself holds (its events are not on disk
 /// yet): each prepared table's file and its companions', a file counted only under the content-addressed name its fetch
 /// gives it (data/<sha256>.<ext>), so other bytes there are no fetch of it. A table whose id ends "@2" (as step_for reads
@@ -4341,6 +4346,10 @@ pub(crate) async fn page_from(
     match leaf {
         Ok(leaf) => {
             let (recipe, published) = (leaf.recipe.name.as_str(), &leaf.published);
+            // each external layer's drawn check, as the visual group gave it ({layer, compared, failed})
+            for checked in &published.drawn_checked {
+                recorder.program_event(DRAWN_CHECKED_EVENT, checked.clone())?;
+            }
             // what a layer could not place is on record in the run's events too, never only in the request beside the page
             let mut event = json!({"by": RING_ACTOR, "recipe": recipe, "published": published.html_ref,
                 "html_sha256": published.html_sha256,
@@ -6296,6 +6305,21 @@ mod tests {
         (rust, fill, calls.into_inner().unwrap())
     }
 
+    /// The q1 column fill the rust bars_fill gives, frozen (scripts/fixtures/p4a/q1-rust-fill.json) so the declared bars
+    /// stay compared with it once bars_fill is gone: equal to the live fill, key by key. P4A_FREEZE=1 writes it afresh.
+    #[test]
+    fn q1_rust_fill_is_the_frozen_fixture() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/fixtures/p4a/q1-rust-fill.json");
+        let (rust, _, _) = q1_fills(&crate::next_tree::bindings());
+        if std::env::var("P4A_FREEZE").is_ok_and(|v| v == "1") {
+            std::fs::write(&path, serde_json::to_string_pretty(&rust).unwrap() + "\n").unwrap();
+        }
+        let frozen: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let mut differs = Vec::new();
+        fill_diff(&frozen, &rust, "fill", &mut differs);
+        assert!(differs.is_empty(), "{differs:#?}");
+    }
+
     /// Key by key, every place two fills differ.
     fn fill_diff(a: &Value, b: &Value, at: &str, out: &mut Vec<String>) {
         match (a, b) {
@@ -6371,8 +6395,8 @@ mod tests {
         let codes: Vec<&str> = items.iter().map(|i| i["code"].as_str().unwrap()).collect();
         assert_eq!(codes, rust["knobs"]["spec"]["hero"]["data"]["ranked"].as_array().unwrap().iter().map(|c| c.as_str().unwrap()).collect::<Vec<_>>());
         for it in items {
-            assert!(it["mark"]["w"].is_number() && it["texts"]["label"]["anchor"] == "end", "{it}");
-            assert_eq!(it["texts"]["value_text"]["src"], format!("fact:val.{}.n", it["code"].as_str().unwrap()));
+            assert!(it["mark"]["w"].is_number() && it["texts"][0]["name"] == "label" && it["texts"][0]["anchor"] == "end", "{it}");
+            assert_eq!((&it["texts"][1]["name"], &it["texts"][1]["src"]), (&json!("value_text"), &json!(format!("fact:val.{}.n", it["code"].as_str().unwrap()))));
         }
         // everything else of the fill is as the rust bars left it
         let mut rest = drawn.clone();
@@ -11027,6 +11051,7 @@ for line in sys.stdin:
             dropped: Vec::new(),
             type_measured: None,
             scales: Vec::new(),
+            drawn_checked: Vec::new(),
         };
         let sha = Some(published.html_sha256.clone());
         assert_eq!(checked_bytes(dir.path(), &published), (Some(page.to_string()), sha));

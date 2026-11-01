@@ -4849,14 +4849,16 @@ fn placed_of(n: &J, reply: &J, meta: &Meta, got: &Got) -> Result<J, String> {
             }
         }
         let prefix = format!("{}/{i}/", st(n.g("id")));
-        let mut texts = J::Obj(vec![]);
+        // in the core's order (the registry's), which the leaf prints them in and the drawn check reads them back in
+        let mut texts = Vec::new();
         for (tid, _, src) in &meta.texts {
             let Some(name) = tid.strip_prefix(&prefix) else { continue };
             let mut t = reply.g("texts").g(tid).clone();
+            t.set("name", J::str(name));
             t.set("src", src.clone());
-            texts.set(name, t);
+            texts.push(t);
         }
-        items.push(J::obj_of(vec![("code", code), ("mark", mark), ("texts", texts)]));
+        items.push(J::obj_of(vec![("code", code), ("mark", mark), ("texts", J::Arr(texts))]));
     }
     Ok(J::obj_of(vec![("items", J::Arr(items))]))
 }

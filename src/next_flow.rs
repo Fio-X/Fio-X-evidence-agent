@@ -2973,6 +2973,8 @@ pub struct Published {
     pub type_measured: Option<Value>,
     /// The radius scales the layers drew at (next_leaf Panel::scales: layer, r_used, r_steps, r_min_lifted, r_min_codes), for the run's event.
     pub scales: Vec<Value>,
+    /// What the visual group's drawn check compared on each external layer (next_visual LeafDrawn), for the run's event.
+    pub drawn_checked: Vec<Value>,
 }
 
 /// The leaf page published at publications/<slug>/ of the run folder at `root`. The visual group draws and bakes it; its
@@ -3042,7 +3044,14 @@ pub fn publish_leaf_page(
         write(root, &dir.join("manifest.json"), text)
     })
     .map_err(io)?;
-    Ok(Published { html_ref, html_sha256, dropped: drawn.dropped, type_measured: drawn.type_measured, scales: drawn.scales })
+    Ok(Published {
+        html_ref,
+        html_sha256,
+        dropped: drawn.dropped,
+        type_measured: drawn.type_measured,
+        scales: drawn.scales,
+        drawn_checked: drawn.drawn_checked,
+    })
 }
 
 fn matched_reply(reply: Result<next_visual::Reply, String>) -> Matched {

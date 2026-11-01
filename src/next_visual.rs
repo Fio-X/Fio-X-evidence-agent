@@ -194,6 +194,8 @@ pub struct LeafDrawn {
     pub type_measured: Option<Value>,
     /// The radius scales the layers said they drew at (next_leaf Panel::scales), for the page's event.
     pub scales: Vec<Value>,
+    /// What the drawn check compared on each external layer ({layer, compared, failed}, drawn_checked), for the page's event.
+    pub drawn_checked: Vec<Value>,
 }
 
 /// A leaf page as LeafFill built it, owned but for the layer names: the flow lends it as a LeafPage with its draw and bake
@@ -211,6 +213,85 @@ pub struct LeafFill<'a> {
     pub draw: Runner,
     pub bake: Runner,
     pub qa: Runner,
+}
+
+/// The value of attribute `name` in one start tag's text (its first occurrence), as written.
+fn attr<'t>(tag: &'t str, name: &str) -> Option<&'t str> {
+    let key = format!(" {name}=\"");
+    let at = tag.find(&key)? + key.len();
+    tag[at..].find('"').map(|e| &tag[at..at + e])
+}
+
+/// The drawn check: on each layer its recipe binds external (knobs.external), the page as drawn (`html`, before the bake)
+/// prints the geometry the core placed and checked (knobs.placed[layer]), number for number. The layer's group (its one
+/// data-layer element, no group nested in it) holds one rect per placed item, in item order, at the item's mark (x, y,
+/// width, height), and one text per placed text, in item order and the core's text order, at the text's x, y with its
+/// anchor; each number is compared as the leaf prints it (one decimal), each anchor as a word. One more or one fewer, a
+/// layer that is missing or cannot be read, or any number that differs refuses the page; the leaf's other marks (an axis
+/// line) are no placed geometry and are not compared. Ok is {layer, compared, failed} per external layer.
+fn drawn_checked(html: &str, layers: &[Layer<'_>]) -> Result<Vec<Value>, String> {
+    let mut out = Vec::new();
+    for layer in layers {
+        let (name, knobs) = (layer.name(), layer.knobs());
+        if !knobs["external"].as_array().is_some_and(|e| e.iter().any(|x| x == name)) {
+            continue;
+        }
+        let refuse = |why: String| format!("drawn: layer {name}: {why}");
+        let marker = format!("data-layer=\"{name}\"");
+        if html.matches(&marker).count() != 1 {
+            return Err(refuse(format!("the page has {} elements tagged {marker}, not one", html.matches(&marker).count())));
+        }
+        let start = html.find(&marker).expect("counted once");
+        let body = &html[start..];
+        let body = &body[..body.find("</g>").ok_or_else(|| refuse("its group is not closed".into()))?];
+        if body.contains("<g") {
+            return Err(refuse("a group nested in it, which the check cannot read".into()));
+        }
+        let tags = |el: &str| -> Vec<&str> {
+            let open = format!("<{el} ");
+            body.match_indices(&open).map(|(i, _)| &body[i..i + body[i..].find('>').unwrap_or(body.len() - i)]).collect()
+        };
+        let (rects, texts) = (tags("rect"), tags("text"));
+        let items = knobs["placed"][name]["items"].as_array().cloned().unwrap_or_default();
+        let want_texts: Vec<&Value> = items.iter().flat_map(|it| it["texts"].as_array().into_iter().flatten()).collect();
+        let (mut compared, mut failed, mut first) = (0usize, 0usize, None::<String>);
+        let mut miss = |what: String, ok: bool, first: &mut Option<String>| {
+            compared += 1;
+            if !ok {
+                failed += 1;
+                first.get_or_insert(what);
+            }
+        };
+        let printed = |v: Option<f64>| v.map(|v| format!("{v:.1}"));
+        for (i, it) in items.iter().enumerate() {
+            let rect = rects.get(i).copied().unwrap_or("");
+            for (a, k) in [("x", "x"), ("y", "y"), ("width", "w"), ("height", "h")] {
+                let page = printed(attr(rect, a).and_then(|v| v.parse().ok()));
+                let placed = printed(it["mark"][k].as_f64());
+                miss(format!("item {i} rect {a}: drawn {page:?}, placed {placed:?}"), page.is_some() && page == placed, &mut first);
+            }
+        }
+        for (j, t) in want_texts.iter().enumerate() {
+            let text = texts.get(j).copied().unwrap_or("");
+            for a in ["x", "y"] {
+                let page = printed(attr(text, a).and_then(|v| v.parse().ok()));
+                let placed = printed(t[a].as_f64());
+                miss(format!("text {j} {a}: drawn {page:?}, placed {placed:?}"), page.is_some() && page == placed, &mut first);
+            }
+            let anchor = if text.is_empty() { None } else { Some(attr(text, "text-anchor").unwrap_or("start")) };
+            miss(format!("text {j} anchor: drawn {anchor:?}, placed {}", t["anchor"]), anchor.is_some() && anchor == t["anchor"].as_str(), &mut first);
+        }
+        miss(format!("{} rects drawn, {} placed", rects.len(), items.len()), rects.len() == items.len(), &mut first);
+        miss(format!("{} texts drawn, {} placed", texts.len(), want_texts.len()), texts.len() == want_texts.len(), &mut first);
+        if items.is_empty() {
+            return Err(refuse("the request gives no placed items for it".into()));
+        }
+        if failed > 0 {
+            return Err(refuse(format!("{failed} of {compared} drawn numbers are not the placed ones, first {}", first.unwrap_or_default())));
+        }
+        out.push(json!({"layer": name, "compared": compared, "failed": failed}));
+    }
+    Ok(out)
 }
 
 /// The panel a filled page is drawn in: the page's width, its height left to the child (0; it says the panel before any layer,
@@ -272,6 +353,10 @@ fn fill<'a>(
     }
     let refs = leaf_refs(&knobs["spec"]["tables"])?;
     let mut knobs = knobs.clone();
+    // the recipe's external layers (knobs.json, from the registry's recipes), which the leaf draws from their placed geometry
+    // only (run.py layer_fn); the leaf reads it here, never from the flow
+    let external = leaves().recipes.iter().find(|r| r.name == recipe).map(|r| r.external.clone()).unwrap_or_default();
+    knobs["external"] = json!(external);
     // the footer marks these ids in the source line (scmp.footer), the same the page check reads; a request's own kept
     if knobs["spec"].get("refs").is_none() {
         knobs["spec"]["refs"] = json!(refs);
@@ -400,6 +485,7 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
             let given: Vec<(&str, &Strip)> = page.strip.map(|s| ("illus_strip", s)).into_iter().collect();
             let (panel, html, records) = draw_page_given(page.draw, page.w, page.h, page.frame.clone(), page.layers, &given)
                 .map_err(|(_, why)| why.join("\n"))?;
+            let checked = drawn_checked(&html, page.layers)?;
             let baked = bake_leaf_page(page.bake, &html, page.ledger, page.refs, page.facts).map_err(|off| off.join("\n"))?;
             Reply::Leaf(LeafDrawn {
                 html: baked.html,
@@ -407,6 +493,7 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
                 dropped: panel.dropped.iter().map(|d| dropped_entry(&d.layer, &d.id, &d.why)).collect(),
                 type_measured: baked.type_measured,
                 scales: panel.scales.clone(),
+                drawn_checked: checked,
             })
         }
         Request::LeafFill { recipe, rows, knobs, order, runtime } => Reply::Filled(fill(recipe, rows, knobs, order, runtime)?),
@@ -538,6 +625,49 @@ fn browser_check(runner: &Runner, html: &Path, out: &Path) -> Result<Value, Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The drawn check: a bars layer printed where the core placed it passes, counted; one bar 0.1 px wider, a bar more, a
+    /// text short, a text at another anchor, two texts in each other's place or a layer missing from the page refuses, and
+    /// a layer its recipe does not bind external, or no external layer, is not compared.
+    #[test]
+    fn the_drawn_check_holds_an_external_layer_to_its_placed_geometry() {
+        let item = |i: usize, w: f64| {
+            let y = 6.0 + 24.0 * i as f64;
+            json!({"code": format!("C{i}"), "mark": {"x": 100.25, "y": y + 3.0, "w": w, "h": 18},
+                "texts": [{"name": "label", "x": 92.25, "y": y + 12.0, "anchor": "end", "src": "C"},
+                          {"name": "value_text", "x": 106.25 + w, "y": y + 12.0, "anchor": "start", "src": format!("fact:v.C{i}.n")}]})
+        };
+        let items = vec![item(0, 400.123), item(1, 200.5)];
+        let bar = |it: &Value, w: Option<&str>| {
+            let (m, t) = (&it["mark"], &it["texts"]);
+            let w = w.map_or(format!("{:.1}", m["w"].as_f64().unwrap()), str::to_string);
+            format!(
+                r#"<text x="{:.1}" y="{:.1}" text-anchor="end" font-size="13">N</text><rect x="{:.1}" y="{:.1}" width="{w}" height="18" fill="x"/><text x="{:.1}" y="{:.1}" font-size="13"><tspan data-src="s">1</tspan></text>"#,
+                t[0]["x"].as_f64().unwrap(), t[0]["y"].as_f64().unwrap(), m["x"].as_f64().unwrap(), m["y"].as_f64().unwrap(),
+                t[1]["x"].as_f64().unwrap(), t[1]["y"].as_f64().unwrap()
+            )
+        };
+        let page = |inner: &str| format!(r#"<svg class="bars"><g data-layer="bars"><line x1="100.2" x2="100.2" y1="6" y2="54"/>{inner}</g></svg>"#);
+        let good = page(&format!("{}{}", bar(&items[0], None), bar(&items[1], None)));
+        let knobs = json!({"external": ["bars"], "placed": {"bars": {"items": items}}});
+        let layers = |knobs: Value| vec![Layer::registered("column", "bars", json!([]), knobs).unwrap()];
+        assert_eq!(drawn_checked(&good, &layers(knobs.clone())).unwrap(), vec![json!({"layer": "bars", "compared": 22, "failed": 0})]);
+        let refused = |html: &str, words: &str| {
+            let why = drawn_checked(html, &layers(knobs.clone())).unwrap_err();
+            assert!(why.starts_with("drawn: layer bars: ") && why.contains(words), "{words}: {why}");
+        };
+        refused(&page(&format!("{}{}", bar(&items[0], Some("400.2")), bar(&items[1], None))), "item 0 rect width");
+        refused(&format!("{}<rect x=\"1\" y=\"1\" width=\"1\" height=\"1\"/></g>", good.trim_end_matches("</g></svg>")), "3 rects drawn, 2 placed");
+        refused(&good.replacen("<text x=\"92.2\" y=\"18.0\" text-anchor=\"end\" font-size=\"13\">N</text>", "", 1), "11 of 22 drawn numbers are not the placed ones, first text 0 x");
+        refused(&good.replacen("text-anchor=\"end\"", "text-anchor=\"middle\"", 1), "text 0 anchor");
+        refused(&page(&format!("{}{}", bar(&items[1], None), bar(&items[0], None))), "item 0 rect");
+        refused("<svg></svg>", "elements tagged");
+        refused(&good.replacen("<line", "<g><line", 1), "nested");
+        let off = json!({"external": [], "placed": {}});
+        assert_eq!(drawn_checked("<svg></svg>", &layers(off)).unwrap(), Vec::<Value>::new());
+        let none = json!({"external": ["bars"], "placed": {"bars": {"items": []}}});
+        assert!(drawn_checked(&page(""), &layers(none)).unwrap_err().contains("no placed items"));
+    }
 
     /// A peak in the ring's last month leaves one mark there; marks on two months, or naming no computed fact, all stay.
     #[test]
