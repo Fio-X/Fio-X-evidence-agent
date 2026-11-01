@@ -5,8 +5,9 @@ import assert from 'node:assert/strict';
 import { CLEAN_HERO_CHECKS } from './lib_hero_checks.mjs';
 import { lintVizSpec, renderVizBundle, critiqueViz } from '../runtime/pi/viz.mjs';
 import { validateInfographicSpec, lintInfographicSpec, composeInfographicBundle } from '../runtime/pi/infographic.mjs';
-import { rmSync } from "node:fs";
 import { join } from 'node:path';
+// runtime/pi/infographic.mjs at an older commit, loaded from a scratch folder (never written into runtime/pi/).
+import { importParentInfographic } from './lib_parent_infographic.mjs';
 // NEWSROOM_PAGE_POLISH=1: a short note keeps the whole column (no readable-measure cap) and a number is never paired 4/8 with it.
 const POLISH = process.env.NEWSROOM_PAGE_POLISH === '1';
 const SHORT_W = POLISH ? 1248 : 750;
@@ -122,15 +123,8 @@ for (const [name, sidecars, mods] of [
 }
 // Mobile is untouched.
 {
-  const { writeFileSync, rmSync } = await import('node:fs');
-  const path = new URL('../runtime/pi/_parent_infographic.mjs', import.meta.url);
   // Later deliberate changes the rhythm does not own (the footer) are carried into it: scripts/lib_parent_infographic.mjs.
-  const src = (await import('./lib_parent_infographic.mjs')).parentInfographicSource('a4d4cb0', new URL('..', import.meta.url).pathname);
-  let parent = null;
-  if (src !== null) {
-    writeFileSync(path, src);
-    try { parent = await import(path.href); } finally { rmSync(path); }
-  }
+  const parent = await importParentInfographic('a4d4cb0', '_parent_infographic.mjs');
   if (parent) {
     const spec = { ...page([chart, text('t1', ONE), stat('s1')]) };
     const a = composeInfographicBundle(spec, assets, { mobilePages: true });
@@ -183,15 +177,8 @@ function checkTiers(name, out) {
 }
 // The mobile page does not change with desktop spacing.
 {
-  const { writeFileSync, rmSync: rm } = await import('node:fs');
-  const parentPath = new URL('../runtime/pi/_parent_rhythm.mjs', import.meta.url);
   // the same carried-in later changes as above (scripts/lib_parent_infographic.mjs)
-  const src = (await import('./lib_parent_infographic.mjs')).parentInfographicSource('a4d4cb0', new URL('..', import.meta.url).pathname);
-  let parent = null;
-  if (src !== null) {
-    writeFileSync(parentPath, src);
-    try { parent = await import(parentPath.href); } finally { rm(parentPath); }
-  }
+  const parent = await importParentInfographic('a4d4cb0', '_parent_rhythm.mjs');
   if (parent) {
     for (const modules of [[header('h1'), chart, stat('s1'), text('t1', ONE), header('h2'), text('t2', LONG)], [chart, stat('s1'), stat('s2', { value: '8' }), text('t1', TWO)]]) {
       const spec = page(modules);

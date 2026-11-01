@@ -3,6 +3,10 @@
 // guards, are carried into the old source here, each by an exact edit that must hit exactly once (a miss throws, so a
 // test never silently compares against an unedited source). Everything else stays the old commit's bytes.
 import { execFileSync } from "node:child_process";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { makeTestTmp, pointRelativeImportsAt } from "./tmp_helper.mjs";
 
 // 8a5b1131 (never print VERIFIED in the page footer): the page is rendered before verification runs, so a zh page prints
 // no English footer line and an en page prints only the brand; the desktop top-right brand line is gone.
@@ -35,4 +39,17 @@ export function parentInfographicSource(rev, cwd) {
     src = src.replace(change.find, () => change.replace);
   }
   return src;
+}
+
+// parentInfographicSource(rev) loaded as a module, or null without that history. It is written as `name` into a scratch
+// folder, never into runtime/pi/ (a test running beside the caller would see it there, and two callers would share the
+// name); its relative imports point at today's runtime/pi/ modules, the same instances the caller loads.
+export async function importParentInfographic(rev, name) {
+  const src = parentInfographicSource(rev, fileURLToPath(new URL("..", import.meta.url)));
+  if (src === null) return null;
+  const { source, rewritten } = pointRelativeImportsAt(src, new URL("../runtime/pi/", import.meta.url));
+  if (rewritten === 0) throw new Error(`parent ${rev}: no relative import found to point at runtime/pi/`);
+  const path = join(makeTestTmp("parent-infographic-"), name);
+  writeFileSync(path, source);
+  return import(pathToFileURL(path).href);
 }

@@ -3,9 +3,10 @@
 // picture comes from another renderer and stays without the read-back. Off (default), nothing changes. Pictures are drawn live by the repo's
 // own renderer with the switch on; every edit is made on a copy of the text.
 import assert from "node:assert/strict";
-import { copyFileSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { makeTestTmp, pointRelativeImportsAt } from "./tmp_helper.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "runtime", "pi");
 const SWITCH = "NEWSROOM_QA_TICK_READBACK";
@@ -60,25 +61,24 @@ async function suite(runRenderQa, label) {
   return fails;
 }
 
-async function load(file) {
-  return (await import(`${join(root, file)}?${Date.now()}${Math.random()}`)).runRenderQa;
+async function load(file, dir = root) {
+  return (await import(`${pathToFileURL(join(dir, file)).href}?${Date.now()}${Math.random()}`)).runRenderQa;
 }
 
-// mutants: temporary copies next to the real files, each of which must turn at least one case red; removed in finally
-const tmp = [];
+// mutants: copies in a scratch folder (never next to the real files), each of which must turn at least one case red. Their
+// relative imports point at the real runtime/pi/ modules, except a mutated render_qa_ticks.mjs, which is the scratch copy.
+const scratch = makeTestTmp("render-qa-tick-compact-");
+const rootUrl = pathToFileURL(join(root, "/"));
 function mutant(name, { qa, ticks }) {
-  let src = readFileSync(join(root, "render_qa.mjs"), "utf8");
+  let { source: src } = pointRelativeImportsAt(readFileSync(join(root, "render_qa.mjs"), "utf8"), rootUrl);
   const qaFile = `render_qa_mut_${name}.mjs`;
-  let ticksName = "render_qa_ticks.mjs";
   if (ticks) {
-    ticksName = `render_qa_ticks_mut_${name}.mjs`;
-    writeFileSync(join(root, ticksName), ticks(readFileSync(join(root, "render_qa_ticks.mjs"), "utf8")));
-    tmp.push(ticksName);
-    src = src.replace("./render_qa_ticks.mjs", `./${ticksName}`);
+    const ticksName = `render_qa_ticks_mut_${name}.mjs`;
+    writeFileSync(join(scratch, ticksName), pointRelativeImportsAt(ticks(readFileSync(join(root, "render_qa_ticks.mjs"), "utf8")), rootUrl).source);
+    src = swap(src, new URL("render_qa_ticks.mjs", rootUrl).href, `./${ticksName}`);
   }
   if (qa) src = qa(src);
-  writeFileSync(join(root, qaFile), src);
-  tmp.push(qaFile);
+  writeFileSync(join(scratch, qaFile), src);
   return qaFile;
 }
 const swap = (s, a, b) => { assert.ok(s.includes(a), `mutant target not found: ${a}`); return s.replace(a, () => b); };
@@ -113,11 +113,10 @@ try {
     "tolerance-wide": mutant("d", { ticks: (s) => swap(s, "export const TICK_POSITION_TOLERANCE = 1.0;", "export const TICK_POSITION_TOLERANCE = 50;") }),
   };
   for (const [name, file] of Object.entries(mutants)) {
-    const failures = await suite(await load(file), `mutant ${name}`);
+    const failures = await suite(await load(file, scratch), `mutant ${name}`);
     assert.ok(failures.length > 0, `mutant must turn a case red: ${name}`);
   }
   console.log(`ok test_render_qa_tick_compact: 2 chart sizes x (good, ${Object.keys(edits).length} edits), switch matrix, heatmap stays desktop-only, ${Object.keys(mutants).length} mutants red`);
 } finally {
-  for (const f of tmp) rmSync(join(root, f), { force: true });
   if (old === undefined) delete process.env[SWITCH]; else process.env[SWITCH] = old;
 }

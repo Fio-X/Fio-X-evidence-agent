@@ -27,3 +27,16 @@ export function makeTestTmp(prefix = "newsroom-test-") {
   }
   return dir;
 }
+
+// A module's source made loadable from a scratch folder: each static relative import ("./x.mjs", "../x.mjs", bare
+// `import "./x.mjs"`) is pointed at that file under `dirUrl` (the folder the source belongs in), so the copy loads the
+// same module instances as the original would. Throws when a relative import is left (a dynamic import("./x") included).
+export function pointRelativeImportsAt(src, dirUrl) {
+  let rewritten = 0;
+  const source = src.replace(/(\bfrom\s+|\bimport\s+)(["'])(\.\.?\/[^"']+)\2/g, (_, kw, q, rel) => {
+    rewritten += 1;
+    return `${kw}${q}${new URL(rel, dirUrl).href}${q}`;
+  });
+  if (/(?:\bfrom\s+|\bimport\s*\(?\s*)["']\.\.?\//.test(source)) throw new Error(`a relative import is left in a module moved to scratch (base ${dirUrl})`);
+  return { source, rewritten };
+}

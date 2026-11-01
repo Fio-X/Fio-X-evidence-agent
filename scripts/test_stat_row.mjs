@@ -107,15 +107,9 @@ function composeScene(spec, mobilePages = false) {
   return out;
 }
 // The previous layout (commit before the scene band), for byte-identity checks.
-const parentPath = new URL('../runtime/pi/_parent_infographic.mjs', import.meta.url);
 // Later deliberate changes the band does not own (the footer) are carried into it: scripts/lib_parent_infographic.mjs.
-let parent = null;
-const parentSrc = (await import('./lib_parent_infographic.mjs')).parentInfographicSource('0f2dbd7', new URL('..', import.meta.url).pathname);
-if (parentSrc !== null) {
-  const { writeFileSync, rmSync } = await import('node:fs');
-  writeFileSync(parentPath, parentSrc);
-  try { parent = await import(parentPath.href); } finally { rmSync(parentPath); }
-}
+// Loaded from a scratch folder, never written into runtime/pi/.
+const parent = await (await import('./lib_parent_infographic.mjs')).importParentInfographic('0f2dbd7', '_parent_infographic.mjs');
 // Desktop spacing now follows ink (page rhythm, see test_page_rhythm.mjs), so
 // only the mobile page is still compared byte for byte.
 const sameAsParent = (spec) => {
