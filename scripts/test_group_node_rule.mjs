@@ -9,9 +9,11 @@
 //   - pinned_in's rule parameters are the entry's, key by key;
 //   - every tracked code file under the entry's files (and each runner and not_nodes file) is the visual group's in groups.json;
 //     each runner and not_nodes file lies under files;
-//   - the page tree core's runner folders (src/next_tree.rs RUNNER_DIRS, under the run's runtime/) are the entry's files;
+//   - the page tree core's runner folders (src/next_tree.rs RUNNER_DIRS, under the run's runtime/) are the entry's files, and
+//     the files it refuses as runners (NOT_NODES) are the entry's not_nodes, which the scan skips;
 //   - every node the page tree core binds external (runtime/page_tree/node-bindings.json) names a runner that is a code file
-//     under the entry's files with no `..`, and the leaf registry (runtime/leaves_py/knobs.json binding) binds the same nodes
+//     under the entry's files with no `..` and is none of its not_nodes (a program step the scan skips is never a node),
+//     and the leaf registry (runtime/leaves_py/knobs.json binding) binds the same nodes
 //     external, each binding "external" (absent is rust);
 //   - src/next_tree.rs is the visual group's and under cross_calls.rust_rule_next.files (its calls are held by
 //     scripts/test_group_module_calls.mjs).
@@ -38,11 +40,12 @@ const same = (a, b) => {
   }
 };
 
-/** The RUNNER_DIRS of src/next_tree.rs, as written. */
-export const runnerDirs = (src) => {
-  const m = src.match(/pub const RUNNER_DIRS: \[&str; \d+\] = \[([^\]]*)\];/);
+/** A `pub const NAME: [&str; N] = [...]` list of src/next_tree.rs, as written; null when there is none. */
+export const constList = (src, name) => {
+  const m = src.match(new RegExp(`pub const ${name}: \\[&str; \\d+\\] = \\[([^\\]]*)\\];`));
   return m ? [...m[1].matchAll(/"([^"]*)"/g)].map((x) => x[1]) : null;
 };
+export const runnerDirs = (src) => constList(src, "RUNNER_DIRS");
 
 /** Every problem of the inputs, one line each; [] is clean. */
 export function problemsOf({ groups, pinned, bindings, knobs, treeSrc, codeFiles }) {
@@ -63,6 +66,10 @@ export function problemsOf({ groups, pinned, bindings, knobs, treeSrc, codeFiles
   const dirs = runnerDirs(treeSrc);
   if (!dirs) out.push("src/next_tree.rs has no RUNNER_DIRS");
   else if (!same([...dirs.map((d) => `runtime/${d}`)].sort(), [...files].sort())) out.push(`src/next_tree.rs RUNNER_DIRS ${JSON.stringify(dirs)} under runtime/ are not node_rule.files ${JSON.stringify(files)}`);
+  const notNodes = Object.keys(rule.not_nodes ?? {});
+  const refused = constList(treeSrc, "NOT_NODES");
+  if (!refused) out.push("src/next_tree.rs has no NOT_NODES");
+  else if (!same(refused.map((d) => `runtime/${d}`).sort(), [...notNodes].sort())) out.push(`src/next_tree.rs NOT_NODES ${JSON.stringify(refused)} under runtime/ are not node_rule.not_nodes ${JSON.stringify(notNodes)}`);
   const external = Object.entries(bindings.nodes ?? {}).filter(([, e]) => e.binding === "external");
   for (const [name, e] of Object.entries(bindings.nodes ?? {}))
     if (e.binding != null && e.binding !== "external") out.push(`node-bindings.json ${name}: binding ${JSON.stringify(e.binding)}; only "external" (absent is rust)`);
@@ -70,6 +77,7 @@ export function problemsOf({ groups, pinned, bindings, knobs, treeSrc, codeFiles
     const rel = `runtime/${e.runner ?? ""}`;
     if (typeof e.runner !== "string" || !CODE.test(rel) || rel.split("/").some((s) => s === ".." || s === "." || s === "") || !under(rel))
       out.push(`node-bindings.json ${name}: runner ${JSON.stringify(e.runner)} is not a code file under node_rule.files`);
+    else if (notNodes.includes(rel)) out.push(`node-bindings.json ${name}: runner ${JSON.stringify(e.runner)} is under node_rule.not_nodes, a program step the scan skips, never a node`);
   }
   const leafExternal = [];
   for (const [name, n] of Object.entries(knobs.nodes ?? {})) {
@@ -112,6 +120,11 @@ const mutants = [
     i.bindings.nodes.bars = { binding: "external", runner: "../pi/economy_names.mjs" };
     i.knobs.nodes.bars = { ...(i.knobs.nodes.bars ?? {}), binding: "external" };
   }, "is not a code file under node_rule.files"],
+  ["an external node run by the bake child (not_nodes)", (i) => {
+    i.bindings.nodes.bars = { binding: "external", runner: "leaves_py/bake.py" };
+    i.knobs.nodes.bars = { ...(i.knobs.nodes.bars ?? {}), binding: "external" };
+  }, "is under node_rule.not_nodes"],
+  ["the core no longer refuses the bake child as a runner", (i) => (i.treeSrc = i.treeSrc.replace('pub const NOT_NODES: [&str; 2] = ["leaves_py/bake.py", ', 'pub const NOT_NODES: [&str; 1] = [')), "NOT_NODES"],
   ["an external node whose runner is data", (i) => {
     i.bindings.nodes.bars = { binding: "external", runner: "leaves_py/words.zh.json" };
     i.knobs.nodes.bars = { ...(i.knobs.nodes.bars ?? {}), binding: "external" };

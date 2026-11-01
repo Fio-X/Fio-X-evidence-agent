@@ -186,6 +186,12 @@
   "neg-r6-tol-px-over-cap.json": [
    "C5 registry bars marks"
   ],
+  "neg-r7-max-px-over-cap.json": [
+   "C5 registry bars text label"
+  ],
+  "neg-r8-radius-over-cap.json": [
+   "C5 registry bubbles channel {'fields'"
+  ],
   "pos-q1-b.json": [],
   "pos-q3-b.json": []
  }

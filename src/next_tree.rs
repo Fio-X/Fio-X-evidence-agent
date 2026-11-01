@@ -11,7 +11,8 @@
 //!      C4 the input checks R1-R12 (rows, printed numbers, names, the flow's picks, every check evaluated by the core and
 //!         none it cannot compute, knob values as sent, drawn / rows / composition derived, items draw their own rows);
 //!      C5 the registry: an external node naming a check, channel, scale, relation, field kind, shape or frame the core does
-//!         not compute, or a tolerance above TOL_PX_MAX, is refused when the registry loads.
+//!         not compute, or a tolerance above TOL_PX_MAX, a text farther from its mark than MAX_PX_MAX or a circle radius
+//!         above RADIUS_PX_MAX, is refused when the registry loads.
 //!   B  the node's reply: B0 the allow-list (geometry fields only, closed enums, finite numbers, issued ids only); B1 every
 //!      issued mark and text placed exactly once; B2 inside the frame; B3 each value-determined field equal to the core's
 //!      recomputation from the declared field -> channel -> scale (B4 a projected point); B5 each text next to its own mark;
@@ -2792,6 +2793,12 @@ fn r12(inp: &J, page: &J, got: &Got, ext: &[String], errs: &mut Vec<String>) {
 
 /// The largest tolerance (px) a registry may give a value-determined field; an entry may only be stricter.
 pub const TOL_PX_MAX: f64 = 0.5;
+/// The farthest an item's text may sit from its own mark (B5's max_px) in any registry entry: the farthest relation a
+/// registered node draws today, the bar's label under its baseline (24 px); every other registered relation is nearer
+/// (12, 8, 6). A registry may only be stricter.
+pub const MAX_PX_MAX: f64 = 24.0;
+/// The largest circle radius a registry's radius_area scale may declare: the bubbles' 28 px, the one registered today.
+pub const RADIUS_PX_MAX: f64 = 28.0;
 const CHECK_KINDS: [&str; 14] = [
     "count_equals", "points_pinned", "named", "one_name", "tolerance_fixed", "ranks_some", "one_row_per_code", "max_dropped",
     "fill_after_drop", "has_composition", "row_exists", "page_check", "unit_short", "finding_words",
@@ -2897,7 +2904,10 @@ pub fn registry_problems(reg: &J) -> Vec<String> {
                     && sc.g("kind").s() == Some(kind)
                     && sc.g("domain").s() == Some(domain)
                     && (rng.s() == Some(range)
-                        || (*range == "max_px" && rng.is_obj() && rng.obj().len() == 1 && rng.g("max_px").finite()))
+                        || (*range == "max_px"
+                            && rng.is_obj()
+                            && rng.obj().len() == 1
+                            && rng.g("max_px").num().is_some_and(|r| r > 0.0 && r <= RADIUS_PX_MAX)))
                     && {
                         let mut extra: Vec<&str> = sc.obj().iter().map(|(k, _)| k.as_str()).filter(|k| !["kind", "domain", "range"].contains(k)).collect();
                         extra.sort();
@@ -2933,6 +2943,10 @@ pub fn registry_problems(reg: &J) -> Vec<String> {
             let ok = matches!(rel.g("near").s(), Some("item" | "part")) && matches!(rel.g("from").s(), Some("anchor" | "box")) && rel.g("max_px").finite();
             if !ok {
                 out.push(format!("{p} text {f} relation {}: not one the core checks", rel.repr()));
+            } else if !rel.g("max_px").num().is_some_and(|d| d > 0.0 && d <= MAX_PX_MAX) {
+                let cap = py_float(MAX_PX_MAX);
+                let cap = cap.strip_suffix(".0").unwrap_or(&cap);
+                out.push(format!("{p} text {f}: max_px {} is over the core's cap {cap}; a registry may only be stricter", st(rel.g("max_px"))));
             }
         }
     }
@@ -3838,6 +3852,9 @@ const BINDINGS_TEXT: &str = include_str!("../runtime/page_tree/node-bindings.jso
 
 /// The folders (under the run's runtime/) an external node's runner may lie in.
 pub const RUNNER_DIRS: [&str; 2] = ["nodes/", "leaves_py/"];
+/// The files under RUNNER_DIRS that are program steps, not nodes (groups.json cross_calls.node_rule.not_nodes: the bake
+/// child, the registry writer). The node rule's scan skips them, so no registry may name one as a node's runner.
+pub const NOT_NODES: [&str; 2] = ["leaves_py/bake.py", "leaves_py/knobs.py"];
 
 #[cfg(test)]
 thread_local! {
@@ -3874,9 +3891,10 @@ pub fn external_nodes(overlay: &J) -> Vec<String> {
     overlay.g("nodes").obj().iter().filter(|(_, e)| e.g("binding").s() == Some("external")).map(|(k, _)| k.clone()).collect()
 }
 
-/// A runner path the registry may name: under one of RUNNER_DIRS, no `..`, a code file.
+/// A runner path the registry may name: under one of RUNNER_DIRS, none of NOT_NODES, no `..`, a code file.
 pub fn runner_allowed(rel: &str) -> bool {
     RUNNER_DIRS.iter().any(|d| rel.starts_with(d))
+        && !NOT_NODES.contains(&rel)
         && !rel.split('/').any(|s| s == ".." || s == "." || s.is_empty())
         && [".mjs", ".cjs", ".js", ".py"].iter().any(|e| rel.ends_with(e))
 }
@@ -4133,7 +4151,7 @@ mod tests {
         }
         println!("next_tree fixtures: {}/{n} equal to the prototype", n - off.len());
         assert!(off.is_empty(), "{}", off.join("\n"));
-        assert_eq!(n, 52);
+        assert_eq!(n, 54);
     }
 
     /// The five round-4 holes in all 38 forms they take under plan B: every form stops, with the prototype's heads.
@@ -4214,6 +4232,35 @@ mod tests {
         assert_eq!((total, passed), (all.g("total").num().unwrap() as i64, 887));
     }
 
+    /// A text farther than MAX_PX_MAX from its mark, or a circle radius above RADIUS_PX_MAX, is refused when the registry
+    /// loads; one at or under the cap is taken, and so is every value registered today.
+    #[test]
+    fn next_tree_a_registry_text_distance_or_radius_over_the_cap_is_refused() {
+        fn at_mut<'a>(mut o: &'a mut J, path: &[&str]) -> &'a mut J {
+            for k in path {
+                o = o.get_mut(k).unwrap_or_else(|| panic!("registry-b.json has no {k}"));
+            }
+            o
+        }
+        let base = read("registry-b.json");
+        assert!(registry_problems(&load_registry(&base)).is_empty());
+        for (d, refused) in [(25.0, true), (24.0, false), (6.0, false), (0.0, true), (-1.0, true)] {
+            let mut o = base.clone();
+            let label = at_mut(&mut o, &["nodes", "bars", "texts", "item", "label"]);
+            label.set("max_px", J::Num(d));
+            let errs = registry_problems(&load_registry(&o));
+            assert_eq!(errs.iter().any(|e| e.starts_with("C5 registry bars text label: max_px")), refused, "{d}: {errs:?}");
+        }
+        for (r, refused) in [(29.0, true), (28.0, false), (10.0, false), (0.0, true)] {
+            let mut o = base.clone();
+            let enc = at_mut(&mut o, &["nodes", "bubbles", "marks", "encode"]);
+            let J::Arr(chs) = enc else { panic!("encode is a list") };
+            chs[0].get_mut("scale").unwrap().set("range", J::obj_of(vec![("max_px", J::Num(r))]));
+            let errs = registry_problems(&load_registry(&o));
+            assert_eq!(errs.iter().any(|e| e.starts_with("C5 registry bubbles channel")), refused, "{r}: {errs:?}");
+        }
+    }
+
     /// A registry tolerance above TOL_PX_MAX is refused when the registry loads; one at or under it is taken.
     #[test]
     fn next_tree_a_registry_tolerance_over_the_cap_is_refused() {
@@ -4235,7 +4282,7 @@ mod tests {
         let leaf: Vec<&String> = crate::next_leaf::leaves().nodes.iter().filter(|(_, l)| l.external).map(|(k, _)| k).collect();
         assert!(leaf.is_empty(), "{leaf:?}");
         assert!(runner_allowed("nodes/bars.mjs") && runner_allowed("leaves_py/bars.py"));
-        for bad in ["pi/x.mjs", "nodes/../pi/x.mjs", "nodes/x.json", "/nodes/x.mjs", "nodes/./x.py"] {
+        for bad in ["pi/x.mjs", "nodes/../pi/x.mjs", "nodes/x.json", "/nodes/x.mjs", "nodes/./x.py", "leaves_py/bake.py", "leaves_py/knobs.py"] {
             assert!(!runner_allowed(bad), "{bad}");
         }
     }
