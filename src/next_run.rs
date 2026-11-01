@@ -4280,13 +4280,26 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
 ) -> Result<String, Stop> {
     let prepared =
         prepare_claims(recorder, model, tools, question, steps, catalogue, cancel).await?;
-    let page = charts(recorder, &prepared, catalogue)?;
+    page_from(recorder, model, question, &prepared, catalogue, cancel).await
+}
+
+/// The first prompt from its prepared tables on (run_page after prepare_claims): the charts, the recipe's pick, the text
+/// step, the leaf page, the completion gate, the page checks and the image review. Returns the answer text.
+pub(crate) async fn page_from(
+    recorder: &mut Recorder<'_>,
+    model: &mut (dyn Asker + '_),
+    question: &str,
+    prepared: &[Prepared],
+    catalogue: &dyn Catalogue,
+    cancel: &AtomicBool,
+) -> Result<String, Stop> {
+    let page = charts(recorder, prepared, catalogue)?;
     let calls = std::sync::Mutex::new(Vec::new());
     let drawn: Vec<&str> = page.templates.iter().filter_map(|t| t["chart_type"].as_str()).collect();
     // The recipe is picked by the data's shape before the text step (its words go into the fill once worded, leaf_page), so
     // the page-level fields are drafted for what the picked page draws: a page whose bars draw the change gets a title
     // that names a change. A pick that stopped stops the run after the text step, as before.
-    let picked = leaf_request(recorder.run_dir(), &prepared, &drawn, catalogue, (question, ("", "", "")), &calls);
+    let picked = leaf_request(recorder.run_dir(), prepared, &drawn, catalogue, (question, ("", "", "")), &calls);
     let form = page_lead(picked.as_ref().ok().map(|(_, fill)| fill), &page.charts);
     let titles: Vec<String> = page.measures.iter().map(|m| m.name.clone()).collect();
     // No typed number on the page text, years included: the design pack's claim-template check refuses every one, so the
@@ -4347,7 +4360,7 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
             let state = json!({"question": question, "route": recipe, "claims": verified, "worded": worded_out,
                 "published": published.html_ref, "html_sha256": published.html_sha256});
             save_route_state(recorder.run_dir(), &LEAF_PLAN_STEPS, "browser", StepEnd::Passed, &state)?;
-            let gaps = leaf_gate_now(recorder.run_dir(), recipe, &prepared);
+            let gaps = leaf_gate_now(recorder.run_dir(), recipe, prepared);
             recorder.program_event(
                 LEAF_GATE_EVENT,
                 json!({"by": RING_ACTOR, "recipe": recipe, "published": published.html_ref,

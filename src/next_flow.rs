@@ -2207,6 +2207,13 @@ impl<'a> Recorder<'a> {
 
     /// One program event that is not a tool call (the catalogue's search), hung under the accepted model call of this step like a
     /// program call; with none there it is not written.
+    /// Program events hang under `call_id` from here on, as under an accepted model answer of that id (a page refilled
+    /// from a finished run hangs its events under that run's claims step, next_drive replay).
+    #[cfg(test)]
+    pub fn hang_under(&mut self, call_id: &str) {
+        self.parent = Some(call_id.to_string());
+    }
+
     pub fn program_event(&mut self, kind: &str, mut event: Value) -> Result<(), Stop> {
         let Some(parent) = self.parent.clone() else {
             return Err(Stop::NoModelParent {

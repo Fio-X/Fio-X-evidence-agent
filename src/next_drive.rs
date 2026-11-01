@@ -874,9 +874,11 @@ mod drive {
         use async_trait::async_trait;
         use serde_json::{json, Map, Value};
 
-        use super::start_tools_from;
         use crate::anthropic_model::ToolDef;
-        use crate::next_flow::{Asker, GroupCatalogue, ModelRoute, Recorder, Stop, CATALOGUE_EVENT, CHOOSE_TOOL, HELD_FROM_ENV};
+        use crate::next_flow::{
+            Asker, Catalogue, GroupCatalogue, ModelRoute, Prepared, Recorder, Stop, CATALOGUE_EVENT, CHOOSE_TOOL,
+            COMPANION_EVENT, COMPOSITION_FETCH_EVENT, DATA_PREPARE_TOOL,
+        };
 
         /// The frozen list's sha256 (11-01 15:49, design section 6): every later list is it with recorded swaps.
         const MANIFEST_SHA256: &str = "9ac9b0cd42fdb1e6b7c68ac2d61a963e141c95d7b55f83275da20f5e8e73bcbb";
@@ -1703,9 +1705,54 @@ mod drive {
 
         /// The run's model, replayed: each step's answers (its newsroom_choose calls, in order) given again in that order;
         /// none for a step it has no answer left for, and none for the image review (advice the gate does not run).
+        ///
+        /// The program the page is refilled with may be newer than the one the run met, and refuse a recorded answer (an
+        /// item it no longer offers, a word a later rule refuses). Then the asker gives the refused answer mapped
+        /// onto what the program now allows (fitted), not the run's own retry (made under the run's rules): the same for
+        /// every refill, so a page's before and after meet the same answers.
         struct ReplayAsker {
             answers: BTreeMap<String, VecDeque<Value>>,
+            /// The last answer given to each step.
+            last: BTreeMap<String, Value>,
             n: usize,
+        }
+
+        /// A refused answer mapped onto the refusal's allowed values and example (the program's own, newsroom_choose):
+        /// a table step keeps each recorded parameter the program still offers with a value it allows (else the
+        /// example's), and its pick when the program allows it (else the example's); a text step keeps the recorded name
+        /// of each name the program asks for (else the example's) and gives no rewording, so the program's own drafts
+        /// stand; any other step gives the example. None when the refusal holds no example.
+        fn fitted(step: &str, recorded: &Value, refusal: &Value) -> Option<Value> {
+            let (allowed, example) = (&refusal["allowed"], refusal.get("example")?);
+            let mut out = example.clone();
+            match step {
+                "table" => {
+                    let mut params = serde_json::Map::new();
+                    for (k, values) in allowed["params"].as_object().into_iter().flatten() {
+                        let ok = |v: &Value| values.as_array().is_some_and(|a| a.contains(v));
+                        match (recorded["params"].get(k), example["params"].get(k)) {
+                            (Some(v), _) if ok(v) => params.insert(k.clone(), v.clone()),
+                            (_, Some(e)) => params.insert(k.clone(), e.clone()),
+                            _ => None,
+                        };
+                    }
+                    out["params"] = Value::Object(params);
+                    let picks = recorded["pick"].as_array().cloned().unwrap_or_default();
+                    if !picks.is_empty() && picks.iter().all(|p| allowed["pick"].as_array().is_some_and(|a| a.contains(p))) {
+                        out["pick"] = json!(picks);
+                    }
+                }
+                "text" => {
+                    for k in allowed["names"].as_array().into_iter().flatten().filter_map(Value::as_str) {
+                        if let Some(name) = recorded["names"].get(k) {
+                            out["names"][k] = name.clone();
+                        }
+                    }
+                    out["text"] = json!({});
+                }
+                _ => {}
+            }
+            Some(out)
         }
 
         #[async_trait]
@@ -1714,12 +1761,22 @@ mod drive {
                 ModelRoute::Standin
             }
 
-            async fn ask(&mut self, _history: &[Value], tools: &[ToolDef], _cancel: &AtomicBool) -> Option<Value> {
+            async fn ask(&mut self, history: &[Value], tools: &[ToolDef], _cancel: &AtomicBool) -> Option<Value> {
                 let step = tools.first()?.parameters["properties"]["step"]["enum"][0].as_str()?.to_string();
                 if step == "vision" {
                     return None;
                 }
-                let args = self.answers.get_mut(&step)?.pop_front()?;
+                // the program's refusal of the answer just given, when it refused it
+                let refusal = history
+                    .last()
+                    .filter(|m| m["role"] == "toolResult" && m["isError"] == true)
+                    .and_then(|m| m["content"][0]["text"].as_str())
+                    .and_then(|t| serde_json::from_str::<Value>(t).ok());
+                let args = match (refusal, self.last.get(&step)) {
+                    (Some(refusal), Some(last)) => fitted(&step, last, &refusal)?,
+                    _ => self.answers.get_mut(&step).and_then(VecDeque::pop_front)?,
+                };
+                self.last.insert(step, args.clone());
                 self.n += 1;
                 Some(json!({"content": [{"type": "toolCall", "id": format!("replay-{}", self.n), "name": CHOOSE_TOOL, "arguments": args}],
                     "stopReason": "toolUse", "usage": {}}))
@@ -1731,16 +1788,6 @@ mod drive {
                 "gate": null, "checks": null, "html": null})
         }
 
-        /// The claim ids of a claims.jsonl, as a set.
-        fn claim_ids(path: &Path) -> Option<BTreeSet<String>> {
-            let text = std::fs::read_to_string(path).ok()?;
-            Some(
-                text.lines()
-                    .filter_map(|l| serde_json::from_str::<Value>(l).ok())
-                    .filter_map(|r| r["claim_id"].as_str().map(str::to_string))
-                    .collect(),
-            )
-        }
 
         fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
             std::fs::create_dir_all(to)?;
@@ -1769,11 +1816,86 @@ mod drive {
             (step, stop.to_string())
         }
 
-        /// One page of the list refilled under `dir` and walked through the production path again: its run's events.jsonl,
-        /// claims.jsonl and data/ copied to <dir>/from (the run folder is only read), the run's question and its model's
-        /// answers replayed through the whole first prompt (run_page) into <dir>/run with the real catalogue and tool host,
-        /// every fetch answered from the copy. Refilled ("ok") when the walk registered the run's claims again; else the
-        /// reason (REFILL_REASONS). The record holds the 10 items' raw values (the html for text, layers and page).
+        /// The tables the run prepared (prepare_claims' result), rebuilt from its events: each claims-step fetch of the
+        /// knowledge group (a newsroom_data_prepare call with picks and a sheet) that registered every pick, in call order
+        /// (the main first), its id the catalogue's (a World Bank indicator with "@2"), its title the catalogue's ranking
+        /// (a companion's: the main's companion shortlist), its claims in pick order; the main carries the companions the
+        /// run kept (next_companions) with their fetched files and its sum-input fetch (next_composition_fetch). With them
+        /// the claims step's call id, the program events' parent. Err names what the events lack.
+        fn prepared_of(events: &[Value], catalogue: &dyn Catalogue) -> Result<(Vec<Prepared>, String), String> {
+            let ranking = events.iter().find(|e| e["type"] == CATALOGUE_EVENT).map(|e| e["ranking"].clone()).ok_or("no next_catalogue")?;
+            let places_zh: Vec<String> = serde_json::from_value(ranking["places_zh"].clone()).unwrap_or_default();
+            let ends: BTreeMap<&str, &Value> = events
+                .iter()
+                .filter(|e| e["type"] == "tool_execution_end" && e["toolName"] == DATA_PREPARE_TOOL)
+                .filter_map(|e| Some((e["toolCallId"].as_str()?, e)))
+                .collect();
+            let id_of = |args: &Value| {
+                let dataset = args["dataset"].as_str().unwrap_or("");
+                if args["provider"] == "worldbank" { format!("{dataset}@2") } else { dataset.to_string() }
+            };
+            // every fetch's file by table id, the last one fetched (the companions' files)
+            let mut files: BTreeMap<String, String> = BTreeMap::new();
+            let mut prepared: Vec<Prepared> = Vec::new();
+            let mut parent = None;
+            for start in events.iter().filter(|e| e["type"] == "tool_execution_start" && e["toolName"] == DATA_PREPARE_TOOL) {
+                let Some(end) = start["toolCallId"].as_str().and_then(|id| ends.get(id)) else { continue };
+                let (args, details) = (&start["args"], &end["result"]["details"]);
+                let id = id_of(args);
+                if let Some(file) = details["filePath"].as_str() {
+                    files.insert(id.clone(), file.to_string());
+                }
+                let picks: Vec<&str> = args["picks"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+                let Some(sheet) = args["sheet"].as_str().filter(|_| !picks.is_empty()) else { continue };
+                let mut claims = details["claims"].as_array().cloned().unwrap_or_default();
+                if details["mode"] != "picks" || !details["runStop"].is_null() || claims.len() != picks.len() {
+                    continue;
+                }
+                claims.sort_by_key(|c| c["candidate"].as_str().and_then(|k| picks.iter().position(|p| *p == k)).unwrap_or(usize::MAX));
+                parent.get_or_insert_with(|| start["auto_parent_call_id"].as_str().unwrap_or("").to_string());
+                let mut fetch = args.as_object().cloned().unwrap_or_default();
+                fetch.remove("sheet");
+                fetch.remove("picks");
+                let ranked = ranking["candidates"].as_array().into_iter().flatten().find(|c| c["id"] == id.as_str()).and_then(|c| c["title"].as_str());
+                let title = match (ranked, prepared.first()) {
+                    (Some(t), _) => t.to_string(),
+                    (None, Some(main)) => {
+                        catalogue.companion_shortlist(&main.id).into_iter().find(|(c, _)| c.id == id).map(|(_, t)| t).unwrap_or_default()
+                    }
+                    (None, None) => String::new(),
+                };
+                prepared.push(Prepared {
+                    id,
+                    title,
+                    file: details["filePath"].as_str().unwrap_or("").to_string(),
+                    args: fetch,
+                    sheet: sheet.to_string(),
+                    claims,
+                    places_zh: places_zh.clone(),
+                    companions: Vec::new(),
+                });
+            }
+            let main = prepared.first_mut().ok_or("no claims-step fetch registered its picks")?;
+            for kept in events.iter().filter(|e| e["type"] == COMPANION_EVENT).flat_map(|e| e["kept"].as_array().cloned().unwrap_or_default()) {
+                let table = kept["table"].as_str().unwrap_or("").to_string();
+                let file = files.get(&table).ok_or_else(|| format!("no fetch of the kept companion {table}"))?;
+                main.companions.push((table, file.clone()));
+            }
+            for e in events.iter().filter(|e| e["type"] == COMPOSITION_FETCH_EVENT) {
+                let file = e["file"].as_str().ok_or("a next_composition_fetch with no file")?;
+                main.companions.push((main.id.clone(), file.to_string()));
+            }
+            Ok((prepared, parent.unwrap_or_default()))
+        }
+
+        /// One page of the list refilled under `dir` and walked through the production path again from its prepared tables:
+        /// the run's records the page step reads (claims.jsonl, data/ with its origins, computations/, the candidate
+        /// sheets in shadow/) copied to <dir>/run (the run folder is only read; nothing is fetched or computed afresh), its
+        /// prepared tables rebuilt from its events (prepared_of), then next_run::page_from (the charts, the recipe's pick,
+        /// the text step, the leaf page with the bake and the browser check, the completion gate, the page checks) with the
+        /// run's model's text answers (ReplayAsker) and the real catalogue. Refilled ("ok") when the run's records are all
+        /// there and every claim a prepared table names is a verified record of its claims.jsonl; else the reason
+        /// (REFILL_REASONS). The record holds the 10 items' raw values (the html for text, layers and page).
         async fn refill(docs: &Path, page: &Page, dir: &Path) -> Value {
             let src = docs.join(&page.run);
             let Ok(text) = std::fs::read_to_string(src.join("events.jsonl")) else {
@@ -1785,60 +1907,58 @@ mod drive {
                 let step = e["args"]["step"].as_str().unwrap_or("").to_string();
                 answers.entry(step).or_default().push_back(e["args"].clone());
             }
-            if answers.is_empty() {
-                return failed(dir, "events missing: no newsroom_choose answer in events.jsonl".into());
-            }
             let Some(question) = events.iter().find(|e| e["type"] == CATALOGUE_EVENT).and_then(|e| e["question"].as_str()) else {
                 return failed(dir, "events missing: no next_catalogue question in events.jsonl".into());
             };
-            let had = match claim_ids(&src.join("claims.jsonl")) {
-                Some(ids) if !ids.is_empty() => ids,
-                _ => return failed(dir, "claims missing: claims.jsonl".into()),
+            let Some(records) = std::fs::read_to_string(src.join("claims.jsonl")).ok().filter(|t| !t.trim().is_empty()) else {
+                return failed(dir, "claims missing: claims.jsonl".into());
             };
-            let claims_text = std::fs::read_to_string(src.join("claims.jsonl")).unwrap_or_default();
-            for r in claims_text.lines().filter_map(|l| serde_json::from_str::<Value>(l).ok()) {
-                for f in r["source_refs"].as_array().into_iter().flatten().filter_map(Value::as_str) {
-                    if !src.join(f).is_file() {
-                        return failed(dir, format!("data file missing: {f}"));
-                    }
+            let records: Vec<Value> = records.lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
+            let catalogue = GroupCatalogue::from_env(|key| std::env::var(key).ok()).unwrap();
+            let (prepared, parent) = match prepared_of(&events, &catalogue) {
+                Ok(p) => p,
+                Err(why) => return failed(dir, format!("events missing: {why}")),
+            };
+            // every file the page step reads is the run's own
+            let mut needed: Vec<String> = prepared.iter().map(|p| p.file.clone()).collect();
+            needed.extend(prepared.iter().flat_map(|p| p.companions.iter().map(|(_, f)| f.clone())));
+            needed.extend(prepared.iter().map(|p| format!("shadow/candidate_sheet-{}.json", p.sheet)));
+            for r in &records {
+                for key in ["source_refs", "computation_refs"] {
+                    needed.extend(r[key].as_array().into_iter().flatten().filter_map(Value::as_str).map(str::to_string));
                 }
             }
-            let _ = std::fs::remove_dir_all(dir);
-            let (from, run) = (dir.join("from"), dir.join("run"));
-            std::fs::create_dir_all(&run).unwrap();
-            copy_tree(&src.join("data"), &from.join("data")).unwrap();
-            for f in ["events.jsonl", "claims.jsonl"] {
-                std::fs::copy(src.join(f), from.join(f)).unwrap();
+            if let Some(f) = needed.iter().find(|f| !src.join(f).is_file()) {
+                return failed(dir, format!("data file missing: {f}"));
             }
+            let verified: BTreeSet<&str> =
+                records.iter().filter(|r| r["status"] == "verified").filter_map(|r| r["claim_id"].as_str()).collect();
+            let named: Vec<&str> = prepared.iter().flat_map(|p| p.claims.iter().filter_map(|c| c["claim_id"].as_str())).collect();
+            if let Some(c) = named.iter().find(|c| !verified.contains(*c)) {
+                return failed(dir, format!("ledger facts differ from request.json: {c}, a claim of a prepared table, is no verified record of claims.jsonl"));
+            }
+            let _ = std::fs::remove_dir_all(dir);
+            let run = dir.join("run");
+            std::fs::create_dir_all(&run).unwrap();
+            for d in ["data", "computations", "shadow"] {
+                if src.join(d).is_dir() {
+                    copy_tree(&src.join(d), &run.join(d)).unwrap();
+                }
+            }
+            std::fs::copy(src.join("claims.jsonl"), run.join("claims.jsonl")).unwrap();
             let _command = crate::group_guard::command_for_test("investigate");
             crate::runtime::materialize_extension(&run).unwrap();
-            let from_text = from.display().to_string();
-            let catalogue = GroupCatalogue::from_env(|key| {
-                std::env::var(key).ok().or_else(|| (key == HELD_FROM_ENV).then(|| from_text.clone()))
-            })
-            .unwrap();
-            let mut tools = start_tools_from(&run, dir, Some(from_text.clone())).await;
-            let mut model = ReplayAsker { answers, n: 0 };
+            let mut model = ReplayAsker { answers, last: BTreeMap::new(), n: 0 };
             let mut walked = Vec::new();
             let mut sink = |e: Value| walked.push(e);
             let cancel = AtomicBool::new(false);
             let mut recorder = Recorder::new(&mut sink, &run, Vec::new(), Vec::new());
-            let result = crate::next_run::run_page(&mut recorder, &mut model, &mut tools, question, &[], &catalogue, &cancel).await;
+            recorder.hang_under(&parent);
+            let result = crate::next_run::page_from(&mut recorder, &mut model, question, &prepared, &catalogue, &cancel).await;
             drop(recorder);
-            let again = claim_ids(&run.join("claims.jsonl")).unwrap_or_default();
-            if again != had {
-                let missing: Vec<&String> = had.difference(&again).collect();
-                return failed(
-                    dir,
-                    format!(
-                        "ledger facts differ from request.json: the refill registered {} claim(s), the run {}; first not registered \
-                         again {:?}",
-                        again.len(),
-                        had.len(),
-                        missing.first()
-                    ),
-                );
-            }
+            // the walk's events beside it, as the q1 walk keeps them, for a reader of a refill that went wrong
+            let lines: Vec<String> = walked.iter().map(Value::to_string).collect();
+            std::fs::write(dir.join("walk-events.jsonl"), lines.join("\n")).unwrap();
             outcome_of(dir, &run, &walked, &result)
         }
 
@@ -1881,6 +2001,22 @@ mod drive {
 
         fn var(name: &str) -> String {
             std::env::var(name).unwrap_or_else(|_| panic!("{name} is not set"))
+        }
+
+        /// One page of the list refilled into target/page-replay/one/<sha16>/ (NEXT_TREE_REPLAY_RUNS, NEXT_TREE_REPLAY_PAGE: its
+        /// sha16), its record printed but its html: for reading why a page does not refill. Not the gate.
+        #[tokio::test]
+        #[ignore]
+        async fn replay_refill_one_page() {
+            let manifest = PathBuf::from(var("NEXT_TREE_REPLAY_RUNS"));
+            let sha = var("NEXT_TREE_REPLAY_PAGE");
+            let inputs = Inputs::beside(Some(&manifest));
+            let (pages, _) = read_manifest(&inputs).unwrap_or_else(|why| panic!("{why}"));
+            let page = pages.iter().find(|p| p.sha == sha).unwrap_or_else(|| panic!("{sha} is not on the list"));
+            let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/page-replay/one").join(&sha);
+            let rec = refill(&inputs.docs, page, &dir).await;
+            let layers: Vec<String> = rec["html"].as_str().map(|h| canon_html(h).layers.into_iter().map(|(n, _)| n).collect()).unwrap_or_default();
+            println!("REFILL {sha} refill {} | end {} | layers {layers:?}", rec["refill"], rec["end"]);
         }
 
         /// The gate (design section 6.3): the list at NEXT_TREE_REPLAY_RUNS (its swap record beside it) refilled page by page
