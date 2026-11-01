@@ -1,0 +1,184 @@
+{
+ "$comment": "Rule parameters and the per-file pinned baseline for scripts/test_node_file_reads_pinned.mjs. Only that test reads this file.",
+ "why": "A second-layer node (runtime/nodes/, runtime/leaves_py/) should get everything it uses on its one stdin line from the visual group's entry: it reads no file, starts no process, opens no socket, reads no environment, loads no code at run time and imports no module of another group. The drawing leaves already in the tree break this at many sites, so each breaking file is pinned with its site counts (each import statement and each call is one site). A file not listed under pinned must have no finding; a pinned count may only go down, and when it goes down the pin is lowered in the same change; a pinned finding that no longer holds is deleted. This entry adds a check only and loosens nothing.",
+ "files": [
+  "runtime/nodes/",
+  "runtime/leaves_py/"
+ ],
+ "skip_dirs": [
+  "node_modules"
+ ],
+ "not_nodes": {
+  "runtime/leaves_py/bake.py": "The visual group's bake child (Chrome lays the page out and its DOM is read back): a program step of the first layer's page check, not a node; it never gets data rows. Skipped, and listed by name in the test output.",
+  "runtime/leaves_py/knobs.py": "Build-time generator of knobs.json (the registry), run by hand, never started by the entry. Skipped, and listed by name in the test output."
+ },
+ "runners": {
+  "runtime/nodes/run.mjs": {
+   "js_builtins": [
+    "node:readline"
+   ],
+   "py_modules": []
+  },
+  "runtime/leaves_py/run.py": {
+   "js_builtins": [],
+   "py_modules": [
+    "sys"
+   ]
+  }
+ },
+ "js_packages": [
+  "d3"
+ ],
+ "py_modules": [
+  "json",
+  "math",
+  "re",
+  "itertools",
+  "functools",
+  "collections",
+  "unicodedata",
+  "html",
+  "decimal",
+  "fractions",
+  "bisect",
+  "heapq",
+  "statistics",
+  "dataclasses",
+  "typing",
+  "string",
+  "operator",
+  "copy",
+  "enum",
+  "colorsys",
+  "hashlib",
+  "csv"
+ ],
+ "ownership_note": "file_rules_add and files_add are used only by this test to decide which group a file belongs to (the node folders as visual). They are not a change to runtime/pi/groups.json, which this test reads and never writes.",
+ "file_rules_add": [
+  {
+   "prefix": "runtime/nodes/",
+   "group": "visual",
+   "note": "Ownership for this test only (not a groups.json change): Second-layer JS nodes (fill and draw), started by the visual group's entry only (next_visual::call -> next_leaf runner)."
+  },
+  {
+   "prefix": "runtime/leaves_py/",
+   "group": "visual",
+   "note": "Ownership for this test only (not a groups.json change): Second-layer Python leaves and fill nodes, started by the visual group's entry only."
+  }
+ ],
+ "files_add": {
+  "src/next_tree.rs": {
+   "group": "visual",
+   "note": "Ownership for this test only (not a groups.json change); no cross-group call is allowed by this row."
+  }
+ },
+ "pinned_note": "Measured on a clean checkout of 5400f7568165ceb68cfe7269051b93caed287ba8: 16 files, 93 sites. Each file is pinned on its own; counts may only go down.",
+ "pinned": {
+  "runtime/leaves_py/bubbles.py": {
+   "imports os": 1,
+   "imports sys": 1,
+   "calls open()": 1,
+   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 2,
+   "imports geo (runtime/leaves_py/geo.py), which breaks the rule": 1,
+   "imports mapkit (runtime/leaves_py/mapkit.py), which breaks the rule": 1
+  },
+  "runtime/leaves_py/cards.py": {
+   "imports words (runtime/leaves_py/words.py), which breaks the rule": 1
+  },
+  "runtime/leaves_py/column.py": {
+   "imports os": 1,
+   "imports sys": 1,
+   "imports facts (runtime/leaves_py/facts.py), which breaks the rule": 1,
+   "imports prod (runtime/leaves_py/prod.py), which breaks the rule": 1,
+   "imports words (runtime/leaves_py/words.py), which breaks the rule": 1
+  },
+  "runtime/leaves_py/facts.py": {
+   "imports os": 1,
+   "imports sys": 1,
+   "calls open()": 3,
+   "imports words (runtime/leaves_py/words.py), which breaks the rule": 1
+  },
+  "runtime/leaves_py/geo.py": {
+   "imports os": 1,
+   "calls open()": 1,
+   "imports cards (runtime/leaves_py/cards.py), which breaks the rule": 1,
+   "imports words (runtime/leaves_py/words.py), which breaks the rule": 1
+  },
+  "runtime/leaves_py/leader_notes.py": {
+   "imports os": 1,
+   "imports sys": 1,
+   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 2,
+   "imports mapkit (runtime/leaves_py/mapkit.py), which breaks the rule": 1
+  },
+  "runtime/leaves_py/mapkit.py": {
+   "imports os": 1,
+   "imports sys": 1,
+   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 2
+  },
+  "runtime/leaves_py/prod.py": {
+   "imports os": 1,
+   "imports sys": 1,
+   "calls open()": 4,
+   "imports facts (runtime/leaves_py/facts.py), which breaks the rule": 1,
+   "imports geo (runtime/leaves_py/geo.py), which breaks the rule": 1,
+   "imports words (runtime/leaves_py/words.py), which breaks the rule": 1
+  },
+  "runtime/leaves_py/rankbar.py": {
+   "imports os": 1,
+   "imports sys": 1,
+   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 2
+  },
+  "runtime/leaves_py/run.py": {
+   "imports os": 1,
+   "imports facts (runtime/leaves_py/facts.py), which breaks the rule": 1,
+   "imports bubbles (runtime/leaves_py/bubbles.py), which breaks the rule": 1,
+   "imports column (runtime/leaves_py/column.py), which breaks the rule": 1,
+   "imports geo (runtime/leaves_py/geo.py), which breaks the rule": 1,
+   "imports leader_notes (runtime/leaves_py/leader_notes.py), which breaks the rule": 1,
+   "imports mapkit (runtime/leaves_py/mapkit.py), which breaks the rule": 1,
+   "imports prod (runtime/leaves_py/prod.py), which breaks the rule": 1,
+   "imports rankbar (runtime/leaves_py/rankbar.py), which breaks the rule": 1,
+   "imports sankey (runtime/leaves_py/sankey.py), which breaks the rule": 1,
+   "imports scmp (runtime/leaves_py/scmp.py), which breaks the rule": 1,
+   "imports stacked100 (runtime/leaves_py/stacked100.py), which breaks the rule": 1,
+   "imports section_head (runtime/leaves_py/section_head.py), which breaks the rule": 1,
+   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1,
+   "imports words (runtime/leaves_py/words.py), which breaks the rule": 1
+  },
+  "runtime/leaves_py/sankey.py": {
+   "imports os": 1,
+   "imports sys": 1,
+   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 2,
+   "imports words (runtime/leaves_py/words.py), which breaks the rule": 1
+  },
+  "runtime/leaves_py/scmp.py": {
+   "imports os": 1,
+   "imports sys": 1,
+   "calls open()": 8,
+   "imports column (runtime/leaves_py/column.py), which breaks the rule": 1,
+   "imports facts (runtime/leaves_py/facts.py), which breaks the rule": 1,
+   "imports prod (runtime/leaves_py/prod.py), which breaks the rule": 1,
+   "imports words (runtime/leaves_py/words.py), which breaks the rule": 1
+  },
+  "runtime/leaves_py/section_head.py": {
+   "imports os": 1,
+   "imports sys": 1,
+   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 2
+  },
+  "runtime/leaves_py/stacked100.py": {
+   "imports os": 1,
+   "imports sys": 1,
+   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 2,
+   "imports words (runtime/leaves_py/words.py), which breaks the rule": 1
+  },
+  "runtime/leaves_py/wbkit.py": {
+   "imports facts (runtime/leaves_py/facts.py), which breaks the rule": 1,
+   "imports prod (runtime/leaves_py/prod.py), which breaks the rule": 1,
+   "imports words (runtime/leaves_py/words.py), which breaks the rule": 1
+  },
+  "runtime/leaves_py/words.py": {
+   "imports os": 1,
+   "calls open()": 1
+  }
+ }
+}
