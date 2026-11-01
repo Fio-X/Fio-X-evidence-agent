@@ -346,13 +346,13 @@ def column_page(panel, got, sizes):
         off.append("page: the illustration strip comes with no size [w, h]")
     if off: return {"refused": off}
     box = re.sub(r"^<(\w+)", r'<\1 data-layer="bignums"', got["bignums"], count=1) if "bignums" in got else None
-    found = FOUND.get(f.main)
+    found, said = FOUND.get(f.main), spec  # the chart's label and long description keep the text step's words, as before
     if found:
         spec, why = headline(spec, found, got[f.main])
         if why: return {"refused": why}
     unit = FX.worded(spec, panel.c.F, "unit", spec["hero"]["unit"]) if spec["hero"].get("unit") else ""
     pic = "".join(f'<g data-layer="{n}">{got[n]}</g>' for n in MAP_LAYERS if n in need)
-    hero = hooked(column.column_shell(f, f'<g data-layer="{f.main}">{got[f.main]}</g>', unit, pic, f.main), panel.c, spec, column_hooks(f.main))
+    hero = hooked(column.column_shell(f, f'<g data-layer="{f.main}">{got[f.main]}</g>', unit, pic, f.main), panel.c, said, column_hooks(f.main))
     if isinstance(hero, list): return {"refused": hero}
     strip = column.strip_shell(got["illus_strip"], *wh) if "illus_strip" in got else ""
     html = scmp.shell(panel.c, spec, scmp.page_head(panel.c, spec, box=box, wide=box is None) + hero + strip, column.CSS)

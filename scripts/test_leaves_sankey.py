@@ -345,6 +345,15 @@ class FlowPage(unittest.TestCase):
         plain = page(flow_request(style={"sankey": {"finding": "none"}}))
         self.assertIn(f'<div class="kicker">{spec["kicker"]}</div><h1>{spec["title"]}</h1>', plain)
         self.assertNotIn("data-cmp", plain)
+        # the chart's long description (aria-describedby) and label stay the text step's words, plain text, as without a
+        # finding: the gate reads the described-by text up to its first tag
+        desc = lambda h: re.search(r'<p id="desc-column" hidden>(.*?)</p>', h, re.S).group(1)
+        label = lambda h: re.search(r'aria-label="([^"]*)" aria-describedby="desc-column"', h).group(1)
+        self.assertEqual(desc(html), desc(plain))
+        self.assertEqual(desc(html), spec["title"])
+        self.assertNotIn("<", desc(html))
+        self.assertTrue(desc(html).split("<")[0].strip())
+        self.assertEqual(label(html), label(plain))
         # a title holding a placeholder is no kicker: the kicker is kept
         found = sankey.Frame(hero(DATA)).finding
         held, why = run.headline(dict(spec, title="{lead} T"), found, draw(hero(DATA))[0])
