@@ -1,0 +1,1609 @@
+{
+ "contract": "p3-b/1",
+ "external": [
+  "stacked100"
+ ],
+ "input": {
+  "rows": [
+   {
+    "src": "series:nrg_bal_peh/A.GEP.BA100.GWH.PT:2024:OBS_VALUE",
+    "table": "nrg_bal_peh",
+    "dims": {
+     "freq": "A",
+     "nrg_bal": "GEP",
+     "siec": "BA100",
+     "unit": "GWH",
+     "geo": "PT"
+    },
+    "time": "2024",
+    "value": "0.631"
+   },
+   {
+    "src": "series:nrg_bal_peh/A.GEP.C0000X0350-0370.GWH.PT:2024:OBS_VALUE",
+    "table": "nrg_bal_peh",
+    "dims": {
+     "freq": "A",
+     "nrg_bal": "GEP",
+     "siec": "C0000X0350-0370",
+     "unit": "GWH",
+     "geo": "PT"
+    },
+    "time": "2024",
+    "value": "0.000"
+   },
+   {
+    "src": "series:nrg_bal_peh/A.GEP.C0350-0370.GWH.PT:2024:OBS_VALUE",
+    "table": "nrg_bal_peh",
+    "dims": {
+     "freq": "A",
+     "nrg_bal": "GEP",
+     "siec": "C0350-0370",
+     "unit": "GWH",
+     "geo": "PT"
+    },
+    "time": "2024",
+    "value": "0.000"
+   },
+   {
+    "src": "series:nrg_bal_peh/A.GEP.G3000.GWH.PT:2024:OBS_VALUE",
+    "table": "nrg_bal_peh",
+    "dims": {
+     "freq": "A",
+     "nrg_bal": "GEP",
+     "siec": "G3000",
+     "unit": "GWH",
+     "geo": "PT"
+    },
+    "time": "2024",
+    "value": "5634.081"
+   },
+   {
+    "src": "series:nrg_bal_peh/A.GEP.H8000.GWH.PT:2024:OBS_VALUE",
+    "table": "nrg_bal_peh",
+    "dims": {
+     "freq": "A",
+     "nrg_bal": "GEP",
+     "siec": "H8000",
+     "unit": "GWH",
+     "geo": "PT"
+    },
+    "time": "2024",
+    "value": "0.000"
+   },
+   {
+    "src": "series:nrg_bal_peh/A.GEP.N900H.GWH.PT:2024:OBS_VALUE",
+    "table": "nrg_bal_peh",
+    "dims": {
+     "freq": "A",
+     "nrg_bal": "GEP",
+     "siec": "N900H",
+     "unit": "GWH",
+     "geo": "PT"
+    },
+    "time": "2024",
+    "value": "0.000"
+   },
+   {
+    "src": "series:nrg_bal_peh/A.GEP.O4000XBIO.GWH.PT:2024:OBS_VALUE",
+    "table": "nrg_bal_peh",
+    "dims": {
+     "freq": "A",
+     "nrg_bal": "GEP",
+     "siec": "O4000XBIO",
+     "unit": "GWH",
+     "geo": "PT"
+    },
+    "time": "2024",
+    "value": "1145.714"
+   },
+   {
+    "src": "series:nrg_bal_peh/A.GEP.P1000.GWH.PT:2024:OBS_VALUE",
+    "table": "nrg_bal_peh",
+    "dims": {
+     "freq": "A",
+     "nrg_bal": "GEP",
+     "siec": "P1000",
+     "unit": "GWH",
+     "geo": "PT"
+    },
+    "time": "2024",
+    "value": "0.000"
+   },
+   {
+    "src": "series:nrg_bal_peh/A.GEP.RA000.GWH.PT:2024:OBS_VALUE",
+    "table": "nrg_bal_peh",
+    "dims": {
+     "freq": "A",
+     "nrg_bal": "GEP",
+     "siec": "RA000",
+     "unit": "GWH",
+     "geo": "PT"
+    },
+    "time": "2024",
+    "value": "40353.204"
+   },
+   {
+    "src": "series:nrg_bal_peh/A.GEP.RA130.GWH.PT:2024:OBS_VALUE",
+    "table": "nrg_bal_peh",
+    "dims": {
+     "freq": "A",
+     "nrg_bal": "GEP",
+     "siec": "RA130",
+     "unit": "GWH",
+     "geo": "PT"
+    },
+    "time": "2024",
+    "value": "3701.693"
+   },
+   {
+    "src": "series:nrg_bal_peh/A.GEP.S2000.GWH.PT:2024:OBS_VALUE",
+    "table": "nrg_bal_peh",
+    "dims": {
+     "freq": "A",
+     "nrg_bal": "GEP",
+     "siec": "S2000",
+     "unit": "GWH",
+     "geo": "PT"
+    },
+    "time": "2024",
+    "value": "0.000"
+   },
+   {
+    "src": "series:nrg_bal_peh/A.GEP.W6100_6220.GWH.PT:2024:OBS_VALUE",
+    "table": "nrg_bal_peh",
+    "dims": {
+     "freq": "A",
+     "nrg_bal": "GEP",
+     "siec": "W6100_6220",
+     "unit": "GWH",
+     "geo": "PT"
+    },
+    "time": "2024",
+    "value": "254.754"
+   },
+   {
+    "src": "series:nrg_bal_peh/A.GEP.X9900.GWH.PT:2024:OBS_VALUE",
+    "table": "nrg_bal_peh",
+    "dims": {
+     "freq": "A",
+     "nrg_bal": "GEP",
+     "siec": "X9900",
+     "unit": "GWH",
+     "geo": "PT"
+    },
+    "time": "2024",
+    "value": "0.000"
+   },
+   {
+    "src": "series:nrg_bal_peh/A.GEP.TOTAL.GWH.PT:2024:OBS_VALUE",
+    "table": "nrg_bal_peh",
+    "dims": {
+     "freq": "A",
+     "nrg_bal": "GEP",
+     "siec": "TOTAL",
+     "unit": "GWH",
+     "geo": "PT"
+    },
+    "time": "2024",
+    "value": "51089.446"
+   }
+  ],
+  "select_spec": {
+   "groups": {
+    "kind": "registry_list",
+    "registry": "composition_groups:nrg_bal_peh"
+   },
+   "candidates": {
+    "kind": "rank",
+    "over": {
+     "table": "nrg_bal_peh",
+     "by": "geo",
+     "filter": {
+      "siec": "TOTAL"
+     },
+     "time": "2024"
+    },
+    "key": "value",
+    "order": "desc",
+    "tie": {
+     "by": "code",
+     "outcome": "order"
+    },
+    "one_row_per_code": true
+   },
+   "excl_pt_ba100": {
+    "kind": "exclude_codes",
+    "place": "select:candidates[0]",
+    "part": "other",
+    "codes": [
+     "BA100"
+    ],
+    "rule": "gap_equals_codes_value",
+    "value": "excl.PT.BA100",
+    "status": "pending_p4b"
+   },
+   "pt_other": {
+    "kind": "set_op",
+    "op": "minus",
+    "a": "select:groups.other",
+    "b": "select:excl_pt_ba100"
+   },
+   "bars": {
+    "kind": "drop_replace",
+    "from": "candidates",
+    "target": 1,
+    "check": {
+     "sum_within": {
+      "table": "nrg_bal_peh",
+      "time": "2024",
+      "place": "geo",
+      "dim": "siec",
+      "parts": "select:groups",
+      "total": "TOTAL",
+      "tol": {
+       "knob": "stacked100.tol",
+       "value": 1e-05
+      },
+      "less": [
+       "excl_pt_ba100"
+      ]
+     }
+    },
+    "replace": "next_in_order"
+   },
+   "zero": {
+    "kind": "zero_parts",
+    "bars": "bars",
+    "table": "nrg_bal_peh",
+    "time": "2024",
+    "place": "geo",
+    "dim": "siec",
+    "parts": "select:groups",
+    "rule": "every_code_has_row_and_all_zero",
+    "facts": {
+     "nuclear": "zero.nuclear"
+    }
+   },
+   "empty": {
+    "kind": "empty_parts",
+    "bars": "bars",
+    "rule": "no_row_or_zero_with_code_missing"
+   },
+   "comp_top": {
+    "kind": "named_rule",
+    "rule": "largest_share_of_first_part",
+    "inputs": {
+     "bars": "bars",
+     "part": "fossil"
+    },
+    "tie": {
+     "by": "printed",
+     "fmt": "pct",
+     "outcome": "silence"
+    }
+   }
+  },
+  "knobs": {
+   "stacked100.tol": {
+    "value": 1e-05,
+    "min": 0,
+    "max": 0.001
+   }
+  },
+  "drawn_rules": {},
+  "given": {
+   "groups": {
+    "fossil": [
+     "C0000X0350-0370",
+     "C0350-0370",
+     "P1000",
+     "S2000",
+     "G3000",
+     "O4000XBIO"
+    ],
+    "renewable": [
+     "RA000"
+    ],
+    "other": [
+     "RA130",
+     "W6100_6220",
+     "E7000",
+     "H8000",
+     "X9900",
+     "BA100"
+    ],
+    "nuclear": [
+     "N900H"
+    ]
+   },
+   "comp_top": "PT"
+  },
+  "name_table": {
+   "labels": {
+    "PT": "葡萄牙",
+    "fossil": "化石能源",
+    "renewable": "可再生能源",
+    "other": "其他",
+    "nuclear": "核能",
+    "BA100": "电池储能"
+   },
+   "named": {
+    "name:frames:composition": "整体的构成",
+    "name:unit_short_zh:GWH": "吉瓦时",
+    "name:zh_names:siec:TOTAL": "合计",
+    "name:catalogue:nrg_bal_peh:title": "按燃料类型分列的电力和衍生热生产",
+    "name:zh_names:siec_group:fossil": "化石能源",
+    "name:zh_names:siec_group:renewable": "可再生能源",
+    "name:zh_names:siec_group:other": "其他",
+    "name:zh_names:siec_group:nuclear": "核能"
+   }
+  },
+  "points": {},
+  "flow_record": {
+   "template": "stacked_bar_100",
+   "left_out": []
+  },
+  "part_codes": {
+   "fossil": [
+    "C0000X0350-0370",
+    "C0350-0370",
+    "G3000",
+    "O4000XBIO",
+    "P1000",
+    "S2000"
+   ],
+   "renewable": [
+    "RA000"
+   ],
+   "other": [
+    "H8000",
+    "RA130",
+    "W6100_6220",
+    "X9900",
+    "BA100"
+   ],
+   "nuclear": [
+    "N900H"
+   ]
+  },
+  "word_table": {
+   "column.note.hi": "最高",
+   "column.note.lo": "最低",
+   "composition.outside_total": "不计入合计，约三成"
+  },
+  "page_spec": {
+   "kind": "Page",
+   "schema_version": "0.1.0",
+   "$comment": "q3 F3 page as merged after an external stacked100 fill (P3 fixture, derived by make_fixtures.py)",
+   "recipe": "composition",
+   "order": [
+    "stacked100"
+   ],
+   "scoped": false,
+   "texts": {
+    "title": {
+     "kind": "Text",
+     "role": "headline",
+     "origin": "word_table",
+     "runs": [
+      {
+       "name": "select:comp_top"
+      },
+      {
+       "name": "fossil"
+      },
+      {
+       "w": "占比最高，达"
+      },
+      {
+       "fact": "comp_top"
+      }
+     ]
+    },
+    "dek": {
+     "kind": "Text",
+     "role": "dek",
+     "origin": "word_table",
+     "runs": [
+      {
+       "fact": "lead1",
+       "part": "t"
+      },
+      {
+       "w": "，"
+      },
+      {
+       "name": "select:comp_top"
+      },
+      {
+       "name": "fossil"
+      },
+      {
+       "w": "占比最高，为"
+      },
+      {
+       "fact": "comp_top"
+      }
+     ]
+    },
+    "kicker": {
+     "kind": "Text",
+     "role": "kicker",
+     "origin": "registry",
+     "runs": [
+      {
+       "w": "整体的构成与份额"
+      }
+     ]
+    },
+    "source": {
+     "kind": "Text",
+     "role": "source",
+     "origin": "program",
+     "runs": [
+      {
+       "w": "数据来源："
+      },
+      {
+       "src": "name:catalogue:nrg_bal_peh:title"
+      },
+      {
+       "w": "（"
+      },
+      {
+       "table": "nrg_bal_peh"
+      },
+      {
+       "w": "）"
+      }
+     ]
+    }
+   },
+   "finding": {
+    "branch": "part",
+    "select": "comp_top",
+    "dek": {
+     "kind": "Text",
+     "role": "dek",
+     "origin": "word_table",
+     "runs": [
+      {
+       "fact": "lead1",
+       "part": "t"
+      },
+      {
+       "w": "，"
+      },
+      {
+       "name": "select:comp_top"
+      },
+      {
+       "name": "fossil"
+      },
+      {
+       "w": "占比最高，为"
+      },
+      {
+       "fact": "comp_top"
+      }
+     ]
+    },
+    "dek_scoped": {
+     "kind": "Text",
+     "role": "dek",
+     "origin": "word_table",
+     "runs": [
+      {
+       "fact": "lead1",
+       "part": "t"
+      },
+      {
+       "w": "，"
+      },
+      {
+       "name": "select:comp_top"
+      },
+      {
+       "name": "fossil"
+      },
+      {
+       "w": "占比最高，为"
+      },
+      {
+       "fact": "comp_top"
+      }
+     ]
+    },
+    "headline": {
+     "kind": "Text",
+     "role": "headline",
+     "origin": "word_table",
+     "runs": [
+      {
+       "name": "select:comp_top"
+      },
+      {
+       "name": "fossil"
+      },
+      {
+       "w": "占比最高，达"
+      },
+      {
+       "fact": "comp_top"
+      }
+     ]
+    }
+   },
+   "facts": {
+    "kind": "Facts",
+    "tables": {
+     "nrg_bal_peh": {
+      "id": "nrg_bal_peh"
+     }
+    },
+    "facts": {
+     "total.PT": {
+      "table": "nrg_bal_peh",
+      "filter": {
+       "geo": "select:bars[0]",
+       "siec": "TOTAL"
+      },
+      "time": "2024",
+      "fmt": "gwh"
+     },
+     "excl.PT.BA100": {
+      "table": "nrg_bal_peh",
+      "filter": {
+       "geo": "select:candidates[0]",
+       "siec": "select:excl_pt_ba100"
+      },
+      "time": "2024",
+      "fmt": "comp_gap"
+     },
+     "zero.nuclear": {
+      "op": "zeros",
+      "table": "nrg_bal_peh",
+      "filter": {
+       "geo": "select:bars",
+       "siec": "select:groups.nuclear"
+      },
+      "time": "2024",
+      "fmt": "n"
+     },
+     "comp_bars": {
+      "op": "n",
+      "by": "geo",
+      "table": "nrg_bal_peh",
+      "filter": {
+       "geo": "select:bars",
+       "siec": "TOTAL"
+      },
+      "time": "2024",
+      "fmt": "n"
+     },
+     "comp_top": {
+      "op": "share",
+      "a": "sum.fossil.PT",
+      "b": "total.PT"
+     },
+     "lead1": {
+      "op": "last",
+      "table": "nrg_bal_peh",
+      "filter": {
+       "geo": "select:comp_top",
+       "siec": "TOTAL"
+      },
+      "from": "2024",
+      "to": "2024",
+      "fmt": "gwh"
+     },
+     "sum.fossil.PT": {
+      "table": "nrg_bal_peh",
+      "filter": {
+       "geo": "select:bars[0]",
+       "siec": "select:groups.fossil"
+      },
+      "time": "2024",
+      "fmt": "gwh"
+     },
+     "share.fossil.PT": {
+      "op": "share",
+      "a": "sum.fossil.PT",
+      "b": "total.PT"
+     },
+     "sum.renewable.PT": {
+      "table": "nrg_bal_peh",
+      "filter": {
+       "geo": "select:bars[0]",
+       "siec": "select:groups.renewable"
+      },
+      "time": "2024",
+      "fmt": "gwh"
+     },
+     "share.renewable.PT": {
+      "op": "share",
+      "a": "sum.renewable.PT",
+      "b": "total.PT"
+     },
+     "sum.other.PT": {
+      "table": "nrg_bal_peh",
+      "filter": {
+       "geo": "select:bars[0]",
+       "siec": "select:pt_other"
+      },
+      "time": "2024",
+      "fmt": "gwh"
+     },
+     "share.other.PT": {
+      "op": "share",
+      "a": "sum.other.PT",
+      "b": "total.PT"
+     },
+     "zero_sum.nuclear": {
+      "table": "nrg_bal_peh",
+      "filter": {
+       "geo": "select:bars",
+       "siec": "select:groups.nuclear"
+      },
+      "time": "2024",
+      "fmt": "n"
+     }
+    },
+    "fmts": {
+     "gwh": {
+      "scale": 1,
+      "dec": 0,
+      "suffix": " 吉瓦时"
+     },
+     "comp_gap": {
+      "scale": 1,
+      "dec": 3,
+      "suffix": " 吉瓦时"
+     },
+     "time": {}
+    },
+    "rows": [
+     {
+      "src": "series:nrg_bal_peh/A.GEP.BA100.GWH.PT:2024:OBS_VALUE",
+      "table": "nrg_bal_peh",
+      "dims": {
+       "freq": "A",
+       "nrg_bal": "GEP",
+       "siec": "BA100",
+       "unit": "GWH",
+       "geo": "PT"
+      },
+      "time": "2024",
+      "value": "0.631"
+     },
+     {
+      "src": "series:nrg_bal_peh/A.GEP.C0000X0350-0370.GWH.PT:2024:OBS_VALUE",
+      "table": "nrg_bal_peh",
+      "dims": {
+       "freq": "A",
+       "nrg_bal": "GEP",
+       "siec": "C0000X0350-0370",
+       "unit": "GWH",
+       "geo": "PT"
+      },
+      "time": "2024",
+      "value": "0.000"
+     },
+     {
+      "src": "series:nrg_bal_peh/A.GEP.C0350-0370.GWH.PT:2024:OBS_VALUE",
+      "table": "nrg_bal_peh",
+      "dims": {
+       "freq": "A",
+       "nrg_bal": "GEP",
+       "siec": "C0350-0370",
+       "unit": "GWH",
+       "geo": "PT"
+      },
+      "time": "2024",
+      "value": "0.000"
+     },
+     {
+      "src": "series:nrg_bal_peh/A.GEP.G3000.GWH.PT:2024:OBS_VALUE",
+      "table": "nrg_bal_peh",
+      "dims": {
+       "freq": "A",
+       "nrg_bal": "GEP",
+       "siec": "G3000",
+       "unit": "GWH",
+       "geo": "PT"
+      },
+      "time": "2024",
+      "value": "5634.081"
+     },
+     {
+      "src": "series:nrg_bal_peh/A.GEP.H8000.GWH.PT:2024:OBS_VALUE",
+      "table": "nrg_bal_peh",
+      "dims": {
+       "freq": "A",
+       "nrg_bal": "GEP",
+       "siec": "H8000",
+       "unit": "GWH",
+       "geo": "PT"
+      },
+      "time": "2024",
+      "value": "0.000"
+     },
+     {
+      "src": "series:nrg_bal_peh/A.GEP.N900H.GWH.PT:2024:OBS_VALUE",
+      "table": "nrg_bal_peh",
+      "dims": {
+       "freq": "A",
+       "nrg_bal": "GEP",
+       "siec": "N900H",
+       "unit": "GWH",
+       "geo": "PT"
+      },
+      "time": "2024",
+      "value": "0.000"
+     },
+     {
+      "src": "series:nrg_bal_peh/A.GEP.O4000XBIO.GWH.PT:2024:OBS_VALUE",
+      "table": "nrg_bal_peh",
+      "dims": {
+       "freq": "A",
+       "nrg_bal": "GEP",
+       "siec": "O4000XBIO",
+       "unit": "GWH",
+       "geo": "PT"
+      },
+      "time": "2024",
+      "value": "1145.714"
+     },
+     {
+      "src": "series:nrg_bal_peh/A.GEP.P1000.GWH.PT:2024:OBS_VALUE",
+      "table": "nrg_bal_peh",
+      "dims": {
+       "freq": "A",
+       "nrg_bal": "GEP",
+       "siec": "P1000",
+       "unit": "GWH",
+       "geo": "PT"
+      },
+      "time": "2024",
+      "value": "0.000"
+     },
+     {
+      "src": "series:nrg_bal_peh/A.GEP.RA000.GWH.PT:2024:OBS_VALUE",
+      "table": "nrg_bal_peh",
+      "dims": {
+       "freq": "A",
+       "nrg_bal": "GEP",
+       "siec": "RA000",
+       "unit": "GWH",
+       "geo": "PT"
+      },
+      "time": "2024",
+      "value": "40353.204"
+     },
+     {
+      "src": "series:nrg_bal_peh/A.GEP.RA130.GWH.PT:2024:OBS_VALUE",
+      "table": "nrg_bal_peh",
+      "dims": {
+       "freq": "A",
+       "nrg_bal": "GEP",
+       "siec": "RA130",
+       "unit": "GWH",
+       "geo": "PT"
+      },
+      "time": "2024",
+      "value": "3701.693"
+     },
+     {
+      "src": "series:nrg_bal_peh/A.GEP.S2000.GWH.PT:2024:OBS_VALUE",
+      "table": "nrg_bal_peh",
+      "dims": {
+       "freq": "A",
+       "nrg_bal": "GEP",
+       "siec": "S2000",
+       "unit": "GWH",
+       "geo": "PT"
+      },
+      "time": "2024",
+      "value": "0.000"
+     },
+     {
+      "src": "series:nrg_bal_peh/A.GEP.W6100_6220.GWH.PT:2024:OBS_VALUE",
+      "table": "nrg_bal_peh",
+      "dims": {
+       "freq": "A",
+       "nrg_bal": "GEP",
+       "siec": "W6100_6220",
+       "unit": "GWH",
+       "geo": "PT"
+      },
+      "time": "2024",
+      "value": "254.754"
+     },
+     {
+      "src": "series:nrg_bal_peh/A.GEP.X9900.GWH.PT:2024:OBS_VALUE",
+      "table": "nrg_bal_peh",
+      "dims": {
+       "freq": "A",
+       "nrg_bal": "GEP",
+       "siec": "X9900",
+       "unit": "GWH",
+       "geo": "PT"
+      },
+      "time": "2024",
+      "value": "0.000"
+     },
+     {
+      "src": "series:nrg_bal_peh/A.GEP.TOTAL.GWH.PT:2024:OBS_VALUE",
+      "table": "nrg_bal_peh",
+      "dims": {
+       "freq": "A",
+       "nrg_bal": "GEP",
+       "siec": "TOTAL",
+       "unit": "GWH",
+       "geo": "PT"
+      },
+      "time": "2024",
+      "value": "51089.446"
+     }
+    ],
+    "labels": {
+     "PT": "葡萄牙",
+     "fossil": "化石能源",
+     "renewable": "可再生能源",
+     "other": "其他",
+     "nuclear": "核能",
+     "BA100": "电池储能"
+    },
+    "named": {
+     "name:frames:composition": "整体的构成",
+     "name:unit_short_zh:GWH": "吉瓦时",
+     "name:zh_names:siec:TOTAL": "合计",
+     "name:catalogue:nrg_bal_peh:title": "按燃料类型分列的电力和衍生热生产",
+     "name:zh_names:siec_group:fossil": "化石能源",
+     "name:zh_names:siec_group:renewable": "可再生能源",
+     "name:zh_names:siec_group:other": "其他",
+     "name:zh_names:siec_group:nuclear": "核能"
+    }
+   },
+   "selects": {
+    "kind": "Selects",
+    "items": [
+     {
+      "id": "groups",
+      "kind": "registry_list",
+      "registry": "composition_groups:nrg_bal_peh",
+      "result": {
+       "fossil": [
+        "C0000X0350-0370",
+        "C0350-0370",
+        "P1000",
+        "S2000",
+        "G3000",
+        "O4000XBIO"
+       ],
+       "renewable": [
+        "RA000"
+       ],
+       "other": [
+        "RA130",
+        "W6100_6220",
+        "E7000",
+        "H8000",
+        "X9900",
+        "BA100"
+       ],
+       "nuclear": [
+        "N900H"
+       ]
+      }
+     },
+     {
+      "id": "candidates",
+      "kind": "rank",
+      "over": {
+       "table": "nrg_bal_peh",
+       "by": "geo",
+       "filter": {
+        "siec": "TOTAL"
+       },
+       "time": "2024"
+      },
+      "key": "value",
+      "order": "desc",
+      "tie": {
+       "by": "code",
+       "outcome": "order"
+      },
+      "one_row_per_code": true,
+      "result": [
+       "PT"
+      ]
+     },
+     {
+      "id": "excl_pt_ba100",
+      "kind": "exclude_codes",
+      "place": "select:candidates[0]",
+      "part": "other",
+      "codes": [
+       "BA100"
+      ],
+      "rule": "gap_equals_codes_value",
+      "value": "excl.PT.BA100",
+      "status": "pending_p4b"
+     },
+     {
+      "id": "pt_other",
+      "kind": "set_op",
+      "op": "minus",
+      "a": "select:groups.other",
+      "b": "select:excl_pt_ba100",
+      "result": [
+       "RA130",
+       "W6100_6220",
+       "E7000",
+       "H8000",
+       "X9900"
+      ]
+     },
+     {
+      "id": "bars",
+      "kind": "drop_replace",
+      "from": "candidates",
+      "target": 1,
+      "check": {
+       "sum_within": {
+        "table": "nrg_bal_peh",
+        "time": "2024",
+        "place": "geo",
+        "dim": "siec",
+        "parts": "select:groups",
+        "total": "TOTAL",
+        "tol": {
+         "knob": "stacked100.tol",
+         "value": 1e-05
+        },
+        "less": [
+         "excl_pt_ba100"
+        ]
+       }
+      },
+      "replace": "next_in_order",
+      "result": [
+       "PT"
+      ],
+      "dropped": []
+     },
+     {
+      "id": "zero",
+      "kind": "zero_parts",
+      "bars": "bars",
+      "table": "nrg_bal_peh",
+      "time": "2024",
+      "place": "geo",
+      "dim": "siec",
+      "parts": "select:groups",
+      "rule": "every_code_has_row_and_all_zero",
+      "facts": {
+       "nuclear": "zero.nuclear"
+      },
+      "declared": [
+       {
+        "bar": "PT",
+        "part": "nuclear",
+        "cells": [
+         "series:nrg_bal_peh/A.GEP.N900H.GWH.PT:2024:OBS_VALUE"
+        ]
+       }
+      ]
+     },
+     {
+      "id": "empty",
+      "kind": "empty_parts",
+      "bars": "bars",
+      "rule": "no_row_or_zero_with_code_missing",
+      "result": []
+     },
+     {
+      "id": "comp_top",
+      "kind": "named_rule",
+      "rule": "largest_share_of_first_part",
+      "inputs": {
+       "bars": "bars",
+       "part": "fossil"
+      },
+      "tie": {
+       "by": "printed",
+       "fmt": "pct",
+       "outcome": "silence"
+      },
+      "result": "PT"
+     }
+    ]
+   },
+   "checks": {
+    "kind": "Checks",
+    "items": [
+     {
+      "id": "unit_short",
+      "kind": "unit_short",
+      "args": {
+       "unit": "GWH"
+      },
+      "on_fail": "stop"
+     },
+     {
+      "id": "has_composition",
+      "kind": "has_composition",
+      "on_fail": "stop"
+     },
+     {
+      "id": "quarter",
+      "kind": "max_dropped",
+      "select": "bars",
+      "num": 1,
+      "den": 4,
+      "on_fail": "stop"
+     },
+     {
+      "id": "short",
+      "kind": "fill_after_drop",
+      "select": "bars",
+      "on_fail": "stop"
+     },
+     {
+      "id": "total_row",
+      "kind": "row_exists",
+      "what": "total_row",
+      "query": {
+       "table": "nrg_bal_peh",
+       "filter": {
+        "siec": "TOTAL"
+       },
+       "time": "2024"
+      },
+      "for_each": "candidates",
+      "on_fail": "stop"
+     },
+     {
+      "id": "numbers",
+      "kind": "row_exists",
+      "what": "number_in_row",
+      "query": {
+       "table": "nrg_bal_peh",
+       "time": "2024"
+      },
+      "for_each": "candidates",
+      "on_fail": "stop"
+     },
+     {
+      "id": "tol",
+      "kind": "tolerance_fixed",
+      "knob": {
+       "knob": "stacked100.tol",
+       "value": 1e-05
+      },
+      "on_fail": "stop"
+     },
+     {
+      "id": "names_groups",
+      "kind": "named",
+      "name_kind": "siec_group",
+      "codes": [
+       "fossil",
+       "renewable",
+       "other",
+       "nuclear"
+      ],
+      "on_fail": "stop"
+     },
+     {
+      "id": "names_total",
+      "kind": "named",
+      "name_kind": "siec",
+      "codes": [
+       "TOTAL"
+      ],
+      "on_fail": "stop"
+     },
+     {
+      "id": "names_ba100",
+      "kind": "named",
+      "name_kind": "siec",
+      "codes": "select:excl_pt_ba100",
+      "on_fail": "stop"
+     },
+     {
+      "id": "names_places",
+      "kind": "named",
+      "name_kind": "iso2",
+      "codes": {
+       "select": "bars"
+      },
+      "on_fail": "stop"
+     },
+     {
+      "id": "one_name",
+      "kind": "one_name",
+      "name_kind": "siec_group",
+      "codes": [
+       "fossil",
+       "renewable",
+       "other",
+       "nuclear"
+      ],
+      "on_fail": "stop"
+     },
+     {
+      "id": "zeros_declared",
+      "kind": "page_check",
+      "name": "zeros_declared",
+      "declared": [
+       "zero"
+      ],
+      "on_fail": "page_fail"
+     },
+     {
+      "id": "notes_dropped",
+      "kind": "page_check",
+      "name": "notes_dropped",
+      "declared": [
+       "zero"
+      ],
+      "on_fail": "page_fail"
+     }
+    ]
+   },
+   "body": {
+    "kind": "Frame",
+    "id": "page",
+    "role": "page",
+    "children": [
+     {
+      "kind": "Frame",
+      "id": "hero",
+      "role": "hero",
+      "children": [
+       {
+        "kind": "Node",
+        "id": "stacked100",
+        "node": "stacked100",
+        "unit_drawn": true,
+        "binds": {
+         "bar_kind": "place",
+         "part_kind": "siec_group",
+         "parts": [
+          "fossil",
+          "renewable",
+          "other",
+          "nuclear"
+         ],
+         "table": "nrg_bal_peh",
+         "year": "2024",
+         "bars": {
+          "select": "bars"
+         },
+         "zero": {
+          "select": "zero"
+         },
+         "empty": {
+          "select": "empty"
+         }
+        },
+        "items_for": "select:bars",
+        "items": [
+         {
+          "code": "select:bars[0]",
+          "total": "series:nrg_bal_peh/A.GEP.TOTAL.GWH.PT:2024:OBS_VALUE",
+          "total_text": "fact:total.PT.n",
+          "cells": {
+           "fossil": [
+            "series:nrg_bal_peh/A.GEP.C0000X0350-0370.GWH.PT:2024:OBS_VALUE",
+            "series:nrg_bal_peh/A.GEP.C0350-0370.GWH.PT:2024:OBS_VALUE",
+            "series:nrg_bal_peh/A.GEP.G3000.GWH.PT:2024:OBS_VALUE",
+            "series:nrg_bal_peh/A.GEP.O4000XBIO.GWH.PT:2024:OBS_VALUE",
+            "series:nrg_bal_peh/A.GEP.P1000.GWH.PT:2024:OBS_VALUE",
+            "series:nrg_bal_peh/A.GEP.S2000.GWH.PT:2024:OBS_VALUE"
+           ],
+           "renewable": [
+            "series:nrg_bal_peh/A.GEP.RA000.GWH.PT:2024:OBS_VALUE"
+           ],
+           "other": [
+            "series:nrg_bal_peh/A.GEP.H8000.GWH.PT:2024:OBS_VALUE",
+            "series:nrg_bal_peh/A.GEP.RA130.GWH.PT:2024:OBS_VALUE",
+            "series:nrg_bal_peh/A.GEP.W6100_6220.GWH.PT:2024:OBS_VALUE",
+            "series:nrg_bal_peh/A.GEP.X9900.GWH.PT:2024:OBS_VALUE"
+           ]
+          },
+          "share_text": {
+           "fossil": "fact:share.fossil.PT",
+           "renewable": "fact:share.renewable.PT",
+           "other": "fact:share.other.PT"
+          }
+         }
+        ],
+        "texts": {
+         "title": {
+          "kind": "Text",
+          "role": "head",
+          "origin": "registry",
+          "runs": [
+           {
+            "src": "name:frames:composition"
+           }
+          ]
+         },
+         "unit": {
+          "kind": "Text",
+          "role": "unit",
+          "origin": "registry",
+          "runs": [
+           {
+            "src": "name:unit_short_zh:GWH"
+           }
+          ]
+         },
+         "total_head": {
+          "kind": "Text",
+          "role": "head",
+          "origin": "registry",
+          "runs": [
+           {
+            "src": "name:zh_names:siec:TOTAL"
+           }
+          ]
+         }
+        },
+        "lines": [
+         {
+          "kind": "Text",
+          "role": "line",
+          "origin": "program",
+          "runs": [
+           {
+            "w": "图中为合计最大的 "
+           },
+           {
+            "src": "fact:comp_bars.n"
+           },
+           {
+            "w": " 个国家，自上而下由大到小"
+           }
+          ]
+         },
+         {
+          "kind": "Text",
+          "role": "line",
+          "origin": "word_table",
+          "runs": [
+           {
+            "src": "name:zh_names:iso2:PT"
+           },
+           {
+            "w": "："
+           },
+           {
+            "src": "name:zh_names:siec:BA100"
+           },
+           {
+            "word": "composition.outside_total"
+           },
+           {
+            "src": "fact:excl.PT.BA100"
+           }
+          ]
+         },
+         {
+          "kind": "Text",
+          "role": "line",
+          "origin": "program",
+          "runs": [
+           {
+            "src": "name:zh_names:siec_group:nuclear"
+           },
+           {
+            "w": "为"
+           },
+           {
+            "src": "fact:zero_sum.nuclear"
+           },
+           {
+            "w": "的国家："
+           },
+           {
+            "src": "name:zh_names:iso2:PT"
+           }
+          ]
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "record": {
+    "composition": {
+     "template": "stacked_bar_100",
+     "dim": "siec",
+     "total": "TOTAL",
+     "year": "2024",
+     "place": "geo",
+     "candidates": [
+      "PT"
+     ],
+     "bars": [
+      "PT"
+     ],
+     "dropped": [],
+     "others": [],
+     "zero": [
+      {
+       "bar": "PT",
+       "part": "nuclear",
+       "cells": [
+        "series:nrg_bal_peh/A.GEP.N900H.GWH.PT:2024:OBS_VALUE"
+       ]
+      }
+     ],
+     "left_out": []
+    }
+   }
+  }
+ },
+ "request": {
+  "stacked100": {
+   "node": "stacked100",
+   "frame": {
+    "w": 480,
+    "h": 170
+   },
+   "plot": [
+    60,
+    46,
+    390,
+    86
+   ],
+   "encode": [
+    {
+     "fields": [
+      "x",
+      "w"
+     ],
+     "channel": "stack_x",
+     "of": "share",
+     "scale": {
+      "kind": "linear",
+      "domain": "zero_to_one",
+      "range": "plot.x"
+     }
+    },
+    {
+     "fields": [
+      "y",
+      "h"
+     ],
+     "channel": "band_y",
+     "of": "item",
+     "scale": {
+      "kind": "band",
+      "domain": "items",
+      "range": "plot.y",
+      "padding": 0.4
+     }
+    }
+   ],
+   "marks": [
+    {
+     "id": "stacked100/0/fossil",
+     "shape": "rect",
+     "item": 0,
+     "share": 0.13270441413672796
+    },
+    {
+     "id": "stacked100/0/renewable",
+     "shape": "rect",
+     "item": 0,
+     "share": 0.7898540140756272
+    },
+    {
+     "id": "stacked100/0/other",
+     "shape": "rect",
+     "item": 0,
+     "share": 0.07744157178764474
+    }
+   ],
+   "texts": [
+    {
+     "id": "stacked100/0/label",
+     "w": 33,
+     "h": 12.65,
+     "size": 11,
+     "near": {
+      "marks": [
+       "stacked100/0/fossil",
+       "stacked100/0/renewable",
+       "stacked100/0/other"
+      ],
+      "from": "anchor",
+      "max_px": 12
+     }
+    },
+    {
+     "id": "stacked100/0/total_text",
+     "w": 71.28,
+     "h": 12.65,
+     "size": 11,
+     "near": {
+      "marks": [
+       "stacked100/0/fossil",
+       "stacked100/0/renewable",
+       "stacked100/0/other"
+      ],
+      "from": "anchor",
+      "max_px": 12
+     }
+    },
+    {
+     "id": "stacked100/0/share_text/fossil",
+     "w": 31.9,
+     "h": 12.65,
+     "size": 11,
+     "near": {
+      "marks": [
+       "stacked100/0/fossil"
+      ],
+      "from": "anchor",
+      "max_px": 8
+     }
+    },
+    {
+     "id": "stacked100/0/share_text/renewable",
+     "w": 31.9,
+     "h": 12.65,
+     "size": 11,
+     "near": {
+      "marks": [
+       "stacked100/0/renewable"
+      ],
+      "from": "anchor",
+      "max_px": 8
+     }
+    },
+    {
+     "id": "stacked100/0/share_text/other",
+     "w": 25.52,
+     "h": 12.65,
+     "size": 11,
+     "near": {
+      "marks": [
+       "stacked100/0/other"
+      ],
+      "from": "anchor",
+      "max_px": 8
+     }
+    },
+    {
+     "id": "stacked100/texts/title",
+     "w": 60,
+     "h": 13.8,
+     "size": 12
+    },
+    {
+     "id": "stacked100/texts/unit",
+     "w": 36,
+     "h": 13.8,
+     "size": 12
+    },
+    {
+     "id": "stacked100/texts/total_head",
+     "w": 24,
+     "h": 13.8,
+     "size": 12
+    },
+    {
+     "id": "stacked100/lines/0",
+     "w": 260.88,
+     "h": 13.8,
+     "size": 12
+    },
+    {
+     "id": "stacked100/lines/1",
+     "w": 281.76,
+     "h": 13.8,
+     "size": 12
+    },
+    {
+     "id": "stacked100/lines/2",
+     "w": 126.96,
+     "h": 13.8,
+     "size": 12
+    }
+   ]
+  }
+ },
+ "reply": {
+  "stacked100": {
+   "marks": {
+    "stacked100/0/fossil": {
+     "shape": "rect",
+     "x": 60.0,
+     "w": 43.792,
+     "y": 54.0,
+     "h": 24.0
+    },
+    "stacked100/0/renewable": {
+     "shape": "rect",
+     "x": 103.792,
+     "w": 260.652,
+     "y": 54.0,
+     "h": 24.0
+    },
+    "stacked100/0/other": {
+     "shape": "rect",
+     "x": 364.444,
+     "w": 25.556,
+     "y": 54.0,
+     "h": 24.0
+    }
+   },
+   "texts": {
+    "stacked100/0/share_text/fossil": {
+     "x": 81.896,
+     "y": 50.0,
+     "anchor": "middle"
+    },
+    "stacked100/0/label": {
+     "x": 54,
+     "y": 70.0,
+     "anchor": "end"
+    },
+    "stacked100/0/total_text": {
+     "x": 396,
+     "y": 70.0,
+     "anchor": "start"
+    },
+    "stacked100/0/share_text/renewable": {
+     "x": 234.118,
+     "y": 50.0,
+     "anchor": "middle"
+    },
+    "stacked100/0/share_text/other": {
+     "x": 377.222,
+     "y": 50.0,
+     "anchor": "middle"
+    },
+    "stacked100/texts/title": {
+     "x": 10,
+     "y": 16,
+     "anchor": "start"
+    },
+    "stacked100/texts/unit": {
+     "x": 470,
+     "y": 16,
+     "anchor": "end"
+    },
+    "stacked100/texts/total_head": {
+     "x": 396,
+     "y": 30,
+     "anchor": "start"
+    },
+    "stacked100/lines/0": {
+     "x": 10,
+     "y": 104,
+     "anchor": "start"
+    },
+    "stacked100/lines/1": {
+     "x": 10,
+     "y": 122,
+     "anchor": "start"
+    },
+    "stacked100/lines/2": {
+     "x": 10,
+     "y": 140,
+     "anchor": "start"
+    }
+   }
+  }
+ },
+ "expect": "C3 $.body.children[0].children[0].lines[1]",
+ "$comment": "hole 3b through the word table: the word the line prints says 约三成"
+}

@@ -72,6 +72,12 @@ EATS = dict(map=["hub_origin", "one_unit"], ring=["monthly_companion"], callouts
 # The nodes a node brings with it: every recipe that draws the node draws these right after it, in this order (a key to its
 # marks), so no recipe can draw the marks without them; a recipe that names one itself refuses.
 WITH = dict(bubbles=["bubble_key"])
+# How each node is filled (P3, plan B): absent is rust (its fill in src/next_run.rs NODE_FILLS); "external" is a second-layer
+# node the visual group asks for geometry over the core's page tree (src/next_tree.rs node_fill), written to knobs.json as
+# the node's "binding". The page tree core's bindings (runtime/page_tree/node-bindings.json) must bind the same nodes
+# external. A binding is data, not a switch; P3 binds no production node external.
+BINDINGS = {}
+BINDINGS_OF_CORE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page_tree", "node-bindings.json")
 # What a shape condition reads that an earlier one writes (src/next_run.rs): each list is one need, met by any condition in
 # it standing before. A recipe that names the condition names one of each need first, or the condition can only refuse.
 NEEDS = dict(monthly_companion=[["hub_origin"], ["one_unit"]], others_single=[["hub_origin", "one_place"]],
@@ -146,6 +152,14 @@ def table():
     take(nodes, json.load(open(PAGE_OUT, encoding="utf-8")))
     for n, eats in EATS.items():
         nodes[n]["eats"] = list(eats)
+    core = json.load(open(BINDINGS_OF_CORE, encoding="utf-8"))["nodes"]
+    core_external = sorted(n for n, e in core.items() if e.get("binding") == "external")
+    if sorted(BINDINGS) != core_external:
+        raise SystemExit(f"BINDINGS binds {sorted(BINDINGS)} external, the page tree core's bindings {core_external}")
+    for n, b in BINDINGS.items():
+        if n not in nodes or b != "external":
+            raise SystemExit(f"{n}: binding {b!r}; a binding names a registered node and is \"external\" (absent is rust)")
+        nodes[n]["binding"] = b
     return dict(nodes=nodes, groups=groups, legacy=READS, recipes=recipes(nodes, groups))
 
 

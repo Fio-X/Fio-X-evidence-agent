@@ -1,0 +1,1564 @@
+{
+ "contract": "p3-b/1",
+ "external": [
+  "bars",
+  "bubbles",
+  "leader_notes"
+ ],
+ "input": {
+  "rows": [
+   {
+    "src": "series:sdg/SE:2025:OBS_VALUE",
+    "table": "sdg",
+    "dims": {
+     "freq": "A",
+     "unit": "PC",
+     "geo": "SE"
+    },
+    "time": "2025",
+    "value": "65.4"
+   },
+   {
+    "src": "series:sdg/BE:2025:OBS_VALUE",
+    "table": "sdg",
+    "dims": {
+     "freq": "A",
+     "unit": "PC",
+     "geo": "BE"
+    },
+    "time": "2025",
+    "value": "14.9"
+   },
+   {
+    "src": "series:sdg/DE:2025:OBS_VALUE",
+    "table": "sdg",
+    "dims": {
+     "freq": "A",
+     "unit": "PC",
+     "geo": "DE"
+    },
+    "time": "2025",
+    "value": "30.25"
+   },
+   {
+    "src": "series:sdg/FR:2025:OBS_VALUE",
+    "table": "sdg",
+    "dims": {
+     "freq": "A",
+     "unit": "PC",
+     "geo": "FR"
+    },
+    "time": "2025",
+    "value": "20"
+   },
+   {
+    "src": "series:sdg/SE:2024:OBS_VALUE",
+    "table": "sdg",
+    "dims": {
+     "freq": "A",
+     "unit": "PC",
+     "geo": "SE"
+    },
+    "time": "2024",
+    "value": "60.1"
+   }
+  ],
+  "select_spec": {
+   "countries": {
+    "kind": "given",
+    "source": "shape",
+    "path": "shape.countries"
+   },
+   "ranked": {
+    "kind": "rank",
+    "over": {
+     "table": "sdg",
+     "by": "geo",
+     "time": "2025"
+    },
+    "key": "value",
+    "order": "desc",
+    "only": "select:countries",
+    "tie": {
+     "by": "code",
+     "outcome": "order"
+    },
+    "one_row_per_code": true
+   },
+   "marks": {
+    "kind": "named_rule",
+    "rule": "marks_from_claims",
+    "inputs": {
+     "ranked": "ranked"
+    }
+   },
+   "hi": {
+    "kind": "take",
+    "from": "ranked",
+    "at": "first",
+    "tie": {
+     "by": "printed",
+     "fmt": "pc",
+     "outcome": "silence"
+    }
+   },
+   "lo": {
+    "kind": "take",
+    "from": "ranked",
+    "at": "last",
+    "tie": {
+     "by": "printed",
+     "fmt": "pc",
+     "outcome": "silence"
+    }
+   }
+  },
+  "knobs": {
+   "stacked100.tol": {
+    "value": 1e-05,
+    "min": 0,
+    "max": 0.001
+   }
+  },
+  "drawn_rules": {
+   "bars": "rows_of_select",
+   "bubbles": "rows_of_select"
+  },
+  "given": {
+   "countries": [
+    "BE",
+    "DE",
+    "FR",
+    "SE"
+   ],
+   "marks": [
+    "BE"
+   ]
+  },
+  "name_table": {
+   "labels": {
+    "SE": "瑞典",
+    "BE": "比利时",
+    "DE": "德国",
+    "FR": "法国"
+   },
+   "named": {
+    "name:unit_short_zh:PC": "%",
+    "name:catalogue:sdg:title": "可再生能源在最终能源消费总量中的占比（按部门）"
+   }
+  },
+  "points": {
+   "table": "naturalearth-admin0-50m-attributes",
+   "sha256": "206fbe5e671c3c3f19db0709a7d85093ed935b2490b25b4d5b50a3c0a4120d1a",
+   "at": {
+    "SE": [
+     19.01705,
+     65.85918
+    ],
+    "DE": [
+     9.678348,
+     50.961733
+    ],
+    "FR": [
+     2.552275,
+     46.696113
+    ],
+    "BE": [
+     4.800448,
+     50.785392
+    ]
+   }
+  },
+  "word_table": {
+   "column.note.hi": "最高",
+   "column.note.lo": "最低",
+   "composition.outside_total": "不计入合计，差额为"
+  },
+  "page_spec": {
+   "kind": "Page",
+   "schema_version": "0.1.0",
+   "$comment": "q1 column page as merged after the external bars and bubbles fills (P3 fixture, derived by make_fixtures.py)",
+   "recipe": "column",
+   "order": [
+    "bars",
+    "bubbles",
+    "bubble_key",
+    "leader_notes"
+   ],
+   "scoped": false,
+   "texts": {
+    "title": {
+     "kind": "Text",
+     "role": "headline",
+     "origin": "word_table",
+     "runs": [
+      {
+       "name": "select:hi"
+      },
+      {
+       "w": "最高，是最低者"
+      },
+      {
+       "name": "select:lo"
+      },
+      {
+       "w": "的"
+      },
+      {
+       "fact": "times"
+      }
+     ]
+    },
+    "dek": {
+     "kind": "Text",
+     "role": "dek",
+     "origin": "word_table",
+     "runs": [
+      {
+       "fact": "lead1",
+       "part": "t"
+      },
+      {
+       "w": "，"
+      },
+      {
+       "name": "select:hi"
+      },
+      {
+       "w": "最高，为"
+      },
+      {
+       "fact": "hi"
+      },
+      {
+       "w": "，比最低的"
+      },
+      {
+       "name": "select:lo"
+      },
+      {
+       "w": "高"
+      },
+      {
+       "fact": "gap"
+      }
+     ]
+    },
+    "kicker": {
+     "kind": "Text",
+     "role": "kicker",
+     "origin": "text_step",
+     "runs": [
+      {
+       "w": "标题"
+      }
+     ]
+    },
+    "unit": {
+     "kind": "Text",
+     "role": "unit",
+     "origin": "program",
+     "runs": [
+      {
+       "w": "单位："
+      },
+      {
+       "src": "name:unit_short_zh:PC"
+      }
+     ]
+    },
+    "source": {
+     "kind": "Text",
+     "role": "source",
+     "origin": "program",
+     "runs": [
+      {
+       "w": "数据来源："
+      },
+      {
+       "src": "name:catalogue:sdg:title"
+      },
+      {
+       "w": "（"
+      },
+      {
+       "table": "sdg"
+      },
+      {
+       "w": "）"
+      }
+     ]
+    }
+   },
+   "finding": {
+    "branch": "level",
+    "select": "hi",
+    "dek": {
+     "kind": "Text",
+     "role": "dek",
+     "origin": "word_table",
+     "runs": [
+      {
+       "fact": "lead1",
+       "part": "t"
+      },
+      {
+       "w": "，"
+      },
+      {
+       "name": "select:hi"
+      },
+      {
+       "w": "最高，为"
+      },
+      {
+       "fact": "hi"
+      },
+      {
+       "w": "，比最低的"
+      },
+      {
+       "name": "select:lo"
+      },
+      {
+       "w": "高"
+      },
+      {
+       "fact": "gap"
+      }
+     ]
+    },
+    "dek_scoped": {
+     "kind": "Text",
+     "role": "dek",
+     "origin": "word_table",
+     "runs": [
+      {
+       "fact": "lead1",
+       "part": "t"
+      },
+      {
+       "w": "，所选各方中，"
+      },
+      {
+       "name": "select:hi"
+      },
+      {
+       "w": "居首，为"
+      },
+      {
+       "fact": "hi"
+      },
+      {
+       "w": "，比"
+      },
+      {
+       "name": "select:lo"
+      },
+      {
+       "w": "高"
+      },
+      {
+       "fact": "gap"
+      }
+     ]
+    },
+    "headline": {
+     "kind": "Text",
+     "role": "headline",
+     "origin": "word_table",
+     "runs": [
+      {
+       "name": "select:hi"
+      },
+      {
+       "w": "最高，是最低者"
+      },
+      {
+       "name": "select:lo"
+      },
+      {
+       "w": "的"
+      },
+      {
+       "fact": "times"
+      }
+     ]
+    },
+    "headline_scoped": {
+     "kind": "Text",
+     "role": "headline",
+     "origin": "word_table",
+     "runs": [
+      {
+       "w": "所选各方中"
+      },
+      {
+       "name": "select:hi"
+      },
+      {
+       "w": "居首，是"
+      },
+      {
+       "name": "select:lo"
+      },
+      {
+       "w": "的"
+      },
+      {
+       "fact": "times"
+      }
+     ]
+    },
+    "requires_facts": [
+     "times"
+    ]
+   },
+   "facts": {
+    "kind": "Facts",
+    "tables": {
+     "sdg": {
+      "id": "sdg"
+     }
+    },
+    "facts": {
+     "val": {
+      "each": "geo",
+      "table": "sdg",
+      "time": "2025",
+      "fmt": "pc"
+     },
+     "drawn": {
+      "op": "n",
+      "by": "geo",
+      "table": "sdg",
+      "time": "2025",
+      "fmt": "n"
+     },
+     "hi": {
+      "table": "sdg",
+      "filter": {
+       "geo": "select:hi"
+      },
+      "time": "2025",
+      "fmt": "pc"
+     },
+     "lo": {
+      "table": "sdg",
+      "filter": {
+       "geo": "select:lo"
+      },
+      "time": "2025",
+      "fmt": "pc"
+     },
+     "gap": {
+      "op": "minus",
+      "a": "hi",
+      "b": "lo",
+      "fmt": "pp"
+     },
+     "times": {
+      "op": "times",
+      "a": "hi",
+      "b": "lo",
+      "fmt": "times"
+     },
+     "lead1": {
+      "op": "last",
+      "table": "sdg",
+      "filter": {
+       "geo": "select:hi"
+      },
+      "from": "2025",
+      "to": "2025",
+      "fmt": "pc"
+     }
+    },
+    "fmts": {
+     "pc": {
+      "scale": 1,
+      "dec": 2,
+      "suffix": "%",
+      "dec_rule": {
+       "rule": "held_decimals",
+       "rows": {
+        "table": "sdg",
+        "filter": {
+         "geo": "select:ranked"
+        },
+        "time": "2025"
+       },
+       "max": {
+        "const": "COLUMN_DEC",
+        "value": 2
+       }
+      }
+     },
+     "pp": {
+      "scale": 1,
+      "dec": 1,
+      "suffix": " 个百分点",
+      "dec_rule": {
+       "rule": "min_of",
+       "of": [
+        "pc"
+       ],
+       "max": {
+        "const": "POINTS_DEC",
+        "value": 1
+       }
+      }
+     },
+     "times": {
+      "scale": 1,
+      "dec": 1,
+      "suffix": "倍",
+      "dec_rule": {
+       "rule": "fixed"
+      }
+     },
+     "time": {}
+    },
+    "rows": [
+     {
+      "src": "series:sdg/SE:2025:OBS_VALUE",
+      "table": "sdg",
+      "dims": {
+       "freq": "A",
+       "unit": "PC",
+       "geo": "SE"
+      },
+      "time": "2025",
+      "value": "65.4"
+     },
+     {
+      "src": "series:sdg/BE:2025:OBS_VALUE",
+      "table": "sdg",
+      "dims": {
+       "freq": "A",
+       "unit": "PC",
+       "geo": "BE"
+      },
+      "time": "2025",
+      "value": "14.9"
+     },
+     {
+      "src": "series:sdg/DE:2025:OBS_VALUE",
+      "table": "sdg",
+      "dims": {
+       "freq": "A",
+       "unit": "PC",
+       "geo": "DE"
+      },
+      "time": "2025",
+      "value": "30.25"
+     },
+     {
+      "src": "series:sdg/FR:2025:OBS_VALUE",
+      "table": "sdg",
+      "dims": {
+       "freq": "A",
+       "unit": "PC",
+       "geo": "FR"
+      },
+      "time": "2025",
+      "value": "20"
+     }
+    ],
+    "labels": {
+     "SE": "瑞典",
+     "BE": "比利时",
+     "DE": "德国",
+     "FR": "法国"
+    },
+    "named": {
+     "name:unit_short_zh:PC": "%",
+     "name:catalogue:sdg:title": "可再生能源在最终能源消费总量中的占比（按部门）"
+    },
+    "points": {
+     "table": "naturalearth-admin0-50m-attributes",
+     "sha256": "206fbe5e671c3c3f19db0709a7d85093ed935b2490b25b4d5b50a3c0a4120d1a",
+     "at": {
+      "SE": [
+       19.01705,
+       65.85918
+      ],
+      "DE": [
+       9.678348,
+       50.961733
+      ],
+      "FR": [
+       2.552275,
+       46.696113
+      ],
+      "BE": [
+       4.800448,
+       50.785392
+      ]
+     }
+    }
+   },
+   "selects": {
+    "kind": "Selects",
+    "items": [
+     {
+      "id": "countries",
+      "kind": "given",
+      "source": "shape",
+      "path": "shape.countries",
+      "result": [
+       "BE",
+       "DE",
+       "FR",
+       "SE"
+      ]
+     },
+     {
+      "id": "ranked",
+      "kind": "rank",
+      "over": {
+       "table": "sdg",
+       "by": "geo",
+       "time": "2025"
+      },
+      "key": "value",
+      "order": "desc",
+      "only": "select:countries",
+      "tie": {
+       "by": "code",
+       "outcome": "order"
+      },
+      "one_row_per_code": true,
+      "result": [
+       "SE",
+       "DE",
+       "FR",
+       "BE"
+      ]
+     },
+     {
+      "id": "marks",
+      "kind": "named_rule",
+      "rule": "marks_from_claims",
+      "inputs": {
+       "ranked": "ranked"
+      },
+      "result": [
+       "BE"
+      ]
+     },
+     {
+      "id": "hi",
+      "kind": "take",
+      "from": "ranked",
+      "at": "first",
+      "tie": {
+       "by": "printed",
+       "fmt": "pc",
+       "outcome": "silence"
+      },
+      "result": "SE"
+     },
+     {
+      "id": "lo",
+      "kind": "take",
+      "from": "ranked",
+      "at": "last",
+      "tie": {
+       "by": "printed",
+       "fmt": "pc",
+       "outcome": "silence"
+      },
+      "result": "BE"
+     }
+    ]
+   },
+   "checks": {
+    "kind": "Checks",
+    "items": [
+     {
+      "id": "unit_short",
+      "kind": "unit_short",
+      "args": {
+       "unit": "PC"
+      },
+      "on_fail": "stop"
+     },
+     {
+      "id": "ranks_some",
+      "kind": "ranks_some",
+      "args": {
+       "select": "ranked"
+      },
+      "on_fail": "stop"
+     },
+     {
+      "id": "one_row",
+      "kind": "one_row_per_code",
+      "args": {
+       "family": "val"
+      },
+      "on_fail": "stop"
+     },
+     {
+      "id": "points",
+      "kind": "points_pinned",
+      "args": {
+       "table": "naturalearth-admin0-50m-attributes"
+      },
+      "on_fail": "stop"
+     },
+     {
+      "id": "bubbles_all",
+      "kind": "count_equals",
+      "args": {
+       "items": "bubbles",
+       "select": "ranked"
+      },
+      "on_fail": "stop"
+     },
+     {
+      "id": "names",
+      "kind": "named",
+      "name_kind": "iso2",
+      "codes": {
+       "select": "ranked"
+      },
+      "on_fail": "stop"
+     },
+     {
+      "id": "finding_words",
+      "kind": "finding_words",
+      "args": {
+       "branch": "level"
+      },
+      "on_fail": "stop"
+     },
+     {
+      "id": "same_twice",
+      "kind": "page_check",
+      "name": "same_numbers_twice",
+      "on_fail": "page_fail"
+     },
+     {
+      "id": "type_size",
+      "kind": "page_check",
+      "name": "type_size",
+      "on_fail": "page_fail"
+     },
+     {
+      "id": "contrast",
+      "kind": "page_check",
+      "name": "text_contrast",
+      "on_fail": "page_fail"
+     }
+    ]
+   },
+   "body": {
+    "kind": "Frame",
+    "id": "page",
+    "role": "page",
+    "children": [
+     {
+      "kind": "Frame",
+      "id": "hero",
+      "role": "hero",
+      "children": [
+       {
+        "kind": "Node",
+        "id": "bars",
+        "node": "bars",
+        "knobs": {
+         "measure": "level"
+        },
+        "binds": {
+         "chart": "bars",
+         "by": "geo",
+         "year": "2025",
+         "family": {
+          "family": "val"
+         },
+         "ranked": "select:ranked",
+         "marks": "select:marks",
+         "accent": "select:hi",
+         "count": {
+          "fact": "drawn"
+         }
+        },
+        "items": [
+         {
+          "code": "select:ranked[0]",
+          "value": "series:sdg/SE:2025:OBS_VALUE",
+          "value_text": "fact:val.SE.n",
+          "focus": true
+         },
+         {
+          "code": "select:ranked[1]",
+          "value": "series:sdg/DE:2025:OBS_VALUE",
+          "value_text": "fact:val.DE.n",
+          "focus": false
+         },
+         {
+          "code": "select:ranked[2]",
+          "value": "series:sdg/FR:2025:OBS_VALUE",
+          "value_text": "fact:val.FR.n",
+          "focus": false
+         },
+         {
+          "code": "select:ranked[3]",
+          "value": "series:sdg/BE:2025:OBS_VALUE",
+          "value_text": "fact:val.BE.n",
+          "focus": false
+         }
+        ]
+       },
+       {
+        "kind": "Node",
+        "id": "bubbles",
+        "node": "bubbles",
+        "items_for": "select:ranked",
+        "items": [
+         {
+          "code": "select:ranked[0]",
+          "value": "series:sdg/SE:2025:OBS_VALUE",
+          "value_text": "fact:val.SE.n",
+          "at": [
+           19.01705,
+           65.85918
+          ]
+         },
+         {
+          "code": "select:ranked[1]",
+          "value": "series:sdg/DE:2025:OBS_VALUE",
+          "value_text": "fact:val.DE.n",
+          "at": [
+           9.678348,
+           50.961733
+          ]
+         },
+         {
+          "code": "select:ranked[2]",
+          "value": "series:sdg/FR:2025:OBS_VALUE",
+          "value_text": "fact:val.FR.n",
+          "at": [
+           2.552275,
+           46.696113
+          ]
+         },
+         {
+          "code": "select:ranked[3]",
+          "value": "series:sdg/BE:2025:OBS_VALUE",
+          "value_text": "fact:val.BE.n",
+          "at": [
+           4.800448,
+           50.785392
+          ]
+         }
+        ],
+        "geometry": {
+         "ext": [
+          -1.4477250000000002,
+          42.696113,
+          23.01705,
+          69.85918
+         ]
+        },
+        "binds": {
+         "family": {
+          "family": "val"
+         }
+        }
+       },
+       {
+        "kind": "Node",
+        "id": "bubble_key",
+        "node": "bubble_key"
+       },
+       {
+        "kind": "Node",
+        "id": "leader_notes",
+        "node": "leader_notes",
+        "geometry": {
+         "ext": [
+          -1.4477250000000002,
+          42.696113,
+          23.01705,
+          69.85918
+         ]
+        },
+        "items": [
+         {
+          "code": "select:hi",
+          "at": [
+           19.01705,
+           65.85918
+          ],
+          "text": [
+           {
+            "word": "column.note.hi"
+           }
+          ],
+          "value_text": "fact:gap"
+         },
+         {
+          "code": "select:lo",
+          "at": [
+           4.800448,
+           50.785392
+          ],
+          "text": [
+           {
+            "word": "column.note.lo"
+           }
+          ],
+          "value_text": "fact:times"
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "record": {
+    "drawn": [
+     {
+      "layer": "bars",
+      "src": "series:sdg/SE:2025:OBS_VALUE",
+      "table": "sdg",
+      "time": "2025"
+     },
+     {
+      "layer": "bars",
+      "src": "series:sdg/BE:2025:OBS_VALUE",
+      "table": "sdg",
+      "time": "2025"
+     },
+     {
+      "layer": "bars",
+      "src": "series:sdg/DE:2025:OBS_VALUE",
+      "table": "sdg",
+      "time": "2025"
+     },
+     {
+      "layer": "bars",
+      "src": "series:sdg/FR:2025:OBS_VALUE",
+      "table": "sdg",
+      "time": "2025"
+     },
+     {
+      "layer": "bubbles",
+      "src": "series:sdg/SE:2025:OBS_VALUE",
+      "table": "sdg",
+      "time": "2025"
+     },
+     {
+      "layer": "bubbles",
+      "src": "series:sdg/BE:2025:OBS_VALUE",
+      "table": "sdg",
+      "time": "2025"
+     },
+     {
+      "layer": "bubbles",
+      "src": "series:sdg/DE:2025:OBS_VALUE",
+      "table": "sdg",
+      "time": "2025"
+     },
+     {
+      "layer": "bubbles",
+      "src": "series:sdg/FR:2025:OBS_VALUE",
+      "table": "sdg",
+      "time": "2025"
+     }
+    ]
+   }
+  }
+ },
+ "request": {
+  "bars": {
+   "node": "bars",
+   "frame": {
+    "w": 400,
+    "h": 240
+   },
+   "plot": [
+    30,
+    40,
+    370,
+    210
+   ],
+   "encode": [
+    {
+     "fields": [
+      "h",
+      "y"
+     ],
+     "channel": "length_up",
+     "of": "value",
+     "scale": {
+      "kind": "linear",
+      "domain": "zero_to_max",
+      "range": "plot.y"
+     }
+    },
+    {
+     "fields": [
+      "x",
+      "w"
+     ],
+     "channel": "band_x",
+     "of": "item",
+     "scale": {
+      "kind": "band",
+      "domain": "items",
+      "range": "plot.x",
+      "padding": 0.4
+     }
+    }
+   ],
+   "marks": [
+    {
+     "id": "bars/0",
+     "shape": "rect",
+     "item": 0,
+     "value": 65.4
+    },
+    {
+     "id": "bars/1",
+     "shape": "rect",
+     "item": 1,
+     "value": 30.25
+    },
+    {
+     "id": "bars/2",
+     "shape": "rect",
+     "item": 2,
+     "value": 20.0
+    },
+    {
+     "id": "bars/3",
+     "shape": "rect",
+     "item": 3,
+     "value": 14.9
+    }
+   ],
+   "texts": [
+    {
+     "id": "bars/0/label",
+     "w": 22,
+     "h": 12.65,
+     "size": 11,
+     "near": {
+      "marks": [
+       "bars/0"
+      ],
+      "from": "anchor",
+      "max_px": 24
+     }
+    },
+    {
+     "id": "bars/0/value_text",
+     "w": 38.28,
+     "h": 12.65,
+     "size": 11,
+     "near": {
+      "marks": [
+       "bars/0"
+      ],
+      "from": "anchor",
+      "max_px": 12
+     }
+    },
+    {
+     "id": "bars/1/label",
+     "w": 22,
+     "h": 12.65,
+     "size": 11,
+     "near": {
+      "marks": [
+       "bars/1"
+      ],
+      "from": "anchor",
+      "max_px": 24
+     }
+    },
+    {
+     "id": "bars/1/value_text",
+     "w": 38.28,
+     "h": 12.65,
+     "size": 11,
+     "near": {
+      "marks": [
+       "bars/1"
+      ],
+      "from": "anchor",
+      "max_px": 12
+     }
+    },
+    {
+     "id": "bars/2/label",
+     "w": 22,
+     "h": 12.65,
+     "size": 11,
+     "near": {
+      "marks": [
+       "bars/2"
+      ],
+      "from": "anchor",
+      "max_px": 24
+     }
+    },
+    {
+     "id": "bars/2/value_text",
+     "w": 38.28,
+     "h": 12.65,
+     "size": 11,
+     "near": {
+      "marks": [
+       "bars/2"
+      ],
+      "from": "anchor",
+      "max_px": 12
+     }
+    },
+    {
+     "id": "bars/3/label",
+     "w": 33,
+     "h": 12.65,
+     "size": 11,
+     "near": {
+      "marks": [
+       "bars/3"
+      ],
+      "from": "anchor",
+      "max_px": 24
+     }
+    },
+    {
+     "id": "bars/3/value_text",
+     "w": 38.28,
+     "h": 12.65,
+     "size": 11,
+     "near": {
+      "marks": [
+       "bars/3"
+      ],
+      "from": "anchor",
+      "max_px": 12
+     }
+    }
+   ]
+  },
+  "bubbles": {
+   "node": "bubbles",
+   "frame": {
+    "w": 460,
+    "h": 400
+   },
+   "plot": [
+    10,
+    10,
+    450,
+    390
+   ],
+   "encode": [
+    {
+     "fields": [
+      "r"
+     ],
+     "channel": "radius_area",
+     "of": "value",
+     "scale": {
+      "kind": "sqrt",
+      "domain": "zero_to_max",
+      "range": {
+       "max_px": 28
+      }
+     }
+    },
+    {
+     "fields": [
+      "cx",
+      "cy"
+     ],
+     "channel": "point",
+     "of": "at",
+     "scale": {
+      "kind": "mercator",
+      "domain": "ext",
+      "range": "plot"
+     }
+    }
+   ],
+   "marks": [
+    {
+     "id": "bubbles/0",
+     "shape": "circle",
+     "item": 0,
+     "value": 65.4,
+     "pin": [
+      290.488,
+      88.19
+     ]
+    },
+    {
+     "id": "bubbles/1",
+     "shape": "circle",
+     "item": 1,
+     "value": 30.25,
+     "pin": [
+      221.871,
+      300.98
+     ]
+    },
+    {
+     "id": "bubbles/2",
+     "shape": "circle",
+     "item": 2,
+     "value": 20.0,
+     "pin": [
+      169.512,
+      348.63
+     ]
+    },
+    {
+     "id": "bubbles/3",
+     "shape": "circle",
+     "item": 3,
+     "value": 14.9,
+     "pin": [
+      186.031,
+      303.034
+     ]
+    }
+   ],
+   "texts": [
+    {
+     "id": "bubbles/0/value_text",
+     "w": 38.28,
+     "h": 12.65,
+     "size": 11,
+     "near": {
+      "marks": [
+       "bubbles/0"
+      ],
+      "from": "anchor",
+      "max_px": 12
+     }
+    },
+    {
+     "id": "bubbles/1/value_text",
+     "w": 38.28,
+     "h": 12.65,
+     "size": 11,
+     "near": {
+      "marks": [
+       "bubbles/1"
+      ],
+      "from": "anchor",
+      "max_px": 12
+     }
+    },
+    {
+     "id": "bubbles/2/value_text",
+     "w": 38.28,
+     "h": 12.65,
+     "size": 11,
+     "near": {
+      "marks": [
+       "bubbles/2"
+      ],
+      "from": "anchor",
+      "max_px": 12
+     }
+    },
+    {
+     "id": "bubbles/3/value_text",
+     "w": 38.28,
+     "h": 12.65,
+     "size": 11,
+     "near": {
+      "marks": [
+       "bubbles/3"
+      ],
+      "from": "anchor",
+      "max_px": 12
+     }
+    }
+   ]
+  },
+  "leader_notes": {
+   "node": "leader_notes",
+   "frame": {
+    "w": 460,
+    "h": 400
+   },
+   "plot": [
+    10,
+    10,
+    450,
+    390
+   ],
+   "encode": [
+    {
+     "fields": [
+      "x2",
+      "y2"
+     ],
+     "channel": "point",
+     "of": "at",
+     "scale": {
+      "kind": "mercator",
+      "domain": "ext",
+      "range": "plot"
+     }
+    }
+   ],
+   "marks": [
+    {
+     "id": "leader_notes/0",
+     "shape": "line",
+     "item": 0,
+     "pin": [
+      290.488,
+      88.19
+     ]
+    },
+    {
+     "id": "leader_notes/1",
+     "shape": "line",
+     "item": 1,
+     "pin": [
+      186.031,
+      303.034
+     ]
+    }
+   ],
+   "texts": [
+    {
+     "id": "leader_notes/0/text",
+     "w": 24,
+     "h": 13.8,
+     "size": 12,
+     "near": {
+      "marks": [
+       "leader_notes/0"
+      ],
+      "from": "box",
+      "max_px": 6
+     }
+    },
+    {
+     "id": "leader_notes/0/value_text",
+     "w": 82.8,
+     "h": 13.8,
+     "size": 12,
+     "near": {
+      "marks": [
+       "leader_notes/0"
+      ],
+      "from": "box",
+      "max_px": 12
+     }
+    },
+    {
+     "id": "leader_notes/1/text",
+     "w": 24,
+     "h": 13.8,
+     "size": 12,
+     "near": {
+      "marks": [
+       "leader_notes/1"
+      ],
+      "from": "box",
+      "max_px": 6
+     }
+    },
+    {
+     "id": "leader_notes/1/value_text",
+     "w": 32.88,
+     "h": 13.8,
+     "size": 12,
+     "near": {
+      "marks": [
+       "leader_notes/1"
+      ],
+      "from": "box",
+      "max_px": 12
+     }
+    }
+   ]
+  }
+ },
+ "reply": {
+  "bars": {
+   "marks": {
+    "bars/0": {
+     "shape": "rect",
+     "h": 170.0,
+     "y": 40.0,
+     "x": 47.0,
+     "w": 51.0
+    },
+    "bars/1": {
+     "shape": "rect",
+     "h": 78.631,
+     "y": 131.369,
+     "x": 132.0,
+     "w": 51.0
+    },
+    "bars/2": {
+     "shape": "rect",
+     "h": 51.988,
+     "y": 158.012,
+     "x": 217.0,
+     "w": 51.0
+    },
+    "bars/3": {
+     "shape": "rect",
+     "h": 38.731,
+     "y": 171.269,
+     "x": 302.0,
+     "w": 51.0
+    }
+   },
+   "texts": {
+    "bars/0/label": {
+     "x": 72.5,
+     "y": 224,
+     "anchor": "middle"
+    },
+    "bars/0/value_text": {
+     "x": 72.5,
+     "y": 36.0,
+     "anchor": "middle"
+    },
+    "bars/1/label": {
+     "x": 157.5,
+     "y": 224,
+     "anchor": "middle"
+    },
+    "bars/1/value_text": {
+     "x": 157.5,
+     "y": 127.369,
+     "anchor": "middle"
+    },
+    "bars/2/label": {
+     "x": 242.5,
+     "y": 224,
+     "anchor": "middle"
+    },
+    "bars/2/value_text": {
+     "x": 242.5,
+     "y": 154.012,
+     "anchor": "middle"
+    },
+    "bars/3/label": {
+     "x": 327.5,
+     "y": 224,
+     "anchor": "middle"
+    },
+    "bars/3/value_text": {
+     "x": 327.5,
+     "y": 167.269,
+     "anchor": "middle"
+    }
+   }
+  },
+  "bubbles": {
+   "marks": {
+    "bubbles/0": {
+     "shape": "circle",
+     "r": 28.0,
+     "cx": 290.488,
+     "cy": 88.19,
+     "at": [
+      4.800448,
+      50.785392
+     ]
+    },
+    "bubbles/1": {
+     "shape": "circle",
+     "r": 19.043,
+     "cx": 221.871,
+     "cy": 300.98
+    },
+    "bubbles/2": {
+     "shape": "circle",
+     "r": 15.484,
+     "cx": 169.512,
+     "cy": 348.63
+    },
+    "bubbles/3": {
+     "shape": "circle",
+     "r": 13.365,
+     "cx": 186.031,
+     "cy": 303.034
+    }
+   },
+   "texts": {
+    "bubbles/0/value_text": {
+     "x": 290.488,
+     "y": 56.19,
+     "anchor": "middle"
+    },
+    "bubbles/1/value_text": {
+     "x": 221.871,
+     "y": 277.937,
+     "anchor": "middle"
+    },
+    "bubbles/2/value_text": {
+     "x": 169.512,
+     "y": 329.146,
+     "anchor": "middle"
+    },
+    "bubbles/3/value_text": {
+     "x": 169.666,
+     "y": 307.034,
+     "anchor": "end"
+    }
+   }
+  },
+  "leader_notes": {
+   "marks": {
+    "leader_notes/0": {
+     "shape": "line",
+     "x2": 290.488,
+     "y2": 88.19,
+     "x1": 425,
+     "y1": 84.29
+    },
+    "leader_notes/1": {
+     "shape": "line",
+     "x2": 186.031,
+     "y2": 303.034,
+     "x1": 35,
+     "y1": 299.134
+    }
+   },
+   "texts": {
+    "leader_notes/0/text": {
+     "x": 452,
+     "y": 88.19,
+     "anchor": "end"
+    },
+    "leader_notes/0/value_text": {
+     "x": 452,
+     "y": 104.99,
+     "anchor": "end"
+    },
+    "leader_notes/1/text": {
+     "x": 8,
+     "y": 303.034,
+     "anchor": "start"
+    },
+    "leader_notes/1/value_text": {
+     "x": 8,
+     "y": 319.834,
+     "anchor": "start"
+    }
+   }
+  }
+ },
+ "expect": "B0 reply.bubbles.marks.bubbles/0.at",
+ "$comment": "hole 1a: the node restates SE's point as BE's"
+}

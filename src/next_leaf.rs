@@ -28,6 +28,10 @@ use crate::next_nodes::{tw, Bx, Kind, Knob, NodeInfo, Val};
 /// How long one layer may take before the child is stopped and the layer refused.
 pub const LAYER_DEADLINE: Duration = Duration::from_secs(2);
 
+/// How long an external node (next_tree::node_fill) may take to send back its one reply line before the child is stopped
+/// and the page refused.
+pub const FILL_DEADLINE: Duration = Duration::from_secs(2);
+
 /// How long one bake (Chrome started, the page laid out, its DOM read back) may take before the child is stopped.
 pub const BAKE_DEADLINE: Duration = Duration::from_secs(20);
 
@@ -105,6 +109,8 @@ pub struct Leaf {
     pub reserve: bool,
     /// The shape conditions the node needs its tables to meet (knobs.py EATS); none stated is empty.
     pub eats: Vec<String>,
+    /// knobs.json `binding`: "external" (asked through next_tree::node_fill), or none written (rust, the default).
+    pub external: bool,
 }
 
 /// A page recipe, a page's outermost composite node (knobs.py RECIPES): the layers its page draws, bottom first; the shape
@@ -114,6 +120,7 @@ pub struct Leaf {
 /// layer that reads a time keeps to (none: each layer its own); the pairs of its layers that print the same measure by
 /// design (same_measure; none: no two may, next_run.rs page_checks); and whether its page has a slot for the illustration
 /// strip (strip; run.py STRIP_SLOT places it): only then does the flow ask for one and hold the page to placing it.
+#[derive(Clone, Debug)]
 pub struct Recipe {
     pub name: String,
     pub layers: Vec<String>,
@@ -124,6 +131,9 @@ pub struct Recipe {
     pub window: Vec<String>,
     pub same_measure: Vec<(String, String)>,
     pub strip: bool,
+    /// The recipe's layers whose node the registry binds external (knobs.json `binding`; none written is rust): the flow
+    /// asks the visual group's NodeFill for them instead of a rust fill.
+    pub external: Vec<String>,
 }
 
 const LEAVES: &str = include_str!("../runtime/leaves_py/knobs.json");
@@ -159,7 +169,12 @@ pub fn leaves() -> &'static Leaves {
             let knobs: Vec<Knob> = n["knobs"].as_array().expect("knobs.json: knobs").iter().map(knob).collect();
             let info = NodeInfo { name: word(&json!(name)), needs: &[], knobs: Box::leak(knobs.into_boxed_slice()), inner: None };
             let reserve = n["reserve"].as_bool().expect("knobs.json: reserve");
-            (name.clone(), Leaf { info: Box::leak(Box::new(info)), reserve, eats: words(&n["eats"]) })
+            let external = match &n["binding"] {
+                Value::Null => false,
+                Value::String(b) if b == "external" => true,
+                b => panic!("knobs.json: node {name} binding {b}: external, or none (rust)"),
+            };
+            (name.clone(), Leaf { info: Box::leak(Box::new(info)), reserve, eats: words(&n["eats"]), external })
         });
         let legacy = t["legacy"].as_object().expect("knobs.json: legacy").iter().map(|(node, at)| {
             (node.clone(), at.as_array().expect("knobs.json: a path").iter().map(|p| word(p).to_string()).collect())
@@ -168,6 +183,9 @@ pub fn leaves() -> &'static Leaves {
         let groups = t["groups"].as_object().expect("knobs.json: groups").iter().map(|(name, layers)| {
             (name.clone(), layers.as_array().expect("knobs.json: a group").iter().map(|l| word(l).to_string()).collect())
         });
+        let bound = |layers: &[String]| -> Vec<String> {
+            layers.iter().filter(|l| t["nodes"][l.as_str()]["binding"].as_str() == Some("external")).cloned().collect()
+        };
         let recipes = t["recipes"].as_array().expect("knobs.json: recipes").iter().map(|r| Recipe {
             name: r["name"].as_str().expect("knobs.json: a recipe name").to_string(),
             layers: words(&r["layers"]),
@@ -186,6 +204,7 @@ pub fn leaves() -> &'static Leaves {
                 Value::Null => false,
                 v => v.as_bool().expect("knobs.json: a recipe's strip is true or false"),
             },
+            external: bound(&words(&r["layers"])),
         });
         Leaves { nodes: nodes.collect(), groups: groups.collect(), legacy, recipes: recipes.collect() }
     })
@@ -736,6 +755,46 @@ fn start(runner: &Runner) -> Result<(Child, ChildStdin, Lines), String> {
         }
     });
     Ok((child, stdin, rx))
+}
+
+/// One request line to a fill child started by `runner` and its one reply line back within `deadline`, the child stopped
+/// after: (the line, milliseconds from start to reply). The child's environment is tighter than a leaf's: PATH and LANG
+/// only (no HOME), and it runs in its own folder.
+pub fn ask_once(runner: &Runner, request: &str, deadline: Duration) -> Result<(String, u128), String> {
+    let started = Instant::now();
+    let dir = runner.args.last().map(Path::new).and_then(Path::parent).filter(|d| d.is_dir());
+    let mut cmd = Command::new(&runner.program);
+    cmd.args(&runner.args)
+        .env_clear()
+        .envs(["PATH", "LANG"].iter().filter_map(|k| Some((*k, std::env::var(k).ok()?))))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    if let Some(dir) = dir {
+        cmd.current_dir(dir);
+    }
+    let mut child = cmd.spawn().map_err(|e| format!("{} did not start: {e}", runner.program))?;
+    let (Some(mut stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else {
+        stop(child);
+        return Err(format!("{} gave no pipes", runner.program));
+    };
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut line = String::new();
+        let got = BufReader::new(stdout).read_line(&mut line).map(|_| line);
+        let _ = tx.send(got);
+    });
+    let sent = writeln!(stdin, "{request}").and_then(|_| stdin.flush());
+    drop(stdin);
+    let reply = match (sent, rx.recv_timeout(deadline)) {
+        (Err(_), _) => Err("the node closed its input".to_string()),
+        (_, Ok(Ok(line))) if !line.trim().is_empty() => Ok(line.trim_end().to_string()),
+        (_, Ok(Ok(_))) => Err("the node exited with no reply".to_string()),
+        (_, Ok(Err(e))) => Err(format!("reading the reply: {e}")),
+        (_, Err(_)) => Err(format!("no reply in {deadline:?}")),
+    };
+    stop(child);
+    reply.map(|line| (line, started.elapsed().as_millis()))
 }
 
 /// A refused panel: the records so far and every reason the refused layer gave.

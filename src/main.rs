@@ -53,6 +53,7 @@ mod next_params;
 mod next_render;
 mod next_run;
 mod next_serve;
+mod next_tree;
 mod next_visual;
 mod number_audit;
 #[cfg(test)]

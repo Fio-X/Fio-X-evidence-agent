@@ -89,6 +89,11 @@ pub enum Request<'a> {
     /// names one of them, drawn by the strip child under `runtime` (the run's materialized runtime/) in the page's ink and
     /// accent and taken only as line art in those (next_leaf::strip); none when no set names them. Nothing is written.
     IllusStrip { tables: &'a [String], width: f64, runtime: &'a Path },
+    /// One external node of the core's page tree (`tree`: the page spec with the rows, name table, points, picks, select
+    /// specs, knobs and word table it was computed from) asked for its geometry by its registered runner under `runtime`
+    /// (next_tree::node_fill): every select, fact, check, item and word the core's own, checked before the child starts;
+    /// the reply's geometry checked against the core's recomputation; what the flow's Filled takes derived by the core.
+    NodeFill { node: &'a str, tree: &'a Value, runtime: &'a Path },
 }
 
 /// The illustration piece sets the second layer describes (runtime/leaves_js/pieces-<set>.json: its pieces, knobs and the
@@ -342,6 +347,9 @@ pub enum Reply<'a> {
     Rechecked(Vec<String>),
     /// The page's illustration strip, none when no piece set names its tables, and what was drawn or why none.
     Strip { strip: Option<Strip>, note: String },
+    /// What the flow's Filled takes from an external node, derived by the core (drawn rows, rows read, facts, formats, hero
+    /// data), its SVG as the core drew it, and the child's and the core's milliseconds.
+    NodeFilled(Box<crate::next_tree::NodeFilled>),
     /// The label point of each iso3 asked that has one, the ones that have none in the order asked, and the table read.
     Points {
         points: BTreeMap<String, [f64; 2]>,
@@ -446,6 +454,7 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
             let (strip, note) = illus_strip(tables, width, runtime)?;
             Reply::Strip { strip, note }
         }
+        Request::NodeFill { node, tree, runtime } => Reply::NodeFilled(Box::new(crate::next_tree::node_fill(node, tree, runtime)?)),
     })
 }
 

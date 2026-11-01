@@ -1,0 +1,309 @@
+{
+ "$comment": "Plan B draft (P3, 11-01): what the visual group's node registry adds for an external node, as data. It extends P1's node-registry.json (bound selects and stop lines, kept as they are) with: binding, frame (the core's frame and plot box), items (how the core expands a node's items from its binds, by a closed set of field kinds), marks (one mark per item or per item part, a closed shape, and for every field of that shape EITHER a declared field -> channel -> scale the core recomputes, OR the field is free and held only by constraints: inside the frame and tied to its text), texts (which item fields are printed, each tied to its mark by a closed relation) and the text size. Geometry comes in two kinds (owner 11-01): value-determined fields (length, angle, point, colour) the core recomputes from the declared scale and the node's must be equal within tol_px; placement the values cannot decide (labels, avoidance) is held to three constraints only: inside the frame, no two text boxes overlap, each text next to its own mark (max_px). The scale kind, domain source and range are the core's: the range is the plot box the core sends; no scale parameter is ever taken from a node. An entry naming a check kind, channel, scale, relation, field kind, shape or frame the core does not compute, or leaving a shape field neither declared nor free, is refused when the registry loads.",
+ "extends": "runtime/page_tree/node-registry.json",
+ "frames": {
+  "chart": {
+   "w": 400,
+   "h": 240,
+   "plot": [
+    30,
+    40,
+    370,
+    210
+   ]
+  },
+  "map": {
+   "w": 460,
+   "h": 400,
+   "plot": [
+    10,
+    10,
+    450,
+    390
+   ]
+  },
+  "rows": {
+   "w": 480,
+   "h": 170,
+   "plot": [
+    60,
+    46,
+    390,
+    86
+   ]
+  }
+ },
+ "nodes": {
+  "bars": {
+   "binding": "external",
+   "frame": "chart",
+   "items": {
+    "for_each": "binds.ranked",
+    "fields": {
+     "code": {
+      "kind": "select_index"
+     },
+     "value": {
+      "kind": "row_of_code"
+     },
+     "value_text": {
+      "kind": "fact_template",
+      "template": "{binds.family.family}.{code}.n"
+     },
+     "focus": {
+      "kind": "code_is",
+      "ref": "binds.accent"
+     }
+    }
+   },
+   "marks": {
+    "per": "item",
+    "shape": "rect",
+    "tol_px": 0.5,
+    "encode": [
+     {
+      "fields": [
+       "h",
+       "y"
+      ],
+      "channel": "length_up",
+      "of": "value",
+      "scale": {
+       "kind": "linear",
+       "domain": "zero_to_max",
+       "range": "plot.y"
+      }
+     },
+     {
+      "fields": [
+       "x",
+       "w"
+      ],
+      "channel": "band_x",
+      "of": "item",
+      "scale": {
+       "kind": "band",
+       "domain": "items",
+       "range": "plot.x",
+       "padding": 0.4
+      }
+     }
+    ]
+   },
+   "texts": {
+    "size": 11,
+    "item": {
+     "label": {
+      "near": "item",
+      "from": "anchor",
+      "max_px": 24
+     },
+     "value_text": {
+      "near": "item",
+      "from": "anchor",
+      "max_px": 12
+     }
+    }
+   }
+  },
+  "bubbles": {
+   "binding": "external",
+   "frame": "map",
+   "items": {
+    "for_each": "items_for",
+    "fields": {
+     "code": {
+      "kind": "select_index"
+     },
+     "value": {
+      "kind": "row_of_code"
+     },
+     "value_text": {
+      "kind": "fact_template",
+      "template": "{binds.family.family}.{code}.n"
+     },
+     "at": {
+      "kind": "point_of_code"
+     }
+    }
+   },
+   "marks": {
+    "per": "item",
+    "shape": "circle",
+    "tol_px": 0.5,
+    "encode": [
+     {
+      "fields": [
+       "r"
+      ],
+      "channel": "radius_area",
+      "of": "value",
+      "scale": {
+       "kind": "sqrt",
+       "domain": "zero_to_max",
+       "range": {
+        "max_px": 28
+       }
+      }
+     },
+     {
+      "fields": [
+       "cx",
+       "cy"
+      ],
+      "channel": "point",
+      "of": "at",
+      "scale": {
+       "kind": "mercator",
+       "domain": "ext",
+       "range": "plot"
+      }
+     }
+    ]
+   },
+   "texts": {
+    "size": 11,
+    "item": {
+     "value_text": {
+      "near": "item",
+      "from": "anchor",
+      "max_px": 12
+     }
+    }
+   }
+  },
+  "leader_notes": {
+   "binding": "external",
+   "frame": "map",
+   "items": {
+    "for_each": "spec",
+    "fields": {
+     "at": {
+      "kind": "point_of_code"
+     }
+    }
+   },
+   "marks": {
+    "per": "item",
+    "shape": "line",
+    "tol_px": 0.5,
+    "free": [
+     "x1",
+     "y1"
+    ],
+    "encode": [
+     {
+      "fields": [
+       "x2",
+       "y2"
+      ],
+      "channel": "point",
+      "of": "at",
+      "scale": {
+       "kind": "mercator",
+       "domain": "ext",
+       "range": "plot"
+      }
+     }
+    ]
+   },
+   "texts": {
+    "size": 12,
+    "item": {
+     "text": {
+      "near": "item",
+      "from": "box",
+      "max_px": 6
+     },
+     "value_text": {
+      "near": "item",
+      "from": "box",
+      "max_px": 12
+     }
+    }
+   }
+  },
+  "stacked100": {
+   "binding": "external",
+   "frame": "rows",
+   "items": {
+    "for_each": "binds.bars",
+    "fields": {
+     "code": {
+      "kind": "select_index"
+     },
+     "total": {
+      "kind": "row_of_code"
+     },
+     "total_text": {
+      "kind": "fact_template",
+      "template": "total.{code}.n"
+     },
+     "cells": {
+      "kind": "cells_by_part"
+     },
+     "share_text": {
+      "kind": "fact_per_part",
+      "template": "share.{part}.{code}"
+     }
+    }
+   },
+   "marks": {
+    "per": "part",
+    "shape": "rect",
+    "tol_px": 0.5,
+    "encode": [
+     {
+      "fields": [
+       "x",
+       "w"
+      ],
+      "channel": "stack_x",
+      "of": "share",
+      "scale": {
+       "kind": "linear",
+       "domain": "zero_to_one",
+       "range": "plot.x"
+      }
+     },
+     {
+      "fields": [
+       "y",
+       "h"
+      ],
+      "channel": "band_y",
+      "of": "item",
+      "scale": {
+       "kind": "band",
+       "domain": "items",
+       "range": "plot.y",
+       "padding": 0.4
+      }
+     }
+    ]
+   },
+   "texts": {
+    "size": 11,
+    "head_size": 12,
+    "item": {
+     "label": {
+      "near": "item",
+      "from": "anchor",
+      "max_px": 12
+     },
+     "total_text": {
+      "near": "item",
+      "from": "anchor",
+      "max_px": 12
+     },
+     "share_text": {
+      "near": "part",
+      "from": "anchor",
+      "max_px": 8
+     }
+    },
+    "node": true
+   }
+  }
+ }
+}

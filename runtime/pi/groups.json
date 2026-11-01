@@ -396,6 +396,28 @@
    "suffix": ".geojson",
    "group": "visual",
    "note": "Map boundary data for the map renderer; the name tables beside them (*.json) are listed one by one."
+  },
+  {
+   "prefix": "runtime/nodes/",
+   "group": "visual",
+   "note": "Second-layer JS nodes (fill and draw), started by the visual group's entry only (next_visual::call -> next_leaf runner). Ownership only; what they may touch is cross_calls.node_rule."
+  },
+  {
+   "prefix": "runtime/leaves_py/",
+   "suffix": ".py",
+   "group": "visual",
+   "note": "Second-layer Python leaves and fill nodes, started by the visual group's entry only. Code files only: the folder's data files keep no group (words.zh.json is still the flow's word file, include_str in next_run.rs, which the flow ratchet counts as the flow's copy). Ownership only; what they may touch is cross_calls.node_rule."
+  },
+  {
+   "prefix": "runtime/leaves_py/",
+   "suffix": ".js",
+   "group": "visual",
+   "note": "The page check's browser scripts beside the Python leaves (qa, layer clash, page width), run by the visual group's bake child. Code files only, as the .py rule above. Ownership only; what they may touch is cross_calls.node_rule."
+  },
+  {
+   "prefix": "runtime/page_tree/",
+   "group": "visual",
+   "note": "The page tree's schema, P1's node registry and the external bindings over it, read by the visual group's page tree core (src/next_tree.rs, include_str). Data only. Ownership only; no cross-group call is allowed by this rule."
   }
  ],
  "files": {
@@ -1041,6 +1063,10 @@
   "src/next_visual.rs": {
    "group": "visual",
    "note": "New route: the visual group's one group command (call), through which another group asks the chart matcher (shape_registry.rs) to rank the relations for a data slice. Pure. Ownership only; no cross-group call is allowed by this row."
+  },
+  "src/next_tree.rs": {
+   "group": "visual",
+   "note": "New route: the visual group's page tree core (P3, plan B). It recomputes every select, fact, item and word of a page tree from the rows and the registry, checks the registry (C5), and asks an external node only for geometry, held to the core's own recomputation (B0-B7); what the flow takes from the node is derived by the core. Request::NodeFill reaches it through next_visual::call. Ownership only; no cross-group call is allowed by this row."
   },
   "src/shape_registry.rs": {
    "group": "visual",
@@ -4976,6 +5002,7 @@
     "src/l5geo.rs",
     "src/next_knowledge.rs",
     "src/next_visual.rs",
+    "src/next_tree.rs",
     "src/next_nodes.rs",
     "src/next_render.rs",
     "src/next_ledger.rs",
@@ -5035,6 +5062,62 @@
      "visual"
     ]
    }
+  },
+  "node_rule": {
+   "why": "Rule three (P3, plan A section 4): a second-layer node gets everything it uses on its one stdin line from the visual group's entry (next_visual::call, inside group_guard::as_visual_call, kept as a next_group_call event): the page's data rows or, for an external node, the core's request (ids, values, box sizes, pixel pins), the name rows, the map points, and registered assets by id and sha256 with their bytes. It reads no file, starts no process, opens no socket, reads no environment, loads no code at run time, imports no module of another group, and writes only its reply line to stdout. A relative import may only name a code file (.mjs, .cjs, .js; Python: a sibling .py), never data; a module of the node folders that a file imports is followed, and importing one that breaks the rule is a finding of the importer. The files already breaking it are pinned per file, by site, in `pinned_in` (scripts/test_node_file_reads_pinned.mjs compares them; a count may only go down). A runner path the page tree registry names must lie under `files` (src/next_tree.rs RUNNER_DIRS). scripts/test_group_node_rule.mjs holds this entry, the pinned file's rule and the registries to each other.",
+   "files": [
+    "runtime/nodes/",
+    "runtime/leaves_py/"
+   ],
+   "skip_dirs": [
+    "node_modules"
+   ],
+   "not_nodes": {
+    "runtime/leaves_py/bake.py": "The visual group's bake child (Chrome lays the page out and its DOM is read back): a program step of the first layer's page check, not a node; it never gets data rows. Skipped, and listed by name in the test output.",
+    "runtime/leaves_py/knobs.py": "Build-time generator of knobs.json (the registry), run by hand, never started by the entry. Skipped, and listed by name in the test output."
+   },
+   "runners": {
+    "runtime/nodes/run.mjs": {
+     "js_builtins": [
+      "node:readline"
+     ],
+     "py_modules": []
+    },
+    "runtime/leaves_py/run.py": {
+     "js_builtins": [],
+     "py_modules": [
+      "sys"
+     ]
+    }
+   },
+   "js_packages": [
+    "d3"
+   ],
+   "py_modules": [
+    "json",
+    "math",
+    "re",
+    "itertools",
+    "functools",
+    "collections",
+    "unicodedata",
+    "html",
+    "decimal",
+    "fractions",
+    "bisect",
+    "heapq",
+    "statistics",
+    "dataclasses",
+    "typing",
+    "string",
+    "operator",
+    "copy",
+    "enum",
+    "colorsys",
+    "hashlib",
+    "csv"
+   ],
+   "pinned_in": "scripts/fixtures/node-file-reads-pinned.json"
   },
   "tool_allow": {
    "queryDuckDb": {

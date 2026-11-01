@@ -1,0 +1,2942 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://pj004.local/schemas/page-tree/0.1.0",
+ "title": "Page tree (P1 draft 0.1.0)",
+ "description": "One infographic page as a tree of seven node kinds: Page, Frame, Node, Text, Facts, Checks, Selects. Every number a page prints is a fact reference (fact:<key>[.n|.t|.tick<i>]) whose query uses the existing op language of next_facts.rs (value, mean, peak, low, last, count, rest, n, zeros, unrowed, excluded over rows; share, change, times, minus, plus over two facts). Selects declare which codes a page chose and why, so the core can recheck the choice from the rows; Checks declare the stop lines and page checks. Field names follow the old specs where they exist (title, dek, kicker, alt, span, labels, children) without $ref to them (ADR P1-1, option C). Draft: no code reads this file yet.",
+ "type": "object",
+ "$ref": "#/$defs/Page",
+ "$defs": {
+  "Code": {
+   "description": "A data code or key: a dimension code (SE, EU27_2020, N900H, BA100), a table id, a year or month as the rows give it. Never words: no CJK, no space.",
+   "type": "string",
+   "pattern": "^(?!select:)[A-Za-z0-9_.@:>\\-]+$"
+  },
+  "Codes": {
+   "type": "array",
+   "items": {
+    "$ref": "#/$defs/Code"
+   }
+  },
+  "FactKey": {
+   "description": "A declared fact key, or a family member <family>.<code>.",
+   "type": "string",
+   "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.@\\-]*$"
+  },
+  "FactRef": {
+   "description": "Where a printed number is in the ledger: fact:<key>, fact:<key>.n (bare), fact:<key>.t (its period), fact:<key>.tick<i>.",
+   "type": "string",
+   "pattern": "^fact:[A-Za-z0-9_][A-Za-z0-9_.@\\-]*$"
+  },
+  "SeriesRef": {
+   "description": "A fetched row by its src.",
+   "type": "string",
+   "pattern": "^series:.+$"
+  },
+  "LedgerRef": {
+   "description": "Any ledger entry a text run may print: a fact, a name row (name:zh_names:<kind>:<code>, name:frames:<relation>, name:unit_short_zh:<unit>, name:catalogue:<table>:title), a period or a record cell.",
+   "type": "string",
+   "pattern": "^(fact|name|period|record):.+$"
+  },
+  "SelectId": {
+   "type": "string",
+   "pattern": "^[a-z][a-z0-9_]*$"
+  },
+  "Knob": {
+   "description": "A visual or layer-1 knob by its registered name and the value it had for this page (knobs.json, catalogue.knob).",
+   "type": "object",
+   "required": [
+    "knob",
+    "value"
+   ],
+   "properties": {
+    "knob": {
+     "type": "string",
+     "pattern": "^[a-z0-9_]+\\.[a-z0-9_]+$"
+    },
+    "value": {
+     "type": "number"
+    }
+   },
+   "additionalProperties": false
+  },
+  "Const": {
+   "description": "A program constant by its name and value (NARROW_TOP, COLUMN_DEC): never printed.",
+   "type": "object",
+   "required": [
+    "const",
+    "value"
+   ],
+   "properties": {
+    "const": {
+     "type": "string",
+     "pattern": "^[A-Z][A-Z0-9_]*$"
+    },
+    "value": {
+     "type": "number"
+    }
+   },
+   "additionalProperties": false
+  },
+  "Filter": {
+   "description": "dimension -> one code or a list of codes (next_facts select).",
+   "type": "object",
+   "additionalProperties": {
+    "anyOf": [
+     {
+      "$ref": "#/$defs/CodeOrRef"
+     },
+     {
+      "type": "array",
+      "items": {
+       "$ref": "#/$defs/CodeOrRef"
+      }
+     }
+    ]
+   }
+  },
+  "Query": {
+   "description": "A row set: table, filter, and the dimension it runs by.",
+   "type": "object",
+   "required": [
+    "table"
+   ],
+   "properties": {
+    "table": {
+     "$ref": "#/$defs/Code"
+    },
+    "filter": {
+     "$ref": "#/$defs/Filter"
+    },
+    "by": {
+     "$ref": "#/$defs/Code"
+    },
+    "time": {
+     "$ref": "#/$defs/Code"
+    },
+    "not_eu": {
+     "type": "boolean"
+    }
+   },
+   "additionalProperties": false
+  },
+  "Page": {
+   "type": "object",
+   "required": [
+    "kind",
+    "schema_version",
+    "recipe",
+    "order",
+    "texts",
+    "facts",
+    "selects",
+    "checks",
+    "body"
+   ],
+   "properties": {
+    "kind": {
+     "const": "Page"
+    },
+    "schema_version": {
+     "const": "0.1.0"
+    },
+    "$comment": {
+     "type": "string"
+    },
+    "recipe": {
+     "$ref": "#/$defs/Code"
+    },
+    "order": {
+     "description": "The recipe's layers bottom first (fill.order).",
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Code"
+     },
+     "minItems": 1
+    },
+    "scoped": {
+     "description": "The program narrowed the main's places: texts use their scoped wording.",
+     "type": "boolean"
+    },
+    "texts": {
+     "type": "object",
+     "required": [
+      "title",
+      "dek"
+     ],
+     "properties": {
+      "title": {
+       "$ref": "#/$defs/Text"
+      },
+      "dek": {
+       "$ref": "#/$defs/Text"
+      },
+      "kicker": {
+       "$ref": "#/$defs/Text"
+      },
+      "alt": {
+       "$ref": "#/$defs/Text"
+      },
+      "unit": {
+       "$ref": "#/$defs/Text"
+      },
+      "source": {
+       "$ref": "#/$defs/Text"
+      }
+     },
+     "additionalProperties": false
+    },
+    "finding": {
+     "$ref": "#/$defs/Finding"
+    },
+    "scope": {
+     "description": "hero.scope: the aggregate the drawn places are members of, and the fact counting them.",
+     "type": "object",
+     "required": [
+      "code",
+      "count",
+      "select"
+     ],
+     "properties": {
+      "code": {
+       "$ref": "#/$defs/CodeOrRef"
+      },
+      "count": {
+       "$ref": "#/$defs/FactKey"
+      },
+      "select": {
+       "$ref": "#/$defs/SelectId"
+      }
+     },
+     "additionalProperties": false
+    },
+    "facts": {
+     "$ref": "#/$defs/Facts"
+    },
+    "selects": {
+     "$ref": "#/$defs/Selects"
+    },
+    "checks": {
+     "$ref": "#/$defs/Checks"
+    },
+    "body": {
+     "$ref": "#/$defs/Frame"
+    },
+    "record": {
+     "$ref": "#/$defs/Record"
+    },
+    "request": {
+     "description": "The user's request, whole, and its sha256 (hex of its UTF-8 bytes): what a quote run is held to.",
+     "type": "object",
+     "required": [
+      "text",
+      "sha256"
+     ],
+     "properties": {
+      "text": {
+       "type": "string"
+      },
+      "sha256": {
+       "type": "string",
+       "pattern": "^[0-9a-f]{64}$"
+      }
+     },
+     "additionalProperties": false
+    },
+    "fragment": {
+     "description": "Part of a page only (a fixture without the rows for the rest). Recognised only for files under examples/fixtures/ (the fixture directory); anywhere else a page holding this key fails validation. The node registry is not enforced on a fixture, and its publish gate is always closed: publish must be false, and the publish gate (the check the page tree core makes before publishing) refuses every page holding this key.",
+     "type": "object",
+     "required": [
+      "covers",
+      "why",
+      "publish"
+     ],
+     "properties": {
+      "covers": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       }
+      },
+      "why": {
+       "type": "string"
+      },
+      "publish": {
+       "const": false
+      }
+     },
+     "additionalProperties": false
+    }
+   },
+   "additionalProperties": false
+  },
+  "Finding": {
+   "description": "The dek's finding (finding_of) and its headline, each plain and scoped; the subject is the accent.",
+   "type": "object",
+   "required": [
+    "branch",
+    "select",
+    "dek",
+    "dek_scoped"
+   ],
+   "properties": {
+    "branch": {
+     "enum": [
+      "rise",
+      "fall",
+      "level",
+      "share",
+      "part"
+     ]
+    },
+    "select": {
+     "$ref": "#/$defs/SelectId"
+    },
+    "dek": {
+     "$ref": "#/$defs/Text"
+    },
+    "dek_scoped": {
+     "$ref": "#/$defs/Text"
+    },
+    "headline": {
+     "$ref": "#/$defs/Text"
+    },
+    "headline_scoped": {
+     "$ref": "#/$defs/Text"
+    },
+    "requires_facts": {
+     "description": "The headline prints only when these facts are declared (a level headline needs times).",
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/FactKey"
+     }
+    }
+   },
+   "additionalProperties": false
+  },
+  "Text": {
+   "description": "Words as runs. A literal run holds no digit: every number is a fact or ledger run.",
+   "type": "object",
+   "required": [
+    "kind",
+    "runs"
+   ],
+   "properties": {
+    "kind": {
+     "const": "Text"
+    },
+    "id": {
+     "type": "string"
+    },
+    "role": {
+     "enum": [
+      "title",
+      "dek",
+      "kicker",
+      "headline",
+      "alt",
+      "unit",
+      "source",
+      "line",
+      "head",
+      "label",
+      "note",
+      "measure",
+      "name",
+      "members_head"
+     ]
+    },
+    "origin": {
+     "description": "Who wrote the literal runs: program constants (counted by the ratchet), the word table, the text step (model words, placeholders kept), the registry.",
+     "enum": [
+      "program",
+      "word_table",
+      "text_step",
+      "registry"
+     ]
+    },
+    "runs": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Run"
+     }
+    }
+   },
+   "additionalProperties": false
+  },
+  "Run": {
+   "anyOf": [
+    {
+     "type": "object",
+     "required": [
+      "w"
+     ],
+     "properties": {
+      "w": {
+       "description": "Literal words. The schema refuses digits, the ratio words and a numeral before a ratio word or a percent sign; the full rule is the core's next_flow::worded_number, which the page tree core (src/next_tree.rs) ports with its constants (NUMERALS, RATIO_AFTER, RATIO_WORDS, NUMBER_FREE, QUANTITY_BEFORE at 4494b5fd) over the Text's runs joined, the other runs standing as placeholders.",
+       "type": "string",
+       "pattern": "^(?!.*(一半|过半|大半|半数|减半|近半|逾半|超半|翻番|翻倍|数倍|[零〇一二两三四五六七八九十百千万亿几]\\s*(倍|分之|个百分点|%|％)))[^0-9０-９]*$"
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "type": "object",
+     "required": [
+      "word"
+     ],
+     "properties": {
+      "word": {
+       "$ref": "#/$defs/WordKey"
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "type": "object",
+     "required": [
+      "src"
+     ],
+     "properties": {
+      "src": {
+       "$ref": "#/$defs/LedgerRef"
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "type": "object",
+     "required": [
+      "fact"
+     ],
+     "properties": {
+      "fact": {
+       "$ref": "#/$defs/FactKey"
+      },
+      "part": {
+       "type": "string",
+       "pattern": "^(n|t|tick[0-9]+)$"
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "type": "object",
+     "required": [
+      "name"
+     ],
+     "properties": {
+      "name": {
+       "$ref": "#/$defs/CodeOrRef"
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "type": "object",
+     "required": [
+      "table"
+     ],
+     "properties": {
+      "table": {
+       "$ref": "#/$defs/Code"
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "type": "object",
+     "required": [
+      "quote",
+      "from"
+     ],
+     "properties": {
+      "quote": {
+       "description": "A digit string of the request (10-31 release: only the request's own digit strings): the page tree core holds it to Page.request.text.",
+       "type": "string",
+       "minLength": 1
+      },
+      "from": {
+       "const": "request"
+      }
+     },
+     "additionalProperties": false
+    }
+   ]
+  },
+  "Frame": {
+   "description": "A group of children in order (z order, reading order); a recipe's page is its outermost frame.",
+   "type": "object",
+   "required": [
+    "kind",
+    "id",
+    "children"
+   ],
+   "properties": {
+    "kind": {
+     "const": "Frame"
+    },
+    "id": {
+     "type": "string"
+    },
+    "role": {
+     "enum": [
+      "page",
+      "hero",
+      "panel",
+      "under",
+      "footer",
+      "strip",
+      "grid"
+     ]
+    },
+    "span": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 12
+    },
+    "children": {
+     "type": "array",
+     "minItems": 1,
+     "items": {
+      "anyOf": [
+       {
+        "$ref": "#/$defs/Frame"
+       },
+       {
+        "$ref": "#/$defs/Node"
+       },
+       {
+        "$ref": "#/$defs/Text"
+       }
+      ]
+     }
+    },
+    "shared": {
+     "$ref": "#/$defs/Shared"
+    },
+    "grid": {
+     "$ref": "#/$defs/Grid"
+    }
+   },
+   "additionalProperties": false
+  },
+  "Node": {
+   "description": "One registered node (knobs.json) with its knobs and its bindings. Binds and items carry codes, refs and select ids only; geometry carries layout numbers that never print. A Node may hold child Nodes (composite); shared knobs are declared once on the outer Frame or Node.",
+   "type": "object",
+   "required": [
+    "kind",
+    "id",
+    "node"
+   ],
+   "properties": {
+    "kind": {
+     "const": "Node"
+    },
+    "id": {
+     "type": "string"
+    },
+    "node": {
+     "$ref": "#/$defs/Code"
+    },
+    "knobs": {
+     "type": "object",
+     "additionalProperties": {
+      "$ref": "#/$defs/KnobValue"
+     }
+    },
+    "binds": {
+     "type": "object",
+     "additionalProperties": {
+      "$ref": "#/$defs/Bind"
+     }
+    },
+    "items": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Item"
+     }
+    },
+    "texts": {
+     "type": "object",
+     "additionalProperties": {
+      "$ref": "#/$defs/Text"
+     }
+    },
+    "lines": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Text"
+     }
+    },
+    "geometry": {
+     "type": "object",
+     "properties": {
+      "ext": {
+       "type": "array",
+       "items": {
+        "type": "number"
+       },
+       "minItems": 4,
+       "maxItems": 4
+      },
+      "hub": {
+       "type": "array",
+       "items": {
+        "type": "number"
+       },
+       "minItems": 2,
+       "maxItems": 2
+      }
+     },
+     "additionalProperties": false
+    },
+    "unit_drawn": {
+     "type": "boolean"
+    },
+    "shared": {
+     "$ref": "#/$defs/Shared"
+    },
+    "grid": {
+     "$ref": "#/$defs/Grid"
+    },
+    "children": {
+     "description": "Nodes packed into this node (a composite / smart object: layers nested as one node that shows only a few knobs). Panels of a grid are children.",
+     "type": "array",
+     "items": {
+      "anyOf": [
+       {
+        "$ref": "#/$defs/Node"
+       },
+       {
+        "$ref": "#/$defs/Text"
+       }
+      ]
+     }
+    },
+    "panel": {
+     "description": "The facet code this node draws (one panel of a grid).",
+     "$ref": "#/$defs/Code"
+    },
+    "items_for": {
+     "description": "The select whose result the items are, one item per code in order (checked).",
+     "$ref": "#/$defs/SelectRef"
+    }
+   },
+   "additionalProperties": false
+  },
+  "Bind": {
+   "anyOf": [
+    {
+     "$ref": "#/$defs/SelectRef"
+    },
+    {
+     "$ref": "#/$defs/Code"
+    },
+    {
+     "$ref": "#/$defs/Codes"
+    },
+    {
+     "type": "boolean"
+    },
+    {
+     "type": "object",
+     "required": [
+      "fact"
+     ],
+     "properties": {
+      "fact": {
+       "$ref": "#/$defs/FactKey"
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "type": "object",
+     "required": [
+      "family"
+     ],
+     "properties": {
+      "family": {
+       "$ref": "#/$defs/FactKey"
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "type": "object",
+     "required": [
+      "select"
+     ],
+     "properties": {
+      "select": {
+       "$ref": "#/$defs/SelectId"
+      },
+      "part": {
+       "type": "string"
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "type": "object",
+     "required": [
+      "query"
+     ],
+     "properties": {
+      "query": {
+       "$ref": "#/$defs/Query"
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "type": "object",
+     "required": [
+      "name_of"
+     ],
+     "properties": {
+      "name_of": {
+       "$ref": "#/$defs/Code"
+      }
+     },
+     "additionalProperties": false
+    }
+   ]
+  },
+  "Item": {
+   "description": "One drawn thing of a node: a bar, a circle, a note, a flow, a mark, a big number, a merged node.",
+   "type": "object",
+   "properties": {
+    "code": {
+     "$ref": "#/$defs/CodeOrRef"
+    },
+    "side": {
+     "enum": [
+      "source",
+      "target"
+     ]
+    },
+    "source": {
+     "$ref": "#/$defs/Code"
+    },
+    "target": {
+     "$ref": "#/$defs/Code"
+    },
+    "value": {
+     "$ref": "#/$defs/SeriesRef"
+    },
+    "value_text": {
+     "$ref": "#/$defs/FactRef"
+    },
+    "total": {
+     "$ref": "#/$defs/SeriesRef"
+    },
+    "total_text": {
+     "$ref": "#/$defs/FactRef"
+    },
+    "cells": {
+     "type": "object",
+     "additionalProperties": {
+      "type": "array",
+      "items": {
+       "$ref": "#/$defs/SeriesRef"
+      }
+     }
+    },
+    "share_text": {
+     "type": "object",
+     "additionalProperties": {
+      "$ref": "#/$defs/FactRef"
+     }
+    },
+    "at": {
+     "type": "array",
+     "items": {
+      "type": "number"
+     },
+     "minItems": 2,
+     "maxItems": 2
+    },
+    "text": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Run"
+     }
+    },
+    "name": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Run"
+     }
+    },
+    "members": {
+     "$ref": "#/$defs/Bind"
+    },
+    "members_head": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Run"
+     }
+    },
+    "facts": {
+     "type": "object",
+     "additionalProperties": {
+      "anyOf": [
+       {
+        "$ref": "#/$defs/FactKey"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "fact": {
+     "$ref": "#/$defs/FactKey"
+    },
+    "word": {
+     "$ref": "#/$defs/WordKey"
+    },
+    "label": {
+     "type": "object",
+     "properties": {
+      "word": {
+       "$ref": "#/$defs/WordKey"
+      },
+      "name": {
+       "$ref": "#/$defs/CodeOrRef"
+      },
+      "by_sign": {
+       "$ref": "#/$defs/FactKey"
+      }
+     },
+     "additionalProperties": false
+    },
+    "focus": {
+     "type": "boolean"
+    },
+    "hub": {
+     "type": "boolean"
+    }
+   },
+   "additionalProperties": false
+  },
+  "Facts": {
+   "description": "The page's data: the tables, the rows (each once, by src), the declared facts, the formats, the names. The core recomputes every fact from these rows (next_facts recheck).",
+   "type": "object",
+   "required": [
+    "kind",
+    "tables",
+    "rows",
+    "facts",
+    "fmts"
+   ],
+   "properties": {
+    "kind": {
+     "const": "Facts"
+    },
+    "tables": {
+     "type": "object",
+     "additionalProperties": {
+      "type": "object",
+      "required": [
+       "id"
+      ],
+      "properties": {
+       "id": {
+        "$ref": "#/$defs/Code"
+       }
+      },
+      "additionalProperties": false
+     }
+    },
+    "rows": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Row"
+     }
+    },
+    "facts": {
+     "type": "object",
+     "propertyNames": {
+      "$ref": "#/$defs/FactKey"
+     },
+     "additionalProperties": {
+      "$ref": "#/$defs/FactQuery"
+     }
+    },
+    "fmts": {
+     "type": "object",
+     "additionalProperties": {
+      "$ref": "#/$defs/Fmt"
+     }
+    },
+    "labels": {
+     "description": "code -> reviewed Chinese name (knobs.labels).",
+     "type": "object",
+     "additionalProperties": {
+      "type": "string"
+     }
+    },
+    "named": {
+     "description": "name row -> its text (knobs.named), held to it in the ledger.",
+     "type": "object",
+     "propertyNames": {
+      "pattern": "^name:"
+     },
+     "additionalProperties": {
+      "type": "string"
+     }
+    },
+    "members": {
+     "$ref": "#/$defs/Codes"
+    },
+    "points": {
+     "type": "object",
+     "required": [
+      "table",
+      "sha256",
+      "at"
+     ],
+     "properties": {
+      "table": {
+       "type": "string"
+      },
+      "sha256": {
+       "type": "string",
+       "pattern": "^[0-9a-f]{64}$"
+      },
+      "at": {
+       "type": "object",
+       "additionalProperties": {
+        "type": "array",
+        "items": {
+         "type": "number"
+        },
+        "minItems": 2,
+        "maxItems": 2
+       }
+      }
+     },
+     "additionalProperties": false
+    },
+    "conditional": {
+     "description": "Facts declared only under a data condition, with the rule, so an absent or reordered fact is rechecked too (map <c>_ch only from a t0 value above 0; a gap's a/b larger first; a big number only when its fact is declared).",
+     "type": "object",
+     "additionalProperties": {
+      "type": "object",
+      "required": [
+       "rule"
+      ],
+      "properties": {
+       "rule": {
+        "enum": [
+         "base_above_zero",
+         "larger_first",
+         "only_if_declared"
+        ]
+       },
+       "fact": {
+        "$ref": "#/$defs/FactKey"
+       },
+       "of": {
+        "type": "array",
+        "items": {
+         "$ref": "#/$defs/FactKey"
+        }
+       },
+       "present": {
+        "type": "boolean"
+       }
+      },
+      "additionalProperties": false
+     }
+    },
+    "assets": {
+     "description": "Run-local files a node reads (knobs.shapes: the ring shapes), by a relative name and its hash.",
+     "type": "object",
+     "additionalProperties": {
+      "type": "object",
+      "required": [
+       "file"
+      ],
+      "properties": {
+       "file": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_.\\-]+(/[A-Za-z0-9_.\\-]+)*$"
+       },
+       "sha256": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+       }
+      },
+      "additionalProperties": false
+     }
+    }
+   },
+   "additionalProperties": false
+  },
+  "Row": {
+   "type": "object",
+   "required": [
+    "src",
+    "table",
+    "dims",
+    "time",
+    "value"
+   ],
+   "properties": {
+    "src": {
+     "$ref": "#/$defs/SeriesRef"
+    },
+    "table": {
+     "$ref": "#/$defs/Code"
+    },
+    "dims": {
+     "type": "object",
+     "additionalProperties": {
+      "$ref": "#/$defs/Code"
+     }
+    },
+    "time": {
+     "$ref": "#/$defs/Code"
+    },
+    "value": {
+     "type": "string",
+     "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$"
+    }
+   },
+   "additionalProperties": false
+  },
+  "Fmt": {
+   "type": "object",
+   "properties": {
+    "scale": {
+     "type": "number"
+    },
+    "dec": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 6
+    },
+    "suffix": {
+     "type": "string",
+     "pattern": "^[^0-9]*$"
+    },
+    "prefix": {
+     "type": "string",
+     "pattern": "^[^0-9]*$"
+    },
+    "dec_rule": {
+     "description": "How dec was derived, so the core can recheck it: held_decimals = the most decimals the named rows hold, capped by max (COLUMN_DEC, POINTS_DEC, COMPOSITION_GAP_DEC); fixed = as written.",
+     "type": "object",
+     "required": [
+      "rule"
+     ],
+     "properties": {
+      "rule": {
+       "enum": [
+        "held_decimals",
+        "fixed",
+        "min_of"
+       ]
+      },
+      "rows": {
+       "$ref": "#/$defs/Query"
+      },
+      "of": {
+       "type": "array",
+       "items": {
+        "$ref": "#/$defs/Code"
+       }
+      },
+      "max": {
+       "$ref": "#/$defs/Const"
+      }
+     },
+     "additionalProperties": false
+    }
+   },
+   "additionalProperties": false
+  },
+  "FactQuery": {
+   "description": "The op language of next_facts.rs, one variant per op group. op absent means value.",
+   "oneOf": [
+    {
+     "title": "value / family (each)",
+     "type": "object",
+     "required": [
+      "table",
+      "time",
+      "fmt"
+     ],
+     "properties": {
+      "op": {
+       "const": "value"
+      },
+      "table": {
+       "$ref": "#/$defs/Code"
+      },
+      "filter": {
+       "$ref": "#/$defs/Filter"
+      },
+      "time": {
+       "$ref": "#/$defs/Code"
+      },
+      "each": {
+       "$ref": "#/$defs/Code"
+      },
+      "not_eu": {
+       "$ref": "#/$defs/Code"
+      },
+      "fmt": {
+       "$ref": "#/$defs/Code"
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "title": "peak / low / last over a window",
+     "type": "object",
+     "required": [
+      "op",
+      "table",
+      "fmt"
+     ],
+     "properties": {
+      "op": {
+       "enum": [
+        "peak",
+        "low",
+        "last"
+       ]
+      },
+      "table": {
+       "$ref": "#/$defs/Code"
+      },
+      "filter": {
+       "$ref": "#/$defs/Filter"
+      },
+      "from": {
+       "$ref": "#/$defs/Code"
+      },
+      "to": {
+       "$ref": "#/$defs/Code"
+      },
+      "axis": {
+       "type": "boolean"
+      },
+      "fmt": {
+       "$ref": "#/$defs/Code"
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "title": "mean within a period prefix",
+     "type": "object",
+     "required": [
+      "op",
+      "table",
+      "within",
+      "fmt"
+     ],
+     "properties": {
+      "op": {
+       "const": "mean"
+      },
+      "table": {
+       "$ref": "#/$defs/Code"
+      },
+      "filter": {
+       "$ref": "#/$defs/Filter"
+      },
+      "within": {
+       "$ref": "#/$defs/Code"
+      },
+      "fmt": {
+       "$ref": "#/$defs/Code"
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "title": "rest: the codes of `by` past the first `skip`, largest first",
+     "type": "object",
+     "required": [
+      "op",
+      "table",
+      "by",
+      "skip",
+      "time",
+      "fmt"
+     ],
+     "properties": {
+      "op": {
+       "const": "rest"
+      },
+      "table": {
+       "$ref": "#/$defs/Code"
+      },
+      "filter": {
+       "$ref": "#/$defs/Filter"
+      },
+      "by": {
+       "$ref": "#/$defs/Code"
+      },
+      "skip": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "not_eu": {
+       "type": "boolean"
+      },
+      "time": {
+       "$ref": "#/$defs/Code"
+      },
+      "fmt": {
+       "$ref": "#/$defs/Code"
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "title": "n: how many codes of `by`; zeros: how many rows of 0",
+     "type": "object",
+     "required": [
+      "op",
+      "table",
+      "time",
+      "fmt"
+     ],
+     "properties": {
+      "op": {
+       "enum": [
+        "n",
+        "zeros"
+       ]
+      },
+      "table": {
+       "$ref": "#/$defs/Code"
+      },
+      "filter": {
+       "$ref": "#/$defs/Filter"
+      },
+      "by": {
+       "$ref": "#/$defs/Code"
+      },
+      "time": {
+       "$ref": "#/$defs/Code"
+      },
+      "fmt": {
+       "const": "n"
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "title": "unrowed: pairs of held codes with no row",
+     "type": "object",
+     "required": [
+      "op",
+      "table",
+      "time",
+      "by",
+      "codes",
+      "fmt"
+     ],
+     "properties": {
+      "op": {
+       "const": "unrowed"
+      },
+      "table": {
+       "$ref": "#/$defs/Code"
+      },
+      "filter": {
+       "$ref": "#/$defs/Filter"
+      },
+      "time": {
+       "$ref": "#/$defs/Code"
+      },
+      "by": {
+       "type": "array",
+       "items": {
+        "$ref": "#/$defs/Code"
+       },
+       "minItems": 2,
+       "maxItems": 2
+      },
+      "codes": {
+       "type": "array",
+       "items": {
+        "$ref": "#/$defs/Codes"
+       },
+       "minItems": 2,
+       "maxItems": 2
+      },
+      "fmt": {
+       "const": "n"
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "title": "excluded: pairs the registry leaves out",
+     "type": "object",
+     "required": [
+      "op",
+      "table",
+      "time",
+      "by",
+      "pairs",
+      "fmt"
+     ],
+     "properties": {
+      "op": {
+       "const": "excluded"
+      },
+      "table": {
+       "$ref": "#/$defs/Code"
+      },
+      "filter": {
+       "$ref": "#/$defs/Filter"
+      },
+      "time": {
+       "$ref": "#/$defs/Code"
+      },
+      "by": {
+       "type": "array",
+       "items": {
+        "$ref": "#/$defs/Code"
+       },
+       "minItems": 2,
+       "maxItems": 2
+      },
+      "pairs": {
+       "type": "array",
+       "items": {
+        "type": "array",
+        "items": {
+         "$ref": "#/$defs/Code"
+        },
+        "minItems": 2,
+        "maxItems": 2
+       }
+      },
+      "fmt": {
+       "const": "n"
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "title": "count: members whose a/b is above a line",
+     "type": "object",
+     "required": [
+      "op",
+      "time",
+      "above",
+      "a",
+      "b"
+     ],
+     "properties": {
+      "op": {
+       "const": "count"
+      },
+      "time": {
+       "$ref": "#/$defs/Code"
+      },
+      "above": {
+       "type": "number"
+      },
+      "by": {
+       "$ref": "#/$defs/Code"
+      },
+      "a": {
+       "$ref": "#/$defs/Query"
+      },
+      "b": {
+       "$ref": "#/$defs/Query"
+      },
+      "fmt": {
+       "const": "n"
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "title": "share / change / times / minus / plus of two facts (minus with each: a family of differences)",
+     "type": "object",
+     "required": [
+      "op",
+      "a",
+      "b"
+     ],
+     "properties": {
+      "op": {
+       "enum": [
+        "share",
+        "change",
+        "times",
+        "minus",
+        "plus"
+       ]
+      },
+      "a": {
+       "$ref": "#/$defs/FactKey"
+      },
+      "b": {
+       "$ref": "#/$defs/FactKey"
+      },
+      "each": {
+       "$ref": "#/$defs/Code"
+      },
+      "fmt": {
+       "$ref": "#/$defs/Code"
+      }
+     },
+     "additionalProperties": false
+    }
+   ]
+  },
+  "Selects": {
+   "description": "Every choice of codes the page makes, declared with its rule and its result, so the core can recompute the result from Facts.rows (plan section 4 item 1). A select's result that the core cannot recompute is a refusal, never a pass. Which selects a node must carry is not the page's choice: node-registry.json lists, per node, the selects and checks it needs, and the page tree core refuses a page that lacks one or swaps its kind.",
+   "type": "object",
+   "required": [
+    "kind",
+    "items"
+   ],
+   "properties": {
+    "kind": {
+     "const": "Selects"
+    },
+    "items": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Select"
+     }
+    }
+   },
+   "additionalProperties": false
+  },
+  "Tie": {
+   "description": "What a tie does: order by code, keep the first seen, or (printed) two values the page prints alike tie, and the outcome is silence (no finding) or the place's own value.",
+   "type": "object",
+   "required": [
+    "by",
+    "outcome"
+   ],
+   "properties": {
+    "by": {
+     "enum": [
+      "code",
+      "first_seen",
+      "printed"
+     ]
+    },
+    "fmt": {
+     "$ref": "#/$defs/Code"
+    },
+    "outcome": {
+     "enum": [
+      "order",
+      "silence",
+      "own_value"
+     ]
+    }
+   },
+   "additionalProperties": false
+  },
+  "Select": {
+   "oneOf": [
+    {
+     "title": "rank: order codes of `by` by their value (or change between two times)",
+     "type": "object",
+     "required": [
+      "id",
+      "kind",
+      "over",
+      "key",
+      "order",
+      "tie",
+      "result"
+     ],
+     "properties": {
+      "id": {
+       "$ref": "#/$defs/SelectId"
+      },
+      "kind": {
+       "const": "rank"
+      },
+      "over": {
+       "$ref": "#/$defs/Query"
+      },
+      "key": {
+       "anyOf": [
+        {
+         "const": "value"
+        },
+        {
+         "type": "object",
+         "required": [
+          "change"
+         ],
+         "properties": {
+          "change": {
+           "type": "array",
+           "items": {
+            "$ref": "#/$defs/Code"
+           },
+           "minItems": 2,
+           "maxItems": 2
+          }
+         },
+         "additionalProperties": false
+        }
+       ]
+      },
+      "order": {
+       "enum": [
+        "desc",
+        "asc"
+       ]
+      },
+      "only": {
+       "anyOf": [
+        {
+         "$ref": "#/$defs/Codes"
+        },
+        {
+         "$ref": "#/$defs/SelectRef"
+        }
+       ]
+      },
+      "tie": {
+       "$ref": "#/$defs/Tie"
+      },
+      "one_row_per_code": {
+       "type": "boolean"
+      },
+      "result": {
+       "$ref": "#/$defs/Codes"
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "title": "top_n: the first n of an ordered select",
+     "type": "object",
+     "required": [
+      "id",
+      "kind",
+      "from",
+      "n",
+      "result"
+     ],
+     "properties": {
+      "id": {
+       "$ref": "#/$defs/SelectId"
+      },
+      "kind": {
+       "const": "top_n"
+      },
+      "from": {
+       "$ref": "#/$defs/SelectId"
+      },
+      "n": {
+       "anyOf": [
+        {
+         "type": "integer",
+         "minimum": 1
+        },
+        {
+         "$ref": "#/$defs/Const"
+        },
+        {
+         "$ref": "#/$defs/Knob"
+        }
+       ]
+      },
+      "result": {
+       "$ref": "#/$defs/Codes"
+      },
+      "rest": {
+       "description": "The codes past the first n, in order (named under the picture).",
+       "$ref": "#/$defs/Codes"
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "title": "take: one code at an end of an ordered select, under a sign condition",
+     "type": "object",
+     "required": [
+      "id",
+      "kind",
+      "from",
+      "at",
+      "result"
+     ],
+     "properties": {
+      "id": {
+       "$ref": "#/$defs/SelectId"
+      },
+      "kind": {
+       "const": "take"
+      },
+      "from": {
+       "$ref": "#/$defs/SelectId"
+      },
+      "at": {
+       "enum": [
+        "first",
+        "last",
+        "second",
+        "before_last"
+       ]
+      },
+      "when": {
+       "type": "object",
+       "required": [
+        "fact",
+        "sign"
+       ],
+       "properties": {
+        "fact": {
+         "$ref": "#/$defs/FactKey"
+        },
+        "sign": {
+         "enum": [
+          "pos",
+          "neg",
+          "nonzero"
+         ]
+        }
+       },
+       "additionalProperties": false
+      },
+      "tie": {
+       "$ref": "#/$defs/Tie"
+      },
+      "result": {
+       "anyOf": [
+        {
+         "$ref": "#/$defs/Code"
+        },
+        {
+         "type": "null"
+        }
+       ]
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "title": "drop_replace: a candidate that fails a sum check is left out and the next in order takes its place",
+     "type": "object",
+     "required": [
+      "id",
+      "kind",
+      "from",
+      "target",
+      "check",
+      "replace",
+      "dropped",
+      "result"
+     ],
+     "properties": {
+      "id": {
+       "$ref": "#/$defs/SelectId"
+      },
+      "kind": {
+       "const": "drop_replace"
+      },
+      "from": {
+       "$ref": "#/$defs/SelectId"
+      },
+      "target": {
+       "anyOf": [
+        {
+         "type": "integer",
+         "minimum": 1
+        },
+        {
+         "$ref": "#/$defs/Const"
+        }
+       ]
+      },
+      "check": {
+       "type": "object",
+       "required": [
+        "sum_within"
+       ],
+       "properties": {
+        "sum_within": {
+         "type": "object",
+         "required": [
+          "table",
+          "time",
+          "place",
+          "dim",
+          "parts",
+          "total",
+          "tol"
+         ],
+         "properties": {
+          "table": {
+           "$ref": "#/$defs/Code"
+          },
+          "time": {
+           "$ref": "#/$defs/Code"
+          },
+          "place": {
+           "$ref": "#/$defs/Code"
+          },
+          "dim": {
+           "$ref": "#/$defs/Code"
+          },
+          "parts": {
+           "anyOf": [
+            {
+             "description": "group -> its input codes",
+             "type": "object",
+             "additionalProperties": {
+              "$ref": "#/$defs/Codes"
+             }
+            },
+            {
+             "$ref": "#/$defs/SelectRef"
+            }
+           ]
+          },
+          "total": {
+           "$ref": "#/$defs/Code"
+          },
+          "tol": {
+           "$ref": "#/$defs/Knob"
+          },
+          "less": {
+           "description": "exclude_codes selects applied before the sum",
+           "type": "array",
+           "items": {
+            "$ref": "#/$defs/SelectId"
+           }
+          }
+         },
+         "additionalProperties": false
+        }
+       },
+       "additionalProperties": false
+      },
+      "replace": {
+       "const": "next_in_order"
+      },
+      "dropped": {
+       "type": "array",
+       "items": {
+        "type": "object",
+        "required": [
+         "code",
+         "gap"
+        ],
+        "properties": {
+         "code": {
+          "$ref": "#/$defs/Code"
+         },
+         "gap": {
+          "$ref": "#/$defs/FactKey"
+         }
+        },
+        "additionalProperties": false
+       }
+      },
+      "unread": {
+       "description": "Candidates never reached once the target was met.",
+       "$ref": "#/$defs/Codes"
+      },
+      "result": {
+       "$ref": "#/$defs/Codes"
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "title": "zero_parts: a part declared zero in a bar: every code of the group has a row and all are 0",
+     "type": "object",
+     "required": [
+      "id",
+      "kind",
+      "bars",
+      "table",
+      "time",
+      "place",
+      "dim",
+      "parts",
+      "rule",
+      "declared"
+     ],
+     "properties": {
+      "id": {
+       "$ref": "#/$defs/SelectId"
+      },
+      "kind": {
+       "const": "zero_parts"
+      },
+      "bars": {
+       "$ref": "#/$defs/SelectId"
+      },
+      "table": {
+       "$ref": "#/$defs/Code"
+      },
+      "time": {
+       "$ref": "#/$defs/Code"
+      },
+      "place": {
+       "$ref": "#/$defs/Code"
+      },
+      "dim": {
+       "$ref": "#/$defs/Code"
+      },
+      "parts": {
+       "anyOf": [
+        {
+         "type": "object",
+         "additionalProperties": {
+          "$ref": "#/$defs/Codes"
+         }
+        },
+        {
+         "$ref": "#/$defs/SelectRef"
+        }
+       ]
+      },
+      "rule": {
+       "const": "every_code_has_row_and_all_zero"
+      },
+      "declared": {
+       "type": "array",
+       "items": {
+        "type": "object",
+        "required": [
+         "bar",
+         "part",
+         "cells"
+        ],
+        "properties": {
+         "bar": {
+          "$ref": "#/$defs/Code"
+         },
+         "part": {
+          "$ref": "#/$defs/Code"
+         },
+         "cells": {
+          "type": "array",
+          "items": {
+           "$ref": "#/$defs/SeriesRef"
+          },
+          "minItems": 1
+         }
+        },
+        "additionalProperties": false
+       }
+      },
+      "facts": {
+       "description": "group -> the zeros fact counting its rows of 0",
+       "type": "object",
+       "additionalProperties": {
+        "$ref": "#/$defs/FactKey"
+       }
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "title": "empty_parts: a part with no row (or 0 with a code missing) is empty, never said as 0",
+     "type": "object",
+     "required": [
+      "id",
+      "kind",
+      "bars",
+      "rule",
+      "result"
+     ],
+     "properties": {
+      "id": {
+       "$ref": "#/$defs/SelectId"
+      },
+      "kind": {
+       "const": "empty_parts"
+      },
+      "bars": {
+       "$ref": "#/$defs/SelectId"
+      },
+      "rule": {
+       "const": "no_row_or_zero_with_code_missing"
+      },
+      "result": {
+       "type": "array",
+       "items": {
+        "type": "object",
+        "required": [
+         "bar",
+         "part"
+        ],
+        "properties": {
+         "bar": {
+          "$ref": "#/$defs/Code"
+         },
+         "part": {
+          "$ref": "#/$defs/Code"
+         }
+        },
+        "additionalProperties": false
+       }
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "title": "exclude_codes: codes of a group taken out of one place's sum because the total does not hold them (F3: BA100 for PT); the gap must equal their value",
+     "type": "object",
+     "required": [
+      "id",
+      "kind",
+      "place",
+      "part",
+      "codes",
+      "rule",
+      "value"
+     ],
+     "properties": {
+      "id": {
+       "$ref": "#/$defs/SelectId"
+      },
+      "kind": {
+       "const": "exclude_codes"
+      },
+      "place": {
+       "$ref": "#/$defs/CodeOrRef"
+      },
+      "part": {
+       "$ref": "#/$defs/Code"
+      },
+      "codes": {
+       "anyOf": [
+        {
+         "$ref": "#/$defs/Codes"
+        },
+        {
+         "$ref": "#/$defs/SelectRef"
+        }
+       ]
+      },
+      "rule": {
+       "const": "gap_equals_codes_value"
+      },
+      "value": {
+       "description": "fact: the excluded codes' value, printed in the note",
+       "$ref": "#/$defs/FactKey"
+      },
+      "status": {
+       "enum": [
+        "landed",
+        "pending_p4b"
+       ]
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "title": "merge_below: codes of a side under a share of all flows merge into one other node when two or more do",
+     "type": "object",
+     "required": [
+      "id",
+      "kind",
+      "dim",
+      "min",
+      "min_count",
+      "result",
+      "kept"
+     ],
+     "properties": {
+      "id": {
+       "$ref": "#/$defs/SelectId"
+      },
+      "kind": {
+       "const": "merge_below"
+      },
+      "dim": {
+       "$ref": "#/$defs/Code"
+      },
+      "min": {
+       "$ref": "#/$defs/Knob"
+      },
+      "min_count": {
+       "type": "integer",
+       "minimum": 2
+      },
+      "result": {
+       "$ref": "#/$defs/Codes"
+      },
+      "kept": {
+       "$ref": "#/$defs/Codes"
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "title": "window: a months span back from a series' last month, clipped to the page window",
+     "type": "object",
+     "required": [
+      "id",
+      "kind",
+      "series",
+      "span",
+      "result"
+     ],
+     "properties": {
+      "id": {
+       "$ref": "#/$defs/SelectId"
+      },
+      "kind": {
+       "const": "window"
+      },
+      "series": {
+       "$ref": "#/$defs/Query"
+      },
+      "span": {
+       "$ref": "#/$defs/Knob"
+      },
+      "clip": {
+       "type": "object",
+       "properties": {
+        "from": {
+         "$ref": "#/$defs/Code"
+        },
+        "to": {
+         "$ref": "#/$defs/Code"
+        }
+       },
+       "additionalProperties": false
+      },
+      "result": {
+       "type": "object",
+       "required": [
+        "from"
+       ],
+       "properties": {
+        "from": {
+         "$ref": "#/$defs/Code"
+        },
+        "to": {
+         "$ref": "#/$defs/Code"
+        }
+       },
+       "additionalProperties": false
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "title": "table_pick: a table chosen for the question is held to rules (a table with no groups refused; a fetch of no row refused once)",
+     "type": "object",
+     "required": [
+      "id",
+      "kind",
+      "picked",
+      "rules",
+      "outcome"
+     ],
+     "properties": {
+      "id": {
+       "$ref": "#/$defs/SelectId"
+      },
+      "kind": {
+       "const": "table_pick"
+      },
+      "picked": {
+       "$ref": "#/$defs/Code"
+      },
+      "fixed": {
+       "$ref": "#/$defs/Filter"
+      },
+      "rules": {
+       "type": "array",
+       "minItems": 1,
+       "items": {
+        "oneOf": [
+         {
+          "type": "object",
+          "required": [
+           "rule",
+           "words",
+           "group_dim"
+          ],
+          "properties": {
+           "rule": {
+            "const": "structure_question_needs_group"
+           },
+           "words": {
+            "type": "array",
+            "items": {
+             "type": "string"
+            },
+            "minItems": 1
+           },
+           "group_dim": {
+            "$ref": "#/$defs/Code"
+           },
+           "has_group": {
+            "type": "boolean"
+           }
+          },
+          "additionalProperties": false
+         },
+         {
+          "type": "object",
+          "required": [
+           "rule"
+          ],
+          "properties": {
+           "rule": {
+            "const": "fetch_has_rows"
+           },
+           "rows": {
+            "type": "integer",
+            "minimum": 0
+           }
+          },
+          "additionalProperties": false
+         }
+        ]
+       }
+      },
+      "outcome": {
+       "enum": [
+        "accept",
+        "refuse_once",
+        "stop"
+       ]
+      },
+      "allowed": {
+       "$ref": "#/$defs/Codes"
+      },
+      "example": {
+       "$ref": "#/$defs/Code"
+      },
+      "refusals": {
+       "type": "integer",
+       "minimum": 0,
+       "maximum": 1
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "title": "registry_list: codes a registry gives (flow_asked, flow_excluded, members, composition groups); rechecked by reading the registry",
+     "type": "object",
+     "required": [
+      "id",
+      "kind",
+      "registry",
+      "result"
+     ],
+     "properties": {
+      "id": {
+       "$ref": "#/$defs/SelectId"
+      },
+      "kind": {
+       "const": "registry_list"
+      },
+      "registry": {
+       "type": "string",
+       "pattern": "^[a-z_]+:[A-Za-z0-9_.@:\\-]+$"
+      },
+      "result": {
+       "anyOf": [
+        {
+         "$ref": "#/$defs/Codes"
+        },
+        {
+         "type": "object",
+         "additionalProperties": {
+          "$ref": "#/$defs/Codes"
+         }
+        }
+       ]
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "title": "set_op: codes of one select less another's, or two in order (sankey empty = registered less held; composition others = candidates past the bars then the places never fetched)",
+     "type": "object",
+     "required": [
+      "id",
+      "kind",
+      "op",
+      "a",
+      "b",
+      "result"
+     ],
+     "properties": {
+      "id": {
+       "$ref": "#/$defs/SelectId"
+      },
+      "kind": {
+       "const": "set_op"
+      },
+      "op": {
+       "enum": [
+        "minus",
+        "concat"
+       ]
+      },
+      "a": {
+       "anyOf": [
+        {
+         "$ref": "#/$defs/SelectId"
+        },
+        {
+         "$ref": "#/$defs/SelectRef"
+        }
+       ]
+      },
+      "b": {
+       "anyOf": [
+        {
+         "$ref": "#/$defs/SelectId"
+        },
+        {
+         "$ref": "#/$defs/SelectRef"
+        }
+       ]
+      },
+      "result": {
+       "$ref": "#/$defs/Codes"
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "title": "given: codes an earlier stage chose (the run record, the shape step), copied in; rechecked by reading that record, never by trusting this list",
+     "type": "object",
+     "required": [
+      "id",
+      "kind",
+      "source",
+      "path",
+      "result"
+     ],
+     "properties": {
+      "id": {
+       "$ref": "#/$defs/SelectId"
+      },
+      "kind": {
+       "const": "given"
+      },
+      "source": {
+       "enum": [
+        "run_record",
+        "shape",
+        "picks"
+       ]
+      },
+      "path": {
+       "type": "string"
+      },
+      "result": {
+       "$ref": "#/$defs/Codes"
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "title": "named_rule: a rule from a closed list the core implements once (topic-free), for choices the kinds above do not cover yet",
+     "type": "object",
+     "required": [
+      "id",
+      "kind",
+      "rule",
+      "inputs",
+      "result"
+     ],
+     "properties": {
+      "id": {
+       "$ref": "#/$defs/SelectId"
+      },
+      "kind": {
+       "const": "named_rule"
+      },
+      "rule": {
+       "enum": [
+        "marks_from_claims",
+        "scope_fewest_members",
+        "two_ends",
+        "largest_share_of_first_part",
+        "largest_outside_hub",
+        "grew_most",
+        "neighbour_or_own"
+       ]
+      },
+      "inputs": {
+       "type": "object",
+       "additionalProperties": {
+        "anyOf": [
+         {
+          "$ref": "#/$defs/SelectId"
+         },
+         {
+          "$ref": "#/$defs/Code"
+         },
+         {
+          "$ref": "#/$defs/Codes"
+         },
+         {
+          "$ref": "#/$defs/Knob"
+         },
+         {
+          "$ref": "#/$defs/SelectRef"
+         }
+        ]
+       }
+      },
+      "tie": {
+       "$ref": "#/$defs/Tie"
+      },
+      "result": {
+       "anyOf": [
+        {
+         "$ref": "#/$defs/Code"
+        },
+        {
+         "$ref": "#/$defs/Codes"
+        },
+        {
+         "type": "null"
+        },
+        {
+         "type": "object"
+        }
+       ]
+      }
+     },
+     "additionalProperties": false
+    }
+   ]
+  },
+  "Checks": {
+   "description": "Stop lines and page checks. stop: the page stops with the why; silence: the finding is dropped, the page goes on; refuse_once: the model is told the allowed values and an example, a second failure stops; page_fail: a page check that must pass before publish. The required ones per node are in node-registry.json (enforced).",
+   "type": "object",
+   "required": [
+    "kind",
+    "items"
+   ],
+   "properties": {
+    "kind": {
+     "const": "Checks"
+    },
+    "items": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Check"
+     }
+    }
+   },
+   "additionalProperties": false
+  },
+  "Check": {
+   "oneOf": [
+    {
+     "title": "max_dropped: more than num/den of the target dropped stops",
+     "type": "object",
+     "required": [
+      "id",
+      "kind",
+      "select",
+      "num",
+      "den",
+      "on_fail"
+     ],
+     "properties": {
+      "id": {
+       "type": "string"
+      },
+      "kind": {
+       "const": "max_dropped"
+      },
+      "select": {
+       "$ref": "#/$defs/SelectId"
+      },
+      "num": {
+       "type": "integer",
+       "minimum": 1
+      },
+      "den": {
+       "type": "integer",
+       "minimum": 1
+      },
+      "on_fail": {
+       "const": "stop"
+      },
+      "passed": {
+       "type": "boolean"
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "title": "fill_after_drop: once one is dropped, the bars must still reach the target",
+     "type": "object",
+     "required": [
+      "id",
+      "kind",
+      "select",
+      "on_fail"
+     ],
+     "properties": {
+      "id": {
+       "type": "string"
+      },
+      "kind": {
+       "const": "fill_after_drop"
+      },
+      "select": {
+       "$ref": "#/$defs/SelectId"
+      },
+      "on_fail": {
+       "const": "stop"
+      },
+      "passed": {
+       "type": "boolean"
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "title": "row_exists: a row each code of a select must have (the total row; a month; a flow above zero; two ends)",
+     "type": "object",
+     "required": [
+      "id",
+      "kind",
+      "what",
+      "query",
+      "on_fail"
+     ],
+     "properties": {
+      "id": {
+       "type": "string"
+      },
+      "kind": {
+       "const": "row_exists"
+      },
+      "what": {
+       "enum": [
+        "total_row",
+        "number_in_row",
+        "month",
+        "flow_above_zero",
+        "two_ends",
+        "row_and_point"
+       ]
+      },
+      "query": {
+       "$ref": "#/$defs/Query"
+      },
+      "for_each": {
+       "$ref": "#/$defs/SelectId"
+      },
+      "on_fail": {
+       "enum": [
+        "stop",
+        "silence"
+       ]
+      },
+      "passed": {
+       "type": "boolean"
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "title": "named: every code of a kind the page prints has a reviewed name in the name table; one code, one name",
+     "type": "object",
+     "required": [
+      "id",
+      "kind",
+      "name_kind",
+      "codes",
+      "on_fail"
+     ],
+     "properties": {
+      "id": {
+       "type": "string"
+      },
+      "kind": {
+       "enum": [
+        "named",
+        "one_name"
+       ]
+      },
+      "name_kind": {
+       "$ref": "#/$defs/Code"
+      },
+      "codes": {
+       "anyOf": [
+        {
+         "$ref": "#/$defs/Codes"
+        },
+        {
+         "type": "object",
+         "required": [
+          "select"
+         ],
+         "properties": {
+          "select": {
+           "$ref": "#/$defs/SelectId"
+          }
+         },
+         "additionalProperties": false
+        },
+        {
+         "$ref": "#/$defs/SelectRef"
+        }
+       ]
+      },
+      "on_fail": {
+       "enum": [
+        "stop",
+        "silence"
+       ]
+      },
+      "passed": {
+       "type": "boolean"
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "title": "tolerance_fixed: a tolerance is the registered knob's, never widened",
+     "type": "object",
+     "required": [
+      "id",
+      "kind",
+      "knob",
+      "on_fail"
+     ],
+     "properties": {
+      "id": {
+       "type": "string"
+      },
+      "kind": {
+       "const": "tolerance_fixed"
+      },
+      "knob": {
+       "$ref": "#/$defs/Knob"
+      },
+      "on_fail": {
+       "const": "stop"
+      },
+      "passed": {
+       "type": "boolean"
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "title": "page_check: a check the published page must pass (page_checks)",
+     "type": "object",
+     "required": [
+      "id",
+      "kind",
+      "name",
+      "on_fail"
+     ],
+     "properties": {
+      "id": {
+       "type": "string"
+      },
+      "kind": {
+       "const": "page_check"
+      },
+      "name": {
+       "enum": [
+        "notes_dropped",
+        "zeros_declared",
+        "strip_placed",
+        "same_numbers_twice",
+        "type_size",
+        "text_contrast"
+       ]
+      },
+      "declared": {
+       "description": "select ids whose declarations the check accepts as said (zero_parts)",
+       "type": "array",
+       "items": {
+        "$ref": "#/$defs/SelectId"
+       }
+      },
+      "on_fail": {
+       "const": "page_fail"
+      },
+      "passed": {
+       "type": "boolean"
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "title": "other program stop lines, one kind each, topic-free",
+     "type": "object",
+     "required": [
+      "id",
+      "kind",
+      "on_fail"
+     ],
+     "properties": {
+      "id": {
+       "type": "string"
+      },
+      "kind": {
+       "enum": [
+        "ranks_some",
+        "one_row_per_code",
+        "points_pinned",
+        "count_equals",
+        "ends_distinct",
+        "pairs_accounted",
+        "unit_short",
+        "layers_agree",
+        "has_composition",
+        "has_flow",
+        "fetch_rows",
+        "finding_words"
+       ]
+      },
+      "args": {
+       "type": "object"
+      },
+      "on_fail": {
+       "enum": [
+        "stop",
+        "silence",
+        "refuse_once"
+       ]
+      },
+      "passed": {
+       "type": "boolean"
+      }
+     },
+     "additionalProperties": false
+    }
+   ]
+  },
+  "Record": {
+   "description": "What stays with the flow for the run's record (not sent to the leaf, not printed).",
+   "type": "object",
+   "properties": {
+    "drawn": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "required": [
+       "layer",
+       "src",
+       "table",
+       "time"
+      ],
+      "properties": {
+       "layer": {
+        "$ref": "#/$defs/Code"
+       },
+       "src": {
+        "$ref": "#/$defs/SeriesRef"
+       },
+       "table": {
+        "$ref": "#/$defs/Code"
+       },
+       "time": {
+        "$ref": "#/$defs/Code"
+       }
+      },
+      "additionalProperties": false
+     }
+    },
+    "pairs": {
+     "type": "object",
+     "required": [
+      "registered",
+      "excluded",
+      "asked",
+      "drawn",
+      "zero",
+      "unrowed",
+      "of_empty"
+     ],
+     "properties": {
+      "registered": {
+       "type": "integer"
+      },
+      "excluded": {
+       "type": "integer"
+      },
+      "asked": {
+       "type": "integer"
+      },
+      "drawn": {
+       "type": "integer"
+      },
+      "zero": {
+       "type": "integer"
+      },
+      "unrowed": {
+       "type": "integer"
+      },
+      "of_empty": {
+       "type": "integer"
+      }
+     },
+     "additionalProperties": false
+    },
+    "composition": {
+     "type": "object",
+     "properties": {
+      "template": {
+       "type": "string"
+      },
+      "dim": {
+       "$ref": "#/$defs/Code"
+      },
+      "total": {
+       "$ref": "#/$defs/Code"
+      },
+      "groups": {
+       "type": "array"
+      },
+      "year": {
+       "$ref": "#/$defs/Code"
+      },
+      "place": {
+       "$ref": "#/$defs/Code"
+      },
+      "candidates": {
+       "$ref": "#/$defs/Codes"
+      },
+      "bars": {
+       "$ref": "#/$defs/Codes"
+      },
+      "dropped": {
+       "$ref": "#/$defs/Codes"
+      },
+      "others": {
+       "$ref": "#/$defs/Codes"
+      },
+      "zero": {
+       "type": "array"
+      },
+      "left_out": {
+       "$ref": "#/$defs/Codes"
+      }
+     },
+     "additionalProperties": false
+    },
+    "ends": {
+     "type": "object",
+     "properties": {
+      "t0": {
+       "$ref": "#/$defs/Code"
+      },
+      "t1": {
+       "$ref": "#/$defs/Code"
+      },
+      "rule": {
+       "const": "two_ends"
+      },
+      "fetched_from": {
+       "$ref": "#/$defs/Code"
+      },
+      "later": {
+       "type": "array"
+      }
+     },
+     "additionalProperties": false
+    }
+   },
+   "additionalProperties": false
+  },
+  "Shared": {
+   "description": "Fields declared once on an outer Frame or Node and inherited by every Node under it (panel grid, combined views): category order, legend, value scale, accent, palette, knobs. A node under it must not restate any of them, under the same name or another one: the page tree core refuses a child bind or knob named as a shared field, a child value that lists two or more codes of the shared category order, an items_for other than the shared order, and two accents that differ anywhere on the page.",
+   "type": "object",
+   "properties": {
+    "category_order": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/SelectRef"
+      },
+      {
+       "type": "object",
+       "required": [
+        "select"
+       ],
+       "properties": {
+        "select": {
+         "$ref": "#/$defs/SelectId"
+        }
+       },
+       "additionalProperties": false
+      }
+     ]
+    },
+    "legend": {
+     "description": "One legend for all panels: an entry per category, its name from the labels.",
+     "type": "object",
+     "required": [
+      "node",
+      "entries"
+     ],
+     "properties": {
+      "node": {
+       "$ref": "#/$defs/Code"
+      },
+      "entries": {
+       "type": "array",
+       "items": {
+        "type": "object",
+        "required": [
+         "code"
+        ],
+        "properties": {
+         "code": {
+          "$ref": "#/$defs/CodeOrRef"
+         },
+         "swatch": {
+          "type": "string"
+         }
+        },
+        "additionalProperties": false
+       }
+      },
+      "at": {
+       "enum": [
+        "top",
+        "bottom",
+        "right"
+       ]
+      }
+     },
+     "additionalProperties": false
+    },
+    "scale": {
+     "description": "One value axis for all panels: its top a fact, so panels compare.",
+     "type": "object",
+     "properties": {
+      "max": {
+       "$ref": "#/$defs/FactKey"
+      },
+      "min": {
+       "$ref": "#/$defs/FactKey"
+      }
+     },
+     "additionalProperties": false
+    },
+    "knobs": {
+     "type": "object",
+     "additionalProperties": {
+      "$ref": "#/$defs/KnobValue"
+     }
+    },
+    "accent": {
+     "description": "The one place every node under this frame marks (R3): a select, declared once.",
+     "anyOf": [
+      {
+       "$ref": "#/$defs/SelectRef"
+      },
+      {
+       "type": "object",
+       "required": [
+        "select"
+       ],
+       "properties": {
+        "select": {
+         "$ref": "#/$defs/SelectId"
+        }
+       },
+       "additionalProperties": false
+      }
+     ]
+    },
+    "palette": {
+     "description": "code -> colour, one map for every node under this frame.",
+     "type": "object",
+     "additionalProperties": {
+      "type": "string",
+      "pattern": "^#[0-9a-fA-F]{3,8}$"
+     }
+    }
+   },
+   "additionalProperties": false
+  },
+  "Grid": {
+   "type": "object",
+   "required": [
+    "rows",
+    "cols"
+   ],
+   "properties": {
+    "rows": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 6
+    },
+    "cols": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 6
+    },
+    "by": {
+     "description": "The dimension one panel per code of (facet).",
+     "$ref": "#/$defs/Code"
+    },
+    "panels": {
+     "description": "The facet codes in panel order, a select's result.",
+     "$ref": "#/$defs/SelectId"
+    }
+   },
+   "additionalProperties": false
+  },
+  "SelectRef": {
+   "description": "A select's recomputed result: select:<id> (all of it), select:<id>[i] (one, negative from the end), select:<id>.<key> (one entry of a map result). Anywhere a chosen code is used (filters, names, items, binds, checks) it is written as this, never as the literal code: the core substitutes its own recomputed result, so a fact or a drawn item cannot drift from the choice (lint: a literal code that is a member of a select result is refused).",
+   "type": "string",
+   "pattern": "^select:[a-z][a-z0-9_]*(\\.[A-Za-z0-9_]+)?(\\[-?[0-9]+\\])?$"
+  },
+  "CodeOrRef": {
+   "anyOf": [
+    {
+     "$ref": "#/$defs/Code"
+    },
+    {
+     "$ref": "#/$defs/SelectRef"
+    }
+   ]
+  },
+  "WordKey": {
+   "type": "string",
+   "pattern": "^[a-z][a-z0-9_]*(\\.[a-z0-9_]+)*$"
+  },
+  "KnobValue": {
+   "description": "A knob's value: a number (layout, never printed), a word-free option name, or a colour.",
+   "anyOf": [
+    {
+     "type": "number"
+    },
+    {
+     "type": "boolean"
+    },
+    {
+     "type": "string",
+     "pattern": "^(#[0-9a-fA-F]{3,8}|[A-Za-z_][A-Za-z0-9_.\\-]*)$"
+    }
+   ]
+  }
+ }
+}

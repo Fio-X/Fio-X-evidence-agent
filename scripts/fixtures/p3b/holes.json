@@ -1,0 +1,1391 @@
+{
+ "$comment": "The five round-4 holes in the 38 forms they take under plan B (field, subtree at the node reply and inside a mark, and the geometry or core-side fixtures). Each form is a value set at `path` of the base fixture, or a fixture by name; heads are the prototype's failure lines up to their first ':', in order. Every form must stop.",
+ "forms": [
+  {
+   "hole": "1a item at -> another country's point",
+   "base": "pos-q1-b.json",
+   "path": [
+    "reply",
+    "bubbles",
+    "marks",
+    "bubbles/0",
+    "at"
+   ],
+   "value": [
+    4.800448,
+    50.785392
+   ],
+   "heads": [
+    "B0 reply.bubbles.marks.bubbles/0.at"
+   ]
+  },
+  {
+   "hole": "1a item at -> another country's point",
+   "base": "pos-q1-b.json",
+   "path": [
+    "reply",
+    "bubbles",
+    "items"
+   ],
+   "value": [
+    {
+     "code": "select:ranked[0]",
+     "value": "series:sdg/SE:2025:OBS_VALUE",
+     "value_text": "fact:val.SE.n",
+     "at": [
+      4.800448,
+      50.785392
+     ]
+    },
+    {
+     "code": "select:ranked[1]",
+     "value": "series:sdg/DE:2025:OBS_VALUE",
+     "value_text": "fact:val.DE.n",
+     "at": [
+      9.678348,
+      50.961733
+     ]
+    },
+    {
+     "code": "select:ranked[2]",
+     "value": "series:sdg/FR:2025:OBS_VALUE",
+     "value_text": "fact:val.FR.n",
+     "at": [
+      2.552275,
+      46.696113
+     ]
+    },
+    {
+     "code": "select:ranked[3]",
+     "value": "series:sdg/BE:2025:OBS_VALUE",
+     "value_text": "fact:val.BE.n",
+     "at": [
+      4.800448,
+      50.785392
+     ]
+    }
+   ],
+   "heads": [
+    "B0 reply.bubbles.items"
+   ]
+  },
+  {
+   "hole": "1a item at -> another country's point",
+   "base": "pos-q1-b.json",
+   "path": [
+    "reply",
+    "bubbles",
+    "marks",
+    "bubbles/0",
+    "items"
+   ],
+   "value": [
+    {
+     "code": "select:ranked[0]",
+     "value": "series:sdg/SE:2025:OBS_VALUE",
+     "value_text": "fact:val.SE.n",
+     "at": [
+      4.800448,
+      50.785392
+     ]
+    },
+    {
+     "code": "select:ranked[1]",
+     "value": "series:sdg/DE:2025:OBS_VALUE",
+     "value_text": "fact:val.DE.n",
+     "at": [
+      9.678348,
+      50.961733
+     ]
+    },
+    {
+     "code": "select:ranked[2]",
+     "value": "series:sdg/FR:2025:OBS_VALUE",
+     "value_text": "fact:val.FR.n",
+     "at": [
+      2.552275,
+      46.696113
+     ]
+    },
+    {
+     "code": "select:ranked[3]",
+     "value": "series:sdg/BE:2025:OBS_VALUE",
+     "value_text": "fact:val.BE.n",
+     "at": [
+      4.800448,
+      50.785392
+     ]
+    }
+   ],
+   "heads": [
+    "B0 reply.bubbles.marks.bubbles/0.items"
+   ]
+  },
+  {
+   "hole": "1a item at -> another country's point",
+   "base": "pos-q1-b.json",
+   "path": [
+    "reply",
+    "bubbles",
+    "geometry"
+   ],
+   "value": {
+    "ext": [
+     -1.4477250000000002,
+     42.696113,
+     23.01705,
+     69.85918
+    ]
+   },
+   "heads": [
+    "B0 reply.bubbles.geometry"
+   ]
+  },
+  {
+   "hole": "1a item at -> another country's point",
+   "base": "pos-q1-b.json",
+   "path": [
+    "reply",
+    "bubbles",
+    "marks",
+    "bubbles/0",
+    "geometry"
+   ],
+   "value": {
+    "ext": [
+     -1.4477250000000002,
+     42.696113,
+     23.01705,
+     69.85918
+    ]
+   },
+   "heads": [
+    "B0 reply.bubbles.marks.bubbles/0.geometry"
+   ]
+  },
+  {
+   "hole": "1a item at -> another country's point",
+   "fixture": "neg-h1a-geom-at.json",
+   "heads": [
+    "B4 node bubbles bubbles/0.cx",
+    "B4 node bubbles bubbles/0.cy",
+    "B5 node bubbles bubbles/0/value_text",
+    "B5 node bubbles bubbles/2/value_text",
+    "B5 node bubbles bubbles/3/value_text"
+   ]
+  },
+  {
+   "hole": "1a item at -> another country's point",
+   "fixture": "neg-c2-item-not-expansion.json",
+   "heads": [
+    "C2 node bubbles"
+   ]
+  },
+  {
+   "hole": "1b focus added",
+   "base": "pos-q1-b.json",
+   "path": [
+    "reply",
+    "bubbles",
+    "marks",
+    "bubbles/2",
+    "focus"
+   ],
+   "value": true,
+   "heads": [
+    "B0 reply.bubbles.marks.bubbles/2.focus"
+   ]
+  },
+  {
+   "hole": "1b focus added",
+   "base": "pos-q1-b.json",
+   "path": [
+    "reply",
+    "bubbles",
+    "items"
+   ],
+   "value": [
+    {
+     "code": "select:ranked[0]",
+     "value": "series:sdg/SE:2025:OBS_VALUE",
+     "value_text": "fact:val.SE.n",
+     "at": [
+      19.01705,
+      65.85918
+     ]
+    },
+    {
+     "code": "select:ranked[1]",
+     "value": "series:sdg/DE:2025:OBS_VALUE",
+     "value_text": "fact:val.DE.n",
+     "at": [
+      9.678348,
+      50.961733
+     ]
+    },
+    {
+     "code": "select:ranked[2]",
+     "value": "series:sdg/FR:2025:OBS_VALUE",
+     "value_text": "fact:val.FR.n",
+     "at": [
+      2.552275,
+      46.696113
+     ],
+     "focus": true
+    },
+    {
+     "code": "select:ranked[3]",
+     "value": "series:sdg/BE:2025:OBS_VALUE",
+     "value_text": "fact:val.BE.n",
+     "at": [
+      4.800448,
+      50.785392
+     ]
+    }
+   ],
+   "heads": [
+    "B0 reply.bubbles.items"
+   ]
+  },
+  {
+   "hole": "1b focus added",
+   "base": "pos-q1-b.json",
+   "path": [
+    "reply",
+    "bubbles",
+    "marks",
+    "bubbles/0",
+    "items"
+   ],
+   "value": [
+    {
+     "code": "select:ranked[0]",
+     "value": "series:sdg/SE:2025:OBS_VALUE",
+     "value_text": "fact:val.SE.n",
+     "at": [
+      19.01705,
+      65.85918
+     ]
+    },
+    {
+     "code": "select:ranked[1]",
+     "value": "series:sdg/DE:2025:OBS_VALUE",
+     "value_text": "fact:val.DE.n",
+     "at": [
+      9.678348,
+      50.961733
+     ]
+    },
+    {
+     "code": "select:ranked[2]",
+     "value": "series:sdg/FR:2025:OBS_VALUE",
+     "value_text": "fact:val.FR.n",
+     "at": [
+      2.552275,
+      46.696113
+     ],
+     "focus": true
+    },
+    {
+     "code": "select:ranked[3]",
+     "value": "series:sdg/BE:2025:OBS_VALUE",
+     "value_text": "fact:val.BE.n",
+     "at": [
+      4.800448,
+      50.785392
+     ]
+    }
+   ],
+   "heads": [
+    "B0 reply.bubbles.marks.bubbles/0.items"
+   ]
+  },
+  {
+   "hole": "1b focus added",
+   "base": "pos-q1-b.json",
+   "path": [
+    "reply",
+    "bubbles",
+    "geometry"
+   ],
+   "value": {
+    "ext": [
+     -1.4477250000000002,
+     42.696113,
+     23.01705,
+     69.85918
+    ]
+   },
+   "heads": [
+    "B0 reply.bubbles.geometry"
+   ]
+  },
+  {
+   "hole": "1b focus added",
+   "base": "pos-q1-b.json",
+   "path": [
+    "reply",
+    "bubbles",
+    "marks",
+    "bubbles/0",
+    "geometry"
+   ],
+   "value": {
+    "ext": [
+     -1.4477250000000002,
+     42.696113,
+     23.01705,
+     69.85918
+    ]
+   },
+   "heads": [
+    "B0 reply.bubbles.marks.bubbles/0.geometry"
+   ]
+  },
+  {
+   "hole": "1b focus added",
+   "fixture": "neg-h1b-geom-bigger.json",
+   "heads": [
+    "B3 node bubbles bubbles/2.r"
+   ]
+  },
+  {
+   "hole": "2 share_text swapped",
+   "base": "pos-q3-b.json",
+   "path": [
+    "reply",
+    "stacked100",
+    "texts",
+    "stacked100/0/share_text/fossil",
+    "share_text"
+   ],
+   "value": "fact:share.renewable.PT",
+   "heads": [
+    "B0 reply.stacked100.texts.stacked100/0/share_text/fossil.share_text"
+   ]
+  },
+  {
+   "hole": "2 share_text swapped",
+   "base": "pos-q3-b.json",
+   "path": [
+    "reply",
+    "stacked100",
+    "items"
+   ],
+   "value": [
+    {
+     "code": "select:bars[0]",
+     "total": "series:nrg_bal_peh/A.GEP.TOTAL.GWH.PT:2024:OBS_VALUE",
+     "total_text": "fact:total.PT.n",
+     "cells": {
+      "fossil": [
+       "series:nrg_bal_peh/A.GEP.C0000X0350-0370.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.C0350-0370.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.G3000.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.O4000XBIO.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.P1000.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.S2000.GWH.PT:2024:OBS_VALUE"
+      ],
+      "renewable": [
+       "series:nrg_bal_peh/A.GEP.RA000.GWH.PT:2024:OBS_VALUE"
+      ],
+      "other": [
+       "series:nrg_bal_peh/A.GEP.H8000.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.RA130.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.W6100_6220.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.X9900.GWH.PT:2024:OBS_VALUE"
+      ]
+     },
+     "share_text": {
+      "fossil": "fact:share.renewable.PT",
+      "renewable": "fact:share.fossil.PT",
+      "other": "fact:share.other.PT"
+     }
+    }
+   ],
+   "heads": [
+    "B0 reply.stacked100.items"
+   ]
+  },
+  {
+   "hole": "2 share_text swapped",
+   "base": "pos-q3-b.json",
+   "path": [
+    "reply",
+    "stacked100",
+    "marks",
+    "stacked100/0/fossil",
+    "items"
+   ],
+   "value": [
+    {
+     "code": "select:bars[0]",
+     "total": "series:nrg_bal_peh/A.GEP.TOTAL.GWH.PT:2024:OBS_VALUE",
+     "total_text": "fact:total.PT.n",
+     "cells": {
+      "fossil": [
+       "series:nrg_bal_peh/A.GEP.C0000X0350-0370.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.C0350-0370.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.G3000.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.O4000XBIO.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.P1000.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.S2000.GWH.PT:2024:OBS_VALUE"
+      ],
+      "renewable": [
+       "series:nrg_bal_peh/A.GEP.RA000.GWH.PT:2024:OBS_VALUE"
+      ],
+      "other": [
+       "series:nrg_bal_peh/A.GEP.H8000.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.RA130.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.W6100_6220.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.X9900.GWH.PT:2024:OBS_VALUE"
+      ]
+     },
+     "share_text": {
+      "fossil": "fact:share.renewable.PT",
+      "renewable": "fact:share.fossil.PT",
+      "other": "fact:share.other.PT"
+     }
+    }
+   ],
+   "heads": [
+    "B0 reply.stacked100.marks.stacked100/0/fossil.items"
+   ]
+  },
+  {
+   "hole": "2 share_text swapped",
+   "base": "pos-q3-b.json",
+   "path": [
+    "reply",
+    "stacked100",
+    "texts"
+   ],
+   "value": {
+    "title": {
+     "kind": "Text",
+     "role": "head",
+     "origin": "registry",
+     "runs": [
+      {
+       "src": "name:frames:composition"
+      }
+     ]
+    },
+    "unit": {
+     "kind": "Text",
+     "role": "unit",
+     "origin": "registry",
+     "runs": [
+      {
+       "src": "name:unit_short_zh:GWH"
+      }
+     ]
+    },
+    "total_head": {
+     "kind": "Text",
+     "role": "head",
+     "origin": "registry",
+     "runs": [
+      {
+       "src": "name:zh_names:siec:TOTAL"
+      }
+     ]
+    }
+   },
+   "heads": [
+    "B0 reply.stacked100.texts.title",
+    "B0 reply.stacked100.texts.unit",
+    "B0 reply.stacked100.texts.total_head"
+   ]
+  },
+  {
+   "hole": "2 share_text swapped",
+   "base": "pos-q3-b.json",
+   "path": [
+    "reply",
+    "stacked100",
+    "marks",
+    "stacked100/0/fossil",
+    "texts"
+   ],
+   "value": {
+    "title": {
+     "kind": "Text",
+     "role": "head",
+     "origin": "registry",
+     "runs": [
+      {
+       "src": "name:frames:composition"
+      }
+     ]
+    },
+    "unit": {
+     "kind": "Text",
+     "role": "unit",
+     "origin": "registry",
+     "runs": [
+      {
+       "src": "name:unit_short_zh:GWH"
+      }
+     ]
+    },
+    "total_head": {
+     "kind": "Text",
+     "role": "head",
+     "origin": "registry",
+     "runs": [
+      {
+       "src": "name:zh_names:siec:TOTAL"
+      }
+     ]
+    }
+   },
+   "heads": [
+    "B0 reply.stacked100.marks.stacked100/0/fossil.texts"
+   ]
+  },
+  {
+   "hole": "2 share_text swapped",
+   "base": "pos-q3-b.json",
+   "path": [
+    "reply",
+    "stacked100",
+    "lines"
+   ],
+   "value": [
+    {
+     "kind": "Text",
+     "role": "line",
+     "origin": "program",
+     "runs": [
+      {
+       "w": "图中为合计最大的 "
+      },
+      {
+       "src": "fact:comp_bars.n"
+      },
+      {
+       "w": " 个国家，自上而下由大到小"
+      }
+     ]
+    },
+    {
+     "kind": "Text",
+     "role": "line",
+     "origin": "word_table",
+     "runs": [
+      {
+       "src": "name:zh_names:iso2:PT"
+      },
+      {
+       "w": "："
+      },
+      {
+       "src": "name:zh_names:siec:BA100"
+      },
+      {
+       "word": "composition.outside_total"
+      },
+      {
+       "src": "fact:excl.PT.BA100"
+      }
+     ]
+    },
+    {
+     "kind": "Text",
+     "role": "line",
+     "origin": "program",
+     "runs": [
+      {
+       "src": "name:zh_names:siec_group:nuclear"
+      },
+      {
+       "w": "为零的国家："
+      },
+      {
+       "src": "name:zh_names:iso2:PT"
+      }
+     ]
+    }
+   ],
+   "heads": [
+    "B0 reply.stacked100.lines"
+   ]
+  },
+  {
+   "hole": "2 share_text swapped",
+   "base": "pos-q3-b.json",
+   "path": [
+    "reply",
+    "stacked100",
+    "marks",
+    "stacked100/0/fossil",
+    "lines"
+   ],
+   "value": [
+    {
+     "kind": "Text",
+     "role": "line",
+     "origin": "program",
+     "runs": [
+      {
+       "w": "图中为合计最大的 "
+      },
+      {
+       "src": "fact:comp_bars.n"
+      },
+      {
+       "w": " 个国家，自上而下由大到小"
+      }
+     ]
+    },
+    {
+     "kind": "Text",
+     "role": "line",
+     "origin": "word_table",
+     "runs": [
+      {
+       "src": "name:zh_names:iso2:PT"
+      },
+      {
+       "w": "："
+      },
+      {
+       "src": "name:zh_names:siec:BA100"
+      },
+      {
+       "word": "composition.outside_total"
+      },
+      {
+       "src": "fact:excl.PT.BA100"
+      }
+     ]
+    },
+    {
+     "kind": "Text",
+     "role": "line",
+     "origin": "program",
+     "runs": [
+      {
+       "src": "name:zh_names:siec_group:nuclear"
+      },
+      {
+       "w": "为零的国家："
+      },
+      {
+       "src": "name:zh_names:iso2:PT"
+      }
+     ]
+    }
+   ],
+   "heads": [
+    "B0 reply.stacked100.marks.stacked100/0/fossil.lines"
+   ]
+  },
+  {
+   "hole": "2 share_text swapped",
+   "fixture": "neg-h2-geom-swap.json",
+   "heads": [
+    "B5 node stacked100 stacked100/0/share_text/fossil",
+    "B5 node stacked100 stacked100/0/share_text/renewable"
+   ]
+  },
+  {
+   "hole": "3a twelve in node words",
+   "base": "pos-q3-b.json",
+   "path": [
+    "reply",
+    "stacked100",
+    "texts",
+    "stacked100/lines/0",
+    "runs"
+   ],
+   "value": [
+    {
+     "w": "十二"
+    }
+   ],
+   "heads": [
+    "B0 reply.stacked100.texts.stacked100/lines/0.runs"
+   ]
+  },
+  {
+   "hole": "3a twelve in node words",
+   "base": "pos-q3-b.json",
+   "path": [
+    "reply",
+    "stacked100",
+    "items"
+   ],
+   "value": [
+    {
+     "code": "select:bars[0]",
+     "total": "series:nrg_bal_peh/A.GEP.TOTAL.GWH.PT:2024:OBS_VALUE",
+     "total_text": "fact:total.PT.n",
+     "cells": {
+      "fossil": [
+       "series:nrg_bal_peh/A.GEP.C0000X0350-0370.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.C0350-0370.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.G3000.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.O4000XBIO.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.P1000.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.S2000.GWH.PT:2024:OBS_VALUE"
+      ],
+      "renewable": [
+       "series:nrg_bal_peh/A.GEP.RA000.GWH.PT:2024:OBS_VALUE"
+      ],
+      "other": [
+       "series:nrg_bal_peh/A.GEP.H8000.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.RA130.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.W6100_6220.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.X9900.GWH.PT:2024:OBS_VALUE"
+      ]
+     },
+     "share_text": {
+      "fossil": "fact:share.fossil.PT",
+      "renewable": "fact:share.renewable.PT",
+      "other": "fact:share.other.PT"
+     }
+    }
+   ],
+   "heads": [
+    "B0 reply.stacked100.items"
+   ]
+  },
+  {
+   "hole": "3a twelve in node words",
+   "base": "pos-q3-b.json",
+   "path": [
+    "reply",
+    "stacked100",
+    "marks",
+    "stacked100/0/fossil",
+    "items"
+   ],
+   "value": [
+    {
+     "code": "select:bars[0]",
+     "total": "series:nrg_bal_peh/A.GEP.TOTAL.GWH.PT:2024:OBS_VALUE",
+     "total_text": "fact:total.PT.n",
+     "cells": {
+      "fossil": [
+       "series:nrg_bal_peh/A.GEP.C0000X0350-0370.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.C0350-0370.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.G3000.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.O4000XBIO.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.P1000.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.S2000.GWH.PT:2024:OBS_VALUE"
+      ],
+      "renewable": [
+       "series:nrg_bal_peh/A.GEP.RA000.GWH.PT:2024:OBS_VALUE"
+      ],
+      "other": [
+       "series:nrg_bal_peh/A.GEP.H8000.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.RA130.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.W6100_6220.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.X9900.GWH.PT:2024:OBS_VALUE"
+      ]
+     },
+     "share_text": {
+      "fossil": "fact:share.fossil.PT",
+      "renewable": "fact:share.renewable.PT",
+      "other": "fact:share.other.PT"
+     }
+    }
+   ],
+   "heads": [
+    "B0 reply.stacked100.marks.stacked100/0/fossil.items"
+   ]
+  },
+  {
+   "hole": "3a twelve in node words",
+   "base": "pos-q3-b.json",
+   "path": [
+    "reply",
+    "stacked100",
+    "texts"
+   ],
+   "value": {
+    "title": {
+     "kind": "Text",
+     "role": "head",
+     "origin": "registry",
+     "runs": [
+      {
+       "src": "name:frames:composition"
+      }
+     ]
+    },
+    "unit": {
+     "kind": "Text",
+     "role": "unit",
+     "origin": "registry",
+     "runs": [
+      {
+       "src": "name:unit_short_zh:GWH"
+      }
+     ]
+    },
+    "total_head": {
+     "kind": "Text",
+     "role": "head",
+     "origin": "registry",
+     "runs": [
+      {
+       "src": "name:zh_names:siec:TOTAL"
+      }
+     ]
+    }
+   },
+   "heads": [
+    "B0 reply.stacked100.texts.title",
+    "B0 reply.stacked100.texts.unit",
+    "B0 reply.stacked100.texts.total_head"
+   ]
+  },
+  {
+   "hole": "3a twelve in node words",
+   "base": "pos-q3-b.json",
+   "path": [
+    "reply",
+    "stacked100",
+    "marks",
+    "stacked100/0/fossil",
+    "texts"
+   ],
+   "value": {
+    "title": {
+     "kind": "Text",
+     "role": "head",
+     "origin": "registry",
+     "runs": [
+      {
+       "src": "name:frames:composition"
+      }
+     ]
+    },
+    "unit": {
+     "kind": "Text",
+     "role": "unit",
+     "origin": "registry",
+     "runs": [
+      {
+       "src": "name:unit_short_zh:GWH"
+      }
+     ]
+    },
+    "total_head": {
+     "kind": "Text",
+     "role": "head",
+     "origin": "registry",
+     "runs": [
+      {
+       "src": "name:zh_names:siec:TOTAL"
+      }
+     ]
+    }
+   },
+   "heads": [
+    "B0 reply.stacked100.marks.stacked100/0/fossil.texts"
+   ]
+  },
+  {
+   "hole": "3a twelve in node words",
+   "base": "pos-q3-b.json",
+   "path": [
+    "reply",
+    "stacked100",
+    "lines"
+   ],
+   "value": [
+    {
+     "kind": "Text",
+     "role": "line",
+     "origin": "program",
+     "runs": [
+      {
+       "w": "图中为合计最大的 "
+      },
+      {
+       "w": "十二"
+      },
+      {
+       "w": " 个国家，自上而下由大到小"
+      }
+     ]
+    },
+    {
+     "kind": "Text",
+     "role": "line",
+     "origin": "word_table",
+     "runs": [
+      {
+       "src": "name:zh_names:iso2:PT"
+      },
+      {
+       "w": "："
+      },
+      {
+       "src": "name:zh_names:siec:BA100"
+      },
+      {
+       "word": "composition.outside_total"
+      },
+      {
+       "src": "fact:excl.PT.BA100"
+      }
+     ]
+    },
+    {
+     "kind": "Text",
+     "role": "line",
+     "origin": "program",
+     "runs": [
+      {
+       "src": "name:zh_names:siec_group:nuclear"
+      },
+      {
+       "w": "为零的国家："
+      },
+      {
+       "src": "name:zh_names:iso2:PT"
+      }
+     ]
+    }
+   ],
+   "heads": [
+    "B0 reply.stacked100.lines"
+   ]
+  },
+  {
+   "hole": "3a twelve in node words",
+   "base": "pos-q3-b.json",
+   "path": [
+    "reply",
+    "stacked100",
+    "marks",
+    "stacked100/0/fossil",
+    "lines"
+   ],
+   "value": [
+    {
+     "kind": "Text",
+     "role": "line",
+     "origin": "program",
+     "runs": [
+      {
+       "w": "图中为合计最大的 "
+      },
+      {
+       "w": "十二"
+      },
+      {
+       "w": " 个国家，自上而下由大到小"
+      }
+     ]
+    },
+    {
+     "kind": "Text",
+     "role": "line",
+     "origin": "word_table",
+     "runs": [
+      {
+       "src": "name:zh_names:iso2:PT"
+      },
+      {
+       "w": "："
+      },
+      {
+       "src": "name:zh_names:siec:BA100"
+      },
+      {
+       "word": "composition.outside_total"
+      },
+      {
+       "src": "fact:excl.PT.BA100"
+      }
+     ]
+    },
+    {
+     "kind": "Text",
+     "role": "line",
+     "origin": "program",
+     "runs": [
+      {
+       "src": "name:zh_names:siec_group:nuclear"
+      },
+      {
+       "w": "为零的国家："
+      },
+      {
+       "src": "name:zh_names:iso2:PT"
+      }
+     ]
+    }
+   ],
+   "heads": [
+    "B0 reply.stacked100.marks.stacked100/0/fossil.lines"
+   ]
+  },
+  {
+   "hole": "3a twelve in node words",
+   "fixture": "neg-h3a-core-words.json",
+   "heads": [
+    "C3 $.body.children[0].children[0].lines[0]"
+   ]
+  },
+  {
+   "hole": "3b about three tenths in node words",
+   "base": "pos-q3-b.json",
+   "path": [
+    "reply",
+    "stacked100",
+    "texts",
+    "stacked100/lines/2",
+    "w"
+   ],
+   "value": "约三成",
+   "heads": [
+    "B0 reply.stacked100.texts.stacked100/lines/2.w"
+   ]
+  },
+  {
+   "hole": "3b about three tenths in node words",
+   "base": "pos-q3-b.json",
+   "path": [
+    "reply",
+    "stacked100",
+    "items"
+   ],
+   "value": [
+    {
+     "code": "select:bars[0]",
+     "total": "series:nrg_bal_peh/A.GEP.TOTAL.GWH.PT:2024:OBS_VALUE",
+     "total_text": "fact:total.PT.n",
+     "cells": {
+      "fossil": [
+       "series:nrg_bal_peh/A.GEP.C0000X0350-0370.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.C0350-0370.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.G3000.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.O4000XBIO.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.P1000.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.S2000.GWH.PT:2024:OBS_VALUE"
+      ],
+      "renewable": [
+       "series:nrg_bal_peh/A.GEP.RA000.GWH.PT:2024:OBS_VALUE"
+      ],
+      "other": [
+       "series:nrg_bal_peh/A.GEP.H8000.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.RA130.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.W6100_6220.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.X9900.GWH.PT:2024:OBS_VALUE"
+      ]
+     },
+     "share_text": {
+      "fossil": "fact:share.fossil.PT",
+      "renewable": "fact:share.renewable.PT",
+      "other": "fact:share.other.PT"
+     }
+    }
+   ],
+   "heads": [
+    "B0 reply.stacked100.items"
+   ]
+  },
+  {
+   "hole": "3b about three tenths in node words",
+   "base": "pos-q3-b.json",
+   "path": [
+    "reply",
+    "stacked100",
+    "marks",
+    "stacked100/0/fossil",
+    "items"
+   ],
+   "value": [
+    {
+     "code": "select:bars[0]",
+     "total": "series:nrg_bal_peh/A.GEP.TOTAL.GWH.PT:2024:OBS_VALUE",
+     "total_text": "fact:total.PT.n",
+     "cells": {
+      "fossil": [
+       "series:nrg_bal_peh/A.GEP.C0000X0350-0370.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.C0350-0370.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.G3000.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.O4000XBIO.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.P1000.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.S2000.GWH.PT:2024:OBS_VALUE"
+      ],
+      "renewable": [
+       "series:nrg_bal_peh/A.GEP.RA000.GWH.PT:2024:OBS_VALUE"
+      ],
+      "other": [
+       "series:nrg_bal_peh/A.GEP.H8000.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.RA130.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.W6100_6220.GWH.PT:2024:OBS_VALUE",
+       "series:nrg_bal_peh/A.GEP.X9900.GWH.PT:2024:OBS_VALUE"
+      ]
+     },
+     "share_text": {
+      "fossil": "fact:share.fossil.PT",
+      "renewable": "fact:share.renewable.PT",
+      "other": "fact:share.other.PT"
+     }
+    }
+   ],
+   "heads": [
+    "B0 reply.stacked100.marks.stacked100/0/fossil.items"
+   ]
+  },
+  {
+   "hole": "3b about three tenths in node words",
+   "base": "pos-q3-b.json",
+   "path": [
+    "reply",
+    "stacked100",
+    "texts"
+   ],
+   "value": {
+    "title": {
+     "kind": "Text",
+     "role": "head",
+     "origin": "registry",
+     "runs": [
+      {
+       "src": "name:frames:composition"
+      }
+     ]
+    },
+    "unit": {
+     "kind": "Text",
+     "role": "unit",
+     "origin": "registry",
+     "runs": [
+      {
+       "src": "name:unit_short_zh:GWH"
+      }
+     ]
+    },
+    "total_head": {
+     "kind": "Text",
+     "role": "head",
+     "origin": "registry",
+     "runs": [
+      {
+       "src": "name:zh_names:siec:TOTAL"
+      }
+     ]
+    }
+   },
+   "heads": [
+    "B0 reply.stacked100.texts.title",
+    "B0 reply.stacked100.texts.unit",
+    "B0 reply.stacked100.texts.total_head"
+   ]
+  },
+  {
+   "hole": "3b about three tenths in node words",
+   "base": "pos-q3-b.json",
+   "path": [
+    "reply",
+    "stacked100",
+    "marks",
+    "stacked100/0/fossil",
+    "texts"
+   ],
+   "value": {
+    "title": {
+     "kind": "Text",
+     "role": "head",
+     "origin": "registry",
+     "runs": [
+      {
+       "src": "name:frames:composition"
+      }
+     ]
+    },
+    "unit": {
+     "kind": "Text",
+     "role": "unit",
+     "origin": "registry",
+     "runs": [
+      {
+       "src": "name:unit_short_zh:GWH"
+      }
+     ]
+    },
+    "total_head": {
+     "kind": "Text",
+     "role": "head",
+     "origin": "registry",
+     "runs": [
+      {
+       "src": "name:zh_names:siec:TOTAL"
+      }
+     ]
+    }
+   },
+   "heads": [
+    "B0 reply.stacked100.marks.stacked100/0/fossil.texts"
+   ]
+  },
+  {
+   "hole": "3b about three tenths in node words",
+   "base": "pos-q3-b.json",
+   "path": [
+    "reply",
+    "stacked100",
+    "lines"
+   ],
+   "value": [
+    {
+     "kind": "Text",
+     "role": "line",
+     "origin": "program",
+     "runs": [
+      {
+       "w": "图中为合计最大的 "
+      },
+      {
+       "src": "fact:comp_bars.n"
+      },
+      {
+       "w": " 个国家，自上而下由大到小"
+      }
+     ]
+    },
+    {
+     "kind": "Text",
+     "role": "line",
+     "origin": "word_table",
+     "runs": [
+      {
+       "src": "name:zh_names:iso2:PT"
+      },
+      {
+       "w": "："
+      },
+      {
+       "src": "name:zh_names:siec:BA100"
+      },
+      {
+       "word": "composition.outside_total"
+      },
+      {
+       "src": "fact:excl.PT.BA100"
+      }
+     ]
+    },
+    {
+     "kind": "Text",
+     "role": "line",
+     "origin": "program",
+     "runs": [
+      {
+       "src": "name:zh_names:siec_group:nuclear"
+      },
+      {
+       "w": "为零的国家："
+      },
+      {
+       "src": "name:zh_names:iso2:PT"
+      },
+      {
+       "w": "约三成"
+      }
+     ]
+    }
+   ],
+   "heads": [
+    "B0 reply.stacked100.lines"
+   ]
+  },
+  {
+   "hole": "3b about three tenths in node words",
+   "base": "pos-q3-b.json",
+   "path": [
+    "reply",
+    "stacked100",
+    "marks",
+    "stacked100/0/fossil",
+    "lines"
+   ],
+   "value": [
+    {
+     "kind": "Text",
+     "role": "line",
+     "origin": "program",
+     "runs": [
+      {
+       "w": "图中为合计最大的 "
+      },
+      {
+       "src": "fact:comp_bars.n"
+      },
+      {
+       "w": " 个国家，自上而下由大到小"
+      }
+     ]
+    },
+    {
+     "kind": "Text",
+     "role": "line",
+     "origin": "word_table",
+     "runs": [
+      {
+       "src": "name:zh_names:iso2:PT"
+      },
+      {
+       "w": "："
+      },
+      {
+       "src": "name:zh_names:siec:BA100"
+      },
+      {
+       "word": "composition.outside_total"
+      },
+      {
+       "src": "fact:excl.PT.BA100"
+      }
+     ]
+    },
+    {
+     "kind": "Text",
+     "role": "line",
+     "origin": "program",
+     "runs": [
+      {
+       "src": "name:zh_names:siec_group:nuclear"
+      },
+      {
+       "w": "为零的国家："
+      },
+      {
+       "src": "name:zh_names:iso2:PT"
+      },
+      {
+       "w": "约三成"
+      }
+     ]
+    }
+   ],
+   "heads": [
+    "B0 reply.stacked100.marks.stacked100/0/fossil.lines"
+   ]
+  },
+  {
+   "hole": "3b about three tenths in node words",
+   "fixture": "neg-h3b-core-words.json",
+   "heads": [
+    "C3 $.body.children[0].children[0].lines[2]"
+   ]
+  },
+  {
+   "hole": "3b about three tenths in node words",
+   "fixture": "neg-h3b-word-table.json",
+   "heads": [
+    "C3 $.body.children[0].children[0].lines[1]"
+   ]
+  }
+ ]
+}

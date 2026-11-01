@@ -1,0 +1,175 @@
+{
+ "$comment": "P1 (11-01): what each registered node must carry, so a page cannot drop a stop line or swap a select's kind by leaving it out. bound: the node's field must be a select reference (select:<id>[...] or {select: id}) to a select of one of these kinds; '$name' in a check stands for the id bound under that name. A node missing from this list is refused. The visual group's page tree core (src/next_tree.rs) enforces it on every page tree it checks; node-bindings.json lays the external bindings over it.",
+ "page": {
+  "checks": [
+   {
+    "kind": "unit_short"
+   }
+  ]
+ },
+ "nodes": {
+  "bars": {
+   "bound": [
+    {
+     "as": "order",
+     "any_of": [
+      "binds.ranked",
+      "items_for",
+      "shared.category_order"
+     ],
+     "kinds": [
+      "rank",
+      "top_n",
+      "drop_replace"
+     ]
+    }
+   ],
+   "checks": [
+    {
+     "kind": "ranks_some",
+     "select": "$order"
+    },
+    {
+     "kind": "one_row_per_code"
+    }
+   ]
+  },
+  "bubbles": {
+   "bound": [
+    {
+     "as": "order",
+     "any_of": [
+      "items_for",
+      "shared.category_order"
+     ],
+     "kinds": [
+      "rank",
+      "top_n"
+     ]
+    }
+   ],
+   "checks": [
+    {
+     "kind": "count_equals",
+     "select": "$order"
+    },
+    {
+     "kind": "points_pinned"
+    }
+   ]
+  },
+  "bubble_key": {},
+  "leader_notes": {
+   "bound": [
+    {
+     "as": "ends",
+     "any_of": [
+      "items[*].code"
+     ],
+     "kinds": [
+      "take"
+     ]
+    }
+   ],
+   "checks": [
+    {
+     "kind": "ranks_some"
+    }
+   ]
+  },
+  "stacked100": {
+   "bound": [
+    {
+     "as": "bars",
+     "any_of": [
+      "binds.bars"
+     ],
+     "kinds": [
+      "drop_replace"
+     ],
+     "from_kinds": [
+      "rank"
+     ]
+    },
+    {
+     "as": "zero",
+     "any_of": [
+      "binds.zero"
+     ],
+     "kinds": [
+      "zero_parts"
+     ]
+    }
+   ],
+   "checks": [
+    {
+     "kind": "has_composition"
+    },
+    {
+     "kind": "max_dropped",
+     "select": "$bars",
+     "num": 1,
+     "den": 4
+    },
+    {
+     "kind": "fill_after_drop",
+     "select": "$bars"
+    },
+    {
+     "kind": "row_exists",
+     "what": "total_row"
+    },
+    {
+     "kind": "row_exists",
+     "what": "number_in_row"
+    },
+    {
+     "kind": "tolerance_fixed",
+     "knob": "stacked100.tol"
+    },
+    {
+     "kind": "named"
+    },
+    {
+     "kind": "one_name"
+    },
+    {
+     "kind": "page_check",
+     "name": "zeros_declared",
+     "declared": "$zero"
+    },
+    {
+     "kind": "page_check",
+     "name": "notes_dropped",
+     "declared": "$zero"
+    }
+   ]
+  },
+  "sankey": {
+   "selects": [
+    {
+     "kind": "merge_below"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "has_flow"
+    },
+    {
+     "kind": "pairs_accounted"
+    },
+    {
+     "kind": "named"
+    },
+    {
+     "kind": "one_name"
+    }
+   ]
+  },
+  "panel_grid": {
+   "shared": [
+    "category_order"
+   ]
+  }
+ }
+}

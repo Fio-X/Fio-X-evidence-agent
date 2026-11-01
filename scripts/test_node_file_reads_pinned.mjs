@@ -22,8 +22,9 @@
 //   - more sites than pinned is red; fewer sites is red too until the pin is lowered to the new count;
 //   - a pinned finding that no longer holds is red ("delete the line").
 // Files under `not_nodes` (bake.py, knobs.py: program steps, not nodes) are skipped and listed by name in the output.
-// Group ownership comes from runtime/pi/groups.json (read, never written) plus the fixture's `file_rules_add` and `files_add`,
-// which only this test uses to place the node folders in the visual group.
+// Group ownership comes from runtime/pi/groups.json (read, never written): its file_rules place the node folders' code files in
+// the visual group (P3). The rule's parameters here are held equal to groups.json cross_calls.node_rule by
+// scripts/test_group_node_rule.mjs.
 //
 // Self-tests run first (17 must-fail sources, 3 must-pass sources, 1 site count, 2 ownership, 6 compare cases); then the real
 // files are scanned and compared with `pinned`. Any self-test not as expected, or any compare problem, exits non-zero.
@@ -39,7 +40,6 @@ const FIXTURE = "scripts/fixtures/node-file-reads-pinned.json";
 const SPEC = JSON.parse(readFileSync(join(REPO, FIXTURE), "utf8"));
 const RULE = SPEC;
 const GROUPS = JSON.parse(readFileSync(join(REPO, "runtime/pi/groups.json"), "utf8"));
-const groupsWith = (g) => ({ ...g, files: { ...g.files, ...SPEC.files_add }, file_rules: [...(g.file_rules ?? []), ...SPEC.file_rules_add] });
 const groupOf = (g, rel) =>
   g.files?.[rel]?.group ?? (g.file_rules ?? []).find((r) => rel.startsWith(r.prefix) && (!r.suffix || rel.endsWith(r.suffix)))?.group ?? null;
 const underRule = (rel) => RULE.files.some((p) => rel.startsWith(p));
@@ -170,7 +170,7 @@ function direct(rel, src, g, read) {
 }
 
 /** Findings of one file (repo-relative `rel`, text `src`) with the node-folder modules it imports followed: Map(finding -> sites). */
-export function findings(rel, src, g = groupsWith(GROUPS), read = makeReader(), memo = new Map(), stack = new Set()) {
+export function findings(rel, src, g = GROUPS, read = makeReader(), memo = new Map(), stack = new Set()) {
   if (memo.has(rel)) return memo.get(rel);
   stack.add(rel);
   const { out, local } = direct(rel, src, g, read);
@@ -207,12 +207,12 @@ export const compare = (realMap, pinned) => {
 // ---- self-tests of the scan -----------------------------------------------------------------------------------------------------------
 const results = [];
 const red = (name, rel, src, want, overlay = {}) => {
-  const got = show(findings(rel, src, groupsWith(GROUPS), makeReader(overlay)));
+  const got = show(findings(rel, src, GROUPS, makeReader(overlay)));
   assert.ok(got.some((f) => f.includes(want)), `${name}: expected a finding with ${JSON.stringify(want)}, got ${JSON.stringify(got)}`);
   results.push(`must-fail ${name}: red as expected (${got.join("; ")})`);
 };
 const green = (name, rel, src, overlay = {}) => {
-  const got = show(findings(rel, src, groupsWith(GROUPS), makeReader(overlay)));
+  const got = show(findings(rel, src, GROUPS, makeReader(overlay)));
   assert.deepEqual(got, [], `${name}: expected no finding, got ${JSON.stringify(got)}`);
   results.push(`must-pass ${name}: no finding as expected`);
 };
@@ -273,7 +273,7 @@ red("F17 a Python node reads a sibling json through pkgutil", "runtime/leaves_py
   `import json, pkgutil\n\ndef fill(req):\n    return json.loads(pkgutil.get_data(__name__, "words.zh.json"))\n`,
   "imports pkgutil");
 
-const twice = findings("runtime/leaves_py/x_fill.py", `def a():\n    return open("a")\n\ndef b():\n    return open("b")\n`, groupsWith(GROUPS), makeReader());
+const twice = findings("runtime/leaves_py/x_fill.py", `def a():\n    return open("a")\n\ndef b():\n    return open("b")\n`, GROUPS, makeReader());
 assert.equal(twice.get("calls open()"), 2, "two open() calls are two sites");
 results.push("site count: two open() calls in one file count 2 (pinned counts sites, not file x kind)");
 
@@ -286,15 +286,12 @@ green("P3 a pure Python fill node (stdlib only, a pure sibling followed, open( i
   `"""bars fill: never open( a file; the rows come on stdin."""\nimport json, math\nfrom collections import OrderedDict\nimport purehelp\n\ndef fill(req):\n    return {"fragment": OrderedDict(n=math.floor(len(req["rows"]) * purehelp.K))}\n`,
   { "runtime/leaves_py/purehelp.py": `import math\nK = math.pi / math.pi\n` });
 
-// Ownership: groups.json gives the node folders no group today; the fixture's ownership rows make them visual. If groups.json
-// starts to place them, this goes red on purpose: drop file_rules_add from the fixture then.
-for (const rel of ["runtime/nodes/run.mjs", "runtime/leaves_py/bubbles.py"]) {
-  assert.equal(groupOf(GROUPS, rel), null, `${rel} now has a group in groups.json: drop file_rules_add from ${FIXTURE}`);
-  assert.equal(groupOf(groupsWith(GROUPS), rel), "visual", `${rel} is not visual with the fixture's ownership rows`);
-}
-results.push("ownership: runtime/nodes/run.mjs and runtime/leaves_py/bubbles.py have no group in groups.json, visual with the fixture's rows");
-assert.equal(groupOf(groupsWith(GROUPS), "runtime/pi/economy_names.mjs"), "knowledge");
-results.push("ownership: runtime/pi/economy_names.mjs stays knowledge with the fixture's rows");
+// Ownership: groups.json places the node folders' code files in the visual group; a module of another group stays its own.
+for (const rel of ["runtime/nodes/run.mjs", "runtime/leaves_py/bubbles.py"])
+  assert.equal(groupOf(GROUPS, rel), "visual", `${rel} is not visual in groups.json`);
+results.push("ownership: runtime/nodes/run.mjs and runtime/leaves_py/bubbles.py are visual in groups.json");
+assert.equal(groupOf(GROUPS, "runtime/pi/economy_names.mjs"), "knowledge");
+results.push("ownership: runtime/pi/economy_names.mjs stays knowledge in groups.json");
 
 // ---- self-tests of compare ------------------------------------------------------------------------------------------------------------
 const P = { "runtime/leaves_py/a.py": { "calls open()": 2 } };
@@ -334,7 +331,7 @@ const skipped = [];
 let total = 0, own = 0;
 for (const rel of real) {
   if (RULE.not_nodes[rel]) { skipped.push(rel); lines.push(`  ${rel}: SKIPPED (not_nodes)`); continue; }
-  const f = findings(rel, read(rel), groupsWith(GROUPS), read, memo);
+  const f = findings(rel, read(rel), GROUPS, read, memo);
   if (!f.size) { lines.push(`  ${rel}: clean`); continue; }
   realMap[rel] = Object.fromEntries(f);
   total += [...f.values()].reduce((a, b) => a + b, 0);

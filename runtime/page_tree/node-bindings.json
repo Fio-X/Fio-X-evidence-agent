@@ -1,0 +1,5 @@
+{
+ "$comment": "The external bindings the visual group's page tree core (src/next_tree.rs) lays over node-registry.json: frames (the core's frame and plot box), and per node its binding, runner (a code file under the run's runtime/nodes/ or runtime/leaves_py/), frame, items (how the core expands a node's items from its binds), marks (one shape per item or part; each shape field a declared field -> channel -> scale the core recomputes, or free and held by constraints) and texts. An external entry naming anything the core does not compute is refused when the registry loads (C5). P3 binds no production node external: the leaf registry (runtime/leaves_py/knobs.json binding) must name the same nodes, none.",
+ "frames": {},
+ "nodes": {}
+}

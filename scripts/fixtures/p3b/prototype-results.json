@@ -1,0 +1,192 @@
+{
+ "$comment": "The plan B prototype's failure heads (each failure line up to its first ':', in order) per fixture; [] = the page passes.",
+ "fixtures": {
+  "neg-c1-select-not-recomputed.json": [
+   "C1 recheck"
+  ],
+  "neg-c10-select-merge-below.json": [
+   "C1 recheck"
+  ],
+  "neg-c11-empty-parts-not-recomputed.json": [
+   "C1 recheck"
+  ],
+  "neg-c12-row-exists-no-for-each.json": [
+   "C4 R11 check total_row row_exists"
+  ],
+  "neg-c2-item-not-expansion.json": [
+   "C2 node bubbles"
+  ],
+  "neg-c3-knob-not-sent.json": [
+   "C4 R9 select bars"
+  ],
+  "neg-c4-drawn-not-derived.json": [
+   "C4 R10 drawn bubbles"
+  ],
+  "neg-c5-take-out-of-range.json": [
+   "C1 recheck"
+  ],
+  "neg-c6-rank-key-change.json": [
+   "C1 recheck"
+  ],
+  "neg-c7-rank-tie-printed.json": [
+   "C1 recheck"
+  ],
+  "neg-c8-take-when.json": [
+   "C1 recheck"
+  ],
+  "neg-c9-select-window.json": [
+   "C1 recheck"
+  ],
+  "neg-g1-scale.json": [
+   "B3 node bars bars/1.h",
+   "B3 node bars bars/1.y"
+  ],
+  "neg-g10-stack-gap.json": [
+   "B3 node stacked100 stacked100/0/renewable.x"
+  ],
+  "neg-g11-band-order.json": [
+   "B3 node bars bars/0.x",
+   "B3 node bars bars/1.x",
+   "B5 node bars bars/0/label",
+   "B5 node bars bars/0/value_text",
+   "B5 node bars bars/1/label",
+   "B5 node bars bars/1/value_text"
+  ],
+  "neg-g12-refused.json": [
+   "B7 node bubbles refused (no_room)"
+  ],
+  "neg-g13-refused-words.json": [
+   "B0 reply.bubbles.refused"
+  ],
+  "neg-g14-svg.json": [
+   "B0 reply.bubbles.svg"
+  ],
+  "neg-g15-share-length.json": [
+   "B3 node stacked100 stacked100/0/renewable.w",
+   "B5 node stacked100 stacked100/0/share_text/other"
+  ],
+  "neg-g16-one-wrong-scale-for-all.json": [
+   "B3 node bars bars/0.h",
+   "B3 node bars bars/0.y",
+   "B3 node bars bars/1.h",
+   "B3 node bars bars/1.y",
+   "B3 node bars bars/2.h",
+   "B3 node bars bars/2.y",
+   "B3 node bars bars/3.h",
+   "B3 node bars bars/3.y",
+   "B5 node bars bars/0/value_text",
+   "B5 node bars bars/1/value_text",
+   "B5 node bars bars/2/value_text"
+  ],
+  "neg-g17a-two-bar-lengths-swapped.json": [
+   "B3 node bars bars/1.h",
+   "B3 node bars bars/1.y",
+   "B3 node bars bars/2.h",
+   "B3 node bars bars/2.y",
+   "B5 node bars bars/1/value_text"
+  ],
+  "neg-g17b-two-segment-lengths-swapped.json": [
+   "B3 node stacked100 stacked100/0/fossil.w",
+   "B3 node stacked100 stacked100/0/renewable.x",
+   "B3 node stacked100 stacked100/0/other.x",
+   "B3 node stacked100 stacked100/0/other.w"
+  ],
+  "neg-g18-two-labels-swapped.json": [
+   "B5 node bars bars/1/label",
+   "B5 node bars bars/2/label"
+  ],
+  "neg-g2-mark-missing.json": [
+   "B1 node bubbles"
+  ],
+  "neg-g3-mark-extra.json": [
+   "B0 reply.bubbles.marks.bubbles/4"
+  ],
+  "neg-g3b-text-extra.json": [
+   "B0 reply.bars.texts.bars/0/note"
+  ],
+  "neg-g4-out-of-frame.json": [
+   "B2 node bars bars/0/label",
+   "B5 node bars bars/0/label"
+  ],
+  "neg-g5-line-off-point.json": [
+   "B4 node leader_notes leader_notes/0.x2"
+  ],
+  "neg-g6-overlap.json": [
+   "B6 node stacked100"
+  ],
+  "neg-g7-shape.json": [
+   "B0 reply.bars.marks.bars/0.shape"
+  ],
+  "neg-g8-not-finite.json": [
+   "B0 reply.bars.marks.bars/0.x"
+  ],
+  "neg-g9-baseline.json": [
+   "B3 node bars bars/2.y"
+  ],
+  "neg-h1a-field-at.json": [
+   "B0 reply.bubbles.marks.bubbles/0.at"
+  ],
+  "neg-h1a-geom-at.json": [
+   "B4 node bubbles bubbles/0.cx",
+   "B4 node bubbles bubbles/0.cy",
+   "B5 node bubbles bubbles/0/value_text",
+   "B5 node bubbles bubbles/2/value_text",
+   "B5 node bubbles bubbles/3/value_text"
+  ],
+  "neg-h1b-field-focus.json": [
+   "B0 reply.bubbles.marks.bubbles/2.focus"
+  ],
+  "neg-h1b-geom-bigger.json": [
+   "B3 node bubbles bubbles/2.r"
+  ],
+  "neg-h2-field-share.json": [
+   "B0 reply.stacked100.texts.stacked100/0/share_text/fossil.src"
+  ],
+  "neg-h2-geom-swap.json": [
+   "B5 node stacked100 stacked100/0/share_text/fossil",
+   "B5 node stacked100 stacked100/0/share_text/renewable"
+  ],
+  "neg-h3a-core-words.json": [
+   "C3 $.body.children[0].children[0].lines[0]"
+  ],
+  "neg-h3a-field-runs.json": [
+   "B0 reply.stacked100.texts.stacked100/lines/0.runs"
+  ],
+  "neg-h3b-core-words.json": [
+   "C3 $.body.children[0].children[0].lines[2]"
+  ],
+  "neg-h3b-field-w.json": [
+   "B0 reply.stacked100.texts.stacked100/lines/2.w"
+  ],
+  "neg-h3b-word-table.json": [
+   "C3 $.body.children[0].children[0].lines[1]"
+  ],
+  "neg-h3c-zero-in-words.json": [
+   "C3 $.body.children[0].children[0].lines[2]"
+  ],
+  "neg-r1-check-kind.json": [
+   "C5 registry bars check layers_agree",
+   "C1 lint"
+  ],
+  "neg-r2-channel.json": [
+   "C5 registry bars channel {'fields'",
+   "C5 registry bars marks"
+  ],
+  "neg-r3-field-from-node.json": [
+   "C5 registry bubbles items.fields.at kind 'from_node'",
+   "C2 node bubbles"
+  ],
+  "neg-r4-node-scale.json": [
+   "C5 registry bars channel {'fields'"
+  ],
+  "neg-r5-field-undeclared.json": [
+   "C5 registry bars channel {'fields'",
+   "C5 registry bars marks"
+  ],
+  "neg-r6-tol-px-over-cap.json": [
+   "C5 registry bars marks"
+  ],
+  "pos-q1-b.json": [],
+  "pos-q3-b.json": []
+ }
+}

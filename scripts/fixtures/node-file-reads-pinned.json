@@ -1,5 +1,5 @@
 {
- "$comment": "Rule parameters and the per-file pinned baseline for scripts/test_node_file_reads_pinned.mjs. Only that test reads this file.",
+ "$comment": "Rule parameters and the per-file pinned baseline for scripts/test_node_file_reads_pinned.mjs, which compares the pins; scripts/test_group_node_rule.mjs holds the rule parameters equal to runtime/pi/groups.json cross_calls.node_rule (whose pinned_in names this file).",
  "why": "A second-layer node (runtime/nodes/, runtime/leaves_py/) should get everything it uses on its one stdin line from the visual group's entry: it reads no file, starts no process, opens no socket, reads no environment, loads no code at run time and imports no module of another group. The drawing leaves already in the tree break this at many sites, so each breaking file is pinned with its site counts (each import statement and each call is one site). A file not listed under pinned must have no finding; a pinned count may only go down, and when it goes down the pin is lowered in the same change; a pinned finding that no longer holds is deleted. This entry adds a check only and loosens nothing.",
  "files": [
   "runtime/nodes/",
@@ -53,25 +53,6 @@
   "hashlib",
   "csv"
  ],
- "ownership_note": "file_rules_add and files_add are used only by this test to decide which group a file belongs to (the node folders as visual). They are not a change to runtime/pi/groups.json, which this test reads and never writes.",
- "file_rules_add": [
-  {
-   "prefix": "runtime/nodes/",
-   "group": "visual",
-   "note": "Ownership for this test only (not a groups.json change): Second-layer JS nodes (fill and draw), started by the visual group's entry only (next_visual::call -> next_leaf runner)."
-  },
-  {
-   "prefix": "runtime/leaves_py/",
-   "group": "visual",
-   "note": "Ownership for this test only (not a groups.json change): Second-layer Python leaves and fill nodes, started by the visual group's entry only."
-  }
- ],
- "files_add": {
-  "src/next_tree.rs": {
-   "group": "visual",
-   "note": "Ownership for this test only (not a groups.json change); no cross-group call is allowed by this row."
-  }
- },
  "pinned_note": "Measured on a clean checkout of 5400f7568165ceb68cfe7269051b93caed287ba8: 16 files, 93 sites. Each file is pinned on its own; counts may only go down.",
  "pinned": {
   "runtime/leaves_py/bubbles.py": {

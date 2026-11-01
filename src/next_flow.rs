@@ -2878,6 +2878,11 @@ pub(crate) fn visual_call<'a>(
         }
         Request::PlacePoints { iso3 } => format!("{kind} {iso3:?}"),
         Request::IllusStrip { tables, width, runtime } => format!("{kind} {tables:?} {width} {}", runtime.display()),
+        Request::NodeFill { node, tree, runtime } => format!("{kind} {node} {tree} {}", runtime.display()),
+    };
+    let node = match &request {
+        Request::NodeFill { node, .. } => Some(node.to_string()),
+        _ => None,
     };
     let started = std::time::Instant::now();
     let reply = crate::group_guard::as_visual_call(|| next_visual::call(request));
@@ -2904,6 +2909,7 @@ pub(crate) fn visual_call<'a>(
             format!("{points:?} {missing:?} {}", crate::hash::sha256_bytes(table.as_bytes()))
         }
         Ok(Reply::Strip { strip, note }) => format!("{} {note}", strip.as_ref().map_or("", |s| s.svg.as_str())),
+        Ok(Reply::NodeFilled(filled)) => format!("{filled:?}"),
     };
     let mut event = json!({"group": "visual", "request": kind,
         "request_sha256": crate::hash::sha256_bytes(asked.as_bytes()),
@@ -2913,6 +2919,18 @@ pub(crate) fn visual_call<'a>(
         Ok(Reply::Strip { note, .. }) => event["note"] = json!(note),
         Err(why) if kind == "illus_strip" => event["note"] = json!(why),
         _ => {}
+    }
+    // an external node's call: which node, the child's and the core's milliseconds, and how many failure lines stopped it
+    if let Some(node) = node {
+        event["node"] = json!(node);
+        let (child, recheck, failures) = match &reply {
+            Ok(Reply::NodeFilled(filled)) => (json!(filled.child_ms), json!(filled.recheck_ms), 0),
+            Ok(_) => (Value::Null, Value::Null, 0),
+            Err(why) => (Value::Null, Value::Null, why.lines().count()),
+        };
+        event["child_ms"] = child;
+        event["recheck_ms"] = recheck;
+        event["failures"] = json!(failures);
     }
     calls.lock().unwrap_or_else(|e| e.into_inner()).push(event);
     reply
