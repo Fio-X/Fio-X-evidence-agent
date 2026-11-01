@@ -295,6 +295,30 @@ class FlowPage(unittest.TestCase):
         self.assertNotIn('data-layer="bars"', html)
         self.assertEqual(run.placeholders(html), [])
 
+    def test_the_finding_s_headline_is_the_page_title_and_the_text_step_s_title_its_kicker(self):
+        # the page's title and the text step's recorded title part here: the text step's title stays on the page as the
+        # kicker (kept as the kicker only when it holds no digit or placeholder), the h1 the finding's marked headline
+        def page(lines):
+            pic = child(lines)[1]
+            return child(lines + [json.dumps({"phase": "page", "layers": {"sankey": pic["svg"]}})])[-1]["html"]
+        lines = flow_request()
+        spec = json.loads(lines[0])["knobs"]["spec"]
+        html = page(lines)
+        head = re.search(r'<div class="kicker">(.*?)</div><h1>(.*?)</h1>', html, re.S)
+        self.assertEqual(head.group(1), spec["title"])
+        self.assertTrue(head.group(2).startswith('<span data-cmp="max" data-a="'), head.group(2))
+        self.assertRegex(head.group(2), r'data-src="name:[^"]*:O4000XBIO"')
+        self.assertIn(K.WD.WORDS["column.note.vs_next"], head.group(2))
+        # no finding: the text step's title is the h1 and its kicker stays, as before
+        plain = page(flow_request(style={"sankey": {"finding": "none"}}))
+        self.assertIn(f'<div class="kicker">{spec["kicker"]}</div><h1>{spec["title"]}</h1>', plain)
+        self.assertNotIn("data-cmp", plain)
+        # a title holding a placeholder is no kicker: the kicker is kept
+        found = sankey.Frame(hero(DATA)).finding
+        held, why = run.headline(dict(spec, title="{lead} T"), found, draw(hero(DATA))[0])
+        self.assertIsNone(why)
+        self.assertEqual(held["kicker"], spec["kicker"])
+
     def test_a_zero_flow_is_drawn_as_no_band_and_goes_back_to_layer_1_as_dropped(self):
         # the reported totals hold the zeroed flow's old value, so they are left out here (conservation has its own tests)
         data = {k: v for k, v in DATA.items() if k != "totals"}

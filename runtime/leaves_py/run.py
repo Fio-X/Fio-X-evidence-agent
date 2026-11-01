@@ -78,6 +78,9 @@ SCALE = {}
 # The size of the picture each leaf layer drew last (its Frame's W and H, None where it has none): a column page's main
 # leaf's is the panel's (main_size).
 DREW = {}
+# The finding each leaf layer drew last (its Frame's finding, wbkit.two_sided; None where it has none): a column page's
+# main leaf's makes the page's headline (column_page).
+FOUND = {}
 
 
 def leaf(Frame, cl, key, fixed=None, by_hero=None):
@@ -95,6 +98,7 @@ def leaf(Frame, cl, key, fixed=None, by_hero=None):
         for node, kv in [*(fixed or {}).items(), *(by_hero(f.h) if by_hero else {}).items()]: st[node] = {**st.get(node, {}), **kv}
         fr = Frame({"data": d, "style": st}); out = cl(fr, occ)
         DREW[key] = (getattr(fr, "W", None), getattr(fr, "H", None))
+        FOUND[key] = getattr(fr, "finding", None)
         dropped = getattr(fr, "dropped", None) or []
         DROPPED.extend({"id": str(c), "why": why} for c, why in dropped)
         if getattr(fr, "r_used", None) is not None:
@@ -342,6 +346,10 @@ def column_page(panel, got, sizes):
         off.append("page: the illustration strip comes with no size [w, h]")
     if off: return {"refused": off}
     box = re.sub(r"^<(\w+)", r'<\1 data-layer="bignums"', got["bignums"], count=1) if "bignums" in got else None
+    found = FOUND.get(f.main)
+    if found:
+        spec, why = headline(spec, found, got[f.main])
+        if why: return {"refused": why}
     unit = FX.worded(spec, panel.c.F, "unit", spec["hero"]["unit"]) if spec["hero"].get("unit") else ""
     pic = "".join(f'<g data-layer="{n}">{got[n]}</g>' for n in MAP_LAYERS if n in need)
     hero = hooked(column.column_shell(f, f'<g data-layer="{f.main}">{got[f.main]}</g>', unit, pic, f.main), panel.c, spec, column_hooks(f.main))
@@ -350,6 +358,22 @@ def column_page(panel, got, sizes):
     html = scmp.shell(panel.c, spec, scmp.page_head(panel.c, spec, box=box, wide=box is None) + hero + strip, column.CSS)
     left = placeholders(html)
     return {"refused": [f"page: the page still holds the placeholder {k}" for k in left]} if left else {"html": html}
+
+
+def headline(spec, found, svg):
+    """The page's title from its main leaf's finding (P5, wbkit.two_sided), as layer 1's title_and_kicker does with a
+    headline: the finding's headline is the title, the title the text step gave the kicker (the kicker kept when that title
+    holds a digit or a placeholder, which a chart label cannot). Refuses when the main picture's accent marks (data-code
+    in the accent) are not exactly the finding's subject, or the headline does not name the subject by its name row."""
+    acc = set(re.findall(r'fill="var\(--accent\)"[^>]*data-code="([^"]+)"', svg))
+    if acc != {found["subject"]}: return spec, [f"page: the accent marks {sorted(acc)}, the headline's subject is {found['subject']}"]
+    if not any(s.get("name") == found["subject"] for s in found["headline"]):
+        return spec, [f"page: the headline does not name its subject {found['subject']}"]
+    old = str(spec.get("title") or "")
+    kick = old if old.strip() and not re.search(r"[{}0-9\uff10-\uff19]", old) else spec.get("kicker")
+    rel, a, _ = found["cmp"]  # the set it is the max of is the page check's to derive, so the page names none
+    mark = f'<span data-cmp="{rel}" data-a="{wbkit.esc(a)}">'
+    return {**spec, "title": mark + wbkit.finding_html(found["headline"], "span") + "</span>", "kicker": kick}, None
 
 
 def scmp_page(panel, got):
