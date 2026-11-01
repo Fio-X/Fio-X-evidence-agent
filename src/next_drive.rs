@@ -1701,6 +1701,125 @@ mod drive {
             if bad.is_empty() { Ok(()) } else { Err(bad) }
         }
 
+        // ------------------------------------------------------------ the fixture page set (acceptance H2, 11-02)
+
+        /// The fixture list's sha256: the column pages and the change pages that refilled and published in the BEFORE at
+        /// ad4b05f541b934c6627db58ef98276bd9070ddae (pass 1), each pinned to the run records a refill reads.
+        const FIXTURE_LIST_SHA256: &str = "ac6d62bc590a8c62e8dd90e21386986929d619ba1053277a94d6e32f5fc8ef93";
+
+        /// The sha256 of the run records a refill reads from a run folder: events.jsonl, claims.jsonl and every file under
+        /// computations/, data/ and shadow/, as "<relative path>\0<sha256 of its bytes>\n" lines in byte order of the paths.
+        fn inputs_sha256(run: &Path) -> Result<String, String> {
+            fn walk(root: &Path, dir: &Path, out: &mut Vec<String>) -> std::io::Result<()> {
+                for e in std::fs::read_dir(dir)? {
+                    let path = e?.path();
+                    if path.is_dir() {
+                        walk(root, &path, out)?;
+                    } else {
+                        out.push(path.strip_prefix(root).unwrap_or(&path).to_string_lossy().into_owned());
+                    }
+                }
+                Ok(())
+            }
+            let mut files = vec!["events.jsonl".to_string(), "claims.jsonl".to_string()];
+            for d in ["computations", "data", "shadow"] {
+                if run.join(d).is_dir() {
+                    walk(run, &run.join(d), &mut files).map_err(|e| format!("{d}: {e}"))?;
+                }
+            }
+            files.sort();
+            files.dedup();
+            let mut all = Vec::new();
+            for f in &files {
+                let bytes = std::fs::read(run.join(f)).map_err(|e| format!("{f}: {e}"))?;
+                all.extend(format!("{f}\0{}\n", sha256(&bytes)).into_bytes());
+            }
+            Ok(sha256(&all))
+        }
+
+        /// The fixture list (`# fixture pages <n> column <c> change <h>`, then a line per page: the gate list's five fields
+        /// and inputs_sha256 of its run folder under `docs`): Ok its pages and its sha256, Err why it is refused. Only the
+        /// pinned list, and only pages whose run folder holds that page and those records.
+        fn read_fixture_list(raw: &[u8], docs: &Path, pinned: &str) -> Result<(Vec<Page>, String), String> {
+            let sha = sha256(raw);
+            if sha != pinned {
+                return Err(format!("fixture list sha256 {sha} is not the pinned {pinned}"));
+            }
+            let text = String::from_utf8(raw.to_vec()).map_err(|_| "fixture list is not utf-8")?;
+            let mut lines = text.split('\n').filter(|l| !l.is_empty());
+            let head: Vec<&str> = lines.next().unwrap_or("").split(' ').collect();
+            let mut pages = Vec::new();
+            for l in lines {
+                let f: Vec<&str> = l.split('\t').collect();
+                if f.len() != FIELDS.len() + 1 {
+                    return Err(format!("fixture line {:?} has not six fields", l.chars().take(40).collect::<String>()));
+                }
+                let page = Page::of(&f[..5]);
+                if !["column", "change"].contains(&page.recipe.as_str()) {
+                    return Err(format!("fixture page {} is a {} page, not a column or change page", page.sha, page.recipe));
+                }
+                let run = docs.join(&page.run);
+                let req = run.join("publications").join(&page.recipe).join("request.json");
+                if std::fs::read(&req).map(|b| sha256(&b)[..16] == page.sha).ok() != Some(true) {
+                    return Err(format!("fixture page {}: its run folder holds no {} page with that request", page.sha, page.recipe));
+                }
+                if inputs_sha256(&run)? != f[5] {
+                    return Err(format!("fixture page {}: its run records are not the pinned ones (inputs_sha256 differs)", page.sha));
+                }
+                pages.push(page);
+            }
+            let n = |r: &str| pages.iter().filter(|p| p.recipe == r).count().to_string();
+            let want = ["#", "fixture", "pages", &pages.len().to_string(), "column", &n("column"), "change", &n("change")];
+            if head != want || pages.is_empty() {
+                return Err("fixture list header and lines disagree (or empty)".into());
+            }
+            Ok((pages, sha))
+        }
+
+        /// The fixture set's pass rule (H2): a BEFORE whose two passes agree and in whose first pass every page refilled
+        /// and published (a column page with its bars, file_problems), and an AFTER at another head, repeatable too, whose
+        /// first pass equals BEFORE's on every item of every page. Ok(()) or every problem.
+        fn fixture_judge(pages: &[Page], lsha: &str, run: &Value, before: Option<&Value>) -> Result<(), Vec<String>> {
+            let green = |f: &Value| -> Vec<String> {
+                pages
+                    .iter()
+                    .filter(|p| f["passes"][0][&p.sha]["end"] != json!({"published": true}))
+                    .map(|p| format!("before pass 1 page {} ({}) did not publish: every fixture page publishes at the base", p.sha, p.recipe))
+                    .collect()
+            };
+            let mut bad = Vec::new();
+            match (run["kind"].as_str(), before) {
+                (Some("before"), None) => {
+                    bad.extend(file_problems(run, "before", pages, lsha));
+                    if bad.is_empty() {
+                        bad.extend(green(run));
+                    }
+                }
+                (Some("after"), Some(before)) => {
+                    bad.extend(file_problems(before, "before", pages, lsha));
+                    bad.extend(file_problems(run, "after", pages, lsha));
+                    if bad.is_empty() {
+                        bad.extend(green(before));
+                    }
+                    if bad.is_empty() && before["head40"] == run["head40"] {
+                        bad.push("BEFORE was run at the same head as this run".into());
+                    }
+                    if bad.is_empty() {
+                        for page in pages {
+                            let d = differs(&before["passes"][0][&page.sha], &run["passes"][0][&page.sha]);
+                            if !d.is_empty() {
+                                bad.push(format!("page {}: {} differ", page.sha, d.join(", ")));
+                            }
+                        }
+                    }
+                }
+                (Some("before"), Some(_)) => bad.push("before run given a BEFORE file".into()),
+                (Some("after"), None) => bad.push("after run without BEFORE".into()),
+                (other, _) => bad.push(format!("run kind {other:?} is neither before nor after")),
+            }
+            if bad.is_empty() { Ok(()) } else { Err(bad) }
+        }
+
         // ------------------------------------------------------------ refill: a page through the production path again
 
         /// The run's model, replayed: each step's answers (its newsroom_choose calls, in order) given again in that order;
@@ -2016,6 +2135,7 @@ mod drive {
             let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/page-replay/one").join(&sha);
             let rec = refill(&inputs.docs, page, &dir).await;
             let layers: Vec<String> = rec["html"].as_str().map(|h| canon_html(h).layers.into_iter().map(|(n, _)| n).collect()).unwrap_or_default();
+            std::fs::write(dir.join("record.json"), rec.to_string()).unwrap_or_else(|e| panic!("{sha}: record: {e}"));
             println!("REFILL {sha} refill {} | end {} | layers {layers:?}", rec["refill"], rec["end"]);
         }
 
@@ -2094,6 +2214,66 @@ mod drive {
             }
             println!("REPLAY {kind} pages {} equal {equal} differ {differ}", pages.len());
             assert!(judged.is_ok(), "the replay gate does not pass: {:?}", judged.err());
+        }
+
+        /// The fixture page set (acceptance H2): the pinned list at NEXT_TREE_FIXTURE_LIST (beside the gate's list; the
+        /// local docs three folders up) refilled page by page twice into target/page-replay/fixture-<kind>-<pass>/<sha16>/,
+        /// the outcome file written to NEXT_TREE_FIXTURE_OUT (as the gate's, the list's sha256 as its manifest_sha256), then
+        /// judged by fixture_judge, NEXT_TREE_FIXTURE_KIND before or after (after with NEXT_TREE_FIXTURE_BEFORE). Prints a
+        /// line per page and last `FIXTURES <kind> pages <n> equal <n> differ <n>`; fails on any problem.
+        ///
+        ///     NEWS_CATALOG_DIR=.. NEWS_CLASSIFY_REFS=.. NEXT_TREE_FIXTURE_LIST=<list> NEXT_TREE_FIXTURE_KIND=before \
+        ///     NEXT_TREE_FIXTURE_OUT=<file> cargo test --release --bins page_tree_fixture_set -- --ignored --nocapture
+        #[tokio::test]
+        #[ignore]
+        async fn page_tree_fixture_set() {
+            let list = PathBuf::from(var("NEXT_TREE_FIXTURE_LIST"));
+            let kind = var("NEXT_TREE_FIXTURE_KIND");
+            let out = PathBuf::from(var("NEXT_TREE_FIXTURE_OUT"));
+            let before: Option<Value> = std::env::var("NEXT_TREE_FIXTURE_BEFORE")
+                .ok()
+                .map(|p| serde_json::from_slice(&std::fs::read(&p).unwrap_or_else(|e| panic!("BEFORE {p}: {e}"))).unwrap());
+            let docs = list.parent().and_then(|d| d.ancestors().nth(3)).map(Path::to_path_buf).unwrap_or_default();
+            let raw = std::fs::read(&list).unwrap_or_else(|e| panic!("fixture list: {e}"));
+            let (pages, lsha) = read_fixture_list(&raw, &docs, FIXTURE_LIST_SHA256).unwrap_or_else(|why| panic!("FIXTURES {kind} refused: {why}"));
+            assert!(kind == "before" || kind == "after", "NEXT_TREE_FIXTURE_KIND {kind} is neither before nor after");
+            let repo = Path::new(env!("CARGO_MANIFEST_DIR"));
+            let head = std::process::Command::new("git").arg("-C").arg(repo).args(["rev-parse", "HEAD"]).output().unwrap();
+            let head40 = String::from_utf8_lossy(&head.stdout).trim().to_string();
+            let mut passes = Vec::new();
+            for pass in 1..=2 {
+                let mut recs = Map::new();
+                for page in &pages {
+                    let dir = repo.join("target/page-replay").join(format!("fixture-{kind}-{pass}")).join(&page.sha);
+                    recs.insert(page.sha.clone(), refill(&docs, page, &dir).await);
+                }
+                passes.push(Value::Object(recs));
+            }
+            let file = json!({"kind": kind, "head40": head40, "manifest_sha256": lsha, "passes": passes});
+            std::fs::write(&out, serde_json::to_vec(&file).unwrap()).unwrap();
+            let other = match &before {
+                Some(b) => &b["passes"][0],
+                None => &file["passes"][1],
+            };
+            let (mut equal, mut differ) = (0, 0);
+            for page in &pages {
+                let rec = &file["passes"][0][&page.sha];
+                let d = differs(&other[&page.sha], rec);
+                if d.is_empty() { equal += 1 } else { differ += 1 }
+                let end = match rec["end"].get("stop") {
+                    Some(stage) => stage.as_str().unwrap_or("?").to_string(),
+                    None if rec["end"].is_null() => "-".into(),
+                    None => "published".into(),
+                };
+                let d = if d.is_empty() { String::new() } else { format!(" differ: {}", d.join(",")) };
+                println!("fixture: {} {} refill {} end {end}{d}", page.sha, page.recipe, rec["refill"].as_str().unwrap_or("?"));
+            }
+            let judged = fixture_judge(&pages, &lsha, &file, before.as_ref());
+            for problem in judged.as_ref().err().into_iter().flatten() {
+                println!("fixture problem: {problem}");
+            }
+            println!("FIXTURES {kind} pages {} equal {equal} differ {differ}", pages.len());
+            assert!(judged.is_ok(), "the fixture set does not pass: {:?}", judged.err());
         }
 
         // ------------------------------------------------------------ the gate's own cases (design section 6.4)
@@ -2548,6 +2728,70 @@ mod drive {
 
         /// One published run's outcome as the gate records it, read from the run folder (outcome.py capture: the rows of the
         /// request for drawn); for the walks below, which are runs and not refills.
+        /// The fixture set's list and judge: only the pinned list, of column and change pages whose run folders hold the
+        /// page and the pinned records; a BEFORE every page of which published (a column page with its bars) and whose passes
+        /// agree; an AFTER at another head equal to it on every item of every page. Each must-fail for its own reason.
+        #[test]
+        fn fixture_set_judge_cases() {
+            let w = World::new();
+            for i in 0..16 {
+                std::fs::create_dir_all(w.docs.join(format!("runs/p{i}/data"))).unwrap();
+                std::fs::write(w.docs.join(format!("runs/p{i}/events.jsonl")), format!("{{\"e\": {i}}}\n")).unwrap();
+                std::fs::write(w.docs.join(format!("runs/p{i}/claims.jsonl")), "{}\n").unwrap();
+                std::fs::write(w.docs.join(format!("runs/p{i}/data/a.csv")), format!("x,{i}\n")).unwrap();
+            }
+            let take: Vec<&Page> = [0, 1, 14].iter().map(|&i| &w.pages[i]).collect();
+            let list = |pages: &[&Page], head: &str| -> Vec<u8> {
+                let lines: Vec<String> =
+                    pages.iter().map(|p| format!("{}\t{}", p.line(), inputs_sha256(&w.docs.join(&p.run)).unwrap())).collect();
+                format!("{head}\n{}\n", lines.join("\n")).into_bytes()
+            };
+            let good = list(&take, "# fixture pages 3 column 2 change 1");
+            let gsha = sha256(&good);
+            let (pages, lsha) = read_fixture_list(&good, &w.docs, &gsha).unwrap();
+            assert_eq!(pages.len(), 3);
+            // the list
+            let refused = |raw: &[u8], pin: &str, words: &str| {
+                let why = read_fixture_list(raw, &w.docs, pin).err().unwrap_or_default();
+                assert!(why.contains(words), "{words:?} not in {why:?}");
+            };
+            refused(&good, &"0".repeat(64), "is not the pinned");
+            let wrong_head = list(&take, "# fixture pages 3 column 3 change 0");
+            refused(&wrong_head, &sha256(&wrong_head), "header and lines disagree");
+            std::fs::write(w.docs.join("runs/p1/data/a.csv"), "x,changed\n").unwrap();
+            refused(&good, &gsha, "run records are not the pinned ones");
+            std::fs::write(w.docs.join("runs/p1/data/a.csv"), "x,1\n").unwrap();
+            let mut other = w.pages[0].clone();
+            other.recipe = "flow".into();
+            let flow = list(&[&other], "# fixture pages 1 column 0 change 0");
+            refused(&flow, &sha256(&flow), "not a column or change page");
+            // the judge
+            let p1: Map<String, Value> = pages.iter().map(|p| (p.sha.clone(), w.base[&p.sha].clone())).collect();
+            let before = file("before", H0, &lsha, &p1, &p1);
+            assert_eq!(fixture_judge(&pages, &lsha, &before, None), Ok(()));
+            let after = file("after", &"a".repeat(40), &lsha, &p1, &p1);
+            assert_eq!(fixture_judge(&pages, &lsha, &after, Some(&before)), Ok(()));
+            let fails = |run: &Value, before: Option<&Value>, words: &str| {
+                let bad = fixture_judge(&pages, &lsha, run, before).err().unwrap_or_default();
+                assert!(bad.first().is_some_and(|b| b.contains(words)), "{words:?} not first in {bad:?}");
+            };
+            let mut stopped = p1.clone();
+            stopped.insert(w.chg().to_string(), stop_at(&p1[w.chg()], "checks", "x"));
+            fails(&file("before", H0, &lsha, &stopped, &stopped), None, "did not publish");
+            let mut barless = p1.clone();
+            let c0 = w.col(0).to_string();
+            barless[&c0]["html"] = json!(p1[&c0]["html"].as_str().unwrap().replace("data-layer=\"bars\"", "data-layer=\"other\""));
+            fails(&file("before", H0, &lsha, &barless, &barless), None, "published with no bars layer");
+            let mut moved = p1.clone();
+            moved.insert(c0.clone(), bar_width(&p1[&c0], 0.5));
+            fails(&file("after", &"a".repeat(40), &lsha, &moved, &moved), Some(&before), "differ");
+            fails(&file("after", &"a".repeat(40), &lsha, &moved, &p1), Some(&before), "the gate is not repeatable");
+            fails(&file("after", H0, &lsha, &p1, &p1), Some(&before), "same head");
+            fails(&file("after", &"a".repeat(40), &"0".repeat(64), &p1, &p1), Some(&before), "another manifest");
+            fails(&after, None, "without BEFORE");
+            fails(&before, Some(&before), "given a BEFORE file");
+        }
+
         fn capture(run: &Path, recipe: &str) -> Value {
             let text = std::fs::read_to_string(run.join("events.jsonl")).unwrap();
             let events: Vec<Value> = text.lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
