@@ -2878,10 +2878,12 @@ pub(crate) fn visual_call<'a>(
         }
         Request::PlacePoints { iso3 } => format!("{kind} {iso3:?}"),
         Request::IllusStrip { tables, width, runtime } => format!("{kind} {tables:?} {width} {}", runtime.display()),
-        Request::NodeFill { node, tree, runtime } => format!("{kind} {node} {tree} {}", runtime.display()),
+        Request::NodeDeclare { layer, page_in } => format!("{kind} {layer} {page_in}"),
+        Request::NodeDraw { fill, page_in, layers, runtime } => format!("{kind} {layers:?} {fill} {page_in} {}", runtime.display()),
     };
     let node = match &request {
-        Request::NodeFill { node, .. } => Some(node.to_string()),
+        Request::NodeDeclare { layer, .. } => Some(layer.to_string()),
+        Request::NodeDraw { layers, .. } => Some(layers.join(",")),
         _ => None,
     };
     let started = std::time::Instant::now();
@@ -2909,7 +2911,8 @@ pub(crate) fn visual_call<'a>(
             format!("{points:?} {missing:?} {}", crate::hash::sha256_bytes(table.as_bytes()))
         }
         Ok(Reply::Strip { strip, note }) => format!("{} {note}", strip.as_ref().map_or("", |s| s.svg.as_str())),
-        Ok(Reply::NodeFilled(filled)) => format!("{filled:?}"),
+        Ok(Reply::NodeDeclared(declared)) => format!("{declared:?}"),
+        Ok(Reply::NodesDrawn(drawn)) => format!("{drawn:?}"),
     };
     let mut event = json!({"group": "visual", "request": kind,
         "request_sha256": crate::hash::sha256_bytes(asked.as_bytes()),
@@ -2924,13 +2927,24 @@ pub(crate) fn visual_call<'a>(
     if let Some(node) = node {
         event["node"] = json!(node);
         let (child, recheck, failures) = match &reply {
-            Ok(Reply::NodeFilled(filled)) => (json!(filled.child_ms), json!(filled.recheck_ms), 0),
+            Ok(Reply::NodesDrawn(drawn)) => (
+                json!(drawn.timing.iter().map(|t| t.1).sum::<u64>()),
+                json!(drawn.timing.iter().map(|t| t.2).sum::<u64>()),
+                0,
+            ),
             Ok(_) => (Value::Null, Value::Null, 0),
             Err(why) => (Value::Null, Value::Null, why.lines().count()),
         };
         event["child_ms"] = child;
         event["recheck_ms"] = recheck;
         event["failures"] = json!(failures);
+        // a layer left to its leaf, which refuses it before drawing (next_tree_gen leaf_stops), and by which rule
+        if let Ok(Reply::NodesDrawn(drawn)) = &reply {
+            let left: Vec<Value> = drawn.timing.iter().filter_map(|t| t.3.as_ref().map(|r| json!({"layer": t.0, "rule": r}))).collect();
+            if !left.is_empty() {
+                event["left_to_leaf"] = json!(left);
+            }
+        }
     }
     calls.lock().unwrap_or_else(|e| e.into_inner()).push(event);
     reply

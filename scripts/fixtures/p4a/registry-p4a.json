@@ -1,0 +1,381 @@
+{
+ "$comment": "P4a plan B draft (11-01): what node-bindings.json gains so the visual group's page tree generator (src/next_tree_gen.rs, prototype tests/gen_tree.py) can write bars' and bubbles' declarations itself, and bars_fill / bubbles_fill leave the flow group. Over P3's overlay (frames, binding, items, marks, texts: copied from ../../p3-binding-1101/plan-b/registry-b.json, P3 vocabulary, so the prototype checks against the unchanged P3 core) it adds, as data: 'picks' (each flow pick rule as the select the core recomputes; a pick rule with no entry cannot feed an external node), 'recipes' (P4a-1 only: which layers a recipe binds external, column's bars alone; the bubbles stay a rust layer on every recipe until P4a-2, design section 3.2) and 'recipes_p4a2' (what P4a-2 would bind, column's bars and bubbles, so the prototype keeps proving the bubbles' declaration too; P4a-2 deletes both and the node binding alone decides), and per node 'declares' (the rows it draws, the facts and the format it declares, its binds, its items select and geometry, its leaf data). A template value '$a.b' is read from the flow's page input by a closed set of paths (PAGE_IN_PATHS in gen_tree.py); nothing in a declaration is a chart kind the flow names. 'real_page' lists the vocabulary the real q1 page needs beyond P3 (measured, tests/measure_q1_map.py) for P4a's core commit.",
+ "extends": "../../p1-page-tree-1101/node-registry.json",
+ "frames": {
+  "chart": {
+   "w": 400,
+   "h": 240,
+   "plot": [
+    30,
+    40,
+    370,
+    210
+   ]
+  },
+  "map": {
+   "w": 460,
+   "h": 400,
+   "plot": [
+    10,
+    10,
+    450,
+    390
+   ]
+  }
+ },
+ "picks": {
+  "countries": {
+   "id": "countries",
+   "kind": "given",
+   "source": "shape",
+   "path": "shape.countries",
+   "given": "$shape.countries"
+  },
+  "ranked": {
+   "id": "ranked",
+   "kind": "rank",
+   "over": {
+    "table": "$shape.main",
+    "by": "$shape.place",
+    "time": "$shape.year"
+   },
+   "key": "value",
+   "order": "desc",
+   "only": "select:countries",
+   "tie": {
+    "by": "code",
+    "outcome": "order"
+   },
+   "one_row_per_code": true
+  },
+  "claim_marks": {
+   "id": "marks",
+   "kind": "named_rule",
+   "rule": "marks_from_claims",
+   "inputs": {
+    "ranked": "ranked"
+   },
+   "given": "$picks.marks"
+  }
+ },
+ "recipes": {
+  "column": [
+   "bars"
+  ]
+ },
+ "recipes_p4a2": {
+  "column": [
+   "bars",
+   "bubbles"
+  ]
+ },
+ "nodes": {
+  "bars": {
+   "binding": "external",
+   "frame": "chart",
+   "declares": {
+    "rows": "rows_of_select",
+    "facts": {
+     "val": {
+      "each": "$shape.place",
+      "table": "$shape.main",
+      "time": "$shape.year",
+      "fmt": "$shape.fmt"
+     },
+     "drawn": {
+      "op": "n",
+      "by": "$shape.place",
+      "table": "$shape.main",
+      "time": "$shape.year",
+      "fmt": "n"
+     }
+    },
+    "fmt": {
+     "scale": 1,
+     "suffix": "$shape.suffix",
+     "dec_rule": {
+      "rule": "held_decimals",
+      "rows": {
+       "table": "$shape.main",
+       "filter": {
+        "$shape.place": "select:ranked"
+       },
+       "time": "$shape.year"
+      },
+      "max": {
+       "const": "COLUMN_DEC",
+       "value": 2
+      }
+     }
+    },
+    "binds": {
+     "chart": "bars",
+     "by": "$shape.place",
+     "year": "$shape.year",
+     "family": {
+      "family": "val"
+     },
+     "ranked": "select:ranked",
+     "marks": "select:marks",
+     "count": {
+      "fact": "drawn"
+     }
+    },
+    "binds_after_fill": {
+     "accent": "$fill.accent"
+    }
+   },
+   "items": {
+    "for_each": "binds.ranked",
+    "fields": {
+     "code": {
+      "kind": "select_index"
+     },
+     "value": {
+      "kind": "row_of_code"
+     },
+     "value_text": {
+      "kind": "fact_template",
+      "template": "{binds.family.family}.{code}.n"
+     },
+     "focus": {
+      "kind": "code_is",
+      "ref": "binds.accent"
+     }
+    }
+   },
+   "marks": {
+    "per": "item",
+    "shape": "rect",
+    "tol_px": 0.5,
+    "encode": [
+     {
+      "fields": [
+       "h",
+       "y"
+      ],
+      "channel": "length_up",
+      "of": "value",
+      "scale": {
+       "kind": "linear",
+       "domain": "zero_to_max",
+       "range": "plot.y"
+      }
+     },
+     {
+      "fields": [
+       "x",
+       "w"
+      ],
+      "channel": "band_x",
+      "of": "item",
+      "scale": {
+       "kind": "band",
+       "domain": "items",
+       "range": "plot.x",
+       "padding": 0.4
+      }
+     }
+    ]
+   },
+   "texts": {
+    "size": 11,
+    "item": {
+     "label": {
+      "near": "item",
+      "from": "anchor",
+      "max_px": 24
+     },
+     "value_text": {
+      "near": "item",
+      "from": "anchor",
+      "max_px": 12
+     }
+    }
+   }
+  },
+  "bubbles": {
+   "binding": "external",
+   "frame": "map",
+   "declares": {
+    "rows": "rows_of_select",
+    "facts": {
+     "val": {
+      "each": "$shape.place",
+      "table": "$shape.main",
+      "time": "$shape.year",
+      "fmt": "$shape.fmt"
+     }
+    },
+    "fmt": {
+     "scale": 1,
+     "suffix": "$shape.suffix",
+     "dec_rule": {
+      "rule": "held_decimals",
+      "rows": {
+       "table": "$shape.main",
+       "filter": {
+        "$shape.place": "select:ranked"
+       },
+       "time": "$shape.year"
+      },
+      "max": {
+       "const": "COLUMN_DEC",
+       "value": 2
+      }
+     }
+    },
+    "binds": {
+     "family": {
+      "family": "val"
+     }
+    },
+    "items_for": "select:ranked",
+    "geometry": {
+     "ext": "$page.ext"
+    },
+    "leaf": {
+     "items": [
+      "code",
+      "value",
+      "value_text",
+      "at"
+     ],
+     "ext": "geometry.ext"
+    },
+    "points": "items"
+   },
+   "items": {
+    "for_each": "items_for",
+    "fields": {
+     "code": {
+      "kind": "select_index"
+     },
+     "value": {
+      "kind": "row_of_code"
+     },
+     "value_text": {
+      "kind": "fact_template",
+      "template": "{binds.family.family}.{code}.n"
+     },
+     "at": {
+      "kind": "point_of_code"
+     }
+    }
+   },
+   "marks": {
+    "per": "item",
+    "shape": "circle",
+    "tol_px": 0.5,
+    "encode": [
+     {
+      "fields": [
+       "r"
+      ],
+      "channel": "radius_area",
+      "of": "value",
+      "scale": {
+       "kind": "sqrt",
+       "domain": "zero_to_max",
+       "range": {
+        "max_px": 22
+       }
+      }
+     },
+     {
+      "fields": [
+       "cx",
+       "cy"
+      ],
+      "channel": "point",
+      "of": "at",
+      "scale": {
+       "kind": "mercator",
+       "domain": "ext",
+       "range": "plot"
+      }
+     }
+    ]
+   },
+   "texts": {
+    "size": 11,
+    "item": {
+     "value_text": {
+      "near": "item",
+      "from": "anchor",
+      "max_px": 12
+     }
+    }
+   }
+  }
+ },
+ "real_page": {
+  "$comment": "Not read by the prototype's P3 core. What P4a's core commit adds as closed kinds (each with a red test first) so the registry can describe the q1 page as it is drawn (tests/measure_q1_map.py on the golden html).",
+  "channels": {
+   "length_right": {
+    "fields": [
+     "x",
+     "w"
+    ],
+    "of": "value",
+    "scale": {
+     "kind": "linear",
+     "domain": "zero_to_max",
+     "range": "plot.x"
+    },
+    "formula": "x = plot.x0, w = v / max * (plot.x1 - plot.x0), divided then multiplied as cl_bars does; checked by the core, never drawn from the core (revision 3): the leaf prints the node's numbers, which repeat cl_bars' arithmetic (tests/migrate_bars.py M5)"
+   }
+  },
+  "frames": {
+   "rows": {
+    "rule": "ColumnFrame as it is (revision 3): lw_ = max(tw_leaf(name)) + 12, vw_ = max(tw_leaf(value text)) + 8, plot.x0 = x0 + lw_ (x0 = map width + 40, or 0), plot width = (page width - x0) - lw_ - vw_, row i at top + i * row, bar at row y + 3 with height row - 6 (3 px, not a proportional padding), frame height top + row * n + 4; tw_leaf = prod.py:132 tw copied (a code point above 0x2E7F 1 em, others 0.58 em, summed glyph by glyph), on the strings the leaf prints, widths not rounded",
+    "q1": {
+     "x0": 600,
+     "row": 24,
+     "top": 6,
+     "inset_px": 3,
+     "name_gap": 12,
+     "value_gap": 8
+    }
+   },
+   "view": {
+    "rule": "the column map's equirectangular view (prod.proj: x = (lon - lon0) * k * s, y = (lat1 - lat) * s, k = cos((lat0 + lat1) / 2 + 2 deg)), h = round(w * (lat1 - lat0) / ((lon1 - lon0) * k)); replaces mercator for this frame",
+    "q1": {
+     "w": 560
+    }
+   }
+  },
+  "radius_area": {
+   "floor": "r = max(r_min, max_px * sqrt(v / max)); r_min the bubbles knob (3), max_px the r_max knob (22); the leaf's step-down rule kept as a core stop line: more pairs overlapping by over half the smaller than max_overlaps (0) at r_max refuses"
+  },
+  "texts": {
+   "bubbles": {
+    "label": {
+     "near": "item",
+     "from": "anchor",
+     "max_px": 24
+    },
+    "value_text": {
+     "near": "item",
+     "from": "anchor",
+     "max_px": 24
+    },
+    "for": "ends_then_largest(label_top 12)",
+    "size": 13
+   },
+   "bars": {
+    "label": {
+     "near": "item",
+     "from": "anchor",
+     "max_px": 12
+    },
+    "value_text": {
+     "near": "item",
+     "from": "anchor",
+     "max_px": 12
+    },
+    "size": 13
+   }
+  }
+ }
+}

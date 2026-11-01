@@ -28,7 +28,7 @@ use crate::next_nodes::{tw, Bx, Kind, Knob, NodeInfo, Val};
 /// How long one layer may take before the child is stopped and the layer refused.
 pub const LAYER_DEADLINE: Duration = Duration::from_secs(2);
 
-/// How long an external node (next_tree::node_fill) may take to send back its one reply line before the child is stopped
+/// How long an external node (next_tree::node_draw) may take to send back its one reply line before the child is stopped
 /// and the page refused.
 pub const FILL_DEADLINE: Duration = Duration::from_secs(2);
 
@@ -109,7 +109,7 @@ pub struct Leaf {
     pub reserve: bool,
     /// The shape conditions the node needs its tables to meet (knobs.py EATS); none stated is empty.
     pub eats: Vec<String>,
-    /// knobs.json `binding`: "external" (asked through next_tree::node_fill), or none written (rust, the default).
+    /// knobs.json `binding`: "external" (declared and drawn through next_tree_gen), or none written (rust, the default).
     pub external: bool,
 }
 
@@ -132,7 +132,7 @@ pub struct Recipe {
     pub same_measure: Vec<(String, String)>,
     pub strip: bool,
     /// The recipe's layers whose node the registry binds external (knobs.json `binding`; none written is rust): the flow
-    /// asks the visual group's NodeFill for them instead of a rust fill.
+    /// asks the visual group's NodeDeclare and NodeDraw for them instead of a rust fill.
     pub external: Vec<String>,
 }
 

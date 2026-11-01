@@ -326,7 +326,7 @@ fn repr_into(v: &J, out: &mut String) {
 }
 
 /// Python's `str(x)` in an f-string: a string as it is, anything else as its repr.
-fn st(v: &J) -> String {
+pub(crate) fn st(v: &J) -> String {
     match v {
         J::Str(s) => s.clone(),
         v => v.repr(),
@@ -908,7 +908,7 @@ fn is_ref(v: &J) -> bool {
 }
 
 /// The select id a value refers to: a reference string, or {select: id} (with part at most).
-fn ref_id(v: &J) -> Option<String> {
+pub(crate) fn ref_id(v: &J) -> Option<String> {
     if let Some(s) = v.s() {
         return ref_parts(s).map(|p| p.0);
     }
@@ -920,7 +920,7 @@ fn ref_id(v: &J) -> Option<String> {
     None
 }
 
-type Got = BTreeMap<String, J>;
+pub(crate) type Got = BTreeMap<String, J>;
 /// How recheck_one reports a recomputed result against the one written: (errors, the select's id, recomputed, written).
 type Same = dyn Fn(&mut Vec<String>, String, &J, &J);
 
@@ -941,7 +941,7 @@ fn index(v: &J, i: i64) -> Result<J, String> {
     })
 }
 
-fn resolve_ref(v: &str, got: &Got) -> Result<J, String> {
+pub(crate) fn resolve_ref(v: &str, got: &Got) -> Result<J, String> {
     let (sid, key, idx) = ref_parts(v).ok_or_else(|| format!("{v}: no select reference"))?;
     let mut r = got.get(&sid).cloned().ok_or_else(|| format!("'{v}: no select {sid}'"))?;
     if let Some(k) = key {
@@ -955,7 +955,7 @@ fn resolve_ref(v: &str, got: &Got) -> Result<J, String> {
 
 /// Every select reference of a tree replaced by its recomputed result; a reference inside a list that resolves to a list
 /// is spliced in.
-fn resolved(v: &J, got: &Got) -> Result<J, String> {
+pub(crate) fn resolved(v: &J, got: &Got) -> Result<J, String> {
     Ok(match v {
         J::Str(s) if ref_parts(s).is_some() => resolve_ref(s, got)?,
         J::Obj(m) => J::Obj(m.iter().map(|(k, x)| Ok((k.clone(), resolved(x, got)?))).collect::<Result<_, String>>()?),
@@ -1254,7 +1254,7 @@ fn sel_get<'a>(sel: &[(String, &'a J)], id: &str) -> Option<&'a J> {
     sel.iter().find(|(k, _)| k == id).map(|(_, s)| *s)
 }
 
-fn root_rank<'a>(sel: &[(String, &'a J)], sid: &str) -> Result<&'a J, String> {
+pub(crate) fn root_rank<'a>(sel: &[(String, &'a J)], sid: &str) -> Result<&'a J, String> {
     let mut s = sel_get(sel, sid).ok_or_else(|| format!("'{sid}'"))?;
     for _ in 0..64 {
         if s.g("kind").s() == Some("rank") {
@@ -2850,6 +2850,10 @@ pub fn load_registry(overlay: &J) -> J {
         }
     }
     reg.set("nodes", nodes);
+    // the pick rules the page tree generator writes as selects (next_tree_gen): data the core itself does not read
+    if let Some(picks) = overlay.get("picks") {
+        reg.set("picks", picks.clone());
+    }
     reg
 }
 
@@ -2888,8 +2892,7 @@ pub fn registry_problems(reg: &J) -> Vec<String> {
         }
         if !e.g("frame").s().is_some_and(|f| reg.g("frames").has(f)) {
             out.push(format!("{p} frame {}: not a registered frame", e.g("frame").repr()));
-        }
-        let it = e.g("items");
+        }        let it = e.g("items");
         if !it.g("for_each").s().is_some_and(|f| FOR_EACH.contains(&f)) {
             out.push(format!("{p} items.for_each {}: not one the core expands", it.g("for_each").repr()));
         }
@@ -3815,7 +3818,11 @@ pub fn expand_items(n: &J, entry: &J, spec: &J, got: &Got, inp: &J) -> Result<Ve
                     hit[0].g("src").clone()
                 }
                 "fact_template" => J::Str(format!("fact:{}", fill_template(&st(d.g("template")), &[("code", &cs)], n)?)),
-                "code_is" => J::Bool(*code == resolve_sel(at_path(n, &st(d.g("ref")))?, got)?),
+                // a page that marks no code (no accent bound: the leaf's focus is none) marks no item
+                "code_is" => match at_path(n, &st(d.g("ref"))) {
+                    Ok(r) => J::Bool(*code == resolve_sel(r, got)?),
+                    Err(_) => J::Bool(false),
+                },
                 "point_of_code" => inp.g("points").g("at").get(&cs).cloned().ok_or_else(|| format!("'{cs}'"))?,
                 "cells_by_part" => {
                     let sid = sid.as_deref().ok_or("'None'")?;
@@ -4657,8 +4664,8 @@ pub fn check_envelope(env: &J, reg: &J) -> Result<Vec<String>, String> {
 }
 
 // ================================================================================================================
-// The visual group's NodeFill: one external node asked, its geometry checked, and what the flow's Filled takes from it
-// derived by the core (drawn rows, rows read, facts, formats, hero data), never taken from the node.
+// The visual group's NodeDraw (P4a): one external node asked over the page tree the generator wrote (next_tree_gen), its
+// geometry checked, and the checked geometry handed to the leaf that draws the layer.
 // ================================================================================================================
 
 /// The external bindings over P1's registry (frames; per node binding, runner, frame, items, marks, texts). P3 binds no
@@ -4692,7 +4699,7 @@ pub fn bindings() -> J {
 }
 
 /// The registry in force and the runner override (test only).
-fn registry_in_force() -> (J, Option<crate::next_leaf::Runner>) {
+pub(crate) fn registry_in_force() -> (J, Option<crate::next_leaf::Runner>) {
     #[cfg(test)]
     if let Some((overlay, runner)) = TEST_BINDINGS.with(|t| t.borrow().clone()) {
         return (load_registry(&overlay), Some(runner));
@@ -4714,20 +4721,14 @@ pub fn runner_allowed(rel: &str) -> bool {
         && [".mjs", ".cjs", ".js", ".py"].iter().any(|e| rel.ends_with(e))
 }
 
-/// What the flow's Filled takes from one external node, every part derived by the core.
+/// One external node drawn over the core's page tree (Request::NodeDraw, P4a): the geometry the core checked, as the leaf
+/// that draws the layer reads it (`placed`), and the child's and the core's milliseconds.
 #[derive(Debug, Clone)]
-pub struct NodeFilled {
-    pub node: String,
-    /// The rows the node draws ({src, table, dims, time, value}), input order.
-    pub drawn: Vec<Value>,
-    /// The other rows its facts read, input order.
-    pub reads: Vec<Value>,
-    pub facts: Vec<(String, Value)>,
-    pub fmts: Vec<(String, Value)>,
-    /// Its binds with every reference resolved: a select to its recomputed result, {fact: k} to k, {family: f} to f.
-    pub data: Vec<(String, Value)>,
-    pub svg: String,
-    /// From the child's start to its reply line, and the core's checks (C and B), each wall clock.
+pub struct NodeDrawn {
+    /// {"items": [{"code", "mark": {field: value}, "texts": {name: {x, y, anchor, src}}}]}, item by item in the core's order:
+    /// each code is the core's select result, each src the core's record of what the text prints, each number the node's
+    /// own reply that passed B0-B7 (none rounded or rewritten).
+    pub placed: J,
     pub child_ms: u64,
     pub recheck_ms: u64,
 }
@@ -4736,114 +4737,39 @@ fn node_in<'a>(spec: &'a J, id: &str) -> Option<&'a J> {
     walk(spec.g("body"), "$").into_iter().map(|(_, n)| n).find(|n| n.g("kind").s() == Some("Node") && n.g("id").s() == Some(id))
 }
 
-/// The fact keys a node prints or names (fact: refs and {fact: k}), each as its declared key (a family member as its
-/// family), then the facts those read (a, b), in first-seen order.
-fn facts_of(n: &J, rfacts: &J) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    let add = |k: &str, out: &mut Vec<String>| {
-        let k = strip_part(k);
-        let key = if rfacts.has(k) {
-            Some(k.to_string())
-        } else {
-            k.rsplit_once('.').map(|x| x.0).filter(|f| rfacts.g(f).has("each")).map(str::to_string)
-        };
-        if let Some(key) = key {
-            if !out.contains(&key) {
-                out.push(key);
+/// The checked geometry as the leaf reads it, from the core's own record (meta) and its select results (got); the
+/// coordinates are the reply's, which passed B0-B7.
+fn placed_of(n: &J, reply: &J, meta: &Meta, got: &Got) -> Result<J, String> {
+    let mut items: Vec<J> = Vec::new();
+    for (i, it) in n.g("items").arr().iter().enumerate() {
+        let code = resolve_sel(it.g("code"), got)?;
+        let mut mark = J::Obj(vec![]);
+        if let Some((id, ..)) = meta.marks.iter().find(|m| m.1 == i && m.2.is_none()) {
+            for (f, v) in reply.g("marks").g(id).obj() {
+                if f != "shape" {
+                    mark.set(f, v.clone());
+                }
             }
         }
-    };
-    for (_, v) in walk(n, "$") {
-        if let Some(k) = v.s().and_then(|s| s.strip_prefix("fact:")) {
-            add(k, &mut out);
+        let prefix = format!("{}/{i}/", st(n.g("id")));
+        let mut texts = J::Obj(vec![]);
+        for (tid, _, src) in &meta.texts {
+            let Some(name) = tid.strip_prefix(&prefix) else { continue };
+            let mut t = reply.g("texts").g(tid).clone();
+            t.set("src", src.clone());
+            texts.set(name, t);
         }
-        if v.is_obj() && v.obj().iter().all(|(k, _)| k == "fact" || k == "part") {
-            if let Some(k) = v.g("fact").s() {
-                add(k, &mut out);
-            }
-        }
+        items.push(J::obj_of(vec![("code", code), ("mark", mark), ("texts", texts)]));
     }
-    let mut i = 0;
-    while i < out.len() {
-        let q = rfacts.g(&out[i]).clone();
-        for side in ["a", "b"] {
-            if let Some(x) = q.g(side).s() {
-                add(x, &mut out);
-            }
-        }
-        i += 1;
-    }
-    out
+    Ok(J::obj_of(vec![("items", J::Arr(items))]))
 }
 
-/// What the flow takes from the node, derived from the core's own content (the R10 derivations).
-fn derive(n: &J, inp: &J, spec: &J, content: &Content) -> NodeFilled {
-    let rows = inp.g("rows").arr();
-    let (got, rfacts) = (&content.got, content.rpage.g("facts").g("facts"));
-    let sel: Vec<(String, &J)> = spec.g("selects").g("items").arr().iter().map(|s| (st(s.g("id")), s)).collect();
-    let mut drawn: Vec<&J> = Vec::new();
-    if inp.g("drawn_rules").g(&st(n.g("node"))).s() == Some("rows_of_select") {
-        let b = n.g("binds");
-        let r = if b.g("ranked").truthy() { b.g("ranked") } else { n.g("items_for") };
-        if let Some(over) = ref_id(r).and_then(|sid| root_rank(&sel, &sid).ok().map(|root| (sid, root.g("over").clone()))) {
-            let (sid, over) = over;
-            let codes = got.get(&sid).map(|c| c.arr().to_vec()).unwrap_or_default();
-            let by = st(over.g("by"));
-            drawn = rows.iter().filter(|r| r.g("table") == over.g("table") && r.g("time") == over.g("time") && codes.contains(dims(r, &by))).collect();
-        }
-    }
-    let keys = facts_of(n, rfacts);
-    let mut read: BTreeSet<String> = BTreeSet::new();
-    for k in &keys {
-        read.extend(fact_rows(rfacts.g(k), rows).iter().map(|r| st(r.g("src"))));
-    }
-    let drawn_srcs: Vec<String> = drawn.iter().map(|r| st(r.g("src"))).collect();
-    let reads: Vec<Value> = rows.iter().filter(|r| read.contains(&st(r.g("src"))) && !drawn_srcs.contains(&st(r.g("src")))).map(J::to_value).collect();
-    let fmts_all = spec.g("facts").g("fmts");
-    let mut fmts: Vec<(String, Value)> = Vec::new();
-    for k in &keys {
-        let f = st(rfacts.g(k).g("fmt"));
-        if let Some(m) = fmts_all.get(&f) {
-            if !fmts.iter().any(|(x, _)| *x == f) {
-                let kept = J::Obj(m.obj().iter().filter(|(k, _)| matches!(k.as_str(), "scale" | "dec" | "suffix")).cloned().collect());
-                fmts.push((f, kept.to_value()));
-            }
-        }
-    }
-    let data = n
-        .g("binds")
-        .obj()
-        .iter()
-        .map(|(k, v)| {
-            let x = match v {
-                J::Str(s) if ref_parts(s).is_some() => resolve_ref(s, got).unwrap_or(J::Null),
-                J::Obj(m) if m.len() == 1 && (v.has("fact") || v.has("family")) => m[0].1.clone(),
-                J::Obj(_) if ref_id(v).is_some() => got.get(&ref_id(v).expect("checked")).cloned().unwrap_or(J::Null),
-                v => v.clone(),
-            };
-            (k.clone(), x.to_value())
-        })
-        .collect();
-    NodeFilled {
-        node: st(n.g("id")),
-        drawn: drawn.into_iter().map(J::to_value).collect(),
-        reads,
-        facts: keys.iter().map(|k| (k.clone(), rfacts.g(k).to_value())).collect(),
-        fmts,
-        data,
-        svg: String::new(),
-        child_ms: 0,
-        recheck_ms: 0,
-    }
-}
-
-/// Request::NodeFill: the external node `node` of the core's page tree (`tree`: {page_spec, rows, name_table, points,
-/// given, select_spec, knobs, drawn_rules, word_table, ...}) asked for its geometry by its registered runner under
-/// `runtime`, everything checked (C1-C5 before the child starts, B0-B7 on its reply). Err lists every failure, one per line;
-/// nothing is repaired and nothing falls back to the rust fill.
-pub fn node_fill(node: &str, tree: &Value, runtime: &std::path::Path) -> Result<NodeFilled, String> {
+/// Request::NodeDraw: the external node `node` of the core's page tree (`inp`: {page_spec, rows, name_table, points,
+/// given, select_spec, knobs, drawn_rules, word_table}, as next_tree_gen::tree writes it) asked for its geometry by its
+/// registered runner under `runtime`, everything checked (C1-C5 before the child starts, B0-B7 and the colour checks on its
+/// reply). Err lists every failure, one per line; nothing is repaired and nothing falls back to a rust fill.
+pub fn node_draw(node: &str, inp: &J, runtime: &std::path::Path) -> Result<NodeDrawn, String> {
     let started = std::time::Instant::now();
-    let inp = J::from_value(tree);
     let spec = inp.g("page_spec");
     let n = node_in(spec, node).ok_or_else(|| format!("node {node}: the page tree has no node {node}"))?;
     let (reg, runner_override) = registry_in_force();
@@ -4852,9 +4778,9 @@ pub fn node_fill(node: &str, tree: &Value, runtime: &std::path::Path) -> Result<
         return Err(format!("node {node}: the registry binds {} rust, not external", st(n.g("node"))));
     }
     let ext = vec![node.to_string()];
-    let (errs, content) = content_problems(spec, &inp, &ext, &reg);
+    let (errs, content) = content_problems(spec, inp, &ext, &reg);
     let Some(content) = content else { return Err(errs.iter().map(|e| format!("node {node}: recheck: {e}")).collect::<Vec<_>>().join("\n")) };
-    let (reqs, metas) = issue(spec, &inp, &reg, &ext, &content.got, &content.rpage).map_err(|e| format!("node {node}: recheck: {e}"))?;
+    let (reqs, metas) = issue(spec, inp, &reg, &ext, &content.got, &content.rpage).map_err(|e| format!("node {node}: recheck: {e}"))?;
     let runner = match runner_override {
         Some(r) => r,
         None => {
@@ -4876,18 +4802,18 @@ pub fn node_fill(node: &str, tree: &Value, runtime: &std::path::Path) -> Result<
     if fails.is_empty() {
         fails = geometry_problems(node, &reqs[0].1, replies.g(node), &metas[node]).map_err(|e| format!("node {node}: recheck: {e}"))?;
     }
+    if fails.is_empty() {
+        fails = colour_problems(&svg(node, &reqs[0].1, replies.g(node), &metas[node]), &metas[node]);
+    }
     if !fails.is_empty() {
         return Err(fails.iter().map(|e| format!("node {node}: recheck: {e}")).collect::<Vec<_>>().join("\n"));
     }
-    let mut out = derive(n, &inp, spec, &content);
-    out.svg = svg(node, &reqs[0].1, replies.g(node), &metas[node]);
-    let colour = colour_problems(&out.svg, &metas[node]);
-    if !colour.is_empty() {
-        return Err(colour.iter().map(|e| format!("node {node}: recheck: {e}")).collect::<Vec<_>>().join("\n"));
-    }
-    out.child_ms = child_ms as u64;
-    out.recheck_ms = (before_child + after_child.elapsed()).as_millis() as u64;
-    Ok(out)
+    let placed = placed_of(n, replies.g(node), &metas[node], &content.got).map_err(|e| format!("node {node}: recheck: {e}"))?;
+    Ok(NodeDrawn {
+        placed,
+        child_ms: child_ms as u64,
+        recheck_ms: (before_child + after_child.elapsed()).as_millis() as u64,
+    })
 }
 
 #[cfg(test)]
@@ -5424,7 +5350,7 @@ mod tests {
     }
 
     /// A painted node's SVG as the core draws it passes both colour checks; one cell drawn a class up, or the legend
-    /// without its first cut, is refused (the production path: content, issue, svg, then the checks node_fill runs).
+    /// without its first cut, is refused (the production path: content, issue, svg, then the checks node_draw runs).
     #[test]
     fn next_tree_r11_the_core_drawing_passes_and_a_changed_one_is_refused() {
         let quantile = J::obj_of(vec![("rule", J::str("quantile")), ("k", J::Int(3))]);

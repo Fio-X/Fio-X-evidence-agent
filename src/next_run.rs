@@ -1529,41 +1529,68 @@ struct Filling<'a> {
     asked: Option<&'a Asked<'a>>,
 }
 
-/// Where a page's external nodes are asked: the page's group calls (kept as program events), the core's page tree they are
-/// asked over (none until a page tree is built for the page; P3 binds no production node external), and the run's runtime/
-/// their runners lie under.
+/// Where a page's external layers are asked: the page's group calls (kept as program events), the page input their
+/// declarations are read over (page_input; none, a layer bound external refuses the page).
 pub(crate) struct Asked<'a> {
     pub calls: &'a std::sync::Mutex<Vec<Value>>,
-    pub tree: Option<&'a Value>,
-    pub runtime: &'a Path,
+    pub page_in: Option<&'a Value>,
 }
 
-/// A layer the registry binds external: asked through the visual group's NodeFill over the core's page tree, and what comes
-/// back (drawn rows, rows read, facts, formats, hero data; each derived by the visual group's core, none taken from the
-/// node) set into the fill as a rust fill sets its own. A key two layers set differently refuses the page; nothing falls
-/// back to a rust fill.
+/// A layer the recipe binds external: asked through the visual group's NodeDeclare over the page input, and what comes back
+/// (drawn rows, facts, formats, hero data; each derived by the visual group from the registry's declaration, none written
+/// here) set into the fill as any layer's. A key two layers set differently refuses the page; nothing falls back.
 fn ask_node(f: &Filling, out: &mut Filled) -> Result<(), String> {
     let layer = out.at.clone();
     let asked = f.asked.ok_or_else(|| format!("node {layer}: bound external, and this page asks no node"))?;
-    let tree = asked.tree.ok_or_else(|| format!("node {layer}: bound external, and the page has no page tree to ask it over"))?;
-    let request = crate::next_visual::Request::NodeFill { node: &layer, tree, runtime: asked.runtime };
-    let filled = match crate::next_flow::visual_call(asked.calls, "node_fill", request)? {
-        crate::next_visual::Reply::NodeFilled(filled) => *filled,
+    let page_in = asked.page_in.ok_or_else(|| format!("node {layer}: bound external, and the page has no page input to declare it over"))?;
+    let request = crate::next_visual::Request::NodeDeclare { layer: &layer, page_in };
+    let declared = match crate::next_flow::visual_call(asked.calls, "node_declare", request)? {
+        crate::next_visual::Reply::NodeDeclared(declared) => *declared,
         _ => return Err(format!("node {layer}: the visual group answered with another reply")),
     };
-    if filled.node != layer {
-        return Err(format!("node {layer}: the visual group answered for node {}", filled.node));
+    if declared.node != layer {
+        return Err(format!("node {layer}: the visual group answered for node {}", declared.node));
     }
-    out.rows(filled.drawn);
-    out.reads(filled.reads);
-    for (key, value) in filled.facts {
+    out.rows(declared.drawn);
+    for (key, value) in declared.facts {
         Filled::set(&mut out.facts, "fact", &key, value)?;
     }
-    for (key, value) in filled.fmts {
+    for (key, value) in declared.fmts {
         Filled::set(&mut out.fmts, "format", &key, value)?;
     }
-    for (key, value) in filled.data {
+    for (key, value) in declared.data {
         Filled::set(&mut out.data, "hero data", &key, value)?;
+    }
+    Ok(())
+}
+
+/// The page input the visual group declares and lays out a recipe's external layers over: what the flow already holds, as
+/// plain data (the recipe and its layers, the shape, the picks with the rules that made them, the main's rows, and the
+/// name scheme of the place codes, as leaf_labels asks the name table by). Nothing in it names a picture.
+fn page_input(recipe: &Recipe, shape: &Shape, picks: &Picks, main: &[Value]) -> Value {
+    let scheme = if shape.countries.iter().all(|c| c.len() == 2) { "iso2" } else { "iso3" };
+    json!({"recipe": recipe.name, "order": recipe.layers,
+        "shape": {"main": shape.main, "place": shape.place, "year": shape.year, "unit": shape.unit, "fmt": shape.unit.to_lowercase(),
+            "suffix": next_pack::unit_short(&shape.unit).map(suffix), "countries": shape.countries},
+        "picks": {"rules": recipe.picks, "ranked": picks.ranked, "marks": picks.marks, "t0": picks.t0, "t1": picks.t1},
+        "rows": main, "name_kind": scheme})
+}
+
+/// The recipe's external layers laid out over the finished fill (its words in): the visual group's NodeDraw writes the page
+/// tree from the fill and the page input (kept in the fill by recipe_request), asks each layer's node and checks its
+/// geometry, and the checked geometry goes to the leaves as knobs.placed. A page with no external layer asks nothing.
+fn draw_nodes(fill: &mut Value, layers: &[String], calls: &std::sync::Mutex<Vec<Value>>, runtime: &Path) -> Result<(), String> {
+    if layers.is_empty() {
+        return Ok(());
+    }
+    let page_in = fill.get("page_in").cloned().ok_or_else(|| format!("nodes {layers:?}: bound external, and the fill keeps no page input"))?;
+    let request = crate::next_visual::Request::NodeDraw { fill, page_in: &page_in, layers, runtime };
+    let placed = match crate::next_flow::visual_call(calls, "node_draw", request)? {
+        crate::next_visual::Reply::NodesDrawn(drawn) => drawn.placed,
+        _ => return Err(format!("nodes {layers:?}: the visual group answered with another reply")),
+    };
+    if placed.as_object().is_some_and(|p| !p.is_empty()) {
+        fill["knobs"]["placed"] = placed;
     }
     Ok(())
 }
@@ -3321,10 +3348,14 @@ fn recipe_request(
     let picks = picks_of(&recipe.picks, &shape, &main_rows, &claims).map_err(shape_err)?;
     // read from the main's narrow record, as the charts step reads the page's scope (narrowed), never from the tool's details
     let scoped = narrowed(run_dir, main).map_err(|why| ("fill", why))?.is_some();
-    let runtime = run_dir.join("runtime");
-    let asked = Asked { calls, tree: None, runtime: &runtime };
+    // a recipe with external layers declares and lays them out over the page input, which the fill keeps for draw_nodes
+    let page_in = (!recipe.external.is_empty()).then(|| page_input(recipe, &shape, &picks, &main_rows));
+    let asked = Asked { calls, page_in: page_in.as_ref() };
     let mut fill = fill_of(recipe, &shape, &picks, (&main_rows, &comp_rows), catalogue, (title, dek), scoped, Some(&asked))
         .map_err(|why| ("fill", why))?;
+    if let Some(page_in) = page_in {
+        fill["page_in"] = page_in;
+    }
     zero_rows(&mut fill, &comp_rows);
     if recipe.layers.iter().any(|l| l == "map" || l == "bubbles") {
         fill["knobs"]["shapes"] = json!(run_dir.join(RING_SHAPES));
@@ -3407,8 +3438,9 @@ fn leaf_page(
     page_words(&mut fill, words);
     let recipe = picked.name.as_str();
     let order: Vec<String> = fill["order"].as_array().into_iter().flatten().filter_map(|l| l.as_str().map(str::to_string)).collect();
-    let rows = fill["rows"].as_array().map_or(&[][..], Vec::as_slice);
     let runtime = run_dir.join("runtime");
+    draw_nodes(&mut fill, &picked.external, calls, &runtime).map_err(|why| (recipe, "fill", why))?;
+    let rows = fill["rows"].as_array().map_or(&[][..], Vec::as_slice);
     let request = Request::LeafFill { recipe, rows, knobs: &fill["knobs"], order: &order, runtime: &runtime };
     let Reply::Filled(page) = crate::next_flow::visual_call(calls, "leaf_fill", request).map_err(|why| (recipe, "fill", why))? else {
         unreachable!("the visual group answered leaf_fill with another reply")
@@ -6221,29 +6253,11 @@ mod tests {
         assert!(unnamed["knobs"]["labels"].get("EU27_2020").is_none());
     }
 
-    /// Plan B's twin: a test-only external bars node (scripts/fixtures/p3b/twin_node.py, which no registry lists) laid over
-    /// the bindings for the q1 column page of scripts/fixtures/p3b/pos-q1-b.json. The whole path runs (fill_of, ask_node, the
-    /// visual group's NodeFill through its door, the child, B0-B7, what the core derives), and the merged fill equals the
-    /// rust binding's key by key, but for the one key the page tree's binds add: hero.data.count names the declared drawn
-    /// fact (the rust fill names it at hero.scope.count). A twin that draws every bar with one wrong scale (g16), swaps two
-    /// bar lengths (g17a) or swaps two labels (g18) stops the page; so does an external layer with no page tree to ask over.
-    #[test]
-    fn external_binding_twin() {
-        fn diff(a: &Value, b: &Value, at: &str, out: &mut Vec<String>) {
-            match (a, b) {
-                (Value::Object(x), Value::Object(y)) => {
-                    for k in x.keys().chain(y.keys().filter(|k| !x.contains_key(*k))) {
-                        diff(x.get(k).unwrap_or(&Value::Null), y.get(k).unwrap_or(&Value::Null), &format!("{at}.{k}"), out);
-                    }
-                }
-                _ if a != b => out.push(format!("{at}: {a} != {b}")),
-                _ => {}
-            }
-        }
+    /// The q1 column page of scripts/fixtures/p3b/pos-q1-b.json with its bars bound external over `overlay` (the visual
+    /// group's NodeDeclare through its door): the fill as fill_of writes it with the rust bars, and with the external bars.
+    fn q1_fills(overlay: &crate::next_tree::J) -> (Value, Result<Value, String>, Vec<Value>) {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let p3b = root.join("scripts/fixtures/p3b");
-        let read = |name: &str| std::fs::read_to_string(p3b.join(name)).unwrap();
-        let envelope: Value = serde_json::from_str(&read("pos-q1-b.json")).unwrap();
+        let envelope: Value = serde_json::from_str(&std::fs::read_to_string(root.join("scripts/fixtures/p3b/pos-q1-b.json")).unwrap()).unwrap();
         let tree = &envelope["input"];
         let main: Vec<Value> = tree["rows"].as_array().unwrap().clone();
         let column = recipe("column");
@@ -6254,46 +6268,60 @@ mod tests {
         let rust = fill_of(column, &shape, &picks, (&main, &[]), &Hubs, words, false, None).unwrap();
         let mut external = column.clone();
         external.external = vec!["bars".to_string()];
-        let overlay = crate::next_tree::parse(&read("registry-b.json")).unwrap();
-        let runtime = root.join("runtime");
-        let ask = |mode: &str, tree: Option<&Value>| {
-            let mut twin = crate::next_leaf::Runner::python(&p3b.join("twin_node.py"));
-            if !mode.is_empty() {
-                twin.args.push(mode.to_string());
+        let page_in = page_input(&external, &shape, &picks, &main);
+        let calls = std::sync::Mutex::new(Vec::new());
+        let asked = Asked { calls: &calls, page_in: Some(&page_in) };
+        let unused = crate::next_leaf::Runner::python(&root.join("scripts/fixtures/p3b/twin_node.py"));
+        let fill = crate::next_tree::with_test_bindings(overlay.clone(), unused, || {
+            fill_of(&external, &shape, &picks, (&main, &[]), &Hubs, words, false, Some(&asked))
+        });
+        (rust, fill, calls.into_inner().unwrap())
+    }
+
+    /// Key by key, every place two fills differ.
+    fn fill_diff(a: &Value, b: &Value, at: &str, out: &mut Vec<String>) {
+        match (a, b) {
+            (Value::Object(x), Value::Object(y)) => {
+                for k in x.keys().chain(y.keys().filter(|k| !x.contains_key(*k))) {
+                    fill_diff(x.get(k).unwrap_or(&Value::Null), y.get(k).unwrap_or(&Value::Null), &format!("{at}.{k}"), out);
+                }
             }
-            let calls = std::sync::Mutex::new(Vec::new());
-            let asked = Asked { calls: &calls, tree, runtime: &runtime };
-            let fill = crate::next_tree::with_test_bindings(overlay.clone(), twin, || {
-                fill_of(&external, &shape, &picks, (&main, &[]), &Hubs, words, false, Some(&asked))
-            });
-            (fill, calls.into_inner().unwrap())
-        };
-
-        let (fill, calls) = ask("", Some(tree));
-        let fill = fill.unwrap_or_else(|e| panic!("the twin's page: {e}"));
-        let event = calls.iter().find(|e| e["node"] == "bars").expect("one node_fill event");
-        println!("P3TIME child_ms={} recheck_ms={}", event["child_ms"], event["recheck_ms"]);
-        assert_eq!((event["request"].as_str(), event["failures"].as_u64()), (Some("node_fill"), Some(0)));
-        assert_eq!(fill["knobs"]["spec"]["hero"]["data"]["count"], DRAWN);
-        assert!(fill["knobs"]["spec"]["facts"].get(DRAWN).is_some(), "the count names a declared fact");
-        let mut want = rust.clone();
-        want["knobs"]["spec"]["hero"]["data"]["count"] = json!(DRAWN);
-        let mut differs = Vec::new();
-        diff(&want, &fill, "fill", &mut differs);
-        assert!(differs.is_empty(), "the external fill differs from the rust binding's: {differs:#?}");
-        assert!(!fill["drawn"].as_array().unwrap().is_empty() && fill["drawn"].as_array().unwrap().iter().any(|d| d["layer"] == "bars"));
-
-        for (mode, head) in [("g16", "B3"), ("g17a", "B3"), ("g18", "B5")] {
-            let (fill, calls) = ask(mode, Some(tree));
-            let why = fill.expect_err(mode);
-            assert!(why.starts_with(&format!("node bars: recheck: {head} node bars ")), "{mode}: {why}");
-            assert!(!why.contains("not this shape"), "{mode}: an external refusal stops the page: {why}");
-            let event = calls.iter().find(|e| e["node"] == "bars").expect("one node_fill event");
-            assert!(event["failures"].as_u64().unwrap() >= 1, "{mode}: {event}");
+            _ if a != b => out.push(format!("{at}: {a} != {b}")),
+            _ => {}
         }
-        let (fill, calls) = ask("", None);
-        assert!(fill.unwrap_err().contains("no page tree"));
-        assert!(calls.is_empty(), "no tree, no child asked");
+    }
+
+    /// S2 (P4a): the bars declared by the visual group's generator (NodeDeclare over the page input, the registry's
+    /// declaration in scripts/fixtures/p4a/registry-p4a.json, the drawn count kept in the page tree only) merge into the q1
+    /// column fill exactly as the rust bars_fill does: equal key by key, no key more. One node_declare call is on record.
+    /// With no page input to declare over, the external layer refuses the page.
+    #[test]
+    fn declare_equals_rust_fill() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut overlay = crate::next_tree::parse(&std::fs::read_to_string(root.join("scripts/fixtures/p4a/registry-p4a.json")).unwrap()).unwrap();
+        assert!(overlay.set_path(&["nodes", "bars", "declares", "tree_only"].map(String::from), crate::next_tree::J::strs(&["count"])));
+        let (rust, fill, calls) = q1_fills(&overlay);
+        let fill = fill.unwrap_or_else(|e| panic!("the declared page: {e}"));
+        let mut differs = Vec::new();
+        fill_diff(&rust, &fill, "fill", &mut differs);
+        assert!(differs.is_empty(), "the declared fill differs from the rust bars': {differs:#?}");
+        let event = calls.iter().find(|e| e["request"] == "node_declare").expect("one node_declare event");
+        assert_eq!((event["node"].as_str(), event["ok"].as_bool()), (Some("bars"), Some(true)));
+        // the drawn count stays out of the hero's data unless the registry keeps it in the tree only
+        assert!(overlay.set_path(&["nodes", "bars", "declares", "tree_only"].map(String::from), crate::next_tree::J::strs(&[] as &[&str])));
+        let (_, with_count, _) = q1_fills(&overlay);
+        assert_eq!(with_count.unwrap()["knobs"]["spec"]["hero"]["data"]["count"], DRAWN);
+        // a page input the flow did not keep refuses the external layer
+        let column = recipe("column");
+        let mut external = column.clone();
+        external.external = vec!["bars".to_string()];
+        let calls = std::sync::Mutex::new(Vec::new());
+        let asked = Asked { calls: &calls, page_in: None };
+        let main: Vec<Value> = ring_rows("sdg", &[("freq", "A"), ("unit", "PC")], ("geo", &["DE", "FR"]), &["2025"]);
+        let shape = shape_of(&column.eats, &[("sdg", &main[..])], &Hubs).unwrap();
+        let picks = picks_of(&column.picks, &shape, &main, &[]).unwrap();
+        let why = fill_of(&external, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false, Some(&asked)).unwrap_err();
+        assert!(why.contains("no page input"), "{why}");
     }
 
     /// The ring page's layers are the leaf registry's ring group without events.

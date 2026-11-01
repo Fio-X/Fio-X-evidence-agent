@@ -1066,7 +1066,11 @@
   },
   "src/next_tree.rs": {
    "group": "visual",
-   "note": "New route: the visual group's page tree core (P3, plan B). It recomputes every select, fact, item and word of a page tree from the rows and the registry, checks the registry (C5), and asks an external node only for geometry, held to the core's own recomputation (B0-B7); what the flow takes from the node is derived by the core. Request::NodeFill reaches it through next_visual::call. Ownership only; no cross-group call is allowed by this row."
+   "note": "New route: the visual group's page tree core (P3, plan B). It recomputes every select, fact, item and word of a page tree from the rows and the registry, checks the registry (C5), and asks an external node only for geometry, held to the core's own recomputation (B0-B7); the checked geometry goes to the leaf that draws the layer. Request::NodeDraw reaches it through next_visual::call and next_tree_gen.rs. Ownership only; no cross-group call is allowed by this row."
+  },
+  "src/next_tree_gen.rs": {
+   "group": "visual",
+   "note": "New route: the visual group's page tree generator (P4a, plan B). From the registry's declarations over the flow's page input (plain data: shape, picks, rows) it writes what the flow's fill takes from an external layer (Request::NodeDeclare) and, once the fill is done, the page tree the core checks and asks the external nodes over (Request::NodeDraw); generic, no chart name in it. Ownership only; no cross-group call is allowed by this row."
   },
   "src/shape_registry.rs": {
    "group": "visual",

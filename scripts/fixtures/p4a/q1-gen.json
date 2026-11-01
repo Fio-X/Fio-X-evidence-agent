@@ -1,0 +1,1052 @@
+{
+ "page_in": {
+  "shape": {
+   "main": "sdg",
+   "place": "geo",
+   "year": "2025",
+   "unit": "PC",
+   "fmt": "pc",
+   "suffix": "%",
+   "countries": [
+    "BE",
+    "DE",
+    "FR",
+    "SE"
+   ]
+  },
+  "picks": {
+   "rules": [
+    "ranked",
+    "claim_marks"
+   ],
+   "ranked": [
+    "SE",
+    "DE",
+    "FR",
+    "BE"
+   ],
+   "marks": [
+    "BE"
+   ]
+  },
+  "rows": [
+   {
+    "src": "series:sdg/SE:2025:OBS_VALUE",
+    "table": "sdg",
+    "dims": {
+     "freq": "A",
+     "unit": "PC",
+     "geo": "SE"
+    },
+    "time": "2025",
+    "value": "65.4"
+   },
+   {
+    "src": "series:sdg/BE:2025:OBS_VALUE",
+    "table": "sdg",
+    "dims": {
+     "freq": "A",
+     "unit": "PC",
+     "geo": "BE"
+    },
+    "time": "2025",
+    "value": "14.9"
+   },
+   {
+    "src": "series:sdg/DE:2025:OBS_VALUE",
+    "table": "sdg",
+    "dims": {
+     "freq": "A",
+     "unit": "PC",
+     "geo": "DE"
+    },
+    "time": "2025",
+    "value": "30.25"
+   },
+   {
+    "src": "series:sdg/FR:2025:OBS_VALUE",
+    "table": "sdg",
+    "dims": {
+     "freq": "A",
+     "unit": "PC",
+     "geo": "FR"
+    },
+    "time": "2025",
+    "value": "20"
+   },
+   {
+    "src": "series:sdg/SE:2024:OBS_VALUE",
+    "table": "sdg",
+    "dims": {
+     "freq": "A",
+     "unit": "PC",
+     "geo": "SE"
+    },
+    "time": "2024",
+    "value": "60.1"
+   }
+  ],
+  "names": {
+   "SE": "瑞典",
+   "BE": "比利时",
+   "DE": "德国",
+   "FR": "法国"
+  },
+  "named": {
+   "name:unit_short_zh:PC": "%",
+   "name:catalogue:sdg:title": "可再生能源在最终能源消费总量中的占比（按部门）"
+  },
+  "name_kind": "iso2",
+  "points": {
+   "table": "naturalearth-admin0-50m-attributes",
+   "sha256": "206fbe5e671c3c3f19db0709a7d85093ed935b2490b25b4d5b50a3c0a4120d1a",
+   "at": {
+    "SE": [
+     19.01705,
+     65.85918
+    ],
+    "DE": [
+     9.678348,
+     50.961733
+    ],
+    "FR": [
+     2.552275,
+     46.696113
+    ],
+    "BE": [
+     4.800448,
+     50.785392
+    ]
+   }
+  },
+  "page": {
+   "ext": [
+    -1.4477250000000002,
+    42.696113,
+    23.01705,
+    69.85918
+   ]
+  }
+ },
+ "fill": {
+  "recipe": "column",
+  "order": [
+   "bars",
+   "bubbles",
+   "bubble_key",
+   "leader_notes"
+  ],
+  "rows": [
+   {
+    "src": "series:sdg/SE:2025:OBS_VALUE",
+    "table": "sdg",
+    "dims": {
+     "freq": "A",
+     "unit": "PC",
+     "geo": "SE"
+    },
+    "time": "2025",
+    "value": "65.4"
+   },
+   {
+    "src": "series:sdg/BE:2025:OBS_VALUE",
+    "table": "sdg",
+    "dims": {
+     "freq": "A",
+     "unit": "PC",
+     "geo": "BE"
+    },
+    "time": "2025",
+    "value": "14.9"
+   },
+   {
+    "src": "series:sdg/DE:2025:OBS_VALUE",
+    "table": "sdg",
+    "dims": {
+     "freq": "A",
+     "unit": "PC",
+     "geo": "DE"
+    },
+    "time": "2025",
+    "value": "30.25"
+   },
+   {
+    "src": "series:sdg/FR:2025:OBS_VALUE",
+    "table": "sdg",
+    "dims": {
+     "freq": "A",
+     "unit": "PC",
+     "geo": "FR"
+    },
+    "time": "2025",
+    "value": "20"
+   }
+  ],
+  "knobs": {
+   "spec": {
+    "title": "瑞典最高，是最低者比利时的{times}",
+    "dek": "{lead1.t}年，瑞典最高，为{hi}，比最低的比利时高{gap}",
+    "kicker": "标题",
+    "tables": {
+     "sdg": {
+      "id": "sdg"
+     }
+    },
+    "facts": {
+     "val": {
+      "each": "geo",
+      "table": "sdg",
+      "time": "2025",
+      "fmt": "pc"
+     },
+     "drawn": {
+      "op": "n",
+      "by": "geo",
+      "table": "sdg",
+      "time": "2025",
+      "fmt": "n"
+     },
+     "hi": {
+      "table": "sdg",
+      "filter": {
+       "geo": "SE"
+      },
+      "time": "2025",
+      "fmt": "pc"
+     },
+     "lo": {
+      "table": "sdg",
+      "filter": {
+       "geo": "BE"
+      },
+      "time": "2025",
+      "fmt": "pc"
+     },
+     "gap": {
+      "op": "minus",
+      "a": "hi",
+      "b": "lo",
+      "fmt": "pp"
+     },
+     "times": {
+      "op": "times",
+      "a": "hi",
+      "b": "lo",
+      "fmt": "times"
+     },
+     "lead1": {
+      "op": "last",
+      "table": "sdg",
+      "filter": {
+       "geo": "SE"
+      },
+      "from": "2025",
+      "to": "2025",
+      "fmt": "pc"
+     }
+    },
+    "fmts": {
+     "pc": {
+      "scale": 1,
+      "dec": 2,
+      "suffix": "%"
+     },
+     "pp": {
+      "scale": 1,
+      "dec": 1,
+      "suffix": " 个百分点"
+     },
+     "times": {
+      "scale": 1,
+      "dec": 1,
+      "suffix": "倍"
+     },
+     "time": {}
+    },
+    "hero": {
+     "data": {
+      "chart": "bars",
+      "by": "geo",
+      "year": "2025",
+      "family": "val",
+      "ranked": [
+       "SE",
+       "DE",
+       "FR",
+       "BE"
+      ],
+      "marks": [
+       "BE"
+      ],
+      "accent": "SE"
+     },
+     "leaves": {
+      "bubbles": {
+       "items": [
+        {
+         "code": "SE",
+         "value": "series:sdg/SE:2025:OBS_VALUE",
+         "value_text": "fact:val.SE.n",
+         "at": [
+          19.01705,
+          65.85918
+         ]
+        },
+        {
+         "code": "DE",
+         "value": "series:sdg/DE:2025:OBS_VALUE",
+         "value_text": "fact:val.DE.n",
+         "at": [
+          9.678348,
+          50.961733
+         ]
+        },
+        {
+         "code": "FR",
+         "value": "series:sdg/FR:2025:OBS_VALUE",
+         "value_text": "fact:val.FR.n",
+         "at": [
+          2.552275,
+          46.696113
+         ]
+        },
+        {
+         "code": "BE",
+         "value": "series:sdg/BE:2025:OBS_VALUE",
+         "value_text": "fact:val.BE.n",
+         "at": [
+          4.800448,
+          50.785392
+         ]
+        }
+       ],
+       "ext": [
+        -1.4477250000000002,
+        42.696113,
+        23.01705,
+        69.85918
+       ]
+      }
+     }
+    }
+   },
+   "points": {
+    "table": "naturalearth-admin0-50m-attributes",
+    "sha256": "206fbe5e671c3c3f19db0709a7d85093ed935b2490b25b4d5b50a3c0a4120d1a",
+    "at": {
+     "SE": [
+      19.01705,
+      65.85918
+     ],
+     "DE": [
+      9.678348,
+      50.961733
+     ],
+     "FR": [
+      2.552275,
+      46.696113
+     ],
+     "BE": [
+      4.800448,
+      50.785392
+     ]
+    }
+   }
+  },
+  "drawn": [
+   {
+    "layer": "bars",
+    "src": "series:sdg/SE:2025:OBS_VALUE",
+    "table": "sdg",
+    "time": "2025"
+   },
+   {
+    "layer": "bars",
+    "src": "series:sdg/BE:2025:OBS_VALUE",
+    "table": "sdg",
+    "time": "2025"
+   },
+   {
+    "layer": "bars",
+    "src": "series:sdg/DE:2025:OBS_VALUE",
+    "table": "sdg",
+    "time": "2025"
+   },
+   {
+    "layer": "bars",
+    "src": "series:sdg/FR:2025:OBS_VALUE",
+    "table": "sdg",
+    "time": "2025"
+   },
+   {
+    "layer": "bubbles",
+    "src": "series:sdg/SE:2025:OBS_VALUE",
+    "table": "sdg",
+    "time": "2025"
+   },
+   {
+    "layer": "bubbles",
+    "src": "series:sdg/BE:2025:OBS_VALUE",
+    "table": "sdg",
+    "time": "2025"
+   },
+   {
+    "layer": "bubbles",
+    "src": "series:sdg/DE:2025:OBS_VALUE",
+    "table": "sdg",
+    "time": "2025"
+   },
+   {
+    "layer": "bubbles",
+    "src": "series:sdg/FR:2025:OBS_VALUE",
+    "table": "sdg",
+    "time": "2025"
+   }
+  ]
+ },
+ "declare_bars": {
+  "rows": [
+   {
+    "src": "series:sdg/SE:2025:OBS_VALUE",
+    "table": "sdg",
+    "dims": {
+     "freq": "A",
+     "unit": "PC",
+     "geo": "SE"
+    },
+    "time": "2025",
+    "value": "65.4"
+   },
+   {
+    "src": "series:sdg/BE:2025:OBS_VALUE",
+    "table": "sdg",
+    "dims": {
+     "freq": "A",
+     "unit": "PC",
+     "geo": "BE"
+    },
+    "time": "2025",
+    "value": "14.9"
+   },
+   {
+    "src": "series:sdg/DE:2025:OBS_VALUE",
+    "table": "sdg",
+    "dims": {
+     "freq": "A",
+     "unit": "PC",
+     "geo": "DE"
+    },
+    "time": "2025",
+    "value": "30.25"
+   },
+   {
+    "src": "series:sdg/FR:2025:OBS_VALUE",
+    "table": "sdg",
+    "dims": {
+     "freq": "A",
+     "unit": "PC",
+     "geo": "FR"
+    },
+    "time": "2025",
+    "value": "20"
+   }
+  ],
+  "facts": {
+   "val": {
+    "each": "geo",
+    "table": "sdg",
+    "time": "2025",
+    "fmt": "pc"
+   },
+   "drawn": {
+    "op": "n",
+    "by": "geo",
+    "table": "sdg",
+    "time": "2025",
+    "fmt": "n"
+   }
+  },
+  "fmts": {
+   "pc": {
+    "scale": 1,
+    "dec": 2,
+    "suffix": "%"
+   }
+  },
+  "data": {
+   "chart": "bars",
+   "by": "geo",
+   "year": "2025",
+   "family": "val",
+   "ranked": [
+    "SE",
+    "DE",
+    "FR",
+    "BE"
+   ],
+   "marks": [
+    "BE"
+   ],
+   "count": "drawn"
+  }
+ },
+ "tree_p4a1": {
+  "rows": [
+   {
+    "src": "series:sdg/SE:2025:OBS_VALUE",
+    "table": "sdg",
+    "dims": {
+     "freq": "A",
+     "unit": "PC",
+     "geo": "SE"
+    },
+    "time": "2025",
+    "value": "65.4"
+   },
+   {
+    "src": "series:sdg/BE:2025:OBS_VALUE",
+    "table": "sdg",
+    "dims": {
+     "freq": "A",
+     "unit": "PC",
+     "geo": "BE"
+    },
+    "time": "2025",
+    "value": "14.9"
+   },
+   {
+    "src": "series:sdg/DE:2025:OBS_VALUE",
+    "table": "sdg",
+    "dims": {
+     "freq": "A",
+     "unit": "PC",
+     "geo": "DE"
+    },
+    "time": "2025",
+    "value": "30.25"
+   },
+   {
+    "src": "series:sdg/FR:2025:OBS_VALUE",
+    "table": "sdg",
+    "dims": {
+     "freq": "A",
+     "unit": "PC",
+     "geo": "FR"
+    },
+    "time": "2025",
+    "value": "20"
+   },
+   {
+    "src": "series:sdg/SE:2024:OBS_VALUE",
+    "table": "sdg",
+    "dims": {
+     "freq": "A",
+     "unit": "PC",
+     "geo": "SE"
+    },
+    "time": "2024",
+    "value": "60.1"
+   }
+  ],
+  "select_spec": {
+   "countries": {
+    "kind": "given",
+    "source": "shape",
+    "path": "shape.countries"
+   },
+   "ranked": {
+    "kind": "rank",
+    "over": {
+     "table": "sdg",
+     "by": "geo",
+     "time": "2025"
+    },
+    "key": "value",
+    "order": "desc",
+    "only": "select:countries",
+    "tie": {
+     "by": "code",
+     "outcome": "order"
+    },
+    "one_row_per_code": true
+   },
+   "marks": {
+    "kind": "named_rule",
+    "rule": "marks_from_claims",
+    "inputs": {
+     "ranked": "ranked"
+    }
+   }
+  },
+  "knobs": {},
+  "drawn_rules": {
+   "bars": "rows_of_select"
+  },
+  "given": {
+   "countries": [
+    "BE",
+    "DE",
+    "FR",
+    "SE"
+   ],
+   "marks": [
+    "BE"
+   ]
+  },
+  "name_table": {
+   "labels": {
+    "SE": "瑞典",
+    "BE": "比利时",
+    "DE": "德国",
+    "FR": "法国"
+   },
+   "named": {
+    "name:unit_short_zh:PC": "%",
+    "name:catalogue:sdg:title": "可再生能源在最终能源消费总量中的占比（按部门）"
+   }
+  },
+  "points": {
+   "table": "naturalearth-admin0-50m-attributes",
+   "sha256": "206fbe5e671c3c3f19db0709a7d85093ed935b2490b25b4d5b50a3c0a4120d1a",
+   "at": {
+    "SE": [
+     19.01705,
+     65.85918
+    ],
+    "DE": [
+     9.678348,
+     50.961733
+    ],
+    "FR": [
+     2.552275,
+     46.696113
+    ],
+    "BE": [
+     4.800448,
+     50.785392
+    ]
+   }
+  },
+  "word_table": {},
+  "page_spec": {
+   "kind": "Page",
+   "schema_version": "0.1.0",
+   "recipe": "column",
+   "order": [
+    "bars",
+    "bubbles",
+    "bubble_key",
+    "leader_notes"
+   ],
+   "scoped": false,
+   "texts": {
+    "title": {
+     "kind": "Text",
+     "role": "headline",
+     "origin": "text_step",
+     "runs": [
+      {
+       "w": "瑞典最高，是最低者比利时的"
+      },
+      {
+       "fact": "times"
+      }
+     ]
+    },
+    "dek": {
+     "kind": "Text",
+     "role": "dek",
+     "origin": "text_step",
+     "runs": [
+      {
+       "fact": "lead1",
+       "part": "t"
+      },
+      {
+       "w": "年，瑞典最高，为"
+      },
+      {
+       "fact": "hi"
+      },
+      {
+       "w": "，比最低的比利时高"
+      },
+      {
+       "fact": "gap"
+      }
+     ]
+    },
+    "kicker": {
+     "kind": "Text",
+     "role": "kicker",
+     "origin": "text_step",
+     "runs": [
+      {
+       "w": "标题"
+      }
+     ]
+    },
+    "unit": {
+     "kind": "Text",
+     "role": "unit",
+     "origin": "program",
+     "runs": [
+      {
+       "w": "单位："
+      },
+      {
+       "src": "name:unit_short_zh:PC"
+      }
+     ]
+    }
+   },
+   "facts": {
+    "kind": "Facts",
+    "tables": {
+     "sdg": {
+      "id": "sdg"
+     }
+    },
+    "facts": {
+     "val": {
+      "each": "geo",
+      "table": "sdg",
+      "time": "2025",
+      "fmt": "pc"
+     },
+     "drawn": {
+      "op": "n",
+      "by": "geo",
+      "table": "sdg",
+      "time": "2025",
+      "fmt": "n"
+     },
+     "hi": {
+      "table": "sdg",
+      "filter": {
+       "geo": "select:countries[3]"
+      },
+      "time": "2025",
+      "fmt": "pc"
+     },
+     "lo": {
+      "table": "sdg",
+      "filter": {
+       "geo": "select:countries[0]"
+      },
+      "time": "2025",
+      "fmt": "pc"
+     },
+     "gap": {
+      "op": "minus",
+      "a": "hi",
+      "b": "lo",
+      "fmt": "pp"
+     },
+     "times": {
+      "op": "times",
+      "a": "hi",
+      "b": "lo",
+      "fmt": "times"
+     },
+     "lead1": {
+      "op": "last",
+      "table": "sdg",
+      "filter": {
+       "geo": "select:countries[3]"
+      },
+      "from": "2025",
+      "to": "2025",
+      "fmt": "pc"
+     }
+    },
+    "fmts": {
+     "pc": {
+      "scale": 1,
+      "dec": 2,
+      "suffix": "%",
+      "dec_rule": {
+       "rule": "held_decimals",
+       "rows": {
+        "table": "sdg",
+        "filter": {
+         "geo": "select:ranked"
+        },
+        "time": "2025"
+       },
+       "max": {
+        "const": "COLUMN_DEC",
+        "value": 2
+       }
+      }
+     },
+     "pp": {
+      "scale": 1,
+      "dec": 1,
+      "suffix": " 个百分点"
+     },
+     "times": {
+      "scale": 1,
+      "dec": 1,
+      "suffix": "倍"
+     },
+     "time": {}
+    },
+    "rows": [
+     {
+      "src": "series:sdg/SE:2025:OBS_VALUE",
+      "table": "sdg",
+      "dims": {
+       "freq": "A",
+       "unit": "PC",
+       "geo": "SE"
+      },
+      "time": "2025",
+      "value": "65.4"
+     },
+     {
+      "src": "series:sdg/BE:2025:OBS_VALUE",
+      "table": "sdg",
+      "dims": {
+       "freq": "A",
+       "unit": "PC",
+       "geo": "BE"
+      },
+      "time": "2025",
+      "value": "14.9"
+     },
+     {
+      "src": "series:sdg/DE:2025:OBS_VALUE",
+      "table": "sdg",
+      "dims": {
+       "freq": "A",
+       "unit": "PC",
+       "geo": "DE"
+      },
+      "time": "2025",
+      "value": "30.25"
+     },
+     {
+      "src": "series:sdg/FR:2025:OBS_VALUE",
+      "table": "sdg",
+      "dims": {
+       "freq": "A",
+       "unit": "PC",
+       "geo": "FR"
+      },
+      "time": "2025",
+      "value": "20"
+     }
+    ],
+    "labels": {
+     "SE": "瑞典",
+     "BE": "比利时",
+     "DE": "德国",
+     "FR": "法国"
+    },
+    "named": {
+     "name:unit_short_zh:PC": "%",
+     "name:catalogue:sdg:title": "可再生能源在最终能源消费总量中的占比（按部门）"
+    },
+    "points": {
+     "table": "naturalearth-admin0-50m-attributes",
+     "sha256": "206fbe5e671c3c3f19db0709a7d85093ed935b2490b25b4d5b50a3c0a4120d1a",
+     "at": {
+      "SE": [
+       19.01705,
+       65.85918
+      ],
+      "DE": [
+       9.678348,
+       50.961733
+      ],
+      "FR": [
+       2.552275,
+       46.696113
+      ],
+      "BE": [
+       4.800448,
+       50.785392
+      ]
+     }
+    }
+   },
+   "selects": {
+    "kind": "Selects",
+    "items": [
+     {
+      "id": "countries",
+      "kind": "given",
+      "source": "shape",
+      "path": "shape.countries",
+      "result": [
+       "BE",
+       "DE",
+       "FR",
+       "SE"
+      ]
+     },
+     {
+      "id": "ranked",
+      "kind": "rank",
+      "over": {
+       "table": "sdg",
+       "by": "geo",
+       "time": "2025"
+      },
+      "key": "value",
+      "order": "desc",
+      "only": "select:countries",
+      "tie": {
+       "by": "code",
+       "outcome": "order"
+      },
+      "one_row_per_code": true,
+      "result": [
+       "SE",
+       "DE",
+       "FR",
+       "BE"
+      ]
+     },
+     {
+      "id": "marks",
+      "kind": "named_rule",
+      "rule": "marks_from_claims",
+      "inputs": {
+       "ranked": "ranked"
+      },
+      "result": [
+       "BE"
+      ]
+     }
+    ]
+   },
+   "checks": {
+    "kind": "Checks",
+    "items": [
+     {
+      "id": "unit_short",
+      "kind": "unit_short",
+      "args": {
+       "unit": "PC"
+      },
+      "on_fail": "stop"
+     },
+     {
+      "id": "bars_0",
+      "kind": "ranks_some",
+      "args": {
+       "select": "ranked"
+      },
+      "on_fail": "stop"
+     },
+     {
+      "id": "bars_1",
+      "kind": "one_row_per_code",
+      "args": {
+       "family": "val"
+      },
+      "on_fail": "stop"
+     },
+     {
+      "id": "names",
+      "kind": "named",
+      "name_kind": "iso2",
+      "codes": {
+       "select": "ranked"
+      },
+      "on_fail": "stop"
+     }
+    ]
+   },
+   "body": {
+    "kind": "Frame",
+    "id": "page",
+    "role": "page",
+    "children": [
+     {
+      "kind": "Frame",
+      "id": "hero",
+      "role": "hero",
+      "children": [
+       {
+        "kind": "Node",
+        "id": "bars",
+        "node": "bars",
+        "binds": {
+         "chart": "bars",
+         "by": "geo",
+         "year": "2025",
+         "family": {
+          "family": "val"
+         },
+         "ranked": "select:ranked",
+         "marks": "select:marks",
+         "count": {
+          "fact": "drawn"
+         },
+         "accent": "select:countries[3]"
+        },
+        "items": [
+         {
+          "code": "select:ranked[0]",
+          "value": "series:sdg/SE:2025:OBS_VALUE",
+          "value_text": "fact:val.SE.n",
+          "focus": true
+         },
+         {
+          "code": "select:ranked[1]",
+          "value": "series:sdg/DE:2025:OBS_VALUE",
+          "value_text": "fact:val.DE.n",
+          "focus": false
+         },
+         {
+          "code": "select:ranked[2]",
+          "value": "series:sdg/FR:2025:OBS_VALUE",
+          "value_text": "fact:val.FR.n",
+          "focus": false
+         },
+         {
+          "code": "select:ranked[3]",
+          "value": "series:sdg/BE:2025:OBS_VALUE",
+          "value_text": "fact:val.BE.n",
+          "focus": false
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "record": {
+    "drawn": [
+     {
+      "layer": "bars",
+      "src": "series:sdg/SE:2025:OBS_VALUE",
+      "table": "sdg",
+      "time": "2025"
+     },
+     {
+      "layer": "bars",
+      "src": "series:sdg/BE:2025:OBS_VALUE",
+      "table": "sdg",
+      "time": "2025"
+     },
+     {
+      "layer": "bars",
+      "src": "series:sdg/DE:2025:OBS_VALUE",
+      "table": "sdg",
+      "time": "2025"
+     },
+     {
+      "layer": "bars",
+      "src": "series:sdg/FR:2025:OBS_VALUE",
+      "table": "sdg",
+      "time": "2025"
+     }
+    ]
+   }
+  }
+ }
+}

@@ -89,11 +89,15 @@ pub enum Request<'a> {
     /// names one of them, drawn by the strip child under `runtime` (the run's materialized runtime/) in the page's ink and
     /// accent and taken only as line art in those (next_leaf::strip); none when no set names them. Nothing is written.
     IllusStrip { tables: &'a [String], width: f64, runtime: &'a Path },
-    /// One external node of the core's page tree (`tree`: the page spec with the rows, name table, points, picks, select
-    /// specs, knobs and word table it was computed from) asked for its geometry by its registered runner under `runtime`
-    /// (next_tree::node_fill): every select, fact, check, item and word the core's own, checked before the child starts;
-    /// the reply's geometry checked against the core's recomputation; what the flow's Filled takes derived by the core.
-    NodeFill { node: &'a str, tree: &'a Value, runtime: &'a Path },
+    /// What the flow's fill takes from a layer its recipe binds external (next_tree_gen::declare, P4a): the rows it draws,
+    /// the facts and the format it declares and its hero data, from the registry's declaration over the flow's page input
+    /// (plain data: shape, picks, rows), every select recomputed by the core.
+    NodeDeclare { layer: &'a str, page_in: &'a Value },
+    /// The recipe's external layers over the finished fill (next_tree_gen::draw, P4a): the page tree written from the fill
+    /// and the page input, each layer's node asked for its geometry by its registered runner under `runtime`, every select,
+    /// fact, check, item and word the core's own and checked before the child starts (C1-C5), the reply's geometry checked
+    /// against the core's recomputation (B0-B7); the checked geometry by layer, which the leaves draw.
+    NodeDraw { fill: &'a Value, page_in: &'a Value, layers: &'a [String], runtime: &'a Path },
 }
 
 /// The illustration piece sets the second layer describes (runtime/leaves_js/pieces-<set>.json: its pieces, knobs and the
@@ -347,9 +351,10 @@ pub enum Reply<'a> {
     Rechecked(Vec<String>),
     /// The page's illustration strip, none when no piece set names its tables, and what was drawn or why none.
     Strip { strip: Option<Strip>, note: String },
-    /// What the flow's Filled takes from an external node, derived by the core (drawn rows, rows read, facts, formats, hero
-    /// data), its SVG as the core drew it, and the child's and the core's milliseconds.
-    NodeFilled(Box<crate::next_tree::NodeFilled>),
+    /// What the flow's fill takes from an external layer, derived by the generator (drawn rows, facts, formats, hero data).
+    NodeDeclared(Box<crate::next_tree_gen::NodeDeclared>),
+    /// The external layers' checked geometry by layer, and per layer the child's and the core's milliseconds.
+    NodesDrawn(Box<crate::next_tree_gen::NodesDrawn>),
     /// The label point of each iso3 asked that has one, the ones that have none in the order asked, and the table read.
     Points {
         points: BTreeMap<String, [f64; 2]>,
@@ -454,7 +459,10 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
             let (strip, note) = illus_strip(tables, width, runtime)?;
             Reply::Strip { strip, note }
         }
-        Request::NodeFill { node, tree, runtime } => Reply::NodeFilled(Box::new(crate::next_tree::node_fill(node, tree, runtime)?)),
+        Request::NodeDeclare { layer, page_in } => Reply::NodeDeclared(Box::new(crate::next_tree_gen::declare(layer, page_in)?)),
+        Request::NodeDraw { fill, page_in, layers, runtime } => {
+            Reply::NodesDrawn(Box::new(crate::next_tree_gen::draw(fill, page_in, layers, runtime)?))
+        }
     })
 }
 
