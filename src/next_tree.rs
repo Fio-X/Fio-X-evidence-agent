@@ -5319,11 +5319,17 @@ mod tests {
 
     // ---- R11: colour --------------------------------------------------------------------------------------------
 
+    /// The 35 cases in id order, each parsed from its file text as scripts/r11_fixtures.py generates it: three base pages
+    /// stored whole (scripts/fixtures/r11/P1-P3.json) and 32 change descriptions (derived.json). The script refuses to
+    /// print unless every generated text's sha256 is the one recorded for the case file it replaced, byte for byte.
     fn r11_cases() -> Vec<(String, J)> {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/fixtures/r11");
-        let mut names: Vec<String> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).filter(|n| n.ends_with(".json")).collect();
-        names.sort();
-        names.into_iter().map(|n| (n.trim_end_matches(".json").to_string(), parse(&std::fs::read_to_string(dir.join(&n)).unwrap()).unwrap())).collect()
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let out = std::process::Command::new("python3").arg(root.join("scripts/r11_fixtures.py")).arg("dump").output().unwrap();
+        assert!(out.status.success(), "r11_fixtures.py dump: {}", String::from_utf8_lossy(&out.stderr));
+        let all = parse(std::str::from_utf8(&out.stdout).unwrap()).unwrap();
+        let cases: Vec<(String, J)> = all.obj().iter().map(|(id, text)| (id.clone(), parse(&st(text)).unwrap())).collect();
+        assert_eq!(cases.len(), 35);
+        cases
     }
 
     /// The shipped palette file passes palette_ok; each bad palette file of the prototype's cases (N5c, N8a-N8f) is
