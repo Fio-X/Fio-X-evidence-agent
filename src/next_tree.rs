@@ -18,6 +18,9 @@
 //!      issued mark and text placed exactly once; B2 inside the frame; B3 each value-determined field equal to the core's
 //!      recomputation from the declared field -> channel -> scale (B4 a projected point); B5 each text next to its own mark;
 //!      B6 no two text boxes of a node overlap; B7 a refusal stops the page.
+//!   On the SVG the core draws (R11): paint_matches_scale, every painted mark, in-mark number and legend entry equal to
+//!      the core's recomputation from its scale record; single_accent, every colour from the palette file and spelled one
+//!      way, one accent. Both run on every node the core draws and no registry can switch them off.
 //! A port of the plan B prototype (core_b.py, reply_b.py, plan A's core_recheck.py and P1's validate.py, with the 11-01
 //! fixes); scripts/fixtures/p3b holds its fixtures and verdicts, and the tests below hold this file to them case by case.
 //! Pure: it reads no file and calls no other group; the child is started by next_leaf (this group's).
@@ -3349,13 +3352,15 @@ fn bin_of(v: f64, cuts: &[f64]) -> usize {
 }
 
 /// One mark a scale paints, as the core keeps it: its id, the value it classifies (None: no row or a null value; the
-/// printed number when the scale prints), its focus, and the id of the text it prints inside the mark.
+/// printed number when the scale prints), its focus, and the text it prints inside the mark: its id, words and source.
 #[derive(Clone, Debug, Default)]
 pub struct Cell {
     pub id: String,
     pub value: Option<f64>,
     pub focus: bool,
     pub text_id: Option<String>,
+    pub text: Option<String>,
+    pub src: Option<String>,
 }
 
 /// The core's record of a node painted by a scale: its cells, the cuts the core computed and their printed texts (the
@@ -3447,13 +3452,15 @@ impl Paint {
 /// The core's record of a node its registry paints by scale `sid`: each cell's value from its own row (no row or a null
 /// value is no data), in the units its fmt prints (the printed number when the scale prints); the cuts from those values
 /// or from the core's own facts (Compute), never from a number the page tree wrote; the legend's place from the frame.
-/// `texts`: per cell, the id and source of the number it prints (value_text), which sits in the mark when the scale is
-/// printed.
-fn paint_record(sid: &str, e: &J, fr: &J, mut cells: Vec<Cell>, texts: &[Option<(String, String)>], words: &Words, inp: &J) -> Result<Paint, String> {
+/// `texts`: per cell, the id, source and words of the number it prints (value_text), which sits in the mark when the
+/// scale is printed.
+fn paint_record(sid: &str, e: &J, fr: &J, mut cells: Vec<Cell>, texts: &[Option<(String, String, String)>], words: &Words, inp: &J) -> Result<Paint, String> {
     let sc = e.g("scales").g(sid);
     let printed = sc.g("printed").truthy();
     for (c, t) in cells.iter_mut().zip(texts) {
-        c.text_id = t.as_ref().filter(|_| printed).map(|t| t.0.clone());
+        if let Some((tid, src, said)) = t.as_ref().filter(|_| printed) {
+            (c.text_id, c.src, c.text) = (Some(tid.clone()), Some(src.clone()), Some(said.clone()));
+        }
     }
     let cut_refs: Vec<String> = sc.g("cuts").g("from").arr().iter().map(st).collect();
     let mut fmts: Vec<String> = Vec::new();
@@ -3488,6 +3495,232 @@ fn paint_record(sid: &str, e: &J, fr: &J, mut cells: Vec<Cell>, texts: &[Option<
     };
     let lg = fr.g("legend");
     Ok(Paint::new(sid, sc, cells, cuts, dec, (lg.at(0).num().unwrap_or(0.0), lg.at(1).num().unwrap_or(0.0)), nodata_word))
+}
+
+/// One element of an SVG the core wrote: its tag (`#stray` for text outside any element), its attributes in order, the
+/// text inside it, and the first attribute it repeats.
+#[derive(Debug, Default)]
+struct El {
+    tag: String,
+    attrs: Vec<(String, String)>,
+    text: String,
+    repeats: Option<String>,
+}
+
+impl El {
+    fn get(&self, k: &str) -> Option<&str> {
+        self.attrs.iter().rev().find(|(a, _)| a == k).map(|(_, v)| v.as_str())
+    }
+    fn id(&self) -> &str {
+        self.get("data-id").unwrap_or("None")
+    }
+}
+
+/// The elements of an SVG in the one form the core writes (`<tag a="v" ...>`, `</tag>`, `<tag .../>`, text inside a
+/// text element). Anything else, a tag in another form or text outside a text element, is read as stray text.
+fn svg_elements(svg: &str) -> Vec<El> {
+    let word = |c: char| c.is_alphanumeric() || c == '_';
+    let b = svg.as_bytes();
+    let tag_at = |i: usize| -> Option<(usize, bool, El, bool)> {
+        let mut j = i + 1;
+        let close = svg[j..].starts_with('/');
+        j += usize::from(close);
+        let name_len = svg[j..].char_indices().find(|(k, c)| !(if *k == 0 { c.is_ascii_alphabetic() } else { word(*c) || *c == '-' })).map_or(svg.len() - j, |x| x.0);
+        if name_len == 0 {
+            return None;
+        }
+        let mut el = El { tag: svg[j..j + name_len].to_string(), ..Default::default() };
+        j += name_len;
+        loop {
+            let ws = svg[j..].find(|c: char| !c.is_whitespace()).unwrap_or(svg.len() - j);
+            let rest = &svg[j + ws..];
+            let an = rest.find(|c: char| !(word(c) || c == ':' || c == '-')).unwrap_or(rest.len());
+            if ws == 0 || an == 0 || !rest[an..].starts_with("=\"") {
+                j += ws;
+                break;
+            }
+            let v0 = j + ws + an + 2;
+            let vlen = svg[v0..].find('"')?;
+            let (a, v) = (rest[..an].to_string(), svg[v0..v0 + vlen].to_string());
+            if el.repeats.is_none() && el.get(&a).is_some() {
+                el.repeats = Some(a.clone());
+            }
+            el.attrs.push((a, v));
+            j = v0 + vlen + 1;
+        }
+        let selfclose = svg[j..].starts_with('/');
+        j += usize::from(selfclose);
+        (b.get(j) == Some(&b'>')).then_some((j + 1, close, el, selfclose))
+    };
+    let (mut out, mut stack, mut pos, mut i): (Vec<El>, Vec<usize>, usize, usize) = (Vec::new(), Vec::new(), 0, 0);
+    let between = |out: &mut Vec<El>, stack: &[usize], text: &str| {
+        if text.trim().is_empty() {
+            return;
+        }
+        match stack.last() {
+            Some(&k) if out[k].tag == "text" => out[k].text.push_str(text),
+            _ => out.push(El { tag: "#stray".into(), text: text.trim().to_string(), ..Default::default() }),
+        }
+    };
+    while let Some(k) = svg[i..].find('<').map(|k| i + k) {
+        let Some((end, close, el, selfclose)) = tag_at(k) else {
+            i = k + 1;
+            continue;
+        };
+        between(&mut out, &stack, &svg[pos..k]);
+        (pos, i) = (end, end);
+        if close {
+            stack.pop();
+        } else {
+            out.push(el);
+            if !selfclose {
+                stack.push(out.len() - 1);
+            }
+        }
+    }
+    between(&mut out, &stack, &svg[pos..]);
+    out
+}
+
+/// paint_matches_scale: every painted element of the node's SVG equals the core's recomputation from its own record
+/// (class from the value and the cuts, colour from the palette file; the renderer's class tag is compared, never
+/// believed); every cell painted exactly once; a printed number in its ink, with the record's words and source; the
+/// outline as the record says; the legend the k steps in order, the nodata swatch exactly when a cell has no value, and
+/// its cut texts the cut facts.
+pub fn paint_problems(svg: &str, rec: &Paint, pf: &J) -> Vec<String> {
+    let mut out = Vec::new();
+    let sid = &rec.sid;
+    let els = svg_elements(svg);
+    let pal = rec.steps(pf);
+    let (accent, edge) = (pf.g("roles").g("accent").s(), pf.g("roles").g("edge").s());
+    let in_legend = |e: &El| e.get("data-paint").is_some_and(|p| p.starts_with(&format!("{sid}:"))) && e.id().starts_with(&format!("legend/{sid}/"));
+    let cell_of = |did: &str| rec.cells.iter().find(|c| xml(&c.id) == did);
+    let mut seen: BTreeMap<String, usize> = BTreeMap::new();
+    for e in els.iter().filter(|e| e.get("data-paint").is_some() && !in_legend(*e)) {
+        let did = e.id();
+        let Some(c) = cell_of(did) else {
+            out.push(format!("paint_matches_scale: {did} is painted but is no cell of the core's record"));
+            continue;
+        };
+        *seen.entry(c.id.clone()).or_default() += 1;
+        let (tag, fill) = rec.paint_of(c, pf);
+        if e.get("data-paint") != Some(format!("{sid}:{tag}").as_str()) {
+            out.push(format!("paint_matches_scale: {did} tagged {}, the core's class is {sid}:{tag} (value {:?}, cuts {:?})", e.get("data-paint").unwrap_or(""), c.value, rec.cuts));
+        }
+        if e.get("fill") != Some(fill) {
+            out.push(format!("paint_matches_scale: {did} fill {:?}, the core's colour is {fill:?} ({sid}:{tag})", e.get("fill")));
+        }
+        let want = if c.focus { accent } else if needs_edge(fill, pf) { edge } else { None };
+        if e.get("stroke") != want {
+            out.push(format!("paint_matches_scale: {did} stroke {:?}, the core's outline is {want:?}", e.get("stroke")));
+        }
+    }
+    for c in &rec.cells {
+        let n = seen.get(&c.id).copied().unwrap_or(0);
+        if n != 1 {
+            out.push(format!("paint_matches_scale: cell {} painted {n} times, not once", c.id));
+        }
+    }
+    for e in els.iter().filter(|e| e.tag == "text") {
+        let Some(c) = rec.cells.iter().find(|c| c.text_id.as_ref().is_some_and(|t| xml(t) == e.id())) else { continue };
+        let fill = rec.paint_of(c, pf).1;
+        if e.get("fill") != Some(ink_on(fill, pf)) {
+            out.push(format!("paint_matches_scale: {} text fill {:?} on {fill}, the core's ink is {:?}", e.id(), e.get("fill"), ink_on(fill, pf)));
+        }
+        let (words, src) = (c.text.as_deref().map(xml).unwrap_or_default(), c.src.as_deref().map(xml));
+        if e.text.trim() != words || e.get("data-src").map(str::to_string) != src {
+            out.push(format!("paint_matches_scale: {} prints {:?} from {:?}, the record has {words:?} from {src:?}", e.id(), e.text, e.get("data-src")));
+        }
+    }
+    let legend: Vec<&El> = els.iter().filter(|e| in_legend(*e)).collect();
+    let (nd, steps): (Vec<&El>, Vec<&El>) = legend.into_iter().partition(|e| e.get("data-paint").is_some_and(|p| p.ends_with(":nodata")));
+    let tags: Vec<&str> = steps.iter().filter_map(|e| e.get("data-paint")).collect();
+    if tags != (0..rec.k()).map(|i| format!("{sid}:{i}")).collect::<Vec<_>>() {
+        out.push(format!("paint_matches_scale: legend swatches {tags:?}, the core's are {sid}:0..{} in order", rec.k() - 1));
+    }
+    for (i, e) in steps.iter().enumerate() {
+        if i < pal.len() && e.get("fill") != Some(pal[i]) {
+            out.push(format!("paint_matches_scale: legend swatch {i} fill {:?}, the palette's step {i} is {:?}", e.get("fill"), pal[i]));
+        }
+    }
+    let nodata = pf.g("roles").g("nodata").s();
+    if nd.is_empty() == rec.any_missing() || nd.len() > 1 || nd.iter().any(|e| e.get("fill") != nodata) {
+        let fills: Vec<Option<&str>> = nd.iter().map(|e| e.get("fill")).collect();
+        out.push(format!("paint_matches_scale: legend nodata swatches {fills:?}; the core draws one ({nodata:?}) exactly when a cell has no value ({})", rec.any_missing()));
+    }
+    let have: Vec<(Option<&str>, &str)> =
+        els.iter().filter(|e| e.tag == "text" && e.id().starts_with(&format!("legend/{sid}/cut"))).map(|e| (e.get("data-src"), e.text.trim())).collect();
+    let want: Vec<(String, String)> = rec.cut_texts.iter().enumerate().map(|(j, t)| (format!("fact:{sid}.cut.{}", j + 1), xml(t))).collect();
+    if have.len() != want.len() || have.iter().zip(&want).any(|(h, w)| h.0 != Some(w.0.as_str()) || h.1 != w.1) {
+        out.push(format!("paint_matches_scale: legend cut texts {have:?}, the core's cut facts {want:?}"));
+    }
+    out
+}
+
+/// The attributes that carry a colour: the two the core writes, and the ones it never writes.
+const COLOUR_ATTRS: [&str; 2] = ["fill", "stroke"];
+const OTHER_COLOUR_ATTRS: [&str; 5] = ["color", "stop-color", "flood-color", "lighting-color", "style"];
+
+/// single_accent: every colour on the node's SVG is spelled '#rrggbb' lowercase and comes from the palette file (a role,
+/// a ground, or a step of a scale the node declares); the only saturated colour besides the declared steps is the one
+/// accent; a painted mark is never filled with the accent (emphasis on a painted mark is the accent outline).
+pub fn accent_problems(svg: &str, recs: &[&Paint], pf: &J) -> Vec<String> {
+    let mut out = Vec::new();
+    let roles: Vec<&str> = pf.g("roles").obj().iter().filter_map(|(_, v)| v.s()).chain(pf.g("grounds").arr().iter().filter_map(J::s)).collect();
+    let steps: Vec<&str> = recs.iter().flat_map(|r| r.steps(pf)).collect();
+    let acc = pf.g("roles").g("accent").s().unwrap_or("");
+    let mut saturated: BTreeSet<&str> = BTreeSet::new();
+    let low = svg.to_ascii_lowercase();
+    if low.match_indices("<style").any(|(i, m)| low[i + m.len()..].chars().next().is_none_or(|c| !(c.is_alphanumeric() || c == '_'))) {
+        out.push("single_accent: the SVG holds a <style>; the core writes colours as fill/stroke attributes only".into());
+    }
+    let els = svg_elements(svg);
+    for e in &els {
+        if e.tag == "#stray" {
+            out.push(format!("single_accent: text outside any element {}", J::str(&e.text.chars().take(40).collect::<String>()).repr()));
+        }
+        if let Some(a) = &e.repeats {
+            out.push(format!("single_accent: {} repeats the attribute {a}", e.id()));
+        }
+        for a in OTHER_COLOUR_ATTRS {
+            if let Some(v) = e.get(a) {
+                out.push(format!("single_accent: {} has {a}={}; the core writes colours only as fill/stroke", e.id(), J::str(v).repr()));
+            }
+        }
+        for a in COLOUR_ATTRS {
+            let Some(v) = e.get(a).filter(|v| *v != "none") else { continue };
+            if !canon_hex(v) {
+                out.push(format!(
+                    "single_accent: {} {a}={} is not spelled '#rrggbb' lowercase; the core writes no other spelling, so another writer drew it",
+                    e.id(),
+                    J::str(v).repr()
+                ));
+                continue;
+            }
+            if !roles.contains(&v) && !steps.contains(&v) {
+                out.push(format!("single_accent: {} {a}={v} is not in the palette file (roles, grounds, declared steps)", e.id()));
+            }
+            if !steps.contains(&v) && chroma(v) > NEUTRAL_CHROMA_MAX {
+                saturated.insert(v);
+            }
+            if a == "fill" && v == acc && e.get("data-paint").is_some() {
+                out.push(format!("single_accent: {} is painted by a scale and filled with the accent; emphasis on a painted mark is the outline", e.id()));
+            }
+        }
+    }
+    if saturated.len() > 1 || saturated.iter().any(|v| *v != acc) {
+        out.push(format!("single_accent: saturated colours {saturated:?} besides the declared steps; the page has one accent {acc}"));
+    }
+    out
+}
+
+/// The two colour checks on a node's SVG, run on every node the core draws: paint_matches_scale for its scale record,
+/// single_accent always.
+fn colour_problems(svg: &str, meta: &Meta) -> Vec<String> {
+    let pf = palettes();
+    let mut out = meta.paint.as_ref().map_or_else(Vec::new, |p| paint_problems(svg, p, pf));
+    out.extend(accent_problems(svg, &meta.paint.iter().collect::<Vec<_>>(), pf));
+    out
 }
 
 // ================================================================================================================
@@ -3930,7 +4163,7 @@ fn issue(spec: &J, inp: &J, reg: &J, ext: &[String], got: &Got, rpage: &J) -> Re
                 if paint_sid.is_some() {
                     let v = it.g("value");
                     let value = if v.is_null() || row(v)?.g("value").is_null() { None } else { Some(num(row(v)?)?) };
-                    cells.push(Cell { id: id.clone(), value, focus, text_id: None });
+                    cells.push(Cell { id: id.clone(), value, focus, ..Default::default() });
                 }
                 meta.marks.push((id, i, None, focus));
             } else {
@@ -3982,9 +4215,9 @@ fn issue(spec: &J, inp: &J, reg: &J, ext: &[String], got: &Got, rpage: &J) -> Re
             }
         }
         if let Some(sid) = paint_sid {
-            let texts: Vec<Option<(String, String)>> = cells
+            let texts: Vec<Option<(String, String, String)>> = cells
                 .iter()
-                .map(|c| meta.texts.iter().find(|t| t.0 == format!("{}/value_text", c.id)).and_then(|t| t.2.s().map(|s| (t.0.clone(), s.to_string()))))
+                .map(|c| meta.texts.iter().find(|t| t.0 == format!("{}/value_text", c.id)).and_then(|t| t.2.s().map(|s| (t.0.clone(), s.to_string(), t.1.clone()))))
                 .collect();
             meta.paint = Some(paint_record(sid, e, fr, cells, &texts, &words, inp)?);
         }
@@ -4415,6 +4648,11 @@ pub fn check_envelope(env: &J, reg: &J) -> Result<Vec<String>, String> {
     for (nid, req) in &reqs {
         out.extend(geometry_problems(nid, req, reply.g(nid), &metas[nid])?);
     }
+    if out.is_empty() {
+        for (nid, req) in &reqs {
+            out.extend(colour_problems(&svg(nid, req, reply.g(nid), &metas[nid]), &metas[nid]));
+        }
+    }
     Ok(out)
 }
 
@@ -4643,6 +4881,10 @@ pub fn node_fill(node: &str, tree: &Value, runtime: &std::path::Path) -> Result<
     }
     let mut out = derive(n, &inp, spec, &content);
     out.svg = svg(node, &reqs[0].1, replies.g(node), &metas[node]);
+    let colour = colour_problems(&out.svg, &metas[node]);
+    if !colour.is_empty() {
+        return Err(colour.iter().map(|e| format!("node {node}: recheck: {e}")).collect::<Vec<_>>().join("\n"));
+    }
     out.child_ms = child_ms as u64;
     out.recheck_ms = (before_child + after_child.elapsed()).as_millis() as u64;
     Ok(out)
@@ -5016,5 +5258,218 @@ mod tests {
             let errs = edit(&*f);
             assert!(errs.iter().any(|e| e.starts_with("C5 registry bars") && e.contains(why)), "{why}: {errs:?}");
         }
+    }
+
+    /// The prototype's record of a case (core_color.record): cell values (the printed ones when the scale prints), cuts
+    /// from the values or from the case's facts. The cut numbers of a facts case are injected here, in the test only;
+    /// the core resolves a cut only through its own facts (paint_record). `lenient` is the prototype's switched-off
+    /// cuts_of (mutate.py): quantile the distinct values from the second to the fifth, facts as written.
+    fn r11_record(case: &J, lenient: bool) -> Result<Paint, String> {
+        let (sc, dec) = (case.g("scale"), case.g("dec").num().unwrap() as usize);
+        let printed = sc.g("printed").truthy();
+        let cells: Vec<Cell> = case
+            .g("items")
+            .arr()
+            .iter()
+            .map(|it| {
+                let (id, v) = (st(it.g("id")), it.g("value").num());
+                Cell {
+                    value: v.map(|v| if printed { printed_value(v, dec) } else { v }),
+                    focus: it.g("focus").truthy(),
+                    text_id: printed.then(|| format!("{id}/t")),
+                    text: v.map(|v| py_fixed(v, dec)),
+                    src: it.g("src").s().map(str::to_string),
+                    id,
+                }
+            })
+            .collect();
+        let values: Vec<f64> = cells.iter().filter_map(|c| c.value).collect();
+        let facts = case.g("facts");
+        let cuts = if !lenient {
+            cuts_of(sc, &values, &|k| facts.g(k).num().ok_or_else(|| format!("'{k}'")), dec)?
+        } else if sc.g("cuts").g("rule").s() == Some("quantile") {
+            let mut d = values.clone();
+            d.sort_by(f64::total_cmp);
+            d.dedup();
+            d.into_iter().skip(1).take(4).collect()
+        } else {
+            sc.g("cuts").g("from").arr().iter().filter_map(|r| facts.g(st(r).get(5..).unwrap_or("")).num()).collect()
+        };
+        Ok(Paint::new(&st(case.g("sid")), sc, cells, cuts, dec, (0.0, 300.0), "\u{65e0}\u{6570}\u{636e}".into()))
+    }
+
+    /// The core's own drawing of a case (the prototype's render, cells 40 x 22 at their grid place), from the record.
+    fn r11_render(rec: &Paint, case: &J, pf: &J) -> String {
+        let ink = st(pf.g("roles").g("ink"));
+        let mut o = format!("<svg xmlns=\"http://www.w3.org/2000/svg\" data-node=\"{}\">", rec.sid);
+        for l in case.g("labels").arr() {
+            let _ = write!(o, "<text x=\"{}\" y=\"{}\" data-id=\"{}\" data-src=\"{}\" fill=\"{ink}\">{}</text>", st(l.g("x")), st(l.g("y")), st(l.g("id")), st(l.g("src")), st(l.g("text")));
+        }
+        for (c, it) in rec.cells.iter().zip(case.g("items").arr()) {
+            let (x, y) = (it.g("at").at(0).num().unwrap() * 40.0, it.g("at").at(1).num().unwrap() * 22.0);
+            let _ = write!(o, "<rect x=\"{}\" y=\"{}\" width=\"40\" height=\"22\" data-id=\"{}\"{}/>", num_attr(x), num_attr(y), c.id, rec.mark_attrs(c, pf));
+            if let (Some(tid), Some(t)) = (&c.text_id, &c.text) {
+                let fill = ink_on(rec.paint_of(c, pf).1, pf);
+                let src = c.src.clone().unwrap_or_default();
+                let _ = write!(o, "<text x=\"{}\" y=\"{}\" data-id=\"{tid}\" data-src=\"{src}\" fill=\"{fill}\">{t}</text>", num_attr(x + 20.0), num_attr(y + 15.0));
+            }
+        }
+        o.push_str(&rec.legend_svg(pf));
+        o.push_str("</svg>");
+        o
+    }
+
+    /// The prototype's check_node over one case file: palette_ok, then C5 for the entry and the tree's colours, then the
+    /// record, then paint_matches_scale and single_accent over the case's SVG (the core's own drawing when it has none).
+    /// `off` switches one of them off, as mutate.py does.
+    fn r11_check(c: &J, off: &str) -> Vec<String> {
+        let (case, pf) = (c.g("case"), c.g("palettes"));
+        if off != "palette_ok" {
+            let errs = palette_problems(pf);
+            if !errs.is_empty() {
+                return errs;
+            }
+        }
+        let mut errs = Vec::new();
+        if off != "registry" {
+            errs.extend(registry_scale_problems(&st(case.g("node")), case.g("registry"), pf));
+        }
+        if off != "tree" {
+            errs.extend(tree_colour_problems(case.g("tree"), pf));
+        }
+        if !errs.is_empty() {
+            return errs;
+        }
+        let rec = match r11_record(case, off == "cuts") {
+            Ok(r) => r,
+            Err(e) => return vec![format!("refused: {e}")],
+        };
+        // a must-pass case is drawn by the core (as the prototype's check_node draws it); a must-fail case brings its SVG
+        let given = c.g("svg").s().filter(|_| st(c.g("expect")) != "pass");
+        let svg = given.map_or_else(|| r11_render(&rec, case, pf), str::to_string);
+        let mut out = if off == "paint_matches_scale" { vec![] } else { paint_problems(&svg, &rec, pf) };
+        if off != "single_accent" {
+            out.extend(accent_problems(&svg, &[&rec], pf));
+        }
+        out
+    }
+
+    fn r11_as_expected(c: &J, errs: &[String]) -> bool {
+        let expect = st(c.g("expect"));
+        if expect == "pass" { errs.is_empty() } else { errs.iter().any(|e| e.contains(&expect)) }
+    }
+
+    /// The 35 R11 prototype cases (scripts/fixtures/r11, copied from the prototype's cases/): the 3 that must pass pass,
+    /// the 32 that must fail are each refused by the check the prototype names, and every failure line's head equals the
+    /// prototype's, case by case. The prototype's drawing of each passing case passes too.
+    #[test]
+    fn next_tree_r11_cases_equal_the_prototype() {
+        let (mut off, mut pass, mut fail) = (Vec::new(), 0, 0);
+        for (id, c) in r11_cases() {
+            let errs = r11_check(&c, "none");
+            let proto: Vec<String> = c.g("got").arr().iter().map(st).collect();
+            if !r11_as_expected(&c, &errs) || heads(&errs) != heads(&proto) {
+                off.push(format!("{id}: rust {:?}; prototype {:?}; first lines {:?}", heads(&errs), heads(&proto), errs.iter().take(3).collect::<Vec<_>>()));
+            }
+            if st(c.g("expect")) == "pass" {
+                pass += 1;
+                let (case, pf) = (c.g("case"), c.g("palettes"));
+                let rec = r11_record(case, false).unwrap();
+                let drawn = st(c.g("svg"));
+                let mut errs = paint_problems(&drawn, &rec, pf);
+                errs.extend(accent_problems(&drawn, &[&rec], pf));
+                assert!(errs.is_empty(), "{id}: the prototype's drawing: {errs:?}");
+            } else {
+                fail += 1;
+            }
+        }
+        println!("next_tree r11 cases: {}/{} equal to the prototype", pass + fail - off.len(), pass + fail);
+        assert!(off.is_empty(), "{}", off.join("\n"));
+        assert_eq!((pass, fail), (3, 32));
+    }
+
+    /// Each check is load-bearing (mutate.py): switched off, it turns the prototype's count of cases red (palette_ok 7,
+    /// C5 1, tree 2, paint_matches_scale 11, single_accent 8, the cut refusals 3).
+    #[test]
+    fn next_tree_r11_each_colour_check_turns_cases_red_when_off() {
+        let cases = r11_cases();
+        let red = |off: &str| -> Vec<String> { cases.iter().filter(|(_, c)| !r11_as_expected(c, &r11_check(c, off))).map(|(id, _)| id.clone()).collect() };
+        assert_eq!(red("none"), Vec::<String>::new());
+        let mut counts = Vec::new();
+        for off in ["palette_ok", "registry", "tree", "paint_matches_scale", "single_accent", "cuts"] {
+            let r = red(off);
+            println!("next_tree r11 {off} off: {} red {r:?}", r.len());
+            counts.push(r.len());
+        }
+        assert_eq!(counts, [7, 1, 2, 11, 8, 3]);
+    }
+
+    /// The SVG reader takes only the core's form: a tag in another form or text outside a text element is stray, a
+    /// repeated attribute is named, and the colour checks refuse each.
+    #[test]
+    fn next_tree_r11_svg_reader_takes_only_the_core_form() {
+        let els = svg_elements("<svg a=\"1\"><g><rect x=\"0\" fill=\"#ffffff\"/><text data-id=\"t\">6.9</text></g></svg>");
+        assert_eq!(els.iter().map(|e| e.tag.as_str()).collect::<Vec<_>>(), ["svg", "g", "rect", "text"]);
+        assert_eq!((els[2].get("fill"), els[3].text.as_str()), (Some("#ffffff"), "6.9"));
+        for (bad, why) in [
+            ("<svg><rect x=0 fill=\"#ffffff\"/></svg>", "text outside any element"),
+            ("<svg><g>stray</g></svg>", "text outside any element"),
+            ("<svg><rect fill=\"#ffffff\" fill=\"#ff00ff\"/></svg>", "repeats the attribute fill"),
+            ("<svg><style>rect{fill:red}</style></svg>", "holds a <style>"),
+            ("<svg><rect stop-color=\"#ffffff\"/></svg>", "has stop-color="),
+        ] {
+            let errs = accent_problems(bad, &[], palettes());
+            assert!(errs.iter().any(|e| e.contains(why)), "{bad}: {errs:?}");
+        }
+    }
+
+    /// A painted node's SVG as the core draws it passes both colour checks; one cell drawn a class up, or the legend
+    /// without its first cut, is refused (the production path: content, issue, svg, then the checks node_fill runs).
+    #[test]
+    fn next_tree_r11_the_core_drawing_passes_and_a_changed_one_is_refused() {
+        let quantile = J::obj_of(vec![("rule", J::str("quantile")), ("k", J::Int(3))]);
+        for printed in [false, true] {
+            let (drawn, meta) = painted_svg(&painted_bars(quantile.clone(), printed)).unwrap();
+            assert_eq!(colour_problems(&drawn, &meta), Vec::<String>::new(), "{drawn}");
+            let p = meta.paint.as_ref().unwrap();
+            let c = p.cells.iter().find(|c| bin_of(c.value.unwrap(), &p.cuts) == 0).unwrap();
+            let (tag, fill) = p.paint_of(c, palettes());
+            let up = p.steps(palettes())[1];
+            let moved = drawn.replace(&format!("data-paint=\"s1:{tag}\" fill=\"{fill}\""), &format!("data-paint=\"s1:1\" fill=\"{up}\""));
+            assert_ne!(moved, drawn);
+            assert!(colour_problems(&moved, &meta).iter().any(|e| e.starts_with("paint_matches_scale")), "{moved}");
+            let cut = drawn.find("data-id=\"legend/s1/cut1\"").unwrap();
+            let start = drawn[..cut].rfind("<text").unwrap();
+            let end = cut + drawn[cut..].find("</text>").unwrap() + "</text>".len();
+            let cutless = format!("{}{}", &drawn[..start], &drawn[end..]);
+            assert!(colour_problems(&cutless, &meta).iter().any(|e| e.contains("legend cut texts")), "{cutless}");
+        }
+    }
+
+    /// The node SVG the core draws for every plan B fixture whose requests it issues (30 fixtures, 72 node SVGs, any reply)
+    /// is byte for byte what it was before R11
+    /// (base f76026792f1e86f1ac7d2211293629449973c299): a mark no scale paints is drawn as it was.
+    #[test]
+    fn next_tree_r11_unpainted_svg_is_the_base_bytes() {
+        let want = read("prototype-results.json");
+        let (mut all, mut n) = (String::new(), 0);
+        for (name, _) in want.g("fixtures").obj() {
+            let env = read(name);
+            let reg = reg_of(&env);
+            let inp = env.g("input");
+            let spec = inp.g("page_spec");
+            let ext: Vec<String> = env.g("external").arr().iter().map(st).collect();
+            let Some(content) = content_problems(spec, inp, &ext, &reg).1 else { continue };
+            let Ok((reqs, metas)) = issue(spec, inp, &reg, &ext, &content.got, &content.rpage) else { continue };
+            let reply = env.g("reply");
+            for (nid, req) in &reqs {
+                all.push_str(&svg(nid, req, reply.g(nid), &metas[nid]));
+                all.push('\n');
+            }
+            n += 1;
+        }
+        println!("next_tree r11 unpainted svg: {n} fixtures, {} svgs, sha256 {}", all.lines().count(), sha256_hex(&all));
+        // measured at R11 part 1, whose svg() is the base's
+        assert_eq!((n, all.lines().count(), sha256_hex(&all).as_str()), (30, 72, "5b8f40da4292fc31fddf397676d21db42425b601dff8f705320c4208e36c1a4d"));
     }
 }
