@@ -17,7 +17,7 @@ circle on the frame's edge looks inward), its leader crossing no other leader; e
 Frame.unlabeled, never put on a circle, and in Frame.dropped
 (code, "no free place for the label"), which run.py sends back so layer 1 keeps it in the page's ledger.
 Colours: --accent the page's focus (the highlight knob: the place the page's dek names, its name in bold), NOTED_INK the other
-places the page's notes name (the noted knob, their names in bold too), CIRCLE_INK every other circle, --t-dark at LAND_OPACITY the land, --bg its outline, --t-title the labels' names and numbers (VALUE_INK).
+places the page's notes name (the noted knob, their names in bold too), CIRCLE_INK every other circle, --t-dark at LAND_OPACITY the land, --bg its outline and every circle's edge (CIRCLE_EDGE), --t-title the labels' names and numbers (VALUE_INK).
 Circles drawn at r_max that still overlap by over half the smaller one in more pairs than max_overlaps (default 0) after the nudge are
 drawn smaller: r_max a knob step (2 px) less each round, down to the knob's floor (12), every radius (still by area), the nudge and the
 overlaps again; the scale drawn is Frame.r_used (r_max when that held), the one any legend or note of the circles' size must read: the
@@ -65,6 +65,11 @@ CIRCLE_INK = "--t-sec"
 # A circle the page's notes name besides its focus (noted): a dark grey of the page's, darker than CIRCLE_INK, never the accent.
 NOTED_INK = "--t-body"
 DOT_R = 1.6  # the dot at a nudged circle's true point
+# Every circle's edge, px, in the page ground (--bg, the land's outline): drawn biggest first, a smaller circle that overlaps a
+# bigger one keeps its outline on top of it, so a cluster of one grey still reads as separate circles (proportional symbols
+# drawn large to small with a contrasting outline, as thematic cartography draws overlapping symbols). Stroke only: a circle's
+# place, radius, fill and claimed box are as before.
+CIRCLE_EDGE = 1
 BELOW_GAP = 0.3  # of the label size: a label set below its leader starts this far under the leader's end (a 13 px name's glyph box
 # reaches about 0.26 of its size above the box tw lays out; the page's line check, 2 px in from that glyph box, would meet the leader)
 A1, A2, A3, A4 = 1.340264, -0.081106, 0.000893, 0.003796
@@ -190,7 +195,7 @@ def cl_bubbles(f, occ):
         if not hasattr(occ, "circles"): occ.circles = []
         occ.circles.append((i["_xy"][0], i["_xy"][1], i["_r"], sq))  # the circle itself, for a leader that may pass its square's corner
         ink = "--accent" if i["code"] in f.hl else NOTED_INK if i["code"] in f.noted else CIRCLE_INK
-        o.append(f'<circle cx="{i["_xy"][0]:.1f}" cy="{i["_xy"][1]:.1f}" r="{i["_r"]:.1f}" fill="var({ink})" fill-opacity="{k("opacity")}" data-code="{esc(i["code"])}"/>')
+        o.append(f'<circle cx="{i["_xy"][0]:.1f}" cy="{i["_xy"][1]:.1f}" r="{i["_r"]:.1f}" fill="var({ink})" fill-opacity="{k("opacity")}" stroke="var(--bg)" stroke-width="{CIRCLE_EDGE}" data-code="{esc(i["code"])}"/>')
     dots = []  # a circle nudged off its point keeps a dot where the place is; no label, leader or note may cover it
     for i in f.items:
         if math.dist(i["_xy"], i["_at"]) > 0.5:

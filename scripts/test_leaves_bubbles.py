@@ -184,6 +184,13 @@ def map_set(values, dec, point_of, names):
     return rows, items, {c: names[c] for c in values}
 
 
+def edgeless(svg):
+    """The svg with each circle's edge in the page ground (bubbles.CIRCLE_EDGE) taken out, exactly once per circle it marks."""
+    edge = f' stroke="var(--bg)" stroke-width="{bubbles.CIRCLE_EDGE}" data-code='
+    assert svg.count(edge) == svg.count(" data-code="), "a circle without its edge"
+    return svg.replace(edge, " data-code=")
+
+
 def box_pad(items, pad=4.0):
     """The extent layer 1 gave before: the points' box, a fixed pad of degrees past it."""
     lo, la = [i["lonlat"][0] for i in items], [i["lonlat"][1] for i in items]
@@ -198,6 +205,10 @@ EU2 = dict(CY=31.0, PT=24.6, FI=23.9, DK=20.8, ES=20.6, EE=21.0, MT=20.1, RO=19.
 NAMES2 = json.load(open(os.path.join(ASSETS, "economy-names.json"), encoding="utf-8"))["economies"]
 ISO3 = {e["iso2"]: e["iso3"] for e in NAMES2}
 ZH2 = {e["iso2"]: e["zh"] for e in NAMES2}
+# the q6 stand-in page's map (asylum applicants to the EU by citizenship, 2025, the 20 its table kept; test-only copies of that
+# run's values), iso2 codes
+Q6 = dict(AF=112310, BD=37350, CD=17675, CO=21715, EG=25310, ER=12570, GE=15130, GN=14275, HT=14050, IQ=12485, MA=20205, ML=19910,
+          PE=20150, PK=19250, SD=17375, SO=18340, SY=43290, TR=31010, UA=23935, VE=90950)
 
 
 class MapExtent(unittest.TestCase):
@@ -253,6 +264,27 @@ class MapExtent(unittest.TestCase):
         (code, bx), = f.label_boxes
         c = next(i for i in f.items if i["code"] == code)
         self.assertLess(bx[2], c["_xy"][0])  # the label ends left of the circle's centre, toward the frame's middle
+
+    def test_circles_that_overlap_keep_an_edge_in_the_page_ground(self):
+        # two map shapes whose circles still overlap on the scale drawn (by less than half the smaller, as the leaf allows): the
+        # q5 page's eight 65+ shares (2025, Monaco, Italy, Greece and Portugal in one European cluster) and the q6 page's 20
+        # asylum citizenships (2025, Turkey, Syria, Iraq and Georgia in one cluster). Overlapping circles of one grey read as one
+        # blob (both stand-in image reviews said a reader cannot tell them apart): every circle is drawn biggest first with an
+        # edge in the page ground (--bg, the land's own outline colour) at least CIRCLE_EDGE px, so each smaller circle on top
+        # keeps its outline. Only the circles' stroke: their place, radius, fill and every label are as before (the pins below)
+        for tag, values, dec, point_of, names in (("q5", EU, 2, POINT.get, ZH3), ("q6", Q6, 0, lambda c: POINT[ISO3[c]], ZH2)):
+            rows, items, labels = map_set(values, dec, point_of, names); setup(rows, labels)
+            ext = layer1_extent({i["code"]: i["lonlat"] for i in items}, {c: (v, labels[c]) for c, v in values.items()}, dec)
+            f = bubbles.Frame({"data": {"items": items, "ext": ext}, "style": {"bubbles": dict(run.MAP_STYLE["bubbles"])}})
+            svg = bubbles.cl_bubbles(f, prod.Occ())
+            drawn = [(float(x), float(y), float(r), rest) for x, y, r, rest in re.findall(r'<circle cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)"([^>]*)data-code=', svg)]
+            self.assertEqual(len(drawn), len(values), tag)
+            over = [(a, b) for i, a in enumerate(drawn) for b in drawn[i + 1:] if math.dist(a[:2], b[:2]) < a[2] + b[2]]
+            self.assertGreater(len(over), 0, f"{tag}: the shape has no overlapping circles to test")
+            self.assertEqual([r for _, _, r, _ in drawn], sorted((r for _, _, r, _ in drawn), reverse=True), tag)
+            for x, y, r, rest in drawn:
+                edge = re.search(r'stroke="var\(--bg\)" stroke-width="([\d.]+)"', rest)
+                self.assertTrue(edge and float(edge.group(1)) >= bubbles.CIRCLE_EDGE >= 1, f"{tag}: the circle at {x},{y} has no edge in the page ground: {rest!r}")
 
     def test_circles_that_overlap_at_r_max_are_drawn_smaller_until_they_clear(self):
         # the q5 stand-in page's map (the eight highest 65+ shares, 2025, as its table held them, at Natural Earth label points, on
@@ -317,7 +349,9 @@ class MapExtent(unittest.TestCase):
     def test_maps_that_clear_at_r_max_draw_as_before(self):
         # the EU table above, a q1-style EU-27 column map, the q5 change page's world map and the world set: each clears at r_max,
         # r_used is the knob's, and the layer is byte for byte the one drawn before the smaller scales were tried but for its circles'
-        # fill (its sha then, with every circle out of the focus in CIRCLE_INK where it was in the accent)
+        # fill (its sha then, with every circle out of the focus in CIRCLE_INK where it was in the accent) and the circles' edge in
+        # the page ground (CIRCLE_EDGE, taken out before the sha: it is a stroke only, so the pins also hold every place, radius,
+        # fill and label as they were before it)
         q1 = dict(SE=66.4, FI=50.8, DK=44.9, LV=43.2, EE=38.5, PT=35.2, AT=33.8, LT=31.9, HR=28.1, RO=25.8, SI=25.1, EL=25.3, ES=24.9, FR=22.2,
                   DE=21.5, IT=19.6, BG=22.5, CZ=18.6, PL=16.6, SK=17.0, CY=20.2, NL=17.4, HU=15.2, MT=15.1, IE=15.3, BE=14.7, LU=11.6)  # test-only
         iso3, zh2 = dict(ISO3, EL="GRC"), dict(ZH2, EL=ZH2["GR"])
@@ -328,9 +362,9 @@ class MapExtent(unittest.TestCase):
             rows, items, labels = map_set(values, dec, point_of, names); setup(rows, labels)
             ext = layer1_extent({i["code"]: i["lonlat"] for i in items}, {c: (v, labels[c]) for c, v in values.items()}, dec)
             f = bubbles.Frame({"data": {"items": items, "ext": ext}, "style": {"bubbles": dict(run.MAP_STYLE["bubbles"])}})
-            self.assertEqual((f.r_used, hashlib.sha256(bubbles.cl_bubbles(f, prod.Occ()).encode()).hexdigest(), f.dropped), (22, pin, []), tag)
+            self.assertEqual((f.r_used, hashlib.sha256(edgeless(bubbles.cl_bubbles(f, prod.Occ())).encode()).hexdigest(), f.dropped), (22, pin, []), tag)
         setup(W_ROWS, W_LABELS)
-        self.assertEqual(hashlib.sha256(bubbles.draw(hero(W_DATA, highlight="CHN"))[0].encode()).hexdigest(), "256649e06393c4a99e9fecdc520ea52d76802183541bdf7e68cc53c632bf3251")
+        self.assertEqual(hashlib.sha256(edgeless(bubbles.draw(hero(W_DATA, highlight="CHN"))[0]).encode()).hexdigest(), "256649e06393c4a99e9fecdc520ea52d76802183541bdf7e68cc53c632bf3251")
 
 
 # The key's fixture: a q1-style EU-27 column map (test-only values), each circle's value printed bare from its family member
