@@ -2863,6 +2863,16 @@ pub fn registry_problems(reg: &J) -> Vec<String> {
             continue;
         }
         let p = format!("C5 registry {name}");
+        out.extend(registry_scale_problems(name, e, palettes()));
+        if let Some(sid) = e.g("marks").g("paint").g("scale").s() {
+            if e.g("marks").g("per").s() != Some("item") {
+                out.push(format!("{p} marks.paint: scale {sid} paints one mark per item"));
+            }
+            let lg = reg.g("frames").g(&st(e.g("frame"))).g("legend");
+            if lg.arr().len() != 2 || !lg.arr().iter().all(J::finite) {
+                out.push(format!("{p} frame {}: a node painted by scale {sid} needs the legend's place [x, y] in its frame", e.g("frame").repr()));
+            }
+        }
         for c in e.g("checks").arr() {
             let k = st(c.g("kind"));
             if !CHECK_KINDS.contains(&k.as_str()) {
@@ -3215,6 +3225,271 @@ fn tree_colour_problems(spec: &J, pf: &J) -> Vec<String> {
     out
 }
 
+/// The scale kinds, cut rules and paint roles the core recomputes (batch 1: a threshold scale of a value).
+const SCALE_KINDS: [&str; 1] = ["threshold"];
+const CUT_RULES: [&str; 2] = ["quantile", "facts"];
+const PAINT_ROLES: [&str; 2] = ["base", "accent"];
+
+/// C5 for a node's scales and paint: a threshold scale of the value with cuts the core computes (quantile k, or 2..8
+/// facts) and a palette of the palette file; paint one {scale} of the entry or one {role}; no literal colour anywhere.
+fn registry_scale_problems(name: &str, e: &J, pf: &J) -> Vec<String> {
+    let p = format!("C5 registry {name}");
+    let mut out = Vec::new();
+    for (path, x) in walk(e, "$") {
+        if x.s().is_some_and(colour_literal) {
+            out.push(format!("{p} {path}: a literal colour {}; colours come only from the palette file", x.repr()));
+        }
+    }
+    let scales = e.g("scales");
+    let sorted_keys = |o: &J| {
+        let mut k: Vec<String> = o.obj().iter().map(|(k, _)| k.clone()).collect();
+        k.sort();
+        k
+    };
+    for (sid, sc) in scales.obj() {
+        let q = format!("{p} scale {sid}");
+        let mut want = vec!["cuts", "encodes", "kind", "no_data", "palette"];
+        if sc.has("printed") {
+            want.push("printed");
+        }
+        if !sc.is_obj() || sorted_keys(sc) != want {
+            out.push(format!("{q}: fields {}; a threshold scale has kind, encodes, cuts, palette, no_data, printed", J::strs(&sorted_keys(sc)).repr()));
+            continue;
+        }
+        if !sc.g("kind").s().is_some_and(|k| SCALE_KINDS.contains(&k)) || sc.g("encodes").s() != Some("value") || sc.g("no_data").s() != Some("nodata") {
+            out.push(format!("{q}: kind/encodes/no_data {}/{}/{} not one the core recomputes", sc.g("kind").repr(), sc.g("encodes").repr(), sc.g("no_data").repr()));
+        }
+        if sc.has("printed") && !matches!(sc.g("printed"), J::Bool(_)) {
+            out.push(format!("{q}: printed is true or false"));
+        }
+        let cu = sc.g("cuts");
+        let rule = cu.g("rule").s();
+        let from = cu.g("from").arr();
+        if !cu.is_obj() || !rule.is_some_and(|r| CUT_RULES.contains(&r)) {
+            out.push(format!("{q}: cuts {}: rule is quantile or facts", cu.repr()));
+        } else if rule == Some("quantile") && (sorted_keys(cu) != ["k", "rule"] || !matches!(cu.g("k"), J::Int(k) if (K_MIN as i64..=K_MAX as i64).contains(k))) {
+            out.push(format!("{q}: quantile cuts take one integer k in {K_MIN}..{K_MAX}"));
+        } else if rule == Some("facts")
+            && (sorted_keys(cu) != ["from", "rule"]
+                || !cu.g("from").is_arr()
+                || !(K_MIN - 1..=K_MAX - 1).contains(&from.len())
+                || !from.iter().all(|r| r.s().is_some_and(|r| r.starts_with("fact:"))))
+        {
+            out.push(format!("{q}: facts cuts are {}..{} fact: references", K_MIN - 1, K_MAX - 1));
+        }
+        if !sc.g("palette").s().is_some_and(|x| pf.g("sequential").has(x)) {
+            out.push(format!("{q}: palette {} is not in the palette file", sc.g("palette").repr()));
+        }
+    }
+    if let Some(paint) = e.g("marks").get("paint") {
+        let ok = paint.obj().len() == 1
+            && (paint.g("scale").s().is_some_and(|s| scales.has(s)) || paint.g("role").s().is_some_and(|r| PAINT_ROLES.contains(&r)));
+        if !ok {
+            out.push(format!("{p} marks.paint {}: one {{scale: id}} of this entry or one {{role: base|accent}}", paint.repr()));
+        }
+    }
+    out
+}
+
+/// The text colour the core prints on a painted mark: ink or white, whichever has the higher WCAG contrast.
+fn ink_on<'p>(fill: &str, pf: &'p J) -> &'p str {
+    let (ink, white) = (pf.g("roles").g("ink").s().unwrap_or(""), pf.g("roles").g("white").s().unwrap_or(""));
+    if contrast(fill, ink) >= contrast(fill, white) { ink } else { white }
+}
+
+/// A painted mark under 3:1 on any page ground gets the edge outline (WCAG SC 1.4.11).
+fn needs_edge(fill: &str, pf: &J) -> bool {
+    pf.g("grounds").arr().iter().filter_map(J::s).any(|g| contrast(fill, g) < NONTEXT_MIN)
+}
+
+/// A number as printed with `dec` decimals, read back.
+fn printed_value(v: f64, dec: usize) -> f64 {
+    py_fixed(v, dec).parse().unwrap_or(v)
+}
+
+/// The scale's cuts, ascending. quantile: nearest rank on the classified values, cut j = the ceil(j n / k)-th (from 0)
+/// of the sorted values, so every cut is a value of the data; equal cuts merge, a cut equal to the least value is dropped
+/// (its class would be empty). facts: each cut a fact the core recomputes (`fact` resolves only the core's own facts),
+/// strictly ascending. Fewer than K_MIN classes is refused.
+fn cuts_of(sc: &J, values: &[f64], fact: &dyn Fn(&str) -> Result<f64, String>, dec: usize) -> Result<Vec<f64>, String> {
+    let cu = sc.g("cuts");
+    let mut cuts: Vec<f64> = Vec::new();
+    if cu.g("rule").s() == Some("quantile") {
+        let mut s = values.to_vec();
+        s.sort_by(f64::total_cmp);
+        let (n, k) = (s.len(), cu.g("k").num().unwrap_or(0.0) as usize);
+        if n < k {
+            return Err(format!("too_few_values: {n} values for {k} classes"));
+        }
+        for j in 1..k {
+            let c = s[(j * n).div_ceil(k)];
+            if c > s[0] && cuts.last().is_none_or(|l| c > *l) {
+                cuts.push(c);
+            }
+        }
+    } else {
+        for r in cu.g("from").arr().iter().map(st) {
+            let v = r.strip_prefix("fact:").and_then(|k| fact(k).ok()).filter(|v| v.is_finite());
+            let v = v.ok_or_else(|| format!("cut {r}: not a fact the core resolves to a number"))?;
+            cuts.push(if sc.g("printed").truthy() { printed_value(v, dec) } else { v });
+        }
+        if cuts.windows(2).any(|w| w[0] >= w[1] || w[0].is_nan()) {
+            return Err(format!("cuts_not_ascending: [{}]", cuts.iter().map(|c| py_float(*c)).collect::<Vec<_>>().join(", ")));
+        }
+    }
+    if cuts.len() + 1 < K_MIN {
+        return Err(format!("too_few_classes: {} after equal cuts merge", cuts.len() + 1));
+    }
+    Ok(cuts)
+}
+
+/// The class of a value: the number of cuts at or below it (classes closed on the left; the top class holds the maximum).
+fn bin_of(v: f64, cuts: &[f64]) -> usize {
+    cuts.iter().filter(|c| **c <= v).count()
+}
+
+/// One mark a scale paints, as the core keeps it: its id, the value it classifies (None: no row or a null value; the
+/// printed number when the scale prints), its focus, and the id of the text it prints inside the mark.
+#[derive(Clone, Debug, Default)]
+pub struct Cell {
+    pub id: String,
+    pub value: Option<f64>,
+    pub focus: bool,
+    pub text_id: Option<String>,
+}
+
+/// The core's record of a node painted by a scale: its cells, the cuts the core computed and their printed texts (the
+/// cut facts `<sid>.cut.<j>`, j = 1..k-1), where the legend goes and the word it prints for no data. Rendering and the
+/// page checks both start from this record and the palette file; nothing a renderer wrote is read back as truth.
+#[derive(Clone, Debug, Default)]
+pub struct Paint {
+    pub sid: String,
+    pub palette: String,
+    pub cells: Vec<Cell>,
+    pub cuts: Vec<f64>,
+    pub cut_texts: Vec<String>,
+    pub legend: (f64, f64),
+    pub nodata_word: String,
+}
+
+impl Paint {
+    fn new(sid: &str, sc: &J, cells: Vec<Cell>, cuts: Vec<f64>, dec: usize, legend: (f64, f64), nodata_word: String) -> Paint {
+        let cut_texts = cuts.iter().map(|c| py_fixed(*c, dec)).collect();
+        Paint { sid: sid.to_string(), palette: st(sc.g("palette")), cells, cuts, cut_texts, legend, nodata_word }
+    }
+    fn k(&self) -> usize {
+        self.cuts.len() + 1
+    }
+    fn any_missing(&self) -> bool {
+        self.cells.iter().any(|c| c.value.is_none())
+    }
+    /// The palette's table for this scale's number of classes (empty when the file has none).
+    fn steps<'p>(&self, pf: &'p J) -> Vec<&'p str> {
+        pf.g("sequential").g(&self.palette).g(&self.k().to_string()).arr().iter().filter_map(J::s).collect()
+    }
+    /// A cell's class tag and colour, recomputed from its value and the cuts: `nodata` and the nodata role, or the step.
+    fn paint_of<'p>(&self, c: &Cell, pf: &'p J) -> (String, &'p str) {
+        match c.value {
+            None => ("nodata".into(), pf.g("roles").g("nodata").s().unwrap_or("")),
+            Some(v) => {
+                let b = bin_of(v, &self.cuts);
+                (b.to_string(), self.steps(pf).get(b).copied().unwrap_or(""))
+            }
+        }
+    }
+    /// The attributes the core writes on a painted mark: its class tag, its colour, and its outline (the accent for a
+    /// focus, else the edge when the colour is under 3:1 on a ground).
+    fn mark_attrs(&self, c: &Cell, pf: &J) -> String {
+        let (tag, fill) = self.paint_of(c, pf);
+        let r = pf.g("roles");
+        let stroke = if c.focus {
+            format!(" stroke=\"{}\" stroke-width=\"2\"", st(r.g("accent")))
+        } else if needs_edge(fill, pf) {
+            format!(" stroke=\"{}\" stroke-width=\"0.5\"", st(r.g("edge")))
+        } else {
+            String::new()
+        };
+        format!(" data-paint=\"{}:{tag}\" fill=\"{fill}\"{stroke}", xml(&self.sid))
+    }
+    /// The legend: the k steps in order, the k-1 cut texts from the cut facts, and the nodata swatch with its word
+    /// exactly when a cell has no value.
+    fn legend_svg(&self, pf: &J) -> String {
+        let (x, y) = self.legend;
+        let (sid, ink) = (xml(&self.sid), st(pf.g("roles").g("ink")));
+        let edge = |fill: &str| if needs_edge(fill, pf) { format!(" stroke=\"{}\" stroke-width=\"0.5\"", st(pf.g("roles").g("edge"))) } else { String::new() };
+        let mut o = format!("<g data-legend=\"{sid}\">");
+        let steps = self.steps(pf);
+        for (i, fill) in steps.iter().enumerate() {
+            let at = num_attr(x + i as f64 * 30.0);
+            let _ = write!(o, "<rect x=\"{at}\" y=\"{}\" width=\"30\" height=\"10\" data-id=\"legend/{sid}/{i}\" data-paint=\"{sid}:{i}\" fill=\"{fill}\"{}/>", num_attr(y), edge(fill));
+        }
+        for (j, t) in self.cut_texts.iter().enumerate().map(|(j, t)| (j + 1, t)) {
+            let at = num_attr(x + j as f64 * 30.0);
+            let _ = write!(o, "<text x=\"{at}\" y=\"{}\" data-id=\"legend/{sid}/cut{j}\" data-src=\"fact:{sid}.cut.{j}\" fill=\"{ink}\">{}</text>", num_attr(y + 22.0), xml(t));
+        }
+        if self.any_missing() {
+            let nd = st(pf.g("roles").g("nodata"));
+            let at = x + steps.len() as f64 * 30.0;
+            let _ = write!(o, "<rect x=\"{}\" y=\"{}\" width=\"30\" height=\"10\" data-id=\"legend/{sid}/nodata\" data-paint=\"{sid}:nodata\" fill=\"{nd}\"{}/>", num_attr(at + 20.0), num_attr(y), edge(nd.as_str()));
+            let _ = write!(
+                o,
+                "<text x=\"{}\" y=\"{}\" data-id=\"legend/{sid}/nodata/t\" data-src=\"word:legend.no_data\" fill=\"{ink}\">{}</text>",
+                num_attr(at + 55.0),
+                num_attr(y + 10.0),
+                xml(&self.nodata_word)
+            );
+        }
+        o.push_str("</g>");
+        o
+    }
+}
+
+/// The core's record of a node its registry paints by scale `sid`: each cell's value from its own row (no row or a null
+/// value is no data), in the units its fmt prints (the printed number when the scale prints); the cuts from those values
+/// or from the core's own facts (Compute), never from a number the page tree wrote; the legend's place from the frame.
+/// `texts`: per cell, the id and source of the number it prints (value_text), which sits in the mark when the scale is
+/// printed.
+fn paint_record(sid: &str, e: &J, fr: &J, mut cells: Vec<Cell>, texts: &[Option<(String, String)>], words: &Words, inp: &J) -> Result<Paint, String> {
+    let sc = e.g("scales").g(sid);
+    let printed = sc.g("printed").truthy();
+    for (c, t) in cells.iter_mut().zip(texts) {
+        c.text_id = t.as_ref().filter(|_| printed).map(|t| t.0.clone());
+    }
+    let cut_refs: Vec<String> = sc.g("cuts").g("from").arr().iter().map(st).collect();
+    let mut fmts: Vec<String> = Vec::new();
+    for k in texts.iter().flatten().map(|t| &t.1).chain(&cut_refs).filter_map(|s| s.strip_prefix("fact:")) {
+        let q = words.query(k).1;
+        let f = st(q.g("fmt"));
+        if !q.is_null() && !fmts.contains(&f) {
+            fmts.push(f);
+        }
+    }
+    let m = match fmts.as_slice() {
+        [f] => words.fmts.g(f),
+        _ => &NULL,
+    };
+    let (Some(dec), Some(scale)) = (m.g("dec").num(), m.get("scale").map_or(Some(1.0), J::num)) else {
+        return Err(format!("scale {sid}: its marks and cuts print with the fmts {}; a scale prints with one fmt that has a dec", J::strs(&fmts).repr()));
+    };
+    let dec = dec as usize;
+    if printed && texts.iter().all(Option::is_none) {
+        return Err(format!("scale {sid} prints its numbers but no mark prints one"));
+    }
+    for c in &mut cells {
+        c.value = c.value.map(|v| if printed { printed_value(v * scale, dec) } else { v * scale });
+    }
+    let values: Vec<f64> = cells.iter().filter_map(|c| c.value).collect();
+    let fact = |k: &str| -> Result<f64, String> { Ok(words.val.val(words.query(k).0)? * scale) };
+    let cuts = cuts_of(sc, &values, &fact, dec).map_err(|e| format!("refused: {e}"))?;
+    let nodata_word = if cells.iter().any(|c| c.value.is_none()) {
+        inp.g("word_table").get("legend.no_data").map(st).ok_or_else(|| format!("scale {sid}: a mark has no value and the word table has no legend.no_data"))?
+    } else {
+        String::new()
+    };
+    let lg = fr.g("legend");
+    Ok(Paint::new(sid, sc, cells, cuts, dec, (lg.at(0).num().unwrap_or(0.0), lg.at(1).num().unwrap_or(0.0)), nodata_word))
+}
+
 // ================================================================================================================
 // The core's content: items expanded from the binding (C2), the words it prints and their boxes, the map projection,
 // the value-determined geometry, the requests it issues.
@@ -3386,7 +3661,8 @@ impl<'a> Words<'a> {
         let rfacts = rpage.g("facts").g("facts");
         Words { fmts: spec.g("facts").g("fmts"), rfacts, inp, got, val: Compute::new(rfacts, inp.g("rows").arr()) }
     }
-    fn fact(&self, key: &str, part: Option<&str>) -> Result<String, String> {
+    /// A printed fact key's base (less a final .n or .t) and its query (its own, or its family's).
+    fn query<'k>(&self, key: &'k str) -> (&'k str, &'a J) {
         let base = match key.rsplit_once('.') {
             Some((head, "n" | "t")) => head,
             _ => key,
@@ -3396,6 +3672,10 @@ impl<'a> Words<'a> {
             .flatten()
             .find(|q| q.truthy())
             .unwrap_or(&NULL);
+        (base, q)
+    }
+    fn fact(&self, key: &str, part: Option<&str>) -> Result<String, String> {
+        let (base, q) = self.query(key);
         if part == Some("t") {
             let t = if q.g("to").truthy() { q.g("to") } else { q.g("time") };
             return Ok(if t.is_null() { "None".into() } else { st(t) });
@@ -3600,6 +3880,8 @@ pub struct Meta {
     pub marks: Vec<(String, usize, Option<String>, bool)>,
     pub texts: Vec<(String, String, J)>,
     pub tol_px: f64,
+    /// The scale record when the registry paints the node's marks by a scale (R11).
+    pub paint: Option<Paint>,
 }
 
 impl Meta {
@@ -3630,6 +3912,8 @@ fn issue(spec: &J, inp: &J, reg: &J, ext: &[String], got: &Got, rpage: &J) -> Re
         let shape = e.g("marks").g("shape").clone();
         let per_item = e.g("marks").g("per").s() == Some("item");
         let tsize = e.g("texts").g("size").num().ok_or("texts.size")?;
+        let paint_sid = e.g("marks").g("paint").g("scale").s();
+        let mut cells: Vec<Cell> = Vec::new();
         for (i, it) in n.g("items").arr().iter().enumerate() {
             let focus = it.g("focus").truthy();
             if per_item {
@@ -3643,6 +3927,11 @@ fn issue(spec: &J, inp: &J, reg: &J, ext: &[String], got: &Got, rpage: &J) -> Re
                     m.set("pin", J::Arr(p.iter().map(|v| J::Num(py_round(*v, 3))).collect()));
                 }
                 marks.push(m);
+                if paint_sid.is_some() {
+                    let v = it.g("value");
+                    let value = if v.is_null() || row(v)?.g("value").is_null() { None } else { Some(num(row(v)?)?) };
+                    cells.push(Cell { id: id.clone(), value, focus, text_id: None });
+                }
                 meta.marks.push((id, i, None, focus));
             } else {
                 let total = num(row(it.g("total"))?)?;
@@ -3691,6 +3980,13 @@ fn issue(spec: &J, inp: &J, reg: &J, ext: &[String], got: &Got, rpage: &J) -> Re
                 texts.push(J::obj_of(vec![("id", J::str(&tid)), ("w", J::Num(py_round(tw(&s, sz), 3))), ("h", J::Num(py_round(sz * 1.15, 3))), ("size", size.clone())]));
                 meta.texts.push((tid, s, t.g("runs").clone()));
             }
+        }
+        if let Some(sid) = paint_sid {
+            let texts: Vec<Option<(String, String)>> = cells
+                .iter()
+                .map(|c| meta.texts.iter().find(|t| t.0 == format!("{}/value_text", c.id)).and_then(|t| t.2.s().map(|s| (t.0.clone(), s.to_string()))))
+                .collect();
+            meta.paint = Some(paint_record(sid, e, fr, cells, &texts, &words, inp)?);
         }
         meta.tol_px = e.g("marks").g("tol_px").num().ok_or("tol_px")?;
         reqs.push((
@@ -4048,8 +4344,11 @@ fn num_attr(x: f64) -> String {
 }
 
 /// The node's SVG as the core draws it: each shape at the reply's coordinates, its emphasis from the core's record; each
-/// text at the reply's position, its words and source from the core's record. Nothing the node sent is printed.
+/// text at the reply's position, its words and source from the core's record. Nothing the node sent is printed. A mark a
+/// scale paints takes its class tag, colour and outline from the core's scale record and the palette file, the text it
+/// prints the ink for that colour, and the legend follows the texts; a mark no scale paints is drawn as before R11.
 pub fn svg(nid: &str, req: &J, reply: &J, meta: &Meta) -> String {
+    let pf = palettes();
     let (w, h) = (st(req.g("frame").g("w")), st(req.g("frame").g("h")));
     let mut out = format!("<svg xmlns=\"http://www.w3.org/2000/svg\" data-node=\"{}\" width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\">", xml(nid));
     for (id, _, part, focus) in &meta.marks {
@@ -4062,7 +4361,14 @@ pub fn svg(nid: &str, req: &J, reply: &J, meta: &Meta) -> String {
             Some("circle") => format!("<circle cx=\"{}\" cy=\"{}\" r=\"{}\"", a("cx"), a("cy"), a("r")),
             _ => format!("<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\"", a("x1"), a("y1"), a("x2"), a("y2")),
         };
-        let _ = write!(out, "{el} class=\"{class}\" data-id=\"{}\"{part}/>", xml(id));
+        match meta.paint.as_ref().and_then(|p| p.cells.iter().find(|c| c.id == *id).map(|c| (p, c))) {
+            Some((p, c)) => {
+                let _ = write!(out, "{el} class=\"mark paint\" data-id=\"{}\"{part}{}/>", xml(id), p.mark_attrs(c, pf));
+            }
+            None => {
+                let _ = write!(out, "{el} class=\"{class}\" data-id=\"{}\"{part}/>", xml(id));
+            }
+        }
     }
     for (id, printed, src) in &meta.texts {
         let t = reply.g("texts").g(id);
@@ -4070,9 +4376,11 @@ pub fn svg(nid: &str, req: &J, reply: &J, meta: &Meta) -> String {
             J::Str(s) => s.clone(),
             other => other.dump(),
         };
+        let ink = meta.paint.as_ref().and_then(|p| p.cells.iter().find(|c| c.text_id.as_deref() == Some(id.as_str())).map(|c| (p, c)));
+        let ink = ink.map_or(String::new(), |(p, c)| format!(" fill=\"{}\"", ink_on(p.paint_of(c, pf).1, pf)));
         let _ = write!(
             out,
-            "<text x=\"{}\" y=\"{}\" text-anchor=\"{}\" data-id=\"{}\" data-src=\"{}\">{}</text>",
+            "<text x=\"{}\" y=\"{}\" text-anchor=\"{}\" data-id=\"{}\" data-src=\"{}\"{ink}>{}</text>",
             num_attr(coord(t, "x")),
             num_attr(coord(t, "y")),
             xml(&st(t.g("anchor"))),
@@ -4080,6 +4388,9 @@ pub fn svg(nid: &str, req: &J, reply: &J, meta: &Meta) -> String {
             xml(&src),
             xml(printed)
         );
+    }
+    if let Some(p) = &meta.paint {
+        out.push_str(&p.legend_svg(pf));
     }
     out.push_str("</svg>");
     out
@@ -4597,5 +4908,113 @@ mod tests {
         }
         assert!(seen.len() >= 4, "{seen:?}");
         assert!(seen.iter().all(|(_, v)| *v == acc), "{acc}: {seen:?}");
+    }
+
+    /// Plan B's registry with q1's bars painted by a threshold scale (test only: no production node is painted).
+    fn painted_bars(cuts: J, printed: bool) -> J {
+        let mut o = read("registry-b.json");
+        let sc = J::obj_of(vec![
+            ("kind", J::str("threshold")),
+            ("encodes", J::str("value")),
+            ("cuts", cuts),
+            ("palette", J::str("seq-slate")),
+            ("no_data", J::str("nodata")),
+            ("printed", J::Bool(printed)),
+        ]);
+        let bars = o.get_mut("nodes").and_then(|n| n.get_mut("bars")).unwrap();
+        bars.set("scales", J::obj_of(vec![("s1", sc)]));
+        bars.get_mut("marks").unwrap().set("paint", J::obj_of(vec![("scale", J::str("s1"))]));
+        o.get_mut("frames").and_then(|f| f.get_mut("chart")).unwrap().set("legend", J::Arr(vec![J::Int(30), J::Int(228)]));
+        o
+    }
+
+    /// q1 (pos-q1-b) through the core with `overlay`: the bars' SVG and record, or every failure line.
+    fn painted_svg(overlay: &J) -> Result<(String, Meta), String> {
+        let env = read("pos-q1-b.json");
+        let reg = load_registry(overlay);
+        let inp = env.g("input");
+        let spec = inp.g("page_spec");
+        let ext: Vec<String> = env.g("external").arr().iter().map(st).collect();
+        let (errs, content) = content_problems(spec, inp, &ext, &reg);
+        let content = content.ok_or_else(|| errs.join("\n"))?;
+        let (reqs, metas) = issue(spec, inp, &reg, &ext, &content.got, &content.rpage)?;
+        let (nid, req) = reqs.iter().find(|(k, _)| k == "bars").unwrap();
+        Ok((svg(nid, req, env.g("reply").g(nid), &metas[nid]), metas[nid].clone()))
+    }
+
+    /// A node the registry paints by a scale: each mark's class and colour recomputed by the core from its own row and the
+    /// cuts (quantile: values of the data; facts: the core's own facts), the legend with the cut facts, and a printed
+    /// scale's in-mark numbers in the ink for their colour. A cut that is no fact the core computes is refused.
+    #[test]
+    fn next_tree_r11_a_painted_node_takes_its_colours_from_the_core() {
+        let pf = palettes();
+        let quantile = J::obj_of(vec![("rule", J::str("quantile")), ("k", J::Int(3))]);
+        let (svg_q, meta) = painted_svg(&painted_bars(quantile.clone(), false)).unwrap();
+        let p = meta.paint.as_ref().unwrap();
+        let mut vals: Vec<f64> = p.cells.iter().filter_map(|c| c.value).collect();
+        vals.sort_by(f64::total_cmp);
+        assert_eq!((vals.len(), p.cuts.clone()), (4, vec![vals[2], vals[3]]));
+        let steps = p.steps(pf);
+        assert_eq!(steps.len(), 3);
+        for c in &p.cells {
+            let b = bin_of(c.value.unwrap(), &p.cuts);
+            assert!(svg_q.contains(&format!("data-id=\"{}\" data-paint=\"s1:{b}\" fill=\"{}\"", c.id, steps[b])), "{}: {svg_q}", c.id);
+        }
+        assert!(svg_q.contains("<g data-legend=\"s1\">") && svg_q.matches("data-src=\"fact:s1.cut.").count() == 2, "{svg_q}");
+        assert!(!svg_q.contains("legend/s1/nodata") && !svg_q.contains("class=\"mark base\"") && !svg_q.contains("class=\"mark accent\""), "{svg_q}");
+        // not printed in the marks: the value texts keep the page's own colour
+        let body = &svg_q[..svg_q.find("<g data-legend").unwrap()];
+        assert!(!body.split("<text").skip(1).any(|t| t[..t.find('>').unwrap()].contains(" fill=")), "{svg_q}");
+
+        let (svg_p, meta) = painted_svg(&painted_bars(quantile, true)).unwrap();
+        let p = meta.paint.as_ref().unwrap();
+        for c in &p.cells {
+            let ink = ink_on(p.paint_of(c, pf).1, pf);
+            let tid = c.text_id.clone().unwrap();
+            let tail = &svg_p[svg_p.find(&format!("data-id=\"{tid}\"")).unwrap()..];
+            assert!(tail[..tail.find('>').unwrap()].ends_with(&format!(" fill=\"{ink}\"")), "{tid}: {svg_p}");
+        }
+
+        let facts = |from: &[&str]| J::obj_of(vec![("rule", J::str("facts")), ("from", J::strs(from))]);
+        let (_, meta) = painted_svg(&painted_bars(facts(&["fact:val.BE.n", "fact:val.FR.n"]), false)).unwrap();
+        let p = meta.paint.as_ref().unwrap();
+        let classes: Vec<usize> = p.cells.iter().map(|c| bin_of(c.value.unwrap(), &p.cuts)).collect();
+        assert_eq!((p.cuts.len(), classes), (2, vec![2, 2, 2, 1]), "{:?} {:?}", p.cuts, p.cells);
+        for (from, why) in [(&["fact:val.FR.n", "fact:val.BE.n"][..], "cuts_not_ascending"), (&["fact:val.BE.n", "fact:99"][..], "cut fact:99: not a fact")] {
+            let errs = painted_svg(&painted_bars(facts(from), false)).unwrap_err();
+            assert!(errs.starts_with("refused: ") && errs.contains(why), "{from:?}: {errs}");
+        }
+    }
+
+    /// C5 for a painted node: scale fields, cut rules, palette ids and paint are closed; a scale paints one mark per item
+    /// and its frame gives the legend's place; no literal colour anywhere in the entry.
+    #[test]
+    fn next_tree_r11_registry_refuses_a_scale_the_core_cannot_recompute() {
+        let quantile = |k: i64| J::obj_of(vec![("rule", J::str("quantile")), ("k", J::Int(k))]);
+        assert_eq!(registry_problems(&load_registry(&painted_bars(quantile(3), true))), Vec::<String>::new());
+        let edit = |f: &dyn Fn(&mut J)| {
+            let mut o = painted_bars(quantile(3), true);
+            f(o.get_mut("nodes").and_then(|n| n.get_mut("bars")).unwrap());
+            registry_problems(&load_registry(&o))
+        };
+        fn scale(b: &mut J, k: &str, v: J) {
+            b.get_mut("scales").and_then(|s| s.get_mut("s1")).unwrap().set(k, v);
+        }
+        let cases: Vec<(&str, Box<dyn Fn(&mut J)>)> = vec![
+            ("quantile cuts take one integer k", Box::new(move |b| scale(b, "cuts", quantile(10)))),
+            ("rule is quantile or facts", Box::new(|b| scale(b, "cuts", J::obj_of(vec![("rule", J::str("jenks"))])))),
+            ("facts cuts are 2..8 fact: references", Box::new(|b| scale(b, "cuts", J::obj_of(vec![("rule", J::str("facts")), ("from", J::Arr(vec![J::Int(1), J::Int(5)]))])))),
+            ("is not in the palette file", Box::new(|b| scale(b, "palette", J::str("viridis")))),
+            ("a threshold scale has kind", Box::new(|b| scale(b, "domain", J::str("zero_to_max")))),
+            ("not one the core recomputes", Box::new(|b| scale(b, "kind", J::str("linear")))),
+            ("a literal colour", Box::new(|b| b.get_mut("marks").unwrap().set("paint", J::obj_of(vec![("fill", J::str("#ff00ff"))])))),
+            ("one {scale: id} of this entry", Box::new(|b| b.get_mut("marks").unwrap().set("paint", J::obj_of(vec![("scale", J::str("s2"))])))),
+            ("paints one mark per item", Box::new(|b| b.get_mut("marks").unwrap().set("per", J::str("part")))),
+            ("needs the legend's place", Box::new(|b| b.set("frame", J::str("rows")))),
+        ];
+        for (why, f) in cases {
+            let errs = edit(&*f);
+            assert!(errs.iter().any(|e| e.starts_with("C5 registry bars") && e.contains(why)), "{why}: {errs:?}");
+        }
     }
 }
