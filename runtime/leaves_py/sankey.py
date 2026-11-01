@@ -57,6 +57,7 @@ prod.KNOBS[NODE] = dict(
     min_share=(0.03, (0, 0.2, 0.005), "a node under this share of the total merges into the other node (needs two); layer 1 merges"),
     hairline=(0.6, (0, 2, 0.1), "thinnest band drawn in px (geometry only; the data are not changed)"),
     highlight=("", None, "code of the one node whose bands are drawn in the accent; none = all grey"),
+    finding=("auto", ("auto", "none"), "auto: the finding over the two columns (wbkit.two_sided) when the data hold one: its subject in the accent, a note per column, its headline the page's title; none: no finding"),
     tol=(1e-5, (0, 0.001, 1e-6), "conservation tolerance, as a share of the grand total"))
 
 
@@ -144,6 +145,17 @@ class Frame:
         for side, nodes, small in (("source", f.src_nodes, f.src_small), ("target", f.tgt_nodes, f.tgt_small)):
             for code, _ in nodes:
                 if code != "_other": f.names[(side, code)] = K.named(code, f.kinds[side])
+        # the finding (P5): picked over the drawn nodes after every check above, so a picture refused before is refused alike;
+        # its subject is the accent, and an accent layer 1 names that is not the subject refuses (the headline names the subject)
+        f.finding = None
+        if k("finding") == "auto":
+            vt = lambda side, c: f.other[side]["value_text"] if c == "_other" else txt[c]
+            sides = [(f.kinds[side], [(c, v, vt(side, c)) for c, v in nodes], f.grand) for side, nodes in (("source", f.src_nodes), ("target", f.tgt_nodes))]
+            f.finding = K.two_sided(sides, d.get("unit") or [])
+        if f.finding:
+            s = f.finding["subject"]
+            if f.hl and f.hl != {s}: raise Refused(f"sankey: highlight {sorted(f.hl)[0]} is not the finding's subject {s}; the accent marks the node the headline names")
+            f.hl = {s}
         f.top, f.H = 54, 0
 
 
@@ -195,11 +207,30 @@ def cl_sankey(f, occ):
     for (side, c), (y0, y1) in pos.items():
         x = x_src if side == "source" else x_tgt
         hot = c in f.hl
-        o.append(f'<rect x="{x:.1f}" y="{y0:.2f}" width="{nw}" height="{max(y1 - y0, hl):.2f}" fill="{"var(--accent)" if hot else "var(--t-sec)"}"/>')
+        dc = f' data-code="{esc(c)}"' if f.hl and c != "_other" else ""  # the entity a mark draws, where the picture has an accent
+        o.append(f'<rect x="{x:.1f}" y="{y0:.2f}" width="{nw}" height="{max(y1 - y0, hl):.2f}" fill="{"var(--accent)" if hot else "var(--t-sec)"}"{dc}/>')
         inner, plain = labels[(side, c)]; yc = (y0 + y1) / 2 + size * 0.35
         lx, anc = (x - 6, "end") if side == "source" else (x + nw + 6, "start")
         o.append(K.txt(B, lx, yc, size, "var(--t-title)", inner, tw(plain, size), anchor=anc, tag=f"{side} {c}"))
     y = Hmax
+    # the finding's notes (P5), one row each under the columns: a leader from the node's outer edge down to the row, the
+    # note beside it; each states one relation of two ledger entries, marked for the page's comparison check (data-cmp)
+    notes = (f.finding or {}).get("notes") or []
+    if notes:
+        o.append('<g data-notes="finding">')
+        for n in notes:
+            y += size * 1.5
+            side = ("source", "target")[n["side"]]; y0, y1 = pos[(side, n["code"])]; ym = (y0 + y1) / 2; yl = y - size * 0.35
+            inner, plain = K.finding_html(n["segs"]), K.finding_plain(n["segs"])
+            rel, a_src, b_src = n["cmp"]
+            mark = f' data-cmp="{rel}" data-a="{esc(a_src)}" data-b="{esc(b_src)}"'
+            if side == "source":
+                lx = x_src - 3; pts = f"{lx:.1f},{ym:.2f} {lx:.1f},{yl:.2f} {lx + 5:.1f},{yl:.2f}"; tx, anc = lx + 8, "start"
+            else:
+                lx = x_tgt + nw + 3; pts = f"{lx:.1f},{ym:.2f} {lx:.1f},{yl:.2f} {lx - 5:.1f},{yl:.2f}"; tx, anc = lx - 8, "end"
+            o.append(f'<polyline points="{pts}" fill="none" stroke="var(--t-title)" stroke-width="0.8"/>')
+            o.append(K.txt(B, tx, y, size, "var(--t-title)", inner, tw(plain, size), anchor=anc, tag=f"note {side} {n['code']}", style=mark))
+        o.append('</g>')
     for side, small in (("source", f.src_small), ("target", f.tgt_small)):
         if not small: continue
         spec = f.other[side]; head = K.segs(spec["members_head"], f"other_{side} members_head")

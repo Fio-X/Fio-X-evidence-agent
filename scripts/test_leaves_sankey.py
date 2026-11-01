@@ -160,11 +160,29 @@ class Picture(unittest.TestCase):
         self.assertTrue(sizes and min(sizes) >= 11, sizes)
 
     def test_highlight_draws_one_codes_bands_in_the_accent(self):
-        svg, _, _ = draw(hero(DATA, highlight="G3000"))
+        # with no finding (knob finding=none) layer 1's highlight is the accent, as before the finding came in
+        svg, _, _ = draw(hero(DATA, highlight="G3000", finding="none"))
         self.assertEqual(check_svg(svg), [])
         n = len(re.findall(r'data-flow="G3000>[^"]*"', svg))
         self.assertGreater(n, 0)
         self.assertEqual(len(re.findall(r'fill="var\(--accent\)" fill-opacity="0\.7"', svg)), n)
+        self.assertNotIn("data-notes", svg)
+        # with a finding the accent is its subject: a highlight naming another node refuses, naming the subject draws alike
+        with self.assertRaisesRegex(Refused, "is not the finding's subject"):
+            draw(hero(DATA, highlight="G3000"))
+        self.assertEqual(draw(hero(DATA, highlight="O4000XBIO"))[0], self.svg)
+
+    def test_the_finding_marks_its_subject_and_notes_each_side(self):
+        f = sankey.Frame(hero(DATA))
+        self.assertEqual(f.finding["subject"], "O4000XBIO")
+        self.assertEqual(re.findall(r'fill="var\(--accent\)" data-code="([^"]+)"', self.svg), ["O4000XBIO"])
+        notes = re.search(r'<g data-notes="finding">.*?</g>', self.svg, re.S).group(0)
+        marks = re.findall(r'data-cmp="next" data-a="([^"]+)" data-b="([^"]+)"', notes)
+        self.assertEqual(len(marks), len(f.finding["notes"]))
+        self.assertEqual(len(re.findall(r"<text\b", notes)), len(marks))
+        for a, b in marks:
+            self.assertIn(f'data-src="{a}"', notes); self.assertIn(f'data-src="{b}"', notes)
+        self.assertEqual(draw(hero(DATA, finding="none"))[0].count("data-code="), 0)
 
 
 class Refusals(unittest.TestCase):

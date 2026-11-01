@@ -259,6 +259,88 @@ def line(x0, y0, x1, y1, stroke="var(--t-sec)", w=0.6, op=0.35):
     return f'<line x1="{x0:.1f}" y1="{y0:.1f}" x2="{x1:.1f}" y2="{y1:.1f}" stroke="{stroke}" stroke-width="{w}" stroke-opacity="{op}"/>'
 
 
+# ---- the page's finding over two-sided totals (P5 prototype) -------------------------------------------------------------
+# A data shape, not a chart: a leaf whose picture has two sides of named nodes, each node's value a ledger entry (a flow's
+# sources and destinations; later a composition's parts and wholes), hands its nodes to two_sided and draws what comes back:
+# the subject (one node, in the accent), the headline the page prints as its title, one short note per side comparing its
+# first node with its second. Program rules only, no model word, no topic word, and no word of its own: every name is the
+# request's label marked with its name row, every number a ledger entry, the words the word table's (FINDING_WORDS: keys of
+# words.zh.json that exist today, so the table and the flow's copy count do not grow).
+#   - a side takes part when it has two or more nodes besides a merged one, its largest above its second, the two printing
+#     differently (a value another node prints alike is no one's own), and no merged node at or above its largest;
+#   - the subject: the largest node of the side whose largest holds the greater share of its side's sum (the first side on a
+#     tie); no side taking part, no finding (the page keeps its title, no accent, no note);
+#   - the headline: the subject's name, its value and the unit's first segment, then the word of FINDING_WORDS["above"];
+#     it states max (data-cmp max, data-a its value); the page check derives the set it is the max of from the ledger
+#     (every value fact of the same table, time, format and filter dimension), never from the leaf;
+#   - a note per side taking part, at its largest node: name, value, the same word, and in FINDING_WORDS["paren"] the second's
+#     name and value; it states next (data-cmp next, data-a the first, data-b the second of that derived set).
+FINDING_WORDS = {"above": "column.note.vs_next", "paren": "paren"}
+FINDING_RELATION = {"headline": "max", "note": "next"}
+
+
+def finding_side_top(nodes):
+    """(first, second) of a side that takes part, else None; nodes [(code, value, text_src)], "_other" the merged node."""
+    r = sorted([n for n in nodes if n[0] != "_other"], key=lambda n: (-n[1], n[0]))
+    if len(r) < 2: return None
+    a, b = r[0], r[1]
+    if not a[1] > b[1] or FX.text(a[2]) == FX.text(b[2]): return None
+    if any(n[0] == "_other" and n[1] >= a[1] for n in nodes): return None
+    return a, b
+
+
+def _finding_word(key, **parts):
+    """The word table's entry as segments, each {placeholder} the given segments; a digit in its words refuses."""
+    t = WD.WORDS[key]; out = []; at = 0
+    for m in re.finditer(r"\{(\w+)\}", t):
+        if m.start() > at: out.append({"w": t[at:m.start()]})
+        if m.group(1) not in parts: raise Refused(f"the word {key} is given no {m.group(1)}")
+        out += parts[m.group(1)]; at = m.end()
+    if at < len(t): out.append({"w": t[at:]})
+    if any(FX.digit(s["w"]) for s in out if "w" in s): raise Refused(f"the word {key} holds a digit")
+    return out
+
+
+def two_sided(sides, unit):
+    """sides: [(name kind, nodes [(code, value, text_src)], side sum)] in the picture's order; unit: the picture's unit
+    segments. None, or {"side", "subject", "headline": segs, "cmp": ("max", a_src, [srcs]), "notes": [{"side", "code",
+    "segs", "cmp": ("gt", a_src, b_src)}]}; segs {"w"}, {"src", "bold"}, {"name", "kind"}, and the unit's first segment."""
+    tops = [finding_side_top(nodes) for _, nodes, _ in sides]
+    shares = [(t[0][1] / s if t and s > 0 else -1.0) for t, (_, _, s) in zip(tops, sides)]
+    if max(shares) < 0: return None
+    i = shares.index(max(shares)); kind, nodes, _ = sides[i]; a = tops[i][0]
+    nm = lambda code, k: {"name": code, "kind": k}
+    u = list(unit[:1])
+    head = [nm(a[0], kind), {"w": " "}, {"src": a[2], "bold": True}] + ([{"w": " "}] + u if u else []) + _finding_word(FINDING_WORDS["above"])
+    notes = []
+    for j, ((k, _, _), t) in enumerate(zip(sides, tops)):
+        if not t: continue
+        x, y = t
+        segs = [nm(x[0], k), {"w": " "}, {"src": x[2], "bold": True}] + _finding_word(FINDING_WORDS["above"]) + \
+            _finding_word(FINDING_WORDS["paren"], v=[nm(y[0], k), {"w": " "}, {"src": y[2], "bold": True}])
+        notes.append({"side": j, "code": x[0], "segs": segs, "cmp": (FINDING_RELATION["note"], x[2], y[2])})
+    return {"side": i, "subject": a[0], "headline": head, "cmp": (FINDING_RELATION["headline"], a[2], [n[2] for n in nodes]), "notes": notes}
+
+
+def finding_plain(segs):
+    """A finding's segments (wbkit.two_sided) as printed: words, a node's name as named() prints it, a src's ledger text."""
+    return "".join(s["w"] if "w" in s else named(s["name"], s["kind"])[1] if "name" in s else FX.text(s["src"]) for s in segs)
+
+
+def finding_html(segs, tag="tspan"):
+    """A finding's segments marked: in svg (tspan) a name as named() marks it and a value bold, both by their rows; in html
+    (span) the same marks on spans, a value in <b class="n"> as FX.fill prints a number."""
+    out = []
+    for s in segs:
+        if "w" in s: out.append(html.escape(s["w"], quote=False))
+        elif "name" in s:
+            inner, nm = named(s["name"], s["kind"])
+            out.append(inner if tag == "tspan" else f'<span data-src="{esc(name_row(s["name"], s["kind"]))}">{esc(nm)}</span>')
+        elif s.get("bold"): out.append(f'<tspan font-weight="700">{FX.entry(s["src"], "tspan", None)}</tspan>' if tag == "tspan" else f'<b class="n">{FX.entry(s["src"], "span", None)}</b>')
+        else: out.append(FX.entry(s["src"], tag, None))
+    return "".join(out)
+
+
 def check_codes(node, v, known):
     """A knob's comma list of codes must name drawn codes."""
     bad = [c for c in v.split(",") if c and c not in known]

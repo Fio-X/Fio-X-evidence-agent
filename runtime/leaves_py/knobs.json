@@ -1331,6 +1331,15 @@
      "what": "code of the one node whose bands are drawn in the accent; none = all grey"
     },
     {
+     "name": "finding",
+     "default": "auto",
+     "options": [
+      "auto",
+      "none"
+     ],
+     "what": "auto: the finding over the two columns (wbkit.two_sided) when the data hold one: its subject in the accent, a note per column, its headline the page's title; none: no finding"
+    },
+    {
      "name": "tol",
      "default": 1e-05,
      "min": 0,
