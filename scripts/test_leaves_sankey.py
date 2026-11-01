@@ -172,6 +172,38 @@ class Picture(unittest.TestCase):
             draw(hero(DATA, highlight="G3000"))
         self.assertEqual(draw(hero(DATA, highlight="O4000XBIO"))[0], self.svg)
 
+    def test_a_side_claims_only_what_the_page_check_holds_over_its_whole_set(self):
+        # the page check derives each side's set from the fact definitions, the merged node in it: a side claims (headline
+        # max, note next) only when its first is above every node and its second above every node after it, both printing
+        # differently; two data shapes, each side failing either way and the finding moving or going
+        def sides(*cols):
+            rows = [{"src": f"fact:t.{c}", "text": t} for col in cols for c, _, t in col]
+            K.setup(rows, {}, run.tables)
+            return [("k", [(c, v, f"fact:t.{c}") for c, v, _ in col], sum(v for _, v, _ in col)) for col in cols]
+        fuels = [("A", 60.0, "60"), ("B", 6.0, "6"), ("C", 5.0, "5"), ("_other", 8.7, "8.7")]  # three merged at 2.9% above B
+        sectors = [("H", 52.0, "52"), ("T", 49.0, "49"), ("I", 48.0, "48"), ("_other", 3.0, "3")]
+        self.assertIsNone(K.finding_side_top(sides(fuels)[0][1]))
+        f = K.two_sided(sides(fuels, sectors), [])
+        self.assertEqual((f["side"], f["subject"], [n["code"] for n in f["notes"]]), (1, "H", ["H"]))
+        alike = [("H", 52.0, "52"), ("T", 49.01, "49.0"), ("I", 49.0, "49.0"), ("_other", 3.0, "3")]  # second prints as third
+        self.assertIsNone(K.finding_side_top(sides(alike)[0][1]))
+        self.assertIsNone(K.two_sided(sides(fuels, alike), []))
+        # a second shape, no merged node: groups into countries
+        groups = [("REN", 912.0, "912"), ("FOS", 700.0, "700"), ("NUC", 690.0, "690")]  # second above third, printing apart
+        geos = [("DE", 500.0, "500"), ("FR", 480.0, "480"), ("ES", 480.0, "480")]  # second prints as third
+        self.assertEqual([n[0] for n in K.finding_side_top(sides(groups)[0][1])], ["REN", "FOS"])
+        self.assertIsNone(K.finding_side_top(sides(geos)[0][1]))
+        f = K.two_sided(sides(groups, geos), [])
+        self.assertEqual((f["subject"], [n["code"] for n in f["notes"]]), ("REN", ["REN"]))
+        self.assertIsNone(K.finding_side_top(sides([("A", 5.0, "5"), ("_other", 9.0, "9"), ("B", 1.0, "1")])[0][1]))
+        # the drawn finding over this file's data holds over each side's whole set
+        K.setup(ROWS, NAMES, run.tables)
+        fr = sankey.Frame(hero(DATA))
+        for side, nodes in (("source", fr.src_nodes), ("target", fr.tgt_nodes)):
+            got = K.finding_side_top([(c, v, fr.other[side]["value_text"] if c == "_other" else DATA["node_text"][c]) for c, v in nodes])
+            if got and any(n["code"] == got[0][0] for n in fr.finding["notes"]):
+                self.assertTrue(all(got[1][1] > v for c, v in nodes if c not in (got[0][0], got[1][0])))
+
     def test_the_finding_marks_its_subject_and_notes_each_side(self):
         f = sankey.Frame(hero(DATA))
         self.assertEqual(f.finding["subject"], "O4000XBIO")

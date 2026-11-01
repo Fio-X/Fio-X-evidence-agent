@@ -1210,6 +1210,53 @@ mod tests {
         alone("F28 the accent on a code the h1 does not name", &on_target, &facts);
     }
 
+    /// The leaf's side rule (wbkit.finding_side_top) and this check agree: a side whose merged node is above its second named
+    /// node, or whose second prints like its third, claims nothing; the page the leaf then draws (the finding on the other
+    /// side, or that side's note left out) passes, and the page it drew before the rule matched the check is refused.
+    #[test]
+    fn a_side_the_leaf_leaves_out_is_one_the_check_would_refuse() {
+        let (spec, facts, ledger) = flow_request();
+        let page = flow_page();
+        let check = |html: &str, facts: &[Fact], ledger: &BTreeMap<String, String>| -> Vec<String> {
+            let mut off = check_relations(html, ledger, &spec, facts);
+            off.extend(check_accent_named(html));
+            off
+        };
+        let note_of = |html: &str, a: &str| -> String {
+            let at = html.find(&format!("data-a=\"fact:{a}.n\" data-b=")).unwrap();
+            let start = html[..at].rfind("<text").unwrap();
+            let end = at + html[at..].find("</text>").unwrap() + "</text>".len();
+            html[start..end].to_string()
+        };
+        // the merged sources above the second named source: the sources claim nothing, the destinations take the finding
+        let merged: Vec<Fact> =
+            facts.iter().cloned().map(|f| if f.key == "from_other" { Fact { v: 46000.0, ..f } } else { f }).collect();
+        let mut merged_ledger = ledger.clone();
+        merged_ledger.insert("fact:from_other.n".into(), "46,000.00".into());
+        assert!(!check(&page, &merged, &merged_ledger).is_empty(), "the sources' note: its second is below the merged node");
+        let homes = format!(
+            "<span data-cmp=\"max\" data-a=\"fact:to.FC_OTH_HH_E.n\">{} <span data-src=\"name:unit_short_zh:KTOE\">ktoe</span>\u{ff0c}{}</span>",
+            named_value("span", "nrg_bal", "FC_OTH_HH_E", "Homes", "to.FC_OTH_HH_E", "52,455.83"),
+            relation_words("max")[0]
+        );
+        let h1 = page[page.find("<h1>").unwrap() + 4..page.find("</h1>").unwrap()].to_string();
+        let tra = "<rect x=\"990.4\" y=\"185\" width=\"14\" height=\"103\" fill=\"var(--t-sec)\" data-code=\"FC_TRA_E\"/>";
+        let to_side = page
+            .replacen(&h1, &homes, 1)
+            .replacen(&note_of(&page, "from.O4000XBIO"), "", 1)
+            .replacen("fill=\"var(--accent)\" data-code=\"O4000XBIO\"", "fill=\"var(--t-sec)\" data-code=\"O4000XBIO\"", 1)
+            .replacen(tra, &format!("{tra}<rect x=\"990.4\" y=\"60\" width=\"14\" height=\"120\" fill=\"var(--accent)\" data-code=\"FC_OTH_HH_E\"/>"), 1);
+        assert!(!to_side.contains("data-a=\"fact:from.O4000XBIO.n\""));
+        assert_eq!(check(&to_side, &merged, &merged_ledger), Vec::<String>::new());
+        // the second destination prints like the third: the destinations claim nothing, the sources keep the finding
+        let mut alike = ledger.clone();
+        alike.insert("fact:to.FC_IND_E.n".into(), "49,522.11".into());
+        assert!(!check(&page, &facts, &alike).is_empty(), "the destinations' note: its second prints like the third");
+        let from_side = page.replacen(&note_of(&page, "to.FC_OTH_HH_E"), "", 1);
+        assert!(!from_side.contains("data-a=\"fact:to.FC_OTH_HH_E.n\""));
+        assert_eq!(check(&from_side, &facts, &alike), Vec::<String>::new());
+    }
+
     /// The measure for P5 (run with --ignored): both new checks over published pages (P5_PAGES, one path per line) find
     /// nothing; with P5_PAGE and P5_REQUEST (a page and the request.json it was checked against) the page passes them too.
     #[test]

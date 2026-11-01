@@ -280,13 +280,15 @@ FINDING_RELATION = {"headline": "max", "note": "next"}
 
 
 def finding_side_top(nodes):
-    """(first, second) of a side that takes part, else None; nodes [(code, value, text_src)], "_other" the merged node."""
-    r = sorted([n for n in nodes if n[0] != "_other"], key=lambda n: (-n[1], n[0]))
-    if len(r) < 2: return None
-    a, b = r[0], r[1]
-    if not a[1] > b[1] or FX.text(a[2]) == FX.text(b[2]): return None
-    if any(n[0] == "_other" and n[1] >= a[1] for n in nodes): return None
-    return a, b
+    """(first, second) of a side that takes part, else None; nodes [(code, value, text_src)], "_other" the merged node.
+    The side's set is every node, the merged one included, as the page check (next_ledger.rs relation_holds) derives it from
+    the fact definitions: the first is above every other node and prints differently from each, the second above every node
+    after it and prints differently from each, and both are named nodes; anything less and the side claims nothing."""
+    r = sorted(nodes, key=lambda n: (-n[1], n[0]))
+    if len(r) < 2 or "_other" in (r[0][0], r[1][0]): return None
+    above = lambda x, rest: all(x[1] > n[1] and FX.text(x[2]) != FX.text(n[2]) for n in rest)
+    if not above(r[0], r[1:]) or not above(r[1], r[2:]): return None
+    return r[0], r[1]
 
 
 def _finding_word(key, **parts):
