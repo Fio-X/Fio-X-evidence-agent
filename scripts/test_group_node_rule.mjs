@@ -16,7 +16,10 @@
 //     and the leaf registry (runtime/leaves_py/knobs.json binding) binds the same nodes
 //     external, each binding "external" (absent is rust);
 //   - src/next_tree.rs is the visual group's and under cross_calls.rust_rule_next.files (its calls are held by
-//     scripts/test_group_module_calls.mjs).
+//     scripts/test_group_module_calls.mjs);
+//   - not_nodes is exactly NOT_NODES_ALLOWED below, the two program steps the owner exempted (2026-11-01): one more, one
+//     fewer or one swapped is red. A new exemption needs the owner, not an edit of this list. When the leaves move (P6),
+//     move bake.py and knobs.py out of runtime/leaves_py/ and drop them from this list and from not_nodes.
 // Self-tests: the real inputs are clean, and each of the must-fail copies below is red with its own reason.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -28,6 +31,8 @@ const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
 const readJson = (rel) => JSON.parse(readFileSync(join(REPO, rel), "utf8"));
 const PARAMS = ["files", "skip_dirs", "not_nodes", "runners", "js_packages", "py_modules"];
 const CODE = /\.(?:mjs|cjs|js|py)$/;
+// The only files the node scan may skip as program steps (owner exemption, 2026-11-01). P6: move them out of runtime/leaves_py/.
+export const NOT_NODES_ALLOWED = Object.freeze(["runtime/leaves_py/bake.py", "runtime/leaves_py/knobs.py"]);
 
 const groupOf = (g, rel) =>
   g.files?.[rel]?.group ?? (g.file_rules ?? []).find((r) => rel.startsWith(r.prefix ?? "") && (!r.suffix || rel.endsWith(r.suffix)) && (r.prefix || r.suffix))?.group ?? null;
@@ -67,6 +72,8 @@ export function problemsOf({ groups, pinned, bindings, knobs, treeSrc, codeFiles
   if (!dirs) out.push("src/next_tree.rs has no RUNNER_DIRS");
   else if (!same([...dirs.map((d) => `runtime/${d}`)].sort(), [...files].sort())) out.push(`src/next_tree.rs RUNNER_DIRS ${JSON.stringify(dirs)} under runtime/ are not node_rule.files ${JSON.stringify(files)}`);
   const notNodes = Object.keys(rule.not_nodes ?? {});
+  if (!same([...notNodes].sort(), [...NOT_NODES_ALLOWED].sort()))
+    out.push(`node_rule.not_nodes ${JSON.stringify(notNodes)} is not exactly the exempted ${JSON.stringify(NOT_NODES_ALLOWED)} (owner exemption; P6 moves them out of leaves_py)`);
   const refused = constList(treeSrc, "NOT_NODES");
   if (!refused) out.push("src/next_tree.rs has no NOT_NODES");
   else if (!same(refused.map((d) => `runtime/${d}`).sort(), [...notNodes].sort())) out.push(`src/next_tree.rs NOT_NODES ${JSON.stringify(refused)} under runtime/ are not node_rule.not_nodes ${JSON.stringify(notNodes)}`);
@@ -131,6 +138,20 @@ const mutants = [
   }, "is not a code file under node_rule.files"],
   ["the leaf registry binds a node external the core does not", (i) => (i.knobs.nodes.bars = { ...(i.knobs.nodes.bars ?? {}), binding: "external" }), "knobs.json binds"],
   ["a binding that is neither absent nor external", (i) => (i.knobs.nodes.bars = { ...(i.knobs.nodes.bars ?? {}), binding: "rust" }), "only \"external\""],
+  ["not_nodes gains a third file", (i) => {
+    i.groups.cross_calls.node_rule.not_nodes["runtime/leaves_py/bars.py"] = "x";
+    i.pinned.not_nodes = i.groups.cross_calls.node_rule.not_nodes;
+  }, "is not exactly the exempted"],
+  ["not_nodes loses knobs.py", (i) => {
+    delete i.groups.cross_calls.node_rule.not_nodes["runtime/leaves_py/knobs.py"];
+    i.pinned.not_nodes = i.groups.cross_calls.node_rule.not_nodes;
+  }, "is not exactly the exempted"],
+  ["not_nodes swaps knobs.py for another leaf", (i) => {
+    const n = i.groups.cross_calls.node_rule.not_nodes;
+    n["runtime/leaves_py/bars.py"] = n["runtime/leaves_py/knobs.py"];
+    delete n["runtime/leaves_py/knobs.py"];
+    i.pinned.not_nodes = n;
+  }, "is not exactly the exempted"],
   ["next_tree.rs out of rule one's files", (i) => (i.groups.cross_calls.rust_rule_next.files = i.groups.cross_calls.rust_rule_next.files.filter((f) => f !== "src/next_tree.rs")), "rust_rule_next"],
 ];
 const results = [];
