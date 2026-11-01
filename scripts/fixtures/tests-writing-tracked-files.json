@@ -1,0 +1,130 @@
+{
+ "note": "Tests that write under the repo's runtime/, src/, fixtures/, config/, scripts/ or recipes/ in place, as found by scripts/test_tests_write_no_tracked_file.mjs. Pinned per file: a file's count must equal its pin, and the pins may only go down (PIN_TOTAL_CEILING in that test). One reason per write in sites. Every write here is a hand-run golden refresh behind a flag; none runs in a normal or parallel test run.",
+ "files": {
+  "scripts/test_compact_label_cases.mjs": {
+   "count": 1,
+   "sites": [
+    "writeFileSync to fixtures/compact-label-cases.json: only under --write, which rewrites fixtures/compact-label-cases.json. A golden refresh run by hand on purpose, never in a normal or parallel run; the file it writes is the point of the flag, so it cannot go to a scratch copy."
+   ]
+  },
+  "scripts/test_complex_snapshots.mjs": {
+   "count": 1,
+   "sites": [
+    "writeFile to fixtures/complex-snapshots.json: only under --update, which rewrites fixtures/complex-snapshots.json. A golden refresh run by hand on purpose, never in a normal or parallel run; the file it writes is the point of the flag, so it cannot go to a scratch copy."
+   ]
+  },
+  "scripts/test_complex_viz.mjs": {
+   "count": 3,
+   "sites": [
+    "writeFile to fixtures/complex/${name}.svg: only under --write-fixtures, which rewrites the fixtures/complex/<case> SVG and JSON. A golden refresh run by hand on purpose, never in a normal or parallel run; the file it writes is the point of the flag, so it cannot go to a scratch copy.",
+    "writeFile to fixtures/complex/${name}.mobile.svg: only under --write-fixtures, which rewrites the fixtures/complex/<case> SVG and JSON. A golden refresh run by hand on purpose, never in a normal or parallel run; the file it writes is the point of the flag, so it cannot go to a scratch copy.",
+    "writeFile to fixtures/complex/${name}.json: only under --write-fixtures, which rewrites the fixtures/complex/<case> SVG and JSON. A golden refresh run by hand on purpose, never in a normal or parallel run; the file it writes is the point of the flag, so it cannot go to a scratch copy."
+   ]
+  },
+  "scripts/test_explanatory.mjs": {
+   "count": 3,
+   "sites": [
+    "writeFile to fixtures/explanatory/${view}.svg: only under --write-fixtures, which rewrites the fixtures/explanatory/ SVGs and fixtures/explanatory-snapshots.json. A golden refresh run by hand on purpose, never in a normal or parallel run; the file it writes is the point of the flag, so it cannot go to a scratch copy.",
+    "writeFile to fixtures/explanatory/${view}.mobile.svg: only under --write-fixtures, which rewrites the fixtures/explanatory/ SVGs and fixtures/explanatory-snapshots.json. A golden refresh run by hand on purpose, never in a normal or parallel run; the file it writes is the point of the flag, so it cannot go to a scratch copy.",
+    "writeFile to fixtures/explanatory-snapshots.json: only under --write-fixtures, which rewrites the fixtures/explanatory/ SVGs and fixtures/explanatory-snapshots.json. A golden refresh run by hand on purpose, never in a normal or parallel run; the file it writes is the point of the flag, so it cannot go to a scratch copy."
+   ]
+  },
+  "scripts/test_group_commands.py": {
+   "count": 1,
+   "sites": [
+    ".write_text to scripts: only under --record, which records scripts/fixtures/group_commands_off.json. A golden refresh run by hand on purpose, never in a normal or parallel run; the file it writes is the point of the flag, so it cannot go to a scratch copy."
+   ]
+  },
+  "scripts/test_group_cross_calls.mjs": {
+   "count": 1,
+   "sites": [
+    "writeFileSync to runtime/pi/groups.json: only under --write-baseline, which shrinks the cross_calls baseline in runtime/pi/groups.json. A golden refresh run by hand on purpose, never in a normal or parallel run; the file it writes is the point of the flag, so it cannot go to a scratch copy."
+   ]
+  },
+  "scripts/test_group_flow_ratchet.mjs": {
+   "count": 1,
+   "sites": [
+    "writeFileSync to scripts/fixtures/flow-ratchet.json: only under --lower, which lowers scripts/fixtures/flow-ratchet.json. A golden refresh run by hand on purpose, never in a normal or parallel run; the file it writes is the point of the flag, so it cannot go to a scratch copy."
+   ]
+  },
+  "scripts/test_group_module_calls.mjs": {
+   "count": 1,
+   "sites": [
+    "writeFileSync to runtime/pi/groups.json: only under --write-baseline, which shrinks the module-calls baseline in runtime/pi/groups.json. A golden refresh run by hand on purpose, never in a normal or parallel run; the file it writes is the point of the flag, so it cannot go to a scratch copy."
+   ]
+  },
+  "scripts/test_infographic.mjs": {
+   "count": 10,
+   "sites": [
+    "writeFile to fixtures/${base}${polishOn?'.polish':''}${embedMinOn?'.embedmin':''}.json: only under --write-fixtures, which rewrites the fixtures/infographic/ regression pages and the infographic snapshot JSONs. A golden refresh run by hand on purpose, never in a normal or parallel run; the file it writes is the point of the flag, so it cannot go to a scratch copy.",
+    "writeFile to fixtures/${base}${polishOn?'.polish':''}${embedMinOn?'.embedmin':''}.json: only under --write-fixtures, which rewrites the fixtures/infographic/ regression pages and the infographic snapshot JSONs. A golden refresh run by hand on purpose, never in a normal or parallel run; the file it writes is the point of the flag, so it cannot go to a scratch copy.",
+    "writeFile to fixtures/infographic/magazine-regression.svg: only under --write-fixtures, which rewrites the fixtures/infographic/ regression pages and the infographic snapshot JSONs. A golden refresh run by hand on purpose, never in a normal or parallel run; the file it writes is the point of the flag, so it cannot go to a scratch copy.",
+    "writeFile to fixtures/infographic/magazine-regression.mobile.svg: only under --write-fixtures, which rewrites the fixtures/infographic/ regression pages and the infographic snapshot JSONs. A golden refresh run by hand on purpose, never in a normal or parallel run; the file it writes is the point of the flag, so it cannot go to a scratch copy.",
+    "writeFile to fixtures/infographic/magazine-regression.json: only under --write-fixtures, which rewrites the fixtures/infographic/ regression pages and the infographic snapshot JSONs. A golden refresh run by hand on purpose, never in a normal or parallel run; the file it writes is the point of the flag, so it cannot go to a scratch copy.",
+    "writeFile to fixtures/infographic-snapshots.json: only under --write-fixtures, which rewrites the fixtures/infographic/ regression pages and the infographic snapshot JSONs. A golden refresh run by hand on purpose, never in a normal or parallel run; the file it writes is the point of the flag, so it cannot go to a scratch copy.",
+    "writeFile to fixtures/infographic/award-regression.svg: only under --write-fixtures, which rewrites the fixtures/infographic/ regression pages and the infographic snapshot JSONs. A golden refresh run by hand on purpose, never in a normal or parallel run; the file it writes is the point of the flag, so it cannot go to a scratch copy.",
+    "writeFile to fixtures/infographic/award-regression.mobile.svg: only under --write-fixtures, which rewrites the fixtures/infographic/ regression pages and the infographic snapshot JSONs. A golden refresh run by hand on purpose, never in a normal or parallel run; the file it writes is the point of the flag, so it cannot go to a scratch copy.",
+    "writeFile to fixtures/infographic/award-regression.json: only under --write-fixtures, which rewrites the fixtures/infographic/ regression pages and the infographic snapshot JSONs. A golden refresh run by hand on purpose, never in a normal or parallel run; the file it writes is the point of the flag, so it cannot go to a scratch copy.",
+    "writeFile to fixtures/infographic-award-snapshots.json: only under --write-fixtures, which rewrites the fixtures/infographic/ regression pages and the infographic snapshot JSONs. A golden refresh run by hand on purpose, never in a normal or parallel run; the file it writes is the point of the flag, so it cannot go to a scratch copy."
+   ]
+  },
+  "scripts/test_refusal_fields.mjs": {
+   "count": 1,
+   "sites": [
+    "writeFileSync to fixtures/refusal-fields/templates.json: only under --write, which rewrites fixtures/refusal-fields/templates.json. A golden refresh run by hand on purpose, never in a normal or parallel run; the file it writes is the point of the flag, so it cannot go to a scratch copy."
+   ]
+  },
+  "scripts/test_spatial_explanatory_snapshots.mjs": {
+   "count": 1,
+   "sites": [
+    "writeFile to fixtures/spatial-explanatory-snapshots.json: only under --update, which rewrites fixtures/spatial-explanatory-snapshots.json. A golden refresh run by hand on purpose, never in a normal or parallel run; the file it writes is the point of the flag, so it cannot go to a scratch copy."
+   ]
+  },
+  "scripts/test_spatial_explanatory_viz.mjs": {
+   "count": 3,
+   "sites": [
+    "writeFile to fixtures/spatial-explanatory/${name}.svg: only under --write-fixtures, which rewrites the fixtures/spatial-explanatory/<case> SVG and JSON. A golden refresh run by hand on purpose, never in a normal or parallel run; the file it writes is the point of the flag, so it cannot go to a scratch copy.",
+    "writeFile to fixtures/spatial-explanatory/${name}.mobile.svg: only under --write-fixtures, which rewrites the fixtures/spatial-explanatory/<case> SVG and JSON. A golden refresh run by hand on purpose, never in a normal or parallel run; the file it writes is the point of the flag, so it cannot go to a scratch copy.",
+    "writeFile to fixtures/spatial-explanatory/${name}.json: only under --write-fixtures, which rewrites the fixtures/spatial-explanatory/<case> SVG and JSON. A golden refresh run by hand on purpose, never in a normal or parallel run; the file it writes is the point of the flag, so it cannot go to a scratch copy."
+   ]
+  },
+  "scripts/test_tool_defs_unchanged.mjs": {
+   "count": 1,
+   "sites": [
+    "writeFileSync to fixtures/speed-off/tool-defs-8a75560.json: only under --write, which rewrites fixtures/speed-off/tool-defs-8a75560.json. A golden refresh run by hand on purpose, never in a normal or parallel run; the file it writes is the point of the flag, so it cannot go to a scratch copy."
+   ]
+  },
+  "scripts/test_viz.mjs": {
+   "count": 3,
+   "sites": [
+    "writeFile to fixtures/newsroom-viz-v0.5.svg: only under --write-fixture, which rewrites fixtures/newsroom-viz-v0.5 SVGs and lint JSON. A golden refresh run by hand on purpose, never in a normal or parallel run; the file it writes is the point of the flag, so it cannot go to a scratch copy.",
+    "writeFile to fixtures/newsroom-viz-v0.5.mobile.svg: only under --write-fixture, which rewrites fixtures/newsroom-viz-v0.5 SVGs and lint JSON. A golden refresh run by hand on purpose, never in a normal or parallel run; the file it writes is the point of the flag, so it cannot go to a scratch copy.",
+    "writeFile to fixtures/newsroom-viz-v0.5-lint.json: only under --write-fixture, which rewrites fixtures/newsroom-viz-v0.5 SVGs and lint JSON. A golden refresh run by hand on purpose, never in a normal or parallel run; the file it writes is the point of the flag, so it cannot go to a scratch copy."
+   ]
+  },
+  "scripts/test_viz_mirrored_bar.mjs": {
+   "count": 1,
+   "sites": [
+    "writeFileSync to fixtures: only under --update, which rewrites the fixtures/viz-mirrored-bar/ SVG snapshots. A golden refresh run by hand on purpose, never in a normal or parallel run; the file it writes is the point of the flag, so it cannot go to a scratch copy."
+   ]
+  },
+  "scripts/test_viz_snapshots.mjs": {
+   "count": 1,
+   "sites": [
+    "writeFile to fixtures/viz-snapshots.json: only under --update, which rewrites fixtures/viz-snapshots.json. A golden refresh run by hand on purpose, never in a normal or parallel run; the file it writes is the point of the flag, so it cannot go to a scratch copy."
+   ]
+  },
+  "scripts/test_viz_stacked_bar_100.mjs": {
+   "count": 1,
+   "sites": [
+    "writeFileSync to fixtures: only under --update, which rewrites fixtures/viz-stacked-bar-100-snapshots.json. A golden refresh run by hand on purpose, never in a normal or parallel run; the file it writes is the point of the flag, so it cannot go to a scratch copy."
+   ]
+  },
+  "scripts/test_viz_strip_plot.mjs": {
+   "count": 1,
+   "sites": [
+    "writeFile to fixtures/viz-strip-plot-snapshots.json: only under --update, which rewrites fixtures/viz-strip-plot-snapshots.json. A golden refresh run by hand on purpose, never in a normal or parallel run; the file it writes is the point of the flag, so it cannot go to a scratch copy."
+   ]
+  }
+ }
+}
