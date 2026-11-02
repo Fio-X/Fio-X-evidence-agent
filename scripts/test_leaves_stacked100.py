@@ -150,13 +150,14 @@ class Picture(unittest.TestCase):
         css = open(os.path.join(LEAVES, "tokens.css"), encoding="utf-8").read()
 
         def lstar(var):
-            h = re.search(rf"{var[4:-1]}:#([0-9a-f]{{6}})", css).group(1)
+            h = var[1:] if var.startswith("#") else re.search(rf"{var[4:-1]}:#([0-9a-f]{{6}})", css).group(1)
             lin = [(c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4) for c in (int(h[i:i + 2], 16) / 255 for i in (0, 2, 4))]
             return 116 * (0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]) ** (1 / 3) - 16
-        three = [lstar(g) for g in stacked100.GREYS[:3]]  # a page of four parts (q3) uses the first three
-        self.assertGreaterEqual(min(abs(a - b) for i, a in enumerate(three) for b in three[i + 1:]), 19.5, three)
         neighbours = [lstar(g) for g in stacked100.GREYS]
         self.assertGreaterEqual(min(abs(a - b) for a, b in zip(neighbours, neighbours[1:])), 14, neighbours)
+        five = neighbours + [lstar(stacked100.HL_DARK)]  # the other bars' highlighted part: darker than every grey, apart from each
+        self.assertLess(five[-1], min(neighbours))
+        self.assertGreaterEqual(min(abs(a - b) for i, a in enumerate(five) for b in five[i + 1:]), 10, five)
 
     def test_each_bar_prints_its_total_from_the_ledger_in_a_column_or_none_does(self):
         rows = ROWS + [{"src": f"fact:total.{g}.n", "text": f"{TAB[(g, 'TOTAL')]:,.0f}"} for g in GEOS]
@@ -349,6 +350,24 @@ class ShareNote(unittest.TestCase):
             self.assertIn(WD.WORDS["scope.within"], svg)
         else:
             self.assertNotIn("data-notes", svg)
+
+    def test_the_cores_first_alone_takes_the_accent_its_name_bold_and_the_key_says_so(self):
+        rows, h = three("fossil", self.SHARES)
+        self.core("EU27_2020", "DE")
+        svg, _, _ = draw(h, rows)
+        self.assertEqual(check_svg(svg), [])
+        segs = re.findall(r'fill="([^"]+)" stroke="var\(--bg\)" stroke-width="1" data-part="([A-Z0-9_]+):fossil"', svg)
+        self.assertEqual({g: c for c, g in segs}, {"DE": stacked100.HL_DARK, "EU27_2020": "var(--accent)", "FR": stacked100.HL_DARK})
+        self.assertEqual(svg.count('fill="var(--accent)"'), 1)  # no accent text or key swatch beside the one segment
+        weights = {t: w for w, t in re.findall(r'font-weight="(\d+)"><tspan data-src="name:[^"]*">([^<]*)</tspan></text>', svg)}
+        self.assertEqual((weights["欧盟"], weights["德国"], weights["法国"]), ("700", "400", "400"), weights)
+        key = NAMES["fossil"] + WD.word("paren", v=WD.word("accent.subject", name=NAMES["EU27_2020"]))
+        self.assertIn(key, re.sub(r"<[^>]+>", "", svg))
+        self.assertIn('<tspan data-src="name:zh_names:siec_group:fossil">', svg)
+        self.core("PT", "EU27_2020")  # the core's first is no bar: every bar's highlighted part in the accent, as before
+        svg, _, _ = draw(h, rows)
+        self.assertEqual(len(re.findall(r'fill="var\(--accent\)" stroke', svg)), 3)
+        self.assertNotIn(WD.word("accent.subject", name=NAMES["EU27_2020"]), re.sub(r"<[^>]+>", "", svg))
 
     def test_no_note_where_the_shares_tie_print_alike_a_bar_lacks_the_part_or_the_core_disagrees(self):
         cases = {"a tie at the top": ("fossil", {"DE": ("40%", "40"), "EU27_2020": ("40%", "40"), "FR": ("30%", "30")}, ("EU27_2020", "DE")),

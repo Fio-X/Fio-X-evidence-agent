@@ -29,11 +29,16 @@ A part whose every cell is 0 and that layer 1 did not declare zero draws no segm
 ("<bar>:<part>", "zero"); a declared zero draws none and is no drop.
 Conservation (refuses): a bar's cells, laid end to end, end off its total by more than knob tol of the total (a leaf left out,
 or one counted twice).
-Colours: --accent the highlighted part, --seq-5, --seq-9, --seq-1, --seq-7, --seq-3 the others in turn (mid, darkest,
-lightest, dark, light: CIE L* 61, 35, 81, 49, 71, so the first three sit 20 or more apart where the old route's --seq-5,
---seq-8, --seq-3 sat 10 apart and read as one teal), --t-title ink, --t-sec the lines, --bg the gaps between segments and an
+Colours: --accent the highlighted part, --seq-2, --seq-5, --empty the others in turn (light, mid, lightest: CIE L* 76, 61,
+91, each 10 or more from the others and from HL_DARK, so the rest stays lighter than the highlighted part), --t-title ink, --t-sec the lines, --bg the gaps between segments and an
 in-bar share's ink on the two dark greys (--t-dark on the others). Each segment names the part it draws (data-code), so the
 page's accent check knows the accent's entity.
+Subject (_subject): where the core's comparison of the highlighted part's share (knobs.comparisons) names a first that is a
+bar drawing that part, only that bar's highlighted segment takes the accent; every other bar's takes HL_DARK (a neutral mid
+grey, L* 50: darker than every grey above and 11 or more from each, well lighter than the ink), the subject's name alone is bold, the share column's head is
+ink, and the highlighted part's name is followed by the word table's paren around accent.subject (which names the subject
+by its name row as the colour's). With no such first (no comparison from the core), every bar's highlighted part takes the
+accent.
 Note (_share_note): one line under the bars, the place first on the highlighted part's share above the second (data-cmp next,
 in g[data-notes]), only where the shares' ledger values order the first two strictly and print them apart and the core's
 comparison (knobs.comparisons) names the same two, with the scope phrase where its set is scoped; else none.
@@ -49,8 +54,12 @@ from wbkit import FX, prod, Refused, esc, tw
 import words as WD
 
 NODE = "stacked100"
-GREYS = ["var(--seq-5)", "var(--seq-9)", "var(--seq-1)", "var(--seq-7)", "var(--seq-3)"]
-DARK = {"var(--seq-9)", "var(--seq-7)"}  # the greys an in-bar share is printed on in --bg, not --t-dark
+GREYS = ["var(--seq-2)", "var(--seq-5)", "var(--empty)"]
+# The highlighted part of every bar but the subject's: neutral, L* 50, between the ink (16) and the greys (61 and up), so the
+# accent's one segment stays the page's focus. No token sits there and tokens.css stays as every other page has it; #767676
+# carries white text at 4.5:1 (WCAG AA), hence its place in DARK.
+HL_DARK = "#767676"
+DARK = {HL_DARK}  # the greys an in-bar share is printed on in --bg, not --t-dark
 prod.KNOBS[NODE] = dict(
     size=(12, (11, 16, 0.5), "label size px (11 is the page floor)"), title_size=(16, (12, 22, 1), "chart name size px"),
     width=(1140, (480, 1400, 10), "picture width in px"), bar_h=(18, (12, 30, 1), "bar height in px"),
@@ -132,17 +141,31 @@ class Frame:
         if f.totals and not d.get("total_head"): raise Refused("stacked100: the bars print their totals and total_head is missing")
         f.part_kind = K.need(d, "part_kind")
         f.part_names = {p: K.named(p, f.part_kind) for p in parts}
+        f.subject = _subject(f)
+        if f.subject:  # one accent segment; the others' highlighted part in the dark grey, its name saying which is red
+            f.fill[f.hl] = HL_DARK
+            segs = [{"name": f.hl, "kind": f.part_kind}] + K._finding_word("paren", v=K._finding_word(
+                "accent.subject", name=[{"name": f.subject, "kind": d.get("bar_kind", "place")}]))
+            f.part_names[f.hl] = (K.finding_html(segs), K.finding_plain(segs))
         f.name_w = max(tw(r["name"][1], f.size) for r in f.rows) + 14
         f.column = k("values") == "highlight_column"
         if f.column:
             texts = [K.ent(r["share"][f.hl])[1] for r in f.rows if f.hl in r["share"] and any(s[0] == f.hl for s in r["segs"])]
-            f.col_w = max([tw(f.part_names[f.hl][1], f.size)] + [tw(t, f.size) for t in texts]) + 14
+            f.col_w = max([tw(K.named(f.hl, f.part_kind)[1], f.size)] + [tw(t, f.size) for t in texts]) + 14
         else:
             f.col_w = 0
         f.tot_w = (max([tw(K.plain(d["total_head"], "total head"), f.size)] + [tw(r["total"][1], f.size) for r in f.rows]) + 14) if f.totals else 0
         f.x0, f.x1 = 8 + f.name_w + f.tot_w, f.W - 8 - f.col_w
         if f.x1 - f.x0 < 160: raise Refused("stacked100: the board is too narrow for the names, the bars and the share column (plot under 160 px)")
         f.H = 0
+
+
+def _subject(f):
+    """The bar whose highlighted segment alone takes the accent: the first of the core's comparison of the highlighted part's
+    share (wbkit.compared), where it is a bar that draws that part; else None."""
+    c = next((K.compared(r["share"][f.hl]) for r in f.rows if r["share"].get(f.hl) and K.compared(r["share"][f.hl])), None)
+    first = c and c.get("first")
+    return first if any(r["code"] == first and any(s[0] == f.hl for s in r["segs"]) for r in f.rows) else None
 
 
 def _share_note(f):
@@ -202,25 +225,28 @@ def cl_stacked100(f, occ):
         hsvg = "".join(FX.entry(sg, "tspan", None) if sg else esc(t) for t, sg in head)
         o.append(K.txt(B, f.x0 - 8, y, size, "var(--t-sec)", hsvg, tw(K.plain(d["total_head"], "total head"), size), anchor="end", tag="total head"))
     if f.column:
-        nm_svg, nm = f.part_names[f.hl]
-        o.append(K.txt(B, W - 8, y, size, "var(--accent)", nm_svg, tw(nm, size), anchor="end", weight=700, tag="column head"))
+        nm_svg, nm = K.named(f.hl, f.part_kind)
+        o.append(K.txt(B, W - 8, y, size, "var(--t-title)" if f.subject else "var(--accent)", nm_svg, tw(nm, size), anchor="end",
+                       weight=700, tag="column head"))
     top = y + 8
     bottom = top + (len(f.rows) - 1) * pitch + bh
     for q in (0.25, 0.5, 0.75):  # quarter lines under the bars; no tick prints a number of its own
         o.append(K.line(_px(f, q), top - 2, _px(f, q), bottom + 2))
     for i, r in enumerate(f.rows):
         y0 = top + i * pitch; yc = y0 + bh / 2 + size * 0.35
-        o.append(K.txt(B, f.x0 - 6 - f.tot_w, yc, size, "var(--t-title)", r["name"][0], tw(r["name"][1], size), anchor="end", weight=700, tag=f"name {r['code']}"))
+        o.append(K.txt(B, f.x0 - 6 - f.tot_w, yc, size, "var(--t-title)", r["name"][0], tw(r["name"][1], size), anchor="end",
+                       weight=700 if f.subject in (None, r["code"]) else 400, tag=f"name {r['code']}"))
         if f.totals:
             o.append(K.txt(B, f.x0 - 8, yc, size, "var(--t-title)", r["total"][0], tw(r["total"][1], size), anchor="end", tag=f"total {r['code']}"))
         last = len(r["segs"]) - 1
         for j, (p, a, b) in enumerate(r["segs"]):
             xa, xb = _px(f, a), (f.x1 if j == last else _px(f, b))  # the last segment ends exactly at the 100% end
-            o.append(f'<rect x="{xa:.2f}" y="{y0:.1f}" width="{max(xb - xa, 0.0):.2f}" height="{bh}" fill="{f.fill[p]}" stroke="var(--bg)" stroke-width="1" data-part="{esc(r["code"])}:{esc(p)}" data-code="{esc(p)}"/>')
+            fill = "var(--accent)" if p == f.hl and r["code"] == f.subject else f.fill[p]
+            o.append(f'<rect x="{xa:.2f}" y="{y0:.1f}" width="{max(xb - xa, 0.0):.2f}" height="{bh}" fill="{fill}" stroke="var(--bg)" stroke-width="1" data-part="{esc(r["code"])}:{esc(p)}" data-code="{esc(p)}"/>')
             if not f.column:
                 t = K.ent(r["share"][p]); w = tw(t[1], size)
                 if w + 2 * pad <= xb - xa:
-                    ink = "var(--bg)" if p == f.hl or f.fill[p] in DARK else "var(--t-dark)"
+                    ink = "var(--bg)" if fill == "var(--accent)" or fill in DARK else "var(--t-dark)"
                     o.append(K.txt(B, (xa + xb) / 2, yc, size, ink, t[0], w, anchor="middle", tag=f"share {r['code']} {p}"))
         if f.column and any(s[0] == f.hl for s in r["segs"]):
             t = K.ent(r["share"][f.hl])

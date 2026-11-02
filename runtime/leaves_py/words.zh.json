@@ -50,6 +50,7 @@
  "column.change_years": "柱：{a} 年至{b}的变化　地图：{b}",
  "column.scope": "{place} {n} 国　",
  "column.accent": "红＝导语所指",
+ "accent.subject": "{name}以红色标出",
  "bubble_key.area": "圆面积＝{m}，{y}",
  "bubble_key.area_any": "圆面积＝数值，{y}",
  "scmp.note.h": "{name} {a} → {b}",
