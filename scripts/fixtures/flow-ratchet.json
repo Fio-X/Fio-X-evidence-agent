@@ -5,7 +5,7 @@
     "new": {
       "nodes": 16,
       "ops": 20,
-      "copy": 139,
+      "copy": 140,
       "kinds": 246
     },
     "old": {
@@ -153,7 +153,7 @@
     "src/next_run.rs": {
       "nodes": 16,
       "ops": 20,
-      "copy": 94,
+      "copy": 95,
       "kinds": 225
     },
     "src/next_serve.rs": {

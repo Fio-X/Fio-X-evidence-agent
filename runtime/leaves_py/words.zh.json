@@ -6,6 +6,7 @@
  "half.1": "上",
  "half.2": "下",
  "paren": "（{v}）",
+ "scope.within": "在有此项数据的成员中",
  "missing": "缺",
  "gap": "差 {v}",
  "ring.name": "圈：{v}",
