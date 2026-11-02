@@ -221,7 +221,7 @@ def vocab_items(c, ref):
         return sorted({o for arm in re.findall(r'^\s*((?:"\w+"\s*\|\s*)*"\w+")\s*=>', seg, re.M) for o in re.findall(r'"(\w+)"', arm)})
     m = re.search(rf"const {name}: [^=]*=\s*\[(.*?)\];", t, re.S)
     if not m: return []
-    if name in ("RELATIONS", "CLAIM_WORDS", "SHAPES"):  # a table of (word, ...): its first strings
+    if name in ("RELATIONS", "CLAIM_WORDS", "SHAPES", "CONDITIONS"):  # a table of (word, ...): its first strings
         return re.findall(r'\(\s*"(\w+)"', m.group(1))
     return re.findall(r'"([^"]+)"', m.group(1))
 

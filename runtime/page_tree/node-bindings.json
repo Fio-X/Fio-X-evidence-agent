@@ -38,7 +38,7 @@
   },
   "claim_marks": {"id": "marks", "kind": "named_rule", "rule": "marks_from_claims", "inputs": {"ranked": "ranked"}, "given": "$picks.marks"}
  },
- "recipes": {"column": ["bars", "bubbles"], "change": ["bubbles", "bars"], "composition": ["stacked100"]},
+ "recipes": {"column": ["bars", "bubbles", "leader_notes"], "change": ["bubbles", "bars", "leader_notes"], "composition": ["stacked100"]},
  "nodes": {
   "bars": {
    "binding": "external",
@@ -205,6 +205,253 @@
    "knobs": {"r_max": 22, "r_min": 3, "nudge": 6, "circle_gap": 1, "max_overlaps": 0, "label_top": 12, "label_gap": 4, "label_sep": 8, "reach": 96, "land_cost": 60},
    "ground": {"phase": "ground"},
    "checks": [{"kind": "count_equals", "select": "$order"}, {"kind": "points_pinned"}]
+  }
+,
+  "leader_notes": {
+   "binding": "external",
+   "geometry": "leaf",
+   "runner": "leaves_py/leader_notes.py",
+   "frame": "map_view",
+   "declares_by_recipe": {
+    "column": {
+     "fmt": {
+      "scale": 1,
+      "suffix": "$shape.suffix",
+      "dec_rule": {
+       "rule": "held_decimals",
+       "rows": {"table": "$shape.main", "filter": {"$shape.place": "select:ranked"}, "time": "$shape.year"},
+       "max": {"const": "COLUMN_DEC", "value": 2}
+      }
+     },
+     "fmt_change": {
+      "rule": "points_if_percent",
+      "percent": "%",
+      "points": {
+       "key": "pp",
+       "suffix": " 个百分点",
+       "max_dec": 1
+      },
+      "else": {
+       "key": "$shape.fmt",
+       "suffix": "$shape.suffix"
+      },
+      "dec_rule": {
+       "rule": "held_decimals",
+       "rows": {"table": "$shape.main", "filter": {"$shape.place": "select:ranked"}, "time": "$shape.year"},
+       "max": {"const": "COLUMN_DEC", "value": 2}
+      }
+     },
+     "formats": {
+      "times": {
+       "scale": 1,
+       "dec": 1,
+       "suffix": "倍"
+      }
+     },
+     "selects": [
+      {
+       "id": "end_first",
+       "kind": "take",
+       "from": "ranked",
+       "at": "first"
+      },
+      {
+       "id": "end_last",
+       "kind": "take",
+       "from": "ranked",
+       "at": "last"
+      }
+     ],
+     "facts": {
+      "hi": {
+       "table": "$shape.main",
+       "filter": {"$shape.place": "select:end_first"},
+       "time": "$shape.year",
+       "fmt": "$shape.fmt"
+      },
+      "lo": {
+       "table": "$shape.main",
+       "filter": {"$shape.place": "select:end_last"},
+       "time": "$shape.year",
+       "fmt": "$shape.fmt"
+      },
+      "gap": {
+       "op": "minus",
+       "a": "hi",
+       "b": "lo",
+       "fmt": "$fmt.change"
+      },
+      "times": {
+       "op": "times",
+       "a": "hi",
+       "b": "lo",
+       "fmt": "times"
+      }
+     },
+     "items": [
+      {
+       "code": "select:end_first",
+       "end": "hi"
+      },
+      {
+       "code": "select:end_last",
+       "end": "lo"
+      }
+     ],
+     "candidates": {
+      "hi": [
+       {"when": [{"if": "page_is", "path": "scoped"}], "text": [{"word": "column.note.hi.scoped"}], "value_text": "fact:gap"},
+       {"when": [], "text": [{"word": "column.note.hi"}], "value_text": "fact:gap"}
+      ],
+      "lo": [
+       {"when": [{"if": "page_is", "path": "scoped"}], "text": [{"word": "column.note.lo.scoped"}], "value_text": "fact:times"},
+       {"when": [], "text": [{"word": "column.note.lo"}], "value_text": "fact:times"}
+      ]
+     },
+     "leaf": {
+      "key": "leader_notes",
+      "items_as": "notes",
+      "items": {
+       "at": "at",
+       "name": "code",
+       "text": "note.text",
+       "value_text": "note.value_text"
+      },
+      "ext": "$page.ext"
+     }
+    },
+    "change": {
+     "fmt": {
+      "scale": 1,
+      "suffix": "$shape.suffix",
+      "dec_rule": {
+       "rule": "held_decimals",
+       "rows": {"table": "$shape.main", "filter": {"$shape.place": "select:ranked"}, "time": "$shape.year"},
+       "max": {"const": "COLUMN_DEC", "value": 2}
+      }
+     },
+     "fmt_change": {
+      "rule": "points_if_percent",
+      "percent": "%",
+      "points": {
+       "key": "pp",
+       "suffix": " 个百分点",
+       "max_dec": 1
+      },
+      "else": {
+       "key": "chg",
+       "suffix": "$shape.suffix"
+      },
+      "dec_rule": {
+       "rule": "held_decimals",
+       "rows": {"table": "$shape.main", "filter": {"$shape.place": "select:ranked"}, "time": ["$picks.t0", "$shape.year"]},
+       "max": {"const": "COLUMN_DEC", "value": 2}
+      }
+     },
+     "selects": [
+      {
+       "id": "end_first",
+       "kind": "take",
+       "from": "ranked",
+       "at": "first"
+      },
+      {
+       "id": "end_last",
+       "kind": "take",
+       "from": "ranked",
+       "at": "last",
+       "when": [{"if": "count_at_least", "select": "ranked", "n": 2}]
+      },
+      {
+       "id": "next_first",
+       "kind": "take",
+       "from": "ranked",
+       "at": "second",
+       "when": [{"if": "count_at_least", "select": "ranked", "n": 2}]
+      },
+      {
+       "id": "prev_last",
+       "kind": "take",
+       "from": "ranked",
+       "at": "before_last",
+       "when": [{"if": "count_at_least", "select": "ranked", "n": 3}]
+      }
+     ],
+     "facts": {
+      "val0": {
+       "each": "$shape.place",
+       "table": "$shape.main",
+       "time": "$picks.t0",
+       "fmt": "$shape.fmt"
+      },
+      "val1": {
+       "each": "$shape.place",
+       "table": "$shape.main",
+       "time": "$shape.year",
+       "fmt": "$shape.fmt"
+      },
+      "chg": {
+       "op": "minus",
+       "each": "$shape.place",
+       "a": "val1",
+       "b": "val0",
+       "fmt": "$fmt.change"
+      }
+     },
+     "items": [
+      {
+       "code": "select:end_first",
+       "end": "first"
+      },
+      {
+       "code": "select:end_last",
+       "end": "last",
+       "when": [{"if": "count_at_least", "select": "ranked", "n": 2}]
+      }
+     ],
+     "candidates": {
+      "first": [
+       {"when": [{"if": "count_at_least", "select": "ranked", "n": 2}, {"if": "sign", "fact": "chg.{code}", "is": "pos"}, {"if": "prints_nonzero", "fact": "vs_hi", "fmt": "$fmt.change"}, {"if": "width_at_most", "text": ["{name}", " ", {"word": "column.note.rise_most"}, {"word": "column.note.vs_next"}], "size": 16, "max": 280}], "text": [{"word": "column.note.rise_most"}, {"word": "column.note.vs_next"}], "value_text": "fact:vs_hi", "facts": {"vs_hi_a0": {"op": "last", "table": "$shape.main", "filter": {"$shape.place": "{code}"}, "from": "$picks.t0", "to": "$picks.t0", "fmt": "$shape.fmt"}, "vs_hi_a1": {"op": "last", "table": "$shape.main", "filter": {"$shape.place": "{code}"}, "from": "$shape.year", "to": "$shape.year", "fmt": "$shape.fmt"}, "vs_hi_a": {"op": "minus", "a": "vs_hi_a1", "b": "vs_hi_a0", "fmt": "$fmt.change"}, "vs_hi_b0": {"op": "last", "table": "$shape.main", "filter": {"$shape.place": "select:next_first"}, "from": "$picks.t0", "to": "$picks.t0", "fmt": "$shape.fmt"}, "vs_hi_b1": {"op": "last", "table": "$shape.main", "filter": {"$shape.place": "select:next_first"}, "from": "$shape.year", "to": "$shape.year", "fmt": "$shape.fmt"}, "vs_hi_b": {"op": "minus", "a": "vs_hi_b1", "b": "vs_hi_b0", "fmt": "$fmt.change"}, "vs_hi": {"op": "minus", "a": "vs_hi_a", "b": "vs_hi_b", "fmt": "$fmt.change"}}},
+       {"when": [{"if": "count_at_least", "select": "ranked", "n": 2}, {"if": "sign", "fact": "chg.{code}", "is": "neg"}, {"if": "prints_nonzero", "fact": "vs_hi", "fmt": "$fmt.change"}, {"if": "width_at_most", "text": ["{name}", " ", {"word": "column.note.fall_least"}, {"word": "column.note.vs_next"}], "size": 16, "max": 280}], "text": [{"word": "column.note.fall_least"}, {"word": "column.note.vs_next"}], "value_text": "fact:vs_hi", "facts": {"vs_hi_a0": {"op": "last", "table": "$shape.main", "filter": {"$shape.place": "{code}"}, "from": "$picks.t0", "to": "$picks.t0", "fmt": "$shape.fmt"}, "vs_hi_a1": {"op": "last", "table": "$shape.main", "filter": {"$shape.place": "{code}"}, "from": "$shape.year", "to": "$shape.year", "fmt": "$shape.fmt"}, "vs_hi_a": {"op": "minus", "a": "vs_hi_a1", "b": "vs_hi_a0", "fmt": "$fmt.change"}, "vs_hi_b0": {"op": "last", "table": "$shape.main", "filter": {"$shape.place": "select:next_first"}, "from": "$picks.t0", "to": "$picks.t0", "fmt": "$shape.fmt"}, "vs_hi_b1": {"op": "last", "table": "$shape.main", "filter": {"$shape.place": "select:next_first"}, "from": "$shape.year", "to": "$shape.year", "fmt": "$shape.fmt"}, "vs_hi_b": {"op": "minus", "a": "vs_hi_b1", "b": "vs_hi_b0", "fmt": "$fmt.change"}, "vs_hi": {"op": "minus", "a": "vs_hi_a", "b": "vs_hi_b", "fmt": "$fmt.change"}}},
+       {"when": [{"if": "count_at_least", "select": "ranked", "n": 2}, {"if": "sign", "fact": "chg.{code}", "is": "zero"}, {"if": "prints_nonzero", "fact": "vs_hi", "fmt": "$fmt.change"}, {"if": "width_at_most", "text": ["{name}", " ", {"word": "column.note.flat"}, {"word": "column.note.vs_next"}], "size": 16, "max": 280}], "text": [{"word": "column.note.flat"}, {"word": "column.note.vs_next"}], "value_text": "fact:vs_hi", "facts": {"vs_hi_a0": {"op": "last", "table": "$shape.main", "filter": {"$shape.place": "{code}"}, "from": "$picks.t0", "to": "$picks.t0", "fmt": "$shape.fmt"}, "vs_hi_a1": {"op": "last", "table": "$shape.main", "filter": {"$shape.place": "{code}"}, "from": "$shape.year", "to": "$shape.year", "fmt": "$shape.fmt"}, "vs_hi_a": {"op": "minus", "a": "vs_hi_a1", "b": "vs_hi_a0", "fmt": "$fmt.change"}, "vs_hi_b0": {"op": "last", "table": "$shape.main", "filter": {"$shape.place": "select:next_first"}, "from": "$picks.t0", "to": "$picks.t0", "fmt": "$shape.fmt"}, "vs_hi_b1": {"op": "last", "table": "$shape.main", "filter": {"$shape.place": "select:next_first"}, "from": "$shape.year", "to": "$shape.year", "fmt": "$shape.fmt"}, "vs_hi_b": {"op": "minus", "a": "vs_hi_b1", "b": "vs_hi_b0", "fmt": "$fmt.change"}, "vs_hi": {"op": "minus", "a": "vs_hi_a", "b": "vs_hi_b", "fmt": "$fmt.change"}}},
+       {"when": [{"if": "sign", "fact": "chg.{code}", "is": "pos"}], "text": [{"word": "column.note.rise_most"}], "value_text": "fact:chg.{code}"},
+       {"when": [{"if": "sign", "fact": "chg.{code}", "is": "neg"}], "text": [{"word": "column.note.fall_least"}], "value_text": "fact:chg.{code}"},
+       {"when": [{"if": "sign", "fact": "chg.{code}", "is": "zero"}], "text": [{"word": "column.note.flat"}], "value_text": "fact:chg.{code}"}
+      ],
+      "last": [
+       {"when": [{"if": "count_at_least", "select": "ranked", "n": 3}, {"if": "sign", "fact": "chg.{code}", "is": "neg"}, {"if": "prints_nonzero", "fact": "vs_lo", "fmt": "$fmt.change"}, {"if": "width_at_most", "text": ["{name}", " ", {"word": "column.note.fall_most"}, {"word": "column.note.vs_prev"}], "size": 16, "max": 280}], "text": [{"word": "column.note.fall_most"}, {"word": "column.note.vs_prev"}], "value_text": "fact:vs_lo", "facts": {"vs_lo_a0": {"op": "last", "table": "$shape.main", "filter": {"$shape.place": "select:prev_last"}, "from": "$picks.t0", "to": "$picks.t0", "fmt": "$shape.fmt"}, "vs_lo_a1": {"op": "last", "table": "$shape.main", "filter": {"$shape.place": "select:prev_last"}, "from": "$shape.year", "to": "$shape.year", "fmt": "$shape.fmt"}, "vs_lo_a": {"op": "minus", "a": "vs_lo_a1", "b": "vs_lo_a0", "fmt": "$fmt.change"}, "vs_lo_b0": {"op": "last", "table": "$shape.main", "filter": {"$shape.place": "{code}"}, "from": "$picks.t0", "to": "$picks.t0", "fmt": "$shape.fmt"}, "vs_lo_b1": {"op": "last", "table": "$shape.main", "filter": {"$shape.place": "{code}"}, "from": "$shape.year", "to": "$shape.year", "fmt": "$shape.fmt"}, "vs_lo_b": {"op": "minus", "a": "vs_lo_b1", "b": "vs_lo_b0", "fmt": "$fmt.change"}, "vs_lo": {"op": "minus", "a": "vs_lo_a", "b": "vs_lo_b", "fmt": "$fmt.change"}}},
+       {"when": [{"if": "count_at_least", "select": "ranked", "n": 3}, {"if": "sign", "fact": "chg.{code}", "is": "pos"}, {"if": "prints_nonzero", "fact": "vs_lo", "fmt": "$fmt.change"}, {"if": "width_at_most", "text": ["{name}", " ", {"word": "column.note.rise_least"}, {"word": "column.note.vs_prev"}], "size": 16, "max": 280}], "text": [{"word": "column.note.rise_least"}, {"word": "column.note.vs_prev"}], "value_text": "fact:vs_lo", "facts": {"vs_lo_a0": {"op": "last", "table": "$shape.main", "filter": {"$shape.place": "select:prev_last"}, "from": "$picks.t0", "to": "$picks.t0", "fmt": "$shape.fmt"}, "vs_lo_a1": {"op": "last", "table": "$shape.main", "filter": {"$shape.place": "select:prev_last"}, "from": "$shape.year", "to": "$shape.year", "fmt": "$shape.fmt"}, "vs_lo_a": {"op": "minus", "a": "vs_lo_a1", "b": "vs_lo_a0", "fmt": "$fmt.change"}, "vs_lo_b0": {"op": "last", "table": "$shape.main", "filter": {"$shape.place": "{code}"}, "from": "$picks.t0", "to": "$picks.t0", "fmt": "$shape.fmt"}, "vs_lo_b1": {"op": "last", "table": "$shape.main", "filter": {"$shape.place": "{code}"}, "from": "$shape.year", "to": "$shape.year", "fmt": "$shape.fmt"}, "vs_lo_b": {"op": "minus", "a": "vs_lo_b1", "b": "vs_lo_b0", "fmt": "$fmt.change"}, "vs_lo": {"op": "minus", "a": "vs_lo_a", "b": "vs_lo_b", "fmt": "$fmt.change"}}},
+       {"when": [{"if": "count_at_least", "select": "ranked", "n": 3}, {"if": "sign", "fact": "chg.{code}", "is": "zero"}, {"if": "prints_nonzero", "fact": "vs_lo", "fmt": "$fmt.change"}, {"if": "width_at_most", "text": ["{name}", " ", {"word": "column.note.flat"}, {"word": "column.note.vs_prev"}], "size": 16, "max": 280}], "text": [{"word": "column.note.flat"}, {"word": "column.note.vs_prev"}], "value_text": "fact:vs_lo", "facts": {"vs_lo_a0": {"op": "last", "table": "$shape.main", "filter": {"$shape.place": "select:prev_last"}, "from": "$picks.t0", "to": "$picks.t0", "fmt": "$shape.fmt"}, "vs_lo_a1": {"op": "last", "table": "$shape.main", "filter": {"$shape.place": "select:prev_last"}, "from": "$shape.year", "to": "$shape.year", "fmt": "$shape.fmt"}, "vs_lo_a": {"op": "minus", "a": "vs_lo_a1", "b": "vs_lo_a0", "fmt": "$fmt.change"}, "vs_lo_b0": {"op": "last", "table": "$shape.main", "filter": {"$shape.place": "{code}"}, "from": "$picks.t0", "to": "$picks.t0", "fmt": "$shape.fmt"}, "vs_lo_b1": {"op": "last", "table": "$shape.main", "filter": {"$shape.place": "{code}"}, "from": "$shape.year", "to": "$shape.year", "fmt": "$shape.fmt"}, "vs_lo_b": {"op": "minus", "a": "vs_lo_b1", "b": "vs_lo_b0", "fmt": "$fmt.change"}, "vs_lo": {"op": "minus", "a": "vs_lo_a", "b": "vs_lo_b", "fmt": "$fmt.change"}}},
+       {"when": [{"if": "sign", "fact": "chg.{code}", "is": "neg"}], "text": [{"word": "column.note.fall_most"}], "value_text": "fact:chg.{code}"},
+       {"when": [{"if": "sign", "fact": "chg.{code}", "is": "pos"}], "text": [{"word": "column.note.rise_least"}], "value_text": "fact:chg.{code}"},
+       {"when": [{"if": "sign", "fact": "chg.{code}", "is": "zero"}], "text": [{"word": "column.note.flat"}], "value_text": "fact:chg.{code}"}
+      ]
+     },
+     "leaf": {
+      "key": "leader_notes",
+      "items_as": "notes",
+      "items": {
+       "at": "at",
+       "name": "code",
+       "text": "note.text",
+       "value_text": "note.value_text"
+      },
+      "ext": "$page.ext"
+     }
+    }
+   },
+   "items": {
+    "for_each": "spec",
+    "fields": {
+     "at": {
+      "kind": "point_of_code"
+     },
+     "note": {
+      "kind": "first_holding",
+      "by": "end"
+     }
+    }
+   }
   }
 ,
   "stacked100": {

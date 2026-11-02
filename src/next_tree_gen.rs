@@ -134,7 +134,7 @@ fn declares<'a>(reg: &'a J, layer: &str, page_in: &J) -> Result<&'a J, String> {
 
 /// The external layer's node in the page tree, from its registry declaration; its items by the core's generic expansion.
 /// Before the fill is done (`after` none) a field tied to a bind set only then (binds_after_fill, the accent) is left out.
-fn node_of(layer: &str, page_in: &J, reg: &J, got: &Got, sels: &[J], after: Option<&J>, knobs: Option<J>) -> Result<J, String> {
+fn node_of(layer: &str, page_in: &J, reg: &J, got: &Got, sels: &[J], after: Option<&J>, knobs: Option<J>, facts: Option<&J>) -> Result<J, String> {
     let d = declares(reg, layer, page_in)?;
     let mut n = J::obj_of(vec![("kind", J::str("Node")), ("id", J::str(layer)), ("node", J::str(layer))]);
     let mut binds = sub(d.get("binds").unwrap_or(&J::Obj(vec![])), page_in)?;
@@ -152,7 +152,32 @@ fn node_of(layer: &str, page_in: &J, reg: &J, got: &Got, sels: &[J], after: Opti
     if let Some(f) = d.get("items_for") {
         n.set("items_for", f.clone());
     }
+    // the declaration's own items (for_each spec): each where its conditions hold over the selects, less them
+    if let Some(items) = d.get("items") {
+        let mut kept = Vec::new();
+        for it in items.arr() {
+            if core::conditions_hold(it.g("when"), &plain_holding(got, page_in))? {
+                kept.push(J::Obj(it.obj().iter().filter(|(k, _)| k != "when").cloned().collect()));
+            }
+        }
+        n.set("items", J::Arr(kept));
+    }
     let mut entry = reg.g("nodes").g(layer).clone();
+    // a first_holding field's candidates are the declaration's, over the page input, each chosen code a literal code
+    if let Some(c) = d.get("candidates") {
+        let c = codes_in(&sub(c, facts.and_then(|f| f.get("in")).unwrap_or(page_in))?, got);
+        let with = |fd: &J| {
+            let mut fd = fd.clone();
+            if fd.g("kind").s() == Some("first_holding") {
+                fd.set("candidates", c.clone());
+            }
+            fd
+        };
+        let fields = J::Obj(entry.g("items").g("fields").obj().iter().map(|(k, fd)| (k.clone(), with(fd))).collect());
+        let mut items = entry.g("items").clone();
+        items.set("fields", fields);
+        entry.set("items", items);
+    }
     if after.is_none() {
         let later: Vec<String> = d.g("binds_after_fill").obj().iter().map(|(k, _)| format!("binds.{k}")).collect();
         let fields: Vec<(String, J)> =
@@ -161,16 +186,46 @@ fn node_of(layer: &str, page_in: &J, reg: &J, got: &Got, sels: &[J], after: Opti
         items.set("fields", J::Obj(fields));
         entry.set("items", items);
     }
-    let spec = J::obj_of(vec![(
+    let mut spec = J::obj_of(vec![(
         "selects",
         J::obj_of(vec![("items", J::Arr(sels.iter().map(|s| with_result(s, got.get(&st(s.g("id"))).cloned().unwrap_or(J::Null))).collect()))]),
     )]);
+    // the declaration's facts and formats, which a first_holding field's conditions read
+    if let Some(f) = facts {
+        spec.set("facts", f.clone());
+    }
     let items = core::expand_items(&n, &entry, &spec, got, page_in)?;
     n.set("items", J::Arr(items));
     if let Some(g) = d.get("geometry") {
         n.set("geometry", sub(g, page_in)?);
     }
     Ok(n)
+}
+
+/// What a condition over the selects and the page input alone reads (count_at_least, page_is): no facts, formats, name
+/// or words, which such a condition does not read.
+fn plain_holding<'a>(got: &'a Got, page: &'a J) -> core::Holding<'a> {
+    fn no_fact(k: &str) -> Result<f64, String> {
+        Err(format!("fact {k}: a condition here reads no fact"))
+    }
+    fn no_word(_: &str) -> Option<String> {
+        None
+    }
+    static NONE: J = J::Null;
+    core::Holding { facts: &no_fact, fmts: &NONE, got, page, code: "", name: "", word: &no_word }
+}
+
+/// `v` with each string that is a select reference to one code (a take's) written as that code.
+fn codes_in(v: &J, got: &Got) -> J {
+    match v {
+        J::Str(s) => match core::ref_parts(s).and_then(|_| core::resolve_ref(s, got).ok()) {
+            Some(J::Str(code)) => J::Str(code),
+            _ => v.clone(),
+        },
+        J::Arr(a) => J::Arr(a.iter().map(|x| codes_in(x, got)).collect()),
+        J::Obj(o) => J::Obj(o.iter().map(|(k, x)| (k.clone(), codes_in(x, got))).collect()),
+        x => x.clone(),
+    }
 }
 
 /// The select a node's items follow: its ranked bind, else its items_for.
@@ -254,10 +309,25 @@ fn change_fmt(layer: &str, fc: &J, page_in: &J, got: &Got) -> Result<(String, J)
 /// The declaration as JSON in the generator's own order (the prototype's), for the fixtures.
 fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
     let d = declares(reg, layer, page_in)?;
-    let (sels, given) = selects_of(page_in, reg)?;
-    let (bad, got) = recompute(page_in, &sels, &given);
+    let (mut sels, given) = selects_of(page_in, reg)?;
+    let (bad, mut got) = recompute(page_in, &sels, &given);
     if !bad.is_empty() {
         return Err(format!("{layer}: the core's selects do not recompute: {}", bad.iter().take(3).cloned().collect::<Vec<_>>().join("; ")));
+    }
+    // the layer's own selects (declares.selects), each only where its conditions hold over the page's selects
+    let mut own = Vec::new();
+    for s in d.g("selects").arr() {
+        if core::conditions_hold(s.g("when"), &plain_holding(&got, page_in))? {
+            own.push(sub(&J::Obj(s.obj().iter().filter(|(k, _)| k != "when").cloned().collect()), page_in)?);
+        }
+    }
+    if !own.is_empty() {
+        sels.extend(own);
+        let (bad, again) = recompute(page_in, &sels, &given);
+        if !bad.is_empty() {
+            return Err(format!("{layer}: its selects do not recompute: {}", bad.iter().take(3).cloned().collect::<Vec<_>>().join("; ")));
+        }
+        got = again;
     }
     let mut fd = sub(d.g("fmt"), page_in)?;
     let rule = fd.remove("dec_rule").ok_or_else(|| format!("{layer}: declares.fmt has no dec_rule"))?;
@@ -272,31 +342,51 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
         fmts.set(&key, cfd);
         facts_in.set("fmt", J::obj_of(vec![("change", J::Str(key))]));
     }
-    let facts = sub(d.g("facts"), &facts_in)?;
-    let n = node_of(layer, page_in, reg, &got, &sels, None, None)?;
-    let sid = order_of(&n).ok_or_else(|| format!("{layer}: its items follow no select"))?;
-    let refs: Vec<(String, &J)> = sels.iter().map(|s| (st(s.g("id")), s)).collect();
-    let root = core::root_rank(&refs, &sid)?;
-    let over = root.g("over").clone();
-    let codes = got.get(&sid).cloned().unwrap_or(J::Arr(vec![]));
-    let by = st(over.g("by"));
-    // the rows of the select at its time (rows_of_select), or at its time and the time its change runs from
-    let rows_by = |rule: &J| -> Result<Vec<J>, String> {
-        let times: Vec<&J> = match rule.s() {
-            None => return Ok(vec![]),
-            Some("rows_of_select") => vec![over.g("time")],
-            Some("rows_of_select_both_ends") => vec![over.g("time"), core::change_from(root).unwrap_or(&J::Null)],
-            Some(r) => return Err(format!("{layer}: rows rule {r}: not one the generator computes")),
+    // the facts, each code a select chose written as the code; the formats the declaration fixes (declares.formats)
+    let mut facts = codes_in(&sub(d.g("facts"), &facts_in)?, &got);
+    for (k, v) in d.g("formats").obj() {
+        fmts.set(k, sub(v, page_in)?);
+    }
+    let held = J::obj_of(vec![("facts", facts.clone()), ("fmts", fmts.clone()), ("in", facts_in.clone())]);
+    let n = node_of(layer, page_in, reg, &got, &sels, None, None, Some(&held))?;
+    // the facts of each item's chosen candidate (a first_holding field's): one key two items declare apart refuses
+    for it in n.g("items").arr() {
+        for (_, v) in it.obj() {
+            for (k, q) in v.g("facts").obj() {
+                if facts.get(k).is_some_and(|w| w != q) {
+                    return Err(format!("{layer}: fact {k} is declared two ways"));
+                }
+                facts.set(k, q.clone());
+            }
+        }
+    }
+    let (drawn, reads) = if d.has("rows") || d.has("reads") {
+        let sid = order_of(&n).ok_or_else(|| format!("{layer}: its items follow no select"))?;
+        let refs: Vec<(String, &J)> = sels.iter().map(|s| (st(s.g("id")), s)).collect();
+        let root = core::root_rank(&refs, &sid)?;
+        let over = root.g("over").clone();
+        let codes = got.get(&sid).cloned().unwrap_or(J::Arr(vec![]));
+        let by = st(over.g("by"));
+        // the rows of the select at its time (rows_of_select), or at its time and the time its change runs from
+        let rows_by = |rule: &J| -> Result<Vec<J>, String> {
+            let times: Vec<&J> = match rule.s() {
+                None => return Ok(vec![]),
+                Some("rows_of_select") => vec![over.g("time")],
+                Some("rows_of_select_both_ends") => vec![over.g("time"), core::change_from(root).unwrap_or(&J::Null)],
+                Some(r) => return Err(format!("{layer}: rows rule {r}: not one the generator computes")),
+            };
+            Ok(page_in
+                .g("rows")
+                .arr()
+                .iter()
+                .filter(|r| r.g("table") == over.g("table") && times.contains(&r.g("time")) && codes.arr().contains(r.g("dims").g(&by)))
+                .cloned()
+                .collect())
         };
-        Ok(page_in
-            .g("rows")
-            .arr()
-            .iter()
-            .filter(|r| r.g("table") == over.g("table") && times.contains(&r.g("time")) && codes.arr().contains(r.g("dims").g(&by)))
-            .cloned()
-            .collect())
+        (rows_by(d.g("rows"))?, rows_by(d.g("reads"))?)
+    } else {
+        (Vec::new(), Vec::new())
     };
-    let (drawn, reads) = (rows_by(d.g("rows"))?, rows_by(d.g("reads"))?);
     let mut data = J::Obj(vec![]);
     for (k, v) in n.g("binds").obj() {
         let x = match v {
@@ -326,13 +416,17 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
         for it in n.g("items").arr() {
             let mut x = J::Obj(vec![]);
             for (k, from) in lf.g("items").obj() {
-                let v = it.get(&st(from)).ok_or_else(|| format!("{layer}: leaf item field {k}: the items have no {}", st(from)))?;
+                // a dotted path reads into an item field (a first_holding field's chosen candidate: note.text)
+                let v = st(from).split('.').try_fold(it, |x, p| x.get(p));
+                let v = v.ok_or_else(|| format!("{layer}: leaf item field {k}: the items have no {}", st(from)))?;
                 x.set(k, if v.s().is_some_and(|s| core::ref_parts(s).is_some()) { core::resolve_ref(&st(v), &got)? } else { v.clone() });
             }
             items.push(x);
         }
-        let mut leaf = J::obj_of(vec![("items", J::Arr(items))]);
-        for (k, v) in lf.obj().iter().filter(|(k, _)| k != "key" && k != "items") {
+        // the items under the key the leaf reads them by (items_as; items when the declaration names none)
+        let items_as = lf.g("items_as").s().unwrap_or("items").to_string();
+        let mut leaf = J::obj_of(vec![(items_as.as_str(), J::Arr(items))]);
+        for (k, v) in lf.obj().iter().filter(|(k, _)| k != "key" && k != "items" && k != "items_as") {
             leaf.set(k, sub(v, page_in)?);
         }
         out.set("leaves", J::Obj(vec![(st(lf.g("key")), leaf)]));
@@ -1110,7 +1204,7 @@ pub(crate) fn tree_j(page_in: &J, fill: &J, reg: &J, external: &[String]) -> Res
     // with no accent the binds set after the fill are left out, and the items mark no code (next_tree code_is)
     let after = after.unwrap_or(J::Obj(vec![]));
     for layer in fill.g("order").arr().iter().map(st).filter(|l| external.contains(l)) {
-        body.push(node_of(&layer, page_in, reg, &got, &sels, Some(&after), frame_knobs(&layer, reg, fill))?);
+        body.push(node_of(&layer, page_in, reg, &got, &sels, Some(&after), frame_knobs(&layer, reg, fill), None)?);
     }
     let text = |k: &str, role: &str| {
         J::obj_of(vec![("kind", J::str("Text")), ("role", J::str(role)), ("origin", J::str("text_step")), ("runs", runs_of(spec.g(k).s().unwrap_or("")))])
@@ -1325,7 +1419,23 @@ pub fn draw(fill: &Value, page_in: &Value, layers: &[String], runtime: &std::pat
     if asked.is_empty() {
         return Ok(out);
     }
-    // a layer whose leaf lays itself out (geometry leaf) asks no node and is given no placed geometry
+    // a layer whose leaf lays itself out (geometry leaf) asks no node and is given no placed geometry; one whose items
+    // choose by conditions (declares.candidates) is declared again over the finished fill's name rows, and the leaf data
+    // the fill holds must be that declaration's (a name the conditions measured otherwise refuses)
+    for l in asked.iter().filter(|l| reg.g("nodes").g(l).g("geometry").s() == Some("leaf")) {
+        let Ok(d) = declares(&reg, l, &page_in) else { continue };
+        if !d.has("candidates") {
+            continue;
+        }
+        let mut named = page_in.clone();
+        named.set("names", fill.g("knobs").g("labels").clone());
+        let again = declared_j(l, &named, &reg).map_err(|e| format!("node {l}: recheck over the name rows: {e}"))?;
+        let key = st(d.g("leaf").g("key"));
+        let held = fill.g("knobs").g("spec").g("hero").g("leaves").g(&key);
+        if again.g("leaves").g(&key) != held {
+            return Err(format!("node {l}: the leaf data is not its declaration over the page's name rows: {} != {}", held.repr(), again.g("leaves").g(&key).repr()));
+        }
+    }
     asked.retain(|l| reg.g("nodes").g(l).g("geometry").s() != Some("leaf"));
     if asked.is_empty() {
         return Ok(out);
@@ -1469,7 +1579,8 @@ mod tests {
         let mut off = Vec::new();
         for c in fx.g("cases").arr() {
             let (page_in, fill) = stop_case(c);
-            let layers: Vec<String> = bindings.g("recipes").g(&st(c.g("recipe"))).arr().iter().map(st).collect();
+            // the layers the prototype asked: not the leader notes, which lay themselves out in their leaf and stop nowhere here
+            let layers: Vec<String> = bindings.g("recipes").g(&st(c.g("recipe"))).arr().iter().map(st).filter(|l| l != "leader_notes").collect();
             let asked: Vec<String> = layers.iter().filter(|l| leaf_stops(l, &page_in, &fill, &reg).is_none()).cloned().collect();
             let want: Vec<String> = c.g("asked").arr().iter().map(st).collect();
             if asked != want {
@@ -1666,13 +1777,15 @@ mod tests {
         assert!(why.starts_with("not this shape: stacked100: ") && why.contains("more than a quarter"), "{why}");
     }
 
-    /// Only the stacked100 node lays itself out in its leaf (geometry leaf): draw asks no node and checks no placed geometry
-    /// for such a layer, so a second node declaring it in node-bindings.json would leave the core's geometry check unasked.
+    /// Only the stacked100 node and the leader notes lay themselves out in their leaf (geometry leaf): draw asks no node and
+    /// checks no placed geometry for such a layer, so another node declaring it in node-bindings.json would leave the core's
+    /// geometry check unasked. The notes placed themselves in their leaf before they were external too (P6 step 1); what
+    /// they say is the declaration's, declared again over the name rows (draw).
     #[test]
     fn next_tree_gen_only_stacked100_declares_geometry_leaf() {
         let bound = core::bindings();
         let leaf: Vec<&str> = bound.g("nodes").obj().iter().filter(|(_, n)| n.g("geometry").s() == Some("leaf")).map(|(k, _)| k.as_str()).collect();
-        assert_eq!(leaf, ["stacked100"]);
+        assert_eq!(leaf, ["leader_notes", "stacked100"]);
     }
 
     /// Fill texts as runs: placeholders become fact runs (a final .n or .t a part), any other brace stays a word.

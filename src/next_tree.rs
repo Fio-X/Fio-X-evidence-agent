@@ -2886,8 +2886,8 @@ const CHANNELS: [Channel; 10] = [
     ("radius_floor", &[&["r"]], "value", "sqrt", "zero_to_max", "r_max"),
     ("stack_x", &[&["x", "w"]], "share", "linear", "zero_to_one", "plot.x"),
 ];
-const FIELD_KINDS: [&str; 8] =
-    ["select_index", "row_of_code", "row_of_code_from", "fact_template", "code_is", "point_of_code", "cells_by_part", "fact_per_part"];
+const FIELD_KINDS: [&str; 9] =
+    ["select_index", "row_of_code", "row_of_code_from", "fact_template", "code_is", "point_of_code", "cells_by_part", "fact_per_part", "first_holding"];
 const FOR_EACH: [&str; 4] = ["binds.ranked", "binds.bars", "items_for", "spec"];
 /// The reply allow-list: each shape's fields, a text's fields, the anchors, the one refusal.
 pub const SHAPES: [(&str, &[&str]); 3] = [("rect", &["x", "y", "w", "h"]), ("circle", &["cx", "cy", "r"]), ("line", &["x1", "y1", "x2", "y2"])];
@@ -4099,6 +4099,27 @@ pub fn expand_items(n: &J, entry: &J, spec: &J, got: &Got, inp: &J) -> Result<Ve
                     hit[0].g("src").clone()
                 }
                 "fact_template" => J::Str(format!("fact:{}", fill_template(&st(d.g("template")), &[("code", &cs)], n)?)),
+                // the first candidate whose conditions hold (CONDITIONS), from the list the item's `by` field names; its
+                // value is the candidate less its conditions, `{code}` read as the item's code
+                "first_holding" => {
+                    let list = match d.get("by") {
+                        Some(b) => d.g("candidates").g(&st(item.g(&st(b)))).clone(),
+                        None => d.g("candidates").clone(),
+                    };
+                    let list = with_code(&list, &cs);
+                    let mut facts = spec.g("facts").g("facts").clone();
+                    for c in list.arr() {
+                        for (k, q) in c.g("facts").obj() {
+                            facts.set(k, q.clone());
+                        }
+                    }
+                    let fact = |k: &str| fact_value(&facts, rows, k);
+                    let word = |k: &str| crate::next_ledger::word_table().get(k).and_then(serde_json::Value::as_str).map(str::to_string);
+                    let name = inp.g("names").g(&cs).s().ok_or_else(|| format!("'{cs}': the page input names no {cs}"))?.to_string();
+                    let hold = Holding { facts: &fact, fmts: spec.g("facts").g("fmts"), got, page: inp, code: &cs, name: &name, word: &word };
+                    let i = first_holding(&list, &hold)?;
+                    J::Obj(list.at(i).obj().iter().filter(|(k, _)| k != "when").cloned().collect())
+                }
                 // a page that marks no code (no accent bound: the leaf's focus is none) marks no item
                 "code_is" => match at_path(n, &st(d.g("ref"))) {
                     Ok(r) => J::Bool(*code == resolve_sel(r, got)?),
@@ -4155,6 +4176,136 @@ fn cells_of(code: &J, dr: &J, sel: &[(String, &J)], got: &Got, rows: &[J]) -> Re
         }
     }
     Ok(J::Obj(out))
+}
+
+/// The conditions a `first_holding` field's candidates are held by, all recomputed here from the core's own facts,
+/// formats, selects and the page input (registered: next_ledger CHECK_REGISTRY tree.first_holding). A candidate names
+/// only these; any other condition, or another argument, is refused.
+pub const CONDITIONS: [(&str, &[&str]); 5] = [
+    // the sign of a fact the core computes: pos, neg or zero (a NaN reads as zero, as a partial_cmp with 0 does)
+    ("sign", &["fact", "is"]),
+    // the fact as the format prints it differs from 0 as the format prints it (a tie prints as no gap)
+    ("prints_nonzero", &["fact", "fmt"]),
+    // one line's width: its parts (a `{name}`, a literal, a `{"word": key}` of the word table) joined in order, each
+    // character above U+2E7F `size` px, any other 0.58 `size`, summed left to right, at most `max` px
+    ("width_at_most", &["text", "size", "max"]),
+    // a select holds at least `n` codes
+    ("count_at_least", &["select", "n"]),
+    // a boolean at a path of the page input (a value that is not true or false is refused)
+    ("page_is", &["path"]),
+];
+
+/// What a `first_holding` condition reads, given by its caller: the core's fact values by key, its formats, its selects'
+/// results, the page input, the item's code, the code's name as the page prints it, and the word table.
+pub(crate) struct Holding<'a> {
+    pub facts: &'a dyn Fn(&str) -> Result<f64, String>,
+    pub fmts: &'a J,
+    pub got: &'a Got,
+    pub page: &'a J,
+    pub code: &'a str,
+    pub name: &'a str,
+    pub word: &'a dyn Fn(&str) -> Option<String>,
+}
+
+/// The index of the first candidate (`[{"when": [condition, ...], ...}, ...]`) whose every condition holds, `{code}` in a
+/// fact or select key read as the item's code. None holds: refused (the page cannot say what the registry asks).
+pub(crate) fn first_holding(candidates: &J, h: &Holding) -> Result<usize, String> {
+    for (i, c) in candidates.arr().iter().enumerate() {
+        if conditions_hold(c.g("when"), h).map_err(|e| format!("candidate {i}: {e}"))? {
+            return Ok(i);
+        }
+    }
+    Err(format!("item {}: no candidate's conditions hold", h.code))
+}
+
+/// Whether every condition of a list (CONDITIONS) holds, read in order (the first that does not ends it).
+pub(crate) fn conditions_hold(conds: &J, h: &Holding) -> Result<bool, String> {
+    for cond in conds.arr() {
+        if !condition_holds(cond, h)? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+/// One condition of CONDITIONS over what `h` gives.
+fn condition_holds(cond: &J, h: &Holding) -> Result<bool, String> {
+    let kind = st(cond.g("if"));
+    let args = CONDITIONS.iter().find(|(k, _)| *k == kind).map(|(_, a)| *a).ok_or_else(|| format!("condition {kind}: not one the core computes"))?;
+    if let Some((k, _)) = cond.obj().iter().find(|(k, _)| k != "if" && !args.contains(&k.as_str())) {
+        return Err(format!("condition {kind}: no argument {k} (it reads {})", args.join(", ")));
+    }
+    let key = |k: &str| st(cond.g(k)).replace("{code}", h.code);
+    match kind.as_str() {
+        "sign" => {
+            let v = (h.facts)(&key("fact"))?;
+            let is = match v.partial_cmp(&0.0).unwrap_or(std::cmp::Ordering::Equal) {
+                std::cmp::Ordering::Greater => "pos",
+                std::cmp::Ordering::Less => "neg",
+                std::cmp::Ordering::Equal => "zero",
+            };
+            match st(cond.g("is")).as_str() {
+                want @ ("pos" | "neg" | "zero") => Ok(is == want),
+                other => Err(format!("condition sign: is {other} (pos, neg or zero)")),
+            }
+        }
+        "prints_nonzero" => {
+            let v = (h.facts)(&key("fact"))?;
+            let fmt = st(cond.g("fmt"));
+            let fm = h.fmts.get(&fmt).ok_or_else(|| format!("condition prints_nonzero: no format {fmt}"))?;
+            let dec = fm.g("dec").num().ok_or_else(|| format!("format {fmt}: no dec"))? as usize;
+            let scale = fm.get("scale").map_or(Ok(1.0), |x| x.num().ok_or_else(|| format!("format {fmt}: scale")))?;
+            Ok(py_fixed(v * scale, dec) != py_fixed(0.0 * scale, dec))
+        }
+        "width_at_most" => {
+            let mut line = String::new();
+            for part in cond.g("text").arr() {
+                match part {
+                    J::Str(s) => line.push_str(&s.replace("{name}", h.name)),
+                    J::Obj(_) if part.has("word") => {
+                        let k = st(part.g("word"));
+                        line.push_str(&(h.word)(&k).ok_or_else(|| format!("condition width_at_most: the word table has no {k}"))?);
+                    }
+                    p => return Err(format!("condition width_at_most: text part {}", p.repr())),
+                }
+            }
+            let size = cond.g("size").num().ok_or("condition width_at_most: size")?;
+            let max = cond.g("max").num().ok_or("condition width_at_most: max")?;
+            Ok(line_width(&line, size) <= max)
+        }
+        "count_at_least" => {
+            let sid = key("select");
+            let n = cond.g("n").num().ok_or("condition count_at_least: n")?;
+            let have = h.got.get(&sid).ok_or_else(|| format!("condition count_at_least: no select {sid}"))?.arr().len();
+            Ok(have as f64 >= n)
+        }
+        "page_is" => match at_path(h.page, &st(cond.g("path")))? {
+            J::Bool(b) => Ok(*b),
+            v => Err(format!("condition page_is {}: {} is not true or false", st(cond.g("path")), v.repr())),
+        },
+        _ => unreachable!("CONDITIONS holds the arms"),
+    }
+}
+
+/// `v` with `{code}` in every string and object key read as `code`.
+fn with_code(v: &J, code: &str) -> J {
+    match v {
+        J::Str(s) => J::Str(s.replace("{code}", code)),
+        J::Arr(a) => J::Arr(a.iter().map(|x| with_code(x, code)).collect()),
+        J::Obj(o) => J::Obj(o.iter().map(|(k, x)| (k.replace("{code}", code), with_code(x, code))).collect()),
+        x => x.clone(),
+    }
+}
+
+/// A fact's value as the core computes it over `rows` (the Compute the checks use), the facts declared in `facts`.
+pub(crate) fn fact_value(facts: &J, rows: &[J], key: &str) -> Result<f64, String> {
+    Compute::new(facts, rows).val(key)
+}
+
+/// One line's width as the flow's leader notes measured it (note_fits): a character above U+2E7F `size`, any other 0.58
+/// `size`, summed left to right in a plain sum (not tw_leaf's compensated one: the two may differ at the limit).
+fn line_width(text: &str, size: f64) -> f64 {
+    text.chars().map(|c| if c as u32 > 0x2e7f { size } else { 0.58 * size }).sum()
 }
 
 /// The first layer's width rule (runtime/nodes/common.mjs tw): a CJK character 1 em, any other 0.58 em.
@@ -6444,7 +6595,7 @@ mod tests {
     #[test]
     fn next_tree_production_binds_the_bars_external() {
         let o = bindings();
-        assert_eq!(external_nodes(&o), ["bars", "bubbles", "stacked100"]);
+        assert_eq!(external_nodes(&o), ["bars", "bubbles", "leader_notes", "stacked100"]);
         assert_eq!(registry_problems(&load_registry(&o)), Vec::<String>::new());
         for n in external_nodes(&o) {
             assert!(runner_allowed(&st(o.g("nodes").g(&n).g("runner"))), "{n}");
@@ -6993,5 +7144,89 @@ mod tests {
         println!("next_tree r11 unpainted svg: {n} fixtures, {} svgs, sha256 {}", all.lines().count(), sha256_hex(&all));
         // measured at R11 part 1, whose svg() is the base's; re-measured at S5b (numbers printed as the leaf prints them)
         assert_eq!((n, all.lines().count(), sha256_hex(&all).as_str()), (30, 72, "cfd1b685951d4431b14ff8873a7e9109cc8404b303af00524f3881c5a334c39d"));
+    }
+
+    /// The flow's leader-note width rule (next_run note_fits, at NOTE_PX 16 and half the 560 px map panel), copied here as
+    /// the reference the core's width_at_most is held to.
+    fn note_fits_old(words: &str) -> bool {
+        let w: f64 = words.chars().map(|c| if c as u32 > 0x2e7f { 16.0 } else { 0.58 * 16.0 }).sum();
+        w <= 560.0 / 2.0
+    }
+
+    /// first_holding over each condition: the first candidate whose conditions all hold, a refusal when none does or a
+    /// condition is not CONDITIONS's; width_at_most measures the whole line as note_fits did, at and around its limit.
+    #[test]
+    fn first_holding_takes_the_first_candidate_whose_conditions_hold() {
+        let facts = |k: &str| -> Result<f64, String> {
+            match k {
+                "chg.SE" => Ok(2.5),
+                "chg.FI" => Ok(-1.0),
+                "chg.NO" => Ok(0.0),
+                "chg.NA" => Ok(f64::NAN),
+                "tie" => Ok(0.004),
+                "gap" => Ok(0.006),
+                k => Err(format!("'{k}'")),
+            }
+        };
+        let words = |k: &str| match k {
+            "w.rise" => Some("增幅最大".to_string()),
+            "w.vs" => Some("，比第二名高".to_string()),
+            "w.ascii" => Some("abcdefghijklmnopqrstuvw".to_string()),
+            _ => None,
+        };
+        let fmts = parse(r#"{"pp": {"scale": 1, "dec": 2, "suffix": "x"}, "pct": {"scale": 100, "dec": 0}}"#).unwrap();
+        let mut got = Got::new();
+        got.insert("ranked".into(), parse(r#"["SE", "FI"]"#).unwrap());
+        let page = parse(r#"{"scoped": true, "plain": false, "n": 1}"#).unwrap();
+        let run = |cands: &str, code: &str, name: &str| {
+            let hold = Holding { facts: &facts, fmts: &fmts, got: &got, page: &page, code, name, word: &words };
+            first_holding(&parse(cands).unwrap(), &hold)
+        };
+        let sign = |is: &str| format!(r#"[{{"when": [{{"if": "sign", "fact": "chg.{{code}}", "is": "{is}"}}]}}, {{"when": []}}]"#);
+        assert_eq!(run(&sign("pos"), "SE", "瑞典"), Ok(0));
+        assert_eq!(run(&sign("pos"), "FI", "芬兰"), Ok(1));
+        assert_eq!(run(&sign("neg"), "FI", "芬兰"), Ok(0));
+        assert_eq!(run(&sign("zero"), "NO", "挪威"), Ok(0));
+        assert_eq!(run(&sign("zero"), "NA", "x"), Ok(0), "a NaN reads as zero, as the flow's partial_cmp did");
+        assert!(run(&sign("up"), "SE", "瑞典").unwrap_err().contains("is up"));
+        // a tie: the gap prints as 0 in its format, so the gap candidate does not hold
+        let tie = |fact: &str, fmt: &str| format!(r#"[{{"when": [{{"if": "prints_nonzero", "fact": "{fact}", "fmt": "{fmt}"}}]}}, {{"when": []}}]"#);
+        assert_eq!(run(&tie("tie", "pp"), "SE", "瑞典"), Ok(1));
+        assert_eq!(run(&tie("gap", "pp"), "SE", "瑞典"), Ok(0));
+        assert_eq!(run(&tie("tie", "pct"), "SE", "瑞典"), Ok(1), "0.4 prints as 0 at dec 0");
+        assert_eq!(run(&tie("gap", "pct"), "SE", "瑞典"), Ok(0), "0.6 prints as 1");
+        assert!(run(&tie("gap", "none"), "SE", "瑞典").unwrap_err().contains("no format none"));
+        // a neighbour: the ranked select's length
+        let count = |n: u32| format!(r#"[{{"when": [{{"if": "count_at_least", "select": "ranked", "n": {n}}}]}}, {{"when": []}}]"#);
+        assert_eq!(run(&count(2), "SE", "瑞典"), Ok(0));
+        assert_eq!(run(&count(3), "SE", "瑞典"), Ok(1));
+        // the scoped words: a boolean at a path, anything else refused, and no comparison argument
+        let flag = |p: &str| format!(r#"[{{"when": [{{"if": "page_is", "path": "{p}"}}]}}, {{"when": []}}]"#);
+        assert_eq!(run(&flag("scoped"), "SE", "瑞典"), Ok(0));
+        assert_eq!(run(&flag("plain"), "SE", "瑞典"), Ok(1));
+        assert!(run(&flag("n"), "SE", "瑞典").unwrap_err().contains("is not true or false"));
+        assert!(run(r#"[{"when": [{"if": "page_is", "path": "n", "is": 1}]}]"#, "SE", "瑞典").unwrap_err().contains("no argument is"));
+        // what CONDITIONS does not hold is refused, and an item no candidate fits
+        assert!(run(r#"[{"when": [{"if": "larger", "fact": "gap"}]}]"#, "SE", "瑞典").unwrap_err().contains("not one the core computes"));
+        assert!(run(r#"[{"when": [{"if": "sign", "fact": "chg.{code}", "is": "neg"}]}]"#, "SE", "瑞典").unwrap_err().contains("no candidate"));
+        // width_at_most: the line "{name} {word}{vs}" in note_fits's order, the separator space included
+        let width = |parts: &str| format!(r#"[{{"when": [{{"if": "width_at_most", "text": {parts}, "size": 16, "max": 280}}]}}, {{"when": []}}]"#);
+        for (name, word) in [("瑞典", "w.rise"), ("波斯尼亚和黑塞哥维那", "w.rise"), ("AB", "w.ascii"), ("中文", "w.ascii")] {
+            let line = format!("{name} {}{}", words(word).unwrap(), words("w.vs").unwrap());
+            let parts = format!(r#"["{{name}}", " ", {{"word": "{word}"}}, {{"word": "w.vs"}}]"#);
+            let want = if note_fits_old(&line) { 0 } else { 1 };
+            assert_eq!(run(&width(&parts), "SE", name), Ok(want), "{line}: {} px", line_width(&line, 16.0));
+        }
+        // the limit: 3 CJK (48 px) and 25 others (232 px), 279.99999999999994 by the plain sum; one more character is over, one
+        // fewer (short by one space width) holds; each held to note_fits's own answer
+        let exact = "A中文字 abcdefghijklmnopqrstuvw";
+        assert_eq!((exact.chars().filter(|c| (*c as u32) > 0x2e7f).count(), exact.chars().count()), (3, 28));
+        for line in [exact.to_string(), format!("{exact}x"), format!("{exact} "), exact[..exact.len() - 1].to_string(), "AB中文字 abcdefghijklmnopqrstuvw".to_string()] {
+            let parts = format!(r#"["{line}"]"#);
+            assert_eq!(run(&width(&parts), "SE", "-"), Ok(if note_fits_old(&line) { 0 } else { 1 }), "{line}");
+        }
+        assert!(!note_fits_old(&format!("{exact}x")) && note_fits_old(&exact[..exact.len() - 1]));
+        assert!(run(&width(r#"[{"word": "w.none"}]"#), "SE", "瑞典").unwrap_err().contains("no w.none"));
+        assert_eq!(CONDITIONS.map(|(k, _)| k), ["sign", "prints_nonzero", "width_at_most", "count_at_least", "page_is"]);
     }
 }

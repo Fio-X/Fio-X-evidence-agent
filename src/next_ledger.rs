@@ -516,7 +516,7 @@ pub fn saturated_colours(html: &str) -> Vec<String> {
 const RELATIONS: [(&str, &[&str]); 3] = [("max", &["column.note.vs_next"]), ("next", &["column.note.vs_next"]), ("gt", &["column.note.vs_next"])];
 
 /// The leaf's word table, read here as data (include_str), so the check and the leaf hold the same words.
-fn word_table() -> &'static Value {
+pub(crate) fn word_table() -> &'static Value {
     static WORDS: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
     WORDS.get_or_init(|| serde_json::from_str(include_str!("../runtime/leaves_py/words.zh.json")).unwrap_or_default())
 }
@@ -1093,6 +1093,8 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     // the page tree (next_tree.rs): its schema
     // a page tree that is JSON the checker reads (each value, number, string and escape), no extra data, a number
     // where float() takes one
+    // a first_holding field: the first candidate whose conditions (CONDITIONS, recomputed by the core) all hold
+    ("tree.first_holding", "next_tree::CONDITIONS", &["tree::first_holding", "tree::conditions_hold", "tree::condition_holds", "tree::line_width", "tree::with_code", "tree::fact_value", "tree_gen::plain_holding", "tree_gen::no_fact", "tree_gen::no_word", "tree_gen::codes_in"]),
     ("tree.json_input", "", &["tree::parse", "tree::err", "tree::num", "tree::value", "tree::number", "tree::string", "tree::hex4"]),
     // the node the core asks: in the page tree, bound external, its runner a code file under the runtime, its content
     // rechecked before the child starts and its reply after (C1-C5, B0-B7 and the colour checks)

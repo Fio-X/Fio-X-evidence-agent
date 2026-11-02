@@ -406,7 +406,7 @@
    "prefix": "runtime/leaves_py/",
    "suffix": ".py",
    "group": "visual",
-   "note": "Second-layer Python leaves and fill nodes, started by the visual group's entry only. Code files only: the folder's data files keep no group (words.zh.json is still the flow's word file, include_str in next_run.rs, which the flow ratchet counts as the flow's copy). Ownership only; what they may touch is cross_calls.node_rule."
+   "note": "Second-layer Python leaves and fill nodes, started by the visual group's entry only. Code files only: the folder's data files keep no group (words.zh.json, the leaves' word table, is read by the visual group's core through include_str in next_ledger.rs). Ownership only; what they may touch is cross_calls.node_rule."
   },
   {
    "prefix": "runtime/leaves_py/",

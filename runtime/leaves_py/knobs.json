@@ -1755,10 +1755,12 @@
    "main": "bars",
    "external": [
     "bubbles",
-    "bars"
+    "bars",
+    "leader_notes"
    ],
    "points": [
-    "bubbles"
+    "bubbles",
+    "leader_notes"
    ]
   },
   {
@@ -1794,10 +1796,12 @@
    "main": "bars",
    "external": [
     "bars",
-    "bubbles"
+    "bubbles",
+    "leader_notes"
    ],
    "points": [
-    "bubbles"
+    "bubbles",
+    "leader_notes"
    ]
   },
   {
