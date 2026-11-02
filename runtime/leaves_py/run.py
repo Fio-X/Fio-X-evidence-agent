@@ -240,7 +240,7 @@ class Panel:
         p.raw = [r for r in req["rows"] if isinstance(r.get("dims"), dict)]  # B11: the request's series rows, a claim's values
         FX.MEMBERS = list(k["members"]) if k.get("members") else None
         FX.LEDGER = {r["src"]: r["text"] for r in req["rows"] if "text" in r} or None; FX.SEGS = k.get("segs")
-        wbkit.COMPARISONS = dict(k.get("comparisons") or {})
+        wbkit.COMPARISONS = dict(k["comparisons"]) if isinstance(k.get("comparisons"), dict) else None
         if FX.LEDGER is not None: fact_times(spec)
         spec["fmts"]["bcm0"] = {"scale": 0.01, "dec": 0}  # as scmp.page sets it
         c = prod.Ctx(spec); h = spec["hero"]
@@ -489,6 +489,8 @@ def title_claim(title, found, spec, raw, words):
         if len(fam) < 2: return None
         v = {o: _value(facts[o], raw) for o in fam}
         if not all(v[k] > v[o] for o in fam if o != k): return None
+        cmp = wbkit.compared(f"fact:{k}")  # the core's own set (other codes of the rows in it) holds it first, unscoped
+        if wbkit.COMPARISONS is not None and (cmp is None or cmp.get("scoped") or cmp.get("first") != c): return None
         a = f"fact:{k}"
     elif len(named) == 2 and {n[0] for n in named} == {0, 1}:  # a flow: its row over every row of its table and time
         s_, t_ = (n[1] for n in sorted(named))

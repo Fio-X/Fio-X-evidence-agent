@@ -126,11 +126,14 @@ def child(lines):
     return [json.loads(l) for l in out.splitlines()]
 
 
-def page(shape, title, words):
+def page(shape, title, words, comparisons=None):
     """(html or None, refusal, ledger) of the shape's flow page with `title` as the text step's, the page line carrying
-    `words` as claim_words (None: no claim_words, as before B11)."""
+    `words` as claim_words (None: no claim_words, as before B11), the layer lines the core's comparisons when given
+    (knobs.comparisons; None: a core that sends none)."""
     build, head = SHAPES[shape]
     lines, ledger = build({**head, "title": title})
+    if comparisons is not None:
+        lines = [json.dumps({**(d := json.loads(l)), "knobs": {**d["knobs"], "comparisons": comparisons}}, ensure_ascii=False) for l in lines]
     size, pic = child(lines)
     if "refused" in size or "refused" in pic: return None, size.get("refused") or pic.get("refused"), ledger
     extra = {"claim_words": words} if words is not None else {}
@@ -177,6 +180,27 @@ def dek(html):
 
 class Titles(unittest.TestCase):
     WORDS = claim_words()
+
+    def test_the_page_states_only_the_comparisons_the_core_confirms(self):
+        """P4b-5: the core's comparisons (knobs.comparisons) decide what the page states. Every one confirmed: the page as
+        with none sent, byte for byte. None confirmed (an empty map: the core refused every set): no finding, no note, no
+        claim, the page drawn. The sources' set refused: their note and a title claim on oil fall back, the sectors' stand."""
+        title = "石油是德国最大的能源来源"
+        side = lambda p, first, second: {f"{p}.{c}": {"first": first, "second": second, "scoped": False}
+                                         for c in (["E7000", "G3000", "H8000", "O4000XBIO", "RA000"] if p == "from" else ["FC_IND_E", "FC_OTH_CP_E", "FC_OTH_HH_E", "FC_TRA_E"])}
+        all_ = {**side("from", "O4000XBIO", "G3000"), **side("to", "FC_OTH_HH_E", "FC_TRA_E")}
+        before, _, _ = page("q2", title, self.WORDS)
+        self.assertIn('data-claim="max" data-a="fact:from.O4000XBIO"', before)
+        same, _, _ = page("q2", title, self.WORDS, all_)
+        self.assertEqual(same, before)
+        none, why, _ = page("q2", title, self.WORDS, {})
+        self.assertIsNotNone(none, why)
+        for mark in ("data-cmp", "data-claim", "data-notes"): self.assertNotIn(mark, none)
+        sectors, why, _ = page("q2", title, self.WORDS, side("to", "FC_OTH_HH_E", "FC_TRA_E"))
+        self.assertIsNotNone(sectors, why)
+        self.assertNotIn("data-claim", sectors)  # the title's claim on oil falls back
+        marked = set(re.findall(r'data-[ab]="fact:([a-z]+)\.', sectors))
+        self.assertEqual(marked, {"to"}, "only the sectors' comparisons are stated")
 
     def test_each_title_gets_its_verdict_and_a_fallback_is_the_page_as_before(self):
         self.assertEqual(len(TITLES), 24)

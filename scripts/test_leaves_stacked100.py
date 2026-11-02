@@ -326,7 +326,7 @@ class ShareNote(unittest.TestCase):
     SHARES = {"DE": ("40%", "40"), "EU27_2020": ("55%", "55"), "FR": ("30%", "30")}
 
     def tearDown(self):
-        K.COMPARISONS = {}
+        K.COMPARISONS = None
 
     def core(self, first, second, scoped=False, hl="fossil"):
         K.COMPARISONS = {f"share.{g}.{hl}": {"first": first, "second": second, "scoped": scoped} for g in ("DE", "EU27_2020", "FR")}
@@ -369,7 +369,7 @@ class ShareNote(unittest.TestCase):
     def test_a_two_sided_finding_keeps_to_the_cores_comparisons_where_it_sent_any(self):
         K.setup(copy.deepcopy(ROWS) + [{"src": f"fact:n.{c}.n", "text": t} for c, t in (("A", "50"), ("B", "30"), ("C", "20"))], NAMES, run.tables)
         sides = [("siec", [("A", 50.0, "fact:n.A.n"), ("B", 30.0, "fact:n.B.n"), ("C", 20.0, "fact:n.C.n")], 100.0)]
-        for comparisons, found in [({}, True), ({"n.Z": {"first": "Z", "second": "Y", "scoped": False}}, False),
+        for comparisons, found in [(None, True), ({}, False), ({"n.A": {"first": "A", "second": "C", "scoped": False}}, False), ({"n.Z": {"first": "Z", "second": "Y", "scoped": False}}, False),
                                    ({"n.A": {"first": "A", "second": "B", "scoped": False}}, True),
                                    ({"n.A": {"first": "A", "second": "B", "scoped": True}}, False)]:
             K.COMPARISONS = comparisons
