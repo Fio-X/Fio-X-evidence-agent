@@ -141,6 +141,22 @@ class Picture(unittest.TestCase):
         self.assertEqual([p for _, p in segs], ["renewable", "fossil", "other"])
         self.assertEqual(segs[0][0], "var(--accent)")
 
+    def test_each_segment_names_its_part_and_the_greys_step_apart_in_lightness(self):
+        svg = draw(hero(DATA, highlight="fossil"))[0]
+        marks = re.findall(r'fill="([^"]+)" stroke="var\(--bg\)" stroke-width="1" data-part="[A-Z0-9_]+:([a-z]+)" data-code="([a-z]+)"', svg)
+        self.assertTrue(marks and all(p == c for _, p, c in marks), marks[:3])
+        self.assertEqual({c for fill, _, c in marks if fill == "var(--accent)"}, {"fossil"})  # the accent's entity, for the page checks
+        css = open(os.path.join(LEAVES, "tokens.css"), encoding="utf-8").read()
+
+        def lstar(var):
+            h = re.search(rf"{var[4:-1]}:#([0-9a-f]{{6}})", css).group(1)
+            lin = [(c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4) for c in (int(h[i:i + 2], 16) / 255 for i in (0, 2, 4))]
+            return 116 * (0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]) ** (1 / 3) - 16
+        three = [lstar(g) for g in stacked100.GREYS[:3]]  # a page of four parts (q3) uses the first three
+        self.assertGreaterEqual(min(abs(a - b) for i, a in enumerate(three) for b in three[i + 1:]), 19.5, three)
+        neighbours = [lstar(g) for g in stacked100.GREYS]
+        self.assertGreaterEqual(min(abs(a - b) for a, b in zip(neighbours, neighbours[1:])), 14, neighbours)
+
     def test_each_bar_prints_its_total_from_the_ledger_in_a_column_or_none_does(self):
         rows = ROWS + [{"src": f"fact:total.{g}.n", "text": f"{TAB[(g, 'TOTAL')]:,.0f}"} for g in GEOS]
         data = dict(DATA, total_head=W("合计"), bars=[dict(b, total_text=f"fact:total.{b['code']}.n") for b in DATA["bars"]])
@@ -220,6 +236,10 @@ class Picture(unittest.TestCase):
         got = [g["src"] for g in run.drawn(svg)[0] if g["src"] and g["src"].startswith("fact:share")]
         self.assertIn("fact:share.DE.renewable", got)
         self.assertNotIn("fact:share.DE.other", got)  # under 3% of the bar: no room inside its segment
+        f = frame(hero(DATA, values="in_bar"))  # a share on a dark grey is printed in --bg, on a light one in --t-dark
+        for p in f.order[1:]:
+            m = re.search(rf'fill="([^"]+)"[^>]*><tspan data-src="fact:share\.DE\.{p}"', svg)
+            if m: self.assertEqual(m.group(1), "var(--bg)" if f.fill[p] in stacked100.DARK else "var(--t-dark)", p)
 
     def test_a_part_named_empty_draws_nothing_and_is_dropped(self):
         data = copy.deepcopy(DATA)

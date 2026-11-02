@@ -29,8 +29,11 @@ A part whose every cell is 0 and that layer 1 did not declare zero draws no segm
 ("<bar>:<part>", "zero"); a declared zero draws none and is no drop.
 Conservation (refuses): a bar's cells, laid end to end, end off its total by more than knob tol of the total (a leaf left out,
 or one counted twice).
-Colours: --accent the highlighted part, --seq-5, --seq-8, --seq-3, --seq-7, --seq-2 the others in turn (the old route's mid,
-darkest, light, dark, lightest greys), --t-title ink, --t-sec the lines, --bg the gaps between segments.
+Colours: --accent the highlighted part, --seq-5, --seq-9, --seq-1, --seq-7, --seq-3 the others in turn (mid, darkest,
+lightest, dark, light: CIE L* 61, 35, 81, 49, 71, so the first three sit 20 or more apart where the old route's --seq-5,
+--seq-8, --seq-3 sat 10 apart and read as one teal), --t-title ink, --t-sec the lines, --bg the gaps between segments and an
+in-bar share's ink on the two dark greys (--t-dark on the others). Each segment names the part it draws (data-code), so the
+page's accent check knows the accent's entity.
 Refuses: no bars, fewer than two parts, a part twice, a bar twice, a negative cell, a cell whose series the request lacks, a
 drawn part with no share_text, a part in none of cells, empty and zero, a zero cell that is not 0 or a zero also empty, a highlight that is no part, a digit in a literal word, a text
 that leaves the picture or overlaps another, a board too narrow (plot under 160 px), an others line over 3 lines."""
@@ -43,7 +46,8 @@ from wbkit import FX, prod, Refused, esc, tw
 import words as WD
 
 NODE = "stacked100"
-GREYS = ["var(--seq-5)", "var(--seq-8)", "var(--seq-3)", "var(--seq-7)", "var(--seq-2)"]
+GREYS = ["var(--seq-5)", "var(--seq-9)", "var(--seq-1)", "var(--seq-7)", "var(--seq-3)"]
+DARK = {"var(--seq-9)", "var(--seq-7)"}  # the greys an in-bar share is printed on in --bg, not --t-dark
 prod.KNOBS[NODE] = dict(
     size=(12, (11, 16, 0.5), "label size px (11 is the page floor)"), title_size=(16, (12, 22, 1), "chart name size px"),
     width=(1140, (480, 1400, 10), "picture width in px"), bar_h=(18, (12, 30, 1), "bar height in px"),
@@ -183,11 +187,11 @@ def cl_stacked100(f, occ):
         last = len(r["segs"]) - 1
         for j, (p, a, b) in enumerate(r["segs"]):
             xa, xb = _px(f, a), (f.x1 if j == last else _px(f, b))  # the last segment ends exactly at the 100% end
-            o.append(f'<rect x="{xa:.2f}" y="{y0:.1f}" width="{max(xb - xa, 0.0):.2f}" height="{bh}" fill="{f.fill[p]}" stroke="var(--bg)" stroke-width="1" data-part="{esc(r["code"])}:{esc(p)}"/>')
+            o.append(f'<rect x="{xa:.2f}" y="{y0:.1f}" width="{max(xb - xa, 0.0):.2f}" height="{bh}" fill="{f.fill[p]}" stroke="var(--bg)" stroke-width="1" data-part="{esc(r["code"])}:{esc(p)}" data-code="{esc(p)}"/>')
             if not f.column:
                 t = K.ent(r["share"][p]); w = tw(t[1], size)
                 if w + 2 * pad <= xb - xa:
-                    ink = "var(--bg)" if p == f.hl else "var(--t-dark)"
+                    ink = "var(--bg)" if p == f.hl or f.fill[p] in DARK else "var(--t-dark)"
                     o.append(K.txt(B, (xa + xb) / 2, yc, size, ink, t[0], w, anchor="middle", tag=f"share {r['code']} {p}"))
         if f.column and any(s[0] == f.hl for s in r["segs"]):
             t = K.ent(r["share"][f.hl])
