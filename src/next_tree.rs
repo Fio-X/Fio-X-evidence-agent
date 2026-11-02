@@ -4066,12 +4066,11 @@ pub fn expand_items(n: &J, entry: &J, spec: &J, got: &Got, inp: &J) -> Result<Ve
         let codes = got.get(&sid).ok_or_else(|| format!("'{sid}'"))?.arr().to_vec();
         (codes.iter().map(|_| J::Obj(vec![])).collect(), codes, Some(sid))
     };
-    let (over, from) = match &sid {
-        Some(s) => {
-            let root = root_rank(&sel, s)?;
-            (Some(root.g("over").clone()), change_from(root).cloned())
-        }
-        None => (None, None),
+    // the rows the items' rank reads, for the fields that name a row (row_of_code); items over a select with no rank at
+    // its root (a given one: a flow's top origins) have none, and such a field refuses below
+    let (over, from) = match sid.as_deref().map(|s| root_rank(&sel, s)) {
+        Some(Ok(root)) => (Some(root.g("over").clone()), change_from(root).cloned()),
+        _ => (None, None),
     };
     for (i, (item, code)) in items.iter_mut().zip(&codes).enumerate() {
         let mut cells: Option<J> = None;
@@ -4106,7 +4105,7 @@ pub fn expand_items(n: &J, entry: &J, spec: &J, got: &Got, inp: &J) -> Result<Ve
                         Some(b) => d.g("candidates").g(&st(item.g(&st(b)))).clone(),
                         None => d.g("candidates").clone(),
                     };
-                    let list = with_code(&list, &cs);
+                    let list = with_code(&list, &cs, inp);
                     let mut facts = spec.g("facts").g("facts").clone();
                     for c in list.arr() {
                         for (k, q) in c.g("facts").obj() {
@@ -4115,8 +4114,9 @@ pub fn expand_items(n: &J, entry: &J, spec: &J, got: &Got, inp: &J) -> Result<Ve
                     }
                     let fact = |k: &str| fact_value(&facts, rows, k);
                     let word = |k: &str| crate::next_ledger::word_table().get(k).and_then(serde_json::Value::as_str).map(str::to_string);
-                    let name = inp.g("names").g(&cs).s().ok_or_else(|| format!("'{cs}': the page input names no {cs}"))?.to_string();
-                    let hold = Holding { facts: &fact, fmts: spec.g("facts").g("fmts"), got, page: inp, code: &cs, name: &name, word: &word };
+                    // the code's name, read only by a condition that prints it (width_at_most's {name})
+                    let name = inp.g("names").g(&cs).s();
+                    let hold = Holding { facts: &fact, fmts: spec.g("facts").g("fmts"), got, page: inp, code: &cs, name, word: &word };
                     let i = first_holding(&list, &hold)?;
                     J::Obj(list.at(i).obj().iter().filter(|(k, _)| k != "when").cloned().collect())
                 }
@@ -4181,7 +4181,7 @@ fn cells_of(code: &J, dr: &J, sel: &[(String, &J)], got: &Got, rows: &[J]) -> Re
 /// The conditions a `first_holding` field's candidates are held by, all recomputed here from the core's own facts,
 /// formats, selects and the page input (registered: next_ledger CHECK_REGISTRY tree.first_holding). A candidate names
 /// only these; any other condition, or another argument, is refused.
-pub const CONDITIONS: [(&str, &[&str]); 5] = [
+pub const CONDITIONS: [(&str, &[&str]); 6] = [
     // the sign of a fact the core computes: pos, neg or zero (a NaN reads as zero, as a partial_cmp with 0 does)
     ("sign", &["fact", "is"]),
     // the fact as the format prints it differs from 0 as the format prints it (a tie prints as no gap)
@@ -4193,17 +4193,21 @@ pub const CONDITIONS: [(&str, &[&str]); 5] = [
     ("count_at_least", &["select", "n"]),
     // a boolean at a path of the page input (a value that is not true or false is refused)
     ("page_is", &["path"]),
+    // a row of the page input's rows at `table`, `time` and every `filter` dimension holds a text value that parses above
+    // `than`; no such row, or none that parses, does not hold (the map's rule for a change: from nothing it has no ratio)
+    ("row_above", &["table", "filter", "time", "than"]),
 ];
 
 /// What a `first_holding` condition reads, given by its caller: the core's fact values by key, its formats, its selects'
-/// results, the page input, the item's code, the code's name as the page prints it, and the word table.
+/// results, the page input, the item's code, the code's name as the page prints it (none when the page input names it
+/// none: only a condition that prints it refuses), and the word table.
 pub(crate) struct Holding<'a> {
     pub facts: &'a dyn Fn(&str) -> Result<f64, String>,
     pub fmts: &'a J,
     pub got: &'a Got,
     pub page: &'a J,
     pub code: &'a str,
-    pub name: &'a str,
+    pub name: Option<&'a str>,
     pub word: &'a dyn Fn(&str) -> Option<String>,
 }
 
@@ -4261,7 +4265,11 @@ fn condition_holds(cond: &J, h: &Holding) -> Result<bool, String> {
             let mut line = String::new();
             for part in cond.g("text").arr() {
                 match part {
-                    J::Str(s) => line.push_str(&s.replace("{name}", h.name)),
+                    J::Str(s) if s.contains("{name}") => {
+                        let name = h.name.ok_or_else(|| format!("'{}': the page input names no {}", h.code, h.code))?;
+                        line.push_str(&s.replace("{name}", name))
+                    }
+                    J::Str(s) => line.push_str(s),
                     J::Obj(_) if part.has("word") => {
                         let k = st(part.g("word"));
                         line.push_str(&(h.word)(&k).ok_or_else(|| format!("condition width_at_most: the word table has no {k}"))?);
@@ -4283,18 +4291,40 @@ fn condition_holds(cond: &J, h: &Holding) -> Result<bool, String> {
             J::Bool(b) => Ok(*b),
             v => Err(format!("condition page_is {}: {} is not true or false", st(cond.g("path")), v.repr())),
         },
+        "row_above" => {
+            let than = cond.g("than").num().ok_or("condition row_above: than")?;
+            let filter = cond.g("filter").obj();
+            Ok(h.page.g("rows").arr().iter().any(|r| {
+                r.g("table") == cond.g("table")
+                    && r.g("time") == cond.g("time")
+                    && filter.iter().all(|(d, c)| dims(r, d) == c)
+                    && r.g("value").s().and_then(|v| v.parse::<f64>().ok()).is_some_and(|v| v > than)
+            }))
+        }
         _ => unreachable!("CONDITIONS holds the arms"),
     }
 }
 
-/// `v` with `{code}` in every string and object key read as `code`.
-fn with_code(v: &J, code: &str) -> J {
-    match v {
-        J::Str(s) => J::Str(s.replace("{code}", code)),
-        J::Arr(a) => J::Arr(a.iter().map(|x| with_code(x, code)).collect()),
-        J::Obj(o) => J::Obj(o.iter().map(|(k, x)| (k.replace("{code}", code), with_code(x, code))).collect()),
-        x => x.clone(),
+/// `v` with `{code}` in every string and object key read as `code`, `{code_lc}` as it in lowercase, and `{y0}` / `{y1}`
+/// as the page input's picks.y0 / picks.y1 (the two years' last two digits) when it has them.
+pub(crate) fn with_code(v: &J, code: &str, page: &J) -> J {
+    let lc = code.to_lowercase();
+    let mut ctx = vec![("{code}", code), ("{code_lc}", lc.as_str())];
+    for (k, y) in [("{y0}", "y0"), ("{y1}", "y1")] {
+        if let Some(v) = page.g("picks").g(y).s() {
+            ctx.push((k, v));
+        }
     }
+    fn walk(v: &J, ctx: &[(&str, &str)]) -> J {
+        let put = |s: &str| ctx.iter().fold(s.to_string(), |s, (k, v)| s.replace(k, v));
+        match v {
+            J::Str(s) => J::Str(put(s)),
+            J::Arr(a) => J::Arr(a.iter().map(|x| walk(x, ctx)).collect()),
+            J::Obj(o) => J::Obj(o.iter().map(|(k, x)| (put(k), walk(x, ctx))).collect()),
+            x => x.clone(),
+        }
+    }
+    walk(v, &ctx)
 }
 
 /// A fact's value as the core computes it over `rows` (the Compute the checks use), the facts declared in `facts`.
@@ -6595,7 +6625,7 @@ mod tests {
     #[test]
     fn next_tree_production_binds_the_bars_external() {
         let o = bindings();
-        assert_eq!(external_nodes(&o), ["bars", "bubbles", "leader_notes", "stacked100"]);
+        assert_eq!(external_nodes(&o), ["bars", "bubbles", "leader_notes", "notes", "stacked100"]);
         assert_eq!(registry_problems(&load_registry(&o)), Vec::<String>::new());
         for n in external_nodes(&o) {
             assert!(runner_allowed(&st(o.g("nodes").g(&n).g("runner"))), "{n}");
@@ -7177,8 +7207,11 @@ mod tests {
         let fmts = parse(r#"{"pp": {"scale": 1, "dec": 2, "suffix": "x"}, "pct": {"scale": 100, "dec": 0}}"#).unwrap();
         let mut got = Got::new();
         got.insert("ranked".into(), parse(r#"["SE", "FI"]"#).unwrap());
-        let page = parse(r#"{"scoped": true, "plain": false, "n": 1}"#).unwrap();
+        let row = |geo: &str, v: &str| format!(r#"{{"table": "t", "time": "2019", "dims": {{"geo": "{geo}", "partner": "EU"}}, "value": {v}}}"#);
+        let rows = [row("SE", r#""2.5""#), row("FI", r#""0""#), row("NO", r#""-1""#), row("DK", r#"":""#), row("IS", "4"), row("LV", r#""1""#), row("LV", r#""-3""#)];
+        let page = parse(&format!(r#"{{"scoped": true, "plain": false, "n": 1, "rows": [{}]}}"#, rows.join(", "))).unwrap();
         let run = |cands: &str, code: &str, name: &str| {
+            let name = (name != "?").then_some(name);
             let hold = Holding { facts: &facts, fmts: &fmts, got: &got, page: &page, code, name, word: &words };
             first_holding(&parse(cands).unwrap(), &hold)
         };
@@ -7227,6 +7260,21 @@ mod tests {
         }
         assert!(!note_fits_old(&format!("{exact}x")) && note_fits_old(&exact[..exact.len() - 1]));
         assert!(run(&width(r#"[{"word": "w.none"}]"#), "SE", "瑞典").unwrap_err().contains("no w.none"));
-        assert_eq!(CONDITIONS.map(|(k, _)| k), ["sign", "prints_nonzero", "width_at_most", "count_at_least", "page_is"]);
+        // a code the page input names none of: only a condition that prints its name refuses, in the expansion's words
+        assert_eq!(run(&width(r#"["{name}"]"#), "XK", "?"), Err("candidate 0: 'XK': the page input names no XK".to_string()));
+        assert_eq!(run(&width(r#"["abc"]"#), "XK", "?"), Ok(0));
+        // row_above: the map's above_0, a text value above `than` at the table, time and filter; a 0, a negative, an
+        // unparsed text, a number that is no text and a missing row do not hold; of two rows any one above holds
+        let above = |code: &str, than: &str| format!(r#"[{{"when": [{{"if": "row_above", "table": "t", "time": "2019", "filter": {{"geo": "{code}", "partner": "EU"}}, "than": {than}}}]}}, {{"when": []}}]"#);
+        for (code, want) in [("SE", 0), ("FI", 1), ("NO", 1), ("DK", 1), ("IS", 1), ("EE", 1), ("LV", 0)] {
+            assert_eq!(run(&above(code, "0"), code, "-"), Ok(want), "{code}");
+        }
+        assert_eq!(run(&above("NO", "-2"), "NO", "-"), Ok(0));
+        assert!(run(&above("SE", r#""0""#), "SE", "-").unwrap_err().contains("row_above: than"));
+        // with_code: the code, its lowercase and the page's two years where it has them
+        let years = parse(r#"{"picks": {"y0": "19", "y1": "24"}}"#).unwrap();
+        assert_eq!(with_code(&J::str("{code_lc}{y0}/{code}{y1}"), "DE", &years), J::str("de19/DE24"));
+        assert_eq!(with_code(&J::str("{code_lc}{y0}"), "DE", &page), J::str("de{y0}"));
+        assert_eq!(CONDITIONS.map(|(k, _)| k), ["sign", "prints_nonzero", "width_at_most", "count_at_least", "page_is", "row_above"]);
     }
 }

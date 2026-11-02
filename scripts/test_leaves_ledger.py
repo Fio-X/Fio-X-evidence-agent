@@ -411,6 +411,20 @@ class Column(unittest.TestCase):
         finally:
             FX.LEDGER = None
 
+    def test_the_scmp_frame_reads_its_notes_from_the_notes_node_s_leaf_data(self):
+        notes = [{"code": "NO", "a": "no19", "b": "no24", "ch": "no_ch", "share": "no24_share", "f": True},
+                 {"code": "DZ", "a": "dz19", "b": "dz24", "ch": None, "share": "dz24_share", "f": False},
+                 {"hub": True, "a": "tot19", "b": "tot24", "ch": "tot_ch"}]
+        data = {"chart": "flowmap", "ext": [-10, 30, 40, 70]}
+        FX.LEDGER = {"fact:x.n": "1"}
+        try:
+            f = run.scmp.SquareFrame(None, {"data": data, "leaves": {"notes": {"notes": notes}}})
+            self.assertEqual((len(f.notes), f.notes), (3, notes))
+            # the old key (hero.notes) is no longer read: a request that still wrote it draws no note
+            self.assertEqual(run.scmp.SquareFrame(None, {"data": data, "notes": notes}).notes, [])
+        finally:
+            FX.LEDGER = None
+
 
 if __name__ == "__main__":
     unittest.main()

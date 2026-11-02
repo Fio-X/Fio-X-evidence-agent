@@ -431,7 +431,7 @@ class SquareFrame:
         f.ext = tuple(f.d["ext"]); lon0, lat0, lon1, lat1 = f.ext
         f.MH = round(f.MW * (lat1 - lat0) / ((lon1 - lon0) * math.cos(math.radians((lat0 + lat1) / 2 + 2))))  # as hero()
         f.P = prod.proj(f.MW, f.MH, f.ext)
-        f.notes = h.get("notes") or []
+        f.notes = ((h.get("leaves") or {}).get("notes") or {}).get("notes") or []  # the notes node's leaf data (hero.leaves.notes)
         f.st = h.get("strip"); f.SH = prod.knob(h, "strip", "height") if f.st else 0
         f.SY = f.MH + prod.knob(h, "strip", "gap") if f.st else f.MH
         f.H = f.SY + f.SH
@@ -452,7 +452,7 @@ def sq_map(f, occ):
     return body.replace('<svg viewBox=', f'<svg x="{f.ox}" y="0" width="{f.MW}" height="{f.MH}" viewBox=', 1).replace(' width="100%"', "", 1).replace(' role="img"', "", 1)
 
 def sq_notes(f, occ):
-    """One short note per place the request lists (hero.notes, made by the program, never written by hand): its name and its
+    """One short note per place the request lists (hero.leaves.notes, the notes node's declaration, never written by hand): its name and its
     two years' values, then by how much it changed (from a value above 0 only) and its share at the later year; the hub's
     note its total. Words from the word table, numbers each a ledger entry; stacked in the browser by STACK, leaders to
     the point."""

@@ -22,9 +22,9 @@ use std::collections::BTreeSet;
 use serde_json::Value;
 
 /// The page input paths a declaration template may read (`$shape.main`, ...); nothing else is substituted.
-const PAGE_IN_PATHS: [&str; 11] = [
-    "shape.main", "shape.place", "shape.year", "shape.fmt", "shape.suffix", "shape.countries", "picks.marks", "picks.t0", "page.ext", "fill.accent",
-    "fmt.change",
+const PAGE_IN_PATHS: [&str; 14] = [
+    "shape.main", "shape.place", "shape.year", "shape.fmt", "shape.suffix", "shape.countries", "shape.hub", "picks.marks", "picks.t0", "picks.top",
+    "picks.focus", "page.ext", "fill.accent", "fmt.change",
 ];
 
 /// A template with every `$path` (a string value or an object key) read from the page input by PAGE_IN_PATHS.
@@ -212,7 +212,7 @@ fn plain_holding<'a>(got: &'a Got, page: &'a J) -> core::Holding<'a> {
         None
     }
     static NONE: J = J::Null;
-    core::Holding { facts: &no_fact, fmts: &NONE, got, page, code: "", name: "", word: &no_word }
+    core::Holding { facts: &no_fact, fmts: &NONE, got, page, code: "", name: None, word: &no_word }
 }
 
 /// `v` with each string that is a select reference to one code (a take's) written as that code.
@@ -306,10 +306,19 @@ fn change_fmt(layer: &str, fc: &J, page_in: &J, got: &Got) -> Result<(String, J)
     Ok((st(side.g("key")), fd))
 }
 
+/// Whether a first_holding candidate list (a list, or lists by key) has a candidate that carries facts.
+fn carries_facts(c: &J) -> bool {
+    match c {
+        J::Arr(a) => a.iter().any(|x| x.has("facts")),
+        J::Obj(o) => o.iter().any(|(_, x)| matches!(x, J::Arr(_)) && carries_facts(x)),
+        _ => false,
+    }
+}
+
 /// The declaration as JSON in the generator's own order (the prototype's), for the fixtures.
 fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
     let d = declares(reg, layer, page_in)?;
-    let (mut sels, given) = selects_of(page_in, reg)?;
+    let (mut sels, mut given) = selects_of(page_in, reg)?;
     let (bad, mut got) = recompute(page_in, &sels, &given);
     if !bad.is_empty() {
         return Err(format!("{layer}: the core's selects do not recompute: {}", bad.iter().take(3).cloned().collect::<Vec<_>>().join("; ")));
@@ -318,7 +327,11 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
     let mut own = Vec::new();
     for s in d.g("selects").arr() {
         if core::conditions_hold(s.g("when"), &plain_holding(&got, page_in))? {
-            own.push(sub(&J::Obj(s.obj().iter().filter(|(k, _)| k != "when").cloned().collect()), page_in)?);
+            // a given select's result is the flow's pick, as a pick rule's (selects_of)
+            if let (Some("given"), Some(g)) = (s.g("kind").s(), s.get("given")) {
+                given.push((st(s.g("id")), sub(g, page_in)?));
+            }
+            own.push(sub(&J::Obj(s.obj().iter().filter(|(k, _)| k != "when" && k != "given").cloned().collect()), page_in)?);
         }
     }
     if !own.is_empty() {
@@ -329,12 +342,18 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
         }
         got = again;
     }
-    let mut fd = sub(d.g("fmt"), page_in)?;
-    let rule = fd.remove("dec_rule").ok_or_else(|| format!("{layer}: declares.fmt has no dec_rule"))?;
-    let dec = dec_of(layer, &rule, page_in, &got)?;
-    let fd = J::obj_of(vec![("scale", fd.g("scale").clone()), ("dec", J::Int(dec)), ("suffix", fd.g("suffix").clone())]);
-    let fmt = st(page_in.g("shape").g("fmt"));
-    let mut fmts = J::Obj(vec![(fmt, fd)]);
+    // a declaration with no fmt declares no format and no fact of its own (the facts it prints are another layer's, which
+    // owns their formats): one that declares facts, a change format, formats or a candidate's facts with no fmt refuses
+    let mut fmts = J::Obj(vec![]);
+    if d.has("fmt") {
+        let mut fd = sub(d.g("fmt"), page_in)?;
+        let rule = fd.remove("dec_rule").ok_or_else(|| format!("{layer}: declares.fmt has no dec_rule"))?;
+        let dec = dec_of(layer, &rule, page_in, &got)?;
+        let fd = J::obj_of(vec![("scale", fd.g("scale").clone()), ("dec", J::Int(dec)), ("suffix", fd.g("suffix").clone())]);
+        fmts.set(&st(page_in.g("shape").g("fmt")), fd);
+    } else if let Some(k) = ["facts", "fmt_change", "formats"].into_iter().find(|k| d.has(k)).or(carries_facts(d.g("candidates")).then_some("candidates' facts")) {
+        return Err(format!("{layer}: declares {k} and no fmt; a declaration with no fmt declares no fact of its own"));
+    }
     // a change's format, its key read by the facts that print in it ($fmt.change)
     let mut facts_in = page_in.clone();
     if let Some(fc) = d.get("fmt_change") {
@@ -423,10 +442,12 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
             }
             items.push(x);
         }
+        // the leaf's fixed items after the node's (items_after: a total's), `{y0}` / `{y1}` read as the page's two years
+        items.extend(lf.g("items_after").arr().iter().map(|x| core::with_code(x, "", page_in)));
         // the items under the key the leaf reads them by (items_as; items when the declaration names none)
         let items_as = lf.g("items_as").s().unwrap_or("items").to_string();
         let mut leaf = J::obj_of(vec![(items_as.as_str(), J::Arr(items))]);
-        for (k, v) in lf.obj().iter().filter(|(k, _)| k != "key" && k != "items" && k != "items_as") {
+        for (k, v) in lf.obj().iter().filter(|(k, _)| !["key", "items", "items_as", "items_after", "fact_fields"].contains(&k.as_str())) {
             leaf.set(k, sub(v, page_in)?);
         }
         out.set("leaves", J::Obj(vec![(st(lf.g("key")), leaf)]));
@@ -1190,7 +1211,8 @@ pub(crate) fn tree_j(page_in: &J, fill: &J, reg: &J, external: &[String]) -> Res
     );
     let mut fmts = spec.g("fmts").clone();
     let fmt = st(shape.g("fmt"));
-    for layer in external {
+    // each layer's decimals rule on the page's format; a layer with no fmt declares no format (declared_j)
+    for layer in external.iter().filter(|l| declares(reg, l, page_in).is_ok_and(|d| d.has("fmt"))) {
         let rule = sub(declares(reg, layer, page_in)?.g("fmt").g("dec_rule"), page_in)?;
         let f = fmts.get_mut(&fmt).ok_or_else(|| format!("the fill has no format {fmt}"))?;
         f.set("dec_rule", rule);
@@ -1434,6 +1456,17 @@ pub fn draw(fill: &Value, page_in: &Value, layers: &[String], runtime: &std::pat
         let held = fill.g("knobs").g("spec").g("hero").g("leaves").g(&key);
         if again.g("leaves").g(&key) != held {
             return Err(format!("node {l}: the leaf data is not its declaration over the page's name rows: {} != {}", held.repr(), again.g("leaves").g(&key).repr()));
+        }
+        // the item fields the leaf prints as facts by key (leaf.fact_fields): each a fact the page declares (another
+        // layer's, the map's, when the declaration declares none of its own)
+        let items_as = d.g("leaf").g("items_as").s().unwrap_or("items").to_string();
+        let facts = fill.g("knobs").g("spec").g("facts");
+        for it in held.g(&items_as).arr() {
+            for f in d.g("leaf").g("fact_fields").arr().iter().map(st) {
+                if let Some(k) = it.g(&f).s().filter(|k| !facts.has(k)) {
+                    return Err(format!("node {l}: its {items_as} field {f} prints fact {k}, which the page does not declare"));
+                }
+            }
         }
     }
     asked.retain(|l| reg.g("nodes").g(l).g("geometry").s() != Some("leaf"));
@@ -1777,15 +1810,59 @@ mod tests {
         assert!(why.starts_with("not this shape: stacked100: ") && why.contains("more than a quarter"), "{why}");
     }
 
-    /// Only the stacked100 node and the leader notes lay themselves out in their leaf (geometry leaf): draw asks no node and
-    /// checks no placed geometry for such a layer, so another node declaring it in node-bindings.json would leave the core's
-    /// geometry check unasked. The notes placed themselves in their leaf before they were external too (P6 step 1); what
-    /// they say is the declaration's, declared again over the name rows (draw).
+    /// Only the stacked100 node, the leader notes and the scmp notes lay themselves out in their leaf (geometry leaf): draw
+    /// asks no node and checks no placed geometry for such a layer, so another node declaring it in node-bindings.json
+    /// would leave the core's geometry check unasked. Both notes placed themselves in their leaf before they were external
+    /// too (P6 steps 1 and 2); what they say is the declaration's, declared again over the name rows (draw).
     #[test]
     fn next_tree_gen_only_stacked100_declares_geometry_leaf() {
         let bound = core::bindings();
         let leaf: Vec<&str> = bound.g("nodes").obj().iter().filter(|(_, n)| n.g("geometry").s() == Some("leaf")).map(|(k, _)| k.as_str()).collect();
-        assert_eq!(leaf, ["leader_notes", "stacked100"]);
+        assert_eq!(leaf, ["leader_notes", "notes", "stacked100"]);
+    }
+
+    /// The scmp notes declared over a hand page input: one note per top origin in its order, the focus's marked, its change
+    /// only where the map's rule holds (row_above: a text value above 0 at t0; a 0, no row or an unparsed value has none),
+    /// the hub's note after them, no fact and no format of its own (the map's are the page's). A declaration with no fmt
+    /// that declares facts (its own, a change format, formats, or a candidate's) is refused.
+    #[test]
+    fn next_tree_gen_scmp_notes_follow_the_map_rule_and_declare_no_fact() {
+        let row = |p: &str, t: &str, v: &str| {
+            serde_json::json!({"src": format!("series:imp/{p}:{t}:OBS_VALUE"), "table": "imp", "dims": {"partner": p, "geo": "EU27_2020"}, "time": t, "value": v})
+        };
+        let rows = [row("RU", "2021", "5"), row("RU", "2024", "3"), row("NO", "2021", "0"), row("NO", "2024", "4"), row("US", "2024", "2"), row("QA", "2021", ":"), row("QA", "2024", "1")];
+        let pi = J::from_value(&serde_json::json!({"recipe": "scmp",
+            "shape": {"main": "imp", "place": "partner", "hub": "EU27_2020", "fmt": "mio_m3", "countries": ["NO", "QA", "RU", "US"]},
+            "picks": {"rules": ["change_focus"], "ranked": [], "marks": [], "t0": "2021", "t1": "2024", "top": ["RU", "NO", "US", "QA"], "focus": "RU", "y0": "21", "y1": "24"},
+            "rows": rows}));
+        let (reg, _) = core::registry_in_force();
+        let d = declared_j("notes", &pi, &reg).unwrap();
+        let note = |c: &str, ch: bool, f: bool| {
+            let l = c.to_lowercase();
+            serde_json::json!({"code": c, "a": format!("{l}21"), "b": format!("{l}24"), "ch": ch.then(|| format!("{l}_ch")), "share": format!("{l}24_share"), "f": f})
+        };
+        assert_eq!(
+            d.g("leaves").g("notes").to_value(),
+            serde_json::json!({"notes": [note("RU", true, true), note("NO", false, false), note("US", false, false), note("QA", false, false),
+                {"hub": true, "a": "tot21", "b": "tot24", "ch": "tot_ch"}]})
+        );
+        assert_eq!((d.g("facts").truthy(), d.g("fmts").truthy(), d.g("data").truthy()), (false, false, false), "no fact, format or data of its own");
+        let with = |k: &str, v: J| {
+            let mut r = reg.clone();
+            let n = r.get_mut("nodes").and_then(|n| n.get_mut("notes")).and_then(|n| n.get_mut("declares_by_recipe")).and_then(|n| n.get_mut("scmp")).unwrap();
+            match k {
+                "candidate" => match n.get_mut("candidates") {
+                    Some(J::Arr(c)) => c[1].set("facts", v),
+                    _ => unreachable!("the scmp notes' candidates are a list"),
+                },
+                k => n.set(k, v),
+            }
+            declared_j("notes", &pi, &r).unwrap_err()
+        };
+        let obj = || J::obj_of(vec![("x", J::obj_of(vec![("op", J::str("n"))]))]);
+        for (k, said) in [("facts", "facts"), ("fmt_change", "fmt_change"), ("formats", "formats"), ("candidate", "candidates' facts")] {
+            assert_eq!(with(k, obj()), format!("notes: declares {said} and no fmt; a declaration with no fmt declares no fact of its own"));
+        }
     }
 
     /// Fill texts as runs: placeholders become fact runs (a final .n or .t a part), any other brace stays a word.

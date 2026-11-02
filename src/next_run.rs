@@ -1622,12 +1622,18 @@ fn fixed_name(src: &str) -> Option<String> {
 /// candidates, the bars' cap, the unit's short form and the composition's groups). Nothing in it names a picture.
 fn page_input(recipe: &Recipe, shape: &Shape, picks: &Picks, (main, sums): (&[Value], &[Value])) -> Value {
     let scheme = if shape.countries.iter().all(|c| c.len() == 2) { "iso2" } else { "iso3" };
-    json!({"recipe": recipe.name, "order": recipe.layers,
+    let mut p = json!({"recipe": recipe.name, "order": recipe.layers,
         "shape": {"main": shape.main, "place": shape.place, "year": shape.year, "unit": shape.unit, "fmt": shape.unit.to_lowercase(),
             "suffix": next_pack::unit_short(&shape.unit).map(suffix), "countries": shape.countries},
         "picks": {"rules": recipe.picks, "ranked": picks.ranked, "marks": picks.marks, "t0": picks.t0, "t1": picks.t1},
         "rows": main, "name_kind": scheme, "sum_rows": sums, "outside": shape.outside, "top": next_params::NARROW_TOP,
-        "short": next_pack::unit_short(&shape.unit), "composition": shape.composition.as_ref().map(|c| json!({"dim": c.dim, "total": c.total, "groups": c.groups}))})
+        "short": next_pack::unit_short(&shape.unit), "composition": shape.composition.as_ref().map(|c| json!({"dim": c.dim, "total": c.total, "groups": c.groups}))});
+    // a flow into a hub (picks.top): its origins, focus and hub, and the two years' last two digits the map's keys carry
+    if let (false, Some(y0), Some(y1)) = (picks.top.is_empty(), picks.t0.get(2..), picks.t1.get(2..)) {
+        (p["picks"]["top"], p["picks"]["focus"], p["picks"]["y0"], p["picks"]["y1"]) = (json!(picks.top), json!(picks.focus), json!(y0), json!(y1));
+        p["shape"]["hub"] = json!(shape.hub);
+    }
+    p
 }
 
 /// The recipe's external layers laid out over the finished fill (its words in): the visual group's NodeDraw writes the page
@@ -1724,7 +1730,6 @@ const NODE_FILLS: &[(&str, NodeFill)] = &[
     ("map", map_fill),
     ("ring", ring_node_fill),
     ("bignums", bignums_fill),
-    ("notes", notes_fill),
     ("strip", strip_fill),
     ("sankey", sankey_fill),
 ];
@@ -1826,28 +1831,6 @@ fn ring_node_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
 fn flow_keys(picks: &Picks, code: &str) -> [String; 4] {
     let (c, y0, y1) = (code.to_lowercase(), &picks.t0[2..], &picks.t1[2..]);
     [format!("{c}{y0}"), format!("{c}{y1}"), format!("{c}_ch"), format!("{c}{y1}_share")]
-}
-
-/// The short notes beside the map, one per top origin and one for the total: which facts each prints (the map's, so the
-/// map fills first), never a sentence; the leaf writes the words from its word table. A note's change is there only when
-/// the map declared one (a change from a value above 0), and the focus's note is marked.
-fn notes_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
-    let picks = f.picks;
-    let mut notes = Vec::new();
-    for code in &picks.top {
-        let [a, b, ch, share] = flow_keys(picks, code);
-        if ![&a, &b, &share].iter().all(|k| out.facts.contains_key(k.as_str())) {
-            return Err(format!("notes: the map declares no facts for {code}"));
-        }
-        let ch = if out.facts.contains_key(&ch) { json!(ch) } else { Value::Null };
-        notes.push(json!({"code": code, "a": a, "b": b, "ch": ch, "share": share, "f": *code == picks.focus}));
-    }
-    let (a, b) = (format!("tot{}", &picks.t0[2..]), format!("tot{}", &picks.t1[2..]));
-    if ![&a, &b, &"tot_ch".to_string()].iter().all(|k| out.facts.contains_key(k.as_str())) {
-        return Err("notes: the map declares no totals".into());
-    }
-    notes.push(json!({"hub": true, "a": a, "b": b, "ch": "tot_ch"}));
-    Filled::set(&mut out.hero, "hero key", "notes", Value::Array(notes))
 }
 
 /// The strip under the hero: the focus's months in the companion, strip.months (the visual knob) back from its last month,
@@ -8231,7 +8214,7 @@ mod tests {
         let hero = &fill["knobs"]["spec"]["hero"];
         println!("scmp fill order {} rows {} facts {} notes {} bignums {} strip from {} ms {}", fill["order"],
             fill["rows"].as_array().unwrap().len(), fill["knobs"]["spec"]["facts"].as_object().unwrap().len(),
-            hero["notes"].as_array().map_or(0, Vec::len), hero["data"]["bignums"], hero["strip"]["from"], started.elapsed().as_millis());
+            hero["leaves"]["notes"]["notes"].as_array().map_or(0, Vec::len), hero["data"]["bignums"], hero["strip"]["from"], started.elapsed().as_millis());
         let order: Vec<String> = fill["order"].as_array().unwrap().iter().filter_map(|l| l.as_str().map(str::to_string)).collect();
         let calls = std::sync::Mutex::new(Vec::new());
         let request = crate::next_visual::Request::LeafFill {
@@ -11364,6 +11347,29 @@ for line in sys.stdin:
     // ---- P6 step 1: the rust leader notes as they were before they left the flow (frozen at 9af5ca3a, renamed old_*),
     // kept only as the reference the declared notes are held to
 
+    /// Frozen copy of the flow's notes fill as it was before P6 step 2 (base 03f24541), the reference the declared notes
+    /// are held to. The short notes beside the map, one per top origin and one for the total: which facts each prints (the
+    /// map's, so the map fills first), never a sentence; the leaf writes the words from its word table. A note's change is there only when
+    /// the map declared one (a change from a value above 0), and the focus's note is marked.
+    fn old_notes_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
+        let picks = f.picks;
+        let mut notes = Vec::new();
+        for code in &picks.top {
+            let [a, b, ch, share] = flow_keys(picks, code);
+            if ![&a, &b, &share].iter().all(|k| out.facts.contains_key(k.as_str())) {
+                return Err(format!("notes: the map declares no facts for {code}"));
+            }
+            let ch = if out.facts.contains_key(&ch) { json!(ch) } else { Value::Null };
+            notes.push(json!({"code": code, "a": a, "b": b, "ch": ch, "share": share, "f": *code == picks.focus}));
+        }
+        let (a, b) = (format!("tot{}", &picks.t0[2..]), format!("tot{}", &picks.t1[2..]));
+        if ![&a, &b, &"tot_ch".to_string()].iter().all(|k| out.facts.contains_key(k.as_str())) {
+            return Err("notes: the map declares no totals".into());
+        }
+        notes.push(json!({"hub": true, "a": a, "b": b, "ch": "tot_ch"}));
+        Filled::set(&mut out.hero, "hero key", "notes", Value::Array(notes))
+    }
+
     /// Each ranked country's value at the two ends and its change (CHANGE_FAMILIES), the change printed in percentage points
     /// when the unit prints as "%" (POINTS, at most POINTS_DEC decimals), else in the unit (CHANGE_FMT), with the most decimals
     /// the two ends' rows hold (at most COLUMN_DEC); the values at the ends in the unit's format as val_family prints them. Rows: the main's at both ends for
@@ -11810,5 +11816,153 @@ for line in sys.stdin:
             let notes: Vec<String> = old.hero["leaves"]["leader_notes"]["notes"].as_array().unwrap().iter().map(|n| n["text"].to_string()).collect();
             println!("P6REQ {name} notes {} note facts {} equal: {}", notes.len(), mine.len(), notes.join(" | "));
         }
+    }
+
+
+    /// P6 step 2 on real data: the gas fixture (env as ring_fill_of_the_gas_fixture; run with --ignored), Eurostat's
+    /// nrg_ti_gas and nrg_ti_gasm, filled under the scmp recipe as recipe_request fills it (notes declared and drawn),
+    /// its notes and the map's facts held to the rust notes over the same shape and picks, byte for byte. No stand-in run
+    /// stored an scmp or ring request, so this is the real-data page. Prints one P6REQ line.
+    #[test]
+    #[ignore]
+    fn p6_scmp_notes_over_the_gas_fixture() {
+        let (main, monthly, catalogue, _, claims) = gas_fixture();
+        let r = recipe("scmp");
+        let shape = shape_of(&r.eats, &[("nrg_ti_gas", &main), ("nrg_ti_gasm", &monthly)], &catalogue).unwrap();
+        let picks = picks_of(&r.picks, &shape, &main, &claims).unwrap();
+        let fill = test_fill(r, &shape, &picks, (&main, &monthly), &catalogue, ("标题", "导语"), false).unwrap();
+        let short = next_pack::unit_short(&shape.unit).unwrap();
+        let window = window_of(r, &picks).unwrap();
+        let filling = Filling { shape: &shape, picks: &picks, main: &main, companion: &monthly, catalogue: &catalogue, fmt: shape.unit.to_lowercase(), short, window, asked: None };
+        let mut old = Filled::default();
+        map_fill(&filling, &mut old).unwrap();
+        old_notes_fill(&filling, &mut old).unwrap();
+        let spec = &fill["knobs"]["spec"];
+        assert_eq!(spec["hero"]["leaves"]["notes"], json!({"notes": old.hero["notes"]}), "the notes");
+        for (k, q) in &old.facts {
+            assert_eq!(&spec["facts"][k], q, "fact {k}");
+        }
+        let notes = old.hero["notes"].as_array().unwrap();
+        let plain = notes.iter().filter(|n| n["ch"].is_null()).count();
+        println!("P6REQ scmp gas notes {} with no change {} facts {} equal: top {:?} focus {}", notes.len(), plain, old.facts.len(), picks.top, picks.focus);
+    }
+
+    /// One scmp page over the ring fixture's rows (as the_ring_fill_is_program_rules_over_the_shape_and_picks_...): each
+    /// partner's text values at 2021, 2022 and 2024 at the hub (None: no row at that year), the focus's member change claim
+    /// from 2021 to 2024; the page filled as recipe_request fills it, its notes declared and drawn (test_fill: fill_of then
+    /// draw_nodes), beside the rust notes over the same shape and picks (map_fill, then the frozen old_notes_fill).
+    fn scmp_notes_case(values: &[(&str, [Option<&str>; 3])], focus: &str) -> Result<(Value, Filled), String> {
+        let fixed = [("siec", "G3000"), ("unit", "MIO_M3"), ("geo", "EU27_2020")];
+        let times = ["2021", "2022", "2024"];
+        let codes: Vec<&str> = values.iter().map(|(c, _)| *c).collect();
+        let main: Vec<Value> = ring_rows("imp", &fixed, ("partner", &codes), &times)
+            .into_iter()
+            .filter_map(|mut r| {
+                let (_, vs) = values.iter().find(|(c, _)| r["dims"]["partner"] == *c)?;
+                let i = times.iter().position(|t| r["time"] == *t)?;
+                r["value"] = json!(vs[i]?);
+                Some(r)
+            })
+            .collect();
+        let months: Vec<String> = (2019..=2024).flat_map(|y| (1..=12).map(move |m| format!("{y}-{m:02}"))).take(63).collect();
+        let months: Vec<&str> = months.iter().map(String::as_str).collect();
+        let monthly = ring_rows("impm", &fixed, ("partner", &[focus]), &months);
+        let at = |i: usize| values.iter().find(|(c, _)| *c == focus).and_then(|(_, v)| v[i]).and_then(|v| v.parse::<f64>().ok()).map_or(Value::Null, |v| json!(v));
+        let change = [("members", json!(5)), ("from_year", json!(2021)), ("to_year", json!(2024)), ("country_iso2", json!(focus)),
+            ("from_value", at(0)), ("to_value", at(2))];
+        let r = recipe("scmp");
+        let shape = shape_of(&r.eats, &[("imp", &main), ("impm", &monthly)], &Hubs)?;
+        let picks = picks_of(&r.picks, &shape, &main, &[(MEMBER_CHANGE.to_string(), bound("c4", &change))])?;
+        let fill = test_fill(r, &shape, &picks, (&main, &monthly), &Hubs, ("标题", "导语"), false)?;
+        let short = next_pack::unit_short(&shape.unit).unwrap();
+        let window = window_of(r, &picks)?;
+        let filling = Filling { shape: &shape, picks: &picks, main: &main, companion: &monthly, catalogue: &Hubs, fmt: shape.unit.to_lowercase(), short, window, asked: None };
+        let mut old = Filled::default();
+        map_fill(&filling, &mut old)?;
+        old_notes_fill(&filling, &mut old)?;
+        Ok((fill, old))
+    }
+
+    /// P6 step 2: the scmp notes the visual group declares are the rust notes byte for byte (hero.leaves.notes, which the
+    /// scmp leaf reads, against the frozen old_notes_fill's hero.notes), and every fact the map declares is the page's, on
+    /// each branch of the map's change rule (a text value above 0 at t0) over two shapes (A: the ring fixture's RU, NO, US
+    /// with RU the focus; B: six origins, NO the focus): every t0 above 0 but one 0, a top origin with no t0 row (ring_top
+    /// admits it at 0), one whose t0 value is no number, the focus's own t0 at 0. The page goes through draw_nodes: the
+    /// notes are a geometry leaf with no frame, so nothing is placed for them and no map points are declared.
+    #[test]
+    fn declared_scmp_notes_equal_the_rust_notes_on_every_branch() {
+        let v = |a: &'static str, b: &'static str, c: &'static str| [Some(a), Some(b), Some(c)];
+        let rest = [("DE", v("1", "1", "1")), ("TOTAL", v("1", "1", "1")), ("EXT_EU27_2020", v("1", "1", "1"))];
+        let a = |us: [Option<&'static str>; 3], ru0: &'static str| {
+            let mut x = vec![("RU", [Some(ru0), Some("50000"), Some("37843.285")]), ("NO", v("80000", "85000", "90000")), ("US", us)];
+            x.extend(rest);
+            x
+        };
+        let b = |dz: [Option<&'static str>; 3], no0: &'static str| {
+            let mut x = vec![("NO", [Some(no0), Some("90000"), Some("95000")]), ("DZ", dz), ("QA", v("20000", "21000", "15000")),
+                ("AZ", v("5000", "9000", "12000")), ("RU", v("150000", "80000", "20000")), ("LY", v("3000", "2500", "2500"))];
+            x.extend(rest);
+            x
+        };
+        let none: [Option<&'static str>; 3] = [None, Some("1"), Some("30000")];
+        let cases: Vec<(&str, Vec<(&str, [Option<&str>; 3])>, &str, &[&str])> = vec![
+            ("A one t0 at 0", a(v("0", "1", "30000"), "126027.316"), "RU", &["US"]),
+            ("A no t0 row", a(none, "126027.316"), "RU", &["US"]),
+            ("A t0 no number", a(v(":", "1", "30000"), "126027.316"), "RU", &["US"]),
+            ("A all above 0", a(v("10", "1", "30000"), "126027.316"), "RU", &[]),
+            ("A focus t0 at 0", a(v("10", "1", "30000"), "0"), "RU", &["RU"]),
+            ("B one t0 at 0", b(v("0", "7000", "40000"), "60000"), "NO", &["DZ"]),
+            ("B no t0 row", b(none, "60000"), "NO", &["DZ"]),
+            ("B t0 no number", b(v(":", "7000", "40000"), "60000"), "NO", &["DZ"]),
+            ("B all above 0", b(v("100", "7000", "40000"), "60000"), "NO", &[]),
+            ("B focus t0 at 0", b(v("100", "7000", "40000"), "0"), "NO", &["NO"]),
+        ];
+        for (name, values, focus, no_change) in cases {
+            let (fill, old) = scmp_notes_case(&values, focus).unwrap_or_else(|e| panic!("{name}: {e}"));
+            let spec = &fill["knobs"]["spec"];
+            assert!(spec["hero"].get("notes").is_none(), "{name}: the notes are the node's leaf data, not a hero key");
+            assert_eq!(spec["hero"]["leaves"]["notes"], json!({"notes": old.hero["notes"]}), "{name}");
+            for (k, q) in &old.facts {
+                assert_eq!(&spec["facts"][k], q, "{name}: fact {k}");
+            }
+            let notes = old.hero["notes"].as_array().unwrap();
+            let plain: Vec<&str> = notes.iter().filter(|n| n["ch"].is_null()).filter_map(|n| n["code"].as_str()).collect();
+            assert_eq!(plain, no_change, "{name}: the notes with no change");
+            assert_eq!(notes.iter().filter(|n| n["f"] == true).count(), 1, "{name}: one focus note");
+            assert!(fill["knobs"].get("placed").is_none_or(|p| p.get("notes").is_none()), "{name}: nothing placed for the notes");
+            assert!(fill["page_in"].get("points").is_none(), "{name}: no map points declared for a layer with no view frame");
+            println!("P6SCMP {name}: {} notes, {} with no change, equal", notes.len(), plain.len());
+        }
+    }
+
+    /// The three old stops of the scmp notes and big numbers ("notes: the map declares no facts for {code}", "notes: the map
+    /// declares no totals", "bignums: the page declares none of its facts") cannot stop a registered page: the scmp recipe
+    /// fills its map first (knobs.json recipes: map, strip, bignums, notes), and the map declares every top origin's two
+    /// values and share and the totals and their change. Each test page here shows the old text where only a map-less
+    /// fill reaches it, and the guard that now stands in its place: a note printing a fact the page does not declare is
+    /// refused when the notes are drawn (draw: leaf.fact_fields), in its own words.
+    #[test]
+    fn the_scmp_notes_old_stops_are_unreachable_and_a_fact_the_page_lacks_is_refused_at_draw() {
+        let scmp = recipe("scmp");
+        let at = |l: &str| scmp.layers.iter().position(|x| x == l).unwrap();
+        assert!(at("map") < at("bignums") && at("map") < at("notes"), "{:?}", scmp.layers);
+        let (shape, picks) = (Shape { place: "partner".into(), ..Shape::default() }, Picks { top: vec!["RU".into()], t0: "2021".into(), t1: "2024".into(), ..Picks::default() });
+        let filling = Filling { shape: &shape, picks: &picks, main: &[], companion: &[], catalogue: &Hubs, fmt: "x".into(), short: "x", window: None, asked: None };
+        let mut bare = Filled::default();
+        assert_eq!(old_notes_fill(&filling, &mut bare).unwrap_err(), "notes: the map declares no facts for RU");
+        let mut totals_only = Filled::default();
+        for k in ["ru21", "ru24", "ru24_share"] {
+            totals_only.facts.insert(k.into(), json!({}));
+        }
+        assert_eq!(old_notes_fill(&filling, &mut totals_only).unwrap_err(), "notes: the map declares no totals");
+        // the guard: the ring fixture's page with NO's change taken out of the page's facts after the fill
+        let v = |a: &'static str, b: &'static str, c: &'static str| [Some(a), Some(b), Some(c)];
+        let values = [("RU", v("126027.316", "50000", "37843.285")), ("NO", v("80000", "85000", "90000")), ("US", v("0", "1", "30000")),
+            ("DE", v("1", "1", "1")), ("TOTAL", v("1", "1", "1")), ("EXT_EU27_2020", v("1", "1", "1"))];
+        let (mut fill, _) = scmp_notes_case(&values, "RU").unwrap();
+        fill["knobs"]["spec"]["facts"].as_object_mut().unwrap().remove("no_ch").unwrap();
+        let calls = std::sync::Mutex::new(Vec::new());
+        let why = draw_nodes(&mut fill, &scmp.external, &calls, &Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime")).unwrap_err();
+        assert!(why.contains("node notes: its notes field ch prints fact no_ch, which the page does not declare"), "{why}");
     }
 }

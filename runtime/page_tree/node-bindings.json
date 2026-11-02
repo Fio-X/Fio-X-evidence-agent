@@ -36,9 +36,10 @@
    "tie": {"by": "code", "outcome": "order"},
    "one_row_per_code": true
   },
+  "change_focus": {"id": "top", "kind": "given", "source": "picks", "path": "picks.top", "given": "$picks.top"},
   "claim_marks": {"id": "marks", "kind": "named_rule", "rule": "marks_from_claims", "inputs": {"ranked": "ranked"}, "given": "$picks.marks"}
  },
- "recipes": {"column": ["bars", "bubbles", "leader_notes"], "change": ["bubbles", "bars", "leader_notes"], "composition": ["stacked100"]},
+ "recipes": {"column": ["bars", "bubbles", "leader_notes"], "change": ["bubbles", "bars", "leader_notes"], "composition": ["stacked100"], "scmp": ["notes"]},
  "nodes": {
   "bars": {
    "binding": "external",
@@ -449,6 +450,80 @@
      "note": {
       "kind": "first_holding",
       "by": "end"
+     }
+    }
+   }
+  }
+,
+  "notes": {
+   "binding": "external",
+   "geometry": "leaf",
+   "runner": "leaves_py/scmp.py",
+   "declares_by_recipe": {
+    "scmp": {
+     "selects": [
+      {
+       "id": "focus",
+       "kind": "given",
+       "given": "$picks.focus"
+      }
+     ],
+     "binds": {
+      "focus": "select:focus"
+     },
+     "tree_only": [
+      "focus"
+     ],
+     "items_for": "select:top",
+     "candidates": [
+      {
+       "when": [{"if": "row_above", "table": "$shape.main", "filter": {"$shape.place": "{code}", "geo": "$shape.hub"}, "time": "$picks.t0", "than": 0}],
+       "code": "{code}",
+       "a": "{code_lc}{y0}",
+       "b": "{code_lc}{y1}",
+       "ch": "{code_lc}_ch",
+       "share": "{code_lc}{y1}_share"
+      },
+      {
+       "code": "{code}",
+       "a": "{code_lc}{y0}",
+       "b": "{code_lc}{y1}",
+       "ch": null,
+       "share": "{code_lc}{y1}_share"
+      }
+     ],
+     "leaf": {
+      "key": "notes",
+      "items_as": "notes",
+      "items": {
+       "code": "note.code",
+       "a": "note.a",
+       "b": "note.b",
+       "ch": "note.ch",
+       "share": "note.share",
+       "f": "f"
+      },
+      "items_after": [
+       {"hub": true, "a": "tot{y0}", "b": "tot{y1}", "ch": "tot_ch"}
+      ],
+      "fact_fields": [
+       "a",
+       "b",
+       "ch",
+       "share"
+      ]
+     }
+    }
+   },
+   "items": {
+    "for_each": "items_for",
+    "fields": {
+     "note": {
+      "kind": "first_holding"
+     },
+     "f": {
+      "kind": "code_is",
+      "ref": "binds.focus"
      }
     }
    }
