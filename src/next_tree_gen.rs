@@ -1666,6 +1666,15 @@ mod tests {
         assert!(why.starts_with("not this shape: stacked100: ") && why.contains("more than a quarter"), "{why}");
     }
 
+    /// Only the stacked100 node lays itself out in its leaf (geometry leaf): draw asks no node and checks no placed geometry
+    /// for such a layer, so a second node declaring it in node-bindings.json would leave the core's geometry check unasked.
+    #[test]
+    fn next_tree_gen_only_stacked100_declares_geometry_leaf() {
+        let bound = core::bindings();
+        let leaf: Vec<&str> = bound.g("nodes").obj().iter().filter(|(_, n)| n.g("geometry").s() == Some("leaf")).map(|(k, _)| k.as_str()).collect();
+        assert_eq!(leaf, ["stacked100"]);
+    }
+
     /// Fill texts as runs: placeholders become fact runs (a final .n or .t a part), any other brace stays a word.
     #[test]
     fn next_tree_gen_runs_of_a_fill_text() {
