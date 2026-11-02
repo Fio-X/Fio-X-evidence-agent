@@ -1677,6 +1677,7 @@
     "t1"
    ],
    "external": [
+    "map",
     "strip",
     "bignums",
     "notes"
@@ -1711,6 +1712,7 @@
     "names.font"
    ],
    "external": [
+    "map",
     "ring"
    ]
   },

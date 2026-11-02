@@ -39,7 +39,7 @@
   "change_focus": {"id": "top", "kind": "given", "source": "picks", "path": "picks.top", "given": "$picks.top"},
   "claim_marks": {"id": "marks", "kind": "named_rule", "rule": "marks_from_claims", "inputs": {"ranked": "ranked"}, "given": "$picks.marks"}
  },
- "recipes": {"column": ["bars", "bubbles", "leader_notes"], "change": ["bubbles", "bars", "leader_notes"], "composition": ["stacked100"], "scmp": ["strip", "bignums", "notes"], "ring": ["ring"], "flow": ["sankey"]},
+ "recipes": {"column": ["bars", "bubbles", "leader_notes"], "change": ["bubbles", "bars", "leader_notes"], "composition": ["stacked100"], "scmp": ["map", "strip", "bignums", "notes"], "ring": ["map", "ring"], "flow": ["sankey"]},
  "nodes": {
   "bars": {
    "binding": "external",
@@ -207,6 +207,271 @@
    "knobs": {"r_max": 22, "r_min": 3, "nudge": 6, "circle_gap": 1, "max_overlaps": 0, "label_top": 12, "label_gap": 4, "label_sep": 8, "reach": 96, "land_cost": 60},
    "ground": {"phase": "ground"},
    "checks": [{"kind": "count_equals", "select": "$order"}, {"kind": "points_pinned"}]
+  },
+  "map": {
+   "binding": "external",
+   "geometry": "leaf",
+   "runner": "leaves_py/prod.py",
+   "declares_by_recipe": {
+    "scmp": {
+     "needs": [
+      {
+       "path": "$hub_name",
+       "stop": ["the name table names no hub ", "$shape.hub"]
+      }
+     ],
+     "fmt": {
+      "scale": 1,
+      "suffix": "$shape.suffix",
+      "dec_rule": {
+       "rule": "fixed",
+       "dec": 0
+      }
+     },
+     "facts": {
+      "tot{y0}": {
+       "op": "rest",
+       "table": "$shape.main",
+       "filter": {"geo": "$shape.hub"},
+       "by": "$shape.place",
+       "not_eu": true,
+       "skip": 0,
+       "time": "$picks.t0",
+       "fmt": "$shape.fmt"
+      },
+      "tot{y1}": {
+       "op": "rest",
+       "table": "$shape.main",
+       "filter": {"geo": "$shape.hub"},
+       "by": "$shape.place",
+       "not_eu": true,
+       "skip": 0,
+       "time": "$picks.t1",
+       "fmt": "$shape.fmt"
+      },
+      "tot_ch": {
+       "op": "change",
+       "a": "tot{y1}",
+       "b": "tot{y0}"
+      },
+      "lab_t0": {
+       "op": "value",
+       "each": "$shape.place",
+       "table": "$shape.main",
+       "filter": {"geo": "$shape.hub"},
+       "time": "$picks.t0",
+       "not_eu": "$shape.place",
+       "fmt": "$shape.fmt"
+      },
+      "lab_t1": {
+       "op": "value",
+       "each": "$shape.place",
+       "table": "$shape.main",
+       "filter": {"geo": "$shape.hub"},
+       "time": "$picks.t1",
+       "not_eu": "$shape.place",
+       "fmt": "$shape.fmt"
+      }
+     },
+     "for_each": "select:top",
+     "facts_each": {
+      "{code_lc}{y0}": {
+       "table": "$shape.main",
+       "filter": {"$shape.place": "{code}", "geo": "$shape.hub"},
+       "time": "$picks.t0",
+       "fmt": "$shape.fmt"
+      },
+      "{code_lc}{y1}": {
+       "table": "$shape.main",
+       "filter": {"$shape.place": "{code}", "geo": "$shape.hub"},
+       "time": "$picks.t1",
+       "fmt": "$shape.fmt"
+      },
+      "{code_lc}_ch": {
+       "op": "change",
+       "a": "{code_lc}{y1}",
+       "b": "{code_lc}{y0}",
+       "when": [{"if": "row_above", "table": "$shape.main", "filter": {"$shape.place": "{code}", "geo": "$shape.hub"}, "time": "$picks.t0", "than": 0}]
+      },
+      "{code_lc}{y1}_share": {
+       "op": "share",
+       "a": "{code_lc}{y1}",
+       "b": "tot{y1}"
+      }
+     },
+     "rows": {
+      "rule": "rows_in",
+      "table": "$shape.main",
+      "filter": {
+       "geo": "$shape.hub"
+      },
+      "by": "$shape.place",
+      "in": [
+       "$outside",
+       "$shape.members"
+      ]
+     },
+     "data": {
+      "chart": "flowmap",
+      "fmt": "$shape.fmt",
+      "q": {
+       "table": "$shape.main",
+       "filter": {"geo": "$shape.hub"},
+       "by": "$shape.place",
+       "not_eu": true
+      },
+      "t0": "$picks.t0",
+      "t1": "$picks.t1",
+      "top": "$picks.top",
+      "hub": "$shape.point",
+      "ext": "$shape.extent",
+      "focus": "$picks.focus",
+      "hub_name": "$hub_name",
+      "label_fact": "lab_t1",
+      "legend_fact": "lab_t0"
+     },
+     "data_facts": [
+      "label_fact",
+      "legend_fact"
+     ],
+     "notes": [
+      [
+       "占比为",
+       "$hub_name",
+       "以外各国合计中的占比"
+      ]
+     ]
+    },
+    "ring": {
+     "needs": [
+      {
+       "path": "$hub_name",
+       "stop": ["the name table names no hub ", "$shape.hub"]
+      }
+     ],
+     "fmt": {
+      "scale": 1,
+      "suffix": "$shape.suffix",
+      "dec_rule": {
+       "rule": "fixed",
+       "dec": 0
+      }
+     },
+     "facts": {
+      "tot{y0}": {
+       "op": "rest",
+       "table": "$shape.main",
+       "filter": {"geo": "$shape.hub"},
+       "by": "$shape.place",
+       "not_eu": true,
+       "skip": 0,
+       "time": "$picks.t0",
+       "fmt": "$shape.fmt"
+      },
+      "tot{y1}": {
+       "op": "rest",
+       "table": "$shape.main",
+       "filter": {"geo": "$shape.hub"},
+       "by": "$shape.place",
+       "not_eu": true,
+       "skip": 0,
+       "time": "$picks.t1",
+       "fmt": "$shape.fmt"
+      },
+      "tot_ch": {
+       "op": "change",
+       "a": "tot{y1}",
+       "b": "tot{y0}"
+      },
+      "lab_t0": {
+       "op": "value",
+       "each": "$shape.place",
+       "table": "$shape.main",
+       "filter": {"geo": "$shape.hub"},
+       "time": "$picks.t0",
+       "not_eu": "$shape.place",
+       "fmt": "$shape.fmt"
+      },
+      "lab_t1": {
+       "op": "value",
+       "each": "$shape.place",
+       "table": "$shape.main",
+       "filter": {"geo": "$shape.hub"},
+       "time": "$picks.t1",
+       "not_eu": "$shape.place",
+       "fmt": "$shape.fmt"
+      }
+     },
+     "for_each": "select:top",
+     "facts_each": {
+      "{code_lc}{y0}": {
+       "table": "$shape.main",
+       "filter": {"$shape.place": "{code}", "geo": "$shape.hub"},
+       "time": "$picks.t0",
+       "fmt": "$shape.fmt"
+      },
+      "{code_lc}{y1}": {
+       "table": "$shape.main",
+       "filter": {"$shape.place": "{code}", "geo": "$shape.hub"},
+       "time": "$picks.t1",
+       "fmt": "$shape.fmt"
+      },
+      "{code_lc}_ch": {
+       "op": "change",
+       "a": "{code_lc}{y1}",
+       "b": "{code_lc}{y0}",
+       "when": [{"if": "row_above", "table": "$shape.main", "filter": {"$shape.place": "{code}", "geo": "$shape.hub"}, "time": "$picks.t0", "than": 0}]
+      },
+      "{code_lc}{y1}_share": {
+       "op": "share",
+       "a": "{code_lc}{y1}",
+       "b": "tot{y1}"
+      }
+     },
+     "rows": {
+      "rule": "rows_in",
+      "table": "$shape.main",
+      "filter": {
+       "geo": "$shape.hub"
+      },
+      "by": "$shape.place",
+      "in": [
+       "$outside",
+       "$shape.members"
+      ]
+     },
+     "data": {
+      "chart": "flowmap",
+      "fmt": "$shape.fmt",
+      "q": {
+       "table": "$shape.main",
+       "filter": {"geo": "$shape.hub"},
+       "by": "$shape.place",
+       "not_eu": true
+      },
+      "t0": "$picks.t0",
+      "t1": "$picks.t1",
+      "top": "$picks.top",
+      "hub": "$shape.point",
+      "ext": "$shape.extent",
+      "focus": "$picks.focus",
+      "hub_name": "$hub_name",
+      "label_fact": "lab_t1",
+      "legend_fact": "lab_t0"
+     },
+     "data_facts": [
+      "label_fact",
+      "legend_fact"
+     ],
+     "notes": [
+      [
+       "占比为",
+       "$hub_name",
+       "以外各国合计中的占比"
+      ]
+     ]
+    }
+   }
   }
 ,
   "finding": {

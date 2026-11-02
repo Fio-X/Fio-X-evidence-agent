@@ -75,8 +75,10 @@ WITH = dict(bubbles=["bubble_key"])
 # Which layers each page recipe binds external (P4a): the page tree core's bindings (runtime/page_tree/node-bindings.json
 # "recipes") name them, each a layer of the recipe whose node the core binds external, and they are written into knobs.json
 # as the recipe's "external"; the flow then declares them through the visual group's page tree generator and the leaf draws
-# them from the geometry the core checked (run.py placed_layer). A layer no recipe lists is filled by rust (src/next_run.rs
-# NODE_FILLS). Data, not a switch.
+# them from the geometry the core checked (run.py placed_layer). Every other layer of a recipe prints only from what the
+# others put (PRINTS_ONLY); the flow fills none itself (P6), so a layer that is neither refuses here. Data, not a switch.
+# The layers that put nothing into a page's request: each prints from what the recipe's other layers put.
+PRINTS_ONLY = ["callouts", "legend", "inset", "bubble_key"]
 BINDINGS_OF_CORE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page_tree", "node-bindings.json")
 # What a shape condition reads that an earlier one writes (src/next_run.rs): each list is one need, met by any condition in
 # it standing before. A recipe that names the condition names one of each need first, or the condition can only refuse.
@@ -165,7 +167,16 @@ def table():
         # the external layers the core lays out in a view frame: the flow gives their declaration the map points and extent
         view = [l for l in layers if core["frames"].get(core["nodes"][l].get("frame"), {}).get("kind") == "view"]
         if view: r["points"] = view
+    for r in out:
+        none_left(r)
     return dict(nodes=nodes, groups=groups, legacy=READS, recipes=out)
+
+
+def none_left(r):
+    """Every layer of a recipe is either asked of the visual group (external) or prints only: none is left to a fill."""
+    left = [l for l in r["layers"] if l not in r.get("external", []) and l not in PRINTS_ONLY]
+    if left:
+        raise SystemExit(f"recipes.{r['name']}: layers {left} are neither bound external (node-bindings.json recipes) nor PRINTS_ONLY")
 
 
 def recipes(nodes, groups):

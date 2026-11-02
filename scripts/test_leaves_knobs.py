@@ -89,6 +89,16 @@ class Registry(unittest.TestCase):
             self._with(dict(column, layers=["bars", "bubbles", "bubble_key", "leader_notes"]), t)
         self.assertIn("which its layers bring (WITH)", str(e.exception))
 
+    def test_every_layer_of_every_recipe_is_asked_or_prints_only(self):
+        t = knobs.table()
+        for r in t["recipes"]:
+            knobs.none_left(r)
+            print("recipe", r["name"], "external", r["external"], "prints only", [l for l in r["layers"] if l not in r["external"]])
+        scmp = next(r for r in t["recipes"] if r["name"] == "scmp")
+        with self.assertRaises(SystemExit) as e:
+            knobs.none_left(dict(scmp, external=["strip", "bignums", "notes"]))
+        self.assertIn("layers ['map'] are neither bound external", str(e.exception))
+
     def _with(self, recipe, t):
         saved = knobs.RECIPES[:]
         knobs.RECIPES[:] = [recipe]

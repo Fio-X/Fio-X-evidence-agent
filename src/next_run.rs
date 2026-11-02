@@ -877,10 +877,6 @@ const RING_HUBS: &[(&str, [f64; 2], [f64; 4])] = &[("EU27_2020", [10.0, 50.0], [
 /// How many origins a ring page's map draws and names: a visual knob default, as RING_HUBS. No number here prints.
 const RING_TOP: usize = 9;
 
-/// How a ring page says what its shares are of: the total of every country outside the hub, which {hub} names by the knowledge
-/// group's Chinese name of the hub code, never a fixed word.
-const RING_SHARE_WORDS: &str = "占比为{hub}以外各国合计中的占比";
-
 /// The tables' shape as a recipe's conditions found it (SHAPE_CONDITIONS, in the recipe's order), read from the tables'
 /// dimensions and rows (never a table id or topic). A field no condition of the recipe sets stays empty; a node needs only
 /// what its recipe's conditions set (knobs.py checks each recipe holds what its nodes eat).
@@ -1508,9 +1504,10 @@ fn claim_marks(p: &mut Picks, _: &Shape, _: &[Value], claims: &[(String, Value)]
 struct Filling<'a> {
     shape: &'a Shape,
     picks: &'a Picks,
+    /// The main, the companion, the format key, the unit's short form and the window: read by the frozen pre-P6 fills the
+    /// declared nodes are held to (tests); the declared nodes read them from the page input.
+    #[cfg_attr(not(test), allow(dead_code))]
     main: &'a [Value],
-    /// The companion, the format key, the unit's short form and the window: read by the frozen pre-P6 fills the declared
-    /// nodes are held to (tests); the declared nodes read them from the page input.
     #[cfg_attr(not(test), allow(dead_code))]
     companion: &'a [Value],
     catalogue: &'a dyn Catalogue,
@@ -1569,6 +1566,7 @@ fn ask_node(f: &Filling, out: &mut Filled, page_in: Option<&Value>) -> Result<()
     take_names(f.catalogue, out, &layer, (declared.names, declared.fixed))?;
     out.composition = declared.record.or(out.composition.take());
     out.unit_drawn |= declared.unit_drawn;
+    out.notes.extend(declared.notes);
     Ok(())
 }
 
@@ -1655,6 +1653,8 @@ fn page_input(recipe: &Recipe, shape: &Shape, picks: &Picks, (main, sums): (&[Va
     if let (false, Some(y0), Some(y1)) = (picks.top.is_empty(), picks.t0.get(2..), picks.t1.get(2..)) {
         (p["picks"]["top"], p["picks"]["focus"], p["picks"]["y0"], p["picks"]["y1"]) = (json!(picks.top), json!(picks.focus), json!(y0), json!(y1));
         p["shape"]["hub"] = json!(shape.hub);
+        // the hub's members, its map point and the map's extent (hub_origin, RING_HUBS)
+        (p["shape"]["members"], p["shape"]["point"], p["shape"]["extent"]) = (json!(shape.members), json!(shape.point), json!(shape.extent));
     }
     // a second table beside the main (its monthly companion, the page input's sum_rows) and its months
     if !shape.companion.is_empty() {
@@ -1755,90 +1755,6 @@ impl Filled {
             }
         }
     }
-}
-
-/// A node's fill: program rules over the shape and picks, nothing chosen by a model. Err is the why; the caller marks it
-/// "not this shape".
-type NodeFill = fn(&Filling, &mut Filled) -> Result<(), String>;
-
-/// The nodes that put something into a page's request, each once here, whatever recipe draws it; a layer with none here
-/// (callouts, legend, inset, bubble_key) prints from what the others put.
-const NODE_FILLS: &[(&str, NodeFill)] = &[
-    ("map", map_fill),
-];
-
-/// A filter of a fact: dimension -> code.
-fn filter(pairs: &[(&str, &str)]) -> Value {
-    Value::Object(pairs.iter().map(|(k, v)| (k.to_string(), json!(v))).collect())
-}
-
-/// The flow map into the hub. Rows: the main's at the hub for the shape's countries (outside the hub and its members, so no
-/// aggregate row is ever summed). Facts, keyed by the lowercase code and the year's last two digits: each top origin's value
-/// at t0 and t1, its change (only from a t0 value above 0: a change from nothing has no ratio) and its t1 share of the total;
-/// the totals (the rest of the countries outside the hub, none skipped) and their change; the map's label and legend values.
-/// The unit's format is its registered short form, unscaled; a hub the name table does not name is refused, and the unit
-/// note says what the shares are of.
-fn map_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
-    let (shape, picks, fmt) = (f.shape, f.picks, f.fmt.as_str());
-    let (y0, y1) = (&picks.t0[2..], &picks.t1[2..]);
-    if y0 == y1 {
-        return Err(format!("t0 {} and t1 {} share their last two digits", picks.t0, picks.t1));
-    }
-    let (origin, hub) = (shape.place.as_str(), shape.hub.as_str());
-    // the scheme by length, as leaf_labels: a hub the iso3 table does not name (EA20) refuses below
-    let scheme = if hub.len() == 2 { "iso2" } else { "iso3" };
-    let hub_zh = f
-        .catalogue
-        .zh_names(scheme, &[hub.to_string()])
-        .ok()
-        .and_then(|mut names| names.remove(hub))
-        .ok_or_else(|| format!("the name table names no hub {hub}"))?;
-    let countries: BTreeSet<&str> = shape.outside.iter().chain(&shape.members).map(String::as_str).collect();
-    out.rows(
-        f.main
-            .iter()
-            .filter(|r| r["dims"]["geo"] == hub && r["dims"][origin].as_str().is_some_and(|c| countries.contains(c)))
-            .cloned(),
-    );
-    let facts = &mut out.facts;
-    let mut fact = |key: String, q: Value| Filled::set(facts, "fact", &key, q);
-    for (y, t) in [(y0, &picks.t0), (y1, &picks.t1)] {
-        let q = json!({"op": "rest", "table": shape.main, "filter": filter(&[("geo", hub)]), "by": origin, "not_eu": true,
-            "skip": 0, "time": t, "fmt": fmt});
-        fact(format!("tot{y}"), q)?;
-    }
-    fact("tot_ch".into(), json!({"op": "change", "a": format!("tot{y1}"), "b": format!("tot{y0}")}))?;
-    let above_0 = |code: &str| {
-        f.main.iter().any(|r| {
-            r["dims"][origin] == code && r["dims"]["geo"] == hub && r["time"] == picks.t0.as_str()
-                && r["value"].as_str().and_then(|v| v.parse::<f64>().ok()).is_some_and(|v| v > 0.0)
-        })
-    };
-    for code in &picks.top {
-        let c = code.to_lowercase();
-        for (y, t) in [(y0, &picks.t0), (y1, &picks.t1)] {
-            let q = json!({"table": shape.main, "filter": filter(&[(origin, code.as_str()), ("geo", hub)]), "time": t, "fmt": fmt});
-            fact(format!("{c}{y}"), q)?;
-        }
-        if above_0(code) {
-            fact(format!("{c}_ch"), json!({"op": "change", "a": format!("{c}{y1}"), "b": format!("{c}{y0}")}))?;
-        }
-        fact(format!("{c}{y1}_share"), json!({"op": "share", "a": format!("{c}{y1}"), "b": format!("tot{y1}")}))?;
-    }
-    for (key, t) in [("lab_t0", &picks.t0), ("lab_t1", &picks.t1)] {
-        let q = json!({"op": "value", "each": origin, "table": shape.main, "filter": filter(&[("geo", hub)]), "time": t,
-            "not_eu": origin, "fmt": fmt});
-        fact(key.into(), q)?;
-    }
-    Filled::set(&mut out.fmts, "format", fmt, json!({"scale": 1, "dec": 0, "suffix": suffix(f.short)}))?;
-    let data = json!({"chart": "flowmap", "fmt": fmt, "q": {"table": shape.main, "filter": filter(&[("geo", hub)]), "by": origin,
-        "not_eu": true}, "t0": picks.t0, "t1": picks.t1, "top": picks.top, "hub": shape.point, "ext": shape.extent,
-        "focus": picks.focus, "hub_name": hub_zh, "label_fact": "lab_t1", "legend_fact": "lab_t0"});
-    for (k, v) in data.as_object().into_iter().flatten() {
-        Filled::set(&mut out.data, "hero data", k, v.clone())?;
-    }
-    out.notes.push(RING_SHARE_WORDS.replace("{hub}", &hub_zh));
-    Ok(())
 }
 
 /// The suffix a value prints with: its unit's short form, after a space when it holds a letter or a digit.
@@ -2058,7 +1974,7 @@ fn set_leaf(out: &mut Filled, key: &str, data: Value) -> Result<(), String> {
 }
 
 /// A page's request for the visual group's LeafFill by a recipe, as plain JSON {order, rows, knobs}: each of the recipe's
-/// layers' node fills (NODE_FILLS) in its order, over the shape, the picks and the rows, then what every page has: the
+/// layers asked of the visual group in its order, over the shape, the picks and the rows, then what every page has: the
 /// unit's registered short form (a unit with none is refused) with the nodes' notes after it, the tables, the title and dek
 /// from the text step, and the place names of the rows. Beside them `drawn`, each row a layer prints a value of ({layer,
 /// src, table, time}, in fill order), which the flow keeps for its page checks. `scoped`: the program narrowed the main's
@@ -2082,6 +1998,17 @@ fn fill_of(
     let filling = Filling { shape, picks, main, companion, catalogue, fmt: shape.unit.to_lowercase(), short, window, asked };
     let mut out = Filled::default();
     let mut page_in = asked.and_then(|a| a.page_in).cloned();
+    // a flow into a hub: its facts are keyed by the two years' last two digits (page_input's y0 and y1), which must differ
+    if !shape.hub.is_empty() && picks.t0.get(2..).is_some() && picks.t0.get(2..) == picks.t1.get(2..) {
+        return Err(no(format!("t0 {} and t1 {} share their last two digits", picks.t0, picks.t1)));
+    }
+    // the hub's reviewed name (the knowledge group's name table, by the code's length as leaf_labels reads it: iso2 or
+    // iso3), a run fact the layers print; none when the table names it none, which a layer that prints it stops on
+    if let (false, Some(p)) = (shape.hub.is_empty(), page_in.as_mut()) {
+        let hub = shape.hub.as_str();
+        let scheme = if hub.len() == 2 { "iso2" } else { "iso3" };
+        p["hub_name"] = json!(catalogue.zh_names(scheme, &[hub.to_string()]).ok().and_then(|mut names| names.remove(hub)));
+    }
     for layer in &recipe.layers {
         // a layer the registry binds external is asked, never filled by rust; its refusal stops the page (no other shape)
         if recipe.external.contains(layer) {
@@ -2097,10 +2024,8 @@ fn fill_of(
                 p["scoped"] = json!(scoped);
             }
             ask_node(&filling, &mut out, page_in.as_ref())?;
-        } else if let Some((_, node)) = NODE_FILLS.iter().find(|(n, _)| n == layer) {
-            out.at = layer.clone();
-            node(&filling, &mut out).map_err(no)?;
         }
+        // any other layer prints only from what the others put (callouts, legend, inset, bubble_key: knobs.py PRINTS_ONLY)
     }
     // a flow's accounting of its pairs, the flow's own (the picture is the visual group's)
     out.flow_pairs = flow_pairs_of(shape, main).map_err(no)?;
@@ -11586,6 +11511,82 @@ for line in sys.stdin:
     /// The format key of a change that is no gap between two percentages: the unit's suffix, with the decimals of both ends.
     const CHANGE_FMT: &str = "chg";
 
+
+    /// Frozen with old_map_fill (P6 step 6): the words moved to node-bindings.json.
+    /// How a ring page says what its shares are of: the total of every country outside the hub, which {hub} names by the knowledge
+    /// group's Chinese name of the hub code, never a fixed word.
+    const RING_SHARE_WORDS: &str = "占比为{hub}以外各国合计中的占比";
+
+    /// Frozen copy of the map's fill as it was before P6 step 6, the reference the declared map is held to.
+    /// The flow map into the hub. Rows: the main's at the hub for the shape's countries (outside the hub and its members, so no
+    /// aggregate row is ever summed). Facts, keyed by the lowercase code and the year's last two digits: each top origin's value
+    /// at t0 and t1, its change (only from a t0 value above 0: a change from nothing has no ratio) and its t1 share of the total;
+    /// the totals (the rest of the countries outside the hub, none skipped) and their change; the map's label and legend values.
+    /// The unit's format is its registered short form, unscaled; a hub the name table does not name is refused, and the unit
+    /// note says what the shares are of.
+    fn old_map_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
+        let (shape, picks, fmt) = (f.shape, f.picks, f.fmt.as_str());
+        let (y0, y1) = (&picks.t0[2..], &picks.t1[2..]);
+        if y0 == y1 {
+            return Err(format!("t0 {} and t1 {} share their last two digits", picks.t0, picks.t1));
+        }
+        let (origin, hub) = (shape.place.as_str(), shape.hub.as_str());
+        // the scheme by length, as leaf_labels: a hub the iso3 table does not name (EA20) refuses below
+        let scheme = if hub.len() == 2 { "iso2" } else { "iso3" };
+        let hub_zh = f
+            .catalogue
+            .zh_names(scheme, &[hub.to_string()])
+            .ok()
+            .and_then(|mut names| names.remove(hub))
+            .ok_or_else(|| format!("the name table names no hub {hub}"))?;
+        let countries: BTreeSet<&str> = shape.outside.iter().chain(&shape.members).map(String::as_str).collect();
+        out.rows(
+            f.main
+                .iter()
+                .filter(|r| r["dims"]["geo"] == hub && r["dims"][origin].as_str().is_some_and(|c| countries.contains(c)))
+                .cloned(),
+        );
+        let facts = &mut out.facts;
+        let mut fact = |key: String, q: Value| Filled::set(facts, "fact", &key, q);
+        for (y, t) in [(y0, &picks.t0), (y1, &picks.t1)] {
+            let q = json!({"op": "rest", "table": shape.main, "filter": filter(&[("geo", hub)]), "by": origin, "not_eu": true,
+                "skip": 0, "time": t, "fmt": fmt});
+            fact(format!("tot{y}"), q)?;
+        }
+        fact("tot_ch".into(), json!({"op": "change", "a": format!("tot{y1}"), "b": format!("tot{y0}")}))?;
+        let above_0 = |code: &str| {
+            f.main.iter().any(|r| {
+                r["dims"][origin] == code && r["dims"]["geo"] == hub && r["time"] == picks.t0.as_str()
+                    && r["value"].as_str().and_then(|v| v.parse::<f64>().ok()).is_some_and(|v| v > 0.0)
+            })
+        };
+        for code in &picks.top {
+            let c = code.to_lowercase();
+            for (y, t) in [(y0, &picks.t0), (y1, &picks.t1)] {
+                let q = json!({"table": shape.main, "filter": filter(&[(origin, code.as_str()), ("geo", hub)]), "time": t, "fmt": fmt});
+                fact(format!("{c}{y}"), q)?;
+            }
+            if above_0(code) {
+                fact(format!("{c}_ch"), json!({"op": "change", "a": format!("{c}{y1}"), "b": format!("{c}{y0}")}))?;
+            }
+            fact(format!("{c}{y1}_share"), json!({"op": "share", "a": format!("{c}{y1}"), "b": format!("tot{y1}")}))?;
+        }
+        for (key, t) in [("lab_t0", &picks.t0), ("lab_t1", &picks.t1)] {
+            let q = json!({"op": "value", "each": origin, "table": shape.main, "filter": filter(&[("geo", hub)]), "time": t,
+                "not_eu": origin, "fmt": fmt});
+            fact(key.into(), q)?;
+        }
+        Filled::set(&mut out.fmts, "format", fmt, json!({"scale": 1, "dec": 0, "suffix": suffix(f.short)}))?;
+        let data = json!({"chart": "flowmap", "fmt": fmt, "q": {"table": shape.main, "filter": filter(&[("geo", hub)]), "by": origin,
+            "not_eu": true}, "t0": picks.t0, "t1": picks.t1, "top": picks.top, "hub": shape.point, "ext": shape.extent,
+            "focus": picks.focus, "hub_name": hub_zh, "label_fact": "lab_t1", "legend_fact": "lab_t0"});
+        for (k, v) in data.as_object().into_iter().flatten() {
+            Filled::set(&mut out.data, "hero data", k, v.clone())?;
+        }
+        out.notes.push(RING_SHARE_WORDS.replace("{hub}", &hub_zh));
+        Ok(())
+    }
+
     /// Frozen copy of the flow's notes fill as it was before P6 step 2 (base 03f24541), the reference the declared notes
     /// are held to. The short notes beside the map, one per top origin and one for the total: which facts each prints (the
     /// map's, so the map fills first), never a sentence; the leaf writes the words from its word table. A note's change is there only when
@@ -12074,7 +12075,7 @@ for line in sys.stdin:
         let window = window_of(r, &picks).unwrap();
         let filling = Filling { shape: &shape, picks: &picks, main: &main, companion: &monthly, catalogue: &catalogue, fmt: shape.unit.to_lowercase(), short, window, asked: None };
         let mut old = Filled::default();
-        map_fill(&filling, &mut old).unwrap();
+        old_map_fill(&filling, &mut old).unwrap();
         old_strip_fill(&filling, &mut old).unwrap();
         old_bignums_fill(&filling, &mut old).unwrap();
         old_notes_fill(&filling, &mut old).unwrap();
@@ -12097,7 +12098,7 @@ for line in sys.stdin:
     /// One scmp page over the ring fixture's rows (as the_ring_fill_is_program_rules_over_the_shape_and_picks_...): each
     /// partner's text values at 2021, 2022 and 2024 at the hub (None: no row at that year), the focus's member change claim
     /// from 2021 to 2024; the page filled as recipe_request fills it, its notes declared and drawn (test_fill: fill_of then
-    /// draw_nodes), beside the rust notes over the same shape and picks (map_fill, then the frozen old_notes_fill).
+    /// draw_nodes), beside the rust notes over the same shape and picks (old_map_fill, then the frozen old_notes_fill).
     fn scmp_notes_case(values: &[(&str, [Option<&str>; 3])], focus: &str) -> Result<(Value, Filled), String> {
         scmp_case(values, focus, &[(focus, "2019-01", 63)])
     }
@@ -12142,7 +12143,7 @@ for line in sys.stdin:
         let window = window_of(r, &picks)?;
         let filling = Filling { shape: &shape, picks: &picks, main: &main, companion: &monthly, catalogue: &Hubs, fmt: shape.unit.to_lowercase(), short, window, asked: None };
         let mut old = Filled::default();
-        map_fill(&filling, &mut old)?;
+        old_map_fill(&filling, &mut old)?;
         old_strip_fill(&filling, &mut old)?;
         old_bignums_fill(&filling, &mut old)?;
         old_notes_fill(&filling, &mut old)?;
@@ -12239,11 +12240,17 @@ for line in sys.stdin:
         let values = [("RU", v("126027.316", "50000", "37843.285")), ("NO", v("80000", "85000", "90000")), ("US", v("0", "1", "30000")),
             ("DE", v("1", "1", "1")), ("TOTAL", v("1", "1", "1")), ("EXT_EU27_2020", v("1", "1", "1"))];
         let (fill, _) = scmp_notes_case(&values, "RU").unwrap();
+        // since P6 step 6 the map draws first and declares both facts itself, so its own recheck refuses first; the notes'
+        // and the big numbers' guards hold behind it (drawn without the map)
+        let runtime = Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime");
+        let after_map: Vec<String> = scmp.external.iter().filter(|l| *l != "map").cloned().collect();
         for (gone, said) in [("us24_share", "node notes: its notes field share prints fact us24_share"), ("tot_ch", "node bignums: its bignums field fact prints fact tot_ch")] {
             let mut fill = fill.clone();
             fill["knobs"]["spec"]["facts"].as_object_mut().unwrap().remove(gone).unwrap();
             let calls = std::sync::Mutex::new(Vec::new());
-            let why = draw_nodes(&mut fill, &scmp.external, &calls, &Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime")).unwrap_err();
+            let why = draw_nodes(&mut fill.clone(), &scmp.external, &calls, &runtime).unwrap_err();
+            assert!(why.contains(&format!("node map: fact {gone} is not its declaration")), "{why}");
+            let why = draw_nodes(&mut fill, &after_map, &calls, &runtime).unwrap_err();
             assert!(why.contains(&format!("{said}, which the page does not declare")), "{why}");
         }
     }
@@ -12251,7 +12258,7 @@ for line in sys.stdin:
 
     /// One ring page over the ring fixture's main (RU, NO, US at 2021, 2022 and 2024; the focus's member change claim from
     /// 2021 to 2024) and a monthly companion of each (code, first month, months) given: the page filled as recipe_request
-    /// fills it, its ring declared and drawn (test_fill), beside the rust ring over the same shape and picks (map_fill, then
+    /// fills it, its ring declared and drawn (test_fill), beside the rust ring over the same shape and picks (old_map_fill, then
     /// the frozen old_ring_node_fill).
     fn ring_case(focus: &str, months: &[(&str, &str, i64)]) -> Result<(Value, Filled), String> {
         let fixed = [("siec", "G3000"), ("unit", "MIO_M3"), ("geo", "EU27_2020")];
@@ -12288,7 +12295,7 @@ for line in sys.stdin:
         let window = window_of(r, &picks)?;
         let filling = Filling { shape: &shape, picks: &picks, main: &main, companion: &monthly, catalogue: &Hubs, fmt: shape.unit.to_lowercase(), short, window, asked: None };
         let mut old = Filled::default();
-        map_fill(&filling, &mut old)?;
+        old_map_fill(&filling, &mut old)?;
         old.drawn.clear();
         old_ring_node_fill(&filling, &mut old)?;
         Ok((fill, old))
@@ -12389,7 +12396,7 @@ for line in sys.stdin:
         let short = next_pack::unit_short(&shape.unit).unwrap();
         let filling = Filling { shape: &shape, picks: &picks, main: &main, companion: &monthly, catalogue: &catalogue, fmt: shape.unit.to_lowercase(), short, window: window_of(r, &picks).unwrap(), asked: None };
         let mut old = Filled::default();
-        map_fill(&filling, &mut old).unwrap();
+        old_map_fill(&filling, &mut old).unwrap();
         old.drawn.clear();
         old_ring_node_fill(&filling, &mut old).unwrap();
         let spec = &fill["knobs"]["spec"];
@@ -12483,14 +12490,15 @@ for line in sys.stdin:
                 places_zh: Vec::new(),
                 companions: vec![("impm".into(), "impm.csv".into())],
             };
-            let cat = Fetched(BTreeMap::from([("imp".to_string(), main), ("impm".to_string(), monthly)]));
+            let cat = Fetched(BTreeMap::from([("imp".to_string(), main), ("impm".to_string(), monthly)]), "");
             let got = leaf_request(run.path(), &[prepared], &[], &cat, ("", ("标题", "导语", "栏目")), &Default::default()).unwrap_err();
             assert_eq!(got, ("scmp", "fill", said.to_string()), "{name}: the recipe loop");
         }
     }
 
-    /// A catalogue whose fetched files are given rows by table (the rest as Hubs), for the recipe loop over a run folder.
-    struct Fetched(BTreeMap<String, Vec<Value>>);
+    /// A catalogue whose fetched files are given rows by table (the rest as Hubs, but its name table names nothing of the
+    /// scheme given, if any), for the recipe loop over a run folder.
+    struct Fetched(BTreeMap<String, Vec<Value>>, &'static str);
     impl Catalogue for Fetched {
         fn top5(&self, q: &str, t: &[String], m: bool, y: Option<i32>) -> crate::l5geo::Ranking {
             Hubs.top5(q, t, m, y)
@@ -12505,7 +12513,7 @@ for line in sys.stdin:
             Hubs.countries(codes)
         }
         fn zh_names(&self, kind: &str, codes: &[String]) -> Result<BTreeMap<String, String>, Vec<String>> {
-            Hubs.zh_names(kind, codes)
+            if kind == self.1 { Err(codes.to_vec()) } else { Hubs.zh_names(kind, codes) }
         }
         fn members(&self, aggregate: &str) -> Result<Vec<String>, String> {
             Hubs.members(aggregate)
@@ -13127,6 +13135,186 @@ for line in sys.stdin:
             let got = assert_finding_as_old(recipe_name, &fill, &shape, &picks, (&main, &monthly));
             assert!(got.is_some(), "{recipe_name}: the gas page has a share finding");
             println!("P6REQ finding {recipe_name} gas: {got:?} equal");
+        }
+    }
+
+
+
+    /// One hub page (`recipe`: scmp or ring) over its main and monthly tables and the change claims, filled as recipe_request
+    /// fills it (test_fill: the map declared by the visual group), beside the frozen fills run in the recipe's order, each
+    /// under its own layer as fill_of ran them, and the finding fill_of writes after them over the same labels (finding_of
+    /// reads the map's {c}{y1}_share keys): the whole page's facts on both sides. Also the unit's short form.
+    fn map_page(recipe_name: &str, tables: [(&str, &[Value]); 2], claims: &[(String, Value)], catalogue: &dyn Catalogue) -> Result<(Value, Filled, String), String> {
+        let r = recipe(recipe_name);
+        let [(_, main), (_, monthly)] = tables;
+        let shape = shape_of(&r.eats, &tables, catalogue)?;
+        let picks = picks_of(&r.picks, &shape, main, claims)?;
+        let fill = test_fill(r, &shape, &picks, (main, monthly), catalogue, ("标题", "导语"), false)?;
+        let short = next_pack::unit_short(&shape.unit).unwrap();
+        let filling = Filling { shape: &shape, picks: &picks, main, companion: monthly, catalogue, fmt: shape.unit.to_lowercase(), short, window: window_of(r, &picks)?, asked: None };
+        let mut old = Filled::default();
+        for layer in &r.layers {
+            old.at = layer.clone();
+            match layer.as_str() {
+                "map" => old_map_fill(&filling, &mut old).map_err(|e| format!("not this shape: {e}"))?,
+                "strip" => old_strip_fill(&filling, &mut old)?,
+                "bignums" => old_bignums_fill(&filling, &mut old)?,
+                "notes" => old_notes_fill(&filling, &mut old)?,
+                "ring" => old_ring_node_fill(&filling, &mut old)?,
+                _ => {}
+            }
+        }
+        let scope = scope_of(&shape, &picks, catalogue);
+        let named: Vec<String> = shape.members.iter().cloned().chain(scope).collect();
+        let mut labels = leaf_labels(&old.rows, &named, catalogue)?;
+        for (code, zh) in &old.labels {
+            labels.entry(code.clone()).or_insert_with(|| zh.clone());
+        }
+        old_finding_of(&filling, &mut old, &labels)?;
+        Ok((fill, old, short.to_string()))
+    }
+
+    /// The declared map's page is the frozen map's: the same fact keys over the whole page (the finding's among them) and
+    /// each the same, every format, the hero's data, the unit line with the map's note after it, the rows the map draws and
+    /// every row the page keeps, in their order. The count of facts.
+    fn assert_map_page(name: &str, fill: &Value, old: &Filled, short: &str) -> usize {
+        let spec = &fill["knobs"]["spec"];
+        let mine: BTreeSet<&String> = spec["facts"].as_object().unwrap().keys().collect();
+        assert_eq!(mine, old.facts.keys().collect::<BTreeSet<_>>(), "{name}: the page's fact keys, the finding's among them");
+        for (k, q) in &old.facts {
+            assert_eq!(&spec["facts"][k], q, "{name}: fact {k}");
+        }
+        for (k, q) in &old.fmts {
+            assert_eq!(&spec["fmts"][k], q, "{name}: format {k}");
+        }
+        assert_eq!(spec["hero"]["data"], Value::Object(old.data.clone()), "{name}: the hero's data");
+        let unit = std::iter::once(format!("单位：{short}")).chain(old.notes.iter().cloned()).collect::<Vec<_>>().join("；");
+        assert_eq!(spec["hero"]["unit"], json!(unit), "{name}: the unit line and the map's note");
+        let drawn: Vec<&Value> = fill["drawn"].as_array().unwrap().iter().filter(|d| d["layer"] == "map").map(|d| &d["src"]).collect();
+        assert_eq!(drawn, old.drawn.iter().filter(|(l, _)| l == "map").map(|(_, r)| &r["src"]).collect::<Vec<_>>(), "{name}: the rows the map draws");
+        let kept: Vec<&Value> = fill["rows"].as_array().unwrap().iter().map(|r| &r["src"]).collect();
+        assert_eq!(kept, old.rows.iter().map(|r| &r["src"]).collect::<Vec<_>>(), "{name}: the rows the page keeps");
+        old.facts.len()
+    }
+
+    /// P6 step 6: the map the visual group declares is the rust map byte for byte (its facts with the page's finding, its
+    /// format, the hero's data, its note, its rows), on each branch of its rules over both recipes that draw it (scmp, ring)
+    /// and two shapes (A: RU, NO, US with RU the focus; B: six origins with NO the focus), each with a member (DE) and two
+    /// aggregates (TOTAL, EXT_EU27_2020) at the hub, which the rows keep the member of and the totals leave out: a top
+    /// origin whose t0 is 0 (no change), no t0 row, a t0 that is no number, every t0 above 0, the focus's own t0 at 0.
+    #[test]
+    fn declared_map_equals_the_rust_map_on_every_branch() {
+        let v = |a: &'static str, b: &'static str, c: &'static str| [Some(a), Some(b), Some(c)];
+        let rest = [("DE", v("1", "1", "1")), ("TOTAL", v("1", "1", "1")), ("EXT_EU27_2020", v("1", "1", "1"))];
+        let a = |us: [Option<&'static str>; 3], ru0: &'static str| {
+            let mut x = vec![("RU", [Some(ru0), Some("50000"), Some("37843.285")]), ("NO", v("80000", "85000", "90000")), ("US", us)];
+            x.extend(rest);
+            x
+        };
+        let b = |dz: [Option<&'static str>; 3], no0: &'static str| {
+            let mut x = vec![("NO", [Some(no0), Some("90000"), Some("95000")]), ("DZ", dz), ("QA", v("20000", "21000", "15000")),
+                ("AZ", v("5000", "9000", "12000")), ("RU", v("150000", "80000", "20000")), ("LY", v("3000", "2500", "2500"))];
+            x.extend(rest);
+            x
+        };
+        let none: [Option<&'static str>; 3] = [None, Some("1"), Some("30000")];
+        let cases: Vec<(&str, Vec<(&str, [Option<&str>; 3])>, &str, &str)> = vec![
+            ("A one t0 at 0", a(v("0", "1", "30000"), "126027.316"), "RU", "us_ch"),
+            ("A no t0 row", a(none, "126027.316"), "RU", "us_ch"),
+            ("A t0 no number", a(v(":", "1", "30000"), "126027.316"), "RU", "us_ch"),
+            ("A all above 0", a(v("10", "1", "30000"), "126027.316"), "RU", ""),
+            ("A focus t0 at 0", a(v("10", "1", "30000"), "0"), "RU", "ru_ch"),
+            ("B one t0 at 0", b(v("0", "7000", "40000"), "60000"), "NO", "dz_ch"),
+            ("B no t0 row", b(none, "60000"), "NO", "dz_ch"),
+            ("B all above 0", b(v("100", "7000", "40000"), "60000"), "NO", ""),
+        ];
+        for recipe_name in ["scmp", "ring"] {
+            for (name, values, focus, no_change) in &cases {
+                let (main, monthly, change) = scmp_rows(values, focus, &[(*focus, "2019-01", 63)]);
+                let claims = [(MEMBER_CHANGE.to_string(), change)];
+                let (fill, old, short) = map_page(recipe_name, [("imp", &main), ("impm", &monthly)], &claims, &Hubs).unwrap_or_else(|e| panic!("{recipe_name} {name}: {e}"));
+                let n = assert_map_page(&format!("{recipe_name} {name}"), &fill, &old, &short);
+                assert!(no_change.is_empty() || !old.facts.contains_key(*no_change), "{recipe_name} {name}: no change from nothing");
+                let rows = old.drawn.iter().filter(|(l, _)| l == "map").count();
+                assert!(old.drawn.iter().any(|(l, r)| l == "map" && r["dims"]["partner"] == "DE"), "{recipe_name} {name}: the member's rows");
+                assert!(!old.drawn.iter().any(|(l, r)| l == "map" && ["TOTAL", "EXT_EU27_2020"].contains(&r["dims"]["partner"].as_str().unwrap_or(""))), "{recipe_name} {name}");
+                println!("P6MAP {recipe_name} {name}: facts {n} (finding's among them), rows {rows}, top {:?}, equal", old.data["top"]);
+            }
+        }
+    }
+
+    /// The map's stop that a page reaches replays word for word: a name table that names no hub stops the page at the map
+    /// (the first layer of scmp and of ring) in the rust fill's words, now that the hub's name is looked up in fill_of and
+    /// the map's declaration stops on its absence (declares.needs); the recipe loop (leaf_request) stops at scmp's fill with
+    /// them, trying no other recipe. The other stop (t0 and t1 sharing their last two digits) no page reaches: t0 and t1
+    /// are years of one table's rows (years_2), never a century apart; the flow keeps it where page_input derives the two
+    /// digits, in the same words, shown here on picks no table gives.
+    #[test]
+    fn the_map_stops_replay_word_for_word_and_end_the_recipe_loop_at_the_fill() {
+        let v = |a: &'static str, b: &'static str, c: &'static str| [Some(a), Some(b), Some(c)];
+        let values = [("RU", v("126027.316", "50000", "37843.285")), ("NO", v("80000", "85000", "90000")), ("US", v("0", "1", "30000")),
+            ("DE", v("1", "1", "1")), ("TOTAL", v("1", "1", "1")), ("EXT_EU27_2020", v("1", "1", "1"))];
+        let said = "not this shape: the name table names no hub EU27_2020";
+        let (main, monthly, change) = scmp_rows(&values, "RU", &[("RU", "2019-01", 63)]);
+        let cat = Fetched(BTreeMap::from([("imp".to_string(), main.clone()), ("impm".to_string(), monthly.clone())]), "iso3");
+        let claims = [(MEMBER_CHANGE.to_string(), change.clone())];
+        for recipe_name in ["scmp", "ring"] {
+            let r = recipe(recipe_name);
+            assert_eq!(r.layers[0], "map", "{recipe_name}: the map is the first layer");
+            let got = map_page(recipe_name, [("imp", &main), ("impm", &monthly)], &claims, &cat).err().unwrap();
+            assert_eq!(got, said, "{recipe_name}: the declared map");
+            // the rust map's words over the same shape and picks
+            let shape = shape_of(&r.eats, &[("imp", &main), ("impm", &monthly)], &cat).unwrap();
+            let picks = picks_of(&r.picks, &shape, &main, &claims).unwrap();
+            let filling = Filling { shape: &shape, picks: &picks, main: &main, companion: &monthly, catalogue: &cat, fmt: shape.unit.to_lowercase(),
+                short: next_pack::unit_short(&shape.unit).unwrap(), window: window_of(r, &picks).unwrap(), asked: None };
+            assert_eq!(format!("not this shape: {}", old_map_fill(&filling, &mut Filled::default()).unwrap_err()), said, "{recipe_name}: the rust map");
+            println!("P6MAP stop {recipe_name}: {got}");
+        }
+        // the recipe loop over a run folder holding these rows: it stops at scmp's fill, in these words
+        let run = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(run.path().join("shadow")).unwrap();
+        std::fs::write(run.path().join("claims.jsonl"), format!("{change}\n")).unwrap();
+        std::fs::write(run.path().join("shadow/candidate_sheet-s1.json"), json!({"candidates": [{"id": "k1", "kind": MEMBER_CHANGE}]}).to_string()).unwrap();
+        for f in ["imp.csv", "impm.csv"] {
+            std::fs::write(run.path().join(f), "").unwrap();
+        }
+        let prepared = Prepared {
+            id: "imp".into(),
+            title: String::new(),
+            file: "imp.csv".into(),
+            args: Map::new(),
+            sheet: "s1".into(),
+            claims: vec![json!({"candidate": "k1", "claim_id": "c4"})],
+            places_zh: Vec::new(),
+            companions: vec![("impm".into(), "impm.csv".into())],
+        };
+        let got = leaf_request(run.path(), &[prepared], &[], &cat, ("", ("标题", "导语", "栏目")), &Default::default()).unwrap_err();
+        assert_eq!(got, ("scmp", "fill", said.to_string()), "the recipe loop");
+        println!("P6MAP stop recipe loop: {:?}", got);
+        // the two digits: the rust map's words, and the flow's, on picks a century apart
+        let shape = Shape { hub: "EU27_2020".into(), unit: "MIO_M3".into(), ..Shape::default() };
+        let picks = Picks { top: vec!["RU".into()], focus: "RU".into(), t0: "1924".into(), t1: "2024".into(), ..Picks::default() };
+        let filling = Filling { shape: &shape, picks: &picks, main: &[], companion: &[], catalogue: &Hubs, fmt: "x".into(), short: "x", window: None, asked: None };
+        let old = format!("not this shape: {}", old_map_fill(&filling, &mut Filled::default()).unwrap_err());
+        assert_eq!(old, "not this shape: t0 1924 and t1 2024 share their last two digits");
+        let mine = fill_of(recipe("scmp"), &shape, &picks, (&[] as &[Value], &[] as &[Value]), &Hubs, ("标题", "导语"), false, None).unwrap_err();
+        assert_eq!(mine, old, "the flow's guard");
+    }
+
+    /// P6 step 6 on real data: the gas fixture (env as ring_fill_of_the_gas_fixture; run with --ignored), Eurostat's
+    /// nrg_ti_gas and nrg_ti_gasm, filled under scmp and under ring as recipe_request fills them (the map declared), the
+    /// whole page held to the frozen fills over the same shape and picks. No stand-in run stored an scmp or ring request.
+    /// Prints one P6REQ line per recipe.
+    #[test]
+    #[ignore]
+    fn p6_map_over_the_gas_fixture() {
+        let (main, monthly, catalogue, _, claims) = gas_fixture();
+        for recipe_name in ["scmp", "ring"] {
+            let (fill, old, short) = map_page(recipe_name, [("nrg_ti_gas", &main), ("nrg_ti_gasm", &monthly)], &claims, &catalogue).unwrap();
+            let n = assert_map_page(recipe_name, &fill, &old, &short);
+            let rows = old.drawn.iter().filter(|(l, _)| l == "map").count();
+            println!("P6REQ map {recipe_name} gas facts {n} (finding's among them) rows {rows} equal: top {:?} focus {} hub {}", old.data["top"], old.data["focus"], old.data["hub_name"]);
         }
     }
 }

@@ -22,9 +22,9 @@ use std::collections::BTreeSet;
 use serde_json::Value;
 
 /// The page input paths a declaration template may read (`$shape.main`, ...); nothing else is substituted.
-const PAGE_IN_PATHS: [&str; 26] = [
+const PAGE_IN_PATHS: [&str; 30] = [
     "shape.main", "shape.source", "shape.target", "shape.place", "shape.year", "shape.fmt", "shape.suffix", "shape.countries", "shape.hub", "shape.second", "shape.months", "picks.marks", "picks.t0", "picks.t1", "picks.top",
-    "picks.focus", "fill.accent", "fmt.change", "outside",
+    "picks.focus", "fill.accent", "fmt.change", "shape.members", "shape.point", "shape.extent", "outside", "hub_name",
     "shape.t0", "sum_rows", "composition.dim", "composition.total", "composition.first_group", "composition.first_codes",
     "fill.composition.bars",
 ];
@@ -289,6 +289,8 @@ pub struct NodeDeclared {
     pub record: Option<Value>,
     /// The layer writes the unit in its own picture.
     pub unit_drawn: bool,
+    /// The notes after the unit the layer writes (declares.notes: what a share is of), in its order.
+    pub notes: Vec<String>,
     /// The page's finding (the finding node): its dek's two wordings and its headline's, and the code it names first.
     pub finding: Option<(Value, String)>,
 }
@@ -845,6 +847,14 @@ fn finding_recheck(page_in: &J, fill: &J, reg: &J) -> Result<(), String> {
 /// The declaration as JSON in the generator's own order (the prototype's), for the fixtures.
 fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
     let d = declares(reg, layer, page_in)?;
+    // a page input value the declaration cannot do without (declares.needs: its path, and the registry's words for the
+    // page's stop when it is null): a stop in the registry's own words, as the rust fill's was
+    for nd in d.g("needs").arr() {
+        if sub(nd.g("path"), page_in)? == J::Null {
+            let words = nd.g("stop").arr().iter().map(|w| sub(w, page_in).map(|x| st(&x))).collect::<Result<Vec<_>, _>>()?;
+            return Err(format!("not this shape: {}", words.concat()));
+        }
+    }
     // the declaration's own values (declares.values), which its templates read beside the page input
     let view = with_values(layer, page_in, reg)?;
     let page_in = view.as_ref().unwrap_or(page_in);
@@ -898,8 +908,30 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
         Some(r) => Some(st(&core::resolve_ref(&st(r), &got)?)),
         None => None,
     };
-    if let Some(c) = &for_code {
-        facts = core::with_code(&facts, c, page_in);
+    match &for_code {
+        Some(c) => facts = core::with_code(&facts, c, page_in),
+        // with no code, only the page's two years (`{y0}` / `{y1}`) are read; a code template with no code refuses
+        None if facts.repr().contains("{code") => return Err(format!("{layer}: declares facts of a code and names no for_code")),
+        None => facts = core::with_code(&facts, "", page_in),
+    }
+    // for_each: the facts of every code a select holds (declares.facts_each), in its order, `{code}` / `{code_lc}` read as
+    // each; a fact with conditions (when) only for a code they hold for
+    if let Some(r) = d.get("for_each") {
+        let each = sub(d.g("facts_each"), &facts_in)?;
+        for c in core::resolve_ref(&st(r), &got)?.arr() {
+            for (k, q) in each.obj() {
+                let (k, mut q) = (st(&core::with_code(&J::Str(k.clone()), &st(c), page_in)), core::with_code(q, &st(c), page_in));
+                if let Some(w) = q.remove("when") {
+                    if !core::conditions_hold(&w, &plain_holding(&got, page_in))? {
+                        continue;
+                    }
+                }
+                if facts.get(&k).is_some_and(|w| *w != q) {
+                    return Err(format!("{layer}: fact {k} is declared two ways"));
+                }
+                facts.set(&k, q);
+            }
+        }
     }
     for (k, v) in d.g("formats").obj() {
         fmts.set(k, sub(v, page_in)?);
@@ -923,6 +955,16 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
         let q = codes_in(&sub(d.g("rows"), page_in)?, &got);
         let hit = |r: &&J| r.g("table") == q.g("table") && q.g("filter").obj().iter().all(|(k, v)| r.g("dims").g(k) == v);
         (page_in.g("rows").arr().iter().chain(page_in.g("sum_rows").arr()).filter(hit).cloned().collect(), Vec::new())
+    } else if d.g("rows").g("rule").s() == Some("rows_in") {
+        // rows_in: the page input's main rows at the table and every filter dimension whose `by` code is in any of the
+        // lists `in` names, at every time; all drawn, in the input's order
+        let q = sub(d.g("rows"), page_in)?;
+        let by = st(q.g("by"));
+        let codes: Vec<&J> = q.g("in").arr().iter().flat_map(|l| l.arr()).collect();
+        let hit = |r: &&J| {
+            r.g("table") == q.g("table") && q.g("filter").obj().iter().all(|(k, v)| r.g("dims").g(k) == v) && codes.contains(&r.g("dims").g(&by))
+        };
+        (page_in.g("rows").arr().iter().filter(hit).cloned().collect(), Vec::new())
     } else if d.has("rows") || d.has("reads") {
         let sid = order_of(&n).ok_or_else(|| format!("{layer}: its items follow no select"))?;
         let refs: Vec<(String, &J)> = sels.iter().map(|s| (st(s.g("id")), s)).collect();
@@ -962,7 +1004,19 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
             data.set(k, x);
         }
     }
+    // the hero's data keys the declaration writes itself (declares.data), each template read over the page input
+    for (k, v) in d.g("data").obj() {
+        data.set(k, sub(v, page_in)?);
+    }
     let mut out = J::obj_of(vec![("rows", J::Arr(drawn)), ("facts", facts), ("fmts", fmts)]);
+    // the notes after the unit the declaration writes (declares.notes), each the registry's words with every template read
+    let mut notes = Vec::new();
+    for words in d.g("notes").arr() {
+        notes.push(J::Str(words.arr().iter().map(|w| sub(w, page_in).map(|x| st(&x))).collect::<Result<Vec<_>, _>>()?.concat()));
+    }
+    if !notes.is_empty() {
+        out.set("notes", J::Arr(notes));
+    }
     if !reads.is_empty() {
         out.set("reads", J::Arr(reads));
     }
@@ -1060,6 +1114,7 @@ pub fn declare(layer: &str, page_in: &Value) -> Result<NodeDeclared, String> {
         fixed: out.g("fixed").arr().iter().map(|f| (st(f.at(0)), st(f.at(1)))).collect(),
         record: out.get("record").map(J::to_value),
         unit_drawn: out.g("unit_drawn").truthy(),
+        notes: out.g("notes").arr().iter().map(st).collect(),
         finding: out.get("finding").filter(|f| !f.is_null()).map(|f| (f.to_value(), st(out.g("subject")))),
     })
 }
@@ -2022,7 +2077,7 @@ pub fn draw(fill: &Value, page_in: &Value, layers: &[String], runtime: &std::pat
     // the fill holds must be that declaration's (a name the conditions measured otherwise refuses)
     for l in asked.iter().filter(|l| reg.g("nodes").g(l).g("geometry").s() == Some("leaf")) {
         let Ok(d) = declares(&reg, l, &page_in) else { continue };
-        if !d.has("candidates") && !d.has("hero") {
+        if !d.has("candidates") && !d.has("hero") && !d.has("data") {
             continue;
         }
         let mut named = page_in.clone();
@@ -2051,6 +2106,18 @@ pub fn draw(fill: &Value, page_in: &Value, layers: &[String], runtime: &std::pat
         for (k, q) in again.g("facts").obj() {
             if fill.g("knobs").g("spec").g("facts").g(k) != q {
                 return Err(format!("node {l}: fact {k} is not its declaration: {}", q.repr()));
+            }
+        }
+        // the hero's data keys it writes itself (declares.data) are the page's, and each that names a fact (data_facts)
+        // names one the page declares
+        for k in d.g("data").obj().iter().map(|(k, _)| k) {
+            if hero.g("data").g(k) != again.g("data").g(k) {
+                return Err(format!("node {l}: hero data {k} is not its declaration: {} != {}", hero.g("data").g(k).repr(), again.g("data").g(k).repr()));
+            }
+        }
+        for k in d.g("data_facts").arr().iter().map(st) {
+            if let Some(f) = hero.g("data").g(&k).s().filter(|f| !fill.g("knobs").g("spec").g("facts").has(f)) {
+                return Err(format!("node {l}: its data field {k} prints fact {f}, which the page does not declare"));
             }
         }
         // the item fields the leaf prints as facts by key (leaf.fact_fields): each a fact the page declares (another
@@ -2413,7 +2480,7 @@ mod tests {
     fn next_tree_gen_only_stacked100_declares_geometry_leaf() {
         let bound = core::bindings();
         let leaf: Vec<&str> = bound.g("nodes").obj().iter().filter(|(_, n)| n.g("geometry").s() == Some("leaf")).map(|(k, _)| k.as_str()).collect();
-        assert_eq!(leaf, ["bignums", "leader_notes", "notes", "ring", "strip", "sankey", "stacked100"]);
+        assert_eq!(leaf, ["map", "bignums", "leader_notes", "notes", "ring", "strip", "sankey", "stacked100"]);
     }
 
     /// The scmp notes declared over a hand page input: one note per top origin in its order, the focus's marked, its change
