@@ -5581,6 +5581,10 @@ fn next_qa_1440_gap(qa_key_dir: &Path, qa_report: &Value) -> Option<String> {
 /// The program's checks on a new-route page, in the order the flow records them (next_run.rs page_checks): a page checks
 /// event names exactly these, so one the flow stopped recording (or a check that is not the program's) is a gap.
 pub(crate) const NEXT_PAGE_CHECKS: [&str; 5] = ["notes_dropped", "strip_placed", "same_numbers_twice", "type_size", "text_contrast"];
+/// The program's checks the flow adds after NEXT_PAGE_CHECKS only on some pages, in this order (next_run.rs zeros_check:
+/// a composition page that declares parts 0). A page checks event may name each at most once, after the five; every
+/// check it names must still pass like the five.
+pub(crate) const NEXT_PAGE_CHECKS_WHEN_DECLARED: [&str; 1] = ["zeros_declared"];
 
 /// What keeps the publication in publications/<dir>/ (its html at `html_ref`, `sha` the hash of those bytes on disk now)
 /// from the program's page checks, None when the flow's last page checks event of it measured those bytes, names exactly
@@ -5602,8 +5606,15 @@ fn next_page_checks_gap(events: &[Value], dir: &str, html_ref: &str, sha: &str) 
         return Some("its page checks event holds no checks".to_string());
     };
     let names: Vec<&str> = checks.iter().map(|check| check["name"].as_str().unwrap_or("?")).collect();
-    if names != NEXT_PAGE_CHECKS {
-        return Some(format!("its page checks are {}, not the program's {}", names.join(", "), NEXT_PAGE_CHECKS.join(", ")));
+    let (five, more) = names.split_at(names.len().min(NEXT_PAGE_CHECKS.len()));
+    let more_known = more.len() <= NEXT_PAGE_CHECKS_WHEN_DECLARED.len() && NEXT_PAGE_CHECKS_WHEN_DECLARED.starts_with(more);
+    if five != NEXT_PAGE_CHECKS || !more_known {
+        return Some(format!(
+            "its page checks are {}, not the program's {} (then {} only on a page that declares it)",
+            names.join(", "),
+            NEXT_PAGE_CHECKS.join(", "),
+            NEXT_PAGE_CHECKS_WHEN_DECLARED.join(", ")
+        ));
     }
     let failed: Vec<String> = checks
         .iter()
@@ -9840,6 +9851,49 @@ mod tests {
         assert!(publication_errors(root).is_empty());
         fs::write(root.join(format!("publications/{key}/index.html")), "<html>changed</html>").unwrap();
         assert!(named(&publication_errors(root), "measured other bytes"));
+    }
+
+    /// A composition page that declares parts 0 gets the program's zeros_declared after the five (next_run.rs zeros_check):
+    /// the five then it, passed, is no gap; it failed or passed as text is a failed check; it twice, before the five, in
+    /// place of one of them, or any other check after the five is not the program's list.
+    #[test]
+    fn a_next_route_page_may_add_the_programs_zeros_check_after_the_five_and_it_must_pass() {
+        let (temp, key) = build_publication_fixture(true, true);
+        let root = temp.path();
+        let manifest = format!("publications/{key}/manifest.json");
+        fs::create_dir_all(root.join("runtime")).unwrap();
+        fs::write(root.join("runtime/next-page.json"), "{}").unwrap();
+        let named = |errors: &[String], want: &str| {
+            errors.iter().any(|e| e.contains("has no passing page checks of its bytes (next_page_checks)") && e.contains(want))
+        };
+        let with = |extra: &[(&str, Value)]| {
+            let mut event = page_checks_event(&key, &key, &[]);
+            let checks = event["checks"].as_array_mut().unwrap();
+            for (name, passed) in extra {
+                checks.push(serde_json::json!({"name": name, "passed": passed, "measured": {}}));
+            }
+            event
+        };
+        let yes = serde_json::json!(true);
+        write_events(root, &[with(&[("zeros_declared", yes.clone())]), vision_event(&manifest, true)]);
+        assert!(publication_errors(root).is_empty(), "{:?}", publication_errors(root));
+        let mut before = with(&[]);
+        before["checks"].as_array_mut().unwrap().insert(0, serde_json::json!({"name": "zeros_declared", "passed": true, "measured": {}}));
+        let mut in_place = with(&[("zeros_declared", yes.clone())]);
+        in_place["checks"].as_array_mut().unwrap().remove(4);
+        for (event, want) in [
+            (with(&[("zeros_declared", serde_json::json!(false))]), "failed zeros_declared"),
+            (with(&[("zeros_declared", serde_json::json!("true"))]), "failed zeros_declared"),
+            (with(&[("zeros_declared", yes.clone()), ("zeros_declared", yes.clone())]), "not the program's"),
+            (with(&[("strip_skipped", yes.clone())]), "not the program's"),
+            (with(&[("zeros_declared", yes.clone()), ("strip_skipped", yes.clone())]), "not the program's"),
+            (before, "not the program's"),
+            (in_place, "not the program's"),
+        ] {
+            write_events(root, &[event, vision_event(&manifest, true)]);
+            let errors = publication_errors(root);
+            assert!(named(&errors, want), "{want}: {errors:?}");
+        }
     }
 
     /// A new-route publication's passing browser QA must hold exactly one 1440 screenshot whose bytes on disk hash to the
