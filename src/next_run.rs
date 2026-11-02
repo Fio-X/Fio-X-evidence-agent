@@ -11718,6 +11718,20 @@ for line in sys.stdin:
         fn members(&self, aggregate: &str) -> Result<Vec<String>, String> {
             Hubs.members(aggregate)
         }
+        /// A World Bank main as the real catalogue lists it, its places the codes the stored page named and its unit the
+        /// registered one (l5geo wb_unit); the stored page's places stand in for the catalogue's country list.
+        fn table(&self, id: &str) -> Option<crate::l5geo::TableMeta> {
+            id.ends_with("@2").then(|| crate::l5geo::TableMeta {
+                id: id.into(),
+                worldbank: true,
+                dims: Vec::new(),
+                end_year: None,
+                places: self.0.keys().map(|c| (String::new(), c.clone())).collect(),
+                place_members: Vec::new(),
+                freqs: Vec::new(),
+                unit: crate::l5geo::wb_unit(id),
+            })
+        }
     }
 
     /// P6 step 1 over stand-in pages (P6_REQS: a file listing publications/<recipe>/request.json of stored runs, one per
