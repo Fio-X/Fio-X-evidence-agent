@@ -29,7 +29,7 @@ A part whose every cell is 0 and that layer 1 did not declare zero draws no segm
 ("<bar>:<part>", "zero"); a declared zero draws none and is no drop.
 Conservation (refuses): a bar's cells, laid end to end, end off its total by more than knob tol of the total (a leaf left out,
 or one counted twice).
-Colours: --accent the highlighted part, GREYS the others in turn (lightest, mid, light: CIE L* 84, 61, 72, each 10 or more
+Colours: --accent the highlighted part, GREYS the others in turn (lightest, mid, light violet: CIE L* 84, 61, 72, each 10 or more
 from the others and from HL_DARK, so the rest stays lighter than the highlighted part, and none the empty track's --empty,
 L* 91, which reads as no data), --t-title ink, --t-sec the lines, --bg the gaps between segments and an in-bar share's ink
 on the dark grey (--t-dark on the others). Each segment names the part it draws (data-code), so the
@@ -55,10 +55,12 @@ from wbkit import FX, prod, Refused, esc, tw
 import words as WD
 
 NODE = "stacked100"
-# The others' greys, on the ramp's teal: --seq-5 (L* 61.3) and two steps the ramp lacks, so every gap is 10 or more and the
-# lightest stays 7 or more off --empty (L* 90.9; a big share in it reads as an empty track): #9db5b9 (L* 72.0, between
-# --seq-3 and --seq-2) and #c8d2d4 (L* 83.5, --seq-1 lightened). tokens.css stays as every other page has it.
-GREYS = ["#c8d2d4", "var(--seq-5)", "#9db5b9"]
+# The others' greys: --seq-5 (teal, L* 61.3), #c8d2d4 (pale teal, L* 83.5, 7 off --empty's 91: a big share in the empty
+# track's grey reads as no data) and #b1aec8 (violet grey, L* 72.1). Two teals of 11 L* apart read as one (q3 stand-ins,
+# twice), so the middle one leaves the teal: every pair is 10 or more apart in L* and 18 or more in CIE76 dE, and none is
+# saturated (HSL saturation 0.19 at most beside the page check's 0.25), so the accent stays the one hue. tokens.css
+# stays as every other page has it.
+GREYS = ["#c8d2d4", "var(--seq-5)", "#b1aec8"]
 # The highlighted part of every bar but the subject's: neutral, L* 50, between the ink (16) and the greys (61 and up), so the
 # accent's one segment stays the page's focus. No token sits there and tokens.css stays as every other page has it; #767676
 # carries white text at 4.5:1 (WCAG AA), hence its place in DARK.
