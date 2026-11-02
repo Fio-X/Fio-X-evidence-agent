@@ -30,7 +30,8 @@ DIFFED = ("runtime/page_tree/node-bindings.json", "src/next_tree_gen.rs", "src/n
 STEPS = [("P4a-1 bars", "9e7dbc20", "2b069404"), ("P4a-2 map circles and change bars", "3316afa1", "144054b8"),
          ("P4b composition", "144054b8", "ee1cffe4"), ("P4b-5 share comparison and scope", "c72a2d74", "99b701b9"),
          ("P6-1 leader notes", "1f9f8137", "e9ff6205"), ("P6-2 scmp notes", "1eb987bd", "eb52e9c8"),
-         ("P6-2 scmp big numbers", "eb52e9c8", "ef58c2c3"), ("P6-3 ring", "ef58c2c3", "f5555ce0")]
+         ("P6-2 scmp big numbers", "eb52e9c8", "ef58c2c3"), ("P6-3 ring", "ef58c2c3", "f5555ce0"),
+         ("P6-4 strip", "11cfbc9a", "WORKTREE")]
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _shown = {}
 

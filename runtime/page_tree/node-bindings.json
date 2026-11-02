@@ -39,7 +39,7 @@
   "change_focus": {"id": "top", "kind": "given", "source": "picks", "path": "picks.top", "given": "$picks.top"},
   "claim_marks": {"id": "marks", "kind": "named_rule", "rule": "marks_from_claims", "inputs": {"ranked": "ranked"}, "given": "$picks.marks"}
  },
- "recipes": {"column": ["bars", "bubbles", "leader_notes"], "change": ["bubbles", "bars", "leader_notes"], "composition": ["stacked100"], "scmp": ["bignums", "notes"], "ring": ["ring"]},
+ "recipes": {"column": ["bars", "bubbles", "leader_notes"], "change": ["bubbles", "bars", "leader_notes"], "composition": ["stacked100"], "scmp": ["strip", "bignums", "notes"], "ring": ["ring"]},
  "nodes": {
   "bars": {
    "binding": "external",
@@ -680,6 +680,82 @@
        "q": {"table": "$shape.second", "filter": {"$shape.place": "{code}"}, "by": "$shape.place"},
        "from": "$value.from",
        "marks": [{"key": "{code_lc}_m_peak"}, {"key": "{code_lc}_last"}]
+      }
+     }
+    }
+   }
+  }
+,
+  "strip": {
+   "binding": "external",
+   "geometry": "leaf",
+   "runner": "leaves_py/scmp.py",
+   "declares_by_recipe": {
+    "scmp": {
+     "selects": [
+      {
+       "id": "focus",
+       "kind": "given",
+       "given": ["$picks.focus"]
+      }
+     ],
+     "values": {
+      "from": {
+       "rule": "months_back",
+       "months": "$shape.months",
+       "span": {"knob": "months"},
+       "within": ["$picks.t0", "$picks.t1"],
+       "stop": ["monthly ", "$shape.second", " has no month in the page's window"]
+      },
+      "to": {
+       "rule": "last_month",
+       "months": "$shape.months",
+       "within": ["$picks.t0", "$picks.t1"],
+       "stop": ["monthly ", "$shape.second", " has no month in the page's window"]
+      }
+     },
+     "fmt": {
+      "scale": 1,
+      "suffix": "$shape.suffix",
+      "dec_rule": {
+       "rule": "fixed",
+       "dec": 0
+      }
+     },
+     "for_code": "select:focus[0]",
+     "facts": {
+      "{code_lc}_s_peak": {
+       "op": "peak",
+       "table": "$shape.second",
+       "filter": {"$shape.place": "{code}"},
+       "from": "$value.from",
+       "fmt": "$shape.fmt",
+       "to": "$value.to",
+       "axis": true
+      },
+      "{code_lc}_s_last": {
+       "op": "last",
+       "table": "$shape.second",
+       "filter": {"$shape.place": "{code}"},
+       "from": "$value.from",
+       "fmt": "$shape.fmt",
+       "to": "$value.to"
+      }
+     },
+     "rows": {
+      "rule": "rows_of_code",
+      "table": "$shape.second",
+      "filter": {
+       "$shape.place": "select:focus[0]"
+      }
+     },
+     "hero": {
+      "strip": {
+       "q": {"table": "$shape.second", "filter": {"$shape.place": "{code}"}, "by": "$shape.place"},
+       "from": "$value.from",
+       "axis": "{code_lc}_s_peak",
+       "marks": [{"key": "{code_lc}_s_peak", "word": "scmp.strip.peak"}, {"key": "{code_lc}_s_last", "word": "scmp.strip.last"}],
+       "to": "$value.to"
       }
      }
     }

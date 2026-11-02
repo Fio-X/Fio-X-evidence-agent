@@ -1502,16 +1502,6 @@ fn claim_marks(p: &mut Picks, _: &Shape, _: &[Value], claims: &[(String, Value)]
     Ok(())
 }
 
-/// The ring's first month: `span` months (the visual knob ring.months) back from the companion's last month, that month
-/// counted, or its first month when it holds fewer. None when it holds no month.
-fn ring_from(months: &[String], span: i64) -> Option<String> {
-    let last = months.last()?;
-    let (y, m): (i64, i64) = (last[..4].parse().ok()?, last[5..].parse().ok()?);
-    let i = y * 12 + m - 1 - (span - 1);
-    let from = format!("{}-{:02}", i.div_euclid(12), i.rem_euclid(12) + 1);
-    Some(if from < months[0] { months[0].clone() } else { from })
-}
-
 /// What a node's fill reads: the page's shape and picks, the main's and the companion's series rows, the catalogue, the
 /// unit's format key and registered short form, the page's time window (window_of) as its first and last month, and whether
 /// the program narrowed the main's places (a narrow record of its file, narrowed): its extremes are then the kept places'.
@@ -1523,6 +1513,9 @@ struct Filling<'a> {
     catalogue: &'a dyn Catalogue,
     fmt: String,
     short: &'a str,
+    /// Read by the frozen pre-P6 strip fill the declared strip is held to (tests); the declared strip reads the page's
+    /// window from the page input.
+    #[cfg_attr(not(test), allow(dead_code))]
     window: Option<(String, String)>,
     /// Where the recipe's external layers are asked (ask_node); none, a layer bound external refuses the page.
     asked: Option<&'a Asked<'a>>,
@@ -1732,7 +1725,6 @@ type NodeFill = fn(&Filling, &mut Filled) -> Result<(), String>;
 /// (callouts, legend, inset, bubble_key) prints from what the others put.
 const NODE_FILLS: &[(&str, NodeFill)] = &[
     ("map", map_fill),
-    ("strip", strip_fill),
     ("sankey", sankey_fill),
 ];
 
@@ -1814,45 +1806,6 @@ fn map_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
 fn flow_keys(picks: &Picks, code: &str) -> [String; 4] {
     let (c, y0, y1) = (code.to_lowercase(), &picks.t0[2..], &picks.t1[2..]);
     [format!("{c}{y0}"), format!("{c}{y1}"), format!("{c}_ch"), format!("{c}{y1}_share")]
-}
-
-/// The strip under the hero: the focus's months in the companion, strip.months (the visual knob) back from its last month,
-/// kept to the page's window when the recipe has one (from no earlier than its first month, to its last month or the
-/// companion's last before it). Rows: the companion's for the focus. Facts: its peak (the top of its value axis) and its
-/// last month in that span, the strip's two marks.
-fn strip_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
-    let (shape, picks, fmt) = (f.shape, f.picks, f.fmt.as_str());
-    let span = f.catalogue.knob("strip", "months")? as i64;
-    let none = || format!("monthly {} has no month in the page's window", shape.companion);
-    let (months, to): (Vec<String>, Option<String>) = match &f.window {
-        None => (shape.months.clone(), None),
-        Some((a, b)) => {
-            let kept: Vec<String> = shape.months.iter().filter(|t| *t <= b).cloned().collect();
-            let last = kept.last().cloned().ok_or_else(none)?;
-            (kept.into_iter().filter(|t| t >= a).collect(), Some(last))
-        }
-    };
-    let from = ring_from(&months, span).ok_or_else(none)?;
-    let origin = shape.place.as_str();
-    out.rows(f.companion.iter().filter(|r| r["dims"][origin] == picks.focus.as_str()).cloned());
-    let c = picks.focus.to_lowercase();
-    let (peak, last) = (format!("{c}_s_peak"), format!("{c}_s_last"));
-    for (key, op) in [(&peak, "peak"), (&last, "last")] {
-        let mut q = json!({"op": op, "table": shape.companion, "filter": filter(&[(origin, picks.focus.as_str())]), "from": from, "fmt": fmt});
-        if let Some(to) = &to {
-            q["to"] = json!(to);
-        }
-        if op == "peak" {
-            q["axis"] = json!(true);
-        }
-        Filled::set(&mut out.facts, "fact", key, q)?;
-    }
-    let mut strip = json!({"q": {"table": shape.companion, "filter": filter(&[(origin, picks.focus.as_str())]), "by": origin},
-        "from": from, "axis": peak, "marks": [{"key": peak, "word": "scmp.strip.peak"}, {"key": last, "word": "scmp.strip.last"}]});
-    if let Some(to) = to {
-        strip["to"] = json!(to);
-    }
-    Filled::set(&mut out.hero, "hero key", "strip", strip)
 }
 
 /// The suffix a value prints with: its unit's short form, after a space when it holds a letter or a digit.
@@ -11355,6 +11308,57 @@ for line in sys.stdin:
         Filled::set(&mut out.hero, "hero key", "ring", ring)
     }
 
+    /// Frozen copy of the flow's window rule (P6 steps 3 and 4 moved it to the visual group's months_back).
+    /// The ring's first month: `span` months (the visual knob ring.months) back from the companion's last month, that month
+    /// counted, or its first month when it holds fewer. None when it holds no month.
+    fn ring_from(months: &[String], span: i64) -> Option<String> {
+        let last = months.last()?;
+        let (y, m): (i64, i64) = (last[..4].parse().ok()?, last[5..].parse().ok()?);
+        let i = y * 12 + m - 1 - (span - 1);
+        let from = format!("{}-{:02}", i.div_euclid(12), i.rem_euclid(12) + 1);
+        Some(if from < months[0] { months[0].clone() } else { from })
+    }
+
+    /// Frozen copy of the flow's strip fill as it was before P6 step 4, the reference the declared strip is held to.
+    /// The strip under the hero: the focus's months in the companion, strip.months (the visual knob) back from its last month,
+    /// kept to the page's window when the recipe has one (from no earlier than its first month, to its last month or the
+    /// companion's last before it). Rows: the companion's for the focus. Facts: its peak (the top of its value axis) and its
+    /// last month in that span, the strip's two marks.
+    fn old_strip_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
+        let (shape, picks, fmt) = (f.shape, f.picks, f.fmt.as_str());
+        let span = f.catalogue.knob("strip", "months")? as i64;
+        let none = || format!("monthly {} has no month in the page's window", shape.companion);
+        let (months, to): (Vec<String>, Option<String>) = match &f.window {
+            None => (shape.months.clone(), None),
+            Some((a, b)) => {
+                let kept: Vec<String> = shape.months.iter().filter(|t| *t <= b).cloned().collect();
+                let last = kept.last().cloned().ok_or_else(none)?;
+                (kept.into_iter().filter(|t| t >= a).collect(), Some(last))
+            }
+        };
+        let from = ring_from(&months, span).ok_or_else(none)?;
+        let origin = shape.place.as_str();
+        out.rows(f.companion.iter().filter(|r| r["dims"][origin] == picks.focus.as_str()).cloned());
+        let c = picks.focus.to_lowercase();
+        let (peak, last) = (format!("{c}_s_peak"), format!("{c}_s_last"));
+        for (key, op) in [(&peak, "peak"), (&last, "last")] {
+            let mut q = json!({"op": op, "table": shape.companion, "filter": filter(&[(origin, picks.focus.as_str())]), "from": from, "fmt": fmt});
+            if let Some(to) = &to {
+                q["to"] = json!(to);
+            }
+            if op == "peak" {
+                q["axis"] = json!(true);
+            }
+            Filled::set(&mut out.facts, "fact", key, q)?;
+        }
+        let mut strip = json!({"q": {"table": shape.companion, "filter": filter(&[(origin, picks.focus.as_str())]), "by": origin},
+            "from": from, "axis": peak, "marks": [{"key": peak, "word": "scmp.strip.peak"}, {"key": last, "word": "scmp.strip.last"}]});
+        if let Some(to) = to {
+            strip["to"] = json!(to);
+        }
+        Filled::set(&mut out.hero, "hero key", "strip", strip)
+    }
+
     /// Frozen copy of the flow's notes fill as it was before P6 step 2 (base 03f24541), the reference the declared notes
     /// are held to. The short notes beside the map, one per top origin and one for the total: which facts each prints (the
     /// map's, so the map fills first), never a sentence; the leaf writes the words from its word table. A note's change is there only when
@@ -11844,19 +11848,23 @@ for line in sys.stdin:
         let filling = Filling { shape: &shape, picks: &picks, main: &main, companion: &monthly, catalogue: &catalogue, fmt: shape.unit.to_lowercase(), short, window, asked: None };
         let mut old = Filled::default();
         map_fill(&filling, &mut old).unwrap();
-        strip_fill(&filling, &mut old).unwrap();
+        old_strip_fill(&filling, &mut old).unwrap();
         old_bignums_fill(&filling, &mut old).unwrap();
         old_notes_fill(&filling, &mut old).unwrap();
         let spec = &fill["knobs"]["spec"];
         assert_eq!(spec["hero"]["leaves"]["notes"], json!({"notes": old.hero["notes"]}), "the notes");
         assert_eq!(spec["hero"]["data"]["bignums"], old.data["bignums"], "the big numbers");
+        assert_eq!(spec["hero"]["strip"], old.hero["strip"], "the strip");
+        for (k, q) in &old.fmts {
+            assert_eq!(&spec["fmts"][k], q, "format {k}");
+        }
         for (k, q) in &old.facts {
             assert_eq!(&spec["facts"][k], q, "fact {k}");
         }
         let notes = old.hero["notes"].as_array().unwrap();
         let plain = notes.iter().filter(|n| n["ch"].is_null()).count();
         let bn: Vec<&str> = old.data["bignums"].as_array().unwrap().iter().filter_map(|b| b["fact"].as_str()).collect();
-        println!("P6REQ scmp gas notes {} with no change {} big numbers {bn:?} facts {} equal: top {:?} focus {}", notes.len(), plain, old.facts.len(), picks.top, picks.focus);
+        println!("P6REQ scmp gas notes {} with no change {} big numbers {bn:?} strip {}..{} facts {} equal: top {:?} focus {}", notes.len(), plain, old.hero["strip"]["from"], old.hero["strip"]["to"], old.facts.len(), picks.top, picks.focus);
     }
 
     /// One scmp page over the ring fixture's rows (as the_ring_fill_is_program_rules_over_the_shape_and_picks_...): each
@@ -11864,6 +11872,12 @@ for line in sys.stdin:
     /// from 2021 to 2024; the page filled as recipe_request fills it, its notes declared and drawn (test_fill: fill_of then
     /// draw_nodes), beside the rust notes over the same shape and picks (map_fill, then the frozen old_notes_fill).
     fn scmp_notes_case(values: &[(&str, [Option<&str>; 3])], focus: &str) -> Result<(Value, Filled), String> {
+        scmp_case(values, focus, &[(focus, "2019-01", 63)])
+    }
+
+    /// The rows of an scmp page: the main's from `values` (each partner's text values at 2021, 2022 and 2024, None: no
+    /// row), each origin's monthly rows, and the focus's member change claim from 2021 to 2024.
+    fn scmp_rows(values: &[(&str, [Option<&str>; 3])], focus: &str, monthly_of: &[(&str, &str, i64)]) -> (Vec<Value>, Vec<Value>, Value) {
         let fixed = [("siec", "G3000"), ("unit", "MIO_M3"), ("geo", "EU27_2020")];
         let times = ["2021", "2022", "2024"];
         let codes: Vec<&str> = values.iter().map(|(c, _)| *c).collect();
@@ -11876,22 +11890,33 @@ for line in sys.stdin:
                 Some(r)
             })
             .collect();
-        let months: Vec<String> = (2019..=2024).flat_map(|y| (1..=12).map(move |m| format!("{y}-{m:02}"))).take(63).collect();
-        let months: Vec<&str> = months.iter().map(String::as_str).collect();
-        let monthly = ring_rows("impm", &fixed, ("partner", &[focus]), &months);
+        let mut monthly = Vec::new();
+        for (code, first, n) in monthly_of {
+            let (y, m): (i64, i64) = (first[..4].parse().unwrap(), first[5..].parse().unwrap());
+            let ms: Vec<String> = (0..*n).map(|k| y * 12 + m - 1 + k).map(|i| format!("{}-{:02}", i.div_euclid(12), i.rem_euclid(12) + 1)).collect();
+            let ms: Vec<&str> = ms.iter().map(String::as_str).collect();
+            monthly.extend(ring_rows("impm", &fixed, ("partner", &[*code]), &ms));
+        }
         let at = |i: usize| values.iter().find(|(c, _)| *c == focus).and_then(|(_, v)| v[i]).and_then(|v| v.parse::<f64>().ok()).map_or(Value::Null, |v| json!(v));
         let change = [("members", json!(5)), ("from_year", json!(2021)), ("to_year", json!(2024)), ("country_iso2", json!(focus)),
             ("from_value", at(0)), ("to_value", at(2))];
+        (main, monthly, bound("c4", &change))
+    }
+
+    /// The scmp page's rows as scmp_notes_case's, its main from `values` and each origin's monthly rows from its first month
+    /// for its count of months (as ring_case's); both sides filled.
+    fn scmp_case(values: &[(&str, [Option<&str>; 3])], focus: &str, monthly_of: &[(&str, &str, i64)]) -> Result<(Value, Filled), String> {
+        let (main, monthly, change) = scmp_rows(values, focus, monthly_of);
         let r = recipe("scmp");
         let shape = shape_of(&r.eats, &[("imp", &main), ("impm", &monthly)], &Hubs)?;
-        let picks = picks_of(&r.picks, &shape, &main, &[(MEMBER_CHANGE.to_string(), bound("c4", &change))])?;
+        let picks = picks_of(&r.picks, &shape, &main, &[(MEMBER_CHANGE.to_string(), change)])?;
         let fill = test_fill(r, &shape, &picks, (&main, &monthly), &Hubs, ("标题", "导语"), false)?;
         let short = next_pack::unit_short(&shape.unit).unwrap();
         let window = window_of(r, &picks)?;
         let filling = Filling { shape: &shape, picks: &picks, main: &main, companion: &monthly, catalogue: &Hubs, fmt: shape.unit.to_lowercase(), short, window, asked: None };
         let mut old = Filled::default();
         map_fill(&filling, &mut old)?;
-        strip_fill(&filling, &mut old)?;
+        old_strip_fill(&filling, &mut old)?;
         old_bignums_fill(&filling, &mut old)?;
         old_notes_fill(&filling, &mut old)?;
         Ok((fill, old))
@@ -11982,12 +12007,12 @@ for line in sys.stdin:
         }
         assert_eq!(old_notes_fill(&filling, &mut totals_only).unwrap_err(), "notes: the map declares no totals");
         assert_eq!(old_bignums_fill(&filling, &mut Filled::default()).unwrap_err(), "bignums: the page declares none of its facts");
-        // the guard: the ring fixture's page with NO's change taken out of the page's facts after the fill
+        // the guard: the ring fixture's page with a fact only notes, then only bignums, prints taken out of the page's facts after the fill (the strip draws first and declares the peak itself)
         let v = |a: &'static str, b: &'static str, c: &'static str| [Some(a), Some(b), Some(c)];
         let values = [("RU", v("126027.316", "50000", "37843.285")), ("NO", v("80000", "85000", "90000")), ("US", v("0", "1", "30000")),
             ("DE", v("1", "1", "1")), ("TOTAL", v("1", "1", "1")), ("EXT_EU27_2020", v("1", "1", "1"))];
         let (fill, _) = scmp_notes_case(&values, "RU").unwrap();
-        for (gone, said) in [("us24_share", "node notes: its notes field share prints fact us24_share"), ("ru_s_peak", "node bignums: its bignums field fact prints fact ru_s_peak")] {
+        for (gone, said) in [("us24_share", "node notes: its notes field share prints fact us24_share"), ("tot_ch", "node bignums: its bignums field fact prints fact tot_ch")] {
             let mut fill = fill.clone();
             fill["knobs"]["spec"]["facts"].as_object_mut().unwrap().remove(gone).unwrap();
             let calls = std::sync::Mutex::new(Vec::new());
@@ -12149,5 +12174,129 @@ for line in sys.stdin:
         let theirs: Vec<&Value> = old.drawn.iter().map(|(_, r)| &r["src"]).collect();
         assert_eq!(mine, theirs, "the rows the ring draws");
         println!("P6REQ ring gas from {} rows {} facts {} equal: focus {}", old.hero["ring"]["from"], mine.len(), old.facts.len(), picks.focus);
+    }
+
+
+    /// P6 step 4: the strip the visual group declares is the rust strip byte for byte (hero.strip, its two facts, the
+    /// format, the rows it draws), and the big numbers and notes stay equal, on each branch of its window (strip.months
+    /// back from the second table's last month in the page's window, t0's January to t1's December) over two shapes:
+    /// the span reaching past the window's first month, the window exactly the span, the companion past t1 (to cut to
+    /// t1's December), ending inside the window, its last month in January, the focus with fewer months than another.
+    #[test]
+    fn declared_strip_equals_the_rust_strip_on_every_branch() {
+        let v = |a: &'static str, b: &'static str, c: &'static str| [Some(a), Some(b), Some(c)];
+        let rest = [("DE", v("1", "1", "1")), ("TOTAL", v("1", "1", "1")), ("EXT_EU27_2020", v("1", "1", "1"))];
+        let mut a = vec![("RU", v("126027.316", "50000", "37843.285")), ("NO", v("80000", "85000", "90000")), ("US", v("0", "1", "30000"))];
+        a.extend(rest);
+        let mut b = vec![("NO", v("60000", "90000", "95000")), ("DZ", v("100", "7000", "40000")), ("QA", v("20000", "21000", "15000")),
+            ("AZ", v("5000", "9000", "12000")), ("RU", v("150000", "80000", "20000")), ("LY", v("3000", "2500", "2500"))];
+        b.extend(rest);
+        let cases: [(&str, &Vec<(&str, [Option<&str>; 3])>, &str, &[(&str, &str, i64)], (&str, &str)); 8] = [
+            ("A past the window's first month", &a, "RU", &[("RU", "2019-01", 63)], ("2021-01", "2024-03")),
+            ("A the window exactly", &a, "RU", &[("RU", "2019-01", 72)], ("2021-01", "2024-12")),
+            ("A past t1", &a, "RU", &[("RU", "2019-01", 90)], ("2021-01", "2024-12")),
+            ("A ending inside the window", &a, "RU", &[("RU", "2022-06", 20)], ("2022-06", "2024-01")),
+            ("A last month January", &a, "RU", &[("RU", "2021-01", 37)], ("2021-01", "2024-01")),
+            ("B 18 months", &b, "NO", &[("NO", "2023-01", 18)], ("2023-01", "2024-06")),
+            ("B another origin longer", &b, "NO", &[("NO", "2023-01", 18), ("RU", "2018-01", 100)], ("2021-01", "2024-12")),
+            ("B past t1", &b, "NO", &[("NO", "2020-07", 60)], ("2021-01", "2024-12")),
+        ];
+        for (name, values, focus, months, (from, to)) in cases {
+            let (fill, old) = scmp_case(values, focus, months).unwrap_or_else(|e| panic!("{name}: {e}"));
+            let spec = &fill["knobs"]["spec"];
+            assert_eq!(spec["hero"]["strip"], old.hero["strip"], "{name}");
+            assert_eq!((old.hero["strip"]["from"].as_str(), old.hero["strip"]["to"].as_str()), (Some(from), Some(to)), "{name}: the window");
+            for (k, q) in old.facts.iter().chain(&old.fmts) {
+                assert!(&spec["facts"][k] == q || &spec["fmts"][k] == q, "{name}: {k}");
+            }
+            assert_eq!(spec["hero"]["data"]["bignums"], old.data["bignums"], "{name}: the big numbers");
+            assert_eq!(spec["hero"]["leaves"]["notes"], json!({"notes": old.hero["notes"]}), "{name}: the notes");
+            let rows = |layer: &str| -> Vec<Value> { fill["drawn"].as_array().unwrap().iter().filter(|d| d["layer"] == layer).map(|d| d["src"].clone()).collect() };
+            let focus_rows: Vec<Value> = old.drawn.iter().filter(|(_, r)| r["table"] == "impm").map(|(_, r)| r["src"].clone()).collect();
+            assert_eq!(rows("strip"), focus_rows, "{name}: the rows the strip draws");
+            println!("P6STRIP {name}: from {from} to {to}, {} rows, equal", focus_rows.len());
+        }
+    }
+
+    /// The strip's stop is reachable and replays word for word: a second table whose months all fall after t1's December,
+    /// or all before t0's January, has no month in the page's window. The declared strip stops the fill in the rust fill's
+    /// own words, and the recipe loop (leaf_request) stops at scmp's fill with them, trying no other recipe, as before.
+    #[test]
+    fn the_strip_stop_replays_word_for_word_and_ends_the_recipe_loop_at_the_fill() {
+        let v = |a: &'static str, b: &'static str, c: &'static str| [Some(a), Some(b), Some(c)];
+        let values = [("RU", v("126027.316", "50000", "37843.285")), ("NO", v("80000", "85000", "90000")), ("US", v("0", "1", "30000")),
+            ("DE", v("1", "1", "1")), ("TOTAL", v("1", "1", "1")), ("EXT_EU27_2020", v("1", "1", "1"))];
+        let said = "not this shape: monthly impm has no month in the page's window";
+        for (name, first, n) in [("after t1", "2025-01", 12), ("before t0", "2018-01", 24)] {
+            // the rust strip's words over the same shape and picks
+            let (main, monthly, change) = scmp_rows(&values, "RU", &[("RU", first, n)]);
+            let r = recipe("scmp");
+            let shape = shape_of(&r.eats, &[("imp", &main), ("impm", &monthly)], &Hubs).unwrap();
+            let picks = picks_of(&r.picks, &shape, &main, &[(MEMBER_CHANGE.to_string(), change.clone())]).unwrap();
+            let filling = Filling { shape: &shape, picks: &picks, main: &main, companion: &monthly, catalogue: &Hubs, fmt: shape.unit.to_lowercase(),
+                short: next_pack::unit_short(&shape.unit).unwrap(), window: window_of(r, &picks).unwrap(), asked: None };
+            let old = old_strip_fill(&filling, &mut Filled::default()).unwrap_err();
+            assert_eq!(format!("not this shape: {old}"), said, "{name}");
+            assert_eq!(scmp_case(&values, "RU", &[("RU", first, n)]).err().unwrap(), said, "{name}: the declared strip");
+            // the recipe loop over a run folder holding these rows: it stops at scmp's fill, in these words
+            let run = tempfile::tempdir().unwrap();
+            std::fs::create_dir_all(run.path().join("shadow")).unwrap();
+            std::fs::write(run.path().join("claims.jsonl"), format!("{change}\n")).unwrap();
+            std::fs::write(run.path().join("shadow/candidate_sheet-s1.json"), json!({"candidates": [{"id": "k1", "kind": MEMBER_CHANGE}]}).to_string()).unwrap();
+            for f in ["imp.csv", "impm.csv"] {
+                std::fs::write(run.path().join(f), "").unwrap();
+            }
+            let prepared = Prepared {
+                id: "imp".into(),
+                title: String::new(),
+                file: "imp.csv".into(),
+                args: Map::new(),
+                sheet: "s1".into(),
+                claims: vec![json!({"candidate": "k1", "claim_id": "c4"})],
+                places_zh: Vec::new(),
+                companions: vec![("impm".into(), "impm.csv".into())],
+            };
+            let cat = Fetched(BTreeMap::from([("imp".to_string(), main), ("impm".to_string(), monthly)]));
+            let got = leaf_request(run.path(), &[prepared], &[], &cat, ("", ("标题", "导语", "栏目")), &Default::default()).unwrap_err();
+            assert_eq!(got, ("scmp", "fill", said.to_string()), "{name}: the recipe loop");
+        }
+    }
+
+    /// A catalogue whose fetched files are given rows by table (the rest as Hubs), for the recipe loop over a run folder.
+    struct Fetched(BTreeMap<String, Vec<Value>>);
+    impl Catalogue for Fetched {
+        fn top5(&self, q: &str, t: &[String], m: bool, y: Option<i32>) -> crate::l5geo::Ranking {
+            Hubs.top5(q, t, m, y)
+        }
+        fn places_outside(&self, q: &str, t: &[String]) -> Vec<String> {
+            Hubs.places_outside(q, t)
+        }
+        fn source(&self) -> &Value {
+            &Value::Null
+        }
+        fn countries(&self, codes: &[String]) -> Result<Vec<String>, String> {
+            Hubs.countries(codes)
+        }
+        fn zh_names(&self, kind: &str, codes: &[String]) -> Result<BTreeMap<String, String>, Vec<String>> {
+            Hubs.zh_names(kind, codes)
+        }
+        fn members(&self, aggregate: &str) -> Result<Vec<String>, String> {
+            Hubs.members(aggregate)
+        }
+        fn table(&self, id: &str) -> Option<crate::l5geo::TableMeta> {
+            self.0.contains_key(id).then(|| crate::l5geo::TableMeta {
+                id: id.into(),
+                worldbank: false,
+                dims: Vec::new(),
+                end_year: None,
+                places: Vec::new(),
+                place_members: Vec::new(),
+                freqs: Vec::new(),
+                unit: None,
+            })
+        }
+        fn series_rows(&self, table: &crate::l5geo::TableMeta, _: &str) -> Result<Vec<Value>, String> {
+            self.0.get(&table.id).cloned().ok_or_else(|| format!("no rows for {}", table.id))
+        }
     }
 }

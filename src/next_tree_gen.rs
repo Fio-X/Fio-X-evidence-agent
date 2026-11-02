@@ -323,18 +323,33 @@ fn carries_facts(c: &J) -> bool {
 
 /// declares.values: each a value the declaration's templates read as `$value.<name>`, by its rule over the page input.
 /// months_back: the month `span` - 1 months before the last of `months` (the layer's own knob `span.knob`, the leaf
-/// registry's default, as Request::Knob reads it), no earlier than the first; no month refuses.
+/// registry's default, as Request::Knob reads it), no earlier than the first. last_month: the last of `months`. With
+/// `within: [year a, year b]` the months are first kept to b's December, the last of those being last_month's, then to
+/// a's January for months_back. No month refuses: in the registry's words when the rule gives them (`stop`: the page
+/// is not this shape, "not this shape: <words>", which declare passes on as the page's own stop), else the generator's.
 pub(crate) fn value_of(layer: &str, name: &str, r: &J) -> Result<J, String> {
+    let none = || match r.get("stop") {
+        Some(w) => format!("not this shape: {}", w.arr().iter().map(st).collect::<String>()),
+        None => format!("{layer}: value {name}: no month"),
+    };
+    let mut months: Vec<String> = r.g("months").arr().iter().map(st).collect();
+    let mut kept_last = months.last().cloned();
+    if let [a, b] = r.g("within").arr() {
+        let (a, b) = (format!("{}-01", st(a)), format!("{}-12", st(b)));
+        months.retain(|t| *t <= b);
+        kept_last = months.last().cloned();
+        months.retain(|t| *t >= a);
+    }
     match r.g("rule").s() {
+        Some("last_month") => Ok(J::Str(kept_last.ok_or_else(none)?)),
         Some("months_back") => {
-            let months: Vec<String> = r.g("months").arr().iter().map(st).collect();
             let knob = st(r.g("span").g("knob"));
             let leaf = crate::next_leaf::leaves().nodes.get(layer).ok_or_else(|| format!("{layer}: value {name}: the leaf registry has no node {layer}"))?;
             let span = match leaf.info.knobs.iter().find(|k| k.name == knob).map(|k| &k.kind) {
                 Some(crate::next_nodes::Kind::Range { default, .. }) => *default as i64,
                 _ => return Err(format!("{layer}: value {name}: no number knob {knob}")),
             };
-            let none = || format!("{layer}: value {name}: no month");
+            kept_last.as_ref().ok_or_else(none)?;
             let (first, last) = (months.first().ok_or_else(none)?, months.last().ok_or_else(none)?);
             let (y, m): (i64, i64) = (last.get(..4).and_then(|y| y.parse().ok()).ok_or_else(none)?, last.get(5..).and_then(|m| m.parse().ok()).ok_or_else(none)?);
             let i = y * 12 + m - 1 - (span - 1);
@@ -542,7 +557,8 @@ pub fn declare(layer: &str, page_in: &Value) -> Result<NodeDeclared, String> {
             Halt::Bad(e) => format!("node {layer}: declare: {e}"),
         })?
     } else {
-        declared_j(layer, &pi, &reg).map_err(|e| format!("node {layer}: declare: {e}"))?
+        // a stop in the registry's own words (a value rule's `stop`) is the page's, as the rust fill's was
+        declared_j(layer, &pi, &reg).map_err(|e| if e.starts_with("not this shape: ") { e } else { format!("node {layer}: declare: {e}") })?
     };
     let pairs = |k: &str| out.g(k).obj().iter().map(|(k, v)| (k.clone(), v.to_value())).collect();
     let mut rows: Vec<(Value, bool)> = out.g("rows").arr().iter().map(|r| (r.to_value(), true)).collect();
@@ -1912,7 +1928,7 @@ mod tests {
     fn next_tree_gen_only_stacked100_declares_geometry_leaf() {
         let bound = core::bindings();
         let leaf: Vec<&str> = bound.g("nodes").obj().iter().filter(|(_, n)| n.g("geometry").s() == Some("leaf")).map(|(k, _)| k.as_str()).collect();
-        assert_eq!(leaf, ["bignums", "leader_notes", "notes", "ring", "stacked100"]);
+        assert_eq!(leaf, ["bignums", "leader_notes", "notes", "ring", "strip", "stacked100"]);
     }
 
     /// The scmp notes declared over a hand page input: one note per top origin in its order, the focus's marked, its change
