@@ -1103,7 +1103,7 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     // its facts recomputed by the checker's own ops (the op arms of Compute)
     ("tree.fact_ops", "next_tree::Compute ops", &["tree::fam", "tree::val", "tree::val_new"]),
     // its selects recomputed (ranks, takes, sums) and every reference resolved
-    ("tree.selects", "", &["tree::ref_parts", "tree::is_ref", "tree::ref_id", "tree::index", "tree::resolve_ref", "tree::resolved", "tree::result_codes", "tree::dims", "tree::select_rows", "tree::plain_tie", "tree::last_in_only", "tree::text_num", "tree::change_from", "tree::cannot_rank", "tree::cannot_take", "tree::take_value", "tree::sel_get", "tree::root_rank", "tree::int_or_knob", "tree::sum_rows", "tree::py_fixed", "tree::py_grouped", "tree::recheck", "tree::recheck_one", "tree::strip_part"]),
+    ("tree.selects", "", &["tree::ref_parts", "tree::is_ref", "tree::ref_id", "tree::index", "tree::resolve_ref", "tree::resolved", "tree::result_codes", "tree::dims", "tree::select_rows", "tree::plain_tie", "tree::last_in_only", "tree::text_num", "tree::pair_rows", "tree::change_from", "tree::cannot_rank", "tree::cannot_take", "tree::take_value", "tree::sel_get", "tree::root_rank", "tree::int_or_knob", "tree::sum_rows", "tree::py_fixed", "tree::py_grouped", "tree::recheck", "tree::recheck_one", "tree::strip_part"]),
     ("tree.check_kinds", "next_tree::CHECK_KINDS", &["tree::evaluate", "tree::check_codes", "tree::named_in", "tree::names_of", "tree::is_knob", "tree::knob_problem", "tree::has_digit", "tree::pathlike", "tree::nodes_of"]),
     // P1 lints: words (no worded number), shared fields, registered nodes
     ("tree.lint", "", &["tree::lint", "tree::places", "tree::last_name", "tree::sha256_hex", "tree::digit_runs", "tree::words_lint", "tree::worded_number", "tree::literal_chars", "tree::shared_lint", "tree::codes_of", "tree::scope", "tree::registry_lint", "tree::scoped"]),
@@ -1141,7 +1141,7 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     ("tree_gen.registry_checks", "", &["tree_gen::checks_of"]),
     // a declaration the generator computes, else refused: the page input paths and knobs it reads, its dec_rule,
     // fmt_change, rows rule, line segments and frame headings, its numbers, the select its items follow
-    ("tree_gen.declaration", "", &["tree_gen::sub", "tree_gen::declares", "tree_gen::held_decimals", "tree_gen::dec_of", "tree_gen::change_fmt", "tree_gen::declared_j", "tree_gen::carries_facts", "tree_gen::value_of", "tree_gen::from", "tree_gen::view_path", "tree_gen::number_of", "tree_gen::segments", "tree_gen::frame_words", "tree_gen::declare"]),
+    ("tree_gen.declaration", "", &["tree_gen::sub", "tree_gen::declares", "tree_gen::held_decimals", "tree_gen::dec_of", "tree_gen::change_fmt", "tree_gen::declared_j", "tree_gen::carries_facts", "tree_gen::value_of", "tree_gen::knob_default", "tree_gen::pairs_declared", "tree_gen::from", "tree_gen::view_path", "tree_gen::number_of", "tree_gen::segments", "tree_gen::frame_words", "tree_gen::declare"]),
     // a parts_of_whole page stops in the registry's words: its needs, and each stop rule (the rule names parts_declared
     // reads; node-bindings.json stops name only those, the test below holds it); its expansion refuses a part with no
     // total row, a fact the declaration lacks, a format it does not compute

@@ -1238,6 +1238,16 @@ fn last_in_only(s: &J) -> bool {
     s.get("tie").is_some_and(|t| *t == J::obj_of(vec![("by", J::str("only")), ("outcome", J::str("last"))])) && s.has("only")
 }
 
+/// The rows of a pairs select (held_codes, group_sum, share_merge): at its over.table and over.time, each holding every
+/// `with` dimension as a code, in row order.
+fn pair_rows<'a>(rows: &'a [J], s: &J) -> Vec<&'a J> {
+    let q = s.g("over");
+    rows.iter()
+        .filter(|r| r.g("table") == q.g("table") && r.g("time") == q.g("time"))
+        .filter(|r| s.g("with").arr().iter().all(|d| dims(r, &st(d)).s().is_some()))
+        .collect()
+}
+
 /// A row's value as the map reads one: a text that parses to a finite number (none for anything else).
 fn text_num(r: &J) -> Option<f64> {
     r.g("value").s().and_then(|v| v.parse::<f64>().ok()).filter(|v| v.is_finite())
@@ -1693,6 +1703,42 @@ fn recheck_one(
             }
             same(bad, format!("select {id} (empty_parts)"), s.g("result"), &J::Arr(want.clone()));
             got.insert(id.into(), J::Arr(want));
+        }
+        // the codes of `by` among the rows at the table and time that hold every `with` dimension, in row order (held_codes:
+        // all of them; group_sum: those with a row whose value is not 0, in the order of each one's first such row)
+        "held_codes" | "group_sum" => {
+            let at = pair_rows(rows, s);
+            let by = st(s.g("by"));
+            let mut have: Vec<J> = Vec::new();
+            for r in at.iter().filter(|r| kind == "held_codes" || text_num(r) != Some(0.0)) {
+                if !have.contains(dims(r, &by)) {
+                    have.push(dims(r, &by).clone());
+                }
+            }
+            same(bad, format!("select {id} ({kind})"), s.g("result"), &J::Arr(have.clone()));
+            got.insert(id.into(), J::Arr(have));
+        }
+        // share_merge: the codes of a group_sum (`from`, in its order) whose rows' sum is under `share` of all the rows'
+        // sum, none when fewer than `min_count` are
+        "share_merge" => {
+            let at = pair_rows(rows, s);
+            let by = st(s.g("by"));
+            let share = s.g("share").num().ok_or("'share'")?;
+            let total: f64 = at.iter().map(|r| text_num(r).unwrap_or(0.0)).sum();
+            let mut sums: Vec<(J, f64)> = Vec::new();
+            for r in at.iter().filter(|r| text_num(r) != Some(0.0)) {
+                let v = text_num(r).unwrap_or(0.0);
+                match sums.iter().position(|(c, _)| c == dims(r, &by)) {
+                    Some(i) => sums[i].1 += v,
+                    None => sums.push((dims(r, &by).clone(), v)),
+                }
+            }
+            let from = got.get(&st(s.g("from"))).cloned().unwrap_or(J::Arr(vec![]));
+            let small: Vec<J> = from.arr().iter().filter(|c| sums.iter().any(|(x, v)| x == *c && *v / total < share)).cloned().collect();
+            let min = s.g("min_count").num().unwrap_or(2.0) as usize;
+            let have = J::Arr(if small.len() >= min { small } else { Vec::new() });
+            same(bad, format!("select {id} (share_merge)"), s.g("result"), &have);
+            got.insert(id.into(), have);
         }
         k => {
             bad.push(format!("select {id} ({k}): the core cannot compute this kind; a result written on the page is not taken"));
@@ -2255,9 +2301,14 @@ fn part_a(page: &J, inp: &J, reg: &J) -> (Vec<String>, Got, Option<J>) {
 const PINNED_POINTS: &str = crate::next_flow::NE_POINTS_SHA256;
 const REF_PREFIX: [&str; 4] = ["series:", "name:", "fact:", "select:"];
 const OUTPUT_FIELDS: [&str; 5] = ["id", "result", "declared", "dropped", "rest"];
-/// Checks a later core step computes (the text step); any other kind not evaluated here is refused (R11).
-const LATER: [(&str, &str); 2] =
-    [("unit_short", "the text step (next_pack.rs unit_short)"), ("finding_words", "the text step (next_run.rs finding_of)")];
+/// Checks a later core step computes (the text step, the flow's shape and its pair accounting); any other kind not evaluated
+/// here is refused (R11).
+const LATER: [(&str, &str); 4] = [
+    ("unit_short", "the text step (next_pack.rs unit_short)"),
+    ("finding_words", "the text step (next_run.rs finding_of)"),
+    ("has_flow", "the flow's shape condition (next_run.rs official_flow)"),
+    ("pairs_accounted", "the flow's pair accounting and its page checks (next_run.rs flow_pairs_of)"),
+];
 const PAGE_CHECKS: [&str; 6] = ["same_numbers_twice", "type_size", "text_contrast", "zeros_declared", "notes_dropped", "strip_placed"];
 const ROW_WHATS: [&str; 2] = ["total_row", "number_in_row"];
 
@@ -2893,9 +2944,9 @@ pub const SEP_PX_MIN: f64 = 2.0;
 /// K5: the dot a circle moved off its point keeps at the point (radius), and how far it must have moved to keep one.
 pub const DOT_R_PX: f64 = 1.6;
 const DOT_OVER_PX: f64 = 0.5;
-const CHECK_KINDS: [&str; 14] = [
+const CHECK_KINDS: [&str; 16] = [
     "count_equals", "points_pinned", "named", "one_name", "tolerance_fixed", "ranks_some", "one_row_per_code", "max_dropped",
-    "fill_after_drop", "has_composition", "row_exists", "page_check", "unit_short", "finding_words",
+    "fill_after_drop", "has_composition", "row_exists", "page_check", "unit_short", "finding_words", "has_flow", "pairs_accounted",
 ];
 /// Value-determined geometry: channel -> (the field tuples it decides, what it encodes, scale kind, domain source, range).
 /// Every part of a scale is the core's; a registry may only add the declared constants (band padding, max radius).
@@ -6665,7 +6716,7 @@ mod tests {
     #[test]
     fn next_tree_production_binds_the_bars_external() {
         let o = bindings();
-        assert_eq!(external_nodes(&o), ["bars", "bubbles", "bignums", "leader_notes", "notes", "ring", "strip", "stacked100"]);
+        assert_eq!(external_nodes(&o), ["bars", "bubbles", "bignums", "leader_notes", "notes", "ring", "strip", "sankey", "stacked100"]);
         assert_eq!(registry_problems(&load_registry(&o)), Vec::<String>::new());
         for n in external_nodes(&o) {
             assert!(runner_allowed(&st(o.g("nodes").g(&n).g("runner"))), "{n}");

@@ -39,7 +39,7 @@
   "change_focus": {"id": "top", "kind": "given", "source": "picks", "path": "picks.top", "given": "$picks.top"},
   "claim_marks": {"id": "marks", "kind": "named_rule", "rule": "marks_from_claims", "inputs": {"ranked": "ranked"}, "given": "$picks.marks"}
  },
- "recipes": {"column": ["bars", "bubbles", "leader_notes"], "change": ["bubbles", "bars", "leader_notes"], "composition": ["stacked100"], "scmp": ["strip", "bignums", "notes"], "ring": ["ring"]},
+ "recipes": {"column": ["bars", "bubbles", "leader_notes"], "change": ["bubbles", "bars", "leader_notes"], "composition": ["stacked100"], "scmp": ["strip", "bignums", "notes"], "ring": ["ring"], "flow": ["sankey"]},
  "nodes": {
   "bars": {
    "binding": "external",
@@ -757,6 +757,130 @@
        "marks": [{"key": "{code_lc}_s_peak", "word": "scmp.strip.peak"}, {"key": "{code_lc}_s_last", "word": "scmp.strip.last"}],
        "to": "$value.to"
       }
+     }
+    }
+   }
+  }
+,
+  "sankey": {
+   "binding": "external",
+   "geometry": "leaf",
+   "runner": "leaves_py/sankey.py",
+   "declares_by_recipe": {
+    "flow": {
+     "shape": "pairs_of_two",
+     "selects": [
+      {
+       "id": "held_source",
+       "kind": "held_codes",
+       "over": {"table": "$shape.main", "time": "$shape.year"},
+       "by": "$shape.source",
+       "with": ["$shape.source", "$shape.target"]
+      },
+      {
+       "id": "summed_source",
+       "kind": "group_sum",
+       "over": {"table": "$shape.main", "time": "$shape.year"},
+       "by": "$shape.source",
+       "with": ["$shape.source", "$shape.target"]
+      },
+      {
+       "id": "merged_source",
+       "kind": "share_merge",
+       "from": "summed_source",
+       "over": {"table": "$shape.main", "time": "$shape.year"},
+       "by": "$shape.source",
+       "with": ["$shape.source", "$shape.target"],
+       "share": {"knob": "min_share"},
+       "min_count": 2
+      },
+      {
+       "id": "held_target",
+       "kind": "held_codes",
+       "over": {"table": "$shape.main", "time": "$shape.year"},
+       "by": "$shape.target",
+       "with": ["$shape.source", "$shape.target"]
+      },
+      {
+       "id": "summed_target",
+       "kind": "group_sum",
+       "over": {"table": "$shape.main", "time": "$shape.year"},
+       "by": "$shape.target",
+       "with": ["$shape.source", "$shape.target"]
+      },
+      {
+       "id": "merged_target",
+       "kind": "share_merge",
+       "from": "summed_target",
+       "over": {"table": "$shape.main", "time": "$shape.year"},
+       "by": "$shape.target",
+       "with": ["$shape.source", "$shape.target"],
+       "share": {"knob": "min_share"},
+       "min_count": 2
+      }
+     ],
+     "stops": {
+      "no_number": [
+       "sankey: the row ",
+       "{src}",
+       " holds no number"
+      ],
+      "no_flow": [
+       "sankey: main ",
+       "{main}",
+       " holds no flow above zero at ",
+       "{year}"
+      ]
+     },
+     "dec_max": 2,
+     "title": {
+      "fixed": "frames:flow",
+      "frame": "Flow"
+     },
+     "unit": {
+      "fixed_prefix": "unit_short_zh:",
+      "words": "（各节点数值为与其相连的各条流向之和）"
+     },
+     "sides": [
+      {
+       "side": "source",
+       "node": "from",
+       "held": "held_source",
+       "summed": "summed_source",
+       "merged": "merged_source",
+       "other": "其他来源",
+       "head": "其他来源包括："
+      },
+      {
+       "side": "target",
+       "node": "to",
+       "held": "held_target",
+       "summed": "summed_target",
+       "merged": "merged_target",
+       "other": "其他去向",
+       "head": "其他去向包括："
+      }
+     ],
+     "keys": {
+      "zeros": "zero_flows",
+      "unrowed": "unrowed_flows",
+      "excluded": "excluded_flows"
+     },
+     "words": {
+      "zero": [
+       "另有 ",
+       " 个组合为零"
+      ],
+      "all_zero": [
+       "，其中",
+       "、",
+       "的各个组合均为零"
+      ],
+      "unrowed": [
+       "另有 ",
+       " 个组合在数据中没有记录"
+      ],
+      "excluded": "：欧盟统计局标为不适用，不计入终端使用"
      }
     }
    }

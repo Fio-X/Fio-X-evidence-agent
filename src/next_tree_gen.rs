@@ -22,8 +22,8 @@ use std::collections::BTreeSet;
 use serde_json::Value;
 
 /// The page input paths a declaration template may read (`$shape.main`, ...); nothing else is substituted.
-const PAGE_IN_PATHS: [&str; 17] = [
-    "shape.main", "shape.place", "shape.year", "shape.fmt", "shape.suffix", "shape.countries", "shape.hub", "shape.second", "shape.months", "picks.marks", "picks.t0", "picks.t1", "picks.top",
+const PAGE_IN_PATHS: [&str; 19] = [
+    "shape.main", "shape.source", "shape.target", "shape.place", "shape.year", "shape.fmt", "shape.suffix", "shape.countries", "shape.hub", "shape.second", "shape.months", "picks.marks", "picks.t0", "picks.t1", "picks.top",
     "picks.focus", "page.ext", "fill.accent", "fmt.change",
 ];
 
@@ -321,6 +321,172 @@ fn carries_facts(c: &J) -> bool {
     }
 }
 
+/// A node's number knob at the leaf registry's default, as Request::Knob reads it.
+fn knob_default(layer: &str, knob: &str) -> Result<f64, String> {
+    let leaf = crate::next_leaf::leaves().nodes.get(layer).ok_or_else(|| format!("the leaf registry has no node {layer}"))?;
+    match leaf.info.knobs.iter().find(|k| k.name == knob).map(|k| &k.kind) {
+        Some(crate::next_nodes::Kind::Range { default, .. }) => Ok(*default),
+        _ => Err(format!("no number knob {knob}")),
+    }
+}
+
+/// A declaration of shape PAIRS: pairs of two dimensions of the main at its year (shape.source x shape.target), each row
+/// above or below zero a link, its zero rows only read. What it declares, every word and key from the registry
+/// (declares: stops, sides, keys, words), every choice of codes a select the core recomputes (held_codes, group_sum,
+/// share_merge, set_op, registry_list), its names requested from the knowledge group's name table (source side, then
+/// target), its accounting left to the flow:
+/// - the rows: each must hold a number (stop no_number) and their sum be above 0 (stop no_flow);
+/// - the format: the decimals the non-zero rows hold, at most dec_max;
+/// - per side: a fact per drawn code (summed less merged), the merged codes' one fact and words, the codes held, the
+///   codes zero on every row (named in the zero line), the registered codes the rows hold none of (empty);
+/// - lines: the zero rows' count (and the all-zero codes' names), the unrowed pairs' count, each excluded code's words.
+fn pairs_declared(layer: &str, d: &J, page_in: &J, reg: &J) -> Result<J, String> {
+    let (mut sels, mut given) = selects_of(page_in, reg)?;
+    for s in d.g("selects").arr() {
+        let mut x = sub(&J::Obj(s.obj().iter().filter(|(k, _)| k != "given").cloned().collect()), page_in)?;
+        if let Some(k) = x.g("share").g("knob").s().map(str::to_string) {
+            x.set("share", J::Num(knob_default(layer, &k)?));
+        }
+        if let Some(g) = s.get("given") {
+            given.push((st(s.g("id")), sub(g, page_in)?));
+        }
+        sels.push(x);
+    }
+    let (bad, got) = recompute(page_in, &sels, &given);
+    if !bad.is_empty() {
+        return Err(format!("{layer}: its selects do not recompute: {}", bad.iter().take(3).cloned().collect::<Vec<_>>().join("; ")));
+    }
+    let codes = |id: &J| -> Vec<String> { got.get(&st(id)).map(|c| c.arr().iter().map(st).collect()).unwrap_or_default() };
+    let sh = page_in.g("shape");
+    let (main, year, fmt, unit) = (st(sh.g("main")), st(sh.g("year")), st(sh.g("fmt")), st(sh.g("unit")));
+    let (source, target) = (st(sh.g("source")), st(sh.g("target")));
+    let words = |k: &str, ctx: &[(&str, &str)]| -> String {
+        d.g("stops").g(k).arr().iter().map(|w| ctx.iter().fold(st(w), |t, (a, b)| t.replace(&format!("{{{a}}}"), b))).collect()
+    };
+    let num = |r: &J| r.g("value").s().and_then(|v| v.parse::<f64>().ok()).filter(|v| v.is_finite());
+    let rows: Vec<&J> = page_in
+        .g("rows")
+        .arr()
+        .iter()
+        .filter(|r| st(r.g("time")) == year && r.g("dims").g(&source).s().is_some() && r.g("dims").g(&target).s().is_some())
+        .collect();
+    let mut total = 0.0;
+    for r in &rows {
+        total += num(r).ok_or_else(|| format!("not this shape: {}", words("no_number", &[("src", &r.g("src").to_value().to_string())])))?;
+    }
+    if total <= 0.0 {
+        return Err(format!("not this shape: {}", words("no_flow", &[("main", &main), ("year", &year)])));
+    }
+    let (zeros, flows): (Vec<&J>, Vec<&J>) = rows.iter().copied().partition(|r| num(r) == Some(0.0));
+    let ordered: Vec<J> = flows.iter().map(|r| J::Arr(vec![(*r).clone(), J::Bool(true)])).chain(zeros.iter().map(|r| J::Arr(vec![(*r).clone(), J::Bool(false)]))).collect();
+    let dec = flows.iter().filter_map(|r| r.g("value").s()).map(|v| v.split_once('.').map_or(0, |(_, x)| x.len())).max().unwrap_or(0);
+    let dec = dec.min(d.g("dec_max").num().unwrap_or(0.0) as usize);
+    let fmts = J::obj_of(vec![(fmt.as_str(), J::obj_of(vec![("scale", J::Int(1)), ("dec", J::Int(dec as i64)), ("suffix", sh.g("suffix").clone())]))]);
+    let fixed = vec![
+        (format!("name:{}", st(d.g("title").g("fixed"))), frame_words(&st(d.g("title").g("frame")))?),
+        (format!("name:{}{unit}", st(d.g("unit").g("fixed_prefix"))), st(page_in.g("short"))),
+    ];
+    let q = |filter: J| J::obj_of(vec![("op", J::str("value")), ("table", J::str(&main)), ("filter", filter), ("time", J::str(&year)), ("fmt", J::str(&fmt))]);
+    let mut facts = J::Obj(vec![]);
+    let mut leaf = J::obj_of(vec![
+        ("title", J::Arr(vec![J::obj_of(vec![("src", J::Str(fixed[0].0.clone()))])])),
+        ("unit", J::Arr(vec![J::obj_of(vec![("src", J::Str(fixed[1].0.clone()))]), J::obj_of(vec![("w", d.g("unit").g("words").clone())])])),
+        ("source_kind", J::str(&source)),
+        ("target_kind", J::str(&target)),
+    ]);
+    let link = |r: &&J| J::obj_of(vec![("source", r.g("dims").g(&source).clone()), ("target", r.g("dims").g(&target).clone()), ("value", r.g("src").clone())]);
+    leaf.set("flows", J::Arr(flows.iter().map(link).collect()));
+    let (mut node_text, mut empty, mut all_zero, mut names, mut held) = (J::Obj(vec![]), J::Obj(vec![]), Vec::new(), Vec::new(), Vec::new());
+    let excluded: Vec<String> = page_in.g("pairs").g("excluded").arr().iter().map(st).collect();
+    for (i, (sd, dim)) in d.g("sides").arr().iter().zip([&source, &target]).enumerate() {
+        let (summed, merged, side_held) = (codes(sd.g("summed")), codes(sd.g("merged")), codes(sd.g("held")));
+        let drawn: Vec<&String> = summed.iter().filter(|c| !merged.contains(c)).collect();
+        let node = st(sd.g("node"));
+        for c in &drawn {
+            let key = format!("{node}.{c}");
+            facts.set(&key, q(J::obj_of(vec![(dim.as_str(), J::str(c))])));
+            node_text.set(c, J::Str(format!("fact:{key}.n")));
+        }
+        if !merged.is_empty() {
+            let key = format!("{node}_other");
+            facts.set(&key, q(J::obj_of(vec![(dim.as_str(), J::strs(&merged))])));
+            leaf.set(&format!("other_{}", st(sd.g("side"))), J::obj_of(vec![
+                ("name", J::Arr(vec![J::obj_of(vec![("w", sd.g("other").clone())])])),
+                ("members", J::strs(&merged)),
+                ("value_text", J::Str(format!("fact:{key}.n"))),
+                ("members_head", J::Arr(vec![J::obj_of(vec![("w", sd.g("head").clone())])])),
+            ]));
+        }
+        let zero_only: Vec<&String> = side_held.iter().filter(|c| !summed.contains(c)).collect();
+        // the codes the registry asks for on this side (the flow's run fact) the rows hold none of
+        let none: Vec<String> = page_in.g("pairs").g("asked").at(i).arr().iter().map(st).filter(|c| !side_held.contains(c)).collect();
+        if !none.is_empty() {
+            empty.set(&st(sd.g("side")), J::strs(&none));
+        }
+        let left_out: &[String] = if i == 0 { &excluded } else { &[] };
+        let named: Vec<String> = drawn.iter().map(|c| c.to_string()).chain(merged.iter().cloned()).chain(zero_only.iter().map(|c| c.to_string())).chain(left_out.iter().cloned()).collect();
+        names.push(J::obj_of(vec![("kind", J::str(dim)), ("codes", J::strs(&named)), ("labels", J::Bool(true))]));
+        all_zero.extend(zero_only.iter().map(|c| J::obj_of(vec![("src", J::Str(format!("name:zh_names:{dim}:{c}")))])));
+        held.push(side_held);
+    }
+    let k = |name: &str| st(d.g("keys").g(name));
+    let w = |name: &str| d.g("words").g(name).clone();
+    let piece = |x: &J| J::obj_of(vec![("w", x.clone())]);
+    let fact_ref = |key: &str| J::obj_of(vec![("src", J::Str(format!("fact:{key}.n")))]);
+    let mut lines: Vec<J> = Vec::new();
+    if !zeros.is_empty() {
+        facts.set(&k("zeros"), J::obj_of(vec![("op", J::str("zeros")), ("table", J::str(&main)), ("time", J::str(&year)), ("fmt", J::str("n"))]));
+        let z = w("zero");
+        let mut line = vec![piece(z.at(0)), fact_ref(&k("zeros")), piece(z.at(1))];
+        if !all_zero.is_empty() {
+            let a = w("all_zero");
+            line.push(piece(a.at(0)));
+            for (n, name) in all_zero.into_iter().enumerate() {
+                if n > 0 {
+                    line.push(piece(a.at(1)));
+                }
+                line.push(name);
+            }
+            line.push(piece(a.at(2)));
+        }
+        lines.push(J::Arr(line));
+    }
+    let has_row = |a: &str, b: &str| rows.iter().any(|r| r.g("dims").g(&source).s() == Some(a) && r.g("dims").g(&target).s() == Some(b));
+    if held[0].iter().any(|a| held[1].iter().any(|b| !has_row(a, b))) {
+        let by = J::strs(&[source.clone(), target.clone()]);
+        facts.set(&k("unrowed"), J::obj_of(vec![("op", J::str("unrowed")), ("table", J::str(&main)), ("time", J::str(&year)), ("by", by),
+            ("codes", J::Arr(vec![J::strs(&held[0]), J::strs(&held[1])])), ("fmt", J::str("n"))]));
+        let u = w("unrowed");
+        lines.push(J::Arr(vec![piece(u.at(0)), fact_ref(&k("unrowed")), piece(u.at(1))]));
+    }
+    if !excluded.is_empty() {
+        let targets: Vec<String> = page_in.g("pairs").g("target_parts").arr().iter().map(st).collect();
+        let pairs: Vec<J> = excluded.iter().flat_map(|x| targets.iter().map(move |t| J::strs(&[x.clone(), t.clone()]))).collect();
+        facts.set(&k("excluded"), J::obj_of(vec![("op", J::str("excluded")), ("table", J::str(&main)), ("time", J::str(&year)),
+            ("by", J::strs(&[source.clone(), target.clone()])), ("pairs", J::Arr(pairs)), ("fmt", J::str("n"))]));
+        for c in &excluded {
+            lines.push(J::Arr(vec![J::obj_of(vec![("src", J::Str(format!("name:zh_names:{source}:{c}")))]), piece(&w("excluded"))]));
+        }
+    }
+    leaf.set("node_text", node_text);
+    if empty.truthy() {
+        leaf.set("empty", empty);
+    }
+    if !lines.is_empty() {
+        leaf.set("lines", J::Arr(lines));
+    }
+    Ok(J::obj_of(vec![
+        ("ordered", J::Arr(ordered)),
+        ("facts", facts),
+        ("fmts", fmts),
+        ("data", J::obj_of(vec![("table", J::str(&main)), ("year", J::str(&year))])),
+        ("leaves", J::Obj(vec![(layer.to_string(), leaf)])),
+        ("names", J::Arr(names)),
+        ("fixed", J::Arr(fixed.into_iter().map(|(s, t)| J::Arr(vec![J::Str(s), J::Str(t)])).collect())),
+        ("unit_drawn", J::Bool(true)),
+    ]))
+}
+
 /// declares.values: each a value the declaration's templates read as `$value.<name>`, by its rule over the page input.
 /// months_back: the month `span` - 1 months before the last of `months` (the layer's own knob `span.knob`, the leaf
 /// registry's default, as Request::Knob reads it), no earlier than the first. last_month: the last of `months`. With
@@ -343,12 +509,7 @@ pub(crate) fn value_of(layer: &str, name: &str, r: &J) -> Result<J, String> {
     match r.g("rule").s() {
         Some("last_month") => Ok(J::Str(kept_last.ok_or_else(none)?)),
         Some("months_back") => {
-            let knob = st(r.g("span").g("knob"));
-            let leaf = crate::next_leaf::leaves().nodes.get(layer).ok_or_else(|| format!("{layer}: value {name}: the leaf registry has no node {layer}"))?;
-            let span = match leaf.info.knobs.iter().find(|k| k.name == knob).map(|k| &k.kind) {
-                Some(crate::next_nodes::Kind::Range { default, .. }) => *default as i64,
-                _ => return Err(format!("{layer}: value {name}: no number knob {knob}")),
-            };
+            let span = knob_default(layer, &st(r.g("span").g("knob"))).map_err(|e| format!("{layer}: value {name}: {e}"))? as i64;
             kept_last.as_ref().ok_or_else(none)?;
             let (first, last) = (months.first().ok_or_else(none)?, months.last().ok_or_else(none)?);
             let (y, m): (i64, i64) = (last.get(..4).and_then(|y| y.parse().ok()).ok_or_else(none)?, last.get(5..).and_then(|m| m.parse().ok()).ok_or_else(none)?);
@@ -551,7 +712,11 @@ pub fn declare(layer: &str, page_in: &Value) -> Result<NodeDeclared, String> {
     let (reg, _) = core::registry_in_force();
     let pi = J::from_value(page_in);
     let parts = declares(&reg, layer, &pi).is_ok_and(|d| d.g("shape").s() == Some(PARTS_OF_WHOLE));
-    let out = if parts {
+    let pairs = declares(&reg, layer, &pi).ok().filter(|d| d.g("shape").s() == Some(PAIRS));
+    let out = if let Some(d) = pairs {
+        // a stop in the registry's own words is the page's, as the rust fill's was
+        pairs_declared(layer, d, &pi, &reg).map_err(|e| if e.starts_with("not this shape: ") { e } else { format!("node {layer}: declare: {e}") })?
+    } else if parts {
         parts_declared(layer, &pi, &reg).map_err(|h| match h {
             Halt::Stop(words) => words,
             Halt::Bad(e) => format!("node {layer}: declare: {e}"),
@@ -596,10 +761,12 @@ pub fn declare(layer: &str, page_in: &Value) -> Result<NodeDeclared, String> {
 
 /// The declaration shape this section expands.
 const PARTS_OF_WHOLE: &str = "parts_of_whole";
+/// The declaration shape of pairs of two dimensions (pairs_declared).
+const PAIRS: &str = "pairs_of_two";
 
 /// The select kinds the core recomputes (next_tree recheck_one); a declaration naming another is refused (lint).
-const CORE_SELECT_KINDS: [&str; 11] =
-    ["given", "rank", "top_n", "take", "drop_replace", "exclude_codes", "zero_parts", "empty_parts", "set_op", "named_rule", "registry_list"];
+const CORE_SELECT_KINDS: [&str; 14] =
+    ["given", "rank", "top_n", "take", "drop_replace", "exclude_codes", "zero_parts", "empty_parts", "set_op", "named_rule", "registry_list", "held_codes", "group_sum", "share_merge"];
 
 /// Why a parts_of_whole declaration ends: a stop in the registry's own words (the page is not this shape, as a rust fill
 /// said it), or the generator's or the core's failure.
@@ -1928,7 +2095,7 @@ mod tests {
     fn next_tree_gen_only_stacked100_declares_geometry_leaf() {
         let bound = core::bindings();
         let leaf: Vec<&str> = bound.g("nodes").obj().iter().filter(|(_, n)| n.g("geometry").s() == Some("leaf")).map(|(k, _)| k.as_str()).collect();
-        assert_eq!(leaf, ["bignums", "leader_notes", "notes", "ring", "strip", "stacked100"]);
+        assert_eq!(leaf, ["bignums", "leader_notes", "notes", "ring", "strip", "sankey", "stacked100"]);
     }
 
     /// The scmp notes declared over a hand page input: one note per top origin in its order, the focus's marked, its change

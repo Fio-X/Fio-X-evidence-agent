@@ -37,7 +37,7 @@ pub const FILLED_TEMPLATES: [&str; 3] = ["horizontal_bar", "line", "choropleth"]
 /// FILLED_TEMPLATES, so a series of values, and the years options it is read for, gain no candidate from it.
 pub const MOVE_TEMPLATES: [&str; 1] = ["dumbbell"];
 /// The registry template whose relation (a flow) a flow split is offered for: the flow recipe draws it with its sankey leaf
-/// node (runtime/leaves_py run.py MAIN; its data sankey_fill), not a template this flow fills. Kept apart from
+/// node (runtime/leaves_py run.py MAIN; its data the sankey node's declaration), not a template this flow fills. Kept apart from
 /// FILLED_TEMPLATES, so only a flow split (next_params::flow_split) and a fetched table with an official flow (group_charts)
 /// are ranked against it, and a series of values gains no candidate from it.
 pub const FLOW_TEMPLATES: [&str; 1] = ["sankey"];
@@ -1630,6 +1630,16 @@ fn page_input(recipe: &Recipe, shape: &Shape, picks: &Picks, (main, sums): (&[Va
     if !shape.companion.is_empty() {
         (p["shape"]["second"], p["shape"]["months"]) = (json!(shape.companion), json!(shape.months));
     }
+    // a flow's two dimensions and what its registry asks for (next_params, read here: official_flow read it already), by
+    // side, the source leaves it leaves out and the target's leaves those would pair with
+    if let Some((source, target)) = &shape.flow {
+        let id = shape.main.strip_suffix("@2").unwrap_or(&shape.main);
+        let codes = |parts: Vec<next_params::Part>| -> Vec<String> { parts.into_iter().map(|p| p.code).collect() };
+        let asked = |dim: &str| codes(next_params::flow_asked(id, dim).unwrap_or_default());
+        (p["shape"]["source"], p["shape"]["target"]) = (json!(source), json!(target));
+        p["pairs"] = json!({"asked": [asked(source), asked(target)], "excluded": codes(next_params::flow_excluded(id).unwrap_or_default()),
+            "target_parts": codes(next_params::flow_parts(id, target))});
+    }
     p
 }
 
@@ -1685,7 +1695,7 @@ struct Filled {
     named: Map<String, Value>,
     /// A layer writes the unit in its own picture (the sankey's head), so the page's unit line does not write it again.
     unit_drawn: bool,
-    /// How a flow picture accounted for each pair its fetch asked for (sankey_fill), for the run's record.
+    /// How a flow picture accounted for each pair its fetch asked for (flow_pairs_of), for the run's record.
     flow_pairs: Option<FlowPairs>,
     /// Which candidates a composition drew, left out for their parts, or named under it (the stacked100 declaration (node-bindings.json)), for the record.
     composition: Option<Value>,
@@ -1725,7 +1735,6 @@ type NodeFill = fn(&Filling, &mut Filled) -> Result<(), String>;
 /// (callouts, legend, inset, bubble_key) prints from what the others put.
 const NODE_FILLS: &[(&str, NodeFill)] = &[
     ("map", map_fill),
-    ("sankey", sankey_fill),
 ];
 
 /// A filter of a fact: dimension -> code.
@@ -1847,43 +1856,6 @@ fn held_decimals(rows: &[&Value]) -> usize {
 /// prints (hero.scope): the count comes from the data, never typed.
 const DRAWN: &str = "drawn";
 
-/// The fact keys of a flow picture's nodes by side (source, target): `<side>.<code>` a drawn node's value, `<side>_other` the
-/// merged node's (sankey_fill).
-const FLOW_NODES: [&str; 2] = ["from", "to"];
-
-/// The words of a flow picture's merged node by side (source, target): its name, and the head of its members' names under
-/// the picture. No number, no topic: what merged is named by the codes' own names.
-const FLOW_OTHER: [(&str, &str); 2] = [("其他来源", "其他来源包括："), ("其他去向", "其他去向包括：")];
-
-/// The words after the unit in the flow picture's head: a node's value is the program's sum of the flows drawn from or to it
-/// (no reported total is fetched beside them, sankey_fill), so the page says so once.
-const FLOW_SUM_WORDS: &str = "（各节点数值为与其相连的各条流向之和）";
-
-/// The words of the lines under a flow picture, each around a count the program computes (a fact, never a digit typed
-/// here): the pairs whose flow is 0 (FLOW_ZEROS), then the codes of which every pair is 0 by their names, and the pairs the
-/// table holds no row of (FLOW_UNROWED).
-const FLOW_ZERO_WORDS: (&str, &str) = ("另有 ", " 个组合为零");
-const FLOW_ALL_ZERO_WORDS: (&str, &str, &str) = ("，其中", "、", "的各个组合均为零");
-const FLOW_UNROWED_WORDS: (&str, &str) = ("另有 ", " 个组合在数据中没有记录");
-/// The words after the name of a source code the registry leaves out of the flow (next_params::flow_excluded: a source
-/// leaf excluded from the target's total, which Eurostat flags not applicable), one line per code under the picture.
-const FLOW_EXCLUDED_WORDS: &str = "：欧盟统计局标为不适用，不计入终端使用";
-
-/// The facts counting a flow picture's zero flows (op zeros over the flow's rows at its year) and the pairs of its held
-/// codes with no row (op unrowed).
-const FLOW_ZEROS: &str = "zero_flows";
-const FLOW_UNROWED: &str = "unrowed_flows";
-/// The fact naming the pairs the registry leaves out of a flow picture (op excluded), each kept in the ledger as excluded
-/// by registry; never printed.
-const FLOW_EXCLUDED: &str = "excluded_flows";
-
-/// The name rows a flow picture's head is marked with (every svg text names a source, next_leaf faults), each held to its
-/// text in the ledger (knobs.named): the registry's flow heading (shape_registry FRAMES) and the unit's registered short
-/// form (unit-short-zh.tsv).
-fn flow_word_srcs(unit: &str) -> [String; 2] {
-    [format!("{LABEL_SRC}frames:flow"), format!("{LABEL_SRC}unit_short_zh:{unit}")]
-}
-
 /// How a flow picture accounts for every pair of its registered leaves (each registered leaf of the source with each of the
 /// target, next_params::flow_parts): excluded (a leaf the registry leaves out, never fetched) or asked for; and each pair
 /// asked for drawn (a row above 0), zero (a row of 0), unrowed (no row, both codes held otherwise) or a pair of an empty
@@ -1899,199 +1871,40 @@ struct FlowPairs {
     of_empty: usize,
 }
 
-/// The flow across the page (hero.leaves.sankey, as runtime/leaves_py/sankey.py reads it), program rules over the shape
-/// official_flow read, with how it accounts for each pair asked for (FlowPairs):
-/// - a row above zero is a flow, its width that row's series;
-/// - a row of 0 is data, not a loss: it is left out of the picture, counted by the fact FLOW_ZEROS (which keeps each one in
-///   the ledger with its series src) in one line under the picture, which names the codes every pair of which is 0 (no node
-///   of theirs is drawn) by the name table;
-/// - a pair of two held codes with no row is left out too, counted by the fact FLOW_UNROWED (each pair in the ledger as no
-///   row) in a line of its own;
-/// - a source leaf the registry leaves out of the flow (next_params::flow_excluded) was never fetched: each of its pairs is
-///   named by the fact FLOW_EXCLUDED (in the ledger as excluded by registry), and one line per code says it by its name
-///   (FLOW_EXCLUDED_WORDS); it is no node and no drop;
-/// - a registered leaf the flow asks for and the main has no row of at all is named empty (the leaf drops it as a node, said).
-///
-/// Each drawn node's value is a fact the visual group computes as the sum of its rows (op value over the node's code),
-/// printed bare (.n), the unit written once in the picture's head (unit_drawn) with FLOW_SUM_WORDS, and the hero's year line
-/// its table and year. On a side, the nodes whose sum is under the knob sankey.min_share of all the flows merge into one
-/// other node when two or more do (their sum one fact over their codes, their names listed under the picture). The names
-/// are the knowledge group's name table's for each dimension (the leaf marks each with its name row
-/// name:zh_names:<dimension>:<code>); a code it names none of refuses, never printed as its code or in English. No total of
-/// either side is fetched (each would take the fetch past a chart's rows), so the nodes' values are the program's sums, and
-/// the leaf has no reported total to check them against.
-fn sankey_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
-    let shape = f.shape;
+/// How a flow picture accounts for every pair of its registered leaves (FlowPairs), from the main's rows at its year and the
+/// flow's registry (next_params): the flow's own accounting for its page check, beside the picture the visual group
+/// declares (node sankey). None for a shape with no flow.
+fn flow_pairs_of(shape: &Shape, main: &[Value]) -> Result<Option<FlowPairs>, String> {
     let Some((source, target)) = &shape.flow else {
-        return Err(format!("sankey: main {} holds no flow", shape.main));
+        return Ok(None);
     };
-    let (main, year, fmt) = (shape.main.as_str(), shape.year.as_str(), f.fmt.as_str());
-    let rows: Vec<&Value> = f
-        .main
+    let id = shape.main.strip_suffix("@2").unwrap_or(&shape.main);
+    let rows: Vec<&Value> = main
         .iter()
-        .filter(|r| r["time"] == year && r["dims"][source].is_string() && r["dims"][target].is_string())
+        .filter(|r| r["time"] == shape.year.as_str() && r["dims"][source].is_string() && r["dims"][target].is_string())
         .collect();
-    let mut total = 0.0;
-    for r in &rows {
-        total += row_value(r).ok_or_else(|| format!("sankey: the row {} holds no number", r["src"]))?;
-    }
-    if total <= 0.0 {
-        return Err(format!("sankey: main {main} holds no flow above zero at {year}"));
-    }
-    let (zeros, flows): (Vec<&Value>, Vec<&Value>) = rows.iter().copied().partition(|r| row_value(r) == Some(0.0));
-    out.rows(flows.iter().map(|r| (*r).clone()));
-    // the zero flows are only read: the fact that counts them prints, never their values
-    out.reads(zeros.iter().map(|r| (*r).clone()));
-    Filled::set(&mut out.fmts, "format", fmt, json!({"scale": 1, "dec": held_decimals(&flows), "suffix": suffix(f.short)}))?;
-    let min_share = f.catalogue.knob("sankey", "min_share")?;
-    let id = main.strip_suffix("@2").unwrap_or(main);
-    let excluded: Vec<String> = next_params::flow_excluded(id).map_err(|e| format!("sankey: {e}"))?.into_iter().map(|p| p.code).collect();
-    let [head_src, unit_src] = flow_word_srcs(&shape.unit);
-    for (src, text) in [(&head_src, flow_heading()?), (&unit_src, f.short)] {
-        out.named.insert(src.clone(), json!(text));
-    }
-    let mut data = json!({"title": [{"src": head_src}], "unit": [{"src": unit_src}, {"w": FLOW_SUM_WORDS}],
-        "source_kind": source, "target_kind": target});
-    data["flows"] = flows
-        .iter()
-        .map(|r| json!({"source": r["dims"][source], "target": r["dims"][target], "value": r["src"]}))
-        .collect();
-    // each side's codes the rows hold (a zero row is held), in the rows' order
-    let held_of = |dim: &str| -> Vec<String> {
-        let mut held: Vec<String> = Vec::new();
+    let held_of = |dim: &str| -> Vec<&str> {
+        let mut held: Vec<&str> = Vec::new();
         for c in rows.iter().filter_map(|r| r["dims"][dim].as_str()) {
-            if !held.iter().any(|h| h == c) {
-                held.push(c.to_string());
+            if !held.contains(&c) {
+                held.push(c);
             }
         }
         held
     };
     let held = [held_of(source), held_of(target)];
-    let mut node_text = Map::new();
-    let mut empty = Map::new();
-    let mut all_zero: Vec<Value> = Vec::new();
-    let mut pairs = FlowPairs { drawn: flows.len(), zero: zeros.len(), ..FlowPairs::default() };
-    let mut leaves = [0usize; 2];
-    let sides = ["source", "target"].into_iter().zip([source, target]).zip(FLOW_NODES.into_iter().zip(FLOW_OTHER));
-    for (i, ((side, dim), (node, (other, head)))) in sides.enumerate() {
-        // the side's codes with the sum of their flows above zero, in the rows' order
-        let mut sums: Vec<(String, f64)> = Vec::new();
-        for r in &flows {
-            let (code, v) = (r["dims"][dim].as_str().unwrap_or_default(), row_value(r).unwrap_or_default());
-            match sums.iter_mut().find(|(c, _)| c == code) {
-                Some((_, s)) => *s += v,
-                None => sums.push((code.to_string(), v)),
-            }
-        }
-        let small: Vec<&str> = sums.iter().filter(|(_, v)| v / total < min_share).map(|(c, _)| c.as_str()).collect();
-        let merged = if small.len() >= 2 { small } else { Vec::new() };
-        let drawn: Vec<&str> = sums.iter().filter(|(c, _)| !merged.contains(&c.as_str())).map(|(c, _)| c.as_str()).collect();
-        for code in &drawn {
-            let key = format!("{node}.{code}");
-            let q = json!({"op": "value", "table": main, "filter": filter(&[(dim.as_str(), *code)]), "time": year, "fmt": fmt});
-            Filled::set(&mut out.facts, "fact", &key, q)?;
-            node_text.insert(code.to_string(), json!(format!("fact:{key}.n")));
-        }
-        if !merged.is_empty() {
-            let key = format!("{node}_other");
-            let of = Value::Object(Map::from_iter([(dim.to_string(), json!(merged))]));
-            let q = json!({"op": "value", "table": main, "filter": of, "time": year, "fmt": fmt});
-            Filled::set(&mut out.facts, "fact", &key, q)?;
-            data[format!("other_{side}")] = json!({"name": [{"w": other}], "members": merged, "value_text": format!("fact:{key}.n"),
-                "members_head": [{"w": head}]});
-        }
-        // a held code with no flow above zero: every pair of it is 0, no node of it is drawn, and the zero line names it
-        let zero_only: Vec<&String> = held[i].iter().filter(|c| !sums.iter().any(|(s, _)| s == *c)).collect();
-        let registered: Vec<String> =
-            next_params::flow_asked(id, dim).map_err(|e| format!("sankey: {e}"))?.into_iter().map(|p| p.code).collect();
-        leaves[i] = registered.len();
-        let none: Vec<String> = registered.into_iter().filter(|c| !held[i].contains(c)).collect();
-        if !none.is_empty() {
-            empty.insert(side.to_string(), json!(none));
-        }
-        // every code the page names: its drawn nodes, the merged members, the codes that are zero only and, on the source
-        // side, the codes the registry leaves out
-        let left_out: &[String] = if i == 0 { &excluded } else { &[] };
-        let named: Vec<String> = drawn
-            .iter()
-            .chain(&merged)
-            .map(|c| c.to_string())
-            .chain(zero_only.iter().map(|c| c.to_string()))
-            .chain(left_out.iter().cloned())
-            .collect();
-        let names = f.catalogue.zh_names(dim, &named).map_err(|missing| {
-            format!("sankey: the name table gives no Chinese name for {dim} {}", missing.join(", "))
-        })?;
-        for (code, zh) in names {
-            out.named.insert(format!("{LABEL_SRC}zh_names:{dim}:{code}"), json!(zh));
-            match out.labels.get(&code) {
-                Some(was) if *was != zh => return Err(format!("sankey: code {code} has two names, {was} and {zh}")),
-                _ => {
-                    out.labels.insert(code, zh);
-                }
-            }
-        }
-        all_zero.extend(zero_only.iter().map(|c| json!({"src": format!("{LABEL_SRC}zh_names:{dim}:{c}")})));
-    }
-    // the pairs asked for: each asked leaf of the source with each of the target; a pair of two held codes with no row is
-    // unrowed, a pair of an empty code goes with that code's drop; the excluded leaves' pairs were never asked for
+    let asked = |dim: &str| next_params::flow_asked(id, dim).map(|p| p.len()).map_err(|e| format!("sankey: {e}"));
+    let leaves = [asked(source)?, asked(target)?];
+    let excluded = next_params::flow_excluded(id).map_err(|e| format!("sankey: {e}"))?.len();
+    let zero = rows.iter().filter(|r| row_value(r) == Some(0.0)).count();
+    let mut pairs = FlowPairs { drawn: rows.len() - zero, zero, ..FlowPairs::default() };
     pairs.asked = leaves[0] * leaves[1];
-    pairs.excluded = excluded.len() * leaves[1];
+    pairs.excluded = excluded * leaves[1];
     pairs.registered = pairs.asked + pairs.excluded;
     let has_row = |a: &str, b: &str| rows.iter().any(|r| r["dims"][source] == a && r["dims"][target] == b);
-    pairs.unrowed = held[0].iter().flat_map(|a| held[1].iter().map(move |b| (a, b))).filter(|(a, b)| !has_row(a, b)).count();
+    pairs.unrowed = held[0].iter().flat_map(|a| held[1].iter().map(move |b| (*a, *b))).filter(|(a, b)| !has_row(a, b)).count();
     pairs.of_empty = pairs.asked - held[0].len() * held[1].len();
-    let mut lines: Vec<Value> = Vec::new();
-    if !zeros.is_empty() {
-        Filled::set(&mut out.facts, "fact", FLOW_ZEROS, json!({"op": "zeros", "table": main, "time": year, "fmt": "n"}))?;
-        let (before, after) = FLOW_ZERO_WORDS;
-        let mut line = vec![json!({"w": before}), json!({"src": format!("fact:{FLOW_ZEROS}.n")}), json!({"w": after})];
-        if !all_zero.is_empty() {
-            let (lead, sep, end) = FLOW_ALL_ZERO_WORDS;
-            line.push(json!({"w": lead}));
-            for (k, name) in all_zero.into_iter().enumerate() {
-                if k > 0 {
-                    line.push(json!({"w": sep}));
-                }
-                line.push(name);
-            }
-            line.push(json!({"w": end}));
-        }
-        lines.push(Value::Array(line));
-    }
-    if pairs.unrowed > 0 {
-        let q = json!({"op": "unrowed", "table": main, "time": year, "by": [source, target], "codes": held, "fmt": "n"});
-        Filled::set(&mut out.facts, "fact", FLOW_UNROWED, q)?;
-        let (before, after) = FLOW_UNROWED_WORDS;
-        lines.push(json!([{"w": before}, {"src": format!("fact:{FLOW_UNROWED}.n")}, {"w": after}]));
-    }
-    if !excluded.is_empty() {
-        let targets: Vec<String> = next_params::flow_parts(id, target).into_iter().map(|p| p.code).collect();
-        let excluded_pairs: Vec<[&String; 2]> = excluded.iter().flat_map(|x| targets.iter().map(move |t| [x, t])).collect();
-        let q = json!({"op": "excluded", "table": main, "time": year, "by": [source, target], "pairs": excluded_pairs, "fmt": "n"});
-        Filled::set(&mut out.facts, "fact", FLOW_EXCLUDED, q)?;
-        for code in &excluded {
-            lines.push(json!([{"src": format!("{LABEL_SRC}zh_names:{source}:{code}")}, {"w": FLOW_EXCLUDED_WORDS}]));
-        }
-    }
-    data["node_text"] = Value::Object(node_text);
-    if !empty.is_empty() {
-        data["empty"] = Value::Object(empty);
-    }
-    if !lines.is_empty() {
-        data["lines"] = Value::Array(lines);
-    }
-    out.unit_drawn = true;
-    for (k, v) in [("table", json!(main)), ("year", json!(year))] {
-        Filled::set(&mut out.data, "hero data", k, v)?;
-    }
-    out.flow_pairs = Some(pairs);
-    set_leaf(out, "sankey", data)
-}
-
-/// The flow picture's head: the registry's chart heading of a flow (shape_registry FRAMES), program words with no number.
-fn flow_heading() -> Result<&'static str, String> {
-    frame_heading(Relation::Flow)
+    Ok(Some(pairs))
 }
 
 /// A picture's head by its relation: the registry's chart heading of that relation at one period (shape_registry FRAMES),
@@ -2584,6 +2397,8 @@ fn fill_of(
             node(&filling, &mut out).map_err(no)?;
         }
     }
+    // a flow's accounting of its pairs, the flow's own (the picture is the visual group's)
+    out.flow_pairs = flow_pairs_of(shape, main).map_err(no)?;
     // the page's scope (the aggregate the drawn places are members of, from the data) is named from the name table like
     // any place; with no reviewed name for it, or no count of the places drawn, the unit line names no scope
     let scope = scope_of(shape, picks, catalogue);
@@ -11359,6 +11174,240 @@ for line in sys.stdin:
         Filled::set(&mut out.hero, "hero key", "strip", strip)
     }
 
+    /// Frozen with old_sankey_fill (P6 step 5): the words and keys moved to node-bindings.json.
+    /// The fact keys of a flow picture's nodes by side (source, target): `<side>.<code>` a drawn node's value, `<side>_other` the
+    /// merged node's (sankey_fill).
+    const FLOW_NODES: [&str; 2] = ["from", "to"];
+
+    /// The words of a flow picture's merged node by side (source, target): its name, and the head of its members' names under
+    /// the picture. No number, no topic: what merged is named by the codes' own names.
+    const FLOW_OTHER: [(&str, &str); 2] = [("其他来源", "其他来源包括："), ("其他去向", "其他去向包括：")];
+
+    /// The words after the unit in the flow picture's head: a node's value is the program's sum of the flows drawn from or to it
+    /// (no reported total is fetched beside them, sankey_fill), so the page says so once.
+    const FLOW_SUM_WORDS: &str = "（各节点数值为与其相连的各条流向之和）";
+
+    /// The words of the lines under a flow picture, each around a count the program computes (a fact, never a digit typed
+    /// here): the pairs whose flow is 0 (FLOW_ZEROS), then the codes of which every pair is 0 by their names, and the pairs the
+    /// table holds no row of (FLOW_UNROWED).
+    const FLOW_ZERO_WORDS: (&str, &str) = ("另有 ", " 个组合为零");
+    const FLOW_ALL_ZERO_WORDS: (&str, &str, &str) = ("，其中", "、", "的各个组合均为零");
+    const FLOW_UNROWED_WORDS: (&str, &str) = ("另有 ", " 个组合在数据中没有记录");
+    /// The words after the name of a source code the registry leaves out of the flow (next_params::flow_excluded: a source
+    /// leaf excluded from the target's total, which Eurostat flags not applicable), one line per code under the picture.
+    const FLOW_EXCLUDED_WORDS: &str = "：欧盟统计局标为不适用，不计入终端使用";
+
+    /// The facts counting a flow picture's zero flows (op zeros over the flow's rows at its year) and the pairs of its held
+    /// codes with no row (op unrowed).
+    const FLOW_ZEROS: &str = "zero_flows";
+    const FLOW_UNROWED: &str = "unrowed_flows";
+    /// The fact naming the pairs the registry leaves out of a flow picture (op excluded), each kept in the ledger as excluded
+    /// by registry; never printed.
+    const FLOW_EXCLUDED: &str = "excluded_flows";
+
+    /// The name rows a flow picture's head is marked with (every svg text names a source, next_leaf faults), each held to its
+    /// text in the ledger (knobs.named): the registry's flow heading (shape_registry FRAMES) and the unit's registered short
+    /// form (unit-short-zh.tsv).
+    fn flow_word_srcs(unit: &str) -> [String; 2] {
+        [format!("{LABEL_SRC}frames:flow"), format!("{LABEL_SRC}unit_short_zh:{unit}")]
+    }
+
+    /// The flow picture's head: the registry's chart heading of a flow (shape_registry FRAMES), program words with no number.
+    fn flow_heading() -> Result<&'static str, String> {
+        frame_heading(Relation::Flow)
+    }
+
+    /// Frozen copy of the flow's sankey fill as it was before P6 step 5, the reference the declared pairs are held to.
+    /// The flow across the page (hero.leaves.sankey, as runtime/leaves_py/sankey.py reads it), program rules over the shape
+    /// official_flow read, with how it accounts for each pair asked for (FlowPairs):
+    /// - a row above zero is a flow, its width that row's series;
+    /// - a row of 0 is data, not a loss: it is left out of the picture, counted by the fact FLOW_ZEROS (which keeps each one in
+    ///   the ledger with its series src) in one line under the picture, which names the codes every pair of which is 0 (no node
+    ///   of theirs is drawn) by the name table;
+    /// - a pair of two held codes with no row is left out too, counted by the fact FLOW_UNROWED (each pair in the ledger as no
+    ///   row) in a line of its own;
+    /// - a source leaf the registry leaves out of the flow (next_params::flow_excluded) was never fetched: each of its pairs is
+    ///   named by the fact FLOW_EXCLUDED (in the ledger as excluded by registry), and one line per code says it by its name
+    ///   (FLOW_EXCLUDED_WORDS); it is no node and no drop;
+    /// - a registered leaf the flow asks for and the main has no row of at all is named empty (the leaf drops it as a node, said).
+    ///
+    /// Each drawn node's value is a fact the visual group computes as the sum of its rows (op value over the node's code),
+    /// printed bare (.n), the unit written once in the picture's head (unit_drawn) with FLOW_SUM_WORDS, and the hero's year line
+    /// its table and year. On a side, the nodes whose sum is under the knob sankey.min_share of all the flows merge into one
+    /// other node when two or more do (their sum one fact over their codes, their names listed under the picture). The names
+    /// are the knowledge group's name table's for each dimension (the leaf marks each with its name row
+    /// name:zh_names:<dimension>:<code>); a code it names none of refuses, never printed as its code or in English. No total of
+    /// either side is fetched (each would take the fetch past a chart's rows), so the nodes' values are the program's sums, and
+    /// the leaf has no reported total to check them against.
+    fn old_sankey_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
+        let shape = f.shape;
+        let Some((source, target)) = &shape.flow else {
+            return Err(format!("sankey: main {} holds no flow", shape.main));
+        };
+        let (main, year, fmt) = (shape.main.as_str(), shape.year.as_str(), f.fmt.as_str());
+        let rows: Vec<&Value> = f
+            .main
+            .iter()
+            .filter(|r| r["time"] == year && r["dims"][source].is_string() && r["dims"][target].is_string())
+            .collect();
+        let mut total = 0.0;
+        for r in &rows {
+            total += row_value(r).ok_or_else(|| format!("sankey: the row {} holds no number", r["src"]))?;
+        }
+        if total <= 0.0 {
+            return Err(format!("sankey: main {main} holds no flow above zero at {year}"));
+        }
+        let (zeros, flows): (Vec<&Value>, Vec<&Value>) = rows.iter().copied().partition(|r| row_value(r) == Some(0.0));
+        out.rows(flows.iter().map(|r| (*r).clone()));
+        // the zero flows are only read: the fact that counts them prints, never their values
+        out.reads(zeros.iter().map(|r| (*r).clone()));
+        Filled::set(&mut out.fmts, "format", fmt, json!({"scale": 1, "dec": held_decimals(&flows), "suffix": suffix(f.short)}))?;
+        let min_share = f.catalogue.knob("sankey", "min_share")?;
+        let id = main.strip_suffix("@2").unwrap_or(main);
+        let excluded: Vec<String> = next_params::flow_excluded(id).map_err(|e| format!("sankey: {e}"))?.into_iter().map(|p| p.code).collect();
+        let [head_src, unit_src] = flow_word_srcs(&shape.unit);
+        for (src, text) in [(&head_src, flow_heading()?), (&unit_src, f.short)] {
+            out.named.insert(src.clone(), json!(text));
+        }
+        let mut data = json!({"title": [{"src": head_src}], "unit": [{"src": unit_src}, {"w": FLOW_SUM_WORDS}],
+            "source_kind": source, "target_kind": target});
+        data["flows"] = flows
+            .iter()
+            .map(|r| json!({"source": r["dims"][source], "target": r["dims"][target], "value": r["src"]}))
+            .collect();
+        // each side's codes the rows hold (a zero row is held), in the rows' order
+        let held_of = |dim: &str| -> Vec<String> {
+            let mut held: Vec<String> = Vec::new();
+            for c in rows.iter().filter_map(|r| r["dims"][dim].as_str()) {
+                if !held.iter().any(|h| h == c) {
+                    held.push(c.to_string());
+                }
+            }
+            held
+        };
+        let held = [held_of(source), held_of(target)];
+        let mut node_text = Map::new();
+        let mut empty = Map::new();
+        let mut all_zero: Vec<Value> = Vec::new();
+        let mut pairs = FlowPairs { drawn: flows.len(), zero: zeros.len(), ..FlowPairs::default() };
+        let mut leaves = [0usize; 2];
+        let sides = ["source", "target"].into_iter().zip([source, target]).zip(FLOW_NODES.into_iter().zip(FLOW_OTHER));
+        for (i, ((side, dim), (node, (other, head)))) in sides.enumerate() {
+            // the side's codes with the sum of their flows above zero, in the rows' order
+            let mut sums: Vec<(String, f64)> = Vec::new();
+            for r in &flows {
+                let (code, v) = (r["dims"][dim].as_str().unwrap_or_default(), row_value(r).unwrap_or_default());
+                match sums.iter_mut().find(|(c, _)| c == code) {
+                    Some((_, s)) => *s += v,
+                    None => sums.push((code.to_string(), v)),
+                }
+            }
+            let small: Vec<&str> = sums.iter().filter(|(_, v)| v / total < min_share).map(|(c, _)| c.as_str()).collect();
+            let merged = if small.len() >= 2 { small } else { Vec::new() };
+            let drawn: Vec<&str> = sums.iter().filter(|(c, _)| !merged.contains(&c.as_str())).map(|(c, _)| c.as_str()).collect();
+            for code in &drawn {
+                let key = format!("{node}.{code}");
+                let q = json!({"op": "value", "table": main, "filter": filter(&[(dim.as_str(), *code)]), "time": year, "fmt": fmt});
+                Filled::set(&mut out.facts, "fact", &key, q)?;
+                node_text.insert(code.to_string(), json!(format!("fact:{key}.n")));
+            }
+            if !merged.is_empty() {
+                let key = format!("{node}_other");
+                let of = Value::Object(Map::from_iter([(dim.to_string(), json!(merged))]));
+                let q = json!({"op": "value", "table": main, "filter": of, "time": year, "fmt": fmt});
+                Filled::set(&mut out.facts, "fact", &key, q)?;
+                data[format!("other_{side}")] = json!({"name": [{"w": other}], "members": merged, "value_text": format!("fact:{key}.n"),
+                    "members_head": [{"w": head}]});
+            }
+            // a held code with no flow above zero: every pair of it is 0, no node of it is drawn, and the zero line names it
+            let zero_only: Vec<&String> = held[i].iter().filter(|c| !sums.iter().any(|(s, _)| s == *c)).collect();
+            let registered: Vec<String> =
+                next_params::flow_asked(id, dim).map_err(|e| format!("sankey: {e}"))?.into_iter().map(|p| p.code).collect();
+            leaves[i] = registered.len();
+            let none: Vec<String> = registered.into_iter().filter(|c| !held[i].contains(c)).collect();
+            if !none.is_empty() {
+                empty.insert(side.to_string(), json!(none));
+            }
+            // every code the page names: its drawn nodes, the merged members, the codes that are zero only and, on the source
+            // side, the codes the registry leaves out
+            let left_out: &[String] = if i == 0 { &excluded } else { &[] };
+            let named: Vec<String> = drawn
+                .iter()
+                .chain(&merged)
+                .map(|c| c.to_string())
+                .chain(zero_only.iter().map(|c| c.to_string()))
+                .chain(left_out.iter().cloned())
+                .collect();
+            let names = f.catalogue.zh_names(dim, &named).map_err(|missing| {
+                format!("sankey: the name table gives no Chinese name for {dim} {}", missing.join(", "))
+            })?;
+            for (code, zh) in names {
+                out.named.insert(format!("{LABEL_SRC}zh_names:{dim}:{code}"), json!(zh));
+                match out.labels.get(&code) {
+                    Some(was) if *was != zh => return Err(format!("sankey: code {code} has two names, {was} and {zh}")),
+                    _ => {
+                        out.labels.insert(code, zh);
+                    }
+                }
+            }
+            all_zero.extend(zero_only.iter().map(|c| json!({"src": format!("{LABEL_SRC}zh_names:{dim}:{c}")})));
+        }
+        // the pairs asked for: each asked leaf of the source with each of the target; a pair of two held codes with no row is
+        // unrowed, a pair of an empty code goes with that code's drop; the excluded leaves' pairs were never asked for
+        pairs.asked = leaves[0] * leaves[1];
+        pairs.excluded = excluded.len() * leaves[1];
+        pairs.registered = pairs.asked + pairs.excluded;
+        let has_row = |a: &str, b: &str| rows.iter().any(|r| r["dims"][source] == a && r["dims"][target] == b);
+        pairs.unrowed = held[0].iter().flat_map(|a| held[1].iter().map(move |b| (a, b))).filter(|(a, b)| !has_row(a, b)).count();
+        pairs.of_empty = pairs.asked - held[0].len() * held[1].len();
+        let mut lines: Vec<Value> = Vec::new();
+        if !zeros.is_empty() {
+            Filled::set(&mut out.facts, "fact", FLOW_ZEROS, json!({"op": "zeros", "table": main, "time": year, "fmt": "n"}))?;
+            let (before, after) = FLOW_ZERO_WORDS;
+            let mut line = vec![json!({"w": before}), json!({"src": format!("fact:{FLOW_ZEROS}.n")}), json!({"w": after})];
+            if !all_zero.is_empty() {
+                let (lead, sep, end) = FLOW_ALL_ZERO_WORDS;
+                line.push(json!({"w": lead}));
+                for (k, name) in all_zero.into_iter().enumerate() {
+                    if k > 0 {
+                        line.push(json!({"w": sep}));
+                    }
+                    line.push(name);
+                }
+                line.push(json!({"w": end}));
+            }
+            lines.push(Value::Array(line));
+        }
+        if pairs.unrowed > 0 {
+            let q = json!({"op": "unrowed", "table": main, "time": year, "by": [source, target], "codes": held, "fmt": "n"});
+            Filled::set(&mut out.facts, "fact", FLOW_UNROWED, q)?;
+            let (before, after) = FLOW_UNROWED_WORDS;
+            lines.push(json!([{"w": before}, {"src": format!("fact:{FLOW_UNROWED}.n")}, {"w": after}]));
+        }
+        if !excluded.is_empty() {
+            let targets: Vec<String> = next_params::flow_parts(id, target).into_iter().map(|p| p.code).collect();
+            let excluded_pairs: Vec<[&String; 2]> = excluded.iter().flat_map(|x| targets.iter().map(move |t| [x, t])).collect();
+            let q = json!({"op": "excluded", "table": main, "time": year, "by": [source, target], "pairs": excluded_pairs, "fmt": "n"});
+            Filled::set(&mut out.facts, "fact", FLOW_EXCLUDED, q)?;
+            for code in &excluded {
+                lines.push(json!([{"src": format!("{LABEL_SRC}zh_names:{source}:{code}")}, {"w": FLOW_EXCLUDED_WORDS}]));
+            }
+        }
+        data["node_text"] = Value::Object(node_text);
+        if !empty.is_empty() {
+            data["empty"] = Value::Object(empty);
+        }
+        if !lines.is_empty() {
+            data["lines"] = Value::Array(lines);
+        }
+        out.unit_drawn = true;
+        for (k, v) in [("table", json!(main)), ("year", json!(year))] {
+            Filled::set(&mut out.data, "hero data", k, v)?;
+        }
+        out.flow_pairs = Some(pairs);
+        set_leaf(out, "sankey", data)
+    }
+
     /// Frozen copy of the flow's notes fill as it was before P6 step 2 (base 03f24541), the reference the declared notes
     /// are held to. The short notes beside the map, one per top origin and one for the total: which facts each prints (the
     /// map's, so the map fills first), never a sentence; the leaf writes the words from its word table. A note's change is there only when
@@ -12297,6 +12346,159 @@ for line in sys.stdin:
         }
         fn series_rows(&self, table: &crate::l5geo::TableMeta, _: &str) -> Result<Vec<Value>, String> {
             self.0.get(&table.id).cloned().ok_or_else(|| format!("no rows for {}", table.id))
+        }
+    }
+
+
+    /// One flow page over `main` (the q2 fixture's rows of a flow table, changed by a branch): filled as recipe_request
+    /// fills it, its pairs declared by the visual group (test_fill), beside the frozen old_sankey_fill over the same shape.
+    fn sankey_case(table: &str, main: &[Value], catalogue: &dyn Catalogue) -> Result<(Value, Filled), String> {
+        let flow = recipe("flow");
+        let shape = shape_of(&flow.eats, &[(table, main)], catalogue)?;
+        let picks = picks_of(&flow.picks, &shape, main, &[])?;
+        let fill = test_fill(flow, &shape, &picks, (main, &[]), catalogue, ("标题", "导语"), false)?;
+        let short = next_pack::unit_short(&shape.unit).unwrap();
+        let filling = Filling { shape: &shape, picks: &picks, main, companion: &[], catalogue, fmt: shape.unit.to_lowercase(), short, window: None, asked: None };
+        let mut old = Filled::default();
+        old_sankey_fill(&filling, &mut old).map_err(|e| format!("not this shape: {e}"))?;
+        Ok((fill, old))
+    }
+
+    /// The rows of `main` with each row whose source code is `code` given the values in turn (the rest as they were).
+    fn with_values(main: &[Value], source: &str, code: &str, values: &[&str]) -> Vec<Value> {
+        let mut out = main.to_vec();
+        let mut k = 0;
+        for r in out.iter_mut().filter(|r| r["dims"][source] == code) {
+            if let Some(v) = values.get(k) {
+                r["value"] = json!(v);
+            }
+            k += 1;
+        }
+        out
+    }
+
+    /// P6 step 5: the pairs the visual group declares are the rust sankey byte for byte (hero.leaves.sankey, every fact and
+    /// format, the name rows and labels, the rows drawn and read, the hero's table and year, the unit drawn) and the flow's
+    /// own accounting (pairs) is unchanged, on each branch over two tables (nrg_bal_s, nrg_bal_c): both sides merged, zero
+    /// rows with all-zero codes, an unrowed pair, an excluded source; a code whose first row is 0 and later rows not; a
+    /// code whose rows sum to 0 (+x, -x); a negative sum; decimals from the non-zero rows only (a zero row 0.000); one
+    /// small code alone (no merge on that side); the big codes only (registered codes with no row: empty).
+    #[test]
+    fn declared_pairs_equal_the_rust_sankey_on_every_branch() {
+        for table in ["nrg_bal_s", "nrg_bal_c"] {
+            let base = q2_flow_rows(table);
+            let code_rows = |c: &str| base.iter().filter(|r| r["dims"]["siec"] == c && row_value(r) != Some(0.0)).count();
+            let two = ["G3000", "O4000XBIO", "RA000", "E7000", "H8000"].into_iter().find(|c| code_rows(c) >= 2).unwrap();
+            let mut first_zero = base.clone();
+            if let Some(r) = first_zero.iter_mut().find(|r| r["dims"]["siec"] == two) {
+                r["value"] = json!("0");
+            }
+            let mut decimals = with_values(&base, "siec", "G3000", &["1.5"]);
+            if let Some(r) = decimals.iter_mut().find(|r| row_value(r) == Some(0.0)) {
+                r["value"] = json!("0.000");
+            }
+            let big_only: Vec<Value> = base.iter().filter(|r| ["G3000", "O4000XBIO"].contains(&r["dims"]["siec"].as_str().unwrap_or(""))).cloned().collect();
+            let one_small = with_values(&with_values(&base, "siec", "C0350-0370", &["90000"; 9]), "siec", "W6100_6220", &["90000"; 9]);
+            let cases: Vec<(&str, Vec<Value>)> = vec![
+                ("as fetched", base.clone()),
+                ("first row 0", first_zero),
+                ("sum 0", with_values(&base, "siec", "C0350-0370", &["5", "-5", "0", "0", "0", "0", "0", "0", "0"])),
+                ("negative sum", with_values(&base, "siec", "W6100_6220", &["-20", "-1"])),
+                ("decimals", decimals),
+                ("one small", one_small),
+                ("big only", big_only),
+            ];
+            for (name, main) in cases {
+                let (fill, old) = sankey_case(table, &main, &Hubs).unwrap_or_else(|e| panic!("{table} {name}: {e}"));
+                let spec = &fill["knobs"]["spec"];
+                let leaf = &spec["hero"]["leaves"]["sankey"];
+                assert_eq!(leaf, &old.hero["leaves"]["sankey"], "{table} {name}");
+                for (k, q) in &old.facts {
+                    assert_eq!(&spec["facts"][k], q, "{table} {name}: fact {k}");
+                }
+                for (k, q) in &old.fmts {
+                    assert_eq!(&spec["fmts"][k], q, "{table} {name}: format {k}");
+                }
+                for (k, q) in &old.named {
+                    assert_eq!(&fill["knobs"]["named"][k], q, "{table} {name}: name row {k}");
+                }
+                for (k, q) in &old.labels {
+                    assert_eq!(fill["knobs"]["labels"][k].as_str(), Some(q.as_str()), "{table} {name}: label {k}");
+                }
+                let drawn: Vec<&Value> = fill["drawn"].as_array().unwrap().iter().filter(|d| d["layer"] == "sankey").map(|d| &d["src"]).collect();
+                assert_eq!(drawn, old.drawn.iter().map(|(_, r)| &r["src"]).collect::<Vec<_>>(), "{table} {name}: rows drawn");
+                let kept: Vec<&Value> = fill["rows"].as_array().unwrap().iter().map(|r| &r["src"]).collect();
+                assert_eq!(kept, old.rows.iter().map(|r| &r["src"]).collect::<Vec<_>>(), "{table} {name}: rows kept");
+                assert_eq!(spec["hero"]["data"], Value::Object(old.data.clone()), "{table} {name}: the hero's data");
+                assert_eq!(fill["pairs"], json!(old.flow_pairs.unwrap()), "{table} {name}: the pairs accounted for");
+                println!("P6SANKEY {table} {name}: merged {} / {}, lines {}, equal", leaf["other_source"]["members"], leaf["other_target"]["members"],
+                    leaf["lines"].as_array().map_or(0, Vec::len));
+            }
+        }
+    }
+
+    /// The sankey's reachable stops replay word for word through the declared pairs: a row that holds no number, rows
+    /// whose sum is not above 0, a code the name table names none of on the source side and on the target side (the
+    /// name requests go source then target, as the rust fill asked). The two that cannot stop a registered page: a main
+    /// with no flow (official_flow sets it) and a broken registry (official_flow reads it first).
+    #[test]
+    fn the_sankey_stops_replay_word_for_word() {
+        let base = q2_flow_rows("nrg_bal_s");
+        let mut no_number = base.clone();
+        no_number[3]["value"] = json!(":");
+        let zero: Vec<Value> = base.iter().cloned().map(|mut r| {
+            r["value"] = json!("0");
+            r
+        }).collect();
+        let pages: [(&str, Vec<Value>, &dyn Catalogue); 4] =
+            [("no number", no_number, &Hubs), ("no flow", zero, &Hubs), ("source name", base.clone(), &NoNamesOf("siec")), ("target name", base.clone(), &NoNamesOf("nrg_bal"))];
+        for (name, main, catalogue) in pages {
+            let flow = recipe("flow");
+            let shape = shape_of(&flow.eats, &[("nrg_bal_s", &main)], catalogue).unwrap();
+            let picks = picks_of(&flow.picks, &shape, &main, &[]).unwrap();
+            let filling = Filling { shape: &shape, picks: &picks, main: &main, companion: &[], catalogue, fmt: shape.unit.to_lowercase(),
+                short: next_pack::unit_short(&shape.unit).unwrap(), window: None, asked: None };
+            let old = format!("not this shape: {}", old_sankey_fill(&filling, &mut Filled::default()).unwrap_err());
+            let mine = test_fill(flow, &shape, &picks, (&main, &[]), catalogue, ("标题", "导语"), false).unwrap_err();
+            assert_eq!(mine, old, "{name}");
+            println!("P6SANKEY stop {name}: {mine}");
+        }
+        let shape = Shape { main: "nrg_bal_s".into(), ..Shape::default() };
+        let picks = Picks::default();
+        let filling = Filling { shape: &shape, picks: &picks, main: &[], companion: &[], catalogue: &Hubs, fmt: "x".into(), short: "x", window: None, asked: None };
+        assert_eq!(old_sankey_fill(&filling, &mut Filled::default()).unwrap_err(), "sankey: main nrg_bal_s holds no flow");
+    }
+
+    /// P6 step 5 on real data: the stored q2 stand-in flow pages (P6_FLOW_REQS: a file listing their request.json, one per
+    /// line; run with --ignored), each page's rows refilled (as text) under the flow recipe, the declared pairs held to
+    /// the frozen rust sankey over the same shape, and the facts held to the stored page's. Prints one P6REQ line each.
+    #[test]
+    #[ignore]
+    fn p6_pairs_over_stored_q2_requests() {
+        let list = std::fs::read_to_string(std::env::var("P6_FLOW_REQS").unwrap()).unwrap();
+        for path in list.lines().filter(|l| !l.trim().is_empty()) {
+            let req: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+            let main: Vec<Value> = req["rows"].as_array().unwrap().iter().filter(|r| r["src"].as_str().is_some_and(|s| s.starts_with("series:")))
+                .map(|r| {
+                    let mut r = r.clone();
+                    if let Some(n) = r["value"].as_f64().and_then(serde_json::Number::from_f64) {
+                        r["value"] = json!(n.to_string());
+                    }
+                    r
+                })
+                .collect();
+            let names: BTreeMap<String, String> = req["ledger"].as_object().unwrap().iter()
+                .filter_map(|(k, v)| Some((k.strip_prefix("name:zh_names:")?.split_once(':')?.1.to_string(), v.as_str()?.to_string()))).collect();
+            let table = main[0]["table"].as_str().unwrap().to_string();
+            let (fill, old) = sankey_case(&table, &main, &Ledgered(names)).unwrap_or_else(|e| panic!("{path}: {e}"));
+            let spec = &fill["knobs"]["spec"];
+            assert_eq!(spec["hero"]["leaves"]["sankey"], old.hero["leaves"]["sankey"], "{path}");
+            for (k, q) in &old.facts {
+                assert_eq!(&spec["facts"][k], q, "{path}: fact {k}");
+            }
+            let stored: BTreeSet<String> = req["facts"].as_array().unwrap().iter().filter_map(|f| f["key"].as_str().map(str::to_string)).collect();
+            let mine: BTreeSet<String> = spec["facts"].as_object().unwrap().keys().cloned().collect();
+            println!("P6REQ flow {table} facts {} (stored {}, same keys {}) equal", mine.len(), stored.len(), mine == stored);
         }
     }
 }
