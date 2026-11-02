@@ -1677,6 +1677,7 @@
     "t1"
    ],
    "external": [
+    "bignums",
     "notes"
    ]
   },

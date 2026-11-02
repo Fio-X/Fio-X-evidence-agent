@@ -1729,7 +1729,6 @@ type NodeFill = fn(&Filling, &mut Filled) -> Result<(), String>;
 const NODE_FILLS: &[(&str, NodeFill)] = &[
     ("map", map_fill),
     ("ring", ring_node_fill),
-    ("bignums", bignums_fill),
     ("strip", strip_fill),
     ("sankey", sankey_fill),
 ];
@@ -2480,57 +2479,6 @@ fn dek_finding(fill: &Value) -> Option<(String, String)> {
 /// The format of a gap between two percentages: percentage points, not a percentage.
 const POINTS: (&str, &str) = ("pp", " 个百分点");
 
-/// The most decimals a gap in percentage points prints with, whatever its rows hold: one, as statistical releases print a
-/// change in a share (a change of 16.85 points reads 16.9); a value's own format keeps the decimals its rows hold.
-const POINTS_DEC: usize = 1;
-
-/// The big numbers: the highest and the lowest ranked country's value, their gap and times (extremes) as hero.data's hi, lo,
-/// gap and times.
-fn bignums_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
-    if f.picks.ranked.is_empty() && !f.picks.focus.is_empty() {
-        return flow_bignums(f, out);
-    }
-    extremes(f, out, true)?;
-    for k in ["hi", "lo", "gap", "times"] {
-        Filled::set(&mut out.data, "hero data", k, json!(k))?;
-    }
-    Ok(())
-}
-
-/// The facts hi and lo (the highest and the lowest ranked country's value), gap (in percentage points when the unit prints
-/// as "%") and times (how many times the lowest the highest is); each with the decimals the bars print. Rows: the main's for
-/// the two at the year, drawn when `prints` (the layer prints hi and lo themselves), else only read. Ok is the two
-/// countries' codes, highest first.
-fn extremes<'a>(f: &Filling<'a>, out: &mut Filled, prints: bool) -> Result<(&'a str, &'a str), String> {
-    let (shape, picks, fmt) = (f.shape, f.picks, f.fmt.as_str());
-    let (place, year) = (shape.place.as_str(), shape.year.as_str());
-    let (Some(hi), Some(lo)) = (picks.ranked.first(), picks.ranked.last()) else {
-        return Err(format!("main {} ranks no country", shape.main));
-    };
-    let two = f.main.iter().filter(|r| r["time"] == year && (r["dims"][place] == hi.as_str() || r["dims"][place] == lo.as_str())).cloned();
-    match prints {
-        true => out.rows(two),
-        false => out.reads(two),
-    }
-    let at = |code: &str| json!({"table": shape.main, "filter": {place: code}, "time": year, "fmt": fmt});
-    let (_, dec) = ranked_rows(f);
-    let gap_fmt = if f.short == "%" { POINTS.0 } else { fmt };
-    for (key, q) in [
-        ("hi", at(hi)),
-        ("lo", at(lo)),
-        ("gap", json!({"op": "minus", "a": "hi", "b": "lo", "fmt": gap_fmt})),
-        ("times", json!({"op": "times", "a": "hi", "b": "lo", "fmt": "times"})),
-    ] {
-        Filled::set(&mut out.facts, "fact", key, q)?;
-    }
-    Filled::set(&mut out.fmts, "format", fmt, json!({"scale": 1, "dec": dec, "suffix": suffix(f.short)}))?;
-    if gap_fmt == POINTS.0 {
-        Filled::set(&mut out.fmts, "format", POINTS.0, json!({"scale": 1, "dec": dec.min(POINTS_DEC), "suffix": POINTS.1}))?;
-    }
-    Filled::set(&mut out.fmts, "format", "times", json!({"scale": 1, "dec": 1, "suffix": "倍"}))?;
-    Ok((hi, lo))
-}
-
 /// How far (degrees) a column page's map reaches past its countries' points on each side at least, clamped to the globe: a
 /// visual layout default, as RING_HUBS. No number here prints.
 const MAP_PAD: f64 = 4.0;
@@ -2651,41 +2599,6 @@ fn set_leaf(out: &mut Filled, key: &str, data: Value) -> Result<(), String> {
     let leaves = out.hero.entry("leaves").or_insert_with(|| json!({}));
     let Value::Object(leaves) = leaves else { unreachable!("hero.leaves is the fills' own object") };
     Filled::set(leaves, "leaf", key, data)
-}
-
-/// The big numbers of a flow page (a focus and its years, no ranking): the focus's change, the total's change, the change of the
-/// top origin that grew most in volume (the focus aside) and the focus's peak month in the strip, each a fact the map or the
-/// strip declared (so both fill first), as hero.data.bignums items; each label a word-table key, its fall or rise word by
-/// the sign of the fact (the leaf's column.bignum_cells). A fact the page lacks is left out, never made up; none refuses.
-fn flow_bignums(f: &Filling, out: &mut Filled) -> Result<(), String> {
-    let (shape, picks) = (f.shape, f.picks);
-    let at = |code: &str, t: &str| {
-        f.main
-            .iter()
-            .find(|r| r["dims"][&shape.place] == code && r["dims"]["geo"] == shape.hub.as_str() && r["time"] == t)
-            .and_then(row_value)
-    };
-    let grew = picks
-        .top
-        .iter()
-        .filter(|c| **c != picks.focus && out.facts.contains_key(&flow_keys(picks, c)[2]))
-        .filter_map(|c| Some((at(c, &picks.t1)? - at(c, &picks.t0)?, c)))
-        .filter(|(d, _)| *d > 0.0)
-        .max_by(|a, b| a.0.total_cmp(&b.0))
-        .map(|(_, c)| c);
-    let ch = |code: &str| {
-        let key = flow_keys(picks, code)[2].clone();
-        json!({"fact": key, "label": {"word": "scmp.bn.ch", "name": code, "by_sign": key}})
-    };
-    let mut items = vec![ch(&picks.focus), json!({"fact": "tot_ch", "label": {"word": "scmp.bn.tot", "by_sign": "tot_ch"}})];
-    items.extend(grew.map(|c| ch(c)));
-    let peak = format!("{}_s_peak", picks.focus.to_lowercase());
-    items.push(json!({"fact": peak, "label": {"word": "scmp.bn.peak", "name": picks.focus}}));
-    let items: Vec<Value> = items.into_iter().filter(|i| i["fact"].as_str().is_some_and(|k| out.facts.contains_key(k))).collect();
-    if items.is_empty() {
-        return Err("bignums: the page declares none of its facts".into());
-    }
-    Filled::set(&mut out.data, "hero data", "bignums", Value::Array(items))
 }
 
 /// A page's request for the visual group's LeafFill by a recipe, as plain JSON {order, rows, knobs}: each of the recipe's
@@ -11347,6 +11260,94 @@ for line in sys.stdin:
     // ---- P6 step 1: the rust leader notes as they were before they left the flow (frozen at 9af5ca3a, renamed old_*),
     // kept only as the reference the declared notes are held to
 
+    /// Frozen copies of the flow's big numbers fill as it was before P6 step 2 (bignums_fill, its extremes and
+    /// flow_bignums), the reference the declared big numbers are held to; the extremes also serve the frozen leader notes.
+    /// The most decimals a gap in percentage points prints with, whatever its rows hold: one, as statistical releases print a
+    /// change in a share (a change of 16.85 points reads 16.9); a value's own format keeps the decimals its rows hold.
+    const POINTS_DEC: usize = 1;
+
+    /// The big numbers: the highest and the lowest ranked country's value, their gap and times (extremes) as hero.data's hi, lo,
+    /// gap and times.
+    fn old_bignums_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
+        if f.picks.ranked.is_empty() && !f.picks.focus.is_empty() {
+            return old_flow_bignums(f, out);
+        }
+        extremes(f, out, true)?;
+        for k in ["hi", "lo", "gap", "times"] {
+            Filled::set(&mut out.data, "hero data", k, json!(k))?;
+        }
+        Ok(())
+    }
+
+    /// The facts hi and lo (the highest and the lowest ranked country's value), gap (in percentage points when the unit prints
+    /// as "%") and times (how many times the lowest the highest is); each with the decimals the bars print. Rows: the main's for
+    /// the two at the year, drawn when `prints` (the layer prints hi and lo themselves), else only read. Ok is the two
+    /// countries' codes, highest first.
+    fn extremes<'a>(f: &Filling<'a>, out: &mut Filled, prints: bool) -> Result<(&'a str, &'a str), String> {
+        let (shape, picks, fmt) = (f.shape, f.picks, f.fmt.as_str());
+        let (place, year) = (shape.place.as_str(), shape.year.as_str());
+        let (Some(hi), Some(lo)) = (picks.ranked.first(), picks.ranked.last()) else {
+            return Err(format!("main {} ranks no country", shape.main));
+        };
+        let two = f.main.iter().filter(|r| r["time"] == year && (r["dims"][place] == hi.as_str() || r["dims"][place] == lo.as_str())).cloned();
+        match prints {
+            true => out.rows(two),
+            false => out.reads(two),
+        }
+        let at = |code: &str| json!({"table": shape.main, "filter": {place: code}, "time": year, "fmt": fmt});
+        let (_, dec) = ranked_rows(f);
+        let gap_fmt = if f.short == "%" { POINTS.0 } else { fmt };
+        for (key, q) in [
+            ("hi", at(hi)),
+            ("lo", at(lo)),
+            ("gap", json!({"op": "minus", "a": "hi", "b": "lo", "fmt": gap_fmt})),
+            ("times", json!({"op": "times", "a": "hi", "b": "lo", "fmt": "times"})),
+        ] {
+            Filled::set(&mut out.facts, "fact", key, q)?;
+        }
+        Filled::set(&mut out.fmts, "format", fmt, json!({"scale": 1, "dec": dec, "suffix": suffix(f.short)}))?;
+        if gap_fmt == POINTS.0 {
+            Filled::set(&mut out.fmts, "format", POINTS.0, json!({"scale": 1, "dec": dec.min(POINTS_DEC), "suffix": POINTS.1}))?;
+        }
+        Filled::set(&mut out.fmts, "format", "times", json!({"scale": 1, "dec": 1, "suffix": "倍"}))?;
+        Ok((hi, lo))
+    }
+
+    /// The big numbers of a flow page (a focus and its years, no ranking): the focus's change, the total's change, the change of the
+    /// top origin that grew most in volume (the focus aside) and the focus's peak month in the strip, each a fact the map or the
+    /// strip declared (so both fill first), as hero.data.bignums items; each label a word-table key, its fall or rise word by
+    /// the sign of the fact (the leaf's column.bignum_cells). A fact the page lacks is left out, never made up; none refuses.
+    fn old_flow_bignums(f: &Filling, out: &mut Filled) -> Result<(), String> {
+        let (shape, picks) = (f.shape, f.picks);
+        let at = |code: &str, t: &str| {
+            f.main
+                .iter()
+                .find(|r| r["dims"][&shape.place] == code && r["dims"]["geo"] == shape.hub.as_str() && r["time"] == t)
+                .and_then(row_value)
+        };
+        let grew = picks
+            .top
+            .iter()
+            .filter(|c| **c != picks.focus && out.facts.contains_key(&flow_keys(picks, c)[2]))
+            .filter_map(|c| Some((at(c, &picks.t1)? - at(c, &picks.t0)?, c)))
+            .filter(|(d, _)| *d > 0.0)
+            .max_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|(_, c)| c);
+        let ch = |code: &str| {
+            let key = flow_keys(picks, code)[2].clone();
+            json!({"fact": key, "label": {"word": "scmp.bn.ch", "name": code, "by_sign": key}})
+        };
+        let mut items = vec![ch(&picks.focus), json!({"fact": "tot_ch", "label": {"word": "scmp.bn.tot", "by_sign": "tot_ch"}})];
+        items.extend(grew.map(|c| ch(c)));
+        let peak = format!("{}_s_peak", picks.focus.to_lowercase());
+        items.push(json!({"fact": peak, "label": {"word": "scmp.bn.peak", "name": picks.focus}}));
+        let items: Vec<Value> = items.into_iter().filter(|i| i["fact"].as_str().is_some_and(|k| out.facts.contains_key(k))).collect();
+        if items.is_empty() {
+            return Err("bignums: the page declares none of its facts".into());
+        }
+        Filled::set(&mut out.data, "hero data", "bignums", Value::Array(items))
+    }
+
     /// Frozen copy of the flow's notes fill as it was before P6 step 2 (base 03f24541), the reference the declared notes
     /// are held to. The short notes beside the map, one per top origin and one for the total: which facts each prints (the
     /// map's, so the map fills first), never a sentence; the leaf writes the words from its word table. A note's change is there only when
@@ -11836,15 +11837,19 @@ for line in sys.stdin:
         let filling = Filling { shape: &shape, picks: &picks, main: &main, companion: &monthly, catalogue: &catalogue, fmt: shape.unit.to_lowercase(), short, window, asked: None };
         let mut old = Filled::default();
         map_fill(&filling, &mut old).unwrap();
+        strip_fill(&filling, &mut old).unwrap();
+        old_bignums_fill(&filling, &mut old).unwrap();
         old_notes_fill(&filling, &mut old).unwrap();
         let spec = &fill["knobs"]["spec"];
         assert_eq!(spec["hero"]["leaves"]["notes"], json!({"notes": old.hero["notes"]}), "the notes");
+        assert_eq!(spec["hero"]["data"]["bignums"], old.data["bignums"], "the big numbers");
         for (k, q) in &old.facts {
             assert_eq!(&spec["facts"][k], q, "fact {k}");
         }
         let notes = old.hero["notes"].as_array().unwrap();
         let plain = notes.iter().filter(|n| n["ch"].is_null()).count();
-        println!("P6REQ scmp gas notes {} with no change {} facts {} equal: top {:?} focus {}", notes.len(), plain, old.facts.len(), picks.top, picks.focus);
+        let bn: Vec<&str> = old.data["bignums"].as_array().unwrap().iter().filter_map(|b| b["fact"].as_str()).collect();
+        println!("P6REQ scmp gas notes {} with no change {} big numbers {bn:?} facts {} equal: top {:?} focus {}", notes.len(), plain, old.facts.len(), picks.top, picks.focus);
     }
 
     /// One scmp page over the ring fixture's rows (as the_ring_fill_is_program_rules_over_the_shape_and_picks_...): each
@@ -11879,6 +11884,8 @@ for line in sys.stdin:
         let filling = Filling { shape: &shape, picks: &picks, main: &main, companion: &monthly, catalogue: &Hubs, fmt: shape.unit.to_lowercase(), short, window, asked: None };
         let mut old = Filled::default();
         map_fill(&filling, &mut old)?;
+        strip_fill(&filling, &mut old)?;
+        old_bignums_fill(&filling, &mut old)?;
         old_notes_fill(&filling, &mut old)?;
         Ok((fill, old))
     }
@@ -11917,11 +11924,22 @@ for line in sys.stdin:
             ("B all above 0", b(v("100", "7000", "40000"), "60000"), "NO", &[]),
             ("B focus t0 at 0", b(v("100", "7000", "40000"), "0"), "NO", &["NO"]),
         ];
+        // the big numbers' own branches: none grew, two grew alike (the old max kept the later in the top order)
+        let mut cases = cases;
+        let mut fell = a(v("30000", "1", "10"), "126027.316");
+        fell[1].1 = v("90000", "85000", "80000");
+        let mut alike = a(v("20000", "1", "30000"), "126027.316");
+        alike[1].1 = v("80000", "85000", "90000");
+        let mut b_fell = b(v("40000", "7000", "7000"), "60000");
+        b_fell[3].1 = v("12000", "9000", "5000");
+        let b_alike = b(v("33000", "7000", "40000"), "60000");
+        cases.extend([("A none grew", fell, "RU", &[] as &[&str]), ("A two grew alike", alike, "RU", &[]), ("B none grew", b_fell, "NO", &[]), ("B two grew alike", b_alike, "NO", &[])]);
         for (name, values, focus, no_change) in cases {
             let (fill, old) = scmp_notes_case(&values, focus).unwrap_or_else(|e| panic!("{name}: {e}"));
             let spec = &fill["knobs"]["spec"];
             assert!(spec["hero"].get("notes").is_none(), "{name}: the notes are the node's leaf data, not a hero key");
             assert_eq!(spec["hero"]["leaves"]["notes"], json!({"notes": old.hero["notes"]}), "{name}");
+            assert_eq!(spec["hero"]["data"]["bignums"], old.data["bignums"], "{name}: the big numbers");
             for (k, q) in &old.facts {
                 assert_eq!(&spec["facts"][k], q, "{name}: fact {k}");
             }
@@ -11931,7 +11949,8 @@ for line in sys.stdin:
             assert_eq!(notes.iter().filter(|n| n["f"] == true).count(), 1, "{name}: one focus note");
             assert!(fill["knobs"].get("placed").is_none_or(|p| p.get("notes").is_none()), "{name}: nothing placed for the notes");
             assert!(fill["page_in"].get("points").is_none(), "{name}: no map points declared for a layer with no view frame");
-            println!("P6SCMP {name}: {} notes, {} with no change, equal", notes.len(), plain.len());
+            let bn: Vec<&str> = old.data["bignums"].as_array().unwrap().iter().filter_map(|b| b["fact"].as_str()).collect();
+            println!("P6SCMP {name}: {} notes, {} with no change, big numbers {bn:?}, equal", notes.len(), plain.len());
         }
     }
 
@@ -11946,7 +11965,7 @@ for line in sys.stdin:
         let scmp = recipe("scmp");
         let at = |l: &str| scmp.layers.iter().position(|x| x == l).unwrap();
         assert!(at("map") < at("bignums") && at("map") < at("notes"), "{:?}", scmp.layers);
-        let (shape, picks) = (Shape { place: "partner".into(), ..Shape::default() }, Picks { top: vec!["RU".into()], t0: "2021".into(), t1: "2024".into(), ..Picks::default() });
+        let (shape, picks) = (Shape { place: "partner".into(), ..Shape::default() }, Picks { top: vec!["RU".into()], focus: "RU".into(), t0: "2021".into(), t1: "2024".into(), ..Picks::default() });
         let filling = Filling { shape: &shape, picks: &picks, main: &[], companion: &[], catalogue: &Hubs, fmt: "x".into(), short: "x", window: None, asked: None };
         let mut bare = Filled::default();
         assert_eq!(old_notes_fill(&filling, &mut bare).unwrap_err(), "notes: the map declares no facts for RU");
@@ -11955,14 +11974,18 @@ for line in sys.stdin:
             totals_only.facts.insert(k.into(), json!({}));
         }
         assert_eq!(old_notes_fill(&filling, &mut totals_only).unwrap_err(), "notes: the map declares no totals");
+        assert_eq!(old_bignums_fill(&filling, &mut Filled::default()).unwrap_err(), "bignums: the page declares none of its facts");
         // the guard: the ring fixture's page with NO's change taken out of the page's facts after the fill
         let v = |a: &'static str, b: &'static str, c: &'static str| [Some(a), Some(b), Some(c)];
         let values = [("RU", v("126027.316", "50000", "37843.285")), ("NO", v("80000", "85000", "90000")), ("US", v("0", "1", "30000")),
             ("DE", v("1", "1", "1")), ("TOTAL", v("1", "1", "1")), ("EXT_EU27_2020", v("1", "1", "1"))];
-        let (mut fill, _) = scmp_notes_case(&values, "RU").unwrap();
-        fill["knobs"]["spec"]["facts"].as_object_mut().unwrap().remove("no_ch").unwrap();
-        let calls = std::sync::Mutex::new(Vec::new());
-        let why = draw_nodes(&mut fill, &scmp.external, &calls, &Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime")).unwrap_err();
-        assert!(why.contains("node notes: its notes field ch prints fact no_ch, which the page does not declare"), "{why}");
+        let (fill, _) = scmp_notes_case(&values, "RU").unwrap();
+        for (gone, said) in [("us24_share", "node notes: its notes field share prints fact us24_share"), ("ru_s_peak", "node bignums: its bignums field fact prints fact ru_s_peak")] {
+            let mut fill = fill.clone();
+            fill["knobs"]["spec"]["facts"].as_object_mut().unwrap().remove(gone).unwrap();
+            let calls = std::sync::Mutex::new(Vec::new());
+            let why = draw_nodes(&mut fill, &scmp.external, &calls, &Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime")).unwrap_err();
+            assert!(why.contains(&format!("{said}, which the page does not declare")), "{why}");
+        }
     }
 }

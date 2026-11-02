@@ -22,8 +22,8 @@ use std::collections::BTreeSet;
 use serde_json::Value;
 
 /// The page input paths a declaration template may read (`$shape.main`, ...); nothing else is substituted.
-const PAGE_IN_PATHS: [&str; 14] = [
-    "shape.main", "shape.place", "shape.year", "shape.fmt", "shape.suffix", "shape.countries", "shape.hub", "picks.marks", "picks.t0", "picks.top",
+const PAGE_IN_PATHS: [&str; 15] = [
+    "shape.main", "shape.place", "shape.year", "shape.fmt", "shape.suffix", "shape.countries", "shape.hub", "picks.marks", "picks.t0", "picks.t1", "picks.top",
     "picks.focus", "page.ext", "fill.accent", "fmt.change",
 ];
 
@@ -156,6 +156,7 @@ fn node_of(layer: &str, page_in: &J, reg: &J, got: &Got, sels: &[J], after: Opti
     if let Some(items) = d.get("items") {
         let mut kept = Vec::new();
         for it in items.arr() {
+            let it = &sub(it, page_in)?;
             if core::conditions_hold(it.g("when"), &plain_holding(got, page_in))? {
                 kept.push(J::Obj(it.obj().iter().filter(|(k, _)| k != "when").cloned().collect()));
             }
@@ -422,9 +423,6 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
     if !reads.is_empty() {
         out.set("reads", J::Arr(reads));
     }
-    if data.truthy() {
-        out.set("data", data);
-    }
     if let Some(hs) = d.get("hero_style") {
         out.set("hero", J::obj_of(vec![("style", sub(hs, page_in)?)]));
     }
@@ -447,10 +445,20 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
         // the items under the key the leaf reads them by (items_as; items when the declaration names none)
         let items_as = lf.g("items_as").s().unwrap_or("items").to_string();
         let mut leaf = J::obj_of(vec![(items_as.as_str(), J::Arr(items))]);
-        for (k, v) in lf.obj().iter().filter(|(k, _)| !["key", "items", "items_as", "items_after", "fact_fields"].contains(&k.as_str())) {
+        for (k, v) in lf.obj().iter().filter(|(k, _)| !["key", "items", "items_as", "items_after", "fact_fields", "into"].contains(&k.as_str())) {
             leaf.set(k, sub(v, page_in)?);
         }
-        out.set("leaves", J::Obj(vec![(st(lf.g("key")), leaf)]));
+        // into data: the items are a key of the hero's data the leaf reads there (the big numbers), no leaf of their own
+        if lf.g("into").s() == Some("data") {
+            for (k, v) in leaf.obj() {
+                data.set(k, v.clone());
+            }
+        } else {
+            out.set("leaves", J::Obj(vec![(st(lf.g("key")), leaf)]));
+        }
+    }
+    if data.truthy() {
+        out.set("data", data);
     }
     Ok(out)
 }
@@ -1453,13 +1461,21 @@ pub fn draw(fill: &Value, page_in: &Value, layers: &[String], runtime: &std::pat
         named.set("names", fill.g("knobs").g("labels").clone());
         let again = declared_j(l, &named, &reg).map_err(|e| format!("node {l}: recheck over the name rows: {e}"))?;
         let key = st(d.g("leaf").g("key"));
-        let held = fill.g("knobs").g("spec").g("hero").g("leaves").g(&key);
-        if again.g("leaves").g(&key) != held {
-            return Err(format!("node {l}: the leaf data is not its declaration over the page's name rows: {} != {}", held.repr(), again.g("leaves").g(&key).repr()));
+        let items_as = d.g("leaf").g("items_as").s().unwrap_or("items").to_string();
+        let hero = fill.g("knobs").g("spec").g("hero");
+        // a leaf into the hero's data holds its items there (leaf.into), any other under the hero's leaves
+        let (held, mine) = if d.g("leaf").g("into").s() == Some("data") {
+            let of = |data: &J| J::obj_of(vec![(items_as.as_str(), data.g(&items_as).clone())]);
+            (of(hero.g("data")), of(again.g("data")))
+        } else {
+            (hero.g("leaves").g(&key).clone(), again.g("leaves").g(&key).clone())
+        };
+        let held = &held;
+        if mine != *held {
+            return Err(format!("node {l}: the leaf data is not its declaration over the page's name rows: {} != {}", held.repr(), mine.repr()));
         }
         // the item fields the leaf prints as facts by key (leaf.fact_fields): each a fact the page declares (another
         // layer's, the map's, when the declaration declares none of its own)
-        let items_as = d.g("leaf").g("items_as").s().unwrap_or("items").to_string();
         let facts = fill.g("knobs").g("spec").g("facts");
         for it in held.g(&items_as).arr() {
             for f in d.g("leaf").g("fact_fields").arr().iter().map(st) {
@@ -1810,7 +1826,7 @@ mod tests {
         assert!(why.starts_with("not this shape: stacked100: ") && why.contains("more than a quarter"), "{why}");
     }
 
-    /// Only the stacked100 node, the leader notes and the scmp notes lay themselves out in their leaf (geometry leaf): draw
+    /// Only the stacked100 node, the leader notes and the scmp notes and big numbers lay themselves out in their leaf: draw
     /// asks no node and checks no placed geometry for such a layer, so another node declaring it in node-bindings.json
     /// would leave the core's geometry check unasked. Both notes placed themselves in their leaf before they were external
     /// too (P6 steps 1 and 2); what they say is the declaration's, declared again over the name rows (draw).
@@ -1818,7 +1834,7 @@ mod tests {
     fn next_tree_gen_only_stacked100_declares_geometry_leaf() {
         let bound = core::bindings();
         let leaf: Vec<&str> = bound.g("nodes").obj().iter().filter(|(_, n)| n.g("geometry").s() == Some("leaf")).map(|(k, _)| k.as_str()).collect();
-        assert_eq!(leaf, ["leader_notes", "notes", "stacked100"]);
+        assert_eq!(leaf, ["bignums", "leader_notes", "notes", "stacked100"]);
     }
 
     /// The scmp notes declared over a hand page input: one note per top origin in its order, the focus's marked, its change

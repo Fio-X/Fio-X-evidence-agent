@@ -1226,10 +1226,21 @@ fn cannot_rank(s: &J) -> Option<String> {
         over.sort();
         return Some(format!("over fields {} (only {})", J::strs(&extra).repr(), J::strs(&over).repr()));
     }
-    if !plain_tie(s.get("tie")) {
-        return Some(format!("tie {} (only by code, outcome order)", s.g("tie").repr()));
+    if !plain_tie(s.get("tie")) && !last_in_only(s) {
+        return Some(format!("tie {} (only by code, outcome order; or by only, outcome last)", s.g("tie").repr()));
     }
     None
+}
+
+/// A rank's tie {"by": "only", "outcome": "last"}: of equal keys the code later in its `only` list ranks first (a max
+/// over the list in its order that keeps the last of equals, as the flow's big numbers took the origin that grew most).
+fn last_in_only(s: &J) -> bool {
+    s.get("tie").is_some_and(|t| *t == J::obj_of(vec![("by", J::str("only")), ("outcome", J::str("last"))])) && s.has("only")
+}
+
+/// A row's value as the map reads one: a text that parses to a finite number (none for anything else).
+fn text_num(r: &J) -> Option<f64> {
+    r.g("value").s().and_then(|v| v.parse::<f64>().ok()).filter(|v| v.is_finite())
 }
 
 fn cannot_take(s: &J) -> Option<String> {
@@ -1416,24 +1427,46 @@ fn recheck_one(
                 bad.push(format!("rank {id}: a code has two rows"));
             }
             let desc = s.g("order").s() == Some("desc");
+            // from_above: a change only from a value the map reads (text_num) above it at the time the change runs
+            // from, as the map declares a change; a code without both ends read so is left out, never refused.
+            // positive: only the codes whose key is above 0
+            let above = s.g("from_above").num();
             let mut keyed: Vec<(f64, String, &J)> = Vec::new();
             for r in at {
-                let mut v = num(r)?;
+                let mut v = match above {
+                    Some(_) => match text_num(r) {
+                        Some(v) => v,
+                        None => continue,
+                    },
+                    None => num(r)?,
+                };
                 if let Some(t0) = change_from(s) {
                     let c = dims(r, by);
                     let from: Vec<&J> = select_rows(rows, q).into_iter().filter(|x| x.g("time") == t0 && dims(x, by) == c).collect();
-                    match from[..] {
-                        [r0] => v -= num(r0)?,
-                        _ => {
+                    match (above, &from[..]) {
+                        (Some(th), from) => match (from.iter().any(|x| text_num(x).is_some_and(|v0| v0 > th)), from.first().and_then(|x| text_num(x))) {
+                            (true, Some(v0)) => v -= v0,
+                            _ => continue,
+                        },
+                        (None, [r0]) => v -= num(r0)?,
+                        (None, _) => {
                             bad.push(format!("rank {id}: {} has {} rows at {}, the change needs one", st(c), from.len(), st(t0)));
                             got.insert(id.into(), s0.g("result").clone());
                             return Ok(());
                         }
                     }
                 }
+                if s.g("positive").truthy() && v <= 0.0 {
+                    continue;
+                }
                 keyed.push((if desc { -v } else { v }, st(dims(r, by)), r));
             }
-            keyed.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal).then_with(|| a.1.cmp(&b.1)));
+            let pos = |c: &str| only.arr().iter().position(|x| x.s() == Some(c));
+            let last = last_in_only(s);
+            keyed.sort_by(|a, b| {
+                let tie = if last { pos(&b.1).cmp(&pos(&a.1)) } else { a.1.cmp(&b.1) };
+                a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal).then(tie)
+            });
             let have = J::Arr(keyed.iter().map(|(_, _, r)| dims(r, by).clone()).collect());
             same(bad, format!("select {id} (rank)"), s.g("result"), &have);
             got.insert(id.into(), have);
@@ -4181,7 +4214,7 @@ fn cells_of(code: &J, dr: &J, sel: &[(String, &J)], got: &Got, rows: &[J]) -> Re
 /// The conditions a `first_holding` field's candidates are held by, all recomputed here from the core's own facts,
 /// formats, selects and the page input (registered: next_ledger CHECK_REGISTRY tree.first_holding). A candidate names
 /// only these; any other condition, or another argument, is refused.
-pub const CONDITIONS: [(&str, &[&str]); 6] = [
+pub const CONDITIONS: [(&str, &[&str]); 7] = [
     // the sign of a fact the core computes: pos, neg or zero (a NaN reads as zero, as a partial_cmp with 0 does)
     ("sign", &["fact", "is"]),
     // the fact as the format prints it differs from 0 as the format prints it (a tie prints as no gap)
@@ -4196,6 +4229,9 @@ pub const CONDITIONS: [(&str, &[&str]); 6] = [
     // a row of the page input's rows at `table`, `time` and every `filter` dimension holds a text value that parses above
     // `than`; no such row, or none that parses, does not hold (the map's rule for a change: from nothing it has no ratio)
     ("row_above", &["table", "filter", "time", "than"]),
+    // the page's order (its recipe's layers) has `layer` before `than`: what `layer` declares is there when `than` is
+    // declared (a layer absent from the order declares nothing)
+    ("layer_before", &["layer", "than"]),
 ];
 
 /// What a `first_holding` condition reads, given by its caller: the core's fact values by key, its formats, its selects'
@@ -4300,6 +4336,10 @@ fn condition_holds(cond: &J, h: &Holding) -> Result<bool, String> {
                     && filter.iter().all(|(d, c)| dims(r, d) == c)
                     && r.g("value").s().and_then(|v| v.parse::<f64>().ok()).is_some_and(|v| v > than)
             }))
+        }
+        "layer_before" => {
+            let at = |k: &str| h.page.g("order").arr().iter().position(|l| l.s() == Some(st(cond.g(k)).as_str()));
+            Ok(matches!((at("layer"), at("than")), (Some(a), Some(b)) if a < b))
         }
         _ => unreachable!("CONDITIONS holds the arms"),
     }
@@ -6625,7 +6665,7 @@ mod tests {
     #[test]
     fn next_tree_production_binds_the_bars_external() {
         let o = bindings();
-        assert_eq!(external_nodes(&o), ["bars", "bubbles", "leader_notes", "notes", "stacked100"]);
+        assert_eq!(external_nodes(&o), ["bars", "bubbles", "bignums", "leader_notes", "notes", "stacked100"]);
         assert_eq!(registry_problems(&load_registry(&o)), Vec::<String>::new());
         for n in external_nodes(&o) {
             assert!(runner_allowed(&st(o.g("nodes").g(&n).g("runner"))), "{n}");
@@ -7275,6 +7315,13 @@ mod tests {
         let years = parse(r#"{"picks": {"y0": "19", "y1": "24"}}"#).unwrap();
         assert_eq!(with_code(&J::str("{code_lc}{y0}/{code}{y1}"), "DE", &years), J::str("de19/DE24"));
         assert_eq!(with_code(&J::str("{code_lc}{y0}"), "DE", &page), J::str("de{y0}"));
-        assert_eq!(CONDITIONS.map(|(k, _)| k), ["sign", "prints_nonzero", "width_at_most", "count_at_least", "page_is", "row_above"]);
+        // layer_before: the page's order, both layers in it, the first earlier
+        let ordered = parse(r#"{"order": ["map", "strip", "bignums"]}"#).unwrap();
+        let before = |a: &str, b: &str| {
+            let hold = Holding { facts: &facts, fmts: &fmts, got: &got, page: &ordered, code: "", name: None, word: &words };
+            conditions_hold(&parse(&format!(r#"[{{"if": "layer_before", "layer": "{a}", "than": "{b}"}}]"#)).unwrap(), &hold).unwrap()
+        };
+        assert_eq!([before("strip", "bignums"), before("bignums", "strip"), before("ring", "bignums"), before("strip", "notes")], [true, false, false, false]);
+        assert_eq!(CONDITIONS.map(|(k, _)| k), ["sign", "prints_nonzero", "width_at_most", "count_at_least", "page_is", "row_above", "layer_before"]);
     }
 }

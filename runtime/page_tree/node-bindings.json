@@ -39,7 +39,7 @@
   "change_focus": {"id": "top", "kind": "given", "source": "picks", "path": "picks.top", "given": "$picks.top"},
   "claim_marks": {"id": "marks", "kind": "named_rule", "rule": "marks_from_claims", "inputs": {"ranked": "ranked"}, "given": "$picks.marks"}
  },
- "recipes": {"column": ["bars", "bubbles", "leader_notes"], "change": ["bubbles", "bars", "leader_notes"], "composition": ["stacked100"], "scmp": ["notes"]},
+ "recipes": {"column": ["bars", "bubbles", "leader_notes"], "change": ["bubbles", "bars", "leader_notes"], "composition": ["stacked100"], "scmp": ["bignums", "notes"]},
  "nodes": {
   "bars": {
    "binding": "external",
@@ -206,6 +206,100 @@
    "knobs": {"r_max": 22, "r_min": 3, "nudge": 6, "circle_gap": 1, "max_overlaps": 0, "label_top": 12, "label_gap": 4, "label_sep": 8, "reach": 96, "land_cost": 60},
    "ground": {"phase": "ground"},
    "checks": [{"kind": "count_equals", "select": "$order"}, {"kind": "points_pinned"}]
+  }
+,
+  "bignums": {
+   "binding": "external",
+   "geometry": "leaf",
+   "runner": "leaves_py/scmp.py",
+   "declares_by_recipe": {
+    "scmp": {
+     "selects": [
+      {
+       "id": "focus",
+       "kind": "given",
+       "given": ["$picks.focus"]
+      },
+      {
+       "id": "others",
+       "kind": "set_op",
+       "op": "minus",
+       "a": "top",
+       "b": "focus"
+      },
+      {
+       "id": "grown",
+       "kind": "rank",
+       "over": {"table": "$shape.main", "filter": {"geo": "$shape.hub"}, "by": "$shape.place", "time": "$picks.t1"},
+       "key": {"change": ["$picks.t0", "$picks.t1"]},
+       "order": "desc",
+       "only": "select:others",
+       "from_above": 0,
+       "positive": true,
+       "tie": {"by": "only", "outcome": "last"}
+      },
+      {
+       "id": "grew",
+       "kind": "take",
+       "from": "grown",
+       "at": "first"
+      }
+     ],
+     "items": [
+      {
+       "code": "select:focus[0]",
+       "kind": "ch",
+       "when": [{"if": "row_above", "table": "$shape.main", "filter": {"$shape.place": "$picks.focus", "geo": "$shape.hub"}, "time": "$picks.t0", "than": 0}]
+      },
+      {
+       "code": "select:focus[0]",
+       "kind": "tot"
+      },
+      {
+       "code": "select:grew",
+       "kind": "ch",
+       "when": [{"if": "count_at_least", "select": "grown", "n": 1}]
+      },
+      {
+       "code": "select:focus[0]",
+       "kind": "peak",
+       "when": [{"if": "layer_before", "layer": "strip", "than": "bignums"}]
+      }
+     ],
+     "candidates": {
+      "ch": [
+       {"fact": "{code_lc}_ch", "label": {"word": "scmp.bn.ch", "name": "{code}", "by_sign": "{code_lc}_ch"}}
+      ],
+      "tot": [
+       {"fact": "tot_ch", "label": {"word": "scmp.bn.tot", "by_sign": "tot_ch"}}
+      ],
+      "peak": [
+       {"fact": "{code_lc}_s_peak", "label": {"word": "scmp.bn.peak", "name": "{code}"}}
+      ]
+     },
+     "leaf": {
+      "key": "bignums",
+      "into": "data",
+      "items_as": "bignums",
+      "items": {
+       "fact": "bn.fact",
+       "label": "bn.label"
+      },
+      "fact_fields": [
+       "fact"
+      ]
+     }
+    }
+   },
+   "items": {
+    "for_each": "spec",
+    "fields": {
+     "bn": {
+      "kind": "first_holding",
+      "by": "kind"
+     }
+    }
+   }
   }
 ,
   "leader_notes": {
