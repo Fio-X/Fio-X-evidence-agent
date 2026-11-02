@@ -65,6 +65,9 @@ const MONTH_WORDS: [&str; 12] = ["每月", "每个月", "逐月", "按月", "各
 /// The words that ask for a part of a year, which months add up to and a year's figure cannot answer: a quarter ("一季度",
 /// "第三季度", "前三季度", "按季度"), a half ("上半年", "下半年", "近半年") or the year so far ("今年以来").
 const PART_YEAR_WORDS: [&str; 7] = ["季度", "半年", "今年以来", "今年至今", "今年迄今", "年初以来", "年初至今"];
+/// The words of a table card's line under a table with composition groups (parts_line), around the grouped dimension and
+/// its total code, then the groups' registry names; English program words with no number.
+const PARTS_LINE_WORDS: [&str; 2] = ["each place's", "splits into the registered groups"];
 /// Codes kept when an open place dimension has more codes than a chart shows (newsroom_data_prepare narrow, rule "top"):
 /// the highest at the latest time, at most the chart's rows over the years.
 pub const NARROW_TOP: usize = 20;
@@ -553,6 +556,37 @@ pub fn question_months(question: &str) -> bool {
                 count_of(&chars[i - n..i].iter().collect::<String>()).is_some_and(|m| (1..=12).contains(&m))
             }
         })
+}
+
+/// The dimension of Eurostat table `table` (its id) whose registry has composition groups (group_inputs), the first in the
+/// file's order, with its total code and the groups' registry names (column "group_en") in their order; None for a World
+/// Bank table and for a table with no such dimension, or whose groups the registry cannot give.
+pub fn grouped_dim(table: &str) -> Option<(String, String, Vec<String>)> {
+    if table.ends_with("@2") {
+        return None;
+    }
+    let mut dims: Vec<&str> = Vec::new();
+    for (t, d, _) in registry() {
+        if t == table && !dims.contains(&d.as_str()) {
+            dims.push(d.as_str());
+        }
+    }
+    dims.into_iter().find_map(|dim| {
+        let total = parts(table, dim).into_iter().find(|p| p.level == PART_LEVELS[0])?;
+        match group_inputs(table, dim) {
+            Ok(groups) if !groups.is_empty() => Some((dim.to_string(), total.code, groups.into_iter().map(|(g, _)| g).collect())),
+            _ => None,
+        }
+    })
+}
+
+/// The table card's line under table `n` (its id `table`) when its registry has composition groups (grouped_dim): each
+/// place's total of the grouped dimension splits into the registered groups, by their registry names. Shown under every
+/// such table whatever the question; None for a table with none.
+pub fn parts_line(n: usize, table: &str) -> Option<String> {
+    let (dim, total, groups) = grouped_dim(table)?;
+    let [before, after] = PARTS_LINE_WORDS;
+    Some(format!("   t{n}: {before} {dim} {total} {after} {}", groups.join(", ")))
 }
 
 /// A count in digits, or in Chinese numerals up to 九十九 (十 ten, 两 two).
@@ -2968,6 +3002,27 @@ mod tests {
                 assert!((whole - sum).abs() < 0.005, "{dim} {}: {whole} vs parts {sum}", p.code);
             }
         }
+    }
+
+    /// P4b-4: the tables whose registry has composition groups give their dimension, total and groups in file order
+    /// (nrg_bal_peh; nrg_bal_c and nrg_bal_s siec), a table with none and a World Bank table none; the card's line under
+    /// a table says what each place's total splits into only for such a table. q3's card (run 233730) gets it under t4
+    /// nrg_bal_peh alone.
+    #[test]
+    fn the_tables_with_composition_groups_and_their_card_line() {
+        let four: Vec<String> = ["fossil", "renewable", "other", "nuclear"].iter().map(|g| g.to_string()).collect();
+        for t in ["nrg_bal_peh", "nrg_bal_s", "nrg_bal_c"] {
+            assert_eq!(grouped_dim(t), Some(("siec".into(), "TOTAL".into(), four.clone())), "{t}");
+        }
+        for none in ["nrg_cb_pem", "nrg_cb_e", "nrg_ind_ren", "SP.POP.65UP.TO.ZS@2"] {
+            assert_eq!(grouped_dim(none), None, "{none}");
+        }
+        let card: Vec<Option<String>> =
+            ["nrg_ind_pehnf", "nrg_cb_pem", "nrg_ind_pehcf", "nrg_bal_peh", "nrg_ind_peh"].iter().enumerate().map(|(i, t)| parts_line(i + 1, t)).collect();
+        assert_eq!(
+            card,
+            [None, None, None, Some("   t4: each place's siec TOTAL splits into the registered groups fossil, renewable, other, nuclear".into()), None]
+        );
     }
 
     /// q3 (欧盟各国发电结构): nrg_bal_peh's siec tree and its four groups on the fixture (gross electricity production, GWH,

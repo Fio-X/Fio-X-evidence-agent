@@ -440,10 +440,12 @@ pub enum Choice {
         query: String,
     },
     /// The picked table numbers; empty when the answer was 0, none of the tables fits. `params`: item key -> the picked
-    /// option number, for the items of the picked tables (empty when the request listed none).
+    /// option number, for the items of the picked tables (empty when the request listed none). `relation`: the number the
+    /// answer gave as its optional relation, as given (table_relation keeps or drops it).
     Table {
         picks: Vec<usize>,
         params: BTreeMap<String, usize>,
+        relation: Option<usize>,
     },
     /// Claim numbers as listed, across the tables.
     Claims {
@@ -779,6 +781,31 @@ fn claims_rule(groups: &[usize]) -> String {
     )
 }
 
+/// The table step's optional answer key: the number of the data relation the page should draw (1 to 6, by RELATIONS).
+const RELATION_KEY: &str = "relation";
+const RELATIONS: [Relation; 6] = crate::shape_registry::RELATIONS;
+
+/// The relation key's rule as the table step's schema words it: the numbered relations, Composition only with a table
+/// whose card says what it splits into (next_params::parts_line).
+fn relation_rule() -> String {
+    let named: Vec<String> = RELATIONS.iter().enumerate().map(|(i, r)| format!("{} {r:?}", i + 1)).collect();
+    format!("optional: the number of the data relation the page should draw, {}; Composition only with a table that has a 'splits into' line", named.join(", "))
+}
+
+/// The relation number an answer gives, as given (any other value is none); never a refusal.
+fn relation_of(map: &Map<String, Value>) -> Option<usize> {
+    map.get(RELATION_KEY).and_then(Value::as_u64).map(|n| n as usize)
+}
+
+/// The table step's relation, by the picked main table's data shape only (P4b-4; the question's words are never read): a
+/// number outside RELATIONS is dropped; Composition is kept only for a table whose registry has composition groups
+/// (next_params::grouped_dim), else dropped; any other is kept. The pick, its tables and params are never changed, nothing
+/// is refused or stopped, and no round is added.
+fn table_relation(relation: Option<usize>, table: &str) -> Option<Relation> {
+    let r = *RELATIONS.get(relation?.checked_sub(1)?)?;
+    (r != Relation::Composition || next_params::grouped_dim(table).is_some()).then_some(r)
+}
+
 impl Ask {
     fn step(&self) -> &'static str {
         match self {
@@ -812,6 +839,8 @@ impl Ask {
                         "properties": items.iter().flatten().map(|(k, count)| (k.clone(), json!({"type": "integer", "enum": (1..=*count).collect::<Vec<_>>()}))).collect::<Map<_, _>>(),
                         "description": "item -> the number of the option that fits the question, for every item of each picked table and no other, except an item its breakdown says to leave out"});
                 }
+                schema["properties"]["relation"] =
+                    json!({"type": "integer", "enum": (1..=RELATIONS.len()).collect::<Vec<_>>(), "description": relation_rule()});
                 schema
             }
             Ask::Claims { groups, relations } => {
@@ -995,7 +1024,9 @@ impl Ask {
             Ask::Text { .. } => &["step", "text", "names"],
             Ask::Vision => &["step", "answers"],
         };
-        if let Some(key) = map.keys().find(|k| !keys.contains(&k.as_str())) {
+        // the table step's relation is optional and never refused (table_relation reads it after every check)
+        let optional = |k: &str| matches!(self, Ask::Table { .. }) && k == RELATION_KEY;
+        if let Some(key) = map.keys().find(|k| !keys.contains(&k.as_str()) && !optional(k)) {
             return Err(self.refuse(format!("unknown key '{key}'")));
         }
         if let Some(key) = keys.iter().find(|k| !map.contains_key(**k)) {
@@ -1046,6 +1077,7 @@ impl Ask {
                     return Ok(Choice::Table {
                         picks,
                         params: BTreeMap::new(),
+                        relation: relation_of(map),
                     });
                 }
                 // A refused params is answered with the items of the picked tables only.
@@ -1174,7 +1206,7 @@ impl Ask {
                         return Err(refused);
                     }
                 }
-                Ok(Choice::Table { picks, params })
+                Ok(Choice::Table { picks, params, relation: relation_of(map) })
             }
             Ask::Claims { groups, relations } => {
                 let picks = numbers(&map["pick"]).unwrap_or_default();
@@ -3514,6 +3546,9 @@ pub const YEARS_BACK_EVENT: &str = "next_years_back";
 /// The event of a table pick asked again after its fetch came back with no row (prepare_claims): the dataset, its table
 /// number, the answer, what the tool said and the refusal the model got back.
 pub const REPICK_EVENT: &str = "next_table_repick";
+/// The event of a table pick that gave its optional relation (prepare_claims, table_relation): the main table, the number
+/// given and the relation kept by the table's shape (none when dropped). An answer with none records no such event.
+pub const TABLE_RELATION_EVENT: &str = "next_table_relation";
 /// The event of the companion stage (D8): the main table, each candidate the catalogue offered with its seconds and what
 /// came of it (fetched, or why it was dropped), the companions kept with their role, and the stage's seconds.
 pub const COMPANION_EVENT: &str = "next_companions";
@@ -4618,6 +4653,8 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
         if let (Some(table_items), Some((_, Some(d)))) = (items.get(i), drafts.get(i)) {
             listed.extend(next_params::lines(i + 1, d, table_items));
         }
+        // under a table whose registry has composition groups, what each place's total splits into (every question)
+        listed.extend(next_params::parts_line(i + 1, &t.id));
     }
     let most = steps.len().clamp(1, offers.len());
     let params_rule = if items.is_empty() {
@@ -4626,8 +4663,9 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
         "\nFor each picked table also give params: for each of its items t<n>.<item>, the number of the option that fits the question."
     };
     let prompt = format!(
-        "Question: {question}\nTables:\n{}\nPick the table, or up to {most} tables, that answer the question; 0 if none fits.{params_rule}",
-        listed.join("\n")
+        "Question: {question}\nTables:\n{}\nPick the table, or up to {most} tables, that answer the question; 0 if none fits.{params_rule}\nrelation ({})",
+        listed.join("\n"),
+        relation_rule()
     );
     let mut ask = Ask::Table {
         count: offers.len(),
@@ -4663,8 +4701,8 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
     let mut prompt = asked.clone();
     let mut repicked = false;
     let (mut tables, main_file, main_narrowed, main_window, cut) = 'pick: loop {
-        let (picks, params) = match recorder.ask_step(model, &ask, &prompt, cancel).await? {
-            (_, Choice::Table { picks, params }) => (picks, params),
+        let (picks, params, relation) = match recorder.ask_step(model, &ask, &prompt, cancel).await? {
+            (_, Choice::Table { picks, params, relation }) => (picks, params, relation),
             (_, other) => unreachable!("the table step was answered with {other:?}"),
         };
         if picks.is_empty() {
@@ -4673,6 +4711,12 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
             ));
         }
         let ids: Vec<&String> = picks.iter().map(|n| &offers[n - 1].id).collect();
+        // an answer's relation, kept or dropped by the main table's shape, for the run's record only (the claims step here
+        // asks no relation); an answer with none records nothing
+        if relation.is_some() {
+            let kept = table_relation(relation, ids[0]).map(|r| format!("{r:?}"));
+            recorder.program_event(TABLE_RELATION_EVENT, json!({"table": ids[0], "relation": relation, "kept": kept}))?;
+        }
         let chosen: Vec<(&String, PrepareStep)> = if steps.is_empty() {
             ids.iter()
                 .copied()
@@ -5267,6 +5311,7 @@ mod tests {
             )
             .unwrap(),
             Choice::Table {
+                relation: None,
                 picks: vec![1],
                 params: BTreeMap::from([("t1.breakdown".into(), 2), ("t1.years".into(), 1)])
             }
@@ -5312,7 +5357,7 @@ mod tests {
         // left out, the program gives the flow's years (the latest only)
         assert_eq!(
             ask.check(&json!({"step": "table", "pick": [1], "params": {"t1.breakdown": 4}})),
-            Ok(Choice::Table { picks: vec![1], params: BTreeMap::from([("t1.breakdown".into(), 4), ("t1.years".into(), 1)]) })
+            Ok(Choice::Table { relation: None, picks: vec![1], params: BTreeMap::from([("t1.breakdown".into(), 4), ("t1.years".into(), 1)]) })
         );
         // the split by siec alone takes no member item: t1.nrg_bal is still asked
         let missing = ask.check(&json!({"step": "table", "pick": [1], "params": {"t1.breakdown": 3}})).unwrap_err();
@@ -5336,16 +5381,16 @@ mod tests {
         let split = json!({"step": "table", "pick": [1], "params": {"t1.breakdown": 2}});
         assert_eq!(
             ask(vec![1]).check(&split).unwrap(),
-            Choice::Table { picks: vec![1], params: BTreeMap::from([("t1.breakdown".into(), 2), ("t1.years".into(), 1)]) }
+            Choice::Table { relation: None, picks: vec![1], params: BTreeMap::from([("t1.breakdown".into(), 2), ("t1.years".into(), 1)]) }
         );
         assert_eq!(
             ask(vec![1, 2]).check(&split).unwrap(),
-            Choice::Table { picks: vec![1], params: BTreeMap::from([("t1.breakdown".into(), 2)]) }
+            Choice::Table { relation: None, picks: vec![1], params: BTreeMap::from([("t1.breakdown".into(), 2)]) }
         );
         let none = json!({"step": "table", "pick": [1], "params": {"t1.breakdown": 1, "t1.nrg_bal": 1}});
         assert_eq!(
             ask(vec![1]).check(&none).unwrap(),
-            Choice::Table { picks: vec![1], params: BTreeMap::from([("t1.breakdown".into(), 1), ("t1.nrg_bal".into(), 1)]) }
+            Choice::Table { relation: None, picks: vec![1], params: BTreeMap::from([("t1.breakdown".into(), 1), ("t1.nrg_bal".into(), 1)]) }
         );
         // the model's years for it is no item
         let years = json!({"step": "table", "pick": [1], "params": {"t1.breakdown": 2, "t1.years": 1}});
@@ -5371,11 +5416,11 @@ mod tests {
         assert_eq!(given.allowed["params"], json!({"t1.breakdown": 2}));
         assert_eq!(
             ask.check(&json!({"step": "table", "pick": [1], "params": {"t1.breakdown": 2}})),
-            Ok(Choice::Table { picks: vec![1], params: BTreeMap::from([("t1.breakdown".into(), 2)]) })
+            Ok(Choice::Table { relation: None, picks: vec![1], params: BTreeMap::from([("t1.breakdown".into(), 2)]) })
         );
         assert_eq!(
             ask.check(&json!({"step": "table", "pick": [1], "params": {"t1.years": 2, "t1.breakdown": 1}})),
-            Ok(Choice::Table { picks: vec![1], params: BTreeMap::from([("t1.breakdown".into(), 1), ("t1.years".into(), 2)]) })
+            Ok(Choice::Table { relation: None, picks: vec![1], params: BTreeMap::from([("t1.breakdown".into(), 1), ("t1.years".into(), 2)]) })
         );
         let missing = ask.check(&json!({"step": "table", "pick": [1], "params": {"t1.breakdown": 1}})).unwrap_err();
         assert_eq!(missing.problem, "params needs item 't1.years' as one of its option numbers 1 to 2");
@@ -5389,6 +5434,7 @@ mod tests {
                 &json!({"step": "table", "pick": [2], "params": {"t2.years": 2, "t2.breakdown": 3}})
             ),
             Ok(Choice::Table {
+                relation: None,
                 picks: vec![2],
                 params: BTreeMap::from([
                     ("t2.breakdown".to_string(), 3),
@@ -5399,6 +5445,7 @@ mod tests {
         assert_eq!(
             ask.check(&json!({"step": "table", "pick": [0], "params": {}})),
             Ok(Choice::Table {
+                relation: None,
                 picks: vec![],
                 params: BTreeMap::new()
             })
@@ -5479,6 +5526,7 @@ mod tests {
         assert_eq!(
             one.check(&json!({"step": "table", "pick": [0]})),
             Ok(Choice::Table {
+                relation: None,
                 picks: vec![],
                 params: BTreeMap::new()
             })
@@ -5486,6 +5534,7 @@ mod tests {
         assert_eq!(
             one.check(&json!({"step": "table", "pick": [5]})),
             Ok(Choice::Table {
+                relation: None,
                 picks: vec![5],
                 params: BTreeMap::new()
             })
@@ -5511,6 +5560,7 @@ mod tests {
         assert_eq!(
             two.check(&json!({"step": "table", "pick": [4, 2]})),
             Ok(Choice::Table {
+                relation: None,
                 picks: vec![4, 2],
                 params: BTreeMap::new()
             })
@@ -6124,6 +6174,7 @@ mod tests {
         assert_eq!(
             table.check(&params),
             Ok(Choice::Table {
+                relation: None,
                 picks: vec![1],
                 params: BTreeMap::from([("t1.years".to_string(), 2)])
             })
@@ -6256,6 +6307,7 @@ mod tests {
             assert_eq!(
                 choice,
                 Choice::Table {
+                    relation: None,
                     picks: vec![1],
                     params: BTreeMap::new()
                 }
@@ -7194,6 +7246,136 @@ mod tests {
             "toolu_s",
             json!({"step": "search", "query": "electricity generation"}),
         )
+    }
+
+    /// P4b-4 (table pick by data shape): the table card says under each table with composition groups what each place's
+    /// total splits into, whatever the question, and offers an optional relation. An answer with a relation fetches, picks
+    /// and prepares exactly as the same answer without one (no round, no refusal, no stop, no table or param changed); the
+    /// run records the number and what the main table's shape keeps: Composition on a table with groups (nrg_bal_peh),
+    /// dropped on one with none (a World Bank table) and a number outside 1-6 dropped. An answer with none records nothing.
+    #[tokio::test]
+    async fn a_table_answer_with_a_relation_takes_todays_path_and_the_shape_keeps_or_drops_it() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let run = |table: Value| async move {
+            drive(
+                &[(SHEET_A, &["c1", "c2", "c3", "c4"]), (SHEET_B, &["w1", "w2", "w3"])],
+                vec![search_reply(), call("toolu_t", table), call("toolu_c", json!({"step": "claims", "pick": [4, 1, 2, 5, 6, 7]}))],
+                vec![
+                    json!({"mode": "too_large", "estimate": 90000}),
+                    json!({"mode": "candidates", "sheet": SHEET_A, "conclusions": 4}),
+                    json!({"mode": "candidates", "sheet": SHEET_B, "conclusions": 3}),
+                    json!({"mode": "picks", "claims": [{"candidate": "c4", "claim_id": "k1"}, {"candidate": "c1", "claim_id": "k2"}, {"candidate": "c2", "claim_id": "k3"}]}),
+                    json!({"mode": "picks", "claims": [{"candidate": "w1", "claim_id": "k4"}, {"candidate": "w2", "claim_id": "k5"}, {"candidate": "w3", "claim_id": "k6"}]}),
+                ],
+                offers(),
+            )
+            .await
+        };
+        let today = run(json!({"step": "table", "pick": [2, 4]})).await;
+        assert!(of_type(&today.events, TABLE_RELATION_EVENT).is_empty());
+        let card = today.history.iter().filter(|m| m["role"] == "user").map(|m| m["content"].to_string()).find(|c| c.contains("Tables:")).unwrap();
+        assert!(card.contains("t2: each place's siec TOTAL splits into the registered groups fossil, renewable, other, nuclear"), "{card}");
+        assert!(!card.contains("t4: each place's"), "a World Bank table has no groups");
+        assert!(card.contains("2 Composition") && card.contains("Composition only with a table that has a 'splits into' line"), "{card}");
+        let prepared = format!("{:?}", today.result.as_ref().unwrap());
+        for (answer, kept) in [
+            (json!({"step": "table", "pick": [2, 4], "relation": 2}), json!("Composition")),
+            (json!({"step": "table", "pick": [2, 4], "relation": 5}), json!("Ranking")),
+            (json!({"step": "table", "pick": [2, 4], "relation": 7}), Value::Null),
+            (json!({"step": "table", "pick": [2, 4], "relation": "two"}), Value::Null),
+        ] {
+            let drove = run(answer.clone()).await;
+            assert_eq!(format!("{:?}", drove.result.as_ref().unwrap()), prepared, "{answer}");
+            assert_eq!(drove.tools.args, today.tools.args, "{answer}: the fetches");
+            assert_eq!(drove.model.offered.len(), today.model.offered.len(), "{answer}: no round added");
+            let ev = of_type(&drove.events, TABLE_RELATION_EVENT);
+            if answer["relation"].is_u64() {
+                assert_eq!((ev.len(), &ev[0]["table"], &ev[0]["kept"]), (1, &json!("nrg_bal_peh"), &kept), "{answer}");
+            } else {
+                assert!(ev.is_empty(), "{answer}: a relation that is no number is none");
+            }
+        }
+    }
+
+    /// P4b-4: the rule by the main table's shape alone, never the question's words (P0-P5 of the design): Composition kept
+    /// on a table with composition groups, dropped on one with none; any other relation kept; none, 0 and a number past the
+    /// six dropped. The table step's check takes an answer with any relation (or none) as the same pick and params.
+    #[test]
+    fn the_table_relation_is_kept_or_dropped_by_the_tables_shape_only() {
+        assert_eq!(table_relation(Some(2), "nrg_bal_peh"), Some(Relation::Composition));
+        assert_eq!(table_relation(Some(2), "nrg_cb_pem"), None);
+        assert_eq!(table_relation(Some(2), "SP.POP.65UP.TO.ZS@2"), None);
+        assert_eq!(table_relation(Some(5), "nrg_cb_pem"), Some(Relation::Ranking));
+        for none in [None, Some(0), Some(7)] {
+            assert_eq!(table_relation(none, "nrg_bal_peh"), None, "{none:?}");
+        }
+        let ask = Ask::Table { count: 2, most: 1, items: Vec::new(), splits: Vec::new(), held: Vec::new() };
+        assert!(ask.schema()["properties"]["relation"].is_object());
+        assert_eq!(ask.schema()["required"], json!(["step", "pick"]), "the relation is optional");
+        let plain = ask.check(&json!({"step": "table", "pick": [1]})).unwrap();
+        for (r, given) in [(json!(2), Some(2)), (json!(9), Some(9)), (json!("x"), None)] {
+            let Choice::Table { picks, params, relation } = ask.check(&json!({"step": "table", "pick": [1], "relation": r})).unwrap() else { panic!() };
+            assert_eq!((Choice::Table { picks, params, relation: None }, relation), (plain.clone(), given));
+        }
+        assert!(ask.check(&json!({"step": "table", "pick": [1], "other": 1})).is_err(), "another key is still refused");
+        let claims = Ask::Claims { groups: vec![2], relations: 1 };
+        assert!(claims.check(&json!({"step": "claims", "pick": [1, 2], "relation": 1})).is_err(), "the claims step asks no relation here");
+    }
+
+    /// P4b-4 replay (design 4.2 (a), (c)): every recorded table-step answer of the bank's last runs (P4B_TABLE_REPLIES,
+    /// exported from their relay/reply-*.json with the tables each card listed), as recorded and with each relation 1-6
+    /// added: the check gives the same pick and params (or the same refusal) as today, the table the program fetches is the
+    /// model's, and the rule keeps only what the table's shape allows. Prints one line per run and a total.
+    ///
+    ///     P4B_TABLE_REPLIES=<table-replies.json> cargo test --bins table_relation_replay -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn table_relation_replay() {
+        let runs: Vec<Value> = serde_json::from_str(&std::fs::read_to_string(std::env::var("P4B_TABLE_REPLIES").unwrap()).unwrap()).unwrap();
+        let (mut cases, mut equal, mut changed) = (0, 0, 0);
+        for run in &runs {
+            let mut line = Vec::new();
+            for r in run["replies"].as_array().unwrap().iter().filter(|r| r["args"]["step"] == "table") {
+                let args = &r["args"];
+                let listed = r["listed"].as_object().unwrap();
+                // the check as the step asked it: its listed tables, one pick, an item per param given (its options at least
+                // the number given), no held-series probe
+                let params = args["params"].as_object().cloned().unwrap_or_default();
+                let items: Vec<Vec<(String, usize)>> = (1..=listed.len().max(1))
+                    .map(|n| params.iter().filter(|(k, _)| k.starts_with(&format!("t{n}."))).map(|(k, v)| (k.clone(), v.as_u64().unwrap_or(1).max(4) as usize)).collect())
+                    .collect();
+                let items = if items.iter().all(Vec::is_empty) { Vec::new() } else { items };
+                let ask = Ask::Table { count: listed.len().max(1), most: 1, items, splits: Vec::new(), held: Vec::new() };
+                let plain = ask.check(args).map_err(|e| e.problem);
+                assert!(args.get("relation").is_none(), "{}: a recorded answer gives a relation", run["q"]);
+                for rel in 1..=7usize {
+                    cases += 1;
+                    let mut with = args.clone();
+                    with["relation"] = json!(rel);
+                    let got = ask.check(&with).map_err(|e| e.problem);
+                    let same = match (&plain, &got) {
+                        (Ok(Choice::Table { picks: p0, params: q0, .. }), Ok(Choice::Table { picks, params, relation })) => {
+                            p0 == picks && q0 == params && *relation == Some(rel)
+                        }
+                        (Err(a), Err(b)) => a == b,
+                        _ => false,
+                    };
+                    equal += usize::from(same);
+                    // the table the program fetches is the model's main pick, whatever the rule keeps
+                    if let Ok(Choice::Table { picks, .. }) = &got {
+                        let main = picks.first().and_then(|n| listed.get(&n.to_string())).and_then(Value::as_str).unwrap_or("");
+                        let kept = table_relation(Some(rel), main);
+                        changed += usize::from(kept.is_some_and(|k| k == Relation::Composition) && next_params::grouped_dim(main).is_none());
+                        if rel == 2 {
+                            line.push(format!("t{} {main} composition {}", picks.first().unwrap_or(&0), if kept.is_some() { "kept" } else { "dropped" }));
+                        }
+                    }
+                }
+            }
+            println!("TABLEREPLAY {} {}: {}", run["q"].as_str().unwrap(), run["run"].as_str().unwrap(), line.join("; "));
+        }
+        println!("TABLEREPLAY cases {cases} same as today {equal} composition kept on a table with no groups {changed} refusals added 0 stops 0");
+        assert_eq!((equal, changed), (cases, 0));
     }
 
     #[tokio::test]
