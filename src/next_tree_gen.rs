@@ -22,9 +22,11 @@ use std::collections::BTreeSet;
 use serde_json::Value;
 
 /// The page input paths a declaration template may read (`$shape.main`, ...); nothing else is substituted.
-const PAGE_IN_PATHS: [&str; 19] = [
+const PAGE_IN_PATHS: [&str; 27] = [
     "shape.main", "shape.source", "shape.target", "shape.place", "shape.year", "shape.fmt", "shape.suffix", "shape.countries", "shape.hub", "shape.second", "shape.months", "picks.marks", "picks.t0", "picks.t1", "picks.top",
-    "picks.focus", "page.ext", "fill.accent", "fmt.change",
+    "picks.focus", "page.ext", "fill.accent", "fmt.change", "outside",
+    "shape.t0", "sum_rows", "composition.dim", "composition.total", "composition.first_group", "composition.first_codes",
+    "fill.composition.bars",
 ];
 
 /// A template with every `$path` (a string value or an object key) read from the page input by PAGE_IN_PATHS.
@@ -88,6 +90,11 @@ fn with_result(s: &J, result: J) -> J {
 /// The core's own select results over the page input's rows, two passes (the first computes, the second holds every
 /// result to its recomputation), and the flow's own pick of each select held to the core's. (failures, results)
 fn recompute(page_in: &J, sels: &[J], given: &[(String, J)]) -> (Vec<String>, Got) {
+    recompute_over(page_in, sels, given, &J::Obj(vec![]))
+}
+
+/// recompute with the page's formats beside its rows, which a take's printed tie reads.
+fn recompute_over(page_in: &J, sels: &[J], given: &[(String, J)], fmts: &J) -> (Vec<String>, Got) {
     let page = |items: Vec<J>| {
         J::obj_of(vec![
             ("kind", J::str("Page")),
@@ -99,7 +106,7 @@ fn recompute(page_in: &J, sels: &[J], given: &[(String, J)]) -> (Vec<String>, Go
                     ("tables", J::Obj(vec![])),
                     ("rows", page_in.g("rows").clone()),
                     ("facts", J::Obj(vec![])),
-                    ("fmts", J::Obj(vec![])),
+                    ("fmts", fmts.clone()),
                 ]),
             ),
             ("checks", J::obj_of(vec![("kind", J::str("Checks")), ("items", J::Arr(vec![]))])),
@@ -282,6 +289,8 @@ pub struct NodeDeclared {
     pub record: Option<Value>,
     /// The layer writes the unit in its own picture.
     pub unit_drawn: bool,
+    /// The page's finding (the finding node): its dek's two wordings and its headline's, and the code it names first.
+    pub finding: Option<(Value, String)>,
 }
 
 /// fmt dec_rule over the page input: held_decimals (the only rule the generator computes), at most its cap.
@@ -521,6 +530,190 @@ pub(crate) fn value_of(layer: &str, name: &str, r: &J) -> Result<J, String> {
     }
 }
 
+/// The declaration shape of a page's finding (finding_declared).
+const FINDING: &str = "finding";
+
+/// The page's finding (node finding, declared for the page's recipe): the first case whose `if` holds over the core's
+/// recomputed selects (a rank's key at its first or last code above or below a bound) is the page's, and no other is tried;
+/// its subject (and other) are the codes the core's take selects hold, with no finding when either is none (a tie), its
+/// key is not above `key_above`, the subject's key is not above the other's (`higher`), a code it names is one the page's
+/// labels name none of (`named`), or a fact it needs is not the page's (`facts_have`). Then its facts (templates over the
+/// subject's code, the other's and the first group's), the rows it reads (the subject's at `reads.times`), and its dek and
+/// headline in shape_registry's words (DEK_FINDINGS, HEADLINES) with each token the case's template. Every input but the
+/// rows is the page's own fill: `fill` {facts: keys, fmts, named: codes, composition: {bars}}, which the flow gives when it
+/// asks and the draw recheck reads from the finished fill. {facts, reads, finding, subject}; a page with none: no finding.
+fn finding_declared(d: &J, page_in: &J, reg: &J) -> Result<J, String> {
+    let none = || J::obj_of(vec![("facts", J::Obj(vec![])), ("reads", J::Arr(vec![])), ("finding", J::Null), ("subject", J::Null)]);
+    let fill = page_in.g("fill");
+    let has_fact = |k: &str| fill.g("facts").arr().iter().any(|x| x.s() == Some(k));
+    if d.g("rule").s() == Some("none") || !d.g("needs_facts").arr().iter().all(|k| has_fact(&st(k))) {
+        return Ok(none());
+    }
+    // each page input value the finding needs, there and not empty (a path the page input lacks is none)
+    for path in d.g("requires").arr() {
+        let held = st(path).strip_prefix('$').map(|p| p.split('.').try_fold(page_in, |x, k| x.get(k))).ok_or_else(|| format!("finding: requires {}: no path", path.repr()))?;
+        if !held.is_some_and(J::truthy) {
+            return Ok(none());
+        }
+    }
+    // the format a change prints in: the registry's by the unit's short form (a gap of percentages in points)
+    let mut view = page_in.clone();
+    if let Some(cf) = d.get("change_fmt") {
+        let pick = if page_in.g("short").s() == cf.g("short").s() { cf.g("then") } else { cf.g("else") };
+        view.set("fmt", J::obj_of(vec![("change", pick.clone())]));
+    }
+    let view = &view;
+    let (mut sels, mut given) = selects_of(view, reg)?;
+    for s in d.g("selects").arr() {
+        if let (Some("given"), Some(g)) = (s.g("kind").s(), s.get("given")) {
+            given.push((st(s.g("id")), sub(g, view)?));
+        }
+        sels.push(sub(&J::Obj(s.obj().iter().filter(|(k, _)| k != "given").cloned().collect()), view)?);
+    }
+    let (bad, got) = recompute_over(view, &sels, &given, fill.g("fmts"));
+    if !bad.is_empty() {
+        return Err(format!("finding: its selects do not recompute: {}", bad.iter().take(3).cloned().collect::<Vec<_>>().join("; ")));
+    }
+    let refs: Vec<(String, &J)> = sels.iter().map(|s| (st(s.g("id")), s)).collect();
+    let rows = view.g("rows").arr();
+    let key = |sid: &str, code: &J| core::take_value(&refs, sid, code, rows);
+    // the first case whose bound holds over its select's first or last code
+    let mut case = None;
+    for c in d.g("cases").arr() {
+        let cond = c.g("if");
+        let holds = match cond.get("key_of") {
+            None => true,
+            Some(sid) => {
+                let codes = got.get(&st(sid)).map(|x| x.arr().to_vec()).unwrap_or_default();
+                let at = if cond.g("at").s() == Some("last") { codes.last() } else { codes.first() };
+                match at {
+                    None => false,
+                    Some(code) => {
+                        let v = key(&st(sid), code)?;
+                        cond.g("above").num().is_none_or(|b| v > b) && cond.g("below").num().is_none_or(|b| v < b)
+                    }
+                }
+            }
+        };
+        if holds {
+            case = Some(c);
+            break;
+        }
+    }
+    let Some(c) = case else { return Ok(none()) };
+    let pick = |k: &str| -> Option<J> { c.get(k).and_then(|sid| got.get(&st(sid))).filter(|x| !x.is_null()).cloned() };
+    let Some(subject) = pick("subject") else { return Ok(none()) };
+    let other = pick("other");
+    if c.has("other") && other.is_none() {
+        return Ok(none());
+    }
+    let sid = st(c.g("subject"));
+    if let Some(b) = c.g("key_above").num() {
+        if key(&sid, &subject)? <= b {
+            return Ok(none());
+        }
+    }
+    if let (true, Some(o)) = (c.g("higher").truthy(), &other) {
+        if key(&sid, &subject)? <= key(&st(c.g("other")), o)? {
+            return Ok(none());
+        }
+    }
+    // a template over the case's codes: its paths, then the subject's code ({code}, {code_lc}, the years), the other's
+    // ({other}) and the first group's ({group})
+    let code = st(&subject);
+    let group = st(view.g("composition").g("first_group"));
+    let other_code = other.as_ref().map(st).unwrap_or_default();
+    let put = |v: &J| -> Result<J, String> {
+        fn walk(v: &J, ctx: &[(&str, &str)]) -> J {
+            let put = |s: &str| ctx.iter().fold(s.to_string(), |s, (k, v)| s.replace(k, v));
+            match v {
+                J::Str(s) => J::Str(put(s)),
+                J::Arr(a) => J::Arr(a.iter().map(|x| walk(x, ctx)).collect()),
+                J::Obj(o) => J::Obj(o.iter().map(|(k, x)| (put(k), walk(x, ctx))).collect()),
+                x => x.clone(),
+            }
+        }
+        let v = core::with_code(&sub(v, view)?, &code, view);
+        Ok(walk(&v, &[("{other}", other_code.as_str()), ("{group}", group.as_str())]))
+    };
+    let named = |x: &J| fill.g("named").arr().contains(x);
+    for n in c.g("named").arr() {
+        if !named(&put(n)?) {
+            return Ok(none());
+        }
+    }
+    for k in c.g("facts_have").arr() {
+        if !has_fact(&st(&put(k)?)) {
+            return Ok(none());
+        }
+    }
+    let facts = put(c.g("facts"))?;
+    let reads = match c.get("reads") {
+        Some(r) => {
+            let times = sub(r.g("times"), view)?;
+            let place = st(view.g("shape").g("place"));
+            rows.iter().filter(|x| times.arr().contains(x.g("time")) && x.g("dims").g(&place) == &subject).cloned().collect()
+        }
+        None => Vec::new(),
+    };
+    // the words: shape_registry's sentence of the case's finding, each token its template over the codes
+    let name = st(c.g("finding"));
+    let of = |table: &[(crate::shape_registry::Finding, &'static str, &'static str)]| table.iter().find(|(f, _, _)| format!("{f:?}") == name).map(|&(_, a, b)| (a, b));
+    let Some((plain, scoped)) = of(&crate::shape_registry::DEK_FINDINGS) else {
+        return Err(format!("not this shape: no DEK_FINDINGS words for {name}"));
+    };
+    // each token as written (never read as a template), its text the case's template over the codes
+    let tokens: Vec<(String, String)> = c.g("words").obj().iter().map(|(k, v)| Ok((k.clone(), st(&put(v)?)))).collect::<Result<_, String>>()?;
+    let worded = |t: &str| J::Str(tokens.iter().fold(t.to_string(), |t, (k, v)| t.replace(k.as_str(), v)));
+    let mut said = J::obj_of(vec![("dek", worded(plain)), ("scoped", worded(scoped))]);
+    let headline = of(&crate::shape_registry::HEADLINES).filter(|_| c.g("headline_needs_facts").arr().iter().all(|k| has_fact(&st(k))));
+    if let Some((plain, scoped)) = headline {
+        said.set("headline", J::obj_of(vec![("title", worded(plain)), ("scoped", worded(scoped))]));
+    }
+    Ok(J::obj_of(vec![("facts", facts), ("reads", J::Arr(reads)), ("finding", said), ("subject", subject)]))
+}
+
+/// The page's finding declared again over the finished fill (its facts' keys and formats, its labels' codes and its
+/// composition's bars, never what the flow handed in), and held to the page: each fact it declares, each row it reads among
+/// the page's, its dek's and its headline's words, and the accent (the subject when ranked, else none).
+fn finding_recheck(page_in: &J, fill: &J, reg: &J) -> Result<(), String> {
+    let Some(d) = declares(reg, FINDING, page_in).ok().filter(|d| d.g("shape").s() == Some(FINDING)) else { return Ok(()) };
+    let spec = fill.g("knobs").g("spec");
+    let keys = |o: &J| J::Arr(o.obj().iter().map(|(k, _)| J::Str(k.clone())).collect());
+    let mut own = J::obj_of(vec![("facts", keys(spec.g("facts"))), ("fmts", spec.g("fmts").clone()), ("named", keys(fill.g("knobs").g("labels")))]);
+    if fill.g("composition").is_obj() {
+        own.set("composition", J::obj_of(vec![("bars", fill.g("composition").g("bars").clone())]));
+    }
+    let mut view = page_in.clone();
+    view.set("fill", own);
+    let again = finding_declared(d, &view, reg).map_err(|e| format!("node finding: recheck over the finished fill: {e}"))?;
+    for (k, q) in again.g("facts").obj() {
+        if spec.g("facts").g(k) != q {
+            return Err(format!("node finding: fact {k} is not its declaration: {}", q.repr()));
+        }
+    }
+    let kept: Vec<&J> = fill.g("rows").arr().iter().map(|r| r.g("src")).collect();
+    for r in again.g("reads").arr() {
+        if !kept.contains(&r.g("src")) {
+            return Err(format!("node finding: it reads row {}, which the page does not keep", r.g("src").repr()));
+        }
+    }
+    let mut said = again.g("finding").clone();
+    let headline = said.remove("headline").unwrap_or(J::Null);
+    if fill.g("finding") != &said {
+        return Err(format!("node finding: the dek's finding is not its declaration: {} != {}", fill.g("finding").repr(), said.repr()));
+    }
+    if fill.g("headline") != &headline {
+        return Err(format!("node finding: the headline is not its declaration: {} != {}", fill.g("headline").repr(), headline.repr()));
+    }
+    let subject = again.g("subject");
+    let accent = if page_in.g("picks").g("ranked").arr().contains(subject) { subject.clone() } else { J::Null };
+    if spec.g("hero").g("data").g("accent") != &accent {
+        return Err(format!("node finding: the accent is {}, its subject ranked is {}", spec.g("hero").g("data").g("accent").repr(), accent.repr()));
+    }
+    Ok(())
+}
+
 /// The declaration as JSON in the generator's own order (the prototype's), for the fixtures.
 fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
     let d = declares(reg, layer, page_in)?;
@@ -713,7 +906,10 @@ pub fn declare(layer: &str, page_in: &Value) -> Result<NodeDeclared, String> {
     let pi = J::from_value(page_in);
     let parts = declares(&reg, layer, &pi).is_ok_and(|d| d.g("shape").s() == Some(PARTS_OF_WHOLE));
     let pairs = declares(&reg, layer, &pi).ok().filter(|d| d.g("shape").s() == Some(PAIRS));
-    let out = if let Some(d) = pairs {
+    let finding = declares(&reg, layer, &pi).ok().filter(|d| d.g("shape").s() == Some(FINDING));
+    let out = if let Some(d) = finding {
+        finding_declared(d, &pi, &reg).map_err(|e| if e.starts_with("not this shape: ") { e } else { format!("node {layer}: declare: {e}") })?
+    } else if let Some(d) = pairs {
         // a stop in the registry's own words is the page's, as the rust fill's was
         pairs_declared(layer, d, &pi, &reg).map_err(|e| if e.starts_with("not this shape: ") { e } else { format!("node {layer}: declare: {e}") })?
     } else if parts {
@@ -748,6 +944,7 @@ pub fn declare(layer: &str, page_in: &Value) -> Result<NodeDeclared, String> {
         fixed: out.g("fixed").arr().iter().map(|f| (st(f.at(0)), st(f.at(1)))).collect(),
         record: out.get("record").map(J::to_value),
         unit_drawn: out.g("unit_drawn").truthy(),
+        finding: out.get("finding").filter(|f| !f.is_null()).map(|f| (f.to_value(), st(out.g("subject")))),
     })
 }
 
@@ -1699,6 +1896,9 @@ pub fn draw(fill: &Value, page_in: &Value, layers: &[String], runtime: &std::pat
     if asked.is_empty() {
         return Ok(out);
     }
+    // the page's finding, declared again over the finished fill (a page every layer of which stops at its leaf publishes
+    // none, so it is not read there)
+    finding_recheck(&page_in, &fill, &reg)?;
     // a layer whose leaf lays itself out (geometry leaf) asks no node and is given no placed geometry; one whose items
     // choose by conditions (declares.candidates) is declared again over the finished fill's name rows, and the leaf data
     // the fill holds must be that declaration's (a name the conditions measured otherwise refuses)

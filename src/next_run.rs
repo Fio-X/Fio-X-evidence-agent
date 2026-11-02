@@ -28,7 +28,7 @@ use crate::next_page::{self, Chart, Claim, Drafts, Scope, Target, TIME_COLUMNS};
 use crate::next_knowledge::{HubMiss, HubOrigin};
 use crate::next_params;
 use crate::next_render::{BarCard, BarRow, Card, Hero, Label, Num, PageSpec, Seg, LABEL_SRC};
-use crate::shape_registry::{Axis, Finding, PagePlan, Relation, View, DEK_FINDINGS, HEADLINES};
+use crate::shape_registry::{Axis, PagePlan, Relation, View};
 
 /// The registry templates whose fields this flow fills from a series' columns (a category and a value column). The others
 /// are not offered to the ranking yet: a flow or a composition needs a third column. A map reads the bundled basemap.
@@ -1509,12 +1509,15 @@ struct Filling<'a> {
     shape: &'a Shape,
     picks: &'a Picks,
     main: &'a [Value],
+    /// The companion, the format key, the unit's short form and the window: read by the frozen pre-P6 fills the declared
+    /// nodes are held to (tests); the declared nodes read them from the page input.
+    #[cfg_attr(not(test), allow(dead_code))]
     companion: &'a [Value],
     catalogue: &'a dyn Catalogue,
+    #[cfg_attr(not(test), allow(dead_code))]
     fmt: String,
+    #[cfg_attr(not(test), allow(dead_code))]
     short: &'a str,
-    /// Read by the frozen pre-P6 strip fill the declared strip is held to (tests); the declared strip reads the page's
-    /// window from the page input.
     #[cfg_attr(not(test), allow(dead_code))]
     window: Option<(String, String)>,
     /// Where the recipe's external layers are asked (ask_node); none, a layer bound external refuses the page.
@@ -1569,6 +1572,28 @@ fn ask_node(f: &Filling, out: &mut Filled, page_in: Option<&Value>) -> Result<()
     Ok(())
 }
 
+/// The page's finding, asked of the visual group's finding node (node-bindings.json finding) over the page input and what
+/// the layers left in the fill: its facts' keys, its formats, the codes the labels name (never the names) and the
+/// composition's bars. Its facts are the page's, the rows it reads kept; (its words, the code it names first), or none.
+fn ask_finding(f: &Filling, out: &mut Filled, page_in: &Value, labels: &BTreeMap<String, String>) -> Result<Option<(Value, String)>, String> {
+    let asked = f.asked.ok_or("node finding: this page asks no node")?;
+    let mut view = page_in.clone();
+    view["fill"] = json!({"facts": out.facts.keys().collect::<Vec<_>>(), "fmts": out.fmts, "named": labels.keys().collect::<Vec<_>>()});
+    if let Some(cut) = &out.composition {
+        view["fill"]["composition"] = json!({"bars": cut["bars"]});
+    }
+    let request = crate::next_visual::Request::NodeDeclare { layer: "finding", page_in: &view };
+    let declared = match crate::next_flow::visual_call(asked.calls, "node_declare", request)? {
+        crate::next_visual::Reply::NodeDeclared(declared) => *declared,
+        _ => return Err("node finding: the visual group answered with another reply".into()),
+    };
+    for (key, value) in declared.facts {
+        Filled::set(&mut out.facts, "fact", &key, value).map_err(|e| format!("not this shape: {e}"))?;
+    }
+    out.reads(declared.reads);
+    Ok(declared.finding)
+}
+
 /// The names a layer prints: each request resolved through the name table (a code it names none of stops the page) into
 /// the name rows, and the leaf's labels when the request says so; each fixed name row only one of FIXED_NAMES with its
 /// registered text, set as any layer's key.
@@ -1620,7 +1645,12 @@ fn page_input(recipe: &Recipe, shape: &Shape, picks: &Picks, (main, sums): (&[Va
             "suffix": next_pack::unit_short(&shape.unit).map(suffix), "countries": shape.countries},
         "picks": {"rules": recipe.picks, "ranked": picks.ranked, "marks": picks.marks, "t0": picks.t0, "t1": picks.t1},
         "rows": main, "name_kind": scheme, "sum_rows": sums, "outside": shape.outside, "top": next_params::NARROW_TOP,
-        "short": next_pack::unit_short(&shape.unit), "composition": shape.composition.as_ref().map(|c| json!({"dim": c.dim, "total": c.total, "groups": c.groups}))});
+        "short": next_pack::unit_short(&shape.unit), "composition": shape.composition.as_ref().map(|c| json!({"dim": c.dim, "total": c.total, "groups": c.groups,
+            "first_group": c.groups.first().map(|g| &g.0), "first_codes": c.groups.first().map(|g| &g.1)}))});
+    // a page with two ends: the earlier (two_ends)
+    if !shape.t0.is_empty() {
+        p["shape"]["t0"] = json!(shape.t0);
+    }
     // a flow into a hub (picks.top): its origins, focus and hub, and the two years' last two digits the map's keys carry
     if let (false, Some(y0), Some(y1)) = (picks.top.is_empty(), picks.t0.get(2..), picks.t1.get(2..)) {
         (p["picks"]["top"], p["picks"]["focus"], p["picks"]["y0"], p["picks"]["y1"]) = (json!(picks.top), json!(picks.focus), json!(y0), json!(y1));
@@ -1811,12 +1841,6 @@ fn map_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
     Ok(())
 }
 
-/// The facts the map declares for one origin (map_fill), by its keys: its values at t0 and t1, its change and its t1 share.
-fn flow_keys(picks: &Picks, code: &str) -> [String; 4] {
-    let (c, y0, y1) = (code.to_lowercase(), &picks.t0[2..], &picks.t1[2..]);
-    [format!("{c}{y0}"), format!("{c}{y1}"), format!("{c}_ch"), format!("{c}{y1}_share")]
-}
-
 /// The suffix a value prints with: its unit's short form, after a space when it holds a letter or a digit.
 fn suffix(short: &str) -> String {
     if short.chars().any(char::is_alphanumeric) {
@@ -1917,22 +1941,6 @@ fn frame_heading(relation: Relation) -> Result<&'static str, String> {
         .ok_or_else(|| format!("the registry has no {relation:?} heading"))
 }
 
-/// The fact of a composition's finding (finding_of, Finding::Part): the highlighted part's share of the total of the bar
-/// where it is largest, a share of that bar's sum and total facts; the dek and the headline print it.
-const COMPOSITION_TOP: &str = "comp_top";
-
-/// The fact keys of a composition: a bar's total, a group's sum in it, and that sum's share of the total.
-fn composition_keys(group: &str, code: &str) -> [String; 3] {
-    [format!("total.{code}"), format!("sum.{group}.{code}"), format!("share.{group}.{code}")]
-}
-
-/// The families of a page with two ends (two_ends): each ranked country's value at the earlier end and at the later, and its
-/// change between them (the later less the earlier, a minus family: next_facts).
-const CHANGE_FAMILIES: [&str; 3] = ["val0", "val1", "chg"];
-
-/// The format key of a change that is no gap between two percentages: the unit's suffix, with the decimals of both ends.
-const CHANGE_FMT: &str = "chg";
-
 /// The bars' measure (the visual knob bars.measure) of a page whose bars draw the change between its two ends.
 const BARS_CHANGE: &str = "change";
 
@@ -1986,188 +1994,9 @@ fn named_places(text: &str, labels: &Value) -> String {
     out
 }
 
-/// The facts of a finding (finding_of): a change finding's change, then its place's values at the earlier and the later
-/// year; a level or a share finding declares the later only. Each value is read as the last period of a one-year window,
-/// so it carries its period: the dek names its year through {<fact>.t}, a ledger entry like every number.
-const FINDING_FACTS: [&str; 3] = ["lead", "lead0", "lead1"];
-
-/// A finding fact (FINDING_FACTS): the rows `filter` keeps of `table`, read at the year `t` only (op last over a window of
-/// that year), in the format `fmt`.
-fn year_fact(table: &str, filter: Value, t: &str, fmt: &str) -> Value {
-    json!({"op": "last", "table": table, "filter": filter, "from": t, "to": t, "fmt": fmt})
-}
-
-/// A value as the page's format `fmt` prints it (facts.py: the value times its scale at its decimals), so two values the
-/// page prints alike tie though their floats differ (65.4 - 60.1 and 70.4 - 65.1); a format the page lacks prints it whole.
-fn printed(fmts: &Map<String, Value>, fmt: &str, v: f64) -> String {
-    match fmts.get(fmt) {
-        Some(m) => format!("{:.*}", m["dec"].as_u64().unwrap_or(0) as usize, v * m["scale"].as_f64().unwrap_or(1.0)),
-        None => v.to_string(),
-    }
-}
-
-/// The page dek's finding (shape_registry DEK_FINDINGS) by what the page's facts and rows hold, as {"dek", "scoped"}: {name}
-/// and {other} become name placeholders of codes the labels name, {value} and {gap} facts the page declares, {y0} and {y1}
-/// the periods of FINDING_FACTS read at the earlier and the later year (year_fact; rows already read). On a page with
-/// two ends whose bars draw the change (the minus family chg), the first ranked place's rise when it rose, else the last
-/// one's fall when it fell and no other ranked place's change ties it, its change a fact of its two ends' values
-/// (FINDING_FACTS: the later less the earlier for a rise, the earlier less the later for a fall, so it prints unsigned, in
-/// the change's format; rows already read). On a page of one year with the extremes (hi, lo, gap), the highest place against
-/// the lowest when they differ and no other ranked place ties either. On a flow page (a focus,
-/// nothing ranked), the origin with the largest value at t1 among every country outside the hub, when no other ties it and
-/// the map declares its share. None otherwise: the dek stays the frame's. Beside the sentence, the code of the place its
-/// {name} names, the dek's subject (fill_of gives it the page's accent). Program rules only; no model word is read.
-fn finding_of(f: &Filling, out: &mut Filled, labels: &BTreeMap<String, String>) -> Result<Option<(Value, String)>, String> {
-    let (shape, picks) = (f.shape, f.picks);
-    let place = shape.place.as_str();
-    let named = |code: &str| labels.contains_key(code).then(|| format!("{{{NAME_PLACEHOLDER}{code}}}"));
-    let at = |code: &str, t: &str| f.main.iter().find(|r| r["time"] == t && r["dims"][place] == code).and_then(row_value);
-    let (finding, subject, words): (Finding, String, Vec<(&str, String)>) = if !shape.t0.is_empty() {
-        if !out.facts.contains_key(CHANGE_FAMILIES[2]) {
-            return Ok(None);
-        }
-        let moved = |code: &String| at(code, &shape.year).zip(at(code, &shape.t0)).map(|(b, a)| (b - a, code.clone()));
-        let rise = picks.ranked.first().and_then(moved).filter(|(d, _)| *d > 0.0).map(|(d, c)| (Finding::Rise, d, c));
-        let fall = picks.ranked.last().and_then(moved).filter(|(d, _)| *d < 0.0).map(|(d, c)| (Finding::Fall, d, c));
-        let Some((finding, d, code)) = rise.or(fall) else { return Ok(None) };
-        let chg_fmt = if f.short == "%" { POINTS.0 } else { CHANGE_FMT };
-        // a change another ranked place shares as the page prints it is no one's largest
-        let alike = printed(&out.fmts, chg_fmt, d);
-        if picks.ranked.iter().filter(|c| **c != code).filter_map(moved).any(|(e, _)| printed(&out.fmts, chg_fmt, e) == alike) {
-            return Ok(None);
-        }
-        let Some(name) = named(&code) else { return Ok(None) };
-        let [lead, early, late] = FINDING_FACTS;
-        let (a, b) = if finding == Finding::Rise { (late, early) } else { (early, late) };
-        let value = |t: &str| year_fact(&shape.main, filter(&[(place, code.as_str())]), t, &f.fmt);
-        for (key, q) in [
-            (early, value(&shape.t0)),
-            (late, value(&shape.year)),
-            (lead, json!({"op": "minus", "a": a, "b": b, "fmt": chg_fmt})),
-        ] {
-            Filled::set(&mut out.facts, "fact", key, q)?;
-        }
-        let ends = |r: &&Value| r["dims"][place] == code.as_str() && (r["time"] == shape.t0.as_str() || r["time"] == shape.year.as_str());
-        out.reads(f.main.iter().filter(ends).cloned());
-        let (y0, y1) = (format!("{{{early}.t}}"), format!("{{{late}.t}}"));
-        (finding, code, vec![("{name}", name), ("{value}", format!("{{{lead}}}")), ("{y0}", y0), ("{y1}", y1)])
-    } else if !picks.ranked.is_empty() {
-        if !["hi", "lo", "gap"].iter().all(|k| out.facts.contains_key(*k)) {
-            return Ok(None);
-        }
-        let (Some(hi), Some(lo)) = (picks.ranked.first(), picks.ranked.last()) else { return Ok(None) };
-        let higher = at(hi, &shape.year).zip(at(lo, &shape.year)).filter(|(h, l)| h > l);
-        let (Some(name), Some(other)) = (named(hi), named(lo)) else { return Ok(None) };
-        let Some((top, low)) = higher else { return Ok(None) };
-        // a highest or a lowest value another ranked place shares as the page prints it is no one's own
-        let shared = |code: &String, v: f64| {
-            let alike = printed(&out.fmts, &f.fmt, v);
-            picks.ranked.iter().any(|c| c != code && at(c, &shape.year).is_some_and(|w| printed(&out.fmts, &f.fmt, w) == alike))
-        };
-        if shared(hi, top) || shared(lo, low) {
-            return Ok(None);
-        }
-        let late = FINDING_FACTS[2];
-        Filled::set(&mut out.facts, "fact", late, year_fact(&shape.main, filter(&[(place, hi.as_str())]), &shape.year, &f.fmt))?;
-        let y1 = format!("{{{late}.t}}");
-        let words = vec![("{name}", name), ("{other}", other), ("{value}", "{hi}".into()), ("{gap}", "{gap}".into()), ("{y1}", y1)];
-        (Finding::Level, hi.clone(), words)
-    } else if !picks.focus.is_empty() && picks.t1.len() > 2 {
-        let mut largest: Vec<(f64, &String)> = shape
-            .outside
-            .iter()
-            .filter_map(|c| {
-                f.main
-                    .iter()
-                    .find(|r| r["dims"][place] == c.as_str() && r["dims"]["geo"] == shape.hub.as_str() && r["time"] == picks.t1.as_str())
-                    .and_then(row_value)
-                    .map(|v| (v, c))
-            })
-            .collect();
-        // shape.outside is in code order and the sort is stable
-        largest.sort_by(|a, b| b.0.total_cmp(&a.0));
-        let Some(&(v, code)) = largest.first() else { return Ok(None) };
-        let share = flow_keys(picks, code)[3].clone();
-        if v <= 0.0 || largest.get(1).is_some_and(|(w, _)| *w == v) || !out.facts.contains_key(&share) {
-            return Ok(None);
-        }
-        let Some(name) = named(code) else { return Ok(None) };
-        let late = FINDING_FACTS[2];
-        let at_hub = filter(&[(place, code.as_str()), ("geo", shape.hub.as_str())]);
-        Filled::set(&mut out.facts, "fact", late, year_fact(&shape.main, at_hub, &picks.t1, &f.fmt))?;
-        let y1 = format!("{{{late}.t}}");
-        (Finding::Share, code.clone(), vec![("{name}", name), ("{value}", format!("{{{share}}}")), ("{y1}", y1)])
-    } else if let (Some(comp), Some(cut)) = (&shape.composition, out.composition.clone()) {
-        // a composition: of its bars, the place whose highlighted part (the first group, the leaf's accent) is the largest
-        // share of its total, the share a fact over the part's sum and the total (the stacked100 declaration (node-bindings.json)), named place and part
-        let Some((group, codes)) = comp.groups.first() else { return Ok(None) };
-        let year = shape.year.as_str();
-        let total_at = |code: &str| {
-            f.main
-                .iter()
-                .find(|r| r["time"] == year && r["dims"][place] == code && r["dims"][&comp.dim] == comp.total.as_str())
-                .and_then(row_value)
-                .filter(|t| *t > 0.0)
-        };
-        let part_at = |code: &str| -> Option<f64> {
-            let held: Vec<f64> = f
-                .companion
-                .iter()
-                .filter(|r| r["time"] == year && r["dims"][place] == code)
-                .filter(|r| r["dims"][&comp.dim].as_str().is_some_and(|c| codes.iter().any(|k| k == c)))
-                .filter_map(row_value)
-                .collect();
-            (!held.is_empty()).then(|| held.iter().sum())
-        };
-        let mut shares: Vec<(f64, String)> = cut["bars"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(Value::as_str)
-            .filter_map(|c| Some((part_at(c)? / total_at(c)?, c.to_string())))
-            .collect();
-        shares.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
-        let Some((top, code)) = shares.first().cloned() else { return Ok(None) };
-        // a share another bar prints alike (a whole percent, as a share fact prints) is no one's own
-        let pct = |v: f64| format!("{:.0}", v * 100.0);
-        if top <= 0.0 || shares.get(1).is_some_and(|(v, _)| pct(*v) == pct(top)) {
-            return Ok(None);
-        }
-        let [total_key, sum_key, _] = composition_keys(group, &code);
-        let (Some(place_name), Some(part_name)) = (named(&code), named(group)) else { return Ok(None) };
-        if !out.facts.contains_key(&sum_key) || !out.facts.contains_key(&total_key) {
-            return Ok(None);
-        }
-        Filled::set(&mut out.facts, "fact", COMPOSITION_TOP, json!({"op": "share", "a": sum_key, "b": total_key}))?;
-        let late = FINDING_FACTS[2];
-        let at_total = filter(&[(place, code.as_str()), (comp.dim.as_str(), comp.total.as_str())]);
-        Filled::set(&mut out.facts, "fact", late, year_fact(&shape.main, at_total, year, &f.fmt))?;
-        let y1 = format!("{{{late}.t}}");
-        let words = vec![("{name}", format!("{place_name}{part_name}")), ("{value}", format!("{{{COMPOSITION_TOP}}}")), ("{y1}", y1)];
-        (Finding::Part, code.clone(), words)
-    } else {
-        return Ok(None);
-    };
-    let Some(&(_, plain, scoped)) = DEK_FINDINGS.iter().find(|(k, _, _)| *k == finding) else {
-        return Err(format!("no DEK_FINDINGS words for {finding:?}"));
-    };
-    let worded = |template: &str| words.iter().fold(template.to_string(), |text, (token, with)| text.replace(token, with));
-    let mut said = json!({"dek": worded(plain), "scoped": worded(scoped)});
-    // the headline says the same finding (HEADLINES); a level one compares the two ends by their times, a fact the page
-    // declares (extremes), so with no such fact there is no headline and the title stays the text step's label
-    let headline = HEADLINES.iter().find(|(k, _, _)| *k == finding);
-    if let Some(&(_, plain, scoped)) = headline.filter(|_| finding != Finding::Level || out.facts.contains_key(TIMES)) {
-        said[HEADLINE] = json!({"title": worded(plain), "scoped": worded(scoped)});
-    }
-    Ok(Some((said, subject)))
-}
-
 /// The key of a finding's headline (HEADLINES) beside its dek in finding_of's sentence; fill_of keeps it as the fill's own
 /// key, so the fill's finding stays the dek's two wordings (dek_finding).
 const HEADLINE: &str = "headline";
-
-/// The fact of how many times the lowest ranked place's value the highest's is (extremes), which a level headline prints.
-const TIMES: &str = "times";
 
 /// The page's title and kicker after the text step. With a headline (the fill's, finding_of: its scoped wording on a
 /// scoped page, as the dek's) the title is that conclusion and the kicker the text step's title (`label`, the label the
@@ -2226,7 +2055,9 @@ fn dek_finding(fill: &Value) -> Option<(String, String)> {
     Some((finding["dek"].as_str()?.to_string(), finding["scoped"].as_str()?.to_string()))
 }
 
-/// The format of a gap between two percentages: percentage points, not a percentage.
+/// The format of a gap between two percentages: percentage points, not a percentage. Read by the frozen fills (tests);
+/// the declared nodes name it in node-bindings.json.
+#[cfg_attr(not(test), allow(dead_code))]
 const POINTS: (&str, &str) = ("pp", " 个百分点");
 
 /// How far (degrees) a column page's map reaches past its countries' points on each side at least, clamped to the globe: a
@@ -2413,8 +2244,12 @@ fn fill_of(
             }
         }
     }
-    // the dek's finding reads only rows the nodes read already, so the labels hold every code it names
-    let finding = finding_of(&filling, &mut out, &labels).map_err(no)?;
+    // the dek's finding: the visual group's finding node over the page as its layers left it (asked last, after the labels);
+    // it reads only rows the nodes read already, so the labels hold every code it names
+    let finding = match page_in.as_ref() {
+        Some(p) => ask_finding(&filling, &mut out, p, &labels)?,
+        None => None,
+    };
     // the accent marks one place, the one the dek names: its finding's subject. The frame's dek (no finding) names no place,
     // so that page marks none and prints no legend line for the accent; nor does a page that does not rank the subject
     let accent = finding.as_ref().map(|(_, code)| code).filter(|c| picks.ranked.contains(c));
@@ -4206,6 +4041,7 @@ pub fn ranking_page_spec(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::shape_registry::{Finding, DEK_FINDINGS, HEADLINES};
     use crate::anthropic_model::ToolDef;
     use crate::next_flow::{
         number_not_allowed, placeholders, worded_number, ModelRoute, CHOOSE_TOOL,
@@ -5589,7 +5425,7 @@ mod tests {
         assert!(differs.is_empty(), "the declared fill differs from the rust bars' and circles': {differs:#?}");
         let asked: Vec<(Option<&str>, Option<bool>)> =
             calls.iter().filter(|e| e["request"] == "node_declare").map(|e| (e["node"].as_str(), e["ok"].as_bool())).collect();
-        assert_eq!(asked, [(Some("bars"), Some(true)), (Some("bubbles"), Some(true)), (Some("leader_notes"), Some(true))]);
+        assert_eq!(asked, [(Some("bars"), Some(true)), (Some("bubbles"), Some(true)), (Some("leader_notes"), Some(true)), (Some("finding"), Some(true))]);
         // the drawn count stays out of the hero's data unless the registry keeps it in the tree only
         assert!(overlay.set_path(&["nodes", "bars", "declares", "tree_only"].map(String::from), crate::next_tree::J::strs(&["part"])));
         let (_, with_count, _) = q1_fills(&overlay);
@@ -5632,7 +5468,7 @@ mod tests {
         assert!(differs.is_empty(), "the declared change fill differs from the rust circles' and bars': {differs:#?}");
         let calls = calls.into_inner().unwrap();
         let asked: Vec<Option<&str>> = calls.iter().filter(|e| e["request"] == "node_declare").map(|e| e["node"].as_str()).collect();
-        assert_eq!(asked, [Some("bubbles"), Some("bars"), Some("leader_notes")]);
+        assert_eq!(asked, [Some("bubbles"), Some("bars"), Some("leader_notes"), Some("finding")]);
         // F1: a ranked place the map point table has no point for (an aggregate) stops the fill, no node asked
         let mut picks = picks;
         picks.ranked.push("EU27_2020".into());
@@ -11408,6 +11244,215 @@ for line in sys.stdin:
         set_leaf(out, "sankey", data)
     }
 
+    /// Frozen with old_finding_of (P6 step 7).
+    /// The fact of how many times the lowest ranked place's value the highest's is (extremes), which a level headline prints.
+    const TIMES: &str = "times";
+
+    /// The facts of a finding (finding_of): a change finding's change, then its place's values at the earlier and the later
+    /// year; a level or a share finding declares the later only. Each value is read as the last period of a one-year window,
+    /// so it carries its period: the dek names its year through {<fact>.t}, a ledger entry like every number.
+    const FINDING_FACTS: [&str; 3] = ["lead", "lead0", "lead1"];
+
+    /// A finding fact (FINDING_FACTS): the rows `filter` keeps of `table`, read at the year `t` only (op last over a window of
+    /// that year), in the format `fmt`.
+    fn year_fact(table: &str, filter: Value, t: &str, fmt: &str) -> Value {
+        json!({"op": "last", "table": table, "filter": filter, "from": t, "to": t, "fmt": fmt})
+    }
+
+    /// A value as the page's format `fmt` prints it (facts.py: the value times its scale at its decimals), so two values the
+    /// page prints alike tie though their floats differ (65.4 - 60.1 and 70.4 - 65.1); a format the page lacks prints it whole.
+    fn printed(fmts: &Map<String, Value>, fmt: &str, v: f64) -> String {
+        match fmts.get(fmt) {
+            Some(m) => format!("{:.*}", m["dec"].as_u64().unwrap_or(0) as usize, v * m["scale"].as_f64().unwrap_or(1.0)),
+            None => v.to_string(),
+        }
+    }
+
+    /// Frozen copy of the page's finding as the flow found it before P6 step 7, the reference the finding node is held to.
+    /// The page dek's finding (shape_registry DEK_FINDINGS) by what the page's facts and rows hold, as {"dek", "scoped"}: {name}
+    /// and {other} become name placeholders of codes the labels name, {value} and {gap} facts the page declares, {y0} and {y1}
+    /// the periods of FINDING_FACTS read at the earlier and the later year (year_fact; rows already read). On a page with
+    /// two ends whose bars draw the change (the minus family chg), the first ranked place's rise when it rose, else the last
+    /// one's fall when it fell and no other ranked place's change ties it, its change a fact of its two ends' values
+    /// (FINDING_FACTS: the later less the earlier for a rise, the earlier less the later for a fall, so it prints unsigned, in
+    /// the change's format; rows already read). On a page of one year with the extremes (hi, lo, gap), the highest place against
+    /// the lowest when they differ and no other ranked place ties either. On a flow page (a focus,
+    /// nothing ranked), the origin with the largest value at t1 among every country outside the hub, when no other ties it and
+    /// the map declares its share. None otherwise: the dek stays the frame's. Beside the sentence, the code of the place its
+    /// {name} names, the dek's subject (fill_of gives it the page's accent). Program rules only; no model word is read.
+    fn old_finding_of(f: &Filling, out: &mut Filled, labels: &BTreeMap<String, String>) -> Result<Option<(Value, String)>, String> {
+        let (shape, picks) = (f.shape, f.picks);
+        let place = shape.place.as_str();
+        let named = |code: &str| labels.contains_key(code).then(|| format!("{{{NAME_PLACEHOLDER}{code}}}"));
+        let at = |code: &str, t: &str| f.main.iter().find(|r| r["time"] == t && r["dims"][place] == code).and_then(row_value);
+        let (finding, subject, words): (Finding, String, Vec<(&str, String)>) = if !shape.t0.is_empty() {
+            if !out.facts.contains_key(CHANGE_FAMILIES[2]) {
+                return Ok(None);
+            }
+            let moved = |code: &String| at(code, &shape.year).zip(at(code, &shape.t0)).map(|(b, a)| (b - a, code.clone()));
+            let rise = picks.ranked.first().and_then(moved).filter(|(d, _)| *d > 0.0).map(|(d, c)| (Finding::Rise, d, c));
+            let fall = picks.ranked.last().and_then(moved).filter(|(d, _)| *d < 0.0).map(|(d, c)| (Finding::Fall, d, c));
+            let Some((finding, d, code)) = rise.or(fall) else { return Ok(None) };
+            let chg_fmt = if f.short == "%" { POINTS.0 } else { CHANGE_FMT };
+            // a change another ranked place shares as the page prints it is no one's largest
+            let alike = printed(&out.fmts, chg_fmt, d);
+            if picks.ranked.iter().filter(|c| **c != code).filter_map(moved).any(|(e, _)| printed(&out.fmts, chg_fmt, e) == alike) {
+                return Ok(None);
+            }
+            let Some(name) = named(&code) else { return Ok(None) };
+            let [lead, early, late] = FINDING_FACTS;
+            let (a, b) = if finding == Finding::Rise { (late, early) } else { (early, late) };
+            let value = |t: &str| year_fact(&shape.main, filter(&[(place, code.as_str())]), t, &f.fmt);
+            for (key, q) in [
+                (early, value(&shape.t0)),
+                (late, value(&shape.year)),
+                (lead, json!({"op": "minus", "a": a, "b": b, "fmt": chg_fmt})),
+            ] {
+                Filled::set(&mut out.facts, "fact", key, q)?;
+            }
+            let ends = |r: &&Value| r["dims"][place] == code.as_str() && (r["time"] == shape.t0.as_str() || r["time"] == shape.year.as_str());
+            out.reads(f.main.iter().filter(ends).cloned());
+            let (y0, y1) = (format!("{{{early}.t}}"), format!("{{{late}.t}}"));
+            (finding, code, vec![("{name}", name), ("{value}", format!("{{{lead}}}")), ("{y0}", y0), ("{y1}", y1)])
+        } else if !picks.ranked.is_empty() {
+            if !["hi", "lo", "gap"].iter().all(|k| out.facts.contains_key(*k)) {
+                return Ok(None);
+            }
+            let (Some(hi), Some(lo)) = (picks.ranked.first(), picks.ranked.last()) else { return Ok(None) };
+            let higher = at(hi, &shape.year).zip(at(lo, &shape.year)).filter(|(h, l)| h > l);
+            let (Some(name), Some(other)) = (named(hi), named(lo)) else { return Ok(None) };
+            let Some((top, low)) = higher else { return Ok(None) };
+            // a highest or a lowest value another ranked place shares as the page prints it is no one's own
+            let shared = |code: &String, v: f64| {
+                let alike = printed(&out.fmts, &f.fmt, v);
+                picks.ranked.iter().any(|c| c != code && at(c, &shape.year).is_some_and(|w| printed(&out.fmts, &f.fmt, w) == alike))
+            };
+            if shared(hi, top) || shared(lo, low) {
+                return Ok(None);
+            }
+            let late = FINDING_FACTS[2];
+            Filled::set(&mut out.facts, "fact", late, year_fact(&shape.main, filter(&[(place, hi.as_str())]), &shape.year, &f.fmt))?;
+            let y1 = format!("{{{late}.t}}");
+            let words = vec![("{name}", name), ("{other}", other), ("{value}", "{hi}".into()), ("{gap}", "{gap}".into()), ("{y1}", y1)];
+            (Finding::Level, hi.clone(), words)
+        } else if !picks.focus.is_empty() && picks.t1.len() > 2 {
+            let mut largest: Vec<(f64, &String)> = shape
+                .outside
+                .iter()
+                .filter_map(|c| {
+                    f.main
+                        .iter()
+                        .find(|r| r["dims"][place] == c.as_str() && r["dims"]["geo"] == shape.hub.as_str() && r["time"] == picks.t1.as_str())
+                        .and_then(row_value)
+                        .map(|v| (v, c))
+                })
+                .collect();
+            // shape.outside is in code order and the sort is stable
+            largest.sort_by(|a, b| b.0.total_cmp(&a.0));
+            let Some(&(v, code)) = largest.first() else { return Ok(None) };
+            let share = flow_keys(picks, code)[3].clone();
+            if v <= 0.0 || largest.get(1).is_some_and(|(w, _)| *w == v) || !out.facts.contains_key(&share) {
+                return Ok(None);
+            }
+            let Some(name) = named(code) else { return Ok(None) };
+            let late = FINDING_FACTS[2];
+            let at_hub = filter(&[(place, code.as_str()), ("geo", shape.hub.as_str())]);
+            Filled::set(&mut out.facts, "fact", late, year_fact(&shape.main, at_hub, &picks.t1, &f.fmt))?;
+            let y1 = format!("{{{late}.t}}");
+            (Finding::Share, code.clone(), vec![("{name}", name), ("{value}", format!("{{{share}}}")), ("{y1}", y1)])
+        } else if let (Some(comp), Some(cut)) = (&shape.composition, out.composition.clone()) {
+            // a composition: of its bars, the place whose highlighted part (the first group, the leaf's accent) is the largest
+            // share of its total, the share a fact over the part's sum and the total (the stacked100 declaration (node-bindings.json)), named place and part
+            let Some((group, codes)) = comp.groups.first() else { return Ok(None) };
+            let year = shape.year.as_str();
+            let total_at = |code: &str| {
+                f.main
+                    .iter()
+                    .find(|r| r["time"] == year && r["dims"][place] == code && r["dims"][&comp.dim] == comp.total.as_str())
+                    .and_then(row_value)
+                    .filter(|t| *t > 0.0)
+            };
+            let part_at = |code: &str| -> Option<f64> {
+                let held: Vec<f64> = f
+                    .companion
+                    .iter()
+                    .filter(|r| r["time"] == year && r["dims"][place] == code)
+                    .filter(|r| r["dims"][&comp.dim].as_str().is_some_and(|c| codes.iter().any(|k| k == c)))
+                    .filter_map(row_value)
+                    .collect();
+                (!held.is_empty()).then(|| held.iter().sum())
+            };
+            let mut shares: Vec<(f64, String)> = cut["bars"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .filter_map(|c| Some((part_at(c)? / total_at(c)?, c.to_string())))
+                .collect();
+            shares.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+            let Some((top, code)) = shares.first().cloned() else { return Ok(None) };
+            // a share another bar prints alike (a whole percent, as a share fact prints) is no one's own
+            let pct = |v: f64| format!("{:.0}", v * 100.0);
+            if top <= 0.0 || shares.get(1).is_some_and(|(v, _)| pct(*v) == pct(top)) {
+                return Ok(None);
+            }
+            let [total_key, sum_key, _] = composition_keys(group, &code);
+            let (Some(place_name), Some(part_name)) = (named(&code), named(group)) else { return Ok(None) };
+            if !out.facts.contains_key(&sum_key) || !out.facts.contains_key(&total_key) {
+                return Ok(None);
+            }
+            Filled::set(&mut out.facts, "fact", COMPOSITION_TOP, json!({"op": "share", "a": sum_key, "b": total_key}))?;
+            let late = FINDING_FACTS[2];
+            let at_total = filter(&[(place, code.as_str()), (comp.dim.as_str(), comp.total.as_str())]);
+            Filled::set(&mut out.facts, "fact", late, year_fact(&shape.main, at_total, year, &f.fmt))?;
+            let y1 = format!("{{{late}.t}}");
+            let words = vec![("{name}", format!("{place_name}{part_name}")), ("{value}", format!("{{{COMPOSITION_TOP}}}")), ("{y1}", y1)];
+            (Finding::Part, code.clone(), words)
+        } else {
+            return Ok(None);
+        };
+        let Some(&(_, plain, scoped)) = DEK_FINDINGS.iter().find(|(k, _, _)| *k == finding) else {
+            return Err(format!("no DEK_FINDINGS words for {finding:?}"));
+        };
+        let worded = |template: &str| words.iter().fold(template.to_string(), |text, (token, with)| text.replace(token, with));
+        let mut said = json!({"dek": worded(plain), "scoped": worded(scoped)});
+        // the headline says the same finding (HEADLINES); a level one compares the two ends by their times, a fact the page
+        // declares (extremes), so with no such fact there is no headline and the title stays the text step's label
+        let headline = HEADLINES.iter().find(|(k, _, _)| *k == finding);
+        if let Some(&(_, plain, scoped)) = headline.filter(|_| finding != Finding::Level || out.facts.contains_key(TIMES)) {
+            said[HEADLINE] = json!({"title": worded(plain), "scoped": worded(scoped)});
+        }
+        Ok(Some((said, subject)))
+    }
+
+    /// The flow's fill vocabulary only the frozen fills read since P6 step 7 (the finding moved to node finding).
+    /// A filter of a fact: dimension -> code.
+    fn filter(pairs: &[(&str, &str)]) -> Value {
+        Value::Object(pairs.iter().map(|(k, v)| (k.to_string(), json!(v))).collect())
+    }
+
+    /// The facts the map declares for one origin (the map node's declaration, node-bindings.json), by its keys: its values at t0 and t1, its change and its t1 share.
+    fn flow_keys(picks: &Picks, code: &str) -> [String; 4] {
+        let (c, y0, y1) = (code.to_lowercase(), &picks.t0[2..], &picks.t1[2..]);
+        [format!("{c}{y0}"), format!("{c}{y1}"), format!("{c}_ch"), format!("{c}{y1}_share")]
+    }
+
+    /// The fact of a composition's finding (finding_of, Finding::Part): the highlighted part's share of the total of the bar
+    /// where it is largest, a share of that bar's sum and total facts; the dek and the headline print it.
+    const COMPOSITION_TOP: &str = "comp_top";
+
+    /// The fact keys of a composition: a bar's total, a group's sum in it, and that sum's share of the total.
+    fn composition_keys(group: &str, code: &str) -> [String; 3] {
+        [format!("total.{code}"), format!("sum.{group}.{code}"), format!("share.{group}.{code}")]
+    }
+
+    /// The families of a page with two ends (two_ends): each ranked country's value at the earlier end and at the later, and its
+    /// change between them (the later less the earlier, a minus family: next_facts).
+    const CHANGE_FAMILIES: [&str; 3] = ["val0", "val1", "chg"];
+
+    /// The format key of a change that is no gap between two percentages: the unit's suffix, with the decimals of both ends.
+    const CHANGE_FMT: &str = "chg";
+
     /// Frozen copy of the flow's notes fill as it was before P6 step 2 (base 03f24541), the reference the declared notes
     /// are held to. The short notes beside the map, one per top origin and one for the total: which facts each prints (the
     /// map's, so the map fills first), never a sentence; the leaf writes the words from its word table. A note's change is there only when
@@ -12499,6 +12544,397 @@ for line in sys.stdin:
             let stored: BTreeSet<String> = req["facts"].as_array().unwrap().iter().filter_map(|f| f["key"].as_str().map(str::to_string)).collect();
             let mine: BTreeSet<String> = spec["facts"].as_object().unwrap().keys().cloned().collect();
             println!("P6REQ flow {table} facts {} (stored {}, same keys {}) equal", mine.len(), stored.len(), mine == stored);
+        }
+    }
+
+    /// The facts the finding declares itself (old_finding_of's FINDING_FACTS and the composition's top share).
+    const FINDING_KEYS: [&str; 4] = ["lead", "lead0", "lead1", "comp_top"];
+
+    /// The frozen finding over a finished page: the flow's Filled as the page's layers left it (the page's facts less the
+    /// finding's own, its formats less the page's time format, its composition's bars) and the page's labels, through
+    /// old_finding_of. (its words and subject, the Filled after it)
+    fn old_finding_over(fill: &Value, shape: &Shape, picks: &Picks, (main, companion): (&[Value], &[Value])) -> (Option<(Value, String)>, Filled) {
+        let spec = &fill["knobs"]["spec"];
+        let mut out = Filled::default();
+        for (k, q) in spec["facts"].as_object().unwrap().iter().filter(|(k, _)| !FINDING_KEYS.contains(&k.as_str())) {
+            out.facts.insert(k.clone(), q.clone());
+        }
+        for (k, q) in spec["fmts"].as_object().unwrap().iter().filter(|(k, _)| *k != "time") {
+            out.fmts.insert(k.clone(), q.clone());
+        }
+        if fill["composition"].is_object() {
+            out.composition = Some(json!({"bars": fill["composition"]["bars"]}));
+        }
+        let labels: BTreeMap<String, String> = serde_json::from_value(fill["knobs"]["labels"].clone()).unwrap();
+        let short = next_pack::unit_short(&shape.unit).unwrap();
+        let filling = Filling { shape, picks, main, companion, catalogue: &Hubs, fmt: shape.unit.to_lowercase(), short, window: None, asked: None };
+        let found = old_finding_of(&filling, &mut out, &labels).unwrap();
+        (found, out)
+    }
+
+    /// The page's finding is the frozen one's: its dek's two wordings, its headline, the facts it declares, the rows it reads
+    /// (kept by the page) and the accent (the subject when ranked). The subject and the dek, or none.
+    fn assert_finding_as_old(name: &str, fill: &Value, shape: &Shape, picks: &Picks, tables: (&[Value], &[Value])) -> Option<String> {
+        let (old, out) = old_finding_over(fill, shape, picks, tables);
+        let mut said = old.as_ref().map(|(f, _)| f.clone());
+        let headline = said.as_mut().and_then(|f| f.as_object_mut().unwrap().remove(HEADLINE));
+        assert_eq!(fill.get("finding"), said.as_ref(), "{name}: the dek's finding");
+        assert_eq!(fill.get(HEADLINE), headline.as_ref(), "{name}: the headline");
+        let spec = &fill["knobs"]["spec"];
+        for k in FINDING_KEYS {
+            assert_eq!(spec["facts"].get(k), out.facts.get(k), "{name}: fact {k}");
+        }
+        let accent = old.as_ref().map(|(_, c)| c.as_str()).filter(|c| picks.ranked.iter().any(|r| r == c));
+        assert_eq!(spec["hero"]["data"]["accent"].as_str(), accent, "{name}: the accent");
+        let kept: Vec<&Value> = fill["rows"].as_array().unwrap().iter().map(|r| &r["src"]).collect();
+        for r in &out.rows {
+            assert!(kept.contains(&&r["src"]), "{name}: the finding reads {}", r["src"]);
+        }
+        old.map(|(f, c)| format!("{c}: {}", f["dek"].as_str().unwrap()))
+    }
+
+    /// P6 step 7: the page's finding the visual group's finding node declares is the frozen flow's, byte for byte, on each
+    /// branch of each rule over two shapes each. Change (q1 in percent, its change in points; q6 in persons, in its own
+    /// format): a rise alone, two rises alike as printed while another falls (no finding: the fall is never tried), no place
+    /// rising and one falling, two falls alike. Level: the highest against the lowest, two highest, two lowest, every place
+    /// alike. Share (scmp and ring, two shapes): the largest origin, two largest alike, every origin at 0. Composition: every
+    /// bar's share alike (none), one bar's share the largest. Prints one P6FINDING line each.
+    #[test]
+    fn declared_finding_equals_the_frozen_finding_on_every_branch() {
+        let set = |rows: &mut Vec<Value>, at: &[(&str, &str, &str)]| {
+            for (g, t, v) in at {
+                let row = rows.iter_mut().find(|r| r["dims"]["geo"] == *g && r["time"] == *t).unwrap();
+                row["value"] = json!(v);
+            }
+        };
+        // change
+        let change = recipe("change");
+        let fixed = [("freq", "A"), ("unit", "PER"), ("sex", "T"), ("age", "TOTAL"), ("citizen", "TOTAL")];
+        let mut q6 = ring_rows("migr", &fixed, ("geo", &["SE", "BE", "DE", "FR", "EU27_2020"]), &["2021", "2025"]);
+        for (r, v) in q6.iter_mut().zip(["2900", "900", "1900", "3300", "14800", "23700", "10300", "15800", "63200", "91200"]) {
+            r["value"] = json!(v);
+        }
+        let falls = [("SE", "2016", "66"), ("SE", "2024", "50"), ("BE", "2016", "14"), ("BE", "2024", "8.5"), ("DE", "2016", "22.4"),
+            ("DE", "2024", "14.9"), ("FR", "2024", "15.5")];
+        let alike = [("SE", "2016", "50.6"), ("SE", "2024", "66.6"), ("BE", "2016", "8.6"), ("BE", "2024", "24.6")];
+        let q1 = |at: &[(&str, &str, &str)]| {
+            let mut main = q1_ten_years();
+            set(&mut main, at);
+            ("sdg", main)
+        };
+        let q6_at = |at: &[(&str, &str, &str)]| {
+            let mut main = q6.clone();
+            set(&mut main, at);
+            ("migr", main)
+        };
+        let two_falls: Vec<(&str, &str, &str)> = [&falls[..], &[("BE", "2016", "24.5")]].concat();
+        let cases: Vec<(&str, (&str, Vec<Value>), bool)> = vec![
+            ("q1 a rise alone", q1(&[]), true),
+            ("q1 two rises alike, FR falls", q1(&[("BE", "2024", "24.5")]), false),
+            ("q1 two rises alike as printed", q1(&alike), false),
+            ("q1 none rises, one falls", q1(&falls), true),
+            ("q1 two falls alike", q1(&two_falls), false),
+            ("q6 a rise alone", q6_at(&[]), true),
+            ("q6 two rises alike, another falls", q6_at(&[("SE", "2025", "11800"), ("FR", "2025", "6000")]), false),
+            ("q6 another place rises most", q6_at(&[("SE", "2025", "2000"), ("BE", "2025", "1000"), ("DE", "2025", "10000"), ("FR", "2025", "50000"), ("EU27_2020", "2025", "60000")]), true),
+        ];
+        for (name, (table, main), found) in cases {
+            let shape = shape_of(&change.eats, &[(table, &main[..])], &Hubs).unwrap_or_else(|e| panic!("{name}: {e}"));
+            let picks = picks_of(&change.picks, &shape, &main, &[]).unwrap();
+            let fill = fill_undrawn(change, &shape, &picks, &main);
+            let got = assert_finding_as_old(name, &fill, &shape, &picks, (&main, &[]));
+            assert_eq!(got.is_some(), found, "{name}: {got:?}");
+            println!("P6FINDING change {name}: {got:?}, equal");
+        }
+        // level
+        let column = recipe("column");
+        let level = |at: &[(&str, &str, &str)], unit: &'static str| {
+            let mut main = ring_rows("sdg", &[("freq", "A"), ("unit", unit)], ("geo", &["SE", "BE", "DE", "FR", "EU27_2020"]), &["2025"]);
+            for (r, v) in main.iter_mut().zip(["65.4", "14.9", "30.25", "20", "40"]) {
+                r["value"] = json!(v);
+            }
+            set(&mut main, at);
+            main
+        };
+        let cases: Vec<(&str, Vec<Value>, bool)> = vec![
+            ("PC the highest against the lowest", level(&[], "PC"), true),
+            ("PC two highest", level(&[("DE", "2025", "65.4")], "PC"), false),
+            ("PC two lowest", level(&[("FR", "2025", "14.9")], "PC"), false),
+            ("PER the highest against the lowest", level(&[], "PER"), true),
+            ("PER every place alike", level(&[("SE", "2025", "5"), ("BE", "2025", "5"), ("DE", "2025", "5"), ("FR", "2025", "5"), ("EU27_2020", "2025", "5")], "PER"), false),
+        ];
+        for (name, main, found) in cases {
+            let shape = shape_of(&column.eats, &[("sdg", &main[..])], &Hubs).unwrap_or_else(|e| panic!("{name}: {e}"));
+            let picks = picks_of(&column.picks, &shape, &main, &[]).unwrap();
+            let fill = test_fill(column, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false).unwrap_or_else(|e| panic!("{name}: {e}"));
+            let got = assert_finding_as_old(name, &fill, &shape, &picks, (&main, &[]));
+            assert_eq!(got.is_some(), found, "{name}: {got:?}");
+            println!("P6FINDING level {name}: {got:?}, equal");
+        }
+        // share (scmp, ring)
+        let v = |a: &'static str, b: &'static str, c: &'static str| [Some(a), Some(b), Some(c)];
+        let rest = [("DE", v("1", "1", "1")), ("TOTAL", v("1", "1", "1")), ("EXT_EU27_2020", v("1", "1", "1"))];
+        let a = |no: [Option<&'static str>; 3]| {
+            let mut x = vec![("RU", v("126027.316", "50000", "37843.285")), ("NO", no), ("US", v("0", "1", "30000"))];
+            x.extend(rest);
+            x
+        };
+        let b = |qa: [Option<&'static str>; 3]| {
+            let mut x = vec![("NO", v("60000", "90000", "95000")), ("DZ", v("100", "7000", "40000")), ("QA", qa),
+                ("AZ", v("5000", "9000", "12000")), ("RU", v("150000", "80000", "20000")), ("LY", v("3000", "2500", "2500"))];
+            x.extend(rest);
+            x
+        };
+        let cases: Vec<(&str, Vec<(&str, [Option<&str>; 3])>, &str, bool)> = vec![
+            ("A the largest", a(v("80000", "85000", "90000")), "RU", true),
+            ("A two largest alike", a(v("80000", "85000", "37843.285")), "RU", false),
+            ("B the largest", b(v("20000", "21000", "15000")), "NO", true),
+            ("B two largest alike", b(v("20000", "21000", "95000")), "NO", false),
+        ];
+        for recipe_name in ["scmp", "ring"] {
+            for (name, values, focus, found) in &cases {
+                let (main, monthly, change) = scmp_rows(values, focus, &[(*focus, "2019-01", 63)]);
+                let r = recipe(recipe_name);
+                let tables = [("imp", &main[..]), ("impm", &monthly[..])];
+                let shape = shape_of(&r.eats, &tables, &Hubs).unwrap();
+                let picks = picks_of(&r.picks, &shape, &main, &[(MEMBER_CHANGE.to_string(), change)]).unwrap();
+                let fill = test_fill(r, &shape, &picks, (&main, &monthly), &Hubs, ("标题", "导语"), false).unwrap_or_else(|e| panic!("{name}: {e}"));
+                let got = assert_finding_as_old(name, &fill, &shape, &picks, (&main, &monthly));
+                assert_eq!(got.is_some(), *found, "{recipe_name} {name}: {got:?}");
+                println!("P6FINDING share {recipe_name} {name}: {got:?}, equal");
+            }
+        }
+        // composition
+        let composition = recipe("composition");
+        let (_, _, _, main, mut sums) = q3_tables(&[]);
+        let comp_case = |name: &str, main: &[Value], sums: &[Value], found: bool| {
+            let tables = [("nrg_bal_peh", main), ("nrg_bal_peh", sums)];
+            let shape = shape_of(&composition.eats, &tables, &Hubs).unwrap();
+            let picks = picks_of(&composition.picks, &shape, main, &[]).unwrap();
+            let fill = q3_fill(main, sums).unwrap();
+            let got = assert_finding_as_old(name, &fill, &shape, &picks, (main, sums));
+            assert_eq!(got.is_some(), found, "{name}: {got:?}");
+            println!("P6FINDING composition {name}: {got:?}, equal");
+        };
+        comp_case("every share alike", &main, &sums, false);
+        let fossil = next_params::group_inputs("nrg_bal_peh", "siec").unwrap()[0].1.clone();
+        let mut main = main;
+        let mut more = 0.0;
+        for r in sums.iter_mut().filter(|r| r["dims"]["geo"] == "IT" && fossil.iter().any(|c| r["dims"]["siec"] == c.as_str())) {
+            let v = row_value(r).unwrap();
+            more += v / 2.0;
+            r["value"] = json!(format!("{}", v * 1.5));
+        }
+        let total = main.iter_mut().find(|r| r["dims"]["geo"] == "IT").unwrap();
+        total["value"] = json!(format!("{}", row_value(total).unwrap() + more));
+        comp_case("IT the largest share", &main, &sums, true);
+    }
+
+    /// The finding over a finished page, declared again by the visual group as the draw recheck reads it (the finished
+    /// fill's facts' keys and formats, its labels' codes, its composition's bars), the view changed by `edit` first.
+    fn finding_over_finished(fill: &Value, edit: impl Fn(&mut Value)) -> Result<crate::next_tree_gen::NodeDeclared, String> {
+        let spec = &fill["knobs"]["spec"];
+        let mut view = fill["page_in"].clone();
+        view["fill"] = json!({"facts": spec["facts"].as_object().unwrap().keys().collect::<Vec<_>>(), "fmts": spec["fmts"],
+            "named": fill["knobs"]["labels"].as_object().unwrap().keys().collect::<Vec<_>>()});
+        if fill["composition"].is_object() {
+            view["fill"]["composition"] = json!({"bars": fill["composition"]["bars"]});
+        }
+        edit(&mut view);
+        crate::next_tree_gen::declare("finding", &view)
+    }
+
+    /// The first case that holds is the page's and no other is tried: a change page whose largest rise is a tie, or whose
+    /// riser the labels name none of, while another place falls alone, has no finding (the old fill never tried the fall);
+    /// the old fill agrees on the same Filled. A change format the page lacks (chg, pp) prints whole, as the old printed did:
+    /// the finding stands, equal to the old one's over the same formats, and nothing stops.
+    #[test]
+    fn a_tied_or_unnamed_rise_gives_no_finding_and_the_fall_is_never_tried() {
+        let change = recipe("change");
+        let page = |at: &[(&str, &str, &str)]| {
+            let mut main = q1_ten_years();
+            for (g, t, v) in at {
+                let row = main.iter_mut().find(|r| r["dims"]["geo"] == *g && r["time"] == *t).unwrap();
+                row["value"] = json!(v);
+            }
+            let shape = shape_of(&change.eats, &[("sdg", &main[..])], &Hubs).unwrap();
+            let picks = picks_of(&change.picks, &shape, &main, &[]).unwrap();
+            let fill = fill_undrawn(change, &shape, &picks, &main);
+            (main, shape, picks, fill)
+        };
+        // q1: SE rises most (16), FR falls (2.25): SE's rise
+        let (main, shape, picks, fill) = page(&[]);
+        assert_eq!(finding_over_finished(&fill, |_| {}).unwrap().finding.unwrap().1, "SE");
+        // SE unnamed: no finding, though FR falls alone
+        let unnamed = finding_over_finished(&fill, |v| {
+            let named: Vec<Value> = v["fill"]["named"].as_array().unwrap().iter().filter(|c| *c != "SE").cloned().collect();
+            v["fill"]["named"] = json!(named);
+        });
+        assert!(unnamed.unwrap().finding.is_none(), "an unnamed riser: no finding, the fall never tried");
+        let mut labels: BTreeMap<String, String> = serde_json::from_value(fill["knobs"]["labels"].clone()).unwrap();
+        labels.remove("SE");
+        let mut out = Filled::default();
+        out.facts = fill["knobs"]["spec"]["facts"].as_object().unwrap().iter().filter(|(k, _)| !FINDING_KEYS.contains(&k.as_str())).map(|(k, v)| (k.clone(), v.clone())).collect();
+        out.fmts = fill["knobs"]["spec"]["fmts"].as_object().unwrap().clone();
+        let short = next_pack::unit_short(&shape.unit).unwrap();
+        let filling = Filling { shape: &shape, picks: &picks, main: &main, companion: &[], catalogue: &Hubs, fmt: shape.unit.to_lowercase(), short, window: None, asked: None };
+        assert!(old_finding_of(&filling, &mut out, &labels).unwrap().is_none(), "the old fill agrees");
+        // two rises alike (BE up 16 too), FR falls alone: no finding
+        let (_, _, _, tied) = page(&[("BE", "2024", "24.5")]);
+        assert!(tied.get("finding").is_none() && finding_over_finished(&tied, |_| {}).unwrap().finding.is_none());
+        // the change format missing from the page (q1 prints in points): the tie prints whole, the finding stands as the old one's
+        for gone in ["pp", "chg"] {
+            let lacking = finding_over_finished(&fill, |v| {
+                v["fill"]["fmts"].as_object_mut().unwrap().remove(gone);
+            })
+            .unwrap_or_else(|e| panic!("{gone}: {e}"));
+            let mut out = Filled::default();
+            out.facts = fill["knobs"]["spec"]["facts"].as_object().unwrap().iter().filter(|(k, _)| !FINDING_KEYS.contains(&k.as_str())).map(|(k, v)| (k.clone(), v.clone())).collect();
+            out.fmts = fill["knobs"]["spec"]["fmts"].as_object().unwrap().clone();
+            out.fmts.remove(gone);
+            let labels: BTreeMap<String, String> = serde_json::from_value(fill["knobs"]["labels"].clone()).unwrap();
+            let old = old_finding_of(&filling, &mut out, &labels).unwrap();
+            assert_eq!(lacking.finding.as_ref().map(|(f, c)| (f.clone(), c.clone())), old, "{gone} missing");
+            println!("P6FINDING replay {gone} missing: {:?}", lacking.finding.map(|(_, c)| c));
+        }
+    }
+
+    /// The draw recheck refuses each part of the finding a page holds that is not its declaration over the finished fill,
+    /// each in its own words (11-01 10:30): the dek's two wordings, the headline's two, the accent, each fact it declares
+    /// (lead, lead0, lead1 on a change page; comp_top on a composition page) and a row it reads that the page no longer keeps.
+    #[test]
+    fn each_part_of_the_finding_tampered_is_refused_at_draw() {
+        let change = recipe("change");
+        let main = q1_ten_years();
+        let shape = shape_of(&change.eats, &[("sdg", &main[..])], &Hubs).unwrap();
+        let picks = picks_of(&change.picks, &shape, &main, &[]).unwrap();
+        let fill = test_fill(change, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false).unwrap();
+        let (_, _, _, cmain, mut sums) = q3_tables(&[]);
+        let fossil = next_params::group_inputs("nrg_bal_peh", "siec").unwrap()[0].1.clone();
+        let mut cmain = cmain;
+        let mut more = 0.0;
+        for r in sums.iter_mut().filter(|r| r["dims"]["geo"] == "IT" && fossil.iter().any(|c| r["dims"]["siec"] == c.as_str())) {
+            let v = row_value(r).unwrap();
+            more += v / 2.0;
+            r["value"] = json!(format!("{}", v * 1.5));
+        }
+        let total = cmain.iter_mut().find(|r| r["dims"]["geo"] == "IT").unwrap();
+        total["value"] = json!(format!("{}", row_value(total).unwrap() + more));
+        let comp = q3_fill(&cmain, &sums).unwrap();
+        assert!(fill.get("finding").is_some() && comp.get("finding").is_some());
+        let runtime = Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime");
+        type Tamper = fn(&mut Value);
+        let cases: [(&str, bool, Tamper, &str); 10] = [
+            ("dek", false, |f| f["finding"]["dek"] = json!("{lead1.t}，{name.BE}增幅最大"), "node finding: the dek's finding is not its declaration"),
+            ("scoped dek", false, |f| f["finding"]["scoped"] = json!("所选各方中"), "node finding: the dek's finding is not its declaration"),
+            ("headline", false, |f| f[HEADLINE]["title"] = json!("{name.BE}增幅最大"), "node finding: the headline is not its declaration"),
+            ("scoped headline", false, |f| f[HEADLINE]["scoped"] = json!("所选各方中{name.BE}增幅最大"), "node finding: the headline is not its declaration"),
+            ("accent", false, |f| f["knobs"]["spec"]["hero"]["data"]["accent"] = json!("BE"), "node finding: the accent is"),
+            ("lead", false, |f| f["knobs"]["spec"]["facts"]["lead"]["a"] = json!("lead0"), "node finding: fact lead is not its declaration"),
+            ("lead0", false, |f| f["knobs"]["spec"]["facts"]["lead0"]["from"] = json!("2015"), "node finding: fact lead0 is not its declaration"),
+            ("lead1", false, |f| f["knobs"]["spec"]["facts"]["lead1"]["filter"]["geo"] = json!("BE"), "node finding: fact lead1 is not its declaration"),
+            ("a row it reads", false, |f| {
+                let rows: Vec<Value> = f["rows"].as_array().unwrap().iter().filter(|r| !(r["dims"]["geo"] == "SE" && r["time"] == "2016")).cloned().collect();
+                f["rows"] = json!(rows);
+            }, "node finding: it reads row"),
+            ("comp_top", true, |f| f["knobs"]["spec"]["facts"]["comp_top"]["b"] = json!("total.DE"), "node finding: fact comp_top is not its declaration"),
+        ];
+        for (name, on_comp, tamper, said) in cases {
+            let (r, mut f) = if on_comp { (recipe("composition"), comp.clone()) } else { (change, fill.clone()) };
+            tamper(&mut f);
+            let calls = std::sync::Mutex::new(Vec::new());
+            let why = draw_nodes(&mut f, &r.external, &calls, &runtime).unwrap_err();
+            assert!(why.starts_with(said), "{name}: {why}");
+            println!("P6FINDING tamper {name}: {}", why.chars().take(90).collect::<String>());
+        }
+        // untampered, both pass
+        for (r, f) in [(change, &fill), (recipe("composition"), &comp)] {
+            let calls = std::sync::Mutex::new(Vec::new());
+            draw_nodes(&mut f.clone(), &r.external, &calls, &runtime).unwrap();
+        }
+    }
+
+    /// P6 step 7 on real data: the stored stand-in change and column requests (P6_REQS, as p6_notes_over_stored_requests;
+    /// run with --ignored) refilled, the finding the visual group declares held to the frozen one's over the same page, and
+    /// a page whose stored request declared a finding (its lead1) finding one again, its lead facts the stored ones' values
+    /// (the core's computation over the rows): the finding never silently becomes none. Prints one P6REQ line each.
+    #[test]
+    #[ignore]
+    fn p6_finding_over_stored_requests() {
+        let list = std::fs::read_to_string(std::env::var("P6_REQS").unwrap()).unwrap();
+        for path in list.lines().filter(|l| !l.trim().is_empty()) {
+            let req: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+            let main: Vec<Value> = req["rows"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|r| r["src"].as_str().is_some_and(|s| s.starts_with("series:")))
+                .map(|r| {
+                    let mut r = r.clone();
+                    if let Some(n) = r["value"].as_f64().and_then(serde_json::Number::from_f64) {
+                        r["value"] = json!(n.to_string());
+                    }
+                    r
+                })
+                .collect();
+            let names: BTreeMap<String, String> = req["ledger"]
+                .as_object()
+                .unwrap()
+                .iter()
+                .filter_map(|(k, v)| Some((k.strip_prefix("name:zh_names:")?.split_once(':')?.1.to_string(), v.as_str()?.to_string())))
+                .collect();
+            let cat = Ledgered(names);
+            let table = main[0]["table"].as_str().unwrap().to_string();
+            let name = if path.contains("/change/") { "change" } else { "column" };
+            let r = recipe(name);
+            let Ok(shape) = shape_of(&r.eats, &[(table.as_str(), &main[..])], &cat) else {
+                println!("P6REQ {name} not refilled here");
+                continue;
+            };
+            let picks = picks_of(&r.picks, &shape, &main, &[]).unwrap_or_else(|e| panic!("{path}: {e}"));
+            let page_in = page_input(r, &shape, &picks, (&main, &[]));
+            let calls = std::sync::Mutex::new(Vec::new());
+            let asked = Asked { calls: &calls, page_in: Some(&page_in) };
+            let fill = fill_of(r, &shape, &picks, (&main, &[]), &cat, ("标题", "导语"), false, Some(&asked)).unwrap_or_else(|e| panic!("{path}: {e}"));
+            // the frozen finding over the same page and labels (old_finding_over reads the catalogue's names from the fill)
+            let spec = &fill["knobs"]["spec"];
+            let mut out = Filled::default();
+            out.facts = spec["facts"].as_object().unwrap().iter().filter(|(k, _)| !FINDING_KEYS.contains(&k.as_str())).map(|(k, v)| (k.clone(), v.clone())).collect();
+            out.fmts = spec["fmts"].as_object().unwrap().iter().filter(|(k, _)| *k != "time").map(|(k, v)| (k.clone(), v.clone())).collect();
+            let labels: BTreeMap<String, String> = serde_json::from_value(fill["knobs"]["labels"].clone()).unwrap();
+            let short = next_pack::unit_short(&shape.unit).unwrap();
+            let filling = Filling { shape: &shape, picks: &picks, main: &main, companion: &[], catalogue: &cat, fmt: shape.unit.to_lowercase(), short, window: None, asked: None };
+            let mut old = old_finding_of(&filling, &mut out, &labels).unwrap();
+            let headline = old.as_mut().and_then(|(f, _)| f.as_object_mut().unwrap().remove(HEADLINE));
+            assert_eq!(fill.get("finding"), old.as_ref().map(|(f, _)| f), "{path}: the dek's finding");
+            assert_eq!(fill.get(HEADLINE), headline.as_ref(), "{path}: the headline");
+            let stored: BTreeMap<String, f64> = req["facts"].as_array().unwrap().iter().filter_map(|f| Some((f["key"].as_str()?.to_string(), f["v"].as_f64()?))).collect();
+            let had = stored.contains_key("lead1");
+            assert_eq!(fill.get("finding").is_some(), had, "{path}: a stored finding is found again (and none where none was)");
+            let facts = crate::next_tree::J::from_value(&spec["facts"]);
+            let rows: Vec<crate::next_tree::J> = main.iter().map(crate::next_tree::J::from_value).collect();
+            for k in ["lead", "lead0", "lead1"].iter().filter(|k| stored.contains_key(**k)) {
+                assert_eq!(crate::next_tree::fact_value(&facts, &rows, k), Ok(stored[*k]), "{path}: {k}");
+            }
+            println!("P6REQ finding {name}: {} equal to the frozen and the stored", fill["finding"]["dek"]);
+        }
+    }
+
+    /// P6 step 7 on real data: the gas fixture under scmp and ring (env as ring_fill_of_the_gas_fixture; --ignored), the
+    /// page's share finding held to the frozen one's, and found. Prints one P6REQ line per recipe.
+    #[test]
+    #[ignore]
+    fn p6_finding_over_the_gas_fixture() {
+        let (main, monthly, catalogue, _, claims) = gas_fixture();
+        for recipe_name in ["scmp", "ring"] {
+            let r = recipe(recipe_name);
+            let tables = [("nrg_ti_gas", &main[..]), ("nrg_ti_gasm", &monthly[..])];
+            let shape = shape_of(&r.eats, &tables, &catalogue).unwrap();
+            let picks = picks_of(&r.picks, &shape, &main, &claims).unwrap();
+            let fill = test_fill(r, &shape, &picks, (&main, &monthly), &catalogue, ("标题", "导语"), false).unwrap();
+            let got = assert_finding_as_old(recipe_name, &fill, &shape, &picks, (&main, &monthly));
+            assert!(got.is_some(), "{recipe_name}: the gas page has a share finding");
+            println!("P6REQ finding {recipe_name} gas: {got:?} equal");
         }
     }
 }

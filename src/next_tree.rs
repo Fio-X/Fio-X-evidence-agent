@@ -1214,9 +1214,32 @@ pub(crate) fn change_from(s: &J) -> Option<&J> {
     (k.is_obj() && k.obj().len() == 1 && ends.len() == 2 && ends[1] == *s.g("over").g("time") && ends[0].s().is_some()).then(|| &ends[0])
 }
 
+/// A rank's key {"part_share": {"dim", "codes", "rows"}}: each code's parts (its `rows` at over.time whose `dim` is one of
+/// `codes`) summed, over its own row's value (the total, above 0); a code with no part row or no total above 0 is left out.
+fn part_share_key(s: &J) -> Option<&J> {
+    let k = s.g("key");
+    (k.is_obj() && k.obj().len() == 1).then(|| k.get("part_share")).flatten()
+}
+
+/// The share of a code's parts in its total (part_share_key): none when its total is not above 0 or it has no part row.
+fn part_share_of(ps: &J, by: &str, time: &J, code: &J, total: f64) -> Option<f64> {
+    if total <= 0.0 {
+        return None;
+    }
+    let dim = st(ps.g("dim"));
+    let parts: Vec<f64> = ps
+        .g("rows")
+        .arr()
+        .iter()
+        .filter(|r| r.g("time") == time && dims(r, by) == code && ps.g("codes").arr().contains(dims(r, &dim)))
+        .filter_map(text_num)
+        .collect();
+    (!parts.is_empty()).then(|| parts.iter().sum::<f64>() / total)
+}
+
 fn cannot_rank(s: &J) -> Option<String> {
-    if s.g("key").s() != Some("value") && change_from(s).is_none() {
-        return Some(format!("key {} (only value, or {{\"change\": [a time, over.time]}})", s.g("key").repr()));
+    if s.g("key").s() != Some("value") && change_from(s).is_none() && part_share_key(s).is_none() {
+        return Some(format!("key {} (only value, {{\"change\": [a time, over.time]}} or {{\"part_share\": ...}})", s.g("key").repr()));
     }
     let extra: Vec<&str> = s.g("over").obj().iter().map(|(k, _)| k.as_str()).filter(|k| !RANK_OVER.contains(k)).collect();
     if !extra.is_empty() {
@@ -1263,20 +1286,35 @@ fn cannot_take(s: &J) -> Option<String> {
     }
     let t = t.expect("not plain, so present");
     let at = s.g("at").s().unwrap_or("");
-    if t.g("by").s() == Some("printed") && t.g("outcome").s() == Some("silence") && matches!(at, "first" | "last") {
+    if matches!(t.g("by").s(), Some("printed" | "value")) && t.g("outcome").s() == Some("silence") && matches!(at, "first" | "last") {
         return None;
     }
-    Some(format!("tie {} at {at} (only by code, or by printed with silence at first or last)", t.repr()))
+    Some(format!("tie {} at {at} (only by code, or by printed or value with silence at first or last)", t.repr()))
 }
 
-/// The value a take's code is ordered by: its rows under the root rank's over.
-fn take_value(sel: &[(String, &J)], sid: &str, code: &J, rows: &[J]) -> Result<f64, String> {
-    let q = root_rank(sel, sid)?.g("over");
-    let mut s = 0.0;
-    for r in select_rows(rows, q).into_iter().filter(|r| r.g("time") == q.g("time") && dims(r, q.g("by").s().unwrap_or("")) == code) {
-        s += num(r)?;
+/// The value a take's code is ordered by: the root rank's key of it, as the rank computes it. Its rows under the rank's over
+/// at over.time (read as the map reads a number when the rank reads only numbers), less its rows at the time a change runs
+/// from (key change), or their parts' share (key part_share).
+pub(crate) fn take_value(sel: &[(String, &J)], sid: &str, code: &J, rows: &[J]) -> Result<f64, String> {
+    let root = root_rank(sel, sid)?;
+    let q = root.g("over");
+    let by = q.g("by").s().unwrap_or("");
+    let lenient = root.g("numbers_only").truthy() || root.has("from_above");
+    let sum_at = |t: &J| -> Result<f64, String> {
+        let mut s = 0.0;
+        for r in select_rows(rows, q).into_iter().filter(|r| r.g("time") == t && dims(r, by) == code) {
+            s += if lenient { text_num(r).unwrap_or(0.0) } else { num(r)? };
+        }
+        Ok(s)
+    };
+    let mut v = sum_at(q.g("time"))?;
+    if let Some(t0) = change_from(root) {
+        v -= sum_at(t0)?;
     }
-    Ok(s)
+    if let Some(ps) = part_share_key(root) {
+        v = part_share_of(ps, by, q.g("time"), code, v).ok_or_else(|| format!("{}: no share of its parts", st(code)))?;
+    }
+    Ok(v)
 }
 
 fn sel_get<'a>(sel: &[(String, &'a J)], id: &str) -> Option<&'a J> {
@@ -1442,14 +1480,22 @@ fn recheck_one(
             // positive: only the codes whose key is above 0
             let above = s.g("from_above").num();
             let mut keyed: Vec<(f64, String, &J)> = Vec::new();
+            // numbers_only: a row whose value is no number (as the map reads one) is left out, never refused
+            let lenient = above.is_some() || s.g("numbers_only").truthy();
             for r in at {
-                let mut v = match above {
-                    Some(_) => match text_num(r) {
+                let mut v = match lenient {
+                    true => match text_num(r) {
                         Some(v) => v,
                         None => continue,
                     },
-                    None => num(r)?,
+                    false => num(r)?,
                 };
+                if let Some(ps) = part_share_key(s) {
+                    match part_share_of(ps, by, q.g("time"), dims(r, by), v) {
+                        Some(share) => v = share,
+                        None => continue,
+                    }
+                }
                 if let Some(t0) = change_from(s) {
                     let c = dims(r, by);
                     let from: Vec<&J> = select_rows(rows, q).into_iter().filter(|x| x.g("time") == t0 && dims(x, by) == c).collect();
@@ -1513,13 +1559,33 @@ fn recheck_one(
             }
             let mut pick = if src.is_empty() { J::Null } else { src[(if i < 0 { n + i } else { i }) as usize].clone() };
             let tie = s.g("tie");
-            if !pick.is_null() && tie.g("by").s() == Some("printed") && src.len() > 1 {
+            let by = tie.g("by").s();
+            if !pick.is_null() && matches!(by, Some("printed" | "value")) && src.len() > 1 {
                 let nb = if i == 0 { &src[1] } else { &src[src.len() - 2] };
-                let fm = f.g("fmts").g(&st(tie.g("fmt")));
-                let dec = fm.g("dec").num().ok_or_else(|| format!("tie fmt {}: no dec", st(tie.g("fmt"))))? as usize;
-                let scale = fm.get("scale").map_or(Ok(1.0), |x| x.num().ok_or("scale"))?;
-                let pr = |c: &J| -> Result<String, String> { Ok(py_fixed(take_value(sel, &from, c, rows)? * scale, dec)) };
-                if pr(&pick)? == pr(nb)? {
+                let (a, b) = (take_value(sel, &from, &pick, rows)?, take_value(sel, &from, nb, rows)?);
+                let alike = match by {
+                    // by value: the two keys are one number
+                    Some("value") => a == b,
+                    // printed: as the page's format prints them (its decimals and scale) or as the tie states them (dec,
+                    // scale); a format the page lacks prints whole when the tie says so (missing: whole), else refuses
+                    _ => {
+                        let fm = f.g("fmts").g(&st(tie.g("fmt")));
+                        let whole = tie.g("missing").s() == Some("whole");
+                        let at: Option<(usize, f64)> = if tie.has("dec") {
+                            Some((tie.g("dec").num().ok_or("tie dec")? as usize, tie.get("scale").map_or(Ok(1.0), |x| x.num().ok_or("tie scale"))?))
+                        } else if whole && fm.is_null() {
+                            None
+                        } else if whole {
+                            Some((fm.g("dec").num().unwrap_or(0.0) as usize, fm.g("scale").num().unwrap_or(1.0)))
+                        } else {
+                            let dec = fm.g("dec").num().ok_or_else(|| format!("tie fmt {}: no dec", st(tie.g("fmt"))))? as usize;
+                            Some((dec, fm.get("scale").map_or(Ok(1.0), |x| x.num().ok_or("scale"))?))
+                        };
+                        let pr = |v: f64| at.map_or_else(|| v.to_string(), |(dec, scale)| py_fixed(v * scale, dec));
+                        pr(a) == pr(b)
+                    }
+                };
+                if alike {
                     pick = J::Null;
                 }
             }
@@ -2305,7 +2371,7 @@ const OUTPUT_FIELDS: [&str; 5] = ["id", "result", "declared", "dropped", "rest"]
 /// here is refused (R11).
 const LATER: [(&str, &str); 4] = [
     ("unit_short", "the text step (next_pack.rs unit_short)"),
-    ("finding_words", "the text step (next_run.rs finding_of)"),
+    ("finding_words", "the finding node (node-bindings.json finding; next_tree_gen.rs finding_declared, rechecked at draw)"),
     ("has_flow", "the flow's shape condition (next_run.rs official_flow)"),
     ("pairs_accounted", "the flow's pair accounting and its page checks (next_run.rs flow_pairs_of)"),
 ];
@@ -7374,5 +7440,106 @@ mod tests {
         };
         assert_eq!([before("strip", "bignums"), before("bignums", "strip"), before("ring", "bignums"), before("strip", "notes")], [true, false, false, false]);
         assert_eq!(CONDITIONS.map(|(k, _)| k), ["sign", "prints_nonzero", "width_at_most", "count_at_least", "page_is", "row_above", "layer_before"]);
+    }
+
+
+    /// A page of selects over rows and formats, recomputed by the core: each select's result.
+    fn selects_over(rows: Vec<J>, sels: &[&str], fmts: &str) -> Got {
+        let items: Vec<J> = sels.iter().map(|s| parse(s).unwrap()).collect();
+        let page = J::obj_of(vec![
+            ("kind", J::str("Page")),
+            ("selects", J::obj_of(vec![("kind", J::str("Selects")), ("items", J::Arr(items))])),
+            ("facts", J::obj_of(vec![("kind", J::str("Facts")), ("tables", J::Obj(vec![])), ("rows", J::Arr(rows)), ("facts", J::Obj(vec![])), ("fmts", parse(fmts).unwrap())])),
+            ("checks", J::obj_of(vec![("kind", J::str("Checks")), ("items", J::Arr(vec![]))])),
+        ]);
+        recheck(&page).1
+    }
+
+    fn a_row(code: &str, dim: Option<(&str, &str)>, t: &str, v: &str) -> J {
+        let mut dims = serde_json::json!({"geo": code});
+        if let Some((d, c)) = dim {
+            dims[d] = serde_json::json!(c);
+        }
+        J::from_value(&serde_json::json!({"src": format!("series:t/{code}:{t}"), "table": "t", "dims": dims, "time": t, "value": v}))
+    }
+
+    /// P6 step 7 (finding): a take's value is its root rank's key, as the rank orders by it, not the rank's rows at over.time.
+    /// A change rank: two places at one level and two changes (and two changes alike at two levels); a part_share rank: two
+    /// places at one total and two shares (and two shares alike at two totals). The take's tie (printed, silence) decides on
+    /// the key: the same level never silences two changes, the same change at two levels does; likewise totals and shares.
+    #[test]
+    fn take_value_is_the_root_rank_s_key_and_the_tie_reads_it() {
+        // change: A and B both 50 at 2024, up 40 and 20; C and D both up 25, at 25 and 45
+        let rows: Vec<J> = [("A", "10", "50"), ("B", "30", "50"), ("C", "0", "25"), ("D", "20", "45")]
+            .iter()
+            .flat_map(|(c, a, b)| [a_row(c, None, "2020", a), a_row(c, None, "2024", b)])
+            .collect();
+        let rank = r#"{"id": "r", "kind": "rank", "over": {"table": "t", "by": "geo", "time": "2024"}, "key": {"change": ["2020", "2024"]}, "order": "desc"}"#;
+        let take = r#"{"id": "k", "kind": "take", "from": "r", "at": "first", "tie": {"by": "printed", "outcome": "silence", "dec": 0}}"#;
+        let (r, k) = (parse(rank).unwrap(), parse(take).unwrap());
+        let sel = vec![("r".to_string(), &r), ("k".to_string(), &k)];
+        let key = |c: &str| take_value(&sel, "k", &J::str(c), &rows);
+        assert_eq!([key("A"), key("B"), key("C"), key("D")], [Ok(40.0), Ok(20.0), Ok(25.0), Ok(25.0)], "the change, not the level");
+        // A first (40), B next (20): one level, two changes, no tie
+        let got = selects_over(rows.clone(), &[rank, take], "{}");
+        assert_eq!((got["r"].clone(), got["k"].clone()), (parse(r#"["A", "C", "D", "B"]"#).unwrap(), J::str("A")));
+        // C and D alone: two levels, one change, a tie
+        let cd: Vec<J> = rows.iter().filter(|r| ["C", "D"].contains(&r.g("dims").g("geo").s().unwrap())).cloned().collect();
+        let got = selects_over(cd, &[rank, take], "{}");
+        assert_eq!(got["k"], J::Null, "one change at two levels is a tie");
+        // part_share: P and Q both 100 in total, 30 and 60 of it in F1; R and S both half, of 100 and of 200
+        let totals: Vec<J> = [("P", "100"), ("Q", "100"), ("R", "100"), ("S", "200")].iter().map(|(c, v)| a_row(c, Some(("siec", "TOTAL")), "2024", v)).collect();
+        let parts: Vec<serde_json::Value> = [("P", "30"), ("Q", "60"), ("R", "50"), ("S", "100")]
+            .iter()
+            .map(|(c, v)| a_row(c, Some(("siec", "F1")), "2024", v).to_value())
+            .collect();
+        let rank = |only: &[&str]| {
+            serde_json::json!({"id": "r", "kind": "rank", "over": {"table": "t", "filter": {"siec": "TOTAL"}, "by": "geo", "time": "2024"},
+                "key": {"part_share": {"dim": "siec", "codes": ["F1"], "rows": parts}}, "order": "desc", "only": only, "numbers_only": true})
+            .to_string()
+        };
+        let take = r#"{"id": "k", "kind": "take", "from": "r", "at": "first", "tie": {"by": "printed", "outcome": "silence", "dec": 0, "scale": 100}}"#;
+        let pq = rank(&["P", "Q"]);
+        let (r, k) = (parse(&pq).unwrap(), parse(take).unwrap());
+        let sel = vec![("r".to_string(), &r), ("k".to_string(), &k)];
+        let key = |c: &str| take_value(&sel, "k", &J::str(c), &totals);
+        assert_eq!([key("P"), key("Q"), key("R"), key("S")], [Ok(0.3), Ok(0.6), Ok(0.5), Ok(0.5)], "the share, not the total");
+        // Q first (60 %), P next (30 %): one total, two shares, no tie
+        let got = selects_over(totals.clone(), &[pq.as_str(), take], "{}");
+        assert_eq!(got["k"], J::str("Q"));
+        // R and S: two totals, one share, a tie
+        let got = selects_over(totals.clone(), &[rank(&["R", "S"]).as_str(), take], "{}");
+        assert_eq!(got["k"], J::Null, "one share of two totals is a tie");
+        // a value rank's take is its level at over.time, as before
+        let rank = r#"{"id": "r", "kind": "rank", "over": {"table": "t", "by": "geo", "time": "2024"}, "key": "value", "order": "desc"}"#;
+        let r = parse(rank).unwrap();
+        let sel = vec![("r".to_string(), &r), ("k".to_string(), &k)];
+        assert_eq!(take_value(&sel, "k", &J::str("C"), &rows), Ok(25.0));
+        // a tie by value: one number; a tie printed by a format the page lacks prints whole when the tie says so, else refuses
+        let by_value = r#"{"id": "k", "kind": "take", "from": "r", "at": "first", "tie": {"by": "value", "outcome": "silence"}}"#;
+        let ab: Vec<J> = rows.iter().filter(|r| r.g("time").s() == Some("2024")).cloned().collect();
+        assert_eq!(selects_over(ab.clone(), &[rank, by_value], "{}")["k"], J::Null, "A and B are both 50");
+        let whole = r#"{"id": "k", "kind": "take", "from": "r", "at": "first", "tie": {"by": "printed", "outcome": "silence", "fmt": "chg", "missing": "whole"}}"#;
+        assert_eq!(selects_over(ab.clone(), &[rank, whole], "{}")["k"], J::Null);
+        let strict = r#"{"id": "k", "kind": "take", "from": "r", "at": "first", "tie": {"by": "printed", "outcome": "silence", "fmt": "chg"}}"#;
+        let items: Vec<J> = [rank, strict].iter().map(|s| parse(s).unwrap()).collect();
+        let page = J::obj_of(vec![
+            ("kind", J::str("Page")),
+            ("selects", J::obj_of(vec![("kind", J::str("Selects")), ("items", J::Arr(items))])),
+            ("facts", J::obj_of(vec![("kind", J::str("Facts")), ("tables", J::Obj(vec![])), ("rows", J::Arr(ab)), ("facts", J::Obj(vec![])), ("fmts", J::Obj(vec![]))])),
+            ("checks", J::obj_of(vec![("kind", J::str("Checks")), ("items", J::Arr(vec![]))])),
+        ]);
+        let (bad, _, _) = recheck(&page);
+        assert!(bad.iter().any(|b| b.contains("tie fmt chg: no dec")), "{bad:?}");
+    }
+
+    /// The core's printed tie (py_fixed) and the flow's old printed() are one call, format!("{:.*}"): at every .x5 boundary,
+    /// either sign, 0 to 2 decimals, they print the same.
+    #[test]
+    fn the_printed_tie_rounds_as_the_flow_s_printed_did_at_every_x5_boundary() {
+        for (v, dec) in [(0.125, 2), (2.675, 2), (1.005, 2), (0.5, 0), (1.5, 0), (2.5, 0), (0.05, 1), (0.15, 1), (0.25, 1), (16.005, 2), (-0.125, 2), (-2.5, 0), (-0.15, 1)] {
+            assert_eq!(py_fixed(v, dec), format!("{:.*}", dec, v), "{v} at {dec}");
+            assert_eq!(py_fixed(v * 100.0, 0), format!("{:.0}", v * 100.0), "{v} as a whole percent");
+        }
     }
 }

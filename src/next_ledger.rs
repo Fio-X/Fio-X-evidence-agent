@@ -1103,7 +1103,7 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     // its facts recomputed by the checker's own ops (the op arms of Compute)
     ("tree.fact_ops", "next_tree::Compute ops", &["tree::fam", "tree::val", "tree::val_new"]),
     // its selects recomputed (ranks, takes, sums) and every reference resolved
-    ("tree.selects", "", &["tree::ref_parts", "tree::is_ref", "tree::ref_id", "tree::index", "tree::resolve_ref", "tree::resolved", "tree::result_codes", "tree::dims", "tree::select_rows", "tree::plain_tie", "tree::last_in_only", "tree::text_num", "tree::pair_rows", "tree::change_from", "tree::cannot_rank", "tree::cannot_take", "tree::take_value", "tree::sel_get", "tree::root_rank", "tree::int_or_knob", "tree::sum_rows", "tree::py_fixed", "tree::py_grouped", "tree::recheck", "tree::recheck_one", "tree::strip_part"]),
+    ("tree.selects", "", &["tree::ref_parts", "tree::is_ref", "tree::ref_id", "tree::index", "tree::resolve_ref", "tree::resolved", "tree::result_codes", "tree::dims", "tree::select_rows", "tree::plain_tie", "tree::last_in_only", "tree::text_num", "tree::pair_rows", "tree::change_from", "tree::part_share_key", "tree::part_share_of", "tree::cannot_rank", "tree::cannot_take", "tree::take_value", "tree::sel_get", "tree::root_rank", "tree::int_or_knob", "tree::sum_rows", "tree::py_fixed", "tree::py_grouped", "tree::recheck", "tree::recheck_one", "tree::strip_part"]),
     ("tree.check_kinds", "next_tree::CHECK_KINDS", &["tree::evaluate", "tree::check_codes", "tree::named_in", "tree::names_of", "tree::is_knob", "tree::knob_problem", "tree::has_digit", "tree::pathlike", "tree::nodes_of"]),
     // P1 lints: words (no worded number), shared fields, registered nodes
     ("tree.lint", "", &["tree::lint", "tree::places", "tree::last_name", "tree::sha256_hex", "tree::digit_runs", "tree::words_lint", "tree::worded_number", "tree::literal_chars", "tree::shared_lint", "tree::codes_of", "tree::scope", "tree::registry_lint", "tree::scoped"]),
@@ -1134,7 +1134,7 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     // the generator (next_tree_gen.rs): what it refuses in a parts_of_whole declaration
     ("tree_gen.parts_lint", "", &["tree_gen::parts_lint"]),
     // its selects recomputed over the page input's rows, every given result held to its recomputation
-    ("tree_gen.selects_recompute", "", &["tree_gen::recompute", "tree_gen::recheck_selects", "tree_gen::with_results_of", "tree_gen::selects_of", "tree_gen::given_of", "tree_gen::with_result"]),
+    ("tree_gen.selects_recompute", "", &["tree_gen::recompute", "tree_gen::recompute_over", "tree_gen::recheck_selects", "tree_gen::with_results_of", "tree_gen::selects_of", "tree_gen::given_of", "tree_gen::with_result"]),
     // a fill fact held to the page's rows, its chosen codes select references; one no select holds refuses
     ("tree_gen.facts_held", "", &["tree_gen::held_to_page", "tree_gen::as_refs", "tree_gen::code_ref"]),
     // the registry's checks put on the page tree, per page and per external node
@@ -1146,6 +1146,9 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     // reads; node-bindings.json stops name only those, the test below holds it); its expansion refuses a part with no
     // total row, a fact the declaration lacks, a format it does not compute
     ("tree_gen.parts_stops", "next_tree_gen::parts_declared rules", &["tree_gen::parts_declared", "tree_gen::first_row_of_no_number", "tree_gen::parts_expand"]),
+    // the page's finding (node finding): the first case that holds over the core's selects, no finding on a tie, an unnamed
+    // code or a fact the page lacks; declared again over the finished fill at draw, its facts, reads, words and accent held
+    ("tree_gen.finding", "", &["tree_gen::finding_declared", "tree_gen::walk", "tree_gen::finding_recheck"]),
     // the page tree over the fill: selects recompute, every format the fill names, the accent held by a select
     ("tree_gen.tree_held", "", &["tree_gen::tree_j"]),
     // a leaf's ground for its node: no refusal reason, its land rows as {band: [[x0, x1], ...]}
