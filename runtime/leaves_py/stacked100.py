@@ -34,6 +34,9 @@ lightest, dark, light: CIE L* 61, 35, 81, 49, 71, so the first three sit 20 or m
 --seq-8, --seq-3 sat 10 apart and read as one teal), --t-title ink, --t-sec the lines, --bg the gaps between segments and an
 in-bar share's ink on the two dark greys (--t-dark on the others). Each segment names the part it draws (data-code), so the
 page's accent check knows the accent's entity.
+Note (_share_note): one line under the bars, the place first on the highlighted part's share above the second (data-cmp next,
+in g[data-notes]), only where the shares' ledger values order the first two strictly and print them apart and the core's
+comparison (knobs.comparisons) names the same two, with the scope phrase where its set is scoped; else none.
 Refuses: no bars, fewer than two parts, a part twice, a bar twice, a negative cell, a cell whose series the request lacks, a
 drawn part with no share_text, a part in none of cells, empty and zero, a zero cell that is not 0 or a zero also empty, a highlight that is no part, a digit in a literal word, a text
 that leaves the picture or overlaps another, a board too narrow (plot under 160 px), an others line over 3 lines."""
@@ -142,6 +145,32 @@ class Frame:
         f.H = 0
 
 
+def _share_note(f):
+    """(segs, (relation, a_src, b_src)) of the note under the bars, or None (no note; the page is drawn all the same): the
+    place first on the highlighted part's share above the second (wbkit.finding_side_top over the bars, each share's value
+    the number of its fact's bare ledger entry, never a sum of cells), the second above every place after it, each printing
+    differently. Only where every bar draws that part (none empty or zero), three bars or more, each from its own share
+    entry; and only where the core's comparison of that share (wbkit.compared: the set the page check judges over, the
+    request's other codes computed alike) names the same first and second, its scope phrase leading where it is scoped."""
+    nodes = []
+    for r in f.rows:
+        src = r["share"].get(f.hl)
+        if not src or not any(s[0] == f.hl for s in r["segs"]): return None
+        try: nodes.append((r["code"], float(FX.text(src.removesuffix(".r").removesuffix(".n") + ".n").replace(",", "")), src))
+        except (Refused, ValueError): return None
+    top = K.finding_side_top(nodes) if len(nodes) >= 3 and len({n[2] for n in nodes}) == len(nodes) else None
+    if not top: return None
+    (a, _, a_src), (b, _, b_src) = top
+    c = K.compared(a_src)  # the core's first and second must be these two; a scoped set says its scope (the word table's)
+    if not c or (c.get("first"), c.get("second")) != (a, b) or (c.get("scoped") and K.FINDING_WORDS["scope"] not in WD.WORDS): return None
+    nm = lambda c: {"name": c, "kind": f.d.get("bar_kind", "place")}
+    pause = WD.WORDS[K.FINDING_WORDS["above"]][:1]  # the pause the above word opens with, after the scope phrase too
+    scope = K._finding_word(K.FINDING_WORDS["scope"]) + [{"w": pause}] if c.get("scoped") else []
+    segs = scope + [nm(a), {"w": " "}, {"src": a_src, "bold": True}] + K._finding_word(K.FINDING_WORDS["above"]) + \
+        K._finding_word(K.FINDING_WORDS["paren"], v=[nm(b), {"w": " "}, {"src": b_src, "bold": True}])
+    return segs, (K.FINDING_RELATION["note"], a_src, b_src)
+
+
 def _px(f, at):
     return round(f.x0 + (f.x1 - f.x0) * at, 2)
 
@@ -197,6 +226,12 @@ def cl_stacked100(f, occ):
             t = K.ent(r["share"][f.hl])
             o.append(K.txt(B, W - 8, yc, size, "var(--t-title)", t[0], tw(t[1], size), anchor="end", tag=f"share {r['code']}"))
     y = bottom + 6
+    note = _share_note(f)
+    if note:  # one short note under the bars, marked for the page's comparison check (data-cmp)
+        segs, (rel, a_src, b_src) = note; y += size * 1.5
+        mark = f' data-cmp="{rel}" data-a="{esc(a_src)}" data-b="{esc(b_src)}"'
+        o.append('<g data-notes="share">' + K.txt(B, 8, y, size, "var(--t-title)", K.finding_html(segs), tw(K.finding_plain(segs), size),
+                                                   tag="note", style=mark) + "</g>")
     others = d.get("others")
     if others:
         codes = _codes(others.get("codes"), "others.codes")

@@ -240,6 +240,7 @@ class Panel:
         p.raw = [r for r in req["rows"] if isinstance(r.get("dims"), dict)]  # B11: the request's series rows, a claim's values
         FX.MEMBERS = list(k["members"]) if k.get("members") else None
         FX.LEDGER = {r["src"]: r["text"] for r in req["rows"] if "text" in r} or None; FX.SEGS = k.get("segs")
+        wbkit.COMPARISONS = dict(k.get("comparisons") or {})
         if FX.LEDGER is not None: fact_times(spec)
         spec["fmts"]["bcm0"] = {"scale": 0.01, "dec": 0}  # as scmp.page sets it
         c = prod.Ctx(spec); h = spec["hero"]

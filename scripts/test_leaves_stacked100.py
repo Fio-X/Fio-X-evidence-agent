@@ -21,6 +21,7 @@ import prod  # noqa: E402
 import run  # noqa: E402
 import stacked100  # noqa: E402
 import wbkit as K  # noqa: E402
+import words as WD  # noqa: E402
 from wbkit import Refused  # noqa: E402
 
 W = lambda t: [{"w": t}]
@@ -299,6 +300,72 @@ class Refusals(unittest.TestCase):
         self.assertEqual(check_svg(draw(hero(DATA, width=480))[0]), [])
         K.setup(ROWS, {**NAMES, "DE": "德" * 24}, run.tables)
         with self.assertRaisesRegex(Refused, "too narrow"): stacked100.draw(hero(DATA, width=480))
+
+
+def three(hl, shares):
+    """Three bars (DE, EU27_2020 and FR, FR drawn from DE's cells) whose `hl` shares print and hold {place: (text, bare)} as
+    test-only ledger entries (layer 1 writes a share fact's text and its bare .n entry); the rows and the hero."""
+    rows = copy.deepcopy(ROWS) + [dict(r, src=r["src"].replace("/DE.", "/FR."), dims=dict(r["dims"], geo="FR"))
+                                  for r in ROWS if r["src"].startswith("series:T/DE.")]
+    rows += [{"src": r["src"].replace(".DE.", ".FR."), "text": r["text"]} for r in ROWS if r["src"].startswith("fact:share.DE.")]
+    for g, (text, bare) in shares.items():
+        rows += [{"src": f"fact:share.{g}.{hl}", "text": text}, {"src": f"fact:share.{g}.{hl}.n", "text": bare}]
+    data = copy.deepcopy(DATA)
+    fr = copy.deepcopy(data["bars"][0])
+    fr.update(code="FR", total=src("FR", "TOTAL"), cells={p: [c.replace("/DE.", "/FR.") for c in cs] for p, cs in fr["cells"].items()},
+              share_text={p: s.replace(".DE.", ".FR.") for p, s in fr["share_text"].items()})
+    data["bars"].append(fr); data["others"]["codes"] = ["PL"]
+    return rows, hero(data, highlight=hl)
+
+
+class ShareNote(unittest.TestCase):
+    """One note under the bars (P4b-5): the first place on the highlighted part's share above the second, ordered by the shares'
+    ledger values, marked for the page check, and only where the core's comparison (wbkit.COMPARISONS, knobs.comparisons)
+    names the same two; its scope phrase leading where the core's set is scoped. No note where the two tie, print alike, a bar
+    does not draw the part, the core names other places or none, and the page is drawn all the same."""
+    SHARES = {"DE": ("40%", "40"), "EU27_2020": ("55%", "55"), "FR": ("30%", "30")}
+
+    def tearDown(self):
+        K.COMPARISONS = {}
+
+    def core(self, first, second, scoped=False, hl="fossil"):
+        K.COMPARISONS = {f"share.{g}.{hl}": {"first": first, "second": second, "scoped": scoped} for g in ("DE", "EU27_2020", "FR")}
+
+    def note(self, svg):
+        m = re.search(r'<g data-notes="share"><text [^>]*data-cmp="next" data-a="([^"]+)" data-b="([^"]+)">(.*?)</text></g>', svg)
+        return m and (m.group(1), m.group(2), re.sub(r"<[^>]+>", "", m.group(3)))
+
+    def test_the_first_above_the_second_by_their_ledger_values_as_the_core_finds_them(self):
+        rows, h = three("fossil", self.SHARES)
+        self.core("EU27_2020", "DE")
+        svg, _, _ = draw(h, rows)
+        self.assertEqual(check_svg(svg), [])
+        said = "欧盟 55%" + WD.WORDS["column.note.vs_next"] + WD.word("paren", v="德国 40%")
+        self.assertEqual(self.note(svg), ("fact:share.EU27_2020.fossil", "fact:share.DE.fossil", said))
+        self.core("EU27_2020", "DE", scoped=True)
+        svg, _, _ = draw(h, rows)
+        if "scope.within" in WD.WORDS:  # the scope phrase leads, in one piece, as the page check reads it
+            self.assertEqual(self.note(svg)[2], WD.WORDS["scope.within"] + WD.WORDS["column.note.vs_next"][:1] + said)
+            self.assertIn(WD.WORDS["scope.within"], svg)
+        else:
+            self.assertNotIn("data-notes", svg)
+
+    def test_no_note_where_the_shares_tie_print_alike_a_bar_lacks_the_part_or_the_core_disagrees(self):
+        cases = {"a tie at the top": ("fossil", {"DE": ("40%", "40"), "EU27_2020": ("40%", "40"), "FR": ("30%", "30")}, ("EU27_2020", "DE")),
+                 "the second printed as the third": ("fossil", {"DE": ("40%", "40.2"), "EU27_2020": ("55%", "55"), "FR": ("40%", "39.9")}, ("EU27_2020", "DE")),
+                 "a bar whose part is zero": ("nuclear", {"EU27_2020": ("23%", "23"), "FR": ("10%", "10")}, ("EU27_2020", "FR")),
+                 "the core's first is a place the bars do not draw": ("fossil", self.SHARES, ("PT", "EU27_2020")),
+                 "the core's second is another": ("fossil", self.SHARES, ("EU27_2020", "FR"))}
+        for name, (hl, shares, (first, second)) in cases.items():
+            rows, h = three(hl, shares)
+            self.core(first, second, hl=hl)
+            svg, _, _ = draw(h, rows)
+            self.assertEqual(check_svg(svg), [], name)
+            self.assertNotIn("data-notes", svg, name)
+        K.COMPARISONS = {}
+        rows, h = three("fossil", self.SHARES)
+        self.assertNotIn("data-notes", draw(h, rows)[0])  # no comparison from the core: no note
+        self.assertNotIn("data-notes", draw(hero(DATA))[0])  # two bars, and no bare entries: no note
 
 
 class ColumnLeafLayer(unittest.TestCase):

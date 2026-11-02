@@ -282,8 +282,17 @@ def line(x0, y0, x1, y1, stroke="var(--t-sec)", w=0.6, op=0.35):
 #     (every value fact of the same table, time, format and filter dimension), never from the leaf;
 #   - a note per side taking part, at its largest node: name, value, the same word, and in FINDING_WORDS["paren"] the second's
 #     name and value; it states next (data-cmp next, data-a the first, data-b the second of that derived set).
-FINDING_WORDS = {"above": "column.note.vs_next", "paren": "paren"}
+FINDING_WORDS = {"above": "column.note.vs_next", "paren": "paren", "scope": "scope.within"}
 FINDING_RELATION = {"headline": "max", "note": "next"}
+# The core's comparisons (next_ledger.rs comparisons, the request's knobs.comparisons; run.Panel sets them): {fact key:
+# {"first", "second": codes, "scoped": the set is narrower than the request's codes, a statement over it says the scope}}.
+COMPARISONS = {}
+
+
+def compared(src):
+    """The core's comparison of the fact a ledger src prints (fact:<k>, its .n or .r part), or None."""
+    k = src.removeprefix("fact:")
+    return COMPARISONS.get(k) or COMPARISONS.get(k[:-2] if k.endswith((".n", ".r")) else k)
 
 
 def finding_side_top(nodes):
@@ -315,6 +324,7 @@ def two_sided(sides, unit):
     segments. None, or {"side", "subject", "headline": segs, "cmp": ("max", a_src, [srcs]), "notes": [{"side", "code",
     "segs", "cmp": ("gt", a_src, b_src)}]}; segs {"w"}, {"src", "bold"}, {"name", "kind"}, and the unit's first segment."""
     tops = [finding_side_top(nodes) for _, nodes, _ in sides]
+    tops = [None if t and (compared(t[0][2]) or {}).get("scoped") else t for t in tops]  # a scoped side says nothing here
     shares = [(t[0][1] / s if t and s > 0 else -1.0) for t, (_, _, s) in zip(tops, sides)]
     if max(shares) < 0: return None
     i = shares.index(max(shares)); kind, nodes, _ = sides[i]; a = tops[i][0]
