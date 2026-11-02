@@ -95,6 +95,60 @@ def non_test_fns(t):
     return out
 
 
+def own_bodies(t):
+    """[(name, code)] of each non-test fn: its own code (code_only), the bodies of fns nested in it blanked. A fn runs to its
+    matching `}`, or to a `;` outside any bracket before its body (as next_ledger.rs own_bodies reads it)."""
+    c = code_only(t)
+    def end_of(j):
+        brace = bracket = 0
+        while j < len(c):
+            ch = c[j]
+            if ch in "([": bracket += 1
+            elif ch in ")]": bracket -= 1
+            elif ch == ";" and brace == 0 and bracket == 0: break
+            elif ch == "{": brace += 1
+            elif ch == "}":
+                brace -= 1
+                if brace == 0: break
+            j += 1
+        return min(j, len(c) - 1)
+    spans, i = [], 0
+    while i < len(c):
+        if c.startswith("#[cfg(test)]", i):
+            i = end_of(i + len("#[cfg(test)]"))
+        elif c.startswith("fn ", i) and (i == 0 or not (c[i - 1].isalnum() or c[i - 1] == "_")):
+            spans.append((re.match(r"\s*(\w*)", c[i + 3:]).group(1), i, end_of(i)))
+        i += 1
+    out = []
+    for name, a, z in spans:
+        own = list(c[a:z + 1])
+        for _, a2, z2 in spans:
+            if a < a2 and z2 <= z:
+                for k in range(a2 - a, z2 - a + 1):
+                    if own[k] != "\n": own[k] = " "
+        out.append((name, "".join(own)))
+    return out
+
+
+def refuses(line):
+    """A line of code_only code that refuses in its own words: `Err(` of anything but a bare name passed on, a
+    `Halt::Stop(` / `Halt::Bad(` built, `.ok_or(` of anything but a bare name, `.ok_or_else(` (a match pattern before `=>`
+    is none; `?` passing an error on is none). next_ledger.rs refuses() reads it alike."""
+    line = line.split("=>", 1)[1] if "=>" in line else line
+    return bool(re.search(r"(?<![\w])Err\((?!\s*\w+\s*\))|\.ok_or\((?!\s*\w+\s*\))|Halt::(?:Stop|Bad)\(|\.ok_or_else\(", line))
+
+
+def refusing(c, reg):
+    """The helpers and entry fns at c that refuse in their own body (the registry test holds that at none)."""
+    entry = set(reg[0].get("entry", ("", []))[1])
+    want = set(reg[1]) | entry
+    out = set()
+    for short, f in reg[2]:
+        for n, code in own_bodies(show(c, f)):
+            if f"{short}::{n}" in want and any(refuses(l) for l in code.splitlines()): out.add(f"{short}::{n}")
+    return sorted(out)
+
+
 def fns_at(c, files=CORE):
     """{"ledger::name", ...}: the non-test fns at c of files ((short name, path), ...)."""
     return {f"{short}::{n}" for short, f in files for n in non_test_fns(show(c, f))}
@@ -128,11 +182,16 @@ def vocab_items(c, ref):
     if name == "CHANNELS":
         m = re.search(r"const CHANNELS: \[Channel; \d+\] = \[(.*?)\n\];", t, re.S)
         return [f"{s[0]}/{s[2]}/{s[4]}" for s in re.findall(r'^\s*\("([a-z_]+)",.*?"(\w+)", "(\w+)", "(\w+)", "([\w.]+)"\),', m.group(1), re.M)] if m else []
-    if name == "leaf_stops":  # the rule arms of next_tree_gen.rs fn leaf_stops
-        i = t.find("\nfn leaf_stops(")
+    if ref.endswith(" rules"):  # the rules a fn implements, as next_ledger.rs rules_of reads them
+        i = t.find(f"\nfn {name}(")
         if i < 0: return []
-        body = t[i:]; j = body.find("\nfn ", 1); body = body if j < 0 else body[:j]
-        return [m for m in re.findall(r'^\s*"(\w+)" =>', body, re.M)]
+        body = t[i:]; j = body.find("\nfn ", 1); body = body if j < 0 else body[:j + 1]
+        out = []
+        for l in body.splitlines():
+            m = re.match(r'\s*(?:Some\()?"(\w+)"\)*\s*=>', l)
+            if m: out.append(m.group(1))
+            out += re.findall(r'g\("rule"\)\.s\(\) == Some\("(\w+)"', l)
+        return out
     if name == "Compute":
         seg = t[t.find('let op = q.g("op")'):t.find('not ported in this checker')]
         return sorted({o for arm in re.findall(r'^\s*((?:"\w+"\s*\|\s*)*"\w+")\s*=>', seg, re.M) for o in re.findall(r'"(\w+)"', arm)})
@@ -205,11 +264,13 @@ def added(b, h, files):
 
 
 def imports(c, f):
-    """{module: {name, ...}} a Rust file at c brings in by `use crate::<module>::...`."""
-    out = {}
+    """({module: {name, ...}}, {alias: module}) a Rust file at c brings in by `use crate::<module>::...` (`self as x`: an
+    alias of the module)."""
+    out, alias = {}, {}
     for mod, body in re.findall(r"use crate::(\w+)::(\{[^}]*\}|\w+)", show(c, f)):
         out.setdefault(mod, set()).update(re.findall(r"\w+", body))
-    return out
+        for a in re.findall(r"\bself as (\w+)", body): alias[a] = mod
+    return out, alias
 
 
 def pct(o, n):
@@ -228,10 +289,16 @@ def step(name, b, h, ref):
         or by its module path anywhere (`next_nodes::find(`)."""
         short, fn = f.split("::")
         p = path[short]; mod = os.path.splitext(os.path.basename(p))[0]
-        bare = rf"(?<![.\w:])(?<!fn ){re.escape(fn)}\("
-        if re.search(bare, by.get(p, "")) or re.search(rf"\b{mod}::{re.escape(fn)}\(", a): return True
-        # or bare in a file that imports it (`use crate::next_nodes::{find, ...}`)
-        return any(fn in imports(h, q).get(mod, ()) and re.search(bare, t) for q, t in by.items() if q.endswith(".rs"))
+        # a call `name(`, or the fn passed as a value (`.map(name)`, `(name,`)
+        bare = rf"(?<![.\w:])(?<!fn ){re.escape(fn)}\(|[(,]\s*{re.escape(fn)}\s*[),]"
+        if re.search(bare, by.get(p, "")) or re.search(rf"\b{mod}::{re.escape(fn)}\b", a): return True
+        # or bare in a file that imports it (`use crate::next_nodes::{find, ...}`), or by a module alias (`core::resolved`)
+        for q, t in by.items():
+            if not q.endswith(".rs"): continue
+            names, alias = imports(h, q)
+            if fn in names.get(mod, ()) and re.search(bare, t): return True
+            if any(m == mod and re.search(rf"\b{x}::{re.escape(fn)}\b", t) for x, m in alias.items()): return True
+        return False
     def used(k):
         fns, items = kh[k]
         return any(called(f) for f in fns) or any(re.search(rf'"{re.escape(i)}"', a) for i in items)
@@ -247,6 +314,8 @@ def step(name, b, h, ref):
         print(f"   v2 with the cfg(test) parse fixed, for comparison: existing {o2}, new {n2}; reuse {pct(o2, n2)}")
     else:
         print(f"   unregistered checks: {len(un)}" + (f" {', '.join(un)}" if un else ""))
+        r = refusing(h, reg)
+        print(f"   helpers or entries that refuse: {len(r)}" + (f" {', '.join(r)}" if r else ""))
 
 
 def main(argv):

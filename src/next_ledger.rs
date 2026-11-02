@@ -1071,6 +1071,8 @@ pub const CHECK_FILES: &[(&str, &str)] = &[
 #[allow(dead_code)] // read by its test and by scripts/reuse_rate.py
 pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     // the page's numbers: every digit a marked ledger entry printed one way, or a table id the request names
+    // a page whose comments the browser reads as written (one ended early is refused)
+    ("page_html_read", "", &["ledger::comment_len"]),
     ("numbers", "", &["ledger::check_numbers", "ledger::prints", "ledger::digit_runs", "ledger::num", "ledger::label", "ledger::enter", "ledger::segs", "ledger::finish", "facts::table_id", "facts::leaf_refs"]),
     // every fact recomputed from the request rows by its declared query (ops value, share, change, ...)
     ("fact_recompute", "", &["facts::compute", "facts::fact", "facts::one", "facts::family", "facts::minus_family", "facts::select", "facts::word", "facts::members", "facts::finite", "facts::sum"]),
@@ -1089,6 +1091,11 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     ("accent_named", "", &["ledger::check_accent_named"]),
     ("saturated_colours", "", &["ledger::saturated_colours"]),
     // the page tree (next_tree.rs): its schema
+    // a page tree that is JSON the checker reads: no extra data, a number where float() takes one
+    ("tree.json_input", "", &["tree::parse", "tree::err", "tree::num"]),
+    // the node the core asks: in the page tree, bound external, its runner a code file under the runtime, its content
+    // rechecked before the child starts and its reply after (C1-C5, B0-B7 and the colour checks)
+    ("tree.node_bound", "", &["tree::node_draw"]),
     ("tree.schema", "", &["tree::schema", "tree::is_type", "tree::full", "tree::word_c", "tree::nonempty_all", "tree::palette_id", "tree::ident_lower", "tree::pattern_match", "tree::schema_ref", "tree::schema_errors"]),
     // its facts recomputed by the checker's own ops (the op arms of Compute)
     ("tree.fact_ops", "next_tree::Compute ops", &["tree::fam", "tree::val", "tree::val_new"]),
@@ -1129,36 +1136,62 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     ("tree_gen.facts_held", "", &["tree_gen::held_to_page", "tree_gen::as_refs", "tree_gen::code_ref"]),
     // the registry's checks put on the page tree, per page and per external node
     ("tree_gen.registry_checks", "", &["tree_gen::checks_of"]),
-    // the leaf bridge (next_leaf.rs): every knob a page sets against the leaf registry's ranges
-    ("leaf.style", "", &["leaf::check_style"]),
-    // a layer's reply taken onto the panel or refused: sources, positions, overlaps, dropped items, svg markup
-    ("leaf.reply", "", &["leaf::take", "leaf::faults", "leaf::dropped_items", "leaf::text_box", "leaf::turn", "leaf::corners", "leaf::bounds", "leaf::overlap", "leaf::on_line", "leaf::drawn_texts", "leaf::svg_markup", "leaf::strs"]),
+    // a declaration the generator computes, else refused: the page input paths and knobs it reads, its dec_rule,
+    // fmt_change, rows rule, line segments and frame headings, its numbers, the select its items follow
+    ("tree_gen.declaration", "", &["tree_gen::sub", "tree_gen::declares", "tree_gen::held_decimals", "tree_gen::dec_of", "tree_gen::change_fmt", "tree_gen::declared_j", "tree_gen::from", "tree_gen::view_path", "tree_gen::number_of", "tree_gen::segments", "tree_gen::frame_words"]),
+    // a parts_of_whole page stops in the registry's words: its needs, and each stop rule (the rule names parts_declared
+    // reads; node-bindings.json stops name only those, the test below holds it); its expansion refuses a part with no
+    // total row, a fact the declaration lacks, a format it does not compute
+    ("tree_gen.parts_stops", "next_tree_gen::parts_declared rules", &["tree_gen::parts_declared", "tree_gen::first_row_of_no_number", "tree_gen::parts_expand"]),
+    // the page tree over the fill: selects recompute, every format the fill names, the accent held by a select
+    ("tree_gen.tree_held", "", &["tree_gen::tree_j"]),
+    // a leaf's ground for its node: no refusal reason, its land rows as {band: [[x0, x1], ...]}
+    ("tree_gen.ground", "", &["tree_gen::ground_of"]),
+    // the page sets no knob of an external layer (the core lays it out at the registry's)
+    ("tree_gen.external_knob", "", &["tree_gen::draw"]),
+    // the leaf bridge (next_leaf.rs): a layer's node registered, every knob a page sets against the leaf registry's ranges
+    ("leaf.style", "", &["leaf::check_style", "leaf::registered"]),
+    // a child that gives no pipes, closes its input, exits with no reply or answers past its deadline
+    ("leaf.child", "", &["leaf::start", "leaf::ask_once", "leaf::ask"]),
+    // a layer's reply taken onto the panel or refused: sources, positions, overlaps, dropped items, svg markup, its size
+    ("leaf.reply", "", &["leaf::take", "leaf::faults", "leaf::dropped_items", "leaf::text_box", "leaf::turn", "leaf::corners", "leaf::bounds", "leaf::overlap", "leaf::on_line", "leaf::drawn_texts", "leaf::svg_markup", "leaf::strs", "leaf::drawn"]),
     // the page holds each layer's bytes as Rust took them, once
     ("leaf.page_holds_layers", "", &["leaf::held", "leaf::element", "leaf::unseen", "leaf::svgs", "leaf::drawing"]),
-    // an illustration strip is line art in the page's colours only
-    ("leaf.strip", "", &["leaf::strip_faults"]),
+    // an illustration strip is line art in the page's colours only, as wide as asked
+    ("leaf.strip", "", &["leaf::strip_faults", "leaf::strip"]),
     // the bake changes no text and no mark of the page
     ("leaf.bake_keeps_text", "", &["leaf::bake", "leaf::read"]),
-    // the whole page as written: no placeholder left, no month read from two periods
-    ("leaf.page", "", &["leaf::check_leaf_page", "leaf::placeholders", "leaf::split_months"]),
+    // the whole page as written: no placeholder left, no month read from two periods, the ready script Rust's alone
+    ("leaf.page", "", &["leaf::check_leaf_page", "leaf::placeholders", "leaf::split_months", "leaf::bake_leaf_page"]),
     // the group command (next_visual.rs): each external layer prints the geometry the core placed
     ("visual.drawn_check", "", &["visual::drawn_checked", "visual::attr", "visual::tags_in", "visual::circles_drawn"]),
     // the browser check of the page, a pass only for these bytes
     ("visual.browser_check", "", &["visual::browser_check", "visual::passed"]),
     ("visual.one_mark_per_period", "", &["visual::one_mark_per_period"]),
+    // the strip's piece set in the page palette's colours
+    ("visual.strip_palette", "", &["visual::illus_strip"]),
+    // the map label points the binary embeds: each on the globe, else the table is refused
+    ("visual.label_points", "", &["visual::label_points"]),
+    // a fill of a registered recipe: no stray knob, every named row a name row with a text, every map point a table's
+    ("visual.fill", "", &["visual::fill"]),
+    // the command: the page check's findings stop the page; a knob request names a leaf's number knob
+    ("visual.command", "", &["visual::call"]),
     // the node registry (next_nodes.rs): a knob set within its range, else refused with the range and one example
     ("nodes.knob_range", "", &["nodes::check", "nodes::range_text", "nodes::set", "nodes::find"]),
-    // a node's registration: defaults in range, ranges sound, no name twice
-    ("nodes.registration", "", &["nodes::check_info"]),
+    // a node's registration: defaults in range, ranges sound, no name twice, every layer's node drawn by code
+    ("nodes.registration", "", &["nodes::check_info", "nodes::layered"]),
     // the Rust column page (next_render.rs): every number its spec prints, for the number checks to read
     ("render.spec_numbers", "", &["render::nums", "render::of"]),
     ("render.accent_colour", "", &["render::is_hex_colour"]),
+    // a bars frame with rows whose values it can draw, a page whose every card draws
+    ("render.page_refusals", "", &["render::new", "render::render"]),
     // the chart matcher (shape_registry.rs): a template that cannot hold every varying dimension does not pass
     ("shape.gate", "", &["shape::gate", "shape::judge"]),
-    // the entries that run the kinds above on a page and stop it on any failure: the core asking a node (C1-C5 before
-    // the child starts, B0-B7 and the colour checks on its reply), the generator's draw and declare, the leaf panel and
-    // page draws, the strip, the published page's bake, and the group command and its fill
-    ("entry", "", &["tree::node_draw", "tree_gen::draw", "tree_gen::declare", "leaf::draw", "leaf::draw_page", "leaf::draw_page_given", "leaf::strip", "leaf::bake_leaf_page", "visual::call", "visual::fill"]),
+    // a slice cut to its cap by shape alone, a remaining dimension that adds up or has a total row, else refused
+    ("shape.slice_fits", "", &["shape::fit", "shape::rank_by"]),
+    // the entries that run the kinds above and refuse nothing themselves (the test below holds it): the generator's
+    // declare, the leaf panel and page draws
+    ("entry", "", &["tree_gen::declare", "leaf::draw", "leaf::draw_page", "leaf::draw_page_given"]),
 ];
 
 /// The non-test fns of CHECK_FILES that implement no check: JSON and HTML reading and writing (Python-compatible where
@@ -1166,32 +1199,27 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
 /// declarations and expansions the checks then hold, child processes, and the chart matcher's ranking.
 #[allow(dead_code)] // read by its test and by scripts/reuse_rate.py
 pub const CHECK_HELPERS: &[&str] = &[
-    "ledger::name_src", "ledger::point_entry", "ledger::dropped_entry", "ledger::esc", "ledger::unescape", "ledger::tag_parts",
-    "ledger::comment_len", "ledger::tag_end", "ledger::attr", "ledger::elements", "ledger::text_outside", "ledger::printed",
-    "ledger::word_table", "facts::stored_request",
-    "tree::eq", "tree::num_like", "tree::num", "tree::finite", "tree::get", "tree::g", "tree::has", "tree::at", "tree::s", "tree::arr",
-    "tree::obj", "tree::is_obj", "tree::is_arr", "tree::is_null", "tree::truthy", "tree::get_mut", "tree::set", "tree::remove",
-    "tree::str", "tree::obj_of", "tree::strs", "tree::repr", "tree::dump", "tree::to_value", "tree::from_value", "tree::py_float",
-    "tree::py_str_repr", "tree::repr_into", "tree::st", "tree::dump_into", "tree::parse", "tree::ws", "tree::lit", "tree::err",
-    "tree::value", "tree::number", "tree::hex4", "tree::string", "tree::walk", "tree::go", "tree::new",
-    "tree::xml", "tree::num_attr", "tree::svg", "tree::bindings", "tree::registry_in_force", "tree::node_in", "tree::placed_of",
-    "tree_gen::change_fmt", "tree_gen::dec_of", "tree_gen::declared_j", "tree_gen::declares", "tree_gen::first_row_of_no_number",
-    "tree_gen::frame_knobs", "tree_gen::frame_words", "tree_gen::from", "tree_gen::ground_of", "tree_gen::held_decimals",
-    "tree_gen::in_input_order", "tree_gen::node_of", "tree_gen::number_of", "tree_gen::order_of", "tree_gen::parts_declared",
-    "tree_gen::parts_expand", "tree_gen::parts_selects", "tree_gen::place_src", "tree_gen::row_num", "tree_gen::runs_of",
-    "tree_gen::segments", "tree_gen::sub", "tree_gen::subx", "tree_gen::tree_j", "tree_gen::view_path",
-    "leaf::sampled", "leaf::node", "leaf::python", "leaf::leaves", "leaf::word", "leaf::words", "leaf::name", "leaf::knobs",
-    "leaf::registered", "leaf::stop", "leaf::start", "leaf::ask_once", "leaf::ask", "leaf::reserved", "leaf::drawn",
-    "visual::illus_strip", "visual::label_points", "visual::recipe_layers", "visual::expand",
+    "ledger::name_src", "ledger::point_entry", "ledger::dropped_entry", "ledger::esc", "ledger::unescape",
+    "ledger::tag_parts", "ledger::tag_end", "ledger::attr", "ledger::elements", "ledger::text_outside",
+    "ledger::printed", "ledger::word_table", "facts::stored_request", "tree::eq", "tree::num_like", "tree::finite",
+    "tree::get", "tree::g", "tree::has", "tree::at", "tree::s", "tree::arr", "tree::obj", "tree::is_obj",
+    "tree::is_arr", "tree::is_null", "tree::truthy", "tree::get_mut", "tree::set", "tree::remove", "tree::str",
+    "tree::obj_of", "tree::strs", "tree::repr", "tree::dump", "tree::to_value", "tree::from_value", "tree::py_float",
+    "tree::py_str_repr", "tree::repr_into", "tree::st", "tree::dump_into", "tree::ws", "tree::lit", "tree::value",
+    "tree::number", "tree::hex4", "tree::string", "tree::walk", "tree::go", "tree::new", "tree::xml", "tree::num_attr",
+    "tree::svg", "tree::bindings", "tree::registry_in_force", "tree::node_in", "tree::placed_of",
+    "tree_gen::frame_knobs", "tree_gen::in_input_order", "tree_gen::node_of", "tree_gen::order_of",
+    "tree_gen::parts_selects", "tree_gen::place_src", "tree_gen::row_num", "tree_gen::runs_of", "tree_gen::subx",
+    "leaf::sampled", "leaf::node", "leaf::python", "leaf::leaves", "leaf::word", "leaf::words", "leaf::name",
+    "leaf::knobs", "leaf::stop", "leaf::reserved", "visual::recipe_layers", "visual::expand",
     "nodes::add", "nodes::add_line", "nodes::default", "nodes::default_val", "nodes::fmt", "nodes::get", "nodes::hit",
-    "nodes::layered", "nodes::list", "nodes::names", "nodes::num", "nodes::on_line", "nodes::place", "nodes::tw", "nodes::walk",
-    "nodes::within", "nodes::word",
-    "render::bar_card", "render::draw_bars", "render::draw_cards", "render::draw_header", "render::draw_hero",
-    "render::draw_highlight", "render::draw_prose", "render::draw_value_labels", "render::height", "render::mid", "render::new",
-    "render::render", "render::reserve_bars", "render::seg", "render::seg_text", "render::x",
-    "shape::axis", "shape::base", "shape::cap", "shape::collapse_time", "shape::explain", "shape::first_to_last", "shape::fit",
-    "shape::has", "shape::name", "shape::page_plan", "shape::parts_index", "shape::rank", "shape::rank_by",
-    "shape::rank_first_to_last", "shape::rows", "shape::score", "shape::template", "shape::time_index",
+    "nodes::list", "nodes::names", "nodes::num", "nodes::on_line", "nodes::place", "nodes::tw", "nodes::walk",
+    "nodes::within", "nodes::word", "render::bar_card", "render::draw_bars", "render::draw_cards",
+    "render::draw_header", "render::draw_hero", "render::draw_highlight", "render::draw_prose",
+    "render::draw_value_labels", "render::height", "render::mid", "render::reserve_bars", "render::seg",
+    "render::seg_text", "render::x", "shape::axis", "shape::base", "shape::cap", "shape::collapse_time",
+    "shape::explain", "shape::first_to_last", "shape::has", "shape::name", "shape::page_plan", "shape::parts_index",
+    "shape::rank", "shape::rank_first_to_last", "shape::rows", "shape::score", "shape::template", "shape::time_index",
 ];
 
 /// The comparison set of a request row, from the request's rows alone: every series row of the same table and time, and
@@ -2753,11 +2781,110 @@ mod tests {
     }
 
     /// The rule names next_tree_gen.rs leaf_stops implements: its match arms `"name" => ...` (not the `_` arm).
-    fn leaf_stop_rules(gen: &str) -> Vec<String> {
-        let body = &gen[gen.find("\nfn leaf_stops(").expect("next_tree_gen.rs has fn leaf_stops")..];
+    /// The rule names a next_tree_gen.rs fn implements: its match arms `"name" =>` or `Some("name") =>`, and the rules it
+    /// reads by `g("rule").s() == Some("name")` (not the `_` arm). scripts/reuse_rate.py reads them alike.
+    fn rules_of(gen: &str, name: &str) -> Vec<String> {
+        let body = &gen[gen.find(&format!("\nfn {name}(")).unwrap_or_else(|| panic!("next_tree_gen.rs has fn {name}"))..];
         let body = &body[..body[1..].find("\nfn ").map_or(body.len(), |p| p + 1)];
-        body.lines()
-            .filter_map(|l| l.trim().strip_prefix('"')?.split_once("\" =>").map(|(name, _)| name.to_string()))
+        let quoted = |s: &str| s.strip_prefix('"').and_then(|s| s.split_once('"')).map(|(n, rest)| (n.to_string(), rest.to_string()));
+        let mut out = Vec::new();
+        for l in body.lines().map(str::trim) {
+            let arm = l.strip_prefix("Some(").unwrap_or(l);
+            if let Some((n, rest)) = quoted(arm) {
+                if rest.trim_start_matches(')').trim_start().starts_with("=>") {
+                    out.push(n);
+                }
+            }
+            for (i, _) in l.match_indices("g(\"rule\").s() == Some(") {
+                out.extend(quoted(&l[i + "g(\"rule\").s() == Some(".len()..]).map(|(n, _)| n));
+            }
+        }
+        out
+    }
+
+    /// The `rule` of every entry of a `stops` list, anywhere in the bindings.
+    fn stop_rules(v: &Value) -> Vec<&str> {
+        match v {
+            Value::Object(m) => m
+                .iter()
+                .flat_map(|(k, x)| match (k.as_str(), x) {
+                    ("stops", Value::Array(a)) => a.iter().filter_map(|s| s["rule"].as_str()).collect(),
+                    _ => stop_rules(x),
+                })
+                .collect(),
+            Value::Array(a) => a.iter().flat_map(stop_rules).collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Whether a line of a fn's code (code_only) refuses in its own words: `Err(` of anything but a bare name passed on,
+    /// a `Halt::Stop(` or `Halt::Bad(` built, an `.ok_or(` of anything but a bare name, an `.ok_or_else(`. A match
+    /// pattern before `=>` is read as no refusal, and `?` passing an error on is none.
+    fn refuses(line: &str) -> bool {
+        let line = line.split_once("=>").map_or(line, |(_, r)| r);
+        let b = line.as_bytes();
+        let after = |pat: &'static str| {
+            line.match_indices(pat)
+                .filter(move |(i, _)| pat.starts_with('.') || *i == 0 || !(b[i - 1].is_ascii_alphanumeric() || b[i - 1] == b'_'))
+                .map(move |(i, _)| &line[i + pat.len()..])
+        };
+        let passes_on = |rest: &str| {
+            let r = rest.trim_start();
+            let n = r.chars().take_while(|c| c.is_alphanumeric() || *c == '_').count();
+            n > 0 && r[n..].trim_start().starts_with(')')
+        };
+        after("Err(").chain(after(".ok_or(")).any(|r| !passes_on(r))
+            || line.contains("Halt::Stop(")
+            || line.contains("Halt::Bad(")
+            || line.contains(".ok_or_else(")
+    }
+
+    /// Each non-test fn's own code (code_only), the bodies of fns nested in it blanked: (name, code). A fn runs to its
+    /// matching `}`, or to a `;` outside any bracket before its body (a declaration).
+    fn own_bodies(src: &str) -> Vec<(String, String)> {
+        let c = code_only(src);
+        let b = c.as_bytes();
+        let end_of = |start: usize| {
+            let (mut j, mut brace, mut bracket) = (start, 0i32, 0i32);
+            while j < b.len() {
+                match b[j] {
+                    b'(' | b'[' => bracket += 1,
+                    b')' | b']' => bracket -= 1,
+                    b';' if brace == 0 && bracket == 0 => break,
+                    b'{' => brace += 1,
+                    b'}' => {
+                        brace -= 1;
+                        if brace == 0 {
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+                j += 1;
+            }
+            j.min(b.len() - 1)
+        };
+        let (mut spans, mut i) = (Vec::new(), 0);
+        while i < b.len() {
+            if c[i..].starts_with("#[cfg(test)]") {
+                i = end_of(i + "#[cfg(test)]".len());
+            } else if c[i..].starts_with("fn ") && (i == 0 || !(b[i - 1].is_ascii_alphanumeric() || b[i - 1] == b'_')) {
+                let name: String = c[i + 3..].trim_start().chars().take_while(|ch| ch.is_alphanumeric() || *ch == '_').collect();
+                spans.push((name, i, end_of(i)));
+            }
+            i += 1;
+        }
+        spans
+            .iter()
+            .map(|(name, a, z)| {
+                let mut own = b[*a..=*z].to_vec();
+                for (_, a2, z2) in &spans {
+                    if a < a2 && z2 <= z {
+                        own[a2 - a..=z2 - a].iter_mut().filter(|x| **x != b'\n').for_each(|x| *x = b' ');
+                    }
+                }
+                (name.clone(), String::from_utf8(own).unwrap())
+            })
             .collect()
     }
 
@@ -2837,7 +2964,7 @@ mod tests {
         }
         let gen = include_str!("next_tree_gen.rs");
         // every leaf stop node-bindings.json names is a rule the registered leaf_stops kind implements
-        let rules = leaf_stop_rules(gen);
+        let rules = rules_of(gen, "leaf_stops");
         assert!(rules.len() >= 15 && rules.contains(&"zero_end_past_frame".to_string()), "leaf_stops rules: {rules:?}");
         let bindings: Value = serde_json::from_str(include_str!("../runtime/page_tree/node-bindings.json")).unwrap();
         let mut named = Vec::new();
@@ -2846,6 +2973,37 @@ mod tests {
         let unregistered: Vec<&String> = named.iter().filter(|s| !rules.contains(s)).collect();
         assert!(unregistered.is_empty(), "leaf stops in node-bindings.json no registered rule implements: {unregistered:?}");
         assert!(CHECK_REGISTRY.iter().any(|(k, v, f)| *k == "leaf_stops" && v.starts_with("next_tree_gen::leaf_stops") && f == &["tree_gen::leaf_stops"]));
+        // every parts_of_whole stop rule node-bindings.json names is one parts_declared reads (tree_gen.parts_stops)
+        let parts = rules_of(gen, "parts_declared");
+        assert_eq!(parts, ["number_in_rows_read", "max_dropped", "fill_after_drop"]);
+        let stops = stop_rules(&bindings);
+        assert!(!stops.is_empty() && stops.iter().all(|s| parts.iter().any(|p| p == s)), "node-bindings.json stops: {stops:?} against {parts:?}");
+        // a helper or an entry refuses nothing in its own body: a refusal is a check, so it belongs to a registered kind
+        let entry: &[&str] = CHECK_REGISTRY.iter().find(|(k, _, _)| *k == "entry").map_or(&[][..], |(_, _, f)| *f);
+        let refusing: Vec<String> = files
+            .iter()
+            .flat_map(|(short, _, src)| own_bodies(src).into_iter().map(move |(n, b)| (format!("{short}::{n}"), b)))
+            .filter(|(n, b)| (CHECK_HELPERS.contains(&n.as_str()) || entry.contains(&n.as_str())) && b.lines().any(refuses))
+            .map(|(n, _)| n)
+            .collect();
+        assert!(refusing.is_empty(), "helpers or entries that refuse in their own body: {refusing:?}");
+        // the guard reads refusals as the reuse script does
+        for (line, hit) in [
+            ("return Err(format!(\"no\"));", true),
+            ("return Err(\"no\".into());", true),
+            ("Err(e) => return Err(e),", false),
+            ("let x = y.ok_or_else(|| format!(\"no\"))?;", true),
+            ("let x = y.ok_or(e)?;", false),
+            ("let x = y.ok_or(\"no\")?;", true),
+            ("Halt::Stop(w) => w,", false),
+            ("return Err(stop(w));", true),
+            ("let x = f(y)?;", false),
+            ("let n = OkErr(e);", false),
+        ] {
+            assert_eq!(refuses(&code_only(line)), hit, "{line}");
+        }
+        let bodies = own_bodies("fn a() -> [u8; 2] { fn b() { Err(\"x\") } ok(1) }\nfn c();\n#[cfg(test)]\nfn d() { Err(\"t\") }\n");
+        assert_eq!(bodies.iter().map(|(n, b)| (n.as_str(), b.lines().any(refuses))).collect::<Vec<_>>(), [("a", false), ("b", true), ("c", false)]);
         // the helper test above parses as the reuse script does: a fn in a comment, a string or a test item is no fn
         assert_eq!(non_test_fns("fn a() {}\n// fn b()\nconst S: &str = \"fn c()\";\n#[cfg(test)]\nmod t { fn d() {} }\nfn e<'x>(c: char) -> bool { c == '}' }\n"), ["a", "e"]);
     }
