@@ -1206,9 +1206,17 @@ fn plain_tie(t: Option<&J>) -> bool {
     t.is_none_or(|t| *t == J::obj_of(vec![("by", J::str("code")), ("outcome", J::str("order"))]))
 }
 
+/// K10 (P4a-2): a rank's key, its value at over.time or its change {"change": [t0, t1]} from t0 to t1 = over.time (the later
+/// value less the earlier, as the flow's changed ranks and the page's change facts compute it): the time it runs from.
+pub(crate) fn change_from(s: &J) -> Option<&J> {
+    let k = s.g("key");
+    let ends = k.g("change").arr();
+    (k.is_obj() && k.obj().len() == 1 && ends.len() == 2 && ends[1] == *s.g("over").g("time") && ends[0].s().is_some()).then(|| &ends[0])
+}
+
 fn cannot_rank(s: &J) -> Option<String> {
-    if s.g("key").s() != Some("value") {
-        return Some(format!("key {} (only value)", s.g("key").repr()));
+    if s.g("key").s() != Some("value") && change_from(s).is_none() {
+        return Some(format!("key {} (only value, or {{\"change\": [a time, over.time]}})", s.g("key").repr()));
     }
     let extra: Vec<&str> = s.g("over").obj().iter().map(|(k, _)| k.as_str()).filter(|k| !RANK_OVER.contains(k)).collect();
     if !extra.is_empty() {
@@ -1410,7 +1418,19 @@ fn recheck_one(
             let desc = s.g("order").s() == Some("desc");
             let mut keyed: Vec<(f64, String, &J)> = Vec::new();
             for r in at {
-                let v = num(r)?;
+                let mut v = num(r)?;
+                if let Some(t0) = change_from(s) {
+                    let c = dims(r, by);
+                    let from: Vec<&J> = select_rows(rows, q).into_iter().filter(|x| x.g("time") == t0 && dims(x, by) == c).collect();
+                    match from[..] {
+                        [r0] => v -= num(r0)?,
+                        _ => {
+                            bad.push(format!("rank {id}: {} has {} rows at {}, the change needs one", st(c), from.len(), st(t0)));
+                            got.insert(id.into(), s0.g("result").clone());
+                            return Ok(());
+                        }
+                    }
+                }
                 keyed.push((if desc { -v } else { v }, st(dims(r, by)), r));
             }
             keyed.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal).then_with(|| a.1.cmp(&b.1)));
@@ -2820,7 +2840,26 @@ pub const TOL_PX_MAX: f64 = 0.5;
 /// (12, 8, 6). A registry may only be stricter.
 pub const MAX_PX_MAX: f64 = 24.0;
 /// The largest circle radius a registry's radius_area scale may declare: the bubbles' 28 px, the one registered today.
+/// K4 (P4a-2) holds a map's r_max knob under it too: a registry may only be stricter.
 pub const RADIUS_PX_MAX: f64 = 28.0;
+/// K4: the grid the circles' radius scale r_used steps down on, from the registry's r_max: R_STEP_PX at a time, down to
+/// R_FLOOR_PX (the leaf's r_max knob floor and step, bubbles.py); the core's, no registry sets them.
+pub const R_FLOOR_PX: f64 = 12.0;
+pub const R_STEP_PX: f64 = 2.0;
+/// K4: the range of the radius a small circle is lifted to (the r_min knob's range).
+pub const R_MIN_PX: (f64, f64) = (2.0, 8.0);
+/// K5: the farthest a circle may be moved off its place's point (the nudge knob's maximum).
+pub const NUDGE_PX_MAX: f64 = 16.0;
+/// K8: the longest leader from a circle's edge to its label (the reach knob's maximum).
+pub const REACH_PX_MAX: f64 = 200.0;
+/// K6: the most pairs of circles that may overlap by over half the smaller one (the max_overlaps knob's maximum).
+pub const OVERLAPS_MAX: f64 = 20.0;
+/// K8: the least room a label keeps from every circle and dot (label_gap's minimum) and from another label (label_sep's).
+pub const GAP_PX_MIN: f64 = 1.0;
+pub const SEP_PX_MIN: f64 = 2.0;
+/// K5: the dot a circle moved off its point keeps at the point (radius), and how far it must have moved to keep one.
+pub const DOT_R_PX: f64 = 1.6;
+const DOT_OVER_PX: f64 = 0.5;
 const CHECK_KINDS: [&str; 14] = [
     "count_equals", "points_pinned", "named", "one_name", "tolerance_fixed", "ranks_some", "one_row_per_code", "max_dropped",
     "fill_after_drop", "has_composition", "row_exists", "page_check", "unit_short", "finding_words",
@@ -2829,19 +2868,26 @@ const CHECK_KINDS: [&str; 14] = [
 /// Every part of a scale is the core's; a registry may only add the declared constants (band padding, max radius).
 /// A channel the core recomputes: (name, its field sets, what it encodes, scale kind, domain, range).
 type Channel = (&'static str, &'static [&'static [&'static str]], &'static str, &'static str, &'static str, &'static str);
-const CHANNELS: [Channel; 8] = [
+const CHANNELS: [Channel; 10] = [
     ("length_up", &[&["h", "y"]], "value", "linear", "zero_to_max", "plot.y"),
-    // K1 (P4a): a bar from the plot's left edge, its length the value over the largest, across the plot's width
-    ("length_right", &[&["x", "w"]], "value", "linear", "zero_to_max", "plot.x"),
+    // K11 (P4a-2, in place of K1): a bar from a zero line, its length the value's size over the span from the lowest (or 0)
+    // to the highest (or 0), right of the line for a value of 0 or more, left of it below 0; on values of 0 or more it is
+    // K1's bar from the plot's left edge, bit for bit
+    ("length_signed", &[&["x", "w"]], "value", "linear", "lo0_to_hi0", "plot.x"),
     // K2 (P4a): one row per item down a rows frame, the mark inset from its row's top and bottom
     ("rows_y", &[&["y", "h"]], "item", "rows", "items", "plot.y"),
     ("band_x", &[&["x", "w"]], "item", "band", "items", "plot.x"),
     ("band_y", &[&["y", "h"]], "item", "band", "items", "plot.y"),
     ("radius_area", &[&["r"]], "value", "sqrt", "zero_to_max", "max_px"),
     ("point", &[&["cx", "cy"], &["x2", "y2"]], "at", "mercator", "ext", "plot"),
+    // K3 (P4a-2): a place's point as the map leaves project it (mapkit.View over the page's extent, the frame's width)
+    ("point", &[&["cx", "cy"]], "at", "view", "ext", "plot"),
+    // K4 (P4a-2): r = max(r_min, r_used * sqrt(v / vmax)), r_used the largest circle's, on the core's grid under r_max
+    ("radius_floor", &[&["r"]], "value", "sqrt", "zero_to_max", "r_max"),
     ("stack_x", &[&["x", "w"]], "share", "linear", "zero_to_one", "plot.x"),
 ];
-const FIELD_KINDS: [&str; 7] = ["select_index", "row_of_code", "fact_template", "code_is", "point_of_code", "cells_by_part", "fact_per_part"];
+const FIELD_KINDS: [&str; 8] =
+    ["select_index", "row_of_code", "row_of_code_from", "fact_template", "code_is", "point_of_code", "cells_by_part", "fact_per_part"];
 const FOR_EACH: [&str; 4] = ["binds.ranked", "binds.bars", "items_for", "spec"];
 /// The reply allow-list: each shape's fields, a text's fields, the anchors, the one refusal.
 pub const SHAPES: [(&str, &[&str]); 3] = [("rect", &["x", "y", "w", "h"]), ("circle", &["cx", "cy", "r"]), ("line", &["x1", "y1", "x2", "y2"])];
@@ -2862,6 +2908,11 @@ fn rows_frame_problem(fr: &J, e: &J) -> Option<String> {
     match fr.get("kind") {
         None if rows_y => Some("channel rows_y needs a frame of kind rows".into()),
         None => None,
+        // K3 (P4a-2): a map view, the core's projection over the page's extent at the frame's width, its land inset px in
+        Some(k) if k.s() == Some("view") && !rows_y => {
+            let ok = matches!(fr.g("w"), J::Int(x) if *x > 0) && matches!(fr.g("inset"), J::Int(x) if *x >= 0);
+            (!ok).then(|| "a view frame needs a whole w above 0 and a whole inset".into())
+        }
         Some(k) if k.s() != Some("rows") => Some(format!("kind {}: not one the core lays out", k.repr())),
         Some(_) => {
             let whole = ["w", "top", "row", "inset", "foot"].iter().all(|f| matches!(fr.g(f), J::Int(x) if *x >= 0));
@@ -2870,6 +2921,165 @@ fn rows_frame_problem(fr: &J, e: &J) -> Option<String> {
             (!ok).then(|| "a rows frame needs whole w, top, row, inset (under half a row) and foot, and a left and right text of the node".into())
         }
     }
+}
+
+/// The knobs a map circles node is laid out by (the registry's `knobs`, the values the core sends), each a number.
+const CIRCLE_KNOBS: [&str; 10] = [
+    "r_max",
+    "r_min",
+    "nudge",
+    "circle_gap",
+    "max_overlaps",
+    "label_top",
+    "label_gap",
+    "label_sep",
+    "reach",
+    "land_cost",
+];
+
+/// Every map circles knob past the core's own bound (K4-K8, design 4.1): the registry's at load (C5) and a request's before
+/// its reply is read (B0), by the same rule, so a second layer that widens its knob ranges cannot widen a core check. `k`
+/// gives a knob's value by its registry name; a missing or non-number knob is out of bounds.
+fn circle_bound_problems(at: &str, k: &dyn Fn(&str) -> Option<f64>) -> Vec<String> {
+    let mut bad = Vec::new();
+    let mut need = |name: &str, ok: &dyn Fn(f64) -> bool, why: String| match k(name) {
+        Some(v) if v.is_finite() && ok(v) => {}
+        v => bad.push(format!(
+            "{at} {name} {}: {why}",
+            v.map_or("none".into(), py_float)
+        )),
+    };
+    need(
+        "r_max",
+        &|v| (R_FLOOR_PX..=RADIUS_PX_MAX).contains(&v) && (v - R_FLOOR_PX) % R_STEP_PX == 0.0,
+        format!(
+        "outside [{}, RADIUS_PX_MAX {}] on the core's {} px grid; a registry may only be stricter",
+        py_float(R_FLOOR_PX),
+        py_float(RADIUS_PX_MAX),
+        py_float(R_STEP_PX)
+    ),
+    );
+    need(
+        "r_min",
+        &|v| (R_MIN_PX.0..=R_MIN_PX.1).contains(&v),
+        format!(
+            "outside [{}, {}]",
+            py_float(R_MIN_PX.0),
+            py_float(R_MIN_PX.1)
+        ),
+    );
+    need(
+        "max_overlaps",
+        &|v| (0.0..=OVERLAPS_MAX).contains(&v) && v.fract() == 0.0,
+        format!("over OVERLAPS_MAX {}", py_float(OVERLAPS_MAX)),
+    );
+    need(
+        "nudge",
+        &|v| (0.0..=NUDGE_PX_MAX).contains(&v),
+        format!("over NUDGE_PX_MAX {}", py_float(NUDGE_PX_MAX)),
+    );
+    need(
+        "reach",
+        &|v| (0.0..=REACH_PX_MAX).contains(&v),
+        format!("over REACH_PX_MAX {}", py_float(REACH_PX_MAX)),
+    );
+    need(
+        "label_gap",
+        &|v| v >= GAP_PX_MIN,
+        format!("under GAP_PX_MIN {}", py_float(GAP_PX_MIN)),
+    );
+    need(
+        "label_sep",
+        &|v| v >= SEP_PX_MIN,
+        format!("under SEP_PX_MIN {}", py_float(SEP_PX_MIN)),
+    );
+    need("circle_gap", &|v| v >= 0.0, "below 0".into());
+    need(
+        "label_top",
+        &|v| v >= 0.0 && v.fract() == 0.0,
+        "not a whole count".into(),
+    );
+    need("land_cost", &|v| v >= 0.0, "below 0".into());
+    bad
+}
+
+/// C5 for a map circles node (a frame of kind view): the rules it names are the ones the core computes (K5 pinned_within,
+/// K6 overlap_pairs, K7 ends_then_largest, K9 dropped_listed), its marks in value order, and its knobs within the core's
+/// own bounds.
+fn circles_registry_problems(p: &str, e: &J) -> Vec<String> {
+    let mut out = Vec::new();
+    let m = e.g("marks");
+    let want = [
+        (m.g("order"), J::str("value_desc_stable"), "marks.order"),
+        (
+            m.g("moved"),
+            J::obj_of(vec![
+                ("rule", J::str("pinned_within")),
+                ("most", J::str("nudge")),
+            ]),
+            "marks.moved",
+        ),
+        (
+            m.g("overlap"),
+            J::obj_of(vec![
+                ("rule", J::str("overlap_pairs")),
+                ("max", J::str("max_overlaps")),
+            ]),
+            "marks.overlap",
+        ),
+        (
+            e.g("texts").g("subset"),
+            J::obj_of(vec![
+                ("rule", J::str("ends_then_largest")),
+                ("top", J::str("label_top")),
+            ]),
+            "texts.subset",
+        ),
+        (
+            e.g("texts").g("drop"),
+            J::obj_of(vec![("rule", J::str("dropped_listed"))]),
+            "texts.drop",
+        ),
+    ];
+    for (have, want, what) in want {
+        if *have != want {
+            out.push(format!(
+                "{p} {what} {}: the core computes only {}",
+                have.repr(),
+                want.repr()
+            ));
+        }
+    }
+    let item: Vec<&str> = e
+        .g("texts")
+        .g("item")
+        .obj()
+        .iter()
+        .map(|(k, _)| k.as_str())
+        .collect();
+    if item != ["label"] {
+        out.push(format!(
+            "{p} texts.item {}: a map circle carries one label",
+            J::strs(&item).repr()
+        ));
+    }
+    let knobs = e.g("knobs");
+    let extra: Vec<&str> = knobs
+        .obj()
+        .iter()
+        .map(|(k, _)| k.as_str())
+        .filter(|k| !CIRCLE_KNOBS.contains(k))
+        .collect();
+    if !extra.is_empty() {
+        out.push(format!(
+            "{p} knobs {}: not knobs the core lays the circles out by",
+            J::strs(&extra).repr()
+        ));
+    }
+    out.extend(circle_bound_problems(&format!("{p} knobs"), &|k| {
+        knobs.g(k).num()
+    }));
+    out
 }
 
 /// P1's node registry with an overlay over it: the overlay's frames, and each overlay node's fields set over P1's entry.
@@ -2932,7 +3142,8 @@ pub fn registry_problems(reg: &J) -> Vec<String> {
         }
         if let Some(why) = rows_frame_problem(reg.g("frames").g(&st(e.g("frame"))), e) {
             out.push(format!("{p} frame {}: {why}", e.g("frame").repr()));
-        }        let it = e.g("items");
+        }
+        let it = e.g("items");
         if !it.g("for_each").s().is_some_and(|f| FOR_EACH.contains(&f)) {
             out.push(format!("{p} items.for_each {}: not one the core expands", it.g("for_each").repr()));
         }
@@ -2955,8 +3166,7 @@ pub fn registry_problems(reg: &J) -> Vec<String> {
         for ch in m.g("encode").arr() {
             let sc = ch.g("scale");
             let fields: Vec<String> = ch.g("fields").arr().iter().map(st).collect();
-            let def = CHANNELS.iter().find(|c| ch.g("channel").s() == Some(c.0));
-            let ok = def.is_some_and(|(_, ftuples, of, kind, domain, range)| {
+            let ok = CHANNELS.iter().filter(|c| ch.g("channel").s() == Some(c.0)).any(|(_, ftuples, of, kind, domain, range)| {
                 let consts: &[&str] = if *kind == "band" { &["padding"] } else { &[] };
                 let rng = sc.g("range");
                 ftuples.iter().any(|t| t.len() == fields.len() && t.iter().zip(&fields).all(|(a, b)| a == b))
@@ -2999,8 +3209,24 @@ pub fn registry_problems(reg: &J) -> Vec<String> {
         if m.g("free").arr().iter().any(|f| !matches!(f.s(), Some("x1" | "y1"))) {
             out.push(format!("{p} marks: free {}: only a line's start may be free (tied to its text)", m.g("free").repr()));
         }
+        let view = reg.g("frames").g(&st(e.g("frame"))).g("kind").s() == Some("view");
+        if view {
+            out.extend(circles_registry_problems(&p, e));
+        }
         for (f, rel) in e.g("texts").g("item").obj() {
             let ok = matches!(rel.g("near").s(), Some("item" | "part")) && matches!(rel.g("from").s(), Some("anchor" | "box")) && rel.g("max_px").finite();
+            // K2 (P4a-2): a text at its row's start in a rows frame (the left column's right edge, gap_px before it), its
+            // place the core's own: a closer check than near
+            let row_left = rel.g("row").s() == Some("left")
+                && rel.obj().len() == 2
+                && rel.g("gap_px").num().is_some_and(|g| g > 0.0 && g <= MAX_PX_MAX)
+                && reg.g("frames").g(&st(e.g("frame"))).g("kind").s() == Some("rows")
+                && reg.g("frames").g(&st(e.g("frame"))).g("left").g("text").s() == Some(f.as_str());
+            // K8 (P4a-2): a map circle's label beside it or at a leader's end, by the knobs the core bounds
+            let beside = view && rel == &J::obj_of(vec![("place", J::str("beside_or_leader"))]);
+            if row_left || beside {
+                continue;
+            }
             if !ok {
                 out.push(format!("{p} text {f} relation {}: not one the core checks", rel.repr()));
             } else if !rel.g("max_px").num().is_some_and(|d| d > 0.0 && d <= MAX_PX_MAX) {
@@ -3790,7 +4016,8 @@ fn at_path<'a>(obj: &'a J, dotted: &str) -> Result<&'a J, String> {
     Ok(o)
 }
 
-/// A template's `{name}` holes filled from the context, or from the node by a dotted path.
+/// A template's `{name}` holes filled from the context, or from the node by a dotted path; `{path?}` is empty where the
+/// node has no such path (a bind one page's node carries and another's not: the column page's number part `.n`).
 fn fill_template(template: &str, ctx: &[(&str, &str)], n: &J) -> Result<String, String> {
     let mut out = String::new();
     let mut rest = template;
@@ -3798,13 +4025,15 @@ fn fill_template(template: &str, ctx: &[(&str, &str)], n: &J) -> Result<String, 
         out.push_str(&rest[..i]);
         let after = &rest[i + 1..];
         let end = after.find(|c: char| !(c.is_ascii_lowercase() || c == '_' || c == '.')).unwrap_or(after.len());
-        if end > 0 && after[end..].starts_with('}') {
+        let optional = after[end..].starts_with("?}");
+        if end > 0 && (optional || after[end..].starts_with('}')) {
             let k = &after[..end];
             match ctx.iter().find(|(name, _)| *name == k) {
                 Some((_, v)) => out.push_str(v),
+                None if optional => out.push_str(&at_path(n, k).map(st).unwrap_or_default()),
                 None => out.push_str(&st(at_path(n, k)?)),
             }
-            rest = &after[end + 1..];
+            rest = &after[end + 1 + usize::from(optional)..];
         } else {
             out.push('{');
             rest = after;
@@ -3834,22 +4063,31 @@ pub fn expand_items(n: &J, entry: &J, spec: &J, got: &Got, inp: &J) -> Result<Ve
         let codes = got.get(&sid).ok_or_else(|| format!("'{sid}'"))?.arr().to_vec();
         (codes.iter().map(|_| J::Obj(vec![])).collect(), codes, Some(sid))
     };
-    let over = match &sid {
-        Some(s) => Some(root_rank(&sel, s)?.g("over").clone()),
-        None => None,
+    let (over, from) = match &sid {
+        Some(s) => {
+            let root = root_rank(&sel, s)?;
+            (Some(root.g("over").clone()), change_from(root).cloned())
+        }
+        None => (None, None),
     };
     for (i, (item, code)) in items.iter_mut().zip(&codes).enumerate() {
         let mut cells: Option<J> = None;
         let cs = st(code);
         for (f, d) in it.g("fields").obj() {
-            let v = match d.g("kind").s().unwrap_or("") {
+            let kind = d.g("kind").s().unwrap_or("");
+            // K10: the row a change runs from, only where the items' rank is by a change (else no such field)
+            if kind == "row_of_code_from" && from.is_none() {
+                continue;
+            }
+            let v = match kind {
                 "select_index" => J::Str(format!("select:{}[{i}]", sid.as_deref().unwrap_or("None"))),
-                "row_of_code" => {
+                "row_of_code" | "row_of_code_from" => {
                     let over = over.as_ref().ok_or("'over'")?;
                     let by = st(over.g("by"));
+                    let time = if kind == "row_of_code" { over.g("time") } else { from.as_ref().expect("checked above") };
                     let hit: Vec<&J> = rows
                         .iter()
-                        .filter(|r| r.g("table") == over.g("table") && r.g("time") == over.g("time") && dims(r, &by) == code)
+                        .filter(|r| r.g("table") == over.g("table") && r.g("time") == time && dims(r, &by) == code)
                         .filter(|r| over.g("filter").obj().iter().all(|(a, b)| dims(r, a) == b))
                         .collect();
                     if hit.len() != 1 {
@@ -3941,35 +4179,113 @@ pub fn tw_leaf(text: &str, size: f64) -> f64 {
     s + c
 }
 
-/// K2: a rows frame laid out as the column page's leaf lays out its bars (column.py ColumnFrame, its arithmetic in its
-/// order): the left column as wide as its widest text plus its gap, the right likewise, the frame starting at the node's
-/// knob x0 (0 without it) and the plot between the two columns, one row per item from top, the frame's foot under the last.
-/// Returns the frame {w, h}, the plot box and the numbers the node lays the rows out by {x0, lw, bw, top, row, inset}.
-fn rows_frame(fr: &J, n: &J, meta: &Meta, size: f64) -> Result<(J, J, J), String> {
+/// K11 (P4a-2): the room for a value text on each side a bar runs to, as the change leaf left it (column.py
+/// cl_change_bars): `vw` left of the zero line when a value is below 0, right of it when one is above 0. (lo, hi, neg, pos)
+fn signed_room(values: &[f64], vw: f64) -> (f64, f64, f64, f64) {
+    let lo = values
+        .iter()
+        .copied()
+        .fold(f64::INFINITY, |a, b| if b < a { b } else { a });
+    let hi = values
+        .iter()
+        .copied()
+        .fold(f64::NEG_INFINITY, |a, b| if b > a { b } else { a });
+    // Python's min(0.0, x) and max(0.0, x): 0.0 unless x is past it
+    let (lo, hi) = (
+        if lo < 0.0 { lo } else { 0.0 },
+        if hi > 0.0 { hi } else { 0.0 },
+    );
+    (
+        lo,
+        hi,
+        if lo < 0.0 { vw } else { 0.0 },
+        if hi > 0.0 { vw } else { 0.0 },
+    )
+}
+
+/// K2: a rows frame laid out as the column page's leaf lays out its bars (column.py ColumnFrame and cl_change_bars, their
+/// arithmetic in their order): the left column as wide as its widest text plus its gap, the right likewise, the frame
+/// starting at the node's knob x0 (0 without it); the bars between the two columns from a zero line, with the right
+/// column's room on each side a bar runs to (K11: on values of 0 or more, the room after the bars only); one row per item
+/// from top, the frame's foot under the last. Returns the frame {w, h}, the plot box (from the zero line's left room to the
+/// right room) and the numbers the node lays the rows out by {x0, lw, vw, bw (the whole width after x0), top, row, inset}.
+fn rows_frame(fr: &J, n: &J, meta: &Meta, size: f64, values: &[f64]) -> Result<(J, J, J), String> {
     let widest = |side: &str| -> Result<f64, String> {
         let end = format!("/{}", st(fr.g(side).g("text")));
         let gap = fr.g(side).g("gap").num().ok_or("rows frame gap")?;
-        let w = meta.texts.iter().filter(|t| t.0.ends_with(&end)).map(|t| tw_leaf(&t.1, size)).reduce(pmax).ok_or("rows frame: no text sizes a column")?;
+        let w = meta
+            .texts
+            .iter()
+            .filter(|t| t.0.ends_with(&end))
+            .map(|t| tw_leaf(&t.1, size))
+            .reduce(pmax)
+            .ok_or("rows frame: no text sizes a column")?;
         Ok(w + gap)
     };
     let (lw, vw) = (widest("left")?, widest("right")?);
     let x0 = n.g("knobs").get("x0").cloned().unwrap_or(J::Int(0));
-    let num = |v: &J, what: &str| v.num().ok_or_else(|| format!("rows frame: {what} is no number"));
-    let (w, x, top, row) = (num(fr.g("w"), "w")?, num(&x0, "x0")?, num(fr.g("top"), "top")?, num(fr.g("row"), "row")?);
+    let num = |v: &J, what: &str| {
+        v.num()
+            .ok_or_else(|| format!("rows frame: {what} is no number"))
+    };
+    let (w, x, top, row) = (
+        num(fr.g("w"), "w")?,
+        num(&x0, "x0")?,
+        num(fr.g("top"), "top")?,
+        num(fr.g("row"), "row")?,
+    );
     let count = n.g("items").arr().len() as f64;
-    let bw = (w - x) - lw - vw;
-    let plot = J::Arr(vec![J::Num(x + lw), J::Num(top), J::Num(x + lw + bw), J::Num(top + row * count)]);
+    let whole = w - x;
+    let (_, _, neg, pos) = signed_room(values, vw);
+    let bw = whole - lw - neg - pos;
+    let left = x + lw + neg;
+    let plot = J::Arr(vec![
+        J::Num(left),
+        J::Num(top),
+        J::Num(left + bw),
+        J::Num(top + row * count),
+    ]);
     let h = top + row * count + num(fr.g("foot"), "foot")?;
     let frame = J::obj_of(vec![("w", fr.g("w").clone()), ("h", J::Num(h))]);
     let rows = J::obj_of(vec![
         ("x0", x0),
         ("lw", J::Num(lw)),
-        ("bw", J::Num(bw)),
+        ("vw", J::Num(vw)),
+        ("bw", J::Num(whole)),
         ("top", fr.g("top").clone()),
         ("row", fr.g("row").clone()),
         ("inset", fr.g("inset").clone()),
     ]);
     Ok((frame, plot, rows))
+}
+
+/// K11: the zero line and each value's bar (x, w) on a signed rows request, the change leaf's arithmetic in its order:
+/// left = x0 + lw + neg, bw = whole - lw - neg - pos, z = left + -lo / (hi - lo) * bw, w = |v| / (hi - lo) * bw, x = z or
+/// z - w. None when every value is 0 (no span to scale by).
+fn signed_bars(rows: &J, values: &[f64]) -> Option<(f64, Vec<(f64, f64)>)> {
+    let (x0, lw, vw, whole) = (
+        rows.g("x0").num()?,
+        rows.g("lw").num()?,
+        rows.g("vw").num()?,
+        rows.g("bw").num()?,
+    );
+    let (lo, hi, neg, pos) = signed_room(values, vw);
+    if hi - lo <= 0.0 {
+        return None;
+    }
+    let left = x0 + lw + neg;
+    let bw = whole - lw - neg - pos;
+    let z = left + -lo / (hi - lo) * bw;
+    Some((
+        z,
+        values
+            .iter()
+            .map(|v| {
+                let w = v.abs() / (hi - lo) * bw;
+                (if *v >= 0.0 { z } else { z - w }, w)
+            })
+            .collect(),
+    ))
 }
 
 /// The core's printed strings: facts formatted by their format record, names from the name table, word-table words.
@@ -4183,17 +4499,13 @@ pub fn expected(req: &J) -> Result<Expected, String> {
                     put(&mut out, i, &f[1], pin.at(1).num().ok_or("pin")?);
                 }
             }
-            "length_right" => {
-                // K1: from the plot's left edge, the value over the largest times the plot's width, divided then multiplied
-                let mut vmax = f64::NEG_INFINITY;
-                for m in ms {
-                    vmax = vmax.max(value(m, "value")?);
-                }
-                let bw = req.g("rows").g("bw").num().unwrap_or(x1 - x0);
-                for (i, m) in ms.iter().enumerate() {
-                    let v = value(m, "value")?;
-                    put(&mut out, i, "x", x0);
-                    put(&mut out, i, "w", if vmax > 0.0 { v / vmax * bw } else { 0.0 });
+            "length_signed" => {
+                // K11: from the zero line, each value's size over the span, right of the line or left of it by its sign
+                let values = ms.iter().map(|m| value(m, "value")).collect::<Result<Vec<f64>, String>>()?;
+                let (_, bars) = signed_bars(req.g("rows"), &values).ok_or("length_signed: no value differs from 0, or no signed rows frame")?;
+                for (i, (x, w)) in bars.into_iter().enumerate() {
+                    put(&mut out, i, "x", x);
+                    put(&mut out, i, "w", w);
                 }
             }
             "rows_y" => {
@@ -4256,10 +4568,17 @@ fn issue(spec: &J, inp: &J, reg: &J, ext: &[String], got: &Got, rpage: &J) -> Re
         }
         let e = reg.g("nodes").g(&st(n.g("node")));
         let fr = reg.g("frames").g(&st(e.g("frame")));
+        if fr.g("kind").s() == Some("view") {
+            let (req, meta) = circles_request(&nid, n, e, fr, &words, &rows, got, inp)?;
+            reqs.push((nid.clone(), req));
+            metas.insert(nid, meta);
+            continue;
+        }
         let enc = e.g("marks").g("encode");
         let ofs: Vec<&str> = enc.arr().iter().filter_map(|c| c.g("of").s()).collect();
         let proj = if ofs.contains(&"at") { Some(fit(four(n.g("geometry").g("ext"))?, four(fr.g("plot"))?)) } else { None };
         let (mut marks, mut texts, mut meta) = (Vec::new(), Vec::new(), Meta::default());
+        let mut row_left: Vec<(usize, usize, f64)> = Vec::new();
         let shape = e.g("marks").g("shape").clone();
         let per_item = e.g("marks").g("per").s() == Some("item");
         let tsize = e.g("texts").g("size").num().ok_or("texts.size")?;
@@ -4271,7 +4590,12 @@ fn issue(spec: &J, inp: &J, reg: &J, ext: &[String], got: &Got, rpage: &J) -> Re
                 let id = format!("{nid}/{i}");
                 let mut m = J::obj_of(vec![("id", J::str(&id)), ("shape", shape.clone()), ("item", J::Int(i as i64))]);
                 if ofs.contains(&"value") {
-                    m.set("value", J::Num(num(row(it.g("value"))?)?));
+                    let mut v = num(row(it.g("value"))?)?;
+                    // K10: an item ranked by its change is drawn by it, the later value less the earlier
+                    if let Some(from) = it.get("value_from") {
+                        v -= num(row(from)?)?;
+                    }
+                    m.set("value", J::Num(v));
                 }
                 if let Some(proj) = proj {
                     let p = project((it.g("at").at(0).num().ok_or("at")?, it.g("at").at(1).num().ok_or("at")?), proj);
@@ -4311,13 +4635,18 @@ fn issue(spec: &J, inp: &J, reg: &J, ext: &[String], got: &Got, rpage: &J) -> Re
                     _ => vec![],
                 };
                 for (tid, s, src, near) in found {
-                    texts.push(J::obj_of(vec![
+                    let mut t = J::obj_of(vec![
                         ("id", J::str(&tid)),
                         ("w", J::Num(py_round(tw(&s, tsize), 3))),
                         ("h", J::Num(py_round(tsize * 1.15, 3))),
                         ("size", e.g("texts").g("size").clone()),
-                        ("near", J::obj_of(vec![("marks", J::strs(&near)), ("from", rel.g("from").clone()), ("max_px", rel.g("max_px").clone())])),
-                    ]));
+                    ]);
+                    match rel.g("gap_px").num() {
+                        // K2: at its row's start, placed below once the rows frame is laid out
+                        Some(gap) => row_left.push((texts.len(), i, gap)),
+                        None => t.set("near", J::obj_of(vec![("marks", J::strs(&near)), ("from", rel.g("from").clone()), ("max_px", rel.g("max_px").clone())])),
+                    }
+                    texts.push(t);
                     meta.texts.push((tid, s, src));
                 }
             }
@@ -4349,7 +4678,17 @@ fn issue(spec: &J, inp: &J, reg: &J, ext: &[String], got: &Got, rpage: &J) -> Re
             ("texts", J::Arr(texts)),
         ]);
         if fr.g("kind").s() == Some("rows") {
-            let (frame, plot, rows) = rows_frame(fr, n, &meta, tsize)?;
+            let values = req.g("marks").arr().iter().filter_map(|m| m.g("value").num()).collect::<Vec<f64>>();
+            let (frame, plot, rows) = rows_frame(fr, n, &meta, tsize, &values)?;
+            // K2: a text at its row's start: right-aligned gap_px before the left column's edge, on its row's middle
+            let (x0, lw, top, row) = (rows.g("x0").num(), rows.g("lw").num(), rows.g("top").num(), rows.g("row").num());
+            let (Some(x0), Some(lw), Some(top), Some(row)) = (x0, lw, top, row) else { return Err("rows frame: x0, lw, top, row".into()) };
+            let mut ts = req.g("texts").arr().to_vec();
+            for (k, i, gap) in &row_left {
+                let y = top + *i as f64 * row;
+                ts[*k].set("at", J::Arr(vec![J::Num(x0 + lw - gap), J::Num(y + row / 2.0), J::str("end")]));
+            }
+            req.set("texts", J::Arr(ts));
             req.set("frame", frame);
             req.set("plot", plot);
             req.set("rows", rows);
@@ -4620,6 +4959,28 @@ pub fn geometry_problems(nid: &str, req: &J, reply: &J, meta: &Meta) -> Result<V
             }
         }
     }
+    // K2 (P4a-2): a text the core places at its row's start is there, within the tolerance, with the anchor it gives
+    for (i, t, r) in &rt {
+        let at = t.g("at");
+        if !at.truthy() {
+            continue;
+        }
+        let (ax, ay) = (
+            at.at(0).num().unwrap_or(f64::NAN),
+            at.at(1).num().unwrap_or(f64::NAN),
+        );
+        let (hx, hy) = (coord(r, "x"), coord(r, "y"));
+        if !((hx - ax).abs() <= meta.tol_px
+            && (hy - ay).abs() <= meta.tol_px
+            && r.g("anchor") == at.at(2))
+        {
+            out.push(format!(
+                "K2 node {nid} {i}: ({hx:.3}, {hy:.3}) anchor {} drawn, its row's start is ({ax:.3}, {ay:.3}) anchor {}",
+                r.g("anchor").repr(),
+                at.at(2).repr()
+            ));
+        }
+    }
     // B5: each text near its own mark, nearer to it than to any other mark of the node
     for (i, t, r) in &rt {
         let nr = t.g("near");
@@ -4667,6 +5028,703 @@ pub fn geometry_problems(nid: &str, req: &J, reply: &J, meta: &Meta) -> Result<V
         }
     }
     Ok(out)
+}
+
+// ================================================================================================================
+// P4a-2: map circles (a node in a frame of kind view). The core computes the request's numbers (K3 each place's point,
+// K7 the label subset, the label widths by the leaf's rule) and checks the node's reply (B0 widened by K9, B1, K4-K6, K8);
+// a reply that passes is the placed geometry the leaf draws. Nothing here is read from a node but the reply.
+// ================================================================================================================
+
+/// Below this a recomputed number equals the reply's: the node computes in the same order (no rounding in between).
+const CIRCLE_EPS: f64 = 1e-9;
+
+/// K3: the map view's height and each place's point, as the map leaves project it (mapkit.View and prod.proj, in their
+/// order): H = round(W (lat1 - lat0) / ((lon1 - lon0) cos(mid latitude + 2 deg))), the scale the smaller of the two fits.
+pub fn view_projection(
+    w: f64,
+    ext: [f64; 4],
+) -> Result<(f64, impl Fn(f64, f64) -> [f64; 2]), String> {
+    let [lon0, lat0, lon1, lat1] = ext;
+    if !(lon0 < lon1
+        && lat0 < lat1
+        && -180.0 <= lon0
+        && lon1 <= 180.0
+        && -90.0 <= lat0
+        && lat1 <= 90.0)
+    {
+        return Err(format!(
+            "view: ext {} must be [lon0, lat0, lon1, lat1] inside the globe",
+            J::Arr(ext.iter().map(|x| J::Num(*x)).collect()).repr()
+        ));
+    }
+    let k = ((lat0 + lat1) / 2.0 + 2.0).to_radians().cos();
+    // Python's round: halves to even
+    let h = (w * (lat1 - lat0) / ((lon1 - lon0) * k)).round_ties_even();
+    let (a, b) = (w / ((lon1 - lon0) * k), h / (lat1 - lat0));
+    let s = if b < a { b } else { a };
+    Ok((h, move |lo: f64, la: f64| {
+        [(lo - lon0) * k * s, (lat1 - la) * s]
+    }))
+}
+
+/// K7: the label subset, of the codes largest first: the largest and the smallest, then the rest by size, `top` at most.
+pub fn ends_then_largest(codes: &[String], top: usize) -> Vec<String> {
+    let ends: Vec<String> = match codes {
+        [] => vec![],
+        [one] => vec![one.clone()],
+        [first, .., last] => vec![first.clone(), last.clone()],
+    };
+    ends.iter()
+        .cloned()
+        .chain(codes.iter().filter(|c| !ends.contains(c)).cloned())
+        .take(top)
+        .collect()
+}
+
+/// A number as the request carries it: a whole one as an integer (as the registry gave it), else a float.
+fn whole_or(x: f64) -> J {
+    if x.fract() == 0.0 && x.abs() < 1e15 {
+        J::Int(x as i64)
+    } else {
+        J::Num(x)
+    }
+}
+
+/// The request to a map circles node: its frame (the view's size, its land's inset), one mark per item largest first
+/// (ties in the select's order) with its value and its point (K3), the label subset (K7) with each label's two widths (the
+/// name's and the number's, by the leaf's rule tw_leaf), the knobs the registry lays it out by (each within the core's
+/// bounds), and the land the leaf gave (ground: it only chooses among places the core holds equally good, never checked).
+#[allow(clippy::too_many_arguments)]
+fn circles_request(
+    nid: &str,
+    n: &J,
+    e: &J,
+    fr: &J,
+    words: &Words<'_>,
+    rows: &BTreeMap<String, &J>,
+    got: &Got,
+    inp: &J,
+) -> Result<(J, Meta), String> {
+    let kn = e.g("knobs");
+    let knob = |k: &str| kn.g(k).num().ok_or_else(|| format!("knob {k}"));
+    let w = fr.g("w").num().ok_or("view w")?;
+    let (h, pin) = view_projection(w, four(n.g("geometry").g("ext"))?)?;
+    let size = e.g("texts").g("size").num().ok_or("texts.size")?;
+    let mut items: Vec<(String, f64, J, J)> = Vec::new();
+    for it in n.g("items").arr() {
+        let code = st(&resolve_sel(it.g("code"), got)?);
+        let at = it.g("at");
+        let (lon, lat) = (at.at(0).num().ok_or("at")?, at.at(1).num().ok_or("at")?);
+        let p = pin(lon, lat);
+        let src = it.g("value");
+        let r = rows
+            .get(&st(src))
+            .copied()
+            .ok_or_else(|| format!("'{}'", st(src)))?;
+        items.push((
+            code,
+            num(r)?,
+            J::Arr(vec![J::Num(p[0]), J::Num(p[1])]),
+            it.g("value_text").clone(),
+        ));
+    }
+    // largest first, a tie in the select's order (the leaf's stable sort by -value)
+    let mut order: Vec<usize> = (0..items.len()).collect();
+    order.sort_by(|a, b| {
+        items[*b]
+            .1
+            .partial_cmp(&items[*a].1)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let mut meta = Meta::default();
+    let marks: Vec<J> = order
+        .iter()
+        .map(|i| {
+            let (code, v, p, _) = &items[*i];
+            meta.marks.push((code.clone(), *i, None, false));
+            J::obj_of(vec![
+                ("id", J::str(code)),
+                ("item", J::Int(*i as i64)),
+                ("value", J::Num(*v)),
+                ("pin", p.clone()),
+            ])
+        })
+        .collect();
+    let codes: Vec<String> = order.iter().map(|i| items[*i].0.clone()).collect();
+    let mut texts = Vec::new();
+    for c in ends_then_largest(&codes, knob("label_top")? as usize) {
+        let it = items
+            .iter()
+            .find(|x| x.0 == c)
+            .expect("a code of the items");
+        let name = words.name(&c)?;
+        let value = words.fact(st(&it.3).strip_prefix("fact:").unwrap_or(""), None)?;
+        texts.push(J::obj_of(vec![
+            ("id", J::str(&c)),
+            ("w_name", J::Num(tw_leaf(&name, size))),
+            ("w_value", J::Num(tw_leaf(&value, size))),
+        ]));
+        meta.texts
+            .push((c.clone(), format!("{name} {value}"), it.3.clone()));
+    }
+    let req = J::obj_of(vec![
+        ("node", n.g("node").clone()),
+        (
+            "frame",
+            J::obj_of(vec![
+                ("w", fr.g("w").clone()),
+                ("h", whole_or(h)),
+                ("top", J::Int(0)),
+                ("inset", fr.g("inset").clone()),
+            ]),
+        ),
+        ("marks", J::Arr(marks)),
+        (
+            "scale",
+            J::obj_of(vec![
+                ("r_max", kn.g("r_max").clone()),
+                ("r_min", kn.g("r_min").clone()),
+                ("step", whole_or(R_STEP_PX)),
+                ("floor", whole_or(R_FLOOR_PX)),
+                ("max_overlaps", kn.g("max_overlaps").clone()),
+            ]),
+        ),
+        (
+            "nudge",
+            J::obj_of(vec![
+                ("most", kn.g("nudge").clone()),
+                ("gap", kn.g("circle_gap").clone()),
+            ]),
+        ),
+        ("texts", J::Arr(texts)),
+        (
+            "labels",
+            J::obj_of(vec![
+                ("size", e.g("texts").g("size").clone()),
+                ("gap", kn.g("label_gap").clone()),
+                ("sep", kn.g("label_sep").clone()),
+                ("reach", kn.g("reach").clone()),
+                ("land_cost", kn.g("land_cost").clone()),
+            ]),
+        ),
+        (
+            "ground",
+            inp.g("ground")
+                .get(nid)
+                .cloned()
+                .unwrap_or_else(|| J::obj_of(vec![("land", J::Obj(vec![]))])),
+        ),
+    ]);
+    Ok((req, meta))
+}
+
+/// K6: the area two circles (cx, cy, r) overlap by.
+fn lens(a: (f64, f64, f64), b: (f64, f64, f64)) -> f64 {
+    let d = (a.0 - b.0).hypot(a.1 - b.1);
+    let (r1, r2) = (a.2, b.2);
+    if d >= r1 + r2 {
+        return 0.0;
+    }
+    let small = if r2 < r1 { r2 } else { r1 };
+    if d <= (r1 - r2).abs() {
+        return std::f64::consts::PI * small.powi(2);
+    }
+    let p = r1 * r1 * ((d * d + r1 * r1 - r2 * r2) / (2.0 * d * r1)).acos()
+        + r2 * r2 * ((d * d + r2 * r2 - r1 * r1) / (2.0 * d * r2)).acos();
+    p - 0.5 * ((-d + r1 + r2) * (d + r1 - r2) * (d - r1 + r2) * (d + r1 + r2)).sqrt()
+}
+
+type Pt = (f64, f64);
+
+/// K8: whether two leaders a-b and c-d cross (touching counts: two leaders may not meet either), as the leaf's mapkit.crosses.
+fn crosses(a: Pt, b: Pt, c: Pt, d: Pt) -> bool {
+    let side = |p: Pt, q: Pt, r: Pt| (q.0 - p.0) * (r.1 - p.1) - (q.1 - p.1) * (r.0 - p.0);
+    let on = |p: Pt, q: Pt, r: Pt| {
+        p.0.min(q.0) - 1e-9 <= r.0
+            && r.0 <= p.0.max(q.0) + 1e-9
+            && p.1.min(q.1) - 1e-9 <= r.1
+            && r.1 <= p.1.max(q.1) + 1e-9
+    };
+    let (d1, d2, d3, d4) = (side(c, d, a), side(c, d, b), side(a, b, c), side(a, b, d));
+    if ((d1 > 0.0) != (d2 > 0.0))
+        && ((d3 > 0.0) != (d4 > 0.0))
+        && d1 != 0.0
+        && d2 != 0.0
+        && d3 != 0.0
+        && d4 != 0.0
+    {
+        return true;
+    }
+    [(d1, c, d, a), (d2, c, d, b), (d3, a, b, c), (d4, a, b, d)]
+        .iter()
+        .any(|(v, p, q, r)| v.abs() < 1e-9 && on(*p, *q, *r))
+}
+
+/// Points along a-b, `step` px apart at most, both ends included (the leaf samples its leaders and hairline so).
+fn along(a: Pt, b: Pt, n: usize) -> impl Iterator<Item = Pt> {
+    (0..=n).map(move |t| {
+        (
+            a.0 + (b.0 - a.0) * t as f64 / n as f64,
+            a.1 + (b.1 - a.1) * t as f64 / n as f64,
+        )
+    })
+}
+
+fn pdist(a: Pt, b: Pt) -> f64 {
+    (a.0 - b.0).hypot(a.1 - b.1)
+}
+
+/// B0 (widened by K9), B1, K4, K5, K6 and K8 over a map circles node's reply, in the reply's order; Ok is the placed
+/// geometry the leaf draws ({order, marks, texts in the order placed, r_used, dropped, size}), or, when even the floor
+/// overlaps more than max_overlaps pairs, {floor: {pairs, r_used, max_overlaps}}, which the leaf stops the page on in its
+/// own words. A reply of the wrong form is not read further; nothing is repaired.
+pub fn circles_problems(nid: &str, req: &J, rep: &J) -> Result<J, Vec<String>> {
+    let (sc, nu, lb, fr) = (
+        req.g("scale"),
+        req.g("nudge"),
+        req.g("labels"),
+        req.g("frame"),
+    );
+    // B0: the request's knobs within the core's bounds (a second layer cannot widen them), the grid the core's
+    let ntexts = req.g("texts").arr().len() as f64;
+    let mut caps = circle_bound_problems(&format!("B0 request {nid}"), &|k| match k {
+        "r_max" | "r_min" | "max_overlaps" => sc.g(k).num(),
+        "nudge" => nu.g("most").num(),
+        "circle_gap" => nu.g("gap").num(),
+        "label_gap" => lb.g("gap").num(),
+        "label_sep" => lb.g("sep").num(),
+        "label_top" => Some(ntexts),
+        _ => lb.g(k).num(),
+    });
+    if sc.g("floor").num() != Some(R_FLOOR_PX) || sc.g("step").num() != Some(R_STEP_PX) {
+        caps.push(format!(
+            "B0 request {nid} r_used grid: floor and step are the core's ({}, {})",
+            py_float(R_FLOOR_PX),
+            py_float(R_STEP_PX)
+        ));
+    }
+    if !caps.is_empty() {
+        return Err(caps);
+    }
+    let p = format!("B0 reply.{nid}");
+    let J::Obj(top) = rep else {
+        return Err(vec![format!("{p}: not an object")]);
+    };
+    if rep.has("refused") {
+        return Err(vec![format!(
+            "B7 node {nid} refused ({}): the page stops; nothing is dropped or repaired",
+            rep.g("refused").repr()
+        )]);
+    }
+    let mut bad: Vec<String> = top
+        .iter()
+        .filter(|(k, _)| !["marks", "texts", "dropped"].contains(&k.as_str()))
+        .map(|(k, _)| format!("{p}.{k}: not a reply field (only marks, texts, dropped)"))
+        .collect();
+    let codes: Vec<String> = req.g("marks").arr().iter().map(|m| st(m.g("id"))).collect();
+    let subset: Vec<String> = req.g("texts").arr().iter().map(|t| st(t.g("id"))).collect();
+    let (marks, texts) = (rep.g("marks"), rep.g("texts"));
+    if !marks.is_obj() || !texts.is_obj() || !rep.g("dropped").is_arr() {
+        return Err(vec![format!(
+            "{p}: marks and texts are objects keyed by issued id, dropped a list"
+        )]);
+    }
+    let dropped: Vec<String> = rep.g("dropped").arr().iter().map(st).collect();
+    for (k, _) in marks.obj() {
+        let base = k
+            .strip_suffix("/dot")
+            .or_else(|| k.strip_suffix("/leader"))
+            .unwrap_or(k);
+        if !codes.iter().any(|c| c == base) {
+            bad.push(format!(
+                "{p}.marks.{k}: not an id the core issued to this node"
+            ));
+        }
+    }
+    for (k, _) in texts.obj() {
+        if !subset.contains(k) {
+            bad.push(format!(
+                "{p}.texts.{k}: not an id the core issued to this node"
+            ));
+        }
+    }
+    // K9: a label of the subset is placed or listed as dropped, never both, the dropped in the subset's order
+    let listed: Vec<&String> = subset.iter().filter(|c| dropped.contains(c)).collect();
+    if listed.len() != dropped.len() || listed.iter().zip(&dropped).any(|(a, b)| *a != b) {
+        bad.push(format!(
+            "K9 node {nid} dropped {}: not ids of the label subset in its order",
+            J::strs(&dropped).repr()
+        ));
+    }
+    for c in &subset {
+        match (texts.has(c), dropped.contains(c)) {
+            (true, true) => bad.push(format!("K9 node {nid} label {c}: both placed and dropped")),
+            (false, false) => bad.push(format!(
+                "K9 node {nid} label {c}: neither placed nor listed as dropped"
+            )),
+            _ => {}
+        }
+    }
+    if !bad.is_empty() {
+        return Err(bad);
+    }
+    // B1: every mark the shape and fields its id stands for (a circle, a dot, a leader), every text at x, y with an anchor
+    for (k, m) in marks.obj() {
+        let (shape, fields) = if k.ends_with("/leader") {
+            ("line", &["x1", "y1", "x2", "y2"][..])
+        } else {
+            ("circle", &["cx", "cy", "r"][..])
+        };
+        let mut keys: Vec<&str> = m.obj().iter().map(|(f, _)| f.as_str()).collect();
+        keys.sort();
+        let mut want: Vec<&str> = fields.iter().copied().chain(["shape"]).collect();
+        want.sort();
+        if m.g("shape").s() != Some(shape)
+            || keys != want
+            || !fields.iter().all(|f| m.g(f).finite())
+        {
+            bad.push(format!(
+                "B1 node {nid} mark {k}: no {shape} {}",
+                fields.join(", ")
+            ));
+        }
+    }
+    for c in &codes {
+        if !marks.has(c) {
+            bad.push(format!("B1 node {nid} mark {c}: no circle cx, cy, r"));
+        }
+    }
+    for (k, t) in texts.obj() {
+        let mut keys: Vec<&str> = t.obj().iter().map(|(f, _)| f.as_str()).collect();
+        keys.sort();
+        if keys != ["anchor", "x", "y"]
+            || !t.g("x").finite()
+            || !t.g("y").finite()
+            || !t.g("anchor").s().is_some_and(|a| ANCHORS.contains(&a))
+        {
+            bad.push(format!("B1 node {nid} text {k}: no x, y, anchor"));
+        }
+    }
+    if !bad.is_empty() {
+        return Err(bad);
+    }
+    let n = |o: &J, f: &str| o.g(f).num().unwrap_or(f64::NAN);
+    let by: Vec<(&J, &J)> = req
+        .g("marks")
+        .arr()
+        .iter()
+        .map(|m| (m, marks.g(&st(m.g("id")))))
+        .collect();
+    let circ: Vec<(f64, f64, f64)> = by
+        .iter()
+        .map(|(_, m)| (n(m, "cx"), n(m, "cy"), n(m, "r")))
+        .collect();
+    // K4: r_used the largest circle's radius, on the core's grid from the registry's r_max down; each r by its area
+    let (r_max, r_min, step, floor) = (n(sc, "r_max"), n(sc, "r_min"), R_STEP_PX, R_FLOOR_PX);
+    let vmax = by
+        .iter()
+        .map(|(q, _)| n(q, "value"))
+        .fold(f64::NEG_INFINITY, |a, b| if b > a { b } else { a });
+    let r_used = circ.first().map_or(f64::NAN, |c| c.2);
+    let grid: Vec<f64> = (0..=((r_max - floor) / step) as usize)
+        .map(|j| r_max - j as f64 * step)
+        .collect();
+    let on_grid = grid
+        .iter()
+        .copied()
+        .find(|g| (r_used - g).abs() <= CIRCLE_EPS);
+    if on_grid.is_none() {
+        bad.push(format!(
+            "K4 node {nid} r_used {}: not on the core's grid {}",
+            py_float(r_used),
+            J::Arr(grid.iter().map(|g| J::Num(*g)).collect()).repr()
+        ));
+    }
+    let denom = if vmax == 0.0 { 1.0 } else { vmax };
+    for ((q, _), c) in by.iter().zip(&circ) {
+        let a = r_used * (n(q, "value") / denom).sqrt();
+        let want = if a > r_min { a } else { r_min };
+        if (c.2 - want).abs() > CIRCLE_EPS {
+            bad.push(format!(
+                "K4 node {nid} mark {}: r {} is not {}",
+                st(q.g("id")),
+                py_float(c.2),
+                py_float(want)
+            ));
+        }
+    }
+    // K5: each circle within `most` px of its point; one moved over DOT_OVER_PX keeps a DOT_R_PX dot exactly at it, no other
+    let most = n(nu, "most");
+    for ((q, _), c) in by.iter().zip(&circ) {
+        let id = st(q.g("id"));
+        let (px, py) = (
+            q.g("pin").at(0).num().unwrap_or(f64::NAN),
+            q.g("pin").at(1).num().unwrap_or(f64::NAN),
+        );
+        let off = pdist((c.0, c.1), (px, py));
+        if !(off <= most + CIRCLE_EPS) {
+            bad.push(format!(
+                "K5 node {nid} mark {id}: {off:.3} px off its point, most {}",
+                py_float(most)
+            ));
+        }
+        let dot = marks.get(&format!("{id}/dot"));
+        if (off > DOT_OVER_PX) != dot.is_some() {
+            bad.push(format!(
+                "K5 node {nid} mark {id}: moved {off:.3} px {} a dot at its point",
+                if dot.is_some() { "with" } else { "without" }
+            ));
+        }
+        if let Some(d) = dot {
+            if !(n(d, "cx") == px && n(d, "cy") == py && n(d, "r") == DOT_R_PX) {
+                bad.push(format!(
+                    "K5 node {nid} dot {id}: not a {} px circle at the point",
+                    py_float(DOT_R_PX)
+                ));
+            }
+        }
+    }
+    // K6: pairs overlapping by over half the smaller circle; past max_overlaps only at the floor, which the leaf stops on
+    let mut pairs = Vec::new();
+    for a in 0..circ.len() {
+        for b in a + 1..circ.len() {
+            let small = if circ[b].2 < circ[a].2 {
+                circ[b].2
+            } else {
+                circ[a].2
+            };
+            if lens(circ[a], circ[b]) > 0.5 * std::f64::consts::PI * small.powi(2) {
+                pairs.push(J::strs(&[codes[a].clone(), codes[b].clone()]));
+            }
+        }
+    }
+    let r_used_j = match (on_grid, sc.g("r_max")) {
+        (Some(g), J::Int(_)) => whole_or(g),
+        (Some(g), _) => J::Num(g),
+        (None, _) => J::Num(r_used),
+    };
+    if pairs.len() as f64 > n(sc, "max_overlaps") {
+        if r_used - step < floor {
+            if !bad.is_empty() {
+                return Err(bad);
+            }
+            return Ok(J::obj_of(vec![(
+                "floor",
+                J::obj_of(vec![
+                    ("pairs", J::Arr(pairs)),
+                    ("r_used", r_used_j),
+                    ("max_overlaps", sc.g("max_overlaps").clone()),
+                ]),
+            )]));
+        }
+        bad.push(format!(
+            "K6 node {nid}: {} pairs overlap by over half the smaller at r_used {}, a step above the floor: the node stopped stepping down early",
+            pairs.len(),
+            py_float(r_used)
+        ));
+    }
+    // K8: each label, in the order placed, beside its circle or at the end of a leader from its edge, clear as the leaf
+    // holds a label clear (its free and clear_lead): of the frame's edge, the labels and leaders before it, every circle
+    // and dot; its leader of every other circle and dot, the leaders and labels before it
+    let (sz, gap, sep, reach) = (n(lb, "size"), n(lb, "gap"), n(lb, "sep"), n(lb, "reach"));
+    let (w, h, top_y, inset) = (n(fr, "w"), n(fr, "h"), n(fr, "top"), n(fr, "inset"));
+    let widths: Vec<(String, f64, f64)> = req
+        .g("texts")
+        .arr()
+        .iter()
+        .map(|t| (st(t.g("id")), n(t, "w_name"), n(t, "w_value")))
+        .collect();
+    let dots: Vec<(f64, f64, f64, &str)> = codes
+        .iter()
+        .filter_map(|c| {
+            marks
+                .get(&format!("{c}/dot"))
+                .map(|d| (n(d, "cx"), n(d, "cy"), DOT_R_PX, c.as_str()))
+        })
+        .collect();
+    let rings: Vec<(f64, f64, f64, &str)> = circ
+        .iter()
+        .zip(&codes)
+        .map(|(c, k)| (c.0, c.1, c.2, k.as_str()))
+        .collect();
+    let (mut tboxes, mut segs, mut leads): (Vec<Bx>, Vec<(Pt, Pt)>, Vec<Pt>) =
+        (Vec::new(), Vec::new(), Vec::new());
+    if inset != 0.0 {
+        let e = inset;
+        let corners = [(e, e), (w - e, e), (w - e, h - e), (e, h - e), (e, e)];
+        for pair in corners.windows(2) {
+            let steps = ((pdist(pair[0], pair[1]) / 4.0).ceil() as usize).max(1);
+            leads.extend(along(pair[0], pair[1], steps));
+        }
+    }
+    let x_of = |anchor: &str, x: f64, wd: f64| match anchor {
+        "start" => x,
+        "end" => x - wd,
+        _ => x - wd / 2.0,
+    };
+    for (c, t) in texts.obj() {
+        let i = codes
+            .iter()
+            .position(|k| k == c)
+            .expect("a subset id is a mark id");
+        let (x, y, r) = circ[i];
+        let (tx, ty, anchor) = (n(t, "x"), n(t, "y"), t.g("anchor").s().unwrap_or(""));
+        let g = gap + 1.0;
+        let ln = marks.get(&format!("{c}/leader"));
+        match ln {
+            None => {
+                let places = [
+                    ("start", x + r + g, y - sz * 0.2),
+                    ("end", x - r - g, y - sz * 0.2),
+                    ("middle", x, y - r - g - sz * 1.65),
+                    ("middle", x, y + r + g + sz * 0.8),
+                ];
+                if !places.iter().any(|(a, px, py)| {
+                    *a == anchor && (tx - px).abs() <= CIRCLE_EPS && (ty - py).abs() <= CIRCLE_EPS
+                }) {
+                    bad.push(format!(
+                        "K8 node {nid} label {c}: not beside its circle and no leader"
+                    ));
+                }
+            }
+            Some(l) => {
+                let mut hit = false;
+                for d in (16..=(reach as i64)).step_by(8) {
+                    let d = d as f64;
+                    for k in 0..16 {
+                        let ang = std::f64::consts::PI * k as f64 / 8.0;
+                        let (co, si) = (ang.cos(), ang.sin());
+                        let (a0, b0) = (
+                            (x + r * co, y + r * si),
+                            (x + (r + d) * co, y + (r + d) * si),
+                        );
+                        let want = if co > 0.3 {
+                            "start"
+                        } else if co < -0.3 {
+                            "end"
+                        } else {
+                            "middle"
+                        };
+                        let tp = if si > 0.3 {
+                            b0.1 + sz * 0.3
+                        } else if si < -0.3 {
+                            b0.1 - sz * 2.45
+                        } else {
+                            b0.1 - sz * 1.2
+                        };
+                        let near = |a: f64, b: f64| (a - b).abs() <= CIRCLE_EPS;
+                        if near(n(l, "x1"), a0.0)
+                            && near(n(l, "y1"), a0.1)
+                            && near(n(l, "x2"), b0.0)
+                            && near(n(l, "y2"), b0.1)
+                            && anchor == want
+                            && near(tx, b0.0)
+                            && near(ty, tp + sz * 0.8)
+                        {
+                            hit = true;
+                        }
+                    }
+                }
+                if !hit {
+                    bad.push(format!("K8 node {nid} label {c}: its leader does not start on its circle's edge or the label is not at its end"));
+                }
+            }
+        }
+        let (_, wn, wv) = widths
+            .iter()
+            .find(|x| x.0 == *c)
+            .cloned()
+            .expect("a subset id has its widths");
+        let wmax = if wv > wn { wv } else { wn };
+        let x0 = x_of(anchor, tx, wmax);
+        let bx: Bx = (x0, ty - sz * 0.8, x0 + wmax, ty + sz * 1.65);
+        if bx.0 < 2.0 || bx.2 > w - 2.0 || bx.1 < top_y - 4.0 || bx.3 > h - 2.0 {
+            bad.push(format!("K8 node {nid} label {c}: outside the frame"));
+        }
+        if tboxes.iter().any(|b| {
+            bx.0 < b.2 + sep && b.0 < bx.2 + sep && bx.1 < b.3 + sep / 2.0 && b.1 < bx.3 + sep / 2.0
+        }) {
+            bad.push(format!(
+                "K8 node {nid} label {c}: within {} px of a label before it",
+                py_float(sep)
+            ));
+        }
+        if leads.iter().any(|(px, py)| {
+            bx.0 - 1.0 < *px && *px < bx.2 + 1.0 && bx.1 - 1.0 < *py && *py < bx.3 + 1.0
+        }) {
+            bad.push(format!(
+                "K8 node {nid} label {c}: over a leader or the frame's hairline"
+            ));
+        }
+        let clear = |cx: f64, cy: f64| {
+            pmax(pmax(bx.0 - cx, 0.0), cx - bx.2).hypot(pmax(pmax(bx.1 - cy, 0.0), cy - bx.3))
+        };
+        if rings
+            .iter()
+            .chain(&dots)
+            .any(|(cx, cy, rr, _)| clear(*cx, *cy) < rr + gap)
+        {
+            bad.push(format!(
+                "K8 node {nid} label {c}: within {} px of a circle or dot",
+                py_float(gap)
+            ));
+        }
+        if let Some(l) = ln {
+            let (a, b) = ((n(l, "x1"), n(l, "y1")), (n(l, "x2"), n(l, "y2")));
+            let steps = ((pdist(a, b) / 2.0).ceil() as usize).max(2);
+            let pts: Vec<Pt> = along(a, b, steps).collect();
+            if pts.iter().any(|p| {
+                rings
+                    .iter()
+                    .any(|(cx, cy, rr, o)| *o != c.as_str() && pdist(*p, (*cx, *cy)) < rr + 1.0)
+            }) {
+                bad.push(format!("K8 node {nid} leader {c}: over another circle"));
+            }
+            if pts.iter().any(|p| {
+                dots.iter()
+                    .any(|(dx, dy, dr, o)| *o != c.as_str() && pdist(*p, (*dx, *dy)) < dr + 1.0)
+            }) {
+                bad.push(format!("K8 node {nid} leader {c}: over a dot"));
+            }
+            if segs.iter().any(|(s0, s1)| crosses(a, b, *s0, *s1)) {
+                bad.push(format!(
+                    "K8 node {nid} leader {c}: crosses a leader before it"
+                ));
+            }
+            if pts.iter().any(|p| {
+                tboxes.iter().any(|t| {
+                    t.0 - 1.0 < p.0 && p.0 < t.2 + 1.0 && t.1 - 1.0 < p.1 && p.1 < t.3 + 1.0
+                })
+            }) {
+                bad.push(format!("K8 node {nid} leader {c}: over a label before it"));
+            }
+            leads.extend(pts);
+            segs.push((a, b));
+        }
+        for (wd, yy) in [(wn, ty), (wv, ty + sz * 1.4)] {
+            let x0 = x_of(anchor, tx, wd);
+            tboxes.push((x0, yy - sz * 0.8, x0 + wd, yy + sz * 0.25));
+        }
+    }
+    if !bad.is_empty() {
+        return Err(bad);
+    }
+    // the texts as a list in the order placed (an object's order does not survive every JSON map the placed geometry
+    // passes through on its way to the leaf), each with its circle's code
+    let placed_texts = texts
+        .obj()
+        .iter()
+        .map(|(c, t)| J::Obj(std::iter::once(("id".to_string(), J::str(c))).chain(t.obj().iter().cloned()).collect()))
+        .collect();
+    Ok(J::obj_of(vec![
+        ("order", J::strs(&codes)),
+        ("marks", marks.clone()),
+        ("texts", J::Arr(placed_texts)),
+        ("r_used", r_used_j),
+        ("dropped", J::strs(&dropped)),
+        ("size", lb.g("size").clone()),
+    ]))
 }
 
 /// The content a reply's geometry is drawn with, by id: a mark's shape and emphasis, a text's words and source. Two replies
@@ -4914,6 +5972,13 @@ pub fn node_draw(node: &str, inp: &J, runtime: &std::path::Path) -> Result<NodeD
         .map_err(|e| format!("node {node}: the child: {e}"))?;
     let after_child = std::time::Instant::now();
     let reply = parse(&line).map_err(|e| format!("node {node}: recheck: B0 reply: {e}"))?;
+    let lines = |fails: Vec<String>| fails.iter().map(|e| format!("node {node}: recheck: {e}")).collect::<Vec<_>>().join("\n");
+    // a map circles node (P4a-2): its own checks, K3-K9; the placed geometry is the checked reply
+    if reqs[0].1.has("scale") {
+        let placed = circles_problems(node, &reqs[0].1, &reply).map_err(lines)?;
+        let recheck_ms = (before_child + after_child.elapsed()).as_millis() as u64;
+        return Ok(NodeDrawn { placed, child_ms: child_ms as u64, recheck_ms });
+    }
     let replies = J::Obj(vec![(node.to_string(), reply)]);
     let mut fails = reply_problems(&replies, &reqs);
     if fails.is_empty() {
@@ -4925,7 +5990,15 @@ pub fn node_draw(node: &str, inp: &J, runtime: &std::path::Path) -> Result<NodeD
     if !fails.is_empty() {
         return Err(fails.iter().map(|e| format!("node {node}: recheck: {e}")).collect::<Vec<_>>().join("\n"));
     }
-    let placed = placed_of(n, replies.g(node), &metas[node], &content.got).map_err(|e| format!("node {node}: recheck: {e}"))?;
+    let mut placed = placed_of(n, replies.g(node), &metas[node], &content.got).map_err(|e| format!("node {node}: recheck: {e}"))?;
+    // K11: the bars' zero line, the core's own (the leaf draws it there; the bars' ends were checked against it)
+    let req = &reqs[0].1;
+    if req.g("encode").arr().iter().any(|c| c.g("channel").s() == Some("length_signed")) {
+        let values: Vec<f64> = req.g("marks").arr().iter().filter_map(|m| m.g("value").num()).collect();
+        if let Some((z, _)) = signed_bars(req.g("rows"), &values) {
+            placed.set("axis", J::obj_of(vec![("x", J::Num(z))]));
+        }
+    }
     Ok(NodeDrawn {
         placed,
         child_ms: child_ms as u64,
@@ -4944,6 +6017,230 @@ mod tests {
     fn read(name: &str) -> J {
         parse(&std::fs::read_to_string(fixtures().join(name)).unwrap_or_else(|e| panic!("{name}: {e}"))).unwrap_or_else(|e| panic!("{name}: {e}"))
     }
+    /// P4a-2: the map circles' honest requests and replies (scripts/fixtures/p4a2/circles.json, exported from the design's
+    /// prototype): q1 (dots, labels beside), q6 (leaders), and q1 with two places on one point and no nudge.
+    fn circles() -> J {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/fixtures/p4a2/circles.json");
+        parse(&std::fs::read_to_string(path).unwrap()).unwrap()
+    }
+
+    /// The first failure line of a circles reply, or "passed".
+    fn circles_first(req: &J, rep: &J) -> String {
+        match circles_problems("bubbles", req, rep) {
+            Ok(_) => "passed".into(),
+            Err(e) => e.first().cloned().unwrap_or_default(),
+        }
+    }
+
+    /// K3-K9 (P4a-2): the honest replies pass and give the placed geometry the prototype's core gave (texts listed in the
+    /// order placed); even the floor overlapping passes the reply and hands the leaf the floor's pairs (placed.floor: the
+    /// leaf stops in its own words, scripts/test_leaf_stops_p4a2.py B6), never a placed circle.
+    #[test]
+    fn next_tree_circles_honest_replies_pass_as_the_prototype() {
+        let fx = circles();
+        for case in ["q1", "q6", "floor"] {
+            let c = fx.g(case);
+            let placed = circles_problems("bubbles", c.g("request"), c.g("reply")).unwrap_or_else(|e| panic!("{case}: {e:?}"));
+            // the core keeps r_used whole when r_max is (the leaf's own int, so its records print as before) and adds the
+            // labels' size; the prototype wrote r_used as a float
+            let (have, want) = (if placed.has("floor") { placed.g("floor") } else { &placed }, c.g("placed").get("floor").unwrap_or(c.g("placed")));
+            assert_eq!(have.g("r_used").num(), want.g("r_used").num(), "{case}");
+            for k in ["order", "marks", "texts", "dropped", "pairs", "max_overlaps"] {
+                assert_eq!(have.g(k).dump(), want.g(k).dump(), "{case} {k}");
+            }
+        }
+        assert!(fx.g("floor").g("placed").g("floor").g("pairs").arr().len() > fx.g("floor").g("request").g("scale").g("max_overlaps").num().unwrap() as usize);
+    }
+
+    /// F1-F17 (P4a-2 design 8): each tampered reply stops at the check kind it names, never passes (design tests/must_fail.py).
+    #[test]
+    fn next_tree_circles_tampered_replies_stop_at_their_check() {
+        let fx = circles();
+        let (q1, q6) = (fx.g("q1"), fx.g("q6"));
+        let (req1, rep1, req6, rep6) = (q1.g("request"), q1.g("reply"), q6.g("request"), q6.g("reply"));
+        let marks = rep1.g("marks");
+        let moved = req1.g("marks").arr().iter().map(|m| st(m.g("id"))).find(|c| marks.has(&format!("{c}/dot"))).expect("a moved circle");
+        let still = req1.g("marks").arr().iter().map(|m| st(m.g("id"))).find(|c| !marks.has(&format!("{c}/dot"))).expect("a still circle");
+        let led = rep6.g("marks").obj().iter().find_map(|(k, _)| k.strip_suffix("/leader").map(String::from)).expect("a leader");
+        let lab = rep1.g("texts").obj()[0].0.clone();
+        let num = |r: &J, path: &[&str]| r.g(path[0]).g(path[1]).g(path[2]).num().unwrap();
+        let set = |r: &mut J, path: &[&str], v: J| assert!(r.set_path(&path.iter().map(|x| x.to_string()).collect::<Vec<_>>(), v), "{path:?}");
+        type Tamper<'a> = Box<dyn Fn(&mut J) + 'a>;
+        let pin = req1.g("marks").arr().iter().find(|m| st(m.g("id")) == moved).unwrap().g("pin").clone();
+        let most = req1.g("nudge").g("most").num().unwrap();
+        let cases: Vec<(&str, &str, bool, Tamper)> = vec![
+            ("F1 a circle 0.1 px past nudge.most", "K5", true, Box::new(|r: &mut J| {
+                let (cx, cy) = (num(r, &["marks", &moved, "cx"]), num(r, &["marks", &moved, "cy"]));
+                let (px, py) = (pin.at(0).num().unwrap(), pin.at(1).num().unwrap());
+                let k = (most + 0.1) / (cx - px).hypot(cy - py);
+                set(r, &["marks", &moved, "cx"], J::Num(px + (cx - px) * k));
+                set(r, &["marks", &moved, "cy"], J::Num(py + (cy - py) * k));
+            })),
+            ("F2 one radius +0.1 px", "K4", true, Box::new(|r: &mut J| { let v = num(r, &["marks", &still, "r"]); set(r, &["marks", &still, "r"], J::Num(v + 0.1)) })),
+            ("F3 r_used 21, off the 2 px grid", "K4", true, Box::new(|r: &mut J| {
+                for m in req1.g("marks").arr() {
+                    let c = st(m.g("id"));
+                    let v = num(r, &["marks", &c, "r"]);
+                    set(r, &["marks", &c, "r"], J::Num(if v > 3.0 { (v * 21.0 / 22.0).max(3.0) } else { 3.0 }));
+                }
+            })),
+            ("F4 a moved circle's dot left out", "K5", true, Box::new(|r: &mut J| { r.get_mut("marks").unwrap().remove(&format!("{moved}/dot")); })),
+            ("F5 a dot 0.1 px off its pin", "K5", true, Box::new(|r: &mut J| { let d = format!("{moved}/dot"); let v = num(r, &["marks", &d, "cx"]); set(r, &["marks", &d, "cx"], J::Num(v + 0.1)) })),
+            ("F6 a dot on a circle that did not move", "K5", true, Box::new(|r: &mut J| {
+                r.get_mut("marks").unwrap().set(&format!("{still}/dot"), J::obj_of(vec![("shape", J::str("circle")), ("cx", J::Int(1)), ("cy", J::Int(1)), ("r", J::Num(1.6))]));
+            })),
+            ("F7 a beside label 0.1 px off its place", "K8", true, Box::new(|r: &mut J| { let v = num(r, &["texts", &lab, "x"]); set(r, &["texts", &lab, "x"], J::Num(v + 0.1)) })),
+            ("F8 a beside label with another anchor", "K8", true, Box::new(|r: &mut J| {
+                let a = if r.g("texts").g(&lab).g("anchor").s() != Some("middle") { "middle" } else { "start" };
+                set(r, &["texts", &lab, "anchor"], J::str(a));
+            })),
+            ("F10 a label left off and not listed", "K9", true, Box::new(|r: &mut J| { r.get_mut("texts").unwrap().remove(&lab); })),
+            ("F11 a label placed and listed as dropped", "K9", true, Box::new(|r: &mut J| {
+                let mut d = r.g("dropped").arr().to_vec();
+                d.push(J::str(&lab));
+                r.set("dropped", J::Arr(d));
+            })),
+            ("F12 two dropped, out of the subset's order", "K9", true, Box::new(|r: &mut J| {
+                let (a, b) = (r.g("texts").obj()[0].0.clone(), r.g("texts").obj()[1].0.clone());
+                let t = r.get_mut("texts").unwrap();
+                t.remove(&a);
+                t.remove(&b);
+                let mut d = r.g("dropped").arr().to_vec();
+                d.extend([J::str(&b), J::str(&a)]);
+                r.set("dropped", J::Arr(d));
+            })),
+            ("F13 a reply field the core does not read", "B0", true, Box::new(|r: &mut J| r.set("scale", J::obj_of(vec![("r_used", J::Int(22))])))),
+            ("F14 a label for a circle outside the subset", "B0", true, Box::new(|r: &mut J| {
+                let out = st(req1.g("marks").arr()[req1.g("marks").arr().len() - 2].g("id"));
+                r.get_mut("texts").unwrap().set(&out, J::obj_of(vec![("x", J::Int(1)), ("y", J::Int(1)), ("anchor", J::str("start"))]));
+            })),
+            ("F17 a circle answered as a rect", "B1", true, Box::new(|r: &mut J| set(r, &["marks", &still, "shape"], J::str("rect")))),
+            ("F9 a leader starting 0.1 px off the circle's edge", "K8", false, Box::new(|r: &mut J| { let l = format!("{led}/leader"); let v = num(r, &["marks", &l, "x1"]); set(r, &["marks", &l, "x1"], J::Num(v + 0.1)) })),
+            ("F16 a leader 8 px longer than its label's place", "K8", false, Box::new(|r: &mut J| { let l = format!("{led}/leader"); let v = num(r, &["marks", &l, "x2"]); set(r, &["marks", &l, "x2"], J::Num(v + 8.0)) })),
+        ];
+        let mut off = Vec::new();
+        for (name, kind, on_q1, tamper) in &cases {
+            let (req, mut rep) = if *on_q1 { (req1, rep1.clone()) } else { (req6, rep6.clone()) };
+            tamper(&mut rep);
+            let first = circles_first(req, &rep);
+            if !first.starts_with(kind) {
+                off.push(format!("{name}: want {kind}, got {first}"));
+            }
+        }
+        // F15: a label moved to an earlier beside place, one the node found taken
+        let (sz, g) = (req1.g("labels").g("size").num().unwrap(), req1.g("labels").g("gap").num().unwrap() + 1.0);
+        let mut rep = rep1.clone();
+        let mut done = false;
+        for (c, t) in rep1.g("texts").obj() {
+            let m = rep1.g("marks").g(c);
+            let (x, y, r) = (m.g("cx").num().unwrap(), m.g("cy").num().unwrap(), m.g("r").num().unwrap());
+            let places = [("start", x + r + g, y - sz * 0.2), ("end", x - r - g, y - sz * 0.2), ("middle", x, y - r - g - sz * 1.65), ("middle", x, y + r + g + sz * 0.8)];
+            let at = places.iter().position(|p| Some(p.0) == t.g("anchor").s() && (p.1 - t.g("x").num().unwrap()).abs() < 1e-9 && (p.2 - t.g("y").num().unwrap()).abs() < 1e-9);
+            if at.is_some_and(|a| a > 0) {
+                let (a, px, py) = places[0];
+                rep.get_mut("texts").unwrap().set(c, J::obj_of(vec![("x", J::Num(px)), ("y", J::Num(py)), ("anchor", J::str(a))]));
+                done = true;
+                break;
+            }
+        }
+        assert!(done, "F15: q1 has a label past its first beside place");
+        let first = circles_first(req1, &rep);
+        if !first.starts_with("K8") {
+            off.push(format!("F15 a label at an earlier beside place: want K8, got {first}"));
+        }
+        assert!(off.is_empty(), "{off:#?}");
+    }
+
+    /// C1-C6, D1-D6 (P4a-2 design 4.1): a registry past a core bound is refused when it loads, and a request carrying the same
+    /// knob (a second layer's knobs.json widened) is refused before the reply is read, each naming its constant; the
+    /// production knobs and the bounds themselves pass.
+    #[test]
+    fn next_tree_circles_knobs_past_the_core_bounds_are_refused() {
+        let widen = [("reach", 208.0, "REACH_PX_MAX"), ("nudge", 17.0, "NUDGE_PX_MAX"), ("r_max", 30.0, "RADIUS_PX_MAX"), ("max_overlaps", 21.0, "OVERLAPS_MAX"), ("label_gap", 0.5, "GAP_PX_MIN"), ("label_sep", 1.0, "SEP_PX_MIN")];
+        let at_bound = [("reach", 200.0), ("nudge", 16.0), ("r_max", 28.0), ("max_overlaps", 20.0), ("label_gap", 1.0), ("label_sep", 2.0)];
+        let with_knob = |k: &str, v: f64| {
+            let mut o = bindings();
+            assert!(o.set_path(&["nodes", "bubbles", "knobs", k].map(String::from), J::Num(v)));
+            registry_problems(&load_registry(&o))
+        };
+        assert_eq!(registry_problems(&load_registry(&bindings())), Vec::<String>::new());
+        for (k, v, cap) in widen {
+            let errs = with_knob(k, v);
+            assert!(errs.iter().any(|e| e.starts_with("C5 registry bubbles knobs") && e.contains(cap)), "C {k} {v}: {errs:?}");
+        }
+        for (k, v) in at_bound {
+            assert_eq!(with_knob(k, v), Vec::<String>::new(), "{k} at its bound {v}");
+        }
+        let fx = circles();
+        let (req, rep) = (fx.g("q1").g("request"), fx.g("q1").g("reply"));
+        for (k, v, cap) in widen {
+            let path: [&str; 2] = match k {
+                "reach" => ["labels", "reach"],
+                "nudge" => ["nudge", "most"],
+                "r_max" | "max_overlaps" => ["scale", k],
+                "label_gap" => ["labels", "gap"],
+                _ => ["labels", "sep"],
+            };
+            let mut rq = req.clone();
+            assert!(rq.set_path(&path.map(String::from), J::Num(v)));
+            let first = circles_first(&rq, rep);
+            assert!(first.starts_with("B0 request bubbles") && first.contains(cap), "D {k} {v}: {first}");
+        }
+    }
+
+    /// K11 (P4a-2): signed bars from one zero line, the value's room on each side a bar runs to; with values of 0 or more
+    /// the room after the bars only, as K1 laid the level bars; every value 0 gives no bars to scale.
+    #[test]
+    fn next_tree_signed_bars_run_from_one_zero_line() {
+        let rows = J::obj_of(vec![("x0", J::Int(0)), ("lw", J::Num(40.0)), ("vw", J::Num(30.0)), ("bw", J::Num(400.0))]);
+        let (z, bars) = signed_bars(&rows, &[3.0, -1.0]).unwrap();
+        // left 0 + 40 + 30 = 70, bw 400 - 40 - 30 - 30 = 300, z = 70 + 1/4 * 300
+        assert_eq!((z, bars), (145.0, vec![(145.0, 225.0), (70.0, 75.0)]));
+        let (z, bars) = signed_bars(&rows, &[4.0, 1.0, 0.0]).unwrap();
+        // no room left of the zero line: left 70 - 30 = 40, bw 400 - 40 - 30 = 330
+        assert_eq!((z, bars), (40.0, vec![(40.0, 330.0), (40.0, 82.5), (40.0, 0.0)]));
+        assert_eq!(signed_room(&[0.0, -2.0], 30.0), (-2.0, 0.0, 30.0, 0.0));
+        assert!(signed_bars(&rows, &[0.0, 0.0]).is_none());
+    }
+
+    /// K10 (P4a-2): a rank by the change between two times orders the codes by the later value less the earlier, the largest
+    /// first and a tie to code order; a result in another order, a key whose later time is not over.time, or a code with
+    /// no row at the earlier time stops.
+    #[test]
+    fn next_tree_a_rank_by_change_recomputes_the_flow_s_changed() {
+        let row = |c: &str, t: &str, v: &str| {
+            J::obj_of(vec![("src", J::Str(format!("series:T/{c}:{t}"))), ("table", J::str("T")), ("dims", J::obj_of(vec![("geo", J::str(c))])), ("time", J::str(t)), ("value", J::str(v))])
+        };
+        let rows = J::Arr(vec![row("AT", "2016", "10"), row("AT", "2024", "14"), row("BE", "2016", "5"), row("BE", "2024", "9"), row("CY", "2016", "8"), row("CY", "2024", "7")]);
+        let page = |key: J, result: &[&str]| {
+            let s = J::obj_of(vec![
+                ("id", J::str("ranked")),
+                ("kind", J::str("rank")),
+                ("over", J::obj_of(vec![("table", J::str("T")), ("by", J::str("geo")), ("time", J::str("2024"))])),
+                ("key", key),
+                ("order", J::str("desc")),
+                ("tie", J::obj_of(vec![("by", J::str("code")), ("outcome", J::str("order"))])),
+                ("result", J::strs(result)),
+            ]);
+            J::obj_of(vec![
+                ("kind", J::str("Page")),
+                ("selects", J::obj_of(vec![("kind", J::str("Selects")), ("items", J::Arr(vec![s]))])),
+                ("facts", J::obj_of(vec![("kind", J::str("Facts")), ("tables", J::Obj(vec![])), ("rows", rows.clone()), ("facts", J::Obj(vec![])), ("fmts", J::Obj(vec![]))])),
+                ("checks", J::obj_of(vec![("kind", J::str("Checks")), ("items", J::Arr(vec![]))])),
+            ])
+        };
+        let change = |a: &str, b: &str| J::obj_of(vec![("change", J::strs(&[a, b]))]);
+        // AT +4 and BE +4 tie to code order, CY -1 last
+        let (bad, got, _) = recheck(&page(change("2016", "2024"), &["AT", "BE", "CY"]));
+        assert_eq!((bad, got.get("ranked").map(J::dump)), (Vec::<String>::new(), Some(r#"["AT","BE","CY"]"#.to_string())));
+        let (bad, _, _) = recheck(&page(change("2016", "2024"), &["BE", "AT", "CY"]));
+        assert!(!bad.is_empty(), "the flow's ranked in another order passed");
+        let (bad, _, _) = recheck(&page(change("2016", "2025"), &["AT", "BE", "CY"]));
+        assert!(bad.iter().any(|e| e.contains("key")), "a change whose later end is not over.time: {bad:?}");
+        let (bad, _, _) = recheck(&page(change("2015", "2024"), &["AT", "BE", "CY"]));
+        assert!(bad.iter().any(|e| e.contains("has 0 rows at 2015")), "{bad:?}");
+    }
+
     /// The core writes a number as the leaf's facts.fmt does: Python's `,.{dec}f` (outputs taken from Python 3.13).
     #[test]
     fn next_tree_numbers_group_by_thousands_as_the_leaf() {
@@ -5150,19 +6447,34 @@ mod tests {
         }
     }
 
-    /// The production bindings (P4a-1) bind the bars external and nothing else, pass C5, and name a runner under the node
-    /// folders; every recipe's external layers in the leaf registry (knobs.json, which knobs.py writes from the bindings'
-    /// recipes) are the bindings' own, of nodes the core binds external.
+    /// The production bindings (P4a-2) bind the bars and the map circles external and nothing else, pass C5, and name a
+    /// runner under the node folders; every recipe's external layers in the leaf registry (knobs.json, which knobs.py writes
+    /// from the bindings' recipes) are the bindings' own, of nodes the core binds external, and its points layers the ones
+    /// laid out in a view frame. The circles' knobs are the bubbles leaf's under the map style (run.MAP_STYLE: label_top 12,
+    /// label_sep 8; the rest its knob defaults), so the core lays them out as the leaf did.
     #[test]
     fn next_tree_production_binds_the_bars_external() {
         let o = bindings();
-        assert_eq!(external_nodes(&o), ["bars"]);
+        assert_eq!(external_nodes(&o), ["bars", "bubbles"]);
         assert_eq!(registry_problems(&load_registry(&o)), Vec::<String>::new());
-        assert!(runner_allowed(&st(o.g("nodes").g("bars").g("runner"))));
+        for n in external_nodes(&o) {
+            assert!(runner_allowed(&st(o.g("nodes").g(&n).g("runner"))), "{n}");
+        }
         for r in &crate::next_leaf::leaves().recipes {
             let want: Vec<String> = o.g("recipes").g(&r.name).arr().iter().map(st).collect();
             assert_eq!(r.external, want, "recipe {}", r.name);
             assert!(r.external.iter().all(|l| external_nodes(&o).contains(l)));
+            let view: Vec<String> =
+                want.iter().filter(|l| o.g("frames").g(&st(o.g("nodes").g(l.as_str()).g("frame"))).g("kind").s() == Some("view")).cloned().collect();
+            assert_eq!(r.points, view, "recipe {}", r.name);
+        }
+        let leaf = |k: &str| match crate::next_leaf::leaves().nodes["bubbles"].info.knobs.iter().find(|x| x.name == k).map(|x| &x.kind) {
+            Some(crate::next_nodes::Kind::Range { default, .. }) => *default,
+            _ => panic!("bubbles.{k}"),
+        };
+        let kn = o.g("nodes").g("bubbles").g("knobs");
+        for (k, map_style) in [("label_top", Some(12.0)), ("label_sep", Some(8.0)), ("r_max", None), ("nudge", None), ("max_overlaps", None), ("reach", None), ("r_min", None), ("circle_gap", None), ("label_gap", None), ("land_cost", None)] {
+            assert_eq!(kn.g(k).num(), Some(map_style.unwrap_or_else(|| leaf(k))), "bubbles knob {k}");
         }
         // the rows frame repeats the bars leaf's knob defaults (column.py ColumnFrame reads top, row and size)
         let knob = |k: &str| match crate::next_leaf::leaves().nodes["bars"].info.knobs.iter().find(|x| x.name == k).map(|x| &x.kind) {
@@ -5246,7 +6558,8 @@ mod tests {
                 ("knobs", J::obj_of(vec![("x0", p.g("x0").clone())])),
                 ("items", J::Arr(names.iter().map(|_| J::Obj(vec![])).collect())),
             ]);
-            let (frame, plot, rows) = rows_frame(fr, &node, &meta, 13.0).unwrap();
+            let values: Vec<f64> = p.g("values").arr().iter().filter_map(J::num).collect();
+            let (frame, plot, rows) = rows_frame(fr, &node, &meta, 13.0, &values).unwrap();
             let marks: Vec<J> = p.g("values").arr().iter().enumerate().map(|(i, v)| {
                 J::obj_of(vec![("id", J::Str(format!("bars/{i}"))), ("shape", J::str("rect")), ("item", J::Int(i as i64)), ("value", v.clone())])
             }).collect();
@@ -5286,12 +6599,12 @@ mod tests {
             }
         }
         let node = J::obj_of(vec![("knobs", J::obj_of(vec![("x0", J::Int(600))])), ("items", J::Arr(vec![J::Obj(vec![]); 3]))]);
-        let (frame, plot, rows) = rows_frame(fr, &node, &meta, 13.0).unwrap();
+        let (frame, plot, rows) = rows_frame(fr, &node, &meta, 13.0, &vals).unwrap();
         let marks: Vec<J> = vals.iter().enumerate().map(|(i, v)| J::obj_of(vec![("id", J::Str(format!("bars/{i}"))), ("shape", J::str("rect")), ("item", J::Int(i as i64)), ("value", J::Num(*v))])).collect();
         let req = J::obj_of(vec![("node", J::str("bars")), ("frame", frame), ("plot", plot), ("rows", rows), ("encode", e.g("marks").g("encode").clone()), ("marks", J::Arr(marks)), ("texts", J::Arr(texts))]);
         let honest = {
             let r = req.g("rows");
-            let (left, bw) = (600.0 + r.g("lw").num().unwrap(), r.g("bw").num().unwrap());
+            let (left, bw) = (600.0 + r.g("lw").num().unwrap(), r.g("bw").num().unwrap() - r.g("lw").num().unwrap() - r.g("vw").num().unwrap());
             let mut m = Vec::new();
             let mut t = Vec::new();
             for (i, v) in vals.iter().enumerate() {

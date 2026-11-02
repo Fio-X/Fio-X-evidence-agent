@@ -83,6 +83,28 @@ DREW = {}
 FOUND = {}
 
 
+def leaf_frame(Frame, f, key, fixed=None, by_hero=None):
+    """A chart leaf's own Frame over the hero's leaves.<key> (refusing a hero that names none), with the hero's style
+    (`fixed` over it, then `by_hero`'s), and the series values read from the request's tables (wbkit.read_values)."""
+    d = (f.h.get("leaves") or {}).get(key)
+    if d is None: raise FX.Refused(f"the hero names no leaves.{key}")
+    wbkit.read_values()
+    st = dict(f.h.get("style", {}))
+    for node, kv in [*(fixed or {}).items(), *(by_hero(f.h) if by_hero else {}).items()]: st[node] = {**st.get(node, {}), **kv}
+    return Frame({"data": d, "style": st})
+
+
+def leaf_records(fr, key):
+    """What a chart leaf's Frame drew, as main() sends it back: its size, finding, what it dropped and its radius scale."""
+    DREW[key] = (getattr(fr, "W", None), getattr(fr, "H", None))
+    FOUND[key] = getattr(fr, "finding", None)
+    dropped = getattr(fr, "dropped", None) or []
+    DROPPED.extend({"id": str(c), "why": why} for c, why in dropped)
+    if getattr(fr, "r_used", None) is not None:
+        SCALE.update(r_used=fr.r_used, r_steps=round((fr.k("r_max") - fr.r_used) / prod.KNOBS[key]["r_max"][1][2]),
+                     r_min_lifted=len(fr.r_min_codes), r_min_codes=list(fr.r_min_codes))
+
+
 def leaf(Frame, cl, key, fixed=None, by_hero=None):
     """A chart leaf (wbkit's style) as a layer of a recipe's frame: its own Frame over the hero's leaves.<key> as its data,
     with the hero's style (`fixed`, {node: {knob: value}}, over it: what the recipe's layout sets; then `by_hero`'s, the knobs
@@ -91,19 +113,8 @@ def leaf(Frame, cl, key, fixed=None, by_hero=None):
     not place (its Frame.dropped, (id, why) each) does not stop the layer: it goes back in DROPPED, even when that is all it
     was given (the layer is drawn empty, and the page still goes out with every dropped item in its ledger)."""
     def draw(f, occ):
-        d = (f.h.get("leaves") or {}).get(key)
-        if d is None: raise FX.Refused(f"the hero names no leaves.{key}")
-        wbkit.read_values()
-        st = dict(f.h.get("style", {}))
-        for node, kv in [*(fixed or {}).items(), *(by_hero(f.h) if by_hero else {}).items()]: st[node] = {**st.get(node, {}), **kv}
-        fr = Frame({"data": d, "style": st}); out = cl(fr, occ)
-        DREW[key] = (getattr(fr, "W", None), getattr(fr, "H", None))
-        FOUND[key] = getattr(fr, "finding", None)
-        dropped = getattr(fr, "dropped", None) or []
-        DROPPED.extend({"id": str(c), "why": why} for c, why in dropped)
-        if getattr(fr, "r_used", None) is not None:
-            SCALE.update(r_used=fr.r_used, r_steps=round((fr.k("r_max") - fr.r_used) / prod.KNOBS[key]["r_max"][1][2]),
-                         r_min_lifted=len(fr.r_min_codes), r_min_codes=list(fr.r_min_codes))
+        fr = leaf_frame(Frame, f, key, fixed, by_hero); out = cl(fr, occ)
+        leaf_records(fr, key)
         return out
     return draw, None
 
@@ -138,7 +149,7 @@ def bubble_key(f, occ):
 # The chart leaves a column page's frame holds beside its own layers, and which of them are svg.
 LEAF_LAYERS = dict(section_head=leaf(section_head.Frame, section_head.cl_section_head, "section_head"),
                    rankbar=leaf(rankbar.Frame, rankbar.cl_rankbar, "rankbar"),
-                   bubbles=leaf(bubbles.Frame, bubbles.cl_bubbles, "bubbles", MAP_STYLE, focus_style),
+                   bubbles=leaf(bubbles.Laid, bubbles.cl_bubbles, "bubbles", MAP_STYLE, focus_style),
                    bubble_key=(bubble_key, None),
                    leader_notes=leaf(leader_notes.Frame, leader_notes.cl_leader_notes, "leader_notes", MAP_STYLE),
                    sankey=leaf(sankey.Frame, sankey.cl_sankey, "sankey"),
@@ -161,9 +172,38 @@ KINDS = dict(ring=(scmp.RING_LAYERS, scmp.RING_SVG), **{k: ({**column.COLUMN_LAY
              scmp=(scmp.SCMP_LAYERS, scmp.SCMP_SVG))
 
 
+def bubbles_frame(f):
+    """The bubbles' input half over the panel's hero (bubbles.Frame: the view, the items, their values, names, ledger entries
+    and points, each refusal in its own words), as the bubbles leaf reads it under MAP_STYLE and the page's focus."""
+    return leaf_frame(bubbles.Frame, f, "bubbles", MAP_STYLE, focus_style)
+
+
+def bubbles_placed(f, occ, g):
+    """The bubbles drawn from the core's placed geometry (bubbles.cl_bubbles_placed), with the leaf's records as before."""
+    fr = bubbles_frame(f); out = bubbles.cl_bubbles_placed(fr, occ, g)
+    leaf_records(fr, "bubbles")
+    return out
+
+
 # The layers a leaf draws from the geometry the core placed and checked (knobs.placed[layer], src/next_tree.rs node_draw),
-# by layer: the ones a page recipe may bind external.
-PLACED_LAYERS = dict(bars=column.cl_bars_placed)
+# by layer: the ones a page recipe may bind external. The bars draw level or change bars by the panel's measure.
+PLACED_LAYERS = dict(bars=lambda f, occ, g: column.cl_change_bars_placed(f, g) if f.change else column.cl_bars_placed(f, occ, g),
+                     bubbles=bubbles_placed)
+# What a layer drawn from placed geometry reads of its own input (P4a-2): run before refusing a missing geometry, so a
+# layer whose input is off refuses in its own words, as before it was external. The bars read the panel's (ColumnFrame).
+INPUT_HALF = dict(bubbles=bubbles_frame)
+# The ground phase: what the leaf gives an external node to choose among places the core holds equally good (the map
+# circles' land rows), by layer; never checked, never a number on the page.
+GROUND = dict(bubbles=lambda h: bubbles.ground(leaf_frame_hh(h, "bubbles", MAP_STYLE, focus_style)))
+
+
+def leaf_frame_hh(h, key, fixed, by_hero):
+    """The {data, style} a chart leaf's Frame reads, over a hero (leaf_frame's, with no panel)."""
+    d = (h.get("leaves") or {}).get(key)
+    if d is None: raise FX.Refused(f"the hero names no leaves.{key}")
+    st = dict(h.get("style", {}))
+    for node, kv in [*(fixed or {}).items(), *(by_hero(h) if by_hero else {}).items()]: st[node] = {**st.get(node, {}), **kv}
+    return {"data": d, "style": st}
 
 
 def layer_fn(layers, name, knobs):
@@ -175,7 +215,11 @@ def layer_fn(layers, name, knobs):
     if name in ext:
         if name not in PLACED_LAYERS: raise FX.Refused(f"the recipe binds {name} external and no leaf draws it from placed geometry")
         g = placed.get(name)
-        if not isinstance(g, dict): raise FX.Refused(f"the recipe binds {name} external and the request gives no placed geometry for it")
+        if not isinstance(g, dict):
+            def none(f, occ):
+                if name in INPUT_HALF: INPUT_HALF[name](f)  # its own words first
+                raise FX.Refused(f"the recipe binds {name} external and the request gives no placed geometry for it")
+            return none
         return lambda f, occ: PLACED_LAYERS[name](f, occ, g)
     if name in placed: raise FX.Refused(f"placed geometry for {name}, which the recipe does not bind external")
     return layers[name][0]
@@ -446,6 +490,13 @@ def main():
         req = json.loads(line)
         node = req.get("node", node)  # the page line names none: the panel's
         layers, svgs = KINDS.get(node, ({}, []))
+        if req.get("phase") == "ground":  # before any panel: the ground an external node is given (GROUND)
+            try:
+                FX.TABLES = tables(req.get("rows") or []); geo.NE = (req.get("knobs") or {}).get("shapes")
+                out = {"land": GROUND[req["layer"]](req["knobs"]["spec"]["hero"])}
+            except KeyError as e: out = {"refused": [f"ground: no ground for {e}"]}
+            except FX.Refused as e: out = {"refused": [f"ground: {e}"]}
+            print(json.dumps(out), flush=True); continue
         if req.get("phase") == "page" and not (panel or off):
             print(json.dumps({"refused": ["page: the page line came before any layer line"]}), flush=True); continue
         if not (panel or off):

@@ -130,7 +130,7 @@ def style(full=False, **nst):
 def pair(d=D, occ=None, full=False, **nst):
     """bubbles in the shared view, then leader_notes, on one Occ: (bubbles' frame, notes' frame, the svg inner, the Occ)."""
     setup(); occ = occ or prod.Occ()
-    fb = bubbles.Frame({"data": dict(items=ITEMS, ext=d.get("ext", EXT)), "style": style(full)}); sb = bubbles.cl_bubbles(fb, occ)
+    fb = bubbles.Laid({"data": dict(items=ITEMS, ext=d.get("ext", EXT)), "style": style(full)}); sb = bubbles.cl_bubbles(fb, occ)
     fn = LN.Frame({"data": d, "style": style(**nst)}); sn = LN.cl_leader_notes(fn, occ)
     return fb, fn, sb + sn, occ
 
@@ -238,7 +238,7 @@ class LeaderNotes(unittest.TestCase):
             items = [dict(i, value=i["value"]) for i in ITEMS]
             rows = [dict(r, value=str(vals[r["dims"]["geo"]])) if "dims" in r else r for r in ROWS]
             K.setup(rows, ZH2, run.tables); geo.NE = SHP; occ = prod.Occ()
-            svg = bubbles.cl_bubbles(bubbles.Frame({"data": dict(items=items, ext=EXT), "style": style()}), occ)
+            svg = bubbles.cl_bubbles(bubbles.Laid({"data": dict(items=items, ext=EXT), "style": style()}), occ)
             svg += LN.cl_leader_notes(LN.Frame({"data": dict(D, notes=be), "style": style()}), occ)
             lines = segs(svg)
             for m in re.finditer(r'<text x="([\d.]+)" y="([\d.]+)" font-size="([\d.]+)" text-anchor="(\w+)"[^>]*>(.*?)</text>', svg):
@@ -253,7 +253,7 @@ class LeaderNotes(unittest.TestCase):
     def test_every_eu_circle_is_labelled_and_no_label_or_leader_covers_a_true_point_dot(self):
         # the EU-27 with every circle asked for (FULL): all 27 circles carry their name and number; the dot a nudged circle keeps
         # at its true point is claimed in the Occ, and no label box and no leader drawn passes over it (but the leader of its own circle)
-        setup(); occ = prod.Occ(); f = bubbles.Frame({"data": dict(items=ITEMS, ext=EXT), "style": style(True)}); svg = bubbles.cl_bubbles(f, occ)
+        setup(); occ = prod.Occ(); f = bubbles.Laid({"data": dict(items=ITEMS, ext=EXT), "style": style(True)}); svg = bubbles.cl_bubbles(f, occ)
         self.assertEqual((len(f.label_boxes), f.dropped), (len(ITEMS), []))
         dots = [(float(x), float(y), c) for x, y, c in re.findall(r'<circle cx="([\d.]+)" cy="([\d.]+)" r="[\d.]+" fill="var\(--t-title\)" data-at="([A-Z]+)"', svg)]
         self.assertTrue(dots)
@@ -308,7 +308,7 @@ class LeaderNotes(unittest.TestCase):
         items = [dict(code=c, value=f"series:t/A.{c}:2025:OBS_VALUE", value_text=f"fact:val.{c}.n", lonlat=list(at[c])) for c in ranked]
         notes = [dict(at=list(at["AF"]), name="AF", text=[{"word": "column.note.hi"}], value_text="fact:gap"), dict(at=list(at["IQ"]), name="IQ", text=[{"word": "column.note.lo"}], value_text="fact:times")]
         K.setup(rows, ZH2, run.tables); geo.NE = SHP; occ = prod.Occ()
-        svg = bubbles.cl_bubbles(bubbles.Frame({"data": dict(items=items, ext=ext), "style": style()}), occ)
+        svg = bubbles.cl_bubbles(bubbles.Laid({"data": dict(items=items, ext=ext), "style": style()}), occ)
         f = LN.Frame({"data": dict(ext=ext, notes=notes), "style": style()}); svg += LN.cl_leader_notes(f, occ)
         setup()
         return f, svg, occ
@@ -388,13 +388,13 @@ class LeaderNotes(unittest.TestCase):
             for c, _ in pick: rows += [{"src": f"series:t/A.{c}:2023:OBS_VALUE", "table": "t", "dims": {"geo": c}, "time": "2023", "value": str(vals[c])}, {"src": f"fact:v.{c}", "text": f"{vals[c]}%"}]
             K.setup(rows, ZH2, run.tables); geo.NE = SHP; occ = prod.Occ()
             items = [dict(code=c, value=f"series:t/A.{c}:2023:OBS_VALUE", value_text=f"fact:v.{c}", lonlat=list(p)) for c, p in pick]
-            bubbles.cl_bubbles(bubbles.Frame({"data": dict(items=items, ext=ext), "style": {**style(), "bubbles": {**style()["bubbles"], "max_overlaps": 20}}}), occ)
+            bubbles.cl_bubbles(bubbles.Laid({"data": dict(items=items, ext=ext), "style": {**style(), "bubbles": {**style()["bubbles"], "max_overlaps": 20}}}), occ)
             LN.cl_leader_notes(LN.Frame({"data": dict(ext=ext, notes=[dict(at=list(p), name=c, value_text="fact:gap") for c, p in pick]), "style": style()}), occ)
         every = [dict(at=POINT[ISO3[c]], name=c, value_text="fact:gap") for c in VALUES]
         sys.settrace(rec)
         try:
             pair(); self.q6(); pair(dict(D, notes=every), label_count=12, note_size=22); europe()
-            setup(ROWS + [CHG]); occ = prod.Occ(); bubbles.cl_bubbles(bubbles.Frame({"data": dict(items=ITEMS, ext=EXT), "style": style()}), occ)
+            setup(ROWS + [CHG]); occ = prod.Occ(); bubbles.cl_bubbles(bubbles.Laid({"data": dict(items=ITEMS, ext=EXT), "style": style()}), occ)
             LN.cl_leader_notes(LN.Frame({"data": dict(D, notes=[NOTES[0], WIDE]), "style": style()}), occ)
             self.test_a_note_in_a_walled_room_takes_two_bends_through_its_door_and_none_drops_without_one()
         finally:
@@ -442,7 +442,7 @@ class LeaderNotes(unittest.TestCase):
         st = style(); st["bubbles"].update(run.focus_style(hero)["bubbles"])
         try:
             for k, v in knobs.items(): setattr(LN, k, v)
-            svg = bubbles.cl_bubbles(bubbles.Frame({"data": hero["leaves"]["bubbles"], "style": st}), occ)
+            svg = bubbles.cl_bubbles(bubbles.Laid({"data": hero["leaves"]["bubbles"], "style": st}), occ)
             f = LN.Frame({"data": hero["leaves"]["leader_notes"], "style": st}); svg += LN.cl_leader_notes(f, occ)
         finally:
             for k, v in keep.items(): setattr(LN, k, v)
@@ -528,7 +528,7 @@ class LeaderNotes(unittest.TestCase):
         # holds both lines, off every circle, label and other note, and no leader meets either line's glyph box (2 px in, as the
         # page check reads it); the two lines' glyph boxes do not meet. Before the break the note refused (wider than half)
         setup(ROWS + [CHG]); occ = prod.Occ(); size = 16
-        svg = bubbles.cl_bubbles(bubbles.Frame({"data": dict(items=ITEMS, ext=EXT), "style": style()}), occ)
+        svg = bubbles.cl_bubbles(bubbles.Laid({"data": dict(items=ITEMS, ext=EXT), "style": style()}), occ)
         f = LN.Frame({"data": dict(D, notes=[NOTES[0], WIDE]), "style": style()}); svg += LN.cl_leader_notes(f, occ)
         setup()
         self.assertEqual((check_svg(svg), f.dropped), ([], []))
@@ -577,7 +577,7 @@ class LeaderNotes(unittest.TestCase):
         # tried (its sha on the commit before them), nothing dropped
         for notes, rows, pin in (([NOTES[0], NOTES[1]], ROWS, "e9c8281fae2c6bba17f6f980ef8cc0df2408a9911cce1b263f0d489035c7531a"),
                                  ([NOTES[0], WIDE], ROWS + [CHG], "a3f79be867c910de50165963a89940e2e98f0f2f92f6cfeaad6698069f1ecc75")):
-            setup(rows); occ = prod.Occ(); bubbles.cl_bubbles(bubbles.Frame({"data": dict(items=ITEMS, ext=EXT), "style": style()}), occ)
+            setup(rows); occ = prod.Occ(); bubbles.cl_bubbles(bubbles.Laid({"data": dict(items=ITEMS, ext=EXT), "style": style()}), occ)
             f = LN.Frame({"data": dict(D, notes=notes), "style": style()}); svg = LN.cl_leader_notes(f, occ)
             self.assertEqual((hashlib.sha256(svg.encode()).hexdigest(), f.dropped), (pin, []))
         setup()
@@ -851,7 +851,7 @@ class ColumnMap(unittest.TestCase):
         self.assertEqual(sum(w == "past label_count" for w in dropped.values()), len(VALUES) - 12)
         self.assertTrue({c for c, w in dropped.items() if w == "no free place for the note"})  # the crowded centre leaves some
         setup(); f = LN.Frame({"data": dict(D, notes=notes), "style": style(label_count=12, note_size=22)}); occ = prod.Occ()
-        bubbles.cl_bubbles(bubbles.Frame({"data": dict(items=ITEMS, ext=EXT), "style": style()}), occ); LN.cl_leader_notes(f, occ)
+        bubbles.cl_bubbles(bubbles.Laid({"data": dict(items=ITEMS, ext=EXT), "style": style()}), occ); LN.cl_leader_notes(f, occ)
         self.assertEqual([{"id": c, "why": w} for c, w in f.dropped], got["dropped"])
         page = child(lines + [json.dumps({"phase": "page", "layers": {"bars": bars["svg"], "bubbles": bub["svg"], "bubble_key": key["svg"], "leader_notes": got["svg"]}})])[5]
         self.assertNotIn("refused", page)
@@ -875,12 +875,12 @@ class ColumnMap(unittest.TestCase):
         self.assertEqual(set(dropped.values()), {"no free place for the label"})
         by_size = sorted(VALUES, key=lambda c: -VALUES[c]); top = by_size[:1] + by_size[-1:] + by_size[1:run.MAP_LABELS - 1]
         self.assertEqual((labelled | set(dropped), labelled & set(dropped)), (set(top), set()))
-        setup(); f = bubbles.Frame({"data": dict(items=ITEMS, ext=EXT), "style": {**style(), "bubbles": {**style()["bubbles"], **crowd}}})
+        setup(); f = bubbles.Laid({"data": dict(items=ITEMS, ext=EXT), "style": {**style(), "bubbles": {**style()["bubbles"], **crowd}}})
         bubbles.cl_bubbles(f, prod.Occ())
         self.assertEqual([{"id": c, "why": w} for c, w in f.dropped], got["dropped"])
         # with leaders (the default reach) the same crowded set labels more circles, each label still clear of every circle
         # and joined to its own by a leader that starts on that circle's edge
-        setup(); g = bubbles.Frame({"data": dict(items=ITEMS, ext=EXT), "style": style(True)}); svg = bubbles.cl_bubbles(g, prod.Occ())
+        setup(); g = bubbles.Laid({"data": dict(items=ITEMS, ext=EXT), "style": style(True)}); svg = bubbles.cl_bubbles(g, prod.Occ())
         self.assertLess(len(g.dropped), len(f.dropped))
         lines = [tuple(map(float, m)) for m in re.findall(r'<line x1="([\d.]+)" y1="([\d.]+)" x2="([\d.]+)" y2="([\d.]+)"', svg)]
         self.assertTrue(lines)
@@ -893,7 +893,7 @@ class ColumnMap(unittest.TestCase):
         # the EU-27 in the column page's shared frame: its MAP_LABELS circles, the biggest and the smallest first, are each
         # labelled (none dropped: the bars beside it print the rest); a label beside its circle has no leader, one set out has a
         # leader from its own circle's edge no longer than reach
-        setup(); occ = prod.Occ(); f = bubbles.Frame({"data": dict(items=ITEMS, ext=EXT), "style": style()}); svg = bubbles.cl_bubbles(f, occ)
+        setup(); occ = prod.Occ(); f = bubbles.Laid({"data": dict(items=ITEMS, ext=EXT), "style": style()}); svg = bubbles.cl_bubbles(f, occ)
         reach = bubbles.prod.KNOBS["bubbles"]["reach"][0]
         self.assertEqual((len(f.label_boxes), f.dropped), (run.MAP_LABELS, []))
         ends = {max(VALUES, key=VALUES.get), min(VALUES, key=VALUES.get)}
@@ -907,7 +907,7 @@ class ColumnMap(unittest.TestCase):
     def test_the_land_stops_inside_the_frame_on_a_hairline_and_the_margin_is_open_room(self):
         # the inset (default) clips the land to a rect inside the picture, drawn as a hairline; the land the notes keep off
         # (occ.land) lies inside it, so the margin is open room; inset 0 clips at the picture's own edge, with no hairline
-        setup(); occ = prod.Occ(); f = bubbles.Frame({"data": dict(items=ITEMS, ext=EXT), "style": style()}); svg = bubbles.cl_bubbles(f, occ)
+        setup(); occ = prod.Occ(); f = bubbles.Laid({"data": dict(items=ITEMS, ext=EXT), "style": style()}); svg = bubbles.cl_bubbles(f, occ)
         e = bubbles.prod.KNOBS["bubbles"]["inset"][0]
         self.assertIn(f'<clipPath id="bubblesframe"><rect x="{e}" y="{e}" width="{f.W - 2 * e}" height="{f.H - 2 * e}"/>', svg)
         self.assertIn(f'<rect x="{e}" y="{e}" width="{f.W - 2 * e}" height="{f.H - 2 * e}" fill="none"', svg)
@@ -915,7 +915,7 @@ class ColumnMap(unittest.TestCase):
         self.assertTrue(spans)
         self.assertTrue(all(e <= a <= b <= f.W - e and e <= (r + 0.5) * MK.LAND_STEP <= f.H - e for r, a, b in spans))
         self.assertFalse(MK.on_land(occ.land, (0, 0, f.W, e - 3), pad=0))
-        st = style(); st["bubbles"]["inset"] = 0; svg0 = bubbles.cl_bubbles(bubbles.Frame({"data": dict(items=ITEMS, ext=EXT), "style": st}), prod.Occ())
+        st = style(); st["bubbles"]["inset"] = 0; svg0 = bubbles.cl_bubbles(bubbles.Laid({"data": dict(items=ITEMS, ext=EXT), "style": st}), prod.Occ())
         self.assertIn('<rect x="0" y="0"', svg0)
         self.assertNotIn('fill="none" stroke="var(--t-sec)"', svg0)
 

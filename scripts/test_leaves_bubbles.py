@@ -97,7 +97,7 @@ class Bubbles(unittest.TestCase):
         # circles overlapping than no nudge does, and every moved circle has a dot drawn at its true point
         setup(E_ROWS, E_LABELS)
         overlaps = lambda f: sum(bubbles.lens(a, b) for x, a in enumerate(f.items) for b in f.items[x + 1:])
-        still = bubbles.Frame(hero(E_DATA, nudge=0, max_overlaps=20)); f = bubbles.Frame(hero(E_DATA, max_overlaps=20))
+        still = bubbles.Laid(hero(E_DATA, nudge=0, max_overlaps=20)); f = bubbles.Laid(hero(E_DATA, max_overlaps=20))
         most = bubbles.prod.KNOBS["bubbles"]["nudge"][0]
         self.assertLess(overlaps(f), overlaps(still))
         moved = [i for i in f.items if math.dist(i["_xy"], i["_at"]) > 0.5]
@@ -111,7 +111,7 @@ class Bubbles(unittest.TestCase):
         for tag, rows, labels, data in (("world", W_ROWS, W_LABELS, W_DATA), ("crowded", E_ROWS, E_LABELS, E_DATA)):
             with self.subTest(tag):
                 setup(rows, labels)
-                f = bubbles.Frame(hero(data, max_overlaps=20))
+                f = bubbles.Laid(hero(data, max_overlaps=20))
                 bubbles.cl_bubbles(f, prod.Occ())
                 self.assertTrue(f.label_boxes)
                 self.assertEqual(len(f.label_boxes) + len(f.unlabeled), min(len(f.items), bubbles.prod.KNOBS["bubbles"]["label_top"][0]))
@@ -216,7 +216,7 @@ class MapExtent(unittest.TestCase):
         rows, items, labels = map_set(values, dec, point_of, names)
         setup(rows, labels)
         ext = ext or layer1_extent({i["code"]: i["lonlat"] for i in items}, {c: (v, labels[c]) for c, v in values.items()}, dec)
-        f = bubbles.Frame({"data": {"items": items, "ext": ext}, "style": {"bubbles": {**run.MAP_STYLE["bubbles"], **style}}})
+        f = bubbles.Laid({"data": {"items": items, "ext": ext}, "style": {"bubbles": {**run.MAP_STYLE["bubbles"], **style}}})
         svg = bubbles.cl_bubbles(f, prod.Occ())
         self.assertEqual(check_svg(svg), [])
         return f, items
@@ -275,7 +275,7 @@ class MapExtent(unittest.TestCase):
         for tag, values, dec, point_of, names in (("q5", EU, 2, POINT.get, ZH3), ("q6", Q6, 0, lambda c: POINT[ISO3[c]], ZH2)):
             rows, items, labels = map_set(values, dec, point_of, names); setup(rows, labels)
             ext = layer1_extent({i["code"]: i["lonlat"] for i in items}, {c: (v, labels[c]) for c, v in values.items()}, dec)
-            f = bubbles.Frame({"data": {"items": items, "ext": ext}, "style": {"bubbles": dict(run.MAP_STYLE["bubbles"])}})
+            f = bubbles.Laid({"data": {"items": items, "ext": ext}, "style": {"bubbles": dict(run.MAP_STYLE["bubbles"])}})
             svg = bubbles.cl_bubbles(f, prod.Occ())
             drawn = [(float(x), float(y), float(r), rest) for x, y, r, rest in re.findall(r'<circle cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)"([^>]*)data-code=', svg)]
             self.assertEqual(len(drawn), len(values), tag)
@@ -299,10 +299,10 @@ class MapExtent(unittest.TestCase):
         def column_map(values, **style):  # the column page's map panel on layer 1's extent
             rows, items, labels = map_set(values, 1, POINT.get, ZH3); setup(rows, labels)
             ext = layer1_extent({i["code"]: i["lonlat"] for i in items}, {c: (v, labels[c]) for c, v in values.items()}, 1)
-            return bubbles.Frame({"data": {"items": items, "ext": ext}, "style": {"bubbles": {**run.MAP_STYLE["bubbles"], **style}}})
+            return bubbles.Laid({"data": {"items": items, "ext": ext}, "style": {"bubbles": {**run.MAP_STYLE["bubbles"], **style}}})
         def world_map(values, **style):
             rows, items, labels = value_set(values, "2025", 1, "%"); setup(rows, labels)
-            return bubbles.Frame(hero(dict(E_DATA, items=items), **style))
+            return bubbles.Laid(hero(dict(E_DATA, items=items), **style))
         for draw, values, used in ((column_map, q5, 18), (world_map, west, 12)):
             fr = draw(values)
             self.assertEqual((fr.r_used, fr.over), (used, []))
@@ -343,7 +343,7 @@ class MapExtent(unittest.TestCase):
         # is under r_min at 12 and so lifted, and only there
         west = dict(LUX=1.0, BEL=20.9608828531757, DEU=23.7031981458429, FRA=22.5418906984086, NLD=20.8687702211484, ITA=25.0981380733118, SMR=23.1484101571226)
         rows, items, labels = value_set(west, "2025", 1, "%"); setup(rows, labels)
-        fr = bubbles.Frame(hero(dict(E_DATA, items=items)))
+        fr = bubbles.Laid(hero(dict(E_DATA, items=items)))
         self.assertEqual((fr.r_used, fr.r_min_codes, under(west, 12), under(west, 22)), (12, ["LUX"], ["LUX"], []))
 
     def test_maps_that_clear_at_r_max_draw_as_before(self):
@@ -361,7 +361,7 @@ class MapExtent(unittest.TestCase):
                 ("q5-world", Q5, 2, POINT.get, ZH3, "7f6b7bdb647beb2ae8c81caabec9173e41dff0645c211874e6440e02e2f85024")):
             rows, items, labels = map_set(values, dec, point_of, names); setup(rows, labels)
             ext = layer1_extent({i["code"]: i["lonlat"] for i in items}, {c: (v, labels[c]) for c, v in values.items()}, dec)
-            f = bubbles.Frame({"data": {"items": items, "ext": ext}, "style": {"bubbles": dict(run.MAP_STYLE["bubbles"])}})
+            f = bubbles.Laid({"data": {"items": items, "ext": ext}, "style": {"bubbles": dict(run.MAP_STYLE["bubbles"])}})
             self.assertEqual((f.r_used, hashlib.sha256(edgeless(bubbles.cl_bubbles(f, prod.Occ())).encode()).hexdigest(), f.dropped), (22, pin, []), tag)
         setup(W_ROWS, W_LABELS)
         self.assertEqual(hashlib.sha256(edgeless(bubbles.draw(hero(W_DATA, highlight="CHN"))[0]).encode()).hexdigest(), "256649e06393c4a99e9fecdc520ea52d76802183541bdf7e68cc53c632bf3251")
@@ -526,7 +526,7 @@ class Key(unittest.TestCase):
         self.assertEqual(re.findall(r'(?:fill|stroke)="var\(--(?:accent|t-body)\)"', key_panel()[2]), [])
         # the noted knob names drawn codes only, as highlight does
         setup(W_ROWS, W_LABELS)
-        with self.assertRaises(Refused) as e: bubbles.Frame(hero(W_DATA, noted="XXX"))
+        with self.assertRaises(Refused) as e: bubbles.Laid(hero(W_DATA, noted="XXX"))
         self.assertIn("codes the request does not hold", str(e.exception))
 
 

@@ -1537,12 +1537,13 @@ pub(crate) struct Asked<'a> {
 }
 
 /// A layer the recipe binds external: asked through the visual group's NodeDeclare over the page input, and what comes back
-/// (drawn rows, facts, formats, hero data; each derived by the visual group from the registry's declaration, none written
-/// here) set into the fill as any layer's. A key two layers set differently refuses the page; nothing falls back.
-fn ask_node(f: &Filling, out: &mut Filled) -> Result<(), String> {
+/// (drawn and read rows, facts, formats, hero data and keys, leaf data; each derived by the visual group from the registry's
+/// declaration, none written here) set into the fill as any layer's. A key two layers set differently refuses the page;
+/// nothing falls back.
+fn ask_node(f: &Filling, out: &mut Filled, page_in: Option<&Value>) -> Result<(), String> {
     let layer = out.at.clone();
     let asked = f.asked.ok_or_else(|| format!("node {layer}: bound external, and this page asks no node"))?;
-    let page_in = asked.page_in.ok_or_else(|| format!("node {layer}: bound external, and the page has no page input to declare it over"))?;
+    let page_in = page_in.ok_or_else(|| format!("node {layer}: bound external, and the page has no page input to declare it over"))?;
     let request = crate::next_visual::Request::NodeDeclare { layer: &layer, page_in };
     let declared = match crate::next_flow::visual_call(asked.calls, "node_declare", request)? {
         crate::next_visual::Reply::NodeDeclared(declared) => *declared,
@@ -1552,6 +1553,7 @@ fn ask_node(f: &Filling, out: &mut Filled) -> Result<(), String> {
         return Err(format!("node {layer}: the visual group answered for node {}", declared.node));
     }
     out.rows(declared.drawn);
+    out.reads(declared.reads);
     for (key, value) in declared.facts {
         Filled::set(&mut out.facts, "fact", &key, value)?;
     }
@@ -1560,6 +1562,12 @@ fn ask_node(f: &Filling, out: &mut Filled) -> Result<(), String> {
     }
     for (key, value) in declared.data {
         Filled::set(&mut out.data, "hero data", &key, value)?;
+    }
+    for (key, value) in declared.hero {
+        Filled::set(&mut out.hero, "hero key", &key, value)?;
+    }
+    for (key, value) in declared.leaves {
+        set_leaf(out, &key, value)?;
     }
     Ok(())
 }
@@ -1669,9 +1677,7 @@ type NodeFill = fn(&Filling, &mut Filled) -> Result<(), String>;
 const NODE_FILLS: &[(&str, NodeFill)] = &[
     ("map", map_fill),
     ("ring", ring_node_fill),
-    ("bars", change_bars_fill),
     ("bignums", bignums_fill),
-    ("bubbles", bubbles_fill),
     ("leader_notes", leader_notes_fill),
     ("notes", notes_fill),
     ("strip", strip_fill),
@@ -1872,17 +1878,6 @@ fn held_decimals(rows: &[&Value]) -> usize {
         .max()
         .unwrap_or(0)
         .min(COLUMN_DEC)
-}
-
-/// Each ranked country's value at the year: the main's rows for them, and the family `val` (keyed val.<code>, the code as
-/// the rows give it) printed with the most decimals the rows hold (at most COLUMN_DEC). The rows, in the main's order.
-fn val_family<'a>(f: &Filling<'a>, out: &mut Filled) -> Result<Vec<&'a Value>, String> {
-    let (shape, fmt) = (f.shape, f.fmt.as_str());
-    let (kept, dec) = ranked_rows(f);
-    out.rows(kept.iter().map(|r| (*r).clone()));
-    Filled::set(&mut out.facts, "fact", "val", json!({"each": shape.place, "table": shape.main, "time": shape.year, "fmt": fmt}))?;
-    Filled::set(&mut out.fmts, "format", fmt, json!({"scale": 1, "dec": dec, "suffix": suffix(f.short)}))?;
-    Ok(kept)
 }
 
 /// The fact counting the places a column page draws (op n over its own ranked rows at the year), which the unit line's scope
@@ -2452,26 +2447,11 @@ fn change_families(f: &Filling, out: &mut Filled) -> Result<&'static str, String
     Ok(chg_fmt)
 }
 
-/// One signed bar per ranked country of a page with two ends, in the order changed ranks them: its change between t0 and t1
-/// (change_families), the bars' measure set to change (the visual knob bars.measure), and how many they are (DRAWN).
-fn change_bars_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
-    let (shape, picks) = (f.shape, f.picks);
-    let (place, year) = (shape.place.as_str(), shape.year.as_str());
-    change_families(f, out)?;
-    Filled::set(&mut out.facts, "fact", DRAWN, json!({"op": "n", "by": place, "table": shape.main, "time": year, "fmt": "n"}))?;
-    let data = json!({"chart": "bars", "by": place, "year": year, "t0": shape.t0, "family": CHANGE_FAMILIES[2],
-        "ranked": picks.ranked, "marks": picks.marks});
-    for (k, v) in data.as_object().into_iter().flatten() {
-        Filled::set(&mut out.data, "hero data", k, v.clone())?;
-    }
-    Filled::set(&mut out.hero, "hero key", "style", json!({"bars": {"measure": BARS_CHANGE}}))
-}
-
 /// The bars' measure (the visual knob bars.measure) of a page whose bars draw the change between its two ends.
 const BARS_CHANGE: &str = "change";
 
 /// The form a page's page-level fields are drafted for (next_page::draft_for): the first-to-last change when the picked
-/// recipe's bars draw the change between the two ends (its fill's bars.measure, change_bars_fill), so the title names what
+/// recipe's bars draw the change between the two ends (its fill's bars.measure, which the bars' declaration writes), so the title names what
 /// the page shows; the composition at one period when it draws one (its fill's composition record, stacked100_fill), so
 /// a page of 100% bars is titled for the parts of each whole, never for the ranking its first fetch's chart is; else, and
 /// with no recipe picked, the lead chart's (next_page::lead).
@@ -2936,28 +2916,6 @@ fn set_leaf(out: &mut Filled, key: &str, data: Value) -> Result<(), String> {
     Filled::set(leaves, "leaf", key, data)
 }
 
-/// One circle per ranked country on the map (hero.leaves.bubbles): its value's row (the circle's area), its value fact
-/// val.<code> printed bare (.n, as the bars print it under the unit line; val_family), and its map point (ranked_points);
-/// and the map's extent.
-fn bubbles_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
-    let kept = val_family(f, out)?;
-    let (points, ext) = ranked_points(f, out)?;
-    let place = f.shape.place.as_str();
-    let items: Vec<Value> = f
-        .picks
-        .ranked
-        .iter()
-        .filter_map(|c| {
-            let row = kept.iter().find(|r| r["dims"][place] == c.as_str())?;
-            Some(json!({"code": c, "value": row["src"], "value_text": format!("fact:val.{c}.n"), "lonlat": points.get(c)?}))
-        })
-        .collect();
-    if items.len() != f.picks.ranked.len() {
-        return Err(format!("bubbles: {} of {} ranked countries have a row and a point", items.len(), f.picks.ranked.len()));
-    }
-    set_leaf(out, "bubbles", json!({"items": items, "ext": ext}))
-}
-
 /// Two notes on the map (hero.leaves.leader_notes), each at its country's point (ranked_points, the bubbles' extent): at the
 /// highest ranked country how far it is above the lowest (the gap), at the lowest how many times it the highest is (the
 /// times); both facts as extremes declares them, the words the word table's (no number in them), its scoped words
@@ -3155,11 +3113,18 @@ fn fill_of(
     let window = window_of(recipe, picks).map_err(no)?;
     let filling = Filling { shape, picks, main, companion, catalogue, fmt: shape.unit.to_lowercase(), short, window, scoped, asked };
     let mut out = Filled::default();
+    let mut page_in = asked.and_then(|a| a.page_in).cloned();
     for layer in &recipe.layers {
         // a layer the registry binds external is asked, never filled by rust; its refusal stops the page (no other shape)
         if recipe.external.contains(layer) {
             out.at = layer.clone();
-            ask_node(&filling, &mut out)?;
+            // a layer laid out in a view frame is declared over the map points and the extent (its refusal: no other shape)
+            if let (true, Some(p)) = (recipe.points.contains(layer), page_in.as_mut()) {
+                let (points, ext) = ranked_points(&filling, &mut out).map_err(no)?;
+                p["points"] = json!({"table": POINT_TABLE, "sha256": crate::next_flow::NE_POINTS_SHA256, "at": points});
+                p["page"] = json!({"ext": ext});
+            }
+            ask_node(&filling, &mut out, page_in.as_ref())?;
         } else if let Some((_, node)) = NODE_FILLS.iter().find(|(n, _)| n == layer) {
             out.at = layer.clone();
             node(&filling, &mut out).map_err(no)?;
@@ -3221,6 +3186,10 @@ fn fill_of(
         .map(|(layer, r)| json!({"layer": layer, "src": r["src"], "table": r["table"], "time": r["time"]}))
         .collect();
     let mut fill = json!({"order": recipe.layers, "rows": rows, "knobs": knobs, "drawn": drawn});
+    // the page input the external layers were declared over, for draw_nodes
+    if let Some(page_in) = page_in {
+        fill["page_in"] = page_in;
+    }
     // how a flow picture accounted for every pair asked for, for the run's record
     if let Some(pairs) = flow_pairs {
         fill["pairs"] = json!(pairs);
@@ -3336,9 +3305,6 @@ fn recipe_request(
     let asked = Asked { calls, page_in: page_in.as_ref() };
     let mut fill = fill_of(recipe, &shape, &picks, (&main_rows, &comp_rows), catalogue, (title, dek), scoped, Some(&asked))
         .map_err(|why| ("fill", why))?;
-    if let Some(page_in) = page_in {
-        fill["page_in"] = page_in;
-    }
     zero_rows(&mut fill, &comp_rows);
     if recipe.layers.iter().any(|l| l == "map" || l == "bubbles") {
         fill["knobs"]["shapes"] = json!(run_dir.join(RING_SHAPES));
@@ -5028,13 +4994,25 @@ mod tests {
         let calls = std::sync::Mutex::new(Vec::new());
         let asked = Asked { calls: &calls, page_in: page_in.as_ref() };
         let mut fill = fill_of(recipe, shape, picks, (main, companion), catalogue, words, scoped, Some(&asked))?;
-        if let Some(page_in) = page_in {
-            fill["page_in"] = page_in;
+        if page_in.is_some() {
+            // the map shapes the leaf's ground phase reads, as recipe_request sets them before the nodes are asked (a whole
+            // path: the leaf child runs in its own folder)
+            if !recipe.points.is_empty() {
+                fill["knobs"]["shapes"] = json!(Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime/pi/assets/naturalearth-admin0-50m.geojson"));
+            }
             // and laid out where leaf_page lays them out, by the repository's own nodes
             // the node's child runs in its own folder (next_leaf::ask_once), so its runtime is a whole path
             draw_nodes(&mut fill, &recipe.external, &calls, &Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime"))?;
         }
         Ok(fill)
+    }
+
+    /// fill_of as recipe_request calls it, its external layers declared over the page input and not laid out.
+    fn fill_undrawn(recipe: &Recipe, shape: &Shape, picks: &Picks, main: &[Value]) -> Value {
+        let page_in = (!recipe.external.is_empty()).then(|| page_input(recipe, shape, picks, main));
+        let calls = std::sync::Mutex::new(Vec::new());
+        let asked = Asked { calls: &calls, page_in: page_in.as_ref() };
+        fill_of(recipe, shape, picks, (main, &[]), &Hubs, ("标题", "导语"), false, Some(&asked)).unwrap()
     }
 
     fn ring_fill(
@@ -6304,11 +6282,6 @@ mod tests {
         let fill = crate::next_tree::with_test_bindings(overlay.clone(), unused, || {
             fill_of(&external, &shape, &picks, (&main, &[]), &Hubs, words, false, Some(&asked))
         });
-        // as recipe_request keeps it, for draw_nodes
-        let fill = fill.map(|mut f| {
-            f["page_in"] = page_in.clone();
-            f
-        });
         (rust, fill, calls.into_inner().unwrap())
     }
 
@@ -6325,25 +6298,29 @@ mod tests {
         }
     }
 
-    /// S2 (P4a): the bars declared by the visual group's generator (NodeDeclare over the page input, the registry's
-    /// declaration in scripts/fixtures/p4a/registry-p4a.json, the drawn count kept in the page tree only) merge into the q1
-    /// column fill exactly as the rust bars_fill does: equal key by key, no key more. One node_declare call is on record.
-    /// With no page input to declare over, the external layer refuses the page.
+    /// S2 (P4a), S1 (P4a-2): the bars and the map circles declared by the visual group's generator (NodeDeclare over the
+    /// page input, the production bindings, the drawn count and the number part kept in the page tree only; the circles over
+    /// the map points and extent the flow computes) merge into the q1 column fill exactly as the rust bars_fill and
+    /// bubbles_fill did (scripts/fixtures/p4a/q1-rust-fill.json, frozen before they were deleted): equal key by key, no key
+    /// more. Two node_declare calls are on record, in the recipe's order. With no page input to declare over, the external
+    /// layer refuses the page.
     #[test]
     fn declare_equals_rust_fill() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let mut overlay = crate::next_tree::parse(&std::fs::read_to_string(root.join("scripts/fixtures/p4a/registry-p4a.json")).unwrap()).unwrap();
-        assert!(overlay.set_path(&["nodes", "bars", "declares", "tree_only"].map(String::from), crate::next_tree::J::strs(&["count"])));
+        let mut overlay = crate::next_tree::bindings();
         let (rust, fill, calls) = q1_fills(&overlay);
         let mut fill = fill.unwrap_or_else(|e| panic!("the declared page: {e}"));
-        fill.as_object_mut().unwrap().remove("page_in");
+        let page_in = fill.as_object_mut().unwrap().remove("page_in").expect("the page input kept for draw_nodes");
+        // the circles were declared over the map points the flow keeps (knobs.points) and the extent their leaf draws in
+        assert_eq!(page_in["points"], fill["knobs"]["points"]);
+        assert_eq!(page_in["page"]["ext"], fill["knobs"]["spec"]["hero"]["leaves"]["bubbles"]["ext"]);
         let mut differs = Vec::new();
         fill_diff(&rust, &fill, "fill", &mut differs);
-        assert!(differs.is_empty(), "the declared fill differs from the rust bars': {differs:#?}");
-        let event = calls.iter().find(|e| e["request"] == "node_declare").expect("one node_declare event");
-        assert_eq!((event["node"].as_str(), event["ok"].as_bool()), (Some("bars"), Some(true)));
+        assert!(differs.is_empty(), "the declared fill differs from the rust bars' and circles': {differs:#?}");
+        let asked: Vec<(Option<&str>, Option<bool>)> =
+            calls.iter().filter(|e| e["request"] == "node_declare").map(|e| (e["node"].as_str(), e["ok"].as_bool())).collect();
+        assert_eq!(asked, [(Some("bars"), Some(true)), (Some("bubbles"), Some(true))]);
         // the drawn count stays out of the hero's data unless the registry keeps it in the tree only
-        assert!(overlay.set_path(&["nodes", "bars", "declares", "tree_only"].map(String::from), crate::next_tree::J::strs(&[] as &[&str])));
+        assert!(overlay.set_path(&["nodes", "bars", "declares", "tree_only"].map(String::from), crate::next_tree::J::strs(&["part"])));
         let (_, with_count, _) = q1_fills(&overlay);
         assert_eq!(with_count.unwrap()["knobs"]["spec"]["hero"]["data"]["count"], DRAWN);
         // a page input the flow did not keep refuses the external layer
@@ -6357,6 +6334,42 @@ mod tests {
         let picks = picks_of(&column.picks, &shape, &main, &[]).unwrap();
         let why = fill_of(&external, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false, Some(&asked)).unwrap_err();
         assert!(why.contains("no page input"), "{why}");
+    }
+
+    /// S1 (P4a-2): the change page's map circles and signed bars declared by the visual group's generator (the bars by
+    /// their change page declaration: both ends read, the change in percentage points, the measure the page's lead reads)
+    /// merge into the q1 ten-year change fill exactly as the rust bubbles_fill and change_bars_fill did
+    /// (scripts/fixtures/p4a2/change-rust-fill.json, frozen from them before they were deleted): equal key by key, no key
+    /// more, the circles asked first as the recipe draws them. A ranked place with no map point stops the fill as the rust
+    /// circles did, before any node is asked (F1).
+    #[test]
+    fn declare_equals_rust_fill_on_a_change_page() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let rust: Value = serde_json::from_str(&std::fs::read_to_string(root.join("scripts/fixtures/p4a2/change-rust-fill.json")).unwrap()).unwrap();
+        let change = recipe("change");
+        assert_eq!((change.external.clone(), change.points.clone()), (vec!["bubbles".to_string(), "bars".to_string()], vec!["bubbles".to_string()]));
+        let main = q1_ten_years();
+        let shape = shape_of(&change.eats, &[("sdg", &main[..])], &Hubs).unwrap();
+        let picks = picks_of(&change.picks, &shape, &main, &[]).unwrap();
+        let page_in = page_input(change, &shape, &picks, &main);
+        let calls = std::sync::Mutex::new(Vec::new());
+        let asked = Asked { calls: &calls, page_in: Some(&page_in) };
+        let mut fill = fill_of(change, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false, Some(&asked)).unwrap();
+        fill.as_object_mut().unwrap().remove("page_in").expect("the page input kept for draw_nodes");
+        let mut differs = Vec::new();
+        fill_diff(&rust, &fill, "fill", &mut differs);
+        assert!(differs.is_empty(), "the declared change fill differs from the rust circles' and bars': {differs:#?}");
+        let calls = calls.into_inner().unwrap();
+        let asked: Vec<Option<&str>> = calls.iter().filter(|e| e["request"] == "node_declare").map(|e| e["node"].as_str()).collect();
+        assert_eq!(asked, [Some("bubbles"), Some("bars")]);
+        // F1: a ranked place the map point table has no point for (an aggregate) stops the fill, no node asked
+        let mut picks = picks;
+        picks.ranked.push("EU27_2020".into());
+        let calls = std::sync::Mutex::new(Vec::new());
+        let asked = Asked { calls: &calls, page_in: Some(&page_in) };
+        let why = fill_of(change, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false, Some(&asked)).unwrap_err();
+        assert!(why.starts_with("not this shape: ") && why.contains("EU27_2020"), "{why}");
+        assert!(calls.into_inner().unwrap().is_empty());
     }
 
     /// S3 (P4a): the q1 column page with its bars bound external over the production bindings, the whole path: fill_of
@@ -6400,7 +6413,7 @@ mod tests {
         fill_diff(&want, &rest, "fill", &mut differs);
         assert!(differs.is_empty(), "{differs:#?}");
         let twin = root.join("scripts/fixtures/p4a/tamper_bars.py");
-        for (mode, head) in [("wider", "node bars: recheck: B3 node bars"), ("swap", "node bars: recheck: B5 node bars"), ("late", "node bars: the child")] {
+        for (mode, head) in [("wider", "node bars: recheck: B3 node bars"), ("swap", "node bars: recheck: K2 node bars"), ("late", "node bars: the child")] {
             let mut runner = crate::next_leaf::Runner::python(&twin);
             runner.args.push(mode.to_string());
             let (out, calls) = draw(runner);
@@ -6973,7 +6986,9 @@ mod tests {
             set(&mut main, at);
             let shape = shape_of(&change.eats, &[("sdg", &main[..])], &Hubs).unwrap();
             let picks = picks_of(&change.picks, &shape, &main, &[]).unwrap();
-            test_fill(change, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false).unwrap().get("finding").cloned()
+            // the finding only: the fill, its nodes declared and not laid out (a page whose largest change is 0 and the rest
+            // falls prints that 0's value past the frame, which the core's B2 stops; the leaf's panel check stopped it before)
+            fill_undrawn(change, &shape, &picks, &main).get("finding").cloned()
         };
         // SE up 16 (50 to 66); BE too
         assert_eq!(moved(&[("BE", "2024", "24.5")]), None, "two largest rises");
@@ -8329,6 +8344,7 @@ mod tests {
             same_measure: r.same_measure.clone(),
             strip: r.strip,
             external: r.external.clone(),
+            points: r.points.clone(),
         }
     }
 
@@ -10662,11 +10678,13 @@ for line in sys.stdin:
     req = json.loads(line)
     phase = req.get("phase")
     if phase == "size":
-        out = {"w": 1140, "h": 600}
+        out = {"w": 1140, "h": 1200}
     elif phase == "page":
         out = {"html": "<body><svg>" + "".join(req["layers"][n] for n in drawn if n in req["layers"]) + "</svg></body>"}
     elif phase == "reserve":
         out = {"boxes": [], "lines": [], "refused": []}
+    elif phase == "ground":
+        out = {"land": {}}
     else:
         drawn.append(req["layer"])
         # an external layer is drawn where the core placed it (run.py layer_fn): its bars, then their texts
@@ -10684,6 +10702,23 @@ for line in sys.stdin:
                 src = t["src"] if t["name"] == "value_text" else "name:zh_names:%s:%s" % ("iso2" if len(c) == 2 else "iso3", c)
                 inner += '<text x="%.1f" y="%.1f" text-anchor="%s" data-src="%s">%s</text>' % (t["x"], t["y"], t["anchor"], src, led.get(src, ""))
                 texts.append({"src": src, "text": led.get(src, ""), "x": t["x"], "y": t["y"], "size": 13, "anchor": t["anchor"], "baseline": "middle", "rot": 0.0})
+        # the map circles where the core placed them: each circle, each dot, each leader, then each label's name and value
+        if g and "order" in g:
+            items = {i["code"]: i for i in k["spec"]["hero"]["leaves"]["bubbles"]["items"]}
+            for c in g["order"]:
+                m = g["marks"][c]
+                inner += '<circle cx="%.1f" cy="%.1f" r="%.1f" data-code="%s"/>' % (m["cx"], m["cy"], m["r"], c)
+            for c in g["order"]:
+                d = g["marks"].get(c + "/dot")
+                if d: inner += '<circle cx="%.1f" cy="%.1f" r="1.6" data-at="%s"/>' % (d["cx"], d["cy"], c)
+            for t in g["texts"]:
+                l = g["marks"].get(t["id"] + "/leader")
+                if l: inner += '<line x1="%.1f" y1="%.1f" x2="%.1f" y2="%.1f"/>' % (l["x1"], l["y1"], l["x2"], l["y2"])
+            for t in g["texts"]:
+                c = t["id"]
+                for src, dy in (("name:zh_names:%s:%s" % ("iso2" if len(c) == 2 else "iso3", c), 0.0), (items[c]["value_text"], g["size"] * 1.4)):
+                    inner += '<text x="%.1f" y="%.1f" text-anchor="%s" data-src="%s">%s</text>' % (t["x"], t["y"] + dy, t["anchor"], src, led.get(src, ""))
+                    texts.append({"src": src, "text": led.get(src, ""), "x": t["x"], "y": t["y"] + dy, "size": 13, "anchor": t["anchor"], "baseline": "middle", "rot": 0.0})
         out = {"svg": '<g data-layer="%s">%s</g>' % (req["layer"], inner), "texts": texts, "lines": [], "frame": None, "refused": [], "dropped": []}
     sys.stdout.write(json.dumps(out) + "\n")
     sys.stdout.flush()
@@ -10774,8 +10809,11 @@ for line in sys.stdin:
             std::fs::write(run.join("runtime/leaves_py/run.py"), child).unwrap();
         }
         std::fs::copy("fixtures/next_leaf/bake_twin.py", run.join("runtime/leaves_py/bake.py")).unwrap();
-        // the column recipe's external bars are laid out by the run's copy of the bars node, as materialize writes it
-        std::fs::copy("runtime/leaves_py/bars_node.py", run.join("runtime/leaves_py/bars_node.py")).unwrap();
+        // the column recipe's external bars and map circles are laid out by the run's copies of their nodes, as materialize
+        // writes them
+        for node in ["bars_node.py", "bubbles_node.py"] {
+            std::fs::copy(format!("runtime/leaves_py/{node}"), run.join("runtime/leaves_py").join(node)).unwrap();
+        }
         let qa_twin = std::fs::canonicalize("fixtures/next_visual/qa_twin.py").unwrap();
         std::fs::write(
             run.join("runtime/browser_qa.py"),
@@ -10867,7 +10905,9 @@ for line in sys.stdin:
     /// what stuck, with no fallback, the plan marks the step blocked, and no other route's tool (the design pack) is run.
     #[tokio::test]
     async fn a_leaf_page_stopped_at_a_stage_stops_the_run_there_with_no_fallback() {
-        let ran = leaf_run(None, "", Vec::new()).await;
+        // a leaf child that gives the map circles' node its ground and refuses the panel
+        let refusing = "import json, sys\nfor line in sys.stdin:\n    req = json.loads(line)\n    out = {\"land\": {}} if req.get(\"phase\") == \"ground\" else {\"refused\": [\"size: no panel\"]}\n    sys.stdout.write(json.dumps(out) + \"\\n\")\n    sys.stdout.flush()\n";
+        let ran = leaf_run(Some(refusing), "", Vec::new()).await;
         match &ran.result {
             Err(Stop::Page { step: "draw", why }) => assert!(why.starts_with("the column leaf page stopped at draw: "), "{why}"),
             other => panic!("expected a draw stop, got {other:?}"),

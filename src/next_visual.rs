@@ -228,7 +228,8 @@ fn attr<'t>(tag: &'t str, name: &str) -> Option<&'t str> {
 /// width, height), and one text per placed text, in item order and the core's text order, at the text's x, y with its
 /// anchor; each number is compared as the leaf prints it (one decimal), each anchor as a word. One more or one fewer, a
 /// layer that is missing or cannot be read, or any number that differs refuses the page; the leaf's other marks (an axis
-/// line) are no placed geometry and are not compared. Ok is {layer, compared, failed} per external layer.
+/// line) are no placed geometry and are not compared. A map circles layer (placed {order, marks, texts}: K3-K9) is held to
+/// its circles instead (circles_drawn). Ok is {layer, compared, failed} per external layer.
 fn drawn_checked(html: &str, layers: &[Layer<'_>]) -> Result<Vec<Value>, String> {
     let mut out = Vec::new();
     for layer in layers {
@@ -242,16 +243,17 @@ fn drawn_checked(html: &str, layers: &[Layer<'_>]) -> Result<Vec<Value>, String>
             return Err(refuse(format!("the page has {} elements tagged {marker}, not one", html.matches(&marker).count())));
         }
         let start = html.find(&marker).expect("counted once");
+        if knobs["placed"][name]["order"].is_array() {
+            out.push(circles_drawn(&html[start..], &knobs["placed"][name]).map_err(refuse)?);
+            out.last_mut().expect("pushed")["layer"] = json!(name);
+            continue;
+        }
         let body = &html[start..];
         let body = &body[..body.find("</g>").ok_or_else(|| refuse("its group is not closed".into()))?];
         if body.contains("<g") {
             return Err(refuse("a group nested in it, which the check cannot read".into()));
         }
-        let tags = |el: &str| -> Vec<&str> {
-            let open = format!("<{el} ");
-            body.match_indices(&open).map(|(i, _)| &body[i..i + body[i..].find('>').unwrap_or(body.len() - i)]).collect()
-        };
-        let (rects, texts) = (tags("rect"), tags("text"));
+        let (rects, texts) = (tags_in(body, "rect"), tags_in(body, "text"));
         let items = knobs["placed"][name]["items"].as_array().cloned().unwrap_or_default();
         let want_texts: Vec<&Value> = items.iter().flat_map(|it| it["texts"].as_array().into_iter().flatten()).collect();
         let (mut compared, mut failed, mut first) = (0usize, 0usize, None::<String>);
@@ -292,6 +294,105 @@ fn drawn_checked(html: &str, layers: &[Layer<'_>]) -> Result<Vec<Value>, String>
         out.push(json!({"layer": name, "compared": compared, "failed": failed}));
     }
     Ok(out)
+}
+
+/// Each start tag `<el ...` in `body`, in order.
+fn tags_in<'b>(body: &'b str, el: &str) -> Vec<&'b str> {
+    let open = format!("<{el} ");
+    body.match_indices(&open).map(|(i, _)| &body[i..i + body[i..].find('>').unwrap_or(body.len() - i)]).collect()
+}
+
+/// The drawn check of a map circles layer (from its data-layer tag on): its group up to the </g> that closes it, groups
+/// nested in it (the land's clip) only with no transform, so every number stands where it is printed. Its circles tagged
+/// data-code are the placed circles in the placed order at their cx, cy, r; its circles tagged data-at the placed dots in
+/// that order at their cx, cy; its lines the placed leaders in the order the texts were placed; and per placed text two
+/// texts, the name at the text's x, y and the value a line (size x 1.4) under it, with its anchor. Each number compared as
+/// the leaf prints it (one decimal), one more or one fewer of any of them refuses; the land, its frame and clip are no
+/// placed geometry. Ok is {compared, failed: 0}.
+fn circles_drawn(from: &str, placed: &Value) -> Result<Value, String> {
+    // `from` stands inside the layer's own start tag: its group is open
+    let mut depth = 1usize;
+    let mut end = None;
+    let mut at = 0;
+    while let Some(i) = from[at..].find(['<']) {
+        let rest = &from[at + i..];
+        if rest.starts_with("<g") && rest[2..].starts_with([' ', '>']) {
+            depth += 1;
+        } else if rest.starts_with("</g>") {
+            depth -= 1;
+            if depth == 0 {
+                end = Some(at + i);
+                break;
+            }
+        }
+        at += i + 1;
+    }
+    let body = &from[..end.ok_or("its group is not closed")?];
+    let open_tag = body.find('>').map_or(body, |e| &body[..e]);
+    if tags_in(&body[open_tag.len()..], "g").iter().any(|t| t.contains(" transform=")) || body.contains("<svg") || open_tag.contains(" transform=") {
+        return Err("a group in it moves what it holds, which the check cannot read".into());
+    }
+    let order: Vec<&str> = placed["order"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+    let (marks, texts) = (&placed["marks"], placed["texts"].as_array().cloned().unwrap_or_default());
+    let size = placed["size"].as_f64().ok_or("the placed geometry has no text size")?;
+    let circles = tags_in(body, "circle");
+    let (drawn, dots): (Vec<&str>, Vec<&str>) = circles.iter().partition(|c| attr(c, "data-code").is_some());
+    let dots: Vec<&str> = dots.into_iter().filter(|c| attr(c, "data-at").is_some()).collect();
+    let (lines, words) = (tags_in(body, "line"), tags_in(body, "text"));
+    let (mut compared, mut first) = (0usize, None::<String>);
+    let mut miss = |what: String, ok: bool| {
+        compared += 1;
+        if !ok {
+            first.get_or_insert(what);
+        }
+    };
+    let printed = |v: Option<f64>| v.map(|v| format!("{v:.1}"));
+    let num = |tag: &str, a: &str| printed(attr(tag, a).and_then(|v| v.parse().ok()));
+    let same = |miss: &mut dyn FnMut(String, bool), what: String, tag: &str, a: &str, want: Option<f64>| {
+        let (page, placed) = (num(tag, a), printed(want));
+        miss(format!("{what} {a}: drawn {page:?}, placed {placed:?}"), page.is_some() && page == placed);
+    };
+    for (i, c) in order.iter().enumerate() {
+        let tag = drawn.get(i).copied().unwrap_or("");
+        miss(format!("circle {i}: drawn {:?}, placed {c}", attr(tag, "data-code")), attr(tag, "data-code") == Some(c));
+        for a in ["cx", "cy", "r"] {
+            same(&mut miss, format!("circle {c}"), tag, a, marks[*c][a].as_f64());
+        }
+    }
+    let placed_dots: Vec<&&str> = order.iter().filter(|c| marks[format!("{c}/dot")].is_object()).collect();
+    for (i, c) in placed_dots.iter().enumerate() {
+        let tag = dots.get(i).copied().unwrap_or("");
+        miss(format!("dot {i}: drawn {:?}, placed {c}", attr(tag, "data-at")), attr(tag, "data-at") == Some(**c));
+        for a in ["cx", "cy"] {
+            same(&mut miss, format!("dot {c}"), tag, a, marks[format!("{c}/dot")][a].as_f64());
+        }
+    }
+    let leaders: Vec<&Value> = texts.iter().filter_map(|t| t["id"].as_str()).map(|c| &marks[format!("{c}/leader")]).filter(|l| l.is_object()).collect();
+    for (i, l) in leaders.iter().enumerate() {
+        let tag = lines.get(i).copied().unwrap_or("");
+        for a in ["x1", "y1", "x2", "y2"] {
+            same(&mut miss, format!("leader {i}"), tag, a, l[a].as_f64());
+        }
+    }
+    for (j, t) in texts.iter().enumerate() {
+        for (k, dy) in [(0, 0.0), (1, size * 1.4)] {
+            let tag = words.get(2 * j + k).copied().unwrap_or("");
+            same(&mut miss, format!("text {j}.{k}"), tag, "x", t["x"].as_f64());
+            same(&mut miss, format!("text {j}.{k}"), tag, "y", t["y"].as_f64().map(|y| y + dy));
+            let anchor = if tag.is_empty() { None } else { Some(attr(tag, "text-anchor").unwrap_or("start")) };
+            miss(format!("text {j}.{k} anchor: drawn {anchor:?}, placed {}", t["anchor"]), anchor.is_some() && anchor == t["anchor"].as_str());
+        }
+    }
+    for (what, n, want) in [("circles", drawn.len(), order.len()), ("dots", dots.len(), placed_dots.len()), ("leaders", lines.len(), leaders.len()), ("texts", words.len(), 2 * texts.len())] {
+        miss(format!("{n} {what} drawn, {want} placed"), n == want);
+    }
+    if order.is_empty() {
+        return Err("the request gives no placed circles for it".into());
+    }
+    match first {
+        Some(f) => Err(format!("a drawn number is not the placed one ({compared} compared), first {f}")),
+        None => Ok(json!({"compared": compared, "failed": 0})),
+    }
 }
 
 /// The panel a filled page is drawn in: the page's width, its height left to the child (0; it says the panel before any layer,
@@ -667,6 +768,36 @@ mod tests {
         assert_eq!(drawn_checked("<svg></svg>", &layers(off)).unwrap(), Vec::<Value>::new());
         let none = json!({"external": ["bars"], "placed": {"bars": {"items": []}}});
         assert!(drawn_checked(&page(""), &layers(none)).unwrap_err().contains("no placed items"));
+    }
+
+    /// The drawn check of a map circles layer (P4a-2): circles, dots, leaders and both lines of each label where the core
+    /// placed them pass, the land's clip group beside them; a circle 0.1 px off, one leader missing, a label line moved, a
+    /// circle of another code in its place, or a group that moves what it holds refuses.
+    #[test]
+    fn the_drawn_check_holds_a_circles_layer_to_its_placed_geometry() {
+        let placed = json!({"order": ["AT", "BE"], "size": 13,
+            "marks": {"AT": {"cx": 100.04, "cy": 50.0, "r": 22.0}, "BE": {"cx": 200.0, "cy": 80.0, "r": 10.5}, "AT/dot": {"cx": 102.0, "cy": 51.0},
+                "BE/leader": {"x1": 210.5, "y1": 80.0, "x2": 260.0, "y2": 80.0}},
+            "texts": [{"id": "AT", "x": 125.0, "y": 47.4, "anchor": "start"}, {"id": "BE", "x": 262.0, "y": 77.4, "anchor": "start"}],
+            "r_used": 22, "dropped": []});
+        let html = |circle_at: &str, leader: bool, at_y: &str| {
+            format!(
+                r#"<svg><g data-layer="bubbles"><clipPath id="c"><rect x="12" y="12" width="9" height="9"/></clipPath><g clip-path="url(#c)"><path d="M0 0Z"/></g><circle cx="{circle_at}" cy="50.0" r="22.0" data-code="AT"/><circle cx="200.0" cy="80.0" r="10.5" data-code="BE"/><circle cx="102.0" cy="51.0" r="1.6" data-at="AT"/>{}<text x="125.0" y="{at_y}" text-anchor="start">a</text><text x="125.0" y="65.6" text-anchor="start">1</text><text x="262.0" y="77.4" text-anchor="start">b</text><text x="262.0" y="95.6" text-anchor="start">2</text></g></svg>"#,
+                if leader { r#"<line x1="210.5" y1="80.0" x2="260.0" y2="80.0"/>"# } else { "" }
+            )
+        };
+        let check = |h: String| circles_drawn(&h[h.find("data-layer").unwrap()..], &placed);
+        assert_eq!(check(html("100.0", true, "47.4")).unwrap(), json!({"compared": 31, "failed": 0}));
+        for (h, words) in [
+            (html("100.1", true, "47.4"), "circle AT cx"),
+            (html("100.0", false, "47.4"), "leader 0 x1"),
+            (html("100.0", true, "47.5"), "text 0.0 y"),
+            (html("100.0", true, "47.4").replacen("data-code=\"AT\"", "data-code=\"BE\"", 1), "circle 0: drawn Some(\"BE\")"),
+            (html("100.0", true, "47.4").replacen("<g clip-path", "<g transform=\"translate(1 0)\" clip-path", 1), "moves what it holds"),
+        ] {
+            let why = check(h).unwrap_err();
+            assert!(why.contains(words), "{words}: {why}");
+        }
     }
 
     /// A peak in the ring's last month leaves one mark there; marks on two months, or naming no computed fact, all stay.

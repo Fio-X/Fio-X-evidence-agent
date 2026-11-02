@@ -162,6 +162,9 @@ def table():
         if r is None or not layers or not set(layers) <= set(r["layers"]) or not set(layers) <= core_external:
             raise SystemExit(f"recipes.{name} {layers!r}: a recipe binds external some of its own layers whose node the core binds external")
         r["external"] = list(layers)
+        # the external layers the core lays out in a view frame: the flow gives their declaration the map points and extent
+        view = [l for l in layers if core["frames"].get(core["nodes"][l].get("frame"), {}).get("kind") == "view"]
+        if view: r["points"] = view
     return dict(nodes=nodes, groups=groups, legacy=READS, recipes=out)
 
 

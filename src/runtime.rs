@@ -421,6 +421,7 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
         (runtime_dir.join("leaves_py/bake.py"), include_str!("../runtime/leaves_py/bake.py")),
         (runtime_dir.join("leaves_py/bars_node.py"), include_str!("../runtime/leaves_py/bars_node.py")),
         (runtime_dir.join("leaves_py/bubbles.py"), include_str!("../runtime/leaves_py/bubbles.py")),
+        (runtime_dir.join("leaves_py/bubbles_node.py"), include_str!("../runtime/leaves_py/bubbles_node.py")),
         (runtime_dir.join("leaves_py/cards.py"), include_str!("../runtime/leaves_py/cards.py")),
         (runtime_dir.join("leaves_py/column.py"), include_str!("../runtime/leaves_py/column.py")),
         (runtime_dir.join("leaves_py/facts.py"), include_str!("../runtime/leaves_py/facts.py")),

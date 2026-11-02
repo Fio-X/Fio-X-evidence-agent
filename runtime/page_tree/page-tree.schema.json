@@ -725,6 +725,10 @@
     "value": {
      "$ref": "#/$defs/SeriesRef"
     },
+    "value_from": {
+     "description": "The row an item's change runs from, where its rank is by the change (K10): the value it draws is value less value_from.",
+     "$ref": "#/$defs/SeriesRef"
+    },
     "value_text": {
      "$ref": "#/$defs/FactRef"
     },

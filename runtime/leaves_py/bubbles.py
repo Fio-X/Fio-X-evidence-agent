@@ -36,6 +36,7 @@ import wbkit as K
 from wbkit import FX, prod, Refused, esc, tw
 import geo
 import mapkit as MK
+import bubbles_node
 
 prod.KNOBS["bubbles"] = dict(
     projection=("equal_earth", ("equal_earth", "equirect", "view"), "projection; view: the picture's shared frame over data.ext (mapkit.View)"), extent=("world", ("world", "box"), "world or the data's box"),
@@ -122,22 +123,73 @@ class Frame:
             if not (box[0] <= ll[0] <= box[2] and box[1] <= ll[1] <= box[3]): raise Refused(f"bubbles: {i['code']} lies outside the extent")
         f.hl = K.check_codes(NODE, k("highlight"), {i["code"] for i in items}) if k("highlight") else set()
         f.noted = K.check_codes(NODE, k("noted"), {i["code"] for i in items}) - f.hl if k("noted") else set()
-        mx = max(i["_v"] for i in items) or 1.0; r_max = k("r_max"); low, _, step = prod.KNOBS[NODE]["r_max"][1]
-        while True:  # at r_max, and only when that refuses, a step smaller each round down to the knob's floor: every radius, the nudge and the overlaps again
-            for i in items: i["_r"] = max(k("r_min"), r_max * math.sqrt(i["_v"] / mx)); i["_at"] = i["_xy"] = f.xy(*i["lonlat"])
-            items.sort(key=lambda i: -i["_v"])
-            nudge(items, k("nudge"), k("circle_gap"))
-            f.over = [[items[a]["code"], items[b]["code"]] for a in range(len(items)) for b in range(a + 1, len(items))
-                      if lens(items[a], items[b]) > 0.5 * math.pi * min(items[a]["_r"], items[b]["_r"]) ** 2]
-            if len(f.over) <= k("max_overlaps"): break
-            if r_max - step < low:
-                raise Refused(f"bubbles: {len(f.over)} pairs of circles overlap by more than half the smaller one ({', '.join('/'.join(p) for p in f.over[:6])}) even at r_max {r_max:g}, max_overlaps is {k('max_overlaps')}; "
-                              "use extent=box with data.box on the crowded region or a map of that region")
-            r_max -= step
-        f.r_used = r_max  # the radius scale drawn (the largest circle's radius px): what a size legend or note about the circles reads, not the knob
-        # the circles drawn at r_min, not by area: their area-true radius on that scale is under it (more of them as the scale steps down)
-        f.r_min_codes = sorted(str(i["code"]) for i in items if r_max * math.sqrt(i["_v"] / mx) < k("r_min"))
+        items.sort(key=lambda i: -i["_v"])  # largest first, ties in the given order (the order the node is asked in)
+        for i in items: i["_at"] = i["_xy"] = f.xy(*i["lonlat"])
         f.items, f.unlabeled, f.dropped = items, [], []
+
+
+def floor_words(n, pairs, r_used, max_overlaps):
+    """The page's stop when even the floor overlaps more than max_overlaps pairs, in the leaf's own words."""
+    return (f"bubbles: {n} pairs of circles overlap by more than half the smaller one ({', '.join('/'.join(p) for p in pairs[:6])}) even at r_max {r_used:g}, max_overlaps is {max_overlaps}; "
+            "use extent=box with data.box on the crowded region or a map of that region")
+
+
+def request(f, land_rows=None):
+    """The node request (bubbles_node.py) for a Frame, as the core writes it for the map view (src/next_tree.rs
+    circles_request): the frame, the marks largest first with their points, the label subset (the largest, the smallest,
+    then by size, label_top at most) with each label's widths, the knobs, the land rows."""
+    k = f.k
+    marks = [{"id": i["code"], "item": n, "value": i["_v"], "pin": list(i["_at"])} for n, i in enumerate(f.items)]
+    ends = f.items[:1] + f.items[-1:] if len(f.items) > 1 else f.items[:1]
+    wanted = (ends + [i for i in f.items if i not in ends])[: int(k("label_top"))]
+    sz = f.size
+    low, _, step = prod.KNOBS[NODE]["r_max"][1]
+    return {"node": NODE, "frame": {"w": f.W, "h": f.H, "top": f.top, "inset": k("inset") if f.v else 0}, "marks": marks,
+            "scale": {"r_max": k("r_max"), "r_min": k("r_min"), "step": step, "floor": low, "max_overlaps": k("max_overlaps")},
+            "nudge": {"most": k("nudge"), "gap": k("circle_gap")},
+            "texts": [{"id": i["code"], "w_name": tw(i["_n"][1], sz), "w_value": tw(K.ent(i["value_text"])[1], sz)} for i in wanted],
+            "labels": {"size": sz, "gap": k("label_gap"), "sep": k("label_sep"), "reach": k("reach"), "land_cost": k("land_cost")},
+            "ground": {"land": {str(r): v for r, v in (land_rows or {}).items()}}}
+
+
+class Laid(Frame):
+    """A Frame laid out here by the node's own code (bubbles_node.reply over request()), for a page that does not bind the
+    bubbles external and for the tests: the placed geometry as the core would hand it (f.placed), and what the layout
+    decides (r_used, the circles' places) on the frame; even the floor overlapping refuses in the leaf's words."""
+    def __init__(f, h):
+        super().__init__(h)
+        land_rows = None
+        if f.v:
+            _, rings = land(f); e = f.k("inset"); land_rows = MK.land_rows(rings, (e, e, f.W - e, f.H - e))
+        req = json.loads(json.dumps(request(f, land_rows)))
+        rep = bubbles_node.reply(req)
+        order = [m["id"] for m in req["marks"]]
+        r_used = rep["marks"][order[0]]["r"]
+        r_used = int(r_used) if float(r_used).is_integer() else r_used
+        circ = [rep["marks"][c] for c in order]
+        pairs = [[order[a], order[b]] for a in range(len(order)) for b in range(a + 1, len(order))
+                 if lens({"_xy": (circ[a]["cx"], circ[a]["cy"]), "_r": circ[a]["r"]}, {"_xy": (circ[b]["cx"], circ[b]["cy"]), "_r": circ[b]["r"]})
+                 > 0.5 * math.pi * min(circ[a]["r"], circ[b]["r"]) ** 2]
+        f.over = pairs
+        if len(pairs) > f.k("max_overlaps"): raise Refused(floor_words(len(pairs), pairs, r_used, f.k("max_overlaps")))
+        f.placed = {"order": order, "marks": rep["marks"], "texts": [{"id": c, **t} for c, t in rep["texts"].items()], "r_used": r_used,
+                    "dropped": rep["dropped"], "size": f.size}
+        f.settle(f.placed)
+
+
+
+def settle(f, placed):
+    """The placed circles on the frame (each item's _xy, _r, in the placed order) and the scale drawn: r_used, and the
+    circles lifted to r_min on it (r_min_codes: their areas no longer keep to it)."""
+    items = {i["code"]: i for i in f.items}
+    for c in placed["order"]:
+        m = placed["marks"][c]; items[c]["_xy"] = (m["cx"], m["cy"]); items[c]["_r"] = m["r"]
+    f.items = [items[c] for c in placed["order"]]
+    f.r_used = placed["r_used"]; mx = max(i["_v"] for i in f.items) or 1.0
+    f.r_min_codes = sorted(str(i["code"]) for i in f.items if f.r_used * math.sqrt(i["_v"] / mx) < f.k("r_min"))
+
+
+Frame.settle = settle
 
 
 def nudge(items, most, gap):
@@ -180,6 +232,19 @@ def land(f):
 
 
 def cl_bubbles(f, occ):
+    """The bubbles of a Frame laid out here (Laid): drawn from its own placed geometry."""
+    return cl_bubbles_placed(f, occ, f.placed)
+
+
+def cl_bubbles_placed(f, occ, placed):
+    """The bubbles where the core placed them (knobs.placed.bubbles: the external node's reply, every number checked by the
+    core, K3-K9; or {floor} when even the floor overlaps, which stops the page here in the leaf's words). The land, the
+    colours, the halo, the Occ claims and their order are the leaf's own; no layout is done here."""
+    if not isinstance(placed, dict): raise Refused("bubbles: the placed geometry is no object")
+    if "floor" in placed:
+        fl = placed["floor"]; raise Refused(floor_words(len(fl["pairs"]), fl["pairs"], fl["r_used"], fl["max_overlaps"]))
+    if set(placed.get("order") or []) != {i["code"] for i in f.items}: raise Refused("bubbles: the placed circles are not the items")
+    f.settle(placed)
     d, k, W, H, sz = f.d, f.k, f.W, f.H, f.size; B = K.Boxes(W, H); o = [] if f.v else [K.head(B, d["title"], d["unit"], sz + 1, k("title_size"))]
     shape, rings = land(f)
     path = f'<path d="{shape}" fill="var(--t-dark)" fill-opacity="{LAND_OPACITY}" stroke="var(--bg)" stroke-width="0.4"/>'
@@ -196,107 +261,46 @@ def cl_bubbles(f, occ):
         occ.circles.append((i["_xy"][0], i["_xy"][1], i["_r"], sq))  # the circle itself, for a leader that may pass its square's corner
         ink = "--accent" if i["code"] in f.hl else NOTED_INK if i["code"] in f.noted else CIRCLE_INK
         o.append(f'<circle cx="{i["_xy"][0]:.1f}" cy="{i["_xy"][1]:.1f}" r="{i["_r"]:.1f}" fill="var({ink})" fill-opacity="{k("opacity")}" stroke="var(--bg)" stroke-width="{CIRCLE_EDGE}" data-code="{esc(i["code"])}"/>')
-    dots = []  # a circle nudged off its point keeps a dot where the place is; no label, leader or note may cover it
-    for i in f.items:
-        if math.dist(i["_xy"], i["_at"]) > 0.5:
-            x, y = i["_at"]; dots.append((x, y, DOT_R)); occ.add((x - DOT_R, y - DOT_R, x + DOT_R, y + DOT_R), "bubbles")
+    for i in f.items:  # a circle moved off its point keeps a dot where the place is
+        dm = placed["marks"].get(i["code"] + "/dot")
+        if dm:
+            x, y = dm["cx"], dm["cy"]; occ.add((x - DOT_R, y - DOT_R, x + DOT_R, y + DOT_R), "bubbles")
             o.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{DOT_R}" fill="var(--t-title)" data-at="{esc(i["code"])}"/>')
-    f.unlabeled, f.label_boxes, f.dropped = [], [], []
-    gap, sep, reach, halo = k("label_gap"), k("label_sep"), k("reach"), ' stroke="var(--bg)" stroke-width="3" paint-order="stroke"'
-    leads = []  # the points of every leader drawn (and of the land's hairline frame), which no label may sit on
-    segs = []  # every leader drawn, as (a, b): no other leader may cross it
+    halo = ' stroke="var(--bg)" stroke-width="3" paint-order="stroke"'
     if e:  # the hairline is a line the page's checks read: notes and labels keep off it
         corners = [(e, e), (W - e, e), (W - e, H - e), (e, H - e), (e, e)]
         fr = [(a[0] + (b[0] - a[0]) * t / n, a[1] + (b[1] - a[1]) * t / n) for a, b in zip(corners, corners[1:]) for n in [max(1, math.ceil(math.dist(a, b) / 4))] for t in range(n + 1)]
-        leads.extend(fr); occ.add_line(fr, "bubbles", "frame")
-
-    def free(bx, i):
-        """A label box inside the picture, clear of every label drawn, every leader and every circle by label_gap (its own too)."""
-        if bx[0] < 2 or bx[2] > W - 2 or bx[1] < f.top - 4 or bx[3] > H - 2: return False
-        if any(bx[0] < b[0][2] + sep and b[0][0] < bx[2] + sep and bx[1] < b[0][3] + sep / 2 and b[0][1] < bx[3] + sep / 2 for b in B.b): return False
-        if any(bx[0] - 1 < px < bx[2] + 1 and bx[1] - 1 < py < bx[3] + 1 for px, py in leads): return False
-        rings = [(*j["_xy"], j["_r"]) for j in f.items] + dots
-        return not any(math.hypot(max(bx[0] - x, 0, x - bx[2]), max(bx[1] - y, 0, y - bx[3])) < r + gap for x, y, r in rings)
-
-    mid = (W / 2, (f.top + H) / 2)  # the frame's centre: a label looks toward it first
-
-    def inward(i, c, s_):
-        """How far the direction (c, s_) from circle i points toward the frame's centre (each axis by the frame's half size)."""
-        dx, dy = (mid[0] - i["_xy"][0]) / (W / 2), (mid[1] - i["_xy"][1]) / max((H - f.top) / 2, 1)
-        return c * dx + s_ * dy
-
-    def beside(i):
-        """(anchor, tx, ty) beside the circle, label_gap + 1 px off it: right, left, above, below. (Taking the side toward the
-        frame's centre first here drops labels of a crowded centre: the EU-27 with every circle labelled loses one.)"""
-        x, y = i["_xy"]; r = i["_r"]; g = gap + 1
-        return [("start", x + r + g, y - sz * 0.2), ("end", x - r - g, y - sz * 0.2), ("middle", x, y - r - g - sz * 1.65), ("middle", x, y + r + g + sz * 0.8)]
-
-    def out(i):
-        """(anchor, tx, ty, leader) out in free room: sixteen directions, 16 px past the circle's edge to reach, each with a
-        leader from the edge to the label."""
-        x, y = i["_xy"]; r = i["_r"]
-        for d in range(16, int(reach) + 1, 8):
-            for n in range(16):
-                c, s_ = math.cos(math.pi * n / 8), math.sin(math.pi * n / 8); px, py = x + (r + d) * c, y + (r + d) * s_
-                anchor = "start" if c > 0.3 else "end" if c < -0.3 else "middle"
-                # the box's top: below (BELOW_GAP under the leader's end, as the browser's glyph box reaches above the name's em box), above,
-                # or level with the point
-                top = py + sz * BELOW_GAP if s_ > 0.3 else py - sz * 2.45 if s_ < -0.3 else py - sz * 1.2
-                yield anchor, px, top + sz * 0.8, ((x + r * c, y + r * s_), (px, py))
-
-    def unit(lead):
-        """The unit direction of a leader (from the circle's edge to the label)."""
-        (ax, ay), (bx_, by_) = lead; n = math.hypot(bx_ - ax, by_ - ay) or 1.0
-        return (bx_ - ax) / n, (by_ - ay) / n
-
-    def clear_lead(i, a, b):
-        """A leader that crosses no other circle, no true-point dot, no label drawn and no other leader."""
-        n = max(2, math.ceil(math.dist(a, b) / 2)); pts = [(a[0] + (b[0] - a[0]) * t / n, a[1] + (b[1] - a[1]) * t / n) for t in range(n + 1)]
-        if any(math.dist(p, j["_xy"]) < j["_r"] + 1 for p in pts for j in f.items if j is not i): return None
-        if any(math.dist(p, d[:2]) < d[2] + 1 for p in pts for d in dots if math.dist(d[:2], i["_at"]) > 0.5): return None
-        if any(MK.crosses(a, b, *s) for s in segs): return None
-        if any(bb[0][0] - 1 < p[0] < bb[0][2] + 1 and bb[0][1] - 1 < p[1] < bb[0][3] + 1 for p in pts for bb in B.b): return None
-        return pts
-
-    def box(i, anchor, tx, ty):
-        wmax = max(tw(i["_n"][1], sz), tw(K.ent(i["value_text"])[1], sz))
-        x0 = tx if anchor == "start" else tx - wmax if anchor == "end" else tx - wmax / 2
-        return (x0, ty - sz * 0.8, x0 + wmax, ty + sz * 1.65)
-
-    def label(i, anchor, tx, ty, bx, lead=None, pts=()):
+        occ.add_line(fr, "bubbles", "frame")
+    items = {i["code"]: i for i in f.items}
+    f.unlabeled, f.label_boxes = [], []
+    for t in placed["texts"]:  # in the order the node placed them
+        c = t["id"]; i = items[c]; anchor, tx, ty = t["anchor"], t["x"], t["y"]
         vt = K.ent(i["value_text"]); nm = i["_n"][1]
-        if lead:
-            (ax, ay), (bx_, by_) = lead
-            o.append(f'<line x1="{ax:.1f}" y1="{ay:.1f}" x2="{bx_:.1f}" y2="{by_:.1f}" stroke="var(--t-sec)" stroke-width="0.8"/>')
-            leads.extend(pts); segs.append(lead); occ.add_line(list(pts), "bubbles", "leader")
-        f.label_boxes.append((i["code"], bx)); occ.add(bx, "bubbles")
-        o.append(K.txt(B, tx, ty, sz, "var(--t-title)", i["_n"][0], tw(nm, sz), anchor=anchor, weight=700 if i["code"] in f.hl | f.noted else 400, tag=f"name {i['code']}", style=halo))
-        o.append(K.txt(B, tx, ty + sz * 1.4, sz, f"var({VALUE_INK})", vt[0], tw(vt[1], sz), anchor=anchor, tag=f"value {i['code']}", style=halo))
-
-    # first every label that fits beside its circle (biggest first), so a crowded centre's own labels stay close; then the
-    # rest out on leaders, each the cheapest clear place (its leader's length, a place over the land counting land_cost px
-    # more, so open room off the map's shapes comes first); what fits nowhere is dropped and listed
-    # the biggest and the smallest go first, as the page's story names the two ends; then the rest by size
-    ends = f.items[:1] + f.items[-1:] if len(f.items) > 1 else f.items[:1]
-    wanted = (ends + [i for i in f.items if i not in ends])[: int(k("label_top"))]; out_ = []
-    for i in wanted:
-        for anchor, tx, ty in beside(i):
-            bx = box(i, anchor, tx, ty)
-            if free(bx, i): label(i, anchor, tx, ty, bx); break
-        else: out_.append(i)
-    ground = getattr(occ, "land", None) if f.v else None
-    for i in out_:
-        # equal costs: the place toward the frame's centre first
-        found = sorted(((round(math.dist(*lead) + (k("land_cost") if MK.on_land(ground, bx) else 0), 6), -inward(i, *unit(lead)), anchor, tx, ty, bx, lead)
-                        for anchor, tx, ty, lead in out(i) for bx in [box(i, anchor, tx, ty)] if free(bx, i)), key=lambda c: c[:2])
-        for _, _, anchor, tx, ty, bx, lead in found:
-            pts = clear_lead(i, *lead)
-            if pts is not None: label(i, anchor, tx, ty, bx, lead, pts); break
-        else:
-            f.unlabeled.append(i["code"]); f.dropped.append((i["code"], "no free place for the label"))
-    order = {i["code"]: n for n, i in enumerate(wanted)}
-    f.unlabeled.sort(key=order.get); f.dropped.sort(key=lambda c: order[c[0]])
+        ln = placed["marks"].get(c + "/leader")
+        if ln:
+            a, b = (ln["x1"], ln["y1"]), (ln["x2"], ln["y2"])
+            o.append(f'<line x1="{a[0]:.1f}" y1="{a[1]:.1f}" x2="{b[0]:.1f}" y2="{b[1]:.1f}" stroke="var(--t-sec)" stroke-width="0.8"/>')
+            n = max(2, math.ceil(math.dist(a, b) / 2)); pts = [(a[0] + (b[0] - a[0]) * s_ / n, a[1] + (b[1] - a[1]) * s_ / n) for s_ in range(n + 1)]
+            occ.add_line(list(pts), "bubbles", "leader")
+        wmax = max(tw(nm, sz), tw(vt[1], sz))
+        x0 = tx if anchor == "start" else tx - wmax if anchor == "end" else tx - wmax / 2
+        bx = (x0, ty - sz * 0.8, x0 + wmax, ty + sz * 1.65)
+        f.label_boxes.append((c, bx)); occ.add(bx, "bubbles")
+        o.append(K.txt(B, tx, ty, sz, "var(--t-title)", i["_n"][0], tw(nm, sz), anchor=anchor, weight=700 if c in f.hl | f.noted else 400, tag=f"name {c}", style=halo))
+        o.append(K.txt(B, tx, ty + sz * 1.4, sz, f"var({VALUE_INK})", vt[0], tw(vt[1], sz), anchor=anchor, tag=f"value {c}", style=halo))
+    f.unlabeled = list(placed["dropped"])
+    f.dropped = [(c, "no free place for the label") for c in placed["dropped"]]
     return "".join(o)
+
+
+def ground(h):
+    """The land rows of the map a hero's bubbles draw (the ground phase, run.py): what bubbles_node weighs a leader over the
+    land by, from the land file only the leaf reads; given to the node, never checked, never a number on the page."""
+    f = Frame.__new__(Frame); k = lambda n: K.knob(h, NODE, n)
+    f.k, f.d = k, h["data"]
+    f.v = v = MK.View(h, NODE); f.box, f.W, f.H, f.top, f.xy = list(v.ext), v.W, v.H, 0, v.P
+    _, rings = land(f); e = k("inset")
+    return {str(r): spans for r, spans in MK.land_rows(rings, (e, e, f.W - e, f.H - e)).items()}
 
 
 # bubble_key: the key to the circles, drawn right after the bubbles on every page that draws them (knobs.py WITH). Its words, the
@@ -456,5 +460,5 @@ BUBBLES_SVG = ["bubbles", "bubble_key"]
 
 
 def draw(h):
-    f = Frame(h)
+    f = Laid(h)
     return K.svg(cl_bubbles(f, prod.Occ()), f.W, f.H, "bubbles"), f.W, f.H

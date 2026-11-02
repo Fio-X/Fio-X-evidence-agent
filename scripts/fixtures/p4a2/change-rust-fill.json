@@ -1,0 +1,497 @@
+{
+  "drawn": [
+    {
+      "layer": "bubbles",
+      "src": "series:sdg/SE:2024:OBS_VALUE",
+      "table": "sdg",
+      "time": "2024"
+    },
+    {
+      "layer": "bubbles",
+      "src": "series:sdg/BE:2024:OBS_VALUE",
+      "table": "sdg",
+      "time": "2024"
+    },
+    {
+      "layer": "bubbles",
+      "src": "series:sdg/DE:2024:OBS_VALUE",
+      "table": "sdg",
+      "time": "2024"
+    },
+    {
+      "layer": "bubbles",
+      "src": "series:sdg/FR:2024:OBS_VALUE",
+      "table": "sdg",
+      "time": "2024"
+    }
+  ],
+  "ends": {
+    "fetched_from": "2013",
+    "later": [
+      {
+        "missing": [
+          "BE",
+          "DE",
+          "FR"
+        ],
+        "year": "2013"
+      },
+      {
+        "missing": [
+          "DE"
+        ],
+        "year": "2015"
+      }
+    ],
+    "rule": "two_ends",
+    "t0": "2016",
+    "t1": "2024"
+  },
+  "finding": {
+    "dek": "{lead0.t}至{lead1.t}，{name.SE}增幅最大，增加{lead}",
+    "scoped": "{lead0.t}至{lead1.t}，所选各方中，{name.SE}增幅最大，增加{lead}"
+  },
+  "headline": {
+    "scoped": "所选各方中{name.SE}增幅最大",
+    "title": "{name.SE}增幅最大"
+  },
+  "knobs": {
+    "labels": {
+      "A": "名A",
+      "BE": "名BE",
+      "DE": "名DE",
+      "FR": "名FR",
+      "PC": "名PC",
+      "SE": "名SE"
+    },
+    "points": {
+      "at": {
+        "BE": [
+          4.800448,
+          50.785392
+        ],
+        "DE": [
+          9.678348,
+          50.961733
+        ],
+        "FR": [
+          2.552275,
+          46.696113
+        ],
+        "SE": [
+          19.01705,
+          65.85918
+        ]
+      },
+      "sha256": "206fbe5e671c3c3f19db0709a7d85093ed935b2490b25b4d5b50a3c0a4120d1a",
+      "table": "naturalearth-admin0-50m-attributes"
+    },
+    "spec": {
+      "dek": "导语",
+      "facts": {
+        "chg": {
+          "a": "val1",
+          "b": "val0",
+          "each": "geo",
+          "fmt": "pp",
+          "op": "minus"
+        },
+        "drawn": {
+          "by": "geo",
+          "fmt": "n",
+          "op": "n",
+          "table": "sdg",
+          "time": "2024"
+        },
+        "lead": {
+          "a": "lead1",
+          "b": "lead0",
+          "fmt": "pp",
+          "op": "minus"
+        },
+        "lead0": {
+          "filter": {
+            "geo": "SE"
+          },
+          "fmt": "pc",
+          "from": "2016",
+          "op": "last",
+          "table": "sdg",
+          "to": "2016"
+        },
+        "lead1": {
+          "filter": {
+            "geo": "SE"
+          },
+          "fmt": "pc",
+          "from": "2024",
+          "op": "last",
+          "table": "sdg",
+          "to": "2024"
+        },
+        "val": {
+          "each": "geo",
+          "fmt": "pc",
+          "table": "sdg",
+          "time": "2024"
+        },
+        "val0": {
+          "each": "geo",
+          "fmt": "pc",
+          "table": "sdg",
+          "time": "2016"
+        },
+        "val1": {
+          "each": "geo",
+          "fmt": "pc",
+          "table": "sdg",
+          "time": "2024"
+        },
+        "vs_hi": {
+          "a": "vs_hi_a",
+          "b": "vs_hi_b",
+          "fmt": "pp",
+          "op": "minus"
+        },
+        "vs_hi_a": {
+          "a": "vs_hi_a1",
+          "b": "vs_hi_a0",
+          "fmt": "pp",
+          "op": "minus"
+        },
+        "vs_hi_a0": {
+          "filter": {
+            "geo": "SE"
+          },
+          "fmt": "pc",
+          "from": "2016",
+          "op": "last",
+          "table": "sdg",
+          "to": "2016"
+        },
+        "vs_hi_a1": {
+          "filter": {
+            "geo": "SE"
+          },
+          "fmt": "pc",
+          "from": "2024",
+          "op": "last",
+          "table": "sdg",
+          "to": "2024"
+        },
+        "vs_hi_b": {
+          "a": "vs_hi_b1",
+          "b": "vs_hi_b0",
+          "fmt": "pp",
+          "op": "minus"
+        },
+        "vs_hi_b0": {
+          "filter": {
+            "geo": "DE"
+          },
+          "fmt": "pc",
+          "from": "2016",
+          "op": "last",
+          "table": "sdg",
+          "to": "2016"
+        },
+        "vs_hi_b1": {
+          "filter": {
+            "geo": "DE"
+          },
+          "fmt": "pc",
+          "from": "2024",
+          "op": "last",
+          "table": "sdg",
+          "to": "2024"
+        },
+        "vs_lo": {
+          "a": "vs_lo_a",
+          "b": "vs_lo_b",
+          "fmt": "pp",
+          "op": "minus"
+        },
+        "vs_lo_a": {
+          "a": "vs_lo_a1",
+          "b": "vs_lo_a0",
+          "fmt": "pp",
+          "op": "minus"
+        },
+        "vs_lo_a0": {
+          "filter": {
+            "geo": "BE"
+          },
+          "fmt": "pc",
+          "from": "2016",
+          "op": "last",
+          "table": "sdg",
+          "to": "2016"
+        },
+        "vs_lo_a1": {
+          "filter": {
+            "geo": "BE"
+          },
+          "fmt": "pc",
+          "from": "2024",
+          "op": "last",
+          "table": "sdg",
+          "to": "2024"
+        },
+        "vs_lo_b": {
+          "a": "vs_lo_b1",
+          "b": "vs_lo_b0",
+          "fmt": "pp",
+          "op": "minus"
+        },
+        "vs_lo_b0": {
+          "filter": {
+            "geo": "FR"
+          },
+          "fmt": "pc",
+          "from": "2016",
+          "op": "last",
+          "table": "sdg",
+          "to": "2016"
+        },
+        "vs_lo_b1": {
+          "filter": {
+            "geo": "FR"
+          },
+          "fmt": "pc",
+          "from": "2024",
+          "op": "last",
+          "table": "sdg",
+          "to": "2024"
+        }
+      },
+      "fmts": {
+        "pc": {
+          "dec": 2,
+          "scale": 1,
+          "suffix": "%"
+        },
+        "pp": {
+          "dec": 1,
+          "scale": 1,
+          "suffix": " 个百分点"
+        },
+        "time": {}
+      },
+      "hero": {
+        "data": {
+          "accent": "SE",
+          "by": "geo",
+          "chart": "bars",
+          "family": "chg",
+          "marks": [],
+          "ranked": [
+            "SE",
+            "DE",
+            "BE",
+            "FR"
+          ],
+          "t0": "2016",
+          "year": "2024"
+        },
+        "leaves": {
+          "bubbles": {
+            "ext": [
+              -1.4477250000000002,
+              42.696113,
+              23.01705,
+              69.85918
+            ],
+            "items": [
+              {
+                "code": "SE",
+                "lonlat": [
+                  19.01705,
+                  65.85918
+                ],
+                "value": "series:sdg/SE:2024:OBS_VALUE",
+                "value_text": "fact:val.SE.n"
+              },
+              {
+                "code": "DE",
+                "lonlat": [
+                  9.678348,
+                  50.961733
+                ],
+                "value": "series:sdg/DE:2024:OBS_VALUE",
+                "value_text": "fact:val.DE.n"
+              },
+              {
+                "code": "BE",
+                "lonlat": [
+                  4.800448,
+                  50.785392
+                ],
+                "value": "series:sdg/BE:2024:OBS_VALUE",
+                "value_text": "fact:val.BE.n"
+              },
+              {
+                "code": "FR",
+                "lonlat": [
+                  2.552275,
+                  46.696113
+                ],
+                "value": "series:sdg/FR:2024:OBS_VALUE",
+                "value_text": "fact:val.FR.n"
+              }
+            ]
+          },
+          "leader_notes": {
+            "ext": [
+              -1.4477250000000002,
+              42.696113,
+              23.01705,
+              69.85918
+            ],
+            "notes": [
+              {
+                "at": [
+                  19.01705,
+                  65.85918
+                ],
+                "name": "SE",
+                "text": [
+                  {
+                    "word": "column.note.rise_most"
+                  },
+                  {
+                    "word": "column.note.vs_next"
+                  }
+                ],
+                "value_text": "fact:vs_hi"
+              },
+              {
+                "at": [
+                  2.552275,
+                  46.696113
+                ],
+                "name": "FR",
+                "text": [
+                  {
+                    "word": "column.note.fall_most"
+                  },
+                  {
+                    "word": "column.note.vs_prev"
+                  }
+                ],
+                "value_text": "fact:vs_lo"
+              }
+            ]
+          }
+        },
+        "style": {
+          "bars": {
+            "measure": "change"
+          }
+        },
+        "unit": "单位：%"
+      },
+      "tables": {
+        "sdg": {
+          "id": "sdg"
+        }
+      },
+      "title": "标题"
+    }
+  },
+  "order": [
+    "bubbles",
+    "bubble_key",
+    "bars",
+    "leader_notes"
+  ],
+  "rows": [
+    {
+      "dims": {
+        "freq": "A",
+        "geo": "SE",
+        "unit": "PC"
+      },
+      "src": "series:sdg/SE:2024:OBS_VALUE",
+      "table": "sdg",
+      "time": "2024",
+      "value": "66"
+    },
+    {
+      "dims": {
+        "freq": "A",
+        "geo": "BE",
+        "unit": "PC"
+      },
+      "src": "series:sdg/BE:2024:OBS_VALUE",
+      "table": "sdg",
+      "time": "2024",
+      "value": "14"
+    },
+    {
+      "dims": {
+        "freq": "A",
+        "geo": "DE",
+        "unit": "PC"
+      },
+      "src": "series:sdg/DE:2024:OBS_VALUE",
+      "table": "sdg",
+      "time": "2024",
+      "value": "22.4"
+    },
+    {
+      "dims": {
+        "freq": "A",
+        "geo": "FR",
+        "unit": "PC"
+      },
+      "src": "series:sdg/FR:2024:OBS_VALUE",
+      "table": "sdg",
+      "time": "2024",
+      "value": "13.25"
+    },
+    {
+      "dims": {
+        "freq": "A",
+        "geo": "SE",
+        "unit": "PC"
+      },
+      "src": "series:sdg/SE:2016:OBS_VALUE",
+      "table": "sdg",
+      "time": "2016",
+      "value": "50"
+    },
+    {
+      "dims": {
+        "freq": "A",
+        "geo": "BE",
+        "unit": "PC"
+      },
+      "src": "series:sdg/BE:2016:OBS_VALUE",
+      "table": "sdg",
+      "time": "2016",
+      "value": "8.5"
+    },
+    {
+      "dims": {
+        "freq": "A",
+        "geo": "DE",
+        "unit": "PC"
+      },
+      "src": "series:sdg/DE:2016:OBS_VALUE",
+      "table": "sdg",
+      "time": "2016",
+      "value": "14.9"
+    },
+    {
+      "dims": {
+        "freq": "A",
+        "geo": "FR",
+        "unit": "PC"
+      },
+      "src": "series:sdg/FR:2016:OBS_VALUE",
+      "table": "sdg",
+      "time": "2016",
+      "value": "15.5"
+    }
+  ]
+}

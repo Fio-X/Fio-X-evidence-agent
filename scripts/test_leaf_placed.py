@@ -5,8 +5,7 @@ drawn only from the geometry the core placed (knobs.placed), and a layer that is
   2 with placed geometry they are drawn from it, even with bars.measure change in the style: the change layout and the
     level layout are stubs that raise, and neither is called;
   3 a change page's bars (not bound external) that come with placed geometry refuse;
-  4 over every recipe, the bars and bubbles layers still on a leaf's own layout are exactly change's bars and bubbles and
-    column's bubbles (knobs.json; P4a-2 empties it);
+  4 over every recipe, no bars or bubbles layer is still on a leaf's own layout (knobs.json; P4a-2 emptied it);
   5 the bubbles of a column page and of a change page are drawn by today's leaf, unchanged;
   6 on the 14 column pages of the replay list (scripts/fixtures/p4a/column-bars.json), the bars layer cl_bars_placed draws
     from the bars node's reply (runtime/leaves_py/bars_node.py, through one JSON round trip as it travels) is byte for byte
@@ -48,7 +47,7 @@ class Frame:
 def placed_of(f):
     """What the core writes into knobs.placed.bars from the node's reply: per item its code, its bar and its texts in the
     core's order (the name, the value with its ledger src)."""
-    req = jrt({"node": "bars", "rows": {"x0": f.x0, "lw": f.lw, "bw": f.bw - f.lw - f.vw, "top": f.top, "row": f.rh, "inset": 3},
+    req = jrt({"node": "bars", "rows": {"x0": f.x0, "lw": f.lw, "vw": f.vw, "bw": f.bw, "top": f.top, "row": f.rh, "inset": 3},
                "marks": [{"id": f"bars/{i}", "shape": "rect", "item": i, "value": v} for i, (_, v) in enumerate(f.vals)],
                "texts": [{"id": f"bars/{i}/{n}"} for i in range(len(f.vals)) for n in ("label", "value_text")]})
     out = jrt(bars_node.reply(req))
@@ -96,14 +95,15 @@ def main():
     f = Frame(pages[0])
     g = placed_of(f)
     # 1
-    refuses(lambda: run.layer_fn(col_layers, "bars", {"external": ["bars"]}), "no placed geometry", "1 bars external, no placed")
+    refuses(lambda: run.layer_fn(col_layers, "bars", {"external": ["bars"]})(f, prod.Occ()), "no placed geometry", "1 bars external, no placed")
     # 2: the old layouts raise if called; the placed one draws
     def stub(*_a, **_k): raise AssertionError("an old bars layout was called")
     saved = (column.cl_change_bars, column.COLUMN_LAYERS["bars"], col_layers["bars"])
     column.cl_change_bars, column.COLUMN_LAYERS["bars"], col_layers["bars"] = stub, (stub, None), (stub, None)
     try:
         f.change = True  # bars.measure change in the style
-        svg = run.layer_fn(col_layers, "bars", {"external": ["bars"], "placed": {"bars": g}})(f, prod.Occ())
+        g2 = {**g, "axis": {"x": g["items"][0]["mark"]["x"]}}  # a change page's bars come with their zero line
+        svg = run.layer_fn(col_layers, "bars", {"external": ["bars"], "placed": {"bars": g2}})(f, prod.Occ())
         if svg.count("<rect ") != len(f.vals): FAILS.append(f"2 placed bars: {svg.count('<rect ')} bars drawn, {len(f.vals)} placed")
     except AssertionError as e: FAILS.append(f"2 placed bars with measure change: {e}")
     finally:
@@ -116,10 +116,10 @@ def main():
         if run.layer_fn(layers, "bubbles", {"external": ["bars"] if rec == "column" else []}) is not run.LEAF_LAYERS["bubbles"][0]:
             FAILS.append(f"5 the {rec} page's bubbles are not today's leaf")
     # 4: over every recipe of the registry, on the bars and bubbles layers only, the pairs still drawn by the recipe's own
-    # leaf (no external binding) are exactly these; P4a-2 makes it empty
+    # leaf (no external binding): none since P4a-2
     reg = json.load(open(os.path.join(REPO, "runtime", "leaves_py", "knobs.json"), encoding="utf-8"))
     old = {(r["name"], l) for r in reg["recipes"] for l in r["layers"] if l in ("bars", "bubbles") and l not in (r.get("external") or [])}
-    if old != {("change", "bars"), ("change", "bubbles"), ("column", "bubbles")}:
+    if old:
         FAILS.append(f"4 the layers on the leaf's own layout are {sorted(old)}")
     # 6: against the layer cl_bars drew before the level layout left it (frozen: column-bars-svg.json)
     frozen = json.load(open(os.path.join(REPO, "scripts", "fixtures", "p4a", "column-bars-svg.json"), encoding="utf-8"))

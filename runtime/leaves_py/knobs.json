@@ -1749,7 +1749,14 @@
    ],
    "exposes": [],
    "strip": true,
-   "main": "bars"
+   "main": "bars",
+   "external": [
+    "bubbles",
+    "bars"
+   ],
+   "points": [
+    "bubbles"
+   ]
   },
   {
    "name": "column",
@@ -1783,7 +1790,11 @@
    "strip": true,
    "main": "bars",
    "external": [
-    "bars"
+    "bars",
+    "bubbles"
+   ],
+   "points": [
+    "bubbles"
    ]
   },
   {

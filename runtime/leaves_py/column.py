@@ -133,6 +133,32 @@ def cl_bars_placed(f, occ, placed):
     return "".join(o)
 
 
+def cl_change_bars_placed(f, placed):
+    """The change bars where the core placed them (knobs.placed.bars: the external bars node's reply, every number checked by
+    the core, K2 and K11): the zero line at the core's axis, one item per ranked place in the core's order, its bar (mark x,
+    y, w, h) and its texts (the name, then the value with its src, each at its x, y with its anchor). Printed in
+    cl_change_bars's own words, number for number; the colours by the place and its change's sign as there."""
+    items = placed.get("items") if isinstance(placed, dict) else None
+    if not items or not isinstance((placed.get("axis") or {}).get("x"), (int, float)): raise FX.Refused("bars: the placed geometry holds no item or no axis")
+    vals = dict(f.vals)
+    if [it.get("code") for it in items] != [k for k, _ in f.vals]: raise FX.Refused("bars: the placed items are not the ranked places")
+    z = placed["axis"]["x"]
+    o = [f'<line x1="{z:.1f}" x2="{z:.1f}" y1="{f.top}" y2="{f.top + f.rh * len(items)}" stroke="var(--t-sec)" stroke-width="0.8"/>']
+    for i, it in enumerate(items):
+        m, texts = it.get("mark") or {}, it.get("texts") or []
+        if not all(isinstance(m.get(k), (int, float)) for k in ("x", "y", "w", "h")):
+            raise FX.Refused(f"bars: placed item {i} has no bar x, y, w, h")
+        if [t.get("name") for t in texts] != ["label", "value_text"] or not isinstance(texts[1].get("src"), str):
+            raise FX.Refused(f"bars: placed item {i} has not the name and the value (with its src) as its texts")
+        k, (lab, val), v = it["code"], texts, vals[it["code"]]
+        hi_ = k in f.marks
+        ink, weight = ("var(--t-title)", 700) if hi_ else ("var(--t-body)", 400)
+        o.append(f'<text x="{lab["x"]:.1f}" y="{lab["y"]:.1f}" text-anchor="end" dominant-baseline="middle" font-size="{f.size}" fill="{ink}" font-weight="{weight}">{prod.named(k)}</text>'
+                 f'<rect x="{m["x"]:.1f}" y="{m["y"]:.1f}" width="{m["w"]:.1f}" height="{m["h"]}" fill="{FOCUS if k in f.focus else NOTED if k in f.noted else RISE if v > 0 else FALL if v < 0 else "var(--bar)"}"/>'
+                 f'<text x="{val["x"]:.1f}" y="{val["y"]:.1f}" text-anchor="{val["anchor"]}" dominant-baseline="middle" font-size="{f.size}" fill="{ink if hi_ else "var(--t-sec)"}" font-weight="{weight}">{FX.entry(val["src"], "tspan", None)}</text>')
+    return "".join(o)
+
+
 # A bar of the page's focus (focus): the accent, which marks nothing else on the page; the legend line (accent_key) says so. A
 # bar of another place the notes name (noted): a dark grey of the page's, darker than any other bar's. A change bar out of
 # both by its sign, two of the page's greys: a rise the darker, a fall the bars' own; no change, the bar's.

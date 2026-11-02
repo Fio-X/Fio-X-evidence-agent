@@ -24,10 +24,9 @@ def request(page):
     """The core's request for a page, as next_tree.rs issue and rows_frame write it (lw, bw by the leaf's arithmetic)."""
     lw = max(prod.tw(n, SIZE) for n in page["names"]) + 12
     vw = max(prod.tw(v, SIZE) for v in page["values_text"]) + 8
-    bw = (PAGE_W - page["x0"]) - lw - vw
     marks = [{"id": f"bars/{i}", "shape": "rect", "item": i, "value": v} for i, v in enumerate(page["values"])]
     texts = [{"id": f"bars/{i}/{f}"} for i in range(len(marks)) for f in ("label", "value_text")]
-    return jrt({"node": "bars", "rows": {"x0": page["x0"], "lw": lw, "bw": bw, "top": TOP, "row": ROW, "inset": INSET},
+    return jrt({"node": "bars", "rows": {"x0": page["x0"], "lw": lw, "vw": vw, "bw": PAGE_W - page["x0"], "top": TOP, "row": ROW, "inset": INSET},
                 "marks": marks, "texts": texts})
 
 
@@ -50,7 +49,7 @@ def main():
     for m in zero["marks"]:
         m["value"] = 0
     if bars_node.reply(zero) != {"refused": "no_room"}:
-        FAILS.append("no value above 0: not refused")
+        FAILS.append("every value 0: not refused")
     few = request(pages[0])
     few["texts"] = few["texts"][:1]
     if list(bars_node.reply(few)["texts"]) != ["bars/0/label"]:

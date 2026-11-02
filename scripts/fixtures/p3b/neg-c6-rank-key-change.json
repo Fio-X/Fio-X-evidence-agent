@@ -1565,6 +1565,6 @@
    }
   }
  },
- "expect": "C1 recheck: select ranked (rank): key",
- "$comment": "item 2: a rank by change between two times; the core ranks by value only, so it is refused"
+ "expect": "C1 recheck: rank ranked: BE has 0 rows at 2024, the change needs one",
+ "$comment": "item 2: a rank by change between two times; the core ranks by the change (K10, P4a-2) and finds no row at the earlier time in the input, so it is refused"
 }

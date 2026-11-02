@@ -133,6 +133,9 @@ pub struct Recipe {
     /// bindings; none written is rust): the flow
     /// asks the visual group's NodeDeclare and NodeDraw for them instead of a rust fill.
     pub external: Vec<String>,
+    /// Its external layers the core lays out in a view frame (knobs.json recipes[].points, which knobs.py writes from the
+    /// bindings' frames): the flow gives their declaration the map points and the extent it computes.
+    pub points: Vec<String>,
 }
 
 const LEAVES: &str = include_str!("../runtime/leaves_py/knobs.json");
@@ -196,6 +199,7 @@ pub fn leaves() -> &'static Leaves {
                 v => v.as_bool().expect("knobs.json: a recipe's strip is true or false"),
             },
             external: words(&r["external"]),
+            points: words(&r["points"]),
         });
         Leaves { nodes: nodes.collect(), groups: groups.collect(), legacy, recipes: recipes.collect() }
     })

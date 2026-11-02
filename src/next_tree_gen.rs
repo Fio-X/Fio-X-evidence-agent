@@ -10,16 +10,19 @@
 //!            layers' nodes from their declarations, the registry's checks. Layers the registry leaves rust stay out of it,
 //!            their drawn rows too.
 //! The page input (page_input in next_run.rs) is plain data the flow already holds: {recipe, order, shape{main, place, year,
-//! unit, fmt, suffix, countries}, picks{rules, ranked, marks, t0, t1}, rows, name_kind}; a template in the registry reads it
-//! only by PAGE_IN_PATHS.
+//! unit, fmt, suffix, countries}, picks{rules, ranked, marks, t0, t1}, rows, name_kind}, and for a layer the registry lays
+//! out in a view frame the map points and the extent the flow computed ({points, page{ext}}); a template in the registry
+//! reads it only by PAGE_IN_PATHS. A node's declaration is its recipe's (declares_by_recipe) when the registry gives one.
 
 use crate::next_tree::{self as core, st, Got, J};
 use std::collections::BTreeSet;
 use serde_json::Value;
 
 /// The page input paths a declaration template may read (`$shape.main`, ...); nothing else is substituted.
-const PAGE_IN_PATHS: [&str; 9] =
-    ["shape.main", "shape.place", "shape.year", "shape.fmt", "shape.suffix", "shape.countries", "picks.marks", "page.ext", "fill.accent"];
+const PAGE_IN_PATHS: [&str; 11] = [
+    "shape.main", "shape.place", "shape.year", "shape.fmt", "shape.suffix", "shape.countries", "picks.marks", "picks.t0", "page.ext", "fill.accent",
+    "fmt.change",
+];
 
 /// A template with every `$path` (a string value or an object key) read from the page input by PAGE_IN_PATHS.
 fn sub(v: &J, page_in: &J) -> Result<J, String> {
@@ -119,14 +122,17 @@ fn recompute(page_in: &J, sels: &[J], given: &[(String, J)]) -> (Vec<String>, Go
     (bad, got)
 }
 
-fn declares<'a>(reg: &'a J, layer: &str) -> Result<&'a J, String> {
-    reg.g("nodes").g(layer).get("declares").ok_or_else(|| format!("node {layer}: the registry declares nothing for it"))
+/// A node's declaration on the page input's recipe: the recipe's own (declares_by_recipe) when the registry gives one.
+fn declares<'a>(reg: &'a J, layer: &str, page_in: &J) -> Result<&'a J, String> {
+    let n = reg.g("nodes").g(layer);
+    let own = page_in.g("recipe").s().and_then(|r| n.g("declares_by_recipe").get(r));
+    own.or_else(|| n.get("declares")).ok_or_else(|| format!("node {layer}: the registry declares nothing for it"))
 }
 
 /// The external layer's node in the page tree, from its registry declaration; its items by the core's generic expansion.
 /// Before the fill is done (`after` none) a field tied to a bind set only then (binds_after_fill, the accent) is left out.
 fn node_of(layer: &str, page_in: &J, reg: &J, got: &Got, sels: &[J], after: Option<&J>, knobs: Option<J>) -> Result<J, String> {
-    let d = declares(reg, layer)?;
+    let d = declares(reg, layer, page_in)?;
     let mut n = J::obj_of(vec![("kind", J::str("Node")), ("id", J::str(layer)), ("node", J::str(layer))]);
     let mut binds = sub(d.get("binds").unwrap_or(&J::Obj(vec![])), page_in)?;
     if let Some(after) = after.filter(|a| a.has("fill")) {
@@ -170,13 +176,18 @@ fn order_of(n: &J) -> Option<String> {
     core::ref_id(if b.has("ranked") { b.g("ranked") } else { n.g("items_for") })
 }
 
-/// fmt dec_rule held_decimals: the most decimals the chosen rows' values hold as the data gave them, at most the cap.
+/// fmt dec_rule held_decimals: the most decimals the chosen rows' values hold as the data gave them (at its time, or at
+/// each of its times), at most the cap.
 fn held_decimals(rows: &[J], q: &J, got: &Got) -> Result<i64, String> {
     let (by, _) = q.g("filter").obj().first().ok_or("held_decimals: a filter of one dimension")?;
     let codes = core::resolved(q.g("filter"), got)?.g(by).clone();
+    let times: Vec<&J> = match q.g("time") {
+        J::Arr(a) => a.iter().collect(),
+        t => vec![t],
+    };
     let held = rows
         .iter()
-        .filter(|r| r.g("table") == q.g("table") && r.g("time") == q.g("time") && codes.arr().contains(r.g("dims").g(by)))
+        .filter(|r| r.g("table") == q.g("table") && times.contains(&r.g("time")) && codes.arr().contains(r.g("dims").g(by)))
         .filter_map(|r| r.g("value").s())
         .map(|v| v.split_once('.').map_or(0, |(_, d)| d.len() as i64))
         .max()
@@ -190,58 +201,128 @@ pub struct NodeDeclared {
     pub node: String,
     /// The rows the layer draws, in the page input's order.
     pub drawn: Vec<Value>,
+    /// The rows it only computes from (its numbers are other facts: a change's two ends), in the page input's order.
+    pub reads: Vec<Value>,
     pub facts: Vec<(String, Value)>,
     pub fmts: Vec<(String, Value)>,
     /// Its binds with every reference resolved (a select to its recomputed result, {fact: k} to k, {family: f} to f), less
     /// the keys the registry keeps in the page tree only (declares.tree_only).
     pub data: Vec<(String, Value)>,
+    /// Hero keys other than its data (declares.hero_style: {"style": ...}, which the page's lead reads).
+    pub hero: Vec<(String, Value)>,
+    /// A leaf's data under the hero's leaves (declares.leaf: its items with every select resolved to its code), by key.
+    pub leaves: Vec<(String, Value)>,
+}
+
+/// fmt dec_rule over the page input: held_decimals (the only rule the generator computes), at most its cap.
+fn dec_of(layer: &str, rule: &J, page_in: &J, got: &Got) -> Result<i64, String> {
+    if rule.g("rule").s() != Some("held_decimals") {
+        return Err(format!("{layer}: fmt dec_rule {}: not one the generator computes", rule.g("rule").repr()));
+    }
+    let cap = rule.g("max").g("value").num().ok_or_else(|| format!("{layer}: dec_rule max has no value"))? as i64;
+    Ok(held_decimals(page_in.g("rows").arr(), rule.g("rows"), got)?.min(cap))
+}
+
+/// declares.fmt_change, rule points_if_percent: a change printed in points when the unit prints as the rule's percent sign
+/// (its points key, suffix and at most max_dec decimals), else in the unit; its decimals by its dec_rule. (key, format)
+fn change_fmt(layer: &str, fc: &J, page_in: &J, got: &Got) -> Result<(String, J), String> {
+    if fc.g("rule").s() != Some("points_if_percent") {
+        return Err(format!("{layer}: fmt_change rule {}: not one the generator computes", fc.g("rule").repr()));
+    }
+    let side = if page_in.g("shape").g("suffix") == fc.g("percent") { fc.g("points") } else { fc.g("else") };
+    let mut dec = dec_of(layer, fc.g("dec_rule"), page_in, got)?;
+    if let Some(most) = side.g("max_dec").num() {
+        dec = dec.min(most as i64);
+    }
+    let fd = J::obj_of(vec![("scale", J::Int(1)), ("dec", J::Int(dec)), ("suffix", side.g("suffix").clone())]);
+    Ok((st(side.g("key")), fd))
 }
 
 /// The declaration as JSON in the generator's own order (the prototype's), for the fixtures.
 fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
-    let d = declares(reg, layer)?;
+    let d = declares(reg, layer, page_in)?;
     let (sels, given) = selects_of(page_in, reg)?;
     let (bad, got) = recompute(page_in, &sels, &given);
     if !bad.is_empty() {
         return Err(format!("{layer}: the core's selects do not recompute: {}", bad.iter().take(3).cloned().collect::<Vec<_>>().join("; ")));
     }
-    let facts = sub(d.g("facts"), page_in)?;
     let mut fd = sub(d.g("fmt"), page_in)?;
     let rule = fd.remove("dec_rule").ok_or_else(|| format!("{layer}: declares.fmt has no dec_rule"))?;
-    if rule.g("rule").s() != Some("held_decimals") {
-        return Err(format!("{layer}: fmt dec_rule {}: not one the generator computes", rule.g("rule").repr()));
-    }
-    let cap = rule.g("max").g("value").num().ok_or_else(|| format!("{layer}: dec_rule max has no value"))? as i64;
-    let dec = held_decimals(page_in.g("rows").arr(), rule.g("rows"), &got)?.min(cap);
+    let dec = dec_of(layer, &rule, page_in, &got)?;
     let fd = J::obj_of(vec![("scale", fd.g("scale").clone()), ("dec", J::Int(dec)), ("suffix", fd.g("suffix").clone())]);
+    let fmt = st(page_in.g("shape").g("fmt"));
+    let mut fmts = J::Obj(vec![(fmt, fd)]);
+    // a change's format, its key read by the facts that print in it ($fmt.change)
+    let mut facts_in = page_in.clone();
+    if let Some(fc) = d.get("fmt_change") {
+        let (key, cfd) = change_fmt(layer, &sub(fc, page_in)?, page_in, &got)?;
+        fmts.set(&key, cfd);
+        facts_in.set("fmt", J::obj_of(vec![("change", J::Str(key))]));
+    }
+    let facts = sub(d.g("facts"), &facts_in)?;
     let n = node_of(layer, page_in, reg, &got, &sels, None, None)?;
     let sid = order_of(&n).ok_or_else(|| format!("{layer}: its items follow no select"))?;
     let refs: Vec<(String, &J)> = sels.iter().map(|s| (st(s.g("id")), s)).collect();
-    let over = core::root_rank(&refs, &sid)?.g("over").clone();
+    let root = core::root_rank(&refs, &sid)?;
+    let over = root.g("over").clone();
     let codes = got.get(&sid).cloned().unwrap_or(J::Arr(vec![]));
     let by = st(over.g("by"));
-    let drawn: Vec<J> = page_in
-        .g("rows")
-        .arr()
-        .iter()
-        .filter(|r| r.g("table") == over.g("table") && r.g("time") == over.g("time") && codes.arr().contains(r.g("dims").g(&by)))
-        .cloned()
-        .collect();
+    // the rows of the select at its time (rows_of_select), or at its time and the time its change runs from
+    let rows_by = |rule: &J| -> Result<Vec<J>, String> {
+        let times: Vec<&J> = match rule.s() {
+            None => return Ok(vec![]),
+            Some("rows_of_select") => vec![over.g("time")],
+            Some("rows_of_select_both_ends") => vec![over.g("time"), core::change_from(root).unwrap_or(&J::Null)],
+            Some(r) => return Err(format!("{layer}: rows rule {r}: not one the generator computes")),
+        };
+        Ok(page_in
+            .g("rows")
+            .arr()
+            .iter()
+            .filter(|r| r.g("table") == over.g("table") && times.contains(&r.g("time")) && codes.arr().contains(r.g("dims").g(&by)))
+            .cloned()
+            .collect())
+    };
+    let (drawn, reads) = (rows_by(d.g("rows"))?, rows_by(d.g("reads"))?);
     let mut data = J::Obj(vec![]);
     for (k, v) in n.g("binds").obj() {
         let x = match v {
             J::Str(s) if core::ref_parts(s).is_some() => core::resolve_ref(s, &got)?,
-            J::Obj(m) if m.len() == 1 && (v.has("fact") || v.has("family")) => m[0].1.clone(),
+            J::Obj(_) if v.has("fact") => v.g("fact").clone(),
+            J::Obj(_) if v.has("family") => v.g("family").clone(),
             v => v.clone(),
         };
         if !d.g("tree_only").arr().iter().any(|t| t.s() == Some(k)) {
             data.set(k, x);
         }
     }
-    let fmt = st(page_in.g("shape").g("fmt"));
-    let mut out = J::obj_of(vec![("rows", J::Arr(drawn)), ("facts", facts), ("fmts", J::Obj(vec![(fmt, fd)]))]);
+    let mut out = J::obj_of(vec![("rows", J::Arr(drawn)), ("facts", facts), ("fmts", fmts)]);
+    if !reads.is_empty() {
+        out.set("reads", J::Arr(reads));
+    }
     if data.truthy() {
         out.set("data", data);
+    }
+    if let Some(hs) = d.get("hero_style") {
+        out.set("hero", J::obj_of(vec![("style", sub(hs, page_in)?)]));
+    }
+    // a leaf's data: the node's items, each field the leaf reads from the item field the registry names (a select
+    // reference resolved to its code), and the leaf's other keys from the page input
+    if let Some(lf) = d.get("leaf") {
+        let mut items = Vec::new();
+        for it in n.g("items").arr() {
+            let mut x = J::Obj(vec![]);
+            for (k, from) in lf.g("items").obj() {
+                let v = it.get(&st(from)).ok_or_else(|| format!("{layer}: leaf item field {k}: the items have no {}", st(from)))?;
+                x.set(k, if v.s().is_some_and(|s| core::ref_parts(s).is_some()) { core::resolve_ref(&st(v), &got)? } else { v.clone() });
+            }
+            items.push(x);
+        }
+        let mut leaf = J::obj_of(vec![("items", J::Arr(items))]);
+        for (k, v) in lf.obj().iter().filter(|(k, _)| k != "key" && k != "items") {
+            leaf.set(k, sub(v, page_in)?);
+        }
+        out.set("leaves", J::Obj(vec![(st(lf.g("key")), leaf)]));
     }
     Ok(out)
 }
@@ -254,9 +335,12 @@ pub fn declare(layer: &str, page_in: &Value) -> Result<NodeDeclared, String> {
     Ok(NodeDeclared {
         node: layer.to_string(),
         drawn: out.g("rows").arr().iter().map(J::to_value).collect(),
+        reads: out.g("reads").arr().iter().map(J::to_value).collect(),
         facts: pairs("facts"),
         fmts: pairs("fmts"),
         data: pairs("data"),
+        hero: pairs("hero"),
+        leaves: pairs("leaves"),
     })
 }
 
@@ -414,6 +498,16 @@ fn frame_knobs(layer: &str, reg: &J, fill: &J) -> Option<J> {
     Some(J::obj_of(vec![("x0", if x0.fract() == 0.0 { J::Int(x0 as i64) } else { J::Num(x0) })]))
 }
 
+/// The fill's rows in the order the page input holds them (R10 holds the tree's rows to it): the fill keeps each layer's
+/// rows in the order the layers put them (a change page's circles their later end first, its bars both ends after), which
+/// the leaf reads by src only. A row the input does not hold stays after them, in its order, for R10 to refuse.
+fn in_input_order(rows: &[J], input: &[J]) -> Vec<J> {
+    let at = |r: &J| input.iter().position(|x| x.g("src") == r.g("src")).unwrap_or(usize::MAX);
+    let mut out = rows.to_vec();
+    out.sort_by_key(at);
+    out
+}
+
 /// The page tree the core checks and asks the external layers over, from the page input and the finished fill.
 pub(crate) fn tree_j(page_in: &J, fill: &J, reg: &J, external: &[String]) -> Result<J, String> {
     let (sels, given) = selects_of(page_in, reg)?;
@@ -436,7 +530,7 @@ pub(crate) fn tree_j(page_in: &J, fill: &J, reg: &J, external: &[String]) -> Res
     let mut fmts = spec.g("fmts").clone();
     let fmt = st(shape.g("fmt"));
     for layer in external {
-        let rule = sub(declares(reg, layer)?.g("fmt").g("dec_rule"), page_in)?;
+        let rule = sub(declares(reg, layer, page_in)?.g("fmt").g("dec_rule"), page_in)?;
         let f = fmts.get_mut(&fmt).ok_or_else(|| format!("the fill has no format {fmt}"))?;
         f.set("dec_rule", rule);
     }
@@ -490,7 +584,7 @@ pub(crate) fn tree_j(page_in: &J, fill: &J, reg: &J, external: &[String]) -> Res
                 ("tables", spec.g("tables").clone()),
                 ("facts", facts),
                 ("fmts", fmts),
-                ("rows", fill.g("rows").clone()),
+                ("rows", J::Arr(in_input_order(fill.g("rows").arr(), page_in.g("rows").arr()))),
                 ("labels", names.clone()),
                 ("named", named.clone()),
                 ("points", points.clone()),
@@ -510,7 +604,7 @@ pub(crate) fn tree_j(page_in: &J, fill: &J, reg: &J, external: &[String]) -> Res
         ("record", J::obj_of(vec![("drawn", J::Arr(drawn))])),
     ]);
     let select_spec = J::Obj(sels.iter().map(|s| (st(s.g("id")), J::Obj(s.obj().iter().filter(|(k, _)| k != "id").cloned().collect()))).collect());
-    let rules = J::Obj(external.iter().map(|l| Ok((l.clone(), declares(reg, l)?.g("rows").clone()))).collect::<Result<_, String>>()?);
+    let rules = J::Obj(external.iter().map(|l| Ok((l.clone(), declares(reg, l, page_in)?.g("rows").clone()))).collect::<Result<_, String>>()?);
     Ok(J::obj_of(vec![
         ("rows", page_in.g("rows").clone()),
         ("select_spec", select_spec),
@@ -524,32 +618,66 @@ pub(crate) fn tree_j(page_in: &J, fill: &J, reg: &J, external: &[String]) -> Res
     ]))
 }
 
-/// What a leaf of an external layer refuses before it draws anything (the registry's declares.leaf_stops, each a rule named
-/// here): the page then goes to the leaf as it is and stops there with the leaf's own words, as before the layer was
-/// external, instead of at a check of the core that would word it otherwise. None when the leaf draws.
+/// What a leaf of an external layer refuses before it draws anything (the declaration's leaf_stops, or its recipe's in
+/// leaf_stops_by_recipe; each a rule named here, in the leaf's order: the panel's first, which refuse every layer at the
+/// panel's first line, then the layer's own input): the layer's node is then not asked, and the page goes to the leaf as it
+/// is and stops there with the leaf's own words, as before the layer was external, instead of at a check of the core that
+/// would word it otherwise. A rule of the layer's own leaves the page's other layers asked. None when the leaf draws.
 fn leaf_stops(layer: &str, page_in: &J, fill: &J, reg: &J) -> Option<String> {
-    let shape = page_in.g("shape");
+    let d = declares(reg, layer, page_in).ok()?;
+    let rules = page_in.g("recipe").s().and_then(|r| d.g("leaf_stops_by_recipe").get(r)).unwrap_or_else(|| d.g("leaf_stops"));
+    let (shape, hero) = (page_in.g("shape"), fill.g("knobs").g("spec").g("hero"));
     let ranked: Vec<&J> = page_in.g("picks").g("ranked").arr().iter().collect();
-    let at_year = |c: &J| {
+    let value = |r: &J| match r.g("value") {
+        J::Str(s) => s.trim().parse::<f64>().ok(),
+        v => v.num(),
+    };
+    let at = |c: &J, t: &J| {
         page_in
             .g("rows")
             .arr()
             .iter()
-            .filter(|r| r.g("table") == shape.g("main") && r.g("time") == shape.g("year") && r.g("dims").g(&st(shape.g("place"))) == c)
-            .filter_map(|r| match r.g("value") {
-                J::Str(s) => s.trim().parse::<f64>().ok(),
-                v => v.num(),
-            })
+            .filter(|r| r.g("table") == shape.g("main") && r.g("time") == t && r.g("dims").g(&st(shape.g("place"))) == c)
+            .filter_map(value)
             .next_back()
     };
-    for rule in declares(reg, layer).ok()?.g("leaf_stops").arr().iter().filter_map(J::s) {
+    let (year, t0) = (shape.g("year"), page_in.g("picks").g("t0"));
+    let labels = fill.g("knobs").g("labels");
+    let facts = fill.g("knobs").g("spec").g("facts");
+    let leaves = hero.g("leaves");
+    let circles = leaves.g("bubbles");
+    let ext: Vec<f64> = circles.g("ext").arr().iter().filter_map(J::num).collect();
+    let in_box = |e: &[f64]| e.len() == 4 && e[0] < e[2] && e[1] < e[3] && -180.0 <= e[0] && e[2] <= 180.0 && -90.0 <= e[1] && e[3] <= 90.0;
+    let src_value = |src: &J| fill.g("rows").arr().iter().find(|r| r.g("src") == src).and_then(value);
+    let fact_base = |t: &J| t.s().and_then(|t| t.strip_prefix("fact:")).map(|t| t.strip_suffix(".n").unwrap_or(t).rsplit_once('.').map_or(t, |x| x.0).to_string());
+    let items = circles.g("items").arr();
+    let point = |i: &J| {
+        let p: Vec<f64> = i.g("lonlat").arr().iter().filter_map(J::num).collect();
+        (p.len() == 2 && (-180.0..=180.0).contains(&p[0]) && (-90.0..=90.0).contains(&p[1])).then_some(p)
+    };
+    for rule in rules.arr().iter().filter_map(J::s) {
         let hit = match rule {
-            "row_at_year" => ranked.iter().any(|c| at_year(c).is_none()),
+            "row_at_year" => ranked.iter().any(|c| at(c, year).is_none()),
+            "row_at_both_ends" => ranked.iter().any(|c| at(c, t0).is_none() || at(c, year).is_none()),
             "value_domain" => {
-                let v: Vec<f64> = ranked.iter().filter_map(|c| at_year(c)).collect();
+                let v: Vec<f64> = ranked.iter().filter_map(|c| at(c, year)).collect();
                 v.is_empty() || v.iter().any(|x| *x < 0.0) || !v.iter().any(|x| *x > 0.0)
             }
-            "accent_ranked" => fill.g("knobs").g("spec").g("hero").g("data").g("accent").s().is_some_and(|a| !ranked.iter().any(|c| c.s() == Some(a))),
+            "some_change" => ranked.iter().filter_map(|c| Some(at(c, year)? - at(c, t0)?)).all(|x| x == 0.0),
+            "named" => ranked.iter().any(|c| !c.s().is_some_and(|c| labels.has(c))),
+            "value_entry" => hero.g("data").g("family").s().is_some_and(|f| !facts.has(f)),
+            "accent_ranked" => hero.g("data").g("accent").s().is_some_and(|a| !ranked.iter().any(|c| c.s() == Some(a))),
+            "one_ext" => leaves.has("leader_notes") && leaves.g("leader_notes").g("ext") != circles.g("ext"),
+            "view_ext" => circles.g("ext").arr().len() != 4 || !in_box(&ext),
+            "has_items" => items.is_empty(),
+            "series_of_request" => items.iter().any(|i| src_value(i.g("value")).is_none()),
+            "named_item" => items.iter().any(|i| !i.g("code").s().is_some_and(|c| labels.has(c))),
+            "ledger_entry" => items.iter().any(|i| !fact_base(i.g("value_text")).is_some_and(|b| facts.has(&b))),
+            "not_negative" => items.iter().any(|i| src_value(i.g("value")).is_some_and(|v| v < 0.0)),
+            "has_point" => items.iter().any(|i| point(i).is_none()),
+            "inside_ext" => {
+                in_box(&ext) && items.iter().filter_map(point).any(|p| !(ext[0] <= p[0] && p[0] <= ext[2] && ext[1] <= p[1] && p[1] <= ext[3]))
+            }
             _ => false,
         };
         if hit {
@@ -557,6 +685,32 @@ fn leaf_stops(layer: &str, page_in: &J, fill: &J, reg: &J) -> Option<String> {
         }
     }
     None
+}
+
+/// The ground a layer's leaf gives its node (the registry's `ground`: the leaf's ground phase, run.py GROUND, over the
+/// fill's hero and its map shapes): what the node weighs among places the core holds equally good (the map circles' land
+/// rows), never checked and never a number on the page. Asked only for a layer whose node is asked. A reply that is no
+/// {"land": {band: [[x0, x1], ...]}} refuses the page.
+fn ground_of(layer: &str, g: &J, fill: &J, runtime: &std::path::Path) -> Result<J, String> {
+    let knobs = fill.g("knobs");
+    let req = J::obj_of(vec![
+        ("phase", g.g("phase").clone()),
+        ("layer", J::str(layer)),
+        ("knobs", J::obj_of(vec![("spec", J::obj_of(vec![("hero", knobs.g("spec").g("hero").clone())])), ("shapes", knobs.g("shapes").clone())])),
+    ]);
+    let runner = crate::next_leaf::Runner::python(&runtime.join("leaves_py/run.py"));
+    let no = |why: String| format!("node {layer}: ground: {why}");
+    let (line, _) = crate::next_leaf::ask_once(&runner, &req.dump(), crate::next_leaf::LAYER_DEADLINE).map_err(no)?;
+    let rep = core::parse(&line).map_err(no)?;
+    if let Some(why) = rep.get("refused") {
+        return Err(no(why.arr().iter().map(st).collect::<Vec<_>>().join("; ")));
+    }
+    let land = rep.g("land");
+    let span = |x: &J| x.arr().len() == 2 && x.arr().iter().all(J::finite);
+    if !land.is_obj() || !land.obj().iter().all(|(k, v)| k.parse::<i64>().is_ok() && v.is_arr() && v.arr().iter().all(span)) {
+        return Err(no("the leaf's land rows are not {band: [[x0, x1], ...]}".into()));
+    }
+    Ok(J::obj_of(vec![("land", land.clone())]))
 }
 
 /// What NodeDraw gives back: the checked geometry by layer (none for a layer whose leaf refuses before it draws, which
@@ -572,7 +726,10 @@ pub struct NodesDrawn {
 pub fn draw(fill: &Value, page_in: &Value, layers: &[String], runtime: &std::path::Path) -> Result<NodesDrawn, String> {
     let (reg, _) = core::registry_in_force();
     let (page_in, fill) = (J::from_value(page_in), J::from_value(fill));
-    let mut style: Vec<String> = layers.iter().filter(|l| fill.g("knobs").g("spec").g("hero").g("style").has(l)).cloned().collect();
+    // a layer's style its declaration writes (hero_style: what the page's lead reads) is the registry's, not the page's
+    let own = |l: &str| declares(&reg, l, &page_in).ok().and_then(|d| d.g("hero_style").get(l)).cloned();
+    let style_of = |l: &str| fill.g("knobs").g("spec").g("hero").g("style").get(l).cloned();
+    let mut style: Vec<String> = layers.iter().filter(|l| style_of(l).is_some() && style_of(l) != own(l)).cloned().collect();
     if let Some(l) = style.pop() {
         return Err(format!("node {l}: the page sets a knob of the external layer {l}; the core lays it out at the registry's"));
     }
@@ -587,7 +744,16 @@ pub fn draw(fill: &Value, page_in: &Value, layers: &[String], runtime: &std::pat
     if asked.is_empty() {
         return Ok(out);
     }
-    let tree = tree_j(&page_in, &fill, &reg, &asked).map_err(|e| format!("node {}: page tree: {e}", asked.join(",")))?;
+    let mut tree = tree_j(&page_in, &fill, &reg, &asked).map_err(|e| format!("node {}: page tree: {e}", asked.join(",")))?;
+    let mut ground = J::Obj(vec![]);
+    for l in &asked {
+        if let Some(g) = reg.g("nodes").g(l).get("ground") {
+            ground.set(l, ground_of(l, g, &fill, runtime)?);
+        }
+    }
+    if ground.truthy() {
+        tree.set("ground", ground);
+    }
     for l in &asked {
         let drawn = core::node_draw(l, &tree, runtime)?;
         out.placed[l.as_str()] = drawn.placed.to_value();
@@ -682,6 +848,60 @@ mod tests {
         pts.set("at", at);
         p.set("points", pts);
         assert_eq!(check(&p, &fill), Vec::<String>::new(), "a missing point is not the bars' tree's");
+    }
+
+    /// The page input and the finished fill a stop fixture (scripts/fixtures/p4a2/stops.json) stands for: its rows, its
+    /// ranking and ends, its names, a declared fact per ledger family, its hero.
+    fn stop_case(c: &J) -> (J, J) {
+        let data = c.g("hero").g("data");
+        let page_in = J::obj_of(vec![
+            ("recipe", c.g("recipe").clone()),
+            ("shape", J::obj_of(vec![("main", c.g("table").clone()), ("place", c.g("place").clone()), ("year", data.g("year").clone())])),
+            ("picks", J::obj_of(vec![("ranked", data.g("ranked").clone()), ("t0", data.get("t0").cloned().unwrap_or(J::Null))])),
+            ("rows", c.g("rows").clone()),
+        ]);
+        let mut facts = J::Obj(vec![]);
+        for (k, _) in c.g("ledger").obj() {
+            if let Some(f) = k.strip_prefix("fact:").and_then(|k| k.split('.').next()) {
+                facts.set(f, J::Obj(vec![]));
+            }
+        }
+        let spec = J::obj_of(vec![("facts", facts), ("hero", c.g("hero").clone())]);
+        let fill = J::obj_of(vec![("rows", c.g("rows").clone()), ("knobs", J::obj_of(vec![("labels", c.g("names").clone()), ("spec", spec)]))]);
+        (page_in, fill)
+    }
+
+    /// M8 (P4a-2): on every stop fixture the generator asks the external layers the prototype asked (a panel's stop asks no
+    /// node; a stop of the circles' own input skips only the circles; the column page's bars keep their P4a-1 rules), so
+    /// the leaf ends the page where it did (scripts/test_leaf_stops_p4a2.py). A panel rule hit leaves no layer asked, and
+    /// draw then asks no node and no ground (a runtime with no leaf child at all: nothing is started) and keeps the leaf's
+    /// stage; a circles-only hit leaves the bars asked.
+    #[test]
+    fn next_tree_gen_leaf_stops_ask_what_the_prototype_asked() {
+        let fx = core::parse(&std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/fixtures/p4a2/stops.json")).unwrap()).unwrap();
+        let (bindings, reg) = (core::bindings(), core::load_registry(&core::bindings()));
+        let mut off = Vec::new();
+        for c in fx.g("cases").arr() {
+            let (page_in, fill) = stop_case(c);
+            let layers: Vec<String> = bindings.g("recipes").g(&st(c.g("recipe"))).arr().iter().map(st).collect();
+            let asked: Vec<String> = layers.iter().filter(|l| leaf_stops(l, &page_in, &fill, &reg).is_none()).cloned().collect();
+            let want: Vec<String> = c.g("asked").arr().iter().map(st).collect();
+            if asked != want {
+                off.push(format!("{} {}: asked {asked:?}, the prototype {want:?}", st(c.g("id")), st(c.g("recipe"))));
+            }
+        }
+        // P6 and B2 take one entry out of the ledger, which the flow prints from the facts it declares (unreachable, design
+        // 11.2): the generator sees the declared family, so it asks; the leaf still stops on the missing entry as before, at
+        // its panel (P6) or in the circles' input half, which runs before their placed geometry is read (B2)
+        let ledger_only = ["P6 change: asked [\"bubbles\", \"bars\"], the prototype []", "B2 change: asked [\"bubbles\", \"bars\"], the prototype [\"bars\"]"];
+        assert_eq!(off, ledger_only, "{off:#?}");
+        // a panel stop: draw asks nothing, not even the ground, and leaves each layer to its leaf rule
+        let p2 = fx.g("cases").arr().iter().find(|c| c.g("id").s() == Some("P2")).unwrap();
+        let (page_in, fill) = stop_case(p2);
+        let layers = ["bars".to_string(), "bubbles".to_string()];
+        let out = draw(&fill.to_value(), &page_in.to_value(), &layers, Path::new("/nonexistent-runtime")).unwrap();
+        assert_eq!(out.timing.iter().map(|t| t.3.clone()).collect::<Vec<_>>(), [Some("value_domain".into()), Some("value_domain".into())]);
+        assert_eq!(out.placed, serde_json::json!({}));
     }
 
     /// Fill texts as runs: placeholders become fact runs (a final .n or .t a part), any other brace stays a word.
