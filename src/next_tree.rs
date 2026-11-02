@@ -6665,7 +6665,7 @@ mod tests {
     #[test]
     fn next_tree_production_binds_the_bars_external() {
         let o = bindings();
-        assert_eq!(external_nodes(&o), ["bars", "bubbles", "bignums", "leader_notes", "notes", "stacked100"]);
+        assert_eq!(external_nodes(&o), ["bars", "bubbles", "bignums", "leader_notes", "notes", "ring", "stacked100"]);
         assert_eq!(registry_problems(&load_registry(&o)), Vec::<String>::new());
         for n in external_nodes(&o) {
             assert!(runner_allowed(&st(o.g("nodes").g(&n).g("runner"))), "{n}");

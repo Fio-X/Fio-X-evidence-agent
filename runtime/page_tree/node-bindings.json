@@ -39,7 +39,7 @@
   "change_focus": {"id": "top", "kind": "given", "source": "picks", "path": "picks.top", "given": "$picks.top"},
   "claim_marks": {"id": "marks", "kind": "named_rule", "rule": "marks_from_claims", "inputs": {"ranked": "ranked"}, "given": "$picks.marks"}
  },
- "recipes": {"column": ["bars", "bubbles", "leader_notes"], "change": ["bubbles", "bars", "leader_notes"], "composition": ["stacked100"], "scmp": ["bignums", "notes"]},
+ "recipes": {"column": ["bars", "bubbles", "leader_notes"], "change": ["bubbles", "bars", "leader_notes"], "composition": ["stacked100"], "scmp": ["bignums", "notes"], "ring": ["ring"]},
  "nodes": {
   "bars": {
    "binding": "external",
@@ -618,6 +618,69 @@
      "f": {
       "kind": "code_is",
       "ref": "binds.focus"
+     }
+    }
+   }
+  }
+,
+  "ring": {
+   "binding": "external",
+   "geometry": "leaf",
+   "runner": "leaves_py/prod.py",
+   "declares_by_recipe": {
+    "ring": {
+     "selects": [
+      {
+       "id": "focus",
+       "kind": "given",
+       "given": ["$picks.focus"]
+      }
+     ],
+     "values": {
+      "from": {
+       "rule": "months_back",
+       "months": "$shape.months",
+       "span": {"knob": "months"}
+      }
+     },
+     "fmt": {
+      "scale": 1,
+      "suffix": "$shape.suffix",
+      "dec_rule": {
+       "rule": "fixed",
+       "dec": 0
+      }
+     },
+     "for_code": "select:focus[0]",
+     "facts": {
+      "{code_lc}_m_peak": {
+       "op": "peak",
+       "table": "$shape.second",
+       "filter": {"$shape.place": "{code}"},
+       "from": "$value.from",
+       "fmt": "$shape.fmt"
+      },
+      "{code_lc}_last": {
+       "op": "last",
+       "table": "$shape.second",
+       "filter": {"$shape.place": "{code}"},
+       "from": "$value.from",
+       "fmt": "$shape.fmt"
+      }
+     },
+     "rows": {
+      "rule": "rows_of_code",
+      "table": "$shape.second",
+      "filter": {
+       "$shape.place": "select:focus[0]"
+      }
+     },
+     "hero": {
+      "ring": {
+       "q": {"table": "$shape.second", "filter": {"$shape.place": "{code}"}, "by": "$shape.place"},
+       "from": "$value.from",
+       "marks": [{"key": "{code_lc}_m_peak"}, {"key": "{code_lc}_last"}]
+      }
      }
     }
    }

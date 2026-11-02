@@ -1633,6 +1633,10 @@ fn page_input(recipe: &Recipe, shape: &Shape, picks: &Picks, (main, sums): (&[Va
         (p["picks"]["top"], p["picks"]["focus"], p["picks"]["y0"], p["picks"]["y1"]) = (json!(picks.top), json!(picks.focus), json!(y0), json!(y1));
         p["shape"]["hub"] = json!(shape.hub);
     }
+    // a second table beside the main (its monthly companion, the page input's sum_rows) and its months
+    if !shape.companion.is_empty() {
+        (p["shape"]["second"], p["shape"]["months"]) = (json!(shape.companion), json!(shape.months));
+    }
     p
 }
 
@@ -1728,7 +1732,6 @@ type NodeFill = fn(&Filling, &mut Filled) -> Result<(), String>;
 /// (callouts, legend, inset, bubble_key) prints from what the others put.
 const NODE_FILLS: &[(&str, NodeFill)] = &[
     ("map", map_fill),
-    ("ring", ring_node_fill),
     ("strip", strip_fill),
     ("sankey", sankey_fill),
 ];
@@ -1805,25 +1808,6 @@ fn map_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
     }
     out.notes.push(RING_SHARE_WORDS.replace("{hub}", &hub_zh));
     Ok(())
-}
-
-/// The ring of the focus's months. Rows: the companion's for the focus. Facts: the focus's monthly peak and last within the
-/// ring, which starts ring.months (the visual knob) back from the companion's last month.
-fn ring_node_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
-    let (shape, picks, fmt) = (f.shape, f.picks, f.fmt.as_str());
-    let span = f.catalogue.knob("ring", "months")? as i64;
-    let from = ring_from(&shape.months, span).ok_or_else(|| format!("monthly {} has no month", shape.companion))?;
-    let origin = shape.place.as_str();
-    out.rows(f.companion.iter().filter(|r| r["dims"][origin] == picks.focus.as_str()).cloned());
-    let c = picks.focus.to_lowercase();
-    let monthly = |op: &str| {
-        json!({"op": op, "table": shape.companion, "filter": filter(&[(origin, picks.focus.as_str())]), "from": from, "fmt": fmt})
-    };
-    Filled::set(&mut out.facts, "fact", &format!("{c}_m_peak"), monthly("peak"))?;
-    Filled::set(&mut out.facts, "fact", &format!("{c}_last"), monthly("last"))?;
-    let ring = json!({"q": {"table": shape.companion, "filter": filter(&[(origin, picks.focus.as_str())]), "by": origin},
-        "from": from, "marks": [{"key": format!("{c}_m_peak")}, {"key": format!("{c}_last")}]});
-    Filled::set(&mut out.hero, "hero key", "ring", ring)
 }
 
 /// The facts the map declares for one origin (map_fill), by its keys: its values at t0 and t1, its change and its t1 share.
@@ -5640,6 +5624,9 @@ mod tests {
         // bytes sent are the ones before it
         let headline = sent.as_object_mut().unwrap().remove(HEADLINE).unwrap();
         assert_eq!(headline, json!({"title": "{name.RU}最多，占{ru24_share}", "scoped": "所选各方中{name.RU}居首，占{ru24_share}"}));
+        // the page input the ring layer is declared over (P6 step 3: the ring is the visual group's) stays with the flow
+        // for draw_nodes, so the bytes sent, the ring's among them, are still the ones pinned below
+        sent.as_object_mut().unwrap().remove("page_in").unwrap();
         // RU is the largest origin at t1 (NO and US are at 1): its share, which the map declares, its name placeholder and
         // the year of its value at t1 (lead1, the finding's own fact, kept out of the bytes compared)
         assert_eq!(finding, json!({"dek": "{lead1.t}，{name.RU}最多，占{ru24_share}", "scoped": "{lead1.t}，所选各方中，{name.RU}居首，占{ru24_share}"}));
@@ -11348,6 +11335,26 @@ for line in sys.stdin:
         Filled::set(&mut out.data, "hero data", "bignums", Value::Array(items))
     }
 
+    /// Frozen copy of the flow's ring fill as it was before P6 step 3, the reference the declared ring is held to.
+    /// The ring of the focus's months. Rows: the companion's for the focus. Facts: the focus's monthly peak and last within the
+    /// ring, which starts ring.months (the visual knob) back from the companion's last month.
+    fn old_ring_node_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
+        let (shape, picks, fmt) = (f.shape, f.picks, f.fmt.as_str());
+        let span = f.catalogue.knob("ring", "months")? as i64;
+        let from = ring_from(&shape.months, span).ok_or_else(|| format!("monthly {} has no month", shape.companion))?;
+        let origin = shape.place.as_str();
+        out.rows(f.companion.iter().filter(|r| r["dims"][origin] == picks.focus.as_str()).cloned());
+        let c = picks.focus.to_lowercase();
+        let monthly = |op: &str| {
+            json!({"op": op, "table": shape.companion, "filter": filter(&[(origin, picks.focus.as_str())]), "from": from, "fmt": fmt})
+        };
+        Filled::set(&mut out.facts, "fact", &format!("{c}_m_peak"), monthly("peak"))?;
+        Filled::set(&mut out.facts, "fact", &format!("{c}_last"), monthly("last"))?;
+        let ring = json!({"q": {"table": shape.companion, "filter": filter(&[(origin, picks.focus.as_str())]), "by": origin},
+            "from": from, "marks": [{"key": format!("{c}_m_peak")}, {"key": format!("{c}_last")}]});
+        Filled::set(&mut out.hero, "hero key", "ring", ring)
+    }
+
     /// Frozen copy of the flow's notes fill as it was before P6 step 2 (base 03f24541), the reference the declared notes
     /// are held to. The short notes beside the map, one per top origin and one for the total: which facts each prints (the
     /// map's, so the map fills first), never a sentence; the leaf writes the words from its word table. A note's change is there only when
@@ -11987,5 +11994,160 @@ for line in sys.stdin:
             let why = draw_nodes(&mut fill, &scmp.external, &calls, &Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime")).unwrap_err();
             assert!(why.contains(&format!("{said}, which the page does not declare")), "{why}");
         }
+    }
+
+
+    /// One ring page over the ring fixture's main (RU, NO, US at 2021, 2022 and 2024; the focus's member change claim from
+    /// 2021 to 2024) and a monthly companion of each (code, first month, months) given: the page filled as recipe_request
+    /// fills it, its ring declared and drawn (test_fill), beside the rust ring over the same shape and picks (map_fill, then
+    /// the frozen old_ring_node_fill).
+    fn ring_case(focus: &str, months: &[(&str, &str, i64)]) -> Result<(Value, Filled), String> {
+        let fixed = [("siec", "G3000"), ("unit", "MIO_M3"), ("geo", "EU27_2020")];
+        let val = |c: &str, t: &str| match (c, t) {
+            ("RU", "2021") => "126027.316",
+            ("RU", _) => "37843.285",
+            ("NO", "2021") => "50000",
+            ("NO", _) => "70000",
+            ("US", "2021") => "0",
+            _ => "1",
+        };
+        let mut main = ring_rows("imp", &fixed, ("partner", &["RU", "NO", "US", "DE", "TOTAL", "EXT_EU27_2020"]), &["2021", "2022", "2024"]);
+        for r in main.iter_mut() {
+            let v = val(r["dims"]["partner"].as_str().unwrap(), r["time"].as_str().unwrap());
+            r["value"] = json!(v);
+        }
+        let mut monthly = Vec::new();
+        for (code, first, n) in months {
+            let (y, m): (i64, i64) = (first[..4].parse().unwrap(), first[5..].parse().unwrap());
+            let ms: Vec<String> = (0..*n).map(|k| y * 12 + m - 1 + k).map(|i| format!("{}-{:02}", i.div_euclid(12), i.rem_euclid(12) + 1)).collect();
+            let ms: Vec<&str> = ms.iter().map(String::as_str).collect();
+            monthly.extend(ring_rows("impm", &fixed, ("partner", &[*code]), &ms));
+        }
+        let shape = ring_shape(&[("imp", &main), ("impm", &monthly)], &Hubs)?;
+        let at = |t: &str| json!(val(focus, t).parse::<f64>().unwrap());
+        let change = [("members", json!(5)), ("from_year", json!(2021)), ("to_year", json!(2024)), ("country_iso2", json!(focus)),
+            ("from_value", at("2021")), ("to_value", at("2024"))];
+        let rp = ring_picks(&shape, &main, &[(MEMBER_CHANGE.to_string(), bound("c4", &change))])?;
+        let fill = ring_fill(&shape, &rp, (&main, &monthly), &Hubs, ("标题", "导语"))?;
+        let RingPicks { focus, t0, t1, top } = rp;
+        let picks = Picks { focus, t0, t1, top, ..Picks::default() };
+        let r = recipe(RING_RECIPE);
+        let short = next_pack::unit_short(&shape.unit).unwrap();
+        let window = window_of(r, &picks)?;
+        let filling = Filling { shape: &shape, picks: &picks, main: &main, companion: &monthly, catalogue: &Hubs, fmt: shape.unit.to_lowercase(), short, window, asked: None };
+        let mut old = Filled::default();
+        map_fill(&filling, &mut old)?;
+        old.drawn.clear();
+        old_ring_node_fill(&filling, &mut old)?;
+        Ok((fill, old))
+    }
+
+    /// P6 step 3: the ring the visual group declares is the rust ring byte for byte (hero.ring, its two facts, the format,
+    /// the rows it draws in their order), on each branch of its window (ring.months back from the companion's last month,
+    /// no earlier than its first) over two shapes (S1: RU the focus; S2: NO the focus), the page through draw_nodes: the
+    /// window reaching past the first month and not, the last month in December and in January, the focus with fewer
+    /// months than another origin (its own rows only, the window from the companion's last month).
+    #[test]
+    fn declared_ring_equals_the_rust_ring_on_every_branch() {
+        let cases: [(&str, &str, &[(&str, &str, i64)], &str); 7] = [
+            ("S1 63 months", "RU", &[("RU", "2019-01", 63)], "2019-04"),
+            ("S1 last month December", "RU", &[("RU", "2019-01", 72)], "2020-01"),
+            ("S1 last month January", "RU", &[("RU", "2019-01", 61)], "2019-02"),
+            ("S1 window past the first month", "RU", &[("RU", "2022-01", 30)], "2022-01"),
+            ("S1 focus with fewer months", "RU", &[("RU", "2019-01", 63), ("NO", "2019-01", 66)], "2019-07"),
+            ("S2 18 months, clamped", "NO", &[("NO", "2023-01", 18)], "2023-01"),
+            ("S2 another origin longer", "NO", &[("NO", "2023-01", 18), ("RU", "2018-01", 80)], "2019-09"),
+        ];
+        for (name, focus, months, from) in cases {
+            let (fill, old) = ring_case(focus, months).unwrap_or_else(|e| panic!("{name}: {e}"));
+            let spec = &fill["knobs"]["spec"];
+            assert_eq!(spec["hero"]["ring"], old.hero["ring"], "{name}");
+            assert_eq!(old.hero["ring"]["from"], from, "{name}: the window");
+            for (k, q) in &old.facts {
+                assert_eq!(&spec["facts"][k], q, "{name}: fact {k}");
+            }
+            for (k, q) in &old.fmts {
+                assert_eq!(&spec["fmts"][k], q, "{name}: format {k}");
+            }
+            let mine: Vec<&Value> = fill["drawn"].as_array().unwrap().iter().filter(|d| d["layer"] == "ring").map(|d| &d["src"]).collect();
+            let theirs: Vec<&Value> = old.drawn.iter().map(|(_, r)| &r["src"]).collect();
+            assert_eq!(mine, theirs, "{name}: the rows the ring draws");
+            assert!(fill["knobs"].get("placed").is_none_or(|p| p.get("ring").is_none()), "{name}: nothing placed for the ring");
+            println!("P6RING {name}: from {from}, {} rows, equal", mine.len());
+        }
+    }
+
+    /// The window rule the visual group computes (months_back) is the flow's ring_from at the ring's knob (ring.months, 60),
+    /// on month lists that reach past the span and do not, end in December or January, or hold one month; none refuses.
+    #[test]
+    fn months_back_is_ring_from_at_the_ring_knob() {
+        let span = Hubs.knob("ring", "months").unwrap() as i64;
+        assert_eq!(span, 60);
+        let run = |first: &str, n: i64| -> Vec<String> {
+            let (y, m): (i64, i64) = (first[..4].parse().unwrap(), first[5..].parse().unwrap());
+            (0..n).map(|k| y * 12 + m - 1 + k).map(|i| format!("{}-{:02}", i.div_euclid(12), i.rem_euclid(12) + 1)).collect()
+        };
+        for (first, n) in [("2019-01", 63), ("2019-01", 72), ("2019-01", 61), ("2019-01", 60), ("2019-01", 59), ("2024-05", 1), ("2010-12", 200)] {
+            let months = run(first, n);
+            let rule = crate::next_tree::J::from_value(&json!({"rule": "months_back", "months": months, "span": {"knob": "months"}}));
+            let mine = crate::next_tree_gen::value_of("ring", "from", &rule).unwrap();
+            assert_eq!(mine.to_value(), json!(ring_from(&months, span).unwrap()), "{first} x {n}");
+        }
+        let none = crate::next_tree::J::from_value(&json!({"rule": "months_back", "months": [], "span": {"knob": "months"}}));
+        assert_eq!(crate::next_tree_gen::value_of("ring", "from", &none).unwrap_err(), "ring: value from: no month");
+    }
+
+    /// The ring's two old stops cannot stop a registered page, each shown where only a page no recipe makes reaches it:
+    /// "monthly {companion} has no month" needs a companion with no month, and monthly_companion sets the months from
+    /// the companion's own rows; the knob error needs ring.months unregistered, and it is (60). What stands in their place
+    /// at draw: the ring's hero key and its facts are its declaration, declared again over the finished fill.
+    #[test]
+    fn the_ring_old_stops_are_unreachable_and_a_ring_that_is_not_its_declaration_is_refused_at_draw() {
+        let shape = Shape { place: "partner".into(), companion: "impm".into(), ..Shape::default() };
+        let picks = Picks { focus: "RU".into(), ..Picks::default() };
+        let filling = Filling { shape: &shape, picks: &picks, main: &[], companion: &[], catalogue: &Hubs, fmt: "x".into(), short: "x", window: None, asked: None };
+        assert_eq!(old_ring_node_fill(&filling, &mut Filled::default()).unwrap_err(), "monthly impm has no month");
+        assert_eq!(Hubs.knob("ring", "months"), Ok(60.0));
+        let (fill, _) = ring_case("RU", &[("RU", "2019-01", 63)]).unwrap();
+        let ring = recipe(RING_RECIPE);
+        for (at, said) in [("hero", "node ring: hero ring is not its declaration"), ("fact", "node ring: fact ru_m_peak is not its declaration")] {
+            let mut fill = fill.clone();
+            match at {
+                "hero" => fill["knobs"]["spec"]["hero"]["ring"]["from"] = json!("2019-05"),
+                _ => fill["knobs"]["spec"]["facts"]["ru_m_peak"]["from"] = json!("2019-05"),
+            }
+            let calls = std::sync::Mutex::new(Vec::new());
+            let why = draw_nodes(&mut fill, &ring.external, &calls, &Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime")).unwrap_err();
+            assert!(why.contains(said), "{why}");
+        }
+    }
+
+    /// P6 step 3 on real data: the gas fixture (env as ring_fill_of_the_gas_fixture; run with --ignored) filled under the ring
+    /// recipe (the ring declared and drawn), its ring, facts, formats and drawn rows held to the rust ring over the same
+    /// shape and picks. No stand-in run stored a ring request. Prints one P6REQ line.
+    #[test]
+    #[ignore]
+    fn p6_ring_over_the_gas_fixture() {
+        let (main, monthly, catalogue, shape, claims) = gas_fixture();
+        let rp = ring_picks(&shape, &main, &claims).unwrap();
+        let fill = ring_fill(&shape, &rp, (&main, &monthly), &catalogue, ("标题", "导语")).unwrap();
+        let RingPicks { focus, t0, t1, top } = rp;
+        let picks = Picks { focus, t0, t1, top, ..Picks::default() };
+        let r = recipe(RING_RECIPE);
+        let short = next_pack::unit_short(&shape.unit).unwrap();
+        let filling = Filling { shape: &shape, picks: &picks, main: &main, companion: &monthly, catalogue: &catalogue, fmt: shape.unit.to_lowercase(), short, window: window_of(r, &picks).unwrap(), asked: None };
+        let mut old = Filled::default();
+        map_fill(&filling, &mut old).unwrap();
+        old.drawn.clear();
+        old_ring_node_fill(&filling, &mut old).unwrap();
+        let spec = &fill["knobs"]["spec"];
+        assert_eq!(spec["hero"]["ring"], old.hero["ring"], "the ring");
+        for (k, q) in old.facts.iter().chain(&old.fmts) {
+            assert!(&spec["facts"][k] == q || &spec["fmts"][k] == q, "{k}");
+        }
+        let mine: Vec<&Value> = fill["drawn"].as_array().unwrap().iter().filter(|d| d["layer"] == "ring").map(|d| &d["src"]).collect();
+        let theirs: Vec<&Value> = old.drawn.iter().map(|(_, r)| &r["src"]).collect();
+        assert_eq!(mine, theirs, "the rows the ring draws");
+        println!("P6REQ ring gas from {} rows {} facts {} equal: focus {}", old.hero["ring"]["from"], mine.len(), old.facts.len(), picks.focus);
     }
 }

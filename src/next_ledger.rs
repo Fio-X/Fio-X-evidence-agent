@@ -1141,7 +1141,7 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     ("tree_gen.registry_checks", "", &["tree_gen::checks_of"]),
     // a declaration the generator computes, else refused: the page input paths and knobs it reads, its dec_rule,
     // fmt_change, rows rule, line segments and frame headings, its numbers, the select its items follow
-    ("tree_gen.declaration", "", &["tree_gen::sub", "tree_gen::declares", "tree_gen::held_decimals", "tree_gen::dec_of", "tree_gen::change_fmt", "tree_gen::declared_j", "tree_gen::carries_facts", "tree_gen::from", "tree_gen::view_path", "tree_gen::number_of", "tree_gen::segments", "tree_gen::frame_words", "tree_gen::declare"]),
+    ("tree_gen.declaration", "", &["tree_gen::sub", "tree_gen::declares", "tree_gen::held_decimals", "tree_gen::dec_of", "tree_gen::change_fmt", "tree_gen::declared_j", "tree_gen::carries_facts", "tree_gen::value_of", "tree_gen::from", "tree_gen::view_path", "tree_gen::number_of", "tree_gen::segments", "tree_gen::frame_words", "tree_gen::declare"]),
     // a parts_of_whole page stops in the registry's words: its needs, and each stop rule (the rule names parts_declared
     // reads; node-bindings.json stops name only those, the test below holds it); its expansion refuses a part with no
     // total row, a fact the declaration lacks, a format it does not compute

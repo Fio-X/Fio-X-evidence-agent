@@ -22,8 +22,8 @@ use std::collections::BTreeSet;
 use serde_json::Value;
 
 /// The page input paths a declaration template may read (`$shape.main`, ...); nothing else is substituted.
-const PAGE_IN_PATHS: [&str; 15] = [
-    "shape.main", "shape.place", "shape.year", "shape.fmt", "shape.suffix", "shape.countries", "shape.hub", "picks.marks", "picks.t0", "picks.t1", "picks.top",
+const PAGE_IN_PATHS: [&str; 17] = [
+    "shape.main", "shape.place", "shape.year", "shape.fmt", "shape.suffix", "shape.countries", "shape.hub", "shape.second", "shape.months", "picks.marks", "picks.t0", "picks.t1", "picks.top",
     "picks.focus", "page.ext", "fill.accent", "fmt.change",
 ];
 
@@ -32,7 +32,7 @@ fn sub(v: &J, page_in: &J) -> Result<J, String> {
     Ok(match v {
         J::Str(s) if s.starts_with('$') => {
             let path = &s[1..];
-            if !PAGE_IN_PATHS.contains(&path) {
+            if !PAGE_IN_PATHS.contains(&path) && !path.starts_with("value.") {
                 return Err(format!("template path {s} is not a page input path the generator reads"));
             }
             let mut x = page_in;
@@ -164,6 +164,7 @@ fn node_of(layer: &str, page_in: &J, reg: &J, got: &Got, sels: &[J], after: Opti
         n.set("items", J::Arr(kept));
     }
     let mut entry = reg.g("nodes").g(layer).clone();
+    let has_items = entry.has("items");
     // a first_holding field's candidates are the declaration's, over the page input, each chosen code a literal code
     if let Some(c) = d.get("candidates") {
         let c = codes_in(&sub(c, facts.and_then(|f| f.get("in")).unwrap_or(page_in))?, got);
@@ -195,7 +196,7 @@ fn node_of(layer: &str, page_in: &J, reg: &J, got: &Got, sels: &[J], after: Opti
     if let Some(f) = facts {
         spec.set("facts", f.clone());
     }
-    let items = core::expand_items(&n, &entry, &spec, got, page_in)?;
+    let items = if has_items { core::expand_items(&n, &entry, &spec, got, page_in)? } else { Vec::new() };
     n.set("items", J::Arr(items));
     if let Some(g) = d.get("geometry") {
         n.set("geometry", sub(g, page_in)?);
@@ -285,6 +286,10 @@ pub struct NodeDeclared {
 
 /// fmt dec_rule over the page input: held_decimals (the only rule the generator computes), at most its cap.
 fn dec_of(layer: &str, rule: &J, page_in: &J, got: &Got) -> Result<i64, String> {
+    // fixed: the decimals another layer's format of the same key fixes (the map's), so both declare one format
+    if rule.g("rule").s() == Some("fixed") {
+        return rule.g("dec").num().map(|d| d as i64).ok_or_else(|| format!("{layer}: fmt dec_rule fixed has no dec"));
+    }
     if rule.g("rule").s() != Some("held_decimals") {
         return Err(format!("{layer}: fmt dec_rule {}: not one the generator computes", rule.g("rule").repr()));
     }
@@ -316,9 +321,48 @@ fn carries_facts(c: &J) -> bool {
     }
 }
 
+/// declares.values: each a value the declaration's templates read as `$value.<name>`, by its rule over the page input.
+/// months_back: the month `span` - 1 months before the last of `months` (the layer's own knob `span.knob`, the leaf
+/// registry's default, as Request::Knob reads it), no earlier than the first; no month refuses.
+pub(crate) fn value_of(layer: &str, name: &str, r: &J) -> Result<J, String> {
+    match r.g("rule").s() {
+        Some("months_back") => {
+            let months: Vec<String> = r.g("months").arr().iter().map(st).collect();
+            let knob = st(r.g("span").g("knob"));
+            let leaf = crate::next_leaf::leaves().nodes.get(layer).ok_or_else(|| format!("{layer}: value {name}: the leaf registry has no node {layer}"))?;
+            let span = match leaf.info.knobs.iter().find(|k| k.name == knob).map(|k| &k.kind) {
+                Some(crate::next_nodes::Kind::Range { default, .. }) => *default as i64,
+                _ => return Err(format!("{layer}: value {name}: no number knob {knob}")),
+            };
+            let none = || format!("{layer}: value {name}: no month");
+            let (first, last) = (months.first().ok_or_else(none)?, months.last().ok_or_else(none)?);
+            let (y, m): (i64, i64) = (last.get(..4).and_then(|y| y.parse().ok()).ok_or_else(none)?, last.get(5..).and_then(|m| m.parse().ok()).ok_or_else(none)?);
+            let i = y * 12 + m - 1 - (span - 1);
+            let from = format!("{}-{:02}", i.div_euclid(12), i.rem_euclid(12) + 1);
+            Ok(J::Str(if from < *first { first.clone() } else { from }))
+        }
+        r => Err(format!("{layer}: value {name}: rule {} is not one the generator computes", r.unwrap_or("none"))),
+    }
+}
+
 /// The declaration as JSON in the generator's own order (the prototype's), for the fixtures.
 fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
     let d = declares(reg, layer, page_in)?;
+    // the declaration's own values (declares.values), which its templates read beside the page input
+    let view;
+    let page_in = match d.get("values") {
+        Some(vs) => {
+            let mut vals = J::Obj(vec![]);
+            for (k, r) in vs.obj() {
+                vals.set(k, value_of(layer, k, &sub(r, page_in)?)?);
+            }
+            let mut v = page_in.clone();
+            v.set("value", vals);
+            view = v;
+            &view
+        }
+        None => page_in,
+    };
     let (mut sels, mut given) = selects_of(page_in, reg)?;
     let (bad, mut got) = recompute(page_in, &sels, &given);
     if !bad.is_empty() {
@@ -364,6 +408,14 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
     }
     // the facts, each code a select chose written as the code; the formats the declaration fixes (declares.formats)
     let mut facts = codes_in(&sub(d.g("facts"), &facts_in)?, &got);
+    // for_code: the facts and hero keys of one code a select holds, `{code}` / `{code_lc}` read as it
+    let for_code = match d.get("for_code") {
+        Some(r) => Some(st(&core::resolve_ref(&st(r), &got)?)),
+        None => None,
+    };
+    if let Some(c) = &for_code {
+        facts = core::with_code(&facts, c, page_in);
+    }
     for (k, v) in d.g("formats").obj() {
         fmts.set(k, sub(v, page_in)?);
     }
@@ -380,7 +432,13 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
             }
         }
     }
-    let (drawn, reads) = if d.has("rows") || d.has("reads") {
+    let (drawn, reads) = if d.g("rows").g("rule").s() == Some("rows_of_code") {
+        // rows_of_code: the page input's rows (its main's, then its other rows: a second table's) at the table and every
+        // filter dimension, a select reference read as its code; all drawn, in the input's order
+        let q = codes_in(&sub(d.g("rows"), page_in)?, &got);
+        let hit = |r: &&J| r.g("table") == q.g("table") && q.g("filter").obj().iter().all(|(k, v)| r.g("dims").g(k) == v);
+        (page_in.g("rows").arr().iter().chain(page_in.g("sum_rows").arr()).filter(hit).cloned().collect(), Vec::new())
+    } else if d.has("rows") || d.has("reads") {
         let sid = order_of(&n).ok_or_else(|| format!("{layer}: its items follow no select"))?;
         let refs: Vec<(String, &J)> = sels.iter().map(|s| (st(s.g("id")), s)).collect();
         let root = core::root_rank(&refs, &sid)?;
@@ -423,8 +481,17 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
     if !reads.is_empty() {
         out.set("reads", J::Arr(reads));
     }
+    let mut hero = J::Obj(vec![]);
     if let Some(hs) = d.get("hero_style") {
-        out.set("hero", J::obj_of(vec![("style", sub(hs, page_in)?)]));
+        hero.set("style", sub(hs, page_in)?);
+    }
+    // hero keys the declaration writes (declares.hero), for its code when it names one
+    for (k, v) in d.g("hero").obj() {
+        let v = codes_in(&sub(v, page_in)?, &got);
+        hero.set(k, for_code.as_ref().map_or(v.clone(), |c| core::with_code(&v, c, page_in)));
+    }
+    if hero.truthy() {
+        out.set("hero", hero);
     }
     // a leaf's data: the node's items, each field the leaf reads from the item field the registry names (a select
     // reference resolved to its code), and the leaf's other keys from the page input
@@ -1454,7 +1521,7 @@ pub fn draw(fill: &Value, page_in: &Value, layers: &[String], runtime: &std::pat
     // the fill holds must be that declaration's (a name the conditions measured otherwise refuses)
     for l in asked.iter().filter(|l| reg.g("nodes").g(l).g("geometry").s() == Some("leaf")) {
         let Ok(d) = declares(&reg, l, &page_in) else { continue };
-        if !d.has("candidates") {
+        if !d.has("candidates") && !d.has("hero") {
             continue;
         }
         let mut named = page_in.clone();
@@ -1473,6 +1540,17 @@ pub fn draw(fill: &Value, page_in: &Value, layers: &[String], runtime: &std::pat
         let held = &held;
         if mine != *held {
             return Err(format!("node {l}: the leaf data is not its declaration over the page's name rows: {} != {}", held.repr(), mine.repr()));
+        }
+        // the hero keys it writes and the facts it declares are the page's, as declared again
+        for (k, v) in d.g("hero").obj().iter().map(|(k, _)| (k, again.g("hero").g(k))) {
+            if hero.g(k) != v {
+                return Err(format!("node {l}: hero {k} is not its declaration: {} != {}", hero.g(k).repr(), v.repr()));
+            }
+        }
+        for (k, q) in again.g("facts").obj() {
+            if fill.g("knobs").g("spec").g("facts").g(k) != q {
+                return Err(format!("node {l}: fact {k} is not its declaration: {}", q.repr()));
+            }
         }
         // the item fields the leaf prints as facts by key (leaf.fact_fields): each a fact the page declares (another
         // layer's, the map's, when the declaration declares none of its own)
@@ -1834,7 +1912,7 @@ mod tests {
     fn next_tree_gen_only_stacked100_declares_geometry_leaf() {
         let bound = core::bindings();
         let leaf: Vec<&str> = bound.g("nodes").obj().iter().filter(|(_, n)| n.g("geometry").s() == Some("leaf")).map(|(k, _)| k.as_str()).collect();
-        assert_eq!(leaf, ["bignums", "leader_notes", "notes", "stacked100"]);
+        assert_eq!(leaf, ["bignums", "leader_notes", "notes", "ring", "stacked100"]);
     }
 
     /// The scmp notes declared over a hand page input: one note per top origin in its order, the focus's marked, its change

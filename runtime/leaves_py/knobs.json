@@ -1708,6 +1708,9 @@
     "ring.months",
     "ring.color",
     "names.font"
+   ],
+   "external": [
+    "ring"
    ]
   },
   {
