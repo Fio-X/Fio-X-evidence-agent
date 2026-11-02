@@ -96,6 +96,10 @@ def main():
     g = placed_of(f)
     # 1
     refuses(lambda: run.layer_fn(col_layers, "bars", {"external": ["bars"]})(f, prod.Occ()), "no placed geometry", "1 bars external, no placed")
+    # 1b: a layer the generator left to its leaf to stop (placed {leaf_stop}) is drawn by the leaf's own layout, so layer 1
+    # stops on it in today's words (the drawn check refuses it should the page go on)
+    if run.layer_fn(col_layers, "bars", {"external": ["bars"], "placed": {"bars": {"leaf_stop": "zero_end_past_frame"}}}) is not col_layers["bars"][0]:
+        FAILS.append("1b a layer left to its leaf to stop is not the leaf's own layout")
     # 2: the old layouts raise if called; the placed one draws
     def stub(*_a, **_k): raise AssertionError("an old bars layout was called")
     saved = (column.cl_change_bars, column.COLUMN_LAYERS["bars"], col_layers["bars"])

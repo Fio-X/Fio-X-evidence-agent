@@ -115,7 +115,8 @@
      "hero_style": {"bars": {"measure": "change"}},
      "binds_after_fill": {"accent": "$fill.accent"},
      "tree_only": ["count"],
-     "leaf_stops": ["row_at_both_ends", "some_change", "named", "value_entry", "accent_ranked", "one_ext", "view_ext"]
+     "leaf_stops": ["row_at_both_ends", "some_change", "named", "value_entry", "accent_ranked", "one_ext", "view_ext", "zero_end_past_frame"],
+     "leaf_draws": ["zero_end_past_frame"]
     }
    },
    "items": {

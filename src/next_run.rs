@@ -7045,6 +7045,70 @@ mod tests {
         );
     }
 
+    /// M8 (P4a-2): a change page whose largest change is 0 and the rest fall ends where and in the words it ended before its
+    /// bars were external: the leaf prints that 0's value past the bars' right edge and layer 1 stops the page on it. The
+    /// generator leaves the bars to their leaf (leaf_draws), the circles laid out by their node; the page drawn with no
+    /// layer bound external (as before P4a-2) stops in the same words.
+    #[test]
+    fn a_change_page_whose_largest_change_is_0_stops_where_the_leaf_stopped() {
+        // SE, BE and DE fall, FR flat: the largest change is 0, its value printed past the bars' right edge
+        let mut main = q1_ten_years();
+        for (g, t, v) in [("SE", "2016", "66"), ("SE", "2024", "50"), ("BE", "2016", "14"), ("BE", "2024", "8.5"), ("DE", "2016", "22.4"), ("DE", "2024", "14.9"), ("FR", "2024", "15.5")] {
+            main.iter_mut().find(|r| r["dims"]["geo"] == g && r["time"] == t).unwrap()["value"] = json!(v);
+        }
+        let change = recipe("change");
+        let shape = shape_of(&change.eats, &[("sdg", &main[..])], &Hubs).unwrap();
+        let picks = picks_of(&change.picks, &shape, &main, &[]).unwrap();
+        let mut fill = test_fill(change, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false).unwrap();
+        // the generator asked the circles' node and left the bars to their leaf, to stop there
+        assert_eq!(fill["knobs"]["placed"]["bars"], json!({"leaf_stop": "zero_end_past_frame"}));
+        assert!(fill["knobs"]["placed"]["bubbles"]["order"].is_array());
+        let dek = dek_finding(&fill).unwrap().0;
+        page_words(&mut fill, ("标题", &dek, "栏目"));
+        fill["knobs"]["shapes"] = json!("runtime/pi/assets/naturalearth-admin0-50m.geojson");
+        fill["knobs"]["spec"]["source"] = json!("来源");
+        let order: Vec<String> = fill["order"].as_array().unwrap().iter().filter_map(|l| l.as_str().map(str::to_string)).collect();
+        let calls = std::sync::Mutex::new(Vec::new());
+        let request = crate::next_visual::Request::LeafFill { recipe: "change", rows: fill["rows"].as_array().unwrap(), knobs: &fill["knobs"], order: &order, runtime: Path::new("runtime") };
+        let page = match crate::next_flow::visual_call(&calls, "leaf_fill", request) {
+            Ok(crate::next_visual::Reply::Filled(page)) => page,
+            _ => panic!("leaf fill"),
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = {
+            let _command = crate::group_guard::command_for_test("investigate");
+            crate::artifact::InvestigationBundle::create(dir.path(), "leaf page").unwrap()
+        };
+        let _command = crate::group_guard::command_for_test("investigate");
+        let _doors = crate::group_guard::doors_for_test(true);
+        let bake = crate::next_leaf::Runner::python(Path::new("fixtures/next_leaf/bake_twin.py"));
+        let mut qa = crate::next_leaf::Runner::python(Path::new("fixtures/next_visual/qa_twin.py"));
+        qa.args.push("pass".into());
+        let end = |layers: &[crate::next_leaf::Layer]| {
+            let leaf = crate::next_visual::LeafPage {
+                draw: &page.draw, bake: &bake, w: page.w, h: page.h, frame: page.frame.clone(), layers,
+                ledger: &page.ledger, refs: &page.refs, facts: (&page.spec, &page.rows, &page.facts), strip: None,
+            };
+            let plan = json!({"kind": "leaf_plan", "recipe": "change"});
+            crate::next_flow::publish_leaf_page(&calls, &bundle.dir, "change", (&leaf, &plan), &qa).map(|_| ()).unwrap_err()
+        };
+        // before P4a-2: the same page with no layer bound external, each drawn by its leaf's own layout
+        let before: Vec<crate::next_leaf::Layer> = page
+            .layers
+            .iter()
+            .map(|l| {
+                let (node, rows) = l.parts();
+                let mut k = l.knobs().clone();
+                k["external"] = json!([]);
+                k.as_object_mut().unwrap().remove("placed");
+                crate::next_leaf::Layer::registered(node, l.name(), rows.clone(), k).unwrap()
+            })
+            .collect();
+        let (after, before) = (end(&page.layers), end(&before));
+        assert_eq!(after, before);
+        assert!(after.contains("bars: ") && after.contains("is outside the panel"), "{after}");
+    }
+
     /// The change page's request: the bubbles the level at t1 (val), the bars the change (val0, val1 and their minus family
     /// chg, in percentage points of a share, only read from the rows), the notes the largest rise and fall, the bars' measure
     /// knob set to change; then the page drawn by the real leaf child, baked and checked by the twins: signed bars in the rise

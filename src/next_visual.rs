@@ -243,6 +243,9 @@ fn drawn_checked(html: &str, layers: &[Layer<'_>]) -> Result<Vec<Value>, String>
             return Err(refuse(format!("the page has {} elements tagged {marker}, not one", html.matches(&marker).count())));
         }
         let start = html.find(&marker).expect("counted once");
+        if let Some(rule) = knobs["placed"][name]["leaf_stop"].as_str() {
+            return Err(refuse(format!("left to its leaf to stop ({rule}), and the page was drawn")));
+        }
         if knobs["placed"][name]["order"].is_array() {
             out.push(circles_drawn(&html[start..], &knobs["placed"][name]).map_err(refuse)?);
             out.last_mut().expect("pushed")["layer"] = json!(name);
@@ -768,6 +771,9 @@ mod tests {
         assert_eq!(drawn_checked("<svg></svg>", &layers(off)).unwrap(), Vec::<Value>::new());
         let none = json!({"external": ["bars"], "placed": {"bars": {"items": []}}});
         assert!(drawn_checked(&page(""), &layers(none)).unwrap_err().contains("no placed items"));
+        // a layer left to its leaf to stop (P4a-2 leaf_draws) that was drawn after all never passes
+        let left = json!({"external": ["bars"], "placed": {"bars": {"leaf_stop": "zero_end_past_frame"}}});
+        assert!(drawn_checked(&good, &layers(left)).unwrap_err().contains("left to its leaf to stop (zero_end_past_frame)"));
     }
 
     /// The drawn check of a map circles layer (P4a-2): circles, dots, leaders and both lines of each label where the core

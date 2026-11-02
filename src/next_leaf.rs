@@ -291,6 +291,12 @@ impl<'a> Layer<'a> {
         Ok(Layer { node, layer, rows, knobs, reserve })
     }
 
+    /// Test-only: the layer's node and rows, to draw it again with other knobs.
+    #[cfg(test)]
+    pub(crate) fn parts(&self) -> (&'a str, &Value) {
+        (self.node, &self.rows)
+    }
+
     /// Test-only: a layer of a twin leaf no registry lists (fixtures/next_leaf), with no rows and its knobs as given.
     #[cfg(test)]
     pub(crate) fn twin(node: &'a str, layer: &'a str, knobs: Value) -> Layer<'a> {

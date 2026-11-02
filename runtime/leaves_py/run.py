@@ -215,6 +215,9 @@ def layer_fn(layers, name, knobs):
     if name in ext:
         if name not in PLACED_LAYERS: raise FX.Refused(f"the recipe binds {name} external and no leaf draws it from placed geometry")
         g = placed.get(name)
+        # the core's generator found the leaf stops on this layer as drawn its own way (a stop layer 1 makes on its texts):
+        # drawn so, to stop in today's words; the drawn check refuses it should the page go on
+        if isinstance(g, dict) and list(g) == ["leaf_stop"]: return layers[name][0]
         if not isinstance(g, dict):
             def none(f, occ):
                 if name in INPUT_HALF: INPUT_HALF[name](f)  # its own words first

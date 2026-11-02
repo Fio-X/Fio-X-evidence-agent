@@ -664,6 +664,12 @@ fn leaf_stops(layer: &str, page_in: &J, fill: &J, reg: &J) -> Option<String> {
                 v.is_empty() || v.iter().any(|x| *x < 0.0) || !v.iter().any(|x| *x > 0.0)
             }
             "some_change" => ranked.iter().filter_map(|c| Some(at(c, year)? - at(c, t0)?)).all(|x| x == 0.0),
+            // the largest change is 0 and the rest fall: the leaf prints that 0's value past the zero line at the frame's
+            // right edge, with no room there, and layer 1 stops the page on it (the leaf draws it, leaf_draws)
+            "zero_end_past_frame" => {
+                let v: Vec<f64> = ranked.iter().filter_map(|c| Some(at(c, year)? - at(c, t0)?)).collect();
+                v.iter().any(|x| *x < 0.0) && v.iter().copied().fold(f64::NEG_INFINITY, f64::max) == 0.0
+            }
             "named" => ranked.iter().any(|c| !c.s().is_some_and(|c| labels.has(c))),
             "value_entry" => hero.g("data").g("family").s().is_some_and(|f| !facts.has(f)),
             "accent_ranked" => hero.g("data").g("accent").s().is_some_and(|a| !ranked.iter().any(|c| c.s() == Some(a))),
@@ -737,7 +743,15 @@ pub fn draw(fill: &Value, page_in: &Value, layers: &[String], runtime: &std::pat
     let mut asked = Vec::new();
     for l in layers {
         match leaf_stops(l, &page_in, &fill, &reg) {
-            Some(rule) => out.timing.push((l.clone(), 0, 0, Some(rule))),
+            Some(rule) => {
+                // a stop layer 1 makes on what the leaf draws (declares.leaf_draws): the leaf draws it its own way to stop
+                // there in its words; the drawn check refuses that layer should it ever not stop (no placed items)
+                let draws = declares(&reg, l, &page_in).is_ok_and(|d| d.g("leaf_draws").arr().iter().any(|r| r.s() == Some(rule.as_str())));
+                if draws {
+                    out.placed[l.as_str()] = serde_json::json!({"leaf_stop": rule});
+                }
+                out.timing.push((l.clone(), 0, 0, Some(rule)))
+            }
             None => asked.push(l.clone()),
         }
     }

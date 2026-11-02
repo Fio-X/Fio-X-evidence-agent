@@ -3142,8 +3142,7 @@ pub fn registry_problems(reg: &J) -> Vec<String> {
         }
         if let Some(why) = rows_frame_problem(reg.g("frames").g(&st(e.g("frame"))), e) {
             out.push(format!("{p} frame {}: {why}", e.g("frame").repr()));
-        }
-        let it = e.g("items");
+        }        let it = e.g("items");
         if !it.g("for_each").s().is_some_and(|f| FOR_EACH.contains(&f)) {
             out.push(format!("{p} items.for_each {}: not one the core expands", it.g("for_each").repr()));
         }
@@ -4213,27 +4212,13 @@ fn rows_frame(fr: &J, n: &J, meta: &Meta, size: f64, values: &[f64]) -> Result<(
     let widest = |side: &str| -> Result<f64, String> {
         let end = format!("/{}", st(fr.g(side).g("text")));
         let gap = fr.g(side).g("gap").num().ok_or("rows frame gap")?;
-        let w = meta
-            .texts
-            .iter()
-            .filter(|t| t.0.ends_with(&end))
-            .map(|t| tw_leaf(&t.1, size))
-            .reduce(pmax)
-            .ok_or("rows frame: no text sizes a column")?;
+        let w = meta.texts.iter().filter(|t| t.0.ends_with(&end)).map(|t| tw_leaf(&t.1, size)).reduce(pmax).ok_or("rows frame: no text sizes a column")?;
         Ok(w + gap)
     };
     let (lw, vw) = (widest("left")?, widest("right")?);
     let x0 = n.g("knobs").get("x0").cloned().unwrap_or(J::Int(0));
-    let num = |v: &J, what: &str| {
-        v.num()
-            .ok_or_else(|| format!("rows frame: {what} is no number"))
-    };
-    let (w, x, top, row) = (
-        num(fr.g("w"), "w")?,
-        num(&x0, "x0")?,
-        num(fr.g("top"), "top")?,
-        num(fr.g("row"), "row")?,
-    );
+    let num = |v: &J, what: &str| v.num().ok_or_else(|| format!("rows frame: {what} is no number"));
+    let (w, x, top, row) = (num(fr.g("w"), "w")?, num(&x0, "x0")?, num(fr.g("top"), "top")?, num(fr.g("row"), "row")?);
     let count = n.g("items").arr().len() as f64;
     let whole = w - x;
     let (_, _, neg, pos) = signed_room(values, vw);
