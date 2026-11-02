@@ -324,7 +324,8 @@ def two_sided(sides, unit):
     segments. None, or {"side", "subject", "headline": segs, "cmp": ("max", a_src, [srcs]), "notes": [{"side", "code",
     "segs", "cmp": ("gt", a_src, b_src)}]}; segs {"w"}, {"src", "bold"}, {"name", "kind"}, and the unit's first segment."""
     tops = [finding_side_top(nodes) for _, nodes, _ in sides]
-    tops = [None if t and (compared(t[0][2]) or {}).get("scoped") else t for t in tops]  # a scoped side says nothing here
+    # a side the core scopes, or (where the core sent comparisons) does not compare, says nothing here
+    tops = [None if t and (COMPARISONS and not compared(t[0][2]) or (compared(t[0][2]) or {}).get("scoped")) else t for t in tops]
     shares = [(t[0][1] / s if t and s > 0 else -1.0) for t, (_, _, s) in zip(tops, sides)]
     if max(shares) < 0: return None
     i = shares.index(max(shares)); kind, nodes, _ = sides[i]; a = tops[i][0]

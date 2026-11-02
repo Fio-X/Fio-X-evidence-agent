@@ -365,6 +365,15 @@ class ShareNote(unittest.TestCase):
         K.COMPARISONS = {}
         rows, h = three("fossil", self.SHARES)
         self.assertNotIn("data-notes", draw(h, rows)[0])  # no comparison from the core: no note
+
+    def test_a_two_sided_finding_keeps_to_the_cores_comparisons_where_it_sent_any(self):
+        K.setup(copy.deepcopy(ROWS) + [{"src": f"fact:n.{c}.n", "text": t} for c, t in (("A", "50"), ("B", "30"), ("C", "20"))], NAMES, run.tables)
+        sides = [("siec", [("A", 50.0, "fact:n.A.n"), ("B", 30.0, "fact:n.B.n"), ("C", 20.0, "fact:n.C.n")], 100.0)]
+        for comparisons, found in [({}, True), ({"n.Z": {"first": "Z", "second": "Y", "scoped": False}}, False),
+                                   ({"n.A": {"first": "A", "second": "B", "scoped": False}}, True),
+                                   ({"n.A": {"first": "A", "second": "B", "scoped": True}}, False)]:
+            K.COMPARISONS = comparisons
+            self.assertEqual(K.two_sided(sides, []) is not None, found, comparisons)
         self.assertNotIn("data-notes", draw(hero(DATA))[0])  # two bars, and no bare entries: no note
 
 

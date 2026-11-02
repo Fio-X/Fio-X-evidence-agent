@@ -697,7 +697,8 @@ impl Member<'_> {
 /// family holds it) with each member's computed value, then every other code of the full set (the codes its dimension
 /// takes in the request rows of the set's tables and time) whose value the set's own definition computes from those rows
 /// (computed_at), and whether the full set holds a code it could not compute (scoped: a comparison stated over it must say
-/// its scope). None when the fact has no set of two codes or more, or a member has no computed value.
+/// its scope). None when the fact has no set of two codes or more, a member has no computed value, or a code of the full
+/// set holds rows the set's definition cannot read alike (computed_at Unsupported): no comparison is judged then.
 pub(crate) fn comparison<'a>(key: &str, spec: &'a Spec, rows: &[Row], facts: &[Fact]) -> Option<(Vec<Member<'a>>, bool)> {
     let def = move |k: &str| spec.facts.iter().find(|(key, _)| key == k).map(|(_, q)| q);
     let value = move |k: &str| facts.iter().find(|f| f.key == k).map(|f| f.v);
@@ -733,44 +734,88 @@ pub(crate) fn comparison<'a>(key: &str, spec: &'a Spec, rows: &[Row], facts: &[F
         .collect();
     let mut scoped = false;
     for c in full.into_iter().filter(|c| !held.contains(*c)) {
-        let got: Option<Vec<f64>> = template.iter().map(|q| computed_at(q, &dim, c, rows)).collect();
-        match got.as_deref() {
-            Some([v]) => members.push(Member { key: None, code: Some(c.clone()), v: *v }),
-            Some([a, b]) if *b != 0.0 => members.push(Member { key: None, code: Some(c.clone()), v: a / b }),
+        let got: Vec<At> = template.iter().map(|q| computed_at(q, &dim, c, rows)).collect();
+        match got[..] {
+            // a definition the check cannot apply to the code's rows alike: no comparison it could stand behind
+            _ if got.is_empty() || got.contains(&At::Unsupported) => return None,
+            [At::Value(v)] => members.push(Member { key: None, code: Some(c.clone()), v }),
+            [At::Value(a), At::Value(b)] if b != 0.0 => members.push(Member { key: None, code: Some(c.clone()), v: a / b }),
             _ => scoped = true,
         }
     }
     Some((members, scoped))
 }
 
-/// The value a value fact's definition `q` takes with its code on `dim` replaced by `code`, summed from the request rows
-/// as next_facts sums a value; None unless every code its filter names has a row there, every code the rows of `q` itself
-/// hold on another dimension is held there too, and the definition is a plain value (op, table, time, fmt, filter).
-fn computed_at(q: &Value, dim: &str, code: &str, rows: &[Row]) -> Option<f64> {
-    let plain = q.as_object()?.keys().all(|k| matches!(k.as_str(), "op" | "table" | "time" | "fmt" | "filter"));
-    let filter = q["filter"].as_object().filter(|_| plain && q["op"] == "value")?;
+/// What computed_at finds for a code: its value; no rows of the template's kind (a numerator or denominator row missing,
+/// a code of the filter with none, a 0 denominator: the set is scoped); or rows it cannot read alike (a definition with a
+/// key it does not apply, or rows that do not match the template member's exactly: the comparison refuses).
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum At {
+    Value(f64),
+    Missing,
+    Unsupported,
+}
+
+/// The value a value fact's definition `q` (a template member of the set) takes with its code on `dim` replaced by `code`,
+/// summed from the request rows as next_facts sums a value. The rows must match the template member's own exactly: on
+/// every other dimension the same codes, and as many rows for each code of the filter; a row of another code there
+/// (a second unit) is Unsupported, never summed, and no row of the template's codes at all is Missing, as is a code of the
+/// filter with no row. A definition with keys beyond op, table, time, fmt and filter is Unsupported.
+fn computed_at(q: &Value, dim: &str, code: &str, rows: &[Row]) -> At {
+    use std::collections::{BTreeMap as Map, BTreeSet as Set};
+    let plain = q.as_object().is_some_and(|o| o.keys().all(|k| matches!(k.as_str(), "op" | "table" | "time" | "fmt" | "filter")));
+    let Some(filter) = q["filter"].as_object().filter(|_| plain && q["op"] == "value") else { return At::Unsupported };
     let codes = |v: &Value| match v {
         Value::String(c) => Some(vec![c.clone()]),
         Value::Array(cs) => cs.iter().map(|c| c.as_str().map(str::to_string)).collect(),
         _ => None,
     };
-    // the rows a definition picks, and whether every code its filter names has one
-    let pick = |swap: bool| -> Option<(Vec<&Row>, bool)> {
-        let want: Vec<(&String, Vec<String>)> =
-            filter.iter().map(|(d, v)| Some((d, if swap && d == dim { vec![code.to_string()] } else { codes(v)? }))).collect::<Option<_>>()?;
-        let at = rows.iter().filter(|r| Some(r.table.as_str()) == q["table"].as_str() && Some(r.time.as_str()) == q["time"].as_str());
-        let picked: Vec<&Row> = at.filter(|r| want.iter().all(|(d, cs)| r.dims.get(*d).is_some_and(|c| cs.contains(c)))).collect();
-        let whole = want.iter().all(|(d, cs)| cs.iter().all(|c| picked.iter().any(|r| r.dims.get(*d) == Some(c))));
-        Some((picked, whole))
+    let want = |swap: bool| -> Option<Vec<(&String, Vec<String>)>> {
+        filter.iter().map(|(d, v)| Some((d, if swap && d == dim { vec![code.to_string()] } else { codes(v)? }))).collect()
     };
-    let ((mine, _), (there, whole)) = (pick(false)?, pick(true)?);
-    let held = |rs: &[&Row], d: &String| rs.iter().filter_map(|r| r.dims.get(d)).cloned().collect::<std::collections::BTreeSet<String>>();
-    let dims: std::collections::BTreeSet<&String> = mine.iter().flat_map(|r| r.dims.keys()).filter(|d| !filter.contains_key(*d)).collect();
-    if !whole || there.is_empty() || !dims.into_iter().all(|d| held(&mine[..], d).is_subset(&held(&there[..], d))) {
-        return None;
+    let (Some(mine_want), Some(there_want)) = (want(false), want(true)) else { return At::Unsupported };
+    let pick = |want: &[(&String, Vec<String>)]| -> Vec<&Row> {
+        let at = rows.iter().filter(|r| Some(r.table.as_str()) == q["table"].as_str() && Some(r.time.as_str()) == q["time"].as_str());
+        at.filter(|r| want.iter().all(|(d, cs)| r.dims.get(*d).is_some_and(|c| cs.contains(c)))).collect()
+    };
+    let (mine, there) = (pick(&mine_want), pick(&there_want));
+    // the template's other dimensions and their codes, and its rows per combination of filter codes (dim left out)
+    let others = |rs: &[&Row]| -> Map<String, Set<String>> {
+        let mut out: Map<String, Set<String>> = Map::new();
+        for r in rs {
+            for (d, c) in r.dims.iter().filter(|(d, _)| !filter.contains_key(*d)) {
+                out.entry(d.clone()).or_default().insert(c.clone());
+            }
+        }
+        out
+    };
+    let per = |rs: &[&Row]| -> Set<usize> {
+        let mut n: Map<Vec<Option<&String>>, usize> = Map::new();
+        for r in rs {
+            *n.entry(filter.keys().filter(|d| *d != dim).map(|d| r.dims.get(d)).collect()).or_default() += 1;
+        }
+        n.into_values().collect()
+    };
+    let profile = others(&mine[..]);
+    let one = per(&mine[..]);
+    if mine.is_empty() || one.len() != 1 {
+        return At::Unsupported;
     }
-    let v: f64 = there.iter().map(|r| r.value).sum();
-    v.is_finite().then_some(v)
+    let inside: Vec<&Row> = there.iter().copied().filter(|r| profile.iter().all(|(d, cs)| r.dims.get(d).is_some_and(|c| cs.contains(c)))).collect();
+    if inside.is_empty() {
+        return At::Missing;
+    }
+    if inside.len() != there.len() {
+        return At::Unsupported;
+    }
+    if !there_want.iter().all(|(d, cs)| cs.iter().all(|c| inside.iter().any(|r| r.dims.get(*d) == Some(c)))) {
+        return At::Missing;
+    }
+    if others(&inside[..]) != profile || per(&inside[..]) != one {
+        return At::Unsupported;
+    }
+    let v: f64 = inside.iter().map(|r| r.value).sum();
+    if v.is_finite() { At::Value(v) } else { At::Unsupported }
 }
 
 /// For the leaf: each fact of a comparison set, the codes the check finds first and second over it and whether a
@@ -889,7 +934,7 @@ pub fn check_relations(html: &str, ledger: &BTreeMap<String, String>, spec: &Spe
         }
         // the set compared over: its members, and every code the request rows let the check compute alike (comparison)
         let Some((members, scoped)) = comparison(keys[0], spec, rows, facts) else {
-            off.push(format!("{shown:?}: {} has no comparison set", keys[0]));
+            off.push(format!("{shown:?}: {} has no comparison set its rows compute alike (a code of the rows it cannot read alike)", keys[0]));
             continue;
         };
         if let Some((a, b)) = members.iter().flat_map(|a| members.iter().map(move |b| (a, b))).find(|(a, b)| a.code.is_some() && a.code == b.code && a.v != b.v) {
@@ -1081,10 +1126,12 @@ pub fn check_claims(html: &str, ledger: &BTreeMap<String, String>, spec: &Spec, 
                     continue;
                 }
                 // C9: the set compared over is comparison's, the codes the rows let the check compute alike with it
-                if let Some((all, narrower)) = comparison(k, spec, rows, facts) {
-                    set.extend(all.iter().filter(|m| m.key.is_none()).map(|m| (m.label(), Some(m.v))));
-                    scoped = narrower;
-                }
+                let Some((all, narrower)) = comparison(k, spec, rows, facts) else {
+                    off.push(format!("{shown:?}: the rows hold a code of the set of {k} its definition cannot read alike (C9)"));
+                    continue;
+                };
+                set.extend(all.iter().filter(|m| m.key.is_none()).map(|m| (m.label(), Some(m.v))));
+                scoped = narrower;
                 (k.clone(), set, vec![code.to_string()], members)
             } else if let Some((same, vary)) = row_family(src, rows) {
                 let Some(subject) = same.iter().find(|r| r.src == src).and_then(|r| vary.iter().map(|d| r.dims.get(d).cloned()).collect::<Option<Vec<_>>>())
@@ -1918,6 +1965,30 @@ mod tests {
         said("M8 a computed code above data-a", &page, &portugal_at(0.70), "does not hold");
         said("M8b a computed code above data-b", &page, &portugal_at(0.60), "does not hold");
         assert_eq!(comparisons(&portugal_at(0.70).0, &portugal_at(0.70).3, &portugal_at(0.70).1)["share.fossil.PL"]["first"], "PT");
+        // M9: a row of Portugal's in a second unit, under its numerator's or its denominator's codes: never summed in, the
+        // comparison refused and nothing handed to the leaf
+        for siec in ["G3000", "TOTAL"] {
+            let mut tj = r.clone();
+            let mut extra = tj.3.iter().find(|x| x.dims["geo"] == "PT" && x.dims["siec"] == siec).unwrap().clone();
+            extra.dims.insert("unit".into(), "TJ".into());
+            extra.src = extra.src.replace(".GWH.", ".TJ.");
+            extra.value *= 3.6;
+            tj.3.push(extra);
+            assert!(comparison("share.fossil.PL", &tj.0, &tj.3, &tj.1).is_none(), "{siec}");
+            assert!(comparisons(&tj.0, &tj.3, &tj.1).get("share.fossil.PL").is_none(), "{siec}");
+            said(&format!("M9 a second-unit row under {siec}"), &page, &tj, "cannot read alike");
+        }
+        // M10: a definition with a key the check does not apply (not_eu) while the rows hold a code to compute by it: the
+        // comparison refused, not scoped out; with no such code the key is never read
+        let mut keyed = transport();
+        keyed.0.facts.iter_mut().filter(|(k, _)| k.starts_with("tra.")).for_each(|(_, q)| q["not_eu"] = json!("geo"));
+        let kpage = share_page(&keyed.2, "next", ("FR", "share.tra.FR"), ("DE", "share.tra.DE"));
+        assert_eq!(share_checks(&kpage, &keyed), (Vec::new(), Vec::new()), "no code to compute: the key is not read");
+        let mut more = keyed.clone();
+        more.3.extend(transport_rows("PL", Some(250.0)));
+        assert!(comparison("share.tra.FR", &more.0, &more.3, &more.1).is_none());
+        let koff = share_checks(&scoped_page(&more.2, "next", ("FR", "share.tra.FR"), ("DE", "share.tra.DE")), &more).0;
+        assert!(koff.iter().any(|f| f.contains("cannot read alike")) && check_numbers(&scoped_page(&more.2, "next", ("FR", "share.tra.FR"), ("DE", "share.tra.DE")), &more.2, &[]).is_empty(), "M10 {koff:?}");
         // the share set
         alone("F6 no comparison word", &page.replacen(&relation_words("next")[0], "x", 1), &r);
         alone("F7 the two entries swapped", &scoped_page(&l, "next", ie, pl), &r);
@@ -2047,6 +2118,11 @@ mod tests {
         assert_eq!(comparison("v.A", &other.0, &other.1, &other.2).map(|(m, s)| (m.len(), s)), Some((3, true)));
         assert!(checks(&value_note(&other.3, ""), &other).iter().any(|f| f.contains("do not say")), "a scoped value note, no phrase");
         assert_eq!(checks(&value_note(&other.3, &lead), &other), Vec::<String>::new(), "a scoped value note with the phrase");
+        // M9b: D's rows under the family's sector and another: never summed in; the note and the claim refused
+        let both = value_family(&[("N1", 10.0), ("N2", 60.0)]);
+        assert!(comparison("v.A", &both.0, &both.1, &both.2).is_none());
+        assert!(checks(&value_note(&both.3, ""), &both).iter().any(|f| f.contains("cannot read alike")), "M9b a note");
+        assert!(checks(&value_claim(&both.3, "fact:v.A", ""), &both).iter().any(|f| f.contains("cannot read alike")), "M9b a claim");
         // M7: claim titles
         assert_eq!(checks(&value_claim(&below.3, "fact:v.A", ""), &below), Vec::<String>::new(), "a value claim over the full set");
         assert!(checks(&value_claim(&other.3, "fact:v.A", ""), &other).iter().any(|f| f.contains("(C9)")), "M7 a scoped value claim, no phrase");
