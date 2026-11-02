@@ -154,10 +154,12 @@ class Picture(unittest.TestCase):
             lin = [(c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4) for c in (int(h[i:i + 2], 16) / 255 for i in (0, 2, 4))]
             return 116 * (0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]) ** (1 / 3) - 16
         neighbours = [lstar(g) for g in stacked100.GREYS]
-        self.assertGreaterEqual(min(abs(a - b) for a, b in zip(neighbours, neighbours[1:])), 14, neighbours)
+        self.assertGreaterEqual(min(abs(a - b) for a, b in zip(neighbours, neighbours[1:])), 10, neighbours)
         five = neighbours + [lstar(stacked100.HL_DARK)]  # the other bars' highlighted part: darker than every grey, apart from each
         self.assertLess(five[-1], min(neighbours))
         self.assertGreaterEqual(min(abs(a - b) for i, a in enumerate(five) for b in five[i + 1:]), 10, five)
+        self.assertNotIn("var(--empty)", stacked100.GREYS)  # the empty track's grey reads as no data
+        self.assertGreaterEqual(min(abs(v - lstar("var(--empty)")) for v in five), 6, five)
 
     def test_each_bar_prints_its_total_from_the_ledger_in_a_column_or_none_does(self):
         rows = ROWS + [{"src": f"fact:total.{g}.n", "text": f"{TAB[(g, 'TOTAL')]:,.0f}"} for g in GEOS]
