@@ -7,8 +7,9 @@ CHECK_KINDS, FIELD_KINDS, FOR_EACH, SCALE_KINDS, SHAPES, its CHANNELS, the op ar
 RELATIONS, CLAIM_WORDS; the rule arms of next_tree_gen.rs leaf_stops, which node-bindings.json's leaf_stops name) is a
 kind of its own. A kind is present at a commit when one of its fns is a non-test fn there
 (a vocabulary item: when that commit's vocabulary holds it). A step uses a present kind its added lines call a function
-of, or name a vocabulary item of (a string literal). Unregistered checks: the non-test fns of the three core files
-(next_ledger.rs, next_facts.rs, next_tree.rs) in no kind and not in CHECK_HELPERS (next_ledger.rs's test
+of, or name a vocabulary item of (a string literal). Unregistered checks: the non-test fns of the visual group's Rust
+files (next_ledger.rs CHECK_FILES, the one list the registry test also reads; before it, the three core files
+next_ledger.rs, next_facts.rs, next_tree.rs) in no kind and not in CHECK_HELPERS (next_ledger.rs's test
 every_check_is_a_registered_kind holds that at 0).
 
 A step whose head has no registry is marked pre-registry and classified by the registry at --registry (default: the
@@ -22,9 +23,9 @@ import re
 import subprocess
 import sys
 
-CORE = ("src/next_ledger.rs", "src/next_tree.rs", "src/next_facts.rs")
-SHORT = {"src/next_ledger.rs": "ledger", "src/next_facts.rs": "facts", "src/next_tree.rs": "tree"}
-DIFFED = ("runtime/page_tree/node-bindings.json", "src/next_tree_gen.rs", *CORE, "src/next_leaf.rs", "src/next_visual.rs",
+# the files a registry with no CHECK_FILES (and v2) reads
+CORE = (("ledger", "src/next_ledger.rs"), ("tree", "src/next_tree.rs"), ("facts", "src/next_facts.rs"))
+DIFFED = ("runtime/page_tree/node-bindings.json", "src/next_tree_gen.rs", "src/next_leaf.rs", "src/next_visual.rs",
           "runtime/leaves_py")
 STEPS = [("P4a-1 bars", "9e7dbc20", "2b069404"), ("P4a-2 map circles and change bars", "3316afa1", "144054b8"),
          ("P4b composition", "144054b8", "ee1cffe4"), ("P4b-5 share comparison and scope", "c72a2d74", "99b701b9")]
@@ -94,15 +95,16 @@ def non_test_fns(t):
     return out
 
 
-def fns_at(c):
-    """{"ledger::name", ...}: the non-test fns of the core files at c."""
-    return {f"{SHORT[f]}::{n}" for f in CORE for n in non_test_fns(show(c, f))}
+def fns_at(c, files=CORE):
+    """{"ledger::name", ...}: the non-test fns at c of files ((short name, path), ...)."""
+    return {f"{short}::{n}" for short, f in files for n in non_test_fns(show(c, f))}
 
 
 # ---- the registry
 
 def registry(c):
-    """(kinds {name: (vocab, [fn])}, helpers [fn]) of next_ledger.rs at c, or None when it has no registry."""
+    """(kinds {name: (vocab, [fn])}, helpers [fn], files ((short, path), ...)) of next_ledger.rs at c, or None when it
+    has no registry (files: its CHECK_FILES, else the three core files)."""
     led = show(c, "src/next_ledger.rs")
     if "pub const CHECK_REGISTRY" not in led: return None
     reg = led[led.index("pub const CHECK_REGISTRY"):]
@@ -111,7 +113,11 @@ def registry(c):
     for name, vocab, fns in re.findall(r'^\s*\("([\w.]+)", "([^"]*)", &\[([^\]]*)\]\),', reg, re.M):
         kinds[name] = (vocab, re.findall(r'"(\w+::\w+)"', fns))
     hel = led[led.index("pub const CHECK_HELPERS"):]
-    return kinds, re.findall(r'"(\w+::\w+)"', hel[:hel.index("\n];")])
+    files = CORE
+    if "pub const CHECK_FILES" in led:
+        cf = led[led.index("pub const CHECK_FILES"):]
+        files = tuple(re.findall(r'\("(\w+)", "([\w/.]+)"\)', cf[:cf.index("\n];")]))
+    return kinds, re.findall(r'"(\w+::\w+)"', hel[:hel.index("\n];")]), files
 
 
 def vocab_items(c, ref):
@@ -139,10 +145,11 @@ def vocab_items(c, ref):
 
 def kinds_at(c, reg):
     """{kind: (fn names, vocabulary items)} present at c, classified by the registry reg (from registry())."""
-    have = fns_at(c) | {f"tree_gen::{n}" for n in non_test_fns(show(c, "src/next_tree_gen.rs"))}
+    files = reg[2] if any(s == "tree_gen" for s, _ in reg[2]) else (*reg[2], ("tree_gen", "src/next_tree_gen.rs"))
+    have = fns_at(c, files)
     out = {}
     for name, (vocab, fns) in reg[0].items():
-        if any(f in have for f in fns): out[f"kind:{name}"] = ([f.split("::")[1] for f in fns if f in have], [])
+        if any(f in have for f in fns): out[f"kind:{name}"] = ([f for f in fns if f in have], [])
         if vocab:
             for item in vocab_items(c, vocab): out[f"{name}:{item}"] = ([], [item])
     return out
@@ -151,7 +158,7 @@ def kinds_at(c, reg):
 def unlisted(c, reg):
     """The non-test fns at c the registry reg holds in no kind and not as a helper."""
     listed = {f for _, fns in reg[0].values() for f in fns} | set(reg[1])
-    return sorted(fns_at(c) - listed)
+    return sorted(fns_at(c, reg[2]) - listed)
 
 
 # ---- v2, kept for comparison (it now skips #[cfg(test)] items instead of cutting the file at the first one)
@@ -180,14 +187,29 @@ def v2(b, h, a):
         t = re.escape(k.split(":", 1)[1].split("/")[0] if ":" in k else k)
         return bool(re.search(rf"\b{t}\(", a)) if k.startswith("fn:") else bool(re.search(rf'"{t}"|\b{t}\(', a))
     old = [k for k in vb if k in vh and named(k)]
-    return len(old), len(new)
+    return len(old), len(new)  # v2 reads the added lines as one text
 
 
 # ---- a step
 
-def added(b, h):
-    d = git("diff", "-U0", b, "--", *DIFFED) if h == "WORKTREE" else git("diff", "-U0", b, h, "--", *DIFFED)
-    return "\n".join(x[1:] for x in d.splitlines() if x.startswith("+") and not x.startswith("+++"))
+def added(b, h, files):
+    """The step's added lines: all of them, and by file."""
+    paths = sorted({*DIFFED, *(f for _, f in files)})
+    d = git("diff", "-U0", b, "--", *paths) if h == "WORKTREE" else git("diff", "-U0", b, h, "--", *paths)
+    by, cur = {}, None
+    for x in d.splitlines():
+        if x.startswith("+++"): cur = x[6:] if x.startswith("+++ b/") else None
+        elif x.startswith("+") and cur: by.setdefault(cur, []).append(x[1:])
+    by = {f: "\n".join(v) for f, v in by.items()}
+    return "\n".join(by.values()), by
+
+
+def imports(c, f):
+    """{module: {name, ...}} a Rust file at c brings in by `use crate::<module>::...`."""
+    out = {}
+    for mod, body in re.findall(r"use crate::(\w+)::(\{[^}]*\}|\w+)", show(c, f)):
+        out.setdefault(mod, set()).update(re.findall(r"\w+", body))
+    return out
 
 
 def pct(o, n):
@@ -196,13 +218,23 @@ def pct(o, n):
 
 def step(name, b, h, ref):
     """Kinds classified by the head's registry, or (pre-registry) by the registry at ref."""
-    a = added(b, h)
     reg, tag = registry(h), ""
     if reg is None: reg, tag = registry(ref), f" [pre-registry: classified by the registry at {ref}]"
+    a, by = added(b, h, reg[2])
     kb, kh = kinds_at(b, reg), kinds_at(h, reg)
+    path = dict(reg[2]) | {"tree_gen": "src/next_tree_gen.rs"}
+    def called(f):
+        """A call of the fn: bare in its own file (not a method call `.name(`, as std's `.find(`, and not its definition),
+        or by its module path anywhere (`next_nodes::find(`)."""
+        short, fn = f.split("::")
+        p = path[short]; mod = os.path.splitext(os.path.basename(p))[0]
+        bare = rf"(?<![.\w:])(?<!fn ){re.escape(fn)}\("
+        if re.search(bare, by.get(p, "")) or re.search(rf"\b{mod}::{re.escape(fn)}\(", a): return True
+        # or bare in a file that imports it (`use crate::next_nodes::{find, ...}`)
+        return any(fn in imports(h, q).get(mod, ()) and re.search(bare, t) for q, t in by.items() if q.endswith(".rs"))
     def used(k):
         fns, items = kh[k]
-        return any(re.search(rf"\b{re.escape(f)}\(", a) for f in fns) or any(re.search(rf'"{re.escape(i)}"', a) for i in items)
+        return any(called(f) for f in fns) or any(re.search(rf'"{re.escape(i)}"', a) for i in items)
     new = sorted(k for k in kh if k not in kb)
     old = sorted(k for k in kh if k in kb and used(k))
     un = unlisted(h, reg)

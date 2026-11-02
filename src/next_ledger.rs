@@ -1045,13 +1045,29 @@ pub fn claim_words() -> Value {
     Value::Object(CLAIM_WORDS.iter().map(|(k, w)| (k.to_string(), Value::from(w.to_vec()))).collect())
 }
 
-/// The core's check kinds, in one place (owner 11-02: a step's reuse counts only kinds registered here, and a check
-/// function outside them is an unregistered check, which must be none). Each kind: its name, the vocabulary it is read by
-/// where that already lives in the core (`next_tree::CHECK_KINDS` and the like, named, not copied; "" for a kind whose
-/// words are its code), and the functions that implement it, `<file>::<fn>` (ledger next_ledger.rs, facts next_facts.rs,
-/// tree next_tree.rs). Every non-test fn of those three files is in a kind or in CHECK_HELPERS (the test below holds it);
-/// scripts/reuse_rate.py reads both tables at each commit. Kept here because this file holds the visual group's other
-/// check vocabularies (RELATIONS, CLAIM_WORDS) and the checks every page meets.
+/// The visual group's Rust files, each with the short name its functions go by in CHECK_REGISTRY and CHECK_HELPERS: every
+/// `.rs` file runtime/pi/groups.json gives the visual group (the test below holds the two lists equal), and the one list
+/// scripts/reuse_rate.py reads.
+#[allow(dead_code)] // read by its test and by scripts/reuse_rate.py
+pub const CHECK_FILES: &[(&str, &str)] = &[
+    ("ledger", "src/next_ledger.rs"),
+    ("facts", "src/next_facts.rs"),
+    ("tree", "src/next_tree.rs"),
+    ("tree_gen", "src/next_tree_gen.rs"),
+    ("leaf", "src/next_leaf.rs"),
+    ("visual", "src/next_visual.rs"),
+    ("nodes", "src/next_nodes.rs"),
+    ("render", "src/next_render.rs"),
+    ("shape", "src/shape_registry.rs"),
+];
+
+/// The visual group's check kinds, in one place (owner 11-02: a step's reuse counts only kinds registered here, and a
+/// check function outside them is an unregistered check, which must be none). Each kind: its name, the vocabulary it is
+/// read by where that already lives in the group (`next_tree::CHECK_KINDS` and the like, named, not copied; "" for a kind
+/// whose words are its code), and the functions that implement it, `<file>::<fn>` (the short names of CHECK_FILES). Every
+/// non-test fn of those files is in a kind or in CHECK_HELPERS (the test below holds it); scripts/reuse_rate.py reads the
+/// three tables at each commit. Kept here because this file holds the group's other check vocabularies (RELATIONS,
+/// CLAIM_WORDS) and the checks every page meets.
 #[allow(dead_code)] // read by its test and by scripts/reuse_rate.py
 pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     // the page's numbers: every digit a marked ledger entry printed one way, or a table id the request names
@@ -1105,11 +1121,49 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     // next_tree_gen.rs leaf_stops, the one place the names are implemented; node-bindings.json leaf_stops and
     // leaf_stops_by_recipe name only those (the test below holds it)
     ("leaf_stops", "next_tree_gen::leaf_stops rules", &["tree_gen::leaf_stops"]),
+    // the generator (next_tree_gen.rs): what it refuses in a parts_of_whole declaration
+    ("tree_gen.parts_lint", "", &["tree_gen::parts_lint"]),
+    // its selects recomputed over the page input's rows, every given result held to its recomputation
+    ("tree_gen.selects_recompute", "", &["tree_gen::recompute", "tree_gen::recheck_selects", "tree_gen::with_results_of", "tree_gen::selects_of", "tree_gen::given_of", "tree_gen::with_result"]),
+    // a fill fact held to the page's rows, its chosen codes select references; one no select holds refuses
+    ("tree_gen.facts_held", "", &["tree_gen::held_to_page", "tree_gen::as_refs", "tree_gen::code_ref"]),
+    // the registry's checks put on the page tree, per page and per external node
+    ("tree_gen.registry_checks", "", &["tree_gen::checks_of"]),
+    // the leaf bridge (next_leaf.rs): every knob a page sets against the leaf registry's ranges
+    ("leaf.style", "", &["leaf::check_style"]),
+    // a layer's reply taken onto the panel or refused: sources, positions, overlaps, dropped items, svg markup
+    ("leaf.reply", "", &["leaf::take", "leaf::faults", "leaf::dropped_items", "leaf::text_box", "leaf::turn", "leaf::corners", "leaf::bounds", "leaf::overlap", "leaf::on_line", "leaf::drawn_texts", "leaf::svg_markup", "leaf::strs"]),
+    // the page holds each layer's bytes as Rust took them, once
+    ("leaf.page_holds_layers", "", &["leaf::held", "leaf::element", "leaf::unseen", "leaf::svgs", "leaf::drawing"]),
+    // an illustration strip is line art in the page's colours only
+    ("leaf.strip", "", &["leaf::strip_faults"]),
+    // the bake changes no text and no mark of the page
+    ("leaf.bake_keeps_text", "", &["leaf::bake", "leaf::read"]),
+    // the whole page as written: no placeholder left, no month read from two periods
+    ("leaf.page", "", &["leaf::check_leaf_page", "leaf::placeholders", "leaf::split_months"]),
+    // the group command (next_visual.rs): each external layer prints the geometry the core placed
+    ("visual.drawn_check", "", &["visual::drawn_checked", "visual::attr", "visual::tags_in", "visual::circles_drawn"]),
+    // the browser check of the page, a pass only for these bytes
+    ("visual.browser_check", "", &["visual::browser_check", "visual::passed"]),
+    ("visual.one_mark_per_period", "", &["visual::one_mark_per_period"]),
+    // the node registry (next_nodes.rs): a knob set within its range, else refused with the range and one example
+    ("nodes.knob_range", "", &["nodes::check", "nodes::range_text", "nodes::set", "nodes::find"]),
+    // a node's registration: defaults in range, ranges sound, no name twice
+    ("nodes.registration", "", &["nodes::check_info"]),
+    // the Rust column page (next_render.rs): every number its spec prints, for the number checks to read
+    ("render.spec_numbers", "", &["render::nums", "render::of"]),
+    ("render.accent_colour", "", &["render::is_hex_colour"]),
+    // the chart matcher (shape_registry.rs): a template that cannot hold every varying dimension does not pass
+    ("shape.gate", "", &["shape::gate", "shape::judge"]),
+    // the entries that run the kinds above on a page and stop it on any failure: the core asking a node (C1-C5 before
+    // the child starts, B0-B7 and the colour checks on its reply), the generator's draw and declare, the leaf panel and
+    // page draws, the strip, the published page's bake, and the group command and its fill
+    ("entry", "", &["tree::node_draw", "tree_gen::draw", "tree_gen::declare", "leaf::draw", "leaf::draw_page", "leaf::draw_page_given", "leaf::strip", "leaf::bake_leaf_page", "visual::call", "visual::fill"]),
 ];
 
-/// The non-test fns of the three files that implement no check: JSON and HTML reading and writing (Python-compatible
-/// where the prototype's messages need it), ledger entry spellings, the word table, the stored request, the core's own
-/// drawing of a checked node and its plumbing.
+/// The non-test fns of CHECK_FILES that implement no check: JSON and HTML reading and writing (Python-compatible where
+/// the prototype's messages need it), ledger entry spellings, the word table, the stored request, drawing, layout,
+/// declarations and expansions the checks then hold, child processes, and the chart matcher's ranking.
 #[allow(dead_code)] // read by its test and by scripts/reuse_rate.py
 pub const CHECK_HELPERS: &[&str] = &[
     "ledger::name_src", "ledger::point_entry", "ledger::dropped_entry", "ledger::esc", "ledger::unescape", "ledger::tag_parts",
@@ -1121,7 +1175,23 @@ pub const CHECK_HELPERS: &[&str] = &[
     "tree::py_str_repr", "tree::repr_into", "tree::st", "tree::dump_into", "tree::parse", "tree::ws", "tree::lit", "tree::err",
     "tree::value", "tree::number", "tree::hex4", "tree::string", "tree::walk", "tree::go", "tree::new",
     "tree::xml", "tree::num_attr", "tree::svg", "tree::bindings", "tree::registry_in_force", "tree::node_in", "tree::placed_of",
-    "tree::node_draw",
+    "tree_gen::change_fmt", "tree_gen::dec_of", "tree_gen::declared_j", "tree_gen::declares", "tree_gen::first_row_of_no_number",
+    "tree_gen::frame_knobs", "tree_gen::frame_words", "tree_gen::from", "tree_gen::ground_of", "tree_gen::held_decimals",
+    "tree_gen::in_input_order", "tree_gen::node_of", "tree_gen::number_of", "tree_gen::order_of", "tree_gen::parts_declared",
+    "tree_gen::parts_expand", "tree_gen::parts_selects", "tree_gen::place_src", "tree_gen::row_num", "tree_gen::runs_of",
+    "tree_gen::segments", "tree_gen::sub", "tree_gen::subx", "tree_gen::tree_j", "tree_gen::view_path",
+    "leaf::sampled", "leaf::node", "leaf::python", "leaf::leaves", "leaf::word", "leaf::words", "leaf::name", "leaf::knobs",
+    "leaf::registered", "leaf::stop", "leaf::start", "leaf::ask_once", "leaf::ask", "leaf::reserved", "leaf::drawn",
+    "visual::illus_strip", "visual::label_points", "visual::recipe_layers", "visual::expand",
+    "nodes::add", "nodes::add_line", "nodes::default", "nodes::default_val", "nodes::fmt", "nodes::get", "nodes::hit",
+    "nodes::layered", "nodes::list", "nodes::names", "nodes::num", "nodes::on_line", "nodes::place", "nodes::tw", "nodes::walk",
+    "nodes::within", "nodes::word",
+    "render::bar_card", "render::draw_bars", "render::draw_cards", "render::draw_header", "render::draw_hero",
+    "render::draw_highlight", "render::draw_prose", "render::draw_value_labels", "render::height", "render::mid", "render::new",
+    "render::render", "render::reserve_bars", "render::seg", "render::seg_text", "render::x",
+    "shape::axis", "shape::base", "shape::cap", "shape::collapse_time", "shape::explain", "shape::first_to_last", "shape::fit",
+    "shape::has", "shape::name", "shape::page_plan", "shape::parts_index", "shape::rank", "shape::rank_by",
+    "shape::rank_first_to_last", "shape::rows", "shape::score", "shape::template", "shape::time_index",
 ];
 
 /// The comparison set of a request row, from the request's rows alone: every series row of the same table and time, and
@@ -2710,24 +2780,46 @@ mod tests {
         }
     }
 
-    /// Every non-test fn of next_ledger.rs, next_facts.rs and next_tree.rs is in one registered check kind or in the helper
-    /// list (an unregistered check is red), each listed fn exists, none is listed twice, each vocabulary a kind names is
-    /// one its file defines, and every leaf stop node-bindings.json names is a rule of the registered leaf_stops kind.
+    /// Every non-test fn of the visual group's Rust files (CHECK_FILES, which are the visual `.rs` files of groups.json) is
+    /// in one registered check kind or in the helper list (an unregistered check is red), each listed fn exists, none is
+    /// listed twice, each vocabulary a kind names is one its file defines, and every leaf stop node-bindings.json names is a
+    /// rule of the registered leaf_stops kind.
     #[test]
     fn every_check_is_a_registered_kind() {
-        let files = [("ledger", include_str!("next_ledger.rs")), ("facts", include_str!("next_facts.rs")), ("tree", include_str!("next_tree.rs"))];
+        let files = [
+            ("ledger", "src/next_ledger.rs", include_str!("next_ledger.rs")),
+            ("facts", "src/next_facts.rs", include_str!("next_facts.rs")),
+            ("tree", "src/next_tree.rs", include_str!("next_tree.rs")),
+            ("tree_gen", "src/next_tree_gen.rs", include_str!("next_tree_gen.rs")),
+            ("leaf", "src/next_leaf.rs", include_str!("next_leaf.rs")),
+            ("visual", "src/next_visual.rs", include_str!("next_visual.rs")),
+            ("nodes", "src/next_nodes.rs", include_str!("next_nodes.rs")),
+            ("render", "src/next_render.rs", include_str!("next_render.rs")),
+            ("shape", "src/shape_registry.rs", include_str!("shape_registry.rs")),
+        ];
+        let read: Vec<(&str, &str)> = files.iter().map(|(s, p, _)| (*s, *p)).collect();
+        assert_eq!(read, CHECK_FILES, "the files this test reads are CHECK_FILES");
+        // CHECK_FILES are the visual group's .rs files, as groups.json gives them
+        let groups: Value = serde_json::from_str(include_str!("../runtime/pi/groups.json")).unwrap();
+        let mut visual: Vec<&str> = groups["files"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .filter(|(p, v)| p.ends_with(".rs") && v["group"] == "visual")
+            .map(|(p, _)| p.as_str())
+            .collect();
+        let mut ours: Vec<&str> = CHECK_FILES.iter().map(|(_, p)| *p).collect();
+        visual.sort();
+        ours.sort();
+        assert_eq!(ours, visual, "CHECK_FILES against the visual .rs files of runtime/pi/groups.json");
         let mut have = std::collections::BTreeSet::new();
-        for (short, src) in files {
+        for (short, _, src) in files {
             have.extend(non_test_fns(src).into_iter().map(|f| format!("{short}::{f}")));
         }
-        assert!(have.len() > 250, "the parse found {} fns", have.len());
+        assert!(have.len() > 400, "the parse found {} fns", have.len());
         let listed: Vec<&str> = CHECK_REGISTRY.iter().flat_map(|(_, _, fns)| fns.iter().copied()).chain(CHECK_HELPERS.iter().copied()).collect();
         let unregistered: Vec<&String> = have.iter().filter(|f| !listed.contains(&f.as_str())).collect();
         assert!(unregistered.is_empty(), "unregistered checks: {} {unregistered:?}", unregistered.len());
-        // a kind may be implemented outside the three files (leaf_stops, next_tree_gen.rs): it must exist there, but the
-        // rest of that file is not held to the registry
-        let gen = include_str!("next_tree_gen.rs");
-        have.extend(non_test_fns(gen).into_iter().map(|f| format!("tree_gen::{f}")).filter(|f| listed.contains(&f.as_str())));
         let stale: Vec<&&str> = listed.iter().filter(|f| !have.contains(**f)).collect();
         assert!(stale.is_empty(), "listed, no such fn: {stale:?}");
         let twice: Vec<&&str> = listed.iter().enumerate().filter(|(i, f)| listed[..*i].contains(f)).map(|(_, f)| f).collect();
@@ -2737,13 +2829,13 @@ mod tests {
         for (kind, vocab, fns) in CHECK_REGISTRY {
             assert!(!fns.is_empty(), "{kind}: no fn");
             if let Some((file, name)) = vocab.split_once("::") {
-                let src = files.iter().find(|(s, _)| format!("next_{s}") == file).map(|(_, s)| *s);
-                let src = src.unwrap_or(if file == "next_tree_gen" { gen } else { "" });
+                let src = files.iter().find(|(_, p, _)| p.ends_with(&format!("/{file}.rs"))).map_or("", |(_, _, s)| *s);
                 let name = name.split(' ').next().unwrap_or_default();
                 let defined = ["const", "struct", "fn"].iter().any(|k| src.contains(&format!("{k} {name}")));
                 assert!(defined, "{kind}: its vocabulary {vocab} is not defined in {file}.rs");
             }
         }
+        let gen = include_str!("next_tree_gen.rs");
         // every leaf stop node-bindings.json names is a rule the registered leaf_stops kind implements
         let rules = leaf_stop_rules(gen);
         assert!(rules.len() >= 15 && rules.contains(&"zero_end_past_frame".to_string()), "leaf_stops rules: {rules:?}");
