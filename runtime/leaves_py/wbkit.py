@@ -130,6 +130,13 @@ def txt(boxes, x, y, size, fill, inner, width, anchor="start", weight=400, tag="
     return (f'<text x="{x:.1f}" y="{y:.1f}" font-size="{size}" text-anchor="{anchor}" fill="{fill}" font-weight="{weight}"{style}>{inner}</text>')
 
 
+def shown(src):
+    """B11: the part of a fact a picture prints: its display part (fact:<k>.r, the visual group's ledger gives one when the
+    format holds more places than three significant digits need) when the request holds it, else the src as given."""
+    r = src[:-2] + ".r" if src.startswith("fact:") and src.endswith(".n") else None
+    return r if r and FX.LEDGER is not None and r in FX.LEDGER else src
+
+
 def ent(src, size_w=None):
     """(tspan marked with the ledger entry, text) for a ledger src."""
     return FX.entry(src, "tspan", None), FX.text(src)
@@ -321,7 +328,10 @@ def two_sided(sides, unit):
         segs = [nm(x[0], k), {"w": " "}, {"src": x[2], "bold": True}] + _finding_word(FINDING_WORDS["above"]) + \
             _finding_word(FINDING_WORDS["paren"], v=[nm(y[0], k), {"w": " "}, {"src": y[2], "bold": True}])
         notes.append({"side": j, "code": x[0], "segs": segs, "cmp": (FINDING_RELATION["note"], x[2], y[2])})
-    return {"side": i, "subject": a[0], "headline": head, "cmp": (FINDING_RELATION["headline"], a[2], [n[2] for n in nodes]), "notes": notes}
+    b = tops[i][1]  # B11: the dek states the subject's side as its note does, with the unit: first, its value, then the second's
+    dek = head + _finding_word(FINDING_WORDS["paren"], v=[nm(b[0], kind), {"w": " "}, {"src": b[2], "bold": True}])
+    return {"side": i, "subject": a[0], "headline": head, "cmp": (FINDING_RELATION["headline"], a[2], [n[2] for n in nodes]), "notes": notes,
+            "dek": dek, "dek_cmp": (FINDING_RELATION["note"], a[2], b[2])}
 
 
 def finding_plain(segs):

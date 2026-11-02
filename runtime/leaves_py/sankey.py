@@ -149,13 +149,18 @@ class Frame:
         # its subject is the accent, and an accent layer 1 names that is not the subject refuses (the headline names the subject)
         f.finding = None
         if k("finding") == "auto":
-            vt = lambda side, c: f.other[side]["value_text"] if c == "_other" else txt[c]
+            vt = lambda side, c: K.shown(f.other[side]["value_text"] if c == "_other" else txt[c])
             sides = [(f.kinds[side], [(c, v, vt(side, c)) for c, v in nodes], f.grand) for side, nodes in (("source", f.src_nodes), ("target", f.tgt_nodes))]
             f.finding = K.two_sided(sides, d.get("unit") or [])
         if f.finding:
             s = f.finding["subject"]
             if f.hl and f.hl != {s}: raise Refused(f"sankey: highlight {sorted(f.hl)[0]} is not the finding's subject {s}; the accent marks the node the headline names")
             f.hl = {s}
+            # B11: what a title's claim is read over (run.py title_claim): each side's kind, named nodes and merged members,
+            # the drawn cells and the flows' rows
+            f.finding["shape"] = {"sides": [(f.kinds[sd], [c for c, _ in nodes if c != "_other"], list(small)) for sd, nodes, small in
+                                            (("source", f.src_nodes, f.src_small), ("target", f.tgt_nodes, f.tgt_small))],
+                                  "cells": f.cells, "flows": d["flows"]}
         f.top, f.H = 54, 0
 
 
@@ -164,9 +169,9 @@ def _label(f, side, code):
     if code == "_other":
         o = f.other[side]; nm = K.plain(o["name"], f"other_{side} name")
         segs = K.segs(o["name"], f"other_{side} name"); name_svg = "".join(FX.entry(s, "tspan", None) if s else esc(t) for t, s in segs)
-        vt = K.ent(o["value_text"])
+        vt = K.ent(K.shown(o["value_text"]))
     else:
-        name_svg, nm = f.names[(side, code)]; vt = K.ent(f.d["node_text"][code])
+        name_svg, nm = f.names[(side, code)]; vt = K.ent(K.shown(f.d["node_text"][code]))
     return f'<tspan font-weight="700">{name_svg}</tspan> {vt[0]}', f"{nm} {vt[1]}"
 
 

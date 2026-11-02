@@ -8035,7 +8035,7 @@ mod tests {
             assert!(!page.ledger.keys().any(|k| k.contains("N900H>") && !k.starts_with(crate::next_facts::EXCLUDED_SRC)));
         });
         assert!(html.contains(r#"<g data-layer="sankey">"#), "the sankey is the page's main layer");
-        for src in ["fact:from.G3000.n", "fact:to_other.n", "name:zh_names:siec:G3000", "name:zh_names:nrg_bal:FC_OTH_NSP_E"] {
+        for src in ["fact:from.G3000.r", "fact:to_other.r", "name:zh_names:siec:G3000", "name:zh_names:nrg_bal:FC_OTH_NSP_E"] {
             assert!(html.contains(&format!(r#"data-src="{src}""#)), "{src}");
         }
         assert!(html.contains("其他来源包括：") && html.contains(FLOW_SUM_WORDS), "the members and the footnote are said");

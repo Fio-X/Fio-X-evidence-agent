@@ -14,7 +14,8 @@ use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Where a fact's ledger entries are: `fact:<key>` its number with its unit, `fact:<key>.n` the number alone (for a layout
-/// that states the unit once), `fact:<key>.t` its period, `fact:<key>.tick<i>` the i-th tick of an axis running to it.
+/// that states the unit once), `fact:<key>.t` its period, `fact:<key>.tick<i>` the i-th tick of an axis running to it,
+/// `fact:<key>.r` a value fact's number alone at fewer places (display).
 pub const FACT_SRC: &str = "fact:";
 
 /// Where a year a table's rows cover is: `period:<table>:<year>`, its text the year; a month is two entries read from
@@ -43,7 +44,7 @@ pub const EXCLUDED_SRC: &str = "excluded:";
 pub const EXCLUDED_TEXT: &str = "excluded by registry";
 
 /// Where a series row was read (the series, its row key, period and column): what makes its table one a page dates.
-const SERIES_SRC: &str = "series:";
+pub(crate) const SERIES_SRC: &str = "series:";
 
 /// The record columns a page prints whole, as the cell gives them (`record:<table>/<i>:<column>`): a source's name, which
 /// may hold a regulation's number, and a thing's name (a pipeline's, 北溪1号), which may hold a digit. Each is rechecked
@@ -867,6 +868,23 @@ pub fn num(f: &Fact, fmts: &Value, part: Part) -> Result<Num, String> {
     })
 }
 
+/// A value fact's display part (`fact:<key>.r`): its number alone at the places three significant digits need (a whole
+/// number from 100 up), never more than its format's, with a comma between thousands; None when that is its format's own
+/// places (the page prints `.n`) or it is no value fact in a scaled format. Err for a format the spec does not hold.
+pub fn display(f: &Fact, fmts: &Value) -> Result<Option<Num>, String> {
+    if f.op != "value" || matches!(f.fmt.as_str(), "pct" | "n" | "x") {
+        return Ok(None);
+    }
+    let (scale, dec, _) = scaled(f, fmts, &f.fmt)?;
+    let x = f.v * scale;
+    if !x.is_finite() {
+        return Ok(None);
+    }
+    let whole = if x.abs() >= 1.0 { fixed(x.abs().trunc(), 0, false).len() } else { 0 };
+    let places = dec.min(3usize.saturating_sub(whole));
+    Ok((places < dec).then(|| Num { src: format!("{FACT_SRC}{}.r", f.key), value: f.v, text: fixed(x, places, true) }))
+}
+
 /// The ticks of an axis from 0 to a fact (0 left out), in the fact's format without its unit: steps of 1, 2, 5 or 10
 /// times a power of ten in the printed unit, the largest that gives at least `MIN_TICKS` ticks up to the top, and never
 /// finer than the format's last printed place (with `dec` 0 a top of 2 gets 1, 2, not 0.5, 1, 1.5, 2 printed as 0, 1, 2,
@@ -1004,7 +1022,8 @@ pub fn date_parts(row: &Row, column: &str) -> Result<[Num; 3], String> {
     Ok([part(0..4, "y")?, part(5..7, "m")?, part(8..10, "d")?])
 }
 
-/// Every entry a leaf may print, src to text: per fact its text, its bare number and its period's parts (`.t.y`, then
+/// Every entry a leaf may print, src to text: per fact its text, its bare number, its display part when it has one
+/// (display) and its period's parts (`.t.y`, then
 /// `.t.m` or `.t.h`, whichever the period has); per series table its years and months; per record row its date's parts
 /// when the date cell is a date, and each `RECORD_TEXT` cell whole; and the ticks of an axis running to each fact whose
 /// query says `"axis": true` (ticks), the only facts a leaf draws an axis to. Err names each fact whose text, bare number
@@ -1024,6 +1043,9 @@ pub fn leaf_ledger(
                 }
                 Err(e) => off.push(e),
             }
+        }
+        if let Ok(Some(n)) = display(f, &spec.fmts) {
+            out.insert(n.src, n.text);
         }
         if spec.facts.iter().any(|(k, q)| *k == f.key && q["axis"] == json!(true)) {
             match ticks(f, &spec.fmts) {
@@ -1326,7 +1348,7 @@ pub fn recheck(
             Some((k, t)) if ["y", "m", "h"].contains(&t) && k.ends_with(".t") => {
                 (&k[..k.len() - 2], &rest[k.len() - 1..])
             }
-            Some((k, t)) if t == "n" || t == "t" || t.starts_with("tick") => (k, t),
+            Some((k, t)) if t == "n" || t == "r" || t == "t" || t.starts_with("tick") => (k, t),
             _ => (rest, ""),
         };
         let Some(f) = by_key.get(key) else {
@@ -1336,6 +1358,7 @@ pub fn recheck(
         let want = match tail {
             "" => num(f, &spec.fmts, Part::Text),
             "n" => num(f, &spec.fmts, Part::Bare),
+            "r" => display(f, &spec.fmts).and_then(|n| n.ok_or_else(|| format!("{key} has no display part"))),
             "t" => num(f, &spec.fmts, Part::Period),
             "t.y" => num(f, &spec.fmts, Part::Year),
             "t.m" => num(f, &spec.fmts, Part::Month),
@@ -2483,5 +2506,58 @@ mod tests {
         assert!(compute(&held, &rows).unwrap_err().contains("the registry leaves G>TRA out, and the row series:t/A.G.TRA:2024:OBS_VALUE holds it"));
         let none = Spec { facts: vec![("x".into(), q(json!([])))], ..spec };
         assert!(compute(&none, &rows).unwrap_err().contains("excluded names no pair"));
+    }
+
+    /// B11: a value fact's display part (`.r`) holds three significant digits, never more places than its format's, and is
+    /// in the ledger only when that is fewer places; the recheck recomputes it, a made-up one refused, one where the fact
+    /// has none too. Other formats and ops have none.
+    #[test]
+    fn the_display_part_rounds_to_three_significant_digits_and_is_rechecked() {
+        let f = |key: &str, op: &str, v: f64, fmt: &str| Fact {
+            key: key.into(),
+            op: op.into(),
+            v,
+            t: None,
+            n: None,
+            who: Vec::new(),
+            fmt: fmt.into(),
+            reads: Vec::new(),
+        };
+        let fmts = json!({"k2": {"dec": 2, "scale": 1, "suffix": " u"}, "k0": {"dec": 0}, "m": {"dec": 2, "scale": 0.001}});
+        let shown = |v: f64, fmt: &str| display(&f("a", "value", v, fmt), &fmts).unwrap().map(|n| (n.src, n.text));
+        assert_eq!(shown(60699.059, "k2"), Some(("fact:a.r".into(), "60,699".into())));
+        assert_eq!(shown(45.67, "k2").unwrap().1, "45.7");
+        assert_eq!(shown(5.678, "k2"), None, "three significant digits are the format's two places");
+        assert_eq!(shown(0.631, "k2"), None, "under 1: the format's two places");
+        assert_eq!(shown(-1234.5, "k2").unwrap().1, "-1,234", "a minus kept, half to even");
+        assert_eq!(shown(15000.0, "m").unwrap().1, "15.0", "the format's scale first");
+        assert_eq!(shown(60699.0, "k0"), None, "no places: no display part");
+        for fmt in ["pct", "n", "x"] {
+            assert_eq!(shown(1234.56, fmt), None, "{fmt}");
+        }
+        assert_eq!(display(&f("a", "sum", 1234.56, "k2"), &fmts).unwrap(), None, "a value fact's only");
+        assert!(display(&f("a", "value", 1.0, "nope"), &fmts).is_err());
+        // in the ledger and rechecked, from a request's rows
+        let row = |code: &str, v: f64| Row {
+            src: format!("series:t/{code}:2024:OBS_VALUE"),
+            table: "t".into(),
+            dims: BTreeMap::from([("s".to_string(), code.to_string())]),
+            time: "2024".into(),
+            value: v,
+        };
+        let rows = vec![row("A", 60699.059), row("B", 0.631)];
+        let q = |code: &str| json!({"op": "value", "table": "t", "time": "2024", "fmt": "k2", "filter": {"s": code}});
+        let spec = Spec { facts: vec![("a".into(), q("A")), ("b".into(), q("B"))], fmts, members: None };
+        let facts = compute(&spec, &rows).unwrap();
+        let ledger = leaf_ledger(&spec, &rows, &facts).unwrap();
+        assert_eq!((ledger["fact:a.n"].as_str(), ledger["fact:a.r"].as_str()), ("60,699.06", "60,699"));
+        assert!(ledger.contains_key("fact:b.n") && !ledger.contains_key("fact:b.r"));
+        assert_eq!(recheck(&ledger, &spec, &rows, &facts), Vec::<String>::new());
+        let mut bent = ledger.clone();
+        bent.insert("fact:a.r".into(), "60,700".into());
+        assert_eq!(recheck(&bent, &spec, &rows, &facts), ["fact:a.r prints \"60,700\", the rows give \"60,699\""]);
+        let mut extra = ledger.clone();
+        extra.insert("fact:b.r".into(), "0.6".into());
+        assert_eq!(recheck(&extra, &spec, &rows, &facts), ["fact:b.r: b has no display part"]);
     }
 }

@@ -1184,7 +1184,8 @@ fn drawn(
         panel.layers.extend(given.iter().map(|(name, s)| (name.to_string(), s.svg.clone(), false)));
         let sent: serde_json::Map<String, Value> =
             panel.layers.iter().map(|(n, f, _)| (n.clone(), json!(f))).collect();
-        let mut request = json!({"phase": "page", "layers": sent});
+        // claim_words: the words check_claims reads a title's claim by, so the leaf keeps a title only where the check holds it
+        let mut request = json!({"phase": "page", "layers": sent, "claim_words": crate::next_ledger::claim_words()});
         if !given.is_empty() {
             request["sizes"] = given.iter().map(|(name, s)| (name.to_string(), json!([s.w, s.h]))).collect();
         }
@@ -1606,6 +1607,7 @@ pub fn check_leaf_page(
     off.extend(check_numbers(html, ledger, refs));
     off.extend(recheck(ledger, spec, rows, facts));
     off.extend(crate::next_ledger::check_relations(html, ledger, spec, facts));
+    off.extend(crate::next_ledger::check_claims(html, ledger, spec, facts, rows));
     off.extend(crate::next_ledger::check_accent_named(html));
     off
 }

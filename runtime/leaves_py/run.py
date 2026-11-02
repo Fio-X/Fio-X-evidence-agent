@@ -81,6 +81,9 @@ DREW = {}
 # The finding each leaf layer drew last (its Frame's finding, wbkit.two_sided; None where it has none): a column page's
 # main leaf's makes the page's headline (column_page).
 FOUND = {}
+# B11: the words a title's claim is read by (the page line's claim_words, from the visual group's check vocabulary,
+# next_ledger.rs CLAIM_WORDS); None (a core that sends none): no title is read for a claim, the page as before.
+CLAIM_WORDS = None
 
 
 def leaf_frame(Frame, f, key, fixed=None, by_hero=None):
@@ -234,6 +237,7 @@ class Panel:
         p.node = req.get("node")
         if p.node not in KINDS: raise FX.Refused(f"no page recipe {p.node}; e.g. one of {'|'.join(KINDS)}")
         k = req["knobs"]; spec = k["spec"]; FX.TABLES = tables(req["rows"]); geo.NE = k.get("shapes"); prod.NAMES = k.get("labels") or {}
+        p.raw = [r for r in req["rows"] if isinstance(r.get("dims"), dict)]  # B11: the request's series rows, a claim's values
         FX.MEMBERS = list(k["members"]) if k.get("members") else None
         FX.LEDGER = {r["src"]: r["text"] for r in req["rows"] if "text" in r} or None; FX.SEGS = k.get("segs")
         if FX.LEDGER is not None: fact_times(spec)
@@ -393,21 +397,24 @@ def column_page(panel, got, sizes):
         off.append("page: the illustration strip comes with no size [w, h]")
     if off: return {"refused": off}
     box = re.sub(r"^<(\w+)", r'<\1 data-layer="bignums"', got["bignums"], count=1) if "bignums" in got else None
-    found, said = FOUND.get(f.main), spec  # the chart's label and long description keep the text step's words, as before
+    found, said, dek = FOUND.get(f.main), spec, None  # the chart's label and long description keep the text step's words, as before
     if found:
-        spec, why = headline(spec, found, got[f.main])
+        spec, why = headline(spec, found, got[f.main], panel.raw, CLAIM_WORDS)
         if why: return {"refused": why}
+        dek = spec.pop("_dek", None)
     unit = FX.worded(spec, panel.c.F, "unit", spec["hero"]["unit"]) if spec["hero"].get("unit") else ""
     pic = "".join(f'<g data-layer="{n}">{got[n]}</g>' for n in MAP_LAYERS if n in need)
     hero = hooked(column.column_shell(f, f'<g data-layer="{f.main}">{got[f.main]}</g>', unit, pic, f.main), panel.c, said, column_hooks(f.main))
     if isinstance(hero, list): return {"refused": hero}
     strip = column.strip_shell(got["illus_strip"], *wh) if "illus_strip" in got else ""
-    html = scmp.shell(panel.c, spec, scmp.page_head(panel.c, spec, box=box, wide=box is None) + hero + strip, column.CSS)
+    head = scmp.page_head(panel.c, spec, box=box, wide=box is None)
+    if dek is not None: head = re.sub(r'<p class="dek">.*?</p>', lambda m: f'<p class="dek">{dek}</p>', head, count=1, flags=re.S)
+    html = scmp.shell(panel.c, spec, head + hero + strip, column.CSS)
     left = placeholders(html)
     return {"refused": [f"page: the page still holds the placeholder {k}" for k in left]} if left else {"html": html}
 
 
-def headline(spec, found, svg):
+def headline(spec, found, svg, raw=(), words=None):
     """The page's title from its main leaf's finding (P5, wbkit.two_sided), as layer 1's title_and_kicker does with a
     headline: the finding's headline is the title, the title the text step gave the kicker (the kicker kept when that title
     holds a digit or a placeholder, which a chart label cannot). Refuses when the main picture's accent marks (data-code
@@ -416,11 +423,88 @@ def headline(spec, found, svg):
     if acc != {found["subject"]}: return spec, [f"page: the accent marks {sorted(acc)}, the headline's subject is {found['subject']}"]
     if not any(s.get("name") == found["subject"] for s in found["headline"]):
         return spec, [f"page: the headline does not name its subject {found['subject']}"]
+    claim = title_claim(spec.get("title"), found, spec, raw, words)
+    if claim:  # B11: the text step's title is the h1, its claim marked; the finding with its numbers is the dek
+        rel, a, b = found["dek_cmp"]
+        dek = f'<span data-cmp="{rel}" data-a="{wbkit.esc(a)}" data-b="{wbkit.esc(b)}">' + wbkit.finding_html(found["dek"], "span") + "</span>"
+        return {**spec, "title": claim, "_dek": dek}, None  # _dek: the page's dek html, column_page takes it out
     old = str(spec.get("title") or "")
     kick = old if old.strip() and not re.search(r"[{}0-9\uff10-\uff19]", old) else spec.get("kicker")
     rel, a, _ = found["cmp"]  # the set it is the max of is the page check's to derive, so the page names none
     mark = f'<span data-cmp="{rel}" data-a="{wbkit.esc(a)}">'
     return {**spec, "title": mark + wbkit.finding_html(found["headline"], "span") + "</span>", "kicker": kick}, None
+
+
+def _value(q, raw):
+    """A value fact's number as its definition reads the request rows (op value: the rows of its table and time whose dims
+    hold its filter's codes, summed), the way the visual group computes it; None for any other op."""
+    if not isinstance(q, dict) or q.get("op") != "value" or not isinstance(q.get("filter"), dict): return None
+    want = {d: set(v) if isinstance(v, list) else {v} for d, v in q["filter"].items()}
+    return sum(float(r["value"]) for r in raw if r.get("table") == q.get("table") and r.get("time") == q.get("time")
+               and all(r["dims"].get(d) in cs for d, cs in want.items()))
+
+
+def _family(k, facts):
+    """The page check's comparison set of a value fact (next_ledger.rs family): op value, same table, time and format, a filter
+    over the same one dimension."""
+    same = lambda q: (q.get("op"), q.get("table"), q.get("time"), q.get("fmt"), tuple(sorted(q["filter"])))
+    one = lambda q: isinstance(q, dict) and q.get("op") == "value" and isinstance(q.get("filter"), dict) and len(q["filter"]) == 1
+    return sorted(o for o, q in facts.items() if one(q) and one(facts[k]) and same(q) == same(facts[k]))
+
+
+def title_claim(title, found, spec, raw, words):
+    """B11: the text step's title kept as the page's h1 when it states a claim the data hold, else None (the finding's
+    headline stays the title, as before). Program rules over the model's words, the claim read from the data, never from
+    the model: the title names, by a name row's text or its first two characters, either one node of the picture (a node
+    claim: max over its fact's family, as the page check derives it) or one source and one target (a flow claim: its row
+    the max of every request row of its table and time, and its drawn cell above every other cell); a name two codes share,
+    a merged member, a digit or a {placeholder} gives no claim. Its words outside the names hold a max word, a verb that makes
+    it a conclusion and no off word (`words`, the page line's claim_words). The h1: the title with each name marked by its
+    row (a two-character name printed whole), in a span stating the claim (data-claim max, data-a the fact or row)."""
+    sh = found.get("shape"); facts = spec.get("facts") or {}
+    if not (words and sh and isinstance(title, str) and title.strip()) or FX.digit(title) or re.search(r"[{}]", title): return None
+    alias = {}
+    for j, (kind, named, small) in enumerate(sh["sides"]):
+        for c in named + small:
+            row = wbkit.name_row(c, kind)
+            if row not in (FX.LEDGER or {}): continue
+            nm = FX.text(row)
+            for al in {nm} | ({nm[:2]} if len(nm) > 2 else set()): alias.setdefault(al, set()).add((j, c, c in named, row, nm))
+    hits, taken = [], [False] * len(title)
+    for al in sorted(alias, key=len, reverse=True):
+        for m in re.finditer(re.escape(al), title):
+            if any(taken[m.start():m.end()]): continue
+            if len(alias[al]) > 1: return None
+            hits.append((m.start(), m.end(), next(iter(alias[al]))))
+            taken[m.start():m.end()] = [True] * (m.end() - m.start())
+    named = sorted({(h[2][0], h[2][1], h[2][2]) for h in hits})
+    if not named or not all(n[2] for n in named): return None
+    bare = "".join(ch for i, ch in enumerate(title) if not taken[i])
+    if not any(w in bare for w in words["max"]) or any(w in bare for w in words["off"]) or not any(w in bare for w in words["verb"]): return None
+    if len(named) == 1:  # a node: the fact whose filter is its one code, max over its family
+        (j, c, _), = named; dim = sh["sides"][j][0]
+        k = next((o for o, q in facts.items() if isinstance(q, dict) and q.get("op") == "value" and q.get("filter") == {dim: c}), None)
+        fam = _family(k, facts) if k else []
+        if len(fam) < 2: return None
+        v = {o: _value(facts[o], raw) for o in fam}
+        if not all(v[k] > v[o] for o in fam if o != k): return None
+        a = f"fact:{k}"
+    elif len(named) == 2 and {n[0] for n in named} == {0, 1}:  # a flow: its row over every row of its table and time
+        s_, t_ = (n[1] for n in sorted(named))
+        src = next((fl["value"] for fl in sh["flows"] if fl["source"] == s_ and fl["target"] == t_), None)
+        me = next((r for r in raw if r.get("src") == src), None)
+        if me is None: return None
+        same = [r for r in raw if r.get("table") == me.get("table") and r.get("time") == me.get("time")]
+        cells = sh["cells"]
+        if not all(float(me["value"]) > float(r["value"]) for r in same if r is not me): return None
+        if not all(cells.get((s_, t_), 0) > v for key, v in cells.items() if key != (s_, t_)): return None
+        a = src
+    else: return None
+    out, at = [], 0
+    for st, en, (_, _, _, row, nm) in sorted(hits):
+        out.append(wbkit.esc(title[at:st])); out.append(f'<span data-src="{wbkit.esc(row)}">{wbkit.esc(nm)}</span>'); at = en
+    out.append(wbkit.esc(title[at:]))
+    return f'<span data-claim="max" data-a="{wbkit.esc(a)}">' + "".join(out) + "</span>"
 
 
 def scmp_page(panel, got):
@@ -509,6 +593,8 @@ def main():
         name = req.get("layer")
         if req.get("phase") == "size": out = {"refused": [f"size: {off}"]} if off else {"w": panel.f.W, "h": panel.f.H}
         elif req.get("phase") == "page":
+            global CLAIM_WORDS
+            CLAIM_WORDS = req.get("claim_words")
             if off: out = {"refused": [f"page: {off}"]}
             else:
                 try: out = page(panel, req.get("layers") or {}, req.get("sizes") or {})
