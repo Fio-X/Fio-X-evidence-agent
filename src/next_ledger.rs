@@ -1045,6 +1045,85 @@ pub fn claim_words() -> Value {
     Value::Object(CLAIM_WORDS.iter().map(|(k, w)| (k.to_string(), Value::from(w.to_vec()))).collect())
 }
 
+/// The core's check kinds, in one place (owner 11-02: a step's reuse counts only kinds registered here, and a check
+/// function outside them is an unregistered check, which must be none). Each kind: its name, the vocabulary it is read by
+/// where that already lives in the core (`next_tree::CHECK_KINDS` and the like, named, not copied; "" for a kind whose
+/// words are its code), and the functions that implement it, `<file>::<fn>` (ledger next_ledger.rs, facts next_facts.rs,
+/// tree next_tree.rs). Every non-test fn of those three files is in a kind or in CHECK_HELPERS (the test below holds it);
+/// scripts/reuse_rate.py reads both tables at each commit. Kept here because this file holds the visual group's other
+/// check vocabularies (RELATIONS, CLAIM_WORDS) and the checks every page meets.
+#[allow(dead_code)] // read by its test and by scripts/reuse_rate.py
+pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
+    // the page's numbers: every digit a marked ledger entry printed one way, or a table id the request names
+    ("numbers", "", &["ledger::check_numbers", "ledger::prints", "ledger::digit_runs", "ledger::num", "ledger::label", "ledger::enter", "ledger::segs", "ledger::finish", "facts::table_id", "facts::leaf_refs"]),
+    // every fact recomputed from the request rows by its declared query (ops value, share, change, ...)
+    ("fact_recompute", "", &["facts::compute", "facts::fact", "facts::one", "facts::family", "facts::minus_family", "facts::select", "facts::word", "facts::members", "facts::finite", "facts::sum"]),
+    // every ledger entry recomputed and reprinted (its text, bare .n and display .r parts, ticks, periods, dates, names)
+    ("ledger_recheck", "", &["facts::recheck", "facts::read_entry", "facts::reads_back", "facts::leaf_ledger", "facts::who", "facts::text", "facts::scaled", "facts::fixed", "facts::tlabel", "facts::num", "facts::display", "facts::ticks", "facts::periods", "facts::months", "facts::date_parts", "facts::wording_segs"]),
+    // relation_holds: data-cmp max, next, gt over the set the request's definitions give, each named by its code's row
+    ("relations", "next_ledger::RELATIONS", &["ledger::check_relations", "ledger::relation_words", "ledger::family", "ledger::fact_key", "ledger::part_of", "ledger::member_code"]),
+    // P4b-5: a share fact's set (one varying dimension, the rest of numerator and denominator alike), same-code copies one
+    ("share_family", "", &["ledger::share_family", "ledger::share_split", "ledger::same"]),
+    // P4b-5: the set plus every code of the request rows its definition computes alike, or the comparison refused
+    ("full_set_members", "", &["ledger::comparison", "ledger::computed_at", "ledger::comparisons"]),
+    // P4b-5: over a narrowed set the words say the scope phrase (words.zh.json scope.within), over the full set they do not
+    ("scope_phrase", "", &["ledger::scope_said"]),
+    // claim_holds C1-C9: a number-free title's max claim over its derived set
+    ("claims", "next_ledger::CLAIM_WORDS", &["ledger::check_claims", "ledger::claim_list", "ledger::claim_words", "ledger::row_family"]),
+    ("accent_named", "", &["ledger::check_accent_named"]),
+    ("saturated_colours", "", &["ledger::saturated_colours"]),
+    // the page tree (next_tree.rs): its schema
+    ("tree.schema", "", &["tree::schema", "tree::is_type", "tree::full", "tree::word_c", "tree::nonempty_all", "tree::palette_id", "tree::ident_lower", "tree::pattern_match", "tree::schema_ref", "tree::schema_errors"]),
+    // its facts recomputed by the checker's own ops (the op arms of Compute)
+    ("tree.fact_ops", "next_tree::Compute ops", &["tree::fam", "tree::val", "tree::val_new"]),
+    // its selects recomputed (ranks, takes, sums) and every reference resolved
+    ("tree.selects", "", &["tree::ref_parts", "tree::is_ref", "tree::ref_id", "tree::index", "tree::resolve_ref", "tree::resolved", "tree::result_codes", "tree::dims", "tree::select_rows", "tree::plain_tie", "tree::change_from", "tree::cannot_rank", "tree::cannot_take", "tree::take_value", "tree::sel_get", "tree::root_rank", "tree::int_or_knob", "tree::sum_rows", "tree::py_fixed", "tree::py_grouped", "tree::recheck", "tree::recheck_one", "tree::strip_part"]),
+    ("tree.check_kinds", "next_tree::CHECK_KINDS", &["tree::evaluate", "tree::check_codes", "tree::named_in", "tree::names_of", "tree::is_knob", "tree::knob_problem", "tree::has_digit", "tree::pathlike", "tree::nodes_of"]),
+    // P1 lints: words (no worded number), shared fields, registered nodes
+    ("tree.lint", "", &["tree::lint", "tree::places", "tree::last_name", "tree::sha256_hex", "tree::digit_runs", "tree::words_lint", "tree::worded_number", "tree::literal_chars", "tree::shared_lint", "tree::codes_of", "tree::scope", "tree::registry_lint", "tree::scoped"]),
+    // P1 and P2 over the page (parts A and B, R10 composition, R12)
+    ("tree.page_parts", "", &["tree::part_a", "tree::part_b", "tree::spec_diff", "tree::fact_rows", "tree::r10", "tree::r12", "tree::select_rows_read", "tree::composition"]),
+    // C5: a node's registry entry names only what the core computes
+    ("tree.registry", "next_tree::FIELD_KINDS", &["tree::rows_frame_problem", "tree::circle_bound_problems", "tree::circles_registry_problems", "tree::load_registry", "tree::registry_problems", "tree::runner_allowed"]),
+    ("tree.items", "next_tree::FOR_EACH", &["tree::resolve_sel", "tree::at_path", "tree::fill_template", "tree::expand_items", "tree::cells_of"]),
+    ("tree.palette", "", &["tree::palettes", "tree::canon_hex", "tree::rgb_lin", "tree::lum", "tree::contrast", "tree::lab", "tree::chroma", "tree::de76", "tree::palette_problems"]),
+    ("tree.no_literal_colour", "", &["tree::colour_literal", "tree::tree_colour_problems", "tree::frames"]),
+    ("tree.paint_matches_scale", "next_tree::SCALE_KINDS", &["tree::registry_scale_problems", "tree::ink_on", "tree::needs_edge", "tree::printed_value", "tree::cuts_of", "tree::bin_of", "tree::k", "tree::any_missing", "tree::steps", "tree::paint_of", "tree::mark_attrs", "tree::legend_svg", "tree::paint_record", "tree::id", "tree::svg_elements", "tree::paint_problems", "tree::colour_problems"]),
+    ("tree.single_accent", "", &["tree::accent_problems"]),
+    // value-determined geometry the core recomputes (K1-K3, K11)
+    ("tree.channels", "next_tree::CHANNELS", &["tree::tw", "tree::py_round", "tree::tw_leaf", "tree::signed_room", "tree::rows_frame", "tree::signed_bars", "tree::merc", "tree::fit", "tree::project", "tree::four", "tree::expected", "tree::item_of"]),
+    // the request the core issues to a node, every number and word in it the core's
+    ("tree.node_request", "", &["tree::issue", "tree::query", "tree::fact", "tree::name", "tree::run", "tree::runs"]),
+    ("tree.content", "", &["tree::content_problems"]),
+    // B0: a reply within the allow-list
+    ("tree.reply_allow_list", "next_tree::SHAPES", &["tree::reply_problems", "tree::node_problems", "tree::shape_fields"]),
+    // B1-B7: a reply's geometry
+    ("tree.geometry", "", &["tree::coord", "tree::mbox", "tree::region", "tree::tbox", "tree::pmax", "tree::dist", "tree::union", "tree::inside", "tree::fmt2", "tree::geometry_problems"]),
+    // K3-K9: map circles
+    ("tree.map_circles", "", &["tree::view_projection", "tree::ends_then_largest", "tree::whole_or", "tree::circles_request", "tree::lens", "tree::crosses", "tree::along", "tree::pdist", "tree::circles_problems"]),
+    // what an external layer's leaf refuses before it draws (the page stops there): each rule a match arm of
+    // next_tree_gen.rs leaf_stops, the one place the names are implemented; node-bindings.json leaf_stops and
+    // leaf_stops_by_recipe name only those (the test below holds it)
+    ("leaf_stops", "next_tree_gen::leaf_stops rules", &["tree_gen::leaf_stops"]),
+];
+
+/// The non-test fns of the three files that implement no check: JSON and HTML reading and writing (Python-compatible
+/// where the prototype's messages need it), ledger entry spellings, the word table, the stored request, the core's own
+/// drawing of a checked node and its plumbing.
+#[allow(dead_code)] // read by its test and by scripts/reuse_rate.py
+pub const CHECK_HELPERS: &[&str] = &[
+    "ledger::name_src", "ledger::point_entry", "ledger::dropped_entry", "ledger::esc", "ledger::unescape", "ledger::tag_parts",
+    "ledger::comment_len", "ledger::tag_end", "ledger::attr", "ledger::elements", "ledger::text_outside", "ledger::printed",
+    "ledger::word_table", "facts::stored_request",
+    "tree::eq", "tree::num_like", "tree::num", "tree::finite", "tree::get", "tree::g", "tree::has", "tree::at", "tree::s", "tree::arr",
+    "tree::obj", "tree::is_obj", "tree::is_arr", "tree::is_null", "tree::truthy", "tree::get_mut", "tree::set", "tree::remove",
+    "tree::str", "tree::obj_of", "tree::strs", "tree::repr", "tree::dump", "tree::to_value", "tree::from_value", "tree::py_float",
+    "tree::py_str_repr", "tree::repr_into", "tree::st", "tree::dump_into", "tree::parse", "tree::ws", "tree::lit", "tree::err",
+    "tree::value", "tree::number", "tree::hex4", "tree::string", "tree::walk", "tree::go", "tree::new",
+    "tree::xml", "tree::num_attr", "tree::svg", "tree::bindings", "tree::registry_in_force", "tree::node_in", "tree::placed_of",
+    "tree::node_draw",
+];
+
 /// The comparison set of a request row, from the request's rows alone: every series row of the same table and time, and
 /// the dims whose code differs among them (the varying dims). None when `src` is no series row.
 fn row_family<'r>(src: &str, rows: &'r [Row]) -> Option<(Vec<&'r Row>, Vec<String>)> {
@@ -2523,5 +2602,159 @@ mod tests {
         // no verb of a conclusion: the check does not read the verb list (the leaf does, and falls back before it)
         let no_verb = node.replacen(title, "<span data-src=\"name:zh_names:siec:O4000XBIO\">石油</span>最大", 1);
         assert_eq!(check_claims(&no_verb, &req.3, &req.0, &req.2, &req.1), Vec::<String>::new());
+    }
+
+    // ---- the check registry (owner 11-02): no check outside a registered kind
+
+    /// The source with the insides of comments, string and char literals blanked (lengths kept), so a brace or a `fn` in
+    /// them is not read.
+    fn code_only(src: &str) -> String {
+        let b = src.as_bytes();
+        let (mut out, mut i) = (Vec::with_capacity(b.len()), 0);
+        let blank = |out: &mut Vec<u8>, s: &[u8]| out.extend(s.iter().map(|c| if *c == b'\n' { b'\n' } else { b' ' }));
+        while i < b.len() {
+            let ident_before = i > 0 && (b[i - 1].is_ascii_alphanumeric() || b[i - 1] == b'_');
+            if b[i..].starts_with(b"//") {
+                let j = b[i..].iter().position(|c| *c == b'\n').map_or(b.len(), |p| i + p);
+                blank(&mut out, &b[i..j]);
+                i = j;
+            } else if b[i..].starts_with(b"/*") {
+                let j = src[i + 2..].find("*/").map_or(b.len(), |p| i + 2 + p + 2);
+                blank(&mut out, &b[i..j]);
+                i = j;
+            } else if b[i] == b'r' && !ident_before && b[i + 1..].iter().position(|c| *c != b'#').is_some_and(|p| b[i + 1 + p] == b'"') {
+                let hashes = b[i + 1..].iter().take_while(|c| **c == b'#').count();
+                let open = i + 1 + hashes + 1;
+                let close = format!("\"{}", "#".repeat(hashes));
+                let j = src[open..].find(&close).map_or(b.len(), |p| open + p + close.len());
+                blank(&mut out, &b[i..j]);
+                i = j;
+            } else if b[i] == b'"' {
+                let mut j = i + 1;
+                while j < b.len() && b[j] != b'"' {
+                    j += if b[j] == b'\\' { 2 } else { 1 };
+                }
+                blank(&mut out, &b[i..(j + 1).min(b.len())]);
+                i = j + 1;
+            } else if b[i] == b'\'' && (b.get(i + 1) == Some(&b'\\') || src[i + 1..].chars().nth(1) == Some('\'')) {
+                let j = src[i + 1..].find('\'').map_or(b.len(), |p| {
+                    let p = if b[i + 1] == b'\\' && b[i + 2] == b'\'' { p + 1 } else { p };
+                    i + 1 + p + 1
+                });
+                blank(&mut out, &b[i..j]);
+                i = j;
+            } else {
+                out.push(b[i]);
+                i += 1;
+            }
+        }
+        String::from_utf8(out).unwrap()
+    }
+
+    /// The names of the non-test fns of a source: every `fn` outside an item marked #[cfg(test)] (that item skipped to its
+    /// closing brace, or its `;`).
+    fn non_test_fns(src: &str) -> Vec<String> {
+        let c = code_only(src);
+        let (b, mut out, mut i) = (c.as_bytes(), Vec::new(), 0);
+        while i < b.len() {
+            if c[i..].starts_with("#[cfg(test)]") {
+                let mut depth = 0;
+                while i < b.len() {
+                    match b[i] {
+                        b';' if depth == 0 => break,
+                        b'{' => depth += 1,
+                        b'}' => {
+                            depth -= 1;
+                            if depth == 0 {
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                    i += 1;
+                }
+            } else if c[i..].starts_with("fn ") && (i == 0 || !(b[i - 1].is_ascii_alphanumeric() || b[i - 1] == b'_')) {
+                let name: String = c[i + 3..].trim_start().chars().take_while(|ch| ch.is_alphanumeric() || *ch == '_').collect();
+                out.push(name);
+            }
+            i += 1;
+        }
+        out
+    }
+
+    /// The rule names next_tree_gen.rs leaf_stops implements: its match arms `"name" => ...` (not the `_` arm).
+    fn leaf_stop_rules(gen: &str) -> Vec<String> {
+        let body = &gen[gen.find("\nfn leaf_stops(").expect("next_tree_gen.rs has fn leaf_stops")..];
+        let body = &body[..body[1..].find("\nfn ").map_or(body.len(), |p| p + 1)];
+        body.lines()
+            .filter_map(|l| l.trim().strip_prefix('"')?.split_once("\" =>").map(|(name, _)| name.to_string()))
+            .collect()
+    }
+
+    /// Every name under a `leaf_stops` list or a `leaf_stops_by_recipe` object's lists, anywhere in the bindings.
+    fn named_leaf_stops(v: &Value, out: &mut Vec<String>) {
+        match v {
+            Value::Object(m) => {
+                for (k, x) in m {
+                    match (k.as_str(), x) {
+                        ("leaf_stops", Value::Array(a)) => out.extend(a.iter().filter_map(Value::as_str).map(str::to_string)),
+                        ("leaf_stops_by_recipe", Value::Object(r)) => {
+                            out.extend(r.values().flat_map(|a| a.as_array().into_iter().flatten()).filter_map(Value::as_str).map(str::to_string))
+                        }
+                        _ => named_leaf_stops(x, out),
+                    }
+                }
+            }
+            Value::Array(a) => a.iter().for_each(|x| named_leaf_stops(x, out)),
+            _ => {}
+        }
+    }
+
+    /// Every non-test fn of next_ledger.rs, next_facts.rs and next_tree.rs is in one registered check kind or in the helper
+    /// list (an unregistered check is red), each listed fn exists, none is listed twice, each vocabulary a kind names is
+    /// one its file defines, and every leaf stop node-bindings.json names is a rule of the registered leaf_stops kind.
+    #[test]
+    fn every_check_is_a_registered_kind() {
+        let files = [("ledger", include_str!("next_ledger.rs")), ("facts", include_str!("next_facts.rs")), ("tree", include_str!("next_tree.rs"))];
+        let mut have = std::collections::BTreeSet::new();
+        for (short, src) in files {
+            have.extend(non_test_fns(src).into_iter().map(|f| format!("{short}::{f}")));
+        }
+        assert!(have.len() > 250, "the parse found {} fns", have.len());
+        let listed: Vec<&str> = CHECK_REGISTRY.iter().flat_map(|(_, _, fns)| fns.iter().copied()).chain(CHECK_HELPERS.iter().copied()).collect();
+        let unregistered: Vec<&String> = have.iter().filter(|f| !listed.contains(&f.as_str())).collect();
+        assert!(unregistered.is_empty(), "unregistered checks: {} {unregistered:?}", unregistered.len());
+        // a kind may be implemented outside the three files (leaf_stops, next_tree_gen.rs): it must exist there, but the
+        // rest of that file is not held to the registry
+        let gen = include_str!("next_tree_gen.rs");
+        have.extend(non_test_fns(gen).into_iter().map(|f| format!("tree_gen::{f}")).filter(|f| listed.contains(&f.as_str())));
+        let stale: Vec<&&str> = listed.iter().filter(|f| !have.contains(**f)).collect();
+        assert!(stale.is_empty(), "listed, no such fn: {stale:?}");
+        let twice: Vec<&&str> = listed.iter().enumerate().filter(|(i, f)| listed[..*i].contains(f)).map(|(_, f)| f).collect();
+        assert!(twice.is_empty(), "listed twice: {twice:?}");
+        let names: Vec<&str> = CHECK_REGISTRY.iter().map(|(n, _, _)| *n).collect();
+        assert!(names.iter().enumerate().all(|(i, n)| !names[..i].contains(n)), "a kind named twice: {names:?}");
+        for (kind, vocab, fns) in CHECK_REGISTRY {
+            assert!(!fns.is_empty(), "{kind}: no fn");
+            if let Some((file, name)) = vocab.split_once("::") {
+                let src = files.iter().find(|(s, _)| format!("next_{s}") == file).map(|(_, s)| *s);
+                let src = src.unwrap_or(if file == "next_tree_gen" { gen } else { "" });
+                let name = name.split(' ').next().unwrap_or_default();
+                let defined = ["const", "struct", "fn"].iter().any(|k| src.contains(&format!("{k} {name}")));
+                assert!(defined, "{kind}: its vocabulary {vocab} is not defined in {file}.rs");
+            }
+        }
+        // every leaf stop node-bindings.json names is a rule the registered leaf_stops kind implements
+        let rules = leaf_stop_rules(gen);
+        assert!(rules.len() >= 15 && rules.contains(&"zero_end_past_frame".to_string()), "leaf_stops rules: {rules:?}");
+        let bindings: Value = serde_json::from_str(include_str!("../runtime/page_tree/node-bindings.json")).unwrap();
+        let mut named = Vec::new();
+        named_leaf_stops(&bindings, &mut named);
+        assert!(named.len() >= 20, "node-bindings.json leaf_stops: {named:?}");
+        let unregistered: Vec<&String> = named.iter().filter(|s| !rules.contains(s)).collect();
+        assert!(unregistered.is_empty(), "leaf stops in node-bindings.json no registered rule implements: {unregistered:?}");
+        assert!(CHECK_REGISTRY.iter().any(|(k, v, f)| *k == "leaf_stops" && v.starts_with("next_tree_gen::leaf_stops") && f == &["tree_gen::leaf_stops"]));
+        // the helper test above parses as the reuse script does: a fn in a comment, a string or a test item is no fn
+        assert_eq!(non_test_fns("fn a() {}\n// fn b()\nconst S: &str = \"fn c()\";\n#[cfg(test)]\nmod t { fn d() {} }\nfn e<'x>(c: char) -> bool { c == '}' }\n"), ["a", "e"]);
     }
 }
