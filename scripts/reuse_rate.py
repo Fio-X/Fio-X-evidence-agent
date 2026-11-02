@@ -71,7 +71,9 @@ def code_only(t):
             j = n if j < 0 else j + 1
         else:
             out.append(c); i += 1; continue
-        out.append(re.sub(r"[^\n]", " ", t[i:j])); i = j
+        blank = re.sub(r"[^\n]", " ", t[i:j])
+        if c in 'r"' and j - i >= 2: blank = '"' + blank[1:-1] + '"'  # a string keeps its quotes: a literal is seen
+        out.append(blank); i = j
     return "".join(out)
 
 
@@ -135,7 +137,29 @@ def refuses(line):
     `Halt::Stop(` / `Halt::Bad(` built, `.ok_or(` of anything but a bare name, `.ok_or_else(` (a match pattern before `=>`
     is none; `?` passing an error on is none). next_ledger.rs refuses() reads it alike."""
     line = line.split("=>", 1)[1] if "=>" in line else line
-    return bool(re.search(r"(?<![\w])Err\((?!\s*\w+\s*\))|\.ok_or\((?!\s*\w+\s*\))|Halt::(?:Stop|Bad)\(|\.ok_or_else\(", line))
+    if re.search(r"(?<![\w])Err\((?!\s*\w+\s*\))|\.ok_or\((?!\s*\w+\s*\))|Halt::(?:Stop|Bad)\(|\.ok_or_else\(", line): return True
+    # `.err(` of a message (`self.err("...")`; `.err()` is Result::err), `.map_err(` whose closure words a message
+    if re.search(r'\.err\(\s*(?:"|format!)', line): return True
+    for m in re.finditer(r"\.map_err\(", line):
+        depth, j = 1, m.end()
+        while j < len(line) and depth:
+            depth += {"(": 1, ")": -1}.get(line[j], 0); j += 1
+        if re.search(r'"|format!\(', line[m.end():j]): return True
+    # a Rejected built (not its struct or type), or a reason pushed into a rejected list
+    return bool(re.search(r"(?<![\w<])(?<!struct )Rejected\s*\{|\brejected\.(?:push|extend)\(", line))
+
+
+REFUSAL_EXAMPLES = [  # the lines next_ledger.rs every_check_is_a_registered_kind holds refuses() to, read alike here
+    ('return Err(format!("no"));', True), ('return Err("no".into());', True), ("Err(e) => return Err(e),", False),
+    ('let x = y.ok_or_else(|| format!("no"))?;', True), ("let x = y.ok_or(e)?;", False), ('let x = y.ok_or("no")?;', True),
+    ("Halt::Stop(w) => w,", False), ("return Err(stop(w));", True), ("let x = f(y)?;", False), ("let n = OkErr(e);", False),
+    ('let Some(&c) = self.b.get(self.i) else { return self.err("unexpected end") };', True),
+    ('_ => self.err(format!("no {x}")),', True), ("let e = r.err();", False),
+    ('let n = s.parse().map_err(|e| format!("number {s}: {e}"))?;', True), ("let n = s.parse().map_err(|e| e.to_string())?;", False),
+    ('let n = s.parse().map_err(lines)?; let w = "x";', False),
+    ("None => out.rejected.extend(RELATIONS.map(|relation| Rejected {", True), ("out.rejected.push(reject(why));", True),
+    ("pub struct Rejected {", False), ("pub rejected: Vec<Rejected>,", False), ("rejected: Vec::new(),", False),
+]
 
 
 def refusing(c, reg):
@@ -325,6 +349,8 @@ def main(argv):
         if argv[0] == "--repo": REPO = argv[1]
         else: ref = argv[1]
         argv = argv[2:]
+    off = [(l, want) for l, want in REFUSAL_EXAMPLES if refuses(code_only(l)) != want]
+    if off: sys.exit(f"refuses() misreads: {off}")
     if registry(ref) is None: sys.exit(f"no CHECK_REGISTRY at {ref}; pass --registry COMMIT")
     steps = [(argv[i + 2], argv[i], argv[i + 1]) for i in range(0, len(argv), 3)] if argv else STEPS
     for s in steps: step(*s, ref)

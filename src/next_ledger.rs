@@ -1091,8 +1091,9 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     ("accent_named", "", &["ledger::check_accent_named"]),
     ("saturated_colours", "", &["ledger::saturated_colours"]),
     // the page tree (next_tree.rs): its schema
-    // a page tree that is JSON the checker reads: no extra data, a number where float() takes one
-    ("tree.json_input", "", &["tree::parse", "tree::err", "tree::num"]),
+    // a page tree that is JSON the checker reads (each value, number, string and escape), no extra data, a number
+    // where float() takes one
+    ("tree.json_input", "", &["tree::parse", "tree::err", "tree::num", "tree::value", "tree::number", "tree::string", "tree::hex4"]),
     // the node the core asks: in the page tree, bound external, its runner a code file under the runtime, its content
     // rechecked before the child starts and its reply after (C1-C5, B0-B7 and the colour checks)
     ("tree.node_bound", "", &["tree::node_draw"]),
@@ -1138,7 +1139,7 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     ("tree_gen.registry_checks", "", &["tree_gen::checks_of"]),
     // a declaration the generator computes, else refused: the page input paths and knobs it reads, its dec_rule,
     // fmt_change, rows rule, line segments and frame headings, its numbers, the select its items follow
-    ("tree_gen.declaration", "", &["tree_gen::sub", "tree_gen::declares", "tree_gen::held_decimals", "tree_gen::dec_of", "tree_gen::change_fmt", "tree_gen::declared_j", "tree_gen::from", "tree_gen::view_path", "tree_gen::number_of", "tree_gen::segments", "tree_gen::frame_words"]),
+    ("tree_gen.declaration", "", &["tree_gen::sub", "tree_gen::declares", "tree_gen::held_decimals", "tree_gen::dec_of", "tree_gen::change_fmt", "tree_gen::declared_j", "tree_gen::from", "tree_gen::view_path", "tree_gen::number_of", "tree_gen::segments", "tree_gen::frame_words", "tree_gen::declare"]),
     // a parts_of_whole page stops in the registry's words: its needs, and each stop rule (the rule names parts_declared
     // reads; node-bindings.json stops name only those, the test below holds it); its expansion refuses a part with no
     // total row, a fact the declaration lacks, a format it does not compute
@@ -1187,11 +1188,12 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     ("render.page_refusals", "", &["render::new", "render::render"]),
     // the chart matcher (shape_registry.rs): a template that cannot hold every varying dimension does not pass
     ("shape.gate", "", &["shape::gate", "shape::judge"]),
-    // a slice cut to its cap by shape alone, a remaining dimension that adds up or has a total row, else refused
-    ("shape.slice_fits", "", &["shape::fit", "shape::rank_by"]),
-    // the entries that run the kinds above and refuse nothing themselves (the test below holds it): the generator's
-    // declare, the leaf panel and page draws
-    ("entry", "", &["tree_gen::declare", "leaf::draw", "leaf::draw_page", "leaf::draw_page_given"]),
+    // a slice cut to its cap by shape alone, a remaining dimension that adds up or has a total row, a first-to-last
+    // view only of a slice whose time collapses; else refused (every relation rejected with its reason)
+    ("shape.slice_fits", "", &["shape::fit", "shape::rank_by", "shape::rank_first_to_last"]),
+    // the entries that run the kinds above and refuse nothing themselves (the test below holds it): the leaf panel and
+    // page draws
+    ("entry", "", &["leaf::draw", "leaf::draw_page", "leaf::draw_page_given"]),
 ];
 
 /// The non-test fns of CHECK_FILES that implement no check: JSON and HTML reading and writing (Python-compatible where
@@ -1205,8 +1207,8 @@ pub const CHECK_HELPERS: &[&str] = &[
     "tree::get", "tree::g", "tree::has", "tree::at", "tree::s", "tree::arr", "tree::obj", "tree::is_obj",
     "tree::is_arr", "tree::is_null", "tree::truthy", "tree::get_mut", "tree::set", "tree::remove", "tree::str",
     "tree::obj_of", "tree::strs", "tree::repr", "tree::dump", "tree::to_value", "tree::from_value", "tree::py_float",
-    "tree::py_str_repr", "tree::repr_into", "tree::st", "tree::dump_into", "tree::ws", "tree::lit", "tree::value",
-    "tree::number", "tree::hex4", "tree::string", "tree::walk", "tree::go", "tree::new", "tree::xml", "tree::num_attr",
+    "tree::py_str_repr", "tree::repr_into", "tree::st", "tree::dump_into", "tree::ws", "tree::lit",
+    "tree::walk", "tree::go", "tree::new", "tree::xml", "tree::num_attr",
     "tree::svg", "tree::bindings", "tree::registry_in_force", "tree::node_in", "tree::placed_of",
     "tree_gen::frame_knobs", "tree_gen::in_input_order", "tree_gen::node_of", "tree_gen::order_of",
     "tree_gen::parts_selects", "tree_gen::place_src", "tree_gen::row_num", "tree_gen::runs_of", "tree_gen::subx",
@@ -1219,7 +1221,7 @@ pub const CHECK_HELPERS: &[&str] = &[
     "render::draw_value_labels", "render::height", "render::mid", "render::reserve_bars", "render::seg",
     "render::seg_text", "render::x", "shape::axis", "shape::base", "shape::cap", "shape::collapse_time",
     "shape::explain", "shape::first_to_last", "shape::has", "shape::name", "shape::page_plan", "shape::parts_index",
-    "shape::rank", "shape::rank_first_to_last", "shape::rows", "shape::score", "shape::template", "shape::time_index",
+    "shape::rank", "shape::rows", "shape::score", "shape::template", "shape::time_index",
 ];
 
 /// The comparison set of a request row, from the request's rows alone: every series row of the same table and time, and
@@ -2710,6 +2712,15 @@ mod tests {
         let b = src.as_bytes();
         let (mut out, mut i) = (Vec::with_capacity(b.len()), 0);
         let blank = |out: &mut Vec<u8>, s: &[u8]| out.extend(s.iter().map(|c| if *c == b'\n' { b'\n' } else { b' ' }));
+        // a string keeps its quotes, so a literal is seen (`self.err("...")` against `.err()`)
+        let quoted = |out: &mut Vec<u8>, s: &[u8]| {
+            let at = out.len();
+            blank(out, s);
+            if s.len() >= 2 {
+                let last = out.len() - 1;
+                (out[at], out[last]) = (b'"', b'"');
+            }
+        };
         while i < b.len() {
             let ident_before = i > 0 && (b[i - 1].is_ascii_alphanumeric() || b[i - 1] == b'_');
             if b[i..].starts_with(b"//") {
@@ -2725,14 +2736,14 @@ mod tests {
                 let open = i + 1 + hashes + 1;
                 let close = format!("\"{}", "#".repeat(hashes));
                 let j = src[open..].find(&close).map_or(b.len(), |p| open + p + close.len());
-                blank(&mut out, &b[i..j]);
+                quoted(&mut out, &b[i..j]);
                 i = j;
             } else if b[i] == b'"' {
                 let mut j = i + 1;
                 while j < b.len() && b[j] != b'"' {
                     j += if b[j] == b'\\' { 2 } else { 1 };
                 }
-                blank(&mut out, &b[i..(j + 1).min(b.len())]);
+                quoted(&mut out, &b[i..(j + 1).min(b.len())]);
                 i = j + 1;
             } else if b[i] == b'\'' && (b.get(i + 1) == Some(&b'\\') || src[i + 1..].chars().nth(1) == Some('\'')) {
                 let j = src[i + 1..].find('\'').map_or(b.len(), |p| {
@@ -2818,8 +2829,10 @@ mod tests {
     }
 
     /// Whether a line of a fn's code (code_only) refuses in its own words: `Err(` of anything but a bare name passed on,
-    /// a `Halt::Stop(` or `Halt::Bad(` built, an `.ok_or(` of anything but a bare name, an `.ok_or_else(`. A match
-    /// pattern before `=>` is read as no refusal, and `?` passing an error on is none.
+    /// a `Halt::Stop(` or `Halt::Bad(` built, an `.ok_or(` of anything but a bare name, an `.ok_or_else(`, an `.err(` of
+    /// a literal or a format! (`self.err("...")`; `.err()` is Result::err), a `.map_err(` whose closure words a message,
+    /// a `Rejected {` built or a reason pushed into a `rejected` list. A match pattern before `=>` is read as no refusal,
+    /// and `?` passing an error on is none. scripts/reuse_rate.py refuses() reads it alike.
     fn refuses(line: &str) -> bool {
         let line = line.split_once("=>").map_or(line, |(_, r)| r);
         let b = line.as_bytes();
@@ -2833,10 +2846,36 @@ mod tests {
             let n = r.chars().take_while(|c| c.is_alphanumeric() || *c == '_').count();
             n > 0 && r[n..].trim_start().starts_with(')')
         };
+        let message = |r: &str| r.starts_with('"') || r.starts_with("format!(");
+        // the argument of a call opened just before `rest`, to its closing bracket
+        let arg = |rest: &str| {
+            let mut depth = 1;
+            let end = rest.char_indices().find(|(_, c)| {
+                depth += match c {
+                    '(' => 1,
+                    ')' => -1,
+                    _ => 0,
+                };
+                depth == 0
+            });
+            rest[..end.map_or(rest.len(), |(i, _)| i)].to_string()
+        };
+        let rejected = line.match_indices("Rejected").any(|(i, _)| {
+            let built = line[i + "Rejected".len()..].trim_start().starts_with('{');
+            let before = &line[..i];
+            built && !before.ends_with("struct ") && !before.ends_with('<') && !before.ends_with(|c: char| c.is_alphanumeric() || c == '_')
+        });
         after("Err(").chain(after(".ok_or(")).any(|r| !passes_on(r))
             || line.contains("Halt::Stop(")
             || line.contains("Halt::Bad(")
             || line.contains(".ok_or_else(")
+            || after(".err(").any(|r| message(r.trim_start()))
+            || after(".map_err(").any(|r| {
+                let a = arg(r);
+                a.contains('"') || a.contains("format!(")
+            })
+            || rejected
+            || after("rejected.push(").chain(after("rejected.extend(")).next().is_some()
     }
 
     /// Each non-test fn's own code (code_only), the bodies of fns nested in it blanked: (name, code). A fn runs to its
@@ -2999,6 +3038,17 @@ mod tests {
             ("return Err(stop(w));", true),
             ("let x = f(y)?;", false),
             ("let n = OkErr(e);", false),
+            ("let Some(&c) = self.b.get(self.i) else { return self.err(\"unexpected end\") };", true),
+            ("_ => self.err(format!(\"no {x}\")),", true),
+            ("let e = r.err();", false),
+            ("let n = s.parse().map_err(|e| format!(\"number {s}: {e}\"))?;", true),
+            ("let n = s.parse().map_err(|e| e.to_string())?;", false),
+            ("let n = s.parse().map_err(lines)?; let w = \"x\";", false),
+            ("None => out.rejected.extend(RELATIONS.map(|relation| Rejected {", true),
+            ("out.rejected.push(reject(why));", true),
+            ("pub struct Rejected {", false),
+            ("pub rejected: Vec<Rejected>,", false),
+            ("rejected: Vec::new(),", false),
         ] {
             assert_eq!(refuses(&code_only(line)), hit, "{line}");
         }
