@@ -473,6 +473,12 @@ fn fill<'a>(
         knobs["spec"]["refs"] = json!(refs);
     }
     one_mark_per_period(&mut knobs, &facts);
+    // the comparisons the page check will judge (next_ledger::comparisons): a leaf states one only where its first and
+    // second agree, with the scope phrase where the set is narrower than the request's codes
+    let compared = crate::next_ledger::comparisons(&spec, &table_rows, &facts);
+    if compared.as_object().is_some_and(|m| !m.is_empty()) {
+        knobs["comparisons"] = compared;
+    }
     let mut all = rows.to_vec();
     all.extend(ledger.iter().map(|(src, text)| json!({"src": src, "text": text})));
     let all = Value::Array(all);

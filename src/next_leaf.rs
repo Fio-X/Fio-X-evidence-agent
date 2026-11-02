@@ -1606,7 +1606,7 @@ pub fn check_leaf_page(
     off.extend(split_months(html));
     off.extend(check_numbers(html, ledger, refs));
     off.extend(recheck(ledger, spec, rows, facts));
-    off.extend(crate::next_ledger::check_relations(html, ledger, spec, facts));
+    off.extend(crate::next_ledger::check_relations(html, ledger, spec, facts, rows));
     off.extend(crate::next_ledger::check_claims(html, ledger, spec, facts, rows));
     off.extend(crate::next_ledger::check_accent_named(html));
     off
