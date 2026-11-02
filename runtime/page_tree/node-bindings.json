@@ -1,5 +1,5 @@
 {
- "$comment": "The external bindings the visual group's page tree core (src/next_tree.rs) lays over node-registry.json: frames (the core's frame and plot box, or a rows frame the core lays out itself, K2), the pick rules the page tree generator (src/next_tree_gen.rs) writes as selects the core recomputes (picks), which layers each page recipe binds external (recipes; runtime/leaves_py/knobs.py writes them into knobs.json), and per node its binding, runner (a code file under the run's runtime/nodes/ or runtime/leaves_py/), frame, declares (what the generator writes for the flow's fill and the page tree), items (how the core expands a node's items from its binds), marks (one shape per item or part; each shape field a declared field -> channel -> scale the core recomputes, or free and held by constraints) and texts. An external entry naming anything the core does not compute is refused when the registry loads (C5). P4a-1: the bars, external on the column page; the rows frame repeats the column page leaf's own layout (column.py ColumnFrame: top, row and size are its knob defaults, the map panel before it 560 wide and 40 apart). P4a-2: the change page's bars too (one signed channel, K11, for both; their change page declaration under declares_by_recipe, the rank by change K10), and the map circles on both pages (a view frame, K3-K9; the leaf gives their land rows through its ground phase, never checked). A declaration's leaf_stops (or leaf_stops_by_recipe) lists what the layer's leaf refuses before it draws, in the leaf's order: the panel's first, then the layer's own.",
+ "$comment": "The external bindings the visual group's page tree core (src/next_tree.rs) lays over node-registry.json: frames (the core's frame and plot box, or a rows frame the core lays out itself, K2), the pick rules the page tree generator (src/next_tree_gen.rs) writes as selects the core recomputes (picks), which layers each page recipe binds external (recipes; runtime/leaves_py/knobs.py writes them into knobs.json), and per node its binding, runner (a code file under the run's runtime/nodes/ or runtime/leaves_py/), frame, declares (what the generator writes for the flow's fill and the page tree), items (how the core expands a node's items from its binds), marks (one shape per item or part; each shape field a declared field -> channel -> scale the core recomputes, or free and held by constraints) and texts. An external entry naming anything the core does not compute is refused when the registry loads (C5). P4a-1: the bars, external on the column page; the rows frame repeats the column page leaf's own layout (column.py ColumnFrame: top, row and size are its knob defaults, the map panel before it 560 wide and 40 apart). P4a-2: the change page's bars too (one signed channel, K11, for both; their change page declaration under declares_by_recipe, the rank by change K10), and the map circles on both pages (a view frame, K3-K9; the leaf gives their land rows through its ground phase, never checked). A declaration's leaf_stops (or leaf_stops_by_recipe) lists what the layer's leaf refuses before it draws, in the leaf's order: the panel's first, then the layer's own. P4b-1: the composition's stacked100, geometry leaf (its runner the leaf that lays it out, runtime/leaves_py/stacked100.py: draw asks it nothing and the leaf is given no placed geometry), declared by shape parts_of_whole: every pick a select the core recomputes (given, rank, drop_replace, zero_parts, empty_parts, set_op), the cut's stop lines its words over the core's results (max_dropped and fill_after_drop as node-registry.json pins them, lint), the facts, formats, leaf data, lines, name requests, fixed names and record templates over the page input ($path, {name} of the item or part expanded).",
  "frames": {
   "map_view": {"kind": "view", "w": 560, "inset": 12},
   "bars_rows": {
@@ -38,7 +38,7 @@
   },
   "claim_marks": {"id": "marks", "kind": "named_rule", "rule": "marks_from_claims", "inputs": {"ranked": "ranked"}, "given": "$picks.marks"}
  },
- "recipes": {"column": ["bars", "bubbles"], "change": ["bubbles", "bars"]},
+ "recipes": {"column": ["bars", "bubbles"], "change": ["bubbles", "bars"], "composition": ["stacked100"]},
  "nodes": {
   "bars": {
    "binding": "external",
@@ -205,6 +205,113 @@
    "knobs": {"r_max": 22, "r_min": 3, "nudge": 6, "circle_gap": 1, "max_overlaps": 0, "label_top": 12, "label_gap": 4, "label_sep": 8, "reach": 96, "land_cost": 60},
    "ground": {"phase": "ground"},
    "checks": [{"kind": "count_equals", "select": "$order"}, {"kind": "points_pinned"}]
+  }
+,
+  "stacked100": {
+   "binding": "external",
+   "geometry": "leaf",
+   "runner": "leaves_py/stacked100.py",
+   "declares": {
+    "shape": "parts_of_whole",
+    "needs": {"path": "composition", "words": "stacked100: main {shape.main} holds no composition"},
+    "stop_prefix": "not this shape: ",
+    "target": {"min": ["$top", {"len": "$shape.countries"}]},
+    "selects": [
+     {"id": "countries", "kind": "given", "given": "$shape.countries"},
+     {"id": "outside", "kind": "given", "given": "$outside"},
+     {"id": "groups", "kind": "given", "given": "$composition.groups_map"},
+     {
+      "id": "candidates",
+      "kind": "rank",
+      "over": {"table": "$shape.main", "by": "$shape.place", "filter": {"$composition.dim": "$composition.total"}, "time": "$shape.year"},
+      "key": "value",
+      "order": "desc",
+      "only": "select:countries",
+      "tie": {"by": "code", "outcome": "order"},
+      "one_row_per_code": true
+     },
+     {
+      "id": "bars",
+      "kind": "drop_replace",
+      "from": "candidates",
+      "target": "$target",
+      "replace": "next_in_order",
+      "check": {
+       "sum_within": {
+        "table": "$shape.main",
+        "time": "$shape.year",
+        "place": "$shape.place",
+        "dim": "$composition.dim",
+        "parts": "select:groups",
+        "total": "$composition.total",
+        "tol": {"knob": "stacked100.tol", "value": "$knob.stacked100.tol"}
+       }
+      }
+     },
+     {"id": "zero", "kind": "zero_parts", "bars": "bars", "table": "$shape.main", "time": "$shape.year", "place": "$shape.place", "dim": "$composition.dim", "parts": "select:groups"},
+     {"id": "empty", "kind": "empty_parts", "bars": "bars"},
+     {"id": "read", "kind": "set_op", "op": "union", "a": "bars", "b": "bars#dropped"},
+     {"id": "unread", "kind": "set_op", "op": "minus", "a": "candidates", "b": "read"},
+     {"id": "others", "kind": "set_op", "op": "union", "a": "unread", "b": "outside"}
+    ],
+    "stops": [
+     {"rule": "number_in_rows_read", "select": "bars", "words": "stacked100: the row {src_json} holds no number"},
+     {
+      "rule": "max_dropped",
+      "select": "bars",
+      "num": 1,
+      "den": 4,
+      "words": "stacked100: {dropped_n} of the {target} places ({dropped_codes}) have groups that do not add up to their {composition.total} at {shape.year} within {tol} of it, more than a quarter"
+     },
+     {"rule": "fill_after_drop", "select": "bars", "words": "stacked100: {drawn_n} places add up at {shape.year} after {dropped_n} left out, short of {target}, and the sum inputs hold no next place"}
+    ],
+    "items": "bars",
+    "parts": "groups",
+    "zero": "zero",
+    "empty": "empty",
+    "dropped": "bars#dropped",
+    "others": "others",
+    "facts": {
+     "item_total": {"key": "total.{item}", "q": {"op": "value", "table": "$shape.main", "filter": {"$shape.place": "{item}", "$composition.dim": "$composition.total"}, "time": "$shape.year", "fmt": "$shape.fmt"}},
+     "part_sum": {"key": "sum.{part}.{item}", "q": {"op": "value", "table": "$shape.main", "filter": {"$shape.place": "{item}", "$composition.dim": "{part_codes}"}, "time": "$shape.year", "fmt": "$shape.fmt"}},
+     "part_share": {"key": "share.{part}.{item}", "q": {"op": "share", "a": "sum.{part}.{item}", "b": "total.{item}"}},
+     "items_n": {"key": "comp_bars", "q": {"op": "n", "by": "$shape.place", "table": "$shape.main", "filter": {"$shape.place": "{items}", "$composition.dim": "$composition.total"}, "time": "$shape.year", "fmt": "n"}},
+     "dropped_sum": {"key": "drop_sum.{item}", "q": {"op": "value", "table": "$shape.main", "filter": {"$shape.place": "{item}", "$composition.dim": "{all_codes}"}, "time": "$shape.year", "fmt": "$shape.fmt"}},
+     "dropped_gap": {"key": "gap.{item}", "q": {"op": "minus", "a": "{larger}", "b": "{smaller}", "fmt": "comp_gap"}},
+     "zero_n": {"key": "zero.{part}", "q": {"op": "zeros", "table": "$shape.main", "filter": {"$shape.place": "{items}", "$composition.dim": "{part_codes}"}, "time": "$shape.year", "fmt": "n"}},
+     "others_n": {"key": "comp_others", "q": {"op": "n", "by": "$shape.place", "table": "$shape.main", "filter": {"$shape.place": "{items}", "$composition.dim": "$composition.total"}, "time": "$shape.year", "fmt": "n"}}
+    },
+    "fmts": {
+     "$shape.fmt": {"scale": 1, "dec": 0, "suffix": "$shape.suffix"},
+     "comp_gap": {
+      "when": "dropped",
+      "scale": 1,
+      "suffix": "$shape.suffix",
+      "dec_rule": {"rule": "held_decimals_read", "rows": ["dropped_totals", "sum_rows"], "max": {"const": "COMPOSITION_GAP_DEC", "value": 3}}
+     }
+    },
+    "leaf": {
+     "head": {"bar_kind": "place", "part_kind": "siec_group"},
+     "total_text": "fact:total.{item}.n",
+     "share_text": "fact:share.{part}.{item}",
+     "total_head": {"name": "$composition.dim", "code": "$composition.total"},
+     "title": {"fixed": "frames:composition", "frame": "Composition"},
+     "unit": {"fixed": "unit_short_zh:{shape.unit}", "text": "$short"},
+     "others_head": [{"w": "其余 "}, {"src": "fact:comp_others.n"}, {"w": " 个国家（按合计由大到小）："}]
+    },
+    "lines": [
+     {"each": "once", "segs": [{"w": "图中为合计最大的 "}, {"src": "fact:comp_bars.n"}, {"w": " 个国家，自上而下由大到小"}]},
+     {"each": "dropped", "segs": [{"place_name": "{item}"}, {"w": "：各组之和与合计相差 "}, {"src": "fact:gap.{item}"}, {"w": "，未列入图中，由合计次大的国家递补"}]},
+     {"each": "zero_part", "segs": [{"name": "siec_group", "code": "{part}"}, {"w": "为零的国家："}, {"list_places": "{items}", "sep": "、"}]}
+    ],
+    "names": [
+     {"kind": "$composition.dim", "codes": ["$composition.total"]},
+     {"kind": "siec_group", "codes": "{parts}", "labels": true}
+    ],
+    "hero_data": {"table": "$shape.main", "year": "$shape.year"},
+    "unit_drawn": true,
+    "record": {"bars": "items", "dropped": "dropped", "others": "others", "zero": "zero_declared"}
+   }
   }
  }
 }

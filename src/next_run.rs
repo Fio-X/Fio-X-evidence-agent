@@ -42,7 +42,7 @@ pub const MOVE_TEMPLATES: [&str; 1] = ["dumbbell"];
 /// are ranked against it, and a series of values gains no candidate from it.
 pub const FLOW_TEMPLATES: [&str; 1] = ["sankey"];
 /// The registry template whose relation (a composition) the composition recipe draws, with its stacked100 leaf node
-/// (runtime/leaves_py run.py MAIN; its data stacked100_fill), not a template this flow fills. Kept apart from
+/// (runtime/leaves_py run.py MAIN; its data the layer's declaration, next_tree_gen), not a template this flow fills. Kept apart from
 /// FILLED_TEMPLATES as FLOW_TEMPLATES is: nothing ranks a series of values against it, and no table gains a candidate
 /// from it; the page is the composition recipe's, read from the shape (composition_groups).
 pub const COMPOSITION_TEMPLATES: [&str; 1] = ["stacked_bar_100"];
@@ -1552,7 +1552,9 @@ fn ask_node(f: &Filling, out: &mut Filled, page_in: Option<&Value>) -> Result<()
     if declared.node != layer {
         return Err(format!("node {layer}: the visual group answered for node {}", declared.node));
     }
-    out.rows(declared.drawn);
+    for (row, drawn) in declared.rows {
+        if drawn { out.rows([row]) } else { out.reads([row]) }
+    }
     out.reads(declared.reads);
     for (key, value) in declared.facts {
         Filled::set(&mut out.facts, "fact", &key, value)?;
@@ -1569,19 +1571,64 @@ fn ask_node(f: &Filling, out: &mut Filled, page_in: Option<&Value>) -> Result<()
     for (key, value) in declared.leaves {
         set_leaf(out, &key, value)?;
     }
+    take_names(f.catalogue, out, &layer, (declared.names, declared.fixed))?;
+    out.composition = declared.record.or(out.composition.take());
+    out.unit_drawn |= declared.unit_drawn;
     Ok(())
+}
+
+/// The names a layer prints: each request resolved through the name table (a code it names none of stops the page) into
+/// the name rows, and the leaf's labels when the request says so; each fixed name row only one of FIXED_NAMES with its
+/// registered text, set as any layer's key.
+type NameRequests = (Vec<(String, Vec<String>, bool)>, Vec<(String, String)>);
+fn take_names(catalogue: &dyn Catalogue, out: &mut Filled, layer: &str, (requests, fixed): NameRequests) -> Result<(), String> {
+    for (kind, codes, labels) in requests {
+        let no = |missing: Vec<String>| format!("not this shape: {layer}: the name table gives no Chinese name for {kind} {}", missing.join(", "));
+        let names = catalogue.zh_names(&kind, &codes).map_err(no)?;
+        let missing: Vec<String> = codes.iter().filter(|c| !names.contains_key(*c)).cloned().collect();
+        if !missing.is_empty() {
+            return Err(no(missing));
+        }
+        for (code, zh) in names {
+            out.named.insert(format!("{LABEL_SRC}zh_names:{kind}:{code}"), json!(zh));
+            if let Some(was) = labels.then(|| out.labels.insert(code.clone(), zh.clone())).flatten().filter(|was| *was != zh) {
+                return Err(format!("not this shape: {layer}: code {code} has two names, {was} and {zh}"));
+            }
+        }
+    }
+    for (src, text) in fixed {
+        if fixed_name(&src).as_deref() != Some(text.as_str()) {
+            return Err(format!("not this shape: {layer}: fixed name {src} {text:?} is none of {FIXED_NAMES:?} or not its registered text"));
+        }
+        Filled::set(&mut out.named, "name", &src, json!(text))?;
+    }
+    Ok(())
+}
+
+/// The name rows a layer may give as fixed text, each the text it must be: a frame's heading (the registry's, shape_registry
+/// FRAMES by its relation) and the unit's short form (next_pack::unit_short); every other name comes from the name table.
+const FIXED_NAMES: [&str; 2] = ["name:frames:", "name:unit_short_zh:"];
+
+fn fixed_name(src: &str) -> Option<String> {
+    if let Some(rel) = src.strip_prefix(FIXED_NAMES[0]) {
+        let r = crate::shape_registry::RELATIONS.into_iter().find(|r| format!("{r:?}").to_lowercase() == rel)?;
+        return frame_heading(r).ok().map(str::to_string);
+    }
+    next_pack::unit_short(src.strip_prefix(FIXED_NAMES[1])?).map(str::to_string)
 }
 
 /// The page input the visual group declares and lays out a recipe's external layers over: what the flow already holds, as
 /// plain data (the recipe and its layers, the shape, the picks with the rules that made them, the main's rows, and the
-/// name scheme of the place codes, as leaf_labels asks the name table by). Nothing in it names a picture.
-fn page_input(recipe: &Recipe, shape: &Shape, picks: &Picks, main: &[Value]) -> Value {
+/// name scheme of the place codes, as leaf_labels asks the name table by; the sum inputs' rows, the main's places past the
+/// candidates, the bars' cap, the unit's short form and the composition's groups). Nothing in it names a picture.
+fn page_input(recipe: &Recipe, shape: &Shape, picks: &Picks, (main, sums): (&[Value], &[Value])) -> Value {
     let scheme = if shape.countries.iter().all(|c| c.len() == 2) { "iso2" } else { "iso3" };
     json!({"recipe": recipe.name, "order": recipe.layers,
         "shape": {"main": shape.main, "place": shape.place, "year": shape.year, "unit": shape.unit, "fmt": shape.unit.to_lowercase(),
             "suffix": next_pack::unit_short(&shape.unit).map(suffix), "countries": shape.countries},
         "picks": {"rules": recipe.picks, "ranked": picks.ranked, "marks": picks.marks, "t0": picks.t0, "t1": picks.t1},
-        "rows": main, "name_kind": scheme})
+        "rows": main, "name_kind": scheme, "sum_rows": sums, "outside": shape.outside, "top": next_params::NARROW_TOP,
+        "short": next_pack::unit_short(&shape.unit), "composition": shape.composition.as_ref().map(|c| json!({"dim": c.dim, "total": c.total, "groups": c.groups}))})
 }
 
 /// The recipe's external layers laid out over the finished fill (its words in): the visual group's NodeDraw writes the page
@@ -1638,7 +1685,7 @@ struct Filled {
     unit_drawn: bool,
     /// How a flow picture accounted for each pair its fetch asked for (sankey_fill), for the run's record.
     flow_pairs: Option<FlowPairs>,
-    /// Which candidates a composition drew, left out for their parts, or named under it (stacked100_fill), for the record.
+    /// Which candidates a composition drew, left out for their parts, or named under it (the stacked100 declaration (node-bindings.json)), for the record.
     composition: Option<Value>,
 }
 
@@ -1682,7 +1729,6 @@ const NODE_FILLS: &[(&str, NodeFill)] = &[
     ("notes", notes_fill),
     ("strip", strip_fill),
     ("sankey", sankey_fill),
-    ("stacked100", stacked100_fill),
 ];
 
 /// A filter of a fact: dimension -> code.
@@ -2141,265 +2187,13 @@ fn frame_heading(relation: Relation) -> Result<&'static str, String> {
         .ok_or_else(|| format!("the registry has no {relation:?} heading"))
 }
 
-/// The words of a composition picture (stacked100_fill), each around a count the program computes (a fact, never a digit
-/// typed here): the line that states the cut (how many places the bars are, the largest totals) and the head of the places
-/// left out, named in the same order. The head of the column of each bar's total is the total code's reviewed name.
-const COMPOSITION_CUT_WORDS: (&str, &str) = ("图中为合计最大的 ", " 个国家，自上而下由大到小");
-const COMPOSITION_OTHERS_WORDS: (&str, &str) = ("其余 ", " 个国家（按合计由大到小）：");
-/// The words around the gap of a place left out of a composition because its groups do not add up to its total: its name
-/// before, the gap (a minus fact) between, and what became of its bar after.
-const COMPOSITION_DROPPED_WORDS: (&str, &str) = ("：各组之和与合计相差 ", "，未列入图中，由合计次大的国家递补");
-/// The words of the line that names, by its name, a part that is 0 in some bars (stacked100_fill): after the part's name,
-/// and between the places' names. A part with no row in a bar is no zero and is never said with these.
-const COMPOSITION_ZERO_WORDS: (&str, &str) = ("为零的国家：", "、");
-/// The format key of that gap, and the most decimals it prints with (the decimals its rows hold, at most these).
-const COMPOSITION_GAP_FMT: &str = "comp_gap";
-const COMPOSITION_GAP_DEC: usize = 3;
-/// The facts counting a composition's bars and the places left out (op n over their total rows at the year).
-const COMPOSITION_BARS: &str = "comp_bars";
-const COMPOSITION_OTHERS: &str = "comp_others";
 /// The fact of a composition's finding (finding_of, Finding::Part): the highlighted part's share of the total of the bar
 /// where it is largest, a share of that bar's sum and total facts; the dek and the headline print it.
 const COMPOSITION_TOP: &str = "comp_top";
-/// The name kind of a composition's parts: the knowledge group's name table of the registered groups (code-names-zh.json).
-const COMPOSITION_PART_KIND: &str = "siec_group";
 
 /// The fact keys of a composition: a bar's total, a group's sum in it, and that sum's share of the total.
 fn composition_keys(group: &str, code: &str) -> [String; 3] {
     [format!("total.{code}"), format!("sum.{group}.{code}"), format!("share.{group}.{code}")]
-}
-
-/// A composition across places (hero.leaves.stacked100, as runtime/leaves_py/stacked100.py reads it), program rules over
-/// the shape composition_groups read:
-/// - one bar per place of the sum-input fetch's candidates (the shape's countries, largest total first) whose groups add up,
-///   at most next_params::NARROW_TOP, its 100% the main's total row, printed beside it (total.<code>, bare: the unit is
-///   written once in the picture's head);
-/// - in each bar one part per group, its cells the sum-input rows of the group's input codes (geometry only), its sum a
-///   fact the visual group computes (op value over the place and the group's codes: sum.<group>.<code>) and its printed
-///   share that sum over the total (op share: share.<group>.<code>); a group with no input row for the place is named
-///   empty (the leaf drops it, said), and a group's sum is never a difference of other figures;
-/// - the groups' sums, as the rows hold them, must add up to the total within the knob stacked100.tol of it (the leaf's own
-///   conservation check, the same tolerance, never widened): a candidate whose do not is no bar, the next by total takes
-///   its place, and one line by its name gives the gap (gap.<code>, a minus fact of its inputs' sum and its total, each a
-///   fact over its own rows; what the gap may be is never said); more such places than a quarter of the bars, or fewer
-///   bars than asked once one is left out, refuses the page;
-/// - one line states the cut (COMPOSITION_BARS counts the bars from their own total rows), and one names the main's other
-///   countries with a total at the year in the same order (COMPOSITION_OTHERS counts them, each by its place name): the
-///   candidates past the bars, then the countries never fetched; a place left out for its parts is never among them.
-///
-/// The groups are named by the knowledge group's name table (COMPOSITION_PART_KIND); a group it names none of refuses.
-fn stacked100_fill(f: &Filling, out: &mut Filled) -> Result<(), String> {
-    let shape = f.shape;
-    let Some(comp) = &shape.composition else {
-        return Err(format!("stacked100: main {} holds no composition", shape.main));
-    };
-    let (main, year, fmt, place) = (shape.main.as_str(), shape.year.as_str(), f.fmt.as_str(), shape.place.as_str());
-    let total_row = |code: &str| {
-        f.main.iter().find(|r| r["time"] == year && r["dims"][place] == code && r["dims"][&comp.dim] == comp.total.as_str())
-    };
-    let tol = f.catalogue.knob("stacked100", "tol")?;
-    // each candidate in total order: its groups' input rows and their sum, set against its total at the layer-1 tolerance
-    let target = next_params::NARROW_TOP.min(shape.countries.len());
-    let (mut drawn, mut dropped, mut unread): (Vec<&String>, Vec<(&String, f64, f64)>, Vec<&String>) = Default::default();
-    for code in &shape.countries {
-        if drawn.len() == target {
-            unread.push(code);
-            continue;
-        }
-        let total = total_row(code).ok_or_else(|| format!("stacked100: main {main} has no total row for {code} at {year}"))?;
-        let whole = row_value(total).ok_or_else(|| format!("stacked100: the row {} holds no number", total["src"]))?;
-        let mut sum = 0.0;
-        for r in f.companion.iter().filter(|r| r["time"] == year && r["dims"][place] == code.as_str()) {
-            sum += row_value(r).ok_or_else(|| format!("stacked100: the row {} holds no number", r["src"]))?;
-        }
-        if (sum - whole).abs() > tol * whole.abs() {
-            dropped.push((code, sum, whole));
-        } else {
-            drawn.push(code);
-        }
-    }
-    // a place left out for its parts is said and the next by total takes its bar; past a quarter of the bars, or short of
-    // them once one is left out, the page stops (a place the question names stops it too: leaf_request)
-    if dropped.len() * 4 > target {
-        let codes: Vec<&str> = dropped.iter().map(|(c, ..)| c.as_str()).collect();
-        return Err(format!(
-            "stacked100: {} of the {target} places ({}) have groups that do not add up to their {} at {year} within {tol} of it, \
-             more than a quarter",
-            codes.len(),
-            codes.join(", "),
-            comp.total
-        ));
-    }
-    if !dropped.is_empty() && drawn.len() < target {
-        return Err(format!(
-            "stacked100: {} places add up at {year} after {} left out, short of {target}, and the sum inputs hold no next place",
-            drawn.len(),
-            dropped.len()
-        ));
-    }
-    let mut bars: Vec<Value> = Vec::new();
-    let mut empty: Vec<Value> = Vec::new();
-    let (mut zero, mut zero_bars): (Vec<Value>, Vec<(String, Vec<String>)>) = Default::default();
-    for code in &drawn {
-        let total = total_row(code).expect("each drawn place's total row was read above");
-        out.rows([total.clone()]);
-        let [total_key, ..] = composition_keys("", code);
-        let q = json!({"op": "value", "table": main, "filter": filter(&[(place, code.as_str()), (comp.dim.as_str(), comp.total.as_str())]),
-            "time": year, "fmt": fmt});
-        Filled::set(&mut out.facts, "fact", &total_key, q)?;
-        let (mut cells, mut share_text) = (Map::new(), Map::new());
-        for (group, codes) in &comp.groups {
-            let held: Vec<&Value> = f
-                .companion
-                .iter()
-                .filter(|r| r["time"] == year && r["dims"][place] == code.as_str())
-                .filter(|r| r["dims"][&comp.dim].as_str().is_some_and(|c| codes.iter().any(|k| k == c)))
-                .collect();
-            if held.is_empty() {
-                empty.push(json!({"bar": code, "part": group}));
-                continue;
-            }
-            // the inputs are only read: the leaf draws their widths, the page prints the facts over them
-            out.reads(held.iter().map(|r| (*r).clone()));
-            // a part whose every code has a row at the year and every row is 0 is data, not a loss: no segment, declared
-            // with its rows (the leaf and the page check zeros_declared hold each to 0) and said in a line under the picture.
-            // A part with no row at all, or whose rows are 0 while a code of it has none, is empty: a missing row is never
-            // said as 0
-            let every_code = codes.iter().all(|k| held.iter().any(|r| r["dims"][&comp.dim] == k.as_str()));
-            let all_zero = held.iter().all(|r| row_value(r) == Some(0.0));
-            if all_zero && !every_code {
-                empty.push(json!({"bar": code, "part": group}));
-                continue;
-            }
-            if all_zero {
-                let srcs: Vec<Value> = held.iter().map(|r| r["src"].clone()).collect();
-                zero.push(json!({"bar": code, "part": group, "cells": srcs}));
-                match zero_bars.iter_mut().find(|(g, _)| *g == *group) {
-                    Some((_, bars)) => bars.push(code.to_string()),
-                    None => zero_bars.push((group.clone(), vec![code.to_string()])),
-                }
-                continue;
-            }
-            cells.insert(group.clone(), held.iter().map(|r| r["src"].clone()).collect());
-            let [_, sum_key, share_key] = composition_keys(group, code);
-            let of = Value::Object(Map::from_iter([
-                (place.to_string(), json!(code)),
-                (comp.dim.clone(), json!(codes)),
-            ]));
-            Filled::set(&mut out.facts, "fact", &sum_key, json!({"op": "value", "table": main, "filter": of, "time": year, "fmt": fmt}))?;
-            Filled::set(&mut out.facts, "fact", &share_key, json!({"op": "share", "a": sum_key, "b": total_key}))?;
-            share_text.insert(group.clone(), json!(format!("fact:{share_key}")));
-        }
-        bars.push(json!({"code": code, "total": total["src"], "total_text": format!("fact:{total_key}.n"), "cells": cells,
-            "share_text": share_text}));
-    }
-    Filled::set(&mut out.fmts, "format", fmt, json!({"scale": 1, "dec": 0, "suffix": suffix(f.short)}))?;
-    // the bars' count from their own total rows, and the places left out from theirs (read, never printed as values)
-    let of_codes = |codes: &[String]| {
-        Value::Object(Map::from_iter([(place.to_string(), json!(codes)), (comp.dim.clone(), json!(comp.total))]))
-    };
-    let count = |codes: &[String]| json!({"op": "n", "by": place, "table": main, "filter": of_codes(codes), "time": year, "fmt": "n"});
-    let drawn: Vec<String> = drawn.into_iter().cloned().collect();
-    Filled::set(&mut out.facts, "fact", COMPOSITION_BARS, count(&drawn))?;
-    let (before, after) = COMPOSITION_CUT_WORDS;
-    let mut lines = vec![json!([{"w": before}, {"src": format!("fact:{COMPOSITION_BARS}.n")}, {"w": after}])];
-    // each place left out for its parts, by its name: how far its groups' sum is from its total, a minus fact of two facts
-    // over its own rows (the larger first, so the gap prints as a size), printed with the decimals its rows hold
-    let all: Vec<&String> = comp.groups.iter().flat_map(|(_, c)| c).collect();
-    for (code, sum, whole) in &dropped {
-        let (sum_key, total_key, gap_key) = (format!("drop_sum.{code}"), format!("total.{code}"), format!("gap.{code}"));
-        let total = total_row(code).expect("each dropped place's total row was read above");
-        let inputs: Vec<&Value> = f.companion.iter().filter(|r| r["time"] == year && r["dims"][place] == code.as_str()).collect();
-        out.reads(std::iter::once(total.clone()).chain(inputs.iter().map(|r| (*r).clone())));
-        let of = Value::Object(Map::from_iter([(place.to_string(), json!(code)), (comp.dim.clone(), json!(all))]));
-        Filled::set(&mut out.facts, "fact", &sum_key, json!({"op": "value", "table": main, "filter": of, "time": year, "fmt": fmt}))?;
-        let q = json!({"op": "value", "table": main, "filter": filter(&[(place, code.as_str()), (comp.dim.as_str(), comp.total.as_str())]),
-            "time": year, "fmt": fmt});
-        Filled::set(&mut out.facts, "fact", &total_key, q)?;
-        let (a, b) = if sum > whole { (&sum_key, &total_key) } else { (&total_key, &sum_key) };
-        Filled::set(&mut out.facts, "fact", &gap_key, json!({"op": "minus", "a": a, "b": b, "fmt": COMPOSITION_GAP_FMT}))?;
-        let (before, after) = COMPOSITION_DROPPED_WORDS;
-        lines.push(json!([{"src": format!("{LABEL_SRC}zh_names:{}:{code}", if code.len() == 2 { "iso2" } else { "iso3" })}, {"w": before}, {"src": format!("fact:{gap_key}")}, {"w": after}]));
-    }
-    // each part 0 in some bars, by its name: the bars where it is 0, in total order, each by its place name; the fact
-    // zero.<group> counts their rows of 0 (each in the ledger with its series src as 0), never typed
-    for (group, bars) in &zero_bars {
-        let codes = &comp.groups.iter().find(|(g, _)| g == group).expect("a zero part is one of the groups").1;
-        let of = Value::Object(Map::from_iter([(place.to_string(), json!(bars)), (comp.dim.clone(), json!(codes))]));
-        Filled::set(&mut out.facts, "fact", &format!("zero.{group}"), json!({"op": "zeros", "table": main, "filter": of, "time": year, "fmt": "n"}))?;
-        let (after_part, sep) = COMPOSITION_ZERO_WORDS;
-        let mut line = vec![json!({"src": format!("{LABEL_SRC}zh_names:{COMPOSITION_PART_KIND}:{group}")}), json!({"w": after_part})];
-        for (k, code) in bars.iter().enumerate() {
-            if k > 0 {
-                line.push(json!({"w": sep}));
-            }
-            line.push(json!({"src": format!("{LABEL_SRC}zh_names:{}:{code}", if code.len() == 2 { "iso2" } else { "iso3" })}));
-        }
-        lines.push(Value::Array(line));
-    }
-    if !dropped.is_empty() {
-        let read: Vec<&Value> = dropped.iter().filter_map(|(c, ..)| total_row(c)).chain(f.companion.iter()).collect();
-        let dec = read.iter().filter_map(|r| r["value"].as_str()).map(|v| v.split_once('.').map_or(0, |(_, d)| d.len())).max();
-        Filled::set(&mut out.fmts, "format", COMPOSITION_GAP_FMT,
-            json!({"scale": 1, "dec": dec.unwrap_or(0).min(COMPOSITION_GAP_DEC), "suffix": suffix(f.short)}))?;
-    }
-    let mut data = json!({"bar_kind": "place", "part_kind": COMPOSITION_PART_KIND,
-        "parts": comp.groups.iter().map(|(g, _)| g.clone()).collect::<Vec<_>>()});
-    // the head of the totals' column: the total code's reviewed name (code-names-zh.json), marked with its name row as every
-    // svg text is; a total the name table names none of refuses, never printed as a word typed here
-    let total_zh = f
-        .catalogue
-        .zh_names(&comp.dim, std::slice::from_ref(&comp.total))
-        .ok()
-        .and_then(|mut names| names.remove(&comp.total))
-        .ok_or_else(|| format!("stacked100: the name table gives no Chinese name for {} {}", comp.dim, comp.total))?;
-    let total_src = format!("{LABEL_SRC}zh_names:{}:{}", comp.dim, comp.total);
-    out.named.insert(total_src.clone(), json!(total_zh));
-    data["total_head"] = json!([{"src": total_src}]);
-    // the places named under the picture: the candidates past the bars, then the countries never fetched, in total order;
-    // a place left out for its parts is said on its own line, never among them
-    let others: Vec<String> = unread.into_iter().cloned().chain(shape.outside.iter().cloned()).collect();
-    if !others.is_empty() {
-        out.reads(others.iter().filter_map(|c| total_row(c)).cloned());
-        Filled::set(&mut out.facts, "fact", COMPOSITION_OTHERS, count(&others))?;
-        let (before, after) = COMPOSITION_OTHERS_WORDS;
-        data["others"] = json!({"head": [{"w": before}, {"src": format!("fact:{COMPOSITION_OTHERS}.n")}, {"w": after}],
-            "codes": others});
-    }
-    let dropped_codes: Vec<&String> = dropped.iter().map(|(c, ..)| *c).collect();
-    out.composition = Some(json!({"bars": drawn, "dropped": dropped_codes, "others": others, "zero": zero.clone()}));
-    let groups: Vec<String> = comp.groups.iter().map(|(g, _)| g.clone()).collect();
-    let names = f.catalogue.zh_names(COMPOSITION_PART_KIND, &groups).map_err(|missing| {
-        format!("stacked100: the name table gives no Chinese name for {COMPOSITION_PART_KIND} {}", missing.join(", "))
-    })?;
-    for (code, zh) in names {
-        out.named.insert(format!("{LABEL_SRC}zh_names:{COMPOSITION_PART_KIND}:{code}"), json!(zh));
-        match out.labels.get(&code) {
-            Some(was) if *was != zh => return Err(format!("stacked100: code {code} has two names, {was} and {zh}")),
-            _ => {
-                out.labels.insert(code, zh);
-            }
-        }
-    }
-    let (head_src, unit_src) = (format!("{LABEL_SRC}frames:composition"), format!("{LABEL_SRC}unit_short_zh:{}", shape.unit));
-    for (src, text) in [(&head_src, frame_heading(Relation::Composition)?), (&unit_src, f.short)] {
-        out.named.insert(src.clone(), json!(text));
-    }
-    data["title"] = json!([{"src": head_src}]);
-    data["unit"] = json!([{"src": unit_src}]);
-    data["bars"] = Value::Array(bars);
-    if !empty.is_empty() {
-        data["empty"] = Value::Array(empty);
-    }
-    if !zero.is_empty() {
-        data["zero"] = Value::Array(zero);
-    }
-    data["lines"] = Value::Array(lines);
-    out.unit_drawn = true;
-    for (k, v) in [("table", json!(main)), ("year", json!(year))] {
-        Filled::set(&mut out.data, "hero data", k, v)?;
-    }
-    set_leaf(out, "stacked100", data)
 }
 
 /// The families of a page with two ends (two_ends): each ranked country's value at the earlier end and at the later, and its
@@ -2452,7 +2246,7 @@ const BARS_CHANGE: &str = "change";
 
 /// The form a page's page-level fields are drafted for (next_page::draft_for): the first-to-last change when the picked
 /// recipe's bars draw the change between the two ends (its fill's bars.measure, which the bars' declaration writes), so the title names what
-/// the page shows; the composition at one period when it draws one (its fill's composition record, stacked100_fill), so
+/// the page shows; the composition at one period when it draws one (its fill's composition record, the stacked100 declaration (node-bindings.json)), so
 /// a page of 100% bars is titled for the parts of each whole, never for the ranking its first fetch's chart is; else, and
 /// with no recipe picked, the lead chart's (next_page::lead).
 fn page_lead(fill: Option<&Value>, charts: &[Chart]) -> Option<(Relation, View)> {
@@ -2613,7 +2407,7 @@ fn finding_of(f: &Filling, out: &mut Filled, labels: &BTreeMap<String, String>) 
         (Finding::Share, code.clone(), vec![("{name}", name), ("{value}", format!("{{{share}}}")), ("{y1}", y1)])
     } else if let (Some(comp), Some(cut)) = (&shape.composition, out.composition.clone()) {
         // a composition: of its bars, the place whose highlighted part (the first group, the leaf's accent) is the largest
-        // share of its total, the share a fact over the part's sum and the total (stacked100_fill), named place and part
+        // share of its total, the share a fact over the part's sum and the total (the stacked100 declaration (node-bindings.json)), named place and part
         let Some((group, codes)) = comp.groups.first() else { return Ok(None) };
         let year = shape.year.as_str();
         let total_at = |code: &str| {
@@ -2696,7 +2490,7 @@ fn title_and_kicker(fill: Option<&Value>, scoped: bool, label: &str, measure: &s
     }
 }
 
-/// A composition's scope on its text step: the cut its fill states under the picture (stacked100_fill's cut line and the
+/// A composition's scope on its text step: the cut its fill states under the picture (the stacked100 declaration (node-bindings.json)'s cut line and the
 /// line of the places left out), so a finding over its bars is said in its scoped wording ("所选各方中"), never as the
 /// highest of every place. Only whether a page has a scope is read (next_page Drafts::with_scopes); no narrow record
 /// stands behind it, the cut is the fill's.
@@ -2724,7 +2518,7 @@ fn text_drafts(page: &Page, form: Option<(Relation, View)>, titles: &[String], f
     }
 }
 
-/// The kicker of a composition page (its fill holds a composition record, stacked100_fill): the registry's title words of a
+/// The kicker of a composition page (its fill holds a composition record, the stacked100 declaration (node-bindings.json)): the registry's title words of a
 /// composition at one period (shape_registry FRAMES), program words with no number; None for any other page.
 fn composition_kicker(fill: Option<&Value>) -> Option<&'static str> {
     fill.filter(|fill| fill["composition"].is_object())?;
@@ -3301,7 +3095,7 @@ fn recipe_request(
     // read from the main's narrow record, as the charts step reads the page's scope (narrowed), never from the tool's details
     let scoped = narrowed(run_dir, main).map_err(|why| ("fill", why))?.is_some();
     // a recipe with external layers declares and lays them out over the page input, which the fill keeps for draw_nodes
-    let page_in = (!recipe.external.is_empty()).then(|| page_input(recipe, &shape, &picks, &main_rows));
+    let page_in = (!recipe.external.is_empty()).then(|| page_input(recipe, &shape, &picks, (&main_rows, &comp_rows)));
     let asked = Asked { calls, page_in: page_in.as_ref() };
     let mut fill = fill_of(recipe, &shape, &picks, (&main_rows, &comp_rows), catalogue, (title, dek), scoped, Some(&asked))
         .map_err(|why| ("fill", why))?;
@@ -3337,7 +3131,7 @@ fn recipe_request(
     Ok(fill)
 }
 
-/// A composition may leave out a place whose parts do not add up (stacked100_fill), never one the question names: Err when
+/// A composition may leave out a place whose parts do not add up (the stacked100 declaration (node-bindings.json)), never one the question names: Err when
 /// a place it left out is a country the knowledge group reads in the question (Place::Country, an iso2 code), compared by
 /// code, the iso code turned into Eurostat's where they differ (next_params::ESTAT_ISO: GR is EL), never by a name, which
 /// two name tables may write apart.
@@ -3468,7 +3262,7 @@ struct LeafPublished {
     drawn: Vec<Value>,
     strip: StripAsk,
     ends: Option<Value>,
-    /// The parts a composition declared 0 in a bar (stacked100_fill), each read again from the fetched rows by its place,
+    /// The parts a composition declared 0 in a bar (the stacked100 declaration (node-bindings.json)), each read again from the fetched rows by its place,
     /// codes and year (zero_rows, declared_zeros), which the page check zeros_declared holds to 0.
     zeros: Vec<Value>,
 }
@@ -4990,7 +4784,7 @@ mod tests {
         words: (&str, &str),
         scoped: bool,
     ) -> Result<Value, String> {
-        let page_in = (!recipe.external.is_empty()).then(|| page_input(recipe, shape, picks, main));
+        let page_in = (!recipe.external.is_empty()).then(|| page_input(recipe, shape, picks, (main, companion)));
         let calls = std::sync::Mutex::new(Vec::new());
         let asked = Asked { calls: &calls, page_in: page_in.as_ref() };
         let mut fill = fill_of(recipe, shape, picks, (main, companion), catalogue, words, scoped, Some(&asked))?;
@@ -5009,7 +4803,7 @@ mod tests {
 
     /// fill_of as recipe_request calls it, its external layers declared over the page input and not laid out.
     fn fill_undrawn(recipe: &Recipe, shape: &Shape, picks: &Picks, main: &[Value]) -> Value {
-        let page_in = (!recipe.external.is_empty()).then(|| page_input(recipe, shape, picks, main));
+        let page_in = (!recipe.external.is_empty()).then(|| page_input(recipe, shape, picks, (main, &[])));
         let calls = std::sync::Mutex::new(Vec::new());
         let asked = Asked { calls: &calls, page_in: page_in.as_ref() };
         fill_of(recipe, shape, picks, (main, &[]), &Hubs, ("标题", "导语"), false, Some(&asked)).unwrap()
@@ -6275,7 +6069,7 @@ mod tests {
         let words = ("标题", "导语");
         let rust: Value = serde_json::from_str(&std::fs::read_to_string(root.join("scripts/fixtures/p4a/q1-rust-fill.json")).unwrap()).unwrap();
         let external = column.clone();
-        let page_in = page_input(&external, &shape, &picks, &main);
+        let page_in = page_input(&external, &shape, &picks, (&main, &[]));
         let calls = std::sync::Mutex::new(Vec::new());
         let asked = Asked { calls: &calls, page_in: Some(&page_in) };
         let unused = crate::next_leaf::Runner::python(&root.join("scripts/fixtures/p3b/twin_node.py"));
@@ -6351,7 +6145,7 @@ mod tests {
         let main = q1_ten_years();
         let shape = shape_of(&change.eats, &[("sdg", &main[..])], &Hubs).unwrap();
         let picks = picks_of(&change.picks, &shape, &main, &[]).unwrap();
-        let page_in = page_input(change, &shape, &picks, &main);
+        let page_in = page_input(change, &shape, &picks, (&main, &[]));
         let calls = std::sync::Mutex::new(Vec::new());
         let asked = Asked { calls: &calls, page_in: Some(&page_in) };
         let mut fill = fill_of(change, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false, Some(&asked)).unwrap();
@@ -7591,6 +7385,130 @@ mod tests {
         test_fill(composition, &shape, &picks, (main, sums), &Hubs, ("标题", "导语"), false)
     }
 
+    /// Hubs with some names missing from its name table (`kind:code`), for the composition outcome harness.
+    struct NamesOff(Vec<String>);
+    impl Catalogue for NamesOff {
+        fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>) -> crate::l5geo::Ranking {
+            unreachable!()
+        }
+        fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
+            unreachable!()
+        }
+        fn source(&self) -> &Value {
+            &Value::Null
+        }
+        fn countries(&self, codes: &[String]) -> Result<Vec<String>, String> {
+            Hubs.countries(codes)
+        }
+        fn zh_names(&self, kind: &str, codes: &[String]) -> Result<BTreeMap<String, String>, Vec<String>> {
+            let off: Vec<String> = codes.iter().filter(|c| self.0.contains(&format!("{kind}:{c}"))).cloned().collect();
+            if off.is_empty() {
+                Hubs.zh_names(kind, codes)
+            } else {
+                Err(off)
+            }
+        }
+        fn members(&self, aggregate: &str) -> Result<Vec<String>, String> {
+            Hubs.members(aggregate)
+        }
+    }
+
+    /// The composition outcome harness (P4b-1 acceptance: every page outcome equal before and after the migration): each
+    /// input set of P4B_OUTCOME_IN ({name: {main, sums}}) through the composition recipe's fill as recipe_request makes it,
+    /// with its zero rows read again and the page check zeros_declared, written to P4B_OUTCOME_OUT as {name: {fill} or
+    /// {stop}}; the real set also with two kinds of name missing. The fill's page input (only after) is left out.
+    ///
+    ///     P4B_OUTCOME_IN=<sets.json> P4B_OUTCOME_OUT=<out.json> cargo test --bins composition_outcomes -- --ignored
+    #[test]
+    #[ignore]
+    fn composition_outcomes() {
+        let var = |k: &str| std::env::var(k).unwrap_or_else(|_| panic!("{k} is not set"));
+        let sets: Map<String, Value> = serde_json::from_str(&std::fs::read_to_string(var("P4B_OUTCOME_IN")).unwrap()).unwrap();
+        let composition = recipe("composition");
+        let one = |main: &[Value], sums: &[Value], catalogue: &dyn Catalogue| -> Value {
+            let tables = [("nrg_bal_peh", main), ("nrg_bal_peh", sums)];
+            let shape = match shape_of(&composition.eats, &tables, catalogue) {
+                Ok(s) => s,
+                Err(e) => return json!({"stop": format!("shape: {e}")}),
+            };
+            let picks = picks_of(&composition.picks, &shape, main, &[]).unwrap();
+            match test_fill(composition, &shape, &picks, (main, sums), catalogue, ("标题", "导语"), false) {
+                Ok(mut fill) => {
+                    zero_rows(&mut fill, sums);
+                    fill.as_object_mut().unwrap().remove("page_in");
+                    let zeros = declared_zeros(&fill);
+                    let check = zeros_check(&zeros).map(|c| json!({"name": c.name, "passed": c.passed, "measured": c.measured}));
+                    json!({"fill": fill, "zeros": zeros, "zeros_check": check})
+                }
+                Err(e) => json!({"stop": e}),
+            }
+        };
+        let rows = |s: &Value, k: &str| -> Vec<Value> { s[k].as_array().unwrap().clone() };
+        let mut out = Map::new();
+        for (name, s) in &sets {
+            out.insert(name.clone(), one(&rows(s, "main"), &rows(s, "sums"), &Hubs));
+        }
+        let real = &sets["real"];
+        for (tag, off) in [("names_off_total", vec!["siec:TOTAL"]), ("names_off_groups", vec!["siec_group:other", "siec_group:fossil"])] {
+            let cat = NamesOff(off.into_iter().map(String::from).collect());
+            out.insert(tag.into(), one(&rows(real, "main"), &rows(real, "sums"), &cat));
+        }
+        for (name, o) in &out {
+            println!("OUTCOME {name}: {}", o.get("stop").map_or("page".to_string(), |s| format!("stop {s}")));
+        }
+        std::fs::write(var("P4B_OUTCOME_OUT"), serde_json::to_string_pretty(&Value::Object(out)).unwrap()).unwrap();
+    }
+
+    /// The fixed name rows a layer gives (P4b-1, ask_node): only a frame's heading and the unit's short form, each with the
+    /// text its registry holds, set as any layer's key (P6); a row of the name table's (F1, F2), the same key with two texts
+    /// (F3), a name another layer set otherwise (F4), and a frame's or unit's text other than the registry's (R1, R2) stop.
+    #[test]
+    fn fixed_names_are_the_two_kinds_with_their_registered_text() {
+        let heading = frame_heading(Relation::Composition).unwrap().to_string();
+        let short = next_pack::unit_short("GWH").unwrap().to_string();
+        let good = vec![("name:frames:composition".to_string(), heading.clone()), ("name:unit_short_zh:GWH".to_string(), short.clone())];
+        let take = |fixed: Vec<(String, String)>, out: &mut Filled| take_names(&Hubs, out, "stacked100", (Vec::new(), fixed));
+        let mut out = Filled::default();
+        assert_eq!(take(good.clone(), &mut out), Ok(()), "P6");
+        assert_eq!((out.named["name:frames:composition"].as_str(), out.named["name:unit_short_zh:GWH"].as_str()), (Some(&heading[..]), Some(&short[..])));
+        let with = |extra: (&str, &str)| [good.clone(), vec![(extra.0.to_string(), extra.1.to_string())]].concat();
+        for (tag, fixed) in [
+            ("F1", with(("name:zh_names:geo:PT", "葡萄牙共和国"))),
+            ("F2", with(("name:zh_names:iso2:PT", "别名"))),
+            ("F3", with(("name:frames:composition", "另一个标题"))),
+            ("R1", vec![("name:frames:composition".to_string(), format!("{heading}之"))]),
+            ("R2", vec![("name:unit_short_zh:GWH".to_string(), "千兆瓦时".to_string())]),
+        ] {
+            assert!(take(fixed, &mut Filled::default()).is_err(), "{tag}");
+        }
+        let mut other = Filled::default();
+        other.named.insert("name:unit_short_zh:GWH".into(), json!("千兆瓦时"));
+        assert!(take(good, &mut other).is_err(), "F4");
+        // a name request the table names none of stops in the layer's words
+        let names = vec![("siec".to_string(), vec!["TOTAL".to_string()], false)];
+        let why = take_names(&NamesOff(vec!["siec:TOTAL".into()]), &mut Filled::default(), "stacked100", (names, Vec::new())).unwrap_err();
+        assert_eq!(why, "not this shape: stacked100: the name table gives no Chinese name for siec TOTAL");
+    }
+
+    /// The composition page inputs of the sets of P4B_OUTCOME_IN named in P4B_PAGE_IN_SETS (comma separated), as
+    /// recipe_request writes them, to P4B_PAGE_IN_OUT: the generator's fixture (scripts/fixtures/p4b/page-inputs.json).
+    #[test]
+    #[ignore]
+    fn composition_page_inputs() {
+        let var = |k: &str| std::env::var(k).unwrap_or_else(|_| panic!("{k} is not set"));
+        let sets: Map<String, Value> = serde_json::from_str(&std::fs::read_to_string(var("P4B_OUTCOME_IN")).unwrap()).unwrap();
+        let composition = recipe("composition");
+        let mut out = Map::new();
+        for name in var("P4B_PAGE_IN_SETS").split(',') {
+            let (main, sums) = (sets[name]["main"].as_array().unwrap().clone(), sets[name]["sums"].as_array().unwrap().clone());
+            let tables = [("nrg_bal_peh", &main[..]), ("nrg_bal_peh", &sums[..])];
+            let shape = shape_of(&composition.eats, &tables, &Hubs).unwrap();
+            let picks = picks_of(&composition.picks, &shape, &main, &[]).unwrap();
+            out.insert(name.to_string(), page_input(composition, &shape, &picks, (&main, &sums)));
+        }
+        std::fs::write(var("P4B_PAGE_IN_OUT"), serde_json::to_string(&Value::Object(out)).unwrap()).unwrap();
+    }
+
     /// q3 (欧盟各国发电结构) from the total fetch to the page: the program's second fetch asks the 14 group inputs for the 20
     /// largest and 5 more (COMPOSITION_RESERVE), marked sum_input with the first fetch's file and sheet (no sheet, picks or
     /// narrow of its own, so its rows become no candidate: test_page_build_wiring section 18); the composition recipe is the
@@ -7647,15 +7565,15 @@ mod tests {
             }
         }
         assert_eq!(leaf["others"]["codes"], json!(Q3_GEOS[20..]));
-        assert_eq!(spec["facts"][COMPOSITION_OTHERS]["filter"]["geo"], json!(Q3_GEOS[20..]));
-        assert_eq!(spec["facts"][COMPOSITION_BARS]["filter"]["geo"], json!(Q3_GEOS[..20]));
+        assert_eq!(spec["facts"]["comp_others"]["filter"]["geo"], json!(Q3_GEOS[20..]));
+        assert_eq!(spec["facts"]["comp_bars"]["filter"]["geo"], json!(Q3_GEOS[..20]));
         // the cut and the zero line: nuclear by its name, then the 20 bars' names in total order, no place left out
         let lines = leaf["lines"].as_array().unwrap();
         assert_eq!(lines.len(), 2, "{lines:?}");
-        let mut zero_line = vec![json!({"src": "name:zh_names:siec_group:nuclear"}), json!({"w": COMPOSITION_ZERO_WORDS.0})];
+        let mut zero_line = vec![json!({"src": "name:zh_names:siec_group:nuclear"}), json!({"w": "为零的国家："})];
         for (k, g) in Q3_GEOS[..20].iter().enumerate() {
             if k > 0 {
-                zero_line.push(json!({"w": COMPOSITION_ZERO_WORDS.1}));
+                zero_line.push(json!({"w": "、"}));
             }
             zero_line.push(json!({"src": format!("name:zh_names:iso2:{g}")}));
         }
@@ -7687,18 +7605,18 @@ mod tests {
         let want: Vec<&str> = Q3_GEOS[..21].iter().copied().filter(|g| *g != "PT").collect();
         assert_eq!(bars, want);
         assert_eq!(leaf["others"]["codes"], json!(Q3_GEOS[21..]));
-        assert_eq!(spec["facts"][COMPOSITION_OTHERS]["filter"]["geo"], json!(Q3_GEOS[21..]));
+        assert_eq!(spec["facts"]["comp_others"]["filter"]["geo"], json!(Q3_GEOS[21..]));
         assert_eq!(fill["composition"]["dropped"], json!(["PT"]));
         // the gap: the inputs' sum less the total, each a fact over PT's own rows, never a typed number
-        assert_eq!(spec["facts"]["gap.PT"], json!({"op": "minus", "a": "drop_sum.PT", "b": "total.PT", "fmt": COMPOSITION_GAP_FMT}));
+        assert_eq!(spec["facts"]["gap.PT"], json!({"op": "minus", "a": "drop_sum.PT", "b": "total.PT", "fmt": "comp_gap"}));
         let inputs: Vec<String> = serde_json::from_value(spec["facts"]["drop_sum.PT"]["filter"]["siec"].clone()).unwrap();
         assert_eq!(inputs.len(), 14);
         assert_eq!(spec["facts"]["total.PT"]["filter"], json!({"geo": "PT", "siec": "TOTAL"}));
-        assert!(spec["fmts"][COMPOSITION_GAP_FMT]["dec"].as_u64().is_some_and(|d| d >= 1));
+        assert!(spec["fmts"]["comp_gap"]["dec"].as_u64().is_some_and(|d| d >= 1));
         let lines = leaf["lines"].as_array().unwrap();
         assert_eq!(lines.len(), 3, "the cut, PT's and the zero nuclear line");
-        assert_eq!(lines[1], json!([{"src": "name:zh_names:iso2:PT"}, {"w": COMPOSITION_DROPPED_WORDS.0}, {"src": "fact:gap.PT"},
-            {"w": COMPOSITION_DROPPED_WORDS.1}]));
+        assert_eq!(lines[1], json!([{"src": "name:zh_names:iso2:PT"}, {"w": "：各组之和与合计相差 "}, {"src": "fact:gap.PT"},
+            {"w": "，未列入图中，由合计次大的国家递补"}]));
         assert!(fill["rows"].as_array().unwrap().iter().any(|r| r["dims"]["geo"] == "PT"), "PT's rows are read for its line");
         // a place the question names is never left out (named_dropped, by code)
         assert!(named_dropped(&fill, &[crate::l5geo::Place::Country("PT".into())]).unwrap_err().contains("PT"));

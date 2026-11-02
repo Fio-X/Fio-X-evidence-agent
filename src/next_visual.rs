@@ -459,7 +459,14 @@ fn fill<'a>(
     let mut knobs = knobs.clone();
     // the recipe's external layers (knobs.json, from the registry's recipes), which the leaf draws from their placed geometry
     // only (run.py layer_fn); the leaf reads it here, never from the flow
-    let external = leaves().recipes.iter().find(|r| r.name == recipe).map(|r| r.external.clone()).unwrap_or_default();
+    // only the layers the core lays out: a layer whose leaf lays itself out (bindings geometry leaf) draws as before
+    let bound = crate::next_tree::bindings();
+    let external: Vec<String> = leaves()
+        .recipes
+        .iter()
+        .find(|r| r.name == recipe)
+        .map(|r| r.external.iter().filter(|l| bound.g("nodes").g(l).g("geometry").s() != Some("leaf")).cloned().collect())
+        .unwrap_or_default();
     knobs["external"] = json!(external);
     // the footer marks these ids in the source line (scmp.footer), the same the page check reads; a request's own kept
     if knobs["spec"].get("refs").is_none() {

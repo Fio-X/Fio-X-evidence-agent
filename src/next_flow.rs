@@ -3529,7 +3529,7 @@ pub const SUM_INPUT_MODE: &str = "sum_input";
 
 /// The places a composition's second fetch asks past its bars (next_params::NARROW_TOP), the next by total: a place whose
 /// groups do not add up to its total is left out of the bars and said, and the next takes its bar (next_run
-/// stacked100_fill); more left out than these, a quarter of the bars, stops the page.
+/// the stacked100 declaration, node-bindings.json); more left out than these, a quarter of the bars, stops the page.
 pub const COMPOSITION_RESERVE: usize = next_params::NARROW_TOP / 4;
 
 /// The place dimension a composition ranks and asks its countries by.

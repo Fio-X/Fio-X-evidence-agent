@@ -1719,7 +1719,10 @@
    "charts": [],
    "picks": [],
    "exposes": [],
-   "main": "stacked100"
+   "main": "stacked100",
+   "external": [
+    "stacked100"
+   ]
   },
   {
    "name": "change",

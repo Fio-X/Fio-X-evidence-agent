@@ -13,6 +13,9 @@
 //! unit, fmt, suffix, countries}, picks{rules, ranked, marks, t0, t1}, rows, name_kind}, and for a layer the registry lays
 //! out in a view frame the map points and the extent the flow computed ({points, page{ext}}); a template in the registry
 //! reads it only by PAGE_IN_PATHS. A node's declaration is its recipe's (declares_by_recipe) when the registry gives one.
+//! A declaration of shape parts_of_whole (P4b-1, the composition's stacked100) is expanded by parts_declared over the page
+//! input's further fields {sum_rows, outside, top, short, composition{dim, total, groups}}; its layer lays itself out in its
+//! leaf (geometry leaf), so draw asks no node for it.
 
 use crate::next_tree::{self as core, st, Got, J};
 use std::collections::BTreeSet;
@@ -199,8 +202,9 @@ fn held_decimals(rows: &[J], q: &J, got: &Got) -> Result<i64, String> {
 #[derive(Debug, Clone)]
 pub struct NodeDeclared {
     pub node: String,
-    /// The rows the layer draws, in the page input's order.
-    pub drawn: Vec<Value>,
+    /// The rows the layer draws (true) or reads first among them (false), in its order: a rows-of-select layer's drawn rows
+    /// in the page input's order; a parts_of_whole layer's each item's total (drawn) then its parts' rows, as it reads them.
+    pub rows: Vec<(Value, bool)>,
     /// The rows it only computes from (its numbers are other facts: a change's two ends), in the page input's order.
     pub reads: Vec<Value>,
     pub facts: Vec<(String, Value)>,
@@ -212,6 +216,15 @@ pub struct NodeDeclared {
     pub hero: Vec<(String, Value)>,
     /// A leaf's data under the hero's leaves (declares.leaf: its items with every select resolved to its code), by key.
     pub leaves: Vec<(String, Value)>,
+    /// The names the layer prints, as requests the flow resolves through the knowledge group's name table: (name kind,
+    /// codes, whether they are also the leaf's labels of codes that are no place).
+    pub names: Vec<(String, Vec<String>, bool)>,
+    /// Name rows of words the visual group holds (a frame's heading, the unit's short form): (src, text).
+    pub fixed: Vec<(String, String)>,
+    /// What a parts_of_whole layer drew, left out and named under it, for the run's record.
+    pub record: Option<Value>,
+    /// The layer writes the unit in its own picture.
+    pub unit_drawn: bool,
 }
 
 /// fmt dec_rule over the page input: held_decimals (the only rule the generator computes), at most its cap.
@@ -327,21 +340,575 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
     Ok(out)
 }
 
-/// Request::NodeDeclare: what fill_of takes from the external layer `layer` over the flow's page input.
+/// Request::NodeDeclare: what fill_of takes from the external layer `layer` over the flow's page input. A declaration of
+/// shape parts_of_whole (parts_declared) stops in its own words; any other failure is the generator's.
 pub fn declare(layer: &str, page_in: &Value) -> Result<NodeDeclared, String> {
     let (reg, _) = core::registry_in_force();
-    let out = declared_j(layer, &J::from_value(page_in), &reg).map_err(|e| format!("node {layer}: declare: {e}"))?;
+    let pi = J::from_value(page_in);
+    let parts = declares(&reg, layer, &pi).is_ok_and(|d| d.g("shape").s() == Some(PARTS_OF_WHOLE));
+    let out = if parts {
+        parts_declared(layer, &pi, &reg).map_err(|h| match h {
+            Halt::Stop(words) => words,
+            Halt::Bad(e) => format!("node {layer}: declare: {e}"),
+        })?
+    } else {
+        declared_j(layer, &pi, &reg).map_err(|e| format!("node {layer}: declare: {e}"))?
+    };
     let pairs = |k: &str| out.g(k).obj().iter().map(|(k, v)| (k.clone(), v.to_value())).collect();
+    let mut rows: Vec<(Value, bool)> = out.g("rows").arr().iter().map(|r| (r.to_value(), true)).collect();
+    if let Some(ordered) = out.get("ordered") {
+        rows = ordered.arr().iter().map(|x| (x.at(0).to_value(), x.at(1) == &J::Bool(true))).collect();
+    }
     Ok(NodeDeclared {
         node: layer.to_string(),
-        drawn: out.g("rows").arr().iter().map(J::to_value).collect(),
+        rows,
         reads: out.g("reads").arr().iter().map(J::to_value).collect(),
         facts: pairs("facts"),
         fmts: pairs("fmts"),
         data: pairs("data"),
         hero: pairs("hero"),
         leaves: pairs("leaves"),
+        names: out
+            .g("names")
+            .arr()
+            .iter()
+            .map(|n| (st(n.g("kind")), n.g("codes").arr().iter().map(st).collect(), n.g("labels").truthy()))
+            .collect(),
+        fixed: out.g("fixed").arr().iter().map(|f| (st(f.at(0)), st(f.at(1)))).collect(),
+        record: out.get("record").map(J::to_value),
+        unit_drawn: out.g("unit_drawn").truthy(),
     })
+}
+
+// ================================================================================================================
+// parts_of_whole (P4b-1): a layer whose items are wholes split into registered parts (one bar per place, one segment per
+// group of codes). Every pick is a select the core recomputes (given, rank, drop_replace, zero_parts, empty_parts,
+// set_op); the cut's stop lines are the registry's words over the core's own results; the facts, formats, leaf data,
+// lines, name requests and the record are the registry's templates expanded over the page input. No chart, table or
+// part name is written here.
+// ================================================================================================================
+
+/// The declaration shape this section expands.
+const PARTS_OF_WHOLE: &str = "parts_of_whole";
+
+/// The select kinds the core recomputes (next_tree recheck_one); a declaration naming another is refused (lint).
+const CORE_SELECT_KINDS: [&str; 11] =
+    ["given", "rank", "top_n", "take", "drop_replace", "exclude_codes", "zero_parts", "empty_parts", "set_op", "named_rule", "registry_list"];
+
+/// Why a parts_of_whole declaration ends: a stop in the registry's own words (the page is not this shape, as a rust fill
+/// said it), or the generator's or the core's failure.
+enum Halt {
+    Stop(String),
+    Bad(String),
+}
+
+impl From<String> for Halt {
+    fn from(e: String) -> Self {
+        Halt::Bad(e)
+    }
+}
+
+/// A row's value as the flow reads it (a finite number written as text), else none.
+fn row_num(r: &J) -> Option<f64> {
+    r.g("value").s().and_then(|v| v.parse::<f64>().ok()).filter(|v| v.is_finite())
+}
+
+/// The value at a dotted path of the declaration's page view: the page input, the target, the composition's groups as a
+/// map, and `knob.<node>.<knob>`, a number knob's default from the visual group's leaf registry.
+fn view_path(view: &J, path: &str) -> Result<J, String> {
+    if let Some(rest) = path.strip_prefix("knob.") {
+        let (node, knob) = rest.split_once('.').ok_or_else(|| format!("template path ${path}: knob.<node>.<knob>"))?;
+        let leaf = crate::next_leaf::leaves().nodes.get(node).ok_or_else(|| format!("template path ${path}: no node {node}"))?;
+        return match leaf.info.knobs.iter().find(|k| k.name == knob).map(|k| &k.kind) {
+            Some(crate::next_nodes::Kind::Range { default, .. }) => Ok(J::Num(*default)),
+            _ => Err(format!("template path ${path}: no number knob {knob}")),
+        };
+    }
+    let mut x = view;
+    for p in path.split('.') {
+        x = x.get(p).ok_or_else(|| format!("template path ${path}: the page input has no {p}"))?;
+    }
+    Ok(x.clone())
+}
+
+/// A template over the page view and the expansion context: `$path` (a whole string or an object key) from the view; a
+/// whole string `{name}` the context's value itself; inside a string each `{name}` the context's word and each `{a.b}` the
+/// view's.
+fn subx(v: &J, view: &J, ctx: &[(&str, J)]) -> Result<J, String> {
+    Ok(match v {
+        J::Str(s) if s.starts_with('$') => view_path(view, &s[1..])?,
+        J::Str(s) => {
+            let whole = s.strip_prefix('{').and_then(|x| x.strip_suffix('}')).filter(|x| !x.contains('{'));
+            if let Some((_, x)) = whole.and_then(|w| ctx.iter().find(|(k, _)| *k == w)) {
+                return Ok(x.clone());
+            }
+            let mut out = String::new();
+            let mut rest = s.as_str();
+            while let Some(i) = rest.find('{') {
+                let Some(j) = rest[i..].find('}') else { break };
+                let name = &rest[i + 1..i + j];
+                out.push_str(&rest[..i]);
+                match ctx.iter().find(|(k, _)| *k == name) {
+                    Some((_, x)) => out.push_str(&st(x)),
+                    None if name.contains('.') => out.push_str(&st(&view_path(view, name)?)),
+                    None => out.push_str(&rest[i..=i + j]),
+                }
+                rest = &rest[i + j + 1..];
+            }
+            out.push_str(rest);
+            J::Str(out)
+        }
+        J::Obj(m) => J::Obj(
+            m.iter()
+                .map(|(k, x)| Ok((match k.strip_prefix('$') { Some(p) => st(&view_path(view, p)?), None => k.clone() }, subx(x, view, ctx)?)))
+                .collect::<Result<_, String>>()?,
+        ),
+        J::Arr(a) => J::Arr(a.iter().map(|x| subx(x, view, ctx)).collect::<Result<_, String>>()?),
+        v => v.clone(),
+    })
+}
+
+/// A number of the declaration: a `$path`, {"min": [...]}, {"len": a list template}, or a literal.
+fn number_of(v: &J, view: &J) -> Result<i64, String> {
+    Ok(match v {
+        J::Str(s) if s.starts_with('$') => view_path(view, &s[1..])?.num().ok_or_else(|| format!("{s}: no number"))? as i64,
+        J::Obj(_) if v.has("min") => v.g("min").arr().iter().map(|x| number_of(x, view)).collect::<Result<Vec<_>, _>>()?.into_iter().min().unwrap_or(0),
+        J::Obj(_) if v.has("len") => subx(v.g("len"), view, &[])?.arr().len() as i64,
+        v => v.num().ok_or_else(|| format!("{}: no number", v.repr()))? as i64,
+    })
+}
+
+/// What the generator refuses in a parts_of_whole declaration (each declare, and the bindings' test): a select kind the
+/// core cannot compute, a tolerance that is no knob reference, a stop line of the cut other than the one the node
+/// registry pins for the node (max_dropped num/den, fill_after_drop), a word with a digit.
+fn parts_lint(layer: &str, d: &J, reg: &J) -> Vec<String> {
+    let mut bad = Vec::new();
+    for s in d.g("selects").arr() {
+        let kind = s.g("kind").s().unwrap_or("");
+        if !CORE_SELECT_KINDS.contains(&kind) {
+            bad.push(format!("select {}: kind {kind} the core cannot compute", st(s.g("id"))));
+        }
+        if kind == "drop_replace" {
+            let tol = s.g("check").g("sum_within").g("tol");
+            let knob = tol.g("knob").s().unwrap_or("");
+            if !(tol.obj().len() == 2 && !knob.is_empty() && tol.g("value").s() == Some(&format!("$knob.{knob}"))) {
+                bad.push(format!("select {}: tol {} is no knob reference", st(s.g("id")), tol.repr()));
+            }
+        }
+    }
+    let pinned: Vec<&J> = reg.g("nodes").g(layer).g("checks").arr().iter().collect();
+    for rule in ["max_dropped", "fill_after_drop"] {
+        let pin = pinned.iter().find(|c| c.g("kind").s() == Some(rule));
+        let stop = d.g("stops").arr().iter().find(|s| s.g("rule").s() == Some(rule));
+        match (pin, stop) {
+            (Some(p), Some(s)) if rule == "max_dropped" && (s.g("num") != p.g("num") || s.g("den") != p.g("den")) => {
+                bad.push(format!("stop max_dropped {}/{}: the node registry pins {}/{}", st(s.g("num")), st(s.g("den")), st(p.g("num")), st(p.g("den"))))
+            }
+            (Some(_), None) => bad.push(format!("stop {rule}: pinned by the node registry, missing")),
+            (None, Some(_)) => bad.push(format!("stop {rule}: the node registry pins no such check for {layer}")),
+            _ => {}
+        }
+    }
+    let digit = |s: &str| s.chars().any(|c| c.is_ascii_digit() || ('０'..='９').contains(&c));
+    for (at, v) in [("lines", d.g("lines")), ("leaf", d.g("leaf"))] {
+        for (path, w) in core::walk(v, "") {
+            if path.ends_with(".w") && w.s().is_some_and(digit) {
+                bad.push(format!("{at}{path}: the word {} holds a digit", w.repr()));
+            }
+        }
+    }
+    bad
+}
+
+/// The selects as written, each result given or empty, with the core's results put in (with_results: the second pass,
+/// and the third with the zero parts declared).
+fn with_results_of(s: &J, got: &Got, zero: Option<&J>) -> J {
+    let mut s = s.clone();
+    match s.g("kind").s() {
+        Some("given") => {}
+        Some("zero_parts") => {
+            if let Some(z) = zero {
+                s.set("declared", z.clone());
+            }
+        }
+        _ => {
+            let id = st(s.g("id"));
+            s.set("result", got.get(&id).cloned().unwrap_or(J::Null));
+            if s.g("kind").s() == Some("drop_replace") {
+                let dropped = got.get(&format!("{id}#dropped")).map(|d| d.arr().to_vec()).unwrap_or_default();
+                s.set("dropped", J::Arr(dropped.into_iter().map(|c| J::obj_of(vec![("code", c)])).collect()));
+            }
+        }
+    }
+    s
+}
+
+/// The core's recheck of selects over rows alone (no facts, no checks): (failures, results).
+fn recheck_selects(rows: &[J], sels: &[J]) -> (Vec<String>, Got) {
+    let page = J::obj_of(vec![
+        ("kind", J::str("Page")),
+        ("selects", J::obj_of(vec![("kind", J::str("Selects")), ("items", J::Arr(sels.to_vec()))])),
+        (
+            "facts",
+            J::obj_of(vec![
+                ("kind", J::str("Facts")),
+                ("tables", J::Obj(vec![])),
+                ("rows", J::Arr(rows.to_vec())),
+                ("facts", J::Obj(vec![])),
+                ("fmts", J::Obj(vec![])),
+            ]),
+        ),
+        ("checks", J::obj_of(vec![("kind", J::str("Checks")), ("items", J::Arr(vec![]))])),
+    ]);
+    let (bad, got, _) = core::recheck(&page);
+    (bad, got)
+}
+
+/// The rows a drop_replace reads, place by place in its order until its target is drawn (each place's total rows, then
+/// its parts' rows): the first that holds no number, or none. The core's own walk, so a row past the cut is never read.
+fn first_row_of_no_number<'a>(cands: &[J], target: i64, rows: &'a [J], c: &J) -> Option<&'a J> {
+    let every: Vec<&J> = c.g("parts").obj().iter().flat_map(|(_, cs)| cs.arr().iter()).collect();
+    let (place, dim) = (st(c.g("place")), st(c.g("dim")));
+    let mut drawn = 0;
+    for code in cands {
+        if drawn == target {
+            return None;
+        }
+        let at: Vec<&J> = rows.iter().filter(|r| r.g("table") == c.g("table") && r.g("time") == c.g("time") && r.g("dims").g(&place) == code).collect();
+        let tot: Vec<&J> = at.iter().copied().filter(|r| r.g("dims").g(&dim) == c.g("total")).collect();
+        let parts: Vec<&J> = at.iter().copied().filter(|r| every.contains(&r.g("dims").g(&dim))).collect();
+        if let Some(r) = tot.iter().chain(parts.iter()).find(|r| row_num(r).is_none()) {
+            return Some(r);
+        }
+        let whole: f64 = tot.iter().filter_map(|r| row_num(r)).sum();
+        let sum: f64 = parts.iter().filter_map(|r| row_num(r)).sum();
+        if (sum - whole).abs() <= c.g("tol").g("value").num().unwrap_or(0.0) * whole.abs() {
+            drawn += 1;
+        }
+    }
+    None
+}
+
+/// A place's name row: its reviewed name by the code's scheme (two letters iso2, else iso3), as the flow names places.
+fn place_src(code: &str) -> J {
+    J::obj_of(vec![("src", J::Str(format!("name:zh_names:{}:{code}", if code.len() == 2 { "iso2" } else { "iso3" })))])
+}
+
+/// A line of the declaration (its `segs`) over the expansion context: words and sources as written, a place by its name
+/// row, a coded name by its name row, a list of places by their name rows between the separator.
+fn segments(segs: &J, view: &J, ctx: &[(&str, J)]) -> Result<J, String> {
+    let mut out = Vec::new();
+    for s in segs.arr() {
+        if s.has("w") || s.has("src") {
+            out.push(subx(s, view, ctx)?);
+        } else if let Some(p) = s.get("place_name") {
+            out.push(place_src(&st(&subx(p, view, ctx)?)));
+        } else if s.has("name") {
+            let (kind, code) = (st(&subx(s.g("name"), view, ctx)?), st(&subx(s.g("code"), view, ctx)?));
+            out.push(J::obj_of(vec![("src", J::Str(format!("name:zh_names:{kind}:{code}")))]));
+        } else if let Some(l) = s.get("list_places") {
+            for (k, c) in subx(l, view, ctx)?.arr().iter().enumerate() {
+                if k > 0 {
+                    out.push(J::obj_of(vec![("w", s.g("sep").clone())]));
+                }
+                out.push(place_src(&st(c)));
+            }
+        } else {
+            return Err(format!("line segment {}: not one the generator expands", s.repr()));
+        }
+    }
+    Ok(J::Arr(out))
+}
+
+/// The heading of a relation at one period from the visual group's frames (shape_registry FRAMES), by its name.
+fn frame_words(name: &str) -> Result<String, String> {
+    crate::shape_registry::FRAMES
+        .iter()
+        .find(|(r, v, _)| format!("{r:?}") == name && *v == crate::shape_registry::View::Slice)
+        .map(|(_, _, w)| w[2].to_string())
+        .ok_or_else(|| format!("frame {name}: the registry has no heading of it"))
+}
+
+/// A parts_of_whole declaration's page view (the page input, its target, the composition's groups as a map: group -> its
+/// codes), the rows its selects run over (the main's and the sum inputs'), and its selects as written over the view, each
+/// result given or empty: the core's first pass.
+fn parts_selects(d: &J, page_in: &J) -> Result<(J, Vec<J>, Vec<J>), String> {
+    let mut view = page_in.clone();
+    let mut comp = page_in.g("composition").clone();
+    comp.set("groups_map", J::Obj(comp.g("groups").arr().iter().map(|g| (st(g.at(0)), g.at(1).clone())).collect()));
+    view.set("composition", comp);
+    let target = number_of(d.g("target"), &view)?;
+    view.set("target", J::Int(target));
+    let mut rows: Vec<J> = page_in.g("rows").arr().to_vec();
+    rows.extend(page_in.g("sum_rows").arr().iter().cloned());
+    let mut sels = Vec::new();
+    for s in d.g("selects").arr() {
+        let mut x = subx(&J::Obj(s.obj().iter().filter(|(k, _)| k != "given").cloned().collect()), &view, &[])?;
+        match s.get("given") {
+            Some(g) => x.set("result", subx(g, &view, &[])?),
+            None => {
+                x.set("result", J::Arr(vec![]));
+                match x.g("kind").s() {
+                    Some("drop_replace") => x.set("dropped", J::Arr(vec![])),
+                    Some("zero_parts") => x.set("declared", J::Arr(vec![])),
+                    _ => {}
+                }
+            }
+        }
+        sels.push(x);
+    }
+    Ok((view, rows, sels))
+}
+
+/// A parts_of_whole layer's declaration over the page input: what the flow's fill takes from it (its rows in order, each
+/// drawn or only read, facts, formats, hero data, leaf data, name requests, fixed names, the record), or the stop the
+/// registry words.
+fn parts_declared(layer: &str, page_in: &J, reg: &J) -> Result<J, Halt> {
+    let d = declares(reg, layer, page_in)?;
+    let lint = parts_lint(layer, d, reg);
+    if !lint.is_empty() {
+        return Err(Halt::Bad(format!("the registry's declaration: {}", lint.join("; "))));
+    }
+    let pre = st(d.g("stop_prefix"));
+    let stop = |w: String| Halt::Stop(format!("{pre}{w}"));
+    if !page_in.g(&st(d.g("needs").g("path"))).truthy() {
+        return Err(stop(st(&subx(d.g("needs").g("words"), page_in, &[])?)));
+    }
+    let (view, rows, sels) = parts_selects(d, page_in)?;
+    let target = view.g("target").num().unwrap_or(0.0) as i64;
+    let shape = page_in.g("shape").clone();
+    let (place, dim, year) = (st(shape.g("place")), st(view.g("composition").g("dim")), shape.g("year").clone());
+    let total = view.g("composition").g("total").clone();
+    let by_id = |id: &str| sels.iter().find(|s| s.g("id").s() == Some(id)).cloned();
+    let items = st(d.g("items"));
+    let dr = by_id(&items).filter(|s| s.g("kind").s() == Some("drop_replace")).ok_or_else(|| format!("items {items}: no drop_replace select"))?;
+    // a row the cut reads that holds no number stops in the registry's words, before the core would fail on it
+    let ranked: Vec<J> = sels.iter().filter(|s| matches!(s.g("kind").s(), Some("given" | "rank"))).cloned().collect();
+    let (_, rk) = recheck_selects(&rows, &ranked);
+    let c = core::resolved(dr.g("check").g("sum_within"), &rk)?;
+    let cands = rk.get(&st(dr.g("from"))).cloned().unwrap_or(J::Arr(vec![]));
+    for s in d.g("stops").arr().iter().filter(|s| s.g("rule").s() == Some("number_in_rows_read")) {
+        if let Some(r) = first_row_of_no_number(cands.arr(), target, &rows, &c) {
+            let w = st(s.g("words")).replace("{src_json}", &r.g("src").dump());
+            return Err(stop(w));
+        }
+    }
+    // two passes over the core: the first computes, the second holds every declared result to the first's
+    let (_, got) = recheck_selects(&rows, &sels);
+    let second: Vec<J> = sels.iter().map(|s| with_results_of(s, &got, None)).collect();
+    let (bad, got) = recheck_selects(&rows, &second);
+    // the zero declaration is expanded below and held in the third pass
+    let bad: Vec<String> = bad.into_iter().filter(|b| !b.contains("(zero_parts)")).collect();
+    if !bad.is_empty() {
+        return Err(Halt::Bad(format!("the core's selects do not recompute: {}", bad.iter().take(3).cloned().collect::<Vec<_>>().join("; "))));
+    }
+    let res = |k: &str| got.get(k).cloned().unwrap_or(J::Arr(vec![]));
+    let (drawn, dropped) = (res(&items), res(&st(d.g("dropped"))));
+    // the cut's stop lines, from the core's own results
+    let tol = c.g("tol").g("value").num().unwrap_or(f64::NAN);
+    let codes = |x: &J| x.arr().iter().map(st).collect::<Vec<_>>();
+    let words = |s: &J| -> Result<String, String> {
+        let w = st(s.g("words"))
+            .replace("{target}", &target.to_string())
+            .replace("{dropped_n}", &dropped.arr().len().to_string())
+            .replace("{drawn_n}", &drawn.arr().len().to_string())
+            .replace("{dropped_codes}", &codes(&dropped).join(", "))
+            .replace("{tol}", &format!("{tol}"));
+        Ok(st(&subx(&J::Str(w), &view, &[])?))
+    };
+    for s in d.g("stops").arr() {
+        let (nd, nt) = (dropped.arr().len() as i64, target);
+        let hit = match s.g("rule").s() {
+            Some("max_dropped") => nd * s.g("den").num().unwrap_or(0.0) as i64 > nt * s.g("num").num().unwrap_or(0.0) as i64,
+            Some("fill_after_drop") => nd > 0 && (drawn.arr().len() as i64) < nt,
+            _ => false,
+        };
+        if hit {
+            return Err(stop(words(s)?));
+        }
+    }
+    parts_expand(layer, d, &view, (&rows, &second), &got, (place, dim, year, total))
+}
+
+/// The parts_of_whole expansion over the core's results (parts_declared): per item its total (drawn) and per part its
+/// rows (read): none is empty, all 0 with every code a row is zero (declared, held by the core's third pass), else its
+/// cells, sum and share; the places left out for their parts with their gap; the zero parts' lines; the others; the
+/// formats, leaf data, lines, name requests, fixed names and the record.
+fn parts_expand(layer: &str, d: &J, view: &J, (rows, sels): (&[J], &[J]), got: &Got, (place, dim, year, total): (String, String, J, J)) -> Result<J, Halt> {
+    let shape = view.g("shape");
+    let res = |k: &str| got.get(k).cloned().unwrap_or(J::Arr(vec![]));
+    let groups = res(&st(d.g("parts")));
+    let sums = view.g("sum_rows").arr();
+    let fdecl = d.g("facts");
+    let fact = |name: &str, ctx: &[(&str, J)]| -> Result<(String, J), String> {
+        let f = fdecl.get(name).ok_or_else(|| format!("facts.{name}: the declaration has none"))?;
+        Ok((st(&subx(f.g("key"), view, ctx)?), subx(f.g("q"), view, ctx)?))
+    };
+    let total_row = |code: &J| {
+        view.g("rows").arr().iter().find(|r| r.g("time") == &year && r.g("dims").g(&place) == code && r.g("dims").g(&dim) == &total).cloned()
+    };
+    let (mut ordered, mut facts, mut fmts, mut lines) = (Vec::new(), J::Obj(vec![]), J::Obj(vec![]), Vec::new());
+    let set_fact = |facts: &mut J, (k, q): (String, J)| facts.set(&k, q);
+    let take = |ordered: &mut Vec<J>, rs: Vec<J>, drawn: bool| ordered.extend(rs.into_iter().map(|r| J::Arr(vec![r, J::Bool(drawn)])));
+    let empty = res(&st(d.g("empty")));
+    let leaf_d = d.g("leaf");
+    let (mut bars, mut zero_decl) = (Vec::new(), Vec::new());
+    let mut zero_parts: Vec<(String, Vec<J>)> = Vec::new();
+    for item in res(&st(d.g("items"))).arr() {
+        let tot = total_row(item).ok_or_else(|| format!("item {}: no total row at the year", st(item)))?;
+        take(&mut ordered, vec![tot.clone()], true);
+        set_fact(&mut facts, fact("item_total", &[("item", item.clone())])?);
+        let (mut cells, mut share) = (J::Obj(vec![]), J::Obj(vec![]));
+        for (part, pcodes) in groups.obj() {
+            let held: Vec<J> = sums
+                .iter()
+                .filter(|r| r.g("time") == &year && r.g("dims").g(&place) == item && pcodes.arr().contains(r.g("dims").g(&dim)))
+                .cloned()
+                .collect();
+            let is_empty = empty.arr().iter().any(|e| e.g("bar") == item && e.g("part").s() == Some(part.as_str()));
+            take(&mut ordered, held.clone(), false);
+            if is_empty {
+                continue;
+            }
+            // every code has a row (else empty_parts holds it): all 0 is a zero part, declared with its rows
+            if held.iter().all(|r| row_num(r) == Some(0.0)) {
+                zero_decl.push(J::obj_of(vec![("bar", item.clone()), ("part", J::str(part)), ("cells", J::Arr(held.iter().map(|r| r.g("src").clone()).collect()))]));
+                match zero_parts.iter_mut().find(|(p, _)| p == part) {
+                    Some((_, its)) => its.push(item.clone()),
+                    None => zero_parts.push((part.clone(), vec![item.clone()])),
+                }
+                continue;
+            }
+            cells.set(part, J::Arr(held.iter().map(|r| r.g("src").clone()).collect()));
+            let ctx = [("item", item.clone()), ("part", J::str(part)), ("part_codes", pcodes.clone())];
+            set_fact(&mut facts, fact("part_sum", &ctx)?);
+            set_fact(&mut facts, fact("part_share", &ctx)?);
+            share.set(part, subx(leaf_d.g("share_text"), view, &ctx)?);
+        }
+        bars.push(J::obj_of(vec![
+            ("code", item.clone()),
+            ("total", tot.g("src").clone()),
+            ("total_text", subx(leaf_d.g("total_text"), view, &[("item", item.clone())])?),
+            ("cells", cells),
+            ("share_text", share),
+        ]));
+    }
+    // the third pass: the zero declaration held to the core's zero_parts
+    let third: Vec<J> = sels.iter().map(|s| with_results_of(s, got, Some(&J::Arr(zero_decl.clone())))).collect();
+    if let Some(b) = recheck_selects(rows, &third).0.into_iter().find(|b| b.contains("(zero_parts)")) {
+        return Err(Halt::Bad(b));
+    }
+    let fmt_d = d.g("fmts");
+    let fmt_key = st(shape.g("fmt"));
+    fmts.set(&fmt_key, subx(fmt_d.g("$shape.fmt"), view, &[])?);
+    let items = res(&st(d.g("items")));
+    set_fact(&mut facts, fact("items_n", &[("items", items.clone())])?);
+    let line_d = |each: &'static str| d.g("lines").arr().iter().filter(move |l| l.g("each").s() == Some(each));
+    for l in line_d("once") {
+        lines.push(segments(l.g("segs"), view, &[])?);
+    }
+    let dropped = res(&st(d.g("dropped")));
+    let all_codes = J::Arr(groups.obj().iter().flat_map(|(_, cs)| cs.arr().iter().cloned()).collect());
+    for item in dropped.arr() {
+        let tot = total_row(item).ok_or_else(|| format!("item {}: no total row at the year", st(item)))?;
+        let inputs: Vec<J> = sums.iter().filter(|r| r.g("time") == &year && r.g("dims").g(&place) == item).cloned().collect();
+        take(&mut ordered, std::iter::once(tot.clone()).chain(inputs.iter().cloned()).collect(), false);
+        let s: f64 = inputs.iter().filter_map(row_num).sum();
+        let whole = row_num(&tot).unwrap_or(f64::NAN);
+        let (k_sum, q_sum) = fact("dropped_sum", &[("item", item.clone()), ("all_codes", all_codes.clone())])?;
+        let (k_tot, q_tot) = fact("item_total", &[("item", item.clone())])?;
+        let (big, small) = if s > whole { (&k_sum, &k_tot) } else { (&k_tot, &k_sum) };
+        let gap = fact("dropped_gap", &[("item", item.clone()), ("larger", J::str(big)), ("smaller", J::str(small))])?;
+        set_fact(&mut facts, (k_sum.clone(), q_sum));
+        set_fact(&mut facts, (k_tot.clone(), q_tot));
+        set_fact(&mut facts, gap);
+        for l in line_d("dropped") {
+            lines.push(segments(l.g("segs"), view, &[("item", item.clone())])?);
+        }
+    }
+    for (part, its) in &zero_parts {
+        let ctx = [("part", J::str(part)), ("items", J::Arr(its.clone())), ("part_codes", groups.g(part).clone())];
+        set_fact(&mut facts, fact("zero_n", &ctx)?);
+        for l in line_d("zero_part") {
+            lines.push(segments(l.g("segs"), view, &ctx)?);
+        }
+    }
+    // the gap's format, while a place is left out: the most decimals its rows hold as the data gave them, at most the cap
+    for (key, f) in fmt_d.obj().iter().filter(|(k, f)| !k.starts_with('$') && f.g("when").s() == Some("dropped")) {
+        if dropped.arr().is_empty() {
+            continue;
+        }
+        let rule = f.g("dec_rule");
+        if rule.g("rule").s() != Some("held_decimals_read") {
+            return Err(Halt::Bad(format!("fmts.{key} dec_rule {}: not one the generator computes", rule.g("rule").repr())));
+        }
+        let read: Vec<J> = dropped.arr().iter().filter_map(total_row).chain(sums.iter().cloned()).collect();
+        let dec = read.iter().filter_map(|r| r.g("value").s()).map(|v| v.split_once('.').map_or(0, |(_, x)| x.len() as i64)).max().unwrap_or(0);
+        let cap = rule.g("max").g("value").num().ok_or_else(|| format!("fmts.{key}: dec_rule max has no value"))? as i64;
+        fmts.set(key, J::obj_of(vec![("scale", f.g("scale").clone()), ("dec", J::Int(dec.min(cap))), ("suffix", subx(f.g("suffix"), view, &[])?)]));
+    }
+    let parts: Vec<J> = groups.obj().iter().map(|(g, _)| J::str(g)).collect();
+    let mut leaf = subx(leaf_d.g("head"), view, &[])?;
+    leaf.set("parts", J::Arr(parts.clone()));
+    let th = subx(leaf_d.g("total_head"), view, &[])?;
+    leaf.set("total_head", J::Arr(vec![J::obj_of(vec![("src", J::Str(format!("name:zh_names:{}:{}", st(th.g("name")), st(th.g("code")))))])]));
+    let others = res(&st(d.g("others")));
+    if !others.arr().is_empty() {
+        take(&mut ordered, others.arr().iter().filter_map(total_row).collect(), false);
+        set_fact(&mut facts, fact("others_n", &[("items", others.clone())])?);
+        leaf.set("others", J::obj_of(vec![("head", leaf_d.g("others_head").clone()), ("codes", others.clone())]));
+    }
+    let record = J::Obj(
+        d.g("record")
+            .obj()
+            .iter()
+            .map(|(k, role)| {
+                // each the result of the select the declaration's role names, or the zero parts as declared
+                let v = match role.s() {
+                    Some("zero_declared") => J::Arr(zero_decl.clone()),
+                    _ => res(&st(d.g(&st(role)))),
+                };
+                (k.clone(), v)
+            })
+            .collect(),
+    );
+    let (t, u) = (subx(leaf_d.g("title"), view, &[])?, subx(leaf_d.g("unit"), view, &[])?);
+    let fixed = vec![
+        (format!("name:{}", st(t.g("fixed"))), frame_words(&st(t.g("frame")))?),
+        (format!("name:{}", st(u.g("fixed"))), st(u.g("text"))),
+    ];
+    leaf.set("title", J::Arr(vec![J::obj_of(vec![("src", J::Str(fixed[0].0.clone()))])]));
+    leaf.set("unit", J::Arr(vec![J::obj_of(vec![("src", J::Str(fixed[1].0.clone()))])]));
+    leaf.set("bars", J::Arr(bars));
+    if !empty.arr().is_empty() {
+        leaf.set("empty", empty.clone());
+    }
+    if !zero_decl.is_empty() {
+        leaf.set("zero", J::Arr(zero_decl));
+    }
+    leaf.set("lines", J::Arr(lines));
+    let names = J::Arr(
+        d.g("names")
+            .arr()
+            .iter()
+            .map(|n| {
+                let codes = if n.g("codes").s() == Some("{parts}") { J::Arr(parts.clone()) } else { subx(n.g("codes"), view, &[])? };
+                Ok(J::obj_of(vec![("kind", subx(n.g("kind"), view, &[])?), ("codes", codes), ("labels", J::Bool(n.g("labels").truthy()))]))
+            })
+            .collect::<Result<_, String>>()?,
+    );
+    let layer_key = layer.to_string();
+    Ok(J::obj_of(vec![
+        ("ordered", J::Arr(ordered)),
+        ("facts", facts),
+        ("fmts", fmts),
+        ("data", subx(d.g("hero_data"), view, &[])?),
+        ("leaves", J::Obj(vec![(layer_key, leaf)])),
+        ("names", names),
+        ("fixed", J::Arr(fixed.into_iter().map(|(s, t)| J::Arr(vec![J::Str(s), J::Str(t)])).collect())),
+        ("record", record),
+        ("unit_drawn", J::Bool(d.g("unit_drawn").truthy())),
+    ]))
 }
 
 /// A fill text ('...{key}...{key.n}...{key.t}...') as page tree runs: literal words and fact runs, in order. A brace that
@@ -758,6 +1325,11 @@ pub fn draw(fill: &Value, page_in: &Value, layers: &[String], runtime: &std::pat
     if asked.is_empty() {
         return Ok(out);
     }
+    // a layer whose leaf lays itself out (geometry leaf) asks no node and is given no placed geometry
+    asked.retain(|l| reg.g("nodes").g(l).g("geometry").s() != Some("leaf"));
+    if asked.is_empty() {
+        return Ok(out);
+    }
     let mut tree = tree_j(&page_in, &fill, &reg, &asked).map_err(|e| format!("node {}: page tree: {e}", asked.join(",")))?;
     let mut ground = J::Obj(vec![]);
     for l in &asked {
@@ -916,6 +1488,182 @@ mod tests {
         let out = draw(&fill.to_value(), &page_in.to_value(), &layers, Path::new("/nonexistent-runtime")).unwrap();
         assert_eq!(out.timing.iter().map(|t| t.3.clone()).collect::<Vec<_>>(), [Some("value_domain".into()), Some("value_domain".into())]);
         assert_eq!(out.placed, serde_json::json!({}));
+    }
+
+    /// The composition page inputs (scripts/fixtures/p4b/page-inputs.json, next_run composition_page_inputs over the
+    /// design's input sets: q3 run 195240's two fetches and the next_run q3 test shapes), by set name.
+    fn parts_input(name: &str) -> J {
+        let all = core::parse(&std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/fixtures/p4b/page-inputs.json")).unwrap()).unwrap();
+        all.g(name).clone()
+    }
+
+    /// The production registry, its stacked100 declaration, and that declaration's selects over a page input with the
+    /// core's results written in as the generator declares them (the second pass, the zero parts as the leaf declares them).
+    fn parts_declared_selects(name: &str) -> (Vec<J>, Vec<J>) {
+        let reg = core::load_registry(&core::bindings());
+        let pi = parts_input(name);
+        let d = declares(&reg, "stacked100", &pi).unwrap();
+        let (_, rows, sels) = parts_selects(d, &pi).unwrap();
+        let (_, got) = recheck_selects(&rows, &sels);
+        let out = match parts_declared("stacked100", &pi, &reg) {
+            Ok(o) => o,
+            Err(Halt::Stop(w) | Halt::Bad(w)) => panic!("{name}: {w}"),
+        };
+        let zero = out.g("leaves").g("stacked100").get("zero").cloned().unwrap_or(J::Arr(vec![]));
+        (rows, sels.iter().map(|s| with_results_of(s, &got, Some(&zero))).collect())
+    }
+
+    /// P4b-1 (design 2, M1-M12, P1-P3): the core recomputes every select the stacked100 declaration writes, so a declared
+    /// result that is not the core's own is refused: two bars swapped, the place left out declared drawn, a place that adds
+    /// up declared left out, a part above 0 declared zero, a zero part's cells cut short, a zero part left undeclared, an
+    /// empty part left out or added, the others with a place left out among them or one never fetched missing, the
+    /// candidates not in total order, the tolerance raised in the select. The honest declarations pass.
+    #[test]
+    fn next_tree_gen_parts_of_whole_core_refuses_what_it_does_not_recompute() {
+        let fails = |name: &str, change: &dyn Fn(&mut Vec<J>)| {
+            let (rows, mut sels) = parts_declared_selects(name);
+            change(&mut sels);
+            recheck_selects(&rows, &sels).0
+        };
+        for name in ["real", "synth_at_zero_empty", "synth_base", "synth_fr_nuclear_it_none"] {
+            assert_eq!(fails(name, &|_| {}), Vec::<String>::new(), "{name}");
+        }
+        let edit = |id: &'static str, f: fn(&mut J)| {
+            move |sels: &mut Vec<J>| {
+                let i = sels.iter().position(|s| s.g("id").s() == Some(id)).unwrap();
+                f(&mut sels[i]);
+            }
+        };
+        fn arr(s: &J, k: &str) -> Vec<J> {
+            s.g(k).arr().to_vec()
+        }
+        type Change = Box<dyn Fn(&mut Vec<J>)>;
+        let cases: Vec<(&str, &str, Change)> = vec![
+            ("M1 two bars swapped", "real", Box::new(edit("bars", |s| {
+                let mut b = arr(s, "result");
+                b.swap(0, 1);
+                s.set("result", J::Arr(b));
+            }))),
+            ("M2 the place left out declared drawn", "real", Box::new(edit("bars", |s| {
+                let mut b = arr(s, "result");
+                b.pop();
+                b.push(J::str("PT"));
+                s.set("result", J::Arr(b));
+                s.set("dropped", J::Arr(vec![]));
+            }))),
+            ("M3 a place that adds up declared left out", "real", Box::new(edit("bars", |s| {
+                let mut d = arr(s, "dropped");
+                d.push(J::obj_of(vec![("code", J::str("DE"))]));
+                s.set("dropped", J::Arr(d));
+            }))),
+            ("M4 a part above 0 declared zero", "real", Box::new(edit("zero", |s| {
+                let mut d = arr(s, "declared");
+                d.push(J::obj_of(vec![("bar", J::str("FR")), ("part", J::str("fossil")), ("cells", J::strs(&["series:nrg_bal_peh/A.GEP.G3000.GWH.FR:2024:OBS_VALUE"]))]));
+                s.set("declared", J::Arr(d));
+            }))),
+            ("M5 a zero part's cells cut short", "synth_at_zero_empty", Box::new(edit("zero", |s| {
+                let mut d = arr(s, "declared");
+                let mut first = d[0].clone();
+                let mut cells = arr(&first, "cells");
+                cells.pop();
+                first.set("cells", J::Arr(cells));
+                d[0] = first;
+                s.set("declared", J::Arr(d));
+            }))),
+            ("M6 a zero part left undeclared", "synth_base", Box::new(edit("zero", |s| {
+                let d = arr(s, "declared");
+                s.set("declared", J::Arr(d[1..].to_vec()));
+            }))),
+            ("M7 an empty part left out", "synth_fr_nuclear_it_none", Box::new(edit("empty", |s| {
+                let d = arr(s, "result");
+                s.set("result", J::Arr(d[1..].to_vec()));
+            }))),
+            ("M8 an empty part added", "real", Box::new(edit("empty", |s| {
+                let mut d = arr(s, "result");
+                d.push(J::obj_of(vec![("bar", J::str("FR")), ("part", J::str("fossil"))]));
+                s.set("result", J::Arr(d));
+            }))),
+            ("M9 others with the place left out among them", "real", Box::new(edit("others", |s| {
+                let mut d = arr(s, "result");
+                d.insert(0, J::str("PT"));
+                s.set("result", J::Arr(d));
+            }))),
+            ("M10 others missing a country never fetched", "real", Box::new(edit("others", |s| {
+                let mut d = arr(s, "result");
+                d.pop();
+                s.set("result", J::Arr(d));
+            }))),
+            ("M11 candidates not in total order", "real", Box::new(edit("candidates", |s| {
+                let mut d = arr(s, "result");
+                d.reverse();
+                s.set("result", J::Arr(d));
+            }))),
+            ("M12 the tolerance raised in the select", "real", Box::new(edit("bars", |s| {
+                let mut c = s.g("check").clone();
+                let mut w = c.g("sum_within").clone();
+                w.set("tol", J::obj_of(vec![("knob", J::str("stacked100.tol")), ("value", J::Num(1e-3))]));
+                c.set("sum_within", w);
+                s.set("check", c);
+            }))),
+        ];
+        for (tag, name, change) in &cases {
+            assert!(!fails(name, change.as_ref()).is_empty(), "{tag}: passed");
+        }
+        assert_eq!(cases.len(), 12);
+    }
+
+    /// P4b-1 (design 2, P4, L1-L5): the production stacked100 declaration lints clean; a tolerance that is no knob
+    /// reference, the quarter loosened, the fill_after_drop stop removed, a word with a digit, a select kind the core
+    /// cannot compute each refuse, and the generator then declares nothing (the page stops as the generator's failure).
+    #[test]
+    fn next_tree_gen_parts_of_whole_lint_refuses_a_loosened_declaration() {
+        let reg = core::load_registry(&core::bindings());
+        let d = reg.g("nodes").g("stacked100").g("declares").clone();
+        assert_eq!(parts_lint("stacked100", &d, &reg), Vec::<String>::new());
+        let with = |f: &dyn Fn(&mut J)| {
+            let mut x = d.clone();
+            f(&mut x);
+            parts_lint("stacked100", &x, &reg)
+        };
+        let set_at = |x: &mut J, path: &[&str], v: J| assert!(x.set_path(&path.iter().map(|s| s.to_string()).collect::<Vec<_>>(), v), "{path:?}");
+        type Edit = Box<dyn Fn(&mut J)>;
+        let cases: Vec<(&str, Edit)> = vec![
+            ("L1 tolerance a literal", Box::new(move |x: &mut J| set_at(x, &["selects", "4", "check", "sum_within", "tol", "value"], J::Num(1e-3)))),
+            ("L2 max_dropped loosened to 1/2", Box::new(move |x: &mut J| set_at(x, &["stops", "1", "den"], J::Int(2)))),
+            ("L3 fill_after_drop removed", Box::new(|x: &mut J| {
+                let stops = x.g("stops").arr()[..2].to_vec();
+                x.set("stops", J::Arr(stops));
+            })),
+            ("L4 a word with a digit", Box::new(move |x: &mut J| set_at(x, &["lines", "0", "segs", "0", "w"], J::str("图中为合计最大的 20 ")))),
+            ("L5 a select kind the core cannot compute", Box::new(|x: &mut J| {
+                let mut s = x.g("selects").arr().to_vec();
+                s.push(J::obj_of(vec![("id", J::str("x")), ("kind", J::str("largest_gap"))]));
+                x.set("selects", J::Arr(s));
+            })),
+        ];
+        for (tag, f) in &cases {
+            assert!(!with(f.as_ref()).is_empty(), "{tag}: passed");
+        }
+    }
+
+    /// P4b-1: the stacked100 layer is declared by its generator (never a rust fill) and lays itself out in its leaf
+    /// (geometry leaf): draw asks no node for it and gives it no placed geometry, and a stop of its cut is the registry's
+    /// words, not the generator's failure.
+    #[test]
+    fn next_tree_gen_parts_of_whole_draws_in_its_leaf_and_stops_in_its_words() {
+        let pi = parts_input("real");
+        let out = draw(&serde_json::json!({"knobs": {"spec": {"hero": {}}}}), &pi.to_value(), &["stacked100".to_string()], Path::new("/nonexistent-runtime")).unwrap();
+        assert_eq!((out.placed, out.timing.len()), (serde_json::json!({}), 0));
+        let declared = declare("stacked100", &pi.to_value()).unwrap();
+        assert_eq!(declared.leaves.iter().map(|(k, _)| k.as_str()).collect::<Vec<_>>(), ["stacked100"]);
+        assert!(declared.rows.iter().filter(|(_, d)| *d).count() == 20 && declared.record.is_some() && declared.unit_drawn);
+        // six more places whose parts miss their totals (their sum inputs gone): the registry's words with its prefix, never
+        // "node stacked100: declare:"
+        let mut short = pi.clone();
+        let keep: Vec<J> = short.g("sum_rows").arr().iter().filter(|r| !matches!(r.g("dims").g("geo").s(), Some("RO" | "EL" | "HU" | "BG" | "DK" | "SK"))).cloned().collect();
+        short.set("sum_rows", J::Arr(keep));
+        let why = declare("stacked100", &short.to_value()).unwrap_err();
+        assert!(why.starts_with("not this shape: stacked100: ") && why.contains("more than a quarter"), "{why}");
     }
 
     /// Fill texts as runs: placeholders become fact runs (a final .n or .t a part), any other brace stays a word.

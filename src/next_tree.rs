@@ -3137,6 +3137,10 @@ pub fn registry_problems(reg: &J) -> Vec<String> {
                 out.push(format!("{p} page check {}: no core page check computes it", c.g("name").repr()));
             }
         }
+        // a node whose leaf lays itself out (geometry leaf) is asked for no geometry: it has no frame, items or marks here
+        if e.g("geometry").s() == Some("leaf") {
+            continue;
+        }
         if !e.g("frame").s().is_some_and(|f| reg.g("frames").has(f)) {
             out.push(format!("{p} frame {}: not a registered frame", e.g("frame").repr()));
         }
@@ -6432,7 +6436,7 @@ mod tests {
         }
     }
 
-    /// The production bindings (P4a-2) bind the bars and the map circles external and nothing else, pass C5, and name a
+    /// The production bindings (P4a-2) bind the bars and the map circles external, and (P4b-1) the composition's stacked100 with its leaf's own geometry, and nothing else, pass C5, and name a
     /// runner under the node folders; every recipe's external layers in the leaf registry (knobs.json, which knobs.py writes
     /// from the bindings' recipes) are the bindings' own, of nodes the core binds external, and its points layers the ones
     /// laid out in a view frame. The circles' knobs are the bubbles leaf's under the map style (run.MAP_STYLE: label_top 12,
@@ -6440,7 +6444,7 @@ mod tests {
     #[test]
     fn next_tree_production_binds_the_bars_external() {
         let o = bindings();
-        assert_eq!(external_nodes(&o), ["bars", "bubbles"]);
+        assert_eq!(external_nodes(&o), ["bars", "bubbles", "stacked100"]);
         assert_eq!(registry_problems(&load_registry(&o)), Vec::<String>::new());
         for n in external_nodes(&o) {
             assert!(runner_allowed(&st(o.g("nodes").g(&n).g("runner"))), "{n}");
