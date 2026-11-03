@@ -1105,7 +1105,7 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     // its selects recomputed (ranks, takes, sums) and every reference resolved
     ("tree.registry_list", "", &["tree::registry_list", "tree::parts_rows", "tree::leaves_under_total"]),
     ("tree.printed_difference", "", &["tree::differences_disagree", "tree::printed_keys", "tree::fact_fmt", "tree::printed_int", "tree::round_even"]),
-    ("tree.roles", "", &["tree::recipe_roles", "tree::reference_legend_gaps", "tree::reference_legend", "tree::element_at", "tree::pieces", "tree::is_the_word"]),
+    ("tree.roles", "", &["tree::recipe_roles", "tree::reference_legend_gaps", "tree::reference_legend", "tree::element_at", "tree::pieces", "tree::is_the_word", "tree::draws_vars", "tree::template_vars", "tree::knob_at", "tree::drawn_vars", "tree::segs_match", "tree::src_is", "tree::drawn_entry_gaps"]),
     ("tree.selects", "", &["tree::ref_parts", "tree::is_ref", "tree::ref_id", "tree::index", "tree::resolve_ref", "tree::resolved", "tree::result_codes", "tree::dims", "tree::select_rows", "tree::plain_tie", "tree::last_in_only", "tree::text_num", "tree::pair_rows", "tree::change_from", "tree::part_share_key", "tree::part_share_of", "tree::cannot_rank", "tree::cannot_take", "tree::take_value", "tree::sel_get", "tree::root_rank", "tree::int_or_knob", "tree::sum_rows", "tree::py_fixed", "tree::py_grouped", "tree::recheck", "tree::recheck_one", "tree::strip_part"]),
     ("tree.check_kinds", "next_tree::CHECK_KINDS", &["tree::evaluate", "tree::check_codes", "tree::named_in", "tree::names_of", "tree::is_knob", "tree::knob_problem", "tree::has_digit", "tree::pathlike", "tree::nodes_of"]),
     // P1 lints: words (no worded number), shared fields, registered nodes

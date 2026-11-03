@@ -2933,8 +2933,9 @@ pub fn publish_leaf_page(
     // what a layer dropped is kept with the request as never-printed entries, so a replay knows what the page leaves out
     let mut ledger = page.ledger.clone();
     ledger.extend(drawn.dropped.iter().cloned());
+    // and the knobs its layers were given, from which the recheck reads what a reference layer draws
     let request = serde_json::to_string_pretty(&json!({"spec": spec, "rows": rows, "facts": facts, "ledger": ledger,
-        "refs": page.refs}))
+        "refs": page.refs, "hero": drawn.hero}))
     .map_err(|e| format!("publish: {e}"))?;
     let io = |e: std::io::Error| format!("publish: {e}");
     as_visual_call(|| {

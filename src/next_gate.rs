@@ -114,7 +114,7 @@ pub fn leaf_gaps(root: &Path, dir: &str, manifest: &Value, fetched: &[Fetch]) ->
         return gaps;
     };
     match request(root, &at) {
-        Ok((spec, rows, facts, ledger, refs)) => {
+        Ok((spec, rows, facts, ledger, refs, hero)) => {
             gaps.extend(reread_gaps(root, &rows, fetched).into_iter().map(|off| format!("leaf page {at}: {off}")));
             let recheck = crate::next_visual::Request::LeafRecheck {
                 recipe: dir,
@@ -122,6 +122,7 @@ pub fn leaf_gaps(root: &Path, dir: &str, manifest: &Value, fetched: &[Fetch]) ->
                 ledger: &ledger,
                 refs: &refs,
                 facts: (&spec, &rows, &facts),
+                hero: &hero,
             };
             match visual_call(&calls, "leaf_recheck", recheck) {
                 Ok(crate::next_visual::Reply::Rechecked(off)) => {
@@ -298,7 +299,7 @@ fn read_json(root: &Path, rel: &str) -> Option<Value> {
     serde_json::from_str(&std::fs::read_to_string(root.join(rel)).ok()?).ok()
 }
 
-type Checked = (Spec, Vec<Row>, Vec<Fact>, BTreeMap<String, String>, Vec<String>);
+type Checked = (Spec, Vec<Row>, Vec<Fact>, BTreeMap<String, String>, Vec<String>, Value);
 
 /// What the page was checked against at its bake, as publish_leaf_page wrote it beside index.html.
 fn request(root: &Path, at: &str) -> Result<Checked, String> {
@@ -312,6 +313,7 @@ fn request(root: &Path, at: &str) -> Result<Checked, String> {
         serde_json::from_value(take("facts")?).map_err(field)?,
         serde_json::from_value(take("ledger")?).map_err(field)?,
         serde_json::from_value(take("refs")?).map_err(field)?,
+        take("hero").unwrap_or(Value::Null),
     ))
 }
 

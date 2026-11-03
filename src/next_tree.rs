@@ -1463,10 +1463,31 @@ pub(crate) fn recipe_roles(reg: &J, recipe: &str) -> Result<(String, Vec<(String
         if role.g("legend").g("within").s().is_none_or(str::is_empty) {
             return Err(format!("recipe {recipe}: reference {what}'s legend names no legend it sits within"));
         }
+        // each entry it prints is one the layer draws (legend.entries over legend.draws, drawn_entry_gaps), not any entry
+        // of that kind on the page: a template per entry placeholder, tied to what the layer draws by a value of draws or by
+        // a value another such template shares
+        let known = draws_vars(role.g("legend").g("draws"));
+        let mut tied: Vec<(String, Vec<String>)> = Vec::new();
         for ph in template.split('{').skip(1).filter_map(|p| p.split_once('}').map(|x| x.0)) {
             let kind = role.g("legend").g("fills").g(ph).s().unwrap_or("");
             if !LEGEND_FILLS.contains(&kind) {
                 return Err(format!("recipe {recipe}: reference {what}'s legend fills {{{ph}}} as {kind:?}, not one of {LEGEND_FILLS:?}"));
+            }
+            if kind == "unit" {
+                continue;
+            }
+            let Some(e) = role.g("legend").g("entries").g(ph).s().filter(|e| !e.is_empty()) else {
+                return Err(format!("recipe {recipe}: reference {what}'s legend names no entry its layer draws for {{{ph}}} (legend.entries)"));
+            };
+            if !e.starts_with(&format!("{}:", kind.strip_suffix("_unit").unwrap_or(kind))) {
+                return Err(format!("recipe {recipe}: reference {what}'s entry {e:?} for {{{ph}}} is no {kind} entry"));
+            }
+            tied.push((ph.to_string(), template_vars(e)));
+        }
+        for (ph, vars) in &tied {
+            let shared = |v: &String| tied.iter().any(|(p, vs)| p != ph && vs.contains(v) && vs.iter().any(|w| known.contains(w)));
+            if !vars.iter().any(|v| known.contains(v) || shared(v)) {
+                return Err(format!("recipe {recipe}: reference {what}'s entry for {{{ph}}} names nothing its layer draws (legend.draws)"));
             }
         }
         Ok((what.to_string(), word.to_string()))
@@ -1493,6 +1514,132 @@ pub(crate) fn recipe_roles(reg: &J, recipe: &str) -> Result<(String, Vec<(String
 
 /// How a reference's legend word fills a placeholder (reference_legend_gaps is_the_word).
 const LEGEND_FILLS: [&str; 5] = ["period", "fact", "name", "fact_unit", "unit"];
+
+/// What a published page's layers were given and read, for what a reference layer draws (drawn_entry_gaps): the page's
+/// knobs (`knobs.spec.hero`), its request rows, the member codes, and each fact's reads.
+pub(crate) struct Drawn<'a> {
+    pub hero: &'a J,
+    pub rows: &'a [J],
+    pub members: &'a [String],
+    pub reads: &'a BTreeMap<String, Vec<String>>,
+}
+
+/// The values a reference's legend.draws gives its entry templates: each key but `span` (a path into the knobs), and
+/// `first`, `last` for a `span`.
+fn draws_vars(draws: &J) -> BTreeSet<String> {
+    draws.obj().iter().flat_map(|(k, _)| if k == "span" { vec!["first".to_string(), "last".to_string()] } else { vec![k.clone()] }).collect()
+}
+
+/// The {placeholders} of an entry template, in order.
+fn template_vars(t: &str) -> Vec<String> {
+    t.split('{').skip(1).filter_map(|p| p.split_once('}').map(|x| x.0.to_string())).collect()
+}
+
+/// The knobs' value at a dotted path.
+fn knob_at<'a>(hero: &'a J, path: &str) -> &'a J {
+    path.split('.').fold(hero, |j, k| j.g(k))
+}
+
+/// What legend.draws names, read from the page as drawn: each key a string of the knobs at its path, and `span`
+/// ({q, from, to}: paths of a query and its first and last period) the first and last period of the request rows the
+/// query selects in that range (its not_eu leaving the members and TOTAL out of its by-dimension, as the layer reads it).
+fn drawn_vars(draws: &J, d: &Drawn) -> Result<BTreeMap<String, String>, String> {
+    let mut out = BTreeMap::new();
+    for (var, path) in draws.obj() {
+        if var != "span" {
+            let v = knob_at(d.hero, &st(path)).s().ok_or_else(|| format!("the knobs give no {var} at {}", st(path)))?;
+            out.insert(var.clone(), v.to_string());
+            continue;
+        }
+        let q = knob_at(d.hero, &st(path.g("q")));
+        let table = q.g("table").s().ok_or_else(|| format!("the knobs give no query at {}", st(path.g("q"))))?;
+        let from = knob_at(d.hero, &st(path.g("from"))).s().ok_or_else(|| format!("the knobs give no first period at {}", st(path.g("from"))))?;
+        let to = path.g("to").s().and_then(|p| knob_at(d.hero, p).s());
+        let by = q.g("by").s();
+        let out_of = |r: &J| matches!(q.g("not_eu"), J::Bool(true)) && by.is_some_and(|b| d.members.iter().any(|m| m == &st(dims(r, b))) || st(dims(r, b)) == "TOTAL");
+        let times: BTreeSet<String> = select_rows(d.rows, q)
+            .into_iter()
+            .filter(|r| !out_of(r))
+            .map(|r| st(r.g("time")))
+            .filter(|t| from <= t.as_str() && to.is_none_or(|to| t.as_str() <= to))
+            .collect();
+        let (Some(a), Some(b)) = (times.first(), times.last()) else {
+            return Err(format!("the query of {table} selects no row from {from}"));
+        };
+        out.insert("table".to_string(), table.to_string());
+        out.insert("first".to_string(), a.clone());
+        out.insert("last".to_string(), b.clone());
+    }
+    Ok(out)
+}
+
+/// src_is's matcher: the segments (is a var, literal or name) read off `src` in order, a var not yet bound trying each
+/// length from one character.
+fn segs_match(src: &str, segs: &[(bool, String)], bound: &mut BTreeMap<String, String>) -> bool {
+    let Some(((is_var, s), rest)) = segs.split_first() else { return src.is_empty() };
+    if !is_var {
+        return src.strip_prefix(s.as_str()).is_some_and(|r| segs_match(r, rest, bound));
+    }
+    if let Some(v) = bound.get(s).cloned() {
+        return src.strip_prefix(v.as_str()).is_some_and(|r| segs_match(r, rest, bound));
+    }
+    for end in src.char_indices().map(|(i, c)| i + c.len_utf8()) {
+        let mut b = bound.clone();
+        b.insert(s.clone(), src[..end].to_string());
+        if segs_match(&src[end..], rest, &mut b) {
+            *bound = b;
+            return true;
+        }
+    }
+    false
+}
+
+/// Whether `src` is the entry `template` names: its literal parts and the known values exactly, each other {var} one or
+/// more characters, bound once (`bound`: the same in every entry of the line).
+fn src_is(src: &str, template: &str, known: &BTreeMap<String, String>, bound: &mut BTreeMap<String, String>) -> bool {
+    let mut segs = Vec::new();
+    for (i, p) in template.split('{').enumerate() {
+        let (var, lit) = if i == 0 { (None, p) } else { p.split_once('}').map_or((None, p), |(v, l)| (Some(v), l)) };
+        if let Some(v) = var {
+            segs.push(known.get(v).map_or((true, v.to_string()), |k| (false, k.clone())));
+        }
+        if !lit.is_empty() {
+            segs.push((false, lit.to_string()));
+        }
+    }
+    segs_match(src, &segs, bound)
+}
+
+/// What a reference's legend line prints that its layer does not draw: each entry (placeholder, src) the one its template
+/// names over what the layer draws (legend.entries over legend.draws), and with a `time` among them each fact entry's
+/// reads all at that period (the halo's value is its year's).
+fn drawn_entry_gaps(legend: &J, entries: &[(String, String)], d: &Drawn) -> Vec<String> {
+    let known = match drawn_vars(legend.g("draws"), d) {
+        Ok(k) => k,
+        Err(e) => return vec![format!("what its layer draws: {e}")],
+    };
+    let mut bound = BTreeMap::new();
+    let mut out = Vec::new();
+    // an entry tied to what the layer draws binds the values it shares first (the halo's {code} by its value, then its name)
+    let mut entries: Vec<&(String, String)> = entries.iter().collect();
+    entries.sort_by_key(|(ph, _)| !template_vars(&st(legend.g("entries").g(ph))).iter().any(|v| known.contains_key(v)));
+    for (ph, src) in entries {
+        let template = st(legend.g("entries").g(ph));
+        if !src_is(src, &template, &known, &mut bound) {
+            let want = known.iter().fold(template.clone(), |t, (k, v)| t.replace(&format!("{{{k}}}"), v));
+            out.push(format!("{{{ph}}} is the entry {src}, and its layer draws {want}"));
+            continue;
+        }
+        let Some(key) = src.strip_prefix("fact:") else { continue };
+        let (Some(time), key) = (known.get("time"), key.strip_suffix(".n").or(key.strip_suffix(".t")).unwrap_or(key)) else { continue };
+        let reads = d.reads.get(key).map(Vec::as_slice).unwrap_or_default();
+        let at = |r: &String| r.strip_prefix("series:").and_then(|r| r.rsplit(':').nth(1)) == Some(time.as_str());
+        if reads.is_empty() || !reads.iter().all(at) {
+            out.push(format!("{{{ph}}} is the fact {key}, which reads {reads:?}, not its layer's {time}"));
+        }
+    }
+    out
+}
 
 /// The element of `html` whose opening tag starts at `open`: (its name, where its body starts, where its closing tag
 /// starts), elements of the same name inside it counted; none when it does not close.
@@ -1555,7 +1702,8 @@ fn pieces(html: &str, from: usize, to: usize) -> Option<Vec<Piece>> {
 /// filled as the registry's legend says (fills: `period`, `fact`, `name`: one entry of that kind; `fact_unit`: such an
 /// entry, then the unit of a page format; `unit`: the unit of a page format as text). A page format's unit is its suffix
 /// less its spaces.
-fn is_the_word(pieces: &[Piece], template: &str, fills: &J, units: &[String]) -> Result<(), String> {
+fn is_the_word(pieces: &[Piece], template: &str, fills: &J, units: &[String]) -> Result<Vec<(String, String)>, String> {
+    let mut entries = Vec::new();
     let mut text = String::new();
     let mut rest = pieces.iter();
     let all: Vec<(bool, String)> = template
@@ -1611,7 +1759,7 @@ fn is_the_word(pieces: &[Piece], template: &str, fills: &J, units: &[String]) ->
         text.clear();
         let want = kind.strip_suffix("_unit").unwrap_or(kind);
         match rest.next() {
-            Some(Piece::Entry(src)) if src.starts_with(&format!("{want}:")) => {}
+            Some(Piece::Entry(src)) if src.starts_with(&format!("{want}:")) => entries.push((s.clone(), src.clone())),
             Some(Piece::Entry(src)) => return Err(format!("{{{s}}} is the entry {src}, not a {want}")),
             _ => return Err(format!("{{{s}}} is no entry of the page")),
         }
@@ -1624,17 +1772,18 @@ fn is_the_word(pieces: &[Piece], template: &str, fills: &J, units: &[String]) ->
     if !text.trim().is_empty() || rest.next().is_some() {
         return Err(format!("the line holds more than the word ({text:?})"));
     }
-    Ok(())
+    Ok(entries)
 }
 
 /// What a published page of `recipe` lacks of its references' legend lines (owner 11-03 14:43): each reference
 /// (recipe_roles) prints its legend line in an element marked `data-word="<word>"` that sits inside the legend it names
 /// (legend.within: an element marked `data-legend="<within>"`), and whose text is the registry's word (the word table's
 /// entry) exactly, each placeholder filled as legend.fills says from the page's entries, whose own text the page check
-/// holds to the ledger. `units`: the units of the page's formats. A registry the roles cannot be read from is one gap; one
-/// that names no main chart at all is a prototype fixture's (as registry_lint reads it: the registry in force names one
-/// per recipe, a test holds it) and asks for no line.
-pub(crate) fn reference_legend_gaps(reg: &J, recipe: &str, html: &str, units: &[String]) -> Vec<String> {
+/// holds to the ledger, and each of those entries the one its layer draws (drawn_entry_gaps over `drawn`: what the page's
+/// layers were given; none, a gap). `units`: the units of the page's formats. A registry the roles cannot be read from is
+/// one gap; one that names no main chart at all is a prototype fixture's (as registry_lint reads it: the registry in
+/// force names one per recipe, a test holds it) and asks for no line.
+pub(crate) fn reference_legend_gaps(reg: &J, recipe: &str, html: &str, units: &[String], drawn: Option<&Drawn>) -> Vec<String> {
     if !reg.has("main_chart") {
         return Vec::new();
     }
@@ -1664,8 +1813,12 @@ pub(crate) fn reference_legend_gaps(reg: &J, recipe: &str, html: &str, units: &[
         };
         let template = crate::next_ledger::word_table().get(&word).and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
         let said = pieces(html, lb, lc).ok_or_else(|| "a child element names no data-src".to_string()).and_then(|p| is_the_word(&p, &template, legend.g("fills"), units));
-        if let Err(e) = said {
-            out.push(format!("roles: {what}'s legend line is not the registry's word {word} ({template:?}): {e}"));
+        match (said, drawn) {
+            (Err(e), _) => out.push(format!("roles: {what}'s legend line is not the registry's word {word} ({template:?}): {e}")),
+            (Ok(_), None) => out.push(format!("roles: {what}'s legend line: the page gives no knobs to read what its layer draws")),
+            (Ok(entries), Some(d)) => {
+                out.extend(drawn_entry_gaps(&legend, &entries, d).into_iter().map(|e| format!("roles: {what}'s legend line {word}: {e}")))
+            }
         }
     }
     out
@@ -6871,12 +7024,16 @@ mod tests {
     /// text changed (a literal, an entry of another kind, a unit of no format, more text), or outside the legend.
     #[test]
     fn a_reference_layer_names_its_legend_and_the_main_chart_is_never_wholly_one() {
-        let halo = r#"{"word": "halo.t0", "within": "map", "fills": {"y": "period", "name": "name", "val": "fact_unit"}}"#;
+        let halo = r#"{"word": "halo.t0", "within": "map", "fills": {"y": "period", "name": "name", "val": "fact_unit"},
+            "draws": {"table": "data.q.table", "time": "data.t0", "family": "data.legend_fact"},
+            "entries": {"y": "period:{table}:{time}", "val": "fact:{family}.{code}.n", "name": "name:{names}:{code}"}}"#;
         let reg = |main: &str, roles: &str| {
             let map = format!(r#"{{"roles": {{"ring": {{"parts": {{"halo": {{"role": "reference", "legend": {halo}}}}}}}}}}}"#);
             parse(&format!(r#"{{"recipes": {{"ring": ["map", "ring"]}}, "main_chart": {{"ring": {main}}}, "nodes": {{"map": {map}, "ring": {{"roles": {{"ring": {roles}}}}}}}}}"#)).unwrap()
         };
-        let strip = r#"{"role": "reference", "legend": {"word": "scmp.strip.peak", "within": "strip", "fills": {"t": "period", "v": "fact_unit"}}}"#;
+        let strip = r#"{"role": "reference", "legend": {"word": "scmp.strip.peak", "within": "strip", "fills": {"t": "period", "v": "fact_unit"},
+            "draws": {"span": {"q": "strip.q", "from": "strip.from", "to": "strip.to"}, "peak": "strip.peak"},
+            "entries": {"t": "period:{table}:{last}.y", "v": "fact:{peak}.n"}}}"#;
         let good = reg(r#""map""#, strip);
         let (main, refs) = recipe_roles(&good, "ring").unwrap();
         assert_eq!(main, "map");
@@ -6891,19 +7048,47 @@ mod tests {
             ("no legend it sits within", reg(r#""map""#, &strip.replace(r#""within": "strip", "#, "")), "names no legend it sits within"),
             ("a fill of no kind", reg(r#""map""#, &strip.replace(r#""t": "period""#, r#""t": "words""#)), "fills {t}"),
             ("a placeholder not filled", reg(r#""map""#, &strip.replace(r#""t": "period", "#, "")), "fills {t}"),
+            // each entry it prints is one its layer draws (reviewer 11-03): a template per entry, of its kind, tied to draws
+            ("no entry template", reg(r#""map""#, &strip.replace(r#""t": "period:{table}:{last}.y", "#, "")), "no entry its layer draws for {t}"),
+            ("an entry of another kind", reg(r#""map""#, &strip.replace(r#""t": "period:{table}"#, r#""t": "fact:{table}"#)), "is no period entry"),
+            ("an entry tied to nothing drawn", reg(r#""map""#, &strip.replace(r#""v": "fact:{peak}.n""#, r#""v": "fact:{any}.n""#)), "names nothing its layer draws"),
         ] {
             let e = recipe_roles(&bad, "ring").expect_err(what);
             assert!(e.contains(says), "{what}: {e}");
-            assert_eq!(reference_legend_gaps(&bad, "ring", "", &[]).len(), 1, "{what}: one gap");
+            assert_eq!(reference_legend_gaps(&bad, "ring", "", &[], None).len(), 1, "{what}: one gap");
         }
+        // what the page's layers were given and read: the map's halo at 2015 of lab_t0, the strip over m's RU rows from 2021-01
+        let hero = parse(r#"{"data": {"q": {"table": "t"}, "t0": "2015", "legend_fact": "lab_t0"},
+            "strip": {"q": {"table": "m", "filter": {"partner": "RU"}, "by": "partner"}, "from": "2021-01", "peak": "ru_s_peak"}}"#).unwrap();
+        let row = |p: &str, t: &str| format!(r#"{{"src": "series:m/{p}:{t}:OBS_VALUE", "table": "m", "dims": {{"partner": "{p}"}}, "time": "{t}", "value": 1}}"#);
+        let rows = parse(&format!("[{}]", [row("RU", "2019-01"), row("RU", "2021-01"), row("RU", "2025-12"), row("NO", "2026-01")].join(","))).unwrap();
+        let reads_at = |y: &str| BTreeMap::from([("lab_t0.RU".to_string(), vec![format!("series:t/RU:{y}:OBS_VALUE")]), ("ru_s_peak".to_string(), vec![])]);
+        let (reads, reads_late) = (reads_at("2015"), reads_at("2024"));
+        let drawn = Drawn { hero: &hero, rows: rows.arr(), members: &[], reads: &reads };
+        let late = Drawn { reads: &reads_late, ..drawn };
         // the page: each line the registry's word, its numbers the page's entries, inside its legend
         let units = ["百万立方米".to_string()];
         let halo_line = r#"<text data-word="halo.t0">浅色宽带＝<tspan data-src="period:t:2015">2015</tspan> 年（<tspan data-src="name:zh_names:iso2:RU">俄罗斯</tspan> <tspan data-src="fact:lab_t0.RU.n">126,027</tspan> 百万立方米）</text>"#;
         let strip_line = r#"<span data-word="scmp.strip.peak">最多：<span data-src="period:m:2025-12.y">2025</span> <span data-src="fact:ru_s_peak.n">3,261</span> 百万立方米</span>"#;
         let page = |h: &str, s: &str| format!(r#"<g data-legend="map"><rect/>{h}</g><div data-legend="strip"><b>剖面</b>{s}</div>"#);
-        assert_eq!(reference_legend_gaps(&good, "ring", &page(halo_line, strip_line), &units), Vec::<String>::new());
+        assert_eq!(reference_legend_gaps(&good, "ring", &page(halo_line, strip_line), &units, Some(&drawn)), Vec::<String>::new());
+        let fails_with = |d: Option<&Drawn>, html: &str, says: &str| {
+            let gaps = reference_legend_gaps(&good, "ring", html, &units, d);
+            assert_eq!(gaps.len(), 1, "{says}: {gaps:?}");
+            assert!(gaps[0].contains(says), "{says}: {}", gaps[0]);
+        };
+        // each entry the one its layer draws, not any entry of its kind: the strip's last month, the halo's year, its value
+        // a member of the map's legend family read at that year, its name that member's
+        fails_with(Some(&drawn), &page(halo_line, &strip_line.replace("period:m:2025-12.y", "period:m:2024-12.y")), "its layer draws period:m:2025-12.y");
+        fails_with(Some(&drawn), &page(&halo_line.replace("period:t:2015", "period:t:2024"), strip_line), "its layer draws period:t:2015");
+        fails_with(Some(&drawn), &page(&halo_line.replace("period:t:2015", "period:m:2015"), strip_line), "its layer draws period:t:2015");
+        fails_with(Some(&drawn), &page(&halo_line.replace("fact:lab_t0.RU.n", "fact:lab_t1.RU.n"), strip_line), "its layer draws fact:lab_t0.{code}.n");
+        fails_with(Some(&drawn), &page(&halo_line.replace("iso2:RU", "iso2:NO"), strip_line), "{name} is the entry name:zh_names:iso2:NO");
+        fails_with(Some(&drawn), &page(halo_line, &strip_line.replace("fact:ru_s_peak.n", "fact:no_s_peak.n")), "its layer draws fact:ru_s_peak.n");
+        fails_with(Some(&late), &page(halo_line, strip_line), "not its layer's 2015");
+        fails_with(None, &page(halo_line, strip_line), "gives no knobs");
         let fails = |html: &str, says: &str| {
-            let gaps = reference_legend_gaps(&good, "ring", html, &units);
+            let gaps = reference_legend_gaps(&good, "ring", html, &units, Some(&drawn));
             assert_eq!(gaps.len(), 1, "{says}: {gaps:?}");
             assert!(gaps[0].contains(says), "{says}: {}", gaps[0]);
         };
@@ -6921,8 +7106,8 @@ mod tests {
         let (in_force, _) = registry_in_force();
         let (_, scmp) = recipe_roles(&in_force, "scmp").unwrap();
         assert_eq!(scmp, [("map.halo".to_string(), "halo.t0".to_string()), ("strip".to_string(), "scmp.strip.ref".to_string())]);
-        assert_eq!(reference_legend_gaps(&in_force, "scmp", "", &[]).len(), 2);
-        assert!(reference_legend_gaps(&in_force, "ring", "", &[]).is_empty() && reference_legend_gaps(&in_force, "column", "", &[]).is_empty());
+        assert_eq!(reference_legend_gaps(&in_force, "scmp", "", &[], None).len(), 2);
+        assert!(reference_legend_gaps(&in_force, "ring", "", &[], None).is_empty() && reference_legend_gaps(&in_force, "column", "", &[], None).is_empty());
     }
 
     /// 11-03: a printed difference is the difference of its two values as the page prints them, over three shapes: a
