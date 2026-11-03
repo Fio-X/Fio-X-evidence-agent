@@ -6465,7 +6465,7 @@ mod tests {
         assert_eq!(model.asked[0].len(), 2);
         let first = &model.asked[1];
         assert_eq!(first.len(), 1, "{first:?}");
-        assert_eq!(first[0]["content"], json!([{"type": "text", "text": "review the page"}, image]));
+        assert_eq!(first[0]["content"], json!([{"type": "text", "text": with_step_line("review the page", "vision")}, image]));
         let second = &model.asked[2];
         let roles: Vec<&str> = second.iter().map(|m| m["role"].as_str().unwrap()).collect();
         assert_eq!(roles, ["user", "assistant", "toolResult"]);
