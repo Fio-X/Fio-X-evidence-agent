@@ -483,7 +483,9 @@ def ml_inset(m, occ):
             if not m.inside(b, 6) or occ.hit(b, pad=(6, 6)) or occ.on_line(b, pad=6) or any(b[0] - 8 < px < b[2] + 8 and b[1] - 8 < py < b[3] + 8 for px, py in ev): continue
             sc = math.dist(((b[0] + b[2]) / 2, (b[1] + b[3]) / 2), (m.hx, m.hy))
             if not best or sc > best[0]: best = (sc, x, y)
-    if not best: return f'<g data-left="{word("inset.left")}"></g>'
+    # no room inside: a ring page (its frame hands _ret) puts the inset in a corner outside the ring (scmp.rl_inset), so the
+    # map leaves nothing and says nothing; only a map with no such fallback lists the inset as left out
+    if not best: return "" if "_ret" in d else f'<g data-left="{word("inset.left")}"></g>'
     _, x, y = best; occ.add((x, y - 16, x + w, y + h), "inset")
     if "_ret" in d: d["_ret"]["inset"] = True
     return inset_svg(m, g, x, y, w, soft=knob(d, "base", "sea"))

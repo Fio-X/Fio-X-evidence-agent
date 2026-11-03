@@ -469,6 +469,23 @@ class Column(unittest.TestCase):
         m = types.SimpleNamespace(d={"halo": False}, c=c, t0="2015", t1="2024")
         self.assertEqual(prod.ml_legend(m, None), "")  # no halo, so no halo lines on the map
 
+    def test_an_inset_with_no_room_on_a_ring_map_goes_to_the_ring_s_corner_and_is_no_left_out_mark(self):
+        """The gas ring page stopped at the bake with "map.inset does not fit: 副图": the map found no free room inside for
+        the locator inset and marked it left out, though the ring then sets it in a corner outside the ring (rl_inset). A
+        ring's map (its frame hands _ret) now leaves nothing and says nothing; a map with no such fallback still marks it."""
+        import types
+        geom = prod.inset_geom
+        try:
+            prod.inset_geom = lambda m, w: ("geometry", 60)
+            for ret, want in (({}, ""), (None, f'<g data-left="{words.word("inset.left")}"></g>')):
+                d = {"round": True, "style": {}}
+                if ret is not None: d["_ret"] = ret
+                m = types.SimpleNamespace(d=d, W=400, H=400, P=lambda *p: (0, 0), hx=200, hy=200, inside=lambda b, pad: False)
+                self.assertEqual(prod.ml_inset(m, prod.Occ()), want, ret)
+                if ret is not None: self.assertNotIn("inset", ret)  # the ring's corner (inset_spot) is then taken
+        finally:
+            prod.inset_geom = geom
+
     def test_a_note_names_the_other_place_by_its_name_row_and_never_a_free_name(self):
         """J2 (owner 11-04): a gap two decimals cannot bring within 5% is not printed; the note names the other place
         (its words a name segment, printed from its name row's ledger entry) and only which is higher."""
