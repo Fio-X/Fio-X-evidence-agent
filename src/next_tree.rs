@@ -1066,7 +1066,16 @@ impl<'a> Compute<'a> {
         let time = q.g("time");
         Ok(match op {
             "share" | "change" | "times" | "minus" | "plus" => {
-                let (a, b) = (self.val(&st(q.g("a")))?, self.val(&st(q.g("b")))?);
+                let (mut a, mut b) = (self.val(&st(q.g("a")))?, self.val(&st(q.g("b")))?);
+                // a printed difference (J2): the difference of its two values as the page prints them (of_printed)
+                if op == "minus" && q.has("of_printed") {
+                    let as_printed = |x: f64, i: usize| -> Result<f64, String> {
+                        let p = q.g("of_printed").at(i);
+                        let dec = p.g("dec").num().ok_or_else(|| format!("{key}: of_printed {i} names no dec"))? as usize;
+                        of_printed(x, p.g("scale").num().unwrap_or(1.0), dec).ok_or_else(|| format!("{key}: of_printed {i} cannot print {x}"))
+                    };
+                    (a, b) = (as_printed(a, 0)?, as_printed(b, 1)?);
+                }
                 match op {
                     "share" | "times" => {
                         if b != 0.0 {
@@ -4899,7 +4908,7 @@ fn cells_of(code: &J, dr: &J, sel: &[(String, &J)], got: &Got, rows: &[J]) -> Re
 /// The conditions a `first_holding` field's candidates are held by, all recomputed here from the core's own facts,
 /// formats, selects and the page input (registered: next_ledger CHECK_REGISTRY tree.first_holding). A candidate names
 /// only these; any other condition, or another argument, is refused.
-pub const CONDITIONS: [(&str, &[&str]); 7] = [
+pub const CONDITIONS: [(&str, &[&str]); 8] = [
     // the sign of a fact the core computes: pos, neg or zero (a NaN reads as zero, as a partial_cmp with 0 does)
     ("sign", &["fact", "is"]),
     // the fact as the format prints it differs from 0 as the format prints it (a tie prints as no gap)
@@ -4909,6 +4918,9 @@ pub const CONDITIONS: [(&str, &[&str]); 7] = [
     ("width_at_most", &["text", "size", "max"]),
     // a select holds at least `n` codes
     ("count_at_least", &["select", "n"]),
+    // the page prints the fact, a difference, as a number: no DIFF_MOST_DEC decimals left it more than DIFF_CLOSE off
+    // its true difference (next_tree_gen printed_raise's gap_order, J2), else its words say only which is higher
+    ("gap_printable", &["fact"]),
     // a boolean at a path of the page input (a value that is not true or false is refused)
     ("page_is", &["path"]),
     // a row of the page input's rows at `table`, `time` and every `filter` dimension holds a text value that parses above
@@ -5008,6 +5020,7 @@ fn condition_holds(cond: &J, h: &Holding) -> Result<bool, String> {
             let have = h.got.get(&sid).ok_or_else(|| format!("condition count_at_least: no select {sid}"))?.arr().len();
             Ok(have as f64 >= n)
         }
+        "gap_printable" => Ok(!h.page.g("gap_order").arr().iter().any(|o| o.s() == Some(key("fact").as_str()))),
         "page_is" => match at_path(h.page, &st(cond.g("path")))? {
             J::Bool(b) => Ok(*b),
             v => Err(format!("condition page_is {}: {} is not true or false", st(cond.g("path")), v.repr())),
@@ -5056,6 +5069,20 @@ pub(crate) fn with_code(v: &J, code: &str, page: &J) -> J {
 pub(crate) fn fact_value(facts: &J, rows: &[J], key: &str) -> Result<f64, String> {
     Compute::new(facts, rows).val(key)
 }
+
+/// A value as a format of `scale` and `dec` decimals prints it, read back in the value's own unit (next_facts printed_value).
+fn of_printed(x: f64, scale: f64, dec: usize) -> Option<f64> {
+    if !x.is_finite() || scale == 0.0 {
+        return None;
+    }
+    py_fixed(x * scale, dec).parse::<f64>().ok().map(|p| p / scale)
+}
+
+/// How far a printed difference may sit from the true one (J2, owner 11-04): 5% of the true difference.
+pub(crate) const DIFF_CLOSE: f64 = 0.05;
+
+/// The most decimals a printed difference's two values may take to come close (J2): two.
+pub(crate) const DIFF_MOST_DEC: usize = 2;
 
 /// A number its format printed (py_fixed: "-0.35") as an integer of `dec` decimals (-35 at 2, -350 at 3); none when it
 /// holds more decimals than `dec` or is no number.
@@ -5149,8 +5176,42 @@ pub(crate) fn fact_fmt(facts: &J, key: &str) -> Option<String> {
 /// a printed fact of the same value: vs_hi_a is SE's bar chg.SE), the difference of the two printed numbers, rounded half
 /// to even to the difference's decimals, is the difference as printed. An operand the page does not print (a year's level
 /// the dek only reads) leaves its difference no case; so do formats of two scales and a fact the core cannot compute (the
-/// facts check reports it). Each failure: (its words, [the difference, the printed key of each operand]).
+/// facts check reports it). And (J2, owner 11-04) the difference as printed is within DIFF_CLOSE of the true difference
+/// of the two values. Each failure: (its words, [the difference, the printed key of each operand]).
 pub(crate) fn differences_disagree(facts: &J, fmts: &J, rows: &[J], printed: &BTreeSet<String>) -> Vec<(String, Vec<String>)> {
+    let mut out = Vec::new();
+    for d in printed_differences(facts, fmts, rows, printed) {
+        let keys = vec![d.key.clone(), d.pa.clone(), d.pb.clone()];
+        if !d.equal {
+            out.push((format!("printed difference {}: prints {}, and {} {} less {} {} as printed is {}", d.key, d.tk, d.pa, d.ta, d.pb, d.tb, d.said), keys));
+        } else if !d.close {
+            out.push((format!("printed difference {}: prints {}, which is more than {}% off the true difference {} of {} and {}", d.key, d.tk, DIFF_CLOSE * 100.0, d.truth, d.pa, d.pb), keys));
+        }
+    }
+    out
+}
+
+/// One printed difference of the page as differences_disagree reads it: the difference and its operands' printed keys,
+/// what each prints, the operands' (scale, decimals), whether it is the difference of its operands as printed (`said`
+/// that difference at the difference's decimals), the true difference of the operands, and whether the printed one is
+/// within DIFF_CLOSE of it.
+pub(crate) struct PrintedDiff {
+    pub key: String,
+    pub pa: String,
+    pub pb: String,
+    pub tk: String,
+    pub ta: String,
+    pub tb: String,
+    pub said: String,
+    pub forms: [(f64, usize); 2],
+    pub dec: usize,
+    pub equal: bool,
+    pub truth: f64,
+    pub close: bool,
+}
+
+/// The page's printed differences (differences_disagree's cases), each read whole (PrintedDiff).
+pub(crate) fn printed_differences(facts: &J, fmts: &J, rows: &[J], printed: &BTreeSet<String>) -> Vec<PrintedDiff> {
     let val = Compute::new(facts, rows);
     let shown = |k: &str| printed.contains(k) || k.rsplit_once('.').is_some_and(|(f, _)| printed.contains(&format!("{f}.*")));
     // the printed keys, each family bound whole as its members
@@ -5198,10 +5259,12 @@ pub(crate) fn differences_disagree(facts: &J, fmts: &J, rows: &[J], printed: &BT
         let most = da.max(db).max(dk);
         let (Some(ik), Some(ia), Some(ib)) = (printed_int(&tk, dk), printed_int(&ta, most), printed_int(&tb, most)) else { continue };
         let want = round_even(ia - ib, most, dk);
-        if want != ik {
-            let said = py_fixed(want as f64 / 10f64.powi(dk as i32), dk);
-            out.push((format!("printed difference {k}: prints {tk}, and {pa} {ta} less {pb} {tb} as printed is {said}"), vec![k.clone(), pa, pb]));
-        }
+        let said = py_fixed(want as f64 / 10f64.powi(dk as i32), dk);
+        // the true difference of the two values, and the printed one against it (in the difference's own unit)
+        let truth = va - vb;
+        let shown_v = ik as f64 / 10f64.powi(dk as i32) / sk;
+        let close = if truth == 0.0 { ik == 0 } else { (shown_v - truth).abs() <= DIFF_CLOSE * truth.abs() };
+        out.push(PrintedDiff { key: k.clone(), pa, pb, tk, ta, tb, said, forms: [(sa, da), (sb, db)], dec: dk, equal: want == ik, truth, close });
     }
     out
 }
@@ -7219,6 +7282,41 @@ mod tests {
         assert!(in_force.g("nodes").g("ring").g("split").has("ring"));
         assert_eq!(split_gaps(&in_force, "ring", "", &[], None).len(), 1);
         assert!(split_gaps(&in_force, "scmp", "", &[], None).is_empty() && split_gaps(&in_force, "column", "", &[], None).is_empty());
+    }
+
+    /// J2 (owner 11-04): a printed difference is the difference of its two values as printed (of_printed), and within 5% of
+    /// the true one. RO 0.568 and HR 0.234 (true 0.334): at one decimal 0.6 less 0.2 is 0.4, 20% off, a failure; at two
+    /// 0.57 less 0.23 is 0.34, 2% off, none; a gap printed at the true difference's rounding (0.33) where the values as
+    /// printed say 0.34 still fails as before; a true difference of 0 printed 0 passes.
+    #[test]
+    fn a_printed_difference_is_within_five_percent_of_the_true_one() {
+        let rows: Vec<J> = [("RO", "0.568"), ("HR", "0.234"), ("SE", "0.3"), ("FI", "0.3")].iter()
+            .map(|(g, v)| parse(&format!(r#"{{"table": "t", "time": "2024", "dims": {{"geo": "{g}"}}, "value": "{v}"}}"#)).unwrap()).collect();
+        let fmts = parse(r#"{"d1": {"scale": 1, "dec": 1, "suffix": ""}, "d2": {"scale": 1, "dec": 2, "suffix": ""}}"#).unwrap();
+        let facts = |dec: usize, of: bool| {
+            let f = format!("d{dec}");
+            let of = if of { format!(r#", "of_printed": [{{"scale": 1, "dec": {dec}}}, {{"scale": 1, "dec": {dec}}}]"#) } else { String::new() };
+            parse(&format!(r#"{{"ro": {{"table": "t", "filter": {{"geo": "RO"}}, "time": "2024", "fmt": "{f}"}}, "hr": {{"table": "t", "filter": {{"geo": "HR"}}, "time": "2024", "fmt": "{f}"}},
+                "se": {{"table": "t", "filter": {{"geo": "SE"}}, "time": "2024", "fmt": "{f}"}}, "fi": {{"table": "t", "filter": {{"geo": "FI"}}, "time": "2024", "fmt": "{f}"}},
+                "gap": {{"op": "minus", "a": "ro", "b": "hr", "fmt": "{f}"{of}}}, "tie": {{"op": "minus", "a": "se", "b": "fi", "fmt": "{f}"{of}}}}}"#)).unwrap()
+        };
+        let shown: BTreeSet<String> = ["ro", "hr", "gap", "se", "fi", "tie"].iter().map(|k| k.to_string()).collect();
+        // the difference of the values as printed: 0.6 - 0.2 at one decimal, 0.57 - 0.23 at two
+        assert!((fact_value(&facts(1, true), &rows, "gap").unwrap() - 0.4).abs() < 1e-12);
+        assert!((fact_value(&facts(2, true), &rows, "gap").unwrap() - 0.34).abs() < 1e-12);
+        let one = differences_disagree(&facts(1, true), &fmts, &rows, &shown);
+        assert_eq!(one.len(), 1, "{one:?}");
+        assert!(one[0].0.contains("printed difference gap: prints 0.4, which is more than 5% off the true difference"), "{}", one[0].0);
+        assert_eq!(one[0].1, ["gap", "ro", "hr"]);
+        assert!(differences_disagree(&facts(2, true), &fmts, &rows, &shown).is_empty());
+        // at the true difference's own rounding (0.334 prints 0.33), not the values' as printed (0.34): fails as before
+        let off = differences_disagree(&facts(2, false), &fmts, &rows, &shown);
+        assert_eq!(off.len(), 1, "{off:?}");
+        assert!(off[0].0.contains("prints 0.33, and ro 0.57 less hr 0.23 as printed is 0.34"), "{}", off[0].0);
+        // the whole reading: equal and close at two decimals, its operands' forms
+        let d = printed_differences(&facts(2, true), &fmts, &rows, &shown).into_iter().find(|d| d.key == "gap").unwrap();
+        assert_eq!((d.equal, d.close, d.forms, d.dec), (true, true, [(1.0, 2), (1.0, 2)], 2));
+        assert!((d.truth - 0.334).abs() < 1e-12);
     }
 
     /// 11-03: a printed difference is the difference of its two values as the page prints them, over three shapes: a

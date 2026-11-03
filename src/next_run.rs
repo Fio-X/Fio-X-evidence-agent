@@ -5592,6 +5592,11 @@ mod tests {
             let mut same = new.clone();
             same["fmt"] = q["fmt"].clone();
             same.as_object_mut().unwrap().remove("fmt_each");
+            // J2: a printed difference the difference of its two values as printed, only where the core names it
+            if let Some(forms) = same.as_object_mut().unwrap().remove("of_printed") {
+                assert!(named(k), "fact {k}: made the difference of its printed values with no printed difference naming it");
+                raised.push(format!("{k} of printed {forms}"));
+            }
             assert_eq!(&same, q, "fact {k}: more than its format differs from the frozen fill's");
             if new["fmt"] != q["fmt"] {
                 assert!(named(k), "fact {k}: raised with no printed difference naming it");
@@ -5700,11 +5705,13 @@ mod tests {
         })
         .unwrap();
         fill.as_object_mut().unwrap().remove("page_in").expect("the page input kept for draw_nodes");
-        // the last note's gap and its two bars one decimal more than the frozen fill's, nothing else: FR's -2.25 printed -2.2
-        // left BE's 5.5 less it at 7.7, the note 7.75 printed 7.8
+        // J2 (owner 11-04): the last note's gap the difference of its two bars as printed, nothing else: FR's -2.25 printed
+        // -2.2 leaves BE's 5.5 less it at 7.7, within 5% of 7.75, so no decimal is added
         let old = &rust["knobs"]["spec"];
         let (facts, fmts, raised) = with_printed_raise(old["facts"].as_object().unwrap(), old["fmts"].as_object().unwrap(), &fill["knobs"]["spec"], page_in["rows"].as_array().unwrap());
-        assert_eq!(raised, ["chg.BE", "chg.FR", "vs_lo"]);
+        assert_eq!(raised.len(), 1, "{raised:?}");
+        assert!(raised[0].starts_with("vs_lo of printed "), "{raised:?}");
+        assert_eq!(fill["knobs"]["spec"]["facts"]["vs_lo"]["of_printed"], json!([{"scale": 1.0, "dec": 1}, {"scale": 1.0, "dec": 1}]));
         (rust["knobs"]["spec"]["facts"], rust["knobs"]["spec"]["fmts"]) = (json!(facts), json!(fmts));
         let mut differs = Vec::new();
         fill_diff(&rust, &fill, "fill", &mut differs);
@@ -6475,12 +6482,12 @@ mod tests {
         assert_eq!(fill["ends"], json!({"t0": "2016", "t1": "2024", "rule": "two_ends", "fetched_from": "2013",
             "later": [{"year": "2013", "missing": ["BE", "DE", "FR"]}, {"year": "2015", "missing": ["DE"]}]}));
         let spec = &fill["knobs"]["spec"];
-        // the bars' changes in points at one decimal, but BE's and FR's at two: the last note's gap is the difference of those
-        // two bars, and at one decimal 5.5 less -2.2 is 7.7 where the gap 7.75 prints 7.8 (differences_disagree)
-        assert_eq!(spec["facts"]["chg"], json!({"op": "minus", "each": "geo", "a": "val1", "b": "val0", "fmt": "pp", "fmt_each": {"BE": "pp_d2", "FR": "pp_d2"}}));
+        // the bars' changes in points at one decimal; the last note's gap is the difference of BE's and FR's bars as printed
+        // (J2: 5.5 less -2.2 is 7.7, within 5% of the true 7.75, so no bar takes a decimal more)
+        assert_eq!(spec["facts"]["chg"], json!({"op": "minus", "each": "geo", "a": "val1", "b": "val0", "fmt": "pp"}));
         assert_eq!(spec["facts"]["val0"], json!({"each": "geo", "table": "sdg", "time": "2016", "fmt": "pc"}));
         assert_eq!(spec["fmts"]["pp"], json!({"scale": 1, "dec": 1, "suffix": " 个百分点"}));
-        assert_eq!(spec["fmts"]["pp_d2"], json!({"scale": 1, "dec": 2, "suffix": " 个百分点"}));
+        assert!(spec["fmts"].get("pp_d2").is_none());
         assert_eq!(spec["hero"]["style"], json!({"bars": {"measure": "change"}}));
         assert_eq!(spec["hero"]["data"]["family"], "chg");
         assert_eq!(spec["hero"]["data"]["t0"], "2016");
@@ -6508,8 +6515,10 @@ mod tests {
         assert_eq!(spec["facts"]["mean_chg"]["op"], "minus");
         let year = |code: &str, t: &str| json!({"op": "last", "table": "sdg", "filter": {"geo": code}, "from": t, "to": t, "fmt": "pc"});
         for (key, higher, lower) in [("vs_lo", "BE", "FR")] {
-            let fmt = if key == "vs_lo" { "pp_d2" } else { "pp" };
-            assert_eq!(spec["facts"][key], json!({"op": "minus", "a": format!("{key}_a"), "b": format!("{key}_b"), "fmt": fmt}));
+            // J2: the gap the difference of BE's and FR's bars as printed (5.5 less -2.2), within 5% of the true 7.75
+            let want = json!({"op": "minus", "a": format!("{key}_a"), "b": format!("{key}_b"), "fmt": "pp",
+                "of_printed": [{"scale": 1.0, "dec": 1}, {"scale": 1.0, "dec": 1}]});
+            assert_eq!(spec["facts"][key], want);
             for (side, code) in [("a", higher), ("b", lower)] {
                 assert_eq!(spec["facts"][format!("{key}_{side}")],
                     json!({"op": "minus", "a": format!("{key}_{side}1"), "b": format!("{key}_{side}0"), "fmt": "pp"}), "{key} {side}");
@@ -6542,15 +6551,15 @@ mod tests {
             Ok(_) => panic!("not a filled page"),
             Err(e) => panic!("leaf fill: {e}"),
         };
-        // each change as by hand, at one decimal (POINTS_DEC), but the last note's two bars at two: before 11-03 FR printed
-        // -2.2 (-2.25 to the even digit) and the note 7.8, which is not BE's 5.5 less it
-        for (code, text) in [("SE", "16.0 个百分点"), ("DE", "7.5 个百分点"), ("BE", "5.50 个百分点"), ("FR", "-2.25 个百分点")] {
+        // each change as by hand, at one decimal (POINTS_DEC): FR's -2.25 prints -2.2 (to the even digit)
+        for (code, text) in [("SE", "16.0 个百分点"), ("DE", "7.5 个百分点"), ("BE", "5.5 个百分点"), ("FR", "-2.2 个百分点")] {
             assert_eq!(page.ledger.get(&format!("fact:chg.{code}")).map(String::as_str), Some(text), "{code}");
         }
         assert_eq!(page.ledger.get("fact:lead").map(String::as_str), Some("16.0 个百分点"), "the dek's rise, as SE's bar");
-        // the notes' numbers from the rows: SE's 16 above the mean rise 6.6875 (form A), 5.5 - (-2.25) = 7.75 below BE
+        // the notes' numbers from the rows: SE's 16 above the mean rise 6.6875 (form A), and BE's 5.5 less FR's -2.2 as the
+        // bars print them, 7.7 (J2: the true 7.75 within 5%)
         assert_eq!(page.ledger.get("fact:vs_mean").map(String::as_str), Some("9.3 个百分点"), "the first note's gap to the mean");
-        assert_eq!(page.ledger.get("fact:vs_lo").map(String::as_str), Some("7.75 个百分点"), "the last note's gap");
+        assert_eq!(page.ledger.get("fact:vs_lo").map(String::as_str), Some("7.7 个百分点"), "the last note's gap");
         let dir = tempfile::tempdir().unwrap();
         let bundle = {
             let _command = crate::group_guard::command_for_test("investigate");

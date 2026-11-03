@@ -242,7 +242,16 @@ fn one(
                 .map_err(|e| format!("{key}: {side} {k} fails ({e})"))?;
             Ok(other.v)
         };
-        let (a, b) = (of("a")?, of("b")?);
+        let (mut a, mut b) = (of("a")?, of("b")?);
+        // a printed difference (J2, owner 11-04): the difference of its two values as the page prints them
+        if op == "minus" && q.get("of_printed").is_some() {
+            let as_printed = |x: f64, i: usize| -> Result<f64, String> {
+                let p = &q["of_printed"][i];
+                let (scale, dec) = (p["scale"].as_f64().unwrap_or(1.0), p["dec"].as_u64().ok_or_else(|| format!("{key}: of_printed {i} names no dec"))?);
+                printed_value(x, scale, dec as usize).ok_or_else(|| format!("{key}: of_printed {i} cannot print {x}"))
+            };
+            (a, b) = (as_printed(a, 0)?, as_printed(b, 1)?);
+        }
         if b == 0.0 && matches!(op, "share" | "change" | "times") {
             return Err(format!("{key}: {op} divides by {}, which is 0", q["b"]));
         }
@@ -535,6 +544,14 @@ fn one(
 
 /// A family member's format: the family's `fmt_each.<code>` when it names one (a printed difference's operand printed with
 /// one decimal more, next_tree_gen printed_raise), else the family's own.
+/// A value as a format of `scale` and `dec` decimals prints it, read back in the value's own unit (0.5678 at 100, 2: 0.57).
+pub(crate) fn printed_value(x: f64, scale: f64, dec: usize) -> Option<f64> {
+    if !x.is_finite() || scale == 0.0 {
+        return None;
+    }
+    format!("{:.dec$}", x * scale).parse::<f64>().ok().map(|p| p / scale)
+}
+
 fn member_fmt(q: &Value, code: &str, fmt: &str) -> String {
     q["fmt_each"][code].as_str().unwrap_or(fmt).to_string()
 }

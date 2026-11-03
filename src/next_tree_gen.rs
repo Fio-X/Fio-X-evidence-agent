@@ -1161,6 +1161,14 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
         }
         facts.set(&fact, q);
     }
+    // each printed difference the difference of its two values as printed (printed_raise: page_in.printed_of)
+    for (k, forms) in page_in.g("printed_of").obj() {
+        if let Some(q) = facts.get(k).filter(|q| q.g("op").s() == Some("minus") && !q.has("each")).cloned() {
+            let mut q = q;
+            q.set("of_printed", forms.clone());
+            facts.set(k, q);
+        }
+    }
     let mut out = J::obj_of(vec![("rows", J::Arr(drawn)), ("facts", facts), ("fmts", fmts)]);
     // the notes after the unit the declaration writes (declares.notes), each the registry's words with every template read
     let mut notes = Vec::new();
@@ -1224,24 +1232,30 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
 
 /// Request::NodeDeclare: what fill_of takes from the external layer `layer` over the flow's page input. A declaration of
 /// shape parts_of_whole (parts_declared) stops in its own words; any other failure is the generator's.
-/// The decimals the page's printed differences need (core differences_disagree, 11-03): the page's layers in its order
-/// (those declared_j declares) declared together, and for each printed difference that is not the difference of its two
-/// values as printed, that difference and the two printed values (only those three numbers) one decimal more each, in its
-/// own format; again until none disagrees or none of a failure's three can take one more (at the most decimals a row of the
-/// page input holds; the core refuses what still disagrees). Every other number keeps its format. A layer that does not
-/// declare leaves the raise as it is (its own declaration says why). {fact key or family member: decimals}
+/// How the page prints its differences (J2, owner 11-04: core printed_differences): the page's layers in its order (those
+/// declared_j declares) declared together, and each printed difference made the difference of its two values as printed
+/// (`of_printed`: each operand's scale and decimals); one more than DIFF_CLOSE off its true difference, the difference and
+/// its two values one decimal more each, in their own formats, to at most DIFF_MOST_DEC (and the most a row of the page
+/// input holds); still off there, the page prints no such difference (`gap_order`: a note's case asks gap_printable, so
+/// its words say only which is higher). Every other number keeps its format. A layer that does not declare leaves it as
+/// it is (its own declaration says why). {dec_raise: {fact key or family member: decimals}, printed_of: {difference:
+/// [{scale, dec}, {scale, dec}]}, gap_order: [difference]}
 fn printed_raise(page_in: &J, reg: &J) -> J {
-    let held = page_in.g("rows").arr().iter().filter_map(|r| r.g("value").s()).map(|v| v.split_once('.').map_or(0, |(_, f)| f.len())).max().unwrap_or(0) as f64;
-    let mut raise = J::Obj(vec![]);
+    let held = page_in.g("rows").arr().iter().filter_map(|r| r.g("value").s()).map(|v| v.split_once('.').map_or(0, |(_, f)| f.len())).max().unwrap_or(0);
+    let most = core::DIFF_MOST_DEC.min(held);
+    let (mut raise, mut of, mut order) = (J::Obj(vec![]), J::Obj(vec![]), Vec::<J>::new());
+    let done = |raise: &J, of: &J, order: &[J]| J::obj_of(vec![("dec_raise", raise.clone()), ("printed_of", of.clone()), ("gap_order", J::Arr(order.to_vec()))]);
     loop {
         let mut view = page_in.clone();
         view.set("dec_raise", raise.clone());
+        view.set("printed_of", of.clone());
+        view.set("gap_order", J::Arr(order.clone()));
         let (mut facts, mut fmts, mut shown) = (J::Obj(vec![]), J::Obj(vec![]), Vec::new());
         for layer in page_in.g("order").arr().iter().map(st) {
             if declares(reg, &layer, page_in).map_or(true, |d| d.has("shape")) {
                 continue;
             }
-            let Ok(out) = declared_j(&layer, &view, reg) else { return raise };
+            let Ok(out) = declared_j(&layer, &view, reg) else { return done(&raise, &of, &order) };
             for (k, v) in out.g("facts").obj() {
                 facts.set(k, v.clone());
             }
@@ -1252,22 +1266,41 @@ fn printed_raise(page_in: &J, reg: &J) -> J {
             shown.push(J::Obj(out.obj().iter().filter(|(k, _)| !matches!(k.as_str(), "facts" | "fmts" | "rows" | "reads" | "ordered")).cloned().collect()));
         }
         let printed = core::printed_keys(&J::Arr(shown), &facts);
-        let mut more: Vec<(String, i64)> = Vec::new();
-        for (_, keys) in core::differences_disagree(&facts, &fmts, page_in.g("rows").arr(), &printed) {
-            for k in keys {
-                let dec = core::fact_fmt(&facts, &k).and_then(|f| fmts.g(&f).g("dec").num());
-                if let Some(d) = dec.filter(|d| *d < held) {
-                    if !more.iter().any(|(m, _)| *m == k) {
-                        more.push((k, d as i64 + 1));
-                    }
+        let mut moved = false;
+        for d in core::printed_differences(&facts, &fmts, page_in.g("rows").arr(), &printed) {
+            if d.equal && d.close {
+                continue;
+            }
+            // first the difference of the two values as printed
+            let want = J::Arr(d.forms.iter().map(|(sc, dec)| J::obj_of(vec![("scale", J::Num(*sc)), ("dec", J::Int(*dec as i64))])).collect());
+            if of.get(&d.key) != Some(&want) {
+                of.set(&d.key, want);
+                moved = true;
+                continue;
+            }
+            if d.close {
+                // the difference of the values as printed, printed at fewer decimals than they hold: at theirs
+                let at = d.forms[0].1.max(d.forms[1].1);
+                if d.dec < at {
+                    raise.set(&d.key, J::Int(at as i64));
+                    moved = true;
                 }
+                continue;
+            }
+            // off the true difference: one decimal more each, to the most
+            let next = d.forms[0].1.max(d.forms[1].1).max(d.dec) + 1;
+            if next <= most {
+                for k in [&d.key, &d.pa, &d.pb] {
+                    raise.set(k, J::Int(next as i64));
+                }
+                moved = true;
+            } else if !order.iter().any(|o| o.s() == Some(d.key.as_str())) {
+                order.push(J::Str(d.key.clone()));
+                moved = true;
             }
         }
-        if more.is_empty() {
-            return raise;
-        }
-        for (k, d) in more {
-            raise.set(&k, J::Int(d));
+        if !moved {
+            return done(&raise, &of, &order);
         }
     }
 }
@@ -1293,7 +1326,9 @@ pub fn declare(layer: &str, page_in: &Value) -> Result<NodeDeclared, String> {
         let mut pi = pi;
         if !pi.has("dec_raise") {
             let raise = printed_raise(&pi, &reg);
-            pi.set("dec_raise", raise);
+            for k in ["dec_raise", "printed_of", "gap_order"] {
+                pi.set(k, raise.g(k).clone());
+            }
         }
         // a stop in the registry's own words (a value rule's `stop`) is the page's, as the rust fill's was
         declared_j(layer, &pi, &reg).map_err(|e| if e.starts_with("not this shape: ") { e } else { format!("node {layer}: declare: {e}") })?
@@ -2304,7 +2339,9 @@ pub fn draw(fill: &Value, page_in: &Value, layers: &[String], runtime: &std::pat
         // the decimals the page's printed differences need, as declare gave every layer (printed_raise)
         if !named.has("dec_raise") {
             let raise = printed_raise(&named, &reg);
-            named.set("dec_raise", raise);
+            for k in ["dec_raise", "printed_of", "gap_order"] {
+                named.set(k, raise.g(k).clone());
+            }
         }
         let again = declared_j(l, &named, &reg).map_err(|e| format!("node {l}: recheck over the name rows: {e}"))?;
         let key = st(d.g("leaf").g("key"));
