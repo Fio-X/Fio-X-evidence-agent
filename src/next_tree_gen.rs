@@ -820,21 +820,6 @@ fn finding_declared(d: &J, page_in: &J, reg: &J) -> Result<J, String> {
             return Ok(none("the subject's key is not above the bound"));
         }
     }
-    // other_untied: a place of its select's list sharing the other's key would make naming it a choice the data do not make
-    if let (true, Some(o)) = (c.g("other_untied").truthy(), &other) {
-        let oid = st(c.g("other"));
-        let from = refs.iter().find(|(id, _)| *id == oid).map(|(_, s)| st(s.g("from"))).unwrap_or_default();
-        let ko = key(&oid, o)?;
-        let mut same = 0;
-        for code in got.get(&from).map(|x| x.arr().to_vec()).unwrap_or_default() {
-            if key(&oid, &code)? == ko {
-                same += 1;
-            }
-        }
-        if same > 1 {
-            return Ok(none("the other is tied with another place"));
-        }
-    }
     if let (true, Some(o)) = (c.g("higher").truthy(), &other) {
         if key(&sid, &subject)? <= key(&st(c.g("other")), o)? {
             return Ok(none("the subject is not above the other"));

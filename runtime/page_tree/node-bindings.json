@@ -613,6 +613,12 @@
        "kind": "take",
        "from": "ranked",
        "at": "second",
+       "tie": {
+        "by": "printed",
+        "outcome": "silence",
+        "fmt": "$shape.fmt",
+        "missing": "whole"
+       },
        "scoped_only": true
       }
      ],
@@ -641,7 +647,6 @@
        ],
        "when_scoped": {
         "other": "second",
-        "other_untied": true,
         "facts": {
          "next1": {"op": "last", "table": "$shape.main", "filter": {"$shape.place": "{other}"}, "from": "$shape.year", "to": "$shape.year", "fmt": "$shape.fmt"},
          "next_gap": {"op": "minus", "a": "lead1", "b": "next1", "fmt": "$fmt.change"},
