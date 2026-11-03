@@ -1,18 +1,18 @@
 {
-  "measured_at": "df272add85b44167d9b807012ea2f964c80c1809",
+  "measured_at": "ffcc37f81ded074c540b7650751982f6514afe9d",
   "rules": "scripts/test_group_flow_ratchet.mjs header; totals and per_file may only go down; kind_names only grow, by --lower",
   "totals": {
     "new": {
       "nodes": 3,
       "ops": 5,
-      "copy": 62,
-      "kinds": 177
+      "copy": 98,
+      "kinds": 275
     },
     "old": {
       "nodes": 0,
       "ops": 0,
       "copy": 224,
-      "kinds": 413
+      "kinds": 417
     }
   },
   "scanned": {
@@ -137,6 +137,10 @@
     "src/interactive.rs": {
       "copy": 13
     },
+    "src/next_flow.rs": {
+      "copy": 31,
+      "kinds": 84
+    },
     "src/next_gate.rs": {
       "kinds": 13
     },
@@ -145,10 +149,11 @@
     },
     "src/next_page.rs": {
       "copy": 3,
-      "kinds": 2
+      "kinds": 7
     },
     "src/next_params.rs": {
-      "copy": 4
+      "copy": 9,
+      "kinds": 9
     },
     "src/next_run.rs": {
       "nodes": 3,
@@ -161,6 +166,9 @@
     },
     "src/openai_model.rs": {
       "kinds": 10
+    },
+    "src/pi.rs": {
+      "kinds": 4
     },
     "src/prompt.rs": {
       "copy": 65,
