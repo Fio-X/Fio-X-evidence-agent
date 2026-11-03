@@ -5405,19 +5405,21 @@ mod tests {
         // the headline from the finding joins the fill (HEADLINES, the page's title): taken out like the dek's finding, the
         // bytes sent are the ones before it
         let headline = sent.as_object_mut().unwrap().remove(HEADLINE).unwrap();
-        // the ring's headline is its focus's change between the headline years (owner 11-03): RU's fall
-        assert_eq!(headline, json!({"title": "{name.RU}降幅最大", "scoped": "{name.RU}降幅最大"}));
+        // the ring's headline is its focus's change between the headline years as a share of the earlier (owner 11-03): RU's
+        // fall, no ranking claimed
+        assert_eq!(headline, json!({"title": "{name.RU}下降{lead}", "scoped": "{name.RU}下降{lead}"}));
         // the page input the ring layer is declared over (P6 step 3: the ring is the visual group's) stays with the flow
         // for draw_nodes, so the bytes sent, the ring's among them, are still the ones pinned below
         sent.as_object_mut().unwrap().remove("page_in").unwrap();
         // the ring's finding is its focus's change between the headline years (owner 11-03): RU fell from 2021 to 2024, its
         // two years' values and their difference the finding's own facts, kept out of the bytes compared with the map's
         // count of the places it compares (drawn), the headline's years on the ring and the map at the later year only
-        assert_eq!(finding, json!({"dek": "{lead0.t}至{lead1.t}，{name.RU}降幅最大，减少{lead}", "scoped": "{lead0.t}至{lead1.t}，{name.RU}降幅最大，减少{lead}"}));
+        assert_eq!(finding, json!({"dek": "{lead0.t}至{lead1.t}，{name.RU}下降{lead}", "scoped": "{lead0.t}至{lead1.t}，{name.RU}下降{lead}"}));
         let facts = sent["knobs"]["spec"]["facts"].as_object_mut().unwrap();
         let year = |t: &str| json!({"op": "last", "table": "imp", "filter": {"partner": "RU", "geo": "EU27_2020"}, "from": t, "to": t, "fmt": "mio_m3"});
         assert_eq!((facts.remove("lead0").unwrap(), facts.remove("lead1").unwrap()), (year("2021"), year("2024")));
-        assert_eq!(facts.remove("lead").unwrap(), json!({"op": "minus", "a": "lead0", "b": "lead1", "fmt": "mio_m3"}));
+        assert_eq!(facts.remove("gap").unwrap(), json!({"op": "minus", "a": "lead0", "b": "lead1", "fmt": "mio_m3"}));
+        assert_eq!(facts.remove("lead").unwrap(), json!({"op": "share", "a": "gap", "b": "lead0"}));
         assert_eq!(facts.remove("drawn").unwrap()["op"], "n");
         let hero = sent["knobs"]["spec"]["hero"].as_object_mut().unwrap();
         assert_eq!(hero["ring"].as_object_mut().unwrap().remove("inside").unwrap(), json!({"from": "2021", "to": "2024"}));
@@ -5433,7 +5435,7 @@ mod tests {
         assert!(kept.iter().filter(|r| r["table"] == "impm").all(|r| r["dims"]["partner"] == "RU"));
         let spec = &fill["knobs"]["spec"];
         let mut keys: Vec<String> = spec["facts"].as_object().unwrap().keys().cloned().collect();
-        let mut want: Vec<String> = ["tot21", "tot24", "tot_ch", "ru_m_peak", "ru_last", "lab_t0", "lab_t1", "lead0", "lead1", "lead", "drawn"].map(String::from).to_vec();
+        let mut want: Vec<String> = ["tot21", "tot24", "tot_ch", "ru_m_peak", "ru_last", "lab_t0", "lab_t1", "lead0", "lead1", "gap", "lead", "drawn"].map(String::from).to_vec();
         for c in ["ru", "no", "us"] {
             want.extend([format!("{c}21"), format!("{c}24"), format!("{c}24_share")]);
         }
@@ -5459,8 +5461,8 @@ mod tests {
         let Ok(crate::next_visual::Reply::Filled(page)) = crate::next_flow::visual_call(&calls, "leaf_fill", request) else {
             panic!("no filled page");
         };
-        // 22 declared (lead0, lead1, lead the finding's, drawn the set count); lab_t0 and lab_t1 one fact per origin outside the hub (RU NO US)
-        assert_eq!((page.layers.len(), page.refs.as_slice(), page.facts.len()), (5, &["imp".to_string(), "impm".into()][..], 26));
+        // 23 declared (lead0, lead1, gap, lead the finding's, drawn the set count); lab_t0 and lab_t1 one fact per origin outside the hub (RU NO US)
+        assert_eq!((page.layers.len(), page.refs.as_slice(), page.facts.len()), (5, &["imp".to_string(), "impm".into()][..], 27));
         // the total is the countries outside the hub (RU NO US); DE is a member, TOTAL and EXT_EU27_2020 are not rows
         let tot24 = page.facts.iter().find(|f| f.key == "tot24").unwrap();
         assert_eq!((tot24.v, tot24.n), (37843.285 + 1.0 + 1.0, Some(3)));
@@ -13359,9 +13361,12 @@ for line in sys.stdin:
             let at = |k: &str| (spec[k]["filter"][&shape.place].clone(), spec[k]["from"].clone());
             assert_eq!(at("lead0"), (json!(focus), json!(picks.t0)), "ring {name}: lead0");
             assert_eq!(at("lead1"), (json!(focus), json!(picks.t1)), "ring {name}: lead1");
-            // A's focus RU falls (lead0 less lead1), B's focus NO rises (lead1 less lead0)
+            // A's focus RU falls (lead0 less lead1), B's focus NO rises (lead1 less lead0): that gap a share of its earlier value
             let (a, b) = if *focus == "RU" { ("lead0", "lead1") } else { ("lead1", "lead0") };
-            assert_eq!((spec["lead"]["op"].as_str(), spec["lead"]["a"].as_str(), spec["lead"]["b"].as_str()), (Some("minus"), Some(a), Some(b)), "ring {name}: lead");
+            assert_eq!((spec["gap"]["op"].as_str(), spec["gap"]["a"].as_str(), spec["gap"]["b"].as_str()), (Some("minus"), Some(a), Some(b)), "ring {name}: gap");
+            assert_eq!(spec["lead"], json!({"op": "share", "a": "gap", "b": "lead0"}), "ring {name}: lead");
+            let said = fill[HEADLINE]["title"].as_str().unwrap();
+            assert_eq!(said, format!("{{name.{focus}}}{}{{lead}}", if *focus == "RU" { "下降" } else { "增长" }), "ring {name}: no ranking claimed");
             let dek = fill["finding"]["dek"].as_str().unwrap_or_else(|| panic!("ring {name}: no finding: {}", fill["finding"]));
             println!("P6FINDING change ring {name}: {focus}: {dek}");
         }
@@ -13668,7 +13673,7 @@ for line in sys.stdin:
             if recipe_name == "ring" {
                 // the ring's finding is no longer the frozen share (owner 11-03): its focus's change between the years
                 let dek = fill["finding"]["dek"].as_str().unwrap_or_else(|| panic!("ring: no finding: {}", fill["finding"]));
-                assert_eq!(dek, format!("{{lead0.t}}至{{lead1.t}}，{{name.{}}}降幅最大，减少{{lead}}", picks.focus), "ring: the gas page's fall");
+                assert_eq!(dek, format!("{{lead0.t}}至{{lead1.t}}，{{name.{}}}下降{{lead}}", picks.focus), "ring: the gas page's fall");
                 println!("P6REQ finding ring gas: {dek}");
                 continue;
             }
@@ -13722,7 +13727,7 @@ for line in sys.stdin:
         // the ring page is no longer the frozen one in its finding (owner 11-03: its focus's change, the map's set count
         // drawn) and in its map's data (the later year only, its reference line's word); the rest is
         let ring = name.starts_with("ring");
-        let own = |k: &str| ring && matches!(k, "lead" | "lead0" | "lead1" | "drawn");
+        let own = |k: &str| ring && matches!(k, "lead" | "lead0" | "lead1" | "gap" | "drawn");
         let mine: BTreeSet<&String> = spec["facts"].as_object().unwrap().keys().filter(|k| !own(k)).collect();
         assert_eq!(mine, old.facts.keys().filter(|k| !own(k)).collect::<BTreeSet<_>>(), "{name}: the page's fact keys, the finding's among them");
         for (k, q) in old.facts.iter().filter(|(k, _)| !own(k)) {

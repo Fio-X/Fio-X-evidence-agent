@@ -757,7 +757,7 @@
         "at": "first",
         "above": 0
        },
-       "finding": "Rise",
+       "finding": "Grew",
        "subject": "subject",
        "named": [
         "{code}"
@@ -786,6 +786,11 @@
          "fmt": "$shape.fmt"
         },
         "lead": {
+         "op": "share",
+         "a": "gap",
+         "b": "lead0"
+        },
+        "gap": {
          "op": "minus",
          "a": "lead1",
          "b": "lead0",
@@ -811,7 +816,7 @@
         "at": "first",
         "below": 0
        },
-       "finding": "Fall",
+       "finding": "Shrank",
        "subject": "subject",
        "named": [
         "{code}"
@@ -840,6 +845,11 @@
          "fmt": "$shape.fmt"
         },
         "lead": {
+         "op": "share",
+         "a": "gap",
+         "b": "lead0"
+        },
+        "gap": {
          "op": "minus",
          "a": "lead0",
          "b": "lead1",

@@ -180,6 +180,11 @@ pub enum Finding {
     Share,
     /// A composition's highlighted part (its first group) with the largest share of its place's total among the bars.
     Part,
+    /// One place's own rise between the page's two years, as a share of its earlier value (the ring page's focus, the
+    /// quantity its ring draws, owner 11-03): no ranking, so nothing the page does not show is claimed.
+    Grew,
+    /// One place's own fall between the two years, as Grew.
+    Shrank,
 }
 
 /// The page dek's one finding sentence per Finding: unscoped, then a scoped page's wording (no next_page SUPERLATIVES word;
@@ -190,12 +195,14 @@ pub enum Finding {
 /// facts the page declares, and {y0} and {y1} with the period placeholders of facts read at the earlier and the later year
 /// ({<fact>.t}, which the leaf prints with its 年 from the ledger), so every number and year prints from the ledger. Same
 /// rules as FRAMES but the placeholders.
-pub const DEK_FINDINGS: [(Finding, &str, &str); 5] = [
+pub const DEK_FINDINGS: [(Finding, &str, &str); 7] = [
     (Finding::Rise, "{y0}至{y1}，{name}增幅最大，增加{value}", "{y0}至{y1}，{name}{set}增幅最大，增加{value}"),
     (Finding::Fall, "{y0}至{y1}，{name}降幅最大，减少{value}", "{y0}至{y1}，{name}{set}降幅最大，减少{value}"),
     (Finding::Level, "{y1}，{name}最高，为{value}，比最低的{other}高{gap}", "{y1}，{name}{set}居首，为{value}，比{other}高{gap}"),
     (Finding::Share, "{y1}，{name}最多，占{value}", "{y1}，{name}{set}居首，占{value}"),
     (Finding::Part, "{y1}，{name}占比最高，为{value}", "{y1}，{set}，{name}占比居首，为{value}"),
+    (Finding::Grew, "{y0}至{y1}，{name}增长{value}", "{y0}至{y1}，{name}{set}增长{value}"),
+    (Finding::Shrank, "{y0}至{y1}，{name}下降{value}", "{y0}至{y1}，{name}{set}下降{value}"),
 ];
 
 /// The page title's conclusion per Finding, unscoped then scoped (next_run finding_of fills it as it fills the dek's, and the
@@ -204,12 +211,14 @@ pub const DEK_FINDINGS: [(Finding, &str, &str); 5] = [
 /// fact of how many times the lowest the highest is (next_run extremes), so a level headline compares the two ends by a
 /// number from the ledger. The scoped wording holds the page's set ({set}, as DEK_FINDINGS') and no next_page SUPERLATIVES word, as
 /// DEK_FINDINGS' does. Same rules as FRAMES but the placeholders.
-pub const HEADLINES: [(Finding, &str, &str); 5] = [
+pub const HEADLINES: [(Finding, &str, &str); 7] = [
     (Finding::Rise, "{name}增幅最大", "{name}{set}增幅最大"),
     (Finding::Fall, "{name}降幅最大", "{name}{set}降幅最大"),
     (Finding::Level, "{name}最高，是最低者{other}的{times}", "{name}{set}居首，是{other}的{times}"),
     (Finding::Share, "{name}最多，占{value}", "{name}{set}居首，占{value}"),
     (Finding::Part, "{name}占比最高，达{value}", "{set}{name}占比居首，达{value}"),
+    (Finding::Grew, "{name}增长{value}", "{name}{set}增长{value}"),
+    (Finding::Shrank, "{name}下降{value}", "{name}{set}下降{value}"),
 ];
 
 /// The chart forms the page renderer draws a card for (next_render Card): the page's title, dek, text and reader fields are
