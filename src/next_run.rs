@@ -8983,6 +8983,29 @@ mod tests {
         assert_eq!(notes, [("SE".to_string(), "column.note.hi.scoped".to_string()), ("BE".into(), "column.note.lo.scoped".into())]);
     }
 
+    /// The set's count the page prints ({drawn}, counted over the rows the page keeps) is the places the finding compares:
+    /// a narrowed column page whose table holds an aggregate row (EU27_2020) beside its 4 places keeps 4 and draws; the
+    /// aggregate's row kept on the page counts 5 places for 4 compared, and the draw recheck stops the page.
+    #[test]
+    fn a_set_count_that_counts_an_aggregate_row_is_refused_at_draw() {
+        let column = recipe("column");
+        let main = column_rows();
+        let shape = shape_of(&column.eats, &[("t", &main[..])], &Hubs).unwrap();
+        let picks = picks_of(&column.picks, &shape, &main, &[]).unwrap();
+        let set = json!({"words": "在本指标最高的{n}个经济体中", "members": 4});
+        let fill = test_fill_set(column, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), true, Some(set)).unwrap();
+        assert_eq!(fill["finding"]["set"], "在本指标最高的{drawn}个经济体中");
+        let runtime = Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime");
+        let calls = std::sync::Mutex::new(Vec::new());
+        draw_nodes(&mut fill.clone(), &column.external, &calls, &runtime).unwrap();
+        let mut counted = fill.clone();
+        let aggregate = main.iter().find(|r| r["dims"]["geo"] == "EU27_2020").unwrap().clone();
+        counted["rows"].as_array_mut().unwrap().push(aggregate);
+        let calls = std::sync::Mutex::new(Vec::new());
+        let why = draw_nodes(&mut counted, &column.external, &calls, &runtime).unwrap_err();
+        assert!(why.starts_with("node finding: the set's count drawn counts 5 places over the page's rows, the finding compares 4"), "{why}");
+    }
+
     /// A narrow record whose members the page does not all compare (one kept by the narrow has no value at the page's
     /// year): its set words would say a count the page does not show, so the page has no finding (no dek finding, no
     /// headline); with the members the page compares, the finding names the set, its count the drawn fact.

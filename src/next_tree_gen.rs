@@ -872,6 +872,27 @@ fn finding_recheck(page_in: &J, fill: &J, reg: &J) -> Result<(), String> {
     if fill.g("headline") != &headline {
         return Err(format!("node finding: the headline is not its declaration: {} != {}", fill.g("headline").repr(), headline.repr()));
     }
+    // a set named with its count (set_count, a plain count of places over the page's kept rows): the count printed is the
+    // places the finding compares (the record's members, held to the compared select at declaration), never one more for
+    // a total or an aggregate row the page keeps
+    if let (Some(_), Some(key)) = (said.get("set"), d.g("set_count").s()) {
+        let q = spec.g("facts").g(key);
+        let (by, table, time) = (st(q.g("by")), st(q.g("table")), st(q.g("time")));
+        let mut codes: Vec<&J> = Vec::new();
+        for r in fill.g("rows").arr().iter().filter(|r| st(r.g("table")) == table && st(r.g("time")) == time) {
+            if !codes.contains(&r.g("dims").g(&by)) {
+                codes.push(r.g("dims").g(&by));
+            }
+        }
+        let compared = page_in.g("set").g("members").num();
+        if q.g("op").s() != Some("n") || q.get("filter").is_some() || compared != Some(codes.len() as f64) {
+            return Err(format!(
+                "node finding: the set's count {key} counts {} places over the page's rows, the finding compares {}",
+                codes.len(),
+                page_in.g("set").g("members").repr()
+            ));
+        }
+    }
     let subject = again.g("subject");
     let accent = if page_in.g("picks").g("ranked").arr().contains(subject) { subject.clone() } else { J::Null };
     if spec.g("hero").g("data").g("accent") != &accent {
