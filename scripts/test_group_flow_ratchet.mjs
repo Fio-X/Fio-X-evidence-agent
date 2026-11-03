@@ -196,7 +196,7 @@ export function cutAt(path, lines) {
  *  starts none is a lifetime. */
 export function depthsOf(lines) {
   const t = lines.join("\n"), n = t.length, depth = [0], last = [""];
-  let d = 0, i = 0;
+  let d = 0, i = 0, unclosed = -1;
   const nl = () => { depth.push(d); last.push(""); };
   const mark = (c) => { last[last.length - 1] = c; };
   const word = (k) => k >= 0 && /[A-Za-z0-9_]/.test(t[k]);
@@ -207,21 +207,27 @@ export function depthsOf(lines) {
     if (c === "/" && t[i + 1] === "/") { while (i < n && t[i] !== "\n") i += 1; continue; }
     if (c === "/" && t[i + 1] === "*") {
       let open = 1; i += 2;
+      const from = depth.length - 1;
       while (i < n && open) { if (t[i] === "\n") nl(); if (t[i] === "/" && t[i + 1] === "*") { open += 1; i += 2; continue; } if (t[i] === "*" && t[i + 1] === "/") { open -= 1; i += 2; continue; } i += 1; }
+      if (open && unclosed < 0) unclosed = from;
       continue;
     }
     const raw = !word(i - 1) && /^[bc]?r(#*)"/.exec(t.slice(i, i + 64));
     if (raw) {
       const close = `"${raw[1]}`;
       i += raw[0].length;
+      const from = depth.length - 1;
       while (i < n && t.slice(i, i + close.length) !== close) { if (t[i] === "\n") nl(); i += 1; }
+      if (i >= n && unclosed < 0) unclosed = from;
       i += close.length;
       mark('"');
       continue;
     }
     if (c === '"') {
       i += 1;
+      const from = depth.length - 1;
       while (i < n && t[i] !== '"') { if (t[i] === "\\") { if (t[i + 1] === "\n") nl(); i += 2; continue; } if (t[i] === "\n") nl(); i += 1; }
+      if (i >= n && unclosed < 0) unclosed = from;
       i += 1;
       mark('"');
       continue;
@@ -233,7 +239,7 @@ export function depthsOf(lines) {
     i += 1;
   }
   depth.push(d);
-  return { depth, last };
+  return { depth, last, unclosed };
 }
 
 /** A line's leading attributes (`#[...]`, brackets matched) and the rest of it. */
@@ -259,8 +265,10 @@ export function splitAttrs(line) {
 export function pastCut(path, lines) {
   const cut = cutAt(path, lines);
   if (cut >= lines.length) return -1;
-  const { depth, last } = depthsOf(lines);
+  const { depth, last, unclosed } = depthsOf(lines);
   if (depth[cut] !== 0) return cut;
+  // a string or block comment the lexer never saw close: what follows it cannot be read, so it is red
+  if (unclosed >= 0) return Math.max(unclosed, cut);
   let attrs = [], open = -1;
   const ends = (k) => depth[k + 1] === 0 && (last[k] === ";" || last[k] === "}");
   for (let k = cut; k < lines.length; k += 1) {
@@ -439,6 +447,9 @@ eq(pastOf('#[cfg(test)]\nmod tests {\n    let s = cr"}";\n}\nfn hidden() {}\n'),
 eq(pastOf('#[cfg(test)]\nmod tests {\n    fn t() {\n}\n'), 1, "must-fail: an item still open at the end of the file (unbalanced) is red, not skipped");
 eq(pastOf('fn a() {\n#[cfg(test)]\nmod tests {\n}\n'), 1, "must-fail: a cut not at depth 0 is red");
 eq(pastOf('#[cfg(test)]\nmod tests {\n}\n}\nfn x() {}\n'), 3, "must-fail: a depth below 0 is red");
+eq(pastOf('#[cfg(test)]\nmod tests {\n    let s = "open;\n}\nfn hidden() {}\n'), 2, "must-fail: a string still open at the end of the file is red");
+eq(pastOf('#[cfg(test)]\nmod tests {\n    /* open\n}\nfn hidden() {}\n'), 2, "must-fail: a block comment still open at the end of the file is red");
+eq(pastOf('#[cfg(test)]\nmod tests {\n    let s = r#"open;\n}\nfn hidden() {}\n'), 2, "must-fail: a raw string still open at the end of the file is red");
 eq(cutAt("src/next_x.rs", 'fn a() {\n    #[cfg(test)]\n    let k = "ring";\n}\nfn b() {}\n'.split("\n")), 6, "an indented #[cfg(test)] inside a non-test item is no cut");
 eq(counts("src/next_x.rs", 'fn a() {\n    #[cfg(test)]\n    let k = "ring";\n}\nfn b() { let j = "sankey"; }\n'), { nodes: 0, ops: 0, copy: 0, kinds: 2 }, "the code after an indented #[cfg(test)] is counted");
 assert.ok(scanText("src/next_x.rs", '#[cfg(test)]\nuse a::B;\nfn f() {}\n', SAMPLE_KINDS).hidden?.line === 3, "a hidden line is reported by scanText");
