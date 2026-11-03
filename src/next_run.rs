@@ -9134,13 +9134,13 @@ mod tests {
         let why = draw_nodes(&mut tampered, &change.external, &calls, &runtime).unwrap_err();
         assert!(why.contains("mean1"), "{why}");
         // the mean is over exactly the places the page draws: a page whose kept rows draw one more place (the aggregate's
-        // row kept) than the mean averages stops, never a note against a mean of another set
+        // row kept, at both ends: the first count checked, mean_n0, names it) than the mean averages stops, never a note against a mean of another set
         let mut wider = fill.clone();
         let aggregate: Vec<Value> = main.iter().filter(|r| r["dims"]["geo"] == "EU27_2020").cloned().collect();
         wider["rows"].as_array_mut().unwrap().extend(aggregate);
         let calls = std::sync::Mutex::new(Vec::new());
         let why = draw_nodes(&mut wider, &change.external, &calls, &runtime).unwrap_err();
-        assert!(why.starts_with("node leader_notes: the mean is over 4 places (mean_n1), the page draws 5 (drawn)"), "{why}");
+        assert!(why.starts_with("node leader_notes: the mean is over 4 places (mean_n0), the page draws 5 (drawn)"), "{why}");
         // and at the start year: a page whose kept rows hold one place fewer at t0 (DE's 2016 row gone) averages 3 there
         // against the 4 it draws, and stops
         let mut short = fill.clone();
