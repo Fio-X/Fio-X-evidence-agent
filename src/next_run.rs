@@ -5462,6 +5462,53 @@ mod tests {
         (rust, fill, calls.into_inner().unwrap())
     }
 
+    /// The frozen fill's facts and formats with what the generator raised so the page's printed differences agree
+    /// (next_tree_gen printed_raise, 11-03) taken from the declared spec, each raise held to its reason: a raised fact
+    /// differs from the frozen one only in its format (a plain fact's fmt, a family's fmt_each), its new format is its old
+    /// one at more decimals, and the core finds, at the frozen facts and formats, a printed difference that disagrees and
+    /// names that very fact. Every other fact and format stays the frozen one. (facts, formats, the raised keys)
+    fn with_printed_raise(old_facts: &Map<String, Value>, old_fmts: &Map<String, Value>, spec: &Value, rows: &[Value]) -> (Map<String, Value>, Map<String, Value>, Vec<String>) {
+        use crate::next_tree::J;
+        let jrows: Vec<J> = rows.iter().map(J::from_value).collect();
+        let shown_spec = Value::Object(spec.as_object().unwrap().iter().filter(|(k, _)| *k != "facts").map(|(k, v)| (k.clone(), v.clone())).collect());
+        let printed = crate::next_tree::printed_keys(&J::from_value(&shown_spec), &J::from_value(&json!(old_facts)));
+        let at_old = crate::next_tree::differences_disagree(&J::from_value(&json!(old_facts)), &J::from_value(&json!(old_fmts)), &jrows, &printed);
+        let named = |k: &str| at_old.iter().any(|(_, keys)| keys.iter().any(|x| x == k));
+        let (mut facts, mut fmts, mut raised) = (old_facts.clone(), old_fmts.clone(), Vec::new());
+        let mut more_dec = |new: &str, old: &str| {
+            let (n, o) = (&spec["fmts"][new], &old_fmts[old]);
+            let mut same = n.clone();
+            same["dec"] = o["dec"].clone();
+            assert_eq!(&same, o, "format {new}: more than its decimals differ from {old}");
+            assert!(n["dec"].as_u64() > o["dec"].as_u64(), "format {new}: no more decimals than {old}");
+            fmts.insert(new.to_string(), n.clone());
+        };
+        for (k, q) in old_facts {
+            let new = &spec["facts"][k];
+            if new == q {
+                continue;
+            }
+            let mut same = new.clone();
+            same["fmt"] = q["fmt"].clone();
+            same.as_object_mut().unwrap().remove("fmt_each");
+            assert_eq!(&same, q, "fact {k}: more than its format differs from the frozen fill's");
+            if new["fmt"] != q["fmt"] {
+                assert!(named(k), "fact {k}: raised with no printed difference naming it");
+                more_dec(new["fmt"].as_str().unwrap(), q["fmt"].as_str().unwrap());
+                raised.push(k.clone());
+            }
+            for (code, f) in new["fmt_each"].as_object().into_iter().flatten() {
+                let member = format!("{k}.{code}");
+                assert!(named(&member), "member {member}: raised with no printed difference naming it");
+                more_dec(f.as_str().unwrap(), q["fmt"].as_str().unwrap());
+                raised.push(member);
+            }
+            facts.insert(k.clone(), new.clone());
+        }
+        raised.sort();
+        (facts, fmts, raised)
+    }
+
     /// Key by key, every place two fills differ.
     fn fill_diff(a: &Value, b: &Value, at: &str, out: &mut Vec<String>) {
         match (a, b) {
@@ -5522,7 +5569,7 @@ mod tests {
     #[test]
     fn declare_equals_rust_fill_on_a_change_page() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let rust: Value = serde_json::from_str(&std::fs::read_to_string(root.join("scripts/fixtures/p4a2/change-rust-fill.json")).unwrap()).unwrap();
+        let mut rust: Value = serde_json::from_str(&std::fs::read_to_string(root.join("scripts/fixtures/p4a2/change-rust-fill.json")).unwrap()).unwrap();
         let change = recipe("change");
         assert_eq!((change.external.clone(), change.points.clone()), (vec!["bubbles".to_string(), "bars".to_string(), "leader_notes".to_string()], vec!["bubbles".to_string(), "leader_notes".to_string()]));
         let main = q1_ten_years();
@@ -5533,6 +5580,12 @@ mod tests {
         let asked = Asked { calls: &calls, page_in: Some(&page_in) };
         let mut fill = fill_of(change, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false, Some(&asked)).unwrap();
         fill.as_object_mut().unwrap().remove("page_in").expect("the page input kept for draw_nodes");
+        // the last note's gap and its two bars one decimal more than the frozen fill's, nothing else: FR's -2.25 printed -2.2
+        // left BE's 5.5 less it at 7.7, the note 7.75 printed 7.8
+        let old = &rust["knobs"]["spec"];
+        let (facts, fmts, raised) = with_printed_raise(old["facts"].as_object().unwrap(), old["fmts"].as_object().unwrap(), &fill["knobs"]["spec"], page_in["rows"].as_array().unwrap());
+        assert_eq!(raised, ["chg.BE", "chg.FR", "vs_lo"]);
+        (rust["knobs"]["spec"]["facts"], rust["knobs"]["spec"]["fmts"]) = (json!(facts), json!(fmts));
         let mut differs = Vec::new();
         fill_diff(&rust, &fill, "fill", &mut differs);
         assert!(differs.is_empty(), "the declared change fill differs from the rust circles' and bars': {differs:#?}");
@@ -6300,9 +6353,12 @@ mod tests {
         assert_eq!(fill["ends"], json!({"t0": "2016", "t1": "2024", "rule": "two_ends", "fetched_from": "2013",
             "later": [{"year": "2013", "missing": ["BE", "DE", "FR"]}, {"year": "2015", "missing": ["DE"]}]}));
         let spec = &fill["knobs"]["spec"];
-        assert_eq!(spec["facts"]["chg"], json!({"op": "minus", "each": "geo", "a": "val1", "b": "val0", "fmt": "pp"}));
+        // the bars' changes in points at one decimal, but BE's and FR's at two: the last note's gap is the difference of those
+        // two bars, and at one decimal 5.5 less -2.2 is 7.7 where the gap 7.75 prints 7.8 (differences_disagree)
+        assert_eq!(spec["facts"]["chg"], json!({"op": "minus", "each": "geo", "a": "val1", "b": "val0", "fmt": "pp", "fmt_each": {"BE": "pp_d2", "FR": "pp_d2"}}));
         assert_eq!(spec["facts"]["val0"], json!({"each": "geo", "table": "sdg", "time": "2016", "fmt": "pc"}));
         assert_eq!(spec["fmts"]["pp"], json!({"scale": 1, "dec": 1, "suffix": " 个百分点"}));
+        assert_eq!(spec["fmts"]["pp_d2"], json!({"scale": 1, "dec": 2, "suffix": " 个百分点"}));
         assert_eq!(spec["hero"]["style"], json!({"bars": {"measure": "change"}}));
         assert_eq!(spec["hero"]["data"]["family"], "chg");
         assert_eq!(spec["hero"]["data"]["t0"], "2016");
@@ -6326,7 +6382,8 @@ mod tests {
         assert_eq!(notes[1]["text"][1], json!({"word": "column.note.vs_prev"}));
         let year = |code: &str, t: &str| json!({"op": "last", "table": "sdg", "filter": {"geo": code}, "from": t, "to": t, "fmt": "pc"});
         for (key, higher, lower) in [("vs_hi", "SE", "DE"), ("vs_lo", "BE", "FR")] {
-            assert_eq!(spec["facts"][key], json!({"op": "minus", "a": format!("{key}_a"), "b": format!("{key}_b"), "fmt": "pp"}));
+            let fmt = if key == "vs_lo" { "pp_d2" } else { "pp" };
+            assert_eq!(spec["facts"][key], json!({"op": "minus", "a": format!("{key}_a"), "b": format!("{key}_b"), "fmt": fmt}));
             for (side, code) in [("a", higher), ("b", lower)] {
                 assert_eq!(spec["facts"][format!("{key}_{side}")],
                     json!({"op": "minus", "a": format!("{key}_{side}1"), "b": format!("{key}_{side}0"), "fmt": "pp"}), "{key} {side}");
@@ -6359,15 +6416,15 @@ mod tests {
             Ok(_) => panic!("not a filled page"),
             Err(e) => panic!("leaf fill: {e}"),
         };
-        // each change as by hand, at the two ends' most decimals
-        // each change as by hand, at one decimal (POINTS_DEC; -2.25 to the even digit)
-        for (code, text) in [("SE", "16.0 个百分点"), ("DE", "7.5 个百分点"), ("BE", "5.5 个百分点"), ("FR", "-2.2 个百分点")] {
+        // each change as by hand, at one decimal (POINTS_DEC), but the last note's two bars at two: before 11-03 FR printed
+        // -2.2 (-2.25 to the even digit) and the note 7.8, which is not BE's 5.5 less it
+        for (code, text) in [("SE", "16.0 个百分点"), ("DE", "7.5 个百分点"), ("BE", "5.50 个百分点"), ("FR", "-2.25 个百分点")] {
             assert_eq!(page.ledger.get(&format!("fact:chg.{code}")).map(String::as_str), Some(text), "{code}");
         }
         assert_eq!(page.ledger.get("fact:lead").map(String::as_str), Some("16.0 个百分点"), "the dek's rise, as SE's bar");
-        // the notes' gaps from the rows: 16 - 7.5 above DE, 5.5 - (-2.25) = 7.75 below BE (to the even digit up: 7.8)
+        // the notes' gaps from the rows: 16 - 7.5 above DE (8.5, as the bars print), 5.5 - (-2.25) = 7.75 below BE
         assert_eq!(page.ledger.get("fact:vs_hi").map(String::as_str), Some("8.5 个百分点"), "the first note's gap");
-        assert_eq!(page.ledger.get("fact:vs_lo").map(String::as_str), Some("7.8 个百分点"), "the last note's gap");
+        assert_eq!(page.ledger.get("fact:vs_lo").map(String::as_str), Some("7.75 个百分点"), "the last note's gap");
         let dir = tempfile::tempdir().unwrap();
         let bundle = {
             let _command = crate::group_guard::command_for_test("investigate");
@@ -11906,10 +11963,11 @@ for line in sys.stdin:
             old_leader_notes_fill(&filling, &mut old, scoped).unwrap_or_else(|e| panic!("{label}: the rust notes: {e}"));
             let spec = &fill["knobs"]["spec"];
             assert_eq!(spec["hero"]["leaves"]["leader_notes"], old.hero["leaves"]["leader_notes"], "{label}: the notes");
-            for (k, v) in &old.facts {
+            let (old_facts, old_fmts, _) = with_printed_raise(&old.facts, &old.fmts, spec, page_in["rows"].as_array().unwrap());
+            for (k, v) in &old_facts {
                 assert_eq!(&spec["facts"][k], v, "{label}: fact {k}");
             }
-            for (k, v) in &old.fmts {
+            for (k, v) in &old_fmts {
                 assert_eq!(&spec["fmts"][k], v, "{label}: format {k}");
             }
             let extra: Vec<&String> = spec["facts"].as_object().unwrap().keys().filter(|k| k.starts_with("vs_") && !old.facts.contains_key(*k)).collect();
@@ -12058,7 +12116,12 @@ for line in sys.stdin:
             old_leader_notes_fill(&filling, &mut old, scoped).unwrap();
             let spec = &fill["knobs"]["spec"];
             assert_eq!(spec["hero"]["leaves"]["leader_notes"], old.hero["leaves"]["leader_notes"], "{path}: the notes");
-            for (k, v) in &old.facts {
+            // a printed difference's two values and itself one decimal more where they disagreed (with_printed_raise)
+            let (old_facts, _, raised) = with_printed_raise(&old.facts, &old.fmts, spec, &main);
+            if !raised.is_empty() {
+                println!("P6REQ {path}: raised {raised:?}");
+            }
+            for (k, v) in &old_facts {
                 assert_eq!(&spec["facts"][k], v, "{path}: fact {k}");
             }
             let facts = crate::next_tree::J::from_value(&spec["facts"]);

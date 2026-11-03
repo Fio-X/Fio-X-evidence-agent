@@ -1021,6 +1021,36 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
     for (k, v) in d.g("data").obj() {
         data.set(k, sub(v, page_in)?);
     }
+    // the facts a printed difference needs printed with more decimals (printed_raise: page_in.dec_raise, a fact key or a
+    // family member's, the decimals it prints with), each in its own format: its format at those decimals
+    let (mut facts, mut fmts) = (facts, fmts);
+    for (k, d) in page_in.g("dec_raise").obj() {
+        let Some(dec) = d.num().map(|d| d as i64) else { continue };
+        let (fact, code) = match facts.get(k) {
+            Some(_) => (k.clone(), None),
+            None => match k.rsplit_once('.') {
+                Some((f, c)) if facts.get(f).is_some_and(|q| q.has("each")) => (f.to_string(), Some(c.to_string())),
+                _ => continue,
+            },
+        };
+        let base = st(facts.g(&fact).g("fmt"));
+        let key = format!("{base}_d{dec}");
+        if let Some(fd) = fmts.get(&base).cloned() {
+            let mut fd = fd;
+            fd.set("dec", J::Int(dec));
+            fmts.set(&key, fd);
+        }
+        let mut q = facts.g(&fact).clone();
+        match code {
+            None => q.set("fmt", J::Str(key)),
+            Some(c) => {
+                let mut each = q.get("fmt_each").cloned().unwrap_or(J::Obj(vec![]));
+                each.set(&c, J::Str(key));
+                q.set("fmt_each", each);
+            }
+        }
+        facts.set(&fact, q);
+    }
     let mut out = J::obj_of(vec![("rows", J::Arr(drawn)), ("facts", facts), ("fmts", fmts)]);
     // the notes after the unit the declaration writes (declares.notes), each the registry's words with every template read
     let mut notes = Vec::new();
@@ -1084,6 +1114,54 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
 
 /// Request::NodeDeclare: what fill_of takes from the external layer `layer` over the flow's page input. A declaration of
 /// shape parts_of_whole (parts_declared) stops in its own words; any other failure is the generator's.
+/// The decimals the page's printed differences need (core differences_disagree, 11-03): the page's layers in its order
+/// (those declared_j declares) declared together, and for each printed difference that is not the difference of its two
+/// values as printed, that difference and the two printed values (only those three numbers) one decimal more each, in its
+/// own format; again until none disagrees or none of a failure's three can take one more (at the most decimals a row of the
+/// page input holds; the core refuses what still disagrees). Every other number keeps its format. A layer that does not
+/// declare leaves the raise as it is (its own declaration says why). {fact key or family member: decimals}
+fn printed_raise(page_in: &J, reg: &J) -> J {
+    let held = page_in.g("rows").arr().iter().filter_map(|r| r.g("value").s()).map(|v| v.split_once('.').map_or(0, |(_, f)| f.len())).max().unwrap_or(0) as f64;
+    let mut raise = J::Obj(vec![]);
+    loop {
+        let mut view = page_in.clone();
+        view.set("dec_raise", raise.clone());
+        let (mut facts, mut fmts, mut shown) = (J::Obj(vec![]), J::Obj(vec![]), Vec::new());
+        for layer in page_in.g("order").arr().iter().map(st) {
+            if declares(reg, &layer, page_in).map_or(true, |d| d.has("shape")) {
+                continue;
+            }
+            let Ok(out) = declared_j(&layer, &view, reg) else { return raise };
+            for (k, v) in out.g("facts").obj() {
+                facts.set(k, v.clone());
+            }
+            for (k, v) in out.g("fmts").obj() {
+                fmts.set(k, v.clone());
+            }
+            // what the layer prints: its leaf data, hero keys and data (the facts it declares are no print of them)
+            shown.push(J::Obj(out.obj().iter().filter(|(k, _)| !matches!(k.as_str(), "facts" | "fmts" | "rows" | "reads" | "ordered")).cloned().collect()));
+        }
+        let printed = core::printed_keys(&J::Arr(shown), &facts);
+        let mut more: Vec<(String, i64)> = Vec::new();
+        for (_, keys) in core::differences_disagree(&facts, &fmts, page_in.g("rows").arr(), &printed) {
+            for k in keys {
+                let dec = core::fact_fmt(&facts, &k).and_then(|f| fmts.g(&f).g("dec").num());
+                if let Some(d) = dec.filter(|d| *d < held) {
+                    if !more.iter().any(|(m, _)| *m == k) {
+                        more.push((k, d as i64 + 1));
+                    }
+                }
+            }
+        }
+        if more.is_empty() {
+            return raise;
+        }
+        for (k, d) in more {
+            raise.set(&k, J::Int(d));
+        }
+    }
+}
+
 pub fn declare(layer: &str, page_in: &Value) -> Result<NodeDeclared, String> {
     let (reg, _) = core::registry_in_force();
     let pi = J::from_value(page_in);
@@ -1101,6 +1179,12 @@ pub fn declare(layer: &str, page_in: &Value) -> Result<NodeDeclared, String> {
             Halt::Bad(e) => format!("node {layer}: declare: {e}"),
         })?
     } else {
+        // the facts raised so the page's printed differences agree (printed_raise), the same for every layer
+        let mut pi = pi;
+        if !pi.has("dec_raise") {
+            let raise = printed_raise(&pi, &reg);
+            pi.set("dec_raise", raise);
+        }
         // a stop in the registry's own words (a value rule's `stop`) is the page's, as the rust fill's was
         declared_j(layer, &pi, &reg).map_err(|e| if e.starts_with("not this shape: ") { e } else { format!("node {layer}: declare: {e}") })?
     };
@@ -2097,6 +2181,11 @@ pub fn draw(fill: &Value, page_in: &Value, layers: &[String], runtime: &std::pat
         }
         let mut named = page_in.clone();
         named.set("names", fill.g("knobs").g("labels").clone());
+        // the decimals the page's printed differences need, as declare gave every layer (printed_raise)
+        if !named.has("dec_raise") {
+            let raise = printed_raise(&named, &reg);
+            named.set("dec_raise", raise);
+        }
         let again = declared_j(l, &named, &reg).map_err(|e| format!("node {l}: recheck over the name rows: {e}"))?;
         let key = st(d.g("leaf").g("key"));
         let items_as = d.g("leaf").g("items_as").s().unwrap_or("items").to_string();

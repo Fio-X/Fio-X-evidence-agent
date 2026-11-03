@@ -533,6 +533,12 @@ fn one(
     Ok(f)
 }
 
+/// A family member's format: the family's `fmt_each.<code>` when it names one (a printed difference's operand printed with
+/// one decimal more, next_tree_gen printed_raise), else the family's own.
+fn member_fmt(q: &Value, code: &str, fmt: &str) -> String {
+    q["fmt_each"][code].as_str().unwrap_or(fmt).to_string()
+}
+
 /// A family: one value fact per code of its `each` dimension among the rows at its time (that code's one row there),
 /// keyed `<family>.<code>`, in the order the codes first appear. With `not_eu` (a dimension) the member codes and the
 /// aggregate of that dimension are left out, as a value's are. Err for an op other than value, a row set with no row,
@@ -584,7 +590,7 @@ fn family(key: &str, q: &Value, spec: &Spec, rows: &[Row]) -> Result<Vec<Fact>, 
                 t: None,
                 n: None,
                 who: Vec::new(),
-                fmt: fmt.clone(),
+                fmt: member_fmt(q, &code, &fmt),
                 reads: rs.iter().map(|r| r.src.clone()).collect(),
             })
         })
@@ -633,7 +639,7 @@ fn minus_family(
                 t: None,
                 n: None,
                 who: Vec::new(),
-                fmt: fmt.clone(),
+                fmt: member_fmt(q, &code, &fmt),
                 reads: vec![format!("{FACT_SRC}{a}.{code}"), format!("{FACT_SRC}{b}.{code}")],
             })
         })

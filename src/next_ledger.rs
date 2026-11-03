@@ -1075,7 +1075,7 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     ("page_html_read", "", &["ledger::comment_len"]),
     ("numbers", "", &["ledger::check_numbers", "ledger::prints", "ledger::digit_runs", "ledger::num", "ledger::label", "ledger::enter", "ledger::segs", "ledger::finish", "facts::table_id", "facts::leaf_refs"]),
     // every fact recomputed from the request rows by its declared query (ops value, share, change, ...)
-    ("fact_recompute", "", &["facts::compute", "facts::fact", "facts::one", "facts::family", "facts::minus_family", "facts::select", "facts::word", "facts::members", "facts::finite", "facts::sum"]),
+    ("fact_recompute", "", &["facts::compute", "facts::fact", "facts::one", "facts::family", "facts::member_fmt", "facts::minus_family", "facts::select", "facts::word", "facts::members", "facts::finite", "facts::sum"]),
     // every ledger entry recomputed and reprinted (its text, bare .n and display .r parts, ticks, periods, dates, names)
     ("ledger_recheck", "", &["facts::recheck", "facts::read_entry", "facts::reads_back", "facts::leaf_ledger", "facts::who", "facts::text", "facts::scaled", "facts::fixed", "facts::tlabel", "facts::num", "facts::display", "facts::ticks", "facts::periods", "facts::months", "facts::date_parts", "facts::wording_segs"]),
     // relation_holds: data-cmp max, next, gt over the set the request's definitions give, each named by its code's row
@@ -1104,6 +1104,7 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     ("tree.fact_ops", "next_tree::Compute ops", &["tree::fam", "tree::val", "tree::val_new"]),
     // its selects recomputed (ranks, takes, sums) and every reference resolved
     ("tree.registry_list", "", &["tree::registry_list", "tree::parts_rows", "tree::leaves_under_total"]),
+    ("tree.printed_difference", "", &["tree::differences_disagree", "tree::printed_keys", "tree::fact_fmt", "tree::printed_int", "tree::round_even"]),
     ("tree.selects", "", &["tree::ref_parts", "tree::is_ref", "tree::ref_id", "tree::index", "tree::resolve_ref", "tree::resolved", "tree::result_codes", "tree::dims", "tree::select_rows", "tree::plain_tie", "tree::last_in_only", "tree::text_num", "tree::pair_rows", "tree::change_from", "tree::part_share_key", "tree::part_share_of", "tree::cannot_rank", "tree::cannot_take", "tree::take_value", "tree::sel_get", "tree::root_rank", "tree::int_or_knob", "tree::sum_rows", "tree::py_fixed", "tree::py_grouped", "tree::recheck", "tree::recheck_one", "tree::strip_part"]),
     ("tree.check_kinds", "next_tree::CHECK_KINDS", &["tree::evaluate", "tree::check_codes", "tree::named_in", "tree::names_of", "tree::is_knob", "tree::knob_problem", "tree::has_digit", "tree::pathlike", "tree::nodes_of"]),
     // P1 lints: words (no worded number), shared fields, registered nodes
@@ -1142,7 +1143,7 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     ("tree_gen.registry_checks", "", &["tree_gen::checks_of"]),
     // a declaration the generator computes, else refused: the page input paths and knobs it reads, its dec_rule,
     // fmt_change, rows rule, line segments and frame headings, its numbers, the select its items follow
-    ("tree_gen.declaration", "", &["tree_gen::sub", "tree_gen::declares", "tree_gen::held_decimals", "tree_gen::dec_of", "tree_gen::change_fmt", "tree_gen::declared_j", "tree_gen::carries_facts", "tree_gen::value_of", "tree_gen::with_values", "tree_gen::extent_of", "tree_gen::label_px", "tree_gen::printed_len", "tree_gen::knob_default", "tree_gen::pairs_declared", "tree_gen::from", "tree_gen::view_path", "tree_gen::number_of", "tree_gen::segments", "tree_gen::frame_words", "tree_gen::declare"]),
+    ("tree_gen.declaration", "", &["tree_gen::sub", "tree_gen::declares", "tree_gen::held_decimals", "tree_gen::dec_of", "tree_gen::change_fmt", "tree_gen::printed_raise", "tree_gen::declared_j", "tree_gen::carries_facts", "tree_gen::value_of", "tree_gen::with_values", "tree_gen::extent_of", "tree_gen::label_px", "tree_gen::printed_len", "tree_gen::knob_default", "tree_gen::pairs_declared", "tree_gen::from", "tree_gen::view_path", "tree_gen::number_of", "tree_gen::segments", "tree_gen::frame_words", "tree_gen::declare"]),
     // a parts_of_whole page stops in the registry's words: its needs, and each stop rule (the rule names parts_declared
     // reads; node-bindings.json stops name only those, the test below holds it); its expansion refuses a part with no
     // total row, a fact the declaration lacks, a format it does not compute

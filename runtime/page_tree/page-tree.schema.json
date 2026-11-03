@@ -1093,6 +1093,13 @@
       "not_eu": {
        "$ref": "#/$defs/Code"
       },
+      "fmt_each": {
+       "description": "A family member's own format by its code (a printed difference's operand printed with one decimal more, next_tree_gen printed_raise); a member not named prints in fmt.",
+       "type": "object",
+       "additionalProperties": {
+        "$ref": "#/$defs/Code"
+       }
+      },
       "fmt": {
        "$ref": "#/$defs/Code"
       }
@@ -1394,6 +1401,13 @@
       },
       "each": {
        "$ref": "#/$defs/Code"
+      },
+      "fmt_each": {
+       "description": "A family member's own format by its code (a printed difference's operand printed with one decimal more, next_tree_gen printed_raise); a member not named prints in fmt.",
+       "type": "object",
+       "additionalProperties": {
+        "$ref": "#/$defs/Code"
+       }
       },
       "fmt": {
        "$ref": "#/$defs/Code"

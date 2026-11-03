@@ -1510,6 +1510,10 @@ pub fn recheck(page: &J) -> (Vec<String>, Got, Option<J>) {
             bad.push(format!("fact {k}: {e}"));
         }
     }
+    // a printed difference is the difference of the two values as the page prints them (differences_disagree): what the
+    // page prints read from it less its facts
+    let shown = printed_keys(&J::Obj(rpage.obj().iter().filter(|(k, _)| k != "facts").cloned().collect()), facts);
+    bad.extend(differences_disagree(facts, rpage.g("facts").g("fmts"), rows, &shown).into_iter().map(|(e, _)| e));
     (bad, got, Some(rpage))
 }
 
@@ -4573,6 +4577,155 @@ pub(crate) fn fact_value(facts: &J, rows: &[J], key: &str) -> Result<f64, String
     Compute::new(facts, rows).val(key)
 }
 
+/// A number its format printed (py_fixed: "-0.35") as an integer of `dec` decimals (-35 at 2, -350 at 3); none when it
+/// holds more decimals than `dec` or is no number.
+fn printed_int(printed: &str, dec: usize) -> Option<i128> {
+    let (neg, body) = printed.strip_prefix('-').map_or((false, printed), |b| (true, b));
+    let (whole, frac) = body.split_once('.').unwrap_or((body, ""));
+    if frac.len() > dec || whole.is_empty() || !whole.chars().chain(frac.chars()).all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    let n: i128 = format!("{whole}{frac}{}", "0".repeat(dec - frac.len())).parse().ok()?;
+    Some(if neg { -n } else { n })
+}
+
+/// An integer of `from` decimals rounded half to even to `to` (at most `from`) decimals.
+fn round_even(x: i128, from: usize, to: usize) -> i128 {
+    let k = 10i128.pow((from - to) as u32);
+    let (q, r) = (x.div_euclid(k), x.rem_euclid(k));
+    match (2 * r).cmp(&k) {
+        std::cmp::Ordering::Greater => q + 1,
+        std::cmp::Ordering::Equal => q + (q & 1),
+        std::cmp::Ordering::Less => q,
+    }
+}
+
+/// The fact keys a page prints: every `fact:<key>` ledger reference and every `{<key>}` placeholder in `v` (a page tree
+/// less its facts, or what a layer declared), a `.n` ending read as the number itself; a `.t` (its year) or any other
+/// ending of a key the facts do not hold is no number of it. A family's members print where a layer binds the family
+/// (`"family": <key>`, the bars' signed changes): every member of it then.
+pub(crate) fn printed_keys(v: &J, facts: &J) -> BTreeSet<String> {
+    fn walk(v: &J, out: &mut Vec<String>, fams: &mut Vec<String>) {
+        match v {
+            J::Str(s) => {
+                if let Some(k) = s.strip_prefix("fact:") {
+                    out.push(k.to_string());
+                }
+                let mut rest = s.as_str();
+                while let Some(i) = rest.find('{') {
+                    let tail = &rest[i + 1..];
+                    match tail.find('}') {
+                        Some(j) => {
+                            out.push(tail[..j].to_string());
+                            rest = &tail[j + 1..];
+                        }
+                        None => break,
+                    }
+                }
+            }
+            J::Arr(a) => a.iter().for_each(|x| walk(x, out, fams)),
+            J::Obj(o) => {
+                for (k, x) in o {
+                    if k == "family" {
+                        if let Some(f) = x.s() {
+                            fams.push(f.to_string());
+                        }
+                    }
+                    walk(x, out, fams);
+                }
+            }
+            _ => {}
+        }
+    }
+    let (mut refs, mut fams) = (Vec::new(), Vec::new());
+    walk(v, &mut refs, &mut fams);
+    let held = |k: &str| facts.get(k).is_some() || k.rsplit_once('.').is_some_and(|(f, _)| facts.get(f).is_some_and(|q| q.has("each")));
+    let mut out = BTreeSet::new();
+    for r in refs {
+        let k = r.strip_suffix(".n").unwrap_or(&r);
+        if held(k) {
+            out.insert(k.to_string());
+        }
+    }
+    for f in fams.into_iter().filter(|f| facts.get(f).is_some_and(|q| q.has("each"))) {
+        out.insert(format!("{f}.*"));
+    }
+    out
+}
+
+/// A fact key's format: its own fact's, or a family member's (`fmt_each.<code>` when the family names one for it, else the
+/// family's own: chg.SE prints in chg's).
+pub(crate) fn fact_fmt(facts: &J, key: &str) -> Option<String> {
+    if let Some(q) = facts.get(key) {
+        return q.g("fmt").s().map(str::to_string);
+    }
+    let (fam, code) = key.rsplit_once('.')?;
+    let q = facts.get(fam).filter(|q| q.has("each"))?;
+    q.g("fmt_each").g(code).s().or(q.g("fmt").s()).map(str::to_string)
+}
+
+/// A printed difference read against the two values it is the difference of, as the page prints them (11-03): for every
+/// minus fact of two facts (no family) the page prints, each operand read where the page prints it (the operand itself, or
+/// a printed fact of the same value: vs_hi_a is SE's bar chg.SE), the difference of the two printed numbers, rounded half
+/// to even to the difference's decimals, is the difference as printed. An operand the page does not print (a year's level
+/// the dek only reads) leaves its difference no case; so do formats of two scales and a fact the core cannot compute (the
+/// facts check reports it). Each failure: (its words, [the difference, the printed key of each operand]).
+pub(crate) fn differences_disagree(facts: &J, fmts: &J, rows: &[J], printed: &BTreeSet<String>) -> Vec<(String, Vec<String>)> {
+    let val = Compute::new(facts, rows);
+    let shown = |k: &str| printed.contains(k) || k.rsplit_once('.').is_some_and(|(f, _)| printed.contains(&format!("{f}.*")));
+    // the printed keys, each family bound whole as its members
+    let mut keys: Vec<String> = printed.iter().filter(|k| !k.ends_with(".*")).cloned().collect();
+    for f in printed.iter().filter_map(|k| k.strip_suffix(".*")) {
+        // a family of differences has its first family's codes
+        let of = match facts.g(f).g("op").s() {
+            Some("minus") => st(facts.g(f).g("a")),
+            _ => f.to_string(),
+        };
+        if let Ok(members) = val.fam(&of) {
+            keys.extend(members.into_iter().map(|(c, _)| format!("{f}.{c}")));
+        }
+    }
+    let form = |key: &str| -> Option<(String, f64, usize)> {
+        let f = fact_fmt(facts, key)?;
+        let fm = fmts.get(&f)?;
+        Some((f, fm.get("scale").map_or(Some(1.0), J::num)?, fm.g("dec").num()? as usize))
+    };
+    // where the page prints an operand: itself, else a printed fact of its value (its own format's first)
+    let twin = |key: &str| -> Option<String> {
+        if shown(key) {
+            return Some(key.to_string());
+        }
+        let v = val.val(key).ok()?;
+        let own = fact_fmt(facts, key);
+        let same: Vec<&String> = keys.iter().filter(|k| val.val(k).is_ok_and(|w| w == v)).collect();
+        same.iter().find(|k| fact_fmt(facts, k) == own).or(same.first()).map(|k| k.to_string())
+    };
+    let mut out = Vec::new();
+    for (k, q) in facts.obj() {
+        if q.g("op").s() != Some("minus") || q.has("each") || !shown(k) {
+            continue;
+        }
+        let (Some(pa), Some(pb)) = (twin(&st(q.g("a"))), twin(&st(q.g("b")))) else { continue };
+        let (Some((_, sk, dk)), Some((_, sa, da)), Some((_, sb, db))) = (form(k), form(&pa), form(&pb)) else { continue };
+        if sk != sa || sk != sb {
+            continue;
+        }
+        let (Ok(vk), Ok(va), Ok(vb)) = (val.val(k), val.val(&pa), val.val(&pb)) else { continue };
+        if !(vk.is_finite() && va.is_finite() && vb.is_finite()) {
+            continue;
+        }
+        let (tk, ta, tb) = (py_fixed(vk * sk, dk), py_fixed(va * sa, da), py_fixed(vb * sb, db));
+        let most = da.max(db).max(dk);
+        let (Some(ik), Some(ia), Some(ib)) = (printed_int(&tk, dk), printed_int(&ta, most), printed_int(&tb, most)) else { continue };
+        let want = round_even(ia - ib, most, dk);
+        if want != ik {
+            let said = py_fixed(want as f64 / 10f64.powi(dk as i32), dk);
+            out.push((format!("printed difference {k}: prints {tk}, and {pa} {ta} less {pb} {tb} as printed is {said}"), vec![k.clone(), pa, pb]));
+        }
+    }
+    out
+}
+
 /// One line's width as the flow's leader notes measured it (note_fits): a character above U+2E7F `size`, any other 0.58
 /// `size`, summed left to right in a plain sum (not tw_leaf's compensated one: the two may differ at the limit).
 fn line_width(text: &str, size: f64) -> f64 {
@@ -4733,7 +4886,9 @@ impl<'a> Words<'a> {
             return Ok(if t.is_null() { "None".into() } else { st(t) });
         }
         let v = self.val.val(base)?;
-        let f = q.g("fmt");
+        // a family member's own format when the family names one (fact_fmt: fmt_each), else the fact's
+        let f = fact_fmt(self.rfacts, base).map_or_else(|| q.g("fmt").clone(), J::Str);
+        let f = &f;
         if let Some(m) = f.s().and_then(|f| self.fmts.get(f)).filter(|m| m.has("dec")) {
             let scale = m.get("scale").map_or(Some(1.0), J::num).ok_or("scale")?;
             let dec = m.g("dec").num().ok_or("dec")? as usize;
@@ -6424,6 +6579,77 @@ mod tests {
 
     fn fixtures() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/fixtures/p3b")
+    }
+
+    /// 11-03: a printed difference is the difference of its two values as the page prints them, over three shapes: a
+    /// change page's gap of two changes in points (each operand printed as a member of the bars' minus family, its value
+    /// twin), a column page's gap in points of two shares printed in percent, a whole-unit gap of two levels; each
+    /// disagreeing at the decimals that round the operands and agreeing at one more. An operand the page does not print
+    /// (the dek's year levels), a difference the page does not print, formats of two scales and a half tie read to the even
+    /// digit are no failure; a family member takes its own format (fmt_each).
+    #[test]
+    fn a_printed_difference_is_the_difference_of_its_two_printed_values() {
+        let rows = |vals: &[(&str, &str, &str)]| -> Vec<J> {
+            vals.iter().map(|(g, t, v)| parse(&format!(r#"{{"table": "sdg", "time": "{t}", "dims": {{"geo": "{g}"}}, "value": "{v}"}}"#)).unwrap()).collect()
+        };
+        let fmts = |decs: &[(&str, i64)]| J::Obj(decs.iter().map(|(k, d)| (k.to_string(), parse(&format!(r#"{{"scale": 1, "dec": {d}, "suffix": ""}}"#)).unwrap())).collect());
+        let keys = |out: Vec<(String, Vec<String>)>| out.into_iter().map(|(_, k)| k).collect::<Vec<_>>();
+        let set = |ks: &[&str]| ks.iter().map(|k| k.to_string()).collect::<BTreeSet<String>>();
+        // the change page: BE +5.5, FR -2.25; the note's gap 7.75 prints 7.8, the bars 5.5 and -2.2 (7.7)
+        let change = rows(&[("BE", "2016", "10"), ("BE", "2024", "15.5"), ("FR", "2016", "9.25"), ("FR", "2024", "7")]);
+        let facts = |each: &str| {
+            parse(&format!(
+                r#"{{"val0": {{"each": "geo", "table": "sdg", "time": "2016", "fmt": "pc"}}, "val1": {{"each": "geo", "table": "sdg", "time": "2024", "fmt": "pc"}},
+                    "chg": {{"op": "minus", "each": "geo", "a": "val1", "b": "val0", "fmt": "pp"{each}}},
+                    "a1": {{"table": "sdg", "filter": {{"geo": "BE"}}, "time": "2024", "fmt": "pc"}}, "a0": {{"table": "sdg", "filter": {{"geo": "BE"}}, "time": "2016", "fmt": "pc"}},
+                    "b1": {{"table": "sdg", "filter": {{"geo": "FR"}}, "time": "2024", "fmt": "pc"}}, "b0": {{"table": "sdg", "filter": {{"geo": "FR"}}, "time": "2016", "fmt": "pc"}},
+                    "vs_a": {{"op": "minus", "a": "a1", "b": "a0", "fmt": "pp"}}, "vs_b": {{"op": "minus", "a": "b1", "b": "b0", "fmt": "pp"}},
+                    "vs_lo": {{"op": "minus", "a": "vs_a", "b": "vs_b", "fmt": "{}"}}}}"#,
+                if each.is_empty() { "pp" } else { "pp_d2" }
+            ))
+            .unwrap()
+        };
+        // what the page prints: the bars bind the family (every member), the note its gap
+        let shown = printed_keys(&parse(r#"{"bars": {"family": "chg"}, "note": "fact:vs_lo", "dek": "{a0.t} {a1.t}"}"#).unwrap(), &facts(""));
+        assert_eq!(shown, set(&["chg.*", "vs_lo"]), "a .t year prints no number of its fact");
+        let out = differences_disagree(&facts(""), &fmts(&[("pc", 2), ("pp", 1)]), &change, &shown);
+        assert_eq!(out.len(), 1, "{out:?}");
+        assert!(out[0].0.contains("vs_lo: prints 7.8") && out[0].0.contains("chg.FR -2.2") && out[0].0.ends_with("is 7.7"), "{}", out[0].0);
+        assert_eq!(keys(out), [vec!["vs_lo".to_string(), "chg.BE".to_string(), "chg.FR".to_string()]]);
+        // the three at two decimals, each in its own format; the other bars keep one
+        let raised = facts(r#", "fmt_each": {"BE": "pp_d2", "FR": "pp_d2"}"#);
+        assert_eq!((fact_fmt(&raised, "chg.BE").as_deref(), fact_fmt(&raised, "chg.SE").as_deref()), (Some("pp_d2"), Some("pp")));
+        assert!(differences_disagree(&raised, &fmts(&[("pc", 2), ("pp", 1), ("pp_d2", 2)]), &change, &shown).is_empty());
+        // the gap not printed, or no operand printed: no case
+        assert!(differences_disagree(&facts(""), &fmts(&[("pc", 2), ("pp", 1)]), &change, &set(&["chg.*"])).is_empty());
+        assert!(differences_disagree(&facts(""), &fmts(&[("pc", 2), ("pp", 1)]), &change, &set(&["vs_lo"])).is_empty());
+        // the column page: two shares at two decimals, their gap in points at one: 65.43 - 14.92 = 50.51 prints 50.5
+        let column = rows(&[("SE", "2025", "65.43"), ("BE", "2025", "14.92")]);
+        let gap = |a: &str, b: &str, f: &str| {
+            parse(&format!(
+                r#"{{"hi": {{"table": "sdg", "filter": {{"geo": "{a}"}}, "time": "2025", "fmt": "{f}"}}, "lo": {{"table": "sdg", "filter": {{"geo": "{b}"}}, "time": "2025", "fmt": "{f}"}},
+                    "gap": {{"op": "minus", "a": "hi", "b": "lo", "fmt": "pp"}}}}"#
+            ))
+            .unwrap()
+        };
+        let all = set(&["hi", "lo", "gap"]);
+        assert!(differences_disagree(&gap("SE", "BE", "pc"), &fmts(&[("pc", 2), ("pp", 1)]), &column, &all).is_empty());
+        // at none: 65 - 15 = 50, the gap prints 51
+        assert_eq!(keys(differences_disagree(&gap("SE", "BE", "pc"), &fmts(&[("pc", 0), ("pp", 0)]), &column, &all)), [vec!["gap".to_string(), "hi".to_string(), "lo".to_string()]]);
+        // whole units: 10.6 and 3.4 print 11 and 3 (8), their gap 7.2 prints 7; at one decimal 10.6 - 3.4 = 7.2
+        let levels = rows(&[("DE", "2025", "10.6"), ("FR", "2025", "3.4")]);
+        assert_eq!(differences_disagree(&gap("DE", "FR", "ktoe"), &fmts(&[("ktoe", 0), ("pp", 0)]), &levels, &all).len(), 1);
+        assert!(differences_disagree(&gap("DE", "FR", "ktoe"), &fmts(&[("ktoe", 1), ("pp", 1)]), &levels, &all).is_empty());
+        // a half tie: 2.25 and 1.00, their 1.25 to one decimal is 1.2 by the even digit, as the gap prints
+        let tie = rows(&[("DE", "2025", "2.25"), ("FR", "2025", "1")]);
+        assert!(differences_disagree(&gap("DE", "FR", "ktoe"), &fmts(&[("ktoe", 2), ("pp", 1)]), &tie, &all).is_empty());
+        // formats of two scales are no case
+        let mut scaled = fmts(&[("ktoe", 0), ("pp", 0)]);
+        scaled.set("pp", parse(r#"{"scale": 100, "dec": 0, "suffix": ""}"#).unwrap());
+        assert!(differences_disagree(&gap("DE", "FR", "ktoe"), &scaled, &levels, &all).is_empty());
+        // the printed numbers as integers, and the half tie to the even digit
+        assert_eq!((printed_int("-2.2", 2), printed_int("7", 1), printed_int("1.234", 2)), (Some(-220), Some(70), None));
+        assert_eq!((round_even(775, 2, 1), round_even(765, 2, 1), round_even(-775, 2, 1), round_even(-226, 2, 1)), (78, 76, -78, -23));
     }
     fn read(name: &str) -> J {
         parse(&std::fs::read_to_string(fixtures().join(name)).unwrap_or_else(|e| panic!("{name}: {e}"))).unwrap_or_else(|e| panic!("{name}: {e}"))
