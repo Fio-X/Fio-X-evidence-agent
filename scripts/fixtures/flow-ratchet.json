@@ -1,11 +1,11 @@
 {
-  "measured_at": "231f0b5a051b208fac878a3cfe3679fefc55d906",
+  "measured_at": "9a0f8d214c1b694f6fef69c990a7f3108ffac1ab",
   "rules": "scripts/test_group_flow_ratchet.mjs header; totals and per_file may only go down; kind_names only grow, by --lower",
   "totals": {
     "new": {
       "nodes": 1,
       "ops": 0,
-      "copy": 97,
+      "copy": 95,
       "kinds": 268
     },
     "old": {
@@ -138,7 +138,7 @@
       "copy": 13
     },
     "src/next_flow.rs": {
-      "copy": 31,
+      "copy": 30,
       "kinds": 84
     },
     "src/next_gate.rs": {
@@ -148,7 +148,7 @@
       "kinds": 1
     },
     "src/next_page.rs": {
-      "copy": 3,
+      "copy": 2,
       "kinds": 7
     },
     "src/next_params.rs": {

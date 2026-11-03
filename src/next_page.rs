@@ -98,11 +98,6 @@ pub fn concept(relation: Relation, view: View) -> &'static Concept {
 /// so the text check refuses a reworded field that holds one (next_flow SCOPE_RULE); the draft stands under the scope fields.
 pub const SUPERLATIVES: [&str; 7] = ["最高", "最低", "领先", "垫底", "第一", "最多", "最少"];
 
-/// The words a scoped draft holds its ranking under (shape_registry DEK_FINDINGS scoped: "所选各方中，{name}增幅最大"): 最大 and
-/// 居首 are no SUPERLATIVES word (the rules suggest them), so a reworded field whose draft holds these words keeps them, or it
-/// would say the place leads among all places (next_flow Ask::Text scoped).
-pub const SCOPE_MARK: &str = "所选各方中";
-
 /// How the program chose a chart's places (a World Bank table narrowed by wb-rank-by.json, a Eurostat table cut to the top
 /// codes of its open dimension, estat-narrow.json's words): its own page field (the kicker and the chart's eyebrow), never
 /// model text, so the model can neither drop nor change it. `text` names the count of places the narrow record keeps;
@@ -128,6 +123,11 @@ pub struct Drafts {
     pub slots: Vec<(Target, String)>,
     /// Some chart of the page has a Scope: a reworded field that ranks is refused (Ask::Text scoped, Drafts::scoped).
     pub has_scope: bool,
+    /// The words a scoped draft holds its ranking under (with_scope_mark: the finding's set phrase, shape_registry
+    /// DEK_FINDINGS scoped "{name}{set}增幅最大"): 最大 and 居首 are no SUPERLATIVES word (the rules suggest them), so a
+    /// reworded field whose draft holds the phrase keeps it, or it would say the place leads among all places (next_flow
+    /// Ask::Text mark). None on a page with no scope or no finding.
+    pub scope_mark: Option<String>,
     /// The page-level fields speak for the first-to-last change (draft_for): a reworded title that asks a level with no
     /// change word is refused (Ask::Text changes, next_flow level_question).
     pub change_title: bool,
@@ -243,6 +243,7 @@ pub fn draft_for(
         unplaced,
         slots: Vec::new(),
         has_scope: false,
+        scope_mark: None,
         change_title: lead == (Relation::Change, View::FirstToLast),
     }
 }
@@ -323,7 +324,14 @@ impl Drafts {
         self
     }
 
-    /// The revised fields, each whose wording differs from its draft and holds a SUPERLATIVES word, or drops the SCOPE_MARK
+    /// The scope phrase the finding's scoped wording holds (next_run: the fill's finding set, the registry's words with the
+    /// count a fact placeholder), on a scoped page only; so it follows with_scopes.
+    pub fn with_scope_mark(mut self, mark: Option<String>) -> Self {
+        self.scope_mark = mark.filter(|m| self.has_scope && !m.is_empty());
+        self
+    }
+
+    /// The revised fields, each whose wording differs from its draft and holds a SUPERLATIVES word, or drops the scope_mark
     /// its draft holds, the draft's again when the page is scoped; returns the fields that went back. The text check refuses such a wording first (Ask::Text scoped),
     /// so after it this finds none: a guard only, its put-back recorded (SCOPE_FALLBACK_EVENT). With no scope, as given.
     pub fn scoped(
@@ -336,8 +344,9 @@ impl Drafts {
         let mut back = Vec::new();
         for (target, draft) in &self.fields {
             if let Some(wording) = out.get_mut(target) {
-                let unmarked = draft.contains(SCOPE_MARK) && !wording.contains(SCOPE_MARK);
-                if wording != draft && (unmarked || SUPERLATIVES.iter().any(|w| wording.contains(w))) {
+                let unmarked = self.scope_mark.as_deref().is_some_and(|m| draft.contains(m) && !wording.contains(m));
+                let bare = self.scope_mark.as_deref().map_or(wording.clone(), |m| wording.replace(m, ""));
+                if wording != draft && (unmarked || SUPERLATIVES.iter().any(|w| bare.contains(w))) {
                     *wording = draft.clone();
                     back.push(target.clone());
                 }
@@ -368,6 +377,7 @@ impl Drafts {
             changes: self.changes(),
             scoped: self.scoped_fields(),
             titles: self.titles(),
+            mark: self.scope_mark.clone().unwrap_or_default(),
         }
     }
 
@@ -1216,12 +1226,15 @@ mod tests {
         }
     }
 
+    /// A narrowed page's set phrase as next_tree_gen fills {set}: wb-rank-by.json's SP.POP.TOTL words, {n} the drawn fact.
+    const SET: &str = "在人口最多的{drawn}个经济体中";
+
     /// The dek a run gives a page (next_run finding_of: DEK_FINDINGS on the picked recipe's own facts) as fill drafts it:
     /// {name} a place's name placeholder, {value} and {gap} facts, {y0} and {y1} facts' periods. Each finding replaces the
     /// frame's dek, its scoped wording on a scoped page; the sentence types no number, names its later year (and a change its
     /// earlier) through a placeholder, says no "从起始到最近" and on a scoped page ranks nothing; kept or reworded with its
-    /// placeholders it passes, a reword that drops one, writes 年 after a period, or on a scoped page ranks or drops SCOPE_MARK
-    /// is refused. None
+    /// placeholders it passes, a reword that drops one, writes 年 after a period, or on a scoped page ranks, drops the page's
+    /// set phrase (its scope_mark), says another page's set or types the set's count is refused. None
     /// keeps the frame's dek.
     #[test]
     fn a_finding_is_the_dek_of_its_page_and_keeps_its_placeholders() {
@@ -1233,6 +1246,7 @@ mod tests {
                 .replace("{value}", "{lead}")
                 .replace("{y0}", "{lead0.t}")
                 .replace("{y1}", "{lead1.t}")
+                .replace("{set}", SET)
         };
         let dek = |drafts: &Drafts| drafts.fields.iter().find(|(t, _)| *t == Target::PageDek).unwrap().1.clone();
         let plain = draft(&claims, &charts, Vec::new());
@@ -1242,20 +1256,22 @@ mod tests {
             // only the tokens finding_of fills, the name, the value and the later year in every sentence
             for template in [unscoped, scoped] {
                 let tokens = placeholders(template).unwrap();
-                assert!(tokens.iter().all(|t| ["name", "other", "value", "gap", "y0", "y1"].contains(&t.as_str())), "{template}");
+                assert!(tokens.iter().all(|t| ["name", "other", "value", "gap", "y0", "y1", "set"].contains(&t.as_str())), "{template}");
                 assert!(["name", "value", "y1"].iter().all(|t| tokens.contains(*t)), "{template}");
-                assert_eq!(placeholders(unscoped).unwrap(), tokens, "{finding:?}: both wordings fill the same");
+                let mut both = placeholders(unscoped).unwrap();
+                both.insert("set".to_string());
+                assert_eq!(both, placeholders(scoped).unwrap(), "{finding:?}: the scoped wording fills the same and the set");
             }
             let finding_of = Some((fill(unscoped), fill(scoped)));
             for drafts in [
                 plain.clone().with_finding(finding_of.clone()),
-                plain.clone().with_scopes(&[Some(by_population())]).with_finding(finding_of.clone()),
+                plain.clone().with_scopes(&[Some(by_population())]).with_finding(finding_of.clone()).with_scope_mark(Some(SET.to_string())),
             ] {
                 let said = dek(&drafts);
                 assert_eq!(said, if drafts.has_scope { fill(scoped) } else { fill(unscoped) }, "{finding:?}");
                 assert!(typed_numbers(&said).is_empty() && worded_number(&said).is_none(), "{said}");
                 assert!(!said.contains("从起始到最近") && question_word(&said).is_none(), "{said}");
-                assert!(!drafts.has_scope || crate::next_flow::ranking_word(&said).is_none(), "{said}");
+                assert!(!drafts.has_scope || crate::next_flow::ranking_word(&said.replace(SET, "")).is_none(), "{said}");
                 // the dek is field 2
                 let ask = drafts.ask(Vec::new());
                 assert!(ask.check(&one("2", &said)).is_ok(), "{said}");
@@ -1271,12 +1287,21 @@ mod tests {
                 assert_eq!(ask.check(&one("2", &ranks)).is_err(), drafts.has_scope, "{ranks}");
                 // e3: 增幅最大 and 居首 rank with no SUPERLATIVES word, so a scoped reword that drops the scope's words said the
                 // place led among all places: refused with the draft as the example, and put back by the guard unchecked
-                assert_eq!(said.contains(SCOPE_MARK), drafts.has_scope, "{said}");
-                let unmarked = said.replace(&format!("{SCOPE_MARK}，"), "");
+                assert_eq!(said.contains(SET), drafts.has_scope, "{said}");
+                let unmarked = said.replace(SET, "");
                 let unmarked_refused = ask.check(&one("2", &unmarked));
                 assert_eq!(unmarked_refused.is_err(), drafts.has_scope, "{unmarked}");
+                if drafts.has_scope {
+                    // another page's set (another registry option's words), or the set's count typed: refused too
+                    let other = said.replace(SET, "在经济规模最大的{drawn}个经济体中");
+                    assert!(ask.check(&one("2", &other)).unwrap_err().problem.contains("drops"), "{other}");
+                    let typed = said.replace("{drawn}", "8");
+                    assert!(ask.check(&one("2", &typed)).is_err(), "{typed}");
+                    let wrong = said.replace(SET, "在人口最多的{lead}个经济体中");
+                    assert!(ask.check(&one("2", &wrong)).is_err(), "{wrong}");
+                }
                 if let Err(refused) = unmarked_refused {
-                    assert!(refused.problem.starts_with(&format!("field '2': drops '{SCOPE_MARK}'; ")), "{}", refused.problem);
+                    assert!(refused.problem.starts_with(&format!("field '2': drops '{SET}'; ")), "{}", refused.problem);
                     assert!(refused.problem.ends_with(&format!(", e.g. '{said}'")), "{}", refused.problem);
                     let unchecked = Choice::Text { text: BTreeMap::from([("2".to_string(), unmarked.clone())]), names: BTreeMap::new() };
                     let (page, back) = drafts.scoped(drafts.revised(&unchecked).unwrap());
@@ -1289,12 +1314,12 @@ mod tests {
     /// The page title's headline (shape_registry HEADLINES, next_run finding_of fills it as the dek's finding): only the
     /// tokens finding_of fills, the place's name in each; filled, it types no number, asks nothing and names no year; it
     /// holds a comparison word or a fact placeholder (a number from the ledger) and a verb, so it states a conclusion, not a
-    /// label; its scoped wording holds SCOPE_MARK and no ranking word, as the scoped dek's.
+    /// label; its scoped wording names the page's set ({set}) and holds no ranking word, as the scoped dek's.
     #[test]
     fn a_headline_states_its_finding_with_no_typed_number() {
         use crate::shape_registry::HEADLINES;
         let fill = |template: &str| {
-            template.replace("{name}", "{name.SE}").replace("{other}", "{name.BE}").replace("{value}", "{lead}")
+            template.replace("{name}", "{name.SE}").replace("{other}", "{name.BE}").replace("{value}", "{lead}").replace("{set}", SET)
         };
         const COMPARES: [&str; 4] = ["最", "比", "倍", "居首"];
         const VERBS: [&str; 6] = ["增", "降", "是", "占", "居首", "比"];
@@ -1302,9 +1327,11 @@ mod tests {
             assert!(DEK_FINDINGS.iter().any(|(f, _, _)| *f == finding), "{finding:?}: a headline says a dek's finding");
             for template in [unscoped, scoped] {
                 let tokens = placeholders(template).unwrap();
-                assert!(tokens.iter().all(|t| ["name", "other", "value", "times"].contains(&t.as_str())), "{template}");
+                assert!(tokens.iter().all(|t| ["name", "other", "value", "times", "set"].contains(&t.as_str())), "{template}");
                 assert!(tokens.contains("name"), "{template}");
-                assert_eq!(placeholders(unscoped).unwrap(), tokens, "{finding:?}: both wordings fill the same");
+                let mut both = placeholders(unscoped).unwrap();
+                both.extend(tokens.contains("set").then(|| "set".to_string()));
+                assert_eq!(both, tokens, "{finding:?}: both wordings fill the same, the scoped one and the set");
                 let said = fill(template);
                 assert!(typed_numbers(&said).is_empty() && worded_number(&said).is_none(), "{said}");
                 assert!(question_word(&said).is_none() && !said.contains('年'), "{said}");
@@ -1312,8 +1339,8 @@ mod tests {
                 assert!(numbered || COMPARES.iter().any(|w| said.contains(w)), "{said}: no comparison");
                 assert!(VERBS.iter().any(|w| said.contains(w)), "{said}: no verb");
             }
-            assert!(scoped.starts_with(SCOPE_MARK), "{scoped}");
-            assert!(crate::next_flow::ranking_word(&fill(scoped)).is_none(), "{scoped}");
+            assert!(scoped.contains("{name}{set}"), "{scoped}: the set right after the name, no doubled 中");
+            assert!(crate::next_flow::ranking_word(&fill(scoped).replace(SET, "")).is_none(), "{scoped}");
         }
     }
 

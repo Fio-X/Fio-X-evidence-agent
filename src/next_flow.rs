@@ -237,6 +237,10 @@ pub enum Ask {
         changes: Vec<String>,
         scoped: Vec<String>,
         titles: Vec<String>,
+        /// The page's scope phrase as its drafts hold it (next_page Drafts::scope_mark: the compared set's words from the
+        /// registry, its count a fact placeholder): on a `scoped` field whose draft holds it, a reword that drops it is
+        /// refused. Empty on a page with no set.
+        mark: String,
     },
     /// The image review of the published page's screenshot: each of VISION_QUESTIONS answered yes or no, with a one-line
     /// reason for a no. Advice only: the answer is recorded, it never stops a run and never verifies a page.
@@ -741,6 +745,7 @@ impl Ask {
                 changes,
                 scoped,
                 titles,
+                ..
             } => {
                 json!({"type": "object", "additionalProperties": false, "required": ["step", "text", "names"],
                 "properties": {"step": step,
@@ -826,6 +831,7 @@ impl Ask {
                 changes,
                 scoped,
                 titles,
+                ..
             } => {
                 let mut allowed = json!({"step": "text",
                 "text": fields.iter().map(|(k, draft)| (k.clone(), json!(draft))).collect::<Map<_, _>>(), "names": slots,
@@ -1118,6 +1124,7 @@ impl Ask {
                 changes,
                 scoped,
                 titles,
+                mark,
             } => {
                 let text = strings(&map["text"])
                     .ok_or_else(|| self.refuse("text must map field numbers to wording"))?;
@@ -1154,13 +1161,15 @@ impl Ask {
                     }
                     // On a scoped page a ranking word holds only among the kept places: refused here, so the model words
                     // it again, rather than put back after acceptance (next_page Drafts::scoped). A draft that ranks under
-                    // the scope's own words (SCOPE_MARK) keeps them, with the draft as the example.
-                    let mark = crate::next_page::SCOPE_MARK;
-                    if scoped.contains(id) && revised != draft && draft.contains(mark) && !revised.contains(mark) {
+                    // the scope's own words (the page's set phrase, `mark`) keeps them, with the draft as the example.
+                    let mark = mark.as_str();
+                    if scoped.contains(id) && revised != draft && !mark.is_empty() && draft.contains(mark) && !revised.contains(mark) {
                         return Err(self.refuse(format!("field '{id}': drops '{mark}'{}, e.g. '{draft}'", scope_rule(scoped))));
                     }
+                    // the set phrase is the registry's words, which may rank the set itself (人口最多的): read without it
+                    let unmarked = if mark.is_empty() { revised.clone() } else { revised.replace(mark, "") };
                     if let Some(word) =
-                        ranking_word(revised).filter(|_| scoped.contains(id) && revised != draft)
+                        ranking_word(&unmarked).filter(|_| scoped.contains(id) && revised != draft)
                     {
                         return Err(self.refuse(format!("field '{id}': '{word}' ranks{}", scope_rule(scoped))));
                     }
@@ -1538,8 +1547,8 @@ pub const CHANGE_WORDS: [&str; 10] = ["变", "增", "减", "升", "降", "涨", 
 /// The rule of the fields of a scoped page (Ask::Text scoped), said to the model in the ask and in a refusal, with an
 /// example that passes; the words are next_page SUPERLATIVES.
 pub const SCOPE_RULE: &str = "this page's chart shows only the places the program kept, not all of them, so a ranking word \
-     (最高, 最低, 领先, 垫底, 第一, 最多, 最少) holds only among those: a reworded field names none, e.g. '各方数值的变化', and \
-     keeps 所选各方中 where its draft says it";
+     (最高, 最低, 领先, 垫底, 第一, 最多, 最少) holds only among those: a reworded field names none outside the draft's set phrase (在…中, which says which places), e.g. '各方数值的变化', \
+     and keeps that set phrase word for word where its draft says it";
 
 /// The rule of the title field (Ask::Text titles), said to the model in the ask and in a refusal, with a label and a
 /// conclusion that pass (neither ranks, asks a level nor types a number); the words are QUESTION_WORDS.
@@ -5071,6 +5080,7 @@ mod tests {
             changes: Vec::new(),
             scoped: Vec::new(),
             titles: Vec::new(),
+            mark: String::new(),
         }
     }
 
@@ -5663,6 +5673,7 @@ mod tests {
             changes: Vec::new(),
             scoped: Vec::new(),
             titles: Vec::new(),
+            mark: String::new(),
         };
         let answer = |t: &str| json!({"step": "text", "text": {"1": t}, "names": {}});
         let monthly = ask(&["2026-08"]);
@@ -5718,6 +5729,7 @@ mod tests {
             changes: changes.iter().map(|c| c.to_string()).collect(),
             scoped: Vec::new(),
             titles: Vec::new(),
+            mark: String::new(),
         };
         let answer = |n: &str, t: &str| json!({"step": "text", "text": {n: t}, "names": {}});
         let refused = ask(&["1"]).check(&answer("1", "哪国最高")).unwrap_err();
@@ -5758,6 +5770,7 @@ mod tests {
             changes: vec!["1".to_string()],
             scoped: scoped.iter().map(|s| s.to_string()).collect(),
             titles: Vec::new(),
+            mark: String::new(),
         };
         let answer = |n: &str, t: &str| json!({"step": "text", "text": {n: t}, "names": {}});
         let both = ask(&["1", "2"]);
@@ -5803,6 +5816,7 @@ mod tests {
             changes: changes.iter().map(|c| c.to_string()).collect(),
             scoped: scoped.iter().map(|s| s.to_string()).collect(),
             titles: titles.iter().map(|t| t.to_string()).collect(),
+            mark: String::new(),
         };
         let answer = |n: &str, t: &str| json!({"step": "text", "text": {n: t}, "names": {}});
         let titled = ask(&["1"], &[], &[]);
@@ -6023,6 +6037,7 @@ mod tests {
             changes: Vec::new(),
             scoped: Vec::new(),
             titles: Vec::new(),
+            mark: String::new(),
         };
         let good = json!({"step": "text", "text": json!({"1": "{first.name}居首"}).to_string(), "names": json!({"s1": "占比"}).to_string()});
         assert_eq!(text.decode(&good).1, vec!["text", "names"]);

@@ -605,6 +605,34 @@ fn push_charts(
 /// (narrow_words), with the count of codes the record keeps and its rank time: the scope, and the selection line that follows
 /// the chart's source. None when no record narrows this file; Err when the records cannot be read or two of them narrow it.
 fn narrowed(run_dir: &Path, table: &Prepared) -> Result<Option<(Scope, String)>, String> {
+    let Some((rel, record)) = narrow_record(run_dir, table)? else {
+        return Ok(None);
+    };
+    let words = narrow_words(&rel, &record)?;
+    let n = words.members.to_string();
+    let scope = Scope {
+        text: words.zh_scope.replace("{n}", &n),
+        record: rel.clone(),
+    };
+    Ok(Some((
+        scope,
+        words.zh_line.replace("{n}", &n).replace("{at}", &words.at),
+    )))
+}
+
+/// The compared set a narrowed table's finding names (the page input's `set`, next_tree_gen finding_declared): the narrow
+/// record's registered scope words as the registry gives them ({n} left for the count, which the page prints from its own
+/// fact) and the count of codes the record keeps. None when no record narrows the table. Registry data passed through.
+fn narrow_set(run_dir: &Path, table: &Prepared) -> Result<Option<Value>, String> {
+    let Some((rel, record)) = narrow_record(run_dir, table)? else {
+        return Ok(None);
+    };
+    let words = narrow_words(&rel, &record)?;
+    Ok(Some(json!({"words": words.zh_scope, "members": words.members})))
+}
+
+/// The narrow record of a fetched table (narrowed): its run-folder path and the record; None when none narrows its file.
+fn narrow_record(run_dir: &Path, table: &Prepared) -> Result<Option<(String, Value)>, String> {
     let Ok(entries) = std::fs::read_dir(run_dir.join("data/origins")) else {
         return Ok(None);
     };
@@ -626,19 +654,7 @@ fn narrowed(run_dir: &Path, table: &Prepared) -> Result<Option<(Scope, String)>,
         }
         found = Some((rel, record));
     }
-    let Some((rel, record)) = found else {
-        return Ok(None);
-    };
-    let words = narrow_words(&rel, &record)?;
-    let n = words.members.to_string();
-    let scope = Scope {
-        text: words.zh_scope.replace("{n}", &n),
-        record: rel.clone(),
-    };
-    Ok(Some((
-        scope,
-        words.zh_line.replace("{n}", &n).replace("{at}", &words.at),
-    )))
+    Ok(found)
 }
 
 /// What a narrow record says for the page: its scope and selection line templates (`{n}` and `{at}` left to fill), the
@@ -1909,7 +1925,7 @@ fn title_and_kicker(fill: Option<&Value>, scoped: bool, label: &str, measure: &s
 }
 
 /// A composition's scope on its text step: the cut its fill states under the picture (the stacked100 declaration (node-bindings.json)'s cut line and the
-/// line of the places left out), so a finding over its bars is said in its scoped wording ("所选各方中"), never as the
+/// line of the places left out), so a finding over its bars is said in its scoped wording (the set words 在图中各国中), never as the
 /// highest of every place. Only whether a page has a scope is read (next_page Drafts::with_scopes); no narrow record
 /// stands behind it, the cut is the fill's.
 const COMPOSITION_SCOPE: &str = "图中各国";
@@ -1921,17 +1937,19 @@ const COMPOSITION_SCOPE: &str = "图中各国";
 /// they were; the text step only no longer reads them there.
 fn text_drafts(page: &Page, form: Option<(Relation, View)>, titles: &[String], fill: Option<&Value>) -> Drafts {
     let finding = fill.and_then(dek_finding);
+    let mark = fill.and_then(|fill| fill["finding"]["set"].as_str()).map(str::to_string);
     match fill.filter(|fill| fill["composition"].is_object()) {
         Some(fill) => {
             let cut = &fill["composition"];
             let left_out = ["others", "dropped", "left_out"].iter().any(|k| cut[*k].as_array().is_some_and(|a| !a.is_empty()));
             let scopes = if left_out { vec![Some(Scope { text: COMPOSITION_SCOPE.into(), record: String::new() })] } else { Vec::new() };
-            next_page::draft_for(&[], &[], Vec::new(), form).with_scopes(&scopes).with_finding(finding).with_periods(&page.times)
+            next_page::draft_for(&[], &[], Vec::new(), form).with_scopes(&scopes).with_finding(finding).with_scope_mark(mark).with_periods(&page.times)
         }
         None => next_page::draft_for(&page.claims, &page.charts, Vec::new(), form)
             .name_measures(titles, &page.charts)
             .with_scopes(&page.scopes)
             .with_finding(finding)
+            .with_scope_mark(mark)
             .with_periods(&page.times),
     }
 }
@@ -2210,9 +2228,14 @@ fn recipe_request(
     let claims = picked_claims(run_dir, main, &claim_records(run_dir).map_err(shape_err)?).map_err(shape_err)?;
     let picks = picks_of(&recipe.picks, &shape, &main_rows, &claims).map_err(shape_err)?;
     // read from the main's narrow record, as the charts step reads the page's scope (narrowed), never from the tool's details
-    let scoped = narrowed(run_dir, main).map_err(|why| ("fill", why))?.is_some();
-    // a recipe with external layers declares and lays them out over the page input, which the fill keeps for draw_nodes
-    let page_in = (!recipe.external.is_empty()).then(|| page_input(recipe, &shape, &picks, (&main_rows, &comp_rows)));
+    let set = narrow_set(run_dir, main).map_err(|why| ("fill", why))?;
+    let scoped = set.is_some();
+    // a recipe with external layers declares and lays them out over the page input, which the fill keeps for draw_nodes;
+    // a narrowed main's set (its record's scope words and members) goes in as given, for the finding's words
+    let mut page_in = (!recipe.external.is_empty()).then(|| page_input(recipe, &shape, &picks, (&main_rows, &comp_rows)));
+    if let (Some(p), Some(set)) = (page_in.as_mut(), set) {
+        p["set"] = set;
+    }
     let asked = Asked { calls, page_in: page_in.as_ref() };
     let mut fill = fill_of(recipe, &shape, &picks, (&main_rows, &comp_rows), catalogue, (title, dek), scoped, Some(&asked))
         .map_err(|why| ("fill", why))?;
@@ -2696,6 +2719,7 @@ pub async fn reword(
         changes,
         scoped,
         titles,
+        mark,
         ..
     } = &ask
     else {
@@ -2754,6 +2778,7 @@ pub async fn reword(
                 changes: changes.clone(),
                 scoped: scoped.clone(),
                 titles: titles.clone(),
+                mark: mark.clone(),
             };
             let mut kept = BTreeMap::new();
             let mut given = Map::new();
@@ -2773,6 +2798,7 @@ pub async fn reword(
                         changes: Vec::new(),
                         scoped: Vec::new(),
                         titles: Vec::new(),
+                        mark: String::new(),
                     };
                     let alone = json!({"step": "text", "text": {}, "names": {id.as_str(): name}});
                     if !given.contains_key(id)
@@ -4046,7 +4072,24 @@ mod tests {
         words: (&str, &str),
         scoped: bool,
     ) -> Result<Value, String> {
-        let page_in = (!recipe.external.is_empty()).then(|| page_input(recipe, shape, picks, (main, companion)));
+        test_fill_set(recipe, shape, picks, (main, companion), catalogue, words, scoped, None)
+    }
+    /// test_fill with the page input's `set` (narrow_set's, as recipe_request gives it for a narrowed main).
+    #[allow(clippy::too_many_arguments)]
+    fn test_fill_set(
+        recipe: &Recipe,
+        shape: &Shape,
+        picks: &Picks,
+        (main, companion): (&[Value], &[Value]),
+        catalogue: &dyn Catalogue,
+        words: (&str, &str),
+        scoped: bool,
+        set: Option<Value>,
+    ) -> Result<Value, String> {
+        let mut page_in = (!recipe.external.is_empty()).then(|| page_input(recipe, shape, picks, (main, companion)));
+        if let (Some(p), Some(set)) = (page_in.as_mut(), set) {
+            p["set"] = set;
+        }
         let calls = std::sync::Mutex::new(Vec::new());
         let asked = Asked { calls: &calls, page_in: page_in.as_ref() };
         let mut fill = fill_of(recipe, shape, picks, (main, companion), catalogue, words, scoped, Some(&asked))?;
@@ -4522,6 +4565,7 @@ mod tests {
                 (Target::Measure(1), "Renewable energy share".into()),
             ],
             has_scope: false,
+            scope_mark: None,
             change_title: false,
         }
     }
@@ -5297,13 +5341,13 @@ mod tests {
         // the headline from the finding joins the fill (HEADLINES, the page's title): taken out like the dek's finding, the
         // bytes sent are the ones before it
         let headline = sent.as_object_mut().unwrap().remove(HEADLINE).unwrap();
-        assert_eq!(headline, json!({"title": "{name.RU}最多，占{ru24_share}", "scoped": "所选各方中{name.RU}居首，占{ru24_share}"}));
+        assert_eq!(headline, json!({"title": "{name.RU}最多，占{ru24_share}", "scoped": "{name.RU}居首，占{ru24_share}"}));
         // the page input the ring layer is declared over (P6 step 3: the ring is the visual group's) stays with the flow
         // for draw_nodes, so the bytes sent, the ring's among them, are still the ones pinned below
         sent.as_object_mut().unwrap().remove("page_in").unwrap();
         // RU is the largest origin at t1 (NO and US are at 1): its share, which the map declares, its name placeholder and
         // the year of its value at t1 (lead1, the finding's own fact, kept out of the bytes compared)
-        assert_eq!(finding, json!({"dek": "{lead1.t}，{name.RU}最多，占{ru24_share}", "scoped": "{lead1.t}，所选各方中，{name.RU}居首，占{ru24_share}"}));
+        assert_eq!(finding, json!({"dek": "{lead1.t}，{name.RU}最多，占{ru24_share}", "scoped": "{lead1.t}，{name.RU}居首，占{ru24_share}"}));
         let lead1 = sent["knobs"]["spec"]["facts"].as_object_mut().unwrap().remove("lead1").unwrap();
         assert_eq!(lead1, json!({"op": "last", "table": "imp", "filter": {"partner": "RU", "geo": "EU27_2020"}, "from": "2024", "to": "2024", "fmt": "mio_m3"}));
         assert_eq!(crate::hash::sha256_bytes(sent.to_string().as_bytes()), "d728a43088b98205718a7814a2ce0ef3572d9485fc8961926831fa471dafb5e8");
@@ -6009,10 +6053,10 @@ mod tests {
         // the dek's finding: the highest place against the lowest, on the extremes the notes declare, each place a name
         // placeholder the labels name, the year the period of its own fact lead1 (the highest's value at the year)
         assert_eq!(fill["finding"], json!({"dek": "{lead1.t}，{name.SE}最高，为{hi}，比最低的{name.BE}高{gap}",
-            "scoped": "{lead1.t}，所选各方中，{name.SE}居首，为{hi}，比{name.BE}高{gap}"}));
+            "scoped": "{lead1.t}，{name.SE}居首，为{hi}，比{name.BE}高{gap}"}));
         // the title's headline says the same finding with the times the notes declare (HEADLINES), kept apart from the dek's
         assert_eq!(fill[HEADLINE], json!({"title": "{name.SE}最高，是最低者{name.BE}的{times}",
-            "scoped": "所选各方中{name.SE}居首，是{name.BE}的{times}"}));
+            "scoped": "{name.SE}居首，是{name.BE}的{times}"}));
         assert_eq!(spec["facts"]["lead1"], json!({"op": "last", "table": "sdg", "filter": {"geo": "SE"}, "from": "2025", "to": "2025", "fmt": "pc"}));
         assert!(spec["hero"]["data"].get("hi").is_none());
         assert_eq!(spec["fmts"]["pc"], json!({"scale": 1, "dec": 2, "suffix": "%"}));
@@ -6367,8 +6411,8 @@ mod tests {
         // the dek's finding: SE's rise, a fact of its two ends' values (the later less the earlier, in points), its rows
         // the ones the bars already read
         assert_eq!(fill["finding"], json!({"dek": "{lead0.t}至{lead1.t}，{name.SE}增幅最大，增加{lead}",
-            "scoped": "{lead0.t}至{lead1.t}，所选各方中，{name.SE}增幅最大，增加{lead}"}));
-        assert_eq!(fill[HEADLINE], json!({"title": "{name.SE}增幅最大", "scoped": "所选各方中{name.SE}增幅最大"}));
+            "scoped": "{lead0.t}至{lead1.t}，{name.SE}增幅最大，增加{lead}"}));
+        assert_eq!(fill[HEADLINE], json!({"title": "{name.SE}增幅最大", "scoped": "{name.SE}增幅最大"}));
         assert_eq!(spec["facts"]["lead"], json!({"op": "minus", "a": "lead1", "b": "lead0", "fmt": "pp"}));
         assert_eq!(spec["facts"]["lead0"], json!({"op": "last", "table": "sdg", "filter": {"geo": "SE"}, "from": "2016", "to": "2016", "fmt": "pc"}));
         assert_eq!(spec["facts"]["lead1"], json!({"op": "last", "table": "sdg", "filter": {"geo": "SE"}, "from": "2024", "to": "2024", "fmt": "pc"}));
@@ -6515,7 +6559,7 @@ mod tests {
             ("USA", "2016", "16.5"), ("USA", "2025", "17.0")];
         let mut page = fill(&apart);
         let spec = &page["knobs"]["spec"];
-        assert_eq!(page[HEADLINE], json!({"title": "{name.CHN}增幅最大", "scoped": "所选各方中{name.CHN}增幅最大"}));
+        assert_eq!(page[HEADLINE], json!({"title": "{name.CHN}增幅最大", "scoped": "{name.CHN}增幅最大"}));
         assert_eq!(spec["hero"]["data"]["accent"], "CHN");
         assert_eq!(spec["fmts"]["pp"], json!({"scale": 1, "dec": 1, "suffix": " 个百分点"}));
         let notes = spec["hero"]["leaves"]["leader_notes"]["notes"].as_array().unwrap();
@@ -6564,7 +6608,7 @@ mod tests {
         // the title and the kicker run_page gives the page
         let label = "各国老年人口占比的变化";
         assert_eq!(title_and_kicker(Some(&page), false, label, "老年人口占比"), ("{name.CHN}增幅最大".into(), label.into()));
-        assert_eq!(title_and_kicker(Some(&page), true, label, "老年人口占比"), ("所选各方中{name.CHN}增幅最大".into(), label.into()));
+        assert_eq!(title_and_kicker(Some(&page), true, label, "老年人口占比"), ("{name.CHN}增幅最大".into(), label.into()));
         assert_eq!(title_and_kicker(Some(&page), false, "", "老年人口占比"), ("{name.CHN}增幅最大".into(), "老年人口占比".into()));
         assert_eq!(title_and_kicker(Some(&tied), false, label, "老年人口占比"), (label.into(), "老年人口占比".into()));
         assert_eq!(title_and_kicker(None, false, label, "老年人口占比"), (label.into(), "老年人口占比".into()));
@@ -7242,6 +7286,10 @@ mod tests {
         let spec = &fill["knobs"]["spec"];
         assert_eq!(fill[HEADLINE]["title"], json!("{name.IT}{name.fossil}占比最高，达{comp_top}"));
         assert_eq!(fill["finding"]["dek"], json!("{lead1.t}，{name.IT}{name.fossil}占比最高，为{comp_top}"));
+        // a cut composition (places left out) names the set it ranks in: the registry's composition set words
+        assert_eq!(fill["finding"]["scoped"], json!("{lead1.t}，{name.IT}{name.fossil}在图中各国中占比居首，为{comp_top}"));
+        assert_eq!(fill["finding"]["set"], json!("在图中各国中"));
+        assert_eq!(fill[HEADLINE]["scoped"], json!("{name.IT}{name.fossil}在图中各国中占比居首，达{comp_top}"));
         assert_eq!(spec["facts"][COMPOSITION_TOP], json!({"op": "share", "a": "sum.fossil.IT", "b": "total.IT"}));
         assert_eq!(spec["facts"]["lead1"]["filter"], json!({"geo": "IT", "siec": "TOTAL"}));
         let frame = crate::shape_registry::FRAMES.iter().find(|(r, v, _)| (*r, *v) == (Relation::Composition, View::Slice)).unwrap().2;
@@ -7280,7 +7328,7 @@ mod tests {
         };
         let titles = vec!["发电总量".to_string()];
         let finding = json!({"dek": "{lead1.t}，{name.IT}{name.fossil}占比最高，为{comp_top}",
-            "scoped": "{lead1.t}，所选各方中，{name.IT}{name.fossil}占比居首，为{comp_top}"});
+            "scoped": "{lead1.t}，{name.IT}{name.fossil}在图中各国中占比居首，为{comp_top}", "set": "在图中各国中"});
         let fill = json!({"composition": {"bars": ["DE", "IT"], "dropped": [], "others": ["MT"], "left_out": []}, "finding": finding});
         let drafts = text_drafts(&page, page_lead(Some(&fill), &page.charts), &titles, Some(&fill));
         let said: Vec<&str> = drafts.fields.iter().map(|(_, t)| t.as_str()).chain(drafts.slots.iter().map(|(_, t)| t.as_str())).collect();
@@ -7288,7 +7336,7 @@ mod tests {
         let ranking = crate::shape_registry::FRAMES.iter().find(|(r, v, _)| (*r, *v) == (Relation::Ranking, View::Slice)).unwrap().2;
         assert!(!all.contains("发电总量") && !all.contains("first.") && !ranking.iter().any(|w| all.contains(w)), "{all}");
         assert!(drafts.slots.is_empty(), "no measure of the first fetch to name");
-        assert!(drafts.has_scope && all.contains("所选各方中，{name.IT}{name.fossil}占比居首，为{comp_top}"), "{all}");
+        assert!(drafts.has_scope && all.contains("{name.IT}{name.fossil}在图中各国中占比居首，为{comp_top}"), "{all}");
         let composition = crate::shape_registry::FRAMES.iter().find(|(r, v, _)| (*r, *v) == (Relation::Composition, View::Slice)).unwrap().2;
         assert!(composition.iter().any(|w| all.contains(w)), "{all}");
         // every bar drawn, none left out: unscoped
@@ -8835,7 +8883,8 @@ mod tests {
         let column = recipe("column");
         let shape = shape_of(&column.eats, &[("t", main)], &Hubs).unwrap();
         let picks = picks_of(&column.picks, &shape, main, &[]).unwrap();
-        let fill = test_fill(column, &shape, &picks, (main, &[]), &Hubs, ("标题", "导语"), scope.is_some()).unwrap();
+        let set = narrow_set(dir.path(), &table).unwrap();
+        let fill = test_fill_set(column, &shape, &picks, (main, &[]), &Hubs, ("标题", "导语"), scope.is_some(), set).unwrap();
         let charts = vec![Chart {
             relation: Relation::Ranking,
             view: View::Slice,
@@ -8845,7 +8894,8 @@ mod tests {
         }];
         let drafts = next_page::draft_for(&[], &charts, Vec::new(), page_lead(Some(&fill), &charts))
             .with_scopes(&[scope.clone()])
-            .with_finding(dek_finding(&fill));
+            .with_finding(dek_finding(&fill))
+            .with_scope_mark(fill["finding"]["set"].as_str().map(str::to_string));
         let dek = drafts.fields.iter().find(|(t, _)| *t == Target::PageDek).map(|(_, d)| d.clone()).unwrap();
         let texts = drafts.fields.iter().map(|(_, d)| d.clone()).collect();
         let notes = fill["knobs"]["spec"]["hero"]["leaves"]["leader_notes"]["notes"]
@@ -8892,7 +8942,8 @@ mod tests {
         let (scope, dir, dek, texts, notes) = cut_page(&[record.clone()], &main);
         let scope = scope.expect("the narrow record scopes the page");
         assert_eq!(scope, Scope { text: "在本指标最高的20个国籍中".into(), record: "data/origins/0.json".into() });
-        assert_eq!(dek, "{lead1.t}，所选各方中，{name.AF}居首，为{hi}，比{name.IQ}高{gap}");
+        // the dek names the set in the registry's words, its count the drawn fact (the 20 citizenships compared)
+        assert_eq!(dek, "{lead1.t}，{name.AF}在本指标最高的{drawn}个国籍中居首，为{hi}，比{name.IQ}高{gap}");
         assert!(texts.iter().all(|t| !t.contains("最低的")), "{texts:?}");
         assert_eq!(notes, [("AF".to_string(), "column.note.hi.scoped".to_string()), ("IQ".into(), "column.note.lo.scoped".into())]);
         // the kicker and the eyebrow (ScopeSegs words) and the selection line, the count and the year read from the record
@@ -8927,9 +8978,27 @@ mod tests {
             "members": ["SE", "DE", "FR", "BE"], "at": "2025"});
         let (scope, _dir, dek, texts, notes) = cut_page(&[record], &column_rows());
         assert_eq!(scope.map(|s| s.text), Some("在本指标最高的4个经济体中".to_string()));
-        assert_eq!(dek, "{lead1.t}，所选各方中，{name.SE}居首，为{hi}，比{name.BE}高{gap}");
+        assert_eq!(dek, "{lead1.t}，{name.SE}在本指标最高的{drawn}个经济体中居首，为{hi}，比{name.BE}高{gap}");
         assert!(texts.iter().all(|t| !t.contains("最低的")), "{texts:?}");
         assert_eq!(notes, [("SE".to_string(), "column.note.hi.scoped".to_string()), ("BE".into(), "column.note.lo.scoped".into())]);
+    }
+
+    /// A narrow record whose members the page does not all compare (one kept by the narrow has no value at the page's
+    /// year): its set words would say a count the page does not show, so the page has no finding (no dek finding, no
+    /// headline); with the members the page compares, the finding names the set, its count the drawn fact.
+    #[test]
+    fn a_set_with_a_member_the_page_does_not_compare_names_no_finding() {
+        let column = recipe("column");
+        let main = column_rows();
+        let shape = shape_of(&column.eats, &[("t", &main[..])], &Hubs).unwrap();
+        let picks = picks_of(&column.picks, &shape, &main, &[]).unwrap();
+        let words = "在本指标最高的{n}个经济体中";
+        let fill = |set: Value| test_fill_set(column, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), true, Some(set)).unwrap();
+        let five = fill(json!({"words": words, "members": 5}));
+        assert!(five.get("finding").is_none() && five.get(HEADLINE).is_none(), "{}", five["finding"]);
+        let four = fill(json!({"words": words, "members": 4}));
+        assert_eq!(four["finding"]["set"], "在本指标最高的{drawn}个经济体中");
+        assert_eq!(four[HEADLINE]["scoped"], "{name.SE}在本指标最高的{drawn}个经济体中居首，是{name.BE}的{times}");
     }
 
     /// A table no one cut (its own download record, and a cut of another file beside it): no scope, so no scope word on the
@@ -8943,7 +9012,7 @@ mod tests {
         let (scope, _dir, dek, texts, notes) = cut_page(&records, &column_rows());
         assert_eq!(scope, None);
         assert_eq!(dek, "{lead1.t}，{name.SE}最高，为{hi}，比最低的{name.BE}高{gap}");
-        assert!(texts.iter().all(|t| !t.contains(next_page::SCOPE_MARK) && !t.contains("所选")), "{texts:?}");
+        assert!(texts.iter().all(|t| !t.contains("所选") && !t.contains("在本指标")), "{texts:?}");
         assert_eq!(notes, [("SE".to_string(), "column.note.hi".to_string()), ("BE".into(), "column.note.lo".into())]);
     }
 
@@ -11748,7 +11817,7 @@ for line in sys.stdin:
     }
 
     /// The word keys of the two leader notes (the highest's, the lowest's): unscoped, then a narrowed main's, which say the
-    /// lowest and the highest are the kept places' (所选, as the scoped dek's 所选各方中), in few glyphs: a walled-in note has
+    /// lowest and the highest are the kept places' (所选, as the scoped dek names its set), in few glyphs: a walled-in note has
     /// little room (scripts/test_leaves_leader_notes.py test_a_cut_pages_scoped_notes_place_where_the_plain_ones_do).
     const OLD_LEADER_NOTES: [(&str, &str); 2] = [
         ("column.note.hi", "column.note.lo"),

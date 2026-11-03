@@ -806,9 +806,32 @@ fn finding_declared(d: &J, page_in: &J, reg: &J) -> Result<J, String> {
         return Err(format!("not this shape: no DEK_FINDINGS words for {name}"));
     };
     // each token as written (never read as a template), its text the case's template over the codes
-    let tokens: Vec<(String, String)> = c.g("words").obj().iter().map(|(k, v)| Ok((k.clone(), st(&put(v)?)))).collect::<Result<_, String>>()?;
+    let mut tokens: Vec<(String, String)> = c.g("words").obj().iter().map(|(k, v)| Ok((k.clone(), st(&put(v)?)))).collect::<Result<_, String>>()?;
+    // the compared set the scoped wording names ({set}): the declaration's own words (a composition cut's), or the narrow
+    // record's registered scope words the flow passes (page input set: {words with {n}, members}) with {n} the fact of the
+    // places drawn (set_count, which the core recomputes from the rows of the select set_of). The record's members must be
+    // the places the page compares (the core's recomputed set_of select), else the words would name a set the page does not
+    // show (a member with no value at the page's year) and the page has no finding; a page the program narrowed with no set
+    // words has none either.
+    let set = match (d.g("set_words").s(), view.g("set").g("words").s()) {
+        (Some(w), _) => Some(w.to_string()),
+        (None, Some(w)) => {
+            let count = st(d.g("set_count"));
+            let compared = got.get(&st(d.g("set_of"))).map(|x| x.arr().len());
+            if count.is_empty() || !has_fact(&count) || compared.is_none() || view.g("set").g("members").num() != compared.map(|n| n as f64) {
+                return Ok(none());
+            }
+            Some(w.replace("{n}", &format!("{{{count}}}")))
+        }
+        (None, None) if view.g("scoped").truthy() => return Ok(none()),
+        (None, None) => None,
+    };
+    tokens.push(("{set}".to_string(), set.clone().unwrap_or_default()));
     let worded = |t: &str| J::Str(tokens.iter().fold(t.to_string(), |t, (k, v)| t.replace(k.as_str(), v)));
     let mut said = J::obj_of(vec![("dek", worded(plain)), ("scoped", worded(scoped))]);
+    if let Some(set) = set {
+        said.set("set", J::Str(set));
+    }
     let headline = of(&crate::shape_registry::HEADLINES).filter(|_| c.g("headline_needs_facts").arr().iter().all(|k| has_fact(&st(k))));
     if let Some((plain, scoped)) = headline {
         said.set("headline", J::obj_of(vec![("title", worded(plain)), ("scoped", worded(scoped))]));

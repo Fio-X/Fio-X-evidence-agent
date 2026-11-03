@@ -478,6 +478,8 @@
    "declares_by_recipe": {
     "change": {
      "shape": "finding",
+     "set_count": "drawn",
+     "set_of": "ranked",
      "needs_facts": [
       "chg"
      ],
@@ -569,6 +571,8 @@
     },
     "column": {
      "shape": "finding",
+     "set_count": "drawn",
+     "set_of": "ranked",
      "needs_facts": [
       "hi",
       "lo",
@@ -736,6 +740,7 @@
     },
     "composition": {
      "shape": "finding",
+     "set_words": "在图中各国中",
      "requires": [
       "$fill.composition.bars"
      ],
