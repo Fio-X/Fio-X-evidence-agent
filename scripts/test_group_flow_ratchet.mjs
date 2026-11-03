@@ -15,7 +15,8 @@
 //          cut) and that groups.json gives to no group (one owned by agent is scanned as itself; one owned by another group
 //          is that group's knowledge). Its lines count toward the including file and its route.
 //   kinds  each line naming a chart kind. The names are read at test time from the registries (registryKinds below; a
-//          registry file, table or listing that is missing or yields no name fails the test): the node, group and recipe
+//          registry file, table or listing that is missing or yields no name fails the test, except NODE_FILLS, which P6
+//          emptied: absent it adds no name, a table that is there must yield names): the node, group and recipe
 //          names (and recipe layers) of runtime/leaves_py/knobs.json, run.py MAIN and LEAF_LAYERS, every *_TEMPLATES list
 //          and NODE_FILLS name in src/next_*.rs, the NodeInfo and GroupInfo names in src/next_render.rs, shape_registry.rs
 //          Relation variants and their templates, the NODES keys of runtime/nodes/run.mjs when that folder is there (no commit
@@ -34,7 +35,9 @@
 // What the scan does NOT count (known limits, kept as plain rules rather than closed):
 //   - any code line whose trimmed start is `//`, `*` or `/*`, so a code line that starts with `*` (a deref such as
 //     `*slot = "sankey"`) is skipped as if it were a comment;
-//   - everything in a .rs file from its first line starting `#[cfg(test)]` or `mod tests` on, even non-test code below it;
+//   - everything in a .rs file from its first line starting `#[cfg(test)]` or `mod tests` on; past that line only test code
+//     may follow (the test module, or items whose attribute lines carry #[cfg(test)]), any other item is red (pastCut);
+//     every run prints, per file, the lines read of its total;
 //   - the continuation lines of a multi-line string: copy needs CJK and a quote on the same line, so a CJK line inside a
 //     multi-line string literal with no quote on it is not copy (word files and data files are counted line by line);
 //   - text a `{}` format placeholder fills in at run time, and any knowledge reached through a function call or constant
@@ -141,7 +144,9 @@ export function registryKinds(read, list) {
     if (fills) for (const q of fills[1].matchAll(/\(\s*"([^"]+)"\s*,/g)) { add(q[1], `src/${f} NODE_FILLS`); fillNames += 1; }
   }
   took(templates, "the *_TEMPLATES lists of src/next_*.rs");
-  took(fillNames, "NODE_FILLS of src/next_*.rs");
+  // NODE_FILLS was emptied by P6 (every node fill moved to the visual group): its names ("map", ...) still count
+  // through the baseline's stored set, which a name never leaves; a NODE_FILLS table that is there must yield names
+  if (fillNames === 0) assert.ok(!src.some((f) => /^next_\w*\.rs$/.test(f) && NODE_FILLS_DEF_RE.test(read(`src/${f}`) ?? "")), "a NODE_FILLS table that is there must yield at least one kind name");
   const render = need(read("src/next_render.rs"), "src/next_render.rs");
   n = 0;
   for (const m of render.matchAll(/:\s*(NodeInfo|GroupInfo)\s*=\s*\1\s*\{\s*name:\s*"([^"]+)"/g)) { add(m[2], `next_render.rs ${m[1]}`); n += 1; }
@@ -182,13 +187,33 @@ export function cutAt(path, lines) {
   return lines.length;
 }
 
+/** The first line past a .rs file's cut that is not test code, else -1: each column-0 item there must be the test module or
+ *  carry #[cfg(test)] in the attribute lines right above it; an item whose line ends with `{` is skipped to its column-0
+ *  close. Lines that start indented, with `}`, `]`, `)` or `"` (a raw string's end), and comments are no item. */
+export function pastCut(path, lines) {
+  const cut = cutAt(path, lines);
+  let attrs = [], skipTo = -1;
+  for (let k = cut; k < lines.length; k++) {
+    if (k <= skipTo) continue;
+    const l = lines[k];
+    if (!l.trim() || /^[\s}\])"]/.test(l) || l.startsWith("//")) continue;
+    if (l.startsWith("#[")) { attrs.push(l); continue; }
+    const test = attrs.some((a) => a.startsWith("#[cfg(test)]")) || /^mod tests\b/.test(l);
+    attrs = [];
+    if (!test) return k;
+    if (/\{\s*$/.test(l)) { const end = lines.findIndex((x, m) => m > k && x.startsWith("}")); skipTo = end < 0 ? lines.length : end; }
+  }
+  return -1;
+}
+
 /** One file's hits: { nodes, ops, copy, kinds, includes } with hits as { at, line, text } (kinds hits also carry names). */
 export function scanText(path, text, kinds) {
   const lines = text.split("\n");
   const n = cutAt(path, lines);
+  const past = pastCut(path, lines);
   const isData = !/\.(?:rs|ts|mjs|js)$/.test(path);
   const isJs = JS_EXT.test(path);
-  const out = { nodes: [], ops: [], copy: [], kinds: [], includes: [] };
+  const out = { nodes: [], ops: [], copy: [], kinds: [], includes: [], hidden: past < 0 ? null : { line: past + 1, cut: n + 1, text: lines[past].trim() }, read: n, total: lines.length };
   const hit = (k, i) => out[k].push({ at: path, line: i + 1, text: lines[i].trim() });
   let inFills = false;
   for (let i = 0; i < n; i++) {
@@ -223,6 +248,8 @@ export function measure(groups, read, kinds) {
   const hits = {};
   const missing = [];
   const words = [];
+  const hidden = [];
+  const reads = {};
   for (const f of files) {
     const text = read(f);
     if (text === null) { missing.push(f); continue; }
@@ -237,13 +264,15 @@ export function measure(groups, read, kinds) {
       const lines = wt.split("\n");
       lines.forEach((L, i) => { if (CJK_RE.test(L)) got.copy.push({ at: inc.target, line: i + 1, text: L.trim() }); });
     }
+    reads[f] = { read: got.read, total: got.total };
+    if (got.hidden) hidden.push(`${f}:${got.hidden.line} (cut at ${got.hidden.cut}): ${got.hidden.text}`);
     hits[f] = got;
     for (const c of COUNTS) {
       totals[route][c] += got[c].length;
       if (got[c].length) (perFile[f] ??= {})[c] = got[c].length;
     }
   }
-  return { files: files.length, scanned, totals, perFile, hits, missing, words, kinds };
+  return { files: files.length, scanned, totals, perFile, hits, missing, words, kinds, hidden, reads };
 }
 
 /** Totals against a baseline: rises (red, the files and new lines) and drops (red, lower the baseline). */
@@ -312,7 +341,26 @@ let checks = 0;
 const eq = (a, b, msg) => { assert.deepEqual(a, b, msg); checks += 1; };
 const SAMPLE_KINDS = new Set(["sankey", "bars", "ring", "map", "horizontal_bar", "stacked_bar_100", "rankbar", "treemap"].map(normKind));
 const counts = (path, text) => { const g = scanText(path, text, SAMPLE_KINDS); return Object.fromEntries(COUNTS.map((c) => [c, g[c].length])); };
-eq(counts("src/next_x.rs", 'let k = "sankey";\n// let k = "bars";\nlet t = "\u4e2d\u6587";\nlet o = json!({"op": "fill"});\n#[cfg(test)]\nlet k = "ring";\n'), { nodes: 0, ops: 1, copy: 1, kinds: 1 }, "rs sample: comment skipped, cut at the test line");
+eq(counts("src/next_x.rs", 'let k = "sankey";\n// let k = "bars";\nlet t = "\u4e2d\u6587";\nlet o = json!({"op": "fill"});\n#[cfg(test)]\nmod tests {\nlet k = "ring";\n}\n'), { nodes: 0, ops: 1, copy: 1, kinds: 1 }, "rs sample: comment skipped, cut at the test line");
+// past the cut only test code: the test module, #[cfg(test)] items (a raw string's lines inside one are no item)
+const pastOf = (text) => pastCut("src/next_x.rs", text.split("\n"));
+eq(pastOf('fn a() {}\n#[cfg(test)]\nmod tests {\n    use super::*;\n}\n#[cfg(test)]\n/// doc\npub fn b() {\n    let s = r#"\n}\n"#;\n}\n'), -1, "past the cut: the test module and a test item only");
+eq(pastOf('#[cfg(test)]\n#[derive(Debug)]\npub enum R {\n    A,\n}\n#[cfg(test)]\nuse x::Y;\n#[cfg(test)]\nmod tests {\n}\n'), -1, "past the cut: test items before the test module");
+eq(pastOf('fn a() {}\n#[cfg(test)]\nmod tests {\n    fn t() {}\n}\nfn draw() {\n    let k = "ring";\n}\n'), 5, "must-fail: code after mod tests");
+eq(pastOf('#[cfg(test)]\nuse crate::x::{A, B};\nfn fill_of() {\n    let k = "ring";\n}\n#[cfg(test)]\nmod tests {\n}\n'), 2, "must-fail: a stray #[cfg(test)] use line followed by code");
+eq(pastOf('mod tests {\n}\n// trailing note\n'), -1, "past the cut: comments are no item");
+assert.ok(scanText("src/next_x.rs", '#[cfg(test)]\nuse a::B;\nfn f() {}\n', SAMPLE_KINDS).hidden?.line === 3, "a hidden line is reported by scanText");
+checks += 1;
+// NODE_FILLS: a src listing with no table reads; one with an empty table throws
+{
+  const srcList = (d) => (d === "src" ? [...(diskList("src") ?? []), "next_nofills_probe.rs"] : diskList(d));
+  const strip = (t) => (t ?? "").replace(/\bNODE_FILLS\b/g, "NODE_FILLX");
+  const noTable = (p) => (/^src\/next_\w*\.rs$/.test(p) ? (p === "src/next_nofills_probe.rs" ? "fn x() {}\n" : strip(diskRead(p))) : diskRead(p));
+  assert.doesNotThrow(() => registryKinds(noTable, srcList), "no NODE_FILLS table: reads");
+  const emptyTable = (p) => (p === "src/next_nofills_probe.rs" ? "const NODE_FILLS: &[(&str, F)] = &[];\n" : noTable(p));
+  assert.throws(() => registryKinds(emptyTable, srcList), assert.AssertionError, "an empty NODE_FILLS table must fail");
+  checks += 2;
+}
 eq(counts("src/next_x.rs", 'const NODE_FILLS: &[(&str, F)] = &[\n    ("map", map_fill),\n    ("ring", ring_fill),\n];\nfn map_fill() {}\npub(crate) fn fill_of() {}\n'), { nodes: 4, ops: 0, copy: 0, kinds: 2 }, "NODE_FILLS entries and fill fns (map is an ordinary word: only its literal counts)");
 eq(counts("src/next_x.rs", 'const NODE_FILLS: &[(&str, F)] = &[("map", map_fill), ("bars", bars_fill)];\nlet x = ("no", 1);\n'), { nodes: 2, ops: 0, copy: 0, kinds: 1 }, "a one-line NODE_FILLS table; a tuple after it is no entry");
 eq(counts("runtime/pi/x.mjs", "const t = '\u4e2d\u6587'; // ok\nconst u = x; // \u4e2d\u6587 note\n"), { nodes: 0, ops: 0, copy: 1, kinds: 0 }, "js quote kinds; CJK only in a trailing comment is no copy");
@@ -352,6 +400,9 @@ const newNames = [...registry].filter(([n]) => !baseNames.has(n));
 const countNames = baseline ? baseNames : registry;
 const disk = measure(groups, diskRead, new Set(countNames.keys()));
 eq(disk.missing, [], "every agent file and word file groups.json and include_str name exists");
+// every run: what each file's scan read (a .rs file up to its test cut) of its lines; a non-test part not read in full is red
+for (const [f, r] of Object.entries(disk.reads)) console.log(`read ${r.read} / total ${r.total} lines: ${f}${r.read < r.total ? " (the rest its tests)" : ""}`);
+eq(disk.hidden, [], "past each .rs file's test cut only test code: a line there is not counted, so none may be non-test code");
 assert.ok(disk.files > 0 && disk.scanned.new > 0 && disk.scanned.old > 0, `scanned files: ${JSON.stringify(disk.scanned)} (each route must be > 0)`);
 checks += 1;
 assert.ok(disk.words.length > 0, "at least one include_str word file is scanned");
@@ -376,7 +427,7 @@ const cmp2str = (c) => c.rises.map((x) => `${x.route}/${x.count}`).join(",");
   eq(cmp.rises[0].where.map((w) => [w.file, w.lines.map((h) => `${h.at}:${h.line}:${h.text}`)]), [[f, [`${f}:1:${extra.trim()}`]]], "mutant 1 names the file and the line");
   assert.match(describe(cmp), /UP new kinds/);
   // the same line after the test cut does not count
-  const after = measure(groups, overlay({ [f]: `${text}\n#[cfg(test)]\n${extra}\n` }), self.kinds);
+  const after = measure(groups, overlay({ [f]: `${text}\n#[cfg(test)]\nmod probe_tests {\n${extra}\n}\n` }), self.kinds);
   eq(after.totals.new.kinds, self.totals.new.kinds, "mutant 1b: the same line inside the test part is not counted");
   // mutant 1c: registry names in other spellings and cases, each one line, each red on new kinds and naming that line
   for (const [spelled, name] of [['    let t = "choropleth";', "choropleth"], ['    let p = "rankbar";', "rankbar"], ['    let k = "Sankey";', "sankey"], ["    Kind::Sankey => {}", "sankey"], ['    let s = "stacked_bar_100";', "stackedbar100"], ["    Shape::StackedBar100 => {}", "stackedbar100"], ["    CHOROPLETH_FILL;", "choropleth"]]) {
@@ -425,6 +476,8 @@ if (at) {
   const m = measure(g, refRead(at), new Set(names.keys()));
   console.log(`at ${at}: ${row(m)}${m.missing.length ? ` | missing ${m.missing.join(", ")}` : ""}`);
   console.log(`word files: ${m.words.map((w) => `${w.includer} <- ${w.target}`).join(", ")}`);
+  for (const [f, r] of Object.entries(m.reads)) if (process.argv.includes("--print")) console.log(`read ${r.read} / total ${r.total} lines: ${f}`);
+  console.log(m.hidden.length ? `NOT fully read (non-test code past a test cut): ${m.hidden.join("; ")}` : "every non-test part read in full");
   if (process.argv.includes("--print")) { for (const [f, c] of Object.entries(m.perFile)) console.log(`  ${f} ${JSON.stringify(c)}`); console.log(`kind names (lines/only): ${kindShares(m).map((x) => `${x.name} ${x.lines}/${x.only}`).join(", ")}`); }
   process.exit(0);
 }
