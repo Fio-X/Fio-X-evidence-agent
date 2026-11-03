@@ -144,12 +144,17 @@ class Bubbles(unittest.TestCase):
 
 
 
-# layer 1's map extent for a column page (src/next_run.rs map_extent), as it computes it: the points' box, past each side as
-# far as the circle nearest it needs for its label beside it (radius, label_gap + 1, the wider of name and number, the
-# hairline inset + 2) and above or below it (radius, label_gap + 1, the label's two lines, inset + 2), MAP_PAD degrees at
-# least; px to degrees through the shared frame (mapkit.View, column.MAP_W wide), grown until it holds
-RS = open(os.path.join(HERE, "..", "src", "next_run.rs"), encoding="utf-8").read()
-RS_CONST = {k: float(v) for k, v in re.findall(r"^const (MAP_PAD|MAP_W_PX|BUBBLE_R_MAX_PX|BUBBLE_R_MIN_PX|BUBBLE_LABEL_PX|BUBBLE_LABEL_GAP_PX|MAP_INSET_PX): f64 = ([\d.]+);", RS, re.M)}
+# the visual group's map extent for a column page (src/next_tree_gen.rs extent_of, rule extent), as it computes it: the
+# points' box, past each side as far as the circle nearest it needs for its label beside it (radius, label_gap + 1, the wider
+# of name and number, the hairline inset + 2) and above or below it (radius, label_gap + 1, the label's two lines, inset +
+# 2), the frame's pad degrees at least; px to degrees through the shared frame (mapkit.View, column.MAP_W wide), grown until
+# it holds. Its numbers are the registry's (runtime/page_tree/node-bindings.json: the map_view frame, the bubbles' knobs and
+# text size), under the names the flow's constants had.
+_REG = json.load(open(os.path.join(HERE, "..", "runtime", "page_tree", "node-bindings.json"), encoding="utf-8"))
+_FRAME, _CIRCLES = _REG["frames"]["map_view"], _REG["nodes"]["bubbles"]
+RS_CONST = {"MAP_PAD": float(_FRAME["pad"]), "MAP_W_PX": float(_FRAME["w"]), "BUBBLE_R_MAX_PX": float(_CIRCLES["knobs"]["r_max"]),
+            "BUBBLE_R_MIN_PX": float(_CIRCLES["knobs"]["r_min"]), "BUBBLE_LABEL_PX": float(_CIRCLES["texts"]["size"]),
+            "BUBBLE_LABEL_GAP_PX": float(_CIRCLES["knobs"]["label_gap"]), "MAP_INSET_PX": float(_FRAME["inset"])}
 
 
 def layer1_extent(points, labels, dec):

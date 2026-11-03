@@ -1,7 +1,7 @@
 {
  "$comment": "The external bindings the visual group's page tree core (src/next_tree.rs) lays over node-registry.json: frames (the core's frame and plot box, or a rows frame the core lays out itself, K2), the pick rules the page tree generator (src/next_tree_gen.rs) writes as selects the core recomputes (picks), which layers each page recipe binds external (recipes; runtime/leaves_py/knobs.py writes them into knobs.json), and per node its binding, runner (a code file under the run's runtime/nodes/ or runtime/leaves_py/), frame, declares (what the generator writes for the flow's fill and the page tree), items (how the core expands a node's items from its binds), marks (one shape per item or part; each shape field a declared field -> channel -> scale the core recomputes, or free and held by constraints) and texts. An external entry naming anything the core does not compute is refused when the registry loads (C5). P4a-1: the bars, external on the column page; the rows frame repeats the column page leaf's own layout (column.py ColumnFrame: top, row and size are its knob defaults, the map panel before it 560 wide and 40 apart). P4a-2: the change page's bars too (one signed channel, K11, for both; their change page declaration under declares_by_recipe, the rank by change K10), and the map circles on both pages (a view frame, K3-K9; the leaf gives their land rows through its ground phase, never checked). A declaration's leaf_stops (or leaf_stops_by_recipe) lists what the layer's leaf refuses before it draws, in the leaf's order: the panel's first, then the layer's own. P4b-1: the composition's stacked100, geometry leaf (its runner the leaf that lays it out, runtime/leaves_py/stacked100.py: draw asks it nothing and the leaf is given no placed geometry), declared by shape parts_of_whole: every pick a select the core recomputes (given, rank, drop_replace, zero_parts, empty_parts, set_op), the cut's stop lines its words over the core's results (max_dropped and fill_after_drop as node-registry.json pins them, lint), the facts, formats, leaf data, lines, name requests, fixed names and record templates over the page input ($path, {name} of the item or part expanded).",
  "frames": {
-  "map_view": {"kind": "view", "w": 560, "inset": 12},
+  "map_view": {"kind": "view", "w": 560, "inset": 12, "pad": 4},
   "bars_rows": {
    "kind": "rows",
    "w": 1140,
@@ -167,8 +167,9 @@
      }
     },
     "items_for": "select:ranked",
-    "geometry": {"ext": "$page.ext"},
-    "leaf": {"key": "bubbles", "items": {"code": "code", "value": "value", "value_text": "value_text", "lonlat": "at"}, "ext": "$page.ext"},
+    "values": {"ext": {"rule": "extent", "frame": "map_view", "circles": "bubbles", "dec_max": 2}},
+    "geometry": {"ext": "$value.ext"},
+    "leaf": {"key": "bubbles", "items": {"code": "code", "value": "value", "value_text": "value_text", "lonlat": "at"}, "ext": "$value.ext"},
     "leaf_stops_by_recipe": {
      "column": ["row_at_year", "value_domain", "named", "value_entry", "accent_ranked", "one_ext", "view_ext",
                 "has_items", "series_of_request", "named_item", "ledger_entry", "not_negative", "has_point", "inside_ext"],
@@ -635,6 +636,7 @@
    "frame": "map_view",
    "declares_by_recipe": {
     "column": {
+     "values": {"ext": {"rule": "extent", "frame": "map_view", "circles": "bubbles", "dec_max": 2}},
      "fmt": {
       "scale": 1,
       "suffix": "$shape.suffix",
@@ -738,10 +740,11 @@
        "text": "note.text",
        "value_text": "note.value_text"
       },
-      "ext": "$page.ext"
+      "ext": "$value.ext"
      }
     },
     "change": {
+     "values": {"ext": {"rule": "extent", "frame": "map_view", "circles": "bubbles", "dec_max": 2}},
      "fmt": {
       "scale": 1,
       "suffix": "$shape.suffix",
@@ -857,7 +860,7 @@
        "text": "note.text",
        "value_text": "note.value_text"
       },
-      "ext": "$page.ext"
+      "ext": "$value.ext"
      }
     }
    },

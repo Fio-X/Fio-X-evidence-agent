@@ -1850,32 +1850,6 @@ fn suffix(short: &str) -> String {
     }
 }
 
-/// The most decimals a column page prints a value with, whatever its rows hold.
-const COLUMN_DEC: usize = 2;
-
-/// The main's rows at the shape's year for the ranked countries, and the most decimals they hold (at most COLUMN_DEC): every
-/// value of a column page prints with that many.
-fn ranked_rows<'a>(f: &Filling<'a>) -> (Vec<&'a Value>, usize) {
-    let (place, year) = (f.shape.place.as_str(), f.shape.year.as_str());
-    let kept: Vec<&Value> = f
-        .main
-        .iter()
-        .filter(|r| r["time"] == year && r["dims"][place].as_str().is_some_and(|c| f.picks.ranked.iter().any(|k| k == c)))
-        .collect();
-    let dec = held_decimals(&kept);
-    (kept, dec)
-}
-
-/// The most decimals the rows' values hold, at most COLUMN_DEC.
-fn held_decimals(rows: &[&Value]) -> usize {
-    rows.iter()
-        .filter_map(|r| r["value"].as_str())
-        .map(|v| v.split_once('.').map_or(0, |(_, d)| d.len()))
-        .max()
-        .unwrap_or(0)
-        .min(COLUMN_DEC)
-}
-
 /// The fact counting the places a column page draws (op n over its own ranked rows at the year), which the unit line's scope
 /// prints (hero.scope): the count comes from the data, never typed.
 const DRAWN: &str = "drawn";
@@ -2060,119 +2034,20 @@ fn dek_finding(fill: &Value) -> Option<(String, String)> {
 #[cfg_attr(not(test), allow(dead_code))]
 const POINTS: (&str, &str) = ("pp", " 个百分点");
 
-/// How far (degrees) a column page's map reaches past its countries' points on each side at least, clamped to the globe: a
-/// visual layout default, as RING_HUBS. No number here prints.
-const MAP_PAD: f64 = 4.0;
-
-/// The column page's map panel as the second layer draws it (runtime/leaves_py: column.MAP_W, and the bubbles knobs' defaults
-/// under run.MAP_STYLE: r_max, r_min, size, label_gap, inset), for the room map_extent leaves each circle's label: visual layout
-/// defaults, as MAP_PAD; no number here prints. scripts/test_leaves_bubbles.py holds them to the leaf's own.
-const MAP_W_PX: f64 = 560.0;
-const BUBBLE_R_MAX_PX: f64 = 22.0;
-const BUBBLE_R_MIN_PX: f64 = 3.0;
-const BUBBLE_LABEL_PX: f64 = 13.0;
-const BUBBLE_LABEL_GAP_PX: f64 = 4.0;
-const MAP_INSET_PX: f64 = 12.0;
-
-/// A label's rough width at the bubbles' label size, as the second layer measures it (prod.tw): a CJK character the size,
-/// any other about half.
-fn label_px(s: &str) -> f64 {
-    s.chars().map(|c| if c as u32 > 0x2e7f { BUBBLE_LABEL_PX } else { 0.58 * BUBBLE_LABEL_PX }).sum()
-}
-
-/// A value as the bubbles print it bare (fact .n): `dec` places, a comma between thousands.
-fn printed_len(v: f64, dec: usize) -> usize {
-    let s = format!("{:.*}", dec, v.abs());
-    let int = s.split('.').next().map_or(0, str::len);
-    s.len() + int.saturating_sub(1) / 3 + usize::from(v < 0.0)
-}
-
-/// The room (px) a circle's label needs from the circle's point to the frame's edge, (beside, above or below): its radius,
-/// the label's gap and its width (the wider of the name and the number) to the left or right; its radius, the gap and the
-/// label's two lines above or below; each past the land's hairline inset, 2 px more for the leaf's own margins.
-fn label_room(r: f64, w: f64) -> (f64, f64) {
-    let edge = MAP_INSET_PX + 2.0;
-    let side = r + BUBBLE_LABEL_GAP_PX + 1.0 + w + edge;
-    (side, r + BUBBLE_LABEL_GAP_PX + 1.0 + 2.45 * BUBBLE_LABEL_PX + edge)
-}
-
-/// The map's extent: the points' box, past each side as far as the circle nearest it needs for its label there (label_room,
-/// each circle's radius by its value's area as the bubbles scale it; `labels` each circle's name and number), and MAP_PAD
-/// at least, clamped to the globe. The px become degrees through the frame the leaves project it in (mapkit.View over the
-/// extent, MAP_W_PX wide: a degree of longitude W / span px, of latitude that over the cosine of the middle latitude + 2),
-/// which the padding itself changes, so the padding is grown until it holds (it only grows, the globe bounds it).
-fn map_extent(points: &BTreeMap<String, [f64; 2]>, labels: &BTreeMap<String, (f64, String)>, dec: usize) -> [f64; 4] {
-    let vmax = labels.values().map(|(v, _)| *v).fold(0.0, f64::max);
-    let room: Vec<([f64; 2], (f64, f64))> = points
-        .iter()
-        .map(|(code, p)| {
-            let (r, w) = match labels.get(code) {
-                Some((v, name)) => {
-                    let r = match vmax > 0.0 {
-                        true => (BUBBLE_R_MAX_PX * (v.max(0.0) / vmax).sqrt()).max(BUBBLE_R_MIN_PX),
-                        false => BUBBLE_R_MIN_PX,
-                    };
-                    (r, label_px(name).max(printed_len(*v, dec) as f64 * label_px("0")))
-                }
-                None => (BUBBLE_R_MAX_PX, label_px(code)),
-            };
-            (*p, label_room(r, w))
-        })
-        .collect();
-    let least = |i: usize| points.values().map(|p| p[i]).fold(f64::INFINITY, f64::min);
-    let most = |i: usize| points.values().map(|p| p[i]).fold(f64::NEG_INFINITY, f64::max);
-    let (lon0, lat0, lon1, lat1) = (least(0), least(1), most(0), most(1));
-    let clamp = |e: [f64; 4]| [e[0].max(-180.0), e[1].max(-90.0), e[2].min(180.0), e[3].min(90.0)];
-    let mut ext = clamp([lon0 - MAP_PAD, lat0 - MAP_PAD, lon1 + MAP_PAD, lat1 + MAP_PAD]);
-    for _ in 0..64 {
-        let x_px = MAP_W_PX / (ext[2] - ext[0]);
-        let y_px = x_px / ((ext[1] + ext[3]) / 2.0 + 2.0).to_radians().cos().max(0.05);
-        // the degrees each side needs: the room of each point there, less how far inside the box's edge it already is
-        let side = |far: &dyn Fn(&[f64; 2]) -> f64, px: f64, beside: bool| {
-            room.iter().map(|(p, (h, v))| (if beside { *h } else { *v }) / px - far(p)).fold(MAP_PAD, f64::max)
-        };
-        let next = clamp([
-            ext[0].min(lon0 - side(&|p| p[0] - lon0, x_px, true)),
-            ext[1].min(lat0 - side(&|p| p[1] - lat0, y_px, false)),
-            ext[2].max(lon1 + side(&|p| lon1 - p[0], x_px, true)),
-            ext[3].max(lat1 + side(&|p| lat1 - p[1], y_px, false)),
-        ]);
-        let moved = next.iter().zip(ext).any(|(a, b)| (a - b).abs() > 1e-9);
-        ext = next;
-        if !moved {
-            break;
-        }
-    }
-    ext
-}
-
 /// The map table a page's points come from (the flow group refuses any other than its pinned hash): the page's request keeps
 /// each point with it (knobs.points, the visual group's ledger entries), so a replay of that table can be held to it.
 const POINT_TABLE: &str = "naturalearth-admin0-50m-attributes";
 
-/// The map point of each ranked country (the knowledge group's, through the catalogue, kept in `out` for knobs.points) and
-/// the map's extent (map_extent: the points' box with room past each side for the labels of the circles nearest it, each
-/// circle's value its row at the year and its name the name table's, as the bubbles print them). A country without a point
-/// refuses.
-fn ranked_points(f: &Filling, out: &mut Filled) -> Result<(BTreeMap<String, [f64; 2]>, [f64; 4]), String> {
+/// The map point of each ranked country (the knowledge group's, through the catalogue, kept in `out` for knobs.points), a
+/// fact the page input hands the view frame's layers; the extent they are drawn in is the visual group's (rule extent). A
+/// page that ranks no country with a point refuses.
+fn map_points(f: &Filling, out: &mut Filled) -> Result<BTreeMap<String, [f64; 2]>, String> {
     let points = f.catalogue.place_points(&f.picks.ranked)?;
     out.points.extend(points.iter().map(|(c, p)| (c.clone(), *p)));
     if points.is_empty() {
         return Err(format!("main {} ranks no country to put on a map", f.shape.main));
     }
-    let place = f.shape.place.as_str();
-    let (kept, dec) = ranked_rows(f);
-    // a name the table does not answer for is measured as its code (the leaf refuses a nameless place anyway)
-    let names = leaf_labels(&[], &f.picks.ranked, f.catalogue).unwrap_or_default();
-    let labels: BTreeMap<String, (f64, String)> = kept
-        .iter()
-        .filter_map(|r| {
-            let code = r["dims"][place].as_str()?;
-            Some((code.to_string(), (row_value(r)?, names.get(code).cloned().unwrap_or_else(|| code.to_string()))))
-        })
-        .collect();
-    let ext = map_extent(&points, &labels, dec);
-    Ok((points, ext))
+    Ok(points)
 }
 
 /// A leaf's data under the hero's leaves (run.py leaf reads hero.leaves.<key>); two layers setting one key differently refuse.
@@ -2211,11 +2086,10 @@ fn fill_of(
         // a layer the registry binds external is asked, never filled by rust; its refusal stops the page (no other shape)
         if recipe.external.contains(layer) {
             out.at = layer.clone();
-            // a layer laid out in a view frame is declared over the map points and the extent (its refusal: no other shape)
+            // a layer laid out in a view frame is declared over the map points, its extent the visual group's (rule extent)
             if let (true, Some(p)) = (recipe.points.contains(layer), page_in.as_mut()) {
-                let (points, ext) = ranked_points(&filling, &mut out).map_err(no)?;
+                let points = map_points(&filling, &mut out).map_err(no)?;
                 p["points"] = json!({"table": POINT_TABLE, "sha256": crate::next_flow::NE_POINTS_SHA256, "at": points});
-                p["page"] = json!({"ext": ext});
                 // the ranked places' reviewed names, as the leaf is handed them below (leaf_labels): a run fact a layer's
                 // conditions may measure (a note's width), which the core rechecks against the tree's name rows
                 p["names"] = json!(leaf_labels(&[], &picks.ranked, catalogue).map_err(no)?);
@@ -4042,6 +3916,146 @@ pub fn ranking_page_spec(
 mod tests {
     use super::*;
     use crate::shape_registry::{Finding, DEK_FINDINGS, HEADLINES};
+
+    /// Frozen with the flow's extent (P6 step 8): the column decimals and the map extent as the flow computed them before the
+    /// visual group's rule extent, the reference the declared extent is held to (and the old fills that read them).
+    /// The most decimals a column page prints a value with, whatever its rows hold.
+    const COLUMN_DEC: usize = 2;
+
+    /// The main's rows at the shape's year for the ranked countries, and the most decimals they hold (at most COLUMN_DEC): every
+    /// value of a column page prints with that many.
+    fn ranked_rows<'a>(f: &Filling<'a>) -> (Vec<&'a Value>, usize) {
+        let (place, year) = (f.shape.place.as_str(), f.shape.year.as_str());
+        let kept: Vec<&Value> = f
+            .main
+            .iter()
+            .filter(|r| r["time"] == year && r["dims"][place].as_str().is_some_and(|c| f.picks.ranked.iter().any(|k| k == c)))
+            .collect();
+        let dec = held_decimals(&kept);
+        (kept, dec)
+    }
+
+    /// The most decimals the rows' values hold, at most COLUMN_DEC.
+    fn held_decimals(rows: &[&Value]) -> usize {
+        rows.iter()
+            .filter_map(|r| r["value"].as_str())
+            .map(|v| v.split_once('.').map_or(0, |(_, d)| d.len()))
+            .max()
+            .unwrap_or(0)
+            .min(COLUMN_DEC)
+    }
+
+    /// How far (degrees) a column page's map reaches past its countries' points on each side at least, clamped to the globe: a
+    /// visual layout default, as RING_HUBS. No number here prints.
+    const MAP_PAD: f64 = 4.0;
+
+    /// The column page's map panel as the second layer draws it (runtime/leaves_py: column.MAP_W, and the bubbles knobs' defaults
+    /// under run.MAP_STYLE: r_max, r_min, size, label_gap, inset), for the room map_extent leaves each circle's label: visual layout
+    /// defaults, as MAP_PAD; no number here prints. scripts/test_leaves_bubbles.py holds them to the leaf's own.
+    const MAP_W_PX: f64 = 560.0;
+    const BUBBLE_R_MAX_PX: f64 = 22.0;
+    const BUBBLE_R_MIN_PX: f64 = 3.0;
+    const BUBBLE_LABEL_PX: f64 = 13.0;
+    const BUBBLE_LABEL_GAP_PX: f64 = 4.0;
+    const MAP_INSET_PX: f64 = 12.0;
+
+    /// A label's rough width at the bubbles' label size, as the second layer measures it (prod.tw): a CJK character the size,
+    /// any other about half.
+    fn label_px(s: &str) -> f64 {
+        s.chars().map(|c| if c as u32 > 0x2e7f { BUBBLE_LABEL_PX } else { 0.58 * BUBBLE_LABEL_PX }).sum()
+    }
+
+    /// A value as the bubbles print it bare (fact .n): `dec` places, a comma between thousands.
+    fn printed_len(v: f64, dec: usize) -> usize {
+        let s = format!("{:.*}", dec, v.abs());
+        let int = s.split('.').next().map_or(0, str::len);
+        s.len() + int.saturating_sub(1) / 3 + usize::from(v < 0.0)
+    }
+
+    /// The room (px) a circle's label needs from the circle's point to the frame's edge, (beside, above or below): its radius,
+    /// the label's gap and its width (the wider of the name and the number) to the left or right; its radius, the gap and the
+    /// label's two lines above or below; each past the land's hairline inset, 2 px more for the leaf's own margins.
+    fn label_room(r: f64, w: f64) -> (f64, f64) {
+        let edge = MAP_INSET_PX + 2.0;
+        let side = r + BUBBLE_LABEL_GAP_PX + 1.0 + w + edge;
+        (side, r + BUBBLE_LABEL_GAP_PX + 1.0 + 2.45 * BUBBLE_LABEL_PX + edge)
+    }
+
+    /// The map's extent: the points' box, past each side as far as the circle nearest it needs for its label there (label_room,
+    /// each circle's radius by its value's area as the bubbles scale it; `labels` each circle's name and number), and MAP_PAD
+    /// at least, clamped to the globe. The px become degrees through the frame the leaves project it in (mapkit.View over the
+    /// extent, MAP_W_PX wide: a degree of longitude W / span px, of latitude that over the cosine of the middle latitude + 2),
+    /// which the padding itself changes, so the padding is grown until it holds (it only grows, the globe bounds it).
+    fn map_extent(points: &BTreeMap<String, [f64; 2]>, labels: &BTreeMap<String, (f64, String)>, dec: usize) -> [f64; 4] {
+        let vmax = labels.values().map(|(v, _)| *v).fold(0.0, f64::max);
+        let room: Vec<([f64; 2], (f64, f64))> = points
+            .iter()
+            .map(|(code, p)| {
+                let (r, w) = match labels.get(code) {
+                    Some((v, name)) => {
+                        let r = match vmax > 0.0 {
+                            true => (BUBBLE_R_MAX_PX * (v.max(0.0) / vmax).sqrt()).max(BUBBLE_R_MIN_PX),
+                            false => BUBBLE_R_MIN_PX,
+                        };
+                        (r, label_px(name).max(printed_len(*v, dec) as f64 * label_px("0")))
+                    }
+                    None => (BUBBLE_R_MAX_PX, label_px(code)),
+                };
+                (*p, label_room(r, w))
+            })
+            .collect();
+        let least = |i: usize| points.values().map(|p| p[i]).fold(f64::INFINITY, f64::min);
+        let most = |i: usize| points.values().map(|p| p[i]).fold(f64::NEG_INFINITY, f64::max);
+        let (lon0, lat0, lon1, lat1) = (least(0), least(1), most(0), most(1));
+        let clamp = |e: [f64; 4]| [e[0].max(-180.0), e[1].max(-90.0), e[2].min(180.0), e[3].min(90.0)];
+        let mut ext = clamp([lon0 - MAP_PAD, lat0 - MAP_PAD, lon1 + MAP_PAD, lat1 + MAP_PAD]);
+        for _ in 0..64 {
+            let x_px = MAP_W_PX / (ext[2] - ext[0]);
+            let y_px = x_px / ((ext[1] + ext[3]) / 2.0 + 2.0).to_radians().cos().max(0.05);
+            // the degrees each side needs: the room of each point there, less how far inside the box's edge it already is
+            let side = |far: &dyn Fn(&[f64; 2]) -> f64, px: f64, beside: bool| {
+                room.iter().map(|(p, (h, v))| (if beside { *h } else { *v }) / px - far(p)).fold(MAP_PAD, f64::max)
+            };
+            let next = clamp([
+                ext[0].min(lon0 - side(&|p| p[0] - lon0, x_px, true)),
+                ext[1].min(lat0 - side(&|p| p[1] - lat0, y_px, false)),
+                ext[2].max(lon1 + side(&|p| lon1 - p[0], x_px, true)),
+                ext[3].max(lat1 + side(&|p| lat1 - p[1], y_px, false)),
+            ]);
+            let moved = next.iter().zip(ext).any(|(a, b)| (a - b).abs() > 1e-9);
+            ext = next;
+            if !moved {
+                break;
+            }
+        }
+        ext
+    }
+
+    /// The map point of each ranked country (the knowledge group's, through the catalogue, kept in `out` for knobs.points) and
+    /// the map's extent (map_extent: the points' box with room past each side for the labels of the circles nearest it, each
+    /// circle's value its row at the year and its name the name table's, as the bubbles print them). A country without a point
+    /// refuses.
+    fn ranked_points(f: &Filling, out: &mut Filled) -> Result<(BTreeMap<String, [f64; 2]>, [f64; 4]), String> {
+        let points = f.catalogue.place_points(&f.picks.ranked)?;
+        out.points.extend(points.iter().map(|(c, p)| (c.clone(), *p)));
+        if points.is_empty() {
+            return Err(format!("main {} ranks no country to put on a map", f.shape.main));
+        }
+        let place = f.shape.place.as_str();
+        let (kept, dec) = ranked_rows(f);
+        // a name the table does not answer for is measured as its code (the leaf refuses a nameless place anyway)
+        let names = leaf_labels(&[], &f.picks.ranked, f.catalogue).unwrap_or_default();
+        let labels: BTreeMap<String, (f64, String)> = kept
+            .iter()
+            .filter_map(|r| {
+                let code = r["dims"][place].as_str()?;
+                Some((code.to_string(), (row_value(r)?, names.get(code).cloned().unwrap_or_else(|| code.to_string()))))
+            })
+            .collect();
+        let ext = map_extent(&points, &labels, dec);
+        Ok((points, ext))
+    }
+
     use crate::anthropic_model::ToolDef;
     use crate::next_flow::{
         number_not_allowed, placeholders, worded_number, ModelRoute, CHOOSE_TOOL,
@@ -5018,6 +5032,125 @@ mod tests {
         assert!((label_px("14.90") - 5.0 * 0.58 * BUBBLE_LABEL_PX).abs() < 1e-9);
     }
 
+    /// The extent the frozen flow gave (ranked_points over the rows, the catalogue's names and points) and the one the visual
+    /// group declares (rule extent, next_tree_gen::extent_of) over the page input the flow hands it: the same rows, the map
+    /// points (points.at) and the names (leaf_labels, as fill_of hands them; none when the table names a place none). Each
+    /// ranked code's row at 2025 when it has one, a decoy at 2019 for each and a decoy unranked code at 2025.
+    fn extents(values: &[(&str, Option<&str>)], names: &[(&str, &str)]) -> ([f64; 4], [f64; 4], [f64; 4]) {
+        let mut main: Vec<Value> = Vec::new();
+        for (c, v) in values {
+            if let Some(v) = v {
+                main.push(json!({"src": format!("series:t/{c}:2025:OBS_VALUE"), "table": "t", "dims": {"country": c}, "time": "2025", "value": v}));
+            }
+            main.push(json!({"src": format!("series:t/{c}:2019:OBS_VALUE"), "table": "t", "dims": {"country": c}, "time": "2019", "value": "98765.4321"}));
+        }
+        main.push(json!({"src": "series:t/ZZ:2025:OBS_VALUE", "table": "t", "dims": {"country": "ZZ"}, "time": "2025", "value": "5000.125"}));
+        let shape = Shape { main: "t".into(), place: "country".into(), year: "2025".into(), ..Default::default() };
+        let picks = Picks { ranked: values.iter().map(|(c, _)| c.to_string()).collect(), ..Default::default() };
+        let cat = Ledgered(names.iter().map(|(c, n)| (c.to_string(), n.to_string())).collect());
+        let f = Filling { shape: &shape, picks: &picks, main: &main, companion: &[], catalogue: &cat, fmt: "pc".into(), short: "%", window: None, asked: None };
+        let (points, old) = ranked_points(&f, &mut Filled::default()).unwrap();
+        let page_in = json!({"shape": {"place": "country", "year": "2025"}, "picks": {"ranked": picks.ranked}, "rows": main,
+            "points": {"table": POINT_TABLE, "at": points}, "names": leaf_labels(&[], &picks.ranked, &cat).unwrap_or_default()});
+        let reg = crate::next_tree::load_registry(&crate::next_tree::bindings());
+        let rule = crate::next_tree::J::from_value(&json!({"rule": "extent", "frame": "map_view", "circles": "bubbles", "dec_max": 2}));
+        let new = crate::next_tree_gen::extent_of("bubbles", "ext", &rule, &crate::next_tree::J::from_value(&page_in), &reg).unwrap();
+        let new: Vec<f64> = new.to_value().as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect();
+        let least = |i: usize| points.values().map(|p| p[i]).fold(f64::INFINITY, f64::min);
+        let most = |i: usize| points.values().map(|p| p[i]).fold(f64::NEG_INFINITY, f64::max);
+        let padded = [(least(0) - MAP_PAD).max(-180.0), (least(1) - MAP_PAD).max(-90.0), (most(0) + MAP_PAD).min(180.0), (most(1) + MAP_PAD).min(90.0)];
+        (old, [new[0], new[1], new[2], new[3]], padded)
+    }
+
+    /// P6 step 8: the map's extent the visual group declares (rule extent) is the frozen flow's bit for bit on every branch of
+    /// it, over two places' sets (an EU set, iso2; a world set, iso3): Latin and CJK names, none named (the code measured),
+    /// decimals 0, 1, 2 and 3 (printed with 2, the cap), a ranked point with no row at the year (r_max by its code), every
+    /// value 0 (vmax 0: r_min), negative values (the minus sign), a large value (thousands commas), one point, and a box the
+    /// globe clamps (Fiji and Samoa on both sides of the antimeridian); each set holding both an extent the pad alone gives
+    /// (one round) and one its labels push out (several rounds).
+    #[test]
+    fn declared_extent_equals_the_frozen_extent_on_every_branch() {
+        let sets: [([&str; 4], [&str; 4], [&str; 4]); 2] = [
+            (["SE", "DE", "FR", "BE"], ["Sweden", "Germany", "France", "Belgium"], ["瑞典", "德国", "法国", "比利时"]),
+            (["USA", "CHN", "BRA", "IDN"], ["United States", "China", "Brazil", "Indonesia"], ["美国", "中国", "巴西", "印度尼西亚"]),
+        ];
+        let mut rounds = BTreeSet::new();
+        for (codes, latin, cjk) in sets {
+            let named = |n: [&'static str; 4]| -> Vec<(&str, &str)> { codes.iter().copied().zip(n).collect() };
+            let vals = |v: [Option<&'static str>; 4]| -> Vec<(&str, Option<&str>)> { codes.iter().copied().zip(v).collect() };
+            let cases: Vec<(&str, Vec<(&str, Option<&str>)>, Vec<(&str, &str)>)> = vec![
+                ("latin names, dec 2", vals([Some("18.39"), Some("7.1"), Some("12"), Some("3.05")]), named(latin)),
+                ("cjk names, dec 1", vals([Some("18.3"), Some("7.1"), Some("12"), Some("3.0")]), named(cjk)),
+                ("no names, dec 0", vals([Some("18"), Some("7"), Some("12"), Some("3")]), vec![]),
+                ("3 decimals print 2, thousands", vals([Some("18.391"), Some("7.1"), Some("1234567.5"), Some("3")]), named(latin)),
+                ("a ranked point with no row", vals([Some("5.5"), None, Some("2"), Some("1")]), named(cjk)),
+                ("every value 0", vals([Some("0"), Some("0"), Some("0"), Some("0")]), named(latin)),
+                ("every value negative", vals([Some("-999"), Some("-1000.5"), Some("-3"), Some("-12.25")]), named(cjk)),
+                ("one negative", vals([Some("10"), Some("-4"), Some("3"), Some("2")]), named(latin)),
+                ("one point", vec![(codes[0], Some("4.2"))], vec![(codes[0], cjk[0])]),
+            ];
+            for (case, values, names) in cases {
+                let (old, new, padded) = extents(&values, &names);
+                assert_eq!(old.map(f64::to_bits), new.map(f64::to_bits), "{codes:?} {case}: {old:?} != {new:?}");
+                rounds.insert((codes[0], old == padded));
+            }
+        }
+        // the globe clamps the box: Fiji and Samoa on both sides of the antimeridian
+        let (old, new, _) = extents(&[("FJ", Some("3.5")), ("WS", Some("1.25")), ("NO", Some("40"))], &[("FJ", "斐济"), ("WS", "萨摩亚"), ("NO", "挪威")]);
+        assert_eq!(old.map(f64::to_bits), new.map(f64::to_bits), "clamped: {old:?} != {new:?}");
+        assert!(old[0] == -180.0 && old[2] == 180.0, "the globe clamps the box: {old:?}");
+        assert!(rounds.contains(&("SE", false)) && rounds.contains(&("USA", false)), "labels push some extent out: {rounds:?}");
+        assert!(rounds.iter().any(|(_, pad_only)| *pad_only), "some extent is the pad's alone: {rounds:?}");
+    }
+
+    /// Every geometry ext of a page tree (a node's view frame extent), in tree order.
+    fn tree_exts(v: &Value, out: &mut Vec<Value>) {
+        match v {
+            Value::Object(m) => {
+                if let Some(e) = m.get("geometry").and_then(|g| g.get("ext")) {
+                    out.push(e.clone());
+                }
+                m.values().for_each(|x| tree_exts(x, out));
+            }
+            Value::Array(a) => a.iter().for_each(|x| tree_exts(x, out)),
+            _ => {}
+        }
+    }
+
+    /// P6 step 8: the q1 column page's tree holds the circles' extent the visual group declares, the one their leaf data and
+    /// the notes' hold (rule extent over the page input in both, next_tree_gen with_values), and the flow hands in none: an
+    /// extent set on the page input changes nothing, a moved map point moves the tree's extent (and it is no longer the
+    /// leaf's).
+    #[test]
+    fn the_trees_extent_is_the_leaf_data_s_and_the_flow_hands_in_none() {
+        use crate::next_tree::J;
+        let overlay = crate::next_tree::bindings();
+        let (_, fill, _) = q1_fills(&overlay);
+        let fill = fill.unwrap();
+        let page_in = fill["page_in"].clone();
+        assert!(page_in.get("page").is_none(), "the flow hands in no extent");
+        let reg = crate::next_tree::load_registry(&overlay);
+        let tree_ext = |pi: &Value| -> Vec<Value> {
+            let tree = crate::next_tree_gen::tree_j(&J::from_value(pi), &J::from_value(&fill), &reg, &["bubbles".to_string()]).unwrap();
+            let mut out = Vec::new();
+            tree_exts(&tree.to_value(), &mut out);
+            out
+        };
+        let leaves = &fill["knobs"]["spec"]["hero"]["leaves"];
+        let leaf = leaves["bubbles"]["ext"].clone();
+        assert_eq!(leaf.as_array().map(Vec::len), Some(4));
+        assert_eq!(leaves["leader_notes"]["ext"], leaf);
+        assert_eq!(tree_ext(&page_in), vec![leaf.clone()]);
+        let mut handed = page_in.clone();
+        handed["page"] = json!({"ext": [0.0, 0.0, 1.0, 1.0]});
+        assert_eq!(tree_ext(&handed), vec![leaf.clone()], "an extent handed in is read by nothing");
+        let mut moved = page_in.clone();
+        moved["points"]["at"]["SE"] = json!([30.0, 70.0]);
+        let got = tree_ext(&moved);
+        assert_ne!(got, vec![leaf.clone()], "a moved point moves the extent");
+        assert!(got[0][2].as_f64().unwrap() > 30.0 && got[0][3].as_f64().unwrap() > 70.0, "{got:?}");
+    }
+
     /// Two-letter codes are countries (EU aside); EU27_2020 and EA20 have members, only EU27_2020 a hub row.
     struct Hubs;
     impl Catalogue for Hubs {
@@ -5417,9 +5550,9 @@ mod tests {
         let (rust, fill, calls) = q1_fills(&overlay);
         let mut fill = fill.unwrap_or_else(|e| panic!("the declared page: {e}"));
         let page_in = fill.as_object_mut().unwrap().remove("page_in").expect("the page input kept for draw_nodes");
-        // the circles were declared over the map points the flow keeps (knobs.points) and the extent their leaf draws in
+        // the circles were declared over the map points the flow keeps (knobs.points), their extent the visual group's
         assert_eq!(page_in["points"], fill["knobs"]["points"]);
-        assert_eq!(page_in["page"]["ext"], fill["knobs"]["spec"]["hero"]["leaves"]["bubbles"]["ext"]);
+        assert!(page_in.get("page").is_none(), "the extent is the visual group's (rule extent), not handed in");
         let mut differs = Vec::new();
         fill_diff(&rust, &fill, "fill", &mut differs);
         assert!(differs.is_empty(), "the declared fill differs from the rust bars' and circles': {differs:#?}");
@@ -12917,6 +13050,65 @@ for line in sys.stdin:
                 assert_eq!(crate::next_tree::fact_value(&facts, &rows, k), Ok(stored[*k]), "{path}: {k}");
             }
             println!("P6REQ finding {name}: {} equal to the frozen and the stored", fill["finding"]["dek"]);
+        }
+    }
+
+    /// P6 step 8 on real data: the stored stand-in change and column requests (P6_REQS, as p6_finding_over_stored_requests;
+    /// run with --ignored) refilled, the extent the circles' and the notes' leaf data hold (the visual group's rule extent)
+    /// the frozen flow's (ranked_points over the same rows and catalogue) bit for bit, and the page tree's (the stored
+    /// requests keep no extent). Prints one P6REQ line each.
+    #[test]
+    #[ignore]
+    fn p6_extent_over_stored_requests() {
+        let list = std::fs::read_to_string(std::env::var("P6_REQS").unwrap()).unwrap();
+        for path in list.lines().filter(|l| !l.trim().is_empty()) {
+            let req: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+            let main: Vec<Value> = req["rows"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|r| r["src"].as_str().is_some_and(|s| s.starts_with("series:")))
+                .map(|r| {
+                    let mut r = r.clone();
+                    if let Some(n) = r["value"].as_f64().and_then(serde_json::Number::from_f64) {
+                        r["value"] = json!(n.to_string());
+                    }
+                    r
+                })
+                .collect();
+            let names: BTreeMap<String, String> = req["ledger"]
+                .as_object()
+                .unwrap()
+                .iter()
+                .filter_map(|(k, v)| Some((k.strip_prefix("name:zh_names:")?.split_once(':')?.1.to_string(), v.as_str()?.to_string())))
+                .collect();
+            let cat = Ledgered(names);
+            let table = main[0]["table"].as_str().unwrap().to_string();
+            let name = if path.contains("/change/") { "change" } else { "column" };
+            let r = recipe(name);
+            let Ok(shape) = shape_of(&r.eats, &[(table.as_str(), &main[..])], &cat) else {
+                println!("P6REQ extent {name} not refilled here");
+                continue;
+            };
+            let picks = picks_of(&r.picks, &shape, &main, &[]).unwrap_or_else(|e| panic!("{path}: {e}"));
+            let page_in = page_input(r, &shape, &picks, (&main, &[]));
+            let calls = std::sync::Mutex::new(Vec::new());
+            let asked = Asked { calls: &calls, page_in: Some(&page_in) };
+            let fill = fill_of(r, &shape, &picks, (&main, &[]), &cat, ("标题", "导语"), false, Some(&asked)).unwrap_or_else(|e| panic!("{path}: {e}"));
+            let short = next_pack::unit_short(&shape.unit).unwrap();
+            let filling = Filling { shape: &shape, picks: &picks, main: &main, companion: &[], catalogue: &cat, fmt: shape.unit.to_lowercase(), short, window: None, asked: None };
+            let (_, old) = ranked_points(&filling, &mut Filled::default()).unwrap();
+            let leaves = &fill["knobs"]["spec"]["hero"]["leaves"];
+            let bits = |v: &Value| v.as_array().unwrap().iter().map(|x| x.as_f64().unwrap().to_bits()).collect::<Vec<_>>();
+            assert_eq!(bits(&leaves["bubbles"]["ext"]), old.map(f64::to_bits).to_vec(), "{path}: the circles' extent");
+            assert_eq!(leaves["leader_notes"]["ext"], leaves["bubbles"]["ext"], "{path}: the notes' extent");
+            let reg = crate::next_tree::load_registry(&crate::next_tree::bindings());
+            let pi = crate::next_tree::J::from_value(&fill["page_in"]);
+            let tree = crate::next_tree_gen::tree_j(&pi, &crate::next_tree::J::from_value(&fill), &reg, &["bubbles".to_string()]).unwrap_or_else(|e| panic!("{path}: {e}"));
+            let mut exts = Vec::new();
+            tree_exts(&tree.to_value(), &mut exts);
+            assert_eq!(exts, vec![leaves["bubbles"]["ext"].clone()], "{path}: the tree's extent");
+            println!("P6REQ extent {name}: {} equal to the frozen and the tree's", leaves["bubbles"]["ext"]);
         }
     }
 

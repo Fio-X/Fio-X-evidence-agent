@@ -22,9 +22,9 @@ use std::collections::BTreeSet;
 use serde_json::Value;
 
 /// The page input paths a declaration template may read (`$shape.main`, ...); nothing else is substituted.
-const PAGE_IN_PATHS: [&str; 27] = [
+const PAGE_IN_PATHS: [&str; 26] = [
     "shape.main", "shape.source", "shape.target", "shape.place", "shape.year", "shape.fmt", "shape.suffix", "shape.countries", "shape.hub", "shape.second", "shape.months", "picks.marks", "picks.t0", "picks.t1", "picks.top",
-    "picks.focus", "page.ext", "fill.accent", "fmt.change", "outside",
+    "picks.focus", "fill.accent", "fmt.change", "outside",
     "shape.t0", "sum_rows", "composition.dim", "composition.total", "composition.first_group", "composition.first_codes",
     "fill.composition.bars",
 ];
@@ -530,6 +530,134 @@ pub(crate) fn value_of(layer: &str, name: &str, r: &J) -> Result<J, String> {
     }
 }
 
+/// A layer's page input with its declaration's values (declares.values) under `value`, each by its rule (value_of, or
+/// extent_of for rule extent); None when the declaration has none. declared_j and tree_j both read a layer's templates over
+/// it, so the leaf's data and the tree's node hold one value.
+fn with_values(layer: &str, page_in: &J, reg: &J) -> Result<Option<J>, String> {
+    let d = declares(reg, layer, page_in)?;
+    let Some(vs) = d.get("values") else { return Ok(None) };
+    let mut vals = J::Obj(vec![]);
+    for (k, r) in vs.obj() {
+        let r = sub(r, page_in)?;
+        let v = match r.g("rule").s() {
+            Some("extent") => extent_of(layer, k, &r, page_in, reg)?,
+            _ => value_of(layer, k, &r)?,
+        };
+        vals.set(k, v);
+    }
+    let mut v = page_in.clone();
+    v.set("value", vals);
+    Ok(Some(v))
+}
+
+/// A label's rough width at `size` px, as the second layer measures it (prod.tw): a CJK character the size, any other about
+/// half.
+fn label_px(s: &str, size: f64) -> f64 {
+    s.chars().map(|c| if c as u32 > 0x2e7f { size } else { 0.58 * size }).sum()
+}
+
+/// A value as the circles print it bare (fact .n): `dec` places, a comma between thousands.
+fn printed_len(v: f64, dec: usize) -> usize {
+    let s = format!("{:.*}", dec, v.abs());
+    let int = s.split('.').next().map_or(0, str::len);
+    s.len() + int.saturating_sub(1) / 3 + usize::from(v < 0.0)
+}
+
+/// Rule extent: the view frame's extent (lon0, lat0, lon1, lat1) over the page input's map points (`points.at`, a flow
+/// fact): the points' box, past each side as far as the circle nearest it needs for its label there, and the frame's `pad`
+/// at least, clamped to the globe. A circle's label: its name (the page input's names, else its code) or its number (the
+/// main's row at the year for each ranked code, printed with the decimals those rows hold, at most `dec_max`), the wider;
+/// its room beside the circle its radius (by its value's area, the `circles` node's knobs r_max and r_min), the knob
+/// label_gap and 1, the label's width and the frame's inset and 2 (the leaf's own margins); above or below the same with
+/// 2.45 label lines (the node's text size) for the width. A point without a row is measured at r_max by its code. The px
+/// become degrees through the frame the leaves project it in (W = the frame's w px over the span; a degree of latitude that
+/// over the cosine of the middle latitude + 2), which the padding itself changes, so the padding grows until it holds (at
+/// most 64 rounds; it only grows, the globe bounds it). Moved from the flow (P6 step 8), every operation in its order.
+pub(crate) fn extent_of(layer: &str, name: &str, r: &J, page_in: &J, reg: &J) -> Result<J, String> {
+    let no = |what: String| format!("{layer}: value {name}: {what}");
+    let (frame, circles) = (st(r.g("frame")), st(r.g("circles")));
+    let fr = reg.g("frames").g(&frame);
+    let node = reg.g("nodes").g(&circles);
+    let num = |v: &J, what: &str| v.num().ok_or_else(|| no(format!("no {what}")));
+    let (w_px, inset, pad) = (num(fr.g("w"), "frame w")?, num(fr.g("inset"), "frame inset")?, num(fr.g("pad"), "frame pad")?);
+    let knobs = node.g("knobs");
+    let (r_max, r_min, gap) = (num(knobs.g("r_max"), "knob r_max")?, num(knobs.g("r_min"), "knob r_min")?, num(knobs.g("label_gap"), "knob label_gap")?);
+    let size = num(node.g("texts").g("size"), "text size")?;
+    let dec_max = num(r.g("dec_max"), "dec_max")? as usize;
+    let mut points: Vec<(String, [f64; 2])> = Vec::new();
+    for (code, p) in page_in.g("points").g("at").obj() {
+        match p.arr() {
+            [lon, lat] => points.push((code.clone(), [num(lon, "point")?, num(lat, "point")?])),
+            _ => return Err(no(format!("point {code} is no [lon, lat]"))),
+        }
+    }
+    if points.is_empty() {
+        return Err(no("no map point".into()));
+    }
+    let shape = page_in.g("shape");
+    let (place, year) = (st(shape.g("place")), shape.g("year"));
+    let ranked = page_in.g("picks").g("ranked").arr();
+    let kept: Vec<&J> = page_in
+        .g("rows")
+        .arr()
+        .iter()
+        .filter(|r| r.g("time") == year && r.g("dims").g(&place).s().is_some() && ranked.contains(r.g("dims").g(&place)))
+        .collect();
+    let dec = kept.iter().filter_map(|r| r.g("value").s()).map(|v| v.split_once('.').map_or(0, |(_, d)| d.len())).max().unwrap_or(0).min(dec_max);
+    let names = page_in.g("names");
+    let mut labels: std::collections::BTreeMap<String, (f64, String)> = std::collections::BTreeMap::new();
+    for r in &kept {
+        let code = st(r.g("dims").g(&place));
+        let Some(v) = r.g("value").s().and_then(|v| v.parse::<f64>().ok()).filter(|v| v.is_finite()) else { continue };
+        let named = names.g(&code).s().map_or_else(|| code.clone(), str::to_string);
+        labels.insert(code, (v, named));
+    }
+    let vmax = labels.values().map(|(v, _)| *v).fold(0.0, f64::max);
+    let edge = inset + 2.0;
+    let room: Vec<([f64; 2], (f64, f64))> = points
+        .iter()
+        .map(|(code, p)| {
+            let (r, w) = match labels.get(code) {
+                Some((v, name)) => {
+                    let r = match vmax > 0.0 {
+                        true => (r_max * (v.max(0.0) / vmax).sqrt()).max(r_min),
+                        false => r_min,
+                    };
+                    (r, label_px(name, size).max(printed_len(*v, dec) as f64 * label_px("0", size)))
+                }
+                None => (r_max, label_px(code, size)),
+            };
+            let side = r + gap + 1.0 + w + edge;
+            (*p, (side, r + gap + 1.0 + 2.45 * size + edge))
+        })
+        .collect();
+    let least = |i: usize| points.iter().map(|(_, p)| p[i]).fold(f64::INFINITY, f64::min);
+    let most = |i: usize| points.iter().map(|(_, p)| p[i]).fold(f64::NEG_INFINITY, f64::max);
+    let (lon0, lat0, lon1, lat1) = (least(0), least(1), most(0), most(1));
+    let clamp = |e: [f64; 4]| [e[0].max(-180.0), e[1].max(-90.0), e[2].min(180.0), e[3].min(90.0)];
+    let mut ext = clamp([lon0 - pad, lat0 - pad, lon1 + pad, lat1 + pad]);
+    for _ in 0..64 {
+        let x_px = w_px / (ext[2] - ext[0]);
+        let y_px = x_px / ((ext[1] + ext[3]) / 2.0 + 2.0).to_radians().cos().max(0.05);
+        // the degrees each side needs: the room of each point there, less how far inside the box's edge it already is
+        let side = |far: &dyn Fn(&[f64; 2]) -> f64, px: f64, beside: bool| {
+            room.iter().map(|(p, (h, v))| (if beside { *h } else { *v }) / px - far(p)).fold(pad, f64::max)
+        };
+        let next = clamp([
+            ext[0].min(lon0 - side(&|p| p[0] - lon0, x_px, true)),
+            ext[1].min(lat0 - side(&|p| p[1] - lat0, y_px, false)),
+            ext[2].max(lon1 + side(&|p| lon1 - p[0], x_px, true)),
+            ext[3].max(lat1 + side(&|p| lat1 - p[1], y_px, false)),
+        ]);
+        let moved = next.iter().zip(ext).any(|(a, b)| (a - b).abs() > 1e-9);
+        ext = next;
+        if !moved {
+            break;
+        }
+    }
+    Ok(J::Arr(ext.iter().map(|x| J::Num(*x)).collect()))
+}
+
 /// The declaration shape of a page's finding (finding_declared).
 const FINDING: &str = "finding";
 
@@ -718,20 +846,8 @@ fn finding_recheck(page_in: &J, fill: &J, reg: &J) -> Result<(), String> {
 fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
     let d = declares(reg, layer, page_in)?;
     // the declaration's own values (declares.values), which its templates read beside the page input
-    let view;
-    let page_in = match d.get("values") {
-        Some(vs) => {
-            let mut vals = J::Obj(vec![]);
-            for (k, r) in vs.obj() {
-                vals.set(k, value_of(layer, k, &sub(r, page_in)?)?);
-            }
-            let mut v = page_in.clone();
-            v.set("value", vals);
-            view = v;
-            &view
-        }
-        None => page_in,
-    };
+    let view = with_values(layer, page_in, reg)?;
+    let page_in = view.as_ref().unwrap_or(page_in);
     let (mut sels, mut given) = selects_of(page_in, reg)?;
     let (bad, mut got) = recompute(page_in, &sels, &given);
     if !bad.is_empty() {
@@ -1681,7 +1797,9 @@ pub(crate) fn tree_j(page_in: &J, fill: &J, reg: &J, external: &[String]) -> Res
     // with no accent the binds set after the fill are left out, and the items mark no code (next_tree code_is)
     let after = after.unwrap_or(J::Obj(vec![]));
     for layer in fill.g("order").arr().iter().map(st).filter(|l| external.contains(l)) {
-        body.push(node_of(&layer, page_in, reg, &got, &sels, Some(&after), frame_knobs(&layer, reg, fill), None)?);
+        // the layer's values as its declaration reads them (with_values, as declared_j): the node's geometry is the declared one
+        let view = with_values(&layer, page_in, reg)?;
+        body.push(node_of(&layer, view.as_ref().unwrap_or(page_in), reg, &got, &sels, Some(&after), frame_knobs(&layer, reg, fill), None)?);
     }
     let text = |k: &str, role: &str| {
         J::obj_of(vec![("kind", J::str("Text")), ("role", J::str(role)), ("origin", J::str("text_step")), ("runs", runs_of(spec.g(k).s().unwrap_or("")))])
