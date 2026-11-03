@@ -1604,9 +1604,11 @@ fn parts_expand(layer: &str, d: &J, view: &J, (rows, sels): (&[J], &[J]), got: &
             .obj()
             .iter()
             .map(|(k, role)| {
-                // each the result of the select the declaration's role names, or the zero parts as declared
-                let v = match role.s() {
-                    Some("zero_declared") => J::Arr(zero_decl.clone()),
+                // each the result of the select the declaration's role names, the zero parts as declared, or the registry's
+                // own value ({"value": ..}: what the record says the page is, never a fill)
+                let v = match (role.get("value"), role.s()) {
+                    (Some(x), _) => x.clone(),
+                    (None, Some("zero_declared")) => J::Arr(zero_decl.clone()),
                     _ => res(&st(d.g(&st(role)))),
                 };
                 (k.clone(), v)

@@ -41,11 +41,6 @@ pub const MOVE_TEMPLATES: [&str; 1] = ["dumbbell"];
 /// FILLED_TEMPLATES, so only a flow split (next_params::flow_split) and a fetched table with an official flow (group_charts)
 /// are ranked against it, and a series of values gains no candidate from it.
 pub const FLOW_TEMPLATES: [&str; 1] = ["sankey"];
-/// The registry template whose relation (a composition) the composition recipe draws, with its stacked100 leaf node
-/// (runtime/leaves_py run.py MAIN; its data the layer's declaration, next_tree_gen), not a template this flow fills. Kept apart from
-/// FILLED_TEMPLATES as FLOW_TEMPLATES is: nothing ranks a series of values against it, and no table gains a candidate
-/// from it; the page is the composition recipe's, read from the shape (composition_groups).
-pub const COMPOSITION_TEMPLATES: [&str; 1] = ["stacked_bar_100"];
 /// The first and the last value columns of a move series (claim_candidates.mjs `move`, with its change column).
 pub const MOVE_FROM: &str = "from_value";
 pub const MOVE_TO: &str = "to_value";
@@ -2097,10 +2092,11 @@ fn fill_of(
     if let Some(pairs) = flow_pairs {
         fill["pairs"] = json!(pairs);
     }
-    // a composition's cut, for the run's record: the template its relation is, the candidates fetched (largest total
-    // first), the places drawn, left out for their parts and named under the picture, and the countries never fetched
+    // a composition's cut, for the run's record: the template its relation is (the declaration's record says it), the
+    // candidates fetched (largest total first), the places drawn, left out for their parts and named under the picture,
+    // and the countries never fetched
     if let (Some(comp), Some(cut)) = (&shape.composition, cut) {
-        fill["composition"] = json!({"template": COMPOSITION_TEMPLATES[0], "dim": comp.dim, "total": comp.total,
+        fill["composition"] = json!({"template": cut["template"], "dim": comp.dim, "total": comp.total,
             "groups": comp.groups, "year": shape.year, "place": shape.place, "candidates": shape.countries, "bars": cut["bars"],
             "dropped": cut["dropped"], "others": cut["others"], "zero": cut["zero"], "left_out": shape.outside});
     }
@@ -3841,6 +3837,12 @@ pub fn ranking_page_spec(
 mod tests {
     use super::*;
     use crate::shape_registry::{Finding, DEK_FINDINGS, HEADLINES};
+
+    /// The registry template whose relation (a composition) the composition recipe draws, with its stacked100 leaf node
+    /// (runtime/leaves_py run.py MAIN; its data the layer's declaration, next_tree_gen), not a template this flow fills: the
+    /// composition record's template is the stacked100 declaration's (node-bindings.json record.template) since P6; kept
+    /// here as the list the frozen test holds and the ratchet reads as kind names.
+    pub const COMPOSITION_TEMPLATES: [&str; 1] = ["stacked_bar_100"];
 
     /// Frozen with the flow's extent (P6 step 8): the column decimals and the map extent as the flow computed them before the
     /// visual group's rule extent, the reference the declared extent is held to (and the old fills that read them).
@@ -6952,6 +6954,8 @@ mod tests {
         assert_eq!(spec["facts"]["zero.nuclear"]["filter"], json!({"geo": Q3_GEOS[..20], "siec": ["N900H"]}));
         assert_eq!(spec["facts"]["zero.nuclear"]["op"], "zeros");
         assert_eq!((&fill["composition"]["dropped"], &fill["composition"]["left_out"]), (&json!([]), &json!(Q3_GEOS[25..])));
+        // the record's template is the stacked100 declaration's (its registry record), the frozen list's one composition template
+        assert_eq!(fill["composition"]["template"], json!(COMPOSITION_TEMPLATES[0]));
         // the page-level fields are drafted for the composition it draws, not the ranking the first fetch's chart is
         assert_eq!(page_lead(Some(&fill), &[]), Some((Relation::Composition, View::Slice)));
         let drafts = next_page::draft_for(&[], &[], Vec::new(), page_lead(Some(&fill), &[]));

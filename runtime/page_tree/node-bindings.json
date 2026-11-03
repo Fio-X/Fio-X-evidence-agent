@@ -1583,7 +1583,7 @@
     ],
     "hero_data": {"table": "$shape.main", "year": "$shape.year"},
     "unit_drawn": true,
-    "record": {"bars": "items", "dropped": "dropped", "others": "others", "zero": "zero_declared"}
+    "record": {"template": {"value": "stacked_bar_100"}, "bars": "items", "dropped": "dropped", "others": "others", "zero": "zero_declared"}
    }
   }
  }
