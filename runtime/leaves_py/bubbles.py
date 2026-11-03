@@ -330,6 +330,14 @@ KEY_GAP = 6  # px between the key's words and its circles, a circle and its valu
 KEY_LINE = 1.35  # em between the baselines of the key's lines
 KEY_STEP = 24  # px between the places along an edge the key is tried at
 KEY_SAME = 2  # px: a reference circle within this of one kept would read as the same size
+KEY_EDGE = 0.8  # px: the key circle's outline
+
+
+def key_r(r):
+    """The radius a key circle is drawn at for a map circle of radius r: its outline's outer edge on the map circle's
+    visible edge (the map's fill less the half of its CIRCLE_EDGE background edge that covers it), so a key circle never
+    reads larger than the circle it stands for."""
+    return max(0.5, r - CIRCLE_EDGE / 2 - KEY_EDGE / 2)
 
 
 def word_units(key, **fills):
@@ -406,6 +414,7 @@ def key_refs(circles, count):
     """The reference circles of the key (occ.scale's, largest first): the largest, then for a quarter and a sixteenth of its area
     the circle nearest it by radius, each once and none within KEY_SAME px of a radius kept; largest first."""
     if not circles: return []
+    circles = sorted(circles, key=lambda c: -c[2])  # the largest drawn first, whatever order they were placed in
     top = circles[0]; out = [top]
     for frac in (0.25, 0.0625)[: int(count) - 1]:
         left = [c for c in circles if all(abs(c[2] - o[2]) >= KEY_SAME for o in out)]
@@ -448,8 +457,11 @@ def cl_bubble_key(f, occ):
         inner = "".join(FX.entry(s, "tspan", None) if s else esc(t) for t, s in ln)
         o.append(K.txt(B, x, y + sz * 0.8 + n * sz * KEY_LINE, sz, "var(--t-body)", inner, tw(plain(ln), sz), tag=f"key line {n + 1}"))
     yb = y + words_h + KEY_GAP + 2 * R  # the circles' one bottom line
+    big = max(c[2] for c in sc["circles"]) - CIRCLE_EDGE / 2  # the largest map circle's visible edge
     for (c, inner, p), w in zip(vals, slots):
-        o.append(f'<circle cx="{x + w / 2:.1f}" cy="{yb - c[2]:.1f}" r="{c[2]:.1f}" fill="none" stroke="var(--t-sec)" stroke-width="0.8"/>')
+        rk = key_r(c[2])
+        if rk + KEY_EDGE / 2 > big + 0.01: raise Refused(f"bubble_key: the key circle for {c[0]} would read larger than the largest map circle")
+        o.append(f'<circle cx="{x + w / 2:.1f}" cy="{yb - rk:.1f}" r="{rk:.1f}" fill="none" stroke="var(--t-sec)" stroke-width="{KEY_EDGE}"/>')
         o.append(K.txt(B, x + w / 2, yb + KEY_GAP + sz * 0.8, sz, f"var({VALUE_INK})", inner, tw(p, sz), anchor="middle", tag=f"key value {c[0]}"))
         x += w + KEY_GAP
     return f'<g data-node="{KEY}">' + "".join(o) + "</g>"

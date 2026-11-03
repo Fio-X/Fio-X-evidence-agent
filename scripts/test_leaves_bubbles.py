@@ -436,9 +436,17 @@ class Key(unittest.TestCase):
         refs = [float(r) for r in re.findall(r'<circle [^>]*r="([\d.]+)" fill="none"', svg)]
         self.assertEqual(len(refs), len(values))
         self.assertGreaterEqual(len(refs), 2)
-        self.assertEqual(refs[0], occ.scale["r_used"])
+        # each reference circle on its own map circle's visible edge (B3: an outline at the drawn radius read larger than
+        # the filled circle, whose background edge covers half its width): the outline's outer edge is the fill's edge
+        self.assertEqual(refs[0], round(bubbles.key_r(occ.scale["r_used"]), 1))
         for t, r in zip(values, refs):
-            self.assertEqual(r, drawn[t["src"].split(".")[1]], t)  # each reference circle at its own circle's radius on the map
+            d = drawn[t["src"].split(".")[1]]
+            self.assertEqual(r, round(bubbles.key_r(d), 1), t)
+            self.assertLessEqual(r + bubbles.KEY_EDGE / 2, d - bubbles.CIRCLE_EDGE / 2 + 0.05, t)
+        self.assertLessEqual(refs[0] + bubbles.KEY_EDGE / 2, max(drawn.values()) - bubbles.CIRCLE_EDGE / 2 + 0.05)
+        # the largest drawn circle leads the key whatever order the circles were placed in
+        shuffled = [("B", 2, 9.0, "b"), ("A", 9, 22.0, "a"), ("C", 1, 5.5, "c")]
+        self.assertEqual([c[0] for c in bubbles.key_refs(shuffled, 3)], ["A", "B", "C"])
         # its box is claimed off every circle and label the bubbles claimed: inside the land's rect, or (this one: the q1 name on one
         # line takes the key wider than any free box on the EU map) under the map in the room the panel keeps, the map grown to it
         box = next(q for q in occ.boxes if q[4] == "bubble_key")
