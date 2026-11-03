@@ -1295,10 +1295,10 @@ fn cannot_take(s: &J) -> Option<String> {
     }
     let t = t.expect("not plain, so present");
     let at = s.g("at").s().unwrap_or("");
-    if matches!(t.g("by").s(), Some("printed" | "value")) && t.g("outcome").s() == Some("silence") && matches!(at, "first" | "last") {
+    if matches!(t.g("by").s(), Some("printed" | "value")) && t.g("outcome").s() == Some("silence") && matches!(at, "first" | "last" | "second") {
         return None;
     }
-    Some(format!("tie {} at {at} (only by code, or by printed or value with silence at first or last)", t.repr()))
+    Some(format!("tie {} at {at} (only by code, or by printed or value with silence at first, second or last)", t.repr()))
 }
 
 /// The value a take's code is ordered by: the root rank's key of it, as the rank computes it. Its rows under the rank's over
@@ -2114,8 +2114,11 @@ fn recheck_one(
             let mut pick = if src.is_empty() { J::Null } else { src[(if i < 0 { n + i } else { i }) as usize].clone() };
             let tie = s.g("tie");
             let by = tie.g("by").s();
-            if !pick.is_null() && matches!(by, Some("printed" | "value")) && src.len() > 1 {
-                let nb = if i == 0 { &src[1] } else { &src[src.len() - 2] };
+            // the pick against each place beside it in the list (first and last have one, the second has two: the first and
+            // the third), silent when it prints as either does
+            let at_i = if i < 0 { n + i } else { i };
+            let beside: Vec<&J> = [at_i - 1, at_i + 1].iter().filter(|&&k| 0 <= k && k < n).map(|&k| &src[k as usize]).collect();
+            for nb in beside.into_iter().filter(|_| !pick.is_null() && matches!(by, Some("printed" | "value")) && src.len() > 1) {
                 let (a, b) = (take_value(sel, &from, &pick, rows)?, take_value(sel, &from, nb, rows)?);
                 let alike = match by {
                     // by value: the two keys are one number
@@ -2141,6 +2144,7 @@ fn recheck_one(
                 };
                 if alike {
                     pick = J::Null;
+                    break;
                 }
             }
             same(bad, format!("select {id} (take)"), s.g("result"), &pick);
@@ -8606,6 +8610,32 @@ mod tests {
         ]);
         let (bad, _, _) = recheck(&page);
         assert!(bad.iter().any(|b| b.contains("tie fmt chg: no dec")), "{bad:?}");
+    }
+
+    /// A take at second with a printed tie (a cut page's headline naming the second kept place) is silent when the second
+    /// prints as the third does, or as the first does; a second printed apart from both is the pick. First and last still
+    /// read only the one place beside them.
+    #[test]
+    fn a_second_printed_as_the_third_is_no_pick() {
+        let rows = |vals: &[(&str, &str)]| -> Vec<J> { vals.iter().map(|(c, v)| a_row(c, None, "2024", v)).collect() };
+        let rank = r#"{"id": "r", "kind": "rank", "over": {"table": "t", "by": "geo", "time": "2024"}, "key": "value", "order": "desc"}"#;
+        let second = r#"{"id": "k", "kind": "take", "from": "r", "at": "second", "tie": {"by": "printed", "outcome": "silence", "dec": 0}}"#;
+        let first = r#"{"id": "k", "kind": "take", "from": "r", "at": "first", "tie": {"by": "printed", "outcome": "silence", "dec": 0}}"#;
+        // A 50, C 30.4, B 30: the second (C) prints 30 as the third does
+        let tied = rows(&[("A", "50"), ("B", "30"), ("C", "30.4")]);
+        let got = selects_over(tied.clone(), &[rank, second], "{}");
+        assert_eq!((got["r"].clone(), got["k"].clone()), (parse(r#"["A", "C", "B"]"#).unwrap(), J::Null), "a second printed as the third");
+        // the first is apart from the second there, so the first's take still names it
+        assert_eq!(selects_over(tied, &[rank, first], "{}")["k"], J::str("A"));
+        // C 34 prints apart from both: the pick
+        assert_eq!(selects_over(rows(&[("A", "50"), ("B", "30"), ("C", "34")]), &[rank, second], "{}")["k"], J::str("C"));
+        // C 49.8 prints 50 as the first does: silent too
+        assert_eq!(selects_over(rows(&[("A", "50"), ("B", "30"), ("C", "49.8")]), &[rank, second], "{}")["k"], J::Null);
+        // by value: the second and the third one number
+        let by_value = r#"{"id": "k", "kind": "take", "from": "r", "at": "second", "tie": {"by": "value", "outcome": "silence"}}"#;
+        assert_eq!(selects_over(rows(&[("A", "50"), ("B", "30"), ("C", "30")]), &[rank, by_value], "{}")["k"], J::Null);
+        // two codes: the second is the last, beside the first only
+        assert_eq!(selects_over(rows(&[("A", "50"), ("C", "34")]), &[rank, second], "{}")["k"], J::str("C"));
     }
 
     /// The core's printed tie (py_fixed) and the flow's old printed() are one call, format!("{:.*}"): at every .x5 boundary,
