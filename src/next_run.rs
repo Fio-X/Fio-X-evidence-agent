@@ -9063,6 +9063,53 @@ mod tests {
         assert!(why.starts_with("node finding: the set's count drawn counts 5 places over the page's rows, the finding compares 4"), "{why}");
     }
 
+    /// Form A (notes-so-what, 11-03): the extreme's note compares it with the mean of the places the page compares, in the
+    /// word table's words and a ledger fact the core recomputes over the rows the page keeps (the ranked places' values at
+    /// the year summed, over their count), never a typed number. On a World Bank narrow column page SE's note is its lead
+    /// over the 4 kept economies' mean (65.4 less 32.6375; the aggregate row of its table no part of it); on a Eurostat
+    /// change page the largest riser's is its rise less the mean rise (the mean at the year less the mean at t0: 16 less
+    /// 6.6875). A mean whose declaration is tampered is refused at draw.
+    #[test]
+    fn the_extreme_s_note_compares_it_with_the_mean_of_the_compared_places() {
+        let runtime = Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime");
+        let value = |fill: &Value, key: &str| {
+            let rows: Vec<crate::next_tree::J> = fill["rows"].as_array().unwrap().iter().map(crate::next_tree::J::from_value).collect();
+            crate::next_tree::fact_value(&crate::next_tree::J::from_value(&fill["knobs"]["spec"]["facts"]), &rows, key).unwrap()
+        };
+        let first_note = |fill: &Value| fill["knobs"]["spec"]["hero"]["leaves"]["leader_notes"]["notes"][0].clone();
+        // a World Bank narrow: a column page of 4 kept economies, the EU aggregate's row in its table
+        let column = recipe("column");
+        let main = column_rows();
+        let shape = shape_of(&column.eats, &[("t", &main[..])], &Hubs).unwrap();
+        let picks = picks_of(&column.picks, &shape, &main, &[]).unwrap();
+        let set = json!({"words": "在本指标最高的{n}个经济体中", "members": 4});
+        let fill = test_fill_set(column, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), true, Some(set)).unwrap();
+        let note = first_note(&fill);
+        assert_eq!((&note["name"], &note["text"], &note["value_text"]), (&json!("SE"), &json!([{"word": "column.note.vs_mean"}]), &json!("fact:vs_mean")), "{note}");
+        let facts = &fill["knobs"]["spec"]["facts"];
+        assert_eq!(facts["mean"], json!({"op": "times", "a": "mean_sum", "b": "mean_n", "fmt": facts["hi"]["fmt"]}));
+        assert!((value(&fill, "mean") - 32.6375).abs() < 1e-9 && (value(&fill, "vs_mean") - 32.7625).abs() < 1e-9);
+        assert_eq!(value(&fill, "mean_n"), 4.0, "the kept places, the aggregate row no part of the mean");
+        // a Eurostat change page: the largest riser against the mean rise
+        let change = recipe("change");
+        let main = q1_ten_years();
+        let shape = shape_of(&change.eats, &[("sdg", &main[..])], &Hubs).unwrap();
+        let picks = picks_of(&change.picks, &shape, &main, &[]).unwrap();
+        let fill = test_fill(change, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false).unwrap();
+        let note = first_note(&fill);
+        assert_eq!(note["text"], json!([{"word": "column.note.rise_most"}, {"word": "column.note.vs_mean_after"}]), "{note}");
+        assert_eq!(note["value_text"], "fact:vs_mean");
+        assert!((value(&fill, "mean_chg") - 6.6875).abs() < 1e-9 && (value(&fill, "vs_mean") - 9.3125).abs() < 1e-9);
+        // untampered it draws; a mean whose declaration is not the node's is refused
+        let calls = std::sync::Mutex::new(Vec::new());
+        draw_nodes(&mut fill.clone(), &change.external, &calls, &runtime).unwrap();
+        let mut tampered = fill.clone();
+        tampered["knobs"]["spec"]["facts"]["mean1"]["b"] = json!("mean_n0");
+        let calls = std::sync::Mutex::new(Vec::new());
+        let why = draw_nodes(&mut tampered, &change.external, &calls, &runtime).unwrap_err();
+        assert!(why.contains("mean1"), "{why}");
+    }
+
     /// A narrow record whose members the page does not all compare (one kept by the narrow has no value at the page's
     /// year): its set words would say a count the page does not show, so the page has no finding (no dek finding, no
     /// headline); with the members the page compares, the finding names the set, its count the drawn fact.
