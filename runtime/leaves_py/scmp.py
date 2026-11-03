@@ -510,7 +510,12 @@ def strip_shell(f, strip):
     head = word("scmp.strip.h", name=html_named(f.st["q"]["filter"][f.st["q"]["by"]]))
     one = {t for v in prod.series(f.c.T, f.st["q"]).values() for t in v if f.st["from"] <= t <= f.st.get("to", "9999")}
     if one and any(t not in one for t in months(min(one), max(one))): head += f'<span class="gapw">{word("scmp.strip.gap")}</span>'  # the profile's dashed months
-    return (f'<section class="strip"><div class="sh"><span class="no">{word("scmp.strip.no")}</span>{head}</div>'
+    if FX.LEDGER is not None and one:  # the strip is a reference (node-bindings roles): its legend line names its months and unit
+        tbl = f.st["q"]["table"]; a, b = min(one), max(one)
+        p = lambda t, part: FX.entry(f"period:{tbl}:{t}.{part}", "span", None)
+        u = FX.unit(f.c.spec, f.c.spec["facts"][f.st["marks"][0]["key"]]).strip()
+        head += f'<span class="gapw" data-word="scmp.strip.ref">{word("scmp.strip.ref", ay=p(a, "y"), am=p(a, "m"), by=p(b, "y"), bm=p(b, "m"), u=prod.esc(u))}</span>'
+    return (f'<section class="strip"><div class="sh" data-legend="strip"><span class="no">{word("scmp.strip.no")}</span>{head}</div>'
             f'<svg class="prof" viewBox="0 {f.SY} {f.W} {f.SH}" width="{f.W}" height="{f.SH}">{strip}</svg></section>')
 
 SCMP_CSS = """.hero.scmp .pic{position:absolute;left:0;top:0}.hero.scmp .hu{width:{side}px}.strip .gapw{font:400 12px/17px var(--sans);color:var(--t-sec);margin-left:14px}""".replace("{side}", str(SIDE))

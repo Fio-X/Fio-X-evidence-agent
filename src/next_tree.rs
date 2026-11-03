@@ -1456,8 +1456,18 @@ pub(crate) fn recipe_roles(reg: &J, recipe: &str) -> Result<(String, Vec<(String
             return Err(format!("recipe {recipe}: {what} has role {}, and reference is the only role", role.g("role").repr()));
         }
         let word = role.g("legend").g("word").s().filter(|w| !w.is_empty()).ok_or_else(|| format!("recipe {recipe}: reference {what} names no legend word"))?;
-        if crate::next_ledger::word_table().get(word).and_then(serde_json::Value::as_str).is_none() {
+        let Some(template) = crate::next_ledger::word_table().get(word).and_then(serde_json::Value::as_str) else {
             return Err(format!("recipe {recipe}: reference {what}'s legend word {word} is not in the word table"));
+        };
+        // the legend it sits in, and how each placeholder of its word is filled (reference_legend_gaps)
+        if role.g("legend").g("within").s().is_none_or(str::is_empty) {
+            return Err(format!("recipe {recipe}: reference {what}'s legend names no legend it sits within"));
+        }
+        for ph in template.split('{').skip(1).filter_map(|p| p.split_once('}').map(|x| x.0)) {
+            let kind = role.g("legend").g("fills").g(ph).s().unwrap_or("");
+            if !LEGEND_FILLS.contains(&kind) {
+                return Err(format!("recipe {recipe}: reference {what}'s legend fills {{{ph}}} as {kind:?}, not one of {LEGEND_FILLS:?}"));
+            }
         }
         Ok((what.to_string(), word.to_string()))
     };
@@ -1481,21 +1491,193 @@ pub(crate) fn recipe_roles(reg: &J, recipe: &str) -> Result<(String, Vec<(String
     Ok((main, refs))
 }
 
-/// What a published page of `recipe` lacks of its references' legend lines: each reference (recipe_roles) must print its
-/// legend word as a ledger entry (data-src="word:<word>") on the page. A registry the roles cannot be read from is one gap;
-/// one that names no main chart at all is a prototype fixture's (as registry_lint reads it: the registry in force names one
+/// How a reference's legend word fills a placeholder (reference_legend_gaps is_the_word).
+const LEGEND_FILLS: [&str; 5] = ["period", "fact", "name", "fact_unit", "unit"];
+
+/// The element of `html` whose opening tag starts at `open`: (its name, where its body starts, where its closing tag
+/// starts), elements of the same name inside it counted; none when it does not close.
+fn element_at(html: &str, open: usize) -> Option<(String, usize, usize)> {
+    let name: String = html[open + 1..].chars().take_while(|c| c.is_ascii_alphanumeric()).collect();
+    if name.is_empty() {
+        return None;
+    }
+    let body = open + html[open..].find('>')? + 1;
+    let (mut depth, mut i) = (1usize, body);
+    loop {
+        let next = html[i..].find('<')? + i;
+        let tag = &html[next + 1..];
+        if tag.strip_prefix('/').is_some_and(|t| t.starts_with(&name) && t[name.len()..].starts_with('>')) {
+            depth -= 1;
+            if depth == 0 {
+                return Some((name, body, next));
+            }
+        } else if tag.starts_with(&name) && tag[name.len()..].starts_with([' ', '>']) {
+            depth += 1;
+        }
+        i = next + 1;
+    }
+}
+
+/// One piece of a legend line's body: its own text, or a child element with the data-src its opening tag names.
+enum Piece {
+    Text(String),
+    Entry(String),
+}
+
+/// A legend line's body as the reader reads it: its text between its child elements, each child an entry (the data-src of
+/// its opening tag; a child with none, or a tag left open, is no legend line).
+fn pieces(html: &str, from: usize, to: usize) -> Option<Vec<Piece>> {
+    let mut out = Vec::new();
+    let mut i = from;
+    while i < to {
+        match html[i..to].find('<') {
+            None => {
+                out.push(Piece::Text(html[i..to].to_string()));
+                break;
+            }
+            Some(0) => {
+                let (_, body, close) = element_at(html, i)?;
+                let tag = &html[i..body];
+                let src = tag.split("data-src=\"").nth(1)?.split('"').next()?.to_string();
+                out.push(Piece::Entry(src));
+                i = close + html[close..].find('>')? + 1;
+            }
+            Some(n) => {
+                out.push(Piece::Text(html[i..i + n].to_string()));
+                i += n;
+            }
+        }
+    }
+    Some(out)
+}
+
+/// Whether a legend line's pieces are the registry's word: its literal parts the line's text exactly, each placeholder
+/// filled as the registry's legend says (fills: `period`, `fact`, `name`: one entry of that kind; `fact_unit`: such an
+/// entry, then the unit of a page format; `unit`: the unit of a page format as text). A page format's unit is its suffix
+/// less its spaces.
+fn is_the_word(pieces: &[Piece], template: &str, fills: &J, units: &[String]) -> Result<(), String> {
+    let mut text = String::new();
+    let mut rest = pieces.iter();
+    let all: Vec<(bool, String)> = template
+        .split('{')
+        .enumerate()
+        .flat_map(|(i, p)| {
+            let (ph, lit) = if i == 0 { ("", p) } else { p.split_once('}').unwrap_or((p, "")) };
+            [(true, ph.to_string()), (false, lit.to_string())]
+        })
+        .collect();
+    let next_text = |text: &mut String, rest: &mut std::slice::Iter<Piece>| {
+        while text.is_empty() {
+            match rest.as_slice().first() {
+                Some(Piece::Text(t)) => {
+                    text.push_str(t);
+                    rest.next();
+                }
+                _ => break,
+            }
+        }
+    };
+    let take_unit = |text: &mut String, upto: Option<&str>| -> Result<(), String> {
+        let end = upto.filter(|l| !l.is_empty()).and_then(|l| text.find(l)).unwrap_or(text.len());
+        let u = text[..end].trim().to_string();
+        if !units.contains(&u) {
+            return Err(format!("{u:?} is the unit of no format of the page"));
+        }
+        text.replace_range(..end, "");
+        Ok(())
+    };
+    for (n, (is_ph, s)) in all.iter().enumerate() {
+        if !is_ph {
+            next_text(&mut text, &mut rest);
+            if !text.starts_with(s.as_str()) {
+                return Err(format!("the line reads {text:?} where the word has {s:?}"));
+            }
+            text.replace_range(..s.len(), "");
+            continue;
+        }
+        if s.is_empty() {
+            continue;
+        }
+        let kind = fills.g(s).s().ok_or_else(|| format!("the legend names no fill for {{{s}}}"))?;
+        let following = all.get(n + 1).map(|(_, l)| l.as_str());
+        if kind == "unit" {
+            next_text(&mut text, &mut rest);
+            take_unit(&mut text, following)?;
+            continue;
+        }
+        if !text.trim().is_empty() {
+            return Err(format!("the line reads {text:?} where the word has {{{s}}}"));
+        }
+        text.clear();
+        let want = kind.strip_suffix("_unit").unwrap_or(kind);
+        match rest.next() {
+            Some(Piece::Entry(src)) if src.starts_with(&format!("{want}:")) => {}
+            Some(Piece::Entry(src)) => return Err(format!("{{{s}}} is the entry {src}, not a {want}")),
+            _ => return Err(format!("{{{s}}} is no entry of the page")),
+        }
+        if kind.ends_with("_unit") {
+            next_text(&mut text, &mut rest);
+            take_unit(&mut text, following)?;
+        }
+    }
+    next_text(&mut text, &mut rest);
+    if !text.trim().is_empty() || rest.next().is_some() {
+        return Err(format!("the line holds more than the word ({text:?})"));
+    }
+    Ok(())
+}
+
+/// What a published page of `recipe` lacks of its references' legend lines (owner 11-03 14:43): each reference
+/// (recipe_roles) prints its legend line in an element marked `data-word="<word>"` that sits inside the legend it names
+/// (legend.within: an element marked `data-legend="<within>"`), and whose text is the registry's word (the word table's
+/// entry) exactly, each placeholder filled as legend.fills says from the page's entries, whose own text the page check
+/// holds to the ledger. `units`: the units of the page's formats. A registry the roles cannot be read from is one gap; one
+/// that names no main chart at all is a prototype fixture's (as registry_lint reads it: the registry in force names one
 /// per recipe, a test holds it) and asks for no line.
-pub(crate) fn reference_legend_gaps(reg: &J, recipe: &str, html: &str) -> Vec<String> {
+pub(crate) fn reference_legend_gaps(reg: &J, recipe: &str, html: &str, units: &[String]) -> Vec<String> {
     if !reg.has("main_chart") {
         return Vec::new();
     }
-    match recipe_roles(reg, recipe) {
-        Err(e) => vec![format!("roles: {e}")],
-        Ok((_, refs)) => refs
-            .into_iter()
-            .filter(|(_, word)| !html.contains(&format!("data-src=\"word:{word}\"")))
-            .map(|(what, word)| format!("roles: {what} is drawn as a reference and the page prints no legend line word:{word}"))
-            .collect(),
+    let refs = match recipe_roles(reg, recipe) {
+        Err(e) => return vec![format!("roles: {e}")],
+        Ok((_, refs)) => refs,
+    };
+    let mut out = Vec::new();
+    for (what, word) in refs {
+        let legend = reference_legend(reg, recipe, &what);
+        let within = st(legend.g("within"));
+        // the legend it names, and the line inside it
+        let line = html.match_indices(&format!("data-legend=\"{within}\"")).find_map(|(at, _)| {
+            let (_, body, close) = element_at(html, html[..at].rfind('<')?)?;
+            let mark = html[body..close].find(&format!("data-word=\"{word}\""))? + body;
+            let open = html[..mark].rfind('<')?;
+            let (_, lb, lc) = element_at(html, open)?;
+            Some((lb, lc))
+        });
+        let Some((lb, lc)) = line else {
+            let anywhere = html.contains(&format!("data-word=\"{word}\""));
+            out.push(match anywhere {
+                true => format!("roles: {what}'s legend line data-word={word} sits outside the legend data-legend={within}"),
+                false => format!("roles: {what} is drawn as a reference and its legend data-legend={within} prints no line data-word={word}"),
+            });
+            continue;
+        };
+        let template = crate::next_ledger::word_table().get(&word).and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
+        let said = pieces(html, lb, lc).ok_or_else(|| "a child element names no data-src".to_string()).and_then(|p| is_the_word(&p, &template, legend.g("fills"), units));
+        if let Err(e) = said {
+            out.push(format!("roles: {what}'s legend line is not the registry's word {word} ({template:?}): {e}"));
+        }
+    }
+    out
+}
+
+/// A reference's legend as the registry declares it (roles.<recipe> of the layer, or its parts.<part>).
+fn reference_legend(reg: &J, recipe: &str, what: &str) -> J {
+    let (layer, part) = what.split_once('.').map_or((what, None), |(l, p)| (l, Some(p)));
+    let roles = reg.g("nodes").g(layer).g("roles").g(recipe);
+    match part {
+        Some(p) => roles.g("parts").g(p).g("legend").clone(),
+        None => roles.g("legend").clone(),
     }
 }
 
@@ -6683,16 +6865,18 @@ mod tests {
     }
 
     /// 11-03: the roles' rules refuse each way a registry breaks them (no main chart, a main chart of no layer, a main chart
-    /// wholly reference, a role that is no reference, a reference with no legend word or a word the table lacks), take a
-    /// part of the main chart as reference (the map's earlier-year halo), and a published page lacks the legend line of
-    /// every reference it does not print.
+    /// wholly reference, a role that is no reference, a reference with no legend word, a word the table lacks, no legend it
+    /// sits within, a placeholder filled no known way), take a part of the main chart as reference (the map's earlier-year
+    /// halo), and a published page lacks each legend line that is not the registry's word inside its legend: missing, its
+    /// text changed (a literal, an entry of another kind, a unit of no format, more text), or outside the legend.
     #[test]
     fn a_reference_layer_names_its_legend_and_the_main_chart_is_never_wholly_one() {
+        let halo = r#"{"word": "halo.t0", "within": "map", "fills": {"y": "period", "name": "name", "val": "fact_unit"}}"#;
         let reg = |main: &str, roles: &str| {
-            let map = r#"{"roles": {"ring": {"parts": {"halo": {"role": "reference", "legend": {"word": "halo.t0"}}}}}}"#;
+            let map = format!(r#"{{"roles": {{"ring": {{"parts": {{"halo": {{"role": "reference", "legend": {halo}}}}}}}}}}}"#);
             parse(&format!(r#"{{"recipes": {{"ring": ["map", "ring"]}}, "main_chart": {{"ring": {main}}}, "nodes": {{"map": {map}, "ring": {{"roles": {{"ring": {roles}}}}}}}}}"#)).unwrap()
         };
-        let strip = r#"{"role": "reference", "legend": {"word": "scmp.strip.peak"}}"#;
+        let strip = r#"{"role": "reference", "legend": {"word": "scmp.strip.peak", "within": "strip", "fills": {"t": "period", "v": "fact_unit"}}}"#;
         let good = reg(r#""map""#, strip);
         let (main, refs) = recipe_roles(&good, "ring").unwrap();
         assert_eq!(main, "map");
@@ -6701,24 +6885,44 @@ mod tests {
             ("no main chart", reg("null", strip), "names no main chart"),
             ("a main chart of no layer", reg(r#""bars""#, strip), "is no layer of it"),
             ("the main chart wholly reference", reg(r#""ring""#, strip), "wholly reference"),
-            ("a role that is no reference", reg(r#""map""#, r#"{"role": "aux", "legend": {"word": "scmp.strip.peak"}}"#), "the only role"),
+            ("a role that is no reference", reg(r#""map""#, &strip.replace("\"reference\"", "\"aux\"")), "the only role"),
             ("no legend word", reg(r#""map""#, r#"{"role": "reference"}"#), "names no legend word"),
-            ("a word the table lacks", reg(r#""map""#, r#"{"role": "reference", "legend": {"word": "no.such.word"}}"#), "not in the word table"),
+            ("a word the table lacks", reg(r#""map""#, &strip.replace("scmp.strip.peak", "no.such.word")), "not in the word table"),
+            ("no legend it sits within", reg(r#""map""#, &strip.replace(r#""within": "strip", "#, "")), "names no legend it sits within"),
+            ("a fill of no kind", reg(r#""map""#, &strip.replace(r#""t": "period""#, r#""t": "words""#)), "fills {t}"),
+            ("a placeholder not filled", reg(r#""map""#, &strip.replace(r#""t": "period", "#, "")), "fills {t}"),
         ] {
             let e = recipe_roles(&bad, "ring").expect_err(what);
             assert!(e.contains(says), "{what}: {e}");
-            assert_eq!(reference_legend_gaps(&bad, "ring", "").len(), 1, "{what}: one gap");
+            assert_eq!(reference_legend_gaps(&bad, "ring", "", &[]).len(), 1, "{what}: one gap");
         }
-        // the page: each reference's legend line printed as a ledger entry, else a gap that names it
-        let both = r#"<tspan data-src="word:halo.t0">a</tspan><tspan data-src="word:scmp.strip.peak">b</tspan>"#;
-        assert!(reference_legend_gaps(&good, "ring", both).is_empty());
-        let gaps = reference_legend_gaps(&good, "ring", r#"<tspan data-src="word:halo.t0">a</tspan>"#);
-        assert_eq!(gaps.len(), 1);
-        assert!(gaps[0].contains("ring is drawn as a reference") && gaps[0].contains("word:scmp.strip.peak"), "{}", gaps[0]);
-        assert_eq!(reference_legend_gaps(&good, "ring", "").len(), 2);
-        // a page of the registry in force asks for no line while no reference is registered (steps 2 and 3 register them)
+        // the page: each line the registry's word, its numbers the page's entries, inside its legend
+        let units = ["百万立方米".to_string()];
+        let halo_line = r#"<text data-word="halo.t0">浅色宽带＝<tspan data-src="period:t:2015">2015</tspan> 年（<tspan data-src="name:zh_names:iso2:RU">俄罗斯</tspan> <tspan data-src="fact:lab_t0.RU.n">126,027</tspan> 百万立方米）</text>"#;
+        let strip_line = r#"<span data-word="scmp.strip.peak">最多：<span data-src="period:m:2025-12.y">2025</span> <span data-src="fact:ru_s_peak.n">3,261</span> 百万立方米</span>"#;
+        let page = |h: &str, s: &str| format!(r#"<g data-legend="map"><rect/>{h}</g><div data-legend="strip"><b>剖面</b>{s}</div>"#);
+        assert_eq!(reference_legend_gaps(&good, "ring", &page(halo_line, strip_line), &units), Vec::<String>::new());
+        let fails = |html: &str, says: &str| {
+            let gaps = reference_legend_gaps(&good, "ring", html, &units);
+            assert_eq!(gaps.len(), 1, "{says}: {gaps:?}");
+            assert!(gaps[0].contains(says), "{says}: {}", gaps[0]);
+        };
+        // missing, or outside its legend
+        fails(&page(halo_line, ""), "prints no line data-word=scmp.strip.peak");
+        fails(&format!(r#"{}<p>{strip_line}</p>"#, page(halo_line, "")), "sits outside the legend data-legend=strip");
+        fails(&format!(r#"<g data-legend="map">{halo_line}</g><div data-legend="map">{strip_line}</div>"#), "sits outside the legend data-legend=strip");
+        // the attribute there and its text changed: a literal, an entry of another kind, a unit of no format, more text
+        fails(&page(&halo_line.replace("浅色宽带＝", "浅色＝"), strip_line), "not the registry's word halo.t0");
+        fails(&page(&halo_line.replace(r#"data-src="period:t:2015""#, r#"data-src="fact:y0""#), strip_line), "not a period");
+        fails(&page(halo_line, &strip_line.replace("百万立方米", "吨")), "the unit of no format");
+        fails(&page(&halo_line.replace("）</text>", "）以前</text>"), strip_line), "more than the word");
+        fails(&page(&halo_line.replace(r#"<tspan data-src="period:t:2015">2015</tspan>"#, "2015"), strip_line), "not the registry's word halo.t0");
+        // a page of the registry in force: scmp's strip and the map's halo are references (step 2), the ring page none yet
         let (in_force, _) = registry_in_force();
-        assert!(reference_legend_gaps(&in_force, "scmp", "").is_empty() && reference_legend_gaps(&in_force, "ring", "").is_empty());
+        let (_, scmp) = recipe_roles(&in_force, "scmp").unwrap();
+        assert_eq!(scmp, [("map.halo".to_string(), "halo.t0".to_string()), ("strip".to_string(), "scmp.strip.ref".to_string())]);
+        assert_eq!(reference_legend_gaps(&in_force, "scmp", "", &[]).len(), 2);
+        assert!(reference_legend_gaps(&in_force, "ring", "", &[]).is_empty() && reference_legend_gaps(&in_force, "column", "", &[]).is_empty());
     }
 
     /// 11-03: a printed difference is the difference of its two values as the page prints them, over three shapes: a

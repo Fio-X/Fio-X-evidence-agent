@@ -211,6 +211,7 @@
   },
   "map": {
    "binding": "external",
+   "roles": {"scmp": {"parts": {"halo": {"role": "reference", "legend": {"word": "halo.t0", "within": "map", "fills": {"y": "period", "name": "name", "val": "fact_unit"}}}}}},
    "geometry": "leaf",
    "runner": "leaves_py/prod.py",
    "declares_by_recipe": {
@@ -1290,6 +1291,7 @@
 ,
   "strip": {
    "binding": "external",
+   "roles": {"scmp": {"role": "reference", "legend": {"word": "scmp.strip.ref", "within": "strip", "fills": {"ay": "period", "am": "period", "by": "period", "bm": "period", "u": "unit"}}}},
    "geometry": "leaf",
    "runner": "leaves_py/scmp.py",
    "declares_by_recipe": {

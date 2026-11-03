@@ -73,5 +73,6 @@
  "scmp.bn.tot.flat": "各来源合计：首尾两年相比持平",
  "scmp.bn.peak": "{name}单月最多",
  "scmp.strip.gap": "虚线＝该月无数",
+ "scmp.strip.ref": "{ay} 年 {am} 月至 {by} 年 {bm} 月逐月，单位：{u}",
  "line.no_start": "，。、；：！？）」』》”’…"
 }

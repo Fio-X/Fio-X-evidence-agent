@@ -8024,6 +8024,12 @@ mod tests {
                 if let Ok(out) = std::env::var("LEAF_PAGE_OUT") {
                     std::fs::write(out, &drawn.html).unwrap();
                 }
+                // the visual group's recheck of the page as drawn (its references' legend lines among it)
+                let recheck = crate::next_visual::Request::LeafRecheck { recipe: "scmp", html: &drawn.html, ledger: leaf.ledger, refs: leaf.refs, facts: leaf.facts };
+                match crate::next_flow::visual_call(&calls, "leaf_recheck", recheck) {
+                    Ok(crate::next_visual::Reply::Rechecked(off)) => println!("recheck {} finding(s): {off:?}", off.len()),
+                    other => println!("recheck: {:?}", other.err()),
+                }
             }
             Ok(_) => panic!("not a leaf page"),
             Err(why) => {

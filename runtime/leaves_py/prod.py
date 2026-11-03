@@ -566,9 +566,9 @@ def ml_legend(m, occ):
         val = FX.entry(f"fact:{lf}.{big}.n", "tspan", None) + esc(FX.unit(c.spec, c.spec["facts"][lf]))
     l0, l1 = word("halo.t0", y=y0, name=named(big), val=val), word("halo.t1", y=y1, words=halo_words(d))
     bw = max(290, 72 + max(tw(re.sub(r"<[^>]+>", "", html.unescape(t)), 12) for t in (l0, l1)) + 12)  # the box holds its longest line
-    return (f'<g transform="translate(16,16)"><rect width="{bw:.0f}" height="62" fill="#fff" fill-opacity="0.85"/>'
+    return (f'<g transform="translate(16,16)" data-legend="map"><rect width="{bw:.0f}" height="62" fill="#fff" fill-opacity="0.85"/>'
             f'<line x1="12" x2="60" y1="20" y2="20" stroke="#c9c9c9" stroke-width="{m.wid(v):.1f}" stroke-opacity="0.55"/>'
-            f'<text x="72" y="25" font-size="12" fill="var(--t-body)">{l0}</text>'
+            f'<text x="72" y="25" font-size="12" fill="var(--t-body)" data-word="halo.t0">{l0}</text>'
             f'<line x1="12" x2="36" y1="46" y2="46" stroke="{"var(--accent)" if d.get("focus") else d.get("fall", "var(--accent)")}" stroke-width="5"/><line x1="36" x2="60" y1="46" y2="46" stroke="{d.get("other", "var(--t-title)") if d.get("focus") else d.get("rise", "var(--accent2)")}" stroke-width="5"/>'
             f'<text x="72" y="51" font-size="12" fill="var(--t-body)">{l1}</text></g>')
 
