@@ -11621,8 +11621,16 @@ for line in sys.stdin:
         let Some(&(_, plain, scoped)) = DEK_FINDINGS.iter().find(|(k, _, _)| *k == finding) else {
             return Err(format!("no DEK_FINDINGS words for {finding:?}"));
         };
+        // the compared set ({set}, next_tree_gen finding_declared): a composition's registry set words; none on these
+        // unnarrowed pages
+        let set = if finding == Finding::Part { "图中各国中" } else { "" };
+        let mut words = words;
+        words.push(("{set}", set.to_string()));
         let worded = |template: &str| words.iter().fold(template.to_string(), |text, (token, with)| text.replace(token, with));
         let mut said = json!({"dek": worded(plain), "scoped": worded(scoped)});
+        if !set.is_empty() {
+            said["set"] = json!(set);
+        }
         // the headline says the same finding (HEADLINES); a level one compares the two ends by their times, a fact the page
         // declares (extremes), so with no such fact there is no headline and the title stays the text step's label
         let headline = HEADLINES.iter().find(|(k, _, _)| *k == finding);

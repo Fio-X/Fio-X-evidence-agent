@@ -1132,6 +1132,12 @@ impl Ask {
                     let Some(draft) = fields.get(id) else {
                         return Err(self.refuse(format!("text has no field '{id}'")));
                     };
+                    // A draft that ranks under the scope's own words (the page's set phrase, `mark`, its count a placeholder)
+                    // keeps them, with the draft as the example: said first, before the placeholder its count is.
+                    let mark = mark.as_str();
+                    if scoped.contains(id) && revised != draft && !mark.is_empty() && draft.contains(mark) && !revised.contains(mark) {
+                        return Err(self.refuse(format!("field '{id}': drops '{mark}'{}, e.g. '{draft}'", scope_rule(scoped))));
+                    }
                     if let Err(why) = same_placeholders(draft, revised) {
                         return Err(self.refuse(format!("field '{id}': {why}")));
                     }
@@ -1160,12 +1166,7 @@ impl Ask {
                         return Err(self.refuse(format!("field '{id}': '{level}' asks a level{}", change_rule(changes))));
                     }
                     // On a scoped page a ranking word holds only among the kept places: refused here, so the model words
-                    // it again, rather than put back after acceptance (next_page Drafts::scoped). A draft that ranks under
-                    // the scope's own words (the page's set phrase, `mark`) keeps them, with the draft as the example.
-                    let mark = mark.as_str();
-                    if scoped.contains(id) && revised != draft && !mark.is_empty() && draft.contains(mark) && !revised.contains(mark) {
-                        return Err(self.refuse(format!("field '{id}': drops '{mark}'{}, e.g. '{draft}'", scope_rule(scoped))));
-                    }
+                    // it again, rather than put back after acceptance (next_page Drafts::scoped).
                     // the set phrase is the registry's words, which may rank the set itself (人口最多的): read without it
                     let unmarked = if mark.is_empty() { revised.clone() } else { revised.replace(mark, "") };
                     if let Some(word) =

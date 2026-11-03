@@ -1304,6 +1304,11 @@ mod tests {
                     assert!(refused.problem.starts_with(&format!("field '2': drops '{SET}'; ")), "{}", refused.problem);
                     assert!(refused.problem.ends_with(&format!(", e.g. '{said}'")), "{}", refused.problem);
                     let unchecked = Choice::Text { text: BTreeMap::from([("2".to_string(), unmarked.clone())]), names: BTreeMap::new() };
+                    // the set's count is a placeholder, so a wording without the set fails revised too (the drafted
+                    // placeholders) before the guard; the guard still puts back one that keeps them
+                    assert!(drafts.revised(&unchecked).is_err(), "{unmarked}");
+                    let kept = format!("{unmarked}（{{drawn}}）");
+                    let unchecked = Choice::Text { text: BTreeMap::from([("2".to_string(), kept)]), names: BTreeMap::new() };
                     let (page, back) = drafts.scoped(drafts.revised(&unchecked).unwrap());
                     assert_eq!((page[&Target::PageDek].as_str(), back), (said.as_str(), vec![Target::PageDek]));
                 }
