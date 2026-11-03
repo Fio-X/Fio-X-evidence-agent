@@ -363,12 +363,25 @@ fn pairs_declared(layer: &str, d: &J, page_in: &J, reg: &J) -> Result<J, String>
         }
         sels.push(x);
     }
+    // what the flow's registry asks for on each side and leaves out (the page input's pairs, a run fact): each a
+    // registry_list select the core reads again from the registry, so a list that is not the registry's refuses the page
+    let (pairs_in, sh) = (page_in.g("pairs"), page_in.g("shape"));
+    let table = st(pairs_in.g("table"));
+    let lists = [
+        ("pairs_asked_source", format!("flow_asked:{table}:{}", st(sh.g("source"))), pairs_in.g("asked").at(0).clone()),
+        ("pairs_asked_target", format!("flow_asked:{table}:{}", st(sh.g("target"))), pairs_in.g("asked").at(1).clone()),
+        ("pairs_excluded", format!("flow_excluded:{table}"), pairs_in.g("excluded").clone()),
+    ];
+    for (id, registry, result) in lists {
+        sels.push(J::obj_of(vec![("id", J::str(id)), ("kind", J::str("registry_list")), ("registry", J::Str(registry))]));
+        given.push((id.to_string(), result));
+    }
     let (bad, got) = recompute(page_in, &sels, &given);
     if !bad.is_empty() {
         return Err(format!("{layer}: its selects do not recompute: {}", bad.iter().take(3).cloned().collect::<Vec<_>>().join("; ")));
     }
     let codes = |id: &J| -> Vec<String> { got.get(&st(id)).map(|c| c.arr().iter().map(st).collect()).unwrap_or_default() };
-    let sh = page_in.g("shape");
+    let listed = |id: &str| codes(&J::str(id));
     let (main, year, fmt, unit) = (st(sh.g("main")), st(sh.g("year")), st(sh.g("fmt")), st(sh.g("unit")));
     let (source, target) = (st(sh.g("source")), st(sh.g("target")));
     let words = |k: &str, ctx: &[(&str, &str)]| -> String {
@@ -408,7 +421,7 @@ fn pairs_declared(layer: &str, d: &J, page_in: &J, reg: &J) -> Result<J, String>
     let link = |r: &&J| J::obj_of(vec![("source", r.g("dims").g(&source).clone()), ("target", r.g("dims").g(&target).clone()), ("value", r.g("src").clone())]);
     leaf.set("flows", J::Arr(flows.iter().map(link).collect()));
     let (mut node_text, mut empty, mut all_zero, mut names, mut held) = (J::Obj(vec![]), J::Obj(vec![]), Vec::new(), Vec::new(), Vec::new());
-    let excluded: Vec<String> = page_in.g("pairs").g("excluded").arr().iter().map(st).collect();
+    let excluded: Vec<String> = listed("pairs_excluded");
     for (i, (sd, dim)) in d.g("sides").arr().iter().zip([&source, &target]).enumerate() {
         let (summed, merged, side_held) = (codes(sd.g("summed")), codes(sd.g("merged")), codes(sd.g("held")));
         let drawn: Vec<&String> = summed.iter().filter(|c| !merged.contains(c)).collect();
@@ -430,7 +443,7 @@ fn pairs_declared(layer: &str, d: &J, page_in: &J, reg: &J) -> Result<J, String>
         }
         let zero_only: Vec<&String> = side_held.iter().filter(|c| !summed.contains(c)).collect();
         // the codes the registry asks for on this side (the flow's run fact) the rows hold none of
-        let none: Vec<String> = page_in.g("pairs").g("asked").at(i).arr().iter().map(st).filter(|c| !side_held.contains(c)).collect();
+        let none: Vec<String> = listed(["pairs_asked_source", "pairs_asked_target"][i]).into_iter().filter(|c| !side_held.contains(c)).collect();
         if !none.is_empty() {
             empty.set(&st(sd.g("side")), J::strs(&none));
         }

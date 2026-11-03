@@ -1662,7 +1662,7 @@ fn page_input(recipe: &Recipe, shape: &Shape, picks: &Picks, (main, sums): (&[Va
         let codes = |parts: Vec<next_params::Part>| -> Vec<String> { parts.into_iter().map(|p| p.code).collect() };
         let asked = |dim: &str| codes(next_params::flow_asked(id, dim).unwrap_or_default());
         (p["shape"]["source"], p["shape"]["target"]) = (json!(source), json!(target));
-        p["pairs"] = json!({"asked": [asked(source), asked(target)], "excluded": codes(next_params::flow_excluded(id).unwrap_or_default()),
+        p["pairs"] = json!({"table": id, "asked": [asked(source), asked(target)], "excluded": codes(next_params::flow_excluded(id).unwrap_or_default()),
             "target_parts": codes(next_params::flow_parts(id, target))});
     }
     p
@@ -12634,6 +12634,66 @@ for line in sys.stdin:
                     leaf["lines"].as_array().map_or(0, Vec::len));
             }
         }
+    }
+
+    /// 11-03 B1: the sankey's registry lists are registry_list selects the core recomputes from the registered parts table
+    /// itself (no call into the flow's next_params): the lists the flow hands in declare; one excluded code missing, one
+    /// asked code too many, another table's lists, or the lists a broken flow_excluded (a test-only mutant: the target's
+    /// marked leaves for the source's) would hand in refuse the page, naming the select and the registry.
+    #[test]
+    fn the_cores_registry_reread_refuses_a_flow_list_that_is_not_the_registrys() {
+        let main = q2_flow_rows("nrg_bal_s");
+        let flow = recipe("flow");
+        let shape = shape_of(&flow.eats, &[("nrg_bal_s", &main[..])], &Hubs).unwrap();
+        let picks = picks_of(&flow.picks, &shape, &main, &[]).unwrap();
+        let page_in = page_input(flow, &shape, &picks, (&main, &[]));
+        crate::next_tree_gen::declare("sankey", &page_in).unwrap();
+        let excluded = page_in["pairs"]["excluded"].as_array().unwrap().clone();
+        assert!(!excluded.is_empty(), "the registry leaves a source leaf out of nrg_bal_s's flow");
+        let refused = |p: &Value| crate::next_tree_gen::declare("sankey", p).unwrap_err();
+        let mut short = page_in.clone();
+        short["pairs"]["excluded"] = json!(excluded[1..]);
+        let why = refused(&short);
+        assert!(why.contains("select pairs_excluded (registry_list flow_excluded:nrg_bal_s)"), "{why}");
+        let mut more = page_in.clone();
+        more["pairs"]["asked"][0].as_array_mut().unwrap().push(excluded[0].clone());
+        let why = refused(&more);
+        assert!(why.contains("select pairs_asked_source (registry_list flow_asked:nrg_bal_s:"), "{why}");
+        let mut other = page_in.clone();
+        other["pairs"]["table"] = json!("nrg_x");
+        assert!(refused(&other).contains("registry_list"));
+        // a broken flow_excluded: the marked leaves of the target dimension, not the source's (none), handed in as the list
+        let mutant_flow_excluded = |table: &str| -> Vec<String> {
+            let (_, target) = next_params::flow_dims(table).unwrap();
+            next_params::flow_parts(table, &target).into_iter().filter(|p| p.excluded_from.is_some()).map(|p| p.code).collect()
+        };
+        let mut broken = page_in.clone();
+        broken["pairs"]["excluded"] = json!(mutant_flow_excluded("nrg_bal_s"));
+        let why = refused(&broken);
+        assert!(why.contains("select pairs_excluded (registry_list flow_excluded:nrg_bal_s)"), "{why}");
+    }
+
+    /// 11-03 B1: the core's own reading of the registered parts table gives every registered flow table's lists exactly as
+    /// the flow's next_params does (flow_excluded, and flow_asked on both sides): two readers, one answer.
+    #[test]
+    fn the_cores_registry_lists_equal_next_params_on_every_registered_flow_table() {
+        let tables: BTreeSet<String> = include_str!("../runtime/pi/assets/estat-parts.tsv")
+            .lines()
+            .skip(1)
+            .flat_map(|l| l.split('\t').next().unwrap_or("").split_whitespace().map(str::to_string).collect::<Vec<_>>())
+            .collect();
+        let core = |r: String| crate::next_tree::registry_list_for_test(&r).unwrap().unwrap().to_value();
+        let codes = |p: Vec<next_params::Part>| json!(p.into_iter().map(|p| p.code).collect::<Vec<_>>());
+        let mut flows = 0;
+        for t in &tables {
+            let Some((source, target)) = next_params::flow_dims(t) else { continue };
+            flows += 1;
+            assert_eq!(core(format!("flow_excluded:{t}")), codes(next_params::flow_excluded(t).unwrap()), "{t} excluded");
+            for d in [&source, &target] {
+                assert_eq!(core(format!("flow_asked:{t}:{d}")), codes(next_params::flow_asked(t, d).unwrap()), "{t} asked {d}");
+            }
+        }
+        assert!(flows >= 2, "registered flow tables: {flows}");
     }
 
     /// 11-03 B2: the flow's pair accounting is a gate: drawn + zero + unrowed + of empty codes is the pairs asked for, or

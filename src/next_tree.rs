@@ -1367,6 +1367,80 @@ fn py_grouped(fixed: &str) -> String {
     format!("{sign}{out}{}", frac.map_or(String::new(), |f| format!(".{f}")))
 }
 
+/// The registered parts table (runtime/pi/assets/estat-parts.tsv, the knowledge group's catalogue data), which the core reads
+/// itself as vocabulary, as next_visual.rs reads the Natural Earth attributes: no function of another group is called.
+const PARTS_TEXT: &str = include_str!("../runtime/pi/assets/estat-parts.tsv");
+
+/// One estat-parts.tsv row as the core reads it: (table, dim, code, level, parent, flow side, excluded_from), a row naming
+/// several tables once per table. Columns are found by the header's names; a table without one is no registry.
+fn parts_rows() -> Result<Vec<[String; 7]>, String> {
+    let mut lines = PARTS_TEXT.lines();
+    let header: Vec<&str> = lines.next().unwrap_or("").split('\t').collect();
+    let col = |name: &str| header.iter().position(|h| *h == name).ok_or_else(|| format!("estat-parts.tsv has no column {name}"));
+    let cols = [col("tables")?, col("dim")?, col("code")?, col("level")?, col("parent")?, col("flow")?, col("excluded_from")?];
+    let mut out = Vec::new();
+    for line in lines.filter(|l| !l.is_empty()) {
+        let f: Vec<&str> = line.split('\t').collect();
+        let at = |i: usize| f.get(cols[i]).copied().unwrap_or("").to_string();
+        for table in at(0).split_whitespace() {
+            out.push([table.to_string(), at(1), at(2), at(3), at(4), at(5), at(6)]);
+        }
+    }
+    Ok(out)
+}
+
+/// The leaves of `dim` of `table` whose parents lead up to its total, in file order (the dimension's level-2 codes under its
+/// total: an aggregate is never one), each with its excluded_from.
+fn leaves_under_total(rows: &[[String; 7]], table: &str, dim: &str) -> Vec<(String, String)> {
+    let of: Vec<&[String; 7]> = rows.iter().filter(|r| r[0] == table && r[1] == dim && r[3] != "overlap").collect();
+    let Some(total) = of.iter().find(|r| r[3] == "total").map(|r| r[2].clone()) else { return Vec::new() };
+    let parent = |code: &str| of.iter().find(|r| r[2] == code).map(|r| r[4].clone()).unwrap_or_default();
+    let under = |r: &[String; 7]| {
+        let mut at = r[4].clone();
+        for _ in 0..of.len() {
+            if at == total {
+                return true;
+            }
+            if at.is_empty() {
+                return false;
+            }
+            at = parent(&at);
+        }
+        false
+    };
+    of.iter().filter(|r| r[3] == "leaf" && under(r)).map(|r| (r[2].clone(), r[6].clone())).collect()
+}
+
+/// A registry_list select's codes recomputed from the registered parts table, in its order: `flow_excluded:<table>`, the
+/// leaves of the flow's source dimension (the one whose total row names it the source) marked excluded_from; and
+/// `flow_asked:<table>:<dim>`, the leaves of `dim` under its total less those. None for any other registry (taken as handed,
+/// as before 11-03).
+fn registry_list(registry: &str) -> Option<Result<J, String>> {
+    let rows = match parts_rows() {
+        Ok(rows) => rows,
+        Err(e) => return Some(Err(e)),
+    };
+    let excluded = |table: &str| -> Vec<String> {
+        let source = rows.iter().find(|r| r[0] == table && r[3] == "total" && r[5] == "source").map(|r| r[1].clone());
+        source.map(|d| leaves_under_total(&rows, table, &d).into_iter().filter(|(_, x)| !x.is_empty()).map(|(c, _)| c).collect()).unwrap_or_default()
+    };
+    let codes = |c: Vec<String>| J::Arr(c.into_iter().map(J::Str).collect());
+    match registry.split(':').collect::<Vec<_>>()[..] {
+        ["flow_excluded", table] => Some(Ok(codes(excluded(table)))),
+        ["flow_asked", table, dim] => {
+            let out = excluded(table);
+            Some(Ok(codes(leaves_under_total(&rows, table, dim).into_iter().map(|(c, _)| c).filter(|c| !out.contains(c)).collect())))
+        }
+        _ => None,
+    }
+}
+
+/// The core's own reading of a flow's registry lists (registry_list), for the tests that hold it to the flow's.
+#[cfg(test)]
+pub(crate) fn registry_list_for_test(registry: &str) -> Option<Result<J, String>> {
+    registry_list(registry)
+}
+
 /// The selects recomputed over the page's rows, the checks max_dropped and fill_after_drop, then the page with every
 /// select reference resolved and its facts computed: (failures, recomputed results by select id, the resolved page).
 pub fn recheck(page: &J) -> (Vec<String>, Got, Option<J>) {
@@ -1592,7 +1666,17 @@ fn recheck_one(
             same(bad, format!("select {id} (take)"), s.g("result"), &pick);
             got.insert(id.into(), pick);
         }
-        "given" | "named_rule" | "registry_list" => {
+        "given" | "named_rule" => {
+            got.insert(id.into(), s.g("result").clone());
+        }
+        "registry_list" => {
+            // a flow's registry lists read again: a list the page was handed that is not the registry's is refused. Another
+            // registry (composition_groups) is taken as handed, as before 11-03: the core reads only the flow's two
+            match registry_list(&st(s.g("registry"))) {
+                Some(Ok(want)) => same(bad, format!("select {id} (registry_list {})", st(s.g("registry"))), s.g("result"), &want),
+                Some(Err(e)) => bad.push(format!("select {id} (registry_list): {e}")),
+                None => {}
+            }
             got.insert(id.into(), s.g("result").clone());
         }
         "exclude_codes" => {
