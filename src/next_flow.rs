@@ -683,7 +683,7 @@ fn table_relation(relation: Option<usize>, table: &str) -> Option<Relation> {
 }
 
 impl Ask {
-    fn step(&self) -> &'static str {
+    pub(crate) fn step(&self) -> &'static str {
         match self {
             Ask::Search => "search",
             Ask::Table { .. } => "table",
