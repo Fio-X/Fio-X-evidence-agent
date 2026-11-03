@@ -9141,6 +9141,13 @@ mod tests {
         let calls = std::sync::Mutex::new(Vec::new());
         let why = draw_nodes(&mut wider, &change.external, &calls, &runtime).unwrap_err();
         assert!(why.starts_with("node leader_notes: the mean is over 4 places (mean_n1), the page draws 5 (drawn)"), "{why}");
+        // and at the start year: a page whose kept rows hold one place fewer at t0 (DE's 2016 row gone) averages 3 there
+        // against the 4 it draws, and stops
+        let mut short = fill.clone();
+        short["rows"].as_array_mut().unwrap().retain(|r| !(r["dims"]["geo"] == "DE" && r["time"] == "2016"));
+        let calls = std::sync::Mutex::new(Vec::new());
+        let why = draw_nodes(&mut short, &change.external, &calls, &runtime).unwrap_err();
+        assert!(why.starts_with("node leader_notes: the mean is over 3 places (mean_n0), the page draws 4 (drawn)"), "{why}");
     }
 
     /// A narrow record whose members the page does not all compare (one kept by the narrow has no value at the page's

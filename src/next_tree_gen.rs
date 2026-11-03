@@ -864,13 +864,17 @@ fn finding_declared(d: &J, page_in: &J, reg: &J) -> Result<J, String> {
     Ok(out)
 }
 
-/// The mean a note compares with ("图中平均", the leader notes' mean_n or mean_n1: a count of the places averaged) is over
-/// exactly the places the page draws: the places its averaged rows hold at their time are as many as the page's drawn
+/// The mean a note compares with ("图中平均", the leader notes' mean_n, or mean_n0 and mean_n1 at a change's two ends: a
+/// count of the places averaged) is over exactly the places the page draws, at each end: the places its averaged rows hold at their time are as many as the page's drawn
 /// count (its `drawn` fact, a plain count over the rows the page keeps), else the page stops. A page with no such mean
 /// passes.
 fn mean_recheck(fill: &J) -> Result<(), String> {
     let facts = fill.g("knobs").g("spec").g("facts");
-    let Some((key, q)) = ["mean_n", "mean_n1"].iter().find_map(|k| facts.get(k).map(|q| (*k, q))) else { return Ok(()) };
+    // every count of a mean the page holds: a column's (mean_n), a change's at both ends (mean_n0 at t0, mean_n1 at the year)
+    let counts: Vec<(&str, &J)> = ["mean_n", "mean_n0", "mean_n1"].iter().filter_map(|k| facts.get(k).map(|q| (*k, q))).collect();
+    if counts.is_empty() {
+        return Ok(());
+    }
     let rows = fill.g("rows").arr();
     // the distinct codes of `by` among the kept rows of the count's table at its time, its filter's codes only when it has one
     let places = |q: &J| -> Vec<J> {
@@ -888,12 +892,15 @@ fn mean_recheck(fill: &J) -> Result<(), String> {
         out
     };
     let drawn = facts.g("drawn");
-    if drawn.g("op").s() != Some("n") || drawn.get("filter").is_some() || q.g("op").s() != Some("n") {
-        return Err(format!("node leader_notes: the mean's count {key} and the page's drawn count must both be plain counts"));
-    }
-    let (averaged, shown) = (places(q).len(), places(drawn).len());
-    if averaged != shown {
-        return Err(format!("node leader_notes: the mean is over {averaged} places ({key}), the page draws {shown} (drawn)"));
+    let shown = places(drawn).len();
+    for (key, q) in counts {
+        if drawn.g("op").s() != Some("n") || drawn.get("filter").is_some() || q.g("op").s() != Some("n") {
+            return Err(format!("node leader_notes: the mean's count {key} and the page's drawn count must both be plain counts"));
+        }
+        let averaged = places(q).len();
+        if averaged != shown {
+            return Err(format!("node leader_notes: the mean is over {averaged} places ({key}), the page draws {shown} (drawn)"));
+        }
     }
     Ok(())
 }
