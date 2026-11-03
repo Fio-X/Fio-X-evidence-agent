@@ -1812,7 +1812,16 @@ fn flow_pairs_of(shape: &Shape, main: &[Value]) -> Result<Option<FlowPairs>, Str
     pairs.registered = pairs.asked + pairs.excluded;
     let has_row = |a: &str, b: &str| rows.iter().any(|r| r["dims"][source] == a && r["dims"][target] == b);
     pairs.unrowed = held[0].iter().flat_map(|a| held[1].iter().map(move |b| (*a, *b))).filter(|(a, b)| !has_row(a, b)).count();
-    pairs.of_empty = pairs.asked - held[0].len() * held[1].len();
+    // the gate: every pair asked for is drawn, zero, unrowed or of an empty code, once; anything else refuses the page
+    let held_pairs = held[0].len() * held[1].len();
+    pairs.of_empty = pairs.asked.checked_sub(held_pairs).ok_or_else(|| format!("pairs: the rows hold {held_pairs} pairs, more than the {} asked for", pairs.asked))?;
+    let accounted = pairs.drawn + pairs.zero + pairs.unrowed + pairs.of_empty;
+    if accounted != pairs.asked {
+        return Err(format!(
+            "pairs not accounted for: drawn {} + zero {} + unrowed {} + of empty codes {} = {accounted}, not the {} asked for",
+            pairs.drawn, pairs.zero, pairs.unrowed, pairs.of_empty, pairs.asked
+        ));
+    }
     Ok(Some(pairs))
 }
 
@@ -12625,6 +12634,21 @@ for line in sys.stdin:
                     leaf["lines"].as_array().map_or(0, Vec::len));
             }
         }
+    }
+
+    /// 11-03 B2: the flow's pair accounting is a gate: drawn + zero + unrowed + of empty codes is the pairs asked for, or
+    /// the page is refused (a pair row twice is counted twice, so it refuses); the fetched rows pass.
+    #[test]
+    fn the_pairs_not_accounted_for_refuse_the_flow_page() {
+        let main = q2_flow_rows("nrg_bal_s");
+        let flow = recipe("flow");
+        let shape = shape_of(&flow.eats, &[("nrg_bal_s", &main[..])], &Hubs).unwrap();
+        let pairs = flow_pairs_of(&shape, &main).unwrap().unwrap();
+        assert_eq!(pairs.drawn + pairs.zero + pairs.unrowed + pairs.of_empty, pairs.asked);
+        let mut twice = main.clone();
+        twice.push(main[0].clone());
+        let why = flow_pairs_of(&shape, &twice).unwrap_err();
+        assert!(why.starts_with("pairs not accounted for: ") && why.ends_with(&format!("not the {} asked for", pairs.asked)), "{why}");
     }
 
     /// The sankey's reachable stops replay word for word through the declared pairs: a row that holds no number, rows
