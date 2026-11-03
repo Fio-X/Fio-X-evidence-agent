@@ -402,7 +402,8 @@
        "time": "$picks.t1",
        "not_eu": "$shape.place",
        "fmt": "$shape.fmt"
-      }
+      },
+      "drawn": {"op": "n", "by": "$shape.place", "table": "$shape.main", "filter": {"geo": "$shape.hub"}, "not_eu": true, "time": "$picks.t1", "fmt": "n"}
      },
      "for_each": "select:top",
      "facts_each": {
@@ -690,15 +691,20 @@
      "shape": "finding",
      "requires": [
       "$picks.focus",
+      "$picks.t0",
       "$picks.t1"
      ],
+     "set_count": "drawn",
+     "set_of": "origins",
      "selects": [
       {
        "id": "origins",
        "kind": "rank",
        "over": {
         "table": "$shape.main",
-        "filter": {"geo": "$shape.hub"},
+        "filter": {
+         "geo": "$shape.hub"
+        },
         "by": "$shape.place",
         "time": "$picks.t1"
        },
@@ -708,33 +714,146 @@
        "numbers_only": true
       },
       {
-       "id": "largest",
+       "id": "ring_focus",
+       "kind": "given",
+       "given": [
+        "$picks.focus"
+       ]
+      },
+      {
+       "id": "moved",
+       "kind": "rank",
+       "over": {
+        "table": "$shape.main",
+        "filter": {
+         "geo": "$shape.hub"
+        },
+        "by": "$shape.place",
+        "time": "$picks.t1"
+       },
+       "key": {
+        "change": [
+         "$picks.t0",
+         "$picks.t1"
+        ]
+       },
+       "order": "desc",
+       "only": "select:ring_focus",
+       "numbers_only": true
+      },
+      {
+       "id": "subject",
        "kind": "take",
-       "from": "origins",
-       "at": "first",
-       "tie": {
-        "by": "value",
-        "outcome": "silence"
-       }
+       "from": "moved",
+       "at": "first"
       }
      ],
      "cases": [
       {
-       "finding": "Share",
-       "subject": "largest",
-       "key_above": 0,
+       "if": {
+        "key_of": "moved",
+        "at": "first",
+        "above": 0
+       },
+       "finding": "Rise",
+       "subject": "subject",
        "named": [
         "{code}"
        ],
-       "facts_have": [
-        "{code_lc}{y1}_share"
-       ],
        "facts": {
-        "lead1": {"op": "last", "table": "$shape.main", "filter": {"$shape.place": "{code}", "geo": "$shape.hub"}, "from": "$picks.t1", "to": "$picks.t1", "fmt": "$shape.fmt"}
+        "lead0": {
+         "op": "last",
+         "table": "$shape.main",
+         "filter": {
+          "$shape.place": "{code}",
+          "geo": "$shape.hub"
+         },
+         "from": "$picks.t0",
+         "to": "$picks.t0",
+         "fmt": "$shape.fmt"
+        },
+        "lead1": {
+         "op": "last",
+         "table": "$shape.main",
+         "filter": {
+          "$shape.place": "{code}",
+          "geo": "$shape.hub"
+         },
+         "from": "$picks.t1",
+         "to": "$picks.t1",
+         "fmt": "$shape.fmt"
+        },
+        "lead": {
+         "op": "minus",
+         "a": "lead1",
+         "b": "lead0",
+         "fmt": "$shape.fmt"
+        }
+       },
+       "reads": {
+        "times": [
+         "$picks.t0",
+         "$picks.t1"
+        ]
        },
        "words": {
         "{name}": "{name.{code}}",
-        "{value}": "{{code_lc}{y1}_share}",
+        "{value}": "{lead}",
+        "{y0}": "{lead0.t}",
+        "{y1}": "{lead1.t}"
+       }
+      },
+      {
+       "if": {
+        "key_of": "moved",
+        "at": "first",
+        "below": 0
+       },
+       "finding": "Fall",
+       "subject": "subject",
+       "named": [
+        "{code}"
+       ],
+       "facts": {
+        "lead0": {
+         "op": "last",
+         "table": "$shape.main",
+         "filter": {
+          "$shape.place": "{code}",
+          "geo": "$shape.hub"
+         },
+         "from": "$picks.t0",
+         "to": "$picks.t0",
+         "fmt": "$shape.fmt"
+        },
+        "lead1": {
+         "op": "last",
+         "table": "$shape.main",
+         "filter": {
+          "$shape.place": "{code}",
+          "geo": "$shape.hub"
+         },
+         "from": "$picks.t1",
+         "to": "$picks.t1",
+         "fmt": "$shape.fmt"
+        },
+        "lead": {
+         "op": "minus",
+         "a": "lead0",
+         "b": "lead1",
+         "fmt": "$shape.fmt"
+        }
+       },
+       "reads": {
+        "times": [
+         "$picks.t0",
+         "$picks.t1"
+        ]
+       },
+       "words": {
+        "{name}": "{name.{code}}",
+        "{value}": "{lead}",
+        "{y0}": "{lead0.t}",
         "{y1}": "{lead1.t}"
        }
       }

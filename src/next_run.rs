@@ -13158,7 +13158,8 @@ for line in sys.stdin:
     /// branch of each rule over two shapes each. Change (q1 in percent, its change in points; q6 in persons, in its own
     /// format): a rise alone, two rises alike as printed while another falls (no finding: the fall is never tried), no place
     /// rising and one falling, two falls alike. Level: the highest against the lowest, two highest, two lowest, every place
-    /// alike. Share (scmp and ring, two shapes): the largest origin, two largest alike, every origin at 0. Composition: every
+    /// alike. Share (scmp, two shapes): the largest origin, two largest alike, every origin at 0; the ring page's is no longer
+    /// the frozen one (owner 11-03): its focus's rise or fall between the headline years. Composition: every
     /// bar's share alike (none), one bar's share the largest. Prints one P6FINDING line each.
     #[test]
     fn declared_finding_equals_the_frozen_finding_on_every_branch() {
@@ -13252,7 +13253,26 @@ for line in sys.stdin:
             ("B the largest", b(v("20000", "21000", "15000")), "NO", true),
             ("B two largest alike", b(v("20000", "21000", "95000")), "NO", false),
         ];
-        for recipe_name in ["scmp", "ring"] {
+        // the ring page's finding is its main chart's quantity, no longer the frozen share (owner 11-03): the focus's change
+        // between the headline years, a rise or a fall as the change page words it, whatever the other origins hold
+        for (name, values, focus, _) in &cases {
+            let (main, monthly, change) = scmp_rows(values, focus, &[(*focus, "2019-01", 63)]);
+            let r = recipe("ring");
+            let tables = [("imp", &main[..]), ("impm", &monthly[..])];
+            let shape = shape_of(&r.eats, &tables, &Hubs).unwrap();
+            let picks = picks_of(&r.picks, &shape, &main, &[(MEMBER_CHANGE.to_string(), change)]).unwrap();
+            let fill = test_fill(r, &shape, &picks, (&main, &monthly), &Hubs, ("标题", "导语"), false).unwrap_or_else(|e| panic!("{name}: {e}"));
+            let spec = &fill["knobs"]["spec"]["facts"];
+            let at = |k: &str| (spec[k]["filter"][&shape.place].clone(), spec[k]["from"].clone());
+            assert_eq!(at("lead0"), (json!(focus), json!(picks.t0)), "ring {name}: lead0");
+            assert_eq!(at("lead1"), (json!(focus), json!(picks.t1)), "ring {name}: lead1");
+            // A's focus RU falls (lead0 less lead1), B's focus NO rises (lead1 less lead0)
+            let (a, b) = if *focus == "RU" { ("lead0", "lead1") } else { ("lead1", "lead0") };
+            assert_eq!((spec["lead"]["op"].as_str(), spec["lead"]["a"].as_str(), spec["lead"]["b"].as_str()), (Some("minus"), Some(a), Some(b)), "ring {name}: lead");
+            let dek = fill["finding"]["dek"].as_str().unwrap_or_else(|| panic!("ring {name}: no finding: {}", fill["finding"]));
+            println!("P6FINDING change ring {name}: {focus}: {dek}");
+        }
+        for recipe_name in ["scmp"] {
             for (name, values, focus, found) in &cases {
                 let (main, monthly, change) = scmp_rows(values, focus, &[(*focus, "2019-01", 63)]);
                 let r = recipe(recipe_name);
