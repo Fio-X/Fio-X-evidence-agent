@@ -851,6 +851,40 @@ fn finding_declared(d: &J, page_in: &J, reg: &J) -> Result<J, String> {
     Ok(out)
 }
 
+/// The mean a note compares with ("图中平均", the leader notes' mean_n or mean_n1: a count of the places averaged) is over
+/// exactly the places the page draws: the places its averaged rows hold at their time are as many as the page's drawn
+/// count (its `drawn` fact, a plain count over the rows the page keeps), else the page stops. A page with no such mean
+/// passes.
+fn mean_recheck(fill: &J) -> Result<(), String> {
+    let facts = fill.g("knobs").g("spec").g("facts");
+    let Some((key, q)) = ["mean_n", "mean_n1"].iter().find_map(|k| facts.get(k).map(|q| (*k, q))) else { return Ok(()) };
+    let rows = fill.g("rows").arr();
+    // the distinct codes of `by` among the kept rows of the count's table at its time, its filter's codes only when it has one
+    let places = |q: &J| -> Vec<J> {
+        let by = st(q.g("by"));
+        let mut out: Vec<J> = Vec::new();
+        for r in rows.iter().filter(|r| r.g("table") == q.g("table") && r.g("time") == q.g("time")) {
+            let held = q.g("filter").obj().iter().all(|(d, c)| match c {
+                J::Arr(codes) => codes.contains(r.g("dims").g(d)),
+                c => r.g("dims").g(d) == c,
+            });
+            if held && !out.contains(r.g("dims").g(&by)) {
+                out.push(r.g("dims").g(&by).clone());
+            }
+        }
+        out
+    };
+    let drawn = facts.g("drawn");
+    if drawn.g("op").s() != Some("n") || drawn.get("filter").is_some() || q.g("op").s() != Some("n") {
+        return Err(format!("node leader_notes: the mean's count {key} and the page's drawn count must both be plain counts"));
+    }
+    let (averaged, shown) = (places(q).len(), places(drawn).len());
+    if averaged != shown {
+        return Err(format!("node leader_notes: the mean is over {averaged} places ({key}), the page draws {shown} (drawn)"));
+    }
+    Ok(())
+}
+
 /// The page's finding declared again over the finished fill (its facts' keys and formats, its labels' codes and its
 /// composition's bars, never what the flow handed in), and held to the page: each fact it declares, each row it reads among
 /// the page's, its dek's and its headline's words, and the accent (the subject when ranked, else none).
@@ -2228,6 +2262,7 @@ pub fn draw(fill: &Value, page_in: &Value, layers: &[String], runtime: &std::pat
     // the page's finding, declared again over the finished fill (a page every layer of which stops at its leaf publishes
     // none, so it is not read there)
     finding_recheck(&page_in, &fill, &reg)?;
+    mean_recheck(&fill)?;
     // a layer whose leaf lays itself out (geometry leaf) asks no node and is given no placed geometry; one whose items
     // choose by conditions (declares.candidates) is declared again over the finished fill's name rows, and the leaf data
     // the fill holds must be that declaration's (a name the conditions measured otherwise refuses)
