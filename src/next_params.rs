@@ -123,17 +123,6 @@ pub fn parts(table: &str, dim: &str) -> Vec<Part> {
         .collect()
 }
 
-/// The registered subtotals of dimension `dim` of `table` that overlap its tree (OVERLAP_LEVEL), in file order: never a part,
-/// a parent or a group's member, listed so a page can say they are left out. Only the tests read it yet.
-#[cfg(test)]
-pub fn overlaps(table: &str, dim: &str) -> Vec<Part> {
-    registry()
-        .iter()
-        .filter(|(t, d, p)| t == table && d == dim && p.level == OVERLAP_LEVEL)
-        .map(|(_, _, part)| part.clone())
-        .collect()
-}
-
 /// The groups a composition of dimension `dim` of `table` sums its leaves into: each registered group (Part::group) with
 /// its leaves, in the order the file first names the group, the leaves in file order. The leaves are the dimension's leaves
 /// under its total (leaves_under_total), so each one counts once and they add up to the total. Empty when the file registers
@@ -3391,4 +3380,15 @@ mod tests {
             assert!((whole - sum).abs() <= crate::classify::TOLERANCE * whole, "{whole} vs parts {sum}");
         }
     }
+}
+
+/// The registered subtotals of dimension `dim` of `table` that overlap its tree (OVERLAP_LEVEL), in file order: never a part,
+/// a parent or a group's member, listed so a page can say they are left out. Only the tests read it yet.
+#[cfg(test)]
+pub fn overlaps(table: &str, dim: &str) -> Vec<Part> {
+    registry()
+        .iter()
+        .filter(|(t, d, p)| t == table && d == dim && p.level == OVERLAP_LEVEL)
+        .map(|(_, _, part)| part.clone())
+        .collect()
 }

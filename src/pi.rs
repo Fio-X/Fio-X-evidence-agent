@@ -152,9 +152,6 @@ pub(crate) fn append_model_timing_event(run_folder: &Path, record: &Value) -> st
     writeln!(file, "{record}")
 }
 
-#[cfg(test)]
-pub(crate) static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
 // The runtime only accepts exactly "1" for these switches, so the prompt side must not accept more.
 fn env_switch(name: &str) -> bool {
     std::env::var(name).ok().as_deref() == Some("1")
@@ -2342,22 +2339,6 @@ async fn send_json(
         }
     }
     Ok(())
-}
-
-/// The child command of the old runtime, selected explicitly with NEWSROOM_AGENT=pi so the test does not depend on the default (1012zi step 0).
-/// Tests that call it hold ENV_LOCK; the previous value of the switch is put back.
-#[cfg(test)]
-impl PiConfig {
-    pub(crate) fn pi_command(&self) -> Command {
-        let before = std::env::var(crate::agent_loop::AGENT_ENV).ok();
-        std::env::set_var(crate::agent_loop::AGENT_ENV, "pi");
-        let command = self.command();
-        match before {
-            Some(value) => std::env::set_var(crate::agent_loop::AGENT_ENV, value),
-            None => std::env::remove_var(crate::agent_loop::AGENT_ENV),
-        }
-        command
-    }
 }
 
 #[cfg(test)]
@@ -4810,5 +4791,24 @@ mod tests {
                 && !first.contains("newsroom_infographic_vision_critic"),
             "{first}"
         );
+    }
+}
+
+#[cfg(test)]
+pub(crate) static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// The child command of the old runtime, selected explicitly with NEWSROOM_AGENT=pi so the test does not depend on the default (1012zi step 0).
+/// Tests that call it hold ENV_LOCK; the previous value of the switch is put back.
+#[cfg(test)]
+impl PiConfig {
+    pub(crate) fn pi_command(&self) -> Command {
+        let before = std::env::var(crate::agent_loop::AGENT_ENV).ok();
+        std::env::set_var(crate::agent_loop::AGENT_ENV, "pi");
+        let command = self.command();
+        match before {
+            Some(value) => std::env::set_var(crate::agent_loop::AGENT_ENV, value),
+            None => std::env::remove_var(crate::agent_loop::AGENT_ENV),
+        }
+        command
     }
 }

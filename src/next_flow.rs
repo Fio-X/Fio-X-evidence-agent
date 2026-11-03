@@ -80,38 +80,6 @@ pub fn legacy_problem(get: impl Fn(&str) -> Option<String>) -> Option<String> {
     })
 }
 
-// Test shells only (next_drive's gold driver and this file's tests): the product picks tables from the catalogue.
-#[cfg(test)]
-#[derive(Debug, PartialEq)]
-pub enum Route {
-    /// The model loop, exactly as before.
-    ModelLoop,
-    /// The fixed flow; the spec is the transitional prepare spec when one was given.
-    NextFlow { prepare_spec: Option<PathBuf> },
-}
-
-#[cfg(test)]
-/// Which path the agent child takes. Off, a prepare spec is an error rather than ignored.
-pub fn route(next: bool, prepare_spec: Option<&Path>) -> Result<Route, String> {
-    match (next, prepare_spec) {
-        (false, Some(_)) => Err(format!(
-            "{PREPARE_SPEC_ARG} belongs to the new route, and {NEXT_ENV} is not '1'"
-        )),
-        (false, None) => Ok(Route::ModelLoop),
-        (true, spec) => Ok(Route::NextFlow {
-            prepare_spec: spec.map(Path::to_path_buf),
-        }),
-    }
-}
-
-// Test shells only (next_drive's gold driver and this file's tests): the product picks tables from the catalogue.
-#[cfg(test)]
-/// The keys of one prepare step that go to newsroom_data_prepare.
-pub const TOOL_KEYS: [&str; 4] = ["provider", "dataset", "filters", "years"];
-#[cfg(test)]
-/// The step keys the file may carry: the tool keys and the narrowed request (itself only tool keys).
-pub const STEP_KEYS: [&str; 5] = ["provider", "dataset", "filters", "years", "narrowed"];
-
 /// One table of the spec: what goes to newsroom_data_prepare, the narrowed request used once when the tool asks to narrow,
 /// and the ring's window when the program set its years (next_params::Draft::window; never from a spec).
 #[derive(Clone, Debug, PartialEq)]
@@ -218,98 +186,6 @@ impl std::fmt::Display for Stop {
             }
             Stop::Page { step, why } => write!(f, "the page step {step} stopped: {why}"),
         }
-    }
-}
-
-// Test shells only (next_drive's gold driver and this file's tests): the product picks tables from the catalogue.
-#[cfg(test)]
-/// The steps of the run, or why it stops. No spec stops as "table pick not wired"; nothing else is tried.
-pub fn prepare_steps(spec_text: Option<&str>) -> Result<Vec<PrepareStep>, Stop> {
-    match spec_text {
-        None => Err(Stop::TablePickNotWired(format!(
-            "no {PREPARE_SPEC_ARG} was given and the catalogue pick is not wired yet"
-        ))),
-        Some(text) => parse_prepare_spec(text),
-    }
-}
-
-#[cfg(test)]
-/// Reads the spec: a JSON list, one step per table, as the question bank's prepare list with every `$` reference already
-/// expanded and the measurer's keys removed. A key outside the five, a `$` value or a bad narrowed request is refused by name,
-/// never dropped; a step that is only a search stops the run.
-pub fn parse_prepare_spec(text: &str) -> Result<Vec<PrepareStep>, Stop> {
-    let value: Value = serde_json::from_str(text)
-        .map_err(|e| Stop::BadSpec(format!("the file is not JSON: {e}")))?;
-    let Value::Array(items) = value else {
-        return Err(Stop::BadSpec(
-            "the file must be a JSON list of steps".into(),
-        ));
-    };
-    if items.is_empty() {
-        return Err(Stop::BadSpec("the list has no step".into()));
-    }
-    let mut steps = Vec::with_capacity(items.len());
-    for (index, item) in items.iter().enumerate() {
-        let n = index + 1;
-        let Value::Object(map) = item else {
-            return Err(Stop::BadSpec(format!("step {n} is not an object")));
-        };
-        if map.len() == 1 && map.contains_key("search") {
-            return Err(Stop::TablePickNotWired(format!(
-                "step {n} is only a catalogue search"
-            )));
-        }
-        if let Some(key) = map.keys().find(|k| !STEP_KEYS.contains(&k.as_str())) {
-            return Err(Stop::BadSpec(format!(
-                "step {n} has the key '{key}'; allowed: {}",
-                STEP_KEYS.join(", ")
-            )));
-        }
-        if let Some(path) = dollar_path(item, "") {
-            return Err(Stop::BadSpec(format!(
-                "step {n} has an unexpanded reference at {path}"
-            )));
-        }
-        let narrowed = match map.get("narrowed") {
-            None => None,
-            Some(Value::Object(inner)) => {
-                if let Some(key) = inner.keys().find(|k| !TOOL_KEYS.contains(&k.as_str())) {
-                    return Err(Stop::BadSpec(format!(
-                        "step {n} narrowed has the key '{key}'; allowed: {}",
-                        TOOL_KEYS.join(", ")
-                    )));
-                }
-                Some(inner.clone())
-            }
-            Some(_) => {
-                return Err(Stop::BadSpec(format!("step {n} narrowed is not an object")));
-            }
-        };
-        let args = map
-            .iter()
-            .filter(|(k, _)| k.as_str() != "narrowed")
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-        steps.push(PrepareStep { args, narrowed, window: None });
-    }
-    Ok(steps)
-}
-
-#[cfg(test)]
-/// Where the first string starting with `$` sits, as a JSON pointer.
-fn dollar_path(value: &Value, at: &str) -> Option<String> {
-    match value {
-        Value::String(s) if s.starts_with('$') => {
-            Some(if at.is_empty() { "/".into() } else { at.into() })
-        }
-        Value::Array(list) => list
-            .iter()
-            .enumerate()
-            .find_map(|(i, v)| dollar_path(v, &format!("{at}/{i}"))),
-        Value::Object(map) => map
-            .iter()
-            .find_map(|(k, v)| dollar_path(v, &format!("{at}/{k}"))),
-        _ => None,
     }
 }
 
@@ -1723,12 +1599,6 @@ pub const TYPED_NUMBER_RULE: &str =
     "type no number, years included: a year goes through a {placeholder} the draft holds, or is left out (write 各方数值的变化, not 2016年到2024年的变化)";
 /// The number-word rule of the page text, with the examples it refuses.
 pub const NUMBER_WORD_RULE: &str = "no number in words either (二十七, 两国, 三倍, 两成, 过半)";
-/// Every wording the rules above suggest (TYPED_NUMBER_RULE, CHANGE_TITLE_RULE, SCOPE_RULE, TITLE_RULE), and only those, each
-/// of which must pass the text and the names checks it is offered for, the title's on every page kind among them. The rules
-/// go to the model on every question, so each is topic-neutral: no place, measure or topic of any one page.
-#[cfg(test)]
-pub const RULE_SUGGESTIONS: [&str; 4] = ["各方数值的变化", "少数地区升幅居前", "各地的高低分布", "少数地区明显偏高"];
-
 /// The first number a text types that is not one of `allowed`.
 pub fn number_not_allowed(text: &str, allowed: &[String]) -> Option<String> {
     typed_numbers(text)
@@ -10356,3 +10226,134 @@ mod tests {
         assert_eq!(draft.window, Some(ring_on(None)));
     }
 }
+
+// Test shells only (next_drive's gold driver and this file's tests): the product picks tables from the catalogue.
+#[cfg(test)]
+#[derive(Debug, PartialEq)]
+pub enum Route {
+    /// The model loop, exactly as before.
+    ModelLoop,
+    /// The fixed flow; the spec is the transitional prepare spec when one was given.
+    NextFlow { prepare_spec: Option<PathBuf> },
+}
+
+#[cfg(test)]
+/// Which path the agent child takes. Off, a prepare spec is an error rather than ignored.
+pub fn route(next: bool, prepare_spec: Option<&Path>) -> Result<Route, String> {
+    match (next, prepare_spec) {
+        (false, Some(_)) => Err(format!(
+            "{PREPARE_SPEC_ARG} belongs to the new route, and {NEXT_ENV} is not '1'"
+        )),
+        (false, None) => Ok(Route::ModelLoop),
+        (true, spec) => Ok(Route::NextFlow {
+            prepare_spec: spec.map(Path::to_path_buf),
+        }),
+    }
+}
+
+// Test shells only (next_drive's gold driver and this file's tests): the product picks tables from the catalogue.
+#[cfg(test)]
+/// The keys of one prepare step that go to newsroom_data_prepare.
+pub const TOOL_KEYS: [&str; 4] = ["provider", "dataset", "filters", "years"];
+
+#[cfg(test)]
+/// The step keys the file may carry: the tool keys and the narrowed request (itself only tool keys).
+pub const STEP_KEYS: [&str; 5] = ["provider", "dataset", "filters", "years", "narrowed"];
+
+// Test shells only (next_drive's gold driver and this file's tests): the product picks tables from the catalogue.
+#[cfg(test)]
+/// The steps of the run, or why it stops. No spec stops as "table pick not wired"; nothing else is tried.
+pub fn prepare_steps(spec_text: Option<&str>) -> Result<Vec<PrepareStep>, Stop> {
+    match spec_text {
+        None => Err(Stop::TablePickNotWired(format!(
+            "no {PREPARE_SPEC_ARG} was given and the catalogue pick is not wired yet"
+        ))),
+        Some(text) => parse_prepare_spec(text),
+    }
+}
+
+#[cfg(test)]
+/// Reads the spec: a JSON list, one step per table, as the question bank's prepare list with every `$` reference already
+/// expanded and the measurer's keys removed. A key outside the five, a `$` value or a bad narrowed request is refused by name,
+/// never dropped; a step that is only a search stops the run.
+pub fn parse_prepare_spec(text: &str) -> Result<Vec<PrepareStep>, Stop> {
+    let value: Value = serde_json::from_str(text)
+        .map_err(|e| Stop::BadSpec(format!("the file is not JSON: {e}")))?;
+    let Value::Array(items) = value else {
+        return Err(Stop::BadSpec(
+            "the file must be a JSON list of steps".into(),
+        ));
+    };
+    if items.is_empty() {
+        return Err(Stop::BadSpec("the list has no step".into()));
+    }
+    let mut steps = Vec::with_capacity(items.len());
+    for (index, item) in items.iter().enumerate() {
+        let n = index + 1;
+        let Value::Object(map) = item else {
+            return Err(Stop::BadSpec(format!("step {n} is not an object")));
+        };
+        if map.len() == 1 && map.contains_key("search") {
+            return Err(Stop::TablePickNotWired(format!(
+                "step {n} is only a catalogue search"
+            )));
+        }
+        if let Some(key) = map.keys().find(|k| !STEP_KEYS.contains(&k.as_str())) {
+            return Err(Stop::BadSpec(format!(
+                "step {n} has the key '{key}'; allowed: {}",
+                STEP_KEYS.join(", ")
+            )));
+        }
+        if let Some(path) = dollar_path(item, "") {
+            return Err(Stop::BadSpec(format!(
+                "step {n} has an unexpanded reference at {path}"
+            )));
+        }
+        let narrowed = match map.get("narrowed") {
+            None => None,
+            Some(Value::Object(inner)) => {
+                if let Some(key) = inner.keys().find(|k| !TOOL_KEYS.contains(&k.as_str())) {
+                    return Err(Stop::BadSpec(format!(
+                        "step {n} narrowed has the key '{key}'; allowed: {}",
+                        TOOL_KEYS.join(", ")
+                    )));
+                }
+                Some(inner.clone())
+            }
+            Some(_) => {
+                return Err(Stop::BadSpec(format!("step {n} narrowed is not an object")));
+            }
+        };
+        let args = map
+            .iter()
+            .filter(|(k, _)| k.as_str() != "narrowed")
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        steps.push(PrepareStep { args, narrowed, window: None });
+    }
+    Ok(steps)
+}
+
+#[cfg(test)]
+/// Where the first string starting with `$` sits, as a JSON pointer.
+fn dollar_path(value: &Value, at: &str) -> Option<String> {
+    match value {
+        Value::String(s) if s.starts_with('$') => {
+            Some(if at.is_empty() { "/".into() } else { at.into() })
+        }
+        Value::Array(list) => list
+            .iter()
+            .enumerate()
+            .find_map(|(i, v)| dollar_path(v, &format!("{at}/{i}"))),
+        Value::Object(map) => map
+            .iter()
+            .find_map(|(k, v)| dollar_path(v, &format!("{at}/{k}"))),
+        _ => None,
+    }
+}
+
+/// Every wording the rules above suggest (TYPED_NUMBER_RULE, CHANGE_TITLE_RULE, SCOPE_RULE, TITLE_RULE), and only those, each
+/// of which must pass the text and the names checks it is offered for, the title's on every page kind among them. The rules
+/// go to the model on every question, so each is topic-neutral: no place, measure or topic of any one page.
+#[cfg(test)]
+pub const RULE_SUGGESTIONS: [&str; 4] = ["各方数值的变化", "少数地区升幅居前", "各地的高低分布", "少数地区明显偏高"];

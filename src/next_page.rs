@@ -170,13 +170,6 @@ pub fn lead(charts: &[Chart]) -> Option<(Relation, View)> {
         .map(|c| (c.relation, c.view))
 }
 
-/// Drafts every page field from the picked claims and the sheet's charts, the page-level fields for the lead chart. A claim
-/// on no chart gets no field. The run drafts through draft_for, with the form its picked recipe draws.
-#[cfg(test)]
-pub fn draft(claims: &[Claim], charts: &[Chart], numbers: Vec<String>) -> Drafts {
-    draft_for(claims, charts, numbers, lead(charts))
-}
-
 /// draft with the page-level fields (title, dek, text, reader fields) drafted for `form`: the form the page's main chart
 /// draws when the run knows it (a leaf page whose bars draw the change between its two ends), else the lead chart's; none,
 /// the ranking's. A page of the first-to-last change gets its change_title.
@@ -1345,4 +1338,11 @@ mod tests {
         let described = ask.schema()["properties"]["text"]["description"].as_str().unwrap().to_string();
         assert!(!described.contains(crate::next_flow::SCOPE_RULE), "{described}");
     }
+}
+
+/// Drafts every page field from the picked claims and the sheet's charts, the page-level fields for the lead chart. A claim
+/// on no chart gets no field. The run drafts through draft_for, with the form its picked recipe draws.
+#[cfg(test)]
+pub fn draft(claims: &[Claim], charts: &[Chart], numbers: Vec<String>) -> Drafts {
+    draft_for(claims, charts, numbers, lead(charts))
 }
