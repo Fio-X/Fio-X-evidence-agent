@@ -114,7 +114,7 @@ pub fn leaf_gaps(root: &Path, dir: &str, manifest: &Value, fetched: &[Fetch]) ->
         return gaps;
     };
     match request(root, &at) {
-        Ok((spec, rows, facts, ledger, refs, hero)) => {
+        Ok((spec, rows, facts, ledger, refs, knobs)) => {
             gaps.extend(reread_gaps(root, &rows, fetched).into_iter().map(|off| format!("leaf page {at}: {off}")));
             let recheck = crate::next_visual::Request::LeafRecheck {
                 recipe: dir,
@@ -122,7 +122,7 @@ pub fn leaf_gaps(root: &Path, dir: &str, manifest: &Value, fetched: &[Fetch]) ->
                 ledger: &ledger,
                 refs: &refs,
                 facts: (&spec, &rows, &facts),
-                hero: &hero,
+                knobs: &knobs,
             };
             match visual_call(&calls, "leaf_recheck", recheck) {
                 Ok(crate::next_visual::Reply::Rechecked(off)) => {
@@ -313,7 +313,7 @@ fn request(root: &Path, at: &str) -> Result<Checked, String> {
         serde_json::from_value(take("facts")?).map_err(field)?,
         serde_json::from_value(take("ledger")?).map_err(field)?,
         serde_json::from_value(take("refs")?).map_err(field)?,
-        take("hero").unwrap_or(Value::Null),
+        take("knobs").unwrap_or(Value::Null),
     ))
 }
 

@@ -8025,7 +8025,7 @@ mod tests {
                     std::fs::write(out, &drawn.html).unwrap();
                 }
                 // the visual group's recheck of the page as drawn (its references' legend lines among it)
-                let recheck = crate::next_visual::Request::LeafRecheck { recipe: "scmp", html: &drawn.html, ledger: leaf.ledger, refs: leaf.refs, facts: leaf.facts, hero: &drawn.hero };
+                let recheck = crate::next_visual::Request::LeafRecheck { recipe: "scmp", html: &drawn.html, ledger: leaf.ledger, refs: leaf.refs, facts: leaf.facts, knobs: &drawn.knobs };
                 match crate::next_flow::visual_call(&calls, "leaf_recheck", recheck) {
                     Ok(crate::next_visual::Reply::Rechecked(off)) => println!("recheck {} finding(s): {off:?}", off.len()),
                     other => println!("recheck: {:?}", other.err()),
