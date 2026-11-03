@@ -52,6 +52,8 @@
  "column.note.vs_prev": "，比倒数第二低",
  "column.note.vs_mean": "比图中平均高",
  "column.note.vs_mean_after": "，比图中平均高",
+ "column.note.vs_next_name": "，高于第二名",
+ "column.note.vs_prev_name": "，低于",
  "column.change_years": "柱：{a} 年至{b}的变化　地图：{b}",
  "column.scope": "{place} {n} 国　",
  "column.accent": "红＝导语所指",

@@ -209,11 +209,13 @@ def segs(v, what):
     if not isinstance(v, list) or not v: raise Refused(f"{what} is not a list of segments")
     out = []
     for s in v:
-        if not isinstance(s, dict) or sum(x in s for x in ("w", "src", "word")) != 1: raise Refused(f"{what} holds a segment that is not one of w, src, word")
+        if not isinstance(s, dict) or sum(x in s for x in ("w", "src", "word", "name")) != 1: raise Refused(f"{what} holds a segment that is not one of w, src, word, name")
         if "w" in s:
             if has_digit(s["w"]): raise Refused(f"{what}: the words {s['w']!r} hold a digit; a number must come as a ledger entry")
             out.append((s["w"], None))
         elif "src" in s: out.append((FX.text(s["src"]), s["src"]))
+        elif "name" in s:  # a place or category the words name: its name row's ledger entry, printed as given
+            src = name_row(s["name"], s.get("kind", "place")); out.append((FX.text(src), src))
         else:
             if s["word"] not in WD.WORDS: raise Refused(f"{what}: the word table has no key {s['word']!r}")
             if "{" in WD.WORDS[s["word"]] or "}" in WD.WORDS[s["word"]]: raise Refused(f"{what}: the word {s['word']!r} holds a {{placeholder}}; a word segment prints as is")

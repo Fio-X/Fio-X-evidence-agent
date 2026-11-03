@@ -4845,7 +4845,16 @@ pub fn expand_items(n: &J, entry: &J, spec: &J, got: &Got, inp: &J) -> Result<Ve
                     let name = inp.g("names").g(&cs).s();
                     let hold = Holding { facts: &fact, fmts: spec.g("facts").g("fmts"), got, page: inp, code: &cs, name, word: &word };
                     let i = first_holding(&list, &hold)?;
-                    J::Obj(list.at(i).obj().iter().filter(|(k, _)| k != "when").cloned().collect())
+                    // a name segment of its words naming a select's one code (the other place a note compares with) names that code
+                    let mut picked = J::Obj(list.at(i).obj().iter().filter(|(k, _)| k != "when").cloned().collect());
+                    if let Some(text) = picked.get("text").cloned() {
+                        let segs = text.arr().iter().map(|s| match s.g("name").s().filter(|r| r.starts_with("select:")) {
+                            Some(r) => resolve_ref(r, got).map(|c| { let mut s = s.clone(); s.set("name", c); s }),
+                            None => Ok(s.clone()),
+                        }).collect::<Result<Vec<_>, String>>()?;
+                        picked.set("text", J::Arr(segs));
+                    }
+                    picked
                 }
                 // a page that marks no code (no accent bound: the leaf's focus is none) marks no item
                 "code_is" => match at_path(n, &st(d.g("ref"))) {
@@ -4920,7 +4929,8 @@ pub const CONDITIONS: [(&str, &[&str]); 8] = [
     ("count_at_least", &["select", "n"]),
     // the page prints the fact, a difference, as a number: no DIFF_MOST_DEC decimals left it more than DIFF_CLOSE off
     // its true difference (next_tree_gen printed_raise's gap_order, J2), else its words say only which is higher
-    ("gap_printable", &["fact"]),
+    // (`is` false: it does not, the note's words then naming the other place with no number)
+    ("gap_printable", &["fact", "is"]),
     // a boolean at a path of the page input (a value that is not true or false is refused)
     ("page_is", &["path"]),
     // a row of the page input's rows at `table`, `time` and every `filter` dimension holds a text value that parses above
@@ -5020,7 +5030,14 @@ fn condition_holds(cond: &J, h: &Holding) -> Result<bool, String> {
             let have = h.got.get(&sid).ok_or_else(|| format!("condition count_at_least: no select {sid}"))?.arr().len();
             Ok(have as f64 >= n)
         }
-        "gap_printable" => Ok(!h.page.g("gap_order").arr().iter().any(|o| o.s() == Some(key("fact").as_str()))),
+        "gap_printable" => {
+            let prints = !h.page.g("gap_order").arr().iter().any(|o| o.s() == Some(key("fact").as_str()));
+            match cond.get("is") {
+                None | Some(J::Bool(true)) => Ok(prints),
+                Some(J::Bool(false)) => Ok(!prints),
+                Some(v) => Err(format!("condition gap_printable: is {} (true or false)", v.repr())),
+            }
+        }
         "page_is" => match at_path(h.page, &st(cond.g("path")))? {
             J::Bool(b) => Ok(*b),
             v => Err(format!("condition page_is {}: {} is not true or false", st(cond.g("path")), v.repr())),

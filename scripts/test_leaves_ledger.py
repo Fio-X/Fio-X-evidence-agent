@@ -469,6 +469,22 @@ class Column(unittest.TestCase):
         m = types.SimpleNamespace(d={"halo": False}, c=c, t0="2015", t1="2024")
         self.assertEqual(prod.ml_legend(m, None), "")  # no halo, so no halo lines on the map
 
+    def test_a_note_names_the_other_place_by_its_name_row_and_never_a_free_name(self):
+        """J2 (owner 11-04): a gap two decimals cannot bring within 5% is not printed; the note names the other place
+        (its words a name segment, printed from its name row's ledger entry) and only which is higher."""
+        import wbkit
+        src = wbkit.name_row("BE", "place")
+        FX.LEDGER = {src: "比利时"}
+        try:
+            got = wbkit.segs([{"word": "column.note.rise_most"}, {"word": "column.note.vs_next_name"}, {"name": "BE", "kind": "place"}], "note")
+            self.assertEqual(got, [(words.word("column.note.rise_most"), None), ("，高于第二名", None), ("比利时", src)])
+            with self.assertRaisesRegex(FX.Refused, "is not in the request's ledger"):
+                wbkit.segs([{"name": "NL", "kind": "place"}], "note")
+            with self.assertRaisesRegex(FX.Refused, "not one of w, src, word, name"):
+                wbkit.segs([{"name": "BE", "w": "x"}], "note")
+        finally:
+            FX.LEDGER = None
+
     def test_the_scmp_frame_reads_its_notes_from_the_notes_node_s_leaf_data(self):
         notes = [{"code": "NO", "a": "no19", "b": "no24", "ch": "no_ch", "share": "no24_share", "f": True},
                  {"code": "DZ", "a": "dz19", "b": "dz24", "ch": None, "share": "dz24_share", "f": False},
