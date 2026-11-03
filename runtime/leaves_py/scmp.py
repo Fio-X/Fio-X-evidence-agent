@@ -284,27 +284,75 @@ def gap_inset(f):
     w = prod.knob(f.h, "inset", "w_in"); g = prod.inset_geom(m, w) if md["chart"] == "flowmap" and prod.knob(f.h, "inset", "show") != "off" else None
     return f'<svg class="ins" width="{w}" height="{g[-1] + 18:.0f}" viewBox="0 -16 {w} {g[-1] + 18:.0f}">{prod.inset_svg(m, g, 0, 0, w)}</svg>' if g else ""
 
+def legend_box(f):
+    """Where the ring's legend (rl_legend, html at the top corner of its side) reaches, estimated from its lines wrapped at
+    its width: the unit, the map's line, the inside years, the gap word, and the inset's caption counted whenever an inset
+    may go to a corner, so a box clear of it stays clear once the caption is added. None when the ring has no legend."""
+    K = lambda k: prod.knob(f.h, "legend", k); md = f.h.get("data", {}); ins = f.h.get("ring", {}).get("inside")
+    lines = [re.sub(r"\{[^}]*\}", "0000", f.h["unit"])] if f.h.get("unit") else []
+    if md.get("legend_word"): lines.append(word(md["legend_word"], y=str(md.get("t1", "0000")), u="0000"))
+    if ins and any(fd and part for fd, part in split_months(f)): lines.append(word("ring.inside", ay=ins["from"], by=ins["to"]))
+    if gap_months(f): lines.append(word("ring.gap"))
+    if not lines: return None
+    lines.append(prod.inset_note(prod.knob(f.h, "inset", "note")))
+    w, sz = K("width"), K("size"); lh = sz * 17 / 12
+    hgt = sum(max(1, math.ceil(prod.tw(re.sub(r"<[^>]+>", "", t), sz) / w)) for t in lines) * lh + 10
+    x0 = f.W - w if K("side") == "right" else 0
+    return (x0, 0, x0 + w, hgt)
+
+def ring_pts(f):
+    """Points on what the ring draws: the calendar track all round, and each month's band from its inner edge out to its
+    depth (and the context total's), sampled so a box over any of it is found."""
+    pts = [f.pt(f.ang(f.n * k / 400), f.RC) for k in range(401)]
+    for s in (f.one, f.tot):
+        for i, t in enumerate(f.ms):
+            if t not in s: continue
+            r1 = f.R1 + f.DEP * s[t] / f.mx
+            for k in range(7):
+                a = f.ang(i + k / 6)
+                pts += [f.pt(a, f.R1 + (r1 - f.R1) * j / 6) for j in range(7)]
+    return pts
+
+def corner_clash(f, box, lgb, pts):
+    """What a corner box runs into: the page's edge, the legend, the ring; None when clear."""
+    x0, y0, x1, y1 = box
+    if x0 < 0 or y0 < 0 or x1 > f.W or y1 > f.H: return "page edge"
+    if lgb and x0 < lgb[2] and lgb[0] < x1 and y0 < lgb[3] and lgb[1] < y1: return "legend"
+    if any(x0 <= x <= x1 and y0 <= y <= y1 for x, y in pts): return "ring"
+    return None
+
 def inset_spot(f):
     """The corner the locator inset takes outside the ring (rl_inset), worked out once: the map below is drawn by then, so
-    f.ret says whether it found room for the inset inside; the ring asks first, to leave the inset clear."""
+    f.ret says whether it found room for the inset inside; the ring asks first, to leave the inset clear. A top corner on
+    the legend's side starts below the legend; a corner box is taken only if it clears the page edge, the legend and the
+    ring (corner_clash). A chosen corner that does not, or no corner that does, leaves the inset out with a mark
+    (f._ins_left, drawn by rl_inset), so the bake refuses the page rather than print it over something."""
     if hasattr(f, "_ins"): return f._ins
-    f._ins = None; md = f.h["data"]
+    f._ins = None; f._ins_left = False; md = f.h["data"]
     if f.h.get("_title") or md["chart"] != "flowmap" or prod.knob(f.h, "inset", "show") == "off": return
     if f.ret.get("inset"): return
     m = prod.MapFrame(f.c, {**md, "round": True, "style": f.h.get("style", {})}, f.S, f.S)
     w = prod.knob(f.h, "inset", "width"); g = prod.inset_geom(m, w)
     if not g: return
     quad = {q: sum(1 for _, a, _ in f.events if (math.sin(a) < 0) == (q[0] == "t") and (math.cos(a) < 0) == (q[1] == "l")) for q in ("br", "bl", "tr", "tl")}
-    K = lambda k: prod.knob(f.h, "inset", k); corner = K("corner") if K("corner") != "auto" else min(quad, key=quad.get)  # the corner with the fewest callouts
-    lg = ("r" if prod.knob(f.h, "legend", "side") == "right" else "l") if f.h.get("unit") or gap_months(f) or f.h.get("data", {}).get("legend_word") else None
-    h = g[-1]; x0 = 8 if corner[1] == "l" else f.W - w - 8; y0 = (K("below_legend") if corner[1] == lg else 22) if corner[0] == "t" else f.H - h - 8
-    f._ins = (m, g, x0, y0, w, corner, (x0, y0 - 18, x0 + w, y0 + h + 14)); return f._ins
+    K = lambda k: prod.knob(f.h, "inset", k)
+    order = [K("corner")] if K("corner") != "auto" else sorted(quad, key=quad.get)  # the corner with the fewest callouts first
+    lgb = legend_box(f); lg = None if lgb is None else ("r" if prod.knob(f.h, "legend", "side") == "right" else "l")
+    h = g[-1]; pts = ring_pts(f)
+    for corner in order:
+        x0 = 8 if corner[1] == "l" else f.W - w - 8
+        y0 = (max(K("below_legend"), lgb[3] + 22) if corner[1] == lg else 22) if corner[0] == "t" else f.H - h - 8
+        box = (x0, y0 - 18, x0 + w, y0 + h + 14)  # names may run 18 above; the caption 14 below
+        drawn = (x0, y0 - 18, x0 + w, y0 + h + (14 if corner[0] == "t" else 0))  # what is drawn: a bottom inset has no caption below
+        if corner_clash(f, drawn, lgb, pts) is None:
+            f._ins = (m, g, x0, y0, w, corner, box); return f._ins
+    f._ins_left = True
 
 def rl_inset(f, occ):
     """Locator inset in the corner its reserve took (rl_inset_reserve); with the title in the gap it stands in the title's
-    column instead (gap_inset), which the page places there."""
+    column instead (gap_inset), which the page places there. No clear corner: the left-out mark, which the bake refuses."""
     if f.h.get("_title"): return gap_inset(f)
-    if not inset_spot(f): return ""
+    if not inset_spot(f): return f'<g data-left="{word("inset.left")}"></g>' if getattr(f, "_ins_left", False) else ""
     m, g, x0, y0, w, corner, box = f._ins; occ.add(box, "inset")
     # with a ledger the caption is the legend's line (rl_legend): a word alone in the panel has no src for layer 1
     return prod.inset_svg(m, g, x0, y0, w, note_below=corner[0] == "t", caption=FX.LEDGER is None)

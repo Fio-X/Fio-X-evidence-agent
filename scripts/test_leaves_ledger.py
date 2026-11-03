@@ -486,6 +486,44 @@ class Column(unittest.TestCase):
         finally:
             prod.inset_geom = geom
 
+    def test_a_ring_corner_inset_is_taken_only_clear_of_the_legend_the_ring_and_the_page_edge(self):
+        """Dropping the map's left-out mark is safe only because the ring checks its corner: a box over the legend (its
+        map line wrapped long), the band or past the page edge is refused, a chosen corner with no clear room leaves the
+        inset out with the mark the bake refuses, and auto takes a clear corner."""
+        import types
+        scmp = run.scmp
+        mf, geom = prod.MapFrame, prod.inset_geom
+        ms = [f"{y}-{m:02d}" for y in (2019, 2020) for m in range(1, 13)]
+        def frame(style):
+            f = object.__new__(scmp.RingFrame)
+            f.W, f.R0, f.DEP, f.GAP0, f.GD = 1140, 300, 58, 24, -90
+            f.ms, f.n = ms, len(ms); f.one = {t: 0.5 for t in ms if t != "2020-06"}; f.tot = {}; f.mx = 1
+            f.cx, f.cy = 570, 408; f.RC, f.R1, f.RO = 304, 330, 388; f.H = 836; f.S = 600; f.events = []; f.ret = {}; f.c = None
+            f.h = {"data": {"chart": "flowmap", "legend_word": "ring.map.t1", "t1": "2024"}, "unit": "百万立方米",
+                   "ring": {"inside": {"from": "2019", "to": "2019"}}, "style": style}
+            return f
+        long_legend = {"legend": {"width": 160, "size": 15}}
+        try:
+            prod.MapFrame = lambda c, d, w, h: types.SimpleNamespace(d=d)
+            prod.inset_geom = lambda m, w: ("far", (0, 0, 1, 1), 1, 1, 150)
+            f = frame(long_legend); lgb = scmp.legend_box(f); pts = scmp.ring_pts(f)
+            self.assertGreater(lgb[3], 130 - 18)  # the long map line pushes the legend past where the inset used to start
+            # must fail: the old top-right spot (below_legend 130) runs into the legend's map line
+            self.assertEqual(scmp.corner_clash(f, (f.W - 258, 112, f.W - 8, 130 + 150 + 14), lgb, pts), "legend")
+            self.assertEqual(scmp.corner_clash(f, (f.W - 258, 700, f.W - 8, 900), None, []), "page edge")
+            self.assertEqual(scmp.corner_clash(f, (f.W - 258, 300, f.W - 8, 450), None, pts), "ring")
+            # top-right chosen: below the long legend it meets the band, so the inset is left out with the mark
+            f = frame({**long_legend, "inset": {"corner": "tr"}})
+            self.assertIsNone(scmp.inset_spot(f))
+            self.assertEqual(scmp.rl_inset(f, prod.Occ()), f'<g data-left="{words.word("inset.left")}"></g>')
+            # auto: a corner clear of all three
+            f = frame(long_legend); got = scmp.inset_spot(f)
+            self.assertIsNotNone(got)
+            y0, corner, box = got[3], got[5], got[6]
+            self.assertIsNone(scmp.corner_clash(f, (box[0], box[1], box[2], y0 + 150 + (14 if corner[0] == "t" else 0)), lgb, pts))
+        finally:
+            prod.MapFrame, prod.inset_geom = mf, geom
+
     def test_a_note_names_the_other_place_by_its_name_row_and_never_a_free_name(self):
         """J2 (owner 11-04): a gap two decimals cannot bring within 5% is not printed; the note names the other place
         (its words a name segment, printed from its name row's ledger entry) and only which is higher."""
