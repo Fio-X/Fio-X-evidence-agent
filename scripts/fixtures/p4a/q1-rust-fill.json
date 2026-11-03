@@ -51,10 +51,10 @@
   ],
   "finding": {
     "dek": "{lead1.t}，{name.SE}最高，为{hi}，比最低的{name.BE}高{gap}",
-    "scoped": "{lead1.t}，所选各方中，{name.SE}居首，为{hi}，比{name.BE}高{gap}"
+    "scoped": "{lead1.t}，{name.SE}居首，为{hi}，比{name.BE}高{gap}"
   },
   "headline": {
-    "scoped": "所选各方中{name.SE}居首，是{name.BE}的{times}",
+    "scoped": "{name.SE}居首，是{name.BE}的{times}",
     "title": "{name.SE}最高，是最低者{name.BE}的{times}"
   },
   "knobs": {

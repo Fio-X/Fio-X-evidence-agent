@@ -195,7 +195,7 @@ pub const DEK_FINDINGS: [(Finding, &str, &str); 5] = [
     (Finding::Fall, "{y0}至{y1}，{name}降幅最大，减少{value}", "{y0}至{y1}，{name}{set}降幅最大，减少{value}"),
     (Finding::Level, "{y1}，{name}最高，为{value}，比最低的{other}高{gap}", "{y1}，{name}{set}居首，为{value}，比{other}高{gap}"),
     (Finding::Share, "{y1}，{name}最多，占{value}", "{y1}，{name}{set}居首，占{value}"),
-    (Finding::Part, "{y1}，{name}占比最高，为{value}", "{y1}，{name}{set}占比居首，为{value}"),
+    (Finding::Part, "{y1}，{name}占比最高，为{value}", "{y1}，{set}，{name}占比居首，为{value}"),
 ];
 
 /// The page title's conclusion per Finding, unscoped then scoped (next_run finding_of fills it as it fills the dek's, and the
@@ -209,7 +209,7 @@ pub const HEADLINES: [(Finding, &str, &str); 5] = [
     (Finding::Fall, "{name}降幅最大", "{name}{set}降幅最大"),
     (Finding::Level, "{name}最高，是最低者{other}的{times}", "{name}{set}居首，是{other}的{times}"),
     (Finding::Share, "{name}最多，占{value}", "{name}{set}居首，占{value}"),
-    (Finding::Part, "{name}占比最高，达{value}", "{name}{set}占比居首，达{value}"),
+    (Finding::Part, "{name}占比最高，达{value}", "{set}{name}占比居首，达{value}"),
 ];
 
 /// The chart forms the page renderer draws a card for (next_render Card): the page's title, dek, text and reader fields are

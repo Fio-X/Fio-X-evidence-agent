@@ -1339,7 +1339,8 @@ mod tests {
                 assert!(numbered || COMPARES.iter().any(|w| said.contains(w)), "{said}: no comparison");
                 assert!(VERBS.iter().any(|w| said.contains(w)), "{said}: no verb");
             }
-            assert!(scoped.contains("{name}{set}"), "{scoped}: the set right after the name, no doubled 中");
+            // the set right after the name, or (a composition's part: the name is a place and its part) before it
+            assert!(scoped.contains("{name}{set}") || scoped.starts_with("{set}{name}"), "{scoped}: no doubled 中");
             assert!(crate::next_flow::ranking_word(&fill(scoped).replace(SET, "")).is_none(), "{scoped}");
         }
     }

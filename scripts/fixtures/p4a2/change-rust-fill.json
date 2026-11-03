@@ -49,10 +49,10 @@
   },
   "finding": {
     "dek": "{lead0.t}至{lead1.t}，{name.SE}增幅最大，增加{lead}",
-    "scoped": "{lead0.t}至{lead1.t}，所选各方中，{name.SE}增幅最大，增加{lead}"
+    "scoped": "{lead0.t}至{lead1.t}，{name.SE}增幅最大，增加{lead}"
   },
   "headline": {
-    "scoped": "所选各方中{name.SE}增幅最大",
+    "scoped": "{name.SE}增幅最大",
     "title": "{name.SE}增幅最大"
   },
   "knobs": {

@@ -1925,7 +1925,7 @@ fn title_and_kicker(fill: Option<&Value>, scoped: bool, label: &str, measure: &s
 }
 
 /// A composition's scope on its text step: the cut its fill states under the picture (the stacked100 declaration (node-bindings.json)'s cut line and the
-/// line of the places left out), so a finding over its bars is said in its scoped wording (the set words 在图中各国中), never as the
+/// line of the places left out), so a finding over its bars is said in its scoped wording (the set words 图中各国中, before the place and its part), never as the
 /// highest of every place. Only whether a page has a scope is read (next_page Drafts::with_scopes); no narrow record
 /// stands behind it, the cut is the fill's.
 const COMPOSITION_SCOPE: &str = "图中各国";
@@ -7287,9 +7287,9 @@ mod tests {
         assert_eq!(fill[HEADLINE]["title"], json!("{name.IT}{name.fossil}占比最高，达{comp_top}"));
         assert_eq!(fill["finding"]["dek"], json!("{lead1.t}，{name.IT}{name.fossil}占比最高，为{comp_top}"));
         // a cut composition (places left out) names the set it ranks in: the registry's composition set words
-        assert_eq!(fill["finding"]["scoped"], json!("{lead1.t}，{name.IT}{name.fossil}在图中各国中占比居首，为{comp_top}"));
-        assert_eq!(fill["finding"]["set"], json!("在图中各国中"));
-        assert_eq!(fill[HEADLINE]["scoped"], json!("{name.IT}{name.fossil}在图中各国中占比居首，达{comp_top}"));
+        assert_eq!(fill["finding"]["scoped"], json!("{lead1.t}，图中各国中，{name.IT}{name.fossil}占比居首，为{comp_top}"));
+        assert_eq!(fill["finding"]["set"], json!("图中各国中"));
+        assert_eq!(fill[HEADLINE]["scoped"], json!("图中各国中{name.IT}{name.fossil}占比居首，达{comp_top}"));
         assert_eq!(spec["facts"][COMPOSITION_TOP], json!({"op": "share", "a": "sum.fossil.IT", "b": "total.IT"}));
         assert_eq!(spec["facts"]["lead1"]["filter"], json!({"geo": "IT", "siec": "TOTAL"}));
         let frame = crate::shape_registry::FRAMES.iter().find(|(r, v, _)| (*r, *v) == (Relation::Composition, View::Slice)).unwrap().2;
@@ -7328,7 +7328,7 @@ mod tests {
         };
         let titles = vec!["发电总量".to_string()];
         let finding = json!({"dek": "{lead1.t}，{name.IT}{name.fossil}占比最高，为{comp_top}",
-            "scoped": "{lead1.t}，{name.IT}{name.fossil}在图中各国中占比居首，为{comp_top}", "set": "在图中各国中"});
+            "scoped": "{lead1.t}，图中各国中，{name.IT}{name.fossil}占比居首，为{comp_top}", "set": "图中各国中"});
         let fill = json!({"composition": {"bars": ["DE", "IT"], "dropped": [], "others": ["MT"], "left_out": []}, "finding": finding});
         let drafts = text_drafts(&page, page_lead(Some(&fill), &page.charts), &titles, Some(&fill));
         let said: Vec<&str> = drafts.fields.iter().map(|(_, t)| t.as_str()).chain(drafts.slots.iter().map(|(_, t)| t.as_str())).collect();
@@ -7336,7 +7336,7 @@ mod tests {
         let ranking = crate::shape_registry::FRAMES.iter().find(|(r, v, _)| (*r, *v) == (Relation::Ranking, View::Slice)).unwrap().2;
         assert!(!all.contains("发电总量") && !all.contains("first.") && !ranking.iter().any(|w| all.contains(w)), "{all}");
         assert!(drafts.slots.is_empty(), "no measure of the first fetch to name");
-        assert!(drafts.has_scope && all.contains("{name.IT}{name.fossil}在图中各国中占比居首，为{comp_top}"), "{all}");
+        assert!(drafts.has_scope && all.contains("图中各国中，{name.IT}{name.fossil}占比居首，为{comp_top}"), "{all}");
         let composition = crate::shape_registry::FRAMES.iter().find(|(r, v, _)| (*r, *v) == (Relation::Composition, View::Slice)).unwrap().2;
         assert!(composition.iter().any(|w| all.contains(w)), "{all}");
         // every bar drawn, none left out: unscoped
