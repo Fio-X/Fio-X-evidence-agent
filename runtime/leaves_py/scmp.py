@@ -290,42 +290,59 @@ def legend_box(f):
     may go to a corner, so a box clear of it stays clear once the caption is added. None when the ring has no legend."""
     K = lambda k: prod.knob(f.h, "legend", k); md = f.h.get("data", {}); ins = f.h.get("ring", {}).get("inside")
     lines = [re.sub(r"\{[^}]*\}", "0000", f.h["unit"])] if f.h.get("unit") else []
-    if md.get("legend_word"): lines.append(word(md["legend_word"], y=str(md.get("t1", "0000")), u="0000"))
+    if md.get("legend_word"):  # measured as printed: the map's later year and the label fact's own unit (rl_legend)
+        u = FX.unit(f.c.spec, f.c.spec["facts"][md["label_fact"]]).strip() if md.get("label_fact") else ""
+        lines.append(word(md["legend_word"], y=str(md.get("t1", "")), u=u))
     if ins and any(fd and part for fd, part in split_months(f)): lines.append(word("ring.inside", ay=ins["from"], by=ins["to"]))
     if gap_months(f): lines.append(word("ring.gap"))
     if not lines: return None
     lines.append(prod.inset_note(prod.knob(f.h, "inset", "note")))
-    w, sz = K("width"), K("size"); lh = sz * 17 / 12
+    w, sz = K("width"), K("size"); lh = max(17, sz * 17 / 12)  # the page sets .hu at 12px/17px: a smaller size keeps 17px lines
     hgt = sum(max(1, math.ceil(prod.tw(re.sub(r"<[^>]+>", "", t), sz) / w)) for t in lines) * lh + 10
     x0 = f.W - w if K("side") == "right" else 0
     return (x0, 0, x0 + w, hgt)
 
 def ring_pts(f):
-    """Points on what the ring draws: the calendar track all round, and each month's band from its inner edge out to its
-    depth (and the context total's), sampled so a box over any of it is found."""
-    pts = [f.pt(f.ang(f.n * k / 400), f.RC) for k in range(401)]
+    """Points on what the ring draws, each tagged: the calendar track all round and each month's band from its inner edge
+    out to its depth (and the context total's) as "ring"; each event's tick and dotted lead out to RO + 26 (rl_events) as
+    "leader"; each value mark outside the band, from r + 9 out along its text (rl_ring's marks), as "mark"."""
+    pts = [(*f.pt(f.ang(f.n * k / 400), f.RC), "ring") for k in range(401)]
     for s in (f.one, f.tot):
         for i, t in enumerate(f.ms):
             if t not in s: continue
             r1 = f.R1 + f.DEP * s[t] / f.mx
             for k in range(7):
                 a = f.ang(i + k / 6)
-                pts += [f.pt(a, f.R1 + (r1 - f.R1) * j / 6) for j in range(7)]
+                pts += [(*f.pt(a, f.R1 + (r1 - f.R1) * j / 6), "ring") for j in range(7)]
+    for _, a, _ in f.events:
+        r0, r1 = f.RC - 2, f.RO + 26
+        pts += [(*f.pt(a, r0 + (r1 - r0) * j / 40), "leader") for j in range(41)]
+    K = lambda k: prod.knob(f.h, "ring", k)
+    for mk in f.h.get("ring", {}).get("marks", []):
+        fa = f.c.F[mk["key"]]; a = f.t2a(fa["t"] + "-15") if fa.get("t") else None
+        if a is None: continue
+        r = f.R1 + f.DEP * fa["v"] / f.mx; mw, mh = prod.tw(FX.fmt(f.c.spec, fa, bare=True), K("mark_size")), K("mark_size") * 1.2
+        for j in range(21):
+            x, y = f.pt(a, r + (9 + mw) * j / 20)
+            pts += [(x + d * mh / 2 * -math.sin(a), y + d * mh / 2 * math.cos(a), "mark") for d in (-1, 0, 1)]
     return pts
 
+def corner_callouts(f, corner):
+    """How many events hang in a corner's quarter: their callouts (rl_callouts, stacked in the browser) stand there."""
+    return sum(1 for _, a, _ in f.events if (math.sin(a) < 0) == (corner[0] == "t") and (math.cos(a) < 0) == (corner[1] == "l"))
+
 def corner_clash(f, box, lgb, pts):
-    """What a corner box runs into: the page's edge, the legend, the ring; None when clear."""
+    """What a corner box runs into: the page's edge, the legend, or a tagged point of ring_pts (ring, leader, mark); None when clear."""
     x0, y0, x1, y1 = box
     if x0 < 0 or y0 < 0 or x1 > f.W or y1 > f.H: return "page edge"
     if lgb and x0 < lgb[2] and lgb[0] < x1 and y0 < lgb[3] and lgb[1] < y1: return "legend"
-    if any(x0 <= x <= x1 and y0 <= y <= y1 for x, y in pts): return "ring"
-    return None
+    return next((tag for x, y, tag in pts if x0 <= x <= x1 and y0 <= y <= y1), None)
 
 def inset_spot(f):
     """The corner the locator inset takes outside the ring (rl_inset), worked out once: the map below is drawn by then, so
     f.ret says whether it found room for the inset inside; the ring asks first, to leave the inset clear. A top corner on
-    the legend's side starts below the legend; a corner box is taken only if it clears the page edge, the legend and the
-    ring (corner_clash). A chosen corner that does not, or no corner that does, leaves the inset out with a mark
+    the legend's side starts below the legend; a corner box is taken only if its quarter holds no callout and it clears the
+    page edge, the legend, the ring, the event leads and the value marks (corner_clash). A chosen corner that does not, or no corner that does, leaves the inset out with a mark
     (f._ins_left, drawn by rl_inset), so the bake refuses the page rather than print it over something."""
     if hasattr(f, "_ins"): return f._ins
     f._ins = None; f._ins_left = False; md = f.h["data"]
@@ -334,7 +351,7 @@ def inset_spot(f):
     m = prod.MapFrame(f.c, {**md, "round": True, "style": f.h.get("style", {})}, f.S, f.S)
     w = prod.knob(f.h, "inset", "width"); g = prod.inset_geom(m, w)
     if not g: return
-    quad = {q: sum(1 for _, a, _ in f.events if (math.sin(a) < 0) == (q[0] == "t") and (math.cos(a) < 0) == (q[1] == "l")) for q in ("br", "bl", "tr", "tl")}
+    quad = {q: corner_callouts(f, q) for q in ("br", "bl", "tr", "tl")}
     K = lambda k: prod.knob(f.h, "inset", k)
     order = [K("corner")] if K("corner") != "auto" else sorted(quad, key=quad.get)  # the corner with the fewest callouts first
     lgb = legend_box(f); lg = None if lgb is None else ("r" if prod.knob(f.h, "legend", "side") == "right" else "l")
@@ -344,7 +361,7 @@ def inset_spot(f):
         y0 = (max(K("below_legend"), lgb[3] + 22) if corner[1] == lg else 22) if corner[0] == "t" else f.H - h - 8
         box = (x0, y0 - 18, x0 + w, y0 + h + 14)  # names may run 18 above; the caption 14 below
         drawn = (x0, y0 - 18, x0 + w, y0 + h + (14 if corner[0] == "t" else 0))  # what is drawn: a bottom inset has no caption below
-        if corner_clash(f, drawn, lgb, pts) is None:
+        if quad[corner] == 0 and corner_clash(f, drawn, lgb, pts) is None:  # a corner holding callouts is not taken
             f._ins = (m, g, x0, y0, w, corner, box); return f._ins
     f._ins_left = True
 

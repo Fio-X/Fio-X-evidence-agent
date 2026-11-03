@@ -524,6 +524,51 @@ class Column(unittest.TestCase):
         finally:
             prod.MapFrame, prod.inset_geom = mf, geom
 
+    def test_a_ring_corner_measures_the_legend_as_printed_and_keeps_off_leads_marks_and_callouts(self):
+        """Review of the corner check: the legend's lines are 17px even at a smaller size, the map line is measured with the
+        label fact's own unit, and a corner box over an event's lead or a value mark, or a corner holding callouts, is refused."""
+        import math
+        import types
+        scmp = run.scmp
+        mf, geom = prod.MapFrame, prod.inset_geom
+        ms = [f"{y}-{m:02d}" for y in (2019, 2020) for m in range(1, 13)]
+        def frame(style, suffix="", events=(), marks=()):
+            f = object.__new__(scmp.RingFrame)
+            f.W, f.R0, f.DEP, f.GAP0, f.GD = 1140, 300, 58, 24, -90
+            f.ms, f.n = ms, len(ms); f.one = {t: 0.5 for t in ms}; f.tot = {}; f.mx = 1
+            f.cx, f.cy = 570, 408; f.RC, f.R1, f.RO = 304, 330, 388; f.H = 836; f.S = 600; f.ret = {}
+            f.events = [({}, a, {}) for a in events]
+            f.c = types.SimpleNamespace(spec={"fmts": {"bcm": {"suffix": suffix}}, "facts": {"lab": {"fmt": "bcm"}}},
+                                        F={"m1": {"t": "2019-03", "v": 0.5, "fmt": "n"}})
+            f.h = {"data": {"chart": "flowmap", "legend_word": "ring.map.t1", "t1": "2024", "label_fact": "lab"},
+                   "ring": {"marks": [{"key": k} for k in marks]}, "style": style}
+            return f
+        try:
+            prod.MapFrame = lambda c, d, w, h: types.SimpleNamespace(d=d)
+            prod.inset_geom = lambda m, w: ("far", (0, 0, 1, 1), 1, 1, 80)
+            # font size 9: the page keeps 17px lines (map line and caption, one line each), not 9 * 17 / 12
+            self.assertEqual(scmp.legend_box(frame({"legend": {"size": 9}}, "%"))[3], 2 * 17 + 10)
+            # a 5-character unit wraps the map line at the default width; "%" does not
+            self.assertEqual(scmp.legend_box(frame({}, "百万立方米"))[3] - scmp.legend_box(frame({}, "%"))[3], 17)
+            # an event's dotted lead runs into a top-right box; a value mark outside the band likewise
+            f = frame({}, events=[math.radians(-30)])
+            self.assertEqual(scmp.corner_clash(f, (900, 180, 1132, 230), None, scmp.ring_pts(f)), "leader")
+            self.assertIsNone(scmp.corner_clash(frame({}), (900, 180, 1132, 230), None, scmp.ring_pts(frame({}))))
+            f = frame({}, marks=["m1"]); a = f.t2a("2019-03-15"); x, y = f.pt(a, 330 + 29 + 12)
+            self.assertEqual(scmp.corner_clash(f, (x - 3, y - 3, x + 3, y + 3), None, scmp.ring_pts(f)), "mark")
+            self.assertIsNone(scmp.corner_clash(frame({}), (x - 3, y - 3, x + 3, y + 3), None, scmp.ring_pts(frame({}))))
+            # top right is clear with no event there; an event in that quarter (its lead below the box) puts a callout
+            # there, so the chosen corner is refused with the mark and auto goes to a corner with none
+            self.assertIsNotNone(scmp.inset_spot(frame({"inset": {"corner": "tr"}})))
+            f = frame({"inset": {"corner": "tr"}}, events=[math.radians(-10)])
+            self.assertIsNone(scmp.corner_clash(f, (882, 112, 1132, 224), scmp.legend_box(f), scmp.ring_pts(f)))
+            self.assertIsNone(scmp.inset_spot(f))
+            self.assertEqual(scmp.rl_inset(f, prod.Occ()), f'<g data-left="{words.word("inset.left")}"></g>')
+            got = scmp.inset_spot(frame({}, events=[math.radians(-10)]))
+            self.assertIsNotNone(got); self.assertNotEqual(got[5], "tr")
+        finally:
+            prod.MapFrame, prod.inset_geom = mf, geom
+
     def test_a_note_names_the_other_place_by_its_name_row_and_never_a_free_name(self):
         """J2 (owner 11-04): a gap two decimals cannot bring within 5% is not printed; the note names the other place
         (its words a name segment, printed from its name row's ledger entry) and only which is higher."""
