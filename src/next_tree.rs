@@ -1435,6 +1435,70 @@ fn registry_list(registry: &str) -> Option<Result<J, String>> {
     }
 }
 
+/// The roles of a recipe's layers (11-03, the quantity a page states). Its main chart (node-bindings.json main_chart)
+/// draws the headline's quantity and is never registered wholly reference. A reference (a node's roles.<recipe>: role
+/// reference for the whole layer, or parts.<part>.role reference for one part of it, as the map's earlier-year halo) may
+/// draw another quantity than the headline's; its legend line is the registry's word (legend.word), which every published
+/// page of the recipe must print. Refused: a recipe with no main chart, a main chart that is no layer of the recipe or is
+/// registered wholly reference, a role other than reference, a reference with no legend word or one the word table lacks,
+/// and a recipe whose every layer is wholly reference. (main chart, [(layer or layer.part, its legend word)])
+pub(crate) fn recipe_roles(reg: &J, recipe: &str) -> Result<(String, Vec<(String, String)>), String> {
+    let layers: Vec<String> = reg.g("recipes").g(recipe).arr().iter().map(st).collect();
+    if layers.is_empty() {
+        return Err(format!("recipe {recipe}: the registry lists no layers"));
+    }
+    let main = reg.g("main_chart").g(recipe).s().ok_or_else(|| format!("recipe {recipe}: the registry names no main chart (main_chart)"))?.to_string();
+    if !layers.contains(&main) {
+        return Err(format!("recipe {recipe}: its main chart {main} is no layer of it"));
+    }
+    let entry = |what: &str, role: &J| -> Result<(String, String), String> {
+        if role.g("role").s() != Some("reference") {
+            return Err(format!("recipe {recipe}: {what} has role {}, and reference is the only role", role.g("role").repr()));
+        }
+        let word = role.g("legend").g("word").s().filter(|w| !w.is_empty()).ok_or_else(|| format!("recipe {recipe}: reference {what} names no legend word"))?;
+        if crate::next_ledger::word_table().get(word).and_then(serde_json::Value::as_str).is_none() {
+            return Err(format!("recipe {recipe}: reference {what}'s legend word {word} is not in the word table"));
+        }
+        Ok((what.to_string(), word.to_string()))
+    };
+    let (mut refs, mut whole) = (Vec::new(), 0);
+    for layer in &layers {
+        let Some(roles) = reg.g("nodes").g(layer).g("roles").get(recipe) else { continue };
+        if roles.has("role") {
+            if *layer == main {
+                return Err(format!("recipe {recipe}: its main chart {main} is registered wholly reference; the main chart draws the headline's quantity"));
+            }
+            refs.push(entry(layer, roles)?);
+            whole += 1;
+        }
+        for (part, role) in roles.g("parts").obj() {
+            refs.push(entry(&format!("{layer}.{part}"), role)?);
+        }
+    }
+    if whole == layers.len() {
+        return Err(format!("recipe {recipe}: every layer is wholly reference; one at least draws the headline's quantity"));
+    }
+    Ok((main, refs))
+}
+
+/// What a published page of `recipe` lacks of its references' legend lines: each reference (recipe_roles) must print its
+/// legend word as a ledger entry (data-src="word:<word>") on the page. A registry the roles cannot be read from is one gap;
+/// one that names no main chart at all is a prototype fixture's (as registry_lint reads it: the registry in force names one
+/// per recipe, a test holds it) and asks for no line.
+pub(crate) fn reference_legend_gaps(reg: &J, recipe: &str, html: &str) -> Vec<String> {
+    if !reg.has("main_chart") {
+        return Vec::new();
+    }
+    match recipe_roles(reg, recipe) {
+        Err(e) => vec![format!("roles: {e}")],
+        Ok((_, refs)) => refs
+            .into_iter()
+            .filter(|(_, word)| !html.contains(&format!("data-src=\"word:{word}\"")))
+            .map(|(what, word)| format!("roles: {what} is drawn as a reference and the page prints no legend line word:{word}"))
+            .collect(),
+    }
+}
+
 /// The core's own reading of a flow's registry lists (registry_list), for the tests that hold it to the flow's.
 #[cfg(test)]
 pub(crate) fn registry_list_for_test(registry: &str) -> Option<Result<J, String>> {
@@ -2284,6 +2348,13 @@ fn shared_lint(page: &J, got: &Got, errs: &mut Vec<String>) {
 
 /// Every node of the page is registered and carries its registered bound selects and stop lines (validate.registry_lint).
 fn registry_lint(page: &J, reg: &J, errs: &mut Vec<String>) {
+    // the page's recipe: its main chart and its references as the registry gives them (recipe_roles); a registry that
+    // names no main chart at all is a prototype fixture's (the one in force names one per recipe, a test holds it)
+    if let (Some(recipe), true) = (page.g("recipe").s(), reg.has("main_chart")) {
+        if let Err(e) = recipe_roles(reg, recipe) {
+            errs.push(format!("registry: {e}"));
+        }
+    }
     let items = page.g("selects").g("items").arr();
     let selects: BTreeMap<String, &J> = items.iter().map(|s| (st(s.g("id")), s)).collect();
     let checks = page.g("checks").g("items").arr();
@@ -3338,6 +3409,12 @@ pub fn load_registry(overlay: &J) -> J {
     // the pick rules the page tree generator writes as selects (next_tree_gen): data the core itself does not read
     if let Some(picks) = overlay.get("picks") {
         reg.set("picks", picks.clone());
+    }
+    // each recipe's layers and main chart, which the roles' checks read (recipe_roles)
+    for k in ["recipes", "main_chart"] {
+        if let Some(v) = overlay.get(k) {
+            reg.set(k, v.clone());
+        }
     }
     reg
 }
@@ -6579,6 +6656,69 @@ mod tests {
 
     fn fixtures() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/fixtures/p3b")
+    }
+
+    /// 11-03: every recipe of the registry in force names its main chart, a layer of it never registered wholly reference;
+    /// the four the leaf's run.py MAIN names agree with it (column, change, flow, composition); scmp takes the map (the
+    /// flowmap of the headline's year, the strip under it the month profile) and ring the ring (it wraps the page, the
+    /// map inside it is the locator of each source's volume; owner 11-03 15:0x).
+    #[test]
+    fn every_recipe_names_its_main_chart_and_the_leafs_main_agrees() {
+        let (reg, _) = registry_in_force();
+        let recipes: Vec<String> = reg.g("recipes").obj().iter().map(|(k, _)| k.clone()).collect();
+        let mut mains = Vec::new();
+        for r in &recipes {
+            let (main, _) = recipe_roles(&reg, r).unwrap_or_else(|e| panic!("{e}"));
+            mains.push(format!("{r}={main}"));
+        }
+        assert_eq!(mains, ["column=bars", "change=bars", "composition=stacked100", "scmp=map", "ring=ring", "flow=sankey"]);
+        let run_py = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime/leaves_py/run.py")).unwrap();
+        let line = run_py.lines().find(|l| l.starts_with("MAIN = dict(")).expect("run.py MAIN");
+        let pairs: Vec<&str> = line.trim_start_matches("MAIN = dict(").trim_end_matches(')').split(", ").collect();
+        assert_eq!(pairs.len(), 4, "{line}");
+        for pair in pairs {
+            let (r, n) = pair.split_once('=').unwrap();
+            assert_eq!(reg.g("main_chart").g(r).s(), Some(n.trim_matches('"')), "run.py MAIN {pair}");
+        }
+    }
+
+    /// 11-03: the roles' rules refuse each way a registry breaks them (no main chart, a main chart of no layer, a main chart
+    /// wholly reference, a role that is no reference, a reference with no legend word or a word the table lacks), take a
+    /// part of the main chart as reference (the map's earlier-year halo), and a published page lacks the legend line of
+    /// every reference it does not print.
+    #[test]
+    fn a_reference_layer_names_its_legend_and_the_main_chart_is_never_wholly_one() {
+        let reg = |main: &str, roles: &str| {
+            let map = r#"{"roles": {"ring": {"parts": {"halo": {"role": "reference", "legend": {"word": "halo.t0"}}}}}}"#;
+            parse(&format!(r#"{{"recipes": {{"ring": ["map", "ring"]}}, "main_chart": {{"ring": {main}}}, "nodes": {{"map": {map}, "ring": {{"roles": {{"ring": {roles}}}}}}}}}"#)).unwrap()
+        };
+        let strip = r#"{"role": "reference", "legend": {"word": "scmp.strip.peak"}}"#;
+        let good = reg(r#""map""#, strip);
+        let (main, refs) = recipe_roles(&good, "ring").unwrap();
+        assert_eq!(main, "map");
+        assert_eq!(refs, [("map.halo".to_string(), "halo.t0".to_string()), ("ring".to_string(), "scmp.strip.peak".to_string())]);
+        for (what, bad, says) in [
+            ("no main chart", reg("null", strip), "names no main chart"),
+            ("a main chart of no layer", reg(r#""bars""#, strip), "is no layer of it"),
+            ("the main chart wholly reference", reg(r#""ring""#, strip), "wholly reference"),
+            ("a role that is no reference", reg(r#""map""#, r#"{"role": "aux", "legend": {"word": "scmp.strip.peak"}}"#), "the only role"),
+            ("no legend word", reg(r#""map""#, r#"{"role": "reference"}"#), "names no legend word"),
+            ("a word the table lacks", reg(r#""map""#, r#"{"role": "reference", "legend": {"word": "no.such.word"}}"#), "not in the word table"),
+        ] {
+            let e = recipe_roles(&bad, "ring").expect_err(what);
+            assert!(e.contains(says), "{what}: {e}");
+            assert_eq!(reference_legend_gaps(&bad, "ring", "").len(), 1, "{what}: one gap");
+        }
+        // the page: each reference's legend line printed as a ledger entry, else a gap that names it
+        let both = r#"<tspan data-src="word:halo.t0">a</tspan><tspan data-src="word:scmp.strip.peak">b</tspan>"#;
+        assert!(reference_legend_gaps(&good, "ring", both).is_empty());
+        let gaps = reference_legend_gaps(&good, "ring", r#"<tspan data-src="word:halo.t0">a</tspan>"#);
+        assert_eq!(gaps.len(), 1);
+        assert!(gaps[0].contains("ring is drawn as a reference") && gaps[0].contains("word:scmp.strip.peak"), "{}", gaps[0]);
+        assert_eq!(reference_legend_gaps(&good, "ring", "").len(), 2);
+        // a page of the registry in force asks for no line while no reference is registered (steps 2 and 3 register them)
+        let (in_force, _) = registry_in_force();
+        assert!(reference_legend_gaps(&in_force, "scmp", "").is_empty() && reference_legend_gaps(&in_force, "ring", "").is_empty());
     }
 
     /// 11-03: a printed difference is the difference of its two values as the page prints them, over three shapes: a

@@ -634,6 +634,8 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
                 off.push(format!("page: {recipe} is no recipe of the leaf registry"));
             }
             off.extend(crate::next_leaf::check_leaf_page(html, ledger, refs, spec, rows, facts));
+            // each reference layer or part the registry gives the recipe prints its legend line (next_tree recipe_roles)
+            off.extend(crate::next_tree::reference_legend_gaps(&crate::next_tree::registry_in_force().0, recipe, html));
             for (src, text) in ledger.iter().filter(|(s, _)| s.starts_with("series:")) {
                 match rows.iter().find(|r| r.src == *src) {
                     Some(row) if crate::next_ledger::prints(text, row.value) => {}
