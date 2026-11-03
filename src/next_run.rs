@@ -5357,9 +5357,16 @@ mod tests {
         let plain = fill(None);
         assert!(plain[HEADLINE].is_object() && plain.get(FELL_BACK).is_none(), "{}", plain[HEADLINE]);
         assert_eq!(headline_fell_back(Ok(&plain), false), None);
+        // the ring recipe now declares its set's count (the map's drawn, 11-03): a narrowed ring page keeps its headline,
+        // its set named with that count, and records no fall back
         let narrowed = fill(Some(json!({"words": "在本指标最高的{n}项中", "members": 3})));
-        assert!(narrowed.get(HEADLINE).is_none() && narrowed.get("finding").is_none());
-        assert_eq!(headline_fell_back(Ok(&narrowed), true).as_deref(), Some("a narrowed page whose recipe declares no count of its set"));
+        assert!(narrowed[HEADLINE].is_object() && narrowed.get(FELL_BACK).is_none(), "{}", narrowed[HEADLINE]);
+        assert_eq!(narrowed["finding"]["set"], json!("在本指标最高的{drawn}项中"));
+        assert_eq!(headline_fell_back(Ok(&narrowed), true), None);
+        // a set the map does not draw (one place more than it compares): no finding, and the fall back says why
+        let off = fill(Some(json!({"words": "在本指标最高的{n}项中", "members": 4})));
+        assert!(off.get(HEADLINE).is_none() && off.get("finding").is_none());
+        assert!(headline_fell_back(Ok(&off), true).is_some());
         assert_eq!(headline_fell_back(Err("not this shape: x"), false).as_deref(), Some("no recipe page: not this shape: x"));
     }
 
@@ -5398,15 +5405,24 @@ mod tests {
         // the headline from the finding joins the fill (HEADLINES, the page's title): taken out like the dek's finding, the
         // bytes sent are the ones before it
         let headline = sent.as_object_mut().unwrap().remove(HEADLINE).unwrap();
-        assert_eq!(headline, json!({"title": "{name.RU}最多，占{ru24_share}", "scoped": "{name.RU}居首，占{ru24_share}"}));
+        // the ring's headline is its focus's change between the headline years (owner 11-03): RU's fall
+        assert_eq!(headline, json!({"title": "{name.RU}降幅最大", "scoped": "{name.RU}降幅最大"}));
         // the page input the ring layer is declared over (P6 step 3: the ring is the visual group's) stays with the flow
         // for draw_nodes, so the bytes sent, the ring's among them, are still the ones pinned below
         sent.as_object_mut().unwrap().remove("page_in").unwrap();
-        // RU is the largest origin at t1 (NO and US are at 1): its share, which the map declares, its name placeholder and
-        // the year of its value at t1 (lead1, the finding's own fact, kept out of the bytes compared)
-        assert_eq!(finding, json!({"dek": "{lead1.t}，{name.RU}最多，占{ru24_share}", "scoped": "{lead1.t}，{name.RU}居首，占{ru24_share}"}));
-        let lead1 = sent["knobs"]["spec"]["facts"].as_object_mut().unwrap().remove("lead1").unwrap();
-        assert_eq!(lead1, json!({"op": "last", "table": "imp", "filter": {"partner": "RU", "geo": "EU27_2020"}, "from": "2024", "to": "2024", "fmt": "mio_m3"}));
+        // the ring's finding is its focus's change between the headline years (owner 11-03): RU fell from 2021 to 2024, its
+        // two years' values and their difference the finding's own facts, kept out of the bytes compared with the map's
+        // count of the places it compares (drawn), the headline's years on the ring and the map at the later year only
+        assert_eq!(finding, json!({"dek": "{lead0.t}至{lead1.t}，{name.RU}降幅最大，减少{lead}", "scoped": "{lead0.t}至{lead1.t}，{name.RU}降幅最大，减少{lead}"}));
+        let facts = sent["knobs"]["spec"]["facts"].as_object_mut().unwrap();
+        let year = |t: &str| json!({"op": "last", "table": "imp", "filter": {"partner": "RU", "geo": "EU27_2020"}, "from": t, "to": t, "fmt": "mio_m3"});
+        assert_eq!((facts.remove("lead0").unwrap(), facts.remove("lead1").unwrap()), (year("2021"), year("2024")));
+        assert_eq!(facts.remove("lead").unwrap(), json!({"op": "minus", "a": "lead0", "b": "lead1", "fmt": "mio_m3"}));
+        assert_eq!(facts.remove("drawn").unwrap()["op"], "n");
+        let hero = sent["knobs"]["spec"]["hero"].as_object_mut().unwrap();
+        assert_eq!(hero["ring"].as_object_mut().unwrap().remove("inside").unwrap(), json!({"from": "2021", "to": "2024"}));
+        let data = hero["data"].as_object_mut().unwrap();
+        assert_eq!((data.remove("halo").unwrap(), data.remove("legend_word").unwrap()), (json!(false), json!("ring.map.t1")));
         assert_eq!(crate::hash::sha256_bytes(sent.to_string().as_bytes()), "d728a43088b98205718a7814a2ce0ef3572d9485fc8961926831fa471dafb5e8");
         assert!(drawn.as_array().unwrap().iter().all(|r| ["map", "ring"].contains(&r["layer"].as_str().unwrap())), "{drawn}");
         assert_eq!(fill["order"], json!(ring_order()));
@@ -5417,7 +5433,7 @@ mod tests {
         assert!(kept.iter().filter(|r| r["table"] == "impm").all(|r| r["dims"]["partner"] == "RU"));
         let spec = &fill["knobs"]["spec"];
         let mut keys: Vec<String> = spec["facts"].as_object().unwrap().keys().cloned().collect();
-        let mut want: Vec<String> = ["tot21", "tot24", "tot_ch", "ru_m_peak", "ru_last", "lab_t0", "lab_t1", "lead1"].map(String::from).to_vec();
+        let mut want: Vec<String> = ["tot21", "tot24", "tot_ch", "ru_m_peak", "ru_last", "lab_t0", "lab_t1", "lead0", "lead1", "lead", "drawn"].map(String::from).to_vec();
         for c in ["ru", "no", "us"] {
             want.extend([format!("{c}21"), format!("{c}24"), format!("{c}24_share")]);
         }
@@ -5443,8 +5459,8 @@ mod tests {
         let Ok(crate::next_visual::Reply::Filled(page)) = crate::next_flow::visual_call(&calls, "leaf_fill", request) else {
             panic!("no filled page");
         };
-        // 19 declared (lead1 the dek finding's); lab_t0 and lab_t1 each compute one fact per origin outside the hub (RU NO US)
-        assert_eq!((page.layers.len(), page.refs.as_slice(), page.facts.len()), (5, &["imp".to_string(), "impm".into()][..], 23));
+        // 22 declared (lead0, lead1, lead the finding's, drawn the set count); lab_t0 and lab_t1 one fact per origin outside the hub (RU NO US)
+        assert_eq!((page.layers.len(), page.refs.as_slice(), page.facts.len()), (5, &["imp".to_string(), "impm".into()][..], 26));
         // the total is the countries outside the hub (RU NO US); DE is a member, TOTAL and EXT_EU27_2020 are not rows
         let tot24 = page.facts.iter().find(|f| f.key == "tot24").unwrap();
         assert_eq!((tot24.v, tot24.n), (37843.285 + 1.0 + 1.0, Some(3)));
@@ -7926,10 +7942,50 @@ mod tests {
     #[test]
     #[ignore]
     fn the_gas_ring_page_through_the_leaf_children() {
-        let (main, monthly, catalogue, shape, claims) = gas_fixture();
-        let picks = ring_picks(&shape, &main, &claims).unwrap();
-        let mut fill = ring_fill(&shape, &picks, (&main, &monthly), &catalogue, ("标题", "导语")).unwrap();
+        gas_ring_page(None);
+    }
+
+    /// The gas ring page narrowed (owner 11-03: a narrowed ring page keeps its headline, its set named with the map's count
+    /// of the places it compares): the fixture's 167 partners cut to the origins the map compares at t1, the set's members
+    /// that count; the page keeps its finding and headline, its set the map's drawn, and is drawn and rechecked whole.
+    #[test]
+    #[ignore]
+    fn the_gas_ring_page_narrowed_keeps_its_headline() {
+        let fill = gas_ring_page(Some(8));
+        assert!(fill[HEADLINE].is_object() && fill.get(FELL_BACK).is_none(), "{}", fill[HEADLINE]);
+        assert_eq!(fill["finding"]["set"], json!("在本指标最高的{drawn}项中"));
+    }
+
+    /// The gas ring page through the leaf children (as the_gas_scmp_page_through_the_leaf_children): the ring recipe's
+    /// fill, its LeafFill, the page drawn, baked and rechecked; `members`: the page narrowed to a set of that many places
+    /// (its words the scope's). Prints each layer's record or the first refusal; LEAF_PAGE_OUT: where to write the page.
+    fn gas_ring_page(members: Option<usize>) -> Value {
+        let (main, monthly, catalogue, _, claims) = gas_fixture();
+        let ring = recipe(RING_RECIPE);
+        let shape = shape_of(&ring.eats, &[("nrg_ti_gas", &main), ("nrg_ti_gasm", &monthly)], &catalogue).unwrap();
+        let picks = picks_of(&ring.picks, &shape, &main, &claims).unwrap();
+        // narrowed: the main's rows cut to the `members` origins largest at t1 (as the scope's narrowing keeps its places), the
+        // members' and aggregates' rows kept, and the page's shape and picks read again over the cut
+        let (main, shape, picks) = match members {
+            None => (main, shape, picks),
+            Some(n) => {
+                let at = |c: &str| main.iter().filter(|r| r["dims"][&shape.place] == c && r["dims"]["geo"] == shape.hub.as_str() && r["time"] == picks.t1.as_str()).find_map(row_value).unwrap_or(0.0);
+                let mut ranked: Vec<(f64, &String)> = shape.outside.iter().map(|c| (at(c), c)).collect();
+                ranked.sort_by(|a, b| b.0.total_cmp(&a.0));
+                let keep: Vec<&String> = ranked.iter().take(n).map(|(_, c)| *c).collect();
+                println!("narrowed: {} of {} origins: {keep:?}", keep.len(), shape.outside.len());
+                let cut: Vec<Value> = main.iter().filter(|r| r["dims"][&shape.place].as_str().is_none_or(|c| !shape.outside.iter().any(|o| o == c) || keep.iter().any(|k| *k == c))).cloned().collect();
+                let shape = shape_of(&ring.eats, &[("nrg_ti_gas", &cut), ("nrg_ti_gasm", &monthly)], &catalogue).unwrap();
+                let picks = picks_of(&ring.picks, &shape, &cut, &claims).unwrap();
+                (cut, shape, picks)
+            }
+        };
+        let set = members.map(|n| json!({"words": "在本指标最高的{n}项中", "members": n}));
+        let mut fill = test_fill_set(ring, &shape, &picks, (&main, &monthly), &catalogue, ("标题", "导语"), set.is_some(), set).unwrap();
+        println!("ring finding {} headline {} set {}", fill["finding"]["dek"], fill[HEADLINE]["title"], fill["finding"]["set"]);
         fill["knobs"]["shapes"] = json!("runtime/pi/assets/naturalearth-admin0-50m.geojson");
+        fill["knobs"]["spec"]["kicker"] = json!("栏目");
+        fill["knobs"]["spec"]["source"] = json!("欧盟统计局 nrg_ti_gas、nrg_ti_gasm");
         let order: Vec<String> = fill["order"].as_array().unwrap().iter().filter_map(|l| l.as_str().map(str::to_string)).collect();
         let calls = std::sync::Mutex::new(Vec::new());
         let request = crate::next_visual::Request::LeafFill {
@@ -7939,8 +7995,10 @@ mod tests {
             order: &order,
             runtime: Path::new("runtime"),
         };
-        let Ok(crate::next_visual::Reply::Filled(page)) = crate::next_flow::visual_call(&calls, "leaf_fill", request) else {
-            panic!("leaf fill")
+        let page = match crate::next_flow::visual_call(&calls, "leaf_fill", request) {
+            Ok(crate::next_visual::Reply::Filled(page)) => page,
+            Ok(_) => panic!("not a filled page"),
+            Err(e) => panic!("leaf fill: {e}"),
         };
         let leaf = crate::next_visual::LeafPage {
             draw: &page.draw,
@@ -7961,19 +8019,32 @@ mod tests {
                     println!("record {} {} {} ms {}", r.node, r.layer, r.outcome, r.ms);
                 }
                 println!("drawn page {} bytes ms {}", drawn.html.len(), started.elapsed().as_millis());
-                println!("type {}", drawn.type_measured.as_ref().map_or("none".to_string(), Value::to_string));
+                if let Ok(out) = std::env::var("LEAF_PAGE_OUT") {
+                    std::fs::write(out, &drawn.html).unwrap();
+                }
+                // the visual group's recheck of the page as drawn: its references' lines, its months split by the years
+                let recheck = crate::next_visual::Request::LeafRecheck { recipe: RING_RECIPE, html: &drawn.html, ledger: leaf.ledger, refs: leaf.refs, facts: leaf.facts, knobs: &drawn.knobs };
+                match crate::next_flow::visual_call(&calls, "leaf_recheck", recheck) {
+                    Ok(crate::next_visual::Reply::Rechecked(off)) => {
+                        println!("recheck {} finding(s): {off:?}", off.len());
+                        assert!(off.is_empty(), "the ring page's recheck: {off:?}");
+                    }
+                    other => panic!("recheck: {:?}", other.err()),
+                }
             }
             Ok(_) => panic!("not a leaf page"),
             Err(why) => {
                 println!("refused ms {}: {why}", started.elapsed().as_millis());
-                // the records up to the refusal, from the draw stage itself (the visual call keeps only the reasons)
                 if let Err((records, _)) = crate::next_leaf::draw_page(leaf.draw, leaf.w, leaf.h, leaf.frame.clone(), leaf.layers) {
                     for r in &records {
                         println!("record {} {} {} ms {}", r.node, r.layer, r.outcome, r.ms);
                     }
                 }
+                // a measurement: the first refusal is printed (stuck), not asserted
+                println!("stuck: {why}");
             }
         };
+        fill
     }
 
     /// The gas fixture's scmp page (env as ring_fill_of_the_gas_fixture; run with --ignored): the scmp recipe's shape, picks and
@@ -12403,6 +12474,10 @@ for line in sys.stdin:
             for k in &mine {
                 match (stored.get(*k), crate::next_tree::fact_value(&facts, &rows, k)) {
                     (Some(a), Ok(b)) if *a == b => {}
+                    // J2: a printed difference is now the difference of its two values as printed, within 5% of the stored
+                    (Some(a), Ok(b)) if spec["facts"][k.as_str()].get("of_printed").is_some() && (a - b).abs() <= 0.05 * a.abs() => {
+                        println!("P6REQ {path}: {k} stored {a}, as printed {b}");
+                    }
                     (a, b) => off.push(format!("{k}: stored {a:?}, here {b:?}")),
                 }
             }
@@ -12674,7 +12749,13 @@ for line in sys.stdin:
         for (name, focus, months, from) in cases {
             let (fill, old) = ring_case(focus, months).unwrap_or_else(|e| panic!("{name}: {e}"));
             let spec = &fill["knobs"]["spec"];
-            assert_eq!(spec["hero"]["ring"], old.hero["ring"], "{name}");
+            // the frozen ring as the rust fill drew it, and the headline's years it now splits its months by (owner 11-03)
+            let mut ring = spec["hero"]["ring"].clone();
+            let inside = ring.as_object_mut().unwrap().remove("inside");
+            assert_eq!(ring, old.hero["ring"], "{name}");
+            let year = |k: &str| inside.as_ref().and_then(|i| i[k].as_str()).filter(|y| y.len() == 4 && y.chars().all(|c| c.is_ascii_digit())).map(str::to_string);
+            let (y0, y1) = (year("from"), year("to"));
+            assert!(y0.is_some() && y1.is_some() && y0 <= y1, "{name}: the headline's years {inside:?}");
             assert_eq!(old.hero["ring"]["from"], from, "{name}: the window");
             for (k, q) in &old.facts {
                 assert_eq!(&spec["facts"][k], q, "{name}: fact {k}");
@@ -12754,7 +12835,10 @@ for line in sys.stdin:
         old.drawn.clear();
         old_ring_node_fill(&filling, &mut old).unwrap();
         let spec = &fill["knobs"]["spec"];
-        assert_eq!(spec["hero"]["ring"], old.hero["ring"], "the ring");
+        // the frozen ring, and the headline's years its months are split by (owner 11-03)
+        let mut ring = spec["hero"]["ring"].clone();
+        assert_eq!(ring.as_object_mut().unwrap().remove("inside"), Some(json!({"from": fill["page_in"]["picks"]["t0"], "to": fill["page_in"]["picks"]["t1"]})));
+        assert_eq!(ring, old.hero["ring"], "the ring");
         for (k, q) in old.facts.iter().chain(&old.fmts) {
             assert!(&spec["facts"][k] == q || &spec["fmts"][k] == q, "{k}");
         }
@@ -13581,6 +13665,13 @@ for line in sys.stdin:
             let shape = shape_of(&r.eats, &tables, &catalogue).unwrap();
             let picks = picks_of(&r.picks, &shape, &main, &claims).unwrap();
             let fill = test_fill(r, &shape, &picks, (&main, &monthly), &catalogue, ("标题", "导语"), false).unwrap();
+            if recipe_name == "ring" {
+                // the ring's finding is no longer the frozen share (owner 11-03): its focus's change between the years
+                let dek = fill["finding"]["dek"].as_str().unwrap_or_else(|| panic!("ring: no finding: {}", fill["finding"]));
+                assert_eq!(dek, format!("{{lead0.t}}至{{lead1.t}}，{{name.{}}}降幅最大，减少{{lead}}", picks.focus), "ring: the gas page's fall");
+                println!("P6REQ finding ring gas: {dek}");
+                continue;
+            }
             let got = assert_finding_as_old(recipe_name, &fill, &shape, &picks, (&main, &monthly));
             assert!(got.is_some(), "{recipe_name}: the gas page has a share finding");
             println!("P6REQ finding {recipe_name} gas: {got:?} equal");
@@ -13628,15 +13719,24 @@ for line in sys.stdin:
     /// every row the page keeps, in their order. The count of facts.
     fn assert_map_page(name: &str, fill: &Value, old: &Filled, short: &str) -> usize {
         let spec = &fill["knobs"]["spec"];
-        let mine: BTreeSet<&String> = spec["facts"].as_object().unwrap().keys().collect();
-        assert_eq!(mine, old.facts.keys().collect::<BTreeSet<_>>(), "{name}: the page's fact keys, the finding's among them");
-        for (k, q) in &old.facts {
+        // the ring page is no longer the frozen one in its finding (owner 11-03: its focus's change, the map's set count
+        // drawn) and in its map's data (the later year only, its reference line's word); the rest is
+        let ring = name.starts_with("ring");
+        let own = |k: &str| ring && matches!(k, "lead" | "lead0" | "lead1" | "drawn");
+        let mine: BTreeSet<&String> = spec["facts"].as_object().unwrap().keys().filter(|k| !own(k)).collect();
+        assert_eq!(mine, old.facts.keys().filter(|k| !own(k)).collect::<BTreeSet<_>>(), "{name}: the page's fact keys, the finding's among them");
+        for (k, q) in old.facts.iter().filter(|(k, _)| !own(k)) {
             assert_eq!(&spec["facts"][k], q, "{name}: fact {k}");
         }
         for (k, q) in &old.fmts {
             assert_eq!(&spec["fmts"][k], q, "{name}: format {k}");
         }
-        assert_eq!(spec["hero"]["data"], Value::Object(old.data.clone()), "{name}: the hero's data");
+        let mut data = spec["hero"]["data"].clone();
+        if ring {
+            assert_eq!((data["halo"].clone(), data["legend_word"].clone()), (json!(false), json!("ring.map.t1")), "{name}: the map at the later year only");
+            data.as_object_mut().unwrap().retain(|k, _| k != "halo" && k != "legend_word");
+        }
+        assert_eq!(data, Value::Object(old.data.clone()), "{name}: the hero's data");
         let unit = std::iter::once(format!("单位：{short}")).chain(old.notes.iter().cloned()).collect::<Vec<_>>().join("；");
         assert_eq!(spec["hero"]["unit"], json!(unit), "{name}: the unit line and the map's note");
         let drawn: Vec<&Value> = fill["drawn"].as_array().unwrap().iter().filter(|d| d["layer"] == "map").map(|d| &d["src"]).collect();

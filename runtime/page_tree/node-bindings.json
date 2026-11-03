@@ -403,7 +403,7 @@
        "not_eu": "$shape.place",
        "fmt": "$shape.fmt"
       },
-      "drawn": {"op": "n", "by": "$shape.place", "table": "$shape.main", "filter": {"geo": "$shape.hub"}, "not_eu": true, "time": "$picks.t1", "fmt": "n"}
+      "drawn": {"op": "n", "by": "$shape.place", "table": "$shape.main", "filter": {"geo": "$shape.hub", "$shape.place": "$outside"}, "time": "$picks.t1", "fmt": "n"}
      },
      "for_each": "select:top",
      "facts_each": {

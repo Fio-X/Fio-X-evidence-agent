@@ -1409,6 +1409,18 @@
         "$ref": "#/$defs/Code"
        }
       },
+      "of_printed": {
+       "description": "A printed difference (minus): the difference of its two values as the page prints them, each at its format's scale and decimals (J2, next_tree_gen printed_raise).",
+       "type": "array",
+       "minItems": 2,
+       "maxItems": 2,
+       "items": {
+        "type": "object",
+        "required": ["scale", "dec"],
+        "properties": {"scale": {"type": "number"}, "dec": {"type": "integer", "minimum": 0}},
+        "additionalProperties": false
+       }
+      },
       "fmt": {
        "$ref": "#/$defs/Code"
       }

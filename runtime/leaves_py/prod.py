@@ -422,7 +422,7 @@ def inset_geom(m, w):
     k_ = math.cos(math.radians((la0 + la1) / 2)); h = min(w * 0.9, w * (la1 - la0) / ((lo1 - lo0) * k_))
     return far, (lo0, la0, lo1, la1), k_, min(w / ((lo1 - lo0) * k_), h / (la1 - la0)), h
 
-def inset_svg(m, g, x0, y0, w, note_below=False, soft=None):
+def inset_svg(m, g, x0, y0, w, note_below=False, soft=None, caption=True):
     """Draw the inset at (x0, y0): pale land, the main map's extent as a dashed frame, one thin line per source to the hub
     (the protagonist in the accent), names of the far sources only (their numbers are on the main map). soft = colour of a
     feathered patch under it, so it sits on the map without a box."""
@@ -464,8 +464,9 @@ def inset_svg(m, g, x0, y0, w, note_below=False, soft=None):
         else: continue
         boxes.append(b)
         o.append(f'<text data-on="src:{esc(k)}" x="{b[0]:.1f}" y="{b[3] - 1.5:.1f}" font-size="{sz}" fill="var(--t-body)" stroke="{soft or "var(--bg)"}" stroke-width="2.5" paint-order="stroke">{named(k)}</text>')
-    o.append(f'<text x="{x0}" y="{y0 + h + 12:.1f}" font-size="11" fill="var(--t-sec)">{esc(inset_note(K("note")))}</text>' if note_below else
-             f'<text x="{x0}" y="{y0 - 5:.1f}" font-size="11" fill="var(--t-sec)">{esc(inset_note(K("note")))}</text>')
+    if caption:  # a caller whose panel holds no text without a src says it in its legend instead (scmp rl_legend)
+        o.append(f'<text x="{x0}" y="{y0 + h + 12:.1f}" font-size="11" fill="var(--t-sec)">{esc(inset_note(K("note")))}</text>' if note_below else
+                 f'<text x="{x0}" y="{y0 - 5:.1f}" font-size="11" fill="var(--t-sec)">{esc(inset_note(K("note")))}</text>')
     return "".join(o)
 
 def ml_inset(m, occ):

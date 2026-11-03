@@ -267,6 +267,8 @@ def rl_legend(f, occ):
         y = lambda t: t if FX.LEDGER is None else FX.entry(f"period:{f.h['data']['q']['table']}:{t}", "span", None)
         gap = f'<div class="gapw" data-word="ring.inside">{word("ring.inside", ay=y(ins["from"]), by=y(ins["to"]))}</div>' + gap
     md = f.h.get("data", {})
+    if FX.LEDGER is not None and inset_spot(f):  # the corner inset's caption (rl_inset)
+        gap = f'<div class="gapw">{prod.inset_note(prod.knob(f.h, "inset", "note"))}</div>' + gap
     if md.get("legend_word"):  # the map as the ring page's reference: what it draws (each source at the later year) and its unit
         y = md["t1"] if FX.LEDGER is None else FX.entry(f"period:{md['q']['table']}:{md['t1']}", "span", None)
         u = FX.unit(f.c.spec, f.c.spec["facts"][md["label_fact"]]).strip()
@@ -304,7 +306,8 @@ def rl_inset(f, occ):
     if f.h.get("_title"): return gap_inset(f)
     if not inset_spot(f): return ""
     m, g, x0, y0, w, corner, box = f._ins; occ.add(box, "inset")
-    return prod.inset_svg(m, g, x0, y0, w, note_below=corner[0] == "t")
+    # with a ledger the caption is the legend's line (rl_legend): a word alone in the panel has no src for layer 1
+    return prod.inset_svg(m, g, x0, y0, w, note_below=corner[0] == "t", caption=FX.LEDGER is None)
 
 # name -> (draw, reserve); svg layers go into the picture, html layers sit over it
 RING_LAYERS = dict(map=(rl_map, None), ring=(rl_ring, None), events=(rl_events, None), callouts=(rl_callouts, None), legend=(rl_legend, None), inset=(rl_inset, None))

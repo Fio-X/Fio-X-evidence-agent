@@ -418,7 +418,7 @@ class Column(unittest.TestCase):
         ms = run.scmp.months("2024-01", "2024-06")
         for one, gaps in [({t: 1.0 for t in ms if t != "2024-03"}, ["2024-03"]), ({t: 1.0 for t in ms}, []),
                           ({"2024-01": 1.0, "2024-06": 2.0}, ["2024-02", "2024-03", "2024-04", "2024-05"])]:
-            f = types.SimpleNamespace(ms=ms, one=one, n=len(ms), R1=200.0, cx=300.0, cy=300.0, h={}, c=None)
+            f = types.SimpleNamespace(ms=ms, one=one, n=len(ms), R1=200.0, cx=300.0, cy=300.0, h={}, c=None, _ins=None)
             f.ang = lambda i, f=f: math.radians(-90 + 360 * i / f.n)
             f.pt = lambda a, r, f=f: (f.cx + r * math.cos(a), f.cy + r * math.sin(a))
             svg = run.scmp.gap_marks(f)
@@ -437,7 +437,7 @@ class Column(unittest.TestCase):
         for ins, inside, line in [({"from": "2021", "to": "2023"}, [t for t in ms if "2021" <= t[:4] <= "2023"], True),
                                   ({"from": "2015", "to": "2024"}, ms, False), (None, ms, False)]:
             h = {"ring": {"inside": ins} if ins else {}, "data": {"q": {"table": "t"}}}
-            f = types.SimpleNamespace(ms=ms, one={t: 1.0 for t in ms}, h=h, c=None)
+            f = types.SimpleNamespace(ms=ms, one={t: 1.0 for t in ms}, h=h, c=None, _ins=None)
             parts = run.scmp.split_months(f)
             self.assertEqual([t for fd, p in parts if not fd for t in p], inside, ins)
             self.assertEqual(sorted(t for _, p in parts for t in p), ms, ins)  # every month once
@@ -458,7 +458,7 @@ class Column(unittest.TestCase):
         ms = run.scmp.months("2024-01", "2024-03")
         c = types.SimpleNamespace(spec={"facts": {"lab_t1": {"fmt": "m"}}, "fmts": {"m": {"suffix": " 百万立方米"}}})
         h = {"ring": {}, "data": {"q": {"table": "t"}, "t1": "2024", "label_fact": "lab_t1", "legend_word": "ring.map.t1", "halo": False}}
-        f = types.SimpleNamespace(ms=ms, one={t: 1.0 for t in ms}, h=h, c=c)
+        f = types.SimpleNamespace(ms=ms, one={t: 1.0 for t in ms}, h=h, c=c, _ins=None)
         FX.LEDGER = {"period:t:2024": "2024"}
         try:
             lg = run.scmp.rl_legend(f, None)

@@ -256,7 +256,8 @@ class Panel:
             p.f = scmp.SquareFrame(c, h); return
         if prod.knob(h, "frame", "gap_dir") == "auto": h = {**h, "_gapdir": scmp.empty_corner(c, h)}
         if scmp.title_in(h): h = {**h, "_title": scmp.page_head(c, spec)}
-        p.f = scmp.RingFrame(c, h); p.f.wrap, p.f.mapout, p.f.ret = k.get("wrap", False), {}, {}
+        # each layer tagged (data-layer) unless a preview asks for it bare: the page phase places and checks tagged layers
+        p.f = scmp.RingFrame(c, h); p.f.wrap, p.f.mapout, p.f.ret = k.get("wrap", True), {}, {}
 
 
 def main_size(f, main):
@@ -362,7 +363,8 @@ def page(panel, got, sizes=None):
     if panel.node in COLUMN_KINDS: return column_page(panel, got, sizes or {})
     if panel.node == "scmp": return scmp_page(panel, got)
     f, spec = panel.f, panel.spec; tin = bool(f.h.get("_title"))
-    pic = [n for n in scmp.RING_SVG if not (n == "inset" and tin)]
+    # the events layer only for a page with sourced events (a ring of a table's months alone has none to hang)
+    pic = [n for n in scmp.RING_SVG if not (n == "inset" and tin) and (n != "events" or spec.get("events"))]
     need = pic + ["legend", "callouts"] + (["inset"] if tin else [])
     off = [f"page: {k} is not drawn by a leaf layer yet" for k in NOT_LEAF if spec.get(k)]
     off += [f"page: no layer {n}" for n in need if not isinstance(got.get(n), str)]

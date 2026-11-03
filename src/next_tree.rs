@@ -7234,7 +7234,9 @@ mod tests {
         fails_with(Some(&drawn), &page(&halo_line.replace("iso2:RU", "iso2:NO"), strip_line), "{name} is the entry name:zh_names:iso2:NO");
         fails_with(Some(&drawn), &page(halo_line, &strip_line.replace("fact:ru_s_peak.n", "fact:no_s_peak.n")), "its layer draws fact:ru_s_peak.n");
         fails_with(Some(&late), &page(halo_line, strip_line), "not its layer's 2015");
-        fails_with(None, &page(halo_line, strip_line), "gives no knobs");
+        // no knobs: each of the two references says it cannot read what its layer draws
+        let blind = reference_legend_gaps(&good, "ring", &page(halo_line, strip_line), &units, None);
+        assert!(blind.len() == 2 && blind.iter().all(|g| g.contains("gives no knobs")), "{blind:?}");
         let fails = |html: &str, says: &str| {
             let gaps = reference_legend_gaps(&good, "ring", html, &units, Some(&drawn));
             assert_eq!(gaps.len(), 1, "{says}: {gaps:?}");
@@ -8504,7 +8506,15 @@ mod tests {
             conditions_hold(&parse(&format!(r#"[{{"if": "layer_before", "layer": "{a}", "than": "{b}"}}]"#)).unwrap(), &hold).unwrap()
         };
         assert_eq!([before("strip", "bignums"), before("bignums", "strip"), before("ring", "bignums"), before("strip", "notes")], [true, false, false, false]);
-        assert_eq!(CONDITIONS.map(|(k, _)| k), ["sign", "prints_nonzero", "width_at_most", "count_at_least", "page_is", "row_above", "layer_before"]);
+        // gap_printable (J2): the page prints the difference unless printed_raise left it in gap_order; is false, the other way
+        let gapped = parse(r#"{"gap_order": ["vs_lo"]}"#).unwrap();
+        let gap = |fact: &str, is: &str| {
+            let hold = Holding { facts: &facts, fmts: &fmts, got: &got, page: &gapped, code: "", name: None, word: &words };
+            conditions_hold(&parse(&format!(r#"[{{"if": "gap_printable", "fact": "{fact}"{is}}}]"#)).unwrap(), &hold)
+        };
+        assert_eq!([gap("vs_lo", ""), gap("vs_hi", ""), gap("vs_lo", r#", "is": false"#), gap("vs_hi", r#", "is": false"#)].map(Result::unwrap), [false, true, true, false]);
+        assert!(gap("vs_lo", r#", "is": "no""#).unwrap_err().contains("true or false"));
+        assert_eq!(CONDITIONS.map(|(k, _)| k), ["sign", "prints_nonzero", "width_at_most", "count_at_least", "gap_printable", "page_is", "row_above", "layer_before"]);
     }
 
 
