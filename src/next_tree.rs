@@ -1794,31 +1794,99 @@ pub(crate) fn reference_legend_gaps(reg: &J, recipe: &str, html: &str, units: &[
     let mut out = Vec::new();
     for (what, word) in refs {
         let legend = reference_legend(reg, recipe, &what);
-        let within = st(legend.g("within"));
-        // the legend it names, and the line inside it
-        let line = html.match_indices(&format!("data-legend=\"{within}\"")).find_map(|(at, _)| {
-            let (_, body, close) = element_at(html, html[..at].rfind('<')?)?;
-            let mark = html[body..close].find(&format!("data-word=\"{word}\""))? + body;
-            let open = html[..mark].rfind('<')?;
-            let (_, lb, lc) = element_at(html, open)?;
-            Some((lb, lc))
+        out.extend(legend_line_gaps(&what, "is drawn as a reference", &word, &legend, html, units, drawn));
+    }
+    out
+}
+
+/// What a page lacks of one legend line the registry gives (a reference's, a time split's): the line marked
+/// `data-word="<word>"` inside the legend legend.within names (`data-legend`), its text the word with each placeholder
+/// filled as legend.fills says, each entry the one its layer draws (drawn_entry_gaps). `why`: what the layer does that
+/// the line says.
+fn legend_line_gaps(what: &str, why: &str, word: &str, legend: &J, html: &str, units: &[String], drawn: Option<&Drawn>) -> Vec<String> {
+    let mut out = Vec::new();
+    let within = st(legend.g("within"));
+    // the legend it names, and the line inside it
+    let line = html.match_indices(&format!("data-legend=\"{within}\"")).find_map(|(at, _)| {
+        let (_, body, close) = element_at(html, html[..at].rfind('<')?)?;
+        let mark = html[body..close].find(&format!("data-word=\"{word}\""))? + body;
+        let open = html[..mark].rfind('<')?;
+        let (_, lb, lc) = element_at(html, open)?;
+        Some((lb, lc))
+    });
+    let Some((lb, lc)) = line else {
+        let anywhere = html.contains(&format!("data-word=\"{word}\""));
+        out.push(match anywhere {
+            true => format!("roles: {what}'s legend line data-word={word} sits outside the legend data-legend={within}"),
+            false => format!("roles: {what} {why} and its legend data-legend={within} prints no line data-word={word}"),
         });
-        let Some((lb, lc)) = line else {
-            let anywhere = html.contains(&format!("data-word=\"{word}\""));
-            out.push(match anywhere {
-                true => format!("roles: {what}'s legend line data-word={word} sits outside the legend data-legend={within}"),
-                false => format!("roles: {what} is drawn as a reference and its legend data-legend={within} prints no line data-word={word}"),
-            });
+        return out;
+    };
+    let template = crate::next_ledger::word_table().get(word).and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
+    let said = pieces(html, lb, lc).ok_or_else(|| "a child element names no data-src".to_string()).and_then(|p| is_the_word(&p, &template, legend.g("fills"), units));
+    match (said, drawn) {
+        (Err(e), _) => out.push(format!("roles: {what}'s legend line is not the registry's word {word} ({template:?}): {e}")),
+        (Ok(_), None) => out.push(format!("roles: {what}'s legend line: the page gives no knobs to read what its layer draws")),
+        (Ok(entries), Some(d)) => {
+            out.extend(drawn_entry_gaps(legend, &entries, d).into_iter().map(|e| format!("roles: {what}'s legend line {word}: {e}")))
+        }
+    }
+    out
+}
+
+/// The opacity at or above which a drawn piece is not faded.
+const UNFADED: f64 = 1.0;
+
+/// What a published page of `recipe` lacks of its time splits (owner 11-03): each node of the recipe that registers
+/// split.<recipe> ({months: the layer, legend}) draws its months as pieces marked `data-ms` (the months, space-separated),
+/// each piece faded (its fill-opacity below 1) exactly when its months fall outside the years legend.draws names (from,
+/// to), no piece holding months of both, no month in two pieces; when a piece is faded, the legend line names the years
+/// (legend_line_gaps). A page with no knobs to read the years from is one gap.
+pub(crate) fn split_gaps(reg: &J, recipe: &str, html: &str, units: &[String], drawn: Option<&Drawn>) -> Vec<String> {
+    let mut out = Vec::new();
+    for layer in reg.g("recipes").g(recipe).arr().iter().map(st) {
+        let Some(split) = reg.g("nodes").g(&layer).g("split").get(recipe) else { continue };
+        let legend = split.g("legend");
+        let Some(d) = drawn else {
+            out.push(format!("split: {layer}: the page gives no knobs to read the years its months are split by"));
             continue;
         };
-        let template = crate::next_ledger::word_table().get(&word).and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
-        let said = pieces(html, lb, lc).ok_or_else(|| "a child element names no data-src".to_string()).and_then(|p| is_the_word(&p, &template, legend.g("fills"), units));
-        match (said, drawn) {
-            (Err(e), _) => out.push(format!("roles: {what}'s legend line is not the registry's word {word} ({template:?}): {e}")),
-            (Ok(_), None) => out.push(format!("roles: {what}'s legend line: the page gives no knobs to read what its layer draws")),
-            (Ok(entries), Some(d)) => {
-                out.extend(drawn_entry_gaps(&legend, &entries, d).into_iter().map(|e| format!("roles: {what}'s legend line {word}: {e}")))
+        let years = match drawn_vars(&J::obj_of(vec![("from", legend.g("draws").g("from").clone()), ("to", legend.g("draws").g("to").clone())]), d) {
+            Ok(y) => y,
+            Err(e) => {
+                out.push(format!("split: {layer}: {e}"));
+                continue;
             }
+        };
+        let (from, to) = (years["from"].clone(), years["to"].clone());
+        let (mut seen, mut faded_any) = (BTreeSet::new(), false);
+        for (at, _) in html.match_indices("data-ms=\"") {
+            let Some(open) = html[..at].rfind('<') else { continue };
+            let tag = &html[open..open + html[open..].find('>').unwrap_or(0)];
+            let months: Vec<&str> = html[at + 9..].split('"').next().unwrap_or("").split_whitespace().collect();
+            let opacity = tag.split("fill-opacity=\"").nth(1).and_then(|v| v.split('"').next()).map_or(Some(UNFADED), |v| v.parse::<f64>().ok());
+            let faded = opacity.is_some_and(|o| o < UNFADED);
+            let inside = |m: &str| m.get(..4).is_some_and(|y| from.as_str() <= y && y <= to.as_str());
+            let inn = months.iter().filter(|m| inside(m)).count();
+            let outside = months.len() - inn;
+            if opacity.is_none() {
+                out.push(format!("split: {layer}: a piece's fill-opacity is no number"));
+            } else if inn > 0 && outside > 0 {
+                out.push(format!("split: {layer}: a piece holds months inside {from}..{to} and outside them"));
+            } else if faded != (outside > 0) {
+                let say = if faded { "faded" } else { "drawn as the band is" };
+                out.push(format!("split: {layer}: months {}..{} are {say}, and the years are {from}..{to}", months.first().unwrap_or(&""), months.last().unwrap_or(&"")));
+            }
+            for m in months {
+                if !seen.insert(m.to_string()) {
+                    out.push(format!("split: {layer}: month {m} is in two pieces"));
+                }
+            }
+            faded_any |= faded;
+        }
+        if faded_any {
+            let word = st(legend.g("word"));
+            out.extend(legend_line_gaps(&layer, "fades its months outside the headline's years", &word, legend, html, units, drawn));
         }
     }
     out
@@ -7108,6 +7176,45 @@ mod tests {
         assert_eq!(scmp, [("map.halo".to_string(), "halo.t0".to_string()), ("strip".to_string(), "scmp.strip.ref".to_string())]);
         assert_eq!(reference_legend_gaps(&in_force, "scmp", "", &[], None).len(), 2);
         assert!(reference_legend_gaps(&in_force, "ring", "", &[], None).is_empty() && reference_legend_gaps(&in_force, "column", "", &[], None).is_empty());
+    }
+
+    /// 11-03 (owner): the ring's months inside the headline's years are drawn as the band is and the rest faded, and the
+    /// legend names those years: a page passes with both, and fails with a month outside not faded, a month inside faded,
+    /// a piece of both, a month in two pieces, no line, a line of other years, and no knobs; a page that fades nothing
+    /// needs no line.
+    #[test]
+    fn a_ring_fades_its_months_outside_the_headline_years_and_its_legend_names_them() {
+        let reg = parse(r#"{"recipes": {"ring": ["map", "ring"]}, "nodes": {"ring": {"split": {"ring": {"months": "ring", "legend": {"word": "ring.inside", "within": "ring",
+            "fills": {"ay": "period", "by": "period"}, "draws": {"table": "data.q.table", "from": "ring.inside.from", "to": "ring.inside.to"},
+            "entries": {"ay": "period:{table}:{from}", "by": "period:{table}:{to}"}}}}}}}"#).unwrap();
+        let hero = parse(r#"{"data": {"q": {"table": "t"}}, "ring": {"inside": {"from": "2021", "to": "2023"}}}"#).unwrap();
+        let reads = BTreeMap::new();
+        let drawn = Drawn { hero: &hero, rows: &[], members: &[], reads: &reads };
+        let piece = |ms: &str, faded: bool| format!(r#"<path data-ms="{ms}" d="M0,0" fill="red"{}/>"#, if faded { r#" fill-opacity="0.35""# } else { "" });
+        let line = |a: &str, b: &str| format!(r#"<div class="hu" data-legend="ring"><div class="gapw" data-word="ring.inside">深色＝<span data-src="period:t:{a}">{a}</span> 年至 <span data-src="period:t:{b}">{b}</span> 年各月，浅色＝其余月份</div></div>"#);
+        let page = |pieces: &[String], legend: &str| format!("{legend}<svg>{}</svg>", pieces.concat());
+        let good = [piece("2021-01 2023-12", false), piece("2020-11 2020-12 2024-01", true)];
+        assert_eq!(split_gaps(&reg, "ring", &page(&good, &line("2021", "2023")), &[], Some(&drawn)), Vec::<String>::new());
+        // nothing faded (every month inside): no line asked for
+        assert_eq!(split_gaps(&reg, "ring", &page(&[piece("2021-01 2022-06", false)], ""), &[], Some(&drawn)), Vec::<String>::new());
+        let fails = |html: &str, d: Option<&Drawn>, says: &str| {
+            let gaps = split_gaps(&reg, "ring", html, &[], d);
+            assert_eq!(gaps.len(), 1, "{says}: {gaps:?}");
+            assert!(gaps[0].contains(says), "{says}: {}", gaps[0]);
+        };
+        let lg = line("2021", "2023");
+        fails(&page(&[piece("2021-01", false), piece("2024-01", false)], &lg), Some(&drawn), "2024-01..2024-01 are drawn as the band is");
+        fails(&page(&[piece("2021-01", true), piece("2024-01", true)], &lg), Some(&drawn), "2021-01..2021-01 are faded");
+        fails(&page(&[piece("2023-12 2024-01", false)], &lg), Some(&drawn), "inside 2021..2023 and outside them");
+        fails(&page(&[piece("2021-01", false), piece("2021-01", false), piece("2024-01", true)], &lg), Some(&drawn), "month 2021-01 is in two pieces");
+        fails(&page(&good, ""), Some(&drawn), "prints no line data-word=ring.inside");
+        fails(&page(&good, &line("2015", "2023")), Some(&drawn), "its layer draws period:t:2021");
+        fails(&page(&good, &lg), None, "gives no knobs");
+        // the registry in force: the ring node splits the ring page's months, and no other recipe's
+        let (in_force, _) = registry_in_force();
+        assert!(in_force.g("nodes").g("ring").g("split").has("ring"));
+        assert_eq!(split_gaps(&in_force, "ring", "", &[], None).len(), 1);
+        assert!(split_gaps(&in_force, "scmp", "", &[], None).is_empty() && split_gaps(&in_force, "column", "", &[], None).is_empty());
     }
 
     /// 11-03: a printed difference is the difference of its two values as the page prints them, over three shapes: a

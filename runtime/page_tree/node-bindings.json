@@ -1349,6 +1349,9 @@
    "binding": "external",
    "geometry": "leaf",
    "runner": "leaves_py/prod.py",
+   "split": {"ring": {"months": "ring", "legend": {"word": "ring.inside", "within": "ring", "fills": {"ay": "period", "by": "period"},
+    "draws": {"table": "data.q.table", "from": "ring.inside.from", "to": "ring.inside.to"},
+    "entries": {"ay": "period:{table}:{from}", "by": "period:{table}:{to}"}}}},
    "declares_by_recipe": {
     "ring": {
      "selects": [
@@ -1401,6 +1404,7 @@
       "ring": {
        "q": {"table": "$shape.second", "filter": {"$shape.place": "{code}"}, "by": "$shape.place"},
        "from": "$value.from",
+       "inside": {"from": "$picks.t0", "to": "$picks.t1"},
        "marks": [{"key": "{code_lc}_m_peak"}, {"key": "{code_lc}_last"}]
       }
      }

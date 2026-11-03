@@ -653,7 +653,10 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
                 (Ok(h), Ok(r)) if !hero.is_null() => Some(crate::next_tree::Drawn { hero: h, rows: r.arr(), members: &members, reads: &reads }),
                 _ => None,
             };
-            off.extend(crate::next_tree::reference_legend_gaps(&crate::next_tree::registry_in_force().0, recipe, html, &units, drawn.as_ref()));
+            let reg = crate::next_tree::registry_in_force().0;
+            off.extend(crate::next_tree::reference_legend_gaps(&reg, recipe, html, &units, drawn.as_ref()));
+            // and a layer that splits its months by the headline's years fades those outside them and names the years
+            off.extend(crate::next_tree::split_gaps(&reg, recipe, html, &units, drawn.as_ref()));
             for (src, text) in ledger.iter().filter(|(s, _)| s.starts_with("series:")) {
                 match rows.iter().find(|r| r.src == *src) {
                     Some(row) if crate::next_ledger::prints(text, row.value) => {}

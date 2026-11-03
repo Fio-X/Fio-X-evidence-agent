@@ -429,6 +429,28 @@ class Column(unittest.TestCase):
             self.assertEqual(lg == "", not gaps, gaps)  # no unit and no gap: no legend box
         self.assertNotIn('word("missing")', open(run.scmp.__file__, encoding="utf-8").read().split("def rl_ring", 1)[1].split("\ndef ", 1)[0])
 
+    def test_the_ring_splits_its_months_by_the_headline_years_and_its_legend_names_them(self):
+        """Owner 11-03: the ring's months inside the headline's years are drawn as the band is, the rest faded, and the
+        legend line names the years from the map's table; with no years given, nothing is faded and no line is printed."""
+        import types
+        ms = run.scmp.months("2020-11", "2024-02")
+        for ins, inside, line in [({"from": "2021", "to": "2023"}, [t for t in ms if "2021" <= t[:4] <= "2023"], True),
+                                  ({"from": "2015", "to": "2024"}, ms, False), (None, ms, False)]:
+            h = {"ring": {"inside": ins} if ins else {}, "data": {"q": {"table": "t"}}}
+            f = types.SimpleNamespace(ms=ms, one={t: 1.0 for t in ms}, h=h, c=None)
+            parts = run.scmp.split_months(f)
+            self.assertEqual([t for fd, p in parts if not fd for t in p], inside, ins)
+            self.assertEqual(sorted(t for _, p in parts for t in p), ms, ins)  # every month once
+            FX.LEDGER = {"period:t:2021": "2021", "period:t:2023": "2023", "period:t:2015": "2015", "period:t:2024": "2024"}
+            try:
+                lg = run.scmp.rl_legend(f, None)
+            finally:
+                FX.LEDGER = None
+            self.assertEqual('data-word="ring.inside"' in lg, line, ins)
+            if line:
+                self.assertIn('data-legend="ring"', lg)
+                self.assertIn('<span data-src="period:t:2021">2021</span> 年至 <span data-src="period:t:2023">2023</span> 年', lg)
+
     def test_the_scmp_frame_reads_its_notes_from_the_notes_node_s_leaf_data(self):
         notes = [{"code": "NO", "a": "no19", "b": "no24", "ch": "no_ch", "share": "no24_share", "f": True},
                  {"code": "DZ", "a": "dz19", "b": "dz24", "ch": None, "share": "dz24_share", "f": False},

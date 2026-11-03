@@ -158,7 +158,9 @@ def rl_ring(f, occ):
                 (x0, y0), (x1, y1) = pt(ang(i), R1), pt(ang(prev), R1)
                 d += f"L{x0:.1f},{y0:.1f} A{R1},{R1} 0 {1 if ang(i) - ang(prev) > math.pi else 0} 0 {x1:.1f},{y1:.1f}Z "; prev = None
         return d
-    o.append(f'<path d="{band(f.one)}" fill="{K("color")}"/>')
+    for faded, part in split_months(f):  # the headline's years drawn as the band is, the months outside them faded (rl_legend says which)
+        v = {t: f.one[t] for t in part if t in f.one}
+        if v: o.append(f'<path data-ms="{" ".join(sorted(v))}" d="{band(v)}" fill="{K("color")}"{f' fill-opacity="{FADED}"' if faded else ""}/>')
     if f.tot:  # the context total as one thin stepped line over the band, not a second fill
         o.append(f'<path d="{band(f.tot)}" fill="none" stroke="var(--t-sec)" stroke-width="0.8" stroke-dasharray="2 2"/>')
     occ.add_line([pt(ang(0) + (ang(f.n) - ang(0)) * j / 720, f.R0) for j in range(721)], "map.edge")  # the map's edge circle
@@ -233,6 +235,16 @@ prod.KNOBS["callouts"] = dict(out=(26, (6, 80, 1), "callout distance from the ba
 CALLOUT_CSS = dict(width=".hero.ring .rc{{width:{v}px}}", head=".hero.ring .rc .ch{{font-size:{v}px}}", body=".hero.ring .rc{{font-size:{v}px}}",
                    bar=".hero.ring .rc .hd{{border-width:{v}px}}", ink=".hero.ring .rc .ct{{color:{v}}}")
 
+FADED = 0.35  # the opacity of the ring's months outside the headline's years
+
+def split_months(f):
+    """The ring's months as (faded, months): those inside the headline's years (hero ring.inside: from and to, years) not
+    faded, the rest faded; with no inside given, every month as it is."""
+    ins = f.h.get("ring", {}).get("inside")
+    if not ins: return [(False, list(f.ms))]
+    inn = [t for t in f.ms if ins["from"] <= t[:4] <= ins["to"]]
+    return [(False, inn), (True, [t for t in f.ms if t not in inn])]
+
 def gap_months(f):
     """The ring's months the table has no row for (the band breaks there)."""
     return [t for t in f.ms if t not in f.one]
@@ -250,8 +262,12 @@ def gap_marks(f):
 def rl_legend(f, occ):
     K = lambda k: prod.knob(f.h, "legend", k); css = "".join(r.format(v=K(k)) for k, r in LEGEND_CSS.items() if K(k) != prod.KNOBS["legend"][k][0])
     gap = f'<div class="gapw">{word("ring.gap")}</div>' if gap_months(f) else ""
+    ins, faded = f.h.get("ring", {}).get("inside"), any(fd and part for fd, part in split_months(f))
+    if ins and faded:  # the years drawn as the band is, the rest faded: the line names the years, from the map's table
+        y = lambda t: t if FX.LEDGER is None else FX.entry(f"period:{f.h['data']['q']['table']}:{t}", "span", None)
+        gap = f'<div class="gapw" data-word="ring.inside">{word("ring.inside", ay=y(ins["from"]), by=y(ins["to"]))}</div>' + gap
     unit = FX.worded(f.c.spec, f.c.F, "unit", f.h["unit"]) if f.h.get("unit") else ""
-    return (f"<style>{css}</style>" if css else "") + (f'<div class="hu">{unit}{gap}</div>' if unit or gap else "")
+    return (f"<style>{css}</style>" if css else "") + (f'<div class="hu" data-legend="ring">{unit}{gap}</div>' if unit or gap else "")
 prod.KNOBS["legend"] = dict(width=(280, (160, 420, 10), "legend width"), size=(12, (9, 15, 0.5), "legend font size"), side=("right", ("right", "left"), "which side"))
 LEGEND_CSS = dict(width=".hero.ring .hu{{width:{v}px}}", size=".hero.ring .hu{{font-size:{v}px}}", side=".hero.ring .hu{{right:auto;left:0}}")
 
