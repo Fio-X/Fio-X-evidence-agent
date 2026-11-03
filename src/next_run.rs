@@ -6165,10 +6165,10 @@ mod tests {
         // the dek's finding: the highest place against the lowest, on the extremes the notes declare, each place a name
         // placeholder the labels name, the year the period of its own fact lead1 (the highest's value at the year)
         assert_eq!(fill["finding"], json!({"dek": "{lead1.t}，{name.SE}最高，为{hi}，比最低的{name.BE}高{gap}",
-            "scoped": "{lead1.t}，{name.SE}居首，为{hi}，比{name.BE}高{gap}"}));
+            "scoped": "{lead1.t}，{name.SE}居首，为{hi}，比第二位的{name.BE}高{gap}"}));
         // the title's headline says the same finding with the times the notes declare (HEADLINES), kept apart from the dek's
         assert_eq!(fill[HEADLINE], json!({"title": "{name.SE}最高，是最低者{name.BE}的{times}",
-            "scoped": "{name.SE}居首，是{name.BE}的{times}"}));
+            "scoped": "{name.SE}居首，是第二位{name.BE}的{times}"}));
         assert_eq!(spec["facts"]["lead1"], json!({"op": "last", "table": "sdg", "filter": {"geo": "SE"}, "from": "2025", "to": "2025", "fmt": "pc"}));
         assert!(spec["hero"]["data"].get("hi").is_none());
         assert_eq!(spec["fmts"]["pc"], json!({"scale": 1, "dec": 2, "suffix": "%"}));
@@ -9129,7 +9129,7 @@ mod tests {
         let scope = scope.expect("the narrow record scopes the page");
         assert_eq!(scope, Scope { text: "在本指标最高的20个国籍中".into(), record: "data/origins/0.json".into() });
         // the dek names the set in the registry's words, its count the drawn fact (the 20 citizenships compared)
-        assert_eq!(dek, "{lead1.t}，{name.AF}在本指标最高的{drawn}个国籍中居首，为{hi}，比{name.IQ}高{gap}");
+        assert_eq!(dek, "{lead1.t}，{name.AF}在本指标最高的{drawn}个国籍中居首，为{hi}，比第二位的{name.VE}高{next_gap}");
         assert!(texts.iter().all(|t| !t.contains("最低的")), "{texts:?}");
         // B1: persons add up, but the 20 kept of 199 are not every citizenship, so no share of the drawn sum: the mean
         assert_eq!(notes, [("AF".to_string(), "column.note.vs_mean".to_string()), ("IQ".into(), "column.note.lo.scoped".into())]);
@@ -9165,7 +9165,7 @@ mod tests {
             "members": ["SE", "DE", "FR", "BE"], "at": "2025"});
         let (scope, _dir, dek, texts, notes) = cut_page(&[record], &column_rows());
         assert_eq!(scope.map(|s| s.text), Some("在本指标最高的4个经济体中".to_string()));
-        assert_eq!(dek, "{lead1.t}，{name.SE}在本指标最高的{drawn}个经济体中居首，为{hi}，比{name.BE}高{gap}");
+        assert_eq!(dek, "{lead1.t}，{name.SE}在本指标最高的{drawn}个经济体中居首，为{hi}，比第二位的{name.DE}高{next_gap}");
         assert!(texts.iter().all(|t| !t.contains("最低的")), "{texts:?}");
         assert_eq!(notes, [("SE".to_string(), "column.note.vs_mean".to_string()), ("BE".into(), "column.note.lo.scoped".into())]);
     }
@@ -9270,7 +9270,36 @@ mod tests {
         assert!(five.get("finding").is_none() && five.get(HEADLINE).is_none(), "{}", five["finding"]);
         let four = fill(json!({"words": words, "members": 4}));
         assert_eq!(four["finding"]["set"], "在本指标最高的{drawn}个经济体中");
-        assert_eq!(four[HEADLINE]["scoped"], "{name.SE}在本指标最高的{drawn}个经济体中居首，是{name.BE}的{times}");
+        assert_eq!(four[HEADLINE]["scoped"], "{name.SE}在本指标最高的{drawn}个经济体中居首，是第二位{name.DE}的{next_times}");
+    }
+
+    /// q6 (B3): on a narrowed page the last kept place is where the cut fell, so the finding compares the first with the
+    /// second (its value at the year, the gap and the times declared over the rows); a second tied with another place
+    /// would name one of them by choice, so the page has no finding. Unscoped, the lowest of all stays the other.
+    #[test]
+    fn a_narrowed_page_compares_its_first_with_the_second_and_a_tied_second_names_none() {
+        let column = recipe("column");
+        let set = json!({"words": "在本指标最高的{n}个经济体中", "members": 4});
+        let fill = |main: &[Value], scoped: bool| {
+            let shape = shape_of(&column.eats, &[("t", main)], &Hubs).unwrap();
+            let picks = picks_of(&column.picks, &shape, main, &[]).unwrap();
+            test_fill_set(column, &shape, &picks, (main, &[]), &Hubs, ("标题", "导语"), scoped, scoped.then(|| set.clone())).unwrap()
+        };
+        let main = column_rows();
+        let cut = fill(&main, true);
+        let facts = &cut["knobs"]["spec"]["facts"];
+        assert_eq!(facts["next1"], json!({"op": "last", "table": "t", "filter": {"geo": "DE"}, "from": "2025", "to": "2025", "fmt": "pc"}));
+        assert_eq!(facts["next_times"], json!({"op": "times", "a": "lead1", "b": "next1", "fmt": "times"}));
+        assert_eq!(facts["next_gap"]["a"], "lead1");
+        let all = fill(&main, false);
+        assert_eq!(all["finding"]["dek"], "{lead1.t}，{name.SE}最高，为{hi}，比最低的{name.BE}高{gap}");
+        assert!(all["knobs"]["spec"]["facts"].get("next1").is_none());
+        let mut tied = main.clone();
+        for r in tied.iter_mut().filter(|r| r["dims"]["geo"] == "FR") {
+            r["value"] = json!("30.25");
+        }
+        let tied = fill(&tied, true);
+        assert!(tied.get("finding").is_none() && tied.get(HEADLINE).is_none(), "{}", tied["finding"]);
     }
 
     /// A table no one cut (its own download record, and a cut of another file beside it): no scope, so no scope word on the

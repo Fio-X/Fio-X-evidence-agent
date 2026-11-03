@@ -607,6 +607,13 @@
         "fmt": "$shape.fmt",
         "missing": "whole"
        }
+      },
+      {
+       "id": "second",
+       "kind": "take",
+       "from": "ranked",
+       "at": "second",
+       "scoped_only": true
       }
      ],
      "cases": [
@@ -631,7 +638,20 @@
        },
        "headline_needs_facts": [
         "times"
-       ]
+       ],
+       "when_scoped": {
+        "other": "second",
+        "other_untied": true,
+        "facts": {
+         "next1": {"op": "last", "table": "$shape.main", "filter": {"$shape.place": "{other}"}, "from": "$shape.year", "to": "$shape.year", "fmt": "$shape.fmt"},
+         "next_gap": {"op": "minus", "a": "lead1", "b": "next1", "fmt": "$fmt.change"},
+         "next_times": {"op": "times", "a": "lead1", "b": "next1", "fmt": "times"}
+        },
+        "words": {
+         "{gap}": "{next_gap}",
+         "{times}": "{next_times}"
+        }
+       }
       }
      ]
     },

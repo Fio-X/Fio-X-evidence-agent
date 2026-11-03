@@ -745,10 +745,14 @@ fn finding_declared(d: &J, page_in: &J, reg: &J) -> Result<J, String> {
     let view = &view;
     let (mut sels, mut given) = selects_of(view, reg)?;
     for s in d.g("selects").arr() {
+        // a select only a case's when_scoped part reads is made on a narrowed page only
+        if s.g("scoped_only").truthy() && !view.g("scoped").truthy() {
+            continue;
+        }
         if let (Some("given"), Some(g)) = (s.g("kind").s(), s.get("given")) {
             given.push((st(s.g("id")), sub(g, view)?));
         }
-        sels.push(sub(&J::Obj(s.obj().iter().filter(|(k, _)| k != "given").cloned().collect()), view)?);
+        sels.push(sub(&J::Obj(s.obj().iter().filter(|(k, _)| k != "given" && k != "scoped_only").cloned().collect()), view)?);
     }
     let (bad, got) = recompute_over(view, &sels, &given, fill.g("fmts"));
     if !bad.is_empty() {
@@ -781,6 +785,29 @@ fn finding_declared(d: &J, page_in: &J, reg: &J) -> Result<J, String> {
         }
     }
     let Some(c) = case else { return Ok(none("no case of the finding holds")) };
+    // on a page the program narrowed, the last kept place is where the cut fell, not the lowest of all: a case's
+    // when_scoped part (each key replacing the case's, an object merged key by key) holds there, so the finding compares
+    // with a place the cut does not decide
+    let merged;
+    let c = match (view.g("scoped").truthy(), c.get("when_scoped")) {
+        (true, Some(o)) => {
+            let mut m = c.clone();
+            for (k, v) in o.obj() {
+                let mut put = v.clone();
+                if let (Some(J::Obj(base)), J::Obj(over)) = (c.get(k), v) {
+                    let mut b = J::Obj(base.clone());
+                    for (kk, vv) in over {
+                        b.set(kk, vv.clone());
+                    }
+                    put = b;
+                }
+                m.set(k, put);
+            }
+            merged = m;
+            &merged
+        }
+        _ => c,
+    };
     let pick = |k: &str| -> Option<J> { c.get(k).and_then(|sid| got.get(&st(sid))).filter(|x| !x.is_null()).cloned() };
     let Some(subject) = pick("subject") else { return Ok(none("no single subject (a tie)")) };
     let other = pick("other");
@@ -791,6 +818,21 @@ fn finding_declared(d: &J, page_in: &J, reg: &J) -> Result<J, String> {
     if let Some(b) = c.g("key_above").num() {
         if key(&sid, &subject)? <= b {
             return Ok(none("the subject's key is not above the bound"));
+        }
+    }
+    // other_untied: a place of its select's list sharing the other's key would make naming it a choice the data do not make
+    if let (true, Some(o)) = (c.g("other_untied").truthy(), &other) {
+        let oid = st(c.g("other"));
+        let from = refs.iter().find(|(id, _)| *id == oid).map(|(_, s)| st(s.g("from"))).unwrap_or_default();
+        let ko = key(&oid, o)?;
+        let mut same = 0;
+        for code in got.get(&from).map(|x| x.arr().to_vec()).unwrap_or_default() {
+            if key(&oid, &code)? == ko {
+                same += 1;
+            }
+        }
+        if same > 1 {
+            return Ok(none("the other is tied with another place"));
         }
     }
     if let (true, Some(o)) = (c.g("higher").truthy(), &other) {
