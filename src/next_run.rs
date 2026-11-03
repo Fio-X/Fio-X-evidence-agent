@@ -58,6 +58,11 @@ pub const CHART_GROUP_DROPPED_EVENT: &str = "next_chart_group_dropped";
 pub const TEXT_FALLBACK_EVENT: &str = "next_text_fallback";
 /// On a page with a scoped chart: the fields whose reworded wording ranked outside the scope and went back to the draft.
 pub const SCOPE_FALLBACK_EVENT: &str = "next_scope_fallback";
+/// A page whose title falls back to the text step's label (no headline from its finding), with why: never a silent
+/// downgrade (owner 11-03 18:41).
+pub const HEADLINE_FELL_BACK_EVENT: &str = "headline_fell_back";
+/// The fill's key for why its page has no headline (the finding node's reason), read for HEADLINE_FELL_BACK_EVENT.
+const FELL_BACK: &str = "headline_fell_back";
 /// The origin record of a World Bank table the program narrowed (newsroom.ts prepareWorldBank), under data/origins.
 const NARROW_ORIGIN: &str = "worldbank_narrow";
 /// The origin record of a Eurostat table the program narrowed to the top codes of its open dimension (newsroom.ts prepareData
@@ -1583,8 +1588,10 @@ fn ask_node(f: &Filling, out: &mut Filled, page_in: Option<&Value>) -> Result<()
 
 /// The page's finding, asked of the visual group's finding node (node-bindings.json finding) over the page input and what
 /// the layers left in the fill: its facts' keys, its formats, the codes the labels name (never the names) and the
-/// composition's bars. Its facts are the page's, the rows it reads kept; (its words, the code it names first), or none.
-fn ask_finding(f: &Filling, out: &mut Filled, page_in: &Value, labels: &BTreeMap<String, String>) -> Result<Option<(Value, String)>, String> {
+/// composition's bars. Its facts are the page's, the rows it reads kept; (its words, the code it names first), or none,
+/// with the node's reason when it gives the page no headline.
+type Finding = (Option<(Value, String)>, Option<String>);
+fn ask_finding(f: &Filling, out: &mut Filled, page_in: &Value, labels: &BTreeMap<String, String>) -> Result<Finding, String> {
     let asked = f.asked.ok_or("node finding: this page asks no node")?;
     let mut view = page_in.clone();
     view["fill"] = json!({"facts": out.facts.keys().collect::<Vec<_>>(), "fmts": out.fmts, "named": labels.keys().collect::<Vec<_>>()});
@@ -1600,7 +1607,7 @@ fn ask_finding(f: &Filling, out: &mut Filled, page_in: &Value, labels: &BTreeMap
         Filled::set(&mut out.facts, "fact", &key, value).map_err(|e| format!("not this shape: {e}"))?;
     }
     out.reads(declared.reads);
-    Ok(declared.finding)
+    Ok((declared.finding, declared.fell_back))
 }
 
 /// The names a layer prints: each request resolved through the name table (a code it names none of stops the page) into
@@ -1924,6 +1931,16 @@ fn title_and_kicker(fill: Option<&Value>, scoped: bool, label: &str, measure: &s
     }
 }
 
+/// Why a page's title is the text step's label and not its finding's headline (title_and_kicker), for
+/// HEADLINE_FELL_BACK_EVENT: the finding node's reason the fill keeps, or the recipe pick's stop; None when it has one.
+fn headline_fell_back(picked: Result<&Value, &str>, scoped: bool) -> Option<String> {
+    match picked {
+        Err(why) => Some(format!("no recipe page: {why}")),
+        Ok(fill) if fill[HEADLINE][if scoped { "scoped" } else { "title" }].is_string() => None,
+        Ok(fill) => Some(fill[FELL_BACK].as_str().unwrap_or("the fill has no headline").to_string()),
+    }
+}
+
 /// A composition's scope on its text step: the cut its fill states under the picture (the stacked100 declaration (node-bindings.json)'s cut line and the
 /// line of the places left out), so a finding over its bars is said in its scoped wording (the set words 图中各国中, before the place and its part), never as the
 /// highest of every place. Only whether a page has a scope is read (next_page Drafts::with_scopes); no narrow record
@@ -2070,9 +2087,9 @@ fn fill_of(
     }
     // the dek's finding: the visual group's finding node over the page as its layers left it (asked last, after the labels);
     // it reads only rows the nodes read already, so the labels hold every code it names
-    let finding = match page_in.as_ref() {
+    let (finding, fell_back) = match page_in.as_ref() {
         Some(p) => ask_finding(&filling, &mut out, p, &labels)?,
-        None => None,
+        None => (None, Some("the page asks no node, so no finding".to_string())),
     };
     // the accent marks one place, the one the dek names: its finding's subject. The frame's dek (no finding) names no place,
     // so that page marks none and prints no legend line for the accent; nor does a page that does not rank the subject
@@ -2137,6 +2154,10 @@ fn fill_of(
             fill[HEADLINE] = headline;
         }
         fill["finding"] = finding;
+    }
+    // a page with no headline says why (the finding node's reason), for the run's record (HEADLINE_FELL_BACK_EVENT)
+    if fill.get(HEADLINE).is_none() {
+        fill[FELL_BACK] = json!(fell_back);
     }
     // the two ends the page runs between, and each earlier year passed over with the countries it misses, for the run's record
     if !shape.t0.is_empty() {
@@ -3225,6 +3246,9 @@ pub(crate) async fn page_from(
     let measure = worded.get(&Target::Measure(0)).map_or("", String::as_str);
     let headed = picked.as_ref().ok().map(|(_, fill)| fill);
     let (title, kicker) = title_and_kicker(headed, drafts.has_scope, label, measure);
+    if let Some(why) = headline_fell_back(picked.as_ref().map(|(_, fill)| fill).map_err(|(_, _, why)| why.as_str()), drafts.has_scope) {
+        recorder.program_event(HEADLINE_FELL_BACK_EVENT, json!({"why": why, "scoped": drafts.has_scope}))?;
+    }
     let leaf = picked.and_then(|picked| leaf_page(recorder.run_dir(), picked, (question, (&title, &dek, &kicker)), &calls));
     record_page_calls(recorder, catalogue, calls)?;
     match leaf {
@@ -5304,6 +5328,39 @@ mod tests {
             ring_picks(&shape, &crowded, &picks(&[(MEMBER_CHANGE, &c4)])).unwrap_err(),
             "not this shape: focus RU is not a top-N origin of main imp"
         );
+    }
+
+    /// A narrowed map page (the ring recipe declares no count of its set) has no finding, so its title falls back to the
+    /// text step's label, and the run records why (headline_fell_back, HEADLINE_FELL_BACK_EVENT's reason); the same page
+    /// unnarrowed has its headline and records none; a page with no recipe records the pick's stop.
+    #[test]
+    fn a_narrowed_map_page_records_why_its_headline_fell_back() {
+        let fixed = [("siec", "G3000"), ("unit", "MIO_M3"), ("geo", "EU27_2020")];
+        let mut main = ring_rows("imp", &fixed, ("partner", &["RU", "NO", "US", "DE", "TOTAL", "EXT_EU27_2020"]), &["2021", "2022", "2024"]);
+        for r in main.iter_mut().filter(|r| r["dims"]["partner"] == "RU") {
+            r["value"] = json!(if r["time"] == "2021" { "126027.316" } else { "37843.285" });
+        }
+        for r in main.iter_mut().filter(|r| r["dims"]["partner"] == "US" && r["time"] == "2021") {
+            r["value"] = json!("0");
+        }
+        let months: Vec<String> = (2019..=2024).flat_map(|y| (1..=12).map(move |m| format!("{y}-{m:02}"))).take(63).collect();
+        let months: Vec<&str> = months.iter().map(String::as_str).collect();
+        let monthly = ring_rows("impm", &fixed, ("partner", &["RU", "NO"]), &months);
+        let shape = ring_shape(&[("imp", &main), ("impm", &monthly)], &Hubs).unwrap();
+        let change = [("members", json!(5)), ("from_year", json!(2021)), ("to_year", json!(2024)),
+            ("country_iso2", json!("RU")), ("from_value", json!(126027.316)), ("to_value", json!(37843.285))];
+        let RingPicks { focus, t0, t1, top } = ring_picks(&shape, &main, &[(MEMBER_CHANGE.to_string(), bound("c4", &change))]).unwrap();
+        let picks = Picks { focus, t0, t1, top, ..Picks::default() };
+        let fill = |set: Option<Value>| {
+            test_fill_set(recipe(RING_RECIPE), &shape, &picks, (&main, &monthly), &Hubs, ("标题", "导语"), set.is_some(), set).unwrap()
+        };
+        let plain = fill(None);
+        assert!(plain[HEADLINE].is_object() && plain.get(FELL_BACK).is_none(), "{}", plain[HEADLINE]);
+        assert_eq!(headline_fell_back(Ok(&plain), false), None);
+        let narrowed = fill(Some(json!({"words": "在本指标最高的{n}项中", "members": 3})));
+        assert!(narrowed.get(HEADLINE).is_none() && narrowed.get("finding").is_none());
+        assert_eq!(headline_fell_back(Ok(&narrowed), true).as_deref(), Some("a narrowed page whose recipe declares no count of its set"));
+        assert_eq!(headline_fell_back(Err("not this shape: x"), false).as_deref(), Some("no recipe page: not this shape: x"));
     }
 
     /// The ring page's fill on Hubs rows: its rows (no total or aggregate row), facts, unit format, share words, top list

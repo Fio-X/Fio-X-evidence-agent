@@ -293,6 +293,8 @@ pub struct NodeDeclared {
     pub notes: Vec<String>,
     /// The page's finding (the finding node): its dek's two wordings and its headline's, and the code it names first.
     pub finding: Option<(Value, String)>,
+    /// Why the finding node gives the page no headline (none, or a finding without one), so its title is the label.
+    pub fell_back: Option<String>,
 }
 
 /// fmt dec_rule over the page input: held_decimals (the only rule the generator computes), at most its cap.
@@ -686,17 +688,21 @@ const FINDING: &str = "finding";
 /// rows is the page's own fill: `fill` {facts: keys, fmts, named: codes, composition: {bars}}, which the flow gives when it
 /// asks and the draw recheck reads from the finished fill. {facts, reads, finding, subject}; a page with none: no finding.
 fn finding_declared(d: &J, page_in: &J, reg: &J) -> Result<J, String> {
-    let none = || J::obj_of(vec![("facts", J::Obj(vec![])), ("reads", J::Arr(vec![])), ("finding", J::Null), ("subject", J::Null)]);
+    // no finding, and why (`fell_back`: the page's title falls back to the text step's label, which the run records)
+    let none = |why: &str| J::obj_of(vec![("facts", J::Obj(vec![])), ("reads", J::Arr(vec![])), ("finding", J::Null), ("subject", J::Null), ("fell_back", J::Str(why.to_string()))]);
     let fill = page_in.g("fill");
     let has_fact = |k: &str| fill.g("facts").arr().iter().any(|x| x.s() == Some(k));
-    if d.g("rule").s() == Some("none") || !d.g("needs_facts").arr().iter().all(|k| has_fact(&st(k))) {
-        return Ok(none());
+    if d.g("rule").s() == Some("none") {
+        return Ok(none("the recipe declares no finding"));
+    }
+    if !d.g("needs_facts").arr().iter().all(|k| has_fact(&st(k))) {
+        return Ok(none("a fact the finding needs is not the page's"));
     }
     // each page input value the finding needs, there and not empty (a path the page input lacks is none)
     for path in d.g("requires").arr() {
         let held = st(path).strip_prefix('$').map(|p| p.split('.').try_fold(page_in, |x, k| x.get(k))).ok_or_else(|| format!("finding: requires {}: no path", path.repr()))?;
         if !held.is_some_and(J::truthy) {
-            return Ok(none());
+            return Ok(none("a page input value the finding needs is empty"));
         }
     }
     // the format a change prints in: the registry's by the unit's short form (a gap of percentages in points)
@@ -743,22 +749,22 @@ fn finding_declared(d: &J, page_in: &J, reg: &J) -> Result<J, String> {
             break;
         }
     }
-    let Some(c) = case else { return Ok(none()) };
+    let Some(c) = case else { return Ok(none("no case of the finding holds")) };
     let pick = |k: &str| -> Option<J> { c.get(k).and_then(|sid| got.get(&st(sid))).filter(|x| !x.is_null()).cloned() };
-    let Some(subject) = pick("subject") else { return Ok(none()) };
+    let Some(subject) = pick("subject") else { return Ok(none("no single subject (a tie)")) };
     let other = pick("other");
     if c.has("other") && other.is_none() {
-        return Ok(none());
+        return Ok(none("no single other (a tie)"));
     }
     let sid = st(c.g("subject"));
     if let Some(b) = c.g("key_above").num() {
         if key(&sid, &subject)? <= b {
-            return Ok(none());
+            return Ok(none("the subject's key is not above the bound"));
         }
     }
     if let (true, Some(o)) = (c.g("higher").truthy(), &other) {
         if key(&sid, &subject)? <= key(&st(c.g("other")), o)? {
-            return Ok(none());
+            return Ok(none("the subject is not above the other"));
         }
     }
     // a template over the case's codes: its paths, then the subject's code ({code}, {code_lc}, the years), the other's
@@ -782,12 +788,12 @@ fn finding_declared(d: &J, page_in: &J, reg: &J) -> Result<J, String> {
     let named = |x: &J| fill.g("named").arr().contains(x);
     for n in c.g("named").arr() {
         if !named(&put(n)?) {
-            return Ok(none());
+            return Ok(none("a code it names is one the labels name none of"));
         }
     }
     for k in c.g("facts_have").arr() {
         if !has_fact(&st(&put(k)?)) {
-            return Ok(none());
+            return Ok(none("a fact the case needs is not the page's"));
         }
     }
     let facts = put(c.g("facts"))?;
@@ -818,12 +824,15 @@ fn finding_declared(d: &J, page_in: &J, reg: &J) -> Result<J, String> {
         (None, Some(w)) => {
             let count = st(d.g("set_count"));
             let compared = got.get(&st(d.g("set_of"))).map(|x| x.arr().len());
-            if count.is_empty() || !has_fact(&count) || compared.is_none() || view.g("set").g("members").num() != compared.map(|n| n as f64) {
-                return Ok(none());
+            if count.is_empty() || !has_fact(&count) {
+                return Ok(none("a narrowed page whose recipe declares no count of its set"));
+            }
+            if compared.is_none() || view.g("set").g("members").num() != compared.map(|n| n as f64) {
+                return Ok(none("the narrow record's member count is not the places compared"));
             }
             Some(w.replace("{n}", &format!("{{{count}}}")))
         }
-        (None, None) if view.g("scoped").truthy() => return Ok(none()),
+        (None, None) if view.g("scoped").truthy() => return Ok(none("a narrowed page whose recipe names no set")),
         (None, None) => None,
     };
     tokens.push(("{set}".to_string(), set.clone().unwrap_or_default()));
@@ -833,10 +842,13 @@ fn finding_declared(d: &J, page_in: &J, reg: &J) -> Result<J, String> {
         said.set("set", J::Str(set));
     }
     let headline = of(&crate::shape_registry::HEADLINES).filter(|_| c.g("headline_needs_facts").arr().iter().all(|k| has_fact(&st(k))));
-    if let Some((plain, scoped)) = headline {
-        said.set("headline", J::obj_of(vec![("title", worded(plain)), ("scoped", worded(scoped))]));
+    let mut out = J::obj_of(vec![("facts", facts), ("reads", J::Arr(reads)), ("finding", J::Null), ("subject", subject)]);
+    match headline {
+        Some((plain, scoped)) => said.set("headline", J::obj_of(vec![("title", worded(plain)), ("scoped", worded(scoped))])),
+        None => out.set("fell_back", J::str("the finding has no headline: a fact it needs is not the page's")),
     }
-    Ok(J::obj_of(vec![("facts", facts), ("reads", J::Arr(reads)), ("finding", said), ("subject", subject)]))
+    out.set("finding", said);
+    Ok(out)
 }
 
 /// The page's finding declared again over the finished fill (its facts' keys and formats, its labels' codes and its
@@ -1257,6 +1269,7 @@ pub fn declare(layer: &str, page_in: &Value) -> Result<NodeDeclared, String> {
         unit_drawn: out.g("unit_drawn").truthy(),
         notes: out.g("notes").arr().iter().map(st).collect(),
         finding: out.get("finding").filter(|f| !f.is_null()).map(|f| (f.to_value(), st(out.g("subject")))),
+        fell_back: out.g("fell_back").s().map(str::to_string),
     })
 }
 
