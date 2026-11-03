@@ -683,7 +683,7 @@ fn table_relation(relation: Option<usize>, table: &str) -> Option<Relation> {
 }
 
 impl Ask {
-    pub(crate) fn step(&self) -> &'static str {
+    fn step(&self) -> &'static str {
         match self {
             Ask::Search => "search",
             Ask::Table { .. } => "table",
@@ -1819,6 +1819,12 @@ pub fn now_ms() -> i64 {
     chrono::Utc::now().timestamp_millis()
 }
 
+/// Every step's prompt ends naming the step value its answer gives, from the step registry the check reads (Ask::step,
+/// the schema's one `step` enum value), never written by hand (stand-ins answered the image review with "image").
+fn with_step_line(prompt: &str, step: &str) -> String {
+    format!("{prompt}\nAnswer with step {step:?}.")
+}
+
 fn text_content(text: &str) -> Vec<Value> {
     vec![json!({"type": "text", "text": text})]
 }
@@ -1950,7 +1956,7 @@ impl<'a> Recorder<'a> {
         let step = ask.step();
         self.parent = None;
         self.step_from = self.history.len();
-        let mut content = text_content(prompt);
+        let mut content = text_content(&with_step_line(prompt, step));
         content.extend(images.iter().cloned());
         self.history
             .push(json!({"role": "user", "content": content, "timestamp": now_ms()}));
@@ -5558,6 +5564,19 @@ mod tests {
             .check(&json!({"step": "table", "pick": [1], "why": "x"}))
             .is_err());
         assert!(ask.check(&json!([1])).is_err());
+    }
+
+    /// Every step's prompt ends with the step value the check takes, read from the same registry (Ask::step, the schema's
+    /// enum), so the step name is never hand-written; an answer with another name ("image") is still refused.
+    #[test]
+    fn every_prompt_names_the_step_the_check_takes() {
+        for ask in [Ask::Search, Ask::Vision] {
+            let step = ask.schema()["properties"]["step"]["enum"][0].as_str().unwrap().to_string();
+            assert_eq!(step, ask.step());
+            assert!(with_step_line("p", ask.step()).ends_with(&format!("\nAnswer with step \"{step}\".")));
+        }
+        let refused = Ask::Vision.check(&json!({"step": "image", "answers": {}})).unwrap_err();
+        assert_eq!(refused.problem, "step must be \"vision\"");
     }
 
     /// The image review's answer, read strictly: every question yes; a no with its one-line reason; anything else on a

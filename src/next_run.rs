@@ -3274,15 +3274,13 @@ pub(crate) async fn page_from(
 }
 
 /// The published page's image review prompt: the question the page answers and the six yes/no questions with their
-/// definitions (VISION_QUESTIONS), and the step value the answer names (the tool schema's own); nothing else of the run.
+/// definitions (VISION_QUESTIONS); nothing else of the run.
 fn publication_vision_prompt(question: &str) -> String {
     let questions: Vec<String> = VISION_QUESTIONS.iter().map(|(id, definition)| format!("- {id}: {definition}")).collect();
-    let step = Ask::Vision.step();
     format!(
         "The page answers this question: {question}\nThe attached image is the browser screenshot of the published page, as a \
          reader sees it. Judging only what is visible, answer each question below yes or no; for each no, give a one-line \
-         reason naming what the image shows.\n{}\n\
-         Answer with step {step:?}.",
+         reason naming what the image shows.\n{}",
         questions.join("\n")
     )
 }
@@ -3989,17 +3987,6 @@ mod tests {
     use crate::next_flow::{
         number_not_allowed, placeholders, worded_number, ModelRoute, CHOOSE_TOOL,
     };
-
-    /// Stand-ins answered the image review with step "image" (5+ times on q1/q3/q6): the prompt names the step value the
-    /// schema takes, and an answer written the way the prompt says is accepted.
-    #[test]
-    fn the_image_review_prompt_names_its_step() {
-        let prompt = publication_vision_prompt("q");
-        assert!(prompt.ends_with("Answer with step \"vision\"."), "{prompt}");
-        let answers: serde_json::Map<String, Value> =
-            VISION_QUESTIONS.iter().map(|(id, _)| (id.to_string(), json!({"answer": "yes"}))).collect();
-        assert!(Ask::Vision.check(&json!({"step": "vision", "answers": answers})).is_ok());
-    }
 
     /// verify.rs (knowledge group) reads the flow's leaf page events and plan as data, by these literals in
     /// leaf_gate_event and verify_publications, not by the agent group's names: they must not drift apart.
