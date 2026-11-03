@@ -1895,8 +1895,11 @@ const HEADLINE: &str = "headline";
 /// The page's title and kicker after the text step. With a headline (the fill's, finding_of: its scoped wording on a
 /// scoped page, as the dek's) the title is that conclusion and the kicker the text step's title (`label`, the label the
 /// model reworded: a field with no number and no placeholder, as a kicker prints); the lead chart's measure (`measure`)
-/// when the label is empty. With none the label is the title and the measure the kicker, as before headlines.
+/// when the label is empty. With none the label is the title and the measure the kicker, as before headlines. A composition
+/// page names the registry's words for a composition (composition_kicker) where another names its measure, never the first
+/// fetch's ranking measure; its label is its kicker as any page's.
 fn title_and_kicker(fill: Option<&Value>, scoped: bool, label: &str, measure: &str) -> (String, String) {
+    let measure = composition_kicker(fill).unwrap_or(measure);
     let wording = if scoped { "scoped" } else { "title" };
     match fill.and_then(|fill| fill[HEADLINE][wording].as_str()) {
         Some(headline) if !label.trim().is_empty() => (headline.to_string(), label.to_string()),
@@ -3195,8 +3198,6 @@ pub(crate) async fn page_from(
     // kicker, as the old route's does without a scope
     let measure = worded.get(&Target::Measure(0)).map_or("", String::as_str);
     let headed = picked.as_ref().ok().map(|(_, fill)| fill);
-    // a composition page's kicker is the registry's words for a composition, never the first fetch's ranking measure
-    let label = composition_kicker(headed).unwrap_or(label);
     let (title, kicker) = title_and_kicker(headed, drafts.has_scope, label, measure);
     let leaf = picked.and_then(|picked| leaf_page(recorder.run_dir(), picked, (question, (&title, &dek, &kicker)), &calls));
     record_page_calls(recorder, catalogue, calls)?;
@@ -7188,8 +7189,17 @@ mod tests {
         assert_eq!(spec["facts"]["lead1"]["filter"], json!({"geo": "IT", "siec": "TOTAL"}));
         let frame = crate::shape_registry::FRAMES.iter().find(|(r, v, _)| (*r, *v) == (Relation::Composition, View::Slice)).unwrap().2;
         assert_eq!(composition_kicker(Some(&fill)), Some(frame[0]));
-        let (title, kicker) = title_and_kicker(Some(&fill), false, composition_kicker(Some(&fill)).unwrap(), "发电总量");
+        // the text step's label (field 1, the model's rewording) is the kicker, as on any page (q3 dropped it 7 of 7 runs
+        // from 11-02 to 11-03: the composition words took the label's place); with no label the composition's words stand
+        // where another page names its measure, never the first fetch's ranking measure
+        let label = "各国发电结构";
+        let (title, kicker) = title_and_kicker(Some(&fill), false, label, "发电总量");
+        assert_eq!((title.as_str(), kicker.as_str()), ("{name.IT}{name.fossil}占比最高，达{comp_top}", label));
+        let (title, kicker) = title_and_kicker(Some(&fill), false, "", "发电总量");
         assert_eq!((title.as_str(), kicker.as_str()), ("{name.IT}{name.fossil}占比最高，达{comp_top}", frame[0]));
+        let mut no_headline = fill.clone();
+        no_headline.as_object_mut().unwrap().remove(HEADLINE);
+        assert_eq!(title_and_kicker(Some(&no_headline), false, label, "发电总量"), (label.into(), frame[0].into()));
         assert_eq!(composition_kicker(Some(&json!({}))), None, "a page that is no composition keeps its own kicker");
     }
 
