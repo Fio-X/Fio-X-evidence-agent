@@ -5368,6 +5368,16 @@ mod tests {
         assert!(off.get(HEADLINE).is_none() && off.get("finding").is_none());
         assert!(headline_fell_back(Ok(&off), true).is_some());
         assert_eq!(headline_fell_back(Err("not this shape: x"), false).as_deref(), Some("no recipe page: not this shape: x"));
+        // a focus whose change starts at zero (US, 0 at 2021): the page is drawn with no finding, and the fall back gives
+        // the reason, narrowed or not, never a stop at the share of its start
+        let monthly = ring_rows("impm", &fixed, ("partner", &["RU", "NO", "US"]), &months);
+        let from_zero = Picks { focus: "US".to_string(), t0: picks.t0.clone(), t1: picks.t1.clone(), top: picks.top.clone(), ..Picks::default() };
+        for set in [None, Some(json!({"words": "在本指标最高的{n}项中", "members": 3}))] {
+            let scoped = set.is_some();
+            let fill = test_fill_set(recipe(RING_RECIPE), &shape, &from_zero, (&main, &monthly), &Hubs, ("标题", "导语"), scoped, set).unwrap();
+            assert!(fill.get(HEADLINE).is_none() && fill.get("finding").is_none(), "{}", fill[HEADLINE]);
+            assert_eq!(headline_fell_back(Ok(&fill), scoped).as_deref(), Some("the change starts at zero: no share of its start"));
+        }
     }
 
     /// The ring page's fill on Hubs rows: its rows (no total or aggregate row), facts, unit format, share words, top list

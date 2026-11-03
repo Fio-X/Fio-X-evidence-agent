@@ -780,6 +780,23 @@ fn finding_declared(d: &J, page_in: &J, reg: &J) -> Result<J, String> {
             return Ok(none("the subject is not above the other"));
         }
     }
+    // a change whose start is zero has no share of that start (the ring's lead, its gap over lead0): no finding, and the
+    // fall back says why, never a page stop at the core's share; the start is the subject's value at the change rank's
+    // earlier time (its key {"change": [t0, t1]}), read as the rank reads it
+    if c.g("start_above_zero").truthy() {
+        let root = core::root_rank(&refs, &sid)?;
+        let Some(t0) = core::change_from(root) else {
+            return Err(format!("finding: start_above_zero on a select whose rank is not a change: {sid}"));
+        };
+        let mut over = root.g("over").clone();
+        over.set("time", t0.clone());
+        let mut at_start = root.clone();
+        at_start.set("over", over);
+        at_start.set("key", J::str("value"));
+        if core::take_value(&[("start".to_string(), &at_start)], "start", &subject, rows)? == 0.0 {
+            return Ok(none("the change starts at zero: no share of its start"));
+        }
+    }
     // a template over the case's codes: its paths, then the subject's code ({code}, {code_lc}, the years), the other's
     // ({other}) and the first group's ({group})
     let code = st(&subject);
@@ -831,19 +848,25 @@ fn finding_declared(d: &J, page_in: &J, reg: &J) -> Result<J, String> {
     // places drawn (set_count, which the core recomputes from the rows of the select set_of). The record's members must be
     // the places the page compares (the core's recomputed set_of select), else the words would name a set the page does not
     // show (a member with no value at the page's year) and the page has no finding; a page the program narrowed with no set
-    // words has none either.
+    // words has none either. The subject must be one of those places (the set_of select's codes), else the set words would
+    // place it among places it is not: a declaration whose plain words claim nothing of the set (outside_set "plain", the
+    // ring's own rise or fall) then says them in its scoped wording too, and any other has no finding.
     let set = match (d.g("set_words").s(), view.g("set").g("words").s()) {
         (Some(w), _) => Some(w.to_string()),
         (None, Some(w)) => {
             let count = st(d.g("set_count"));
-            let compared = got.get(&st(d.g("set_of"))).map(|x| x.arr().len());
+            let compared = got.get(&st(d.g("set_of")));
             if count.is_empty() || !has_fact(&count) {
                 return Ok(none("a narrowed page whose recipe declares no count of its set"));
             }
-            if compared.is_none() || view.g("set").g("members").num() != compared.map(|n| n as f64) {
+            if compared.is_none() || view.g("set").g("members").num() != compared.map(|x| x.arr().len() as f64) {
                 return Ok(none("the narrow record's member count is not the places compared"));
             }
-            Some(w.replace("{n}", &format!("{{{count}}}")))
+            match compared.is_some_and(|x| x.arr().contains(&subject)) {
+                true => Some(w.replace("{n}", &format!("{{{count}}}"))),
+                false if d.g("outside_set").s() == Some("plain") => None,
+                false => return Ok(none("the subject is not among the places the set names")),
+            }
         }
         (None, None) if view.g("scoped").truthy() => return Ok(none("a narrowed page whose recipe names no set")),
         (None, None) => None,
@@ -2750,6 +2773,59 @@ mod tests {
         let bound = core::bindings();
         let leaf: Vec<&str> = bound.g("nodes").obj().iter().filter(|(_, n)| n.g("geometry").s() == Some("leaf")).map(|(k, _)| k.as_str()).collect();
         assert_eq!(leaf, ["map", "bignums", "leader_notes", "notes", "ring", "strip", "sankey", "stacked100"]);
+    }
+
+    /// The ring's finding over a hand page input narrowed to the origins it compares: its set phrase only when the core finds
+    /// the focus among those origins (the set_of select); a focus outside them says its own change in the plain wording on
+    /// the scoped line too (outside_set "plain"), and a declaration with no such word has no finding then, saying why; a
+    /// focus whose change starts at zero (no share of its start) has no finding, saying why, scoped or not, and no stop.
+    #[test]
+    fn next_tree_gen_ring_finding_names_its_set_only_around_the_focus() {
+        let row = |p: &str, t: &str, v: &str| {
+            serde_json::json!({"src": format!("series:imp/{p}:{t}:OBS_VALUE"), "table": "imp", "dims": {"partner": p, "geo": "EU27_2020"}, "time": t, "value": v})
+        };
+        let rows = [row("RU", "2021", "8"), row("RU", "2024", "2"), row("NO", "2021", "5"), row("NO", "2024", "6"),
+            row("US", "2021", "0"), row("US", "2024", "3"), row("DE", "2021", "4"), row("DE", "2024", "1")];
+        let (reg, _) = core::registry_in_force();
+        let d = declares(&reg, FINDING, &J::from_value(&serde_json::json!({"recipe": "ring"}))).unwrap().clone();
+        let pi = |focus: &str, set: Option<serde_json::Value>| {
+            let mut v = serde_json::json!({"recipe": "ring",
+                "shape": {"main": "imp", "place": "partner", "hub": "EU27_2020", "fmt": "mio_m3", "countries": ["DE", "NO", "RU", "US"]},
+                "picks": {"rules": [], "ranked": [], "marks": [], "t0": "2021", "t1": "2024", "top": ["NO", "US", "RU"], "focus": focus},
+                "outside": ["NO", "RU", "US"], "rows": rows,
+                "fill": {"facts": ["drawn", "lead0", "lead1", "gap", "lead"], "fmts": {}, "named": ["DE", "NO", "RU", "US"]}});
+            if let Some(set) = set {
+                v["set"] = set;
+            }
+            J::from_value(&v)
+        };
+        let set = || Some(serde_json::json!({"words": "在本指标最高的{n}项中", "members": 3}));
+        let said = |d: &J, focus: &str, set: Option<serde_json::Value>| finding_declared(d, &pi(focus, set), &reg).unwrap().to_value();
+        // the focus among the three origins: the set phrase, on the scoped line only
+        let ru = said(&d, "RU", set());
+        assert_eq!(ru["finding"]["set"], serde_json::json!("在本指标最高的{drawn}项中"), "{ru}");
+        assert_eq!(ru["finding"]["headline"]["scoped"], serde_json::json!("{name.RU}在本指标最高的{drawn}项中下降{lead}"));
+        assert!(ru.get("fell_back").is_none());
+        // a member focus (DE, no origin of the map's): no set phrase, the scoped line is the plain one
+        let de = said(&d, "DE", set());
+        assert!(de["finding"].get("set").is_none(), "{de}");
+        assert_eq!(de["finding"]["headline"]["scoped"], de["finding"]["headline"]["title"]);
+        assert_eq!(de["finding"]["scoped"], de["finding"]["dek"]);
+        assert_eq!(de["finding"]["headline"]["title"], serde_json::json!("{name.DE}下降{lead}"));
+        assert!(de.get("fell_back").is_none());
+        // must fail: the same declaration with no outside_set has no finding for that focus, and says why
+        let mut strict = d.clone();
+        strict.remove("outside_set");
+        let off = said(&strict, "DE", set());
+        assert!(off["finding"].is_null(), "{off}");
+        assert_eq!(off["fell_back"], serde_json::json!("the subject is not among the places the set names"));
+        assert!(said(&strict, "RU", set())["finding"]["set"].is_string());
+        // a change from zero (US: 0 to 3): no finding, its reason, narrowed or not
+        for set in [None, set()] {
+            let us = said(&d, "US", set);
+            assert!(us["finding"].is_null(), "{us}");
+            assert_eq!(us["fell_back"], serde_json::json!("the change starts at zero: no share of its start"));
+        }
     }
 
     /// The scmp notes declared over a hand page input: one note per top origin in its order, the focus's marked, its change

@@ -698,6 +698,7 @@
      ],
      "set_count": "drawn",
      "set_of": "origins",
+     "outside_set": "plain",
      "selects": [
       {
        "id": "origins",
@@ -758,6 +759,7 @@
         "above": 0
        },
        "finding": "Grew",
+       "start_above_zero": true,
        "subject": "subject",
        "named": [
         "{code}"
@@ -817,6 +819,7 @@
         "below": 0
        },
        "finding": "Shrank",
+       "start_above_zero": true,
        "subject": "subject",
        "named": [
         "{code}"
