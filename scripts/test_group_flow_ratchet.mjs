@@ -36,7 +36,9 @@
 //   - any code line whose trimmed start is `//`, `*` or `/*`, so a code line that starts with `*` (a deref such as
 //     `*slot = "sankey"`) is skipped as if it were a comment;
 //   - everything in a .rs file from its first line starting `#[cfg(test)]` or `mod tests` on; past that line only test code
-//     may follow (the test module, or items whose attribute lines carry #[cfg(test)]), any other item is red (pastCut);
+//     may follow (the test module, or items whose attribute lines carry #[cfg(test)]), any other item is red (pastCut:
+//     items found by brace depth with strings and comments skipped, at any indentation; an inline attribute covers only its
+//     own item; a mod tests without #[cfg(test)] is not test code);
 //     every run prints, per file, the lines read of its total;
 //   - the continuation lines of a multi-line string: copy needs CJK and a quote on the same line, so a CJK line inside a
 //     multi-line string literal with no quote on it is not copy (word files and data files are counted line by line);
@@ -187,21 +189,79 @@ export function cutAt(path, lines) {
   return lines.length;
 }
 
-/** The first line past a .rs file's cut that is not test code, else -1: each column-0 item there must be the test module or
- *  carry #[cfg(test)] in the attribute lines right above it; an item whose line ends with `{` is skipped to its column-0
- *  close. Lines that start indented, with `}`, `]`, `)` or `"` (a raw string's end), and comments are no item. */
+/** Per line of Rust source, the depth of open (, [ and { at its start (one more entry for the end), with strings, raw
+ *  strings, byte strings, char literals and comments skipped (a lone ' is a lifetime). */
+export function depthsOf(lines) {
+  const t = lines.join("\n"), n = t.length, depth = [0];
+  let d = 0, i = 0;
+  const nl = () => depth.push(d);
+  const word = (k) => k >= 0 && /[A-Za-z0-9_]/.test(t[k]);
+  while (i < n) {
+    const c = t[i];
+    if (c === "\n") { nl(); i += 1; continue; }
+    if (c === "/" && t[i + 1] === "/") { while (i < n && t[i] !== "\n") i += 1; continue; }
+    if (c === "/" && t[i + 1] === "*") {
+      let open = 1; i += 2;
+      while (i < n && open) { if (t[i] === "\n") nl(); if (t[i] === "/" && t[i + 1] === "*") { open += 1; i += 2; continue; } if (t[i] === "*" && t[i + 1] === "/") { open -= 1; i += 2; continue; } i += 1; }
+      continue;
+    }
+    const raw = !word(i - 1) && /^b?r(#*)"/.exec(t.slice(i, i + 64));
+    if (raw) {
+      const close = `"${raw[1]}`;
+      i += raw[0].length;
+      while (i < n && t.slice(i, i + close.length) !== close) { if (t[i] === "\n") nl(); i += 1; }
+      i += close.length;
+      continue;
+    }
+    if (c === '"') {
+      i += 1;
+      while (i < n && t[i] !== '"') { if (t[i] === "\\") { if (t[i + 1] === "\n") nl(); i += 2; continue; } if (t[i] === "\n") nl(); i += 1; }
+      i += 1;
+      continue;
+    }
+    if (c === "'") { const ch = /^'(?:\\u\{[0-9a-fA-F]+\}|\\.|[^\\'\n])'/.exec(t.slice(i, i + 12)); i += ch ? ch[0].length : 1; continue; }
+    if (c === "(" || c === "[" || c === "{") d += 1;
+    else if (c === ")" || c === "]" || c === "}") d -= 1;
+    i += 1;
+  }
+  return depth;
+}
+
+/** A line's leading attributes (`#[...]`, brackets matched) and the rest of it. */
+export function splitAttrs(line) {
+  const attrs = [];
+  let rest = line.trim();
+  while (rest.startsWith("#[")) {
+    let open = 0, k = 1;
+    for (; k < rest.length; k += 1) { if (rest[k] === "[") open += 1; else if (rest[k] === "]" && --open === 0) break; }
+    if (k >= rest.length) break;
+    attrs.push(rest.slice(0, k + 1));
+    rest = rest.slice(k + 1).trim();
+  }
+  return { attrs, rest };
+}
+
+/** The first line past a .rs file's cut that is not test code, else -1. Past the cut, each item at depth 0 (depthsOf, at any
+ *  indentation) must carry #[cfg(test)] among its attributes, on the lines above it or inline before it; a module named tests
+ *  without it is code like any other. An item runs from its first line to the line that ends it at depth 0 (`;` or `}`);
+ *  comments and blank lines between items are no item. */
 export function pastCut(path, lines) {
   const cut = cutAt(path, lines);
-  let attrs = [], skipTo = -1;
-  for (let k = cut; k < lines.length; k++) {
-    if (k <= skipTo) continue;
-    const l = lines[k];
-    if (!l.trim() || /^[\s}\])"]/.test(l) || l.startsWith("//")) continue;
-    if (l.startsWith("#[")) { attrs.push(l); continue; }
-    const test = attrs.some((a) => a.startsWith("#[cfg(test)]")) || /^mod tests\b/.test(l);
+  if (cut >= lines.length) return -1;
+  const depth = depthsOf(lines);
+  let attrs = [], open = false;
+  const ends = (k) => depth[k + 1] === 0 && /[;}]$/.test(lines[k].replace(/\s\/\/\s.*$/, "").trim());
+  for (let k = cut; k < lines.length; k += 1) {
+    const l = lines[k].trim();
+    if (open) { if (ends(k)) open = false; continue; }
+    if (!l || l.startsWith("//")) continue;
+    const { attrs: a, rest } = splitAttrs(l);
+    attrs.push(...a);
+    if (!rest) continue;
+    const test = attrs.includes("#[cfg(test)]");
     attrs = [];
     if (!test) return k;
-    if (/\{\s*$/.test(l)) { const end = lines.findIndex((x, m) => m > k && x.startsWith("}")); skipTo = end < 0 ? lines.length : end; }
+    open = !ends(k);
   }
   return -1;
 }
@@ -348,7 +408,14 @@ eq(pastOf('fn a() {}\n#[cfg(test)]\nmod tests {\n    use super::*;\n}\n#[cfg(tes
 eq(pastOf('#[cfg(test)]\n#[derive(Debug)]\npub enum R {\n    A,\n}\n#[cfg(test)]\nuse x::Y;\n#[cfg(test)]\nmod tests {\n}\n'), -1, "past the cut: test items before the test module");
 eq(pastOf('fn a() {}\n#[cfg(test)]\nmod tests {\n    fn t() {}\n}\nfn draw() {\n    let k = "ring";\n}\n'), 5, "must-fail: code after mod tests");
 eq(pastOf('#[cfg(test)]\nuse crate::x::{A, B};\nfn fill_of() {\n    let k = "ring";\n}\n#[cfg(test)]\nmod tests {\n}\n'), 2, "must-fail: a stray #[cfg(test)] use line followed by code");
-eq(pastOf('mod tests {\n}\n// trailing note\n'), -1, "past the cut: comments are no item");
+eq(pastOf('#[cfg(test)]\nmod tests {\n}\n// trailing note\n'), -1, "past the cut: comments are no item");
+eq(pastOf('#[cfg(test)]\nmod tests {\n    fn f<\'a>(x: &\'a str) -> char {\n        let s = "}";\n        let r = r#"\n}\n"#;\n        \'{\'\n    }\n}\n#[cfg(test)]\npub fn g(\n    a: u8,\n) -> u8 {\n    a\n}\n'), -1, "past the cut: strings, raw strings, chars and lifetimes hold no brace; a signature over lines is one item");
+eq(pastOf('#[cfg(test)]\nmod tests {\n}\n#[cfg(test)] const X: u8 = 1;\nfn hidden() {}\n'), 4, "must-fail: an inline #[cfg(test)] item covers only itself, not the code after it");
+eq(pastOf('#[cfg(test)]\nmod tests {\n}\n    fn indented() {\n        let k = "ring";\n    }\n'), 3, "must-fail: indented code at the top level after the test module");
+eq(pastOf('fn a() {}\nmod tests {\n    fn t() {}\n}\n'), 1, "must-fail: a mod tests without #[cfg(test)] is built and counted, not cut");
+eq(depthsOf('const S: &str = "a {\\\nb";\nfn f() {}\n'.split("\n")), [0, 0, 0, 0], "a string continued over a line (backslash newline) keeps the line count and holds no brace");
+eq(cutAt("src/next_x.rs", 'fn a() {\n    #[cfg(test)]\n    let k = "ring";\n}\nfn b() {}\n'.split("\n")), 6, "an indented #[cfg(test)] inside a non-test item is no cut");
+eq(counts("src/next_x.rs", 'fn a() {\n    #[cfg(test)]\n    let k = "ring";\n}\nfn b() { let j = "sankey"; }\n'), { nodes: 0, ops: 0, copy: 0, kinds: 2 }, "the code after an indented #[cfg(test)] is counted");
 assert.ok(scanText("src/next_x.rs", '#[cfg(test)]\nuse a::B;\nfn f() {}\n', SAMPLE_KINDS).hidden?.line === 3, "a hidden line is reported by scanText");
 checks += 1;
 // NODE_FILLS: a src listing with no table reads; one with an empty table throws
