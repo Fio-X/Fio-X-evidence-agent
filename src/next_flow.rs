@@ -2893,6 +2893,8 @@ pub struct Published {
     pub scales: Vec<Value>,
     /// What the visual group's drawn check compared on each external layer (next_visual LeafDrawn), for the run's event.
     pub drawn_checked: Vec<Value>,
+    /// Whether the page's h1 states a relation its checks read (next_visual LeafDrawn): the leaf's own headline.
+    pub headed: bool,
 }
 
 /// The leaf page published at publications/<slug>/ of the run folder at `root`. The visual group draws and bakes it; its
@@ -2969,6 +2971,7 @@ pub fn publish_leaf_page(
         dropped: drawn.dropped,
         type_measured: drawn.type_measured,
         scales: drawn.scales,
+        headed: drawn.headed,
         drawn_checked: drawn.drawn_checked,
     })
 }

@@ -3246,11 +3246,14 @@ pub(crate) async fn page_from(
     let measure = worded.get(&Target::Measure(0)).map_or("", String::as_str);
     let headed = picked.as_ref().ok().map(|(_, fill)| fill);
     let (title, kicker) = title_and_kicker(headed, drafts.has_scope, label, measure);
-    if let Some(why) = headline_fell_back(picked.as_ref().map(|(_, fill)| fill).map_err(|(_, _, why)| why.as_str()), drafts.has_scope) {
-        recorder.program_event(HEADLINE_FELL_BACK_EVENT, json!({"why": why, "scoped": drafts.has_scope}))?;
-    }
+    let fell_back = headline_fell_back(picked.as_ref().map(|(_, fill)| fill).map_err(|(_, _, why)| why.as_str()), drafts.has_scope);
     let leaf = picked.and_then(|picked| leaf_page(recorder.run_dir(), picked, (question, (&title, &dek, &kicker)), &calls));
     record_page_calls(recorder, catalogue, calls)?;
+    // a fill with no headline falls back to the label, unless the leaf made the page's h1 from its own finding (an h1 that
+    // states a relation the page checks read, as a flow page's does): that page did not fall back
+    if let Some(why) = fell_back.filter(|_| !leaf.as_ref().is_ok_and(|l| l.published.headed)) {
+        recorder.program_event(HEADLINE_FELL_BACK_EVENT, json!({"why": why, "scoped": drafts.has_scope}))?;
+    }
     match leaf {
         Ok(leaf) => {
             let (recipe, published) = (leaf.recipe.name.as_str(), &leaf.published);
@@ -10904,6 +10907,7 @@ for line in sys.stdin:
             type_measured: None,
             scales: Vec::new(),
             drawn_checked: Vec::new(),
+            headed: false,
         };
         let sha = Some(published.html_sha256.clone());
         assert_eq!(checked_bytes(dir.path(), &published), (Some(page.to_string()), sha));

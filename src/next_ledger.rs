@@ -1024,14 +1024,23 @@ fn scope_said(shown: &str, body: &str, scoped: bool) -> Option<String> {
     }
 }
 
+/// Whether a page's h1 states a relation the page checks read: an element with data-cmp or data-claim in it (a headline a
+/// leaf made from a finding, its relation rechecked by check_relations, or a title whose claim check_claims read from the
+/// data). A title the text step's label stays as states none.
+pub fn h1_states_relation(html: &str) -> bool {
+    let els = elements(html);
+    els.iter()
+        .filter(|e| e.name == "h1")
+        .any(|h| els.iter().any(|e| (e.attr("data-cmp").is_some() || e.attr("data-claim").is_some()) && h.inner.contains(&e.inner.start)))
+}
+
 /// accent_named, on a page whose h1 states a relation (an element with data-cmp or data-claim in it: a headline a leaf
 /// made from a finding, or a title whose claim it read from the data): every mark (rect, path, polygon, circle) filled with the accent that names its entity (data-code) is named in
 /// the h1 or the dek (p.dek) by that code's name row. A page whose h1 states none is out of its scope (unscoped, the accent
 /// circles of the published column pages would refuse: their h1 names no code by its row).
 pub fn check_accent_named(html: &str) -> Vec<String> {
     let els = elements(html);
-    let heads: Vec<&El> = els.iter().filter(|e| e.name == "h1").collect();
-    if !heads.iter().any(|h| els.iter().any(|e| (e.attr("data-cmp").is_some() || e.attr("data-claim").is_some()) && h.inner.contains(&e.inner.start))) {
+    if !h1_states_relation(html) {
         return Vec::new();
     }
     let dek = |e: &El| e.name == "p" && e.attr("class").is_some_and(|c| c.split_whitespace().any(|w| w == "dek"));
@@ -1247,7 +1256,7 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
 pub const CHECK_HELPERS: &[&str] = &[
     "ledger::name_src", "ledger::point_entry", "ledger::dropped_entry", "ledger::esc", "ledger::unescape",
     "ledger::tag_parts", "ledger::tag_end", "ledger::attr", "ledger::elements", "ledger::text_outside",
-    "ledger::printed", "ledger::word_table", "facts::stored_request", "tree::eq", "tree::num_like", "tree::finite",
+    "ledger::printed", "ledger::word_table", "ledger::h1_states_relation", "facts::stored_request", "tree::eq", "tree::num_like", "tree::finite",
     "tree::get", "tree::g", "tree::has", "tree::at", "tree::s", "tree::arr", "tree::obj", "tree::is_obj",
     "tree::is_arr", "tree::is_null", "tree::truthy", "tree::get_mut", "tree::set", "tree::remove", "tree::str",
     "tree::obj_of", "tree::strs", "tree::repr", "tree::dump", "tree::to_value", "tree::from_value", "tree::py_float",
@@ -1436,6 +1445,20 @@ pub fn check_claims(html: &str, ledger: &BTreeMap<String, String>, spec: &Spec, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// B2 (q2 11-04): a flow page's h1 is the sankey leaf's finding (data-cmp next, its relation rechecked), so the run must
+    /// not record it as a label fallback; a column page's finding headline (data-cmp max) and a title claim (data-claim)
+    /// state one too; the text step's label, and a marked note outside the h1, do not.
+    #[test]
+    fn an_h1_states_a_relation_only_with_a_marked_comparison_inside_it() {
+        let flow = r#"<h1><span data-cmp="next" data-a="fact:from.O4000XBIO.r" data-b="fact:from.G3000.r"><span data-src="name:zh_names:siec:O4000XBIO">石油</span> <b class="n"><span data-src="fact:from.O4000XBIO.r">60,699</span></b>，比第二名高（<span data-src="name:zh_names:siec:G3000">天然气</span>）</span></h1><p class="dek">从来源到去向</p>"#;
+        let column = r#"<h1><span data-cmp="max" data-a="fact:hi"><span data-src="name:zh_names:iso2:SE">瑞典</span>最高</span></h1>"#;
+        let claim = r#"<h1><span data-claim="max" data-a="fact:val.SE">瑞典居首</span></h1>"#;
+        let label = r#"<h1>各国可再生能源占比排名</h1><svg><text data-cmp="next" data-a="fact:a" data-b="fact:b">比第二名高</text></svg>"#;
+        assert!(h1_states_relation(flow) && h1_states_relation(column) && h1_states_relation(claim));
+        assert!(!h1_states_relation(label));
+        assert!(!h1_states_relation("<p class=\"dek\"><span data-cmp=\"next\">x</span></p>"));
+    }
 
     fn num(src: &str, value: f64, text: &str) -> Num {
         Num {

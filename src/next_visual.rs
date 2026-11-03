@@ -199,6 +199,9 @@ pub struct LeafDrawn {
     pub scales: Vec<Value>,
     /// What the drawn check compared on each external layer ({layer, compared, failed}, drawn_checked), for the page's event.
     pub drawn_checked: Vec<Value>,
+    /// Whether the baked page's h1 states a relation the page checks read (next_ledger::h1_states_relation): a leaf that
+    /// made its own headline from its finding, which the flow then records as no fall-back.
+    pub headed: bool,
     /// The knobs the page's layers were given (the first layer's whole knob object; the page's fill knobs every layer
     /// shares), which the flow keeps with the page's request so the recheck reads what each reference layer draws
     /// (LeafRecheck knobs).
@@ -609,7 +612,9 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
                 .map_err(|(_, why)| why.join("\n"))?;
             let checked = drawn_checked(&html, page.layers)?;
             let baked = bake_leaf_page(page.bake, &html, page.ledger, page.refs, page.facts).map_err(|off| off.join("\n"))?;
+            let headed = crate::next_ledger::h1_states_relation(&baked.html);
             Reply::Leaf(LeafDrawn {
+                headed,
                 html: baked.html,
                 records,
                 dropped: panel.dropped.iter().map(|d| dropped_entry(&d.layer, &d.id, &d.why)).collect(),
