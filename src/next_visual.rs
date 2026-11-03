@@ -79,7 +79,8 @@ pub enum Request<'a> {
         ledger: &'a BTreeMap<String, String>,
         refs: &'a [String],
         facts: (&'a Spec, &'a [Row], &'a [Fact]),
-        /// The page knobs its layers were given (LeafDrawn hero), from which a reference layer's legend entries are read.
+        /// The knobs the page's layers were given (LeafDrawn knobs), whose page knobs (`spec.hero`) a reference layer's
+        /// legend entries are read from.
         knobs: &'a Value,
     },
     /// The label point [lon, lat] of each iso3 code in the Natural Earth attributes table this group embeds (NE_ATTRIBUTES),
@@ -198,8 +199,9 @@ pub struct LeafDrawn {
     pub scales: Vec<Value>,
     /// What the drawn check compared on each external layer ({layer, compared, failed}, drawn_checked), for the page's event.
     pub drawn_checked: Vec<Value>,
-    /// The page knobs its layers were given (`knobs.spec.hero`), which the flow keeps with the page's request so the
-    /// recheck reads what each reference layer draws (LeafRecheck hero).
+    /// The knobs the page's layers were given (the first layer's whole knob object; the page's fill knobs every layer
+    /// shares), which the flow keeps with the page's request so the recheck reads what each reference layer draws
+    /// (LeafRecheck knobs).
     pub knobs: Value,
 }
 
@@ -614,7 +616,7 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
                 type_measured: baked.type_measured,
                 scales: panel.scales.clone(),
                 drawn_checked: checked,
-                knobs: page.layers.iter().map(|l| &l.knobs()["spec"]["hero"]).find(|h| !h.is_null()).cloned().unwrap_or(Value::Null),
+                knobs: page.layers.iter().map(|l| l.knobs()).find(|k| !k.is_null()).cloned().unwrap_or(Value::Null),
             })
         }
         Request::LeafFill { recipe, rows, knobs, order, runtime } => Reply::Filled(fill(recipe, rows, knobs, order, runtime)?),
@@ -644,10 +646,11 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
             let units: Vec<String> = spec.fmts.as_object().into_iter().flatten().filter_map(|(_, f)| f["suffix"].as_str()).map(|u| u.trim().to_string()).filter(|u| !u.is_empty()).collect();
             let as_j = |v: &Value| crate::next_tree::parse(&v.to_string());
             let rows_j = serde_json::to_value(rows).map_err(|e| e.to_string()).and_then(|v| as_j(&v));
-            let (hero_j, members) = (as_j(knobs), spec.members.clone().unwrap_or_default());
+            let hero = &knobs["spec"]["hero"];
+            let (hero_j, members) = (as_j(hero), spec.members.clone().unwrap_or_default());
             let reads: BTreeMap<String, Vec<String>> = facts.iter().map(|f| (f.key.clone(), f.reads.clone())).collect();
             let drawn = match (&hero_j, &rows_j) {
-                (Ok(h), Ok(r)) if !knobs.is_null() => Some(crate::next_tree::Drawn { hero: h, rows: r.arr(), members: &members, reads: &reads }),
+                (Ok(h), Ok(r)) if !hero.is_null() => Some(crate::next_tree::Drawn { hero: h, rows: r.arr(), members: &members, reads: &reads }),
                 _ => None,
             };
             off.extend(crate::next_tree::reference_legend_gaps(&crate::next_tree::registry_in_force().0, recipe, html, &units, drawn.as_ref()));
