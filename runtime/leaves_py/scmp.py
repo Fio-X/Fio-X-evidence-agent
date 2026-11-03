@@ -266,6 +266,11 @@ def rl_legend(f, occ):
     if ins and faded:  # the years drawn as the band is, the rest faded: the line names the years, from the map's table
         y = lambda t: t if FX.LEDGER is None else FX.entry(f"period:{f.h['data']['q']['table']}:{t}", "span", None)
         gap = f'<div class="gapw" data-word="ring.inside">{word("ring.inside", ay=y(ins["from"]), by=y(ins["to"]))}</div>' + gap
+    md = f.h.get("data", {})
+    if md.get("legend_word"):  # the map as the ring page's reference: what it draws (each source at the later year) and its unit
+        y = md["t1"] if FX.LEDGER is None else FX.entry(f"period:{md['q']['table']}:{md['t1']}", "span", None)
+        u = FX.unit(f.c.spec, f.c.spec["facts"][md["label_fact"]]).strip()
+        gap = f'<div class="gapw" data-word="{md["legend_word"]}">{word(md["legend_word"], y=y, u=prod.esc(u))}</div>' + gap
     unit = FX.worded(f.c.spec, f.c.F, "unit", f.h["unit"]) if f.h.get("unit") else ""
     return (f"<style>{css}</style>" if css else "") + (f'<div class="hu" data-legend="ring">{unit}{gap}</div>' if unit or gap else "")
 prod.KNOBS["legend"] = dict(width=(280, (160, 420, 10), "legend width"), size=(12, (9, 15, 0.5), "legend font size"), side=("right", ("right", "left"), "which side"))
@@ -289,7 +294,7 @@ def inset_spot(f):
     if not g: return
     quad = {q: sum(1 for _, a, _ in f.events if (math.sin(a) < 0) == (q[0] == "t") and (math.cos(a) < 0) == (q[1] == "l")) for q in ("br", "bl", "tr", "tl")}
     K = lambda k: prod.knob(f.h, "inset", k); corner = K("corner") if K("corner") != "auto" else min(quad, key=quad.get)  # the corner with the fewest callouts
-    lg = ("r" if prod.knob(f.h, "legend", "side") == "right" else "l") if f.h.get("unit") or gap_months(f) else None
+    lg = ("r" if prod.knob(f.h, "legend", "side") == "right" else "l") if f.h.get("unit") or gap_months(f) or f.h.get("data", {}).get("legend_word") else None
     h = g[-1]; x0 = 8 if corner[1] == "l" else f.W - w - 8; y0 = (K("below_legend") if corner[1] == lg else 22) if corner[0] == "t" else f.H - h - 8
     f._ins = (m, g, x0, y0, w, corner, (x0, y0 - 18, x0 + w, y0 + h + 14)); return f._ins
 

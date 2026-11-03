@@ -451,6 +451,24 @@ class Column(unittest.TestCase):
                 self.assertIn('data-legend="ring"', lg)
                 self.assertIn('<span data-src="period:t:2021">2021</span> 年至 <span data-src="period:t:2023">2023</span> 年', lg)
 
+    def test_the_ring_page_s_map_is_a_reference_its_line_naming_the_later_year_and_the_unit(self):
+        """Owner 11-03 15:14: the ring page's map draws each source at the later year only (no earlier-year halo), and the
+        ring's legend says so with the registry's word, the year from the map's table and the unit of its label family."""
+        import types
+        ms = run.scmp.months("2024-01", "2024-03")
+        c = types.SimpleNamespace(spec={"facts": {"lab_t1": {"fmt": "m"}}, "fmts": {"m": {"suffix": " 百万立方米"}}})
+        h = {"ring": {}, "data": {"q": {"table": "t"}, "t1": "2024", "label_fact": "lab_t1", "legend_word": "ring.map.t1", "halo": False}}
+        f = types.SimpleNamespace(ms=ms, one={t: 1.0 for t in ms}, h=h, c=c)
+        FX.LEDGER = {"period:t:2024": "2024"}
+        try:
+            lg = run.scmp.rl_legend(f, None)
+        finally:
+            FX.LEDGER = None
+        self.assertIn('data-legend="ring"', lg)
+        self.assertIn('<div class="gapw" data-word="ring.map.t1">地图线宽＝<span data-src="period:t:2024">2024</span> 年各来源输入量，单位：百万立方米</div>', lg)
+        m = types.SimpleNamespace(d={"halo": False}, c=c, t0="2015", t1="2024")
+        self.assertEqual(prod.ml_legend(m, None), "")  # no halo, so no halo lines on the map
+
     def test_the_scmp_frame_reads_its_notes_from_the_notes_node_s_leaf_data(self):
         notes = [{"code": "NO", "a": "no19", "b": "no24", "ch": "no_ch", "share": "no24_share", "f": True},
                  {"code": "DZ", "a": "dz19", "b": "dz24", "ch": None, "share": "dz24_share", "f": False},

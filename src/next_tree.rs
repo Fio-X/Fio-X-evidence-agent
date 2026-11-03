@@ -7170,12 +7170,16 @@ mod tests {
         fails(&page(halo_line, &strip_line.replace("百万立方米", "吨")), "the unit of no format");
         fails(&page(&halo_line.replace("）</text>", "）以前</text>"), strip_line), "more than the word");
         fails(&page(&halo_line.replace(r#"<tspan data-src="period:t:2015">2015</tspan>"#, "2015"), strip_line), "not the registry's word halo.t0");
-        // a page of the registry in force: scmp's strip and the map's halo are references (step 2), the ring page none yet
+        // a page of the registry in force: scmp's strip and the map's halo are references (step 2)
         let (in_force, _) = registry_in_force();
         let (_, scmp) = recipe_roles(&in_force, "scmp").unwrap();
         assert_eq!(scmp, [("map.halo".to_string(), "halo.t0".to_string()), ("strip".to_string(), "scmp.strip.ref".to_string())]);
         assert_eq!(reference_legend_gaps(&in_force, "scmp", "", &[], None).len(), 2);
-        assert!(reference_legend_gaps(&in_force, "ring", "", &[], None).is_empty() && reference_legend_gaps(&in_force, "column", "", &[], None).is_empty());
+        // the ring page's map is wholly a reference (owner 11-03 15:14): it draws each source at the later year, said in the ring's legend
+        let (ring_main, ring) = recipe_roles(&in_force, "ring").unwrap();
+        assert_eq!((ring_main.as_str(), ring), ("ring", vec![("map".to_string(), "ring.map.t1".to_string())]));
+        assert_eq!(reference_legend_gaps(&in_force, "ring", "", &[], None).len(), 1);
+        assert!(reference_legend_gaps(&in_force, "column", "", &[], None).is_empty());
     }
 
     /// 11-03 (owner): the ring's months inside the headline's years are drawn as the band is and the rest faded, and the

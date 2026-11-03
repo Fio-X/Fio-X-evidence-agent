@@ -11,6 +11,7 @@
  "gap": "差 {v}",
  "ring.name": "圈：{v}",
  "ring.gap": "空框＝该月无数",
+ "ring.map.t1": "地图线宽＝{y} 年各来源输入量，单位：{u}",
  "ring.inside": "深色＝{ay} 年至 {by} 年各月，浅色＝其余月份",
  "inset.left": "副图",
  "inset.note.frame": "虚线框＝主图范围",

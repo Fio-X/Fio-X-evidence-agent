@@ -211,7 +211,7 @@
   },
   "map": {
    "binding": "external",
-   "roles": {"scmp": {"parts": {"halo": {"role": "reference", "legend": {"word": "halo.t0", "within": "map", "fills": {"y": "period", "name": "name", "val": "fact_unit"}, "draws": {"table": "data.q.table", "time": "data.t0", "family": "data.legend_fact"}, "entries": {"y": "period:{table}:{time}", "val": "fact:{family}.{code}.n", "name": "name:{names}:{code}"}}}}}},
+   "roles": {"ring": {"role": "reference", "legend": {"word": "ring.map.t1", "within": "ring", "fills": {"y": "period", "u": "unit"}, "draws": {"table": "data.q.table", "time": "data.t1"}, "entries": {"y": "period:{table}:{time}"}}}, "scmp": {"parts": {"halo": {"role": "reference", "legend": {"word": "halo.t0", "within": "map", "fills": {"y": "period", "name": "name", "val": "fact_unit"}, "draws": {"table": "data.q.table", "time": "data.t0", "family": "data.legend_fact"}, "entries": {"y": "period:{table}:{time}", "val": "fact:{family}.{code}.n", "name": "name:{names}:{code}"}}}}}},
    "geometry": "leaf",
    "runner": "leaves_py/prod.py",
    "declares_by_recipe": {
@@ -460,7 +460,9 @@
       "focus": "$picks.focus",
       "hub_name": "$hub_name",
       "label_fact": "lab_t1",
-      "legend_fact": "lab_t0"
+      "legend_fact": "lab_t0",
+      "halo": false,
+      "legend_word": "ring.map.t1"
      },
      "data_facts": [
       "label_fact",
