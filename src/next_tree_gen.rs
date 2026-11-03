@@ -232,9 +232,22 @@ fn codes_in(v: &J, got: &Got) -> J {
             _ => v.clone(),
         },
         J::Arr(a) => J::Arr(a.iter().map(|x| codes_in(x, got)).collect()),
-        J::Obj(o) => J::Obj(o.iter().map(|(k, x)| (k.clone(), codes_in(x, got))).collect()),
+        J::Obj(o) => J::Obj(o.iter().map(|(k, x)| (k.clone(), if k == "filter" { filter_codes(x, got) } else { codes_in(x, got) })).collect()),
         x => x.clone(),
     }
+}
+
+/// A fact's filter with each select ref its codes: one code, or a select's whole list (a mean over the ranked places).
+fn filter_codes(v: &J, got: &Got) -> J {
+    J::Obj(
+        v.obj()
+            .iter()
+            .map(|(d, c)| match c {
+                J::Str(s) => (d.clone(), core::ref_parts(s).and_then(|_| core::resolve_ref(s, got).ok()).unwrap_or_else(|| c.clone())),
+                c => (d.clone(), codes_in(c, got)),
+            })
+            .collect(),
+    )
 }
 
 /// The select a node's items follow: its ranked bind, else its items_for.
@@ -1899,6 +1912,14 @@ fn as_refs(v: &J, got: &Got, order: &[String], place: &str) -> Result<J, String>
             m.iter()
                 .map(|(k, x)| {
                     let code = x.g(place).s().filter(|c| !c.starts_with("select:"));
+                    // a list of chosen codes (a mean over the ranked places) is the select whose result it is, whole
+                    if let (true, J::Arr(codes)) = (k == "filter" && x.is_obj(), x.g(place)) {
+                        let sid = order.iter().find(|sid| got.get(*sid).is_some_and(|r| r.arr() == codes.as_slice()));
+                        let sid = sid.ok_or_else(|| format!("fact filter {place}: no select holds just the codes {}", x.g(place).repr()))?;
+                        let mut f = x.clone();
+                        f.set(place, J::Str(format!("select:{sid}")));
+                        return Ok((k.clone(), f));
+                    }
                     let y = match (k == "filter" && x.is_obj(), code) {
                         (true, Some(c)) => {
                             let hit = code_ref(c, got, order).ok_or_else(|| format!("fact filter {place}={c}: no select holds the code"))?;

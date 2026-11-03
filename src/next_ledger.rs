@@ -1094,7 +1094,7 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     // a page tree that is JSON the checker reads (each value, number, string and escape), no extra data, a number
     // where float() takes one
     // a first_holding field: the first candidate whose conditions (CONDITIONS, recomputed by the core) all hold
-    ("tree.first_holding", "next_tree::CONDITIONS", &["tree::first_holding", "tree::conditions_hold", "tree::condition_holds", "tree::line_width", "tree::with_code", "tree::fact_value", "tree_gen::plain_holding", "tree_gen::no_fact", "tree_gen::no_word", "tree_gen::codes_in"]),
+    ("tree.first_holding", "next_tree::CONDITIONS", &["tree::first_holding", "tree::conditions_hold", "tree::condition_holds", "tree::line_width", "tree::with_code", "tree::fact_value", "tree_gen::plain_holding", "tree_gen::no_fact", "tree_gen::no_word", "tree_gen::codes_in", "tree_gen::filter_codes"]),
     ("tree.json_input", "", &["tree::parse", "tree::err", "tree::num", "tree::value", "tree::number", "tree::string", "tree::hex4"]),
     // the node the core asks: in the page tree, bound external, its runner a code file under the runtime, its content
     // rechecked before the child starts and its reply after (C1-C5, B0-B7 and the colour checks)
@@ -1151,6 +1151,8 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     // the page's finding (node finding): the first case that holds over the core's selects, no finding on a tie, an unnamed
     // code or a fact the page lacks; declared again over the finished fill at draw, its facts, reads, words and accent held
     ("tree_gen.finding", "", &["tree_gen::finding_declared", "tree_gen::walk", "tree_gen::finding_recheck"]),
+    // a note against the mean of the compared places: the places averaged are the places the page draws
+    ("tree_gen.mean_drawn", "", &["tree_gen::mean_recheck"]),
     // the page tree over the fill: selects recompute, every format the fill names, the accent held by a select
     ("tree_gen.tree_held", "", &["tree_gen::tree_j"]),
     // a leaf's ground for its node: no refusal reason, its land rows as {band: [[x0, x1], ...]}

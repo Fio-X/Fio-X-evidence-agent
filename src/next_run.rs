@@ -5610,6 +5610,19 @@ mod tests {
         (facts, fmts, raised)
     }
 
+    /// The production bindings less form A's notes (the extreme against the mean of the places drawn, 11-03), which the
+    /// frozen rust notes never had: the parity with them holds on every other branch.
+    fn without_mean_notes() -> crate::next_tree::J {
+        let mut v = crate::next_tree::bindings().to_value();
+        for (recipe, end) in [("column", "hi"), ("change", "first")] {
+            let list = v["nodes"]["leader_notes"]["declares_by_recipe"][recipe]["candidates"][end].as_array_mut().unwrap();
+            let before = list.len();
+            list.retain(|c| c["value_text"] != "fact:vs_mean");
+            assert_eq!(list.len(), before - 1, "{recipe} {end}: one form A note");
+        }
+        crate::next_tree::J::from_value(&v)
+    }
+
     /// Key by key, every place two fills differ.
     fn fill_diff(a: &Value, b: &Value, at: &str, out: &mut Vec<String>) {
         match (a, b) {
@@ -5631,7 +5644,8 @@ mod tests {
     /// layer refuses the page.
     #[test]
     fn declare_equals_rust_fill() {
-        let mut overlay = crate::next_tree::bindings();
+        // the frozen fill is the rust fill's, which had no form A note: the production bindings less it
+        let mut overlay = without_mean_notes();
         let (rust, fill, calls) = q1_fills(&overlay);
         let mut fill = fill.unwrap_or_else(|e| panic!("the declared page: {e}"));
         let page_in = fill.as_object_mut().unwrap().remove("page_in").expect("the page input kept for draw_nodes");
@@ -5679,7 +5693,12 @@ mod tests {
         let page_in = page_input(change, &shape, &picks, (&main, &[]));
         let calls = std::sync::Mutex::new(Vec::new());
         let asked = Asked { calls: &calls, page_in: Some(&page_in) };
-        let mut fill = fill_of(change, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false, Some(&asked)).unwrap();
+        // the frozen fill is the rust fill's, which had no form A note: the production bindings less it
+        let unused = crate::next_leaf::Runner::python(&root.join("scripts/fixtures/p3b/twin_node.py"));
+        let mut fill = crate::next_tree::with_test_bindings(without_mean_notes(), unused, || {
+            fill_of(change, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false, Some(&asked))
+        })
+        .unwrap();
         fill.as_object_mut().unwrap().remove("page_in").expect("the page input kept for draw_nodes");
         // the last note's gap and its two bars one decimal more than the frozen fill's, nothing else: FR's -2.25 printed -2.2
         // left BE's 5.5 less it at 7.7, the note 7.75 printed 7.8
@@ -5711,7 +5730,8 @@ mod tests {
     #[test]
     fn external_bars_q1() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let overlay = crate::next_tree::bindings();
+        // compared with the frozen rust fill below: the production bindings less form A's note, which it never had
+        let overlay = without_mean_notes();
         let (rust, fill, _) = q1_fills(&overlay);
         let mut fill = fill.unwrap_or_else(|e| panic!("the declared page: {e}"));
         page_words(&mut fill, ("标题", "导语", "标签"));
@@ -6104,8 +6124,8 @@ mod tests {
         assert_eq!(rows.iter().map(|r| r["dims"]["geo"].as_str().unwrap()).collect::<Vec<_>>(), ["SE", "BE", "DE", "FR"]);
         let spec = &fill["knobs"]["spec"];
         // no big numbers: the bars' and bubbles' family val and the count of places they draw (the unit line's scope), and
-        // the leader notes' hi, lo, gap and times, in no hero.data key
-        assert_eq!(spec["facts"].as_object().unwrap().keys().collect::<Vec<_>>(), ["drawn", "gap", "hi", "lead1", "lo", "times", "val"]);
+        // the leader notes' hi, lo, gap and times, and the highest's note's mean of the places drawn, in no hero.data key
+        assert_eq!(spec["facts"].as_object().unwrap().keys().collect::<Vec<_>>(), ["drawn", "gap", "hi", "lead1", "lo", "mean", "mean_n", "mean_sum", "times", "val", "vs_mean"]);
         assert_eq!(spec["facts"]["drawn"], json!({"op": "n", "by": "geo", "table": "sdg", "time": "2025", "fmt": "n"}));
         // the dek's finding: the highest place against the lowest, on the extremes the notes declare, each place a name
         // placeholder the labels name, the year the period of its own fact lead1 (the highest's value at the year)
@@ -6133,11 +6153,12 @@ mod tests {
         assert_eq!(fill["knobs"]["points"]["sha256"], crate::next_flow::NE_POINTS_SHA256);
         assert_eq!(fill["knobs"]["points"]["at"]["DE"], json!([9.678348, 50.961733]));
         assert_eq!(fill["knobs"]["points"]["at"].as_object().unwrap().len(), 4);
-        // the two notes: the highest (SE) the gap above the lowest, the lowest (BE) the times, in the same frame
+        // the two notes: the highest (SE) how far above the mean of the places drawn (form A), the lowest (BE) the times, in
+        // the same frame
         assert_eq!(notes["ext"], bubbles["ext"]);
         let said: Vec<(&str, &str, &str)> = notes["notes"].as_array().unwrap().iter()
             .map(|n| (n["name"].as_str().unwrap(), n["text"][0]["word"].as_str().unwrap(), n["value_text"].as_str().unwrap())).collect();
-        assert_eq!(said, [("SE", "column.note.hi", "fact:gap"), ("BE", "column.note.lo", "fact:times")]);
+        assert_eq!(said, [("SE", "column.note.vs_mean", "fact:vs_mean"), ("BE", "column.note.lo", "fact:times")]);
         assert_eq!(spec["hero"]["unit"], "单位：%");
         assert_eq!(spec["hero"]["data"]["marks"], json!(["BE"]));
         // the accent marks the place the dek's finding names (SE, the highest) alone, not the lowest its other note names
@@ -6477,12 +6498,16 @@ mod tests {
             .map(|n| (n["name"].as_str().unwrap(), n["text"][0]["word"].as_str().unwrap(), n["value_text"].as_str().unwrap())).collect();
         // each note compares its place with its neighbour in the ranking: SE (up 16) with DE (up 7.5), FR (down 2.25) with BE
         // (up 5.5), the number the gap between the two changes (change_gap), never the note's own change
-        assert_eq!(said, [("SE", "column.note.rise_most", "fact:vs_hi"), ("FR", "column.note.fall_most", "fact:vs_lo")]);
+        // (the largest riser's note against the mean rise of the places drawn, form A, in place of its neighbour)
+        assert_eq!(said, [("SE", "column.note.rise_most", "fact:vs_mean"), ("FR", "column.note.fall_most", "fact:vs_lo")]);
         let notes = spec["hero"]["leaves"]["leader_notes"]["notes"].as_array().unwrap();
-        assert_eq!(notes[0]["text"][1], json!({"word": "column.note.vs_next"}));
+        assert_eq!(notes[0]["text"][1], json!({"word": "column.note.vs_mean_after"}));
         assert_eq!(notes[1]["text"][1], json!({"word": "column.note.vs_prev"}));
+        // SE's rise less the mean rise of the places drawn (the mean at 2024 less the mean at 2016)
+        assert_eq!((&spec["facts"]["vs_mean"]["a"], &spec["facts"]["vs_mean"]["b"]), (&json!("vs_mean_a"), &json!("mean_chg")));
+        assert_eq!(spec["facts"]["mean_chg"]["op"], "minus");
         let year = |code: &str, t: &str| json!({"op": "last", "table": "sdg", "filter": {"geo": code}, "from": t, "to": t, "fmt": "pc"});
-        for (key, higher, lower) in [("vs_hi", "SE", "DE"), ("vs_lo", "BE", "FR")] {
+        for (key, higher, lower) in [("vs_lo", "BE", "FR")] {
             let fmt = if key == "vs_lo" { "pp_d2" } else { "pp" };
             assert_eq!(spec["facts"][key], json!({"op": "minus", "a": format!("{key}_a"), "b": format!("{key}_b"), "fmt": fmt}));
             for (side, code) in [("a", higher), ("b", lower)] {
@@ -6523,8 +6548,8 @@ mod tests {
             assert_eq!(page.ledger.get(&format!("fact:chg.{code}")).map(String::as_str), Some(text), "{code}");
         }
         assert_eq!(page.ledger.get("fact:lead").map(String::as_str), Some("16.0 个百分点"), "the dek's rise, as SE's bar");
-        // the notes' gaps from the rows: 16 - 7.5 above DE (8.5, as the bars print), 5.5 - (-2.25) = 7.75 below BE
-        assert_eq!(page.ledger.get("fact:vs_hi").map(String::as_str), Some("8.5 个百分点"), "the first note's gap");
+        // the notes' numbers from the rows: SE's 16 above the mean rise 6.6875 (form A), 5.5 - (-2.25) = 7.75 below BE
+        assert_eq!(page.ledger.get("fact:vs_mean").map(String::as_str), Some("9.3 个百分点"), "the first note's gap to the mean");
         assert_eq!(page.ledger.get("fact:vs_lo").map(String::as_str), Some("7.75 个百分点"), "the last note's gap");
         let dir = tempfile::tempdir().unwrap();
         let bundle = {
@@ -6552,8 +6577,8 @@ mod tests {
         let published = crate::next_flow::publish_leaf_page(&calls, &bundle.dir, "change", (&leaf, &plan), &qa).unwrap();
         let html = std::fs::read_to_string(bundle.dir.join(&published.html_ref)).unwrap();
         assert!(html.contains(r#"data-src="fact:chg.FR""#) && html.contains(r#"data-src="fact:chg.SE""#), "the bars print the changes");
-        assert!(html.contains(r#"data-src="fact:vs_hi""#) && html.contains(r#"data-src="fact:vs_lo""#), "the notes print the gaps");
-        assert!(html.contains("升幅最大，比第二名高") && html.contains("降幅最大，比倒数第二低"), "and say whom they compare with");
+        assert!(html.contains(r#"data-src="fact:vs_mean""#) && html.contains(r#"data-src="fact:vs_lo""#), "the notes print the gaps");
+        assert!(html.contains("升幅最大，比图中平均高") && html.contains("降幅最大，比倒数第二低"), "and say whom they compare with");
         // the accent marks the dek's place (SE's rise) alone, the other note's place (FR's fall) the dark grey; DE's and BE's
         // rises take the rise grey; the unit line says what the accent means
         assert!(html.contains(r#"fill="var(--accent)""#) && html.contains(r#"fill="var(--accent2)""#), "the focus colour and a rise colour");
@@ -6623,7 +6648,7 @@ mod tests {
         let said: Vec<(&str, &Value, &str)> =
             notes.iter().map(|n| (n["name"].as_str().unwrap(), &n["text"], n["value_text"].as_str().unwrap())).collect();
         assert_eq!(said, [
-            ("CHN", &json!([{"word": "column.note.rise_most"}, {"word": "column.note.vs_next"}]), "fact:vs_hi"),
+            ("CHN", &json!([{"word": "column.note.rise_most"}, {"word": "column.note.vs_mean_after"}]), "fact:vs_mean"),
             ("USA", &json!([{"word": "column.note.rise_least"}, {"word": "column.note.vs_prev"}]), "fact:vs_lo"),
         ]);
         assert_eq!(spec["facts"]["vs_lo_a0"], json!({"op": "last", "table": table, "filter": {"country": "IND"}, "from": "2016", "to": "2016", "fmt": "pc_pop"}));
@@ -6646,8 +6671,8 @@ mod tests {
             Ok(_) => panic!("not a filled page"),
             Err(e) => panic!("leaf fill: {e}"),
         };
-        // 3.75 - 1 = 2.75 to the even digit up, 1 - 0.5 = 0.5; CHN's own change 3.75 prints 3.8 on its bar
-        assert_eq!(filled.ledger.get("fact:vs_hi").map(String::as_str), Some("2.8 个百分点"));
+        // 3.75 less the mean rise (3.75 + 1 + 0.5) / 3 = 1.75 is 2, 1 - 0.5 = 0.5; CHN's own change 3.75 prints 3.8 on its bar
+        assert_eq!(filled.ledger.get("fact:vs_mean").map(String::as_str), Some("2.0 个百分点"));
         assert_eq!(filled.ledger.get("fact:vs_lo").map(String::as_str), Some("0.5 个百分点"));
         assert_eq!(filled.ledger.get("fact:chg.CHN").map(String::as_str), Some("3.8 个百分点"));
 
@@ -9002,7 +9027,7 @@ mod tests {
         // the dek names the set in the registry's words, its count the drawn fact (the 20 citizenships compared)
         assert_eq!(dek, "{lead1.t}，{name.AF}在本指标最高的{drawn}个国籍中居首，为{hi}，比{name.IQ}高{gap}");
         assert!(texts.iter().all(|t| !t.contains("最低的")), "{texts:?}");
-        assert_eq!(notes, [("AF".to_string(), "column.note.hi.scoped".to_string()), ("IQ".into(), "column.note.lo.scoped".into())]);
+        assert_eq!(notes, [("AF".to_string(), "column.note.vs_mean".to_string()), ("IQ".into(), "column.note.lo.scoped".into())]);
         // the kicker and the eyebrow (ScopeSegs words) and the selection line, the count and the year read from the record
         let segs = scope_segs(dir.path(), &scope).unwrap();
         let count = Num { src: "data/origins/0.json:members".into(), value: 20.0, text: "20".into() };
@@ -9037,7 +9062,7 @@ mod tests {
         assert_eq!(scope.map(|s| s.text), Some("在本指标最高的4个经济体中".to_string()));
         assert_eq!(dek, "{lead1.t}，{name.SE}在本指标最高的{drawn}个经济体中居首，为{hi}，比{name.BE}高{gap}");
         assert!(texts.iter().all(|t| !t.contains("最低的")), "{texts:?}");
-        assert_eq!(notes, [("SE".to_string(), "column.note.hi.scoped".to_string()), ("BE".into(), "column.note.lo.scoped".into())]);
+        assert_eq!(notes, [("SE".to_string(), "column.note.vs_mean".to_string()), ("BE".into(), "column.note.lo.scoped".into())]);
     }
 
     /// The set's count the page prints ({drawn}, counted over the rows the page keeps) is the places the finding compares:
@@ -9148,7 +9173,7 @@ mod tests {
         assert_eq!(scope, None);
         assert_eq!(dek, "{lead1.t}，{name.SE}最高，为{hi}，比最低的{name.BE}高{gap}");
         assert!(texts.iter().all(|t| !t.contains("所选") && !t.contains("在本指标")), "{texts:?}");
-        assert_eq!(notes, [("SE".to_string(), "column.note.hi".to_string()), ("BE".into(), "column.note.lo".into())]);
+        assert_eq!(notes, [("SE".to_string(), "column.note.vs_mean".to_string()), ("BE".into(), "column.note.lo".into())]);
     }
 
     /// A ranking run: rank_top SE, rank_bottom BE, their gap and ratio, all of 2025, over a six-country series of shares.
@@ -12168,7 +12193,11 @@ for line in sys.stdin:
             let page_in = page_input(r, &shape, &picks, (&main, &[]));
             let calls = std::sync::Mutex::new(Vec::new());
             let asked = Asked { calls: &calls, page_in: Some(&page_in) };
-            let fill = fill_of(r, &shape, &picks, (&main, &[]), cat, ("标题", "导语"), scoped, Some(&asked)).unwrap_or_else(|e| panic!("{label}: {e}"));
+            let unused = crate::next_leaf::Runner::python(&Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/fixtures/p3b/twin_node.py"));
+            let fill = crate::next_tree::with_test_bindings(without_mean_notes(), unused, || {
+                fill_of(r, &shape, &picks, (&main, &[]), cat, ("标题", "导语"), scoped, Some(&asked))
+            })
+            .unwrap_or_else(|e| panic!("{label}: {e}"));
             let short = next_pack::unit_short(&shape.unit).unwrap();
             let filling = Filling { shape: &shape, picks: &picks, main: &main, companion: &[], catalogue: cat, fmt: shape.unit.to_lowercase(), short, window: None, asked: None };
             let mut old = Filled::default();
@@ -12321,7 +12350,12 @@ for line in sys.stdin:
             let stored: BTreeMap<String, f64> =
                 req["facts"].as_array().unwrap().iter().filter_map(|f| Some((f["key"].as_str()?.to_string(), f["v"].as_f64()?))).collect();
             let scoped = false;
-            let fill = fill_of(r, &shape, &picks, (&main, &[]), &cat, ("标题", "导语"), scoped, Some(&asked)).unwrap_or_else(|e| panic!("{path}: {e}"));
+            // the frozen rust notes had no form A note: the production bindings less it
+            let unused = crate::next_leaf::Runner::python(&Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/fixtures/p3b/twin_node.py"));
+            let fill = crate::next_tree::with_test_bindings(without_mean_notes(), unused, || {
+                fill_of(r, &shape, &picks, (&main, &[]), &cat, ("标题", "导语"), scoped, Some(&asked))
+            })
+            .unwrap_or_else(|e| panic!("{path}: {e}"));
             let short = next_pack::unit_short(&shape.unit).unwrap();
             let filling = Filling { shape: &shape, picks: &picks, main: &main, companion: &[], catalogue: &cat, fmt: shape.unit.to_lowercase(), short, window: None, asked: None };
             let mut old = Filled::default();
