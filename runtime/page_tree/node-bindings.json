@@ -1145,7 +1145,7 @@
        "at": "at",
        "name": "code",
        "text": "note.text",
-       "value_text": "note.value_text"
+       "value_text": "note.value_text?"
       },
       "ext": "$value.ext"
      }
@@ -1272,7 +1272,7 @@
        "at": "at",
        "name": "code",
        "text": "note.text",
-       "value_text": "note.value_text"
+       "value_text": "note.value_text?"
       },
       "ext": "$value.ext"
      }

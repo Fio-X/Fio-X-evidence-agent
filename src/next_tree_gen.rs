@@ -999,6 +999,17 @@ fn finding_recheck(page_in: &J, fill: &J, reg: &J) -> Result<(), String> {
 }
 
 /// The declaration as JSON in the generator's own order (the prototype's), for the fixtures.
+/// An item field a leaf mapping names: a dotted path into the item; a path ending in `?` is optional (None when the
+/// item has none), any other must be there.
+fn leaf_item_field<'a>(it: &'a J, from: &str) -> Result<Option<&'a J>, String> {
+    let (path, optional) = from.strip_suffix('?').map_or((from, false), |p| (p, true));
+    match path.split('.').try_fold(it, |x, p| x.get(p)) {
+        Some(v) => Ok(Some(v)),
+        None if optional => Ok(None),
+        None => Err(format!("the items have no {path}")),
+    }
+}
+
 fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
     let d = declares(reg, layer, page_in)?;
     // a page input value the declaration cannot do without (declares.needs: its path, and the registry's words for the
@@ -1231,9 +1242,7 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
         for it in n.g("items").arr() {
             let mut x = J::Obj(vec![]);
             for (k, from) in lf.g("items").obj() {
-                // a dotted path reads into an item field (a first_holding field's chosen candidate: note.text)
-                let v = st(from).split('.').try_fold(it, |x, p| x.get(p));
-                let v = v.ok_or_else(|| format!("{layer}: leaf item field {k}: the items have no {}", st(from)))?;
+                let Some(v) = leaf_item_field(it, &st(from)).map_err(|e| format!("{layer}: leaf item field {k}: {e}"))? else { continue };
                 x.set(k, if v.s().is_some_and(|s| core::ref_parts(s).is_some()) { core::resolve_ref(&st(v), &got)? } else { v.clone() });
             }
             items.push(x);
@@ -2826,6 +2835,29 @@ mod tests {
             assert!(us["finding"].is_null(), "{us}");
             assert_eq!(us["fell_back"], serde_json::json!("the change starts at zero: no share of its start"));
         }
+    }
+
+    /// The item field a leaf mapping reads: a dotted path reads into an item field (a first_holding field's chosen
+    /// candidate: note.text) and must be there; a path ending in `?` is a field the leaf reads as optional, left out
+    /// when the item has none (a gap note naming the other place prints no number).
+    #[test]
+    fn next_tree_gen_leaf_item_field_optional_only_when_marked() {
+        let it = J::from_value(&serde_json::json!({"code": "DE", "note": {"text": ["w"], "value_text": "fact:gap"}}));
+        let bare = J::from_value(&serde_json::json!({"code": "FR", "note": {"text": ["w"]}}));
+        assert_eq!(leaf_item_field(&it, "note.value_text?").unwrap().map(|v| v.dump()), Some(r#""fact:gap""#.to_string()));
+        assert_eq!(leaf_item_field(&it, "code").unwrap().map(|v| v.dump()), Some(r#""DE""#.to_string()));
+        assert!(leaf_item_field(&bare, "note.value_text?").unwrap().is_none(), "an optional field left out");
+        assert_eq!(leaf_item_field(&bare, "note.value_text").unwrap_err(), "the items have no note.value_text");
+        assert_eq!(leaf_item_field(&bare, "at").unwrap_err(), "the items have no at");
+        // the registry marks the notes' number optional and nothing else
+        let (reg, _) = core::registry_in_force();
+        let mut marked = Vec::new();
+        for (path, v) in core::walk(&reg, "") {
+            if path.contains(".leaf.items.") && v.s().is_some_and(|s| s.ends_with('?')) {
+                marked.push(st(v));
+            }
+        }
+        assert!(!marked.is_empty() && marked.iter().all(|m| m == "note.value_text?"), "{marked:?}");
     }
 
     /// The scmp notes declared over a hand page input: one note per top origin in its order, the focus's marked, its change
