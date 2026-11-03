@@ -10,6 +10,7 @@
  "missing": "缺",
  "gap": "差 {v}",
  "ring.name": "圈：{v}",
+ "ring.gap": "空框＝该月无数",
  "inset.left": "副图",
  "inset.note.frame": "虚线框＝主图范围",
  "inset.note.locator": "定位图：虚线框是主图",

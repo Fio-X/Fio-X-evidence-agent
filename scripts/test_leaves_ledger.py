@@ -411,6 +411,24 @@ class Column(unittest.TestCase):
         finally:
             FX.LEDGER = None
 
+    def test_a_ring_month_with_no_row_is_a_box_on_the_band_and_a_legend_line_never_a_text_without_src(self):
+        """The gas monthly table has no 2024-03 row: the ring layer drew a bare word there, which layer 1 refuses (a text
+        with no src). The month is now an empty box (no text), and the legend's html says what the box means."""
+        import math, types
+        ms = run.scmp.months("2024-01", "2024-06")
+        for one, gaps in [({t: 1.0 for t in ms if t != "2024-03"}, ["2024-03"]), ({t: 1.0 for t in ms}, []),
+                          ({"2024-01": 1.0, "2024-06": 2.0}, ["2024-02", "2024-03", "2024-04", "2024-05"])]:
+            f = types.SimpleNamespace(ms=ms, one=one, n=len(ms), R1=200.0, cx=300.0, cy=300.0, h={}, c=None)
+            f.ang = lambda i, f=f: math.radians(-90 + 360 * i / f.n)
+            f.pt = lambda a, r, f=f: (f.cx + r * math.cos(a), f.cy + r * math.sin(a))
+            svg = run.scmp.gap_marks(f)
+            self.assertEqual(run.drawn(svg), ([], []), gaps)  # no text at all, so none without a src
+            self.assertEqual(re.findall(r'data-gap="([\d-]+)"', svg), gaps)
+            lg = run.scmp.rl_legend(f, None)
+            self.assertEqual(words.word("ring.gap") in lg, bool(gaps), gaps)
+            self.assertEqual(lg == "", not gaps, gaps)  # no unit and no gap: no legend box
+        self.assertNotIn('word("missing")', open(run.scmp.__file__, encoding="utf-8").read().split("def rl_ring", 1)[1].split("\ndef ", 1)[0])
+
     def test_the_scmp_frame_reads_its_notes_from_the_notes_node_s_leaf_data(self):
         notes = [{"code": "NO", "a": "no19", "b": "no24", "ch": "no_ch", "share": "no24_share", "f": True},
                  {"code": "DZ", "a": "dz19", "b": "dz24", "ch": None, "share": "dz24_share", "f": False},

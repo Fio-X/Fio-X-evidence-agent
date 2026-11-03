@@ -177,8 +177,7 @@ def rl_ring(f, occ):
                 xl, yl = pt(ang(i + da), RC + 18); deg = rotdeg(ang(i + da)); b = rbox(xl, yl, yw, yh, deg)
                 if not occ.on_line(b, pad=1.5, own=f"year:{t[:4]}"): break
             o.append(f'<text data-on="year:{t[:4]}" x="{xl:.1f}" y="{yl:.1f}" font-size="{K("year_size")}" font-style="italic" fill="var(--t-sec)" text-anchor="start" dominant-baseline="middle" transform="{rot(ang(i + da), xl, yl)}">{t[:4] if FX.LEDGER is None else FX.entry(f"period:{f.h['ring']['q']['table']}:{t[:4]}", "tspan", None)}</text>')
-        if t not in f.one:
-            xl, yl = pt(ang(i + 0.5), R1 + 8); o.append(f'<text x="{xl:.1f}" y="{yl:.1f}" font-size="11" fill="var(--t-sec)" text-anchor="middle" dominant-baseline="middle">{word("missing")}</text>')
+    o.append(gap_marks(f))  # a month with no row: an empty box on the band, its meaning in the legend (rl_legend), no text of its own
     knock = [inset_spot(f)[-1]] if inset_spot(f) else []  # the inset (drawn above) is left clear
     for mk in f.h["ring"].get("marks", []):  # values written just outside the band at their month, rotated with it, in ink
         fa = c.F[mk["key"]]; a = f.t2a(fa["t"] + "-15") if fa.get("t") else None
@@ -234,9 +233,25 @@ prod.KNOBS["callouts"] = dict(out=(26, (6, 80, 1), "callout distance from the ba
 CALLOUT_CSS = dict(width=".hero.ring .rc{{width:{v}px}}", head=".hero.ring .rc .ch{{font-size:{v}px}}", body=".hero.ring .rc{{font-size:{v}px}}",
                    bar=".hero.ring .rc .hd{{border-width:{v}px}}", ink=".hero.ring .rc .ct{{color:{v}}}")
 
+def gap_months(f):
+    """The ring's months the table has no row for (the band breaks there)."""
+    return [t for t in f.ms if t not in f.one]
+
+def gap_marks(f):
+    """Each month with no row as an empty box on the band's inner edge: a drawn mark, not a word, so the panel holds no
+    text without a src (a missing month has no row to name); the legend says what the box means (ring.gap)."""
+    o = []
+    for t in gap_months(f):
+        i = f.ms.index(t); a0, a1 = f.ang(i) + 0.002, f.ang(i + 1) - 0.002; r0, r1 = f.R1, f.R1 + 6
+        (x0, y0), (x1, y1), (x2, y2), (x3, y3) = f.pt(a0, r0), f.pt(a1, r0), f.pt(a1, r1), f.pt(a0, r1)
+        o.append(f'<path data-gap="{t}" d="M{x0:.1f},{y0:.1f} A{r0},{r0} 0 0 1 {x1:.1f},{y1:.1f} L{x2:.1f},{y2:.1f} A{r1},{r1} 0 0 0 {x3:.1f},{y3:.1f}Z" fill="none" stroke="var(--t-sec)" stroke-width="0.8"/>')
+    return "".join(o)
+
 def rl_legend(f, occ):
     K = lambda k: prod.knob(f.h, "legend", k); css = "".join(r.format(v=K(k)) for k, r in LEGEND_CSS.items() if K(k) != prod.KNOBS["legend"][k][0])
-    return (f"<style>{css}</style>" if css else "") + (f'<div class="hu">{FX.worded(f.c.spec, f.c.F, "unit", f.h["unit"])}</div>' if f.h.get("unit") else "")
+    gap = f'<div class="gapw">{word("ring.gap")}</div>' if gap_months(f) else ""
+    unit = FX.worded(f.c.spec, f.c.F, "unit", f.h["unit"]) if f.h.get("unit") else ""
+    return (f"<style>{css}</style>" if css else "") + (f'<div class="hu">{unit}{gap}</div>' if unit or gap else "")
 prod.KNOBS["legend"] = dict(width=(280, (160, 420, 10), "legend width"), size=(12, (9, 15, 0.5), "legend font size"), side=("right", ("right", "left"), "which side"))
 LEGEND_CSS = dict(width=".hero.ring .hu{{width:{v}px}}", size=".hero.ring .hu{{font-size:{v}px}}", side=".hero.ring .hu{{right:auto;left:0}}")
 
@@ -258,7 +273,7 @@ def inset_spot(f):
     if not g: return
     quad = {q: sum(1 for _, a, _ in f.events if (math.sin(a) < 0) == (q[0] == "t") and (math.cos(a) < 0) == (q[1] == "l")) for q in ("br", "bl", "tr", "tl")}
     K = lambda k: prod.knob(f.h, "inset", k); corner = K("corner") if K("corner") != "auto" else min(quad, key=quad.get)  # the corner with the fewest callouts
-    lg = ("r" if prod.knob(f.h, "legend", "side") == "right" else "l") if f.h.get("unit") else None
+    lg = ("r" if prod.knob(f.h, "legend", "side") == "right" else "l") if f.h.get("unit") or gap_months(f) else None
     h = g[-1]; x0 = 8 if corner[1] == "l" else f.W - w - 8; y0 = (K("below_legend") if corner[1] == lg else 22) if corner[0] == "t" else f.H - h - 8
     f._ins = (m, g, x0, y0, w, corner, (x0, y0 - 18, x0 + w, y0 + h + 14)); return f._ins
 
