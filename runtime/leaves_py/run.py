@@ -433,8 +433,8 @@ def headline(spec, found, svg, raw=(), words=None):
         return {**spec, "title": claim, "_dek": dek}, None  # _dek: the page's dek html, column_page takes it out
     old = str(spec.get("title") or "")
     kick = old if old.strip() and not re.search(r"[{}0-9\uff10-\uff19]", old) else spec.get("kicker")
-    rel, a, _ = found["cmp"]  # the set it is the max of is the page check's to derive, so the page names none
-    mark = f'<span data-cmp="{rel}" data-a="{wbkit.esc(a)}">'
+    rel, a, b = found["cmp"]  # the set it ranks in is the page check's to derive; a next names the second it is above
+    mark = f'<span data-cmp="{rel}" data-a="{wbkit.esc(a)}"' + (f' data-b="{wbkit.esc(b)}"' if rel != "max" else "") + ">"
     return {**spec, "title": mark + wbkit.finding_html(found["headline"], "span") + "</span>", "kicker": kick}, None
 
 

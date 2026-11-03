@@ -338,9 +338,12 @@ class FlowPage(unittest.TestCase):
         html = page(lines)
         head = re.search(r'<div class="kicker">(.*?)</div><h1>(.*?)</h1>', html, re.S)
         self.assertEqual(head.group(1), spec["title"])
-        self.assertTrue(head.group(2).startswith('<span data-cmp="max" data-a="'), head.group(2))
+        # 11-04: the headline names the second it is above, with its value (data-cmp next, the page check's relation)
+        self.assertTrue(head.group(2).startswith('<span data-cmp="next" data-a="fact:n.O4000XBIO" data-b="fact:n.G3000">'), head.group(2))
         self.assertRegex(head.group(2), r'data-src="name:[^"]*:O4000XBIO"')
         self.assertIn(K.WD.WORDS["column.note.vs_next"], head.group(2))
+        self.assertRegex(head.group(2), r'（<span data-src="name:[^"]*:G3000">[^<]+</span> <b class="n"><span data-src="fact:n.G3000">')
+        self.assertFalse(re.sub(r"<[^>]+>", "", head.group(2)).endswith(K.WD.WORDS["column.note.vs_next"]))
         # no finding: the text step's title is the h1 and its kicker stays, as before
         plain = page(flow_request(style={"sankey": {"finding": "none"}}))
         self.assertIn(f'<div class="kicker">{spec["kicker"]}</div><h1>{spec["title"]}</h1>', plain)
@@ -359,6 +362,22 @@ class FlowPage(unittest.TestCase):
         held, why = run.headline(dict(spec, title="{lead} T"), found, draw(hero(DATA))[0])
         self.assertIsNone(why)
         self.assertEqual(held["kicker"], spec["kicker"])
+
+    def test_the_headline_names_the_second_on_either_side(self):
+        # two data shapes: the subject on the first side (sources) and on the second (destinations); either way the
+        # headline is the subject, its value, the above word and the second of its own side with its value (next a, b)
+        rows = [{"src": f"fact:{k}", "text": t} for k, t in (("a", "10"), ("b", "5"), ("c", "1"), ("x", "30"), ("y", "2"))]
+        K.setup(rows, {"A": "甲", "B": "乙", "C": "丙", "X": "戊", "Y": "己"}, run.tables)
+        first = [("A", 10.0, "fact:a"), ("B", 5.0, "fact:b"), ("C", 1.0, "fact:c")]
+        second = [("X", 30.0, "fact:x"), ("Y", 2.0, "fact:y")]
+        for sums, subject, other in (((11.0, 300.0), ("A", "fact:a"), ("B", "fact:b")), ((300.0, 32.0), ("X", "fact:x"), ("Y", "fact:y"))):
+            got = K.two_sided([("place", first, sums[0]), ("place", second, sums[1])], [])
+            self.assertEqual((got["subject"], got["cmp"]), (subject[0], ("next", subject[1], other[1])), sums)
+            names = [s["name"] for s in got["headline"] if "name" in s]
+            srcs = [s["src"] for s in got["headline"] if "src" in s]
+            self.assertEqual((names, srcs), ([subject[0], other[0]], [subject[1], other[1]]), sums)
+            self.assertEqual(got["headline"], got["dek"])
+        K.setup(ROWS, NAMES, run.tables)
 
     def test_a_zero_flow_is_drawn_as_no_band_and_goes_back_to_layer_1_as_dropped(self):
         # the reported totals hold the zeroed flow's old value, so they are left out here (conservation has its own tests)
