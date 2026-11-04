@@ -476,7 +476,8 @@ fn pairs_declared(layer: &str, d: &J, page_in: &J, reg: &J) -> Result<J, String>
             for c in &drawn {
                 let key = format!("{node}_share.{c}");
                 facts.set(&key, J::obj_of(vec![("op", J::str("share")), ("a", J::Str(format!("{node}.{c}"))), ("b", J::Str(whole.clone())), ("fmt", J::str("pct"))]));
-                node_share.set(c, J::Str(format!("fact:{key}.n")));
+                // the share's whole text (its percent sign), as every share on a page prints
+                node_share.set(c, J::Str(format!("fact:{key}")));
             }
         }
         let named: Vec<String> = drawn.iter().map(|c| c.to_string()).chain(merged.iter().cloned()).chain(zero_only.iter().map(|c| c.to_string())).chain(left_out.iter().cloned()).collect();

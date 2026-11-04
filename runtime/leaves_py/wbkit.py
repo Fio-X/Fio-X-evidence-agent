@@ -334,9 +334,10 @@ def _finding_word(key, **parts):
 
 def two_sided(sides, unit, share_words=None, totals=None):
     """sides: [(name kind, nodes [(code, value, text_src[, share_src])], side sum)] in the picture's order; unit: the
-    picture's unit segments; share_words: per side, the word key ({t} the side's whole, {p} the share) a note at a node
-    with a share_src ends on: how much of its side the largest node holds (B1: a registered relation, share of the total,
-    the core's own facts over the rows); totals: per side, the whole's ledger src; a side with no whole says no share. None, or {"side", "subject", "headline": segs, "cmp": ("next", a_src, b_src), "notes": [{"side", "code",
+    picture's unit segments; share_words: per side, the word key ({p} the share, printed whole: its percent sign with it)
+    a note at a node with a share_src ends on: how much of its side the largest node holds (B1: a registered relation,
+    share of the total, the core's own facts over the rows); totals: per side, the whole's ledger src, which the note does
+    not print (the note is long enough) but which says the side is whole; a side with none says no share. None, or {"side", "subject", "headline": segs, "cmp": ("next", a_src, b_src), "notes": [{"side", "code",
     "segs", "cmp": ("gt", a_src, b_src)}]}; segs {"w"}, {"src", "bold"}, {"name", "kind"}, and the unit's first segment."""
     tops = [finding_side_top(nodes) for _, nodes, _ in sides]
     tops = [t if t and confirmed(t[0][2], t[0][0], t[1][0]) else None for t in tops]  # a side the core does not confirm says nothing
@@ -353,7 +354,7 @@ def two_sided(sides, unit, share_words=None, totals=None):
         segs = [nm(x[0], k), {"w": " "}, {"src": x[2], "bold": True}] + _finding_word(FINDING_WORDS["above"]) + \
             _finding_word(FINDING_WORDS["paren"], v=[nm(y[0], k), {"w": " "}, {"src": y[2], "bold": True}])
         if share_words and share_words[j] and totals and totals[j] and len(x) > 3 and x[3]:
-            segs += _finding_word(share_words[j], t=[{"src": totals[j]}], p=[{"src": x[3], "bold": True}])
+            segs += _finding_word(share_words[j], p=[{"src": x[3], "bold": True}])
         notes.append({"side": j, "code": x[0], "segs": segs, "cmp": (FINDING_RELATION["note"], x[2], y[2])})
     b = tops[i][1]  # the headline (and, B11, the dek) state the subject's side as its note does, with the unit: first, its value, then the second's
     dek = head + _finding_word(FINDING_WORDS["paren"], v=[nm(b[0], kind), {"w": " "}, {"src": b[2], "bold": True}])

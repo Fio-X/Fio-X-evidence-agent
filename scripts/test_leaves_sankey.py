@@ -191,15 +191,17 @@ class Picture(unittest.TestCase):
         for n, j in zip(f["notes"], (0, 1)):
             last = n["segs"][-1]
             self.assertEqual((last.get("src"), last.get("bold")), (f"fact:s.{n['code']}", True))
-            self.assertIn(K.WD.WORDS[words[j]].split("{t}")[0], txt(n["segs"]))
-        self.assertEqual(txt(f["notes"][0]["segs"]).rsplit("，", 1)[1], "占全部来源（100）的60%")
+            self.assertTrue(txt(n["segs"]).endswith("%"))  # the share with its sign, as the page's other shares print
+            self.assertFalse(any(s.get("src", "").startswith("fact:whole.") for s in n["segs"]))  # the whole is not in the note
+            self.assertIn(K.WD.WORDS[words[j]].split("{p}")[0], txt(n["segs"]))
+        self.assertEqual(txt(f["notes"][0]["segs"]).rsplit("，", 1)[1], "占全部来源的60%")
         # no share for a node, or no whole for its side (layer 1 found the side not whole): the note is as before
         for plain in (K.two_sided(sides(fuels, sectors, share=False), [], words, whole), K.two_sided(sides(fuels, sectors), [], words, [None, None])):
             self.assertTrue(all(not s.get("src", "").startswith(("fact:s.", "fact:whole.")) for n in plain["notes"] for s in n["segs"]))
         groups = [("REN", 912.0, "912"), ("FOS", 700.0, "700"), ("NUC", 388.0, "388")]
         geos = [("DE", 600.0, "600"), ("FR", 480.0, "480"), ("ES", 420.0, "420")]
         f = K.two_sided(sides(groups, geos), [], words, whole)
-        self.assertEqual([txt(n["segs"]).rsplit("，", 1)[1] for n in f["notes"]], ["占全部来源（2000）的46%", "占全部去向（1500）的40%"])
+        self.assertEqual([txt(n["segs"]).rsplit("，", 1)[1] for n in f["notes"]], ["占全部来源的46%", "占全部去向的40%"])
         # the headline is untouched: the share is the notes' alone
         self.assertFalse(any(s.get("src", "").startswith("fact:s.") for s in f["headline"]))
 

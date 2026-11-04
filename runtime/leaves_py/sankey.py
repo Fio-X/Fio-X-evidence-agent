@@ -11,7 +11,7 @@ hero.data (the data shape this leaf eats; on a column frame page, the hero's lea
   "node_text": {code: ledger src},                  # the printed value of every node that is not merged (source or target);
   "node_share": {code: ledger src}?,                # each drawn node's share of its side's whole (a share fact), which the
                                                     # finding's note at a side's largest node prints (SHARE_WORDS);
-  "side_total": {"source": ledger src?, "target": ledger src?}?,  # the side's whole, printed in that note; a side with
+  "side_total": {"source": ledger src?, "target": ledger src?}?,  # the side's whole (not printed): a side with
                                                     # none (layer 1 found it not whole) says no share;
                                                     # a merged member needs none
   "totals": {"source": {code: series src}?, "target": {code: series src}?, "all": series src?}?,  # reported totals, checked
