@@ -9,6 +9,8 @@ hero.data (the data shape this leaf eats; on a column frame page, the hero's lea
                                                     # is a source or a target, never both; a zero flow is not drawn
                                                     # and goes back in Frame.dropped as ("<source>><target>", "zero")
   "node_text": {code: ledger src},                  # the printed value of every node that is not merged (source or target);
+  "node_share": {code: ledger src}?,                # each drawn node's share of its side's whole (a share fact), which the
+                                                    # finding's note at a side's largest node prints (SHARE_WORDS);
                                                     # a merged member needs none
   "totals": {"source": {code: series src}?, "target": {code: series src}?, "all": series src?}?,  # reported totals, checked
   "other_source": {"name": segs,                    # where layer 1 merged sources: the other node's name,
@@ -49,6 +51,7 @@ from wbkit import FX, prod, Refused, esc, tw
 import words as WD
 
 NODE = "sankey"
+SHARE_WORDS = ("sankey.share.source", "sankey.share.target")  # a side's note at its largest node ends on its share of the side (B1)
 COLUMNS = 2
 prod.KNOBS[NODE] = dict(
     size=(12, (11, 16, 0.5), "label size px (11 is the page floor)"), title_size=(16, (12, 22, 1), "chart name size px"),
@@ -150,8 +153,9 @@ class Frame:
         f.finding = None
         if k("finding") == "auto":
             vt = lambda side, c: K.shown(f.other[side]["value_text"] if c == "_other" else txt[c])
-            sides = [(f.kinds[side], [(c, v, vt(side, c)) for c, v in nodes], f.grand) for side, nodes in (("source", f.src_nodes), ("target", f.tgt_nodes))]
-            f.finding = K.two_sided(sides, d.get("unit") or [])
+            share = d.get("node_share") or {}  # each drawn node's share of its side (layer 1's facts), for the notes
+            sides = [(f.kinds[side], [(c, v, vt(side, c), share.get(c)) for c, v in nodes], f.grand) for side, nodes in (("source", f.src_nodes), ("target", f.tgt_nodes))]
+            f.finding = K.two_sided(sides, d.get("unit") or [], SHARE_WORDS)
         if f.finding:
             s = f.finding["subject"]
             if f.hl and f.hl != {s}: raise Refused(f"sankey: highlight {sorted(f.hl)[0]} is not the finding's subject {s}; the accent marks the node the headline names")

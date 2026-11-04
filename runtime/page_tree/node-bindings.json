@@ -1129,6 +1129,7 @@
      ],
      "candidates": {
       "hi": [
+       {"when": [{"if": "page_is", "path": "additive"}, {"if": "count_at_least", "select": "ranked", "n": 3}], "text": [{"word": "column.note.share_of_drawn"}], "value_text": "fact:hi_share", "facts": {"mean_sum": {"table": "$shape.main", "filter": {"$shape.place": "select:ranked"}, "time": "$shape.year", "fmt": "$shape.fmt"}, "hi_share": {"op": "share", "a": "hi", "b": "mean_sum", "fmt": "pct"}}},
        {"when": [{"if": "count_at_least", "select": "ranked", "n": 3}, {"if": "prints_nonzero", "fact": "vs_mean", "fmt": "$fmt.change"}], "text": [{"word": "column.note.vs_mean"}], "value_text": "fact:vs_mean", "facts": {"mean_sum": {"table": "$shape.main", "filter": {"$shape.place": "select:ranked"}, "time": "$shape.year", "fmt": "$shape.fmt"}, "mean_n": {"op": "n", "by": "$shape.place", "table": "$shape.main", "filter": {"$shape.place": "select:ranked"}, "time": "$shape.year", "fmt": "n"}, "mean": {"op": "times", "a": "mean_sum", "b": "mean_n", "fmt": "$shape.fmt"}, "vs_mean": {"op": "minus", "a": "hi", "b": "mean", "fmt": "$fmt.change"}}},
        {"when": [{"if": "page_is", "path": "scoped"}], "text": [{"word": "column.note.hi.scoped"}], "value_text": "fact:gap"},
        {"when": [], "text": [{"word": "column.note.hi"}], "value_text": "fact:gap"}
