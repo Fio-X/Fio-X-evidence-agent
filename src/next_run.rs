@@ -916,8 +916,8 @@ struct Shape {
     /// The monthly companion (same origin dimension, hub and unit) and its months.
     companion: String,
     months: Vec<String>,
-    /// The last year any of the place's countries has a row at; on a half-yearly or monthly main (`freq`) the period the most
-    /// of them hold a value at (last_year), e.g. 2026-S1 or 2026-09.
+    /// The last year any of the place's countries has a row at; on a half-yearly or monthly main (`freq`) the latest period
+    /// nearly as many of them hold a value at as at the best one (last_year, LATEST_PERIOD_PCT), e.g. 2026-S1 or 2026-09.
     year: String,
     /// The main's one frequency (one_freq): A, S or M; empty when the recipe asks for annual instead.
     freq: String,
@@ -1177,10 +1177,16 @@ fn row_value(r: &Value) -> Option<f64> {
     r["value"].as_str().and_then(|v| v.parse::<f64>().ok()).filter(|v| v.is_finite())
 }
 
-/// The last year any of the place's countries has a value at. On a half-yearly or monthly main (one_freq) the period the most
-/// of them have a value at, a tie to the later: countries report a month or a half year at different times, and the latest
-/// period alone may hold a few of them. Each later period passed over is kept with the countries it misses (Shape::passed),
-/// for the run's record; a missing value is never filled in.
+/// How many of the best period's countries, in percent, a later period of a half-yearly or monthly main must hold a value
+/// for to be the page's period (last_year): the latest period that holds at least this share of the count the best one
+/// holds. 100 would take the period the most countries hold (a tie to the later), which may be an old one.
+const LATEST_PERIOD_PCT: usize = 80;
+
+/// The last year any of the place's countries has a value at. On a half-yearly or monthly main (one_freq) the latest period
+/// at which at least LATEST_PERIOD_PCT percent as many of them have a value as at the period the most have one at:
+/// countries report a month or a half year at different times, and the latest period alone may hold a few of them. Each
+/// later period passed over is kept with the countries the page's period holds and it misses (Shape::passed), for the run's
+/// record; a missing value is never filled in.
 fn last_year(s: &mut Shape, tables: &[(&str, &[Value])], _: &dyn Catalogue) -> Result<(), String> {
     let rows = tables[0].1;
     if matches!(s.freq.as_str(), "S" | "M") {
@@ -1190,10 +1196,12 @@ fn last_year(s: &mut Shape, tables: &[(&str, &[Value])], _: &dyn Catalogue) -> R
                 held.entry(t).or_default().insert(c.to_string());
             }
         }
+        let best = held.values().map(BTreeSet::len).max().ok_or_else(|| format!("main {} has no country value", s.main))?;
         let (period, at) = held
             .iter()
-            .max_by(|a, b| a.1.len().cmp(&b.1.len()).then_with(|| a.0.cmp(b.0)))
-            .ok_or_else(|| format!("main {} has no country value", s.main))?;
+            .rev()
+            .find(|(_, there)| there.len() * 100 >= best * LATEST_PERIOD_PCT)
+            .expect("the best period holds its own count");
         s.passed = held
             .range::<str, _>((std::ops::Bound::Excluded(*period), std::ops::Bound::Unbounded))
             .map(|(t, there)| (t.to_string(), at.difference(there).cloned().collect()))
@@ -6076,9 +6084,10 @@ mod tests {
         }
     }
 
-    /// On a monthly main (une_rt_m's shape) the page's period is the month the most places have a value at, a tie to the
-    /// later, not the latest month a few places reached: each later month passed over is kept with the places it misses,
-    /// and the fill puts it on the run's record (ends, rule latest_period). An annual main keeps its last year and no record.
+    /// On a monthly main (une_rt_m's shape) the page's period is the latest month that at least LATEST_PERIOD_PCT percent
+    /// as many places hold a value at as the best month does, not the latest month a few places reached: each later month
+    /// passed over is kept with the places it misses, and the fill puts it on the run's record (ends, rule latest_period).
+    /// An annual main keeps its last year and no record.
     #[test]
     fn a_monthly_column_is_at_the_month_most_places_hold_and_the_later_months_passed_over_are_recorded() {
         let column = recipe("column");
@@ -6099,6 +6108,24 @@ mod tests {
         let one: &[(&str, &str)] = &[("2026-08", "1")];
         let tie = period_rows("une_rt_m", true, &[("SE", &[("2026-07", "1")]), ("DE", one)]);
         assert_eq!(shape_of(&column.eats, &[("une_rt_m", &tie[..])], &Hubs).unwrap().year, "2026-08");
+        // the newest month at 85% of the best month's count is the page's; at 70% it is passed over, its missing places kept
+        let places: Vec<String> = (0..20u8).map(|i| format!("{}{}", char::from(b'A' + i / 5), char::from(b'A' + i % 5))).collect();
+        let newest = |n: usize| -> Vec<Value> {
+            let mut rows = Vec::new();
+            for (i, p) in places.iter().enumerate() {
+                let at: &[(&str, &str)] = if i < n { full } else { lag };
+                rows.extend(period_rows("une_rt_m", true, &[(p.as_str(), at)]));
+            }
+            rows
+        };
+        let at85 = newest(17);
+        let shape = shape_of(&column.eats, &[("une_rt_m", &at85[..])], &Hubs).unwrap();
+        assert_eq!((shape.year.as_str(), shape.passed.len()), ("2026-09", 0), "17 of 20 is 85%");
+        let at70 = newest(14);
+        let shape = shape_of(&column.eats, &[("une_rt_m", &at70[..])], &Hubs).unwrap();
+        assert_eq!(shape.year, "2026-08", "14 of 20 is 70%");
+        assert_eq!(shape.passed, vec![("2026-09".to_string(), places[14..].to_vec())]);
+        assert_eq!(LATEST_PERIOD_PCT, 80);
         // an annual main: its last year, whatever the count, and no record
         let mut annual = ring_rows("sdg", &[("freq", "A"), ("unit", "PC")], ("geo", &["SE", "BE", "DE", "FR"]), &["2024"]);
         annual.extend(ring_rows("sdg", &[("freq", "A"), ("unit", "PC")], ("geo", &["SE"]), &["2025"]));
@@ -6186,7 +6213,7 @@ mod tests {
         assert!(!html.contains(">2026-S1<") && !html.contains("2025-S2.y"), "no raw period printed, and not the earlier half");
     }
 
-    /// A monthly ranking (une_rt_m's shape) is published at the month most places hold: its year line and the dek print
+    /// A monthly ranking (une_rt_m's shape) is published at the month nearly every place holds: its year line and the dek print
     /// "2026 年 8 月", the year and the month each from its ledger entry.
     #[test]
     fn a_monthly_ranking_is_published_naming_its_month() {
