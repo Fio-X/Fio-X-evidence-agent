@@ -228,9 +228,17 @@ mod tests {
         for code in ["PC_ACT", "PC_IND", "PC_ENT", "PC_TOT"] {
             assert_eq!(unit_short_zh(code), Some("%"), "{code}");
         }
+        // K4 round 1 for s6 (11-05, after the table moved to the knowledge group): every I## the unit list labels
+        // "Index, YYYY=100" reads its own base year (s6's I90), none adding up
+        for (code, short) in [("I90", "指数(1990=100)"), ("I95", "指数(1995=100)"), ("I00", "指数(2000=100)"), ("I21", "指数(2021=100)"), ("I15", "指数(2015=100)")] {
+            assert_eq!(unit_short_zh(code), Some(short), "{code}");
+        }
         for row in UNIT_SHORT_ZH.lines().skip(1) {
             let p: Vec<&str> = row.split('\t').collect();
             if p[2] == "pct_family" { assert_eq!((p[1], p[3]), ("%", "no"), "{row}: a share does not add up"); }
+            if p[2] == "index_base" {
+                assert!(p[1] == format!("指数({}=100)", &p[1][7..11]) && p[3] == "no", "{row}: an index reads its base year and does not add up");
+            }
         }
     }
 }
