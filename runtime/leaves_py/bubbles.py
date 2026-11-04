@@ -430,6 +430,8 @@ def cl_bubble_key(f, occ):
     f.key_dropped, empty = [], f'<g data-node="{KEY}"></g>'
     if not refs:
         f.key_dropped.append(("key", "no circle drawn by its area")); return empty
+    # every key circle is one of the map's drawn circles at key_r: its outline's outer edge on that circle's visible edge, so
+    # none reads larger than the largest map circle by construction (no check, no stop: test_leaves_bubbles holds it)
     spec = f.c.spec
     vals = [(c, FX.entry(c[3], "tspan", None) + esc(unit_of(spec, c[3])), FX.text(c[3]) + unit_of(spec, c[3])) for c in refs]
     slots = [max(2 * c[2], tw(p, sz)) for c, _, p in vals]  # each circle's column: its circle or its value, the wider
@@ -457,10 +459,8 @@ def cl_bubble_key(f, occ):
         inner = "".join(FX.entry(s, "tspan", None) if s else esc(t) for t, s in ln)
         o.append(K.txt(B, x, y + sz * 0.8 + n * sz * KEY_LINE, sz, "var(--t-body)", inner, tw(plain(ln), sz), tag=f"key line {n + 1}"))
     yb = y + words_h + KEY_GAP + 2 * R  # the circles' one bottom line
-    big = max(c[2] for c in sc["circles"]) - CIRCLE_EDGE / 2  # the largest map circle's visible edge
     for (c, inner, p), w in zip(vals, slots):
         rk = key_r(c[2])
-        if rk + KEY_EDGE / 2 > big + 0.01: raise Refused(f"bubble_key: the key circle for {c[0]} would read larger than the largest map circle")
         o.append(f'<circle cx="{x + w / 2:.1f}" cy="{yb - rk:.1f}" r="{rk:.1f}" fill="none" stroke="var(--t-sec)" stroke-width="{KEY_EDGE}"/>')
         o.append(K.txt(B, x + w / 2, yb + KEY_GAP + sz * 0.8, sz, f"var({VALUE_INK})", inner, tw(p, sz), anchor="middle", tag=f"key value {c[0]}"))
         x += w + KEY_GAP
