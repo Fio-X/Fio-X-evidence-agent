@@ -2713,9 +2713,11 @@ mod tests {
         let mut all = c.rank(q3, &t);
         assert_eq!(all.candidates[0].id, "nrg_cb_pem");
         all.candidates.truncate(TOP);
-        // the asked record's offered tables are the top five's (top5 fills them; rank alone offers none)
+        // the asked record's offered tables are the top five's (top5 fills them; rank alone offers none): nrg_cb_pem by its
+        // prefix, the four annual ones by their titles ("Electricity generation by fuel ...")
         let got = c.top5(q3, &t, false, None);
-        assert_eq!(got.asked.iter().map(|a| a.offered.clone()).collect::<Vec<_>>(), vec![vec!["nrg_cb_pem".to_string()]]);
+        let want: Vec<String> = ["nrg_cb_pem", "nrg_pa_mix", "nrg_pa_more", "nrg_pa_few", "nrg_pa_op"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(got.asked.iter().map(|a| a.offered.clone()).collect::<Vec<_>>(), vec![want]);
         all.asked = got.asked.clone();
         assert_eq!(serde_json::to_value(got).unwrap(), serde_json::to_value(all).unwrap());
     }
