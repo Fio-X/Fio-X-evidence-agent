@@ -611,7 +611,9 @@ fn printed(frag: &str) -> Vec<String> {
 /// The comparison set of a value fact, derived from the request's fact definitions alone (never from the page): every fact
 /// whose definition has op value and the same table, time and format, and a filter over the same one dimension (its value
 /// one code, or a list for a merged node), less a total row's (total_row: the whole is printed as ever, never compared with
-/// its parts). Empty when `key` is no such fact, or a total row's.
+/// its parts) and less a whole summed in the request (a list holding every code the set's other facts hold: a flow side's
+/// whole over all its codes, while a merged node, "other", holds only its own and stays). Empty when `key` is no such
+/// fact, or a whole.
 fn family<'a>(key: &str, spec: &'a Spec) -> Vec<&'a str> {
     let shape = |q: &Value| {
         let filter = q.get("filter")?.as_object().filter(|f| f.len() == 1)?;
@@ -629,6 +631,25 @@ fn family<'a>(key: &str, spec: &'a Spec) -> Vec<&'a str> {
         spec.facts.iter().filter(|(_, q)| shape(q).as_ref() == Some(&want) && !total(q)).map(|(k, _)| k.as_str()).collect();
     set.sort_unstable();
     set.dedup();
+    // each member's codes on the set's one dimension; a list holding all the others' is their sum, no part of them
+    let codes = |k: &str| -> (bool, Vec<String>) {
+        let v = spec.facts.iter().find(|(key, _)| key == k).and_then(|(_, q)| q["filter"].as_object()?.values().next().cloned());
+        match v {
+            Some(Value::Array(cs)) => (true, cs.iter().filter_map(Value::as_str).map(str::to_string).collect()),
+            Some(Value::String(c)) => (false, vec![c]),
+            _ => (false, Vec::new()),
+        }
+    };
+    let held: Vec<(&str, (bool, Vec<String>))> = set.iter().map(|k| (*k, codes(k))).collect();
+    let whole = |k: &str| {
+        held.iter().find(|(m, _)| *m == k).is_some_and(|(_, (list, cs))| {
+            *list && held.len() > 1 && held.iter().filter(|(m, _)| *m != k).all(|(_, (_, o))| o.iter().all(|c| cs.contains(c)))
+        })
+    };
+    if whole(key) {
+        return Vec::new();
+    }
+    set.retain(|k| !whole(k));
     set
 }
 
@@ -1107,7 +1128,7 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     // a page tree that is JSON the checker reads (each value, number, string and escape), no extra data, a number
     // where float() takes one
     // a first_holding field: the first candidate whose conditions (CONDITIONS, recomputed by the core) all hold
-    ("tree.first_holding", "next_tree::CONDITIONS", &["tree::first_holding", "tree::conditions_hold", "tree::condition_holds", "tree::line_width", "tree::with_code", "tree::fact_value", "tree_gen::plain_holding", "tree_gen::no_fact", "tree_gen::no_word", "tree_gen::codes_in", "tree_gen::filter_codes"]),
+    ("tree.first_holding", "next_tree::CONDITIONS", &["tree::first_holding", "tree::conditions_hold", "tree::condition_holds", "tree::unit_additive", "tree::line_width", "tree::with_code", "tree::fact_value", "tree_gen::plain_holding", "tree_gen::no_fact", "tree_gen::no_word", "tree_gen::codes_in", "tree_gen::filter_codes"]),
     ("tree.json_input", "", &["tree::parse", "tree::err", "tree::num", "tree::value", "tree::number", "tree::string", "tree::hex4"]),
     // the node the core asks: in the page tree, bound external, its runner a code file under the runtime, its content
     // rechecked before the child starts and its reply after (C1-C5, B0-B7 and the colour checks)
@@ -2435,6 +2456,41 @@ mod tests {
         add(&mut spec, &mut facts, &mut ledger, ("from.X9999", "siec", "X9999", 177745.063, "177,745.06"));
         let page = printed(flow_page(), &["from.X9999"]);
         assert!(check_relations(&page, &ledger, &spec, &facts, &[]).iter().any(|f| f.contains("does not hold")), "X9999 is no total row");
+    }
+
+    /// B1's flow side whole summed in the request ({node}_total: a list of every code its side's facts hold, in the side's
+    /// own format, printed): no member of its side's set, while the merged "other" node stays one; a list that misses one
+    /// code of the side is a part like any merged node and, above the largest, refuses.
+    #[test]
+    fn a_flow_side_summed_whole_is_no_part_and_the_other_node_stays() {
+        let (mut spec, mut facts, mut ledger) = flow_request();
+        let add = |spec: &mut Spec, facts: &mut Vec<Fact>, ledger: &mut BTreeMap<String, String>, (key, dim, codes, v, text): (&str, &str, &[&str], f64, &str)| {
+            spec.facts.push((key.into(), json!({"op": "value", "table": "nrg_bal_c", "time": "2024", "fmt": "ktoe", "filter": {dim: codes}})));
+            facts.push(Fact { key: key.into(), op: "value".into(), v, t: None, n: None, who: Vec::new(), fmt: "ktoe".into(), reads: Vec::new() });
+            ledger.insert(format!("fact:{key}.n"), text.into());
+        };
+        let sources = ["O4000XBIO", "G3000", "E7000", "RA000", "H8000", "C0000X0350-0370", "C0350-0370", "W6100_6220"];
+        let uses = ["FC_OTH_HH_E", "FC_TRA_E", "FC_IND_E", "FC_OTH_CP_E", "FC_OTH_AF_E", "FC_OTH_FISH_E", "FC_OTH_NSP_E"];
+        add(&mut spec, &mut facts, &mut ledger, ("sankey_total.source", "siec", &sources, 177745.063, "177,745.06"));
+        add(&mut spec, &mut facts, &mut ledger, ("sankey_total.target", "nrg_bal", &uses, 177745.063, "177,745.06"));
+        let printed = |page: String, ledger: &BTreeMap<String, String>, keys: &[&str]| {
+            let texts: String = keys.iter().map(|k| format!("<text><tspan data-src=\"fact:{k}.n\">{}</tspan></text>", ledger[&format!("fact:{k}.n")])).collect();
+            page.replacen("</g></svg>", &format!("</g>{texts}</svg>"), 1)
+        };
+        assert_eq!(family("from.G3000", &spec), ["from.E7000", "from.G3000", "from.H8000", "from.O4000XBIO", "from.RA000", "from_other"], "the other node stays");
+        assert_eq!(family("to_other", &spec).len(), 5);
+        assert!(family("sankey_total.source", &spec).is_empty() && family("sankey_total.target", &spec).is_empty());
+        let page = printed(flow_page(), &ledger, &["sankey_total.source", "sankey_total.target"]);
+        assert_eq!(check_relations(&page, &ledger, &spec, &facts, &[]), Vec::<String>::new(), "both summed wholes printed, the finding holds");
+        let on_whole = page.replacen("data-cmp=\"max\" data-a=\"fact:from.O4000XBIO.n\"", "data-cmp=\"max\" data-a=\"fact:sankey_total.source.n\"", 1);
+        assert!(check_relations(&on_whole, &ledger, &spec, &facts, &[]).iter().any(|f| f.contains("has no comparison set")));
+        // must fail: a list missing one source (RA000) is no whole, a part above the largest
+        let (mut spec, mut facts, mut ledger) = flow_request();
+        let short: Vec<&str> = sources.iter().copied().filter(|c| *c != "RA000").collect();
+        add(&mut spec, &mut facts, &mut ledger, ("sankey_most.source", "siec", &short, 160851.329, "160,851.33"));
+        assert_eq!(family("from.G3000", &spec).len(), 7);
+        let page = printed(flow_page(), &ledger, &["sankey_most.source"]);
+        assert!(check_relations(&page, &ledger, &spec, &facts, &[]).iter().any(|f| f.contains("does not hold")), "a list short of the side is a part");
     }
 
     /// The comparisons a stored request hands the leaf (run with --ignored; P5_REQUEST a request.json), as one JSON line.

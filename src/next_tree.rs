@@ -4921,7 +4921,7 @@ fn cells_of(code: &J, dr: &J, sel: &[(String, &J)], got: &Got, rows: &[J]) -> Re
 /// The conditions a `first_holding` field's candidates are held by, all recomputed here from the core's own facts,
 /// formats, selects and the page input (registered: next_ledger CHECK_REGISTRY tree.first_holding). A candidate names
 /// only these; any other condition, or another argument, is refused.
-pub const CONDITIONS: [(&str, &[&str]); 8] = [
+pub const CONDITIONS: [(&str, &[&str]); 9] = [
     // the sign of a fact the core computes: pos, neg or zero (a NaN reads as zero, as a partial_cmp with 0 does)
     ("sign", &["fact", "is"]),
     // the fact as the format prints it differs from 0 as the format prints it (a tie prints as no gap)
@@ -4931,6 +4931,10 @@ pub const CONDITIONS: [(&str, &[&str]); 8] = [
     ("width_at_most", &["text", "size", "max"]),
     // a select holds at least `n` codes
     ("count_at_least", &["select", "n"]),
+    // the amounts of the page's unit add up (a share of their sum says something): every row of the page input holds one
+    // unit code, the same, and the unit registry (unit-short-zh.tsv, its additive column) says yes for it; a row with no
+    // unit, two units or a code the registry lacks: it does not hold
+    ("unit_adds_up", &[]),
     // the page prints the fact, a difference, as a number: no DIFF_MOST_DEC decimals left it more than DIFF_CLOSE off
     // its true difference (next_tree_gen printed_raise's gap_order, J2), else its words say only which is higher
     // (`is` false: it does not, the note's words then naming the other place with no number)
@@ -5028,6 +5032,13 @@ fn condition_holds(cond: &J, h: &Holding) -> Result<bool, String> {
             let max = cond.g("max").num().ok_or("condition width_at_most: max")?;
             Ok(line_width(&line, size) <= max)
         }
+        "unit_adds_up" => {
+            let units: std::collections::BTreeSet<Option<&str>> = h.page.g("rows").arr().iter().map(|r| dims(r, "unit").s()).collect();
+            Ok(match units.into_iter().collect::<Vec<_>>()[..] {
+                [Some(unit)] => unit_additive(unit)?,
+                _ => false,
+            })
+        }
         "count_at_least" => {
             let sid = key("select");
             let n = cond.g("n").num().ok_or("condition count_at_least: n")?;
@@ -5062,6 +5073,30 @@ fn condition_holds(cond: &J, h: &Holding) -> Result<bool, String> {
         }
         _ => unreachable!("CONDITIONS holds the arms"),
     }
+}
+
+/// The unit registry (runtime/pi/assets/unit-short-zh.tsv, data the core reads itself as vocabulary, as it reads the
+/// parts table): code, short form, rule, additive.
+const UNIT_TSV: &str = include_str!("../runtime/pi/assets/unit-short-zh.tsv");
+
+/// Whether amounts in `unit` add up, as the unit registry's additive column says (yes or no); a code it lacks: no. A
+/// registry with no additive column, or a value other than yes or no, is refused.
+fn unit_additive(unit: &str) -> Result<bool, String> {
+    let mut lines = UNIT_TSV.lines();
+    let head: Vec<&str> = lines.next().unwrap_or_default().split('\t').collect();
+    let at = |name: &str| head.iter().position(|h| *h == name).ok_or_else(|| format!("unit registry: no column {name}"));
+    let (code, additive) = (at("code")?, at("additive")?);
+    for line in lines {
+        let p: Vec<&str> = line.split('\t').collect();
+        if p.get(code) == Some(&unit) {
+            return match p.get(additive) {
+                Some(&"yes") => Ok(true),
+                Some(&"no") => Ok(false),
+                v => Err(format!("unit registry: {unit} additive {v:?} (yes or no)")),
+            };
+        }
+    }
+    Ok(false)
 }
 
 /// `v` with `{code}` in every string and object key read as `code`, `{code_lc}` as it in lowercase, and `{y0}` / `{y1}`
@@ -8518,7 +8553,29 @@ mod tests {
         };
         assert_eq!([gap("vs_lo", ""), gap("vs_hi", ""), gap("vs_lo", r#", "is": false"#), gap("vs_hi", r#", "is": false"#)].map(Result::unwrap), [false, true, true, false]);
         assert!(gap("vs_lo", r#", "is": "no""#).unwrap_err().contains("true or false"));
-        assert_eq!(CONDITIONS.map(|(k, _)| k), ["sign", "prints_nonzero", "width_at_most", "count_at_least", "gap_printable", "page_is", "row_above", "layer_before"]);
+        assert_eq!(CONDITIONS.map(|(k, _)| k), ["sign", "prints_nonzero", "width_at_most", "count_at_least", "unit_adds_up", "gap_printable", "page_is", "row_above", "layer_before"]);
+        // unit_adds_up (B1): the page's rows' one unit, as the unit registry's additive column says; persons (a count) and
+        // ktoe (an amount) add up, a percentage and a per-person rate do not; rows with no unit, or two units, never
+        let adds = |units: &[Option<&str>]| {
+            let rows: Vec<serde_json::Value> = units
+                .iter()
+                .enumerate()
+                .map(|(i, u)| {
+                    let mut dims = serde_json::json!({"geo": format!("G{i}")});
+                    if let Some(u) = u {
+                        dims["unit"] = serde_json::json!(u);
+                    }
+                    serde_json::json!({"src": format!("series:t/{i}:2024"), "table": "t", "time": "2024", "dims": dims, "value": "1"})
+                })
+                .collect();
+            let page = J::from_value(&serde_json::json!({"rows": rows}));
+            let hold = Holding { facts: &facts, fmts: &fmts, got: &got, page: &page, code: "", name: None, word: &words };
+            conditions_hold(&parse(r#"[{"if": "unit_adds_up"}]"#).unwrap(), &hold).unwrap()
+        };
+        assert_eq!([adds(&[Some("PER"), Some("PER")]), adds(&[Some("KTOE"), Some("KTOE")])], [true, true], "a count, an amount");
+        assert_eq!([adds(&[Some("PC"), Some("PC")]), adds(&[Some("TCO2E_HAB"), Some("TCO2E_HAB")])], [false, false], "a share, a rate");
+        assert_eq!([adds(&[None, None]), adds(&[Some("PER"), Some("KTOE")]), adds(&[Some("PER"), None]), adds(&[Some("NO_SUCH_UNIT")])], [false; 4]);
+        assert!(conditions_hold(&parse(r#"[{"if": "unit_adds_up", "unit": "PER"}]"#).unwrap(), &Holding { facts: &facts, fmts: &fmts, got: &got, page: &gapped, code: "", name: None, word: &words }).unwrap_err().contains("no argument unit"));
     }
 
 
