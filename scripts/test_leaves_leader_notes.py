@@ -565,6 +565,49 @@ class LeaderNotes(unittest.TestCase):
         page = child(lines + [json.dumps({"phase": "page", "layers": {"bars": bars["svg"], "bubbles": bub["svg"], "bubble_key": key["svg"], "leader_notes": got["svg"]}})])[5]
         self.assertNotIn("refused", page)
 
+    def world(self, kind, a, b, long=None):
+        """Two notes (a rises most, b least) over a map's bubbles, on one Occ: the EU level map (eu), the q5 change page's 8
+        economies (q5) or the q6 page's 20 citizenships (q6). LONG_LEAD at `long` (huge: top first only, as before B5).
+        (each leader's length in drawing order, dropped)."""
+        if kind == "eu":
+            rows, labels, items, ext, at = ROWS, ZH2, ITEMS, EXT, {c: POINT[ISO3[c]] for c in VALUES}
+            rows = rows + [{"src": "fact:gap", "text": "54.8 个百分点"}]
+        elif kind == "q5":
+            rows = [{"src": f"series:t/{c}:2025:value", "table": "t", "dims": {"country": c}, "time": "2025", "value": str(v)} for c, v in Q5_T1.items()]
+            rows += [{"src": f"fact:val.{c}", "text": f"{v:.2f}%"} for c, v in Q5_T1.items()] + [{"src": "fact:gap", "text": "1.80 吨二氧化碳当量/人"}, {"src": "fact:times", "text": "1.43 吨二氧化碳当量/人"}]
+            labels, ext, at = ZH3, Q5_EXT, {c: POINT[c] for c in Q5_T1}
+            items = [dict(code=c, value=f"series:t/{c}:2025:value", value_text=f"fact:val.{c}", lonlat=at[c]) for c in Q5_T1]
+        else:
+            rows = [{"src": f"series:t/{c}:2025:value", "table": "t", "dims": {"citizen": c}, "time": "2025", "value": str(v)} for c, v in Q6_VALUES.items()]
+            rows += [{"src": f"fact:val.{c}", "text": f"{v:,}"} for c, v in Q6_VALUES.items()] + [{"src": "fact:gap", "text": "99,825 人"}, {"src": "fact:times", "text": "9.0倍"}]
+            labels, ext, at = ZH2, Q6_EXT, {c: list(Q6_AT[c]) for c in Q6_VALUES}
+            items = [dict(code=c, value=f"series:t/{c}:2025:value", value_text=f"fact:val.{c}", lonlat=at[c]) for c in Q6_VALUES]
+        notes = [dict(at=at[a], name=a, text=[{"word": "column.note.rise_most"}], value_text="fact:gap"),
+                 dict(at=at[b], name=b, text=[{"word": "column.note.rise_least"}], value_text="fact:times")]
+        was = LN.LONG_LEAD
+        try:
+            if long is not None: LN.LONG_LEAD = long
+            K.setup(rows, labels, run.tables); geo.NE = SHP; occ = prod.Occ()
+            bubbles.cl_bubbles(bubbles.Laid({"data": dict(items=items, ext=ext), "style": style()}), occ)
+            fn = LN.Frame({"data": dict(ext=ext, notes=notes), "style": style()}); svg = LN.cl_leader_notes(fn, occ)
+        finally:
+            LN.LONG_LEAD = was
+        self.assertEqual(check_svg(svg), [])
+        return [round(sum(math.dist(p, q) for p, q in zip(x, x[1:]))) for x in leaders(svg)], fn.dropped
+
+    def test_notes_placed_top_first_on_a_long_leader_are_tried_bottom_first_and_the_shorter_kept(self):
+        # B5 (11-04): the q4 page's China note took a 243 px leader round the USA note placed above it (bottom first, 29). Three
+        # data shapes: the EU level map, the q5 change page's 8 economies, the q6 page's 20 citizenships (world maps); each
+        # pair's longest leader top first, then as drawn now (the drawing order is the order kept)
+        for kind, a, b, before, now in [("eu", "HR", "BG", [129, 204], [19, 93]), ("q5", "BGD", "PAK", [13, 262], [23, 175]),
+                                        ("q6", "CD", "PE", [41, 406], [23, 41]), ("q6", "BD", "SO", [109, 201], [44, 120])]:
+            self.assertEqual(self.world(kind, a, b, long=10 ** 9), (before, []), (kind, a, b))
+            self.assertEqual(self.world(kind, a, b), (now, []), (kind, a, b))
+            self.assertLess(max(now), max(before))
+        # a pair whose bottom-first order is no shorter keeps top first, as drawn before; one under LONG_LEAD is never re-laid
+        for kind, a, b in [("q6", "CD", "GN"), ("eu", "SE", "LU")]:
+            self.assertEqual(self.world(kind, a, b), self.world(kind, a, b, long=10 ** 9), (kind, a, b))
+
     def test_a_note_that_fits_one_line_draws_as_before(self):
         # the q1 page's notes (a name, a word, a number with a short unit) fit one line: the layer, drawn alone on an empty Occ,
         # is byte for byte the one drawn before the two-line break (its sha on the commit before it), one text per note

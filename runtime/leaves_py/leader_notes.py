@@ -29,7 +29,8 @@ page's Nigeria note, 249 px at the break before its number, placed at 208 px aft
 Germany's on two lines; no note of the q1, q6, change or crowded pages moved); a note with no free place in any of them (no
 clear leader of up to two bends), or past label_count, is dropped and listed in Frame.dropped as (id, why), the id its name code (note<i>, its place in the
 request from 1, when it has none); the layer still draws, empty when every note was dropped (run.py sends the list back for layer 1 to keep in
-the page's ledger).
+the page's ledger). The notes are placed top first, each against what those before it claimed; when that leaves a leader past
+LONG_LEAD and drops none, they are placed bottom first too, and that order is kept when it drops none and its longest leader is shorter.
 Refuses: no notes, a note without a name or text, a point that is not [lon, lat] (or "hub" without a hub), a note under 16 px (note_size min), a note wider than
 half the picture (on two lines too), a missing label or ledger entry, a digit in a literal, a knob off its range."""
 import math
@@ -52,6 +53,7 @@ LEAD_GAP = 3  # px a note's leader keeps off every other leader's points (sample
 LAND_COST = 80  # px a note over the land costs against one in the sea or the open margin
 BEND_COST = 40  # px a leader's bend costs against a straight one
 LINE = 1.35  # em between a two-line note's baselines: the page check's glyph box (1.06 above, 0.27 below) of one line stays off the other's
+LONG_LEAD = 120  # px of leader past which the notes, placed top first, are also tried bottom first (B5 11-04: the q4 page's China note took a 243 px leader round the USA note placed before it; bottom first, 29)
 TRIES = 600  # leaders walked per note, cheapest first: a crowded picture stays within the layer's deadline (next_leaf LAYER_DEADLINE)
 GRID = 6  # px between the columns (rows) a two-bend leader's middle run is tried at
 TRIES2 = 600  # two-bend leader pieces walked per note at most (past its last runs, one per GRID column and row), when no straight or one-bend leader clears
@@ -126,7 +128,7 @@ def breaks(name, sg, val, size, half, default):
 
 
 def cl_leader_notes(f, occ):
-    k, W, H, size = f.k, f.W, f.H, f.size; B = K.Boxes(W, H); o = ['<g data-node="leader_notes">']; f.dropped = []
+    k, W, H, size = f.k, f.W, f.H, f.size; o = ['<g data-node="leader_notes">']; f.dropped = []
     lead, margin, land = size * 1.4, 8, getattr(occ, "land", None)
     items = sorted(f.notes, key=lambda n: (n["_pt"][1], str(n.get("name")))); keep, rest = items[: int(k("label_count"))], items[int(k("label_count")):]
     f.dropped += [(n["_id"], "past label_count") for n in rest]
@@ -232,24 +234,41 @@ def cl_leader_notes(f, occ):
                     best = (cost, b1, y, path)
         if not best: best = two_bends(pt, tried, boxes, rings, cells)  # only where no straight or one-bend leader clears
         if not best: return None
-        _, b1, y, path = best
+        cost, b1, y, path = best
         anchor = "end" if (b1[0] + b1[2]) / 2 > W / 2 else "start"  # a note right of the middle keeps to its right edge
-        return (b1[2] if anchor == "end" else b1[0]), anchor, y, b1, path
+        return (b1[2] if anchor == "end" else b1[0]), anchor, y, b1, path, cost
 
-    for n in keep:
-        # its own layout first; with no free place, its other two-line breaks (breaks), narrowest first
-        for w1, lines in [(n["_w"], n["_lines"]), *((w, l) for l, w in n["_alts"])]:
-            spot = place(n, w1, lines)
-            if spot: break
-        if not spot: f.dropped.append((n["_id"], "no free place for the note")); continue
-        pt = n["_pt"]; x, anchor, y, b1, path = spot
-        o.append(f'<polyline points="{" ".join(f"{p[0]:.1f},{p[1]:.1f}" for p in path)}" fill="none" stroke="var(--t-sec)" stroke-width="0.8"/><circle cx="{pt[0]:.1f}" cy="{pt[1]:.1f}" r="2.5" fill="var(--t-title)"/>')
-        halo = ' stroke="var(--bg)" stroke-width="3" paint-order="stroke"'
-        for j, (inner, w) in enumerate(lines or [(n["_inner"], n["_w"])]):  # each line at the box's edge, LINE em below the one above
-            o.append(K.txt(B, x, y + size * LINE * j, size, "var(--accent)" if acc(n) else "var(--t-title)", inner, w, anchor=anchor, weight=400, tag=f"note {n.get('name') or n.get('text')}", style=halo))
-        occ.add(b1, "notes")
-        for a, b in zip(path, path[1:]):
-            steps = max(2, math.ceil(math.dist(a, b) / 4)); occ.add_line([(a[0] + (b[0] - a[0]) * i / steps, a[1] + (b[1] - a[1]) * i / steps) for i in range(steps + 1)], "notes", "leader")
+    def lay(order):
+        """The notes placed in `order`, each against what those before it claimed (added to occ): (svg parts, dropped, the
+        leaders' total cost, the longest leader's length)."""
+        B, o, dropped, total, longest = K.Boxes(W, H), [], [], 0.0, 0.0
+        for n in order:
+            # its own layout first; with no free place, its other two-line breaks (breaks), narrowest first
+            for w1, lines in [(n["_w"], n["_lines"]), *((w, l) for l, w in n["_alts"])]:
+                spot = place(n, w1, lines)
+                if spot: break
+            if not spot: dropped.append((n["_id"], "no free place for the note")); continue
+            pt = n["_pt"]; x, anchor, y, b1, path, cost = spot
+            total += cost; longest = max(longest, sum(math.dist(a, b) for a, b in zip(path, path[1:])))
+            o.append(f'<polyline points="{" ".join(f"{p[0]:.1f},{p[1]:.1f}" for p in path)}" fill="none" stroke="var(--t-sec)" stroke-width="0.8"/><circle cx="{pt[0]:.1f}" cy="{pt[1]:.1f}" r="2.5" fill="var(--t-title)"/>')
+            halo = ' stroke="var(--bg)" stroke-width="3" paint-order="stroke"'
+            for j, (inner, w) in enumerate(lines or [(n["_inner"], n["_w"])]):  # each line at the box's edge, LINE em below the one above
+                o.append(K.txt(B, x, y + size * LINE * j, size, "var(--accent)" if acc(n) else "var(--t-title)", inner, w, anchor=anchor, weight=400, tag=f"note {n.get('name') or n.get('text')}", style=halo))
+            occ.add(b1, "notes")
+            for a, b in zip(path, path[1:]):
+                steps = max(2, math.ceil(math.dist(a, b) / 4)); occ.add_line([(a[0] + (b[0] - a[0]) * i / steps, a[1] + (b[1] - a[1]) * i / steps) for i in range(steps + 1)], "notes", "leader")
+        return o, dropped, total, longest
+
+    # top first; when that leaves a leader past LONG_LEAD and drops none, bottom first too, against the same claims (occ as the
+    # notes found it; the layer's two-bend budget shared), kept when it drops none and its longest leader is shorter (the same: its leaders cost less in all)
+    before = (occ.boxes[:], occ.pts[:])
+    got = lay(keep)
+    if len(keep) > 1 and not got[1] and got[3] > LONG_LEAD:
+        after = (occ.boxes[:], occ.pts[:]); occ.boxes[:], occ.pts[:] = before
+        other = lay(keep[::-1])
+        if other[1] or (other[3], other[2]) >= (got[3], got[2]): occ.boxes[:], occ.pts[:] = after
+        else: got = other
+    o += got[0]; f.dropped += got[1]
     o.append("</g>")
     return "".join(o)
 
