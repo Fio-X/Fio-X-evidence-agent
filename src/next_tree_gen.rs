@@ -2568,8 +2568,14 @@ mod tests {
         assert_eq!(check(&[ren.clone(), lined.clone()], &[ren.clone(), lined.clone()]), Vec::<String>::new());
         let off = check(&[ren.clone(), offered.clone()], &[ren.clone(), offered.clone()]);
         assert_eq!(off, vec!["C6: the question asks for co2 but the page draws no row from EN.GHG., env_air_gge".to_string()]);
-        let off = check(&[ren.clone(), offered], &[ren, lined]);
+        let off = check(&[ren.clone(), offered], &[ren.clone(), lined.clone()]);
         assert!(off.iter().any(|e| e.contains("its unanswered line does not stand, as env_air_gge was offered for it")), "{off:?}");
+        // two asked quantities, both drawn on the page (each record's prefixes start the drawn table): passes
+        let share = rec("renewable_level", &["sdg"], &["sdg"]);
+        assert_eq!(check(&[ren.clone(), share.clone()], &[ren.clone(), share]), Vec::<String>::new());
+        // one drawn and the other with no offered table, but the leaf's spec carries no line for it (none printed): refused
+        let off = check(&[ren.clone(), lined.clone()], &[ren]);
+        assert!(off.len() == 1 && off[0].contains("co2") && off[0].ends_with("and carries no unanswered line for it"), "{off:?}");
     }
 
     /// G3 (P4a-1 group): page inputs the generator or the core must stop. A missing map point is not this tree's: the
