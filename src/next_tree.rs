@@ -4921,7 +4921,7 @@ fn cells_of(code: &J, dr: &J, sel: &[(String, &J)], got: &Got, rows: &[J]) -> Re
 /// The conditions a `first_holding` field's candidates are held by, all recomputed here from the core's own facts,
 /// formats, selects and the page input (registered: next_ledger CHECK_REGISTRY tree.first_holding). A candidate names
 /// only these; any other condition, or another argument, is refused.
-pub const CONDITIONS: [(&str, &[&str]); 9] = [
+pub const CONDITIONS: [(&str, &[&str]); 10] = [
     // the sign of a fact the core computes: pos, neg or zero (a NaN reads as zero, as a partial_cmp with 0 does)
     ("sign", &["fact", "is"]),
     // the fact as the format prints it differs from 0 as the format prints it (a tie prints as no gap)
@@ -4935,6 +4935,11 @@ pub const CONDITIONS: [(&str, &[&str]); 9] = [
     // unit code, the same, and the unit registry (unit-short-zh.tsv, its additive column) says yes for it; a row with no
     // unit, two units or a code the registry lacks: it does not hold
     ("unit_adds_up", &[]),
+    // the select's codes are the whole of `by` (B1, owner 11-04: a share of the drawn sum only when the members cover it
+    // all): the rows of `table` at `time` hold that dimension's one total row (next_ledger total_row, by its type), every
+    // code of the select one row there, and their sum prints as the total does in `fmt`; a narrowed page (the rest not
+    // fetched), a page with no total row, a code with no row or two, or a sum the total does not print as: it does not hold
+    ("covers_whole", &["select", "table", "by", "time", "fmt"]),
     // the page prints the fact, a difference, as a number: no DIFF_MOST_DEC decimals left it more than DIFF_CLOSE off
     // its true difference (next_tree_gen printed_raise's gap_order, J2), else its words say only which is higher
     // (`is` false: it does not, the note's words then naming the other place with no number)
@@ -5038,6 +5043,28 @@ fn condition_holds(cond: &J, h: &Holding) -> Result<bool, String> {
                 [Some(unit)] => unit_additive(unit)?,
                 _ => false,
             })
+        }
+        "covers_whole" => {
+            let sid = key("select");
+            let codes = h.got.get(&sid).ok_or_else(|| format!("condition covers_whole: no select {sid}"))?.arr().to_vec();
+            let (table, by, time) = (key("table"), key("by"), key("time"));
+            let fmt = key("fmt");
+            let fm = h.fmts.get(&fmt).ok_or_else(|| format!("condition covers_whole: no format {fmt}"))?;
+            let dec = fm.g("dec").num().ok_or_else(|| format!("format {fmt}: no dec"))? as usize;
+            let scale = fm.get("scale").map_or(Ok(1.0), |x| x.num().ok_or_else(|| format!("format {fmt}: scale")))?;
+            let at: Vec<&J> = h.page.g("rows").arr().iter().filter(|r| st(r.g("table")) == table && st(r.g("time")) == time).collect();
+            let totals: Vec<&J> = at.iter().copied().filter(|r| dims(r, &by).s().is_some_and(|c| crate::next_ledger::total_row(&table, &by, c))).collect();
+            let [total] = totals.as_slice() else { return Ok(false) };
+            let mut sum = 0.0;
+            for c in &codes {
+                let rows: Vec<&J> = at.iter().copied().filter(|r| dims(r, &by) == c).collect();
+                match (rows.as_slice(), c.s().is_some_and(|c| crate::next_ledger::total_row(&table, &by, c))) {
+                    ([r], false) => sum += text_num(r).ok_or_else(|| format!("condition covers_whole: {} has no number", st(c)))?,
+                    _ => return Ok(false),
+                }
+            }
+            let whole = text_num(total).ok_or("condition covers_whole: the total row has no number")?;
+            Ok(!codes.is_empty() && py_fixed(sum * scale, dec) == py_fixed(whole * scale, dec))
         }
         "count_at_least" => {
             let sid = key("select");
@@ -8446,6 +8473,37 @@ mod tests {
         w <= 560.0 / 2.0
     }
 
+    /// covers_whole (B1, owner 11-04): the select's codes are the whole of their dimension only when the rows hold its one
+    /// total row at the year and the codes' sum prints as it. A bar page by citizenship (TOTAL, persons) and a flow side by
+    /// balance (FC_E, typed total in the parts table, ktoe at one decimal). Must fail: a narrowed page (the total above
+    /// the members fetched), no total row, a sum one decimal off, a code with two rows, the total among the codes.
+    #[test]
+    fn covers_whole_holds_only_when_the_codes_sum_to_the_total_row() {
+        let facts = |k: &str| -> Result<f64, String> { Err(format!("'{k}'")) };
+        let words = |_: &str| -> Option<String> { None };
+        let fmts = parse(r#"{"per": {"scale": 1, "dec": 0}, "ktoe": {"scale": 1, "dec": 1}}"#).unwrap();
+        let holds = |table: &str, by: &str, fmt: &str, codes: &[&str], rows: &[(&str, &str)]| {
+            let mut got = Got::new();
+            got.insert("ranked".into(), J::Arr(codes.iter().map(|c| J::str(c)).collect()));
+            let rows: Vec<String> = rows.iter().map(|(c, v)| format!(r#"{{"table": "{table}", "time": "2024", "dims": {{"{by}": "{c}"}}, "value": "{v}"}}"#)).collect();
+            let page = parse(&format!(r#"{{"rows": [{}]}}"#, rows.join(", "))).unwrap();
+            let hold = Holding { facts: &facts, fmts: &fmts, got: &got, page: &page, code: "", name: None, word: &words };
+            let cond = format!(r#"[{{"if": "covers_whole", "select": "ranked", "table": "{table}", "by": "{by}", "time": "2024", "fmt": "{fmt}"}}]"#);
+            conditions_hold(&parse(&cond).unwrap(), &hold).unwrap()
+        };
+        let bars = |total: &str| holds("migr", "citizen", "per", &["SY", "AF", "VE"], &[("SY", "50"), ("AF", "30"), ("VE", "20"), ("TOTAL", total)]);
+        assert!(bars("100"), "the three are every citizenship");
+        assert!(!bars("150"), "a narrowed page: the rest not fetched");
+        assert!(!holds("migr", "citizen", "per", &["SY", "AF", "VE"], &[("SY", "50"), ("AF", "30"), ("VE", "20")]), "no total row");
+        assert!(!holds("migr", "citizen", "per", &["SY", "AF", "VE"], &[("SY", "50"), ("SY", "1"), ("AF", "30"), ("VE", "20"), ("TOTAL", "100")]), "a code with two rows");
+        assert!(!holds("migr", "citizen", "per", &["SY", "AF", "TOTAL"], &[("SY", "50"), ("AF", "50"), ("TOTAL", "100")]), "the total among the codes");
+        let side = |total: &str| holds("nrg_bal_c", "nrg_bal", "ktoe", &["FC_IND_E", "FC_TRA_E"], &[("FC_IND_E", "60.004"), ("FC_TRA_E", "40.004"), ("FC_E", total)]);
+        assert!(side("100.01"), "100.008 and 100.01 both print 100.0");
+        assert!(!side("100.06"), "100.0 against 100.1: a part left out");
+        // FC_E is a total only on nrg_bal of the tables the parts table names
+        assert!(!holds("other_table", "nrg_bal", "ktoe", &["FC_IND_E", "FC_TRA_E"], &[("FC_IND_E", "60"), ("FC_TRA_E", "40"), ("FC_E", "100")]));
+    }
+
     /// first_holding over each condition: the first candidate whose conditions all hold, a refusal when none does or a
     /// condition is not CONDITIONS's; width_at_most measures the whole line as note_fits did, at and around its limit.
     #[test]
@@ -8553,7 +8611,7 @@ mod tests {
         };
         assert_eq!([gap("vs_lo", ""), gap("vs_hi", ""), gap("vs_lo", r#", "is": false"#), gap("vs_hi", r#", "is": false"#)].map(Result::unwrap), [false, true, true, false]);
         assert!(gap("vs_lo", r#", "is": "no""#).unwrap_err().contains("true or false"));
-        assert_eq!(CONDITIONS.map(|(k, _)| k), ["sign", "prints_nonzero", "width_at_most", "count_at_least", "unit_adds_up", "gap_printable", "page_is", "row_above", "layer_before"]);
+        assert_eq!(CONDITIONS.map(|(k, _)| k), ["sign", "prints_nonzero", "width_at_most", "count_at_least", "unit_adds_up", "covers_whole", "gap_printable", "page_is", "row_above", "layer_before"]);
         // unit_adds_up (B1): the page's rows' one unit, as the unit registry's additive column says; persons (a count) and
         // ktoe (an amount) add up, a percentage and a per-person rate do not; rows with no unit, or two units, never
         let adds = |units: &[Option<&str>]| {

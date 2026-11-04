@@ -1296,7 +1296,7 @@ fn row_family<'r>(src: &str, rows: &'r [Row]) -> Option<(Vec<&'r Row>, Vec<Strin
 /// `dim` of `table`, the code Eurostat gives a dimension's whole (next_facts TOTAL_CODE, the code a rest or value query
 /// leaves out with the members), or the code the registered parts table types `total` there (next_tree parts_rows, the
 /// table leaves_under_total reads: a flow side's whole, FC_E on nrg_bal). No list of its own.
-fn total_row(table: &str, dim: &str, code: &str) -> bool {
+pub(crate) fn total_row(table: &str, dim: &str, code: &str) -> bool {
     code == crate::next_facts::TOTAL_CODE
         || crate::next_tree::parts_rows().is_ok_and(|rows| rows.iter().any(|r| r[0] == table && r[1] == dim && r[2] == code && r[3] == "total"))
 }
