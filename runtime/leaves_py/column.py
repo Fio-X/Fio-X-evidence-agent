@@ -53,6 +53,11 @@ class ColumnFrame:
             raise FX.Refused("bars: the values are not all 0 or more with one above 0")
         f.year, f.marks, f.size, f.rh = year, set(d.get("marks") or []), K("size"), K("row")
         f.focus, f.noted = set(focus(h)), set(noted(h))
+        if f.focus or f.noted:
+            # a page whose legend names its inks (accent_key) sets in the title ink and bold exactly the places those inks mark:
+            # B6 (11-04): the q1 stand-in read the bold title-ink names of layer 1's marks (Sweden, Belgium) as the dark grey the
+            # legend gives the notes, whose own place (Croatia) printed plain beside its dark bar
+            f.marks = f.focus | f.noted
         off = sorted(f.focus - set(d["ranked"]))
         if off: raise FX.Refused(f"column: the accent names {', '.join(off)}, no place the page ranks")
         f.mv, f.W = mv, PAGE_W

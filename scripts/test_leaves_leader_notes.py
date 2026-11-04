@@ -826,6 +826,35 @@ class ColumnMap(unittest.TestCase):
         self.assertEqual(self.marked(html, "--t-body", sorted(VALUES, key=lambda c: -VALUES[c])), (["LU", "SE"], ["SE", "LU"]))
         self.assertEqual(legend(html), [noted])  # no accent, so no accent legend; the dark grey drawn, so its line
 
+    def test_on_a_page_with_a_legend_the_bold_title_ink_names_are_exactly_the_accent_s_and_the_dark_grey_s(self):
+        # B6 (11-04): the q1 stand-in read the bold title-ink names of layer 1's marks (Sweden, Belgium) as the dark grey the
+        # legend gives the notes, whose place (Croatia) printed plain beside its dark bar. Two shapes: the q1-style change page
+        # (notes on SE and LU, SE the accent) and the q6 level page (notes on AF and IQ, AF the accent), each with marks of
+        # other places; then the bold names are the accent's and the noted place's, nothing else, and their bars those inks
+        def with_marks(lines, marks):
+            out = []
+            for line in lines:
+                d = json.loads(line); d["knobs"]["spec"]["hero"]["data"]["marks"] = marks; out.append(json.dumps(d, ensure_ascii=False))
+            return out
+        bold = lambda html: sorted(re.findall(r'<text [^>]*fill="var\(--t-title\)" font-weight="700"><tspan data-src="name:[^"]*:(\w+)">', html))
+        chg = [dict(at=POINT["SWE"], name="SE", text=[{"word": "column.note.rise_most"}], value_text="fact:chg.SE"),
+               dict(at=POINT["LUX"], name="LU", text=[{"word": "column.note.fall_most"}], value_text="fact:chg.LU")]
+        q1 = column_lines({"bubbles": dict(items=ITEMS, ext=EXT), "leader_notes": dict(D, notes=chg)}, accent="SE", change=True)
+        for lines, marks, want in ((q1, ["DE", "BE", "SE"], ["LU", "SE"]), (q6_lines(False), ["VE", "SY", "AF"], ["AF", "IQ"])):
+            ranked = json.loads(lines[0])["knobs"]["spec"]["hero"]["data"]["ranked"]
+            html = self.page_of(with_marks(lines, marks))
+            names = bold(html)
+            self.assertEqual(sorted(set(names)), want, marks)
+            accent, = (c for c in want if c in ("SE", "AF"))
+            self.assertEqual(self.marked(html, "--accent", ranked)[1], [accent])
+            self.assertEqual(self.marked(html, "--t-body", ranked)[1], [c for c in want if c != accent])
+        # a page with no legend (no accent, no notes) keeps layer 1's marks bold, as before
+        sys.path.insert(0, HERE); import test_leaves_ledger as TL
+        got = TL.child(TL.column_request())
+        layers = {n: g.get("svg") or g.get("html") for n, g in zip(["bignums", "bars"], got[1:])}
+        html = TL.child(TL.column_request() + [json.dumps({"phase": "page", "layers": layers})])[-1]["html"]
+        self.assertEqual(sorted(set(bold(html))), ["BE"])
+
     def test_a_change_note_that_compares_with_its_neighbour_prints_the_words_and_the_gap_entry(self):
         # next_run change_notes_fill: the first ranked place's note says it is above the second by a gap, the last's that it is
         # below the one before it, the gap a ledger entry (vs_hi, vs_lo) in bold after the words; both note words join with no
