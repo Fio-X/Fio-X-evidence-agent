@@ -1,0 +1,15 @@
+{
+  "note": "The quantities a Chinese question can ask for, each a measure family: the Chinese words that name it, its Chinese name for the page, English search words, and the catalogue table id prefixes that hold it. Matched on the question with spaces removed and letters upper-cased, longest word first; a matched span is used up, so a shorter word inside it does not match again. Words that only narrow or name a dimension (a big-population filter, an origin-country dimension) are not measure words. A question no word matches asks for no listed quantity and is judged as before.",
+  "families": [
+    {"id": "renewable_share", "zh": "可再生能源占比", "words": ["可再生能源", "可再生"], "en": "share of renewable energy in gross final energy consumption", "tables": ["sdg_07_40", "nrg_ind_ren", "nrg_ind_ure", "nrg_ind_urt", "nrg_ind_fecf", "nrg_ind_cotd", "EG.FEC.RNEW", "EG.ELC.RNEW"]},
+    {"id": "energy_balance", "zh": "能源来源与去向", "words": ["能源平衡", "一次能源", "从来源到", "来源到各部门", "从哪里来", "用在哪里", "终端用途", "最终消费", "能源流向"], "en": "energy balance supply and final consumption by sector", "tables": ["nrg_bal_"]},
+    {"id": "electricity_mix", "zh": "发电结构", "words": ["发电结构", "电源结构", "电力结构", "发电量", "发电"], "en": "electricity generation by fuel", "tables": ["nrg_bal_peh", "nrg_ind_peh", "nrg_cb_pem", "EG.ELC."]},
+    {"id": "co2", "zh": "碳排放", "words": ["二氧化碳排放", "温室气体", "碳排放", "二氧化碳"], "en": "carbon dioxide emissions", "tables": ["EN.GHG.", "EN.ATM.CO2", "env_air_gge", "sdg_13_10"]},
+    {"id": "pop65", "zh": "老年人口", "words": ["65岁以上人口", "65岁以上", "老龄化", "老年人口"], "en": "population aged 65 and above", "tables": ["SP.POP.65UP", "demo_pjanind", "proj_23ndbi"]},
+    {"id": "asylum", "zh": "庇护申请", "words": ["庇护申请", "庇护"], "en": "asylum applicants", "tables": ["migr_asy"]},
+    {"id": "gdp_pc", "zh": "人均GDP", "words": ["人均国内生产总值", "人均GDP"], "en": "gross domestic product per capita", "tables": ["nama_10_pc", "NY.GDP.PCAP"]},
+    {"id": "gdp", "zh": "GDP", "words": ["国内生产总值", "经济总量", "GDP"], "en": "gross domestic product", "tables": ["nama_10_gdp", "NY.GDP.MKTP"]},
+    {"id": "energy_imports", "zh": "能源进口", "words": ["化石能源进口", "能源进口", "进口"], "en": "imports of energy products by partner country", "tables": ["nrg_ti_", "nrg_te_"]},
+    {"id": "population", "zh": "人口", "words": ["总人口", "人口总数", "人口数量", "人口增长", "人口变化"], "en": "total population", "tables": ["SP.POP.TOTL", "demo_pjan", "demo_gind"]}
+  ]
+}

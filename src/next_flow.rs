@@ -6898,6 +6898,7 @@ mod tests {
                 uncovered: self.uncovered.clone(),
                 candidates: self.candidates.clone(),
                 twins_refused: Vec::new(),
+                asked: Vec::new(),
             }
         }
     }

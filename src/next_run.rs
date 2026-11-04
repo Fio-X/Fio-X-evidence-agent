@@ -10661,6 +10661,7 @@ mod tests {
                 uncovered: None,
                 candidates: vec![candidate],
                 twins_refused: Vec::new(),
+                asked: Vec::new(),
             }
         }
         fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {

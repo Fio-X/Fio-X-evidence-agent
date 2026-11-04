@@ -473,14 +473,34 @@ PAGE_ROOT = ":root{--accent:#c93f2b;--accent2:#6b6b6b;--bar:#d6d6d6;--bg:#f8f6f3
 # page ends close under it. The source text itself is the spec's.
 SOURCE_PX = 13
 SOURCE_CSS = "footer{margin-top:12px;padding-top:10px;font:400 %dpx/20px var(--sans);color:var(--t-body)}.pg{padding-bottom:20px}" % SOURCE_PX
+UNANSWERED_CSS = ".unanswered{margin:12px 0 0;font:400 %dpx/22px var(--sans);color:var(--t-body)}" % (SOURCE_PX + 1)
 
 
 def shell(c, spec, body, more=""):
-    """The whole page around its sections: styles (`more` after the page's own), the end line and the footer with the sources."""
-    css = open(os.path.join(FX.D, "tokens.css")).read() + PAGE_ROOT + prod.CSS + CSS + SOURCE_CSS + more
+    """The whole page around its sections: styles (`more` after the page's own), the end line, the unanswered lines and the
+    footer with the sources."""
+    un = unanswered(spec)  # a page with no unanswered line keeps its bytes as before
+    css = open(os.path.join(FX.D, "tokens.css")).read() + PAGE_ROOT + prod.CSS + CSS + SOURCE_CSS + (UNANSWERED_CSS if un else "") + more
     return (f'<!doctype html><html lang="zh"><meta charset="utf-8"><title>{word("page.title")}</title><style>{css}</style><body><div class="pg">'
             f'{body}{f"<p class=end>{c.t(spec["end"])}</p>" if spec.get("end") else ""}'
-            f'{footer(spec)}</div></body></html>')
+            f'{un}{footer(spec)}</div></body></html>')
+
+def unanswered(spec):
+    """One line for each quantity the question asks for that no offered table holds, from the program's record alone
+    (spec.asked: each quantity's id, its name zh and the offered tables that hold it). A quantity with an offered table gets
+    no line: whether the page may say a half cannot be answered is the program's call, never the model's. The name is the
+    record's, never looked up here; a record with no name, or a name holding a digit (no number on a page but from the
+    data), refuses. A page with no asked record has no line, as before."""
+    out = []
+    for a in spec.get("asked") or []:
+        if not isinstance(a, dict) or not isinstance(a.get("id"), str) or not a["id"]:
+            raise FX.Refused("page: an asked quantity with no id")
+        if a.get("offered"): continue
+        zh = a.get("zh")
+        if not isinstance(zh, str) or not zh.strip(): raise FX.Refused(f"page: the asked quantity {a['id']} has no name")
+        if FX.digit(zh): raise FX.Refused(f"page: the asked quantity {a['id']}'s name holds a digit")
+        out.append(f'<p class="unanswered" data-asked="{prod.esc(a["id"])}">{word("page.note.unanswered_half", v=prod.esc(zh))}</p>')
+    return "".join(out)
 
 def footer(spec):
     """The sources. With a ledger (a leaf's page) each table id of the source that spec.refs names is a data-ref mark, each

@@ -177,6 +177,9 @@ pub struct Ranking {
     /// the question names, or the question asking for months.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub twins_refused: Vec<TwinRefused>,
+    /// The quantities the Chinese question asks for (`asked_zh`), each with the offered tables that hold it (`top5`).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub asked: Vec<Asked>,
 }
 
 struct Doc {
@@ -347,6 +350,103 @@ fn table_notes() -> &'static [TableNote] {
             .expect("table-notes-en.json lists tables")
             .tables
     })
+}
+
+/// The quantities a Chinese question can ask for (runtime/pi/assets/measure-families.json), compiled in so a broken file
+/// fails its test, not a run. A question none of its words match asks for no listed quantity and ranks as without the file.
+const MEASURE_FAMILIES: &str = include_str!("../runtime/pi/assets/measure-families.json");
+
+/// One measure family of measure-families.json.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+struct Family {
+    id: String,
+    /// Its name as the page prints it.
+    zh: String,
+    /// The Chinese words that name it in a question.
+    words: Vec<String>,
+    /// English search words for its own tables, used only when the question asks for two or more quantities.
+    en: String,
+    /// The table id prefixes that hold it (a World Bank id without its "@2").
+    tables: Vec<String>,
+}
+
+/// The registered families, read once.
+fn measure_families() -> &'static [Family] {
+    static FAMILIES: OnceLock<Vec<Family>> = OnceLock::new();
+    FAMILIES.get_or_init(|| {
+        #[derive(Deserialize)]
+        struct File {
+            families: Vec<Family>,
+        }
+        serde_json::from_str::<File>(MEASURE_FAMILIES)
+            .expect("measure-families.json lists families")
+            .families
+    })
+}
+
+/// A question's text as the family words are matched on it: spaces removed, letters upper-cased.
+fn measure_chars(text: &str) -> Vec<char> {
+    text.chars()
+        .filter(|c| !c.is_whitespace())
+        .flat_map(char::to_uppercase)
+        .collect()
+}
+
+/// One quantity the Chinese question asks for, judged by the program from the question alone (never from the model).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Asked {
+    /// The family id in measure-families.json.
+    pub id: String,
+    /// Its name as the page prints it, the only name the page may use for it.
+    pub zh: String,
+    /// The table id prefixes that hold it.
+    pub tables: Vec<String>,
+    /// `top5` only: the offered tables that hold it, best first. Empty means no offered table answers this quantity, the
+    /// one case in which the page may say it cannot be answered.
+    pub offered: Vec<String>,
+}
+
+impl Asked {
+    /// Whether the table `id` (a World Bank id with or without "@2") holds this quantity.
+    pub fn holds(&self, id: &str) -> bool {
+        let id = id.split('@').next().unwrap_or(id);
+        self.tables.iter().any(|p| id.starts_with(p.as_str()))
+    }
+}
+
+/// The quantities the Chinese question asks for, in the order their words are matched: longest word first, a matched span
+/// used up so a shorter word inside it does not match again, each family once.
+pub fn asked_zh(question_zh: &str) -> Vec<Asked> {
+    let mut q = measure_chars(question_zh);
+    let mut words: Vec<(Vec<char>, &Family)> = measure_families()
+        .iter()
+        .flat_map(|f| f.words.iter().map(move |w| (measure_chars(w), f)))
+        .filter(|(w, _)| !w.is_empty())
+        .collect();
+    words.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+    let mut found: Vec<Asked> = Vec::new();
+    for (w, f) in &words {
+        let mut hit = false;
+        let mut i = 0;
+        while i + w.len() <= q.len() {
+            if q[i..i + w.len()] == w[..] {
+                q[i..i + w.len()].iter_mut().for_each(|c| *c = '\0');
+                hit = true;
+                i += w.len();
+            } else {
+                i += 1;
+            }
+        }
+        if hit && !found.iter().any(|a| a.id == f.id) {
+            found.push(Asked {
+                id: f.id.clone(),
+                zh: f.zh.clone(),
+                tables: f.tables.clone(),
+                offered: Vec::new(),
+            });
+        }
+    }
+    found
 }
 
 /// The SDMX freqs a Eurostat time code can hold, annual first.
@@ -1323,10 +1423,11 @@ impl Catalog {
             .map(|(_, c)| c)
             .filter(|c| c != REGION && !self.europe.contains(c))
             .collect();
+        let asked = asked_zh(question_zh);
         let candidates = if uncovered.is_some() {
             Vec::new()
         } else {
-            self.rank_reaching(texts, scope, &far)
+            self.lift_asked(self.rank_reaching(texts, scope, &far), &asked, scope, &far)
         };
         Ranking {
             scope,
@@ -1334,7 +1435,72 @@ impl Catalog {
             uncovered,
             candidates,
             twins_refused: Vec::new(),
+            asked,
         }
+    }
+
+    /// With two or more asked quantities, a place among the first TOP for each one: a quantity none of the first TOP holds
+    /// gets its best ranked table, or, when no ranked table holds it, the best table its family's own English words reach
+    /// under the same filters (scored by that search, not this one). It takes the place of the last table of the first TOP
+    /// that is not the only one there holding another asked quantity; the order is otherwise kept. With fewer than two
+    /// asked quantities, or none to lift, `ranked` comes back unchanged.
+    fn lift_asked(&self, ranked: Vec<Candidate>, asked: &[Asked], scope: Scope, far: &[String]) -> Vec<Candidate> {
+        if asked.len() < 2 {
+            return ranked;
+        }
+        let mut lifted: Vec<Candidate> = Vec::new();
+        for a in asked {
+            let placed = ranked.iter().take(TOP).chain(lifted.iter()).any(|c| a.holds(&c.id));
+            if placed {
+                continue;
+            }
+            let found = ranked.iter().find(|c| a.holds(&c.id)).cloned().or_else(|| {
+                let family = measure_families().iter().find(|f| f.id == a.id)?;
+                self.rank_reaching(&[family.en.clone()], scope, far)
+                    .into_iter()
+                    .find(|c| a.holds(&c.id))
+            });
+            if let Some(c) = found {
+                lifted.push(c);
+            }
+        }
+        lifted.truncate(TOP);
+        if lifted.is_empty() {
+            return ranked;
+        }
+        let is_lifted = |c: &Candidate| lifted.iter().any(|l| l.id == c.id);
+        let mut head: Vec<Candidate> = ranked.iter().filter(|c| !is_lifted(c)).take(TOP).cloned().collect();
+        while head.len() + lifted.len() > TOP {
+            // The last table that is not the only one among head and lifted holding an asked quantity.
+            let sole = |k: usize| {
+                asked.iter().any(|a| {
+                    a.holds(&head[k].id)
+                        && head
+                            .iter()
+                            .enumerate()
+                            .filter(|&(j, _)| j != k)
+                            .map(|(_, c)| c)
+                            .chain(lifted.iter())
+                            .all(|c| !a.holds(&c.id))
+                })
+            };
+            match (0..head.len()).rev().find(|&k| !sole(k)) {
+                Some(k) => {
+                    head.remove(k);
+                }
+                None => {
+                    head.pop();
+                }
+            }
+        }
+        let mut out = head;
+        out.extend(lifted.iter().cloned());
+        let rest: Vec<Candidate> = ranked
+            .into_iter()
+            .filter(|c| !out.iter().any(|o| o.id == c.id))
+            .collect();
+        out.extend(rest);
+        out
     }
 
     /// The first 5 of `rank`, a registered monthly-only table among them swapped for its annual twin (`twin_swap`) before
@@ -1347,6 +1513,14 @@ impl Catalog {
             self.twin_swap(std::mem::take(&mut r.candidates), monthly_twins(), months, latest_year);
         r.candidates = candidates;
         r.twins_refused = refused;
+        for a in &mut r.asked {
+            a.offered = r
+                .candidates
+                .iter()
+                .filter(|c| a.holds(&c.id))
+                .map(|c| c.id.clone())
+                .collect();
+        }
         r
     }
 
@@ -2193,6 +2367,83 @@ mod tests {
     }
 
     #[test]
+    fn measure_families_registers_each_family_once_and_each_word_in_one_family() {
+        let families = measure_families();
+        let file: serde_json::Value = serde_json::from_str(MEASURE_FAMILIES).unwrap();
+        assert_eq!(families.len(), file["families"].as_array().unwrap().len());
+        assert!(!families.is_empty());
+        let ids: HashSet<&str> = families.iter().map(|f| f.id.as_str()).collect();
+        assert_eq!(ids.len(), families.len(), "a family twice");
+        let mut words: HashSet<Vec<char>> = HashSet::new();
+        for f in families {
+            assert!(!f.zh.is_empty() && !f.words.is_empty() && !toks(&f.en).is_empty() && !f.tables.is_empty(), "{f:?}");
+            // The name is printed on a page that says a half cannot be answered: no number but from the data.
+            assert!(!f.zh.chars().any(|c| c.is_ascii_digit()), "{f:?}");
+            for w in &f.words {
+                assert!(!measure_chars(w).is_empty(), "{f:?}: an empty word");
+                assert!(words.insert(measure_chars(w)), "{f:?}: {w} in two families");
+            }
+            assert!(f.tables.iter().all(|t| !t.is_empty() && !t.contains('@')), "{f:?}");
+        }
+    }
+
+    /// Each dev question asks for one quantity, the DE question for two, and words that only narrow (a big-population
+    /// filter) or name a dimension (origin countries) ask for none.
+    #[test]
+    fn asked_zh_reads_the_quantities_of_the_dev_questions() {
+        let ids = |q: &str| asked_zh(q).into_iter().map(|a| a.id).collect::<Vec<_>>();
+        for (q, want) in [
+            ("欧盟各国可再生能源占比", vec!["renewable_share"]),
+            ("德国能源从来源到各部门", vec!["energy_balance"]),
+            ("欧盟各国发电结构", vec!["electricity_mix"]),
+            ("人口大国 × 年份的人均碳排放", vec!["co2"]),
+            ("各国 65 岁以上人口比例十年变化", vec!["pop65"]),
+            ("欧盟庇护申请的来源国", vec!["asylum"]),
+            (
+                "德国能源转型：2023 年德国的一次能源从哪里来、最终用在哪里？请用桑基图展示一次能源到终端用途的流向，并用世界地图标出德国进口化石能源的主要来源国。",
+                vec!["energy_balance", "energy_imports"],
+            ),
+            ("人均GDP和可再生能源占比的关系", vec!["renewable_share", "gdp_pc"]),
+            ("人均 gdp 与 GDP", vec!["gdp_pc", "gdp"]),
+            ("今天天气如何", vec![]),
+        ] {
+            assert_eq!(ids(q), want, "{q}");
+        }
+        let a = &asked_zh("人均GDP和可再生能源占比的关系")[1];
+        assert_eq!(a.zh, "人均GDP");
+        assert!(a.holds("nama_10_pc") && a.holds("NY.GDP.PCAP.CD@2") && !a.holds("nama_10_gdp"));
+    }
+
+    fn cand(id: &str, score: f64) -> Candidate {
+        Candidate { id: id.into(), title: id.into(), score, s: score, v: 0.0, coverage: Coverage::Europe, twin_of: None }
+    }
+
+    fn asked_of(id: &str, tables: &[&str]) -> Asked {
+        Asked { id: id.into(), zh: id.into(), tables: tables.iter().map(|t| t.to_string()).collect(), offered: Vec::new() }
+    }
+
+    /// Two asked quantities, the first filling the first five: the second's best ranked table takes the fifth place and
+    /// the one it displaces moves down. One asked quantity, or two already both in the first five, leave the order as it was.
+    #[test]
+    fn lift_asked_keeps_a_place_for_each_asked_quantity() {
+        let c = small();
+        let ranked: Vec<Candidate> =
+            ["ren_a", "ren_b", "ren_c", "ren_d", "ren_e", "ren_f", "gdp_pc_a", "gdp_pc_b"].iter().enumerate().map(|(k, id)| cand(id, 10.0 - k as f64)).collect();
+        let ren = asked_of("renewable_share", &["ren_"]);
+        let gdp = asked_of("gdp_pc", &["gdp_pc_"]);
+        let lifted = c.lift_asked(ranked.clone(), &[ren.clone(), gdp.clone()], Scope::Beyond, &[]);
+        assert_eq!(ids(&lifted[..TOP]), ["ren_a", "ren_b", "ren_c", "ren_d", "gdp_pc_a"]);
+        assert_eq!(ids(&lifted[TOP..]), ["ren_e", "ren_f", "gdp_pc_b"]);
+        assert_eq!(ids(&c.lift_asked(ranked.clone(), &[ren.clone()], Scope::Beyond, &[])), ids(&ranked));
+        let both = c.lift_asked(ranked.clone(), &[ren.clone(), asked_of("x", &["ren_b"])], Scope::Beyond, &[]);
+        assert_eq!(ids(&both), ids(&ranked));
+        // The only table of an asked quantity in the first five is not the one displaced.
+        let third = asked_of("third", &["ren_e"]);
+        let kept = c.lift_asked(ranked.clone(), &[ren, third, gdp], Scope::Beyond, &[]);
+        assert_eq!(ids(&kept[..TOP]), ["ren_a", "ren_b", "ren_c", "ren_e", "gdp_pc_a"]);
+    }
+
+    #[test]
     fn table_notes_registers_each_eurostat_table_once_with_words_that_hold_no_number() {
         let notes = table_notes();
         let file: serde_json::Value = serde_json::from_str(TABLE_NOTES).unwrap();
@@ -2786,7 +3037,7 @@ mod tests {
         };
         let swapped = |ranked: &[Candidate]| {
             let (candidates, twins_refused) = c.twin_swap(ranked.to_vec(), twins, false, None);
-            Ranking { scope: Scope::Europe, places_zh: Vec::new(), uncovered: None, candidates, twins_refused }
+            Ranking { scope: Scope::Europe, places_zh: Vec::new(), uncovered: None, candidates, twins_refused, asked: Vec::new() }
         };
         let scope_of = |q: &str| c.scope(ORIG.iter().find(|(k, _)| *k == q).unwrap().1).0;
         for r in want["phrasings"].as_array().unwrap() {
