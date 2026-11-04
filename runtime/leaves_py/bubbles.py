@@ -46,7 +46,9 @@ prod.KNOBS["bubbles"] = dict(
     label_sep=(2, (2, 16, 1), "px a label keeps clear of every other label side by side (half that above and below)"),
     nudge=(6, (0, 16, 1), "px a circle may move off its point to clear its neighbours; a moved circle keeps a dot at its true point"),
     circle_gap=(1, (0, 6, 1), "px nudging keeps between neighbouring circles"),
-    reach=(96, (0, 200, 8), "longest leader px from a circle to a label set off it; 0: no leaders"),
+    # 160: at 96 the q3 page's Germany (the second circle, in the crowded Benelux) had no place and the page stopped (11-04);
+    # replayed, 160 places it and moves no label of the 18 other stored column and change maps (the cheapest place first)
+    reach=(160, (0, 200, 8), "longest leader px from a circle to a label set off it; 0: no leaders"),
     land_cost=(60, (0, 400, 10), "px of leader a label set off its circle over the land costs: open room off the map's shapes comes first"),
     title_size=(16, (12, 22, 1), "chart name size px"), simplify=(3, (1, 8, 1), "keep every n-th point of a coastline"),
     opacity=(0.85, (0.5, 1.0, 0.05), "circle opacity"), highlight=("", None, "comma list of codes in the accent, their names in bold: the page's focus"),

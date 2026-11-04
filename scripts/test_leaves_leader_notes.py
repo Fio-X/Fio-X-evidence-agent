@@ -974,6 +974,30 @@ class ColumnMap(unittest.TestCase):
         for code, b in g.label_boxes:
             self.assertEqual([j["code"] for j in g.items if ((max(b[0] - j["_xy"][0], 0, j["_xy"][0] - b[2])) ** 2 + (max(b[1] - j["_xy"][1], 0, j["_xy"][1] - b[3])) ** 2) ** 0.5 < j["_r"]], [], code)
 
+    def test_a_label_with_no_place_near_its_circle_reaches_further_and_a_placed_one_does_not_move(self):
+        # 11-04: at the old reach (96 px) the q3 page's Germany, the second circle in the crowded Benelux, had no place and the
+        # page stopped (notes_dropped); the default reach is now 160 (bubbles.py). Two shapes, every label of each map asked
+        # for (FULL): the EU-27 level map and the q6 world map of 20 citizenships. At 160 no label is dropped that 96 placed,
+        # every label placed at 96 is placed where it was (the cheapest place is still taken first), and each leader ends
+        # within 160 px of its circle's edge
+        self.assertEqual(prod.KNOBS["bubbles"]["reach"][0], 160)
+        q6_items = [dict(code=c, value=f"series:t/A.{c}:2025:OBS_VALUE", value_text=f"fact:val.{c}.n", lonlat=list(Q6_AT[c])) for c in Q6_VALUES]
+        q6_rows = [{"src": f"series:t/A.{c}:2025:OBS_VALUE", "table": "t", "dims": {"freq": "A", "citizen": c}, "time": "2025", "value": str(v)} for c, v in Q6_VALUES.items()]
+        q6_rows += [{"src": f"fact:val.{c}.n", "text": f"{v:,}"} for c, v in Q6_VALUES.items()]
+        for name, rows, items, ext in (("eu", ROWS, ITEMS, EXT), ("q6", q6_rows, q6_items, Q6_EXT)):
+            def laid(reach):
+                K.setup(rows, ZH2, run.tables); geo.NE = SHP
+                return bubbles.Laid({"data": dict(items=items, ext=ext), "style": {**style(True), "bubbles": {**style(True)["bubbles"], "reach": reach}}})
+            near, far = laid(96), laid(160)
+            self.assertLessEqual(set(far.placed["dropped"]), set(near.placed["dropped"]), name)
+            at = lambda f: {t["id"]: (t["x"], t["y"]) for t in f.placed["texts"]}
+            moved = {c: (p, at(far).get(c)) for c, p in at(near).items() if at(far).get(c) != p}
+            self.assertEqual(moved, {}, name)
+            for c in at(far):
+                ln = far.placed["marks"].get(c + "/leader")
+                if ln:
+                    self.assertLessEqual(math.dist((ln["x1"], ln["y1"]), (ln["x2"], ln["y2"])), 160 + 1e-6, (name, c))
+
     def test_the_eu_map_labels_most_circles_close_first_then_out_on_short_leaders(self):
         # the EU-27 in the column page's shared frame: its MAP_LABELS circles, the biggest and the smallest first, are each
         # labelled (none dropped: the bars beside it print the rest); a label beside its circle has no leader, one set out has a

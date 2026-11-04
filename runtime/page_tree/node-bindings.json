@@ -205,7 +205,7 @@
     "item": {"label": {"place": "beside_or_leader"}},
     "drop": {"rule": "dropped_listed"}
    },
-   "knobs": {"r_max": 22, "r_min": 3, "nudge": 6, "circle_gap": 1, "max_overlaps": 0, "label_top": 12, "label_gap": 4, "label_sep": 8, "reach": 96, "land_cost": 60},
+   "knobs": {"r_max": 22, "r_min": 3, "nudge": 6, "circle_gap": 1, "max_overlaps": 0, "label_top": 12, "label_gap": 4, "label_sep": 8, "reach": 160, "land_cost": 60},
    "ground": {"phase": "ground"},
    "checks": [{"kind": "count_equals", "select": "$order"}, {"kind": "points_pinned"}]
   },
