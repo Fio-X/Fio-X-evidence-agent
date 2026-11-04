@@ -13215,7 +13215,12 @@ for line in sys.stdin:
             let table = main[0]["table"].as_str().unwrap().to_string();
             let (fill, old) = sankey_case(&table, &main, &Ledgered(names)).unwrap_or_else(|e| panic!("{path}: {e}"));
             let spec = &fill["knobs"]["spec"];
-            assert_eq!(spec["hero"]["leaves"]["sankey"], old.hero["leaves"]["sankey"], "{path}");
+            // B1's side wholes and node shares aside, the leaf data is the frozen rust sankey's
+            let mut leaf = spec["hero"]["leaves"]["sankey"].clone();
+            for k in ["node_share", "side_total"] {
+                leaf.as_object_mut().unwrap().remove(k);
+            }
+            assert_eq!(leaf, old.hero["leaves"]["sankey"], "{path}");
             for (k, q) in &old.facts {
                 assert_eq!(&spec["facts"][k], q, "{path}: fact {k}");
             }
