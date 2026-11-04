@@ -2064,9 +2064,6 @@ fn fill_of(
                 p["names"] = json!(leaf_labels(&[], &picks.ranked, catalogue).map_err(no)?);
                 // whether the page's main is narrowed to the kept places (the scoped words): a run fact
                 p["scoped"] = json!(scoped);
-                // whether the main's unit adds up (the knowledge group's unit rule): a share of the places' sum says
-                // something only then, a run fact a layer's conditions may read
-                p["additive"] = json!(filling.catalogue.unit_additive(&filling.shape.unit).unwrap_or(false));
             }
             ask_node(&filling, &mut out, page_in.as_ref())?;
         }
@@ -9128,9 +9125,8 @@ mod tests {
         // the dek names the set in the registry's words, its count the drawn fact (the 20 citizenships compared)
         assert_eq!(dek, "{lead1.t}，{name.AF}在本指标最高的{drawn}个国籍中居首，为{hi}，比{name.IQ}高{gap}");
         assert!(texts.iter().all(|t| !t.contains("最低的")), "{texts:?}");
-        // B1: persons add up (the knowledge group's unit rule), so the highest's note says its share of the drawn sum; the
-        // q5 shape below (a percentage) keeps the mean
-        assert_eq!(notes, [("AF".to_string(), "column.note.share_of_drawn".to_string()), ("IQ".into(), "column.note.lo.scoped".into())]);
+        // B1: persons add up, but the 20 kept of 199 are not every citizenship, so no share of the drawn sum: the mean
+        assert_eq!(notes, [("AF".to_string(), "column.note.vs_mean".to_string()), ("IQ".into(), "column.note.lo.scoped".into())]);
         // the kicker and the eyebrow (ScopeSegs words) and the selection line, the count and the year read from the record
         let segs = scope_segs(dir.path(), &scope).unwrap();
         let count = Num { src: "data/origins/0.json:members".into(), value: 20.0, text: "20".into() };

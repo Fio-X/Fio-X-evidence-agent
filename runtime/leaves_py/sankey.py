@@ -11,6 +11,8 @@ hero.data (the data shape this leaf eats; on a column frame page, the hero's lea
   "node_text": {code: ledger src},                  # the printed value of every node that is not merged (source or target);
   "node_share": {code: ledger src}?,                # each drawn node's share of its side's whole (a share fact), which the
                                                     # finding's note at a side's largest node prints (SHARE_WORDS);
+  "side_total": {"source": ledger src?, "target": ledger src?}?,  # the side's whole, printed in that note; a side with
+                                                    # none (layer 1 found it not whole) says no share;
                                                     # a merged member needs none
   "totals": {"source": {code: series src}?, "target": {code: series src}?, "all": series src?}?,  # reported totals, checked
   "other_source": {"name": segs,                    # where layer 1 merged sources: the other node's name,
@@ -155,7 +157,8 @@ class Frame:
             vt = lambda side, c: K.shown(f.other[side]["value_text"] if c == "_other" else txt[c])
             share = d.get("node_share") or {}  # each drawn node's share of its side (layer 1's facts), for the notes
             sides = [(f.kinds[side], [(c, v, vt(side, c), share.get(c)) for c, v in nodes], f.grand) for side, nodes in (("source", f.src_nodes), ("target", f.tgt_nodes))]
-            f.finding = K.two_sided(sides, d.get("unit") or [], SHARE_WORDS)
+            whole = d.get("side_total") or {}  # each side's whole, said only where layer 1 found the side whole
+            f.finding = K.two_sided(sides, d.get("unit") or [], SHARE_WORDS, [whole.get("source"), whole.get("target")])
         if f.finding:
             s = f.finding["subject"]
             if f.hl and f.hl != {s}: raise Refused(f"sankey: highlight {sorted(f.hl)[0]} is not the finding's subject {s}; the accent marks the node the headline names")

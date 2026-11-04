@@ -436,7 +436,7 @@ fn pairs_declared(layer: &str, d: &J, page_in: &J, reg: &J) -> Result<J, String>
     let link = |r: &&J| J::obj_of(vec![("source", r.g("dims").g(&source).clone()), ("target", r.g("dims").g(&target).clone()), ("value", r.g("src").clone())]);
     leaf.set("flows", J::Arr(flows.iter().map(link).collect()));
     let (mut node_text, mut empty, mut all_zero, mut names, mut held) = (J::Obj(vec![]), J::Obj(vec![]), Vec::new(), Vec::new(), Vec::new());
-    let mut node_share = J::Obj(vec![]);
+    let (mut node_share, mut side_total) = (J::Obj(vec![]), J::Obj(vec![]));
     let excluded: Vec<String> = listed("pairs_excluded");
     for (i, (sd, dim)) in d.g("sides").arr().iter().zip([&source, &target]).enumerate() {
         let (summed, merged, side_held) = (codes(sd.g("summed")), codes(sd.g("merged")), codes(sd.g("held")));
@@ -446,16 +446,6 @@ fn pairs_declared(layer: &str, d: &J, page_in: &J, reg: &J) -> Result<J, String>
             let key = format!("{node}.{c}");
             facts.set(&key, q(J::obj_of(vec![(dim.as_str(), J::str(c))])));
             node_text.set(c, J::Str(format!("fact:{key}.n")));
-        }
-        // B1: the side's whole (every code it sums, the merged ones too) and each drawn node's share of it, so the leaf's
-        // note at a side's largest node says how much of the side it holds; the whole is never printed, and its count
-        // format keeps it out of the nodes' comparison set (a value fact of the same table, time, format and dimension)
-        let whole = format!("{node}_total");
-        facts.set(&whole, J::obj_of(vec![("op", J::str("value")), ("table", J::str(&main)), ("filter", J::obj_of(vec![(dim.as_str(), J::strs(&summed))])), ("time", J::str(&year)), ("fmt", J::str("n"))]));
-        for c in &drawn {
-            let key = format!("{node}_share.{c}");
-            facts.set(&key, J::obj_of(vec![("op", J::str("share")), ("a", J::Str(format!("{node}.{c}"))), ("b", J::Str(whole.clone())), ("fmt", J::str("pct"))]));
-            node_share.set(c, J::Str(format!("fact:{key}.n")));
         }
         if !merged.is_empty() {
             let key = format!("{node}_other");
@@ -474,6 +464,21 @@ fn pairs_declared(layer: &str, d: &J, page_in: &J, reg: &J) -> Result<J, String>
             empty.set(&st(sd.g("side")), J::strs(&none));
         }
         let left_out: &[String] = if i == 0 { &excluded } else { &[] };
+        // B1 (owner 11-04): the side's whole (every code it sums, the merged ones too), printed as any value is, and each
+        // drawn node's share of it, so the leaf's note at a side's largest node says how much of the side it holds; only
+        // when the side is the whole the registry asks for (no code it asks for missing from the rows, none left out),
+        // else nothing is said. The whole sums the side's codes, a total the nodes' comparison set leaves out by its row
+        // type (the core's rule, line 1)
+        if none.is_empty() && left_out.is_empty() {
+            let whole = format!("{node}_total");
+            facts.set(&whole, q(J::obj_of(vec![(dim.as_str(), J::strs(&summed))])));
+            side_total.set(&st(sd.g("side")), J::Str(format!("fact:{whole}.n")));
+            for c in &drawn {
+                let key = format!("{node}_share.{c}");
+                facts.set(&key, J::obj_of(vec![("op", J::str("share")), ("a", J::Str(format!("{node}.{c}"))), ("b", J::Str(whole.clone())), ("fmt", J::str("pct"))]));
+                node_share.set(c, J::Str(format!("fact:{key}.n")));
+            }
+        }
         let named: Vec<String> = drawn.iter().map(|c| c.to_string()).chain(merged.iter().cloned()).chain(zero_only.iter().map(|c| c.to_string())).chain(left_out.iter().cloned()).collect();
         names.push(J::obj_of(vec![("kind", J::str(dim)), ("codes", J::strs(&named)), ("labels", J::Bool(true))]));
         all_zero.extend(zero_only.iter().map(|c| J::obj_of(vec![("src", J::Str(format!("name:zh_names:{dim}:{c}")))])));
@@ -520,6 +525,7 @@ fn pairs_declared(layer: &str, d: &J, page_in: &J, reg: &J) -> Result<J, String>
     }
     leaf.set("node_text", node_text);
     leaf.set("node_share", node_share);
+    leaf.set("side_total", side_total);
     if empty.truthy() {
         leaf.set("empty", empty);
     }

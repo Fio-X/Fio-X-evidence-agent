@@ -80,7 +80,7 @@ pub(crate) fn measure_kind(code: &str) -> Option<&'static str> {
 
 /// The registry of the short Chinese unit a chart label writes for a unit code (code, short form, rule), built offline from the
 /// codes the catalogues give; compiled in, so a broken file fails its test, not a run.
-const UNIT_SHORT_ZH: &str = include_str!("../runtime/pi/assets/unit-short-zh.tsv");
+pub(crate) const UNIT_SHORT_ZH: &str = include_str!("../runtime/pi/assets/unit-short-zh.tsv");
 
 /// The short Chinese unit unit-short-zh.tsv registers for a code; None for no row or an empty form.
 fn unit_short_zh(code: &str) -> Option<&'static str> {
@@ -193,13 +193,16 @@ mod tests {
     #[test]
     fn unit_short_zh_registers_one_form_per_code_with_its_rule() {
         let mut rows = UNIT_SHORT_ZH.lines();
-        assert_eq!(rows.next(), Some("code\tshort_zh\trule"));
+        assert_eq!(rows.next(), Some("code\tshort_zh\trule\tadditive"));
         let mut seen = BTreeSet::new();
         for row in rows {
             let p: Vec<&str> = row.split('\t').collect();
-            assert_eq!(p.len(), 3, "{row}");
+            assert_eq!(p.len(), 4, "{row}");
             assert!(seen.insert(p[0]), "{} twice", p[0]);
             assert!(!p[2].is_empty(), "{row}: no rule");
+            // B1 (owner 11-04): whether amounts in the unit add up, which the core reads (a share of a sum says
+            // something only then): yes for a count or an amount, no for a share, a rate, a ratio or an index
+            assert!(matches!(p[3], "yes" | "no"), "{row}: additive is yes or no");
         }
         // Every unit code the World Bank registry gives has a row (a form or a named empty one).
         let wb = include_str!("../runtime/pi/assets/wb-units.tsv");
@@ -213,5 +216,7 @@ mod tests {
         // The two World Bank bench measures (q4, q5).
         assert_eq!(unit_short_zh("TCO2E_HAB"), Some("吨二氧化碳当量/人"));
         assert_eq!(unit_short_zh("PC_POP"), Some("%"));
+        let additive = |code: &str| UNIT_SHORT_ZH.lines().find(|l| l.starts_with(&format!("{code}\t"))).and_then(|l| l.split('\t').nth(3));
+        assert_eq!([additive("PER"), additive("KTOE"), additive("PC"), additive("TCO2E_HAB"), additive("NR")], [Some("yes"), Some("yes"), Some("no"), Some("no"), Some("no")]);
     }
 }

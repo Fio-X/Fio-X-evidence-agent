@@ -179,24 +179,27 @@ class Picture(unittest.TestCase):
         def sides(*cols, share=True):
             rows = [{"src": f"fact:t.{c}", "text": t} for col in cols for c, _, t in col]
             rows += [{"src": f"fact:s.{c}", "text": f"{round(100 * v / sum(x for _, x, _ in col))}%"} for col in cols for c, v, _ in col]
+            rows += [{"src": f"fact:whole.{j}", "text": f"{sum(x for _, x, _ in col):.0f}"} for j, col in enumerate(cols)]
             K.setup(rows, {}, run.tables)
             return [("k", [(c, v, f"fact:t.{c}", f"fact:s.{c}" if share and c != "_other" else None) for c, v, _ in col], sum(v for _, v, _ in col)) for col in cols]
         words = sankey.SHARE_WORDS
         txt = lambda segs: "".join(s["w"] if "w" in s else K.FX.text(s["src"]) if "src" in s else "" for s in segs)  # names aside
         fuels = [("A", 60.0, "60"), ("B", 30.0, "30"), ("C", 5.0, "5"), ("_other", 5.0, "5")]
         sectors = [("H", 52.0, "52"), ("T", 30.0, "30"), ("I", 18.0, "18")]
-        f = K.two_sided(sides(fuels, sectors), [], words)
+        whole = ["fact:whole.0", "fact:whole.1"]
+        f = K.two_sided(sides(fuels, sectors), [], words, whole)
         for n, j in zip(f["notes"], (0, 1)):
             last = n["segs"][-1]
             self.assertEqual((last.get("src"), last.get("bold")), (f"fact:s.{n['code']}", True))
-            self.assertIn(K.WD.WORDS[words[j]].split("{p}")[0], txt(n["segs"]))
-        self.assertEqual(txt(f["notes"][0]["segs"]).rsplit("，", 1)[1], "占全部来源的60%")
-        plain = K.two_sided(sides(fuels, sectors, share=False), [], words)
-        self.assertTrue(all(not s.get("src", "").startswith("fact:s.") for n in plain["notes"] for s in n["segs"]))
+            self.assertIn(K.WD.WORDS[words[j]].split("{t}")[0], txt(n["segs"]))
+        self.assertEqual(txt(f["notes"][0]["segs"]).rsplit("，", 1)[1], "占全部来源（100）的60%")
+        # no share for a node, or no whole for its side (layer 1 found the side not whole): the note is as before
+        for plain in (K.two_sided(sides(fuels, sectors, share=False), [], words, whole), K.two_sided(sides(fuels, sectors), [], words, [None, None])):
+            self.assertTrue(all(not s.get("src", "").startswith(("fact:s.", "fact:whole.")) for n in plain["notes"] for s in n["segs"]))
         groups = [("REN", 912.0, "912"), ("FOS", 700.0, "700"), ("NUC", 388.0, "388")]
         geos = [("DE", 600.0, "600"), ("FR", 480.0, "480"), ("ES", 420.0, "420")]
-        f = K.two_sided(sides(groups, geos), [], words)
-        self.assertEqual([txt(n["segs"]).rsplit("，", 1)[1] for n in f["notes"]], ["占全部来源的46%", "占全部去向的40%"])
+        f = K.two_sided(sides(groups, geos), [], words, whole)
+        self.assertEqual([txt(n["segs"]).rsplit("，", 1)[1] for n in f["notes"]], ["占全部来源（2000）的46%", "占全部去向（1500）的40%"])
         # the headline is untouched: the share is the notes' alone
         self.assertFalse(any(s.get("src", "").startswith("fact:s.") for s in f["headline"]))
 
