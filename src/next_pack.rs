@@ -221,20 +221,16 @@ mod tests {
     }
 
     #[test]
-    fn unit_short_zh_holds_the_catalogue_s_percentage_and_index_families() {
-        // K4 (11-05): sealed s2 and s6 stopped at the fill on PC_ACT and I90, units the catalogue offers whose family the
-        // table already held (PC_* "Percentage of …" → %, I## "Index, YYYY=100" → 指数(YYYY=100)); the rows now cover every
-        // code of the two families in the Eurostat unit list, written from its own label, neither one adding up
-        for (code, short) in [("PC_ACT", "%"), ("PC_IND", "%"), ("PC_ENT", "%"), ("I90", "指数(1990=100)"), ("I95", "指数(1995=100)"), ("I21", "指数(2021=100)"), ("I15", "指数(2015=100)")] {
-            assert_eq!(unit_short_zh(code), Some(short), "{code}");
+    fn unit_short_zh_holds_the_catalogue_s_percentage_family() {
+        // K4 (11-05): sealed s2 stopped at the fill on PC_ACT, a unit the catalogue offers whose family the table already
+        // held; every Eurostat code labelled "Percentage of …" now reads %, and none adds up. (The index family, s6's I90,
+        // would add Chinese copy to this flow-group table, which the ratchet refuses: it waits for the owner.)
+        for code in ["PC_ACT", "PC_IND", "PC_ENT", "PC_TOT"] {
+            assert_eq!(unit_short_zh(code), Some("%"), "{code}");
         }
         for row in UNIT_SHORT_ZH.lines().skip(1) {
             let p: Vec<&str> = row.split('\t').collect();
-            if p[2] == "index_base" {
-                let y = &p[0][1..];
-                assert!(p[1].starts_with("指数(") && p[1].ends_with("=100)") && p[1].contains(&format!("{y}=")[..2]), "{row}");
-            }
-            if p[2] == "index_base" || p[2] == "pct_family" { assert_eq!(p[3], "no", "{row}: a share or an index does not add up"); }
+            if p[2] == "pct_family" { assert_eq!((p[1], p[3]), ("%", "no"), "{row}: a share does not add up"); }
         }
     }
 }
