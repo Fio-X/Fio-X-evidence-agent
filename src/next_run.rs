@@ -6625,7 +6625,7 @@ mod tests {
         assert_eq!(html.matches(r#"height="18" fill="var(--accent)""#).count(), 1, "only the dek's bar in the accent");
         assert_eq!(html.matches(r#"height="18" fill="var(--t-body)""#).count(), 1, "the other end's bar in the dark grey");
         assert!(html.contains("红＝导语所指"), "the accent's legend line");
-        assert!(html.contains(r#"text-anchor="end" dominant-baseline="middle" font-size="13" fill="var(--t-sec)" font-weight="400"><tspan data-src="fact:chg.FR""#), "the fall's value on its side");
+        assert!(html.contains(r#"text-anchor="end" dominant-baseline="middle" font-size="13" fill="var(--t-title)" font-weight="700"><tspan data-src="fact:chg.FR""#), "the fall's value on its side, bold in the title ink: a noted place");
         assert!(html.contains(r#"data-src="period:sdg:2016""#), "the year line names the earlier end");
         assert!(html.contains("名SE增幅最大，增加") && html.contains(r#"data-src="fact:lead.n""#), "the dek's finding, its number a ledger entry");
         assert!(html.contains(r#"data-src="fact:lead0.t.y">2016</span>"#) && html.contains(r#"data-src="fact:lead1.t.y">2024</span>"#), "its years too");
