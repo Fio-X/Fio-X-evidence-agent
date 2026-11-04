@@ -1206,6 +1206,24 @@ pub fn wording_segs(
             .map(|t| format!("{PERIOD_SRC}{t}:{key}"))
             .find(|s| ledger.contains_key(s.as_str()) || ledger.contains_key(&format!("{s}.y")))
     };
+    // a half-yearly or monthly main (its ledger holds a period with a '-': YYYY-Sn or YYYY-MM): a bare "YYYY 年" there
+    // names no period of the page, so it is refused with the latest half or month the ledger holds as the example
+    let sub = tables.first().map_or(String::new(), |t| {
+        let pre = format!("{PERIOD_SRC}{t}:");
+        let v = |k: &str| ledger.get(k).map_or("", String::as_str);
+        ledger
+            .keys()
+            .filter_map(|k| k.strip_prefix(&pre).filter(|r| r.contains('-')).and_then(|r| r.strip_suffix(".y")).map(|r| (k, r)))
+            .last()
+            .map_or(String::new(), |(k, r)| {
+                let stem = &k[..k.len() - 2];
+                if r.contains("-S") {
+                    format!("{} 年{}半年", v(k), v(&format!("{stem}.h")))
+                } else {
+                    format!("{} 年 {} 月", v(k), v(&format!("{stem}.m")))
+                }
+            })
+    });
     let mut segs = Vec::new();
     let mut words = String::new();
     let mut off = Vec::new();
@@ -1240,12 +1258,42 @@ pub fn wording_segs(
                 .flatten()?;
             after(m_end, '月').map(|_| (j, m_end, m))
         });
+        // "YYYY 年上半年" / "YYYY 年下半年": the year and the half of one half-year entry (`.y`, `.h`, the half's word)
+        let half = after(end, '年').and_then(|j| {
+            let j = if chars.get(j) == Some(&' ') { j + 1 } else { j };
+            let n = match chars.get(j) {
+                Some('上') => 1,
+                Some('下') => 2,
+                _ => return None,
+            };
+            (chars.get(j + 1) == Some(&'半') && chars.get(j + 2) == Some(&'年')).then_some((j, n))
+        });
         let flush = |segs: &mut Vec<Value>, words: &mut String| {
             if !words.is_empty() {
                 segs.push(json!({ "w": std::mem::take(words) }));
             }
         };
         match (year, month, after(end, '年')) {
+            (true, None, Some(_)) if half.is_some() => {
+                let (j, n) = half.unwrap();
+                match held(&format!("{run}-S{n}")) {
+                    Some(key) => {
+                        flush(&mut segs, &mut words);
+                        segs.push(json!({ "src": format!("{key}.y") }));
+                        segs.push(json!({ "w": chars[end..j].iter().collect::<String>() }));
+                        segs.push(json!({ "src": format!("{key}.h") }));
+                        i = j + 1;
+                        continue;
+                    }
+                    None => off.push(format!(
+                        "\"{run} 年{}半年\" is a half year no table of the page holds",
+                        if n == 1 { "上" } else { "下" }
+                    )),
+                }
+            }
+            (true, None, Some(_)) if !sub.is_empty() => off.push(format!(
+                "\"{run} 年\" names no half year or month, and the page's main is at one (as \"{sub}\")"
+            )),
             (true, Some((j, m_end, m)), _) => match held(&format!("{run}-{m:02}")) {
                 Some(key) => {
                     flush(&mut segs, &mut words);
@@ -1286,9 +1334,11 @@ pub fn wording_segs(
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect();
-        let example = years
-            .last()
-            .map_or(String::new(), |y| format!(", as \"{y} 年\""));
+        let example = if sub.is_empty() {
+            years.last().map_or(String::new(), |y| format!(", as \"{y} 年\""))
+        } else {
+            format!(", as \"{sub}\"")
+        };
         return Err(format!(
             "{text:?}: {}; a wording writes only the years of the data ({}{example}), and any other number as a {{key}} of a fact",
             off.join("; "),
@@ -2271,6 +2321,20 @@ mod tests {
         wrong.insert("period:nrg_pc_204:2026-S2.y".into(), "2026".into());
         let off = recheck(&wrong, &s, &rows, &facts);
         assert!(off.len() == 2 && off[0].contains("the rows give \"上\"") && off[1].contains("no row of nrg_pc_204 is in that half year"), "{off:?}");
+        // a wording on this half-yearly main: "YYYY 年上半年" is the year and the half of one entry the rows hold; a half
+        // no row is in, and a bare "YYYY 年", go back to be reworded with the latest half held as the example
+        let tables = ["nrg_pc_204".to_string()];
+        assert_eq!(
+            Value::from(wording_segs("2026 年上半年德国最高", &ledger, &tables).unwrap()),
+            json!([{"src": "period:nrg_pc_204:2026-S1.y"}, {"w": " 年"}, {"src": "period:nrg_pc_204:2026-S1.h"}, {"w": "半年德国最高"}])
+        );
+        for (text, why) in [
+            ("2026 年下半年德国最高", "\"2026 年下半年\" is a half year no table of the page holds"),
+            ("2026 年德国最高", "\"2026 年\" names no half year or month"),
+        ] {
+            let e = wording_segs(text, &ledger, &tables).unwrap_err();
+            assert!(e.contains(why) && e.contains("as \"2026 年上半年\""), "{text}: {e}");
+        }
     }
 
     #[test]

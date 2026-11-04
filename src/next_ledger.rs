@@ -363,6 +363,11 @@ pub fn check_numbers(
                 text.trim()
             ));
         }
+        // a half year's word is a period too: the leaf prints it marked (<span data-src="...Sn.h">上</span>半年), so an
+        // unmarked 上半年 / 下半年 names a half no row was read for
+        if ["上半年", "下半年"].iter().any(|h| text.contains(h)) {
+            off.push(format!("the half year in {:?} comes from no ledger entry", text.trim()));
+        }
     };
     let close = |shut: Open, off: &mut Vec<String>| match shut.mark {
         Some(Mark::Src(src)) => match ledger.get(&src) {
@@ -1599,6 +1604,16 @@ mod tests {
         assert!(check_numbers(&year, &ledger, &refs())
             .iter()
             .any(|f| f.contains("the digits 2025")));
+        // a half year's word is not exempt either: an unmarked 下半年 names a half no row was read for (the leaf marks the
+        // half's word: <span data-src="...Sn.h">上</span>半年)
+        let half = sample().0.replacen(
+            "<span class=\"n\" data-src=\"series:s1:time\">2025</span>",
+            "<span class=\"n\" data-src=\"series:s1:time\">2025</span> 年下半年",
+            1,
+        );
+        assert!(check_numbers(&half, &ledger, &refs())
+            .iter()
+            .any(|f| f.contains("the half year in")));
         assert!(check_numbers(&sample().0, &ledger, &[])
             .iter()
             .any(|f| f.contains("sdg_07_40")));
