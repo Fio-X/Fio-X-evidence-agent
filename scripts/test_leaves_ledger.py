@@ -41,8 +41,9 @@ class Ledger(unittest.TestCase):
             '截至<span data-src="fact:ru.t.y">2022</span> 年 <span data-src="fact:ru.t.m">9</span> 月',
         )
         self.assertFalse(re.search(r"\d", re.sub(r"<[^>]*>[^<]*</[^>]*>|<[^>]*>", "", got)))  # marked runs, then tags, dropped
-        FX.LEDGER = {"fact:ru.t.y": "2022", "fact:ru.t.h": "1"}
-        self.assertEqual(FX.fill(SPEC, {"ru": {**F["ru"], "t": "2022-S1"}}, "{ru.t}"), '截至<span data-src="fact:ru.t.y">2022</span> 年上半年')
+        FX.LEDGER = {"fact:ru.t.y": "2022", "fact:ru.t.h": "上"}  # a half year's .h entry is its word, marked
+        self.assertEqual(FX.fill(SPEC, {"ru": {**F["ru"], "t": "2022-S1"}}, "{ru.t}"),
+                         '截至<span data-src="fact:ru.t.y">2022</span> 年<span data-src="fact:ru.t.h">上</span>半年')
         FX.LEDGER = {"fact:ru.t.y": "2022"}
         self.assertEqual(FX.fill(SPEC, F, "{ru.t}"), '截至<span data-src="fact:ru.t.y">2022</span> 年')
         with self.assertRaises(FX.Refused):
