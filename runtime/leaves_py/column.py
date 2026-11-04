@@ -302,11 +302,16 @@ def column_shell(f, bars, unit, pic="", main="bars"):
 
 
 def accent_key(f):
-    """The legend line of the accent, on a page with a focus (focus): a swatch in the accent, then the word table's column.accent
-    (words only: the accent marks the place the dek names); none without a focus, where nothing is in the accent."""
-    if not f.focus: return ""
-    if FX.digit(word("column.accent")): raise FX.Refused("column: the accent's legend holds a digit")
-    return f'<span class="ak">{word("column.accent")}</span>'
+    """The legend line of the marked inks: on a page with a focus (focus), a swatch in the accent, then the word table's
+    column.accent (words only: the accent marks the place the dek names); on a page whose notes name other places (noted:
+    their bars and circles in the dark grey, B3 11-04: two q6 stand-ins found the dark bar and circles unexplained beside
+    the accent), a swatch in that grey, then column.noted. None for an ink the page does not draw."""
+    out = ""
+    for key, on in (("column.accent", bool(f.focus)), ("column.noted", bool(set(f.noted) - set(f.focus)))):
+        if not on: continue
+        if FX.digit(word(key)): raise FX.Refused(f"column: the legend's {key} holds a digit")
+        out += f'<span class="ak{" nk" if key == "column.noted" else ""}">{word(key)}</span>'
+    return out
 
 
 def strip_shell(svg, w, h):
@@ -320,4 +325,5 @@ def strip_shell(svg, w, h):
 # map, the gap and the bars; the accent's legend line (accent_key) after the year, its swatch in the accent.
 CSS = """.illus-strip{width:1140px;margin:0 0 24px}.illus-strip svg{display:block}""" + """.hero.column{position:relative;width:1140px;margin:8px 0 30px}.hero.column .cu{font:400 12px/17px var(--sans);color:var(--t-sec);margin-bottom:6px}""" + \
     ".hero.column .cm{display:flex;gap:%dpx;align-items:flex-start}.hero.column .cm svg{flex:none}" % MAP_GAP + \
-    ".hero.column .ak{margin-left:16px;color:var(--t-body)}.hero.column .ak::before{content:'';display:inline-block;width:9px;height:9px;margin-right:5px;background:var(--accent);vertical-align:0}"
+    ".hero.column .ak{margin-left:16px;color:var(--t-body)}.hero.column .ak::before{content:'';display:inline-block;width:9px;height:9px;margin-right:5px;background:var(--accent);vertical-align:0}" + \
+    ".hero.column .ak.nk::before{background:var(--t-body)}"

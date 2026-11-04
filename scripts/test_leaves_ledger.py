@@ -306,15 +306,21 @@ class Column(unittest.TestCase):
         """The column frame's main layer is its recipe's (run.MAIN), the bars on a column and a change page: their html is the
         page built before the frame took a declared main layer (the sha256 of this page's html at that commit, the same
         lines run through run.py; since R11 with tokens.css declaring the one accent #c93f2b, the only byte that moved), so the
-        bars' page did not move when the frame stopped requiring them."""
-        def sha(lines, names):
+        bars' page did not move when the frame stopped requiring them. Since B3 (11-04) the column page's style carries the
+        noted grey's legend swatch rule, the only bytes that moved: without that rule the page is the one it was."""
+        def sha(lines, names, drop=""):
             got = child(lines)[1:]
             self.assertFalse([g for g in got if "refused" in g], got)
             layers = {n: g.get("svg") or g.get("html") for n, g in zip(names, got)}
             html = child(lines + [json.dumps({"phase": "page", "layers": layers})])[-1]["html"]
+            if drop:
+                self.assertEqual(html.count(drop), 1)
+                html = html.replace(drop, "")
             return hashlib.sha256(html.encode("utf-8")).hexdigest()
-        self.assertEqual(sha(column_request(), ["bignums", "bars"]), "1bf9b3673b007f57917095c79935ec90181056ab945f5ff4c774bfc5286c6e36")
-        self.assertEqual(sha(change_request(), ["bars"]), "06a9bbe1ebc2f10f1a76167fb9f5b572bfdf229ce3b8b21685f4d1764a2f3bab")
+        noted_rule = ".hero.column .ak.nk::before{background:var(--t-body)}"
+        self.assertEqual(sha(column_request(), ["bignums", "bars"], noted_rule), "1bf9b3673b007f57917095c79935ec90181056ab945f5ff4c774bfc5286c6e36")
+        self.assertEqual(sha(column_request(), ["bignums", "bars"]), "3a83e4368d3e177e16002c8f60b98b274d5e06f5ae0b75aceaa1bd0dfae343aa")
+        self.assertEqual(sha(change_request(), ["bars"], noted_rule), "06a9bbe1ebc2f10f1a76167fb9f5b572bfdf229ce3b8b21685f4d1764a2f3bab")
         self.assertIn('<svg class="bars pub-chart"', child(change_request() + [json.dumps({"phase": "page", "layers": {"bars": child(change_request())[1]["svg"]}})])[-1]["html"])
 
     def test_a_column_page_with_no_big_numbers_gives_the_title_the_whole_header(self):

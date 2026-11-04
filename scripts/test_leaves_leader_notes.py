@@ -755,7 +755,8 @@ class ColumnMap(unittest.TestCase):
         # accent is SE's: its circle and its bar; LU keeps its note, its circle and bar in the dark grey; the unit line ends in the
         # accent's legend, words only. The kicker's last rule in the page's css (the one that wins: same selector weight or more,
         # later) sets it in the title's ink, not the accent
-        legend = re.compile(r'<div class="cu">(?:(?!</div>).)*<span class="ak">([^<]*)</span></div>')
+        legend = lambda html: re.findall(r'<span class="ak(?: nk)?">([^<]*)</span>', (re.search(r'<div class="cu">((?:(?!</div>).)*)</div>', html) or [None, ""])[1])
+        accent, noted = K.WD.WORDS["column.accent"], K.WD.WORDS["column.noted"]
         chg = [dict(at=POINT["SWE"], name="SE", text=[{"word": "column.note.rise_most"}], value_text="fact:chg.SE"),
                dict(at=POINT["LUX"], name="LU", text=[{"word": "column.note.fall_most"}], value_text="fact:chg.LU")]
         for change, notes in ((False, D), (True, dict(D, notes=chg))):
@@ -766,8 +767,10 @@ class ColumnMap(unittest.TestCase):
             self.assertEqual(sorted(marked), ["circle", "rect"], change)
             self.assertEqual(self.marked(html, "--accent", ranked), (["SE"], ["SE"]), change)
             self.assertEqual(self.marked(html, "--t-body", ranked), (["LU"], ["LU"]), change)
-            self.assertEqual(legend.findall(html), [K.WD.WORDS["column.accent"]], change)
-            self.assertFalse(re.search(r"[0-9０-９]", K.WD.WORDS["column.accent"]))
+            # B3 (11-04): the dark grey of the noted place is in the legend too, after the accent, its swatch in that grey
+            self.assertEqual(legend(html), [accent, noted], change)
+            self.assertIn(f'<span class="ak nk">{noted}</span>', html)
+            self.assertFalse(re.search(r"[0-9０-９]", accent + noted))
             self.assertIn('data-src="fact:chg.LU"' if change else 'data-src="fact:times"', html)  # LU's note stays
         css = re.search(r"<style>(.*)</style>", html, re.S).group(1)
         rules = re.findall(r"(?:^|})\s*([^{}]*\.kicker)\{([^}]*)\}", css)
@@ -778,7 +781,7 @@ class ColumnMap(unittest.TestCase):
         html = self.page_of(column_lines({"bubbles": dict(items=ITEMS, ext=EXT), "leader_notes": D}))
         self.assertEqual(re.findall(r'(?:fill|stroke)="var\(--accent\)"', html), [])
         self.assertEqual(self.marked(html, "--t-body", sorted(VALUES, key=lambda c: -VALUES[c])), (["LU", "SE"], ["SE", "LU"]))
-        self.assertIsNone(legend.search(html))
+        self.assertEqual(legend(html), [noted])  # no accent, so no accent legend; the dark grey drawn, so its line
 
     def test_a_change_note_that_compares_with_its_neighbour_prints_the_words_and_the_gap_entry(self):
         # next_run change_notes_fill: the first ranked place's note says it is above the second by a gap, the last's that it is
