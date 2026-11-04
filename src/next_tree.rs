@@ -5957,7 +5957,9 @@ fn asked_problems(spec: &J, inp: &J) -> Vec<String> {
     let mut out = Vec::new();
     for a in asked {
         let (id, tables, offered) = (st(a.g("id")), strs(a.g("tables")), strs(a.g("offered")));
-        if drawn.iter().any(|t| tables.iter().any(|p| !p.is_empty() && t.starts_with(p.as_str()))) {
+        // drawn from a table one of its prefixes starts, or one the catalogue offered for it (a title naming it: l5geo
+        // Asked::holds_candidate)
+        if drawn.iter().any(|t| tables.iter().any(|p| !p.is_empty() && t.starts_with(p.as_str())) || offered.contains(t)) {
             continue;
         }
         let head = format!("C6: the question asks for {id} but the page draws no row from {}", tables.join(", "));
@@ -7299,6 +7301,13 @@ mod tests {
         assert_eq!(run(&[("bars", "sdg_07_40")], vec![ren]), Vec::<String>::new());
         // a prefix matches the table id's start only
         assert_eq!(run(&[("bars", "XEN.GHG.CO2")], vec![co2]).len(), 1);
+        // a table the catalogue offered for the quantity (its title names it) counts as drawn, though no prefix starts it
+        let asylum_tps = asked_rec("asylum", &["migr_asy"], &["tps00191", "migr_asyappctza"]);
+        let pop_offered = asked_rec("population", &["SP.POP.TOTL", "demo_pjan", "demo_gind"], &["demo_gind"]);
+        assert_eq!(run(&[("bars", "tps00191"), ("bubbles", "demo_gind")], vec![asylum_tps.clone(), pop_offered.clone()]), Vec::<String>::new());
+        // the stand-in's page (11-05): asylum from tps00191, population offered but not drawn: only population is refused
+        let off = run(&[("bars", "tps00191")], vec![asylum_tps, pop_offered]);
+        assert_eq!(off, vec!["C6: the question asks for population but the page draws no row from SP.POP.TOTL, demo_pjan, demo_gind".to_string()]);
     }
     use std::path::{Path, PathBuf};
 

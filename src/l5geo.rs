@@ -412,6 +412,39 @@ impl Asked {
         let id = id.split('@').next().unwrap_or(id);
         self.tables.iter().any(|p| id.starts_with(p.as_str()))
     }
+
+    /// Whether the candidate holds this quantity: its id starts with one of the family's prefixes (`holds`), or its
+    /// catalogue title names every word of the family's English search words (`title_names`) and no family with more of
+    /// those words names it as well (a per-capita title is gdp_pc's, not gdp's). A summary table outside the prefixes
+    /// (tps00191, "Asylum applicants by type - annual aggregated data") is then the asylum family's like migr_asy*.
+    pub fn holds_candidate(&self, c: &Candidate) -> bool {
+        self.holds(&c.id) || {
+            let fams = measure_families();
+            let words = |f: &Family| en_words(&f.en);
+            match fams.iter().find(|f| f.id == self.id) {
+                Some(f) => {
+                    let mine = words(f);
+                    title_names(&c.title, &mine)
+                        && !fams.iter().any(|g| {
+                            let theirs = words(g);
+                            g.id != f.id && theirs.len() > mine.len() && mine.iter().all(|w| theirs.contains(w)) && title_names(&c.title, &theirs)
+                        })
+                }
+                None => false,
+            }
+        }
+    }
+}
+
+/// The content words of a family's English search words: lowercase, letters only, four letters or more.
+fn en_words(en: &str) -> Vec<String> {
+    en.split(|c: char| !c.is_ascii_alphabetic()).filter(|w| w.len() >= 4).map(str::to_ascii_lowercase).collect()
+}
+
+/// Whether a catalogue title holds every one of `words` as a word of its own (case aside); no words, no match.
+fn title_names(title: &str, words: &[String]) -> bool {
+    let t: Vec<String> = title.split(|c: char| !c.is_ascii_alphanumeric()).map(str::to_ascii_lowercase).collect();
+    !words.is_empty() && words.iter().all(|w| t.iter().any(|x| x == w))
 }
 
 /// The quantities the Chinese question asks for, in the order their words are matched: longest word first, a matched span
@@ -1450,15 +1483,15 @@ impl Catalog {
         }
         let mut lifted: Vec<Candidate> = Vec::new();
         for a in asked {
-            let placed = ranked.iter().take(TOP).chain(lifted.iter()).any(|c| a.holds(&c.id));
+            let placed = ranked.iter().take(TOP).chain(lifted.iter()).any(|c| a.holds_candidate(c));
             if placed {
                 continue;
             }
-            let found = ranked.iter().find(|c| a.holds(&c.id)).cloned().or_else(|| {
+            let found = ranked.iter().find(|c| a.holds_candidate(c)).cloned().or_else(|| {
                 let family = measure_families().iter().find(|f| f.id == a.id)?;
                 self.rank_reaching(&[family.en.clone()], scope, far)
                     .into_iter()
-                    .find(|c| a.holds(&c.id))
+                    .find(|c| a.holds_candidate(c))
             });
             if let Some(c) = found {
                 lifted.push(c);
@@ -1474,14 +1507,14 @@ impl Catalog {
             // The last table that is not the only one among head and lifted holding an asked quantity.
             let sole = |k: usize| {
                 asked.iter().any(|a| {
-                    a.holds(&head[k].id)
+                    a.holds_candidate(&head[k])
                         && head
                             .iter()
                             .enumerate()
                             .filter(|&(j, _)| j != k)
                             .map(|(_, c)| c)
                             .chain(lifted.iter())
-                            .all(|c| !a.holds(&c.id))
+                            .all(|c| !a.holds_candidate(c))
                 })
             };
             match (0..head.len()).rev().find(|&k| !sole(k)) {
@@ -1517,7 +1550,7 @@ impl Catalog {
             a.offered = r
                 .candidates
                 .iter()
-                .filter(|c| a.holds(&c.id))
+                .filter(|c| a.holds_candidate(c))
                 .map(|c| c.id.clone())
                 .collect();
         }
@@ -2424,6 +2457,26 @@ mod tests {
 
     /// Two asked quantities, the first filling the first five: the second's best ranked table takes the fifth place and
     /// the one it displaces moves down. One asked quantity, or two already both in the first five, leave the order as it was.
+    /// A table outside a family's prefixes holds it when its catalogue title names the family's English words, and not when
+    /// a family with more of those words names the title too: asylum's summary tables, a CO2 table under another id, a
+    /// per-capita GDP title (gdp_pc's, not gdp's), and titles naming another quantity or only part of the words.
+    #[test]
+    fn an_asked_quantity_is_held_by_a_title_naming_its_words() {
+        let fam = |id: &str| asked_zh(match id { "asylum" => "庇护申请", "co2" => "碳排放", "gdp" => "GDP", "gdp_pc" => "人均GDP", "population" => "总人口", _ => unreachable!() }).remove(0);
+        let titled = |id: &str, title: &str| Candidate { title: title.into(), ..cand(id, 1.0) };
+        let (asylum, co2, gdp, gdp_pc, population) = (fam("asylum"), fam("co2"), fam("gdp"), fam("gdp_pc"), fam("population"));
+        assert_eq!((asylum.id.as_str(), gdp_pc.id.as_str()), ("asylum", "gdp_pc"));
+        assert!(asylum.holds_candidate(&titled("tps00191", "Asylum applicants by type - annual aggregated data")));
+        assert!(asylum.holds_candidate(&titled("migr_asyappctza", "migr_asyappctza")), "a prefix still holds");
+        assert!(co2.holds_candidate(&titled("XYZ.CO2", "Carbon dioxide emissions by sector")));
+        let per_capita = titled("tec00114", "Gross domestic product per capita in PPS");
+        assert!(gdp_pc.holds_candidate(&per_capita) && !gdp.holds_candidate(&per_capita));
+        assert!(gdp.holds_candidate(&titled("tec00001", "Gross domestic product at market prices")));
+        assert!(!asylum.holds_candidate(&titled("tps00001", "Population on 1 January")));
+        assert!(!population.holds_candidate(&titled("tps00001", "Population on 1 January")), "total is not in the title");
+        assert!(!co2.holds_candidate(&titled("env_x", "Carbon footprint")), "part of the words");
+    }
+
     #[test]
     fn lift_asked_keeps_a_place_for_each_asked_quantity() {
         let c = small();
