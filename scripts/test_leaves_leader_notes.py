@@ -476,7 +476,7 @@ class LeaderNotes(unittest.TestCase):
         return texts
 
     def test_a_note_with_no_room_at_its_own_break_moves_the_break_to_another_phrase_the_q5_page(self):
-        # the q5 page (a change page, 11-01): Nigeria's note (升幅最小，与倒数第二差 and its gap) is too wide for one line beside
+        # the q5 page (a change page, 11-01): Nigeria's note (升幅最小，比倒数第二低 and its gap) is too wide for one line beside
         # the map, and on two at the break before its number (249 px) no free box had a clear leader: the page stopped on
         # notes_dropped (dropped:leader_notes:NGA, no free place for the note). With no other break (ALT_BREAKS 0) that is what
         # the layer still does, China's note as on the run's page. Now the break moves to the phrase boundary after the
@@ -491,7 +491,7 @@ class LeaderNotes(unittest.TestCase):
         f, svg, occ = self.q5()
         self.assertEqual(f.dropped, [])
         texts = self.notes_clear(f, svg, occ)
-        self.assertEqual([(t["src"], t["text"]) for t in texts], [c[:2] for c in chn] + [("name:zh_names:iso3:NGA", "尼日利亚 升幅最小，"), ("fact:vs_lo", "与倒数第二差 0.4 个百分点")])
+        self.assertEqual([(t["src"], t["text"]) for t in texts], [c[:2] for c in chn] + [("name:zh_names:iso3:NGA", "尼日利亚 升幅最小，"), ("fact:vs_lo", "比倒数第二低 0.4 个百分点")])
         self.assertEqual([(t["x"], t["y"]) for t in texts[:2]], [c[2:] for c in chn])
         self.assertAlmostEqual(texts[3]["y"] - texts[2]["y"], 16 * LN.LINE, delta=0.11)
         self.assertEqual(svg.split("</text>")[:2], svg0.split("</text>")[:2])  # China's note, its leader and both its lines
@@ -855,15 +855,12 @@ class ColumnMap(unittest.TestCase):
         html = TL.child(TL.column_request() + [json.dumps({"phase": "page", "layers": layers})])[-1]["html"]
         self.assertEqual(sorted(set(bold(html))), ["BE"])
 
-    def test_a_gap_note_says_its_number_is_a_difference(self):
-        # 11-04: stand-ins on q1, q4 and q5 read 比图中平均高 0.34 / 比倒数第二低 1.80 as the place's own value beside its bar.
-        # The words before a gap entry now say it is a difference (与…差), the place's own rank word (升幅最大, 最小…) giving
-        # the direction; each keeps its glyph count, so every note's width and break stand as they were
+    def test_a_gap_note_keeps_a_comparison_word(self):
+        # 11-04: 与图中平均差 / 与倒数第二差 dropped every comparison word, so the page-good check (a note has a number and
+        # 比, 高于, 低于…) failed on q1, q4, q5 and q6, and two stand-ins still misread the gap; the words are back to 比…高 / 比…低
         words = K.WD.WORDS
-        for key, was in (("column.note.vs_mean", "比图中平均高"), ("column.note.vs_mean_after", "，比图中平均高"), ("column.note.vs_prev", "，比倒数第二低")):
-            self.assertTrue(words[key].endswith("差") and words[key].lstrip("，").startswith("与"), key)
-            self.assertEqual(len(words[key]), len(was), key)
-            self.assertEqual(K.tw(words[key], 16), K.tw(was, 16), key)
+        for key in ("column.note.vs_mean", "column.note.vs_mean_after", "column.note.vs_prev"):
+            self.assertIn("比", words[key], key)
 
     def test_a_change_note_that_compares_with_its_neighbour_prints_the_words_and_the_gap_entry(self):
         # next_run change_notes_fill: the first ranked place's note says it is above the second by a gap, the last's that it is
@@ -1074,7 +1071,7 @@ class ColumnMap(unittest.TestCase):
                           ("414.9", "109.1", "13.9", "IND"), ("442.5", "103.5", "13.2", "BGD"), ("396.0", "91.8", "10.7", "PAK"), ("280.5", "133.3", "9.0", "NGA")])
         self.assertNotIn("dropped", notes)
         self.assertEqual([(t["src"], t["text"]) for t in notes["texts"]],
-                         [("name:zh_names:iso3:CHN", "中国 升幅最大，比第二名高"), ("fact:vs_hi", "0.6 个百分点"), ("name:zh_names:iso3:NGA", "尼日利亚 升幅最小，"), ("fact:vs_lo", "与倒数第二差 0.4 个百分点")])
+                         [("name:zh_names:iso3:CHN", "中国 升幅最大，比第二名高"), ("fact:vs_hi", "0.6 个百分点"), ("name:zh_names:iso3:NGA", "尼日利亚 升幅最小，"), ("fact:vs_lo", "比倒数第二低 0.4 个百分点")])
         self.assertTrue(all(t["y"] - 1.06 * t["size"] >= 0 and t["y"] <= 245 for t in notes["texts"]))
         page = child(lines + [json.dumps({"phase": "page", "layers": {"bars": bars["svg"], "bubbles": bub["svg"], "bubble_key": key["svg"], "leader_notes": notes["svg"]}})])[5]
         self.assertNotIn("refused", page)
