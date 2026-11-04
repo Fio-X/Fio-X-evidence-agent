@@ -576,6 +576,11 @@
     },
     "column": {
      "shape": "finding",
+     "change_fmt": {
+      "short": "%",
+      "then": "pp",
+      "else": "$shape.fmt"
+     },
      "set_count": "drawn",
      "set_of": "ranked",
      "needs_facts": [

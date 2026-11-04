@@ -741,7 +741,8 @@ fn finding_declared(d: &J, page_in: &J, reg: &J) -> Result<J, String> {
     let mut view = page_in.clone();
     if let Some(cf) = d.get("change_fmt") {
         let pick = if page_in.g("short").s() == cf.g("short").s() { cf.g("then") } else { cf.g("else") };
-        view.set("fmt", J::obj_of(vec![("change", pick.clone())]));
+        // a key or a page input path ($shape.fmt: a level's own format, a column's gap in its unit)
+        view.set("fmt", J::obj_of(vec![("change", sub(pick, page_in)?)]));
     }
     let view = &view;
     let (mut sels, mut given) = selects_of(view, reg)?;
