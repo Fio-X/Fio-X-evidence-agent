@@ -7607,7 +7607,13 @@ mod tests {
         assert_eq!((sum(&["drawn", "zero", "unrowed", "of_empty"]), sum(&["asked", "excluded"])), (70, 77));
         assert_eq!((data["source_kind"].as_str(), data["target_kind"].as_str()), (Some("siec"), Some("nrg_bal")));
         let facts = spec["facts"].as_object().unwrap();
-        assert_eq!(facts.len(), 14, "{facts:?}");
+        // B1: the target side is every code the registry asks for, so its whole (to_total, its codes summed) and each drawn
+        // node's share of it are declared; the source side leaves nuclear heat out (excluded), so it has none
+        assert_eq!(facts.len(), 19, "{facts:?}");
+        assert!(facts.get("from_total").is_none() && facts["to_total"]["filter"]["nrg_bal"].as_array().is_some_and(|c| c.len() == 7), "{}", facts["to_total"]);
+        let shares: Vec<&String> = facts.keys().filter(|k| k.starts_with("to_share.")).collect();
+        assert_eq!(shares, ["to_share.FC_IND_E", "to_share.FC_OTH_CP_E", "to_share.FC_OTH_HH_E", "to_share.FC_TRA_E"]);
+        assert_eq!(facts["to_share.FC_TRA_E"], json!({"op": "share", "a": "to.FC_TRA_E", "b": "to_total", "fmt": "pct"}));
         let pairs_out: Vec<&Value> = facts[FLOW_EXCLUDED]["pairs"].as_array().unwrap().iter().collect();
         assert_eq!((pairs_out.len(), pairs_out[0]), (7, &json!(["N900H", "FC_IND_E"])));
         assert_eq!(facts[FLOW_ZEROS], json!({"op": "zeros", "table": "nrg_bal_s", "time": "2024", "fmt": "n"}));
@@ -13048,8 +13054,13 @@ for line in sys.stdin:
             for (name, main) in cases {
                 let (fill, old) = sankey_case(table, &main, &Hubs).unwrap_or_else(|e| panic!("{table} {name}: {e}"));
                 let spec = &fill["knobs"]["spec"];
-                let leaf = &spec["hero"]["leaves"]["sankey"];
-                assert_eq!(leaf, &old.hero["leaves"]["sankey"], "{table} {name}");
+                // B1 adds each side's whole and the drawn nodes' shares of it, which the old rust fill never declared: the
+                // rest of the leaf data is the old one's
+                let mut leaf = spec["hero"]["leaves"]["sankey"].clone();
+                for k in ["node_share", "side_total"] {
+                    leaf.as_object_mut().unwrap().remove(k);
+                }
+                assert_eq!(&leaf, &old.hero["leaves"]["sankey"], "{table} {name}");
                 for (k, q) in &old.facts {
                     assert_eq!(&spec["facts"][k], q, "{table} {name}: fact {k}");
                 }

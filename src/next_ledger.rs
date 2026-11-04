@@ -687,7 +687,7 @@ fn share_split<'a>(key: &str, spec: &'a Spec) -> Option<(String, Vec<(&'a str, S
         // a total row's code on `d` (total_row, at the numerator's table) is no member, nor compared
         let table = def(&own["a"]).and_then(|q| q["table"].as_str()).unwrap_or_default();
         if total_row(table, d, &code) {
-            return None;
+            continue;
         }
         let at = |want: &Value| -> Vec<(&'a str, String, bool)> {
             let held = spec.facts.iter().filter_map(|(k, q)| split(q, d).map(|(c, n, b)| (k.as_str(), c, n, b, q.get("fmt") == own.get("fmt"))));
@@ -2439,22 +2439,24 @@ mod tests {
         for t in totals {
             add(&mut spec, &mut facts, &mut ledger, t);
         }
-        let printed = |page: String, keys: &[&str]| {
+        let printed = |page: String, ledger: &BTreeMap<String, String>, keys: &[&str]| {
             let texts: String = keys.iter().map(|k| format!("<text><tspan data-src=\"fact:{k}.n\">{}</tspan></text>", ledger[&format!("fact:{k}.n")])).collect();
             page.replacen("</g></svg>", &format!("</g>{texts}</svg>"), 1)
         };
         assert_eq!(family("from.G3000", &spec).len(), 6);
         assert_eq!(family("to.FC_TRA_E", &spec).len(), 5);
         assert!(family("from.TOTAL", &spec).is_empty() && family("to.FC_E", &spec).is_empty());
-        let page = printed(flow_page(), &["from.TOTAL", "to.FC_E"]);
+        let page = printed(flow_page(), &ledger, &["from.TOTAL", "to.FC_E"]);
         assert_eq!(check_relations(&page, &ledger, &spec, &facts, &[]), Vec::<String>::new(), "both wholes printed, the finding holds");
         // must fail: the whole stated the max
-        let on_whole = page.replacen("data-cmp=\"max\" data-a=\"fact:from.O4000XBIO.n\"", "data-cmp=\"max\" data-a=\"fact:from.TOTAL.n\"", 1);
+        let on_whole = page
+            .replacen("data-cmp=\"max\" data-a=\"fact:from.O4000XBIO.n\"", "data-cmp=\"max\" data-a=\"fact:from.TOTAL.n\"", 1)
+            .replacen("data-src=\"fact:from.O4000XBIO.n\">60,699.06", "data-src=\"fact:from.TOTAL.n\">177,745.06", 1);
         assert!(check_relations(&on_whole, &ledger, &spec, &facts, &[]).iter().any(|f| f.contains("has no comparison set")));
         // must fail: a source of no total type at the whole's value
         let (mut spec, mut facts, mut ledger) = flow_request();
         add(&mut spec, &mut facts, &mut ledger, ("from.X9999", "siec", "X9999", 177745.063, "177,745.06"));
-        let page = printed(flow_page(), &["from.X9999"]);
+        let page = printed(flow_page(), &ledger, &["from.X9999"]);
         assert!(check_relations(&page, &ledger, &spec, &facts, &[]).iter().any(|f| f.contains("does not hold")), "X9999 is no total row");
     }
 
@@ -2482,7 +2484,9 @@ mod tests {
         assert!(family("sankey_total.source", &spec).is_empty() && family("sankey_total.target", &spec).is_empty());
         let page = printed(flow_page(), &ledger, &["sankey_total.source", "sankey_total.target"]);
         assert_eq!(check_relations(&page, &ledger, &spec, &facts, &[]), Vec::<String>::new(), "both summed wholes printed, the finding holds");
-        let on_whole = page.replacen("data-cmp=\"max\" data-a=\"fact:from.O4000XBIO.n\"", "data-cmp=\"max\" data-a=\"fact:sankey_total.source.n\"", 1);
+        let on_whole = page
+            .replacen("data-cmp=\"max\" data-a=\"fact:from.O4000XBIO.n\"", "data-cmp=\"max\" data-a=\"fact:sankey_total.source.n\"", 1)
+            .replacen("data-src=\"fact:from.O4000XBIO.n\">60,699.06", "data-src=\"fact:sankey_total.source.n\">177,745.06", 1);
         assert!(check_relations(&on_whole, &ledger, &spec, &facts, &[]).iter().any(|f| f.contains("has no comparison set")));
         // must fail: a list missing one source (RA000) is no whole, a part above the largest
         let (mut spec, mut facts, mut ledger) = flow_request();
