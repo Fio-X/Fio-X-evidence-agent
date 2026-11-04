@@ -2256,7 +2256,7 @@ pub(crate) fn tree_j(page_in: &J, fill: &J, reg: &J, external: &[String]) -> Res
     ]);
     let select_spec = J::Obj(sels.iter().map(|s| (st(s.g("id")), J::Obj(s.obj().iter().filter(|(k, _)| k != "id").cloned().collect()))).collect());
     let rules = J::Obj(external.iter().map(|l| Ok((l.clone(), declares(reg, l, page_in)?.g("rows").clone()))).collect::<Result<_, String>>()?);
-    Ok(J::obj_of(vec![
+    let mut envelope = J::obj_of(vec![
         ("rows", page_in.g("rows").clone()),
         ("select_spec", select_spec),
         ("knobs", J::Obj(vec![])),
@@ -2266,7 +2266,15 @@ pub(crate) fn tree_j(page_in: &J, fill: &J, reg: &J, external: &[String]) -> Res
         ("points", points),
         ("word_table", J::Obj(vec![])),
         ("page_spec", page),
-    ]))
+    ]);
+    // the quantities the question asks for, as the flow copied them (the page input's and the leaf's spec's), passed on
+    // as given for the core's C6 (next_tree asked_problems); a page with neither keeps its tree as before
+    for (k, v) in [("asked", page_in.get("asked")), ("leaf_asked", spec.get("asked"))] {
+        if let Some(v) = v {
+            envelope.set(k, v.clone());
+        }
+    }
+    Ok(envelope)
 }
 
 /// What a leaf of an external layer refuses before it draws anything (the declaration's leaf_stops, or its recipe's in
@@ -2526,6 +2534,42 @@ mod tests {
         let (pi, fill) = (gen.g("page_in"), gen.g("fill"));
         assert_eq!(declared_j("bars", pi, &reg).unwrap().dump(), gen.g("declare_bars").dump());
         assert_eq!(tree_j(pi, fill, &reg, &["bars".to_string()]).unwrap().dump(), gen.g("tree_p4a1").dump());
+    }
+
+    /// C6 through the core's content check (content_problems) on the q1 page tree, with asked records the flow would copy for
+    /// a two-quantity question written here ("各国可再生能源占比和碳排放分别怎样？"): the renewables are drawn (the bars' rows of
+    /// the main); carbon emissions, with no offered table and the leaf's line, passes; offered a table and not drawn, it is
+    /// refused, the leaf's line not standing; and the page with no asked record checks as before.
+    #[test]
+    fn the_q1_tree_passes_c6_with_the_unanswered_half_lined_and_is_refused_without() {
+        let gen = read("q1-gen.json");
+        let reg = proto_reg();
+        let ext = vec!["bars".to_string()];
+        let rec = |id: &str, tables: &[&str], offered: &[&str]| {
+            J::obj_of(vec![("id", J::str(id)), ("zh", J::str(id)), ("tables", J::strs(tables)), ("offered", J::strs(offered))])
+        };
+        let check = |asked: &[J], leaf: &[J]| -> Vec<String> {
+            let (mut pi, mut fill) = (gen.g("page_in").clone(), gen.g("fill").clone());
+            if !asked.is_empty() {
+                pi.set("asked", J::Arr(asked.to_vec()));
+            }
+            if !leaf.is_empty() {
+                assert!(fill.set_path(&["knobs", "spec", "asked"].map(String::from), J::Arr(leaf.to_vec())));
+            }
+            let tree = tree_j(&pi, &fill, &reg, &ext).unwrap();
+            core::content_problems(tree.g("page_spec"), &tree, &ext, &reg).0
+        };
+        // the fixture's main is the table "sdg" (its rows series:sdg/...), so the record's prefix here is that id
+        let ren = rec("renewable_share", &["sdg", "nrg_ind_ren"], &["sdg"]);
+        let lined = rec("co2", &["EN.GHG.", "env_air_gge"], &[]);
+        let offered = rec("co2", &["EN.GHG.", "env_air_gge"], &["env_air_gge"]);
+        assert_eq!(check(&[], &[]), Vec::<String>::new());
+        assert_eq!(check(&[ren.clone()], &[ren.clone()]), Vec::<String>::new());
+        assert_eq!(check(&[ren.clone(), lined.clone()], &[ren.clone(), lined.clone()]), Vec::<String>::new());
+        let off = check(&[ren.clone(), offered.clone()], &[ren.clone(), offered.clone()]);
+        assert_eq!(off, vec!["C6: the question asks for co2 but the page draws no row from EN.GHG., env_air_gge".to_string()]);
+        let off = check(&[ren.clone(), offered], &[ren, lined]);
+        assert!(off.iter().any(|e| e.contains("its unanswered line does not stand, as env_air_gge was offered for it")), "{off:?}");
     }
 
     /// G3 (P4a-1 group): page inputs the generator or the core must stop. A missing map point is not this tree's: the

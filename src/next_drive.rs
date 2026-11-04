@@ -1992,6 +1992,8 @@ mod drive {
                     claims,
                     places_zh: places_zh.clone(),
                     companions: Vec::new(),
+                    // the asked quantities as the catalogue event recorded them (none on a run before they were)
+                    asked: ranking.get("asked").cloned().unwrap_or_else(|| json!([])),
                 });
             }
             let main = prepared.first_mut().ok_or("no claims-step fetch registered its picks")?;

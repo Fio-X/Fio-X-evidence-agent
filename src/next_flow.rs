@@ -3352,6 +3352,9 @@ pub struct Prepared {
     /// The kept companions' fetched files under the run folder as (table, filePath), picked from or not: on the main table
     /// only, empty on every other.
     pub companions: Vec<(String, String)>,
+    /// The quantities the catalogue read in the question (the ranking's asked, each with the offered tables that hold it),
+    /// as recorded in the catalogue event; an empty array when it read none.
+    pub asked: Value,
 }
 
 /// The spec step that fetches this catalogue table: same dataset, and for a World Bank id the indicator before "@2".
@@ -4829,6 +4832,7 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
             sheet: key,
             claims,
             places_zh: ranking.places_zh.clone(),
+            asked: json!(ranking.asked),
             companions: if prepared.is_empty() {
                 std::mem::take(&mut companion_files)
             } else {

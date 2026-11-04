@@ -2324,10 +2324,20 @@ fn recipe_request(
     if let (Some(p), Some(set)) = (page_in.as_mut(), set) {
         p["set"] = set;
     }
+    // the quantities the question asks for, the catalogue's record as the flow kept it (never the model's): the page input
+    // carries it for the core's answered-all check (next_tree C6), the leaf's spec for its unanswered lines; none read, none
+    // written, and the page is as before
+    let asked_of = main.asked.as_array().filter(|a| !a.is_empty()).map(|_| main.asked.clone());
+    if let (Some(p), Some(a)) = (page_in.as_mut(), &asked_of) {
+        p["asked"] = a.clone();
+    }
     let asked = Asked { calls, page_in: page_in.as_ref() };
     let mut fill = fill_of(recipe, &shape, &picks, (&main_rows, &comp_rows), catalogue, (title, dek), scoped, Some(&asked))
         .map_err(|why| ("fill", why))?;
     zero_rows(&mut fill, &comp_rows);
+    if let Some(a) = asked_of {
+        fill["knobs"]["spec"]["asked"] = a;
+    }
     if recipe.layers.iter().any(|l| l == "map" || l == "bubbles") {
         fill["knobs"]["shapes"] = json!(run_dir.join(RING_SHAPES));
     }
@@ -4817,6 +4827,7 @@ mod tests {
                     claims: details["claims"].as_array().cloned().unwrap_or_default(),
                     places_zh: Vec::new(),
                     companions: Vec::new(),
+                    asked: json!([]),
                 };
                 found = Some((
                     prepared,
@@ -5902,6 +5913,7 @@ mod tests {
             claims: Vec::new(),
             places_zh: Vec::new(),
             companions: Vec::new(),
+            asked: json!([]),
         };
         let stopped = |prepared: &[Prepared]| recipe_request(dir.path(), prepared, &[], recipe(RING_RECIPE), &Hubs, ("", "", ""), &Default::default()).unwrap_err();
         assert_eq!(stopped(&[]), ("shape", "not this shape: no table".to_string()));
@@ -5932,6 +5944,7 @@ mod tests {
             claims: picked["claims"].as_array().unwrap().clone(),
             places_zh: Vec::new(),
             companions: Vec::new(),
+            asked: json!([]),
         };
         let claims = picked_claims(&run, &table, &claim_records(&run).unwrap()).unwrap();
         (main, monthly, catalogue, shape, claims)
@@ -7249,6 +7262,7 @@ mod tests {
             claims: vec![json!({"candidate": "c1", "claim_id": "k1"})],
             places_zh: Vec::new(),
             companions: Vec::new(),
+            asked: json!([]),
         };
         let (args, event) = crate::next_flow::composition_fetch(&first, &main, &Hubs).unwrap().unwrap();
         let asked = |d: &str| -> Vec<String> {
@@ -8209,6 +8223,7 @@ mod tests {
             claims: Vec::new(),
             places_zh: Vec::new(),
             companions: Vec::new(),
+            asked: json!([]),
         };
         let (drawn, event) = group_charts(&shape, &table, &Hubs, &[], View::Slice, &[&picked], true).unwrap();
         assert_eq!(event["template"], "sankey");
@@ -8806,6 +8821,7 @@ mod tests {
                 claims: registered,
                 places_zh: Vec::new(),
                 companions: Vec::new(),
+                asked: json!([]),
             },
         }
     }
@@ -9118,6 +9134,7 @@ mod tests {
             claims: Vec::new(),
             places_zh: Vec::new(),
             companions: Vec::new(),
+            asked: json!([]),
         };
         let by_sector = "Share of renewable energy by sector";
         let one = json!([{"dimension": "nrg_bal", "values": ["REN"]}, {"dimension": "unit", "values": ["PC"]}, {"dimension": "geo", "values": ["SE"]}]);
@@ -9177,6 +9194,7 @@ mod tests {
             claims: Vec::new(),
             places_zh: Vec::new(),
             companions: Vec::new(),
+            asked: json!([]),
         };
         let unit = |t: &Prepared| {
             let m = measure_of(t, &Two, &[], Axis::Country);
@@ -9209,6 +9227,7 @@ mod tests {
             claims: Vec::new(),
             places_zh: Vec::new(),
             companions: Vec::new(),
+            asked: json!([]),
         };
         let unit = |codes: &[&str]| table(json!([{"dimension": "unit", "values": codes}]));
         assert!(
@@ -9260,6 +9279,7 @@ mod tests {
             claims: Vec::new(),
             places_zh: Vec::new(),
             companions: Vec::new(),
+            asked: json!([]),
         };
         assert_eq!(narrowed(dir.path(), &table), Ok(None), "no origins folder");
         let members = json!(["IND", "CHN", "USA", "IDN", "PAK", "NGA", "BRA"]);
@@ -9347,6 +9367,7 @@ mod tests {
             claims: Vec::new(),
             places_zh: Vec::new(),
             companions: Vec::new(),
+            asked: json!([]),
         };
         let scope = narrowed(dir.path(), &table).unwrap().map(|(scope, _)| scope);
         let column = recipe("column");
@@ -10355,6 +10376,7 @@ mod tests {
             claims,
             places_zh: Vec::new(),
             companions: Vec::new(),
+            asked: json!([]),
         };
         println!("main {main} file {} claims {} drawn {drawn:?} question {question}", prepared.file, prepared.claims.len());
         let got = leaf_request(&run, &[prepared], &drawn, &catalogue, (&question, ("标题", "导语", "栏目")), &Default::default());
@@ -13260,6 +13282,7 @@ for line in sys.stdin:
                 claims: vec![json!({"candidate": "k1", "claim_id": "c4"})],
                 places_zh: Vec::new(),
                 companions: vec![("impm".into(), "impm.csv".into())],
+                asked: json!([]),
             };
             let cat = Fetched(BTreeMap::from([("imp".to_string(), main), ("impm".to_string(), monthly)]), "");
             let got = leaf_request(run.path(), &[prepared], &[], &cat, ("", ("标题", "导语", "栏目")), &Default::default()).unwrap_err();
@@ -14183,6 +14206,7 @@ for line in sys.stdin:
             claims: vec![json!({"candidate": "k1", "claim_id": "c4"})],
             places_zh: Vec::new(),
             companions: vec![("impm".into(), "impm.csv".into())],
+            asked: json!([]),
         };
         let got = leaf_request(run.path(), &[prepared], &[], &cat, ("", ("标题", "导语", "栏目")), &Default::default()).unwrap_err();
         assert_eq!(got, ("scmp", "fill", said.to_string()), "the recipe loop");

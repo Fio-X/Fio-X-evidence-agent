@@ -5938,8 +5938,40 @@ pub fn content_problems(spec: &J, inp: &J, ext: &[String], reg: &J) -> (Vec<Stri
             errs.push(format!("C3 {path}: the core's words type a number ({}); a number is a fact run", J::str(hit.as_deref().unwrap_or("a digit")).repr()));
         }
     }
+    errs.extend(asked_problems(spec, inp));
     let ok = errs.is_empty();
     (errs, ok.then_some(Content { got, rpage }))
+}
+
+/// C6, the page answers what the question asks: each quantity the catalogue read in the question (inp.asked, the flow's
+/// copy of its record; none when the field is absent) is drawn, a row of the page's drawn record from a table one of its
+/// prefixes starts, or else named by the leaf's line that this half cannot be answered. The leaf prints that line for each
+/// quantity of its own spec with no offered table (inp.leaf_asked, scmp.py unanswered), and the line stands only when the
+/// catalogue's record offered no table for it either: whether a half is unanswerable is the program's call from the
+/// offered tables, never the model's. The leaf's record must be the catalogue's.
+fn asked_problems(spec: &J, inp: &J) -> Vec<String> {
+    let strs = |v: &J| v.arr().iter().map(st).collect::<Vec<_>>();
+    let drawn = spec.g("record").g("drawn").arr().iter().map(|d| st(d.g("table"))).collect::<Vec<_>>();
+    let (asked, leaf) = (inp.g("asked").arr(), inp.g("leaf_asked").arr());
+    let lined: Vec<String> = leaf.iter().filter(|a| a.g("offered").arr().is_empty()).map(|a| st(a.g("id"))).collect();
+    let mut out = Vec::new();
+    for a in asked {
+        let (id, tables, offered) = (st(a.g("id")), strs(a.g("tables")), strs(a.g("offered")));
+        if drawn.iter().any(|t| tables.iter().any(|p| !p.is_empty() && t.starts_with(p.as_str()))) {
+            continue;
+        }
+        let head = format!("C6: the question asks for {id} but the page draws no row from {}", tables.join(", "));
+        match (offered.is_empty(), lined.contains(&id)) {
+            (true, true) => {}
+            (true, false) => out.push(format!("{head} and carries no unanswered line for it")),
+            (false, true) => out.push(format!("{head}; its unanswered line does not stand, as {} was offered for it", offered.join(", "))),
+            (false, false) => out.push(head),
+        }
+    }
+    for a in leaf.iter().filter(|a| !asked.contains(a)) {
+        out.push(format!("C6: the leaf's asked {} is not the catalogue's record", a.repr()));
+    }
+    out
 }
 
 // ================================================================================================================
@@ -7201,6 +7233,73 @@ pub fn node_draw(node: &str, inp: &J, runtime: &std::path::Path) -> Result<NodeD
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An asked record as the catalogue writes it (l5geo Asked): the family id, its page name, its table prefixes and the
+    /// offered tables that hold it.
+    fn asked_rec(id: &str, tables: &[&str], offered: &[&str]) -> J {
+        J::obj_of(vec![("id", J::str(id)), ("zh", J::str(id)), ("tables", J::strs(tables)), ("offered", J::strs(offered))])
+    }
+
+    /// A page tree's drawn record, one row per (layer, table), and the envelope over it holding the asked records (the flow's
+    /// copy, `asked`) and the leaf's spec's (`leaf_asked`); None leaves the field out.
+    fn asked_page(drawn: &[(&str, &str)], asked: Option<Vec<J>>, leaf: Option<Vec<J>>) -> (J, J) {
+        let rows: Vec<J> = drawn
+            .iter()
+            .map(|(layer, table)| J::obj_of(vec![("layer", J::str(layer)), ("src", J::Str(format!("series:{table}/DE:2024:OBS_VALUE"))), ("table", J::str(table)), ("time", J::str("2024"))]))
+            .collect();
+        let spec = J::obj_of(vec![("kind", J::str("Page")), ("record", J::obj_of(vec![("drawn", J::Arr(rows))]))]);
+        let mut inp = J::obj_of(vec![("page_spec", spec.clone())]);
+        for (k, v) in [("asked", asked), ("leaf_asked", leaf)] {
+            if let Some(v) = v {
+                inp.set(k, J::Arr(v));
+            }
+        }
+        (spec, inp)
+    }
+
+    /// C6 on two-quantity questions written here, no sealed text ("各国碳排放和老年人口占比，哪一个涨得更快？", "欧盟各国的庇护申请
+    /// 和人口变化"). A page passes when each asked quantity is drawn (a drawn row from a table its prefixes start) or, when no
+    /// offered table holds it, named by the leaf's unanswered line; one drawn and the other neither drawn nor lined is refused;
+    /// a line for a quantity a table was offered for does not stand; a page with no asked field, or an empty one, passes as
+    /// before; and the leaf's record must be the catalogue's.
+    #[test]
+    fn c6_each_asked_quantity_is_drawn_or_named_unanswered_where_no_table_was_offered() {
+        let co2 = asked_rec("co2", &["EN.GHG.", "env_air_gge"], &["EN.GHG.CO2.PC.CE.AR5@2"]);
+        let pop65 = asked_rec("pop65", &["SP.POP.65UP", "demo_pjanind"], &["SP.POP.65UP.TO.ZS@2"]);
+        let run = |drawn: &[(&str, &str)], asked: Vec<J>| {
+            let (spec, inp) = asked_page(drawn, Some(asked.clone()), Some(asked));
+            asked_problems(&spec, &inp)
+        };
+        // both drawn: pass
+        let both = [("bars", "EN.GHG.CO2.PC.CE.AR5@2"), ("bubbles", "SP.POP.65UP.TO.ZS@2")];
+        assert_eq!(run(&both, vec![co2.clone(), pop65.clone()]), Vec::<String>::new());
+        // one drawn, the other with no offered table and the leaf's line: pass
+        let asylum = asked_rec("asylum", &["migr_asy"], &["migr_asyappctza"]);
+        let population = asked_rec("population", &["SP.POP.TOTL", "demo_pjan", "demo_gind"], &[]);
+        assert_eq!(run(&[("bars", "migr_asyappctza")], vec![asylum.clone(), population.clone()]), Vec::<String>::new());
+        // one drawn, the other offered a table but not drawn, so no line stands for it: refused, naming it and its tables
+        let off = run(&[("bars", "EN.GHG.CO2.PC.CE.AR5@2")], vec![co2.clone(), pop65.clone()]);
+        assert_eq!(off, vec!["C6: the question asks for pop65 but the page draws no row from SP.POP.65UP, demo_pjanind".to_string()]);
+        // one drawn, the other with no offered table but no line on the page (the leaf's spec lacks it): refused
+        let (spec, inp) = asked_page(&[("bars", "migr_asyappctza")], Some(vec![asylum.clone(), population.clone()]), Some(vec![asylum.clone()]));
+        let off = asked_problems(&spec, &inp);
+        assert!(off.len() == 1 && off[0].ends_with("and carries no unanswered line for it"), "{off:?}");
+        // the line refused: the leaf's spec says no table was offered for pop65, the catalogue's record offered one
+        let unoffered = asked_rec("pop65", &["SP.POP.65UP", "demo_pjanind"], &[]);
+        let (spec, inp) = asked_page(&[("bars", "EN.GHG.CO2.PC.CE.AR5@2")], Some(vec![co2.clone(), pop65.clone()]), Some(vec![co2.clone(), unoffered]));
+        let off = asked_problems(&spec, &inp);
+        assert_eq!(off.len(), 2, "{off:?}");
+        assert!(off[0].contains("its unanswered line does not stand, as SP.POP.65UP.TO.ZS@2 was offered for it"), "{off:?}");
+        assert!(off[1].starts_with("C6: the leaf's asked ") && off[1].ends_with("is not the catalogue's record"), "{off:?}");
+        // no asked field, an empty one, or one quantity drawn: as before
+        let (spec, inp) = asked_page(&[("bars", "sdg_07_40")], None, None);
+        assert_eq!(asked_problems(&spec, &inp), Vec::<String>::new());
+        assert_eq!(run(&[("bars", "sdg_07_40")], Vec::new()), Vec::<String>::new());
+        let ren = asked_rec("renewable_share", &["sdg_07_40", "nrg_ind_ren"], &["sdg_07_40"]);
+        assert_eq!(run(&[("bars", "sdg_07_40")], vec![ren]), Vec::<String>::new());
+        // a prefix matches the table id's start only
+        assert_eq!(run(&[("bars", "XEN.GHG.CO2")], vec![co2]).len(), 1);
+    }
     use std::path::{Path, PathBuf};
 
     fn fixtures() -> PathBuf {
