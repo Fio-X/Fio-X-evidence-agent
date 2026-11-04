@@ -610,17 +610,23 @@ fn printed(frag: &str) -> Vec<String> {
 
 /// The comparison set of a value fact, derived from the request's fact definitions alone (never from the page): every fact
 /// whose definition has op value and the same table, time and format, and a filter over the same one dimension (its value
-/// one code, or a list for a merged node). Empty when `key` is no such fact.
+/// one code, or a list for a merged node), less a total row's (total_row: the whole is printed as ever, never compared with
+/// its parts). Empty when `key` is no such fact, or a total row's.
 fn family<'a>(key: &str, spec: &'a Spec) -> Vec<&'a str> {
     let shape = |q: &Value| {
         let filter = q.get("filter")?.as_object().filter(|f| f.len() == 1)?;
         let dim = filter.keys().next()?.clone();
         (q["op"] == "value").then(|| (q["table"].clone(), q["time"].clone(), q["fmt"].clone(), dim))
     };
-    let Some(want) = spec.facts.iter().find(|(k, _)| k == key).and_then(|(_, q)| shape(q)) else {
+    let total = |q: &Value| {
+        let one = q["filter"].as_object().and_then(|f| f.iter().next()).and_then(|(d, c)| Some((d, c.as_str()?)));
+        one.is_some_and(|(d, c)| total_row(q["table"].as_str().unwrap_or_default(), d, c))
+    };
+    let Some(want) = spec.facts.iter().find(|(k, _)| k == key).filter(|(_, q)| !total(q)).and_then(|(_, q)| shape(q)) else {
         return Vec::new();
     };
-    let mut set: Vec<&str> = spec.facts.iter().filter(|(_, q)| shape(q).as_ref() == Some(&want)).map(|(k, _)| k.as_str()).collect();
+    let mut set: Vec<&str> =
+        spec.facts.iter().filter(|(_, q)| shape(q).as_ref() == Some(&want) && !total(q)).map(|(k, _)| k.as_str()).collect();
     set.sort_unstable();
     set.dedup();
     set
@@ -653,13 +659,18 @@ fn share_split<'a>(key: &str, spec: &'a Spec) -> Option<(String, Vec<(&'a str, S
     let dims: Vec<String> = def(&own["a"]).and_then(|q| q["filter"].as_object()).map(|f| f.keys().cloned().collect()).unwrap_or_default();
     let mut found = Vec::new();
     for d in &dims {
-        let Some((_, num, den)) = split(own, d) else { continue };
+        let Some((code, num, den)) = split(own, d) else { continue };
         if num == den {
+            return None;
+        }
+        // a total row's code on `d` (total_row, at the numerator's table) is no member, nor compared
+        let table = def(&own["a"]).and_then(|q| q["table"].as_str()).unwrap_or_default();
+        if total_row(table, d, &code) {
             return None;
         }
         let at = |want: &Value| -> Vec<(&'a str, String, bool)> {
             let held = spec.facts.iter().filter_map(|(k, q)| split(q, d).map(|(c, n, b)| (k.as_str(), c, n, b, q.get("fmt") == own.get("fmt"))));
-            held.filter(|(_, _, _, b, _)| b == want).map(|(k, c, n, _, fmt)| (k, c, fmt && n == num)).collect()
+            held.filter(|(_, c, _, b, _)| b == want && !total_row(table, d, c)).map(|(k, c, n, _, fmt)| (k, c, fmt && n == num)).collect()
         };
         let mut set: Vec<(&str, String)> = at(&den).into_iter().filter(|m| m.2).map(|(k, c, _)| (k, c)).collect();
         let codes: std::collections::BTreeSet<&String> = set.iter().map(|(_, c)| c).collect();
@@ -732,8 +743,10 @@ pub(crate) fn comparison<'a>(key: &str, spec: &'a Spec, rows: &[Row], facts: &[F
         .filter(|r| at.iter().any(|(t, y)| t.as_str() == Some(r.table.as_str()) && y.as_str() == Some(r.time.as_str())))
         .filter_map(|r| r.dims.get(&dim))
         .collect();
+    // a total row's code (total_row, at a table of the set) is no code of the full set: the whole is not one of its parts
+    let total = |c: &str| at.iter().any(|(t, _)| total_row(t.as_str().unwrap_or_default(), &dim, c));
     let mut scoped = false;
-    for c in full.into_iter().filter(|c| !held.contains(*c)) {
+    for c in full.into_iter().filter(|c| !held.contains(*c) && !total(c.as_str())) {
         let got: Vec<At> = template.iter().map(|q| computed_at(q, &dim, c, rows)).collect();
         match got[..] {
             // a definition the check cannot apply to the code's rows alike: no comparison it could stand behind
@@ -1083,7 +1096,7 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     // P4b-5: a share fact's set (one varying dimension, the rest of numerator and denominator alike), same-code copies one
     ("share_family", "", &["ledger::share_family", "ledger::share_split", "ledger::same"]),
     // P4b-5: the set plus every code of the request rows its definition computes alike, or the comparison refused
-    ("full_set_members", "", &["ledger::comparison", "ledger::computed_at", "ledger::comparisons"]),
+    ("full_set_members", "", &["ledger::comparison", "ledger::computed_at", "ledger::comparisons", "ledger::total_row"]),
     // P4b-5: over a narrowed set the words say the scope phrase (words.zh.json scope.within), over the full set they do not
     ("scope_phrase", "", &["ledger::scope_said"]),
     // claim_holds C1-C9: a number-free title's max claim over its derived set
@@ -1234,19 +1247,37 @@ pub const CHECK_HELPERS: &[&str] = &[
     "shape::rank", "shape::rows", "shape::score", "shape::template", "shape::time_index",
 ];
 
-/// The comparison set of a request row, from the request's rows alone: every series row of the same table and time, and
-/// the dims whose code differs among them (the varying dims). None when `src` is no series row.
+/// The comparison set of a request row, from the request's rows alone: every series row of the same table and time but a
+/// total row's (one whose code on a dim that varies among them is a total_row: the whole is not one of its parts), and the
+/// dims whose code differs among them (the varying dims). None when `src` is no series row, or a total row.
 fn row_family<'r>(src: &str, rows: &'r [Row]) -> Option<(Vec<&'r Row>, Vec<String>)> {
     let me = rows.iter().find(|r| r.src == src && r.src.starts_with(SERIES_SRC))?;
-    let same: Vec<&Row> =
+    let vary = |same: &[&Row]| -> Vec<String> {
+        let dims: std::collections::BTreeSet<&String> = same.iter().flat_map(|r| r.dims.keys()).collect();
+        dims.into_iter()
+            .filter(|d| same.iter().map(|r| r.dims.get(*d)).collect::<std::collections::BTreeSet<_>>().len() > 1)
+            .cloned()
+            .collect()
+    };
+    let all: Vec<&Row> =
         rows.iter().filter(|r| r.src.starts_with(SERIES_SRC) && r.table == me.table && r.time == me.time).collect();
-    let dims: std::collections::BTreeSet<&String> = same.iter().flat_map(|r| r.dims.keys()).collect();
-    let vary = dims
-        .into_iter()
-        .filter(|d| same.iter().map(|r| r.dims.get(*d)).collect::<std::collections::BTreeSet<_>>().len() > 1)
-        .cloned()
-        .collect();
+    let varying = vary(&all);
+    let whole = |r: &Row| varying.iter().any(|d| r.dims.get(d).is_some_and(|c| total_row(&r.table, d, c)));
+    if whole(me) {
+        return None;
+    }
+    let same: Vec<&Row> = all.into_iter().filter(|r| !whole(r)).collect();
+    let vary = vary(&same);
     Some((same, vary))
+}
+
+/// A total row (the owner 11-04: the comparison set leaves out total rows by their type, and the total prints as ever): on
+/// `dim` of `table`, the code Eurostat gives a dimension's whole (next_facts TOTAL_CODE, the code a rest or value query
+/// leaves out with the members), or the code the registered parts table types `total` there (next_tree parts_rows, the
+/// table leaves_under_total reads: a flow side's whole, FC_E on nrg_bal). No list of its own.
+fn total_row(table: &str, dim: &str, code: &str) -> bool {
+    code == crate::next_facts::TOTAL_CODE
+        || crate::next_tree::parts_rows().is_ok_and(|rows| rows.iter().any(|r| r[0] == table && r[1] == dim && r[2] == code && r[3] == "total"))
 }
 
 /// A claim's subject (its fact key or row src), its derived set with each member's computed value, its subject codes and
@@ -2324,6 +2355,86 @@ mod tests {
         for k in ["from.O4000XBIO", "to.FC_OTH_HH_E"] {
             assert!(!comparison(k, &q2.0, &q2.1, &q2.2).unwrap().1, "{k}");
         }
+    }
+
+    /// The owner 11-04: a page prints its total and its comparisons still hold, because the comparison set leaves total
+    /// rows out by their type (total_row), never because the total is not printed. A bar page by fuel with a TOTAL row and
+    /// its total fact printed: the set is A, B, C (the family, the full set of the rows and a row claim's set alike); a
+    /// note or claim on the total itself has no set; a code of another type at the total's value is still compared, and
+    /// above A refuses.
+    #[test]
+    fn a_bar_page_prints_its_total_row_and_compares_its_parts_only() {
+        let lead = "";
+        let bars = |extra: (&str, f64)| -> ClaimRequest {
+            let mut rows: Vec<Row> = [("A", 50.0), ("B", 30.0), ("C", 20.0)].iter().map(|(c, v)| row_at("t", &[("nrg_bal", "N1"), ("siec", c)], *v)).collect();
+            rows.push(row_at("t", &[("nrg_bal", "N1"), ("siec", extra.0)], extra.1));
+            let defs: Vec<(String, Value)> =
+                ["A", "B", "C", extra.0].map(|c| (format!("v.{c}"), json!({"op": "value", "table": "t", "time": "2024", "fmt": "n", "filter": {"siec": c}}))).into();
+            let names: [(&str, &str); 4] = [("A", "Alpha"), ("B", "Beta"), ("C", "Gamma"), (extra.0, "Whole")];
+            claim_request("t", rows, defs, json!({"time": {}}), &[("siec", &names)], ("name:unit_short_zh:N", "n"))
+        };
+        // the total printed beside the notes, outside them
+        let with_total = |html: String, l: &BTreeMap<String, String>, code: &str| html.replacen("</svg>", &format!("<text>{}</text></svg>", nv(l, "tspan", &format!("v.{code}"), ".n")), 1);
+        let checks = |html: &str, (spec, rows, facts, ledger): &ClaimRequest| {
+            let mut off = check_relations(html, ledger, spec, facts, rows);
+            off.extend(check_claims(html, ledger, spec, facts, rows));
+            assert!(check_numbers(html, ledger, &[]).is_empty(), "{html}");
+            off
+        };
+        let total = bars(("TOTAL", 100.0));
+        assert_eq!(family("v.A", &total.0), ["v.A", "v.B", "v.C"]);
+        assert!(family("v.TOTAL", &total.0).is_empty());
+        assert_eq!(comparison("v.A", &total.0, &total.1, &total.2).map(|(m, s)| (m.len(), s)), Some((3, false)));
+        assert_eq!(checks(&with_total(value_note(&total.3, lead), &total.3, "TOTAL"), &total), Vec::<String>::new(), "the total printed, A the max of its parts");
+        let a_row = total.1.iter().find(|x| x.dims["siec"] == "A").unwrap().src.clone();
+        assert_eq!(row_family(&a_row, &total.1).map(|(s, v)| (s.len(), v)), Some((3, vec!["siec".to_string()])));
+        assert_eq!(checks(&value_claim(&total.3, &a_row, ""), &total), Vec::<String>::new(), "a row claim over the parts");
+        let t_row = total.1.iter().find(|x| x.dims["siec"] == "TOTAL").unwrap().src.clone();
+        assert!(row_family(&t_row, &total.1).is_none(), "a total row is compared with nothing");
+        // must fail: a note stating the total the max
+        let on_total = value_note(&total.3, lead).replacen("data-a=\"fact:v.A.n\"", "data-a=\"fact:v.TOTAL.n\"", 1).replacen(&nm(&total.3, "tspan", "siec", "A"), &nm(&total.3, "tspan", "siec", "TOTAL"), 1).replacen(&nv(&total.3, "tspan", "v.A", ".n"), &nv(&total.3, "tspan", "v.TOTAL", ".n"), 1);
+        assert!(checks(&on_total, &total).iter().any(|f| f.contains("has no comparison set")), "a total stated the max of its parts");
+        // must fail: a code of no total type at the same value is a part, compared as ever
+        let other = bars(("E", 100.0));
+        assert_eq!(family("v.A", &other.0).len(), 4);
+        assert!(checks(&with_total(value_note(&other.3, lead), &other.3, "E"), &other).iter().any(|f| f.contains("does not hold")), "E is no total row");
+        let a_row = other.1.iter().find(|x| x.dims["siec"] == "A").unwrap().src.clone();
+        assert!(checks(&value_claim(&other.3, &a_row, ""), &other).iter().any(|f| f.contains("(C4)")), "a row claim under E");
+    }
+
+    /// The owner 11-04 on a flow page: each side's whole printed (siec TOTAL; nrg_bal FC_E, typed total in the registered
+    /// parts table) is no member of its side's set, so the headline and the notes hold as before; a whole stated the max has
+    /// no set; a source of no total type above the largest still refuses.
+    #[test]
+    fn a_flow_page_prints_each_sides_total_and_its_finding_still_holds() {
+        let (mut spec, mut facts, mut ledger) = flow_request();
+        let add = |spec: &mut Spec, facts: &mut Vec<Fact>, ledger: &mut BTreeMap<String, String>, (key, dim, code, v, text): (&str, &str, &str, f64, &str)| {
+            spec.facts.push((key.into(), json!({"op": "value", "table": "nrg_bal_c", "time": "2024", "fmt": "ktoe", "filter": {dim: code}})));
+            facts.push(Fact { key: key.into(), op: "value".into(), v, t: None, n: None, who: Vec::new(), fmt: "ktoe".into(), reads: Vec::new() });
+            ledger.insert(format!("fact:{key}.n"), text.into());
+            ledger.insert(format!("name:zh_names:{dim}:{code}"), "Whole".into());
+        };
+        let totals = [("from.TOTAL", "siec", "TOTAL", 177745.063, "177,745.06"), ("to.FC_E", "nrg_bal", "FC_E", 177745.063, "177,745.06")];
+        for t in totals {
+            add(&mut spec, &mut facts, &mut ledger, t);
+        }
+        let printed = |page: String, keys: &[&str]| {
+            let texts: String = keys.iter().map(|k| format!("<text><tspan data-src=\"fact:{k}.n\">{}</tspan></text>", ledger[&format!("fact:{k}.n")])).collect();
+            page.replacen("</g></svg>", &format!("</g>{texts}</svg>"), 1)
+        };
+        assert_eq!(family("from.G3000", &spec).len(), 6);
+        assert_eq!(family("to.FC_TRA_E", &spec).len(), 5);
+        assert!(family("from.TOTAL", &spec).is_empty() && family("to.FC_E", &spec).is_empty());
+        let page = printed(flow_page(), &["from.TOTAL", "to.FC_E"]);
+        assert_eq!(check_relations(&page, &ledger, &spec, &facts, &[]), Vec::<String>::new(), "both wholes printed, the finding holds");
+        // must fail: the whole stated the max
+        let on_whole = page.replacen("data-cmp=\"max\" data-a=\"fact:from.O4000XBIO.n\"", "data-cmp=\"max\" data-a=\"fact:from.TOTAL.n\"", 1);
+        assert!(check_relations(&on_whole, &ledger, &spec, &facts, &[]).iter().any(|f| f.contains("has no comparison set")));
+        // must fail: a source of no total type at the whole's value
+        let (mut spec, mut facts, mut ledger) = flow_request();
+        add(&mut spec, &mut facts, &mut ledger, ("from.X9999", "siec", "X9999", 177745.063, "177,745.06"));
+        let page = printed(flow_page(), &["from.X9999"]);
+        assert!(check_relations(&page, &ledger, &spec, &facts, &[]).iter().any(|f| f.contains("does not hold")), "X9999 is no total row");
     }
 
     /// The comparisons a stored request hands the leaf (run with --ignored; P5_REQUEST a request.json), as one JSON line.

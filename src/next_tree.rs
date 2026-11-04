@@ -1382,7 +1382,7 @@ const PARTS_TEXT: &str = include_str!("../runtime/pi/assets/estat-parts.tsv");
 
 /// One estat-parts.tsv row as the core reads it: (table, dim, code, level, parent, flow side, excluded_from), a row naming
 /// several tables once per table. Columns are found by the header's names; a table without one is no registry.
-fn parts_rows() -> Result<Vec<[String; 7]>, String> {
+pub(crate) fn parts_rows() -> Result<Vec<[String; 7]>, String> {
     let mut lines = PARTS_TEXT.lines();
     let header: Vec<&str> = lines.next().unwrap_or("").split('\t').collect();
     let col = |name: &str| header.iter().position(|h| *h == name).ok_or_else(|| format!("estat-parts.tsv has no column {name}"));

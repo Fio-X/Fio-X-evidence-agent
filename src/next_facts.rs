@@ -91,7 +91,7 @@ pub fn leaf_refs(tables: &Value) -> Result<Vec<String>, String> {
 }
 
 /// The aggregate a rest or value query leaves out with the members (the code Eurostat gives the whole of a dimension).
-const TOTAL_CODE: &str = "TOTAL";
+pub(crate) const TOTAL_CODE: &str = "TOTAL";
 
 /// The dimension a count runs over when its query names none: Eurostat's place dimension.
 const PLACE_DIM: &str = "geo";
