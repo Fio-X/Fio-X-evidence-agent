@@ -6618,7 +6618,7 @@ mod tests {
         let html = std::fs::read_to_string(bundle.dir.join(&published.html_ref)).unwrap();
         assert!(html.contains(r#"data-src="fact:chg.FR""#) && html.contains(r#"data-src="fact:chg.SE""#), "the bars print the changes");
         assert!(html.contains(r#"data-src="fact:vs_mean""#) && html.contains(r#"data-src="fact:vs_lo""#), "the notes print the gaps");
-        assert!(html.contains("升幅最大，比图中平均高") && html.contains("降幅最大，比倒数第二低"), "and say whom they compare with");
+        assert!(html.contains("升幅最大，与图中平均差") && html.contains("降幅最大，与倒数第二差"), "and say whom they compare with");
         // the accent marks the dek's place (SE's rise) alone, the other note's place (FR's fall) the dark grey; DE's and BE's
         // rises take the rise grey; the unit line says what the accent means
         assert!(html.contains(r#"fill="var(--accent)""#) && html.contains(r#"fill="var(--accent2)""#), "the focus colour and a rise colour");
