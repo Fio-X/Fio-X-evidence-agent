@@ -112,6 +112,15 @@ def blocked_reasons(raw):
         out.append({'module_id':str(x['id']),'reason':kind+(': '+detail if detail else '')})
     return out
 
+def shot_area(page,width):
+    """The screenshot's area: the whole page, but no taller than the page's own content. A page shorter than the 900 px
+    window otherwise prints the window's empty bottom (B5 11-04: q4/q5/q6 at 1440 px ended 179-258 px above the
+    shot's foot, read by reviewers as an empty lower page). Checks above run on the same laid-out page; only the picture's
+    height changes."""
+    h=page.evaluate("() => Math.ceil(document.documentElement.getBoundingClientRect().height)")
+    if isinstance(h,(int,float)) and 0<h<900: return {'full_page':True,'clip':{'x':0,'y':0,'width':width,'height':h}}
+    return {'full_page':True}
+
 def main():
     ap=argparse.ArgumentParser();ap.add_argument('--html',required=True);ap.add_argument('--spec',required=True);ap.add_argument('--output',required=True);ap.add_argument('--profile',choices=['cpu','gpu'],default='cpu');args=ap.parse_args()
     html=Path(args.html).resolve();spec=json.loads(Path(args.spec).read_text());out=Path(args.output).resolve();out.mkdir(parents=True,exist_ok=True)
@@ -164,7 +173,7 @@ def main():
             if args.profile=='gpu':
                 webgl2=page.evaluate("() => {const c=document.createElement('canvas');return !!c.getContext('webgl2');}")
                 if not webgl2: errors.append(f'webgl2_unavailable:{width}')
-            shot=out/f'publication-{width}.png';page.screenshot(path=str(shot),full_page=True);shots.append({'width':width,'path':shot.name,'sha256':sha_file(shot)})
+            shot=out/f'publication-{width}.png';page.screenshot(path=str(shot),**shot_area(page,width));shots.append({'width':width,'path':shot.name,'sha256':sha_file(shot)})
             if ready_ms>max_ready: errors.append(f'ready_time:{width}:{ready_ms}>{max_ready}')
             viewport_reports.append({'width':width,'ready_ms':ready_ms,'max_ready_ms':max_ready,'style_profile':dims.get('style_profile'),'scroll_width':dims['sw'],'client_width':dims['cw'],'module_count':len(dims['modules']),'blocked_modules':[x for x in dims['blocked'] if x],**({'blocked_reasons':blocked_why} if blocked_why else {}),'plotly_boxes':dims.get('plotly',[]),'font_status':dims.get('font_status')})
             page.close()
