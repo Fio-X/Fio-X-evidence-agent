@@ -219,4 +219,22 @@ mod tests {
         let additive = |code: &str| UNIT_SHORT_ZH.lines().find(|l| l.starts_with(&format!("{code}\t"))).and_then(|l| l.split('\t').nth(3));
         assert_eq!([additive("PER"), additive("KTOE"), additive("PC"), additive("TCO2E_HAB"), additive("NR")], [Some("yes"), Some("yes"), Some("no"), Some("no"), Some("no")]);
     }
+
+    #[test]
+    fn unit_short_zh_holds_the_catalogue_s_percentage_and_index_families() {
+        // K4 (11-05): sealed s2 and s6 stopped at the fill on PC_ACT and I90, units the catalogue offers whose family the
+        // table already held (PC_* "Percentage of …" → %, I## "Index, YYYY=100" → 指数(YYYY=100)); the rows now cover every
+        // code of the two families in the Eurostat unit list, written from its own label, neither one adding up
+        for (code, short) in [("PC_ACT", "%"), ("PC_IND", "%"), ("PC_ENT", "%"), ("I90", "指数(1990=100)"), ("I95", "指数(1995=100)"), ("I21", "指数(2021=100)"), ("I15", "指数(2015=100)")] {
+            assert_eq!(unit_short_zh(code), Some(short), "{code}");
+        }
+        for row in UNIT_SHORT_ZH.lines().skip(1) {
+            let p: Vec<&str> = row.split('\t').collect();
+            if p[2] == "index_base" {
+                let y = &p[0][1..];
+                assert!(p[1].starts_with("指数(") && p[1].ends_with("=100)") && p[1].contains(&format!("{y}=")[..2]), "{row}");
+            }
+            if p[2] == "index_base" || p[2] == "pct_family" { assert_eq!(p[3], "no", "{row}: a share or an index does not add up"); }
+        }
+    }
 }
