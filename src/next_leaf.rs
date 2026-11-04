@@ -1554,7 +1554,8 @@ fn placeholders(html: &str) -> Vec<String> {
 }
 
 /// A month's year and month printed from two keys: each `period:<t>:<YYYY-MM>.y` mark must be followed by its own `.m`
-/// mark, and each `.m` follow its own `.y`, in page order, so a date reads as one period of the data.
+/// mark, and each `.m` follow its own `.y`, in page order, so a date reads as one period of the data; a half year's the same
+/// with its `.h` (`period:<t>:<YYYY-Sn>.y`, then `.h`).
 fn split_months(html: &str) -> Vec<String> {
     const AT: &str = "data-src=\"";
     let srcs: Vec<&str> = html
@@ -1572,16 +1573,17 @@ fn split_months(html: &str) -> Vec<String> {
             continue;
         };
         let stem = &src[..src.len() - key.len()];
+        let second = if key.contains("-S") { "h" } else { "m" };
         let (want, next) = match key.rsplit_once('.') {
-            Some((m, "y")) => (format!("{stem}{m}.m"), srcs.get(i + 1)),
-            Some((m, "m")) => (
+            Some((m, "y")) => (format!("{stem}{m}.{second}"), srcs.get(i + 1)),
+            Some((m, tail)) if tail == second => (
                 format!("{stem}{m}.y"),
                 i.checked_sub(1).and_then(|j| srcs.get(j)),
             ),
             _ => continue,
         };
         if next.is_none_or(|n| **n != want) {
-            off.push(format!("{src}: printed beside {next:?}, not beside {want} (a month's year and month come from one period)"));
+            off.push(format!("{src}: printed beside {next:?}, not beside {want} (a month's or a half year's two parts come from one period)"));
         }
     }
     off
@@ -1649,6 +1651,19 @@ pub fn bake_leaf_page(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A month's or a half year's two parts print side by side from one period: a half year's year mark followed by its
+    /// own half (period:<t>:2026-S1.y, then .h), and neither beside another period's part.
+    #[test]
+    fn a_half_year_s_year_and_half_come_from_one_period() {
+        let span = |src: &str, text: &str| format!(r#"<span data-src="period:t:{src}">{text}</span>"#);
+        let page = |a: &str, b: &str| format!("{} 年{}半年", span(a, "2026"), span(b, "上"));
+        assert_eq!(split_months(&page("2026-S1.y", "2026-S1.h")), Vec::<String>::new());
+        assert_eq!(split_months(&format!("{} 年 {} 月", span("2026-08.y", "2026"), span("2026-08.m", "8"))), Vec::<String>::new());
+        assert_eq!(split_months(&page("2026-S1.y", "2025-S2.h")).len(), 2);
+        assert_eq!(split_months(&span("2026-S1.y", "2026")).len(), 1);
+        assert_eq!(split_months(&span("2026-S1.h", "上")).len(), 1);
+    }
 
     /// A strip is taken as line art in the page's colours only: groups and strokes pass; text, another element, a colour of
     /// its own, a fill, a link, an odd transform, an unclosed group each refuse, naming what.

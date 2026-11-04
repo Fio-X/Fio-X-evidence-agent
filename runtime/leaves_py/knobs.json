@@ -38,7 +38,6 @@
     }
    ],
    "eats": [
-    "annual",
     "one_place",
     "one_unit",
     "last_year"
@@ -210,7 +209,6 @@
     }
    ],
    "eats": [
-    "annual",
     "one_place",
     "one_unit",
     "last_year"
@@ -380,7 +378,6 @@
     }
    ],
    "eats": [
-    "annual",
     "one_place",
     "one_unit",
     "last_year"
@@ -1782,7 +1779,7 @@
     "leader_notes"
    ],
    "eats": [
-    "annual",
+    "one_freq",
     "one_place",
     "one_unit",
     "last_year"

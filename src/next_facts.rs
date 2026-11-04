@@ -143,7 +143,8 @@ pub enum Part {
     Text,
     Bare,
     Period,
-    /// The period's year, month or half (`.t.y`, `.t.m`, `.t.h`) as a whole number, for a leaf that writes the words.
+    /// The period's year or month (`.t.y`, `.t.m`) as a whole number, or its half (`.t.h`) as its word (HALF_WORDS), for a
+    /// leaf that writes the words around them.
     Year,
     Month,
     Half,
@@ -824,6 +825,11 @@ fn fixed(x: f64, dec: usize, sep: bool) -> String {
     }
 }
 
+/// The words of a half year, the first and the second, as a page prints them inside "{y} 年{h}半年" (the leaves' word table
+/// runtime/leaves_py/words.zh.json, half.1 and half.2, holds the same): a half is printed as a ledger entry like a month's
+/// number, so the page check reads which half it names.
+pub const HALF_WORDS: [&str; 2] = ["上", "下"];
+
 /// A period as the page names it: `2022-S1` the first half of 2022, `2022-03` its third month, `2022` the year.
 pub fn tlabel(t: &str) -> Result<String, String> {
     if let Some((y, h)) = t.split_once("-S") {
@@ -881,11 +887,12 @@ pub fn num(f: &Fact, fmts: &Value, part: Part) -> Result<Num, String> {
             };
             let v: u32 = piece
                 .and_then(|p| p.parse().ok())
+                .filter(|v| part != Part::Half || (1..=2).contains(v))
                 .ok_or_else(|| format!("{}: the period {t:?} has no such part", f.key))?;
             Num {
                 src: src(&format!(".t.{tail}")),
                 value: f64::from(v),
-                text: v.to_string(),
+                text: if part == Part::Half { HALF_WORDS[v as usize - 1].to_string() } else { v.to_string() },
             }
         }
     })
@@ -1016,6 +1023,32 @@ pub fn months(table: &str, rows: &[Row]) -> Vec<Num> {
     out
 }
 
+/// The half years a table's rows cover, two ledger entries each from one key (`period:<table>:<YYYY-Sn>.y` and `.h`, the
+/// year as a whole number and the half as its word, HALF_WORDS), in the order they first appear. A period that is no half
+/// year (YYYY-S1, YYYY-S2) is left out.
+pub fn halves(table: &str, rows: &[Row]) -> Vec<Num> {
+    let mut out: Vec<Num> = Vec::new();
+    for r in rows.iter().filter(|r| r.table == table) {
+        let t = r.time.as_str();
+        let (Some(y), Some(h)) = (
+            t.get(..4).filter(|y| y.bytes().all(|b| b.is_ascii_digit())).and_then(|y| y.parse::<u32>().ok()),
+            match t.get(4..) {
+                Some("-S1") => Some(1usize),
+                Some("-S2") => Some(2),
+                _ => None,
+            },
+        ) else {
+            continue;
+        };
+        if out.iter().any(|n| n.src == format!("{PERIOD_SRC}{table}:{t}.y")) {
+            continue;
+        }
+        out.push(Num { src: format!("{PERIOD_SRC}{table}:{t}.y"), value: f64::from(y), text: y.to_string() });
+        out.push(Num { src: format!("{PERIOD_SRC}{table}:{t}.h"), value: h as f64, text: HALF_WORDS[h - 1].to_string() });
+    }
+    out
+}
+
 /// A sourced record's date cell as three ledger entries, `<row src>:<column>.y`, `.m` and `.d`: the year, the month and
 /// the day as whole numbers (no leading zero), for a page that writes the date in words around them. Err when the row
 /// has no such column or the cell is no date (YYYY-MM-DD).
@@ -1047,7 +1080,7 @@ pub fn date_parts(row: &Row, column: &str) -> Result<[Num; 3], String> {
 
 /// Every entry a leaf may print, src to text: per fact its text, its bare number, its display part when it has one
 /// (display) and its period's parts (`.t.y`, then
-/// `.t.m` or `.t.h`, whichever the period has); per series table its years and months; per record row its date's parts
+/// `.t.m` or `.t.h`, whichever the period has); per series table its years, months and half years; per record row its date's parts
 /// when the date cell is a date, and each `RECORD_TEXT` cell whole; and the ticks of an axis running to each fact whose
 /// query says `"axis": true` (ticks), the only facts a leaf draws an axis to. Err names each fact whose text, bare number
 /// or axis cannot be made, and each record row whose table is not a `table_id` (one per line).
@@ -1113,7 +1146,7 @@ pub fn leaf_ledger(
     }
     off.extend(tables.iter().filter(|t| !table_id(t)).map(|t| format!("series table {t}: its name must be a table id")));
     for t in tables.into_iter().filter(|t| table_id(t)) {
-        for n in periods(t, rows).into_iter().chain(months(t, rows)) {
+        for n in periods(t, rows).into_iter().chain(months(t, rows)).chain(halves(t, rows)) {
             out.insert(n.src, n.text);
         }
     }
@@ -1275,10 +1308,11 @@ fn read_entry(src: &str, rows: &[Row]) -> Result<Num, String> {
         let (table, at) = rest
             .rsplit_once(':')
             .ok_or_else(|| "names no table and year".to_string())?;
-        let what = if at.contains('-') { "month" } else { "year" };
+        let what = if at.contains("-S") { "half year" } else if at.contains('-') { "month" } else { "year" };
         return periods(table, rows)
             .into_iter()
             .chain(months(table, rows))
+            .chain(halves(table, rows))
             .find(|n| n.src == src)
             .ok_or_else(|| format!("no row of {table} is in that {what}"));
     }
@@ -1971,7 +2005,7 @@ mod tests {
             t: Some("2022-S2".into()),
             ..facts[0].clone()
         };
-        assert_eq!(num(&half, &spec.fmts, Part::Half).unwrap().text, "2");
+        assert_eq!(num(&half, &spec.fmts, Part::Half).unwrap().text, "下");
         assert!(num(&half, &spec.fmts, Part::Month).is_err());
     }
 
@@ -2208,6 +2242,35 @@ mod tests {
             compute(&bad, &rows).unwrap_err(),
             "lab: a family (each) takes op value"
         );
+    }
+
+    /// A half-yearly table's periods (nrg_pc_204's 2025-S2, 2026-S1) are two ledger entries each, the year and the half's
+    /// word (HALF_WORDS, the leaves' half.1 and half.2), beside the year entry every period gives; each is read back from
+    /// the rows, and a half the rows do not give is refused by the recheck.
+    #[test]
+    fn half_years_are_a_year_and_a_half_word_read_back_from_the_rows() {
+        let rows = [row("nrg_pc_204", "DE", "2025-S2", 0.38), row("nrg_pc_204", "DE", "2026-S1", 0.39), row("nrg_pc_204", "SE", "2026-S1", 0.21)];
+        let got: Vec<(String, String)> = halves("nrg_pc_204", &rows).into_iter().map(|n| (n.src, n.text)).collect();
+        let want: Vec<(String, String)> = [("2025-S2.y", "2025"), ("2025-S2.h", "下"), ("2026-S1.y", "2026"), ("2026-S1.h", "上")]
+            .iter()
+            .map(|(k, t)| (format!("period:nrg_pc_204:{k}"), t.to_string()))
+            .collect();
+        assert_eq!(got, want);
+        assert!(months("nrg_pc_204", &rows).is_empty() && halves("une_rt_m", &[row("une_rt_m", "DE", "2026-08", 1.0)]).is_empty());
+        let words: Value = serde_json::from_str(include_str!("../runtime/leaves_py/words.zh.json")).unwrap();
+        assert_eq!((words["half.1"].as_str(), words["half.2"].as_str()), (Some(HALF_WORDS[0]), Some(HALF_WORDS[1])), "the leaves' half words");
+        let s = spec(json!({}), None);
+        let facts: Vec<Fact> = Vec::new();
+        let ledger = leaf_ledger(&s, &rows, &facts).unwrap();
+        for (k, t) in [("period:nrg_pc_204:2026-S1.y", "2026"), ("period:nrg_pc_204:2026-S1.h", "上"), ("period:nrg_pc_204:2026", "2026")] {
+            assert_eq!(ledger.get(k).map(String::as_str), Some(t), "{k}");
+        }
+        assert_eq!(recheck(&ledger, &s, &rows, &facts), Vec::<String>::new());
+        let mut wrong = ledger.clone();
+        wrong.insert("period:nrg_pc_204:2026-S1.h".into(), "下".into());
+        wrong.insert("period:nrg_pc_204:2026-S2.y".into(), "2026".into());
+        let off = recheck(&wrong, &s, &rows, &facts);
+        assert!(off.len() == 2 && off[0].contains("the rows give \"上\"") && off[1].contains("no row of nrg_pc_204 is in that half year"), "{off:?}");
     }
 
     #[test]

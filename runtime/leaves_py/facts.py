@@ -159,12 +159,19 @@ def unit(spec, f):
     return spec["fmts"].get(f["fmt"], {}).get("suffix", "")
 
 def period(spec, k):
-    """A fact's period from the ledger's parts (fact:<k>.t.y, .t.m, .t.h): the digits marked, the words written here."""
-    y = entry(f"fact:{k}.t.y", "span", None)
-    if f"fact:{k}.t.m" in LEDGER: words = word("date.ym", y=y, m=entry(f"fact:{k}.t.m", "span", None))
-    elif f"fact:{k}.t.h" in LEDGER: words = word("date.half", y=y, h=word("half.1" if text(f"fact:{k}.t.h") == "1" else "half.2"))
-    else: words = word("date.y", y=y)
-    return spec["fmts"]["time"].get("prefix", "") + words
+    """A fact's period from the ledger's parts (fact:<k>.t.y, .t.m, .t.h): the digits and the half's word marked, the rest
+    written here."""
+    return spec["fmts"]["time"].get("prefix", "") + period_words(f"fact:{k}.t")
+
+def period_words(stem):
+    """A period printed from its ledger parts <stem>.y with <stem>.m (a month) or <stem>.h (a half year, its word as
+    entered: half.1 or half.2), else <stem>.y alone (a year)."""
+    y = entry(f"{stem}.y", "span", None)
+    if f"{stem}.m" in LEDGER: return word("date.ym", y=y, m=entry(f"{stem}.m", "span", None))
+    if f"{stem}.h" in LEDGER:
+        if text(f"{stem}.h") not in (word("half.1"), word("half.2")): raise Refused(f"{stem}.h: {text(stem + '.h')!r} is no half's word")
+        return word("date.half", y=y, h=entry(f"{stem}.h", "span", None))
+    return word("date.y", y=y)
 
 def fill(spec, F, text):
     """{key} -> formatted number in <b>; {key.t} -> its time label; {key.n} -> the number without its unit. With a ledger

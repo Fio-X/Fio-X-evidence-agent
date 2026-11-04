@@ -388,11 +388,23 @@ def key_lines(f):
     h = f.h; d = (h.get("leaves") or {}).get("bubbles") or {}
     sz, width = K.knob(h, KEY, "size"), K.knob(h, KEY, "width")
     if K.WD.WORDS["date.y"].count("{y}") != 1 or not K.WD.WORDS["date.y"].startswith("{y}"): raise Refused("bubble_key: the word date.y does not start with its year")
-    year = (True, [{"src": f"period:{f.table}:{f.year}"}, *[{"w": w} for w in K.WD.WORDS["date.y"].split("{y}") if w]])
+    year = (True, [{"src": f"period:{f.table}:{f.year}"}, *[{"w": w} for w in K.WD.WORDS["date.y"].split("{y}") if w]]) if "-" not in f.year else (True, period_segs(f.table, f.year))
     most = f.mv.W - 2 * (K.knob(h, NODE, "inset") + KEY_GAP + KEY_PAD)
     lines = sourced(lay_units(word_units("bubble_key.area", m=(False, d["measure"]), y=year), sz, width)) if d.get("measure") else None
     if lines and len(lines) <= KEY_LINES and all(tw("".join(t for t, _ in ln).rstrip(), sz) <= most for ln in lines): return lines
     return sourced(lay_units(word_units("bubble_key.area_any", y=year), sz, width))
+
+
+def period_segs(table, t):
+    """A half year's or a month's words as segments over its two ledger parts (period:<table>:<t>.y with .h or .m), the word
+    table's date.half or date.ym around them, as the column's year line prints it (facts.period_words)."""
+    key, second = ("date.half", "h") if "-S" in t else ("date.ym", "m")
+    out = []
+    for part in re.split(r"(\{\w+\})", K.WD.WORDS[key]):
+        if part in ("{y}", "{" + second + "}"): out.append({"src": f"period:{table}:{t}.{part[1:-1]}"})
+        elif re.fullmatch(r"\{\w+\}", part): raise Refused(f"bubble_key: the word {key} holds {part}")
+        elif part: out.append({"w": part})
+    return out
 
 
 def key_room(f):

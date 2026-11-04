@@ -296,7 +296,8 @@ def column_shell(f, bars, unit, pic="", main="bars"):
     viewBox starting at x0 so each text stands where the panel placed it. The picture's svg is classed by the page's main layer
     (`main`, the bars or the leaf in their place); a main leaf heads itself with its unit, so with no hero unit the line is
     its year only. After the year, when the page has a focus, the line that says what the accent means (accent_key)."""
-    year = word("date.y", y=FX.entry(f"period:{f.table}:{f.year}", "span", None))
+    # the period the bars are at: a year (period:<t>:<y>), or a half year's or a month's two parts (period:<t>:<t>.y, .h or .m)
+    year = word("date.y", y=FX.entry(f"period:{f.table}:{f.year}", "span", None)) if "-" not in f.year else FX.period_words(f"period:{f.table}:{f.year}")
     if f.change: year = word("column.change_years", a=FX.entry(f"period:{f.table}:{prod.need(f.d, 't0')}", "span", None), b=year)
     sc = f.h.get("scope")
     if sc and sc.get("code") in prod.NAMES: unit = word("column.scope", place=prod.named(sc["code"]), n=FX.entry(f"fact:{sc['count']}.n", "span", None)) + unit

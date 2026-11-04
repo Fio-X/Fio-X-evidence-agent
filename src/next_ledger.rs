@@ -1120,7 +1120,7 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     // every fact recomputed from the request rows by its declared query (ops value, share, change, ...)
     ("fact_recompute", "", &["facts::compute", "facts::fact", "facts::one", "facts::family", "facts::member_fmt", "facts::printed_value", "facts::minus_family", "facts::select", "facts::word", "facts::members", "facts::finite", "facts::sum"]),
     // every ledger entry recomputed and reprinted (its text, bare .n and display .r parts, ticks, periods, dates, names)
-    ("ledger_recheck", "", &["facts::recheck", "facts::read_entry", "facts::reads_back", "facts::leaf_ledger", "facts::who", "facts::text", "facts::scaled", "facts::fixed", "facts::tlabel", "facts::num", "facts::display", "facts::ticks", "facts::periods", "facts::months", "facts::date_parts", "facts::wording_segs"]),
+    ("ledger_recheck", "", &["facts::recheck", "facts::read_entry", "facts::reads_back", "facts::leaf_ledger", "facts::who", "facts::text", "facts::scaled", "facts::fixed", "facts::tlabel", "facts::num", "facts::display", "facts::ticks", "facts::periods", "facts::months", "facts::halves", "facts::date_parts", "facts::wording_segs"]),
     // relation_holds: data-cmp max, next, gt over the set the request's definitions give, each named by its code's row
     ("relations", "next_ledger::RELATIONS", &["ledger::check_relations", "ledger::relation_words", "ledger::family", "ledger::fact_key", "ledger::part_of", "ledger::member_code"]),
     // P4b-5: a share fact's set (one varying dimension, the rest of numerator and denominator alike), same-code copies one

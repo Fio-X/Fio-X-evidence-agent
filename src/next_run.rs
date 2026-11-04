@@ -916,8 +916,14 @@ struct Shape {
     /// The monthly companion (same origin dimension, hub and unit) and its months.
     companion: String,
     months: Vec<String>,
-    /// The last year any of the place's countries has a row at.
+    /// The last year any of the place's countries has a row at; on a half-yearly or monthly main (`freq`) the period the most
+    /// of them hold a value at (last_year), e.g. 2026-S1 or 2026-09.
     year: String,
+    /// The main's one frequency (one_freq): A, S or M; empty when the recipe asks for annual instead.
+    freq: String,
+    /// On a half-yearly or monthly main, each later period last_year passed over, with the countries the picked period holds
+    /// and it misses, in period order.
+    passed: Vec<(String, Vec<String>)>,
     /// The page's earlier end (two_ends; the later is `year`), and each year before it within the span that was passed over,
     /// with the countries that have a value at `year` and none at it, in year order.
     t0: String,
@@ -949,6 +955,7 @@ type Condition = fn(&mut Shape, &[(&str, &[Value])], &dyn Catalogue) -> Result<(
 /// The shape conditions a recipe names (knobs.json recipes[].eats), each once here, whatever recipe names it.
 const SHAPE_CONDITIONS: &[(&str, Condition)] = &[
     ("annual", annual),
+    ("one_freq", one_freq),
     ("years_2", years_2),
     ("hub_origin", hub_origin),
     ("one_place", one_place),
@@ -1008,6 +1015,32 @@ fn annual(s: &mut Shape, _: &[(&str, &[Value])], _: &dyn Catalogue) -> Result<()
         return Err(format!("main {} is not annual", s.main));
     }
     Ok(())
+}
+
+/// The frequency a period is written in: A (2025), S (2025-S1, a half year) or M (2025-01); None for any other (a quarter,
+/// a week, a day).
+fn period_freq(t: &str) -> Option<&'static str> {
+    let rest = t.get(4..).filter(|_| t.get(..4).is_some_and(is_year))?;
+    match rest.as_bytes() {
+        [] => Some("A"),
+        [b'-', b'S', b'1' | b'2'] => Some("S"),
+        [b'-', a, b] if a.is_ascii_digit() && b.is_ascii_digit() && (1..=12).contains(&((a - b'0') * 10 + (b - b'0'))) => Some("M"),
+        _ => None,
+    }
+}
+
+/// Every period of the main is of one frequency (period_freq): all years, all half years or all months, kept as the shape's
+/// freq. A quarterly, weekly or daily main, or one that mixes, is not this shape.
+fn one_freq(s: &mut Shape, _: &[(&str, &[Value])], _: &dyn Catalogue) -> Result<(), String> {
+    let freqs: BTreeSet<Option<&str>> = s.years.iter().map(|t| period_freq(t)).collect();
+    match freqs.into_iter().collect::<Vec<_>>().as_slice() {
+        [Some(f)] => {
+            s.freq = f.to_string();
+            Ok(())
+        }
+        [] => Err(format!("main {} has no period", s.main)),
+        _ => Err(format!("main {} is not annual, half-yearly or monthly throughout", s.main)),
+    }
 }
 
 /// The main spans two years or more.
@@ -1144,9 +1177,30 @@ fn row_value(r: &Value) -> Option<f64> {
     r["value"].as_str().and_then(|v| v.parse::<f64>().ok()).filter(|v| v.is_finite())
 }
 
-/// The last year any of the place's countries has a value at.
+/// The last year any of the place's countries has a value at. On a half-yearly or monthly main (one_freq) the period the most
+/// of them have a value at, a tie to the later: countries report a month or a half year at different times, and the latest
+/// period alone may hold a few of them. Each later period passed over is kept with the countries it misses (Shape::passed),
+/// for the run's record; a missing value is never filled in.
 fn last_year(s: &mut Shape, tables: &[(&str, &[Value])], _: &dyn Catalogue) -> Result<(), String> {
     let rows = tables[0].1;
+    if matches!(s.freq.as_str(), "S" | "M") {
+        let mut held: BTreeMap<&str, BTreeSet<String>> = BTreeMap::new();
+        for r in rows.iter().filter(|r| row_value(r).is_some()) {
+            if let (Some(t), Some(c)) = (r["time"].as_str(), r["dims"][&s.place].as_str().filter(|c| s.countries.iter().any(|k| k == c))) {
+                held.entry(t).or_default().insert(c.to_string());
+            }
+        }
+        let (period, at) = held
+            .iter()
+            .max_by(|a, b| a.1.len().cmp(&b.1.len()).then_with(|| a.0.cmp(b.0)))
+            .ok_or_else(|| format!("main {} has no country value", s.main))?;
+        s.passed = held
+            .range::<str, _>((std::ops::Bound::Excluded(*period), std::ops::Bound::Unbounded))
+            .map(|(t, there)| (t.to_string(), at.difference(there).cloned().collect()))
+            .collect();
+        s.year = period.to_string();
+        return Ok(());
+    }
     let year = rows
         .iter()
         .filter(|r| r["dims"][&s.place].as_str().is_some_and(|c| s.countries.iter().any(|k| k == c)) && row_value(r).is_some())
@@ -2164,6 +2218,11 @@ fn fill_of(
         let later: Vec<Value> = shape.later.iter().map(|(year, missing)| json!({"year": year, "missing": missing})).collect();
         let from = shape.years.first().cloned().unwrap_or_default();
         fill["ends"] = json!({"t0": shape.t0, "t1": shape.year, "rule": "two_ends", "fetched_from": from, "later": later});
+    } else if matches!(shape.freq.as_str(), "S" | "M") {
+        // a half-yearly or monthly page's one period (last_year), and each later period passed over with the countries it misses
+        let later: Vec<Value> = shape.passed.iter().map(|(t, missing)| json!({"period": t, "missing": missing})).collect();
+        let from = shape.years.first().cloned().unwrap_or_default();
+        fill["ends"] = json!({"t1": shape.year, "rule": "latest_period", "fetched_from": from, "later": later});
     }
     Ok(fill)
 }
@@ -5967,6 +6026,200 @@ mod tests {
         println!("leaf fill layers {} facts {} ledger {} refs {:?} peak {:?} last {:?} tot {:?} {:?} ms {}", page.layers.len(),
             page.facts.len(), page.ledger.len(), page.refs, at(&format!("{f}_m_peak")), at(&format!("{f}_last")),
             at(&format!("tot{}", &picks.t0[2..])), at(&format!("tot{}", &picks.t1[2..])), started.elapsed().as_millis());
+    }
+
+    /// A half-yearly main shaped like nrg_pc_204 (freq S; nrg_cons, tax and currency one code each; the geo the places) and a
+    /// monthly one shaped like une_rt_m (freq M; s_adj, age and sex one code each), at `times`; each place's value is given
+    /// per time, and a place with no value at a time has no row there. The unit is PC in both: the unit of each table is
+    /// another class's (its unit row), not this shape's.
+    fn period_rows(table: &str, monthly: bool, values: &[(&str, &[(&str, &str)])]) -> Vec<Value> {
+        let fixed: &[(&str, &str)] = if monthly {
+            &[("freq", "M"), ("s_adj", "SA"), ("age", "TOTAL"), ("sex", "T"), ("unit", "PC")]
+        } else {
+            &[("freq", "S"), ("nrg_cons", "KWH2500-4999"), ("tax", "I_TAX"), ("currency", "EUR"), ("unit", "PC")]
+        };
+        let mut out = Vec::new();
+        for (geo, at) in values {
+            for (t, v) in at.iter() {
+                let mut dims: Map<String, Value> = fixed.iter().map(|(d, c)| (d.to_string(), json!(c))).collect();
+                dims.insert("geo".into(), json!(geo));
+                out.push(json!({"src": format!("series:{table}/{geo}:{t}:OBS_VALUE"), "table": table, "dims": dims, "time": t, "value": v}));
+            }
+        }
+        out
+    }
+
+    /// The column recipe takes one frequency throughout (one_freq): years, half years (2026-S1) or months (2026-09), kept as
+    /// the shape's freq; a quarterly main or one that mixes is not this shape, named. Every other recipe still asks for
+    /// annual, so a half-yearly main reaches column alone.
+    #[test]
+    fn the_column_shape_takes_one_frequency_of_years_half_years_or_months() {
+        let at = |ts: &[&'static str]| -> Vec<(&'static str, &'static str)> { ts.iter().map(|t| (*t, "1")).collect() };
+        let column = recipe("column");
+        for (ts, freq) in [(&["2024", "2025"][..], "A"), (&["2025-S2", "2026-S1"][..], "S"), (&["2026-08", "2026-09"][..], "M")] {
+            let (se, de) = (at(ts), at(ts));
+            let main = period_rows("t", freq == "M", &[("SE", &se), ("DE", &de)]);
+            let shape = shape_of(&column.eats, &[("t", &main[..])], &Hubs).unwrap();
+            assert_eq!((shape.freq.as_str(), shape.year.as_str()), (freq, *ts.last().unwrap()), "{ts:?}");
+        }
+        for (ts, why) in [(&["2026-Q1"][..], "is not annual, half-yearly or monthly throughout"), (&["2025", "2026-S1"][..], "throughout"),
+            (&["2026-S3"][..], "throughout"), (&["2026-13"][..], "throughout")] {
+            let se = at(ts);
+            let main = period_rows("t", false, &[("SE", &se), ("DE", &se)]);
+            let e = shape_of(&column.eats, &[("t", &main[..])], &Hubs).unwrap_err();
+            assert!(e.starts_with("not this shape: main t ") && e.contains(why), "{ts:?}: {e}");
+        }
+        let half = at(&["2026-S1"]);
+        let main = period_rows("nrg_pc_204", false, &[("SE", &half), ("DE", &half)]);
+        for r in Hubs.recipes().iter().filter(|r| r.name != "column" && r.name != "flow") {
+            assert_eq!(shape_of(&r.eats, &[("nrg_pc_204", &main[..])], &Hubs).unwrap_err(), "not this shape: main nrg_pc_204 is not annual", "{}", r.name);
+        }
+    }
+
+    /// On a monthly main (une_rt_m's shape) the page's period is the month the most places have a value at, a tie to the
+    /// later, not the latest month a few places reached: each later month passed over is kept with the places it misses,
+    /// and the fill puts it on the run's record (ends, rule latest_period). An annual main keeps its last year and no record.
+    #[test]
+    fn a_monthly_column_is_at_the_month_most_places_hold_and_the_later_months_passed_over_are_recorded() {
+        let column = recipe("column");
+        let full: &[(&str, &str)] = &[("2026-07", "5.1"), ("2026-08", "5.0"), ("2026-09", "4.9")];
+        let lag: &[(&str, &str)] = &[("2026-07", "7.2"), ("2026-08", "7.4")];
+        let main = period_rows("une_rt_m", true, &[("SE", full), ("DE", lag), ("FR", lag), ("IT", lag)]);
+        let shape = shape_of(&column.eats, &[("une_rt_m", &main[..])], &Hubs).unwrap();
+        assert_eq!(shape.year, "2026-08");
+        assert_eq!(shape.passed, vec![("2026-09".to_string(), vec!["DE".to_string(), "FR".into(), "IT".into()])]);
+        let picks = picks_of(&column.picks, &shape, &main, &[]).unwrap();
+        assert_eq!(picks.ranked, ["DE", "FR", "IT", "SE"].map(String::from).to_vec(), "ranked at 2026-08, a tie to code order");
+        let fill = test_fill(column, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false).unwrap();
+        assert_eq!(fill["ends"], json!({"t1": "2026-08", "rule": "latest_period", "fetched_from": "2026-07",
+            "later": [{"period": "2026-09", "missing": ["DE", "FR", "IT"]}]}));
+        // a tie goes to the later month
+        let even = period_rows("une_rt_m", true, &[("SE", full), ("DE", &full[..2])]);
+        assert_eq!(shape_of(&column.eats, &[("une_rt_m", &even[..])], &Hubs).unwrap().year, "2026-08");
+        let one: &[(&str, &str)] = &[("2026-08", "1")];
+        let tie = period_rows("une_rt_m", true, &[("SE", &[("2026-07", "1")]), ("DE", one)]);
+        assert_eq!(shape_of(&column.eats, &[("une_rt_m", &tie[..])], &Hubs).unwrap().year, "2026-08");
+        // an annual main: its last year, whatever the count, and no record
+        let mut annual = ring_rows("sdg", &[("freq", "A"), ("unit", "PC")], ("geo", &["SE", "BE", "DE", "FR"]), &["2024"]);
+        annual.extend(ring_rows("sdg", &[("freq", "A"), ("unit", "PC")], ("geo", &["SE"]), &["2025"]));
+        let shape = shape_of(&column.eats, &[("sdg", &annual[..])], &Hubs).unwrap();
+        assert_eq!((shape.year.as_str(), shape.passed.len()), ("2025", 0));
+        let picks = picks_of(&column.picks, &shape, &annual, &[]).unwrap();
+        assert!(test_fill(column, &shape, &picks, (&annual, &[]), &Hubs, ("标题", "导语"), false).unwrap().get("ends").is_none());
+    }
+
+    /// A column page of one period drawn by the real leaf child (runtime/leaves_py/run.py), baked and checked by the twins, as
+    /// published; the page's html.
+    fn published_column(table: &str, main: &[Value]) -> String {
+        let column = recipe("column");
+        let shape = shape_of(&column.eats, &[(table, main)], &Hubs).unwrap();
+        let picks = picks_of(&column.picks, &shape, main, &[]).unwrap();
+        let mut fill = test_fill(column, &shape, &picks, (main, &[]), &Hubs, ("标题", "导语"), false).unwrap();
+        let dek = dek_finding(&fill).unwrap().0;
+        page_words(&mut fill, ("标题", &dek, "栏目"));
+        fill["knobs"]["shapes"] = json!("runtime/pi/assets/naturalearth-admin0-50m.geojson");
+        fill["knobs"]["spec"]["kicker"] = json!("栏目");
+        fill["knobs"]["spec"]["source"] = json!("来源");
+        let order: Vec<String> = fill["order"].as_array().unwrap().iter().filter_map(|l| l.as_str().map(str::to_string)).collect();
+        let calls = std::sync::Mutex::new(Vec::new());
+        let request = crate::next_visual::Request::LeafFill {
+            recipe: "column",
+            rows: fill["rows"].as_array().unwrap(),
+            knobs: &fill["knobs"],
+            order: &order,
+            runtime: Path::new("runtime"),
+        };
+        let page = match crate::next_flow::visual_call(&calls, "leaf_fill", request) {
+            Ok(crate::next_visual::Reply::Filled(page)) => page,
+            Ok(_) => panic!("not a filled page"),
+            Err(e) => panic!("leaf fill: {e}"),
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = {
+            let _command = crate::group_guard::command_for_test("investigate");
+            crate::artifact::InvestigationBundle::create(dir.path(), "leaf page").unwrap()
+        };
+        let _command = crate::group_guard::command_for_test("investigate");
+        let _doors = crate::group_guard::doors_for_test(true);
+        let bake = crate::next_leaf::Runner::python(Path::new("fixtures/next_leaf/bake_twin.py"));
+        let mut qa = crate::next_leaf::Runner::python(Path::new("fixtures/next_visual/qa_twin.py"));
+        qa.args.push("pass".into());
+        let leaf = crate::next_visual::LeafPage {
+            draw: &page.draw,
+            bake: &bake,
+            w: page.w,
+            h: page.h,
+            frame: page.frame.clone(),
+            layers: &page.layers,
+            ledger: &page.ledger,
+            refs: &page.refs,
+            facts: (&page.spec, &page.rows, &page.facts),
+            strip: None,
+        };
+        let plan = json!({"kind": "leaf_plan", "recipe": "column"});
+        let published = crate::next_flow::publish_leaf_page(&calls, &bundle.dir, "column", (&leaf, &plan), &qa).unwrap();
+        std::fs::read_to_string(bundle.dir.join(&published.html_ref)).unwrap()
+    }
+
+    /// Every place the page prints a four-digit year `y` as a marked entry: the words right after it, up to the next tag.
+    fn after_year<'a>(html: &'a str, y: &str) -> Vec<&'a str> {
+        let mark = format!(">{y}</");
+        html.match_indices(&mark)
+            .filter_map(|(i, _)| html[i + mark.len()..].split_once('>').map(|(_, rest)| rest.split('<').next().unwrap_or("")))
+            .collect()
+    }
+
+    /// A half-yearly ranking (nrg_pc_204's shape, latest period 2026-S1) is published as a column page that names its period
+    /// honestly: the year line under the bars and the dek's period both print "2026 年上半年", the year and the half each
+    /// from its ledger entry (period:<t>:2026-S1.y and .h; fact:lead1.t.y and .t.h), and the year is never printed as a year
+    /// of its own ("2026 年" with no half after it).
+    #[test]
+    fn a_half_yearly_ranking_is_published_naming_its_half_year() {
+        let at = |v: &'static str| -> Vec<(&'static str, &'static str)> { vec![("2025-S2", "0.30"), ("2026-S1", v)] };
+        let (de, it, fr, se) = (at("0.39"), at("0.33"), at("0.26"), at("0.21"));
+        let main = period_rows("nrg_pc_204", false, &[("DE", &de), ("IT", &it), ("FR", &fr), ("SE", &se)]);
+        let html = published_column("nrg_pc_204", &main);
+        assert!(html.contains(r#"data-src="period:nrg_pc_204:2026-S1.y">2026</span> 年<span data-src="period:nrg_pc_204:2026-S1.h">上</span>半年"#), "the year line");
+        assert!(html.contains(r#"data-src="fact:lead1.t.y">2026</span> 年<span data-src="fact:lead1.t.h">上</span>半年"#), "the dek's period");
+        let after = after_year(&html, "2026");
+        assert!(!after.is_empty() && after.iter().all(|w| w.trim() == "年"), "{after:?}");
+        assert!(!html.contains(">2026-S1<") && !html.contains("2025-S2.y"), "no raw period printed, and not the earlier half");
+    }
+
+    /// A monthly ranking (une_rt_m's shape) is published at the month most places hold: its year line and the dek print
+    /// "2026 年 8 月", the year and the month each from its ledger entry.
+    #[test]
+    fn a_monthly_ranking_is_published_naming_its_month() {
+        let full: &[(&str, &str)] = &[("2026-08", "6.2"), ("2026-09", "6.1")];
+        let main = period_rows("une_rt_m", true, &[("ES", &[("2026-08", "10.5")]), ("FR", &[("2026-08", "7.6")]), ("DE", &[("2026-08", "3.8")]), ("SE", full)]);
+        let html = published_column("une_rt_m", &main);
+        assert!(html.contains(r#"data-src="period:une_rt_m:2026-08.y">2026</span> 年 <span data-src="period:une_rt_m:2026-08.m">8</span> 月"#), "the year line");
+        assert!(html.contains(r#"data-src="fact:lead1.t.y">2026</span> 年 <span data-src="fact:lead1.t.m">8</span> 月"#), "the dek's period");
+        assert!(!html.contains("2026-09.y") && !html.contains(">2026-09<"), "the month a few places reached is not the page's");
+    }
+
+    /// The counter-case: on a half-yearly page a title the model types "2026 年" into is refused (a year is typed only
+    /// through a placeholder, and the leaf prints the period with its half), and so is "{lead1.t}年", a year written after
+    /// the period placeholder.
+    #[test]
+    fn a_bare_year_title_on_a_half_yearly_page_is_refused() {
+        let at = |v: &'static str| -> Vec<(&'static str, &'static str)> { vec![("2026-S1", v)] };
+        let (de, se) = (at("0.39"), at("0.21"));
+        let main = period_rows("nrg_pc_204", false, &[("DE", &de), ("SE", &se)]);
+        let column = recipe("column");
+        let shape = shape_of(&column.eats, &[("nrg_pc_204", &main[..])], &Hubs).unwrap();
+        let picks = picks_of(&column.picks, &shape, &main, &[]).unwrap();
+        let fill = test_fill(column, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false).unwrap();
+        let drafts = next_page::draft_for(&[], &[], Vec::new(), None).with_finding(dek_finding(&fill)).with_periods(&[shape.year.clone()]);
+        let dek = drafts.fields.iter().position(|(t, _)| *t == crate::next_page::Target::PageDek).map(|i| (i + 1).to_string()).unwrap();
+        let ask = drafts.ask(vec![]);
+        let check = |n: &str, text: &str| ask.check(&json!({"step": "text", "text": {n: text}, "names": {}}));
+        let refused = check("1", "2026 年德国电价最高").unwrap_err();
+        assert!(refused.problem.contains("type no number"), "{}", refused.problem);
+        let draft = &drafts.fields.iter().find(|(t, _)| *t == crate::next_page::Target::PageDek).unwrap().1;
+        assert!(draft.contains("{lead1.t}"), "{draft}");
+        assert!(check(&dek, &draft.replace("{lead1.t}", "{lead1.t}年")).is_err());
+        assert!(check(&dek, draft).is_ok());
     }
 
     /// The q1 shape's column page whose two leader notes both drop (the hero's style: label_count 0), drawn by the real leaf
