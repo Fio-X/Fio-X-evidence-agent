@@ -1,11 +1,11 @@
 {
-  "measured_at": "9a0f8d214c1b694f6fef69c990a7f3108ffac1ab",
+  "measured_at": "fe13e35c1a44aa6861b34ae81c09fd501bb0a08b",
   "rules": "scripts/test_group_flow_ratchet.mjs header; totals and per_file may only go down; kind_names only grow, by --lower",
   "totals": {
     "new": {
       "nodes": 1,
       "ops": 0,
-      "copy": 95,
+      "copy": 71,
       "kinds": 268
     },
     "old": {
@@ -16,7 +16,7 @@
     }
   },
   "scanned": {
-    "new": 11,
+    "new": 10,
     "old": 43
   },
   "kind_names": {
@@ -87,9 +87,6 @@
   "per_file": {
     "runtime/pi/assets/estat-narrow.json": {
       "copy": 6
-    },
-    "runtime/pi/assets/unit-short-zh.tsv": {
-      "copy": 24
     },
     "runtime/pi/assets/wb-rank-by.json": {
       "copy": 8
