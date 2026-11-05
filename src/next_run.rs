@@ -2165,7 +2165,8 @@ fn fill_of(
     if let Some(code) = accent {
         Filled::set(&mut out.data, "hero data", ACCENT, json!(code)).map_err(no)?;
     }
-    let Filled { drawn, rows, facts, mut fmts, data, mut hero, notes, points, named: mut name_rows, unit_drawn, flow_pairs, composition: cut, .. } = out;
+    let Filled { drawn, rows, facts, mut fmts, data, mut hero, notes, points, named: name_rows, unit_drawn, flow_pairs, composition: cut, .. } = out;
+    let mut name_rows = name_rows;
     hero.insert("data".into(), Value::Object(data));
     // a unit whose short form holds a digit (an index's base year, 指数(2015=100)) prints it as the unit table's registered
     // name row, never as typed words: the unit line goes to the leaf as segments (knobs.segs.unit, facts.worded), its form
@@ -2173,18 +2174,15 @@ fn fill_of(
     let mut segs = None;
     // a layer that writes the unit in its own picture leaves the page's unit line to the year alone (column_page)
     if !unit_drawn {
-        let line = std::iter::once(format!("单位：{short}")).chain(notes.iter().cloned()).collect::<Vec<_>>().join("；");
+        hero.insert("unit".into(), json!(std::iter::once(format!("单位：{short}")).chain(notes).collect::<Vec<_>>().join("；")));
         if short.chars().any(|c| c.is_ascii_digit() || c.is_numeric()) {
             let src = format!("{}{}", FIXED_NAMES[1], shape.unit);
             if fixed_name(&src).as_deref() != Some(short) {
                 return Err(no(format!("unit {}: its short form {short:?} is not the unit table's", shape.unit)));
             }
             name_rows.insert(src.clone(), json!(short));
-            let mut unit = vec![json!({"w": "单位："}), json!({"src": src})];
-            unit.extend(notes.iter().map(|n| json!({"w": format!("；{n}")})));
-            segs = Some(json!({"unit": unit}));
+            segs = Some(unit_segs(hero["unit"].as_str().unwrap_or_default(), short, &src));
         }
-        hero.insert("unit".into(), json!(line));
     } else if !notes.is_empty() {
         return Err(no(format!("the unit is drawn in a layer's picture, so no unit line prints the notes {notes:?}")));
     }
@@ -2480,6 +2478,14 @@ fn leaf_page(
     Ok(LeafPublished { recipe: picked, published, drawn, strip: strip_ask, ends: fill.get("ends").cloned(), zeros, notes })
 }
 
+/// The unit line's segments (knobs.segs.unit, facts.worded) when its unit's short form holds a digit: the line's words before
+/// and after the form, as the line spells them, and the form itself as the unit table's name row `src`.
+fn unit_segs(line: &str, short: &str, src: &str) -> Value {
+    let (before, after) = line.split_once(short).unwrap_or_default();
+    let unit: Vec<Value> = [json!({"w": before}), json!({"src": src}), json!({"w": after})].into_iter().filter(|s| s["w"] != "").collect();
+    json!({"unit": unit})
+}
+
 /// The short notes a page asked of each of its layers whose dropped items are short notes (next_leaf Leaf::short_notes):
 /// the layer and how many notes its leaf data held; and the codes its headline names ({name.<code>}), whose notes may
 /// never be dropped.
@@ -2491,12 +2497,7 @@ struct NotesAsked {
 
 fn notes_asked(recipe: &Recipe, fill: &Value) -> NotesAsked {
     let spec = &fill["knobs"]["spec"];
-    let layers = recipe
-        .layers
-        .iter()
-        .filter(|l| crate::next_leaf::leaves().nodes.get(l.as_str()).is_some_and(|n| n.short_notes))
-        .map(|l| (l.clone(), spec["hero"]["leaves"][l]["notes"].as_array().map_or(0, Vec::len)))
-        .collect();
+    let layers = recipe.short_notes.iter().map(|(l, at)| (l.clone(), spec.pointer(at).and_then(Value::as_array).map_or(0, Vec::len))).collect();
     let title = spec["title"].as_str().unwrap_or_default();
     let cited = title.split("{name.").skip(1).filter_map(|t| t.split_once('}')).map(|(code, _)| code.to_string()).collect();
     NotesAsked { layers, cited }
@@ -8415,6 +8416,7 @@ mod tests {
             strip: r.strip,
             external: r.external.clone(),
             points: r.points.clone(),
+            short_notes: r.short_notes.clone(),
         }
     }
 
@@ -11332,9 +11334,9 @@ for line in sys.stdin:
         assert_eq!((counted, let_go), (vec![d("bubbles", "AT")], vec!["dropped:leader_notes:SE".to_string()]));
         let none = notes_asked(column, &json!({"knobs": {"spec": {"title": "标题"}}}));
         assert_eq!(notes_let_go(&[d("leader_notes", "SE")], &none).0.len(), 1);
-        // only the short-note layers are registered so
-        let short: Vec<&String> = crate::next_leaf::leaves().nodes.iter().filter(|(_, n)| n.short_notes).map(|(k, _)| k).collect();
-        assert_eq!(short, ["leader_notes"]);
+        // only the short-note layers are registered so, on the recipes that draw them
+        let short: BTreeSet<(String, String)> = crate::next_leaf::leaves().recipes.iter().flat_map(|r| r.short_notes.clone()).collect();
+        assert_eq!(short, BTreeSet::from([("leader_notes".to_string(), "/hero/leaves/leader_notes/notes".to_string())]));
     }
 
     /// A strip owed and given: its recipe's slot, a piece set that takes the tables, the visual group's strip.

@@ -906,6 +906,10 @@
    "group": "knowledge",
    "note": "New route, data side: the words that say a part of the question cannot be answered, which only the program prints (user 11-05 10:2x: answered-or-not is the program's call and the program's line). A pure data word list like unit-short-zh.tsv; next_flow.rs (the text step) and next_ledger.rs (the page check) read it with include_str as a vocabulary constant. Ownership only; no cross-group call is allowed by this row."
   },
+  "runtime/pi/assets/year-words.json": {
+   "group": "knowledge",
+   "note": "New route, data side: the words a question counts back a number of years with (近五年, 五年来), the last N years it asks (user 11-05 10:2x (e): the asked span is cut, not the table's whole). A pure data word list like unit-short-zh.tsv; next_params.rs reads it with include_str as a vocabulary constant. Ownership only; no cross-group call is allowed by this row."
+  },
   "runtime/pi/assets/unit-short-zh.tsv": {
    "group": "knowledge",
    "note": "New route, data side: the short Chinese form a chart label writes for each registered unit code, and whether amounts in it add up. A pure data word list like the other knowledge tables (estat-parts.tsv, code-names-zh.json); next_pack.rs reads it with include_str as a vocabulary constant. Ownership only; no cross-group call is allowed by this row."

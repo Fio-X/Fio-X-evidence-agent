@@ -866,8 +866,7 @@
    ],
    "eats": [
     "one_unit"
-   ],
-   "short_notes": true
+   ]
   },
   "ledger": {
    "reserve": false,
@@ -1769,6 +1768,12 @@
    "points": [
     "bubbles",
     "leader_notes"
+   ],
+   "short_notes": [
+    {
+     "layer": "leader_notes",
+     "at": "/hero/leaves/leader_notes/notes"
+    }
    ]
   },
   {
@@ -1810,6 +1815,12 @@
    "points": [
     "bubbles",
     "leader_notes"
+   ],
+   "short_notes": [
+    {
+     "layer": "leader_notes",
+     "at": "/hero/leaves/leader_notes/notes"
+    }
    ]
   },
   {

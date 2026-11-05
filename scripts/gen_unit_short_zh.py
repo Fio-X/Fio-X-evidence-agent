@@ -52,7 +52,8 @@ def read_label(label):
         return f"指数({m.group(1)}=100)", "index_base", "no", ""
     if re.match(r"(percentage change|growth rate|annual average rate of change|rate of change)\b", low):
         return "%", "pct_change", "no", "%"
-    if re.fullmatch(r"percentage" + QUALIFIER, low) or low.startswith("percentage of "):
+    # a share's change ("Percentage of world total - 5-year change") is no share: "%" would misread it, so no rule reads it
+    if re.fullmatch(r"percentage" + QUALIFIER, low) or (low.startswith("percentage of ") and "change" not in low):
         return "%", "pct_family", "no", "%"
     if low == "number" or re.fullmatch(r"number" + QUALIFIER, low):
         return "数量", "count", "yes", ""
@@ -97,6 +98,9 @@ def main():
         for line in f:
             p = dict(zip(head, line.rstrip("\n").split("\t")))
             code = p["code"]
+            # a generated row is made again from its label each run, never kept: a rule that stops reading a label drops it
+            if p.get("source") == "generated":
+                continue
             order.append(code)
             rows[code] = {"code": code, "short_zh": p.get("short_zh", ""), "rule": p.get("rule", ""), "additive": p.get("additive", ""),
                           "suffix_zh": p.get("suffix_zh") or suffix_of(p.get("short_zh", ""), p.get("rule", "")),

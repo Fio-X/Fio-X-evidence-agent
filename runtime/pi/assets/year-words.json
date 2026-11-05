@@ -1,0 +1,5 @@
+{
+ "note": "The words a question counts back a number of years with (question_years): a lead word then a count then 年 (近五年, 这十年), or a count then a tail with no lead (五年来, 3 年以来). Each gives the last that many years.",
+ "last_lead": ["最近", "过去", "近", "这"],
+ "last_tail": ["年来", "年以来"]
+}

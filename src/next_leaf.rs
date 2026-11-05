@@ -109,8 +109,6 @@ pub struct Leaf {
     pub reserve: bool,
     /// The shape conditions the node needs its tables to meet (knobs.py EATS); none stated is empty.
     pub eats: Vec<String>,
-    /// Whether what the node drops is short notes (knobs.py SHORT_NOTES): a page goes on without a few of them.
-    pub short_notes: bool,
 }
 
 /// A page recipe, a page's outermost composite node (knobs.py RECIPES): the layers its page draws, bottom first; the shape
@@ -138,6 +136,9 @@ pub struct Recipe {
     /// Its external layers the core lays out in a view frame (knobs.json recipes[].points, which knobs.py writes from the
     /// bindings' frames): the flow gives their declaration the map points and the extent it computes.
     pub points: Vec<String>,
+    /// Its layers whose dropped items are short notes, each with where the page spec lists them, a JSON pointer (knobs.json
+    /// recipes[].short_notes, from knobs.py SHORT_NOTES): a page goes on without a few of them (next_run notes_let_go).
+    pub short_notes: Vec<(String, String)>,
 }
 
 const LEAVES: &str = include_str!("../runtime/leaves_py/knobs.json");
@@ -173,8 +174,7 @@ pub fn leaves() -> &'static Leaves {
             let knobs: Vec<Knob> = n["knobs"].as_array().expect("knobs.json: knobs").iter().map(knob).collect();
             let info = NodeInfo { name: word(&json!(name)), needs: &[], knobs: Box::leak(knobs.into_boxed_slice()), inner: None };
             let reserve = n["reserve"].as_bool().expect("knobs.json: reserve");
-            let short_notes = n["short_notes"].as_bool().unwrap_or(false);
-            (name.clone(), Leaf { info: Box::leak(Box::new(info)), reserve, eats: words(&n["eats"]), short_notes })
+            (name.clone(), Leaf { info: Box::leak(Box::new(info)), reserve, eats: words(&n["eats"]) })
         });
         let legacy = t["legacy"].as_object().expect("knobs.json: legacy").iter().map(|(node, at)| {
             (node.clone(), at.as_array().expect("knobs.json: a path").iter().map(|p| word(p).to_string()).collect())
@@ -203,6 +203,7 @@ pub fn leaves() -> &'static Leaves {
             },
             external: words(&r["external"]),
             points: words(&r["points"]),
+            short_notes: r["short_notes"].as_array().into_iter().flatten().map(|n| (word(&n["layer"]).to_string(), word(&n["at"]).to_string())).collect(),
         });
         Leaves { nodes: nodes.collect(), groups: groups.collect(), legacy, recipes: recipes.collect() }
     })

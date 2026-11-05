@@ -497,7 +497,10 @@ pub fn question_years(question: &str, this_year: i32) -> Option<NamedYears> {
     }
     let text: String = chars.iter().filter(|c| !c.is_whitespace()).collect();
     let numeral = |c: &char| c.is_ascii_digit() || "一二两三四五六七八九十".contains(*c);
-    for lead in ["最近", "过去", "近", "这"] {
+    let words: Value = serde_json::from_str(include_str!("../runtime/pi/assets/year-words.json")).unwrap_or_default();
+    let list = |k: &str| -> Vec<String> { words[k].as_array().into_iter().flatten().filter_map(|w| w.as_str().map(str::to_string)).collect() };
+    for lead in list("last_lead") {
+        let lead = lead.as_str();
         for (at, _) in text.match_indices(lead) {
             let rest = &text[at + lead.len()..];
             let count: String = rest.chars().take_while(numeral).collect();
@@ -509,8 +512,8 @@ pub fn question_years(question: &str, this_year: i32) -> Option<NamedYears> {
         }
     }
     // a count of years the question runs back over with no word before it: "五年来", "10 年以来" (t4, 11-05 10:2x (e))
-    for tail in ["年来", "年以来"] {
-        for (at, _) in text.match_indices(tail) {
+    for tail in list("last_tail") {
+        for (at, _) in text.match_indices(tail.as_str()) {
             let count: String = text[..at].chars().rev().take_while(numeral).collect::<Vec<_>>().into_iter().rev().collect();
             if let Some(n) = count_of(&count).filter(|n| *n >= 1 && count.chars().count() < 4) {
                 return Some(NamedYears::Last(n));

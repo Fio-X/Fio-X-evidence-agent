@@ -73,8 +73,9 @@ EATS = dict(map=["hub_origin", "one_unit"], ring=["monthly_companion"], callouts
 # The nodes whose dropped items are short notes (a note with no free place, beside the picture, not a mark of it): a page
 # goes on without some of them, each kept in its ledger, when no more than a third of the layer's notes are dropped and none
 # is the note of a place its headline names (user 11-05 10:2x (b)); a dropped item of any other node (a label on the main
-# picture) still stops the page. Written into knobs.json as the node's "short_notes". Data, not a switch.
-SHORT_NOTES = ["leader_notes"]
+# picture) still stops the page. Written into knobs.json as each recipe's "short_notes" (the layer and where in the page spec its
+# notes are listed, a JSON pointer: its leaf data's key), so the flow reads the recipe, never a node name. Data, not a switch.
+SHORT_NOTES = dict(leader_notes="notes")
 # The nodes a node brings with it: every recipe that draws the node draws these right after it, in this order (a key to its
 # marks), so no recipe can draw the marks without them; a recipe that names one itself refuses.
 WITH = dict(bubbles=["bubble_key"])
@@ -160,8 +161,6 @@ def table():
     take(nodes, json.load(open(PAGE_OUT, encoding="utf-8")))
     for n, eats in EATS.items():
         nodes[n]["eats"] = list(eats)
-    for n in SHORT_NOTES:
-        nodes[n]["short_notes"] = True
     core = json.load(open(BINDINGS_OF_CORE, encoding="utf-8"))
     core_external = {n for n, e in core["nodes"].items() if e.get("binding") == "external"}
     if not core_external <= set(nodes):
@@ -177,6 +176,8 @@ def table():
         if view: r["points"] = view
     for r in out:
         none_left(r)
+        notes = [dict(layer=l, at=f"/hero/leaves/{l}/{SHORT_NOTES[l]}") for l in r["layers"] if l in SHORT_NOTES]
+        if notes: r["short_notes"] = notes
     return dict(nodes=nodes, groups=groups, legacy=READS, recipes=out)
 
 

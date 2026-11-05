@@ -29,7 +29,6 @@ KWH	千瓦时	energy	yes	千瓦时	reviewed	Kilowatt-hour
 M3	立方米	volume	yes	立方米	reviewed	Cubic metre
 MIO_M3	百万立方米	volume	yes	百万立方米	reviewed	Million cubic metres
 MTCO2E	百万吨二氧化碳当量	emissions	yes	百万吨二氧化碳当量	reviewed	Million tonnes of CO2 equivalent
-NR	数量	count	yes		generated	Number
 PC	%	pct_family	no	%	reviewed	Percentage
 PCH_PRE	%	pct_family	no	%	reviewed	Percentage change on previous period
 PC_ACT	%	pct_family	no	%	reviewed	Percentage of population in the labour force
@@ -245,6 +244,7 @@ MIO_PER	百万人	amount	yes	百万人	generated	Million persons
 MIO_PKM	百万人公里	amount	yes	百万人公里	generated	Millions of passenger-kilometres
 MIO_T	百万吨	amount	yes	百万吨	generated	Million tonnes
 MTOE	百万吨油当量	amount	yes	百万吨油当量	generated	Million tonnes of oil equivalent
+NR	数量	count	yes		generated	Number
 PCH_10Y	%	pct_change	no	%	generated	Percentage change (t/t-10)
 PCH_1Y	%	pct_change	no	%	generated	Percentage change (t/t-1)
 PCH_3Y	%	pct_change	no	%	generated	Percentage change (t/t-3)
@@ -259,10 +259,6 @@ PCH_M1_SA	%	pct_change	no	%	generated	Percentage change m/m-1 (SA)
 PCH_M1_SCA	%	pct_change	no	%	generated	Percentage change m/m-1 (SCA)
 PCH_M24	%	pct_change	no	%	generated	Percentage change m/m-24
 PCH_MV12	%	pct_change	no	%	generated	Percentage change - 12-months average
-PCH_OECD_5Y	%	pct_family	no	%	generated	Percentage of OECD total - 5-year change
-PCH_OECD_EU_1Y	%	pct_family	no	%	generated	Percentage of OECD and non-OECD EU countries total - 1-year change
-PCH_OECD_EU_3Y	%	pct_family	no	%	generated	Percentage of OECD and non-OECD EU countries total - 3-year change
-PCH_OECD_EU_5Y	%	pct_family	no	%	generated	Percentage of the total of OECD countries and EU Member States not in OECD - 5-year change
 PCH_PRE_EUR	%	pct_change	no	%	generated	Percentage change on previous period, euro
 PCH_PRE_FTE	%	pct_change	no	%	generated	Percentage change on previous period (based on full-time equivalents)
 PCH_PRE_HAB	%	pct_change	no	%	generated	Percentage change on previous period (based on inhabitants)
@@ -299,9 +295,6 @@ PCH_SM_JOB	%	pct_change	no	%	generated	Percentage change compared to same period
 PCH_SM_PER	%	pct_change	no	%	generated	Percentage change compared to same period in previous year (based on persons)
 PCH_SM_PER_NSA	%	pct_change	no	%	generated	Percentage change compared to same period in previous year (based on persons, NSA)
 PCH_SM_PER_SCA	%	pct_change	no	%	generated	Percentage change compared to same period in previous year (based on persons, SCA)
-PCH_WRL_1Y	%	pct_family	no	%	generated	Percentage of world total - 1-year change
-PCH_WRL_3Y	%	pct_family	no	%	generated	Percentage of world total - 3 year change
-PCH_WRL_5Y	%	pct_family	no	%	generated	Percentage of world total - 5-year change
 PC_Y20-29	%	pct_family	no	%	generated	Percentage of total population aged 20-29
 PC_Y25-29	%	pct_family	no	%	generated	Percentage of total population aged 25-29
 PERS	人	amount	yes	人	generated	Persons
