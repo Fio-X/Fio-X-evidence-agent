@@ -2522,7 +2522,8 @@ fn notes_asked(recipe: &Recipe, fill: &Value) -> NotesAsked {
 
 /// What a page's layers dropped, split (user 11-05 10:2x (b), a loosened check the user approved): the short notes the page
 /// goes on without, and every other item, which still fails notes_dropped. A layer's dropped notes are let go only when the
-/// layer is a short-note layer the page asked notes of, no more than a third of them are dropped (dropped x 3 <= asked), and
+/// layer is a short-note layer the page asked notes of, no more than a third of them are dropped (dropped x 3 <= asked) or,
+/// on a layer asked two or three notes, one is dropped (user 11-05 17:1x, plan A, a loosened check the user approved), and
 /// none is the note of a place the headline names; otherwise every one of that layer's drops counts. A label on the main
 /// picture (any other layer) always counts. Each let-go note stays in the request's ledger (next_ledger DROPPED_SRC).
 fn notes_let_go(dropped: &[(String, String)], asked: &NotesAsked) -> (Vec<(String, String)>, Vec<String>) {
@@ -2542,7 +2543,8 @@ fn notes_let_go(dropped: &[(String, String)], asked: &NotesAsked) -> (Vec<(Strin
     for (layer, drops) in by_layer {
         let n = asked.layers[&layer];
         let cited = drops.iter().any(|d| layer_id(&d.0).is_some_and(|(_, id)| asked.cited.contains(&id)));
-        if !cited && n > 0 && drops.len() * 3 <= n {
+        let few = (2..=3).contains(&n) && drops.len() == 1;
+        if !cited && n > 0 && (drops.len() * 3 <= n || few) {
             let_go.extend(drops.iter().map(|d| d.0.clone()));
         } else {
             counted.extend(drops.into_iter().cloned());
@@ -11335,8 +11337,8 @@ for line in sys.stdin:
         assert!(checks[1..].iter().all(|c| c.passed), "{checks:?}");
     }
 
-    /// The short notes a page goes on without (user 11-05 10:2x (b)): a third or fewer of a short-note layer's notes, none of
-    /// a place the headline names, are let go; more than a third, a cited one, or any label of the main picture count.
+    /// The short notes a page goes on without (user 11-05 10:2x (b), 17:1x plan A): a third or fewer of a short-note layer's
+    /// notes, or one of two or three, none of a place the headline names, are let go; more than a third, a cited one, or any label of the main picture count.
     #[test]
     fn a_page_goes_on_without_a_third_of_its_short_notes_but_not_the_headline_s_or_a_main_label() {
         let column = recipe("column");
@@ -11367,6 +11369,18 @@ for line in sys.stdin:
         assert_eq!(notes_let_go(&[d("leader_notes", "SE")], &asked).1.len(), 1, "another one of six goes");
         let none = notes_asked(column, &json!({"knobs": {"spec": {"title": "标题"}}}));
         assert_eq!(notes_let_go(&[d("leader_notes", "SE")], &none).0.len(), 1);
+        // plan A (user 11-05 17:1x): a layer asked two or three notes goes on without one of them, never two, never the
+        // headline's, never a main label; a layer asked one note does not
+        for n in [2, 3] {
+            let few = json!({"knobs": {"spec": {"title": "{name.DE}最高", "hero": {"leaves": {"leader_notes": {"notes": vec![json!({}); n]}}}}}});
+            let asked = notes_asked(column, &few);
+            assert_eq!(notes_let_go(&[d("leader_notes", "SE")], &asked), (vec![], vec!["dropped:leader_notes:SE".to_string()]), "{n}");
+            assert_eq!(notes_let_go(&[d("leader_notes", "SE"), d("leader_notes", "AT")], &asked).0.len(), 2, "{n}: two of {n} count");
+            assert_eq!(notes_let_go(&[d("leader_notes", "DE")], &asked).0.len(), 1, "{n}: the headline's note counts");
+            assert_eq!(notes_let_go(&[d("bubbles", "AT")], &asked).0.len(), 1, "{n}: a main label counts");
+        }
+        let one = notes_asked(column, &json!({"knobs": {"spec": {"title": "标题", "hero": {"leaves": {"leader_notes": {"notes": [{}]}}}}}}));
+        assert_eq!(notes_let_go(&[d("leader_notes", "SE")], &one).0.len(), 1, "the one note of one counts");
         // only the short-note layers are registered so, on the recipes that draw them
         let short: BTreeSet<(String, String)> = crate::next_leaf::leaves().recipes.iter().flat_map(|r| r.short_notes.clone()).collect();
         assert_eq!(short, BTreeSet::from([("leader_notes".to_string(), "/hero/leaves/leader_notes/notes".to_string())]));
