@@ -1191,7 +1191,7 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     ("tree.channels", "next_tree::CHANNELS", &["tree::tw", "tree::py_round", "tree::tw_leaf", "tree::signed_room", "tree::rows_frame", "tree::signed_bars", "tree::merc", "tree::fit", "tree::project", "tree::four", "tree::expected", "tree::item_of"]),
     // the request the core issues to a node, every number and word in it the core's
     ("tree.node_request", "", &["tree::issue", "tree::query", "tree::fact", "tree::name", "tree::run", "tree::runs"]),
-    ("tree.content", "", &["tree::content_problems", "tree::asked_problems"]),
+    ("tree.content", "", &["tree::content_problems", "tree::asked_problems", "tree::fact_tables"]),
     // B0: a reply within the allow-list
     ("tree.reply_allow_list", "next_tree::SHAPES", &["tree::reply_problems", "tree::node_problems", "tree::shape_fields"]),
     // B1-B7: a reply's geometry
