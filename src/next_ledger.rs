@@ -1141,7 +1141,7 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     // the page's numbers: every digit a marked ledger entry printed one way, or a table id the request names
     // a page whose comments the browser reads as written (one ended early is refused)
     ("page_html_read", "", &["ledger::comment_len"]),
-    ("numbers", "", &["ledger::check_numbers", "ledger::prints", "ledger::digit_runs", "ledger::num", "ledger::label", "ledger::enter", "ledger::segs", "ledger::finish", "facts::table_id", "facts::leaf_refs"]),
+    ("numbers", "", &["ledger::check_numbers", "ledger::unanswered_word", "ledger::prints", "ledger::digit_runs", "ledger::num", "ledger::label", "ledger::enter", "ledger::segs", "ledger::finish", "facts::table_id", "facts::leaf_refs"]),
     // every fact recomputed from the request rows by its declared query (ops value, share, change, ...)
     ("fact_recompute", "", &["facts::compute", "facts::fact", "facts::one", "facts::family", "facts::member_fmt", "facts::printed_value", "facts::minus_family", "facts::select", "facts::word", "facts::members", "facts::finite", "facts::sum"]),
     // every ledger entry recomputed and reprinted (its text, bare .n and display .r parts, ticks, periods, dates, names)
