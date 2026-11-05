@@ -1613,10 +1613,9 @@ impl Catalog {
 
     /// What a page drawn for the first group the Chinese question names counts, from the page's first and last years
     /// (`t0`, None for a page of one year, and `t1`), its place codes (`places`) and those with a row at t1 (`at_t1`): the
-    /// members in the year the question names, else in `t1` (the page's last year); the places the question names on
+    /// members in `t1` (the page's last year, the year its line prints, whatever year the question names); the places the question names on
     /// their own, which stay; the page's other places, which are no member that year (left out); the members with no row at
-    /// t1; and the page line when the page must say its basis: the member list differs inside t0..t1 (the question naming
-    /// no year), the group has members that are no country, or a member has no data (named). The line counts the places
+    /// t1; and the page line when the page must say its basis: the member list differs inside the page's t0..t1, the group has members that are no country, or a member has no data (named). The line counts the places
     /// drawn (its `_drawn` form) where they are not the members: a member missing, or a named place beside them. None when
     /// the question names no group or the group has no members in that year.
     pub fn group_basis(
@@ -1628,8 +1627,8 @@ impl Catalog {
         let scanned = self.scan_zh(question_zh);
         let id = scanned.iter().find_map(|(_, c)| c.strip_prefix(GROUP).map(str::to_string))?;
         let g = self.groups.iter().find(|g| g.id == id)?;
-        let asked = question_year(question_zh);
-        let year = asked.unwrap_or(t1);
+        // the list of the page's own year, whichever year the question names: the line prints that year from the data
+        let year = t1;
         let p = self.group_period(&id, Some(year))?;
         let words = &place_names_zh().basis;
         // an iso2 country as the page writes it: the form its rows hold, else iso3 on an iso3 page, else iso2
@@ -1659,8 +1658,8 @@ impl Catalog {
         let tail = if missing.is_empty() { "" } else { words.missing.as_str() };
         let pick = |all: &str, part: &str| if drawn { format!("{part}{tail}") } else { all.to_string() };
         let mut lines = Vec::new();
-        let changes = asked.is_none()
-            && t0.is_some_and(|t0| {
+        // the page's own years, whether or not the question names any: a question asking 2015 to 2025 spans them too
+        let changes = t0.is_some_and(|t0| {
                 t0 < t1
                     && g.periods.iter().any(|q| {
                         q.from <= t1 && q.to.is_none_or(|to| t0 <= to) && {
@@ -2416,14 +2415,21 @@ mod tests {
         assert_eq!((b.year, b.members.len(), b.line.as_deref(), b.dropped.clone()), (2024, 9, Some(changes), s(&["ID", "SA"])), "no members in 2024");
         assert_eq!(gb(q, Some(2012), 2020, &brics10[..5]).unwrap().line, None, "five members all through");
         assert_eq!(gb(q, None, 2025, &brics10).unwrap().line, None, "a page of one year");
-        let named = gb("2010年金砖国家的GDP", Some(2005), 2015, &brics10[..4]).unwrap();
+        let named = gb("2010年金砖国家的GDP", Some(2005), 2010, &brics10[..4]).unwrap();
         assert_eq!((named.year, named.members, named.line), (2010, s(&brics10[..4]), None));
+        // a question naming its years spans them too, and the list is the page's last year's, not the year asked
+        let b = gb("2016年到2025年金砖国家的GDP增长率", Some(2016), 2025, &brics10).unwrap();
+        assert_eq!((b.year, b.line.as_deref()), (2025, Some(changes)), "years named, members changed inside them");
+        let b = gb("2025年金砖国家的GDP", Some(2016), 2024, &[&brics10[..], &["SA"]].concat()).unwrap();
+        assert_eq!((b.year, b.members.len(), b.line.as_deref()), (2024, 9, Some(changes)), "asked 2025, the data ends 2024");
+        let named = gb("2010年金砖国家的GDP", Some(2005), 2015, &brics10[..5]).unwrap();
+        assert_eq!((named.year, named.members.len(), named.line.as_deref()), (2015, 5, Some(changes)), "the page runs past the year asked");
         assert_eq!(gb("七国集团的人均碳排放", Some(1990), 2024, &["FR", "DE", "IT", "JP", "GB", "US", "CA"]).unwrap().line, None);
         let b = gb("二十国集团的人口", None, 2024, &g20).unwrap();
         assert_eq!((b.members.len(), b.line.as_deref()), (19, Some("按 {n} 个成员国计，不含欧盟、非洲联盟")));
         assert_eq!(gb("二十国集团的人口", Some(2000), 2020, &g20).unwrap().line.as_deref(), Some("按 {n} 个成员国计，不含欧盟"));
         assert_eq!(gb("中国和德国的GDP", Some(2016), 2025, &["CN", "DE"]), None);
-        assert_eq!(gb("2000年金砖国家人口", None, 2025, &brics10), None, "no BRICS in 2000");
+        assert_eq!(gb("2000年金砖国家人口", None, 2000, &brics10), None, "a page of 2000: no BRICS that year");
         // a member with no row at t1 is named: the line counts the places drawn, in every case (one year, a list that holds)
         let no_et: Vec<String> = s(&brics10).into_iter().filter(|c| c != "ET").collect();
         let b = c.group_basis(q, (Some(2016), 2025), (&s(&brics10), &no_et)).unwrap();
