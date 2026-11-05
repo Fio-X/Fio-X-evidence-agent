@@ -65,13 +65,40 @@ for label in [
 # "from <year>" outside a change label is no basis for anything (a share of an aggregate defined from a year)
 check(gen.read_label("Percentage of EU27 (from 2020) total")[1] == "pct_family", "a share from 2020 stays a share")
 
+# 2b. a price-basis prefix (national accounts): current prices leave the amount as it is; chain linked volumes are read
+# only for a rate of change, whose basis the rest of the label states.
+check(gen.read_label("Current prices, euro per capita")[0] == "欧元/人", "current prices, euro per capita")
+check(gen.read_label("Current prices, purchasing power standard (PPS, EU27 from 2020) per capita")[0] == "购买力标准/人",
+      "PPS per capita at current prices")
+check(gen.read_label("Current prices, million euro")[:3] == ("百万欧元", "amount", "yes"), "current prices, million euro")
+check(gen.read_label("Chain linked volumes, percentage change compared to same period in previous year")[1] == "pct_change",
+      "a chain-linked rate of change")
+check(gen.basis_of("Chain linked volumes, percentage change compared to same period in previous year") == "同比",
+      "a chain-linked rate of change keeps its basis")
+check(gen.is_change("Chain linked volumes, percentage change on previous period"), "a chain-linked change is a change")
+# must-fail: an annualized change, a chain-linked level (no sum, its own reference year) or index is not read
+for label in [
+    "Chain linked volumes, annualized percentage change on previous period",
+    "Chain linked volumes (2010), million euro",
+    "Chain linked volumes, index 2020=100",
+    "Chain linked volumes, previous year, million euro",
+]:
+    check(gen.read_label(label) is None, f"not read: {label!r}")
+# must-fail: an annual average rate of change says no basis even behind a prefix (it is the change of one year's average
+# index on the year before, which the label does not say and no rule reads; a period it averages over is none)
+check(gen.basis_of("Chain linked volumes, annual average rate of change") is None, "no basis behind a prefix")
+
 # 3. end to end on a small copy: the no-basis change gets no row and lands on the unread list; the change from 1990 gets
 # its row with the basis on its line form.
 with tempfile.TemporaryDirectory(prefix="unit-short-zh-") as tmp:
     estat = os.path.join(tmp, "unit.tsv")
     with open(estat, "w", encoding="utf-8") as f:
         f.write("code\tlabel\nPCH_SM\tPercentage change compared to same period in previous year\n"
-                "RCH_A_AVG\tAnnual average rate of change\n")
+                "RCH_A_AVG\tAnnual average rate of change\n"
+                "CLV_PCH_SM\tChain linked volumes, percentage change compared to same period in previous year\n"
+                "CLV_PCH_ANN\tChain linked volumes, annualized percentage change on previous period\n"
+                "CLV_AVG\tChain linked volumes, annual average rate of change\n"
+                "CP_PPS_EU27_2020_HAB\tCurrent prices, purchasing power standard (PPS, EU27 from 2020) per capita\n")
     wb = os.path.join(tmp, "wb-units.tsv")
     with open(wb, "w", encoding="utf-8") as f:
         f.write("indicator\tname\tunit_code\tunit_label\tmeasure_kind\trule\n"
@@ -95,9 +122,13 @@ with tempfile.TemporaryDirectory(prefix="unit-short-zh-") as tmp:
     check("PCH_NOBASIS" not in rows, "a change with no basis gets no row")
     check("RCH_A_AVG" not in rows, "an annual average rate of change gets no row")
     check(rows.get("PCH_SM", {}).get("line_zh") == "%（同比）", "PCH_SM keeps its basis")
+    check(rows.get("CLV_PCH_SM", {}).get("line_zh") == "%（同比）", "CLV_PCH_SM prints its basis")
+    pps = rows.get("CP_PPS_EU27_2020_HAB", {})
+    check((pps.get("short_zh"), pps.get("additive"), pps.get("line_zh")) == ("购买力标准/人", "no", ""), f"PPS per capita row: {pps}")
+    check("CLV_PCH_ANN" not in rows and "CLV_AVG" not in rows, "an annualized or averaged chain-linked change gets no row")
     with open(os.path.join(out, "unread.tsv"), encoding="utf-8") as f:
         unread = {line.split("\t")[0] for line in f}
-    check({"PCH_NOBASIS", "RCH_A_AVG"} <= unread, f"the no-basis changes are on the unread list: {sorted(unread)}")
+    check({"PCH_NOBASIS", "RCH_A_AVG", "CLV_PCH_ANN", "CLV_AVG"} <= unread, f"the no-basis changes are on the unread list: {sorted(unread)}")
 
 # 4. the committed tables: every World Bank change row with a unit code has a unit row with a line form (its basis), each
 # digit of that line the label's; a change row with no code stays codeless (the page stops on it, named).
@@ -122,6 +153,13 @@ wb = {p[0]: p for p in wb_rows}
 for indicator in ["EN.GHG.TOT.ZG.AR5", "EN.GHG.CO2.ZG.AR5", "EN.GHG.CH4.ZG.AR5", "EN.GHG.N2O.ZG.AR5"]:
     check(wb[indicator][2] == "PCH_1990", f"{indicator} is registered as a change from 1990")
 check(committed.get("PCH_1990", {}).get("line_zh") == "%（较1990年）", "PCH_1990's line prints its basis")
+# the committed table: every rate of change in it prints a basis; the annual average rate of change (t5, t8, t8b) stays out
+for code, row in committed.items():
+    if row["rule"] == "pct_change" or gen.is_change(row["label_en"]):
+        check(row["line_zh"].startswith(row["short_zh"]) and len(row["line_zh"]) > len(row["short_zh"]), f"{code}: no basis on its line")
+check("RCH_A_AVG" not in committed and "CLV_PCH_ANN" not in committed, "no row for a change whose basis no rule reads")
+check(committed.get("CLV_PCH_SM", {}).get("line_zh") == "%（同比）", "n02's unit prints its basis")
+check(committed.get("CP_PPS_EU27_2020_HAB", {}).get("short_zh") == "购买力标准/人", "s4a's PPS unit")
 # growth rates whose unit text states no basis the registry reads stay codeless
 for indicator in ["FM.AST.CGOV.ZG.M3", "SI.SPR.PC40.ZG", "SI.SPR.PCAP.ZG"]:
     check(wb[indicator][2] == "", f"{indicator} stays codeless")

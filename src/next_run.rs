@@ -7281,10 +7281,11 @@ mod tests {
     /// baked, checked by the twins and published, then read back and passed by the whole-page check. A number prints no
     /// digit after it (the index's suffix is none); the index's base year prints only on the unit line, as the unit table's
     /// name row the page marks. A rate of change (PCH_SM, 同比) prints "%" after each number and its comparison basis on the
-    /// unit line, likewise the unit table's name row (user 11-05 16:1x: the basis is on the page and checked).
+    /// unit line, likewise the unit table's name row (user 11-05 16:1x: the basis is on the page and checked); so does a
+    /// chain-linked volume's (CLV_PCH_SM, its basis read past the label's price-basis prefix).
     #[test]
     fn an_index_and_a_count_unit_print_a_whole_page_that_passes_the_check() {
-        for (unit, short, suffix) in [("I15", "指数(2015=100)", ""), ("NR", "数量", ""), ("PCH_SM", "%（同比）", "%")] {
+        for (unit, short, suffix) in [("I15", "指数(2015=100)", ""), ("NR", "数量", ""), ("PCH_SM", "%（同比）", "%"), ("CLV_PCH_SM", "%（同比）", "%")] {
             let change = recipe("change");
             let places = ["AT", "DE", "LU", "LV"];
             let mut main = ring_rows("sdg_07_40", &[("freq", "A"), ("unit", unit)], ("geo", &places), &["2016", "2025"]);
@@ -7299,7 +7300,7 @@ mod tests {
             assert!(spec["fmts"].as_object().unwrap().values().all(|f| !f["suffix"].as_str().unwrap_or("").chars().any(|c| c.is_ascii_digit())), "{unit}: {}", spec["fmts"]);
             assert_eq!(spec["fmts"][unit.to_lowercase()]["suffix"], suffix, "{unit}");
             let src = format!("name:unit_short_zh:{unit}");
-            let has_digit = short.chars().any(|c| c.is_ascii_digit()) || unit == "PCH_SM";
+            let has_digit = short.chars().any(|c| c.is_ascii_digit()) || short.starts_with("%（");
             assert_eq!(fill["knobs"]["named"].get(&src).is_some(), has_digit, "{unit}: the named row");
             assert!(!has_digit || fill["knobs"]["named"][&src] == short, "{unit}: the named row's text");
             assert_eq!(fill["knobs"]["segs"]["unit"][1]["src"].as_str() == Some(src.as_str()), has_digit, "{unit}: the segments");
@@ -7357,7 +7358,7 @@ mod tests {
             let refs: Vec<String> = serde_json::from_value(back["refs"].take()).unwrap();
             assert_eq!(crate::next_leaf::check_leaf_page(&html, &ledger, &refs, &spec, &rows, &facts), Vec::<String>::new(), "{unit}");
             // the basis is checked, not only printed: a page whose unit line says another basis fails the whole-page check
-            if unit == "PCH_SM" {
+            if short.starts_with("%（") {
                 let swapped = html.replace(short, "%（较上期）");
                 assert_ne!(swapped, html, "the page prints the basis");
                 assert_ne!(crate::next_leaf::check_leaf_page(&swapped, &ledger, &refs, &spec, &rows, &facts), Vec::<String>::new(), "a swapped basis passes");

@@ -282,6 +282,14 @@ mod tests {
         assert_eq!((unit_line_form("PC"), unit_line_form("I15"), unit_line_form("XYZ")), (Some("%"), Some("指数(2015=100)"), None));
         // a rate of change whose label states no basis has no row (Annual average rate of change: against what is unsaid)
         assert_eq!(unit_short("RCH_A_AVG"), None);
+        // a chain-linked volume's rate of change reads its basis past the price-basis prefix (n02's quarter on the same
+        // quarter a year before); an annualized one, a chain-linked level or index is not read
+        assert_eq!((unit_short("CLV_PCH_SM"), unit_number_suffix("CLV_PCH_SM"), unit_line_form("CLV_PCH_SM")), (Some("%"), Some("%"), Some("%（同比）")));
+        assert_eq!(unit_line_form("CLV_PCH_PRE"), Some("%（较上期）"));
+        assert_eq!((unit_short("CLV_PCH_ANN"), unit_short("CLV10_MEUR"), unit_short("CLV_I20")), (None, None, None));
+        // a per-capita amount at current prices, in euro or in purchasing power standards (s4a)
+        assert_eq!((unit_line_form("CP_EUR_HAB"), unit_number_suffix("CP_EUR_HAB")), (Some("欧元/人"), Some("欧元/人")));
+        assert_eq!((unit_line_form("CP_PPS_EU27_2020_HAB"), unit_number_suffix("CP_PPS_EU27_2020_HAB")), (Some("购买力标准/人"), Some("购买力标准/人")));
         // a change against a year the label names prints that year as its basis (World Bank "% change from 1990", s6)
         assert_eq!((unit_short("PCH_1990"), unit_number_suffix("PCH_1990"), unit_line_form("PCH_1990")), (Some("%"), Some("%"), Some("%（较1990年）")));
         // every World Bank change registered with a code prints a basis on its unit line: a change whose basis no rule

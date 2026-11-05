@@ -41,6 +41,12 @@ NOUN = {
     "kilowatt-hours": "千瓦时", "kilowatt-hour": "千瓦时", "gigawatt-hours": "吉瓦时", "gigawatt-hour": "吉瓦时",
     "terajoules": "太焦", "terajoule": "太焦", "cubic metres": "立方米", "kilograms": "千克", "kilogram": "千克",
     "enterprises": "家企业", "households": "户",
+    # the purchasing power standard (Eurostat's artificial currency, one PPS buying the same in every country); the EU27
+    # aggregate it is set against is the standard's own definition, not part of the form
+    "purchasing power standard": "购买力标准", "purchasing power standards": "购买力标准",
+    "purchasing power standard (pps)": "购买力标准", "purchasing power standards (pps)": "购买力标准",
+    "purchasing power standard (pps, eu27 from 2020)": "购买力标准",
+    "purchasing power standards (pps, eu27 from 2020)": "购买力标准",
 }
 PER = {"per inhabitant": "/人", "per capita": "/人", "per person": "/人"}
 # The one unit of a quantity a price is given per (lower-case label words -> the Chinese form after "/").
@@ -56,6 +62,12 @@ BASIS = [
     (r"m/m-24\b", "较两年前同月"),
 ]
 SAME_MONTH = r"same month in (\d{4})"
+# A price basis a national-accounts label starts with ("Current prices, euro per capita"): current prices leave an amount
+# as the amount it is; chain linked volumes (a real, not a nominal, measure) are read only for a rate of change, whose
+# comparison basis the rest of the label states, since a chain-linked level does not add up and has its own reference year.
+CURRENT_PRICES = "current prices, "
+CHAIN_LINKED = "chain linked volumes, "
+CHANGE = r"(percentage change|growth rate|annual average rate of change|rate of change)\b"
 # A change against one named year (a World Bank "% change from 1990"), the year read from the label, never typed.
 FROM_YEAR = r"\bchange from (\d{4})\b"
 
@@ -76,19 +88,24 @@ def basis_of(label):
 
 
 def is_change(label):
-    """A rate of change by its label (the pct_change rule), whatever row it came from."""
-    return re.match(r"(percentage change|growth rate|annual average rate of change|rate of change)\b", label.lower()) is not None
+    """A rate of change by its label (the pct_change rule), whatever row it came from; a chain-linked one too."""
+    low = label.lower()
+    return re.match(CHANGE, low.removeprefix(CHAIN_LINKED)) is not None
 
 
 def read_label(label):
     """(short_zh, rule, additive, suffix_zh) for an English unit label, or None when no rule reads it."""
     lab = re.sub(r"\s+", " ", label.strip())
     low = lab.lower()
+    if low.startswith(CHAIN_LINKED):
+        rest = low[len(CHAIN_LINKED):]
+        return ("%", "pct_change", "no", "%") if re.match(CHANGE, rest) else None
+    low = low.removeprefix(CURRENT_PRICES)
     m = re.fullmatch(r"(?:annual average |quarterly |monthly )?(?:volume |price |harmonized consumer price )?index,? "
                      r"\(?(\d{4})=100\)?" + QUALIFIER, low)
     if m:
         return f"指数({m.group(1)}=100)", "index_base", "no", ""
-    if re.match(r"(percentage change|growth rate|annual average rate of change|rate of change)\b", low):
+    if re.match(CHANGE, low):
         return "%", "pct_change", "no", "%"
     # a share's change ("Percentage of world total - 5-year change") is no share: "%" would misread it, so no rule reads it
     if re.fullmatch(r"percentage" + QUALIFIER, low) or (low.startswith("percentage of ") and "change" not in low):

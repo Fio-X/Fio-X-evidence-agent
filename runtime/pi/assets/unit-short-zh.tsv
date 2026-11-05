@@ -221,6 +221,16 @@ T	吨	mass	yes	吨	reviewed	Tonne
 TCO2E_HAB	吨二氧化碳当量/人	per_capita	no	吨二氧化碳当量/人	reviewed	Tonnes of CO2 equivalent per capita	
 YR	年	time	no	年	reviewed	Year	
 BN_EUR	十亿欧元	amount	yes	十亿欧元	generated	Billion euro	
+CLV_PCH_PRE	%	pct_change	no	%	generated	Chain linked volumes, percentage change on previous period	%（较上期）
+CLV_PCH_PRE_HAB	%	pct_change	no	%	generated	Chain linked volumes, percentage change on previous period, per capita	%（较上期）
+CLV_PCH_SM	%	pct_change	no	%	generated	Chain linked volumes, percentage change compared to same period in previous year	%（同比）
+CLV_PCH_SM_HAB	%	pct_change	no	%	generated	Chain linked volumes, percentage change compared to same period in previous year, per capita	%（同比）
+CP_EUR_HAB	欧元/人	per_capita	no	欧元/人	generated	Current prices, euro per capita	
+CP_MEUR	百万欧元	amount	yes	百万欧元	generated	Current prices, million euro	
+CP_MPPS	百万购买力标准	amount	yes	百万购买力标准	generated	Current prices, million purchasing power standards	
+CP_MPPS_EU27_2020	百万购买力标准	amount	yes	百万购买力标准	generated	Current prices, million purchasing power standards (PPS, EU27 from 2020)	
+CP_PPS_EU27_2020_HAB	购买力标准/人	per_capita	no	购买力标准/人	generated	Current prices, purchasing power standard (PPS, EU27 from 2020) per capita	
+CP_PPS_HAB	购买力标准/人	per_capita	no	购买力标准/人	generated	Current prices, purchasing power standard per capita	
 EUR	欧元	amount	yes	欧元	generated	Euro	
 EUR_GJ	欧元/吉焦	price	no	欧元/吉焦	generated	Euro per gigajoule	
 EUR_HA	欧元/公顷	price	no	欧元/公顷	generated	Euro per hectare	
@@ -247,6 +257,8 @@ MEUR_HAB	百万欧元/人	per_capita	no	百万欧元/人	generated	Million euro 
 MIO_EUR	百万欧元	amount	yes	百万欧元	generated	Million euro	
 MIO_PER	百万人	amount	yes	百万人	generated	Million persons	
 MIO_PKM	百万人公里	amount	yes	百万人公里	generated	Millions of passenger-kilometres	
+MIO_PPS	百万购买力标准	amount	yes	百万购买力标准	generated	Million purchasing power standards (PPS)	
+MIO_PPS_EU27_2020	百万购买力标准	amount	yes	百万购买力标准	generated	Million purchasing power standards (PPS, EU27 from 2020)	
 MIO_T	百万吨	amount	yes	百万吨	generated	Million tonnes	
 MTOE	百万吨油当量	amount	yes	百万吨油当量	generated	Million tonnes of oil equivalent	
 NR	数量	count	yes		generated	Number	
@@ -299,6 +311,9 @@ PC_Y20-29	%	pct_family	no	%	generated	Percentage of total population aged 20-29
 PC_Y25-29	%	pct_family	no	%	generated	Percentage of total population aged 25-29	
 PERS	人	amount	yes	人	generated	Persons	
 PKM	人公里	amount	yes	人公里	generated	Passenger-kilometres	
+PPS	购买力标准	amount	yes	购买力标准	generated	Purchasing power standard (PPS)	
+PPS_EU27_2020	购买力标准	amount	yes	购买力标准	generated	Purchasing power standard (PPS, EU27 from 2020)	
+PPS_HAB	购买力标准/人	per_capita	no	购买力标准/人	generated	Purchasing power standard (PPS) per inhabitant	
 RT1	%	pct_change	no	%	generated	Growth rate on previous period (t/t-1)	%（较上期）
 RT1-SCA	%	pct_change	no	%	generated	Percentage change (t/t-1) - seasonally and calendar adjusted data	%（较上期）
 RT4	%	pct_change	no	%	generated	Growth rate on the same quarter in previous year	%（同比）
