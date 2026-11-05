@@ -1947,11 +1947,17 @@ fn page_lead(fill: Option<&Value>, charts: &[Chart]) -> Option<(Relation, View)>
 /// The text step's title, dek and kicker in a page's fill (its spec), in place of the ones it was picked with; each place
 /// name placeholder in the title and dek (finding_of) filled from the fill's labels (named_places).
 fn page_words(fill: &mut Value, (title, dek, kicker): (&str, &str, &str)) {
-    let labels = fill["knobs"]["labels"].clone();
+    let names = place_names(fill).clone();
     let spec = &mut fill["knobs"]["spec"];
-    spec["title"] = json!(named_places(title, &labels));
-    spec["dek"] = json!(named_places(dek, &labels));
+    spec["title"] = json!(named_places(title, &names));
+    spec["dek"] = json!(named_places(dek, &names));
     spec["kicker"] = json!(kicker);
+}
+
+/// The places' names a fill hands its leaf (knobs.labels, code -> the knowledge group's name), which page_words writes over
+/// the placeholders and notes_asked reads the printed headline by.
+fn place_names(fill: &Value) -> &Value {
+    &fill["knobs"]["labels"]
 }
 
 /// The prefix of a place's name placeholder in a page's words, `{name.<code>}` (finding_of): the program writes the name of
@@ -2503,7 +2509,7 @@ fn notes_asked(recipe: &Recipe, fill: &Value) -> NotesAsked {
     // printed headline cited none)
     let title = spec["title"].as_str().unwrap_or_default();
     let mut cited: BTreeSet<String> = title.split("{name.").skip(1).filter_map(|t| t.split_once('}')).map(|(code, _)| code.to_string()).collect();
-    for (code, name) in fill["knobs"]["labels"].as_object().into_iter().flatten() {
+    for (code, name) in place_names(fill).as_object().into_iter().flatten() {
         if name.as_str().is_some_and(|n| !n.is_empty() && title.contains(n)) {
             cited.insert(code.clone());
         }
