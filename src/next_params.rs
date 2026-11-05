@@ -496,14 +496,24 @@ pub fn question_years(question: &str, this_year: i32) -> Option<NamedYears> {
         return Some(NamedYears::Span(a, if since { this_year.max(a) } else { b }));
     }
     let text: String = chars.iter().filter(|c| !c.is_whitespace()).collect();
-    for lead in ["最近", "过去", "近"] {
+    let numeral = |c: &char| c.is_ascii_digit() || "一二两三四五六七八九十".contains(*c);
+    for lead in ["最近", "过去", "近", "这"] {
         for (at, _) in text.match_indices(lead) {
             let rest = &text[at + lead.len()..];
-            let count: String = rest.chars().take_while(|c| c.is_ascii_digit() || "一二两三四五六七八九十".contains(*c)).collect();
+            let count: String = rest.chars().take_while(numeral).collect();
             if rest[count.len()..].starts_with('年') {
                 if let Some(n) = count_of(&count).filter(|n| *n >= 1) {
                     return Some(NamedYears::Last(n));
                 }
+            }
+        }
+    }
+    // a count of years the question runs back over with no word before it: "五年来", "10 年以来" (t4, 11-05 10:2x (e))
+    for tail in ["年来", "年以来"] {
+        for (at, _) in text.match_indices(tail) {
+            let count: String = text[..at].chars().rev().take_while(numeral).collect::<Vec<_>>().into_iter().rev().collect();
+            if let Some(n) = count_of(&count).filter(|n| *n >= 1 && count.chars().count() < 4) {
+                return Some(NamedYears::Last(n));
             }
         }
     }
@@ -2175,6 +2185,16 @@ mod tests {
         assert_eq!(q("过去 10 年各国人均碳排放"), Some(NamedYears::Last(10)));
         assert_eq!(q("最近十二年"), Some(NamedYears::Last(12)));
         assert_eq!(q("近二十年"), Some(NamedYears::Last(20)));
+        // a count of years run back over with no word before it, or after 这 (11-05: a question asking five years was fetched
+        // and printed over the table's whole ten)
+        assert_eq!(q("五年来欧盟各国房价涨了多少"), Some(NamedYears::Last(5)));
+        assert_eq!(q("各国房价 3 年以来的变化"), Some(NamedYears::Last(3)));
+        assert_eq!(q("这十年各国失业率"), Some(NamedYears::Last(10)));
+        assert_eq!(q("这两年来的通胀"), Some(NamedYears::Last(2)));
+        // no count before it: none
+        assert_eq!(q("近年来欧盟各国失业率"), None);
+        assert_eq!(q("多年来各国人口"), None);
+        assert_eq!(q("十多年来各国人口"), None);
         // no year: a count that is no year, a four-digit number off the years, a time word without a count
         assert_eq!(q("欧盟各国可再生能源占比"), None);
         assert_eq!(q("人口超过 1000 万的国家"), None);
