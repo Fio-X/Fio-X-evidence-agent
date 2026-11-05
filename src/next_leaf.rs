@@ -1616,6 +1616,59 @@ pub fn check_leaf_page(
     off.extend(crate::next_ledger::check_claims(html, ledger, spec, facts, rows));
     off.extend(crate::next_ledger::check_accent_named(html));
     off.extend(places_answered(html, ledger, spec, rows, facts));
+    off.extend(basis_said(html, ledger, spec, rows, facts));
+    off
+}
+
+/// A page for a country group whose request keeps a member basis (spec.basis, from the knowledge group's words) says it:
+/// the page's text holds the basis words with the year as its period entry in the basis table and the count as the bare
+/// number of the count fact, both printed marked; that fact counts at the basis year, and every place it counts is one of
+/// the members. A request with no basis asks nothing of the page.
+fn basis_said(html: &str, ledger: &BTreeMap<String, String>, spec: &Spec, rows: &[Row], facts: &[Fact]) -> Vec<String> {
+    let Some(b) = &spec.basis else { return Vec::new() };
+    let year_src = format!("{PERIOD_SRC}{}:{}", b.table, b.year);
+    let count_src = format!("{}{}.n", crate::next_facts::FACT_SRC, b.count);
+    let entry = |src: &str, key: &str| if b.words.contains(key) { ledger.get(src).map(String::as_str) } else { Some("") };
+    let (Some(year), Some(n)) = (entry(&year_src, "{year}"), entry(&count_src, "{n}")) else {
+        return vec![format!("basis: the ledger holds no {year_src} or {count_src} for the member basis {:?}", b.words)];
+    };
+    let mut off = Vec::new();
+    match (spec.facts.iter().find(|(k, _)| *k == b.count), facts.iter().find(|f| f.key == b.count)) {
+        (Some((_, q)), Some(f)) if f.op == "n" => {
+            if q["time"].as_str() != Some(b.year.as_str()) {
+                off.push(format!("basis: {count_src} counts at {}, the basis is of {}", q["time"], b.year));
+            }
+            let by = q["by"].as_str().unwrap_or_default();
+            for r in rows.iter().filter(|r| f.reads.contains(&r.src)) {
+                match r.dims.get(by) {
+                    Some(code) if b.members.contains(code) => {}
+                    code => off.push(format!("basis: {count_src} counts {code:?} ({}), no member of {}", r.src, b.year)),
+                }
+            }
+        }
+        _ => off.push(format!("basis: the request holds no count fact {} for the member basis", b.count)),
+    }
+    // the page's text as read: no markup, its entities as the characters they stand for
+    let mut text = String::new();
+    let mut in_tag = false;
+    for c in html.chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if !in_tag => text.push(c),
+            _ => {}
+        }
+    }
+    let text = text.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&#39;", "'").replace("&amp;", "&");
+    let want = b.words.replace("{year}", year).replace("{n}", n);
+    if !text.contains(&want) {
+        off.push(format!("basis: the page does not say its member basis {want:?}"));
+    }
+    for src in [&year_src, &count_src] {
+        if b.words.contains(if *src == year_src { "{year}" } else { "{n}" }) && !html.contains(&format!("data-src=\"{src}\"")) {
+            off.push(format!("basis: the page prints no {src} for its member basis"));
+        }
+    }
     off
 }
 
@@ -1875,6 +1928,7 @@ mod tests {
             fmts: json!({}),
             members: None,
             asked_places: None,
+            basis: None,
         };
         let ledger = leaf_ledger(&spec, &rows, &[]).unwrap();
         let refs = ["MIGR_ASYAPPCTZM".to_string()];
@@ -2563,6 +2617,7 @@ mod tests {
             fmts: json!({}),
             members: None,
             asked_places: None,
+            basis: None,
         };
         let ledger = leaf_ledger(&spec, &rows, &[]).unwrap();
         let m = |src: &str| {

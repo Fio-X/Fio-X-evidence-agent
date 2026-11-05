@@ -122,6 +122,21 @@ pub struct Spec {
     /// when the question names no country.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub asked_places: Option<AskedPlaces>,
+    /// The member basis a page for a country group must say (knobs.spec.basis); none for any other page.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub basis: Option<Basis>,
+}
+
+/// What a page for a country group counts and must say (the flow writes it from the knowledge group's group_basis): the
+/// line's words ({year} and {n} the page's entries of `year` in `table` and of the `count` fact's bare number), the year
+/// the count is at, and the codes of the group's members that year.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Basis {
+    pub words: String,
+    pub year: String,
+    pub count: String,
+    pub table: String,
+    pub members: Vec<String>,
 }
 
 /// The countries a question names on their own (the knowledge group's places, countries only), as the page's rows write
@@ -1575,6 +1590,7 @@ pub(crate) fn stored_request(req: &Value) -> (Spec, Vec<Row>, Vec<String>) {
             serde_json::from_value(s["asked_places"].clone())
                 .unwrap_or_else(|e| AskedPlaces { unread: Some(e.to_string()), ..Default::default() })
         }),
+        basis: serde_json::from_value(s["basis"].clone()).ok(),
     };
     (spec, rows, tables)
 }
@@ -1625,6 +1641,7 @@ mod tests {
             fmts: d["fmts"].clone(),
             members: Some(members),
             asked_places: None,
+            basis: None,
         };
         (spec, rows, d["golden"].clone())
     }
@@ -1721,6 +1738,7 @@ mod tests {
             fmts: json!({"m": {"scale": 0.01, "dec": 0, "suffix": " 亿"}, "time": {}}),
             members: members.map(|m| m.iter().map(|s| s.to_string()).collect()),
             asked_places: None,
+            basis: None,
         }
     }
 
@@ -2653,6 +2671,7 @@ mod tests {
             fmts: json!({}),
             members: None,
             asked_places: None,
+            basis: None,
         };
         let facts = compute(&spec, &rows).unwrap();
         assert_eq!((facts[0].v, facts[0].n), (2.0, Some(2)));
@@ -2677,7 +2696,7 @@ mod tests {
         };
         let rows = vec![row("G", "IND", 5.0), row("G", "TRA", 0.0)];
         let q = |pairs: Value| json!({"op": "excluded", "table": "t", "time": "2024", "by": ["s", "d"], "pairs": pairs, "fmt": "n"});
-        let spec = Spec { facts: vec![("x".into(), q(json!([["N", "IND"], ["N", "TRA"]])))], fmts: json!({}), members: None, asked_places: None };
+        let spec = Spec { facts: vec![("x".into(), q(json!([["N", "IND"], ["N", "TRA"]])))], fmts: json!({}), members: None, asked_places: None, basis: None };
         let facts = compute(&spec, &rows).unwrap();
         assert_eq!((facts[0].v, facts[0].who.as_slice()), (2.0, &["N>IND".to_string(), "N>TRA".to_string()][..]));
         assert!(facts[0].reads.is_empty());
@@ -2731,7 +2750,7 @@ mod tests {
         };
         let rows = vec![row("A", 60699.059), row("B", 0.631)];
         let q = |code: &str| json!({"op": "value", "table": "t", "time": "2024", "fmt": "k2", "filter": {"s": code}});
-        let spec = Spec { facts: vec![("a".into(), q("A")), ("b".into(), q("B"))], fmts, members: None, asked_places: None };
+        let spec = Spec { facts: vec![("a".into(), q("A")), ("b".into(), q("B"))], fmts, members: None, asked_places: None, basis: None };
         let facts = compute(&spec, &rows).unwrap();
         let ledger = leaf_ledger(&spec, &rows, &facts).unwrap();
         assert_eq!((ledger["fact:a.n"].as_str(), ledger["fact:a.r"].as_str()), ("60,699.06", "60,699"));

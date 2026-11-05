@@ -2319,6 +2319,12 @@ pub trait Catalogue: Sync {
     fn rank_asked(&self, _question_zh: &str) -> Option<RankAsked> {
         None
     }
+    /// What a page drawn for the group the Chinese question names counts (the knowledge group's GroupBasis, through its
+    /// door): the members of the year the page counts and the words of the line that says so; None when the question names
+    /// no group, or this catalogue reads none.
+    fn group_basis(&self, _question_zh: &str, _t0: Option<i32>, _t1: i32) -> Option<crate::l5geo::GroupBasis> {
+        None
+    }
     /// The shape of the slice a fetched file varies over, read by the knowledge group against the table's own metadata.
     fn shape(&self, _table: &TableMeta, _csv: &str) -> Result<Shape, String> {
         Err("this catalogue reads no fetched file".into())
@@ -2770,6 +2776,7 @@ pub(crate) fn knowledge_call<'a>(
                 Place::Region => json!({"region": true}),
             })
             .collect::<Vec<_>>()),
+        Ok(Reply::GroupBasis(basis)) => json!(basis),
         Ok(Reply::Refs(_)) => json!({"refs": "opened"}),
         // A shape is not JSON; its debug text is kept, as the visual group's calls keep theirs.
         Ok(Reply::Shape(shape)) => json!({"shape": format!("{shape:?}")}),
@@ -3211,6 +3218,19 @@ impl Catalogue for GroupCatalogue {
         match self.call("rank_asked", json!({"question": question_zh}), request) {
             next_knowledge::Reply::RankAsked(asked) => asked,
             _ => unreachable!("the knowledge group answered rank_asked with another reply"),
+        }
+    }
+
+    fn group_basis(&self, question_zh: &str, t0: Option<i32>, t1: i32) -> Option<crate::l5geo::GroupBasis> {
+        let request = next_knowledge::Request::GroupBasis {
+            catalogue: &self.opened,
+            question: question_zh,
+            t0,
+            t1,
+        };
+        match self.call("group_basis", json!({"question": question_zh, "t0": t0, "t1": t1}), request) {
+            next_knowledge::Reply::GroupBasis(basis) => basis,
+            _ => unreachable!("the knowledge group answered group_basis with another reply"),
         }
     }
 
@@ -9809,6 +9829,7 @@ mod tests {
             fmts: json!({}),
             members: None,
             asked_places: None,
+            basis: None,
         };
         let ledger = BTreeMap::new();
         let page = next_visual::LeafPage {

@@ -1,58 +1,493 @@
 {
- "note": "Chinese place words the World Bank's Chinese country list (wb-countries-zh.json) does not hold. aliases: the common short name of a country whose registry name is the long form (韩国 for 大韩民国), each as an iso2 code with its source. groups: country groups by year; a group word reads as the members of the period that holds the year the question names, or of the latest period when it names none. Members are iso2 codes of countries only (the EU and the African Union, members of the G20, are not countries and are not listed).",
+ "note": "Chinese place words the World Bank's Chinese country list (wb-countries-zh.json) does not hold, each with its source (title, url, access date). aliases: the short name of a country the list holds only in its long form, as an iso2 code. groups: country groups by year, each period a row of from, to (null: current), member iso2 codes and the source of the membership change that opens it; disputed: codes one source lists as members and another says are not, left out of the members; non_country_members: members that are no country (no country row; the page says they are not counted). basis: the words of the page line that says which members a page counts ({year} and {n} are the page's own entries, {others} the non-country members joined by others_join); line_join joins it to the unit line.",
+ "basis": {
+  "line_join": "；",
+  "members_of_year": "按 {year} 年成员（{n} 国）计",
+  "countries_only": "按 {n} 个成员国计，不含{others}",
+  "others_join": "、"
+ },
  "aliases": [
-  {"name": "韩国", "iso2": "KR", "source": "Ministry of Foreign Affairs of the PRC, country list (国家和组织): 韩国 (大韩民国)"},
-  {"name": "朝鲜", "iso2": "KP", "source": "Ministry of Foreign Affairs of the PRC, country list (国家和组织): 朝鲜 (朝鲜民主主义人民共和国)"},
-  {"name": "俄罗斯", "iso2": "RU", "source": "Ministry of Foreign Affairs of the PRC, country list (国家和组织): 俄罗斯 (俄罗斯联邦)"},
-  {"name": "伊朗", "iso2": "IR", "source": "Ministry of Foreign Affairs of the PRC, country list (国家和组织): 伊朗 (伊朗伊斯兰共和国)"},
-  {"name": "叙利亚", "iso2": "SY", "source": "Ministry of Foreign Affairs of the PRC, country list (国家和组织): 叙利亚 (阿拉伯叙利亚共和国)"},
-  {"name": "委内瑞拉", "iso2": "VE", "source": "Ministry of Foreign Affairs of the PRC, country list (国家和组织): 委内瑞拉 (委内瑞拉玻利瓦尔共和国)"},
-  {"name": "捷克", "iso2": "CZ", "source": "Ministry of Foreign Affairs of the PRC, country list (国家和组织): 捷克 (捷克共和国)"},
-  {"name": "斯洛伐克", "iso2": "SK", "source": "Ministry of Foreign Affairs of the PRC, country list (国家和组织): 斯洛伐克 (斯洛伐克共和国)"},
-  {"name": "文莱", "iso2": "BN", "source": "Ministry of Foreign Affairs of the PRC, country list (国家和组织): 文莱 (文莱达鲁萨兰国)"},
-  {"name": "埃及", "iso2": "EG", "source": "Ministry of Foreign Affairs of the PRC, country list (国家和组织): 埃及 (阿拉伯埃及共和国)"},
-  {"name": "阿联酋", "iso2": "AE", "source": "Ministry of Foreign Affairs of the PRC, country list (国家和组织): 阿联酋 (阿拉伯联合酋长国)"},
-  {"name": "刚果(金)", "iso2": "CD", "source": "the registry name 刚果（金） with ASCII parentheses"},
-  {"name": "刚果(布)", "iso2": "CG", "source": "the registry name 刚果（布） with ASCII parentheses"},
-  {"name": "刚果民主共和国", "iso2": "CD", "source": "Ministry of Foreign Affairs of the PRC, country list (国家和组织): 刚果（金） (刚果民主共和国)"},
-  {"name": "刚果共和国", "iso2": "CG", "source": "Ministry of Foreign Affairs of the PRC, country list (国家和组织): 刚果（布） (刚果共和国)"}
+  {
+   "name": "韩国",
+   "iso2": "KR",
+   "source": {
+    "title": "Ministry of Foreign Affairs of the PRC, countries and regions, Asia list: 韩国",
+    "url": "https://www.mfa.gov.cn/web/gjhdq_676201/gj_676203/yz_676205/",
+    "accessed": "2026-11-05"
+   }
+  },
+  {
+   "name": "朝鲜",
+   "iso2": "KP",
+   "source": {
+    "title": "Ministry of Foreign Affairs of the PRC, countries and regions, Asia list: 朝鲜",
+    "url": "https://www.mfa.gov.cn/web/gjhdq_676201/gj_676203/yz_676205/",
+    "accessed": "2026-11-05"
+   }
+  },
+  {
+   "name": "俄罗斯",
+   "iso2": "RU",
+   "source": {
+    "title": "Ministry of Foreign Affairs of the PRC, countries and regions, Europe list: 俄罗斯",
+    "url": "https://www.mfa.gov.cn/web/gjhdq_676201/gj_676203/oz_678770/",
+    "accessed": "2026-11-05"
+   }
+  },
+  {
+   "name": "伊朗",
+   "iso2": "IR",
+   "source": {
+    "title": "Ministry of Foreign Affairs of the PRC, countries and regions, Asia list: 伊朗",
+    "url": "https://www.mfa.gov.cn/web/gjhdq_676201/gj_676203/yz_676205/",
+    "accessed": "2026-11-05"
+   }
+  },
+  {
+   "name": "叙利亚",
+   "iso2": "SY",
+   "source": {
+    "title": "Ministry of Foreign Affairs of the PRC, countries and regions, Asia list: 叙利亚",
+    "url": "https://www.mfa.gov.cn/web/gjhdq_676201/gj_676203/yz_676205/",
+    "accessed": "2026-11-05"
+   }
+  },
+  {
+   "name": "委内瑞拉",
+   "iso2": "VE",
+   "source": {
+    "title": "Ministry of Foreign Affairs of the PRC, countries and regions, South America list: 委内瑞拉",
+    "url": "https://www.mfa.gov.cn/web/gjhdq_676201/gj_676203/nmz_680924/",
+    "accessed": "2026-11-05"
+   }
+  },
+  {
+   "name": "捷克",
+   "iso2": "CZ",
+   "source": {
+    "title": "Ministry of Foreign Affairs of the PRC, countries and regions, Europe list: 捷克",
+    "url": "https://www.mfa.gov.cn/web/gjhdq_676201/gj_676203/oz_678770/",
+    "accessed": "2026-11-05"
+   }
+  },
+  {
+   "name": "斯洛伐克",
+   "iso2": "SK",
+   "source": {
+    "title": "Ministry of Foreign Affairs of the PRC, countries and regions, Europe list: 斯洛伐克",
+    "url": "https://www.mfa.gov.cn/web/gjhdq_676201/gj_676203/oz_678770/",
+    "accessed": "2026-11-05"
+   }
+  },
+  {
+   "name": "文莱",
+   "iso2": "BN",
+   "source": {
+    "title": "Ministry of Foreign Affairs of the PRC, countries and regions, Asia list: 文莱",
+    "url": "https://www.mfa.gov.cn/web/gjhdq_676201/gj_676203/yz_676205/",
+    "accessed": "2026-11-05"
+   }
+  },
+  {
+   "name": "埃及",
+   "iso2": "EG",
+   "source": {
+    "title": "Ministry of Foreign Affairs of the PRC, countries and regions, Africa list: 埃及",
+    "url": "https://www.mfa.gov.cn/web/gjhdq_676201/gj_676203/fz_677316/",
+    "accessed": "2026-11-05"
+   }
+  },
+  {
+   "name": "阿联酋",
+   "iso2": "AE",
+   "source": {
+    "title": "Ministry of Foreign Affairs of the PRC, countries and regions, Asia list: 阿联酋",
+    "url": "https://www.mfa.gov.cn/web/gjhdq_676201/gj_676203/yz_676205/",
+    "accessed": "2026-11-05"
+   }
+  },
+  {
+   "name": "刚果(金)",
+   "iso2": "CD",
+   "source": {
+    "title": "Ministry of Foreign Affairs of the PRC, countries and regions, Africa list: 刚果(金)",
+    "url": "https://www.mfa.gov.cn/web/gjhdq_676201/gj_676203/fz_677316/",
+    "accessed": "2026-11-05"
+   }
+  },
+  {
+   "name": "刚果(布)",
+   "iso2": "CG",
+   "source": {
+    "title": "Ministry of Foreign Affairs of the PRC, countries and regions, Africa list: 刚果(布)",
+    "url": "https://www.mfa.gov.cn/web/gjhdq_676201/gj_676203/fz_677316/",
+    "accessed": "2026-11-05"
+   }
+  }
  ],
  "groups": [
   {
    "id": "BRICS",
-   "names": ["金砖国家", "金砖"],
+   "names": [
+    "金砖国家",
+    "金砖"
+   ],
+   "disputed": [
+    {
+     "iso2": "SA",
+     "iso3": "SAU",
+     "sources": [
+      {
+       "title": "Ministry of Foreign Affairs of the PRC, BRICS overview (updated 2026-06): Saudi Arabia among the members from 1 January 2024",
+       "url": "https://www.mfa.gov.cn/web/gjhdq_676201/gjhdqzz_681964/jzgj_682158/jbqk_682160/",
+       "accessed": "2026-11-05"
+      },
+      {
+       "title": "Al Arabiya, 1 February 2024: a Saudi official source says the kingdom has not yet joined BRICS",
+       "url": "https://english.alarabiya.net/News/saudi-arabia/2024/02/01/Saudi-Arabia-has-not-yet-joined-BRICS-Saudi-official-source",
+       "accessed": "2026-11-05"
+      }
+     ]
+    }
+   ],
    "periods": [
-    {"from": 2009, "to": 2010, "members": ["BR", "RU", "IN", "CN"], "source": "First BRIC summit, Yekaterinburg, 16 June 2009 (Joint Statement of the BRIC Countries' Leaders)"},
-    {"from": 2011, "to": 2023, "members": ["BR", "RU", "IN", "CN", "ZA"], "source": "South Africa admitted 24 December 2010, first summit as a member Sanya, 14 April 2011 (Sanya Declaration)"},
-    {"from": 2024, "to": 2024, "members": ["BR", "RU", "IN", "CN", "ZA", "EG", "ET", "IR", "AE"], "source": "Johannesburg II Declaration, 24 August 2023: Egypt, Ethiopia, Iran and the UAE members from 1 January 2024 (Saudi Arabia, invited, has not confirmed and is not listed)"},
-    {"from": 2025, "to": null, "members": ["BR", "RU", "IN", "CN", "ZA", "EG", "ET", "IR", "AE", "ID"], "source": "Brazil's BRICS presidency (brics.br, members page), 6 January 2025: Indonesia a full member"}
+    {
+     "from": 2009,
+     "to": 2010,
+     "members": [
+      "BR",
+      "RU",
+      "IN",
+      "CN"
+     ],
+     "source": {
+      "title": "Ministry of Foreign Affairs of the PRC, BRICS overview (updated 2026-06): first leaders' meeting, Yekaterinburg, June 2009",
+      "url": "https://www.mfa.gov.cn/web/gjhdq_676201/gjhdqzz_681964/jzgj_682158/jbqk_682160/",
+      "accessed": "2026-11-05"
+     }
+    },
+    {
+     "from": 2011,
+     "to": 2023,
+     "members": [
+      "BR",
+      "RU",
+      "IN",
+      "CN",
+      "ZA"
+     ],
+     "source": {
+      "title": "Ministry of Foreign Affairs of the PRC, BRICS overview (updated 2026-06): South Africa joined in 2011",
+      "url": "https://www.mfa.gov.cn/web/gjhdq_676201/gjhdqzz_681964/jzgj_682158/jbqk_682160/",
+      "accessed": "2026-11-05"
+     }
+    },
+    {
+     "from": 2024,
+     "to": 2024,
+     "members": [
+      "BR",
+      "RU",
+      "IN",
+      "CN",
+      "ZA",
+      "EG",
+      "ET",
+      "IR",
+      "AE"
+     ],
+     "source": {
+      "title": "Ministry of Foreign Affairs of the PRC, BRICS overview (updated 2026-06): Egypt, the UAE, Iran and Ethiopia members from 1 January 2024",
+      "url": "https://www.mfa.gov.cn/web/gjhdq_676201/gjhdqzz_681964/jzgj_682158/jbqk_682160/",
+      "accessed": "2026-11-05"
+     }
+    },
+    {
+     "from": 2025,
+     "to": null,
+     "members": [
+      "BR",
+      "RU",
+      "IN",
+      "CN",
+      "ZA",
+      "EG",
+      "ET",
+      "IR",
+      "AE",
+      "ID"
+     ],
+     "source": {
+      "title": "Ministry of Foreign Affairs of the PRC, BRICS overview (updated 2026-06): Indonesia a member in 2025",
+      "url": "https://www.mfa.gov.cn/web/gjhdq_676201/gjhdqzz_681964/jzgj_682158/jbqk_682160/",
+      "accessed": "2026-11-05"
+     }
+    }
    ]
   },
   {
    "id": "ASEAN",
-   "names": ["东盟", "东南亚国家联盟"],
+   "names": [
+    "东盟",
+    "东南亚国家联盟"
+   ],
    "periods": [
-    {"from": 1967, "to": 1983, "members": ["ID", "MY", "PH", "SG", "TH"], "source": "ASEAN Declaration (Bangkok Declaration), 8 August 1967 (asean.org, ASEAN Member States)"},
-    {"from": 1984, "to": 1994, "members": ["ID", "MY", "PH", "SG", "TH", "BN"], "source": "Brunei Darussalam joined 7 January 1984 (asean.org, ASEAN Member States)"},
-    {"from": 1995, "to": 1996, "members": ["ID", "MY", "PH", "SG", "TH", "BN", "VN"], "source": "Viet Nam joined 28 July 1995 (asean.org, ASEAN Member States)"},
-    {"from": 1997, "to": 1998, "members": ["ID", "MY", "PH", "SG", "TH", "BN", "VN", "LA", "MM"], "source": "Lao PDR and Myanmar joined 23 July 1997 (asean.org, ASEAN Member States)"},
-    {"from": 1999, "to": 2024, "members": ["ID", "MY", "PH", "SG", "TH", "BN", "VN", "LA", "MM", "KH"], "source": "Cambodia joined 30 April 1999 (asean.org, ASEAN Member States)"},
-    {"from": 2025, "to": null, "members": ["ID", "MY", "PH", "SG", "TH", "BN", "VN", "LA", "MM", "KH", "TL"], "source": "Timor-Leste admitted at the 47th ASEAN Summit, Kuala Lumpur, 26 October 2025 (asean.org, ASEAN Member States)"}
+    {
+     "from": 1967,
+     "to": 1983,
+     "members": [
+      "ID",
+      "MY",
+      "PH",
+      "SG",
+      "TH"
+     ],
+     "source": {
+      "title": "ASEAN, History (The Founding of ASEAN): the ASEAN Declaration, Bangkok, 8 August 1967, by Indonesia, Malaysia, the Philippines, Singapore and Thailand",
+      "url": "https://asean.org/the-founding-of-asean/",
+      "accessed": "2026-11-05"
+     }
+    },
+    {
+     "from": 1984,
+     "to": 1994,
+     "members": [
+      "ID",
+      "MY",
+      "PH",
+      "SG",
+      "TH",
+      "BN"
+     ],
+     "source": {
+      "title": "ASEAN, Member States, Brunei Darussalam: member from 7 January 1984",
+      "url": "https://asean.org/member-states/brunei-darussalam/",
+      "accessed": "2026-11-05"
+     }
+    },
+    {
+     "from": 1995,
+     "to": 1996,
+     "members": [
+      "ID",
+      "MY",
+      "PH",
+      "SG",
+      "TH",
+      "BN",
+      "VN"
+     ],
+     "source": {
+      "title": "ASEAN, The ASEAN Journey: Viet Nam admitted as the seventh member, 28 July 1995",
+      "url": "https://asean.org/asean-milestone/",
+      "accessed": "2026-11-05"
+     }
+    },
+    {
+     "from": 1997,
+     "to": 1998,
+     "members": [
+      "ID",
+      "MY",
+      "PH",
+      "SG",
+      "TH",
+      "BN",
+      "VN",
+      "LA",
+      "MM"
+     ],
+     "source": {
+      "title": "ASEAN, The ASEAN Journey: Lao PDR and Myanmar admitted as the eighth and ninth members, 30th AMM, 23 July 1997",
+      "url": "https://asean.org/asean-milestone/",
+      "accessed": "2026-11-05"
+     }
+    },
+    {
+     "from": 1999,
+     "to": 2024,
+     "members": [
+      "ID",
+      "MY",
+      "PH",
+      "SG",
+      "TH",
+      "BN",
+      "VN",
+      "LA",
+      "MM",
+      "KH"
+     ],
+     "source": {
+      "title": "ASEAN, The ASEAN Journey: Cambodia admitted, 30 April 1999",
+      "url": "https://asean.org/asean-milestone/",
+      "accessed": "2026-11-05"
+     }
+    },
+    {
+     "from": 2025,
+     "to": null,
+     "members": [
+      "ID",
+      "MY",
+      "PH",
+      "SG",
+      "TH",
+      "BN",
+      "VN",
+      "LA",
+      "MM",
+      "KH",
+      "TL"
+     ],
+     "source": {
+      "title": "ASEAN, Forging a New Era: Timor-Leste Admitted into ASEAN, 26 October 2025",
+      "url": "https://asean.org/forging-a-new-era-timor-leste-admitted-into-asean/",
+      "accessed": "2026-11-05"
+     }
+    }
    ]
   },
   {
    "id": "G7",
-   "names": ["七国集团", "西方七国", "G7"],
+   "names": [
+    "七国集团",
+    "西方七国",
+    "G7"
+   ],
    "periods": [
-    {"from": 1975, "to": 1975, "members": ["FR", "DE", "IT", "JP", "GB", "US"], "source": "Rambouillet summit, 15-17 November 1975 (Declaration of Rambouillet)"},
-    {"from": 1976, "to": null, "members": ["FR", "DE", "IT", "JP", "GB", "US", "CA"], "source": "Canada joined at the San Juan summit, 27-28 June 1976 (Government of Canada, About the G7, international.gc.ca)"}
+    {
+     "from": 1975,
+     "to": 1975,
+     "members": [
+      "FR",
+      "DE",
+      "IT",
+      "JP",
+      "GB",
+      "US"
+     ],
+     "source": {
+      "title": "Federal Government of Germany, The history of the G7: the first summit, Rambouillet, 1975, of France, West Germany, the USA, Japan, the United Kingdom and Italy",
+      "url": "https://www.bundesregierung.de/breg-en/service/archive/archive/the-history-of-the-g7-397438",
+      "accessed": "2026-11-05"
+     }
+    },
+    {
+     "from": 1976,
+     "to": null,
+     "members": [
+      "FR",
+      "DE",
+      "IT",
+      "JP",
+      "GB",
+      "US",
+      "CA"
+     ],
+     "source": {
+      "title": "Government of Canada, Canada and the G7: Canada joined the G7 in 1976 (date modified 2026-03-23)",
+      "url": "https://www.international.gc.ca/world-monde/international_relations-relations_internationales/g7/index.aspx?lang=eng",
+      "accessed": "2026-11-05"
+     }
+    }
    ]
   },
   {
    "id": "G20",
-   "names": ["二十国集团", "G20"],
+   "names": [
+    "二十国集团",
+    "G20"
+   ],
    "periods": [
-    {"from": 1999, "to": null, "members": ["AR", "AU", "BR", "CA", "CN", "FR", "DE", "IN", "ID", "IT", "JP", "KR", "MX", "RU", "SA", "ZA", "TR", "GB", "US"], "source": "G20 founded at the finance ministers' meeting, Berlin, 15-16 December 1999 (g20.org, About G20: 19 countries, the EU and, since 9 September 2023, the African Union)"}
+    {
+     "from": 1999,
+     "to": 2022,
+     "members": [
+      "AR",
+      "AU",
+      "BR",
+      "CA",
+      "CN",
+      "FR",
+      "DE",
+      "IN",
+      "ID",
+      "IT",
+      "JP",
+      "KR",
+      "MX",
+      "RU",
+      "SA",
+      "ZA",
+      "TR",
+      "GB",
+      "US"
+     ],
+     "non_country_members": [
+      {
+       "name": "欧盟",
+       "source": {
+        "title": "Ministry of External Affairs of India, Group of Twenty - G20 (brief to March 2025): founded in 1999, the 19 countries along with the European Union",
+        "url": "https://www.mea.gov.in/Portal/ForeignRelation/G20_Brief_upto_MAR_25.pdf",
+        "accessed": "2026-11-05"
+       }
+      }
+     ],
+     "source": {
+      "title": "Ministry of External Affairs of India, Group of Twenty - G20 (brief to March 2025): founded in 1999, the 19 member countries",
+      "url": "https://www.mea.gov.in/Portal/ForeignRelation/G20_Brief_upto_MAR_25.pdf",
+      "accessed": "2026-11-05"
+     }
+    },
+    {
+     "from": 2023,
+     "to": null,
+     "members": [
+      "AR",
+      "AU",
+      "BR",
+      "CA",
+      "CN",
+      "FR",
+      "DE",
+      "IN",
+      "ID",
+      "IT",
+      "JP",
+      "KR",
+      "MX",
+      "RU",
+      "SA",
+      "ZA",
+      "TR",
+      "GB",
+      "US"
+     ],
+     "non_country_members": [
+      {
+       "name": "欧盟",
+       "source": {
+        "title": "Ministry of External Affairs of India, Group of Twenty - G20 (brief to March 2025): founded in 1999, the 19 countries along with the European Union",
+        "url": "https://www.mea.gov.in/Portal/ForeignRelation/G20_Brief_upto_MAR_25.pdf",
+        "accessed": "2026-11-05"
+       }
+      },
+      {
+       "name": "非洲联盟",
+       "source": {
+        "title": "G20 New Delhi Leaders' Declaration, 9-10 September 2023: the African Union welcomed as a permanent member",
+        "url": "https://www.consilium.europa.eu/media/66739/g20-new-delhi-leaders-declaration.pdf",
+        "accessed": "2026-11-05"
+       }
+      }
+     ],
+     "source": {
+      "title": "G20 New Delhi Leaders' Declaration, 9-10 September 2023: the African Union a permanent member, the 19 countries unchanged",
+      "url": "https://www.consilium.europa.eu/media/66739/g20-new-delhi-leaders-declaration.pdf",
+      "accessed": "2026-11-05"
+     }
+    }
    ]
   }
  ]

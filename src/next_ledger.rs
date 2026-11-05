@@ -1245,6 +1245,9 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     // each country the question names on its own is printed from its rows or named as having no data, never said to lack
     // data it has, never dropped silently (spec.asked_places, the knowledge group's words)
     ("leaf.places_answered", "", &["leaf::places_answered", "leaf::entry_places"]),
+    // a page for a country group says the member basis its request keeps (knowledge group words), year and count from its
+    // entries, the count at that year and over the members only
+    ("leaf.member_basis", "", &["leaf::basis_said"]),
     // the group command (next_visual.rs): each external layer prints the geometry the core placed
     ("visual.drawn_check", "", &["visual::drawn_checked", "visual::attr", "visual::tags_in", "visual::circles_drawn"]),
     // the browser check of the page, a pass only for these bytes
@@ -1842,7 +1845,7 @@ mod tests {
                 ledger.insert(format!("name:zh_names:{dim}:{code}"), name.into());
             }
         }
-        (Spec { facts: defs, fmts: json!({}), members: None, asked_places: None }, facts, ledger)
+        (Spec { facts: defs, fmts: json!({}), members: None, asked_places: None, basis: None }, facts, ledger)
     }
 
     /// A node's name and its value marked as the leaf prints them (svg: tspan, html: span), the value bold.
@@ -2036,7 +2039,7 @@ mod tests {
         let mut hits = 0;
         let list = std::fs::read_to_string(std::env::var("P5_PAGES").unwrap()).unwrap();
         let pages: Vec<&str> = list.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
-        let none = Spec { facts: Vec::new(), fmts: json!({}), members: None, asked_places: None };
+        let none = Spec { facts: Vec::new(), fmts: json!({}), members: None, asked_places: None, basis: None };
         for p in &pages {
             let html = std::fs::read_to_string(p).unwrap();
             let mut off = check_relations(&html, &BTreeMap::new(), &none, &[], &[]);
@@ -2149,7 +2152,7 @@ mod tests {
     /// P3, a second data shape: transport's share of final energy use by place, numerator and denominator one code each on
     /// nrg_bal (not siec) and alike on siec, with their rows, over the q3 request's place names.
     fn transport() -> ShareRequest {
-        let mut r = (Spec { facts: Vec::new(), fmts: json!({}), members: None, asked_places: None }, Vec::new(), share_request().2, Vec::new());
+        let mut r = (Spec { facts: Vec::new(), fmts: json!({}), members: None, asked_places: None, basis: None }, Vec::new(), share_request().2, Vec::new());
         for (geo, tra, text) in [("DE", 301.0, "30"), ("FR", 334.0, "33"), ("IT", 287.0, "29")] {
             for (k, bal) in [("tra", "FC_TRA_E"), ("fc", "FC_E")] {
                 let filter = json!({"geo": geo, "nrg_bal": bal, "siec": "TOTAL"});
@@ -2362,7 +2365,7 @@ mod tests {
         }
         alone("F30 a share of numerator equal to its denominator", &scoped_page(&one.2, "next", ("PL", "share.one.PL"), ("IE", "share.one.IE")), &one);
         // F31: shares by place and by unit at once (no rows: no scope); the same page over the one unit's shares passes
-        let mut two = (Spec { facts: Vec::new(), fmts: json!({}), members: None, asked_places: None }, Vec::new(), l.clone(), Vec::new());
+        let mut two = (Spec { facts: Vec::new(), fmts: json!({}), members: None, asked_places: None, basis: None }, Vec::new(), l.clone(), Vec::new());
         for (geo, unit, v, text) in [("PL", "U1", 0.6, "60"), ("IE", "U1", 0.5, "50"), ("PL", "U2", 0.4, "40"), ("IE", "U2", 0.3, "30")] {
             two = with_fact(two, &format!("n.{geo}.{unit}"), value(json!({"geo": geo, "unit": unit, "siec": ["A", "B"]}), "t", "2024"), None);
             two = with_fact(two, &format!("d.{geo}.{unit}"), value(json!({"geo": geo, "unit": unit, "siec": "TOTAL"}), "t", "2024"), None);
@@ -2604,7 +2607,7 @@ mod tests {
     type ClaimRequest = (Spec, Vec<Row>, Vec<Fact>, BTreeMap<String, String>);
 
     fn claim_request(table: &str, rows: Vec<Row>, defs: Vec<(String, Value)>, fmts: Value, names: &[(&str, &[(&str, &str)])], unit: (&str, &str)) -> ClaimRequest {
-        let spec = Spec { facts: defs, fmts, members: None, asked_places: None };
+        let spec = Spec { facts: defs, fmts, members: None, asked_places: None, basis: None };
         let facts = crate::next_facts::compute(&spec, &rows).unwrap();
         let mut ledger = crate::next_facts::leaf_ledger(&spec, &rows, &facts).unwrap();
         for (dim, list) in names {
