@@ -3427,15 +3427,15 @@ fn read_sheet(run_dir: &Path, dataset: &str, key: &str) -> Result<Vec<(String, S
 /// How much of a tool's own text a stop keeps.
 pub const REASON_MAX_CHARS: usize = 200;
 
+/// A tool result's words: its text parts, joined by a space.
+fn words_of(called: &Called) -> String {
+    called.content.iter().filter_map(|c| c["text"].as_str()).collect::<Vec<_>>().join(" ")
+}
+
 /// The start of a tool result's text, each address (http:// or https:// up to the next space) replaced by <address>.
 fn reason(called: &Called) -> String {
-    let text = called
-        .content
-        .iter()
-        .filter_map(|c| c["text"].as_str())
-        .collect::<Vec<_>>()
-        .join(" ");
-    let words: Vec<&str> = text
+    let said = words_of(called);
+    let words: Vec<&str> = said
         .split_whitespace()
         .map(|w| {
             if w.contains("http://") || w.contains("https://") {
@@ -3588,11 +3588,7 @@ fn source_unreachable(called: &Called) -> Option<bool> {
     if mode_of(called) != "failed" {
         return None;
     }
-    let text = called
-        .content
-        .iter()
-        .filter_map(|c| c["text"].as_str())
-        .collect::<String>();
+    let text = words_of(called);
     if text.contains("SOURCE_ACCESS_BLOCKED") || text.contains("SOURCE_HOST_UNREACHABLE") {
         return Some(false);
     }
@@ -3610,8 +3606,19 @@ fn source_unreachable(called: &Called) -> Option<bool> {
     }
 }
 
+/// Whether a failed fetch is the host's structured download timeout (evidence_gate.mjs DOWNLOAD_TIMEOUT: the request ran past the
+/// download limit), which the host allows one identical retry; its refusal of a repeat (DOWNLOAD_TIMEOUT_REPEAT) is not one.
+fn download_timed_out(called: &Called) -> bool {
+    mode_of(called) == "failed"
+        && words_of(called).contains(next_knowledge::DOWNLOAD_TIMEOUT_WORDS)
+}
+
+/// Further fetches a download timeout may take: one, the same request again (a cold request the source's cache answers after).
+pub const DOWNLOAD_TIMEOUT_RETRIES: usize = 1;
+
 /// newsroom_data_prepare with `args`, fetched again with the same args after each FETCH_RETRY_WAITS_MS wait while the source does not
-/// answer; one FETCH_RETRY_EVENT per further fetch. A source still not answering stops as SourceUnreachable.
+/// answer, a download timeout at most DOWNLOAD_TIMEOUT_RETRIES times; one FETCH_RETRY_EVENT per further fetch. A source still not
+/// answering stops as SourceUnreachable.
 async fn prepare_fetch<R: ToolRunner + Send + ?Sized>(
     recorder: &mut Recorder<'_>,
     tools: &mut R,
@@ -3625,7 +3632,16 @@ async fn prepare_fetch<R: ToolRunner + Send + ?Sized>(
         .await?;
     record_group_calls(recorder, catalogue)?;
     let mut tries = 1;
-    while let Some(again) = source_unreachable(&called) {
+    let mut timeouts = 0;
+    loop {
+        let again = if download_timed_out(&called) {
+            timeouts += 1;
+            timeouts <= DOWNLOAD_TIMEOUT_RETRIES
+        } else if let Some(again) = source_unreachable(&called) {
+            again
+        } else {
+            break;
+        };
         let Some(&wait) = FETCH_RETRY_WAITS_MS
             .get(tries - 1)
             .filter(|_| again && !cancel.load(std::sync::atomic::Ordering::Relaxed))
@@ -7086,6 +7102,23 @@ mod tests {
                 .collect::<Vec<_>>(),
             [json!(2_000), json!(4_000)]
         );
+        // the host's structured download timeout (a cold request): one identical retry, logged, then the source answers
+        let cold = || json!({"mode": "failed", "text": "Data preparation failed: DOWNLOAD_TIMEOUT: api.worldbank.org did not finish the download in 30.0 s (limit 30 s). One identical retry is allowed."});
+        let drove = fetch(vec![cold(), json!({"mode": "no_candidates"})]).await;
+        assert!(matches!(drove.result, Err(Stop::TooFewClaims { .. })), "{:?}", drove.result);
+        assert_eq!((drove.tools.args.len(), drove.tools.args[0] == drove.tools.args[1]), (2, true));
+        let retries = of_type(&drove.events, FETCH_RETRY_EVENT);
+        assert_eq!(retries.len(), 1);
+        assert!(retries[0]["after"].as_str().unwrap().contains("DOWNLOAD_TIMEOUT"), "{:?}", retries[0]);
+        // a second timeout still refuses the page, after two fetches and one retry event; a third detail is never asked
+        let drove = fetch(vec![cold(), cold(), json!({"mode": "no_candidates"})]).await;
+        assert!(matches!(&drove.result, Err(Stop::SourceUnreachable { tries: 2, why, .. }) if why.contains("DOWNLOAD_TIMEOUT")), "{:?}", drove.result);
+        assert_eq!((drove.tools.args.len(), of_type(&drove.events, FETCH_RETRY_EVENT).len()), (2, 1));
+        // the host's refusal of a repeat is not retried
+        let repeat = json!({"mode": "failed", "text": "Data preparation failed: DOWNLOAD_TIMEOUT_REPEAT: this exact request to api.worldbank.org timed out 2 times."});
+        let drove = fetch(vec![repeat]).await;
+        assert!(matches!(&drove.result, Err(Stop::NotPrepared { mode, .. }) if mode == "failed"), "{:?}", drove.result);
+        assert_eq!(drove.tools.args.len(), 1);
         // a host the circuit blocked or marked unreachable is not fetched again
         let marked = failed(
             "could not resolve the host name (1/3). This host will not be tried again in this run.",

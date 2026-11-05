@@ -64,6 +64,9 @@ pub const HELD_TIMEOUT: Duration = Duration::from_secs(3);
 /// This group's fetch tool on the host: it downloads one table under its filters and writes the candidate claims, or with
 /// `sheet` and `picks` registers the picked ones.
 pub const DATA_PREPARE_TOOL: &str = "newsroom_data_prepare";
+/// The words the data tool's host starts a download timeout with (evidence_gate.mjs DOWNLOAD_TIMEOUT: the request ran past the
+/// download limit; one identical retry is allowed). Its refusal of a repeat (DOWNLOAD_TIMEOUT_REPEAT) does not hold them.
+pub const DOWNLOAD_TIMEOUT_WORDS: &str = "DOWNLOAD_TIMEOUT: ";
 
 /// The two columns an SDMX 3.0 csvdata reply starts with; the dimensions follow.
 const HELD_LEAD: [&str; 2] = ["STRUCTURE", "STRUCTURE_ID"];
