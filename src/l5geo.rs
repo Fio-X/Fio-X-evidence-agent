@@ -2492,7 +2492,8 @@ mod tests {
         // 占比 is a share said whole, and a joining word ends a whole: the quantity asked after it stays asked (review 11-05)
         assert_eq!(ids("可再生能源占比和人均GDP的比重"), ["renewable_share", "gdp_pc"]);
         assert_eq!(ids("各国可再生能源占比，以及煤炭发电份额"), ["renewable_share", "electricity_mix"]);
-        assert_eq!(ids("人均GDP和可再生能源占比的关系"), ["gdp_pc", "renewable_share"]);
+        // the asked list is in the families' order, not the question's
+        assert_eq!(ids("人均GDP和可再生能源占比的关系"), ["renewable_share", "gdp_pc"]);
     }
 
     /// Each dev question asks for one quantity, the DE question for two, and words that only narrow (a big-population
