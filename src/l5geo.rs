@@ -544,6 +544,9 @@ fn count_at(chars: &[char], at: usize) -> Option<(usize, usize)> {
     }
 }
 
+/// The mark before a number that makes it an ordinal (the second): such a number is no count.
+const ORDINAL_MARK: char = '第';
+
 /// `word` matched at `at` of `chars`: the count its slot read (None for a word with no slot) and the characters it took.
 fn word_at(chars: &[char], at: usize, word: &str) -> Option<(Option<usize>, usize)> {
     let (before, after) = match word.split_once(COUNT_SLOT) {
@@ -557,6 +560,10 @@ fn word_at(chars: &[char], at: usize, word: &str) -> Option<(Option<usize>, usiz
     let Some(after) = after else {
         return Some((None, before.len()));
     };
+    // an ordinal (the second largest economy) names one place in a ranking, never how many the question asks for
+    if (at + before.len()).checked_sub(1).is_some_and(|i| chars[i] == ORDINAL_MARK) {
+        return None;
+    }
     let (n, took) = count_at(chars, at + before.len())?;
     let after: Vec<char> = after.chars().collect();
     let end = at + before.len() + took;
@@ -3493,6 +3500,8 @@ mod tests {
     /// populous cities) read as no ranking.
     #[test]
     fn a_ranking_phrase_that_is_not_fixed_or_is_below_the_country_is_not_read() {
+        assert_eq!(rank_asked_zh("中国作为世界第二大经济体的出口增长"), None, "an ordinal is no count");
+        assert_eq!(rank_asked_zh("第3大人口国的城市化率"), None);
         assert_eq!(rank_asked_zh("人口最多和经济规模最大的国家"), None);
         assert_eq!(rank_asked_zh("中国人口最多的主要城市"), None);
         assert_eq!(rank_asked_zh("美国各州人口最多的十个"), None);
