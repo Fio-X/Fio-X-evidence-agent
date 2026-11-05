@@ -103,6 +103,16 @@ pub(crate) fn unit_short(code: &str) -> Option<&'static str> {
     unit_short_zh(code).or((code == "PC").then_some("%"))
 }
 
+/// What the page's unit line prints for a unit code (the row's line_zh): the short form with a rate of change's comparison
+/// basis, read from the catalogue's label by scripts/gen_unit_short_zh.py (user 11-05 16:1x: the basis is on the page and
+/// checked, the line printed as this registered name); the short form itself where the row gives no line_zh. None where
+/// unit_short is none.
+pub(crate) fn unit_line_form(code: &str) -> Option<&'static str> {
+    let short = unit_short(code)?;
+    let row = UNIT_SHORT_ZH.lines().skip(1).find(|l| l.split('\t').next() == Some(code));
+    Some(row.and_then(|l| l.trim_end_matches('\r').split('\t').nth(7)).filter(|s| !s.is_empty()).unwrap_or(short))
+}
+
 /// What a number prints after it in a unit code (the row's suffix_zh): never a digit, so an index ("指数(2015=100)", its
 /// base year printed on the unit line as the registry's marked name) prints none; "%" for a plain percentage. None
 /// where unit_short is none.
@@ -205,16 +215,22 @@ mod tests {
         assert_eq!((unit_short("I15"), unit_number_suffix("I15")), (Some("指数(2015=100)"), Some("")));
         assert_eq!((unit_short("PC"), unit_number_suffix("PC")), (Some("%"), Some("%")));
         assert_eq!(unit_number_suffix("XYZ"), None);
+        // a rate of change keeps "%" as its short form and number suffix; its unit line says against what
+        assert_eq!((unit_short("PCH_SM"), unit_number_suffix("PCH_SM"), unit_line_form("PCH_SM")), (Some("%"), Some("%"), Some("%（同比）")));
+        assert_eq!(unit_line_form("PCH_PRE"), Some("%（较上期）"));
+        assert_eq!((unit_line_form("PC"), unit_line_form("I15"), unit_line_form("XYZ")), (Some("%"), Some("指数(2015=100)"), None));
+        // a rate of change whose label states no basis has no row (Annual average rate of change: against what is unsaid)
+        assert_eq!(unit_short("RCH_A_AVG"), None);
     }
 
     #[test]
     fn unit_short_zh_registers_one_form_per_code_with_its_rule() {
         let mut rows = UNIT_SHORT_ZH.lines();
-        assert_eq!(rows.next(), Some("code\tshort_zh\trule\tadditive\tsuffix_zh\tsource\tlabel_en"));
+        assert_eq!(rows.next(), Some("code\tshort_zh\trule\tadditive\tsuffix_zh\tsource\tlabel_en\tline_zh"));
         let mut seen = BTreeSet::new();
         for row in rows {
             let p: Vec<&str> = row.split('\t').collect();
-            assert_eq!(p.len(), 7, "{row}");
+            assert_eq!(p.len(), 8, "{row}");
             // what a number prints after it never holds a digit (the page tree's suffix rule); a generated row names the
             // catalogue label it was made from, and every digit of its form is that label's (a base year from the data)
             assert!(!p[4].chars().any(|c| c.is_ascii_digit()), "{row}: a digit in the number suffix");
@@ -224,8 +240,13 @@ mod tests {
                 assert!(!p[6].is_empty() && !p[1].is_empty(), "{row}: a generated row has its label and a form");
             }
             if !p[6].is_empty() {
-                assert!(digits(p[1]).iter().all(|d| digits(p[6]).contains(d)), "{row}: a digit of the form is not the label's");
+                assert!(digits(p[1]).iter().chain(&digits(p[7])).all(|d| digits(p[6]).contains(d)), "{row}: a digit of the form is not the label's");
             }
+            // a rate of change prints its comparison basis on the unit line: a line form that starts with the short form and
+            // says more (user 11-05 16:1x); a row that is no rate of change prints its short form
+            let change = p[2] == "pct_change" || p[6].to_lowercase().starts_with("percentage change") || p[6].to_lowercase().starts_with("growth rate");
+            assert_eq!(change, !p[7].is_empty(), "{row}: a rate of change, and only one, has a line form");
+            assert!(p[7].is_empty() || (p[7].starts_with(p[1]) && p[7].len() > p[1].len()), "{row}: the line form is the short form and its basis");
             assert!(seen.insert(p[0]), "{} twice", p[0]);
             assert!(!p[2].is_empty(), "{row}: no rule");
             // B1 (owner 11-04): whether amounts in the unit add up, which the core reads (a share of a sum says

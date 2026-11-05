@@ -1709,7 +1709,7 @@ fn fixed_name(src: &str) -> Option<String> {
         let r = crate::shape_registry::RELATIONS.into_iter().find(|r| format!("{r:?}").to_lowercase() == rel)?;
         return frame_heading(r).ok().map(str::to_string);
     }
-    next_pack::unit_short(src.strip_prefix(FIXED_NAMES[1])?).map(str::to_string)
+    next_pack::unit_line_form(src.strip_prefix(FIXED_NAMES[1])?).map(str::to_string)
 }
 
 /// The page input the visual group declares and lays out a recipe's external layers over: what the flow already holds, as
@@ -2177,11 +2177,14 @@ fn fill_of(
     // a unit whose short form holds a digit (an index's base year, 指数(2015=100)) prints it as the unit table's registered
     // name row, never as typed words: the unit line goes to the leaf as segments (knobs.segs.unit, facts.worded), its form
     // the fixed name name:unit_short_zh:<code> the table gives (fixed_name), each note after it plain words
+    // so does a rate of change's line form, its comparison basis read from the catalogue's label (next_pack::unit_line_form,
+    // user 11-05 16:1x): the line prints the registered name, which the check holds to the table by the unit's code
     let mut segs = None;
+    let short = next_pack::unit_line_form(&shape.unit).unwrap_or(short);
     // a layer that writes the unit in its own picture leaves the page's unit line to the year alone (column_page)
     if !unit_drawn {
         hero.insert("unit".into(), json!(std::iter::once(format!("单位：{short}")).chain(notes).collect::<Vec<_>>().join("；")));
-        if short.chars().any(|c| c.is_ascii_digit() || c.is_numeric()) {
+        if short.chars().any(|c| c.is_ascii_digit() || c.is_numeric()) || next_pack::unit_short(&shape.unit) != Some(short) {
             let src = format!("{}{}", FIXED_NAMES[1], shape.unit);
             if fixed_name(&src).as_deref() != Some(short) {
                 return Err(no(format!("unit {}: its short form {short:?} is not the unit table's", shape.unit)));
@@ -7215,10 +7218,11 @@ mod tests {
     /// lookup): a change page in an index unit (I15, 指数(2015=100)) and in a count (NR, 数量), drawn by the real leaf child,
     /// baked, checked by the twins and published, then read back and passed by the whole-page check. A number prints no
     /// digit after it (the index's suffix is none); the index's base year prints only on the unit line, as the unit table's
-    /// name row the page marks.
+    /// name row the page marks. A rate of change (PCH_SM, 同比) prints "%" after each number and its comparison basis on the
+    /// unit line, likewise the unit table's name row (user 11-05 16:1x: the basis is on the page and checked).
     #[test]
     fn an_index_and_a_count_unit_print_a_whole_page_that_passes_the_check() {
-        for (unit, short, suffix) in [("I15", "指数(2015=100)", ""), ("NR", "数量", "")] {
+        for (unit, short, suffix) in [("I15", "指数(2015=100)", ""), ("NR", "数量", ""), ("PCH_SM", "%（同比）", "%")] {
             let change = recipe("change");
             let places = ["AT", "DE", "LU", "LV"];
             let mut main = ring_rows("sdg_07_40", &[("freq", "A"), ("unit", unit)], ("geo", &places), &["2016", "2025"]);
@@ -7233,8 +7237,9 @@ mod tests {
             assert!(spec["fmts"].as_object().unwrap().values().all(|f| !f["suffix"].as_str().unwrap_or("").chars().any(|c| c.is_ascii_digit())), "{unit}: {}", spec["fmts"]);
             assert_eq!(spec["fmts"][unit.to_lowercase()]["suffix"], suffix, "{unit}");
             let src = format!("name:unit_short_zh:{unit}");
-            let has_digit = short.chars().any(|c| c.is_ascii_digit());
+            let has_digit = short.chars().any(|c| c.is_ascii_digit()) || unit == "PCH_SM";
             assert_eq!(fill["knobs"]["named"].get(&src).is_some(), has_digit, "{unit}: the named row");
+            assert!(!has_digit || fill["knobs"]["named"][&src] == short, "{unit}: the named row's text");
             assert_eq!(fill["knobs"]["segs"]["unit"][1]["src"].as_str() == Some(src.as_str()), has_digit, "{unit}: the segments");
             let dek = dek_finding(&fill).unwrap().0;
             page_words(&mut fill, ("标题", &dek, "栏目"));
@@ -7289,6 +7294,12 @@ mod tests {
             let ledger: BTreeMap<String, String> = serde_json::from_value(back["ledger"].take()).unwrap();
             let refs: Vec<String> = serde_json::from_value(back["refs"].take()).unwrap();
             assert_eq!(crate::next_leaf::check_leaf_page(&html, &ledger, &refs, &spec, &rows, &facts), Vec::<String>::new(), "{unit}");
+            // the basis is checked, not only printed: a page whose unit line says another basis fails the whole-page check
+            if unit == "PCH_SM" {
+                let swapped = html.replace(short, "%（较上期）");
+                assert_ne!(swapped, html, "the page prints the basis");
+                assert_ne!(crate::next_leaf::check_leaf_page(&swapped, &ledger, &refs, &spec, &rows, &facts), Vec::<String>::new(), "a swapped basis passes");
+            }
         }
     }
 

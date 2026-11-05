@@ -10,7 +10,10 @@ stops on it as before, and the review list names it.
 Columns written: code, short_zh (the unit line's form; an index keeps its base year, read from the label, never typed),
 rule, additive (yes for an amount or a count, no for a share, a rate, a ratio or an index), suffix_zh (what a number
 prints after it: never a digit, so an index prints none), source (reviewed or generated), label_en (the catalogue's label
-the row was made from, so a test can check every digit of short_zh against it).
+the row was made from, so a test can check every digit of short_zh against it), line_zh (what the page's unit line prints
+for the code when it is more than short_zh: a rate of change's comparison basis, read from its label (user 11-05 16:1x:
+同比、环比、较十年前、较 2019 年同月 must be on the page and checked); empty means the line prints short_zh). A rate of
+change whose label states no basis this script reads gets no row: it goes to the unread list.
 
 Writes the table in place and two review lists: <out>/generated.tsv (each generated row) and <out>/unread.tsv (each label
 no rule reads), out = works/k8-units under the docs folder unless --out is given.
@@ -23,7 +26,7 @@ import sys
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TABLE = os.path.join(REPO, "runtime", "pi", "assets", "unit-short-zh.tsv")
 WB = os.path.join(REPO, "runtime", "pi", "assets", "wb-units.tsv")
-HEADER = ["code", "short_zh", "rule", "additive", "suffix_zh", "source", "label_en"]
+HEADER = ["code", "short_zh", "rule", "additive", "suffix_zh", "source", "label_en", "line_zh"]
 
 # A qualifier a label may end with that leaves the unit as it is (seasonal adjustment).
 QUALIFIER = r"(?:\s*[-,]?\s*\((?:NSA|SA|SCA|SWDA|CA)\))?"
@@ -40,6 +43,32 @@ NOUN = {
     "enterprises": "家企业", "households": "户",
 }
 PER = {"per inhabitant": "/人", "per capita": "/人", "per person": "/人"}
+# A rate of change's comparison basis, read only where the label says it outright (lower-case label -> the words the unit
+# line prints in brackets after "%"); a period count with no stated frequency (t/t-12, t/t-5) says no basis, so is unread.
+BASIS = [
+    (r"same (?:period|quarter) in previous year|q/q-4\b|m/m-12\b", "同比"),
+    (r"on previous period|\(t/t-1\)|q/q-1\b|m/m-1\b", "较上期"),
+    (r"same period two years ago", "较两年前同期"),
+    (r"m/m-24\b", "较两年前同月"),
+]
+SAME_MONTH = r"same month in (\d{4})"
+
+
+def basis_of(label):
+    """The comparison basis a rate of change's label states, or None."""
+    low = label.lower()
+    m = re.search(SAME_MONTH, low)
+    if m:
+        return f"较{m.group(1)}年同月"
+    for pat, words in BASIS:
+        if re.search(pat, low):
+            return words
+    return None
+
+
+def is_change(label):
+    """A rate of change by its label (the pct_change rule), whatever row it came from."""
+    return re.match(r"(percentage change|growth rate|annual average rate of change|rate of change)\b", label.lower()) is not None
 
 
 def read_label(label):
@@ -104,7 +133,10 @@ def main():
             order.append(code)
             rows[code] = {"code": code, "short_zh": p.get("short_zh", ""), "rule": p.get("rule", ""), "additive": p.get("additive", ""),
                           "suffix_zh": p.get("suffix_zh") or suffix_of(p.get("short_zh", ""), p.get("rule", "")),
-                          "source": p.get("source") or "reviewed", "label_en": p.get("label_en") or labels.get(code, "")}
+                          "source": p.get("source") or "reviewed", "label_en": p.get("label_en") or labels.get(code, ""), "line_zh": ""}
+            # a reviewed rate of change prints its basis too, read from its label the same way
+            if is_change(rows[code]["label_en"]) and basis_of(rows[code]["label_en"]):
+                rows[code]["line_zh"] = f"{rows[code]['short_zh']}（{basis_of(rows[code]['label_en'])}）"
     generated, unread = [], []
     for code in sorted(labels):
         read = read_label(labels[code])
@@ -116,8 +148,16 @@ def main():
                 unread.append((code, labels[code]))
             continue
         short, rule, additive, suffix = read
+        line = ""
+        if rule == "pct_change":
+            basis = basis_of(labels[code])
+            if basis is None:
+                if not have:
+                    unread.append((code, labels[code]))
+                continue
+            line = f"{short}（{basis}）"
         row = {"code": code, "short_zh": short, "rule": rule, "additive": additive, "suffix_zh": suffix,
-               "source": "generated", "label_en": labels[code]}
+               "source": "generated", "label_en": labels[code], "line_zh": line}
         if code not in rows:
             order.append(code)
         rows[code] = row
@@ -128,9 +168,9 @@ def main():
             f.write("\t".join(rows[code][h] for h in HEADER) + "\n")
     os.makedirs(a.out, exist_ok=True)
     with open(os.path.join(a.out, "generated.tsv"), "w", encoding="utf-8") as f:
-        f.write("code\tshort_zh\tsuffix_zh\trule\tlabel_en\n")
+        f.write("code\tshort_zh\tline_zh\tsuffix_zh\trule\tlabel_en\n")
         for r in generated:
-            f.write(f"{r['code']}\t{r['short_zh']}\t{r['suffix_zh']}\t{r['rule']}\t{r['label_en']}\n")
+            f.write(f"{r['code']}\t{r['short_zh']}\t{r['line_zh']}\t{r['suffix_zh']}\t{r['rule']}\t{r['label_en']}\n")
     with open(os.path.join(a.out, "unread.tsv"), "w", encoding="utf-8") as f:
         f.write("code\tlabel_en\n")
         for code, lab in unread:
