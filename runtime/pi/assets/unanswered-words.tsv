@@ -2,7 +2,7 @@
 # page.note.unanswered_half, inside <p class="unanswered" data-asked="...">, when the catalogue offered no table for an
 # asked quantity); a model's wording that holds one is refused at the text step (next_flow::unanswered_word) and an
 # unmarked one on the page is refused by the page check (next_ledger::check_numbers). Words that also read a chart (a map's
-# "灰色是没有数据") are not listed. One word per line.
+# "灰色是没有数据") are not listed. A text is matched with its spaces removed. One word per line.
 答不了
 回答不了
 无法回答
@@ -17,3 +17,6 @@
 没有对应的表
 无对应数据
 目录里没有
+目录中没有
+无法解答
+回答不出

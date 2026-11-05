@@ -390,6 +390,10 @@ fn measure_families() -> &'static [Family] {
 struct Denominator {
     opens: Vec<String>,
     closes: Vec<String>,
+    /// A joining word or a comma: the whole ends before it, so a second quantity asked after it is never blanked.
+    stops: Vec<String>,
+    /// Words right after an opening word that make it a share said whole (占比), with no whole to blank.
+    not_after_open: Vec<String>,
     max_chars: usize,
 }
 
@@ -410,7 +414,7 @@ fn denominator() -> &'static Denominator {
 fn blank_denominators(q: &mut [char]) {
     let d = denominator();
     let words = |ws: &[String]| ws.iter().map(|w| measure_chars(w)).filter(|w| !w.is_empty()).collect::<Vec<_>>();
-    let (opens, closes) = (words(&d.opens), words(&d.closes));
+    let (opens, closes, stops, not_after) = (words(&d.opens), words(&d.closes), words(&d.stops), words(&d.not_after_open));
     let at = |q: &[char], i: usize, w: &[char]| q.get(i..i + w.len()) == Some(w);
     let mut i = 0;
     while i < q.len() {
@@ -419,7 +423,14 @@ fn blank_denominators(q: &mut [char]) {
             continue;
         };
         let from = i + open.len();
-        let close = (from..q.len().min(from + d.max_chars + 1)).find(|&j| closes.iter().any(|w| at(q, j, w)));
+        if not_after.iter().any(|w| at(q, from, w)) {
+            i = from;
+            continue;
+        }
+        let end = (from..q.len().min(from + d.max_chars + 1))
+            .find(|&j| stops.iter().any(|w| at(q, j, w)))
+            .unwrap_or_else(|| q.len().min(from + d.max_chars + 1));
+        let close = (from..end).find(|&j| closes.iter().any(|w| at(q, j, w)));
         if let Some(to) = close {
             q[from..to].iter_mut().for_each(|c| *c = '\0');
             i = to;
@@ -2478,6 +2489,10 @@ mod tests {
         assert_eq!(ids("各国总人口的变化"), ["population"]);
         // an opening word with no closing word near it blanks nothing
         assert_eq!(ids("各国碳排放占了多少，和GDP"), ["co2", "gdp"]);
+        // 占比 is a share said whole, and a joining word ends a whole: the quantity asked after it stays asked (review 11-05)
+        assert_eq!(ids("可再生能源占比和人均GDP的比重"), ["renewable_share", "gdp_pc"]);
+        assert_eq!(ids("各国可再生能源占比，以及煤炭发电份额"), ["renewable_share", "electricity_mix"]);
+        assert_eq!(ids("人均GDP和可再生能源占比的关系"), ["gdp_pc", "renewable_share"]);
     }
 
     /// Each dev question asks for one quantity, the DE question for two, and words that only narrow (a big-population

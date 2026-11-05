@@ -353,7 +353,7 @@ fn unanswered_word(text: &str) -> Option<&'static str> {
         .lines()
         .map(str::trim)
         .filter(|w| !w.is_empty() && !w.starts_with('#'))
-        .find(|w| text.contains(w))
+        .find(|w| text.chars().filter(|c| !c.is_whitespace()).collect::<String>().contains(w))
 }
 
 /// The page check: every text of the page (and every attribute a reader is read), with its character references read, holds
