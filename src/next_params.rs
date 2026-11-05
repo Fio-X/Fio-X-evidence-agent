@@ -11,7 +11,7 @@ use std::sync::OnceLock;
 use serde_json::{json, Map, Value};
 
 use crate::classify::PLACE_SHARE;
-use crate::l5geo::{Place, TableMeta};
+use crate::l5geo::{Place, RankAsked, TableMeta};
 use crate::next_knowledge::Held;
 use crate::shape_registry::{Role, Shape, VaryingDim, MAX_ROWS as MAX_CHART_ROWS};
 
@@ -394,6 +394,16 @@ pub struct RankBy {
     pub zh_line: String,
 }
 
+/// wb-rank-by.json's year share: the rank year is the latest year where at least this share of the economies with any value
+/// have one (both tables counted when ranked by another indicator), as the tool ranks it.
+pub fn wb_rank_year_share() -> f64 {
+    static SHARE: OnceLock<f64> = OnceLock::new();
+    *SHARE.get_or_init(|| {
+        let asset: Value = serde_json::from_str(WB_RANK_BY).expect("wb-rank-by.json is JSON");
+        asset["year_share"].as_f64().expect("wb-rank-by.json has year_share")
+    })
+}
+
 /// wb-rank-by.json parsed once: the cap on the economies kept and the options in their pick order. The file is compiled
 /// in, so a broken one fails the registry test, not a run.
 pub fn wb_rank_by() -> &'static (usize, Vec<RankBy>) {
@@ -448,6 +458,10 @@ pub struct Draft {
     /// Set by the flow before the pick: the years the question names (question_years), which an annual table's fetch takes
     /// before the program's own last ten years.
     pub named_years: Option<NamedYears>,
+    /// Set by the flow before the pick: the ranking the question asks for in place of named places (the knowledge group's
+    /// rank_asked). With `places_open` and a wb-rank-by.json option ranked by its reference, the program keeps that option's
+    /// economies and the count the question writes (ranked_option): "t<n>.places" is not asked.
+    pub ranked: Option<RankAsked>,
 }
 
 /// The years a question names: a span of years it writes ("2015 年到 2024 年", one year alone a span of one), or the last
@@ -851,7 +865,21 @@ pub fn draft(table: TableMeta, texts: &[String], places: &[Place]) -> Draft {
         places_open,
         window: None,
         named_years: None,
+        ranked: None,
     }
+}
+
+/// The wb-rank-by.json option a draft's asked ranking fixes (its 1-based number and the option): only for a table with every
+/// country open, and only an option ranked by another indicator that is the ranking's reference. None leaves "t<n>.places"
+/// to the pick, as before.
+pub fn ranked_option(d: &Draft) -> Option<(usize, &'static RankBy)> {
+    let asked = d.ranked.as_ref().filter(|_| d.places_open)?;
+    wb_rank_by()
+        .1
+        .iter()
+        .enumerate()
+        .find(|(_, o)| o.by.as_deref() == Some(asked.by.as_str()))
+        .map(|(i, o)| (i + 1, o))
 }
 
 /// The dimensions breakdown entry `entry` takes the codes of: its own dimension, or a flow split's two (flow_split).
@@ -889,7 +917,7 @@ pub fn items(n: usize, d: &Draft) -> Vec<(String, Vec<String>)> {
             YEARS_OPTIONS.iter().map(|s| s.to_string()).collect(),
         ));
     }
-    if d.places_open {
+    if d.places_open && ranked_option(d).is_none() {
         let (cap, options) = wb_rank_by();
         out.push((
             format!("t{n}.{PLACES_KEY}"),
@@ -1300,14 +1328,28 @@ pub fn fill(
         .filter(|(dim, _)| draft.places_open && dim == WB_PLACE_DIM)
     {
         let (cap, options) = wb_rank_by();
-        let kept = pick(&format!("t{n}.{PLACES_KEY}"));
-        let (option, rank) = kept
-            .checked_sub(1)
-            .and_then(|i| options.get(i))
-            .map_or((1, &options[0]), |o| (kept, o));
-        narrow = json!({"dimension": WB_PLACE_DIM, "rule": rank.rule, "by": rank.by, "n": (*cap).min(MAX_CHART_ROWS / years).max(1),
+        let fixed = ranked_option(draft);
+        let (option, rank) = fixed.unwrap_or_else(|| {
+            let kept = pick(&format!("t{n}.{PLACES_KEY}"));
+            kept.checked_sub(1)
+                .and_then(|i| options.get(i))
+                .map_or((1, &options[0]), |o| (kept, o))
+        });
+        // The count the question writes, kept to the registry's cap and the chart's rows over the years; the page prints the
+        // count the narrow record keeps, and the event keeps the count asked.
+        let asked = fixed.and(draft.ranked.as_ref());
+        let kept_n = asked
+            .and_then(|r| r.n)
+            .unwrap_or(*cap)
+            .min(*cap)
+            .min(MAX_CHART_ROWS / years)
+            .max(1);
+        let from = if asked.is_some() { "question" } else { "pick" };
+        let asked = asked.map(|r| json!({"phrase": r.phrase, "by": r.by, "n": r.n}));
+        narrow = json!({"dimension": WB_PLACE_DIM, "rule": rank.rule, "by": rank.by, "n": kept_n,
             "exclude": [], "option": option, "key": rank.key, "label": rank.label, "from_codes": count,
-            "estimate": count * years, "chart_rows": MAX_CHART_ROWS});
+            "estimate": count * years, "chart_rows": MAX_CHART_ROWS,
+            "from": from, "asked": asked});
     }
     if let Some((dim, count)) = open
         .as_ref()
@@ -2893,6 +2935,91 @@ mod tests {
         assert!(!region.places_open);
         // A Eurostat table is never this item's.
         assert!(!draft_of(&[]).places_open);
+    }
+
+    fn asked(by: &str, n: Option<usize>) -> Option<RankAsked> {
+        Some(RankAsked { by: by.into(), n, phrase: "p".into() })
+    }
+
+    /// t2 and q4: a ranking the question asks for fixes the economies a table with every country open keeps. The option is
+    /// the one ranked by the ranking's reference and the count is the question's, within the cap and the chart's rows; the
+    /// economies are ranked by the tool from the reference's fetched rows (newsroom.ts prepareWorldBank), never listed here.
+    /// "t<n>.places" is not asked, and a pick of it does not move the program's option. Two shapes: ten years (a time
+    /// series, q4) and one named year (the latest year, t2).
+    #[test]
+    fn a_ranking_the_question_asks_for_fixes_the_kept_economies() {
+        let ranked = |by: &str, n: Option<usize>, years: Option<NamedYears>| Draft {
+            ranked: asked(by, n),
+            named_years: years,
+            ..draft(world_bank(217), &[], &[])
+        };
+        fn narrow(d: &Draft, p: &[(&str, usize)]) -> Filled {
+            fill(d, 1, &picks(p), &[], 2026).unwrap()
+        }
+        for years in [None, Some(NamedYears::Span(2024, 2024))] {
+            let five = ranked("SP.POP.TOTL", Some(5), years);
+            assert!(items(1, &five).iter().all(|(k, _)| k != "t1.places"), "{years:?}");
+            let filled = narrow(&five, &[]);
+            assert_eq!(
+                filled.args["narrow"],
+                json!({"dimension": "country", "rule": "top", "by": "SP.POP.TOTL", "n": 5, "exclude": []}),
+                "{years:?}"
+            );
+            assert_eq!(filled.event["narrow"]["from"], "question");
+            assert_eq!(filled.event["narrow"]["option"], 3);
+            assert_eq!(filled.event["narrow"]["asked"], json!({"phrase": "p", "by": "SP.POP.TOTL", "n": 5}));
+            // a pick of the item the program fixed does not move it
+            assert_eq!(narrow(&five, &[("t1.places", 1)]).args["narrow"], filled.args["narrow"]);
+            // asked ten: the registry's cap keeps eight, the event keeps the ten asked
+            let ten = narrow(&ranked("SP.POP.TOTL", Some(10), years), &[]);
+            assert_eq!(ten.args["narrow"]["n"], 8);
+            assert_eq!(ten.event["narrow"]["asked"]["n"], 10);
+            // no count written (q4): the cap
+            let some = narrow(&ranked("SP.POP.TOTL", None, years), &[]);
+            assert_eq!(some.args["narrow"]["n"], 8);
+            assert_eq!(some.event["narrow"]["asked"]["n"], Value::Null);
+            // the second registered reference
+            let gdp = narrow(&ranked("NY.GDP.MKTP.CD", Some(3), years), &[]);
+            assert_eq!(
+                gdp.args["narrow"],
+                json!({"dimension": "country", "rule": "top", "by": "NY.GDP.MKTP.CD", "n": 3, "exclude": []})
+            );
+            let shape = predicted_shape(&five, 1, &picks(&[]), &[], 2026, &|_| None).unwrap();
+            assert_eq!(shape.dims[0].members, 5);
+        }
+    }
+
+    /// Must fail: a ranking by a reference wb-rank-by.json does not register is not the program's (the item is asked as
+    /// before); a ranking beside named places, or on a table with few economies, narrows nothing; with no ranking asked the
+    /// pick is the model's and the event says so.
+    #[test]
+    fn a_ranking_the_registry_cannot_rank_by_or_beside_named_places_is_not_used() {
+        let unregistered = Draft {
+            ranked: asked("XX.NOT.REGISTERED", Some(5)),
+            ..draft(world_bank(217), &[], &[])
+        };
+        assert_eq!(ranked_option(&unregistered), None);
+        assert!(items(1, &unregistered).iter().any(|(k, _)| k == "t1.places"));
+        let filled = fill(&unregistered, 1, &picks(&[("t1.places", 2)]), &[], 2026).unwrap();
+        assert_eq!(filled.args["narrow"]["rule"], "bottom");
+        assert_eq!(filled.args["narrow"]["n"], 8);
+        assert_eq!(filled.event["narrow"]["from"], "pick");
+        assert_eq!(filled.event["narrow"]["asked"], Value::Null);
+        let japan = [Place::Country("X3".into())];
+        let named = Draft {
+            ranked: asked("SP.POP.TOTL", Some(5)),
+            ..draft(world_bank(217), &[], &japan)
+        };
+        assert_eq!(ranked_option(&named), None);
+        assert!(!fill(&named, 1, &picks(&[]), &japan, 2026).unwrap().args.contains_key("narrow"));
+        let few = Draft {
+            ranked: asked("SP.POP.TOTL", Some(5)),
+            ..draft(world_bank(80), &[], &[])
+        };
+        assert_eq!(ranked_option(&few), None);
+        assert!(!fill(&few, 1, &picks(&[]), &[], 2026).unwrap().args.contains_key("narrow"));
+        let none = draft(world_bank(217), &[], &[]);
+        assert_eq!(fill(&none, 1, &picks(&[("t1.places", 3)]), &[], 2026).unwrap().event["narrow"]["from"], "pick");
     }
 
     /// The nrg_bal codes of nrg_bal_s the q2 stand-in run's probe found held for DE (the metabase's 95 but GIC2020-2030,

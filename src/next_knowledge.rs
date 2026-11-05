@@ -32,7 +32,7 @@ pub enum HubMiss {
     NoHub(Vec<String>),
 }
 use crate::classify::{self, DimInput, Slice, TableInput};
-use crate::l5geo::{Catalog, Place, Ranking, Raw, TableMeta};
+use crate::l5geo::{Catalog, Place, RankAsked, Ranking, Raw, TableMeta};
 use crate::next_companion::{self, CompanionIndex};
 use crate::shape_registry::Shape;
 use serde_json::{json, Value};
@@ -130,6 +130,9 @@ pub enum Request<'a> {
         catalogue: &'a Opened,
         question: &'a str,
     },
+    /// The ranking the Chinese question asks for in place of named places (the ten most populous economies), read by rule
+    /// from its words (rank-phrases-zh.json); None when it asks for none.
+    RankAsked { question: &'a str },
     /// Reads the six reference files of classify::load_refs from one directory.
     OpenRefs { dir: &'a Path },
     /// The matcher's view of one fetched file: its rows read into classify, every dimension with one code fixed, every other one
@@ -241,6 +244,7 @@ pub enum Reply<'a> {
     Countries(Vec<String>),
     Table(Option<TableMeta>),
     Places(Vec<Place>),
+    RankAsked(Option<RankAsked>),
     Refs(OpenedRefs),
     Shape(Shape),
     ZhNames {
@@ -304,6 +308,7 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
             catalogue,
             question,
         } => Reply::Places(catalogue.catalog.places(question)),
+        Request::RankAsked { question } => Reply::RankAsked(crate::l5geo::rank_asked_zh(question)),
         Request::OpenRefs { dir } => Reply::Refs(OpenedRefs {
             refs: classify::load_refs(dir)
                 .map_err(|e| format!("the reference lists cannot be read: {e}"))?,

@@ -448,6 +448,174 @@ fn measure_chars(text: &str) -> Vec<char> {
         .collect()
 }
 
+/// The words a question asks for a ranked set of economies with (runtime/pi/assets/rank-phrases-zh.json), compiled in so a
+/// broken file fails its test, not a run.
+const RANK_PHRASES: &str = include_str!("../runtime/pi/assets/rank-phrases-zh.json");
+
+/// The count slot of a rank-phrases-zh.json word.
+const COUNT_SLOT: &str = "{n}";
+
+/// A ranking the Chinese question asks for in place of named places (the ten most populous economies): the reference
+/// indicator the set is ranked by, how many economies the question asks for (None: it names no count), and the words that
+/// asked. Read by rule from the question alone; it holds no economy: the program ranks the set from the fetched rows of `by`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct RankAsked {
+    pub by: String,
+    pub n: Option<usize>,
+    pub phrase: String,
+}
+
+/// One entry of rank-phrases-zh.json. Unknown fields are refused, so an entry that types a list of economies (codes,
+/// members) fails to load instead of being read as a ranking.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RankPhrase {
+    by: String,
+    words: Vec<String>,
+}
+
+/// rank-phrases-zh.json read from its text: Err when it is not the registered form (an unknown field, a reference id that is
+/// not an indicator code, a word with no Chinese character, a word with two count slots, two entries with one reference).
+fn rank_phrases_from(text: &str) -> Result<Vec<RankPhrase>, String> {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct File {
+        #[allow(dead_code)]
+        note: String,
+        phrases: Vec<RankPhrase>,
+    }
+    let file: File = serde_json::from_str(text).map_err(|e| format!("rank-phrases-zh.json: {e}"))?;
+    let mut seen = BTreeSet::new();
+    for p in &file.phrases {
+        let code = !p.by.is_empty()
+            && p.by.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+            && p.by.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '.' || c == '_');
+        if !code {
+            return Err(format!("rank-phrases-zh.json: {:?} is not an indicator code", p.by));
+        }
+        if !seen.insert(p.by.clone()) {
+            return Err(format!("rank-phrases-zh.json: {} has two entries", p.by));
+        }
+        if p.words.is_empty() {
+            return Err(format!("rank-phrases-zh.json: {} has no words", p.by));
+        }
+        for w in &p.words {
+            if !w.chars().any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c)) {
+                return Err(format!("rank-phrases-zh.json: {w:?} has no Chinese character"));
+            }
+            if w.matches(COUNT_SLOT).count() > 1 {
+                return Err(format!("rank-phrases-zh.json: {w:?} has two count slots"));
+            }
+        }
+    }
+    Ok(file.phrases)
+}
+
+/// The registered ranking words, read once.
+fn rank_phrases() -> &'static [RankPhrase] {
+    static PHRASES: OnceLock<Vec<RankPhrase>> = OnceLock::new();
+    PHRASES.get_or_init(|| rank_phrases_from(RANK_PHRASES).expect("rank-phrases-zh.json is the registered form"))
+}
+
+/// A count written at `at`: Arabic digits (1 to 999), or one to ninety-nine in Chinese numerals (a digit word alone, ten, ten
+/// and a digit word, a digit word and ten with or without one more digit word), with the characters it takes. None for no
+/// count or zero.
+fn count_at(chars: &[char], at: usize) -> Option<(usize, usize)> {
+    let digits: String = chars[at..].iter().take_while(|c| c.is_ascii_digit()).take(3).collect();
+    if !digits.is_empty() {
+        let n: usize = digits.parse().ok()?;
+        return (n > 0).then_some((n, digits.chars().count()));
+    }
+    let unit = |c: char| "一二三四五六七八九".chars().position(|d| d == c).map(|i| i + 1).or((c == '两').then_some(2));
+    let ten = |i: usize| chars.get(i) == Some(&'十');
+    match (chars.get(at).copied().and_then(unit), ten(at)) {
+        // ten, or ten and a digit word (10 to 19)
+        (None, true) => match chars.get(at + 1).copied().and_then(unit) {
+            Some(u) => Some((10 + u, 2)),
+            None => Some((10, 1)),
+        },
+        // a digit word and ten, with or without one more (20 to 99)
+        (Some(t), _) if ten(at + 1) => match chars.get(at + 2).copied().and_then(unit) {
+            Some(u) => Some((t * 10 + u, 3)),
+            None => Some((t * 10, 2)),
+        },
+        (Some(u), _) => Some((u, 1)),
+        (None, false) => None,
+    }
+}
+
+/// `word` matched at `at` of `chars`: the count its slot read (None for a word with no slot) and the characters it took.
+fn word_at(chars: &[char], at: usize, word: &str) -> Option<(Option<usize>, usize)> {
+    let (before, after) = match word.split_once(COUNT_SLOT) {
+        Some((b, a)) => (b, Some(a)),
+        None => (word, None),
+    };
+    let before: Vec<char> = before.chars().collect();
+    if !chars[at..].starts_with(&before) {
+        return None;
+    }
+    let Some(after) = after else {
+        return Some((None, before.len()));
+    };
+    let (n, took) = count_at(chars, at + before.len())?;
+    let after: Vec<char> = after.chars().collect();
+    let end = at + before.len() + took;
+    chars[end..]
+        .starts_with(&after)
+        .then_some((Some(n), end + after.len() - at))
+}
+
+/// A level below the country asked for (BELOW_COUNTRY_ZH, NOT_BELOW_COUNTRY_ZH aside), as `Catalog::uncovered` reads it.
+fn below_country_asked(question_zh: &str) -> bool {
+    let not: Vec<(usize, usize)> = NOT_BELOW_COUNTRY_ZH
+        .iter()
+        .flat_map(|n| question_zh.match_indices(*n).map(|(at, m)| (at, at + m.len())))
+        .collect();
+    BELOW_COUNTRY_ZH.iter().any(|w| {
+        question_zh
+            .match_indices(*w)
+            .any(|(at, m)| !not.iter().any(|&(a, b)| at < b && a < at + m.len()))
+    })
+}
+
+/// The ranking the Chinese question asks for (rank-phrases-zh.json), read by rule from the question alone, spaces aside: at
+/// the first position where a registered word matches (its longest word there), that entry's reference and the count its
+/// slot read. None when no word matches, when words of two references match (which one the question means is not fixed),
+/// or when the question asks for a level below the country (the most populous cities): the question then reads as before.
+pub fn rank_asked_zh(question_zh: &str) -> Option<RankAsked> {
+    if below_country_asked(question_zh) {
+        return None;
+    }
+    let chars: Vec<char> = question_zh.chars().filter(|c| !c.is_whitespace()).collect();
+    let mut words: Vec<(&RankPhrase, &String)> = rank_phrases()
+        .iter()
+        .flat_map(|p| p.words.iter().map(move |w| (p, w)))
+        .collect();
+    words.sort_by_key(|(_, w)| std::cmp::Reverse(w.replace(COUNT_SLOT, "").chars().count()));
+    let mut found: Option<RankAsked> = None;
+    let mut i = 0;
+    while i < chars.len() {
+        match words.iter().find_map(|(p, w)| word_at(&chars, i, w).map(|m| (p, m))) {
+            Some((p, (n, took))) => {
+                match found.as_ref().map(|f| f.by == p.by) {
+                    None => {
+                        found = Some(RankAsked {
+                            by: p.by.clone(),
+                            n,
+                            phrase: chars[i..i + took].iter().collect(),
+                        })
+                    }
+                    Some(false) => return None,
+                    Some(true) => {}
+                }
+                i += took;
+            }
+            None => i += 1,
+        }
+    }
+    found
+}
+
 /// One quantity the Chinese question asks for, judged by the program from the question alone (never from the model).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Asked {
@@ -3298,5 +3466,71 @@ mod tests {
             }
         }
         assert!(bad.is_empty(), "{}", bad.join("\n"));
+    }
+
+    /// t2 and q4: a ranking phrase reads as a ranking by the reference indicator, with the count it writes (Chinese numerals
+    /// or digits) or none; two shapes of words (a count after the phrase, a count before it) and a second reference.
+    #[test]
+    fn a_ranking_phrase_reads_as_a_ranking_with_its_count() {
+        let asked = |q: &str| rank_asked_zh(q).map(|r| (r.by, r.n, r.phrase));
+        let pop = |n: Option<usize>, phrase: &str| Some(("SP.POP.TOTL".to_string(), n, phrase.to_string()));
+        assert_eq!(asked("世界人口最多的十个国家的预期寿命"), pop(Some(10), "人口最多的十个"));
+        assert_eq!(asked("人口大国 × 年份的人均碳排放"), pop(None, "人口大国"));
+        assert_eq!(asked("人口最多的 5 个国家的失业率"), pop(Some(5), "人口最多的5个"));
+        assert_eq!(asked("人口最多的前二十个国家"), pop(Some(20), "人口最多的前二十个"));
+        assert_eq!(asked("十二大人口国的城市化率"), pop(Some(12), "十二大人口国"));
+        assert_eq!(asked("人口最多的几个国家"), pop(None, "人口最多"));
+        assert_eq!(
+            asked("全球十大经济体的通胀率"),
+            Some(("NY.GDP.MKTP.CD".to_string(), Some(10), "十大经济体".to_string()))
+        );
+        // no phrase: the question reads as before
+        assert_eq!(asked("欧盟各国可再生能源占比"), None);
+        assert_eq!(asked("德国、法国、意大利二十年来的能源进口依存度"), None);
+    }
+
+    /// Must fail: words of two references (which ranking is meant is not fixed) and a level below the country (the most
+    /// populous cities) read as no ranking.
+    #[test]
+    fn a_ranking_phrase_that_is_not_fixed_or_is_below_the_country_is_not_read() {
+        assert_eq!(rank_asked_zh("人口最多和经济规模最大的国家"), None);
+        assert_eq!(rank_asked_zh("中国人口最多的主要城市"), None);
+        assert_eq!(rank_asked_zh("美国各州人口最多的十个"), None);
+    }
+
+    /// Must fail: the word list holds words and a reference only. An entry that types the economies (a members or codes
+    /// list), a reference that is no indicator code, a word with no Chinese, two slots or two entries of one reference is
+    /// refused when the file is read; the file in the repository is the registered form.
+    #[test]
+    fn a_typed_list_of_economies_in_the_ranking_words_is_refused() {
+        assert!(rank_phrases_from(RANK_PHRASES).is_ok());
+        let file = |phrases: serde_json::Value| json!({"note": "x", "phrases": phrases}).to_string();
+        let typed = file(json!([{"by": "SP.POP.TOTL", "words": ["人口最多"], "members": ["CN", "IN", "US"]}]));
+        assert!(rank_phrases_from(&typed).unwrap_err().contains("members"), "{typed}");
+        let codes = file(json!([{"by": "SP.POP.TOTL", "words": ["人口最多"], "codes": ["CHN"]}]));
+        assert!(rank_phrases_from(&codes).is_err());
+        let top = json!({"note": "x", "phrases": [], "economies": ["CN"]}).to_string();
+        assert!(rank_phrases_from(&top).is_err());
+        let not_code = file(json!([{"by": "China, India", "words": ["人口最多"]}]));
+        assert!(rank_phrases_from(&not_code).unwrap_err().contains("not an indicator code"));
+        let no_zh = file(json!([{"by": "SP.POP.TOTL", "words": ["top {n}"]}]));
+        assert!(rank_phrases_from(&no_zh).unwrap_err().contains("no Chinese"));
+        let two = file(json!([{"by": "SP.POP.TOTL", "words": ["前{n}到{n}"]}]));
+        assert!(rank_phrases_from(&two).unwrap_err().contains("two count slots"));
+        let twice = file(json!([{"by": "SP.POP.TOTL", "words": ["人口最多"]}, {"by": "SP.POP.TOTL", "words": ["人口大国"]}]));
+        assert!(rank_phrases_from(&twice).unwrap_err().contains("two entries"));
+    }
+
+    #[test]
+    fn a_count_reads_digits_and_chinese_numerals() {
+        let at = |s: &str| count_at(&s.chars().collect::<Vec<_>>(), 0);
+        assert_eq!(at("十个"), Some((10, 1)));
+        assert_eq!(at("十一个"), Some((11, 2)));
+        assert_eq!(at("二十个"), Some((20, 2)));
+        assert_eq!(at("九十九"), Some((99, 3)));
+        assert_eq!(at("两个"), Some((2, 1)));
+        assert_eq!(at("12个"), Some((12, 2)));
+        assert_eq!(at("0个"), None);
+        assert_eq!(at("个"), None);
     }
 }

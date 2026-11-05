@@ -8,7 +8,7 @@
 
 use crate::agent_loop::ToolRunner;
 use crate::anthropic_model::ToolDef;
-use crate::l5geo::{Place, Ranking, TableMeta};
+use crate::l5geo::{Place, RankAsked, Ranking, TableMeta};
 use crate::next_knowledge;
 use crate::next_params;
 use crate::next_visual;
@@ -2314,6 +2314,11 @@ pub trait Catalogue: Sync {
     fn places(&self, _question_zh: &str) -> Vec<Place> {
         Vec::new()
     }
+    /// The ranking the Chinese question asks for in place of named places (the most populous economies): the reference
+    /// indicator and the count it writes, read by the knowledge group from the question's words; None when it asks for none.
+    fn rank_asked(&self, _question_zh: &str) -> Option<RankAsked> {
+        None
+    }
     /// The shape of the slice a fetched file varies over, read by the knowledge group against the table's own metadata.
     fn shape(&self, _table: &TableMeta, _csv: &str) -> Result<Shape, String> {
         Err("this catalogue reads no fetched file".into())
@@ -3195,6 +3200,16 @@ impl Catalogue for GroupCatalogue {
         match self.call("places", json!({"question": question_zh}), request) {
             next_knowledge::Reply::Places(places) => places,
             _ => unreachable!("the knowledge group answered places with another reply"),
+        }
+    }
+
+    fn rank_asked(&self, question_zh: &str) -> Option<RankAsked> {
+        let request = next_knowledge::Request::RankAsked {
+            question: question_zh,
+        };
+        match self.call("rank_asked", json!({"question": question_zh}), request) {
+            next_knowledge::Reply::RankAsked(asked) => asked,
+            _ => unreachable!("the knowledge group answered rank_asked with another reply"),
         }
     }
 
@@ -4546,10 +4561,19 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
         })
         .collect();
     record_group_calls(recorder, catalogue)?;
+    // A ranking the question asks for (the ten most populous economies) fixes which economies a table with every country
+    // open keeps: the program's pick, from the question's words, not the model's.
+    let rank_asked = if steps.is_empty() {
+        catalogue.rank_asked(question)
+    } else {
+        None
+    };
+    record_group_calls(recorder, catalogue)?;
     for (i, (_, d)) in drafts.iter_mut().enumerate() {
         if let Some(d) = d.as_mut() {
             d.window = ring_window(d, i + 1, &places, this_year, catalogue);
             d.named_years = next_params::question_years(question, this_year);
+            d.ranked = rank_asked.clone();
         }
     }
     record_group_calls(recorder, catalogue)?;

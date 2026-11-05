@@ -659,7 +659,183 @@ fn narrow_record(run_dir: &Path, table: &Prepared) -> Result<Option<(String, Val
         }
         found = Some((rel, record));
     }
+    if let Some((rel, record)) = &found {
+        if record["origin"] == NARROW_ORIGIN {
+            wb_narrow_again(run_dir, rel, record)?;
+        }
+    }
     Ok(found)
+}
+
+/// One row of a World Bank file the tool wrote (prepareWorldBank's conversion): the line as written, its economy code,
+/// its region, its year and its value.
+struct WbRow {
+    line: String,
+    id: String,
+    region: String,
+    year: String,
+    value: f64,
+}
+
+/// The fields of one CSV line: a field in double quotes may hold commas, a doubled quote inside it is one quote.
+fn csv_fields(line: &str) -> Vec<String> {
+    let mut out = vec![String::new()];
+    let mut quoted = false;
+    let mut chars = line.chars().peekable();
+    while let Some(c) = chars.next() {
+        match (c, quoted) {
+            ('"', true) if chars.peek() == Some(&'"') => {
+                chars.next();
+                out.last_mut().expect("one field").push('"');
+            }
+            ('"', _) => quoted = !quoted,
+            (',', false) => out.push(String::new()),
+            (c, _) => out.last_mut().expect("one field").push(c),
+        }
+    }
+    out
+}
+
+/// A World Bank file the tool wrote, read by its header (place, place name, region, time, value): the header line and the
+/// rows. Err when the header is not that form or a row is not a whole one with a finite value.
+fn wb_rows(file: &str, text: &str) -> Result<(String, Vec<WbRow>), String> {
+    let mut lines = text.lines();
+    let header = lines.next().unwrap_or("").to_string();
+    let head = csv_fields(&header);
+    if head.len() != 5 || head[2] != "region" {
+        return Err(format!("{file}: the header {header:?} is not the World Bank conversion's"));
+    }
+    let mut rows = Vec::new();
+    for line in lines {
+        let f = csv_fields(line);
+        let value = f.get(4).and_then(|v| v.parse::<f64>().ok()).filter(|v| v.is_finite());
+        let (5, Some(value)) = (f.len(), value) else {
+            return Err(format!("{file}: the row {line:?} is not a whole row with a value"));
+        };
+        rows.push(WbRow {
+            line: line.to_string(),
+            id: f[0].clone(),
+            region: f[2].clone(),
+            year: f[3].clone(),
+            value,
+        });
+    }
+    Ok((header, rows))
+}
+
+/// The region the World Bank country list gives its aggregates; an economy is any other.
+const WB_AGGREGATES: &str = "Aggregates";
+
+/// A World Bank narrow record ranked again from the files it names, by the rule the tool ranks with (newsroom.ts
+/// prepareWorldBank, wb-rank-by.json): the economies of its full file (region not WB_AGGREGATES) with a value in its
+/// reference file too (the option's `by`, else the full file); the rank year the latest year of the full file's economies
+/// where at least the registry's year share of them have a value in both; the first n by the reference's value then
+/// (highest first for rule top, lowest for bottom), ties by code. The record's option, rule and reference must be one
+/// registered option, its members and rank year these, its narrowed file the members' rows of the full file up to the rank
+/// year with the header, in file order, and each file the bytes its sha256 names. Err names what differs, so a set the rows
+/// do not give (a typed list) is refused before any page word reads the record.
+fn wb_narrow_again(run_dir: &Path, rel: &str, record: &Value) -> Result<(), String> {
+    let key = record["option"].as_str().unwrap_or("");
+    let option = next_params::wb_rank_by()
+        .1
+        .iter()
+        .find(|o| o.key == key)
+        .ok_or_else(|| format!("{rel}: option {key:?} is not in wb-rank-by.json"))?;
+    let members: Vec<&str> = record["members"]
+        .as_array()
+        .map_or(Vec::new(), |m| m.iter().filter_map(Value::as_str).collect());
+    let at = match &record["at"] {
+        Value::String(at) => at.clone(),
+        Value::Number(at) => at.to_string(),
+        _ => String::new(),
+    };
+    if members.is_empty() || at.is_empty() {
+        return Err(format!("{rel}: the record keeps no members or has no rank year"));
+    }
+    if record["rule"].as_str() != Some(option.rule.as_str()) || record["by"].as_str() != option.by.as_deref() {
+        return Err(format!("{rel}: its rule and reference are not option {key:?}'s"));
+    }
+    let n = record["n"]
+        .as_u64()
+        .filter(|n| *n >= 1)
+        .ok_or_else(|| format!("{rel}: the record has no count"))? as usize;
+    let share = next_params::wb_rank_year_share();
+    // A file the record names, read as the bytes its sha256 names; only a file under data/ of this run.
+    let file = |path: &Value, sha: &Value| -> Result<(String, String), String> {
+        let path = path.as_str().unwrap_or("");
+        if !path.starts_with("data/") || path.split('/').any(|p| p == ".." || p.is_empty()) {
+            return Err(format!("{rel}: {path:?} is not a file of this run's data"));
+        }
+        let bytes = std::fs::read(run_dir.join(path)).map_err(|e| format!("{rel}: {path}: {e}"))?;
+        if sha.as_str() != Some(crate::hash::sha256_bytes(&bytes).as_str()) {
+            return Err(format!("{rel}: {path} is not the bytes the record names"));
+        }
+        let text = String::from_utf8(bytes).map_err(|_| format!("{rel}: {path} is not text"))?;
+        Ok((path.to_string(), text))
+    };
+    let inputs = &record["inputs"];
+    let (full_path, full_text) = file(&inputs["full"]["file"], &inputs["full"]["sha256"])?;
+    let (header, full) = wb_rows(&full_path, &full_text)?;
+    let by_rows = match option.by {
+        Some(_) => {
+            let (by_path, by_text) = file(&inputs["by"]["file"], &inputs["by"]["sha256"])?;
+            Some(wb_rows(&by_path, &by_text)?.1)
+        }
+        None => None,
+    };
+    let table = |rows: &[WbRow]| {
+        let mut out: BTreeMap<String, BTreeMap<String, f64>> = BTreeMap::new();
+        for r in rows.iter().filter(|r| r.region != WB_AGGREGATES) {
+            out.entry(r.id.clone()).or_default().insert(r.year.clone(), r.value);
+        }
+        out
+    };
+    let own = table(&full[..]);
+    let reference = by_rows.as_deref().map_or_else(|| own.clone(), table);
+    let counted: Vec<&String> = own.keys().filter(|id| reference.contains_key(*id)).collect();
+    let years: BTreeSet<&String> = own.values().flat_map(|y| y.keys()).collect();
+    let holding = |year: &str| {
+        counted
+            .iter()
+            .copied()
+            .filter(|id| own[*id].contains_key(year) && reference[*id].contains_key(year))
+            .collect::<Vec<&String>>()
+    };
+    let Some(rank_year) = years.iter().rev().copied().find(|y| {
+        let h = holding(y.as_str()).len();
+        h > 0 && h as f64 >= share * counted.len() as f64
+    }) else {
+        return Err(format!("{rel}: no year of {full_path} has a value for the year share of its economies"));
+    };
+    let mut ranked = holding(rank_year.as_str());
+    let value = |id: &String| reference[id][rank_year];
+    ranked.sort_by(|a, b| {
+        let order = value(*a).partial_cmp(&value(*b)).unwrap_or(std::cmp::Ordering::Equal);
+        let order = if option.rule == "bottom" { order } else { order.reverse() };
+        order.then_with(|| a.cmp(b))
+    });
+    let again: Vec<&str> = ranked.iter().take(n).map(|id| id.as_str()).collect();
+    if again != members || *rank_year != at {
+        return Err(format!(
+            "{rel}: its members {members:?} at {at} are not the ranking of its rows ({again:?} at {rank_year})"
+        ));
+    }
+    let keep: BTreeSet<&str> = again.iter().copied().collect();
+    let up_to: i64 = at.parse().map_err(|_| format!("{rel}: the rank year {at:?} is not a number"))?;
+    let mut lines = vec![header.as_str()];
+    lines.extend(
+        full.iter()
+            .filter(|r| keep.contains(r.id.as_str()) && r.year.parse::<i64>().is_ok_and(|y| y <= up_to))
+            .map(|r| r.line.as_str()),
+    );
+    let expected = lines.join("\n") + "\n";
+    let (narrowed_path, narrowed_text) = file(&record["file"], &record["sha256"])?;
+    if narrowed_text != expected {
+        return Err(format!(
+            "{rel}: {narrowed_path} is not the members' rows of {full_path} up to {at}"
+        ));
+    }
+    Ok(())
 }
 
 /// What a narrow record says for the page: its scope and selection line templates (`{n}` and `{at}` left to fill), the
@@ -9841,8 +10017,8 @@ mod tests {
         );
         write(
             "c.json",
-            json!({"origin": "worldbank_narrow", "file": "data/narrowed.csv", "option": "SP.POP.TOTL",
-            "members": members.clone(), "at": "2024"}),
+            wb_narrow_files(dir.path(), json!({"origin": "worldbank_narrow", "file": "data/narrowed.csv", "option": "SP.POP.TOTL",
+            "members": members.clone(), "at": "2024"})),
         );
         // The count is the members the record keeps (7 here), not the registry's cap.
         assert_eq!(
@@ -9879,12 +10055,169 @@ mod tests {
             .contains("no members"));
         write(
             "c.json",
-            json!({"origin": "worldbank_narrow", "file": "data/narrowed.csv", "option": "bottom", "members": members.clone(), "at": 2024}),
+            wb_narrow_files(dir.path(), json!({"origin": "worldbank_narrow", "file": "data/narrowed.csv", "option": "bottom", "members": members.clone(), "at": 2024})),
         );
         assert_eq!(
             narrowed(dir.path(), &table).unwrap().unwrap().1,
             "按 2024 年本指标取最低的 7 个经济体"
         );
+    }
+
+    /// A World Bank narrow record's files as the tool writes them (prepareWorldBank), so wb_narrow_again ranks the record's
+    /// members first: the record (origin, file, option, members, at) with its rule, reference, count, year share, inputs and
+    /// sha256 filled in, and its full file, its reference file (an option ranked by another indicator) and its narrowed file
+    /// written under `run`. Three economies outside the members rank after them; an aggregate (region Aggregates) has the
+    /// most extreme value but is never ranked. Ranked by another indicator, the table's own values rank the other way, so
+    /// only the reference decides. Two years, the rank year last.
+    fn wb_narrow_files(run: &Path, mut record: Value) -> Value {
+        let key = record["option"].as_str().unwrap().to_string();
+        let option = next_params::wb_rank_by().1.iter().find(|o| o.key == key).unwrap();
+        let bottom = option.rule == "bottom";
+        let at: i64 = match &record["at"] {
+            Value::String(s) => s.parse().unwrap(),
+            v => v.as_i64().unwrap(),
+        };
+        let members: Vec<String> = record["members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| m.as_str().unwrap().to_string())
+            .collect();
+        let economies: Vec<String> = members
+            .iter()
+            .cloned()
+            .chain(["ZZA", "ZZB", "ZZC"].iter().map(|o| o.to_string()))
+            .collect();
+        let rank_value = |i: usize| if bottom { 10.0 + i as f64 } else { 1000.0 - i as f64 };
+        fn csv(economies: &[String], at: i64, value: &dyn Fn(usize) -> f64, aggregate: f64) -> String {
+            let mut lines = vec!["country,country_name,region,date,value".to_string()];
+            for year in [at - 1, at] {
+                lines.push(format!("WLD,\"World\",\"Aggregates\",{year},{aggregate}"));
+                for (i, id) in economies.iter().enumerate() {
+                    lines.push(format!("{id},\"Name, {id}\",\"Some \"\"region\"\"\",{year},{}", value(i)));
+                }
+            }
+            lines.join("\n") + "\n"
+        }
+        let write = |path: &str, text: &str| -> Value {
+            let file = run.join(path);
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(file, text).unwrap();
+            json!({"file": path, "sha256": crate::hash::sha256_bytes(text.as_bytes())})
+        };
+        let extreme = if bottom { -1.0 } else { 1e12 };
+        let mut inputs = json!({});
+        let full = match &option.by {
+            Some(_) => {
+                inputs["by"] = write("data/by.csv", &csv(&economies, at, &rank_value, extreme));
+                let n = economies.len();
+                csv(&economies, at, &|i| rank_value(n - 1 - i), 0.5)
+            }
+            None => csv(&economies, at, &rank_value, extreme),
+        };
+        inputs["full"] = write("data/full.csv", &full);
+        let kept: Vec<&str> = full
+            .lines()
+            .take(1)
+            .chain(
+                full.lines()
+                    .skip(1)
+                    .filter(|l| members.iter().any(|m| l.starts_with(&format!("{m},")))),
+            )
+            .collect();
+        let narrowed = kept.join("\n") + "\n";
+        let file = record["file"].as_str().unwrap().to_string();
+        let written = write(&file, &narrowed);
+        record["rule"] = json!(option.rule);
+        record["by"] = json!(option.by);
+        record["n"] = json!(members.len());
+        record["year_share"] = json!(next_params::wb_rank_year_share());
+        record["inputs"] = inputs;
+        record["sha256"] = written["sha256"].clone();
+        record
+    }
+
+    /// The tool's ranking read again from its rows: by another indicator (SP.POP.TOTL) and by the table's own values (top,
+    /// bottom), the members ranked first and the aggregate never ranked. Must fail: members typed in place of the ranking,
+    /// a narrowed file holding a row of an economy outside the members, a file whose bytes are not the ones the record
+    /// names, a rule that is not the option's, and a reference file left out are each refused before any page word reads
+    /// the record.
+    #[test]
+    fn a_world_bank_narrow_is_refused_unless_its_rows_rank_its_members() {
+        let dir = tempfile::tempdir().unwrap();
+        let run = dir.path();
+        let members = json!(["IND", "CHN", "USA"]);
+        let base = |option: &str| {
+            json!({"origin": NARROW_ORIGIN, "file": "data/narrowed.csv", "option": option, "members": members.clone(), "at": "2024"})
+        };
+        for option in ["SP.POP.TOTL", "top", "bottom"] {
+            let record = wb_narrow_files(run, base(option));
+            assert_eq!(wb_narrow_again(run, "r", &record), Ok(()), "{option}");
+        }
+        // typed members: the same three economies in another order, and one economy the rows do not rank there
+        let good = wb_narrow_files(run, base("SP.POP.TOTL"));
+        for typed in [json!(["CHN", "IND", "USA"]), json!(["IND", "CHN", "ZZA"])] {
+            let mut bad = good.clone();
+            bad["members"] = typed.clone();
+            let why = wb_narrow_again(run, "r", &bad).unwrap_err();
+            assert!(why.contains("are not the ranking of its rows"), "{typed}: {why}");
+        }
+        // a rank year the rows do not give
+        let mut bad = good.clone();
+        bad["at"] = json!("2023");
+        assert!(wb_narrow_again(run, "r", &bad).unwrap_err().contains("not the ranking of its rows"));
+        // the narrowed file with one more economy's row, its sha256 renamed to match
+        let narrowed = std::fs::read_to_string(run.join("data/narrowed.csv")).unwrap();
+        let full = std::fs::read_to_string(run.join("data/full.csv")).unwrap();
+        let extra = full.lines().find(|l| l.starts_with("ZZA,")).unwrap();
+        let more = format!("{narrowed}{extra}\n");
+        std::fs::write(run.join("data/more.csv"), &more).unwrap();
+        let mut bad = good.clone();
+        bad["file"] = json!("data/more.csv");
+        bad["sha256"] = json!(crate::hash::sha256_bytes(more.as_bytes()));
+        assert!(wb_narrow_again(run, "r", &bad).unwrap_err().contains("is not the members' rows"));
+        // the bytes are not the ones the record names
+        let mut bad = good.clone();
+        bad["inputs"]["full"]["sha256"] = json!("0".repeat(64));
+        assert!(wb_narrow_again(run, "r", &bad).unwrap_err().contains("not the bytes the record names"));
+        // a rule that is not the option's
+        let mut bad = good.clone();
+        bad["rule"] = json!("bottom");
+        assert!(wb_narrow_again(run, "r", &bad).unwrap_err().contains("not option"));
+        // ranked by another indicator with no reference file
+        let mut bad = good.clone();
+        bad["inputs"].as_object_mut().unwrap().remove("by");
+        assert!(wb_narrow_again(run, "r", &bad).unwrap_err().contains("is not a file of this run's data"));
+        // a path outside the run's data
+        let mut bad = good.clone();
+        bad["inputs"]["full"]["file"] = json!("data/../config/x.csv");
+        assert!(wb_narrow_again(run, "r", &bad).unwrap_err().contains("is not a file of this run's data"));
+        // and through narrowed: a typed list stops the page's scope
+        let origins = run.join("data/origins");
+        std::fs::create_dir_all(&origins).unwrap();
+        let mut typed = good.clone();
+        typed["members"] = json!(["CHN", "IND", "USA"]);
+        std::fs::write(origins.join("n.json"), typed.to_string()).unwrap();
+        let table = Prepared {
+            id: "t".into(),
+            title: "t".into(),
+            file: "data/narrowed.csv".into(),
+            args: Map::new(),
+            sheet: String::new(),
+            claims: Vec::new(),
+            places_zh: Vec::new(),
+            companions: Vec::new(),
+            asked: json!([]),
+        };
+        assert!(narrowed(run, &table).unwrap_err().contains("not the ranking of its rows"));
+        std::fs::write(origins.join("n.json"), good.to_string()).unwrap();
+        assert!(narrowed(run, &table).unwrap().is_some());
+    }
+
+    #[test]
+    fn a_csv_line_keeps_commas_and_doubled_quotes_inside_quotes() {
+        assert_eq!(csv_fields(r#"IND,"India, Rep.","Some ""region""",2024,1.5"#), ["IND", "India, Rep.", "Some \"region\"", "2024", "1.5"]);
+        assert_eq!(csv_fields("a,,b"), ["a", "", "b"]);
     }
 
     /// A column page as run_page drafts it, from a run whose data/origins holds `records` and whose one table reads
@@ -9896,6 +10229,11 @@ mod tests {
         let origins = dir.path().join("data/origins");
         std::fs::create_dir_all(&origins).unwrap();
         for (i, record) in records.iter().enumerate() {
+            let record = if record["origin"] == NARROW_ORIGIN {
+                wb_narrow_files(dir.path(), record.clone())
+            } else {
+                record.clone()
+            };
             std::fs::write(origins.join(format!("{i}.json")), record.to_string()).unwrap();
         }
         let table = Prepared {

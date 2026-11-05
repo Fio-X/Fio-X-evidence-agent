@@ -1,0 +1,31 @@
+{
+ "note": "New route, data side: the words a Chinese question asks for a ranked set of economies with (the ten most populous, the largest economies), each with the reference indicator the set is ranked by. Read by the knowledge group (l5geo.rs, include_str) as a word list: a question one entry's words match asks for that ranking, never for named places. Each word is a template: {n} is a count (digits, or one to ninety-nine in Chinese numerals) and gives how many economies the question asks for; a word without {n} asks for no count. Longer words are tried first. An entry holds words and the reference indicator only: a list of economies, codes or members is refused, since the set is ranked by the program from the fetched rows of the reference indicator (newsroom.ts prepareWorldBank, wb-rank-by.json), never typed here.",
+ "phrases": [
+  {
+   "by": "SP.POP.TOTL",
+   "words": [
+    "人口最多的前{n}个",
+    "人口最多的{n}个",
+    "人口排名前{n}",
+    "人口前{n}",
+    "{n}个人口大国",
+    "{n}大人口国",
+    "人口最多",
+    "人口大国"
+   ]
+  },
+  {
+   "by": "NY.GDP.MKTP.CD",
+   "words": [
+    "经济规模最大的前{n}个",
+    "经济规模最大的{n}个",
+    "经济总量最大的{n}个",
+    "{n}大经济体",
+    "经济规模最大",
+    "经济总量最大",
+    "最大的经济体",
+    "经济大国"
+   ]
+  }
+ ]
+}
