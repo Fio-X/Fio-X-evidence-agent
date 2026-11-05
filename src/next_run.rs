@@ -2451,8 +2451,10 @@ fn answered_places(fill: &mut Value, shape: &Shape, main_rows: &[Value], places:
     } else {
         iso2.iter().map(|c| next_params::ESTAT_ISO.iter().find(|(_, i)| *i == c.as_str()).map_or(c.clone(), |(e, _)| e.to_string())).collect()
     };
+    // the page's year; a page whose shape names none (a hub page) reads every period of its rows, so a place has no data
+    // only when no row of it is there at all
     let year = shape.year.clone();
-    let at_year: Vec<&Value> = main_rows.iter().filter(|r| r["time"].as_str() == Some(year.as_str())).collect();
+    let at_year: Vec<&Value> = main_rows.iter().filter(|r| year.is_empty() || r["time"].as_str() == Some(year.as_str())).collect();
     let missing: Vec<String> = asked.iter().filter(|c| !at_year.iter().any(|r| holds(r, c.as_str()))).cloned().collect();
     let words: Value = serde_json::from_str(crate::next_knowledge::ASKED_PLACES_ZH).map_err(|e| format!("asked-places-zh.json: {e}"))?;
     let word = |key: &str| words[key].as_str().map(str::to_string).ok_or_else(|| format!("asked-places-zh.json holds no {key}"));
@@ -6580,6 +6582,13 @@ mod tests {
         answered_places(&mut f, &shape, &hub, &country(&["DE", "RU"]), &Hubs).unwrap();
         assert_eq!(f["knobs"]["spec"]["asked_places"]["missing"], json!([]));
         assert!(f["knobs"]["spec"]["asked_places"]["dims"].as_array().unwrap().contains(&json!("geo")));
+        // a hub page whose shape names no year (the scmp and ring recipes): RU has rows in some period, so it has data;
+        // only a partner with no row at all is named as having none
+        let hub = ring_rows("imp", &[("siec", "G3000"), ("unit", "MIO_M3"), ("geo", "EU27_2020")], ("partner", &["RU", "NO"]), &["2023"]);
+        let shape = Shape { main: "imp".into(), place: "partner".into(), year: String::new(), ..Default::default() };
+        let mut f = fill();
+        answered_places(&mut f, &shape, &hub, &country(&["RU", "QA"]), &Hubs).unwrap();
+        assert_eq!(f["knobs"]["spec"]["asked_places"]["missing"], json!(["QA"]), "RU has a row, QA none");
     }
 
     /// End to end on two data shapes, a column page of one year and a change page over two (the map of bubbles beside its

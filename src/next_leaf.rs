@@ -1638,7 +1638,8 @@ fn places_answered(html: &str, ledger: &BTreeMap<String, String>, spec: &Spec, r
     for src in &marked {
         answered.extend(entry_places(src, &a.dims, rows, facts));
     }
-    let has_row = |code: &str| rows.iter().any(|r| r.time == a.year && a.dims.iter().any(|d| r.dims.get(d).is_some_and(|c| c == code)));
+    // an empty year (a page whose shape names none) is every period of the request's rows
+    let has_row = |code: &str| rows.iter().any(|r| (a.year.is_empty() || r.time == a.year) && a.dims.iter().any(|d| r.dims.get(d).is_some_and(|c| c == code)));
     for code in &a.asked {
         let missing = a.missing.contains(code);
         match (answered.contains(code), missing, has_row(code.as_str())) {
@@ -2785,6 +2786,18 @@ mod tests {
         let hub_fact = read_fact("val.RU", "value", &[hub.src.clone()]);
         let hub_asked = AskedPlaces { asked: vec!["DE".into(), "RU".into()], missing: Vec::new(), dims: vec!["partner".into(), "geo".into()], ..asked1.clone() };
         let off = places_answered(&page1(&span("fact:val.RU.n", "5"), ""), &BTreeMap::new(), &spec_of(Some(hub_asked)), &[hub], &[hub_fact]);
+        assert_eq!(off, Vec::<String>::new());
+        // a hub page whose shape names no year: a partner with a row in any period has data, so "no data" for it is refused,
+        // and one with no row at all may be named as having none
+        let mut hub2 = place_row("partner", "RU", "2023", 5.0);
+        hub2.dims.insert("geo".into(), "EU27_2020".into());
+        let hub2_fact = read_fact("val.RU", "value", &[hub2.src.clone()]);
+        let no_year = AskedPlaces { asked: vec!["RU".into()], missing: vec!["RU".into()], dims: vec!["partner".into(), "geo".into()], year: String::new(), ..asked1.clone() };
+        let ru_said = format!("{}无数据", span(&name_src("RU"), "俄罗斯"));
+        let ru_ledger: BTreeMap<String, String> = [(name_src("RU"), "俄罗斯".to_string())].into();
+        let off = places_answered(&page1("", &ru_said), &ru_ledger, &spec_of(Some(no_year.clone())), &[hub2.clone()], &[hub2_fact.clone()]);
+        assert!(off.iter().any(|f| f.contains("the request holds its row")), "{off:?}");
+        let off = places_answered(&page1("", &ru_said), &ru_ledger, &spec_of(Some(no_year)), &[], &[]);
         assert_eq!(off, Vec::<String>::new());
         // a stored request keeps its asked places, and one that does not read keeps why
         let req = json!({"knobs": {"spec": {"asked_places": asked1}}, "rows": []});
