@@ -417,7 +417,7 @@ fn group_charts(
         View::Slice => catalogue.rank(&series_shape(shape, &series_rows), &FILLED_TEMPLATES, used),
         View::FirstToLast => catalogue.rank_first_to_last(shape, &MOVE_TEMPLATES, used),
     };
-    if !maps_a_ratio(table) {
+    if !maps_a_ratio(table, unit_dim(catalogue, &table.id)) {
         matched.candidates.retain(|c| c.relation != Relation::Map);
     }
     let Some(best) = matched.candidates.first() else {
@@ -2770,7 +2770,7 @@ fn measure_of(
     let (unit_code, unit_label, kind) = match meta.as_ref().and_then(|m| m.unit.as_ref()) {
         Some(unit) => (Some(unit.code.clone()), Some(unit.label.clone()), unit.kind),
         None => {
-            let unit_code = unit_code(table);
+            let unit_code = unit_code(table, unit_dim(catalogue, &table.id));
             // a code carried in another dimension (EUR_KWH) is no code of the table's unit dimension: its label is the
             // unit registry's
             let unit_label = unit_code
@@ -2881,10 +2881,17 @@ fn measure_name(table: &Prepared, catalogue: &dyn Catalogue) -> String {
     format!("{} ({})", &title[..cut], labels.join("; "))
 }
 
+/// The codes of a table's unit dimension in the catalogue, None when it has none.
+fn unit_dim(catalogue: &dyn Catalogue, id: &str) -> Option<BTreeSet<String>> {
+    let meta = catalogue.table(id)?;
+    let (_, codes) = meta.dims.iter().find(|(dim, _)| dim == "unit")?;
+    Some(codes.iter().map(|(c, _)| c.clone()).collect())
+}
+
 /// A map colours regions, so it draws only a ratio the catalogue's unit code names (share, rate or index); a total, a count or a
 /// unit it cannot read goes on the other templates (a ranked bar).
-fn maps_a_ratio(table: &Prepared) -> bool {
-    unit_code(table)
+fn maps_a_ratio(table: &Prepared, unit_dim: Option<BTreeSet<String>>) -> bool {
+    unit_code(table, unit_dim)
         .as_deref()
         .and_then(next_pack::measure_kind)
         .is_some_and(|k| matches!(k, "share" | "rate" | "index"))
@@ -2892,7 +2899,9 @@ fn maps_a_ratio(table: &Prepared) -> bool {
 
 /// The one unit code the table was fetched in: the code its fixed currency or indicator carries (next_pack::carried_unit,
 /// as one_unit reads it), else its `unit` filter; None when the fetch did not fix one unit or the carried codes have no row.
-fn unit_code(table: &Prepared) -> Option<String> {
+/// A table with a unit dimension (`unit_dim`, its catalogue codes) the fetch did not filter may hold any of them: a currency
+/// alone never names its unit then (a price is per a quantity unit), and a pair needs the one unit code.
+fn unit_code(table: &Prepared, unit_dim: Option<BTreeSet<String>>) -> Option<String> {
     let fixed: BTreeMap<String, BTreeSet<String>> = table
         .args
         .get("filters")
@@ -2904,7 +2913,12 @@ fn unit_code(table: &Prepared) -> Option<String> {
             Some((f["dimension"].as_str()?.to_string(), codes))
         })
         .collect();
-    match next_pack::carried_unit(&fixed) {
+    // the carrier reads the unit dimension as the rows may hold it; the unit filter alone stays the fallback, as before
+    let mut held = fixed.clone();
+    if let Some(codes) = unit_dim {
+        held.entry("unit".to_string()).or_insert(codes);
+    }
+    match next_pack::carried_unit(&held) {
         Ok(Some(code)) => Some(code.to_string()),
         Ok(None) => fixed.get("unit").filter(|values| values.len() == 1).and_then(|values| values.first().cloned()),
         Err(_) => None,
@@ -9471,17 +9485,24 @@ mod tests {
             asked: json!([]),
         };
         let unit = |codes: &[&str]| table(json!([{"dimension": "unit", "values": codes}]));
+        // a price fetched by its currency alone: with no unit dimension the currency is the unit; a unit dimension the fetch
+        // left open may hold several quantity units, so the currency names none, and a pair needs the one code it holds
+        let eur = table(json!([{"dimension": "currency", "values": ["EUR"]}]));
+        let dim = |codes: &[&str]| Some(codes.iter().map(|c| c.to_string()).collect::<BTreeSet<String>>());
+        assert_eq!(unit_code(&eur, None).as_deref(), Some("EUR"));
+        assert_eq!(unit_code(&eur, dim(&["KWH", "GJ_GCV"])), None, "an open unit dimension: no unit");
+        assert_eq!(unit_code(&eur, dim(&["KWH"])).as_deref(), Some("EUR_KWH"), "the one unit it holds");
         assert!(
-            maps_a_ratio(&unit(&["PC"]))
-                && maps_a_ratio(&unit(&["RT"]))
-                && maps_a_ratio(&unit(&["I15_A_AVG"]))
+            maps_a_ratio(&unit(&["PC"]), None)
+                && maps_a_ratio(&unit(&["RT"]), None)
+                && maps_a_ratio(&unit(&["I15_A_AVG"]), None)
         );
         assert!(
-            !maps_a_ratio(&unit(&["KTOE"]))
-                && !maps_a_ratio(&unit(&["THS_PER"]))
-                && !maps_a_ratio(&unit(&["KG_HAB"]))
+            !maps_a_ratio(&unit(&["KTOE"]), None)
+                && !maps_a_ratio(&unit(&["THS_PER"]), None)
+                && !maps_a_ratio(&unit(&["KG_HAB"]), None)
         );
-        assert!(!maps_a_ratio(&unit(&["PC", "KTOE"])) && !maps_a_ratio(&table(json!([]))));
+        assert!(!maps_a_ratio(&unit(&["PC", "KTOE"]), None) && !maps_a_ratio(&table(json!([])), None));
         // The data side's unit kinds of six local tables (unit_kinds.json): every level code stays off the map; the per-inhabitant
         // and EU27-average codes are not read yet, so they stay off too (a bar, not a guess).
         for code in [
@@ -9498,12 +9519,12 @@ mod tests {
             "PPS_EU27_2020_HAB",
             "EUR_HAB_EU27_2020",
         ] {
-            assert!(!maps_a_ratio(&unit(&[code])), "{code}");
+            assert!(!maps_a_ratio(&unit(&[code]), None), "{code}");
         }
         // Only the unit dimension is read: TJ under geo is a country, not terajoules, and a code under another dimension is no unit.
         assert!(!maps_a_ratio(&table(
             json!([{"dimension": "geo", "values": ["TJ"]}, {"dimension": "indic_et", "values": ["PC_IMP_EU"]}])
-        )));
+        ), None));
     }
 
     #[test]
