@@ -1615,7 +1615,98 @@ pub fn check_leaf_page(
     off.extend(crate::next_ledger::check_relations(html, ledger, spec, facts, rows));
     off.extend(crate::next_ledger::check_claims(html, ledger, spec, facts, rows));
     off.extend(crate::next_ledger::check_accent_named(html));
+    off.extend(places_answered(html, ledger, spec, rows, facts));
     off
+}
+
+/// A page whose request keeps the countries the question names on their own (spec.asked_places) answers each one: the
+/// page prints a value read from that place's rows (an entry it marks that is a request row of the place, one of `dims`
+/// holding its code, or a `fact:` entry whose fact reads only rows of the place, through `fact:<a>` reads), or the place
+/// is in `missing`; a
+/// missing place has no request row at the page's `year` (never "no data" for a place the request holds a row of) and is
+/// a place the question names; a named place with a row there that the page neither prints nor names is refused; and the
+/// page's text holds the line's `words` with {missing} the missing places' name rows joined by `join`, each name printed
+/// marked. A request with none asks nothing of the page.
+fn places_answered(html: &str, ledger: &BTreeMap<String, String>, spec: &Spec, rows: &[Row], facts: &[Fact]) -> Vec<String> {
+    let Some(a) = &spec.asked_places else { return Vec::new() };
+    if let Some(why) = &a.unread {
+        return vec![format!("places: the request's asked places do not read: {why}")];
+    }
+    let mut off = Vec::new();
+    let marked = crate::next_ledger::printed(html);
+    let mut answered = std::collections::BTreeSet::new();
+    for src in &marked {
+        answered.extend(entry_places(src, &a.dims, rows, facts));
+    }
+    let has_row = |code: &str| rows.iter().any(|r| r.time == a.year && a.dims.iter().any(|d| r.dims.get(d).is_some_and(|c| c == code)));
+    for code in &a.asked {
+        let missing = a.missing.contains(code);
+        match (answered.contains(code), missing, has_row(code.as_str())) {
+            (_, true, true) => off.push(format!("places: {code} is said to have no data, and the request holds its row at {}", a.year)),
+            (true, true, false) => off.push(format!("places: {code} is said to have no data, and the page prints a value of it")),
+            (false, false, true) => off.push(format!(
+                "places: the question names {code}, which has a row at {}, and the page neither prints a value of it nor says it has none",
+                a.year
+            )),
+            (false, false, false) => off.push(format!("places: the question names {code}, which has no row at {}, and the page does not say so", a.year)),
+            _ => {}
+        }
+    }
+    for code in a.missing.iter().filter(|c| !a.asked.contains(c)) {
+        off.push(format!("places: {code} is said to have no data and the question does not name it"));
+    }
+    if a.missing.is_empty() {
+        return off;
+    }
+    let Some((before, after)) = a.words.split_once("{missing}") else {
+        off.push(format!("places: the line {:?} names no {{missing}} for {:?}", a.words, a.missing));
+        return off;
+    };
+    let mut names = Vec::new();
+    for code in &a.missing {
+        let src = crate::next_ledger::name_src(code);
+        match ledger.get(&src) {
+            Some(name) => names.push(name.as_str()),
+            None => off.push(format!("places: the ledger names no {code}, a place with no data")),
+        }
+        if !marked.contains(&src) {
+            off.push(format!("places: the page prints no {src} for a place with no data"));
+        }
+    }
+    let want = format!("{before}{}{after}", names.join(&a.join));
+    if !crate::next_ledger::text_outside(html, "data-none").contains(&want) {
+        off.push(format!("places: the page does not say {want:?}"));
+    }
+    off
+}
+
+/// The places (codes in `dims`) every request row a marked entry reads belongs to: a request row itself, or a `fact:`
+/// entry's fact (the longest fact key the entry starts with) and the facts it reads in turn; none when it reads no row,
+/// or anything that is neither a request row nor a fact.
+fn entry_places(src: &str, dims: &[String], rows: &[Row], facts: &[Fact]) -> std::collections::BTreeSet<String> {
+    let fact_of = |src: &str| {
+        facts
+            .iter()
+            .filter(|f| src.strip_prefix(crate::next_facts::FACT_SRC).is_some_and(|k| k == f.key || k.strip_prefix(f.key.as_str()).is_some_and(|t| t.starts_with('.'))))
+            .max_by_key(|f| f.key.len())
+    };
+    let (mut read, mut todo, mut seen) = (Vec::new(), vec![src.to_string()], std::collections::BTreeSet::new());
+    while let Some(s) = todo.pop() {
+        if !seen.insert(s.clone()) {
+            continue;
+        }
+        match rows.iter().find(|r| r.src == s) {
+            Some(r) => read.push(r),
+            None => match fact_of(s.as_str()) {
+                Some(f) => todo.extend(f.reads.iter().cloned()),
+                None => return Default::default(),
+            },
+        }
+    }
+    let of = |r: &Row| -> std::collections::BTreeSet<String> { dims.iter().filter_map(|d| r.dims.get(d).cloned()).collect() };
+    let mut rest = read.into_iter();
+    let Some(first) = rest.next() else { return Default::default() };
+    rest.fold(of(first), |all, r| all.intersection(&of(r)).cloned().collect())
 }
 
 /// The leaf page as it is published: Rust adds the renderer's ready script once before `</body>` (the child never writes
@@ -1782,6 +1873,7 @@ mod tests {
             facts: Vec::new(),
             fmts: json!({}),
             members: None,
+            asked_places: None,
         };
         let ledger = leaf_ledger(&spec, &rows, &[]).unwrap();
         let refs = ["MIGR_ASYAPPCTZM".to_string()];
@@ -2469,6 +2561,7 @@ mod tests {
             facts: Vec::new(),
             fmts: json!({}),
             members: None,
+            asked_places: None,
         };
         let ledger = leaf_ledger(&spec, &rows, &[]).unwrap();
         let m = |src: &str| {
@@ -2564,5 +2657,141 @@ mod tests {
         for f in off {
             println!("finding {f}");
         }
+    }
+
+    /// One request row of table t: its place in `dim`, its year and value.
+    fn place_row(dim: &str, code: &str, time: &str, value: f64) -> Row {
+        Row {
+            src: format!("series:t/{code}:{time}:OBS_VALUE"),
+            table: "t".into(),
+            dims: [(dim.to_string(), code.to_string()), ("unit".to_string(), "PC".to_string())].into(),
+            time: time.into(),
+            value,
+        }
+    }
+
+    /// A fact as compute writes it, reading `reads`.
+    fn read_fact(key: &str, op: &str, reads: &[String]) -> Fact {
+        Fact { key: key.into(), op: op.into(), v: 1.0, t: None, n: None, who: Vec::new(), fmt: "pc".into(), reads: reads.to_vec() }
+    }
+
+    /// The countries a question names on their own (owner 11-06 design), on two data shapes: a column page of one year
+    /// (Eurostat iso2 by geo, each bar's value a fact reading its row, Italy with no row at 2024 but one at 2020) and a
+    /// change page (World Bank iso3 by country, each change a fact of two facts, Korea with no row; plus a hub row, whose
+    /// fixed geo is the place). One missing place named on the unit line by its name row passes; the name left out, another
+    /// name in its place, "no data" said of a place with a row, a place with a row dropped from the page, a place answered
+    /// only by a count over every place, and a request that does not read are each refused; a request naming none asks
+    /// nothing.
+    #[test]
+    fn a_named_country_is_printed_from_its_rows_or_named_as_having_no_data() {
+        use crate::next_facts::AskedPlaces;
+        use crate::next_ledger::name_src;
+        let span = |src: &str, text: &str| format!(r#"<span data-src="{src}">{text}</span>"#);
+        // shape 1: a column page by geo
+        let rows1 = vec![
+            place_row("geo", "DE", "2024", 20.0),
+            place_row("geo", "FR", "2024", 30.0),
+            place_row("geo", "IT", "2020", 10.0),
+        ];
+        let facts1 = vec![
+            read_fact("val.DE", "value", &[rows1[0].src.clone()]),
+            read_fact("val.FR", "value", &[rows1[1].src.clone()]),
+            read_fact("drawn", "n", &[rows1[0].src.clone(), rows1[1].src.clone()]),
+        ];
+        let asked1 = AskedPlaces {
+            asked: vec!["DE".into(), "FR".into(), "IT".into()],
+            missing: vec!["IT".into()],
+            words: "{missing}无数据".into(),
+            join: "、".into(),
+            dims: vec!["geo".into()],
+            year: "2024".into(),
+            unread: None,
+        };
+        let ledger1: BTreeMap<String, String> = [(name_src("IT"), "意大利".to_string()), (name_src("DE"), "德国".to_string())].into();
+        let bars1 = format!("{}{}", span("fact:val.DE.n", "20"), span("fact:val.FR.n", "30"));
+        let page1 = |bars: &str, line: &str| format!(r#"<html><body><div class="hu">单位：%；{line}</div>{bars}</body></html>"#);
+        let said1 = format!("{}无数据", span(&name_src("IT"), "意大利"));
+        // shape 2: a change page by World Bank country, and a hub row whose geo is fixed
+        let rows2 = vec![
+            place_row("country", "CHN", "2025", 14.0),
+            place_row("country", "CHN", "2016", 10.0),
+            place_row("country", "JPN", "2025", 29.0),
+            place_row("country", "JPN", "2016", 26.0),
+        ];
+        let facts2 = vec![
+            read_fact("val1.CHN", "value", &[rows2[0].src.clone()]),
+            read_fact("val0.CHN", "value", &[rows2[1].src.clone()]),
+            read_fact("val1.JPN", "value", &[rows2[2].src.clone()]),
+            read_fact("val0.JPN", "value", &[rows2[3].src.clone()]),
+            read_fact("chg.CHN", "minus", &["fact:val1.CHN".to_string(), "fact:val0.CHN".to_string()]),
+            read_fact("chg.JPN", "minus", &["fact:val1.JPN".to_string(), "fact:val0.JPN".to_string()]),
+        ];
+        let asked2 = AskedPlaces {
+            asked: vec!["CHN".into(), "JPN".into(), "KOR".into()],
+            missing: vec!["KOR".into()],
+            words: "{missing}无数据".into(),
+            join: "、".into(),
+            dims: vec!["country".into()],
+            year: "2025".into(),
+            unread: None,
+        };
+        let ledger2: BTreeMap<String, String> = [(name_src("KOR"), "韩国".to_string())].into();
+        let bars2 = format!("{}{}", span("fact:chg.CHN.n", "4.0"), span("fact:chg.JPN.n", "3.0"));
+        let said2 = format!("{}无数据", span(&name_src("KOR"), "韩国"));
+        let spec_of = |a: Option<AskedPlaces>| Spec { facts: Vec::new(), fmts: json!({}), members: None, asked_places: a };
+        let shapes = [
+            ("column", rows1.clone(), facts1.clone(), asked1.clone(), ledger1.clone(), bars1.clone(), said1.clone(), "FR", "fact:val.FR.n"),
+            ("change", rows2.clone(), facts2.clone(), asked2.clone(), ledger2.clone(), bars2.clone(), said2.clone(), "JPN", "fact:chg.JPN.n"),
+        ];
+        for (at, rows, facts, asked, ledger, bars, said, other, other_src) in shapes {
+            let check = |html: &str, a: &AskedPlaces| places_answered(html, &ledger, &spec_of(Some(a.clone())), &rows, &facts);
+            let refused = |html: &str, a: &AskedPlaces, why: &str| {
+                let off = check(html, a);
+                assert!(off.iter().any(|f| f.starts_with("places:") && f.contains(why)), "{at}: {why:?} not in {off:?}");
+            };
+            // one missing place named by its name row: passes
+            let good = page1(&bars, &said);
+            assert_eq!(check(&good, &asked), Vec::<String>::new(), "{at}");
+            assert_eq!(places_answered(&good, &ledger, &spec_of(None), &rows, &facts), Vec::<String>::new(), "{at}: none asked");
+            // the missing place not named
+            refused(&page1(&bars, ""), &asked, "does not say");
+            refused(&page1(&bars, ""), &asked, "prints no name:zh_names");
+            // another name in its place (marked, the text not the ledger's)
+            let missing = &asked.missing[0];
+            refused(&page1(&bars, &format!("{}无数据", span(&name_src(missing), "另一国"))), &asked, "does not say");
+            // "no data" said of a place the request holds a row of at the year
+            let mut wrong = asked.clone();
+            wrong.missing.push(other.to_string());
+            refused(&good, &wrong, "the request holds its row");
+            // a place with a row dropped silently: its value not printed
+            let dropped = bars.replace(&span(other_src, if at == "column" { "30" } else { "3.0" }), "");
+            assert_ne!(dropped, bars, "{at}");
+            refused(&page1(&dropped, &said), &asked, "neither prints a value of it nor says it has none");
+            // a missing place the request does not keep as missing
+            let mut silent = asked.clone();
+            silent.missing.clear();
+            refused(&page1(&bars, ""), &silent, "and the page does not say so");
+            // a request that does not read
+            let unread = AskedPlaces { unread: Some("no dims".into()), ..asked.clone() };
+            refused(&good, &unread, "do not read");
+        }
+        // a count over every place answers none of them
+        let count_only = page1(&span("fact:drawn.n", "2"), &said1);
+        let off = places_answered(&count_only, &ledger1, &spec_of(Some(asked1.clone())), &rows1, &facts1);
+        assert_eq!(off.iter().filter(|f| f.contains("neither prints")).count(), 2, "{off:?}");
+        // a hub page: the place is its fixed geo, beside the varying partner, so every partner value is of the hub
+        let mut hub = place_row("partner", "RU", "2024", 5.0);
+        hub.dims.insert("geo".into(), "DE".into());
+        let hub_fact = read_fact("val.RU", "value", &[hub.src.clone()]);
+        let hub_asked = AskedPlaces { asked: vec!["DE".into(), "RU".into()], missing: Vec::new(), dims: vec!["partner".into(), "geo".into()], ..asked1.clone() };
+        let off = places_answered(&page1(&span("fact:val.RU.n", "5"), ""), &BTreeMap::new(), &spec_of(Some(hub_asked)), &[hub], &[hub_fact]);
+        assert_eq!(off, Vec::<String>::new());
+        // a stored request keeps its asked places, and one that does not read keeps why
+        let req = json!({"knobs": {"spec": {"asked_places": asked1}}, "rows": []});
+        assert_eq!(crate::next_facts::stored_request(&req).0.asked_places.as_ref().map(|a| a.missing.clone()), Some(vec!["IT".to_string()]));
+        let bad = json!({"knobs": {"spec": {"asked_places": {"asked": "DE"}}}, "rows": []});
+        assert!(crate::next_facts::stored_request(&bad).0.asked_places.unwrap().unread.is_some());
+        let none = json!({"knobs": {"spec": {}}, "rows": []});
+        assert!(crate::next_facts::stored_request(&none).0.asked_places.is_none());
     }
 }

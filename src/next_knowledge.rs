@@ -54,6 +54,11 @@ const TABLE_NAMES: &str = include_str!("../runtime/pi/assets/table-names-zh.json
 /// form): a page prints one marked name:zh_names:<dim>:<code>; a code of a listed dimension with no entry has no name.
 const CODE_NAMES: &str = include_str!("../runtime/pi/assets/code-names-zh.json");
 
+/// The words of the page line that names the countries a question names on their own and the page has no row of at its
+/// year (asked-places-zh.json: `said` with {missing}, the names' `join`, and `lead` from the unit line to it). A
+/// vocabulary constant the flow reads; the names come from the name table, never from here.
+pub const ASKED_PLACES_ZH: &str = include_str!("../runtime/pi/assets/asked-places-zh.json");
+
 /// Registry: Eurostat's SDMX 3.0 data endpoint. Its named filters (`c[geo]=DE,FR`) need no dimension order: the metabase
 /// lists a table's dimensions alphabetically, not in its DSD's order (30 of 30 sampled tables differ, 10-28), and a DSD call
 /// would add about 1.2 s per table.

@@ -906,6 +906,10 @@
    "group": "knowledge",
    "note": "New route, data side: the words that say a part of the question cannot be answered, which only the program prints (user 11-05 10:2x: answered-or-not is the program's call and the program's line). A pure data word list like unit-short-zh.tsv; next_flow.rs (the text step) and next_ledger.rs (the page check) read it with include_str as a vocabulary constant. Ownership only; no cross-group call is allowed by this row."
   },
+  "runtime/pi/assets/asked-places-zh.json": {
+   "group": "knowledge",
+   "note": "New route, data side: the words of the page line that names the countries a question names on their own and the page has no row of at its year (the line with {missing}, the names' join and the join to the unit line), which only the program prints (owner 11-06 design: each named country is printed from its rows or named as having no data). A pure data word list like unanswered-words.tsv; next_knowledge.rs reads it with include_str as a vocabulary constant (ASKED_PLACES_ZH) that next_run.rs reads. Ownership only; no cross-group call is allowed by this row."
+  },
   "runtime/pi/assets/year-words.json": {
    "group": "knowledge",
    "note": "New route, data side: the words a question counts back a number of years with (近五年, 五年来), the last N years it asks (user 11-05 10:2x (e): the asked span is cut, not the table's whole). A pure data word list like unit-short-zh.tsv; next_params.rs reads it with include_str as a vocabulary constant. Ownership only; no cross-group call is allowed by this row."

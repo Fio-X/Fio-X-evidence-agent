@@ -2472,6 +2472,14 @@ pub trait Catalogue: Sync {
     fn place_points(&self, codes: &[String]) -> Result<BTreeMap<String, [f64; 2]>, String> {
         place_points_call(&Mutex::new(Vec::new()), codes)
     }
+    /// The iso3 code of each iso2 code by the knowledge group's name table (Iso3Of, through its door); a code it has none
+    /// for is left out.
+    fn iso3_of(&self, codes: &[String]) -> Result<BTreeMap<String, String>, String> {
+        match knowledge_call(&Mutex::new(Vec::new()), "iso3_of", json!({"codes": codes}), next_knowledge::Request::Iso3Of { codes })? {
+            next_knowledge::Reply::Iso3 { iso3, .. } => Ok(iso3),
+            _ => unreachable!("the knowledge group answered iso3_of with another reply"),
+        }
+    }
     /// Which of the codes name a country (the knowledge group's Countries, through its door), in the order asked; Err when
     /// this catalogue opens no reference lists.
     fn countries(&self, _codes: &[String]) -> Result<Vec<String>, String> {
@@ -9775,6 +9783,7 @@ mod tests {
             facts: Vec::new(),
             fmts: json!({}),
             members: None,
+            asked_places: None,
         };
         let ledger = BTreeMap::new();
         let page = next_visual::LeafPage {

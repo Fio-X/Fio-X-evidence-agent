@@ -118,6 +118,31 @@ pub struct Spec {
     pub facts: Vec<(String, Value)>,
     pub fmts: Value,
     pub members: Option<Vec<String>>,
+    /// The countries the question names on their own and what the page must say of them (knobs.spec.asked_places); none
+    /// when the question names no country.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asked_places: Option<AskedPlaces>,
+}
+
+/// The countries a question names on their own (the knowledge group's places, countries only), as the page's rows write
+/// them (a row is of a place when one of its `dims` holds the code: a hub page's place is its fixed geo, the places around
+/// it its varying dimension), and what the page must do with each (next_leaf places_answered): print a value read from
+/// its rows, or, when it has no row at the page's `year`, be in `missing` and named on the page by its name row in the
+/// line `words` ({missing} the names joined by `join`, every word the knowledge group's). The flow writes it; no model does.
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AskedPlaces {
+    pub asked: Vec<String>,
+    #[serde(default)]
+    pub missing: Vec<String>,
+    #[serde(default)]
+    pub words: String,
+    #[serde(default)]
+    pub join: String,
+    pub dims: Vec<String>,
+    pub year: String,
+    /// Why a stored request's asked_places could not be read; a page with one never passes (no check skipped).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unread: Option<String>,
 }
 
 /// What the program computed for one fact.
@@ -1544,6 +1569,12 @@ pub(crate) fn stored_request(req: &Value) -> (Spec, Vec<Row>, Vec<String>) {
         facts,
         fmts: s["fmts"].clone(),
         members,
+        // none when the request has none; one that does not read keeps why, so the page check refuses the page instead
+        // of passing it unchecked
+        asked_places: (!s["asked_places"].is_null()).then(|| {
+            serde_json::from_value(s["asked_places"].clone())
+                .unwrap_or_else(|e| AskedPlaces { unread: Some(e.to_string()), ..Default::default() })
+        }),
     };
     (spec, rows, tables)
 }
@@ -1593,6 +1624,7 @@ mod tests {
             facts,
             fmts: d["fmts"].clone(),
             members: Some(members),
+            asked_places: None,
         };
         (spec, rows, d["golden"].clone())
     }
@@ -1688,6 +1720,7 @@ mod tests {
                 .collect(),
             fmts: json!({"m": {"scale": 0.01, "dec": 0, "suffix": " 亿"}, "time": {}}),
             members: members.map(|m| m.iter().map(|s| s.to_string()).collect()),
+            asked_places: None,
         }
     }
 
@@ -2619,6 +2652,7 @@ mod tests {
             facts: vec![("drawn".into(), json!({"op": "n", "by": "geo", "table": "t", "time": "2025", "fmt": "n"}))],
             fmts: json!({}),
             members: None,
+            asked_places: None,
         };
         let facts = compute(&spec, &rows).unwrap();
         assert_eq!((facts[0].v, facts[0].n), (2.0, Some(2)));
@@ -2643,7 +2677,7 @@ mod tests {
         };
         let rows = vec![row("G", "IND", 5.0), row("G", "TRA", 0.0)];
         let q = |pairs: Value| json!({"op": "excluded", "table": "t", "time": "2024", "by": ["s", "d"], "pairs": pairs, "fmt": "n"});
-        let spec = Spec { facts: vec![("x".into(), q(json!([["N", "IND"], ["N", "TRA"]])))], fmts: json!({}), members: None };
+        let spec = Spec { facts: vec![("x".into(), q(json!([["N", "IND"], ["N", "TRA"]])))], fmts: json!({}), members: None, asked_places: None };
         let facts = compute(&spec, &rows).unwrap();
         assert_eq!((facts[0].v, facts[0].who.as_slice()), (2.0, &["N>IND".to_string(), "N>TRA".to_string()][..]));
         assert!(facts[0].reads.is_empty());
@@ -2697,7 +2731,7 @@ mod tests {
         };
         let rows = vec![row("A", 60699.059), row("B", 0.631)];
         let q = |code: &str| json!({"op": "value", "table": "t", "time": "2024", "fmt": "k2", "filter": {"s": code}});
-        let spec = Spec { facts: vec![("a".into(), q("A")), ("b".into(), q("B"))], fmts, members: None };
+        let spec = Spec { facts: vec![("a".into(), q("A")), ("b".into(), q("B"))], fmts, members: None, asked_places: None };
         let facts = compute(&spec, &rows).unwrap();
         let ledger = leaf_ledger(&spec, &rows, &facts).unwrap();
         assert_eq!((ledger["fact:a.n"].as_str(), ledger["fact:a.r"].as_str()), ("60,699.06", "60,699"));

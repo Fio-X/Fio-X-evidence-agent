@@ -2309,15 +2309,16 @@ const RING_SHAPES: &str = "runtime/assets/naturalearth-admin0-50m.geojson";
 /// one): the charts step must have drawn the table as one of the recipe's charts (`drawn`: the page's chart types; none
 /// listed, the shape alone decides), then their fetched files read as series rows (knowledge group), the shape, picks and
 /// fill (program rules); the page's words are the text step's title, dek and kicker (`words`), and its source line the
-/// catalogue's publisher, id and title of the table, no year (a digit there would be one no ledger entry marks). Err is
-/// (stage, why).
+/// catalogue's publisher, id and title of the table, no year (a digit there would be one no ledger entry marks); the
+/// countries the question names (`places`, the knowledge group's) are each printed or named as having no data
+/// (answered_places). Err is (stage, why).
 fn recipe_request(
     run_dir: &Path,
     prepared: &[Prepared],
     drawn: &[&str],
     recipe: &Recipe,
     catalogue: &dyn Catalogue,
-    (title, dek, kicker): (&str, &str, &str),
+    ((title, dek, kicker), places): ((&str, &str, &str), &[crate::l5geo::Place]),
     calls: &std::sync::Mutex<Vec<Value>>,
 ) -> Result<Value, (&'static str, String)> {
     let shape_err = |why: String| ("shape", why);
@@ -2371,6 +2372,10 @@ fn recipe_request(
     let mut fill = fill_of(recipe, &shape, &picks, (&main_rows, &comp_rows), catalogue, (title, dek), scoped, Some(&asked))
         .map_err(|why| ("fill", why))?;
     zero_rows(&mut fill, &comp_rows);
+    // each country the question names on its own: printed from its rows, or named on the unit line as having no data
+    // (a recipe whose page cannot say so is not this shape, and the next one is tried)
+    answered_places(&mut fill, &shape, &main_rows, places, catalogue)
+        .map_err(|why| (if why.starts_with("not this shape") { "shape" } else { "fill" }, why))?;
     if let Some(a) = asked_of {
         fill["knobs"]["spec"]["asked"] = a;
     }
@@ -2403,6 +2408,99 @@ fn recipe_request(
     // no years here: the leaf footer marks only the table ids (spec.refs) and refuses any other digit in the line
     fill["knobs"]["spec"]["source"] = json!(source_line(meta.worldbank, &meta.id, &title, &[]));
     Ok(fill)
+}
+
+/// The countries the question names on their own (the knowledge group's places, countries only), each as the page's rows
+/// write it (in any of their dimensions but frequency and unit): an iso3 page's by the name table's iso3 (Iso3Of), else
+/// Eurostat's code where it differs (next_params::ESTAT_ISO), as named_dropped compares them. The page's request keeps
+/// them (knobs.spec.asked_places), which the whole-page check holds the page to (next_leaf places_answered): one with no
+/// row of the main at the page's year is
+/// named on the unit line after the line's join by its name row from the name table, every word the knowledge group's
+/// (next_knowledge::ASKED_PLACES_ZH); one with a row there the page must print. A question naming no country leaves the
+/// fill as it was. Err when a place lacks data and the page has no unit line to say so, or the name table names it none.
+fn answered_places(fill: &mut Value, shape: &Shape, main_rows: &[Value], places: &[crate::l5geo::Place], catalogue: &dyn Catalogue) -> Result<(), String> {
+    let mut iso2: Vec<String> = Vec::new();
+    for p in places {
+        if let crate::l5geo::Place::Country(c) = p {
+            if !iso2.contains(c) {
+                iso2.push(c.clone());
+            }
+        }
+    }
+    if iso2.is_empty() {
+        return Ok(());
+    }
+    // a place is read in any dimension of the main's rows but its frequency and unit: a hub page's place is its fixed geo,
+    // the places around it its varying one
+    let mut dims: Vec<String> = Vec::new();
+    for r in main_rows {
+        for d in r["dims"].as_object().into_iter().flat_map(|o| o.keys()) {
+            if d != next_params::FREQ_DIM && d != next_params::UNIT_DIM && !dims.contains(d) {
+                dims.push(d.clone());
+            }
+        }
+    }
+    let holds = |r: &Value, code: &str| dims.iter().any(|d| r["dims"][d.as_str()].as_str() == Some(code));
+    // the codes as the rows write them: iso3 on a World Bank page (or one whose places are iso3), else iso2 with
+    // Eurostat's code where it differs
+    let iso3 = main_rows.iter().any(|r| r["dims"].get(next_params::WB_PLACE_DIM).is_some())
+        || (!shape.countries.is_empty() && shape.countries.iter().all(|c| c.len() == 3));
+    let asked: Vec<String> = if iso3 {
+        let of = catalogue.iso3_of(&iso2)?;
+        iso2.iter().map(|c| of.get(c).cloned().unwrap_or_else(|| c.clone())).collect()
+    } else {
+        iso2.iter().map(|c| next_params::ESTAT_ISO.iter().find(|(_, i)| *i == c.as_str()).map_or(c.clone(), |(e, _)| e.to_string())).collect()
+    };
+    let year = shape.year.clone();
+    let at_year: Vec<&Value> = main_rows.iter().filter(|r| r["time"].as_str() == Some(year.as_str())).collect();
+    let missing: Vec<String> = asked.iter().filter(|c| !at_year.iter().any(|r| holds(r, c.as_str()))).cloned().collect();
+    let words: Value = serde_json::from_str(crate::next_knowledge::ASKED_PLACES_ZH).map_err(|e| format!("asked-places-zh.json: {e}"))?;
+    let word = |key: &str| words[key].as_str().map(str::to_string).ok_or_else(|| format!("asked-places-zh.json holds no {key}"));
+    let (line, join, line_join) = (word("said")?, word("join")?, word("lead")?);
+    fill["knobs"]["spec"]["asked_places"] = json!({"asked": asked, "missing": missing, "words": line, "join": join, "dims": dims, "year": year});
+    if missing.is_empty() {
+        return Ok(());
+    }
+    let (before, after) = line.split_once("{missing}").ok_or("asked-places-zh.json: its said names no {missing}")?;
+    let Some(unit) = fill["knobs"]["spec"].pointer("/hero/unit").and_then(Value::as_str).map(str::to_string) else {
+        return Err(format!("not this shape: the question names {missing:?}, which have no row at {year}, and the page has no unit line to say so"));
+    };
+    // each place with no data by its name row, the name the page's labels give it, else the name table's
+    let mut names: BTreeMap<String, String> = BTreeMap::new();
+    for scheme in ["iso2", "iso3"] {
+        let codes: Vec<String> = missing.iter().filter(|c| (c.len() == 2) == (scheme == "iso2")).cloned().collect();
+        if !codes.is_empty() {
+            let got = catalogue.zh_names(scheme, &codes).map_err(|m| format!("not this shape: the name table names no {m:?}, places the question names with no data"))?;
+            names.extend(got);
+        }
+    }
+    let labels = fill.pointer_mut("/knobs/labels").and_then(Value::as_object_mut).ok_or("the fill keeps no names of its places")?;
+    let mut tail = vec![json!({"w": format!("{line_join}{before}")})];
+    let mut wording = format!("{unit}{line_join}{before}");
+    for (i, code) in missing.iter().enumerate() {
+        let name = names.get(code).ok_or_else(|| format!("not this shape: the name table names no {code}, a place the question names with no data"))?;
+        let name = labels.entry(code.clone()).or_insert_with(|| json!(name)).as_str().unwrap_or(name.as_str()).to_string();
+        if i > 0 {
+            tail.push(json!({"w": join}));
+            wording.push_str(&join);
+        }
+        // its name row as the leaf marks a place's name (next_ledger::name_src)
+        tail.push(json!({"src": format!("{LABEL_SRC}zh_names:{}:{code}", if code.len() == 2 { "iso2" } else { "iso3" })}));
+        wording.push_str(&name);
+    }
+    if !after.is_empty() {
+        tail.push(json!({"w": after}));
+    }
+    wording.push_str(after);
+    if let Some(at) = fill.pointer_mut("/knobs/spec/hero/unit") {
+        *at = json!(wording);
+    }
+    let knobs = fill["knobs"].as_object_mut().ok_or("the fill's knobs are no object")?;
+    let segs = knobs.entry("segs").or_insert_with(|| json!({}));
+    let mut said = segs["unit"].as_array().cloned().unwrap_or_else(|| vec![json!({"w": unit})]);
+    said.extend(tail);
+    segs["unit"] = Value::Array(said);
+    Ok(())
 }
 
 /// A composition may leave out a place whose parts do not add up (the stacked100 declaration (node-bindings.json)), never one the question names: Err when
@@ -2701,6 +2799,7 @@ fn leaf_request(
     calls: &std::sync::Mutex<Vec<Value>>,
 ) -> Result<(&'static Recipe, Value), (&'static str, &'static str, String)> {
     let mut missed = Vec::new();
+    let places = catalogue.places(question);
     for recipe in catalogue.recipes() {
         match unanswered_views(calls, &recipe.name, question) {
             Ok(views) if views.is_empty() => {}
@@ -2711,10 +2810,10 @@ fn leaf_request(
             }
             Err(why) => return Err((recipe.name.as_str(), "shape", why)),
         }
-        match recipe_request(run_dir, prepared, drawn, recipe, catalogue, words, calls) {
+        match recipe_request(run_dir, prepared, drawn, recipe, catalogue, (words, &places), calls) {
             Ok(fill) => {
                 // a composition never leaves out a place the question names (the places the knowledge group reads in it)
-                named_dropped(&fill, &catalogue.places(question)).map_err(|why| (recipe.name.as_str(), "fill", why))?;
+                named_dropped(&fill, &places).map_err(|why| (recipe.name.as_str(), "fill", why))?;
                 return Ok((recipe, fill));
             }
             Err(("shape", why)) => missed.push((recipe.name.as_str(), why)),
@@ -6047,7 +6146,7 @@ mod tests {
             companions: Vec::new(),
             asked: json!([]),
         };
-        let stopped = |prepared: &[Prepared]| recipe_request(dir.path(), prepared, &[], recipe(RING_RECIPE), &Hubs, ("", "", ""), &Default::default()).unwrap_err();
+        let stopped = |prepared: &[Prepared]| recipe_request(dir.path(), prepared, &[], recipe(RING_RECIPE), &Hubs, (("", "", ""), &[]), &Default::default()).unwrap_err();
         assert_eq!(stopped(&[]), ("shape", "not this shape: no table".to_string()));
         assert_eq!(stopped(&[main]), ("shape", "not this shape: main imp kept no companion".to_string()));
         let plan = plan_record("q", &LEAF_PLAN_STEPS, "browser", StepEnd::Passed).unwrap();
@@ -6364,6 +6463,175 @@ mod tests {
         let plan = json!({"kind": "leaf_plan", "recipe": "column"});
         let published = crate::next_flow::publish_leaf_page(&calls, &bundle.dir, "column", (&leaf, &plan), &qa).unwrap();
         std::fs::read_to_string(bundle.dir.join(&published.html_ref)).unwrap()
+    }
+
+    /// A fill drawn by the real leaf child, baked, checked by the twins and published (publish_leaf_page runs the whole-page
+    /// check), then read back: the page and its request's ledger, refs, spec, rows and facts.
+    #[allow(clippy::type_complexity)]
+    fn published_page(name: &str, mut fill: Value) -> (String, BTreeMap<String, String>, Vec<String>, crate::next_facts::Spec, Vec<crate::next_facts::Row>, Vec<crate::next_facts::Fact>) {
+        fill["knobs"]["shapes"] = json!("runtime/pi/assets/naturalearth-admin0-50m.geojson");
+        fill["knobs"]["spec"]["kicker"] = json!("栏目");
+        fill["knobs"]["spec"]["source"] = json!("来源");
+        let order: Vec<String> = fill["order"].as_array().unwrap().iter().filter_map(|l| l.as_str().map(str::to_string)).collect();
+        let calls = std::sync::Mutex::new(Vec::new());
+        let request = crate::next_visual::Request::LeafFill {
+            recipe: name,
+            rows: fill["rows"].as_array().unwrap(),
+            knobs: &fill["knobs"],
+            order: &order,
+            runtime: Path::new("runtime"),
+        };
+        let page = match crate::next_flow::visual_call(&calls, "leaf_fill", request) {
+            Ok(crate::next_visual::Reply::Filled(page)) => page,
+            Ok(_) => panic!("{name}: not a filled page"),
+            Err(e) => panic!("{name}: leaf fill: {e}"),
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = {
+            let _command = crate::group_guard::command_for_test("investigate");
+            crate::artifact::InvestigationBundle::create(dir.path(), "leaf page").unwrap()
+        };
+        let _command = crate::group_guard::command_for_test("investigate");
+        let _doors = crate::group_guard::doors_for_test(true);
+        let bake = crate::next_leaf::Runner::python(Path::new("fixtures/next_leaf/bake_twin.py"));
+        let mut qa = crate::next_leaf::Runner::python(Path::new("fixtures/next_visual/qa_twin.py"));
+        qa.args.push("pass".into());
+        let leaf = crate::next_visual::LeafPage {
+            draw: &page.draw,
+            bake: &bake,
+            w: page.w,
+            h: page.h,
+            frame: page.frame.clone(),
+            layers: &page.layers,
+            ledger: &page.ledger,
+            refs: &page.refs,
+            facts: (&page.spec, &page.rows, &page.facts),
+            strip: None,
+        };
+        let plan = json!({"kind": "leaf_plan", "recipe": name});
+        let published = crate::next_flow::publish_leaf_page(&calls, &bundle.dir, name, (&leaf, &plan), &qa).unwrap_or_else(|e| panic!("{name}: publish: {e}"));
+        let html = std::fs::read_to_string(bundle.dir.join(&published.html_ref)).unwrap();
+        let text = std::fs::read_to_string(bundle.dir.join("publications").join(name).join(crate::next_flow::LEAF_REQUEST)).unwrap();
+        let mut back: Value = serde_json::from_str(&text).unwrap();
+        (
+            html,
+            serde_json::from_value(back["ledger"].take()).unwrap(),
+            serde_json::from_value(back["refs"].take()).unwrap(),
+            serde_json::from_value(back["spec"].take()).unwrap(),
+            serde_json::from_value(back["rows"].take()).unwrap(),
+            serde_json::from_value(back["facts"].take()).unwrap(),
+        )
+    }
+
+    /// The flow's side of the countries a question names on their own (owner 11-06 design): the codes as the rows write
+    /// them (Eurostat's EL for GR; the World Bank's iso3), each one with no row at the page's year kept as missing and named
+    /// on the unit line by its name row, the line's words the knowledge group's, the unit line's segments spelling it; one
+    /// with a row only at another year is missing too; a hub page's fixed geo is a place with rows; a question naming no
+    /// country leaves the fill as it was; a page with no unit line to say it is not this shape.
+    #[test]
+    fn the_flow_names_a_country_the_question_names_that_has_no_row_at_the_page_s_year() {
+        use crate::l5geo::Place;
+        let words: Value = serde_json::from_str(crate::next_knowledge::ASKED_PLACES_ZH).unwrap();
+        let (said, join, lead) = (words["said"].as_str().unwrap(), words["join"].as_str().unwrap(), words["lead"].as_str().unwrap());
+        assert!(said.contains("{missing}") && !join.is_empty() && !lead.is_empty());
+        let fill = || json!({"knobs": {"spec": {"hero": {"unit": "单位：%"}}, "labels": {"DE": "名DE"}}, "rows": []});
+        let country = |codes: &[&str]| codes.iter().map(|c| Place::Country(c.to_string())).collect::<Vec<_>>();
+        // Eurostat: GR is EL; PT has a row only before the page's year, ES none
+        let mut main = ring_rows("sdg_07_40", &[("freq", "A"), ("unit", "PC")], ("geo", &["DE", "EL", "FR"]), &["2024"]);
+        main.extend(ring_rows("sdg_07_40", &[("freq", "A"), ("unit", "PC")], ("geo", &["PT"]), &["2020"]));
+        let shape = Shape { main: "sdg_07_40".into(), place: "geo".into(), year: "2024".into(), ..Default::default() };
+        let mut f = fill();
+        answered_places(&mut f, &shape, &main, &[&country(&["DE", "GR", "PT", "ES"])[..], &[Place::Region][..]].concat(), &Hubs).unwrap();
+        let kept = &f["knobs"]["spec"]["asked_places"];
+        assert_eq!((&kept["asked"], &kept["missing"], &kept["year"]), (&json!(["DE", "EL", "PT", "ES"]), &json!(["PT", "ES"]), &json!("2024")));
+        assert_eq!((&kept["words"], &kept["join"]), (&json!(said), &json!(join)));
+        let names = format!("名PT{join}名ES");
+        let line = format!("单位：%{lead}{}", said.replace("{missing}", &names));
+        assert_eq!(f["knobs"]["spec"]["hero"]["unit"], json!(line));
+        let segs = f["knobs"]["segs"]["unit"].as_array().unwrap();
+        let spelled: String = segs.iter().map(|s| s["w"].as_str().map_or_else(|| f["knobs"]["labels"][s["src"].as_str().unwrap().rsplit(':').next().unwrap()].as_str().unwrap().to_string(), str::to_string)).collect();
+        assert_eq!(spelled, line, "the segments spell the line");
+        assert!(segs.contains(&json!({"src": "name:zh_names:iso2:PT"})) && segs.contains(&json!({"src": "name:zh_names:iso2:ES"})));
+        assert_eq!((&f["knobs"]["labels"]["PT"], &f["knobs"]["labels"]["DE"]), (&json!("名PT"), &json!("名DE")));
+        // every place with a row: kept, nothing said
+        let mut f = fill();
+        answered_places(&mut f, &shape, &main, &country(&["DE", "FR"]), &Hubs).unwrap();
+        assert_eq!(f["knobs"]["spec"]["asked_places"]["missing"], json!([]));
+        assert_eq!(f["knobs"]["spec"]["hero"]["unit"], json!("单位：%"));
+        assert!(f["knobs"].get("segs").is_none());
+        // no country named: the fill as it was
+        let mut f = fill();
+        answered_places(&mut f, &shape, &main, &[Place::Region], &Hubs).unwrap();
+        assert_eq!(f, fill());
+        // a missing place and no unit line: not this shape
+        let mut f = json!({"knobs": {"spec": {"hero": {}}, "labels": {}}});
+        assert!(answered_places(&mut f, &shape, &main, &country(&["ES"]), &Hubs).unwrap_err().starts_with("not this shape"));
+        // the World Bank: iso3 by the name table, KR with no row
+        let wb: Vec<Value> = ["CHN", "JPN"].iter().map(|c| json!({"src": format!("series:SP/{c}:2025:OBS_VALUE"), "table": "SP", "dims": {"country": c}, "time": "2025", "value": "1"})).collect();
+        let shape = Shape { main: "SP".into(), place: "country".into(), year: "2025".into(), countries: vec!["CHN".into(), "JPN".into()], ..Default::default() };
+        let mut f = fill();
+        answered_places(&mut f, &shape, &wb, &country(&["CN", "JP", "KR"]), &Hubs).unwrap();
+        assert_eq!((&f["knobs"]["spec"]["asked_places"]["asked"], &f["knobs"]["spec"]["asked_places"]["missing"]), (&json!(["CHN", "JPN", "KOR"]), &json!(["KOR"])));
+        assert!(f["knobs"]["segs"]["unit"].as_array().unwrap().contains(&json!({"src": "name:zh_names:iso3:KOR"})));
+        // a hub page: DE is the fixed geo beside the varying partner, so it has rows; RU is a partner with rows
+        let hub = ring_rows("imp", &[("siec", "G3000"), ("unit", "MIO_M3"), ("geo", "DE")], ("partner", &["RU", "NO"]), &["2024"]);
+        let shape = Shape { main: "imp".into(), place: "partner".into(), year: "2024".into(), ..Default::default() };
+        let mut f = fill();
+        answered_places(&mut f, &shape, &hub, &country(&["DE", "RU"]), &Hubs).unwrap();
+        assert_eq!(f["knobs"]["spec"]["asked_places"]["missing"], json!([]));
+        assert!(f["knobs"]["spec"]["asked_places"]["dims"].as_array().unwrap().contains(&json!("geo")));
+    }
+
+    /// End to end on two data shapes, a column page of one year and a change page over two (the map of bubbles beside its
+    /// bars), each filled as recipe_request fills it, drawn by the real leaf child and published (the whole-page check
+    /// passes): Portugal, named in the question with no row, is named on the unit line by its name row. Read back, the page
+    /// is refused with the name cut out, with another name in its place, with "no data" said of France (which has rows),
+    /// with Austria given rows the page does not draw, and with Portugal not kept as missing.
+    #[test]
+    fn a_page_names_a_country_with_no_data_and_the_check_holds_it_on_two_shapes() {
+        use crate::l5geo::Place;
+        let places = ["DE", "FR", "IT", "ES", "SE", "NL"];
+        for (name, years) in [("column", &["2024"][..]), ("change", &["2015", "2024"][..])] {
+            let r = recipe(name);
+            let mut main = ring_rows("sdg_07_40", &[("freq", "A"), ("unit", "PC")], ("geo", &places), years);
+            for (i, row) in main.iter_mut().enumerate() {
+                row["value"] = json!(format!("{}.5", 10 + (i * 7) % 23));
+            }
+            let shape = shape_of(&r.eats, &[("sdg_07_40", &main[..])], &Hubs).unwrap();
+            let picks = picks_of(&r.picks, &shape, &main, &[]).unwrap();
+            let mut fill = test_fill(r, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false).unwrap();
+            let dek = dek_finding(&fill).map_or_else(|| "导语".to_string(), |d| d.0);
+            page_words(&mut fill, ("标题", &dek, "栏目"));
+            answered_places(&mut fill, &shape, &main, &[Place::Country("DE".into()), Place::Country("PT".into())], &Hubs).unwrap_or_else(|e| panic!("{name}: {e}"));
+            let (html, ledger, refs, spec, rows, facts) = published_page(name, fill);
+            let check = |page: &str, s: &crate::next_facts::Spec, rows: &[crate::next_facts::Row]| crate::next_leaf::check_leaf_page(page, &ledger, &refs, s, rows, &facts);
+            assert_eq!(check(&html, &spec, &rows), Vec::<String>::new(), "{name}");
+            assert_eq!(spec.asked_places.as_ref().map(|a| a.missing.clone()), Some(vec!["PT".to_string()]), "{name}: the request keeps it");
+            let mark = r#"<span data-src="name:zh_names:iso2:PT">名PT</span>"#;
+            assert!(html.contains(mark), "{name}: Portugal named by its name row");
+            let refused = |page: &str, s: &crate::next_facts::Spec, rows: &[crate::next_facts::Row], why: &str| {
+                let off = check(page, s, rows);
+                assert!(off.iter().any(|f| f.starts_with("places:") && f.contains(why)), "{name}: {why:?} not in {off:?}");
+            };
+            refused(&html.replace(mark, ""), &spec, &rows, "does not say");
+            refused(&html.replace(mark, r#"<span data-src="name:zh_names:iso2:PT">名FR</span>"#), &spec, &rows, "does not say");
+            let mut wrong = spec.clone();
+            wrong.asked_places.as_mut().unwrap().missing.push("FR".into());
+            wrong.asked_places.as_mut().unwrap().asked.push("FR".into());
+            refused(&html, &wrong, &rows, "the request holds its row");
+            let mut more = rows.clone();
+            let mut at = more[0].clone();
+            at.src = format!("series:sdg_07_40/AT:{}:OBS_VALUE", spec.asked_places.as_ref().unwrap().year);
+            at.dims.insert("geo".into(), "AT".into());
+            at.time = spec.asked_places.as_ref().unwrap().year.clone();
+            more.push(at);
+            let mut dropped = spec.clone();
+            dropped.asked_places.as_mut().unwrap().asked.push("AT".into());
+            refused(&html, &dropped, &more, "neither prints a value of it nor says it has none");
+            let mut silent = spec.clone();
+            silent.asked_places.as_mut().unwrap().missing.clear();
+            refused(&html, &silent, &rows, "and the page does not say so");
+        }
     }
 
     /// Every place the page prints a four-digit year `y` as a marked entry: the words right after it, up to the next tag.
