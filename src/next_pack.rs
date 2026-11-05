@@ -78,8 +78,10 @@ pub(crate) fn measure_kind(code: &str) -> Option<&'static str> {
     }
 }
 
-/// The registry of the short Chinese unit a chart label writes for a unit code (code, short form, rule), built offline from the
-/// codes the catalogues give; compiled in, so a broken file fails its test, not a run.
+/// The registry of the short Chinese unit a chart label writes for a unit code (code, short form, rule, additive, the suffix
+/// a number prints, source, the catalogue's English label): reviewed rows kept as reviewed, the rest made by
+/// scripts/gen_unit_short_zh.py from the catalogue's own unit labels (user 11-05 10:2x); compiled in, so a broken file fails
+/// its test, not a run.
 pub(crate) const UNIT_SHORT_ZH: &str = include_str!("../runtime/pi/assets/unit-short-zh.tsv");
 
 /// The short Chinese unit unit-short-zh.tsv registers for a code; None for no row or an empty form.
@@ -99,6 +101,17 @@ pub(crate) const UNIT_SHORT_ZH_TABLE: &str = "unit-short-zh";
 /// The short form of a unit code: its registered short Chinese form ("%" for a percentage), else "%" for a plain percentage.
 pub(crate) fn unit_short(code: &str) -> Option<&'static str> {
     unit_short_zh(code).or((code == "PC").then_some("%"))
+}
+
+/// What a number prints after it in a unit code (the row's suffix_zh): never a digit, so an index ("指数(2015=100)", its
+/// base year printed on the unit line as the registry's marked name) prints none; "%" for a plain percentage. None
+/// where unit_short is none.
+pub(crate) fn unit_number_suffix(code: &str) -> Option<&'static str> {
+    if unit_short(code).is_none() {
+        return None;
+    }
+    let row = UNIT_SHORT_ZH.lines().skip(1).find(|l| l.split('\t').next() == Some(code));
+    Some(row.and_then(|l| l.trim_end_matches('\r').split('\t').nth(4)).unwrap_or("%"))
 }
 
 #[cfg(test)]
@@ -183,21 +196,36 @@ mod tests {
             ]
         );
         assert_eq!(unit_short("PC"), Some("%"));
-        assert_eq!(unit_short("THS_T"), None);
+        assert_eq!(unit_short("THS_T"), Some("千吨"));
         // A registered short form; a code registered with no sure form has none.
         assert_eq!(unit_short("TCO2E_HAB"), Some("吨二氧化碳当量/人"));
         assert_eq!(unit_short("PC_POP"), Some("%"));
-        assert_eq!(unit_short("NR"), None);
+        // a count reads 数量 on its unit line and prints nothing after a number (generated, 11-05)
+        assert_eq!((unit_short("NR"), unit_number_suffix("NR")), (Some("数量"), Some("")));
+        assert_eq!((unit_short("I15"), unit_number_suffix("I15")), (Some("指数(2015=100)"), Some("")));
+        assert_eq!((unit_short("PC"), unit_number_suffix("PC")), (Some("%"), Some("%")));
+        assert_eq!(unit_number_suffix("XYZ"), None);
     }
 
     #[test]
     fn unit_short_zh_registers_one_form_per_code_with_its_rule() {
         let mut rows = UNIT_SHORT_ZH.lines();
-        assert_eq!(rows.next(), Some("code\tshort_zh\trule\tadditive"));
+        assert_eq!(rows.next(), Some("code\tshort_zh\trule\tadditive\tsuffix_zh\tsource\tlabel_en"));
         let mut seen = BTreeSet::new();
         for row in rows {
             let p: Vec<&str> = row.split('\t').collect();
-            assert_eq!(p.len(), 4, "{row}");
+            assert_eq!(p.len(), 7, "{row}");
+            // what a number prints after it never holds a digit (the page tree's suffix rule); a generated row names the
+            // catalogue label it was made from, and every digit of its form is that label's (a base year from the data)
+            assert!(!p[4].chars().any(|c| c.is_ascii_digit()), "{row}: a digit in the number suffix");
+            assert!(matches!(p[5], "reviewed" | "generated"), "{row}: source");
+            let digits = |t: &str| t.split(|c: char| !c.is_ascii_digit()).filter(|d| !d.is_empty()).map(str::to_string).collect::<Vec<_>>();
+            if p[5] == "generated" {
+                assert!(!p[6].is_empty() && !p[1].is_empty(), "{row}: a generated row has its label and a form");
+            }
+            if !p[6].is_empty() {
+                assert!(digits(p[1]).iter().all(|d| digits(p[6]).contains(d)), "{row}: a digit of the form is not the label's");
+            }
             assert!(seen.insert(p[0]), "{} twice", p[0]);
             assert!(!p[2].is_empty(), "{row}: no rule");
             // B1 (owner 11-04): whether amounts in the unit add up, which the core reads (a share of a sum says
@@ -217,7 +245,7 @@ mod tests {
         assert_eq!(unit_short_zh("TCO2E_HAB"), Some("吨二氧化碳当量/人"));
         assert_eq!(unit_short_zh("PC_POP"), Some("%"));
         let additive = |code: &str| UNIT_SHORT_ZH.lines().find(|l| l.starts_with(&format!("{code}\t"))).and_then(|l| l.split('\t').nth(3));
-        assert_eq!([additive("PER"), additive("KTOE"), additive("PC"), additive("TCO2E_HAB"), additive("NR")], [Some("yes"), Some("yes"), Some("no"), Some("no"), Some("no")]);
+        assert_eq!([additive("PER"), additive("KTOE"), additive("PC"), additive("TCO2E_HAB"), additive("NR")], [Some("yes"), Some("yes"), Some("no"), Some("no"), Some("yes")]);
     }
 
     #[test]

@@ -109,6 +109,8 @@ pub struct Leaf {
     pub reserve: bool,
     /// The shape conditions the node needs its tables to meet (knobs.py EATS); none stated is empty.
     pub eats: Vec<String>,
+    /// Whether what the node drops is short notes (knobs.py SHORT_NOTES): a page goes on without a few of them.
+    pub short_notes: bool,
 }
 
 /// A page recipe, a page's outermost composite node (knobs.py RECIPES): the layers its page draws, bottom first; the shape
@@ -171,7 +173,8 @@ pub fn leaves() -> &'static Leaves {
             let knobs: Vec<Knob> = n["knobs"].as_array().expect("knobs.json: knobs").iter().map(knob).collect();
             let info = NodeInfo { name: word(&json!(name)), needs: &[], knobs: Box::leak(knobs.into_boxed_slice()), inner: None };
             let reserve = n["reserve"].as_bool().expect("knobs.json: reserve");
-            (name.clone(), Leaf { info: Box::leak(Box::new(info)), reserve, eats: words(&n["eats"]) })
+            let short_notes = n["short_notes"].as_bool().unwrap_or(false);
+            (name.clone(), Leaf { info: Box::leak(Box::new(info)), reserve, eats: words(&n["eats"]), short_notes })
         });
         let legacy = t["legacy"].as_object().expect("knobs.json: legacy").iter().map(|(node, at)| {
             (node.clone(), at.as_array().expect("knobs.json: a path").iter().map(|p| word(p).to_string()).collect())

@@ -1,223 +1,332 @@
-code	short_zh	rule	additive
-DAY	天	time	no
-GWH	吉瓦时	energy	yes
-HA	公顷	area	yes
-I00	指数(2000=100)	index_base	no
-I01	指数(2001=100)	index_base	no
-I05	指数(2005=100)	index_base	no
-I06	指数(2006=100)	index_base	no
-I08	指数(2008=100)	index_base	no
-I09	指数(2009=100)	index_base	no
-I10	指数(2010=100)	index_base	no
-I12	指数(2012=100)	index_base	no
-I13	指数(2013=100)	index_base	no
-I15	指数(2015=100)	index_base	no
-I16	指数(2016=100)	index_base	no
-I18	指数(2018=100)	index_base	no
-I20	指数(2020=100)	index_base	no
-I21	指数(2021=100)	index_base	no
-I25	指数(2025=100)	index_base	no
-I90	指数(1990=100)	index_base	no
-I91	指数(1991=100)	index_base	no
-I95	指数(1995=100)	index_base	no
-I96	指数(1996=100)	index_base	no
-I99	指数(1999=100)	index_base	no
-KGOE_HAB	千克油当量/人	per_capita	no
-KM2	平方公里	area	yes
-KTOE	千吨油当量	energy	yes
-KWH	千瓦时	energy	yes
-M3	立方米	volume	yes
-MIO_M3	百万立方米	volume	yes
-MTCO2E	百万吨二氧化碳当量	emissions	yes
-NR		ambiguous_count	no
-PC	%	pct_family	no
-PCH_PRE	%	pct_family	no
-PC_ACT	%	pct_family	no
-PC_ACT_FTE	%	pct_family	no
-PC_ACT_HC	%	pct_family	no
-PC_ALLOC	%	pct_family	no
-PC_AREA	%	pct_family	no
-PC_AWSVAL	%	pct_family	no
-PC_BEN	%	pct_family	no
-PC_DI	%	pct_family	no
-PC_EA_MEUR	%	pct_family	no
-PC_ELF	%	pct_family	no
-PC_EMP	%	pct_family	no
-PC_EMP_CUSE	%	pct_family	no
-PC_EMP_CUSE2	%	pct_family	no
-PC_EMP_FTE	%	pct_family	no
-PC_EMP_HC	%	pct_family	no
-PC_EMP_IACC	%	pct_family	no
-PC_EMP_PMD	%	pct_family	no
-PC_EMP_PMD1	%	pct_family	no
-PC_EMP_PREEMP	%	pct_family	no
-PC_EMP_PREEMP_M12	%	pct_family	no
-PC_ENT	%	pct_family	no
-PC_ENT_ADE	%	pct_family	no
-PC_ENT_ADS	%	pct_family	no
-PC_ENT_AEBUY	%	pct_family	no
-PC_ENT_AESELL	%	pct_family	no
-PC_ENT_AI_EC	%	pct_family	no
-PC_ENT_AI_PDI	%	pct_family	no
-PC_ENT_AI_TANY	%	pct_family	no
-PC_ENT_AI_TX	%	pct_family	no
-PC_ENT_AWSELL	%	pct_family	no
-PC_ENT_AWSELLX	%	pct_family	no
-PC_ENT_AWSEU	%	pct_family	no
-PC_ENT_BD	%	pct_family	no
-PC_ENT_BDA	%	pct_family	no
-PC_ENT_CC	%	pct_family	no
-PC_ENT_CUSE	%	pct_family	no
-PC_ENT_CVD_IEM	%	pct_family	no
-PC_ENT_CVD_IRA	%	pct_family	no
-PC_ENT_CVD_IRM	%	pct_family	no
-PC_ENT_DAOWN	%	pct_family	no
-PC_ENT_FIXBB	%	pct_family	no
-PC_ENT_IACC	%	pct_family	no
-PC_ENT_INV3SBG	%	pct_family	no
-PC_ENT_IOT	%	pct_family	no
-PC_ENT_IOT1	%	pct_family	no
-PC_ENT_ITSPRCR2	%	pct_family	no
-PC_ENT_IUSE	%	pct_family	no
-PC_ENT_P3D	%	pct_family	no
-PC_ENT_PMD	%	pct_family	no
-PC_ENT_PMD1	%	pct_family	no
-PC_ENT_RA	%	pct_family	no
-PC_ENT_RBT	%	pct_family	no
-PC_ENT_RBTS	%	pct_family	no
-PC_ENT_RFID	%	pct_family	no
-PC_ENT_RFID1	%	pct_family	no
-PC_ENT_RM	%	pct_family	no
-PC_ENT_SECPOL	%	pct_family	no
-PC_ENT_SECPOL1	%	pct_family	no
-PC_ENT_SECPOL2	%	pct_family	no
-PC_ENT_SM	%	pct_family	no
-PC_ENT_WEB	%	pct_family	no
-PC_ETURN	%	pct_family	no
-PC_EU27_2007	%	pct_family	no
-PC_EU27_2020	%	pct_family	no
-PC_EU27_2020_EUR_HAB	%	pct_family	no
-PC_EU27_2020_HAB_MEUR_CP	%	pct_family	no
-PC_EU27_2020_HAB_MPPS_CP	%	pct_family	no
-PC_EU27_2020_MEUR	%	pct_family	no
-PC_EU27_2020_MEUR_CP	%	pct_family	no
-PC_EU27_2020_MPPS	%	pct_family	no
-PC_EU27_2020_MPPS_CP	%	pct_family	no
-PC_EU27_2020_PPS_EMP	%	pct_family	no
-PC_EU27_2020_PPS_HAB	%	pct_family	no
-PC_EU28	%	pct_family	no
-PC_EXP	%	pct_family	no
-PC_EXT_EU	%	pct_family	no
-PC_FSTU	%	pct_family	no
-PC_FUNC	%	pct_family	no
-PC_FUSE	%	pct_family	no
-PC_GADI	%	pct_family	no
-PC_GBA	%	pct_family	no
-PC_GDP	%	pct_family	no
-PC_GDP_3Y	%	pct_family	no
-PC_GDP_NSA	%	pct_family	no
-PC_GDP_SCA	%	pct_family	no
-PC_GERD	%	pct_family	no
-PC_GEXP	%	pct_family	no
-PC_GFCF	%	pct_family	no
-PC_GNI	%	pct_family	no
-PC_GRSEXP	%	pct_family	no
-PC_GRSEXP_EU	%	pct_family	no
-PC_GRSIMP	%	pct_family	no
-PC_GVA	%	pct_family	no
-PC_HH	%	pct_family	no
-PC_HH_BROADX	%	pct_family	no
-PC_HH_IACC	%	pct_family	no
-PC_HH_IACCX	%	pct_family	no
-PC_IGRTX	%	pct_family	no
-PC_IGRTX_NAPX	%	pct_family	no
-PC_INAC	%	pct_family	no
-PC_INAC_WWRK	%	pct_family	no
-PC_IND	%	pct_family	no
-PC_IND_BFFOR	%	pct_family	no
-PC_IND_BGT3_IU3	%	pct_family	no
-PC_IND_BLT12	%	pct_family	no
-PC_IND_BMT12X	%	pct_family	no
-PC_IND_BUY3	%	pct_family	no
-PC_IND_C3	%	pct_family	no
-PC_IND_CC_CCS	%	pct_family	no
-PC_IND_CEVR	%	pct_family	no
-PC_IND_CIANY	%	pct_family	no
-PC_IND_HM	%	pct_family	no
-PC_IND_IEID	%	pct_family	no
-PC_IND_IEIDX	%	pct_family	no
-PC_IND_ILT12	%	pct_family	no
-PC_IND_ILT12_SSF	%	pct_family	no
-PC_IND_IOT_BDKX	%	pct_family	no
-PC_IND_IOT_DX	%	pct_family	no
-PC_IND_IOT_DX2	%	pct_family	no
-PC_IND_IOT_USE	%	pct_family	no
-PC_IND_IOT_USE2	%	pct_family	no
-PC_IND_IU3	%	pct_family	no
-PC_IND_IU3X	%	pct_family	no
-PC_IND_IUACDL	%	pct_family	no
-PC_IND_IUACRG	%	pct_family	no
-PC_IND_IUAI	%	pct_family	no
-PC_IND_IUAIX	%	pct_family	no
-PC_IND_IUEVR	%	pct_family	no
-PC_IND_IUGOV12	%	pct_family	no
-PC_IND_IUG_TV	%	pct_family	no
-PC_IND_IUHD	%	pct_family	no
-PC_IND_IUMC	%	pct_family	no
-PC_IND_IUOANY	%	pct_family	no
-PC_IND_IUPS	%	pct_family	no
-PC_IND_MDW	%	pct_family	no
-PC_IND_MPP	%	pct_family	no
-PC_IND_SECOITPP	%	pct_family	no
-PC_IND_WH	%	pct_family	no
-PC_IND_WM	%	pct_family	no
-PC_ITG	%	pct_family	no
-PC_ITS	%	pct_family	no
-PC_LE	%	pct_family	no
-PC_LSU	%	pct_family	no
-PC_LW95	%	pct_family	no
-PC_OECD	%	pct_family	no
-PC_OECD_EU	%	pct_family	no
-PC_ORG	%	pct_family	no
-PC_PER_ACC	%	pct_family	no
-PC_PER_HPB	%	pct_family	no
-PC_PEXP	%	pct_family	no
-PC_POP	%	pct_family	no
-PC_POP_NPT	%	pct_family	no
-PC_REC	%	pct_family	no
-PC_RIMG	%	pct_family	no
-PC_RWA	%	pct_family	no
-PC_SAL	%	pct_family	no
-PC_SAL_TEMP	%	pct_family	no
-PC_SIZE	%	pct_family	no
-PC_STU	%	pct_family	no
-PC_TG_ICT	%	pct_family	no
-PC_TOT	%	pct_family	no
-PC_TOT_FTE	%	pct_family	no
-PC_TOT_HAB	%	pct_family	no
-PC_TOT_HW	%	pct_family	no
-PC_TOT_JOB	%	pct_family	no
-PC_TOT_PER	%	pct_family	no
-PC_TSCO	%	pct_family	no
-PC_TSCO_X_ISCO	%	pct_family	no
-PC_TS_ICT	%	pct_family	no
-PC_TURN	%	pct_family	no
-PC_UAA	%	pct_family	no
-PC_UNE	%	pct_family	no
-PC_UP95	%	pct_family	no
-PC_WMN	%	pct_family	no
-PC_WRL	%	pct_family	no
-PC_Y_LT60	%	pct_family	no
-PC_Y_LT65	%	pct_family	no
-PER	人	persons	yes
-PER_KM2	人/平方公里	density	no
-P_HHAB	每百人	per_population	no
-P_HTHAB	每十万人	per_population	no
-P_HTMN	每十万男性	per_population	no
-P_HTWMN	每十万女性	per_population	no
-P_MHAB	每百万人	per_population	no
-P_THAB	每千人	per_population	no
-P_TLBRTH	每千名活产婴儿	per_population	no
-T	吨	mass	yes
-TCO2E_HAB	吨二氧化碳当量/人	per_capita	no
-YR	年	time	no
+code	short_zh	rule	additive	suffix_zh	source	label_en
+DAY	天	time	no	天	reviewed	Day
+GWH	吉瓦时	energy	yes	吉瓦时	reviewed	Gigawatt-hour
+HA	公顷	area	yes	公顷	reviewed	Hectare
+I00	指数(2000=100)	index_base	no		reviewed	Index, 2000=100
+I01	指数(2001=100)	index_base	no		reviewed	Index, 2001=100
+I05	指数(2005=100)	index_base	no		reviewed	Index, 2005=100
+I06	指数(2006=100)	index_base	no		reviewed	Index, 2006=100
+I08	指数(2008=100)	index_base	no		reviewed	Index, 2008=100
+I09	指数(2009=100)	index_base	no		reviewed	Index, 2009=100
+I10	指数(2010=100)	index_base	no		reviewed	Index, 2010=100
+I12	指数(2012=100)	index_base	no		reviewed	Index, 2012=100
+I13	指数(2013=100)	index_base	no		reviewed	Index, 2013=100
+I15	指数(2015=100)	index_base	no		reviewed	Index, 2015=100
+I16	指数(2016=100)	index_base	no		reviewed	Index, 2016=100
+I18	指数(2018=100)	index_base	no		reviewed	Index, 2018=100
+I20	指数(2020=100)	index_base	no		reviewed	Index, 2020=100
+I21	指数(2021=100)	index_base	no		reviewed	Index, 2021=100
+I25	指数(2025=100)	index_base	no		reviewed	Index, 2025=100
+I90	指数(1990=100)	index_base	no		reviewed	Index, 1990=100
+I91	指数(1991=100)	index_base	no		reviewed	Index, 1991=100
+I95	指数(1995=100)	index_base	no		reviewed	Index, 1995=100
+I96	指数(1996=100)	index_base	no		reviewed	Index, 1996=100
+I99	指数(1999=100)	index_base	no		reviewed	Index, 1999=100
+KGOE_HAB	千克油当量/人	per_capita	no	千克油当量/人	reviewed	Kilograms of oil equivalent (KGOE) per capita
+KM2	平方公里	area	yes	平方公里	reviewed	Square kilometre
+KTOE	千吨油当量	energy	yes	千吨油当量	reviewed	Thousand tonnes of oil equivalent
+KWH	千瓦时	energy	yes	千瓦时	reviewed	Kilowatt-hour
+M3	立方米	volume	yes	立方米	reviewed	Cubic metre
+MIO_M3	百万立方米	volume	yes	百万立方米	reviewed	Million cubic metres
+MTCO2E	百万吨二氧化碳当量	emissions	yes	百万吨二氧化碳当量	reviewed	Million tonnes of CO2 equivalent
+NR	数量	count	yes		generated	Number
+PC	%	pct_family	no	%	reviewed	Percentage
+PCH_PRE	%	pct_family	no	%	reviewed	Percentage change on previous period
+PC_ACT	%	pct_family	no	%	reviewed	Percentage of population in the labour force
+PC_ACT_FTE	%	pct_family	no	%	reviewed	Percentage of population in the labour force - numerator in full-time equivalent (FTE)
+PC_ACT_HC	%	pct_family	no	%	reviewed	Percentage of population in the labour force - numerator in head count (HC)
+PC_ALLOC	%	pct_family	no	%	reviewed	Percentage of allocation
+PC_AREA	%	pct_family	no	%	reviewed	Percentage of area
+PC_AWSVAL	%	pct_family	no	%	reviewed	Percentage of web sales
+PC_BEN	%	pct_family	no	%	reviewed	Percentage of total benefits
+PC_DI	%	pct_family	no	%	reviewed	Percentage of disposable income
+PC_EA_MEUR	%	pct_family	no	%	reviewed	Percentage of euro area total (based on million euro)
+PC_ELF	%	pct_family	no	%	reviewed	Percentage of extended labour force
+PC_EMP	%	pct_family	no	%	reviewed	Percentage of total employment
+PC_EMP_CUSE	%	pct_family	no	%	reviewed	Percentage of persons employed using a computer
+PC_EMP_CUSE2	%	pct_family	no	%	reviewed	Percentage of persons employed working in enterprises which use computers
+PC_EMP_FTE	%	pct_family	no	%	reviewed	Percentage of total employment - numerator in full-time equivalent (FTE)
+PC_EMP_HC	%	pct_family	no	%	reviewed	Percentage of total employment - numerator in head count (HC)
+PC_EMP_IACC	%	pct_family	no	%	reviewed	Percentage of persons employed working in an enterprise with internet access
+PC_EMP_PMD	%	pct_family	no	%	reviewed	Percentage of persons employed working in enterprises which provide mobile devices
+PC_EMP_PMD1	%	pct_family	no	%	reviewed	Percentage of persons employed working in enterprises which provide mobile devices (as of 2016)
+PC_EMP_PREEMP	%	pct_family	no	%	reviewed	Percentage of persons employed and previously employed
+PC_EMP_PREEMP_M12	%	pct_family	no	%	reviewed	Percentage of persons employed and previously employed within 12 months
+PC_ENT	%	pct_family	no	%	reviewed	Percentage of enterprises
+PC_ENT_ADE	%	pct_family	no	%	reviewed	Percentage of enterprises using ADE
+PC_ENT_ADS	%	pct_family	no	%	reviewed	Percentage of enterprises using internet ads
+PC_ENT_AEBUY	%	pct_family	no	%	reviewed	Percentage of enterprises sending e-commerce orders over the last calendar year
+PC_ENT_AESELL	%	pct_family	no	%	reviewed	Percentage of enterprises receiving e-commerce orders over the last calendar year
+PC_ENT_AI_EC	%	pct_family	no	%	reviewed	Percentage of the enterprises which ever considered to use any of the AI technologies
+PC_ENT_AI_PDI	%	pct_family	no	%	reviewed	Percentage of the enterprises which process data on individuals using AI technologies
+PC_ENT_AI_TANY	%	pct_family	no	%	reviewed	Percentage of the enterprises using at least one AI technologies
+PC_ENT_AI_TX	%	pct_family	no	%	reviewed	Percentage of the enterprises using no AI technologies
+PC_ENT_AWSELL	%	pct_family	no	%	reviewed	Percentage of enterprises with web sales
+PC_ENT_AWSELLX	%	pct_family	no	%	reviewed	Percentage of enterprises without web sales
+PC_ENT_AWSEU	%	pct_family	no	%	reviewed	Percentage of enterprises with web sales to other EU countries
+PC_ENT_BD	%	pct_family	no	%	reviewed	Percentage of enterprises analysing big data
+PC_ENT_BDA	%	pct_family	no	%	reviewed	Percentage of enterprises analysing big data internally or externally
+PC_ENT_CC	%	pct_family	no	%	reviewed	Percentage of enterprises using paid CC services
+PC_ENT_CUSE	%	pct_family	no	%	reviewed	Percentage of the enterprises which use a computer
+PC_ENT_CVD_IEM	%	pct_family	no	%	reviewed	Percentage of the enterprises which increased the percentage of persons employed having remote access to their e-mail system
+PC_ENT_CVD_IRA	%	pct_family	no	%	reviewed	Percentage of the enterprises which increased the percentage of persons employed having remote access their ICT systems other than e-mail
+PC_ENT_CVD_IRM	%	pct_family	no	%	reviewed	Percentage of the enterprises which increased the number of their remote meetings
+PC_ENT_DAOWN	%	pct_family	no	%	reviewed	Percentage of enterprises which performed Data Analytics by the enterprise's own employees
+PC_ENT_FIXBB	%	pct_family	no	%	reviewed	Percentage of enterprises using a fixed broadband connection
+PC_ENT_IACC	%	pct_family	no	%	reviewed	Percentage of the enterprises with internet access
+PC_ENT_INV3SBG	%	pct_family	no	%	reviewed	Percentage of enterprises sending invoices B2BG
+PC_ENT_IOT	%	pct_family	no	%	reviewed	Percentage of enterprises using Internet of Things
+PC_ENT_IOT1	%	pct_family	no	%	reviewed	Percentage of enterprises using Internet of Things (as of 2021)
+PC_ENT_ITSPRCR2	%	pct_family	no	%	reviewed	Percentage of enterprises which recruited / tried to recruit personnel for jobs requiring ICT specialist skills (reduced comparability with 2007)
+PC_ENT_IUSE	%	pct_family	no	%	reviewed	Percentage of enterprises where persons employed have access to the internet
+PC_ENT_P3D	%	pct_family	no	%	reviewed	Percentage of enterprises with 3D printing
+PC_ENT_PMD	%	pct_family	no	%	reviewed	Percentage of enterprises providing to persons employed portable devices that allow a mobile connection to the internet
+PC_ENT_PMD1	%	pct_family	no	%	reviewed	Percentage of enterprises providing to persons employed portable devices that allow a mobile connection to the internet (as of 2016)
+PC_ENT_RA	%	pct_family	no	%	reviewed	Percentage of enterprises with persons employed having remote access
+PC_ENT_RBT	%	pct_family	no	%	reviewed	Percentage of enterprises using industrial or service robots
+PC_ENT_RBTS	%	pct_family	no	%	reviewed	Percentage of enterprises using service robots
+PC_ENT_RFID	%	pct_family	no	%	reviewed	Percentage of the enterprises using RFID
+PC_ENT_RFID1	%	pct_family	no	%	reviewed	Percentage of enterprises using RFID (as of 2014)
+PC_ENT_RM	%	pct_family	no	%	reviewed	Percentage of enterprises conducting remote meetings
+PC_ENT_SECPOL	%	pct_family	no	%	reviewed	Percentage of enterprises with an ICT security policy
+PC_ENT_SECPOL1	%	pct_family	no	%	reviewed	Percentage of enterprises with an ICT security policy (as of 2015)
+PC_ENT_SECPOL2	%	pct_family	no	%	reviewed	Percentage of enterprises with  document(s) on measures, practices or procedures on ICT security (as of 2019)
+PC_ENT_SM	%	pct_family	no	%	reviewed	Percentage of enterprises using social media
+PC_ENT_WEB	%	pct_family	no	%	reviewed	Percentage of the enterprises having a website
+PC_ETURN	%	pct_family	no	%	reviewed	Percentage of turnover from e-commerce sales
+PC_EU27_2007	%	pct_family	no	%	reviewed	Percentage of EU27 (2007-2013) total
+PC_EU27_2020	%	pct_family	no	%	reviewed	Percentage of EU27 (from 2020) total
+PC_EU27_2020_EUR_HAB	%	pct_family	no	%	reviewed	Percentage of EU27 (from 2020) total (based on euro per inhabitant)
+PC_EU27_2020_HAB_MEUR_CP	%	pct_family	no	%	reviewed	Percentage of EU27 (from 2020) total per capita (based on million euro, EU27 from 2020), current prices
+PC_EU27_2020_HAB_MPPS_CP	%	pct_family	no	%	reviewed	Percentage of EU27 (from 2020) total per capita (based on million purchasing power standards, EU27 from 2020), current prices
+PC_EU27_2020_MEUR	%	pct_family	no	%	reviewed	Percentage of EU27 (from 2020) total (based on million euro)
+PC_EU27_2020_MEUR_CP	%	pct_family	no	%	reviewed	Percentage of EU27 (from 2020) total (based on million euro), current prices
+PC_EU27_2020_MPPS	%	pct_family	no	%	reviewed	Percentage of EU27 (from 2020) total (based on million purchasing power standards)
+PC_EU27_2020_MPPS_CP	%	pct_family	no	%	reviewed	Percentage of EU27 (from 2020) total (based on million purchasing power standards), current prices
+PC_EU27_2020_PPS_EMP	%	pct_family	no	%	reviewed	Percentage of EU27 (from 2020) total (based on purchasing power standards per employed person)
+PC_EU27_2020_PPS_HAB	%	pct_family	no	%	reviewed	Percentage of EU27 (from 2020) total (based on purchasing power standards per inhabitant)
+PC_EU28	%	pct_family	no	%	reviewed	Percentage of EU28 (2013-2020) total
+PC_EXP	%	pct_family	no	%	reviewed	Percentage of total expenditure
+PC_EXT_EU	%	pct_family	no	%	reviewed	Percentage of Extra EU
+PC_FSTU	%	pct_family	no	%	reviewed	Percentage of total foreign tertiary students
+PC_FUNC	%	pct_family	no	%	reviewed	Percentage of total function
+PC_FUSE	%	pct_family	no	%	reviewed	Percentage of total final use
+PC_GADI	%	pct_family	no	%	reviewed	Percentage of gross adjusted disposable income
+PC_GBA	%	pct_family	no	%	reviewed	Percentage of total GBARD
+PC_GDP	%	pct_family	no	%	reviewed	Percentage of gross domestic product (GDP)
+PC_GDP_3Y	%	pct_family	no	%	reviewed	Percentage of GDP - three-year average
+PC_GDP_NSA	%	pct_family	no	%	reviewed	Percentage of gross domestic product (GDP), (NSA)
+PC_GDP_SCA	%	pct_family	no	%	reviewed	Percentage of gross domestic product (GDP), (SCA)
+PC_GERD	%	pct_family	no	%	reviewed	Percentage of gross domestic expenditure on R&D (GERD)
+PC_GEXP	%	pct_family	no	%	reviewed	Percentage of government expenditure
+PC_GFCF	%	pct_family	no	%	reviewed	Percentage of gross fixed capital formation (GFCF)
+PC_GNI	%	pct_family	no	%	reviewed	Percentage of gross national income (GNI)
+PC_GRSEXP	%	pct_family	no	%	reviewed	Percentage of total gross exports
+PC_GRSEXP_EU	%	pct_family	no	%	reviewed	Percentage of EU gross exports
+PC_GRSIMP	%	pct_family	no	%	reviewed	Percentage of total gross imports
+PC_GVA	%	pct_family	no	%	reviewed	Percentage of gross value added (GVA)
+PC_HH	%	pct_family	no	%	reviewed	Percentage of households
+PC_HH_BROADX	%	pct_family	no	%	reviewed	Percentage of households without broadband access
+PC_HH_IACC	%	pct_family	no	%	reviewed	Percentage of households with internet access at home
+PC_HH_IACCX	%	pct_family	no	%	reviewed	Percentage of households without internet access at home
+PC_IGRTX	%	pct_family	no	%	reviewed	Percentage of individuals who have used internet but not for sending filled forms to public authorities
+PC_IGRTX_NAPX	%	pct_family	no	%	reviewed	Percentage of individuals who have used internet but not for sending filled forms to public authorities although they had to
+PC_INAC	%	pct_family	no	%	reviewed	Percentage of population outside the labour force
+PC_INAC_WWRK	%	pct_family	no	%	reviewed	Percentage of population outside the labour force and wanting to work
+PC_IND	%	pct_family	no	%	reviewed	Percentage of individuals
+PC_IND_BFFOR	%	pct_family	no	%	reviewed	Percentage of individuals who purchased online from sellers from other countries (EU or non-EU)
+PC_IND_BGT3_IU3	%	pct_family	no	%	reviewed	Percentage of individuals who used internet and did not purchase online in the last 3 months
+PC_IND_BLT12	%	pct_family	no	%	reviewed	Percentage of individuals who ordered goods or services, over the internet, for private use, in the last year
+PC_IND_BMT12X	%	pct_family	no	%	reviewed	Percentage of individuals who ordered goods or services, over the internet, for private use, more than a year ago or who never did
+PC_IND_BUY3	%	pct_family	no	%	reviewed	Percentage of individuals who purchased online in the last 3 months
+PC_IND_C3	%	pct_family	no	%	reviewed	Percentage of individuals who used a computer within the last 3 months
+PC_IND_CC_CCS	%	pct_family	no	%	reviewed	Percentage of individuals who used internet and cloud services for file saving or sharing
+PC_IND_CEVR	%	pct_family	no	%	reviewed	Percentage of individuals who used a computer, ever
+PC_IND_CIANY	%	pct_family	no	%	reviewed	Percentage of individuals who have done at least one of the listed computer or internet activities
+PC_IND_HM	%	pct_family	no	%	reviewed	Percentage of individuals who encountered messages online that were considered to be hostile or degrading towards groups of people or individuals in the last 3 months
+PC_IND_IEID	%	pct_family	no	%	reviewed	Percentage of individuals who have used their electronic identification to access online services for private purpose in the last 12 months
+PC_IND_IEIDX	%	pct_family	no	%	reviewed	Percentage of individuals who have not used their electronic identification to access online services for private purpose in the last 12 months
+PC_IND_ILT12	%	pct_family	no	%	reviewed	Percentage of individuals who used internet within the last year
+PC_IND_ILT12_SSF	%	pct_family	no	%	reviewed	Percentage of employees and self-employed who used internet within the last year
+PC_IND_IOT_BDKX	%	pct_family	no	%	reviewed	Percentage of individuals who have not used any internet-connected device or systems although they knew about them
+PC_IND_IOT_DX	%	pct_family	no	%	reviewed	Percentage of individuals who have not used any internet-connected devices or systems
+PC_IND_IOT_DX2	%	pct_family	no	%	reviewed	Percentage of individuals who have not used any of the mentioned internet-connected devices or systems in the last 3 months
+PC_IND_IOT_USE	%	pct_family	no	%	reviewed	Percentage of individuals who have used any of the mentioned internet-connected devices or systems in the last 3 months (until 2022)
+PC_IND_IOT_USE2	%	pct_family	no	%	reviewed	Percentage of individuals who have used any of the mentioned internet-connected devices or systems in the last 3 months
+PC_IND_IU3	%	pct_family	no	%	reviewed	Percentage of individuals who used internet in the last 3 months
+PC_IND_IU3X	%	pct_family	no	%	reviewed	Percentage of individuals who have not used the internet within the last 3 months or have never used it
+PC_IND_IUACDL	%	pct_family	no	%	reviewed	Percentage of individuals who have tried to delete their account of a free app or service in the last 3 months
+PC_IND_IUACRG	%	pct_family	no	%	reviewed	Percentage of individuals who have opened an account with a free app or service
+PC_IND_IUAI	%	pct_family	no	%	reviewed	Percentage of individuals who have used any generative AI tools in the last 3 months
+PC_IND_IUAIX	%	pct_family	no	%	reviewed	Percentage of individuals who have not used any generative AI tools in the last 3 months
+PC_IND_IUEVR	%	pct_family	no	%	reviewed	Percentage of individuals who used internet, ever
+PC_IND_IUGOV12	%	pct_family	no	%	reviewed	Percentage of e-government users
+PC_IND_IUG_TV	%	pct_family	no	%	reviewed	Percentage of individuals who used the internet on a smart TV (directly connected to the internet)
+PC_IND_IUHD	%	pct_family	no	%	reviewed	Percentage of individuals who used a handheld device to access internet
+PC_IND_IUMC	%	pct_family	no	%	reviewed	Percentage of individuals who have used a portable computer to access internet
+PC_IND_IUOANY	%	pct_family	no	%	reviewed	Percentage of individuals who have used internet, in the last 3 months, for any of the online learning activities
+PC_IND_IUPS	%	pct_family	no	%	reviewed	Percentage of individuals who had any difficulties when using the internet
+PC_IND_MDW	%	pct_family	no	%	reviewed	Percentage of individuals who, at work, use any type of computers, portable devices or computerised equipment or machinery
+PC_IND_MPP	%	pct_family	no	%	reviewed	Percentage of individuals who use a smartphone for private purposes
+PC_IND_SECOITPP	%	pct_family	no	%	reviewed	Percentage of individuals who have experienced online identity theft, phishing or pharming
+PC_IND_WH	%	pct_family	no	%	reviewed	Percentage of individuals working from home
+PC_IND_WM	%	pct_family	no	%	reviewed	Percentage of individuals working at an external site or on the move
+PC_ITG	%	pct_family	no	%	reviewed	Percentage of total international trade in goods
+PC_ITS	%	pct_family	no	%	reviewed	Percentage of total international trade in services
+PC_LE	%	pct_family	no	%	reviewed	Percentage of stocks (closing balance sheet)
+PC_LSU	%	pct_family	no	%	reviewed	Percentage of total livestock units
+PC_LW95	%	pct_family	no	%	reviewed	Percentage of total population - lower boundary of the 95% confidence interval
+PC_OECD	%	pct_family	no	%	reviewed	Percentage of OECD total
+PC_OECD_EU	%	pct_family	no	%	reviewed	Percentage of the total of OECD countries and EU Member States not in OECD
+PC_ORG	%	pct_family	no	%	reviewed	Percentage of organic product
+PC_PER_ACC	%	pct_family	no	%	reviewed	Percentage of persons reporting an accident
+PC_PER_HPB	%	pct_family	no	%	reviewed	Percentage of persons reporting a health problem
+PC_PEXP	%	pct_family	no	%	reviewed	Percentage of total public expenditure
+PC_POP	%	pct_family	no	%	reviewed	Percentage of total population
+PC_POP_NPT	%	pct_family	no	%	reviewed	Percentage of population not participating in tourism
+PC_REC	%	pct_family	no	%	reviewed	Percentage of total receipts
+PC_RIMG	%	pct_family	no	%	reviewed	Percentage of total recent immigrants
+PC_RWA	%	pct_family	no	%	reviewed	Percentage of risk-weighted assets
+PC_SAL	%	pct_family	no	%	reviewed	Percentage of employees
+PC_SAL_TEMP	%	pct_family	no	%	reviewed	Percentage of employees with a temporary job
+PC_SIZE	%	pct_family	no	%	reviewed	Percentage of total size class
+PC_STU	%	pct_family	no	%	reviewed	Percentage of total tertiary students
+PC_TG_ICT	%	pct_family	no	%	reviewed	Percentage of total ICT goods trade
+PC_TOT	%	pct_family	no	%	reviewed	Percentage of total
+PC_TOT_FTE	%	pct_family	no	%	reviewed	Percentage of total (based on full-time equivalents)
+PC_TOT_HAB	%	pct_family	no	%	reviewed	Percentage of total (based on inhabitants)
+PC_TOT_HW	%	pct_family	no	%	reviewed	Percentage of total (based on hours worked)
+PC_TOT_JOB	%	pct_family	no	%	reviewed	Percentage of total (based on jobs)
+PC_TOT_PER	%	pct_family	no	%	reviewed	Percentage of total (based on persons)
+PC_TSCO	%	pct_family	no	%	reviewed	Percentage of total revenues from taxes and social contributions (including imputed social contributions)
+PC_TSCO_X_ISCO	%	pct_family	no	%	reviewed	Percentage of total revenues from taxes and social contributions (excluding imputed social contributions)
+PC_TS_ICT	%	pct_family	no	%	reviewed	Percentage of total ICT services trade
+PC_TURN	%	pct_family	no	%	reviewed	Percentage of turnover
+PC_UAA	%	pct_family	no	%	reviewed	Percentage of total utilised agricultural area
+PC_UNE	%	pct_family	no	%	reviewed	Percentage of unemployment
+PC_UP95	%	pct_family	no	%	reviewed	Percentage of total population - upper boundary of the 95% confidence interval
+PC_WMN	%	pct_family	no	%	reviewed	Percentage of women
+PC_WRL	%	pct_family	no	%	reviewed	Percentage of world total
+PC_Y_LT60	%	pct_family	no	%	reviewed	Percentage of total population aged less than 60
+PC_Y_LT65	%	pct_family	no	%	reviewed	Percentage of total population aged less than 65
+PER	人	persons	yes	人	reviewed	Person
+PER_KM2	人/平方公里	density	no	人/平方公里	reviewed	Persons per square kilometre
+P_HHAB	每百人	per_population	no	每百人	reviewed	Per hundred inhabitants
+P_HTHAB	每十万人	per_population	no	每十万人	reviewed	Per hundred thousand inhabitants
+P_HTMN	每十万男性	per_population	no	每十万男性	reviewed	Per hundred thousand men
+P_HTWMN	每十万女性	per_population	no	每十万女性	reviewed	Per hundred thousand women
+P_MHAB	每百万人	per_population	no	每百万人	reviewed	Per million inhabitants
+P_THAB	每千人	per_population	no	每千人	reviewed	Per thousand inhabitants
+P_TLBRTH	每千名活产婴儿	per_population	no	每千名活产婴儿	reviewed	Per thousand live birth
+T	吨	mass	yes	吨	reviewed	Tonne
+TCO2E_HAB	吨二氧化碳当量/人	per_capita	no	吨二氧化碳当量/人	reviewed	Tonnes of CO2 equivalent per capita
+YR	年	time	no	年	reviewed	Year
+BN_EUR	十亿欧元	amount	yes	十亿欧元	generated	Billion euro
+EUR	欧元	amount	yes	欧元	generated	Euro
+EUR_HAB	欧元/人	per_capita	no	欧元/人	generated	Euro per inhabitant
+HICP2015	指数(2015=100)	index_base	no		generated	Harmonized consumer price index, 2015=100
+HICP2025	指数(2025=100)	index_base	no		generated	Harmonized consumer price index, 2025=100
+I10_A_AVG	指数(2010=100)	index_base	no		generated	Annual average index, 2010=100
+I10_Q	指数(2010=100)	index_base	no		generated	Quarterly index, 2010=100
+I15_A_AVG	指数(2015=100)	index_base	no		generated	Annual average index, 2015=100
+I15_Q	指数(2015=100)	index_base	no		generated	Quarterly index, 2015=100
+I2010	指数(2010=100)	index_base	no		generated	Index, 2010=100
+I2015	指数(2015=100)	index_base	no		generated	Index, 2015=100
+I2021	指数(2021=100)	index_base	no		generated	Index, 2021=100
+I25_A_AVG	指数(2025=100)	index_base	no		generated	Annual average index, 2025=100
+I25_Q	指数(2025=100)	index_base	no		generated	Quarterly index, 2025=100
+KG	千克	amount	yes	千克	generated	Kilogram
+KG_HAB	千克/人	per_capita	no	千克/人	generated	Kilograms per capita
+KM2_HAB	平方公里/人	per_capita	no	平方公里/人	generated	Square kilometres per capita
+M3_HAB	立方米/人	per_capita	no	立方米/人	generated	Cubic metres per inhabitant
+MEUR_HAB	百万欧元/人	per_capita	no	百万欧元/人	generated	Million euro per inhabitant
+MIO_EUR	百万欧元	amount	yes	百万欧元	generated	Million euro
+MIO_PER	百万人	amount	yes	百万人	generated	Million persons
+MIO_PKM	百万人公里	amount	yes	百万人公里	generated	Millions of passenger-kilometres
+MIO_T	百万吨	amount	yes	百万吨	generated	Million tonnes
+MTOE	百万吨油当量	amount	yes	百万吨油当量	generated	Million tonnes of oil equivalent
+PCH_10Y	%	pct_change	no	%	generated	Percentage change (t/t-10)
+PCH_1Y	%	pct_change	no	%	generated	Percentage change (t/t-1)
+PCH_3Y	%	pct_change	no	%	generated	Percentage change (t/t-3)
+PCH_5Y	%	pct_change	no	%	generated	Percentage change (t/t-5)
+PCH_LV_M_16-19	%	pct_change	no	%	generated	Percentage change of the current month compared to the lowest value for the corresponding month in the period 2016-2019
+PCH_M1	%	pct_change	no	%	generated	Percentage change m/m-1
+PCH_M12	%	pct_change	no	%	generated	Percentage change m/m-12
+PCH_M12_CA	%	pct_change	no	%	generated	Percentage change m/m-12 (CA)
+PCH_M12_NSA	%	pct_change	no	%	generated	Percentage change m/m-12 (NSA)
+PCH_M1_NSA	%	pct_change	no	%	generated	Percentage change m/m-1 (NSA)
+PCH_M1_SA	%	pct_change	no	%	generated	Percentage change m/m-1 (SA)
+PCH_M1_SCA	%	pct_change	no	%	generated	Percentage change m/m-1 (SCA)
+PCH_M24	%	pct_change	no	%	generated	Percentage change m/m-24
+PCH_MV12	%	pct_change	no	%	generated	Percentage change - 12-months average
+PCH_OECD_5Y	%	pct_family	no	%	generated	Percentage of OECD total - 5-year change
+PCH_OECD_EU_1Y	%	pct_family	no	%	generated	Percentage of OECD and non-OECD EU countries total - 1-year change
+PCH_OECD_EU_3Y	%	pct_family	no	%	generated	Percentage of OECD and non-OECD EU countries total - 3-year change
+PCH_OECD_EU_5Y	%	pct_family	no	%	generated	Percentage of the total of OECD countries and EU Member States not in OECD - 5-year change
+PCH_PRE_EUR	%	pct_change	no	%	generated	Percentage change on previous period, euro
+PCH_PRE_FTE	%	pct_change	no	%	generated	Percentage change on previous period (based on full-time equivalents)
+PCH_PRE_HAB	%	pct_change	no	%	generated	Percentage change on previous period (based on inhabitants)
+PCH_PRE_HAB_KP	%	pct_change	no	%	generated	Percentage change on previous period (based on inhabitants) (at constant prices)
+PCH_PRE_HW	%	pct_change	no	%	generated	Percentage change on previous period (based on hours worked)
+PCH_PRE_I00	%	pct_change	no	%	generated	Percentage change on previous period, based on index 2000=100
+PCH_PRE_I05	%	pct_change	no	%	generated	Percentage change on previous period, based on index 2005=100
+PCH_PRE_I10	%	pct_change	no	%	generated	Percentage change on previous period, based on index 2010=100
+PCH_PRE_I15	%	pct_change	no	%	generated	Percentage change on previous period, based on index 2015=100
+PCH_PRE_I20	%	pct_change	no	%	generated	Percentage change on previous period, based on index 2020=100
+PCH_PRE_JOB	%	pct_change	no	%	generated	Percentage change on previous period (based on jobs)
+PCH_PRE_NAC_CP	%	pct_change	no	%	generated	Percentage change on previous period, national currency, current prices
+PCH_PRE_PER	%	pct_change	no	%	generated	Percentage change on previous period (based on persons)
+PCH_PRE_PERS_SCA	%	pct_change	no	%	generated	Percentage change on previous period (based on persons, SCA)
+PCH_Q1_NSA	%	pct_change	no	%	generated	Percentage change q/q-1 (NSA)
+PCH_Q1_SCA	%	pct_change	no	%	generated	Percentage change q/q-1 (SCA)
+PCH_Q4_CA	%	pct_change	no	%	generated	Percentage change q/q-4 (CA)
+PCH_Q4_NSA	%	pct_change	no	%	generated	Percentage change q/q-4 (NSA)
+PCH_Q4_SCA	%	pct_change	no	%	generated	Percentage change q/q-4 (SCA)
+PCH_RV	%	pct_change	no	%	generated	Percentage change, real values
+PCH_SAME_PERS_NSA	%	pct_change	no	%	generated	Percentage change compared to same period in previous year (based on persons, NSA)
+PCH_SM	%	pct_change	no	%	generated	Percentage change compared to same period in previous year
+PCH_SM_19	%	pct_change	no	%	generated	Percentage change compared to same month in 2019
+PCH_SM_2Y	%	pct_change	no	%	generated	Percentage change compared to same period two years ago
+PCH_SM_EUR	%	pct_change	no	%	generated	Percentage change compared to same period in previous year, euro
+PCH_SM_FTE	%	pct_change	no	%	generated	Percentage change compared to same period in previous year (based on full-time equivalents)
+PCH_SM_HW	%	pct_change	no	%	generated	Percentage change compared to same period in previous year (based on hours worked)
+PCH_SM_I00	%	pct_change	no	%	generated	Percentage change compared to same period in previous year, based on index 2000=100
+PCH_SM_I05	%	pct_change	no	%	generated	Percentage change compared to same period in previous year, based on index 2005=100
+PCH_SM_I10	%	pct_change	no	%	generated	Percentage change compared to same period in previous year, based on index 2010=100
+PCH_SM_I15	%	pct_change	no	%	generated	Percentage change compared to same period in previous year, based on index 2015=100
+PCH_SM_I20	%	pct_change	no	%	generated	Percentage change compared to same period in previous year, based on index 2020=100
+PCH_SM_JOB	%	pct_change	no	%	generated	Percentage change compared to same period in previous year (based on jobs)
+PCH_SM_PER	%	pct_change	no	%	generated	Percentage change compared to same period in previous year (based on persons)
+PCH_SM_PER_NSA	%	pct_change	no	%	generated	Percentage change compared to same period in previous year (based on persons, NSA)
+PCH_SM_PER_SCA	%	pct_change	no	%	generated	Percentage change compared to same period in previous year (based on persons, SCA)
+PCH_WRL_1Y	%	pct_family	no	%	generated	Percentage of world total - 1-year change
+PCH_WRL_3Y	%	pct_family	no	%	generated	Percentage of world total - 3 year change
+PCH_WRL_5Y	%	pct_family	no	%	generated	Percentage of world total - 5-year change
+PC_Y20-29	%	pct_family	no	%	generated	Percentage of total population aged 20-29
+PC_Y25-29	%	pct_family	no	%	generated	Percentage of total population aged 25-29
+PERS	人	amount	yes	人	generated	Persons
+PKM	人公里	amount	yes	人公里	generated	Passenger-kilometres
+RCH_A_AVG	%	pct_change	no	%	generated	Annual average rate of change
+RT1	%	pct_change	no	%	generated	Growth rate on previous period (t/t-1)
+RT1-SCA	%	pct_change	no	%	generated	Percentage change (t/t-1) - seasonally and calendar adjusted data
+RT12	%	pct_change	no	%	generated	Growth rate (t/t-12)
+RT12-CA	%	pct_change	no	%	generated	Percentage change (t/t-12) - calendar adjusted data, not seasonally adjusted data
+RT12-NSA	%	pct_change	no	%	generated	Percentage change (t/t-12) - not seasonally adjusted data
+RT4	%	pct_change	no	%	generated	Growth rate on the same quarter in previous year
+RT4-NSA	%	pct_change	no	%	generated	Percentage change (t/t-4) - not seasonally adjusted data
+RT_PRE	%	pct_change	no	%	generated	Growth rate on previous period (t/t-1)
+RT_PRE_EUR	%	pct_change	no	%	generated	Growth rate on previous period (t/t-1) for values in euro
+RT_PRE_GT	%	pct_change	no	%	generated	Growth rate on previous period (t/t-1) for gross tonnage of vessels
+RT_PRE_NAC	%	pct_change	no	%	generated	Growth rate on previous period (t/t-1) for values in national currency
+RT_PRE_NR	%	pct_change	no	%	generated	Growth rate on previous period (t/t-1) for number of vessels
+RT_SMQ	%	pct_change	no	%	generated	Growth rate on the same quarter in previous year
+THS_EUR	千欧元	amount	yes	千欧元	generated	Thousand euro
+THS_HA	千公顷	amount	yes	千公顷	generated	Thousand hectares
+THS_HH	千户	amount	yes	千户	generated	Thousand households
+THS_M3	千立方米	amount	yes	千立方米	generated	Thousand cubic metres
+THS_PAS	千人次	amount	yes	千人次	generated	Thousand passengers
+THS_PER	千人	amount	yes	千人	generated	Thousand persons
+THS_T	千吨	amount	yes	千吨	generated	Thousand tonnes
+TJ	太焦	amount	yes	太焦	generated	Terajoule
+TJ_HAB	太焦/人	per_capita	no	太焦/人	generated	Terajoule per capita
+T_HAB	吨/人	per_capita	no	吨/人	generated	Tonnes per capita

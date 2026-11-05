@@ -70,6 +70,11 @@ EATS = dict(map=["hub_origin", "one_unit"], ring=["monthly_companion"], callouts
             strip=["monthly_companion"], section_head=[], rankbar=["annual", "one_place", "one_unit", "last_year"],
             bubbles=["one_place", "one_unit", "last_year"], bubble_key=["one_place", "one_unit", "last_year"],
             leader_notes=["one_unit"], sankey=["official_flow", "one_unit"], stacked100=["annual", "one_unit", "composition_groups"])
+# The nodes whose dropped items are short notes (a note with no free place, beside the picture, not a mark of it): a page
+# goes on without some of them, each kept in its ledger, when no more than a third of the layer's notes are dropped and none
+# is the note of a place its headline names (user 11-05 10:2x (b)); a dropped item of any other node (a label on the main
+# picture) still stops the page. Written into knobs.json as the node's "short_notes". Data, not a switch.
+SHORT_NOTES = ["leader_notes"]
 # The nodes a node brings with it: every recipe that draws the node draws these right after it, in this order (a key to its
 # marks), so no recipe can draw the marks without them; a recipe that names one itself refuses.
 WITH = dict(bubbles=["bubble_key"])
@@ -155,6 +160,8 @@ def table():
     take(nodes, json.load(open(PAGE_OUT, encoding="utf-8")))
     for n, eats in EATS.items():
         nodes[n]["eats"] = list(eats)
+    for n in SHORT_NOTES:
+        nodes[n]["short_notes"] = True
     core = json.load(open(BINDINGS_OF_CORE, encoding="utf-8"))
     core_external = {n for n, e in core["nodes"].items() if e.get("binding") == "external"}
     if not core_external <= set(nodes):

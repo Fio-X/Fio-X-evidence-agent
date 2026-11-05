@@ -866,7 +866,8 @@
    ],
    "eats": [
     "one_unit"
-   ]
+   ],
+   "short_notes": true
   },
   "ledger": {
    "reserve": false,

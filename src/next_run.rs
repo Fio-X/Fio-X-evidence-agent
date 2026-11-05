@@ -1720,7 +1720,7 @@ fn page_input(recipe: &Recipe, shape: &Shape, picks: &Picks, (main, sums): (&[Va
     let scheme = if shape.countries.iter().all(|c| c.len() == 2) { "iso2" } else { "iso3" };
     let mut p = json!({"recipe": recipe.name, "order": recipe.layers,
         "shape": {"main": shape.main, "place": shape.place, "year": shape.year, "unit": shape.unit, "fmt": shape.unit.to_lowercase(),
-            "suffix": next_pack::unit_short(&shape.unit).map(suffix), "countries": shape.countries},
+            "suffix": next_pack::unit_number_suffix(&shape.unit).map(suffix), "countries": shape.countries},
         "picks": {"rules": recipe.picks, "ranked": picks.ranked, "marks": picks.marks, "t0": picks.t0, "t1": picks.t1},
         "rows": main, "name_kind": scheme, "sum_rows": sums, "outside": shape.outside, "top": next_params::NARROW_TOP,
         "short": next_pack::unit_short(&shape.unit), "composition": shape.composition.as_ref().map(|c| json!({"dim": c.dim, "total": c.total, "groups": c.groups,
@@ -1835,6 +1835,12 @@ impl Filled {
             }
         }
     }
+}
+
+/// What a value in a unit code prints after it: the unit table's number suffix (never a digit, so an index prints none and
+/// its base year stays on the unit line, user 11-05 10:2x), through suffix.
+fn num_suffix(code: &str) -> String {
+    suffix(next_pack::unit_number_suffix(code).unwrap_or(""))
 }
 
 /// The suffix a value prints with: its unit's short form, after a space when it holds a letter or a digit.
@@ -2159,11 +2165,26 @@ fn fill_of(
     if let Some(code) = accent {
         Filled::set(&mut out.data, "hero data", ACCENT, json!(code)).map_err(no)?;
     }
-    let Filled { drawn, rows, facts, mut fmts, data, mut hero, notes, points, named: name_rows, unit_drawn, flow_pairs, composition: cut, .. } = out;
+    let Filled { drawn, rows, facts, mut fmts, data, mut hero, notes, points, named: mut name_rows, unit_drawn, flow_pairs, composition: cut, .. } = out;
     hero.insert("data".into(), Value::Object(data));
+    // a unit whose short form holds a digit (an index's base year, 指数(2015=100)) prints it as the unit table's registered
+    // name row, never as typed words: the unit line goes to the leaf as segments (knobs.segs.unit, facts.worded), its form
+    // the fixed name name:unit_short_zh:<code> the table gives (fixed_name), each note after it plain words
+    let mut segs = None;
     // a layer that writes the unit in its own picture leaves the page's unit line to the year alone (column_page)
     if !unit_drawn {
-        hero.insert("unit".into(), json!(std::iter::once(format!("单位：{short}")).chain(notes).collect::<Vec<_>>().join("；")));
+        let line = std::iter::once(format!("单位：{short}")).chain(notes.iter().cloned()).collect::<Vec<_>>().join("；");
+        if short.chars().any(|c| c.is_ascii_digit() || c.is_numeric()) {
+            let src = format!("{}{}", FIXED_NAMES[1], shape.unit);
+            if fixed_name(&src).as_deref() != Some(short) {
+                return Err(no(format!("unit {}: its short form {short:?} is not the unit table's", shape.unit)));
+            }
+            name_rows.insert(src.clone(), json!(short));
+            let mut unit = vec![json!({"w": "单位："}), json!({"src": src})];
+            unit.extend(notes.iter().map(|n| json!({"w": format!("；{n}")})));
+            segs = Some(json!({"unit": unit}));
+        }
+        hero.insert("unit".into(), json!(line));
     } else if !notes.is_empty() {
         return Err(no(format!("the unit is drawn in a layer's picture, so no unit line prints the notes {notes:?}")));
     }
@@ -2180,6 +2201,9 @@ fn fill_of(
     let mut knobs = json!({"spec": spec, "labels": labels});
     if !name_rows.is_empty() {
         knobs["named"] = Value::Object(name_rows);
+    }
+    if let Some(segs) = segs {
+        knobs["segs"] = segs;
     }
     if !shape.hub.is_empty() {
         knobs["members"] = json!(shape.members);
@@ -2452,7 +2476,61 @@ fn leaf_page(
     })?;
     let drawn = fill["drawn"].as_array().cloned().unwrap_or_default();
     let zeros = declared_zeros(&fill);
-    Ok(LeafPublished { recipe: picked, published, drawn, strip: strip_ask, ends: fill.get("ends").cloned(), zeros })
+    let notes = notes_asked(picked, &fill);
+    Ok(LeafPublished { recipe: picked, published, drawn, strip: strip_ask, ends: fill.get("ends").cloned(), zeros, notes })
+}
+
+/// The short notes a page asked of each of its layers whose dropped items are short notes (next_leaf Leaf::short_notes):
+/// the layer and how many notes its leaf data held; and the codes its headline names ({name.<code>}), whose notes may
+/// never be dropped.
+#[derive(Clone, Debug, Default)]
+struct NotesAsked {
+    layers: BTreeMap<String, usize>,
+    cited: BTreeSet<String>,
+}
+
+fn notes_asked(recipe: &Recipe, fill: &Value) -> NotesAsked {
+    let spec = &fill["knobs"]["spec"];
+    let layers = recipe
+        .layers
+        .iter()
+        .filter(|l| crate::next_leaf::leaves().nodes.get(l.as_str()).is_some_and(|n| n.short_notes))
+        .map(|l| (l.clone(), spec["hero"]["leaves"][l]["notes"].as_array().map_or(0, Vec::len)))
+        .collect();
+    let title = spec["title"].as_str().unwrap_or_default();
+    let cited = title.split("{name.").skip(1).filter_map(|t| t.split_once('}')).map(|(code, _)| code.to_string()).collect();
+    NotesAsked { layers, cited }
+}
+
+/// What a page's layers dropped, split (user 11-05 10:2x (b), a loosened check the user approved): the short notes the page
+/// goes on without, and every other item, which still fails notes_dropped. A layer's dropped notes are let go only when the
+/// layer is a short-note layer the page asked notes of, no more than a third of them are dropped (dropped x 3 <= asked), and
+/// none is the note of a place the headline names; otherwise every one of that layer's drops counts. A label on the main
+/// picture (any other layer) always counts. Each let-go note stays in the request's ledger (next_ledger DROPPED_SRC).
+fn notes_let_go(dropped: &[(String, String)], asked: &NotesAsked) -> (Vec<(String, String)>, Vec<String>) {
+    let layer_id = |src: &str| -> Option<(String, String)> {
+        let rest = src.strip_prefix(crate::next_ledger::DROPPED_SRC)?;
+        rest.split_once(':').map(|(l, id)| (l.to_string(), id.to_string()))
+    };
+    let mut by_layer: BTreeMap<String, Vec<&(String, String)>> = BTreeMap::new();
+    let mut counted = Vec::new();
+    for d in dropped {
+        match layer_id(&d.0).filter(|(l, _)| asked.layers.contains_key(l)) {
+            Some((l, _)) => by_layer.entry(l).or_default().push(d),
+            None => counted.push(d.clone()),
+        }
+    }
+    let mut let_go = Vec::new();
+    for (layer, drops) in by_layer {
+        let n = asked.layers[&layer];
+        let cited = drops.iter().any(|d| layer_id(&d.0).is_some_and(|(_, id)| asked.cited.contains(&id)));
+        if !cited && n > 0 && drops.len() * 3 <= n {
+            let_go.extend(drops.iter().map(|d| d.0.clone()));
+        } else {
+            counted.extend(drops.into_iter().cloned());
+        }
+    }
+    (counted, let_go)
 }
 
 /// What a page's illustration strip was asked of: whether its recipe has a slot for one (Recipe::strip), whether a strip
@@ -2503,6 +2581,8 @@ struct LeafPublished {
     /// The parts a composition declared 0 in a bar (the stacked100 declaration (node-bindings.json)), each read again from the fetched rows by its place,
     /// codes and year (zero_rows, declared_zeros), which the page check zeros_declared holds to 0.
     zeros: Vec<Value>,
+    /// The short notes it asked (notes_asked), against which the notes its layers dropped are let go or counted.
+    notes: NotesAsked,
 }
 
 /// Each part a composition declared 0 in a bar (its fill's composition record), read again from the fetched sum-input rows
@@ -3372,8 +3452,13 @@ pub(crate) async fn page_from(
             }
             // what the program measures on the page is held before any model sees it: a failed check stops the run
             let (html, read_sha256) = checked_bytes(recorder.run_dir(), published);
-            let mut checks =
-                page_checks(leaf.recipe, html.as_deref(), &published.dropped, leaf.strip, &leaf.drawn, published.type_measured.as_ref());
+            let (counted, let_go) = notes_let_go(&published.dropped, &leaf.notes);
+            let mut checks = page_checks(leaf.recipe, html.as_deref(), &counted, leaf.strip, &leaf.drawn, published.type_measured.as_ref());
+            if let Some(notes) = checks.iter_mut().find(|c| c.name == "notes_dropped").filter(|_| !let_go.is_empty()) {
+                notes.measured["let_go"] = json!(let_go);
+                notes.measured["asked"] = json!(leaf.notes.layers);
+                notes.warning = Some(format!("{} short note(s) dropped and kept in the ledger, a third or fewer of their layer's", let_go.len()));
+            }
             checks.extend(zeros_check(&leaf.zeros));
             let measured: Vec<Value> = checks
                 .iter()
@@ -7109,6 +7194,87 @@ mod tests {
         let ledger: BTreeMap<String, String> = serde_json::from_value(back["ledger"].take()).unwrap();
         let refs: Vec<String> = serde_json::from_value(back["refs"].take()).unwrap();
         assert_eq!(crate::next_leaf::check_leaf_page(&html, &ledger, &refs, &spec, &rows, &facts), Vec::<String>::new());
+    }
+
+    /// The unit table made from the catalogue's labels, on a whole page (user 11-05 10:2x (a): tested on the page, not the
+    /// lookup): a change page in an index unit (I15, 指数(2015=100)) and in a count (NR, 数量), drawn by the real leaf child,
+    /// baked, checked by the twins and published, then read back and passed by the whole-page check. A number prints no
+    /// digit after it (the index's suffix is none); the index's base year prints only on the unit line, as the unit table's
+    /// name row the page marks.
+    #[test]
+    fn an_index_and_a_count_unit_print_a_whole_page_that_passes_the_check() {
+        for (unit, short, suffix) in [("I15", "指数(2015=100)", ""), ("NR", "数量", "")] {
+            let change = recipe("change");
+            let places = ["AT", "DE", "LU", "LV"];
+            let mut main = ring_rows("sdg_07_40", &[("freq", "A"), ("unit", unit)], ("geo", &places), &["2016", "2025"]);
+            for (r, v) in main.iter_mut().zip(["93.4", "104.2", "98.8", "112.9", "101.5", "120.2", "97.1", "106.3"]) {
+                r["value"] = json!(v);
+            }
+            let shape = shape_of(&change.eats, &[("sdg_07_40", &main[..])], &Hubs).unwrap();
+            let picks = picks_of(&change.picks, &shape, &main, &[]).unwrap();
+            let mut fill = test_fill(change, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false).unwrap();
+            let spec = &fill["knobs"]["spec"];
+            assert_eq!(spec["hero"]["unit"].as_str().unwrap().split('；').next(), Some(format!("单位：{short}").as_str()), "{unit}");
+            assert!(spec["fmts"].as_object().unwrap().values().all(|f| !f["suffix"].as_str().unwrap_or("").chars().any(|c| c.is_ascii_digit())), "{unit}: {}", spec["fmts"]);
+            assert_eq!(spec["fmts"][unit.to_lowercase()]["suffix"], suffix, "{unit}");
+            let src = format!("name:unit_short_zh:{unit}");
+            let has_digit = short.chars().any(|c| c.is_ascii_digit());
+            assert_eq!(fill["knobs"]["named"].get(&src).is_some(), has_digit, "{unit}: the named row");
+            assert_eq!(fill["knobs"]["segs"]["unit"][1]["src"].as_str() == Some(src.as_str()), has_digit, "{unit}: the segments");
+            let dek = dek_finding(&fill).unwrap().0;
+            page_words(&mut fill, ("标题", &dek, "栏目"));
+            fill["knobs"]["shapes"] = json!("runtime/pi/assets/naturalearth-admin0-50m.geojson");
+            fill["knobs"]["spec"]["kicker"] = json!("栏目");
+            fill["knobs"]["spec"]["source"] = json!("来源");
+            let order: Vec<String> = fill["order"].as_array().unwrap().iter().filter_map(|l| l.as_str().map(str::to_string)).collect();
+            let calls = std::sync::Mutex::new(Vec::new());
+            let request = crate::next_visual::Request::LeafFill {
+                recipe: "change",
+                rows: fill["rows"].as_array().unwrap(),
+                knobs: &fill["knobs"],
+                order: &order,
+                runtime: Path::new("runtime"),
+            };
+            let page = match crate::next_flow::visual_call(&calls, "leaf_fill", request) {
+                Ok(crate::next_visual::Reply::Filled(page)) => page,
+                Ok(_) => panic!("{unit}: not a filled page"),
+                Err(e) => panic!("{unit}: leaf fill: {e}"),
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let bundle = {
+                let _command = crate::group_guard::command_for_test("investigate");
+                crate::artifact::InvestigationBundle::create(dir.path(), "leaf page").unwrap()
+            };
+            let _command = crate::group_guard::command_for_test("investigate");
+            let _doors = crate::group_guard::doors_for_test(true);
+            let bake = crate::next_leaf::Runner::python(Path::new("fixtures/next_leaf/bake_twin.py"));
+            let mut qa = crate::next_leaf::Runner::python(Path::new("fixtures/next_visual/qa_twin.py"));
+            qa.args.push("pass".into());
+            let leaf = crate::next_visual::LeafPage {
+                draw: &page.draw,
+                bake: &bake,
+                w: page.w,
+                h: page.h,
+                frame: page.frame.clone(),
+                layers: &page.layers,
+                ledger: &page.ledger,
+                refs: &page.refs,
+                facts: (&page.spec, &page.rows, &page.facts),
+                strip: None,
+            };
+            let plan = json!({"kind": "leaf_plan", "recipe": "change"});
+            let published = crate::next_flow::publish_leaf_page(&calls, &bundle.dir, "change", (&leaf, &plan), &qa).unwrap_or_else(|e| panic!("{unit}: publish: {e}"));
+            let html = std::fs::read_to_string(bundle.dir.join(&published.html_ref)).unwrap();
+            assert_eq!(html.contains(&format!(r#"data-src="{src}""#)), has_digit, "{unit}: the unit line marks its name row");
+            let text = std::fs::read_to_string(bundle.dir.join("publications/change").join(crate::next_flow::LEAF_REQUEST)).unwrap();
+            let mut back: Value = serde_json::from_str(&text).unwrap();
+            let spec: crate::next_facts::Spec = serde_json::from_value(back["spec"].take()).unwrap();
+            let rows: Vec<crate::next_facts::Row> = serde_json::from_value(back["rows"].take()).unwrap();
+            let facts: Vec<crate::next_facts::Fact> = serde_json::from_value(back["facts"].take()).unwrap();
+            let ledger: BTreeMap<String, String> = serde_json::from_value(back["ledger"].take()).unwrap();
+            let refs: Vec<String> = serde_json::from_value(back["refs"].take()).unwrap();
+            assert_eq!(crate::next_leaf::check_leaf_page(&html, &ledger, &refs, &spec, &rows, &facts), Vec::<String>::new(), "{unit}");
+        }
     }
 
     /// A World Bank table's page (its id SP.POP.65UP.TO.ZS@2, as the catalogue names it) under the source line the flow
@@ -11142,6 +11308,35 @@ for line in sys.stdin:
         assert!(checks[1..].iter().all(|c| c.passed), "{checks:?}");
     }
 
+    /// The short notes a page goes on without (user 11-05 10:2x (b)): a third or fewer of a short-note layer's notes, none of
+    /// a place the headline names, are let go; more than a third, a cited one, or any label of the main picture count.
+    #[test]
+    fn a_page_goes_on_without_a_third_of_its_short_notes_but_not_the_headline_s_or_a_main_label() {
+        let column = recipe("column");
+        let fill = json!({"knobs": {"spec": {"title": "{name.DE}最高", "hero": {"leaves": {"leader_notes": {"notes": [{}, {}, {}, {}, {}, {}]}}}}}});
+        let asked = notes_asked(column, &fill);
+        assert_eq!((asked.layers.clone(), asked.cited.clone()), (BTreeMap::from([("leader_notes".to_string(), 6)]), BTreeSet::from(["DE".to_string()])));
+        let d = |l: &str, id: &str| crate::next_ledger::dropped_entry(l, id, "no free place for the note");
+        // two of six: let go, nothing counted, and notes_dropped passes on what counts
+        let (counted, let_go) = notes_let_go(&[d("leader_notes", "SE"), d("leader_notes", "AT")], &asked);
+        assert_eq!((counted.len(), let_go), (0, vec!["dropped:leader_notes:SE".to_string(), "dropped:leader_notes:AT".into()]));
+        assert!(page_checks(column, Some("<body></body>"), &counted, StripAsk::default(), &[], Some(&typed()))[0].passed);
+        // three of six is past a third: every one counts
+        let (counted, let_go) = notes_let_go(&[d("leader_notes", "SE"), d("leader_notes", "AT"), d("leader_notes", "FR")], &asked);
+        assert_eq!((counted.len(), let_go.len()), (3, 0));
+        // the headline's place: counts, though one of six
+        let (counted, let_go) = notes_let_go(&[d("leader_notes", "DE")], &asked);
+        assert_eq!((counted.len(), let_go.len()), (1, 0));
+        // a circle's label on the map is the main picture's: counts, and so does a layer that asked no notes
+        let (counted, let_go) = notes_let_go(&[d("bubbles", "AT"), d("leader_notes", "SE")], &asked);
+        assert_eq!((counted, let_go), (vec![d("bubbles", "AT")], vec!["dropped:leader_notes:SE".to_string()]));
+        let none = notes_asked(column, &json!({"knobs": {"spec": {"title": "标题"}}}));
+        assert_eq!(notes_let_go(&[d("leader_notes", "SE")], &none).0.len(), 1);
+        // only the short-note layers are registered so
+        let short: Vec<&String> = crate::next_leaf::leaves().nodes.iter().filter(|(_, n)| n.short_notes).map(|(k, _)| k).collect();
+        assert_eq!(short, ["leader_notes"]);
+    }
+
     /// A strip owed and given: its recipe's slot, a piece set that takes the tables, the visual group's strip.
     const OWED: StripAsk = StripAsk { slot: true, asked: true, given: true };
 
@@ -11711,7 +11906,7 @@ for line in sys.stdin:
         ] {
             Filled::set(&mut out.facts, "fact", key, q)?;
         }
-        Filled::set(&mut out.fmts, "format", fmt, json!({"scale": 1, "dec": dec, "suffix": suffix(f.short)}))?;
+        Filled::set(&mut out.fmts, "format", fmt, json!({"scale": 1, "dec": dec, "suffix": num_suffix(&f.shape.unit)}))?;
         if gap_fmt == POINTS.0 {
             Filled::set(&mut out.fmts, "format", POINTS.0, json!({"scale": 1, "dec": dec.min(POINTS_DEC), "suffix": POINTS.1}))?;
         }
@@ -11912,7 +12107,7 @@ for line in sys.stdin:
         out.rows(flows.iter().map(|r| (*r).clone()));
         // the zero flows are only read: the fact that counts them prints, never their values
         out.reads(zeros.iter().map(|r| (*r).clone()));
-        Filled::set(&mut out.fmts, "format", fmt, json!({"scale": 1, "dec": held_decimals(&flows), "suffix": suffix(f.short)}))?;
+        Filled::set(&mut out.fmts, "format", fmt, json!({"scale": 1, "dec": held_decimals(&flows), "suffix": num_suffix(&f.shape.unit)}))?;
         let min_share = f.catalogue.knob("sankey", "min_share")?;
         let id = main.strip_suffix("@2").unwrap_or(main);
         let excluded: Vec<String> = next_params::flow_excluded(id).map_err(|e| format!("sankey: {e}"))?.into_iter().map(|p| p.code).collect();
@@ -12341,7 +12536,7 @@ for line in sys.stdin:
                 "not_eu": origin, "fmt": fmt});
             fact(key.into(), q)?;
         }
-        Filled::set(&mut out.fmts, "format", fmt, json!({"scale": 1, "dec": 0, "suffix": suffix(f.short)}))?;
+        Filled::set(&mut out.fmts, "format", fmt, json!({"scale": 1, "dec": 0, "suffix": num_suffix(&f.shape.unit)}))?;
         let data = json!({"chart": "flowmap", "fmt": fmt, "q": {"table": shape.main, "filter": filter(&[("geo", hub)]), "by": origin,
             "not_eu": true}, "t0": picks.t0, "t1": picks.t1, "top": picks.top, "hub": shape.point, "ext": shape.extent,
             "focus": picks.focus, "hub_name": hub_zh, "label_fact": "lab_t1", "legend_fact": "lab_t0"});
@@ -12398,7 +12593,7 @@ for line in sys.stdin:
             .min(COLUMN_DEC);
         out.reads(ends.iter().map(|r| (*r).clone()));
         let [v0, v1, chg] = CHANGE_FAMILIES;
-        let (chg_fmt, chg_suffix) = if f.short == "%" { (POINTS.0, POINTS.1.to_string()) } else { (CHANGE_FMT, suffix(f.short)) };
+        let (chg_fmt, chg_suffix) = if f.short == "%" { (POINTS.0, POINTS.1.to_string()) } else { (CHANGE_FMT, num_suffix(&f.shape.unit)) };
         let dec = if chg_fmt == POINTS.0 { dec.min(POINTS_DEC) } else { dec };
         for (key, q) in [
             (v0, json!({"each": place, "table": shape.main, "time": shape.t0, "fmt": fmt})),
@@ -12408,7 +12603,7 @@ for line in sys.stdin:
             Filled::set(&mut out.facts, "fact", key, q)?;
         }
         let (_, at_t1) = ranked_rows(f);
-        Filled::set(&mut out.fmts, "format", fmt, json!({"scale": 1, "dec": at_t1, "suffix": suffix(f.short)}))?;
+        Filled::set(&mut out.fmts, "format", fmt, json!({"scale": 1, "dec": at_t1, "suffix": num_suffix(&f.shape.unit)}))?;
         Filled::set(&mut out.fmts, "format", chg_fmt, json!({"scale": 1, "dec": dec, "suffix": chg_suffix}))?;
         Ok(chg_fmt)
     }
