@@ -1114,11 +1114,16 @@ fn one_place(s: &mut Shape, _: &[(&str, &[Value])], catalogue: &dyn Catalogue) -
 }
 
 /// The main holds one unit: its unit dimension's one code; a World Bank main, which has no unit dimension, the unit code the
-/// catalogue registers for its indicator (TableMeta unit, as measure_of takes it), and none registered refuses.
+/// catalogue registers for its indicator (TableMeta unit, as measure_of takes it), and none registered refuses. A Eurostat
+/// main whose unit sits in a currency or indicator dimension (a price per kilowatt-hour, a count of births) takes the code
+/// the knowledge group's unit-carriers registry maps those codes to (next_pack::carried_unit); codes it does not map refuse.
 fn one_unit(s: &mut Shape, _: &[(&str, &[Value])], catalogue: &dyn Catalogue) -> Result<(), String> {
     s.unit = match worldbank_main(s, catalogue)? {
         Some(meta) => meta.unit.map(|u| u.code).ok_or_else(|| format!("main {} has no registered unit", s.main))?,
-        None => one_code(&s.dims, "unit").ok_or_else(|| format!("main {} has no single unit", s.main))?,
+        None => match next_pack::carried_unit(&s.dims).map_err(|e| format!("main {}: {e}", s.main))? {
+            Some(code) => code.to_string(),
+            None => one_code(&s.dims, "unit").ok_or_else(|| format!("main {} has no single unit", s.main))?,
+        },
     };
     Ok(())
 }
@@ -2766,13 +2771,15 @@ fn measure_of(
         Some(unit) => (Some(unit.code.clone()), Some(unit.label.clone()), unit.kind),
         None => {
             let unit_code = unit_code(table);
-            let unit_label = unit_code.as_ref().and_then(|code| {
-                let (_, codes) = meta.as_ref()?.dims.iter().find(|(dim, _)| dim == "unit")?;
-                codes
-                    .iter()
-                    .find(|(c, _)| c == code)
-                    .map(|(_, label)| label.clone())
-            });
+            // a code carried in another dimension (EUR_KWH) is no code of the table's unit dimension: its label is the
+            // unit registry's
+            let unit_label = unit_code
+                .as_ref()
+                .and_then(|code| {
+                    let (_, codes) = meta.as_ref()?.dims.iter().find(|(dim, _)| dim == "unit")?;
+                    codes.iter().find(|(c, _)| c == code).map(|(_, label)| label.clone())
+                })
+                .or_else(|| unit_code.as_deref().and_then(next_pack::unit_label_en).map(str::to_string));
             let kind = unit_code.as_deref().and_then(next_pack::measure_kind);
             (unit_code, unit_label, kind)
         }
@@ -2883,19 +2890,25 @@ fn maps_a_ratio(table: &Prepared) -> bool {
         .is_some_and(|k| matches!(k, "share" | "rate" | "index"))
 }
 
-/// The one unit code the table was fetched in (its `unit` filter); None when the fetch did not fix one unit.
+/// The one unit code the table was fetched in: the code its fixed currency or indicator carries (next_pack::carried_unit,
+/// as one_unit reads it), else its `unit` filter; None when the fetch did not fix one unit or the carried codes have no row.
 fn unit_code(table: &Prepared) -> Option<String> {
-    table
+    let fixed: BTreeMap<String, BTreeSet<String>> = table
         .args
         .get("filters")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
-        .find(|f| f["dimension"] == "unit")
-        .and_then(|f| f["values"].as_array())
-        .filter(|values| values.len() == 1)
-        .and_then(|values| values[0].as_str())
-        .map(str::to_string)
+        .filter_map(|f| {
+            let codes: BTreeSet<String> = f["values"].as_array()?.iter().filter_map(|v| v.as_str().map(str::to_string)).collect();
+            Some((f["dimension"].as_str()?.to_string(), codes))
+        })
+        .collect();
+    match next_pack::carried_unit(&fixed) {
+        Ok(Some(code)) => Some(code.to_string()),
+        Ok(None) => fixed.get("unit").filter(|values| values.len() == 1).and_then(|values| values.first().cloned()),
+        Err(_) => None,
+    }
 }
 
 /// The fourth ask: the drafted fields reworded once. Refused in every round, it does not stop the run (the data is in and
@@ -6200,6 +6213,39 @@ mod tests {
         for r in Hubs.recipes().iter().filter(|r| r.name != "column" && r.name != "flow") {
             assert_eq!(shape_of(&r.eats, &[("nrg_pc_204", &main[..])], &Hubs).unwrap_err(), "not this shape: main nrg_pc_204 is not annual", "{}", r.name);
         }
+    }
+
+    /// A main with no unit dimension takes the unit its currency or indicator carries (unit-carriers.tsv): a half-yearly
+    /// minimum wage in EUR reaches the column page in EUR, a yearly count of births in its indicator code changes in NR, and
+    /// a price's currency beside its kilowatt-hour reads EUR_KWH, not the bare quantity unit. A currency or an indicator the
+    /// registry does not map (PPS, NAC, GROW) is still refused by name, as a main with no unit at all is.
+    #[test]
+    fn a_unit_carried_by_a_currency_or_an_indicator_is_read_through_the_registry_and_an_unmapped_one_is_refused() {
+        let (column, change) = (recipe("column"), recipe("change"));
+        let geo: (&str, &[&str]) = ("geo", &["DE", "FR", "SE"]);
+        let wage = ring_rows("earn_mw_cur", &[("freq", "S"), ("currency", "EUR")], geo, &["2025-S2", "2026-S1"]);
+        let shape = shape_of(&column.eats, &[("earn_mw_cur", &wage[..])], &Hubs).unwrap();
+        assert_eq!((shape.unit.as_str(), shape.freq.as_str(), shape.year.as_str()), ("EUR", "S", "2026-S1"));
+        let births = ring_rows("tps00204", &[("freq", "A"), ("indic_de", "LBIRTH_NR")], geo, &["2015", "2025"]);
+        let shape = shape_of(&change.eats, &[("tps00204", &births[..])], &Hubs).unwrap();
+        assert_eq!((shape.unit.as_str(), shape.year.as_str()), ("NR", "2025"));
+        let price = ring_rows("nrg_pc_204", &[("freq", "S"), ("currency", "EUR"), ("unit", "KWH"), ("tax", "I_TAX")], geo, &["2026-S1"]);
+        assert_eq!(shape_of(&column.eats, &[("nrg_pc_204", &price[..])], &Hubs).unwrap().unit, "EUR_KWH");
+        // a unit dimension with no registered carrier beside it is read as before
+        let plain = ring_rows("t", &[("freq", "A"), ("unit", "PC")], geo, &["2025"]);
+        assert_eq!(shape_of(&column.eats, &[("t", &plain[..])], &Hubs).unwrap().unit, "PC");
+        let refused = [
+            (ring_rows("earn_mw_cur", &[("freq", "S"), ("currency", "PPS")], geo, &["2026-S1"]), "currency PPS, which has no row in unit-carriers"),
+            (ring_rows("earn_mw_cur", &[("freq", "S"), ("currency", "NAC")], geo, &["2026-S1"]), "currency NAC, which has no row in unit-carriers"),
+            (ring_rows("nrg_pc_204", &[("freq", "S"), ("currency", "PPS"), ("unit", "KWH")], geo, &["2026-S1"]), "currency,unit PPS,KWH, which has no row"),
+            (ring_rows("demo_gind", &[("freq", "A"), ("indic_de", "GROW")], geo, &["2025"]), "indic_de GROW, which has no row in unit-carriers"),
+        ];
+        for (rows, why) in &refused {
+            let e = shape_of(&column.eats, &[("x", &rows[..])], &Hubs).unwrap_err();
+            assert!(e.starts_with("not this shape: main x: the unit is carried by ") && e.contains(why), "{e}");
+        }
+        let none = ring_rows("t", &[("freq", "A"), ("sex", "T")], geo, &["2025"]);
+        assert_eq!(shape_of(&column.eats, &[("t", &none[..])], &Hubs).unwrap_err(), "not this shape: main t has no single unit");
     }
 
     /// On a monthly main (une_rt_m's shape) the page's period is the latest month that at least LATEST_PERIOD_PCT percent

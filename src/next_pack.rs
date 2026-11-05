@@ -3,6 +3,7 @@
 //! naming its scope. Pure: no tool runs here, and nothing is filled that the run does not hold.
 
 use crate::shape_registry::Axis;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// The story dimension of a candidate kind (story_graph.mjs STORY_DIMENSIONS).
 pub(crate) fn dimension(kind: &str) -> Option<&'static str> {
@@ -122,6 +123,66 @@ pub(crate) fn unit_number_suffix(code: &str) -> Option<&'static str> {
     }
     let row = UNIT_SHORT_ZH.lines().skip(1).find(|l| l.split('\t').next() == Some(code));
     Some(row.and_then(|l| l.trim_end_matches('\r').split('\t').nth(4)).unwrap_or("%"))
+}
+
+/// The catalogue's English label of a unit code, as the unit registry keeps it (its label_en); None for no row or none.
+pub(crate) fn unit_label_en(code: &str) -> Option<&'static str> {
+    let row = UNIT_SHORT_ZH.lines().skip(1).find(|l| l.split('\t').next() == Some(code))?;
+    row.trim_end_matches('\r').split('\t').nth(6).filter(|s| !s.is_empty())
+}
+
+/// The registry of the dimensions a table may carry its unit in when no unit dimension says it all (dims, codes, unit
+/// code, evidence): a currency code, a currency with a quantity unit (a price), or a demography indicator code, each row
+/// mapped to a code of the unit registry (unit-short-zh.tsv). Knowledge group data, read here as a word list; compiled in,
+/// so a broken file fails its test, not a run.
+pub(crate) const UNIT_CARRIERS: &str = include_str!("../runtime/pi/assets/unit-carriers.tsv");
+
+/// The registry's rows as (dimensions, their codes in the same order, unit code).
+fn unit_carrier_rows() -> impl Iterator<Item = (Vec<&'static str>, Vec<&'static str>, &'static str)> {
+    UNIT_CARRIERS.lines().skip(1).filter_map(|line| {
+        let mut p = line.trim_end_matches('\r').split('\t');
+        let (dims, codes, unit) = (p.next()?, p.next()?, p.next()?);
+        Some((dims.split(',').collect(), codes.split(',').collect(), unit))
+    })
+}
+
+/// The unit a table's series carry in another dimension (unit-carriers.tsv), given the codes each dimension of the rows
+/// holds. A set of registered dimensions applies when the rows hold every one of them, it names `unit` exactly when the
+/// rows have a unit dimension, and, naming it, the registry lists the rows' unit code with it (so a price's currency is
+/// read only beside the quantity unit it is registered with). Ok(None) when no set applies: the unit dimension's own code
+/// is the unit, as before. Err, naming what is missing, when a set applies but a dimension of it holds other than one code,
+/// two sets apply, or the codes have no row: a currency or an indicator the registry does not map stays refused.
+pub(crate) fn carried_unit(dims: &BTreeMap<String, BTreeSet<String>>) -> Result<Option<&'static str>, String> {
+    let rows: Vec<_> = unit_carrier_rows().collect();
+    let unit_codes = dims.get("unit");
+    let applies = |set: &[&str]| {
+        set.iter().all(|d| dims.contains_key(*d))
+            && set.contains(&"unit") == unit_codes.is_some()
+            && unit_codes.is_none_or(|held| {
+                let at = set.iter().position(|d| *d == "unit");
+                rows.iter().any(|(s, codes, _)| s.as_slice() == set && at.is_some_and(|i| held.contains(codes[i])))
+            })
+    };
+    let sets: BTreeSet<&Vec<&str>> = rows.iter().map(|(set, ..)| set).filter(|set| applies(set.as_slice())).collect();
+    let set = match sets.into_iter().collect::<Vec<_>>().as_slice() {
+        [] => return Ok(None),
+        [one] => *one,
+        many => {
+            let named: Vec<String> = many.iter().map(|s| s.join(",")).collect();
+            return Err(format!("the unit is carried by two dimension sets: {}", named.join("; ")));
+        }
+    };
+    let mut codes = Vec::new();
+    for d in set {
+        match dims[*d].iter().collect::<Vec<_>>().as_slice() {
+            [one] => codes.push(one.as_str()),
+            held => return Err(format!("the unit is carried by {d}, which holds {} codes, not one", held.len())),
+        }
+    }
+    rows.iter()
+        .find(|(s, c, _)| s == set && *c == codes)
+        .map(|(.., unit)| Some(*unit))
+        .ok_or_else(|| format!("the unit is carried by {} {}, which has no row in unit-carriers", set.join(","), codes.join(",")))
 }
 
 #[cfg(test)]
@@ -267,6 +328,50 @@ mod tests {
         assert_eq!(unit_short_zh("PC_POP"), Some("%"));
         let additive = |code: &str| UNIT_SHORT_ZH.lines().find(|l| l.starts_with(&format!("{code}\t"))).and_then(|l| l.split('\t').nth(3));
         assert_eq!([additive("PER"), additive("KTOE"), additive("PC"), additive("TCO2E_HAB"), additive("NR")], [Some("yes"), Some("yes"), Some("no"), Some("no"), Some("yes")]);
+    }
+
+    /// The unit-carriers registry: each row's dimensions and codes pair up, no pair twice, and every unit code it maps to
+    /// has a unit-short-zh row, so a carried unit prints as the unit table's own form. Read on four shapes (a currency
+    /// alone, a currency beside a quantity unit, an indicator code, a plain unit dimension), and an unmapped currency or
+    /// indicator, a currency that varies, or a unit dimension with no carrier beside it is named, never guessed.
+    #[test]
+    fn a_carried_unit_is_read_from_the_registry_and_an_unmapped_code_is_refused() {
+        let mut rows = UNIT_CARRIERS.lines();
+        assert_eq!(rows.next(), Some("dims\tcodes\tunit_code\tevidence"));
+        let mut seen = BTreeSet::new();
+        for row in rows {
+            let p: Vec<&str> = row.split('\t').collect();
+            assert_eq!(p.len(), 4, "{row}");
+            assert_eq!(p[0].split(',').count(), p[1].split(',').count(), "{row}: dims and codes pair up");
+            assert!(!p[3].is_empty(), "{row}: no evidence");
+            assert!(unit_short(p[2]).is_some(), "{row}: unit {} has no unit-short-zh row", p[2]);
+            assert!(seen.insert((p[0], p[1])), "{row}: twice");
+        }
+        fn dims(held: &[(&str, &[&str])]) -> BTreeMap<String, BTreeSet<String>> {
+            held.iter().map(|(d, codes)| (d.to_string(), codes.iter().map(|c| c.to_string()).collect())).collect()
+        }
+        fn no(held: &[(&str, &[&str])]) -> String {
+            carried_unit(&dims(held)).unwrap_err()
+        }
+        let geo: (&str, &[&str]) = ("geo", &["DE", "FR"]);
+        assert_eq!(carried_unit(&dims(&[geo, ("freq", &["S"]), ("currency", &["EUR"])])), Ok(Some("EUR")));
+        assert_eq!(carried_unit(&dims(&[geo, ("currency", &["EUR"]), ("unit", &["KWH"]), ("tax", &["I_TAX"])])), Ok(Some("EUR_KWH")));
+        assert_eq!(carried_unit(&dims(&[geo, ("indic_de", &["NATGROWRT"])])), Ok(Some("P_THAB")));
+        assert_eq!(carried_unit(&dims(&[geo, ("indic_de", &["LBIRTH"])])), Ok(Some("NR")));
+        assert_eq!(carried_unit(&dims(&[geo, ("indic_de", &["PC_Y65_MAX"])])), Ok(Some("PC")));
+        // a plain unit dimension, and a currency beside a unit the registry pairs with none (an exchange rate), read as before
+        assert_eq!(carried_unit(&dims(&[geo, ("unit", &["GWH"])])), Ok(None));
+        assert_eq!(carried_unit(&dims(&[("currency", &["USD"]), ("unit", &["AVG"])])), Ok(None));
+        assert_eq!(carried_unit(&dims(&[geo, ("indic_de", &["LBIRTH"]), ("unit", &["NR"])])), Ok(None));
+        assert_eq!(no(&[geo, ("currency", &["PPS"])]), "the unit is carried by currency PPS, which has no row in unit-carriers");
+        assert_eq!(no(&[geo, ("currency", &["NAC"])]), "the unit is carried by currency NAC, which has no row in unit-carriers");
+        assert_eq!(no(&[geo, ("currency", &["PPS"]), ("unit", &["KWH"])]), "the unit is carried by currency,unit PPS,KWH, which has no row in unit-carriers");
+        assert_eq!(no(&[geo, ("indic_de", &["GROW"])]), "the unit is carried by indic_de GROW, which has no row in unit-carriers");
+        assert_eq!(no(&[geo, ("currency", &["EUR", "NAC"])]), "the unit is carried by currency, which holds 2 codes, not one");
+        assert_eq!(no(&[geo, ("currency", &["EUR"]), ("indic_de", &["LBIRTH"])]), "the unit is carried by two dimension sets: currency; indic_de");
+        // the carried code prints as the registry's forms; its label is the catalogue's
+        assert_eq!((unit_short("EUR_KWH"), unit_label_en("EUR_KWH")), (Some("欧元/千瓦时"), Some("Euro per kilowatt-hour")));
+        assert_eq!(unit_label_en("XYZ"), None);
     }
 
     #[test]

@@ -43,6 +43,10 @@ NOUN = {
     "enterprises": "家企业", "households": "户",
 }
 PER = {"per inhabitant": "/人", "per capita": "/人", "per person": "/人"}
+# The one unit of a quantity a price is given per (lower-case label words -> the Chinese form after "/").
+PER_UNIT = {
+    "kilowatt-hour": "千瓦时", "gigajoule": "吉焦", "tonne": "吨", "kilogram": "千克", "hectare": "公顷",
+}
 # A rate of change's comparison basis, read only where the label says it outright (lower-case label -> the words the unit
 # line prints in brackets after "%"); a period count with no stated frequency (t/t-12, t/t-5) says no basis, so is unread.
 BASIS = [
@@ -86,6 +90,12 @@ def read_label(label):
         return "%", "pct_family", "no", "%"
     if low == "number" or re.fullmatch(r"number" + QUALIFIER, low):
         return "数量", "count", "yes", ""
+    # a price: euro per one unit of a quantity ("Euro per kilowatt-hour"); a scaled quantity ("per thousand
+    # kilowatt-hour") or one PER_UNIT does not name gets no row
+    m = re.fullmatch(r"euro per (.+?)" + QUALIFIER, low)
+    if m and m.group(1) in PER_UNIT:
+        short = "欧元/" + PER_UNIT[m.group(1)]
+        return short, "price", "no", short
     m = re.fullmatch(r"(?:(thousands?|millions?|billions?)(?: of)? )?(.+?)( per inhabitant| per capita| per person)?" + QUALIFIER, low)
     if m and m.group(2) in NOUN:
         noun = NOUN[m.group(2)]

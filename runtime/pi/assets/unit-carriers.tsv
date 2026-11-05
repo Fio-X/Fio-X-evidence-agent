@@ -1,0 +1,20 @@
+dims	codes	unit_code	evidence
+currency	EUR	EUR	currency codelist EUR "Euro"; unit codelist EUR "Euro"
+currency	MIO_EUR	MIO_EUR	currency codelist MIO_EUR; unit codelist MIO_EUR "Million euro"
+currency,unit	EUR,KWH	EUR_KWH	unit codelist EUR_KWH "Euro per kilowatt-hour"; nrg_pc tables give the price in currency EUR per unit KWH
+currency,unit	EUR,GJ_GCV	EUR_GJ	unit codelist EUR_GJ "Euro per gigajoule"; nrg_pc tables give the price in currency EUR per unit GJ_GCV (gigajoule, gross calorific value)
+indic_de	LBIRTH	NR	indic_de "Live births - total": a count of births (Eurostat demo_gind metadata: number)
+indic_de	LBIRTH_NR	NR	indic_de "Live births - number"
+indic_de	DEATH	NR	indic_de "Deaths - total": a count (Eurostat demo_gind metadata: number)
+indic_de	NATGROW	NR	indic_de "Natural change of population": live births minus deaths, a count (Eurostat demo_gind metadata: number)
+indic_de	JAN	NR	indic_de "Population on 1 January - total": a count of persons (Eurostat demo_gind metadata: number)
+indic_de	GBIRTHRT	P_THAB	indic_de "Crude birth rate": per 1000 persons (Eurostat demo_gind metadata: crude rates per 1000 persons)
+indic_de	GBIRTHRT_THSP	P_THAB	indic_de "Crude birth rate - per thousand persons"
+indic_de	GDEATHRT	P_THAB	indic_de "Crude death rate": per 1000 persons (Eurostat demo_gind metadata: crude rates per 1000 persons)
+indic_de	NATGROWRT	P_THAB	indic_de "Crude rate of natural change of population": per 1000 persons (Eurostat demo_gind metadata: crude rates per 1000 persons)
+indic_de	GROWRT	P_THAB	indic_de "Crude rate of total population change": per 1000 persons (Eurostat demo_gind metadata: crude rates per 1000 persons)
+indic_de	CNMIGRATRT	P_THAB	indic_de "Crude rate of net migration plus statistical adjustment": per 1000 persons (Eurostat demo_gind metadata: crude rates per 1000 persons)
+indic_de	PC_Y0_14	PC	indic_de "Proportion of population aged 0-14 years": a percentage of the population
+indic_de	PC_Y15_64	PC	indic_de "Proportion of population aged 15-64 years": a percentage of the population
+indic_de	PC_Y65_MAX	PC	indic_de "Proportion of population aged 65 years and more": a percentage of the population
+indic_de	PC_Y80_MAX	PC	indic_de "Proportion of population aged 80 years and more": a percentage of the population

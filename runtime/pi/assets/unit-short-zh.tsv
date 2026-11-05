@@ -222,7 +222,12 @@ TCO2E_HAB	吨二氧化碳当量/人	per_capita	no	吨二氧化碳当量/人	revi
 YR	年	time	no	年	reviewed	Year	
 BN_EUR	十亿欧元	amount	yes	十亿欧元	generated	Billion euro	
 EUR	欧元	amount	yes	欧元	generated	Euro	
+EUR_GJ	欧元/吉焦	price	no	欧元/吉焦	generated	Euro per gigajoule	
+EUR_HA	欧元/公顷	price	no	欧元/公顷	generated	Euro per hectare	
 EUR_HAB	欧元/人	per_capita	no	欧元/人	generated	Euro per inhabitant	
+EUR_KG	欧元/千克	price	no	欧元/千克	generated	Euro per kilogram	
+EUR_KWH	欧元/千瓦时	price	no	欧元/千瓦时	generated	Euro per kilowatt-hour	
+EUR_T	欧元/吨	price	no	欧元/吨	generated	Euro per tonne	
 HICP2015	指数(2015=100)	index_base	no		generated	Harmonized consumer price index, 2015=100	
 HICP2025	指数(2025=100)	index_base	no		generated	Harmonized consumer price index, 2025=100	
 I10_A_AVG	指数(2010=100)	index_base	no		generated	Annual average index, 2010=100	
