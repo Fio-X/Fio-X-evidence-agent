@@ -5948,10 +5948,22 @@ pub fn content_problems(spec: &J, inp: &J, ext: &[String], reg: &J) -> (Vec<Stri
 /// prefixes starts, or else named by the leaf's line that this half cannot be answered. The leaf prints that line for each
 /// quantity of its own spec with no offered table (inp.leaf_asked, scmp.py unanswered), and the line stands only when the
 /// catalogue's record offered no table for it either: whether a half is unanswerable is the program's call from the
-/// offered tables, never the model's. The leaf's record must be the catalogue's.
+/// offered tables, never the model's. The leaf's record must be the catalogue's. A fact the page prints draws the tables it
+/// is computed from as well (a change page's bars print val1 - val0 and draw no row of their own; C1 recomputes it from
+/// those rows): a count of places (op n) draws none.
 fn asked_problems(spec: &J, inp: &J) -> Vec<String> {
     let strs = |v: &J| v.arr().iter().map(st).collect::<Vec<_>>();
-    let drawn = spec.g("record").g("drawn").arr().iter().map(|d| st(d.g("table"))).collect::<Vec<_>>();
+    let mut drawn = spec.g("record").g("drawn").arr().iter().map(|d| st(d.g("table"))).collect::<Vec<_>>();
+    let facts = spec.g("facts").g("facts");
+    let page = J::Obj(spec.obj().iter().filter(|(k, _)| k != "facts").cloned().collect());
+    for k in printed_keys(&page, facts) {
+        let base = match k.strip_suffix(".*") {
+            Some(f) => f,
+            None if facts.get(&k).is_some() => k.as_str(),
+            None => k.rsplit_once('.').map_or(k.as_str(), |(f, _)| f),
+        };
+        fact_tables(facts, base, &mut drawn, 0);
+    }
     let (asked, leaf) = (inp.g("asked").arr(), inp.g("leaf_asked").arr());
     let lined: Vec<String> = leaf.iter().filter(|a| a.g("offered").arr().is_empty()).map(|a| st(a.g("id"))).collect();
     let mut out = Vec::new();
@@ -5974,6 +5986,23 @@ fn asked_problems(spec: &J, inp: &J) -> Vec<String> {
         out.push(format!("C6: the leaf's asked {} is not the catalogue's record", a.repr()));
     }
     out
+}
+
+/// The tables a fact is computed from: its own table, or those of the facts it is made of (a and b of an op), a count of
+/// places (op n) none; depth-bounded, so a fact naming itself ends.
+fn fact_tables(facts: &J, key: &str, out: &mut Vec<String>, depth: usize) {
+    let Some(q) = facts.get(key) else { return };
+    if depth > 8 || q.g("op").s() == Some("n") {
+        return;
+    }
+    if let Some(t) = q.g("table").s() {
+        out.push(t.to_string());
+    }
+    for part in ["a", "b"] {
+        if let Some(k) = q.g(part).s() {
+            fact_tables(facts, k, out, depth + 1);
+        }
+    }
 }
 
 // ================================================================================================================
@@ -7293,6 +7322,28 @@ mod tests {
         assert_eq!(off.len(), 2, "{off:?}");
         assert!(off[0].contains("its unanswered line does not stand, as SP.POP.65UP.TO.ZS@2 was offered for it"), "{off:?}");
         assert!(off[1].starts_with("C6: the leaf's asked ") && off[1].ends_with("is not the catalogue's record"), "{off:?}");
+        // a change page (user 11-05 17:1x, C): bars print val1 - val0 from the asked table and draw no row of their own; the
+        // printed change draws its table, on a Eurostat shape and a World Bank shape alike; a page that prints only a count of
+        // places, or a change from another table, is refused as before
+        let ghg = asked_rec("co2", &["EN.GHG.", "env_air_gge"], &["env_air_gge", "sdg_13_10"]);
+        for table in ["sdg_13_10", "EN.GHG.CO2.PC.CE.AR5@2"] {
+            let change = |table: &str, printed: &str| {
+                let (mut spec, inp) = asked_page(&[], Some(vec![ghg.clone()]), Some(vec![ghg.clone()]));
+                let fact = |t: &str, time: &str| J::obj_of(vec![("each", J::str("geo")), ("table", J::str(t)), ("time", J::str(time))]);
+                let facts = J::obj_of(vec![
+                    ("val0", fact(table, "2015")),
+                    ("val1", fact(table, "2023")),
+                    ("chg", J::obj_of(vec![("op", J::str("minus")), ("each", J::str("geo")), ("a", J::str("val0")), ("b", J::str("val1"))])),
+                    ("drawn", J::obj_of(vec![("op", J::str("n")), ("table", J::str(table)), ("time", J::str("2023"))])),
+                ]);
+                spec.set("facts", J::obj_of(vec![("facts", facts)]));
+                spec.set("body", J::obj_of(vec![("kind", J::str("Text")), ("runs", J::Arr(vec![J::obj_of(vec![("src", J::str(printed))])]))]));
+                asked_problems(&spec, &inp)
+            };
+            assert_eq!(change(table, "fact:chg.DE"), Vec::<String>::new(), "{table}");
+            assert_eq!(change(table, "fact:drawn").len(), 1, "{table}: a count of places draws nothing");
+            assert_eq!(change("sdg_07_40", "fact:chg.DE").len(), 1, "a change from another table");
+        }
         // no asked field, an empty one, or one quantity drawn: as before
         let (spec, inp) = asked_page(&[("bars", "sdg_07_40")], None, None);
         assert_eq!(asked_problems(&spec, &inp), Vec::<String>::new());
