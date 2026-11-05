@@ -251,7 +251,7 @@ EN.GHG.CH4.MT.CE.AR5	Methane (CH4) emissions (total) excluding LULUCF (Mt CO2e)	
 EN.GHG.CH4.PI.MT.CE.AR5	Methane (CH4) emissions from Power Industry (Energy) (Mt CO2e)	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
 EN.GHG.CH4.TR.MT.CE.AR5	Methane (CH4) emissions from Transport (Energy) (Mt CO2e)	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
 EN.GHG.CH4.WA.MT.CE.AR5	Methane (CH4) emissions from Waste (Mt CO2e)	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
-EN.GHG.CH4.ZG.AR5	Methane (CH4) emissions (total) excluding LULUCF (% change from 1990)			change	pct_change_from
+EN.GHG.CH4.ZG.AR5	Methane (CH4) emissions (total) excluding LULUCF (% change from 1990)	PCH_1990	Percentage change from 1990	change	pct_change_from
 EN.GHG.CO2.AG.MT.CE.AR5	Carbon dioxide (CO2) emissions from Agriculture (Mt CO2e)	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
 EN.GHG.CO2.BU.MT.CE.AR5	Carbon dioxide (CO2) emissions from Building (Energy) (Mt CO2e)	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
 EN.GHG.CO2.FE.MT.CE.AR5	Carbon dioxide (CO2) emissions from Fugitive Emissions (Energy) (Mt CO2e)	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
@@ -269,7 +269,7 @@ EN.GHG.CO2.RT.GDP.KD	Carbon intensity of GDP (kg CO2e per constant 2015 US$ of G
 EN.GHG.CO2.RT.GDP.PP.KD	Carbon intensity of GDP (kg CO2e per 2021 PPP $ of GDP)			rate	ratio_per
 EN.GHG.CO2.TR.MT.CE.AR5	Carbon dioxide (CO2) emissions from Transport (Energy) (Mt CO2e)	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
 EN.GHG.CO2.WA.MT.CE.AR5	Carbon dioxide (CO2) emissions from Waste (Mt CO2e)	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
-EN.GHG.CO2.ZG.AR5	Carbon dioxide (CO2) emissions (total) excluding LULUCF (% change from 1990)			change	pct_change_from
+EN.GHG.CO2.ZG.AR5	Carbon dioxide (CO2) emissions (total) excluding LULUCF (% change from 1990)	PCH_1990	Percentage change from 1990	change	pct_change_from
 EN.GHG.FGAS.IP.MT.CE.AR5	F-gases emissions from Industrial Processes (Mt CO2e)	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
 EN.GHG.N2O.AG.MT.CE.AR5	Nitrous oxide (N2O) emissions from Agriculture (Mt CO2e)	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
 EN.GHG.N2O.BU.MT.CE.AR5	Nitrous oxide (N2O) emissions from Building (Energy) (Mt CO2e)	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
@@ -280,8 +280,8 @@ EN.GHG.N2O.MT.CE.AR5	Nitrous oxide (N2O) emissions (total) excluding LULUCF (Mt 
 EN.GHG.N2O.PI.MT.CE.AR5	Nitrous oxide (N2O) emissions from Power Industry (Energy) (Mt CO2e)	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
 EN.GHG.N2O.TR.MT.CE.AR5	Nitrous oxide (N2O) emissions from Transport (Energy) (Mt CO2e)	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
 EN.GHG.N2O.WA.MT.CE.AR5	Nitrous oxide (N2O) emissions from Waste (Mt CO2e)	MTCO2E	Million tonnes of CO2 equivalent	level	mt_co2e
-EN.GHG.N2O.ZG.AR5	Nitrous oxide (N2O) emissions (total) excluding LULUCF (% change from 1990)			change	pct_change_from
-EN.GHG.TOT.ZG.AR5	Total greenhouse gas emissions excluding LULUCF (% change from 1990)			change	pct_change_from
+EN.GHG.N2O.ZG.AR5	Nitrous oxide (N2O) emissions (total) excluding LULUCF (% change from 1990)	PCH_1990	Percentage change from 1990	change	pct_change_from
+EN.GHG.TOT.ZG.AR5	Total greenhouse gas emissions excluding LULUCF (% change from 1990)	PCH_1990	Percentage change from 1990	change	pct_change_from
 EN.HPT.THRD.NO	Plant species (higher), threatened	NR	Number	count	name_counts
 EN.MAM.THRD.NO	Mammal species, threatened	NR	Number	count	name_counts
 EN.POP.DNST	Population density (people per sq. km of land area)	PER_KM2	Persons per square kilometre	rate	density

@@ -56,6 +56,8 @@ BASIS = [
     (r"m/m-24\b", "较两年前同月"),
 ]
 SAME_MONTH = r"same month in (\d{4})"
+# A change against one named year (a World Bank "% change from 1990"), the year read from the label, never typed.
+FROM_YEAR = r"\bchange from (\d{4})\b"
 
 
 def basis_of(label):
@@ -64,6 +66,9 @@ def basis_of(label):
     m = re.search(SAME_MONTH, low)
     if m:
         return f"较{m.group(1)}年同月"
+    m = re.search(FROM_YEAR, low)
+    if m:
+        return f"较{m.group(1)}年"
     for pat, words in BASIS:
         if re.search(pat, low):
             return words

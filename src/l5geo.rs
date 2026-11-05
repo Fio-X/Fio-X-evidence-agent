@@ -2257,12 +2257,14 @@ mod tests {
         for id in ["SP.POP.65UP.FE.ZS", "SP.POP.65UP.MA.ZS@2"] {
             assert_eq!(unit(id), Some(("PC".into(), Some("share"))), "{id}");
         }
-        // A percentage change or growth rate stays codeless: PC would print it as a level.
+        // A percentage change against a year its unit text names ("% change from 1990") takes that change's own code,
+        // whose unit line prints the basis (unit-short-zh.tsv line_zh), never PC: s6's main and its three siblings.
+        for id in ["EN.GHG.CH4.ZG.AR5", "EN.GHG.CO2.ZG.AR5", "EN.GHG.N2O.ZG.AR5", "EN.GHG.TOT.ZG.AR5@2"] {
+            assert_eq!(unit(id), Some(("PCH_1990".into(), Some("change"))), "{id}");
+        }
+        // A percentage change or growth rate whose unit text states no basis the registry reads stays codeless: PC would
+        // print it as a level.
         for id in [
-            "EN.GHG.CH4.ZG.AR5",
-            "EN.GHG.CO2.ZG.AR5",
-            "EN.GHG.N2O.ZG.AR5",
-            "EN.GHG.TOT.ZG.AR5",
             "FM.AST.CGOV.ZG.M3",
             "FM.AST.DOMO.ZG.M3",
             "FM.AST.PRVT.ZG.M3",

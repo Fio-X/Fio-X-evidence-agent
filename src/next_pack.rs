@@ -282,6 +282,16 @@ mod tests {
         assert_eq!((unit_line_form("PC"), unit_line_form("I15"), unit_line_form("XYZ")), (Some("%"), Some("指数(2015=100)"), None));
         // a rate of change whose label states no basis has no row (Annual average rate of change: against what is unsaid)
         assert_eq!(unit_short("RCH_A_AVG"), None);
+        // a change against a year the label names prints that year as its basis (World Bank "% change from 1990", s6)
+        assert_eq!((unit_short("PCH_1990"), unit_number_suffix("PCH_1990"), unit_line_form("PCH_1990")), (Some("%"), Some("%"), Some("%（较1990年）")));
+        // every World Bank change registered with a code prints a basis on its unit line: a change whose basis no rule
+        // reads has no code, so the shape gate refuses it
+        for row in include_str!("../runtime/pi/assets/wb-units.tsv").lines().skip(1) {
+            let p: Vec<&str> = row.split('\t').collect();
+            if p[4] == "change" && !p[2].is_empty() {
+                assert_ne!(unit_line_form(p[2]), unit_short(p[2]), "{row}: a registered change with no basis on its line");
+            }
+        }
     }
 
     #[test]

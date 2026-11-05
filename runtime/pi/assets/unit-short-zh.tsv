@@ -250,6 +250,7 @@ MIO_PKM	百万人公里	amount	yes	百万人公里	generated	Millions of passeng
 MIO_T	百万吨	amount	yes	百万吨	generated	Million tonnes	
 MTOE	百万吨油当量	amount	yes	百万吨油当量	generated	Million tonnes of oil equivalent	
 NR	数量	count	yes		generated	Number	
+PCH_1990	%	pct_change	no	%	generated	Percentage change from 1990	%（较1990年）
 PCH_1Y	%	pct_change	no	%	generated	Percentage change (t/t-1)	%（较上期）
 PCH_M1	%	pct_change	no	%	generated	Percentage change m/m-1	%（较上期）
 PCH_M12	%	pct_change	no	%	generated	Percentage change m/m-12	%（同比）
