@@ -2776,6 +2776,7 @@ pub(crate) fn knowledge_call<'a>(
         Ok(Reply::ZhNames { names, missing }) => json!({"names": names, "missing": missing}),
         Ok(Reply::TableZh(name)) => json!({"zh": name}),
         Ok(Reply::Iso3 { iso3, missing }) => json!({"iso3": iso3, "missing": missing}),
+        Ok(Reply::RankAsked(asked)) => json!({"rank_asked": asked}),
         Ok(Reply::HeldProbe { url, .. }) => json!({"url": url}),
         Ok(Reply::Held(held)) => json!({"held": format!("{held:?}")}),
         Ok(Reply::UnitAdditive(additive)) => json!(additive),

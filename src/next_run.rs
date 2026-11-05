@@ -10167,10 +10167,10 @@ mod tests {
         bad["at"] = json!("2023");
         assert!(wb_narrow_again(run, "r", &bad).unwrap_err().contains("not the ranking of its rows"));
         // the narrowed file with one more economy's row, its sha256 renamed to match
-        let narrowed = std::fs::read_to_string(run.join("data/narrowed.csv")).unwrap();
+        let narrowed_csv = std::fs::read_to_string(run.join("data/narrowed.csv")).unwrap();
         let full = std::fs::read_to_string(run.join("data/full.csv")).unwrap();
         let extra = full.lines().find(|l| l.starts_with("ZZA,")).unwrap();
-        let more = format!("{narrowed}{extra}\n");
+        let more = format!("{narrowed_csv}{extra}\n");
         std::fs::write(run.join("data/more.csv"), &more).unwrap();
         let mut bad = good.clone();
         bad["file"] = json!("data/more.csv");
