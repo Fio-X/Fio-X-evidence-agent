@@ -218,6 +218,9 @@ pub struct Catalog {
     regional: HashSet<String>,
     /// Chinese place names, longest first, with their iso2 code, REGION or NOT_PLACE.
     zh_names: Vec<(Vec<char>, String)>,
+    /// The country groups of place-names-zh.json, members kept only when a World Bank country; a group word in zh_names
+    /// stands for GROUP and the group id.
+    groups: Vec<GroupZh>,
     /// What the fetch parameters are filled from (`table`): the metabase lines whole, scanned for one table when it is
     /// picked; member labels by dim in codelist order; the TOC's last data year of each Eurostat table; the World Bank's
     /// countries (aggregates left out) as (iso2, id).
@@ -350,6 +353,77 @@ fn table_notes() -> &'static [TableNote] {
             .expect("table-notes-en.json lists tables")
             .tables
     })
+}
+
+/// Chinese place words the World Bank's Chinese country list does not hold (runtime/pi/assets/place-names-zh.json),
+/// compiled in so a broken file fails its test, not a run: the short names of countries listed by their long form (韩国
+/// for 大韩民国), and country groups (金砖国家, 东盟, 七国集团, 二十国集团) as their members by year, each with a source.
+const PLACE_NAMES_ZH: &str = include_str!("../runtime/pi/assets/place-names-zh.json");
+
+/// One short name of place-names-zh.json (its `source` is read only by the tests).
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+struct AliasZh {
+    name: String,
+    iso2: String,
+}
+
+/// One country group of place-names-zh.json: its Chinese words and its members by period.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+struct GroupZh {
+    id: String,
+    names: Vec<String>,
+    /// In year order; the last one is the latest list.
+    periods: Vec<GroupPeriod>,
+}
+
+/// The members of a group from one year to another (`to` None: still current), and where the list is published.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+struct GroupPeriod {
+    from: i32,
+    to: Option<i32>,
+    members: Vec<String>,
+    source: String,
+}
+
+/// The registered short names and groups, read once.
+fn place_names_zh() -> &'static (Vec<AliasZh>, Vec<GroupZh>) {
+    static NAMES: OnceLock<(Vec<AliasZh>, Vec<GroupZh>)> = OnceLock::new();
+    NAMES.get_or_init(|| {
+        #[derive(Deserialize)]
+        struct File {
+            aliases: Vec<AliasZh>,
+            groups: Vec<GroupZh>,
+        }
+        let f = serde_json::from_str::<File>(PLACE_NAMES_ZH).expect("place-names-zh.json lists aliases and groups");
+        (f.aliases, f.groups)
+    })
+}
+
+/// The code a group word stands for in the Chinese name list: this prefix and the group id.
+const GROUP: &str = "GROUP:";
+
+/// The year a Chinese question names (the last four-digit year 1900-2100 in it, standing alone), or None.
+fn question_year(text: &str) -> Option<i32> {
+    let chars: Vec<char> = text.chars().collect();
+    let mut year = None;
+    let mut i = 0;
+    while i < chars.len() {
+        if !chars[i].is_ascii_digit() {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < chars.len() && chars[i].is_ascii_digit() {
+            i += 1;
+        }
+        if i - start == 4 {
+            let y: i32 = chars[start..i].iter().collect::<String>().parse().unwrap_or(0);
+            if (1900..=2100).contains(&y) {
+                year = Some(y);
+            }
+        }
+    }
+    year
 }
 
 /// The quantities a Chinese question can ask for (runtime/pi/assets/measure-families.json), compiled in so a broken file
@@ -1084,6 +1158,23 @@ impl Catalog {
                 put(field(x, &["name"]), field(x, &["iso2Code"]));
             }
         }
+        let (aliases, groups_zh) = place_names_zh();
+        for a in aliases {
+            if countries.contains(&a.iso2) {
+                put(&a.name, &a.iso2);
+            }
+        }
+        let mut groups: Vec<GroupZh> = Vec::new();
+        for g in groups_zh {
+            let mut g = g.clone();
+            for p in &mut g.periods {
+                p.members.retain(|c| countries.contains(c));
+            }
+            for n in &g.names {
+                put(n, &format!("{GROUP}{}", g.id));
+            }
+            groups.push(g);
+        }
         for w in REGION_WORDS_ZH {
             put(w, REGION);
         }
@@ -1301,6 +1392,7 @@ impl Catalog {
             europe,
             regional,
             zh_names,
+            groups,
             metabase: raw.metabase.clone(),
             labels,
             end_year,
@@ -1438,9 +1530,31 @@ impl Catalog {
             .collect()
     }
 
-    /// Place names in the Chinese question, longest name first at each position; a NOT_PLACE word is skipped whole.
+    /// The members of a registered group in this year (the period holding it; None for a year it did not exist), or its
+    /// latest list when no year is given.
+    fn group_period(&self, id: &str, year: Option<i32>) -> Option<&GroupPeriod> {
+        let g = self.groups.iter().find(|g| g.id == id)?;
+        match year {
+            None => g.periods.last(),
+            Some(y) => g
+                .periods
+                .iter()
+                .find(|p| p.from <= y && p.to.is_none_or(|t| y <= t)),
+        }
+    }
+
+    /// Place names in the Chinese question, longest name first at each position; a NOT_PLACE word is skipped whole. A
+    /// group word gives one entry per member, under the group word, for the year the question names (latest when none).
+    /// A name with an ASCII letter or digit at an end (G7) is read only when the text there goes on with no other one (not
+    /// in G77).
     fn places_zh(&self, text: &str) -> Vec<(String, String)> {
         let chars: Vec<char> = text.chars().collect();
+        let year = question_year(text);
+        let alnum = |c: Option<&char>| c.is_some_and(|c| c.is_ascii_alphanumeric());
+        let bounded = |i: usize, n: &[char]| {
+            !(alnum(n.first()) && i > 0 && alnum(chars.get(i - 1)))
+                && !(alnum(n.last()) && alnum(chars.get(i + n.len())))
+        };
         let mut found = Vec::new();
         let mut i = 0;
         let among = |i: usize| {
@@ -1459,10 +1573,15 @@ impl Catalog {
             match self
                 .zh_names
                 .iter()
-                .find(|(n, _)| chars[i..].starts_with(n))
+                .find(|(n, _)| chars[i..].starts_with(n) && bounded(i, n))
             {
                 Some((n, code)) => {
-                    if code != NOT_PLACE {
+                    if let Some(id) = code.strip_prefix(GROUP) {
+                        let name: String = n.iter().collect();
+                        for c in self.group_period(id, year).map_or(&[][..], |p| &p.members[..]) {
+                            found.push((name.clone(), c.clone()));
+                        }
+                    } else if code != NOT_PLACE {
                         found.push((n.iter().collect(), code.clone()));
                     }
                     i += n.len();
@@ -1480,10 +1599,18 @@ impl Catalog {
             && found
                 .iter()
                 .all(|(_, c)| c == REGION || self.europe.contains(c));
-        (
-            if europe { Scope::Europe } else { Scope::Beyond },
-            found.into_iter().map(|(n, _)| n).collect(),
-        )
+        let mut names: Vec<String> = Vec::new();
+        for (n, _) in found {
+            // a group word stands for each of its members; it is named once
+            let group = self
+                .zh_names
+                .iter()
+                .any(|(w, c)| c.starts_with(GROUP) && w.iter().copied().eq(n.chars()));
+            if !(group && names.last() == Some(&n)) {
+                names.push(n);
+            }
+        }
+        (if europe { Scope::Europe } else { Scope::Beyond }, names)
     }
 
     /// A level below the country asked for in a named country that has no regions in either catalog. Judged from the
@@ -2028,6 +2155,119 @@ mod tests {
             ]]),
             nuts: "\u{feff}CNTR_CODE,NUTS_ID\r\nMT,MT00\r\nEL,EL30\r\nDE,DE1\r\n".into(),
         }
+    }
+
+    /// `small` with the other members of the registered groups as World Bank countries.
+    fn world() -> Catalog {
+        let mut raw = small_raw();
+        let more = [
+            "RU", "ID", "MY", "PH", "SG", "TH", "BN", "VN", "LA", "MM", "KH", "TL", "GB", "IT", "EG", "ET", "IR", "AE",
+            "AR", "SA", "TR",
+        ];
+        let list = raw.wb_countries[1].as_array_mut().unwrap();
+        for c in more {
+            list.push(json!({"id": c, "iso2Code": c, "name": format!("Land {c}"), "region": {"value": "Elsewhere"}}));
+        }
+        Catalog::from_raw(&raw)
+    }
+
+    fn countries(c: &Catalog, q: &str) -> Vec<String> {
+        c.places(q)
+            .into_iter()
+            .map(|p| match p {
+                Place::Country(c) => c,
+                Place::Region => REGION.to_string(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_short_country_name_reads_as_its_country() {
+        let c = world();
+        assert_eq!(countries(&c, "中国、日本、韩国人口老龄化的速度"), ["CN", "JP", "KR"]);
+        assert_eq!(countries(&c, "2020年韩国的人均GDP"), ["KR"]);
+        assert_eq!(countries(&c, "俄罗斯和伊朗的石油出口"), ["RU", "IR"]);
+        assert_eq!(countries(&c, "埃及人口"), ["EG"]);
+        assert_eq!(c.scope("韩国人口").1, ["韩国"]);
+        // a name not in the catalogue's countries is not read
+        assert!(countries(&small(), "叙利亚人口").is_empty());
+    }
+
+    #[test]
+    fn a_group_reads_as_its_members_in_the_year_asked_and_the_latest_with_none() {
+        let c = world();
+        let brics = |q: &str| countries(&c, q);
+        assert_eq!(brics("2010年金砖国家的GDP"), ["BR", "RU", "IN", "CN"]);
+        assert_eq!(brics("金砖国家2011年GDP增长率"), ["BR", "RU", "IN", "CN", "ZA"]);
+        assert_eq!(brics("2023年金砖的人口"), ["BR", "RU", "IN", "CN", "ZA"]);
+        assert_eq!(brics("2024年金砖国家人口"), ["BR", "RU", "IN", "CN", "ZA", "EG", "ET", "IR", "AE"]);
+        let latest = ["BR", "RU", "IN", "CN", "ZA", "EG", "ET", "IR", "AE", "ID"];
+        assert_eq!(brics("金砖国家近十年的GDP增长率"), latest);
+        let p = c.group_period("BRICS", None).unwrap();
+        assert_eq!(p.members, latest);
+        assert!(p.source.contains("Indonesia") && p.source.contains("2025"), "{}", p.source);
+        assert!(brics("2000年金砖国家人口").is_empty(), "no BRICS in 2000");
+
+        assert_eq!(
+            countries(&c, "东盟国家人均GDP"),
+            ["ID", "MY", "PH", "SG", "TH", "BN", "VN", "LA", "MM", "KH", "TL"]
+        );
+        assert_eq!(
+            countries(&c, "2020年东盟国家人均GDP"),
+            ["ID", "MY", "PH", "SG", "TH", "BN", "VN", "LA", "MM", "KH"]
+        );
+        let g7 = ["FR", "DE", "IT", "JP", "GB", "US", "CA"];
+        assert_eq!(countries(&c, "七国集团的人均碳排放"), g7);
+        assert_eq!(countries(&c, "2015年G7的人均碳排放"), g7);
+        assert!(countries(&c, "G77的人均碳排放").is_empty(), "G77 is not G7");
+        assert_eq!(countries(&c, "二十国集团的人口").len(), 19);
+        // a group and a country: in question order, the group word named once
+        assert_eq!(countries(&c, "七国集团和中国的GDP"), [&g7[..], &["CN"]].concat());
+        let (scope, named) = c.scope("七国集团和中国的GDP");
+        assert_eq!((scope, named), (Scope::Beyond, vec!["七国集团".to_string(), "中国".to_string()]));
+        // a member's English name in a search text is inside the group
+        assert!(c.places_outside("七国集团的GDP", &texts(&["land jp gdp"])).is_empty());
+        assert_eq!(c.places_outside("七国集团的GDP", &texts(&["land cn gdp"])), ["land cn"]);
+    }
+
+    #[test]
+    fn a_question_naming_no_group_or_alias_reads_as_before() {
+        let (c, w) = (small(), world());
+        for q in [
+            "德国能源从来源到各部门",
+            "欧盟各国可再生能源占比",
+            "2020年中国和德国的电价",
+            "中国和德国",
+            "各国 65 岁以上人口比例",
+            "发展中国家人口",
+        ] {
+            assert_eq!(countries(&c, q), countries(&w, q), "{q}");
+            assert_eq!(c.scope(q), w.scope(q), "{q}");
+        }
+        assert_eq!(countries(&w, "2020年中国和德国的电价"), ["CN", "DE"]);
+    }
+
+    #[test]
+    fn the_registered_groups_are_whole() {
+        let (aliases, groups) = place_names_zh();
+        assert!(aliases.iter().all(|a| a.iso2.len() == 2 && !a.name.is_empty()));
+        assert!(aliases.iter().any(|a| a.name == "韩国" && a.iso2 == "KR"));
+        for id in ["BRICS", "ASEAN", "G7", "G20"] {
+            let g = groups.iter().find(|g| g.id == id).expect(id);
+            assert!(!g.names.is_empty(), "{id}");
+            for (i, p) in g.periods.iter().enumerate() {
+                assert!(!p.source.is_empty() && !p.members.is_empty(), "{id} {}", p.from);
+                assert!(p.members.iter().all(|c| c.len() == 2), "{id} {}", p.from);
+                match g.periods.get(i + 1) {
+                    Some(next) => assert_eq!(p.to.map(|t| t + 1), Some(next.from), "{id} periods meet"),
+                    None => assert_eq!(p.to, None, "{id} latest period is current"),
+                }
+            }
+        }
+        assert_eq!(question_year("2010年金砖国家"), Some(2010));
+        assert_eq!(question_year("2010年至2020年"), Some(2020));
+        assert_eq!(question_year("金砖国家近十年"), None);
+        assert_eq!(question_year("12010年 65 岁"), None);
     }
 
     #[test]

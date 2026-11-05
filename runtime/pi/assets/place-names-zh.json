@@ -1,0 +1,59 @@
+{
+ "note": "Chinese place words the World Bank's Chinese country list (wb-countries-zh.json) does not hold. aliases: the common short name of a country whose registry name is the long form (韩国 for 大韩民国), each as an iso2 code with its source. groups: country groups by year; a group word reads as the members of the period that holds the year the question names, or of the latest period when it names none. Members are iso2 codes of countries only (the EU and the African Union, members of the G20, are not countries and are not listed).",
+ "aliases": [
+  {"name": "韩国", "iso2": "KR", "source": "Ministry of Foreign Affairs of the PRC, country list (国家和组织): 韩国 (大韩民国)"},
+  {"name": "朝鲜", "iso2": "KP", "source": "Ministry of Foreign Affairs of the PRC, country list (国家和组织): 朝鲜 (朝鲜民主主义人民共和国)"},
+  {"name": "俄罗斯", "iso2": "RU", "source": "Ministry of Foreign Affairs of the PRC, country list (国家和组织): 俄罗斯 (俄罗斯联邦)"},
+  {"name": "伊朗", "iso2": "IR", "source": "Ministry of Foreign Affairs of the PRC, country list (国家和组织): 伊朗 (伊朗伊斯兰共和国)"},
+  {"name": "叙利亚", "iso2": "SY", "source": "Ministry of Foreign Affairs of the PRC, country list (国家和组织): 叙利亚 (阿拉伯叙利亚共和国)"},
+  {"name": "委内瑞拉", "iso2": "VE", "source": "Ministry of Foreign Affairs of the PRC, country list (国家和组织): 委内瑞拉 (委内瑞拉玻利瓦尔共和国)"},
+  {"name": "捷克", "iso2": "CZ", "source": "Ministry of Foreign Affairs of the PRC, country list (国家和组织): 捷克 (捷克共和国)"},
+  {"name": "斯洛伐克", "iso2": "SK", "source": "Ministry of Foreign Affairs of the PRC, country list (国家和组织): 斯洛伐克 (斯洛伐克共和国)"},
+  {"name": "文莱", "iso2": "BN", "source": "Ministry of Foreign Affairs of the PRC, country list (国家和组织): 文莱 (文莱达鲁萨兰国)"},
+  {"name": "埃及", "iso2": "EG", "source": "Ministry of Foreign Affairs of the PRC, country list (国家和组织): 埃及 (阿拉伯埃及共和国)"},
+  {"name": "阿联酋", "iso2": "AE", "source": "Ministry of Foreign Affairs of the PRC, country list (国家和组织): 阿联酋 (阿拉伯联合酋长国)"},
+  {"name": "刚果(金)", "iso2": "CD", "source": "the registry name 刚果（金） with ASCII parentheses"},
+  {"name": "刚果(布)", "iso2": "CG", "source": "the registry name 刚果（布） with ASCII parentheses"},
+  {"name": "刚果民主共和国", "iso2": "CD", "source": "Ministry of Foreign Affairs of the PRC, country list (国家和组织): 刚果（金） (刚果民主共和国)"},
+  {"name": "刚果共和国", "iso2": "CG", "source": "Ministry of Foreign Affairs of the PRC, country list (国家和组织): 刚果（布） (刚果共和国)"}
+ ],
+ "groups": [
+  {
+   "id": "BRICS",
+   "names": ["金砖国家", "金砖"],
+   "periods": [
+    {"from": 2009, "to": 2010, "members": ["BR", "RU", "IN", "CN"], "source": "First BRIC summit, Yekaterinburg, 16 June 2009 (Joint Statement of the BRIC Countries' Leaders)"},
+    {"from": 2011, "to": 2023, "members": ["BR", "RU", "IN", "CN", "ZA"], "source": "South Africa admitted 24 December 2010, first summit as a member Sanya, 14 April 2011 (Sanya Declaration)"},
+    {"from": 2024, "to": 2024, "members": ["BR", "RU", "IN", "CN", "ZA", "EG", "ET", "IR", "AE"], "source": "Johannesburg II Declaration, 24 August 2023: Egypt, Ethiopia, Iran and the UAE members from 1 January 2024 (Saudi Arabia, invited, has not confirmed and is not listed)"},
+    {"from": 2025, "to": null, "members": ["BR", "RU", "IN", "CN", "ZA", "EG", "ET", "IR", "AE", "ID"], "source": "Brazil's BRICS presidency (brics.br, members page), 6 January 2025: Indonesia a full member"}
+   ]
+  },
+  {
+   "id": "ASEAN",
+   "names": ["东盟", "东南亚国家联盟"],
+   "periods": [
+    {"from": 1967, "to": 1983, "members": ["ID", "MY", "PH", "SG", "TH"], "source": "ASEAN Declaration (Bangkok Declaration), 8 August 1967 (asean.org, ASEAN Member States)"},
+    {"from": 1984, "to": 1994, "members": ["ID", "MY", "PH", "SG", "TH", "BN"], "source": "Brunei Darussalam joined 7 January 1984 (asean.org, ASEAN Member States)"},
+    {"from": 1995, "to": 1996, "members": ["ID", "MY", "PH", "SG", "TH", "BN", "VN"], "source": "Viet Nam joined 28 July 1995 (asean.org, ASEAN Member States)"},
+    {"from": 1997, "to": 1998, "members": ["ID", "MY", "PH", "SG", "TH", "BN", "VN", "LA", "MM"], "source": "Lao PDR and Myanmar joined 23 July 1997 (asean.org, ASEAN Member States)"},
+    {"from": 1999, "to": 2024, "members": ["ID", "MY", "PH", "SG", "TH", "BN", "VN", "LA", "MM", "KH"], "source": "Cambodia joined 30 April 1999 (asean.org, ASEAN Member States)"},
+    {"from": 2025, "to": null, "members": ["ID", "MY", "PH", "SG", "TH", "BN", "VN", "LA", "MM", "KH", "TL"], "source": "Timor-Leste admitted at the 47th ASEAN Summit, Kuala Lumpur, 26 October 2025 (asean.org, ASEAN Member States)"}
+   ]
+  },
+  {
+   "id": "G7",
+   "names": ["七国集团", "西方七国", "G7"],
+   "periods": [
+    {"from": 1975, "to": 1975, "members": ["FR", "DE", "IT", "JP", "GB", "US"], "source": "Rambouillet summit, 15-17 November 1975 (Declaration of Rambouillet)"},
+    {"from": 1976, "to": null, "members": ["FR", "DE", "IT", "JP", "GB", "US", "CA"], "source": "Canada joined at the San Juan summit, 27-28 June 1976 (Government of Canada, About the G7, international.gc.ca)"}
+   ]
+  },
+  {
+   "id": "G20",
+   "names": ["二十国集团", "G20"],
+   "periods": [
+    {"from": 1999, "to": null, "members": ["AR", "AU", "BR", "CA", "CN", "FR", "DE", "IN", "ID", "IT", "JP", "KR", "MX", "RU", "SA", "ZA", "TR", "GB", "US"], "source": "G20 founded at the finance ministers' meeting, Berlin, 15-16 December 1999 (g20.org, About G20: 19 countries, the EU and, since 9 September 2023, the African Union)"}
+   ]
+  }
+ ]
+}
