@@ -133,13 +133,13 @@ pub enum Request<'a> {
     /// The ranking the Chinese question asks for in place of named places (the ten most populous economies), read by rule
     /// from its words (rank-phrases-zh.json); None when it asks for none.
     RankAsked { question: &'a str },
-    /// What a page drawn for the group the Chinese question names counts, from the page's first and last years
-    /// (l5geo::Catalog::group_basis).
+    /// What a page drawn for the group the Chinese question names counts, from the page's first and last years, its place
+    /// codes and those with a row at the last (l5geo::Catalog::group_basis).
     GroupBasis {
         catalogue: &'a Opened,
         question: &'a str,
-        t0: Option<i32>,
-        t1: i32,
+        years: (Option<i32>, i32),
+        places: (&'a [String], &'a [String]),
     },
     /// Reads the six reference files of classify::load_refs from one directory.
     OpenRefs { dir: &'a Path },
@@ -321,9 +321,9 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
         Request::GroupBasis {
             catalogue,
             question,
-            t0,
-            t1,
-        } => Reply::GroupBasis(catalogue.catalog.group_basis(question, t0, t1)),
+            years,
+            places,
+        } => Reply::GroupBasis(catalogue.catalog.group_basis(question, years, places)),
         Request::OpenRefs { dir } => Reply::Refs(OpenedRefs {
             refs: classify::load_refs(dir)
                 .map_err(|e| format!("the reference lists cannot be read: {e}"))?,

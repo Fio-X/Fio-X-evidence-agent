@@ -416,13 +416,19 @@ struct NonCountryZh {
 
 /// The words of the page line that says which members a group's page counts: `members_of_year` ({year}, {n}) where the
 /// membership changes inside the page's years, `countries_only` ({n}, {others}) where the group has members that are no
-/// country; `line_join` joins the line to the unit line, `others_join` the names of those members.
+/// country, each with its `_drawn` form (the count is of the places drawn, not of the members: a member has no data, or the
+/// question names a place beside the group), and `missing` ({missing}) after it when a member has no data; `line_join`
+/// joins the line to the unit line, `others_join` and `missing_join` the names in it.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 struct BasisWordsZh {
     line_join: String,
     members_of_year: String,
+    members_of_year_drawn: String,
     countries_only: String,
+    countries_only_drawn: String,
+    missing: String,
     others_join: String,
+    missing_join: String,
 }
 
 /// place-names-zh.json as read.
@@ -439,19 +445,26 @@ fn place_names_zh() -> &'static PlaceNamesZh {
     NAMES.get_or_init(|| serde_json::from_str(PLACE_NAMES_ZH).expect("place-names-zh.json lists aliases, groups and basis words"))
 }
 
-/// What a page drawn for a group the question names counts (Catalog::group_basis): the group, the year its member list is
-/// of, those members (iso2, and the World Bank's iso3 of each), and the page line's words when the page must say its basis
-/// (the membership changes inside the page's years, or the group has members that are no country). The line's {year} and
-/// {n} are left for the page's own entries of the year and the count of the places it draws; `join` joins it to the unit
-/// line. Every word is the knowledge group's (place-names-zh.json).
+/// What a page drawn for a group the question names counts (Catalog::group_basis), every code as the page's rows write it
+/// (iso2, the World Bank's iso3, or Eurostat's EL and UK; a member with no row in iso3 on an iso3 page, else iso2): the
+/// group, the year its member list is of, those members (countries only), the places the question names on their own
+/// (kept whatever the group), the page's places that are neither (their rows are left out), the members with no row at the
+/// page's last year, and the page line's words when the page must say its basis (the membership changes inside the page's
+/// years, the group has members that are no country, or a member has no data). The line's {year} and {n} are left for the
+/// page's own entries of the year and the count of the places it draws, {missing} for the names of the members with no
+/// data (joined by `missing_join`); `join` joins it to the unit line. Every word is the knowledge group's
+/// (place-names-zh.json).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct GroupBasis {
     pub group: String,
     pub year: i32,
     pub members: Vec<String>,
-    pub members_iso3: Vec<String>,
+    pub named: Vec<String>,
+    pub dropped: Vec<String>,
+    pub missing: Vec<String>,
     pub line: Option<String>,
     pub join: String,
+    pub missing_join: String,
 }
 
 /// The code a group word stands for in the Chinese name list: this prefix and the group id.
@@ -1599,17 +1612,52 @@ impl Catalog {
     }
 
     /// What a page drawn for the first group the Chinese question names counts, from the page's first and last years
-    /// (`t0`, None for a page of one year, and `t1`): the members in the year the question names, else in `t1` (the page's
-    /// last year), with the page line when the page must say its basis: the member list differs inside t0..t1 (the
-    /// question naming no year), or the group has members that are no country (always said). None when the question names
-    /// no group or the group has no members in that year.
-    pub fn group_basis(&self, question_zh: &str, t0: Option<i32>, t1: i32) -> Option<GroupBasis> {
-        let id = self.scan_zh(question_zh).into_iter().find_map(|(_, c)| c.strip_prefix(GROUP).map(str::to_string))?;
+    /// (`t0`, None for a page of one year, and `t1`), its place codes (`places`) and those with a row at t1 (`at_t1`): the
+    /// members in the year the question names, else in `t1` (the page's last year); the places the question names on
+    /// their own, which stay; the page's other places, which are no member that year (left out); the members with no row at
+    /// t1; and the page line when the page must say its basis: the member list differs inside t0..t1 (the question naming
+    /// no year), the group has members that are no country, or a member has no data (named). The line counts the places
+    /// drawn (its `_drawn` form) where they are not the members: a member missing, or a named place beside them. None when
+    /// the question names no group or the group has no members in that year.
+    pub fn group_basis(
+        &self,
+        question_zh: &str,
+        (t0, t1): (Option<i32>, i32),
+        (places, at_t1): (&[String], &[String]),
+    ) -> Option<GroupBasis> {
+        let scanned = self.scan_zh(question_zh);
+        let id = scanned.iter().find_map(|(_, c)| c.strip_prefix(GROUP).map(str::to_string))?;
         let g = self.groups.iter().find(|g| g.id == id)?;
         let asked = question_year(question_zh);
         let year = asked.unwrap_or(t1);
         let p = self.group_period(&id, Some(year))?;
         let words = &place_names_zh().basis;
+        // an iso2 country as the page writes it: the form its rows hold, else iso3 on an iso3 page, else iso2
+        let iso3 = |c: &str| self.wb_places.iter().find(|(i, _)| i == c).map(|(_, id)| id.clone());
+        let page_code = |c: &str| {
+            let estat = ESTAT_ISO.iter().find(|(_, i)| *i == c).map(|(e, _)| e.to_string());
+            [Some(c.to_string()), iso3(c), estat]
+                .into_iter()
+                .flatten()
+                .find(|k| places.contains(k))
+                .unwrap_or_else(|| match iso3(c) {
+                    Some(i) if !places.is_empty() && places.iter().all(|p| p.len() == 3) => i,
+                    _ => c.to_string(),
+                })
+        };
+        let members: Vec<String> = p.members.iter().map(|m| page_code(m)).collect();
+        let mut named: Vec<String> = Vec::new();
+        for (_, c) in &scanned {
+            if c != REGION && c != NOT_PLACE && !c.starts_with(GROUP) && !named.contains(&page_code(c)) {
+                named.push(page_code(c));
+            }
+        }
+        let dropped: Vec<String> = places.iter().filter(|c| !members.contains(c) && !named.contains(c)).cloned().collect();
+        let missing: Vec<String> = members.iter().filter(|m| !at_t1.contains(m)).cloned().collect();
+        let beside = named.iter().any(|c| !members.contains(c) && places.contains(c));
+        let drawn = !missing.is_empty() || beside;
+        let tail = if missing.is_empty() { "" } else { words.missing.as_str() };
+        let pick = |all: &str, part: &str| if drawn { format!("{part}{tail}") } else { all.to_string() };
         let mut lines = Vec::new();
         let changes = asked.is_none()
             && t0.is_some_and(|t0| {
@@ -1623,21 +1671,23 @@ impl Catalog {
                         }
                     })
             });
-        if changes {
-            lines.push(words.members_of_year.clone());
-        }
-        if !p.non_country_members.is_empty() {
+        if !p.non_country_members.is_empty() && !changes {
             let others: Vec<&str> = p.non_country_members.iter().map(|m| m.name.as_str()).collect();
-            lines.push(words.countries_only.replace("{others}", &others.join(&words.others_join)));
+            let line = pick(&words.countries_only, &words.countries_only_drawn);
+            lines.push(line.replace("{others}", &others.join(&words.others_join)));
+        } else if changes || !missing.is_empty() {
+            lines.push(pick(&words.members_of_year, &words.members_of_year_drawn));
         }
-        let iso3 = |c: &String| self.wb_places.iter().find(|(i, _)| i == c).map(|(_, id)| id.clone());
         Some(GroupBasis {
             group: id.clone(),
             year,
-            members: p.members.clone(),
-            members_iso3: p.members.iter().filter_map(iso3).collect(),
-            line: (!lines.is_empty()).then(|| lines.join(&words.line_join)),
+            members,
+            named,
+            dropped,
+            missing,
+            line: lines.pop(),
             join: words.line_join.clone(),
+            missing_join: words.missing_join.clone(),
         })
     }
 
@@ -2189,6 +2239,13 @@ impl Catalog {
     }
 }
 
+/// The tests' small catalogue with every member of the registered groups as a World Bank country, for other groups' tests
+/// that read a group as this group does.
+#[cfg(test)]
+pub(crate) fn test_world() -> Catalog {
+    tests::world()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2266,7 +2323,7 @@ mod tests {
     }
 
     /// `small` with the other members of the registered groups as World Bank countries.
-    fn world() -> Catalog {
+    pub(super) fn world() -> Catalog {
         let mut raw = small_raw();
         let more = [
             "RU", "ID", "MY", "PH", "SG", "TH", "BN", "VN", "LA", "MM", "KH", "TL", "GB", "IT", "EG", "ET", "IR", "AE",
@@ -2345,24 +2402,45 @@ mod tests {
     #[test]
     fn a_group_page_counts_the_members_of_its_last_year_and_says_so_where_they_change() {
         let c = world();
-        let brics = |t0: Option<i32>, t1: i32| c.group_basis("金砖国家近十年的GDP增长率", t0, t1).unwrap();
+        let s = |xs: &[&str]| xs.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        let brics10 = ["BR", "RU", "IN", "CN", "ZA", "EG", "ET", "IR", "AE", "ID"];
+        let g20 = ["AR", "AU", "BR", "CA", "CN", "FR", "DE", "IN", "ID", "IT", "JP", "KR", "MX", "RU", "SA", "ZA", "TR", "GB", "US"];
+        // every place with a row at t1
+        let gb = |q: &str, t0: Option<i32>, t1: i32, places: &[&str]| c.group_basis(q, (t0, t1), (&s(places), &s(places)));
+        let q = "金砖国家近十年的GDP增长率";
         let changes = "按 {year} 年成员（{n} 国）计";
-        let b = brics(Some(2016), 2025);
+        let b = gb(q, Some(2016), 2025, &brics10).unwrap();
         assert_eq!((b.group.as_str(), b.year, b.members.len(), b.line.as_deref(), b.join.as_str()), ("BRICS", 2025, 10, Some(changes), "；"));
-        assert_eq!(b.members_iso3, b.members, "the fixture's World Bank ids are the codes");
-        let b = brics(Some(2016), 2024);
-        assert_eq!((b.year, b.members.len(), b.line.as_deref()), (2024, 9, Some(changes)));
-        assert!(!b.members.contains(&"ID".to_string()) && !b.members.contains(&"SA".to_string()));
-        assert_eq!(brics(Some(2012), 2020).line, None, "five members all through");
-        assert_eq!(brics(None, 2025).line, None, "a page of one year");
-        let named = c.group_basis("2010年金砖国家的GDP", Some(2005), 2015).unwrap();
-        assert_eq!((named.year, named.members, named.line), (2010, vec!["BR", "RU", "IN", "CN"].into_iter().map(String::from).collect(), None));
-        assert_eq!(c.group_basis("七国集团的人均碳排放", Some(1990), 2024).unwrap().line, None);
-        let g20 = c.group_basis("二十国集团的人口", None, 2024).unwrap();
-        assert_eq!((g20.members.len(), g20.line.as_deref()), (19, Some("按 {n} 个成员国计，不含欧盟、非洲联盟")));
-        assert_eq!(c.group_basis("二十国集团的人口", Some(2000), 2020).unwrap().line.as_deref(), Some("按 {n} 个成员国计，不含欧盟"));
-        assert_eq!(c.group_basis("中国和德国的GDP", Some(2016), 2025), None);
-        assert_eq!(c.group_basis("2000年金砖国家人口", None, 2025), None, "no BRICS in 2000");
+        assert!(b.named.is_empty() && b.dropped.is_empty() && b.missing.is_empty());
+        let b = gb(q, Some(2016), 2024, &[&brics10[..], &["SA"]].concat()).unwrap();
+        assert_eq!((b.year, b.members.len(), b.line.as_deref(), b.dropped.clone()), (2024, 9, Some(changes), s(&["ID", "SA"])), "no members in 2024");
+        assert_eq!(gb(q, Some(2012), 2020, &brics10[..5]).unwrap().line, None, "five members all through");
+        assert_eq!(gb(q, None, 2025, &brics10).unwrap().line, None, "a page of one year");
+        let named = gb("2010年金砖国家的GDP", Some(2005), 2015, &brics10[..4]).unwrap();
+        assert_eq!((named.year, named.members, named.line), (2010, s(&brics10[..4]), None));
+        assert_eq!(gb("七国集团的人均碳排放", Some(1990), 2024, &["FR", "DE", "IT", "JP", "GB", "US", "CA"]).unwrap().line, None);
+        let b = gb("二十国集团的人口", None, 2024, &g20).unwrap();
+        assert_eq!((b.members.len(), b.line.as_deref()), (19, Some("按 {n} 个成员国计，不含欧盟、非洲联盟")));
+        assert_eq!(gb("二十国集团的人口", Some(2000), 2020, &g20).unwrap().line.as_deref(), Some("按 {n} 个成员国计，不含欧盟"));
+        assert_eq!(gb("中国和德国的GDP", Some(2016), 2025, &["CN", "DE"]), None);
+        assert_eq!(gb("2000年金砖国家人口", None, 2025, &brics10), None, "no BRICS in 2000");
+        // a member with no row at t1 is named: the line counts the places drawn, in every case (one year, a list that holds)
+        let no_et: Vec<String> = s(&brics10).into_iter().filter(|c| c != "ET").collect();
+        let b = c.group_basis(q, (Some(2016), 2025), (&s(&brics10), &no_et)).unwrap();
+        assert_eq!((b.missing.clone(), b.line.as_deref(), b.missing_join.as_str()), (s(&["ET"]), Some("按 {year} 年成员计，画出 {n} 国，{missing}无数据"), "、"));
+        let b = c.group_basis(q, (None, 2025), (&s(&brics10), &no_et)).unwrap();
+        assert_eq!(b.line.as_deref(), Some("按 {year} 年成员计，画出 {n} 国，{missing}无数据"), "one year, a member missing");
+        let no_us: Vec<String> = s(&g20).into_iter().filter(|c| c != "US").collect();
+        let b = c.group_basis("二十国集团的人口", (None, 2024), (&no_us, &no_us)).unwrap();
+        assert_eq!((b.missing.clone(), b.line.as_deref()), (s(&["US"]), Some("按成员国计，不含欧盟、非洲联盟，画出 {n} 国，{missing}无数据")));
+        // a place the question names on its own stays, and the count is of the places drawn
+        let b = gb("日本和金砖国家近十年的GDP增长率", Some(2016), 2025, &[&brics10[..], &["JP", "SA"]].concat()).unwrap();
+        assert_eq!((b.named.clone(), b.dropped.clone(), b.line.as_deref()), (s(&["JP"]), s(&["SA"]), Some("按 {year} 年成员计，画出 {n} 国")));
+        let b = gb("中国和七国集团的GDP", Some(2016), 2024, &["CN", "FR", "DE", "IT", "JP", "GB", "US", "CA"]).unwrap();
+        assert_eq!((b.named.clone(), b.dropped.clone(), b.line), (s(&["CN"]), Vec::new(), None), "China kept beside the G7");
+        // the codes as the page's rows write them: Eurostat's UK for GB
+        let b = gb("七国集团的GDP", None, 2024, &["FR", "DE", "IT", "JP", "UK", "US", "CA"]).unwrap();
+        assert!(b.members.contains(&"UK".to_string()) && b.dropped.is_empty() && b.missing.is_empty(), "{b:?}");
     }
 
     #[test]

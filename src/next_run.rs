@@ -2530,11 +2530,20 @@ fn recipe_request(
         shape_of(&recipe.eats, &tables, catalogue).map_err(shape_err)
     };
     let mut shape = shape_over(&main_rows)?;
-    // a group the question names counts its members of one year: the rows of any other country are not the page's
-    let basis = basis_of(&shape, catalogue, question);
-    if let Some(kept) = basis.as_ref().and_then(|b| members_only(&main_rows, &shape, b)) {
-        main_rows = kept;
+    // a group the question names counts its members of one year: the rows of a place that is neither one of them nor named
+    // in the question are left out, each kept with why in the page's basis and in an event
+    let mut basis = basis_of(&shape, &main_rows, catalogue, question);
+    if let Some(first) = basis.take_if(|b| !b.dropped.is_empty()) {
+        let why = left_out(&first);
+        main_rows.retain(|r| !r["dims"][&shape.place].as_str().is_some_and(|c| first.dropped.iter().any(|d| d == c)));
+        let left: Vec<Value> = first.dropped.iter().map(|c| json!({"code": c, "why": why})).collect();
+        let event = json!({"group": "agent", "request": LEFT_OUT, "of": first.group, "year": first.year, "dropped": left, "ok": true});
+        calls.lock().unwrap_or_else(|e| e.into_inner()).push(event);
         shape = shape_over(&main_rows)?;
+        basis = basis_of(&shape, &main_rows, catalogue, question).map(|mut b| {
+            b.dropped = first.dropped.clone();
+            b
+        });
     }
     let claims = picked_claims(run_dir, main, &claim_records(run_dir).map_err(shape_err)?).map_err(shape_err)?;
     let picks = picks_of(&recipe.picks, &shape, &main_rows, &claims).map_err(shape_err)?;
@@ -2559,7 +2568,7 @@ fn recipe_request(
         .map_err(|why| ("fill", why))?;
     zero_rows(&mut fill, &comp_rows);
     if let Some(b) = &basis {
-        said_basis(&mut fill, &shape, b).map_err(|why| ("fill", why))?;
+        said_basis(&mut fill, &shape, b, catalogue).map_err(|why| ("fill", why))?;
     }
     // each country the question names on its own: printed from its rows, or named on the unit line as having no data
     // (a recipe whose page cannot say so is not this shape, and the next one is tried)
@@ -2718,59 +2727,95 @@ fn named_dropped(fill: &Value, places: &[crate::l5geo::Place]) -> Result<(), Str
 }
 
 /// The member list a page for a group the question names counts, over the page's years (the shape's earlier end, none for
-/// a page of one year, and its year): the knowledge group's group_basis; None when the question names no group.
-fn basis_of(shape: &Shape, catalogue: &dyn Catalogue, question: &str) -> Option<crate::l5geo::GroupBasis> {
+/// a page of one year, and its year) and its places (each with or without a row at that year): the knowledge group's
+/// group_basis; None when the question names no group.
+fn basis_of(shape: &Shape, rows: &[Value], catalogue: &dyn Catalogue, question: &str) -> Option<crate::l5geo::GroupBasis> {
     let year = |y: &str| y.get(..4).and_then(|y| y.parse::<i32>().ok());
-    catalogue.group_basis(question, year(&shape.t0), year(&shape.year)?)
+    let at_t1: Vec<String> = shape
+        .countries
+        .iter()
+        .filter(|c| rows.iter().any(|r| r["dims"][&shape.place].as_str() == Some(c.as_str()) && r["time"].as_str() == Some(shape.year.as_str())))
+        .cloned()
+        .collect();
+    catalogue.group_basis(question, (year(&shape.t0), year(&shape.year)?), (&shape.countries, &at_t1))
 }
 
-/// The codes a group's member may stand under in a page's rows: its iso2, the World Bank's iso3, and Eurostat's where it
-/// differs (next_params::ESTAT_ISO: EL for GR, UK for GB).
-fn member_codes(basis: &crate::l5geo::GroupBasis) -> Vec<String> {
-    let estat = basis.members.iter().filter_map(|m| next_params::ESTAT_ISO.iter().find(|(_, i)| i == m).map(|(e, _)| e.to_string()));
-    basis.members.iter().chain(&basis.members_iso3).cloned().chain(estat).collect()
+/// The event (and the ledger's layer name, next_visual) of the places a group's page left out.
+const LEFT_OUT: &str = "group_members";
+
+/// Why a place's rows are left out of a group's page: it is no member that year and the question does not name it.
+fn left_out(basis: &crate::l5geo::GroupBasis) -> String {
+    format!("not a member of {} in {}", basis.group, basis.year)
 }
 
-/// The main's rows less those of a country outside the group's members (a place code that is no country, an aggregate, is
-/// kept); None when every row is kept.
-fn members_only(rows: &[Value], shape: &Shape, basis: &crate::l5geo::GroupBasis) -> Option<Vec<Value>> {
-    let codes = member_codes(basis);
-    let outside = |r: &Value| {
-        r["dims"][&shape.place].as_str().is_some_and(|c| shape.countries.iter().any(|k| k == c) && !codes.iter().any(|m| m == c))
-    };
-    rows.iter().any(outside).then(|| rows.iter().filter(|r| !outside(r)).cloned().collect())
-}
-
-/// A page for a group whose member basis it must state (the knowledge group's line: the members change inside the page's
-/// years, or the group has members that are no country) says it on the unit line after the line's join: the year as the
-/// main's period entry at the page's year, the count as the page's own count of the places it draws (DRAWN), every word the
-/// knowledge group's. The spec keeps what the whole-page check holds the page to (next_leaf basis_said): the words, the
-/// year, the count's fact, the table and the members' codes. A page with no such count or no unit line is refused.
-fn said_basis(fill: &mut Value, shape: &Shape, basis: &crate::l5geo::GroupBasis) -> Result<(), String> {
-    let Some(line) = &basis.line else { return Ok(()) };
+/// A page for a country group keeps its basis in the spec (knobs.spec.basis), which the whole-page check holds the page to
+/// (next_leaf basis_said): the words of its line (none when it prints none), the year the count is at, the count's fact
+/// (DRAWN, when the page has it), the table, the year's members, the places named beside them, the members with no data
+/// and the places left out, each with why. A page whose basis the knowledge group says must be stated says it on the unit
+/// line after the line's join: the year as the main's period entry at the page's year, the count as the page's own count
+/// of the places it draws, each member with no data by its name row from the name table, every word the knowledge group's.
+/// A page that must say it with no such count, no unit line, or no name for a member it lacks is refused.
+fn said_basis(fill: &mut Value, shape: &Shape, basis: &crate::l5geo::GroupBasis, catalogue: &dyn Catalogue) -> Result<(), String> {
     let at = format!("{} in {}", basis.group, basis.year);
-    let spec = &mut fill["knobs"]["spec"];
-    if spec["facts"].get(DRAWN).is_none() {
+    let counted = fill["knobs"]["spec"]["facts"].get(DRAWN).is_some();
+    let why = left_out(basis);
+    let dropped: Vec<Value> = basis.dropped.iter().map(|c| json!({"code": c, "why": why})).collect();
+    fill["knobs"]["spec"]["basis"] = json!({"words": basis.line, "year": shape.year, "count": counted.then_some(DRAWN), "table": shape.main,
+        "members": basis.members, "named": basis.named, "missing": basis.missing, "missing_join": basis.missing_join, "dropped": dropped});
+    let Some(line) = &basis.line else { return Ok(()) };
+    if !counted {
         return Err(format!("not this shape: the page counts the members of {at} and has no count of the places it draws"));
     }
-    let Some(unit) = spec.pointer("/hero/unit").and_then(Value::as_str).map(str::to_string) else {
+    let Some(unit) = fill["knobs"]["spec"].pointer("/hero/unit").and_then(Value::as_str).map(str::to_string) else {
         return Err(format!("not this shape: the page counts the members of {at} and has no unit line to say so"));
     };
-    let year_src = format!("{}{}:{}", crate::next_facts::PERIOD_SRC, shape.main, shape.year);
-    let count = format!("{{{DRAWN}.n}}");
-    let mut tail = Vec::new();
-    let said = format!("{}{}", basis.join, line);
-    for (i, words) in said.split("{year}").enumerate() {
-        if i > 0 {
-            tail.push(json!({"src": year_src}));
-        }
-        if !words.is_empty() {
-            tail.push(json!({"w": words.replace("{n}", &count)}));
+    // the members with no data, named from the name table by their code's scheme
+    let mut names: BTreeMap<String, String> = BTreeMap::new();
+    for scheme in ["iso2", "iso3"] {
+        let codes: Vec<String> = basis.missing.iter().filter(|c| (c.len() == 2) == (scheme == "iso2")).cloned().collect();
+        if !codes.is_empty() {
+            let got = catalogue.zh_names(scheme, &codes).map_err(|m| format!("not this shape: the name table names no {m:?}, members of {at} with no data"))?;
+            names.extend(got);
         }
     }
-    let wording = format!("{unit}{}", said.replace("{year}", &shape.year).replace("{n}", &count));
-    spec["basis"] = json!({"words": line, "year": shape.year, "count": DRAWN, "table": shape.main, "members": member_codes(basis)});
-    if let Some(at) = spec.pointer_mut("/hero/unit") {
+    if let Some(labels) = fill.pointer_mut("/knobs/labels").and_then(Value::as_object_mut) {
+        for (code, name) in &names {
+            labels.entry(code.clone()).or_insert_with(|| json!(name));
+        }
+    }
+    let year_src = format!("{}{}:{}", crate::next_facts::PERIOD_SRC, shape.main, shape.year);
+    let count = format!("{{{DRAWN}.n}}");
+    let said = format!("{}{}", basis.join, line);
+    let (mut rest, mut tail, mut wording) = (said.as_str(), Vec::new(), unit.clone());
+    loop {
+        let next = ["{year}", "{missing}"].into_iter().filter_map(|k| rest.find(k).map(|i| (i, k))).min();
+        let (head, key) = next.map_or((rest, ""), |(i, k)| (&rest[..i], k));
+        if !head.is_empty() {
+            let words = head.replace("{n}", &count);
+            wording.push_str(&words);
+            tail.push(json!({"w": words}));
+        }
+        match key {
+            "" => break,
+            "{year}" => {
+                tail.push(json!({"src": year_src}));
+                wording.push_str(&shape.year);
+            }
+            _ => {
+                for (i, code) in basis.missing.iter().enumerate() {
+                    if i > 0 {
+                        tail.push(json!({"w": basis.missing_join}));
+                        wording.push_str(&basis.missing_join);
+                    }
+                    let name = names.get(code).ok_or_else(|| format!("not this shape: the name table names no {code}, a member of {at} with no data"))?;
+                    tail.push(json!({"src": format!("{LABEL_SRC}zh_names:{}:{code}", if code.len() == 2 { "iso2" } else { "iso3" })}));
+                    wording.push_str(name);
+                }
+            }
+        }
+        rest = &rest[head.len() + key.len()..];
+    }
+    if let Some(at) = fill["knobs"]["spec"].pointer_mut("/hero/unit") {
         *at = json!(wording);
     }
     let knobs = fill["knobs"].as_object_mut().ok_or("the fill's knobs are no object")?;
@@ -7806,140 +7851,254 @@ mod tests {
         assert_eq!(crate::next_leaf::check_leaf_page(&html, &ledger, &refs, &spec, &rows, &facts), Vec::<String>::new());
     }
 
-    /// The knowledge group's basis for a group page, as group_basis gives it: the members of `year` and the line built from
-    /// place-names-zh.json's own words (read here as the knowledge group reads them).
-    fn group_basis(group: &str, year: i32, members: &[&str], line: Option<&str>) -> crate::l5geo::GroupBasis {
-        let file: Value = serde_json::from_str(include_str!("../runtime/pi/assets/place-names-zh.json")).unwrap();
-        let words = &file["basis"];
-        let line = line.map(|key| {
-            let w = words[key].as_str().unwrap().to_string();
-            let others: Vec<&str> = file["groups"].as_array().unwrap().iter().find(|g| g["id"] == group).unwrap()["periods"]
-                .as_array().unwrap().last().unwrap()["non_country_members"]
-                .as_array().into_iter().flatten().filter_map(|m| m["name"].as_str()).collect();
-            w.replace("{others}", &others.join(words["others_join"].as_str().unwrap()))
-        });
-        crate::l5geo::GroupBasis {
-            group: group.into(),
-            year,
-            members: members.iter().map(|m| m.to_string()).collect(),
-            members_iso3: Vec::new(),
-            line,
-            join: words["line_join"].as_str().unwrap().into(),
+    /// The test catalogue (Hubs) that also reads country groups as the knowledge group does (l5geo's own test catalogue,
+    /// the World Bank's countries of the l5geo tests with every group member), and, for the recipe loop over a run folder,
+    /// gives each fetched table its rows.
+    struct Groups(BTreeMap<String, Vec<Value>>);
+    impl Catalogue for Groups {
+        fn top5(&self, q: &str, t: &[String], m: bool, y: Option<i32>) -> crate::l5geo::Ranking {
+            Hubs.top5(q, t, m, y)
+        }
+        fn places_outside(&self, q: &str, t: &[String]) -> Vec<String> {
+            Hubs.places_outside(q, t)
+        }
+        fn source(&self) -> &Value {
+            &Value::Null
+        }
+        fn countries(&self, codes: &[String]) -> Result<Vec<String>, String> {
+            Hubs.countries(codes)
+        }
+        fn zh_names(&self, kind: &str, codes: &[String]) -> Result<BTreeMap<String, String>, Vec<String>> {
+            Hubs.zh_names(kind, codes)
+        }
+        fn members(&self, aggregate: &str) -> Result<Vec<String>, String> {
+            Hubs.members(aggregate)
+        }
+        fn group_basis(&self, q: &str, years: (Option<i32>, i32), places: (&[String], &[String])) -> Option<crate::l5geo::GroupBasis> {
+            crate::l5geo::test_world().group_basis(q, years, places)
+        }
+        fn table(&self, id: &str) -> Option<crate::l5geo::TableMeta> {
+            Fetched(self.0.clone(), "").table(id)
+        }
+        fn series_rows(&self, table: &crate::l5geo::TableMeta, csv: &str) -> Result<Vec<Value>, String> {
+            Fetched(self.0.clone(), "").series_rows(table, csv)
         }
     }
 
-    /// A page for a country group says the members it counts (owner 11-05 review, item 1.2), drawn by the real leaf child,
-    /// baked, checked by the twins and published, then read back and passed by the whole-page check. Two shapes: a BRICS
-    /// change page over 2016..2025 (its membership changes inside the span: the rows of Saudi Arabia, disputed and no member,
-    /// are left out, and the unit line says 「按 2025 年成员（10 国）计」, the year the main's period entry and the count the
-    /// drawn fact's), and a G20 column page of one year (the EU and the African Union are members that are no country: the
-    /// line says the count of member countries and names them). A BRICS column page of one year says nothing and its request
-    /// keeps no basis. The line is checked, not only printed: the page without it, or with another count, fails the check.
+    /// A change page's (or a column page's) rows of sdg_07_40 over `places` at `years`, a value each.
+    fn group_rows(places: &[&str], years: &[&str]) -> Vec<Value> {
+        let mut main = ring_rows("sdg_07_40", &[("freq", "A"), ("unit", "PC")], ("geo", places), years);
+        for (i, row) in main.iter_mut().enumerate() {
+            row["value"] = json!(format!("{}.5", 10 + (i * 7) % 23));
+        }
+        main
+    }
+
+    /// A fill drawn by the real leaf child, baked, checked by the twins and published, then read back: the page and its
+    /// request's ledger, refs, spec, rows and facts.
+    fn published(name: &str, mut fill: Value, at: &str) -> (String, BTreeMap<String, String>, Vec<String>, crate::next_facts::Spec, Vec<crate::next_facts::Row>, Vec<crate::next_facts::Fact>) {
+        fill["knobs"]["shapes"] = json!("runtime/pi/assets/naturalearth-admin0-50m.geojson");
+        fill["knobs"]["spec"]["kicker"] = json!("栏目");
+        fill["knobs"]["spec"]["source"] = json!("来源");
+        let order: Vec<String> = fill["order"].as_array().unwrap().iter().filter_map(|l| l.as_str().map(str::to_string)).collect();
+        let calls = std::sync::Mutex::new(Vec::new());
+        let request = crate::next_visual::Request::LeafFill {
+            recipe: name,
+            rows: fill["rows"].as_array().unwrap(),
+            knobs: &fill["knobs"],
+            order: &order,
+            runtime: Path::new("runtime"),
+        };
+        let page = match crate::next_flow::visual_call(&calls, "leaf_fill", request) {
+            Ok(crate::next_visual::Reply::Filled(page)) => page,
+            Ok(_) => panic!("{at}: not a filled page"),
+            Err(e) => panic!("{at}: leaf fill: {e}"),
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = {
+            let _command = crate::group_guard::command_for_test("investigate");
+            crate::artifact::InvestigationBundle::create(dir.path(), "leaf page").unwrap()
+        };
+        let _command = crate::group_guard::command_for_test("investigate");
+        let _doors = crate::group_guard::doors_for_test(true);
+        let bake = crate::next_leaf::Runner::python(Path::new("fixtures/next_leaf/bake_twin.py"));
+        let mut qa = crate::next_leaf::Runner::python(Path::new("fixtures/next_visual/qa_twin.py"));
+        qa.args.push("pass".into());
+        let leaf = crate::next_visual::LeafPage {
+            draw: &page.draw,
+            bake: &bake,
+            w: page.w,
+            h: page.h,
+            frame: page.frame.clone(),
+            layers: &page.layers,
+            ledger: &page.ledger,
+            refs: &page.refs,
+            facts: (&page.spec, &page.rows, &page.facts),
+            strip: None,
+        };
+        let plan = json!({"kind": "leaf_plan", "recipe": name});
+        let published = crate::next_flow::publish_leaf_page(&calls, &bundle.dir, name, (&leaf, &plan), &qa).unwrap_or_else(|e| panic!("{at}: publish: {e}"));
+        let html = std::fs::read_to_string(bundle.dir.join(&published.html_ref)).unwrap();
+        let text = std::fs::read_to_string(bundle.dir.join("publications").join(name).join(crate::next_flow::LEAF_REQUEST)).unwrap();
+        let mut back: Value = serde_json::from_str(&text).unwrap();
+        (
+            html,
+            serde_json::from_value(back["ledger"].take()).unwrap(),
+            serde_json::from_value(back["refs"].take()).unwrap(),
+            serde_json::from_value(back["spec"].take()).unwrap(),
+            serde_json::from_value(back["rows"].take()).unwrap(),
+            serde_json::from_value(back["facts"].take()).unwrap(),
+        )
+    }
+
+    /// A page for a country group says the members it counts (owner 11-05 review, items 1.2 and its two fixes), each page
+    /// filled as recipe_request fills it (the knowledge group's basis over the shape, the rows of a place no member and not
+    /// named left out, the basis said), drawn by the real leaf child and published, then read back and passed by the
+    /// whole-page check. Shapes: a BRICS change page over 2016..2025 (the list changes inside the span; Saudi Arabia,
+    /// disputed and no member, left out); the same with Ethiopia lacking rows (the line counts the places drawn and names
+    /// Ethiopia by its name row); a G20 column page of one year (the EU and the African Union named as not counted), and
+    /// with the US lacking rows; a BRICS column page of one year with every member (no line; the request still keeps the
+    /// basis). The line is checked, not only printed: the page without it, with another count, without the missing name or
+    /// with another name in its place fails the check.
     #[test]
     fn a_group_page_says_the_members_it_counts_and_the_check_holds_it() {
         let brics = ["BR", "RU", "IN", "CN", "ZA", "EG", "ET", "IR", "AE", "ID"];
         let g20 = ["AR", "AU", "BR", "CA", "CN", "FR", "DE", "IN", "ID", "IT", "JP", "KR", "MX", "RU", "SA", "ZA", "TR", "GB", "US"];
-        let cases: [(&str, &[&str], &[&str], crate::l5geo::GroupBasis); 3] = [
-            ("change", &["2016", "2025"], &[&brics[..], &["SA"]].concat(), group_basis("BRICS", 2025, &brics, Some("members_of_year"))),
-            ("column", &["2024"], &g20, group_basis("G20", 2024, &g20, Some("countries_only"))),
-            ("column", &["2025"], &brics, group_basis("BRICS", 2025, &brics, None)),
+        let with_sa = [&brics[..], &["SA"]].concat();
+        let cases: [(&str, &str, &[&str], &[&str], &[&str]); 5] = [
+            ("change", "金砖国家近十年的GDP增长率", &["2016", "2025"], &with_sa, &[]),
+            ("change", "金砖国家近十年的GDP增长率", &["2016", "2025"], &with_sa, &["ET"]),
+            ("column", "二十国集团的人口", &["2024"], &g20, &[]),
+            ("column", "二十国集团的人口", &["2024"], &g20, &["US"]),
+            ("column", "金砖国家的人口", &["2025"], &brics, &[]),
         ];
-        for (name, years, places, basis) in cases {
-            let at = format!("{} {name}", basis.group);
+        let cat = Groups(BTreeMap::new());
+        for (name, question, years, places, lacking) in cases {
+            let at = format!("{question} {name} lacking {lacking:?}");
             let r = recipe(name);
-            let mut main = ring_rows("sdg_07_40", &[("freq", "A"), ("unit", "PC")], ("geo", places), years);
-            for (i, row) in main.iter_mut().enumerate() {
-                row["value"] = json!(format!("{}.5", 10 + (i * 7) % 23));
+            let mut main: Vec<Value> = group_rows(places, years);
+            main.retain(|row| !lacking.iter().any(|l| row["dims"]["geo"] == *l));
+            let mut shape = shape_of(&r.eats, &[("sdg_07_40", &main[..])], &cat).unwrap();
+            let mut basis = basis_of(&shape, &main, &cat, question).unwrap_or_else(|| panic!("{at}: no basis"));
+            if !basis.dropped.is_empty() {
+                assert_eq!(basis.dropped, ["SA"], "{at}");
+                main.retain(|row| row["dims"]["geo"] != "SA");
+                shape = shape_of(&r.eats, &[("sdg_07_40", &main[..])], &cat).unwrap();
+                basis = basis_of(&shape, &main, &cat, question).map(|mut b| {
+                    b.dropped = vec!["SA".into()];
+                    b
+                }).unwrap();
             }
-            let mut shape = shape_of(&r.eats, &[("sdg_07_40", &main[..])], &Hubs).unwrap();
-            if let Some(kept) = members_only(&main, &shape, &basis) {
-                main = kept;
-                shape = shape_of(&r.eats, &[("sdg_07_40", &main[..])], &Hubs).unwrap();
-            }
-            assert!(shape.countries.iter().all(|c| basis.members.contains(c)), "{at}: only members drawn: {:?}", shape.countries);
+            assert_eq!(basis.missing, lacking, "{at}");
             let picks = picks_of(&r.picks, &shape, &main, &[]).unwrap();
-            let mut fill = test_fill(r, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false).unwrap();
+            let mut fill = test_fill(r, &shape, &picks, (&main, &[]), &cat, ("标题", "导语"), false).unwrap();
             let dek = dek_finding(&fill).map_or_else(|| "导语".to_string(), |d| d.0);
             page_words(&mut fill, ("标题", &dek, "栏目"));
-            said_basis(&mut fill, &shape, &basis).unwrap_or_else(|e| panic!("{at}: {e}"));
-            assert_eq!(fill["knobs"]["spec"].get("basis").is_some(), basis.line.is_some(), "{at}: the request keeps the basis");
-            fill["knobs"]["shapes"] = json!("runtime/pi/assets/naturalearth-admin0-50m.geojson");
-            fill["knobs"]["spec"]["kicker"] = json!("栏目");
-            fill["knobs"]["spec"]["source"] = json!("来源");
-            let order: Vec<String> = fill["order"].as_array().unwrap().iter().filter_map(|l| l.as_str().map(str::to_string)).collect();
-            let calls = std::sync::Mutex::new(Vec::new());
-            let request = crate::next_visual::Request::LeafFill {
-                recipe: name,
-                rows: fill["rows"].as_array().unwrap(),
-                knobs: &fill["knobs"],
-                order: &order,
-                runtime: Path::new("runtime"),
-            };
-            let page = match crate::next_flow::visual_call(&calls, "leaf_fill", request) {
-                Ok(crate::next_visual::Reply::Filled(page)) => page,
-                Ok(_) => panic!("{at}: not a filled page"),
-                Err(e) => panic!("{at}: leaf fill: {e}"),
-            };
-            let dir = tempfile::tempdir().unwrap();
-            let bundle = {
-                let _command = crate::group_guard::command_for_test("investigate");
-                crate::artifact::InvestigationBundle::create(dir.path(), "leaf page").unwrap()
-            };
-            let _command = crate::group_guard::command_for_test("investigate");
-            let _doors = crate::group_guard::doors_for_test(true);
-            let bake = crate::next_leaf::Runner::python(Path::new("fixtures/next_leaf/bake_twin.py"));
-            let mut qa = crate::next_leaf::Runner::python(Path::new("fixtures/next_visual/qa_twin.py"));
-            qa.args.push("pass".into());
-            let leaf = crate::next_visual::LeafPage {
-                draw: &page.draw,
-                bake: &bake,
-                w: page.w,
-                h: page.h,
-                frame: page.frame.clone(),
-                layers: &page.layers,
-                ledger: &page.ledger,
-                refs: &page.refs,
-                facts: (&page.spec, &page.rows, &page.facts),
-                strip: None,
-            };
-            let plan = json!({"kind": "leaf_plan", "recipe": name});
-            let published = crate::next_flow::publish_leaf_page(&calls, &bundle.dir, name, (&leaf, &plan), &qa).unwrap_or_else(|e| panic!("{at}: publish: {e}"));
-            let html = std::fs::read_to_string(bundle.dir.join(&published.html_ref)).unwrap();
-            let text = std::fs::read_to_string(bundle.dir.join("publications").join(name).join(crate::next_flow::LEAF_REQUEST)).unwrap();
-            let mut back: Value = serde_json::from_str(&text).unwrap();
-            let spec: crate::next_facts::Spec = serde_json::from_value(back["spec"].take()).unwrap();
-            let rows: Vec<crate::next_facts::Row> = serde_json::from_value(back["rows"].take()).unwrap();
-            let facts: Vec<crate::next_facts::Fact> = serde_json::from_value(back["facts"].take()).unwrap();
-            let ledger: BTreeMap<String, String> = serde_json::from_value(back["ledger"].take()).unwrap();
-            let refs: Vec<String> = serde_json::from_value(back["refs"].take()).unwrap();
+            said_basis(&mut fill, &shape, &basis, &cat).unwrap_or_else(|e| panic!("{at}: {e}"));
+            assert!(fill["knobs"]["spec"]["basis"].is_object(), "{at}: the request keeps the basis, a line or not");
+            let (html, ledger, refs, spec, rows, facts) = published(name, fill, &at);
             assert_eq!(crate::next_leaf::check_leaf_page(&html, &ledger, &refs, &spec, &rows, &facts), Vec::<String>::new(), "{at}");
-            let Some(line) = &basis.line else {
-                assert!(spec.basis.is_none(), "{at}: a page of one year for a group whose list is of that year keeps no basis");
+            let b = spec.basis.clone().unwrap();
+            assert_eq!((b.year.as_str(), b.count.as_deref()), (shape.year.as_str(), Some(DRAWN)), "{at}");
+            for d in &b.dropped {
+                assert_eq!(ledger.get(&format!("dropped:group_members:{}", d.code)).map(String::as_str), Some(d.why.as_str()), "{at}: the left-out place in the ledger");
+            }
+            let Some(line) = basis.line.clone() else {
+                assert!(b.words.is_none() && b.missing.is_empty(), "{at}: a page of one year with every member says nothing");
+                // a member left undrawn with no line naming it fails
+                let mut fewer = spec.clone();
+                fewer.basis.as_mut().unwrap().members.push("KR".into());
+                assert!(crate::next_leaf::check_leaf_page(&html, &ledger, &refs, &fewer, &rows, &facts).iter().any(|f| f.contains("does not draw")), "{at}");
                 continue;
             };
-            // the line as printed: its words, the year from the main's period entry and the count from the drawn fact
+            // the line as printed: its words, the year from the main's period entry, the count from the drawn fact, the names
             let n = ledger[&format!("fact:{DRAWN}.n")].clone();
-            assert_eq!(n, basis.members.len().to_string(), "{at}: every member drawn");
-            let said = line.replace("{year}", &shape.year).replace("{n}", &n);
+            assert_eq!(n, (basis.members.len() - lacking.len()).to_string(), "{at}: the places drawn");
+            let names: Vec<String> = lacking.iter().map(|c| format!("名{c}")).collect();
+            let said = line.replace("{year}", &shape.year).replace("{n}", &n).replace("{missing}", &names.join("、"));
             let plain: String = html.split('<').map(|p| p.split_once('>').map_or(p, |(_, t)| t)).collect();
             assert!(plain.contains(&said), "{at}: the page says {said:?}");
-            assert_eq!(spec.basis.as_ref().map(|b| (b.year.as_str(), b.count.as_str())), Some((shape.year.as_str(), DRAWN)), "{at}");
             assert!(!line.contains("{year}") || html.contains(&format!(r#"data-src="period:sdg_07_40:{}""#, shape.year)), "{at}: the year marked");
+            let fails = |page: &str, s: &crate::next_facts::Spec| crate::next_leaf::check_leaf_page(page, &ledger, &refs, s, &rows, &facts);
             // the line removed: its words cut out of the page
             let first = line.split('{').next().unwrap();
             let cut = html.replace(first, "");
             assert_ne!(cut, html, "{at}: the page prints the words");
-            assert!(crate::next_leaf::check_leaf_page(&cut, &ledger, &refs, &spec, &rows, &facts).iter().any(|f| f.starts_with("basis:")), "{at}: a page without the line passes");
+            assert!(fails(&cut, &spec).iter().any(|f| f.starts_with("basis:")), "{at}: a page without the line passes");
             // another count: the count's entry printed as another number
             let mark = format!(r#"data-src="fact:{DRAWN}.n">{n}<"#);
             assert!(html.contains(&mark), "{at}: the count marked");
-            let other = html.replace(&mark, &format!(r#"data-src="fact:{DRAWN}.n">{}<"#, basis.members.len() - 1));
-            assert_ne!(crate::next_leaf::check_leaf_page(&other, &ledger, &refs, &spec, &rows, &facts), Vec::<String>::new(), "{at}: another count passes");
-            // a basis whose members leave out a drawn place, or another year, refuses the page as it stands
+            let other = html.replace(&mark, &format!(r#"data-src="fact:{DRAWN}.n">{}<"#, n.parse::<usize>().unwrap() + 1));
+            assert_ne!(fails(&other, &spec), Vec::<String>::new(), "{at}: another count passes");
+            // a basis whose members leave out a drawn place refuses the page as it stands
             let mut fewer = spec.clone();
             fewer.basis.as_mut().unwrap().members.retain(|m| m != "CN");
-            assert!(crate::next_leaf::check_leaf_page(&html, &ledger, &refs, &fewer, &rows, &facts).iter().any(|f| f.contains("no member")), "{at}");
+            assert!(fails(&html, &fewer).iter().any(|f| f.contains("no member")), "{at}");
+            for code in lacking {
+                let src = format!(r#"data-src="name:zh_names:iso2:{code}">名{code}<"#);
+                assert!(html.contains(&src), "{at}: {code} named by its name row");
+                // the name cut, or another name in its place, fails
+                assert!(fails(&html.replace(&src, r#">"#), &spec).iter().any(|f| f.starts_with("basis:")), "{at}: without the name");
+                assert!(fails(&html.replace(&src, &format!(r#"data-src="name:zh_names:iso2:{code}">名KR<"#)), &spec).iter().any(|f| f.starts_with("basis:")), "{at}: another name");
+                // a request that names no member missing, for a page that draws one fewer, fails
+                let mut silent = spec.clone();
+                silent.basis.as_mut().unwrap().missing.clear();
+                assert!(fails(&html, &silent).iter().any(|f| f.contains("does not draw")), "{at}: a member lost silently");
+            }
         }
+    }
+
+    /// The recipe loop end to end for a question naming a country beside a group (owner 11-05 review, fix 1): recipe_request
+    /// over a run folder holding the rows of the BRICS members (Ethiopia with none), Japan (named in the question) and Saudi
+    /// Arabia (neither). Japan's rows stay and Japan is drawn; Saudi Arabia's are left out, with why in the page's basis, in
+    /// an event and, once drawn, in the request's ledger; the line counts the places drawn and names Ethiopia; the page
+    /// passes the whole-page check.
+    #[test]
+    fn a_country_named_beside_a_group_stays_and_a_place_left_out_is_recorded() {
+        let brics = ["BR", "RU", "IN", "CN", "ZA", "EG", "IR", "AE", "ID"];
+        let places = [&brics[..], &["JP", "SA"]].concat();
+        let main = group_rows(&places, &["2016", "2025"]);
+        let run = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(run.path().join("shadow")).unwrap();
+        std::fs::write(run.path().join("claims.jsonl"), "").unwrap();
+        std::fs::write(run.path().join("shadow/candidate_sheet-s1.json"), json!({"candidates": []}).to_string()).unwrap();
+        std::fs::write(run.path().join("sdg_07_40.csv"), "").unwrap();
+        let prepared = Prepared {
+            id: "sdg_07_40".into(),
+            title: String::new(),
+            file: "sdg_07_40.csv".into(),
+            args: Map::new(),
+            sheet: "s1".into(),
+            claims: Vec::new(),
+            places_zh: Vec::new(),
+            companions: Vec::new(),
+            asked: json!([]),
+        };
+        let cat = Groups(BTreeMap::from([("sdg_07_40".to_string(), main)]));
+        let calls = std::sync::Mutex::new(Vec::new());
+        let question = "日本和金砖国家近十年的GDP增长率";
+        let fill = recipe_request(run.path(), &[prepared], &["dumbbell"], recipe("change"), &cat, (question, ("标题", "导语", "栏目")), &calls)
+            .unwrap_or_else(|e| panic!("{e:?}"));
+        let geos: BTreeSet<&str> = fill["rows"].as_array().unwrap().iter().filter_map(|r| r["dims"]["geo"].as_str()).collect();
+        assert!(geos.contains("JP") && !geos.contains("SA"), "{geos:?}");
+        let basis = &fill["knobs"]["spec"]["basis"];
+        assert_eq!(basis["named"], json!(["JP"]));
+        assert_eq!(basis["missing"], json!(["ET"]));
+        assert_eq!(basis["dropped"], json!([{"code": "SA", "why": "not a member of BRICS in 2025"}]));
+        let events = calls.lock().unwrap().clone();
+        let left = events.iter().find(|e| e["request"] == "group_members").expect("the drop is an event");
+        assert_eq!(left["dropped"], json!([{"code": "SA", "why": "not a member of BRICS in 2025"}]));
+        // laid out where leaf_page lays the external layers out, by the repository's own nodes (whole paths: the child runs
+        // in its own folder)
+        let mut fill = fill;
+        fill["knobs"]["shapes"] = json!(Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime/pi/assets/naturalearth-admin0-50m.geojson"));
+        draw_nodes(&mut fill, &recipe("change").external, &calls, &Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime")).unwrap();
+        let (html, ledger, refs, spec, rows, facts) = published("change", fill, question);
+        assert_eq!(crate::next_leaf::check_leaf_page(&html, &ledger, &refs, &spec, &rows, &facts), Vec::<String>::new());
+        assert_eq!(ledger.get("dropped:group_members:SA").map(String::as_str), Some("not a member of BRICS in 2025"));
+        assert_eq!(ledger[&format!("fact:{DRAWN}.n")], "10", "nine members and Japan");
+        let plain: String = html.split('<').map(|p| p.split_once('>').map_or(p, |(_, t)| t)).collect();
+        assert!(plain.contains("按 2025 年成员计，画出 10 国，名ET无数据"), "the line counts the places drawn and names Ethiopia");
     }
 
     /// The unit table made from the catalogue's labels, on a whole page (user 11-05 10:2x (a): tested on the page, not the

@@ -1620,33 +1620,90 @@ pub fn check_leaf_page(
     off
 }
 
-/// A page for a country group whose request keeps a member basis (spec.basis, from the knowledge group's words) says it:
-/// the page's text holds the basis words with the year as its period entry in the basis table and the count as the bare
-/// number of the count fact, both printed marked; that fact counts at the basis year, and every place it counts is one of
-/// the members. A request with no basis asks nothing of the page.
+/// A page for a country group whose request keeps a member basis (spec.basis, the knowledge group's words) is held to it:
+/// its count fact counts at the basis year, only members and the places the question names beside them, and the members
+/// it does not count are exactly the ones the basis names as having no data, which the line must name; the page's text
+/// holds the line's words with the year as its period entry in the basis table, the count as the count fact's bare number
+/// and each member with no data as its name row, all printed marked. A basis with no line asks only the count's rule (and
+/// no member missing); a request with no basis asks nothing of the page.
 fn basis_said(html: &str, ledger: &BTreeMap<String, String>, spec: &Spec, rows: &[Row], facts: &[Fact]) -> Vec<String> {
     let Some(b) = &spec.basis else { return Vec::new() };
-    let year_src = format!("{PERIOD_SRC}{}:{}", b.table, b.year);
-    let count_src = format!("{}{}.n", crate::next_facts::FACT_SRC, b.count);
-    let entry = |src: &str, key: &str| if b.words.contains(key) { ledger.get(src).map(String::as_str) } else { Some("") };
-    let (Some(year), Some(n)) = (entry(&year_src, "{year}"), entry(&count_src, "{n}")) else {
-        return vec![format!("basis: the ledger holds no {year_src} or {count_src} for the member basis {:?}", b.words)];
-    };
     let mut off = Vec::new();
-    match (spec.facts.iter().find(|(k, _)| *k == b.count), facts.iter().find(|f| f.key == b.count)) {
-        (Some((_, q)), Some(f)) if f.op == "n" => {
-            if q["time"].as_str() != Some(b.year.as_str()) {
-                off.push(format!("basis: {count_src} counts at {}, the basis is of {}", q["time"], b.year));
-            }
-            let by = q["by"].as_str().unwrap_or_default();
-            for r in rows.iter().filter(|r| f.reads.contains(&r.src)) {
-                match r.dims.get(by) {
-                    Some(code) if b.members.contains(code) => {}
-                    code => off.push(format!("basis: {count_src} counts {code:?} ({}), no member of {}", r.src, b.year)),
+    let uses = |key: &str| b.words.as_deref().is_some_and(|w| w.contains(key));
+    let count_src = b.count.as_ref().map(|c| format!("{}{c}.n", crate::next_facts::FACT_SRC));
+    // the places the count fact counts, each once
+    let counted: Option<Vec<String>> = b.count.as_ref().and_then(|count| {
+        match (spec.facts.iter().find(|(k, _)| k == count), facts.iter().find(|f| &f.key == count)) {
+            (Some((_, q)), Some(f)) if f.op == "n" => {
+                if q["time"].as_str() != Some(b.year.as_str()) {
+                    off.push(format!("basis: {count} counts at {}, the basis is of {}", q["time"], b.year));
                 }
+                let by = q["by"].as_str().unwrap_or_default();
+                let mut codes: Vec<String> = Vec::new();
+                for r in rows.iter().filter(|r| f.reads.contains(&r.src)) {
+                    match r.dims.get(by) {
+                        Some(code) if !codes.contains(code) => codes.push(code.clone()),
+                        Some(_) => {}
+                        None => off.push(format!("basis: {count} reads {}, which has no {by}", r.src)),
+                    }
+                }
+                Some(codes)
+            }
+            _ => {
+                off.push(format!("basis: the request holds no count fact {count} for the member basis"));
+                None
             }
         }
-        _ => off.push(format!("basis: the request holds no count fact {} for the member basis", b.count)),
+    });
+    match &counted {
+        Some(codes) => {
+            for code in codes.iter().filter(|c| !b.members.contains(c) && !b.named.contains(c)) {
+                off.push(format!("basis: the page counts {code}, no member in {} and not named in the question", b.year));
+            }
+            let lacking: std::collections::BTreeSet<&String> = b.members.iter().filter(|m| !codes.contains(m)).collect();
+            let said: std::collections::BTreeSet<&String> = b.missing.iter().collect();
+            if lacking != said {
+                off.push(format!("basis: the members of {} the page does not draw are {lacking:?}, it names {said:?} as with no data", b.year));
+            }
+        }
+        None if b.count.is_none() && (b.words.is_some() || !b.missing.is_empty()) => {
+            off.push("basis: the page states a member basis and has no count of its places".to_string());
+        }
+        None => {}
+    }
+    if !b.missing.is_empty() && !uses("{missing}") {
+        off.push(format!("basis: members {:?} have no data and the page's line does not name them", b.missing));
+    }
+    let Some(words) = &b.words else { return off };
+    let mut want = words.clone();
+    let mut marked: Vec<String> = Vec::new();
+    let year_src = format!("{PERIOD_SRC}{}:{}", b.table, b.year);
+    for (key, src) in [("{year}", Some(&year_src)), ("{n}", count_src.as_ref())] {
+        if !uses(key) {
+            continue;
+        }
+        match src.and_then(|s| ledger.get(s).map(|t| (s, t))) {
+            Some((s, t)) => {
+                want = want.replace(key, t);
+                marked.push(s.clone());
+            }
+            None => {
+                off.push(format!("basis: the ledger holds no entry for {key} of the member basis {words:?}"));
+                return off;
+            }
+        }
+    }
+    if uses("{missing}") {
+        let mut names = Vec::new();
+        for code in &b.missing {
+            let src = crate::next_ledger::name_src(code);
+            match ledger.get(&src) {
+                Some(name) => names.push(name.as_str()),
+                None => off.push(format!("basis: the ledger names no {code}, a member with no data")),
+            }
+            marked.push(src);
+        }
+        want = want.replace("{missing}", &names.join(&b.missing_join));
     }
     // the page's text as read: no markup, its entities as the characters they stand for
     let mut text = String::new();
@@ -1660,12 +1717,11 @@ fn basis_said(html: &str, ledger: &BTreeMap<String, String>, spec: &Spec, rows: 
         }
     }
     let text = text.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&#39;", "'").replace("&amp;", "&");
-    let want = b.words.replace("{year}", year).replace("{n}", n);
     if !text.contains(&want) {
         off.push(format!("basis: the page does not say its member basis {want:?}"));
     }
-    for src in [&year_src, &count_src] {
-        if b.words.contains(if *src == year_src { "{year}" } else { "{n}" }) && !html.contains(&format!("data-src=\"{src}\"")) {
+    for src in marked {
+        if !html.contains(&format!("data-src=\"{src}\"")) {
             off.push(format!("basis: the page prints no {src} for its member basis"));
         }
     }

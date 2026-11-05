@@ -2320,9 +2320,10 @@ pub trait Catalogue: Sync {
         None
     }
     /// What a page drawn for the group the Chinese question names counts (the knowledge group's GroupBasis, through its
-    /// door): the members of the year the page counts and the words of the line that says so; None when the question names
+    /// door), from the page's first and last years, its place codes and those with a row at the last: the members of the
+    /// year the page counts, the places to leave out and the words of the line that says so; None when the question names
     /// no group, or this catalogue reads none.
-    fn group_basis(&self, _question_zh: &str, _t0: Option<i32>, _t1: i32) -> Option<crate::l5geo::GroupBasis> {
+    fn group_basis(&self, _question_zh: &str, _years: (Option<i32>, i32), _places: (&[String], &[String])) -> Option<crate::l5geo::GroupBasis> {
         None
     }
     /// The shape of the slice a fetched file varies over, read by the knowledge group against the table's own metadata.
@@ -3221,14 +3222,15 @@ impl Catalogue for GroupCatalogue {
         }
     }
 
-    fn group_basis(&self, question_zh: &str, t0: Option<i32>, t1: i32) -> Option<crate::l5geo::GroupBasis> {
+    fn group_basis(&self, question_zh: &str, years: (Option<i32>, i32), places: (&[String], &[String])) -> Option<crate::l5geo::GroupBasis> {
         let request = next_knowledge::Request::GroupBasis {
             catalogue: &self.opened,
             question: question_zh,
-            t0,
-            t1,
+            years,
+            places,
         };
-        match self.call("group_basis", json!({"question": question_zh, "t0": t0, "t1": t1}), request) {
+        let args = json!({"question": question_zh, "t0": years.0, "t1": years.1, "places": places.0, "at_t1": places.1});
+        match self.call("group_basis", args, request) {
             next_knowledge::Reply::GroupBasis(basis) => basis,
             _ => unreachable!("the knowledge group answered group_basis with another reply"),
         }

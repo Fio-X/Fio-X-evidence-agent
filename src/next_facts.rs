@@ -128,15 +128,33 @@ pub struct Spec {
 }
 
 /// What a page for a country group counts and must say (the flow writes it from the knowledge group's group_basis): the
-/// line's words ({year} and {n} the page's entries of `year` in `table` and of the `count` fact's bare number), the year
-/// the count is at, and the codes of the group's members that year.
+/// line's words, none when it prints none ({year} and {n} the page's entries of `year` in `table` and of the `count` fact's
+/// bare number, {missing} the name rows of the `missing` members joined by `missing_join`), the year the count is at, the
+/// count's fact (none on a page with no count of its places), and, as the page's rows write the codes, the group's members
+/// that year (countries only), the places the question names beside them, the members with no data, and the places left
+/// out with why.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Basis {
-    pub words: String,
+    pub words: Option<String>,
     pub year: String,
-    pub count: String,
+    pub count: Option<String>,
     pub table: String,
     pub members: Vec<String>,
+    #[serde(default)]
+    pub named: Vec<String>,
+    #[serde(default)]
+    pub missing: Vec<String>,
+    #[serde(default)]
+    pub missing_join: String,
+    #[serde(default)]
+    pub dropped: Vec<BasisDropped>,
+}
+
+/// A place a group's page left out, and why.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct BasisDropped {
+    pub code: String,
+    pub why: String,
 }
 
 /// The countries a question names on their own (the knowledge group's places, countries only), as the page's rows write

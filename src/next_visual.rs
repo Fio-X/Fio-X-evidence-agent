@@ -455,6 +455,12 @@ fn fill<'a>(
             _ => return Err(format!("fill: knobs.named {src} is no name row ({}...) with a text", crate::next_ledger::LABEL_SRC)),
         }
     }
+    // the places a group's page left out (spec.basis.dropped: no member that year, not named), each a never-printed entry
+    // with why, so the page's request says what the page leaves out
+    for d in spec.basis.iter().flat_map(|b| &b.dropped) {
+        let (src, why) = crate::next_ledger::dropped_entry("group_members", &d.code, &d.why);
+        ledger.insert(src, why);
+    }
     // the map points the leaves draw places at (knobs.points, the flow's from the pinned table), kept as ledger entries
     // with the page's request: never printed, there for a replay of that table
     let points = &knobs["points"];
