@@ -24,7 +24,7 @@
 use std::collections::BTreeMap;
 
 use crate::next_flow::{
-    level_question, number_not_allowed, placeholders, question_word, worded_number,
+    level_question, number_not_allowed, placeholders, question_word, unanswered_word, worded_number,
     year_after_fact_period, year_after_period, Ask, Choice,
 };
 use crate::shape_registry::{
@@ -450,6 +450,7 @@ impl Drafts {
             if placeholders(wording) != placeholders(draft)
                 || number_not_allowed(wording, &self.numbers).is_some()
                 || worded_number(wording).is_some()
+                || unanswered_word(wording).is_some()
                 || (!self.periods.is_empty() && year_after_period(wording).is_some())
                 || year_after_fact_period(wording).is_some()
                 || (self.change_title

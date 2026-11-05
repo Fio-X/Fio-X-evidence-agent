@@ -384,6 +384,51 @@ fn measure_families() -> &'static [Family] {
     })
 }
 
+/// measure-families.json's denominator words: a family word between an opening word (占) and the nearest closing word
+/// (比重, 比例, ...) at most `max_chars` characters on is that share's whole, not a quantity the question asks for.
+#[derive(Clone, Debug, Deserialize)]
+struct Denominator {
+    opens: Vec<String>,
+    closes: Vec<String>,
+    max_chars: usize,
+}
+
+fn denominator() -> &'static Denominator {
+    static D: OnceLock<Denominator> = OnceLock::new();
+    D.get_or_init(|| {
+        #[derive(Deserialize)]
+        struct File {
+            denominator: Denominator,
+        }
+        serde_json::from_str::<File>(MEASURE_FAMILIES)
+            .expect("measure-families.json has its denominator words")
+            .denominator
+    })
+}
+
+/// `q` (measure_chars) with each share's whole blanked (`denominator`), so no family word matches inside it.
+fn blank_denominators(q: &mut [char]) {
+    let d = denominator();
+    let words = |ws: &[String]| ws.iter().map(|w| measure_chars(w)).filter(|w| !w.is_empty()).collect::<Vec<_>>();
+    let (opens, closes) = (words(&d.opens), words(&d.closes));
+    let at = |q: &[char], i: usize, w: &[char]| q.get(i..i + w.len()) == Some(w);
+    let mut i = 0;
+    while i < q.len() {
+        let Some(open) = opens.iter().find(|w| at(q, i, w)) else {
+            i += 1;
+            continue;
+        };
+        let from = i + open.len();
+        let close = (from..q.len().min(from + d.max_chars + 1)).find(|&j| closes.iter().any(|w| at(q, j, w)));
+        if let Some(to) = close {
+            q[from..to].iter_mut().for_each(|c| *c = '\0');
+            i = to;
+        } else {
+            i = from;
+        }
+    }
+}
+
 /// A question's text as the family words are matched on it: spaces removed, letters upper-cased.
 fn measure_chars(text: &str) -> Vec<char> {
     text.chars()
@@ -451,6 +496,7 @@ fn title_names(title: &str, words: &[String]) -> bool {
 /// used up so a shorter word inside it does not match again, each family once.
 pub fn asked_zh(question_zh: &str) -> Vec<Asked> {
     let mut q = measure_chars(question_zh);
+    blank_denominators(&mut q);
     let mut words: Vec<(Vec<char>, &Family)> = measure_families()
         .iter()
         .flat_map(|f| f.words.iter().map(move |w| (measure_chars(w), f)))
@@ -2418,6 +2464,20 @@ mod tests {
             }
             assert!(f.tables.iter().all(|t| !t.is_empty() && !t.contains('@')), "{f:?}");
         }
+    }
+
+    /// A share's whole is its denominator, not a quantity asked (user 11-05 10:2x): 占 GDP 比重 reads no gdp, 占总人口比例
+    /// no population, while the same words outside a share still ask (GDP 和 ... ; 总人口).
+    #[test]
+    fn a_share_s_whole_is_no_asked_quantity() {
+        let ids = |q: &str| asked_zh(q).into_iter().map(|a| a.id).collect::<Vec<_>>();
+        assert!(ids("各国研发支出占GDP比重的变化").is_empty());
+        assert!(ids("欧盟各国研发支出占 GDP 的百分比").is_empty());
+        assert_eq!(ids("各国65岁以上人口占总人口比例"), ["pop65"]);
+        assert_eq!(ids("各国GDP和老年人口占总人口的比重"), ["pop65", "gdp"]);
+        assert_eq!(ids("各国总人口的变化"), ["population"]);
+        // an opening word with no closing word near it blanks nothing
+        assert_eq!(ids("各国碳排放占了多少，和GDP"), ["co2", "gdp"]);
     }
 
     /// Each dev question asks for one quantity, the DE question for two, and words that only narrow (a big-population

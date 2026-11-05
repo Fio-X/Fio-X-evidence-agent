@@ -1,0 +1,19 @@
+# The words that say a part of the question cannot be answered. Only the program prints such a line (the leaf's
+# page.note.unanswered_half, inside <p class="unanswered" data-asked="...">, when the catalogue offered no table for an
+# asked quantity); a model's wording that holds one is refused at the text step (next_flow::unanswered_word) and an
+# unmarked one on the page is refused by the page check (next_ledger::check_numbers). Words that also read a chart (a map's
+# "灰色是没有数据") are not listed. One word per line.
+答不了
+回答不了
+无法回答
+没法回答
+不能回答
+无从回答
+无法作答
+答不出
+找不到数据
+查不到数据
+没有能对上的表
+没有对应的表
+无对应数据
+目录里没有

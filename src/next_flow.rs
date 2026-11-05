@@ -1153,6 +1153,11 @@ impl Ask {
                             "field '{id}': '{word}' is a number in words (a count, a multiple, a share, a half) that no data gave; {NUMBER_WORD_RULE}; keep the drafted {{placeholders}} and leave it out"
                         )));
                     }
+                    if let Some(word) = unanswered_word(revised) {
+                        return Err(self.refuse(format!(
+                            "field '{id}': '{word}' says a part cannot be answered; only the program says that, on its own line, when no table holds the part; leave it out"
+                        )));
+                    }
                     if let Some(written) =
                         year_after_period(revised).filter(|_| !periods.is_empty())
                     {
@@ -1207,6 +1212,9 @@ impl Ask {
                 for (id, name) in &names {
                     if let Some(word) = worded_number(name) {
                         return Err(self.refuse(format!("names: slot '{id}' has '{word}', a number in words; a name holds no number: {NUMBER_WORD_RULE}")));
+                    }
+                    if let Some(word) = unanswered_word(name) {
+                        return Err(self.refuse(format!("names: slot '{id}' has '{word}'; only the program says a part cannot be answered")));
                     }
                     if name.trim().chars().count() > NAME_MAX_CHARS {
                         return Err(self.refuse(format!(
@@ -1476,6 +1484,18 @@ pub fn worded_number(text: &str) -> Option<String> {
 
 /// The first time placeholder of a text written with 年 right after it ("{first.year}年"), as written; a time
 /// placeholder is one whose column (its last part) is a TIME_COLUMNS column.
+/// A word that says a part of the question cannot be answered (runtime/pi/assets/unanswered-words.tsv, the knowledge group's
+/// word list, read as data): whether a part is answered is the program's call and its line is the program's (user 11-05
+/// 10:2x), so a model's wording that holds one is refused and worded again.
+pub fn unanswered_word(text: &str) -> Option<String> {
+    include_str!("../runtime/pi/assets/unanswered-words.tsv")
+        .lines()
+        .map(str::trim)
+        .filter(|w| !w.is_empty() && !w.starts_with('#'))
+        .find(|w| text.contains(w))
+        .map(str::to_string)
+}
+
 pub fn year_after_period(text: &str) -> Option<String> {
     year_after(text, |column| crate::next_page::TIME_COLUMNS.contains(&column))
 }
@@ -4885,6 +4905,17 @@ async fn composition_inputs<R: ToolRunner + Send + ?Sized>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Only the program says a part cannot be answered (user 11-05 10:2x): the word list catches a model's wording, and
+    /// leaves a chart's reading words (a map's 灰色是没有数据) and the drafted fields alone.
+    #[test]
+    fn a_wording_that_says_a_part_cannot_be_answered_is_found() {
+        assert_eq!(unanswered_word("失业率这一半答不了"), Some("答不了".to_string()));
+        assert_eq!(unanswered_word("目录里没有这张表"), Some("目录里没有".to_string()));
+        assert_eq!(unanswered_word("暂时无法回答"), Some("无法回答".to_string()));
+        assert_eq!(unanswered_word("读图：颜色越深，数值越高，灰色是没有数据。"), None);
+        assert_eq!(unanswered_word("{first.name}居首"), None);
+    }
     use crate::l5geo::{Candidate, Coverage, Scope, Uncovered};
 
     fn q3_like() -> Value {

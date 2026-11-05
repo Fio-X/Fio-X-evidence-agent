@@ -343,6 +343,17 @@ struct Open {
     name: String,
     mark: Option<Mark>,
     text: String,
+    /// the program's unanswered line (<p class="unanswered" data-asked="...">), the one place the words may stand
+    unanswered: bool,
+}
+
+/// A word that says a part of the question cannot be answered (runtime/pi/assets/unanswered-words.tsv, read as data).
+fn unanswered_word(text: &str) -> Option<&'static str> {
+    include_str!("../runtime/pi/assets/unanswered-words.tsv")
+        .lines()
+        .map(str::trim)
+        .filter(|w| !w.is_empty() && !w.starts_with('#'))
+        .find(|w| text.contains(w))
 }
 
 /// The page check: every text of the page (and every attribute a reader is read), with its character references read, holds
@@ -436,6 +447,9 @@ pub fn check_numbers(
             for (key, value) in &attrs {
                 if READ_ATTRS.contains(&key.as_str()) {
                     plain(value, &mut off);
+                    if let Some(w) = unanswered_word(value) {
+                        off.push(format!("{w:?} in {:?} says a part cannot be answered, and only the program's unanswered line may", value.trim()));
+                    }
                 }
             }
             if name == "style" || name == "script" {
@@ -463,16 +477,22 @@ pub fn check_numbers(
             let mark = attr("data-src")
                 .map(Mark::Src)
                 .or_else(|| attr("data-ref").map(|_| Mark::Ref));
+            let unanswered = attr("data-asked").is_some()
+                && attr("class").is_some_and(|c| c.split_whitespace().any(|c| c == "unanswered"));
             open.push(Open {
                 name,
                 mark,
                 text: String::new(),
+                unanswered,
             });
             continue;
         }
         let next = rest.find('<').unwrap_or(rest.len());
         let text = unescape(&rest[..next]);
         rest = &rest[next..];
+        if let Some(w) = unanswered_word(&text).filter(|_| !open.iter().any(|o| o.unanswered)) {
+            off.push(format!("{w:?} in {:?} says a part cannot be answered, and only the program's unanswered line may", text.trim()));
+        }
         match open.iter_mut().rev().find(|o| o.mark.is_some()) {
             Some(marked) => marked.text.push_str(&text),
             None => plain(&text, &mut off),
@@ -1595,6 +1615,14 @@ mod tests {
         assert!(check_numbers(&wide, &ledger, &refs())
             .iter()
             .any(|f| f.contains("the digits 12")));
+        // only the program's unanswered line may say a part cannot be answered: a model's words saying it are refused
+        let typed_line = format!("{}<p>失业率这一半答不了</p>", sample().0);
+        assert!(check_numbers(&typed_line, &ledger, &refs()).iter().any(|f| f.contains("only the program's unanswered line may")));
+        let program_line = format!(
+            "{}<p class=\"unanswered\" data-asked=\"population\">本题还问到人口，目录里没有能对上的表，这一半答不了。</p>",
+            sample().0
+        );
+        assert_eq!(check_numbers(&program_line, &ledger, &refs()), check_numbers(&sample().0, &ledger, &refs()));
         // a year printed as plain words is not exempt: it must come from its data row through the ledger
         let year = sample().0.replacen(
             "<span class=\"n\" data-src=\"series:s1:time\">2025</span>",
