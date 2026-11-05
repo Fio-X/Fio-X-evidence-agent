@@ -2498,8 +2498,16 @@ struct NotesAsked {
 fn notes_asked(recipe: &Recipe, fill: &Value) -> NotesAsked {
     let spec = &fill["knobs"]["spec"];
     let layers = recipe.short_notes.iter().map(|(l, at)| (l.clone(), spec.pointer(at).and_then(Value::as_array).map_or(0, Vec::len))).collect();
+    // the headline as printed holds its places' names (page_words wrote them over the placeholders): a place is cited when
+    // its name from the leaf labels is in it, or a placeholder of it is still there (review 11-05: by placeholders alone, a
+    // printed headline cited none)
     let title = spec["title"].as_str().unwrap_or_default();
-    let cited = title.split("{name.").skip(1).filter_map(|t| t.split_once('}')).map(|(code, _)| code.to_string()).collect();
+    let mut cited: BTreeSet<String> = title.split("{name.").skip(1).filter_map(|t| t.split_once('}')).map(|(code, _)| code.to_string()).collect();
+    for (code, name) in fill["knobs"]["labels"].as_object().into_iter().flatten() {
+        if name.as_str().is_some_and(|n| !n.is_empty() && title.contains(n)) {
+            cited.insert(code.clone());
+        }
+    }
     NotesAsked { layers, cited }
 }
 
@@ -11332,6 +11340,14 @@ for line in sys.stdin:
         // a circle's label on the map is the main picture's: counts, and so does a layer that asked no notes
         let (counted, let_go) = notes_let_go(&[d("bubbles", "AT"), d("leader_notes", "SE")], &asked);
         assert_eq!((counted, let_go), (vec![d("bubbles", "AT")], vec!["dropped:leader_notes:SE".to_string()]));
+        // the headline as the page prints it, its placeholder written over by page_words: the place is still cited
+        let mut printed = json!({"knobs": {"labels": {"DE": "德国", "SE": "瑞典"}, "spec": {"hero": fill["knobs"]["spec"]["hero"].clone()}}});
+        page_words(&mut printed, ("{name.DE}最高", "导语", "栏目"));
+        assert_eq!(printed["knobs"]["spec"]["title"], "德国最高");
+        let asked = notes_asked(column, &printed);
+        assert_eq!(asked.cited, BTreeSet::from(["DE".to_string()]));
+        assert_eq!(notes_let_go(&[d("leader_notes", "DE")], &asked).0.len(), 1, "the headline's note counts");
+        assert_eq!(notes_let_go(&[d("leader_notes", "SE")], &asked).1.len(), 1, "another one of six goes");
         let none = notes_asked(column, &json!({"knobs": {"spec": {"title": "标题"}}}));
         assert_eq!(notes_let_go(&[d("leader_notes", "SE")], &none).0.len(), 1);
         // only the short-note layers are registered so, on the recipes that draw them
