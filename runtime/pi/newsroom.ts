@@ -15,7 +15,7 @@ import { mkdir, readFile, writeFile, appendFile, stat, readdir, unlink, rename, 
 import { basename, dirname, isAbsolute, join, resolve, sep, relative } from "node:path";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
-import { gunzipSync, gzipSync } from "node:zlib";
+import { gunzipSync } from "node:zlib";
 import { chartNameDisplay, critiqueViz, hashRows, inferVisualFamily, lintVizSpec, renderVizBundle, sankeyMergeSummary, specValueKind, symbolMapQaOptions, tileMapQaOptions, unitAwareText, validateVizSpec } from "./viz.mjs";
 import { economyCodeScheme } from "./economy_names.mjs";
 import { tileMapEnabled } from "./us_states.mjs";
@@ -4265,9 +4265,9 @@ async function writeProgramOrigin(origin: Record<string, unknown>) {
 // NEWSROOM_WB_STORE (new route only; an absolute folder, set by the news-next wrapper): whole World Bank indicators kept on this machine. One
 // data/<indicator>.tsv.gz per indicator (columns below, rows without a value left out, values as the answer gave them) and the country list
 // as country-list.json, unchanged; manifest.tsv names each with its download time, rows and sha256 (a later line replaces an earlier one);
-// names.tsv holds each indicator's name as the provider gave it.
-// A copy is read only when its manifest line, sha256 and row count all hold and it is younger than store_max_age_days; otherwise the whole
-// indicator is fetched again and written back. Unset: nothing here is read or written.
+// names.tsv holds each indicator's name as the provider gave it. The store is filled and refreshed outside the program (its own downloader);
+// the program only reads it. A copy is read only when its manifest line, sha256, header and row count all hold and it is younger than
+// store_max_age_days; otherwise the provider is asked exactly as without a store. Unset: nothing here is read.
 const WB_STORE_COLS = ["indicator", "country_id", "iso3", "year", "value", "obs_status"];
 const WB_STORE_MANIFEST_COLS = ["indicator", "downloaded_at", "rows", "sha256", "wb_lastupdated"];
 const WB_STORE_LIST_KEY = "_country_list";
@@ -4299,17 +4299,6 @@ async function wbStoreRead(dir: string, key: string, file: string) {
   if (sha256Hex(bytes) !== entry.sha256) return { miss: "its file does not match the manifest's sha256" };
   return { bytes, entry };
 }
-async function wbStoreWrite(dir: string, key: string, file: string, bytes: Buffer, rows: number, lastupdated: string) {
-  const path = join(dir, file);
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(`${path}.tmp`, bytes);
-  await rename(`${path}.tmp`, path);
-  const manifest = join(dir, "manifest.tsv");
-  let fresh = false;
-  try { await stat(manifest); } catch { fresh = true; }
-  const at = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
-  await appendFile(manifest, `${fresh ? WB_STORE_MANIFEST_COLS.join("\t") + "\n" : ""}${[key, at, String(rows), sha256Hex(bytes), lastupdated].join("\t")}\n`);
-}
 // A store file as this run's own data file (content-addressed, so its name is the manifest's sha256), with the record of where the store got it.
 async function wbStoreCopyIntoRun(bytes: Buffer, ext: string, record: Record<string, unknown>) {
   const root = String(artifactRoot());
@@ -4328,61 +4317,37 @@ async function wbStoreCopyIntoRun(bytes: Buffer, ext: string, record: Record<str
   await writeProgramOrigin(origin);
   return { relativeFile: copy.relativeFile, sha256: copy.sha256, bytes, reused: false };
 }
-// The country list: the store's copy when it holds a usable one, else the provider's (then written back).
+// The country list: the store's copy when it holds a usable one, else the provider's.
 async function wbCountryList(signal: AbortSignal | undefined) {
   const url = String(dataPrepareNextField("worldbank", "country_list_url"));
   const dir = wbStoreDir();
-  if (!dir) return { file: await dataPrepareFetch(url, "worldbank-countries.json", signal), note: "" };
-  const held = await wbStoreRead(dir, WB_STORE_LIST_KEY, "country-list.json");
-  if (held.bytes) {
+  const held = dir ? await wbStoreRead(dir, WB_STORE_LIST_KEY, "country-list.json") : null;
+  if (held?.bytes) {
     const file = await wbStoreCopyIntoRun(held.bytes, "json", { requested_url: url, store: "country-list.json", downloaded_at: held.entry.downloaded_at, store_sha256: held.entry.sha256 });
     return { file, note: `country list from the local copy downloaded ${held.entry.downloaded_at}` };
   }
-  const file = await dataPrepareFetch(url, "worldbank-countries.json", signal);
-  const rows = parseWorldBankAnswer(file.bytes, "the country list").length;
-  const kept = await wbStoreWrite(dir, WB_STORE_LIST_KEY, "country-list.json", file.bytes, rows, "").then(() => "written to the local store", (error: any) => `not written to the local store (${String(error?.code ?? error?.message ?? error)})`);
-  return { file, note: `country list fetched (local copy ${held.miss}); ${kept}` };
+  return { file: await dataPrepareFetch(url, "worldbank-countries.json", signal), note: held ? `country list fetched (local copy ${held.miss})` : "" };
 }
-// One indicator for every place and year the store keeps: the held copy, else the whole-indicator answer fetched now (kept in data/ as the
-// download it is) and written back. Rows come back in the answer's own shape (value as a number), so one conversion reads either.
-async function wbIndicatorFromStore(dir: string, code: string, signal: AbortSignal | undefined) {
+// One indicator for every place and year the store keeps, or why the store's copy is not used. Rows come back in the answer's own shape
+// (value as a number), so one conversion reads either.
+async function wbIndicatorFromStore(dir: string, code: string) {
   const file = `data/${code}.tsv.gz`;
   const held = await wbStoreRead(dir, code, file);
-  let bytes: Buffer, entry: Record<string, string>, source: { relativeFile: string; sha256: string; bytes: Buffer; reused: boolean }, note: string, name = "";
-  if (held.bytes) {
-    bytes = held.bytes; entry = held.entry;
-    source = await wbStoreCopyIntoRun(bytes, "gz", { requested_url: String(dataPrepareNextField("worldbank", "store_url")).replace("{dataset}", code), store: file, downloaded_at: entry.downloaded_at, wb_lastupdated: entry.wb_lastupdated, store_sha256: entry.sha256, rows: Number(entry.rows) });
-    note = `the local copy downloaded ${entry.downloaded_at} (World Bank lastupdated ${entry.wb_lastupdated || "not given"})`;
-  } else {
-    const url = String(dataPrepareNextField("worldbank", "store_url")).replace("{dataset}", code);
-    const answer = await dataPrepareFetch(url, `${code}.json`, signal);
-    const raw = parseWorldBankAnswer(answer.bytes, `the answer for ${code}`);
-    const last = String(JSON.parse(answer.bytes.toString("utf8"))[0]?.lastupdated ?? "");
-    const lines = raw.filter((row: any) => row?.value !== null && row?.value !== undefined && row?.value !== "").map((row: any) => [code, String(row?.country?.id ?? ""), String(row?.countryiso3code ?? ""), String(row?.date ?? ""), String(row.value), String(row?.obs_status ?? "")].join("\t"));
-    name = String(raw.find((row: any) => row?.indicator?.value)?.indicator?.value ?? "");
-    bytes = gzipSync(Buffer.from([WB_STORE_COLS.join("\t"), ...lines].join("\n") + "\n", "utf8"));
-    const kept = await wbStoreWrite(dir, code, file, bytes, lines.length, last).then(() => "written to the local store", (error: any) => `not written to the local store (${String(error?.code ?? error?.message ?? error)})`);
-    if (name && !(await wbStoreNames(dir)).has(code)) {
-      try {
-        let fresh = false;
-        try { await stat(join(dir, "names.tsv")); } catch { fresh = true; }
-        await appendFile(join(dir, "names.tsv"), `${fresh ? "indicator\tname\n" : ""}${code}\t${name.replace(/[\t\n]/g, " ")}\n`);
-      } catch {}
-    }
-    entry = { downloaded_at: "", wb_lastupdated: last, rows: String(lines.length) };
-    source = answer;
-    note = `fetched whole now (local copy ${held.miss}); ${kept}`;
-  }
-  const [head, ...body] = gunzipSync(bytes).toString("utf8").replace(/\n$/, "").split("\n");
-  if (head !== WB_STORE_COLS.join("\t")) throw new Error(`DATA_PREPARE_LOCAL_COPY: ${file} has the header ${JSON.stringify(head)}, not ${WB_STORE_COLS.join(", ")}`);
-  if (body.length !== Number(entry.rows)) throw new Error(`DATA_PREPARE_LOCAL_COPY: ${file} holds ${body.length} rows and its manifest line says ${entry.rows}`);
-  const rows = body.map((line, at) => {
+  if (!held.bytes) return { miss: held.miss };
+  const entry = held.entry;
+  const [head, ...body] = gunzipSync(held.bytes).toString("utf8").replace(/\n$/, "").split("\n");
+  if (head !== WB_STORE_COLS.join("\t")) return { miss: `its header is not ${WB_STORE_COLS.join(", ")}` };
+  if (body.length !== Number(entry.rows)) return { miss: `it holds ${body.length} rows and its manifest line says ${entry.rows}` };
+  const rows: any[] = [];
+  for (const line of body) {
     const cells = line.split("\t");
     const value = Number(cells[4]);
-    if (cells.length !== WB_STORE_COLS.length || cells[0] !== code || cells[4] === "" || !Number.isFinite(value)) throw new Error(`DATA_PREPARE_LOCAL_COPY: ${file} row ${at + 1} is not a whole row of ${code} with a value`);
-    return { indicator: { id: code, value: "" }, country: { id: cells[1] }, countryiso3code: cells[2], date: cells[3], value };
-  });
-  return { source, rows, note, name: name || ((await wbStoreNames(dir)).get(code) ?? ""), entry };
+    if (cells.length !== WB_STORE_COLS.length || cells[0] !== code || cells[4] === "" || !Number.isFinite(value)) return { miss: `a row is not a whole row of ${code} with a value` };
+    rows.push({ indicator: { id: code, value: "" }, country: { id: cells[1] }, countryiso3code: cells[2], date: cells[3], value });
+  }
+  const source = await wbStoreCopyIntoRun(held.bytes, "gz", { requested_url: String(dataPrepareNextField("worldbank", "store_url")).replace("{dataset}", code), store: file, downloaded_at: entry.downloaded_at, wb_lastupdated: entry.wb_lastupdated, store_sha256: entry.sha256, rows: Number(entry.rows) });
+  const note = `the local copy downloaded ${entry.downloaded_at} (World Bank lastupdated ${entry.wb_lastupdated || "not given"})`;
+  return { source, rows, note, name: (await wbStoreNames(dir)).get(code) ?? "", entry };
 }
 // The indicators' names the store keeps (names.tsv: indicator, name; the stored rows carry none). A name missing there is "": the page's
 // source line then names the host only, and nothing else changes.
@@ -4391,7 +4356,6 @@ async function wbStoreNames(dir: string) {
   try { text = await readFile(join(dir, "names.tsv"), "utf8"); } catch { return new Map<string, string>(); }
   return new Map(text.split("\n").slice(1).map((line) => line.split("\t")).filter((cells) => cells.length === 2 && cells[1]).map((cells) => [cells[0], cells[1]] as [string, string]));
 }
-
 async function prepareWorldBank(params: any, signal: AbortSignal | undefined, opts: { pageBuild?: boolean; onData?: (data: any) => Promise<any> }, finish: (lines: string[], details: Record<string, unknown>) => any) {
   const provider = "worldbank";
   const field = (name: string) => dataPrepareNextField(provider, name);
@@ -4450,22 +4414,24 @@ async function prepareWorldBank(params: any, signal: AbortSignal | undefined, op
   const convert = async (code: string) => {
     const url = String(field("data_url")).replace(/\{(\w+)\}/g, (_all, name) => ({ places: key, dataset: code, start: String(start), end: String(end) } as Record<string, string>)[name] ?? "");
     const store = wbStoreDir();
-    let data: { relativeFile: string; sha256: string; bytes: Buffer; reused: boolean }, raw: any[], local: Awaited<ReturnType<typeof wbIndicatorFromStore>> | undefined;
-    if (store) {
+    let data: { relativeFile: string; sha256: string; bytes: Buffer; reused: boolean }, raw: any[], local: any, storeMiss = "";
+    const held = store ? await wbIndicatorFromStore(store, code) : null;
+    if (held && "miss" in held) storeMiss = String(held.miss);
+    else local = held;
+    if (local) {
       // The store keeps every place and year: the rows asked are cut from it here. A place asked (every place the copy holds, when none is
       // asked) at a year asked that the copy has no row for is a row without a value, as the provider's answer names one.
-      local = await wbIndicatorFromStore(store, code, signal);
       data = local.source;
       const name = local.name;
       const placeOf = (row: any) => byIso2.get(String(row.country.id));
       const wanted = adopted.length ? new Set(adopted) : null;
-      const keep = local.rows.filter((row) => Number(row.date) >= start && Number(row.date) <= end && (!wanted || wanted.has(placeOf(row)?.id ?? "")));
-      const held = new Set(keep.map((row) => `${placeOf(row)?.id} ${row.date}`));
-      const asked = wanted ? [...wanted] : [...new Set(local.rows.map((row) => placeOf(row)?.id).filter((id): id is string => Boolean(id)))];
+      const keep = local.rows.filter((row: any) => Number(row.date) >= start && Number(row.date) <= end && (!wanted || wanted.has(placeOf(row)?.id ?? "")));
+      const heldAt = new Set(keep.map((row: any) => `${placeOf(row)?.id} ${row.date}`));
+      const asked = wanted ? [...wanted] : [...new Set(local.rows.map((row: any) => placeOf(row)?.id).filter((id: any): id is string => Boolean(id)))];
       const byId = new Map(places.map((place) => [place.id, place]));
       const gaps: any[] = [];
-      for (const id of asked) for (let year = start; year <= end; year++) if (!held.has(`${id} ${year}`)) gaps.push({ indicator: { id: code, value: name }, country: { id: byId.get(id)!.iso2 }, countryiso3code: id, date: String(year), value: null });
-      raw = [...keep.map((row) => ({ ...row, indicator: { id: code, value: name } })), ...gaps];
+      for (const id of asked) for (let year = start; year <= end; year++) if (!heldAt.has(`${id} ${year}`)) gaps.push({ indicator: { id: code, value: name }, country: { id: byId.get(id)!.iso2 }, countryiso3code: id, date: String(year), value: null });
+      raw = [...keep.map((row: any) => ({ ...row, indicator: { id: code, value: name } })), ...gaps];
     } else {
       data = await dataPrepareFetch(url, `${code}.json`, signal);
       raw = parseWorldBankAnswer(data.bytes, `the answer for ${code}`);
@@ -4515,15 +4481,16 @@ async function prepareWorldBank(params: any, signal: AbortSignal | undefined, op
       sha256: csv.sha256,
       file: csv.relativeFile,
     });
-    return { url, data, raw, lines, kept, csvBytes, csv, originPath, removed, withoutValue, unmatched, indicatorName, local };
+    return { url, data, raw, lines, kept, csvBytes, csv, originPath, removed, withoutValue, unmatched, indicatorName, local, storeMiss };
   };
   const main = await convert(dataset);
   if (!main.raw.length) return finish([`Dataset ${dataset}: the provider returned no rows for ${key} in ${start}-${end}. Downloaded file: ${main.data.relativeFile}`], { mode: "unresolved", dataset });
-  const { url, data, raw, lines, csvBytes, csv, originPath, removed, withoutValue, unmatched, indicatorName, local } = main as Required<typeof main>;
+  const { url, data, raw, lines, csvBytes, csv, originPath, removed, withoutValue, unmatched, indicatorName, local, storeMiss } = main as Required<typeof main>;
   const body = lines.length - 1;
   const dataLines = [
     `Dataset ${dataset} (${provider}): ${indicatorName}; ${placeDimension} ${key}, years ${start}-${end}; estimated up to ${estimate} rows, ${local ? `${raw.length} rows from ${local.note}` : `downloaded ${raw.length} rows, ${data.bytes.byteLength} bytes${data.reused ? " (already in the run, not requested again)" : ""}`}.`,
     ...(list.note ? [`Country list: ${list.note}.`] : []),
+    ...(storeMiss ? [`Local store: not read for ${dataset} (${storeMiss}); fetched from the provider.`] : []),
     `Data file: ${csv.relativeFile} (${body} rows, written by the program from the downloaded file ${data.relativeFile} and the country list ${listFile.relativeFile}; conversion recorded in ${originPath}).`,
     `Places: each row's two-letter country.id matched to the country list's iso2Code; ${placeDimension} is the list's three-letter id, region the list's region (the list marks its aggregates "Aggregates").`,
     `Unit: the rows carry none; only the indicator name above states one.`,

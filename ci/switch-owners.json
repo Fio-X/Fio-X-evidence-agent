@@ -2208,7 +2208,7 @@
  {
   "name": "NEWSROOM_WB_STORE",
   "owner": "knowledge",
-  "purpose": "New route only: an absolute folder of whole World Bank indicators kept on this machine (one gzip per indicator, the country list, a manifest with download time, rows and sha256). Data preparation reads a copy younger than 30 days whose sha256 matches, keeps the copy it read in the run folder, and otherwise fetches the whole indicator and writes it back. Unset: nothing is read or written there.",
+  "purpose": "New route only: an absolute folder of whole World Bank indicators kept on this machine (one gzip per indicator, the country list, a manifest with download time, rows and sha256). Data preparation reads a copy younger than 30 days whose sha256 and row count match and keeps the copy it read in the run folder; otherwise it asks the provider exactly as without a store. The program never writes there (the store's own downloader fills it). Unset: nothing is read there.",
   "expiry": "permanent",
   "default": "other",
   "status": "approved"

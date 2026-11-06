@@ -1,8 +1,8 @@
 // NEWSROOM_NEXT=1 with NEWSROOM_WB_STORE: newsroom_data_prepare reads a World Bank indicator from the local store, offline. The store is built
 // here from the real answers saved under scripts/fixtures/data_prepare/worldbank (as the store's own writer keeps them: rows with a value,
 // values as given); fetch is a stub serving the same answers. The rule held: the CSV the page reads has the same rows whether the indicator
-// came from the store or from the provider; a copy that is missing, stale or changed is fetched whole again and written back; the run keeps
-// the store file it read. Each mutant patches the copy's source text and must turn exactly the check that guards that rule red.
+// came from the store or from the provider; a copy that is missing, stale or changed is not read and the provider is asked exactly as
+// without a store, the store left as it was; the run keeps the store file it read. Each mutant patches the copy's source text and must turn exactly the check that guards that rule red.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -143,26 +143,21 @@ const checks = {
     const codes = new Set(csvLines(local.dir, local.d.filePath).slice(1).map((l) => l.split(",")[0]));
     return local.d.mode === "data" && [...codes].sort().join() === "DEU,JPN" && local.d.rows === 22;
   },
-  // an empty store: the whole indicator and the country list are fetched once and written back; a second run requests nothing and writes the same CSV
-  writeBack: async (m) => {
+  // an empty store: the provider is asked exactly as without a store (the same URLs), the CSV is the same, and nothing is written to the store
+  missFallsBack: async (m) => {
     const store = join(tmp, `store-${storeNumber++}`);
-    const first = await prepare(m, Q5, store);
-    const manifest = readFileSync(join(store, "manifest.tsv"), "utf8").trimEnd().split("\n");
-    const second = await prepare(m, Q5, store);
+    mkdirSync(store);
+    const local = await prepare(m, Q5, store);
     const online = await prepare(m, Q5);
-    return first.calls.includes(whole("SP.POP.65UP.TO.ZS")) && first.calls.some((u) => u.includes("/v2/country?")) && manifest.length === 3
-      && existsSync(join(store, "data/SP.POP.65UP.TO.ZS.tsv.gz")) && existsSync(join(store, "country-list.json"))
-      && second.calls.length === 0 && second.d.sha256 === first.d.sha256 && sameRows(online, second)
-      && originOf(first.dir, originOf(first.dir, first.d.filePath).source_file)?.origin === "download"
-      && readFileSync(join(store, "names.tsv"), "utf8") === "indicator\tname\nSP.POP.65UP.TO.ZS\tPopulation ages 65 and above (% of total population)\n"
-      && originOf(second.dir, second.d.filePath).series_title === "Population ages 65 and above (% of total population)";
+    return JSON.stringify(local.calls) === JSON.stringify(online.calls) && local.d.sha256 === online.d.sha256
+      && readdirSync(store).length === 0 && /Local store: not read for SP\.POP\.65UP\.TO\.ZS \(not held\); fetched from the provider\./.test(text(local.out));
   },
-  // a copy older than the limit is fetched again (and the newer line read after)
+  // a copy older than the limit is not read: the provider is asked, the store is left as it was
   stale: async (m) => {
     const store = makeStore([["SP.POP.65UP.TO.ZS", "q5.json"]], { daysAgo: 40 });
-    const first = await prepare(m, Q5, store);
-    const second = await prepare(m, Q5, store);
-    return first.calls.includes(whole("SP.POP.65UP.TO.ZS")) && /older than 30 days/.test(text(first.out)) && second.calls.length === 0;
+    const before = readFileSync(join(store, "manifest.tsv"), "utf8");
+    const r = await prepare(m, Q5, store);
+    return r.calls.includes(SOURCE_FILES["q5.json"].url.split(HOST).join(IP)) && /older than 30 days/.test(text(r.out)) && readFileSync(join(store, "manifest.tsv"), "utf8") === before;
   },
   // a copy whose bytes no longer match the manifest is not read
   changed: async (m) => {
@@ -170,7 +165,15 @@ const checks = {
     const file = join(store, "data/SP.POP.65UP.TO.ZS.tsv.gz");
     writeFileSync(file, gzipSync(Buffer.from("indicator\tcountry_id\tiso3\tyear\tvalue\tobs_status\nSP.POP.65UP.TO.ZS\tJP\tJPN\t2024\t99\t\n")));
     const r = await prepare(m, Q5, store);
-    return r.calls.includes(whole("SP.POP.65UP.TO.ZS")) && /does not match the manifest's sha256/.test(text(r.out)) && !csvLines(r.dir, r.d.filePath).some((l) => l.startsWith("JPN,") && l.endsWith(",2024,99"));
+    return r.calls.includes(SOURCE_FILES["q5.json"].url.split(HOST).join(IP)) && /does not match the manifest's sha256/.test(text(r.out)) && !csvLines(r.dir, r.d.filePath).some((l) => l.startsWith("JPN,") && l.endsWith(",2024,99"));
+  },
+  // a copy that matches its manifest's sha256 but not its row count is not read
+  rowCount: async (m) => {
+    const store = makeStore([["SP.POP.65UP.TO.ZS", "q5.json"]]);
+    const path = join(store, "manifest.tsv");
+    writeFileSync(path, readFileSync(path, "utf8").replace(/^(SP\.POP\.65UP\.TO\.ZS\t[^\t]+\t)(\d+)/m, (_all, head, rows) => head + (Number(rows) + 1)));
+    const r = await prepare(m, Q5, store);
+    return r.calls.includes(SOURCE_FILES["q5.json"].url.split(HOST).join(IP)) && /holds \d+ rows and its manifest line says/.test(text(r.out));
   },
   // the route switch off: the store is never read
   switchOff: async (m) => {
@@ -212,9 +215,8 @@ const mutants = [
   ["reads a copy whatever its age", swap("if (!(age >= 0 && age <= limit * 86400000))", "if (false)"), "stale"],
   ["keeps every year of the copy", swap("Number(row.date) >= start && Number(row.date) <= end && ", ""), "yearsCut"],
   ["keeps every place of the copy", swap("(!wanted || wanted.has(placeOf(row)?.id ?? \"\"))", "true"), "placesCut"],
-  ["does not write the fetched indicator back", swap("const kept = await wbStoreWrite(dir, code, file, bytes, lines.length, last)", "const kept = await Promise.resolve()"), "writeBack"],
-  ["writes no name back", swap("if (name && !(await wbStoreNames(dir)).has(code)) {", "if (false) {"), "writeBack"],
-  ["keeps no copy of the store file in the run", swap('source = await wbStoreCopyIntoRun(bytes, "gz",', 'source = await (async (b) => ({ relativeFile: "data/none.gz", sha256: entry.sha256, bytes: b, reused: false }))(bytes, "gz",'), "q5Same"],
+  ["reads a copy whatever its row count", swap("if (body.length !== Number(entry.rows)) return", "if (false) return"), "rowCount"],
+  ["keeps no copy of the store file in the run", swap('const source = await wbStoreCopyIntoRun(held.bytes, "gz",', 'const source = await (async (b) => ({ relativeFile: "data/none.gz", sha256: entry.sha256, bytes: b, reused: false }))(held.bytes, "gz",'), "q5Same"],
 ];
 for (const [name, patch, check] of mutants) {
   const red = await runChecks(await load(patch), [check]);
