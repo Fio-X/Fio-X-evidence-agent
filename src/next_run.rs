@@ -5717,7 +5717,7 @@ mod tests {
     /// P6 step 8: the map's extent the visual group declares (rule extent) is the frozen flow's bit for bit on every branch of
     /// it, over two places' sets (an EU set, iso2; a world set, iso3): Latin and CJK names, none named (the code measured),
     /// decimals 0, 1, 2 and 3 (printed with 2, the cap), a ranked point with no row at the year (r_max by its code), every
-    /// value 0 (vmax 0: r_min), negative values (the minus sign), a large value (thousands commas), one point, and a box the
+    /// value 0 (vmax 0: r_min), negative values (the minus sign; since 11-07 held, not equal: see below), a large value (thousands commas), one point, and a box the
     /// globe clamps (Fiji and Samoa on both sides of the antimeridian); each set holding both an extent the pad alone gives
     /// (one round) and one its labels push out (several rounds).
     #[test]
@@ -5743,6 +5743,12 @@ mod tests {
             ];
             for (case, values, names) in cases {
                 let (old, new, padded) = extents(&values, &names);
+                // 11-07: a circle below 0 is drawn by its value's size (bubbles.py), which the frozen flow never drew (it
+                // stopped the page): there the declared extent holds the frozen one, wider where such a circle needs room
+                if values.iter().any(|(_, v)| v.is_some_and(|v| v.starts_with('-'))) {
+                    assert!(new[0] <= old[0] && new[1] <= old[1] && new[2] >= old[2] && new[3] >= old[3], "{codes:?} {case}: {new:?} does not hold {old:?}");
+                    continue;
+                }
                 assert_eq!(old.map(f64::to_bits), new.map(f64::to_bits), "{codes:?} {case}: {old:?} != {new:?}");
                 rounds.insert((codes[0], old == padded));
             }
