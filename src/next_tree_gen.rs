@@ -22,8 +22,8 @@ use std::collections::BTreeSet;
 use serde_json::Value;
 
 /// The page input paths a declaration template may read (`$shape.main`, ...); nothing else is substituted.
-const PAGE_IN_PATHS: [&str; 30] = [
-    "shape.main", "shape.source", "shape.target", "shape.place", "shape.year", "shape.fmt", "shape.suffix", "shape.countries", "shape.hub", "shape.second", "shape.months", "picks.marks", "picks.t0", "picks.t1", "picks.top",
+const PAGE_IN_PATHS: [&str; 31] = [
+    "shape.scale", "shape.main", "shape.source", "shape.target", "shape.place", "shape.year", "shape.fmt", "shape.suffix", "shape.countries", "shape.hub", "shape.second", "shape.months", "picks.marks", "picks.t0", "picks.t1", "picks.top",
     "picks.focus", "fill.accent", "fmt.change", "shape.members", "shape.point", "shape.extent", "outside", "hub_name",
     "shape.t0", "sum_rows", "composition.dim", "composition.total", "composition.first_group", "composition.first_codes",
     "fill.composition.bars",
@@ -36,6 +36,10 @@ fn sub(v: &J, page_in: &J) -> Result<J, String> {
             let path = &s[1..];
             if !PAGE_IN_PATHS.contains(&path) && !path.starts_with("value.") {
                 return Err(format!("template path {s} is not a page input path the generator reads"));
+            }
+            // a page printed at a magnitude (亿, 万亿) has its unit's formats scaled; a page input with none prints at 1
+            if path == "shape.scale" {
+                return Ok(page_scale(page_in));
             }
             let mut x = page_in;
             for p in path.split('.') {
@@ -311,7 +315,7 @@ pub struct NodeDeclared {
 }
 
 /// fmt dec_rule over the page input: held_decimals (the only rule the generator computes), at most its cap.
-fn dec_of(layer: &str, rule: &J, page_in: &J, got: &Got) -> Result<i64, String> {
+fn dec_of(layer: &str, rule: &J, page_in: &J, got: &Got, scaled: bool) -> Result<i64, String> {
     // fixed: the decimals another layer's format of the same key fixes (the map's), so both declare one format
     if rule.g("rule").s() == Some("fixed") {
         return rule.g("dec").num().map(|d| d as i64).ok_or_else(|| format!("{layer}: fmt dec_rule fixed has no dec"));
@@ -320,7 +324,9 @@ fn dec_of(layer: &str, rule: &J, page_in: &J, got: &Got) -> Result<i64, String> 
         return Err(format!("{layer}: fmt dec_rule {}: not one the generator computes", rule.g("rule").repr()));
     }
     let cap = rule.g("max").g("value").num().ok_or_else(|| format!("{layer}: dec_rule max has no value"))? as i64;
-    Ok(held_decimals(page_in.g("rows").arr(), rule.g("rows"), got)?.min(cap))
+    // a number printed at the page's magnitude holds as many more decimals as the magnitude moves the point (12 for 万亿)
+    let moved = if scaled { page_scale(page_in).num().filter(|f| *f > 0.0).map_or(0, |f| (-f.log10()).round() as i64) } else { 0 };
+    Ok((held_decimals(page_in.g("rows").arr(), rule.g("rows"), got)? + moved).min(cap))
 }
 
 /// declares.fmt_change, rule points_if_percent: a change printed in points when the unit prints as the rule's percent sign
@@ -330,12 +336,20 @@ fn change_fmt(layer: &str, fc: &J, page_in: &J, got: &Got) -> Result<(String, J)
         return Err(format!("{layer}: fmt_change rule {}: not one the generator computes", fc.g("rule").repr()));
     }
     let side = if page_in.g("shape").g("suffix") == fc.g("percent") { fc.g("points") } else { fc.g("else") };
-    let mut dec = dec_of(layer, fc.g("dec_rule"), page_in, got)?;
+    let scaled = side.g("suffix") == page_in.g("shape").g("suffix");
+    let mut dec = dec_of(layer, fc.g("dec_rule"), page_in, got, scaled)?;
     if let Some(most) = side.g("max_dec").num() {
         dec = dec.min(most as i64);
     }
-    let fd = J::obj_of(vec![("scale", J::Int(1)), ("dec", J::Int(dec)), ("suffix", side.g("suffix").clone())]);
+    let scale = if scaled { page_scale(page_in) } else { J::Int(1) };
+    let fd = J::obj_of(vec![("scale", scale), ("dec", J::Int(dec)), ("suffix", side.g("suffix").clone())]);
     Ok((st(side.g("key")), fd))
+}
+
+/// The magnitude a page prints its unit's numbers at (shape.scale, 1e-8 for 亿 and 1e-12 for 万亿, chosen by the flow from the
+/// main's largest value with the unit code that names it); 1 for a page input with none.
+fn page_scale(page_in: &J) -> J {
+    page_in.g("shape").get("scale").cloned().unwrap_or(J::Int(1))
 }
 
 /// Whether a first_holding candidate list (a list, or lists by key) has a candidate that carries facts.
@@ -419,8 +433,9 @@ fn pairs_declared(layer: &str, d: &J, page_in: &J, reg: &J) -> Result<J, String>
     let (zeros, flows): (Vec<&J>, Vec<&J>) = rows.iter().copied().partition(|r| num(r) == Some(0.0));
     let ordered: Vec<J> = flows.iter().map(|r| J::Arr(vec![(*r).clone(), J::Bool(true)])).chain(zeros.iter().map(|r| J::Arr(vec![(*r).clone(), J::Bool(false)]))).collect();
     let dec = flows.iter().filter_map(|r| r.g("value").s()).map(|v| v.split_once('.').map_or(0, |(_, x)| x.len())).max().unwrap_or(0);
-    let dec = dec.min(d.g("dec_max").num().unwrap_or(0.0) as usize);
-    let fmts = J::obj_of(vec![(fmt.as_str(), J::obj_of(vec![("scale", J::Int(1)), ("dec", J::Int(dec as i64)), ("suffix", sh.g("suffix").clone())]))]);
+    let moved = page_scale(page_in).num().filter(|x| *x > 0.0).map_or(0, |x| (-x.log10()).round() as usize);
+    let dec = (dec + moved).min(d.g("dec_max").num().unwrap_or(0.0) as usize);
+    let fmts = J::obj_of(vec![(fmt.as_str(), J::obj_of(vec![("scale", page_scale(page_in)), ("dec", J::Int(dec as i64)), ("suffix", sh.g("suffix").clone())]))]);
     let fixed = vec![
         (format!("name:{}", st(d.g("title").g("fixed"))), frame_words(&st(d.g("title").g("frame")))?),
         (format!("name:{}{unit}", st(d.g("unit").g("fixed_prefix"))), st(page_in.g("short"))),
@@ -1090,7 +1105,7 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
     if d.has("fmt") {
         let mut fd = sub(d.g("fmt"), page_in)?;
         let rule = fd.remove("dec_rule").ok_or_else(|| format!("{layer}: declares.fmt has no dec_rule"))?;
-        let dec = dec_of(layer, &rule, page_in, &got)?;
+        let dec = dec_of(layer, &rule, page_in, &got, fd.g("suffix") == page_in.g("shape").g("suffix"))?;
         let fd = J::obj_of(vec![("scale", fd.g("scale").clone()), ("dec", J::Int(dec)), ("suffix", fd.g("suffix").clone())]);
         fmts.set(&st(page_in.g("shape").g("fmt")), fd);
     } else if let Some(k) = ["facts", "fmt_change", "formats"].into_iter().find(|k| d.has(k)).or(carries_facts(d.g("candidates")).then_some("candidates' facts")) {
@@ -1470,6 +1485,9 @@ fn view_path(view: &J, path: &str) -> Result<J, String> {
             Some(crate::next_nodes::Kind::Range { default, .. }) => Ok(J::Num(*default)),
             _ => Err(format!("template path ${path}: no number knob {knob}")),
         };
+    }
+    if path == "shape.scale" {
+        return Ok(page_scale(view));
     }
     let mut x = view;
     for p in path.split('.') {
@@ -1892,7 +1910,9 @@ fn parts_expand(layer: &str, d: &J, view: &J, (rows, sels): (&[J], &[J]), got: &
         let read: Vec<J> = dropped.arr().iter().filter_map(total_row).chain(sums.iter().cloned()).collect();
         let dec = read.iter().filter_map(|r| r.g("value").s()).map(|v| v.split_once('.').map_or(0, |(_, x)| x.len() as i64)).max().unwrap_or(0);
         let cap = rule.g("max").g("value").num().ok_or_else(|| format!("fmts.{key}: dec_rule max has no value"))? as i64;
-        fmts.set(key, J::obj_of(vec![("scale", f.g("scale").clone()), ("dec", J::Int(dec.min(cap))), ("suffix", subx(f.g("suffix"), view, &[])?)]));
+        let scale = subx(f.g("scale"), view, &[])?;
+        let moved = if f.g("scale") == &J::str("$shape.scale") { scale.num().filter(|x| *x > 0.0).map_or(0, |x| (-x.log10()).round() as i64) } else { 0 };
+        fmts.set(key, J::obj_of(vec![("scale", scale), ("dec", J::Int((dec + moved).min(cap))), ("suffix", subx(f.g("suffix"), view, &[])?)]));
     }
     let parts: Vec<J> = groups.obj().iter().map(|(g, _)| J::str(g)).collect();
     let mut leaf = subx(leaf_d.g("head"), view, &[])?;

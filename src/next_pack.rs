@@ -125,6 +125,28 @@ pub(crate) fn unit_number_suffix(code: &str) -> Option<&'static str> {
     Some(row.and_then(|l| l.trim_end_matches('\r').split('\t').nth(4)).unwrap_or("%"))
 }
 
+/// The magnitudes a page may print an amount at, largest first (owner 11-06 22:02: one magnitude for the whole page, chosen
+/// by its largest number): the code suffix of the unit table's row that names it, the least value that takes it, and the
+/// factor its numbers print at. A unit with no such row prints as the data gives it.
+const MAGNITUDES: [(&str, f64, f64); 2] = [("_E12", 1e12, 1e-12), ("_E8", 1e8, 1e-8)];
+
+/// The unit code and factor a page prints amounts in a code at, given the largest absolute value it prints: the first
+/// magnitude the value reaches whose row the unit table holds; else the code itself at 1.
+pub(crate) fn unit_at_magnitude(code: &str, largest: f64) -> (String, Option<f64>) {
+    MAGNITUDES
+        .iter()
+        .map(|(tag, least, factor)| (format!("{code}{tag}"), *least, *factor))
+        .find(|(scaled, least, _)| largest >= *least && unit_short(scaled).is_some())
+        .map_or((code.to_string(), None), |(scaled, _, factor)| (scaled, Some(factor)))
+}
+
+/// Whether amounts in a unit code compare across places: not when each place counts in its own currency (the row's rule
+/// amount_own_currency, a World Bank "LCU" amount), so a page of two or more places in it has no common scale.
+pub(crate) fn unit_compares_across_places(code: &str) -> bool {
+    let row = UNIT_SHORT_ZH.lines().skip(1).find(|l| l.split('\t').next() == Some(code));
+    row.and_then(|l| l.split('\t').nth(2)) != Some("amount_own_currency")
+}
+
 /// The catalogue's English label of a unit code, as the unit registry keeps it (its label_en); None for no row or none.
 pub(crate) fn unit_label_en(code: &str) -> Option<&'static str> {
     let row = UNIT_SHORT_ZH.lines().skip(1).find(|l| l.split('\t').next() == Some(code))?;
@@ -390,6 +412,40 @@ mod tests {
         // the carried code prints as the registry's forms; its label is the catalogue's
         assert_eq!((unit_short("EUR_KWH"), unit_label_en("EUR_KWH")), (Some("欧元/千瓦时"), Some("Euro per kilowatt-hour")));
         assert_eq!(unit_label_en("XYZ"), None);
+    }
+
+    #[test]
+    fn the_world_bank_units_read_from_its_metadata_print_their_reviewed_forms() {
+        // owner 11-06 22:02: the bank's own unit words fill its codes; the Chinese forms are the reviewed ones
+        for (code, short, suffix) in [
+            ("USD", "美元", "美元"),
+            ("USD_K15", "美元（2015年不变价）", "美元"),
+            ("LCU", "本币（现价）", "本币"),
+            ("LCU_K", "本币（不变价）", "本币"),
+            ("INTD", "国际元（现价）", "国际元"),
+            ("INTD_K21", "国际元（2021年不变价）", "国际元"),
+            ("SC100", "分（满分100）", "分"),
+            ("SCORE", "分", "分"),
+            ("BIRTH_W", "个/妇女", "个/妇女"),
+        ] {
+            assert_eq!((unit_short(code), unit_number_suffix(code)), (Some(short), Some(suffix)), "{code}");
+        }
+        // a page prints a dollar amount at one magnitude chosen by its largest number; a unit with no magnitude row as it is
+        assert_eq!(unit_at_magnitude("USD", 1.77e13), ("USD_E12".to_string(), Some(1e-12)));
+        assert_eq!(unit_at_magnitude("USD", 9.9e11), ("USD_E8".to_string(), Some(1e-8)));
+        assert_eq!(unit_at_magnitude("USD", 9.9e7), ("USD".to_string(), None));
+        assert_eq!(unit_at_magnitude("INTD_K21", 3e12), ("INTD_K21_E12".to_string(), Some(1e-12)));
+        assert_eq!(unit_at_magnitude("LCU", 3e14), ("LCU".to_string(), None));
+        assert_eq!(unit_at_magnitude("GWH", 3e9), ("GWH".to_string(), None));
+        assert_eq!((unit_short("USD_E8"), unit_number_suffix("USD_E8")), (Some("亿美元"), Some("亿美元")));
+        // each place's own currency does not compare across places; a dollar amount and a share do
+        assert!(!unit_compares_across_places("LCU") && !unit_compares_across_places("LCU_K"));
+        assert!(unit_compares_across_places("USD") && unit_compares_across_places("PC"));
+        // every code the World Bank table holds has a row here, so no filled code stops the page on a missing form
+        for row in include_str!("../runtime/pi/assets/wb-units.tsv").lines().skip(1) {
+            let code = row.split('\t').nth(2).unwrap_or("");
+            assert!(code.is_empty() || unit_short(code).is_some(), "{row}");
+        }
     }
 
     #[test]

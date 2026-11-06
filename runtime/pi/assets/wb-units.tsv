@@ -28,180 +28,180 @@ AG.SRF.TOTL.K2	Surface area (sq. km)	KM2	Square kilometre	level	sq_km
 AG.YLD.CREL.KG	Cereal yield (kg per hectare)			rate	per_capita_other
 BG.GSR.NFSV.GD.ZS	Trade in services (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
 BM.GSR.CMCP.ZS	Communications, computer, etc. (% of service imports, BoP)	PC	Percentage	share	pct_of_part_of_whole
-BM.GSR.FCTY.CD	Primary income payments (BoP, current US$)			level	money
-BM.GSR.GNFS.CD	Imports of goods and services (BoP, current US$)			level	money
+BM.GSR.FCTY.CD	Primary income payments (BoP, current US$)	USD	US dollars, current prices	level	money
+BM.GSR.GNFS.CD	Imports of goods and services (BoP, current US$)	USD	US dollars, current prices	level	money
 BM.GSR.INSF.ZS	Insurance and financial services (% of service imports, BoP)	PC	Percentage	share	pct_of_part_of_whole
-BM.GSR.MRCH.CD	Goods imports (BoP, current US$)			level	money
-BM.GSR.NFSV.CD	Service imports (BoP, current US$)			level	money
-BM.GSR.ROYL.CD	Charges for the use of intellectual property, payments (BoP, current US$)			level	money
-BM.GSR.TOTL.CD	Imports of goods, services and primary income (BoP, current US$)			level	money
+BM.GSR.MRCH.CD	Goods imports (BoP, current US$)	USD	US dollars, current prices	level	money
+BM.GSR.NFSV.CD	Service imports (BoP, current US$)	USD	US dollars, current prices	level	money
+BM.GSR.ROYL.CD	Charges for the use of intellectual property, payments (BoP, current US$)	USD	US dollars, current prices	level	money
+BM.GSR.TOTL.CD	Imports of goods, services and primary income (BoP, current US$)	USD	US dollars, current prices	level	money
 BM.GSR.TRAN.ZS	Transport services (% of service imports, BoP)	PC	Percentage	share	pct_of_part_of_whole
 BM.GSR.TRVL.ZS	Travel services (% of service imports, BoP)	PC	Percentage	share	pct_of_part_of_whole
-BM.KLT.DINV.CD.WD	Foreign direct investment, net outflows (BoP, current US$)			level	money
+BM.KLT.DINV.CD.WD	Foreign direct investment, net outflows (BoP, current US$)	USD	US dollars, current prices	level	money
 BM.KLT.DINV.WD.GD.ZS	Foreign direct investment, net outflows (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
-BM.TRF.PRVT.CD	Secondary income, other sectors, payments (BoP, current US$)			level	money
-BM.TRF.PWKR.CD.DT	Personal remittances, paid (current US$)			level	money
-BN.CAB.XOKA.CD	Current account balance (BoP, current US$)			level	money
+BM.TRF.PRVT.CD	Secondary income, other sectors, payments (BoP, current US$)	USD	US dollars, current prices	level	money
+BM.TRF.PWKR.CD.DT	Personal remittances, paid (current US$)	USD	US dollars, current prices	level	money
+BN.CAB.XOKA.CD	Current account balance (BoP, current US$)	USD	US dollars, current prices	level	money
 BN.CAB.XOKA.GD.ZS	Current account balance (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
-BN.FIN.TOTL.CD	Net financial account (BoP, current US$)			level	money
-BN.GSR.FCTY.CD	Net primary income (BoP, current US$)			level	money
-BN.GSR.GNFS.CD	Net trade in goods and services (BoP, current US$)			level	money
-BN.GSR.MRCH.CD	Net trade in goods (BoP, current US$)			level	money
-BN.KAC.EOMS.CD	Net errors and omissions (BoP, current US$)			level	money
-BN.KLT.DINV.CD	Foreign direct investment, net (BoP, current US$)			level	money
-BN.KLT.PTXL.CD	Portfolio Investment, net (BoP, current US$)			level	money
-BN.RES.INCL.CD	Reserves and related items (BoP, current US$)			level	money
-BN.TRF.CURR.CD	Net secondary income (BoP, current US$)			level	money
-BN.TRF.KOGT.CD	Net capital account (BoP, current US$)			level	money
-BX.GRT.EXTA.CD.WD	Grants, excluding technical cooperation (BoP, current US$)			level	money
-BX.GRT.TECH.CD.WD	Technical cooperation grants (BoP, current US$)			level	money
-BX.GSR.CCIS.CD	ICT service exports (BoP, current US$)			level	money
+BN.FIN.TOTL.CD	Net financial account (BoP, current US$)	USD	US dollars, current prices	level	money
+BN.GSR.FCTY.CD	Net primary income (BoP, current US$)	USD	US dollars, current prices	level	money
+BN.GSR.GNFS.CD	Net trade in goods and services (BoP, current US$)	USD	US dollars, current prices	level	money
+BN.GSR.MRCH.CD	Net trade in goods (BoP, current US$)	USD	US dollars, current prices	level	money
+BN.KAC.EOMS.CD	Net errors and omissions (BoP, current US$)	USD	US dollars, current prices	level	money
+BN.KLT.DINV.CD	Foreign direct investment, net (BoP, current US$)	USD	US dollars, current prices	level	money
+BN.KLT.PTXL.CD	Portfolio Investment, net (BoP, current US$)	USD	US dollars, current prices	level	money
+BN.RES.INCL.CD	Reserves and related items (BoP, current US$)	USD	US dollars, current prices	level	money
+BN.TRF.CURR.CD	Net secondary income (BoP, current US$)	USD	US dollars, current prices	level	money
+BN.TRF.KOGT.CD	Net capital account (BoP, current US$)	USD	US dollars, current prices	level	money
+BX.GRT.EXTA.CD.WD	Grants, excluding technical cooperation (BoP, current US$)	USD	US dollars, current prices	level	money
+BX.GRT.TECH.CD.WD	Technical cooperation grants (BoP, current US$)	USD	US dollars, current prices	level	money
+BX.GSR.CCIS.CD	ICT service exports (BoP, current US$)	USD	US dollars, current prices	level	money
 BX.GSR.CCIS.ZS	ICT service exports (% of service exports, BoP)	PC	Percentage	share	pct_of_part_of_whole
 BX.GSR.CMCP.ZS	Communications, computer, etc. (% of service exports, BoP)	PC	Percentage	share	pct_of_part_of_whole
-BX.GSR.FCTY.CD	Primary income receipts (BoP, current US$)			level	money
-BX.GSR.GNFS.CD	Exports of goods and services (BoP, current US$)			level	money
+BX.GSR.FCTY.CD	Primary income receipts (BoP, current US$)	USD	US dollars, current prices	level	money
+BX.GSR.GNFS.CD	Exports of goods and services (BoP, current US$)	USD	US dollars, current prices	level	money
 BX.GSR.INSF.ZS	Insurance and financial services (% of service exports, BoP)	PC	Percentage	share	pct_of_part_of_whole
-BX.GSR.MRCH.CD	Goods exports (BoP, current US$)			level	money
-BX.GSR.NFSV.CD	Service exports (BoP, current US$)			level	money
-BX.GSR.ROYL.CD	Charges for the use of intellectual property, receipts (BoP, current US$)			level	money
-BX.GSR.TOTL.CD	Exports of goods, services and primary income (BoP, current US$)			level	money
+BX.GSR.MRCH.CD	Goods exports (BoP, current US$)	USD	US dollars, current prices	level	money
+BX.GSR.NFSV.CD	Service exports (BoP, current US$)	USD	US dollars, current prices	level	money
+BX.GSR.ROYL.CD	Charges for the use of intellectual property, receipts (BoP, current US$)	USD	US dollars, current prices	level	money
+BX.GSR.TOTL.CD	Exports of goods, services and primary income (BoP, current US$)	USD	US dollars, current prices	level	money
 BX.GSR.TRAN.ZS	Transport services (% of service exports, BoP)	PC	Percentage	share	pct_of_part_of_whole
 BX.GSR.TRVL.ZS	Travel services (% of service exports, BoP)	PC	Percentage	share	pct_of_part_of_whole
-BX.KLT.DINV.CD.WD	Foreign direct investment, net inflows (BoP, current US$)			level	money
+BX.KLT.DINV.CD.WD	Foreign direct investment, net inflows (BoP, current US$)	USD	US dollars, current prices	level	money
 BX.KLT.DINV.WD.GD.ZS	Foreign direct investment, net inflows (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
-BX.PEF.TOTL.CD.WD	Portfolio equity, net inflows (BoP, current US$)			level	money
-BX.TRF.CURR.CD	Secondary income receipts (BoP, current US$)			level	money
-BX.TRF.PWKR.CD	Personal transfers, receipts (BoP, current US$)			level	money
-BX.TRF.PWKR.CD.DT	Personal remittances, received (current US$)			level	money
+BX.PEF.TOTL.CD.WD	Portfolio equity, net inflows (BoP, current US$)	USD	US dollars, current prices	level	money
+BX.TRF.CURR.CD	Secondary income receipts (BoP, current US$)	USD	US dollars, current prices	level	money
+BX.TRF.PWKR.CD	Personal transfers, receipts (BoP, current US$)	USD	US dollars, current prices	level	money
+BX.TRF.PWKR.CD.DT	Personal remittances, received (current US$)	USD	US dollars, current prices	level	money
 BX.TRF.PWKR.DT.GD.ZS	Personal remittances, received (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
 CM.MKT.INDX.ZG	S&P Global Equity Indices (annual % change)	PCH_PRE	Percentage change on previous period	change	annual_growth
-CM.MKT.LCAP.CD	Market capitalization of listed domestic companies (current US$)			level	money
+CM.MKT.LCAP.CD	Market capitalization of listed domestic companies (current US$)	USD	US dollars, current prices	level	money
 CM.MKT.LCAP.GD.ZS	Market capitalization of listed domestic companies (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
 CM.MKT.LDOM.NO	Listed domestic companies, total	NR	Number	count	name_counts
-CM.MKT.TRAD.CD	Stocks traded, total value (current US$)			level	money
+CM.MKT.TRAD.CD	Stocks traded, total value (current US$)	USD	US dollars, current prices	level	money
 CM.MKT.TRAD.GD.ZS	Stocks traded, total value (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
 CM.MKT.TRNR	Stocks traded, turnover ratio of domestic shares (%)	PC	Percentage		pct_plain
-DC.DAC.AUSL.CD	Net bilateral aid flows from DAC donors, Australia (current US$)			level	money
-DC.DAC.AUTL.CD	Net bilateral aid flows from DAC donors, Austria (current US$)			level	money
-DC.DAC.BELL.CD	Net bilateral aid flows from DAC donors, Belgium (current US$)			level	money
-DC.DAC.CANL.CD	Net bilateral aid flows from DAC donors, Canada (current US$)			level	money
-DC.DAC.CECL.CD	Net bilateral aid flows from DAC donors, European Union institutions (current US$)			level	money
-DC.DAC.CHEL.CD	Net bilateral aid flows from DAC donors, Switzerland (current US$)			level	money
-DC.DAC.CZEL.CD	Net bilateral aid flows from DAC donors, Czechia (current US$)			level	money
-DC.DAC.DEUL.CD	Net bilateral aid flows from DAC donors, Germany (current US$)			level	money
-DC.DAC.DNKL.CD	Net bilateral aid flows from DAC donors, Denmark (current US$)			level	money
-DC.DAC.ESPL.CD	Net bilateral aid flows from DAC donors, Spain (current US$)			level	money
-DC.DAC.ESTL.CD	Net bilateral aid flows from DAC donors, Estonia (current US$)			level	money
-DC.DAC.FINL.CD	Net bilateral aid flows from DAC donors, Finland (current US$)			level	money
-DC.DAC.FRAL.CD	Net bilateral aid flows from DAC donors, France (current US$)			level	money
-DC.DAC.GBRL.CD	Net bilateral aid flows from DAC donors, United Kingdom (current US$)			level	money
-DC.DAC.GRCL.CD	Net bilateral aid flows from DAC donors, Greece (current US$)			level	money
-DC.DAC.HUNL.CD	Net bilateral aid flows from DAC donors, Hungary (current US$)			level	money
-DC.DAC.IRLL.CD	Net bilateral aid flows from DAC donors, Ireland (current US$)			level	money
-DC.DAC.ISLL.CD	Net bilateral aid flows from DAC donors, Iceland (current US$)			level	money
-DC.DAC.ITAL.CD	Net bilateral aid flows from DAC donors, Italy (current US$)			level	money
-DC.DAC.JPNL.CD	Net bilateral aid flows from DAC donors, Japan (current US$)			level	money
-DC.DAC.KORL.CD	Net bilateral aid flows from DAC donors, Korea, Rep. (current US$)			level	money
-DC.DAC.LTUL.CD	Net bilateral aid flows from DAC donors, Lithuania (current US$)			level	money
-DC.DAC.LUXL.CD	Net bilateral aid flows from DAC donors, Luxembourg (current US$)			level	money
-DC.DAC.NLDL.CD	Net bilateral aid flows from DAC donors, Netherlands (current US$)			level	money
-DC.DAC.NORL.CD	Net bilateral aid flows from DAC donors, Norway (current US$)			level	money
-DC.DAC.NZLL.CD	Net bilateral aid flows from DAC donors, New Zealand (current US$)			level	money
-DC.DAC.POLL.CD	Net bilateral aid flows from DAC donors, Poland (current US$)			level	money
-DC.DAC.PRTL.CD	Net bilateral aid flows from DAC donors, Portugal (current US$)			level	money
-DC.DAC.SVKL.CD	Net bilateral aid flows from DAC donors, Slovak Republic (current US$)			level	money
-DC.DAC.SVNL.CD	Net bilateral aid flows from DAC donors, Slovenia (current US$)			level	money
-DC.DAC.SWEL.CD	Net bilateral aid flows from DAC donors, Sweden (current US$)			level	money
-DC.DAC.TOTL.CD	Net bilateral aid flows from DAC donors, Total (current US$)			level	money
-DC.DAC.USAL.CD	Net bilateral aid flows from DAC donors, United States (current US$)			level	money
-DC.ODA.TLDC.CD	Net ODA provided, to the least developed countries (current US$)			level	money
+DC.DAC.AUSL.CD	Net bilateral aid flows from DAC donors, Australia (current US$)	USD	US dollars, current prices	level	money
+DC.DAC.AUTL.CD	Net bilateral aid flows from DAC donors, Austria (current US$)	USD	US dollars, current prices	level	money
+DC.DAC.BELL.CD	Net bilateral aid flows from DAC donors, Belgium (current US$)	USD	US dollars, current prices	level	money
+DC.DAC.CANL.CD	Net bilateral aid flows from DAC donors, Canada (current US$)	USD	US dollars, current prices	level	money
+DC.DAC.CECL.CD	Net bilateral aid flows from DAC donors, European Union institutions (current US$)	USD	US dollars, current prices	level	money
+DC.DAC.CHEL.CD	Net bilateral aid flows from DAC donors, Switzerland (current US$)	USD	US dollars, current prices	level	money
+DC.DAC.CZEL.CD	Net bilateral aid flows from DAC donors, Czechia (current US$)	USD	US dollars, current prices	level	money
+DC.DAC.DEUL.CD	Net bilateral aid flows from DAC donors, Germany (current US$)	USD	US dollars, current prices	level	money
+DC.DAC.DNKL.CD	Net bilateral aid flows from DAC donors, Denmark (current US$)	USD	US dollars, current prices	level	money
+DC.DAC.ESPL.CD	Net bilateral aid flows from DAC donors, Spain (current US$)	USD	US dollars, current prices	level	money
+DC.DAC.ESTL.CD	Net bilateral aid flows from DAC donors, Estonia (current US$)	USD	US dollars, current prices	level	money
+DC.DAC.FINL.CD	Net bilateral aid flows from DAC donors, Finland (current US$)	USD	US dollars, current prices	level	money
+DC.DAC.FRAL.CD	Net bilateral aid flows from DAC donors, France (current US$)	USD	US dollars, current prices	level	money
+DC.DAC.GBRL.CD	Net bilateral aid flows from DAC donors, United Kingdom (current US$)	USD	US dollars, current prices	level	money
+DC.DAC.GRCL.CD	Net bilateral aid flows from DAC donors, Greece (current US$)	USD	US dollars, current prices	level	money
+DC.DAC.HUNL.CD	Net bilateral aid flows from DAC donors, Hungary (current US$)	USD	US dollars, current prices	level	money
+DC.DAC.IRLL.CD	Net bilateral aid flows from DAC donors, Ireland (current US$)	USD	US dollars, current prices	level	money
+DC.DAC.ISLL.CD	Net bilateral aid flows from DAC donors, Iceland (current US$)	USD	US dollars, current prices	level	money
+DC.DAC.ITAL.CD	Net bilateral aid flows from DAC donors, Italy (current US$)	USD	US dollars, current prices	level	money
+DC.DAC.JPNL.CD	Net bilateral aid flows from DAC donors, Japan (current US$)	USD	US dollars, current prices	level	money
+DC.DAC.KORL.CD	Net bilateral aid flows from DAC donors, Korea, Rep. (current US$)	USD	US dollars, current prices	level	money
+DC.DAC.LTUL.CD	Net bilateral aid flows from DAC donors, Lithuania (current US$)	USD	US dollars, current prices	level	money
+DC.DAC.LUXL.CD	Net bilateral aid flows from DAC donors, Luxembourg (current US$)	USD	US dollars, current prices	level	money
+DC.DAC.NLDL.CD	Net bilateral aid flows from DAC donors, Netherlands (current US$)	USD	US dollars, current prices	level	money
+DC.DAC.NORL.CD	Net bilateral aid flows from DAC donors, Norway (current US$)	USD	US dollars, current prices	level	money
+DC.DAC.NZLL.CD	Net bilateral aid flows from DAC donors, New Zealand (current US$)	USD	US dollars, current prices	level	money
+DC.DAC.POLL.CD	Net bilateral aid flows from DAC donors, Poland (current US$)	USD	US dollars, current prices	level	money
+DC.DAC.PRTL.CD	Net bilateral aid flows from DAC donors, Portugal (current US$)	USD	US dollars, current prices	level	money
+DC.DAC.SVKL.CD	Net bilateral aid flows from DAC donors, Slovak Republic (current US$)	USD	US dollars, current prices	level	money
+DC.DAC.SVNL.CD	Net bilateral aid flows from DAC donors, Slovenia (current US$)	USD	US dollars, current prices	level	money
+DC.DAC.SWEL.CD	Net bilateral aid flows from DAC donors, Sweden (current US$)	USD	US dollars, current prices	level	money
+DC.DAC.TOTL.CD	Net bilateral aid flows from DAC donors, Total (current US$)	USD	US dollars, current prices	level	money
+DC.DAC.USAL.CD	Net bilateral aid flows from DAC donors, United States (current US$)	USD	US dollars, current prices	level	money
+DC.ODA.TLDC.CD	Net ODA provided, to the least developed countries (current US$)	USD	US dollars, current prices	level	money
 DC.ODA.TLDC.GN.ZS	Net ODA provided to the least developed countries (% of GNI)	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
-DC.ODA.TOTL.CD	Net ODA provided, total (current US$)			level	money
+DC.ODA.TOTL.CD	Net ODA provided, total (current US$)	USD	US dollars, current prices	level	money
 DC.ODA.TOTL.GN.ZS	Net ODA provided, total (% of GNI)	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
 DC.ODA.TOTL.KD	Net ODA provided, total (constant 2023 US$)			level	money
-DT.DOD.DECT.CD	External debt stocks, total (DOD, current US$)			level	money
+DT.DOD.DECT.CD	External debt stocks, total (DOD, current US$)	USD	US dollars, current prices	level	money
 DT.DOD.DECT.GN.ZS	External debt stocks (% of GNI)	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
-DT.DOD.DIMF.CD	Use of IMF credit (DOD, current US$)			level	money
-DT.DOD.DLXF.CD	External debt stocks, long-term (DOD, current US$)			level	money
-DT.DOD.DPNG.CD	External debt stocks, private nonguaranteed (PNG) (DOD, current US$)			level	money
-DT.DOD.DPPG.CD	External debt stocks, public and publicly guaranteed (PPG) (DOD, current US$)			level	money
-DT.DOD.DSTC.CD	External debt stocks, short-term (DOD, current US$)			level	money
+DT.DOD.DIMF.CD	Use of IMF credit (DOD, current US$)	USD	US dollars, current prices	level	money
+DT.DOD.DLXF.CD	External debt stocks, long-term (DOD, current US$)	USD	US dollars, current prices	level	money
+DT.DOD.DPNG.CD	External debt stocks, private nonguaranteed (PNG) (DOD, current US$)	USD	US dollars, current prices	level	money
+DT.DOD.DPPG.CD	External debt stocks, public and publicly guaranteed (PPG) (DOD, current US$)	USD	US dollars, current prices	level	money
+DT.DOD.DSTC.CD	External debt stocks, short-term (DOD, current US$)	USD	US dollars, current prices	level	money
 DT.DOD.DSTC.IR.ZS	Short-term debt (% of total reserves)	PC	Percentage	share	pct_of_part_of_whole
 DT.DOD.DSTC.XP.ZS	Short-term debt (% of exports of goods, services and primary income)	PC	Percentage	rate	pct_of_trade_flow
 DT.DOD.DSTC.ZS	Short-term debt (% of total external debt)	PC	Percentage	share	pct_of_part_of_whole
-DT.DOD.MIBR.CD	PPG, IBRD (DOD, current US$)			level	money
-DT.DOD.MIDA.CD	PPG, IDA (DOD, current US$)			level	money
-DT.DOD.MWBG.CD	IBRD loans and IDA credits (DOD, current US$)			level	money
-DT.DOD.PVLX.CD	Present value of external debt (current US$)			level	money
+DT.DOD.MIBR.CD	PPG, IBRD (DOD, current US$)	USD	US dollars, current prices	level	money
+DT.DOD.MIDA.CD	PPG, IDA (DOD, current US$)	USD	US dollars, current prices	level	money
+DT.DOD.MWBG.CD	IBRD loans and IDA credits (DOD, current US$)	USD	US dollars, current prices	level	money
+DT.DOD.PVLX.CD	Present value of external debt (current US$)	USD	US dollars, current prices	level	money
 DT.DOD.PVLX.EX.ZS	Present value of external debt (% of exports of goods, services and primary income)	PC	Percentage	rate	pct_of_trade_flow
 DT.DOD.PVLX.GN.ZS	Present value of external debt (% of GNI)	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
-DT.NFL.BLAT.CD	Net financial flows, bilateral (NFL, current US$)			level	money
-DT.NFL.BOND.CD	Portfolio investment, bonds (PPG + PNG) (NFL, current US$)			level	money
-DT.NFL.CERF.CD	Net official flows from UN agencies, CERF (current US$)			level	money
-DT.NFL.DPNG.CD	Net flows on external debt, private nonguaranteed (PNG) (NFL, current US$)			level	money
-DT.NFL.FAOG.CD	Net official flows from UN agencies, FAO (current US$)			level	money
-DT.NFL.IAEA.CD	Net official flows from UN agencies, IAEA (current US$)			level	money
-DT.NFL.IFAD.CD	Net official flows from UN agencies, IFAD (current US$)			level	money
-DT.NFL.ILOG.CD	Net official flows from UN agencies, ILO (current US$)			level	money
-DT.NFL.IMFC.CD	Net financial flows, IMF concessional (NFL, current US$)			level	money
-DT.NFL.IMFN.CD	Net financial flows, IMF nonconcessional (NFL, current US$)			level	money
-DT.NFL.MIBR.CD	Net financial flows, IBRD (NFL, current US$)			level	money
-DT.NFL.MIDA.CD	Net financial flows, IDA (NFL, current US$)			level	money
-DT.NFL.MLAT.CD	Net financial flows, multilateral (NFL, current US$)			level	money
-DT.NFL.MOTH.CD	Net financial flows, others (NFL, current US$)			level	money
+DT.NFL.BLAT.CD	Net financial flows, bilateral (NFL, current US$)	USD	US dollars, current prices	level	money
+DT.NFL.BOND.CD	Portfolio investment, bonds (PPG + PNG) (NFL, current US$)	USD	US dollars, current prices	level	money
+DT.NFL.CERF.CD	Net official flows from UN agencies, CERF (current US$)	USD	US dollars, current prices	level	money
+DT.NFL.DPNG.CD	Net flows on external debt, private nonguaranteed (PNG) (NFL, current US$)	USD	US dollars, current prices	level	money
+DT.NFL.FAOG.CD	Net official flows from UN agencies, FAO (current US$)	USD	US dollars, current prices	level	money
+DT.NFL.IAEA.CD	Net official flows from UN agencies, IAEA (current US$)	USD	US dollars, current prices	level	money
+DT.NFL.IFAD.CD	Net official flows from UN agencies, IFAD (current US$)	USD	US dollars, current prices	level	money
+DT.NFL.ILOG.CD	Net official flows from UN agencies, ILO (current US$)	USD	US dollars, current prices	level	money
+DT.NFL.IMFC.CD	Net financial flows, IMF concessional (NFL, current US$)	USD	US dollars, current prices	level	money
+DT.NFL.IMFN.CD	Net financial flows, IMF nonconcessional (NFL, current US$)	USD	US dollars, current prices	level	money
+DT.NFL.MIBR.CD	Net financial flows, IBRD (NFL, current US$)	USD	US dollars, current prices	level	money
+DT.NFL.MIDA.CD	Net financial flows, IDA (NFL, current US$)	USD	US dollars, current prices	level	money
+DT.NFL.MLAT.CD	Net financial flows, multilateral (NFL, current US$)	USD	US dollars, current prices	level	money
+DT.NFL.MOTH.CD	Net financial flows, others (NFL, current US$)	USD	US dollars, current prices	level	money
 DT.NFL.NIFC.CD	IFC, private nonguaranteed (NFL, US$)			level	money
 DT.NFL.OFFT.CD	PPG, official creditors (NFL, US$)			level	money
-DT.NFL.PBND.CD	PPG, bonds (NFL, current US$)			level	money
-DT.NFL.PCBK.CD	PPG, commercial banks (NFL, current US$)			level	money
-DT.NFL.PCBO.CD	Commercial banks and other lending (PPG + PNG) (NFL, current US$)			level	money
-DT.NFL.PNGB.CD	PNG, bonds (NFL, current US$)			level	money
-DT.NFL.PNGC.CD	PNG, commercial banks and other creditors (NFL, current US$)			level	money
-DT.NFL.PROP.CD	PPG, other private creditors (NFL, current US$)			level	money
+DT.NFL.PBND.CD	PPG, bonds (NFL, current US$)	USD	US dollars, current prices	level	money
+DT.NFL.PCBK.CD	PPG, commercial banks (NFL, current US$)	USD	US dollars, current prices	level	money
+DT.NFL.PCBO.CD	Commercial banks and other lending (PPG + PNG) (NFL, current US$)	USD	US dollars, current prices	level	money
+DT.NFL.PNGB.CD	PNG, bonds (NFL, current US$)	USD	US dollars, current prices	level	money
+DT.NFL.PNGC.CD	PNG, commercial banks and other creditors (NFL, current US$)	USD	US dollars, current prices	level	money
+DT.NFL.PROP.CD	PPG, other private creditors (NFL, current US$)	USD	US dollars, current prices	level	money
 DT.NFL.PRVT.CD	PPG, private creditors (NFL, US$)			level	money
-DT.NFL.RDBC.CD	Net financial flows, RDB concessional (NFL, current US$)			level	money
-DT.NFL.RDBN.CD	Net financial flows, RDB nonconcessional (NFL, current US$)			level	money
-DT.NFL.SDGF.CD	Net official flows from UN agencies, SDGFUND (current US$)			level	money
-DT.NFL.SPRP.CD	Net official flows from UN agencies, SPRP (current US$)			level	money
-DT.NFL.UNAI.CD	Net official flows from UN agencies, UNAIDS (current US$)			level	money
-DT.NFL.UNCD.CD	Net official flows from UN agencies, UNCDF (current US$)			level	money
-DT.NFL.UNCF.CD	Net official flows from UN agencies, UNICEF (current US$)			level	money
-DT.NFL.UNCR.CD	Net official flows from UN agencies, UNHCR (current US$)			level	money
-DT.NFL.UNCTAD.CD	Net official flows from UN agencies, UNCTAD (current US$)			level	money
-DT.NFL.UNCV.CD	Net official flows from UN agencies, UNCOVID (current US$)			level	money
-DT.NFL.UNDP.CD	Net official flows from UN agencies, UNDP (current US$)			level	money
-DT.NFL.UNEC.CD	Net official flows from UN agencies, UNECE (current US$)			level	money
-DT.NFL.UNEP.CD	Net official flows from UN agencies, UNEP (current US$)			level	money
-DT.NFL.UNFP.CD	Net official flows from UN agencies, UNFPA (current US$)			level	money
-DT.NFL.UNID.CD	Net official flows from UN agencies, UNIDIR (current US$)			level	money
-DT.NFL.UNIDO.CD	Net official flows from UN agencies, UNIDO (current US$)			level	money
-DT.NFL.UNPB.CD	Net official flows from UN agencies, UNPBF (current US$)			level	money
-DT.NFL.UNRW.CD	Net official flows from UN agencies, UNRWA (current US$)			level	money
-DT.NFL.UNTA.CD	Net official flows from UN agencies, UNTA (current US$)			level	money
-DT.NFL.UNWN.CD	Net official flows from UN agencies, UNWOMEN (current US$)			level	money
-DT.NFL.UNWT.CD	Net official flows from UN agencies, UNWTO (current US$)			level	money
-DT.NFL.WFPG.CD	Net official flows from UN agencies, WFP (current US$)			level	money
-DT.NFL.WHOL.CD	Net official flows from UN agencies, WHO (current US$)			level	money
-DT.NFL.WITC.CD	Net official flows from UN agencies, WTO-ITC (current US$)			level	money
-DT.ODA.ALLD.CD	Net official development assistance and official aid received (current US$)			level	money
+DT.NFL.RDBC.CD	Net financial flows, RDB concessional (NFL, current US$)	USD	US dollars, current prices	level	money
+DT.NFL.RDBN.CD	Net financial flows, RDB nonconcessional (NFL, current US$)	USD	US dollars, current prices	level	money
+DT.NFL.SDGF.CD	Net official flows from UN agencies, SDGFUND (current US$)	USD	US dollars, current prices	level	money
+DT.NFL.SPRP.CD	Net official flows from UN agencies, SPRP (current US$)	USD	US dollars, current prices	level	money
+DT.NFL.UNAI.CD	Net official flows from UN agencies, UNAIDS (current US$)	USD	US dollars, current prices	level	money
+DT.NFL.UNCD.CD	Net official flows from UN agencies, UNCDF (current US$)	USD	US dollars, current prices	level	money
+DT.NFL.UNCF.CD	Net official flows from UN agencies, UNICEF (current US$)	USD	US dollars, current prices	level	money
+DT.NFL.UNCR.CD	Net official flows from UN agencies, UNHCR (current US$)	USD	US dollars, current prices	level	money
+DT.NFL.UNCTAD.CD	Net official flows from UN agencies, UNCTAD (current US$)	USD	US dollars, current prices	level	money
+DT.NFL.UNCV.CD	Net official flows from UN agencies, UNCOVID (current US$)	USD	US dollars, current prices	level	money
+DT.NFL.UNDP.CD	Net official flows from UN agencies, UNDP (current US$)	USD	US dollars, current prices	level	money
+DT.NFL.UNEC.CD	Net official flows from UN agencies, UNECE (current US$)	USD	US dollars, current prices	level	money
+DT.NFL.UNEP.CD	Net official flows from UN agencies, UNEP (current US$)	USD	US dollars, current prices	level	money
+DT.NFL.UNFP.CD	Net official flows from UN agencies, UNFPA (current US$)	USD	US dollars, current prices	level	money
+DT.NFL.UNID.CD	Net official flows from UN agencies, UNIDIR (current US$)	USD	US dollars, current prices	level	money
+DT.NFL.UNIDO.CD	Net official flows from UN agencies, UNIDO (current US$)	USD	US dollars, current prices	level	money
+DT.NFL.UNPB.CD	Net official flows from UN agencies, UNPBF (current US$)	USD	US dollars, current prices	level	money
+DT.NFL.UNRW.CD	Net official flows from UN agencies, UNRWA (current US$)	USD	US dollars, current prices	level	money
+DT.NFL.UNTA.CD	Net official flows from UN agencies, UNTA (current US$)	USD	US dollars, current prices	level	money
+DT.NFL.UNWN.CD	Net official flows from UN agencies, UNWOMEN (current US$)	USD	US dollars, current prices	level	money
+DT.NFL.UNWT.CD	Net official flows from UN agencies, UNWTO (current US$)	USD	US dollars, current prices	level	money
+DT.NFL.WFPG.CD	Net official flows from UN agencies, WFP (current US$)	USD	US dollars, current prices	level	money
+DT.NFL.WHOL.CD	Net official flows from UN agencies, WHO (current US$)	USD	US dollars, current prices	level	money
+DT.NFL.WITC.CD	Net official flows from UN agencies, WTO-ITC (current US$)	USD	US dollars, current prices	level	money
+DT.ODA.ALLD.CD	Net official development assistance and official aid received (current US$)	USD	US dollars, current prices	level	money
 DT.ODA.ALLD.KD	Net official development assistance and official aid received (constant 2023 US$)			level	money
-DT.ODA.OATL.CD	Net official aid received (current US$)			level	money
+DT.ODA.OATL.CD	Net official aid received (current US$)	USD	US dollars, current prices	level	money
 DT.ODA.OATL.KD	Net official aid received (constant 2023 US$)			level	money
-DT.ODA.ODAT.CD	Net official development assistance received (current US$)			level	money
+DT.ODA.ODAT.CD	Net official development assistance received (current US$)	USD	US dollars, current prices	level	money
 DT.ODA.ODAT.GI.ZS	Net ODA received (% of gross capital formation)	PC	Percentage	rate	pct_of_other_quantity
 DT.ODA.ODAT.GN.ZS	Net ODA received (% of GNI)	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
 DT.ODA.ODAT.KD	Net official development assistance received (constant 2023 US$)			level	money
 DT.ODA.ODAT.MP.ZS	Net ODA received (% of imports of goods, services and primary income)	PC	Percentage	rate	pct_of_trade_flow
 DT.ODA.ODAT.PC.ZS	Net ODA received per capita (current US$)			rate	per_capita_money
 DT.ODA.ODAT.XP.ZS	Net ODA received (% of central government expense)	PC	Percentage	share	pct_of_part_of_whole
-DT.TDS.DECT.CD	Debt service on external debt, total (TDS, current US$)			level	money
+DT.TDS.DECT.CD	Debt service on external debt, total (TDS, current US$)	USD	US dollars, current prices	level	money
 DT.TDS.DECT.EX.ZS	Total debt service (% of exports of goods, services and primary income)	PC	Percentage	rate	pct_of_trade_flow
 DT.TDS.DECT.GN.ZS	Total debt service (% of GNI)	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
-DT.TDS.DIMF.CD	IMF repurchases and charges (TDS, current US$)			level	money
+DT.TDS.DIMF.CD	IMF repurchases and charges (TDS, current US$)	USD	US dollars, current prices	level	money
 DT.TDS.DPPF.XP.ZS	Debt service (PPG and IMF only, % of exports of goods, services and primary income)	PC	Percentage	rate	pct_of_trade_flow
-DT.TDS.DPPG.CD	Debt service on external debt, public and publicly guaranteed (PPG) (TDS, current US$)			level	money
+DT.TDS.DPPG.CD	Debt service on external debt, public and publicly guaranteed (PPG) (TDS, current US$)	USD	US dollars, current prices	level	money
 DT.TDS.DPPG.GN.ZS	Public and publicly guaranteed debt service (% of GNI)	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
 DT.TDS.DPPG.XP.ZS	Public and publicly guaranteed debt service (% of exports of goods, services and primary income)	PC	Percentage	rate	pct_of_trade_flow
-DT.TDS.MLAT.CD	Multilateral debt service (TDS, current US$)			level	money
+DT.TDS.MLAT.CD	Multilateral debt service (TDS, current US$)	USD	US dollars, current prices	level	money
 DT.TDS.MLAT.PG.ZS	Multilateral debt service (% of public and publicly guaranteed debt service)	PC	Percentage	share	pct_of_part_of_whole
 EG.CFT.ACCS.RU.ZS	Access to clean fuels and technologies for cooking, rural (% of rural population)	PC	Percentage	share	pct_of_part_of_whole
 EG.CFT.ACCS.UR.ZS	Access to clean fuels and technologies for cooking, urban (% of urban population)	PC	Percentage	share	pct_of_part_of_whole
@@ -316,17 +316,17 @@ FB.CBK.BRWR.P3	Borrowers from commercial banks (per 1,000 adults)			rate	per_pop
 FB.CBK.DPTR.P3	Depositors with commercial banks (per 1,000 adults)			rate	per_population_other
 FD.AST.PRVT.GD.ZS	Domestic credit to private sector by banks (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
 FD.RES.LIQU.AS.ZS	Bank liquid reserves to bank assets ratio (%)	PC	Percentage		pct_plain
-FI.RES.TOTL.CD	Total reserves (includes gold, current US$)			level	money
+FI.RES.TOTL.CD	Total reserves (includes gold, current US$)	USD	US dollars, current prices	level	money
 FI.RES.TOTL.DT.ZS	Total reserves (% of total external debt)	PC	Percentage	share	pct_of_part_of_whole
 FI.RES.TOTL.MO	Total reserves in months of imports				no_unit_text
-FI.RES.XGLD.CD	Total reserves minus gold (current US$)			level	money
+FI.RES.XGLD.CD	Total reserves minus gold (current US$)	USD	US dollars, current prices	level	money
 FM.AST.CGOV.ZG.M3	Claims on central government (annual growth as % of broad money)				growth_as_pct_money
 FM.AST.DOMO.ZG.M3	Claims on other sectors of the domestic economy (annual growth as % of broad money)				growth_as_pct_money
-FM.AST.DOMS.CN	Net domestic credit (current LCU)			level	money
-FM.AST.NFRG.CN	Net foreign assets (current LCU)			level	money
+FM.AST.DOMS.CN	Net domestic credit (current LCU)	LCU	Local currency unit, current prices	level	money
+FM.AST.NFRG.CN	Net foreign assets (current LCU)	LCU	Local currency unit, current prices	level	money
 FM.AST.PRVT.GD.ZS	Monetary Sector credit to private sector (% GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
 FM.AST.PRVT.ZG.M3	Claims on private sector (annual growth as % of broad money)				growth_as_pct_money
-FM.LBL.BMNY.CN	Broad money (current LCU)			level	money
+FM.LBL.BMNY.CN	Broad money (current LCU)	LCU	Local currency unit, current prices	level	money
 FM.LBL.BMNY.GD.ZS	Broad money (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
 FM.LBL.BMNY.IR.ZS	Broad money to total reserves ratio				no_unit_text
 FM.LBL.BMNY.ZG	Broad money growth (annual %)	PCH_PRE	Percentage change on previous period	change	annual_growth
@@ -352,67 +352,67 @@ FX.OWN.TOTL.SO.ZS	Account ownership at a financial institution or with a mobile-
 FX.OWN.TOTL.YG.ZS	Account ownership at a financial institution or with a mobile-money-service provider, young adults (% of population ages 15-24)	PC	Percentage	share	pct_of_part_of_whole
 FX.OWN.TOTL.ZS	Account ownership at a financial institution or with a mobile-money-service provider (% of population ages 15+)	PC	Percentage	share	pct_of_part_of_whole
 GB.XPD.RSDV.GD.ZS	Research and development expenditure (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
-GC.AST.TOTL.CN	Net acquisition of financial assets (current LCU)			level	money
+GC.AST.TOTL.CN	Net acquisition of financial assets (current LCU)	LCU	Local currency unit, current prices	level	money
 GC.AST.TOTL.GD.ZS	Net acquisition of financial assets (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
-GC.DOD.TOTL.CN	Central government debt, total (current LCU)			level	money
+GC.DOD.TOTL.CN	Central government debt, total (current LCU)	LCU	Local currency unit, current prices	level	money
 GC.DOD.TOTL.GD.ZS	Central government debt, total (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
-GC.LBL.TOTL.CN	Net incurrence of liabilities, total (current LCU)			level	money
+GC.LBL.TOTL.CN	Net incurrence of liabilities, total (current LCU)	LCU	Local currency unit, current prices	level	money
 GC.LBL.TOTL.GD.ZS	Net incurrence of liabilities, total (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
-GC.NFN.TOTL.CN	Net investment in nonfinancial assets (current LCU)			level	money
+GC.NFN.TOTL.CN	Net investment in nonfinancial assets (current LCU)	LCU	Local currency unit, current prices	level	money
 GC.NFN.TOTL.GD.ZS	Net investment in nonfinancial assets (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
-GC.NLD.TOTL.CN	Net lending (+) / net borrowing (-) (current LCU)			level	money
+GC.NLD.TOTL.CN	Net lending (+) / net borrowing (-) (current LCU)	LCU	Local currency unit, current prices	level	money
 GC.NLD.TOTL.GD.ZS	Net lending (+) / net borrowing (-) (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
-GC.REV.GOTR.CN	Grants and other revenue (current LCU)			level	money
+GC.REV.GOTR.CN	Grants and other revenue (current LCU)	LCU	Local currency unit, current prices	level	money
 GC.REV.GOTR.ZS	Grants and other revenue (% of revenue)	PC	Percentage	share	pct_of_part_of_whole
-GC.REV.SOCL.CN	Social contributions (current LCU)			level	money
+GC.REV.SOCL.CN	Social contributions (current LCU)	LCU	Local currency unit, current prices	level	money
 GC.REV.SOCL.ZS	Social contributions (% of revenue)	PC	Percentage	share	pct_of_part_of_whole
-GC.REV.XGRT.CN	Revenue, excluding grants (current LCU)			level	money
+GC.REV.XGRT.CN	Revenue, excluding grants (current LCU)	LCU	Local currency unit, current prices	level	money
 GC.REV.XGRT.GD.ZS	Revenue, excluding grants (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
-GC.TAX.EXPT.CN	Taxes on exports (current LCU)			level	money
+GC.TAX.EXPT.CN	Taxes on exports (current LCU)	LCU	Local currency unit, current prices	level	money
 GC.TAX.EXPT.ZS	Taxes on exports (% of tax revenue)	PC	Percentage	share	pct_of_part_of_whole
-GC.TAX.GSRV.CN	Taxes on goods and services (current LCU)			level	money
+GC.TAX.GSRV.CN	Taxes on goods and services (current LCU)	LCU	Local currency unit, current prices	level	money
 GC.TAX.GSRV.RV.ZS	Taxes on goods and services (% of revenue)	PC	Percentage	share	pct_of_part_of_whole
 GC.TAX.GSRV.VA.ZS	Taxes on goods and services (% value added of industry and services)	PC	Percentage	share	pct_of_other_whole
-GC.TAX.IMPT.CN	Customs and other import duties (current LCU)			level	money
+GC.TAX.IMPT.CN	Customs and other import duties (current LCU)	LCU	Local currency unit, current prices	level	money
 GC.TAX.IMPT.ZS	Customs and other import duties (% of tax revenue)	PC	Percentage	share	pct_of_part_of_whole
-GC.TAX.INTT.CN	Taxes on international trade (current LCU)			level	money
+GC.TAX.INTT.CN	Taxes on international trade (current LCU)	LCU	Local currency unit, current prices	level	money
 GC.TAX.INTT.RV.ZS	Taxes on international trade (% of revenue)	PC	Percentage	share	pct_of_part_of_whole
-GC.TAX.OTHR.CN	Other taxes (current LCU)			level	money
+GC.TAX.OTHR.CN	Other taxes (current LCU)	LCU	Local currency unit, current prices	level	money
 GC.TAX.OTHR.RV.ZS	Other taxes (% of revenue)	PC	Percentage	share	pct_of_part_of_whole
-GC.TAX.TOTL.CN	Tax revenue (current LCU)			level	money
+GC.TAX.TOTL.CN	Tax revenue (current LCU)	LCU	Local currency unit, current prices	level	money
 GC.TAX.TOTL.GD.ZS	Tax revenue (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
-GC.TAX.YPKG.CN	Taxes on income, profits and capital gains (current LCU)			level	money
+GC.TAX.YPKG.CN	Taxes on income, profits and capital gains (current LCU)	LCU	Local currency unit, current prices	level	money
 GC.TAX.YPKG.RV.ZS	Taxes on income, profits and capital gains (% of revenue)	PC	Percentage	share	pct_of_part_of_whole
 GC.TAX.YPKG.ZS	Taxes on income, profits and capital gains (% of total taxes)	PC	Percentage	share	pct_of_part_of_whole
-GC.XPN.COMP.CN	Compensation of employees (current LCU)			level	money
+GC.XPN.COMP.CN	Compensation of employees (current LCU)	LCU	Local currency unit, current prices	level	money
 GC.XPN.COMP.ZS	Compensation of employees (% of expense)	PC	Percentage	share	pct_of_part_of_whole
-GC.XPN.GSRV.CN	Goods and services expense (current LCU)			level	money
+GC.XPN.GSRV.CN	Goods and services expense (current LCU)	LCU	Local currency unit, current prices	level	money
 GC.XPN.GSRV.ZS	Goods and services expense (% of expense)	PC	Percentage	share	pct_of_part_of_whole
-GC.XPN.INTP.CN	Interest payments (current LCU)			level	money
+GC.XPN.INTP.CN	Interest payments (current LCU)	LCU	Local currency unit, current prices	level	money
 GC.XPN.INTP.RV.ZS	Interest payments (% of revenue)	PC	Percentage	share	pct_of_part_of_whole
 GC.XPN.INTP.ZS	Interest payments (% of expense)	PC	Percentage	share	pct_of_part_of_whole
-GC.XPN.OTHR.CN	Other expense (current LCU)			level	money
+GC.XPN.OTHR.CN	Other expense (current LCU)	LCU	Local currency unit, current prices	level	money
 GC.XPN.OTHR.ZS	Other expense (% of expense)	PC	Percentage	share	pct_of_part_of_whole
-GC.XPN.TOTL.CN	Expense (current LCU)			level	money
+GC.XPN.TOTL.CN	Expense (current LCU)	LCU	Local currency unit, current prices	level	money
 GC.XPN.TOTL.GD.ZS	Expense (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
-GC.XPN.TRFT.CN	Subsidies and other transfers (current LCU)			level	money
+GC.XPN.TRFT.CN	Subsidies and other transfers (current LCU)	LCU	Local currency unit, current prices	level	money
 GC.XPN.TRFT.ZS	Subsidies and other transfers (% of expense)	PC	Percentage	share	pct_of_part_of_whole
-GD_WBL_OVL_ENF	WBL: Enforcement Perceptions Index (scale 0-100)			index	scale
-GD_WBL_OVL_LAW	WBL: Legal Framework Index (scale 0-100)			index	scale
-GD_WBL_OVL_SFR	WBL: Supportive Framework Index (scale 0-100)			index	scale
+GD_WBL_OVL_ENF	WBL: Enforcement Perceptions Index (scale 0-100)	SC100	Score, 0-100 scale	index	scale
+GD_WBL_OVL_LAW	WBL: Legal Framework Index (scale 0-100)	SC100	Score, 0-100 scale	index	scale
+GD_WBL_OVL_SFR	WBL: Supportive Framework Index (scale 0-100)	SC100	Score, 0-100 scale	index	scale
 GF.XPD.BUDG.ZS	Primary government expenditures as a proportion of original approved budget (%)	PC	Percentage		pct_plain
 GOV_WGI_CC_EST	Control of Corruption - Governance estimate (approx. -2.5 to +2.5)			index	scale
-GOV_WGI_CC_SC	Control of Corruption - Governance score (0-100)			index	scale
+GOV_WGI_CC_SC	Control of Corruption - Governance score (0-100)	SCORE	Score	index	scale
 GOV_WGI_GE_EST	Government Effectiveness - Governance estimate (approx. -2.5 to +2.5)			index	scale
-GOV_WGI_GE_SC	Government Effectiveness - Governance score (0-100)			index	scale
+GOV_WGI_GE_SC	Government Effectiveness - Governance score (0-100)	SCORE	Score	index	scale
 GOV_WGI_PV_EST	Political Stability - Governance estimate (approx. -2.5 to +2.5)			index	scale
-GOV_WGI_PV_SC	Political Stability - Governance score (0-100)			index	scale
+GOV_WGI_PV_SC	Political Stability - Governance score (0-100)	SCORE	Score	index	scale
 GOV_WGI_RL_EST	Rule of Law - Governance estimate (approx. -2.5 to +2.5)			index	scale
-GOV_WGI_RL_SC	Rule of Law - Governance score (0-100)			index	scale
+GOV_WGI_RL_SC	Rule of Law - Governance score (0-100)	SCORE	Score	index	scale
 GOV_WGI_RQ_EST	Regulatory Quality - Governance estimate (approx. -2.5 to +2.5)			index	scale
-GOV_WGI_RQ_SC	Regulatory Quality - Governance score (0-100)			index	scale
+GOV_WGI_RQ_SC	Regulatory Quality - Governance score (0-100)	SCORE	Score	index	scale
 GOV_WGI_VA_EST	Voice and Accountability - Governance estimate (approx. -2.5 to +2.5)			index	scale
-GOV_WGI_VA_SC	Voice and Accountability - Governance score (0-100)			index	scale
+GOV_WGI_VA_SC	Voice and Accountability - Governance score (0-100)	SCORE	Score	index	scale
 HD_HCIP_EDUC_FE	Human capital index plus (HCI+): education pillar score, female (scale 0–188)			index	scale
 HD_HCIP_EDUC_MA	Human capital index plus (HCI+): education pillar score, male (scale 0–188)			index	scale
 HD_HCIP_EDUC_TO	Human capital index plus (HCI+): education pillar score, total (scale 0–188)			index	scale
@@ -425,49 +425,49 @@ HD_HCIP_OTJL_TO	Human capital index plus (HCI+): on-the-job learning pillar sco
 HD_HCIP_OVRL_FE	Human capital index plus (HCI+): overall score, female (scale 0–325)			index	scale
 HD_HCIP_OVRL_MA	Human capital index plus (HCI+): overall score, male (scale 0–325)			index	scale
 HD_HCIP_OVRL_TO	Human capital index plus (HCI+): overall score, total (scale 0–325)			index	scale
-IC.BRE.BE.OS	B-READY: Business Entry: Overall Score			index	name_score
-IC.BRE.BE.P1	B-READY: Business Entry Pillar 1: Quality of Regulations for Business Entry			index	name_score
-IC.BRE.BE.P2	B-READY: Business Entry Pillar 2: Digital Public Services and Transparency of Information for Business Entry			index	name_score
-IC.BRE.BE.P3	B-READY: Business Entry Pillar 3: Operational Efficiency of Business Entry			index	name_score
-IC.BRE.BI.OS	B-READY: Business Insolvency: Overall Score			index	name_score
-IC.BRE.BI.P1	B-READY: Business Insolvency Pillar 1: Quality of Regulations for Judicial Insolvency Proceedings			index	name_score
-IC.BRE.BI.P2	B-READY: Business Insolvency Pillar 2: Quality of Institutional and Operational Infrastructure for Judicial Insolvency Proceedings			index	name_score
-IC.BRE.BI.P3	B-READY: Business Insolvency Pillar 3: Operational Efficiency of Resolving Judicial Insolvency Proceedings			index	name_score
-IC.BRE.BL.OS	B-READY: Business Location: Overall Score			index	name_score
-IC.BRE.BL.P1	B-READY: Business Location Pillar 1: Quality of Regulations for Business Location			index	name_score
-IC.BRE.BL.P2	B-READY: Business Location Pillar 2: Quality of Public Services and Transparency of Information for Business Location			index	name_score
-IC.BRE.BL.P3	B-READY: Business Location Pillar 3: Operational Efficiency of Establishing a Business Location			index	name_score
-IC.BRE.DR.OS	B-READY: Dispute Resolution: Overall Score			index	name_score
-IC.BRE.DR.P1	B-READY: Dispute Resolution Pillar 1: Quality of Regulations for Dispute Resolution			index	name_score
-IC.BRE.DR.P2	B-READY: Dispute Resolution Pillar 2: Public Services for Dispute Resolution			index	name_score
-IC.BRE.DR.P3	B-READY: Dispute Resolution Pillar 3:  Ease of Resolving a Commercial Dispute			index	name_score
-IC.BRE.FS.OS	B-READY: Financial Services: Overall Score			index	name_score
-IC.BRE.FS.P1	B-READY: Financial Services Pillar 1: Quality of Regulations for Financial Services			index	name_score
-IC.BRE.FS.P2	B-READY: Financial Services Pillar 2: Accessibility of Information in Credit Infrastructure			index	name_score
-IC.BRE.FS.P3	B-READY: Financial Services Pillar 3: Operational Efficiency of Receiving Financial Services			index	name_score
-IC.BRE.IT.OS	B-READY: International Trade: Overall Score			index	name_score
-IC.BRE.IT.P1	B-READY: International Trade Pillar 1: Quality of Regulations for International Trade			index	name_score
-IC.BRE.IT.P2	B-READY: International Trade Pillar 2: Quality of Public Services for the Facilitation of International Trade			index	name_score
-IC.BRE.IT.P3	B-READY: International Trade Pillar 3: Efficiency of Importing Goods, Exporting Goods, and Engaging in Digital Trade			index	name_score
-IC.BRE.LB.OS	B-READY: Labor: Overall Score			index	name_score
-IC.BRE.LB.P1	B-READY: Labor Pillar 1: Quality of Labor Regulations			index	name_score
-IC.BRE.LB.P2	B-READY: Labor Pillar 2: Adequacy of Public Services for Labor			index	name_score
-IC.BRE.LB.P3	B-READY: Labor Pillar 3: Operational Efficiency of Labor Regulations and Public Services in Practice			index	name_score
-IC.BRE.MC.OS	B-READY: Market Competition: Overall Score			index	name_score
-IC.BRE.MC.P1	B-READY: Market Competition Pillar 1: Quality of Regulations that Promote Market Competition			index	name_score
-IC.BRE.MC.P2	B-READY: Market Competition Pillar 2: Public Services that Promote Market Competition			index	name_score
-IC.BRE.MC.P3	B-READY: Market Competition Pillar 3:  Implementation of Key Services Promoting Market Competition			index	name_score
-IC.BRE.P1.RF	B-READY: Pillar 1: Regulatory Framework			index	name_score
-IC.BRE.P2.PS	B-READY: Pillar 2: Public Services			index	name_score
-IC.BRE.P3.OE	B-READY: Pillar 3: Operational Efficiency			index	name_score
-IC.BRE.TX.OS	B-READY: Taxation: Overall Score			index	name_score
-IC.BRE.TX.P1	B-READY: Taxation Pillar 1: Quality of Regulations on Taxation			index	name_score
-IC.BRE.TX.P2	B-READY: Taxation Pillar 2: Public Services Provided by the Tax Administration			index	name_score
-IC.BRE.TX.P3	B-READY: Taxation Pillar 3: Operational Efficiency of Tax Systems in Practice			index	name_score
-IC.BRE.US.OS	B-READY: Utility Services: Overall Score			index	name_score
-IC.BRE.US.P1	B-READY: Utility Services Pillar 1: Quality of Regulations on Utility Services			index	name_score
-IC.BRE.US.P2	B-READY: Utility Services Pillar 2: Quality of Governance and Transparency of Utility Services			index	name_score
-IC.BRE.US.P3	B-READY: Utility Services Pillar 3: Operational Efficiency of Utility Service Provision			index	name_score
+IC.BRE.BE.OS	B-READY: Business Entry: Overall Score	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.BE.P1	B-READY: Business Entry Pillar 1: Quality of Regulations for Business Entry	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.BE.P2	B-READY: Business Entry Pillar 2: Digital Public Services and Transparency of Information for Business Entry	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.BE.P3	B-READY: Business Entry Pillar 3: Operational Efficiency of Business Entry	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.BI.OS	B-READY: Business Insolvency: Overall Score	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.BI.P1	B-READY: Business Insolvency Pillar 1: Quality of Regulations for Judicial Insolvency Proceedings	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.BI.P2	B-READY: Business Insolvency Pillar 2: Quality of Institutional and Operational Infrastructure for Judicial Insolvency Proceedings	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.BI.P3	B-READY: Business Insolvency Pillar 3: Operational Efficiency of Resolving Judicial Insolvency Proceedings	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.BL.OS	B-READY: Business Location: Overall Score	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.BL.P1	B-READY: Business Location Pillar 1: Quality of Regulations for Business Location	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.BL.P2	B-READY: Business Location Pillar 2: Quality of Public Services and Transparency of Information for Business Location	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.BL.P3	B-READY: Business Location Pillar 3: Operational Efficiency of Establishing a Business Location	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.DR.OS	B-READY: Dispute Resolution: Overall Score	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.DR.P1	B-READY: Dispute Resolution Pillar 1: Quality of Regulations for Dispute Resolution	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.DR.P2	B-READY: Dispute Resolution Pillar 2: Public Services for Dispute Resolution	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.DR.P3	B-READY: Dispute Resolution Pillar 3:  Ease of Resolving a Commercial Dispute	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.FS.OS	B-READY: Financial Services: Overall Score	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.FS.P1	B-READY: Financial Services Pillar 1: Quality of Regulations for Financial Services	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.FS.P2	B-READY: Financial Services Pillar 2: Accessibility of Information in Credit Infrastructure	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.FS.P3	B-READY: Financial Services Pillar 3: Operational Efficiency of Receiving Financial Services	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.IT.OS	B-READY: International Trade: Overall Score	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.IT.P1	B-READY: International Trade Pillar 1: Quality of Regulations for International Trade	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.IT.P2	B-READY: International Trade Pillar 2: Quality of Public Services for the Facilitation of International Trade	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.IT.P3	B-READY: International Trade Pillar 3: Efficiency of Importing Goods, Exporting Goods, and Engaging in Digital Trade	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.LB.OS	B-READY: Labor: Overall Score	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.LB.P1	B-READY: Labor Pillar 1: Quality of Labor Regulations	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.LB.P2	B-READY: Labor Pillar 2: Adequacy of Public Services for Labor	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.LB.P3	B-READY: Labor Pillar 3: Operational Efficiency of Labor Regulations and Public Services in Practice	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.MC.OS	B-READY: Market Competition: Overall Score	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.MC.P1	B-READY: Market Competition Pillar 1: Quality of Regulations that Promote Market Competition	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.MC.P2	B-READY: Market Competition Pillar 2: Public Services that Promote Market Competition	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.MC.P3	B-READY: Market Competition Pillar 3:  Implementation of Key Services Promoting Market Competition	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.P1.RF	B-READY: Pillar 1: Regulatory Framework	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.P2.PS	B-READY: Pillar 2: Public Services	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.P3.OE	B-READY: Pillar 3: Operational Efficiency	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.TX.OS	B-READY: Taxation: Overall Score	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.TX.P1	B-READY: Taxation Pillar 1: Quality of Regulations on Taxation	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.TX.P2	B-READY: Taxation Pillar 2: Public Services Provided by the Tax Administration	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.TX.P3	B-READY: Taxation Pillar 3: Operational Efficiency of Tax Systems in Practice	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.US.OS	B-READY: Utility Services: Overall Score	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.US.P1	B-READY: Utility Services Pillar 1: Quality of Regulations on Utility Services	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.US.P2	B-READY: Utility Services Pillar 2: Quality of Governance and Transparency of Utility Services	SC100	Score, 0-100 scale	index	name_score
+IC.BRE.US.P3	B-READY: Utility Services Pillar 3: Operational Efficiency of Utility Service Provision	SC100	Score, 0-100 scale	index	name_score
 IC.BUS.NDNS.ZS	New business density (new registrations per 1,000 people ages 15-64)			rate	per_population_other
 IC.BUS.NREG	New businesses registered (number)	NR	Number	count	number
 IC.CUS.DURS.EX	Average time to clear exports through customs (days)	DAY	Day	level	days
@@ -489,11 +489,11 @@ IC.FRM.ENGM.ZS	Firms adopting energy management measures to reduce emissions (% 
 IC.FRM.EXS.ZS	Firms exporting directly at least 10% of sales (% of firms)	PC	Percentage	share	pct_of_part_of_whole
 IC.FRM.FEMM.ZS	Firms with female top manager (% of firms)	PC	Percentage	share	pct_of_part_of_whole
 IC.FRM.FEMO.ZS	Firms with female participation in ownership (% of firms)	PC	Percentage	share	pct_of_part_of_whole
-IC.FRM.FO.ZS	Firms with at least 10% foreign ownership				no_unit_text
+IC.FRM.FO.ZS	Firms with at least 10% foreign ownership	PC	Percentage		no_unit_text
 IC.FRM.FREG.ZS	Firms formally registered when operations started (% of firms)	PC	Percentage	share	pct_of_part_of_whole
 IC.FRM.LOTM.ZS	Firms where largest owner is also the top manager (% of firms)	PC	Percentage	share	pct_of_part_of_whole
 IC.FRM.METG.ZS	Firms visited or required meetings with tax officials (% of firms)	PC	Percentage	share	pct_of_part_of_whole
-IC.FRM.NPRD.ZS	Firms that introduced a new product/service and process, and spent on R&D				no_unit_text
+IC.FRM.NPRD.ZS	Firms that introduced a new product/service and process, and spent on R&D	PC	Percentage		no_unit_text
 IC.FRM.OUTG.ZS	Value lost due to electrical outages (% of sales for affected firms)	PC	Percentage	rate	pct_of_other_quantity
 IC.FRM.TAXE.ZS	Firms filling taxes electronically (% of firms)	PC	Percentage	share	pct_of_part_of_whole
 IC.FRM.TRNG.ZS	Firms offering formal training (% of firms)	PC	Percentage	share	pct_of_part_of_whole
@@ -501,14 +501,14 @@ IC.GOV.DURS.ZS	Time spent dealing with the requirements of government regulation
 IC.MNG.IND	Management practices index			index	name_score
 IC.TAX.GIFT.ZS	Firms expected to give gifts in meetings with tax officials (% of firms)	PC	Percentage	share	pct_of_part_of_whole
 IC.TAX.METG	Number of visits or required meetings with tax officials (average for affected firms)			mean	avg_for_firms
-IE.PPI.ENGY.CD	Investment in energy with private participation (current US$)			level	money
-IE.PPI.ICTI.CD	Investment in ICT with private participation (current US$)			level	money
-IE.PPI.TRAN.CD	Investment in transport with private participation (current US$)			level	money
-IE.PPI.WATR.CD	Investment in water and sanitation with private participation (current US$)			level	money
-IE.PPN.ENGY.CD	Public private partnerships investment in energy (current US$)			level	money
-IE.PPN.ICTI.CD	Public private partnerships investment in ICT (current US$)			level	money
-IE.PPN.TRAN.CD	Public private partnerships investment in transport (current US$)			level	money
-IE.PPN.WATR.CD	Public private partnerships investment in water and sanitation (current US$)			level	money
+IE.PPI.ENGY.CD	Investment in energy with private participation (current US$)	USD	US dollars, current prices	level	money
+IE.PPI.ICTI.CD	Investment in ICT with private participation (current US$)	USD	US dollars, current prices	level	money
+IE.PPI.TRAN.CD	Investment in transport with private participation (current US$)	USD	US dollars, current prices	level	money
+IE.PPI.WATR.CD	Investment in water and sanitation with private participation (current US$)	USD	US dollars, current prices	level	money
+IE.PPN.ENGY.CD	Public private partnerships investment in energy (current US$)	USD	US dollars, current prices	level	money
+IE.PPN.ICTI.CD	Public private partnerships investment in ICT (current US$)	USD	US dollars, current prices	level	money
+IE.PPN.TRAN.CD	Public private partnerships investment in transport (current US$)	USD	US dollars, current prices	level	money
+IE.PPN.WATR.CD	Public private partnerships investment in water and sanitation (current US$)	USD	US dollars, current prices	level	money
 IP.IDS.NRCT	Industrial design applications, nonresident, by count	NR	Number	count	name_counts
 IP.IDS.RSCT	Industrial design applications, resident, by count	NR	Number	count	name_counts
 IP.JRN.ARTC.SC	Scientific and technical journal articles	NR	Number	count	name_counts
@@ -516,33 +516,33 @@ IP.PAT.NRES	Patent applications, nonresidents	NR	Number	count	name_counts
 IP.PAT.RESD	Patent applications, residents	NR	Number	count	name_counts
 IP.TMK.NRCT	Trademark applications, nonresident, by count	NR	Number	count	name_counts
 IP.TMK.RSCT	Trademark applications, resident, by count	NR	Number	count	name_counts
-IQ.CPA.BREG.XQ	CPIA business regulatory environment rating (1=low to 6=high)			index	scale
-IQ.CPA.DEBT.XQ	CPIA debt policy rating (1=low to 6=high)			index	scale
-IQ.CPA.ECON.XQ	CPIA economic management cluster average (1=low to 6=high)			index	scale
-IQ.CPA.ENVR.XQ	CPIA policy and institutions for environmental sustainability rating (1=low to 6=high)			index	scale
+IQ.CPA.BREG.XQ	CPIA business regulatory environment rating (1=low to 6=high)	SCORE	Score	index	scale
+IQ.CPA.DEBT.XQ	CPIA debt policy rating (1=low to 6=high)	SCORE	Score	index	scale
+IQ.CPA.ECON.XQ	CPIA economic management cluster average (1=low to 6=high)	SCORE	Score	index	scale
+IQ.CPA.ENVR.XQ	CPIA policy and institutions for environmental sustainability rating (1=low to 6=high)	SCORE	Score	index	scale
 IQ.CPA.FINQ.XQ	CPIA quality of budgetary and financial management rating (1=low to 6=high)			index	scale
-IQ.CPA.FINS.XQ	CPIA financial sector rating (1=low to 6=high)			index	scale
-IQ.CPA.FISP.XQ	CPIA fiscal policy rating (1=low to 6=high)			index	scale
-IQ.CPA.GNDR.XQ	CPIA gender equality rating (1=low to 6=high)			index	scale
-IQ.CPA.HRES.XQ	CPIA building human resources rating (1=low to 6=high)			index	scale
-IQ.CPA.IRAI.XQ	IDA resource allocation index (1=low to 6=high)			index	scale
-IQ.CPA.MACR.XQ	CPIA macroeconomic management rating (1=low to 6=high)			index	scale
-IQ.CPA.PADM.XQ	CPIA quality of public administration rating (1=low to 6=high)			index	scale
+IQ.CPA.FINS.XQ	CPIA financial sector rating (1=low to 6=high)	SCORE	Score	index	scale
+IQ.CPA.FISP.XQ	CPIA fiscal policy rating (1=low to 6=high)	SCORE	Score	index	scale
+IQ.CPA.GNDR.XQ	CPIA gender equality rating (1=low to 6=high)	SCORE	Score	index	scale
+IQ.CPA.HRES.XQ	CPIA building human resources rating (1=low to 6=high)	SCORE	Score	index	scale
+IQ.CPA.IRAI.XQ	IDA resource allocation index (1=low to 6=high)	SCORE	Score	index	scale
+IQ.CPA.MACR.XQ	CPIA macroeconomic management rating (1=low to 6=high)	SCORE	Score	index	scale
+IQ.CPA.PADM.XQ	CPIA quality of public administration rating (1=low to 6=high)	SCORE	Score	index	scale
 IQ.CPA.PRES.XQ	CPIA equity of public resource use rating (1=low to 6=high)			index	scale
-IQ.CPA.PROP.XQ	CPIA property rights and rule-based governance rating (1=low to 6=high)			index	scale
-IQ.CPA.PROT.XQ	CPIA social protection rating (1=low to 6=high)			index	scale
-IQ.CPA.PUBS.XQ	CPIA public sector management and institutions cluster average (1=low to 6=high)			index	scale
-IQ.CPA.REVN.XQ	CPIA efficiency of revenue mobilization rating (1=low to 6=high)			index	scale
-IQ.CPA.SOCI.XQ	CPIA policies for social inclusion/equity cluster average (1=low to 6=high)			index	scale
-IQ.CPA.STRC.XQ	CPIA structural policies cluster average (1=low to 6=high)			index	scale
-IQ.CPA.TRAD.XQ	CPIA trade rating (1=low to 6=high)			index	scale
-IQ.CPA.TRAN.XQ	CPIA transparency, accountability, and corruption in the public sector rating (1=low to 6=high)			index	scale
-IQ.SPI.OVRL	Statistical performance indicators (SPI): Overall score (scale 0-100)			index	scale
-IQ.SPI.PIL1	Statistical performance indicators (SPI): Pillar 1 data use score (scale 0-100)			index	scale
-IQ.SPI.PIL2	Statistical performance indicators (SPI): Pillar 2 data services score (scale 0-100)			index	scale
-IQ.SPI.PIL3	Statistical performance indicators (SPI): Pillar 3 data products score  (scale 0-100)			index	scale
-IQ.SPI.PIL4	Statistical performance indicators (SPI): Pillar 4 data sources score (scale 0-100)			index	scale
-IQ.SPI.PIL5	Statistical performance indicators (SPI): Pillar 5 data infrastructure score (scale 0-100)			index	scale
+IQ.CPA.PROP.XQ	CPIA property rights and rule-based governance rating (1=low to 6=high)	SCORE	Score	index	scale
+IQ.CPA.PROT.XQ	CPIA social protection rating (1=low to 6=high)	SCORE	Score	index	scale
+IQ.CPA.PUBS.XQ	CPIA public sector management and institutions cluster average (1=low to 6=high)	SCORE	Score	index	scale
+IQ.CPA.REVN.XQ	CPIA efficiency of revenue mobilization rating (1=low to 6=high)	SCORE	Score	index	scale
+IQ.CPA.SOCI.XQ	CPIA policies for social inclusion/equity cluster average (1=low to 6=high)	SCORE	Score	index	scale
+IQ.CPA.STRC.XQ	CPIA structural policies cluster average (1=low to 6=high)	SCORE	Score	index	scale
+IQ.CPA.TRAD.XQ	CPIA trade rating (1=low to 6=high)	SCORE	Score	index	scale
+IQ.CPA.TRAN.XQ	CPIA transparency, accountability, and corruption in the public sector rating (1=low to 6=high)	SCORE	Score	index	scale
+IQ.SPI.OVRL	Statistical performance indicators (SPI): Overall score (scale 0-100)	SC100	Score, 0-100 scale	index	scale
+IQ.SPI.PIL1	Statistical performance indicators (SPI): Pillar 1 data use score (scale 0-100)	SC100	Score, 0-100 scale	index	scale
+IQ.SPI.PIL2	Statistical performance indicators (SPI): Pillar 2 data services score (scale 0-100)	SC100	Score, 0-100 scale	index	scale
+IQ.SPI.PIL3	Statistical performance indicators (SPI): Pillar 3 data products score  (scale 0-100)	SC100	Score, 0-100 scale	index	scale
+IQ.SPI.PIL4	Statistical performance indicators (SPI): Pillar 4 data sources score (scale 0-100)	SC100	Score, 0-100 scale	index	scale
+IQ.SPI.PIL5	Statistical performance indicators (SPI): Pillar 5 data infrastructure score (scale 0-100)	SC100	Score, 0-100 scale	index	scale
 IS.AIR.DPRT	Air transport, registered carrier departures worldwide	NR	Number	count	name_counts
 IS.AIR.GOOD.MT.K1	Air transport, freight (million ton-km)			level	amount_other
 IS.AIR.PSGR	Air transport, passengers carried	NR	Number	count	name_counts
@@ -574,97 +574,97 @@ LP.LPI.TRAC.XQ	Logistics performance index: Ability to track and trace consignme
 MS.MIL.MPRT.KD	Arms imports (SIPRI trend indicator values)			level	money
 MS.MIL.TOTL.P1	Armed forces personnel, total	NR	Number	count	name_counts
 MS.MIL.TOTL.TF.ZS	Armed forces personnel (% of total labor force)	PC	Percentage	share	pct_of_part_of_whole
-MS.MIL.XPND.CD	Military expenditure (current USD)			level	money
-MS.MIL.XPND.CN	Military expenditure (current LCU)			level	money
+MS.MIL.XPND.CD	Military expenditure (current USD)	USD	US dollars, current prices	level	money
+MS.MIL.XPND.CN	Military expenditure (current LCU)	LCU	Local currency unit, current prices	level	money
 MS.MIL.XPND.GD.ZS	Military expenditure (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
 MS.MIL.XPND.ZS	Military expenditure (% of general government expenditure)	PC	Percentage	share	pct_of_part_of_whole
 MS.MIL.XPRT.KD	Arms exports (SIPRI trend indicator values)			level	money
-NE.CON.GOVT.CD	General government final consumption expenditure (current US$)			level	money
-NE.CON.GOVT.CN	General government final consumption expenditure (current LCU)			level	money
-NE.CON.GOVT.KD	General government final consumption expenditure (constant 2015 US$)			level	money
+NE.CON.GOVT.CD	General government final consumption expenditure (current US$)	USD	US dollars, current prices	level	money
+NE.CON.GOVT.CN	General government final consumption expenditure (current LCU)	LCU	Local currency unit, current prices	level	money
+NE.CON.GOVT.KD	General government final consumption expenditure (constant 2015 US$)	USD_K15	US dollars, constant 2015 prices	level	money
 NE.CON.GOVT.KD.ZG	General government final consumption expenditure (annual % growth)	PCH_PRE	Percentage change on previous period	change	annual_growth
-NE.CON.GOVT.KN	General government final consumption expenditure (constant LCU)			level	money
+NE.CON.GOVT.KN	General government final consumption expenditure (constant LCU)	LCU_K	Local currency unit, constant prices	level	money
 NE.CON.GOVT.ZS	General government final consumption expenditure (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
 NE.CON.PCAP.PP.CD	Households and NPISHs Final consumption expenditure per capita, PPP (current international $)			rate	per_capita_money
 NE.CON.PCAP.PP.KD	Households and NPISHs Final consumption expenditure per capita, PPP (constant 2021 international $)			rate	per_capita_money
-NE.CON.PRVT.CD	Households and NPISHs Final consumption expenditure (current US$)			level	money
-NE.CON.PRVT.CN	Households and NPISHs Final consumption expenditure (current LCU)			level	money
-NE.CON.PRVT.CN.AD	Households and NPISHs final consumption expenditure: linked series (current LCU)			level	money
-NE.CON.PRVT.KD	Households and NPISHs Final consumption expenditure (constant 2015 US$)			level	money
+NE.CON.PRVT.CD	Households and NPISHs Final consumption expenditure (current US$)	USD	US dollars, current prices	level	money
+NE.CON.PRVT.CN	Households and NPISHs Final consumption expenditure (current LCU)	LCU	Local currency unit, current prices	level	money
+NE.CON.PRVT.CN.AD	Households and NPISHs final consumption expenditure: linked series (current LCU)	LCU	Local currency unit, current prices	level	money
+NE.CON.PRVT.KD	Households and NPISHs Final consumption expenditure (constant 2015 US$)	USD_K15	US dollars, constant 2015 prices	level	money
 NE.CON.PRVT.KD.ZG	Households and NPISHs Final consumption expenditure (annual % growth)	PCH_PRE	Percentage change on previous period	change	annual_growth
-NE.CON.PRVT.KN	Households and NPISHs Final consumption expenditure (constant LCU)			level	money
+NE.CON.PRVT.KN	Households and NPISHs Final consumption expenditure (constant LCU)	LCU_K	Local currency unit, constant prices	level	money
 NE.CON.PRVT.PC.KD	Households and NPISHs Final consumption expenditure per capita (constant 2015 US$)			rate	per_capita_money
 NE.CON.PRVT.PC.KD.ZG	Households and NPISHs Final consumption expenditure per capita growth (annual %)	PCH_PRE	Percentage change on previous period	change	annual_growth
-NE.CON.PRVT.PP.CD	Households and NPISHs Final consumption expenditure, PPP (current international $)			level	money
-NE.CON.PRVT.PP.KD	Households and NPISHs Final consumption expenditure, PPP (constant 2021 international $)			level	money
+NE.CON.PRVT.PP.CD	Households and NPISHs Final consumption expenditure, PPP (current international $)	INTD	International dollars (PPP), current prices	level	money
+NE.CON.PRVT.PP.KD	Households and NPISHs Final consumption expenditure, PPP (constant 2021 international $)	INTD_K21	International dollars (PPP), constant 2021 prices	level	money
 NE.CON.PRVT.ZS	Households and NPISHs final consumption expenditure (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
-NE.CON.TOTL.CD	Final consumption expenditure (current US$)			level	money
-NE.CON.TOTL.CN	Final consumption expenditure (current LCU)			level	money
-NE.CON.TOTL.KD	Final consumption expenditure (constant 2015 US$)			level	money
+NE.CON.TOTL.CD	Final consumption expenditure (current US$)	USD	US dollars, current prices	level	money
+NE.CON.TOTL.CN	Final consumption expenditure (current LCU)	LCU	Local currency unit, current prices	level	money
+NE.CON.TOTL.KD	Final consumption expenditure (constant 2015 US$)	USD_K15	US dollars, constant 2015 prices	level	money
 NE.CON.TOTL.KD.ZG	Final consumption expenditure (annual % growth)	PCH_PRE	Percentage change on previous period	change	annual_growth
-NE.CON.TOTL.KN	Final consumption expenditure (constant LCU)			level	money
+NE.CON.TOTL.KN	Final consumption expenditure (constant LCU)	LCU_K	Local currency unit, constant prices	level	money
 NE.CON.TOTL.ZS	Final consumption expenditure (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
 NE.DAB.DEFL.ZS	Gross national expenditure deflator (base year varies by country)			index	index_other_base
-NE.DAB.TOTL.CD	Gross national expenditure (current US$)			level	money
-NE.DAB.TOTL.CN	Gross national expenditure (current LCU)			level	money
-NE.DAB.TOTL.KD	Gross national expenditure (constant 2015 US$)			level	money
-NE.DAB.TOTL.KN	Gross national expenditure (constant LCU)			level	money
+NE.DAB.TOTL.CD	Gross national expenditure (current US$)	USD	US dollars, current prices	level	money
+NE.DAB.TOTL.CN	Gross national expenditure (current LCU)	LCU	Local currency unit, current prices	level	money
+NE.DAB.TOTL.KD	Gross national expenditure (constant 2015 US$)	USD_K15	US dollars, constant 2015 prices	level	money
+NE.DAB.TOTL.KN	Gross national expenditure (constant LCU)	LCU_K	Local currency unit, constant prices	level	money
 NE.DAB.TOTL.ZS	Gross national expenditure (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
-NE.EXP.GNFS.CD	Exports of goods and services (current US$)			level	money
-NE.EXP.GNFS.CN	Exports of goods and services (current LCU)			level	money
-NE.EXP.GNFS.KD	Exports of goods and services (constant 2015 US$)			level	money
+NE.EXP.GNFS.CD	Exports of goods and services (current US$)	USD	US dollars, current prices	level	money
+NE.EXP.GNFS.CN	Exports of goods and services (current LCU)	LCU	Local currency unit, current prices	level	money
+NE.EXP.GNFS.KD	Exports of goods and services (constant 2015 US$)	USD_K15	US dollars, constant 2015 prices	level	money
 NE.EXP.GNFS.KD.ZG	Exports of goods and services (annual % growth)	PCH_PRE	Percentage change on previous period	change	annual_growth
-NE.EXP.GNFS.KN	Exports of goods and services (constant LCU)			level	money
+NE.EXP.GNFS.KN	Exports of goods and services (constant LCU)	LCU_K	Local currency unit, constant prices	level	money
 NE.EXP.GNFS.ZS	Exports of goods and services (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
-NE.GDI.FPRV.CN	Gross fixed capital formation, private sector (current LCU)			level	money
+NE.GDI.FPRV.CN	Gross fixed capital formation, private sector (current LCU)	LCU	Local currency unit, current prices	level	money
 NE.GDI.FPRV.ZS	Gross fixed capital formation, private sector (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
-NE.GDI.FTOT.CD	Gross fixed capital formation (current US$)			level	money
-NE.GDI.FTOT.CN	Gross fixed capital formation (current LCU)			level	money
-NE.GDI.FTOT.KD	Gross fixed capital formation (constant 2015 US$)			level	money
+NE.GDI.FTOT.CD	Gross fixed capital formation (current US$)	USD	US dollars, current prices	level	money
+NE.GDI.FTOT.CN	Gross fixed capital formation (current LCU)	LCU	Local currency unit, current prices	level	money
+NE.GDI.FTOT.KD	Gross fixed capital formation (constant 2015 US$)	USD_K15	US dollars, constant 2015 prices	level	money
 NE.GDI.FTOT.KD.ZG	Gross fixed capital formation (annual % growth)	PCH_PRE	Percentage change on previous period	change	annual_growth
-NE.GDI.FTOT.KN	Gross fixed capital formation (constant LCU)			level	money
+NE.GDI.FTOT.KN	Gross fixed capital formation (constant LCU)	LCU_K	Local currency unit, constant prices	level	money
 NE.GDI.FTOT.ZS	Gross fixed capital formation (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
-NE.GDI.STKB.CD	Changes in inventories (current US$)			level	money
-NE.GDI.STKB.CN	Changes in inventories (current LCU)			level	money
-NE.GDI.STKB.KN	Changes in inventories (constant LCU)			level	money
-NE.GDI.TOTL.CD	Gross capital formation (current US$)			level	money
-NE.GDI.TOTL.CN	Gross capital formation (current LCU)			level	money
-NE.GDI.TOTL.KD	Gross capital formation (constant 2015 US$)			level	money
+NE.GDI.STKB.CD	Changes in inventories (current US$)	USD	US dollars, current prices	level	money
+NE.GDI.STKB.CN	Changes in inventories (current LCU)	LCU	Local currency unit, current prices	level	money
+NE.GDI.STKB.KN	Changes in inventories (constant LCU)	LCU_K	Local currency unit, constant prices	level	money
+NE.GDI.TOTL.CD	Gross capital formation (current US$)	USD	US dollars, current prices	level	money
+NE.GDI.TOTL.CN	Gross capital formation (current LCU)	LCU	Local currency unit, current prices	level	money
+NE.GDI.TOTL.KD	Gross capital formation (constant 2015 US$)	USD_K15	US dollars, constant 2015 prices	level	money
 NE.GDI.TOTL.KD.ZG	Gross capital formation (annual % growth)	PCH_PRE	Percentage change on previous period	change	annual_growth
-NE.GDI.TOTL.KN	Gross capital formation (constant LCU)			level	money
+NE.GDI.TOTL.KN	Gross capital formation (constant LCU)	LCU_K	Local currency unit, constant prices	level	money
 NE.GDI.TOTL.ZS	Gross capital formation (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
-NE.IMP.GNFS.CD	Imports of goods and services (current US$)			level	money
-NE.IMP.GNFS.CN	Imports of goods and services (current LCU)			level	money
-NE.IMP.GNFS.KD	Imports of goods and services (constant 2015 US$)			level	money
+NE.IMP.GNFS.CD	Imports of goods and services (current US$)	USD	US dollars, current prices	level	money
+NE.IMP.GNFS.CN	Imports of goods and services (current LCU)	LCU	Local currency unit, current prices	level	money
+NE.IMP.GNFS.KD	Imports of goods and services (constant 2015 US$)	USD_K15	US dollars, constant 2015 prices	level	money
 NE.IMP.GNFS.KD.ZG	Imports of goods and services (annual % growth)	PCH_PRE	Percentage change on previous period	change	annual_growth
-NE.IMP.GNFS.KN	Imports of goods and services (constant LCU)			level	money
+NE.IMP.GNFS.KN	Imports of goods and services (constant LCU)	LCU_K	Local currency unit, constant prices	level	money
 NE.IMP.GNFS.ZS	Imports of goods and services (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
-NE.RSB.GNFS.CD	External balance on goods and services (current US$)			level	money
-NE.RSB.GNFS.CN	External balance on goods and services (current LCU)			level	money
-NE.RSB.GNFS.KN	External balance on goods and services (constant LCU)			level	money
+NE.RSB.GNFS.CD	External balance on goods and services (current US$)	USD	US dollars, current prices	level	money
+NE.RSB.GNFS.CN	External balance on goods and services (current LCU)	LCU	Local currency unit, current prices	level	money
+NE.RSB.GNFS.KN	External balance on goods and services (constant LCU)	LCU_K	Local currency unit, constant prices	level	money
 NE.RSB.GNFS.ZS	External balance on goods and services (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
 NE.TRD.GNFS.ZS	Trade (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
-NV.AGR.EMPL.KD	Agriculture, forestry, and fishing, value added per worker (constant 2015 US$)			level	money
-NV.AGR.TOTL.CD	Agriculture, forestry, and fishing, value added (current US$)			level	money
-NV.AGR.TOTL.CN	Agriculture, forestry, and fishing, value added (current LCU)			level	money
-NV.AGR.TOTL.KD	Agriculture, forestry, and fishing, value added (constant 2015 US$)			level	money
+NV.AGR.EMPL.KD	Agriculture, forestry, and fishing, value added per worker (constant 2015 US$)	USD_K15	US dollars, constant 2015 prices	level	money
+NV.AGR.TOTL.CD	Agriculture, forestry, and fishing, value added (current US$)	USD	US dollars, current prices	level	money
+NV.AGR.TOTL.CN	Agriculture, forestry, and fishing, value added (current LCU)	LCU	Local currency unit, current prices	level	money
+NV.AGR.TOTL.KD	Agriculture, forestry, and fishing, value added (constant 2015 US$)	USD_K15	US dollars, constant 2015 prices	level	money
 NV.AGR.TOTL.KD.ZG	Agriculture, forestry, and fishing, value added (annual % growth)	PCH_PRE	Percentage change on previous period	change	annual_growth
-NV.AGR.TOTL.KN	Agriculture, forestry, and fishing, value added (constant LCU)			level	money
+NV.AGR.TOTL.KN	Agriculture, forestry, and fishing, value added (constant LCU)	LCU_K	Local currency unit, constant prices	level	money
 NV.AGR.TOTL.ZS	Agriculture, forestry, and fishing, value added (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
-NV.FSM.TOTL.CN	Financial intermediary services indirectly Measured (FISIM) (current LCU)			level	money
-NV.FSM.TOTL.KN	Financial intermediary services indirectly Measured (FISIM) (constant LCU)			level	money
-NV.IND.EMPL.KD	Industry (including construction), value added per worker (constant 2015 US$)			level	money
-NV.IND.MANF.CD	Manufacturing, value added (current US$)			level	money
-NV.IND.MANF.CN	Manufacturing, value added (current LCU)			level	money
-NV.IND.MANF.KD	Manufacturing, value added (constant 2015 US$)			level	money
+NV.FSM.TOTL.CN	Financial intermediary services indirectly Measured (FISIM) (current LCU)	LCU	Local currency unit, current prices	level	money
+NV.FSM.TOTL.KN	Financial intermediary services indirectly Measured (FISIM) (constant LCU)	LCU_K	Local currency unit, constant prices	level	money
+NV.IND.EMPL.KD	Industry (including construction), value added per worker (constant 2015 US$)	USD_K15	US dollars, constant 2015 prices	level	money
+NV.IND.MANF.CD	Manufacturing, value added (current US$)	USD	US dollars, current prices	level	money
+NV.IND.MANF.CN	Manufacturing, value added (current LCU)	LCU	Local currency unit, current prices	level	money
+NV.IND.MANF.KD	Manufacturing, value added (constant 2015 US$)	USD_K15	US dollars, constant 2015 prices	level	money
 NV.IND.MANF.KD.ZG	Manufacturing, value added (annual % growth)	PCH_PRE	Percentage change on previous period	change	annual_growth
-NV.IND.MANF.KN	Manufacturing, value added (constant LCU)			level	money
+NV.IND.MANF.KN	Manufacturing, value added (constant LCU)	LCU_K	Local currency unit, constant prices	level	money
 NV.IND.MANF.ZS	Manufacturing, value added (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
-NV.IND.TOTL.CD	Industry (including construction), value added (current US$)			level	money
-NV.IND.TOTL.CN	Industry (including construction), value added (current LCU)			level	money
-NV.IND.TOTL.KD	Industry (including construction), value added (constant 2015 US$)			level	money
+NV.IND.TOTL.CD	Industry (including construction), value added (current US$)	USD	US dollars, current prices	level	money
+NV.IND.TOTL.CN	Industry (including construction), value added (current LCU)	LCU	Local currency unit, current prices	level	money
+NV.IND.TOTL.KD	Industry (including construction), value added (constant 2015 US$)	USD_K15	US dollars, constant 2015 prices	level	money
 NV.IND.TOTL.KD.ZG	Industry (including construction), value added (annual % growth)	PCH_PRE	Percentage change on previous period	change	annual_growth
-NV.IND.TOTL.KN	Industry (including construction), value added (constant LCU)			level	money
+NV.IND.TOTL.KN	Industry (including construction), value added (constant LCU)	LCU_K	Local currency unit, constant prices	level	money
 NV.IND.TOTL.ZS	Industry (including construction), value added (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
 NV.MNF.CHEM.ZS.UN	Chemicals (% of value added in manufacturing)	PC	Percentage	share	pct_of_part_of_whole
 NV.MNF.FBTO.ZS.UN	Food, beverages and tobacco (% of value added in manufacturing)	PC	Percentage	share	pct_of_part_of_whole
@@ -672,63 +672,63 @@ NV.MNF.MTRN.ZS.UN	Machinery and transport equipment (% of value added in manufac
 NV.MNF.OTHR.ZS.UN	Other manufacturing (% of value added in manufacturing)	PC	Percentage	share	pct_of_part_of_whole
 NV.MNF.TECH.ZS.UN	Medium and high-tech manufacturing value added (% manufacturing value added)	PC	Percentage	share	pct_of_other_whole
 NV.MNF.TXTL.ZS.UN	Textiles and clothing (% of value added in manufacturing)	PC	Percentage	share	pct_of_part_of_whole
-NV.SRV.EMPL.KD	Services, value added per worker (constant 2015 US$)			level	money
-NV.SRV.TOTL.CD	Services, value added (current US$)			level	money
-NV.SRV.TOTL.CN	Services, value added (current LCU)			level	money
-NV.SRV.TOTL.KD	Services, value added (constant 2015 US$)			level	money
+NV.SRV.EMPL.KD	Services, value added per worker (constant 2015 US$)	USD_K15	US dollars, constant 2015 prices	level	money
+NV.SRV.TOTL.CD	Services, value added (current US$)	USD	US dollars, current prices	level	money
+NV.SRV.TOTL.CN	Services, value added (current LCU)	LCU	Local currency unit, current prices	level	money
+NV.SRV.TOTL.KD	Services, value added (constant 2015 US$)	USD_K15	US dollars, constant 2015 prices	level	money
 NV.SRV.TOTL.KD.ZG	Services, value added (annual % growth)	PCH_PRE	Percentage change on previous period	change	annual_growth
-NV.SRV.TOTL.KN	Services, value added (constant LCU)			level	money
+NV.SRV.TOTL.KN	Services, value added (constant LCU)	LCU_K	Local currency unit, constant prices	level	money
 NV.SRV.TOTL.ZS	Services, value added (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
-NY.ADJ.AEDU.CD	Adjusted savings: education expenditure (current US$)			level	money
+NY.ADJ.AEDU.CD	Adjusted savings: education expenditure (current US$)	USD	US dollars, current prices	level	money
 NY.ADJ.AEDU.GN.ZS	Adjusted savings: education expenditure (% of GNI)	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
-NY.ADJ.DCO2.CD	Adjusted savings: carbon dioxide damage (current US$)			level	money
+NY.ADJ.DCO2.CD	Adjusted savings: carbon dioxide damage (current US$)	USD	US dollars, current prices	level	money
 NY.ADJ.DCO2.GN.ZS	Adjusted savings: carbon dioxide damage (% of GNI)	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
-NY.ADJ.DFOR.CD	Adjusted savings: net forest depletion (current US$)			level	money
+NY.ADJ.DFOR.CD	Adjusted savings: net forest depletion (current US$)	USD	US dollars, current prices	level	money
 NY.ADJ.DFOR.GN.ZS	Adjusted savings: net forest depletion (% of GNI)	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
-NY.ADJ.DKAP.CD	Adjusted savings: consumption of fixed capital (current US$)			level	money
+NY.ADJ.DKAP.CD	Adjusted savings: consumption of fixed capital (current US$)	USD	US dollars, current prices	level	money
 NY.ADJ.DKAP.GN.ZS	Adjusted savings: consumption of fixed capital (% of GNI)	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
-NY.ADJ.DMIN.CD	Adjusted savings: mineral depletion (current US$)			level	money
+NY.ADJ.DMIN.CD	Adjusted savings: mineral depletion (current US$)	USD	US dollars, current prices	level	money
 NY.ADJ.DMIN.GN.ZS	Adjusted savings: mineral depletion (% of GNI)	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
-NY.ADJ.DNGY.CD	Adjusted savings: energy depletion (current US$)			level	money
+NY.ADJ.DNGY.CD	Adjusted savings: energy depletion (current US$)	USD	US dollars, current prices	level	money
 NY.ADJ.DNGY.GN.ZS	Adjusted savings: energy depletion (% of GNI)	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
-NY.ADJ.DPEM.CD	Adjusted savings: particulate emission damage (current US$)			level	money
+NY.ADJ.DPEM.CD	Adjusted savings: particulate emission damage (current US$)	USD	US dollars, current prices	level	money
 NY.ADJ.DPEM.GN.ZS	Adjusted savings: particulate emission damage (% of GNI)	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
 NY.ADJ.DRES.GN.ZS	Adjusted savings: natural resources depletion (% of GNI)	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
 NY.ADJ.ICTR.GN.ZS	Adjusted savings: gross savings (% of GNI)	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
-NY.ADJ.NNAT.CD	Adjusted savings: net national savings (current US$)			level	money
+NY.ADJ.NNAT.CD	Adjusted savings: net national savings (current US$)	USD	US dollars, current prices	level	money
 NY.ADJ.NNAT.GN.ZS	Adjusted savings: net national savings (% of GNI)	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
-NY.ADJ.NNTY.CD	Adjusted net national income (current US$)			level	money
-NY.ADJ.NNTY.KD	Adjusted net national income (constant 2015 US$)			level	money
+NY.ADJ.NNTY.CD	Adjusted net national income (current US$)	USD	US dollars, current prices	level	money
+NY.ADJ.NNTY.KD	Adjusted net national income (constant 2015 US$)	USD_K15	US dollars, constant 2015 prices	level	money
 NY.ADJ.NNTY.KD.ZG	Adjusted net national income (annual % growth)	PCH_PRE	Percentage change on previous period	change	annual_growth
 NY.ADJ.NNTY.PC.CD	Adjusted net national income per capita (current US$)			rate	per_capita_money
 NY.ADJ.NNTY.PC.KD	Adjusted net national income per capita (constant 2015 US$)			rate	per_capita_money
 NY.ADJ.NNTY.PC.KD.ZG	Adjusted net national income per capita (annual % growth)	PCH_PRE	Percentage change on previous period	change	annual_growth
-NY.ADJ.SVNG.CD	Adjusted net savings, including particulate emission damage (current US$)			level	money
+NY.ADJ.SVNG.CD	Adjusted net savings, including particulate emission damage (current US$)	USD	US dollars, current prices	level	money
 NY.ADJ.SVNG.GN.ZS	Adjusted net savings, including particulate emission damage (% of GNI)	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
-NY.ADJ.SVNX.CD	Adjusted net savings, excluding particulate emission damage (current US$)			level	money
+NY.ADJ.SVNX.CD	Adjusted net savings, excluding particulate emission damage (current US$)	USD	US dollars, current prices	level	money
 NY.ADJ.SVNX.GN.ZS	Adjusted net savings, excluding particulate emission damage (% of GNI)	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
-NY.EXP.CAPM.KN	Exports as a capacity to import (constant LCU)			level	money
+NY.EXP.CAPM.KN	Exports as a capacity to import (constant LCU)	LCU_K	Local currency unit, constant prices	level	money
 NY.GDP.COAL.RT.ZS	Coal rents (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
 NY.GDP.DEFL.KD.ZG	Inflation, GDP deflator (annual %)	PCH_PRE	Percentage change on previous period	change	annual_growth
 NY.GDP.DEFL.KD.ZG.AD	Inflation, GDP deflator: linked series (annual %)	PCH_PRE	Percentage change on previous period	change	annual_growth
 NY.GDP.DEFL.ZS	GDP deflator (base year varies by country)			index	index_other_base
 NY.GDP.DEFL.ZS.AD	GDP deflator: linked series (base year varies by country)			index	index_other_base
-NY.GDP.DISC.CN	Discrepancy in expenditure estimate of GDP (current LCU)			level	money
-NY.GDP.DISC.KN	Discrepancy in expenditure estimate of GDP (constant LCU)			level	money
-NY.GDP.FCST.CD	Gross value added at basic prices (GVA) (current US$)			level	money
-NY.GDP.FCST.CN	Gross value added at basic prices (GVA) (current LCU)			level	money
-NY.GDP.FCST.KD	Gross value added at basic prices (GVA) (constant 2015 US$)			level	money
-NY.GDP.FCST.KN	Gross value added at basic prices (GVA) (constant LCU)			level	money
+NY.GDP.DISC.CN	Discrepancy in expenditure estimate of GDP (current LCU)	LCU	Local currency unit, current prices	level	money
+NY.GDP.DISC.KN	Discrepancy in expenditure estimate of GDP (constant LCU)	LCU_K	Local currency unit, constant prices	level	money
+NY.GDP.FCST.CD	Gross value added at basic prices (GVA) (current US$)	USD	US dollars, current prices	level	money
+NY.GDP.FCST.CN	Gross value added at basic prices (GVA) (current LCU)	LCU	Local currency unit, current prices	level	money
+NY.GDP.FCST.KD	Gross value added at basic prices (GVA) (constant 2015 US$)	USD_K15	US dollars, constant 2015 prices	level	money
+NY.GDP.FCST.KN	Gross value added at basic prices (GVA) (constant LCU)	LCU_K	Local currency unit, constant prices	level	money
 NY.GDP.FRST.RT.ZS	Forest rents (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
 NY.GDP.MINR.RT.ZS	Mineral rents (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
-NY.GDP.MKTP.CD	GDP (current US$)			level	money
-NY.GDP.MKTP.CN	GDP (current LCU)			level	money
-NY.GDP.MKTP.CN.AD	GDP: linked series (current LCU)			level	money
-NY.GDP.MKTP.KD	GDP (constant 2015 US$)			level	money
+NY.GDP.MKTP.CD	GDP (current US$)	USD	US dollars, current prices	level	money
+NY.GDP.MKTP.CN	GDP (current LCU)	LCU	Local currency unit, current prices	level	money
+NY.GDP.MKTP.CN.AD	GDP: linked series (current LCU)	LCU	Local currency unit, current prices	level	money
+NY.GDP.MKTP.KD	GDP (constant 2015 US$)	USD_K15	US dollars, constant 2015 prices	level	money
 NY.GDP.MKTP.KD.ZG	GDP growth (annual %)	PCH_PRE	Percentage change on previous period	change	annual_growth
-NY.GDP.MKTP.KN	GDP (constant LCU)			level	money
-NY.GDP.MKTP.PP.CD	GDP, PPP (current international $)			level	money
-NY.GDP.MKTP.PP.KD	GDP, PPP (constant 2021 international $)			level	money
+NY.GDP.MKTP.KN	GDP (constant LCU)	LCU_K	Local currency unit, constant prices	level	money
+NY.GDP.MKTP.PP.CD	GDP, PPP (current international $)	INTD	International dollars (PPP), current prices	level	money
+NY.GDP.MKTP.PP.KD	GDP, PPP (constant 2021 international $)	INTD_K21	International dollars (PPP), constant 2021 prices	level	money
 NY.GDP.NGAS.RT.ZS	Natural gas rents (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
 NY.GDP.PCAP.CD	GDP per capita (current US$)			rate	per_capita_money
 NY.GDP.PCAP.CN	GDP per capita (current LCU)			rate	per_capita_money
@@ -739,19 +739,19 @@ NY.GDP.PCAP.PP.CD	GDP per capita, PPP (current international $)			rate	per_capit
 NY.GDP.PCAP.PP.KD	GDP per capita, PPP (constant 2021 international $)			rate	per_capita_money
 NY.GDP.PETR.RT.ZS	Oil rents (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
 NY.GDP.TOTL.RT.ZS	Total natural resources rents (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
-NY.GDS.TOTL.CD	Gross domestic savings (current US$)			level	money
-NY.GDS.TOTL.CN	Gross domestic savings (current LCU)			level	money
+NY.GDS.TOTL.CD	Gross domestic savings (current US$)	USD	US dollars, current prices	level	money
+NY.GDS.TOTL.CN	Gross domestic savings (current LCU)	LCU	Local currency unit, current prices	level	money
 NY.GDS.TOTL.ZS	Gross domestic savings (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
-NY.GDY.TOTL.KN	Gross domestic income (constant LCU)			level	money
-NY.GNP.ATLS.CD	GNI, Atlas method (current US$)			level	money
-NY.GNP.MKTP.CD	GNI (current US$)			level	money
-NY.GNP.MKTP.CN	GNI (current LCU)			level	money
-NY.GNP.MKTP.CN.AD	GNI: linked series (current LCU)			level	money
-NY.GNP.MKTP.KD	GNI (constant 2015 US$)			level	money
+NY.GDY.TOTL.KN	Gross domestic income (constant LCU)	LCU_K	Local currency unit, constant prices	level	money
+NY.GNP.ATLS.CD	GNI, Atlas method (current US$)	USD	US dollars, current prices	level	money
+NY.GNP.MKTP.CD	GNI (current US$)	USD	US dollars, current prices	level	money
+NY.GNP.MKTP.CN	GNI (current LCU)	LCU	Local currency unit, current prices	level	money
+NY.GNP.MKTP.CN.AD	GNI: linked series (current LCU)	LCU	Local currency unit, current prices	level	money
+NY.GNP.MKTP.KD	GNI (constant 2015 US$)	USD_K15	US dollars, constant 2015 prices	level	money
 NY.GNP.MKTP.KD.ZG	GNI growth (annual %)	PCH_PRE	Percentage change on previous period	change	annual_growth
-NY.GNP.MKTP.KN	GNI (constant LCU)			level	money
-NY.GNP.MKTP.PP.CD	GNI, PPP (current international $)			level	money
-NY.GNP.MKTP.PP.KD	GNI, PPP (constant 2021 international $)			level	money
+NY.GNP.MKTP.KN	GNI (constant LCU)	LCU_K	Local currency unit, constant prices	level	money
+NY.GNP.MKTP.PP.CD	GNI, PPP (current international $)	INTD	International dollars (PPP), current prices	level	money
+NY.GNP.MKTP.PP.KD	GNI, PPP (constant 2021 international $)	INTD_K21	International dollars (PPP), constant 2021 prices	level	money
 NY.GNP.PCAP.CD	GNI per capita, Atlas method (current US$)			rate	per_capita_money
 NY.GNP.PCAP.CN	GNI per capita (current LCU)			rate	per_capita_money
 NY.GNP.PCAP.KD	GNI per capita (constant 2015 US$)			rate	per_capita_money
@@ -759,20 +759,20 @@ NY.GNP.PCAP.KD.ZG	GNI per capita growth (annual %)	PCH_PRE	Percentage change on 
 NY.GNP.PCAP.KN	GNI per capita (constant LCU)			rate	per_capita_money
 NY.GNP.PCAP.PP.CD	GNI per capita, PPP (current international $)			rate	per_capita_money
 NY.GNP.PCAP.PP.KD	GNI per capita, PPP (constant 2021 international $)			rate	per_capita_money
-NY.GNS.ICTR.CD	Gross savings (current US$)			level	money
-NY.GNS.ICTR.CN	Gross savings (current LCU)			level	money
+NY.GNS.ICTR.CD	Gross savings (current US$)	USD	US dollars, current prices	level	money
+NY.GNS.ICTR.CN	Gross savings (current LCU)	LCU	Local currency unit, current prices	level	money
 NY.GNS.ICTR.GN.ZS	Gross savings (% of GNI)	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
 NY.GNS.ICTR.ZS	Gross savings (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
-NY.GSR.NFCY.CD	Net primary income (Net income from abroad) (current US$)			level	money
-NY.GSR.NFCY.CN	Net primary income (Net income from abroad) (current LCU)			level	money
-NY.GSR.NFCY.KN	Net primary income (Net income from abroad) (constant LCU)			level	money
-NY.TAX.NIND.CD	Taxes less subsidies on products (current US$)			level	money
-NY.TAX.NIND.CN	Taxes less subsidies on products (current LCU)			level	money
-NY.TAX.NIND.KN	Taxes less subsidies on products (constant LCU)			level	money
-NY.TRF.NCTR.CD	Net secondary income (Net current transfers from abroad) (current US$)			level	money
-NY.TRF.NCTR.CN	Net secondary income (Net current transfers from abroad) (current LCU)			level	money
-NY.TRF.NCTR.KN	Net secondary income (Net current transfers from abroad) (constant LCU)			level	money
-NY.TTF.GNFS.KN	Terms of trade adjustment (constant LCU)			level	money
+NY.GSR.NFCY.CD	Net primary income (Net income from abroad) (current US$)	USD	US dollars, current prices	level	money
+NY.GSR.NFCY.CN	Net primary income (Net income from abroad) (current LCU)	LCU	Local currency unit, current prices	level	money
+NY.GSR.NFCY.KN	Net primary income (Net income from abroad) (constant LCU)	LCU_K	Local currency unit, constant prices	level	money
+NY.TAX.NIND.CD	Taxes less subsidies on products (current US$)	USD	US dollars, current prices	level	money
+NY.TAX.NIND.CN	Taxes less subsidies on products (current LCU)	LCU	Local currency unit, current prices	level	money
+NY.TAX.NIND.KN	Taxes less subsidies on products (constant LCU)	LCU_K	Local currency unit, constant prices	level	money
+NY.TRF.NCTR.CD	Net secondary income (Net current transfers from abroad) (current US$)	USD	US dollars, current prices	level	money
+NY.TRF.NCTR.CN	Net secondary income (Net current transfers from abroad) (current LCU)	LCU	Local currency unit, current prices	level	money
+NY.TRF.NCTR.KN	Net secondary income (Net current transfers from abroad) (constant LCU)	LCU_K	Local currency unit, constant prices	level	money
+NY.TTF.GNFS.KN	Terms of trade adjustment (constant LCU)	LCU_K	Local currency unit, constant prices	level	money
 PA.NUS.ATLS	DEC alternative conversion factor (LCU per US$)				lcu_per
 PA.NUS.FCRF	Official exchange rate (LCU per US$, period average)				lcu_per
 PA.NUS.GDP.PLI	Price level index (GDP)			index	price_index_name
@@ -1319,10 +1319,10 @@ SP.DYN.IMRT.MA.IN	Mortality rate, infant, male (per 1,000 live births)	P_TLBRTH	
 SP.DYN.LE00.FE.IN	Life expectancy at birth, female (years)	YR	Year	mean	years_life
 SP.DYN.LE00.IN	Life expectancy at birth, total (years)	YR	Year	mean	years_life
 SP.DYN.LE00.MA.IN	Life expectancy at birth, male (years)	YR	Year	mean	years_life
-SP.DYN.TFRT.IN	Fertility rate, total (births per woman)			rate	per_capita_other
+SP.DYN.TFRT.IN	Fertility rate, total (births per woman)	BIRTH_W	Births per woman	rate	per_capita_other
 SP.DYN.TO65.FE.ZS	Survival to age 65, female (% of cohort)	PC	Percentage	share	pct_of_part_of_whole
 SP.DYN.TO65.MA.ZS	Survival to age 65, male (% of cohort)	PC	Percentage	share	pct_of_part_of_whole
-SP.DYN.WFRT	Wanted fertility rate (births per woman)			rate	per_capita_other
+SP.DYN.WFRT	Wanted fertility rate (births per woman)	BIRTH_W	Births per woman	rate	per_capita_other
 SP.HOU.FEMA.ZS	Female headed households (% of households with a female head)	PC	Percentage	share	pct_of_part_of_whole
 SP.M15.2024.FE.ZS	Women who were first married by age 15 (% of women ages 20-24)	PC	Percentage	share	pct_of_part_of_whole
 SP.M18.2024.FE.ZS	Women who were first married by age 18 (% of women ages 20-24)	PC	Percentage	share	pct_of_part_of_whole
@@ -1406,13 +1406,13 @@ SP.URB.TOTL.IN.ZS	Urban population (% of total population)	PC_POP	Percentage of 
 SP.UWT.TFRT	Unmet need for contraception (% of married women ages 15-49)	PC	Percentage	share	pct_of_part_of_whole
 ST.INT.ARVL	International tourism, number of arrivals	NR	Number	count	name_number_of
 ST.INT.DPRT	International tourism, number of departures	NR	Number	count	name_number_of
-ST.INT.RCPT.CD	International tourism, receipts (current US$)			level	money
+ST.INT.RCPT.CD	International tourism, receipts (current US$)	USD	US dollars, current prices	level	money
 ST.INT.RCPT.XP.ZS	International tourism, receipts (% of total exports)	PC	Percentage	share	pct_of_part_of_whole
-ST.INT.TRNR.CD	International tourism, receipts for passenger transport items (current US$)			level	money
-ST.INT.TRNX.CD	International tourism, expenditures for passenger transport items (current US$)			level	money
-ST.INT.TVLR.CD	International tourism, receipts for travel items (current US$)			level	money
-ST.INT.TVLX.CD	International tourism, expenditures for travel items (current US$)			level	money
-ST.INT.XPND.CD	International tourism, expenditures (current US$)			level	money
+ST.INT.TRNR.CD	International tourism, receipts for passenger transport items (current US$)	USD	US dollars, current prices	level	money
+ST.INT.TRNX.CD	International tourism, expenditures for passenger transport items (current US$)	USD	US dollars, current prices	level	money
+ST.INT.TVLR.CD	International tourism, receipts for travel items (current US$)	USD	US dollars, current prices	level	money
+ST.INT.TVLX.CD	International tourism, expenditures for travel items (current US$)	USD	US dollars, current prices	level	money
+ST.INT.XPND.CD	International tourism, expenditures (current US$)	USD	US dollars, current prices	level	money
 ST.INT.XPND.MP.ZS	International tourism, expenditures (% of total imports)	PC	Percentage	share	pct_of_part_of_whole
 TG.VAL.TOTL.GD.ZS	Merchandise trade (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
 TM.QTY.MRCH.XD.WD	Import volume index (2015 = 100)	I15	Index, 2015=100	index	index_2015
@@ -1443,7 +1443,7 @@ TM.VAL.INSF.ZS.WT	Insurance and financial services (% of commercial service impo
 TM.VAL.MANF.ZS.UN	Manufactures imports (% of merchandise imports)	PC	Percentage	share	pct_of_part_of_whole
 TM.VAL.MMTL.ZS.UN	Ores and metals imports (% of merchandise imports)	PC	Percentage	share	pct_of_part_of_whole
 TM.VAL.MRCH.AL.ZS	Merchandise imports from economies in the Arab World (% of total merchandise imports)	PC	Percentage	share	pct_of_part_of_whole
-TM.VAL.MRCH.CD.WT	Merchandise imports (current US$)			level	money
+TM.VAL.MRCH.CD.WT	Merchandise imports (current US$)	USD	US dollars, current prices	level	money
 TM.VAL.MRCH.HI.ZS	Merchandise imports from high-income economies (% of total merchandise imports)	PC	Percentage	share	pct_of_part_of_whole
 TM.VAL.MRCH.OR.ZS	Merchandise imports from low- and middle-income economies outside region (% of total merchandise imports)	PC	Percentage	share	pct_of_part_of_whole
 TM.VAL.MRCH.R1.ZS	Merchandise imports from low- and middle-income economies in East Asia & Pacific (% of total merchandise imports)	PC	Percentage	share	pct_of_part_of_whole
@@ -1453,11 +1453,11 @@ TM.VAL.MRCH.R4.ZS	Merchandise imports from low- and middle-income economies in M
 TM.VAL.MRCH.R5.ZS	Merchandise imports from low- and middle-income economies in South Asia (% of total merchandise imports)	PC	Percentage	share	pct_of_part_of_whole
 TM.VAL.MRCH.R6.ZS	Merchandise imports from low- and middle-income economies in Sub-Saharan Africa (% of total merchandise imports)	PC	Percentage	share	pct_of_part_of_whole
 TM.VAL.MRCH.RS.ZS	Merchandise imports by the reporting economy, residual (% of total merchandise imports)	PC	Percentage	share	pct_of_part_of_whole
-TM.VAL.MRCH.WL.CD	Merchandise imports by the reporting economy (current US$)			level	money
+TM.VAL.MRCH.WL.CD	Merchandise imports by the reporting economy (current US$)	USD	US dollars, current prices	level	money
 TM.VAL.MRCH.WR.ZS	Merchandise imports from low- and middle-income economies within region (% of total merchandise imports)	PC	Percentage	share	pct_of_part_of_whole
 TM.VAL.MRCH.XD.WD	Import value index (2015 = 100)	I15	Index, 2015=100	index	index_2015
 TM.VAL.OTHR.ZS.WT	Computer, communications and other services (% of commercial service imports)	PC	Percentage	share	pct_of_part_of_whole
-TM.VAL.SERV.CD.WT	Commercial service imports (current US$)			level	money
+TM.VAL.SERV.CD.WT	Commercial service imports (current US$)	USD	US dollars, current prices	level	money
 TM.VAL.TRAN.ZS.WT	Transport services (% of commercial service imports)	PC	Percentage	share	pct_of_part_of_whole
 TM.VAL.TRVL.ZS.WT	Travel services (% of commercial service imports)	PC	Percentage	share	pct_of_part_of_whole
 TT.PRI.MRCH.XD.WD	Net barter terms of trade index (2015 = 100)	I15	Index, 2015=100	index	index_2015
@@ -1472,7 +1472,7 @@ TX.VAL.INSF.ZS.WT	Insurance and financial services (% of commercial service expo
 TX.VAL.MANF.ZS.UN	Manufactures exports (% of merchandise exports)	PC	Percentage	share	pct_of_part_of_whole
 TX.VAL.MMTL.ZS.UN	Ores and metals exports (% of merchandise exports)	PC	Percentage	share	pct_of_part_of_whole
 TX.VAL.MRCH.AL.ZS	Merchandise exports to economies in the Arab World (% of total merchandise exports)	PC	Percentage	share	pct_of_part_of_whole
-TX.VAL.MRCH.CD.WT	Merchandise exports (current US$)			level	money
+TX.VAL.MRCH.CD.WT	Merchandise exports (current US$)	USD	US dollars, current prices	level	money
 TX.VAL.MRCH.HI.ZS	Merchandise exports to high-income economies (% of total merchandise exports)	PC	Percentage	share	pct_of_part_of_whole
 TX.VAL.MRCH.OR.ZS	Merchandise exports to low- and middle-income economies outside region (% of total merchandise exports)	PC	Percentage	share	pct_of_part_of_whole
 TX.VAL.MRCH.R1.ZS	Merchandise exports to low- and middle-income economies in East Asia & Pacific (% of total merchandise exports)	PC	Percentage	share	pct_of_part_of_whole
@@ -1482,12 +1482,12 @@ TX.VAL.MRCH.R4.ZS	Merchandise exports to low- and middle-income economies in Mid
 TX.VAL.MRCH.R5.ZS	Merchandise exports to low- and middle-income economies in South Asia (% of total merchandise exports)	PC	Percentage	share	pct_of_part_of_whole
 TX.VAL.MRCH.R6.ZS	Merchandise exports to low- and middle-income economies in Sub-Saharan Africa (% of total merchandise exports)	PC	Percentage	share	pct_of_part_of_whole
 TX.VAL.MRCH.RS.ZS	Merchandise exports by the reporting economy, residual (% of total merchandise exports)	PC	Percentage	share	pct_of_part_of_whole
-TX.VAL.MRCH.WL.CD	Merchandise exports by the reporting economy (current US$)			level	money
+TX.VAL.MRCH.WL.CD	Merchandise exports by the reporting economy (current US$)	USD	US dollars, current prices	level	money
 TX.VAL.MRCH.WR.ZS	Merchandise exports to low- and middle-income economies within region (% of total merchandise exports)	PC	Percentage	share	pct_of_part_of_whole
 TX.VAL.MRCH.XD.WD	Export value index (2015 = 100)	I15	Index, 2015=100	index	index_2015
 TX.VAL.OTHR.ZS.WT	Computer, communications and other services (% of commercial service exports)	PC	Percentage	share	pct_of_part_of_whole
-TX.VAL.SERV.CD.WT	Commercial service exports (current US$)			level	money
-TX.VAL.TECH.CD	High-technology exports (current US$)			level	money
+TX.VAL.SERV.CD.WT	Commercial service exports (current US$)	USD	US dollars, current prices	level	money
+TX.VAL.TECH.CD	High-technology exports (current US$)	USD	US dollars, current prices	level	money
 TX.VAL.TECH.MF.ZS	High-technology exports (% of manufactured exports)	PC	Percentage	share	pct_of_other_whole
 TX.VAL.TRAN.ZS.WT	Transport services (% of commercial service exports)	PC	Percentage	share	pct_of_part_of_whole
 TX.VAL.TRVL.ZS.WT	Travel services (% of commercial service exports)	PC	Percentage	share	pct_of_part_of_whole

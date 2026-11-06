@@ -53,7 +53,7 @@
      "drawn": {"op": "n", "by": "$shape.place", "table": "$shape.main", "time": "$shape.year", "fmt": "n"}
     },
     "fmt": {
-     "scale": 1,
+     "scale": "$shape.scale",
      "suffix": "$shape.suffix",
      "dec_rule": {
       "rule": "held_decimals",
@@ -85,7 +85,7 @@
       "drawn": {"op": "n", "by": "$shape.place", "table": "$shape.main", "time": "$shape.year", "fmt": "n"}
      },
      "fmt": {
-      "scale": 1,
+      "scale": "$shape.scale",
       "suffix": "$shape.suffix",
       "dec_rule": {
        "rule": "held_decimals",
@@ -159,7 +159,7 @@
      "val": {"each": "$shape.place", "table": "$shape.main", "time": "$shape.year", "fmt": "$shape.fmt"}
     },
     "fmt": {
-     "scale": 1,
+     "scale": "$shape.scale",
      "suffix": "$shape.suffix",
      "dec_rule": {
       "rule": "held_decimals",
@@ -223,7 +223,7 @@
       }
      ],
      "fmt": {
-      "scale": 1,
+      "scale": "$shape.scale",
       "suffix": "$shape.suffix",
       "dec_rule": {
        "rule": "fixed",
@@ -352,7 +352,7 @@
       }
      ],
      "fmt": {
-      "scale": 1,
+      "scale": "$shape.scale",
       "suffix": "$shape.suffix",
       "dec_rule": {
        "rule": "fixed",
@@ -1074,7 +1074,7 @@
     "column": {
      "values": {"ext": {"rule": "extent", "frame": "map_view", "circles": "bubbles", "dec_max": 2}},
      "fmt": {
-      "scale": 1,
+      "scale": "$shape.scale",
       "suffix": "$shape.suffix",
       "dec_rule": {
        "rule": "held_decimals",
@@ -1184,7 +1184,7 @@
     "change": {
      "values": {"ext": {"rule": "extent", "frame": "map_view", "circles": "bubbles", "dec_max": 2}},
      "fmt": {
-      "scale": 1,
+      "scale": "$shape.scale",
       "suffix": "$shape.suffix",
       "dec_rule": {
        "rule": "held_decimals",
@@ -1421,7 +1421,7 @@
       }
      },
      "fmt": {
-      "scale": 1,
+      "scale": "$shape.scale",
       "suffix": "$shape.suffix",
       "dec_rule": {
        "rule": "fixed",
@@ -1494,7 +1494,7 @@
       }
      },
      "fmt": {
-      "scale": 1,
+      "scale": "$shape.scale",
       "suffix": "$shape.suffix",
       "dec_rule": {
        "rule": "fixed",
@@ -1740,10 +1740,10 @@
      "others_n": {"key": "comp_others", "q": {"op": "n", "by": "$shape.place", "table": "$shape.main", "filter": {"$shape.place": "{items}", "$composition.dim": "$composition.total"}, "time": "$shape.year", "fmt": "n"}}
     },
     "fmts": {
-     "$shape.fmt": {"scale": 1, "dec": 0, "suffix": "$shape.suffix"},
+     "$shape.fmt": {"scale": "$shape.scale", "dec": 0, "suffix": "$shape.suffix"},
      "comp_gap": {
       "when": "dropped",
-      "scale": 1,
+      "scale": "$shape.scale",
       "suffix": "$shape.suffix",
       "dec_rule": {"rule": "held_decimals_read", "rows": ["dropped_totals", "sum_rows"], "max": {"const": "COMPOSITION_GAP_DEC", "value": 3}}
      }

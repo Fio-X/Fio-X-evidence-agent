@@ -1082,6 +1082,9 @@ struct Shape {
     place: String,
     countries: Vec<String>,
     unit: String,
+    /// The factor the page prints its unit's numbers at when the unit is a magnitude of the table's (unit_at_magnitude: the
+    /// table in USD, the page in 亿美元 at 1e-8); none prints them as the data gives them.
+    scale: Option<f64>,
     /// The hub: the main's one geo code, an aggregate with members (the knowledge group's hub_origin), its map point and
     /// extent (RING_HUBS), the place's countries outside its members in code order, and its members.
     hub: String,
@@ -1293,7 +1296,7 @@ fn one_place(s: &mut Shape, _: &[(&str, &[Value])], catalogue: &dyn Catalogue) -
 /// catalogue registers for its indicator (TableMeta unit, as measure_of takes it), and none registered refuses. A Eurostat
 /// main whose unit sits in a currency or indicator dimension (a price per kilowatt-hour, a count of births) takes the code
 /// the knowledge group's unit-carriers registry maps those codes to (next_pack::carried_unit); codes it does not map refuse.
-fn one_unit(s: &mut Shape, _: &[(&str, &[Value])], catalogue: &dyn Catalogue) -> Result<(), String> {
+fn one_unit(s: &mut Shape, tables: &[(&str, &[Value])], catalogue: &dyn Catalogue) -> Result<(), String> {
     s.unit = match worldbank_main(s, catalogue)? {
         Some(meta) => meta.unit.map(|u| u.code).ok_or_else(|| format!("main {} has no registered unit", s.main))?,
         None => match next_pack::carried_unit(&s.dims).map_err(|e| format!("main {}: {e}", s.main))? {
@@ -1301,6 +1304,11 @@ fn one_unit(s: &mut Shape, _: &[(&str, &[Value])], catalogue: &dyn Catalogue) ->
             None => one_code(&s.dims, "unit").ok_or_else(|| format!("main {} has no single unit", s.main))?,
         },
     };
+    // an amount prints at one magnitude for the whole page, the one its largest value reaches (亿, 万亿)
+    // among the page's places when the shape has read them (a world total the page does not print sets no magnitude)
+    let on_page = |r: &&Value| s.countries.is_empty() || r["dims"][&s.place].as_str().is_some_and(|c| s.countries.iter().any(|x| x == c));
+    let largest = tables.iter().filter(|(t, _)| *t == s.main).flat_map(|(_, rows)| rows.iter()).filter(on_page).filter_map(row_value).fold(0.0, |m: f64, v| m.max(v.abs()));
+    (s.unit, s.scale) = next_pack::unit_at_magnitude(&s.unit, largest);
     Ok(())
 }
 
@@ -1906,6 +1914,9 @@ fn page_input(recipe: &Recipe, shape: &Shape, picks: &Picks, (main, sums): (&[Va
         "rows": main, "name_kind": scheme, "sum_rows": sums, "outside": shape.outside, "top": next_params::NARROW_TOP,
         "short": next_pack::unit_short(&shape.unit), "composition": shape.composition.as_ref().map(|c| json!({"dim": c.dim, "total": c.total, "groups": c.groups,
             "first_group": c.groups.first().map(|g| &g.0), "first_codes": c.groups.first().map(|g| &g.1)}))});
+    if let Some(scale) = shape.scale {
+        p["shape"]["scale"] = json!(scale);
+    }
     // a page with two ends: the earlier (two_ends)
     if !shape.t0.is_empty() {
         p["shape"]["t0"] = json!(shape.t0);
@@ -2291,6 +2302,9 @@ fn fill_of(
     let no = |why: String| format!("not this shape: {why}");
     let short = next_pack::unit_short(&shape.unit)
         .ok_or_else(|| no(format!("unit {} has no row in {}", shape.unit, next_pack::UNIT_SHORT_ZH_TABLE)))?;
+    if !next_pack::unit_compares_across_places(&shape.unit) && shape.countries.len() > 1 {
+        return Err(no(format!("unit {} is each place's own currency: the places' amounts do not compare", shape.unit)));
+    }
     let window = window_of(recipe, picks).map_err(no)?;
     let filling = Filling { shape, picks, main, companion, catalogue, fmt: shape.unit.to_lowercase(), short, window, asked };
     let mut out = Filled::default();

@@ -1285,6 +1285,7 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
 /// declarations and expansions the checks then hold, child processes, and the chart matcher's ranking.
 #[allow(dead_code)] // read by its test and by scripts/reuse_rate.py
 pub const CHECK_HELPERS: &[&str] = &[
+    "tree_gen::page_scale",
     "ledger::name_src", "ledger::point_entry", "ledger::dropped_entry", "ledger::esc", "ledger::unescape",
     "ledger::tag_parts", "ledger::tag_end", "ledger::attr", "ledger::elements", "ledger::text_outside",
     "ledger::printed", "ledger::word_table", "ledger::h1_states_relation", "facts::stored_request", "tree::eq", "tree::num_like", "tree::finite",

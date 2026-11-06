@@ -220,6 +220,15 @@ P_TLBRTH	每千名活产婴儿	per_population	no	每千名活产婴儿	reviewed	
 T	吨	mass	yes	吨	reviewed	Tonne	
 TCO2E_HAB	吨二氧化碳当量/人	per_capita	no	吨二氧化碳当量/人	reviewed	Tonnes of CO2 equivalent per capita	
 YR	年	time	no	年	reviewed	Year	
+USD	美元	amount	yes	美元	reviewed	US dollars, current prices	
+USD_K15	美元（2015年不变价）	amount	yes	美元	reviewed	US dollars, constant 2015 prices	
+LCU	本币（现价）	amount_own_currency	no	本币	reviewed	Local currency unit, current prices	
+LCU_K	本币（不变价）	amount_own_currency	no	本币	reviewed	Local currency unit, constant prices	
+INTD	国际元（现价）	amount	yes	国际元	reviewed	International dollars (PPP), current prices	
+INTD_K21	国际元（2021年不变价）	amount	yes	国际元	reviewed	International dollars (PPP), constant 2021 prices	
+SC100	分（满分100）	score	no	分	reviewed	Score, 0-100 scale	
+SCORE	分	score	no	分	reviewed	Score	
+BIRTH_W	个/妇女	per_capita	no	个/妇女	reviewed	Births per woman	
 BN_EUR	十亿欧元	amount	yes	十亿欧元	generated	Billion euro	
 CLV_PCH_PRE	%	pct_change	no	%	generated	Chain linked volumes, percentage change on previous period	%（较上期）
 CLV_PCH_PRE_HAB	%	pct_change	no	%	generated	Chain linked volumes, percentage change on previous period, per capita	%（较上期）
@@ -333,3 +342,11 @@ THS_T	千吨	amount	yes	千吨	generated	Thousand tonnes
 TJ	太焦	amount	yes	太焦	generated	Terajoule	
 TJ_HAB	太焦/人	per_capita	no	太焦/人	generated	Terajoule per capita	
 T_HAB	吨/人	per_capita	no	吨/人	generated	Tonnes per capita	
+USD_E8	亿美元	amount	yes	亿美元	reviewed	Hundred million US dollars, current prices	
+USD_E12	万亿美元	amount	yes	万亿美元	reviewed	Trillion US dollars, current prices	
+USD_K15_E8	亿美元（2015年不变价）	amount	yes	亿美元	reviewed	Hundred million US dollars, constant 2015 prices	
+USD_K15_E12	万亿美元（2015年不变价）	amount	yes	万亿美元	reviewed	Trillion US dollars, constant 2015 prices	
+INTD_E8	亿国际元（现价）	amount	yes	亿国际元	reviewed	Hundred million international dollars (PPP), current prices	
+INTD_E12	万亿国际元（现价）	amount	yes	万亿国际元	reviewed	Trillion international dollars (PPP), current prices	
+INTD_K21_E8	亿国际元（2021年不变价）	amount	yes	亿国际元	reviewed	Hundred million international dollars (PPP), constant 2021 prices	
+INTD_K21_E12	万亿国际元（2021年不变价）	amount	yes	万亿国际元	reviewed	Trillion international dollars (PPP), constant 2021 prices	
