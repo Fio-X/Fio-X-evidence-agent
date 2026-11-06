@@ -4335,7 +4335,9 @@ async function wbIndicatorFromStore(dir: string, code: string) {
   const held = await wbStoreRead(dir, code, file);
   if (!held.bytes) return { miss: held.miss };
   const entry = held.entry;
-  const [head, ...body] = gunzipSync(held.bytes).toString("utf8").replace(/\n$/, "").split("\n");
+  let text: string;
+  try { text = gunzipSync(held.bytes).toString("utf8"); } catch { return { miss: "its file is not a readable gzip" }; }
+  const [head, ...body] = text.replace(/\n$/, "").split("\n");
   if (head !== WB_STORE_COLS.join("\t")) return { miss: `its header is not ${WB_STORE_COLS.join(", ")}` };
   if (body.length !== Number(entry.rows)) return { miss: `it holds ${body.length} rows and its manifest line says ${entry.rows}` };
   const rows: any[] = [];
@@ -4415,7 +4417,10 @@ async function prepareWorldBank(params: any, signal: AbortSignal | undefined, op
     const url = String(field("data_url")).replace(/\{(\w+)\}/g, (_all, name) => ({ places: key, dataset: code, start: String(start), end: String(end) } as Record<string, string>)[name] ?? "");
     const store = wbStoreDir();
     let data: { relativeFile: string; sha256: string; bytes: Buffer; reused: boolean }, raw: any[], local: any, storeMiss = "";
-    const held = store ? await wbIndicatorFromStore(store, code) : null;
+    // The years the store holds are the ones its download asked (store_url); a request reaching past them is not read from the store.
+    const span = String(field("store_url")).match(/date=(\d{4}):(\d{4})/);
+    const outside = store && (!span || start < Number(span[1]) || end > Number(span[2]));
+    const held = store && !outside ? await wbIndicatorFromStore(store, code) : outside ? { miss: `the years asked reach past the store's ${span ? `${span[1]}-${span[2]}` : "years"}` } : null;
     if (held && "miss" in held) storeMiss = String(held.miss);
     else local = held;
     if (local) {

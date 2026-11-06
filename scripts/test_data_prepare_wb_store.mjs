@@ -175,6 +175,23 @@ const checks = {
     const r = await prepare(m, Q5, store);
     return r.calls.includes(SOURCE_FILES["q5.json"].url.split(HOST).join(IP)) && /holds \d+ rows and its manifest line says/.test(text(r.out));
   },
+  // a request past the store's years (1960-2025) is not read from it: the provider is asked
+  yearsOutside: async (m) => {
+    const url = `${IP}/v2/country/all/indicator/SP.POP.65UP.TO.ZS?format=json&date=2015:2026&per_page=20000`;
+    routes.set(url, () => fixture("q5.json"));
+    const r = await prepare(m, { ...Q5, years: { start: 2015, end: 2026 } }, makeStore([["SP.POP.65UP.TO.ZS", "q5.json"]]));
+    return r.calls.includes(url) && /the years asked reach past the store's 1960-2025/.test(text(r.out));
+  },
+  // a file that matches its manifest but is not gzip is not read
+  notGzip: async (m) => {
+    const store = makeStore([["SP.POP.65UP.TO.ZS", "q5.json"]]);
+    const bad = Buffer.from("not gzip");
+    writeFileSync(join(store, "data/SP.POP.65UP.TO.ZS.tsv.gz"), bad);
+    const path = join(store, "manifest.tsv");
+    writeFileSync(path, readFileSync(path, "utf8").replace(/^(SP\.POP\.65UP\.TO\.ZS\t[^\t]+\t\d+\t)[0-9a-f]{64}/m, (_all, head) => head + sha256Of(bad)));
+    const r = await prepare(m, Q5, store);
+    return r.d.mode === "data" && r.calls.includes(SOURCE_FILES["q5.json"].url.split(HOST).join(IP)) && /not a readable gzip/.test(text(r.out));
+  },
   // the route switch off: the store is never read
   switchOff: async (m) => {
     delete process.env.NEWSROOM_NEXT;
@@ -216,6 +233,7 @@ const mutants = [
   ["keeps every year of the copy", swap("Number(row.date) >= start && Number(row.date) <= end && ", ""), "yearsCut"],
   ["keeps every place of the copy", swap("(!wanted || wanted.has(placeOf(row)?.id ?? \"\"))", "true"), "placesCut"],
   ["reads a copy whatever its row count", swap("if (body.length !== Number(entry.rows)) return", "if (false) return"), "rowCount"],
+  ["reads the store past its years", swap("const outside = store && (!span || start < Number(span[1]) || end > Number(span[2]));", "const outside = false;"), "yearsOutside"],
   ["keeps no copy of the store file in the run", swap('const source = await wbStoreCopyIntoRun(held.bytes, "gz",', 'const source = await (async (b) => ({ relativeFile: "data/none.gz", sha256: entry.sha256, bytes: b, reused: false }))(held.bytes, "gz",'), "q5Same"],
 ];
 for (const [name, patch, check] of mutants) {
