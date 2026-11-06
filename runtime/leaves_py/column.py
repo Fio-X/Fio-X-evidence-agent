@@ -128,15 +128,18 @@ def cl_bars_placed(f, occ, placed):
             raise FX.Refused(f"bars: placed item {i} has no bar x, y, w, h")
         if [t.get("name") for t in texts] != ["label", "value_text"] or not isinstance(texts[1].get("src"), str):
             raise FX.Refused(f"bars: placed item {i} has not the name and the value (with its src) as its texts")
-        if i == 0:  # the axis at the zero line: a bar of 0 or more starts there, a bar below 0 ends there (bars_node)
-            z = zero_x(f, items)
+        if i == 0:  # the axis at the zero line (the core's placed axis when it gives one): a bar of 0 or more starts there, a bar
+            # below 0 ends there (bars_node)
+            ax = (placed.get("axis") or {}).get("x")
+            z = ax if isinstance(ax, (int, float)) else zero_x(f, items)
             o.append(f'<line x1="{z:.1f}" x2="{z:.1f}" y1="{f.top}" y2="{f.top + f.rh * len(items)}" stroke="var(--t-sec)" stroke-width="0.8"/>')
         k, (lab, val) = it.get("code"), texts
         hi = k in f.marks
+        end = ' text-anchor="end"' if val.get("anchor") == "end" else ""  # a bar below 0: its value left of its end, as placed
         ink, weight = ("var(--t-title)", 700) if hi else ("var(--t-body)", 400)
         o.append(f'<text x="{lab["x"]:.1f}" y="{lab["y"]:.1f}" text-anchor="end" dominant-baseline="middle" font-size="{f.size}" fill="{ink}" font-weight="{weight}">{prod.named(k)}</text>'
                  f'<rect x="{m["x"]:.1f}" y="{m["y"]:.1f}" width="{m["w"]:.1f}" height="{m["h"]}" fill="{FOCUS if k in f.focus else NOTED if k in f.noted else "var(--bar)"}"/>'
-                 f'<text x="{val["x"]:.1f}" y="{val["y"]:.1f}" dominant-baseline="middle" font-size="{f.size}" fill="{ink if hi else "var(--t-sec)"}" font-weight="{weight}">{FX.entry(val["src"], "tspan", None)}</text>')
+                 f'<text x="{val["x"]:.1f}" y="{val["y"]:.1f}"{end} dominant-baseline="middle" font-size="{f.size}" fill="{ink if hi else "var(--t-sec)"}" font-weight="{weight}">{FX.entry(val["src"], "tspan", None)}</text>')
     return "".join(o)
 
 
