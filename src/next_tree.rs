@@ -6356,9 +6356,11 @@ fn circles_request(
             .get(&st(src))
             .copied()
             .ok_or_else(|| format!("'{}'", st(src)))?;
+        // a circle's area is its value's size (11-07): a value below 0 is drawn by its size and outlined by the leaf
+        // (bubbles.py), so the node lays out and K4 rechecks the size; the printed number stays the ledger's, sign and all
         items.push((
             code,
-            num(r)?,
+            num(r)?.abs(),
             J::Arr(vec![J::Num(p[0]), J::Num(p[1])]),
             it.g("value_text").clone(),
         ));

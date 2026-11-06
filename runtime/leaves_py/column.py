@@ -20,7 +20,8 @@ class ColumnFrame:
     """What the column layers share: the ranked places (layer 1's order, kept as given) with their raw values at the year,
     the marked ones, and the panel's size: the page's width and the taller of the bars' rows and the map (`mv`, the map
     leaves' mapkit.View, when the page has one: the bars then start at x0 after it, bw wide). A place with no row at the
-    year, a value below 0 or none above it refuses: the bars start at 0. With bars.measure change each value is the place's
+    year, or none above 0, refuses; a value below 0 is a bar left of the zero line (11-07: growth rates, net migration, a
+    current account; published bars hang negatives from one zero line in the bars' own colour). With bars.measure change each value is the place's
     change from hero.data.t0 to the year (the later row less the earlier): a place with no row at either, or no place that
     changed, refuses.
     The page's main layer is its recipe's (run.MAIN): the bars, or a chart leaf of run.LEAF_LAYERS drawn across the page in
@@ -49,7 +50,7 @@ class ColumnFrame:
         f.vals = [(k, rows[year][k] - rows[ends[0]][k] if f.change else rows[year][k]) for k in d["ranked"]]
         if f.change:
             if not f.vals or all(v == 0 for _, v in f.vals): raise FX.Refused("bars: no place changed between the two years")
-        elif not f.vals or min(v for _, v in f.vals) < 0 or max(v for _, v in f.vals) <= 0:
+        elif not f.vals or max(v for _, v in f.vals) <= 0:
             raise FX.Refused("bars: the values are not all 0 or more with one above 0")
         f.year, f.marks, f.size, f.rh = year, set(d.get("marks") or []), K("size"), K("row")
         f.focus, f.noted = set(focus(h)), set(noted(h))
@@ -127,8 +128,9 @@ def cl_bars_placed(f, occ, placed):
             raise FX.Refused(f"bars: placed item {i} has no bar x, y, w, h")
         if [t.get("name") for t in texts] != ["label", "value_text"] or not isinstance(texts[1].get("src"), str):
             raise FX.Refused(f"bars: placed item {i} has not the name and the value (with its src) as its texts")
-        if i == 0:
-            o.append(f'<line x1="{m["x"]:.1f}" x2="{m["x"]:.1f}" y1="{f.top}" y2="{f.top + f.rh * len(items)}" stroke="var(--t-sec)" stroke-width="0.8"/>')
+        if i == 0:  # the axis at the zero line: a bar of 0 or more starts there, a bar below 0 ends there (bars_node)
+            z = zero_x(f, items)
+            o.append(f'<line x1="{z:.1f}" x2="{z:.1f}" y1="{f.top}" y2="{f.top + f.rh * len(items)}" stroke="var(--t-sec)" stroke-width="0.8"/>')
         k, (lab, val) = it.get("code"), texts
         hi = k in f.marks
         ink, weight = ("var(--t-title)", 700) if hi else ("var(--t-body)", 400)
@@ -136,6 +138,15 @@ def cl_bars_placed(f, occ, placed):
                  f'<rect x="{m["x"]:.1f}" y="{m["y"]:.1f}" width="{m["w"]:.1f}" height="{m["h"]}" fill="{FOCUS if k in f.focus else NOTED if k in f.noted else "var(--bar)"}"/>'
                  f'<text x="{val["x"]:.1f}" y="{val["y"]:.1f}" dominant-baseline="middle" font-size="{f.size}" fill="{ink if hi else "var(--t-sec)"}" font-weight="{weight}">{FX.entry(val["src"], "tspan", None)}</text>')
     return "".join(o)
+
+
+def zero_x(f, items):
+    """The zero line's x in placed bars: the left edge of a bar whose value is 0 or more (on values of 0 or more, the bars'
+    left edge, as before), else the right edge of the first bar (every value below 0)."""
+    val = dict(f.vals)
+    for it in items:
+        if val.get(it.get("code"), 0) >= 0: return it["mark"]["x"]
+    m = items[0]["mark"]; return m["x"] + m["w"]
 
 
 def cl_change_bars_placed(f, placed):

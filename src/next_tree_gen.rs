@@ -676,7 +676,8 @@ pub(crate) fn extent_of(layer: &str, name: &str, r: &J, page_in: &J, reg: &J) ->
         let named = names.g(&code).s().map_or_else(|| code.clone(), str::to_string);
         labels.insert(code, (v, named));
     }
-    let vmax = labels.values().map(|(v, _)| *v).fold(0.0, f64::max);
+    // a circle's area is its value's size: a value below 0 is drawn by its size, outlined (bubbles.py, 11-07)
+    let vmax = labels.values().map(|(v, _)| v.abs()).fold(0.0, f64::max);
     let edge = inset + 2.0;
     let room: Vec<([f64; 2], (f64, f64))> = points
         .iter()
@@ -684,7 +685,7 @@ pub(crate) fn extent_of(layer: &str, name: &str, r: &J, page_in: &J, reg: &J) ->
             let (r, w) = match labels.get(code) {
                 Some((v, name)) => {
                     let r = match vmax > 0.0 {
-                        true => (r_max * (v.max(0.0) / vmax).sqrt()).max(r_min),
+                        true => (r_max * (v.abs() / vmax).sqrt()).max(r_min),
                         false => r_min,
                     };
                     (r, label_px(name, size).max(printed_len(*v, dec) as f64 * label_px("0", size)))
@@ -940,9 +941,17 @@ fn finding_declared(d: &J, page_in: &J, reg: &J) -> Result<J, String> {
         said.set("set", J::Str(set));
     }
     let headline = of(&crate::shape_registry::HEADLINES).filter(|_| c.g("headline_needs_facts").arr().iter().all(|k| has_fact(&st(k))));
+    // a headline that says how many times the other the subject is reads only over an other above 0 (11-07: a level page with
+    // a value below 0 draws now; "是最低者的 -3.2 倍" would say nothing true): else the title stays the text step's label
+    let ratio_holds = match (c.g("headline_needs_other_above_0").truthy(), &other) {
+        (false, _) => true,
+        (true, Some(o)) => key(&st(c.g("other")), o)? > 0.0,
+        (true, None) => false,
+    };
     let mut out = J::obj_of(vec![("facts", facts), ("reads", J::Arr(reads)), ("finding", J::Null), ("subject", subject)]);
-    match headline {
+    match headline.filter(|_| ratio_holds) {
         Some((plain, scoped)) => said.set("headline", J::obj_of(vec![("title", worded(plain)), ("scoped", worded(scoped))])),
+        None if headline.is_some() => out.set("fell_back", J::str("the finding has no headline: its ratio's other is not above 0")),
         None => out.set("fell_back", J::str("the finding has no headline: a fact it needs is not the page's")),
     }
     out.set("finding", said);
@@ -2314,9 +2323,10 @@ fn leaf_stops(layer: &str, page_in: &J, fill: &J, reg: &J) -> Option<String> {
         let hit = match rule {
             "row_at_year" => ranked.iter().any(|c| at(c, year).is_none()),
             "row_at_both_ends" => ranked.iter().any(|c| at(c, t0).is_none() || at(c, year).is_none()),
+            // a level page needs one value above 0; a value below 0 is a bar left of the zero line (11-07, the bars node signed)
             "value_domain" => {
                 let v: Vec<f64> = ranked.iter().filter_map(|c| at(c, year)).collect();
-                v.is_empty() || v.iter().any(|x| *x < 0.0) || !v.iter().any(|x| *x > 0.0)
+                v.is_empty() || !v.iter().any(|x| *x > 0.0)
             }
             "some_change" => ranked.iter().filter_map(|c| Some(at(c, year)? - at(c, t0)?)).all(|x| x == 0.0),
             // the largest change is 0 and the rest fall: the leaf prints that 0's value past the zero line at the frame's
@@ -2334,7 +2344,6 @@ fn leaf_stops(layer: &str, page_in: &J, fill: &J, reg: &J) -> Option<String> {
             "series_of_request" => items.iter().any(|i| src_value(i.g("value")).is_none()),
             "named_item" => items.iter().any(|i| !i.g("code").s().is_some_and(|c| labels.has(c))),
             "ledger_entry" => items.iter().any(|i| !fact_base(i.g("value_text")).is_some_and(|b| facts.has(&b))),
-            "not_negative" => items.iter().any(|i| src_value(i.g("value")).is_some_and(|v| v < 0.0)),
             "has_point" => items.iter().any(|i| point(i).is_none()),
             "inside_ext" => {
                 in_box(&ext) && items.iter().filter_map(point).any(|p| !(ext[0] <= p[0] && p[0] <= ext[2] && ext[1] <= p[1] && p[1] <= ext[3]))
@@ -2682,8 +2691,8 @@ mod tests {
         let ledger_only = ["P6 change: asked [\"bubbles\", \"bars\"], the prototype []", "B2 change: asked [\"bubbles\", \"bars\"], the prototype [\"bars\"]"];
         assert_eq!(off, ledger_only, "{off:#?}");
         // a panel stop: draw asks nothing, not even the ground, and leaves each layer to its leaf rule
-        let p2 = fx.g("cases").arr().iter().find(|c| c.g("id").s() == Some("P2")).unwrap();
-        let (page_in, fill) = stop_case(p2);
+        let p3 = fx.g("cases").arr().iter().find(|c| c.g("id").s() == Some("P3")).unwrap();
+        let (page_in, fill) = stop_case(p3);
         let layers = ["bars".to_string(), "bubbles".to_string()];
         let out = draw(&fill.to_value(), &page_in.to_value(), &layers, Path::new("/nonexistent-runtime")).unwrap();
         assert_eq!(out.timing.iter().map(|t| t.3.clone()).collect::<Vec<_>>(), [Some("value_domain".into()), Some("value_domain".into())]);

@@ -73,6 +73,7 @@ DOT_R = 1.6  # the dot at a nudged circle's true point
 # drawn large to small with a contrasting outline, as thematic cartography draws overlapping symbols). Stroke only: a circle's
 # place, radius, fill and claimed box are as before.
 CIRCLE_EDGE = 1
+NEG_EDGE = 1.6  # px of the outline a circle below 0 is drawn as, inside its radius (its outer edge on the circle's size)
 BELOW_GAP = 0.3  # of the label size: a label set below its leader starts this far under the leader's end (a 13 px name's glyph box
 # reaches about 0.26 of its size above the box tw lays out; the page's line check, 2 px in from that glyph box, would meet the leader)
 A1, A2, A3, A4 = 1.340264, -0.081106, 0.000893, 0.003796
@@ -118,8 +119,10 @@ class Frame:
         if not items: raise Refused("bubbles: the spec holds no items")
         kind = d.get("name_kind", "place")
         for i in items:
-            i["_v"] = K.val(i["value"]); i["_n"] = K.named(i["code"], kind); K.ent(i["value_text"])
-            if i["_v"] < 0: raise Refused(f"bubbles: {i['code']} is negative; a circle area cannot show it")
+            v = K.val(i["value"]); i["_n"] = K.named(i["code"], kind); K.ent(i["value_text"])
+            # a value below 0 is a circle of its size, outlined (NEG_EDGE) and named in the key (bubble_key.negative): 11-07,
+            # net migration, growth, a current account; published maps size by the value's size and mark the sign apart
+            i["_v"], i["_neg"] = abs(v), v < 0
             ll = i.get("lonlat")
             if not (isinstance(ll, list) and len(ll) == 2 and -180 <= ll[0] <= 180 and -90 <= ll[1] <= 90): raise Refused(f"bubbles: {i['code']} has no lon/lat point")
             if not (box[0] <= ll[0] <= box[2] and box[1] <= ll[1] <= box[3]): raise Refused(f"bubbles: {i['code']} lies outside the extent")
@@ -255,14 +258,18 @@ def cl_bubbles_placed(f, occ, placed):
     # what the key to the circles reads (bubble_key): the scale drawn, each circle drawn by its area (not lifted to r_min), largest
     # first, as (code, value, radius, its ledger entry), the picture's size and the rect the land is drawn in
     occ.scale = dict(r_used=f.r_used, W=W, H=H, rect=(e, e, W - e, H - e) if f.v else (0, f.top, W, H),
-                     circles=[(i["code"], i["_v"], i["_r"], i["value_text"]) for i in f.items if str(i["code"]) not in f.r_min_codes])
+                     circles=[(i["code"], i["_v"], i["_r"], i["value_text"]) for i in f.items if str(i["code"]) not in f.r_min_codes
+                              and not i.get("_neg")])  # the key's reference circles print their numbers: none below 0
     o.append(MK.clipped(f.v, path, "bubblesframe", e) if f.v else path)
     for i in f.items:  # biggest first, so the small ones stay visible on top
         sq = (i["_xy"][0] - i["_r"], i["_xy"][1] - i["_r"], i["_xy"][0] + i["_r"], i["_xy"][1] + i["_r"]); occ.add(sq, "bubbles")
         if not hasattr(occ, "circles"): occ.circles = []
         occ.circles.append((i["_xy"][0], i["_xy"][1], i["_r"], sq))  # the circle itself, for a leader that may pass its square's corner
         ink = "--accent" if i["code"] in f.hl else NOTED_INK if i["code"] in f.noted else CIRCLE_INK
-        o.append(f'<circle cx="{i["_xy"][0]:.1f}" cy="{i["_xy"][1]:.1f}" r="{i["_r"]:.1f}" fill="var({ink})" fill-opacity="{k("opacity")}" stroke="var(--bg)" stroke-width="{CIRCLE_EDGE}" data-code="{esc(i["code"])}"/>')
+        if i.get("_neg"):  # below 0: the circle's outline in its ink, no fill
+            o.append(f'<circle cx="{i["_xy"][0]:.1f}" cy="{i["_xy"][1]:.1f}" r="{max(i["_r"] - NEG_EDGE / 2, 0.5):.1f}" fill="none" stroke="var({ink})" stroke-width="{NEG_EDGE}" data-code="{esc(i["code"])}" data-sign="neg"/>')
+        else:
+            o.append(f'<circle cx="{i["_xy"][0]:.1f}" cy="{i["_xy"][1]:.1f}" r="{i["_r"]:.1f}" fill="var({ink})" fill-opacity="{k("opacity")}" stroke="var(--bg)" stroke-width="{CIRCLE_EDGE}" data-code="{esc(i["code"])}"/>')
     for i in f.items:  # a circle moved off its point keeps a dot where the place is
         dm = placed["marks"].get(i["code"] + "/dot")
         if dm:
@@ -382,6 +389,12 @@ def sourced(lines):
     return out
 
 
+def printed_negative(i):
+    """Whether a circle's printed number (its ledger entry, value_text) is below 0: the sign the page prints, read where the key
+    is measured (the panel, before the circles are drawn) without the rows."""
+    return str(FX.text(i.get("value_text"))).lstrip().startswith(("-", "\u2212"))
+
+
 def key_lines(f):
     """The key's words in lines at the width knob, each holding a source (sourced): bubble_key.area with the measure the bubbles'
     entry names, or bubble_key.area_any without one, or when that takes more than KEY_LINES lines or a line wider than the map's
@@ -391,9 +404,11 @@ def key_lines(f):
     if K.WD.WORDS["date.y"].count("{y}") != 1 or not K.WD.WORDS["date.y"].startswith("{y}"): raise Refused("bubble_key: the word date.y does not start with its year")
     year = (True, [{"src": f"period:{f.table}:{f.year}"}, *[{"w": w} for w in K.WD.WORDS["date.y"].split("{y}") if w]]) if "-" not in f.year else (True, period_segs(f.table, f.year))
     most = f.mv.W - 2 * (K.knob(h, NODE, "inset") + KEY_GAP + KEY_PAD)
-    lines = sourced(lay_units(word_units("bubble_key.area", m=(False, d["measure"]), y=year), sz, width)) if d.get("measure") else None
+    # a map with a circle below 0 says how it is drawn (bubble_key.negative), after the area's words, in the same lines
+    tail = word_units("bubble_key.negative") if any(printed_negative(i) for i in d.get("items") or []) else []
+    lines = sourced(lay_units(word_units("bubble_key.area", m=(False, d["measure"]), y=year) + tail, sz, width)) if d.get("measure") else None
     if lines and len(lines) <= KEY_LINES and all(tw("".join(t for t, _ in ln).rstrip(), sz) <= most for ln in lines): return lines
-    return sourced(lay_units(word_units("bubble_key.area_any", y=year), sz, width))
+    return sourced(lay_units(word_units("bubble_key.area_any", y=year) + tail, sz, width))
 
 
 def period_segs(table, t):

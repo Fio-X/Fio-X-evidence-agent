@@ -282,6 +282,22 @@ def child(lines):
 
 
 class Column(unittest.TestCase):
+    def test_placed_level_bars_with_a_value_below_0_put_the_axis_at_the_zero_line(self):
+        # 11-07: the axis the placed bars draw is the zero line the bars node hangs them from, not the first bar's left edge
+        import bars_node, column
+        from types import SimpleNamespace as NS
+        vals = [("BE", -1.0), ("SE", 65.4), ("DK", 10.0)]
+        req = {"rows": {"x0": 0, "lw": 60, "vw": 40, "bw": 500, "top": 20, "row": 24, "inset": 3},
+               "marks": [{"id": c, "item": i, "value": v} for i, (c, v) in enumerate(vals)], "texts": []}
+        rep = bars_node.reply(req)["marks"]
+        items = [{"code": c, "mark": rep[c]} for c, _ in vals]
+        z = column.zero_x(NS(vals=vals), items)
+        self.assertAlmostEqual(z, rep["SE"]["x"]); self.assertAlmostEqual(z, rep["BE"]["x"] + rep["BE"]["w"])
+        self.assertGreater(z, items[0]["mark"]["x"])
+        pos = [("SE", 65.4), ("DK", 10.0)]
+        rep = bars_node.reply({**req, "marks": [{"id": c, "item": i, "value": v} for i, (c, v) in enumerate(pos)]})["marks"]
+        self.assertEqual(column.zero_x(NS(vals=pos), [{"code": c, "mark": rep[c]} for c, _ in pos]), rep["SE"]["x"])
+
     def test_a_column_page_sizes_draws_both_layers_from_the_ledger_and_lays_the_page_out(self):
         size, nums, bars = child(column_request())
         self.assertEqual(size["w"], 1140)
@@ -342,11 +358,13 @@ class Column(unittest.TestCase):
 
     def test_a_column_page_refuses_what_it_cannot_print_or_draw(self):
         for values, ledger, why in [
-            ((("SE", "65.4"), ("BE", "-1")), None, "bars: the values are not all 0 or more"),
+            ((("SE", "-65.4"), ("BE", "-1")), None, "bars: the values are not all 0 or more"),
             ((("SE", "65.4"), ("BE", "14.9")), {"fact:val.SE.n": "65.4"}, "fact:val.BE.n is not in the request's ledger"),
         ]:
             got = child(column_request(values, ledger)[:1])[0]
             self.assertTrue(got["refused"][0].startswith(f"size: {why}"), got)
+        # 11-07 (round 2: n23, n28, n36, n42): a value below 0 with one above it is a bar left of the zero line, no refusal
+        self.assertNotIn("refused", child(column_request((("SE", "65.4"), ("BE", "-1")), None)[:1])[0])
         lines = column_request()
         bad = json.loads(lines[0]); bad["node"] = "pie"
         self.assertEqual(child([json.dumps(bad)])[0]["refused"], ["size: no page recipe pie; e.g. one of ring|column|change|flow|composition|scmp"])

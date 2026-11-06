@@ -122,12 +122,21 @@ class Bubbles(unittest.TestCase):
                     for c2, b in f.label_boxes[i + 1:]:
                         self.assertFalse(a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3], f"{c1}/{c2}")
 
+    def test_a_value_below_0_is_an_outlined_circle_of_its_size(self):
+        # 11-07 (round 2: s6, t7, n47 stopped on a circle below 0): drawn by its value's size, outlined, no longer a refusal
+        neg = [dict(r, value=-r["value"]) if "/CHN:" in r["src"] else r for r in W_ROWS]
+        setup(W_ROWS, W_LABELS, SHP); plain = bubbles.draw(hero(W_DATA))[0]
+        setup(neg, W_LABELS, SHP); svg = bubbles.draw(hero(W_DATA))[0]
+        r_of = lambda s, c: float(re.search(r'<circle [^>]*r="([0-9.]+)"[^>]*data-code="' + c + '"', s)[1])
+        self.assertEqual(len(re.findall(r'data-sign="neg"', svg)), 1)
+        self.assertRegex(svg, r'<circle [^>]*fill="none"[^>]*data-code="CHN" data-sign="neg"')
+        self.assertAlmostEqual(r_of(svg, "CHN"), r_of(plain, "CHN") - bubbles.NEG_EDGE / 2, places=1)
+        self.assertNotIn('data-sign="neg"', plain)
+
     def test_the_refusals(self):
-        neg = [dict(r, value=-1.0) if "/CHN:" in r["src"] else r for r in W_ROWS]
         for tag, h, rows, labels, shapes, why in [
             ("no-shapes", hero(W_DATA), W_ROWS, W_LABELS, None, "Natural Earth"),
             ("no-point", hero(dict(W_DATA, items=[dict(W_ITEMS[0], lonlat=None)] + W_ITEMS[1:])), W_ROWS, W_LABELS, SHP, "lon/lat"),
-            ("negative", hero(W_DATA), neg, W_LABELS, SHP, "negative"),
             ("outside-box", hero(dict(W_DATA, box=[-20, 30, 40, 70]), extent="box"), W_ROWS, W_LABELS, SHP, "outside the extent"),
             ("box-missing", hero(W_DATA, extent="box"), W_ROWS, W_LABELS, SHP, "data.box"),
             ("unknown-highlight", hero(W_DATA, highlight="XXX"), W_ROWS, W_LABELS, SHP, "codes the request does not hold"),
@@ -159,10 +168,10 @@ RS_CONST = {"MAP_PAD": float(_FRAME["pad"]), "MAP_W_PX": float(_FRAME["w"]), "BU
 
 def layer1_extent(points, labels, dec):
     """points {code: [lon, lat]}, labels {code: (value, name)}: the extent layer 1 gives the map leaves."""
-    c = RS_CONST; W, sz = c["MAP_W_PX"], c["BUBBLE_LABEL_PX"]; vmax = max([v for v, _ in labels.values()] + [0.0])
+    c = RS_CONST; W, sz = c["MAP_W_PX"], c["BUBBLE_LABEL_PX"]; vmax = max([abs(v) for v, _ in labels.values()] + [0.0])
     room = []
     for code, p in points.items():
-        v, name = labels[code]; r = max(c["BUBBLE_R_MAX_PX"] * math.sqrt(max(v, 0) / vmax), c["BUBBLE_R_MIN_PX"]) if vmax > 0 else c["BUBBLE_R_MIN_PX"]
+        v, name = labels[code]; r = max(c["BUBBLE_R_MAX_PX"] * math.sqrt(abs(v) / vmax), c["BUBBLE_R_MIN_PX"]) if vmax > 0 else c["BUBBLE_R_MIN_PX"]
         w = max(prod.tw(name, sz), prod.tw(f"{v:,.{dec}f}", sz)); g, e = c["BUBBLE_LABEL_GAP_PX"] + 1, c["MAP_INSET_PX"] + 2
         room.append((p, r + g + w + e, r + g + 2.45 * sz + e))
     lo0, la0 = min(p[0] for p in points.values()), min(p[1] for p in points.values())
