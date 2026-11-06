@@ -455,6 +455,24 @@ class Key(unittest.TestCase):
         self.assertTrue(inside or (box[1] > occ.scale["H"] and panel.map_h >= box[3] and box[3] <= panel.H), box)
         self.assertFalse(any(box[0] < q[2] and q[0] < box[2] and box[1] < q[3] and q[1] < box[3] for q in occ.boxes if q[4] == "bubbles"))
 
+    def test_with_leader_notes_to_come_the_key_takes_the_room_under_the_map_first(self):
+        # the notes drawn after the key need the map's free room (e5 11-07: the key in the map's one free box left the title's place no
+        # spot for its note); without notes the key keeps the map's own free box
+        panel, occ, _ = key_panel()  # without the measure's name the key is narrow enough for a free box on the EU map
+        self.draw_key(panel, occ)
+        alone = next(q for q in occ.boxes if q[4] == "bubble_key")
+        self.assertLess(alone[3], panel.mv.H)
+        panel, occ, _ = key_panel(notes=["DE", "FR"])
+        self.draw_key(panel, occ)
+        under = next(q for q in occ.boxes if q[4] == "bubble_key")
+        self.assertGreaterEqual(under[1], panel.mv.H)
+        self.assertLessEqual(under[3], panel.H + 0.01)
+        # with no room kept under the map, the notes to come do not drop the key: the map's own free box still holds it
+        panel, occ, _ = key_panel(notes=["DE", "FR"], panel_h=None)
+        panel.H = panel.mv.H
+        self.draw_key(panel, occ)
+        self.assertTrue(any(q[4] == "bubble_key" for q in occ.boxes))
+
     def test_a_line_of_words_alone_joins_the_next_so_every_key_text_holds_a_source(self):
         # a measure given as words (no mark) wraps into a line with no entry in it: it joins the line after it, so no text of
         # the key reaches layer 1 without a source; with the width knob at its floor the same; and a measure too wide for the

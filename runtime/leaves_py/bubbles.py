@@ -316,7 +316,8 @@ def ground(h):
 # nearest a quarter and a sixteenth of its area, one within KEY_SAME px of a radius kept left out. No number is the key's own.
 # Where: in the land's rect, KEY_GAP inside it, the first free box (off every box and line the Occ holds) of the corners, then along
 # the top and bottom edges and the sides (KEY_STEP px apart), a box off the land before one over it; on its own ground (--bg), so
-# its words keep their contrast over the land. With no free box there, under the map, in the room the panel keeps for it
+# its words keep their contrast over the land. With leader notes to come (the hero's leaves name some), or with no free box there,
+# under the map, in the room the panel keeps for it
 # (key_room, run.Panel; the panel's map_h then grows to hold it); with no such room the key is dropped and named ("key", "no free
 # place for the key"). The box is claimed in the Occ (layer bubble_key), so the leader notes drawn after it keep clear of it.
 # Reads: the panel's frame f (its hero h, the table and year its map is drawn at, the page spec c.spec, its map view mv, height H and map_h) and
@@ -460,9 +461,13 @@ def cl_bubble_key(f, occ):
     boxes = [(x, y, x + bw, y + bh) for x, y in tries if x >= x0 + g - 0.01 and y >= y0 + g - 0.01 and x + bw <= x1 - g + 0.01 and y + bh <= y1 - g + 0.01]
     free = [b for b in boxes if not occ.hit(b, pad=(4, 4)) and not occ.on_line(b, pad=3)]
     land = getattr(occ, "land", None)
-    box = next((b for b in free if not MK.on_land(land, b)), free[0] if free else None)
     H = getattr(f, "H", sc["H"])
-    if box is None and H - sc["H"] >= g + bh - 0.01:  # nowhere free on the map: under it, in the room the panel keeps there
+    # leader notes drawn after the key need the map's free room for their boxes and leaders: with notes to come, the key takes the room
+    # under the map first (e5 11-07: the key the map's own free box held left the title's place no spot for its note), the map only without it
+    notes_next = bool((((f.h.get("leaves") or {}).get("leader_notes")) or {}).get("notes"))
+    under = notes_next and H - sc["H"] >= g + bh - 0.01
+    box = None if under else next((b for b in free if not MK.on_land(land, b)), free[0] if free else None)
+    if box is None and H - sc["H"] >= g + bh - 0.01:  # nowhere free on the map, or notes to come: under it, in the room the panel keeps there
         box = (x0, sc["H"] + g, x0 + bw, sc["H"] + g + bh); f.map_h = max(getattr(f, "map_h", sc["H"]), math.ceil(box[3]))
     if box is None:
         f.key_dropped.append(("key", "no free place for the key")); return empty
