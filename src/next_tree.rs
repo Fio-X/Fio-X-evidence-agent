@@ -1066,16 +1066,11 @@ impl<'a> Compute<'a> {
         let time = q.g("time");
         Ok(match op {
             "share" | "change" | "times" | "minus" | "plus" => {
-                let (mut a, mut b) = (self.val(&st(q.g("a")))?, self.val(&st(q.g("b")))?);
-                // a printed difference (J2): the difference of its two values as the page prints them (of_printed)
-                if op == "minus" && q.has("of_printed") {
-                    let as_printed = |x: f64, i: usize| -> Result<f64, String> {
-                        let p = q.g("of_printed").at(i);
-                        let dec = p.g("dec").num().ok_or_else(|| format!("{key}: of_printed {i} names no dec"))? as usize;
-                        of_printed(x, p.g("scale").num().unwrap_or(1.0), dec).ok_or_else(|| format!("{key}: of_printed {i} cannot print {x}"))
-                    };
-                    (a, b) = (as_printed(a, 0)?, as_printed(b, 1)?);
+                // owner 11-06: a difference or ratio is computed from the raw values, never from its operands as printed
+                if q.has("of_printed") {
+                    return Err(format!("{key}: of_printed is refused, a difference is computed from the raw values"));
                 }
+                let (a, b) = (self.val(&st(q.g("a")))?, self.val(&st(q.g("b")))?);
                 match op {
                     "share" | "times" => {
                         if b != 0.0 {
@@ -5153,14 +5148,6 @@ pub(crate) fn fact_value(facts: &J, rows: &[J], key: &str) -> Result<f64, String
     Compute::new(facts, rows).val(key)
 }
 
-/// A value as a format of `scale` and `dec` decimals prints it, read back in the value's own unit (next_facts printed_value).
-fn of_printed(x: f64, scale: f64, dec: usize) -> Option<f64> {
-    if !x.is_finite() || scale == 0.0 {
-        return None;
-    }
-    py_fixed(x * scale, dec).parse::<f64>().ok().map(|p| p / scale)
-}
-
 /// The most decimals a printed difference's two values may take to come close (J2): two.
 pub(crate) const DIFF_MOST_DEC: usize = 2;
 
@@ -7523,8 +7510,8 @@ mod tests {
     /// Owner 11-06 (superseding J2 of 11-04): a printed difference is computed from the raw values and only then rounded,
     /// and passes when within half a unit of its last place of the true difference. RO 0.568 and HR 0.234 (true 0.334):
     /// at one decimal it prints 0.3 and at two 0.33, both within half a unit, though 0.6 less 0.2 as printed is 0.4; a
-    /// stored page whose gap was the difference of the values as printed (of_printed: 0.4 at one decimal, 0.34 at two) is
-    /// more than half a unit off and fails; a true difference of 0 printed 0 passes.
+    /// stored fact asking the difference of the values as printed (of_printed) is refused by the core, so it never
+    /// prints; a true difference of 0 printed 0 passes.
     #[test]
     fn a_printed_difference_is_within_half_a_unit_of_the_true_one() {
         let rows: Vec<J> = [("RO", "0.568"), ("HR", "0.234"), ("SE", "0.3"), ("FI", "0.3")].iter()
@@ -7541,13 +7528,11 @@ mod tests {
         // from the raw values: 0.334 prints 0.3 and 0.33, each within half a unit; the tie 0 prints 0
         assert!(differences_disagree(&facts(1, false), &fmts, &rows, &shown).is_empty());
         assert!(differences_disagree(&facts(2, false), &fmts, &rows, &shown).is_empty());
-        // a stored gap of the values as printed: 0.4 and 0.34, more than 0.05 and 0.005 off 0.334
+        // a fact of the values as printed is refused by both cores (it would read 0.4 and 0.34)
         for dec in [1, 2] {
-            let off = differences_disagree(&facts(dec, true), &fmts, &rows, &shown);
-            assert_eq!(off.len(), 1, "{off:?}");
-            let want = if dec == 1 { "prints 0.4, more than half a unit" } else { "prints 0.34, more than half a unit" };
-            assert!(off[0].0.contains(want), "{}", off[0].0);
-            assert_eq!(off[0].1, ["gap", "ro", "hr"]);
+            let why = fact_value(&facts(dec, true), &rows, "gap").unwrap_err();
+            assert!(why.contains("of_printed is refused"), "{why}");
+            assert!(differences_disagree(&facts(dec, true), &fmts, &rows, &shown).is_empty(), "no value, no printed number");
         }
         let d = printed_differences(&facts(2, false), &fmts, &rows, &shown).into_iter().find(|d| d.key == "gap").unwrap();
         assert_eq!((d.close, d.forms, d.dec), (true, [(1.0, 2), (1.0, 2)], 2));

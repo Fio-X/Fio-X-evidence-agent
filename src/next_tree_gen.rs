@@ -1240,14 +1240,6 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
         }
         facts.set(&fact, q);
     }
-    // each printed difference the difference of its two values as printed (printed_raise: page_in.printed_of)
-    for (k, forms) in page_in.g("printed_of").obj() {
-        if let Some(q) = facts.get(k).filter(|q| q.g("op").s() == Some("minus") && !q.has("each")).cloned() {
-            let mut q = q;
-            q.set("of_printed", forms.clone());
-            facts.set(k, q);
-        }
-    }
     let mut out = J::obj_of(vec![("rows", J::Arr(drawn)), ("facts", facts), ("fmts", fmts)]);
     // the notes after the unit the declaration writes (declares.notes), each the registry's words with every template read
     let mut notes = Vec::new();

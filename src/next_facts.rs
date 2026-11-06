@@ -307,16 +307,11 @@ fn one(
                 .map_err(|e| format!("{key}: {side} {k} fails ({e})"))?;
             Ok(other.v)
         };
-        let (mut a, mut b) = (of("a")?, of("b")?);
-        // a printed difference (J2, owner 11-04): the difference of its two values as the page prints them
-        if op == "minus" && q.get("of_printed").is_some() {
-            let as_printed = |x: f64, i: usize| -> Result<f64, String> {
-                let p = &q["of_printed"][i];
-                let (scale, dec) = (p["scale"].as_f64().unwrap_or(1.0), p["dec"].as_u64().ok_or_else(|| format!("{key}: of_printed {i} names no dec"))?);
-                printed_value(x, scale, dec as usize).ok_or_else(|| format!("{key}: of_printed {i} cannot print {x}"))
-            };
-            (a, b) = (as_printed(a, 0)?, as_printed(b, 1)?);
+        // owner 11-06: a difference or ratio is computed from the raw values, never from its operands as printed
+        if q.get("of_printed").is_some() {
+            return Err(format!("{key}: of_printed is refused, a difference is computed from the raw values"));
         }
+        let (a, b) = (of("a")?, of("b")?);
         if b == 0.0 && matches!(op, "share" | "change" | "times") {
             return Err(format!("{key}: {op} divides by {}, which is 0", q["b"]));
         }
@@ -1797,6 +1792,24 @@ mod tests {
         assert_eq!(f["la"].t.as_deref(), Some("2023"));
         assert_eq!(f["hi22"].t.as_deref(), Some("2023"));
         assert_eq!(f["lo"].reads, ["series:a/X:2021:v"]);
+    }
+
+    /// Owner 11-06: a difference asked of its operands as printed (of_printed) is refused, never computed.
+    #[test]
+    fn a_difference_of_printed_operands_is_refused() {
+        let rows = [row("a", "X", "2020", 6.31), row("a", "Y", "2020", 3.53)];
+        let facts = |of: bool| {
+            let mut gap = json!({"op": "minus", "a": "x", "b": "y", "fmt": "m"});
+            if of {
+                gap["of_printed"] = json!([{"scale": 1, "dec": 0}, {"scale": 1, "dec": 0}]);
+            }
+            json!({"x": {"table": "a", "filter": {"geo": "X"}, "time": "2020", "fmt": "m"},
+                   "y": {"table": "a", "filter": {"geo": "Y"}, "time": "2020", "fmt": "m"}, "gap": gap})
+        };
+        let e = compute(&spec(facts(true), None), &rows).unwrap_err();
+        assert!(e.contains("gap: of_printed is refused"), "{e}");
+        let f = compute(&spec(facts(false), None), &rows).unwrap();
+        assert!((f.iter().find(|f| f.key == "gap").unwrap().v - 2.78).abs() < 1e-9);
     }
 
     #[test]

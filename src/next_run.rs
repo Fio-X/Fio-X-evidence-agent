@@ -14301,10 +14301,6 @@ for line in sys.stdin:
             for k in &mine {
                 match (stored.get(*k), crate::next_tree::fact_value(&facts, &rows, k)) {
                     (Some(a), Ok(b)) if *a == b => {}
-                    // J2: a printed difference is now the difference of its two values as printed, within 5% of the stored
-                    (Some(a), Ok(b)) if spec["facts"][k.as_str()].get("of_printed").is_some() && (a - b).abs() <= 0.05 * a.abs() => {
-                        println!("P6REQ {path}: {k} stored {a}, as printed {b}");
-                    }
                     (a, b) => off.push(format!("{k}: stored {a:?}, here {b:?}")),
                 }
             }
