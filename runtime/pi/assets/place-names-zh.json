@@ -129,6 +129,51 @@
    }
   },
   {
+   "name": "印尼",
+   "iso2": "ID",
+   "source": {
+    "title": "Common short form of 印度尼西亚 (MFA of the PRC country list), set by the project owner on 2026-11-06",
+    "url": "https://www.mfa.gov.cn/web/gjhdq_676201/gj_676203/yz_676205/",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "沙特",
+   "iso2": "SA",
+   "source": {
+    "title": "Common short form of 沙特阿拉伯 (MFA of the PRC country list), set by the project owner on 2026-11-06",
+    "url": "https://www.mfa.gov.cn/web/gjhdq_676201/gj_676203/yz_676205/",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "白俄",
+   "iso2": "BY",
+   "source": {
+    "title": "Common short form of 白俄罗斯 (MFA of the PRC country list), set by the project owner on 2026-11-06",
+    "url": "https://www.mfa.gov.cn/web/gjhdq_676201/gj_676203/oz_678770/",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "刚果金",
+   "iso2": "CD",
+   "source": {
+    "title": "Common short form of 刚果（金） (MFA of the PRC country list), set by the project owner on 2026-11-06",
+    "url": "https://www.mfa.gov.cn/web/gjhdq_676201/gj_676203/fz_677316/",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "刚果布",
+   "iso2": "CG",
+   "source": {
+    "title": "Common short form of 刚果（布） (MFA of the PRC country list), set by the project owner on 2026-11-06",
+    "url": "https://www.mfa.gov.cn/web/gjhdq_676201/gj_676203/fz_677316/",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
    "name": "不丹王国",
    "iso2": "BT",
    "source": {

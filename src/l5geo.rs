@@ -2541,7 +2541,7 @@ mod tests {
     fn the_published_lists_give_short_names_the_world_bank_list_holds_only_long() {
         let mut raw = small_raw();
         let list = raw.wb_countries[1].as_array_mut().unwrap();
-        for c in ["HK", "MO", "SO", "YE", "BA", "CF", "CG", "CD"] {
+        for c in ["HK", "MO", "SO", "YE", "BA", "CF", "CG", "CD", "ID", "SA", "BY"] {
             list.push(json!({"id": c, "iso2Code": c, "name": format!("Land {c}"), "region": {"value": "Elsewhere"}}));
         }
         let c = Catalog::from_raw(&raw);
@@ -2549,6 +2549,10 @@ mod tests {
         assert_eq!(countries(&c, "香港、澳门的人口密度"), ["HK", "MO"]);
         assert_eq!(countries(&c, "索马里和也门的粮食进口"), ["SO", "YE"]);
         assert_eq!(countries(&c, "波黑的失业率"), ["BA"]);
+        // short forms the project owner set: they read, and the registered long names still read as the same place
+        assert_eq!(countries(&c, "印尼、沙特和白俄的人口"), ["ID", "SA", "BY"]);
+        assert_eq!(countries(&c, "印度尼西亚共和国和沙特阿拉伯王国的人口"), ["ID", "SA"]);
+        assert_eq!(countries(&c, "刚果金和刚果布的人口"), ["CD", "CG"]);
         // the excluded words do not read: China-Africa and an 'among them' split are no country, bare Congo is either one
         assert!(countries(&c, "中非合作论坛的贸易额").is_empty());
         assert!(countries(&c, "其中非洲国家的人口").is_empty());
