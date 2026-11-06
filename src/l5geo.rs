@@ -24,6 +24,8 @@ const WORLD_MIN: usize = 10;
 const TOP: usize = 5;
 const STOP: &str = "a an and the of in by to for from per on at as or with all each its is are be how what which over";
 const SKIP_DIMS: [&str; 2] = ["geo", "time"];
+/// The member-label dimension a World Bank indicator's name stands in (its table has no other).
+const WB_SERIES: &str = "wb_series";
 const ESTAT_ISO: [(&str, &str); 2] = [("EL", "GR"), ("UK", "GB")];
 /// Region words that mean Europe: the union, the continent and its parts, and the seas inside it.
 const REGION_WORDS_ZH: [&str; 15] = [
@@ -210,6 +212,9 @@ pub struct Catalog {
     /// listing only those still has the place.
     place_codes: HashMap<String, HashSet<String>>,
     place_wb: HashSet<String>,
+    /// iso2 of the World Bank's economies (no aggregates): a place named the Eurostat way (Laos, Russia) whose iso2 is one
+    /// of them is in every World Bank table, as its World Bank name (Lao PDR, Russian Federation) is.
+    wb_iso: HashSet<String>,
     /// English place name (either catalog) -> iso2.
     place_iso: HashMap<String, String>,
     max_place_words: usize,
@@ -1162,6 +1167,11 @@ impl Catalog {
             .collect();
         let place_wb: HashSet<String> =
             wb.iter().map(|x| norm_place(field(x, &["name"]))).collect();
+        let wb_iso: HashSet<String> = wb
+            .iter()
+            .map(|x| field(x, &["iso2Code"]).to_string())
+            .filter(|c| !c.is_empty())
+            .collect();
         let mut place_iso: HashMap<String, String> = place_estat
             .iter()
             .map(|(n, c)| (n.clone(), estat_iso(c).to_string()))
@@ -1415,6 +1425,15 @@ impl Catalog {
                 }
             }
         }
+        // A World Bank indicator is the one member of its table's series: its name is that member's label.
+        for (i, d) in docs.iter().enumerate() {
+            if d.source == Source::Wb {
+                let t: HashSet<String> = toks(&d.title).into_iter().collect();
+                if !t.is_empty() {
+                    members.push((WB_SERIES.to_string(), t, 0.0, vec![i]));
+                }
+            }
+        }
         let mut ldf: HashMap<String, usize> = HashMap::new();
         for (_, t, _, _) in &members {
             for w in t {
@@ -1473,6 +1492,7 @@ impl Catalog {
             place_estat,
             place_codes,
             place_wb,
+            wb_iso,
             place_iso,
             max_place_words,
             europe,
@@ -1896,7 +1916,9 @@ impl Catalog {
                     .iter()
                     .any(|c| d.geo.contains(c) || d.places.contains(c))
             }),
-            Source::Wb => self.place_wb.contains(p),
+            Source::Wb => {
+                self.place_wb.contains(p) || self.place_iso.get(p).is_some_and(|c| self.wb_iso.contains(c))
+            }
         });
         let europe_only =
             self.coverage[i] == Coverage::Europe && !far.iter().any(|c| d.reach.contains(c));
@@ -1923,7 +1945,7 @@ impl Catalog {
         }
     }
 
-    fn v_scores(&self, qt: &[String], ok: &[bool], v: &mut HashMap<usize, f64>) {
+    fn v_scores(&self, qt: &[String], ok: &[bool], scope: Scope, v: &mut HashMap<usize, f64>) {
         let q: HashSet<&String> = qt.iter().collect();
         let mut cand: Vec<usize> = q
             .iter()
@@ -1934,6 +1956,10 @@ impl Catalog {
         let mut best: HashMap<(usize, &str), f64> = HashMap::new();
         for k in cand {
             let (dim, t, total, tabs) = &self.members[k];
+            // A question about Europe alone ranks World Bank tables by their title score only.
+            if scope == Scope::Europe && dim == WB_SERIES {
+                continue;
+            }
             let matched: f64 = t
                 .iter()
                 .filter(|w| q.contains(w))
@@ -1974,7 +2000,7 @@ impl Catalog {
                 .collect();
             let qt = toks(&rest);
             self.s_scores(&qt, &ok, &mut s);
-            self.v_scores(&qt, &ok, &mut v);
+            self.v_scores(&qt, &ok, scope, &mut v);
         }
         let max_s = s.values().copied().fold(0.0, f64::max);
         let max_v = s
@@ -2380,6 +2406,42 @@ mod tests {
             list.push(json!({"id": c, "iso2Code": c, "name": format!("Land {c}"), "region": {"value": "Elsewhere"}}));
         }
         Catalog::from_raw(&raw)
+    }
+
+    /// A place named the Eurostat way (Laos) is in a World Bank table, which names it Lao PDR: its iso2 is a World Bank
+    /// economy. A place neither catalogue lists still drops the table only when it is a place (none here).
+    #[test]
+    fn a_world_bank_table_holds_a_place_named_the_eurostat_way() {
+        let mut raw = small_raw();
+        raw.cl[0].1.push_str("LA\tLaos\r\n");
+        raw.wb_countries[1].as_array_mut().unwrap().push(
+            json!({"id": "LAO", "iso2Code": "LA", "name": "Lao PDR", "region": {"value": "East Asia & Pacific"}}),
+        );
+        let c = Catalog::from_raw(&raw);
+        for t in ["energy use Laos", "energy use Lao PDR"] {
+            assert!(ids(&c.rank_in(&texts(&[t]), Scope::Beyond)).contains(&"EG.USE@2"), "{t}");
+        }
+        // Without Laos among the World Bank's economies the Eurostat name still drops it, as before.
+        let mut raw = small_raw();
+        raw.cl[0].1.push_str("LA\tLaos\r\n");
+        let c = Catalog::from_raw(&raw);
+        assert!(!ids(&c.rank_in(&texts(&["energy use Laos"]), Scope::Beyond)).contains(&"EG.USE@2"));
+    }
+
+    /// A World Bank indicator's name is its table's one member label, scored as a Eurostat member is, beyond Europe only:
+    /// a question about Europe alone ranks World Bank tables by their title score, as before.
+    #[test]
+    fn a_world_bank_name_is_a_member_label_beyond_europe() {
+        let c = small();
+        let v = |scope| {
+            c.rank_in(&texts(&["energy use"]), scope)
+                .into_iter()
+                .find(|x| x.id == "EG.USE@2")
+                .map(|x| x.v)
+                .unwrap()
+        };
+        assert!(v(Scope::Beyond) > 0.0);
+        assert_eq!(v(Scope::Europe), 0.0);
     }
 
     fn countries(c: &Catalog, q: &str) -> Vec<String> {
@@ -4126,5 +4188,36 @@ mod tests {
         assert_eq!(at("12个"), Some((12, 2)));
         assert_eq!(at("0个"), None);
         assert_eq!(at("个"), None);
+    }
+
+    /// Dev-set search replay: each row of R2_CASES (qid, question, search texts joined by " | ", wanted ids joined by
+    /// ",") ranked on the real catalogue; prints where the first wanted table lands in the five offered and in the
+    /// whole order, and the count that reach the five.
+    /// L5GEO_DIR=<registry>/l5geo/catalog R2_CASES=<cases.tsv> cargo test l5geo::tests::replay_devset_search -- --include-ignored --nocapture
+    #[test]
+    #[ignore]
+    fn replay_devset_search() {
+        let dir = std::path::PathBuf::from(std::env::var("L5GEO_DIR").expect("L5GEO_DIR"));
+        let cases = std::fs::read_to_string(std::env::var("R2_CASES").expect("R2_CASES")).unwrap();
+        let c = Catalog::load(&dir).unwrap();
+        let (mut n, mut hit) = (0, 0);
+        for line in cases.lines() {
+            let f: Vec<&str> = line.split('\t').collect();
+            let texts: Vec<String> = f[2].split(" | ").map(String::from).collect();
+            let want: Vec<&str> = f[3].split(',').collect();
+            let is_want = |id: &str| want.contains(&id.split('@').next().unwrap());
+            let top = c.top5(f[1], &texts, false, None);
+            let at5 = top.candidates.iter().position(|x| is_want(&x.id));
+            let all = c.rank(f[1], &texts).candidates;
+            let at = all.iter().position(|x| is_want(&x.id));
+            n += 1;
+            if at5.is_some() {
+                hit += 1;
+            }
+            let first: Vec<String> = top.candidates.iter().take(5).map(|x| format!("{}:{:.2}", x.id, x.score)).collect();
+            let w = at.map(|k| format!("{}:{:.2}/s{:.1}/v{:.1}", all[k].id, all[k].score, all[k].s, all[k].v)).unwrap_or_default();
+            println!("R2\t{}\t{}\t{}\t{}\t{}", f[0], at5.map(|k| (k + 1).to_string()).unwrap_or("-".into()), at.map(|k| (k + 1).to_string()).unwrap_or("none".into()), w, first.join(" "));
+        }
+        println!("R2SUM in-five {hit}/{n}");
     }
 }
