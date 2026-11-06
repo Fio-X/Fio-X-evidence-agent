@@ -85,6 +85,7 @@ const makeStore = (entries, { daysAgo = 1, list = true } = {}) => {
     manifest += ["_country_list", iso(daysAgo), JSON.parse(fixture("countries.json"))[1].length, sha256Of(fixture("countries.json")), ""].join("\t") + "\n";
   }
   writeFileSync(join(dir, "manifest.tsv"), manifest);
+  writeFileSync(join(dir, "names.tsv"), "indicator\tname\n" + entries.map(([code, name]) => `${code}\t${JSON.parse(fixture(name))[1].find((o) => o.indicator?.value)?.indicator.value}\n`).join(""));
   return dir;
 };
 const registered = (mod) => { const tools = new Map(); mod.default(new Proxy({}, { get: (_, key) => (key === "registerTool" ? (tool) => tools.set(tool.name, tool) : () => {}) })); return tools; };
@@ -152,7 +153,9 @@ const checks = {
     return first.calls.includes(whole("SP.POP.65UP.TO.ZS")) && first.calls.some((u) => u.includes("/v2/country?")) && manifest.length === 3
       && existsSync(join(store, "data/SP.POP.65UP.TO.ZS.tsv.gz")) && existsSync(join(store, "country-list.json"))
       && second.calls.length === 0 && second.d.sha256 === first.d.sha256 && sameRows(online, second)
-      && originOf(first.dir, originOf(first.dir, first.d.filePath).source_file)?.origin === "download";
+      && originOf(first.dir, originOf(first.dir, first.d.filePath).source_file)?.origin === "download"
+      && readFileSync(join(store, "names.tsv"), "utf8") === "indicator\tname\nSP.POP.65UP.TO.ZS\tPopulation ages 65 and above (% of total population)\n"
+      && originOf(second.dir, second.d.filePath).series_title === "Population ages 65 and above (% of total population)";
   },
   // a copy older than the limit is fetched again (and the newer line read after)
   stale: async (m) => {
@@ -210,6 +213,7 @@ const mutants = [
   ["keeps every year of the copy", swap("Number(row.date) >= start && Number(row.date) <= end && ", ""), "yearsCut"],
   ["keeps every place of the copy", swap("(!wanted || wanted.has(placeOf(row)?.id ?? \"\"))", "true"), "placesCut"],
   ["does not write the fetched indicator back", swap("const kept = await wbStoreWrite(dir, code, file, bytes, lines.length, last)", "const kept = await Promise.resolve()"), "writeBack"],
+  ["writes no name back", swap("if (name && !(await wbStoreNames(dir)).has(code)) {", "if (false) {"), "writeBack"],
   ["keeps no copy of the store file in the run", swap('source = await wbStoreCopyIntoRun(bytes, "gz",', 'source = await (async (b) => ({ relativeFile: "data/none.gz", sha256: entry.sha256, bytes: b, reused: false }))(bytes, "gz",'), "q5Same"],
 ];
 for (const [name, patch, check] of mutants) {

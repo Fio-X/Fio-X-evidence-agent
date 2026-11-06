@@ -4264,7 +4264,8 @@ async function writeProgramOrigin(origin: Record<string, unknown>) {
 
 // NEWSROOM_WB_STORE (new route only; an absolute folder, set by the news-next wrapper): whole World Bank indicators kept on this machine. One
 // data/<indicator>.tsv.gz per indicator (columns below, rows without a value left out, values as the answer gave them) and the country list
-// as country-list.json, unchanged; manifest.tsv names each with its download time, rows and sha256 (a later line replaces an earlier one).
+// as country-list.json, unchanged; manifest.tsv names each with its download time, rows and sha256 (a later line replaces an earlier one);
+// names.tsv holds each indicator's name as the provider gave it.
 // A copy is read only when its manifest line, sha256 and row count all hold and it is younger than store_max_age_days; otherwise the whole
 // indicator is fetched again and written back. Unset: nothing here is read or written.
 const WB_STORE_COLS = ["indicator", "country_id", "iso3", "year", "value", "obs_status"];
@@ -4361,6 +4362,13 @@ async function wbIndicatorFromStore(dir: string, code: string, signal: AbortSign
     name = String(raw.find((row: any) => row?.indicator?.value)?.indicator?.value ?? "");
     bytes = gzipSync(Buffer.from([WB_STORE_COLS.join("\t"), ...lines].join("\n") + "\n", "utf8"));
     const kept = await wbStoreWrite(dir, code, file, bytes, lines.length, last).then(() => "written to the local store", (error: any) => `not written to the local store (${String(error?.code ?? error?.message ?? error)})`);
+    if (name && !(await wbStoreNames(dir)).has(code)) {
+      try {
+        let fresh = false;
+        try { await stat(join(dir, "names.tsv")); } catch { fresh = true; }
+        await appendFile(join(dir, "names.tsv"), `${fresh ? "indicator\tname\n" : ""}${code}\t${name.replace(/[\t\n]/g, " ")}\n`);
+      } catch {}
+    }
     entry = { downloaded_at: "", wb_lastupdated: last, rows: String(lines.length) };
     source = answer;
     note = `fetched whole now (local copy ${held.miss}); ${kept}`;
@@ -4374,13 +4382,14 @@ async function wbIndicatorFromStore(dir: string, code: string, signal: AbortSign
     if (cells.length !== WB_STORE_COLS.length || cells[0] !== code || cells[4] === "" || !Number.isFinite(value)) throw new Error(`DATA_PREPARE_LOCAL_COPY: ${file} row ${at + 1} is not a whole row of ${code} with a value`);
     return { indicator: { id: code, value: "" }, country: { id: cells[1] }, countryiso3code: cells[2], date: cells[3], value };
   });
-  return { source, rows, note, name, entry };
+  return { source, rows, note, name: name || ((await wbStoreNames(dir)).get(code) ?? ""), entry };
 }
-// The indicator's name as the registry of World Bank units holds it (the stored rows carry none).
-let wbNamesRead: Map<string, string> | undefined;
-function wbIndicatorName(code: string) {
-  wbNamesRead ??= new Map(readFileSync(new URL("./assets/wb-units.tsv", import.meta.url), "utf8").split("\n").slice(1).map((line) => line.split("\t")).filter((cells) => cells.length > 1).map((cells) => [cells[0], cells[1]]));
-  return wbNamesRead.get(code) ?? "";
+// The indicators' names the store keeps (names.tsv: indicator, name; the stored rows carry none). A name missing there is "": the page's
+// source line then names the host only, and nothing else changes.
+async function wbStoreNames(dir: string) {
+  let text = "";
+  try { text = await readFile(join(dir, "names.tsv"), "utf8"); } catch { return new Map<string, string>(); }
+  return new Map(text.split("\n").slice(1).map((line) => line.split("\t")).filter((cells) => cells.length === 2 && cells[1]).map((cells) => [cells[0], cells[1]] as [string, string]));
 }
 
 async function prepareWorldBank(params: any, signal: AbortSignal | undefined, opts: { pageBuild?: boolean; onData?: (data: any) => Promise<any> }, finish: (lines: string[], details: Record<string, unknown>) => any) {
@@ -4447,7 +4456,7 @@ async function prepareWorldBank(params: any, signal: AbortSignal | undefined, op
       // asked) at a year asked that the copy has no row for is a row without a value, as the provider's answer names one.
       local = await wbIndicatorFromStore(store, code, signal);
       data = local.source;
-      const name = local.name || wbIndicatorName(code);
+      const name = local.name;
       const placeOf = (row: any) => byIso2.get(String(row.country.id));
       const wanted = adopted.length ? new Set(adopted) : null;
       const keep = local.rows.filter((row) => Number(row.date) >= start && Number(row.date) <= end && (!wanted || wanted.has(placeOf(row)?.id ?? "")));

@@ -648,6 +648,27 @@ mod tests {
         assert!(missing.is_empty(), "not materialized: {missing:?}");
     }
 
+    /// Every asset the tool source reads by `new URL("./assets/<name>", import.meta.url)` lands in a run's runtime/assets: a
+    /// file left out stops that step with ENOENT in a run and passes every test that copies the whole tree (wb-units.tsv, 11-07).
+    #[test]
+    fn materializes_every_asset_the_tool_reads() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let root = tempfile::tempdir().expect("temporary artifact root");
+        materialize_extension(root.path()).expect("materialize runtime");
+        let source = super::EXTENSION_SOURCE;
+        let named: Vec<&str> = source
+            .split("new URL(\"./assets/")
+            .skip(1)
+            .filter_map(|rest| rest.split('"').next())
+            .collect();
+        assert!(named.len() >= 2, "the source names its assets: {named:?}");
+        let missing: Vec<&&str> = named
+            .iter()
+            .filter(|name| !root.path().join("runtime/assets").join(name).is_file())
+            .collect();
+        assert!(missing.is_empty(), "read by the tool but not materialized: {missing:?}");
+    }
+
     #[test]
     fn materializes_style_mapping_config_for_isolated_runtime() {
         let _command = crate::group_guard::command_for_test("investigate");
