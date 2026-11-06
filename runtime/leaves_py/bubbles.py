@@ -73,7 +73,8 @@ DOT_R = 1.6  # the dot at a nudged circle's true point
 # drawn large to small with a contrasting outline, as thematic cartography draws overlapping symbols). Stroke only: a circle's
 # place, radius, fill and claimed box are as before.
 CIRCLE_EDGE = 1
-NEG_EDGE = 1.6  # px of the outline a circle below 0 is drawn as, inside its radius (its outer edge on the circle's size)
+NEG_EDGE = 1.6  # px of the dashed outline a circle below 0 is drawn as, centred on its placed radius
+NEG_DASH = "3 2"  # its dashes (px on, px off): a key circle is a solid outline, a circle below 0 a dashed one, here and in the key
 BELOW_GAP = 0.3  # of the label size: a label set below its leader starts this far under the leader's end (a 13 px name's glyph box
 # reaches about 0.26 of its size above the box tw lays out; the page's line check, 2 px in from that glyph box, would meet the leader)
 A1, A2, A3, A4 = 1.340264, -0.081106, 0.000893, 0.003796
@@ -258,16 +259,16 @@ def cl_bubbles_placed(f, occ, placed):
     # what the key to the circles reads (bubble_key): the scale drawn, each circle drawn by its area (not lifted to r_min), largest
     # first, as (code, value, radius, its ledger entry), the picture's size and the rect the land is drawn in
     occ.scale = dict(r_used=f.r_used, W=W, H=H, rect=(e, e, W - e, H - e) if f.v else (0, f.top, W, H),
-                     circles=[(i["code"], i["_v"], i["_r"], i["value_text"]) for i in f.items if str(i["code"]) not in f.r_min_codes
-                              and not i.get("_neg")])  # the key's reference circles print their numbers: none below 0
+                     circles=[(i["code"], i["_v"], i["_r"], i["value_text"], bool(i.get("_neg"))) for i in f.items if str(i["code"]) not in f.r_min_codes])
     o.append(MK.clipped(f.v, path, "bubblesframe", e) if f.v else path)
     for i in f.items:  # biggest first, so the small ones stay visible on top
         sq = (i["_xy"][0] - i["_r"], i["_xy"][1] - i["_r"], i["_xy"][0] + i["_r"], i["_xy"][1] + i["_r"]); occ.add(sq, "bubbles")
         if not hasattr(occ, "circles"): occ.circles = []
         occ.circles.append((i["_xy"][0], i["_xy"][1], i["_r"], sq))  # the circle itself, for a leader that may pass its square's corner
         ink = "--accent" if i["code"] in f.hl else NOTED_INK if i["code"] in f.noted else CIRCLE_INK
-        if i.get("_neg"):  # below 0: the circle's outline in its ink, no fill
-            o.append(f'<circle cx="{i["_xy"][0]:.1f}" cy="{i["_xy"][1]:.1f}" r="{max(i["_r"] - NEG_EDGE / 2, 0.5):.1f}" fill="none" stroke="var({ink})" stroke-width="{NEG_EDGE}" data-code="{esc(i["code"])}" data-sign="neg"/>')
+        if i.get("_neg"):  # below 0: a dashed outline in its ink at the placed radius (the core rechecks r as drawn), its fill
+            # the ink at no opacity, so the accent's checks (check_accent_named reads fill) see the place it marks
+            o.append(f'<circle cx="{i["_xy"][0]:.1f}" cy="{i["_xy"][1]:.1f}" r="{i["_r"]:.1f}" fill="var({ink})" fill-opacity="0" stroke="var({ink})" stroke-width="{NEG_EDGE}" stroke-dasharray="{NEG_DASH}" data-code="{esc(i["code"])}" data-sign="neg"/>')
         else:
             o.append(f'<circle cx="{i["_xy"][0]:.1f}" cy="{i["_xy"][1]:.1f}" r="{i["_r"]:.1f}" fill="var({ink})" fill-opacity="{k("opacity")}" stroke="var(--bg)" stroke-width="{CIRCLE_EDGE}" data-code="{esc(i["code"])}"/>')
     for i in f.items:  # a circle moved off its point keeps a dot where the place is
@@ -495,7 +496,8 @@ def cl_bubble_key(f, occ):
     yb = y + words_h + KEY_GAP + 2 * R  # the circles' one bottom line
     for (c, inner, p), w in zip(vals, slots):
         rk = key_r(c[2])
-        o.append(f'<circle cx="{x + w / 2:.1f}" cy="{yb - rk:.1f}" r="{rk:.1f}" fill="none" stroke="var(--t-sec)" stroke-width="{KEY_EDGE}"/>')
+        dash = f' stroke-dasharray="{NEG_DASH}"' if len(c) > 4 and c[4] else ""  # a reference circle below 0 dashed, as on the map
+        o.append(f'<circle cx="{x + w / 2:.1f}" cy="{yb - rk:.1f}" r="{rk:.1f}" fill="none" stroke="var(--t-sec)" stroke-width="{KEY_EDGE}"{dash}/>')
         o.append(K.txt(B, x + w / 2, yb + KEY_GAP + sz * 0.8, sz, f"var({VALUE_INK})", inner, tw(p, sz), anchor="middle", tag=f"key value {c[0]}"))
         x += w + KEY_GAP
     return f'<g data-node="{KEY}">' + "".join(o) + "</g>"

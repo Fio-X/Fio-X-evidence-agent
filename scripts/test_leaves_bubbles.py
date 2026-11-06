@@ -129,8 +129,10 @@ class Bubbles(unittest.TestCase):
         setup(neg, W_LABELS, SHP); svg = bubbles.draw(hero(W_DATA))[0]
         r_of = lambda s, c: float(re.search(r'<circle [^>]*r="([0-9.]+)"[^>]*data-code="' + c + '"', s)[1])
         self.assertEqual(len(re.findall(r'data-sign="neg"', svg)), 1)
-        self.assertRegex(svg, r'<circle [^>]*fill="none"[^>]*data-code="CHN" data-sign="neg"')
-        self.assertAlmostEqual(r_of(svg, "CHN"), r_of(plain, "CHN") - bubbles.NEG_EDGE / 2, places=1)
+        # at the placed radius (the core's drawn-circle check compares r as printed) and its fill the ink at no opacity (the
+        # accent's check reads fill); dashed, as its key circle is
+        self.assertRegex(svg, r'<circle [^>]*fill="var\(--[a-z-]+\)" fill-opacity="0" [^>]*stroke-dasharray="3 2" data-code="CHN" data-sign="neg"')
+        self.assertEqual(r_of(svg, "CHN"), r_of(plain, "CHN"))
         self.assertNotIn('data-sign="neg"', plain)
 
     def test_the_refusals(self):

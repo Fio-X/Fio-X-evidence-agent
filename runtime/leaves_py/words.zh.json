@@ -67,7 +67,7 @@
  "accent.subject": "{name}以红色标出",
  "bubble_key.area": "圆面积＝{m}，{y}",
  "bubble_key.area_any": "圆面积＝数值，{y}",
- "bubble_key.negative": "；空心圆为负值，面积按其绝对值",
+ "bubble_key.negative": "；虚线圆为负值，面积按其绝对值",
  "scmp.note.h": "{name} {a} → {b}",
  "scmp.note.total": "{name}以外各国合计 {a} → {b}",
  "scmp.note.rise": "多了 {v}",
