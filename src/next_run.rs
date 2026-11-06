@@ -8153,6 +8153,20 @@ mod tests {
         let mut lies = spec.clone();
         lies.asked_places.as_mut().unwrap().missing.push("JP".into());
         assert_ne!(fails(&lies), Vec::<String>::new());
+        // must fail: a stored request whose member basis does not read is refused, never read as having none; a request
+        // with no basis still asks nothing of it
+        let mut stored = json!({"knobs": {"spec": serde_json::to_value(&spec).unwrap()}});
+        let (back, _, _) = crate::next_facts::stored_request(&stored);
+        assert_eq!(back.basis, spec.basis, "a basis that reads reads back as it was");
+        stored["knobs"]["spec"]["basis"]["members"] = json!("ET");
+        let (bad, _, _) = crate::next_facts::stored_request(&stored);
+        assert!(bad.basis.as_ref().is_some_and(|b| b.unread.is_some()), "{:?}", bad.basis);
+        let off = fails(&crate::next_facts::Spec { basis: bad.basis, ..spec.clone() });
+        assert!(off.iter().any(|f| f.contains("member basis does not read")), "{off:?}");
+        stored["knobs"]["spec"].as_object_mut().unwrap().remove("basis");
+        assert!(crate::next_facts::stored_request(&stored).0.basis.is_none());
+        let none = crate::next_facts::Spec { basis: None, ..spec.clone() };
+        assert!(!fails(&none).iter().any(|f| f.starts_with("basis:")), "no basis asks nothing");
 
         // Japan lacking rows too: each line names its own place once
         let places = [&brics[..], &["SA"]].concat();

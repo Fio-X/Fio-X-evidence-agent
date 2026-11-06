@@ -1628,6 +1628,9 @@ pub fn check_leaf_page(
 /// no member missing); a request with no basis asks nothing of the page.
 fn basis_said(html: &str, ledger: &BTreeMap<String, String>, spec: &Spec, rows: &[Row], facts: &[Fact]) -> Vec<String> {
     let Some(b) = &spec.basis else { return Vec::new() };
+    if let Some(why) = &b.unread {
+        return vec![format!("basis: the request's member basis does not read: {why}")];
+    }
     let mut off = Vec::new();
     if !b.unfetched.is_empty() {
         off.push(format!("basis: members {:?} of {} were never fetched, so the page cannot say they have no data", b.unfetched, b.year));

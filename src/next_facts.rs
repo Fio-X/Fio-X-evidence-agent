@@ -133,7 +133,7 @@ pub struct Spec {
 /// count's fact (none on a page with no count of its places), and, as the page's rows write the codes, the group's members
 /// that year (countries only), the places the question names beside them, the members with no data, and the places left
 /// out with why.
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Basis {
     pub words: Option<String>,
     pub year: String,
@@ -151,6 +151,9 @@ pub struct Basis {
     /// The members of `year` the run never fetched; a page with any is refused (its lack is no fact of the data).
     #[serde(default)]
     pub unfetched: Vec<String>,
+    /// Why a stored request's basis could not be read; a page with one never passes (no check skipped).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unread: Option<String>,
 }
 
 /// A place a group's page left out, and why.
@@ -1611,7 +1614,11 @@ pub(crate) fn stored_request(req: &Value) -> (Spec, Vec<Row>, Vec<String>) {
             serde_json::from_value(s["asked_places"].clone())
                 .unwrap_or_else(|e| AskedPlaces { unread: Some(e.to_string()), ..Default::default() })
         }),
-        basis: serde_json::from_value(s["basis"].clone()).ok(),
+        // none when the request has none; one that does not read keeps why, so the page check refuses the page instead
+        // of passing it unchecked
+        basis: (!s["basis"].is_null()).then(|| {
+            serde_json::from_value(s["basis"].clone()).unwrap_or_else(|e| Basis { unread: Some(e.to_string()), ..Default::default() })
+        }),
     };
     (spec, rows, tables)
 }
