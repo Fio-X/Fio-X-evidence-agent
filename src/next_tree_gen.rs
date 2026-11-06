@@ -1319,18 +1319,18 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
 
 /// Request::NodeDeclare: what fill_of takes from the external layer `layer` over the flow's page input. A declaration of
 /// shape parts_of_whole (parts_declared) stops in its own words; any other failure is the generator's.
-/// How the page prints its differences (J2, owner 11-04: core printed_differences): the page's layers in its order (those
-/// declared_j declares) declared together, and each printed difference made the difference of its two values as printed
-/// (`of_printed`: each operand's scale and decimals); one more than DIFF_CLOSE off its true difference, the difference and
-/// its two values one decimal more each, in their own formats, to at most DIFF_MOST_DEC (and the most a row of the page
-/// input holds); still off there, the page prints no such difference (`gap_order`: a note's case asks gap_printable, so
-/// its words say only which is higher). Every other number keeps its format. A layer that does not declare leaves it as
-/// it is (its own declaration says why). {dec_raise: {fact key or family member: decimals}, printed_of: {difference:
-/// [{scale, dec}, {scale, dec}]}, gap_order: [difference]}
+/// How the page prints its differences (owner 11-06, superseding J2 of 11-04): a difference is computed from its two raw
+/// values and rounded last, so it is never the difference of its two values as printed (`printed_of` stays empty for old
+/// readers). The page's layers in its order (those declared_j declares) are declared together; a printed difference more
+/// than half a unit of its last place off its true difference (core printed_differences) gets one decimal more, it and
+/// its two values each in their own formats, to at most DIFF_MOST_DEC (and the most a row of the page input holds);
+/// still off there, the page prints no such difference (`gap_order`: a note's case asks gap_printable, so its words say
+/// only which is higher). Every other number keeps its format. A layer that does not declare leaves it as it is (its own
+/// declaration says why). {dec_raise: {fact key or family member: decimals}, printed_of: {}, gap_order: [difference]}
 fn printed_raise(page_in: &J, reg: &J) -> J {
     let held = page_in.g("rows").arr().iter().filter_map(|r| r.g("value").s()).map(|v| v.split_once('.').map_or(0, |(_, f)| f.len())).max().unwrap_or(0);
     let most = core::DIFF_MOST_DEC.min(held);
-    let (mut raise, mut of, mut order) = (J::Obj(vec![]), J::Obj(vec![]), Vec::<J>::new());
+    let (mut raise, of, mut order) = (J::Obj(vec![]), J::Obj(vec![]), Vec::<J>::new());
     let done = |raise: &J, of: &J, order: &[J]| J::obj_of(vec![("dec_raise", raise.clone()), ("printed_of", of.clone()), ("gap_order", J::Arr(order.to_vec()))]);
     loop {
         let mut view = page_in.clone();
@@ -1355,23 +1355,7 @@ fn printed_raise(page_in: &J, reg: &J) -> J {
         let printed = core::printed_keys(&J::Arr(shown), &facts);
         let mut moved = false;
         for d in core::printed_differences(&facts, &fmts, page_in.g("rows").arr(), &printed) {
-            if d.equal && d.close {
-                continue;
-            }
-            // first the difference of the two values as printed
-            let want = J::Arr(d.forms.iter().map(|(sc, dec)| J::obj_of(vec![("scale", J::Num(*sc)), ("dec", J::Int(*dec as i64))])).collect());
-            if of.get(&d.key) != Some(&want) {
-                of.set(&d.key, want);
-                moved = true;
-                continue;
-            }
             if d.close {
-                // the difference of the values as printed, printed at fewer decimals than they hold: at theirs
-                let at = d.forms[0].1.max(d.forms[1].1);
-                if d.dec < at {
-                    raise.set(&d.key, J::Int(at as i64));
-                    moved = true;
-                }
                 continue;
             }
             // off the true difference: one decimal more each, to the most

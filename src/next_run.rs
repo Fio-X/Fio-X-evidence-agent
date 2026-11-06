@@ -6366,13 +6366,12 @@ mod tests {
         })
         .unwrap();
         fill.as_object_mut().unwrap().remove("page_in").expect("the page input kept for draw_nodes");
-        // J2 (owner 11-04): the last note's gap the difference of its two bars as printed, nothing else: FR's -2.25 printed
-        // -2.2 leaves BE's 5.5 less it at 7.7, within 5% of 7.75, so no decimal is added
+        // owner 11-06: the last note's gap is the raw difference 7.75, printed 7.8 within half a unit, so nothing is raised
+        // and no fact is the difference of its operands as printed
         let old = &rust["knobs"]["spec"];
         let (facts, fmts, raised) = with_printed_raise(old["facts"].as_object().unwrap(), old["fmts"].as_object().unwrap(), &fill["knobs"]["spec"], page_in["rows"].as_array().unwrap());
-        assert_eq!(raised.len(), 1, "{raised:?}");
-        assert!(raised[0].starts_with("vs_lo of printed "), "{raised:?}");
-        assert_eq!(fill["knobs"]["spec"]["facts"]["vs_lo"]["of_printed"], json!([{"scale": 1.0, "dec": 1}, {"scale": 1.0, "dec": 1}]));
+        assert!(raised.is_empty(), "{raised:?}");
+        assert!(fill["knobs"]["spec"]["facts"]["vs_lo"].get("of_printed").is_none());
         (rust["knobs"]["spec"]["facts"], rust["knobs"]["spec"]["fmts"]) = (json!(facts), json!(fmts));
         let mut differs = Vec::new();
         fill_diff(&rust, &fill, "fill", &mut differs);
@@ -7567,8 +7566,8 @@ mod tests {
         assert_eq!(fill["ends"], json!({"t0": "2016", "t1": "2024", "rule": "two_ends", "fetched_from": "2013",
             "later": [{"year": "2013", "missing": ["BE", "DE", "FR"]}, {"year": "2015", "missing": ["DE"]}]}));
         let spec = &fill["knobs"]["spec"];
-        // the bars' changes in points at one decimal; the last note's gap is the difference of BE's and FR's bars as printed
-        // (J2: 5.5 less -2.2 is 7.7, within 5% of the true 7.75, so no bar takes a decimal more)
+        // the bars' changes in points at one decimal; the last note's gap is the raw difference of BE's and FR's changes
+        // (owner 11-06: 7.75 prints 7.8, within half a unit, so no bar takes a decimal more)
         assert_eq!(spec["facts"]["chg"], json!({"op": "minus", "each": "geo", "a": "val1", "b": "val0", "fmt": "pp"}));
         assert_eq!(spec["facts"]["val0"], json!({"each": "geo", "table": "sdg", "time": "2016", "fmt": "pc"}));
         assert_eq!(spec["fmts"]["pp"], json!({"scale": 1, "dec": 1, "suffix": " 个百分点"}));
@@ -7600,9 +7599,8 @@ mod tests {
         assert_eq!(spec["facts"]["mean_chg"]["op"], "minus");
         let year = |code: &str, t: &str| json!({"op": "last", "table": "sdg", "filter": {"geo": code}, "from": t, "to": t, "fmt": "pc"});
         for (key, higher, lower) in [("vs_lo", "BE", "FR")] {
-            // J2: the gap the difference of BE's and FR's bars as printed (5.5 less -2.2), within 5% of the true 7.75
-            let want = json!({"op": "minus", "a": format!("{key}_a"), "b": format!("{key}_b"), "fmt": "pp",
-                "of_printed": [{"scale": 1.0, "dec": 1}, {"scale": 1.0, "dec": 1}]});
+            // owner 11-06: the gap the raw difference of BE's and FR's changes (7.75, printed 7.8)
+            let want = json!({"op": "minus", "a": format!("{key}_a"), "b": format!("{key}_b"), "fmt": "pp"});
             assert_eq!(spec["facts"][key], want);
             for (side, code) in [("a", higher), ("b", lower)] {
                 assert_eq!(spec["facts"][format!("{key}_{side}")],
@@ -7641,10 +7639,10 @@ mod tests {
             assert_eq!(page.ledger.get(&format!("fact:chg.{code}")).map(String::as_str), Some(text), "{code}");
         }
         assert_eq!(page.ledger.get("fact:lead").map(String::as_str), Some("16.0 个百分点"), "the dek's rise, as SE's bar");
-        // the notes' numbers from the rows: SE's 16 above the mean rise 6.6875 (form A), and BE's 5.5 less FR's -2.2 as the
-        // bars print them, 7.7 (J2: the true 7.75 within 5%)
+        // the notes' numbers from the rows: SE's 16 above the mean rise 6.6875 (form A), and BE's 5.5 less FR's -2.25 from the
+        // raw values, 7.75 printed 7.8 to the even digit (owner 11-06), not 7.7 of the bars as printed
         assert_eq!(page.ledger.get("fact:vs_mean").map(String::as_str), Some("9.3 个百分点"), "the first note's gap to the mean");
-        assert_eq!(page.ledger.get("fact:vs_lo").map(String::as_str), Some("7.7 个百分点"), "the last note's gap");
+        assert_eq!(page.ledger.get("fact:vs_lo").map(String::as_str), Some("7.8 个百分点"), "the last note's gap");
         let dir = tempfile::tempdir().unwrap();
         let bundle = {
             let _command = crate::group_guard::command_for_test("investigate");
@@ -14150,6 +14148,78 @@ for line in sys.stdin:
                 unit: crate::l5geo::wb_unit(id),
             })
         }
+    }
+
+    /// Owner 11-06 replay: over stored verified pages (RAW_REQS: a file listing publications/<recipe>/request.json, one per
+    /// line), every printed fact (ledger fact:<key>.n) whose value moves when no difference is computed of its operands as
+    /// printed (of_printed dropped, raw values, rounded last): does its printed number still sit within half a unit of its
+    /// last place of the raw value? One line per page: RAWREQ <path> moved <n> off <keys>. A page with an off key is one
+    /// the new rule refuses. Run: RAW_REQS=<file> cargo test --release --bin news -- --ignored raw_differences_over_stored
+    #[test]
+    #[ignore]
+    fn raw_differences_over_stored_requests() {
+        use crate::next_tree::J;
+        let list = std::fs::read_to_string(std::env::var("RAW_REQS").unwrap()).unwrap();
+        let strip = |v: &Value| -> Value {
+            let mut v = v.clone();
+            if let Some(o) = v.as_object_mut() {
+                for (_, q) in o.iter_mut() {
+                    if let Some(q) = q.as_object_mut() {
+                        q.remove("of_printed");
+                    }
+                }
+            }
+            v
+        };
+        let (mut pages, mut refused) = (0, 0);
+        for path in list.lines().filter(|l| !l.trim().is_empty()) {
+            let Ok(text) = std::fs::read_to_string(path) else {
+                println!("RAWREQ {path} unreadable");
+                continue;
+            };
+            let req: Value = serde_json::from_str(&text).unwrap();
+            let facts_v = &req["knobs"]["spec"]["facts"];
+            let (old_f, new_f) = (J::from_value(facts_v), J::from_value(&strip(facts_v)));
+            // the stored rows hold their values as numbers; the core reads them as the data's text
+            let rows: Vec<J> = req["rows"]
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .map(|r| {
+                            let mut r = r.clone();
+                            if let Some(n) = r["value"].as_f64().and_then(serde_json::Number::from_f64) {
+                                r["value"] = json!(n.to_string());
+                            }
+                            J::from_value(&r)
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            let ledger = req["ledger"].as_object().cloned().unwrap_or_default();
+            let (mut moved, mut off) = (0, Vec::new());
+            for (k, v) in &ledger {
+                let Some(key) = k.strip_prefix("fact:").and_then(|k| k.strip_suffix(".n")) else { continue };
+                let Some(shown) = v.as_str() else { continue };
+                let (Ok(old), Ok(new)) = (crate::next_tree::fact_value(&old_f, &rows, key), crate::next_tree::fact_value(&new_f, &rows, key)) else { continue };
+                if old == new || !old.is_finite() || !new.is_finite() {
+                    continue;
+                }
+                moved += 1;
+                // the format's scale, read from the old value and its print (a value of 0 prints 0 at any scale)
+                let read: f64 = shown.parse().unwrap_or(f64::NAN);
+                let scale = if old != 0.0 && read != 0.0 { read / old } else { 1.0 };
+                let scale = if scale.is_finite() { 10f64.powi(scale.abs().log10().round() as i32) * scale.signum() } else { 1.0 };
+                if !crate::next_ledger::prints(shown, new * scale) {
+                    off.push(format!("{key} prints {shown}, raw {:.4}", new * scale));
+                }
+            }
+            pages += 1;
+            if !off.is_empty() {
+                refused += 1;
+            }
+            println!("RAWREQ {path} moved {moved} off {off:?}");
+        }
+        println!("RAWREQ pages {pages} refused by the new rule {refused}");
     }
 
     /// P6 step 1 over stand-in pages (P6_REQS: a file listing publications/<recipe>/request.json of stored runs, one per
