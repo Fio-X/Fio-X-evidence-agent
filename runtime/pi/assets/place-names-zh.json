@@ -127,6 +127,1581 @@
     "url": "https://www.mfa.gov.cn/web/gjhdq_676201/gj_676203/fz_677316/",
     "accessed": "2026-11-05"
    }
+  },
+  {
+   "name": "不丹王国",
+   "iso2": "BT",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "东帝汶民主共和国",
+   "iso2": "TL",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "中华人民共和国",
+   "iso2": "CN",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "中国澳门特区",
+   "iso2": "MO",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "中国香港特区",
+   "iso2": "HK",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "丹麦王国",
+   "iso2": "DK",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "乌兹别克斯坦共和国",
+   "iso2": "UZ",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "乌干达共和国",
+   "iso2": "UG",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "乌拉圭东岸共和国",
+   "iso2": "UY",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "乍得共和国",
+   "iso2": "TD",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "也门",
+   "iso2": "YE",
+   "source": {
+    "title": "Unicode CLDR 48.0 zh territory names, long and short (ICU 78.2)",
+    "url": "https://github.com/unicode-org/cldr/blob/main/common/main/zh.xml",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "亚美尼亚共和国",
+   "iso2": "AM",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "以色列国",
+   "iso2": "IL",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "伊拉克共和国",
+   "iso2": "IQ",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "伊朗伊斯兰共和国",
+   "iso2": "IR",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "佛得角共和国",
+   "iso2": "CV",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "保加利亚共和国",
+   "iso2": "BG",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "克罗地亚共和国",
+   "iso2": "HR",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "冈比亚共和国",
+   "iso2": "GM",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "几内亚共和国",
+   "iso2": "GN",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "几内亚比绍",
+   "iso2": "GW",
+   "source": {
+    "title": "Unicode CLDR 48.0 zh territory names, long and short (ICU 78.2)",
+    "url": "https://github.com/unicode-org/cldr/blob/main/common/main/zh.xml",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "列支敦士登公国",
+   "iso2": "LI",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "刚果共和国",
+   "iso2": "CG",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "刚果民主共和国",
+   "iso2": "CD",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "利比亚国",
+   "iso2": "LY",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "利比里亚共和国",
+   "iso2": "LR",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "加纳共和国",
+   "iso2": "GH",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "加蓬共和国",
+   "iso2": "GA",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "北马其顿共和国",
+   "iso2": "MK",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "南苏丹共和国",
+   "iso2": "SS",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "南非共和国",
+   "iso2": "ZA",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "博茨瓦纳共和国",
+   "iso2": "BW",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "卡塔尔国",
+   "iso2": "QA",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "卢旺达共和国",
+   "iso2": "RW",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "卢森堡大公国",
+   "iso2": "LU",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "印度共和国",
+   "iso2": "IN",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "印度尼西亚共和国",
+   "iso2": "ID",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "危地马拉共和国",
+   "iso2": "GT",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "厄瓜多尔共和国",
+   "iso2": "EC",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "厄立特里亚国",
+   "iso2": "ER",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "古巴共和国",
+   "iso2": "CU",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "吉尔吉斯共和国",
+   "iso2": "KG",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "吉布提共和国",
+   "iso2": "DJ",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "哈萨克斯坦共和国",
+   "iso2": "KZ",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "哥伦比亚共和国",
+   "iso2": "CO",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "哥斯达黎加共和国",
+   "iso2": "CR",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "喀麦隆共和国",
+   "iso2": "CM",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "土耳其共和国",
+   "iso2": "TR",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "圣多美和普林西比民主共和国",
+   "iso2": "ST",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "圣马丁（法属部分）",
+   "iso2": "MF",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "圣马丁（荷属部分）",
+   "iso2": "SX",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "圣马力诺共和国",
+   "iso2": "SM",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "圭亚那合作共和国",
+   "iso2": "GY",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "坦桑尼亚联合共和国",
+   "iso2": "TZ",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "埃塞俄比亚联邦民主共和国",
+   "iso2": "ET",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "基里巴斯共和国",
+   "iso2": "KI",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "塔吉克斯坦共和国",
+   "iso2": "TJ",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "塞内加尔共和国",
+   "iso2": "SN",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "塞尔维亚共和国",
+   "iso2": "RS",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "塞拉利昂共和国",
+   "iso2": "SL",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "塞浦路斯共和国",
+   "iso2": "CY",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "塞舌尔共和国",
+   "iso2": "SC",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "墨西哥合众国",
+   "iso2": "MX",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "多哥共和国",
+   "iso2": "TG",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "多民族玻利维亚国",
+   "iso2": "BO",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "多米尼克国",
+   "iso2": "DM",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "多米尼加",
+   "iso2": "DO",
+   "source": {
+    "title": "Wikipedia (zh), ISO 3166-1, Chinese name column of the code table",
+    "url": "https://zh.wikipedia.org/zh-cn/ISO_3166-1",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "大不列颠及北爱尔兰联合王国",
+   "iso2": "GB",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "奥地利共和国",
+   "iso2": "AT",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "孟加拉人民共和国",
+   "iso2": "BD",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "安哥拉共和国",
+   "iso2": "AO",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "安道尔",
+   "iso2": "AD",
+   "source": {
+    "title": "Unicode CLDR 48.0 zh territory names, long and short (ICU 78.2)",
+    "url": "https://github.com/unicode-org/cldr/blob/main/common/main/zh.xml",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "安道尔公国",
+   "iso2": "AD",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "密克罗尼西亚",
+   "iso2": "FM",
+   "source": {
+    "title": "Unicode CLDR 48.0 zh territory names, long and short (ICU 78.2)",
+    "url": "https://github.com/unicode-org/cldr/blob/main/common/main/zh.xml",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "尼加拉瓜共和国",
+   "iso2": "NI",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "尼日利亚联邦共和国",
+   "iso2": "NG",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "尼日尔共和国",
+   "iso2": "NE",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "巴勒斯坦",
+   "iso2": "PS",
+   "source": {
+    "title": "Unicode CLDR 48.0 zh territory names, long and short (ICU 78.2)",
+    "url": "https://github.com/unicode-org/cldr/blob/main/common/main/zh.xml",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "巴勒斯坦领土",
+   "iso2": "PS",
+   "source": {
+    "title": "Unicode CLDR 48.0 zh territory names, long and short (ICU 78.2)",
+    "url": "https://github.com/unicode-org/cldr/blob/main/common/main/zh.xml",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "巴哈马国",
+   "iso2": "BS",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "巴基斯坦伊斯兰共和国",
+   "iso2": "PK",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "巴布亚新几内亚独立国",
+   "iso2": "PG",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "巴拉圭共和国",
+   "iso2": "PY",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "巴拿马共和国",
+   "iso2": "PA",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "巴林王国",
+   "iso2": "BH",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "巴西联邦共和国",
+   "iso2": "BR",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "布隆迪共和国",
+   "iso2": "BI",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "希腊共和国",
+   "iso2": "GR",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "帕劳共和国",
+   "iso2": "PW",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "德意志联邦共和国",
+   "iso2": "DE",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "意大利共和国",
+   "iso2": "IT",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "拉脱维亚共和国",
+   "iso2": "LV",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "挪威王国",
+   "iso2": "NO",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "摩尔多瓦共和国",
+   "iso2": "MD",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "摩洛哥王国",
+   "iso2": "MA",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "摩纳哥公国",
+   "iso2": "MC",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "斐济共和国",
+   "iso2": "FJ",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "斯威士兰王国",
+   "iso2": "SZ",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "斯洛文尼亚共和国",
+   "iso2": "SI",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "斯里兰卡民主社会主义共和国",
+   "iso2": "LK",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "新加坡共和国",
+   "iso2": "SG",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "日本国",
+   "iso2": "JP",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "智利共和国",
+   "iso2": "CL",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "柬埔寨王国",
+   "iso2": "KH",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "比利时王国",
+   "iso2": "BE",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "毛里塔尼亚伊斯兰共和国",
+   "iso2": "MR",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "毛里求斯共和国",
+   "iso2": "MU",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "汤加王国",
+   "iso2": "TO",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "沙特阿拉伯王国",
+   "iso2": "SA",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "法兰西共和国",
+   "iso2": "FR",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "法属圣马丁",
+   "iso2": "MF",
+   "source": {
+    "title": "Unicode CLDR 48.0 zh territory names, long and short (ICU 78.2)",
+    "url": "https://github.com/unicode-org/cldr/blob/main/common/main/zh.xml",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "波兰共和国",
+   "iso2": "PL",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "波多黎各自由联邦",
+   "iso2": "PR",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "波黑",
+   "iso2": "BA",
+   "source": {
+    "title": "Wikipedia (zh), ISO 3166-1, Chinese name column of the code table",
+    "url": "https://zh.wikipedia.org/zh-cn/ISO_3166-1",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "泰王国",
+   "iso2": "TH",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "津巴布韦共和国",
+   "iso2": "ZW",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "洪都拉斯共和国",
+   "iso2": "HN",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "海地共和国",
+   "iso2": "HT",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "澳门",
+   "iso2": "MO",
+   "source": {
+    "title": "Unicode CLDR 48.0 zh territory names, long and short (ICU 78.2)",
+    "url": "https://github.com/unicode-org/cldr/blob/main/common/main/zh.xml",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "爱沙尼亚共和国",
+   "iso2": "EE",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "特克斯和凯科斯群岛",
+   "iso2": "TC",
+   "source": {
+    "title": "Unicode CLDR 48.0 zh territory names, long and short (ICU 78.2)",
+    "url": "https://github.com/unicode-org/cldr/blob/main/common/main/zh.xml",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "特立尼达和多巴哥共和国",
+   "iso2": "TT",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "瑙鲁",
+   "iso2": "NR",
+   "source": {
+    "title": "Unicode CLDR 48.0 zh territory names, long and short (ICU 78.2)",
+    "url": "https://github.com/unicode-org/cldr/blob/main/common/main/zh.xml",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "瑙鲁共和国",
+   "iso2": "NR",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "瑞典王国",
+   "iso2": "SE",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "瑞士联邦",
+   "iso2": "CH",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "瓦努阿图共和国",
+   "iso2": "VU",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "白俄罗斯共和国",
+   "iso2": "BY",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "科威特国",
+   "iso2": "KW",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "科摩罗联盟",
+   "iso2": "KM",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "科特迪瓦共和国",
+   "iso2": "CI",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "秘鲁共和国",
+   "iso2": "PE",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "突尼斯共和国",
+   "iso2": "TN",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "立陶宛共和国",
+   "iso2": "LT",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "索马里",
+   "iso2": "SO",
+   "source": {
+    "title": "Unicode CLDR 48.0 zh territory names, long and short (ICU 78.2)",
+    "url": "https://github.com/unicode-org/cldr/blob/main/common/main/zh.xml",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "约旦哈希姆王国",
+   "iso2": "JO",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "纳米比亚共和国",
+   "iso2": "NA",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "缅甸联邦共和国",
+   "iso2": "MM",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "美利坚合众国",
+   "iso2": "US",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "美属维尔京群岛",
+   "iso2": "VI",
+   "source": {
+    "title": "Unicode CLDR 48.0 zh territory names, long and short (ICU 78.2)",
+    "url": "https://github.com/unicode-org/cldr/blob/main/common/main/zh.xml",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "老挝人民民主共和国",
+   "iso2": "LA",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "肯尼亚共和国",
+   "iso2": "KE",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "芬兰共和国",
+   "iso2": "FI",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "苏丹共和国",
+   "iso2": "SD",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "苏里南共和国",
+   "iso2": "SR",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "英属维尔京群岛",
+   "iso2": "VG",
+   "source": {
+    "title": "Unicode CLDR 48.0 zh territory names, long and short (ICU 78.2)",
+    "url": "https://github.com/unicode-org/cldr/blob/main/common/main/zh.xml",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "荷兰王国",
+   "iso2": "NL",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "荷属圣马丁",
+   "iso2": "SX",
+   "source": {
+    "title": "Unicode CLDR 48.0 zh territory names, long and short (ICU 78.2)",
+    "url": "https://github.com/unicode-org/cldr/blob/main/common/main/zh.xml",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "莫桑比克共和国",
+   "iso2": "MZ",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "莱索托王国",
+   "iso2": "LS",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "菲律宾共和国",
+   "iso2": "PH",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "萨尔瓦多共和国",
+   "iso2": "SV",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "萨摩亚独立国",
+   "iso2": "WS",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "葡萄牙共和国",
+   "iso2": "PT",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "蒙古国",
+   "iso2": "MN",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "西班牙王国",
+   "iso2": "ES",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "贝宁共和国",
+   "iso2": "BJ",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "赞比亚共和国",
+   "iso2": "ZM",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "赤道几内亚共和国",
+   "iso2": "GQ",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "越南社会主义共和国",
+   "iso2": "VN",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "阿塞拜疆共和国",
+   "iso2": "AZ",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "阿富汗伊斯兰共和国",
+   "iso2": "AF",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "阿尔及利亚民主人民共和国",
+   "iso2": "DZ",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "阿尔巴尼亚共和国",
+   "iso2": "AL",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "阿曼苏丹国",
+   "iso2": "OM",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "阿根廷共和国",
+   "iso2": "AR",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "阿鲁巴岛",
+   "iso2": "AW",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "香港",
+   "iso2": "HK",
+   "source": {
+    "title": "Unicode CLDR 48.0 zh territory names, long and short (ICU 78.2)",
+    "url": "https://github.com/unicode-org/cldr/blob/main/common/main/zh.xml",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "马尔代夫共和国",
+   "iso2": "MV",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "马拉维共和国",
+   "iso2": "MW",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "马绍尔群岛共和国",
+   "iso2": "MH",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "马耳他共和国",
+   "iso2": "MT",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "马达加斯加共和国",
+   "iso2": "MG",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "马里共和国",
+   "iso2": "ML",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
+  },
+  {
+   "name": "黎巴嫩共和国",
+   "iso2": "LB",
+   "source": {
+    "title": "FAO NOCS country names export, sheet Chinese: SHORT NAME and FULL NAME",
+    "url": "https://nocs.fao.org/exportCountryData",
+    "accessed": "2026-11-06"
+   }
   }
  ],
  "groups": [

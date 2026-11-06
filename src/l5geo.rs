@@ -2538,6 +2538,30 @@ mod tests {
     }
 
     #[test]
+    fn the_published_lists_give_short_names_the_world_bank_list_holds_only_long() {
+        let mut raw = small_raw();
+        let list = raw.wb_countries[1].as_array_mut().unwrap();
+        for c in ["HK", "MO", "SO", "YE", "BA", "CF", "CG", "CD"] {
+            list.push(json!({"id": c, "iso2Code": c, "name": format!("Land {c}"), "region": {"value": "Elsewhere"}}));
+        }
+        let c = Catalog::from_raw(&raw);
+        // short names from CLDR, FAO and the zh ISO 3166-1 list
+        assert_eq!(countries(&c, "香港、澳门的人口密度"), ["HK", "MO"]);
+        assert_eq!(countries(&c, "索马里和也门的粮食进口"), ["SO", "YE"]);
+        assert_eq!(countries(&c, "波黑的失业率"), ["BA"]);
+        // the excluded words do not read: China-Africa and an 'among them' split are no country, bare Congo is either one
+        assert!(countries(&c, "中非合作论坛的贸易额").is_empty());
+        assert!(countries(&c, "其中非洲国家的人口").is_empty());
+        assert!(countries(&c, "刚果河流域的降雨").is_empty());
+        let names = place_names_zh();
+        assert!(names.aliases.iter().all(|a| !["中非", "刚果", "欧盟"].contains(&a.name.as_str())));
+        // one name, one code across all lists
+        for a in &names.aliases {
+            assert!(names.aliases.iter().filter(|b| b.name == a.name).all(|b| b.iso2 == a.iso2), "{}", a.name);
+        }
+    }
+
+    #[test]
     fn a_question_naming_no_group_or_alias_reads_as_before() {
         let (c, w) = (small(), world());
         for q in [
