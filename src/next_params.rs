@@ -53,13 +53,13 @@ pub const YEARS_OPTIONS: [&str; 2] = ["the latest year only", "the last ten year
 /// year beside the latest (the row caps below still cut it to the latest year when the fetch would hold too many rows).
 pub const ANNUAL_YEARS: usize = 2;
 /// The earliest year a question may name: a four-digit number before it is no year of a table.
-const NAMED_FROM: i32 = 1950;
+pub const NAMED_FROM: i32 = 1950;
 /// The words that run a question's one year on to now: before the year ("比 1990 年", "较 2015 年") or after its 年
 /// ("2015 年以来", "与 2015 年相比").
-const SINCE_BEFORE: [&str; 5] = ["比", "较", "相比", "相较", "对比"];
-const SINCE_AFTER: [&str; 6] = ["以来", "至今", "到现在", "起", "相比", "比较"];
+pub const SINCE_BEFORE: [&str; 5] = ["比", "较", "相比", "相较", "对比"];
+pub const SINCE_AFTER: [&str; 6] = ["以来", "至今", "到现在", "起", "相比", "比较"];
 /// The marks between the two years of a range ("2015 到 2024 年").
-const RANGE_MARKS: [char; 7] = ['到', '至', '-', '–', '—', '~', '～'];
+pub const RANGE_MARKS: [char; 7] = ['到', '至', '-', '–', '—', '~', '～'];
 /// The words that ask for months, not a year: each month of a span ("每月", "逐月", "月度") or the latest one ("上个月").
 const MONTH_WORDS: [&str; 12] = ["每月", "每个月", "逐月", "按月", "各月", "月度", "月份", "上个月", "上月", "本月", "这个月", "当月"];
 /// The words that ask for a part of a year, which months add up to and a year's figure cannot answer: a quarter ("一季度",

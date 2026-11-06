@@ -148,6 +148,9 @@ pub struct Basis {
     pub missing_join: String,
     #[serde(default)]
     pub dropped: Vec<BasisDropped>,
+    /// The members of `year` the run never fetched; a page with any is refused (its lack is no fact of the data).
+    #[serde(default)]
+    pub unfetched: Vec<String>,
 }
 
 /// A place a group's page left out, and why.

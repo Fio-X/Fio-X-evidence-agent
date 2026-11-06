@@ -1629,6 +1629,14 @@ pub fn check_leaf_page(
 fn basis_said(html: &str, ledger: &BTreeMap<String, String>, spec: &Spec, rows: &[Row], facts: &[Fact]) -> Vec<String> {
     let Some(b) = &spec.basis else { return Vec::new() };
     let mut off = Vec::new();
+    if !b.unfetched.is_empty() {
+        off.push(format!("basis: members {:?} of {} were never fetched, so the page cannot say they have no data", b.unfetched, b.year));
+    }
+    // a member is the basis line's to name: the countries the question names on its own are asked of the page only when
+    // they are no member, so no member is named twice
+    for code in spec.asked_places.iter().flat_map(|a| &a.asked).filter(|c| b.members.contains(c)) {
+        off.push(format!("basis: {code} is a member of the group in {} and is asked again as a place the question names", b.year));
+    }
     let uses = |key: &str| b.words.as_deref().is_some_and(|w| w.contains(key));
     let count_src = b.count.as_ref().map(|c| format!("{}{c}.n", crate::next_facts::FACT_SRC));
     // the places the count fact counts, each once
@@ -2850,7 +2858,7 @@ mod tests {
         let ledger2: BTreeMap<String, String> = [(name_src("KOR"), "韩国".to_string())].into();
         let bars2 = format!("{}{}", span("fact:chg.CHN.n", "4.0"), span("fact:chg.JPN.n", "3.0"));
         let said2 = format!("{}无数据", span(&name_src("KOR"), "韩国"));
-        let spec_of = |a: Option<AskedPlaces>| Spec { facts: Vec::new(), fmts: json!({}), members: None, asked_places: a };
+        let spec_of = |a: Option<AskedPlaces>| Spec { facts: Vec::new(), fmts: json!({}), members: None, asked_places: a, basis: None };
         let shapes = [
             ("column", rows1.clone(), facts1.clone(), asked1.clone(), ledger1.clone(), bars1.clone(), said1.clone(), "FR", "fact:val.FR.n"),
             ("change", rows2.clone(), facts2.clone(), asked2.clone(), ledger2.clone(), bars2.clone(), said2.clone(), "JPN", "fact:chg.JPN.n"),

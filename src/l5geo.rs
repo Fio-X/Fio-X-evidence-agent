@@ -462,6 +462,10 @@ pub struct GroupBasis {
     pub named: Vec<String>,
     pub dropped: Vec<String>,
     pub missing: Vec<String>,
+    /// The members of `year` the flow never fetched (the question's years gave a list without them): their lack is no
+    /// fact of the data, so the page is refused, never drawn with them named as having no data.
+    #[serde(default)]
+    pub unfetched: Vec<String>,
     pub line: Option<String>,
     pub join: String,
     pub missing_join: String,
@@ -470,10 +474,14 @@ pub struct GroupBasis {
 /// The code a group word stands for in the Chinese name list: this prefix and the group id.
 const GROUP: &str = "GROUP:";
 
-/// The year a Chinese question names (the last four-digit year 1900-2100 in it, standing alone), or None.
-fn question_year(text: &str) -> Option<i32> {
-    let chars: Vec<char> = text.chars().collect();
-    let mut year = None;
+/// The years a Chinese question writes, read as the flow's fetch window reads them (next_params question_years, its words
+/// as vocabulary): a four-digit year from NAMED_FROM on standing alone directly before the year character or a range mark, spaces aside;
+/// the earliest and the latest, the latest None (to this year) when the question writes one year that it runs on from or
+/// compares with (a SINCE_AFTER word after it, a SINCE_BEFORE word before it). None when it writes no year.
+fn question_span(text: &str) -> Option<(i32, Option<i32>)> {
+    use crate::next_params::{NAMED_FROM, RANGE_MARKS, SINCE_AFTER, SINCE_BEFORE};
+    let chars: Vec<char> = text.chars().filter(|c| !c.is_whitespace()).collect();
+    let mut years: Vec<(i32, usize)> = Vec::new();
     let mut i = 0;
     while i < chars.len() {
         if !chars[i].is_ascii_digit() {
@@ -484,14 +492,24 @@ fn question_year(text: &str) -> Option<i32> {
         while i < chars.len() && chars[i].is_ascii_digit() {
             i += 1;
         }
-        if i - start == 4 {
+        let marked = chars.get(i).is_some_and(|c| *c == '年' || RANGE_MARKS.contains(c));
+        if i - start == 4 && marked {
             let y: i32 = chars[start..i].iter().collect::<String>().parse().unwrap_or(0);
-            if (1900..=2100).contains(&y) {
-                year = Some(y);
+            if (NAMED_FROM..=2100).contains(&y) {
+                years.push((y, start));
             }
         }
     }
-    year
+    let a = years.iter().map(|y| y.0).min()?;
+    let b = years.iter().map(|y| y.0).max()?;
+    let text = |r: std::ops::Range<usize>| chars[r].iter().collect::<String>();
+    let since = a == b
+        && years.iter().any(|&(_, at)| {
+            let after = at + 5;
+            SINCE_BEFORE.iter().any(|w| text(0..at).ends_with(w))
+                || (chars.get(at + 4) == Some(&'年') && SINCE_AFTER.iter().any(|w| text(after.min(chars.len())..chars.len()).starts_with(w)))
+        });
+    Some((a, if since { None } else { Some(b) }))
 }
 
 /// The quantities a Chinese question can ask for (runtime/pi/assets/measure-families.json), compiled in so a broken file
@@ -1614,8 +1632,8 @@ impl Catalog {
     /// What a page drawn for the first group the Chinese question names counts, from the page's first and last years
     /// (`t0`, None for a page of one year, and `t1`), its place codes (`places`) and those with a row at t1 (`at_t1`): the
     /// members in `t1` (the page's last year, the year its line prints, whatever year the question names); the places the question names on
-    /// their own, which stay; the page's other places, which are no member that year (left out); the members with no row at
-    /// t1; and the page line when the page must say its basis: the member list differs inside the page's t0..t1, the group has members that are no country, or a member has no data (named). The line counts the places
+    /// their own, which stay; the page's other places, which are no member that year (left out); the members fetched with no
+    /// row at t1, and those never fetched (unfetched: the page is refused); and the page line when the page must say its basis: the member list differs inside the page's t0..t1, the group has members that are no country, or a member has no data (named). The line counts the places
     /// drawn (its `_drawn` form) where they are not the members: a member missing, or a named place beside them. None when
     /// the question names no group or the group has no members in that year.
     pub fn group_basis(
@@ -1652,7 +1670,11 @@ impl Catalog {
             }
         }
         let dropped: Vec<String> = places.iter().filter(|c| !members.contains(c) && !named.contains(c)).cloned().collect();
-        let missing: Vec<String> = members.iter().filter(|m| !at_t1.contains(m)).cloned().collect();
+        // a member is fetched when the question's places hold it (the flow fetches places_zh's list) or the page has a row
+        // of it; one that is neither was never asked for, and its lack is no fact of the data
+        let asked: Vec<String> = self.places_zh(question_zh).into_iter().map(|(_, c)| page_code(&c)).collect();
+        let unfetched: Vec<String> = members.iter().filter(|m| !places.contains(m) && !asked.contains(m)).cloned().collect();
+        let missing: Vec<String> = members.iter().filter(|m| !at_t1.contains(m) && !unfetched.contains(m)).cloned().collect();
         let beside = named.iter().any(|c| !members.contains(c) && places.contains(c));
         let drawn = !missing.is_empty() || beside;
         let tail = if missing.is_empty() { "" } else { words.missing.as_str() };
@@ -1684,6 +1706,7 @@ impl Catalog {
             named,
             dropped,
             missing,
+            unfetched,
             line: lines.pop(),
             join: words.line_join.clone(),
             missing_join: words.missing_join.clone(),
@@ -1691,20 +1714,44 @@ impl Catalog {
     }
 
     /// Place names in the Chinese question, longest name first at each position; a NOT_PLACE word is skipped whole. A
-    /// group word gives one entry per member, under the group word, for the year the question names (latest when none).
+    /// group word gives one entry per member, under the group word, of every member list over the years the question
+    /// writes (question_span: a year it runs on from to the latest list; the latest list when it writes none), each once in
+    /// list order, so every member of whichever year in that span the page ends at is fetched.
     fn places_zh(&self, text: &str) -> Vec<(String, String)> {
-        let year = question_year(text);
+        let span = question_span(text);
         let mut found = Vec::new();
         for (name, code) in self.scan_zh(text) {
             if let Some(id) = code.strip_prefix(GROUP) {
-                for c in self.group_period(id, year).map_or(&[][..], |p| &p.members[..]) {
-                    found.push((name.clone(), c.clone()));
+                for c in self.group_members_over(id, span) {
+                    found.push((name.clone(), c));
                 }
             } else {
                 found.push((name, code));
             }
         }
         found
+    }
+
+    /// The members of a registered group over a span of years (`from`, and `to` None for to the latest list), every list
+    /// that overlaps it in year order, each member once; the latest list when no span is given; none when the group has no
+    /// list in the span.
+    fn group_members_over(&self, id: &str, span: Option<(i32, Option<i32>)>) -> Vec<String> {
+        let Some(g) = self.groups.iter().find(|g| g.id == id) else { return Vec::new() };
+        let periods: Vec<&GroupPeriod> = match span {
+            None => g.periods.last().into_iter().collect(),
+            Some((from, to)) => g
+                .periods
+                .iter()
+                .filter(|p| p.to.is_none_or(|t| from <= t) && to.is_none_or(|to| p.from <= to))
+                .collect(),
+        };
+        let mut members: Vec<String> = Vec::new();
+        for m in periods.iter().flat_map(|p| &p.members) {
+            if !members.contains(m) {
+                members.push(m.clone());
+            }
+        }
+        members
     }
 
     /// The Chinese name list's words in the text, longest first at each position, each with its code (an iso2, REGION or
@@ -2449,6 +2496,47 @@ mod tests {
         assert!(b.members.contains(&"UK".to_string()) && b.dropped.is_empty() && b.missing.is_empty(), "{b:?}");
     }
 
+    /// A question's years fetch every member the page can end at (round-3 fix): a year it runs on from (since 2010) reads
+    /// every list from that year to the latest, two years every list between them; the page's basis then names as having
+    /// no data only a member that was fetched, and a member never fetched refuses the page (unfetched), never "no data".
+    #[test]
+    fn a_group_is_fetched_over_the_years_the_question_spans_and_a_member_never_fetched_is_no_missing_member() {
+        let c = world();
+        let s = |xs: &[&str]| xs.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        let brics10 = ["BR", "RU", "IN", "CN", "ZA", "EG", "ET", "IR", "AE", "ID"];
+        // since 2010: every list from 2010 on, so the page's 2025 members are all fetched
+        let q = "2010年以来金砖国家的GDP增长率";
+        assert_eq!(countries(&c, q), brics10);
+        let fetched = s(&brics10);
+        let b = c.group_basis(q, (Some(2010), 2025), (&fetched, &fetched)).unwrap();
+        assert_eq!((b.year, b.members.len(), b.missing.clone(), b.unfetched.clone()), (2025, 10, Vec::new(), Vec::new()));
+        assert_eq!(b.line.as_deref(), Some("按 {year} 年成员（{n} 国）计"), "the list changes inside 2010..2025");
+        // a member fetched with no row at all is missing (a fact of the data), not unfetched
+        let no_et: Vec<String> = fetched.iter().filter(|c| *c != "ET").cloned().collect();
+        let b = c.group_basis(q, (Some(2010), 2025), (&no_et, &no_et)).unwrap();
+        assert_eq!((b.missing.clone(), b.unfetched.clone()), (s(&["ET"]), Vec::new()));
+        // ASEAN since 2015: Timor-Leste, which joins in 2025, is fetched
+        let q = "2015年以来东盟国家人均GDP";
+        let asean11 = ["ID", "MY", "PH", "SG", "TH", "BN", "VN", "LA", "MM", "KH", "TL"];
+        assert_eq!(countries(&c, q), asean11);
+        let b = c.group_basis(q, (Some(2015), 2025), (&s(&asean11), &s(&asean11[..10]))).unwrap();
+        assert_eq!((b.members.len(), b.missing.clone(), b.unfetched.clone()), (11, s(&["TL"]), Vec::new()), "fetched, no row at 2025");
+        // two years: every list between them, none after
+        let q = "2010年和2024年金砖国家的GDP";
+        let nine = &brics10[..9];
+        assert_eq!(countries(&c, q), nine);
+        let b = c.group_basis(q, (Some(2010), 2024), (&s(nine), &s(nine))).unwrap();
+        assert_eq!((b.year, b.members.len(), b.missing.clone(), b.unfetched.clone()), (2024, 9, Vec::new(), Vec::new()));
+        assert_eq!(countries(&c, "2010年至2015年金砖国家的GDP"), &brics10[..5]);
+        // one year with nothing run on from: its list alone; a page that runs past it to 2025 has members never fetched,
+        // which are unfetched (the page is refused), never named as having no data
+        let q = "2010年金砖国家的GDP";
+        assert_eq!(countries(&c, q), &brics10[..4]);
+        let b = c.group_basis(q, (Some(2010), 2025), (&s(&brics10[..4]), &s(&brics10[..4]))).unwrap();
+        assert_eq!((b.missing.clone(), b.unfetched.clone()), (Vec::new(), s(&brics10[4..])));
+        assert!(countries(&c, "2000年以来金砖国家人口").len() == 10 && countries(&c, "2000年金砖国家人口").is_empty());
+    }
+
     #[test]
     fn a_question_naming_no_group_or_alias_reads_as_before() {
         let (c, w) = (small(), world());
@@ -2489,10 +2577,14 @@ mod tests {
                 }
             }
         }
-        assert_eq!(question_year("2010年金砖国家"), Some(2010));
-        assert_eq!(question_year("2010年至2020年"), Some(2020));
-        assert_eq!(question_year("金砖国家近十年"), None);
-        assert_eq!(question_year("12010年 65 岁"), None);
+        assert_eq!(question_span("2010年金砖国家"), Some((2010, Some(2010))));
+        assert_eq!(question_span("2010年至2020年"), Some((2010, Some(2020))));
+        assert_eq!(question_span("2015-2024 年"), Some((2015, Some(2024))));
+        assert_eq!(question_span("2010 年以来金砖国家"), Some((2010, None)));
+        assert_eq!(question_span("与 2015 年相比"), Some((2015, None)));
+        assert_eq!(question_span("金砖国家近十年"), None);
+        assert_eq!(question_span("12010年 65 岁"), None);
+        assert_eq!(question_span("人均 2000 美元"), None, "a number before no year mark is no year");
     }
 
     #[test]
