@@ -644,7 +644,7 @@ NE.RSB.GNFS.CN	External balance on goods and services (current LCU)	LCU	Local cu
 NE.RSB.GNFS.KN	External balance on goods and services (constant LCU)	LCU_K	Local currency unit, constant prices	level	money
 NE.RSB.GNFS.ZS	External balance on goods and services (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
 NE.TRD.GNFS.ZS	Trade (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
-NV.AGR.EMPL.KD	Agriculture, forestry, and fishing, value added per worker (constant 2015 US$)	USD_K15	US dollars, constant 2015 prices	level	money
+NV.AGR.EMPL.KD	Agriculture, forestry, and fishing, value added per worker (constant 2015 US$)			level	money
 NV.AGR.TOTL.CD	Agriculture, forestry, and fishing, value added (current US$)	USD	US dollars, current prices	level	money
 NV.AGR.TOTL.CN	Agriculture, forestry, and fishing, value added (current LCU)	LCU	Local currency unit, current prices	level	money
 NV.AGR.TOTL.KD	Agriculture, forestry, and fishing, value added (constant 2015 US$)	USD_K15	US dollars, constant 2015 prices	level	money
@@ -653,7 +653,7 @@ NV.AGR.TOTL.KN	Agriculture, forestry, and fishing, value added (constant LCU)	LC
 NV.AGR.TOTL.ZS	Agriculture, forestry, and fishing, value added (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
 NV.FSM.TOTL.CN	Financial intermediary services indirectly Measured (FISIM) (current LCU)	LCU	Local currency unit, current prices	level	money
 NV.FSM.TOTL.KN	Financial intermediary services indirectly Measured (FISIM) (constant LCU)	LCU_K	Local currency unit, constant prices	level	money
-NV.IND.EMPL.KD	Industry (including construction), value added per worker (constant 2015 US$)	USD_K15	US dollars, constant 2015 prices	level	money
+NV.IND.EMPL.KD	Industry (including construction), value added per worker (constant 2015 US$)			level	money
 NV.IND.MANF.CD	Manufacturing, value added (current US$)	USD	US dollars, current prices	level	money
 NV.IND.MANF.CN	Manufacturing, value added (current LCU)	LCU	Local currency unit, current prices	level	money
 NV.IND.MANF.KD	Manufacturing, value added (constant 2015 US$)	USD_K15	US dollars, constant 2015 prices	level	money
@@ -672,7 +672,7 @@ NV.MNF.MTRN.ZS.UN	Machinery and transport equipment (% of value added in manufac
 NV.MNF.OTHR.ZS.UN	Other manufacturing (% of value added in manufacturing)	PC	Percentage	share	pct_of_part_of_whole
 NV.MNF.TECH.ZS.UN	Medium and high-tech manufacturing value added (% manufacturing value added)	PC	Percentage	share	pct_of_other_whole
 NV.MNF.TXTL.ZS.UN	Textiles and clothing (% of value added in manufacturing)	PC	Percentage	share	pct_of_part_of_whole
-NV.SRV.EMPL.KD	Services, value added per worker (constant 2015 US$)	USD_K15	US dollars, constant 2015 prices	level	money
+NV.SRV.EMPL.KD	Services, value added per worker (constant 2015 US$)			level	money
 NV.SRV.TOTL.CD	Services, value added (current US$)	USD	US dollars, current prices	level	money
 NV.SRV.TOTL.CN	Services, value added (current LCU)	LCU	Local currency unit, current prices	level	money
 NV.SRV.TOTL.KD	Services, value added (constant 2015 US$)	USD_K15	US dollars, constant 2015 prices	level	money

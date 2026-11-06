@@ -49,9 +49,15 @@ def name_bracket(name):
     return m.group(1) if m else ""
 
 
-def code_for(rule, words):
+# An amount per someone (per worker, per person employed, per capita) is no total: an amount's code would print it as one
+PER_SOMEONE = re.compile(r"\bper (worker|person|capita|employed|employee|inhabitant|head)\b", re.I)
+
+
+def code_for(rule, words, name=""):
     w = fold(words)
     for code, label, rules, said in RULES:
+        if rules is AMOUNT and PER_SOMEONE.search(name):
+            continue
         if rule in rules and w in said:
             return code, label
     return None
@@ -63,7 +69,7 @@ def fill(rows, meta):
         if r["unit_code"]:
             continue
         # the metadata's words first, the name's bracket next; a 0-100 scale either one states wins over a bare "Score"
-        said = [code_for(r["rule"], w) for w in (meta.get(r["indicator"], ""), name_bracket(r["name"])) if w]
+        said = [code_for(r["rule"], w, r["name"]) for w in (meta.get(r["indicator"], ""), name_bracket(r["name"])) if w]
         said = [g for g in said if g]
         got = next((g for g in said if g[0] == "SC100"), said[0] if said else None)
         if got:

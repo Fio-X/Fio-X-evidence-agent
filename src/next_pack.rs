@@ -445,6 +445,10 @@ mod tests {
         for row in include_str!("../runtime/pi/assets/wb-units.tsv").lines().skip(1) {
             let code = row.split('\t').nth(2).unwrap_or("");
             assert!(code.is_empty() || unit_short(code).is_some(), "{row}");
+            // an amount per someone (per worker, per capita) is no total, so it never takes a total amount's code
+            if [" per worker", " per capita", " per person"].iter().any(|w| row.split('\t').nth(1).unwrap_or("").contains(w)) {
+                assert!(!["USD", "USD_K15", "LCU", "LCU_K", "INTD", "INTD_K21"].contains(&code), "{row}");
+            }
         }
     }
 
