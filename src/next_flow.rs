@@ -1421,18 +1421,16 @@ const NUMBER_FREE: [&str; 11] = [
 /// Words that make the numeral after them a number (数千万, 上千万, 近千万).
 const QUANTITY_BEFORE: &str = "数上近逾超余多几";
 
-/// number-free-words.json, the knowledge group's word list read as data (user 11-07 「全按推荐」⑤: a fixed term, a unit or
-/// a band written with a numeral or a digit is no number; a count is still checked).
+/// number-free-words.json, the knowledge group's word list read as data, built by a tool from World Bank indicator names in
+/// Chinese and the unit table only (user 11-07 「全按推荐」⑤, 11-08 item 3: no word typed in by hand; a count is still checked).
 struct FreeWords {
     terms: Vec<Vec<char>>,
     si_units: Vec<Vec<char>>,
-    rate_before: Vec<char>,
-    powers: Vec<char>,
+    rates: Vec<Vec<char>>,
+    ages: Vec<String>,
+    scales: Vec<Vec<char>>,
     scale_open: Vec<Vec<char>>,
-    scale_units: Vec<Vec<char>>,
-    age_after: Vec<Vec<char>>,
-    age_between: Vec<Vec<char>>,
-    age_unit: Vec<char>,
+    age_range: Vec<char>,
 }
 
 fn free_words() -> &'static FreeWords {
@@ -1440,28 +1438,26 @@ fn free_words() -> &'static FreeWords {
     W.get_or_init(|| {
         let v: Value = serde_json::from_str(include_str!("../runtime/pi/assets/number-free-words.json"))
             .expect("number-free-words.json parses");
-        let list = |k: &str| -> Vec<Vec<char>> {
-            v[k].as_array().expect("a word list").iter().map(|w| w.as_str().expect("a word").chars().collect()).collect()
+        let words = |k: &str| -> Vec<String> {
+            v[k].as_array().expect("a word list").iter().map(|w| w.as_str().expect("a word").to_string()).collect()
         };
-        let one = |k: &str| -> Vec<char> { v[k].as_str().expect("a word").chars().collect() };
+        let list = |k: &str| -> Vec<Vec<char>> { words(k).iter().map(|w| w.chars().collect()).collect() };
         FreeWords {
             terms: list("terms"),
             si_units: list("si_units"),
-            rate_before: one("rate_before"),
-            powers: one("powers"),
+            rates: list("rates"),
+            ages: words("ages"),
+            scales: list("scales"),
             scale_open: list("scale_open"),
-            scale_units: list("scale_units"),
-            age_after: list("age_after"),
-            age_between: list("age_between"),
-            age_unit: one("age_unit"),
+            age_range: words("age_range").iter().flat_map(|w| w.chars()).collect(),
         }
     })
 }
 
-/// Which chars of `chars` (a text outside its placeholders, `held` marking a placeholder's blank) write a FreeWords term,
-/// unit or band: a term not right after a numeral, a QUANTITY_BEFORE word or a placeholder; an SI unit not right after a
-/// numeral or a QUANTITY_BEFORE word (after a placeholder it is the value's unit); the powers of a rate's base (每千人,
-/// not 每三人); the powers of a bracketed unit label (（百万吨）); the runs of an age band (五岁以下, 15至24岁).
+/// Which chars of `chars` (a text outside its placeholders, `held` marking a placeholder's blank) write a FreeWords word:
+/// a term or a rate's base not right after a numeral, a QUANTITY_BEFORE word or a placeholder; an SI unit not right after
+/// a numeral or a QUANTITY_BEFORE word (after a placeholder it is the value's unit); a scale label right after a bracket
+/// (（百万吨）); an age or an age band of the list, its range mark read as '-' (15至24岁 as 15-24岁).
 fn number_free(chars: &[char], held: &[bool]) -> Vec<bool> {
     let w = free_words();
     let numeral = |c: char| c.is_numeric() || NUMERALS.contains(c);
@@ -1478,7 +1474,12 @@ fn number_free(chars: &[char], held: &[bool]) -> Vec<bool> {
     let mut free = vec![false; chars.len()];
     for i in 0..chars.len() {
         let mut mark = |from: usize, to: usize| free[from..to].iter_mut().for_each(|f| *f = true);
-        if let Some(t) = w.terms.iter().find(|t| at(i, t)) {
+        // a coded term stands alone among Latin letters and digits (M2 is not in PM2.5)
+        let alone = |t: &[char]| {
+            let code = |c: Option<&char>| c.is_some_and(|c| c.is_ascii_alphanumeric() || *c == '.');
+            !code(i.checked_sub(1).and_then(|j| chars.get(j))) && !code(chars.get(i + t.len()))
+        };
+        if let Some(t) = w.terms.iter().chain(&w.rates).find(|t| at(i, t) && alone(t)) {
             if before(i).is_none_or(|j| !held[j] && !counted(j)) {
                 mark(i, i + t.len());
             }
@@ -1488,27 +1489,22 @@ fn number_free(chars: &[char], held: &[bool]) -> Vec<bool> {
                 mark(i, i + u.len());
             }
         }
-        if at(i, &w.rate_before) || w.scale_open.iter().any(|o| at(i, o)) {
-            let from = i + 1;
-            let mut to = from;
-            while to < chars.len() && w.powers.contains(&chars[to]) {
-                to += 1;
-            }
-            let rate = at(i, &w.rate_before) && to > from && !chars.get(to).is_some_and(|&c| numeral(c));
-            let label = !at(i, &w.rate_before) && to > from && w.scale_units.iter().any(|u| at(to, u));
-            if rate || label {
-                mark(from, to);
+        if let Some(o) = w.scale_open.iter().find(|o| at(i, o)) {
+            if let Some(s) = w.scales.iter().find(|s| at(i + o.len(), s)) {
+                mark(i + o.len(), i + o.len() + s.len());
             }
         }
-        if numeral(chars[i]) && (i == 0 || !numeral(chars[i - 1])) {
+        if numeral(chars[i]) && (i == 0 || !numeral(chars[i - 1])) && before(i).is_none_or(|j| !held[j]) {
             let e = run_end(i);
-            if w.age_after.iter().any(|a| at(e, a)) {
-                mark(i, e);
-            } else if let Some(b) = w.age_between.iter().find(|b| at(e, b)) {
-                let s2 = e + b.len();
-                let e2 = run_end(s2);
-                if e2 > s2 && at(e2, &w.age_unit) {
-                    mark(i, e2);
+            let mut end = e;
+            if chars.get(e).is_some_and(|c| w.age_range.contains(c)) && run_end(e + 1) > e + 1 {
+                end = run_end(e + 1);
+            }
+            if chars.get(end) == Some(&'岁') {
+                let band: String =
+                    chars[i..=end].iter().map(|&c| if w.age_range.contains(&c) { '-' } else { c }).collect();
+                if w.ages.contains(&band) {
+                    mark(i, end + 1);
                 }
             }
         }
@@ -6237,8 +6233,9 @@ mod tests {
         ] {
             assert_eq!(worded_number(text), None, "{text}");
         }
-        // number-free-words.json (user 11-07 ⑤): a rate's base, an SI unit (after a value too), a bracketed unit label, an
-        // age band and a fixed term are no number; the drafts the stand-ins wrote in rounds 2-5 that these words refused.
+        // number-free-words.json (user 11-07 ⑤, 11-08 item 3: built from World Bank indicator names in Chinese and the unit
+        // table only): a rate's base, an SI unit (after a value too), a bracketed scale label, an age band and a coded term
+        // are no number; the drafts the stand-ins wrote in rounds 2-5 that the old check refused.
         for text in [
             "每百人移动电话签约数",
             "粗出生率（每千人）的变化",
@@ -6246,24 +6243,23 @@ mod tests {
             "{min.value.country_iso3}单产最低，为{min.value}千克每公顷。",
             "二氧化碳排放总量的变化（百万吨）",
             "五岁以下儿童死亡率的高低排名",
-            "青年失业率（十五至二十四岁）",
-            "零排放汽车占比",
-            "七国集团经济增长的高低排名",
-            "森林覆盖率的变化（百分点）",
         ] {
             assert_eq!(worded_number(text), None, "{text}");
         }
         for (text, typed) in [
             ("各国PM2.5浓度的高低与下降", "各国     浓度的高低与下降"),
-            ("劳动参与率（15岁以上人口）", "劳动参与率（  岁以上人口）"),
-            ("青年失业率（15至24岁，地图）", "青年失业率（     岁，地图）"),
-            ("65岁及以上人口占比的变化", "  岁及以上人口占比的变化"),
+            ("劳动参与率（65岁以上人口）", "劳动参与率（   以上人口）"),
+            ("青年失业率（15至24岁，地图）", "青年失业率（      ，地图）"),
+            ("65岁及以上人口占比的变化", "   及以上人口占比的变化"),
             ("{a}增加2000人", "{a}增加2000人"),
+            ("劳动参与率（15岁以上人口）", "劳动参与率（15岁以上人口）"),
+            ("{a}PM2.5", "{a}PM2.5"),
         ] {
             assert_eq!(number_free_text(text), typed, "{text}");
         }
         // Still numbers: a count, a span, a rate's base that is a count, a scale after a value or a count, an SI unit after
-        // a numeral, a term after a placeholder.
+        // a numeral, a term after a placeholder, and the words no source writes (an age band in Chinese numerals, 零排放,
+        // 七国集团: hand-added on 11-07, taken out on 11-08).
         for (text, word) in [
             ("四国外债总额的涨幅", "四"),
             ("把两国放在同一把尺子上", "两"),
@@ -6272,7 +6268,9 @@ mod tests {
             ("{a}百万吨", "百万"),
             ("人口过百万人", "百万"),
             ("三千克", "三千"),
-            ("{a}零排放", "零"),
+            ("青年失业率（十五至二十四岁）", "十五"),
+            ("零排放汽车占比", "零"),
+            ("七国集团经济增长的高低排名", "七"),
         ] {
             assert_eq!(worded_number(text).as_deref(), Some(word), "{text}");
         }

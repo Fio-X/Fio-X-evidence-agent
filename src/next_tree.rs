@@ -648,15 +648,16 @@ fn free_words() -> &'static J {
     W.get_or_init(|| parse(FREE_WORDS_TEXT).expect("number-free-words.json parses"))
 }
 
-/// Which chars of a text's literal (`held` marks a placeholder's blank) write a term, a unit or a band of
-/// number-free-words.json (next_flow::number_free, ported).
+/// Which chars of a text's literal (`held` marks a placeholder's blank) write a term, a unit, a rate's base, a scale label
+/// or an age band of number-free-words.json (next_flow::number_free, ported).
 fn number_free(chars: &[char], held: &[bool]) -> Vec<bool> {
     let w = free_words();
-    let list = |k: &str| w.g(k).arr().iter().map(|x| st(x).chars().collect::<Vec<char>>()).collect::<Vec<_>>();
-    let one = |k: &str| st(w.g(k)).chars().collect::<Vec<char>>();
-    let (terms, si_units, scale_open, scale_units, age_after, age_between) =
-        (list("terms"), list("si_units"), list("scale_open"), list("scale_units"), list("age_after"), list("age_between"));
-    let (rate_before, powers, age_unit) = (one("rate_before"), one("powers"), one("age_unit"));
+    let words = |k: &str| w.g(k).arr().iter().map(|x| st(x).to_string()).collect::<Vec<String>>();
+    let list = |k: &str| words(k).iter().map(|x| x.chars().collect::<Vec<char>>()).collect::<Vec<_>>();
+    let (terms, si_units, rates, scales, scale_open) =
+        (list("terms"), list("si_units"), list("rates"), list("scales"), list("scale_open"));
+    let ages = words("ages");
+    let age_range: Vec<char> = words("age_range").iter().flat_map(|x| x.chars()).collect();
     let numeral = |c: char| c.is_numeric() || NUMERALS.contains(c);
     let at = |i: usize, word: &[char]| !word.is_empty() && chars.get(i..i + word.len()) == Some(word);
     let before = |i: usize| (0..i).rev().find(|&j| held[j] || !chars[j].is_whitespace());
@@ -671,7 +672,12 @@ fn number_free(chars: &[char], held: &[bool]) -> Vec<bool> {
     let mut free = vec![false; chars.len()];
     for i in 0..chars.len() {
         let mut mark = |from: usize, to: usize| free[from..to].iter_mut().for_each(|f| *f = true);
-        if let Some(t) = terms.iter().find(|t| at(i, t)) {
+        // a coded term stands alone among Latin letters and digits (M2 is not in PM2.5)
+        let alone = |t: &[char]| {
+            let code = |c: Option<&char>| c.is_some_and(|c| c.is_ascii_alphanumeric() || *c == '.');
+            !code(i.checked_sub(1).and_then(|j| chars.get(j))) && !code(chars.get(i + t.len()))
+        };
+        if let Some(t) = terms.iter().chain(&rates).find(|t| at(i, t) && alone(t)) {
             if before(i).is_none_or(|j| !held[j] && !counted(j)) {
                 mark(i, i + t.len());
             }
@@ -681,27 +687,21 @@ fn number_free(chars: &[char], held: &[bool]) -> Vec<bool> {
                 mark(i, i + u.len());
             }
         }
-        if at(i, &rate_before) || scale_open.iter().any(|o| at(i, o)) {
-            let from = i + 1;
-            let mut to = from;
-            while to < chars.len() && powers.contains(&chars[to]) {
-                to += 1;
-            }
-            let rate = at(i, &rate_before) && to > from && !chars.get(to).is_some_and(|&c| numeral(c));
-            let label = !at(i, &rate_before) && to > from && scale_units.iter().any(|u| at(to, u));
-            if rate || label {
-                mark(from, to);
+        if let Some(o) = scale_open.iter().find(|o| at(i, o)) {
+            if let Some(s) = scales.iter().find(|s| at(i + o.len(), s)) {
+                mark(i + o.len(), i + o.len() + s.len());
             }
         }
-        if numeral(chars[i]) && (i == 0 || !numeral(chars[i - 1])) {
+        if numeral(chars[i]) && (i == 0 || !numeral(chars[i - 1])) && before(i).is_none_or(|j| !held[j]) {
             let e = run_end(i);
-            if age_after.iter().any(|a| at(e, a)) {
-                mark(i, e);
-            } else if let Some(b) = age_between.iter().find(|b| at(e, b)) {
-                let s2 = e + b.len();
-                let e2 = run_end(s2);
-                if e2 > s2 && at(e2, &age_unit) {
-                    mark(i, e2);
+            let mut end = e;
+            if chars.get(e).is_some_and(|c| age_range.contains(c)) && run_end(e + 1) > e + 1 {
+                end = run_end(e + 1);
+            }
+            if chars.get(end) == Some(&'岁') {
+                let band: String = chars[i..=end].iter().map(|&c| if age_range.contains(&c) { '-' } else { c }).collect();
+                if ages.contains(&band) {
+                    mark(i, end + 1);
                 }
             }
         }
