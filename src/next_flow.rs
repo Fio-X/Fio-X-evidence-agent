@@ -7324,7 +7324,12 @@ mod tests {
             (json!({"step": "table", "pick": [2, 4], "relation": "two"}), Value::Null),
         ] {
             let drove = run(answer.clone()).await;
-            assert_eq!(format!("{:?}", drove.result.as_ref().unwrap()), prepared, "{answer}");
+            // the same tables and claims; the main table carries the kept relation, every other none
+            let mut got = drove.result.as_ref().unwrap().clone();
+            let carried: Vec<Option<String>> = got.iter().map(|p| p.relation.map(|r| format!("{r:?}"))).collect();
+            assert_eq!(carried, [kept.as_str().map(str::to_string), None], "{answer}");
+            got.iter_mut().for_each(|p| p.relation = None);
+            assert_eq!(format!("{got:?}"), prepared, "{answer}");
             assert_eq!(drove.tools.args, today.tools.args, "{answer}: the fetches");
             assert_eq!(drove.model.offered.len(), today.model.offered.len(), "{answer}: no round added");
             let ev = of_type(&drove.events, TABLE_RELATION_EVENT);
