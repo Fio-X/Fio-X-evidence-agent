@@ -2599,6 +2599,9 @@ fn recipe_request(
         .map_err(|why| ("fill", why))?;
     zero_rows(&mut fill, &comp_rows);
     if let Some(b) = &basis {
+        // a group's members outside a ranked World Bank set (the ranking beside the group, next_params named_open) are no
+        // members without data: the full file may hold them, so the page stops rather than say so (review 11-08)
+        members_beside_set(scoped, &b.missing).map_err(|why| ("fill", why))?;
         said_basis(&mut fill, &shape, b, catalogue).map_err(|why| ("fill", why))?;
     }
     // each country the question names on its own: printed from its rows, or named on the unit line as having no data
@@ -2808,6 +2811,15 @@ fn left_out(basis: &crate::l5geo::GroupBasis) -> String {
 /// line after the line's join: the year as the main's period entry at the page's year, the count as the page's own count
 /// of the places it draws, each member with no data by its name row from the name table, every word the knowledge group's.
 /// A page that must say it with no such count, no unit line, or no name for a member it lacks is refused.
+/// A group's members with no row on a World Bank page narrowed to a ranked set (`scoped`, iso3 codes): Err, for they may be
+/// outside the set rather than without data; members with no row on any other page are said by said_basis as before.
+fn members_beside_set(scoped: bool, missing: &[String]) -> Result<(), String> {
+    if scoped && missing.iter().any(|c| c.len() == 3) {
+        return Err(format!("the group's members {missing:?} are outside the ranked set the page keeps; the full file may hold them, so the page cannot say they have no data"));
+    }
+    Ok(())
+}
+
 fn said_basis(fill: &mut Value, shape: &Shape, basis: &crate::l5geo::GroupBasis, catalogue: &dyn Catalogue) -> Result<(), String> {
     let at = format!("{} in {}", basis.group, basis.year);
     let counted = fill["knobs"]["spec"]["facts"].get(DRAWN).is_some();
@@ -6952,6 +6964,12 @@ mod tests {
         answered_places(&mut f, &shape, (&wb, false), (&country(&["CN", "JP", "KR"]), None), &Hubs).unwrap();
         assert_eq!((&f["knobs"]["spec"]["asked_places"]["asked"], &f["knobs"]["spec"]["asked_places"]["missing"]), (&json!(["CHN", "JPN", "KOR"]), &json!(["KOR"])));
         assert!(f["knobs"]["segs"]["unit"].as_array().unwrap().contains(&json!({"src": "name:zh_names:iso3:KOR"})));
+        // a group's members outside a ranked World Bank set stop the page too (review 11-08: "the five most populous of the
+        // G20"); unnarrowed, or Eurostat's two-letter codes, they are said as before
+        assert!(members_beside_set(true, &["RUS".to_string()]).is_err());
+        assert!(members_beside_set(false, &["RUS".to_string()]).is_ok());
+        assert!(members_beside_set(true, &["DE".to_string()]).is_ok());
+        assert!(members_beside_set(true, &[]).is_ok());
         // narrowed to a ranked set (review 11-08): KR outside the kept set is not said to have no data, the page stops; a
         // named country inside the set is printed as before
         let mut f = fill();
