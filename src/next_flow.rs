@@ -3421,6 +3421,9 @@ pub struct Prepared {
     /// The quantities the catalogue read in the question (the ranking's asked, each with the offered tables that hold it),
     /// as recorded in the catalogue event; an empty array when it read none.
     pub asked: Value,
+    /// The data relation the table step kept for the main table (table_relation): on the main table only, None on every
+    /// other and when the answer gave none or it was dropped. The page step passes over a recipe that answers another.
+    pub relation: Option<Relation>,
 }
 
 /// The spec step that fetches this catalogue table: same dataset, and for a World Bank id the indicator before "@2".
@@ -4684,7 +4687,7 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
     let asked = prompt;
     let mut prompt = asked.clone();
     let mut repicked = false;
-    let (mut tables, main_file, main_narrowed, main_window, cut) = 'pick: loop {
+    let (mut tables, main_file, main_narrowed, main_window, cut, kept_relation) = 'pick: loop {
         let (picks, params, relation) = match recorder.ask_step(model, &ask, &prompt, cancel).await? {
             (_, Choice::Table { picks, params, relation }) => (picks, params, relation),
             (_, other) => unreachable!("the table step was answered with {other:?}"),
@@ -4695,10 +4698,12 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
             ));
         }
         let ids: Vec<&String> = picks.iter().map(|n| &offers[n - 1].id).collect();
-        // an answer's relation, kept or dropped by the main table's shape, for the run's record only (the claims step here
-        // asks no relation); an answer with none records nothing
+        // an answer's relation, kept or dropped by the main table's shape, for the run's record (the claims step here asks no
+        // relation); an answer with none records nothing
+        // and kept on the main table's Prepared, where the page step passes over a recipe that answers another relation
+        let kept_relation = table_relation(relation, ids[0]);
         if relation.is_some() {
-            let kept = table_relation(relation, ids[0]).map(|r| format!("{r:?}"));
+            let kept = kept_relation.map(|r| format!("{r:?}"));
             recorder.program_event(TABLE_RELATION_EVENT, json!({"table": ids[0], "relation": relation, "kept": kept}))?;
         }
         let chosen: Vec<(&String, PrepareStep)> = if steps.is_empty() {
@@ -4798,7 +4803,7 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
             }
             tables.push((id.clone(), args, key, candidates));
         }
-        break 'pick (tables, main_file, main_narrowed, main_window, cut);
+        break 'pick (tables, main_file, main_narrowed, main_window, cut, kept_relation);
     };
     let mut companion_titles = BTreeMap::new();
     let mut companion_files = Vec::new();
@@ -4924,6 +4929,7 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
             claims,
             places_zh: ranking.places_zh.clone(),
             asked: json!(ranking.asked),
+            relation: if prepared.is_empty() { kept_relation } else { None },
             companions: if prepared.is_empty() {
                 std::mem::take(&mut companion_files)
             } else {

@@ -49,11 +49,12 @@ RECIPES = [
     dict(name="composition", layers=["stacked100"], eats=["annual", "one_unit", "composition_groups"], charts=[], picks=[],
          exposes=[], main="stacked100"),
     # two ends of a ten-year table: each place's change from t0 to t1 as signed bars (bars.measure change, set by layer 1),
-    # the map its level at t1; a table of one year has no two ends and goes on to column
+    # the map its level at t1; a table of one year has no two ends and goes on to column. It answers the Change relation
+    # (relation): a table step that kept another relation for the main table (a ranking of the last year) goes on to column
     dict(name="change", layers=["bubbles", "bars", "leader_notes"],
          eats=["annual", "years_2", "one_place", "one_unit", "last_year", "two_ends"],
          charts=["choropleth", "horizontal_bar", "dumbbell", "line"], picks=["changed", "claim_marks"], exposes=[], strip=True,
-         main="bars"),
+         main="bars", relation="Change"),
     # one period across places: a year, or the half year or month most places have a value at (one_freq, last_year)
     dict(name="column", layers=["bars", "bubbles", "leader_notes"], eats=["one_freq", "one_place", "one_unit", "last_year"],
          charts=["choropleth", "horizontal_bar"], picks=["ranked", "claim_marks"], exposes=[],
@@ -63,6 +64,9 @@ RECIPES = [
     # page, under the page's header and over its source line; no notes yet (the column page's notes point at a map)
     dict(name="flow", layers=["sankey"], eats=["official_flow", "one_unit"], charts=[], picks=[], exposes=[], main="sankey"),
 ]
+# The data relations a recipe may declare it answers (recipes[].relation), by the names of src/shape_registry.rs RELATIONS: a
+# recipe that declares one is passed over when the table step kept another for the main table; none answers any relation.
+RELATIONS = ("Flow", "Composition", "Map", "Change", "Ranking", "Distribution")
 # The shape conditions each node of a recipe needs its tables to meet; a recipe's conditions hold every one its layers'
 # nodes need.
 EATS = dict(map=["hub_origin", "one_unit"], ring=["monthly_companion"], callouts=[], legend=[], inset=[],
@@ -210,6 +214,8 @@ def recipes(nodes, groups):
                 raise SystemExit(f"{r['name']}: node {n} states no shape it eats (EATS)")
             if set(EATS[n]) - set(r["eats"]):
                 raise SystemExit(f"{r['name']}: node {n} eats {sorted(set(EATS[n]) - set(r['eats']))}, the recipe does not")
+        if r.get("relation") not in (None, *RELATIONS):
+            raise SystemExit(f"{r['name']}: relation {r['relation']!r}; one of {RELATIONS} or none (any relation)")
         if r.get("window", []) not in ([], ["t0", "t1"]):
             raise SystemExit(f"{r['name']}: window {r['window']!r}; the one window is ['t0', 't1']")
         if r.get("window") and "change_focus" not in r["picks"]:

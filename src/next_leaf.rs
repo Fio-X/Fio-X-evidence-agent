@@ -139,6 +139,9 @@ pub struct Recipe {
     /// Its layers whose dropped items are short notes, each with where the page spec lists them, a JSON pointer (knobs.json
     /// recipes[].short_notes, from knobs.py SHORT_NOTES): a page goes on without a few of them (next_run notes_let_go).
     pub short_notes: Vec<(String, String)>,
+    /// The data relation the recipe answers, by its name in RELATIONS (knobs.json recipes[].relation, from knobs.py): the flow
+    /// passes over it when the table step kept another for the main table; None answers any relation.
+    pub relation: Option<String>,
 }
 
 const LEAVES: &str = include_str!("../runtime/leaves_py/knobs.json");
@@ -204,6 +207,7 @@ pub fn leaves() -> &'static Leaves {
             external: words(&r["external"]),
             points: words(&r["points"]),
             short_notes: r["short_notes"].as_array().into_iter().flatten().map(|n| (word(&n["layer"]).to_string(), word(&n["at"]).to_string())).collect(),
+            relation: r["relation"].as_str().map(str::to_string),
         });
         Leaves { nodes: nodes.collect(), groups: groups.collect(), legacy, recipes: recipes.collect() }
     })

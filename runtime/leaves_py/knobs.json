@@ -1760,6 +1760,7 @@
    "exposes": [],
    "strip": true,
    "main": "bars",
+   "relation": "Change",
    "external": [
     "bubbles",
     "bars",

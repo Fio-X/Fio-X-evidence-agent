@@ -1994,6 +1994,7 @@ mod drive {
                     companions: Vec::new(),
                     // the asked quantities as the catalogue event recorded them (none on a run before they were)
                     asked: ranking.get("asked").cloned().unwrap_or_else(|| json!([])),
+                    relation: None,
                 });
             }
             let main = prepared.first_mut().ok_or("no claims-step fetch registered its picks")?;
@@ -2006,6 +2007,10 @@ mod drive {
                 let file = e["file"].as_str().ok_or("a next_composition_fetch with no file")?;
                 main.companions.push((main.id.clone(), file.to_string()));
             }
+            // the relation the table step kept for the main table, as recorded (none on a run that gave none)
+            main.relation = events.iter().filter(|e| e["type"] == crate::next_flow::TABLE_RELATION_EVENT).last().and_then(|e| {
+                crate::shape_registry::RELATIONS.into_iter().find(|r| e["kept"].as_str() == Some(format!("{r:?}").as_str()))
+            });
             Ok((prepared, parent.unwrap_or_default()))
         }
 

@@ -3121,8 +3121,9 @@ fn zeros_check(zeros: &[Value]) -> Option<PageCheck> {
     Some(PageCheck { name: "zeros_declared", passed: off.is_empty(), warning: None, measured })
 }
 
-/// The first recipe of the leaf registry (the visual group's Recipes, in its order) that draws every view the question asks
-/// for (GAP-2, unanswered_views) and whose shape the first table has, and the page's request by it (recipe_request). Err is
+/// The first recipe of the leaf registry (the visual group's Recipes, in its order) that answers the relation the table step
+/// kept for the main table (a recipe that declares none answers any), draws every view the question asks for (GAP-2,
+/// unanswered_views) and whose shape the first table has, and the page's request by it (recipe_request). Err is
 /// (recipe, stage, why): NO_RECIPE at the shape, every recipe's why given in registry order, when none fits; else the
 /// recipe that stopped past its shape.
 fn leaf_request(
@@ -3135,7 +3136,15 @@ fn leaf_request(
 ) -> Result<(&'static Recipe, Value), (&'static str, &'static str, String)> {
     let mut missed = Vec::new();
     let places = catalogue.places(question);
+    // the relation the table step kept for the main table: a recipe that answers another is not this relation
+    let kept = prepared.first().and_then(|p| p.relation).map(|r| format!("{r:?}"));
     for recipe in catalogue.recipes() {
+        if let (Some(kept), Some(answers)) = (&kept, &recipe.relation) {
+            if kept != answers {
+                missed.push((recipe.name.as_str(), format!("not this relation: the table step kept {kept}, the recipe answers {answers}")));
+                continue;
+            }
+        }
         match unanswered_views(calls, &recipe.name, question) {
             Ok(views) if views.is_empty() => {}
             Ok(views) => {
@@ -5394,6 +5403,7 @@ mod tests {
                     places_zh: Vec::new(),
                     companions: Vec::new(),
                     asked: json!([]),
+                    relation: None,
                 };
                 found = Some((
                     prepared,
@@ -6485,6 +6495,7 @@ mod tests {
             places_zh: Vec::new(),
             companions: Vec::new(),
             asked: json!([]),
+            relation: None,
         };
         let stopped = |prepared: &[Prepared]| recipe_request(dir.path(), prepared, &[], recipe(RING_RECIPE), &Hubs, ("", ("", "", ""), &[]), &Default::default()).unwrap_err();
         assert_eq!(stopped(&[]), ("shape", "not this shape: no table".to_string()));
@@ -6516,6 +6527,7 @@ mod tests {
             places_zh: Vec::new(),
             companions: Vec::new(),
             asked: json!([]),
+            relation: None,
         };
         let claims = picked_claims(&run, &table, &claim_records(&run).unwrap()).unwrap();
         (main, monthly, catalogue, shape, claims)
@@ -8105,6 +8117,7 @@ mod tests {
             places_zh: Vec::new(),
             companions: Vec::new(),
             asked: json!([]),
+            relation: None,
         };
         let cat = Groups(BTreeMap::from([("sdg_07_40".to_string(), main)]));
         let calls = std::sync::Mutex::new(Vec::new());
@@ -8464,6 +8477,7 @@ mod tests {
             places_zh: Vec::new(),
             companions: Vec::new(),
             asked: json!([]),
+            relation: None,
         };
         let (args, event) = crate::next_flow::composition_fetch(&first, &main, &Hubs).unwrap().unwrap();
         let asked = |d: &str| -> Vec<String> {
@@ -9425,6 +9439,7 @@ mod tests {
             places_zh: Vec::new(),
             companions: Vec::new(),
             asked: json!([]),
+            relation: None,
         };
         let (drawn, event) = group_charts(&shape, &table, &Hubs, &[], View::Slice, &[&picked], true).unwrap();
         assert_eq!(event["template"], "sankey");
@@ -9451,6 +9466,7 @@ mod tests {
             external: r.external.clone(),
             points: r.points.clone(),
             short_notes: r.short_notes.clone(),
+            relation: r.relation.clone(),
         }
     }
 
@@ -10024,6 +10040,7 @@ mod tests {
                 places_zh: Vec::new(),
                 companions: Vec::new(),
                 asked: json!([]),
+                relation: None,
             },
         }
     }
@@ -10337,6 +10354,7 @@ mod tests {
             places_zh: Vec::new(),
             companions: Vec::new(),
             asked: json!([]),
+            relation: None,
         };
         let by_sector = "Share of renewable energy by sector";
         let one = json!([{"dimension": "nrg_bal", "values": ["REN"]}, {"dimension": "unit", "values": ["PC"]}, {"dimension": "geo", "values": ["SE"]}]);
@@ -10397,6 +10415,7 @@ mod tests {
             places_zh: Vec::new(),
             companions: Vec::new(),
             asked: json!([]),
+            relation: None,
         };
         let unit = |t: &Prepared| {
             let m = measure_of(t, &Two, &[], Axis::Country);
@@ -10430,6 +10449,7 @@ mod tests {
             places_zh: Vec::new(),
             companions: Vec::new(),
             asked: json!([]),
+            relation: None,
         };
         let unit = |codes: &[&str]| table(json!([{"dimension": "unit", "values": codes}]));
         // a price fetched by its currency alone: with no unit dimension the currency is the unit; a unit dimension the fetch
@@ -10489,6 +10509,7 @@ mod tests {
             places_zh: Vec::new(),
             companions: Vec::new(),
             asked: json!([]),
+            relation: None,
         };
         assert_eq!(narrowed(dir.path(), &table), Ok(None), "no origins folder");
         let members = json!(["IND", "CHN", "USA", "IDN", "PAK", "NGA", "BRA"]);
@@ -10701,6 +10722,7 @@ mod tests {
             places_zh: Vec::new(),
             companions: Vec::new(),
             asked: json!([]),
+            relation: None,
         };
         assert!(narrowed(run, &table).unwrap_err().contains("not the ranking of its rows"));
         std::fs::write(origins.join("n.json"), good.to_string()).unwrap();
@@ -10739,6 +10761,7 @@ mod tests {
             places_zh: Vec::new(),
             companions: Vec::new(),
             asked: json!([]),
+            relation: None,
         };
         let scope = narrowed(dir.path(), &table).unwrap().map(|(scope, _)| scope);
         let column = recipe("column");
@@ -11748,6 +11771,7 @@ mod tests {
             places_zh: Vec::new(),
             companions: Vec::new(),
             asked: json!([]),
+            relation: None,
         };
         println!("main {main} file {} claims {} drawn {drawn:?} question {question}", prepared.file, prepared.claims.len());
         let got = leaf_request(&run, &[prepared], &drawn, &catalogue, (&question, ("标题", "导语", "栏目")), &Default::default());
@@ -14771,11 +14795,53 @@ for line in sys.stdin:
                 places_zh: Vec::new(),
                 companions: vec![("impm".into(), "impm.csv".into())],
                 asked: json!([]),
+                relation: None,
             };
             let cat = Fetched(BTreeMap::from([("imp".to_string(), main), ("impm".to_string(), monthly)]), "");
             let got = leaf_request(run.path(), &[prepared], &[], &cat, ("", ("标题", "导语", "栏目")), &Default::default()).unwrap_err();
             assert_eq!(got, ("scmp", "fill", said.to_string()), "{name}: the recipe loop");
         }
+    }
+
+    /// The relation the table step kept for the main table picks among the recipes whose shape a ten-year table has: none
+    /// kept or Change goes to the change page (its two ends), Ranking passes over it, which answers Change, to the column
+    /// page of the last year; the change recipe declares Change, the column recipe none.
+    #[test]
+    fn a_ten_year_table_kept_as_a_ranking_is_a_column_page_not_a_change_page() {
+        assert_eq!(recipe("change").relation.as_deref(), Some("Change"));
+        assert_eq!(recipe("column").relation, None);
+        let run = tempfile::tempdir().unwrap();
+        std::fs::write(run.path().join("sdg.csv"), "").unwrap();
+        let reached = |relation: Option<Relation>| {
+            let prepared = Prepared {
+                id: "sdg".into(),
+                title: String::new(),
+                file: "sdg.csv".into(),
+                args: Map::new(),
+                sheet: "s1".into(),
+                claims: Vec::new(),
+                places_zh: Vec::new(),
+                companions: Vec::new(),
+                asked: json!([]),
+                relation,
+            };
+            let cat = Fetched(BTreeMap::from([("sdg".to_string(), q1_ten_years())]), "");
+            match leaf_request(run.path(), &[prepared], &["horizontal_bar"], &cat, ("", ("标题", "导语", "栏目")), &Default::default()) {
+                Ok((recipe, _)) => (recipe.name.clone(), String::new()),
+                Err((recipe, stage, why)) => (format!("{recipe}-{stage}"), why),
+            }
+        };
+        // no candidate sheet is written, so each recipe the table reaches stops there and is named in the stop
+        std::fs::write(run.path().join("claims.jsonl"), "").unwrap();
+        let passed_over = "change: not this relation: the table step kept Ranking, the recipe answers Change";
+        for kept in [None, Some(Relation::Change)] {
+            let (recipe, why) = reached(kept);
+            assert!(recipe.starts_with("change") || why.contains("change: shadow/candidate_sheet"), "{kept:?}: {recipe} {why}");
+            assert!(!why.contains("not this relation"), "{kept:?}: {why}");
+        }
+        let (recipe, why) = reached(Some(Relation::Ranking));
+        assert!(recipe.starts_with("column") || why.contains(passed_over), "Ranking: {recipe} {why}");
+        assert!(!recipe.starts_with("change"), "Ranking: {recipe} {why}");
     }
 
     /// A catalogue whose fetched files are given rows by table (the rest as Hubs, but its name table names nothing of the
@@ -15695,6 +15761,7 @@ for line in sys.stdin:
             places_zh: Vec::new(),
             companions: vec![("impm".into(), "impm.csv".into())],
             asked: json!([]),
+            relation: None,
         };
         let got = leaf_request(run.path(), &[prepared], &[], &cat, ("", ("标题", "导语", "栏目")), &Default::default()).unwrap_err();
         assert_eq!(got, ("scmp", "fill", said.to_string()), "the recipe loop");
