@@ -45,7 +45,9 @@ from wbkit import FX, prod, Refused, esc, tw
 prod.KNOBS["leader_notes"] = dict(
     palette=("grey_accent", ("grey_accent", "mono"), "mono: the highlight is ink too"), label_count=(6, (0, 12, 1), "notes drawn (the rest are dropped and listed)"),
     note_size=(16, (16, 22, 1), "note size px; 16 at least"), side=("auto", ("auto", "left", "right"), "which edge the notes sit at"),
-    highlight=("", None, "name code of the note drawn in the accent"), width=(1140, (400, 1400, 10), "picture width px"))
+    highlight=("", None, "name code of the note drawn in the accent"),
+    first=("", None, "name codes of the notes a page cannot lose (its focus): when the plain order leaves one with no place, they are laid out first; codes no note names are ignored"),
+    width=(1140, (400, 1400, 10), "picture width px"))
 NODE = "leader_notes"
 MAX_ROWS = 400
 STEP = 24  # px between the places a note is tried at across the picture
@@ -92,6 +94,7 @@ class Frame:
             n["_alts"] = breaks(nm if n.get("name") else None, K.segs(n["text"], f"note {i + 1} text") if n.get("text") else [], val if n.get("value_text") else None,
                                 size, f.W / 2, [l for l, _ in n["_lines"] or [(n["_inner"], 0)]])
         f.hl = K.check_codes(NODE, k("highlight"), {n["name"] for n in notes if n.get("name")}) if k("highlight") else set()
+        f.first = {c for c in str(k("first") or "").split(",") if c} & {n["name"] for n in notes if n.get("name")}
         f.pal, f.side = k("palette"), k("side"); f.notes = notes; f.dropped = []
 
 
@@ -267,6 +270,15 @@ def cl_leader_notes(f, occ):
         after = (occ.boxes[:], occ.pts[:]); occ.boxes[:], occ.pts[:] = before
         other = lay(keep[::-1])
         if other[1] or (other[3], other[2]) >= (got[3], got[2]): occ.boxes[:], occ.pts[:] = after
+        else: got = other
+    # a note the page cannot lose (knob first: its focus) left with no free place: the notes again with those first (each
+    # group top first), against the same claims, kept when it drops fewer of them, then fewer in all; a page may let a
+    # plain note go, never its focus's
+    lost = lambda d: (sum(1 for i, _ in d if i in f.first), len(d))
+    if len(keep) > 1 and lost(got[1])[0]:
+        after = (occ.boxes[:], occ.pts[:]); occ.boxes[:], occ.pts[:] = before
+        other = lay(sorted(keep, key=lambda n: n.get("name") not in f.first))
+        if lost(other[1]) >= lost(got[1]): occ.boxes[:], occ.pts[:] = after
         else: got = other
     o += got[0]; f.dropped += got[1]
     o.append("</g>")

@@ -129,6 +129,12 @@ MAP_LABELS = 12
 MAP_STYLE = {"bubbles": {"projection": "view", "width": column.MAP_W, "label_top": MAP_LABELS, "label_sep": 8}, "leader_notes": {"width": column.MAP_W}}
 # The key to the circles comes with the bubbles (knobs.py WITH), drawn after them and before the notes, which keep clear of it.
 MAP_LAYERS = ["bubbles", "bubble_key", "leader_notes"]
+def notes_first(h):
+    """The leader notes laid out first when the plain order leaves one of them with no place: the page's focus
+    (column.focus), the place its headline names."""
+    return {"leader_notes": {"first": ",".join(column.focus(h))}}
+
+
 # The map layer drawn from another's leaves: the key reads the bubbles' entry.
 MAP_LEAVES = {"bubble_key": "bubbles"}
 
@@ -154,7 +160,7 @@ LEAF_LAYERS = dict(section_head=leaf(section_head.Frame, section_head.cl_section
                    rankbar=leaf(rankbar.Frame, rankbar.cl_rankbar, "rankbar"),
                    bubbles=leaf(bubbles.Laid, bubbles.cl_bubbles, "bubbles", MAP_STYLE, focus_style),
                    bubble_key=(bubble_key, None),
-                   leader_notes=leaf(leader_notes.Frame, leader_notes.cl_leader_notes, "leader_notes", MAP_STYLE),
+                   leader_notes=leaf(leader_notes.Frame, leader_notes.cl_leader_notes, "leader_notes", MAP_STYLE, notes_first),
                    sankey=leaf(sankey.Frame, sankey.cl_sankey, "sankey"),
                    stacked100=leaf(stacked100.Frame, stacked100.cl_stacked100, "stacked100"))
 LEAF_SVG = (section_head.SECTION_HEAD_SVG + rankbar.RANKBAR_SVG + bubbles.BUBBLES_SVG + leader_notes.LEADER_NOTES_SVG + sankey.SANKEY_SVG
