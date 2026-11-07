@@ -856,6 +856,12 @@
      "what": "name code of the note drawn in the accent"
     },
     {
+     "name": "first",
+     "default": "",
+     "codes": true,
+     "what": "name codes of the notes a page cannot lose (its focus): when the plain order leaves one with no place, they are laid out first; codes no note names are ignored"
+    },
+    {
      "name": "width",
      "default": 1140,
      "min": 400,
