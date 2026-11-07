@@ -728,10 +728,47 @@ fn numeral_value(run: &[char]) -> Option<usize> {
                 digit = Some(2);
                 continue;
             }
-            _ => {
-                digit = Some("零一二三四五六七八九".chars().position(|d| d == c)?);
+            '零' => {
+                digit = Some(0);
                 continue;
             }
+            '一' => {
+                digit = Some(1);
+                continue;
+            }
+            '二' => {
+                digit = Some(2);
+                continue;
+            }
+            '三' => {
+                digit = Some(3);
+                continue;
+            }
+            '四' => {
+                digit = Some(4);
+                continue;
+            }
+            '五' => {
+                digit = Some(5);
+                continue;
+            }
+            '六' => {
+                digit = Some(6);
+                continue;
+            }
+            '七' => {
+                digit = Some(7);
+                continue;
+            }
+            '八' => {
+                digit = Some(8);
+                continue;
+            }
+            '九' => {
+                digit = Some(9);
+                continue;
+            }
+            _ => return None,
         };
         if unit >= 10_000 {
             total = total.checked_add((section + digit.unwrap_or(0)).max(1).checked_mul(unit)?)?;
