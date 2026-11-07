@@ -76,10 +76,11 @@ const registerIn = (r) => async (c) => {
 const claimsOf = (art) => (existsSync(join(art, "claims.jsonl")) ? readFileSync(join(art, "claims.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : []);
 
 // 1. which templates apply, and the sheet's sentences
-assert.equal(candidates.length, 8, `8 candidates with a time column; dropped: ${JSON.stringify(dropped)}`);
-assert.deepEqual(dropped, []);
-assert.deepEqual(candidates.map((c) => c.id), ["c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8"]);
-assert.deepEqual(candidates.map((c) => c.kind), ["rank_top", "rank_bottom", "extreme_gap", "top_to_bottom_ratio", "share_of_total", "change_largest_rise", "change_largest_fall", "change_total"]);
+// every place rose: the largest fall has no row (a fall only among places that fell, review 11-08), so it is no candidate
+assert.equal(candidates.length, 7, `7 candidates with a time column; dropped: ${JSON.stringify(dropped)}`);
+assert.deepEqual(dropped, [{ kind: "change_largest_fall", why: "the SQL returned no rows" }]);
+assert.deepEqual(candidates.map((c) => c.id), ["c1", "c2", "c3", "c4", "c5", "c6", "c7"]);
+assert.deepEqual(candidates.map((c) => c.kind), ["rank_top", "rank_bottom", "extreme_gap", "top_to_bottom_ratio", "share_of_total", "change_largest_rise", "change_total"]);
 assert.equal(buildCandidates({ ref: run.ref, dimension: "geo", measure: "val" }).length, 5, "no time column: no change candidates, no year placeholders");
 for (const s of buildCandidates({ ref: run.ref, dimension: "geo", measure: "val" })) assert.doesNotMatch(s.template, /year/);
 for (const c of candidates) {
@@ -87,7 +88,7 @@ for (const c of candidates) {
   assert.match(c.sql, new RegExp(`FROM '${run.ref}'`), `${c.id} reads the data file`);
   assert.doesNotMatch(c.sql, /\bprepared\b/);
 }
-check("8 templates (5 without a time column), each reads the data file and holds no typed number");
+check("8 templates, 7 with rows here (5 without a time column), each reads the data file and holds no typed number");
 
 // 2. the sentences come from DuckDB's rows, through the real filler
 const text = Object.fromEntries(candidates.map((c) => [c.kind, c.text]));
@@ -121,7 +122,7 @@ assert.deepEqual(Object.keys(afterSheet).filter((k) => !(k in beforeSheet)), [sh
 assert.equal(Object.keys(afterSheet).filter((k) => k.startsWith("computations/")).length, 0);
 assert.equal(claimsOf(run.art).length, 0);
 check("building and writing the sheet adds one file under shadow/ and no computation, no claim");
-const picks = ["c1", "c5", "c8"];
+const picks = ["c1", "c5", "c7"];
 const registered = [];
 const reg = registerIn(run);
 const result = await pickCandidates({ candidates, picks, register: async (c) => { registered.push(c.id); return reg(c); } });

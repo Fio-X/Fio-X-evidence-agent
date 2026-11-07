@@ -110,9 +110,11 @@ export function buildCandidates(spec) {
   add("top_to_bottom_ratio", "quantitative", over(level, `ROUND(MAX(value) / CASE WHEN MIN(value) > 0 THEN MIN(value) END, 1) AS ratio${t ? ", MAX(year) AS year" : ""}`), `The highest ${word}${inYear} is {first.ratio} times the lowest.`, level);
   add("share_of_total", "quantitative", over(level, `${n}, ROUND(value / NULLIF((SELECT SUM(value) FROM (${level})), 0) * 100, 1) AS share${yearCol}`, ` ORDER BY value DESC, ${n} LIMIT 1`), `{first.${n}} accounts for {first.share} percent of the total${inYear}.`, level);
   if (t) {
-    const by = (dir) => over(move, "*", ` ORDER BY change ${dir}, ${n} LIMIT 1`);
+    // a rise only among places that rose, a fall only among those that fell (review 11-08: "changed the most upward" was said of
+    // a place that fell when every place fell); a page with none of one kind has no such candidate
+    const by = (dir) => over(move, "*", ` WHERE change ${dir === "DESC" ? ">" : "<"} 0 ORDER BY change ${dir}, ${n} LIMIT 1`);
     add("change_largest_rise", "quantitative", by("DESC"), `{first.${n}} changed the most upward from {first.from_year} to {first.to_year}: from {first.from_value} to {first.to_value}.`, move);
-    add("change_largest_fall", "quantitative", by("ASC"), `{first.${n}} changed the most downward, or rose the least, from {first.from_year} to {first.to_year}: from {first.from_value} to {first.to_value}.`, move);
+    add("change_largest_fall", "quantitative", by("ASC"), `{first.${n}} changed the most downward from {first.from_year} to {first.to_year}: from {first.from_value} to {first.to_value}.`, move);
     add("change_total", "quantitative", `WITH a AS (SELECT SUM(${m}) AS total FROM ${src} WHERE ${t} = ${earliest}), b AS (SELECT SUM(${m}) AS total FROM ${src} WHERE ${t} = ${latest}) SELECT ROUND((b.total - a.total) / NULLIF(a.total, 0) * 100, 1) AS pct, ${earliest} AS from_year, ${latest} AS to_year FROM a, b`, `The total ${word} changed by {first.pct} percent from {first.from_year} to {first.to_year}.`, move);
   }
   return out;

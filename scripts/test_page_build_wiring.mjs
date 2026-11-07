@@ -174,7 +174,8 @@ const r1Text = text(r1);
 console.log(r1Text);
 assert.equal(r1.details.mode, "candidates");
 assert.equal(idsOf(r1).length >= 3, true);
-assert.equal(r1.details.dropped, 2 + 0, "the two sum kinds are not offered");
+// the two sum kinds, and one change kind: every place moved one way, so the other way has no row (review 11-08)
+assert.equal(r1.details.dropped, 2 + 1, "the two sum kinds and the change kind with no row are not offered");
 assert.match(r1Text, /sheet=[0-9a-f]{16}/);
 assert.doesNotMatch(r1Text, /Starter SQL/);
 const key = sheetKeyOf(r1);
@@ -636,7 +637,7 @@ const namesOther = (value) => String(value).split(/[^A-Za-z0-9_]/).find((word) =
       extreme_gap: `The gap between the highest and the lowest OBS VALUE in ${last} is ${fmt(max - min)}.`,
       top_to_bottom_ratio: `The highest OBS VALUE in ${last} is ${fmt(Math.round((max / min) * 10) / 10)} times the lowest.`,
       change_largest_rise: `${rise.name} changed the most upward from ${first} to ${last}: from ${fmt(rise.from)} to ${fmt(rise.to)}.`,
-      change_largest_fall: `${fall.name} changed the most downward, or rose the least, from ${first} to ${last}: from ${fmt(fall.from)} to ${fmt(fall.to)}.`,
+      change_largest_fall: `${fall.name} changed the most downward from ${first} to ${last}: from ${fmt(fall.from)} to ${fmt(fall.to)}.`,
     };
   };
   for (const [name, shape] of [["sector", SECTOR], ["flow", FLOW]]) {
@@ -655,17 +656,21 @@ const namesOther = (value) => String(value).split(/[^A-Za-z0-9_]/).find((word) =
     assert.equal(first.details.mode, "candidates", `${label}: ${text(first).slice(0, 300)}`);
     const sheetFile = JSON.parse(readFileSync(join(run, `${cand.SHEET_PREFIX}${sheetKeyOf(first)}.json`), "utf8"));
     const kinds = sheetFile.candidates.map((c) => c.kind);
-    assert.deepEqual(kinds, ["rank_top", "rank_bottom", "extreme_gap", "top_to_bottom_ratio", "change_largest_rise", "change_largest_fall"], `${label}: the same operators apply to every shape`);
+    // a rise only among places that rose, a fall only among those that fell (review 11-08): a shape whose places all moved one
+    // way offers one of the two
+    const moves = kinds.filter((k) => k.startsWith("change_largest_"));
+    assert.ok(moves.length >= 1, `${label}: a change kind is offered`);
+    assert.deepEqual(kinds.filter((k) => !k.startsWith("change_largest_")), ["rank_top", "rank_bottom", "extreme_gap", "top_to_bottom_ratio"], `${label}: the same operators apply to every shape`);
     const ref = sheetFile.candidates[0].sql.match(/'(data\/[^']+)'/)[1];
     const specs = cand.buildCandidates({ ref, dimensions: shape.cols, measure: "OBS_VALUE", time: "TIME_PERIOD" });
     // 16a. every operator's series is its slice: a chart of that SQL binds to the claim as same_sql, and the series SQL is the SQL of no operator
     const ids = sheetFile.candidates.map((c) => c.id);
-    for (const picks of [ids.slice(0, 5), [ids[5], ids[0], ids[3]]]) {
+    for (const picks of [ids.slice(0, 5), [ids[ids.length - 1], ids[0], ids[3]]]) {
       const reg = await t.execute("m2", { ...args, sheet: sheetKeyOf(first), picks });
       assert.equal(reg.details.mode, "picks", `${label}: ${text(reg).slice(0, 400)}`);
     }
     const claims = claimsOf(run);
-    assert.equal(new Set(claims.map((x) => x.claim_id)).size, 6, `${label}: all six registered (a claim picked twice has one id)`);
+    assert.equal(new Set(claims.map((x) => x.claim_id)).size, sheetFile.candidates.length, `${label}: every offered one registered (a claim picked twice has one id)`);
     const norm = (sql) => String(sql).replace(/\s+/g, " ").trim();
     for (const c of sheetFile.candidates) {
       const claim = claims.find((x) => x.claim === c.text);

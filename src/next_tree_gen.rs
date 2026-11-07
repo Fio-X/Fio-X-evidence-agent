@@ -792,7 +792,21 @@ fn finding_declared(d: &J, page_in: &J, reg: &J) -> Result<J, String> {
                     None => false,
                     Some(code) => {
                         let v = key(&st(sid), code)?;
-                        cond.g("above").num().is_none_or(|b| v > b) && cond.g("below").num().is_none_or(|b| v < b)
+                        // not_outnumbered: the places moving the case's way are no fewer than those moving the other way (a
+                        // lone riser among fallers is no "rose most" headline, review of r3 and s6 11-08; SCMP P24: the
+                        // majority's direction first)
+                        let even = if cond.g("not_outnumbered").truthy() {
+                            let mut up = 0usize;
+                            let mut down = 0usize;
+                            for c in &codes {
+                                let w = key(&st(sid), c)?;
+                                if w > 0.0 { up += 1 } else if w < 0.0 { down += 1 }
+                            }
+                            if cond.g("above").num().is_some() { up >= down } else { down >= up }
+                        } else {
+                            true
+                        };
+                        even && cond.g("above").num().is_none_or(|b| v > b) && cond.g("below").num().is_none_or(|b| v < b)
                     }
                 }
             }

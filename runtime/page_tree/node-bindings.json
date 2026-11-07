@@ -524,7 +524,8 @@
        "if": {
         "key_of": "ranked",
         "at": "first",
-        "above": 0
+        "above": 0,
+        "not_outnumbered": true
        },
        "finding": "Rise",
        "subject": "rise",
