@@ -131,6 +131,9 @@ pub struct Drafts {
     /// The page-level fields speak for the first-to-last change (draft_for): a reworded title that asks a level with no
     /// change word is refused (Ask::Text changes, next_flow level_question).
     pub change_title: bool,
+    /// The number of distinct places the page draws (next_run places_drawn: the place codes of its drawn rows): a count of
+    /// places of that number (四国) is no typed number on the text step (Ask::Text places). None when the run does not know it.
+    pub places_drawn: Option<usize>,
 }
 
 /// The one placeholder of a claim template that holds its number: not a time column, not the chart's category column.
@@ -245,6 +248,7 @@ pub fn draft_for(
         has_scope: false,
         scope_mark: None,
         change_title: lead == (Relation::Change, View::FirstToLast),
+        places_drawn: None,
     }
 }
 
@@ -378,6 +382,7 @@ impl Drafts {
             scoped: self.scoped_fields(),
             titles: self.titles(),
             mark: self.scope_mark.clone().unwrap_or_default(),
+            places: self.places_drawn,
         }
     }
 

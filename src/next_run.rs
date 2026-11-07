@@ -2221,7 +2221,7 @@ const COMPOSITION_SCOPE: &str = "图中各国";
 fn text_drafts(page: &Page, form: Option<(Relation, View)>, titles: &[String], fill: Option<&Value>) -> Drafts {
     let finding = fill.and_then(dek_finding);
     let mark = fill.and_then(|fill| fill["finding"]["set"].as_str()).map(str::to_string);
-    match fill.filter(|fill| fill["composition"].is_object()) {
+    let mut drafts = match fill.filter(|fill| fill["composition"].is_object()) {
         Some(fill) => {
             let cut = &fill["composition"];
             let left_out = ["others", "dropped", "left_out"].iter().any(|k| cut[*k].as_array().is_some_and(|a| !a.is_empty()));
@@ -2234,7 +2234,24 @@ fn text_drafts(page: &Page, form: Option<(Relation, View)>, titles: &[String], f
             .with_finding(finding)
             .with_scope_mark(mark)
             .with_periods(&page.times),
-    }
+    };
+    drafts.places_drawn = fill.and_then(places_drawn);
+    drafts
+}
+
+/// The number of distinct places a page's fill draws: the codes of the place dimensions (next_flow::place_dims) across the
+/// rows its layers print a value of (`drawn`, each a row of `rows` by its src), as the core counts them on the page tree
+/// (next_tree places_drawn). None when no drawn row holds a place.
+fn places_drawn(fill: &Value) -> Option<usize> {
+    let srcs: BTreeSet<&str> = fill["drawn"].as_array()?.iter().filter_map(|d| d["src"].as_str()).collect();
+    let dims = crate::next_flow::place_dims();
+    let codes: BTreeSet<&str> = fill["rows"]
+        .as_array()?
+        .iter()
+        .filter(|r| r["src"].as_str().is_some_and(|s| srcs.contains(s)))
+        .flat_map(|r| dims.iter().filter_map(|d| r["dims"][d.as_str()].as_str()))
+        .collect();
+    (!codes.is_empty()).then_some(codes.len())
 }
 
 /// The kicker of a composition page (its fill holds a composition record, the stacked100 declaration (node-bindings.json)): the registry's title words of a
@@ -3388,6 +3405,7 @@ pub async fn reword(
         scoped,
         titles,
         mark,
+        places,
         ..
     } = &ask
     else {
@@ -3447,6 +3465,7 @@ pub async fn reword(
                 scoped: scoped.clone(),
                 titles: titles.clone(),
                 mark: mark.clone(),
+                places: *places,
             };
             let mut kept = BTreeMap::new();
             let mut given = Map::new();
@@ -3467,6 +3486,7 @@ pub async fn reword(
                         scoped: Vec::new(),
                         titles: Vec::new(),
                         mark: String::new(),
+                        places: None,
                     };
                     let alone = json!({"step": "text", "text": {}, "names": {id.as_str(): name}});
                     if !given.contains_key(id)
@@ -5246,6 +5266,7 @@ mod tests {
             has_scope: false,
             scope_mark: None,
             change_title: false,
+            places_drawn: None,
         }
     }
 
@@ -8937,6 +8958,24 @@ mod tests {
         no_headline.as_object_mut().unwrap().remove(HEADLINE);
         assert_eq!(title_and_kicker(Some(&no_headline), false, label, "发电总量"), (label.into(), frame[0].into()));
         assert_eq!(composition_kicker(Some(&json!({}))), None, "a page that is no composition keeps its own kicker");
+    }
+
+    /// The text step's count of places is the distinct place codes (geo, a World Bank country) of the rows the fill's layers
+    /// draw, a row only read left out; the ask carries it; a fill with no drawn row knows none.
+    #[test]
+    fn the_text_step_counts_the_places_the_fill_draws() {
+        let row = |src: &str, dims: Value| json!({"src": src, "table": "t", "dims": dims, "time": "2024", "value": 1.0});
+        let fill = json!({
+            "rows": [row("a", json!({"geo": "DE", "siec": "C"})), row("b", json!({"geo": "DE", "siec": "G"})), row("c", json!({"geo": "FR"})),
+                row("d", json!({"geo": "IT"})), row("e", json!({"country": "JPN"}))],
+            "drawn": [{"layer": "bars", "src": "a"}, {"layer": "bars", "src": "b"}, {"layer": "bars", "src": "c"}, {"layer": "dots", "src": "e"}]});
+        assert_eq!(places_drawn(&fill), Some(3));
+        assert_eq!(places_drawn(&json!({"rows": fill["rows"], "drawn": []})), None);
+        assert_eq!(places_drawn(&json!({"knobs": {}})), None);
+        let mut drafts = q1_drafts();
+        drafts.places_drawn = places_drawn(&fill);
+        let Ask::Text { places, .. } = drafts.ask(Vec::new()) else { unreachable!() };
+        assert_eq!(places, Some(3));
     }
 
     /// The text step's fields on a composition page hold none of the first fetch's total claims or its measure, only the

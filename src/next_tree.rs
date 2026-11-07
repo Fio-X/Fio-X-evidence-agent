@@ -710,6 +710,82 @@ fn number_free(chars: &[char], held: &[bool]) -> Vec<bool> {
     free
 }
 
+/// The value of a run of NUMERALS (next_flow::numeral_value, ported); None for a run with 几 or a digit.
+fn numeral_value(run: &[char]) -> Option<usize> {
+    let (mut total, mut section, mut digit) = (0usize, 0usize, None::<usize>);
+    for &c in run {
+        let unit = match c {
+            '十' => 10,
+            '百' => 100,
+            '千' => 1000,
+            '万' => 10_000,
+            '亿' => 100_000_000,
+            '〇' => {
+                digit = Some(0);
+                continue;
+            }
+            '两' => {
+                digit = Some(2);
+                continue;
+            }
+            _ => {
+                digit = Some("零一二三四五六七八九".chars().position(|d| d == c)?);
+                continue;
+            }
+        };
+        if unit >= 10_000 {
+            total = total.checked_add((section + digit.unwrap_or(0)).max(1).checked_mul(unit)?)?;
+            section = 0;
+        } else {
+            section += digit.unwrap_or(1) * unit;
+        }
+        digit = None;
+    }
+    Some(total + section + digit.unwrap_or(0))
+}
+
+/// Which chars of a text's literal (`held` marks a placeholder's blank) count the places the page draws: a numeral run
+/// right before a place_counts noun of number-free-words.json whose value is `places`, not after 第, a QUANTITY_BEFORE
+/// word or a placeholder (next_flow::place_count, ported; user 11-07). None marks none.
+fn place_count(chars: &[char], held: &[bool], places: Option<usize>) -> Vec<bool> {
+    let mut free = vec![false; chars.len()];
+    let Some(places) = places else { return free };
+    let nouns: Vec<Vec<char>> = free_words().g("place_counts").arr().iter().map(|x| st(x).chars().collect()).collect();
+    let numeral = |c: char| NUMERALS.contains(c);
+    let mut i = 0;
+    while i < chars.len() {
+        if !numeral(chars[i]) {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < chars.len() && numeral(chars[i]) {
+            i += 1;
+        }
+        let before = (0..start).rev().find(|&j| held[j] || !chars[j].is_whitespace());
+        let free_before = before.is_none_or(|j| !held[j] && chars[j] != '第' && !QUANTITY_BEFORE.contains(chars[j]));
+        let noun = nouns.iter().any(|n| chars.get(i..i + n.len()) == Some(n.as_slice()));
+        if free_before && noun && numeral_value(&chars[start..i]) == Some(places) {
+            free[start..i].iter_mut().for_each(|f| *f = true);
+        }
+    }
+    free
+}
+
+/// The number of distinct places a page draws: the codes of the place_dims of number-free-words.json across the rows of
+/// its record's drawn entries (each a row of `rows` by its src), as next_run counts them on the fill. None when no drawn
+/// row holds a place.
+fn places_drawn(page: &J, rows: &[J]) -> Option<usize> {
+    let srcs: BTreeSet<String> = page.g("record").g("drawn").arr().iter().map(|d| st(d.g("src"))).collect();
+    let dims: Vec<String> = free_words().g("place_dims").arr().iter().map(st).collect();
+    let codes: BTreeSet<String> = rows
+        .iter()
+        .filter(|r| srcs.contains(&st(r.g("src"))))
+        .flat_map(|r| dims.iter().filter_map(|d| r.g("dims").g(d).s().map(str::to_string)).collect::<Vec<_>>())
+        .collect();
+    (!codes.is_empty()).then_some(codes.len())
+}
+
 /// A full match of `s` (or of `s` less one final newline, as Python's `$`).
 fn full(s: &str, f: impl Fn(&str) -> bool) -> bool {
     f(s) || s.strip_suffix('\n').is_some_and(&f)
@@ -2695,6 +2771,8 @@ fn words_lint(page: &J, errs: &mut Vec<String>) {
             errs.push("request: sha256 is not the hash of its text".into());
         }
     }
+    // a count of the places the page draws (四国 on a page of four) is the data's own count (user 11-07)
+    let places = places_drawn(page, page.g("facts").g("rows").arr());
     for (path, v) in walk(page, "$") {
         if v.g("kind").s() != Some("Text") {
             continue;
@@ -2725,7 +2803,8 @@ fn words_lint(page: &J, errs: &mut Vec<String>) {
             }
         }
         let free = number_free(&chars, &held);
-        chars.iter_mut().zip(free).filter(|(_, f)| *f).for_each(|(c, _)| *c = ' ');
+        let counted = place_count(&chars, &held, places);
+        chars.iter_mut().zip(free.into_iter().zip(counted)).filter(|(_, (f, n))| *f || *n).for_each(|(c, _)| *c = ' ');
         if let Some(hit) = worded_number(&chars, &held) {
             if path.starts_with("$.texts") || path.starts_with("$.finding") {
                 errs.push(format!("{path}: literal words type a number ({}); a number is a fact run", J::str(&hit).repr()));
@@ -5974,6 +6053,8 @@ pub fn content_problems(spec: &J, inp: &J, ext: &[String], reg: &J) -> (Vec<Stri
             }
         }
     }
+    // a count of the places the page draws (四国 on a page of four) is the data's own count (user 11-07)
+    let places = places_drawn(spec, inp.g("rows").arr());
     for (path, v) in walk(spec, "$") {
         let rs = if v.g("kind").s() == Some("Text") {
             v.g("runs")
@@ -5984,7 +6065,8 @@ pub fn content_problems(spec: &J, inp: &J, ext: &[String], reg: &J) -> (Vec<Stri
         };
         let (mut chars, held) = literal_chars(rs, inp);
         let free = number_free(&chars, &held);
-        chars.iter_mut().zip(free).filter(|(_, f)| *f).for_each(|(c, _)| *c = ' ');
+        let counted = place_count(&chars, &held, places);
+        chars.iter_mut().zip(free.into_iter().zip(counted)).filter(|(_, (f, n))| *f || *n).for_each(|(c, _)| *c = ' ');
         let hit = worded_number(&chars, &held);
         let literal: String = chars.iter().zip(&held).filter(|(_, h)| !**h).map(|(c, _)| *c).collect();
         if hit.is_some() || has_digit(&literal) {
@@ -8368,6 +8450,41 @@ mod tests {
         bars.get_mut("marks").unwrap().set("paint", J::obj_of(vec![("scale", J::str("s1"))]));
         o.get_mut("frames").and_then(|f| f.get_mut("chart")).unwrap().set("legend", J::Arr(vec![J::Int(30), J::Int(228)]));
         o
+    }
+
+    /// User 11-07: a count of places (四国, 两个国家, 四个经济体) in the core's words is a number, passed by C3 and the words
+    /// lint only when it is the number of distinct places the page draws (q1 draws BE DE FR SE: four); any other count, a
+    /// numeral that counts no place, and a count on a page whose places are unknown stay refused.
+    #[test]
+    fn next_tree_a_count_of_places_passes_only_when_the_page_draws_that_many() {
+        let env = read("pos-q1-b.json");
+        let reg = reg_of(&env);
+        let inp = env.g("input");
+        let ext: Vec<String> = env.g("external").arr().iter().map(st).collect();
+        assert_eq!(places_drawn(inp.g("page_spec"), inp.g("rows").arr()), Some(4));
+        let with_kicker = |w: &str| {
+            let mut spec = inp.g("page_spec").clone();
+            spec.get_mut("texts").and_then(|t| t.get_mut("kicker")).unwrap().set("runs", J::Arr(vec![J::obj_of(vec![("w", J::str(w))])]));
+            content_problems(&spec, inp, &ext, &reg).0
+        };
+        for w in ["四国对比", "四个经济体对比", "四个国家对比", "四地对比"] {
+            assert_eq!(with_kicker(w), Vec::<String>::new(), "{w}");
+        }
+        for w in ["三国对比", "两国对比", "五个国家对比", "十年前对比", "四国占三成", "近四国对比"] {
+            let errs = with_kicker(w);
+            assert!(errs.iter().any(|e| e.starts_with("C3 $.texts.kicker")), "{w}: {errs:?}");
+            assert!(errs.iter().any(|e| e.contains("lint: $.texts.kicker")), "{w}: {errs:?}");
+        }
+        // digits stay refused, by the schema before C3
+        assert!(with_kicker("4个国家对比").iter().any(|e| e.starts_with("C1 schema")));
+        let lit = |w: &str| (w.chars().collect::<Vec<char>>(), vec![false; w.chars().count()]);
+        for (w, places, blanked) in [("三国", Some(3), true), ("三国", Some(4), false), ("两国", Some(2), true), ("四个经济体", Some(4), true), ("三国", None, false), ("十年前", Some(10), false)] {
+            let (chars, held) = lit(w);
+            assert_eq!(place_count(&chars, &held, places)[0], blanked, "{w} {places:?}");
+        }
+        // a page with no drawn record knows no count
+        let bare = J::obj_of(vec![("kind", J::str("Page"))]);
+        assert_eq!(places_drawn(&bare, inp.g("rows").arr()), None);
     }
 
     /// q1 (pos-q1-b) through the core with `overlay`: the bars' SVG and record, or every failure line.

@@ -241,6 +241,9 @@ pub enum Ask {
         /// registry, its count a fact placeholder): on a `scoped` field whose draft holds it, a reword that drops it is
         /// refused. Empty on a page with no set.
         mark: String,
+        /// The number of distinct places the page draws (next_page Drafts::places_drawn): a count of places of that number
+        /// (四国, 两个国家) is no typed number (place_count_free); None, none is.
+        places: Option<usize>,
     },
     /// The image review of the published page's screenshot: each of VISION_QUESTIONS answered yes or no, with a one-line
     /// reason for a no. Advice only: the answer is recorded, it never stops a run and never verifies a page.
@@ -831,6 +834,7 @@ impl Ask {
                 changes,
                 scoped,
                 titles,
+                places,
                 ..
             } => {
                 let mut allowed = json!({"step": "text",
@@ -847,6 +851,9 @@ impl Ask {
                 }
                 if !titles.is_empty() {
                     allowed["titles"] = json!({"fields": titles, "words": QUESTION_WORDS});
+                }
+                if let Some(n) = places {
+                    allowed["place_count"] = json!({"places": n, "nouns": free_words().place_counts.iter().map(|w| w.iter().collect::<String>()).collect::<Vec<_>>()});
                 }
                 allowed
             }
@@ -1125,6 +1132,7 @@ impl Ask {
                 scoped,
                 titles,
                 mark,
+                places,
             } => {
                 let text = strings(&map["text"])
                     .ok_or_else(|| self.refuse("text must map field numbers to wording"))?;
@@ -1141,14 +1149,16 @@ impl Ask {
                     if let Err(why) = same_placeholders(draft, revised) {
                         return Err(self.refuse(format!("field '{id}': {why}")));
                     }
+                    // A count of the places the page draws (四国 on a page of four) is the data's own count (user 11-07).
+                    let counted = place_count_free(revised, *places);
                     // Every number on the page comes from the data: a row value through a placeholder, or a label of the picked tables.
-                    if let Some(typed) = number_not_allowed(&number_free_text(revised), numbers) {
+                    if let Some(typed) = number_not_allowed(&number_free_text(&counted), numbers) {
                         return Err(self.refuse(format!(
                             "field '{id}': '{typed}' is a typed number; {}; keep the drafted {{placeholders}}",
                             typed_rule(numbers)
                         )));
                     }
-                    if let Some(word) = worded_number(revised) {
+                    if let Some(word) = worded_number(&counted) {
                         return Err(self.refuse(format!(
                             "field '{id}': '{word}' is a number in words (a count, a multiple, a share, a half) that no data gave; {NUMBER_WORD_RULE}; keep the drafted {{placeholders}} and leave it out"
                         )));
@@ -1432,6 +1442,10 @@ struct FreeWords {
     scale_open: Vec<Vec<char>>,
     scale_close: Vec<Vec<char>>,
     age_range: Vec<char>,
+    /// The nouns that make the numeral right before them a count of places (四国, 两个国家), longest first.
+    place_counts: Vec<Vec<char>>,
+    /// The row dimensions whose codes are places (next_run places_drawn).
+    pub place_dims: Vec<String>,
 }
 
 fn free_words() -> &'static FreeWords {
@@ -1452,8 +1466,91 @@ fn free_words() -> &'static FreeWords {
             scale_open: list("scale_open"),
             scale_close: list("scale_close"),
             age_range: words("age_range").iter().flat_map(|w| w.chars()).collect(),
+            place_counts: {
+                let mut nouns = list("place_counts");
+                nouns.sort_by_key(|n| std::cmp::Reverse(n.len()));
+                nouns
+            },
+            place_dims: words("place_dims"),
         }
     })
+}
+
+/// The row dimensions whose codes are places (number-free-words.json place_dims), for counting the places a page draws.
+pub fn place_dims() -> &'static [String] {
+    &free_words().place_dims
+}
+
+/// The value of a run of NUMERALS (四 4, 两 2, 十二 12, 二十七 27); None for a run with 几 or a digit.
+fn numeral_value(run: &[char]) -> Option<usize> {
+    let (mut total, mut section, mut digit) = (0usize, 0usize, None::<usize>);
+    for &c in run {
+        let unit = match c {
+            '十' => 10,
+            '百' => 100,
+            '千' => 1000,
+            '万' => 10_000,
+            '亿' => 100_000_000,
+            '〇' => {
+                digit = Some(0);
+                continue;
+            }
+            '两' => {
+                digit = Some(2);
+                continue;
+            }
+            _ => {
+                digit = Some("零一二三四五六七八九".chars().position(|d| d == c)?);
+                continue;
+            }
+        };
+        if unit >= 10_000 {
+            total = total.checked_add((section + digit.unwrap_or(0)).max(1).checked_mul(unit)?)?;
+            section = 0;
+        } else {
+            section += digit.unwrap_or(1) * unit;
+        }
+        digit = None;
+    }
+    Some(total + section + digit.unwrap_or(0))
+}
+
+/// Which chars of `chars` (a text outside its placeholders, `held` marking a placeholder's blank) count the places the page
+/// draws: a run of NUMERALS right before a place_counts noun (四国, 两个国家, 四个经济体) whose value is `places`, not after
+/// 第, a QUANTITY_BEFORE word or a placeholder (user 11-07: a count of places is a number, allowed only when it is the count
+/// the page draws). Digits stay a typed number: the core's schema refuses any digit in a literal word. None marks none.
+fn place_count(chars: &[char], held: &[bool], places: Option<usize>) -> Vec<bool> {
+    let mut free = vec![false; chars.len()];
+    let Some(places) = places else { return free };
+    let w = free_words();
+    let numeral = |c: char| NUMERALS.contains(c);
+    let mut i = 0;
+    while i < chars.len() {
+        if !numeral(chars[i]) {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < chars.len() && numeral(chars[i]) {
+            i += 1;
+        }
+        let before = (0..start).rev().find(|&j| held[j] || !chars[j].is_whitespace());
+        let free_before = before.is_none_or(|j| !held[j] && chars[j] != '第' && !QUANTITY_BEFORE.contains(chars[j]));
+        let noun = w.place_counts.iter().any(|n| chars.get(i..i + n.len()) == Some(n.as_slice()));
+        if free_before && noun && numeral_value(&chars[start..i]) == Some(places) {
+            free[start..i].iter_mut().for_each(|f| *f = true);
+        }
+    }
+    free
+}
+
+/// The text with each count of the places the page draws blanked (place_count), one space per char, placeholders kept as
+/// written; any other numeral as written.
+pub fn place_count_free(text: &str, places: Option<usize>) -> String {
+    let outside = outside_placeholders(text);
+    let held: Vec<bool> = outside.iter().zip(text.chars()).map(|(o, t)| *o == ' ' && t != ' ').collect();
+    let free = place_count(&outside, &held, places);
+    text.chars().zip(free).map(|(c, f)| if f { ' ' } else { c }).collect()
 }
 
 /// Which chars of `chars` (a text outside its placeholders, `held` marking a placeholder's blank) write a FreeWords word:
@@ -5303,6 +5400,7 @@ mod tests {
             scoped: Vec::new(),
             titles: Vec::new(),
             mark: String::new(),
+            places: None,
         }
     }
 
@@ -5896,6 +5994,7 @@ mod tests {
             scoped: Vec::new(),
             titles: Vec::new(),
             mark: String::new(),
+            places: None,
         };
         let answer = |t: &str| json!({"step": "text", "text": {"1": t}, "names": {}});
         let monthly = ask(&["2026-08"]);
@@ -5952,6 +6051,7 @@ mod tests {
             scoped: Vec::new(),
             titles: Vec::new(),
             mark: String::new(),
+            places: None,
         };
         let answer = |n: &str, t: &str| json!({"step": "text", "text": {n: t}, "names": {}});
         let refused = ask(&["1"]).check(&answer("1", "哪国最高")).unwrap_err();
@@ -5993,6 +6093,7 @@ mod tests {
             scoped: scoped.iter().map(|s| s.to_string()).collect(),
             titles: Vec::new(),
             mark: String::new(),
+            places: None,
         };
         let answer = |n: &str, t: &str| json!({"step": "text", "text": {n: t}, "names": {}});
         let both = ask(&["1", "2"]);
@@ -6039,6 +6140,7 @@ mod tests {
             scoped: scoped.iter().map(|s| s.to_string()).collect(),
             titles: titles.iter().map(|t| t.to_string()).collect(),
             mark: String::new(),
+            places: None,
         };
         let answer = |n: &str, t: &str| json!({"step": "text", "text": {n: t}, "names": {}});
         let titled = ask(&["1"], &[], &[]);
@@ -6294,6 +6396,48 @@ mod tests {
         }
     }
 
+    /// User 11-07: a count of places (三国, 两国, 四个经济体, 5个国家) is a number, allowed on the text step only when it is the
+    /// number of places the page draws; at any other count, or an unknown one, it is refused as before, and a numeral that
+    /// counts no place stays a number.
+    #[test]
+    fn a_count_of_places_passes_only_when_the_page_draws_that_many() {
+        let ask = |places: Option<usize>| Ask::Text {
+            fields: BTreeMap::from([("1".to_string(), "{first.name}最高".to_string())]),
+            slots: Vec::new(),
+            numbers: Vec::new(),
+            periods: Vec::new(),
+            changes: Vec::new(),
+            scoped: Vec::new(),
+            titles: Vec::new(),
+            mark: String::new(),
+            places,
+        };
+        let said = |text: &str| json!({"step": "text", "text": {"1": text}, "names": {}});
+        for (text, n) in [
+            ("三国中{first.name}最高", 3),
+            ("两国相比，{first.name}最高", 2),
+            ("四个经济体里{first.name}最高", 4),
+            ("二十七国中{first.name}最高", 27),
+            ("三方之中{first.name}最高", 3),
+        ] {
+            assert!(ask(Some(n)).check(&said(text)).is_ok(), "{text} on a page of {n}");
+            assert!(ask(Some(n + 1)).check(&said(text)).is_err(), "{text} on a page of {}", n + 1);
+            assert!(ask(None).check(&said(text)).is_err(), "{text} with no count");
+        }
+        assert_eq!(ask(Some(3)).allowed()["place_count"]["places"], 3);
+        // digits stay a typed number: the core's schema refuses a digit in a literal word
+        assert!(ask(Some(5)).check(&said("5个国家里{first.name}最高")).is_err());
+        // still numbers on a page of three: a span, a share, a count after a quantity word or a placeholder
+        for text in ["十年前{first.name}最高", "三国中{first.name}占三成", "近三国{first.name}最高", "{first.name}三国最高"] {
+            assert!(ask(Some(3)).check(&said(text)).is_err(), "{text}");
+            assert!(ask(Some(10)).check(&said(text)).is_err(), "{text}");
+        }
+        assert_eq!(place_count_free("三国与两国", Some(3)), " 国与两国");
+        for (run, n) in [("两", Some(2)), ("十", Some(10)), ("十二", Some(12)), ("二十七", Some(27)), ("一百零五", Some(105)), ("27", None), ("几", None), ("2十", None)] {
+            assert_eq!(numeral_value(&run.chars().collect::<Vec<_>>()), n, "{run}");
+        }
+    }
+
     /// Replays scripted replies, one per request, and keeps what each request offered.
     /// A value the schema types as an object, sent as a string holding exactly one JSON object, is decoded once and then
     /// checked as usual; any other string, and every other key, is left as sent.
@@ -6308,6 +6452,7 @@ mod tests {
             scoped: Vec::new(),
             titles: Vec::new(),
             mark: String::new(),
+            places: None,
         };
         let good = json!({"step": "text", "text": json!({"1": "{first.name}居首"}).to_string(), "names": json!({"s1": "占比"}).to_string()});
         assert_eq!(text.decode(&good).1, vec!["text", "names"]);

@@ -1,5 +1,5 @@
 {
- "_doc": "Words with a numeral or a digit that write a fixed term, a unit, a rate's base, an age or a scale label, never a number (next_flow::number_free, next_tree::number_free). Built by tools from source metadata only, no word typed in by hand: World Bank indicator names in Chinese (api.worldbank.org/v2/zh/indicator, sha256 385436f8d4f5f406, 29533 rows) and the unit table unit-short-zh.tsv (one row per Eurostat/World Bank unit code). terms: coded names in indicator names (PM2.5), blanked unless a numeral, a quantity word or a placeholder comes right before; si_units: blanked after a placeholder too, never after a numeral or a quantity word; rates: a rate's base taken literally (每千人; 每三人 is not here and stays a number); ages: an age or an age band taken literally, a range mark (- – — 至 到) read as '-'; scales: a scale label, blanked only right after an opening bracket and right before its closing one (（百万吨）, not （百万以上）). A word with an ASCII digit is left out (the page tree takes no digit in a word), so it stays a number. A count of places (四国) is not here: it is checked against the places the page draws.",
+ "_doc": "Words with a numeral or a digit that write a fixed term, a unit, a rate's base, an age or a scale label, never a number (next_flow::number_free, next_tree::number_free). Built by tools from source metadata only, no word typed in by hand: World Bank indicator names in Chinese (api.worldbank.org/v2/zh/indicator, sha256 385436f8d4f5f406, 29533 rows) and the unit table unit-short-zh.tsv (one row per Eurostat/World Bank unit code). terms: coded names in indicator names (PM2.5), blanked unless a numeral, a quantity word or a placeholder comes right before; si_units: blanked after a placeholder too, never after a numeral or a quantity word; rates: a rate's base taken literally (每千人; 每三人 is not here and stays a number); ages: an age or an age band taken literally, a range mark (- – — 至 到) read as '-'; scales: a scale label, blanked only right after an opening bracket and right before its closing one (（百万吨）, not （百万以上）). A word with an ASCII digit is left out (the page tree takes no digit in a word), so it stays a number. A count of places (四国) is not here: it is checked against the places the page draws. place_counts and place_dims are the count rule's own words (user 11-07 ⑤: a count of places 四国 is checked against the places the page draws), not free words and not built from source metadata: place_counts are the nouns that make the Chinese numeral right before them a count of places (四国, 两个国家, 四个经济体; digits stay a typed number), blanked only when its value is the number of distinct places the page draws (the codes of place_dims across its drawn rows); any other count stays a number.",
  "terms": [],
  "si_units": [
   "千瓦时",
@@ -64,5 +64,17 @@
   "—",
   "至",
   "到"
+ ],
+ "place_counts": [
+  "个经济体",
+  "个国家",
+  "个地区",
+  "国",
+  "方",
+  "地"
+ ],
+ "place_dims": [
+  "geo",
+  "country"
  ]
 }
