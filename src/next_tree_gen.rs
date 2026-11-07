@@ -949,9 +949,15 @@ fn finding_declared(d: &J, page_in: &J, reg: &J) -> Result<J, String> {
         (true, None) => false,
     };
     let mut out = J::obj_of(vec![("facts", facts), ("reads", J::Arr(reads)), ("finding", J::Null), ("subject", subject)]);
-    match headline.filter(|_| ratio_holds) {
+    // with the ratio not holding, a level finding keeps a headline without it (LEVEL_PLAIN_HEADLINE)
+    let headline = match (headline, ratio_holds) {
+        (Some(_), false) if name == "Level" => Some(crate::shape_registry::LEVEL_PLAIN_HEADLINE),
+        (h, true) => h,
+        (_, false) => None,
+    };
+    match headline {
         Some((plain, scoped)) => said.set("headline", J::obj_of(vec![("title", worded(plain)), ("scoped", worded(scoped))])),
-        None if headline.is_some() => out.set("fell_back", J::str("the finding has no headline: its ratio's other is not above 0")),
+        None if !ratio_holds => out.set("fell_back", J::str("the finding has no headline: its ratio's other is not above 0")),
         None => out.set("fell_back", J::str("the finding has no headline: a fact it needs is not the page's")),
     }
     out.set("finding", said);
