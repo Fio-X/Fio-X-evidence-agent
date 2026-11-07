@@ -592,11 +592,13 @@ fn blank_denominators(q: &mut [char]) {
             i = from;
             continue;
         }
-        let end = (from..q.len().min(from + d.max_chars + 1))
-            .find(|&j| stops.iter().any(|w| at(q, j, w)))
-            .unwrap_or_else(|| q.len().min(from + d.max_chars + 1));
+        let stop = (from..q.len().min(from + d.max_chars + 1)).find(|&j| stops.iter().any(|w| at(q, j, w)));
+        let end = stop.unwrap_or_else(|| q.len().min(from + d.max_chars + 1));
         let close = (from..end).find(|&j| closes.iter().any(|w| at(q, j, w)));
-        if let Some(to) = close {
+        // with no closing word the whole runs to the clause's end (占 GDP，谁顺差最大: user 11-07 「全按推荐」⑦, only the
+        // numerator is asked), a stop or the question's end within max_chars; past max_chars nothing is blanked
+        let clause = stop.or((q.len() <= from + d.max_chars).then_some(q.len()));
+        if let Some(to) = close.or(clause) {
             q[from..to].iter_mut().for_each(|c| *c = '\0');
             i = to;
         } else {
@@ -3313,6 +3315,11 @@ mod tests {
         assert_eq!(ids("各国总人口的变化"), ["population"]);
         // an opening word with no closing word near it blanks nothing
         assert_eq!(ids("各国碳排放占了多少，和GDP"), ["co2", "gdp"]);
+        // with no closing word the whole runs to the clause end (user 11-07 ⑦): 占 GDP's GDP is the whole, the numerator
+        // alone is asked; a quantity after the clause still asks; 占领 opens no whole
+        assert!(ids("德国、中国 2024 年经常账户余额占 GDP，谁顺差最大？").iter().all(|id| id != "gdp"));
+        assert_eq!(ids("各国研发支出占 GDP，和总人口"), ["population"]);
+        assert_eq!(ids("占领区总人口的变化"), ["population"]);
         // 占比 is a share said whole, and a joining word ends a whole: the quantity asked after it stays asked (review 11-05)
         assert_eq!(ids("可再生能源占比和人均GDP的比重"), ["renewable_share", "gdp_pc"]);
         assert_eq!(ids("各国可再生能源占比，以及煤炭发电份额"), ["renewable_share", "electricity_mix"]);
