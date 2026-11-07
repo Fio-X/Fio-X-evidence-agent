@@ -1,0 +1,48 @@
+{
+ "_doc": "Words with a numeral or a digit that write a fixed term, a unit or a band, never a number (next_flow::number_free, next_tree::number_free). terms: names and fixed phrases, blanked unless a numeral, a quantity word or a placeholder comes right before; si_units: units whose prefix is part of the unit, blanked after a placeholder too (a value's unit), never after a numeral or a quantity word; rate_before + a run of powers: a rate's base (每千人, 每十万人), not a count (每三人 stays a number); scale_open + a run of powers + a scale_units word: a unit label in brackets (（百万吨）); a run + one of age_after, or a run + one of age_between + a run + age_unit: an age band (五岁以下, 15至24岁, 65岁及以上). A count of places (四国) is not here: it is checked against the places the page draws.",
+ "terms": [
+  "PM2.5",
+  "PM10",
+  "零排放",
+  "七国集团",
+  "二十国集团",
+  "百分点"
+ ],
+ "si_units": [
+  "千克",
+  "千米",
+  "千瓦时",
+  "千瓦",
+  "千焦"
+ ],
+ "rate_before": "每",
+ "powers": "十百千万亿",
+ "scale_open": [
+  "（",
+  "("
+ ],
+ "scale_units": [
+  "吨",
+  "美元",
+  "欧元",
+  "元",
+  "桶",
+  "人",
+  "公顷",
+  "立方米"
+ ],
+ "age_after": [
+  "岁及以上",
+  "岁及以下",
+  "岁以上",
+  "岁以下"
+ ],
+ "age_between": [
+  "至",
+  "到",
+  "-",
+  "–",
+  "—"
+ ],
+ "age_unit": "岁"
+}

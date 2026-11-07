@@ -639,6 +639,75 @@ const RATIO_AFTER: [&str; 6] = ["倍", "成", "％", "%", "分之", "个百分�
 const RATIO_WORDS: [&str; 11] = ["一半", "过半", "大半", "半数", "减半", "近半", "逾半", "超半", "翻番", "翻倍", "数倍"];
 const NUMBER_FREE: [&str; 11] = ["二氧化碳", "统一成", "一成不变", "十分", "万一", "千万", "一一", "两者", "千瓦", "百分比", "零售"];
 const QUANTITY_BEFORE: &str = "数上近逾超余多几";
+/// The knowledge group's list of words that write a fixed term, a unit or a band with a numeral or a digit (user 11-07
+/// 「全按推荐」⑤), read as data: number_free is a port of next_flow::number_free.
+const FREE_WORDS_TEXT: &str = include_str!("../runtime/pi/assets/number-free-words.json");
+
+fn free_words() -> &'static J {
+    static W: std::sync::OnceLock<J> = std::sync::OnceLock::new();
+    W.get_or_init(|| parse(FREE_WORDS_TEXT).expect("number-free-words.json parses"))
+}
+
+/// Which chars of a text's literal (`held` marks a placeholder's blank) write a term, a unit or a band of
+/// number-free-words.json (next_flow::number_free, ported).
+fn number_free(chars: &[char], held: &[bool]) -> Vec<bool> {
+    let w = free_words();
+    let list = |k: &str| w.g(k).arr().iter().map(|x| st(x).chars().collect::<Vec<char>>()).collect::<Vec<_>>();
+    let one = |k: &str| st(w.g(k)).chars().collect::<Vec<char>>();
+    let (terms, si_units, scale_open, scale_units, age_after, age_between) =
+        (list("terms"), list("si_units"), list("scale_open"), list("scale_units"), list("age_after"), list("age_between"));
+    let (rate_before, powers, age_unit) = (one("rate_before"), one("powers"), one("age_unit"));
+    let numeral = |c: char| c.is_numeric() || NUMERALS.contains(c);
+    let at = |i: usize, word: &[char]| !word.is_empty() && chars.get(i..i + word.len()) == Some(word);
+    let before = |i: usize| (0..i).rev().find(|&j| held[j] || !chars[j].is_whitespace());
+    let counted = |j: usize| numeral(chars[j]) || QUANTITY_BEFORE.contains(chars[j]);
+    let run_end = |i: usize| {
+        let mut e = i;
+        while e < chars.len() && (numeral(chars[e]) || (chars[e] == '.' && chars.get(e + 1).is_some_and(|&n| numeral(n)))) {
+            e += 1;
+        }
+        e
+    };
+    let mut free = vec![false; chars.len()];
+    for i in 0..chars.len() {
+        let mut mark = |from: usize, to: usize| free[from..to].iter_mut().for_each(|f| *f = true);
+        if let Some(t) = terms.iter().find(|t| at(i, t)) {
+            if before(i).is_none_or(|j| !held[j] && !counted(j)) {
+                mark(i, i + t.len());
+            }
+        }
+        if let Some(u) = si_units.iter().find(|u| at(i, u)) {
+            if before(i).is_none_or(|j| held[j] || !counted(j)) {
+                mark(i, i + u.len());
+            }
+        }
+        if at(i, &rate_before) || scale_open.iter().any(|o| at(i, o)) {
+            let from = i + 1;
+            let mut to = from;
+            while to < chars.len() && powers.contains(&chars[to]) {
+                to += 1;
+            }
+            let rate = at(i, &rate_before) && to > from && !chars.get(to).is_some_and(|&c| numeral(c));
+            let label = !at(i, &rate_before) && to > from && scale_units.iter().any(|u| at(to, u));
+            if rate || label {
+                mark(from, to);
+            }
+        }
+        if numeral(chars[i]) && (i == 0 || !numeral(chars[i - 1])) {
+            let e = run_end(i);
+            if age_after.iter().any(|a| at(e, a)) {
+                mark(i, e);
+            } else if let Some(b) = age_between.iter().find(|b| at(e, b)) {
+                let s2 = e + b.len();
+                let e2 = run_end(s2);
+                if e2 > s2 && at(e2, &age_unit) {
+                    mark(i, e2);
+                }
+            }
+        }
+    }
+    free
+}
 
 /// A full match of `s` (or of `s` less one final newline, as Python's `$`).
 fn full(s: &str, f: impl Fn(&str) -> bool) -> bool {
@@ -2654,6 +2723,8 @@ fn words_lint(page: &J, errs: &mut Vec<String>) {
                 }
             }
         }
+        let free = number_free(&chars, &held);
+        chars.iter_mut().zip(free).filter(|(_, f)| *f).for_each(|(c, _)| *c = ' ');
         if let Some(hit) = worded_number(&chars, &held) {
             if path.starts_with("$.texts") || path.starts_with("$.finding") {
                 errs.push(format!("{path}: literal words type a number ({}); a number is a fact run", J::str(&hit).repr()));
@@ -5910,7 +5981,9 @@ pub fn content_problems(spec: &J, inp: &J, ext: &[String], reg: &J) -> (Vec<Stri
         } else {
             continue;
         };
-        let (chars, held) = literal_chars(rs, inp);
+        let (mut chars, held) = literal_chars(rs, inp);
+        let free = number_free(&chars, &held);
+        chars.iter_mut().zip(free).filter(|(_, f)| *f).for_each(|(c, _)| *c = ' ');
         let hit = worded_number(&chars, &held);
         let literal: String = chars.iter().zip(&held).filter(|(_, h)| !**h).map(|(c, _)| *c).collect();
         if hit.is_some() || has_digit(&literal) {
