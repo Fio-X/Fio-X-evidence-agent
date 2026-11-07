@@ -3320,6 +3320,13 @@ mod tests {
         assert!(ids("德国、中国 2024 年经常账户余额占 GDP，谁顺差最大？").iter().all(|id| id != "gdp"));
         assert_eq!(ids("各国研发支出占 GDP，和总人口"), ["population"]);
         assert_eq!(ids("占领区总人口的变化"), ["population"]);
+        // GDP the question asks for is still checked (user 11-08 item 4): the numerator of a share, the quantity ranked,
+        // a quantity after a whole that ends at the clause
+        assert_eq!(ids("各国GDP占世界比重"), ["gdp"]);
+        assert_eq!(ids("各国 GDP 占世界的比重，谁最高？"), ["gdp"]);
+        assert_eq!(ids("东盟各国GDP谁最高"), ["gdp"]);
+        assert_eq!(ids("2023年各国GDP的高低排名"), ["gdp"]);
+        assert_eq!(ids("各国研发支出占 GDP，GDP 谁最高？"), ["gdp"]);
         // 占比 is a share said whole, and a joining word ends a whole: the quantity asked after it stays asked (review 11-05)
         assert_eq!(ids("可再生能源占比和人均GDP的比重"), ["renewable_share", "gdp_pc"]);
         assert_eq!(ids("各国可再生能源占比，以及煤炭发电份额"), ["renewable_share", "electricity_mix"]);
