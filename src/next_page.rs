@@ -24,7 +24,7 @@
 use std::collections::BTreeMap;
 
 use crate::next_flow::{
-    level_question, number_not_allowed, placeholders, question_word, unanswered_word, worded_number,
+    level_question, number_not_allowed, place_count_free, placeholders, question_word, unanswered_word, worded_number,
     year_after_fact_period, year_after_period, Ask, Choice,
 };
 use crate::shape_registry::{
@@ -454,7 +454,8 @@ impl Drafts {
                 .1;
             if placeholders(wording) != placeholders(draft)
                 || number_not_allowed(wording, &self.numbers).is_some()
-                || worded_number(wording).is_some()
+                // a count of the places the page draws passed the check (place_count_free): the same count passes here
+                || worded_number(&place_count_free(wording, self.places_drawn)).is_some()
                 || unanswered_word(wording).is_some()
                 || (!self.periods.is_empty() && year_after_period(wording).is_some())
                 || year_after_fact_period(wording).is_some()
@@ -760,6 +761,18 @@ mod tests {
         assert!(drafts
             .revised(&Choice::Search { query: "x".into() })
             .is_err());
+        // a count of places the check let through (the page draws that many) is kept by the recheck; any other is refused
+        let counted = |n: Option<usize>| {
+            let mut d = draft(&claims, &charts, q1_numbers());
+            d.places_drawn = n;
+            d.revised(&Choice::Text {
+                text: BTreeMap::from([("1".to_string(), "四国对比".to_string())]),
+                names: BTreeMap::new(),
+            })
+        };
+        assert!(counted(Some(4)).is_ok());
+        assert!(counted(Some(3)).is_err());
+        assert!(counted(None).is_err());
     }
 
     /// q1's and q6's stand-in pages: the bars drew each place's change between two ends, the title asked who is highest.
