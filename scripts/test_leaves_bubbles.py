@@ -250,13 +250,15 @@ class MapExtent(unittest.TestCase):
             self.assertEqual(RS_CONST[rs], knob(k), k)
 
     def test_a_world_tables_edge_circles_keep_their_labels(self):
-        # every circle labelled on the extent layer 1 gives, China's beside it on the box's east edge among them; on the old
-        # extent (a fixed 4 degrees past the box: some 11 px here) China's label found no place
+        # every circle labelled on the extent layer 1 gives, China's beside it on the box's east edge among them, at the full
+        # scale; on the old extent (a fixed 4 degrees past the box: some 11 px here) China's label found no place on the
+        # node's first pass, and its retry (more leader angles, the circles a step smaller) places it at 20 px (11-07)
         f, items = self.draw(Q5, 2, POINT.get, ZH3)
-        self.assertEqual(f.dropped, [])
+        self.assertEqual((f.dropped, f.r_used), ([], 22))
         self.assertEqual(sorted(c for c, _ in f.label_boxes), sorted(Q5))
         f, _ = self.draw(Q5, 2, POINT.get, ZH3, ext=box_pad(items))
-        self.assertEqual(f.dropped, [("CHN", "no free place for the label")])
+        self.assertEqual((f.dropped, f.r_used), ([], 20))
+        self.assertEqual(sorted(c for c, _ in f.label_boxes), sorted(Q5))
 
     def test_an_eu_tables_edge_circles_keep_their_labels(self):
         f, _ = self.draw(EU2, 1, lambda c: POINT[ISO3[c]], ZH2)
