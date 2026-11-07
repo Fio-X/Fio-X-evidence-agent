@@ -452,6 +452,11 @@ pub struct Draft {
     /// A World Bank table the question names no place of, with more economies than a chart shows: every country is open,
     /// and the item "t<n>.places" asks which economies the page keeps (wb-rank-by.json).
     pub places_open: bool,
+    /// A World Bank table with more economies than a chart shows whose question names countries only (no region word): a
+    /// ranking the question asks for still fixes the economies kept (ranked_option), the named ones being the ranking's
+    /// subject, not its set ("the ten most populous countries, where does Nigeria rank", n45); with no ranking they fill
+    /// the places as before.
+    pub named_open: bool,
     /// Set by the flow before the pick for an annual table whose companion shortlist has a monthly twin, when the answer
     /// fills geo with one aggregate (the hub): those answers take the ring's years, not the years item.
     pub window: Option<Window>,
@@ -855,7 +860,9 @@ pub fn draft(table: TableMeta, texts: &[String], places: &[Place]) -> Draft {
             breakdown.push(format!("{source}{FLOW_JOIN}{target}"));
         }
     }
-    let places_open = table.worldbank && places.is_empty() && table.places.len() > MAX_CHART_ROWS;
+    let many = table.worldbank && table.places.len() > MAX_CHART_ROWS;
+    let places_open = many && places.is_empty();
+    let named_open = many && !places.is_empty() && !places.contains(&Place::Region);
     Draft {
         table,
         breakdown,
@@ -863,6 +870,7 @@ pub fn draft(table: TableMeta, texts: &[String], places: &[Place]) -> Draft {
         named,
         ambiguous,
         places_open,
+        named_open,
         window: None,
         named_years: None,
         ranked: None,
@@ -870,10 +878,10 @@ pub fn draft(table: TableMeta, texts: &[String], places: &[Place]) -> Draft {
 }
 
 /// The wb-rank-by.json option a draft's asked ranking fixes (its 1-based number and the option): only for a table with every
-/// country open, and only an option ranked by another indicator that is the ranking's reference. None leaves "t<n>.places"
-/// to the pick, as before.
+/// country open, or one whose question names countries beside the ranking (named_open), and only an option ranked by another
+/// indicator that is the ranking's reference. None leaves "t<n>.places" to the pick, or the named places to fill, as before.
 pub fn ranked_option(d: &Draft) -> Option<(usize, &'static RankBy)> {
-    let asked = d.ranked.as_ref().filter(|_| d.places_open)?;
+    let asked = d.ranked.as_ref().filter(|_| d.places_open || d.named_open)?;
     wb_rank_by()
         .1
         .iter()
@@ -1111,7 +1119,12 @@ pub fn fill(
             })
             .collect()
         };
-        let values = if !countries.is_empty() {
+        // A ranking the program fixes (ranked_option) keeps its economies; a named one is the ranking's subject, drawn when
+        // the ranking holds it.
+        let ranking = ranked_option(draft).is_some();
+        let values = if ranking {
+            Vec::new()
+        } else if !countries.is_empty() {
             ids(&mut countries.iter().copied())
         } else if region {
             ids(&mut EU27.iter().map(|c| {
@@ -1124,7 +1137,7 @@ pub fn fill(
             Vec::new()
         };
         if values.is_empty() {
-            if !countries.is_empty() || region {
+            if !ranking && (!countries.is_empty() || region) {
                 return Err(holds_none(draft));
             }
             open = Some((WB_PLACE_DIM.to_string(), table.places.len()));
@@ -1218,7 +1231,14 @@ pub fn fill(
                     .map(str::to_string)
                     .collect()
             };
-            let values: Vec<String> = if !countries.is_empty() {
+            // A region word beside EU members only ("the EU countries' early-leaver rate, where does Italy rank", n51): the
+            // named members are the subject, the region the set, so geo is the region's members, the named ones among them.
+            let members_named = region
+                && !countries.is_empty()
+                && countries.iter().all(|iso| EU27.contains(&estat_code(iso)));
+            let values: Vec<String> = if members_named {
+                keep(&mut EU27.iter().copied())
+            } else if !countries.is_empty() {
                 keep(&mut countries.iter().map(|iso| estat_code(iso)))
             } else if by_place {
                 [EU_AGGREGATE]
@@ -1325,7 +1345,7 @@ pub fn fill(
     // out, ranked at the latest year most of them have), at most the chart's rows over the years.
     if let Some((_, count)) = open
         .as_ref()
-        .filter(|(dim, _)| draft.places_open && dim == WB_PLACE_DIM)
+        .filter(|(dim, _)| (draft.places_open || ranked_option(draft).is_some()) && dim == WB_PLACE_DIM)
     {
         let (cap, options) = wb_rank_by();
         let fixed = ranked_option(draft);
@@ -2990,10 +3010,10 @@ mod tests {
     }
 
     /// Must fail: a ranking by a reference wb-rank-by.json does not register is not the program's (the item is asked as
-    /// before); a ranking beside named places, or on a table with few economies, narrows nothing; with no ranking asked the
+    /// before); a ranking on a table with few economies, or beside a region word, narrows nothing; with no ranking asked the
     /// pick is the model's and the event says so.
     #[test]
-    fn a_ranking_the_registry_cannot_rank_by_or_beside_named_places_is_not_used() {
+    fn a_ranking_the_registry_cannot_rank_by_is_not_used() {
         let unregistered = Draft {
             ranked: asked("XX.NOT.REGISTERED", Some(5)),
             ..draft(world_bank(217), &[], &[])
@@ -3005,13 +3025,12 @@ mod tests {
         assert_eq!(filled.args["narrow"]["n"], 8);
         assert_eq!(filled.event["narrow"]["from"], "pick");
         assert_eq!(filled.event["narrow"]["asked"], Value::Null);
-        let japan = [Place::Country("X3".into())];
-        let named = Draft {
+        let region = [Place::Region, Place::Country("X3".into())];
+        let beside_region = Draft {
             ranked: asked("SP.POP.TOTL", Some(5)),
-            ..draft(world_bank(217), &[], &japan)
+            ..draft(world_bank(217), &[], &region)
         };
-        assert_eq!(ranked_option(&named), None);
-        assert!(!fill(&named, 1, &picks(&[]), &japan, 2026).unwrap().args.contains_key("narrow"));
+        assert_eq!(ranked_option(&beside_region), None);
         let few = Draft {
             ranked: asked("SP.POP.TOTL", Some(5)),
             ..draft(world_bank(80), &[], &[])
@@ -3020,6 +3039,58 @@ mod tests {
         assert!(!fill(&few, 1, &picks(&[]), &[], 2026).unwrap().args.contains_key("narrow"));
         let none = draft(world_bank(217), &[], &[]);
         assert_eq!(fill(&none, 1, &picks(&[("t1.places", 3)]), &[], 2026).unwrap().event["narrow"]["from"], "pick");
+    }
+
+    /// n45: a ranking the question asks for beside the countries it names ("the ten most populous countries, where does
+    /// Nigeria rank") keeps the ranking's economies, as with no place named: the named country is the ranking's subject,
+    /// drawn when the ranking holds it, not the one place fetched (one row, nothing to rank). Two shapes: one named country,
+    /// and two; with no ranking asked the named ones fill the places as before.
+    #[test]
+    fn a_ranking_beside_named_countries_keeps_the_rankings_economies() {
+        for named in [vec![Place::Country("X3".into())], vec![Place::Country("X3".into()), Place::Country("X4".into())]] {
+            let d = Draft {
+                ranked: asked("SP.POP.TOTL", Some(5)),
+                ..draft(world_bank(217), &[], &named)
+            };
+            assert!(!d.places_open && d.named_open);
+            assert_eq!(ranked_option(&d).map(|(i, _)| i), Some(3));
+            assert!(items(1, &d).iter().all(|(k, _)| k != "t1.places"));
+            let filled = fill(&d, 1, &picks(&[]), &named, 2026).unwrap();
+            assert_eq!(
+                filled.args["narrow"],
+                json!({"dimension": "country", "rule": "top", "by": "SP.POP.TOTL", "n": 5, "exclude": []})
+            );
+            assert!(
+                !filled.args.get("filters").and_then(Value::as_array).is_some_and(|f| f.iter().any(|f| f["dimension"] == "country")),
+                "every country is fetched, the tool ranks"
+            );
+            assert_eq!(filled.event["narrow"]["from"], "question");
+            let unranked = draft(world_bank(217), &[], &named);
+            let filled = fill(&unranked, 1, &picks(&[]), &named, 2026).unwrap();
+            assert!(!filled.args.contains_key("narrow"));
+            assert_eq!(filter(&filled, "country").unwrap().len(), named.len());
+        }
+    }
+
+    /// n51: a region word beside EU members only ("the EU countries' early-leaver rate, where does Italy rank") fills geo with
+    /// the region's members, the named one among them, not the named one alone. Must fail: a named country outside the EU
+    /// beside the region (the EU and China) keeps the named places as before; a member named alone stays alone.
+    #[test]
+    fn a_region_beside_its_named_members_fills_geo_with_the_region() {
+        let mut geo: Vec<&str> = EU27.to_vec();
+        geo.extend(["EU27_2020", "CN", "NO"]);
+        let d = |places: &[Place]| draft(eurostat("edat_x", vec![dim("geo", &geo)]), &[], places);
+        for places in [
+            vec![Place::Region, Place::Country("IT".into())],
+            vec![Place::Region, Place::Country("GR".into()), Place::Country("IT".into())],
+        ] {
+            let filled = fill(&d(&places), 1, &picks(&[]), &places, 2026).unwrap();
+            assert_eq!(filter(&filled, "geo").unwrap(), EU27, "{places:?}");
+        }
+        let eu_cn = [Place::Region, Place::Country("CN".into())];
+        assert_eq!(filter(&fill(&d(&eu_cn), 1, &picks(&[]), &eu_cn, 2026).unwrap(), "geo").unwrap(), ["CN"]);
+        let italy = [Place::Country("IT".into())];
+        assert_eq!(filter(&fill(&d(&italy), 1, &picks(&[]), &italy, 2026).unwrap(), "geo").unwrap(), ["IT"]);
     }
 
     /// The nrg_bal codes of nrg_bal_s the q2 stand-in run's probe found held for DE (the metabase's 95 but GIC2020-2030,
