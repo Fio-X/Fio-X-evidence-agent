@@ -22,6 +22,8 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WB = os.path.join(REPO, "runtime", "pi", "assets", "wb-units.tsv")
 
 AMOUNT = {"money"}
+# an amount per person: its own codes, filled only when the name says per capita / per person
+PER_CAPITA = {"per_capita_money"}
 # (code, English label written into unit_label, rules the code may fill, metadata/name words read, case and space folded)
 RULES = [
     ("USD", "US dollars, current prices", AMOUNT,
@@ -33,6 +35,16 @@ RULES = [
     ("INTD", "International dollars (PPP), current prices", AMOUNT, {"current international $"}),
     ("INTD_K21", "International dollars (PPP), constant 2021 prices", AMOUNT,
      {"constant 2021 international $"}),
+    # an amount per person (user 11-07 「全按推荐」⑥: the World Bank's own Chinese, 现价美元 / 现价国际元, per person)
+    ("USD_HAB", "US dollars per capita, current prices", PER_CAPITA,
+     {"current us$", "usd current [usd_cur]", "usd current"}),
+    ("USD_K15_HAB", "US dollars per capita, constant 2015 prices", PER_CAPITA, {"constant 2015 us$"}),
+    ("INTD_HAB", "International dollars (PPP) per capita, current prices", PER_CAPITA, {"current international $"}),
+    ("INTD_K21_HAB", "International dollars (PPP) per capita, constant 2021 prices", PER_CAPITA,
+     {"constant 2021 international $"}),
+    # an SI unit the national standard writes in Chinese (⑥: 微克/立方米, 千克/公顷)
+    ("UG_M3", "Micrograms per cubic metre", {"ratio_per"}, {"microgram per cubic meter", "micrograms per cubic meter"}),
+    ("KG_HA", "Kilograms per hectare", {"per_capita_other"}, {"kg per hectare", "kilograms per hectare"}),
     ("SC100", "Score, 0-100 scale", {"name_score", "scale"}, {"0-100 scale", "index (0-100)", "scale 0-100"}),
     ("SCORE", "Score", {"scale"}, {"score", "score [score]"}),
     ("PC", "Percentage", {"no_unit_text"}, {"percentage"}),
@@ -57,6 +69,8 @@ def code_for(rule, words, name=""):
     w = fold(words)
     for code, label, rules, said in RULES:
         if rules is AMOUNT and PER_SOMEONE.search(name):
+            continue
+        if rules is PER_CAPITA and not PER_SOMEONE.search(name):
             continue
         if rule in rules and w in said:
             return code, label

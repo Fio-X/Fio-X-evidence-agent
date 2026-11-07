@@ -350,3 +350,9 @@ INTD_E8	亿国际元（现价）	amount	yes	亿国际元	reviewed	Hundred millio
 INTD_E12	万亿国际元（现价）	amount	yes	万亿国际元	reviewed	Trillion international dollars (PPP), current prices	
 INTD_K21_E8	亿国际元（2021年不变价）	amount	yes	亿国际元	reviewed	Hundred million international dollars (PPP), constant 2021 prices	
 INTD_K21_E12	万亿国际元（2021年不变价）	amount	yes	万亿国际元	reviewed	Trillion international dollars (PPP), constant 2021 prices	
+USD_HAB	美元/人	per_capita	no	美元/人	reviewed	US dollars per capita, current prices	
+USD_K15_HAB	美元/人（2015年不变价）	per_capita	no	美元/人	reviewed	US dollars per capita, constant 2015 prices	
+INTD_HAB	国际元/人（现价）	per_capita	no	国际元/人	reviewed	International dollars (PPP) per capita, current prices	
+INTD_K21_HAB	国际元/人（2021年不变价）	per_capita	no	国际元/人	reviewed	International dollars (PPP) per capita, constant 2021 prices	
+UG_M3	微克/立方米	density	no	微克/立方米	reviewed	Micrograms per cubic metre	
+KG_HA	千克/公顷	density	no	千克/公顷	reviewed	Kilograms per hectare	

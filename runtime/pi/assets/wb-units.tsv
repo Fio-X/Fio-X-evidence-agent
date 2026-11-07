@@ -25,7 +25,7 @@ AG.PRD.CROP.XD	Crop production index (2014-2016 = 100)			index	index_other_base
 AG.PRD.FOOD.XD	Food production index (2014-2016 = 100)			index	index_other_base
 AG.PRD.LVSK.XD	Livestock production index (2014-2016 = 100)			index	index_other_base
 AG.SRF.TOTL.K2	Surface area (sq. km)	KM2	Square kilometre	level	sq_km
-AG.YLD.CREL.KG	Cereal yield (kg per hectare)			rate	per_capita_other
+AG.YLD.CREL.KG	Cereal yield (kg per hectare)	KG_HA	Kilograms per hectare	rate	per_capita_other
 BG.GSR.NFSV.GD.ZS	Trade in services (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
 BM.GSR.CMCP.ZS	Communications, computer, etc. (% of service imports, BoP)	PC	Percentage	share	pct_of_part_of_whole
 BM.GSR.FCTY.CD	Primary income payments (BoP, current US$)	USD	US dollars, current prices	level	money
@@ -191,7 +191,7 @@ DT.ODA.ODAT.GI.ZS	Net ODA received (% of gross capital formation)	PC	Percentage	
 DT.ODA.ODAT.GN.ZS	Net ODA received (% of GNI)	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
 DT.ODA.ODAT.KD	Net official development assistance received (constant 2023 US$)			level	money
 DT.ODA.ODAT.MP.ZS	Net ODA received (% of imports of goods, services and primary income)	PC	Percentage	rate	pct_of_trade_flow
-DT.ODA.ODAT.PC.ZS	Net ODA received per capita (current US$)			rate	per_capita_money
+DT.ODA.ODAT.PC.ZS	Net ODA received per capita (current US$)	USD_HAB	US dollars per capita, current prices	rate	per_capita_money
 DT.ODA.ODAT.XP.ZS	Net ODA received (% of central government expense)	PC	Percentage	share	pct_of_part_of_whole
 DT.TDS.DECT.CD	Debt service on external debt, total (TDS, current US$)	USD	US dollars, current prices	level	money
 DT.TDS.DECT.EX.ZS	Total debt service (% of exports of goods, services and primary income)	PC	Percentage	rate	pct_of_trade_flow
@@ -230,7 +230,7 @@ EG.USE.COMM.GD.PP.KD	Energy use (kg of oil equivalent) per $1,000 GDP (constant 
 EG.USE.CRNW.ZS	Combustible renewables and waste (% of total energy)	PC	Percentage	share	pct_of_part_of_whole
 EG.USE.ELEC.KH.PC	Electric power consumption (kWh per capita)			rate	per_capita_other
 EG.USE.PCAP.KG.OE	Energy use (kg of oil equivalent per capita)	KGOE_HAB	Kilograms of oil equivalent (KGOE) per capita	rate	kgoe_capita
-EN.ATM.PM25.MC.M3	PM2.5 air pollution, mean annual exposure (micrograms per cubic meter)			rate	ratio_per
+EN.ATM.PM25.MC.M3	PM2.5 air pollution, mean annual exposure (micrograms per cubic meter)	UG_M3	Micrograms per cubic metre	rate	ratio_per
 EN.ATM.PM25.MC.T1.ZS	PM2.5 pollution, population exposed to levels exceeding WHO Interim Target-1 value (% of total)	PC	Percentage	share	pct_of_part_of_whole
 EN.ATM.PM25.MC.T2.ZS	PM2.5 pollution, population exposed to levels exceeding WHO Interim Target-2 value (% of total)	PC	Percentage	share	pct_of_part_of_whole
 EN.ATM.PM25.MC.T3.ZS	PM2.5 pollution, population exposed to levels exceeding WHO Interim Target-3 value (% of total)	PC	Percentage	share	pct_of_part_of_whole
@@ -585,15 +585,15 @@ NE.CON.GOVT.KD	General government final consumption expenditure (constant 2015 U
 NE.CON.GOVT.KD.ZG	General government final consumption expenditure (annual % growth)	PCH_PRE	Percentage change on previous period	change	annual_growth
 NE.CON.GOVT.KN	General government final consumption expenditure (constant LCU)	LCU_K	Local currency unit, constant prices	level	money
 NE.CON.GOVT.ZS	General government final consumption expenditure (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
-NE.CON.PCAP.PP.CD	Households and NPISHs Final consumption expenditure per capita, PPP (current international $)			rate	per_capita_money
-NE.CON.PCAP.PP.KD	Households and NPISHs Final consumption expenditure per capita, PPP (constant 2021 international $)			rate	per_capita_money
+NE.CON.PCAP.PP.CD	Households and NPISHs Final consumption expenditure per capita, PPP (current international $)	INTD_HAB	International dollars (PPP) per capita, current prices	rate	per_capita_money
+NE.CON.PCAP.PP.KD	Households and NPISHs Final consumption expenditure per capita, PPP (constant 2021 international $)	INTD_K21_HAB	International dollars (PPP) per capita, constant 2021 prices	rate	per_capita_money
 NE.CON.PRVT.CD	Households and NPISHs Final consumption expenditure (current US$)	USD	US dollars, current prices	level	money
 NE.CON.PRVT.CN	Households and NPISHs Final consumption expenditure (current LCU)	LCU	Local currency unit, current prices	level	money
 NE.CON.PRVT.CN.AD	Households and NPISHs final consumption expenditure: linked series (current LCU)	LCU	Local currency unit, current prices	level	money
 NE.CON.PRVT.KD	Households and NPISHs Final consumption expenditure (constant 2015 US$)	USD_K15	US dollars, constant 2015 prices	level	money
 NE.CON.PRVT.KD.ZG	Households and NPISHs Final consumption expenditure (annual % growth)	PCH_PRE	Percentage change on previous period	change	annual_growth
 NE.CON.PRVT.KN	Households and NPISHs Final consumption expenditure (constant LCU)	LCU_K	Local currency unit, constant prices	level	money
-NE.CON.PRVT.PC.KD	Households and NPISHs Final consumption expenditure per capita (constant 2015 US$)			rate	per_capita_money
+NE.CON.PRVT.PC.KD	Households and NPISHs Final consumption expenditure per capita (constant 2015 US$)	USD_K15_HAB	US dollars per capita, constant 2015 prices	rate	per_capita_money
 NE.CON.PRVT.PC.KD.ZG	Households and NPISHs Final consumption expenditure per capita growth (annual %)	PCH_PRE	Percentage change on previous period	change	annual_growth
 NE.CON.PRVT.PP.CD	Households and NPISHs Final consumption expenditure, PPP (current international $)	INTD	International dollars (PPP), current prices	level	money
 NE.CON.PRVT.PP.KD	Households and NPISHs Final consumption expenditure, PPP (constant 2021 international $)	INTD_K21	International dollars (PPP), constant 2021 prices	level	money
@@ -700,8 +700,8 @@ NY.ADJ.NNAT.GN.ZS	Adjusted savings: net national savings (% of GNI)	PC_GNI	Perce
 NY.ADJ.NNTY.CD	Adjusted net national income (current US$)	USD	US dollars, current prices	level	money
 NY.ADJ.NNTY.KD	Adjusted net national income (constant 2015 US$)	USD_K15	US dollars, constant 2015 prices	level	money
 NY.ADJ.NNTY.KD.ZG	Adjusted net national income (annual % growth)	PCH_PRE	Percentage change on previous period	change	annual_growth
-NY.ADJ.NNTY.PC.CD	Adjusted net national income per capita (current US$)			rate	per_capita_money
-NY.ADJ.NNTY.PC.KD	Adjusted net national income per capita (constant 2015 US$)			rate	per_capita_money
+NY.ADJ.NNTY.PC.CD	Adjusted net national income per capita (current US$)	USD_HAB	US dollars per capita, current prices	rate	per_capita_money
+NY.ADJ.NNTY.PC.KD	Adjusted net national income per capita (constant 2015 US$)	USD_K15_HAB	US dollars per capita, constant 2015 prices	rate	per_capita_money
 NY.ADJ.NNTY.PC.KD.ZG	Adjusted net national income per capita (annual % growth)	PCH_PRE	Percentage change on previous period	change	annual_growth
 NY.ADJ.SVNG.CD	Adjusted net savings, including particulate emission damage (current US$)	USD	US dollars, current prices	level	money
 NY.ADJ.SVNG.GN.ZS	Adjusted net savings, including particulate emission damage (% of GNI)	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
@@ -730,13 +730,13 @@ NY.GDP.MKTP.KN	GDP (constant LCU)	LCU_K	Local currency unit, constant prices	lev
 NY.GDP.MKTP.PP.CD	GDP, PPP (current international $)	INTD	International dollars (PPP), current prices	level	money
 NY.GDP.MKTP.PP.KD	GDP, PPP (constant 2021 international $)	INTD_K21	International dollars (PPP), constant 2021 prices	level	money
 NY.GDP.NGAS.RT.ZS	Natural gas rents (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
-NY.GDP.PCAP.CD	GDP per capita (current US$)			rate	per_capita_money
+NY.GDP.PCAP.CD	GDP per capita (current US$)	USD_HAB	US dollars per capita, current prices	rate	per_capita_money
 NY.GDP.PCAP.CN	GDP per capita (current LCU)			rate	per_capita_money
-NY.GDP.PCAP.KD	GDP per capita (constant 2015 US$)			rate	per_capita_money
+NY.GDP.PCAP.KD	GDP per capita (constant 2015 US$)	USD_K15_HAB	US dollars per capita, constant 2015 prices	rate	per_capita_money
 NY.GDP.PCAP.KD.ZG	GDP per capita growth (annual %)	PCH_PRE	Percentage change on previous period	change	annual_growth
 NY.GDP.PCAP.KN	GDP per capita (constant LCU)			rate	per_capita_money
-NY.GDP.PCAP.PP.CD	GDP per capita, PPP (current international $)			rate	per_capita_money
-NY.GDP.PCAP.PP.KD	GDP per capita, PPP (constant 2021 international $)			rate	per_capita_money
+NY.GDP.PCAP.PP.CD	GDP per capita, PPP (current international $)	INTD_HAB	International dollars (PPP) per capita, current prices	rate	per_capita_money
+NY.GDP.PCAP.PP.KD	GDP per capita, PPP (constant 2021 international $)	INTD_K21_HAB	International dollars (PPP) per capita, constant 2021 prices	rate	per_capita_money
 NY.GDP.PETR.RT.ZS	Oil rents (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
 NY.GDP.TOTL.RT.ZS	Total natural resources rents (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
 NY.GDS.TOTL.CD	Gross domestic savings (current US$)	USD	US dollars, current prices	level	money
@@ -752,13 +752,13 @@ NY.GNP.MKTP.KD.ZG	GNI growth (annual %)	PCH_PRE	Percentage change on previous pe
 NY.GNP.MKTP.KN	GNI (constant LCU)	LCU_K	Local currency unit, constant prices	level	money
 NY.GNP.MKTP.PP.CD	GNI, PPP (current international $)	INTD	International dollars (PPP), current prices	level	money
 NY.GNP.MKTP.PP.KD	GNI, PPP (constant 2021 international $)	INTD_K21	International dollars (PPP), constant 2021 prices	level	money
-NY.GNP.PCAP.CD	GNI per capita, Atlas method (current US$)			rate	per_capita_money
+NY.GNP.PCAP.CD	GNI per capita, Atlas method (current US$)	USD_HAB	US dollars per capita, current prices	rate	per_capita_money
 NY.GNP.PCAP.CN	GNI per capita (current LCU)			rate	per_capita_money
-NY.GNP.PCAP.KD	GNI per capita (constant 2015 US$)			rate	per_capita_money
+NY.GNP.PCAP.KD	GNI per capita (constant 2015 US$)	USD_K15_HAB	US dollars per capita, constant 2015 prices	rate	per_capita_money
 NY.GNP.PCAP.KD.ZG	GNI per capita growth (annual %)	PCH_PRE	Percentage change on previous period	change	annual_growth
 NY.GNP.PCAP.KN	GNI per capita (constant LCU)			rate	per_capita_money
-NY.GNP.PCAP.PP.CD	GNI per capita, PPP (current international $)			rate	per_capita_money
-NY.GNP.PCAP.PP.KD	GNI per capita, PPP (constant 2021 international $)			rate	per_capita_money
+NY.GNP.PCAP.PP.CD	GNI per capita, PPP (current international $)	INTD_HAB	International dollars (PPP) per capita, current prices	rate	per_capita_money
+NY.GNP.PCAP.PP.KD	GNI per capita, PPP (constant 2021 international $)	INTD_K21_HAB	International dollars (PPP) per capita, constant 2021 prices	rate	per_capita_money
 NY.GNS.ICTR.CD	Gross savings (current US$)	USD	US dollars, current prices	level	money
 NY.GNS.ICTR.CN	Gross savings (current LCU)	LCU	Local currency unit, current prices	level	money
 NY.GNS.ICTR.GN.ZS	Gross savings (% of GNI)	PC_GNI	Percentage of gross national income (GNI)	rate	pct_gni
@@ -1107,22 +1107,22 @@ SH.TBS.DTEC.ZS	Tuberculosis case detection rate (%, all forms)	PC	Percentage		pc
 SH.TBS.INCD	Incidence of tuberculosis (per 100,000 people)	P_HTHAB	Per hundred thousand inhabitants	rate	per_100000_people
 SH.VAC.TTNS.ZS	Newborns protected against tetanus (%)	PC	Percentage		pct_plain
 SH.XPD.CHEX.GD.ZS	Current health expenditure (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
-SH.XPD.CHEX.PC.CD	Current health expenditure per capita (current US$)			rate	per_capita_money
-SH.XPD.CHEX.PP.CD	Current health expenditure per capita, PPP (current international $)			rate	per_capita_money
+SH.XPD.CHEX.PC.CD	Current health expenditure per capita (current US$)	USD_HAB	US dollars per capita, current prices	rate	per_capita_money
+SH.XPD.CHEX.PP.CD	Current health expenditure per capita, PPP (current international $)	INTD_HAB	International dollars (PPP) per capita, current prices	rate	per_capita_money
 SH.XPD.EHEX.CH.ZS	External health expenditure (% of current health expenditure)	PC	Percentage	share	pct_of_part_of_whole
-SH.XPD.EHEX.PC.CD	External health expenditure per capita (current US$)			rate	per_capita_money
-SH.XPD.EHEX.PP.CD	External health expenditure per capita, PPP (current international $)			rate	per_capita_money
+SH.XPD.EHEX.PC.CD	External health expenditure per capita (current US$)	USD_HAB	US dollars per capita, current prices	rate	per_capita_money
+SH.XPD.EHEX.PP.CD	External health expenditure per capita, PPP (current international $)	INTD_HAB	International dollars (PPP) per capita, current prices	rate	per_capita_money
 SH.XPD.GHED.CH.ZS	Domestic general government health expenditure (% of current health expenditure)	PC	Percentage	share	pct_of_part_of_whole
 SH.XPD.GHED.GD.ZS	Domestic general government health expenditure (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
 SH.XPD.GHED.GE.ZS	Domestic general government health expenditure (% of general government expenditure)	PC	Percentage	share	pct_of_part_of_whole
-SH.XPD.GHED.PC.CD	Domestic general government health expenditure per capita (current US$)			rate	per_capita_money
-SH.XPD.GHED.PP.CD	Domestic general government health expenditure per capita, PPP (current international $)			rate	per_capita_money
+SH.XPD.GHED.PC.CD	Domestic general government health expenditure per capita (current US$)	USD_HAB	US dollars per capita, current prices	rate	per_capita_money
+SH.XPD.GHED.PP.CD	Domestic general government health expenditure per capita, PPP (current international $)	INTD_HAB	International dollars (PPP) per capita, current prices	rate	per_capita_money
 SH.XPD.OOPC.CH.ZS	Out-of-pocket expenditure (% of current health expenditure)	PC	Percentage	share	pct_of_part_of_whole
-SH.XPD.OOPC.PC.CD	Out-of-pocket expenditure per capita (current US$)			rate	per_capita_money
-SH.XPD.OOPC.PP.CD	Out-of-pocket expenditure per capita, PPP (current international $)			rate	per_capita_money
+SH.XPD.OOPC.PC.CD	Out-of-pocket expenditure per capita (current US$)	USD_HAB	US dollars per capita, current prices	rate	per_capita_money
+SH.XPD.OOPC.PP.CD	Out-of-pocket expenditure per capita, PPP (current international $)	INTD_HAB	International dollars (PPP) per capita, current prices	rate	per_capita_money
 SH.XPD.PVTD.CH.ZS	Domestic private health expenditure (% of current health expenditure)	PC	Percentage	share	pct_of_part_of_whole
-SH.XPD.PVTD.PC.CD	Domestic private health expenditure per capita (current US$)			rate	per_capita_money
-SH.XPD.PVTD.PP.CD	Domestic private health expenditure per capita, PPP (current international $)			rate	per_capita_money
+SH.XPD.PVTD.PC.CD	Domestic private health expenditure per capita (current US$)	USD_HAB	US dollars per capita, current prices	rate	per_capita_money
+SH.XPD.PVTD.PP.CD	Domestic private health expenditure per capita, PPP (current international $)	INTD_HAB	International dollars (PPP) per capita, current prices	rate	per_capita_money
 SH_UHC_FH40	Proportion of population facing financial hardship due to out-of-pocket health expenditure (%)	PC	Percentage	share	share_in_name
 SH_UHC_FH40_FURTHER	Proportion of population further impoverished due to out-of-pocket health expenditure, based on the societal poverty line (%)	PC	Percentage	share	share_in_name
 SH_UHC_FH40_IMPOV	Proportion of population facing impoverishing out-of-pocket health expenditure, based on the societal poverty line (%)	PC	Percentage	share	share_in_name
