@@ -71,18 +71,38 @@ def reply(req):
     W, H, top, e = fr["w"], fr["h"], fr["top"], fr["inset"]
     items = [{"code": m["id"], "_v": m["value"], "pin": tuple(m["pin"])} for m in req["marks"]]
     mx = max(i["_v"] for i in items) or 1.0; r_max = sc["r_max"]
-    while True:  # bubbles.Frame: at r_max, a step smaller each round down to the floor
-        for i in items: i["_r"] = max(sc["r_min"], r_max * math.sqrt(i["_v"] / mx)); i["_at"] = i["_xy"] = i["pin"]
+
+    def circles(r):  # the circles at radius scale r, nudged; True when no more pairs overlap by over half than allowed
+        for i in items: i["_r"] = max(sc["r_min"], r * math.sqrt(i["_v"] / mx)); i["_at"] = i["_xy"] = i["pin"]
         nudge(items, nu["most"], nu["gap"])
         over = [1 for a in range(len(items)) for b in range(a + 1, len(items))
                 if lens(items[a], items[b]) > 0.5 * math.pi * min(items[a]["_r"], items[b]["_r"]) ** 2]
-        if len(over) <= sc["max_overlaps"]: break
+        return len(over) <= sc["max_overlaps"]
+
+    while not circles(r_max):  # bubbles.Frame: at r_max, a step smaller each round down to the floor
         if r_max - sc["step"] < sc["floor"]:  # even at the floor: the circles as they stand, no label (the core stops in the leaf's words)
             marks = {i["code"]: {"shape": "circle", "cx": i["_xy"][0], "cy": i["_xy"][1], "r": i["_r"]} for i in items}
             for i in items:
                 if math.dist(i["_xy"], i["_at"]) > 0.5: marks[i["code"] + "/dot"] = {"shape": "circle", "cx": i["_at"][0], "cy": i["_at"][1], "r": DOT_R}
             return {"marks": marks, "texts": {}, "dropped": [t["id"] for t in req["texts"]]}
         r_max -= sc["step"]
+    first = placed(req, items, W, H, top, e)
+    # A label that fits nowhere at this scale: the circles a step smaller each round, down to the floor, give the crowd room;
+    # the first scale that places every label is drawn (still by area, on the core's K4 grid). When none does, the first
+    # scale is drawn and its labels are dropped as before (the page's notes_dropped check stops it).
+    r = r_max
+    while first["dropped"] and r - sc["step"] >= sc["floor"]:
+        r -= sc["step"]
+        if not circles(r): continue
+        tried = placed(req, items, W, H, top, e)
+        if not tried["dropped"]: return tried
+    if r != r_max: circles(r_max)
+    return first
+
+
+def placed(req, items, W, H, top, e):
+    """The labels of the circles as they stand (items' _xy, _r, _at): beside each circle first, then out on a leader."""
+    lb = req["labels"]
     marks, texts, dropped = {}, {}, []
     for i in items: marks[i["code"]] = {"shape": "circle", "cx": i["_xy"][0], "cy": i["_xy"][1], "r": i["_r"]}
     dots = []
