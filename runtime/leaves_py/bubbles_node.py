@@ -86,33 +86,22 @@ def reply(req):
                 if math.dist(i["_xy"], i["_at"]) > 0.5: marks[i["code"] + "/dot"] = {"shape": "circle", "cx": i["_at"][0], "cy": i["_at"][1], "r": DOT_R}
             return {"marks": marks, "texts": {}, "dropped": [t["id"] for t in req["texts"]]}
         r_max -= sc["step"]
-    first = placed(req, items, W, H, top, e, DIRS)
-    # A label that fits nowhere: its leader may also leave at the angles between the sixteen (MORE_DIRS), and the circles a
-    # step smaller each round, down to the floor, give the crowd room; the first try that places every label is drawn
-    # (still by area, on the core's K4 grid; every leader from its circle's edge as K8 reads it). A map whose labels all fit
-    # the first time is drawn as before. When no try places them all, the first is drawn and its labels are dropped as
-    # before (the page's notes_dropped check stops it). Measured on the round-4 dev set's maps that dropped a label
-    # (11-07, the node's requests replayed): t4's EU map (26 circles; Czechia, Germany) places all at 16 px; q7's (27) all
-    # at 16 px; n10's G20 world map (283 px tall; Italy, China, Germany) still drops.
-    if not first["dropped"]: return first
+    first = placed(req, items, W, H, top, e)
+    # A label that fits nowhere at this scale: the circles a step smaller each round, down to the floor, give the crowd room;
+    # the first scale that places every label is drawn (still by area, on the core's K4 grid). When none does, the first
+    # scale is drawn and its labels are dropped as before (the page's notes_dropped check stops it).
     r = r_max
-    while True:
-        tried = placed(req, items, W, H, top, e, MORE_DIRS)
+    while first["dropped"] and r - sc["step"] >= sc["floor"]:
+        r -= sc["step"]
+        if not circles(r): continue
+        tried = placed(req, items, W, H, top, e)
         if not tried["dropped"]: return tried
-        while True:
-            if r - sc["step"] < sc["floor"]:
-                circles(r_max); return first
-            r -= sc["step"]
-            if circles(r): break
+    if r != r_max: circles(r_max)
+    return first
 
 
-DIRS = 16  # the leader's angles around a circle on the first try (pi / 8 apart)
-MORE_DIRS = 32  # a try after a label fit nowhere (pi / 16 apart, the sixteen among them)
-
-
-def placed(req, items, W, H, top, e, dirs):
-    """The labels of the circles as they stand (items' _xy, _r, _at): beside each circle first, then out on a leader at
-    one of dirs angles."""
+def placed(req, items, W, H, top, e):
+    """The labels of the circles as they stand (items' _xy, _r, _at): beside each circle first, then out on a leader."""
     lb = req["labels"]
     marks, texts, dropped = {}, {}, []
     for i in items: marks[i["code"]] = {"shape": "circle", "cx": i["_xy"][0], "cy": i["_xy"][1], "r": i["_r"]}
@@ -148,8 +137,8 @@ def placed(req, items, W, H, top, e, dirs):
     def out(i):
         x, y = i["_xy"]; r = i["_r"]
         for d in range(16, int(reach) + 1, 8):
-            for n in range(dirs):
-                c, s_ = math.cos(math.pi * n / (dirs // 2)), math.sin(math.pi * n / (dirs // 2)); px, py = x + (r + d) * c, y + (r + d) * s_
+            for n in range(16):
+                c, s_ = math.cos(math.pi * n / 8), math.sin(math.pi * n / 8); px, py = x + (r + d) * c, y + (r + d) * s_
                 anchor = "start" if c > 0.3 else "end" if c < -0.3 else "middle"
                 tp = py + sz * BELOW_GAP if s_ > 0.3 else py - sz * 2.45 if s_ < -0.3 else py - sz * 1.2
                 yield anchor, px, tp + sz * 0.8, ((x + r * c, y + r * s_), (px, py))

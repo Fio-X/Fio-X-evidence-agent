@@ -11,7 +11,7 @@ it drew is set as occ.land (mapkit.land_rows), so notes over it can keep to the 
 Circles that overlap are nudged apart (nudge px at most, circle_gap px between them); one moved off its point keeps a dot at the true point,
 claimed in the Occ and kept clear by every label and leader like a circle.
 Label places are tried right, left, above, below of the circle for every labelled circle first (biggest first), so a crowded centre's labels stay
-close; the rest go out in free room on a thin leader from the circle's edge (sixteen directions, thirty-two on the node's retry, up to reach px), each at the cheapest clear place (the
+close; the rest go out in free room on a thin leader from the circle's edge (sixteen directions, up to reach px), each at the cheapest clear place (the
 leader's length, land_cost px more over the land in the shared frame; of places that cost the same, the one toward the frame's centre first, so a
 circle on the frame's edge looks inward), its leader crossing no other leader; every place keeps label_gap px clear of every circle. A top-N label that fits nowhere is left off and listed in
 Frame.unlabeled, never put on a circle, and in Frame.dropped
