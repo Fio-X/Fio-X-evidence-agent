@@ -6237,6 +6237,35 @@ fn canonical_rows_json(value: &Value) -> String {
     }
 }
 
+/// viz.mjs fixedSix past the safe-integer scale: JS value.toFixed(6), the exact decimal value rounded to six places with a tie
+/// away from zero (Rust's {:.6} takes a tie to the even digit: e5's GDP 19498039388042.6, exactly ...042.6015625, printed
+/// ".601562" here and ".601563" by the writer, and the computation failed its result_hash). Reached only for |value| above
+/// 2^53 / 10^6 (about 9.0e9), whose last binary place is 2^-19 at the finest, so 30 places are its exact decimal value.
+fn fixed_six_beyond_safe(value: f64) -> String {
+    let exact = format!("{:.30}", value.abs());
+    let (whole, frac) = exact.split_once('.').unwrap_or((exact.as_str(), "000000000000000000000000000000"));
+    let mut digits: Vec<u8> = format!("{whole}{}", &frac[..6]).into_bytes();
+    if frac.as_bytes()[6] >= b'5' {
+        let mut i = digits.len();
+        loop {
+            if i == 0 {
+                digits.insert(0, b'1');
+                break;
+            }
+            i -= 1;
+            if digits[i] == b'9' {
+                digits[i] = b'0';
+            } else {
+                digits[i] += 1;
+                break;
+            }
+        }
+    }
+    let digits = String::from_utf8(digits).unwrap_or_default();
+    let (w, f) = digits.split_at(digits.len() - 6);
+    format!("{}{w}.{f}", if value.is_sign_negative() { "-" } else { "" })
+}
+
 fn canonical_row_number(number: &serde_json::Number) -> String {
     if let Some(value) = number.as_f64() {
         const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
@@ -6253,7 +6282,7 @@ fn canonical_row_number(number: &serde_json::Number) -> String {
                 return serde_json::to_string(&format!("{sign}{whole}.{fraction:06}"))
                     .unwrap_or_default();
             }
-            return serde_json::to_string(&format!("{value:.6}")).unwrap_or_default();
+            return serde_json::to_string(&fixed_six_beyond_safe(value)).unwrap_or_default();
         }
     }
     number.to_string()

@@ -17,6 +17,10 @@
     ],
     "text_bool_null_keys": [
       {"zeta": "z", "alpha": true, "Beta": false, "_u": null, "k10": "a\"b\\c", "k2": "日本語 é"}
+    ],
+    "ties_beyond_safe_scale": [
+      {"geo": "US", "to_value": 19498039388042.6, "change": 19306551888042.6, "gap": 11271660611957.398},
+      {"geo": "XX", "to_value": -19498039388042.6, "change": 12345678901.5, "gap": 9999999999.9999995}
     ]
   },
   "report_only": {
