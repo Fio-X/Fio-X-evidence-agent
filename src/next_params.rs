@@ -22,6 +22,9 @@ pub const TOTAL_CODES: [(&str, &str); 2] = [("*", "TOTAL"), ("sex", "T")];
 pub const ADDITIVE_MIN_PARTS: usize = 3;
 /// Registry: the EU aggregate on the geo dimension, asked for when the page breaks down by another place dimension.
 pub const EU_AGGREGATE: &str = "EU27_2020";
+/// The most countries a question names as a ranking's subject ("where do Nigeria and Pakistan rank among the ten most
+/// populous"): more are a group, the set itself (Draft::named_open).
+pub const RANK_SUBJECTS_MAX: usize = 3;
 /// Registry: the 27 EU members as Eurostat geo codes (EL is Greece), for a question that names the EU or Europe.
 pub const EU27: [&str; 27] = [
     "AT", "BE", "BG", "CY", "CZ", "DE", "DK", "EE", "EL", "ES", "FI", "FR", "HR", "HU", "IE", "IT",
@@ -455,7 +458,8 @@ pub struct Draft {
     /// A World Bank table with more economies than a chart shows whose question names countries only (no region word): a
     /// ranking the question asks for still fixes the economies kept (ranked_option), the named ones being the ranking's
     /// subject, not its set ("the ten most populous countries, where does Nigeria rank", n45); with no ranking they fill
-    /// the places as before.
+    /// the places as before. A group the question names (its members as places, more than RANK_SUBJECTS_MAX) is the set
+    /// itself, drawn whole as before (review 11-08: "the five most populous of the G20").
     pub named_open: bool,
     /// Set by the flow before the pick for an annual table whose companion shortlist has a monthly twin, when the answer
     /// fills geo with one aggregate (the hub): those answers take the ring's years, not the years item.
@@ -862,7 +866,7 @@ pub fn draft(table: TableMeta, texts: &[String], places: &[Place]) -> Draft {
     }
     let many = table.worldbank && table.places.len() > MAX_CHART_ROWS;
     let places_open = many && places.is_empty();
-    let named_open = many && !places.is_empty() && !places.contains(&Place::Region);
+    let named_open = many && (1..=RANK_SUBJECTS_MAX).contains(&places.len()) && !places.contains(&Place::Region);
     Draft {
         table,
         breakdown,
@@ -3066,6 +3070,10 @@ mod tests {
             );
             assert_eq!(filled.event["narrow"]["from"], "question");
             let unranked = draft(world_bank(217), &[], &named);
+            // a group (more than RANK_SUBJECTS_MAX places) is the set, drawn whole as before
+            let group: Vec<Place> = (0..5).map(|i| Place::Country(format!("X{i}"))).collect();
+            let g = Draft { ranked: asked("SP.POP.TOTL", Some(5)), ..draft(world_bank(217), &[], &group) };
+            assert!(!g.named_open && ranked_option(&g).is_none());
             let filled = fill(&unranked, 1, &picks(&[]), &named, 2026).unwrap();
             assert!(!filled.args.contains_key("narrow"));
             assert_eq!(filter(&filled, "country").unwrap().len(), named.len());
