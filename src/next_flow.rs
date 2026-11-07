@@ -1430,6 +1430,7 @@ struct FreeWords {
     ages: Vec<String>,
     scales: Vec<Vec<char>>,
     scale_open: Vec<Vec<char>>,
+    scale_close: Vec<Vec<char>>,
     age_range: Vec<char>,
 }
 
@@ -1449,6 +1450,7 @@ fn free_words() -> &'static FreeWords {
             ages: words("ages"),
             scales: list("scales"),
             scale_open: list("scale_open"),
+            scale_close: list("scale_close"),
             age_range: words("age_range").iter().flat_map(|w| w.chars()).collect(),
         }
     })
@@ -1456,8 +1458,8 @@ fn free_words() -> &'static FreeWords {
 
 /// Which chars of `chars` (a text outside its placeholders, `held` marking a placeholder's blank) write a FreeWords word:
 /// a term or a rate's base not right after a numeral, a QUANTITY_BEFORE word or a placeholder; an SI unit not right after
-/// a numeral or a QUANTITY_BEFORE word (after a placeholder it is the value's unit); a scale label right after a bracket
-/// (（百万吨）); an age or an age band of the list, its range mark read as '-' (15至24岁 as 15-24岁).
+/// a numeral or a QUANTITY_BEFORE word (after a placeholder it is the value's unit); a scale label alone in brackets
+/// (（百万吨）, not （百万以上）); an age or an age band of the list, its range mark read as '-' (15至24岁 as 15-24岁).
 fn number_free(chars: &[char], held: &[bool]) -> Vec<bool> {
     let w = free_words();
     let numeral = |c: char| c.is_numeric() || NUMERALS.contains(c);
@@ -1490,7 +1492,8 @@ fn number_free(chars: &[char], held: &[bool]) -> Vec<bool> {
             }
         }
         if let Some(o) = w.scale_open.iter().find(|o| at(i, o)) {
-            if let Some(s) = w.scales.iter().find(|s| at(i + o.len(), s)) {
+            let closed = |s: &[char]| w.scale_close.iter().any(|c| at(i + o.len() + s.len(), c));
+            if let Some(s) = w.scales.iter().find(|s| at(i + o.len(), s) && closed(s)) {
                 mark(i + o.len(), i + o.len() + s.len());
             }
         }
@@ -6247,16 +6250,20 @@ mod tests {
             assert_eq!(worded_number(text), None, "{text}");
         }
         for (text, typed) in [
-            ("各国PM2.5浓度的高低与下降", "各国     浓度的高低与下降"),
-            ("劳动参与率（65岁以上人口）", "劳动参与率（   以上人口）"),
-            ("青年失业率（15至24岁，地图）", "青年失业率（      ，地图）"),
-            ("65岁及以上人口占比的变化", "   及以上人口占比的变化"),
+            ("劳动参与率（五岁以上人口）", "劳动参与率（  以上人口）"),
             ("{a}增加2000人", "{a}增加2000人"),
-            ("劳动参与率（15岁以上人口）", "劳动参与率（15岁以上人口）"),
-            ("{a}PM2.5", "{a}PM2.5"),
+            // a word with an ASCII digit is no free word (the page tree takes no digit in a word): it stays for the digit check
+            ("各国PM2.5浓度的高低与下降", "各国PM2.5浓度的高低与下降"),
+            ("65岁及以上人口占比的变化", "65岁及以上人口占比的变化"),
+            ("青年失业率（15至24岁，地图）", "青年失业率（15至24岁，地图）"),
         ] {
             assert_eq!(number_free_text(text), typed, "{text}");
         }
+        let w = free_words();
+        for word in w.terms.iter().chain(&w.si_units).chain(&w.rates).chain(&w.scales) {
+            assert!(!word.iter().any(|c| c.is_ascii_digit()), "{word:?}");
+        }
+        assert!(!w.ages.iter().any(|a| a.chars().any(|c| c.is_ascii_digit())));
         // Still numbers: a count, a span, a rate's base that is a count, a scale after a value or a count, an SI unit after
         // a numeral, a term after a placeholder, and the words no source writes (an age band in Chinese numerals, 零排放,
         // 七国集团: hand-added on 11-07, taken out on 11-08).
@@ -6271,6 +6278,9 @@ mod tests {
             ("青年失业率（十五至二十四岁）", "十五"),
             ("零排放汽车占比", "零"),
             ("七国集团经济增长的高低排名", "七"),
+            // a scale word in a bracket that does not close right after it is a threshold, not a label (review 11-08)
+            ("人口（百万以上）的城市", "百万"),
+            ("（千人以上企业）", "千"),
         ] {
             assert_eq!(worded_number(text).as_deref(), Some(word), "{text}");
         }

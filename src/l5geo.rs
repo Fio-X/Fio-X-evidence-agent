@@ -3327,6 +3327,9 @@ mod tests {
         assert_eq!(ids("东盟各国GDP谁最高"), ["gdp"]);
         assert_eq!(ids("2023年各国GDP的高低排名"), ["gdp"]);
         assert_eq!(ids("各国研发支出占 GDP，GDP 谁最高？"), ["gdp"]);
+        // a sentence's end mark ends the whole too (review 11-08): the GDP after it is asked
+        assert_eq!(ids("研发占GDP多少？谁GDP最高"), ["gdp"]);
+        assert_eq!(ids("研发占GDP多少。GDP谁最高"), ["gdp"]);
         // 占比 is a share said whole, and a joining word ends a whole: the quantity asked after it stays asked (review 11-05)
         assert_eq!(ids("可再生能源占比和人均GDP的比重"), ["renewable_share", "gdp_pc"]);
         assert_eq!(ids("各国可再生能源占比，以及煤炭发电份额"), ["renewable_share", "electricity_mix"]);

@@ -1,26 +1,12 @@
 {
- "_doc": "Words with a numeral or a digit that write a fixed term, a unit, a rate's base, an age or a scale label, never a number (next_flow::number_free, next_tree::number_free). Built by tools from source metadata only, no word typed in by hand: World Bank indicator names in Chinese (api.worldbank.org/v2/zh/indicator, sha256 385436f8d4f5f406, 29533 rows) and the unit table unit-short-zh.tsv (one row per Eurostat/World Bank unit code). terms: coded names in indicator names (PM2.5), blanked unless a numeral, a quantity word or a placeholder comes right before; si_units: blanked after a placeholder too, never after a numeral or a quantity word; rates: a rate's base taken literally (每千人; 每三人 is not here and stays a number); ages: an age or an age band taken literally, a range mark (- – — 至 到) read as '-'; scales: a scale label, blanked only inside brackets (（百万吨）). A count of places (四国) is not here: it is checked against the places the page draws.",
- "terms": [
-  "HepB3",
-  "PM2.5",
-  "CO2",
-  "SF6",
-  "M2"
- ],
+ "_doc": "Words with a numeral or a digit that write a fixed term, a unit, a rate's base, an age or a scale label, never a number (next_flow::number_free, next_tree::number_free). Built by tools from source metadata only, no word typed in by hand: World Bank indicator names in Chinese (api.worldbank.org/v2/zh/indicator, sha256 385436f8d4f5f406, 29533 rows) and the unit table unit-short-zh.tsv (one row per Eurostat/World Bank unit code). terms: coded names in indicator names (PM2.5), blanked unless a numeral, a quantity word or a placeholder comes right before; si_units: blanked after a placeholder too, never after a numeral or a quantity word; rates: a rate's base taken literally (每千人; 每三人 is not here and stays a number); ages: an age or an age band taken literally, a range mark (- – — 至 到) read as '-'; scales: a scale label, blanked only right after an opening bracket and right before its closing one (（百万吨）, not （百万以上）). A word with an ASCII digit is left out (the page tree takes no digit in a word), so it stays a number. A count of places (四国) is not here: it is checked against the places the page draws.",
+ "terms": [],
  "si_units": [
   "千瓦时",
   "千克",
   "千米"
  ],
  "rates": [
-  "每1000人",
-  "每1000名",
-  "每100万人",
-  "每100平",
-  "每10万人",
-  "每10万例",
-  "每10万成",
-  "每10万活",
   "每十万人",
   "每十万女",
   "每十万男",
@@ -33,21 +19,6 @@
   "每百人"
  ],
  "ages": [
-  "15-19岁",
-  "15-24岁",
-  "15-49岁",
-  "15-60岁",
-  "15-64岁",
-  "20-24岁",
-  "0-14岁",
-  "18岁",
-  "65岁",
-  "0岁",
-  "1岁",
-  "2岁",
-  "3岁",
-  "4岁",
-  "5岁",
   "一岁",
   "五岁"
  ],
@@ -82,6 +53,10 @@
  "scale_open": [
   "（",
   "("
+ ],
+ "scale_close": [
+  "）",
+  ")"
  ],
  "age_range": [
   "-",

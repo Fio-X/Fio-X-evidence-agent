@@ -654,8 +654,8 @@ fn number_free(chars: &[char], held: &[bool]) -> Vec<bool> {
     let w = free_words();
     let words = |k: &str| w.g(k).arr().iter().map(|x| st(x).to_string()).collect::<Vec<String>>();
     let list = |k: &str| words(k).iter().map(|x| x.chars().collect::<Vec<char>>()).collect::<Vec<_>>();
-    let (terms, si_units, rates, scales, scale_open) =
-        (list("terms"), list("si_units"), list("rates"), list("scales"), list("scale_open"));
+    let (terms, si_units, rates, scales, scale_open, scale_close) =
+        (list("terms"), list("si_units"), list("rates"), list("scales"), list("scale_open"), list("scale_close"));
     let ages = words("ages");
     let age_range: Vec<char> = words("age_range").iter().flat_map(|x| x.chars()).collect();
     let numeral = |c: char| c.is_numeric() || NUMERALS.contains(c);
@@ -688,7 +688,8 @@ fn number_free(chars: &[char], held: &[bool]) -> Vec<bool> {
             }
         }
         if let Some(o) = scale_open.iter().find(|o| at(i, o)) {
-            if let Some(s) = scales.iter().find(|s| at(i + o.len(), s)) {
+            let closed = |s: &[char]| scale_close.iter().any(|c| at(i + o.len() + s.len(), c));
+            if let Some(s) = scales.iter().find(|s| at(i + o.len(), s) && closed(s)) {
                 mark(i + o.len(), i + o.len() + s.len());
             }
         }
