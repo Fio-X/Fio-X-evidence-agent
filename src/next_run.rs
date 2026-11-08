@@ -15302,6 +15302,15 @@ for line in sys.stdin:
             let fill = fill_undrawn(change, &shape, &picks, &main);
             assert_eq!(fill["finding"]["dek"], "{lead0.t}至{lead1.t}，{name.DE}降幅最大，减少{lead}", "a lone riser among fallers");
         }
+        // the boundary (user 11-08 item 6): every place falls, and no word of the page says "增幅最大"
+        {
+            let main = q6_at(&[("SE", "2025", "900"), ("BE", "2025", "1000"), ("DE", "2025", "10000"), ("FR", "2025", "5000"), ("EU27_2020", "2025", "60000")]).1;
+            let shape = shape_of(&change.eats, &[("migr", &main[..])], &Hubs).unwrap();
+            let picks = picks_of(&change.picks, &shape, &main, &[]).unwrap();
+            let fill = fill_undrawn(change, &shape, &picks, &main);
+            let all = fill.to_string();
+            assert!(!all.contains("增幅最大") && all.contains("降幅最大"), "every place falls: {}", fill["finding"]);
+        }
         // level
         let column = recipe("column");
         let level = |at: &[(&str, &str, &str)], unit: &'static str| {
