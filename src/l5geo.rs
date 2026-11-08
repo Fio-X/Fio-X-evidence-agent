@@ -866,6 +866,8 @@ fn place_words_zh() -> &'static [String] {
         let p = place_names_zh();
         w.extend(p.aliases.iter().map(|a| a.name.clone()));
         w.extend(p.groups.iter().flat_map(|g| g.names.iter().cloned()));
+        // the region words (欧元区, 北欧) and the group nouns no country holds (发展中国家, read whole, never its 中国)
+        w.extend(REGION_WORDS_ZH.iter().chain(NOT_PLACE_ZH.iter()).map(|x| x.to_string()));
         w.retain(|x| !x.is_empty());
         w.sort_by(|a, b| b.chars().count().cmp(&a.chars().count()).then(a.cmp(b)));
         w.dedup();
@@ -875,7 +877,7 @@ fn place_words_zh() -> &'static [String] {
 
 /// The measure a side of a joining word names after its place or year (法国失业率 → 失业率, 2023年的失业率 → 失业率): for
 /// the left side the words after the last place or year in it, for the right side after the place or year it starts with;
-/// a 的 after the place or year is left out. None when no place or year stands there, or nothing follows it.
+/// a 的, 各国 or 平均 after the place or year is left out. None when no place or year stands there, or nothing follows it.
 fn measure_after_place(side: &str, left: bool) -> Option<String> {
     let c: Vec<char> = side.chars().collect();
     let year_at = |i: usize| {
@@ -888,8 +890,12 @@ fn measure_after_place(side: &str, left: bool) -> Option<String> {
         year_at(0).or_else(|| place_at(0))
     }?;
     let rest: String = c[end..].iter().collect();
-    let rest = rest.strip_prefix('的').unwrap_or(&rest).to_string();
-    (!rest.is_empty()).then_some(rest)
+    // 的, 各国 and 平均 after the place name the places' measure (北欧各国失业率, 欧盟平均失业率 → 失业率)
+    let mut rest = rest.as_str();
+    while let Some(r) = ["的", "各国", "平均"].iter().find_map(|p| rest.strip_prefix(p)) {
+        rest = r;
+    }
+    (!rest.is_empty()).then(|| rest.to_string())
 }
 
 /// The class of question the knowledge group refuses from its words alone, before any search (user 11-08 item 1: causes,
@@ -4457,6 +4463,9 @@ mod tests {
             "空气污染导致的死亡率，2019 年哪国最高？",
             "欧盟各国与能源相关的甲烷排放谁最多？",
             "德国失业率和法国失业率谁高？",
+            "欧盟通胀率和欧元区通胀率谁高？",
+            "北欧各国失业率和南欧各国失业率谁高？",
+            "德国失业率和欧盟平均失业率差多少？",
             "2000年的失业率和2023年的失业率差多少？",
             "各国6个月以下儿童纯母乳喂养比例谁最高？",
         ] {
