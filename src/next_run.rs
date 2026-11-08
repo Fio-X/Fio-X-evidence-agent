@@ -15282,7 +15282,8 @@ for line in sys.stdin:
             ("q1 two falls alike", q1(&two_falls), false),
             ("q6 a rise alone", q6_at(&[]), true),
             ("q6 two rises alike, another falls", q6_at(&[("SE", "2025", "11800"), ("FR", "2025", "6000")]), false),
-            ("q6 another place rises most", q6_at(&[("SE", "2025", "2000"), ("BE", "2025", "1000"), ("DE", "2025", "10000"), ("FR", "2025", "50000"), ("EU27_2020", "2025", "60000")]), true),
+            // risers not outnumbered (BE and DE rise a little): FR's rise is the headline, as the frozen finding says
+            ("q6 another place rises most", q6_at(&[("SE", "2025", "2000"), ("BE", "2025", "2500"), ("DE", "2025", "15000"), ("FR", "2025", "50000"), ("EU27_2020", "2025", "60000")]), true),
         ];
         for (name, (table, main), found) in cases {
             let shape = shape_of(&change.eats, &[(table, &main[..])], &Hubs).unwrap_or_else(|e| panic!("{name}: {e}"));
@@ -15291,6 +15292,15 @@ for line in sys.stdin:
             let got = assert_finding_as_old(name, &fill, &shape, &picks, (&main, &[]));
             assert_eq!(got.is_some(), found, "{name}: {got:?}");
             println!("P6FINDING change {name}: {got:?}, equal");
+        }
+        // not the frozen finding (review 11-08, r3 and s6): one place rising among places that fell is no "rose most" headline;
+        // the largest fall is (the frozen one said FR's rise)
+        {
+            let main = q6_at(&[("SE", "2025", "2000"), ("BE", "2025", "1000"), ("DE", "2025", "10000"), ("FR", "2025", "50000"), ("EU27_2020", "2025", "60000")]).1;
+            let shape = shape_of(&change.eats, &[("migr", &main[..])], &Hubs).unwrap();
+            let picks = picks_of(&change.picks, &shape, &main, &[]).unwrap();
+            let fill = fill_undrawn(change, &shape, &picks, &main);
+            assert_eq!(fill["finding"]["dek"], "{lead0.t}至{lead1.t}，{name.DE}降幅最大，减少{lead}", "a lone riser among fallers");
         }
         // level
         let column = recipe("column");
