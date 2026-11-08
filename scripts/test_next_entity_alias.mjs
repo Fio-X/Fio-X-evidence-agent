@@ -59,8 +59,16 @@ const withSumSeries = (specs) => specs.map((s) => {
   const like = { share_of_total: "rank_top", change_total: "change_largest_rise" }[s.kind];
   return like && !s.series_sql ? { ...s, series_sql: specs.find((x) => x.kind === like).series_sql } : s;
 });
-check("no alias: specs byte-identical to the base commit (but for the sum kinds' series)", () => {
-  for (const spec of SPECS) assert.equal(JSON.stringify(buildCandidates(spec)), JSON.stringify(withSumSeries(baseMod.buildCandidates(spec))), JSON.stringify(spec));
+// Since review 11-08 a rise is taken among places that rose, a fall among those that fell (a WHERE on the sign), and the fall's
+// sentence no longer says "or rose the least"; nothing else differs.
+const withSignedMoves = (specs) => specs.map((s) => {
+  if (s.kind !== "change_largest_rise" && s.kind !== "change_largest_fall") return s;
+  const dir = s.kind === "change_largest_rise" ? "DESC" : "ASC";
+  return { ...s, sql: s.sql.replace(` ORDER BY change ${dir},`, ` WHERE change ${dir === "DESC" ? ">" : "<"} 0 ORDER BY change ${dir},`),
+    template: s.template.replace("changed the most downward, or rose the least, from", "changed the most downward from") };
+});
+check("no alias: specs byte-identical to the base commit (but for the sum kinds' series and the signed moves)", () => {
+  for (const spec of SPECS) assert.equal(JSON.stringify(buildCandidates(spec)), JSON.stringify(withSignedMoves(withSumSeries(baseMod.buildCandidates(spec)))), JSON.stringify(spec));
 });
 check("alias names the entity column in every slice, operator and template", () => {
   for (const alias of ENTITY_ALIASES) {

@@ -290,6 +290,12 @@ for (const id of r2.details.claims.map((c) => c.claim_id)) {
   assert.equal(idsOf(two).length, 4);
   assert.doesNotMatch(text(two), /from 2015 to 2015/, "one time value: no change candidate");
   assert.ok(two.details.dropped >= 3, "the two change kinds and the sum kinds are listed as dropped");
+  // the change kinds are left out for the one time value itself, not only because their SQL (a rise among risers, a fall
+  // among fallers, review 11-08) finds no row
+  const flatRun = await cand.programCandidates({ ref: "data/x.csv", dimensions: ["geo"], measure: "v", time: "t", times: 1, runSql: async () => [], fill: () => ({ text: "" }) });
+  for (const kind of ["change_largest_rise", "change_largest_fall"]) {
+    assert.equal(flatRun.dropped.find((d) => d.kind === kind)?.why, "the file holds one time value, so there is no change to report", kind);
+  }
   check("no candidates: duplicate (geo, time), nothing varying, fewer than three usable conclusions: each says how to narrow and writes no sheet");
 }
 
