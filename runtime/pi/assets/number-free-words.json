@@ -1,5 +1,5 @@
 {
- "_doc": "Words with a numeral or a digit that write a fixed term, a unit, a rate's base, an age or a scale label, never a number (next_flow::number_free, next_tree::number_free). Built by tools from source metadata only, no word typed in by hand: World Bank indicator names in Chinese (api.worldbank.org/v2/zh/indicator, sha256 385436f8d4f5f406, 29533 rows) and the unit table unit-short-zh.tsv (one row per Eurostat/World Bank unit code). terms: coded names in indicator names (PM2.5), blanked unless a numeral, a quantity word or a placeholder comes right before; si_units: blanked after a placeholder too, never after a numeral or a quantity word; rates: a rate's base taken literally (每千人; 每三人 is not here and stays a number); ages: an age or an age band taken literally, a range mark (- – — 至 到) read as '-'; scales: a scale label, blanked only right after an opening bracket and right before its closing one (（百万吨）, not （百万以上）). A word with ASCII digits as the official name writes it is kept (user 11-08: 15-24岁, PM2.5 print; the page tree prints it as a term run). A count of places (四国) is not here: it is checked against the places the page draws. place_counts and place_dims are the count rule's own words (user 11-07 ⑤: a count of places 四国 is checked against the places the page draws), not free words and not built from source metadata: place_counts are the nouns that make the Chinese numeral right before them a count of places (四国, 两个国家, 四个经济体; digits stay a typed number), blanked only when its value is the number of distinct places the page draws (the codes of place_dims across its drawn rows); any other count stays a number.",
+ "_doc": "Words with a numeral or a digit that write a fixed term, a unit, a rate's base, an age or a scale label, never a number (next_flow::number_free, next_tree::number_free). Built by tools from source metadata only, no word typed in by hand: World Bank indicator names in Chinese (api.worldbank.org/v2/zh/indicator, sha256 385436f8d4f5f406, 29533 rows) and the unit table unit-short-zh.tsv (one row per Eurostat/World Bank unit code). terms: coded names in indicator names (PM2.5), blanked unless a numeral, a quantity word or a placeholder comes right before; si_units: blanked after a placeholder too, never after a numeral or a quantity word; rates: a rate's base taken literally (每千人; 每三人 is not here and stays a number); ages: an age band (a range mark - – — 至 到 read as '-'), or a single age with the one or two Chinese characters its official name writes after it (5岁以下), never a bare age; scales: a scale label, blanked only right after an opening bracket and right before its closing one (（百万吨）, not （百万以上）). A word with ASCII digits as the official name writes it is kept (user 11-08: 15-24岁, PM2.5 print; the page tree prints it as a term run). A count of places (四国) is not here: it is checked against the places the page draws. place_counts and place_dims are the count rule's own words (user 11-07 ⑤: a count of places 四国 is checked against the places the page draws), not free words and not built from source metadata: place_counts are the nouns that make the Chinese numeral right before them a count of places (四国, 两个国家, 四个经济体; digits stay a typed number), blanked only when its value is the number of distinct places the page draws (the codes of place_dims across its drawn rows); any other count stays a number.",
  "terms": [
   "HepB3",
   "PM2.5",
@@ -40,16 +40,21 @@
   "15-64岁",
   "20-24岁",
   "0-14岁",
-  "18岁",
-  "65岁",
-  "0岁",
-  "1岁",
-  "2岁",
-  "3岁",
-  "4岁",
-  "5岁",
-  "一岁",
-  "五岁"
+  "18岁的妇",
+  "65岁以上",
+  "65岁的女",
+  "65岁的男",
+  "0岁人口",
+  "1岁人口",
+  "2岁人口",
+  "3岁人口",
+  "4岁人口",
+  "5岁人口",
+  "5岁以下",
+  "65岁和",
+  "一岁女童",
+  "一岁男童",
+  "五岁以下"
  ],
  "scales": [
   "百万购买力标准",

@@ -864,7 +864,13 @@ pub fn scope_refused_zh(question_zh: &str, this_year: i32) -> Option<ScopeRefusa
         }
         let chars: Vec<char> = q.chars().collect();
         let refuse = |hit: String| Some(ScopeRefusal { class: c.id.clone(), reason_zh: c.reason_zh.clone(), hit });
-        if let Some(w) = c.words.iter().find(|w| q.contains(w.as_str())) {
+        // a word starting with 年 (年后) right after a four-digit year asks from that year on (2008年以后), not about the future
+        let after_year = |i: usize| {
+            let back: Vec<char> = q[..i].chars().rev().take(5).collect();
+            back.len() >= 4 && back[..4].iter().all(|d| d.is_ascii_digit()) && back.get(4).is_none_or(|d| !d.is_ascii_digit())
+        };
+        let hit = |w: &String| q.match_indices(w.as_str()).any(|(i, _)| !(w.starts_with('年') && after_year(i)));
+        if let Some(w) = c.words.iter().find(|w| hit(w)) {
             return refuse(w.clone());
         }
         for (a, b, n) in &c.gaps {
@@ -880,9 +886,16 @@ pub fn scope_refused_zh(question_zh: &str, this_year: i32) -> Option<ScopeRefusa
                 for (i, _) in q.match_indices(joiner.as_str()) {
                     let left = &q[..i];
                     let right: String = q[i + joiner.len()..].chars().take(j.max).collect();
-                    let ends = |s: &str| j.suffixes.iter().any(|x| s.ends_with(x.as_str()));
-                    let right_ok = (1..=right.chars().count()).any(|k| ends(&right.chars().take(k).collect::<String>()));
-                    if ends(left) && right_ok {
+                    // two sides that end alike for two characters past the suffix name one measure twice (德国失业率和法国失业率)
+                    let same = |l: &str, r: &str, x: &str| {
+                        l.chars().rev().zip(r.chars().rev()).take_while(|(a, b)| a == b).count() >= x.chars().count() + 2
+                    };
+                    let ends = |s: &str| j.suffixes.iter().find(|x| s.ends_with(x.as_str()));
+                    let right_ok = (1..=right.chars().count()).any(|k| {
+                        let r: String = right.chars().take(k).collect();
+                        ends(&r).is_some_and(|x| !same(left, &r, x))
+                    });
+                    if ends(left).is_some() && right_ok {
                         return refuse(format!("…{joiner}…"));
                     }
                 }
@@ -4389,6 +4402,22 @@ mod tests {
             for q in no {
                 assert_eq!(scope_refused_zh(q, 2026), None, "{q}");
             }
+        }
+        // review 11-08: official names and one measure named twice are no class's; 年后 after a past year is no forecast
+        for q in [
+            "2008年以后欧盟各国失业率怎么变？",
+            "1990年后各国碳排放降了多少？",
+            "各国道路交通伤害造成的死亡率谁最高？",
+            "空气污染导致的死亡率，2019 年哪国最高？",
+            "欧盟各国与能源相关的甲烷排放谁最多？",
+            "德国失业率和法国失业率谁高？",
+            "2000年的失业率和2023年的失业率差多少？",
+            "各国6个月以下儿童纯母乳喂养比例谁最高？",
+        ] {
+            assert_eq!(scope_refused_zh(q, 2026), None, "{q}");
+        }
+        for (q, class) in [("十年后印度人口会是多少？", "forecast"), ("5年后欧盟失业率怎么走？", "forecast"), ("各国失业率和通胀率谁高？", "two_measures")] {
+            assert_eq!(scope_refused_zh(q, 2026).map(|r| r.class), Some(class.to_string()), "{q}");
         }
         // the clock decides a forecast: 2027 is one in 2026, not in 2027
         assert!(scope_refused_zh("2027 年德国的人口是多少？", 2026).is_some());

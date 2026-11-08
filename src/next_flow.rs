@@ -1640,8 +1640,12 @@ fn number_free(chars: &[char], held: &[bool]) -> Vec<bool> {
             if chars.get(end) == Some(&'岁') {
                 let band: String =
                     chars[i..=end].iter().map(|&c| if w.age_range.contains(&c) { '-' } else { c }).collect();
-                if w.ages.contains(&band) {
-                    mark(i, end + 1);
+                // an age band alone, or a single age with the words its official name writes after it (5岁以下); a bare age
+                // (增加了5岁) is a number
+                let rest: String = chars[end + 1..].iter().collect();
+                let named = w.ages.iter().filter(|a| a.starts_with(band.as_str()) && rest.starts_with(&a[band.len()..]));
+                if let Some(a) = named.max_by_key(|a| a.len()) {
+                    mark(i, end + 1 + a[band.len()..].chars().count());
                 }
             }
         }
@@ -6412,12 +6416,14 @@ mod tests {
             assert_eq!(worded_number(text), None, "{text}");
         }
         for (text, typed) in [
-            ("劳动参与率（五岁以上人口）", "劳动参与率（  以上人口）"),
+            ("五岁以下儿童死亡率", "    儿童死亡率"),
             ("{a}增加2000人", "{a}增加2000人"),
             // a word with ASCII digits as an official name writes it is a free word (user 11-08 item 4; the page tree prints it
             // as a term run)
             ("各国PM2.5浓度的高低与下降", "各国     浓度的高低与下降"),
-            ("65岁及以上人口占比的变化", "   及以上人口占比的变化"),
+            // a single age only with the words its official name writes after it (65岁以上, 5岁以下; review 11-08)
+            ("65岁以上人口占比的变化", "     人口占比的变化"),
+            ("5岁以下儿童死亡率", "    儿童死亡率"),
             ("青年失业率（15至24岁，地图）", "青年失业率（      ，地图）"),
         ] {
             assert_eq!(number_free_text(text), typed, "{text}");
@@ -6442,6 +6448,9 @@ mod tests {
             // a scale word in a bracket that does not close right after it is a threshold, not a label (review 11-08)
             ("人口（百万以上）的城市", "百万"),
             ("（千人以上企业）", "千"),
+            // a bare age, or an age with words no official name writes after it, is a number (review 11-08)
+            ("预期寿命增加了五岁", "五"),
+            ("劳动参与率（五岁以上人口）", "五"),
         ] {
             assert_eq!(worded_number(text).as_deref(), Some(word), "{text}");
         }

@@ -2049,7 +2049,7 @@ fn runs_of(text: &str) -> J {
     }
     // a word of the digit lists as an official name writes it (15-24岁, PM2.5; user 11-08 item 4) is cut out of a literal
     // into a term run: a literal holds no digit
-    let terms = crate::next_tree::digit_terms();
+    let terms = crate::next_tree::digit_term_spellings();
     let mut cut = Vec::new();
     for r in out {
         let Some(w) = r.g("w").s().map(str::to_string) else {
@@ -2059,13 +2059,13 @@ fn runs_of(text: &str) -> J {
         let mut lit = String::new();
         let mut rest = w.as_str();
         while !rest.is_empty() {
-            if let Some(t) = terms.iter().find(|t| rest.starts_with(t.as_str())) {
+            if let Some((s, t)) = terms.iter().find(|(s, _)| rest.starts_with(s.as_str())) {
                 if !lit.is_empty() {
                     cut.push(J::obj_of(vec![("w", J::str(&lit))]));
                     lit.clear();
                 }
                 cut.push(J::obj_of(vec![("term", J::str(t))]));
-                rest = &rest[t.len()..];
+                rest = &rest[s.len()..];
             } else {
                 let c = rest.chars().next().unwrap();
                 lit.push(c);
@@ -3067,5 +3067,15 @@ mod tests {
             .dump()
         );
         assert_eq!(runs_of("增加2000人").dump(), J::Arr(vec![J::obj_of(vec![("w", J::str("增加2000人"))])]).dump());
+        // an age band written with another range mark is cut as the text step reads it, and prints the list's spelling
+        // (review 11-08: 15至24岁 passed the text step and stayed a literal the core refused)
+        for band in ["15至24岁", "15到24岁", "15–24岁"] {
+            let runs = runs_of(&format!("青年（{band}）"));
+            assert_eq!(runs.arr()[1].dump(), J::obj_of(vec![("term", J::str("15-24岁"))]).dump(), "{band}");
+            assert_eq!(runs.arr().len(), 3, "{band}");
+        }
+        // a bare age is no term: it stays in the literal, which the core refuses
+        assert_eq!(runs_of("增加了5岁").dump(), J::Arr(vec![J::obj_of(vec![("w", J::str("增加了5岁"))])]).dump());
+        assert_eq!(runs_of("5岁以下儿童").arr()[0].dump(), J::obj_of(vec![("term", J::str("5岁以下"))]).dump());
     }
 }

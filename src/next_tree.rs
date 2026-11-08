@@ -648,6 +648,24 @@ fn free_words() -> &'static J {
     W.get_or_init(|| parse(FREE_WORDS_TEXT).expect("number-free-words.json parses"))
 }
 
+/// Each spelling of a digit term (digit_terms) a text may write, with the term the page tree prints for it, longest spelling
+/// first: the term itself, and an age band written with another range mark of number-free-words.json (15至24岁 prints
+/// 15-24岁), as the text checks read it (number_free, next_flow::number_free).
+pub fn digit_term_spellings() -> Vec<(String, String)> {
+    let w = free_words();
+    let marks: Vec<char> = w.g("age_range").arr().iter().flat_map(|x| st(x).chars().collect::<Vec<_>>()).collect();
+    let ages: Vec<String> = w.g("ages").arr().iter().map(st).collect();
+    let mut out = Vec::new();
+    for t in digit_terms() {
+        if ages.contains(&t) && t.contains('-') {
+            out.extend(marks.iter().filter(|m| **m != '-').map(|m| (t.replace('-', &m.to_string()), t.clone())));
+        }
+        out.push((t.clone(), t));
+    }
+    out.sort_by(|a, b| b.0.chars().count().cmp(&a.0.chars().count()).then(a.0.cmp(&b.0)));
+    out
+}
+
 /// The words of number-free-words.json that hold an ASCII digit as an official indicator name writes them (15-24岁, PM2.5,
 /// 每10万人; user 11-08 item 4), longest first: a page prints one as a term run, never as a literal (which holds no digit).
 pub fn digit_terms() -> Vec<String> {
@@ -714,8 +732,12 @@ fn number_free(chars: &[char], held: &[bool]) -> Vec<bool> {
             }
             if chars.get(end) == Some(&'岁') {
                 let band: String = chars[i..=end].iter().map(|&c| if age_range.contains(&c) { '-' } else { c }).collect();
-                if ages.contains(&band) {
-                    mark(i, end + 1);
+                // an age band alone, or a single age with the words its official name writes after it (5岁以下); a bare age
+                // (增加了5岁) is a number (next_flow::number_free)
+                let rest: String = chars[end + 1..].iter().collect();
+                let named = ages.iter().filter(|a| a.starts_with(band.as_str()) && rest.starts_with(&a[band.len()..]));
+                if let Some(a) = named.max_by_key(|a| a.len()) {
+                    mark(i, end + 1 + a[band.len()..].chars().count());
                 }
             }
         }
