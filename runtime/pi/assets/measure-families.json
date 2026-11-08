@@ -10,7 +10,7 @@
     {"id": "asylum", "zh": "庇护申请", "words": ["庇护申请", "庇护"], "en": "asylum applicants", "tables": ["migr_asy"]},
     {"id": "gdp_pc", "zh": "人均GDP", "words": ["人均国内生产总值", "人均GDP"], "en": "gross domestic product per capita", "tables": ["nama_10_pc", "NY.GDP.PCAP"]},
     {"id": "gdp", "zh": "GDP", "words": ["国内生产总值", "经济总量", "GDP"], "en": "gross domestic product", "tables": ["nama_10_gdp", "NY.GDP.MKTP"]},
-    {"id": "energy_imports", "zh": "能源进口", "words": ["化石能源进口", "能源进口", "进口"], "en": "imports of energy products by partner country", "tables": ["nrg_ti_", "nrg_te_"]},
+    {"id": "energy_imports", "zh": "能源进口", "words": ["化石能源进口", "进口化石", "能源进口", "进口能源", "天然气进口", "进口天然气", "原油进口", "进口原油", "石油进口", "进口石油", "煤炭进口", "进口煤炭"], "en": "imports of energy products by partner country", "tables": ["nrg_ti_", "nrg_te_"]},
     {"id": "population", "zh": "人口", "words": ["总人口", "人口总数", "人口数量", "人口增长", "人口变化"], "en": "total population", "tables": ["SP.POP.TOTL", "demo_pjan", "demo_gind"]}
   ]
 }

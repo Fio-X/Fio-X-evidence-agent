@@ -3609,6 +3609,9 @@ mod tests {
             ),
             ("人均GDP和可再生能源占比的关系", vec!["renewable_share", "gdp_pc"]),
             ("人均 gdp 与 GDP", vec!["gdp_pc", "gdp"]),
+            // imports said alone are all goods and services, not energy (a page said the energy half went unanswered)
+            ("香港、新加坡、韩国、日本、中国、泰国 2023 年进口占 GDP 的比重，前三是哪些？", vec![]),
+            ("各国天然气进口来源", vec!["energy_imports"]),
             ("今天天气如何", vec![]),
         ] {
             assert_eq!(ids(q), want, "{q}");
