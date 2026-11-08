@@ -10610,10 +10610,10 @@ mod tests {
             narrowed(dir.path(), &table),
             Ok(Some((
                 Scope {
-                    text: "在人口最多的7个经济体中".into(),
+                    text: "在人口最多、有数据的7个经济体中".into(),
                     record: "data/origins/c.json".into()
                 },
-                "按人口取前 7 个经济体（世界银行 SP.POP.TOTL，2024 年）".into()
+                "按人口取有数据的前 7 个经济体（世界银行 SP.POP.TOTL，2024 年）".into()
             )))
         );
         write(

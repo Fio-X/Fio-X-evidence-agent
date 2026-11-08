@@ -4,7 +4,7 @@
  "n_source": "8 economies x 10 years = 80 rows, the chart row limit (MAX_CHART_ROWS); the cap only, the page shows the true count",
  "year_share": 0.8,
  "year_share_source": "the rank year is the latest year where at least this share of the economies with any value have one (both tables counted when ranked by another indicator), so a year few economies have reported yet is not used",
- "zh_source": "zh_scope is a program field of the page: its kicker (above the title and dek) and the eyebrow of the narrowed chart's scene (above the chart and its heroes), never model text; {n} is the count of economies the narrow record keeps. zh_line follows the chart's source line, {at} the record's rank year",
+ "zh_source": "zh_scope is a program field of the page: its kicker (above the title and dek) and the eyebrow of the narrowed chart's scene (above the chart and its heroes), never model text; {n} is the count of economies the narrow record keeps. zh_line follows the chart's source line, {at} the record's rank year. An option ranked by another indicator ranks only the economies with a value in both tables, so its words say the count is of economies with data: an economy the reference ranks higher but without a value in the table is not among them (round 8 n31: China skipped, the page had said the three most populous)",
  "options": [
   {
    "key": "top",
@@ -28,8 +28,8 @@
    "by": "SP.POP.TOTL",
    "label": "the {n} most populous economies (World Bank SP.POP.TOTL, the latest year both tables have)",
    "prefix": "Among the most populous economies, ",
-   "zh_scope": "在人口最多的{n}个经济体中",
-   "zh_line": "按人口取前 {n} 个经济体（世界银行 SP.POP.TOTL，{at} 年）"
+   "zh_scope": "在人口最多、有数据的{n}个经济体中",
+   "zh_line": "按人口取有数据的前 {n} 个经济体（世界银行 SP.POP.TOTL，{at} 年）"
   },
   {
    "key": "NY.GDP.MKTP.CD",
@@ -37,8 +37,8 @@
    "by": "NY.GDP.MKTP.CD",
    "label": "the {n} largest economies by GDP (World Bank NY.GDP.MKTP.CD, current US$, the latest year both tables have)",
    "prefix": "Among the largest economies by GDP, ",
-   "zh_scope": "在经济规模最大的{n}个经济体中",
-   "zh_line": "按经济规模取前 {n} 个经济体（世界银行 NY.GDP.MKTP.CD，现价美元，{at} 年）"
+   "zh_scope": "在经济规模最大、有数据的{n}个经济体中",
+   "zh_line": "按经济规模取有数据的前 {n} 个经济体（世界银行 NY.GDP.MKTP.CD，现价美元，{at} 年）"
   }
  ]
 }

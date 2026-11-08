@@ -2865,6 +2865,11 @@ mod tests {
             assert!(!o.zh_scope.chars().any(|c| c.is_ascii_digit()), "{o:?}");
             // A kicker and an eyebrow stand alone: no prefix comma.
             assert!(!o.zh_scope.ends_with(['，', ',']), "{o:?}");
+            // Ranked by another indicator, the tool ranks only the economies with a value in both tables: the words say the
+            // count is of economies with data, never "the n most populous" of all (round 8 n31). Ranked by the table's own
+            // values, an economy without one cannot be highest or lowest.
+            assert_eq!(o.by.is_some(), o.zh_scope.contains("有数据的{n}个"), "{o:?}");
+            assert_eq!(o.by.is_some(), o.zh_line.contains("有数据的前 {n} 个"), "{o:?}");
         }
     }
 
