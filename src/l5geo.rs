@@ -852,6 +852,46 @@ fn scope_classes() -> &'static [ScopeClass] {
     CLASSES.get_or_init(|| scope_classes_from(SCOPE_REFUSAL).expect("scope-refusal-zh.json is the registered form"))
 }
 
+/// The knowledge group's country name table (economy-names.json; its Chinese names), read for the scope check's place words.
+const ECONOMY_NAMES_ZH: &str = include_str!("../runtime/pi/assets/economy-names.json");
+
+/// The Chinese place words a question may name a measure by, longest first: each country's Chinese name
+/// (economy-names.json), the short names and the group words of place-names-zh.json.
+fn place_words_zh() -> &'static [String] {
+    static W: OnceLock<Vec<String>> = OnceLock::new();
+    W.get_or_init(|| {
+        let v: serde_json::Value = serde_json::from_str(ECONOMY_NAMES_ZH).expect("economy-names.json parses");
+        let mut w: Vec<String> =
+            v["economies"].as_array().into_iter().flatten().filter_map(|e| e["zh"].as_str().map(str::to_string)).collect();
+        let p = place_names_zh();
+        w.extend(p.aliases.iter().map(|a| a.name.clone()));
+        w.extend(p.groups.iter().flat_map(|g| g.names.iter().cloned()));
+        w.retain(|x| !x.is_empty());
+        w.sort_by(|a, b| b.chars().count().cmp(&a.chars().count()).then(a.cmp(b)));
+        w.dedup();
+        w
+    })
+}
+
+/// The measure a side of a joining word names after its place or year (法国失业率 → 失业率, 2023年的失业率 → 失业率): for
+/// the left side the words after the last place or year in it, for the right side after the place or year it starts with;
+/// a 的 after the place or year is left out. None when no place or year stands there, or nothing follows it.
+fn measure_after_place(side: &str, left: bool) -> Option<String> {
+    let c: Vec<char> = side.chars().collect();
+    let year_at = |i: usize| {
+        (c.len() >= i + 5 && c[i..i + 4].iter().all(|d| d.is_ascii_digit()) && c[i + 4] == '年' && (i == 0 || !c[i - 1].is_ascii_digit())).then_some(i + 5)
+    };
+    let place_at = |i: usize| place_words_zh().iter().map(|w| w.chars().collect::<Vec<_>>()).find(|w| c[i..].starts_with(w)).map(|w| i + w.len());
+    let end = if left {
+        (0..c.len()).filter_map(|i| year_at(i).or_else(|| place_at(i))).max()
+    } else {
+        year_at(0).or_else(|| place_at(0))
+    }?;
+    let rest: String = c[end..].iter().collect();
+    let rest = rest.strip_prefix('的').unwrap_or(&rest).to_string();
+    (!rest.is_empty()).then_some(rest)
+}
+
 /// The class of question the knowledge group refuses from its words alone, before any search (user 11-08 item 1: causes,
 /// forecasts, places below a country, two measures' relation, derived ratios, quarters and months, opinions); None for a
 /// question none of them takes. `this_year` is the program's clock year: a four-digit year after it is a forecast.
@@ -864,10 +904,14 @@ pub fn scope_refused_zh(question_zh: &str, this_year: i32) -> Option<ScopeRefusa
         }
         let chars: Vec<char> = q.chars().collect();
         let refuse = |hit: String| Some(ScopeRefusal { class: c.id.clone(), reason_zh: c.reason_zh.clone(), hit });
-        // a word starting with 年 (年后) right after a four-digit year asks from that year on (2008年以后), not about the future
+        // a word starting with 年 (年后) right after a four-digit year before this one asks from that past year on (2008年以后)
         let after_year = |i: usize| {
             let back: Vec<char> = q[..i].chars().rev().take(5).collect();
-            back.len() >= 4 && back[..4].iter().all(|d| d.is_ascii_digit()) && back.get(4).is_none_or(|d| !d.is_ascii_digit())
+            let year: String = back.iter().take(4).rev().collect();
+            back.len() >= 4
+                && back[..4].iter().all(|d| d.is_ascii_digit())
+                && back.get(4).is_none_or(|d| !d.is_ascii_digit())
+                && year.parse::<i32>().is_ok_and(|y| y < this_year)
         };
         let hit = |w: &String| q.match_indices(w.as_str()).any(|(i, _)| !(w.starts_with('年') && after_year(i)));
         if let Some(w) = c.words.iter().find(|w| hit(w)) {
@@ -886,9 +930,11 @@ pub fn scope_refused_zh(question_zh: &str, this_year: i32) -> Option<ScopeRefusa
                 for (i, _) in q.match_indices(joiner.as_str()) {
                     let left = &q[..i];
                     let right: String = q[i + joiner.len()..].chars().take(j.max).collect();
-                    // two sides that end alike for two characters past the suffix name one measure twice (德国失业率和法国失业率)
-                    let same = |l: &str, r: &str, x: &str| {
-                        l.chars().rev().zip(r.chars().rev()).take_while(|(a, b)| a == b).count() >= x.chars().count() + 2
+                    // one measure named twice, by two places or two years (德国失业率和法国失业率, 2000年的失业率和2023年的
+                    // 失业率): the same words follow a place or a year on both sides; two quantities that end alike
+                    // (GDP增长率和人口增长率) stay two measures (review 11-08)
+                    let same = |l: &str, r: &str, _x: &str| {
+                        matches!((measure_after_place(l, true), measure_after_place(r, false)), (Some(a), Some(b)) if a == b)
                     };
                     let ends = |s: &str| j.suffixes.iter().find(|x| s.ends_with(x.as_str()));
                     let right_ok = (1..=right.chars().count()).any(|k| {
@@ -4416,7 +4462,14 @@ mod tests {
         ] {
             assert_eq!(scope_refused_zh(q, 2026), None, "{q}");
         }
-        for (q, class) in [("十年后印度人口会是多少？", "forecast"), ("5年后欧盟失业率怎么走？", "forecast"), ("各国失业率和通胀率谁高？", "two_measures")] {
+        for (q, class) in [
+            ("十年后印度人口会是多少？", "forecast"),
+            ("5年后欧盟失业率怎么走？", "forecast"),
+            ("2026年以后欧盟失业率怎么走？", "forecast"),
+            ("各国失业率和通胀率谁高？", "two_measures"),
+            ("中国、印度的GDP增长率和人口增长率各是多少？", "two_measures"),
+            ("各国出口增长率和进口增长率谁高？", "two_measures"),
+        ] {
             assert_eq!(scope_refused_zh(q, 2026).map(|r| r.class), Some(class.to_string()), "{q}");
         }
         // the clock decides a forecast: 2027 is one in 2026, not in 2027
