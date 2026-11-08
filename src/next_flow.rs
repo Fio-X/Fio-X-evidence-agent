@@ -4773,15 +4773,6 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
     catalogue: &dyn Catalogue,
     cancel: &AtomicBool,
 ) -> Result<Vec<Prepared>, Stop> {
-    // a whole class the new route cannot answer, read by the knowledge group from the question's words (user 11-08 item 1):
-    // stopped before any search; nothing is asked, searched or fetched
-    if steps.is_empty() {
-        let refused = catalogue.scope_refused(question, chrono::Datelike::year(&chrono::Local::now()));
-        record_group_calls(recorder, catalogue)?;
-        if let Some(r) = refused {
-            return Err(Stop::NoTable(format!("the question is out of scope ({}, \"{}\"): {}", r.class, r.hit, r.reason_zh)));
-        }
-    }
     let prompt = format!(
         "Question: {question}\nWrite English words to search the data catalogue for tables that answer it."
     );
@@ -4792,6 +4783,16 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
         (_, Choice::Search { query }) => query,
         (_, other) => unreachable!("the search step was answered with {other:?}"),
     };
+    // a whole class the new route cannot answer, read by the knowledge group from the question's words (user 11-08 item 1):
+    // stopped before the catalogue is searched, nothing searched or fetched; the group's call is recorded under the search
+    // answer, as every group call follows a model answer (the program never calls on its own, Stop::NoModelParent)
+    if steps.is_empty() {
+        let refused = catalogue.scope_refused(question, chrono::Datelike::year(&chrono::Local::now()));
+        record_group_calls(recorder, catalogue)?;
+        if let Some(r) = refused {
+            return Err(Stop::NoTable(format!("the question is out of scope ({}, \"{}\"): {}", r.class, r.hit, r.reason_zh)));
+        }
+    }
     // The search words go to the catalogue and into this event only: no later prompt, fetch or page reads them.
     let texts = vec![query];
     let this_year = chrono::Datelike::year(&chrono::Local::now());
@@ -8166,6 +8167,50 @@ mod tests {
 
     /// Every call of the knowledge group's command is kept as a GROUP_CALL_EVENT, a refused one too; record_group_calls hangs
     /// them under the step that asked and empties the queue.
+    /// User 11-08 item 1, as run: the knowledge group's scope call is a group call like any other, recorded under a model
+    /// answer. A question the group refuses stops as out of scope after the search answer, its call recorded under that
+    /// answer, never stopped as a call with no model answer (round 7's first three questions all stopped so: the call was
+    /// made and recorded before any step); nothing is searched or fetched.
+    #[tokio::test]
+    async fn the_scope_call_is_recorded_under_the_search_answer() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        struct Scoped(Mutex<Vec<Value>>, bool);
+        impl Catalogue for Scoped {
+            fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>) -> Ranking {
+                unreachable!("an out-of-scope question is not searched")
+            }
+            fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
+                unreachable!()
+            }
+            fn source(&self) -> &Value {
+                unreachable!()
+            }
+            fn take_calls(&self) -> Vec<Value> {
+                std::mem::take(&mut *self.0.lock().unwrap())
+            }
+            fn scope_refused(&self, _: &str, _: i32) -> Option<crate::l5geo::ScopeRefusal> {
+                self.0.lock().unwrap().push(json!({"group": "knowledge", "request": "scope_refused"}));
+                self.1.then(|| crate::l5geo::ScopeRefusal { class: "cause".into(), reason_zh: "原因".into(), hit: "为什么".into() })
+            }
+        }
+        let catalogue = Scoped(Mutex::new(Vec::new()), true);
+        let run = tempfile::tempdir().unwrap();
+        let (events, mut sink) = collector();
+        let mut model = ScriptedAsker::new(vec![search_reply()]);
+        let mut tools = claims_tools();
+        let cancel = AtomicBool::new(false);
+        let mut recorder = Recorder::new(&mut sink, run.path(), Vec::new(), Vec::new());
+        let result = prepare_claims(&mut recorder, &mut model, &mut tools, "为什么日本的老龄化更严重？", &[], &catalogue, &cancel).await;
+        drop(recorder);
+        let why = result.unwrap_err().to_string();
+        assert!(why.contains("out of scope (cause"), "{why}");
+        let calls = of_type(&events, GROUP_CALL_EVENT);
+        assert_eq!(calls.len(), 1, "{calls:?}");
+        assert_eq!(calls[0]["request"], "scope_refused");
+        assert!(calls[0]["auto_parent_call_id"].is_string(), "{calls:?}");
+        assert!(tools.args.is_empty(), "nothing fetched");
+    }
+
     #[test]
     fn every_knowledge_group_call_is_kept_and_recorded_under_its_step() {
         let _command = crate::group_guard::command_for_test("investigate");
