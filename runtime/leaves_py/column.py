@@ -55,7 +55,7 @@ class ColumnFrame:
         f.year, f.marks, f.size, f.rh = year, set(d.get("marks") or []), K("size"), K("row")
         f.focus, f.noted = set(focus(h)), set(noted(h))
         if f.focus or f.noted:
-            # a page whose legend names its inks (accent_key) sets in the title ink and bold exactly the places those inks mark:
+            # a page with marked inks sets in the title ink and bold exactly the places those inks mark:
             # B6 (11-04): the q1 stand-in read the bold title-ink names of layer 1's marks (Sweden, Belgium) as the dark grey the
             # legend gives the notes, whose own place (Croatia) printed plain beside its dark bar
             f.marks = f.focus | f.noted
@@ -178,7 +178,7 @@ def cl_change_bars_placed(f, placed):
     return "".join(o)
 
 
-# A bar of the page's focus (focus): the accent, which marks nothing else on the page; the legend line (accent_key) says so. A
+# A bar of the page's focus (focus): the accent, which marks nothing else on the page; its label names it. A
 # bar of another place the notes name (noted): a dark grey of the page's, darker than any other bar's. A change bar out of
 # both by its sign, two of the page's greys: a rise the darker, a fall the bars' own; no change, the bar's.
 FOCUS, NOTED = "var(--accent)", "var(--t-body)"
@@ -309,7 +309,7 @@ def column_shell(f, bars, unit, pic="", main="bars"):
     svg (`pic`, its layers; class cmap, as the page css places a .map absolutely) on the left and the bars' beside it, its
     viewBox starting at x0 so each text stands where the panel placed it. The picture's svg is classed by the page's main layer
     (`main`, the bars or the leaf in their place); a main leaf heads itself with its unit, so with no hero unit the line is
-    its year only. After the year, when the page has a focus, the line that says what the accent means (accent_key)."""
+    its year only."""
     # the period the bars are at: a year (period:<t>:<y>), or a half year's or a month's two parts (period:<t>:<t>.y, .h or .m)
     year = word("date.y", y=FX.entry(f"period:{f.table}:{f.year}", "span", None)) if "-" not in f.year else FX.period_words(f"period:{f.table}:{f.year}")
     if f.change: year = word("column.change_years", a=FX.entry(f"period:{f.table}:{prod.need(f.d, 't0')}", "span", None), b=year)
@@ -318,20 +318,7 @@ def column_shell(f, bars, unit, pic="", main="bars"):
     bars = f'<svg class="{main}" viewBox="{f.x0} 0 {f.bw} {f.bh:.0f}" width="{f.bw}" height="{f.bh:.0f}">{bars}</svg>'
     if f.mv: bars = f'<div class="cm"><svg class="cmap" viewBox="0 0 {f.mv.W} {f.map_h}" width="{f.mv.W}" height="{f.map_h}">{pic}</svg>{bars}</div>'
     line = year if main != "bars" and not unit else f'{unit}{word("list.sep")}{year}'
-    return f'<div class="hero column"><div class="cu">{line}{accent_key(f)}</div>{bars}</div>'
-
-
-def accent_key(f):
-    """The legend line of the marked inks: on a page with a focus (focus), a swatch in the accent, then the word table's
-    column.accent (words only: the accent marks the place the dek names); on a page whose notes name other places (noted:
-    their bars and circles in the dark grey, B3 11-04: two q6 stand-ins found the dark bar and circles unexplained beside
-    the accent), a swatch in that grey, then column.noted. None for an ink the page does not draw."""
-    out = ""
-    for key, on in (("column.accent", bool(f.focus)), ("column.noted", bool(set(f.noted) - set(f.focus)))):
-        if not on: continue
-        if FX.digit(word(key)): raise FX.Refused(f"column: the legend's {key} holds a digit")
-        out += f'<span class="ak{" nk" if key == "column.noted" else ""}">{word(key)}</span>'
-    return out
+    return f'<div class="hero column"><div class="cu">{line}</div>{bars}</div>'
 
 
 def strip_shell(svg, w, h):
@@ -342,8 +329,7 @@ def strip_shell(svg, w, h):
 
 
 # The header's second column is as wide as the big numbers' box (bignums.width), which sizes each number to its cell. Then the
-# map, the gap and the bars; the accent's legend line (accent_key) after the year, its swatch in the accent.
+# map, the gap and the bars. No legend line of the marked inks (review 11-08, SCMP P25: ten stand-ins found "red = what the
+# headline points at" abstract): every mark in the accent or the dark grey is named by its own label on the map and the bars.
 CSS = """.illus-strip{width:1140px;margin:0 0 24px}.illus-strip svg{display:block}""" + """.hero.column{position:relative;width:1140px;margin:8px 0 30px}.hero.column .cu{font:400 12px/17px var(--sans);color:var(--t-sec);margin-bottom:6px}""" + \
-    ".hero.column .cm{display:flex;gap:%dpx;align-items:flex-start}.hero.column .cm svg{flex:none}" % MAP_GAP + \
-    ".hero.column .ak{margin-left:16px;color:var(--t-body)}.hero.column .ak::before{content:'';display:inline-block;width:9px;height:9px;margin-right:5px;background:var(--accent);vertical-align:0}" + \
-    ".hero.column .ak.nk::before{background:var(--t-body)}"
+    ".hero.column .cm{display:flex;gap:%dpx;align-items:flex-start}.hero.column .cm svg{flex:none}" % MAP_GAP
