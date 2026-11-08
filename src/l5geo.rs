@@ -875,27 +875,46 @@ fn place_words_zh() -> &'static [String] {
     })
 }
 
-/// The measure a side of a joining word names after its place or year (法国失业率 → 失业率, 2023年的失业率 → 失业率): for
-/// the left side the words after the last place or year in it, for the right side after the place or year it starts with;
-/// a 的, 各国 or 平均 after the place or year is left out. None when no place or year stands there, or nothing follows it.
-fn measure_after_place(side: &str, left: bool) -> Option<String> {
+/// The words between a place or a year and the measure they name, left out on both sides (北欧各国失业率, 欧盟平均失业率,
+/// 2023年的失业率 → 失业率).
+const AFTER_PLACE_ZH: [&str; 3] = ["的", "各国", "平均"];
+
+/// The characters before a place word that make it the object of the measure, not the place the measure is of (对东欧出口).
+const OBJECT_MARKS_ZH: [char; 4] = ['对', '向', '从', '自'];
+
+/// The measure the right side of a joining word names after the place or the year it starts with (法国失业率 → 失业率,
+/// 2023年的失业率 → 失业率, 法国对东欧出口总量 → 对东欧出口总量), the AFTER_PLACE_ZH words after it left out; None when
+/// no place or year starts it, or nothing follows it.
+fn measure_after_place(side: &str) -> Option<String> {
     let c: Vec<char> = side.chars().collect();
-    let year_at = |i: usize| {
-        (c.len() >= i + 5 && c[i..i + 4].iter().all(|d| d.is_ascii_digit()) && c[i + 4] == '年' && (i == 0 || !c[i - 1].is_ascii_digit())).then_some(i + 5)
-    };
-    let place_at = |i: usize| place_words_zh().iter().map(|w| w.chars().collect::<Vec<_>>()).find(|w| c[i..].starts_with(w)).map(|w| i + w.len());
-    let end = if left {
-        (0..c.len()).filter_map(|i| year_at(i).or_else(|| place_at(i))).max()
-    } else {
-        year_at(0).or_else(|| place_at(0))
-    }?;
+    let year = c.len() >= 5 && c[..4].iter().all(|d| d.is_ascii_digit()) && c[4] == '年';
+    let place = place_words_zh().iter().find(|w| side.starts_with(w.as_str())).map(|w| w.chars().count());
+    let end = if year { Some(5) } else { place }?;
     let rest: String = c[end..].iter().collect();
-    // 的, 各国 and 平均 after the place name the places' measure (北欧各国失业率, 欧盟平均失业率 → 失业率)
     let mut rest = rest.as_str();
-    while let Some(r) = ["的", "各国", "平均"].iter().find_map(|p| rest.strip_prefix(p)) {
+    while let Some(r) = AFTER_PLACE_ZH.iter().find_map(|p| rest.strip_prefix(p)) {
         rest = r;
     }
     (!rest.is_empty()).then(|| rest.to_string())
+}
+
+/// Whether the left side of a joining word ends with the measure `m` right after a place or a year (the AFTER_PLACE_ZH
+/// words between them allowed), the place not the object of a mark before it (德国对东欧出口总量 does not name 出口总量
+/// of 东欧): then the two sides name one measure twice.
+fn names_measure_after_place(left: &str, m: &str) -> bool {
+    let Some(mut head) = left.strip_suffix(m) else { return false };
+    while let Some(h) = AFTER_PLACE_ZH.iter().find_map(|p| head.strip_suffix(p)) {
+        head = h;
+    }
+    let c: Vec<char> = head.chars().collect();
+    let n = c.len();
+    let year = n >= 5 && c[n - 1] == '年' && c[n - 5..n - 1].iter().all(|d| d.is_ascii_digit()) && (n == 5 || !c[n - 6].is_ascii_digit());
+    let place = place_words_zh().iter().find(|w| head.ends_with(w.as_str())).map(|w| w.chars().count());
+    match (year, place) {
+        (true, _) => true,
+        (false, Some(k)) => !(n > k && OBJECT_MARKS_ZH.contains(&c[n - k - 1])),
+        (false, None) => false,
+    }
 }
 
 /// The class of question the knowledge group refuses from its words alone, before any search (user 11-08 item 1: causes,
@@ -939,9 +958,7 @@ pub fn scope_refused_zh(question_zh: &str, this_year: i32) -> Option<ScopeRefusa
                     // one measure named twice, by two places or two years (德国失业率和法国失业率, 2000年的失业率和2023年的
                     // 失业率): the same words follow a place or a year on both sides; two quantities that end alike
                     // (GDP增长率和人口增长率) stay two measures (review 11-08)
-                    let same = |l: &str, r: &str, _x: &str| {
-                        matches!((measure_after_place(l, true), measure_after_place(r, false)), (Some(a), Some(b)) if a == b)
-                    };
+                    let same = |l: &str, r: &str, _x: &str| measure_after_place(r).is_some_and(|m| names_measure_after_place(l, &m));
                     let ends = |s: &str| j.suffixes.iter().find(|x| s.ends_with(x.as_str()));
                     let right_ok = (1..=right.chars().count()).any(|k| {
                         let r: String = right.chars().take(k).collect();
@@ -4466,6 +4483,7 @@ mod tests {
             "欧盟通胀率和欧元区通胀率谁高？",
             "北欧各国失业率和南欧各国失业率谁高？",
             "德国失业率和欧盟平均失业率差多少？",
+            "德国对东欧出口总量和法国对东欧出口总量谁高？",
             "2000年的失业率和2023年的失业率差多少？",
             "各国6个月以下儿童纯母乳喂养比例谁最高？",
         ] {
@@ -4478,6 +4496,8 @@ mod tests {
             ("各国失业率和通胀率谁高？", "two_measures"),
             ("中国、印度的GDP增长率和人口增长率各是多少？", "two_measures"),
             ("各国出口增长率和进口增长率谁高？", "two_measures"),
+            ("德国对东欧出口总量和法国出口总量谁高？", "two_measures"),
+            ("德国对中国出口总量和法国出口总量谁高？", "two_measures"),
         ] {
             assert_eq!(scope_refused_zh(q, 2026).map(|r| r.class), Some(class.to_string()), "{q}");
         }
