@@ -446,6 +446,20 @@
     {
      "type": "object",
      "required": [
+      "term"
+     ],
+     "properties": {
+      "term": {
+       "description": "A word that writes ASCII digits as an official indicator name does (15-24岁, PM2.5; user 11-08): the core holds it to the digit words of number-free-words.json.",
+       "type": "string",
+       "minLength": 1
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "type": "object",
+     "required": [
       "quote",
       "from"
      ],

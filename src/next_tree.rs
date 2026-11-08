@@ -648,6 +648,19 @@ fn free_words() -> &'static J {
     W.get_or_init(|| parse(FREE_WORDS_TEXT).expect("number-free-words.json parses"))
 }
 
+/// The words of number-free-words.json that hold an ASCII digit as an official indicator name writes them (15-24岁, PM2.5,
+/// 每10万人; user 11-08 item 4), longest first: a page prints one as a term run, never as a literal (which holds no digit).
+pub fn digit_terms() -> Vec<String> {
+    let mut out: Vec<String> = ["terms", "si_units", "rates", "ages", "scales"]
+        .iter()
+        .flat_map(|k| free_words().g(k).arr().iter().map(st).collect::<Vec<_>>())
+        .filter(|w| w.chars().any(|c| c.is_ascii_digit()))
+        .collect();
+    out.sort_by(|a, b| b.chars().count().cmp(&a.chars().count()).then(a.cmp(b)));
+    out.dedup();
+    out
+}
+
 /// Which chars of a text's literal (`held` marks a placeholder's blank) write a term, a unit, a rate's base, a scale label
 /// or an age band of number-free-words.json (next_flow::number_free, ported).
 fn number_free(chars: &[char], held: &[bool]) -> Vec<bool> {
@@ -2816,6 +2829,16 @@ fn words_lint(page: &J, errs: &mut Vec<String>) {
         }
         let (mut chars, mut held) = (Vec::new(), Vec::new());
         for r in v.g("runs").arr() {
+            // a term run is a word of the digit lists (user 11-08 item 4), read as the literal it prints
+            if let Some(t) = r.get("term") {
+                let t = st(t);
+                if !digit_terms().contains(&t) {
+                    errs.push(format!("{path}: term {} is no word of number-free-words.json with a digit", J::str(&t).repr()));
+                }
+                chars.extend(t.chars());
+                held.extend(t.chars().map(|_| false));
+                continue;
+            }
             match r.g("w").s() {
                 Some(w) if r.has("w") => {
                     chars.extend(w.chars());
@@ -5706,6 +5729,9 @@ impl<'a> Words<'a> {
         if r.has("w") {
             return Ok(st(r.g("w")));
         }
+        if r.has("term") {
+            return Ok(st(r.g("term")));
+        }
         if r.has("word") {
             let k = st(r.g("word"));
             return self.inp.g("word_table").get(&k).map(st).ok_or_else(|| format!("'{k}'"));
@@ -5746,6 +5772,8 @@ fn literal_chars(rs: &J, inp: &J) -> (Vec<char>, Vec<bool>) {
     for r in rs.arr() {
         let t = if r.has("w") {
             Some(st(r.g("w")))
+        } else if r.has("term") {
+            Some(st(r.g("term")))
         } else if r.has("word") {
             Some(inp.g("word_table").get(&st(r.g("word"))).map_or(String::new(), st))
         } else {

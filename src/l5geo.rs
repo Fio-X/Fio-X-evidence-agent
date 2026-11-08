@@ -790,6 +790,134 @@ pub fn rank_asked_zh(question_zh: &str) -> Option<RankAsked> {
     found
 }
 
+/// The whole classes of questions the new route cannot answer (runtime/pi/assets/scope-refusal-zh.json, user 11-08 item 1),
+/// compiled in so a broken file fails its test, not a run.
+const SCOPE_REFUSAL: &str = include_str!("../runtime/pi/assets/scope-refusal-zh.json");
+
+/// A question refused for its whole class before any search: the class id, the sentence the stop says, and the words (or
+/// the rule) that matched.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ScopeRefusal {
+    pub class: String,
+    pub reason_zh: String,
+    pub hit: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ScopeJoined {
+    joiners: Vec<String>,
+    suffixes: Vec<String>,
+    max: usize,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ScopeClass {
+    id: String,
+    reason_zh: String,
+    #[serde(default)]
+    words: Vec<String>,
+    #[serde(default)]
+    gaps: Vec<(String, String, usize)>,
+    #[serde(default)]
+    joined: Option<ScopeJoined>,
+    #[serde(default)]
+    month_numbers: bool,
+    #[serde(default)]
+    future_year: bool,
+    #[serde(default)]
+    not: Vec<String>,
+}
+
+fn scope_classes_from(text: &str) -> Result<Vec<ScopeClass>, String> {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct File {
+        #[allow(dead_code)]
+        note: String,
+        classes: Vec<ScopeClass>,
+    }
+    let file: File = serde_json::from_str(text).map_err(|e| format!("scope-refusal-zh.json: {e}"))?;
+    for c in &file.classes {
+        if c.words.iter().chain(c.not.iter()).any(|w| w.trim().is_empty()) || c.reason_zh.trim().is_empty() {
+            return Err(format!("scope-refusal-zh.json: class {} holds an empty word or reason", c.id));
+        }
+    }
+    Ok(file.classes)
+}
+
+fn scope_classes() -> &'static [ScopeClass] {
+    static CLASSES: OnceLock<Vec<ScopeClass>> = OnceLock::new();
+    CLASSES.get_or_init(|| scope_classes_from(SCOPE_REFUSAL).expect("scope-refusal-zh.json is the registered form"))
+}
+
+/// The class of question the knowledge group refuses from its words alone, before any search (user 11-08 item 1: causes,
+/// forecasts, places below a country, two measures' relation, derived ratios, quarters and months, opinions); None for a
+/// question none of them takes. `this_year` is the program's clock year: a four-digit year after it is a forecast.
+pub fn scope_refused_zh(question_zh: &str, this_year: i32) -> Option<ScopeRefusal> {
+    let plain: String = question_zh.chars().filter(|c| !c.is_whitespace()).collect();
+    for c in scope_classes() {
+        let mut q = plain.clone();
+        for n in &c.not {
+            q = q.replace(n.as_str(), &"\u{3000}".repeat(n.chars().count()));
+        }
+        let chars: Vec<char> = q.chars().collect();
+        let refuse = |hit: String| Some(ScopeRefusal { class: c.id.clone(), reason_zh: c.reason_zh.clone(), hit });
+        if let Some(w) = c.words.iter().find(|w| q.contains(w.as_str())) {
+            return refuse(w.clone());
+        }
+        for (a, b, n) in &c.gaps {
+            for (i, _) in q.match_indices(a.as_str()) {
+                let after: String = q[i + a.len()..].chars().take(n + b.chars().count()).collect();
+                if after.contains(b.as_str()) {
+                    return refuse(format!("{a}…{b}"));
+                }
+            }
+        }
+        if let Some(j) = &c.joined {
+            for joiner in &j.joiners {
+                for (i, _) in q.match_indices(joiner.as_str()) {
+                    let left = &q[..i];
+                    let right: String = q[i + joiner.len()..].chars().take(j.max).collect();
+                    let ends = |s: &str| j.suffixes.iter().any(|x| s.ends_with(x.as_str()));
+                    let right_ok = (1..=right.chars().count()).any(|k| ends(&right.chars().take(k).collect::<String>()));
+                    if ends(left) && right_ok {
+                        return refuse(format!("…{joiner}…"));
+                    }
+                }
+            }
+        }
+        if c.month_numbers {
+            const NUMS: [&str; 12] = ["十二", "十一", "十", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
+            for (k, ch) in chars.iter().enumerate() {
+                if *ch == '月' && k > 0 {
+                    let before: String = chars[..k].iter().collect();
+                    let digits: String = before.chars().rev().take_while(|d| d.is_ascii_digit()).collect::<Vec<_>>().into_iter().rev().collect();
+                    let month_digit = digits.parse::<u32>().is_ok_and(|m| (1..=12).contains(&m)) && digits.len() <= 2;
+                    let month_word = NUMS.iter().any(|w| before.ends_with(w));
+                    if month_digit || month_word {
+                        return refuse(format!("{}月", if month_digit { digits } else { String::new() }));
+                    }
+                }
+                if (*ch == 'Q' || *ch == 'q') && chars.get(k + 1).is_some_and(|d| ('1'..='4').contains(d)) && (k == 0 || !chars[k - 1].is_ascii_alphabetic()) {
+                    return refuse(format!("Q{}", chars[k + 1]));
+                }
+            }
+        }
+        if c.future_year {
+            for (k, _) in chars.iter().enumerate() {
+                let run: String = chars[k..].iter().take(4).collect();
+                let bounded = (k == 0 || !chars[k - 1].is_ascii_digit()) && chars.get(k + 4).is_none_or(|d| !d.is_ascii_digit());
+                if run.len() == 4 && run.chars().all(|d| d.is_ascii_digit()) && bounded && run.parse::<i32>().is_ok_and(|y| y > this_year) {
+                    return refuse(format!("{run}年"));
+                }
+            }
+        }
+    }
+    None
+}
+
 /// One quantity the Chinese question asks for, judged by the program from the question alone (never from the model).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Asked {
@@ -4177,6 +4305,7 @@ mod tests {
     #[test]
     fn a_typed_list_of_economies_in_the_ranking_words_is_refused() {
         assert!(rank_phrases_from(RANK_PHRASES).is_ok());
+        assert!(scope_classes_from(SCOPE_REFUSAL).is_ok());
         let file = |phrases: serde_json::Value| json!({"note": "x", "phrases": phrases}).to_string();
         let typed = file(json!([{"by": "SP.POP.TOTL", "words": ["人口最多"], "members": ["CN", "IN", "US"]}]));
         assert!(rank_phrases_from(&typed).unwrap_err().contains("members"), "{typed}");
@@ -4237,4 +4366,58 @@ mod tests {
         }
         println!("R2SUM in-five {hit}/{n}");
     }
+
+    /// User 11-08 item 1: each whole class the new route cannot answer is refused from the question's words, with two
+    /// questions it takes and two lookalikes it leaves (none of them a dev-set question).
+    #[test]
+    fn a_whole_class_out_of_scope_is_refused_and_its_lookalikes_are_not() {
+        let cases: [(&str, [&str; 2], &[&str]); 7] = [
+            ("cause", ["为什么日本的老龄化比韩国更严重？", "德国近十年碳排放下降的原因是什么？"], &["德国、日本、韩国 2023 年的老龄化程度谁最高？", "欧盟各国 2022 年原油进口量谁最多？"]),
+            ("forecast", ["到 2050 年印度人口会超过多少？", "未来十年欧盟各国失业率会怎么变？"], &["2015 年到 2023 年欧盟各国失业率各怎么变？", "2024 年中国、印度的预期寿命谁更高？"]),
+            ("subnational", ["广东和江苏哪个省 2023 年的人均 GDP 更高？", "纽约州和德克萨斯州的人口谁多？"], &["撒哈拉以南非洲和东亚与太平洋地区的婴儿死亡率各降了多少？", "巴黎协定之后，法国、德国的二氧化碳排放各降了多少？", "东盟各国 2023 年城市人口比例谁最高？"]),
+            ("two_measures", ["各国人均收入和预期寿命有没有关系？", "德国、法国、波兰的出生率和死亡率各是多少？"], &["德国、法国、波兰的出生率，2000 年到 2023 年各降了多少？", "印度和中国 2023 年的人口，谁更多？", "2023 年欧盟各国研发支出占 GDP 的比重，谁最高？"]),
+            ("derived_ratio", ["美国的军费是中国的几倍？", "日本人口相当于印度的几分之几？"], &["印度人口 2000 年到 2024 年涨了几倍？", "2024 年德国和法国的人均 GDP 差多少？"]),
+            ("sub_year", ["2025 年第二季度欧盟各国失业率谁最高？", "德国 2026 年 8 月的通胀率是多少？"], &["2025 年欧盟各国失业率谁最高？", "欧盟各国 2023 年的最低月工资谁最高？"]),
+            ("opinion", ["你觉得哪个国家的医疗体系最好？", "欧盟应该提高最低工资吗？"], &["2023 年欧盟各国人均医疗支出谁最高？", "2023 年欧盟各国的最低工资，谁最高？"]),
+        ];
+        for (class, yes, no) in cases {
+            for q in yes {
+                let got = scope_refused_zh(q, 2026);
+                assert_eq!(got.as_ref().map(|r| r.class.as_str()), Some(class), "{q}: {got:?}");
+                assert!(!got.unwrap().reason_zh.is_empty());
+            }
+            for q in no {
+                assert_eq!(scope_refused_zh(q, 2026), None, "{q}");
+            }
+        }
+        // the clock decides a forecast: 2027 is one in 2026, not in 2027
+        assert!(scope_refused_zh("2027 年德国的人口是多少？", 2026).is_some());
+        assert_eq!(scope_refused_zh("2027 年德国的人口是多少？", 2027), None);
+    }
+
+    /// User 11-08 item 1's merge condition, run by hand: SCOPE_DEVSET names a JSON list of {id, question, scope} (scope "in"
+    /// or "out"); no in-scope question is refused. Prints each refusal. Ignored by default: the dev set is not in the repo.
+    #[test]
+    #[ignore]
+    fn no_in_scope_dev_question_is_refused() {
+        let Ok(path) = std::env::var("SCOPE_DEVSET") else { return };
+        let rows: Vec<serde_json::Value> = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let (mut out_caught, mut out_all, mut wrong) = (0, 0, Vec::new());
+        for r in &rows {
+            let (id, q, scope) = (r["id"].as_str().unwrap(), r["question"].as_str().unwrap(), r["scope"].as_str().unwrap());
+            let got = scope_refused_zh(q, 2026);
+            if let Some(g) = &got {
+                println!("SCOPE {id} {scope} {} {}", g.class, g.hit);
+            }
+            if scope == "out" {
+                out_all += 1;
+                out_caught += got.is_some() as usize;
+            } else if got.is_some() {
+                wrong.push(id.to_string());
+            }
+        }
+        println!("SCOPE out caught {out_caught}/{out_all}, in refused {}", wrong.len());
+        assert!(wrong.is_empty(), "in-scope questions refused: {wrong:?}");
+    }
+
 }

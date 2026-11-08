@@ -1,0 +1,53 @@
+{
+ "note": "Whole classes of questions the new route cannot answer from World Bank or Eurostat tables, refused by the knowledge group from the question's words before any search (l5geo::scope_refused_zh; user 11-08 item 1). Blanks are removed first, then every `not` word is blanked out, then a class matches when one of its rules does: `words` (a word in the question), `gaps` ([a, b, n]: a, then b within n characters after it), `joined` (a measure, a joining word, a measure: each side ends with one of `suffixes`, the right one within `max` characters), `month_numbers` (a month written as a number before 月, or a quarter code Q1-Q4), `future_year` (a four-digit year after this year). The first class in this order that matches is the one refused; reason_zh is the sentence the stop says.",
+ "classes": [
+  {
+   "id": "cause",
+   "reason_zh": "问的是原因或影响，数据表只记数量，不记原因",
+   "words": ["为什么", "为何", "原因", "缘故", "导致", "造成", "怎么会", "何以", "是因为", "凭什么", "根源", "背后的", "什么影响", "哪些影响", "怎样的影响", "多大的影响", "多大影响"],
+   "gaps": [["对", "的影响", 10]],
+   "not": []
+  },
+  {
+   "id": "forecast",
+   "reason_zh": "问的是将来的数，数据表只有已经发生的年份",
+   "words": ["未来", "将来", "预计", "预测", "预估", "有望", "会不会", "将会", "明年", "后年", "年后", "年以后", "本世纪末", "展望"],
+   "future_year": true,
+   "not": []
+  },
+  {
+   "id": "subnational",
+   "reason_zh": "问的是一国之内的省、州或城市，数据表只到国家一级",
+   "words": ["哪个省", "哪个市", "哪个州", "北京", "上海", "广州", "深圳", "天津", "重庆", "广东", "江苏", "浙江", "山东", "四川", "河南", "东京都", "大阪府", "京都府", "北海道", "加州", "加利福尼亚", "得克萨斯", "德克萨斯", "德州", "佛罗里达", "纽约", "洛杉矶", "旧金山", "芝加哥", "孟买", "新德里", "悉尼", "墨尔本", "多伦多", "魁北克", "安大略", "圣保罗", "莫斯科", "圣彼得堡"],
+   "not": ["巴黎协定", "省份额", "城市化"]
+  },
+  {
+   "id": "two_measures",
+   "reason_zh": "问的是两个量之间的关系，一页只答一个量",
+   "words": ["关系", "关联", "相关", "取决于", "成正比", "成反比", "之间是什么", "之间有什么", "之间存在"],
+   "gaps": [["越", "越", 12], ["是不是", "也", 10]],
+   "joined": {"joiners": ["和", "与", "及", "跟", "同", "、", "以及"], "suffixes": ["率", "比例", "占比", "比重", "支出", "收入", "人数", "数量", "总量", "金额", "余额", "密度", "产值", "价格", "指数"], "max": 9},
+   "not": []
+  },
+  {
+   "id": "derived_ratio",
+   "reason_zh": "问的是一国是另一国的几倍或几成，这种比值不是表里的数",
+   "words": ["倍数", "几成", "几分之", "几倍于"],
+   "gaps": [["是", "的几倍", 10], ["是", "的多少倍", 10], ["相当于", "的", 10]],
+   "not": []
+  },
+  {
+   "id": "sub_year",
+   "reason_zh": "问的是季度或月份的数，新路线只画年度数据",
+   "words": ["每月", "每个月", "逐月", "按月", "各月", "月度", "月份", "上个月", "上月", "本月", "这个月", "当月", "季度", "半年", "今年以来", "今年至今", "年初以来", "年初至今", "个月", "同期", "同比", "环比"],
+   "month_numbers": true,
+   "not": []
+  },
+  {
+   "id": "opinion",
+   "reason_zh": "问的是看法或好坏，数据表答不了",
+   "words": ["好吃", "好看", "好玩", "最美", "最好", "你觉得", "你认为", "怎么看", "看法", "观点", "评价", "应该", "该不该", "值不值", "好不好", "合理吗", "公平吗", "是否应该", "喜欢", "满意", "民调", "支持率"],
+   "not": []
+  }
+ ]
+}

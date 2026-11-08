@@ -2558,6 +2558,11 @@ pub trait Catalogue: Sync {
     fn rank_asked(&self, _question_zh: &str) -> Option<RankAsked> {
         None
     }
+    /// The whole class of question the knowledge group refuses from its words before any search (scope-refusal-zh.json, user
+    /// 11-08 item 1); None when no class takes it.
+    fn scope_refused(&self, _question_zh: &str, _this_year: i32) -> Option<crate::l5geo::ScopeRefusal> {
+        None
+    }
     /// What a page drawn for the group the Chinese question names counts (the knowledge group's GroupBasis, through its
     /// door), from the page's first and last years, its place codes and those with a row at the last: the members of the
     /// year the page counts, the places to leave out and the words of the line that says so; None when the question names
@@ -3024,6 +3029,7 @@ pub(crate) fn knowledge_call<'a>(
         Ok(Reply::TableZh(name)) => json!({"zh": name}),
         Ok(Reply::Iso3 { iso3, missing }) => json!({"iso3": iso3, "missing": missing}),
         Ok(Reply::RankAsked(asked)) => json!({"rank_asked": asked}),
+        Ok(Reply::ScopeRefused(refused)) => json!({"scope_refused": refused}),
         Ok(Reply::HeldProbe { url, .. }) => json!({"url": url}),
         Ok(Reply::Held(held)) => json!({"held": format!("{held:?}")}),
         Ok(Reply::UnitAdditive(additive)) => json!(additive),
@@ -3448,6 +3454,14 @@ impl Catalogue for GroupCatalogue {
         match self.call("places", json!({"question": question_zh}), request) {
             next_knowledge::Reply::Places(places) => places,
             _ => unreachable!("the knowledge group answered places with another reply"),
+        }
+    }
+
+    fn scope_refused(&self, question_zh: &str, this_year: i32) -> Option<crate::l5geo::ScopeRefusal> {
+        let request = next_knowledge::Request::ScopeRefused { question: question_zh, this_year };
+        match self.call("scope_refused", json!({"question": question_zh, "this_year": this_year}), request) {
+            next_knowledge::Reply::ScopeRefused(refused) => refused,
+            _ => unreachable!("the knowledge group answered scope_refused with another reply"),
         }
     }
 
@@ -4755,6 +4769,15 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
     catalogue: &dyn Catalogue,
     cancel: &AtomicBool,
 ) -> Result<Vec<Prepared>, Stop> {
+    // a whole class the new route cannot answer, read by the knowledge group from the question's words (user 11-08 item 1):
+    // stopped before any search; nothing is asked, searched or fetched
+    if steps.is_empty() {
+        let refused = catalogue.scope_refused(question, chrono::Datelike::year(&chrono::Local::now()));
+        record_group_calls(recorder, catalogue)?;
+        if let Some(r) = refused {
+            return Err(Stop::NoTable(format!("the question is out of scope ({}, \"{}\"): {}", r.class, r.hit, r.reason_zh)));
+        }
+    }
     let prompt = format!(
         "Question: {question}\nWrite English words to search the data catalogue for tables that answer it."
     );
@@ -6391,18 +6414,17 @@ mod tests {
         for (text, typed) in [
             ("劳动参与率（五岁以上人口）", "劳动参与率（  以上人口）"),
             ("{a}增加2000人", "{a}增加2000人"),
-            // a word with an ASCII digit is no free word (the page tree takes no digit in a word): it stays for the digit check
-            ("各国PM2.5浓度的高低与下降", "各国PM2.5浓度的高低与下降"),
-            ("65岁及以上人口占比的变化", "65岁及以上人口占比的变化"),
-            ("青年失业率（15至24岁，地图）", "青年失业率（15至24岁，地图）"),
+            // a word with ASCII digits as an official name writes it is a free word (user 11-08 item 4; the page tree prints it
+            // as a term run)
+            ("各国PM2.5浓度的高低与下降", "各国     浓度的高低与下降"),
+            ("65岁及以上人口占比的变化", "   及以上人口占比的变化"),
+            ("青年失业率（15至24岁，地图）", "青年失业率（      ，地图）"),
         ] {
             assert_eq!(number_free_text(text), typed, "{text}");
         }
         let w = free_words();
-        for word in w.terms.iter().chain(&w.si_units).chain(&w.rates).chain(&w.scales) {
-            assert!(!word.iter().any(|c| c.is_ascii_digit()), "{word:?}");
-        }
-        assert!(!w.ages.iter().any(|a| a.chars().any(|c| c.is_ascii_digit())));
+        assert!(w.terms.iter().any(|t| t.iter().collect::<String>() == "PM2.5"), "the digit terms are taken in bulk too");
+        assert!(w.ages.iter().any(|a| a == "15-24岁"));
         // Still numbers: a count, a span, a rate's base that is a count, a scale after a value or a count, an SI unit after
         // a numeral, a term after a placeholder, and the words no source writes (an age band in Chinese numerals, 零排放,
         // 七国集团: hand-added on 11-07, taken out on 11-08).

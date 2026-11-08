@@ -2047,7 +2047,36 @@ fn runs_of(text: &str) -> J {
     if !word.is_empty() {
         out.push(J::obj_of(vec![("w", J::str(&word))]));
     }
-    J::Arr(out)
+    // a word of the digit lists as an official name writes it (15-24岁, PM2.5; user 11-08 item 4) is cut out of a literal
+    // into a term run: a literal holds no digit
+    let terms = crate::next_tree::digit_terms();
+    let mut cut = Vec::new();
+    for r in out {
+        let Some(w) = r.g("w").s().map(str::to_string) else {
+            cut.push(r);
+            continue;
+        };
+        let mut lit = String::new();
+        let mut rest = w.as_str();
+        while !rest.is_empty() {
+            if let Some(t) = terms.iter().find(|t| rest.starts_with(t.as_str())) {
+                if !lit.is_empty() {
+                    cut.push(J::obj_of(vec![("w", J::str(&lit))]));
+                    lit.clear();
+                }
+                cut.push(J::obj_of(vec![("term", J::str(t))]));
+                rest = &rest[t.len()..];
+            } else {
+                let c = rest.chars().next().unwrap();
+                lit.push(c);
+                rest = &rest[c.len_utf8()..];
+            }
+        }
+        if !lit.is_empty() {
+            cut.push(J::obj_of(vec![("w", J::str(&lit))]));
+        }
+    }
+    J::Arr(cut)
 }
 
 /// A select reference for a code: its index in the first select whose result holds it.
@@ -3025,5 +3054,18 @@ mod tests {
             r#"[{"fact":"lead1","part":"t"},{"w":"年，"},{"fact":"hi"},{"w":"比"},{"fact":"val.SE","part":"n"},{"w":"高"},{"fact":"x"},{"w":"{Bad}"}]"#
         );
         assert_eq!(runs_of("").dump(), "[]");
+        // user 11-08 item 4: a word with ASCII digits as an official name writes it is cut into a term run; other digits stay
+        // in the literal (the core refuses them)
+        assert_eq!(
+            runs_of("青年（15-24岁）失业率与PM2.5").dump(),
+            J::Arr(vec![
+                J::obj_of(vec![("w", J::str("青年（"))]),
+                J::obj_of(vec![("term", J::str("15-24岁"))]),
+                J::obj_of(vec![("w", J::str("）失业率与"))]),
+                J::obj_of(vec![("term", J::str("PM2.5"))]),
+            ])
+            .dump()
+        );
+        assert_eq!(runs_of("增加2000人").dump(), J::Arr(vec![J::obj_of(vec![("w", J::str("增加2000人"))])]).dump());
     }
 }

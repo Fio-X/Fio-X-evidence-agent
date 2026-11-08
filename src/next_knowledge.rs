@@ -133,6 +133,9 @@ pub enum Request<'a> {
     /// The ranking the Chinese question asks for in place of named places (the ten most populous economies), read by rule
     /// from its words (rank-phrases-zh.json); None when it asks for none.
     RankAsked { question: &'a str },
+    /// The whole class of question the new route cannot answer, read by rule from its words (scope-refusal-zh.json); None
+    /// when no class takes it. `this_year` is the program's clock year (a later four-digit year is a forecast).
+    ScopeRefused { question: &'a str, this_year: i32 },
     /// What a page drawn for the group the Chinese question names counts, from the page's first and last years, its place
     /// codes and those with a row at the last (l5geo::Catalog::group_basis).
     GroupBasis {
@@ -253,6 +256,7 @@ pub enum Reply<'a> {
     Table(Option<TableMeta>),
     Places(Vec<Place>),
     RankAsked(Option<RankAsked>),
+    ScopeRefused(Option<crate::l5geo::ScopeRefusal>),
     GroupBasis(Option<crate::l5geo::GroupBasis>),
     Refs(OpenedRefs),
     Shape(Shape),
@@ -318,6 +322,7 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
             question,
         } => Reply::Places(catalogue.catalog.places(question)),
         Request::RankAsked { question } => Reply::RankAsked(crate::l5geo::rank_asked_zh(question)),
+        Request::ScopeRefused { question, this_year } => Reply::ScopeRefused(crate::l5geo::scope_refused_zh(question, this_year)),
         Request::GroupBasis {
             catalogue,
             question,
