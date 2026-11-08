@@ -662,11 +662,13 @@ const namesOther = (value) => String(value).split(/[^A-Za-z0-9_]/).find((word) =
     assert.equal(first.details.mode, "candidates", `${label}: ${text(first).slice(0, 300)}`);
     const sheetFile = JSON.parse(readFileSync(join(run, `${cand.SHEET_PREFIX}${sheetKeyOf(first)}.json`), "utf8"));
     const kinds = sheetFile.candidates.map((c) => c.kind);
-    // a rise only among places that rose, a fall only among those that fell (review 11-08): a shape whose places all moved one
-    // way offers one of the two
-    const moves = kinds.filter((k) => k.startsWith("change_largest_"));
-    assert.ok(moves.length >= 1, `${label}: a change kind is offered`);
-    assert.deepEqual(kinds.filter((k) => !k.startsWith("change_largest_")), ["rank_top", "rank_bottom", "extreme_gap", "top_to_bottom_ratio"], `${label}: the same operators apply to every shape`);
+    // a rise only among places that rose, a fall only among those that fell (review 11-08): the kinds each shape offers, exactly,
+    // read from its own raw rows (a rise when some place rose, a fall when some place fell)
+    const times = Object.keys(shape.data).map(Number).sort((x, y) => x - y);
+    const firstAt = shape.data[times[0]], lastAt = shape.data[times[times.length - 1]];
+    const moved = Object.keys(lastAt).map((key) => lastAt[key] - firstAt[key]);
+    const wantKinds = ["rank_top", "rank_bottom", "extreme_gap", "top_to_bottom_ratio", ...(moved.some((d) => d > 0) ? ["change_largest_rise"] : []), ...(moved.some((d) => d < 0) ? ["change_largest_fall"] : [])];
+    assert.deepEqual(kinds, wantKinds, `${label}: the operators each shape's rows allow`);
     const ref = sheetFile.candidates[0].sql.match(/'(data\/[^']+)'/)[1];
     const specs = cand.buildCandidates({ ref, dimensions: shape.cols, measure: "OBS_VALUE", time: "TIME_PERIOD" });
     // 16a. every operator's series is its slice: a chart of that SQL binds to the claim as same_sql, and the series SQL is the SQL of no operator
@@ -676,7 +678,7 @@ const namesOther = (value) => String(value).split(/[^A-Za-z0-9_]/).find((word) =
       assert.equal(reg.details.mode, "picks", `${label}: ${text(reg).slice(0, 400)}`);
     }
     const claims = claimsOf(run);
-    assert.equal(new Set(claims.map((x) => x.claim_id)).size, sheetFile.candidates.length, `${label}: every offered one registered (a claim picked twice has one id)`);
+    assert.equal(new Set(claims.map((x) => x.claim_id)).size, wantKinds.length, `${label}: all ${wantKinds.length} registered (a claim picked twice has one id)`);
     const norm = (sql) => String(sql).replace(/\s+/g, " ").trim();
     for (const c of sheetFile.candidates) {
       const claim = claims.find((x) => x.claim === c.text);

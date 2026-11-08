@@ -336,8 +336,15 @@ class Column(unittest.TestCase):
                 self.assertEqual(html.count(drop), 1)
                 html = html.replace(drop, "")
             return hashlib.sha256(html.encode("utf-8")).hexdigest()
-        self.assertEqual(sha(column_request(), ["bignums", "bars"]), "7fa9a0cb359730981de3ad58d834d9ec9222264a5ace23d43709d5bbb57fcc39")
-        self.assertEqual(sha(change_request(), ["bars"]), "ada3c647c65d177e4ac322538541fbb132e0bfa55c4f3eb05aa38ade6e7146ff")
+        # every page compared byte for byte (user 11-08: the sha256s re-taken from the pages as they are now), and none holds the
+        # legend line or its rules
+        for lines, names, want in ((column_request(), ["bignums", "bars"], "7fa9a0cb359730981de3ad58d834d9ec9222264a5ace23d43709d5bbb57fcc39"),
+                                   (change_request(), ["bars"], "ada3c647c65d177e4ac322538541fbb132e0bfa55c4f3eb05aa38ade6e7146ff")):
+            self.assertEqual(sha(lines, names), want, names)
+            got = child(lines)[1:]
+            html = child(lines + [json.dumps({"phase": "page", "layers": {n: g.get("svg") or g.get("html") for n, g in zip(names, got)}})])[-1]["html"]
+            self.assertNotIn('class="ak', html)
+            self.assertNotIn(".hero.column .ak", html)
         self.assertIn('<svg class="bars pub-chart"', child(change_request() + [json.dumps({"phase": "page", "layers": {"bars": child(change_request())[1]["svg"]}})])[-1]["html"])
 
     def test_a_column_page_with_no_big_numbers_gives_the_title_the_whole_header(self):
