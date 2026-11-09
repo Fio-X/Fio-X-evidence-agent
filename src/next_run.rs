@@ -2726,22 +2726,39 @@ fn answered_places(
     // only when no row of it is there at all
     let year = shape.year.clone();
     let at_year: Vec<&Value> = main_rows.iter().filter(|r| year.is_empty() || r["time"].as_str() == Some(year.as_str())).collect();
-    let missing: Vec<String> = asked.iter().filter(|c| !at_year.iter().any(|r| holds(r, c.as_str()))).cloned().collect();
+    let meta = catalogue.table(&shape.main);
+    // a named country as the table's rows write it: its own code, and on a partner or citizen dimension the member coded
+    // for it (CN_X_HK is CN), so a row or a filter under that member answers for the country
+    let codes_of = |c: &str| -> Vec<String> {
+        let mut v = vec![c.to_string()];
+        for (_, m) in meta.iter().filter(|t| !t.worldbank).flat_map(|t| t.place_members.iter()) {
+            for (k, iso) in m {
+                if iso == c && !v.contains(k) {
+                    v.push(k.clone());
+                }
+            }
+        }
+        v
+    };
+    let missing: Vec<String> =
+        asked.iter().filter(|c| !at_year.iter().any(|r| codes_of(c).iter().any(|k| holds(r, k)))).cloned().collect();
     // "no data" is the source's word only for a place the fetch asked it for, or one the table's own code list lacks: a
     // place the table holds that no filter lists, while every place dimension (the page's, and one a named place's row is
     // under) is filtered, was never fetched; the source may hold its rows, and the page stops rather than say "no data"
     // (n37: the EU named, the World Bank fetch for the United States and China only)
     let listed = |c: &str| {
-        filters.as_array().into_iter().flatten().any(|f| f["values"].as_array().is_some_and(|v| v.iter().any(|x| x.as_str() == Some(c))))
+        let codes = codes_of(c);
+        filters.as_array().into_iter().flatten().any(|f| {
+            f["values"].as_array().is_some_and(|v| v.iter().any(|x| x.as_str().is_some_and(|x| codes.iter().any(|k| k == x))))
+        })
     };
     let filtered = |d: &str| filters.as_array().into_iter().flatten().any(|f| f["dimension"].as_str() == Some(d));
     let mut place_dims: Vec<&str> = vec![shape.place.as_str()];
     for d in dims.iter().map(String::as_str) {
-        if !place_dims.contains(&d) && main_rows.iter().any(|r| asked.iter().any(|c| r["dims"][d].as_str() == Some(c.as_str()))) {
+        if !place_dims.contains(&d) && main_rows.iter().any(|r| asked.iter().any(|c| codes_of(c).iter().any(|k| r["dims"][d].as_str() == Some(k.as_str())))) {
             place_dims.push(d);
         }
     }
-    let meta = catalogue.table(&shape.main);
     let held = |c: &str| match &meta {
         Some(t) if t.worldbank => t.places.iter().any(|(_, id)| id == c),
         // a country code of a partner or citizen dimension counts by its iso2 too (CN_X_HK is CN): the table holds it
@@ -7172,13 +7189,23 @@ mod tests {
                 false => assert!(got.unwrap_err().contains("QA"), "hub {filters}"),
             }
         }
-        // a partner written CN_X_HK is China's: named CN with no row, the table holds it by its iso2, and no filter lists CN,
-        // so the page stops rather than say China has no data (review 11-09)
+        // a partner written CN_X_HK is China's (review 11-09): a row under it answers for China; a fetch that asked for it and
+        // got no row says China has no data; a fetch that asked only for other partners stops, the table holding China
         let mut table = meta("imp", false, &[("geo", &["DE"]), ("partner", &["RU", "NO", "CN_X_HK"])], &[]);
         table.0.place_members = vec![("partner".into(), vec![("CN_X_HK".into(), "CN".into())])];
+        let named = country(&["DE", "CN"]);
+        let with_cn = ring_rows("imp", &[("siec", "G3000"), ("unit", "MIO_M3"), ("geo", "DE")], ("partner", &["RU", "NO", "CN_X_HK"]), &["2024"]);
         let mut f = fill();
-        let got = answered_places(&mut f, &hub_shape, (&hub, false), (&country(&["DE", "CN"]), None), &json!([geo, partner(&["RU", "NO", "CN_X_HK"])]), &table);
-        assert!(got.unwrap_err().contains("CN"), "CN_X_HK holds China");
+        answered_places(&mut f, &hub_shape, (&with_cn, false), (&named, None), &json!([geo, partner(&["RU", "CN_X_HK"])]), &table)
+            .unwrap_or_else(|e| panic!("CN_X_HK row: {e}"));
+        assert!(f["knobs"]["spec"]["asked_places"].is_null() || f["knobs"]["spec"]["asked_places"]["missing"] == json!([]), "{}", f["knobs"]["spec"]);
+        let mut f = fill();
+        answered_places(&mut f, &hub_shape, (&hub, false), (&named, None), &json!([geo, partner(&["RU", "NO", "CN_X_HK"])]), &table)
+            .unwrap_or_else(|e| panic!("CN_X_HK asked: {e}"));
+        assert_eq!(f["knobs"]["spec"]["asked_places"]["missing"], json!(["CN"]));
+        let mut f = fill();
+        let got = answered_places(&mut f, &hub_shape, (&hub, false), (&named, None), &json!([geo, partner(&["RU", "NO"])]), &table);
+        assert!(got.unwrap_err().contains("CN"), "CN_X_HK held, not asked");
     }
 
     /// End to end on two data shapes, a column page of one year and a change page over two (the map of bubbles beside its
