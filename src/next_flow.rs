@@ -2873,6 +2873,10 @@ fn place_points_call(calls: &Mutex<Vec<Value>>, codes: &[String]) -> Result<BTre
     place_points_reply(codes, &iso3_of, reply)
 }
 
+/// The words a refusal of the map points starts with when the table has no point for a code (an aggregate), the only
+/// refusal a recipe on the map reads as not its shape (next_run on_the_map).
+pub const NO_POINT: &str = "the map point table has no point for";
+
 /// The visual group's points under the codes asked (`iso3_of`, the knowledge group's map), when the table it read them from
 /// hashes to NE_POINTS_SHA256; a code with no iso3 or no point refuses by name, in the order asked.
 fn place_points_reply(
@@ -2904,7 +2908,7 @@ fn place_points_reply(
     if none.is_empty() {
         Ok(found)
     } else {
-        Err(format!("the map point table has no point for {}", none.join(", ")))
+        Err(format!("{NO_POINT} {}", none.join(", ")))
     }
 }
 

@@ -2277,12 +2277,16 @@ const POINTS: (&str, &str) = ("pp", " 个百分点");
 
 /// A recipe whose layers stand on map points (its `points`) eats only places the map point table holds: Err "not this shape"
 /// when a ranked place has none (an aggregate the question names beside countries, the EU), so the next recipe is tried
-/// (the bars alone); a recipe with no layer on the map eats any place.
-fn on_the_map(recipe: &Recipe, ranked: &[String], catalogue: &dyn Catalogue) -> Result<(), String> {
+/// (the bars alone); any other refusal of the points (a table not the pinned one, a group call that failed) stops the page
+/// as it did at the fill. A recipe with no layer on the map eats any place.
+fn on_the_map(recipe: &Recipe, ranked: &[String], catalogue: &dyn Catalogue) -> Result<(), (&'static str, String)> {
     if recipe.points.is_empty() {
         return Ok(());
     }
-    catalogue.place_points(ranked).map(|_| ()).map_err(|why| format!("not this shape: {why}"))
+    catalogue.place_points(ranked).map(|_| ()).map_err(|why| match why.starts_with(crate::next_flow::NO_POINT) {
+        true => ("shape", format!("not this shape: {why}")),
+        false => ("fill", why),
+    })
 }
 
 /// The map table a page's points come from (the flow group refuses any other than its pinned hash): the page's request keeps
@@ -2588,7 +2592,7 @@ fn recipe_request(
     }
     let claims = picked_claims(run_dir, main, &claim_records(run_dir).map_err(shape_err)?).map_err(shape_err)?;
     let picks = picks_of(&recipe.picks, &shape, &main_rows, &claims).map_err(shape_err)?;
-    on_the_map(recipe, &picks.ranked, catalogue).map_err(shape_err)?;
+    on_the_map(recipe, &picks.ranked, catalogue)?;
     // read from the main's narrow record, as the charts step reads the page's scope (narrowed), never from the tool's details
     let set = narrow_set(run_dir, main).map_err(|why| ("fill", why))?;
     let scoped = set.is_some();
@@ -6715,8 +6719,8 @@ mod tests {
         let (column, bars) = (recipe("column"), recipe("ranked_bars"));
         assert!(!column.points.is_empty() && bars.points.is_empty() && bars.layers == ["bars"]);
         for (ranked, off) in [(s(&["USA", "EUU", "CHN"]), "EUU"), (s(&["US", "EU27_2020", "CN"]), "EU27_2020")] {
-            let why = on_the_map(&column, &ranked, &Hubs).unwrap_err();
-            assert!(why.starts_with("not this shape: ") && why.contains(off), "{why}");
+            let (stage, why) = on_the_map(&column, &ranked, &Hubs).unwrap_err();
+            assert!(stage == "shape" && why.starts_with("not this shape: ") && why.contains(off), "{why}");
             assert_eq!(on_the_map(&bars, &ranked, &Hubs), Ok(()));
         }
         for ranked in [s(&["USA", "CHN"]), s(&["US", "DE", "CN"])] {
