@@ -2803,6 +2803,30 @@ mod tests {
         Fact { key: key.into(), op: op.into(), v: 1.0, t: None, n: None, who: Vec::new(), fmt: "pc".into(), reads: reads.to_vec() }
     }
 
+    /// A named country whose rows sit under a member's code (a partner CN_X_HK for China) is asked by that code, as the
+    /// fill writes it: the page printing that row's value passes; the same page asked by the country's own code is refused,
+    /// so the fill's code is what the check reads (review 11-09).
+    #[test]
+    fn a_named_country_under_a_member_code_is_answered_by_that_code() {
+        use crate::next_facts::AskedPlaces;
+        let rows = vec![place_row("partner", "RU", "2024", 5.0), place_row("partner", "CN_X_HK", "2024", 9.0)];
+        let facts = vec![read_fact("val.RU", "value", &[rows[0].src.clone()]), read_fact("val.CN_X_HK", "value", &[rows[1].src.clone()])];
+        let asked = |code: &str| AskedPlaces {
+            asked: vec!["RU".into(), code.into()],
+            missing: Vec::new(),
+            words: "{missing}无数据".into(),
+            join: "、".into(),
+            dims: vec!["partner".into()],
+            year: "2024".into(),
+            unread: None,
+        };
+        let spec_of = |a: AskedPlaces| Spec { facts: Vec::new(), fmts: json!({}), members: None, asked_places: Some(a), basis: None };
+        let html = r#"<html><body><span data-src="fact:val.RU.n">5</span><span data-src="fact:val.CN_X_HK.n">9</span></body></html>"#;
+        assert_eq!(places_answered(html, &BTreeMap::new(), &spec_of(asked("CN_X_HK")), &rows, &facts), Vec::<String>::new());
+        let off = places_answered(html, &BTreeMap::new(), &spec_of(asked("CN")), &rows, &facts);
+        assert!(off.iter().any(|f| f.contains("names CN")), "{off:?}");
+    }
+
     /// The countries a question names on their own (owner 11-06 design), on two data shapes: a column page of one year
     /// (Eurostat iso2 by geo, each bar's value a fact reading its row, Italy with no row at 2024 but one at 2020) and a
     /// change page (World Bank iso3 by country, each change a fact of two facts, Korea with no row; plus a hub row, whose

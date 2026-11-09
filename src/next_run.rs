@@ -2776,7 +2776,13 @@ fn answered_places(
     let words: Value = serde_json::from_str(crate::next_knowledge::ASKED_PLACES_ZH).map_err(|e| format!("asked-places-zh.json: {e}"))?;
     let word = |key: &str| words[key].as_str().map(str::to_string).ok_or_else(|| format!("asked-places-zh.json holds no {key}"));
     let (line, join, line_join) = (word("said")?, word("join")?, word("lead")?);
-    fill["knobs"]["spec"]["asked_places"] = json!({"asked": asked, "missing": missing, "words": line, "join": join, "dims": dims, "year": year});
+    // the page's whole-page check reads codes as the rows write them: a named place answered by a member's row (CN by
+    // CN_X_HK) goes in by that member's code, one with no row by its own
+    let written: Vec<String> = asked
+        .iter()
+        .map(|c| codes_of(c).into_iter().find(|k| at_year.iter().any(|r| holds(r, k))).unwrap_or_else(|| c.clone()))
+        .collect();
+    fill["knobs"]["spec"]["asked_places"] = json!({"asked": written, "missing": missing, "words": line, "join": join, "dims": dims, "year": year});
     if missing.is_empty() {
         return Ok(());
     }
@@ -7198,11 +7204,14 @@ mod tests {
         let mut f = fill();
         answered_places(&mut f, &hub_shape, (&with_cn, false), (&named, None), &json!([geo, partner(&["RU", "CN_X_HK"])]), &table)
             .unwrap_or_else(|e| panic!("CN_X_HK row: {e}"));
-        assert!(f["knobs"]["spec"]["asked_places"].is_null() || f["knobs"]["spec"]["asked_places"]["missing"] == json!([]), "{}", f["knobs"]["spec"]);
+        // the whole-page check finds China's row by the code the request rows write
+        assert_eq!(f["knobs"]["spec"]["asked_places"]["asked"], json!(["DE", "CN_X_HK"]), "{}", f["knobs"]["spec"]);
+        assert_eq!(f["knobs"]["spec"]["asked_places"]["missing"], json!([]));
         let mut f = fill();
         answered_places(&mut f, &hub_shape, (&hub, false), (&named, None), &json!([geo, partner(&["RU", "NO", "CN_X_HK"])]), &table)
             .unwrap_or_else(|e| panic!("CN_X_HK asked: {e}"));
         assert_eq!(f["knobs"]["spec"]["asked_places"]["missing"], json!(["CN"]));
+        assert_eq!(f["knobs"]["spec"]["asked_places"]["asked"], json!(["DE", "CN"]));
         let mut f = fill();
         let got = answered_places(&mut f, &hub_shape, (&hub, false), (&named, None), &json!([geo, partner(&["RU", "NO"])]), &table);
         assert!(got.unwrap_err().contains("CN"), "CN_X_HK held, not asked");
