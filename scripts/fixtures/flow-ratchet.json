@@ -1,5 +1,5 @@
 {
-  "measured_at": "1a35ecdde336b520fe78aa0b29d724c9106f46bb",
+  "measured_at": "9b1e5091e6a5df7f5a3fed3d9302bd43113bf5c5",
   "rules": "scripts/test_group_flow_ratchet.mjs header; totals and per_file may only go down; kind_names only grow, by --lower",
   "totals": {
     "new": {
@@ -66,6 +66,7 @@
     "profile": "knobs.json nodes",
     "prose": "next_render.rs NodeInfo",
     "rankbar": "knobs.json nodes",
+    "rankedbars": "knobs.json groups",
     "ranking": "shape_registry.rs Relation",
     "ring": "knobs.json nodes",
     "routenames": "knobs.json nodes",

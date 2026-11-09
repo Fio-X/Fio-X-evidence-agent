@@ -2275,6 +2275,16 @@ fn dek_finding(fill: &Value) -> Option<(String, String)> {
 #[cfg_attr(not(test), allow(dead_code))]
 const POINTS: (&str, &str) = ("pp", " 个百分点");
 
+/// A recipe whose layers stand on map points (its `points`) eats only places the map point table holds: Err "not this shape"
+/// when a ranked place has none (an aggregate the question names beside countries, the EU), so the next recipe is tried
+/// (the bars alone); a recipe with no layer on the map eats any place.
+fn on_the_map(recipe: &Recipe, ranked: &[String], catalogue: &dyn Catalogue) -> Result<(), String> {
+    if recipe.points.is_empty() {
+        return Ok(());
+    }
+    catalogue.place_points(ranked).map(|_| ()).map_err(|why| format!("not this shape: {why}"))
+}
+
 /// The map table a page's points come from (the flow group refuses any other than its pinned hash): the page's request keeps
 /// each point with it (knobs.points, the visual group's ledger entries), so a replay of that table can be held to it.
 const POINT_TABLE: &str = "naturalearth-admin0-50m-attributes";
@@ -2578,6 +2588,7 @@ fn recipe_request(
     }
     let claims = picked_claims(run_dir, main, &claim_records(run_dir).map_err(shape_err)?).map_err(shape_err)?;
     let picks = picks_of(&recipe.picks, &shape, &main_rows, &claims).map_err(shape_err)?;
+    on_the_map(recipe, &picks.ranked, catalogue).map_err(shape_err)?;
     // read from the main's narrow record, as the charts step reads the page's scope (narrowed), never from the tool's details
     let set = narrow_set(run_dir, main).map_err(|why| ("fill", why))?;
     let scoped = set.is_some();
@@ -6695,6 +6706,27 @@ mod tests {
     /// The column recipe takes one frequency throughout (one_freq): years, half years (2026-S1) or months (2026-09), kept as
     /// the shape's freq; a quarterly main or one that mixes is not this shape, named. Every other recipe still asks for
     /// annual, so a half-yearly main reaches column alone.
+    /// A place the map has no point for (the EU named beside countries) is not the column page's shape, whose circles and
+    /// notes stand on map points, and goes to the bars alone (ranked_bars), on a World Bank page (iso3: EUU) as on a Eurostat
+    /// one (EU27_2020); countries alone stay on the column page.
+    #[test]
+    fn a_place_off_the_map_goes_to_the_bars_alone() {
+        let s = |c: &[&str]| c.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        let (column, bars) = (recipe("column"), recipe("ranked_bars"));
+        assert!(!column.points.is_empty() && bars.points.is_empty() && bars.layers == ["bars"]);
+        for (ranked, off) in [(s(&["USA", "EUU", "CHN"]), "EUU"), (s(&["US", "EU27_2020", "CN"]), "EU27_2020")] {
+            let why = on_the_map(&column, &ranked, &Hubs).unwrap_err();
+            assert!(why.starts_with("not this shape: ") && why.contains(off), "{why}");
+            assert_eq!(on_the_map(&bars, &ranked, &Hubs), Ok(()));
+        }
+        for ranked in [s(&["USA", "CHN"]), s(&["US", "DE", "CN"])] {
+            assert_eq!(on_the_map(&column, &ranked, &Hubs), Ok(()), "{ranked:?}");
+        }
+        let names: Vec<&str> = Hubs.recipes().iter().map(|r| r.name.as_str()).collect();
+        let at = |n: &str| names.iter().position(|x| *x == n).unwrap();
+        assert!(at("column") < at("ranked_bars"), "the bars alone are tried after the column page");
+    }
+
     #[test]
     fn the_column_shape_takes_one_frequency_of_years_half_years_or_months() {
         let at = |ts: &[&'static str]| -> Vec<(&'static str, &'static str)> { ts.iter().map(|t| (*t, "1")).collect() };
@@ -6714,7 +6746,7 @@ mod tests {
         }
         let half = at(&["2026-S1"]);
         let main = period_rows("nrg_pc_204", false, &[("SE", &half), ("DE", &half)]);
-        for r in Hubs.recipes().iter().filter(|r| r.name != "column" && r.name != "flow") {
+        for r in Hubs.recipes().iter().filter(|r| r.name != "column" && r.name != "ranked_bars" && r.name != "flow") {
             assert_eq!(shape_of(&r.eats, &[("nrg_pc_204", &main[..])], &Hubs).unwrap_err(), "not this shape: main nrg_pc_204 is not annual", "{}", r.name);
         }
     }
@@ -7273,7 +7305,7 @@ mod tests {
     #[test]
     fn each_recipe_reads_the_shape_by_its_own_conditions_and_its_nodes_fill_the_page() {
         let names: Vec<&str> = Hubs.recipes().iter().map(|r| r.name.as_str()).collect();
-        assert_eq!(names, ["scmp", "ring", "composition", "change", "column", "flow"]);
+        assert_eq!(names, ["scmp", "ring", "composition", "change", "column", "ranked_bars", "flow"]);
         let mut main = ring_rows("sdg", &[("freq", "A"), ("unit", "PC")], ("geo", &["SE", "BE", "DE", "FR", "EU27_2020"]), &["2025"]);
         for (r, v) in main.iter_mut().zip(["65.4", "14.9", "30.25", "20", "40"]) {
             r["value"] = json!(v);
@@ -9088,6 +9120,7 @@ mod tests {
                 ("composition", Err("not this shape: main migr asks no grouped total alone".to_string())),
                 ("change", Err("not this shape: main spans one year (2025)".to_string())),
                 ("column", Ok("citizen PER 2025".to_string())),
+                ("ranked_bars", Ok("citizen PER 2025".to_string())),
                 ("flow", Err("not this shape: main migr has no registered flow".to_string()))
             ]
         );
@@ -12689,7 +12722,7 @@ for line in sys.stdin:
     #[test]
     fn only_a_recipe_with_a_strip_slot_asks_for_a_strip_and_a_strip_it_did_not_get_is_owed() {
         let slots: Vec<(&str, bool)> = Hubs.recipes().iter().map(|r| (r.name.as_str(), r.strip)).collect();
-        assert_eq!(slots, [("scmp", false), ("ring", false), ("composition", false), ("change", true), ("column", true), ("flow", false)]);
+        assert_eq!(slots, [("scmp", false), ("ring", false), ("composition", false), ("change", true), ("column", true), ("ranked_bars", true), ("flow", false)]);
         let energy = ["nrg_ind_ren".to_string()];
         let calls = std::sync::Mutex::new(Vec::new());
         for name in ["scmp", "ring"] {
@@ -12777,7 +12810,7 @@ for line in sys.stdin:
             .iter()
             .map(|r| (r.name.as_str(), r.same_measure.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect()))
             .collect();
-        assert_eq!(declared, [("scmp", vec![]), ("ring", vec![]), ("composition", vec![]), ("change", vec![]), ("column", vec![("bars", "bubbles")]), ("flow", vec![])]);
+        assert_eq!(declared, [("scmp", vec![]), ("ring", vec![]), ("composition", vec![]), ("change", vec![]), ("column", vec![("bars", "bubbles")]), ("ranked_bars", vec![]), ("flow", vec![])]);
     }
 
     /// A pair is known only by the page's own recipe and only as the layers it declares: the bars and bubbles under a recipe

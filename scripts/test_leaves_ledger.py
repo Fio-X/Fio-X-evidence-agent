@@ -374,7 +374,7 @@ class Column(unittest.TestCase):
         self.assertNotIn("refused", child(column_request((("SE", "65.4"), ("BE", "-1")), None)[:1])[0])
         lines = column_request()
         bad = json.loads(lines[0]); bad["node"] = "pie"
-        self.assertEqual(child([json.dumps(bad)])[0]["refused"], ["size: no page recipe pie; e.g. one of ring|column|change|flow|composition|scmp"])
+        self.assertEqual(child([json.dumps(bad)])[0]["refused"], ["size: no page recipe pie; e.g. one of ring|column|change|flow|composition|ranked_bars|scmp"])
         page = child(lines[:2] + [json.dumps({"phase": "page", "layers": {"bignums": "x"}})])[2]
         self.assertEqual(page["refused"], ["page: no layer bars"])
 

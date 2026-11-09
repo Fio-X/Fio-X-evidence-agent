@@ -1640,6 +1640,17 @@
    "sankey",
    "stacked100"
   ],
+  "ranked_bars": [
+   "bignums",
+   "bars",
+   "section_head",
+   "rankbar",
+   "bubbles",
+   "bubble_key",
+   "leader_notes",
+   "sankey",
+   "stacked100"
+  ],
   "scmp": [
    "map",
    "strip",
@@ -1828,6 +1839,31 @@
      "layer": "leader_notes",
      "at": "/hero/leaves/leader_notes/notes"
     }
+   ]
+  },
+  {
+   "name": "ranked_bars",
+   "layers": [
+    "bars"
+   ],
+   "eats": [
+    "one_freq",
+    "one_place",
+    "one_unit",
+    "last_year"
+   ],
+   "charts": [
+    "horizontal_bar"
+   ],
+   "picks": [
+    "ranked",
+    "claim_marks"
+   ],
+   "exposes": [],
+   "strip": true,
+   "main": "bars",
+   "external": [
+    "bars"
    ]
   },
   {

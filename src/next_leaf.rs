@@ -2476,7 +2476,7 @@ mod tests {
         assert!(Layer::registered("base", "base", json!([]), json!({})).is_ok_and(|l| !l.reserve));
         assert!(Layer::registered("pie", "pie", json!([]), json!({})).is_err_and(|e| e[0].contains("no leaf or composite node pie")));
         let groups: Vec<_> = t.groups.keys().map(String::as_str).collect();
-        assert_eq!(groups, ["change", "charts", "column", "composition", "flow", "map", "ring", "scmp"]);
+        assert_eq!(groups, ["change", "charts", "column", "composition", "flow", "map", "ranked_bars", "ring", "scmp"]);
         assert_eq!(t.groups["composition"], t.groups["column"]);
         assert_eq!(t.groups["scmp"], ["map", "strip", "bignums", "notes"]);
         assert_eq!(t.groups["column"], ["bignums", "bars", "section_head", "rankbar", "bubbles", "bubble_key", "leader_notes", "sankey", "stacked100"]);

@@ -2284,16 +2284,22 @@ pub(crate) fn tree_j(page_in: &J, fill: &J, reg: &J, external: &[String]) -> Res
         ("texts", texts),
         (
             "facts",
-            J::obj_of(vec![
-                ("kind", J::str("Facts")),
-                ("tables", spec.g("tables").clone()),
-                ("facts", facts),
-                ("fmts", fmts),
-                ("rows", J::Arr(in_input_order(fill.g("rows").arr(), page_in.g("rows").arr()))),
-                ("labels", names.clone()),
-                ("named", named.clone()),
-                ("points", points.clone()),
-            ]),
+            // a page with no map (no points handed in) carries none: the schema's points is the map table or absent
+            J::obj_of(
+                vec![
+                    ("kind", J::str("Facts")),
+                    ("tables", spec.g("tables").clone()),
+                    ("facts", facts),
+                    ("fmts", fmts),
+                    ("rows", J::Arr(in_input_order(fill.g("rows").arr(), page_in.g("rows").arr()))),
+                    ("labels", names.clone()),
+                    ("named", named.clone()),
+                    ("points", points.clone()),
+                ]
+                .into_iter()
+                .filter(|(k, v)| *k != "points" || !matches!(v, J::Null))
+                .collect(),
+            ),
         ),
         ("selects", J::obj_of(vec![("kind", J::str("Selects")), ("items", J::Arr(selects))])),
         ("checks", checks),

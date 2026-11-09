@@ -60,6 +60,11 @@ RECIPES = [
          charts=["choropleth", "horizontal_bar"], picks=["ranked", "claim_marks"], exposes=[],
          # TODO(item 5): goes once the map (bubbles) shows other values than the bars (src/next_leaf.rs leaves)
          same_measure=[["bars", "bubbles"]], strip=True, main="bars"),
+    # the same period across places when a place has no map point (an aggregate the question names beside countries, the
+    # EU): the bars alone, no map; column, whose circles and notes stand on map points, is not that shape (the flow asks
+    # for the points before it fills). No notes yet: the column page's notes point at a map, as flow's
+    dict(name="ranked_bars", layers=["bars"], eats=["one_freq", "one_place", "one_unit", "last_year"],
+         charts=["horizontal_bar"], picks=["ranked", "claim_marks"], exposes=[], strip=True, main="bars"),
     # a flow between two dimensions of one table (the registry's official pair, one unit) as a sankey across the column
     # page, under the page's header and over its source line; no notes yet (the column page's notes point at a map)
     dict(name="flow", layers=["sankey"], eats=["official_flow", "one_unit"], charts=[], picks=[], exposes=[], main="sankey"),
@@ -152,6 +157,7 @@ def table():
     columns = run.KINDS["column"][0]  # the column page's own layers and the chart leaves over its frame (run.LEAF_LAYERS)
     groups = dict(map=list(prod.MAP_ORDER), ring=list(scmp.RING_LAYERS), charts=list(prod.CHARTS), column=list(columns),
                   change=list(run.KINDS["change"][0]), flow=list(run.KINDS["flow"][0]), composition=list(run.KINDS["composition"][0]),
+                  ranked_bars=list(run.KINDS["ranked_bars"][0]),
                   scmp=list(scmp.SCMP_LAYERS))
     reserve = {}
     for reg in (prod.MAP_LAYERS, scmp.RING_LAYERS, columns, scmp.SCMP_LAYERS):

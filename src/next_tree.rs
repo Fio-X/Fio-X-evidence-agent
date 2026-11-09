@@ -7603,11 +7603,11 @@ mod tests {
             let (main, _) = recipe_roles(&reg, r).unwrap_or_else(|e| panic!("{e}"));
             mains.push(format!("{r}={main}"));
         }
-        assert_eq!(mains, ["column=bars", "change=bars", "composition=stacked100", "scmp=map", "ring=ring", "flow=sankey"]);
+        assert_eq!(mains, ["column=bars", "change=bars", "composition=stacked100", "scmp=map", "ring=ring", "flow=sankey", "ranked_bars=bars"]);
         let run_py = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime/leaves_py/run.py")).unwrap();
         let line = run_py.lines().find(|l| l.starts_with("MAIN = dict(")).expect("run.py MAIN");
         let pairs: Vec<&str> = line.trim_start_matches("MAIN = dict(").trim_end_matches(')').split(", ").collect();
-        assert_eq!(pairs.len(), 4, "{line}");
+        assert_eq!(pairs.len(), 5, "{line}");
         for pair in pairs {
             let (r, n) = pair.split_once('=').unwrap();
             assert_eq!(reg.g("main_chart").g(r).s(), Some(n.trim_matches('"')), "run.py MAIN {pair}");
