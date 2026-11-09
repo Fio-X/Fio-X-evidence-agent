@@ -30,8 +30,9 @@ pub const EU27: [&str; 27] = [
     "AT", "BE", "BG", "CY", "CZ", "DE", "DK", "EE", "EL", "ES", "FI", "FR", "HR", "HU", "IE", "IT",
     "LT", "LU", "LV", "MT", "NL", "PL", "PT", "RO", "SE", "SI", "SK",
 ];
-/// Registry: Eurostat geo codes that are not ISO 3166-1 alpha-2, as (Eurostat, ISO).
-pub const ESTAT_ISO: [(&str, &str); 2] = [("EL", "GR"), ("UK", "GB")];
+/// Registry: Eurostat geo codes that are not ISO 3166-1 alpha-2, as (Eurostat, ISO); an aggregate a question names as a
+/// place of its own is the World Bank's iso3 (l5geo PEER_AGGREGATES_ZH).
+pub const ESTAT_ISO: [(&str, &str); 3] = [("EL", "GR"), ("UK", "GB"), (EU_AGGREGATE, "EUU")];
 /// The frequency dimension of a Eurostat fetch: the table's own freq (TableMeta::freq, from its metabase time codes; the
 /// metabase lists no freq dimension).
 pub const FREQ_DIM: &str = "freq";
@@ -2013,6 +2014,21 @@ mod tests {
 
     fn draft_of(places: &[Place]) -> Draft {
         draft(eu_trade(), &[], places)
+    }
+
+    /// The EU named as a place of its own (the World Bank's EUU, l5geo PEER_AGGREGATES_ZH) is Eurostat's EU27_2020 beside
+    /// the countries named with it, and a table that lacks it drops it, as any named place it does not hold.
+    #[test]
+    fn the_eu_named_as_a_place_is_fetched_by_its_eurostat_code() {
+        let eu_us = [Place::Country("EUU".into()), Place::Country("US".into())];
+        let table = eurostat("rd_e_gerdtot", vec![dim("geo", &["EU27_2020", "DE", "US", "CN"])]);
+        let filled = fill(&draft(table, &[], &eu_us), 1, &picks(&[("t1.years", 1)]), &eu_us, 2026).unwrap();
+        assert_eq!(filter(&filled, "geo").unwrap(), ["EU27_2020", "US"]);
+        assert_eq!(filled.event["dropped"], json!([]));
+        let without = eurostat("rd_e_gerdtot", vec![dim("geo", &["DE", "US"])]);
+        let filled = fill(&draft(without, &[], &eu_us), 1, &picks(&[("t1.years", 1)]), &eu_us, 2026).unwrap();
+        assert_eq!(filter(&filled, "geo").unwrap(), ["US"]);
+        assert_eq!(filled.event["dropped"], json!(["EU27_2020"]));
     }
 
     #[test]

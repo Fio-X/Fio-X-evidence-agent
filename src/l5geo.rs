@@ -46,6 +46,9 @@ const REGION_WORDS_ZH: [&str; 15] = [
     "波罗的海",
 ];
 const REGION: &str = "REGION";
+/// Region words that also name an aggregate with rows of its own, with its code: the World Bank's iso3 (Eurostat's is
+/// next_params::ESTAT_ISO's). Named beside a country outside Europe, the word is that place (Catalog::places).
+const PEER_AGGREGATES_ZH: [(&str, &str); 2] = [("欧盟", "EUU"), ("欧洲联盟", "EUU")];
 /// Whole words that hold a place name but name no place (发展中国家 holds 中国, 增加纳税 holds 加纳). Matched with the
 /// place names, longest first, so a hit swallows the name. Hand-kept: the catalog has no Chinese words to derive
 /// them from. 小国 is the World Bank aggregate "Small states", which a Chinese question never means.
@@ -1432,7 +1435,7 @@ impl Catalog {
             .iter()
             .map(|x| field(x, &["iso2Code"]).to_string())
             .collect();
-        let wb_places: Vec<(String, String)> = wb
+        let mut wb_places: Vec<(String, String)> = wb
             .iter()
             .map(|x| {
                 (
@@ -1441,6 +1444,16 @@ impl Catalog {
                 )
             })
             .collect();
+        // an aggregate a question may name as a place of its own (PEER_AGGREGATES_ZH), by its iso3 on both sides
+        for x in list(&raw.wb_countries) {
+            let id = field(x, &["id"]);
+            if field(x, &["region", "value"]).trim() == "Aggregates"
+                && PEER_AGGREGATES_ZH.iter().any(|(_, c)| *c == id)
+                && !wb_places.iter().any(|(_, i)| i == id)
+            {
+                wb_places.push((id.to_string(), id.to_string()));
+            }
+        }
         let mut europe: HashSet<String> = wb
             .iter()
             .filter(|x| field(x, &["region", "value"]).trim() == "Europe & Central Asia")
@@ -1834,18 +1847,27 @@ impl Catalog {
         })
     }
 
-    /// The places the Chinese question names, in question order: countries by iso2, region words as Region.
+    /// The places the Chinese question names, in question order: countries by iso2, region words as Region. A region word
+    /// that names an aggregate with rows of its own (PEER_AGGREGATES_ZH) beside a country outside Europe is that aggregate,
+    /// one place among the others by its code ("欧盟、美国、中国": the EU is compared, not the set its members are drawn from).
     pub fn places(&self, question_zh: &str) -> Vec<Place> {
-        self.places_zh(question_zh)
-            .into_iter()
-            .map(|(_, c)| {
-                if c == REGION {
-                    Place::Region
-                } else {
-                    Place::Country(c)
-                }
-            })
-            .collect()
+        let named = self.places_zh(question_zh);
+        let beside_far = named.iter().any(|(_, c)| c != REGION && !self.europe.contains(c));
+        let mut places: Vec<Place> = Vec::new();
+        for (word, c) in named {
+            let place = if c != REGION {
+                Place::Country(c)
+            } else if let Some((_, code)) = PEER_AGGREGATES_ZH.iter().find(|(w, _)| beside_far && *w == word) {
+                Place::Country(code.to_string())
+            } else {
+                Place::Region
+            };
+            // the aggregate once, however many of its words the question uses
+            if !(matches!(&place, Place::Country(p) if p.len() == 3) && places.contains(&place)) {
+                places.push(place);
+            }
+        }
+        places
     }
 
     /// The members of a registered group in this year (the period holding it; None for a year it did not exist), or its
@@ -2676,6 +2698,28 @@ mod tests {
         assert_eq!(c.scope("韩国人口").1, ["韩国"]);
         // a name not in the catalogue's countries is not read
         assert!(countries(&small(), "叙利亚人口").is_empty());
+    }
+
+    /// The EU named beside a country outside Europe is one place by its aggregate's code (n37: "欧盟、美国、中国 … 谁最高"),
+    /// fetched from a World Bank table by that code; the EU's countries ("欧盟各国"), or the EU beside a member, stay the
+    /// region they were.
+    #[test]
+    fn the_eu_beside_a_far_country_is_a_place_of_its_own() {
+        let mut raw = small_raw();
+        raw.wb_countries[1].as_array_mut().unwrap().push(
+            json!({"id": "EUU", "iso2Code": "EU", "name": "European Union", "region": {"value": "Aggregates"}}),
+        );
+        let c = Catalog::from_raw(&raw);
+        assert_eq!(countries(&c, "欧盟、美国、中国 2022 年研发支出占 GDP 的比重谁最高？"), ["EUU", "US", "CN"]);
+        assert_eq!(countries(&c, "欧洲联盟和欧盟与日本的人口"), ["EUU", "JP"]);
+        assert_eq!(countries(&c, "欧盟各国研发投入占GDP的比例"), [REGION]);
+        assert_eq!(countries(&c, "欧盟和德国的失业率"), [REGION, "DE"]);
+        assert_eq!(countries(&c, "欧洲和美国的人口"), [REGION, "US"]);
+        let wb = |c: &Catalog| c.table("EG.USE@2").unwrap().places;
+        assert!(wb(&c).contains(&("EUU".to_string(), "EUU".to_string())));
+        // no other aggregate joins the places, and a list without the EU has none
+        assert!(!wb(&c).iter().any(|(_, id)| id == "WLD" || id == "SST"));
+        assert!(!wb(&small()).iter().any(|(_, id)| id == "EUU"));
     }
 
     #[test]
