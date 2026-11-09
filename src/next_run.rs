@@ -2670,8 +2670,9 @@ fn recipe_request(
 /// On a World Bank page narrowed to a ranked set (`scoped`: the ranking the question asks for beside the countries it names,
 /// next_params named_open) a named country outside the set is no place without data: the full file may hold it, so the
 /// page stops rather than say "no data" (review 11-08: "where does Russia rank among the ten most populous" keeps eight).
-/// So does a named place the main's fetch never asked the source for (`filters`, the fetch's: a filter on its place
-/// dimension listing other codes); Null is a fetch of every place.
+/// So does a named place the table's code list holds (the catalogue's table: a World Bank id, a Eurostat code of any
+/// dimension; no table found counts as held) and the main's fetch never asked the source for (`filters`, the fetch's: no
+/// filter lists it and every place dimension is filtered); Null is a fetch of every place.
 fn answered_places(
     fill: &mut Value,
     shape: &Shape,
@@ -2726,21 +2727,30 @@ fn answered_places(
     let year = shape.year.clone();
     let at_year: Vec<&Value> = main_rows.iter().filter(|r| year.is_empty() || r["time"].as_str() == Some(year.as_str())).collect();
     let missing: Vec<String> = asked.iter().filter(|c| !at_year.iter().any(|r| holds(r, c.as_str()))).cloned().collect();
-    // "no data" is the source's word only for a place the fetch asked it for: a place dimension (one a named place's row is
-    // under, else the page's) whose filter lists other codes never fetched the place's rows, the source may hold them, and
-    // the page stops rather than say "no data" (n37: the EU named, the World Bank fetch for the United States and China only)
-    let filter_on = |d: &str| {
-        filters.as_array().into_iter().flatten().find(|f| f["dimension"].as_str() == Some(d)).map(|f| {
-            f["values"].as_array().into_iter().flatten().filter_map(Value::as_str).map(str::to_string).collect::<Vec<String>>()
-        })
+    // "no data" is the source's word only for a place the fetch asked it for, or one the table's own code list lacks: a
+    // place the table holds that no filter lists, while every place dimension (the page's, and one a named place's row is
+    // under) is filtered, was never fetched; the source may hold its rows, and the page stops rather than say "no data"
+    // (n37: the EU named, the World Bank fetch for the United States and China only)
+    let listed = |c: &str| {
+        filters.as_array().into_iter().flatten().any(|f| f["values"].as_array().is_some_and(|v| v.iter().any(|x| x.as_str() == Some(c))))
     };
-    let mut place_dims: Vec<&str> = dims.iter().map(String::as_str).filter(|d| main_rows.iter().any(|r| asked.iter().any(|c| r["dims"][*d].as_str() == Some(c.as_str())))).collect();
-    if place_dims.is_empty() {
-        place_dims.push(shape.place.as_str());
+    let filtered = |d: &str| filters.as_array().into_iter().flatten().any(|f| f["dimension"].as_str() == Some(d));
+    let mut place_dims: Vec<&str> = vec![shape.place.as_str()];
+    for d in dims.iter().map(String::as_str) {
+        if !place_dims.contains(&d) && main_rows.iter().any(|r| asked.iter().any(|c| r["dims"][d].as_str() == Some(c.as_str()))) {
+            place_dims.push(d);
+        }
     }
-    let unfetched: Vec<&String> = missing.iter().filter(|c| place_dims.iter().all(|d| filter_on(d).is_some_and(|v| !v.contains(c)))).collect();
+    let meta = catalogue.table(&shape.main);
+    let held = |c: &str| match &meta {
+        Some(t) if t.worldbank => t.places.iter().any(|(_, id)| id == c),
+        Some(t) => t.dims.iter().any(|(_, codes)| codes.iter().any(|(k, _)| k == c)),
+        None => true,
+    };
+    let unfetched: Vec<&String> =
+        missing.iter().filter(|c| !listed(c) && place_dims.iter().all(|d| filtered(d)) && held(c)).collect();
     if !unfetched.is_empty() {
-        return Err(format!("the question names {unfetched:?}, which the fetch never asked the source for (its filter on {place_dims:?} lists others): the source may hold them, so the page cannot say they have no data"));
+        return Err(format!("the question names {unfetched:?}, which the table holds but the fetch never asked the source for (it filters {place_dims:?} to other codes): the source may hold them, so the page cannot say they have no data"));
     }
     let words: Value = serde_json::from_str(crate::next_knowledge::ASKED_PLACES_ZH).map_err(|e| format!("asked-places-zh.json: {e}"))?;
     let word = |key: &str| words[key].as_str().map(str::to_string).ok_or_else(|| format!("asked-places-zh.json holds no {key}"));
@@ -7084,6 +7094,79 @@ mod tests {
             let mut f = fill();
             answered_places(&mut f, shape, (rows, false), (&country(&named[..1]), None), &filter(dim, &fetched), &Hubs).unwrap();
             assert_eq!(f["knobs"]["spec"]["asked_places"]["missing"], json!([]), "{name}");
+        }
+        // a place the table's own code list lacks was left out of the fetch for it (next_params dropped): the source has
+        // none, so it is said as before; one the list holds stops the page (review 11-09)
+        struct Listed(crate::l5geo::TableMeta);
+        impl Catalogue for Listed {
+            fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>) -> crate::l5geo::Ranking {
+                unreachable!()
+            }
+            fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
+                unreachable!()
+            }
+            fn source(&self) -> &Value {
+                &Value::Null
+            }
+            fn countries(&self, codes: &[String]) -> Result<Vec<String>, String> {
+                Hubs.countries(codes)
+            }
+            fn zh_names(&self, scheme: &str, codes: &[String]) -> Result<BTreeMap<String, String>, Vec<String>> {
+                Hubs.zh_names(scheme, codes)
+            }
+            fn members(&self, aggregate: &str) -> Result<Vec<String>, String> {
+                Hubs.members(aggregate)
+            }
+            fn table(&self, id: &str) -> Option<crate::l5geo::TableMeta> {
+                (id == self.0.id).then(|| self.0.clone())
+            }
+        }
+        let meta = |id: &str, worldbank: bool, dims: &[(&str, &[&str])], places: &[(&str, &str)]| {
+            Listed(crate::l5geo::TableMeta {
+                id: id.into(),
+                worldbank,
+                dims: dims.iter().map(|(d, codes)| (d.to_string(), codes.iter().map(|c| (c.to_string(), String::new())).collect())).collect(),
+                end_year: None,
+                places: places.iter().map(|(i, id)| (i.to_string(), id.to_string())).collect(),
+                place_members: Vec::new(),
+                freqs: Vec::new(),
+                unit: None,
+            })
+        };
+        for (name, rows, shape, dim, named, fetched, missing, lacks, holds) in [
+            ("world bank", &wb, &wb_shape, "country", ["CN", "KR"], ["CHN", "JPN"], "KOR",
+                meta("SP", true, &[], &[("CN", "CHN"), ("JP", "JPN")]), meta("SP", true, &[], &[("CN", "CHN"), ("JP", "JPN"), ("KR", "KOR")])),
+            ("eurostat", &es, &es_shape, "geo", ["DE", "ES"], ["DE", "FR"], "ES",
+                meta("sdg_07_40", false, &[("geo", &["DE", "FR"])], &[]), meta("sdg_07_40", false, &[("geo", &["DE", "FR", "ES"])], &[])),
+        ] {
+            let mut f = fill();
+            answered_places(&mut f, shape, (rows, false), (&country(&named), None), &filter(dim, &fetched), &lacks).unwrap_or_else(|e| panic!("{name}: {e}"));
+            assert_eq!(f["knobs"]["spec"]["asked_places"]["missing"], json!([missing]), "{name}: the table lacks it");
+            let mut f = fill();
+            let err = answered_places(&mut f, shape, (rows, false), (&country(&named), None), &filter(dim, &fetched), &holds).unwrap_err();
+            assert!(err.contains(missing), "{name}: the table holds it: {err}");
+        }
+        // a hub page: DE the fixed geo, QA a partner with no row: said when the partner filter lists it or is open; stopped
+        // when the partner filter lists other codes and the table holds QA
+        let hub = ring_rows("imp", &[("siec", "G3000"), ("unit", "MIO_M3"), ("geo", "DE")], ("partner", &["RU", "NO"]), &["2024"]);
+        let hub_shape = Shape { main: "imp".into(), place: "partner".into(), year: "2024".into(), ..Default::default() };
+        let geo = json!({"dimension": "geo", "values": ["DE"]});
+        let partner = |codes: &[&str]| json!({"dimension": "partner", "values": codes});
+        let table = meta("imp", false, &[("geo", &["DE"]), ("partner", &["RU", "NO", "QA"])], &[]);
+        for (filters, said) in [
+            (json!([geo, partner(&["RU", "NO", "QA"])]), true),
+            (json!([geo]), true),
+            (json!([geo, partner(&["RU", "NO"])]), false),
+        ] {
+            let mut f = fill();
+            let got = answered_places(&mut f, &hub_shape, (&hub, false), (&country(&["DE", "QA"]), None), &filters, &table);
+            match said {
+                true => {
+                    got.unwrap_or_else(|e| panic!("hub {filters}: {e}"));
+                    assert_eq!(f["knobs"]["spec"]["asked_places"]["missing"], json!(["QA"]), "hub {filters}");
+                }
+                false => assert!(got.unwrap_err().contains("QA"), "hub {filters}"),
+            }
         }
     }
 
