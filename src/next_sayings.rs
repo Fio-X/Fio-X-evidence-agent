@@ -37,7 +37,7 @@ use std::path::Path;
 /// The stop a page whose sayings do not hold is reported under, a step of next_run::LEAF_PLAN_STEPS (plan v4 item 9).
 pub const SAYINGS_STAGE: &str = "sayings";
 
-/// What the flow records of the sayings check on the page just published: {by, recipe, published, html_sha256, unheld}.
+/// What the flow records of the sayings check on the page just published: {recipe, published, html_sha256, unheld}.
 pub const SAYINGS_EVENT: &str = "next_sayings";
 
 /// One block of text the page shows (a heading, a paragraph, an svg text): its words as shown, and the sources its marked
@@ -207,6 +207,10 @@ impl Words {
             .map(|(_, after)| after.trim().to_string())
             .filter(|w| !w.is_empty())
             .ok_or("asked-places-zh.json: its said has no words after {missing}")?;
+        let num = numerals();
+        if num.units.len() != 10 || num.two.is_none() || num.ten.is_none() {
+            return Err("set-sayings-zh.json: numerals needs ten units, two and ten".into());
+        }
         Ok(Words {
             most: list("most")?,
             least: list("least")?,
@@ -267,9 +271,8 @@ fn found(said: &str, word: &str) -> Option<Option<u32>> {
         if from > 0 && (chars[from - 1].is_ascii_digit() || chars[from - 1] == '.') {
             continue;
         }
-        while i < chars.len()
-            && (chars[i].is_ascii_digit() || "零一二两三四五六七八九十百".contains(chars[i]))
-        {
+        let num = numerals();
+        while i < chars.len() && (chars[i].is_ascii_digit() || num.holds(chars[i])) {
             i += 1;
         }
         if i == from {
@@ -286,24 +289,48 @@ fn found(said: &str, word: &str) -> Option<Option<u32>> {
     None
 }
 
-/// A count written in ASCII digits or in Chinese numerals up to 199.
+/// The Chinese numerals a count may be written in (set-sayings-zh.json numerals): the units by value, the other two and ten.
+struct Numerals {
+    units: Vec<char>,
+    two: Option<char>,
+    ten: Option<char>,
+}
+
+impl Numerals {
+    fn holds(&self, c: char) -> bool {
+        self.units.contains(&c) || self.two == Some(c) || self.ten == Some(c)
+    }
+
+    fn unit(&self, c: char) -> Option<u32> {
+        self.units.iter().position(|u| *u == c).map(|i| i as u32).or((self.two == Some(c)).then_some(2))
+    }
+}
+
+/// The word file's numerals, read once; none (ASCII counts only) when the file has none, which Words::read refuses.
+fn numerals() -> &'static Numerals {
+    static NUMERALS: std::sync::OnceLock<Numerals> = std::sync::OnceLock::new();
+    NUMERALS.get_or_init(|| {
+        let set: Value = serde_json::from_str(crate::next_knowledge::SET_SAYINGS_ZH).unwrap_or_default();
+        let n = &set["numerals"];
+        let one = |k: &str| n[k].as_str().and_then(|s| s.chars().next());
+        Numerals { units: n["units"].as_str().unwrap_or("").chars().collect(), two: one("two"), ten: one("ten") }
+    })
+}
+
+/// A count written in ASCII digits or in Chinese numerals up to 99.
 fn count_of(digits: &str) -> Option<u32> {
     if let Ok(n) = digits.parse() {
         return Some(n);
     }
-    let unit = |c: char| {
-        "零一二三四五六七八九"
-            .find(c)
-            .map(|i| (i / 3) as u32)
-            .or((c == '两').then_some(2))
-    };
+    let num = numerals();
+    let ten = num.ten?;
     let chars: Vec<char> = digits.chars().collect();
     match chars.as_slice() {
-        ['十'] => Some(10),
-        [c] => unit(*c),
-        ['十', u] => Some(10 + unit(*u)?),
-        [t, '十'] => Some(unit(*t)? * 10),
-        [t, '十', u] => Some(unit(*t)? * 10 + unit(*u)?),
+        [t] if *t == ten => Some(10),
+        [c] => num.unit(*c),
+        [t, u] if *t == ten => Some(10 + num.unit(*u)?),
+        [t, x] if *x == ten => Some(num.unit(*t)? * 10),
+        [t, x, u] if *x == ten => Some(num.unit(*t)? * 10 + num.unit(*u)?),
         _ => None,
     }
 }
@@ -1040,7 +1067,7 @@ fn worldbank_whole(
     let col = |name: &str| {
         head.iter()
             .position(|h| *h == name)
-            .ok_or_else(|| format!("{file}: no {name} column"))
+            .ok_or_else(|| format!("{file}: no {name} field in its header"))
     };
     let (iso3, year, value) = (col("iso3")?, col("year")?, col("value")?);
     let mut whole = BTreeMap::new();

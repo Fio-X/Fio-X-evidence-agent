@@ -4098,8 +4098,7 @@ pub(crate) async fn page_from(
             };
             recorder.program_event(
                 crate::next_sayings::SAYINGS_EVENT,
-                json!({"by": RING_ACTOR, "recipe": recipe, "published": published.html_ref,
-                    "html_sha256": published.html_sha256, "unheld": said}),
+                json!({"recipe": recipe, "published": published.html_ref, "html_sha256": published.html_sha256, "unheld": said}),
             )?;
             let unheld: Vec<String> = match sayings {
                 Ok(unheld) => unheld.iter().map(|u| format!("{} [{}] {}", u.sentence, u.kind.letter(), u.why)).collect(),
