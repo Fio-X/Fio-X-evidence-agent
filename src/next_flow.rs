@@ -4063,8 +4063,10 @@ fn main_cut(args: &Map<String, Value>, details: Option<&Value>) -> Option<Cut> {
 /// A companion's fetch arguments: the main's years (with `months`, a monthly twin's: the years holding that many months
 /// up to its last month, twin_years), and each of the main's filters on a dimension the companion also has,
 /// fixed to the same codes in the companion's own code list; the main's cut the same way (a World Bank companion's
-/// countries are its places). None when one of them cannot be fixed (the companion lists none of the main's codes): open,
-/// it would fetch every code of a dimension the main fixed or cut.
+/// countries are its places). A World Bank main's countries go to a World Bank companion as they are (the catalogue lists
+/// no dimension for either: the same codes in the same place dimension). None when one of them cannot be fixed (the
+/// companion lists none of the main's codes, or lacks the main's place dimension): open, it would fetch every code of a
+/// dimension the main fixed or cut, every place of the world where the main asked for some.
 fn companion_args(
     main: &Map<String, Value>,
     cut: Option<&Cut>,
@@ -4080,6 +4082,8 @@ fn companion_args(
         json!(table.id.strip_suffix("@2").unwrap_or(&table.id)),
     );
     let mut filters = Vec::new();
+    let main_wb = main.get("provider").and_then(Value::as_str) == Some("worldbank");
+    let place_dim = if main_wb { next_params::WB_PLACE_DIM } else { next_params::GEO_DIM };
     for filter in main
         .get("filters")
         .and_then(Value::as_array)
@@ -4087,7 +4091,17 @@ fn companion_args(
         .flatten()
     {
         let dim = filter["dimension"].as_str().unwrap_or("");
+        if main_wb && table.worldbank && dim == place_dim {
+            // the main's cut, when it cuts this dimension, is the narrower list and goes in below
+            if cut.is_none_or(|c| c.dimension != dim) {
+                filters.push(json!({"dimension": dim, "values": filter["values"].clone()}));
+            }
+            continue;
+        }
         let Some((_, codes)) = table.dims.iter().find(|(d, _)| d == dim) else {
+            if dim == place_dim {
+                return None;
+            }
             continue;
         };
         let mut kept: Vec<String> = Vec::new();
@@ -9904,6 +9918,8 @@ mod tests {
             companion_args(&main, None, &table(&[("geo", &["DE"]), ("sex", &["T"])]), None),
             None
         );
+        // a companion lacking the main's place dimension is not fetched rather than fetched for every place
+        assert_eq!(companion_args(&main, None, &table(&[("unit", &["PC"])]), None), None);
         // two versions of the aggregate: neither is guessed; only a place is mapped
         assert_eq!(
             own_code(
@@ -10015,6 +10031,25 @@ mod tests {
             companion_args(&main, Some(&cut), &meta(true, &[], &[("FR", "FRA")]), None),
             None
         );
+        // World Bank (r1): the countries the main was fixed to by a filter go to a World Bank companion as they are, and
+        // the cut, when there is one on the same dimension, in their place; a Eurostat companion has no country dimension
+        // and is not fetched rather than fetched for every place
+        let fixed: Map<String, Value> = serde_json::from_value(json!({"provider": "worldbank", "dataset": "SH.XPD.CHEX.PC.CD",
+            "filters": [{"dimension": "country", "values": ["AUT", "BEL", "EUU"]}], "years": {"start": 2015, "end": 2024}}))
+        .unwrap();
+        assert_eq!(
+            Value::Object(companion_args(&fixed, None, &sibling, None).unwrap()),
+            json!({"provider": "worldbank", "dataset": "b", "filters": [{"dimension": "country", "values": ["AUT", "BEL", "EUU"]}],
+                "years": {"start": 2015, "end": 2024}})
+        );
+        let mut fixed_cut = fixed.clone();
+        fixed_cut.insert("narrow".into(), main["narrow"].clone());
+        assert_eq!(
+            Value::Object(companion_args(&fixed_cut, Some(&cut), &sibling, None).unwrap()),
+            json!({"provider": "worldbank", "dataset": "b", "filters": [{"dimension": "country", "values": ["JPN", "DEU"]}],
+                "years": {"start": 2015, "end": 2024}})
+        );
+        assert_eq!(companion_args(&fixed, None, &meta(false, &[("geo", &["AT", "BE"])], &[]), None), None);
         // no narrow: no cut, the companion as before
         let mut plain = main.clone();
         plain.remove("narrow");
