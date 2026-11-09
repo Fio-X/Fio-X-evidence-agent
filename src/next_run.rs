@@ -2621,7 +2621,8 @@ fn recipe_request(
     }
     // each country the question names on its own: printed from its rows, or named on the unit line as having no data
     // (a recipe whose page cannot say so is not this shape, and the next one is tried)
-    answered_places(&mut fill, &shape, (&main_rows, scoped), (places, basis.as_ref()), catalogue)
+    let filters = main.args.get("filters").cloned().unwrap_or(Value::Null);
+    answered_places(&mut fill, &shape, (&main_rows, scoped), (places, basis.as_ref()), &filters, catalogue)
         .map_err(|why| (if why.starts_with("not this shape") { "shape" } else { "fill" }, why))?;
     if let Some(a) = asked_of {
         fill["knobs"]["spec"]["asked"] = a;
@@ -2669,11 +2670,14 @@ fn recipe_request(
 /// On a World Bank page narrowed to a ranked set (`scoped`: the ranking the question asks for beside the countries it names,
 /// next_params named_open) a named country outside the set is no place without data: the full file may hold it, so the
 /// page stops rather than say "no data" (review 11-08: "where does Russia rank among the ten most populous" keeps eight).
+/// So does a named place the main's fetch never asked the source for (`filters`, the fetch's: a filter on its place
+/// dimension listing other codes); Null is a fetch of every place.
 fn answered_places(
     fill: &mut Value,
     shape: &Shape,
     (main_rows, scoped): (&[Value], bool),
     (places, group): (&[crate::l5geo::Place], Option<&crate::l5geo::GroupBasis>),
+    filters: &Value,
     catalogue: &dyn Catalogue,
 ) -> Result<(), String> {
     let mut iso2: Vec<String> = Vec::new();
@@ -2722,6 +2726,22 @@ fn answered_places(
     let year = shape.year.clone();
     let at_year: Vec<&Value> = main_rows.iter().filter(|r| year.is_empty() || r["time"].as_str() == Some(year.as_str())).collect();
     let missing: Vec<String> = asked.iter().filter(|c| !at_year.iter().any(|r| holds(r, c.as_str()))).cloned().collect();
+    // "no data" is the source's word only for a place the fetch asked it for: a place dimension (one a named place's row is
+    // under, else the page's) whose filter lists other codes never fetched the place's rows, the source may hold them, and
+    // the page stops rather than say "no data" (n37: the EU named, the World Bank fetch for the United States and China only)
+    let filter_on = |d: &str| {
+        filters.as_array().into_iter().flatten().find(|f| f["dimension"].as_str() == Some(d)).map(|f| {
+            f["values"].as_array().into_iter().flatten().filter_map(Value::as_str).map(str::to_string).collect::<Vec<String>>()
+        })
+    };
+    let mut place_dims: Vec<&str> = dims.iter().map(String::as_str).filter(|d| main_rows.iter().any(|r| asked.iter().any(|c| r["dims"][*d].as_str() == Some(c.as_str())))).collect();
+    if place_dims.is_empty() {
+        place_dims.push(shape.place.as_str());
+    }
+    let unfetched: Vec<&String> = missing.iter().filter(|c| place_dims.iter().all(|d| filter_on(d).is_some_and(|v| !v.contains(c)))).collect();
+    if !unfetched.is_empty() {
+        return Err(format!("the question names {unfetched:?}, which the fetch never asked the source for (its filter on {place_dims:?} lists others): the source may hold them, so the page cannot say they have no data"));
+    }
     let words: Value = serde_json::from_str(crate::next_knowledge::ASKED_PLACES_ZH).map_err(|e| format!("asked-places-zh.json: {e}"))?;
     let word = |key: &str| words[key].as_str().map(str::to_string).ok_or_else(|| format!("asked-places-zh.json holds no {key}"));
     let (line, join, line_join) = (word("said")?, word("join")?, word("lead")?);
@@ -6968,7 +6988,7 @@ mod tests {
         main.extend(ring_rows("sdg_07_40", &[("freq", "A"), ("unit", "PC")], ("geo", &["PT"]), &["2020"]));
         let shape = Shape { main: "sdg_07_40".into(), place: "geo".into(), year: "2024".into(), ..Default::default() };
         let mut f = fill();
-        answered_places(&mut f, &shape, (&main, false), (&[&country(&["DE", "GR", "PT", "ES"])[..], &[Place::Region][..]].concat(), None), &Hubs).unwrap();
+        answered_places(&mut f, &shape, (&main, false), (&[&country(&["DE", "GR", "PT", "ES"])[..], &[Place::Region][..]].concat(), None), &Value::Null, &Hubs).unwrap();
         let kept = &f["knobs"]["spec"]["asked_places"];
         assert_eq!((&kept["asked"], &kept["missing"], &kept["year"]), (&json!(["DE", "EL", "PT", "ES"]), &json!(["PT", "ES"]), &json!("2024")));
         assert_eq!((&kept["words"], &kept["join"]), (&json!(said), &json!(join)));
@@ -6982,22 +7002,22 @@ mod tests {
         assert_eq!((&f["knobs"]["labels"]["PT"], &f["knobs"]["labels"]["DE"]), (&json!("名PT"), &json!("名DE")));
         // every place with a row: kept, nothing said
         let mut f = fill();
-        answered_places(&mut f, &shape, (&main, false), (&country(&["DE", "FR"]), None), &Hubs).unwrap();
+        answered_places(&mut f, &shape, (&main, false), (&country(&["DE", "FR"]), None), &Value::Null, &Hubs).unwrap();
         assert_eq!(f["knobs"]["spec"]["asked_places"]["missing"], json!([]));
         assert_eq!(f["knobs"]["spec"]["hero"]["unit"], json!("单位：%"));
         assert!(f["knobs"].get("segs").is_none());
         // no country named: the fill as it was
         let mut f = fill();
-        answered_places(&mut f, &shape, (&main, false), (&[Place::Region], None), &Hubs).unwrap();
+        answered_places(&mut f, &shape, (&main, false), (&[Place::Region], None), &Value::Null, &Hubs).unwrap();
         assert_eq!(f, fill());
         // a missing place and no unit line: not this shape
         let mut f = json!({"knobs": {"spec": {"hero": {}}, "labels": {}}});
-        assert!(answered_places(&mut f, &shape, (&main, false), (&country(&["ES"]), None), &Hubs).unwrap_err().starts_with("not this shape"));
+        assert!(answered_places(&mut f, &shape, (&main, false), (&country(&["ES"]), None), &Value::Null, &Hubs).unwrap_err().starts_with("not this shape"));
         // the World Bank: iso3 by the name table, KR with no row
         let wb: Vec<Value> = ["CHN", "JPN"].iter().map(|c| json!({"src": format!("series:SP/{c}:2025:OBS_VALUE"), "table": "SP", "dims": {"country": c}, "time": "2025", "value": "1"})).collect();
         let shape = Shape { main: "SP".into(), place: "country".into(), year: "2025".into(), countries: vec!["CHN".into(), "JPN".into()], ..Default::default() };
         let mut f = fill();
-        answered_places(&mut f, &shape, (&wb, false), (&country(&["CN", "JP", "KR"]), None), &Hubs).unwrap();
+        answered_places(&mut f, &shape, (&wb, false), (&country(&["CN", "JP", "KR"]), None), &Value::Null, &Hubs).unwrap();
         assert_eq!((&f["knobs"]["spec"]["asked_places"]["asked"], &f["knobs"]["spec"]["asked_places"]["missing"]), (&json!(["CHN", "JPN", "KOR"]), &json!(["KOR"])));
         assert!(f["knobs"]["segs"]["unit"].as_array().unwrap().contains(&json!({"src": "name:zh_names:iso3:KOR"})));
         // a group's members outside a ranked World Bank set stop the page too (review 11-08: "the five most populous of the
@@ -7009,16 +7029,16 @@ mod tests {
         // narrowed to a ranked set (review 11-08): KR outside the kept set is not said to have no data, the page stops; a
         // named country inside the set is printed as before
         let mut f = fill();
-        let err = answered_places(&mut f, &shape, (&wb, true), (&country(&["CN", "KR"]), None), &Hubs).unwrap_err();
+        let err = answered_places(&mut f, &shape, (&wb, true), (&country(&["CN", "KR"]), None), &Value::Null, &Hubs).unwrap_err();
         assert!(err.contains("KOR") && !err.starts_with("not this shape"), "{err}");
         let mut f = fill();
-        answered_places(&mut f, &shape, (&wb, true), (&country(&["CN"]), None), &Hubs).unwrap();
+        answered_places(&mut f, &shape, (&wb, true), (&country(&["CN"]), None), &Value::Null, &Hubs).unwrap();
         assert_eq!(f["knobs"]["spec"]["asked_places"]["missing"], json!([]));
         // a hub page: DE is the fixed geo beside the varying partner, so it has rows; RU is a partner with rows
         let hub = ring_rows("imp", &[("siec", "G3000"), ("unit", "MIO_M3"), ("geo", "DE")], ("partner", &["RU", "NO"]), &["2024"]);
         let shape = Shape { main: "imp".into(), place: "partner".into(), year: "2024".into(), ..Default::default() };
         let mut f = fill();
-        answered_places(&mut f, &shape, (&hub, false), (&country(&["DE", "RU"]), None), &Hubs).unwrap();
+        answered_places(&mut f, &shape, (&hub, false), (&country(&["DE", "RU"]), None), &Value::Null, &Hubs).unwrap();
         assert_eq!(f["knobs"]["spec"]["asked_places"]["missing"], json!([]));
         assert!(f["knobs"]["spec"]["asked_places"]["dims"].as_array().unwrap().contains(&json!("geo")));
         // a hub page whose shape names no year (the scmp and ring recipes): RU has rows in some period, so it has data;
@@ -7026,8 +7046,45 @@ mod tests {
         let hub = ring_rows("imp", &[("siec", "G3000"), ("unit", "MIO_M3"), ("geo", "EU27_2020")], ("partner", &["RU", "NO"]), &["2023"]);
         let shape = Shape { main: "imp".into(), place: "partner".into(), year: String::new(), ..Default::default() };
         let mut f = fill();
-        answered_places(&mut f, &shape, (&hub, false), (&country(&["RU", "QA"]), None), &Hubs).unwrap();
+        answered_places(&mut f, &shape, (&hub, false), (&country(&["RU", "QA"]), None), &Value::Null, &Hubs).unwrap();
         assert_eq!(f["knobs"]["spec"]["asked_places"]["missing"], json!(["QA"]), "RU has a row, QA none");
+    }
+
+    /// "No data" is said only of a named place the fetch asked the source for (n37, 11-09: the EU named, the World Bank
+    /// fetch for the United States and China only, the page said 欧盟无数据 where the source holds 2.227). On both shapes:
+    /// a place filter listing other codes stops the page (a fill stop, no other recipe tried) and says nothing; a filter
+    /// listing the place, or no filter, says it as before; a named place with a row is printed whatever the filter.
+    #[test]
+    fn no_data_is_said_only_of_a_place_the_fetch_asked_the_source_for() {
+        use crate::l5geo::Place;
+        let fill = || json!({"knobs": {"spec": {"hero": {"unit": "单位：%"}}, "labels": {}}, "rows": []});
+        let country = |codes: &[&str]| codes.iter().map(|c| Place::Country(c.to_string())).collect::<Vec<_>>();
+        let filter = |dim: &str, codes: &[&str]| json!([{"dimension": "freq", "values": ["A"]}, {"dimension": dim, "values": codes}]);
+        // the World Bank: rows of CHN and JPN, KR named
+        let wb: Vec<Value> = ["CHN", "JPN"].iter().map(|c| json!({"src": format!("series:SP/{c}:2025:OBS_VALUE"), "table": "SP", "dims": {"country": c}, "time": "2025", "value": "1"})).collect();
+        let wb_shape = Shape { main: "SP".into(), place: "country".into(), year: "2025".into(), countries: vec!["CHN".into(), "JPN".into()], ..Default::default() };
+        // Eurostat: rows of DE and FR, ES named
+        let es = ring_rows("sdg_07_40", &[("freq", "A"), ("unit", "PC")], ("geo", &["DE", "FR"]), &["2024"]);
+        let es_shape = Shape { main: "sdg_07_40".into(), place: "geo".into(), year: "2024".into(), ..Default::default() };
+        for (name, rows, shape, dim, named, fetched, missing) in [
+            ("world bank", &wb, &wb_shape, "country", ["CN", "KR"], ["CHN", "JPN"], "KOR"),
+            ("eurostat", &es, &es_shape, "geo", ["DE", "ES"], ["DE", "FR"], "ES"),
+        ] {
+            let mut f = fill();
+            let err = answered_places(&mut f, shape, (rows, false), (&country(&named), None), &filter(dim, &fetched), &Hubs).unwrap_err();
+            assert!(err.contains(missing) && err.contains("never asked") && !err.starts_with("not this shape"), "{name}: {err}");
+            assert_eq!(f["knobs"]["spec"]["hero"]["unit"], json!("单位：%"), "{name}: nothing said");
+            let mut asked: Vec<&str> = fetched.to_vec();
+            asked.push(missing);
+            for filters in [filter(dim, &asked), Value::Null] {
+                let mut f = fill();
+                answered_places(&mut f, shape, (rows, false), (&country(&named), None), &filters, &Hubs).unwrap_or_else(|e| panic!("{name}: {e}"));
+                assert_eq!(f["knobs"]["spec"]["asked_places"]["missing"], json!([missing]), "{name}: {filters}");
+            }
+            let mut f = fill();
+            answered_places(&mut f, shape, (rows, false), (&country(&named[..1]), None), &filter(dim, &fetched), &Hubs).unwrap();
+            assert_eq!(f["knobs"]["spec"]["asked_places"]["missing"], json!([]), "{name}");
+        }
     }
 
     /// End to end on two data shapes, a column page of one year and a change page over two (the map of bubbles beside its
@@ -7050,7 +7107,7 @@ mod tests {
             let mut fill = test_fill(r, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false).unwrap();
             let dek = dek_finding(&fill).map_or_else(|| "导语".to_string(), |d| d.0);
             page_words(&mut fill, ("标题", &dek, "栏目"));
-            answered_places(&mut fill, &shape, (&main, false), (&[Place::Country("DE".into()), Place::Country("PT".into())], None), &Hubs).unwrap_or_else(|e| panic!("{name}: {e}"));
+            answered_places(&mut fill, &shape, (&main, false), (&[Place::Country("DE".into()), Place::Country("PT".into())], None), &Value::Null, &Hubs).unwrap_or_else(|e| panic!("{name}: {e}"));
             let (html, ledger, refs, spec, rows, facts) = published_page(name, fill);
             let check = |page: &str, s: &crate::next_facts::Spec, rows: &[crate::next_facts::Row]| crate::next_leaf::check_leaf_page(page, &ledger, &refs, s, rows, &facts);
             assert_eq!(check(&html, &spec, &rows), Vec::<String>::new(), "{name}");
