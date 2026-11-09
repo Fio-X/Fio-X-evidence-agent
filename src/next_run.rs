@@ -2605,7 +2605,16 @@ fn recipe_request(
     // the quantities the question asks for, the catalogue's record as the flow kept it (never the model's): the page input
     // carries it for the core's answered-all check (next_tree C6), the leaf's spec for its unanswered lines; none read, none
     // written, and the page is as before
-    let asked_of = main.asked.as_array().filter(|a| !a.is_empty()).map(|_| main.asked.clone());
+    // with the main chosen, a quantity whose words lie inside its table's reviewed name, said whole in the question, is no
+    // second quantity asked (the knowledge group's asked_beside) and leaves the record
+    let asked_of = match main.asked.as_array().filter(|a| !a.is_empty()) {
+        Some(all) => {
+            let still = catalogue.asked_beside(question, &main.id).map_err(|why| ("fill", why))?;
+            let kept: Vec<Value> = all.iter().filter(|a| a["id"].as_str().is_some_and(|id| still.iter().any(|s| s == id))).cloned().collect();
+            (!kept.is_empty()).then(|| Value::Array(kept))
+        }
+        None => None,
+    };
     if let (Some(p), Some(a)) = (page_in.as_mut(), &asked_of) {
         p["asked"] = a.clone();
     }
@@ -8456,6 +8465,11 @@ mod tests {
     /// recipe_request over a run folder holding `main` as sdg_07_40's rows, for `question`, its places the test world's
     /// (as the flow fetches them): the fill or the stop, and the events.
     fn group_request(question: &str, main: Vec<Value>) -> (Result<Value, (&'static str, String)>, Vec<Value>) {
+        group_request_asked(question, main, json!([]))
+    }
+
+    /// group_request with the search step's record of the quantities asked (`asked`, as the flow keeps it).
+    fn group_request_asked(question: &str, main: Vec<Value>, asked: Value) -> (Result<Value, (&'static str, String)>, Vec<Value>) {
         let run = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(run.path().join("shadow")).unwrap();
         std::fs::write(run.path().join("claims.jsonl"), "").unwrap();
@@ -8470,7 +8484,7 @@ mod tests {
             claims: Vec::new(),
             places_zh: Vec::new(),
             companions: Vec::new(),
-            asked: json!([]),
+            asked,
             relation: None,
         };
         let cat = Groups(BTreeMap::from([("sdg_07_40".to_string(), main)]));
@@ -8488,6 +8502,25 @@ mod tests {
         fill["knobs"]["shapes"] = json!(Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime/pi/assets/naturalearth-admin0-50m.geojson"));
         draw_nodes(&mut fill, &recipe("change").external, &calls, &Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime")).unwrap();
         published("change", fill, at)
+    }
+
+    /// With the main chosen, the search step's record of the quantities asked keeps only those the knowledge group still
+    /// reads beside the main's table (asked_beside): the table's own quantity, said by its reviewed name, stays, and so
+    /// does a quantity the question asks outside that name; a record entry the question no longer asks beside the table
+    /// leaves the page input and the leaf's spec, and with none left neither carries a record.
+    #[test]
+    fn the_quantities_asked_are_read_again_beside_the_chosen_table() {
+        let brics = ["BR", "RU", "IN", "CN", "ZA", "EG", "IR", "AE", "ID"];
+        let places = [&brics[..], &["JP"]].concat();
+        let entry = |id: &str, offered: &[&str]| json!({"id": id, "zh": id, "tables": [], "offered": offered});
+        let record = json!([entry("renewable_share", &["sdg_07_40"]), entry("population", &[])]);
+        let asked = |question: &str, record: Value| {
+            let (fill, _) = group_request_asked(question, group_rows(&places, &["2016", "2025"]), record);
+            fill.unwrap_or_else(|e| panic!("{question}: {e:?}"))["knobs"]["spec"]["asked"].clone()
+        };
+        assert_eq!(asked("日本和金砖国家可再生能源在最终能源消费总量中的占比和总人口", record.clone()), record);
+        assert_eq!(asked("日本和金砖国家可再生能源在最终能源消费总量中的占比", record.clone()), json!([entry("renewable_share", &["sdg_07_40"])]));
+        assert_eq!(asked("日本和金砖国家可再生能源在最终能源消费总量中的占比", json!([entry("population", &[])])), Value::Null);
     }
 
     /// The recipe loop end to end for a question naming a country beside a group (owner 11-05 review, fix 1; round 3 with

@@ -1061,7 +1061,38 @@ fn title_names(title: &str, words: &[String]) -> bool {
 /// The quantities the Chinese question asks for, in the order their words are matched: longest word first, a matched span
 /// used up so a shorter word inside it does not match again, each family once.
 pub fn asked_zh(question_zh: &str) -> Vec<Asked> {
+    asked_of_chars(measure_chars(question_zh))
+}
+
+/// The ids of the quantities the Chinese question asks for once the chosen table is known: its reviewed Chinese name
+/// (`table_zh`, up to its first bracket or dash, where an edition or partner note starts), said whole in the question, is
+/// that one table's quantity, so its span is blanked before the family words are matched and a family word inside it is
+/// no second quantity asked. A family the table `table` holds is kept. With no name, or a name the question does not say
+/// whole, the ids are asked_zh's.
+pub fn asked_beside_table(question_zh: &str, table: &str, table_zh: Option<&str>) -> Vec<String> {
     let mut q = measure_chars(question_zh);
+    let name = table_zh.map(|zh| measure_chars(zh.split(['（', '(', '—']).next().unwrap_or(zh))).unwrap_or_default();
+    if name.len() >= 2 {
+        let mut i = 0;
+        while i + name.len() <= q.len() {
+            if q[i..i + name.len()] == name[..] {
+                q[i..i + name.len()].iter_mut().for_each(|c| *c = '\0');
+                i += name.len();
+            } else {
+                i += 1;
+            }
+        }
+    }
+    let still = asked_of_chars(q);
+    asked_zh(question_zh)
+        .into_iter()
+        .filter(|a| a.holds(table) || still.iter().any(|s| s.id == a.id))
+        .map(|a| a.id)
+        .collect()
+}
+
+/// asked_zh over a question already in measure_chars form.
+fn asked_of_chars(mut q: Vec<char>) -> Vec<Asked> {
     blank_denominators(&mut q);
     let mut words: Vec<(Vec<char>, &Family)> = measure_families()
         .iter()
@@ -3619,6 +3650,26 @@ mod tests {
         let a = &asked_zh("人均GDP和可再生能源占比的关系")[1];
         assert_eq!(a.zh, "人均GDP");
         assert!(a.holds("nama_10_pc") && a.holds("NY.GDP.PCAP.CD@2") && !a.holds("nama_10_gdp"));
+    }
+
+    /// The chosen table's reviewed name said whole in the question is one quantity: a family word inside it is no second
+    /// one (a Eurostat ratio over energy imports; a World Bank count of people 65 and over, whose name holds 人口总数), a
+    /// family the table holds stays, a quantity asked outside the name stays, and a table with no name, or a name the
+    /// question does not say whole, leaves asked_zh's ids.
+    #[test]
+    fn a_family_word_inside_the_chosen_tables_name_is_no_second_quantity() {
+        let ids = |q: &str| asked_zh(q).into_iter().map(|a| a.id).collect::<Vec<_>>();
+        let q = "德国、法国、意大利二十年来的能源进口依存度";
+        assert_eq!(ids(q), ["energy_imports"]);
+        assert!(asked_beside_table(q, "nrg_ind_id", Some("能源进口依存度")).is_empty());
+        assert_eq!(asked_beside_table(q, "nrg_ind_id", None), ["energy_imports"]);
+        assert_eq!(asked_beside_table("能源进口依存度和人均GDP", "nrg_ind_id", Some("能源进口依存度")), ["gdp_pc"]);
+        let q = "各国 65岁和65岁以上的人口总数";
+        assert_eq!(ids(q), ["pop65", "population"]);
+        assert_eq!(asked_beside_table(q, "SP.POP.65UP.TO@2", Some("65岁和65岁以上的人口总数")), ["pop65"]);
+        assert_eq!(asked_beside_table(q, "SP.POP.65UP.TO@2", Some("65 岁和 65 岁以上女性人口（占女性人口的百分比）")), ["pop65", "population"]);
+        // the name up to its edition note is what the question says; the family the table holds stays
+        assert_eq!(asked_beside_table("德国天然气进口", "nrg_ti_gas", Some("天然气进口（年度）")), ["energy_imports"]);
     }
 
     fn cand(id: &str, score: f64) -> Candidate {

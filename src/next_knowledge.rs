@@ -170,6 +170,10 @@ pub enum Request<'a> {
     /// The reviewed Chinese name of a catalogue table (TABLE_NAMES), exact id only; none when the file lists none for it,
     /// never translated.
     TableZh { id: &'a str },
+    /// The ids of the quantities the Chinese question asks for once `table` is the chosen table: its reviewed name
+    /// (TABLE_NAMES), said whole in the question, is one quantity, a family word inside it no second one (l5geo
+    /// asked_beside_table).
+    AskedBeside { question: &'a str, table: &'a str },
     /// The iso3 code of each code, from the name table only: two letters through its economies' and territories' iso2 to
     /// iso3 (Eurostat's EL and UK by its iso2 aliases), three capital letters as they are. A code it cannot map (an aggregate
     /// such as EU27_2020, an unknown two-letter code) is listed as missing, never guessed. Where a place lies on a map is the
@@ -269,6 +273,8 @@ pub enum Reply<'a> {
         missing: Vec<String>,
     },
     TableZh(Option<String>),
+    /// AskedBeside: the ids of the quantities still asked.
+    AskedIds(Vec<String>),
     /// Each code mapped (code -> iso3), and the codes asked that have none, in the order asked.
     Iso3 {
         iso3: BTreeMap<String, String>,
@@ -386,6 +392,11 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
             Reply::ZhNames { names, missing }
         }
         Request::TableZh { id } => Reply::TableZh(table_names()?.get(id).cloned()),
+        Request::AskedBeside { question, table } => Reply::AskedIds(crate::l5geo::asked_beside_table(
+            question,
+            table,
+            table_names()?.get(table).map(String::as_str),
+        )),
         Request::Iso3Of { codes } => {
             let iso3_of = iso3_table()?;
             let (mut iso3, mut missing) = (BTreeMap::new(), Vec::new());
@@ -1087,6 +1098,19 @@ mod tests {
         let file: Value = serde_json::from_str(TABLE_NAMES).unwrap();
         let dated = |d: &str| file["tables"].as_array().unwrap().iter().filter(|t| t["reviewed"] == d).count();
         assert_eq!((dated("2026-10-30"), dated("2026-10-31")), (1, 73));
+    }
+
+    /// AskedBeside reads the chosen table's reviewed name from the file: a family word inside it is no second quantity,
+    /// and a table the file names none for leaves every quantity the question asks for.
+    #[test]
+    fn asked_beside_reads_the_tables_reviewed_name() {
+        let ids = |question: &str, table: &str| match call(Request::AskedBeside { question, table }) {
+            Ok(Reply::AskedIds(ids)) => ids,
+            _ => panic!("not asked ids"),
+        };
+        assert_eq!(ids("各国 65岁和65岁以上的人口总数", "SP.POP.65UP.TO@2"), ["pop65"]);
+        assert_eq!(ids("各国 65岁和65岁以上的人口总数", "SP.POP.65UP.FE.ZS@2"), ["pop65", "population"]);
+        assert_eq!(ids("各国 65岁和65岁以上的人口总数", "nrg_x"), ["pop65", "population"]);
     }
 
     /// A composition's four groups of SIEC leaves (estat-parts.tsv group_en) are named by reviewed entries of their own

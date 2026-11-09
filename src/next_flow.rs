@@ -2726,6 +2726,16 @@ pub trait Catalogue: Sync {
     fn table_zh(&self, id: &str) -> Result<Option<String>, String> {
         table_zh_reply(knowledge_call(&Mutex::new(Vec::new()), "table_zh", json!({"id": id}), next_knowledge::Request::TableZh { id }))
     }
+    /// The ids of the quantities the Chinese question asks for once `table` is chosen, through the knowledge group's
+    /// command (AskedBeside): the table's reviewed name said whole in the question is one quantity.
+    fn asked_beside(&self, question: &str, table: &str) -> Result<Vec<String>, String> {
+        asked_beside_reply(knowledge_call(
+            &Mutex::new(Vec::new()),
+            "asked_beside",
+            json!({"question": question, "table": table}),
+            next_knowledge::Request::AskedBeside { question, table },
+        ))
+    }
     /// The map point [lon, lat] of each code: its iso3 through the knowledge group's command (Iso3Of), then its point through
     /// the visual group's (PlacePoints), from the pinned Natural Earth attributes table only (NE_POINTS_SHA256); Err names the
     /// codes either step has nothing for, or a table that is not the pinned one.
@@ -2912,6 +2922,13 @@ fn place_points_reply(
     }
 }
 
+fn asked_beside_reply(reply: Result<next_knowledge::Reply, String>) -> Result<Vec<String>, String> {
+    match reply? {
+        next_knowledge::Reply::AskedIds(ids) => Ok(ids),
+        _ => unreachable!("the knowledge group answered asked_beside with another reply"),
+    }
+}
+
 fn table_zh_reply(reply: Result<next_knowledge::Reply, String>) -> Result<Option<String>, String> {
     match reply? {
         next_knowledge::Reply::TableZh(name) => Ok(name),
@@ -3035,6 +3052,7 @@ pub(crate) fn knowledge_call<'a>(
         Ok(Reply::Shape(shape)) => json!({"shape": format!("{shape:?}")}),
         Ok(Reply::ZhNames { names, missing }) => json!({"names": names, "missing": missing}),
         Ok(Reply::TableZh(name)) => json!({"zh": name}),
+        Ok(Reply::AskedIds(ids)) => json!({"asked": ids}),
         Ok(Reply::Iso3 { iso3, missing }) => json!({"iso3": iso3, "missing": missing}),
         Ok(Reply::RankAsked(asked)) => json!({"rank_asked": asked}),
         Ok(Reply::ScopeRefused(refused)) => json!({"scope_refused": refused}),
@@ -3589,6 +3607,15 @@ impl Catalogue for GroupCatalogue {
 
     fn table_zh(&self, id: &str) -> Result<Option<String>, String> {
         table_zh_reply(knowledge_call(&self.calls, "table_zh", json!({"id": id}), next_knowledge::Request::TableZh { id }))
+    }
+
+    fn asked_beside(&self, question: &str, table: &str) -> Result<Vec<String>, String> {
+        asked_beside_reply(knowledge_call(
+            &self.calls,
+            "asked_beside",
+            json!({"question": question, "table": table}),
+            next_knowledge::Request::AskedBeside { question, table },
+        ))
     }
 
     fn place_points(&self, codes: &[String]) -> Result<BTreeMap<String, [f64; 2]>, String> {
