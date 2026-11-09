@@ -2744,7 +2744,11 @@ fn answered_places(
     let meta = catalogue.table(&shape.main);
     let held = |c: &str| match &meta {
         Some(t) if t.worldbank => t.places.iter().any(|(_, id)| id == c),
-        Some(t) => t.dims.iter().any(|(_, codes)| codes.iter().any(|(k, _)| k == c)),
+        // a country code of a partner or citizen dimension counts by its iso2 too (CN_X_HK is CN): the table holds it
+        Some(t) => {
+            t.dims.iter().any(|(_, codes)| codes.iter().any(|(k, _)| k == c))
+                || t.place_members.iter().any(|(_, m)| m.iter().any(|(_, iso)| iso == c))
+        }
         None => true,
     };
     let unfetched: Vec<&String> =
@@ -7168,6 +7172,13 @@ mod tests {
                 false => assert!(got.unwrap_err().contains("QA"), "hub {filters}"),
             }
         }
+        // a partner written CN_X_HK is China's: named CN with no row, the table holds it by its iso2, and no filter lists CN,
+        // so the page stops rather than say China has no data (review 11-09)
+        let mut table = meta("imp", false, &[("geo", &["DE"]), ("partner", &["RU", "NO", "CN_X_HK"])], &[]);
+        table.0.place_members = vec![("partner".into(), vec![("CN_X_HK".into(), "CN".into())])];
+        let mut f = fill();
+        let got = answered_places(&mut f, &hub_shape, (&hub, false), (&country(&["DE", "CN"]), None), &json!([geo, partner(&["RU", "NO", "CN_X_HK"])]), &table);
+        assert!(got.unwrap_err().contains("CN"), "CN_X_HK holds China");
     }
 
     /// End to end on two data shapes, a column page of one year and a change page over two (the map of bubbles beside its
