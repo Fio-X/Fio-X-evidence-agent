@@ -914,6 +914,10 @@
    "group": "knowledge",
    "note": "New route, data side: the words of the page line that names the countries a question names on their own and the page has no row of at its year (the line with {missing}, the names' join and the join to the unit line), which only the program prints (owner 11-06 design: each named country is printed from its rows or named as having no data). A pure data word list like unanswered-words.tsv; next_knowledge.rs reads it with include_str as a vocabulary constant (ASKED_PLACES_ZH) that next_run.rs reads. Ownership only; no cross-group call is allowed by this row."
   },
+  "runtime/pi/assets/set-sayings-zh.json": {
+   "group": "knowledge",
+   "note": "New route, data side: the words that make a page sentence a saying over a whole set of places (the highest, the lowest, a rank, the first N, times as much, an average, all rising or falling) and the nouns of a narrowed page's set description (N economies, with data), which the flow's sayings check (next_sayings.rs) reads sentences by; nothing prints them. A pure data word list like asked-places-zh.json; next_knowledge.rs reads it with include_str as a vocabulary constant (SET_SAYINGS_ZH) that next_sayings.rs reads. Ownership only; no cross-group call is allowed by this row."
+  },
   "runtime/pi/assets/rank-phrases-zh.json": {
    "group": "knowledge",
    "note": "New route, data side: the words a question asks for a ranked set of economies with (the most populous, the largest economies), each with the reference indicator the set is ranked by; words and references only, a typed list of economies is refused when the file is read. Catalogue data read by l5geo.rs (include_str) and asked of the knowledge group through its RankAsked request; the flow then fixes the wb-rank-by.json option and the count, and the tool ranks the set from the fetched rows. Ownership only; no cross-group call is allowed by this row."
@@ -1051,6 +1055,10 @@
   "src/next_gate.rs": {
    "group": "agent",
    "note": "New route: the completion gate of a published leaf page (rows re-read through the knowledge group's command, the page rechecked and the recipe's layers read through the visual group's command, the plan and the text checks). Called by the flow after publishing (its finding recorded as a program event verification reads as data) and by the completion check (commands/investigate.rs, agent). Ownership only; no cross-group call is allowed by this row."
+  },
+  "src/next_sayings.rs": {
+   "group": "agent",
+   "note": "New route: the sayings check of a published leaf page (plan v4 item 1): every sentence saying something over a whole set of places held against every place the question names (the knowledge group's places, through the catalogue), a no-data line held against the source, a narrowed page's set description against its ranking, from the run folder's page, fetched rows, origin records and kept World Bank copy. Called by the flow after the page checks (a failed sentence stops the run at the sayings step) and by the offline measure over archived pages (next_drive tests). Writes nothing. Ownership only; no cross-group call is allowed by this row."
   },
   "src/next_run.rs": {
    "group": "agent",
@@ -5059,6 +5067,7 @@
     "src/next_leaf.rs",
     "src/next_facts.rs",
     "src/next_gate.rs",
+    "src/next_sayings.rs",
     "src/classify.rs",
     "src/shape_registry.rs"
    ],

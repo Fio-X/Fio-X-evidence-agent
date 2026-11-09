@@ -3690,7 +3690,7 @@ pub const PLAN_STEPS: [(&str, &str); 7] = [
 
 /// A leaf page's steps after the claims and the text, in its own order (leaf_page's stages, whatever the recipe, then the image
 /// review of what was published); its plan is recorded once it is published.
-pub const LEAF_PLAN_STEPS: [(&str, &str); 10] = [
+pub const LEAF_PLAN_STEPS: [(&str, &str); 11] = [
     PLAN_STEPS[0],
     PLAN_STEPS[1],
     ("shape", "read the tables into the first page recipe whose shape they have, and its picks"),
@@ -3700,6 +3700,7 @@ pub const LEAF_PLAN_STEPS: [(&str, &str); 10] = [
     ("browser", "check the written leaf page in the browser"),
     (LEAF_GATE_STAGE, "check the published leaf page against the completion gate"),
     (PAGE_CHECKS_STAGE, "measure the published leaf page with the program's page checks"),
+    (crate::next_sayings::SAYINGS_STAGE, "hold the published leaf page's sayings over a whole set to every place the question names"),
     PLAN_STEPS[6],
 ];
 
@@ -4086,6 +4087,27 @@ pub(crate) async fn page_from(
             if !failed.is_empty() {
                 let why = format!("{} page check(s) failed on the {recipe} page: {}", failed.len(), failed.join(" | "));
                 return Err(stuck_at(recorder, PAGE_CHECKS_STAGE, why));
+            }
+            // every sentence saying something over a whole set, held to every place the question names and to the source
+            // (next_sayings, plan v4 item 1): one that does not hold stops the run, as a failed page check does
+            let sayings = crate::next_sayings::check_published(recorder.run_dir(), recipe, question, prepared, catalogue);
+            crate::next_flow::record_group_calls(recorder, catalogue)?;
+            let said: Value = match &sayings {
+                Ok(unheld) => json!(unheld.iter().map(crate::next_sayings::Unheld::to_json).collect::<Vec<_>>()),
+                Err(why) => json!([{"kind": "unread", "why": why}]),
+            };
+            recorder.program_event(
+                crate::next_sayings::SAYINGS_EVENT,
+                json!({"by": RING_ACTOR, "recipe": recipe, "published": published.html_ref,
+                    "html_sha256": published.html_sha256, "unheld": said}),
+            )?;
+            let unheld: Vec<String> = match sayings {
+                Ok(unheld) => unheld.iter().map(|u| format!("{} [{}] {}", u.sentence, u.kind.letter(), u.why)).collect(),
+                Err(why) => vec![format!("the sayings could not be read: {why}")],
+            };
+            if !unheld.is_empty() {
+                let why = format!("{} saying(s) on the {recipe} page do not hold: {}", unheld.len(), unheld.join(" | "));
+                return Err(stuck_at(recorder, crate::next_sayings::SAYINGS_STAGE, why));
             }
             // the image review is the model's advice on the page: recorded, never a stop and never what verifies it
             let review = leaf_vision(recorder, model, question, recipe, &state, cancel).await?;
@@ -6624,7 +6646,7 @@ mod tests {
         assert_eq!(stopped(&[main]), ("shape", "not this shape: main imp kept no companion".to_string()));
         let plan = plan_record("q", &LEAF_PLAN_STEPS, "browser", StepEnd::Passed).unwrap();
         let ids: Vec<&str> = plan["steps"].as_array().unwrap().iter().map(|s| s["id"].as_str().unwrap()).collect();
-        assert_eq!(ids, ["claims", "text", "shape", "fill", "draw", "door", "browser", "gate", "checks", "publication_vision"]);
+        assert_eq!(ids, ["claims", "text", "shape", "fill", "draw", "door", "browser", "gate", "checks", "sayings", "publication_vision"]);
         let done: Vec<&Value> = plan["steps"].as_array().unwrap().iter().filter(|s| s["status"] == "completed").collect();
         assert_eq!(done.len(), 7, "the gate, the page checks and the image review are pending once the page is checked in the browser");
     }

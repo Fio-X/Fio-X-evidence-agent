@@ -2205,11 +2205,86 @@ mod drive {
             json!({"run": dir.display().to_string(), "refill": "ok", "end": end,
                 "facts": request.as_ref().map(|q| q["facts"].clone()), "drawn": drawn, "ring": ring,
                 "gate": last(crate::next_run::LEAF_GATE_EVENT).map(|e| e["gaps"].clone()),
-                "checks": last(crate::next_run::PAGE_CHECKS_EVENT).map(|e| e["checks"].clone()), "html": html})
+                "checks": last(crate::next_run::PAGE_CHECKS_EVENT).map(|e| e["checks"].clone()),
+                "sayings": last(crate::next_sayings::SAYINGS_EVENT).map(|e| e["unheld"].clone()), "html": html})
         }
 
         fn var(name: &str) -> String {
             std::env::var(name).unwrap_or_else(|_| panic!("{name} is not set"))
+        }
+
+        /// The sayings check (next_sayings, plan v4 item 1) on pages as they were published, the run folders only read: each
+        /// line of NEXT_SAYINGS_PAGES (tab-separated: sha16, label, recipe, an ignored field, the run folder under the docs
+        /// root beside the list (Inputs::beside), and optionally a folder holding the page's publications/ and data/ in place
+        /// of the run's own, a replayed page) gives its question and prepared tables from the run's events (prepared_of) and
+        /// the check's sentences that do not hold, one JSON line per page written to NEXT_SAYINGS_OUT:
+        /// {sha, label, recipe, unheld: [{sentence, kind, why, fallback}]} or {sha, label, recipe, error}. Lines starting with
+        /// '#' are skipped. Judges nothing itself; the measure reads the file.
+        ///
+        ///     NEWS_CATALOG_DIR=.. NEWS_CLASSIFY_REFS=.. NEXT_SAYINGS_PAGES=<list> NEXT_SAYINGS_OUT=<file> \
+        ///     cargo test --release --bins sayings_archive -- --ignored --nocapture
+        #[test]
+        #[ignore]
+        fn sayings_archive() {
+            let list = PathBuf::from(var("NEXT_SAYINGS_PAGES"));
+            let out = PathBuf::from(var("NEXT_SAYINGS_OUT"));
+            let inputs = Inputs::beside(Some(&list));
+            let catalogue = GroupCatalogue::from_env(|key| std::env::var(key).ok()).unwrap();
+            let text = std::fs::read_to_string(&list).unwrap_or_else(|e| panic!("{}: {e}", list.display()));
+            let mut lines = Vec::new();
+            let (mut pages, mut caught, mut errors) = (0, 0, 0);
+            for line in text.lines().filter(|l| !l.trim().is_empty() && !l.starts_with('#')) {
+                let f: Vec<&str> = line.split('\t').collect();
+                assert!(f.len() >= 5, "a line of {} has fewer than 5 fields: {line}", list.display());
+                let (sha, label, recipe, run) = (f[0], f[1], f[2], inputs.docs.join(f[4]));
+                let dir = f.get(5).filter(|d| !d.is_empty()).map_or(run.clone(), PathBuf::from);
+                let checked = (|| -> Result<Vec<crate::next_sayings::Unheld>, String> {
+                    let text = std::fs::read_to_string(run.join("events.jsonl")).map_err(|e| format!("events.jsonl: {e}"))?;
+                    let events: Vec<Value> = text.lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
+                    let question = events
+                        .iter()
+                        .find(|e| e["type"] == CATALOGUE_EVENT)
+                        .and_then(|e| e["question"].as_str())
+                        .ok_or("no next_catalogue question in events.jsonl")?;
+                    let (prepared, _) = prepared_of(&events, &catalogue)?;
+                    crate::next_sayings::check_published(&dir, recipe, question, &prepared, &catalogue)
+                })();
+                pages += 1;
+                let rec = match checked {
+                    Ok(unheld) => {
+                        caught += usize::from(!unheld.is_empty());
+                        let unheld: Vec<Value> = unheld.iter().map(crate::next_sayings::Unheld::to_json).collect();
+                        json!({"sha": sha, "label": label, "recipe": recipe, "unheld": unheld})
+                    }
+                    Err(why) => {
+                        errors += 1;
+                        json!({"sha": sha, "label": label, "recipe": recipe, "error": why})
+                    }
+                };
+                lines.push(rec.to_string());
+            }
+            std::fs::write(&out, lines.join("\n") + "\n").unwrap_or_else(|e| panic!("{}: {e}", out.display()));
+            println!("SAYINGS pages {pages} with unheld {caught} unread {errors} out {}", out.display());
+        }
+
+        /// One page of any list refilled into NEXT_REPLAY_LINE_OUT/ (record.json beside the refilled run): NEXT_REPLAY_LINE is
+        /// the page's line (tab-separated: sha16, label, recipe, an ignored field, the run folder under NEXT_REPLAY_DOCS). For
+        /// measuring a change over pages of no frozen list (plan v4 item 1, part 2); not the gate, which keeps its own list.
+        ///
+        ///     NEWS_CATALOG_DIR=.. NEWS_CLASSIFY_REFS=.. NEXT_REPLAY_DOCS=<docs> NEXT_REPLAY_LINE=<line> \
+        ///     NEXT_REPLAY_LINE_OUT=<dir> cargo test --release --bins replay_list_page -- --ignored --nocapture
+        #[tokio::test]
+        #[ignore]
+        async fn replay_list_page() {
+            let line = var("NEXT_REPLAY_LINE");
+            let docs = PathBuf::from(var("NEXT_REPLAY_DOCS"));
+            let dir = PathBuf::from(var("NEXT_REPLAY_LINE_OUT"));
+            let fields: Vec<&str> = line.split('\t').collect();
+            assert!(fields.len() >= 5, "NEXT_REPLAY_LINE has fewer than 5 fields: {line}");
+            let page = Page::of(&fields);
+            let rec = refill(&docs, &page, &dir).await;
+            std::fs::write(dir.join("record.json"), rec.to_string()).unwrap_or_else(|e| panic!("{}: record: {e}", page.sha));
+            println!("REFILL {} refill {} | end {} | sayings {}", page.sha, rec["refill"], rec["end"], rec["sayings"]);
         }
 
         /// One page of the list refilled into target/page-replay/one/<sha16>/ (NEXT_TREE_REPLAY_RUNS, NEXT_TREE_REPLAY_PAGE: its

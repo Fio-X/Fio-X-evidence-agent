@@ -52,6 +52,7 @@ mod next_params;
 // the page spec's renderer and visual door land with the page nodes; dropped when next_visual::call draws a page
 mod next_render;
 mod next_run;
+mod next_sayings;
 mod next_serve;
 mod next_tree;
 mod next_tree_gen;

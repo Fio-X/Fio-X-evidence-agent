@@ -1,0 +1,13 @@
+{
+  "note": "New route, data side: the words that make a page sentence a saying over a whole set of places (the highest, the lowest, a rank, the first N, times as much, above the average, all rising or falling), and the words a set description of a narrowed page is read by (N economies, N countries and regions, N citizenships, N items: the nouns of wb-rank-by.json and estat-narrow.json; with data). Read by the flow's sayings check (next_sayings.rs, through next_knowledge::SET_SAYINGS_ZH), which recomputes such a sentence over every place the question names; the program never prints these words from here; a sentence that says a place has no data is read by asked-places-zh.json's said. {d} is a count: ASCII digits or Chinese numerals, spaces around it allowed. Plan v4 item 1 (11-09).",
+  "most": ["最高", "最大", "最多", "第一", "居首"],
+  "least": ["最低", "最小", "最少", "垫底"],
+  "rank": ["第{d}", "前{d}", "倒数", "排名", "排第"],
+  "times": ["倍"],
+  "mean": ["平均"],
+  "all": ["都在", "均在", "全都"],
+  "up": ["升", "增", "涨"],
+  "down": ["降", "减", "跌"],
+  "count": ["{d}个经济体", "{d}个国家和地区", "{d}个国籍", "{d}项"],
+  "with_data": "有数据"
+}
