@@ -1946,11 +1946,11 @@ mod tests {
     /// and on 10-26 rule one's `rust_rule_next` (the new-route files, the shared kinds and the agent group's system write entries; then src/next_page.rs among its files;
     /// then the knowledge group's command file src/next_knowledge.rs, its entry under `group_entries` and its door `as_knowledge_call`;
     /// then the same three for the visual group: src/next_visual.rs, its `call` and `as_visual_call`; then src/next_pack.rs among its files;
-    /// then src/next_run.rs and src/next_serve.rs among its files; then src/next_nodes.rs and src/next_ledger.rs among its files; then src/next_render.rs among its files; then src/next_leaf.rs among its files; then src/next_facts.rs among its files; then src/next_gate.rs among its files),
+    /// then src/next_run.rs and src/next_serve.rs among its files; then src/next_nodes.rs and src/next_ledger.rs among its files; then src/next_render.rs among its files; then src/next_leaf.rs among its files; then src/next_facts.rs among its files; then src/next_gate.rs among its files; then src/next_sayings.rs among its files),
     /// and on 10-27 rule two's one `rule_two` entry;
     /// and on 11-01 (P3) src/next_tree.rs among rule one's files, and rule three's one `node_rule` entry (what a second-layer node may touch).
     const CROSS_CALLS_DIGEST: &str =
-        "a99f29d44ff4d35f7be45aca72285e2391ea09366233203715e48650e4e7d368";
+        "102f58c7c67399e80a07264139f407d0e722d497157fbd30747ff7d5aa6d1936";
     const PACK_HTML: &[u8] = b"<html>design pack page</html>";
 
     fn write_pack_file(root: &Path, reference: &str, bytes: &[u8]) {
