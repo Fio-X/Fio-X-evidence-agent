@@ -69,6 +69,45 @@ const NOT_PLACE_ZH: [&str; 11] = [
 /// its second character starts one of GUO_WORDS_ZH. In 欧洲国家中国防开支 the words are 国家中 and 国防, not 中国;
 /// 欧盟国家中国游客 still names 中国.
 const AMONG_BEFORE_ZH: &str = "家国盟区其之当体市省州";
+
+/// The marks a question lists the countries it names in brackets with (listed_groups): the brackets, the words and marks
+/// that join the names, and the marks that end a clause (a bracket past one is not the group's).
+const LIST_OPEN_ZH: &str = "（(";
+const LIST_CLOSE_ZH: &str = "）)";
+const LIST_JOINS_ZH: &str = "、,，和与及 ";
+const CLAUSE_ENDS_ZH: &str = "。；;？?！!";
+
+/// The indexes in `found` (scan_zh's names: start, length, name, code) of each group word whose own countries the question
+/// lists in brackets after it, in the same clause (金砖最早的五个成员（巴西、俄罗斯、印度、中国、南非）): two or more
+/// countries and nothing else in the brackets but the marks that join them. The listed countries are then the places the
+/// question asks for, and the group's member list is not read for them. A bracket holding any other word (不含, 等, a
+/// word the name list skips) leaves the group word as it is.
+fn listed_groups(chars: &[char], found: &[(usize, usize, String, String)]) -> Vec<usize> {
+    let mut listed = Vec::new();
+    for (k, (at, len, _, code)) in found.iter().enumerate() {
+        if !code.starts_with(GROUP) {
+            continue;
+        }
+        let from = at + len;
+        let Some(open) = (from..chars.len()).find(|&j| LIST_OPEN_ZH.contains(chars[j]) || CLAUSE_ENDS_ZH.contains(chars[j])) else {
+            continue;
+        };
+        if !LIST_OPEN_ZH.contains(chars[open]) {
+            continue;
+        }
+        let Some(close) = (open + 1..chars.len()).find(|&j| LIST_CLOSE_ZH.contains(chars[j])) else {
+            continue;
+        };
+        let inside: Vec<&(usize, usize, String, String)> = found.iter().filter(|(s, _, _, _)| *s > open && *s < close).collect();
+        let countries = inside.iter().all(|(s, l, _, c)| c != REGION && !c.starts_with(GROUP) && s + l <= close);
+        let covered = |j: usize| inside.iter().any(|(s, l, _, _)| (*s..s + l).contains(&j));
+        let bare = (open + 1..close).all(|j| covered(j) || LIST_JOINS_ZH.contains(chars[j]));
+        if inside.len() >= 2 && countries && bare {
+            listed.push(k);
+        }
+    }
+    listed
+}
 const GUO_WORDS_ZH: [&str; 13] = [
     "国防", "国内", "国际", "国债", "国民", "国土", "国有", "国库", "国企", "国产", "国会", "国籍",
     "国营",
@@ -2071,14 +2110,20 @@ impl Catalog {
             {
                 Some((n, code)) => {
                     if code != NOT_PLACE {
-                        found.push((n.iter().collect(), code.clone()));
+                        found.push((i, n.len(), n.iter().collect::<String>(), code.clone()));
                     }
                     i += n.len();
                 }
                 None => i += 1,
             }
         }
+        let listed = listed_groups(&chars, &found);
         found
+            .into_iter()
+            .enumerate()
+            .filter(|(k, _)| !listed.contains(k))
+            .map(|(_, (_, _, n, c))| (n, c))
+            .collect()
     }
 
     /// Europe only when the question names places and every one is European (or the EU, Europe, the euro area).
@@ -2751,6 +2796,27 @@ mod tests {
         // no other aggregate joins the places, and a list without the EU has none
         assert!(!wb(&c).iter().any(|(_, id)| id == "WLD" || id == "SST"));
         assert!(!wb(&small()).iter().any(|(_, id)| id == "EUU"));
+    }
+
+    /// A group word whose countries the question lists in brackets after it, in the same clause, reads as those countries
+    /// alone (n41: the first five BRICS members named, not the 2024 list), with no group basis; a bracket holding another
+    /// word (不含, 等) or one country, or a list past the clause's end, leaves the group's members as before.
+    #[test]
+    fn countries_listed_in_brackets_after_a_group_word_are_the_places_asked() {
+        let c = world();
+        // n41's wording (the test world has no name for 巴西, so four of the five)
+        let q = "金砖最早的四个成员（俄罗斯、印度、中国、南非）2024 年青年失业率怎么排？";
+        assert_eq!(countries(&c, q), ["RU", "IN", "CN", "ZA"]);
+        // a name the list does not know is another word in the brackets: the group stays
+        let brics24 = ["BR", "RU", "IN", "CN", "ZA", "EG", "ET", "IR", "AE"];
+        assert_eq!(countries(&c, "金砖最早的成员（巴西、印度）2024 年")[..9], brics24);
+        let five: Vec<String> = ["RU", "IN", "CN", "ZA"].map(String::from).to_vec();
+        assert_eq!(c.group_basis(q, (None, 2024), (&five, &five)), None);
+        assert_eq!(countries(&c, "七国集团(美国, 日本 和 德国)的GDP"), ["US", "JP", "DE"]);
+        assert_eq!(countries(&c, "2024年金砖国家（不含中国）人口")[..9], brics24);
+        assert_eq!(countries(&c, "2024年金砖国家（印度、中国等）人口")[..9], brics24);
+        assert_eq!(countries(&c, "2024年金砖国家（印度）人口"), [&brics24[..], &["IN"]].concat());
+        assert_eq!(countries(&c, "2024年金砖国家人口。（印度、中国）")[..9], brics24);
     }
 
     #[test]
@@ -4400,6 +4466,22 @@ mod tests {
         ("q6", "欧盟庇护申请的来源国", "asylum applicants by citizenship"),
         ("q6", "欧盟庇护申请的来源国", "asylum applicants by citizenship EU"),
     ];
+
+    /// n41's question on the real catalogue: the five BRICS members it lists in brackets are the places asked, not the
+    /// 2024 member list, and the page has no group basis.
+    /// L5GEO_DIR=<registry>/l5geo/catalog cargo test l5geo::tests::listed_members_on_the_real_catalogue -- --include-ignored
+    #[test]
+    #[ignore]
+    fn listed_members_on_the_real_catalogue() {
+        let dir = std::path::PathBuf::from(std::env::var("L5GEO_DIR").expect("L5GEO_DIR"));
+        let c = Catalog::from_raw(&Raw::read(&dir).unwrap());
+        let q = "金砖最早的五个成员（巴西、俄罗斯、印度、中国、南非）2024 年青年失业率怎么排？";
+        let five = ["BR", "RU", "IN", "CN", "ZA"];
+        assert_eq!(countries(&c, q), five);
+        let codes: Vec<String> = five.map(String::from).to_vec();
+        assert_eq!(c.group_basis(q, (None, 2024), (&codes, &codes)), None);
+        assert_eq!(countries(&c, "2024年金砖国家青年失业率怎么排？").len(), 9);
+    }
 
     /// The registered table notes on the real catalogue: q2's stand-in search words reach nrg_bal_s in the first five only
     /// with the notes, and every NOTE_LOCKED row gets the same first five with and without them. Each note's table is
