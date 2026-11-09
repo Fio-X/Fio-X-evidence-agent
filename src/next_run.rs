@@ -3690,7 +3690,7 @@ pub const PLAN_STEPS: [(&str, &str); 7] = [
 
 /// A leaf page's steps after the claims and the text, in its own order (leaf_page's stages, whatever the recipe, then the image
 /// review of what was published); its plan is recorded once it is published.
-pub const LEAF_PLAN_STEPS: [(&str, &str); 8] = [
+pub const LEAF_PLAN_STEPS: [(&str, &str); 10] = [
     PLAN_STEPS[0],
     PLAN_STEPS[1],
     ("shape", "read the tables into the first page recipe whose shape they have, and its picks"),
@@ -3698,8 +3698,13 @@ pub const LEAF_PLAN_STEPS: [(&str, &str); 8] = [
     ("draw", "draw and bake the leaf page"),
     ("door", "write the leaf page through the visual group's door"),
     ("browser", "check the written leaf page in the browser"),
+    (LEAF_GATE_STAGE, "check the published leaf page against the completion gate"),
+    (PAGE_CHECKS_STAGE, "measure the published leaf page with the program's page checks"),
     PLAN_STEPS[6],
 ];
+
+/// The stop a leaf page the completion gate holds back is reported under, a step of LEAF_PLAN_STEPS.
+const LEAF_GATE_STAGE: &str = "gate";
 
 /// Where a published leaf page's own plan is (publications/plans/<recipe>.json): the publication plan verification reads
 /// for a leaf page (verify.rs verify_publications), written with its manifest inside the visual group's door (publish_leaf_page).
@@ -4037,6 +4042,16 @@ pub(crate) async fn page_from(
             let state = json!({"question": question, "route": recipe, "claims": verified, "worded": worded_out,
                 "published": published.html_ref, "html_sha256": published.html_sha256});
             save_route_state(recorder.run_dir(), &LEAF_PLAN_STEPS, "browser", StepEnd::Passed, &state)?;
+            // a stop after the browser check is a step of the plan like any other: the page state says where it is stuck and
+            // the plan has that step blocked, the steps after it pending
+            let stuck_at = |recorder: &mut Recorder<'_>, stage: &'static str, why: String| -> Stop {
+                let mut stuck = state.clone();
+                stuck["stuck"] = json!(format!("{recipe}-{stage}"));
+                match save_route_state(recorder.run_dir(), &LEAF_PLAN_STEPS, stage, StepEnd::Refused, &stuck) {
+                    Ok(()) => stop(stage, why),
+                    Err(unwritten) => unwritten,
+                }
+            };
             let gaps = leaf_gate_now(recorder.run_dir(), recipe, prepared);
             recorder.program_event(
                 LEAF_GATE_EVENT,
@@ -4045,10 +4060,8 @@ pub(crate) async fn page_from(
             )?;
             // a page the completion gate already holds back is not shown for review: the run stops on its gaps
             if !gaps.is_empty() {
-                return Err(stop(
-                    "gate",
-                    format!("the completion gate found {} gap(s) on the {recipe} page: {}", gaps.len(), gaps.join(" | ")),
-                ));
+                let why = format!("the completion gate found {} gap(s) on the {recipe} page: {}", gaps.len(), gaps.join(" | "));
+                return Err(stuck_at(recorder, LEAF_GATE_STAGE, why));
             }
             // what the program measures on the page is held before any model sees it: a failed check stops the run
             let (html, read_sha256) = checked_bytes(recorder.run_dir(), published);
@@ -4071,10 +4084,8 @@ pub(crate) async fn page_from(
             )?;
             let failed: Vec<String> = checks.iter().filter(|c| !c.passed).map(|c| format!("{} measured {}", c.name, c.measured)).collect();
             if !failed.is_empty() {
-                return Err(stop(
-                    PAGE_CHECKS_STAGE,
-                    format!("{} page check(s) failed on the {recipe} page: {}", failed.len(), failed.join(" | ")),
-                ));
+                let why = format!("{} page check(s) failed on the {recipe} page: {}", failed.len(), failed.join(" | "));
+                return Err(stuck_at(recorder, PAGE_CHECKS_STAGE, why));
             }
             // the image review is the model's advice on the page: recorded, never a stop and never what verifies it
             let review = leaf_vision(recorder, model, question, recipe, &state, cancel).await?;
@@ -6613,9 +6624,9 @@ mod tests {
         assert_eq!(stopped(&[main]), ("shape", "not this shape: main imp kept no companion".to_string()));
         let plan = plan_record("q", &LEAF_PLAN_STEPS, "browser", StepEnd::Passed).unwrap();
         let ids: Vec<&str> = plan["steps"].as_array().unwrap().iter().map(|s| s["id"].as_str().unwrap()).collect();
-        assert_eq!(ids, ["claims", "text", "shape", "fill", "draw", "door", "browser", "publication_vision"]);
+        assert_eq!(ids, ["claims", "text", "shape", "fill", "draw", "door", "browser", "gate", "checks", "publication_vision"]);
         let done: Vec<&Value> = plan["steps"].as_array().unwrap().iter().filter(|s| s["status"] == "completed").collect();
-        assert_eq!(done.len(), 7, "the image review is pending once the page is checked in the browser");
+        assert_eq!(done.len(), 7, "the gate, the page checks and the image review are pending once the page is checked in the browser");
     }
 
     /// The gas fixture read as the run reads it: the main's and the companion's rows, the catalogue, the ring shape, and the
@@ -12728,6 +12739,26 @@ for line in sys.stdin:
         let plan: Value = serde_json::from_str(&std::fs::read_to_string(ran.run.join(PLAN_FILE)).unwrap()).unwrap();
         let status: Vec<&str> = plan["steps"].as_array().unwrap().iter().map(|s| s["status"].as_str().unwrap()).collect();
         assert_eq!(status.last(), Some(&"pending"), "{plan}");
+        assert_stuck_at(&ran.run, "column", LEAF_GATE_STAGE);
+    }
+
+    /// A leaf page stopped after the browser check is stuck at that step of LEAF_PLAN_STEPS: the plan has the steps before it
+    /// completed, it blocked and the rest pending, and the page state names it as stuck.
+    fn assert_stuck_at(run: &Path, recipe: &str, stage: &str) {
+        let plan: Value = serde_json::from_str(&std::fs::read_to_string(run.join(PLAN_FILE)).unwrap()).unwrap();
+        let at = LEAF_PLAN_STEPS.iter().position(|(id, _)| *id == stage).unwrap();
+        let status: Vec<&str> = plan["steps"].as_array().unwrap().iter().map(|s| s["status"].as_str().unwrap()).collect();
+        let want: Vec<&str> = (0..LEAF_PLAN_STEPS.len())
+            .map(|i| match i.cmp(&at) {
+                std::cmp::Ordering::Less => "completed",
+                std::cmp::Ordering::Equal => "blocked",
+                std::cmp::Ordering::Greater => "pending",
+            })
+            .collect();
+        assert_eq!(status, want, "{plan}");
+        assert_eq!(plan["revision_note"], format!("{stage}: refused"));
+        let state: Value = serde_json::from_str(&std::fs::read_to_string(run.join(PAGE_STATE)).unwrap()).unwrap();
+        assert_eq!(state["stuck"], format!("{recipe}-{stage}"), "{state}");
     }
 
     /// The radius scale the bubbles layer drew its circles at is on record in the run's RING_EVENT as the leaf child said it:
@@ -13445,6 +13476,7 @@ for line in sys.stdin:
         for kept in ["publications/column/index.html", "publications/column/request.json", "publications/column/manifest.json"] {
             assert!(ran.run.join(kept).is_file(), "{kept} stays for the replay");
         }
+        assert_stuck_at(&ran.run, "column", PAGE_CHECKS_STAGE);
     }
 
 
