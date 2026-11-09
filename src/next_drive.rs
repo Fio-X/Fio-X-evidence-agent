@@ -1825,15 +1825,46 @@ mod drive {
         /// The run's model, replayed: each step's answers (its newsroom_choose calls, in order) given again in that order;
         /// none for a step it has no answer left for, and none for the image review (advice the gate does not run).
         ///
-        /// The program the page is refilled with may be newer than the one the run met, and refuse a recorded answer (an
-        /// item it no longer offers, a word a later rule refuses). Then the asker gives the refused answer mapped
-        /// onto what the program now allows (fitted), not the run's own retry (made under the run's rules): the same for
-        /// every refill, so a page's before and after meet the same answers.
+        /// The run's answers to one step are kept as asks (replay_asks): each ask the run's attempts at it in order, every
+        /// one the run's program refused and then the one it accepted. A refused replayed answer the run's program refused too
+        /// gets the run's own next attempt, as the run did; only when the attempt the run's program accepted is refused (the
+        /// program the page is refilled with may be newer: an item it no longer offers, a word a later rule refuses), or the
+        /// ask has no attempt left, the asker gives the refused answer mapped onto what the program now allows (fitted). The
+        /// same rule for every refill, so a page's before and after meet the same answers.
         struct ReplayAsker {
-            answers: BTreeMap<String, VecDeque<Value>>,
+            answers: BTreeMap<String, VecDeque<VecDeque<Value>>>,
+            /// The attempts of each step's current ask not given yet.
+            retries: BTreeMap<String, VecDeque<Value>>,
             /// The last answer given to each step.
             last: BTreeMap<String, Value>,
             n: usize,
+        }
+
+        /// The run's newsroom_choose answers by step, as asks: each tool_execution_start's args in order, an ask closed by the
+        /// first attempt its tool_execution_end (by toolCallId) does not mark isError. An attempt without its end is taken as
+        /// accepted; a run's last ask may end refused.
+        fn replay_asks(events: &[Value]) -> BTreeMap<String, VecDeque<VecDeque<Value>>> {
+            let refused: BTreeSet<&str> = events
+                .iter()
+                .filter(|e| e["type"] == "tool_execution_end" && e["toolName"] == CHOOSE_TOOL && e["isError"] == true)
+                .filter_map(|e| e["toolCallId"].as_str())
+                .collect();
+            let mut asks: BTreeMap<String, VecDeque<VecDeque<Value>>> = BTreeMap::new();
+            let mut open: BTreeSet<String> = BTreeSet::new();
+            for e in events.iter().filter(|e| e["type"] == "tool_execution_start" && e["toolName"] == CHOOSE_TOOL) {
+                let step = e["args"]["step"].as_str().unwrap_or("").to_string();
+                let of_step = asks.entry(step.clone()).or_default();
+                if !open.contains(&step) {
+                    of_step.push_back(VecDeque::new());
+                }
+                of_step.back_mut().unwrap().push_back(e["args"].clone());
+                if e["toolCallId"].as_str().is_some_and(|id| refused.contains(id)) {
+                    open.insert(step);
+                } else {
+                    open.remove(&step);
+                }
+            }
+            asks
         }
 
         /// A refused answer mapped onto the refusal's allowed values and example (the program's own, newsroom_choose):
@@ -1892,14 +1923,70 @@ mod drive {
                     .and_then(|m| m["content"][0]["text"].as_str())
                     .and_then(|t| serde_json::from_str::<Value>(t).ok());
                 let args = match (refusal, self.last.get(&step)) {
-                    (Some(refusal), Some(last)) => fitted(&step, last, &refusal)?,
-                    _ => self.answers.get_mut(&step).and_then(VecDeque::pop_front)?,
+                    // the run's program refused the answer just given too: the run's own next attempt at this ask
+                    (Some(refusal), Some(last)) => match self.retries.get_mut(&step).and_then(VecDeque::pop_front) {
+                        Some(next) => next,
+                        None => fitted(&step, last, &refusal)?,
+                    },
+                    _ => {
+                        let mut ask = self.answers.get_mut(&step).and_then(VecDeque::pop_front)?;
+                        let first = ask.pop_front()?;
+                        self.retries.insert(step.clone(), ask);
+                        first
+                    }
                 };
                 self.last.insert(step, args.clone());
                 self.n += 1;
                 Some(json!({"content": [{"type": "toolCall", "id": format!("replay-{}", self.n), "name": CHOOSE_TOOL, "arguments": args}],
                     "stopReason": "toolUse", "usage": {}}))
             }
+        }
+
+        /// The replay follows the run's own retries: a text answer the run's program refused and then took on the second try
+        /// (r8-e2: a measure name with 四类, then without) is given again as the run gave it, the second attempt after the
+        /// refusal; only when that accepted attempt is refused too is the answer fitted (no rewording, the recorded names
+        /// the program asks for kept). A later ask of the step takes the run's next ask, not a leftover retry.
+        #[tokio::test]
+        async fn the_replay_gives_the_runs_accepted_retry_before_fitting_an_answer() {
+            let attempt = |id: &str, args: Value, refused: bool| {
+                vec![
+                    json!({"type": "tool_execution_start", "toolName": CHOOSE_TOOL, "toolCallId": id, "args": args}),
+                    json!({"type": "tool_execution_end", "toolName": CHOOSE_TOOL, "toolCallId": id, "isError": refused}),
+                ]
+            };
+            let first = json!({"step": "text", "names": {"s1": "四类慢病的变化"}, "text": {"1": "四地"}});
+            let second = json!({"step": "text", "names": {"s1": "慢性病的变化"}, "text": {"1": "各地"}});
+            let later = json!({"step": "text", "names": {"s1": "后来的"}, "text": {}});
+            let table = json!({"step": "table", "params": {}, "pick": [1]});
+            let events: Vec<Value> = [
+                attempt("t1", table.clone(), false),
+                attempt("x1", first.clone(), true),
+                attempt("x2", second.clone(), false),
+                attempt("x3", later.clone(), false),
+                vec![json!({"type": "tool_execution_start", "toolName": CHOOSE_TOOL, "toolCallId": "x4", "args": first.clone()})],
+            ]
+            .concat();
+            let asks = replay_asks(&events);
+            assert_eq!(asks["text"], VecDeque::from([VecDeque::from([first.clone(), second.clone()]), VecDeque::from([later.clone()]), VecDeque::from([first.clone()])]));
+            assert_eq!(asks["table"], VecDeque::from([VecDeque::from([table])]));
+            let mut model = ReplayAsker { answers: asks, retries: BTreeMap::new(), last: BTreeMap::new(), n: 0 };
+            let tools = [ToolDef {
+                name: CHOOSE_TOOL.into(),
+                description: String::new(),
+                parameters: json!({"properties": {"step": {"enum": ["text"]}}}),
+            }];
+            let refusal = json!({"allowed": {"names": ["s1"]}, "example": {"step": "text", "names": {"s1": "<name>"}, "text": {"1": "<x>"}}});
+            let refused = [json!({"role": "toolResult", "isError": true, "content": [{"type": "text", "text": refusal.to_string()}]})];
+            let cancel = AtomicBool::new(false);
+            macro_rules! give {
+                ($history:expr) => {
+                    model.ask($history, &tools, &cancel).await.unwrap()["content"][0]["arguments"].clone()
+                };
+            }
+            assert_eq!(give!(&[]), first, "the ask's first attempt");
+            assert_eq!(give!(&refused), second, "refused as the run's program refused it: the run's own retry");
+            assert_eq!(give!(&refused), json!({"step": "text", "names": {"s1": "慢性病的变化"}, "text": {}}), "the accepted attempt refused: fitted");
+            assert_eq!(give!(&[]), later, "a new ask takes the run's next ask");
         }
 
         fn failed(dir: &Path, reason: String) -> Value {
@@ -2028,11 +2115,7 @@ mod drive {
                 return failed(dir, "events missing: events.jsonl".into());
             };
             let events: Vec<Value> = text.lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
-            let mut answers: BTreeMap<String, VecDeque<Value>> = BTreeMap::new();
-            for e in events.iter().filter(|e| e["type"] == "tool_execution_start" && e["toolName"] == CHOOSE_TOOL) {
-                let step = e["args"]["step"].as_str().unwrap_or("").to_string();
-                answers.entry(step).or_default().push_back(e["args"].clone());
-            }
+            let answers = replay_asks(&events);
             let Some(question) = events.iter().find(|e| e["type"] == CATALOGUE_EVENT).and_then(|e| e["question"].as_str()) else {
                 return failed(dir, "events missing: no next_catalogue question in events.jsonl".into());
             };
@@ -2074,7 +2157,7 @@ mod drive {
             std::fs::copy(src.join("claims.jsonl"), run.join("claims.jsonl")).unwrap();
             let _command = crate::group_guard::command_for_test("investigate");
             crate::runtime::materialize_extension(&run).unwrap();
-            let mut model = ReplayAsker { answers, last: BTreeMap::new(), n: 0 };
+            let mut model = ReplayAsker { answers, retries: BTreeMap::new(), last: BTreeMap::new(), n: 0 };
             let mut walked = Vec::new();
             let mut sink = |e: Value| walked.push(e);
             let cancel = AtomicBool::new(false);
