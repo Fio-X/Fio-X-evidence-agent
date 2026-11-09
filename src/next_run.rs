@@ -6788,6 +6788,52 @@ mod tests {
         assert!(at("column") < at("ranked_bars"), "the bars alone are tried after the column page");
     }
 
+    /// on_the_map tells "try the next recipe" from "stop the page" by the refusal's words alone, so the words (NO_POINT),
+    /// the place that writes them (next_flow place_points_reply, reached here through the catalogue's own place_points and
+    /// the two groups' doors) and that reading are held together: a reworded refusal fails here instead of quietly turning
+    /// the EU page from the bars alone into a stopped page. A refusal that only quotes the words, or any other, stops.
+    #[test]
+    fn the_no_point_words_tie_the_map_refusal_to_the_recipe_switch() {
+        assert_eq!(crate::next_flow::NO_POINT, "the map point table has no point for");
+        let column = recipe("column");
+        for code in ["EUU", "EU27_2020"] {
+            let why = Hubs.place_points(&[code.to_string()]).unwrap_err();
+            assert_eq!(why, format!("{} {code}", crate::next_flow::NO_POINT), "the producer's words");
+            assert_eq!(on_the_map(&column, &[code.to_string()], &Hubs), Err(("shape", format!("not this shape: {why}"))));
+        }
+        struct Refused(String);
+        impl Catalogue for Refused {
+            fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>) -> crate::l5geo::Ranking {
+                unreachable!()
+            }
+            fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
+                unreachable!()
+            }
+            fn source(&self) -> &Value {
+                &Value::Null
+            }
+            fn countries(&self, codes: &[String]) -> Result<Vec<String>, String> {
+                Hubs.countries(codes)
+            }
+            fn zh_names(&self, scheme: &str, codes: &[String]) -> Result<BTreeMap<String, String>, Vec<String>> {
+                Hubs.zh_names(scheme, codes)
+            }
+            fn members(&self, aggregate: &str) -> Result<Vec<String>, String> {
+                Hubs.members(aggregate)
+            }
+            fn place_points(&self, _: &[String]) -> Result<BTreeMap<String, [f64; 2]>, String> {
+                Err(self.0.clone())
+            }
+        }
+        let ranked = vec!["USA".to_string(), "EUU".to_string()];
+        for other in [
+            "the map points come from a table of sha256 00, not the pinned 11".to_string(),
+            format!("visual group: {} EUU", crate::next_flow::NO_POINT),
+        ] {
+            assert_eq!(on_the_map(&column, &ranked, &Refused(other.clone())), Err(("fill", other)));
+        }
+    }
+
     #[test]
     fn the_column_shape_takes_one_frequency_of_years_half_years_or_months() {
         let at = |ts: &[&'static str]| -> Vec<(&'static str, &'static str)> { ts.iter().map(|t| (*t, "1")).collect() };
