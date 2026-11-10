@@ -511,14 +511,28 @@ pub fn question_years(question: &str, this_year: i32) -> Option<NamedYears> {
         }
     }
     years.dedup();
+    let last = last_years(&chars);
     if let (Some(a), Some(b)) = (years.iter().map(|y| y.0).min(), years.iter().map(|y| y.0).max()) {
         let text = |r: std::ops::Range<usize>| chars[r].iter().collect::<String>();
         let since = a == b
             && years.iter().any(|&(_, at, after)| {
                 SINCE_BEFORE.iter().any(|w| text(0..at).ends_with(w)) || SINCE_AFTER.iter().any(|w| text(after..chars.len()).starts_with(w))
             });
+        // one year inside the last n years the question also counts back ("近二十年……2015 年那一年有没有往下掉", e9): the
+        // year is a point the question asks about within the span, not the span (rounds 7-10 fetched 2015 alone)
+        if let Some(n) = last.filter(|&n| a == b && !since && n > 1 && a > this_year - 1 - n) {
+            return Some(NamedYears::Last(n));
+        }
         return Some(NamedYears::Span(a, if since { this_year.max(a) } else { b }));
     }
+    // "最近一年" / "近一年" counts back one year: the latest year, which is the program's when the question names none (an
+    // annual table's last ten years, the page at the latest year most places hold); Last(1) fetched this year minus one alone,
+    // a year a sparse World Bank table has no value in for any asked place (n14, n34: no rows, rounds 7-10)
+    last.filter(|&n| n > 1).map(NamedYears::Last)
+}
+
+/// The last n years a question counts back over (year-words.json: a lead word, a count, 年; or a count before a tail).
+fn last_years(chars: &[char]) -> Option<i32> {
     let text: String = chars.iter().filter(|c| !c.is_whitespace()).collect();
     let numeral = |c: &char| c.is_ascii_digit() || "一二两三四五六七八九十".contains(*c);
     let words: Value = serde_json::from_str(include_str!("../runtime/pi/assets/year-words.json")).unwrap_or_default();
@@ -530,7 +544,7 @@ pub fn question_years(question: &str, this_year: i32) -> Option<NamedYears> {
             let count: String = rest.chars().take_while(numeral).collect();
             if rest[count.len()..].starts_with('年') {
                 if let Some(n) = count_of(&count).filter(|n| *n >= 1) {
-                    return Some(NamedYears::Last(n));
+                    return Some(n);
                 }
             }
         }
@@ -540,7 +554,7 @@ pub fn question_years(question: &str, this_year: i32) -> Option<NamedYears> {
         for (at, _) in text.match_indices(tail.as_str()) {
             let count: String = text[..at].chars().rev().take_while(numeral).collect::<Vec<_>>().into_iter().rev().collect();
             if let Some(n) = count_of(&count).filter(|n| *n >= 1 && count.chars().count() < 4) {
-                return Some(NamedYears::Last(n));
+                return Some(n);
             }
         }
     }
@@ -2270,6 +2284,20 @@ mod tests {
         assert_eq!(q("过去 10 年各国人均碳排放"), Some(NamedYears::Last(10)));
         assert_eq!(q("最近十二年"), Some(NamedYears::Last(12)));
         assert_eq!(q("近二十年"), Some(NamedYears::Last(20)));
+        // one year counted back is the latest year, the program's own when none is named (n14, n34: Last(1) fetched 2025
+        // alone, a year a sparse table holds for none of the asked places)
+        assert_eq!(q("南非、巴西、哥伦比亚、墨西哥最近一年的基尼系数，谁的收入最不平等？"), None);
+        assert_eq!(q("日本、意大利、希腊、新加坡、美国最近一年的中央政府债务占 GDP，谁最高？"), None);
+        assert_eq!(q("近一年各国通胀"), None);
+        // one year asked about inside the last n years the question counts back: the span (e9 fetched 2015 alone); a year
+        // before the span, or a year run on from, stays the question's years
+        assert_eq!(
+            q("印尼、菲律宾、泰国、越南近二十年的谷物单产怎么变？2015 年厄尔尼诺那一年有没有往下掉？"),
+            Some(NamedYears::Last(20))
+        );
+        assert_eq!(q("近五年各国失业率，和 2000 年比呢"), Some(NamedYears::Span(2000, 2000)));
+        assert_eq!(q("2015 年以来近十年各国失业率"), Some(NamedYears::Span(2015, 2026)));
+        assert_eq!(q("2015 年到 2024 年，近十年各国失业率"), Some(NamedYears::Span(2015, 2024)));
         // a count of years run back over with no word before it, or after 这 (11-05: a question asking five years was fetched
         // and printed over the table's whole ten)
         assert_eq!(q("五年来欧盟各国房价涨了多少"), Some(NamedYears::Last(5)));
