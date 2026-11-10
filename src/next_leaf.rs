@@ -2800,7 +2800,7 @@ mod tests {
 
     /// A fact as compute writes it, reading `reads`.
     fn read_fact(key: &str, op: &str, reads: &[String]) -> Fact {
-        Fact { key: key.into(), op: op.into(), v: 1.0, t: None, n: None, who: Vec::new(), fmt: "pc".into(), reads: reads.to_vec() }
+        Fact { key: key.into(), op: op.into(), v: 1.0, t: None, n: None, who: Vec::new(), fmt: "pc".into(), reads: reads.to_vec(), exact: None }
     }
 
     /// A named country whose rows sit under a member's code (a partner CN_X_HK for China) is asked by that code, as the

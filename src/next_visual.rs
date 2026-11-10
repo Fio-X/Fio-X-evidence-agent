@@ -863,6 +863,7 @@ mod tests {
             who: Vec::new(),
             fmt: "m".into(),
             reads: Vec::new(),
+            exact: None,
         };
         let marks = |facts: &[Fact]| {
             let mut knobs = json!({"spec": {"hero": {"ring": {"marks": [{"key": "p"}, {"key": "l"}, {"key": "x"}]}}}});

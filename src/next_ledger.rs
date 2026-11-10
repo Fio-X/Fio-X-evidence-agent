@@ -1143,9 +1143,9 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     ("page_html_read", "", &["ledger::comment_len"]),
     ("numbers", "", &["ledger::check_numbers", "ledger::unanswered_word", "ledger::prints", "ledger::digit_runs", "ledger::num", "ledger::label", "ledger::enter", "ledger::segs", "ledger::finish", "facts::table_id", "facts::leaf_refs"]),
     // every fact recomputed from the request rows by its declared query (ops value, share, change, ...)
-    ("fact_recompute", "", &["facts::compute", "facts::fact", "facts::one", "facts::family", "facts::member_fmt", "facts::printed_value", "facts::minus_family", "facts::select", "facts::word", "facts::members", "facts::finite", "facts::sum"]),
+    ("fact_recompute", "", &["facts::compute", "facts::fact", "facts::one", "facts::family", "facts::member_fmt", "facts::printed_value", "facts::minus_family", "facts::select", "facts::word", "facts::members", "facts::finite", "facts::sum", "facts::exact_values", "facts::new", "facts::int", "facts::of", "facts::add", "facts::sub", "facts::mul", "facts::div", "facts::abs", "facts::gcd", "facts::eq"]),
     // every ledger entry recomputed and reprinted (its text, bare .n and display .r parts, ticks, periods, dates, names)
-    ("ledger_recheck", "", &["facts::recheck", "facts::read_entry", "facts::reads_back", "facts::leaf_ledger", "facts::who", "facts::text", "facts::scaled", "facts::fixed", "facts::tlabel", "facts::num", "facts::display", "facts::ticks", "facts::periods", "facts::months", "facts::halves", "facts::date_parts", "facts::wording_segs"]),
+    ("ledger_recheck", "", &["facts::recheck", "facts::read_entry", "facts::reads_back", "facts::leaf_ledger", "facts::who", "facts::text", "facts::scaled", "facts::fixed", "facts::fixed_exact", "facts::rounded", "facts::thousands", "facts::tlabel", "facts::num", "facts::display", "facts::ticks", "facts::periods", "facts::months", "facts::halves", "facts::date_parts", "facts::wording_segs"]),
     // relation_holds: data-cmp max, next, gt over the set the request's definitions give, each named by its code's row
     ("relations", "next_ledger::RELATIONS", &["ledger::check_relations", "ledger::relation_words", "ledger::family", "ledger::fact_key", "ledger::part_of", "ledger::member_code"]),
     // P4b-5: a share fact's set (one varying dimension, the rest of numerator and denominator alike), same-code copies one
@@ -1834,6 +1834,7 @@ mod tests {
             who: Vec::new(),
             fmt: fmt.into(),
             reads: Vec::new(),
+            exact: None,
         };
         let mut defs = vec![("zero_flows".to_string(), json!({"op": "zeros", "table": "nrg_bal_c", "time": "2024", "fmt": "n"}))];
         let mut facts = vec![fact("zero_flows", "zeros", 12.0, "n")];
@@ -2085,7 +2086,7 @@ mod tests {
     /// The request with one more fact definition; a share also with its value and its ledger entries (printed and bare).
     fn with_fact(mut r: ShareRequest, key: &str, def: Value, share: Option<(f64, &str)>) -> ShareRequest {
         if let Some((v, text)) = share {
-            r.1.push(Fact { key: key.into(), op: "share".into(), v, t: None, n: None, who: Vec::new(), fmt: "pct".into(), reads: Vec::new() });
+            r.1.push(Fact { key: key.into(), op: "share".into(), v, t: None, n: None, who: Vec::new(), fmt: "pct".into(), reads: Vec::new(), exact: None });
             r.2.insert(format!("fact:{key}"), format!("{text}%"));
             r.2.insert(format!("fact:{key}.n"), text.into());
         }
@@ -2504,7 +2505,7 @@ mod tests {
         let (mut spec, mut facts, mut ledger) = flow_request();
         let add = |spec: &mut Spec, facts: &mut Vec<Fact>, ledger: &mut BTreeMap<String, String>, (key, dim, code, v, text): (&str, &str, &str, f64, &str)| {
             spec.facts.push((key.into(), json!({"op": "value", "table": "nrg_bal_c", "time": "2024", "fmt": "ktoe", "filter": {dim: code}})));
-            facts.push(Fact { key: key.into(), op: "value".into(), v, t: None, n: None, who: Vec::new(), fmt: "ktoe".into(), reads: Vec::new() });
+            facts.push(Fact { key: key.into(), op: "value".into(), v, t: None, n: None, who: Vec::new(), fmt: "ktoe".into(), reads: Vec::new(), exact: None });
             ledger.insert(format!("fact:{key}.n"), text.into());
             ledger.insert(format!("name:zh_names:{dim}:{code}"), "Whole".into());
         };
@@ -2541,7 +2542,7 @@ mod tests {
         let (mut spec, mut facts, mut ledger) = flow_request();
         let add = |spec: &mut Spec, facts: &mut Vec<Fact>, ledger: &mut BTreeMap<String, String>, (key, dim, codes, v, text): (&str, &str, &[&str], f64, &str)| {
             spec.facts.push((key.into(), json!({"op": "value", "table": "nrg_bal_c", "time": "2024", "fmt": "ktoe", "filter": {dim: codes}})));
-            facts.push(Fact { key: key.into(), op: "value".into(), v, t: None, n: None, who: Vec::new(), fmt: "ktoe".into(), reads: Vec::new() });
+            facts.push(Fact { key: key.into(), op: "value".into(), v, t: None, n: None, who: Vec::new(), fmt: "ktoe".into(), reads: Vec::new(), exact: None });
             ledger.insert(format!("fact:{key}.n"), text.into());
         };
         let sources = ["O4000XBIO", "G3000", "E7000", "RA000", "H8000", "C0000X0350-0370", "C0350-0370", "W6100_6220"];

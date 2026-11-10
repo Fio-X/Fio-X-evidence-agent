@@ -185,7 +185,7 @@ pub struct AskedPlaces {
 }
 
 /// What the program computed for one fact.
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Fact {
     pub key: String,
     pub op: String,
@@ -199,6 +199,158 @@ pub struct Fact {
     pub fmt: String,
     /// The sources of the rows it read in request order, or `fact:<a>`, `fact:<b>` for one computed from two facts.
     pub reads: Vec<String>,
+    /// The same value worked out exactly from the rows' decimal values (`exact_values`), which `text` and `display`
+    /// round once; None when it cannot be (a value with no short decimal, a sum past i128), and the text is `v`'s. Not
+    /// stored: a request's facts read back print from `v`.
+    #[serde(skip)]
+    pub exact: Option<Exact>,
+}
+
+/// Two facts are the same fact when every stored field is: `exact` is how `v` is printed, not another value.
+impl PartialEq for Fact {
+    fn eq(&self, o: &Self) -> bool {
+        self.key == o.key
+            && self.op == o.op
+            && (self.v == o.v || (self.v.is_nan() && o.v.is_nan()))
+            && self.t == o.t
+            && self.n == o.n
+            && self.who == o.who
+            && self.fmt == o.fmt
+            && self.reads == o.reads
+    }
+}
+
+/// A rational number, numerator over a positive denominator in lowest terms: a row's value as its decimal text writes it
+/// (the shortest that reads back as the stored number, the source's own text), and what the facts' ops make of such
+/// values, with no binary rounding on the way. Every step is checked; one past i128 gives none.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Exact {
+    n: i128,
+    d: i128,
+}
+
+impl Exact {
+    fn new(n: i128, d: i128) -> Option<Exact> {
+        if d == 0 {
+            return None;
+        }
+        let g = gcd(n.unsigned_abs(), d.unsigned_abs()).max(1) as i128;
+        let s = if d < 0 { -1 } else { 1 };
+        Some(Exact { n: s * (n / g), d: s * (d / g) })
+    }
+    fn int(k: i128) -> Exact {
+        Exact { n: k, d: 1 }
+    }
+    /// The value of the shortest decimal text of `x` (Rust prints an f64 that way, with no exponent); none for a value
+    /// that is not finite or whose digits pass i128.
+    pub fn of(x: f64) -> Option<Exact> {
+        if !x.is_finite() {
+            return None;
+        }
+        let t = format!("{x}");
+        let (neg, t) = t.strip_prefix('-').map_or((false, t.as_str()), |r| (true, r));
+        let (whole, frac) = t.split_once('.').unwrap_or((t, ""));
+        let digits: i128 = format!("{whole}{frac}").parse().ok()?;
+        let d = 10i128.checked_pow(u32::try_from(frac.len()).ok()?)?;
+        Exact::new(if neg { -digits } else { digits }, d)
+    }
+    fn add(self, o: Exact) -> Option<Exact> {
+        Exact::new(self.n.checked_mul(o.d)?.checked_add(o.n.checked_mul(self.d)?)?, self.d.checked_mul(o.d)?)
+    }
+    fn sub(self, o: Exact) -> Option<Exact> {
+        self.add(Exact { n: o.n.checked_neg()?, d: o.d })
+    }
+    fn mul(self, o: Exact) -> Option<Exact> {
+        Exact::new(self.n.checked_mul(o.n)?, self.d.checked_mul(o.d)?)
+    }
+    fn div(self, o: Exact) -> Option<Exact> {
+        Exact::new(self.n.checked_mul(o.d)?, self.d.checked_mul(o.n)?)
+    }
+    fn abs(self) -> Exact {
+        Exact { n: self.n.abs(), d: self.d }
+    }
+}
+
+fn gcd(mut a: u128, mut b: u128) -> u128 {
+    while b != 0 {
+        (a, b) = (b, a % b);
+    }
+    a
+}
+
+/// Each fact's value worked out exactly (Exact) from what it read: the rows' decimal values summed (a value, a period's
+/// total, a rest), over their count for a mean, a count as itself, and a fact of two facts from their exact values. A
+/// fact whose reads or op cannot be worked out exactly keeps none, and so does every fact made from it.
+fn exact_values(facts: &mut [Fact], rows: &[Row]) {
+    let row: BTreeMap<&str, f64> = rows.iter().map(|r| (r.src.as_str(), r.value)).collect();
+    let sum = |reads: &[String]| reads.iter().try_fold(Exact::int(0), |s, src| s.add(Exact::of(*row.get(src.as_str())?)?));
+    let mut known: BTreeMap<String, Exact> = BTreeMap::new();
+    // a fact of two facts may come before them in declared order: pass again until nothing more is worked out
+    loop {
+        let before = known.len();
+        for f in facts.iter_mut().filter(|f| f.exact.is_none()) {
+            let of = |k: &str| k.strip_prefix(FACT_SRC).and_then(|k| known.get(k)).copied();
+            f.exact = match f.op.as_str() {
+                "value" | "peak" | "low" | "last" | "rest" if !f.reads.is_empty() => sum(&f.reads),
+                "mean" if !f.reads.is_empty() => sum(&f.reads).and_then(|s| s.div(Exact::int(f.reads.len() as i128))),
+                "count" | "n" | "zeros" | "unrowed" | "excluded" if f.v.fract() == 0.0 => Some(Exact::int(f.v as i128)),
+                "share" | "times" | "change" | "minus" | "plus" if f.reads.len() == 2 => match (of(&f.reads[0]), of(&f.reads[1])) {
+                    (Some(a), Some(b)) => match f.op.as_str() {
+                        "share" | "times" => a.div(b),
+                        "change" => a.div(b).and_then(|q| q.sub(Exact::int(1))),
+                        "minus" => a.sub(b),
+                        _ => a.add(b),
+                    },
+                    _ => None,
+                },
+                _ => None,
+            };
+            if let Some(e) = f.exact {
+                known.insert(f.key.clone(), e);
+            }
+        }
+        if known.len() == before {
+            break;
+        }
+    }
+}
+
+/// `x` with `dec` places, rounded once on its exact value with a tie to the even digit (GB/T 8170), a minus on a
+/// negative value even when it rounds to 0, and a comma between thousands when `sep`: `fixed` on the exact value.
+fn fixed_exact(x: Exact, dec: usize, sep: bool) -> Option<String> {
+    let sign = if x.n < 0 { "-" } else { "" };
+    let a = x.abs();
+    let scaled = a.n.checked_mul(10i128.checked_pow(u32::try_from(dec).ok()?)?)?;
+    let (mut q, r) = (scaled / a.d, scaled % a.d);
+    // r / d against one half: 2r against d
+    let twice = r.checked_mul(2)?;
+    if twice > a.d || (twice == a.d && q % 2 == 1) {
+        q += 1;
+    }
+    let digits = format!("{q:0>width$}", width = dec + 1);
+    let (int, frac) = digits.split_at(digits.len() - dec);
+    let int = if sep { thousands(int) } else { int.to_string() };
+    Some(if dec == 0 { format!("{sign}{int}") } else { format!("{sign}{int}.{frac}") })
+}
+
+/// Whole digits with a comma between thousands.
+fn thousands(int: &str) -> String {
+    let mut grouped = String::new();
+    for (i, c) in int.chars().enumerate() {
+        if i > 0 && (int.len() - i).is_multiple_of(3) {
+            grouped.push(',');
+        }
+        grouped.push(c);
+    }
+    grouped
+}
+
+/// A fact's number at `scale` and `dec` places: its exact value rounded once when it has one, else `v` as `fixed` prints it.
+fn rounded(f: &Fact, scale: f64, dec: usize, sep: bool) -> String {
+    f.exact
+        .and_then(|e| e.mul(Exact::of(scale)?))
+        .and_then(|e| fixed_exact(e, dec, sep))
+        .unwrap_or_else(|| fixed(f.v * scale, dec, sep))
 }
 
 /// Which of a fact's ledger entries a number is.
@@ -240,6 +392,7 @@ pub fn compute(spec: &Spec, rows: &[Row]) -> Result<Vec<Fact>, String> {
         }
     }
     if off.is_empty() {
+        exact_values(&mut out, rows);
         Ok(out)
     } else {
         Err(off.join("\n"))
@@ -296,7 +449,7 @@ fn one(
         n: None,
         who: Vec::new(),
         fmt: String::new(),
-        reads: Vec::new(),
+        reads: Vec::new(), exact: None
     };
     if matches!(op, "share" | "change" | "times" | "minus" | "plus") {
         let mut of = |side: &str| -> Result<f64, String> {
@@ -668,7 +821,7 @@ fn family(key: &str, q: &Value, spec: &Spec, rows: &[Row]) -> Result<Vec<Fact>, 
                 n: None,
                 who: Vec::new(),
                 fmt: member_fmt(q, &code, &fmt),
-                reads: rs.iter().map(|r| r.src.clone()).collect(),
+                reads: rs.iter().map(|r| r.src.clone()).collect(), exact: None
             })
         })
         .collect()
@@ -717,7 +870,7 @@ fn minus_family(
                 n: None,
                 who: Vec::new(),
                 fmt: member_fmt(q, &code, &fmt),
-                reads: vec![format!("{FACT_SRC}{a}.{code}"), format!("{FACT_SRC}{b}.{code}")],
+                reads: vec![format!("{FACT_SRC}{a}.{code}"), format!("{FACT_SRC}{b}.{code}")], exact: None
             })
         })
         .collect()
@@ -791,18 +944,21 @@ fn sum(key: &str, rows: &[&Row]) -> Result<f64, String> {
 pub fn text(f: &Fact, fmts: &Value, bare: bool) -> Result<String, String> {
     Ok(match f.fmt.as_str() {
         "pct" => {
-            let s = fixed(f.v.abs() * 100.0, 0, false);
+            let s = match f.exact.and_then(|e| e.abs().mul(Exact::int(100))).and_then(|e| fixed_exact(e, 0, false)) {
+                Some(s) => s,
+                None => fixed(f.v.abs() * 100.0, 0, false),
+            };
             if bare {
                 s
             } else {
                 s + "%"
             }
         }
-        "n" => fixed(f.v, 0, false),
-        "x" => fixed(f.v, 1, false),
+        "n" => rounded(f, 1.0, 0, false),
+        "x" => rounded(f, 1.0, 1, false),
         k => {
             let m = scaled(f, fmts, k)?;
-            let s = fixed(f.v * m.0, m.1, true);
+            let s = rounded(f, m.0, m.1, true);
             if bare {
                 s
             } else {
@@ -971,7 +1127,7 @@ pub fn display(f: &Fact, fmts: &Value) -> Result<Option<Num>, String> {
     }
     let whole = if x.abs() >= 1.0 { fixed(x.abs().trunc(), 0, false).len() } else { 0 };
     let places = dec.min(3usize.saturating_sub(whole));
-    Ok((places < dec).then(|| Num { src: format!("{FACT_SRC}{}.r", f.key), value: f.v, text: fixed(x, places, true) }))
+    Ok((places < dec).then(|| Num { src: format!("{FACT_SRC}{}.r", f.key), value: f.v, text: rounded(f, scale, places, true) }))
 }
 
 /// The ticks of an axis from 0 to a fact (0 left out), in the fact's format without its unit: steps of 1, 2, 5 or 10
@@ -1794,6 +1950,65 @@ mod tests {
         assert_eq!(f["lo"].reads, ["series:a/X:2021:v"]);
     }
 
+    /// Plan v4 item 6 (GB/T 8170, rounded once on the exact decimal value): a row value of exactly .5 at the last place
+    /// kept goes to the even digit on its decimal text, not on the binary number (54.635 prints 54.64, which the float
+    /// 54.634999... printed 54.63); a difference and a mean are worked out from the rows' decimals (113.5 less the mean of
+    /// four rows, 10.45, prints 10.4, which the float 10.450000000000003 printed 10.5); a tie that the even digit already
+    /// rounded down stays (12,422.5 prints 12,422; 45 less 34.5 prints 10); a share prints its exact percent; and a fact
+    /// read back from a stored request (no exact value) prints from its float as before.
+    #[test]
+    fn a_number_is_rounded_once_on_its_exact_decimal_value() {
+        let rows = [
+            row("a", "NGA", "2024", 54.635),
+            row("a", "IND", "2024", 72.235),
+            row("a", "NER", "2024", 113.5),
+            row("a", "TCD", "2024", 100.6),
+            row("a", "SLE", "2024", 93.8),
+            row("a", "SOM", "2024", 104.3),
+            row("b", "X", "2024", 12422.5),
+            row("b", "Y", "2024", 45.0),
+            row("b", "Z", "2024", 34.5),
+        ];
+        let four = ["NER", "TCD", "SLE", "SOM"];
+        let mut s = spec(
+            json!({
+                "lo": {"table": "a", "filter": {"geo": "NGA"}, "time": "2024", "fmt": "yr"},
+                "ind": {"table": "a", "filter": {"geo": "IND"}, "time": "2024", "fmt": "yr"},
+                "hi": {"table": "a", "filter": {"geo": "NER"}, "time": "2024", "fmt": "p"},
+                "mean_sum": {"table": "a", "filter": {"geo": four}, "time": "2024", "fmt": "p"},
+                "mean_n": {"op": "n", "by": "geo", "table": "a", "filter": {"geo": four}, "time": "2024", "fmt": "n"},
+                "mean": {"op": "times", "a": "mean_sum", "b": "mean_n", "fmt": "p"},
+                "vs_mean": {"op": "minus", "a": "hi", "b": "mean", "fmt": "p"},
+                "x": {"table": "b", "filter": {"geo": "X"}, "time": "2024", "fmt": "w"},
+                "y": {"table": "b", "filter": {"geo": "Y"}, "time": "2024", "fmt": "w"},
+                "z": {"table": "b", "filter": {"geo": "Z"}, "time": "2024", "fmt": "w"},
+                "gap": {"op": "minus", "a": "y", "b": "z", "fmt": "w"},
+                "part": {"op": "share", "a": "z", "b": "y"},
+            }),
+            None,
+        );
+        s.fmts = json!({"yr": {"scale": 1, "dec": 2, "suffix": " 年"}, "p": {"scale": 1, "dec": 1, "suffix": ""},
+            "w": {"scale": 1, "dec": 0, "suffix": ""}, "time": {}});
+        let f: BTreeMap<String, Fact> = compute(&s, &rows).unwrap().into_iter().map(|f| (f.key.clone(), f)).collect();
+        let t = |k: &str| text(&f[k], &s.fmts, true).unwrap();
+        assert_eq!((t("lo"), t("ind")), ("54.64".to_string(), "72.24".to_string()));
+        assert_eq!(fixed(f["lo"].v, 2, false), "54.63", "the float alone rounds the other way");
+        assert_eq!(f["vs_mean"].v, 10.450000000000003);
+        assert_eq!((t("mean"), t("vs_mean")), ("103.0".to_string(), "10.4".to_string()));
+        assert_eq!((t("x"), t("gap")), ("12,422".to_string(), "10".to_string()));
+        // 34.5 / 45 = 76.666...%
+        assert_eq!(t("part"), "77");
+        // a negative value keeps its minus; a stored fact has no exact value and prints its float
+        let mut neg = f["gap"].clone();
+        neg.exact = Some(Exact::of(-0.25).unwrap());
+        assert_eq!(text(&neg, &json!({"w": {"scale": 1, "dec": 1}}), true).unwrap(), "-0.2");
+        let stored: Fact = serde_json::from_value(serde_json::to_value(&f["lo"]).unwrap()).unwrap();
+        assert_eq!((stored.exact, text(&stored, &s.fmts, true).unwrap()), (None, "54.63".to_string()));
+        assert_eq!(stored, f["lo"], "the stored fields are the same fact");
+        // the display part rounds the exact value too
+        assert_eq!(display(&f["lo"], &s.fmts).unwrap().map(|n| n.text), Some("54.6".to_string()));
+    }
+
     /// Owner 11-06: a difference asked of its operands as printed (of_printed) is refused, never computed.
     #[test]
     fn a_difference_of_printed_operands_is_refused() {
@@ -1993,7 +2208,7 @@ mod tests {
             n: None,
             who: vec![],
             fmt: "m".into(),
-            reads: vec!["x".into()],
+            reads: vec!["x".into()], exact: None
         };
         let fmts = json!({"m": {"scale": 0.01, "dec": 0, "suffix": " 亿"}});
         let t = ticks(&f, &fmts).unwrap();
@@ -2074,7 +2289,7 @@ mod tests {
             n: None,
             who: vec!["AT".into(), "HU".into()],
             fmt: "n".into(),
-            reads: vec![],
+            reads: vec![], exact: None
         };
         let label = |src: &str, text: &str| Label {
             src: src.into(),
@@ -2765,7 +2980,7 @@ mod tests {
             n: None,
             who: Vec::new(),
             fmt: fmt.into(),
-            reads: Vec::new(),
+            reads: Vec::new(), exact: None
         };
         let fmts = json!({"k2": {"dec": 2, "scale": 1, "suffix": " u"}, "k0": {"dec": 0}, "m": {"dec": 2, "scale": 0.001}});
         let shown = |v: f64, fmt: &str| display(&f("a", "value", v, fmt), &fmts).unwrap().map(|n| (n.src, n.text));
