@@ -63,6 +63,11 @@ pub const ASKED_PLACES_ZH: &str = include_str!("../runtime/pi/assets/asked-place
 /// description (set-sayings-zh.json). A vocabulary constant the flow's sayings check reads (next_sayings); nothing prints it.
 pub const SET_SAYINGS_ZH: &str = include_str!("../runtime/pi/assets/set-sayings-zh.json");
 
+/// Names of measures and terms that hold a change word's character but name no change over time (增加值, value added), each
+/// with where it comes from (level-terms-zh.json). A vocabulary constant the flow's text check reads (next_flow change_word);
+/// nothing prints it.
+pub const LEVEL_TERMS_ZH: &str = include_str!("../runtime/pi/assets/level-terms-zh.json");
+
 /// Registry: Eurostat's SDMX 3.0 data endpoint. Its named filters (`c[geo]=DE,FR`) need no dimension order: the metabase
 /// lists a table's dimensions alphabetically, not in its DSD's order (30 of 30 sampled tables differ, 10-28), and a DSD call
 /// would add about 1.2 s per table.

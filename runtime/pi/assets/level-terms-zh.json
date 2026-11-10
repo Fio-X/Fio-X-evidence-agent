@@ -1,0 +1,13 @@
+{
+ "note": "Built by a tool from source metadata only, no word typed in by hand: World Bank indicator names in Chinese (sha256 385436f8d4f5f406) of indicators whose English name (e14d39469c209c0e) holds no change marker, and the reviewed table names (table-names-zh.json 35d69e88675a629f). A term holds a CHANGE_WORDS character and names a level; the flow's text check (next_flow change_word) reads a wording without these whole terms before it looks for a change word; a change word next to a term (增加值增长) is still read. Nothing prints them from here.",
+ "terms": [
+  {
+   "zh": "土地利用变化",
+   "source": "World Bank indicator name in Chinese (EN.GHG.CO2.MT.CE.AR5) and a reviewed table name"
+  },
+  {
+   "zh": "增加值",
+   "source": "World Bank indicator names in Chinese, 24 level indicators (e.g. EA.PRD.AGRI.KD)"
+  }
+ ]
+}

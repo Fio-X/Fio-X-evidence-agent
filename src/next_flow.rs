@@ -1883,10 +1883,28 @@ pub fn ranking_word(text: &str) -> Option<&'static str> {
         .find(|w| text.contains(*w))
 }
 
-/// The first CHANGE_WORDS word a wording holds: on a page that draws one period's levels, such a title names a change the
-/// page does not show.
+/// The first CHANGE_WORDS word a wording holds, read without the knowledge group's level terms (a measure's name such as
+/// value added holds a change word's character and names no change): on a page that draws one period's levels, such a
+/// title names a change the page does not show.
 pub fn change_word(text: &str) -> Option<&'static str> {
-    CHANGE_WORDS.iter().copied().find(|w| text.contains(*w))
+    let read = level_terms().iter().fold(text.to_string(), |t, term| t.replace(term.as_str(), ""));
+    CHANGE_WORDS.iter().copied().find(|w| read.contains(*w))
+}
+
+/// The terms of next_knowledge::LEVEL_TERMS_ZH, read once; a file that does not parse gives none, so every change word
+/// is refused as before (the check never loosens on a bad file).
+fn level_terms() -> &'static [String] {
+    static TERMS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    TERMS.get_or_init(|| {
+        serde_json::from_str::<Value>(crate::next_knowledge::LEVEL_TERMS_ZH)
+            .ok()
+            .and_then(|v| {
+                v["terms"].as_array().map(|ts| {
+                    ts.iter().filter_map(|t| t["zh"].as_str()).filter(|t| !t.is_empty()).map(str::to_string).collect()
+                })
+            })
+            .unwrap_or_default()
+    })
 }
 
 /// The LEVEL_WORDS word a wording asks with when it names no change (no CHANGE_WORDS word, no 从 before a 到): on a page
@@ -6220,6 +6238,18 @@ mod tests {
         assert!(!described(&ask(&[])).contains(CHANGE_TITLE_RULE));
     }
 
+    #[test]
+    fn every_level_term_holds_a_change_word_and_no_number() {
+        // a term is listed only because it holds a change word's character; one that holds none would loosen nothing
+        let terms = level_terms();
+        assert!(terms.len() >= 2, "{terms:?}");
+        for term in terms {
+            assert!(CHANGE_WORDS.iter().any(|w| term.contains(*w)), "{term}");
+            assert!(!term.chars().any(|c| c.is_ascii_digit()), "{term}");
+            assert_eq!(change_word(term), None, "{term}");
+        }
+    }
+
     /// Plan v4 item 7 (n47, t4): a level page's title named a change (各国温室气体排放的水平与变化) over one year's ranking. On
     /// a field `levels` lists, a wording with a CHANGE_WORDS word is refused with the word, the rule and the field's draft
     /// as the example; a wording with none passes, and so does every field of a page with no level title.
@@ -6248,6 +6278,12 @@ mod tests {
         assert!(ask(&[]).check(&answer("各国温室气体排放的水平与变化")).is_ok());
         let described = |a: &Ask| a.schema()["properties"]["text"]["description"].as_str().unwrap().to_string();
         assert!(described(&ask(&["1"])).contains(LEVEL_RULE) && !described(&ask(&[])).contains(LEVEL_RULE));
+        // A measure's name that holds a change word's character and names no change passes (round 10 q7: value added, which
+        // the stand-in reworded to a wrong name when refused); a change word beside it is still refused.
+        assert!(ask(&["1"]).check(&answer("欧盟各国对华出口的国内增加值排名")).is_ok());
+        assert!(ask(&["1"]).check(&answer("不含土地利用变化的人均排放")).is_ok());
+        let grew = ask(&["1"]).check(&answer("国内增加值增长最快的国家")).unwrap_err();
+        assert!(grew.problem.starts_with("field '1': '增' names a change; "), "{}", grew.problem);
         // A wording a rule offers on every page passes on a level page; only the change rule's own examples name a change,
         // and that rule is said only on a change page.
         for suggested in RULE_SUGGESTIONS {
