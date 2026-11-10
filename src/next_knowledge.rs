@@ -1078,7 +1078,7 @@ mod tests {
         );
     }
 
-    /// sdg_07_40 and the 73 tables reviewed on 2026-10-31 have the names the owner reviewed; a table the file does not list
+    /// sdg_07_40, the 73 tables reviewed on 2026-10-31 and nrg_ind_id (2026-11-10) have the names the owner reviewed; a table the file does not list
     /// has none (its English title stays), and an id is matched exactly. Ten reviewed names hold a digit: they are listed as
     /// reviewed, and the source line still prints none of them (next_run source_line, its digit check).
     #[test]
@@ -1094,7 +1094,7 @@ mod tests {
         assert_eq!(zh("EG.FEC.RNEW.ZS@2"), None);
         let names = table_names().unwrap();
         let digits: Vec<&str> = names.iter().filter(|(_, zh)| zh.chars().any(char::is_numeric)).map(|(id, _)| id.as_str()).collect();
-        assert_eq!((names.len(), digits.len()), (74, 10), "{digits:?}");
+        assert_eq!((names.len(), digits.len()), (75, 10), "{digits:?}");
         let file: Value = serde_json::from_str(TABLE_NAMES).unwrap();
         let dated = |d: &str| file["tables"].as_array().unwrap().iter().filter(|t| t["reviewed"] == d).count();
         assert_eq!((dated("2026-10-30"), dated("2026-10-31")), (1, 73));
@@ -1111,6 +1111,8 @@ mod tests {
         assert_eq!(ids("各国 65岁和65岁以上的人口总数", "SP.POP.65UP.TO@2"), ["pop65"]);
         assert_eq!(ids("各国 65岁和65岁以上的人口总数", "SP.POP.65UP.FE.ZS@2"), ["pop65", "population"]);
         assert_eq!(ids("各国 65岁和65岁以上的人口总数", "nrg_x"), ["pop65", "population"]);
+        // s3: the energy import dependency table's reviewed name holds the energy imports family's words
+        assert!(ids("德国、法国、意大利二十年来的能源进口依存度", "nrg_ind_id").is_empty());
     }
 
     /// A composition's four groups of SIEC leaves (estat-parts.tsv group_en) are named by reviewed entries of their own

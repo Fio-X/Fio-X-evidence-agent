@@ -265,6 +265,12 @@
    "reviewed": "2026-10-31"
   },
   {
+   "id": "nrg_ind_id",
+   "zh": "能源进口依存度",
+   "zh_source": "reviewed",
+   "reviewed": "2026-11-10"
+  },
+  {
    "id": "nrg_ind_pehcf",
    "zh": "可燃燃料的电力和衍生热总产量",
    "zh_source": "reviewed",
