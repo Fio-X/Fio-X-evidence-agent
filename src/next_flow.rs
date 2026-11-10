@@ -6284,6 +6284,11 @@ mod tests {
         assert!(ask(&["1"]).check(&answer("不含土地利用变化的人均排放")).is_ok());
         let grew = ask(&["1"]).check(&answer("国内增加值增长最快的国家")).unwrap_err();
         assert!(grew.problem.starts_with("field '1': '增' names a change; "), "{}", grew.problem);
+        // n47 (round 9, user 11-11 item 2): freeing 土地利用变化 leaves the 变化 of a title that names a change refused
+        let n47 = ask(&["1"]).check(&answer("各国温室气体排放的水平与变化")).unwrap_err();
+        assert!(n47.problem.starts_with("field '1': '变' names a change; "), "{}", n47.problem);
+        assert_eq!(change_word("各国温室气体排放的水平与变化"), Some("变"));
+        assert_eq!(change_word("不含土地利用变化的人均排放量的变化"), Some("变"));
         // A wording a rule offers on every page passes on a level page; only the change rule's own examples name a change,
         // and that rule is said only on a change page.
         for suggested in RULE_SUGGESTIONS {
