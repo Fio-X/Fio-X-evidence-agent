@@ -1173,6 +1173,10 @@
   "runtime/leaves_js/roughjs-4.6.6.LICENSE": {
    "group": "visual",
    "note": "The rough.js 4.6.6 licence, kept next to the vendored file."
+  },
+  "runtime/pi/assets/region-aggregates-zh.json": {
+   "group": "knowledge",
+   "note": "New route, data side: the World Bank regional aggregates (Sub-Saharan Africa, South Asia, Latin America & Caribbean, Middle East & North Africa, East Asia & Pacific, North America, World) a question may list as places of their own, each with its official Chinese name and the words a question writes for it (the official name, it less its trailing 地区, short forms the owner reviewed); Europe & Central Asia is left out, its words clash with 欧洲. A pure data word list like rank-phrases-zh.json; l5geo.rs reads it with include_str (listed_aggregates), and Catalog::places adds a listed aggregate as a place by its code; nothing prints the words. Ownership only; no cross-group call is allowed by this row."
   }
  },
  "artifact_kinds": {

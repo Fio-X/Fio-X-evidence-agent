@@ -49,6 +49,65 @@ const REGION: &str = "REGION";
 /// Region words that also name an aggregate with rows of its own, with its code: the World Bank's iso3 (Eurostat's is
 /// next_params::ESTAT_ISO's). Named beside a country outside Europe, the word is that place (Catalog::places).
 const PEER_AGGREGATES_ZH: [(&str, &str); 2] = [("欧盟", "EUU"), ("欧洲联盟", "EUU")];
+/// region-aggregates-zh.json (knowledge group): the World Bank regional aggregates a question may list as places of their
+/// own, each with the words a question writes for it (the official Chinese name, it less 地区, and the short forms the owner
+/// reviewed 11-10). Not in the name table zh_names: a word there is read everywhere a place is (scope, groups, the page's
+/// codes); an aggregate is a place only when listed_aggregates finds it listed.
+const REGION_AGGREGATES_ZH: &str = include_str!("../runtime/pi/assets/region-aggregates-zh.json");
+/// The marks that join the items of a list of places (撒哈拉以南非洲、南亚、拉丁美洲; 中东和北非、全世界).
+const LIST_JOIN_ZH: &str = "、，,和与及跟";
+/// What may follow a whole item of a list of places: a join, a mark that ends a clause, or 的 before the measure.
+const ITEM_END_ZH: &str = "、，,和与及跟的？?。；;";
+
+/// The aggregates of region-aggregates-zh.json by word, the longest word first; an unreadable file gives none.
+fn region_aggregates() -> &'static [(Vec<char>, String)] {
+    static WORDS: std::sync::OnceLock<Vec<(Vec<char>, String)>> = std::sync::OnceLock::new();
+    WORDS.get_or_init(|| {
+        let v: serde_json::Value = serde_json::from_str(REGION_AGGREGATES_ZH).unwrap_or_default();
+        let mut words: Vec<(Vec<char>, String)> = v["aggregates"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|a| Some((a["code"].as_str()?.to_string(), a["words"].as_array()?.clone())))
+            .flat_map(|(code, ws)| {
+                ws.into_iter().filter_map(move |w| Some((w.as_str()?.chars().collect::<Vec<_>>(), code.clone())))
+            })
+            .collect();
+        words.sort_by_key(|(w, _)| std::cmp::Reverse(w.len()));
+        words
+    })
+}
+
+/// The World Bank aggregate codes a Chinese question lists as places of their own, in question order, each once: a word of
+/// region-aggregates-zh.json that is a whole item of a list of places, with the text start or a LIST_JOIN_ZH mark before it
+/// (全 aside: 全世界) and an ITEM_END_ZH mark or the text end after it, and a join mark on at least one side. A word not so
+/// listed is no place, as before the list (世界人口最多的十个国家, 排进世界前几, 东南亚 holding 南亚).
+pub fn listed_aggregates(question_zh: &str) -> Vec<String> {
+    let chars: Vec<char> = question_zh.chars().filter(|c| !c.is_whitespace()).collect();
+    let join = |c: Option<&char>| c.is_some_and(|c| LIST_JOIN_ZH.contains(*c));
+    let mut codes: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < chars.len() {
+        let Some((w, code)) = region_aggregates().iter().find(|(w, _)| chars[i..].starts_with(w)) else {
+            i += 1;
+            continue;
+        };
+        let start = if i > 0 && chars[i - 1] == '全' { i - 1 } else { i };
+        let before = start.checked_sub(1).map(|b| &chars[b]);
+        let end = i + w.len();
+        let after = chars.get(end);
+        let whole = (start == 0 || join(before)) && (after.is_none() || after.is_some_and(|c| ITEM_END_ZH.contains(*c)));
+        if whole && (join(before) || join(after)) {
+            if !codes.contains(code) {
+                codes.push(code.clone());
+            }
+            i = end;
+        } else {
+            i += 1;
+        }
+    }
+    codes
+}
 /// Whole words that hold a place name but name no place (发展中国家 holds 中国, 增加纳税 holds 加纳). Matched with the
 /// place names, longest first, so a hit swallows the name. Hand-kept: the catalog has no Chinese words to derive
 /// them from. 小国 is the World Bank aggregate "Small states", which a Chinese question never means.
@@ -1937,6 +1996,14 @@ impl Catalog {
                 places.push(place);
             }
         }
+        // a World Bank regional aggregate the question lists as a place of its own (n31: 撒哈拉以南非洲、南亚、拉丁美洲;
+        // n38: 中东和北非、撒哈拉以南非洲、全世界), after the places the name table finds
+        for code in listed_aggregates(question_zh) {
+            let place = Place::Country(code);
+            if !places.contains(&place) {
+                places.push(place);
+            }
+        }
         places
     }
 
@@ -2631,6 +2698,37 @@ pub(crate) fn test_world() -> Catalog {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_listed_region_aggregate_is_a_place_and_an_unlisted_region_word_is_none() {
+        // the two dev questions the table step could only offer ranked economies for (rounds 7-10)
+        assert_eq!(
+            listed_aggregates("撒哈拉以南非洲、南亚、拉丁美洲，能喝上安全饮用水的人口比例 2000 年到 2022 年各涨了多少？"),
+            ["SSF", "SAS", "LCN"]
+        );
+        assert_eq!(listed_aggregates("中东和北非、撒哈拉以南非洲、全世界的婴儿死亡率，2000 年到 2023 年各降了多少？"), ["MEA", "SSF", "WLD"]);
+        // beside a country, and the official name less nothing
+        assert_eq!(listed_aggregates("中国和东亚与太平洋地区的人均 GDP"), ["EAS"]);
+        assert_eq!(listed_aggregates("印度、南亚的识字率"), ["SAS"]);
+        // not listed: a word in a phrase, a ranking over the world, a longer name holding the word, the region's members
+        assert!(listed_aggregates("世界人口最多的十个国家的预期寿命").is_empty());
+        assert!(listed_aggregates("加州的 GDP 能排进世界前几？").is_empty());
+        assert!(listed_aggregates("东南亚、东亚的出口").is_empty());
+        assert!(listed_aggregates("撒哈拉以南非洲哪国的识字率最高？").is_empty());
+        assert!(listed_aggregates("撒哈拉以南非洲各国的识字率").is_empty());
+        // each once, the longest word first (北美洲 not 北美 + 洲)
+        assert_eq!(listed_aggregates("北美洲、世界、全球的碳排放"), ["NAC", "WLD"]);
+    }
+
+    #[test]
+    fn every_region_aggregate_word_is_read_and_ecs_is_not_listed() {
+        let words = region_aggregates();
+        for code in ["SSF", "SAS", "EAS", "NAC", "WLD", "LCN", "MEA"] {
+            assert!(words.iter().any(|(_, c)| c == code), "{code}");
+        }
+        assert!(!words.iter().any(|(_, c)| c == "ECS"), "Europe & Central Asia clashes with 欧洲");
+        assert!(words.windows(2).all(|p| p[0].0.len() >= p[1].0.len()), "longest first");
+    }
     use serde_json::json;
 
     fn texts(t: &[&str]) -> Vec<String> {
