@@ -67,6 +67,9 @@ class Ctx:
     def __init__(s, spec):
         s.spec, s.T = spec, FX.load(spec); s.F = FX.compute(spec, s.T)
     def n(s, v, key="bcm"):  # format a raw value with one of the page's formats
+        # with a ledger a number prints from its entry (FX.entry, FX.fill): a raw value has none, so it refuses rather
+        # than print its own rounding, which may differ from the ledger's (next_facts rounds the exact decimal value)
+        if FX.LEDGER is not None: raise FX.Refused("a raw value has no ledger entry: with a ledger a number prints from its entry")
         return FX.fmt(s.spec, {"v": v, "fmt": key})
     def t(s, text): return FX.fill(s.spec, s.F, text)
 
@@ -560,7 +563,7 @@ def ml_legend(m, occ):
     d, c, t0, t1 = m.d, m.c, m.t0, m.t1
     if not d.get("halo", True): return ""
     big = max(m.top, key=lambda k_: m.ser[k_].get(t0, 0)); v = m.ser[big][t0]
-    y0, y1, val = t0, t1, c.n(v, m.fk)
+    y0, y1, val = t0, t1, c.n(v, m.fk) if FX.LEDGER is None else ""
     if FX.LEDGER is not None:  # the years the map's table covers and the largest member's value at t0, from the ledger
         if not d.get("legend_fact"): raise FX.Refused("map legend: the map names no legend_fact family")
         if not all(len(t) == 4 and t.isdigit() for t in (t0, t1)): raise FX.Refused("map legend: t0 and t1 are not years")
@@ -776,6 +779,8 @@ def events(d):
 def timeline(c, d, W, H=None):
     """Thin context strip (SCMP 'Historical context'): one axis, a tick per event, each label in the lowest free row above
     the axis, reading right of its tick or, if that is taken, left of it; events of the focus kind in the accent, the rest in ink."""
+    if FX.LEDGER is not None:  # its year axis and event labels are free words: with a ledger nothing could mark a number in them
+        raise FX.Refused("timeline: its years and event labels are free words; with a ledger the page takes no timeline")
     ev = events(d); y0, y1 = int(d["from"][:4]), int(d.get("to", ev[-1]["date"])[:4]) + 1
     t2x = lambda s: 6 + ((int(s[:4]) - y0) * 12 + int(s[5:7] or 1) - 1 + (int(s[8:10] or 15) - 1) / 31) / ((y1 - y0) * 12) * (W - 12)
     taken, rows = {}, []  # row -> occupied [left, right] spans
@@ -833,7 +838,7 @@ def step(c, d, W, H=240):
     for key in d["mark"]:
         f = c.F[key]; t = f.get("t") or f["src"]["time"]; i = ts.index(t); x = ml + (i + 0.5) * sw
         o.append(f'<circle cx="{x:.1f}" cy="{py(f["v"]):.1f}" r="4" fill="var(--accent)"/>'
-                 f'<text class="v" x="{x:.1f}" y="{py(f["v"]) + (22 if key == d["mark"][0] else -10):.1f}" text-anchor="{"start" if i < len(ts) / 2 else "end"}" font-size="12" font-weight="700" fill="var(--accent)">{FX.fmt(c.spec, f)}</text>')
+                 f'<text class="v" x="{x:.1f}" y="{py(f["v"]) + (22 if key == d["mark"][0] else -10):.1f}" text-anchor="{"start" if i < len(ts) / 2 else "end"}" font-size="12" font-weight="700" fill="var(--accent)">{FX.fmt(c.spec, f) if FX.LEDGER is None else FX.entry(f"fact:{key}.n", "tspan", None) + esc(FX.unit(c.spec, f))}</text>')
     for yr in sorted({t[:4] for t in ts}):
         if yr + "-S1" in ts and int(yr) % 2 == 1: o.append(f'<text x="{ml + ts.index(yr + "-S1") * sw:.1f}" y="{H - 8}" font-size="11" fill="var(--t-sec)">{yr}</text>')
     o.append(f'<text x="{W}" y="12" text-anchor="end" font-size="11" fill="var(--t-sec)">{esc(need(d, "unit"))}</text></svg>')
