@@ -273,6 +273,10 @@ pub struct Concept {
     pub questions: [&'static str; 3],
 }
 
+/// The page leads that draw one period's levels of their measure, no change between periods: a title over one of them
+/// names what it ranks or maps, not a change (next_page Drafts::level_title; plan v4 item 7).
+pub const LEVEL_LEADS: [(Relation, View); 2] = [(Relation::Ranking, View::Slice), (Relation::Map, View::Slice)];
+
 /// What each template shows of its measure, in the English a chart's draft title adds when two charts on a page share one
 /// table title (a ranking and a dumbbell of the same table), so their names differ before the model words them.
 pub const VIEW_WORDS: [((Relation, View), &str); 7] = [

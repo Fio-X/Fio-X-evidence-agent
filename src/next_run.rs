@@ -2218,7 +2218,7 @@ const COMPOSITION_SCOPE: &str = "图中各国";
 /// of the claims or charts, which are the first fetch's totals and print nowhere on it, only the composition's draft and its
 /// finding over share facts, scoped when the cut left places out of the bars. The claims stay registered and checked as
 /// they were; the text step only no longer reads them there.
-fn text_drafts(page: &Page, form: Option<(Relation, View)>, titles: &[String], fill: Option<&Value>) -> Drafts {
+fn text_drafts(page: &Page, form: Option<(Relation, View)>, titles: &[String], fill: Option<&Value>, change: bool) -> Drafts {
     let finding = fill.and_then(dek_finding);
     let mark = fill.and_then(|fill| fill["finding"]["set"].as_str()).map(str::to_string);
     let mut drafts = match fill.filter(|fill| fill["composition"].is_object()) {
@@ -2236,7 +2236,19 @@ fn text_drafts(page: &Page, form: Option<(Relation, View)>, titles: &[String], f
             .with_periods(&page.times),
     };
     drafts.places_drawn = fill.and_then(places_drawn);
-    drafts
+    drafts.measuring_a_change(change)
+}
+
+/// Whether the main table's measure is itself a change (a growth rate, a change from a base year): its unit code, the World
+/// Bank's from the catalogue's unit row and a Eurostat table's the one its fetch fixed (unit_code), is one
+/// next_pack::measure_kind reads as a change. A ranking of such a measure may name a change in its title; a ranking of any
+/// other may not (Drafts::level_title). None read: no change.
+fn measures_a_change(table: &Prepared, catalogue: &dyn Catalogue) -> bool {
+    let code = catalogue
+        .table(&table.id)
+        .and_then(|m| m.unit.map(|u| u.code))
+        .or_else(|| unit_code(table, unit_dim(catalogue, &table.id)));
+    code.as_deref().and_then(next_pack::measure_kind) == Some(next_pack::CHANGE_KIND)
 }
 
 /// The number of distinct places a page's fill draws: the codes of the place dimensions (next_flow::place_dims) across the
@@ -3501,6 +3513,7 @@ pub async fn reword(
         numbers,
         periods,
         changes,
+        levels,
         scoped,
         titles,
         mark,
@@ -3561,6 +3574,7 @@ pub async fn reword(
                 numbers: numbers.clone(),
                 periods: periods.clone(),
                 changes: changes.clone(),
+                levels: levels.clone(),
                 scoped: scoped.clone(),
                 titles: titles.clone(),
                 mark: mark.clone(),
@@ -3582,6 +3596,7 @@ pub async fn reword(
                         numbers: numbers.clone(),
                         periods: periods.clone(),
                         changes: Vec::new(),
+                        levels: Vec::new(),
                         scoped: Vec::new(),
                         titles: Vec::new(),
                         mark: String::new(),
@@ -3989,7 +4004,8 @@ pub(crate) async fn page_from(
     // No typed number on the page text, years included: the design pack's claim-template check refuses every one, so the
     // text step offers none (a year goes through a placeholder or is left out).
     // the dek is the picked recipe's finding on the page's own facts (finding_of), its numbers and names placeholders
-    let drafts = text_drafts(&page, form, &titles, picked.as_ref().ok().map(|(_, fill)| fill));
+    let change = prepared.first().is_some_and(|main| measures_a_change(main, catalogue));
+    let drafts = text_drafts(&page, form, &titles, picked.as_ref().ok().map(|(_, fill)| fill), change);
     // a text step that stops leaves the recipe pick's group calls on record all the same, as a text step that passes does
     let worded = match reword(recorder, model, question, &drafts, cancel).await {
         Ok(worded) => worded,
@@ -5341,7 +5357,7 @@ mod tests {
             .collect();
         assert_eq!(refused.len(), 1, "{refused:?}");
         assert!(refused[0].contains("field '1': '最多' ranks"), "{}", refused[0]);
-        assert!(refused[0].contains("各方数值的变化"), "{}", refused[0]);
+        assert!(refused[0].contains("各地的高低分布"), "{}", refused[0]);
         assert!(!events.iter().any(|e| e["type"] == TEXT_FALLBACK_EVENT));
         assert!(!events.iter().any(|e| e["type"] == SCOPE_FALLBACK_EVENT));
     }
@@ -5397,6 +5413,7 @@ mod tests {
             has_scope: false,
             scope_mark: None,
             change_title: false,
+            level_title: false,
             places_drawn: None,
         }
     }
@@ -9366,7 +9383,7 @@ mod tests {
         let finding = json!({"dek": "{lead1.t}，{name.IT}{name.fossil}占比最高，为{comp_top}",
             "scoped": "{lead1.t}，图中各国中，{name.IT}{name.fossil}占比居首，为{comp_top}", "set": "图中各国中"});
         let fill = json!({"composition": {"bars": ["DE", "IT"], "dropped": [], "others": ["MT"], "left_out": []}, "finding": finding});
-        let drafts = text_drafts(&page, page_lead(Some(&fill), &page.charts), &titles, Some(&fill));
+        let drafts = text_drafts(&page, page_lead(Some(&fill), &page.charts), &titles, Some(&fill), false);
         let said: Vec<&str> = drafts.fields.iter().map(|(_, t)| t.as_str()).chain(drafts.slots.iter().map(|(_, t)| t.as_str())).collect();
         let all = said.join("\n");
         let ranking = crate::shape_registry::FRAMES.iter().find(|(r, v, _)| (*r, *v) == (Relation::Ranking, View::Slice)).unwrap().2;
@@ -9377,7 +9394,7 @@ mod tests {
         assert!(composition.iter().any(|w| all.contains(w)), "{all}");
         // every bar drawn, none left out: unscoped
         let whole = json!({"composition": {"bars": ["DE", "IT"], "dropped": [], "others": [], "left_out": []}, "finding": finding});
-        assert!(!text_drafts(&page, page_lead(Some(&whole), &page.charts), &titles, Some(&whole)).has_scope);
+        assert!(!text_drafts(&page, page_lead(Some(&whole), &page.charts), &titles, Some(&whole), false).has_scope);
         // any other page: drafted from its claims and charts, as before
         let column = json!({"knobs": {"spec": {"hero": {}}}});
         let before = next_page::draft_for(&claims, &charts, Vec::new(), page_lead(Some(&column), &charts))
@@ -9385,8 +9402,8 @@ mod tests {
             .with_scopes(&page.scopes)
             .with_finding(None)
             .with_periods(&page.times);
-        assert_eq!(text_drafts(&page, page_lead(Some(&column), &charts), &titles, Some(&column)), before);
-        assert_eq!(text_drafts(&page, page_lead(None, &charts), &titles, None), before);
+        assert_eq!(text_drafts(&page, page_lead(Some(&column), &charts), &titles, Some(&column), false), before);
+        assert_eq!(text_drafts(&page, page_lead(None, &charts), &titles, None, false), before);
     }
 
     /// A place the question names is never left out of a composition, read by code, not by name: a question that names Greece

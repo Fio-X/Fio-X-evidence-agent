@@ -24,7 +24,7 @@
 use std::collections::BTreeMap;
 
 use crate::next_flow::{
-    level_question, number_not_allowed, place_count_free, placeholders, question_word, unanswered_word, worded_number,
+    change_word, level_question, number_not_allowed, place_count_free, placeholders, question_word, unanswered_word, worded_number,
     year_after_fact_period, year_after_period, Ask, Choice,
 };
 use crate::shape_registry::{
@@ -131,6 +131,9 @@ pub struct Drafts {
     /// The page-level fields speak for the first-to-last change (draft_for): a reworded title that asks a level with no
     /// change word is refused (Ask::Text changes, next_flow level_question).
     pub change_title: bool,
+    /// The page draws one period's levels (a ranking or a map, draft_for) of a measure that is no change itself
+    /// (measures_a_change): a reworded title that names a change (next_flow change_word) is refused (Ask::Text levels).
+    pub level_title: bool,
     /// The number of distinct places the page draws (next_run places_drawn: the place codes of its drawn rows): a count of
     /// places of that number (四国) is no typed number on the text step (Ask::Text places). None when the run does not know it.
     pub places_drawn: Option<usize>,
@@ -248,6 +251,7 @@ pub fn draft_for(
         has_scope: false,
         scope_mark: None,
         change_title: lead == (Relation::Change, View::FirstToLast),
+        level_title: crate::shape_registry::LEVEL_LEADS.contains(&lead),
         places_drawn: None,
     }
 }
@@ -330,6 +334,13 @@ impl Drafts {
 
     /// The scope phrase the finding's scoped wording holds (next_run: the fill's finding set, the registry's words with the
     /// count a fact placeholder), on a scoped page only; so it follows with_scopes.
+    /// A measure that is itself a change (a growth rate, a change from a base year: the run's measures_a_change) may be
+    /// ranked under a change word (增速最高), so its title is no level title.
+    pub fn measuring_a_change(mut self, change: bool) -> Self {
+        self.level_title &= !change;
+        self
+    }
+
     pub fn with_scope_mark(mut self, mark: Option<String>) -> Self {
         self.scope_mark = mark.filter(|m| self.has_scope && !m.is_empty());
         self
@@ -379,6 +390,7 @@ impl Drafts {
             numbers: self.numbers.clone(),
             periods: self.periods.clone(),
             changes: self.changes(),
+            levels: self.levels(),
             scoped: self.scoped_fields(),
             titles: self.titles(),
             mark: self.scope_mark.clone().unwrap_or_default(),
@@ -403,6 +415,16 @@ impl Drafts {
         } else {
             Vec::new()
         }
+    }
+
+    /// The numbers of the fields that may not name a change: the title's on a level_title page, else none.
+    fn levels(&self) -> Vec<String> {
+        self.fields
+            .iter()
+            .position(|(t, _)| self.level_title && *t == Target::PageTitle)
+            .map(Self::number)
+            .into_iter()
+            .collect()
     }
 
     /// The numbers of the fields that state a change: the title's on a change_title page, else none.
@@ -462,6 +484,7 @@ impl Drafts {
                 || (self.change_title
                     && *target == Target::PageTitle
                     && level_question(wording).is_some())
+                || (self.level_title && *target == Target::PageTitle && change_word(wording).is_some())
                 || (*target == Target::PageTitle && question_word(wording).is_some())
             {
                 return Err(format!("{target:?}: the wording does not keep the draft's placeholders, types a number not allowed, asks a level on a change page or titles the page with a question"));
@@ -694,7 +717,9 @@ mod tests {
             .is_ok());
         // Each wording the rules suggest passes the check that suggests it, as a field and as a name.
         for suggested in crate::next_flow::RULE_SUGGESTIONS {
-            assert!(field(suggested).is_ok(), "{suggested}");
+            // the change rule's own examples are offered only on a change page; this one ranks one period
+            let offered = !crate::next_flow::CHANGE_TITLE_RULE.contains(suggested);
+            assert!(!offered || field(suggested).is_ok(), "{suggested}");
             assert!(
                 named
                     .ask(named.slot_ids())
@@ -773,6 +798,28 @@ mod tests {
         assert!(counted(Some(4)).is_ok());
         assert!(counted(Some(3)).is_err());
         assert!(counted(None).is_err());
+    }
+
+    /// Plan v4 item 7: a ranking (or a map) of one period's levels drafts a level title, whose reworded title may not name a
+    /// change (the ask lists it in `levels`, revised refuses a choice that skipped the check); a ranking of a measure that
+    /// is itself a change (measuring_a_change) and a page of the first-to-last change draft none.
+    #[test]
+    fn a_level_page_refuses_a_change_title_unless_its_measure_is_a_change() {
+        let (claims, charts) = q1();
+        let level = draft_for(&claims, &charts, Vec::new(), Some((Relation::Ranking, View::Slice)));
+        assert!(level.level_title && !level.change_title);
+        let Ask::Text { levels, .. } = level.ask(vec![]) else { unreachable!() };
+        assert_eq!(levels, ["1"]);
+        let revise = |d: &Drafts, t: &str| {
+            d.revised(&Choice::Text { text: BTreeMap::from([("1".to_string(), t.to_string())]), names: BTreeMap::new() })
+        };
+        assert!(revise(&level, "各国排放的水平与变化").is_err());
+        assert!(revise(&level, "各国排放量排名").is_ok());
+        let growth = level.clone().measuring_a_change(true);
+        assert!(!growth.level_title && revise(&growth, "各国经济增速排名").is_ok());
+        let change = draft_for(&claims, &charts, Vec::new(), Some((Relation::Change, View::FirstToLast)));
+        assert!(!change.level_title);
+        assert!(draft_for(&claims, &charts, Vec::new(), Some((Relation::Map, View::Slice))).level_title);
     }
 
     /// q1's and q6's stand-in pages: the bars drew each place's change between two ends, the title asked who is highest.
@@ -1116,10 +1163,10 @@ mod tests {
                 refused.problem
             );
             assert!(refused.problem.contains(crate::next_flow::SCOPE_RULE), "{}", refused.problem);
-            assert!(refused.problem.contains("'各方数值的变化'"), "{}", refused.problem);
+            assert!(refused.problem.contains("'各地的高低分布'"), "{}", refused.problem);
         }
         // The rule's example passes on the same page, and so does every field as drafted (the body's draft ranks).
-        assert!(ask.check(&one("1", "各方数值的变化")).is_ok());
+        assert!(ask.check(&one("1", "各地的高低分布")).is_ok());
         for (i, (_, text)) in drafts.fields.iter().enumerate() {
             let n = (i + 1).to_string();
             assert!(ask.check(&one(&n, text)).is_ok(), "{n}: {text}");
@@ -1127,13 +1174,13 @@ mod tests {
         // An accepted answer that rewords without ranking goes on the page whole: the guard puts back nothing.
         let answer = ask
             .check(&json!({"step": "text", "names": {}, "text": {
-                "1": "各方数值的变化",
+                "1": "各地的高低分布",
                 "2": "从高到低看各经济体",
                 "3": "按高低排列"}}))
             .unwrap();
         let (page, back) = drafts.scoped(drafts.revised(&answer).unwrap());
         assert!(back.is_empty(), "{back:?}");
-        assert_eq!(page[&Target::PageTitle], "各方数值的变化");
+        assert_eq!(page[&Target::PageTitle], "各地的高低分布");
         assert_eq!(page[&Target::PageDek], "从高到低看各经济体");
         assert_eq!(page[&Target::Heading(0)], "按高低排列");
         // No field carries the scope: it is the page's own field, not model text.
@@ -1237,7 +1284,7 @@ mod tests {
                 let ask = drafts.ask(Vec::new());
                 assert!(ask.check(&json!({"step": "text", "text": {"1": title}, "names": {}})).is_ok(), "{kind}");
                 // the title field is the one the question check holds, on every page
-                let asked = ask.check(&json!({"step": "text", "text": {"1": "占比为什么变了"}, "names": {}})).unwrap_err();
+                let asked = ask.check(&json!({"step": "text", "text": {"1": "占比为什么不同"}, "names": {}})).unwrap_err();
                 assert!(asked.problem.starts_with("field '1': '为什么' makes it a question; "), "{kind}: {}", asked.problem);
                 assert!(asked.problem.ends_with(&format!(", e.g. '{title}'")), "{kind}: {}", asked.problem);
                 assert_eq!(asked.allowed["titles"]["fields"], json!(["1"]), "{kind}");

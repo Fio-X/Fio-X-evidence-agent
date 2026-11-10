@@ -47,6 +47,9 @@ pub struct Measure {
 
 /// The measure kind of a Eurostat unit code (measure_semantics.mjs MEASURE_KINDS), by the prefixes classify.rs
 /// unit_additive reads; None for a code these do not cover, which is named, not guessed.
+/// The measure kind of a unit code that is a change over time (PCH, RCH).
+pub(crate) const CHANGE_KIND: &str = "change";
+
 pub(crate) fn measure_kind(code: &str) -> Option<&'static str> {
     const COUNTS: [&str; 2] = ["NR", "PER"];
     const AMOUNTS: [&str; 5] = ["T", "KTOE", "TJ", "GWH", "EUR"];
@@ -62,7 +65,7 @@ pub(crate) fn measure_kind(code: &str) -> Option<&'static str> {
         && code[1..3].bytes().all(|b| b.is_ascii_digit())
         && &code[3..4] == "_";
     if code.starts_with("PCH") || code.starts_with("RCH") {
-        Some("change")
+        Some(CHANGE_KIND)
     } else if code == "PC" || code == "PC_TOT" {
         // A part of its whole; another PC_ code (of GDP, of the population) is a ratio to something else, not guessed.
         Some("share")

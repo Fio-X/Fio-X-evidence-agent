@@ -225,6 +225,9 @@ pub enum Ask {
     /// `changes`: the fields that state a change (the title of a page whose bars draw the change between its two ends,
     /// next_page Drafts::change_title): a wording there that asks a level with no change word is refused (level_question);
     /// empty on any other page.
+    /// `levels`: the fields that may not name a change (the title of a page that draws one period's levels of a measure that
+    /// is no change itself, next_page Drafts::level_title): a wording there with a CHANGE_WORDS word is refused
+    /// (change_word); empty on any other page.
     /// `scoped`: the fields of a page whose chart shows only the places the program kept (next_page Drafts::has_scope): a
     /// wording there that differs from its draft and ranks (ranking_word) is refused; empty on any other page.
     /// `titles`: the page title's field (next_page Drafts::titles): a wording there that asks (question_word) is refused,
@@ -235,6 +238,7 @@ pub enum Ask {
         numbers: Vec<String>,
         periods: Vec<String>,
         changes: Vec<String>,
+        levels: Vec<String>,
         scoped: Vec<String>,
         titles: Vec<String>,
         /// The page's scope phrase as its drafts hold it (next_page Drafts::scope_mark: the compared set's words from the
@@ -746,6 +750,7 @@ impl Ask {
                 numbers,
                 periods,
                 changes,
+                levels,
                 scoped,
                 titles,
                 ..
@@ -754,7 +759,7 @@ impl Ask {
                 "properties": {"step": step,
                     "text": {"type": "object", "additionalProperties": false,
                         "properties": fields.keys().map(|k| (k.clone(), json!({"type": "string"}))).collect::<Map<_, _>>(),
-                        "description": format!("field number -> revised wording; leave a field out to keep the draft; keep every {{placeholder}}; {}; {NUMBER_WORD_RULE}{}{}{}{}", typed_rule(numbers), period_rule(periods), change_rule(changes), scope_rule(scoped), title_rule(titles))},
+                        "description": format!("field number -> revised wording; leave a field out to keep the draft; keep every {{placeholder}}; {}; {NUMBER_WORD_RULE}{}{}{}{}{}", typed_rule(numbers), period_rule(periods), change_rule(changes), level_rule(levels), scope_rule(scoped), title_rule(titles))},
                     "names": {"type": "object", "additionalProperties": false, "required": slots,
                         "properties": slots.iter().map(|k| (k.clone(), json!({"type": "string"}))).collect::<Map<_, _>>(),
                         "description": format!("untranslated slot number -> Chinese name, at most {NAME_MAX_CHARS} characters, no number; {NUMBER_WORD_RULE}")}}})
@@ -832,6 +837,7 @@ impl Ask {
                 numbers,
                 periods,
                 changes,
+                levels,
                 scoped,
                 titles,
                 places,
@@ -845,6 +851,9 @@ impl Ask {
                 }
                 if !changes.is_empty() {
                     allowed["changes"] = json!({"fields": changes, "words": CHANGE_WORDS});
+                }
+                if !levels.is_empty() {
+                    allowed["levels"] = json!({"fields": levels, "words": CHANGE_WORDS, "rule": LEVEL_RULE});
                 }
                 if !scoped.is_empty() {
                     allowed["scoped"] = json!({"fields": scoped, "words": crate::next_page::SUPERLATIVES});
@@ -1129,6 +1138,7 @@ impl Ask {
                 numbers,
                 periods,
                 changes,
+                levels,
                 scoped,
                 titles,
                 mark,
@@ -1179,6 +1189,9 @@ impl Ask {
                     }
                     if let Some(level) = level_question(revised).filter(|_| changes.contains(id)) {
                         return Err(self.refuse(format!("field '{id}': '{level}' asks a level{}", change_rule(changes))));
+                    }
+                    if let Some(word) = change_word(revised).filter(|_| levels.contains(id)) {
+                        return Err(self.refuse(format!("field '{id}': '{word}' names a change{}, e.g. '{draft}'", level_rule(levels))));
                     }
                     // On a scoped page a ranking word holds only among the kept places: refused here, so the model words
                     // it again, rather than put back after acceptance (next_page Drafts::scoped).
@@ -1790,6 +1803,18 @@ fn period_rule(periods: &[String]) -> String {
 
 /// The rule of the fields that state a change (Ask::Text changes), said to the model in the ask and in a refusal; empty
 /// when no field does.
+/// LEVEL_RULE with the fields it holds for; empty when the page draws no levels.
+fn level_rule(levels: &[String]) -> String {
+    if levels.is_empty() {
+        String::new()
+    } else {
+        format!("; {LEVEL_RULE} (field {})", levels.join(", "))
+    }
+}
+
+/// Why a level page's title names no change: the page ranks one period, the change between periods is not drawn.
+pub const LEVEL_RULE: &str = "this page ranks the places in one period and draws no change between periods: name what it ranks, with no change word";
+
 fn change_rule(changes: &[String]) -> String {
     if changes.is_empty() {
         String::new()
@@ -1811,7 +1836,7 @@ pub const CHANGE_WORDS: [&str; 10] = ["变", "增", "减", "升", "降", "涨", 
 /// The rule of the fields of a scoped page (Ask::Text scoped), said to the model in the ask and in a refusal, with an
 /// example that passes; the words are next_page SUPERLATIVES.
 pub const SCOPE_RULE: &str = "this page's chart shows only the places the program kept, not all of them, so a ranking word \
-     (最高, 最低, 领先, 垫底, 第一, 最多, 最少) holds only among those: a reworded field names none outside the draft's set phrase (在…中, which says which places), e.g. '各方数值的变化', \
+     (最高, 最低, 领先, 垫底, 第一, 最多, 最少) holds only among those: a reworded field names none outside the draft's set phrase (在…中, which says which places), e.g. '各地的高低分布', \
      and keeps that set phrase word for word where its draft says it";
 
 /// The rule of the title field (Ask::Text titles), said to the model in the ask and in a refusal, with a label and a
@@ -1858,6 +1883,12 @@ pub fn ranking_word(text: &str) -> Option<&'static str> {
         .find(|w| text.contains(*w))
 }
 
+/// The first CHANGE_WORDS word a wording holds: on a page that draws one period's levels, such a title names a change the
+/// page does not show.
+pub fn change_word(text: &str) -> Option<&'static str> {
+    CHANGE_WORDS.iter().copied().find(|w| text.contains(*w))
+}
+
 /// The LEVEL_WORDS word a wording asks with when it names no change (no CHANGE_WORDS word, no 从 before a 到): on a page
 /// that draws the change, such a title asks what the page does not show.
 pub fn level_question(text: &str) -> Option<&'static str> {
@@ -1869,7 +1900,7 @@ pub fn level_question(text: &str) -> Option<&'static str> {
 /// The typed-number rule of the page text, the same as the design pack's claim-template check (newsroom.ts: "every number,
 /// years included, must be a placeholder"), with one example; the request, the schema and the refusal all say it in these words.
 pub const TYPED_NUMBER_RULE: &str =
-    "type no number, years included: a year goes through a {placeholder} the draft holds, or is left out (write 各方数值的变化, not 2016年到2024年的变化)";
+    "type no number, years included: a year goes through a {placeholder} the draft holds, or is left out (write 各地的高低分布, not 2024年各地的高低分布)";
 /// The number-word rule of the page text, with the examples it refuses.
 pub const NUMBER_WORD_RULE: &str = "no number in words either (二十七, 两国, 三倍, 两成, 过半)";
 /// The first number a text types that is not one of `allowed`.
@@ -5507,6 +5538,7 @@ mod tests {
             numbers: vec!["2023".to_string()],
             periods: Vec::new(),
             changes: Vec::new(),
+            levels: Vec::new(),
             scoped: Vec::new(),
             titles: Vec::new(),
             mark: String::new(),
@@ -6101,6 +6133,7 @@ mod tests {
             numbers: Vec::new(),
             periods: periods.iter().map(|p| p.to_string()).collect(),
             changes: Vec::new(),
+            levels: Vec::new(),
             scoped: Vec::new(),
             titles: Vec::new(),
             mark: String::new(),
@@ -6158,6 +6191,7 @@ mod tests {
             numbers: Vec::new(),
             periods: Vec::new(),
             changes: changes.iter().map(|c| c.to_string()).collect(),
+            levels: Vec::new(),
             scoped: Vec::new(),
             titles: Vec::new(),
             mark: String::new(),
@@ -6186,6 +6220,42 @@ mod tests {
         assert!(!described(&ask(&[])).contains(CHANGE_TITLE_RULE));
     }
 
+    /// Plan v4 item 7 (n47, t4): a level page's title named a change (各国温室气体排放的水平与变化) over one year's ranking. On
+    /// a field `levels` lists, a wording with a CHANGE_WORDS word is refused with the word, the rule and the field's draft
+    /// as the example; a wording with none passes, and so does every field of a page with no level title.
+    #[test]
+    fn a_change_word_is_refused_in_a_level_title() {
+        let ask = |levels: &[&str]| Ask::Text {
+            fields: BTreeMap::from([("1".to_string(), "各国温室气体排放量".to_string())]),
+            slots: Vec::new(),
+            numbers: Vec::new(),
+            periods: Vec::new(),
+            changes: Vec::new(),
+            levels: levels.iter().map(|c| c.to_string()).collect(),
+            scoped: Vec::new(),
+            titles: Vec::new(),
+            mark: String::new(),
+            places: None,
+        };
+        let answer = |t: &str| json!({"step": "text", "text": {"1": t}, "names": {}});
+        for (title, word) in [("各国温室气体排放的水平与变化", "变"), ("各国房价指数的涨幅", "涨"), ("欧盟各国排放下降了吗", "降")] {
+            let refused = ask(&["1"]).check(&answer(title)).unwrap_err();
+            assert!(refused.problem.starts_with(&format!("field '1': '{word}' names a change; ")), "{}", refused.problem);
+            assert!(refused.problem.contains(LEVEL_RULE) && refused.problem.contains("各国温室气体排放量"), "{}", refused.problem);
+            assert_eq!(refused.allowed["levels"], json!({"fields": ["1"], "words": CHANGE_WORDS, "rule": LEVEL_RULE}));
+        }
+        assert!(ask(&["1"]).check(&answer("德国温室气体排放量居首")).is_ok());
+        assert!(ask(&[]).check(&answer("各国温室气体排放的水平与变化")).is_ok());
+        let described = |a: &Ask| a.schema()["properties"]["text"]["description"].as_str().unwrap().to_string();
+        assert!(described(&ask(&["1"])).contains(LEVEL_RULE) && !described(&ask(&[])).contains(LEVEL_RULE));
+        // A wording a rule offers on every page passes on a level page; only the change rule's own examples name a change,
+        // and that rule is said only on a change page.
+        for suggested in RULE_SUGGESTIONS {
+            let on_change_pages = CHANGE_TITLE_RULE.contains(suggested);
+            assert_eq!(ask(&["1"]).check(&answer(suggested)).is_ok(), !on_change_pages, "{suggested}");
+        }
+    }
+
     /// A scoped stand-in title ranked and was put back after acceptance, unsaid: on a field `scoped` lists, a wording that
     /// differs from its draft and holds a SUPERLATIVES word is refused with the word, the rule and its example; a field as
     /// drafted, and every field of a page not scoped, pass as before.
@@ -6200,6 +6270,7 @@ mod tests {
             numbers: Vec::new(),
             periods: Vec::new(),
             changes: vec!["1".to_string()],
+            levels: Vec::new(),
             scoped: scoped.iter().map(|s| s.to_string()).collect(),
             titles: Vec::new(),
             mark: String::new(),
@@ -6210,7 +6281,7 @@ mod tests {
         let refused = both.check(&answer("1", "从起始到最近，谁升得最多")).unwrap_err();
         assert!(refused.problem.starts_with("field '1': '最多' ranks; "), "{}", refused.problem);
         assert!(refused.problem.contains(SCOPE_RULE), "{}", refused.problem);
-        assert!(refused.problem.contains("'各方数值的变化'"), "{}", refused.problem);
+        assert!(refused.problem.contains("'各地的高低分布'"), "{}", refused.problem);
         assert_eq!(
             refused.allowed["scoped"],
             json!({"fields": ["1", "2"], "words": crate::next_page::SUPERLATIVES})
@@ -6247,6 +6318,7 @@ mod tests {
             numbers: Vec::new(),
             periods: Vec::new(),
             changes: changes.iter().map(|c| c.to_string()).collect(),
+            levels: Vec::new(),
             scoped: scoped.iter().map(|s| s.to_string()).collect(),
             titles: titles.iter().map(|t| t.to_string()).collect(),
             mark: String::new(),
@@ -6521,6 +6593,7 @@ mod tests {
             numbers: Vec::new(),
             periods: Vec::new(),
             changes: Vec::new(),
+            levels: Vec::new(),
             scoped: Vec::new(),
             titles: Vec::new(),
             mark: String::new(),
@@ -6563,6 +6636,7 @@ mod tests {
             numbers: Vec::new(),
             periods: Vec::new(),
             changes: Vec::new(),
+            levels: Vec::new(),
             scoped: Vec::new(),
             titles: Vec::new(),
             mark: String::new(),
