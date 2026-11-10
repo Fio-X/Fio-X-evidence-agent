@@ -6247,6 +6247,9 @@ mod tests {
             assert!(CHANGE_WORDS.iter().any(|w| term.contains(*w)), "{term}");
             assert!(!term.chars().any(|c| c.is_ascii_digit()), "{term}");
             assert_eq!(change_word(term), None, "{term}");
+            // a bare change word (增长, 变化) would free every such word: a term keeps two characters besides its change word
+            let rest = CHANGE_WORDS.iter().fold(term.clone(), |t, w| t.replace(*w, ""));
+            assert!(rest.chars().count() >= 2, "{term}");
         }
     }
 
