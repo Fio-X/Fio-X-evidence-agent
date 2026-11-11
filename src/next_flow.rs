@@ -250,7 +250,7 @@ pub enum Ask {
         places: Option<usize>,
         /// The names of the places and parts the page prints (next_page Drafts::members, the fill's labels), each printed
         /// through its name placeholder: a reworded field that types one the question does not write (`unasked`) and its
-        /// draft does not type is refused (MEMBER_RULE); a reworded title that types any of them with a FINDING_WORDS word
+        /// draft does not type is refused (MEMBER_RULE); a reworded title that types any of them with a finding_words() word
         /// its draft does not hold is refused (TITLE_FINDING_RULE). Empty when the run does not know them.
         members: Vec<String>,
         /// The `members` the question does not write.
@@ -873,10 +873,10 @@ impl Ask {
                     allowed["titles"] = json!({"fields": titles, "words": QUESTION_WORDS});
                 }
                 if !unasked.is_empty() {
-                    allowed["members"] = json!({"names": unasked, "rule": MEMBER_RULE});
+                    allowed["members"] = json!({"unasked": unasked, "rule": MEMBER_RULE});
                 }
                 if !members.is_empty() && !titles.is_empty() {
-                    allowed["title_findings"] = json!({"fields": titles, "names": members, "words": FINDING_WORDS, "rule": TITLE_FINDING_RULE});
+                    allowed["title_findings"] = json!({"fields": titles, "members": members, "words": finding_words(), "rule": TITLE_FINDING_RULE});
                 }
                 if let Some(n) = places {
                     allowed["place_count"] = json!({"places": n, "nouns": free_words().place_counts.iter().map(|w| w.iter().collect::<String>()).collect::<Vec<_>>()});
@@ -1919,12 +1919,24 @@ pub const MEMBER_RULE: &str = "is a place or part the page draws, which the prog
 /// Why a reworded title may not say a drawn place's or part's standing (Ask::Text members, titles): said after the word.
 pub const TITLE_FINDING_RULE: &str = "says where a place or part the title names stands: the title is a label (what the page \
      is about), and the program's headline says the finding from the data; name no standing of a place or part there";
-/// The words that say a place's or part's standing (the highest, ahead, clearly above, mostly): SUPERLATIVES and
-/// LEVEL_WORDS with the comparisons and the dominance words the stand-ins wrote into titles (rounds 7 to 12).
-pub const FINDING_WORDS: [&str; 27] = [
-    "最高", "最低", "最多", "最少", "最大", "最小", "最快", "最慢", "最深", "领先", "落后", "垫底", "第一", "居首", "居前", "居末",
-    "居后", "偏高", "偏低", "高于", "低于", "明显", "为主", "主要", "主导", "较快", "较慢",
-];
+/// The words that say a place's or part's standing (next_knowledge::TITLE_FINDINGS_ZH), read once. A file that does not
+/// parse or holds no word fails loud here (a test reads it), never a check that silently holds no word.
+pub fn finding_words() -> &'static [String] {
+    static WORDS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    WORDS.get_or_init(|| {
+        let v: Value = serde_json::from_str(crate::next_knowledge::TITLE_FINDINGS_ZH).expect("title-findings-zh.json parses");
+        let words: Vec<String> = v["words"]
+            .as_array()
+            .expect("title-findings-zh.json holds words")
+            .iter()
+            .filter_map(Value::as_str)
+            .filter(|w| !w.is_empty())
+            .map(str::to_string)
+            .collect();
+        assert!(!words.is_empty(), "title-findings-zh.json holds no word");
+        words
+    })
+}
 
 /// A text read for its own words: without its placeholders (a name placeholder prints the data's name, a value one the
 /// data's number) and without the knowledge group's level terms (a measure's name such as 最低工资 holds no standing).
@@ -1950,10 +1962,10 @@ pub fn typed_member(revised: &str, draft: &str, names: &[String]) -> Option<Stri
     names.into_iter().find(|n| said.contains(n.as_str()) && !drafted.contains(n.as_str())).cloned()
 }
 
-/// The first FINDING_WORDS word a reworded field holds in its own words that its draft does not.
+/// The first finding_words() word a reworded field holds in its own words that its draft does not.
 pub fn finding_word(revised: &str, draft: &str) -> Option<&'static str> {
     let (said, drafted) = (own_words(revised), own_words(draft));
-    FINDING_WORDS.iter().copied().find(|w| said.contains(*w) && !drafted.contains(*w))
+    finding_words().iter().map(String::as_str).find(|w| said.contains(*w) && !drafted.contains(*w))
 }
 
 /// MEMBER_RULE with the names it holds for, and TITLE_FINDING_RULE with the title field; empty when the ask knows no names.
@@ -1963,7 +1975,8 @@ fn member_rule(unasked: &[String], titles: &[String], members: &[String]) -> Str
         rule += &format!("; a name such as {} {MEMBER_RULE}", unasked.iter().take(6).cloned().collect::<Vec<_>>().join(", "));
     }
     if !members.is_empty() && !titles.is_empty() {
-        rule += &format!("; a title that names one, with a word such as 最高, 领先, 居前, 明显 or 为主, {TITLE_FINDING_RULE} (field {})", titles.join(", "));
+        let words = finding_words().iter().take(6).cloned().collect::<Vec<_>>().join(", ");
+        rule += &format!("; a title that names one, with a word such as {words}, {TITLE_FINDING_RULE} (field {})", titles.join(", "));
     }
     rule
 }
@@ -11129,7 +11142,7 @@ mod tests {
         let refused = parts.check(&answer("1", "各国发电结构以化石能源为主要构成")).unwrap_err();
         assert!(refused.problem.starts_with("field '1': '化石能源' is a place or part the page draws"), "{}", refused.problem);
         assert!(refused.problem.contains("e.g. '整体的构成与份额'"), "{}", refused.problem);
-        assert_eq!(refused.allowed["members"]["names"], json!(["化石能源", "可再生能源", "核能", "波兰", "法国"]));
+        assert_eq!(refused.allowed["members"]["unasked"], json!(["化石能源", "可再生能源", "核能", "波兰", "法国"]));
         assert!(parts.check(&answer("3", "可再生能源占多大份额？")).is_err(), "any field, not only the title");
         assert_eq!(typed_member("可再生能源的份额", "整体", &["可再生能源".into(), "能源".into()]), Some("可再生能源".into()), "longest first");
         for passes in ["各国发电结构的构成", "欧盟各国发电结构", "{lead1.t}，{name.PL}{name.fossil}占比居首，为{comp_top}"] {
@@ -11158,6 +11171,8 @@ mod tests {
         let none = ask(&["各方的高低排名"], &[], "南非");
         assert!(none.check(&answer("1", "南非的青年失业率明显偏高")).is_ok());
         assert!(none.allowed().get("members").is_none() && none.allowed().get("title_findings").is_none());
+        // the words are the knowledge group's list (title-findings-zh.json), read once
+        assert!(["为主", "居前", "偏高", "领先"].iter().all(|w| finding_words().iter().any(|f| f == w)));
         // the rule goes to the model with the names, and every wording a rule suggests passes it
         let described = places.schema()["properties"]["text"]["description"].as_str().unwrap().to_string();
         assert!(described.contains(TITLE_FINDING_RULE) && described.contains(MEMBER_RULE), "{described}");

@@ -1,0 +1,7 @@
+{
+ "note": "The words that say where a place or part stands (the highest, ahead, clearly above, mostly), read by the flow's text check (next_flow finding_word): a reworded title that names a place or part the page draws, with one of these words its draft does not hold, is refused, since the program's headline says the finding from the data. The superlatives and level words of the text step's rules, with the comparison and dominance words the stand-ins wrote into page titles in rounds 7 to 12 of the dev set (34 such titles, at most one per page). Nothing prints them from here.",
+ "words": [
+  "最高", "最低", "最多", "最少", "最大", "最小", "最快", "最慢", "最深", "领先", "落后", "垫底", "第一", "居首", "居前", "居末",
+  "居后", "偏高", "偏低", "高于", "低于", "明显", "为主", "主要", "主导", "较快", "较慢"
+ ]
+}
