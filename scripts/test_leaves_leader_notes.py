@@ -484,7 +484,9 @@ class LeaderNotes(unittest.TestCase):
         # straight leader, off every circle and label; China's note is drawn byte for byte as before
         f0, svg0, _ = self.q5(ALT_BREAKS=0)
         self.assertEqual(f0.dropped, [("NGA", "no free place for the note")])
-        chn = [("name:zh_names:iso3:CHN", "中国 升幅最大，比第二名高", 449.3, 51.6), ("fact:vs_hi", "0.6 个百分点", 449.3, 73.2)]  # as the run's page drew them
+        # as the run's page drew them at 51.6 and 73.2 until 11-11; with the bubbles' names claimed at layer 1's 0.9 em ascent the
+        # note keeps clear of a bubble name it touched and sits 11.2 px higher
+        chn = [("name:zh_names:iso3:CHN", "中国 升幅最大，比第二名高", 449.3, 40.4), ("fact:vs_hi", "0.6 个百分点", 449.3, 62.0)]
         self.assertEqual([(t["src"], t["text"], t["x"], t["y"]) for t in run.drawn(svg0.split('data-node="leader_notes"')[1])[0]], chn)
         nga = next(n for n in f0.notes if n["_id"] == "NGA")
         self.assertGreater(nga["_w"], 240); self.assertEqual(len(nga["_lines"]), 2)  # its own layout: two lines, the break before the number
@@ -599,13 +601,15 @@ class LeaderNotes(unittest.TestCase):
         # B5 (11-04): the q4 page's China note took a 243 px leader round the USA note placed above it (bottom first, 29). Three
         # data shapes: the EU level map, the q5 change page's 8 economies, the q6 page's 20 citizenships (world maps); each
         # pair's longest leader top first, then as drawn now (the drawing order is the order kept)
-        for kind, a, b, before, now in [("eu", "HR", "BG", [129, 204], [19, 93]), ("q5", "BGD", "PAK", [13, 262], [23, 175]),
+        # (the EU pair HR, BG, [129, 204] -> [19, 93] here until 11-11: with the bubbles' names claimed at layer 1's 0.9 em ascent
+        # its top-first leaders are 93 and 19 px, under LONG_LEAD, so it is kept top first, below)
+        for kind, a, b, before, now in [("q5", "BGD", "PAK", [24, 262], [35, 175]),
                                         ("q6", "CD", "PE", [41, 406], [23, 41]), ("q6", "BD", "SO", [109, 201], [44, 120])]:
             self.assertEqual(self.world(kind, a, b, long=10 ** 9), (before, []), (kind, a, b))
             self.assertEqual(self.world(kind, a, b), (now, []), (kind, a, b))
             self.assertLess(max(now), max(before))
         # a pair whose bottom-first order is no shorter keeps top first, as drawn before; one under LONG_LEAD is never re-laid
-        for kind, a, b in [("q6", "CD", "GN"), ("eu", "SE", "LU")]:
+        for kind, a, b in [("q6", "CD", "GN"), ("eu", "SE", "LU"), ("eu", "HR", "BG")]:
             self.assertEqual(self.world(kind, a, b), self.world(kind, a, b, long=10 ** 9), (kind, a, b))
 
     def test_a_note_that_fits_one_line_draws_as_before(self):

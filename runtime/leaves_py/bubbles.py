@@ -294,7 +294,9 @@ def cl_bubbles_placed(f, occ, placed):
             occ.add_line(list(pts), "bubbles", "leader")
         wmax = max(tw(nm, sz), tw(vt[1], sz))
         x0 = tx if anchor == "start" else tx - wmax if anchor == "end" else tx - wmax / 2
-        bx = (x0, ty - sz * 0.8, x0 + wmax, ty + sz * 1.65)
+        # claimed with layer 1's ascent (0.9 em, next_leaf text_box), which its overlap check reads the drawn name by: claimed at
+        # wbkit's 0.8 em, a later layer's text set in the 0.1 em between passed here and was refused there (round 10 r1, s5)
+        bx = (x0, ty - sz * 0.9, x0 + wmax, ty + sz * 1.65)
         f.label_boxes.append((c, bx)); occ.add(bx, "bubbles")
         o.append(K.txt(B, tx, ty, sz, "var(--t-title)", i["_n"][0], tw(nm, sz), anchor=anchor, weight=700 if c in f.hl | f.noted else 400, tag=f"name {c}", style=halo))
         o.append(K.txt(B, tx, ty + sz * 1.4, sz, f"var({VALUE_INK})", vt[0], tw(vt[1], sz), anchor=anchor, tag=f"value {c}", style=halo))
