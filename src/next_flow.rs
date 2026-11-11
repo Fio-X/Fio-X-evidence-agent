@@ -248,6 +248,13 @@ pub enum Ask {
         /// The number of distinct places the page draws (next_page Drafts::places_drawn): a count of places of that number
         /// (四国, 两个国家) is no typed number (place_count_free); None, none is.
         places: Option<usize>,
+        /// The names of the places and parts the page prints (next_page Drafts::members, the fill's labels), each printed
+        /// through its name placeholder: a reworded field that types one the question does not write (`unasked`) and its
+        /// draft does not type is refused (MEMBER_RULE); a reworded title that types any of them with a FINDING_WORDS word
+        /// its draft does not hold is refused (TITLE_FINDING_RULE). Empty when the run does not know them.
+        members: Vec<String>,
+        /// The `members` the question does not write.
+        unasked: Vec<String>,
     },
     /// The image review of the published page's screenshot: each of VISION_QUESTIONS answered yes or no, with a one-line
     /// reason for a no. Advice only: the answer is recorded, it never stops a run and never verifies a page.
@@ -753,13 +760,15 @@ impl Ask {
                 levels,
                 scoped,
                 titles,
+                members,
+                unasked,
                 ..
             } => {
                 json!({"type": "object", "additionalProperties": false, "required": ["step", "text", "names"],
                 "properties": {"step": step,
                     "text": {"type": "object", "additionalProperties": false,
                         "properties": fields.keys().map(|k| (k.clone(), json!({"type": "string"}))).collect::<Map<_, _>>(),
-                        "description": format!("field number -> revised wording; leave a field out to keep the draft; keep every {{placeholder}}; {}; {NUMBER_WORD_RULE}{}{}{}{}{}", typed_rule(numbers), period_rule(periods), change_rule(changes), level_rule(levels), scope_rule(scoped), title_rule(titles))},
+                        "description": format!("field number -> revised wording; leave a field out to keep the draft; keep every {{placeholder}}; {}; {NUMBER_WORD_RULE}{}{}{}{}{}{}", typed_rule(numbers), period_rule(periods), change_rule(changes), level_rule(levels), scope_rule(scoped), title_rule(titles), member_rule(unasked, titles, members))},
                     "names": {"type": "object", "additionalProperties": false, "required": slots,
                         "properties": slots.iter().map(|k| (k.clone(), json!({"type": "string"}))).collect::<Map<_, _>>(),
                         "description": format!("untranslated slot number -> Chinese name, at most {NAME_MAX_CHARS} characters, no number; {NUMBER_WORD_RULE}")}}})
@@ -841,6 +850,8 @@ impl Ask {
                 scoped,
                 titles,
                 places,
+                members,
+                unasked,
                 ..
             } => {
                 let mut allowed = json!({"step": "text",
@@ -860,6 +871,12 @@ impl Ask {
                 }
                 if !titles.is_empty() {
                     allowed["titles"] = json!({"fields": titles, "words": QUESTION_WORDS});
+                }
+                if !unasked.is_empty() {
+                    allowed["members"] = json!({"names": unasked, "rule": MEMBER_RULE});
+                }
+                if !members.is_empty() && !titles.is_empty() {
+                    allowed["title_findings"] = json!({"fields": titles, "names": members, "words": FINDING_WORDS, "rule": TITLE_FINDING_RULE});
                 }
                 if let Some(n) = places {
                     allowed["place_count"] = json!({"places": n, "nouns": free_words().place_counts.iter().map(|w| w.iter().collect::<String>()).collect::<Vec<_>>()});
@@ -1143,6 +1160,8 @@ impl Ask {
                 titles,
                 mark,
                 places,
+                members,
+                unasked,
             } => {
                 let text = strings(&map["text"])
                     .ok_or_else(|| self.refuse("text must map field numbers to wording"))?;
@@ -1209,6 +1228,17 @@ impl Ask {
                             "field '{id}': '{word}' makes it a question{}, e.g. '{draft}'",
                             title_rule(titles)
                         )));
+                    }
+                    // A place or part the page draws is named through its placeholder, which the program fills from the
+                    // data: one the question does not write, typed where the draft does not, names what no fact gave.
+                    if let Some(name) = typed_member(revised, draft, unasked) {
+                        return Err(self.refuse(format!("field '{id}': '{name}' {MEMBER_RULE}, e.g. '{draft}'")));
+                    }
+                    // A title that names a drawn place or part says no standing of it: the finding is the program's headline.
+                    if titles.contains(id) {
+                        if let Some(word) = typed_member(revised, draft, members).and_then(|_| finding_word(revised, draft)) {
+                            return Err(self.refuse(format!("field '{id}': '{word}' {TITLE_FINDING_RULE}, e.g. '{draft}'")));
+                        }
                     }
                 }
                 let names = strings(&map["names"])
@@ -1881,6 +1911,61 @@ pub fn ranking_word(text: &str) -> Option<&'static str> {
         .iter()
         .copied()
         .find(|w| text.contains(*w))
+}
+
+/// Why a reworded field may not type a drawn place's or part's name (Ask::Text members): said after the name in a refusal.
+pub const MEMBER_RULE: &str = "is a place or part the page draws, which the program names from the data through its {name.<code>} \
+     placeholder: a reworded field types none of the page's names the question does not write, where its draft does not";
+/// Why a reworded title may not say a drawn place's or part's standing (Ask::Text members, titles): said after the word.
+pub const TITLE_FINDING_RULE: &str = "says where a place or part the title names stands: the title is a label (what the page \
+     is about), and the program's headline says the finding from the data; name no standing of a place or part there";
+/// The words that say a place's or part's standing (the highest, ahead, clearly above, mostly): SUPERLATIVES and
+/// LEVEL_WORDS with the comparisons and the dominance words the stand-ins wrote into titles (rounds 7 to 12).
+pub const FINDING_WORDS: [&str; 27] = [
+    "最高", "最低", "最多", "最少", "最大", "最小", "最快", "最慢", "最深", "领先", "落后", "垫底", "第一", "居首", "居前", "居末",
+    "居后", "偏高", "偏低", "高于", "低于", "明显", "为主", "主要", "主导", "较快", "较慢",
+];
+
+/// A text read for its own words: without its placeholders (a name placeholder prints the data's name, a value one the
+/// data's number) and without the knowledge group's level terms (a measure's name such as 最低工资 holds no standing).
+fn own_words(text: &str) -> String {
+    let mut out = String::new();
+    let mut depth = 0usize;
+    for c in text.chars() {
+        match c {
+            '{' => depth += 1,
+            '}' => depth = depth.saturating_sub(1),
+            _ if depth == 0 => out.push(c),
+            _ => {}
+        }
+    }
+    level_terms().iter().fold(out, |t, term| t.replace(term.as_str(), ""))
+}
+
+/// The first of `names` (longest first) a reworded field types in its own words that its draft does not type.
+pub fn typed_member(revised: &str, draft: &str, names: &[String]) -> Option<String> {
+    let (said, drafted) = (own_words(revised), own_words(draft));
+    let mut names: Vec<&String> = names.iter().filter(|n| !n.trim().is_empty()).collect();
+    names.sort_by_key(|n| std::cmp::Reverse(n.chars().count()));
+    names.into_iter().find(|n| said.contains(n.as_str()) && !drafted.contains(n.as_str())).cloned()
+}
+
+/// The first FINDING_WORDS word a reworded field holds in its own words that its draft does not.
+pub fn finding_word(revised: &str, draft: &str) -> Option<&'static str> {
+    let (said, drafted) = (own_words(revised), own_words(draft));
+    FINDING_WORDS.iter().copied().find(|w| said.contains(*w) && !drafted.contains(*w))
+}
+
+/// MEMBER_RULE with the names it holds for, and TITLE_FINDING_RULE with the title field; empty when the ask knows no names.
+fn member_rule(unasked: &[String], titles: &[String], members: &[String]) -> String {
+    let mut rule = String::new();
+    if !unasked.is_empty() {
+        rule += &format!("; a name such as {} {MEMBER_RULE}", unasked.iter().take(6).cloned().collect::<Vec<_>>().join(", "));
+    }
+    if !members.is_empty() && !titles.is_empty() {
+        rule += &format!("; a title that names one, with a word such as 最高, 领先, 居前, 明显 or 为主, {TITLE_FINDING_RULE} (field {})", titles.join(", "));
+    }
+    rule
 }
 
 /// The first CHANGE_WORDS word a wording holds, read without the knowledge group's level terms (a measure's name such as
@@ -5561,6 +5646,8 @@ mod tests {
             titles: Vec::new(),
             mark: String::new(),
             places: None,
+            members: Vec::new(),
+            unasked: Vec::new(),
         }
     }
 
@@ -6156,6 +6243,8 @@ mod tests {
             titles: Vec::new(),
             mark: String::new(),
             places: None,
+            members: Vec::new(),
+            unasked: Vec::new(),
         };
         let answer = |t: &str| json!({"step": "text", "text": {"1": t}, "names": {}});
         let monthly = ask(&["2026-08"]);
@@ -6214,6 +6303,8 @@ mod tests {
             titles: Vec::new(),
             mark: String::new(),
             places: None,
+            members: Vec::new(),
+            unasked: Vec::new(),
         };
         let answer = |n: &str, t: &str| json!({"step": "text", "text": {n: t}, "names": {}});
         let refused = ask(&["1"]).check(&answer("1", "哪国最高")).unwrap_err();
@@ -6269,6 +6360,8 @@ mod tests {
             titles: Vec::new(),
             mark: String::new(),
             places: None,
+            members: Vec::new(),
+            unasked: Vec::new(),
         };
         let answer = |t: &str| json!({"step": "text", "text": {"1": t}, "names": {}});
         for (title, word) in [("各国温室气体排放的水平与变化", "变"), ("各国房价指数的涨幅", "涨"), ("欧盟各国排放下降了吗", "降")] {
@@ -6319,6 +6412,8 @@ mod tests {
             titles: Vec::new(),
             mark: String::new(),
             places: None,
+            members: Vec::new(),
+            unasked: Vec::new(),
         };
         let answer = |n: &str, t: &str| json!({"step": "text", "text": {n: t}, "names": {}});
         let both = ask(&["1", "2"]);
@@ -6367,6 +6462,8 @@ mod tests {
             titles: titles.iter().map(|t| t.to_string()).collect(),
             mark: String::new(),
             places: None,
+            members: Vec::new(),
+            unasked: Vec::new(),
         };
         let answer = |n: &str, t: &str| json!({"step": "text", "text": {n: t}, "names": {}});
         let titled = ask(&["1"], &[], &[]);
@@ -6642,6 +6739,8 @@ mod tests {
             titles: Vec::new(),
             mark: String::new(),
             places,
+            members: Vec::new(),
+            unasked: Vec::new(),
         };
         let said = |text: &str| json!({"step": "text", "text": {"1": text}, "names": {}});
         for (text, n) in [
@@ -6685,6 +6784,8 @@ mod tests {
             titles: Vec::new(),
             mark: String::new(),
             places: None,
+            members: Vec::new(),
+            unasked: Vec::new(),
         };
         let good = json!({"step": "text", "text": json!({"1": "{first.name}居首"}).to_string(), "names": json!({"s1": "占比"}).to_string()});
         assert_eq!(text.decode(&good).1, vec!["text", "names"]);
@@ -10996,6 +11097,72 @@ mod tests {
         assert!(age["why"][1]["error"].as_str().unwrap().contains("every answer"), "{age}");
         assert_eq!(draft.window, Some(ring_on(None)));
     }
+    /// Round 12 q3 (works/devset-v3/round12-audit.md): the stand-in reworded the label of a composition page into
+    /// "各国发电结构以化石能源为主要构成", typing a part's name no placeholder gave, a finding the data does not hold (3 of
+    /// the 20 drawn countries are above half). A reworded field types no drawn name the question does not write; a reworded
+    /// title that names a drawn place or part says no standing of it. Two shapes: a composition's parts, a ranking's places.
+    #[test]
+    fn a_reworded_field_types_no_drawn_name_the_question_does_not_write_and_a_title_says_no_standing() {
+        let ask = |drafts: &[&str], members: &[&str], question: &str| Ask::Text {
+            fields: drafts.iter().enumerate().map(|(i, d)| ((i + 1).to_string(), d.to_string())).collect(),
+            slots: Vec::new(),
+            numbers: Vec::new(),
+            periods: Vec::new(),
+            changes: Vec::new(),
+            levels: Vec::new(),
+            scoped: Vec::new(),
+            titles: vec!["1".to_string()],
+            mark: String::new(),
+            places: None,
+            members: members.iter().map(|m| m.to_string()).collect(),
+            unasked: members.iter().filter(|m| !question.contains(**m)).map(|m| m.to_string()).collect(),
+        };
+        let answer = |n: &str, t: &str| json!({"step": "text", "text": {n: t}, "names": {}});
+        // the composition (q3): parts and places, none of them written by the question
+        let parts = ask(
+            &["整体的构成与份额", "{lead1.t}，图中各国中，{name.PL}{name.fossil}占比居首，为{comp_top}", "整体由哪些部分构成？"],
+            &["化石能源", "可再生能源", "核能", "波兰", "法国"],
+            "欧盟各国发电结构",
+        );
+        let refused = parts.check(&answer("1", "各国发电结构以化石能源为主要构成")).unwrap_err();
+        assert!(refused.problem.starts_with("field '1': '化石能源' is a place or part the page draws"), "{}", refused.problem);
+        assert!(refused.problem.contains("e.g. '整体的构成与份额'"), "{}", refused.problem);
+        assert_eq!(refused.allowed["members"]["names"], json!(["化石能源", "可再生能源", "核能", "波兰", "法国"]));
+        assert!(parts.check(&answer("3", "可再生能源占多大份额？")).is_err(), "any field, not only the title");
+        assert_eq!(typed_member("可再生能源的份额", "整体", &["可再生能源".into(), "能源".into()]), Some("可再生能源".into()), "longest first");
+        for passes in ["各国发电结构的构成", "欧盟各国发电结构", "{lead1.t}，{name.PL}{name.fossil}占比居首，为{comp_top}"] {
+            let n = if passes.contains('{') { "2" } else { "1" };
+            assert!(parts.check(&answer(n, passes)).is_ok(), "{passes}");
+        }
+        // the ranking (round 11 n4, n5, n44): places the question writes may be named, a title names no standing of them
+        let places = ask(
+            &["各方的高低排名", "{lead1.t}，{name.ZAF}最高，为{hi}", "读者想知道在同样的口径下谁领先、谁落后，差距有多大。"],
+            &["南非", "意大利", "西班牙", "印度", "中国"],
+            "南非和南欧国家的青年失业率，印度和中国",
+        );
+        for (claim, word) in [("南非的青年失业率明显偏高", "偏高"), ("印度增速领先，中国相对较慢", "领先"), ("南非青年失业率居首", "居首")] {
+            let refused = places.check(&answer("1", claim)).unwrap_err();
+            assert!(refused.problem.starts_with(&format!("field '1': '{word}' says where a place or part the title names stands")), "{}", refused.problem);
+            assert!(refused.problem.contains("e.g. '各方的高低排名'"), "{}", refused.problem);
+        }
+        for label in ["印度和中国青年失业率的高低排名", "南非与南欧各国青年失业率", "少数地区明显偏高", "各国最低工资的高低排名"] {
+            assert!(places.check(&answer("1", label)).is_ok(), "{label}");
+        }
+        // a field that is no title may name the question's places with any word; the draft's own words stay
+        assert!(places.check(&answer("3", "读者想知道南非是否明显领先，印度处在什么位置。")).is_ok());
+        assert!(places.check(&answer("3", "读者想知道意大利处在什么位置。")).is_err(), "a place the question does not write");
+        assert_eq!(finding_word("南非领先", "谁领先、谁落后"), None, "a word the draft holds");
+        // no names known (a run that does not pass them): no member check, as before
+        let none = ask(&["各方的高低排名"], &[], "南非");
+        assert!(none.check(&answer("1", "南非的青年失业率明显偏高")).is_ok());
+        assert!(none.allowed().get("members").is_none() && none.allowed().get("title_findings").is_none());
+        // the rule goes to the model with the names, and every wording a rule suggests passes it
+        let described = places.schema()["properties"]["text"]["description"].as_str().unwrap().to_string();
+        assert!(described.contains(TITLE_FINDING_RULE) && described.contains(MEMBER_RULE), "{described}");
+        for suggested in RULE_SUGGESTIONS {
+            assert!(places.check(&answer("1", suggested)).is_ok(), "{suggested}");
+        }
+    }
 }
 
 // Test shells only (next_drive's gold driver and this file's tests): the product picks tables from the catalogue.
@@ -11121,6 +11288,7 @@ fn dollar_path(value: &Value, at: &str) -> Option<String> {
             .find_map(|(k, v)| dollar_path(v, &format!("{at}/{k}"))),
         _ => None,
     }
+
 }
 
 /// Every wording the rules above suggest (TYPED_NUMBER_RULE, CHANGE_TITLE_RULE, SCOPE_RULE, TITLE_RULE), and only those, each

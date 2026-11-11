@@ -137,6 +137,11 @@ pub struct Drafts {
     /// The number of distinct places the page draws (next_run places_drawn: the place codes of its drawn rows): a count of
     /// places of that number (四国) is no typed number on the text step (Ask::Text places). None when the run does not know it.
     pub places_drawn: Option<usize>,
+    /// The names of the places and parts the page prints, as its fill's labels name them (with_members), and those the
+    /// question does not write (`unasked`): the text step refuses a reworded field that types an unasked one, and a
+    /// reworded title that names one with a standing word (Ask::Text members). Empty when the run does not know them.
+    pub members: Vec<String>,
+    pub unasked: Vec<String>,
 }
 
 /// The one placeholder of a claim template that holds its number: not a time column, not the chart's category column.
@@ -253,6 +258,8 @@ pub fn draft_for(
         change_title: lead == (Relation::Change, View::FirstToLast),
         level_title: crate::shape_registry::LEVEL_LEADS.contains(&lead),
         places_drawn: None,
+        members: Vec::new(),
+        unasked: Vec::new(),
     }
 }
 
@@ -341,6 +348,19 @@ impl Drafts {
         self
     }
 
+    /// The page's printed names (`labels`: code -> name, the fill's knobs.labels) and those `question` does not write.
+    pub fn with_members(mut self, labels: &serde_json::Value, question: &str) -> Self {
+        let names: std::collections::BTreeSet<String> = labels
+            .as_object()
+            .into_iter()
+            .flatten()
+            .filter_map(|(_, name)| name.as_str().map(str::trim).filter(|n| !n.is_empty()).map(str::to_string))
+            .collect();
+        self.unasked = names.iter().filter(|n| !question.contains(n.as_str())).cloned().collect();
+        self.members = names.into_iter().collect();
+        self
+    }
+
     pub fn with_scope_mark(mut self, mark: Option<String>) -> Self {
         self.scope_mark = mark.filter(|m| self.has_scope && !m.is_empty());
         self
@@ -395,6 +415,8 @@ impl Drafts {
             titles: self.titles(),
             mark: self.scope_mark.clone().unwrap_or_default(),
             places: self.places_drawn,
+            members: self.members.clone(),
+            unasked: self.unasked.clone(),
         }
     }
 

@@ -3521,6 +3521,8 @@ pub async fn reword(
         titles,
         mark,
         places,
+        members,
+        unasked,
         ..
     } = &ask
     else {
@@ -3582,6 +3584,8 @@ pub async fn reword(
                 titles: titles.clone(),
                 mark: mark.clone(),
                 places: *places,
+                members: members.clone(),
+                unasked: unasked.clone(),
             };
             let mut kept = BTreeMap::new();
             let mut given = Map::new();
@@ -3604,6 +3608,8 @@ pub async fn reword(
                         titles: Vec::new(),
                         mark: String::new(),
                         places: None,
+                        members: Vec::new(),
+                        unasked: Vec::new(),
                     };
                     let alone = json!({"step": "text", "text": {}, "names": {id.as_str(): name}});
                     if !given.contains_key(id)
@@ -4009,6 +4015,12 @@ pub(crate) async fn page_from(
     // the dek is the picked recipe's finding on the page's own facts (finding_of), its numbers and names placeholders
     let change = prepared.first().is_some_and(|main| measures_a_change(main, catalogue));
     let drafts = text_drafts(&page, form, &titles, picked.as_ref().ok().map(|(_, fill)| fill), change);
+    // the names the page prints, each through its placeholder: the text step refuses one typed that the question does not
+    // write, and a title that says where one stands (Ask::Text members)
+    let drafts = match picked.as_ref() {
+        Ok((_, fill)) => drafts.with_members(place_names(fill), question),
+        Err(_) => drafts,
+    };
     // a text step that stops leaves the recipe pick's group calls on record all the same, as a text step that passes does
     let worded = match reword(recorder, model, question, &drafts, cancel).await {
         Ok(worded) => worded,
@@ -5260,6 +5272,51 @@ mod tests {
         assert_eq!(fallback[0]["auto_parent_call_id"], "s1");
     }
 
+    /// Round 12 q3: the stand-in's label of a composition page typed a part's name with a finding ("各国发电结构以化石能源为
+    /// 主要构成") that the data does not hold. With the fill's labels on the drafts (with_members, as page_from sets them),
+    /// the reword is refused in both rounds and the title goes back to its draft; a ranking page's title that says where a
+    /// place the question names stands goes back too, while a label naming it is kept.
+    #[tokio::test]
+    async fn a_reworded_title_naming_a_drawn_part_or_its_standing_goes_back_to_the_draft() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let charts = vec![Chart {
+            relation: Relation::Ranking,
+            view: View::Slice,
+            claim_ids: Vec::new(),
+            category: "geo".into(),
+            value: "value".into(),
+        }];
+        let composition = json!({"knobs": {"labels": {"PL": "波兰", "FR": "法国", "fossil": "化石能源", "renewable": "可再生能源"}}});
+        let ranking = json!({"knobs": {"labels": {"ZAF": "南非", "ITA": "意大利", "ESP": "西班牙"}}});
+        for (fill, question, reworded, kept) in [
+            (&composition, "欧盟各国发电结构", "各国发电结构以化石能源为主要构成", None),
+            (&ranking, "南非和南欧国家的青年失业率", "南非的青年失业率明显偏高", None),
+            (&ranking, "南非和南欧国家的青年失业率", "南非与南欧各国的青年失业率", Some("南非与南欧各国的青年失业率")),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let run = dir.path().to_path_buf();
+            let drafts = next_page::draft_for(&[], &charts, Vec::new(), Some((Relation::Ranking, View::Slice)))
+                .with_members(place_names(fill), question);
+            let draft = drafts.fields.iter().find(|(t, _)| *t == Target::PageTitle).map(|(_, d)| d.clone()).unwrap();
+            let answer = json!({"step": "text", "text": {"1": reworded}, "names": {}});
+            let mut model = ScriptedAsker(
+                vec![call("s1", json!({"step": "search", "query": "q"})), call("t1", answer.clone()), call("t2", answer)].into(),
+            );
+            let events: std::sync::Arc<std::sync::Mutex<Vec<Value>>> = Default::default();
+            let into = events.clone();
+            let mut sink = move |e: Value| into.lock().unwrap().push(e);
+            let mut recorder = Recorder::new(&mut sink, &run, Vec::new(), Vec::new());
+            let cancel = AtomicBool::new(false);
+            recorder.ask_step(&mut model, &Ask::Search, "search words", &cancel).await.unwrap();
+            let page = reword(&mut recorder, &mut model, question, &drafts, &cancel).await.unwrap();
+            drop(recorder);
+            assert_eq!(page[&Target::PageTitle], kept.unwrap_or(draft.as_str()), "{reworded}");
+            let events = events.lock().unwrap();
+            let fallback = events.iter().filter(|e| e["type"] == TEXT_FALLBACK_EVENT).count();
+            assert_eq!(fallback, usize::from(kept.is_none()), "{reworded}");
+        }
+    }
+
     /// q6's stand-in rewording on a change page: the title asking who is highest is refused in both rounds, so it goes back
     /// to the change draft in the fallback (the rule holds there too), and the dek that passes alone is kept.
     #[tokio::test]
@@ -5418,6 +5475,8 @@ mod tests {
             change_title: false,
             level_title: false,
             places_drawn: None,
+            members: Vec::new(),
+            unasked: Vec::new(),
         }
     }
 
