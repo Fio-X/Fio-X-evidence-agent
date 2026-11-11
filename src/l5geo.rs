@@ -582,6 +582,10 @@ pub struct GroupBasis {
     pub line: Option<String>,
     pub join: String,
     pub missing_join: String,
+    /// The basis is said only on a page of whole years (the EU's members', union_basis: its line prints the page's year):
+    /// a page of half years or months goes without it and is drawn as before (the flow's basis_of).
+    #[serde(default)]
+    pub whole_years_only: bool,
 }
 
 /// The code a group word stands for in the Chinese name list: this prefix and the group id.
@@ -2094,6 +2098,7 @@ impl Catalog {
             line: lines.pop(),
             join: words.line_join.clone(),
             missing_join: words.missing_join.clone(),
+            whole_years_only: false,
         })
     }
 
@@ -2161,6 +2166,7 @@ impl Catalog {
             line: Some(words.union_missing.clone()),
             join: words.line_join.clone(),
             missing_join: words.missing_join.clone(),
+            whole_years_only: true,
         })
     }
 
@@ -3105,6 +3111,7 @@ mod tests {
         assert_eq!((b.group.as_str(), b.year, b.members.clone(), b.line.as_deref()), ("EU", 2024, wb27.clone(), line));
         assert_eq!(b.missing, s(&["BEL", "BGR", "CYP", "GRC", "ESP", "FIN", "HRV", "HUN", "LVA", "MLT", "ROU", "SVK"]));
         assert!(b.named.is_empty() && b.dropped.is_empty() && b.unfetched.is_empty(), "{b:?}");
+        assert!(b.whole_years_only, "the union's line prints a year: said on a page of whole years only");
         assert_eq!(c.group_basis(q, (None, 2023), (&wb27, &wb27)), None, "every member at 2023: no basis");
         // r5: Eurostat's codes, Romania with rows to 2023 only
         let es27: Vec<String> = s(&crate::next_params::EU27);

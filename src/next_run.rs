@@ -2877,7 +2877,8 @@ fn named_dropped(fill: &Value, places: &[crate::l5geo::Place]) -> Result<(), Str
 
 /// The member list a page for a group the question names counts, over the page's years (the shape's earlier end, none for
 /// a page of one year, and its year) and its places (each with or without a row at that year): the knowledge group's
-/// group_basis; None when the question names no group.
+/// group_basis; None when the question names no group, and for a basis said only on a page of whole years (the EU's
+/// members', whose line prints the page's year) on a page of half years or months, which is drawn as before.
 fn basis_of(shape: &Shape, rows: &[Value], catalogue: &dyn Catalogue, question: &str) -> Option<crate::l5geo::GroupBasis> {
     let year = |y: &str| y.get(..4).and_then(|y| y.parse::<i32>().ok());
     let at_t1: Vec<String> = shape
@@ -2886,7 +2887,9 @@ fn basis_of(shape: &Shape, rows: &[Value], catalogue: &dyn Catalogue, question: 
         .filter(|c| rows.iter().any(|r| r["dims"][&shape.place].as_str() == Some(c.as_str()) && r["time"].as_str() == Some(shape.year.as_str())))
         .cloned()
         .collect();
-    catalogue.group_basis(question, (year(&shape.t0), year(&shape.year)?), (&shape.countries, &at_t1))
+    catalogue
+        .group_basis(question, (year(&shape.t0), year(&shape.year)?), (&shape.countries, &at_t1))
+        .filter(|b| !b.whole_years_only || is_year(&shape.year))
 }
 
 /// The event (and the ledger's layer name, next_visual) of the places a group's page left out.
@@ -8491,6 +8494,17 @@ mod tests {
         let full = group_rows(&eu, &["2023", "2024"]);
         let shape = shape_of(&r.eats, &[("sdg_07_40", &full[..])], &cat).unwrap();
         assert_eq!(basis_of(&shape, &full, &cat, question), None, "every member at 2024: no basis");
+        // a page of half years or months (review 11-11: its period printed as a year is no ledger entry, and the page would
+        // stop) has no basis and is drawn as before; the same rows' shape read at a whole year has one
+        let codes: Vec<String> = eu.iter().map(|c| c.to_string()).collect();
+        for (freq, periods, whole) in [("S", ["2025-S2", "2026-S1"], false), ("M", ["2026-07", "2026-08"], false), ("A", ["2025", "2026"], true)] {
+            let mut rows = ring_rows("sdg_07_40", &[("freq", freq), ("unit", "PC")], ("geo", &eu), &periods);
+            rows.retain(|row| !(row["dims"]["geo"] == "RO" && row["time"] == periods[1]));
+            let at = Shape { main: "sdg_07_40".into(), place: "geo".into(), year: periods[1].into(), countries: codes.clone(), ..Default::default() };
+            let b = basis_of(&at, &rows, &cat, question);
+            assert_eq!(b.is_some(), whole, "{freq}: {b:?}");
+            assert!(b.is_none_or(|b| b.whole_years_only && b.missing == ["RO"]), "{freq}");
+        }
         let mut main = full.clone();
         main.retain(|row| !(row["dims"]["geo"] == "RO" && row["time"] == "2024"));
         let shape = shape_of(&r.eats, &[("sdg_07_40", &main[..])], &cat).unwrap();
