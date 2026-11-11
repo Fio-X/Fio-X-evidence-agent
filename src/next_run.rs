@@ -8479,6 +8479,39 @@ mod tests {
         }
     }
 
+    /// A column page for the EU's members (round 10's r5): Romania, with rows to 2023 only, is named on the unit line as
+    /// having no data at the page's year, the whole-page check holds the line, and the page without it fails; with every
+    /// member at 2024 there is no basis and the page is as before.
+    #[test]
+    fn an_eu_members_page_names_a_member_without_its_year_and_the_check_holds_it() {
+        let eu: Vec<&str> = next_params::EU27.to_vec();
+        let cat = Groups(BTreeMap::new());
+        let r = recipe("column");
+        let question = "欧盟各国生活垃圾回收率";
+        let full = group_rows(&eu, &["2023", "2024"]);
+        let shape = shape_of(&r.eats, &[("sdg_07_40", &full[..])], &cat).unwrap();
+        assert_eq!(basis_of(&shape, &full, &cat, question), None, "every member at 2024: no basis");
+        let mut main = full.clone();
+        main.retain(|row| !(row["dims"]["geo"] == "RO" && row["time"] == "2024"));
+        let shape = shape_of(&r.eats, &[("sdg_07_40", &main[..])], &cat).unwrap();
+        assert_eq!(shape.year, "2024");
+        let basis = basis_of(&shape, &main, &cat, question).expect("a basis for the EU's members");
+        assert_eq!((basis.group.as_str(), basis.missing.clone(), basis.dropped.len(), basis.members.len()), ("EU", vec!["RO".to_string()], 0, 27));
+        let picks = picks_of(&r.picks, &shape, &main, &[]).unwrap();
+        let mut fill = test_fill(r, &shape, &picks, (&main, &[]), &cat, ("标题", "导语"), false).unwrap();
+        let dek = dek_finding(&fill).map_or_else(|| "导语".to_string(), |d| d.0);
+        page_words(&mut fill, ("标题", &dek, "栏目"));
+        said_basis(&mut fill, &shape, &basis, &cat).unwrap();
+        let (html, ledger, refs, spec, rows, facts) = published("column", fill, question);
+        let check = |page: &str| crate::next_leaf::check_leaf_page(page, &ledger, &refs, &spec, &rows, &facts);
+        assert_eq!(check(&html), Vec::<String>::new());
+        let plain: String = html.split('<').map(|p| p.split_once('>').map_or(p, |(_, t)| t)).collect();
+        assert!(plain.contains("按现有成员国计，画出 26 国，2024 年名RO无数据"), "{plain}");
+        let cut = html.replace("按现有成员国计", "");
+        assert_ne!(cut, html);
+        assert!(check(&cut).iter().any(|f| f.starts_with("basis:")), "a page without the line passes");
+    }
+
     /// recipe_request over a run folder holding `main` as sdg_07_40's rows, for `question`, its places the test world's
     /// (as the flow fetches them): the fill or the stop, and the events.
     fn group_request(question: &str, main: Vec<Value>) -> (Result<Value, (&'static str, String)>, Vec<Value>) {
