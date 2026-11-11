@@ -16,6 +16,8 @@
 //!   one saying times as much, an average or a rank fails whenever the set changes, one saying all rose (fell) fails when
 //!   that place moved the other way.
 //! - B (Unshown): a named place the page neither draws nor says has no data: every set saying fails, whatever the values.
+//!   A group page's member (its basis) the page does not draw, with fetched values in other periods but none at the
+//!   page's year, is held as a named place (held_members).
 //! - C (NoData): "X has no data" holds only when the source has no value of X at the page's year: the whole table where the
 //!   run kept it (the World Bank local copy), else the rows fetched, and then only when the fetch asked for X (or every place),
 //!   marked as judged by that fallback.
@@ -825,13 +827,33 @@ pub fn check_published(
     {
         page.t1 = y.to_string();
     }
-    let named = named_of(catalogue, question, &meta)?;
+    let mut named = named_of(catalogue, question, &meta)?;
     let source = source_of(run_dir, catalogue, &meta, main, &rows, &place_dim, &origins)?;
+    held_members(&mut named, request.pointer("/knobs/spec/basis/members"), &page, &source);
     let narrow = match narrow_rec {
         Some(rec) => narrow_of(run_dir, rec, &rows)?,
         None => None,
     };
     Ok(unheld(&named, &page, &source, narrow.as_ref(), &words))
+}
+
+/// A group page's members (its basis, knobs.spec.basis.members, as the page's rows write them; the knowledge group's
+/// group_basis) that the page does not draw and the fetched rows hold a value of in another period but none at the page's
+/// year are held as places the question names: each must be said to have no data (B), and joins the set where the source
+/// has it after all (A). A member already named stays as it is; one the fetched rows hold no value of, or one with a value
+/// at the page's year, is no member lacking the page's year and is held to nothing new.
+fn held_members(named: &mut Vec<Named>, members: Option<&Value>, page: &Page, source: &Source) {
+    for m in members.and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str) {
+        let with_value = source.fetched.keys().any(|(c, _)| c == m);
+        let at_t1 = source.fetched.contains_key(&(m.to_string(), page.t1.clone()));
+        if named.iter().any(|n| n.is(m)) || page.drawn.contains(m) || !with_value || at_t1 {
+            continue;
+        }
+        named.push(Named {
+            code: m.to_string(),
+            aliases: Vec::new(),
+        });
+    }
 }
 
 fn read_json(run_dir: &Path, rel: &str) -> Result<Value, String> {
@@ -1299,6 +1321,53 @@ mod tests {
         // the kicker (a ranking), the title, the dek and the note: four set sayings; the source line is none
         assert_eq!(u.len(), 4, "{u:?}");
         assert!(u.iter().all(|u| u.why.contains("EUU")));
+    }
+
+    /// Round 10's r5: a page for the EU's members drawn at 2024 without Romania, whose rows end at 2023. The member is held
+    /// as named (held_members): the page's line saying Romania has no data holds, and without the line every set saying
+    /// fails; a member the fetched rows hold no value of (Greece, round 10's t4) or one with a value at 2024 the page does
+    /// not draw is held to nothing new, and a page with no basis holds none.
+    #[test]
+    fn a_group_member_without_a_value_at_the_page_year_is_held_as_named() {
+        let page_with = |unit: Block| Page {
+            blocks: vec![block("2024 年，德国最高，最低的是塞浦路斯", &["fact:hi.n"]), unit],
+            drawn: ["DE", "CY", "AT"].iter().map(|s| s.to_string()).collect(),
+            t1: "2024".into(),
+            ..Page::default()
+        };
+        let mut fetched = BTreeMap::new();
+        for (c, t, v) in [("DE", "2024", 69.0), ("CY", "2024", 15.8), ("AT", "2024", 60.0), ("RO", "2023", 12.4), ("SK", "2024", 50.0)] {
+            fetched.insert((c.to_string(), t.to_string()), v);
+        }
+        let source = Source {
+            asked: Some(["DE", "CY", "AT", "RO", "SK", "EL"].iter().map(|s| s.to_string()).collect()),
+            fetched,
+            whole: None,
+        };
+        let members = json!(["AT", "CY", "DE", "EL", "RO", "SK"]);
+        let line = block(
+            "单位：%；按现有成员国计，画出 3 国，2024 年罗马尼亚无数据",
+            &["fact:drawn.n", "period:cei_wm011:2024", "name:zh_names:iso2:RO"],
+        );
+        let page = page_with(line);
+        let mut held: Vec<Named> = Vec::new();
+        held_members(&mut held, Some(&members), &page, &source);
+        assert_eq!(held, vec![named("RO")]);
+        assert_eq!(unheld(&held, &page, &source, None, &words()), Vec::new());
+        // the same page without its line: Romania is neither drawn nor said
+        let bare = page_with(block("单位：%", &[]));
+        let mut held: Vec<Named> = Vec::new();
+        held_members(&mut held, Some(&members), &bare, &source);
+        let u = unheld(&held, &bare, &source, None, &words());
+        assert_eq!(u.len(), 1, "{u:?}");
+        assert!(u[0].kind == Kind::Unshown && u[0].why.contains("RO"), "{u:?}");
+        // a member already named stays once; no basis, nothing held
+        let mut held = vec![named("RO")];
+        held_members(&mut held, Some(&members), &bare, &source);
+        assert_eq!(held, vec![named("RO")]);
+        let mut held: Vec<Named> = Vec::new();
+        held_members(&mut held, None, &bare, &source);
+        assert!(held.is_empty());
     }
 
     #[test]

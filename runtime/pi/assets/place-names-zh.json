@@ -1,5 +1,5 @@
 {
- "note": "Chinese place words the World Bank's Chinese country list (wb-countries-zh.json) does not hold, each with its source (title, url, access date). aliases: the short name of a country the list holds only in its long form, as an iso2 code. groups: country groups by year, each period a row of from, to (null: current), member iso2 codes and the source of the membership change that opens it; disputed: codes one source lists as members and another says are not, left out of the members; non_country_members: members that are no country (no country row; the page says they are not counted). basis: the words of the page line that says which members a page counts ({year} and {n} are the page's own entries, {others} the non-country members joined by others_join, {missing} the name rows of the members with no data joined by missing_join); a _drawn form counts the places drawn, not the members (a member has no data, or the question names a place beside the group), and missing follows it when a member has no data; line_join joins the line to the unit line.",
+ "note": "Chinese place words the World Bank's Chinese country list (wb-countries-zh.json) does not hold, each with its source (title, url, access date). aliases: the short name of a country the list holds only in its long form, as an iso2 code. groups: country groups by year, each period a row of from, to (null: current), member iso2 codes and the source of the membership change that opens it; disputed: codes one source lists as members and another says are not, left out of the members; non_country_members: members that are no country (no country row; the page says they are not counted). basis: the words of the page line that says which members a page counts ({year} and {n} are the page's own entries, {others} the non-country members joined by others_join, {missing} the name rows of the members with no data joined by missing_join); a _drawn form counts the places drawn, not the members (a member has no data, or the question names a place beside the group), and missing follows it when a member has no data; line_join joins the line to the unit line. union_missing is the line of a page for the EU's members (a region word, not a registered group: the fetch takes today's 27 members for every year, so no year's list is claimed), printed only when a member the page's rows hold in its years has no row at the page's year.",
  "basis": {
   "line_join": "；",
   "members_of_year": "按 {year} 年成员（{n} 国）计",
@@ -7,6 +7,7 @@
   "countries_only": "按 {n} 个成员国计，不含{others}",
   "countries_only_drawn": "按成员国计，不含{others}，画出 {n} 国",
   "missing": "，{missing}无数据",
+  "union_missing": "按现有成员国计，画出 {n} 国，{year} 年{missing}无数据",
   "others_join": "、",
   "missing_join": "、"
  },

@@ -46,6 +46,11 @@ const REGION_WORDS_ZH: [&str; 15] = [
     "波罗的海",
 ];
 const REGION: &str = "REGION";
+/// The region words of REGION_WORDS_ZH that name the European Union (not the continent, its parts or the euro area): a
+/// page drawn for its members counts them (Catalog::group_basis, union_basis), for the fetch takes next_params::EU27 for it.
+const UNION_WORDS_ZH: [&str; 2] = ["欧盟", "欧洲联盟"];
+/// The group id a page drawn for the EU's members writes in its basis.
+const UNION: &str = "EU";
 /// Region words that also name an aggregate with rows of its own, with its code: the World Bank's iso3 (Eurostat's is
 /// next_params::ESTAT_ISO's). Named beside a country outside Europe, the word is that place (Catalog::places).
 const PEER_AGGREGATES_ZH: [(&str, &str); 2] = [("欧盟", "EUU"), ("欧洲联盟", "EUU")];
@@ -533,6 +538,7 @@ struct BasisWordsZh {
     countries_only: String,
     countries_only_drawn: String,
     missing: String,
+    union_missing: String,
     others_join: String,
     missing_join: String,
 }
@@ -559,7 +565,8 @@ fn place_names_zh() -> &'static PlaceNamesZh {
 /// years, the group has members that are no country, or a member has no data). The line's {year} and {n} are left for the
 /// page's own entries of the year and the count of the places it draws, {missing} for the names of the members with no
 /// data (joined by `missing_join`); `join` joins it to the unit line. Every word is the knowledge group's
-/// (place-names-zh.json).
+/// (place-names-zh.json). A page for the EU's members (Catalog::union_basis) has the group EU, today's members as far as
+/// its rows hold them, and a line only when one of them has no row at its year.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct GroupBasis {
     pub group: String,
@@ -2025,8 +2032,9 @@ impl Catalog {
     /// members in `t1` (the page's last year, the year its line prints, whatever year the question names); the places the question names on
     /// their own, which stay; the page's other places, which are no member that year (left out); the members fetched with no
     /// row at t1, and those never fetched (unfetched: the page is refused); and the page line when the page must say its basis: the member list differs inside the page's t0..t1, the group has members that are no country, or a member has no data (named). The line counts the places
-    /// drawn (its `_drawn` form) where they are not the members: a member missing, or a named place beside them. None when
-    /// the question names no group or the group has no members in that year.
+    /// drawn (its `_drawn` form) where they are not the members: a member missing, or a named place beside them. A question
+    /// naming no group but the EU by a region word is the EU's members' (union_basis). None when the question names neither
+    /// or the group has no members in that year.
     pub fn group_basis(
         &self,
         question_zh: &str,
@@ -2034,32 +2042,17 @@ impl Catalog {
         (places, at_t1): (&[String], &[String]),
     ) -> Option<GroupBasis> {
         let scanned = self.scan_zh(question_zh);
-        let id = scanned.iter().find_map(|(_, c)| c.strip_prefix(GROUP).map(str::to_string))?;
+        let Some(id) = scanned.iter().find_map(|(_, c)| c.strip_prefix(GROUP).map(str::to_string)) else {
+            return self.union_basis(&scanned, t1, (places, at_t1));
+        };
         let g = self.groups.iter().find(|g| g.id == id)?;
         // the list of the page's own year, whichever year the question names: the line prints that year from the data
         let year = t1;
         let p = self.group_period(&id, Some(year))?;
         let words = &place_names_zh().basis;
-        // an iso2 country as the page writes it: the form its rows hold, else iso3 on an iso3 page, else iso2
-        let iso3 = |c: &str| self.wb_places.iter().find(|(i, _)| i == c).map(|(_, id)| id.clone());
-        let page_code = |c: &str| {
-            let estat = ESTAT_ISO.iter().find(|(_, i)| *i == c).map(|(e, _)| e.to_string());
-            [Some(c.to_string()), iso3(c), estat]
-                .into_iter()
-                .flatten()
-                .find(|k| places.contains(k))
-                .unwrap_or_else(|| match iso3(c) {
-                    Some(i) if !places.is_empty() && places.iter().all(|p| p.len() == 3) => i,
-                    _ => c.to_string(),
-                })
-        };
+        let page_code = |c: &str| self.page_code(c, places);
         let members: Vec<String> = p.members.iter().map(|m| page_code(m)).collect();
-        let mut named: Vec<String> = Vec::new();
-        for (_, c) in &scanned {
-            if c != REGION && c != NOT_PLACE && !c.starts_with(GROUP) && !named.contains(&page_code(c)) {
-                named.push(page_code(c));
-            }
-        }
+        let named = self.named_on_page(&scanned, places);
         let dropped: Vec<String> = places.iter().filter(|c| !members.contains(c) && !named.contains(c)).cloned().collect();
         // a member is fetched when the question's places hold it (the flow fetches places_zh's list) or the page has a row
         // of it; one that is neither was never asked for, and its lack is no fact of the data
@@ -2099,6 +2092,73 @@ impl Catalog {
             missing,
             unfetched,
             line: lines.pop(),
+            join: words.line_join.clone(),
+            missing_join: words.missing_join.clone(),
+        })
+    }
+
+    /// An iso2 country as a page with these place codes writes it: the form its rows hold, else iso3 on an iso3 page, else
+    /// iso2.
+    fn page_code(&self, c: &str, places: &[String]) -> String {
+        let iso3 = || self.wb_places.iter().find(|(i, _)| i == c).map(|(_, id)| id.clone());
+        let estat = ESTAT_ISO.iter().find(|(_, i)| *i == c).map(|(e, _)| e.to_string());
+        [Some(c.to_string()), iso3(), estat]
+            .into_iter()
+            .flatten()
+            .find(|k| places.contains(k))
+            .unwrap_or_else(|| match iso3() {
+                Some(i) if !places.is_empty() && places.iter().all(|p| p.len() == 3) => i,
+                _ => c.to_string(),
+            })
+    }
+
+    /// The places a scanned question names on their own (no region, group or not-place word), as the page writes them,
+    /// each once in the question's order.
+    fn named_on_page(&self, scanned: &[(String, String)], places: &[String]) -> Vec<String> {
+        let mut named: Vec<String> = Vec::new();
+        for (_, c) in scanned {
+            if c != REGION && c != NOT_PLACE && !c.starts_with(GROUP) && !named.contains(&self.page_code(c, places)) {
+                named.push(self.page_code(c, places));
+            }
+        }
+        named
+    }
+
+    /// What a page drawn for the EU's members counts, for a scanned question that names the union by a region word
+    /// (UNION_WORDS_ZH; the fetch takes next_params::EU27, today's members, for every year) and no registered group: the
+    /// members the page's rows hold in its years (`places`; a member with no row in any of them is left as before, for the
+    /// page says nothing of it), the places the question names on their own, none left out, and the members with no row at
+    /// t1 (`at_t1`), which the page's line names (union_missing: no year's member list is claimed). None, and the page is as
+    /// before, when no member lacks a row at t1, when no place is a member, or when a place is neither a member nor named
+    /// (an aggregate, an origin country): the page is then no page of the members.
+    fn union_basis(&self, scanned: &[(String, String)], t1: i32, (places, at_t1): (&[String], &[String])) -> Option<GroupBasis> {
+        if !scanned.iter().any(|(n, c)| c == REGION && UNION_WORDS_ZH.contains(&n.as_str())) {
+            return None;
+        }
+        let iso2 = |e: &str| crate::next_params::ESTAT_ISO.iter().find(|(x, _)| *x == e).map_or(e.to_string(), |(_, i)| i.to_string());
+        let members: Vec<String> = crate::next_params::EU27
+            .iter()
+            .map(|e| self.page_code(&iso2(e), places))
+            .filter(|m| places.contains(m))
+            .collect();
+        let named = self.named_on_page(scanned, places);
+        if members.is_empty() || places.iter().any(|p| !members.contains(p) && !named.contains(p)) {
+            return None;
+        }
+        let missing: Vec<String> = members.iter().filter(|m| !at_t1.contains(m)).cloned().collect();
+        if missing.is_empty() {
+            return None;
+        }
+        let words = &place_names_zh().basis;
+        Some(GroupBasis {
+            group: UNION.to_string(),
+            year: t1,
+            members,
+            named,
+            dropped: Vec::new(),
+            missing,
+            unfetched: Vec::new(),
+            line: Some(words.union_missing.clone()),
             join: words.line_join.clone(),
             missing_join: words.missing_join.clone(),
         })
@@ -3007,6 +3067,70 @@ mod tests {
         // the codes as the page's rows write them: Eurostat's UK for GB
         let b = gb("七国集团的GDP", None, 2024, &["FR", "DE", "IT", "JP", "UK", "US", "CA"]).unwrap();
         assert!(b.members.contains(&"UK".to_string()) && b.dropped.is_empty() && b.missing.is_empty(), "{b:?}");
+    }
+
+    /// `small` with the EU's other 23 members as World Bank countries by their iso3 ids, and Italy's Chinese name.
+    fn eu_world() -> Catalog {
+        let mut raw = small_raw();
+        let more = [
+            ("AT", "AUT"), ("BE", "BEL"), ("BG", "BGR"), ("CY", "CYP"), ("CZ", "CZE"), ("DK", "DNK"), ("EE", "EST"), ("GR", "GRC"),
+            ("ES", "ESP"), ("HR", "HRV"), ("HU", "HUN"), ("IE", "IRL"), ("IT", "ITA"), ("LT", "LTU"), ("LU", "LUX"), ("LV", "LVA"),
+            ("NL", "NLD"), ("PL", "POL"), ("PT", "PRT"), ("RO", "ROU"), ("SE", "SWE"), ("SI", "SVN"), ("SK", "SVK"),
+        ];
+        let list = raw.wb_countries[1].as_array_mut().unwrap();
+        for (c, id) in more {
+            list.push(json!({"id": id, "iso2Code": c, "name": format!("Land {c}"), "region": {"value": "Europe & Central Asia"}}));
+        }
+        raw.wb_countries_zh[1].as_array_mut().unwrap().push(json!({"iso2Code": "IT", "name": "意大利"}));
+        Catalog::from_raw(&raw)
+    }
+
+    /// A page for the EU's members (round 11's r1 and round 10's r5): a question naming the union by a region word and no
+    /// group counts today's members as far as the page's rows hold them and names those with no row at its year on its
+    /// line; a page with every member at its year, of the aggregate, of origin countries, or for Europe the continent has
+    /// no basis and stays as before. Both shapes: the World Bank's iso3 rows (r1) and Eurostat's, Greece as EL (r5).
+    #[test]
+    fn a_page_for_the_eu_members_names_the_members_without_a_row_at_its_year() {
+        let c = eu_world();
+        let s = |xs: &[&str]| xs.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        let line = Some("按现有成员国计，画出 {n} 国，{year} 年{missing}无数据");
+        let wb27 = s(&[
+            "AUT", "BEL", "BGR", "CYP", "CZE", "DEU", "DNK", "EST", "GRC", "ESP", "FIN", "FRA", "HRV", "HUN", "IRL", "ITA",
+            "LTU", "LUX", "LVA", "MLT", "NLD", "POL", "PRT", "ROU", "SWE", "SVN", "SVK",
+        ]);
+        // r1: 15 of the 27 with a row at 2024, the other 12 with rows in earlier years only
+        let r1_2024 = s(&["LUX", "IRL", "DEU", "NLD", "DNK", "AUT", "SWE", "FRA", "ITA", "SVN", "PRT", "CZE", "EST", "LTU", "POL"]);
+        let q = "欧盟各国人均医疗支出";
+        let b = c.group_basis(q, (None, 2024), (&wb27, &r1_2024)).unwrap();
+        assert_eq!((b.group.as_str(), b.year, b.members.clone(), b.line.as_deref()), ("EU", 2024, wb27.clone(), line));
+        assert_eq!(b.missing, s(&["BEL", "BGR", "CYP", "GRC", "ESP", "FIN", "HRV", "HUN", "LVA", "MLT", "ROU", "SVK"]));
+        assert!(b.named.is_empty() && b.dropped.is_empty() && b.unfetched.is_empty(), "{b:?}");
+        assert_eq!(c.group_basis(q, (None, 2023), (&wb27, &wb27)), None, "every member at 2023: no basis");
+        // r5: Eurostat's codes, Romania with rows to 2023 only
+        let es27: Vec<String> = s(&crate::next_params::EU27);
+        let no_ro: Vec<String> = es27.iter().filter(|c| *c != "RO").cloned().collect();
+        let q = "欧盟各国生活垃圾回收率";
+        let b = c.group_basis(q, (None, 2024), (&es27, &no_ro)).unwrap();
+        assert_eq!((b.members.clone(), b.missing.clone(), b.line.as_deref()), (es27.clone(), s(&["RO"]), line));
+        assert!(b.members.contains(&"EL".to_string()));
+        // a member the rows hold in no year is no member of the count, as before (round 10's t4: no row of Greece)
+        let no_el: Vec<String> = es27.iter().filter(|c| *c != "EL").cloned().collect();
+        let no_el_ro: Vec<String> = no_el.iter().filter(|c| *c != "RO").cloned().collect();
+        let b = c.group_basis(q, (Some(2015), 2024), (&no_el, &no_el_ro)).unwrap();
+        assert_eq!((b.members.len(), b.missing.clone()), (26, s(&["RO"])));
+        assert_eq!(c.group_basis(q, (Some(2015), 2024), (&no_el, &no_el)), None);
+        // a member the question names on its own stays named (n51), as does a place beside the members
+        let b = c.group_basis("2024 年欧盟各国的早期离校率，意大利排第几？", (None, 2024), (&es27, &no_ro)).unwrap();
+        assert_eq!((b.named.clone(), b.missing.clone()), (s(&["IT"]), s(&["RO"])));
+        let with_us: Vec<String> = es27.iter().cloned().chain(s(&["US"])).collect();
+        let with_us_no_ro: Vec<String> = no_ro.iter().cloned().chain(s(&["US"])).collect();
+        let b = c.group_basis("欧盟各国和美国的生活垃圾回收率", (None, 2024), (&with_us, &with_us_no_ro)).unwrap();
+        assert_eq!((b.named.clone(), b.missing.clone(), b.dropped.clone()), (s(&["US"]), s(&["RO"]), Vec::new()));
+        // no page of the members: the aggregate beside far countries (n37), origin countries (q6), Europe the continent
+        assert_eq!(c.group_basis("欧盟、美国、中国 2022 年研发支出占 GDP 的比重谁最高？", (None, 2022), (&s(&["EU27_2020", "US", "CN"]), &s(&["EU27_2020", "US"]))), None);
+        assert_eq!(c.group_basis("欧盟、美国、中国 2022 年研发支出占 GDP 的比重谁最高？", (None, 2022), (&s(&["EUU", "USA", "CHN"]), &s(&["USA"]))), None);
+        assert_eq!(c.group_basis("欧盟庇护申请的来源国", (None, 2024), (&s(&["SY", "AF", "RO"]), &s(&["SY", "AF"]))), None);
+        assert_eq!(c.group_basis("欧洲各国生活垃圾回收率", (None, 2024), (&es27, &no_ro)), None);
     }
 
     /// A question's years fetch every member the page can end at (round-3 fix): a year it runs on from (since 2010) reads
