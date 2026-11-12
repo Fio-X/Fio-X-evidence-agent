@@ -11171,8 +11171,17 @@ mod tests {
         let none = ask(&["各方的高低排名"], &[], "南非");
         assert!(none.check(&answer("1", "南非的青年失业率明显偏高")).is_ok());
         assert!(none.allowed().get("members").is_none() && none.allowed().get("title_findings").is_none());
+        // a change page (round 9 e7, exam h6 and h10): a title says no place's direction; the label of the change passes
+        let change = ask(&["各方的变化", "{lead1.t}"], &["中国", "越南", "墨西哥", "印度"], "中国、越南、墨西哥和印度");
+        for (claim, word) in [("制造业占比：中国下降，越南上升", "上升"), ("墨西哥外资增加，印度减少", "增加"), ("中国排放大增", "大增")] {
+            let refused = change.check(&answer("1", claim)).unwrap_err();
+            assert!(refused.problem.starts_with(&format!("field '1': '{word}' says where")), "{}", refused.problem);
+        }
+        for label in ["中国与越南制造业占比的变化", "墨西哥和印度吸引外资的变化", "出口增加值的变化"] {
+            assert!(change.check(&answer("1", label)).is_ok(), "{label}");
+        }
         // the words are the knowledge group's list (title-findings-zh.json), read once
-        assert!(["为主", "居前", "偏高", "领先"].iter().all(|w| finding_words().iter().any(|f| f == w)));
+        assert!(["为主", "居前", "偏高", "领先", "下降", "增加"].iter().all(|w| finding_words().iter().any(|f| f == w)));
         // the rule goes to the model with the names, and every wording a rule suggests passes it
         let described = places.schema()["properties"]["text"]["description"].as_str().unwrap().to_string();
         assert!(described.contains(TITLE_FINDING_RULE) && described.contains(MEMBER_RULE), "{described}");
