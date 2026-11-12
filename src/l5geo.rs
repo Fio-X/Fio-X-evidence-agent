@@ -4732,6 +4732,27 @@ mod tests {
         assert_eq!(countries(&c, "2024年金砖国家青年失业率怎么排？").len(), 9);
     }
 
+    /// The places each question reads as on the real catalogue: Q_CASES rows of qid and question (tab-separated); prints
+    /// the qid, the countries (iso2, in question order), the listed aggregates and the scope with the words named.
+    /// L5GEO_DIR=<registry>/l5geo/catalog Q_CASES=<cases.tsv> cargo test l5geo::tests::replay_asked_places -- --include-ignored --nocapture
+    #[test]
+    #[ignore]
+    fn replay_asked_places() {
+        let dir = std::path::PathBuf::from(std::env::var("L5GEO_DIR").expect("L5GEO_DIR"));
+        let cases = std::fs::read_to_string(std::env::var("Q_CASES").expect("Q_CASES")).unwrap();
+        let c = Catalog::load(&dir).unwrap();
+        for line in cases.lines().filter(|l| !l.starts_with('#')) {
+            let Some((qid, q)) = line.split_once('\t') else { panic!("Q_CASES row without a tab: {line}") };
+            let (scope, named) = c.scope(q);
+            println!(
+                "PLACES\t{qid}\t{}\t{}\t{scope:?}\t{}",
+                countries(&c, q).join(","),
+                listed_aggregates(q).join(","),
+                named.join(",")
+            );
+        }
+    }
+
     /// The registered table notes on the real catalogue: q2's stand-in search words reach nrg_bal_s in the first five only
     /// with the notes, and every NOTE_LOCKED row gets the same first five with and without them. Each note's table is
     /// listed with the dimensions the note names, and its words hold no place name.
