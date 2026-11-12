@@ -1748,6 +1748,15 @@
     "url": "https://nocs.fao.org/exportCountryData",
     "accessed": "2026-11-06"
    }
+  },
+  {
+   "name": "大马",
+   "iso2": "MY",
+   "source": {
+    "title": "Common short form of 马来西亚 (MFA of the PRC country list), set by the project owner on 2026-11-12",
+    "url": "https://www.mfa.gov.cn/web/gjhdq_676201/gj_676203/yz_676205/",
+    "accessed": "2026-11-12"
+   }
   }
  ],
  "groups": [
@@ -2111,6 +2120,66 @@
       "title": "G20 New Delhi Leaders' Declaration, 9-10 September 2023: the African Union a permanent member, the 19 countries unchanged",
       "url": "https://www.consilium.europa.eu/media/66739/g20-new-delhi-leaders-declaration.pdf",
       "accessed": "2026-11-05"
+     }
+    }
+   ]
+  },
+  {
+   "id": "HKMO",
+   "names": [
+    "港澳"
+   ],
+   "periods": [
+    {
+     "from": 1960,
+     "to": null,
+     "members": [
+      "HK",
+      "MO"
+     ],
+     "source": {
+      "title": "Hong Kong and Macao Affairs Office of the State Council (国务院港澳事务办公室): 港澳 names Hong Kong and Macao together; the first year is the World Bank series' first year",
+      "url": "https://www.hmo.gov.cn/",
+      "accessed": "2026-11-12"
+     }
+    }
+   ]
+  },
+  {
+   "id": "NORDIC",
+   "names": [
+    "北欧五国"
+   ],
+   "periods": [
+    {
+     "from": 1952,
+     "to": 1954,
+     "members": [
+      "DK",
+      "IS",
+      "NO",
+      "SE"
+     ],
+     "source": {
+      "title": "Wikipedia (zh), 北欧理事会: Denmark, Iceland, Norway and Sweden from 1952, Finland from 1955 (五个成员国)",
+      "url": "https://zh.wikipedia.org/zh-cn/北欧理事会",
+      "accessed": "2026-11-12"
+     }
+    },
+    {
+     "from": 1955,
+     "to": null,
+     "members": [
+      "DK",
+      "FI",
+      "IS",
+      "NO",
+      "SE"
+     ],
+     "source": {
+      "title": "Wikipedia (zh), 北欧理事会: Denmark, Iceland, Norway and Sweden from 1952, Finland from 1955 (五个成员国)",
+      "url": "https://zh.wikipedia.org/zh-cn/北欧理事会",
+      "accessed": "2026-11-12"
      }
     }
    ]

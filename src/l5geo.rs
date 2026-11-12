@@ -3209,6 +3209,26 @@ mod tests {
         }
     }
 
+    /// The short forms the owner picked on 2026-11-12: 港澳 reads as Hong Kong and Macao, 大马 as Malaysia, 北欧五国 as the
+    /// five Nordic countries (four before Finland joined in 1955), in question order; 北欧 alone stays a region word.
+    #[test]
+    fn a_short_form_or_group_word_reads_as_its_places() {
+        let mut raw = small_raw();
+        let list = raw.wb_countries[1].as_array_mut().unwrap();
+        for c in ["HK", "MO", "MY", "SG", "KR", "DK", "FI", "IS", "NO", "SE", "TH"] {
+            list.push(json!({"id": c, "iso2Code": c, "name": format!("Land {c}"), "region": {"value": "Elsewhere"}}));
+        }
+        let c = Catalog::from_raw(&raw);
+        assert_eq!(countries(&c, "港澳和韩国的失业率怎么比？"), ["HK", "MO", "KR"]);
+        assert_eq!(countries(&c, "韩国和大马的出口"), ["KR", "MY"]);
+        let nordic = ["DK", "FI", "IS", "NO", "SE"];
+        assert_eq!(countries(&c, "北欧五国的人均寿命谁最长？"), nordic);
+        assert_eq!(countries(&c, "2010 年以来北欧五国各自的失业率"), nordic);
+        // 北欧 alone stays the Europe region word it was
+        assert_eq!(countries(&c, "北欧各国的失业率"), ["REGION"]);
+        assert_eq!(countries(&c, "1953年北欧五国的人口"), ["DK", "IS", "NO", "SE"]);
+    }
+
     #[test]
     fn a_question_naming_no_group_or_alias_reads_as_before() {
         let (c, w) = (small(), world());
@@ -3232,7 +3252,7 @@ mod tests {
         let sourced = |s: &SourceZh| !s.title.is_empty() && s.url.starts_with("https://") && s.accessed.len() == 10;
         assert!(names.aliases.iter().all(|a| a.iso2.len() == 2 && !a.name.is_empty() && sourced(&a.source)));
         assert!(names.aliases.iter().any(|a| a.name == "韩国" && a.iso2 == "KR"));
-        for id in ["BRICS", "ASEAN", "G7", "G20"] {
+        for id in ["BRICS", "ASEAN", "G7", "G20", "HKMO", "NORDIC"] {
             let g = names.groups.iter().find(|g| g.id == id).expect(id);
             assert!(!g.names.is_empty(), "{id}");
             for d in &g.disputed {
