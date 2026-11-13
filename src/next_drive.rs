@@ -2343,7 +2343,9 @@ mod drive {
 
 
         /// Roadmap step 3's planted-error measure (ignored; PLANT_LIST, PLANT_OUT and PLANT_TMP all required). Each line of the
-        /// list is a published leaf page's folder (`<run out>/publications/<recipe>`). The run's publications/ and data/, its
+        /// list is a published leaf page's folder (`<run out>/publications/<recipe>`), and optionally, after a tab, the run
+        /// folder whose events.jsonl to read in place of the page's own (a replayed page: its record keeps the group calls
+        /// only, the archived run its question and fetches). The run's publications/ and data/, its
         /// events.jsonl and runtime/next-page.json are copied into PLANT_TMP/run (never its config/ or session/; the archive is
         /// only read), and the page's checks that read its text run on the copy: the completion gate's (next_gate::leaf_gaps,
         /// the manifest's sha256 set to the bytes checked) and the flow's sayings check (next_sayings::check_published, its
@@ -2362,7 +2364,8 @@ mod drive {
             let copy = tmp.join("run");
             let mut lines = vec!["page\trecipe\tchange\tapplied\tcaught\tby".to_string()];
             let text = std::fs::read_to_string(&list).unwrap_or_else(|e| panic!("{}: {e}", list.display()));
-            for dir in text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')) {
+            for line in text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')) {
+                let (dir, events_at) = line.split_once('\t').map_or((line, None), |(d, e)| (d, Some(Path::new(e))));
                 let page = Path::new(dir);
                 let (Some(recipe), Some(root)) = (page.file_name().and_then(|n| n.to_str()), page.parent().and_then(Path::parent)) else {
                     lines.push(format!("{dir}\t\t-\tnot a publication folder\t\t"));
@@ -2379,9 +2382,8 @@ mod drive {
                             return Err(format!("copying {part} failed"));
                         }
                     }
-                    for file in ["events.jsonl", "runtime/next-page.json"] {
-                        std::fs::copy(root.join(file), copy.join(file)).map_err(|e| format!("{file}: {e}"))?;
-                    }
+                    std::fs::copy(events_at.unwrap_or(root).join("events.jsonl"), copy.join("events.jsonl")).map_err(|e| format!("events.jsonl: {e}"))?;
+                    std::fs::copy(root.join("runtime/next-page.json"), copy.join("runtime/next-page.json")).map_err(|e| format!("runtime/next-page.json: {e}"))?;
                     let text = std::fs::read_to_string(copy.join("events.jsonl")).map_err(|e| format!("events.jsonl: {e}"))?;
                     let events: Vec<Value> = text.lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
                     let question = events.iter().find(|e| e["type"] == CATALOGUE_EVENT).and_then(|e| e["question"].as_str()).ok_or("no next_catalogue question")?.to_string();
