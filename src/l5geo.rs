@@ -2740,14 +2740,26 @@ impl Catalog {
             self.twin_swap(std::mem::take(&mut r.candidates), monthly_twins(), months, latest_year);
         r.candidates = candidates;
         r.twins_refused = refused;
-        // only fewer: a table that cannot prove an answer over the places the question reads and the past year it names is
-        // not offered, none listed in its place (design 2a; none left, the caller says no table answers, as before)
+        // only fewer: when one listed table can prove an answer over the places the question reads and the past year it
+        // names, a table that cannot is not offered, none listed in its place (design 2a). When none can, all stay as
+        // before: the page answers what a table holds and says which named place has no data (answered_places; review
+        // 11-14: a Eurostat table missing a named Switzerland beside EU members is still the best there is)
         let asked: Vec<String> =
             self.places(question_zh).into_iter().filter_map(|p| if let Place::Country(c) = p { Some(c) } else { None }).collect();
-        let (kept, out): (Vec<Candidate>, Vec<Candidate>) =
-            std::mem::take(&mut r.candidates).into_iter().partition(|c| self.unproven(&c.id, &asked, latest_year).is_none());
-        r.unproven = out.iter().filter_map(|c| self.unproven(&c.id, &asked, latest_year).map(|why| (c.id.clone(), why))).collect();
-        r.candidates = kept;
+        let verdicts: Vec<Option<String>> = r.candidates.iter().map(|c| self.unproven(&c.id, &asked, latest_year)).collect();
+        // a table the catalogue lists no metadata of is unknown: kept, but it proves nothing for the others to be dropped by
+        let proves = r.candidates.iter().zip(&verdicts).any(|(c, why)| why.is_none() && self.table(&c.id).is_some());
+        if proves {
+            let (mut kept, mut out) = (Vec::new(), Vec::new());
+            for (c, why) in std::mem::take(&mut r.candidates).into_iter().zip(verdicts) {
+                match why {
+                    None => kept.push(c),
+                    Some(why) => out.push((c.id, why)),
+                }
+            }
+            r.candidates = kept;
+            r.unproven = out;
+        }
         for a in &mut r.asked {
             a.offered = r
                 .candidates
@@ -5027,6 +5039,21 @@ mod tests {
         let asked = s(&["CN", "US"]);
         assert!(r.candidates.iter().all(|x| c.unproven(&x.id, &asked, None).is_none()), "{:?}", r.candidates);
         assert!(r.unproven.iter().all(|(id, _)| !r.candidates.iter().any(|x| &x.id == id)));
+        // Germany and China with no World Bank table: nrg_bal holds DE only, nrg_world CN only, so none can prove and none
+        // is taken out (the page says which place has no data, as before)
+        let mut raw = small_raw();
+        raw.wb_indicators = json!([{}, []]);
+        let eu = Catalog::from_raw(&raw);
+        let q = "德国和中国的能源";
+        assert_eq!(countries(&eu, q), ["DE", "CN"]);
+        let all: Vec<String> = eu.rank(q, &texts(&["energy"])).candidates.into_iter().take(TOP).map(|x| x.id).collect();
+        assert!(all.iter().all(|id| eu.unproven(id, &s(&["DE", "CN"]), None).is_some() || eu.table(id).is_none()), "{all:?}");
+        let none = eu.top5(q, &texts(&["energy"]), false, None);
+        assert!(none.unproven.is_empty(), "{:?}", none.unproven);
+        assert_eq!(none.candidates.into_iter().map(|x| x.id).collect::<Vec<_>>(), all);
+        // with the World Bank table there, it proves and the Eurostat ones are taken out
+        let both = c.top5(q, &texts(&["energy"]), false, None);
+        assert!(both.candidates.iter().all(|x| c.unproven(&x.id, &s(&["DE", "CN"]), None).is_none()) && !both.unproven.is_empty(), "{:?}", both.candidates);
     }
 
     /// Measurement, not a check (ignored; design 2a): over recorded runs, each a published page (UNPROVEN_RUNS=<label>\t
@@ -5064,7 +5091,10 @@ mod tests {
             let asked: Vec<String> =
                 c.places(question).into_iter().filter_map(|p| if let Place::Country(x) = p { Some(x) } else { None }).collect();
             let latest = crate::next_params::question_latest_year(question, this_year);
-            let drops: Vec<(String, String)> = listed.iter().filter_map(|id| c.unproven(id, &asked, latest).map(|why| (id.clone(), why))).collect();
+            let mut drops: Vec<(String, String)> = listed.iter().filter_map(|id| c.unproven(id, &asked, latest).map(|why| (id.clone(), why))).collect();
+            if !listed.iter().any(|id| c.unproven(id, &asked, latest).is_none() && c.table(id).is_some()) {
+                drops.clear(); // none can prove: top5 keeps all
+            }
             let main = used.first().cloned().unwrap_or_default();
             let hit = drops.iter().any(|(id, _)| id.strip_suffix("@2").unwrap_or(id) == main);
             println!(
