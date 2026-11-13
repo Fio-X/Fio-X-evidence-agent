@@ -1477,6 +1477,16 @@ mod tests {
         assert_eq!(a, ["研发投入强度的高低排名"], "{u:?}");
     }
 
+    /// 东亚 (owner 11-13): the near note next_run near_noted puts on the unit line is words only: no saying over the set and
+    /// no place said to have no data, so the page holds as without it.
+    #[test]
+    fn a_near_note_on_the_unit_line_holds_as_words() {
+        let note = "；世行没有单列『东亚』，最接近的是『东亚与太平洋』，含东南亚和太平洋岛国";
+        let page = n37_page(block(&format!("单位：%；2022 年{note}"), &[]));
+        let u = unheld(&[named("USA"), named("CHN")], &page, &Source::default(), None, &words());
+        assert!(u.is_empty(), "{u:?}");
+    }
+
     #[test]
     fn every_named_place_drawn_holds() {
         let page = n37_page(block("单位：%；2022 年", &[]));
