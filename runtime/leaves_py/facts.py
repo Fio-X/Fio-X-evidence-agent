@@ -9,6 +9,7 @@ MEMBERS = None  # the aggregate's member codes, from the request (run.py sets th
 
 TABLES = None  # the request's rows as tables, set by run.py; None reads the csv files as before
 LEDGER = None  # the request's ledger entries {src: text}, set by run.py; None formats the numbers here as before
+NAME = None  # a place code's name from the request's labels without a ledger: prod.NAME, which prod sets when imported (no import of prod here)
 SRCS = {}  # id of each request row's cell -> its src, set by run.py, so an entry read from a record's cell can name it
 SEGS = None  # layer 1's segments of the drafted wordings {"dek", "unit"} (knobs.segs, next_facts::wording_segs), set by run.py
 
@@ -183,8 +184,7 @@ def fill(spec, F, text):
         # ":<code>"), none or two refusing; without one the request's label, bare
         code = mo.group(1)
         if LEDGER is None:
-            import prod
-            return html.escape(prod.NAME(code), quote=False)
+            return html.escape(NAME(code), quote=False)
         rows = [s for s in LEDGER if s.startswith("name:") and s.rsplit(":", 1)[-1] == code]
         if len(rows) > 1:  # a place code's row is the place table's (iso2, iso3), a part's (fossil) the other one
             place = re.fullmatch(r"[A-Z][A-Z0-9_]+", code) is not None

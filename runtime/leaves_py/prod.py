@@ -13,6 +13,7 @@ def NAME(c):
     """A place's name from the request's labels; a code the labels do not name refuses the layer."""
     if c not in NAMES: raise FX.Refused(f"the request labels no name for {c}")
     return NAMES[c]
+FX.NAME = NAME  # facts.fill's {name.<code>} without a ledger
 geo_name = NAME
 def need(d, k):
     """A module's topic word (a unit, a name, a year) the request must give: none refuses the layer. A unit is the
