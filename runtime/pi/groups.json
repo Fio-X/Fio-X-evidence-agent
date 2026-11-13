@@ -1080,6 +1080,10 @@
    "group": "agent",
    "note": "New route: the agent child's side when NEWSROOM_NEXT=1, the same JSONL protocol as the agent loop with each prompt running the program's fixed order (next_run); the model is offered one tool per step. Ownership only; no cross-group call is allowed by this row."
   },
+  "src/answer_plan.rs": {
+   "group": "knowledge",
+   "note": "v5 measurement prototype, built for tests only: a Chinese question read by rule into the places, years, quantity and relation the page has to prove (the owner's nine relations of 2026-11-13) and the one sentence it proves, numbers as placeholders. Reads l5geo only; not on the flow. Ownership only; no cross-group call is allowed by this row."
+  },
   "src/l5geo.rs": {
    "group": "knowledge",
    "note": "New route, data side: the first 5 candidate tables for a question from the catalogue (deterministic ranking). Pure. Ownership only; no cross-group call is allowed by this row."
@@ -5073,6 +5077,7 @@
     "src/next_pack.rs",
     "src/next_run.rs",
     "src/next_serve.rs",
+    "src/answer_plan.rs",
     "src/l5geo.rs",
     "src/next_knowledge.rs",
     "src/next_visual.rs",

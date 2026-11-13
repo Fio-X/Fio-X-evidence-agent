@@ -689,7 +689,7 @@ const GROUP: &str = "GROUP:";
 /// as vocabulary): a four-digit year from NAMED_FROM on standing alone directly before the year character or a range mark, spaces aside;
 /// the earliest and the latest, the latest None (to this year) when the question writes one year that it runs on from or
 /// compares with (a SINCE_AFTER word after it, a SINCE_BEFORE word before it). None when it writes no year.
-fn question_span(text: &str) -> Option<(i32, Option<i32>)> {
+pub(crate) fn question_span(text: &str) -> Option<(i32, Option<i32>)> {
     use crate::next_params::{NAMED_FROM, RANGE_MARKS, SINCE_AFTER, SINCE_BEFORE};
     let chars: Vec<char> = text.chars().filter(|c| !c.is_whitespace()).collect();
     let mut years: Vec<(i32, usize)> = Vec::new();
