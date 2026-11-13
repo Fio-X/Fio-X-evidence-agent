@@ -72,6 +72,9 @@ pub const LEVEL_TERMS_ZH: &str = include_str!("../runtime/pi/assets/level-terms-
 /// constant the flow's text check reads (next_flow finding_word: a reworded title that names a drawn place or part with one
 /// of them is refused); nothing prints it.
 pub const TITLE_FINDINGS_ZH: &str = include_str!("../runtime/pi/assets/title-findings-zh.json");
+/// The units whose values do not divide into a meaningful "N 倍" (years, scores, base-year indices, rates of change), a
+/// knowledge word list: a level page in one of them says its highest place with no ratio (next_tree_gen finding_declared).
+pub const RATIO_FREE_UNITS: &str = include_str!("../runtime/pi/assets/ratio-free-units.json");
 
 /// Registry: Eurostat's SDMX 3.0 data endpoint. Its named filters (`c[geo]=DE,FR`) need no dimension order: the metabase
 /// lists a table's dimensions alphabetically, not in its DSD's order (30 of 30 sampled tables differ, 10-28), and a DSD call

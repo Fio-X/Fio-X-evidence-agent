@@ -735,6 +735,22 @@ const FINDING: &str = "finding";
 /// headline in shape_registry's words (DEK_FINDINGS, HEADLINES) with each token the case's template. Every input but the
 /// rows is the page's own fill: `fill` {facts: keys, fmts, named: codes, composition: {bars}}, which the flow gives when it
 /// asks and the draw recheck reads from the finished fill. {facts, reads, finding, subject}; a page with none: no finding.
+/// Whether `unit` is one of the knowledge group's ratio-free units (next_knowledge::RATIO_FREE_UNITS): years, scores,
+/// base-year indices and rates of change, whose values do not divide into a meaningful "N 倍". A file that does not parse
+/// holds none, and its test fails.
+fn ratio_free_unit(unit: &str) -> bool {
+    static CODES: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    CODES
+        .get_or_init(|| {
+            serde_json::from_str::<serde_json::Value>(crate::next_knowledge::RATIO_FREE_UNITS)
+                .ok()
+                .and_then(|v| v["codes"].as_array().map(|a| a.iter().filter_map(|c| c.as_str().map(String::from)).collect()))
+                .unwrap_or_default()
+        })
+        .iter()
+        .any(|c| c == unit)
+}
+
 fn finding_declared(d: &J, page_in: &J, reg: &J) -> Result<J, String> {
     // no finding, and why (`fell_back`: the page's title falls back to the text step's label, which the run records)
     let none = |why: &str| J::obj_of(vec![("facts", J::Obj(vec![])), ("reads", J::Arr(vec![])), ("finding", J::Null), ("subject", J::Null), ("fell_back", J::Str(why.to_string()))]);
@@ -962,6 +978,9 @@ fn finding_declared(d: &J, page_in: &J, reg: &J) -> Result<J, String> {
         (true, Some(o)) => key(&st(c.g("other")), o)? > 0.0,
         (true, None) => false,
     };
+    // nor over a unit whose values do not divide (owner 11-13: life expectancy and the like get no "N 倍"): the knowledge
+    // group's list of years, scores, base-year indices and rates of change
+    let ratio_holds = ratio_holds && !(c.g("headline_needs_other_above_0").truthy() && ratio_free_unit(&st(view.g("shape").g("unit"))));
     let mut out = J::obj_of(vec![("facts", facts), ("reads", J::Arr(reads)), ("finding", J::Null), ("subject", subject)]);
     // with the ratio not holding, a level finding keeps a headline without it (LEVEL_PLAIN_HEADLINE)
     let headline = match (headline, ratio_holds) {
@@ -2572,6 +2591,17 @@ pub fn draw(fill: &Value, page_in: &Value, layers: &[String], runtime: &std::pat
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The ratio-free units parse and hold years, scores, base-year indices and rates of change, not a percentage or an amount.
+    #[test]
+    fn the_ratio_free_units_hold_years_scores_indices_and_rates_of_change() {
+        for u in ["YR", "SCORE", "SC100", "I15", "PCH_PRE", "RT1"] {
+            assert!(ratio_free_unit(u), "{u}");
+        }
+        for u in ["PC", "PC_GDP", "MIO_EUR", "THS_PER", "NR", ""] {
+            assert!(!ratio_free_unit(u), "{u}");
+        }
+    }
     use std::path::{Path, PathBuf};
 
     fn fixtures() -> PathBuf {

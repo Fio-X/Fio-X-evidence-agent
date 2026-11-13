@@ -922,6 +922,10 @@
    "group": "knowledge",
    "note": "New route, data side: names of measures and terms that hold a change word's character but name no change over time (value added, land-use change), built by a tool from World Bank indicator names in Chinese and the reviewed table names, each with its source, which the flow's text check (next_flow change_word) reads a wording without before it looks for a change word on a page that ranks one period; nothing prints them. A pure data word list like set-sayings-zh.json; next_knowledge.rs reads it with include_str as a vocabulary constant (LEVEL_TERMS_ZH) that next_flow.rs reads. Ownership only; no cross-group call is allowed by this row."
   },
+  "runtime/pi/assets/ratio-free-units.json": {
+   "group": "knowledge",
+   "note": "The units whose values do not divide into a meaningful N times (years, scores, base-year indices, rates of change; owner 11-13). Read through next_knowledge::RATIO_FREE_UNITS by the visual group's finding (next_tree_gen): a level page in one of them has no ratio headline. Ownership only; no cross-group call is allowed by this row."
+  },
   "runtime/pi/assets/title-findings-zh.json": {
    "group": "knowledge",
    "note": "New route, data side: the words that say where a place or part stands (the highest, ahead, clearly above, mostly), which the flow's text check (next_flow finding_word) refuses in a reworded title that names a place or part the page draws; nothing prints them. A pure data word list like level-terms-zh.json; next_knowledge.rs reads it with include_str as a vocabulary constant (TITLE_FINDINGS_ZH) that next_flow.rs reads. Ownership only; no cross-group call is allowed by this row."

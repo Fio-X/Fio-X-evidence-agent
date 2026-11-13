@@ -7699,6 +7699,19 @@ mod tests {
         // the title's headline says the same finding with the times the notes declare (HEADLINES), kept apart from the dek's
         assert_eq!(fill[HEADLINE], json!({"title": "{name.SE}最高，是最低者{name.BE}的{times}",
             "scoped": "{name.SE}居首，是第二位{name.BE}的{times}"}));
+        // a unit whose values do not divide (owner 11-13: life expectancy, years; the knowledge group's ratio-free units)
+        // keeps the level headline with no times
+        let mut years = ring_rows("sdg", &[("freq", "A"), ("unit", "YR")], ("geo", &["SE", "BE", "DE", "FR", "EU27_2020"]), &["2025"]);
+        for (r, v) in years.iter_mut().zip(["83.4", "81.9", "81.2", "82.5", "81.7"]) {
+            r["value"] = json!(v);
+        }
+        let ytables = [("sdg", &years[..])];
+        let yshape = shape_of(&column.eats, &ytables, &Hubs).unwrap();
+        assert_eq!(yshape.unit, "YR");
+        let yclaims = [("rank_top".to_string(), bound("c1", &[("country_iso2", json!("DE")), ("value", json!(81.2))]))];
+        let ypicks = picks_of(&column.picks, &yshape, &years, &yclaims).unwrap();
+        let yfill = test_fill(column, &yshape, &ypicks, (&years, &[]), &Hubs, ("标题", "导语"), false).unwrap();
+        assert_eq!(yfill[HEADLINE], json!({"title": "{name.SE}最高", "scoped": "{name.SE}居首"}));
         assert_eq!(spec["facts"]["lead1"], json!({"op": "last", "table": "sdg", "filter": {"geo": "SE"}, "from": "2025", "to": "2025", "fmt": "pc"}));
         assert!(spec["hero"]["data"].get("hi").is_none());
         assert_eq!(spec["fmts"]["pc"], json!({"scale": 1, "dec": 2, "suffix": "%"}));
