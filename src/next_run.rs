@@ -2626,7 +2626,7 @@ fn recipe_request(
     // (a recipe whose page cannot say so is not this shape, and the next one is tried)
     let filters = main.args.get("filters").cloned().unwrap_or(Value::Null);
     answered_places(&mut fill, &shape, (&main_rows, scoped), (places, basis.as_ref()), &filters, catalogue)
-        .and_then(|()| near_noted(&mut fill, question))
+        .and_then(|()| near_noted(&mut fill, question, places))
         .map_err(|why| (if why.starts_with("not this shape") { "shape" } else { "fill" }, why))?;
     if let Some(a) = asked_of {
         fill["knobs"]["spec"]["asked"] = a;
@@ -2840,15 +2840,17 @@ fn unit_at(fill: &mut Value) -> Option<&mut Value> {
     fill.pointer_mut("/knobs/spec/hero/unit")
 }
 
-/// The near note of each aggregate the page draws (a code its labels hold) that the question names only by a near word
+/// The near note of each aggregate the page draws (a code its labels hold) and the question's places read that the question names only by a near word
 /// (region-aggregates-zh.json near_words, the knowledge group's vocabulary: 东亚, whose nearest aggregate is EAS; owner
 /// 11-13: 东亚 is not EAS, and the page says so), none of the aggregate's own words: said on the unit line after the
 /// asked-places line's join (ASKED_PLACES_ZH lead), words only. The label stays the name table's (东亚与太平洋地区). Err
 /// when the page has no unit line to say it.
-fn near_noted(fill: &mut Value, question: &str) -> Result<(), String> {
+fn near_noted(fill: &mut Value, question: &str, places: &[crate::l5geo::Place]) -> Result<(), String> {
     let table: Value = serde_json::from_str(crate::l5geo::REGION_AGGREGATES_ZH).map_err(|e| format!("region-aggregates-zh.json: {e}"))?;
     let words = |a: &Value, key: &str| -> Vec<String> { a[key].as_array().into_iter().flatten().filter_map(Value::as_str).map(str::to_string).collect() };
-    let drawn = |code: &str| fill.pointer("/knobs/labels").and_then(Value::as_object).is_some_and(|l| l.contains_key(code));
+    // drawn, and read as a place (东亚国家 names no aggregate: a table's EAS row on such a page is no near word's; review 11-14)
+    let read = |code: &str| places.iter().any(|p| matches!(p, crate::l5geo::Place::Country(c) if c == code));
+    let drawn = |code: &str| read(code) && fill.pointer("/knobs/labels").and_then(Value::as_object).is_some_and(|l| l.contains_key(code));
     let notes: Vec<String> = table["aggregates"]
         .as_array()
         .into_iter()
@@ -7226,21 +7228,27 @@ mod tests {
     /// the unit line, as words; named by the aggregate's own words, or not drawn, the line stays; no unit line refuses.
     #[test]
     fn a_near_word_puts_its_note_on_the_unit_line() {
+        use crate::l5geo::Place;
         let page = || json!({"knobs": {"labels": {"SSF": "撒哈拉以南非洲地区", "EAS": "东亚与太平洋地区"}, "spec": {"hero": {"unit": "单位：%"}}}});
         let mut f = page();
-        near_noted(&mut f, "撒哈拉以南非洲、南亚、东亚，2000 年到 2023 年能用上电的人口比例各怎么变？").unwrap();
+        let read = [Place::Country("SSF".into()), Place::Country("SAS".into()), Place::Country("EAS".into())];
+        near_noted(&mut f, "撒哈拉以南非洲、南亚、东亚，2000 年到 2023 年能用上电的人口比例各怎么变？", &read).unwrap();
         let note = "；世行没有单列『东亚』，最接近的是『东亚与太平洋』，含东南亚和太平洋岛国";
         assert_eq!(f["knobs"]["spec"]["hero"]["unit"], format!("单位：%{note}"));
         assert_eq!(f["knobs"]["segs"]["unit"], json!([{"w": "单位：%"}, {"w": note}]));
         let mut own = page();
-        near_noted(&mut own, "撒哈拉以南非洲、东亚与太平洋地区的通电率").unwrap();
+        near_noted(&mut own, "撒哈拉以南非洲、东亚与太平洋地区的通电率", &read).unwrap();
         assert_eq!(own, page());
         let mut undrawn = json!({"knobs": {"labels": {"SSF": "撒哈拉以南非洲地区"}, "spec": {"hero": {"unit": "单位：%"}}}});
         let before = undrawn.clone();
-        near_noted(&mut undrawn, "撒哈拉以南非洲、东亚的通电率").unwrap();
+        near_noted(&mut undrawn, "撒哈拉以南非洲、东亚的通电率", &read).unwrap();
         assert_eq!(undrawn, before);
         let mut no_unit = json!({"knobs": {"labels": {"EAS": "东亚与太平洋地区"}, "spec": {"hero": {}}}});
-        assert!(near_noted(&mut no_unit, "南亚、东亚的通电率").unwrap_err().starts_with("not this shape"));
+        assert!(near_noted(&mut no_unit, "南亚、东亚的通电率", &read).unwrap_err().starts_with("not this shape"));
+        // 东亚 not read as a place (东亚国家), the table's EAS row drawn all the same: no note
+        let mut unread = page();
+        near_noted(&mut unread, "东亚国家的通电率谁最高？", &[]).unwrap();
+        assert_eq!(unread, page());
     }
 
     /// The flow's side of the countries a question names on their own (owner 11-06 design): the codes as the rows write
