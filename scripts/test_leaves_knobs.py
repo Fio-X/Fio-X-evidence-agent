@@ -60,7 +60,7 @@ class Registry(unittest.TestCase):
         t = knobs.table()
         column = next(r for r in knobs.RECIPES if r["name"] == "column")
         self.assertEqual((column["layers"], t["groups"]["column"]),
-                         (["bars", "bubbles", "leader_notes"], ["bignums", "bars", "section_head", "rankbar", "bubbles", "bubble_key", "leader_notes", "sankey", "stacked100"]))
+                         (["bars", "leader_notes"], ["bignums", "bars", "section_head", "rankbar", "bubbles", "bubble_key", "leader_notes", "sankey", "stacked100"]))
         for eats in (["annual", "last_year", "one_place", "one_unit"], ["annual", "one_unit", "monthly_companion", "hub_origin"]):
             with self.assertRaises(SystemExit) as e:
                 self._with(dict(column, layers=[], eats=eats), t)
@@ -80,7 +80,8 @@ class Registry(unittest.TestCase):
         for name, ls in layers.items():
             if "bubbles" in ls: self.assertEqual(ls[ls.index("bubbles") + 1], "bubble_key", name)
             else: self.assertNotIn("bubble_key", ls, name)
-        self.assertEqual((layers["column"], layers["change"]), (["bars", "bubbles", "bubble_key", "leader_notes"], ["bubbles", "bubble_key", "bars", "leader_notes"]))
+        # the column page has no map since v5 item 2 (11-13): no circles, no key
+        self.assertEqual((layers["column"], layers["change"]), (["bars", "leader_notes"], ["bubbles", "bubble_key", "bars", "leader_notes"]))
         self.assertEqual((layers["scmp"], layers["ring"]), (["map", "strip", "bignums", "notes"], ["map", "ring", "callouts", "legend", "inset"]))
         self.assertEqual(t["nodes"]["bubble_key"]["eats"], t["nodes"]["bubbles"]["eats"])
         self.assertEqual([k["name"] for k in t["nodes"]["bubble_key"]["knobs"]], ["size", "count", "width"])

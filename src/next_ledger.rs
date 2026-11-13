@@ -1219,7 +1219,7 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     ("tree_gen.parts_stops", "next_tree_gen::parts_declared rules", &["tree_gen::parts_declared", "tree_gen::first_row_of_no_number", "tree_gen::parts_expand"]),
     // the page's finding (node finding): the first case that holds over the core's selects, no finding on a tie, an unnamed
     // code or a fact the page lacks; declared again over the finished fill at draw, its facts, reads, words and accent held
-    ("tree_gen.finding", "", &["tree_gen::finding_declared", "tree_gen::walk", "tree_gen::finding_recheck"]),
+    ("tree_gen.finding", "", &["tree_gen::finding_declared", "tree_gen::walk", "tree_gen::finding_recheck", "tree_gen::ratio_free_unit"]),
     // a note against the mean of the compared places: the places averaged are the places the page draws
     ("tree_gen.mean_drawn", "", &["tree_gen::mean_recheck"]),
     // the page tree over the fill: selects recompute, every format the fill names, the accent held by a select

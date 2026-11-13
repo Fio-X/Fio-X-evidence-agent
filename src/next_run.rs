@@ -6019,12 +6019,22 @@ mod tests {
     /// P6 step 8: the q1 column page's tree holds the circles' extent the visual group declares, the one their leaf data and
     /// the notes' hold (rule extent over the page input in both, next_tree_gen with_values), and the flow hands in none: an
     /// extent set on the page input changes nothing, a moved map point moves the tree's extent (and it is no longer the
-    /// leaf's).
+    /// leaf's). The column recipe has had no map since v5 item 2 (11-13); the rule is the change recipe's circles' still, so
+    /// the q1 page is laid out here with the circles it had (the bindings and the recipe's layers as before).
     #[test]
     fn the_trees_extent_is_the_leaf_data_s_and_the_flow_hands_in_none() {
         use crate::next_tree::J;
-        let overlay = crate::next_tree::bindings();
-        let (_, fill, _) = q1_fills(&overlay);
+        let mut v = crate::next_tree::bindings().to_value();
+        v["recipes"]["column"] = json!(["bars", "bubbles", "leader_notes"]);
+        let overlay = J::from_value(&v);
+        let column = recipe("column");
+        let with_map = Recipe {
+            layers: vec!["bars".into(), "bubbles".into(), "bubble_key".into(), "leader_notes".into()],
+            external: vec!["bars".into(), "bubbles".into(), "leader_notes".into()],
+            points: vec!["bubbles".into(), "leader_notes".into()],
+            ..recipe_like(column)
+        };
+        let (_, fill, _) = q1_fills_as(&overlay, with_map);
         let fill = fill.unwrap();
         let page_in = fill["page_in"].clone();
         assert!(page_in.get("page").is_none(), "the flow hands in no extent");
@@ -6464,6 +6474,11 @@ mod tests {
     /// The q1 column page of scripts/fixtures/p3b/pos-q1-b.json with its bars bound external over `overlay` (the visual
     /// group's NodeDeclare through its door): the fill as fill_of writes it with the rust bars, and with the external bars.
     fn q1_fills(overlay: &crate::next_tree::J) -> (Value, Result<Value, String>, Vec<Value>) {
+        q1_fills_as(overlay, recipe("column").clone())
+    }
+
+    /// q1_fills with the column page drawn as `external` (its layers, external layers and map points) lays it out.
+    fn q1_fills_as(overlay: &crate::next_tree::J, external: Recipe) -> (Value, Result<Value, String>, Vec<Value>) {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
         let envelope: Value = serde_json::from_str(&std::fs::read_to_string(root.join("scripts/fixtures/p3b/pos-q1-b.json")).unwrap()).unwrap();
         let tree = &envelope["input"];
@@ -6473,8 +6488,8 @@ mod tests {
         let mut picks = picks_of(&column.picks, &shape, &main, &[]).unwrap();
         picks.marks = tree["given"]["marks"].as_array().unwrap().iter().map(|c| c.as_str().unwrap().to_string()).collect();
         let words = ("标题", "导语");
-        let rust: Value = serde_json::from_str(&std::fs::read_to_string(root.join("scripts/fixtures/p4a/q1-rust-fill.json")).unwrap()).unwrap();
-        let external = column.clone();
+        let mut rust: Value = serde_json::from_str(&std::fs::read_to_string(root.join("scripts/fixtures/p4a/q1-rust-fill.json")).unwrap()).unwrap();
+        without_the_map(&mut rust);
         let page_in = page_input(&external, &shape, &picks, (&main, &[]));
         let calls = std::sync::Mutex::new(Vec::new());
         let asked = Asked { calls: &calls, page_in: Some(&page_in) };
@@ -6483,6 +6498,15 @@ mod tests {
             fill_of(&external, &shape, &picks, (&main, &[]), &Hubs, words, false, Some(&asked))
         });
         (rust, fill, calls.into_inner().unwrap())
+    }
+
+    /// The frozen q1 fill less what its map drew: the column recipe has no map since v5 item 2 (11-13; its circles drew the
+    /// bars' own values at their year), so the circles' rows, their leaf and the map layers' places in the order go; every
+    /// other key of the frozen fill is held as before.
+    fn without_the_map(rust: &mut Value) {
+        rust["drawn"].as_array_mut().unwrap().retain(|r| r["layer"] != "bubbles");
+        rust["knobs"]["spec"]["hero"]["leaves"].as_object_mut().unwrap().remove("bubbles").expect("the frozen fill's circles");
+        rust["order"].as_array_mut().unwrap().retain(|l| l != "bubbles" && l != "bubble_key");
     }
 
     /// The frozen fill's facts and formats with what the generator raised so the page's printed differences agree
@@ -6584,7 +6608,7 @@ mod tests {
         assert!(differs.is_empty(), "the declared fill differs from the rust bars' and circles': {differs:#?}");
         let asked: Vec<(Option<&str>, Option<bool>)> =
             calls.iter().filter(|e| e["request"] == "node_declare").map(|e| (e["node"].as_str(), e["ok"].as_bool())).collect();
-        assert_eq!(asked, [(Some("bars"), Some(true)), (Some("bubbles"), Some(true)), (Some("leader_notes"), Some(true)), (Some("finding"), Some(true))]);
+        assert_eq!(asked, [(Some("bars"), Some(true)), (Some("leader_notes"), Some(true)), (Some("finding"), Some(true))]);
         // the drawn count stays out of the hero's data unless the registry keeps it in the tree only
         assert!(overlay.set_path(&["nodes", "bars", "declares", "tree_only"].map(String::from), crate::next_tree::J::strs(&["part"])));
         let (_, with_count, _) = q1_fills(&overlay);
@@ -7681,10 +7705,10 @@ mod tests {
         twice.push(json!({"src": "series:sdg/x:2025:OBS_VALUE", "dims": {"freq": "A", "unit": "PC", "geo": "SE"}, "time": "2025", "value": "1"}));
         assert_eq!(picks_of(&column.picks, &shape, &twice, &claims).unwrap_err(), "not this shape: main sdg holds SE twice at 2025");
 
-        // the key to the circles comes with the bubbles (knobs.py WITH), drawn before the notes
-        assert_eq!(column.layers, ["bars", "bubbles", "bubble_key", "leader_notes"]);
+        // the bars and their notes: no map since v5 item 2 (11-13), its circles drew the bars' own values at their year
+        assert_eq!(column.layers, ["bars", "leader_notes"]);
         let fill = test_fill(column, &shape, &picks, (&main, &[]), &Hubs, ("标题", "导语"), false).unwrap();
-        assert_eq!(fill["order"], json!(["bars", "bubbles", "bubble_key", "leader_notes"]));
+        assert_eq!(fill["order"], json!(["bars", "leader_notes"]));
         let rows = fill["rows"].as_array().unwrap();
         assert_eq!(rows.iter().map(|r| r["dims"]["geo"].as_str().unwrap()).collect::<Vec<_>>(), ["SE", "BE", "DE", "FR"]);
         let spec = &fill["knobs"]["spec"];
@@ -7717,23 +7741,19 @@ mod tests {
         assert_eq!(spec["fmts"]["pc"], json!({"scale": 1, "dec": 2, "suffix": "%"}));
         // a gap in points prints one decimal (POINTS_DEC), the values the two their rows hold
         assert_eq!(spec["fmts"]["pp"], json!({"scale": 1, "dec": 1, "suffix": " 个百分点"}));
-        // one circle per ranked country at its Natural Earth label point, the points' box MAP_PAD past it (a box this small holds
-        // every label at that), the pinned table named
-        let (bubbles, notes) = (&spec["hero"]["leaves"]["bubbles"], &spec["hero"]["leaves"]["leader_notes"]);
-        let items = bubbles["items"].as_array().unwrap();
-        assert_eq!(items.iter().map(|i| i["code"].as_str().unwrap()).collect::<Vec<_>>(), ["SE", "DE", "FR", "BE"]);
-        assert_eq!(items[1], json!({"code": "DE", "value": "series:sdg/DE:2025:OBS_VALUE",
-            "value_text": "fact:val.DE.n", "lonlat": [9.678348, 50.961733]}));
-        let ext = bubbles["ext"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect::<Vec<_>>();
-        let lon: Vec<f64> = items.iter().map(|i| i["lonlat"][0].as_f64().unwrap()).collect();
+        // no circles; the notes' extent is still the visual group's over each ranked country's Natural Earth label point, the
+        // points' box MAP_PAD past it (a box this small holds every label at that), the pinned table named (the leaf points
+        // them at the bars, by name)
+        assert!(spec["hero"]["leaves"].get("bubbles").is_none());
+        let notes = &spec["hero"]["leaves"]["leader_notes"];
+        let ext = notes["ext"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect::<Vec<_>>();
+        let lon: Vec<f64> = fill["knobs"]["points"]["at"].as_object().unwrap().values().map(|p| p[0].as_f64().unwrap()).collect();
         assert_eq!(ext[0], lon.iter().copied().fold(f64::INFINITY, f64::min) - MAP_PAD);
         // each point kept with the request, with the pinned table it was read from
         assert_eq!(fill["knobs"]["points"]["sha256"], crate::next_flow::NE_POINTS_SHA256);
         assert_eq!(fill["knobs"]["points"]["at"]["DE"], json!([9.678348, 50.961733]));
         assert_eq!(fill["knobs"]["points"]["at"].as_object().unwrap().len(), 4);
-        // the two notes: the highest (SE) how far above the mean of the places drawn (form A), the lowest (BE) the times, in
-        // the same frame
-        assert_eq!(notes["ext"], bubbles["ext"]);
+        // the two notes: the highest (SE) how far above the mean of the places drawn (form A), the lowest (BE) the times
         let said: Vec<(&str, &str, &str)> = notes["notes"].as_array().unwrap().iter()
             .map(|n| (n["name"].as_str().unwrap(), n["text"][0]["word"].as_str().unwrap(), n["value_text"].as_str().unwrap())).collect();
         assert_eq!(said, [("SE", "column.note.vs_mean", "fact:vs_mean"), ("BE", "column.note.lo", "fact:times")]);
@@ -12954,11 +12974,13 @@ for line in sys.stdin:
 
     /// The radius scale the bubbles layer drew its circles at is on record in the run's RING_EVENT as the leaf child said it:
     /// a twin child whose bubbles reply says r_used 18 and r_steps 2 (two knob steps under r_max 22), and r_min_lifted 2 with
-    /// r_min_codes LU and MT (the circles lifted to r_min on that scale), gives a ring event with all four.
+    /// r_min_codes LU and MT (the circles lifted to r_min on that scale), gives a ring event with all four. The flow reads
+    /// the scale off whichever layer's reply carries it (next_leaf take); this run's column page has had no circles since v5
+    /// item 2 (11-13), so its twin says it on the bars' reply, as the change page's circles say it on theirs.
     #[tokio::test]
     async fn the_ring_event_records_the_radius_scale_the_bubbles_layer_drew_at() {
         let said = r#""dropped": []}"#;
-        let twin = LEAF_CHILD_TWIN.replacen(said, &format!("{said}\n        if req[\"layer\"] == \"bubbles\": out.update(r_used=18, r_steps=2, r_min_lifted=2, r_min_codes=[\"LU\", \"MT\"])"), 1);
+        let twin = LEAF_CHILD_TWIN.replacen(said, &format!("{said}\n        if req[\"layer\"] == \"bars\": out.update(r_used=18, r_steps=2, r_min_lifted=2, r_min_codes=[\"LU\", \"MT\"])"), 1);
         assert_ne!(twin, LEAF_CHILD_TWIN);
         let vision = call("toolu_v", vision_reply(&[]));
         let ran = leaf_run(Some(twin.as_str()), "other bytes", vec![vision]).await;
@@ -13244,24 +13266,24 @@ for line in sys.stdin:
         );
     }
 
-    /// The pair the column recipe declares (knobs.json same_measure: its bars and bubbles) is recorded as known, declared by
-    /// the column recipe, and passes same_numbers_twice with a warning naming it.
+    /// The column recipe declares no pair since v5 item 2 (owner 11-13: the map must not draw the bars' own numbers at their
+    /// own year; it had, as the one declared exemption): its bars and circles of the same rows fail same_numbers_twice, the
+    /// pair not known, with no warning.
     #[test]
-    fn the_pair_the_column_recipe_declares_passes_same_numbers_twice_with_a_warning() {
-        assert_eq!(recipe("column").same_measure, [("bars".to_string(), "bubbles".to_string())]);
+    fn the_column_recipe_declares_no_pair_and_its_bars_and_circles_of_the_same_rows_fail() {
+        assert!(recipe("column").same_measure.is_empty());
         let drawn: Vec<Value> = ["bubbles", "bars"].iter().flat_map(|l| ["SE", "BE"].map(|g| drawn_row(l, g, "2025"))).collect();
         let checks = page_checks(recipe("column"), Some("<body></body>"), &[], StripAsk::default(), &drawn, Some(&typed()));
-        assert!(checks[2].passed, "{checks:?}");
-        assert!(checks[2].warning.as_deref().is_some_and(|w| w.contains("the column recipe declares")), "{checks:?}");
+        assert_eq!((checks[2].name, checks[2].passed, &checks[2].warning), ("same_numbers_twice", false, &None), "{checks:?}");
         assert_eq!(
             checks[2].measured,
-            json!({"pairs": [{"layers": ["bubbles", "bars"], "table": "sdg", "times": ["2025"], "values": 2, "known": true, "declared_by": "column"}]})
+            json!({"pairs": [{"layers": ["bubbles", "bars"], "table": "sdg", "times": ["2025"], "values": 2, "known": false, "declared_by": null}]})
         );
     }
 
     /// Every recipe's declared same-measure pairs, pinned whole: a pair passes same_numbers_twice for every table of its
     /// recipe, so a declaration is an exemption and each one added (or a recipe added) turns this test red until it is
-    /// reviewed here. Today only the column page's bars and bubbles (item 5 is to take that one away); the flow page declares none.
+    /// reviewed here. None today: the column page's bars and bubbles went with its map (v5 item 2, 11-13).
     #[test]
     fn every_recipe_s_same_measure_declarations_are_pinned() {
         let declared: Vec<(&str, Vec<(&str, &str)>)> = Hubs
@@ -13269,7 +13291,7 @@ for line in sys.stdin:
             .iter()
             .map(|r| (r.name.as_str(), r.same_measure.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect()))
             .collect();
-        assert_eq!(declared, [("scmp", vec![]), ("ring", vec![]), ("composition", vec![]), ("change", vec![]), ("column", vec![("bars", "bubbles")]), ("ranked_bars", vec![]), ("flow", vec![])]);
+        assert_eq!(declared, [("scmp", vec![]), ("ring", vec![]), ("composition", vec![]), ("change", vec![]), ("column", vec![]), ("ranked_bars", vec![]), ("flow", vec![])]);
     }
 
     /// A pair is known only by the page's own recipe and only as the layers it declares: the bars and bubbles under a recipe
@@ -13288,8 +13310,9 @@ for line in sys.stdin:
         }
     }
 
-    /// The q1 shape's column request keeps what each layer prints a value of: the bars and the bubbles each every ranked
-    /// country's row at the year, the leader notes none (they print the gap and the times, which they only compute from).
+    /// The q1 shape's column request keeps what each layer prints a value of: the bars every ranked country's row at the
+    /// year, the leader notes none (they print the gap and the times, which they only compute from); no map draws them again
+    /// (v5 item 2, 11-13), so no pair prints the same numbers twice.
     #[test]
     fn a_column_request_keeps_the_rows_each_layer_prints_and_the_notes_print_none() {
         let mut main = ring_rows("sdg", &[("freq", "A"), ("unit", "PC")], ("geo", &["SE", "BE", "DE", "FR", "EU27_2020"]), &["2025"]);
@@ -13303,14 +13326,15 @@ for line in sys.stdin:
         let drawn = fill["drawn"].as_array().unwrap();
         let of = |layer: &str| -> BTreeSet<&str> { drawn.iter().filter(|r| r["layer"] == layer).filter_map(|r| r["src"].as_str()).collect() };
         assert_eq!(of("bars").len(), picks.ranked.len(), "{drawn:?}");
-        assert_eq!(of("bars"), of("bubbles"));
+        assert!(of("bubbles").is_empty(), "{drawn:?}");
         assert!(of("leader_notes").is_empty(), "{drawn:?}");
         let checks = page_checks(recipe("column"), Some("<body></body>"), &[], StripAsk::default(), drawn, Some(&typed()));
-        assert_eq!(checks[2].measured["pairs"][0]["layers"], json!(["bars", "bubbles"]));
+        assert!(checks[2].passed && checks[2].warning.is_none(), "{checks:?}");
+        assert_eq!(checks[2].measured["pairs"], json!([]));
     }
 
     /// A published leaf page the completion gate holds nothing back on goes through the page checks before the image
-    /// review: the flow records each check (here all passing, the bars and the bubbles' shared rows as the known pair) and
+    /// review: the flow records each check (here all passing, no layer printing another's numbers: v5 item 2) and
     /// the run goes on to the image review (which stops there: the browser-check twin writes no screenshot to show).
     #[tokio::test]
     async fn a_published_leaf_page_passing_every_page_check_goes_on_to_the_image_review() {
@@ -13328,12 +13352,11 @@ for line in sys.stdin:
             got,
             [("notes_dropped", true), ("strip_placed", true), ("same_numbers_twice", true), ("type_size", true), ("text_contrast", true)]
         );
-        assert_eq!(checks[0]["checks"][2]["measured"]["pairs"][0]["known"], true);
+        assert_eq!(checks[0]["checks"][2]["measured"]["pairs"], json!([]));
         // the bake twin's type, carried from the bake to the event
         assert_eq!(checks[0]["checks"][3]["measured"]["min_font_px"], 12, "{:?}", checks[0]);
         assert_eq!(checks[0]["checks"][4]["measured"]["min_contrast_body"], 12.63, "{:?}", checks[0]);
-        assert_eq!(checks[0]["checks"][2]["measured"]["pairs"][0]["declared_by"], "column");
-        assert!(checks[0]["checks"][2]["warning"].as_str().is_some_and(|w| w.contains("column")), "{:?}", checks[0]);
+        assert_eq!(checks[0]["checks"][2]["warning"], Value::Null, "{:?}", checks[0]);
         assert_eq!((&checks[0]["checks"][0]["warning"], &checks[0]["checks"][1]["warning"]), (&Value::Null, &Value::Null));
         match &ran.result {
             Err(Stop::Page { step: "publication_vision", why }) => assert!(why.contains("screenshot"), "{why}"),

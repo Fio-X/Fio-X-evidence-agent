@@ -2765,7 +2765,9 @@ mod tests {
             // the layers the prototype asked: not the leader notes, which lay themselves out in their leaf and stop nowhere here
             let layers: Vec<String> = bindings.g("recipes").g(&st(c.g("recipe"))).arr().iter().map(st).filter(|l| l != "leader_notes").collect();
             let asked: Vec<String> = layers.iter().filter(|l| leaf_stops(l, &page_in, &fill, &reg).is_none()).cloned().collect();
-            let want: Vec<String> = c.g("asked").arr().iter().map(st).collect();
+            // the column recipe has had no map since v5 item 2 (11-13): the circles the prototype asked on its pages are not asked
+            let mapless = st(c.g("recipe")) == "column";
+            let want: Vec<String> = c.g("asked").arr().iter().map(st).filter(|l| !(mapless && l == "bubbles")).collect();
             if asked != want {
                 off.push(format!("{} {}: asked {asked:?}, the prototype {want:?}", st(c.g("id")), st(c.g("recipe"))));
             }

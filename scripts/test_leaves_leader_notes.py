@@ -912,8 +912,29 @@ class ColumnMap(unittest.TestCase):
     def test_two_extents_or_notes_without_bubbles_refuse(self):
         got = child(column_lines({"bubbles": dict(items=ITEMS, ext=EXT), "leader_notes": dict(D, ext=[-20, 30, 40, 70])})[:1])[0]
         self.assertEqual(got["refused"], ["size: column: the leader notes and the bubbles name two extents; the map panel has one frame"])
-        got = child(column_lines({"leader_notes": D})[:1])[0]
-        self.assertEqual(got["refused"], ["size: column: the leader notes point at the bubbles' map, and the hero has none"])
+
+    def test_with_no_map_the_notes_point_at_their_bars_printed_values_in_the_bars_picture(self):
+        # v5 item 2 (11-13): the column recipe has no map (its circles drew the bars' own values at their year); its notes stand
+        # in the bars' picture, under or beside the bars, off every name, bar and value, each leader ending just past its
+        # place's printed value (column.cl_bars_placed's bar_ends), the picture NOTE_BAND taller for them
+        lines = column_lines({"leader_notes": D}, accent="SE")
+        lines = [lines[0], lines[1], lines[4]]
+        got = child(lines)
+        self.assertEqual([g.get("refused") for g in got], [None] * 3)
+        self.assertEqual((got[1].get("dropped") or []) + (got[2].get("dropped") or []), [])
+        html = child(lines + [json.dumps({"phase": "page", "layers": {"bars": got[1]["svg"], "leader_notes": got[2]["svg"]}})])[3]["html"]
+        self.assertNotIn('class="cmap"', html)
+        pic = re.search(r'<svg class="bars[^"]*"[^>]*viewBox="0 0 1140 (\d+)"[^>]*>(.*?)</svg>', html, re.S)
+        rh, top = prod.KNOBS["bars"]["row"][0], prod.KNOBS["bars"]["top"][0]
+        self.assertEqual(int(pic.group(1)), top + rh * len(VALUES) + 4 + run.NOTE_BAND)
+        self.assertIn('<g data-layer="leader_notes">', pic.group(2))
+        ends = [tuple(map(float, c)) for c in re.findall(r'<circle cx="([\d.]+)" cy="([\d.]+)" r="2.5"', pic.group(2))]
+        self.assertEqual(len(ends), 2)
+        ranked = sorted(VALUES, key=lambda c: -VALUES[c])
+        for (x, y), code in zip(sorted(ends, key=lambda p: p[1]), ("SE", "LU")):
+            row = ranked.index(code)
+            self.assertAlmostEqual(y, top + rh * row + rh / 2, delta=1, msg=code)
+            self.assertLess(x, 1140, code)
 
     def test_a_crowded_map_still_draws_and_says_exactly_which_notes_it_dropped(self):
         # the EU-27 with one note per country (its name and a number), label_count 12 and note_size 22: fifteen past it, and of

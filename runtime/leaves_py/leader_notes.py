@@ -64,19 +64,27 @@ TWO_BEND_CHECKS = 1_500_000  # point tests the whole layer's two-bend leaders ma
 
 
 class Frame:
-    def __init__(f, h):
+    def __init__(f, h, bars=None):
+        """bars (a column page with no map, run.bar_notes): {"ends": {code: (x, y)}, "W", "H"}, the end of each bar's printed
+        value in the bars' picture, which a note's name points at instead of its map point (its at is not read); a note whose
+        name no bar draws refuses."""
         d = h["data"]; k = lambda n: K.knob(h, NODE, n)
-        f.h, f.d, f.k = h, d, k; f.v = v = MK.View(h, NODE); f.W, f.H = v.W, v.H; f.size = size = k("note_size")
+        f.h, f.d, f.k = h, d, k; f.size = size = k("note_size")
+        if bars is None: f.v = v = MK.View(h, NODE); f.W, f.H = v.W, v.H
+        else: f.v = v = None; f.W, f.H = bars["W"], bars["H"]
         notes = [dict(n) for n in (d.get("notes") or [])]
         if not notes: raise Refused("leader_notes: the request holds no notes")
         if len(notes) > MAX_ROWS: raise Refused(f"leader_notes: at most {MAX_ROWS} notes, got {len(notes)}")
         kind = d.get("name_kind", "place")
         for i, n in enumerate(notes):
             n["_id"] = n.get("name") or f"note{i + 1}"; at = n.get("at")
-            if at == "hub":
+            if bars is not None:
+                if n.get("name") not in bars["ends"]: raise Refused(f"leader_notes: note {i + 1} names {n.get('name')}, which no bar draws")
+                n["_pt"] = tuple(bars["ends"][n["name"]])
+            elif at == "hub":
                 if v.hub is None: raise Refused(f"leader_notes: note {i + 1} points at the hub and the request gives none")
                 at = v.hub
-            n["_pt"] = v.at(v.lonlat(at, f"leader_notes: note {i + 1}"))  # a place beyond the frame is pointed at where its flow line enters (found by pagecheck: the raw point lay outside the picture)
+            if bars is None: n["_pt"] = v.at(v.lonlat(at, f"leader_notes: note {i + 1}"))  # a place beyond the frame is pointed at where its flow line enters (found by pagecheck: the raw point lay outside the picture)
             if not n.get("name") and not n.get("text"): raise Refused(f"leader_notes: note {i + 1} has neither a name nor words")
             parts, wd, plain, head = [], 0.0, [], 0.0
             if n.get("name"): nm = K.named(n["name"], kind); parts.append(nm[0]); wd += tw(nm[1], size); plain.append(nm[1])

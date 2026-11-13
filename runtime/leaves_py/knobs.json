@@ -1798,8 +1798,6 @@
    "name": "column",
    "layers": [
     "bars",
-    "bubbles",
-    "bubble_key",
     "leader_notes"
    ],
    "eats": [
@@ -1817,21 +1815,13 @@
     "claim_marks"
    ],
    "exposes": [],
-   "same_measure": [
-    [
-     "bars",
-     "bubbles"
-    ]
-   ],
    "strip": true,
    "main": "bars",
    "external": [
     "bars",
-    "bubbles",
     "leader_notes"
    ],
    "points": [
-    "bubbles",
     "leader_notes"
    ],
    "short_notes": [

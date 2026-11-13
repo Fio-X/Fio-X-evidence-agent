@@ -121,7 +121,7 @@ def cl_bars_placed(f, occ, placed):
     names (its src, through FX.entry). Nothing is laid out here; an item with no bar or with other texts refuses."""
     items = placed.get("items") if isinstance(placed, dict) else None
     if not items: raise FX.Refused("bars: the placed geometry holds no item")
-    o = []
+    o = []; f.bar_ends = {}
     for i, it in enumerate(items):
         m, texts = it.get("mark") or {}, it.get("texts") or []
         if not all(isinstance(m.get(k), (int, float)) for k in ("x", "y", "w", "h")):
@@ -137,6 +137,17 @@ def cl_bars_placed(f, occ, placed):
         hi = k in f.marks
         end = ' text-anchor="end"' if val.get("anchor") == "end" else ""  # a bar below 0: its value left of its end, as placed
         ink, weight = ("var(--t-title)", 700) if hi else ("var(--t-body)", 400)
+        if getattr(f, "mv", False) is None:  # a column panel with no map beside the bars: the notes stand in the bars' picture (run.bar_notes), off every name, bar and value,
+            # each pointing at the outer end of its place's printed value
+            nw, vw = prod.tw(prod.NAME(k), f.size), prod.tw(FX.text(val["src"]), f.size) * 1.06 + 2
+            half = f.size * 0.6
+            occ.add((lab["x"] - nw - 1, lab["y"] - half, lab["x"] + 1, lab["y"] + half), "bars")
+            occ.add((m["x"], m["y"], m["x"] + m["w"], m["y"] + m["h"]), "bars")
+            vx = (val["x"] - vw, val["x"]) if end else (val["x"], val["x"] + vw)
+            occ.add((vx[0], val["y"] - half, vx[1], val["y"] + half), "bars")
+            # just past the value, inside the picture (the longest bar's value ends at its edge: the point then stands in the
+            # value's own box, which the note's leader may end in)
+            f.bar_ends[k] = (max(vx[0] - 5, 1) if end else min(vx[1] + 5, f.x0 + f.bw - 1), val["y"])
         o.append(f'<text x="{lab["x"]:.1f}" y="{lab["y"]:.1f}" text-anchor="end" dominant-baseline="middle" font-size="{f.size}" fill="{ink}" font-weight="{weight}">{prod.named(k)}</text>'
                  f'<rect x="{m["x"]:.1f}" y="{m["y"]:.1f}" width="{m["w"]:.1f}" height="{m["h"]}" fill="{FOCUS if k in f.focus else NOTED if k in f.noted else "var(--bar)"}"/>'
                  f'<text x="{val["x"]:.1f}" y="{val["y"]:.1f}"{end} dominant-baseline="middle" font-size="{f.size}" fill="{ink if hi else "var(--t-sec)"}" font-weight="{weight}">{FX.entry(val["src"], "tspan", None)}</text>')

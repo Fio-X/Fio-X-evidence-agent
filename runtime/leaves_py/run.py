@@ -135,6 +135,10 @@ def notes_first(h):
     return {"leader_notes": {"first": ",".join(column.focus(h))}}
 
 
+# The map's leader notes, in its frame (MAP_STYLE).
+MAP_NOTES = leaf(leader_notes.Frame, leader_notes.cl_leader_notes, "leader_notes", MAP_STYLE, notes_first)[0]
+
+
 # The map layer drawn from another's leaves: the key reads the bubbles' entry.
 MAP_LEAVES = {"bubble_key": "bubbles"}
 
@@ -155,12 +159,34 @@ def bubble_key(f, occ):
     return out
 
 
+# The band under the bars a column page with no map gives its notes (11-13, item 2 of v5: the map drew the bars' own values
+# at their own year, so the column recipe has none): px, about two note lines; the notes may stand anywhere in the bars'
+# picture off every name, bar and value (column.cl_bars_placed claims them), the band keeps room for the longest bar's.
+NOTE_BAND = 56
+
+
+def bar_notes(f, occ):
+    """The leader notes of a column page with no map: each points at the end of its place's printed value in the bars'
+    picture (column.cl_bars_placed's bar_ends, drawn first), not at a map point; the rest as the map's notes."""
+    if not hasattr(f, "bar_ends"): raise FX.Refused("leader_notes: the bars are drawn after the notes; the notes point at them")
+    wbkit.read_values()
+    fr = leader_notes.Frame(leaf_frame_hh(f.h, "leader_notes", None, notes_first), bars={"ends": f.bar_ends, "W": f.bw, "H": f.bh})
+    out = leader_notes.cl_leader_notes(fr, occ)
+    leaf_records(fr, "leader_notes")
+    return out
+
+
+def notes_layer(f, occ):
+    """The leader notes over the map when the page has one, else at the bars (bar_notes)."""
+    return MAP_NOTES(f, occ) if f.mv else bar_notes(f, occ)
+
+
 # The chart leaves a column page's frame holds beside its own layers, and which of them are svg.
 LEAF_LAYERS = dict(section_head=leaf(section_head.Frame, section_head.cl_section_head, "section_head"),
                    rankbar=leaf(rankbar.Frame, rankbar.cl_rankbar, "rankbar"),
                    bubbles=leaf(bubbles.Laid, bubbles.cl_bubbles, "bubbles", MAP_STYLE, focus_style),
                    bubble_key=(bubble_key, None),
-                   leader_notes=leaf(leader_notes.Frame, leader_notes.cl_leader_notes, "leader_notes", MAP_STYLE, notes_first),
+                   leader_notes=(notes_layer, None),
                    sankey=leaf(sankey.Frame, sankey.cl_sankey, "sankey"),
                    stacked100=leaf(stacked100.Frame, stacked100.cl_stacked100, "stacked100"))
 LEAF_SVG = (section_head.SECTION_HEAD_SVG + rankbar.RANKBAR_SVG + bubbles.BUBBLES_SVG + leader_notes.LEADER_NOTES_SVG + sankey.SANKEY_SVG
@@ -253,9 +279,12 @@ class Panel:
         p.c, p.spec, p.occ = c, spec, prod.Occ()
         if p.node in COLUMN_KINDS:
             p.f = column.ColumnFrame(c, h, map_view(h), MAIN[p.node])
-            if MAIN[p.node] != "bars": p.f.sized(*main_size(p.f, MAIN[p.node]))
+            if MAIN[p.node] != "bars":
+                if "leader_notes" in (h.get("leaves") or {}): raise FX.Refused(f"column: the leader notes point at the bars or the map, and a {MAIN[p.node]} page has neither")
+                p.f.sized(*main_size(p.f, MAIN[p.node]))
             # the room under the map the bubbles' key may stand in (bubbles.key_room); the map's svg grows into it only when the key does
             if p.f.mv: p.f.H = max(p.f.H, p.f.mv.H + bubbles.key_room(p.f))
+            elif MAIN[p.node] == "bars" and "leader_notes" in (h.get("leaves") or {}): p.f.bh += NOTE_BAND; p.f.H = max(p.f.H, p.f.bh)
             return
         if k.get("shapes") is None: raise FX.Refused(f"the {p.node} page's request gives no shapes")
         if p.node == "scmp":
@@ -278,9 +307,7 @@ def map_view(h):
     whose leader notes name another extent than the bubbles' (two projections under one picture), or that has leader notes
     and no bubbles, refuses."""
     lv = h.get("leaves") or {}
-    if "bubbles" not in lv:
-        if "leader_notes" in lv: raise FX.Refused("column: the leader notes point at the bubbles' map, and the hero has none")
-        return None
+    if "bubbles" not in lv: return None  # leader notes with no map point at the bars (bar_notes)
     if "leader_notes" in lv and lv["leader_notes"].get("ext") != lv["bubbles"].get("ext"):
         raise FX.Refused("column: the leader notes and the bubbles name two extents; the map panel has one frame")
     return mapkit.View({"data": lv["bubbles"], "style": MAP_STYLE}, "bubbles")
@@ -397,6 +424,9 @@ def column_page(panel, got, sizes):
     f, spec = panel.f, panel.spec
     need = (["bignums"] if "bignums" in got else []) + [f.main] + (["illus_strip"] if "illus_strip" in got else [])
     if f.mv: need += [n for n in MAP_LAYERS if MAP_LEAVES.get(n, n) in (f.h.get("leaves") or {})]
+    # no map: the notes stand in the main picture, at its bars (bar_notes)
+    at_bars = not f.mv and f.main == "bars" and "leader_notes" in (f.h.get("leaves") or {})
+    if at_bars: need.append("leader_notes")
     off = [f"page: {k} is not drawn by a leaf layer yet" for k in NOT_LEAF if spec.get(k)]
     off += [f"page: no layer {n}" for n in need if not isinstance(got.get(n), str)]
     off += [f"page: {n} is no layer the page places" for n in got if n not in need]
@@ -413,7 +443,8 @@ def column_page(panel, got, sizes):
         dek = spec.pop("_dek", None)
     unit = FX.worded(spec, panel.c.F, "unit", spec["hero"]["unit"]) if spec["hero"].get("unit") else ""
     pic = "".join(f'<g data-layer="{n}">{got[n]}</g>' for n in MAP_LAYERS if n in need)
-    hero = hooked(column.column_shell(f, f'<g data-layer="{f.main}">{got[f.main]}</g>', unit, pic, f.main), panel.c, said, column_hooks(f.main))
+    main = f'<g data-layer="{f.main}">{got[f.main]}</g>' + (f'<g data-layer="leader_notes">{got["leader_notes"]}</g>' if at_bars else "")
+    hero = hooked(column.column_shell(f, main, unit, pic, f.main), panel.c, said, column_hooks(f.main))
     if isinstance(hero, list): return {"refused": hero}
     strip = column.strip_shell(got["illus_strip"], *wh) if "illus_strip" in got else ""
     head = scmp.page_head(panel.c, spec, box=box, wide=box is None)

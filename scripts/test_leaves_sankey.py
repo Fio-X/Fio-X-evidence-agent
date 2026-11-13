@@ -458,7 +458,7 @@ class FlowPage(unittest.TestCase):
         self.assertEqual(child(lines[:1] + [json.dumps({"phase": "page", "layers": {"sankey": "", "bars": ""}})])[1]["refused"],
                          ["page: bars is no layer the page places"])
         notes = child(flow_request({"sankey": DATA, "leader_notes": {"notes": []}})[:1])[0]
-        self.assertEqual(notes["refused"], ["size: column: the leader notes point at the bubbles' map, and the hero has none"])
+        self.assertEqual(notes["refused"], ["size: column: the leader notes point at the bars or the map, and a sankey page has neither"])
         wide = child(flow_request(style={"sankey": {"width": 1400}})[:1])[0]
         self.assertEqual(wide["refused"], ["size: column: the sankey picture is 1400 px wide, the page 1140"])
         bad = child(flow_request({"sankey": {**DATA, "flows": []}})[:1])[0]

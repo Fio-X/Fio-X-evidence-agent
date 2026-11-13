@@ -56,10 +56,9 @@ RECIPES = [
          charts=["choropleth", "horizontal_bar", "dumbbell", "line"], picks=["changed", "claim_marks"], exposes=[], strip=True,
          main="bars", relation="Change"),
     # one period across places: a year, or the half year or month most places have a value at (one_freq, last_year)
-    dict(name="column", layers=["bars", "bubbles", "leader_notes"], eats=["one_freq", "one_place", "one_unit", "last_year"],
-         charts=["choropleth", "horizontal_bar"], picks=["ranked", "claim_marks"], exposes=[],
-         # TODO(item 5): goes once the map (bubbles) shows other values than the bars (src/next_leaf.rs leaves)
-         same_measure=[["bars", "bubbles"]], strip=True, main="bars"),
+    # (11-13, v5 item 2: no map: it drew the bars' own values at their year; the notes point at the bars, run.bar_notes)
+    dict(name="column", layers=["bars", "leader_notes"], eats=["one_freq", "one_place", "one_unit", "last_year"],
+         charts=["choropleth", "horizontal_bar"], picks=["ranked", "claim_marks"], exposes=[], strip=True, main="bars"),
     # the same period across places when a place has no map point (an aggregate the question names beside countries, the
     # EU): the bars alone, no map; column, whose circles and notes stand on map points, is not that shape (the flow asks
     # for the points before it fills). No notes yet: the column page's notes point at a map, as flow's
