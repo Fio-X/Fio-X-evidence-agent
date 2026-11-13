@@ -58,7 +58,7 @@ const PEER_AGGREGATES_ZH: [(&str, &str); 2] = [("欧盟", "EUU"), ("欧洲联盟
 /// own, each with the words a question writes for it (the official Chinese name, it less 地区, and the short forms the owner
 /// reviewed 11-10). Not in the name table zh_names: a word there is read everywhere a place is (scope, groups, the page's
 /// codes); an aggregate is a place only when listed_aggregates finds it listed.
-const REGION_AGGREGATES_ZH: &str = include_str!("../runtime/pi/assets/region-aggregates-zh.json");
+pub(crate) const REGION_AGGREGATES_ZH: &str = include_str!("../runtime/pi/assets/region-aggregates-zh.json");
 /// The marks that join the items of a list of places (撒哈拉以南非洲、南亚、拉丁美洲; 中东和北非、全世界).
 const LIST_JOIN_ZH: &str = "、，,和与及跟";
 /// What may follow a whole item of a list of places: a join, a mark that ends a clause, or 的 before the measure.
@@ -73,7 +73,13 @@ fn region_aggregates() -> &'static [(Vec<char>, String)] {
             .as_array()
             .into_iter()
             .flatten()
-            .filter_map(|a| Some((a["code"].as_str()?.to_string(), a["words"].as_array()?.clone())))
+            // a near word (近似词: 东亚, whose nearest aggregate is EAS, owner 11-13) reads as the aggregate as its words do; the
+            // page labels it by official_zh and says its near_note (next_run near_noted)
+            .filter_map(|a| {
+                let mut ws = a["words"].as_array()?.clone();
+                ws.extend(a["near_words"].as_array().into_iter().flatten().cloned());
+                Some((a["code"].as_str()?.to_string(), ws))
+            })
             .flat_map(|(code, ws)| {
                 ws.into_iter().filter_map(move |w| Some((w.as_str()?.chars().collect::<Vec<_>>(), code.clone())))
             })
@@ -2410,8 +2416,8 @@ impl Catalog {
                 }
             }
         }
-        let read = self.places(question_zh).iter().filter(|p| matches!(p, Place::Country(_))).count()
-            + listed_aggregates(question_zh).len();
+        // places() holds the listed aggregates already (review 11-14: they were counted twice, so 三个地区 with two read passed)
+        let read = self.places(question_zh).iter().filter(|p| matches!(p, Place::Country(_))).count();
         place_counts_zh(&chars, &masked, &owns)
             .into_iter()
             .find(|(_, n)| *n > read)
@@ -2893,7 +2899,10 @@ mod tests {
         // not listed: a word in a phrase, a ranking over the world, a longer name holding the word, the region's members
         assert!(listed_aggregates("世界人口最多的十个国家的预期寿命").is_empty());
         assert!(listed_aggregates("加州的 GDP 能排进世界前几？").is_empty());
-        assert!(listed_aggregates("东南亚、东亚的出口").is_empty());
+        // a near word reads as its nearest aggregate (owner 11-13: 东亚 is not EAS, the page says so), listed as a word is
+        assert_eq!(listed_aggregates("东南亚、东亚的出口"), ["EAS"]);
+        assert_eq!(listed_aggregates("撒哈拉以南非洲、南亚、东亚，2000 年到 2023 年能用上电的人口比例各怎么变？"), ["SSF", "SAS", "EAS"]);
+        assert!(listed_aggregates("东亚国家的出口").is_empty());
         assert!(listed_aggregates("撒哈拉以南非洲哪国的识字率最高？").is_empty());
         assert!(listed_aggregates("撒哈拉以南非洲各国的识字率").is_empty());
         // each once, the longest word first (北美洲 not 北美 + 洲)

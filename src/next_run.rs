@@ -2627,6 +2627,7 @@ fn recipe_request(
     let filters = main.args.get("filters").cloned().unwrap_or(Value::Null);
     answered_places(&mut fill, &shape, (&main_rows, scoped), (places, basis.as_ref()), &filters, catalogue)
         .map_err(|why| (if why.starts_with("not this shape") { "shape" } else { "fill" }, why))?;
+    near_noted(&mut fill, question).map_err(|why| (if why.starts_with("not this shape") { "shape" } else { "fill" }, why))?;
     if let Some(a) = asked_of {
         fill["knobs"]["spec"]["asked"] = a;
     }
@@ -2831,6 +2832,41 @@ fn answered_places(
     let mut said = segs["unit"].as_array().cloned().unwrap_or_else(|| vec![json!({"w": unit})]);
     said.extend(tail);
     segs["unit"] = Value::Array(said);
+    Ok(())
+}
+
+/// The near note of each aggregate the page draws (a code its labels hold) that the question names only by a near word
+/// (region-aggregates-zh.json near_words, the knowledge group's vocabulary: 东亚, whose nearest aggregate is EAS; owner
+/// 11-13: 东亚 is not EAS, and the page says so), none of the aggregate's own words: said on the unit line after the
+/// asked-places line's join (ASKED_PLACES_ZH lead), words only. The label stays the name table's (东亚与太平洋地区). Err
+/// when the page has no unit line to say it.
+fn near_noted(fill: &mut Value, question: &str) -> Result<(), String> {
+    let table: Value = serde_json::from_str(crate::l5geo::REGION_AGGREGATES_ZH).map_err(|e| format!("region-aggregates-zh.json: {e}"))?;
+    let words = |a: &Value, key: &str| -> Vec<String> { a[key].as_array().into_iter().flatten().filter_map(Value::as_str).map(str::to_string).collect() };
+    let drawn = |code: &str| fill.pointer("/knobs/labels").and_then(Value::as_object).is_some_and(|l| l.contains_key(code));
+    let notes: Vec<String> = table["aggregates"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|a| a["code"].as_str().is_some_and(drawn))
+        .filter(|a| words(a, "near_words").iter().any(|w| question.contains(w.as_str())) && !words(a, "words").iter().any(|w| question.contains(w.as_str())))
+        .filter_map(|a| a["near_note"].as_str().map(str::to_string))
+        .collect();
+    if notes.is_empty() {
+        return Ok(());
+    }
+    let said: Value = serde_json::from_str(crate::next_knowledge::ASKED_PLACES_ZH).map_err(|e| format!("asked-places-zh.json: {e}"))?;
+    let lead = said["lead"].as_str().ok_or("asked-places-zh.json holds no lead")?;
+    let Some(unit) = fill.pointer("/knobs/spec/hero/unit").and_then(Value::as_str).map(str::to_string) else {
+        return Err(format!("not this shape: the question names an aggregate by a near word, and the page has no unit line to say {notes:?}"));
+    };
+    let tail: String = notes.iter().map(|n| format!("{lead}{n}")).collect();
+    fill["knobs"]["spec"]["hero"]["unit"] = json!(format!("{unit}{tail}"));
+    let knobs = fill["knobs"].as_object_mut().ok_or("the fill's knobs are no object")?;
+    let segs = knobs.entry("segs").or_insert_with(|| json!({}));
+    let mut line = segs["unit"].as_array().cloned().unwrap_or_else(|| vec![json!({"w": unit})]);
+    line.push(json!({"w": tail}));
+    segs["unit"] = Value::Array(line);
     Ok(())
 }
 
@@ -7177,6 +7213,27 @@ mod tests {
             serde_json::from_value(back["rows"].take()).unwrap(),
             serde_json::from_value(back["facts"].take()).unwrap(),
         )
+    }
+
+    /// 东亚 (owner 11-13): a question naming East Asia by its near word gets EAS drawn under its own label and the near note on
+    /// the unit line, as words; named by the aggregate's own words, or not drawn, the line stays; no unit line refuses.
+    #[test]
+    fn a_near_word_puts_its_note_on_the_unit_line() {
+        let page = || json!({"knobs": {"labels": {"SSF": "撒哈拉以南非洲地区", "EAS": "东亚与太平洋地区"}, "spec": {"hero": {"unit": "单位：%"}}}});
+        let mut f = page();
+        near_noted(&mut f, "撒哈拉以南非洲、南亚、东亚，2000 年到 2023 年能用上电的人口比例各怎么变？").unwrap();
+        let note = "；世行没有单列『东亚』，最接近的是『东亚与太平洋』，含东南亚和太平洋岛国";
+        assert_eq!(f["knobs"]["spec"]["hero"]["unit"], format!("单位：%{note}"));
+        assert_eq!(f["knobs"]["segs"]["unit"], json!([{"w": "单位：%"}, {"w": note}]));
+        let mut own = page();
+        near_noted(&mut own, "撒哈拉以南非洲、东亚与太平洋地区的通电率").unwrap();
+        assert_eq!(own, page());
+        let mut undrawn = json!({"knobs": {"labels": {"SSF": "撒哈拉以南非洲地区"}, "spec": {"hero": {"unit": "单位：%"}}}});
+        let before = undrawn.clone();
+        near_noted(&mut undrawn, "撒哈拉以南非洲、东亚的通电率").unwrap();
+        assert_eq!(undrawn, before);
+        let mut no_unit = json!({"knobs": {"labels": {"EAS": "东亚与太平洋地区"}, "spec": {"hero": {}}}});
+        assert!(near_noted(&mut no_unit, "南亚、东亚的通电率").unwrap_err().starts_with("not this shape"));
     }
 
     /// The flow's side of the countries a question names on their own (owner 11-06 design): the codes as the rows write
