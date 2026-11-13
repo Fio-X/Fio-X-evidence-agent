@@ -369,6 +369,10 @@ pub struct Ranking {
     /// the question names, or the question asking for months.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub twins_refused: Vec<TwinRefused>,
+    /// `top5` only: the listed tables it took out as unable to prove an answer (`Catalog::unproven`), with why, in rank
+    /// order; the model is offered the rest, numbered as before (design 2a).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub unproven: Vec<(String, String)>,
     /// The quantities the Chinese question asks for (`asked_zh`), each with the offered tables that hold it (`top5`).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub asked: Vec<Asked>,
@@ -2620,6 +2624,7 @@ impl Catalog {
             unread,
             candidates,
             twins_refused: Vec::new(),
+                unproven: Vec::new(),
             asked,
         }
     }
@@ -2688,6 +2693,43 @@ impl Catalog {
         out
     }
 
+    /// Why the listed table `id` cannot prove an answer over the places the question reads (`asked`: Place::Country codes,
+    /// iso2 or an aggregate's iso3) and the latest year it names, None when it can (roadmap step 3, design 2a): a place no
+    /// code of the table holds (World Bank: its places, by iso2 or id; Eurostat: a code of any dimension, by the code, its
+    /// Eurostat form (EL, UK, EU27_2020 for EUU) or a country member (partner CN_X_HK is CN)), or an annual Eurostat table
+    /// whose last year is before `latest_year`, a year before this one. A table the catalogue lists no metadata of proves nothing either way: None.
+    pub fn unproven(&self, id: &str, asked: &[String], latest_year: Option<i32>) -> Option<String> {
+        let meta = self.table(id)?;
+        let estat = |c: &str| -> String {
+            if c == "EUU" {
+                return crate::next_params::EU_AGGREGATE.to_string();
+            }
+            ESTAT_ISO.iter().find(|(_, i)| *i == c).map_or(c.to_string(), |(e, _)| e.to_string())
+        };
+        let held = |c: &str| {
+            if meta.worldbank {
+                return meta.places.iter().any(|(i, w)| i == c || w == c);
+            }
+            let e = estat(c);
+            meta.dims.iter().any(|(_, codes)| codes.iter().any(|(k, _)| k == c || *k == e))
+                || meta.place_members.iter().any(|(_, m)| m.iter().any(|(_, iso)| iso == c))
+        };
+        let missing: Vec<&String> = asked.iter().filter(|c| !held(c)).collect();
+        if !missing.is_empty() {
+            return Some(format!("{id} holds no row of {missing:?}, places the question names"));
+        }
+        let last = meta.freqs.iter().find(|(f, _, _)| f == "A").and_then(|(_, _, last)| last.get(..4)?.parse::<i32>().ok());
+        // a span running to this year (X 年以来, 比 X 年: question_latest_year's end is this year) is answered at the table's
+        // own last year, as the pages of rounds 8-14 were (s6, h28); only a past year the question names is held to
+        let this_year = chrono::Datelike::year(&chrono::Local::now());
+        match (latest_year, last) {
+            (Some(y), Some(end)) if y < this_year && end < y => {
+                Some(format!("{id}'s annual series ends at {end}, before {y}, the year the question names"))
+            }
+            _ => None,
+        }
+    }
+
     /// The first 5 of `rank`, a registered monthly-only table among them swapped for its annual twin (`twin_swap`) before
     /// the model sees any, unless `months`: the caller read that the question asks for months (a month it names, the
     /// latest months), which the annual table, ending a year or two earlier, cannot answer; nor when the annual table ends
@@ -2698,6 +2740,14 @@ impl Catalog {
             self.twin_swap(std::mem::take(&mut r.candidates), monthly_twins(), months, latest_year);
         r.candidates = candidates;
         r.twins_refused = refused;
+        // only fewer: a table that cannot prove an answer over the places the question reads and the past year it names is
+        // not offered, none listed in its place (design 2a; none left, the caller says no table answers, as before)
+        let asked: Vec<String> =
+            self.places(question_zh).into_iter().filter_map(|p| if let Place::Country(c) = p { Some(c) } else { None }).collect();
+        let (kept, out): (Vec<Candidate>, Vec<Candidate>) =
+            std::mem::take(&mut r.candidates).into_iter().partition(|c| self.unproven(&c.id, &asked, latest_year).is_none());
+        r.unproven = out.iter().filter_map(|c| self.unproven(&c.id, &asked, latest_year).map(|why| (c.id.clone(), why))).collect();
+        r.candidates = kept;
         for a in &mut r.asked {
             a.offered = r
                 .candidates
@@ -4857,7 +4907,7 @@ mod tests {
         };
         let swapped = |ranked: &[Candidate]| {
             let (candidates, twins_refused) = c.twin_swap(ranked.to_vec(), twins, false, None);
-            Ranking { scope: Scope::Europe, places_zh: Vec::new(), uncovered: None, unread: None, candidates, twins_refused, asked: Vec::new() }
+            Ranking { scope: Scope::Europe, places_zh: Vec::new(), uncovered: None, unread: None, candidates, twins_refused, unproven: Vec::new(), asked: Vec::new() }
         };
         let scope_of = |q: &str| c.scope(ORIG.iter().find(|(k, _)| *k == q).unwrap().1).0;
         for r in want["phrasings"].as_array().unwrap() {
@@ -4960,6 +5010,73 @@ mod tests {
     /// the qid, the countries (iso2, in question order), the listed aggregates, the scope with the words named, and the
     /// place count the program reads too few places for (Catalog::unread), if any.
     /// L5GEO_DIR=<registry>/l5geo/catalog Q_CASES=<cases.tsv> cargo test l5geo::tests::replay_asked_places -- --include-ignored --nocapture
+    /// design 2a: a listed table that holds no row of a place the question reads cannot prove its answer and is not offered;
+    /// a World Bank table holds the countries it lists, a Eurostat one the codes of its dimensions (DE, FR), EU27_2020
+    /// standing for the EU's EUU. top5 offers none it would refuse, and says which it took out.
+    #[test]
+    fn a_table_holding_no_row_of_a_named_place_is_not_offered() {
+        let c = small();
+        let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        assert!(c.unproven("nrg_bal", &s(&["CN"]), None).is_some_and(|w| w.contains("CN")));
+        assert_eq!(c.unproven("nrg_bal", &s(&["DE", "FR"]), None), None);
+        assert_eq!(c.unproven("nrg_world", &s(&["CN", "US"]), None), None);
+        assert_eq!(c.unproven("EG.USE@2", &s(&["CN", "DE"]), None), None);
+        assert!(c.unproven("nrg_bal", &s(&["EUU"]), None).is_some());
+        assert_eq!(c.unproven("no_such_table", &s(&["CN"]), None), None);
+        let r = c.top5("中国和美国的能源", &texts(&["energy"]), false, None);
+        let asked = s(&["CN", "US"]);
+        assert!(r.candidates.iter().all(|x| c.unproven(&x.id, &asked, None).is_none()), "{:?}", r.candidates);
+        assert!(r.unproven.iter().all(|(id, _)| !r.candidates.iter().any(|x| &x.id == id)));
+    }
+
+    /// Measurement, not a check (ignored; design 2a): over recorded runs, each a published page (UNPROVEN_RUNS=<label>\t
+    /// <events.jsonl> lines), the five tables the run's catalogue step listed and the one its fetch used, and which of the
+    /// five `unproven` would drop with this build's reading of the question's places and latest year. One line per run:
+    /// UNPROVEN, the label, the used table, kept/listed, HIT when the used table is dropped, the drops with their reasons.
+    /// L5GEO_DIR=<registry>/l5geo/catalog UNPROVEN_RUNS=<list> cargo test l5geo::tests::measure_unproven -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn measure_unproven() {
+        let dir = std::path::PathBuf::from(std::env::var("L5GEO_DIR").expect("L5GEO_DIR"));
+        let c = Catalog::load(&dir).unwrap();
+        let this_year = chrono::Datelike::year(&chrono::Local::now());
+        let list = std::fs::read_to_string(std::env::var("UNPROVEN_RUNS").expect("UNPROVEN_RUNS")).unwrap();
+        for line in list.lines().filter(|l| !l.starts_with('#') && !l.is_empty()) {
+            let (label, path) = line.split_once('\t').expect("label<TAB>events path");
+            let Ok(text) = std::fs::read_to_string(path) else {
+                println!("UNPROVEN\t{label}\tno events");
+                continue;
+            };
+            let events: Vec<serde_json::Value> = text.lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
+            let Some(cat) = events.iter().find(|e| e["type"] == "next_catalogue") else {
+                println!("UNPROVEN\t{label}\tno catalogue event");
+                continue;
+            };
+            let question = cat["question"].as_str().unwrap_or_default();
+            let used: Vec<String> = events
+                .iter()
+                .filter(|e| e["type"] == "next_params")
+                .flat_map(|e| e["tables"].as_array().cloned().unwrap_or_default())
+                .filter_map(|t| t["args"]["dataset"].as_str().map(str::to_string))
+                .collect();
+            let listed: Vec<String> =
+                cat["ranking"]["candidates"].as_array().into_iter().flatten().take(TOP).filter_map(|x| x["id"].as_str().map(str::to_string)).collect();
+            let asked: Vec<String> =
+                c.places(question).into_iter().filter_map(|p| if let Place::Country(x) = p { Some(x) } else { None }).collect();
+            let latest = crate::next_params::question_latest_year(question, this_year);
+            let drops: Vec<(String, String)> = listed.iter().filter_map(|id| c.unproven(id, &asked, latest).map(|why| (id.clone(), why))).collect();
+            let main = used.first().cloned().unwrap_or_default();
+            let hit = drops.iter().any(|(id, _)| id.strip_suffix("@2").unwrap_or(id) == main);
+            println!(
+                "UNPROVEN\t{label}\t{main}\t{}/{}\t{}\t{}",
+                listed.len() - drops.len(),
+                listed.len(),
+                if hit { "HIT" } else { "" },
+                drops.iter().map(|(_, w)| w.as_str()).collect::<Vec<_>>().join(" | ")
+            );
+        }
+    }
+
     #[test]
     #[ignore]
     fn replay_asked_places() {

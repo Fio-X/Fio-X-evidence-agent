@@ -7663,6 +7663,7 @@ mod tests {
                 unread: None,
                 candidates: self.candidates.clone(),
                 twins_refused: Vec::new(),
+                unproven: Vec::new(),
                 asked: Vec::new(),
             }
         }

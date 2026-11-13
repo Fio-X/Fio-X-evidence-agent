@@ -12697,6 +12697,7 @@ mod tests {
                 unread: None,
                 candidates: vec![candidate],
                 twins_refused: Vec::new(),
+                unproven: Vec::new(),
                 asked: Vec::new(),
             }
         }
