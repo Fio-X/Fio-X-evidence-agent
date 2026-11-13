@@ -1662,11 +1662,14 @@ impl Catalog {
                 )
             })
             .collect();
-        // an aggregate a question may name as a place of its own (PEER_AGGREGATES_ZH), by its iso3 on both sides
+        // an aggregate a question may name as a place of its own (PEER_AGGREGATES_ZH, and a regional aggregate of
+        // region-aggregates-zh.json that listed_aggregates reads: h18, n31, n38), by its iso3 on both sides, so a table the
+        // question's places pick holds it and the fetch asks for it; an open ranking keeps its economies all the same
+        // (next_params: the tool drops aggregates)
         for x in list(&raw.wb_countries) {
             let id = field(x, &["id"]);
             if field(x, &["region", "value"]).trim() == "Aggregates"
-                && PEER_AGGREGATES_ZH.iter().any(|(_, c)| *c == id)
+                && (PEER_AGGREGATES_ZH.iter().any(|(_, c)| *c == id) || region_aggregates().iter().any(|(_, c)| c == id))
                 && !wb_places.iter().any(|(_, i)| i == id)
             {
                 wb_places.push((id.to_string(), id.to_string()));
@@ -3068,9 +3071,31 @@ mod tests {
         assert_eq!(countries(&c, "欧洲和美国的人口"), [REGION, "US"]);
         let wb = |c: &Catalog| c.table("EG.USE@2").unwrap().places;
         assert!(wb(&c).contains(&("EUU".to_string(), "EUU".to_string())));
-        // no other aggregate joins the places, and a list without the EU has none
-        assert!(!wb(&c).iter().any(|(_, id)| id == "WLD" || id == "SST"));
+        // no other aggregate joins the places but a listed region's (WLD, a word of region-aggregates-zh.json), and a list
+        // without the EU has none
+        assert!(wb(&c).contains(&("WLD".to_string(), "WLD".to_string())));
+        assert!(!wb(&c).iter().any(|(_, id)| id == "SST"));
         assert!(!wb(&small()).iter().any(|(_, id)| id == "EUU"));
+    }
+
+    /// A World Bank regional aggregate the question lists (listed_aggregates) is a place the table holds, so the table pick
+    /// keeps the table and the fetch asks for it (h18, n31, n38: "holds none of the places the question names" before).
+    #[test]
+    fn a_listed_region_aggregate_is_held_by_a_world_bank_table() {
+        let mut raw = small_raw();
+        for (id, name) in [("SSF", "Sub-Saharan Africa"), ("SAS", "South Asia"), ("SST", "Small states")] {
+            raw.wb_countries[1].as_array_mut().unwrap().push(json!({"id": id, "iso2Code": "ZZ", "name": name, "region": {"value": "Aggregates"}}));
+        }
+        let c = Catalog::from_raw(&raw);
+        let places = c.table("EG.USE@2").unwrap().places;
+        for id in ["SSF", "SAS"] {
+            assert!(places.contains(&(id.to_string(), id.to_string())), "{id}");
+        }
+        assert!(!places.iter().any(|(_, id)| id == "SST"));
+        assert_eq!(
+            c.places("撒哈拉以南非洲、南亚，2000 年到 2023 年能用上电的人口比例各怎么变？"),
+            [Place::Country("SSF".into()), Place::Country("SAS".into())]
+        );
     }
 
     /// A group word whose countries the question lists in brackets after it, in the same clause, reads as those countries
