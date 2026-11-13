@@ -270,14 +270,16 @@ def cl_leader_notes(f, occ):
                 steps = max(2, math.ceil(math.dist(a, b) / 4)); occ.add_line([(a[0] + (b[0] - a[0]) * i / steps, a[1] + (b[1] - a[1]) * i / steps) for i in range(steps + 1)], "notes", "leader")
         return o, dropped, total, longest
 
-    # top first; when that leaves a leader past LONG_LEAD and drops none, bottom first too, against the same claims (occ as the
-    # notes found it; the layer's two-bend budget shared), kept when it drops none and its longest leader is shorter (the same: its leaders cost less in all)
+    # top first; when that drops a note, or leaves a leader past LONG_LEAD, bottom first too, against the same claims (occ as the
+    # notes found it; the layer's two-bend budget shared), kept when it drops fewer, or as few and its longest leader is shorter
+    # (the same: its leaders cost less in all). A note high up can take the one free place a lower one had (a short bars
+    # picture's band under the bars): bottom first gives it back
     before = (occ.boxes[:], occ.pts[:])
     got = lay(keep)
-    if len(keep) > 1 and not got[1] and got[3] > LONG_LEAD:
+    if len(keep) > 1 and (got[1] or got[3] > LONG_LEAD):
         after = (occ.boxes[:], occ.pts[:]); occ.boxes[:], occ.pts[:] = before
         other = lay(keep[::-1])
-        if other[1] or (other[3], other[2]) >= (got[3], got[2]): occ.boxes[:], occ.pts[:] = after
+        if (len(other[1]), other[3], other[2]) >= (len(got[1]), got[3], got[2]): occ.boxes[:], occ.pts[:] = after
         else: got = other
     # a note the page cannot lose (knob first: its focus) left with no free place: the notes again with those first (each
     # group top first), against the same claims, kept when it drops fewer of them, then fewer in all; a page may let a

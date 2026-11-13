@@ -6,7 +6,7 @@ ledger only: every number is an entry (facts.entry), the bars' values the family
 big numbers the facts hero.data names (hi, lo, gap, times), each name the request's label marked with its name row. Raw
 row values drive the bars' lengths only. With the knob bars.measure change (a page with two ends, hero.data.t0 and year) each
 bar is its place's change between the two years, a signed bar from 0, its value the family member with its unit."""
-import html, os, re, sys, unicodedata
+import html, math, os, re, sys, unicodedata
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import facts as FX
 import prod
@@ -133,6 +133,9 @@ def cl_bars_placed(f, occ, placed):
             ax = (placed.get("axis") or {}).get("x")
             z = ax if isinstance(ax, (int, float)) else zero_x(f, items)
             o.append(f'<line x1="{z:.1f}" x2="{z:.1f}" y1="{f.top}" y2="{f.top + f.rh * len(items)}" stroke="var(--t-sec)" stroke-width="0.8"/>')
+            if getattr(f, "mv", False) is None:  # no map: the notes stand in the bars' picture, off the axis too (bake's line check)
+                y1 = f.top + f.rh * len(items); steps = max(2, math.ceil((y1 - f.top) / 4))
+                occ.add_line([(z, f.top + (y1 - f.top) * j / steps) for j in range(steps + 1)], "bars", "axis")
         k, (lab, val) = it.get("code"), texts
         hi = k in f.marks
         end = ' text-anchor="end"' if val.get("anchor") == "end" else ""  # a bar below 0: its value left of its end, as placed

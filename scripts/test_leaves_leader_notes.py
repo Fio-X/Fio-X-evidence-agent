@@ -936,6 +936,34 @@ class ColumnMap(unittest.TestCase):
             self.assertAlmostEqual(y, top + rh * row + rh / 2, delta=1, msg=code)
             self.assertLess(x, 1140, code)
 
+    def no_map_page(self, name):
+        """A kept column page with no map (fixtures/v5/column-no-map-notes.json): its size, bars and notes lines, the bars placed
+        where the core places them, and the leaf's replies."""
+        p = json.load(open(os.path.join(HERE, "fixtures", "v5", "column-no-map-notes.json"), encoding="utf-8"))["pages"][name]
+        line = lambda **kv: json.dumps({"node": "column", "panel": {"w": 1140, "h": 0, "frame": None}, "rows": p["rows"], "knobs": p["knobs"], **kv}, ensure_ascii=False)
+        got = child(placed_lines([line(phase="size"), line(layer="bars"), line(layer="leader_notes")]))
+        self.assertEqual([g.get("refused") for g in got], [None] * 3)
+        return got
+
+    def test_with_no_map_a_lower_note_gets_back_the_one_free_place_a_higher_note_took(self):
+        # a kept page (11-13 replay, r9-n15): four bars, the band under them the only free place; top first, the top bar's note
+        # took the band's right end, the one place the lower note's leader could reach, and the lower note dropped. Bottom first
+        # (tried when top first drops one) places both
+        got = self.no_map_page("short_bars")
+        self.assertEqual(got[2].get("dropped") or [], [])
+        self.assertEqual(sorted(t["src"].split("+")[0].split(":")[-1] for t in got[2]["texts"]), ["NER", "SLE"])
+
+    def test_with_no_map_no_note_stands_on_the_bars_zero_axis(self):
+        # a kept page (11-13 replay, r9-n51): 27 bars, the low note in the band under them, where the zero axis ends; the axis
+        # was drawn but not claimed, and the bake's line check found the note's text on it. Each note's box keeps off the axis
+        got = self.no_map_page("long_bars")
+        z, y0, y1 = map(float, re.search(r'<line x1="([\d.]+)" x2="\1" y1="([\d.]+)" y2="([\d.]+)"', got[1]["svg"]).groups())
+        self.assertEqual(len(got[2]["texts"]), 2)
+        for t in got[2]["texts"]:
+            w = prod.tw(t["text"], t["size"]); x0 = t["x"] - w if t["anchor"] == "end" else t["x"]
+            on = x0 - 1 < z < x0 + w + 1 and t["y"] - t["size"] * 0.9 < y1 and t["y"] + t["size"] * 0.25 > y0
+            self.assertFalse(on, f"{t['text']} at {t['x']:.0f}, {t['y']:.0f} on the axis x {z:.0f}, y {y0:.0f}-{y1:.0f}")
+
     def test_a_crowded_map_still_draws_and_says_exactly_which_notes_it_dropped(self):
         # the EU-27 with one note per country (its name and a number), label_count 12 and note_size 22: fifteen past it, and of
         # the twelve the ones in the crowded centre with no free place; the layer and the page still draw, and the reply names each
