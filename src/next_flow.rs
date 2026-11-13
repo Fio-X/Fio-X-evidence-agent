@@ -9167,6 +9167,45 @@ mod tests {
         );
     }
 
+    /// Measurement, not a check (ignored; the catalogue's env as for a run): over recorded runs (NEXT_FILL_RUNS=<events.jsonl>,..)
+    /// the places the question names as this build reads them, and for each of the five tables the run's catalogue step
+    /// listed, the place filters the fetch would ask for with the default picks (or why the fill refuses), one line each.
+    #[test]
+    #[ignore]
+    fn measure_fill_places_over_recorded_runs() {
+        let catalogue = GroupCatalogue::from_env(|key| std::env::var(key).ok()).unwrap();
+        let this_year = chrono::Datelike::year(&chrono::Local::now());
+        for path in std::env::var("NEXT_FILL_RUNS").unwrap().split(',') {
+            let text = std::fs::read_to_string(path).unwrap();
+            let Some(event) = text.lines().filter_map(|l| serde_json::from_str::<Value>(l).ok()).find(|e| e["type"] == CATALOGUE_EVENT) else {
+                println!("FILL\t{path}\tno catalogue event");
+                continue;
+            };
+            let question = event["question"].as_str().unwrap_or_default();
+            let texts: Vec<String> = serde_json::from_value(event["texts"].clone()).unwrap_or_default();
+            let places = catalogue.places(question);
+            println!("PLACES\t{question}\t{places:?}");
+            let ids = event["ranking"]["candidates"].as_array().into_iter().flatten().take(OFFERED_TABLES).filter_map(|c| c["id"].as_str());
+            for id in ids {
+                let Some(meta) = catalogue.table(id) else {
+                    println!("FILL\t{id}\tno meta");
+                    continue;
+                };
+                let draft = next_params::draft(meta, &texts, &places);
+                match next_params::fill(&draft, 1, &BTreeMap::new(), &places, this_year) {
+                    Ok(filled) => {
+                        let place_filters: Vec<String> = filled.args["filters"].as_array().into_iter().flatten()
+                            .filter(|f| matches!(f["dimension"].as_str(), Some("geo" | "country" | "partner" | "c_orig" | "c_dest")))
+                            .map(|f| format!("{}={}", f["dimension"].as_str().unwrap_or(""), f["values"]))
+                            .collect();
+                        println!("FILL\t{id}\t{}", place_filters.join(" "));
+                    }
+                    Err(why) => println!("FILL\t{id}\trefused: {}", why.chars().take(160).collect::<String>()),
+                }
+            }
+        }
+    }
+
     /// Measurement, not a check (ignored; live Eurostat, no relay): the held-series probe as a run makes it, over recorded runs
     /// (NEXT_HELD_RUNS=<events.jsonl>,..; the catalogue's env as for a run). Per question the five listed tables, each line the
     /// table, whether it was probed, its milliseconds and what came back; then the question's wall time and the totals.
