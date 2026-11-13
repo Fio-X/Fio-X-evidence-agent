@@ -186,6 +186,9 @@ def fill(spec, F, text):
             import prod
             return html.escape(prod.NAME(code), quote=False)
         rows = [s for s in LEDGER if s.startswith("name:") and s.rsplit(":", 1)[-1] == code]
+        if len(rows) > 1:  # a place code's row is the place table's (iso2, iso3), a part's (fossil) the other one
+            place = re.fullmatch(r"[A-Z][A-Z0-9_]+", code) is not None
+            rows = [s for s in rows if (s.split(":")[2:3] in (["iso2"], ["iso3"])) == place] or rows
         if len(rows) != 1: raise Refused(f"the words name {code}, and the ledger holds {len(rows)} name rows of it, not one")
         return entry(rows[0], "span", None)
     text = re.sub(r"\{name\.([A-Za-z0-9_]+)\}", name, text)

@@ -609,7 +609,10 @@ def hooked(hero, c, spec, hooks=HOOKS):
     if not kick: off.append("page: the page has no kicker to label its chart")
     elif re.search(r"[{}0-9\uff10-\uff19]", kick): off.append(f"page: the chart label holds a digit or a placeholder: {kick!r}")
     if off: return off
-    for a, b in hooks: hero = hero.replace(a, b.replace("{label}", label).replace("{desc}", c.t(spec["title"])), 1)
+    # the chart's description is the title as read aloud: its names bare (the gate reads the described text up to its first
+    # mark, next_gate text_gaps), its numbers still marked
+    desc = re.sub(r'<span data-src="name:[^"]*">([^<]*)</span>', r"\1", c.t(spec["title"]))
+    for a, b in hooks: hero = hero.replace(a, b.replace("{label}", label).replace("{desc}", desc), 1)
     return hero
 
 
