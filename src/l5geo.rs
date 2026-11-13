@@ -3352,14 +3352,14 @@ mod tests {
         }
         let c = Catalog::from_raw(&raw);
         let un = |q: &str| c.unread(q).map(|u| (u.word_zh, u.read, u.asked));
-        assert_eq!(un("海合会六国女性劳动参与率高低"), Some(("海合会六国".into(), 0, 6)));
-        assert_eq!(un("比荷卢三国可再生能源占比变化"), Some(("比荷卢三国".into(), 0, 3)));
+        assert_eq!(un("南盟八国女性劳动参与率高低"), Some(("南盟八国".into(), 0, 8)), "a group the table does not hold");
+        assert_eq!(un("星马泰三国互联网普及率"), Some(("星马泰三国".into(), 0, 3)));
         assert_eq!(un("两岸三地人均GDP"), Some(("两岸三地".into(), 0, 3)));
         assert_eq!(un("港澳和另一地三地的失业率"), Some(("港澳和另一地三地".into(), 2, 3)), "two of three read");
-        assert_eq!(un("欧洲自由贸易联盟四国失业率"), Some(("欧洲自由贸易联盟四国".into(), 0, 4)), "a region word is no country");
-        assert!(c.rank("海合会六国女性劳动参与率", &texts(&["female labor participation"])).candidates.is_empty());
-        assert!(c.rank("海合会六国女性劳动参与率", &texts(&["female labor participation"])).unread.is_some());
-        assert_eq!(un("波罗的海三国失业率"), Some(("波罗的海三国".into(), 0, 3)), "a sea's name holds no members");
+        assert_eq!(un("欧洲小国四国失业率"), Some(("欧洲小国四国".into(), 0, 4)), "a region word is no country");
+        assert!(c.rank("南盟八国女性劳动参与率", &texts(&["female labor participation"])).candidates.is_empty());
+        assert!(c.rank("南盟八国女性劳动参与率", &texts(&["female labor participation"])).unread.is_some());
+        assert_eq!(un("波罗的海沿岸四国失业率"), Some(("波罗的海沿岸四国".into(), 0, 4)), "a sea's name holds no members");
         for q in [
             "欧盟27国的失业率",
             "欧元区二十国通胀",
@@ -3387,6 +3387,35 @@ mod tests {
         assert_eq!(count_zh("27"), Some(27));
     }
 
+    /// The groups the owner confirmed on 2026-11-13 read as their members in the year asked: 海合会, 欧自联 over its
+    /// changes (Denmark and the UK until 1972, Finland from 1986, Liechtenstein from 1991), 维谢格拉德四国, 比荷卢, 北约 and
+    /// 经合组织 at their latest lists, and 波罗的海三国; a count after one of them is its own.
+    #[test]
+    fn the_v5_groups_read_as_their_members_by_year() {
+        let mut raw = small_raw();
+        let list = raw.wb_countries[1].as_array_mut().unwrap();
+        let more = [
+            "SA", "AE", "KW", "QA", "OM", "BH", "AT", "DK", "NO", "PT", "SE", "CH", "GB", "IS", "FI", "LI", "PL", "CZ", "SK", "HU",
+            "BE", "NL", "LU", "EE", "LV", "LT",
+        ];
+        for c in more {
+            list.push(json!({"id": c, "iso2Code": c, "name": format!("Land {c}"), "region": {"value": "Elsewhere"}}));
+        }
+        let c = Catalog::from_raw(&raw);
+        assert_eq!(countries(&c, "海合会六国女性劳动参与率"), ["SA", "AE", "KW", "QA", "OM", "BH"]);
+        assert_eq!(c.unread("海合会六国女性劳动参与率"), None);
+        assert_eq!(countries(&c, "1972年欧自联的出口"), ["AT", "DK", "NO", "PT", "SE", "CH", "GB", "IS"]);
+        assert_eq!(countries(&c, "1990年欧洲自由贸易联盟的出口"), ["AT", "NO", "SE", "CH", "IS", "FI"]);
+        assert_eq!(countries(&c, "2024年欧洲自由贸易联盟四国失业率"), ["NO", "CH", "IS", "LI"]);
+        assert_eq!(c.unread("2024年欧洲自由贸易联盟四国失业率"), None);
+        assert_eq!(countries(&c, "维谢格拉德四国最低工资"), ["PL", "CZ", "SK", "HU"]);
+        assert_eq!(countries(&c, "比荷卢三国可再生能源占比"), ["BE", "NL", "LU"]);
+        assert_eq!(countries(&c, "波罗的海三国失业率"), ["EE", "LV", "LT"]);
+        let names = place_names_zh();
+        let latest = |id: &str| names.groups.iter().find(|g| g.id == id).unwrap().periods.last().unwrap().members.len();
+        assert_eq!((latest("NATO"), latest("OECD"), latest("SCO"), latest("EAC")), (32, 38, 10, 8));
+    }
+
     #[test]
     fn a_question_naming_no_group_or_alias_reads_as_before() {
         let (c, w) = (small(), world());
@@ -3410,7 +3439,10 @@ mod tests {
         let sourced = |s: &SourceZh| !s.title.is_empty() && s.url.starts_with("https://") && s.accessed.len() == 10;
         assert!(names.aliases.iter().all(|a| a.iso2.len() == 2 && !a.name.is_empty() && sourced(&a.source)));
         assert!(names.aliases.iter().any(|a| a.name == "韩国" && a.iso2 == "KR"));
-        for id in ["BRICS", "ASEAN", "G7", "G20", "HKMO", "NORDIC"] {
+        for id in [
+            "BRICS", "ASEAN", "G7", "G20", "HKMO", "NORDIC", "GCC", "EAEU", "EAC", "PACALL", "SCO", "EFTA", "V4", "BENELUX", "NATO",
+            "OECD", "BALTIC3",
+        ] {
             let g = names.groups.iter().find(|g| g.id == id).expect(id);
             assert!(!g.names.is_empty(), "{id}");
             for d in &g.disputed {

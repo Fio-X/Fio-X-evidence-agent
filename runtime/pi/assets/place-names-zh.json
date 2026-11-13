@@ -2183,6 +2183,1418 @@
      }
     }
    ]
+  },
+  {
+   "id": "GCC",
+   "names": [
+    "海湾阿拉伯国家合作委员会",
+    "海合会"
+   ],
+   "periods": [
+    {
+     "from": 1981,
+     "to": null,
+     "members": [
+      "SA",
+      "AE",
+      "KW",
+      "QA",
+      "OM",
+      "BH"
+     ],
+     "source": {
+      "title": "MFA of the PRC, 海湾阿拉伯国家合作委员会概况 (updated 2026-07): founded 25 May 1981 by Saudi Arabia, the UAE, Kuwait, Qatar, Oman and Bahrain; members the same six",
+      "url": "https://www.mfa.gov.cn/web/gjhdq_676201/gjhdqzz_681964/lhg_682782/jbqk_682784/",
+      "accessed": "2026-11-13"
+     }
+    }
+   ]
+  },
+  {
+   "id": "EAEU",
+   "names": [
+    "欧亚经济联盟"
+   ],
+   "periods": [
+    {
+     "from": 2015,
+     "to": null,
+     "members": [
+      "RU",
+      "BY",
+      "KZ",
+      "AM",
+      "KG"
+     ],
+     "source": {
+      "title": "MFA of the PRC, 欧亚经济联盟概况 (updated 2026-04): the treaty in force 1 January 2015 for Russia, Belarus and Kazakhstan; Armenia joined 2 January 2015, Kyrgyzstan 12 August 2015",
+      "url": "https://www.mfa.gov.cn/web/gjhdq_676201/gjhdqzz_681964/zgzyjz_148230/jbqk_688960/",
+      "accessed": "2026-11-13"
+     }
+    }
+   ]
+  },
+  {
+   "id": "EAC",
+   "names": [
+    "东非共同体",
+    "东共体"
+   ],
+   "periods": [
+    {
+     "from": 2001,
+     "to": 2006,
+     "members": [
+      "KE",
+      "TZ",
+      "UG"
+     ],
+     "source": {
+      "title": "MFA of the PRC, 东非共同体概况 (updated 2026-06): restored 2000-2001 by Tanzania, Kenya and Uganda; Rwanda and Burundi from 2007; South Sudan 2016, DR Congo 2022, Somalia 2024",
+      "url": "https://www.mfa.gov.cn/web/gjhdq_676201/gjhdqzz_681964/lhg_683046/jbqk_683048/",
+      "accessed": "2026-11-13"
+     }
+    },
+    {
+     "from": 2007,
+     "to": 2015,
+     "members": [
+      "KE",
+      "TZ",
+      "UG",
+      "RW",
+      "BI"
+     ],
+     "source": {
+      "title": "MFA of the PRC, 东非共同体概况 (updated 2026-06): restored 2000-2001 by Tanzania, Kenya and Uganda; Rwanda and Burundi from 2007; South Sudan 2016, DR Congo 2022, Somalia 2024",
+      "url": "https://www.mfa.gov.cn/web/gjhdq_676201/gjhdqzz_681964/lhg_683046/jbqk_683048/",
+      "accessed": "2026-11-13"
+     }
+    },
+    {
+     "from": 2016,
+     "to": 2021,
+     "members": [
+      "KE",
+      "TZ",
+      "UG",
+      "RW",
+      "BI",
+      "SS"
+     ],
+     "source": {
+      "title": "MFA of the PRC, 东非共同体概况 (updated 2026-06): restored 2000-2001 by Tanzania, Kenya and Uganda; Rwanda and Burundi from 2007; South Sudan 2016, DR Congo 2022, Somalia 2024",
+      "url": "https://www.mfa.gov.cn/web/gjhdq_676201/gjhdqzz_681964/lhg_683046/jbqk_683048/",
+      "accessed": "2026-11-13"
+     }
+    },
+    {
+     "from": 2022,
+     "to": 2023,
+     "members": [
+      "KE",
+      "TZ",
+      "UG",
+      "RW",
+      "BI",
+      "SS",
+      "CD"
+     ],
+     "source": {
+      "title": "MFA of the PRC, 东非共同体概况 (updated 2026-06): restored 2000-2001 by Tanzania, Kenya and Uganda; Rwanda and Burundi from 2007; South Sudan 2016, DR Congo 2022, Somalia 2024",
+      "url": "https://www.mfa.gov.cn/web/gjhdq_676201/gjhdqzz_681964/lhg_683046/jbqk_683048/",
+      "accessed": "2026-11-13"
+     }
+    },
+    {
+     "from": 2024,
+     "to": null,
+     "members": [
+      "KE",
+      "TZ",
+      "UG",
+      "RW",
+      "BI",
+      "SS",
+      "CD",
+      "SO"
+     ],
+     "source": {
+      "title": "MFA of the PRC, 东非共同体概况 (updated 2026-06): restored 2000-2001 by Tanzania, Kenya and Uganda; Rwanda and Burundi from 2007; South Sudan 2016, DR Congo 2022, Somalia 2024",
+      "url": "https://www.mfa.gov.cn/web/gjhdq_676201/gjhdqzz_681964/lhg_683046/jbqk_683048/",
+      "accessed": "2026-11-13"
+     }
+    }
+   ]
+  },
+  {
+   "id": "PACALL",
+   "names": [
+    "太平洋联盟"
+   ],
+   "periods": [
+    {
+     "from": 2012,
+     "to": null,
+     "members": [
+      "CL",
+      "CO",
+      "MX",
+      "PE"
+     ],
+     "source": {
+      "title": "MFA of the PRC, 太平洋联盟概况 (updated 2026-10): founded 2011-2012 by Chile, Colombia, Mexico and Peru; Costa Rica agreed as a new member in December 2024, its accession in progress",
+      "url": "https://www.mfa.gov.cn/web/gjhdq_676201/gjhdqzz_681964/tpylm_683648/jbqk_683650/",
+      "accessed": "2026-11-13"
+     }
+    }
+   ]
+  },
+  {
+   "id": "SCO",
+   "names": [
+    "上海合作组织",
+    "上合组织"
+   ],
+   "periods": [
+    {
+     "from": 2001,
+     "to": 2016,
+     "members": [
+      "CN",
+      "RU",
+      "KZ",
+      "KG",
+      "TJ",
+      "UZ"
+     ],
+     "source": {
+      "title": "MFA of the PRC, 上海合作组织概况 (updated 2026-04): founded 15 June 2001 by China, Russia, Kazakhstan, Kyrgyzstan, Tajikistan and Uzbekistan; India and Pakistan joined 2017, Iran 2023, Belarus 2024",
+      "url": "https://www.mfa.gov.cn/web/gjhdq_676201/gjhdqzz_681964/lhg_683094/jbqk_683096/200812/t20081224_9388211.shtml",
+      "accessed": "2026-11-13"
+     }
+    },
+    {
+     "from": 2017,
+     "to": 2022,
+     "members": [
+      "CN",
+      "RU",
+      "KZ",
+      "KG",
+      "TJ",
+      "UZ",
+      "IN",
+      "PK"
+     ],
+     "source": {
+      "title": "MFA of the PRC, 上海合作组织概况 (updated 2026-04): founded 15 June 2001 by China, Russia, Kazakhstan, Kyrgyzstan, Tajikistan and Uzbekistan; India and Pakistan joined 2017, Iran 2023, Belarus 2024",
+      "url": "https://www.mfa.gov.cn/web/gjhdq_676201/gjhdqzz_681964/lhg_683094/jbqk_683096/200812/t20081224_9388211.shtml",
+      "accessed": "2026-11-13"
+     }
+    },
+    {
+     "from": 2023,
+     "to": 2023,
+     "members": [
+      "CN",
+      "RU",
+      "KZ",
+      "KG",
+      "TJ",
+      "UZ",
+      "IN",
+      "PK",
+      "IR"
+     ],
+     "source": {
+      "title": "MFA of the PRC, 上海合作组织概况 (updated 2026-04): founded 15 June 2001 by China, Russia, Kazakhstan, Kyrgyzstan, Tajikistan and Uzbekistan; India and Pakistan joined 2017, Iran 2023, Belarus 2024",
+      "url": "https://www.mfa.gov.cn/web/gjhdq_676201/gjhdqzz_681964/lhg_683094/jbqk_683096/200812/t20081224_9388211.shtml",
+      "accessed": "2026-11-13"
+     }
+    },
+    {
+     "from": 2024,
+     "to": null,
+     "members": [
+      "CN",
+      "RU",
+      "KZ",
+      "KG",
+      "TJ",
+      "UZ",
+      "IN",
+      "PK",
+      "IR",
+      "BY"
+     ],
+     "source": {
+      "title": "MFA of the PRC, 上海合作组织概况 (updated 2026-04): founded 15 June 2001 by China, Russia, Kazakhstan, Kyrgyzstan, Tajikistan and Uzbekistan; India and Pakistan joined 2017, Iran 2023, Belarus 2024",
+      "url": "https://www.mfa.gov.cn/web/gjhdq_676201/gjhdqzz_681964/lhg_683094/jbqk_683096/200812/t20081224_9388211.shtml",
+      "accessed": "2026-11-13"
+     }
+    }
+   ]
+  },
+  {
+   "id": "EFTA",
+   "names": [
+    "欧洲自由贸易联盟",
+    "欧自联"
+   ],
+   "periods": [
+    {
+     "from": 1960,
+     "to": 1969,
+     "members": [
+      "AT",
+      "DK",
+      "NO",
+      "PT",
+      "SE",
+      "CH",
+      "GB"
+     ],
+     "source": {
+      "title": "Wikipedia (en), European Free Trade Association, members table: Austria, Denmark, Norway, Portugal, Sweden, Switzerland and the UK from 1960; Iceland 1970; Finland 1986 (full member); Liechtenstein 1991; Denmark and the UK left end 1972, Portugal end 1985, Austria, Finland and Sweden end 1994",
+      "url": "https://en.wikipedia.org/wiki/European_Free_Trade_Association",
+      "accessed": "2026-11-13"
+     }
+    },
+    {
+     "from": 1970,
+     "to": 1972,
+     "members": [
+      "AT",
+      "DK",
+      "NO",
+      "PT",
+      "SE",
+      "CH",
+      "GB",
+      "IS"
+     ],
+     "source": {
+      "title": "Wikipedia (en), European Free Trade Association, members table: Austria, Denmark, Norway, Portugal, Sweden, Switzerland and the UK from 1960; Iceland 1970; Finland 1986 (full member); Liechtenstein 1991; Denmark and the UK left end 1972, Portugal end 1985, Austria, Finland and Sweden end 1994",
+      "url": "https://en.wikipedia.org/wiki/European_Free_Trade_Association",
+      "accessed": "2026-11-13"
+     }
+    },
+    {
+     "from": 1973,
+     "to": 1985,
+     "members": [
+      "AT",
+      "NO",
+      "PT",
+      "SE",
+      "CH",
+      "IS"
+     ],
+     "source": {
+      "title": "Wikipedia (en), European Free Trade Association, members table: Austria, Denmark, Norway, Portugal, Sweden, Switzerland and the UK from 1960; Iceland 1970; Finland 1986 (full member); Liechtenstein 1991; Denmark and the UK left end 1972, Portugal end 1985, Austria, Finland and Sweden end 1994",
+      "url": "https://en.wikipedia.org/wiki/European_Free_Trade_Association",
+      "accessed": "2026-11-13"
+     }
+    },
+    {
+     "from": 1986,
+     "to": 1990,
+     "members": [
+      "AT",
+      "NO",
+      "SE",
+      "CH",
+      "IS",
+      "FI"
+     ],
+     "source": {
+      "title": "Wikipedia (en), European Free Trade Association, members table: Austria, Denmark, Norway, Portugal, Sweden, Switzerland and the UK from 1960; Iceland 1970; Finland 1986 (full member); Liechtenstein 1991; Denmark and the UK left end 1972, Portugal end 1985, Austria, Finland and Sweden end 1994",
+      "url": "https://en.wikipedia.org/wiki/European_Free_Trade_Association",
+      "accessed": "2026-11-13"
+     }
+    },
+    {
+     "from": 1991,
+     "to": 1994,
+     "members": [
+      "AT",
+      "NO",
+      "SE",
+      "CH",
+      "IS",
+      "FI",
+      "LI"
+     ],
+     "source": {
+      "title": "Wikipedia (en), European Free Trade Association, members table: Austria, Denmark, Norway, Portugal, Sweden, Switzerland and the UK from 1960; Iceland 1970; Finland 1986 (full member); Liechtenstein 1991; Denmark and the UK left end 1972, Portugal end 1985, Austria, Finland and Sweden end 1994",
+      "url": "https://en.wikipedia.org/wiki/European_Free_Trade_Association",
+      "accessed": "2026-11-13"
+     }
+    },
+    {
+     "from": 1995,
+     "to": null,
+     "members": [
+      "NO",
+      "CH",
+      "IS",
+      "LI"
+     ],
+     "source": {
+      "title": "Wikipedia (en), European Free Trade Association, members table: Austria, Denmark, Norway, Portugal, Sweden, Switzerland and the UK from 1960; Iceland 1970; Finland 1986 (full member); Liechtenstein 1991; Denmark and the UK left end 1972, Portugal end 1985, Austria, Finland and Sweden end 1994",
+      "url": "https://en.wikipedia.org/wiki/European_Free_Trade_Association",
+      "accessed": "2026-11-13"
+     }
+    }
+   ]
+  },
+  {
+   "id": "V4",
+   "names": [
+    "维谢格拉德集团",
+    "维谢格拉德四国",
+    "维谢格拉德"
+   ],
+   "periods": [
+    {
+     "from": 1993,
+     "to": null,
+     "members": [
+      "PL",
+      "CZ",
+      "SK",
+      "HU"
+     ],
+     "source": {
+      "title": "Wikipedia (en), Visegrád Group: established 15 February 1991 by Czechoslovakia, Hungary and Poland; after the dissolution of Czechoslovakia in 1993 the Czech Republic and Slovakia became members",
+      "url": "https://en.wikipedia.org/wiki/Visegr%C3%A1d_Group",
+      "accessed": "2026-11-13"
+     }
+    }
+   ]
+  },
+  {
+   "id": "BENELUX",
+   "names": [
+    "比荷卢经济联盟",
+    "比荷卢联盟",
+    "比荷卢"
+   ],
+   "periods": [
+    {
+     "from": 1948,
+     "to": null,
+     "members": [
+      "BE",
+      "NL",
+      "LU"
+     ],
+     "source": {
+      "title": "Wikipedia (en), Benelux: Belgium, the Netherlands and Luxembourg; the London Customs Convention of 1944 took effect on 1 January 1948",
+      "url": "https://en.wikipedia.org/wiki/Benelux",
+      "accessed": "2026-11-13"
+     }
+    }
+   ]
+  },
+  {
+   "id": "NATO",
+   "names": [
+    "北大西洋公约组织",
+    "北约"
+   ],
+   "periods": [
+    {
+     "from": 1949,
+     "to": 1951,
+     "members": [
+      "BE",
+      "CA",
+      "DK",
+      "FR",
+      "IS",
+      "IT",
+      "LU",
+      "NL",
+      "NO",
+      "PT",
+      "GB",
+      "US"
+     ],
+     "source": {
+      "title": "Wikipedia (en), Member states of NATO, accession table: twelve founders 1949; Greece and Turkey 1952; West Germany 1955; Spain 1982; Czech Republic, Hungary, Poland 1999; Bulgaria, Estonia, Latvia, Lithuania, Romania, Slovakia, Slovenia 2004; Albania, Croatia 2009; Montenegro 2017; North Macedonia 2020; Finland 2023; Sweden 2024",
+      "url": "https://en.wikipedia.org/wiki/Member_states_of_NATO",
+      "accessed": "2026-11-13"
+     }
+    },
+    {
+     "from": 1952,
+     "to": 1954,
+     "members": [
+      "BE",
+      "CA",
+      "DK",
+      "FR",
+      "IS",
+      "IT",
+      "LU",
+      "NL",
+      "NO",
+      "PT",
+      "GB",
+      "US",
+      "GR",
+      "TR"
+     ],
+     "source": {
+      "title": "Wikipedia (en), Member states of NATO, accession table: twelve founders 1949; Greece and Turkey 1952; West Germany 1955; Spain 1982; Czech Republic, Hungary, Poland 1999; Bulgaria, Estonia, Latvia, Lithuania, Romania, Slovakia, Slovenia 2004; Albania, Croatia 2009; Montenegro 2017; North Macedonia 2020; Finland 2023; Sweden 2024",
+      "url": "https://en.wikipedia.org/wiki/Member_states_of_NATO",
+      "accessed": "2026-11-13"
+     }
+    },
+    {
+     "from": 1955,
+     "to": 1981,
+     "members": [
+      "BE",
+      "CA",
+      "DK",
+      "FR",
+      "IS",
+      "IT",
+      "LU",
+      "NL",
+      "NO",
+      "PT",
+      "GB",
+      "US",
+      "GR",
+      "TR",
+      "DE"
+     ],
+     "source": {
+      "title": "Wikipedia (en), Member states of NATO, accession table: twelve founders 1949; Greece and Turkey 1952; West Germany 1955; Spain 1982; Czech Republic, Hungary, Poland 1999; Bulgaria, Estonia, Latvia, Lithuania, Romania, Slovakia, Slovenia 2004; Albania, Croatia 2009; Montenegro 2017; North Macedonia 2020; Finland 2023; Sweden 2024",
+      "url": "https://en.wikipedia.org/wiki/Member_states_of_NATO",
+      "accessed": "2026-11-13"
+     }
+    },
+    {
+     "from": 1982,
+     "to": 1998,
+     "members": [
+      "BE",
+      "CA",
+      "DK",
+      "FR",
+      "IS",
+      "IT",
+      "LU",
+      "NL",
+      "NO",
+      "PT",
+      "GB",
+      "US",
+      "GR",
+      "TR",
+      "DE",
+      "ES"
+     ],
+     "source": {
+      "title": "Wikipedia (en), Member states of NATO, accession table: twelve founders 1949; Greece and Turkey 1952; West Germany 1955; Spain 1982; Czech Republic, Hungary, Poland 1999; Bulgaria, Estonia, Latvia, Lithuania, Romania, Slovakia, Slovenia 2004; Albania, Croatia 2009; Montenegro 2017; North Macedonia 2020; Finland 2023; Sweden 2024",
+      "url": "https://en.wikipedia.org/wiki/Member_states_of_NATO",
+      "accessed": "2026-11-13"
+     }
+    },
+    {
+     "from": 1999,
+     "to": 2003,
+     "members": [
+      "BE",
+      "CA",
+      "DK",
+      "FR",
+      "IS",
+      "IT",
+      "LU",
+      "NL",
+      "NO",
+      "PT",
+      "GB",
+      "US",
+      "GR",
+      "TR",
+      "DE",
+      "ES",
+      "CZ",
+      "HU",
+      "PL"
+     ],
+     "source": {
+      "title": "Wikipedia (en), Member states of NATO, accession table: twelve founders 1949; Greece and Turkey 1952; West Germany 1955; Spain 1982; Czech Republic, Hungary, Poland 1999; Bulgaria, Estonia, Latvia, Lithuania, Romania, Slovakia, Slovenia 2004; Albania, Croatia 2009; Montenegro 2017; North Macedonia 2020; Finland 2023; Sweden 2024",
+      "url": "https://en.wikipedia.org/wiki/Member_states_of_NATO",
+      "accessed": "2026-11-13"
+     }
+    },
+    {
+     "from": 2004,
+     "to": 2008,
+     "members": [
+      "BE",
+      "CA",
+      "DK",
+      "FR",
+      "IS",
+      "IT",
+      "LU",
+      "NL",
+      "NO",
+      "PT",
+      "GB",
+      "US",
+      "GR",
+      "TR",
+      "DE",
+      "ES",
+      "CZ",
+      "HU",
+      "PL",
+      "BG",
+      "EE",
+      "LV",
+      "LT",
+      "RO",
+      "SK",
+      "SI"
+     ],
+     "source": {
+      "title": "Wikipedia (en), Member states of NATO, accession table: twelve founders 1949; Greece and Turkey 1952; West Germany 1955; Spain 1982; Czech Republic, Hungary, Poland 1999; Bulgaria, Estonia, Latvia, Lithuania, Romania, Slovakia, Slovenia 2004; Albania, Croatia 2009; Montenegro 2017; North Macedonia 2020; Finland 2023; Sweden 2024",
+      "url": "https://en.wikipedia.org/wiki/Member_states_of_NATO",
+      "accessed": "2026-11-13"
+     }
+    },
+    {
+     "from": 2009,
+     "to": 2016,
+     "members": [
+      "BE",
+      "CA",
+      "DK",
+      "FR",
+      "IS",
+      "IT",
+      "LU",
+      "NL",
+      "NO",
+      "PT",
+      "GB",
+      "US",
+      "GR",
+      "TR",
+      "DE",
+      "ES",
+      "CZ",
+      "HU",
+      "PL",
+      "BG",
+      "EE",
+      "LV",
+      "LT",
+      "RO",
+      "SK",
+      "SI",
+      "AL",
+      "HR"
+     ],
+     "source": {
+      "title": "Wikipedia (en), Member states of NATO, accession table: twelve founders 1949; Greece and Turkey 1952; West Germany 1955; Spain 1982; Czech Republic, Hungary, Poland 1999; Bulgaria, Estonia, Latvia, Lithuania, Romania, Slovakia, Slovenia 2004; Albania, Croatia 2009; Montenegro 2017; North Macedonia 2020; Finland 2023; Sweden 2024",
+      "url": "https://en.wikipedia.org/wiki/Member_states_of_NATO",
+      "accessed": "2026-11-13"
+     }
+    },
+    {
+     "from": 2017,
+     "to": 2019,
+     "members": [
+      "BE",
+      "CA",
+      "DK",
+      "FR",
+      "IS",
+      "IT",
+      "LU",
+      "NL",
+      "NO",
+      "PT",
+      "GB",
+      "US",
+      "GR",
+      "TR",
+      "DE",
+      "ES",
+      "CZ",
+      "HU",
+      "PL",
+      "BG",
+      "EE",
+      "LV",
+      "LT",
+      "RO",
+      "SK",
+      "SI",
+      "AL",
+      "HR",
+      "ME"
+     ],
+     "source": {
+      "title": "Wikipedia (en), Member states of NATO, accession table: twelve founders 1949; Greece and Turkey 1952; West Germany 1955; Spain 1982; Czech Republic, Hungary, Poland 1999; Bulgaria, Estonia, Latvia, Lithuania, Romania, Slovakia, Slovenia 2004; Albania, Croatia 2009; Montenegro 2017; North Macedonia 2020; Finland 2023; Sweden 2024",
+      "url": "https://en.wikipedia.org/wiki/Member_states_of_NATO",
+      "accessed": "2026-11-13"
+     }
+    },
+    {
+     "from": 2020,
+     "to": 2022,
+     "members": [
+      "BE",
+      "CA",
+      "DK",
+      "FR",
+      "IS",
+      "IT",
+      "LU",
+      "NL",
+      "NO",
+      "PT",
+      "GB",
+      "US",
+      "GR",
+      "TR",
+      "DE",
+      "ES",
+      "CZ",
+      "HU",
+      "PL",
+      "BG",
+      "EE",
+      "LV",
+      "LT",
+      "RO",
+      "SK",
+      "SI",
+      "AL",
+      "HR",
+      "ME",
+      "MK"
+     ],
+     "source": {
+      "title": "Wikipedia (en), Member states of NATO, accession table: twelve founders 1949; Greece and Turkey 1952; West Germany 1955; Spain 1982; Czech Republic, Hungary, Poland 1999; Bulgaria, Estonia, Latvia, Lithuania, Romania, Slovakia, Slovenia 2004; Albania, Croatia 2009; Montenegro 2017; North Macedonia 2020; Finland 2023; Sweden 2024",
+      "url": "https://en.wikipedia.org/wiki/Member_states_of_NATO",
+      "accessed": "2026-11-13"
+     }
+    },
+    {
+     "from": 2023,
+     "to": 2023,
+     "members": [
+      "BE",
+      "CA",
+      "DK",
+      "FR",
+      "IS",
+      "IT",
+      "LU",
+      "NL",
+      "NO",
+      "PT",
+      "GB",
+      "US",
+      "GR",
+      "TR",
+      "DE",
+      "ES",
+      "CZ",
+      "HU",
+      "PL",
+      "BG",
+      "EE",
+      "LV",
+      "LT",
+      "RO",
+      "SK",
+      "SI",
+      "AL",
+      "HR",
+      "ME",
+      "MK",
+      "FI"
+     ],
+     "source": {
+      "title": "Wikipedia (en), Member states of NATO, accession table: twelve founders 1949; Greece and Turkey 1952; West Germany 1955; Spain 1982; Czech Republic, Hungary, Poland 1999; Bulgaria, Estonia, Latvia, Lithuania, Romania, Slovakia, Slovenia 2004; Albania, Croatia 2009; Montenegro 2017; North Macedonia 2020; Finland 2023; Sweden 2024",
+      "url": "https://en.wikipedia.org/wiki/Member_states_of_NATO",
+      "accessed": "2026-11-13"
+     }
+    },
+    {
+     "from": 2024,
+     "to": null,
+     "members": [
+      "BE",
+      "CA",
+      "DK",
+      "FR",
+      "IS",
+      "IT",
+      "LU",
+      "NL",
+      "NO",
+      "PT",
+      "GB",
+      "US",
+      "GR",
+      "TR",
+      "DE",
+      "ES",
+      "CZ",
+      "HU",
+      "PL",
+      "BG",
+      "EE",
+      "LV",
+      "LT",
+      "RO",
+      "SK",
+      "SI",
+      "AL",
+      "HR",
+      "ME",
+      "MK",
+      "FI",
+      "SE"
+     ],
+     "source": {
+      "title": "Wikipedia (en), Member states of NATO, accession table: twelve founders 1949; Greece and Turkey 1952; West Germany 1955; Spain 1982; Czech Republic, Hungary, Poland 1999; Bulgaria, Estonia, Latvia, Lithuania, Romania, Slovakia, Slovenia 2004; Albania, Croatia 2009; Montenegro 2017; North Macedonia 2020; Finland 2023; Sweden 2024",
+      "url": "https://en.wikipedia.org/wiki/Member_states_of_NATO",
+      "accessed": "2026-11-13"
+     }
+    }
+   ]
+  },
+  {
+   "id": "OECD",
+   "names": [
+    "经济合作与发展组织",
+    "经合组织",
+    "OECD"
+   ],
+   "periods": [
+    {
+     "from": 1961,
+     "to": 1961,
+     "members": [
+      "AT",
+      "BE",
+      "CA",
+      "DK",
+      "FR",
+      "DE",
+      "GR",
+      "IS",
+      "IE",
+      "LU",
+      "NL",
+      "NO",
+      "PT",
+      "ES",
+      "SE",
+      "CH",
+      "TR",
+      "GB",
+      "US"
+     ],
+     "source": {
+      "title": "Wikipedia (zh), 经济合作与发展组织, 成员国表 (成员生效日期), with Greece and Switzerland among the 1961 founders per Wikipedia (en), OECD",
+      "url": "https://zh.wikipedia.org/zh-cn/经济合作与发展组织",
+      "accessed": "2026-11-13"
+     }
+    },
+    {
+     "from": 1962,
+     "to": 1963,
+     "members": [
+      "AT",
+      "BE",
+      "CA",
+      "DK",
+      "FR",
+      "DE",
+      "GR",
+      "IS",
+      "IE",
+      "LU",
+      "NL",
+      "NO",
+      "PT",
+      "ES",
+      "SE",
+      "CH",
+      "TR",
+      "GB",
+      "US",
+      "IT"
+     ],
+     "source": {
+      "title": "Wikipedia (zh), 经济合作与发展组织, 成员国表 (成员生效日期), with Greece and Switzerland among the 1961 founders per Wikipedia (en), OECD",
+      "url": "https://zh.wikipedia.org/zh-cn/经济合作与发展组织",
+      "accessed": "2026-11-13"
+     }
+    },
+    {
+     "from": 1964,
+     "to": 1968,
+     "members": [
+      "AT",
+      "BE",
+      "CA",
+      "DK",
+      "FR",
+      "DE",
+      "GR",
+      "IS",
+      "IE",
+      "LU",
+      "NL",
+      "NO",
+      "PT",
+      "ES",
+      "SE",
+      "CH",
+      "TR",
+      "GB",
+      "US",
+      "IT",
+      "JP"
+     ],
+     "source": {
+      "title": "Wikipedia (zh), 经济合作与发展组织, 成员国表 (成员生效日期), with Greece and Switzerland among the 1961 founders per Wikipedia (en), OECD",
+      "url": "https://zh.wikipedia.org/zh-cn/经济合作与发展组织",
+      "accessed": "2026-11-13"
+     }
+    },
+    {
+     "from": 1969,
+     "to": 1970,
+     "members": [
+      "AT",
+      "BE",
+      "CA",
+      "DK",
+      "FR",
+      "DE",
+      "GR",
+      "IS",
+      "IE",
+      "LU",
+      "NL",
+      "NO",
+      "PT",
+      "ES",
+      "SE",
+      "CH",
+      "TR",
+      "GB",
+      "US",
+      "IT",
+      "JP",
+      "FI"
+     ],
+     "source": {
+      "title": "Wikipedia (zh), 经济合作与发展组织, 成员国表 (成员生效日期), with Greece and Switzerland among the 1961 founders per Wikipedia (en), OECD",
+      "url": "https://zh.wikipedia.org/zh-cn/经济合作与发展组织",
+      "accessed": "2026-11-13"
+     }
+    },
+    {
+     "from": 1971,
+     "to": 1972,
+     "members": [
+      "AT",
+      "BE",
+      "CA",
+      "DK",
+      "FR",
+      "DE",
+      "GR",
+      "IS",
+      "IE",
+      "LU",
+      "NL",
+      "NO",
+      "PT",
+      "ES",
+      "SE",
+      "CH",
+      "TR",
+      "GB",
+      "US",
+      "IT",
+      "JP",
+      "FI",
+      "AU"
+     ],
+     "source": {
+      "title": "Wikipedia (zh), 经济合作与发展组织, 成员国表 (成员生效日期), with Greece and Switzerland among the 1961 founders per Wikipedia (en), OECD",
+      "url": "https://zh.wikipedia.org/zh-cn/经济合作与发展组织",
+      "accessed": "2026-11-13"
+     }
+    },
+    {
+     "from": 1973,
+     "to": 1993,
+     "members": [
+      "AT",
+      "BE",
+      "CA",
+      "DK",
+      "FR",
+      "DE",
+      "GR",
+      "IS",
+      "IE",
+      "LU",
+      "NL",
+      "NO",
+      "PT",
+      "ES",
+      "SE",
+      "CH",
+      "TR",
+      "GB",
+      "US",
+      "IT",
+      "JP",
+      "FI",
+      "AU",
+      "NZ"
+     ],
+     "source": {
+      "title": "Wikipedia (zh), 经济合作与发展组织, 成员国表 (成员生效日期), with Greece and Switzerland among the 1961 founders per Wikipedia (en), OECD",
+      "url": "https://zh.wikipedia.org/zh-cn/经济合作与发展组织",
+      "accessed": "2026-11-13"
+     }
+    },
+    {
+     "from": 1994,
+     "to": 1994,
+     "members": [
+      "AT",
+      "BE",
+      "CA",
+      "DK",
+      "FR",
+      "DE",
+      "GR",
+      "IS",
+      "IE",
+      "LU",
+      "NL",
+      "NO",
+      "PT",
+      "ES",
+      "SE",
+      "CH",
+      "TR",
+      "GB",
+      "US",
+      "IT",
+      "JP",
+      "FI",
+      "AU",
+      "NZ",
+      "MX"
+     ],
+     "source": {
+      "title": "Wikipedia (zh), 经济合作与发展组织, 成员国表 (成员生效日期), with Greece and Switzerland among the 1961 founders per Wikipedia (en), OECD",
+      "url": "https://zh.wikipedia.org/zh-cn/经济合作与发展组织",
+      "accessed": "2026-11-13"
+     }
+    },
+    {
+     "from": 1995,
+     "to": 1995,
+     "members": [
+      "AT",
+      "BE",
+      "CA",
+      "DK",
+      "FR",
+      "DE",
+      "GR",
+      "IS",
+      "IE",
+      "LU",
+      "NL",
+      "NO",
+      "PT",
+      "ES",
+      "SE",
+      "CH",
+      "TR",
+      "GB",
+      "US",
+      "IT",
+      "JP",
+      "FI",
+      "AU",
+      "NZ",
+      "MX",
+      "CZ"
+     ],
+     "source": {
+      "title": "Wikipedia (zh), 经济合作与发展组织, 成员国表 (成员生效日期), with Greece and Switzerland among the 1961 founders per Wikipedia (en), OECD",
+      "url": "https://zh.wikipedia.org/zh-cn/经济合作与发展组织",
+      "accessed": "2026-11-13"
+     }
+    },
+    {
+     "from": 1996,
+     "to": 1999,
+     "members": [
+      "AT",
+      "BE",
+      "CA",
+      "DK",
+      "FR",
+      "DE",
+      "GR",
+      "IS",
+      "IE",
+      "LU",
+      "NL",
+      "NO",
+      "PT",
+      "ES",
+      "SE",
+      "CH",
+      "TR",
+      "GB",
+      "US",
+      "IT",
+      "JP",
+      "FI",
+      "AU",
+      "NZ",
+      "MX",
+      "CZ",
+      "HU",
+      "PL",
+      "KR"
+     ],
+     "source": {
+      "title": "Wikipedia (zh), 经济合作与发展组织, 成员国表 (成员生效日期), with Greece and Switzerland among the 1961 founders per Wikipedia (en), OECD",
+      "url": "https://zh.wikipedia.org/zh-cn/经济合作与发展组织",
+      "accessed": "2026-11-13"
+     }
+    },
+    {
+     "from": 2000,
+     "to": 2009,
+     "members": [
+      "AT",
+      "BE",
+      "CA",
+      "DK",
+      "FR",
+      "DE",
+      "GR",
+      "IS",
+      "IE",
+      "LU",
+      "NL",
+      "NO",
+      "PT",
+      "ES",
+      "SE",
+      "CH",
+      "TR",
+      "GB",
+      "US",
+      "IT",
+      "JP",
+      "FI",
+      "AU",
+      "NZ",
+      "MX",
+      "CZ",
+      "HU",
+      "PL",
+      "KR",
+      "SK"
+     ],
+     "source": {
+      "title": "Wikipedia (zh), 经济合作与发展组织, 成员国表 (成员生效日期), with Greece and Switzerland among the 1961 founders per Wikipedia (en), OECD",
+      "url": "https://zh.wikipedia.org/zh-cn/经济合作与发展组织",
+      "accessed": "2026-11-13"
+     }
+    },
+    {
+     "from": 2010,
+     "to": 2015,
+     "members": [
+      "AT",
+      "BE",
+      "CA",
+      "DK",
+      "FR",
+      "DE",
+      "GR",
+      "IS",
+      "IE",
+      "LU",
+      "NL",
+      "NO",
+      "PT",
+      "ES",
+      "SE",
+      "CH",
+      "TR",
+      "GB",
+      "US",
+      "IT",
+      "JP",
+      "FI",
+      "AU",
+      "NZ",
+      "MX",
+      "CZ",
+      "HU",
+      "PL",
+      "KR",
+      "SK",
+      "CL",
+      "SI",
+      "IL",
+      "EE"
+     ],
+     "source": {
+      "title": "Wikipedia (zh), 经济合作与发展组织, 成员国表 (成员生效日期), with Greece and Switzerland among the 1961 founders per Wikipedia (en), OECD",
+      "url": "https://zh.wikipedia.org/zh-cn/经济合作与发展组织",
+      "accessed": "2026-11-13"
+     }
+    },
+    {
+     "from": 2016,
+     "to": 2017,
+     "members": [
+      "AT",
+      "BE",
+      "CA",
+      "DK",
+      "FR",
+      "DE",
+      "GR",
+      "IS",
+      "IE",
+      "LU",
+      "NL",
+      "NO",
+      "PT",
+      "ES",
+      "SE",
+      "CH",
+      "TR",
+      "GB",
+      "US",
+      "IT",
+      "JP",
+      "FI",
+      "AU",
+      "NZ",
+      "MX",
+      "CZ",
+      "HU",
+      "PL",
+      "KR",
+      "SK",
+      "CL",
+      "SI",
+      "IL",
+      "EE",
+      "LV"
+     ],
+     "source": {
+      "title": "Wikipedia (zh), 经济合作与发展组织, 成员国表 (成员生效日期), with Greece and Switzerland among the 1961 founders per Wikipedia (en), OECD",
+      "url": "https://zh.wikipedia.org/zh-cn/经济合作与发展组织",
+      "accessed": "2026-11-13"
+     }
+    },
+    {
+     "from": 2018,
+     "to": 2019,
+     "members": [
+      "AT",
+      "BE",
+      "CA",
+      "DK",
+      "FR",
+      "DE",
+      "GR",
+      "IS",
+      "IE",
+      "LU",
+      "NL",
+      "NO",
+      "PT",
+      "ES",
+      "SE",
+      "CH",
+      "TR",
+      "GB",
+      "US",
+      "IT",
+      "JP",
+      "FI",
+      "AU",
+      "NZ",
+      "MX",
+      "CZ",
+      "HU",
+      "PL",
+      "KR",
+      "SK",
+      "CL",
+      "SI",
+      "IL",
+      "EE",
+      "LV",
+      "LT"
+     ],
+     "source": {
+      "title": "Wikipedia (zh), 经济合作与发展组织, 成员国表 (成员生效日期), with Greece and Switzerland among the 1961 founders per Wikipedia (en), OECD",
+      "url": "https://zh.wikipedia.org/zh-cn/经济合作与发展组织",
+      "accessed": "2026-11-13"
+     }
+    },
+    {
+     "from": 2020,
+     "to": 2020,
+     "members": [
+      "AT",
+      "BE",
+      "CA",
+      "DK",
+      "FR",
+      "DE",
+      "GR",
+      "IS",
+      "IE",
+      "LU",
+      "NL",
+      "NO",
+      "PT",
+      "ES",
+      "SE",
+      "CH",
+      "TR",
+      "GB",
+      "US",
+      "IT",
+      "JP",
+      "FI",
+      "AU",
+      "NZ",
+      "MX",
+      "CZ",
+      "HU",
+      "PL",
+      "KR",
+      "SK",
+      "CL",
+      "SI",
+      "IL",
+      "EE",
+      "LV",
+      "LT",
+      "CO"
+     ],
+     "source": {
+      "title": "Wikipedia (zh), 经济合作与发展组织, 成员国表 (成员生效日期), with Greece and Switzerland among the 1961 founders per Wikipedia (en), OECD",
+      "url": "https://zh.wikipedia.org/zh-cn/经济合作与发展组织",
+      "accessed": "2026-11-13"
+     }
+    },
+    {
+     "from": 2021,
+     "to": null,
+     "members": [
+      "AT",
+      "BE",
+      "CA",
+      "DK",
+      "FR",
+      "DE",
+      "GR",
+      "IS",
+      "IE",
+      "LU",
+      "NL",
+      "NO",
+      "PT",
+      "ES",
+      "SE",
+      "CH",
+      "TR",
+      "GB",
+      "US",
+      "IT",
+      "JP",
+      "FI",
+      "AU",
+      "NZ",
+      "MX",
+      "CZ",
+      "HU",
+      "PL",
+      "KR",
+      "SK",
+      "CL",
+      "SI",
+      "IL",
+      "EE",
+      "LV",
+      "LT",
+      "CO",
+      "CR"
+     ],
+     "source": {
+      "title": "Wikipedia (zh), 经济合作与发展组织, 成员国表 (成员生效日期), with Greece and Switzerland among the 1961 founders per Wikipedia (en), OECD",
+      "url": "https://zh.wikipedia.org/zh-cn/经济合作与发展组织",
+      "accessed": "2026-11-13"
+     }
+    }
+   ]
+  },
+  {
+   "id": "BALTIC3",
+   "names": [
+    "波罗的海三国"
+   ],
+   "periods": [
+    {
+     "from": 1991,
+     "to": null,
+     "members": [
+      "EE",
+      "LV",
+      "LT"
+     ],
+     "source": {
+      "title": "Wikipedia (zh), 波罗的海国家: Estonia, Latvia and Lithuania (a geographic group, not an organisation), independent from 1991",
+      "url": "https://zh.wikipedia.org/zh-cn/波罗的海国家",
+      "accessed": "2026-11-13"
+     }
+    }
+   ]
   }
  ]
 }
