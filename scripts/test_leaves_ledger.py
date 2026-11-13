@@ -49,6 +49,23 @@ class Ledger(unittest.TestCase):
         with self.assertRaises(FX.Refused):
             FX.fill(SPEC, F, "{ru}")  # the old non-bare entry is not asked for, and without fact:ru.n the layer refuses
 
+    def test_a_name_placeholder_prints_the_name_marked_by_its_one_name_row(self):
+        """{name.<code>} (planted errors 11-13): the code's one name row, marked, so the page checks read which place the
+        words name; a part code with a row in the place table too takes its own; none, or two of its own kind, refuses.
+        Without a ledger the label, bare."""
+        FX.LEDGER = {"name:zh_names:iso3:VNM": "越南", "name:zh_names:iso3:fossil": "化石能源", "name:zh_names:siec_group:fossil": "化石能源"}
+        self.assertEqual(FX.fill(SPEC, F, "{name.VNM}增幅最大"), '<span data-src="name:zh_names:iso3:VNM">越南</span>增幅最大')
+        self.assertEqual(FX.fill(SPEC, F, "{name.fossil}占比"), '<span data-src="name:zh_names:siec_group:fossil">化石能源</span>占比')
+        with self.assertRaises(words.Refused):
+            FX.fill(SPEC, F, "{name.IDN}增幅最大")
+        FX.LEDGER["name:zh_names:iso2:VN"] = "越南"
+        FX.LEDGER["name:other:iso3:VNM"] = "越南"
+        with self.assertRaises(words.Refused):
+            FX.fill(SPEC, F, "{name.VNM}增幅最大")
+        FX.LEDGER = None
+        prod.NAMES = {"VNM": "越南"}
+        self.assertEqual(FX.fill(SPEC, F, "{name.VNM}增幅最大"), "越南增幅最大")
+
     def test_the_entry_text_is_escaped(self):
         FX.LEDGER = {"fact:ru": "<1>"}
         self.assertEqual(FX.entry("fact:ru", "tspan", None), '<tspan data-src="fact:ru">&lt;1&gt;</tspan>')
