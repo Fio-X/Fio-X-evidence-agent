@@ -457,8 +457,8 @@ def page_head(c, spec, nums="", box=None, wide=False):
     it wraps as one piece, and a line it starts loses the bracket's blank half (text-spacing-trim, CSS Text 4, which Chrome
     applies only with a font that carries the halt feature: the page's Songti SC and PingFang SC do not)."""
     box = box if box is not None else f"<div class=bns>{nums}</div>" if nums else ""
-    o, e = map(re.escape, word("paren", v="")); title = re.sub(f"{o}[^<>{o}{e}]*{e}$", r'<span class="nb">\g<0></span>', c.t(spec["title"]))
-    return (f'<header class="hh{" lb" if box and box.startswith("<div data-layer=") else "" if box else " wide" if wide else " solo"}"><div><div class="kicker">{prod.esc(spec["kicker"])}</div><h1>{title}</h1><p class="dek">{FX.worded(spec, c.F, "dek", spec["dek"])}</p></div>'
+    o, e = map(re.escape, word("paren", v="")); title = re.sub(f"{o}[^<>{o}{e}]*{e}$", r'<span class="nb">\g<0></span>', FX.placed(c.t(spec["title"])))
+    return (f'<header class="hh{" lb" if box and box.startswith("<div data-layer=") else "" if box else " wide" if wide else " solo"}"><div><div class="kicker">{prod.esc(spec["kicker"])}</div><h1>{title}</h1><p class="dek">{FX.placed(FX.worded(spec, c.F, "dek", spec["dek"]))}</p></div>'
             f'{box}</header>')
 
 def title_in(hero_):

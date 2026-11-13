@@ -202,6 +202,20 @@ def fill(spec, F, text):
         return f'<b class="n">{fmt(spec, F[k], bare=part == "n")}</b>'
     return re.sub(r"\{([a-z0-9_.]+)\}", sub, text)
 
+def placed(text):
+    """The headline's or the dek's filled text with each place name it prints bare marked by its ledger row (a place row,
+    name:<table>:iso2|iso3:<code>; the longest name first), so the page checks read which place the words name (next_ledger
+    names_drawn): a worded title or dek is the text step's words, and may name the page's place. Words inside a tag or a
+    marked element are left as they are; without a ledger the text is returned unchanged."""
+    if LEDGER is None: return text
+    import re
+    rows = sorted(((t, s) for s, t in LEDGER.items() if s.startswith("name:") and s.split(":")[2:3] in (["iso2"], ["iso3"]) and t),
+                  key=lambda r: -len(r[0]))
+    if not rows: return text
+    by = dict(rows); find = re.compile("|".join(re.escape(t) for t, _ in rows))
+    parts = re.split(r"(<span[^>]*>[^<]*</span>|<[^>]*>)", text)
+    return "".join(p if i % 2 else find.sub(lambda m: entry(by[m.group(0)], "span", None), p) for i, p in enumerate(parts))
+
 def tlabel(t):
     if "-S" in t: y, h = t.split("-S"); return word("date.half", y=y, h=word("half.1" if h == "1" else "half.2"))
     if "-" in t: y, m = t.split("-"); return word("date.ym", y=y, m=int(m))

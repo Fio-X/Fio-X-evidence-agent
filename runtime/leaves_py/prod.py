@@ -870,7 +870,7 @@ def page(spec):
                     f'<div class="wh">{c.t(m["h"])}</div>{body}</section>')
     css = open(os.path.join(FX.D, "tokens.css")).read() + PAGE_ROOT + CSS
     return (f'<!doctype html><html lang="zh"><meta charset="utf-8"><title>{word("page.title")}</title><style>{css}</style><body><div class="pg">'
-            f'<header><div class="kicker">{esc(spec["kicker"])}</div><h1>{c.t(spec["title"])}</h1><p class="dek">{c.t(spec["dek"])}</p></header>'
+            f'<header><div class="kicker">{esc(spec["kicker"])}</div><h1>{FX.placed(c.t(spec["title"]))}</h1><p class="dek">{FX.placed(c.t(spec["dek"]))}</p></header>'
             f'<div class="grid">{"".join(mods)}</div>'
             f'<footer>{word("footer.source", v=esc(spec["source"]))}{esc(spec.get("note", ""))}</footer></div></body></html>')
 

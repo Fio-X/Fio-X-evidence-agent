@@ -1082,7 +1082,9 @@ fn table_place_names() -> &'static [String] {
 /// Their words outside every marked element (data-src) hold no name of the knowledge group's place table (a bare name is
 /// one no check reads: planted errors 11-13, a headline naming the second place as the first and a dek naming a place
 /// the page does not draw passed every check); and each name row they mark is marked in one of the page's svg pictures
-/// too. One line per finding; empty when both hold.
+/// too, but one: on a page whose pictures mark no place row (a place table's, name:<table>:iso2|iso3:<code>: a picture of
+/// one place's parts, as a flow page draws one country's energy), the h1 and the dek together may mark one place row, the
+/// place every picture is of (check_numbers holds it to the page's ledger). One line per finding; empty when both hold.
 pub fn check_names_drawn(html: &str) -> Vec<String> {
     let els = elements(html);
     let drawn: std::collections::BTreeSet<&str> = els
@@ -1092,8 +1094,16 @@ pub fn check_names_drawn(html: &str) -> Vec<String> {
         .filter_map(|e| e.attr("data-src"))
         .filter(|src| src.starts_with(LABEL_SRC))
         .collect();
+    let place = |src: &str| matches!(src.split(':').nth(2), Some("iso2" | "iso3"));
+    let heads = || els.iter().filter(|e| e.name == "h1" || (e.name == "p" && e.attr("class") == Some("dek")));
+    let named_places: std::collections::BTreeSet<&str> = heads()
+        .flat_map(|h| els.iter().filter(move |e| h.inner.start <= e.inner.start && e.inner.start < h.inner.end && e.inner != h.inner))
+        .filter_map(|e| e.attr("data-src"))
+        .filter(|s| s.starts_with(LABEL_SRC) && place(s))
+        .collect();
+    let one_place = !drawn.iter().any(|s| place(s)) && named_places.len() == 1;
     let mut off = Vec::new();
-    for el in els.iter().filter(|e| e.name == "h1" || (e.name == "p" && e.attr("class") == Some("dek"))) {
+    for el in heads() {
         let which = if el.name == "h1" { "h1" } else { "dek" };
         let within = |e: &El| el.inner.start <= e.inner.start && e.inner.start < el.inner.end && e.inner != el.inner;
         let marked: Vec<&El> = els.iter().filter(|e| within(e) && e.attr("data-src").is_some()).collect();
@@ -1132,7 +1142,7 @@ pub fn check_names_drawn(html: &str) -> Vec<String> {
             off.push(format!("{which}: the place name {name:?} is printed bare, not marked by its name row"));
         }
         for src in marked.iter().filter_map(|e| e.attr("data-src")).filter(|s| s.starts_with(LABEL_SRC)) {
-            if !drawn.contains(src) {
+            if !drawn.contains(src) && !(one_place && place(src)) {
                 off.push(format!("{which}: {src} is named, and no picture of the page draws it"));
             }
         }
@@ -3322,6 +3332,25 @@ mod tests {
         // a marked name's own text and the words beside it never join into a name (几内亚 beside 比绍)
         let beside = page(&format!("{vn}比绍"), &format!("{vn}"));
         assert_eq!(check_names_drawn(&beside), Vec::<String>::new());
+        // a picture of one place's parts (a flow page of one country: its svg marks parts' rows, no place's): the h1 and the
+        // dek may name that one place, not two, and a part they name is drawn as before
+        let parts = r#"<svg><text><tspan data-src="name:zh_names:siec:O4000XBIO">石油</tspan></text></svg>"#;
+        let de = r#"<span data-src="name:zh_names:iso2:DE">德国</span>"#;
+        let fr = r#"<span data-src="name:zh_names:iso2:FR">法国</span>"#;
+        let oil = r#"<span data-src="name:zh_names:siec:O4000XBIO">石油</span>"#;
+        let of_one = |h1: &str, dek: &str| format!(r#"<h1>{h1}</h1><p class="dek">{dek}</p>{parts}"#);
+        assert_eq!(check_names_drawn(&of_one(&format!("{oil}最多"), &format!("{de}能源的最大流量"))), Vec::<String>::new());
+        assert_eq!(
+            check_names_drawn(&of_one(&format!("{de}{oil}最多"), &format!("{fr}能源的最大流量"))),
+            ["h1: name:zh_names:iso2:DE is named, and no picture of the page draws it", "dek: name:zh_names:iso2:FR is named, and no picture of the page draws it"]
+        );
+        assert_eq!(
+            check_names_drawn(&of_one(&format!("{oil}最多"), "德国能源的最大流量")),
+            ["dek: the place name \"德国\" is printed bare, not marked by its name row"]
+        );
+        // a page whose pictures draw places keeps the rule: the undrawn place stops it however few the headline names
+        let undrawn = page(&format!("{vn}增幅最大"), r#"<span data-src="name:zh_names:iso3:BRA">巴西</span>"#);
+        assert_eq!(check_names_drawn(&undrawn), ["dek: name:zh_names:iso3:BRA is named, and no picture of the page draws it"]);
     }
 
     /// Every non-test fn of the visual group's Rust files (CHECK_FILES, which are the visual `.rs` files of groups.json) is

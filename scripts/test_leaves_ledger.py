@@ -66,6 +66,20 @@ class Ledger(unittest.TestCase):
         prod.NAMES = {"VNM": "越南"}
         self.assertEqual(FX.fill(SPEC, F, "{name.VNM}增幅最大"), "越南增幅最大")
 
+    def test_a_place_the_worded_head_prints_bare_is_marked_by_its_place_row(self):
+        """FX.placed (r12-q2, 11-13): a worded dek naming the page's place bare prints it marked by its ledger row, the
+        longest name first; a part's row, a marked name and a tag are left alone; no ledger leaves the text as it is."""
+        FX.LEDGER = {"name:zh_names:iso2:DE": "德国", "name:zh_names:iso3:IND": "印度", "name:zh_names:iso3:IDN": "印度尼西亚",
+                     "name:zh_names:siec:O4000XBIO": "石油"}
+        de = '<span data-src="name:zh_names:iso2:DE">德国</span>'
+        self.assertEqual(FX.placed("德国能源的最大流量"), f"{de}能源的最大流量")
+        self.assertEqual(FX.placed("印度尼西亚和印度"), '<span data-src="name:zh_names:iso3:IDN">印度尼西亚</span>和'
+                         '<span data-src="name:zh_names:iso3:IND">印度</span>')
+        self.assertEqual(FX.placed(f"{de}石油最多"), f"{de}石油最多")
+        self.assertEqual(FX.placed('<b class="n" title="德国">1</b>'), '<b class="n" title="德国">1</b>')
+        FX.LEDGER = None
+        self.assertEqual(FX.placed("德国能源"), "德国能源")
+
     def test_the_entry_text_is_escaped(self):
         FX.LEDGER = {"fact:ru": "<1>"}
         self.assertEqual(FX.entry("fact:ru", "tspan", None), '<tspan data-src="fact:ru">&lt;1&gt;</tspan>')
