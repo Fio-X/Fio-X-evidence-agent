@@ -282,6 +282,9 @@ pub struct Unread {
     pub read: usize,
 }
 
+/// The region words that name a set of member countries (the union and the euro area), not a stretch of land or sea: a
+/// count right after one (欧盟27国, 欧元区二十国) is the set's own. 北欧, 波罗的海 and the like are not among them.
+const MEMBERED_REGION_WORDS_ZH: [&str; 3] = ["欧盟", "欧洲联盟", "欧元区"];
 /// The words a place count is written with after its number (三国, 六个国家, 三地).
 const PLACE_COUNT_UNITS_ZH: [&str; 5] = ["个国家", "国家", "个国", "国", "地"];
 /// A character before the number that makes it no count of the places asked (第三国, 前十国, 这两国, 各国, 多国), or a
@@ -306,8 +309,9 @@ fn count_zh(n: &str) -> Option<usize> {
 }
 
 /// Each place count the text writes outside the masked spans: (the count's words with up to ten characters before it,
-/// the number). `masked` marks the characters of names the program read (a group name such as 二十国集团 holds no count).
-fn place_counts_zh(chars: &[char], masked: &[bool]) -> Vec<(String, usize)> {
+/// the number). `masked` marks the characters of names the program read (a group name such as 二十国集团 holds no count);
+/// a count right after a name `owns` marks (one with members of its own: 欧盟27国) is that name's, and none here.
+fn place_counts_zh(chars: &[char], masked: &[bool], owns: &[bool]) -> Vec<(String, usize)> {
     let numeral = |c: char| c.is_ascii_digit() || "零一二两三四五六七八九十".contains(c);
     let mut out = Vec::new();
     let mut i = 0;
@@ -323,6 +327,10 @@ fn place_counts_zh(chars: &[char], masked: &[bool]) -> Vec<(String, usize)> {
         let rest: String = chars[j..].iter().collect();
         let unit = PLACE_COUNT_UNITS_ZH.iter().find(|u| rest.starts_with(**u));
         let before = i.checked_sub(1).map(|k| chars[k]);
+        if i > 0 && owns[i - 1] {
+            i = j;
+            continue;
+        }
         let year = before == Some('年') || rest.starts_with('年');
         if let (Some(u), false, false) = (unit, before.is_some_and(|b| NOT_COUNT_BEFORE_ZH.contains(b)), year) {
             let num: String = chars[i..j].iter().collect();
@@ -2382,12 +2390,17 @@ impl Catalog {
     pub fn unread(&self, question_zh: &str) -> Option<Unread> {
         let chars: Vec<char> = question_zh.chars().collect();
         let mut masked = vec![false; chars.len()];
-        for (name, _) in self.scan_zh(question_zh) {
+        // the characters of a read name that has members of its own (a group, the union, the euro area): a count right
+        // after one (欧盟27国, 欧元区二十国) counts that name's members, which the page reads from the name
+        let mut owns = vec![false; chars.len()];
+        for (name, code) in self.scan_zh(question_zh) {
             let n: Vec<char> = name.chars().collect();
+            let has_members = code.starts_with(GROUP) || (code == REGION && MEMBERED_REGION_WORDS_ZH.contains(&name.as_str()));
             let mut k = 0;
             while k + n.len() <= chars.len() {
                 if chars[k..k + n.len()] == n[..] {
                     masked[k..k + n.len()].iter_mut().for_each(|m| *m = true);
+                    owns[k..k + n.len()].iter_mut().for_each(|m| *m = has_members);
                     k += n.len();
                 } else {
                     k += 1;
@@ -2396,7 +2409,7 @@ impl Catalog {
         }
         let read = self.places(question_zh).iter().filter(|p| matches!(p, Place::Country(_))).count()
             + listed_aggregates(question_zh).len();
-        place_counts_zh(&chars, &masked)
+        place_counts_zh(&chars, &masked, &owns)
             .into_iter()
             .find(|(_, n)| *n > read)
             .map(|(word_zh, asked)| Unread { word_zh, asked, read })
@@ -3346,7 +3359,12 @@ mod tests {
         assert_eq!(un("欧洲自由贸易联盟四国失业率"), Some(("欧洲自由贸易联盟四国".into(), 0, 4)), "a region word is no country");
         assert!(c.rank("海合会六国女性劳动参与率", &texts(&["female labor participation"])).candidates.is_empty());
         assert!(c.rank("海合会六国女性劳动参与率", &texts(&["female labor participation"])).unread.is_some());
+        assert_eq!(un("波罗的海三国失业率"), Some(("波罗的海三国".into(), 0, 3)), "a sea's name holds no members");
         for q in [
+            "欧盟27国的失业率",
+            "欧元区二十国通胀",
+            "欧洲联盟二十七国人口",
+            "2024年金砖五国人口",
             "北欧五国的人均寿命",
             "2020年东盟十国人均GDP",
             "二十国集团的人口",
