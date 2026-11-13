@@ -1219,7 +1219,7 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     ("tree_gen.parts_stops", "next_tree_gen::parts_declared rules", &["tree_gen::parts_declared", "tree_gen::first_row_of_no_number", "tree_gen::parts_expand"]),
     // the page's finding (node finding): the first case that holds over the core's selects, no finding on a tie, an unnamed
     // code or a fact the page lacks; declared again over the finished fill at draw, its facts, reads, words and accent held
-    ("tree_gen.finding", "", &["tree_gen::finding_declared", "tree_gen::walk", "tree_gen::finding_recheck", "tree_gen::ratio_free_unit"]),
+    ("tree_gen.finding", "", &["tree_gen::finding_declared", "tree_gen::walk", "tree_gen::finding_recheck", "ledger::ratio_free_unit"]),
     // a note against the mean of the compared places: the places averaged are the places the page draws
     ("tree_gen.mean_drawn", "", &["tree_gen::mean_recheck"]),
     // the page tree over the fill: selects recompute, every format the fill names, the accent held by a select
@@ -1337,6 +1337,24 @@ fn row_family<'r>(src: &str, rows: &'r [Row]) -> Option<(Vec<&'r Row>, Vec<Strin
 /// `dim` of `table`, the code Eurostat gives a dimension's whole (next_facts TOTAL_CODE, the code a rest or value query
 /// leaves out with the members), or the code the registered parts table types `total` there (next_tree parts_rows, the
 /// table leaves_under_total reads: a flow side's whole, FC_E on nrg_bal). No list of its own.
+/// Whether `unit` is one of the knowledge group's ratio-free units (next_knowledge::RATIO_FREE_UNITS): years, scores,
+/// base-year indices and rates of change, whose values do not divide into a meaningful "N 倍". A file that does not parse
+/// holds none, and its test fails (next_tree_gen the_ratio_free_units_hold_years_scores_indices_and_rates_of_change). The
+/// headline generator (next_tree_gen finding_declared) reads it here, in the visual group's file the cross-group rule
+/// covers, so the knowledge group's constant is read as vocabulary.
+pub(crate) fn ratio_free_unit(unit: &str) -> bool {
+    static CODES: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    CODES
+        .get_or_init(|| {
+            serde_json::from_str::<serde_json::Value>(crate::next_knowledge::RATIO_FREE_UNITS)
+                .ok()
+                .and_then(|v| v["codes"].as_array().map(|a| a.iter().filter_map(|c| c.as_str().map(String::from)).collect()))
+                .unwrap_or_default()
+        })
+        .iter()
+        .any(|c| c == unit)
+}
+
 pub(crate) fn total_row(table: &str, dim: &str, code: &str) -> bool {
     code == crate::next_facts::TOTAL_CODE
         || crate::next_tree::parts_rows().is_ok_and(|rows| rows.iter().any(|r| r[0] == table && r[1] == dim && r[2] == code && r[3] == "total"))
