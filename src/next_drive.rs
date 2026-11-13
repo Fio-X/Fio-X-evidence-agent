@@ -2267,6 +2267,173 @@ mod drive {
             println!("SAYINGS pages {pages} with unheld {caught} unread {errors} out {}", out.display());
         }
 
+        /// The text a page's element holds between its opening tag's end and its closing tag: the first `<{open}` and the first
+        /// `</{tag}>` after it, as byte offsets of the inner text.
+        fn inner_at(html: &str, open: &str, tag: &str) -> Option<(usize, usize)> {
+            let a = html.find(open)?;
+            let s = a + html[a..].find('>')? + 1;
+            let e = s + html[s..].find(&format!("</{tag}>"))?;
+            Some((s, e))
+        }
+
+        /// The four planted errors of roadmap step 3 on one page's html, each None when the page has nothing to change that way.
+        /// Each changes the text the checks read and nothing else (the request, its rows, facts and ledger untouched), every copy
+        /// of what it changes (the headline's hidden description copies it):
+        /// - second_as_top: the headline names the first-ranked place (knobs.spec.hero.data.ranked, by knobs.labels); it names the
+        ///   second instead;
+        /// - number: the first fact the headline or the dek prints (a `<span data-src="fact:...">`), its last digit moved by one;
+        /// - year: the first year the headline or the dek prints (a span whose src is a period or a fact's year part), one later;
+        /// - undrawn: the dek says a place the page does not draw comes second (a name from PLANT_PLACES the page does not hold).
+        fn plants(html: &str, knobs: &Value) -> Vec<(&'static str, Option<String>)> {
+            const PLANT_PLACES: [&str; 6] = ["巴西", "加拿大", "澳大利亚", "墨西哥", "阿根廷", "南非"];
+            let labels = &knobs["labels"];
+            let ranked: Vec<&str> = knobs["spec"]["hero"]["data"]["ranked"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+            let name = |i: usize| ranked.get(i).and_then(|c| labels[*c].as_str());
+            let h1 = inner_at(html, "<h1", "h1");
+            let dek = inner_at(html, "<p class=\"dek\"", "p");
+            let second_as_top = match (name(0), name(1), h1) {
+                (Some(a), Some(b), Some((s, e))) if html[s..e].contains(a) => {
+                    let inner = &html[s..e];
+                    Some(html.replace(inner, &inner.replacen(a, b, 1)))
+                }
+                _ => None,
+            };
+            // the first span of the headline, then of the dek, whose src `want` takes and whose text `edit` changes
+            let first_span = |want: &dyn Fn(&str) -> bool, edit: &dyn Fn(&str) -> Option<String>| -> Option<String> {
+                for (s, e) in [h1, dek].into_iter().flatten() {
+                    let part = &html[s..e];
+                    let mut from = 0;
+                    while let Some(a) = part[from..].find("<span data-src=\"") {
+                        let a = from + a;
+                        let src_at = a + "<span data-src=\"".len();
+                        let Some(q) = part[src_at..].find('"') else { break };
+                        let src = &part[src_at..src_at + q];
+                        let Some(t) = part[src_at + q..].find('>') else { break };
+                        let text_at = src_at + q + t + 1;
+                        let Some(z) = part[text_at..].find("</span>") else { break };
+                        let text = &part[text_at..text_at + z];
+                        if want(src) && !text.contains('<') {
+                            if let Some(new) = edit(text) {
+                                let old = &part[a..text_at + z + "</span>".len()];
+                                let changed = format!("{}{new}</span>", &part[a..text_at]);
+                                return Some(html.replace(old, &changed));
+                            }
+                        }
+                        from = text_at;
+                    }
+                }
+                None
+            };
+            let number = first_span(&|src| src.starts_with("fact:") && !src.contains(".t"), &|text| {
+                let at = text.char_indices().filter(|(_, c)| c.is_ascii_digit()).last()?.0;
+                let d = text[at..].chars().next()?.to_digit(10)?;
+                Some(format!("{}{}{}", &text[..at], (d + 1) % 10, &text[at + 1..]))
+            });
+            let year = first_span(&|src| src.starts_with("period:") || src.ends_with(".t.y") || src.ends_with(".t"), &|text| {
+                let y: u32 = text.trim().parse().ok().filter(|y| (1900..2100).contains(y))?;
+                Some((y + 1).to_string())
+            });
+            let held: Vec<&str> = labels.as_object().into_iter().flatten().filter_map(|(_, v)| v.as_str()).collect();
+            let undrawn = match (dek, PLANT_PLACES.iter().find(|p| !held.contains(p) && !html.contains(*p))) {
+                (Some((_, e)), Some(p)) => Some(format!("{}，{p}次之{}", &html[..e], &html[e..])),
+                _ => None,
+            };
+            vec![("second_as_top", second_as_top), ("number", number), ("year", year), ("undrawn", undrawn)]
+        }
+
+
+        /// Roadmap step 3's planted-error measure (ignored; PLANT_LIST, PLANT_OUT and PLANT_TMP all required). Each line of the
+        /// list is a published leaf page's folder (`<run out>/publications/<recipe>`). The run's publications/ and data/, its
+        /// events.jsonl and runtime/next-page.json are copied into PLANT_TMP/run (never its config/ or session/; the archive is
+        /// only read), and the page's checks that read its text run on the copy: the completion gate's (next_gate::leaf_gaps,
+        /// the manifest's sha256 set to the bytes checked) and the flow's sayings check (next_sayings::check_published, its
+        /// prepared tables rebuilt from the run's events as sayings_archive does). A page whose own bytes pass them all is
+        /// changed four ways (plants) and each changed page checked again. One tsv line per page and change: whether it
+        /// applied, was caught, and the first finding. The checks are not changed; a change not caught is a hole in them.
+        ///
+        ///     NEWS_CATALOG_DIR=.. NEWS_CLASSIFY_REFS=.. PLANT_LIST=<list> PLANT_OUT=<tsv> PLANT_TMP=<a tmpd folder> \
+        ///     cargo test --bins planted_errors -- --ignored --nocapture
+        #[test]
+        #[ignore]
+        fn planted_errors() {
+            let (list, out, tmp) = (PathBuf::from(var("PLANT_LIST")), PathBuf::from(var("PLANT_OUT")), PathBuf::from(var("PLANT_TMP")));
+            assert!(tmp.is_dir(), "PLANT_TMP {} is not a folder", tmp.display());
+            let catalogue = GroupCatalogue::from_env(|key| std::env::var(key).ok()).unwrap();
+            let copy = tmp.join("run");
+            let mut lines = vec!["page\trecipe\tchange\tapplied\tcaught\tby".to_string()];
+            let text = std::fs::read_to_string(&list).unwrap_or_else(|e| panic!("{}: {e}", list.display()));
+            for dir in text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')) {
+                let page = Path::new(dir);
+                let (Some(recipe), Some(root)) = (page.file_name().and_then(|n| n.to_str()), page.parent().and_then(Path::parent)) else {
+                    lines.push(format!("{dir}\t\t-\tnot a publication folder\t\t"));
+                    continue;
+                };
+                let prepared = (|| -> Result<(Vec<Prepared>, String, String, Value), String> {
+                    if copy.exists() {
+                        std::fs::remove_dir_all(&copy).map_err(|e| format!("clearing the copy: {e}"))?;
+                    }
+                    std::fs::create_dir_all(copy.join("runtime")).map_err(|e| e.to_string())?;
+                    for part in ["publications", "data"] {
+                        let ok = std::process::Command::new("/bin/cp").arg("-R").arg(root.join(part)).arg(copy.join(part)).status().map_err(|e| e.to_string())?;
+                        if !ok.success() {
+                            return Err(format!("copying {part} failed"));
+                        }
+                    }
+                    for file in ["events.jsonl", "runtime/next-page.json"] {
+                        std::fs::copy(root.join(file), copy.join(file)).map_err(|e| format!("{file}: {e}"))?;
+                    }
+                    let text = std::fs::read_to_string(copy.join("events.jsonl")).map_err(|e| format!("events.jsonl: {e}"))?;
+                    let events: Vec<Value> = text.lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
+                    let question = events.iter().find(|e| e["type"] == CATALOGUE_EVENT).and_then(|e| e["question"].as_str()).ok_or("no next_catalogue question")?.to_string();
+                    let (prepared, _) = prepared_of(&events, &catalogue)?;
+                    let html = std::fs::read_to_string(page.join("index.html")).map_err(|e| format!("index.html: {e}"))?;
+                    let manifest: Value = serde_json::from_str(&std::fs::read_to_string(page.join("manifest.json")).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+                    Ok((prepared, question, html, manifest))
+                })();
+                let (prepared, question, html, manifest) = match prepared {
+                    Ok(p) => p,
+                    Err(why) => {
+                        lines.push(format!("{dir}\t{recipe}\t-\tunread\t\t{why}"));
+                        continue;
+                    }
+                };
+                let at = copy.join("publications").join(recipe);
+                let check = |h: &str| -> Vec<String> {
+                    let mut manifest = manifest.clone();
+                    manifest["html_sha256"] = json!(crate::hash::sha256_bytes(h.as_bytes()));
+                    if let Err(e) = std::fs::write(at.join("index.html"), h).and_then(|_| std::fs::write(at.join("manifest.json"), manifest.to_string())) {
+                        return vec![format!("writing the copy: {e}")];
+                    }
+                    let mut off: Vec<String> = crate::next_gate::leaf_gaps(&copy, recipe, &manifest, &crate::next_gate::fetches(&copy)).into_iter().map(|g| format!("gate: {g}")).collect();
+                    match crate::next_sayings::check_published(&copy, recipe, &question, &prepared, &catalogue) {
+                        Ok(unheld) => off.extend(unheld.iter().map(|u| format!("sayings: {}", u.to_json()))),
+                        Err(e) => off.push(format!("sayings: {e}")),
+                    }
+                    off
+                };
+                let one = |s: &str| s.replace(['\t', '\n'], " ");
+                if let Some(first) = check(&html).first() {
+                    lines.push(format!("{dir}\t{recipe}\t-\tits own bytes fail\t\t{}", one(first)));
+                    continue;
+                }
+                let knobs = serde_json::from_str::<Value>(&std::fs::read_to_string(page.join("request.json")).unwrap_or_default()).map(|r| r["knobs"].clone()).unwrap_or(Value::Null);
+                for (change, planted) in plants(&html, &knobs) {
+                    lines.push(match planted {
+                        None => format!("{dir}\t{recipe}\t{change}\tn\t\t"),
+                        Some(h) if h == html => format!("{dir}\t{recipe}\t{change}\tn (no text changed)\t\t"),
+                        Some(h) => {
+                            let off = check(&h);
+                            format!("{dir}\t{recipe}\t{change}\ty\t{}\t{}", if off.is_empty() { "n" } else { "y" }, off.first().map(|s| one(s)).unwrap_or_default())
+                        }
+                    });
+                }
+            }
+            if copy.exists() {
+                let _ = std::fs::remove_dir_all(&copy);
+            }
+            std::fs::write(&out, lines.join("\n") + "\n").unwrap_or_else(|e| panic!("{}: {e}", out.display()));
+        }
+
         /// One page of any list refilled into NEXT_REPLAY_LINE_OUT/ (record.json beside the refilled run): NEXT_REPLAY_LINE is
         /// the page's line (tab-separated: sha16, label, recipe, an ignored field, the run folder under NEXT_REPLAY_DOCS). For
         /// measuring a change over pages of no frozen list (plan v4 item 1, part 2); not the gate, which keeps its own list.
