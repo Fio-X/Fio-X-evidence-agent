@@ -2626,8 +2626,8 @@ fn recipe_request(
     // (a recipe whose page cannot say so is not this shape, and the next one is tried)
     let filters = main.args.get("filters").cloned().unwrap_or(Value::Null);
     answered_places(&mut fill, &shape, (&main_rows, scoped), (places, basis.as_ref()), &filters, catalogue)
+        .and_then(|()| near_noted(&mut fill, question))
         .map_err(|why| (if why.starts_with("not this shape") { "shape" } else { "fill" }, why))?;
-    near_noted(&mut fill, question).map_err(|why| (if why.starts_with("not this shape") { "shape" } else { "fill" }, why))?;
     if let Some(a) = asked_of {
         fill["knobs"]["spec"]["asked"] = a;
     }
@@ -2794,7 +2794,7 @@ fn answered_places(
         return Err(format!("the question names {missing:?}, which the ranked set the page keeps leaves out; the full file may hold them, so the page cannot say they have no data"));
     }
     let (before, after) = line.split_once("{missing}").ok_or("asked-places-zh.json: its said names no {missing}")?;
-    let Some(unit) = fill["knobs"]["spec"].pointer("/hero/unit").and_then(Value::as_str).map(str::to_string) else {
+    let Some(unit) = unit_at(fill).and_then(|u| u.as_str()).map(str::to_string) else {
         return Err(format!("not this shape: the question names {missing:?}, which have no row at {year}, and the page has no unit line to say so"));
     };
     // each place with no data by its name row, the name the page's labels give it, else the name table's
@@ -2824,7 +2824,7 @@ fn answered_places(
         tail.push(json!({"w": after}));
     }
     wording.push_str(after);
-    if let Some(at) = fill.pointer_mut("/knobs/spec/hero/unit") {
+    if let Some(at) = unit_at(fill) {
         *at = json!(wording);
     }
     let knobs = fill["knobs"].as_object_mut().ok_or("the fill's knobs are no object")?;
@@ -2833,6 +2833,11 @@ fn answered_places(
     said.extend(tail);
     segs["unit"] = Value::Array(said);
     Ok(())
+}
+
+/// The page's unit line (knobs.spec.hero.unit), where the program says what the asked places and a group's basis need.
+fn unit_at(fill: &mut Value) -> Option<&mut Value> {
+    fill.pointer_mut("/knobs/spec/hero/unit")
 }
 
 /// The near note of each aggregate the page draws (a code its labels hold) that the question names only by a near word
@@ -2857,11 +2862,13 @@ fn near_noted(fill: &mut Value, question: &str) -> Result<(), String> {
     }
     let said: Value = serde_json::from_str(crate::next_knowledge::ASKED_PLACES_ZH).map_err(|e| format!("asked-places-zh.json: {e}"))?;
     let lead = said["lead"].as_str().ok_or("asked-places-zh.json holds no lead")?;
-    let Some(unit) = fill.pointer("/knobs/spec/hero/unit").and_then(Value::as_str).map(str::to_string) else {
+    let Some(unit) = unit_at(fill).and_then(|u| u.as_str()).map(str::to_string) else {
         return Err(format!("not this shape: the question names an aggregate by a near word, and the page has no unit line to say {notes:?}"));
     };
     let tail: String = notes.iter().map(|n| format!("{lead}{n}")).collect();
-    fill["knobs"]["spec"]["hero"]["unit"] = json!(format!("{unit}{tail}"));
+    if let Some(at) = unit_at(fill) {
+        *at = json!(format!("{unit}{tail}"));
+    }
     let knobs = fill["knobs"].as_object_mut().ok_or("the fill's knobs are no object")?;
     let segs = knobs.entry("segs").or_insert_with(|| json!({}));
     let mut line = segs["unit"].as_array().cloned().unwrap_or_else(|| vec![json!({"w": unit})]);
@@ -2950,7 +2957,7 @@ fn said_basis(fill: &mut Value, shape: &Shape, basis: &crate::l5geo::GroupBasis,
     if !counted {
         return Err(format!("not this shape: the page counts the members of {at} and has no count of the places it draws"));
     }
-    let Some(unit) = fill["knobs"]["spec"].pointer("/hero/unit").and_then(Value::as_str).map(str::to_string) else {
+    let Some(unit) = unit_at(fill).and_then(|u| u.as_str()).map(str::to_string) else {
         return Err(format!("not this shape: the page counts the members of {at} and has no unit line to say so"));
     };
     // the members with no data, named from the name table by their code's scheme
@@ -2999,7 +3006,7 @@ fn said_basis(fill: &mut Value, shape: &Shape, basis: &crate::l5geo::GroupBasis,
         }
         rest = &rest[head.len() + key.len()..];
     }
-    if let Some(at) = fill["knobs"]["spec"].pointer_mut("/hero/unit") {
+    if let Some(at) = unit_at(fill) {
         *at = json!(wording);
     }
     let knobs = fill["knobs"].as_object_mut().ok_or("the fill's knobs are no object")?;
