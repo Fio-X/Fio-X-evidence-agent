@@ -30,7 +30,8 @@ Germany's on two lines; no note of the q1, q6, change or crowded pages moved); a
 clear leader of up to two bends), or past label_count, is dropped and listed in Frame.dropped as (id, why), the id its name code (note<i>, its place in the
 request from 1, when it has none); the layer still draws, empty when every note was dropped (run.py sends the list back for layer 1 to keep in
 the page's ledger). The notes are placed top first, each against what those before it claimed; when that leaves a leader past
-LONG_LEAD and drops none, they are placed bottom first too, and that order is kept when it drops none and its longest leader is shorter.
+LONG_LEAD and drops none, they are placed bottom first too, and that order is kept when it drops none and its longest leader is shorter;
+when top first drops notes, bottom first is kept only when the notes it drops are some of those (fewer, none new).
 Refuses: no notes, a note without a name or text, a point that is not [lon, lat] (or "hub" without a hub), a note under 16 px (note_size min), a note wider than
 half the picture (on two lines too), a missing label or ledger entry, a digit in a literal, a knob off its range."""
 import math
@@ -271,16 +272,21 @@ def cl_leader_notes(f, occ):
         return o, dropped, total, longest
 
     # top first; when that drops a note, or leaves a leader past LONG_LEAD, bottom first too, against the same claims (occ as the
-    # notes found it; the layer's two-bend budget shared), kept when it drops fewer, or as few and its longest leader is shorter
-    # (the same: its leaders cost less in all). A note high up can take the one free place a lower one had (a short bars
-    # picture's band under the bars): bottom first gives it back
+    # notes found it). Kept, when top first dropped none, if it drops none and its longest leader is shorter (the same: its
+    # leaders cost less in all); when top first dropped notes, only if the notes it drops are some of those (fewer, and none
+    # top first kept: a page may go on without a plain note, never its focus's or a headline place's, so bottom first must
+    # not trade one dropped note for another). A note high up can take the one free place a lower one had (a short bars
+    # picture's band under the bars): bottom first gives it back. Not kept, it spends none of the two-bend budget the passes
+    # after it share
     before = (occ.boxes[:], occ.pts[:])
     got = lay(keep)
     if len(keep) > 1 and (got[1] or got[3] > LONG_LEAD):
-        after = (occ.boxes[:], occ.pts[:]); occ.boxes[:], occ.pts[:] = before
+        after = (occ.boxes[:], occ.pts[:]); occ.boxes[:], occ.pts[:] = before; budget = left
         other = lay(keep[::-1])
-        if (len(other[1]), other[3], other[2]) >= (len(got[1]), got[3], got[2]): occ.boxes[:], occ.pts[:] = after
-        else: got = other
+        ids = lambda d: {i for i, _ in d}
+        better = ids(other[1]) < ids(got[1]) if got[1] else not other[1] and (other[3], other[2]) < (got[3], got[2])
+        if better: got = other
+        else: occ.boxes[:], occ.pts[:] = after; left = budget
     # a note the page cannot lose (knob first: its focus) left with no free place: the notes again with those first (each
     # group top first), against the same claims, kept when it drops fewer of them, then fewer in all; a page may let a
     # plain note go, never its focus's
