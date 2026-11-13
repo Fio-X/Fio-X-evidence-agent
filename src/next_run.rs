@@ -12605,6 +12605,7 @@ mod tests {
                 scope: crate::l5geo::Scope::Europe,
                 places_zh: vec!["欧盟".into()],
                 uncovered: None,
+                unread: None,
                 candidates: vec![candidate],
                 twins_refused: Vec::new(),
                 asked: Vec::new(),

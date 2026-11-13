@@ -272,6 +272,72 @@ pub struct Uncovered {
     pub level_zh: String,
 }
 
+/// Why a question cannot be answered yet: it counts its places (`word_zh`, as 海合会六国 or 比荷卢三国 writes `asked` of
+/// them) and the program reads fewer than that from it (`read`, countries and listed aggregates). A page drawn from the
+/// places read would leave out places the question asks for and not say so.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Unread {
+    pub word_zh: String,
+    pub asked: usize,
+    pub read: usize,
+}
+
+/// The words a place count is written with after its number (三国, 六个国家, 三地).
+const PLACE_COUNT_UNITS_ZH: [&str; 5] = ["个国家", "国家", "个国", "国", "地"];
+/// A character before the number that makes it no count of the places asked (第三国, 前十国, 这两国, 各国, 多国), or a
+/// count of the places a ranking picks (哪五个国家, 人口最多的十个国家).
+const NOT_COUNT_BEFORE_ZH: &str = "第前后头这那各多几每哪的";
+
+/// A Chinese number of places, 一 to 九十九 or ASCII digits.
+fn count_zh(n: &str) -> Option<usize> {
+    if !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()) {
+        return n.parse().ok();
+    }
+    let digit = |c: char| "零一二三四五六七八九".find(c).map(|i| i / 3).or((c == '两').then_some(2));
+    let c: Vec<char> = n.chars().collect();
+    match c.as_slice() {
+        [a] if *a == '十' => Some(10),
+        [a] => digit(*a),
+        ['十', b] => Some(10 + digit(*b)?),
+        [a, '十'] => Some(digit(*a)? * 10),
+        [a, '十', b] => Some(digit(*a)? * 10 + digit(*b)?),
+        _ => None,
+    }
+}
+
+/// Each place count the text writes outside the masked spans: (the count's words with up to ten characters before it,
+/// the number). `masked` marks the characters of names the program read (a group name such as 二十国集团 holds no count).
+fn place_counts_zh(chars: &[char], masked: &[bool]) -> Vec<(String, usize)> {
+    let numeral = |c: char| c.is_ascii_digit() || "零一二两三四五六七八九十".contains(c);
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < chars.len() {
+        if masked[i] || !numeral(chars[i]) || (i > 0 && numeral(chars[i - 1])) {
+            i += 1;
+            continue;
+        }
+        let mut j = i;
+        while j < chars.len() && numeral(chars[j]) && !masked[j] {
+            j += 1;
+        }
+        let rest: String = chars[j..].iter().collect();
+        let unit = PLACE_COUNT_UNITS_ZH.iter().find(|u| rest.starts_with(**u));
+        let before = i.checked_sub(1).map(|k| chars[k]);
+        let year = before == Some('年') || rest.starts_with('年');
+        if let (Some(u), false, false) = (unit, before.is_some_and(|b| NOT_COUNT_BEFORE_ZH.contains(b)), year) {
+            let num: String = chars[i..j].iter().collect();
+            if let Some(n) = count_zh(&num).filter(|n| *n >= 2) {
+                let from = i.saturating_sub(10);
+                let start = (from..i).rev().find(|&k| !chars[k].is_alphanumeric()).map_or(from, |k| k + 1);
+                let word: String = chars[start..j + u.chars().count()].iter().collect();
+                out.push((word, n));
+            }
+        }
+        i = j;
+    }
+    out
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct Ranking {
     pub scope: Scope,
@@ -279,6 +345,10 @@ pub struct Ranking {
     pub places_zh: Vec<String>,
     /// Set when the question asks for a level the catalogs lack; `candidates` is then empty.
     pub uncovered: Option<Uncovered>,
+    /// Set when the question counts more places than the program reads from it (`Catalog::unread`); `candidates` is then
+    /// empty.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unread: Option<Unread>,
     /// Best first; `top5` keeps 5, `rank` keeps every table that passed the filters.
     pub candidates: Vec<Candidate>,
     /// `top5` only: the registered monthly-only tables it kept, their annual twin failing a check or ending before the year
@@ -2306,6 +2376,32 @@ impl Catalog {
         })
     }
 
+    /// The first place count the question writes (海合会六国, 比荷卢三国, 两岸三地) that is more than the places the program
+    /// reads from it: its countries (a group as its members) and listed aggregates. A count inside a name read (二十国集团)
+    /// is no count; nor is one after 第, 前, 各 and the like (第三国, 前十国), or next to 年.
+    pub fn unread(&self, question_zh: &str) -> Option<Unread> {
+        let chars: Vec<char> = question_zh.chars().collect();
+        let mut masked = vec![false; chars.len()];
+        for (name, _) in self.scan_zh(question_zh) {
+            let n: Vec<char> = name.chars().collect();
+            let mut k = 0;
+            while k + n.len() <= chars.len() {
+                if chars[k..k + n.len()] == n[..] {
+                    masked[k..k + n.len()].iter_mut().for_each(|m| *m = true);
+                    k += n.len();
+                } else {
+                    k += 1;
+                }
+            }
+        }
+        let read = self.places(question_zh).iter().filter(|p| matches!(p, Place::Country(_))).count()
+            + listed_aggregates(question_zh).len();
+        place_counts_zh(&chars, &masked)
+            .into_iter()
+            .find(|(_, n)| *n > read)
+            .map(|(word_zh, asked)| Unread { word_zh, asked, read })
+    }
+
     /// English place names in the search texts that the Chinese question does not name, each once, in text order.
     /// A name is inside when its iso2 is a country the question names, or when the question names a region word (欧盟,
     /// 欧洲 ...) and the country is in Europe. English region words (europe, eu) are not place names in either catalog,
@@ -2482,6 +2578,7 @@ impl Catalog {
     pub fn rank(&self, question_zh: &str, texts: &[String]) -> Ranking {
         let (scope, places_zh) = self.scope(question_zh);
         let uncovered = self.uncovered(question_zh);
+        let unread = self.unread(question_zh);
         let far: Vec<String> = self
             .places_zh(question_zh)
             .into_iter()
@@ -2489,7 +2586,7 @@ impl Catalog {
             .filter(|c| c != REGION && !self.europe.contains(c))
             .collect();
         let asked = asked_zh(question_zh);
-        let candidates = if uncovered.is_some() {
+        let candidates = if uncovered.is_some() || unread.is_some() {
             Vec::new()
         } else {
             self.lift_asked(self.rank_reaching(texts, scope, &far), &asked, scope, &far)
@@ -2498,6 +2595,7 @@ impl Catalog {
             scope,
             places_zh,
             uncovered,
+            unread,
             candidates,
             twins_refused: Vec::new(),
             asked,
@@ -3227,6 +3325,48 @@ mod tests {
         // 北欧 alone stays the Europe region word it was
         assert_eq!(countries(&c, "北欧各国的失业率"), ["REGION"]);
         assert_eq!(countries(&c, "1953年北欧五国的人口"), ["DK", "IS", "NO", "SE"]);
+    }
+
+    /// A question that counts its places (海合会六国, 比荷卢三国, 两岸三地) and names fewer that the program reads is unread,
+    /// and the ranking offers no table; a count the program reads in full, a count inside a group name, an ordinal, a
+    /// ranking's count or a year is none.
+    #[test]
+    fn a_question_counting_more_places_than_the_program_reads_is_unread() {
+        let mut raw = small_raw();
+        let list = raw.wb_countries[1].as_array_mut().unwrap();
+        for c in ["HK", "MO", "KR", "DK", "FI", "IS", "NO", "SE", "ID", "MY", "PH", "SG", "TH", "BN", "VN", "LA", "MM", "KH", "TL"] {
+            list.push(json!({"id": c, "iso2Code": c, "name": format!("Land {c}"), "region": {"value": "Elsewhere"}}));
+        }
+        let c = Catalog::from_raw(&raw);
+        let un = |q: &str| c.unread(q).map(|u| (u.word_zh, u.read, u.asked));
+        assert_eq!(un("海合会六国女性劳动参与率高低"), Some(("海合会六国".into(), 0, 6)));
+        assert_eq!(un("比荷卢三国可再生能源占比变化"), Some(("比荷卢三国".into(), 0, 3)));
+        assert_eq!(un("两岸三地人均GDP"), Some(("两岸三地".into(), 0, 3)));
+        assert_eq!(un("港澳和另一地三地的失业率"), Some(("港澳和另一地三地".into(), 2, 3)), "two of three read");
+        assert_eq!(un("欧洲自由贸易联盟四国失业率"), Some(("欧洲自由贸易联盟四国".into(), 0, 4)), "a region word is no country");
+        assert!(c.rank("海合会六国女性劳动参与率", &texts(&["female labor participation"])).candidates.is_empty());
+        assert!(c.rank("海合会六国女性劳动参与率", &texts(&["female labor participation"])).unread.is_some());
+        for q in [
+            "北欧五国的人均寿命",
+            "2020年东盟十国人均GDP",
+            "二十国集团的人口",
+            "港澳两地的失业率",
+            "韩国和印尼两国的出口",
+            "韩国和印尼两个国家的出口",
+            "第三国转口贸易",
+            "人口前十国",
+            "欧盟哪五个国家电价最高",
+            "人口最多的十个国家",
+            "2023年三季度",
+            "各国人口",
+            "韩国人口",
+        ] {
+            assert_eq!(un(q), None, "{q}");
+        }
+        assert_eq!(count_zh("十一"), Some(11));
+        assert_eq!(count_zh("二十七"), Some(27));
+        assert_eq!(count_zh("两"), Some(2));
+        assert_eq!(count_zh("27"), Some(27));
     }
 
     #[test]
@@ -4633,7 +4773,7 @@ mod tests {
         };
         let swapped = |ranked: &[Candidate]| {
             let (candidates, twins_refused) = c.twin_swap(ranked.to_vec(), twins, false, None);
-            Ranking { scope: Scope::Europe, places_zh: Vec::new(), uncovered: None, candidates, twins_refused, asked: Vec::new() }
+            Ranking { scope: Scope::Europe, places_zh: Vec::new(), uncovered: None, unread: None, candidates, twins_refused, asked: Vec::new() }
         };
         let scope_of = |q: &str| c.scope(ORIG.iter().find(|(k, _)| *k == q).unwrap().1).0;
         for r in want["phrasings"].as_array().unwrap() {
@@ -4733,7 +4873,8 @@ mod tests {
     }
 
     /// The places each question reads as on the real catalogue: Q_CASES rows of qid and question (tab-separated); prints
-    /// the qid, the countries (iso2, in question order), the listed aggregates and the scope with the words named.
+    /// the qid, the countries (iso2, in question order), the listed aggregates, the scope with the words named, and the
+    /// place count the program reads too few places for (Catalog::unread), if any.
     /// L5GEO_DIR=<registry>/l5geo/catalog Q_CASES=<cases.tsv> cargo test l5geo::tests::replay_asked_places -- --include-ignored --nocapture
     #[test]
     #[ignore]
@@ -4745,10 +4886,11 @@ mod tests {
             let Some((qid, q)) = line.split_once('\t') else { panic!("Q_CASES row without a tab: {line}") };
             let (scope, named) = c.scope(q);
             println!(
-                "PLACES\t{qid}\t{}\t{}\t{scope:?}\t{}",
+                "PLACES\t{qid}\t{}\t{}\t{scope:?}\t{}\t{}",
                 countries(&c, q).join(","),
                 listed_aggregates(q).join(","),
-                named.join(",")
+                named.join(","),
+                c.unread(q).map_or(String::new(), |u| format!("UNREAD {} {}/{}", u.word_zh, u.read, u.asked))
             );
         }
     }

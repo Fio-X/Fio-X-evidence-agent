@@ -5012,6 +5012,12 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
             uncovered.level_zh, uncovered.place_zh
         )));
     }
+    if let Some(unread) = &ranking.unread {
+        return Err(Stop::NoTable(format!(
+            "the question asks for {} places as \"{}\", and the program reads {} of them from it",
+            unread.asked, unread.word_zh, unread.read
+        )));
+    }
     let mut offers = ranking.candidates;
     offers.truncate(OFFERED_TABLES);
     if offers.is_empty() {
@@ -7654,6 +7660,7 @@ mod tests {
                 scope: Scope::Europe,
                 places_zh: vec!["德国".into(), "法国".into()],
                 uncovered: self.uncovered.clone(),
+                unread: None,
                 candidates: self.candidates.clone(),
                 twins_refused: Vec::new(),
                 asked: Vec::new(),
