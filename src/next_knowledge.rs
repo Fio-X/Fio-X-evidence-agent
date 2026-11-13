@@ -44,7 +44,7 @@ use std::sync::OnceLock;
 use std::time::Duration;
 
 /// The vendored name table the visual group's economy_names.mjs reads (the same file, built from CLDR and the World Bank list).
-const ECONOMY_NAMES: &str = include_str!("../runtime/pi/assets/economy-names.json");
+pub(crate) const ECONOMY_NAMES: &str = include_str!("../runtime/pi/assets/economy-names.json");
 
 /// The reviewed Chinese names of catalogue tables (table-names-zh.json): a source line prints one in place of the English
 /// title; a table it does not list keeps its English title.

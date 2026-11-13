@@ -1059,6 +1059,87 @@ pub fn h1_states_relation(html: &str) -> bool {
         .any(|h| els.iter().any(|e| (e.attr("data-cmp").is_some() || e.attr("data-claim").is_some()) && h.inner.contains(&e.inner.start)))
 }
 
+/// The place names of the knowledge group's name table (economy-names.json: its economies and territories, ECONOMY_NAMES,
+/// read as vocabulary), each of at least two characters.
+fn table_place_names() -> &'static [String] {
+    static NAMES: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    NAMES.get_or_init(|| {
+        let table: Value = serde_json::from_str(crate::next_knowledge::ECONOMY_NAMES).unwrap_or_default();
+        let mut names: Vec<String> = ["economies", "territories"]
+            .iter()
+            .flat_map(|k| table[*k].as_array().into_iter().flatten())
+            .filter_map(|e| e["zh"].as_str())
+            .filter(|z| z.chars().count() >= 2)
+            .map(str::to_string)
+            .collect();
+        names.sort();
+        names.dedup();
+        names
+    })
+}
+
+/// names_drawn: the headline (h1) and the dek (p.dek) name places only by their name rows, and only places the page draws.
+/// Their words outside every marked element (data-src) hold no name of the knowledge group's place table (a bare name is
+/// one no check reads: planted errors 11-13, a headline naming the second place as the first and a dek naming a place
+/// the page does not draw passed every check); and each name row they mark is marked in one of the page's svg pictures
+/// too. One line per finding; empty when both hold.
+pub fn check_names_drawn(html: &str) -> Vec<String> {
+    let els = elements(html);
+    let drawn: std::collections::BTreeSet<&str> = els
+        .iter()
+        .filter(|e| e.name == "svg")
+        .flat_map(|s| els.iter().filter(move |e| s.inner.start <= e.inner.start && e.inner.start < s.inner.end))
+        .filter_map(|e| e.attr("data-src"))
+        .filter(|src| src.starts_with(LABEL_SRC))
+        .collect();
+    let mut off = Vec::new();
+    for el in els.iter().filter(|e| e.name == "h1" || (e.name == "p" && e.attr("class") == Some("dek"))) {
+        let which = if el.name == "h1" { "h1" } else { "dek" };
+        let within = |e: &El| el.inner.start <= e.inner.start && e.inner.start < el.inner.end && e.inner != el.inner;
+        let marked: Vec<&El> = els.iter().filter(|e| within(e) && e.attr("data-src").is_some()).collect();
+        // the words outside every marked element and every tag, a marked element's text and a tag each a break
+        let mut bare = String::new();
+        let mut in_tag = false;
+        for (i, ch) in html[el.inner.clone()].char_indices() {
+            let at = el.inner.start + i;
+            if marked.iter().any(|m| m.inner.contains(&at)) {
+                bare.push('|');
+            } else if ch == '<' {
+                in_tag = true;
+            } else if ch == '>' {
+                in_tag = false;
+                bare.push('|');
+            } else if !in_tag {
+                bare.push(ch);
+            }
+        }
+        // each name found where it starts, the longest there (印度尼西亚, not the 印度 in it), the words past it read on
+        let bare: Vec<char> = unescape(&bare).chars().collect();
+        let (mut i, mut found) = (0, Vec::new());
+        while i < bare.len() {
+            let at: String = bare[i..].iter().collect();
+            match table_place_names().iter().filter(|n| at.starts_with(n.as_str())).max_by_key(|n| n.chars().count()) {
+                Some(name) => {
+                    if !found.contains(name) {
+                        found.push(name.clone());
+                    }
+                    i += name.chars().count();
+                }
+                None => i += 1,
+            }
+        }
+        for name in found {
+            off.push(format!("{which}: the place name {name:?} is printed bare, not marked by its name row"));
+        }
+        for src in marked.iter().filter_map(|e| e.attr("data-src")).filter(|s| s.starts_with(LABEL_SRC)) {
+            if !drawn.contains(src) {
+                off.push(format!("{which}: {src} is named, and no picture of the page draws it"));
+            }
+        }
+    }
+    off
+}
+
 /// accent_named, on a page whose h1 states a relation (an element with data-cmp or data-claim in it: a headline a leaf
 /// made from a finding, or a title whose claim it read from the data): every mark (rect, path, polygon, circle) filled with the accent that names its entity (data-code) is named in
 /// the h1 or the dek (p.dek) by that code's name row. A page whose h1 states none is out of its scope (unscoped, the accent
@@ -1157,6 +1238,8 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     // claim_holds C1-C9: a number-free title's max claim over its derived set
     ("claims", "next_ledger::CLAIM_WORDS", &["ledger::check_claims", "ledger::claim_list", "ledger::claim_words", "ledger::row_family"]),
     ("accent_named", "", &["ledger::check_accent_named"]),
+    // names_drawn (planted errors 11-13): the h1 and the dek name places only by their name rows, places the page draws
+    ("names_drawn", "", &["ledger::check_names_drawn", "ledger::table_place_names"]),
     ("saturated_colours", "", &["ledger::saturated_colours"]),
     // the page tree (next_tree.rs): its schema
     // a page tree that is JSON the checker reads (each value, number, string and escape), no extra data, a number
@@ -1296,7 +1379,7 @@ pub const CHECK_HELPERS: &[&str] = &[
     "tree::walk", "tree::go", "tree::new", "tree::xml", "tree::num_attr",
     "tree::svg", "tree::bindings", "tree::registry_in_force", "tree::node_in", "tree::placed_of",
     "tree_gen::frame_knobs", "tree_gen::in_input_order", "tree_gen::node_of", "tree_gen::order_of",
-    "tree_gen::parts_selects", "tree_gen::place_src", "tree_gen::row_num", "tree_gen::runs_of", "tree_gen::subx",
+    "tree_gen::parts_selects", "tree_gen::place_src", "tree_gen::row_num", "tree_gen::runs_of", "tree_gen::runs_named", "tree_gen::subx",
     "leaf::sampled", "leaf::node", "leaf::python", "leaf::leaves", "leaf::word", "leaf::words", "leaf::name",
     "leaf::knobs", "leaf::stop", "leaf::reserved", "visual::recipe_layers", "visual::expand",
     "nodes::add", "nodes::add_line", "nodes::default", "nodes::default_val", "nodes::fmt", "nodes::get", "nodes::hit",
@@ -3217,6 +3300,28 @@ mod tests {
             Value::Array(a) => a.iter().for_each(|x| named_leaf_stops(x, out)),
             _ => {}
         }
+    }
+
+    /// names_drawn: a headline and a dek naming their places by name rows the picture draws pass; a place name printed
+    /// bare (the second place's put over the first's, an undrawn place added) and a name row no picture draws each fail.
+    #[test]
+    fn the_headline_and_the_dek_name_only_marked_places_the_page_draws() {
+        let svg = r#"<svg><text><tspan data-src="name:zh_names:iso3:VNM">越南</tspan></text><text><tspan data-src="name:zh_names:iso3:IDN">印度尼西亚</tspan></text></svg>"#;
+        let page = |h1: &str, dek: &str| format!(r#"<h1>{h1}</h1><p class="dek">{dek}</p>{svg}<p id="d" hidden="">越南增幅最大</p>"#);
+        let vn = r#"<span data-src="name:zh_names:iso3:VNM">越南</span>"#;
+        let ok = page(&format!("{vn}增幅最大"), &format!(r#"<span data-src="fact:lead0.t.y">2006</span> 年起，{vn}增幅最大"#));
+        assert_eq!(check_names_drawn(&ok), Vec::<String>::new());
+        // the second place's name put over the first's, bare
+        let swapped = page("印度尼西亚增幅最大", &format!("{vn}增幅最大"));
+        assert_eq!(check_names_drawn(&swapped), ["h1: the place name \"印度尼西亚\" is printed bare, not marked by its name row"]);
+        // a place the page does not draw, bare and marked
+        let bare = page(&format!("{vn}增幅最大"), &format!("{vn}增幅最大，巴西次之"));
+        assert_eq!(check_names_drawn(&bare), ["dek: the place name \"巴西\" is printed bare, not marked by its name row"]);
+        let marked = page(&format!("{vn}增幅最大"), &format!(r#"{vn}增幅最大，<span data-src="name:zh_names:iso3:BRA">巴西</span>次之"#));
+        assert_eq!(check_names_drawn(&marked), ["dek: name:zh_names:iso3:BRA is named, and no picture of the page draws it"]);
+        // a marked name's own text and the words beside it never join into a name (几内亚 beside 比绍)
+        let beside = page(&format!("{vn}比绍"), &format!("{vn}"));
+        assert_eq!(check_names_drawn(&beside), Vec::<String>::new());
     }
 
     /// Every non-test fn of the visual group's Rust files (CHECK_FILES, which are the visual `.rs` files of groups.json) is

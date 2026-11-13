@@ -177,6 +177,18 @@ def fill(spec, F, text):
     """{key} -> formatted number in <b>; {key.t} -> its time label; {key.n} -> the number without its unit. With a ledger
     only bare numbers are entries: {key} prints fact:<key>.n with its unit written after it, {key.t} the period's parts."""
     import re
+    def name(mo):
+        # {name.<code>}: a place's (or a part's) name as layer 1 names it (next_run NAME_PLACEHOLDER), marked with its name row
+        # so the page checks read which place the words name: with a ledger the one name row of the code (a src ending
+        # ":<code>"), none or two refusing; without one the request's label, bare
+        code = mo.group(1)
+        if LEDGER is None:
+            import prod
+            return html.escape(prod.NAME(code), quote=False)
+        rows = [s for s in LEDGER if s.startswith("name:") and s.rsplit(":", 1)[-1] == code]
+        if len(rows) != 1: raise Refused(f"the words name {code}, and the ledger holds {len(rows)} name rows of it, not one")
+        return entry(rows[0], "span", None)
+    text = re.sub(r"\{name\.([A-Za-z0-9_]+)\}", name, text)
     def sub(mo):
         k, _, part = mo.group(1).partition(".")
         if LEDGER is not None:

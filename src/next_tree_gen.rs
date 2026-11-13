@@ -2013,9 +2013,15 @@ fn parts_expand(layer: &str, d: &J, view: &J, (rows, sels): (&[J], &[J]), got: &
     ]))
 }
 
-/// A fill text ('...{key}...{key.n}...{key.t}...') as page tree runs: literal words and fact runs, in order. A brace that
+/// A fill text ('...{key}...{key.n}...{key.t}...{name.<code>}...') as page tree runs: literal words, fact runs and name runs, in order. A brace that
 /// names no key stays a literal word.
 fn runs_of(text: &str) -> J {
+    runs_named(text, &|code| J::str(code))
+}
+
+/// runs_of with each name run's code as `name` gives it: a page's texts name a place by the select reference that holds
+/// its code (code_ref), so the core resolves which place the words name from its own selects, as an accent's.
+fn runs_named(text: &str, name: &dyn Fn(&str) -> J) -> J {
     let key_ok = |k: &str| {
         let mut parts = k.split('.');
         let head = parts.next().unwrap_or("");
@@ -2027,6 +2033,18 @@ fn runs_of(text: &str) -> J {
     let mut rest = text;
     while let Some(i) = rest.find('{') {
         let after = &rest[i + 1..];
+        // a place's (or a part's) name placeholder, {name.<code>} (next_run NAME_PLACEHOLDER): a name run of the code
+        let named = after.find('}').map(|j| &after[..j]).and_then(|k| k.strip_prefix("name.")).filter(|c| !c.is_empty() && c.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'));
+        if let Some(code) = named {
+            word.push_str(&rest[..i]);
+            if !word.is_empty() {
+                out.push(J::obj_of(vec![("w", J::str(&word))]));
+                word.clear();
+            }
+            out.push(J::obj_of(vec![("name", name(code))]));
+            rest = &after["name.".len() + code.len() + 1..];
+            continue;
+        }
         match after.find('}').map(|j| &after[..j]).filter(|k| key_ok(k)) {
             Some(inner) => {
                 word.push_str(&rest[..i]);
@@ -2255,7 +2273,7 @@ pub(crate) fn tree_j(page_in: &J, fill: &J, reg: &J, external: &[String]) -> Res
         body.push(node_of(&layer, view.as_ref().unwrap_or(page_in), reg, &got, &sels, Some(&after), frame_knobs(&layer, reg, fill), None)?);
     }
     let text = |k: &str, role: &str| {
-        J::obj_of(vec![("kind", J::str("Text")), ("role", J::str(role)), ("origin", J::str("text_step")), ("runs", runs_of(spec.g(k).s().unwrap_or("")))])
+        J::obj_of(vec![("kind", J::str("Text")), ("role", J::str(role)), ("origin", J::str("text_step")), ("runs", runs_named(spec.g(k).s().unwrap_or(""), &|c| code_ref(c, &got, &order).map_or_else(|| J::str(c), J::Str)))])
     };
     let unit = shape.g("unit").clone();
     let texts = J::obj_of(vec![

@@ -1619,6 +1619,7 @@ pub fn check_leaf_page(
     off.extend(crate::next_ledger::check_relations(html, ledger, spec, facts, rows));
     off.extend(crate::next_ledger::check_claims(html, ledger, spec, facts, rows));
     off.extend(crate::next_ledger::check_accent_named(html));
+    off.extend(crate::next_ledger::check_names_drawn(html));
     off.extend(places_answered(html, ledger, spec, rows, facts));
     off.extend(basis_said(html, ledger, spec, rows, facts));
     off

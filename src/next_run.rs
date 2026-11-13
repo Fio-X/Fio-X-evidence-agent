@@ -2136,13 +2136,14 @@ fn page_lead(fill: Option<&Value>, charts: &[Chart]) -> Option<(Relation, View)>
     }
 }
 
-/// The text step's title, dek and kicker in a page's fill (its spec), in place of the ones it was picked with; each place
-/// name placeholder in the title and dek (finding_of) filled from the fill's labels (named_places).
+/// The text step's title, dek and kicker in a page's fill (its spec), in place of the ones it was picked with. Each place
+/// name placeholder in the title and dek (finding_of, `{name.<code>}`) stays for the leaf, which prints the name marked
+/// with its name row (facts.py fill), so the page checks read which place the words name (planted errors 11-13: a bare
+/// name passed every check).
 fn page_words(fill: &mut Value, (title, dek, kicker): (&str, &str, &str)) {
-    let names = place_names(fill).clone();
     let spec = &mut fill["knobs"]["spec"];
-    spec["title"] = json!(named_places(title, &names));
-    spec["dek"] = json!(named_places(dek, &names));
+    spec["title"] = json!(title);
+    spec["dek"] = json!(dek);
     spec["kicker"] = json!(kicker);
 }
 
@@ -2152,30 +2153,11 @@ fn place_names(fill: &Value) -> &Value {
     &fill["knobs"]["labels"]
 }
 
-/// The prefix of a place's name placeholder in a page's words, `{name.<code>}` (finding_of): the program writes the name of
-/// the code from the leaf labels (the knowledge group's name table) after the text step, so the model, which must keep every
+/// The prefix of a place's name placeholder in a page's words, `{name.<code>}` (finding_of): the leaf prints the name of the
+/// code marked with its name row (the knowledge group's name table, through the ledger), so the model, which must keep every
 /// placeholder, never types which place a number on the page belongs to.
 const NAME_PLACEHOLDER: &str = "name.";
 
-/// `text` with each name placeholder the labels name replaced by that name. One they do not name stays as written, and the
-/// leaf refuses the page for it (run.py placeholders), never printing a code.
-fn named_places(text: &str, labels: &Value) -> String {
-    let open = format!("{{{NAME_PLACEHOLDER}");
-    let mut out = String::new();
-    let mut rest = text;
-    while let Some(at) = rest.find(&open) {
-        let body = &rest[at + open.len()..];
-        let Some(end) = body.find('}') else { break };
-        out.push_str(&rest[..at]);
-        match labels[&body[..end]].as_str() {
-            Some(name) => out.push_str(name),
-            None => out.push_str(&rest[at..at + open.len() + end + 1]),
-        }
-        rest = &body[end + 1..];
-    }
-    out.push_str(rest);
-    out
-}
 
 /// The key of a finding's headline (HEADLINES) beside its dek in finding_of's sentence; fill_of keeps it as the fill's own
 /// key, so the fill's finding stays the dek's two wordings (dek_finding).
@@ -7581,7 +7563,8 @@ mod tests {
         let published = crate::next_flow::publish_leaf_page(&calls, &bundle.dir, "column", (&leaf, &plan), &qa).unwrap();
         let html = std::fs::read_to_string(bundle.dir.join(&published.html_ref)).unwrap();
         assert!(html.contains(r#"<g data-layer="leader_notes"><g data-node="leader_notes"></g></g>"#), "the notes layer is drawn empty");
-        assert!(html.contains("名SE最高，为") && html.contains(r#"data-src="fact:hi.n""#) && html.contains(r#"data-src="fact:gap.n""#), "the dek's finding");
+        // the dek's place printed marked with its name row (facts.py fill), so the page checks read which place it names
+        assert!(html.contains(r#"<span data-src="name:zh_names:iso2:SE">名SE</span>最高，为"#) && html.contains(r#"data-src="fact:hi.n""#) && html.contains(r#"data-src="fact:gap.n""#), "the dek's finding");
         assert!(html.contains(r#"data-src="fact:lead1.t.y">2025</span>"#), "its year");
         let request: Value = serde_json::from_str(
             &std::fs::read_to_string(bundle.dir.join("publications/column").join(crate::next_flow::LEAF_REQUEST)).unwrap(),
@@ -8120,10 +8103,11 @@ mod tests {
         let drawn = fill["drawn"].as_array().unwrap().clone();
         assert!(drawn.iter().all(|d| d["layer"] == "bubbles" && d["time"] == "2024"), "{drawn:?}");
 
-        // the page's words as the text step leaves them when the model keeps the drafts: the finding, its name filled
+        // the page's words as the text step leaves them when the model keeps the drafts: the finding, its name's placeholder
+        // kept for the leaf, which prints the name marked with its name row
         let dek = dek_finding(&fill).unwrap().0;
         page_words(&mut fill, ("标题", &dek, "栏目"));
-        assert_eq!(fill["knobs"]["spec"]["dek"], "{lead0.t}至{lead1.t}，名SE增幅最大，增加{lead}");
+        assert_eq!(fill["knobs"]["spec"]["dek"], "{lead0.t}至{lead1.t}，{name.SE}增幅最大，增加{lead}");
         fill["knobs"]["shapes"] = json!("runtime/pi/assets/naturalearth-admin0-50m.geojson");
         fill["knobs"]["spec"]["kicker"] = json!("栏目");
         fill["knobs"]["spec"]["source"] = json!("来源");
@@ -8186,7 +8170,7 @@ mod tests {
         assert!(!html.contains(r#"class="ak"#), "no legend line of the inks (review 11-08): the marked places are named by their labels");
         assert!(html.contains(r#"text-anchor="end" dominant-baseline="middle" font-size="13" fill="var(--t-title)" font-weight="700"><tspan data-src="fact:chg.FR""#), "the fall's value on its side, bold in the title ink: a noted place");
         assert!(html.contains(r#"data-src="period:sdg:2016""#), "the year line names the earlier end");
-        assert!(html.contains("名SE增幅最大，增加") && html.contains(r#"data-src="fact:lead.n""#), "the dek's finding, its number a ledger entry");
+        assert!(html.contains(r#"<span data-src="name:zh_names:iso2:SE">名SE</span>增幅最大，增加"#) && html.contains(r#"data-src="fact:lead.n""#), "the dek's finding, its place marked by its name row, its number a ledger entry");
         assert!(html.contains(r#"data-src="fact:lead0.t.y">2016</span>"#) && html.contains(r#"data-src="fact:lead1.t.y">2024</span>"#), "its years too");
         let checks = page_checks(change, Some(html.as_str()), &published.dropped, StripAsk::default(), &drawn, Some(&typed()));
         assert!(checks[2].passed && checks[2].warning.is_none(), "{:?}", checks[2]);
@@ -8293,12 +8277,12 @@ mod tests {
         assert_eq!(title_and_kicker(Some(&page), false, "", "老年人口占比"), ("{name.CHN}增幅最大".into(), "老年人口占比".into()));
         assert_eq!(title_and_kicker(Some(&tied), false, label, "老年人口占比"), (label.into(), "老年人口占比".into()));
         assert_eq!(title_and_kicker(None, false, label, "老年人口占比"), (label.into(), "老年人口占比".into()));
-        // the headline's names filled as the dek's are (page_words), so the page prints no placeholder of a name
+        // the headline's name placeholder kept as the dek's is (page_words), for the leaf to print marked by its name row
         let (title, kicker) = title_and_kicker(Some(&page), false, label, "老年人口占比");
         let mut worded = page.clone();
         page_words(&mut worded, (&title, "导语", &kicker));
         let printed = worded["knobs"]["spec"]["title"].as_str().unwrap().to_string();
-        assert!(!printed.contains("{name.") && printed.ends_with("增幅最大"), "{printed}");
+        assert!(printed == "{name.CHN}增幅最大", "{printed}");
         assert_eq!(worded["knobs"]["spec"]["kicker"], label);
     }
 
@@ -13144,10 +13128,10 @@ for line in sys.stdin:
         // a circle's label on the map is the main picture's: counts, and so does a layer that asked no notes
         let (counted, let_go) = notes_let_go(&[d("bubbles", "AT"), d("leader_notes", "SE")], &asked);
         assert_eq!((counted, let_go), (vec![d("bubbles", "AT")], vec!["dropped:leader_notes:SE".to_string()]));
-        // the headline as the page prints it, its placeholder written over by page_words: the place is still cited
+        // the headline as page_words leaves it, its placeholder kept for the leaf: the place is cited by it
         let mut printed = json!({"knobs": {"labels": {"DE": "德国", "SE": "瑞典"}, "spec": {"hero": fill["knobs"]["spec"]["hero"].clone()}}});
         page_words(&mut printed, ("{name.DE}最高", "导语", "栏目"));
-        assert_eq!(printed["knobs"]["spec"]["title"], "德国最高");
+        assert_eq!(printed["knobs"]["spec"]["title"], "{name.DE}最高");
         let asked = notes_asked(column, &printed);
         assert_eq!(asked.cited, BTreeSet::from(["DE".to_string()]));
         assert_eq!(notes_let_go(&[d("leader_notes", "DE")], &asked).0.len(), 1, "the headline's note counts");
