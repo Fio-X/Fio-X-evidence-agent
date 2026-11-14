@@ -293,7 +293,7 @@ fn exact_values(facts: &mut [Fact], rows: &[Row]) {
             f.exact = match f.op.as_str() {
                 "value" | "peak" | "low" | "last" | "rest" if !f.reads.is_empty() => sum(&f.reads),
                 "mean" if !f.reads.is_empty() => sum(&f.reads).and_then(|s| s.div(Exact::int(f.reads.len() as i128))),
-                "count" | "n" | "zeros" | "unrowed" | "excluded" if f.v.fract() == 0.0 => Some(Exact::int(f.v as i128)),
+                "count" | "n" | "position" | "zeros" | "unrowed" | "excluded" if f.v.fract() == 0.0 => Some(Exact::int(f.v as i128)),
                 "share" | "times" | "change" | "minus" | "plus" if f.reads.len() == 2 => match (of(&f.reads[0]), of(&f.reads[1])) {
                     (Some(a), Some(b)) => match f.op.as_str() {
                         "share" | "times" => a.div(b),
@@ -726,6 +726,26 @@ fn one(
             }
             f.v = codes.len() as f64;
             f.n = Some(codes.len());
+        }
+        // where `code` stands among the codes of `by` the selected rows hold at `time`, highest first: 1 and the number of
+        // codes whose value there is above its own (a tie shares the place); refused when no row holds it
+        "position" => {
+            let time = word(key, &q["time"], "time")?;
+            let by = word(key, &q["by"], "by")?;
+            let code = word(key, &q["code"], "code")?;
+            let mut at: Vec<(&String, f64)> = Vec::new();
+            for r in picked.into_iter().filter(|r| r.time == time) {
+                let c = r.dims.get(&by).ok_or_else(|| format!("{key}: the row {} has no {by}", r.src))?;
+                let v = finite(key, r)?;
+                match at.iter_mut().find(|(k, _)| *k == c) {
+                    Some((_, s)) => *s += v,
+                    None => at.push((c, 0.0 + v)),
+                }
+                f.reads.push(r.src.clone());
+            }
+            let own = at.iter().find(|(c, _)| **c == code).map(|(_, v)| *v).ok_or_else(|| format!("{key}: position has no row of {code} at {time}"))?;
+            f.v = (1 + at.iter().filter(|(_, v)| *v > own).count()) as f64;
+            f.n = Some(at.len());
         }
         "value" => {
             let time = word(key, &q["time"], "time")?;
@@ -2937,6 +2957,34 @@ mod tests {
         assert_eq!(recheck(&ledger, &spec, &rows, &facts), Vec::<String>::new());
         let none = Spec { facts: vec![("drawn".into(), json!({"op": "n", "by": "geo", "table": "t", "time": "2023", "fmt": "n"}))], ..spec };
         assert!(compute(&none, &rows).unwrap_err().contains("n has no row at 2023"));
+    }
+
+    /// position is where a code stands among the codes of `by` at its time, highest first: 1 and the codes above it, a tie
+    /// sharing the place, a code with two rows there summed as n counts it once; printed bare as a whole number and
+    /// rechecked from the same rows; a code with no row at that time fails.
+    #[test]
+    fn position_is_one_and_the_codes_above_the_code() {
+        let row = |geo: &str, time: &str, v: f64| Row {
+            src: format!("series:t/A.{geo}:{time}:OBS_VALUE"),
+            table: "t".into(),
+            dims: BTreeMap::from([("geo".to_string(), geo.to_string()), ("freq".to_string(), "A".to_string())]),
+            time: time.into(),
+            value: v,
+        };
+        let rows = vec![row("SE", "2025", 65.4), row("BE", "2025", 14.9), row("FI", "2025", 14.9), row("DE", "2025", 10.0), row("DE", "2025", 6.0), row("PL", "2024", 99.0)];
+        let q = |code: &str| json!({"op": "position", "by": "geo", "table": "t", "time": "2025", "code": code, "fmt": "n"});
+        let at = |code: &str| {
+            let spec = Spec { facts: vec![("pos".into(), q(code))], fmts: json!({}), members: None, asked_places: None, basis: None };
+            compute(&spec, &rows).map(|f| (f[0].v, spec, f))
+        };
+        assert_eq!(at("SE").unwrap().0, 1.0);
+        // DE's two rows are 16, so it is second; BE and FI tie at 14.9 and share the third place
+        assert_eq!((at("DE").unwrap().0, at("BE").unwrap().0, at("FI").unwrap().0), (2.0, 3.0, 3.0));
+        let (_, spec, facts) = at("BE").unwrap();
+        let ledger = leaf_ledger(&spec, &rows, &facts).unwrap();
+        assert_eq!(ledger.get("fact:pos.n").map(String::as_str), Some("3"));
+        assert_eq!(recheck(&ledger, &spec, &rows, &facts), Vec::<String>::new());
+        assert!(at("PL").unwrap_err().contains("position has no row of PL at 2025"));
     }
 
     /// excluded names each pair the registry leaves out of a flow, keeps each in the ledger as excluded by registry (apart from

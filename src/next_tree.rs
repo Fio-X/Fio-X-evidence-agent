@@ -1333,6 +1333,22 @@ impl<'a> Compute<'a> {
                 }
                 seen.len() as f64
             }
+            // where `code` stands among the codes of `by` at `time`, highest first (next_facts position): 1 and the codes above it
+            "position" => {
+                let by = q.g("by").s().ok_or("'by'")?;
+                let code = q.g("code");
+                let mut at: Vec<(&J, f64)> = Vec::new();
+                for r in select_rows(self.rows, q).into_iter().filter(|r| r.g("time") == time) {
+                    let c = r.g("dims").get(by).ok_or_else(|| format!("'{by}'"))?;
+                    let v = num(r)?;
+                    match at.iter_mut().find(|(k, _)| *k == c) {
+                        Some(slot) => slot.1 += v,
+                        None => at.push((c, v)),
+                    }
+                }
+                let own = at.iter().find(|(c, _)| *c == code).map(|(_, v)| *v).ok_or_else(|| format!("{key}: position has no row of {}", code.repr()))?;
+                (1 + at.iter().filter(|(_, v)| *v > own).count()) as f64
+            }
             "zeros" => {
                 let mut n = 0;
                 for r in select_rows(self.rows, q).into_iter().filter(|r| r.g("time") == time) {

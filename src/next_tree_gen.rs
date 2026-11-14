@@ -747,10 +747,14 @@ fn finding_declared(d: &J, page_in: &J, reg: &J) -> Result<J, String> {
     if !d.g("needs_facts").arr().iter().all(|k| has_fact(&st(k))) {
         return Ok(none("a fact the finding needs is not the page's"));
     }
-    // each page input value the finding needs, there and not empty (a path the page input lacks is none)
+    // a page input value there and not empty (a path the page input lacks is none); a path that is no $path is never held
+    let held = |path: &J| st(path).strip_prefix('$').and_then(|p| p.split('.').try_fold(page_in, |x, k| x.get(k))).is_some_and(J::truthy);
+    // each page input value the finding needs
     for path in d.g("requires").arr() {
-        let held = st(path).strip_prefix('$').map(|p| p.split('.').try_fold(page_in, |x, k| x.get(k))).ok_or_else(|| format!("finding: requires {}: no path", path.repr()))?;
-        if !held.is_some_and(J::truthy) {
+        if !st(path).starts_with('$') {
+            return Err(format!("finding: requires {}: no path", path.repr()));
+        }
+        if !held(path) {
             return Ok(none("a page input value the finding needs is empty"));
         }
     }
@@ -768,10 +772,14 @@ fn finding_declared(d: &J, page_in: &J, reg: &J) -> Result<J, String> {
         if s.g("scoped_only").truthy() && !view.g("scoped").truthy() {
             continue;
         }
+        // a select made only when a page input value is there and not empty (when_held: its path), as a case's requires
+        if s.get("when_held").is_some_and(|p| !held(p)) {
+            continue;
+        }
         if let (Some("given"), Some(g)) = (s.g("kind").s(), s.get("given")) {
             given.push((st(s.g("id")), sub(g, view)?));
         }
-        sels.push(sub(&J::Obj(s.obj().iter().filter(|(k, _)| k != "given" && k != "scoped_only").cloned().collect()), view)?);
+        sels.push(sub(&J::Obj(s.obj().iter().filter(|(k, _)| k != "given" && k != "scoped_only" && k != "when_held").cloned().collect()), view)?);
     }
     let (bad, got) = recompute_over(view, &sels, &given, fill.g("fmts"));
     if !bad.is_empty() {
@@ -783,6 +791,23 @@ fn finding_declared(d: &J, page_in: &J, reg: &J) -> Result<J, String> {
     // the first case whose bound holds over its select's first or last code
     let mut case = None;
     for c in d.g("cases").arr() {
+        // a case that reads a page input value only some pages have (a many-block page's focus) is passed over on the others
+        if !c.g("requires").arr().iter().all(&held) {
+            continue;
+        }
+        // lower: the case holds only for a subject below its other (a focus that is not the leader); a subject that leads,
+        // or a tie on either side, passes to the next case
+        if c.g("lower").truthy() {
+            let code = |k: &str| got.get(&st(c.g(k))).filter(|x| !x.is_null()).cloned();
+            let below = match (code("subject"), code("other")) {
+                // both by the other's rank (a given subject has no rank of its own)
+                (Some(a), Some(b)) => key(&st(c.g("other")), &a)? < key(&st(c.g("other")), &b)?,
+                _ => false,
+            };
+            if !below {
+                continue;
+            }
+        }
         let cond = c.g("if");
         let holds = match cond.get("key_of") {
             None => true,
@@ -2126,6 +2151,11 @@ fn as_refs(v: &J, got: &Got, order: &[String], place: &str) -> Result<J, String>
                         f.set(place, J::Str(format!("select:{sid}")));
                         return Ok((k.clone(), f));
                     }
+                    // a position's code (the place it says the place of) is a chosen code as a filter's is
+                    if let (true, Some(c)) = (k == "code" && v.g("op").s() == Some("position"), x.s().filter(|c| !c.starts_with("select:"))) {
+                        let hit = code_ref(c, got, order).ok_or_else(|| format!("fact position code {c}: no select holds the code"))?;
+                        return Ok((k.clone(), J::Str(hit)));
+                    }
                     let y = match (k == "filter" && x.is_obj(), code) {
                         (true, Some(c)) => {
                             let hit = code_ref(c, got, order).ok_or_else(|| format!("fact filter {place}={c}: no select holds the code"))?;
@@ -2975,6 +3005,47 @@ mod tests {
         let bound = core::bindings();
         let leaf: Vec<&str> = bound.g("nodes").obj().iter().filter(|(_, n)| n.g("geometry").s() == Some("leaf")).map(|(k, _)| k.as_str()).collect();
         assert_eq!(leaf, ["map", "bignums", "leader_notes", "notes", "ring", "strip", "sankey", "stacked100"]);
+    }
+
+    /// A column page's finding with a focus (a many-block page's later block: the first block's leader, owner 11-14 22:2x):
+    /// a focus below the highest says its place (a fact of op position over the page's rows, which next_facts and the core
+    /// recompute alike) with the highest beside it, and is the subject the accent marks; a focus that leads, or no focus,
+    /// gives the level finding as before.
+    #[test]
+    fn next_tree_gen_column_focus_says_its_place_and_the_leader() {
+        let row = |p: &str, v: &str| {
+            serde_json::json!({"src": format!("series:gdp/{p}:2025:OBS_VALUE"), "table": "gdp", "dims": {"country": p}, "time": "2025", "value": v})
+        };
+        let rows = [row("SGP", "90"), row("MYS", "13"), row("VNM", "5.1"), row("IDN", "5"), row("KHM", "2")];
+        let (reg, _) = core::registry_in_force();
+        let d = declares(&reg, FINDING, &J::from_value(&serde_json::json!({"recipe": "column"}))).unwrap().clone();
+        let pi = |focus: Option<&str>| {
+            let mut v = serde_json::json!({"recipe": "column",
+                "shape": {"main": "gdp", "place": "country", "year": "2025", "fmt": "usd", "countries": ["IDN", "KHM", "MYS", "SGP", "VNM"]},
+                "picks": {"rules": ["ranked"], "ranked": ["SGP", "MYS", "VNM", "IDN", "KHM"], "marks": [], "t0": "", "t1": ""},
+                "rows": rows, "short": "美元",
+                "fill": {"facts": ["drawn", "hi", "lo", "gap", "times"], "fmts": {"usd": {"dec": 0}}, "named": ["IDN", "KHM", "MYS", "SGP", "VNM"]}});
+            if let Some(f) = focus {
+                v["picks"]["focus"] = serde_json::json!(f);
+            }
+            J::from_value(&v)
+        };
+        let said = |focus: Option<&str>| finding_declared(&d, &pi(focus), &reg).unwrap().to_value();
+        let at = said(Some("IDN"));
+        assert_eq!(at["subject"], "IDN");
+        assert_eq!(at["facts"]["pos1"], serde_json::json!({"op": "position", "table": "gdp", "by": "country", "time": "2025", "code": "IDN", "fmt": "n"}));
+        assert_eq!(at["finding"]["headline"]["title"], "{name.IDN}排第{pos1}，最高的是{name.SGP}");
+        assert_eq!(at["finding"]["dek"], "{focus1.t}，{name.IDN}排第{pos1}，为{focus1}");
+        // the place as both checkers compute it: 4th, the three above it (SGP, MYS, VNM) and itself
+        let fact_rows: Vec<serde_json::Value> = rows.to_vec();
+        let facts = serde_json::json!({"pos1": at["facts"]["pos1"]});
+        let got = core::fact_value(&J::from_value(&facts), &fact_rows.iter().map(J::from_value).collect::<Vec<_>>(), "pos1").unwrap();
+        assert_eq!(got, 4.0);
+        for lead in [Some("SGP"), None] {
+            let level = said(lead);
+            assert_eq!(level["subject"], "SGP", "{lead:?}");
+            assert!(level["facts"].get("pos1").is_none(), "{lead:?}");
+        }
     }
 
     /// The ring's finding over a hand page input narrowed to the origins it compares: its set phrase only when the core finds

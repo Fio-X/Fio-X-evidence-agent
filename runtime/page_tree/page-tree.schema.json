@@ -1260,6 +1260,42 @@
      "additionalProperties": false
     },
     {
+     "title": "position: where `code` stands among the codes of `by` at `time`, highest first",
+     "type": "object",
+     "required": [
+      "op",
+      "table",
+      "time",
+      "by",
+      "code",
+      "fmt"
+     ],
+     "properties": {
+      "op": {
+       "const": "position"
+      },
+      "table": {
+       "$ref": "#/$defs/Code"
+      },
+      "filter": {
+       "$ref": "#/$defs/Filter"
+      },
+      "by": {
+       "$ref": "#/$defs/Code"
+      },
+      "time": {
+       "$ref": "#/$defs/Code"
+      },
+      "code": {
+       "$ref": "#/$defs/CodeOrRef"
+      },
+      "fmt": {
+       "const": "n"
+      }
+     },
+     "additionalProperties": false
+    },
+    {
      "title": "unrowed: pairs of held codes with no row",
      "type": "object",
      "required": [

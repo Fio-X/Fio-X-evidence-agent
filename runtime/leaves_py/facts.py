@@ -130,6 +130,11 @@ def compute(spec, T):
             F[key] = {"v": len(hit), "fmt": "n", "who": hit, "src": q}; continue
         if op == "n":  # how many codes of `by` the rows hold at one time (the places a chart draws)
             F[key] = {"v": len({r[q["by"]] for r in _sel(rows, q["time"])}), "fmt": q["fmt"], "src": q}; continue
+        if op == "position":  # where `code` stands among the codes of `by` at one time, highest first (1 and those above it)
+            tot = {}
+            for r in _sel(rows, q["time"]): tot[r[q["by"]]] = tot.get(r[q["by"]], 0) + float(r["OBS_VALUE"])
+            own = tot[q["code"]]
+            F[key] = {"v": 1 + sum(1 for v in tot.values() if v > own), "fmt": q["fmt"], "src": q}; continue
         if op == "rest":  # sum of the by-values outside the top `skip`, at one time
             tot = {}
             for r in _sel(rows, q["time"]):

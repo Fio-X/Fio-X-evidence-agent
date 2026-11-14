@@ -2528,6 +2528,16 @@ mod drive {
                     serde_json::from_str(&std::fs::read_to_string(run.join(format!("publications/{folder}/manifest.json"))).unwrap()).unwrap();
                 assert_eq!(crate::next_gate::leaf_gate(&run, folder, &manifest), Some(Vec::new()), "{folder}: the completion gate again");
             }
+            // the later blocks mark the first block's leader and say its place (owner 11-14 22:2x item 2): the headline's
+            // place is a fact of op position, and that place is the page's accent
+            for folder in ["column-b2", "column-b3"] {
+                let req: Value =
+                    serde_json::from_str(&std::fs::read_to_string(run.join(format!("publications/{folder}/request.json"))).unwrap()).unwrap();
+                let spec = &req["knobs"]["spec"];
+                assert_eq!(spec["facts"]["pos1"]["op"], "position", "{folder}: no position fact");
+                assert_eq!(spec["facts"]["pos1"]["code"], spec["hero"]["data"]["accent"], "{folder}: the accent is not the place said");
+                assert!(spec["title"].as_str().is_some_and(|t| t.contains("排第")), "{folder}: the headline says no place: {}", spec["title"]);
+            }
             let stacked = of(crate::next_run::STACKED_EVENT);
             let stacked = stacked.first().expect("a stacked page");
             assert_eq!(stacked["blocks"].as_array().map(Vec::len), Some(3));

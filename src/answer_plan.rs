@@ -104,6 +104,9 @@ pub enum Focus {
     BelowRest,
 }
 
+/// A later 名次对照 block's focus: the first block's highest place (plan_for), whose place the block's page says.
+pub const FIRST_LEADER: &str = "{b1.max.name}";
+
 /// One block: what it proves and the sentence it proves, numbers as {placeholders}.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Block {
@@ -456,7 +459,7 @@ pub fn plan_for(c: &Catalog, question: &str, reply: &SplitReply) -> Plan {
         Some(Shape::RankCompare) if picked.len() >= 2 => {
             let head = ALSO_ZH.iter().filter_map(|w| q.find(w)).min().map_or(q.as_str(), |at| &q[..at]);
             let low = any(head, &MIN_ZH) && !any(head, &MAX_ZH);
-            let lead = if low { "{b1.min.name}" } else { "{b1.max.name}" };
+            let lead = if low { "{b1.min.name}" } else { FIRST_LEADER };
             let mut blocks = vec![with(Rel::Ranking, if low { Focus::Min } else { Focus::Max }, vec![picked[0].clone()])];
             for a in &picked[1..] {
                 blocks.push(with(Rel::Ranking, Focus::Position(lead.to_string()), vec![a.clone()]));

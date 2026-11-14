@@ -1921,6 +1921,10 @@ fn page_input(recipe: &Recipe, shape: &Shape, picks: &Picks, (main, sums): (&[Va
     if !shape.t0.is_empty() {
         p["shape"]["t0"] = json!(shape.t0);
     }
+    // a later block's focus on a page with no hub (the first block's leader, pages_of): the place its finding says the place of
+    if picks.top.is_empty() && !picks.focus.is_empty() {
+        p["picks"]["focus"] = json!(picks.focus);
+    }
     // a flow into a hub (picks.top): its origins, focus and hub, and the two years' last two digits the map's keys carry
     if let (false, Some(y0), Some(y1)) = (picks.top.is_empty(), picks.t0.get(2..), picks.t1.get(2..)) {
         (p["picks"]["top"], p["picks"]["focus"], p["picks"]["y0"], p["picks"]["y1"]) = (json!(picks.top), json!(picks.focus), json!(y0), json!(y1));
@@ -2525,6 +2529,7 @@ fn recipe_request(
     catalogue: &dyn Catalogue,
     (question, (title, dek, kicker), places): (&str, (&str, &str, &str), &[crate::l5geo::Place]),
     calls: &std::sync::Mutex<Vec<Value>>,
+    focus: Option<&str>,
 ) -> Result<Value, (&'static str, String)> {
     let shape_err = |why: String| ("shape", why);
     let main = prepared.first().ok_or_else(|| shape_err("not this shape: no table".into()))?;
@@ -2574,7 +2579,11 @@ fn recipe_request(
         });
     }
     let claims = picked_claims(run_dir, main, &claim_records(run_dir).map_err(shape_err)?).map_err(shape_err)?;
-    let picks = picks_of(&recipe.picks, &shape, &main_rows, &claims).map_err(shape_err)?;
+    let mut picks = picks_of(&recipe.picks, &shape, &main_rows, &claims).map_err(shape_err)?;
+    // a later block's focus (the first block's leader) is the page's when the page ranks it and no rule set one
+    if let Some(code) = focus.filter(|c| picks.focus.is_empty() && picks.ranked.iter().any(|r| r == c)) {
+        picks.focus = code.to_string();
+    }
     on_the_map(recipe, &picks.ranked, catalogue)?;
     // read from the main's narrow record, as the charts step reads the page's scope (narrowed), never from the tool's details
     let set = narrow_set(run_dir, main).map_err(|why| ("fill", why))?;
@@ -3287,6 +3296,7 @@ fn leaf_request(
     catalogue: &dyn Catalogue,
     (question, words): (&str, (&str, &str, &str)),
     calls: &std::sync::Mutex<Vec<Value>>,
+    focus: Option<&str>,
 ) -> Result<(&'static Recipe, Value), (&'static str, &'static str, String)> {
     let mut missed = Vec::new();
     let places = catalogue.places(question);
@@ -3308,7 +3318,7 @@ fn leaf_request(
             }
             Err(why) => return Err((recipe.name.as_str(), "shape", why)),
         }
-        match recipe_request(run_dir, prepared, drawn, recipe, catalogue, (question, words, &places), calls) {
+        match recipe_request(run_dir, prepared, drawn, recipe, catalogue, (question, words, &places), calls, focus) {
             Ok(fill) => {
                 // a composition never leaves out a place the question names (the places the knowledge group reads in it)
                 named_dropped(&fill, &places).map_err(|why| (recipe.name.as_str(), "fill", why))?;
@@ -4057,12 +4067,19 @@ pub(crate) async fn pages_of(
     }
     // a many-block page (owner 11-14 16:5x item 2): each block's page from its own table, by the same steps and checks;
     // the first block stops the run as a one-block page does, a later block that stops is left out and kept as such
-    let (first, shown) = page_of_block(recorder, model, question, std::slice::from_ref(&blocks[0]), catalogue, cancel, 1).await?;
+    let (first, shown, leader) = page_of_block(recorder, model, question, std::slice::from_ref(&blocks[0]), catalogue, cancel, (1, None)).await?;
     let (mut answers, mut pages) = (vec![first], vec![shown]);
     let mut drawn: Vec<&str> = vec![planned.block_tables[0].0.as_str()];
     for (i, table) in blocks.iter().enumerate().skip(1) {
-        match page_of_block(recorder, model, question, std::slice::from_ref(table), catalogue, cancel, i + 1).await {
-            Ok((answer, shown)) => {
+        // a block the plan says gives the first block's leader's place (名次对照, owner 11-14 22:2x item 2) has that place as its
+        // focus: its page marks it and its finding says where it stands, a number from the ledger
+        let family = planned.block_tables[i].0.as_str();
+        let asks_place = planned.plan.as_ref().and_then(|p| p.blocks.iter().find(|b| b.quantity.first().is_some_and(|(q, _)| q == family))).is_some_and(|b| {
+            matches!(&b.focus, crate::answer_plan::Focus::Position(of) if of == crate::answer_plan::FIRST_LEADER)
+        });
+        let focus = leader.as_deref().filter(|_| asks_place);
+        match page_of_block(recorder, model, question, std::slice::from_ref(table), catalogue, cancel, (i + 1, focus)).await {
+            Ok((answer, shown, _)) => {
                 answers.push(answer);
                 pages.push(shown);
                 drawn.push(planned.block_tables[i].0.as_str());
@@ -4110,11 +4127,13 @@ pub(crate) async fn page_from(
     catalogue: &dyn Catalogue,
     cancel: &AtomicBool,
 ) -> Result<String, Stop> {
-    Ok(page_of_block(recorder, model, question, prepared, catalogue, cancel, 1).await?.0)
+    Ok(page_of_block(recorder, model, question, prepared, catalogue, cancel, (1, None)).await?.0)
 }
 
 /// page_from for block `block` of a many-block page (1: the first block, or a one-block page): the same steps and checks,
-/// its page published under next_gate::block_dir, every check that reads a publication folder reading that one.
+/// its page published under next_gate::block_dir, every check that reads a publication folder reading that one. `focus`: a
+/// place the page's finding says the place of (pages_of). Ok also gives the place the page's accent marks (its finding's
+/// subject), none on a tie.
 pub(crate) async fn page_of_block(
     recorder: &mut Recorder<'_>,
     model: &mut (dyn Asker + '_),
@@ -4122,15 +4141,16 @@ pub(crate) async fn page_of_block(
     prepared: &[Prepared],
     catalogue: &dyn Catalogue,
     cancel: &AtomicBool,
-    block: usize,
-) -> Result<(String, (String, f64, f64)), Stop> {
+    (block, focus): (usize, Option<&str>),
+) -> Result<(String, (String, f64, f64), Option<String>), Stop> {
     let page = charts(recorder, prepared, catalogue)?;
     let calls = std::sync::Mutex::new(Vec::new());
     let drawn: Vec<&str> = page.templates.iter().filter_map(|t| t["chart_type"].as_str()).collect();
     // The recipe is picked by the data's shape before the text step (its words go into the fill once worded, leaf_page), so
     // the page-level fields are drafted for what the picked page draws: a page whose bars draw the change gets a title
     // that names a change. A pick that stopped stops the run after the text step, as before.
-    let picked = leaf_request(recorder.run_dir(), prepared, &drawn, catalogue, (question, ("", "", "")), &calls);
+    let picked = leaf_request(recorder.run_dir(), prepared, &drawn, catalogue, (question, ("", "", "")), &calls, focus);
+    let accent = picked.as_ref().ok().and_then(|(_, fill)| fill["knobs"]["spec"]["hero"]["data"][ACCENT].as_str().map(str::to_string));
     let form = page_lead(picked.as_ref().ok().map(|(_, fill)| fill), &page.charts);
     let titles: Vec<String> = page.measures.iter().map(|m| m.name.clone()).collect();
     // No typed number on the page text, years included: the design pack's claim-template check refuses every one, so the
@@ -4282,6 +4302,7 @@ pub(crate) async fn page_of_block(
                     published.html_ref, published.html_sha256
                 ),
                 (dir.to_string(), shown_size(recorder.run_dir(), dir).0.max(leaf.size.0), shown_size(recorder.run_dir(), dir).1.max(leaf.size.1)),
+                accent,
             ));
         }
         // no other route takes over: the run stops at the stage the leaf page stopped at, and what it wrote stays for the replay
@@ -6922,7 +6943,7 @@ mod tests {
             asked: json!([]),
             relation: None,
         };
-        let stopped = |prepared: &[Prepared]| recipe_request(dir.path(), prepared, &[], recipe(RING_RECIPE), &Hubs, ("", ("", "", ""), &[]), &Default::default()).unwrap_err();
+        let stopped = |prepared: &[Prepared]| recipe_request(dir.path(), prepared, &[], recipe(RING_RECIPE), &Hubs, ("", ("", "", ""), &[]), &Default::default(), None).unwrap_err();
         assert_eq!(stopped(&[]), ("shape", "not this shape: no table".to_string()));
         assert_eq!(stopped(&[main]), ("shape", "not this shape: main imp kept no companion".to_string()));
         let plan = plan_record("q", &LEAF_PLAN_STEPS, "browser", StepEnd::Passed).unwrap();
@@ -8845,7 +8866,7 @@ mod tests {
         let cat = Groups(BTreeMap::from([("sdg_07_40".to_string(), main)]));
         let calls = std::sync::Mutex::new(Vec::new());
         let places = crate::l5geo::test_world().places(question);
-        let fill = recipe_request(run.path(), &[prepared], &["dumbbell"], recipe("change"), &cat, (question, ("标题", "导语", "栏目"), &places), &calls);
+        let fill = recipe_request(run.path(), &[prepared], &["dumbbell"], recipe("change"), &cat, (question, ("标题", "导语", "栏目"), &places), &calls, None);
         let events = calls.lock().unwrap().clone();
         (fill, events)
     }
@@ -10439,7 +10460,7 @@ mod tests {
         let (prepared, mode) = last_prepare(&run).unwrap();
         println!("prepare {} {} mode {mode}", prepared.id, prepared.file);
         let started = std::time::Instant::now();
-        let request = leaf_request(&run, &[prepared], &["horizontal_bar"], &catalogue, ("", ("标题", "导语", "栏目")), &Default::default());
+        let request = leaf_request(&run, &[prepared], &["horizontal_bar"], &catalogue, ("", ("标题", "导语", "栏目")), &Default::default(), None);
         let (recipe, fill) = match request {
             Ok((recipe, fill)) => (recipe.name.as_str(), fill),
             Err((recipe, stage, why)) => panic!("stuck {recipe}-{stage} ms {}: {why}", started.elapsed().as_millis()),
@@ -12535,7 +12556,7 @@ mod tests {
             relation: None,
         };
         println!("main {main} file {} claims {} drawn {drawn:?} question {question}", prepared.file, prepared.claims.len());
-        let got = leaf_request(&run, &[prepared], &drawn, &catalogue, (&question, ("标题", "导语", "栏目")), &Default::default());
+        let got = leaf_request(&run, &[prepared], &drawn, &catalogue, (&question, ("标题", "导语", "栏目")), &Default::default(), None);
         match &got {
             Ok((recipe, fill)) => println!("WBRUN {main} recipe {} request made, {} rows", recipe.name, fill["rows"].as_array().map_or(0, Vec::len)),
             Err((recipe, stage, why)) => println!("WBRUN {main} recipe {recipe} stopped at {stage}: {why}"),
@@ -15585,7 +15606,7 @@ for line in sys.stdin:
                 relation: None,
             };
             let cat = Fetched(BTreeMap::from([("imp".to_string(), main), ("impm".to_string(), monthly)]), "");
-            let got = leaf_request(run.path(), &[prepared], &[], &cat, ("", ("标题", "导语", "栏目")), &Default::default()).unwrap_err();
+            let got = leaf_request(run.path(), &[prepared], &[], &cat, ("", ("标题", "导语", "栏目")), &Default::default(), None).unwrap_err();
             assert_eq!(got, ("scmp", "fill", said.to_string()), "{name}: the recipe loop");
         }
     }
@@ -15613,7 +15634,7 @@ for line in sys.stdin:
                 relation,
             };
             let cat = Fetched(BTreeMap::from([("sdg".to_string(), q1_ten_years())]), "");
-            match leaf_request(run.path(), &[prepared], &["horizontal_bar"], &cat, ("", ("标题", "导语", "栏目")), &Default::default()) {
+            match leaf_request(run.path(), &[prepared], &["horizontal_bar"], &cat, ("", ("标题", "导语", "栏目")), &Default::default(), None) {
                 Ok((recipe, _)) => (recipe.name.clone(), String::new()),
                 Err((recipe, stage, why)) => (format!("{recipe}-{stage}"), why),
             }
@@ -16569,7 +16590,7 @@ for line in sys.stdin:
             asked: json!([]),
             relation: None,
         };
-        let got = leaf_request(run.path(), &[prepared], &[], &cat, ("", ("标题", "导语", "栏目")), &Default::default()).unwrap_err();
+        let got = leaf_request(run.path(), &[prepared], &[], &cat, ("", ("标题", "导语", "栏目")), &Default::default(), None).unwrap_err();
         assert_eq!(got, ("scmp", "fill", said.to_string()), "the recipe loop");
         println!("P6MAP stop recipe loop: {:?}", got);
         // the two digits: the rust map's words, and the flow's, on picks a century apart

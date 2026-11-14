@@ -1344,7 +1344,7 @@ mod tests {
             // only the tokens finding_of fills, the name, the value and the later year in every sentence
             for template in [unscoped, scoped] {
                 let tokens = placeholders(template).unwrap();
-                assert!(tokens.iter().all(|t| ["name", "other", "value", "gap", "y0", "y1", "set"].contains(&t.as_str())), "{template}");
+                assert!(tokens.iter().all(|t| ["name", "other", "value", "gap", "rank", "y0", "y1", "set"].contains(&t.as_str())), "{template}");
                 assert!(["name", "value", "y1"].iter().all(|t| tokens.contains(*t)), "{template}");
                 let mut both = placeholders(unscoped).unwrap();
                 both.insert("set".to_string());
@@ -1420,7 +1420,7 @@ mod tests {
             assert!(DEK_FINDINGS.iter().any(|(f, _, _)| *f == finding), "{finding:?}: a headline says a dek's finding");
             for template in [unscoped, scoped] {
                 let tokens = placeholders(template).unwrap();
-                assert!(tokens.iter().all(|t| ["name", "other", "value", "times", "set"].contains(&t.as_str())), "{template}");
+                assert!(tokens.iter().all(|t| ["name", "other", "value", "times", "rank", "set"].contains(&t.as_str())), "{template}");
                 assert!(tokens.contains("name"), "{template}");
                 let mut both = placeholders(unscoped).unwrap();
                 both.extend(tokens.contains("set").then(|| "set".to_string()));
@@ -1428,7 +1428,7 @@ mod tests {
                 let said = fill(template);
                 assert!(typed_numbers(&said).is_empty() && worded_number(&said).is_none(), "{said}");
                 assert!(question_word(&said).is_none() && !said.contains('年'), "{said}");
-                let numbered = said.contains("{lead}") || said.contains("{times}");
+                let numbered = said.contains("{lead}") || said.contains("{times}") || said.contains("{rank}");
                 assert!(numbered || COMPARES.iter().any(|w| said.contains(w)), "{said}: no comparison");
                 assert!(VERBS.iter().any(|w| said.contains(w)), "{said}: no verb");
             }

@@ -628,9 +628,15 @@
         "missing": "whole"
        },
        "scoped_only": true
-      }
+      },
+      {"id": "focus", "kind": "given", "given": "$picks.focus", "when_held": "$picks.focus"}
      ],
      "cases": [
+      {"finding": "Position", "requires": ["$picks.focus"], "subject": "focus", "other": "highest", "lower": true,
+       "named": ["{code}", "{other}"],
+       "facts": {"pos1": {"op": "position", "table": "$shape.main", "by": "$shape.place", "time": "$shape.year", "code": "{code}", "fmt": "n"},
+        "focus1": {"op": "last", "table": "$shape.main", "filter": {"$shape.place": "{code}"}, "from": "$shape.year", "to": "$shape.year", "fmt": "$shape.fmt"}},
+       "words": {"{name}": "{name.{code}}", "{other}": "{name.{other}}", "{rank}": "{pos1}", "{value}": "{focus1}", "{y1}": "{focus1.t}"}},
       {
        "finding": "Level",
        "subject": "highest",
