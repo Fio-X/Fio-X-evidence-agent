@@ -2029,13 +2029,6 @@ impl Filled {
     }
 }
 
-/// What a value in a unit code prints after it: the unit table's number suffix (never a digit, so an index prints none and
-/// its base year stays on the unit line, user 11-05 10:2x), through suffix.
-#[cfg(test)]
-fn num_suffix(code: &str) -> String {
-    suffix(next_pack::unit_number_suffix(code).unwrap_or(""))
-}
-
 /// The suffix a value prints with: its unit's short form, after a space when it holds a letter or a digit.
 fn suffix(short: &str) -> String {
     if short.chars().any(char::is_alphanumeric) {
@@ -2153,12 +2146,6 @@ fn page_words(fill: &mut Value, (title, dek, kicker): (&str, &str, &str)) {
 fn place_names(fill: &Value) -> &Value {
     &fill["knobs"]["labels"]
 }
-
-/// The prefix of a place's name placeholder in a page's words, `{name.<code>}` (finding_of): the leaf prints the name of the
-/// code marked with its name row (the knowledge group's name table, through the ledger), so the model, which must keep every
-/// placeholder, never types which place a number on the page belongs to.
-#[cfg(test)]
-const NAME_PLACEHOLDER: &str = "name.";
 
 
 /// The key of a finding's headline (HEADLINES) beside its dek in finding_of's sentence; fill_of keeps it as the fill's own
@@ -4763,6 +4750,17 @@ pub fn ranking_page_spec(
 mod tests {
     use super::*;
     use crate::shape_registry::{Finding, DEK_FINDINGS, HEADLINES};
+
+    /// What a value in a unit code prints after it: the unit table's number suffix (never a digit, so an index prints none and
+    /// its base year stays on the unit line, user 11-05 10:2x), through suffix.
+    fn num_suffix(code: &str) -> String {
+        suffix(next_pack::unit_number_suffix(code).unwrap_or(""))
+    }
+
+    /// The prefix of a place's name placeholder in a page's words, `{name.<code>}` (finding_of): the leaf prints the name of the
+    /// code marked with its name row (the knowledge group's name table, through the ledger), so the model, which must keep every
+    /// placeholder, never types which place a number on the page belongs to.
+    const NAME_PLACEHOLDER: &str = "name.";
 
     /// The registry template whose relation (a composition) the composition recipe draws, with its stacked100 leaf node
     /// (runtime/leaves_py run.py MAIN; its data the layer's declaration, next_tree_gen), not a template this flow fills: the
