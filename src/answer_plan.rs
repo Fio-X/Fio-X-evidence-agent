@@ -6,7 +6,7 @@
 //! a question gives one block for now (complex pages will give more). Not on the flow: the replay below prints the plans of
 //! a question list, so they are judged against the rubrics before any flow code changes.
 
-use crate::l5geo::{asked_zh, listed_aggregates, question_span, rank_asked_zh, Catalog, Place};
+use crate::l5geo::{asked_zh, asked_zh_in_order, group_aggregate_zh, listed_aggregates, question_span, rank_asked_zh, Catalog, Place};
 
 /// The years a question names (l5geo question_span, the knowledge group's own reading): from a year to a year, or on to
 /// the latest (None); none named. The last n years (近十年, 过去 5 年) are read here as from n before the latest, written
@@ -81,6 +81,12 @@ pub enum Focus {
     LargestFlow,
     Total,
     Against(String),
+    /// A group's own whole, the year it first passed the line (a block of a many-block plan).
+    WholeFirstPast,
+    /// Each member's year past the line: how many were past it at the first year, how many crossed after.
+    EachFirstPast,
+    /// The members still below the line at the last year: the nearest and the lowest.
+    BelowRest,
 }
 
 /// One block: what it proves and the sentence it proves, numbers as {placeholders}.
@@ -99,7 +105,7 @@ pub struct Block {
     pub sentence: String,
 }
 
-/// A plan: the blocks in reading order. One for every question for now.
+/// A plan: the blocks in reading order. One block, unless the question has one of the three many-block shapes (plan).
 #[derive(Clone, Debug)]
 pub struct Plan {
     pub blocks: Vec<Block>,
@@ -261,11 +267,73 @@ pub fn sentence(rel: Rel, focus: &Focus, places: &[String], quantity: &str, year
         (_, Focus::Top(n)) => format!("{span}{quantity}最高的{n}个是{{top.names}}"),
         (_, Focus::Bottom(n)) => format!("{span}{quantity}最低的{n}个是{{bottom.names}}"),
         (_, Focus::Position(x)) => format!("{span}{x}的{quantity}在{{n}}个地方中排第{{rank}}"),
+        (_, Focus::WholeFirstPast) => format!("{who}整体在{{whole.year}}年首次过线{{line}}，{{last.year}}年为{{whole.last}}"),
+        (_, Focus::EachFirstPast) => {
+            "{first.year}年已在线{line}以上的有{n.first}个；此后{n.crossed}个陆续过线，最多的一年是{peak.year}年（{peak.n}个）".to_string()
+        }
+        (_, Focus::BelowRest) => "到{last.year}年仍未过线的{n.below}个里，{near.name}最接近（{near.v}），{low.name}最低（{low.v}）".to_string(),
     }
 }
 
-/// The plan of a question on the catalogue `c`: one block.
+/// Words after which a question asks whether the first quantity's leader also leads the others (是不是也最富).
+const ALSO_ZH: [&str; 4] = ["是不是也", "是否也", "是不是同样", "也是不是"];
+/// Words that ask where a whole comes from and, beside them, where it goes.
+const FROM_ZH: [&str; 3] = ["从哪来", "从哪里来", "来自哪"];
+const TO_ZH: [&str; 6] = ["到哪去", "用到哪", "用在哪", "去了哪", "去向", "流向"];
+/// Words that a threshold question asks of each member of a group.
+const EACH_ZH: [&str; 4] = ["各国", "各成员国", "各成员", "每个成员国"];
+
+/// The plan of a question on the catalogue `c`: one block, or, for three shapes of question, several (complex pages,
+/// roadmap step 5; works/complex-split/design.md), each block one sentence:
+/// - the first quantity's leader and its position in the others (人最多的，是不是也最富、最城市化): a block per quantity,
+///   in the question's order, the first its highest (or lowest), each later one that place's position;
+/// - a threshold asked of each member of a group (欧盟各国哪年跨过 20%): the group's own whole when it has rows of its own,
+///   each member's year, and the members still below at the last year;
+/// - where a whole comes from and where it goes (能源从哪来、用到哪去): its total, its parts, its flows.
 pub fn plan(c: &Catalog, question: &str) -> Plan {
+    let one = one_block(c, question);
+    let Some(b) = one.blocks.first().cloned() else { return one };
+    let q = plain(question);
+    let with = |rel: Rel, focus: Focus, quantity: Vec<(String, String)>| {
+        let name = quantity.first().map_or("{quantity}".to_string(), |(_, zh)| zh.clone());
+        let sentence = sentence(rel, &focus, &b.place_words, &name, &b.years);
+        Block { rel, focus, quantity, sentence, ..b.clone() }
+    };
+    if let Some(at) = ALSO_ZH.iter().filter_map(|w| q.find(w)).min() {
+        let asked: Vec<(String, String)> = asked_zh_in_order(question).into_iter().map(|a| (a.id, a.zh)).collect();
+        if asked.len() >= 2 {
+            let head = &q[..at];
+            let low = any(head, &MIN_ZH) && !any(head, &MAX_ZH);
+            let lead = if low { "{b1.min.name}" } else { "{b1.max.name}" };
+            let mut blocks = vec![with(Rel::Ranking, if low { Focus::Min } else { Focus::Max }, vec![asked[0].clone()])];
+            for a in &asked[1..] {
+                blocks.push(with(Rel::Ranking, Focus::Position(lead.to_string()), vec![a.clone()]));
+            }
+            return Plan { blocks };
+        }
+    }
+    if b.rel == Rel::Threshold && any(&q, &EACH_ZH) {
+        let mut blocks = Vec::new();
+        if group_aggregate_zh(question).is_some() {
+            blocks.push(with(Rel::Threshold, Focus::WholeFirstPast, b.quantity.clone()));
+        }
+        blocks.push(with(Rel::Threshold, Focus::EachFirstPast, b.quantity.clone()));
+        blocks.push(with(Rel::Ranking, Focus::BelowRest, b.quantity.clone()));
+        return Plan { blocks };
+    }
+    if any(&q, &FROM_ZH) && any(&q, &TO_ZH) {
+        let blocks = vec![
+            with(Rel::Magnitude, Focus::Total, b.quantity.clone()),
+            with(Rel::Composition, Focus::LargestPart, b.quantity.clone()),
+            with(Rel::Flow, Focus::LargestFlow, b.quantity.clone()),
+        ];
+        return Plan { blocks };
+    }
+    one
+}
+
+/// The one-block plan of a question on the catalogue `c`.
+fn one_block(c: &Catalog, question: &str) -> Plan {
     let (_, words) = c.scope(question);
     let mut places: Vec<String> =
         c.places(question).into_iter().filter_map(|p| if let Place::Country(x) = p { Some(x) } else { None }).collect();
@@ -315,6 +383,57 @@ mod tests {
         assert_eq!(years_of("过去 5 年的房价"), Some((-5, None)));
         assert_eq!(years_of("2015 到 2024 年"), Some((2015, Some(2024))));
         assert_eq!(years_of("各国人口"), None);
+    }
+
+    /// The three many-block shapes (works/complex-split/design.md) give the blocks of the hand-written plans of complex
+    /// samples A, B and C (works/complex-*/), each with at least one other question of its shape on other data; a
+    /// question of none of them keeps its one block.
+    #[test]
+    fn three_question_shapes_give_the_blocks_of_the_hand_written_plans() {
+        let c = crate::l5geo::test_world();
+        let blocks = |q: &str| -> Vec<(Rel, Focus, Vec<String>)> {
+            plan(&c, q).blocks.into_iter().map(|b| (b.rel, b.focus, b.quantity.into_iter().map(|(id, _)| id).collect())).collect()
+        };
+        let ids = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let lead = Focus::Position("{b1.max.name}".into());
+        // A: the first quantity's leader, then its position in each later one, in the question's order
+        assert_eq!(
+            blocks("东盟各国：人最多的，是不是也最富、最城市化？"),
+            [
+                (Rel::Ranking, Focus::Max, ids(&["population"])),
+                (Rel::Ranking, lead.clone(), ids(&["gdp_pc"])),
+                (Rel::Ranking, lead.clone(), ids(&["urban_share"])),
+            ]
+        );
+        assert_eq!(
+            blocks("金砖国家里人均GDP最高的，是不是也城镇化率最高？"),
+            [(Rel::Ranking, Focus::Max, ids(&["gdp_pc"])), (Rel::Ranking, lead, ids(&["urban_share"]))]
+        );
+        let low = blocks("欧盟里人均GDP最低的，是否也城镇化率最低？");
+        assert_eq!((low[0].1.clone(), low[1].1.clone()), (Focus::Min, Focus::Position("{b1.min.name}".into())));
+        // B: a threshold asked of each member: the group's whole when it has rows of its own, each member, the rest below
+        let b: Vec<(Rel, Focus)> = blocks("欧盟各国哪年跨过 20%？").into_iter().map(|(r, f, _)| (r, f)).collect();
+        assert_eq!(b, [(Rel::Threshold, Focus::WholeFirstPast), (Rel::Threshold, Focus::EachFirstPast), (Rel::Ranking, Focus::BelowRest)]);
+        let b2 = blocks("欧盟各成员国的人均GDP哪年突破 3 万欧元？");
+        assert_eq!(b2.iter().map(|x| x.1.clone()).collect::<Vec<_>>(), [Focus::WholeFirstPast, Focus::EachFirstPast, Focus::BelowRest]);
+        assert!(b2.iter().all(|x| x.2 == ids(&["gdp_pc"])), "{b2:?}");
+        let asean: Vec<Focus> = blocks("东盟各国哪年城镇化率跨过 50%？").into_iter().map(|x| x.1).collect();
+        assert_eq!(asean, [Focus::EachFirstPast, Focus::BelowRest], "a group with no rows of its own has no whole");
+        // C: where a whole comes from and where it goes: its total, its parts, its flows
+        let three = [(Rel::Magnitude, Focus::Total), (Rel::Composition, Focus::LargestPart), (Rel::Flow, Focus::LargestFlow)];
+        for q in ["德国的能源从哪来、用到哪去？", "法国的能源从哪里来，用在哪里？"] {
+            let got = blocks(q);
+            assert_eq!(got.iter().map(|(r, f, _)| (*r, f.clone())).collect::<Vec<_>>(), three, "{q}");
+            assert!(got.iter().all(|x| x.2 == ids(&["energy_balance"])), "{q}: {got:?}");
+        }
+        // none of the three shapes: one block, as before
+        for q in ["德国哪年跨过 20%？", "德国的能源从哪来？", "2023 年金砖国家 GDP 增速排名", "韩国比日本、美国的人均寿命长多少？", "人均GDP最高的是哪国？"] {
+            assert_eq!(plan(&c, q).blocks.len(), 1, "{q}");
+        }
+        // every block's sentence is the program's, numbers as placeholders
+        for b in plan(&c, "东盟各国：人最多的，是不是也最富、最城市化？").blocks {
+            assert!(!b.sentence.chars().any(|ch| ch.is_ascii_digit()), "{}", b.sentence);
+        }
     }
 
     /// The plans of Q_CASES rows (qid, question) on the real catalogue, one line each: qid, relation number, focus, places,

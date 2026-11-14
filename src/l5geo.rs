@@ -1267,6 +1267,35 @@ pub fn asked_zh(question_zh: &str) -> Vec<Asked> {
     asked_of_chars(measure_chars(question_zh))
 }
 
+/// asked_zh's quantities in the order the question first names them (the answer plan's blocks follow the question):
+/// each family at the earliest place one of its words stands in the question; the set is asked_zh's.
+#[cfg_attr(not(test), allow(dead_code))] // read by the answer plan prototype only (built for tests) until it is on the flow
+pub fn asked_zh_in_order(question_zh: &str) -> Vec<Asked> {
+    let q = measure_chars(question_zh);
+    let mut found = asked_of_chars(q.clone());
+    let first = |a: &Asked| -> usize {
+        measure_families().iter().find(|f| f.id == a.id).map_or(usize::MAX, |f| {
+            f.words
+                .iter()
+                .filter_map(|w| {
+                    let w = measure_chars(w);
+                    (!w.is_empty() && w.len() <= q.len()).then(|| q.windows(w.len()).position(|x| x == &w[..])).flatten()
+                })
+                .min()
+                .unwrap_or(usize::MAX)
+        })
+    };
+    found.sort_by_key(|a| first(a));
+    found
+}
+
+/// The aggregate code of a group the question names that has rows of its own (PEER_AGGREGATES_ZH: 欧盟 is EUU), the whole
+/// a page about its members can also draw; none for a group with no rows of its own (东盟) or no group.
+#[cfg_attr(not(test), allow(dead_code))] // read by the answer plan prototype only (built for tests) until it is on the flow
+pub fn group_aggregate_zh(question_zh: &str) -> Option<&'static str> {
+    PEER_AGGREGATES_ZH.iter().find(|(w, _)| question_zh.contains(w)).map(|(_, code)| *code)
+}
+
 /// The ids of the quantities the Chinese question asks for once the chosen table is known: its reviewed Chinese name
 /// (`table_zh`, up to its first bracket or dash, where an edition or partner note starts), said whole in the question, is
 /// that one table's quantity, so its span is blanked before the family words are matched and a family word inside it is
