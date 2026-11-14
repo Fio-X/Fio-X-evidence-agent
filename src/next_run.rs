@@ -4094,10 +4094,14 @@ pub(crate) async fn pages_of(
     let mut answers = Vec::new();
     let mut lead = 0;
     let (first, shown, leader) = loop {
+        let before = manifested(recorder.run_dir());
         match page_of_block(recorder, model, question, std::slice::from_ref(&blocks[lead].1), catalogue, cancel, (1, None)).await {
             Ok(page) => break page,
             Err(stopped @ (Stop::Page { .. } | Stop::Refused { .. } | Stop::NoReply { .. }))
-                if !planned.shared.is_empty() && lead + 1 < blocks.len() && recorder.resume_under_last_accepted() =>
+                if !planned.shared.is_empty()
+                    && lead + 1 < blocks.len()
+                    && manifested(recorder.run_dir()) == before
+                    && recorder.resume_under_last_accepted() =>
             {
                 recorder.program_event(BLOCK_LEFT_OUT_EVENT, json!({"block": lead + 1, "table": blocks[lead].1.id, "why": stopped.to_string()}))?;
                 answers.push(format!("Block {} ({}) was left out: {stopped}", lead + 1, blocks[lead].1.id));
@@ -4117,14 +4121,17 @@ pub(crate) async fn pages_of(
             matches!(&b.focus, crate::answer_plan::Focus::Position(of) if of == crate::answer_plan::FIRST_LEADER)
         });
         let focus = leader.as_deref().filter(|_| asks_place);
+        let before = manifested(recorder.run_dir());
         match page_of_block(recorder, model, question, std::slice::from_ref(table), catalogue, cancel, (i + 1, focus)).await {
             Ok((answer, shown, _)) => {
                 answers.push(answer);
                 pages.push(shown);
                 drawn.push(label.as_str());
             }
-            // a page step or a check of the page stopped it, or the text step's reply was refused: that block only
-            Err(stopped @ (Stop::Page { .. } | Stop::Refused { .. } | Stop::NoReply { .. })) => {
+            // a page step or a check of the page stopped it, or the text step's reply was refused: that block only, while it
+            // published nothing; a block whose published page a check then stopped stops the run (review 11-15: its folder
+            // and manifest would stay among the run's deliveries, artifact.rs publication_candidates, verify.rs)
+            Err(stopped @ (Stop::Page { .. } | Stop::Refused { .. } | Stop::NoReply { .. })) if manifested(recorder.run_dir()) == before => {
                 if recorder.resume_under_last_accepted() {
                     recorder.program_event(BLOCK_LEFT_OUT_EVENT, json!({"block": i + 1, "table": table.id, "why": stopped.to_string()}))?;
                 }
@@ -4148,6 +4155,21 @@ pub(crate) async fn pages_of(
     )?;
     answers.push(format!("The {} blocks are stacked at {stacked_ref} (sha256 {stacked_sha256}).", pages.len()));
     Ok(answers.join("\n"))
+}
+
+/// The run's delivered publications as the delivery scan reads them (artifact.rs publication_candidates): each folder of
+/// publications/ but plans, qa and rejected that holds a manifest.json, sorted; a block left out must add none.
+fn manifested(run_dir: &Path) -> Vec<String> {
+    let mut dirs: Vec<String> = std::fs::read_dir(run_dir.join("publications"))
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| e.path().join("manifest.json").is_file())
+        .filter_map(|e| e.file_name().to_str().map(str::to_string))
+        .filter(|n| !matches!(n.as_str(), "plans" | "qa" | "rejected"))
+        .collect();
+    dirs.sort();
+    dirs
 }
 
 /// The stacked page of a many-block page: its path, its sha256 and the block folders it frames, in order.
@@ -4937,6 +4959,22 @@ pub fn ranking_page_spec(
 mod tests {
     use super::*;
     use crate::shape_registry::{Finding, DEK_FINDINGS, HEADLINES};
+
+    /// A block left out of a many-block page must add no delivery (review 11-15): the folders the delivery scan reads are the
+    /// publications with a manifest, never plans, qa or rejected; a folder with no manifest is none.
+    #[test]
+    fn manifested_lists_the_deliveries_the_scan_reads() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(manifested(dir.path()).is_empty());
+        for (sub, with) in [("column-b2", true), ("column", true), ("flow-b3", false), ("qa/column", true), ("rejected", true), ("plans", true)] {
+            let d = dir.path().join("publications").join(sub);
+            std::fs::create_dir_all(&d).unwrap();
+            if with {
+                std::fs::write(d.join("manifest.json"), "{}").unwrap();
+            }
+        }
+        assert_eq!(manifested(dir.path()), ["column", "column-b2"]);
+    }
 
     /// The stacked page frames each block at the size its browser check showed (sample A run 5: frames at height 0 hid all
     /// three blocks): the 1440 screenshot's PNG width and height, read from the block's own QA folder; no record, no size.
