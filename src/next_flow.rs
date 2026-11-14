@@ -2824,6 +2824,11 @@ pub trait Catalogue: Sync {
     fn split_ask(&self, _question_zh: &str) -> Option<crate::answer_plan::SplitAsk> {
         None
     }
+    /// The table of one quantity family for a block of a many-block page, by the family's own search words and registered
+    /// tables (the knowledge group's family_table, through its door); None when this catalogue reads none.
+    fn family_table(&self, _question_zh: &str, _family: &str) -> Option<crate::l5geo::Candidate> {
+        None
+    }
     /// The plan of the question for a checked shape answer, the answer held once more against the request by the knowledge
     /// group (Err with its words when it does not hold); None when this catalogue reads none.
     fn answer_plan(
@@ -3325,6 +3330,7 @@ pub(crate) fn knowledge_call<'a>(
         Ok(Reply::SplitAsk(ask)) => json!({"shape_ask": ask}),
         Ok(Reply::AnswerPlan(Ok(plan))) => json!({"plan": plan}),
         Ok(Reply::AnswerPlan(Err(why))) => json!({"refused": why}),
+        Ok(Reply::FamilyTable(found)) => json!({"table": found.as_ref().map(|c| &c.id)}),
         Ok(Reply::HeldProbe { url, .. }) => json!({"url": url}),
         Ok(Reply::Held(held)) => json!({"held": format!("{held:?}")}),
         Ok(Reply::UnitAdditive(additive)) => json!(additive),
@@ -3806,6 +3812,14 @@ impl Catalogue for GroupCatalogue {
         match self.call("split_ask", json!({"question": question_zh}), request) {
             next_knowledge::Reply::SplitAsk(ask) => Some(ask),
             _ => unreachable!("the knowledge group answered shape_ask with another reply"),
+        }
+    }
+
+    fn family_table(&self, question_zh: &str, family: &str) -> Option<crate::l5geo::Candidate> {
+        let request = next_knowledge::Request::FamilyTable { catalogue: &self.opened, question: question_zh, family };
+        match self.call("family_table", json!({"question": question_zh, "family": family}), request) {
+            next_knowledge::Reply::FamilyTable(found) => found,
+            _ => unreachable!("the knowledge group answered family_table with another reply"),
         }
     }
 
@@ -5269,10 +5283,20 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
     }
     // each block of a plan that names its own quantity per block gets its table from the program; a block whose quantity
     // no offered table holds is left out and kept as such (the page answers part of the question)
-    let blocks = plan
-        .as_ref()
-        .and_then(|p| block_tables(p, &ranking.asked))
-        .filter(|blocks| blocks.iter().any(|(_, t)| t.as_ref().is_some_and(|t| offers.iter().any(|o| &o.id == t))));
+    let mut blocks = plan.as_ref().and_then(|p| block_tables(p, &ranking.asked));
+    // a block whose quantity no listed table holds by id gets the knowledge group's table of its family, listed after them
+    for (family, table) in blocks.iter_mut().flatten() {
+        if table.is_none() {
+            if let Some(found) = catalogue.family_table(question, family) {
+                *table = Some(found.id.clone());
+                if !offers.iter().any(|o| o.id == found.id) {
+                    offers.push(found);
+                }
+            }
+        }
+    }
+    record_group_calls(recorder, catalogue)?;
+    let blocks = blocks.filter(|blocks| blocks.iter().any(|(_, t)| t.as_ref().is_some_and(|t| offers.iter().any(|o| &o.id == t))));
     if let Some(blocks) = &blocks {
         recorder.program_event(
             BLOCK_TABLES_EVENT,
@@ -5694,7 +5718,16 @@ fn block_tables(plan: &crate::answer_plan::Plan, asked: &[crate::l5geo::Asked]) 
     if ids.len() < 2 || ids.len() != plan.blocks.len() || distinct.len() != ids.len() {
         return None;
     }
-    Some(ids.into_iter().map(|id| (id.clone(), asked.iter().find(|a| &a.id == id).and_then(|a| a.offered.first().cloned()))).collect())
+    // by id only: the family's registered tables (Asked::tables), never a title that only names its words
+    let registered = |a: &crate::l5geo::Asked, t: &str| {
+        let t = t.split('@').next().unwrap_or(t);
+        a.tables.iter().any(|p| t.starts_with(p.as_str()))
+    };
+    Some(
+        ids.into_iter()
+            .map(|id| (id.clone(), asked.iter().find(|a| &a.id == id).and_then(|a| a.offered.iter().find(|t| registered(a, t)).cloned())))
+            .collect(),
+    )
 }
 
 /// The composition's second fetch (composition_fetch) of the main, when it is one: fetched by the program, its file kept
@@ -8834,19 +8867,25 @@ mod tests {
             quantity: vec![(id.to_string(), String::new())],
             sentence: String::new(),
         };
-        let asked = |id: &str, offered: &[&str]| crate::l5geo::Asked {
+        let asked = |id: &str, tables: &[&str], offered: &[&str]| crate::l5geo::Asked {
             id: id.into(),
             zh: String::new(),
-            tables: Vec::new(),
+            tables: tables.iter().map(|t| t.to_string()).collect(),
             offered: offered.iter().map(|t| t.to_string()).collect(),
         };
-        let listed = [asked("population", &["SP.POP.TOTL", "demo_pjan"]), asked("gdp_pc", &["NY.GDP.PCAP.CD"]), asked("urban", &[])];
+        // a listed table that only names the family's words in its title (a survey's per capita, total population) is no
+        // block's table: sample A's first run drew its population block from SI.SPR.PCAP@2
+        let listed = [
+            asked("population", &["SP.POP.TOTL", "demo_pjan"], &["SI.SPR.PCAP@2", "SP.POP.TOTL@2", "demo_pjan"]),
+            asked("gdp_pc", &["NY.GDP.PCAP"], &["NY.GDP.PCAP.CD@2"]),
+            asked("urban", &["SP.URB.TOTL.IN"], &["SI.SPR.PCAP@2"]),
+        ];
         let plan = Plan { blocks: vec![block("population"), block("gdp_pc"), block("urban")], partial: false };
         assert_eq!(
             block_tables(&plan, &listed),
             Some(vec![
-                ("population".into(), Some("SP.POP.TOTL".into())),
-                ("gdp_pc".into(), Some("NY.GDP.PCAP.CD".into())),
+                ("population".into(), Some("SP.POP.TOTL@2".into())),
+                ("gdp_pc".into(), Some("NY.GDP.PCAP.CD@2".into())),
                 ("urban".into(), None)
             ])
         );

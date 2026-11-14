@@ -2806,6 +2806,19 @@ impl Catalog {
     /// the model sees any, unless `months`: the caller read that the question asks for months (a month it names, the
     /// latest months), which the annual table, ending a year or two earlier, cannot answer; nor when the annual table ends
     /// before `latest_year`, the latest year the caller read the question to name.
+    /// The table of one quantity family for a block of a many-block page (owner 11-14 16:0x item 5): the first table the
+    /// ranking gives for the family's own English search words whose id is one of the family's registered tables (Asked
+    /// holds, by id only; a title that only names the words, as a survey's per-capita table names total population, is
+    /// not one). None for a family the file does not list, or when no table of it is ranked.
+    pub fn family_table(&self, question_zh: &str, family: &str) -> Option<Candidate> {
+        let f = measure_families().iter().find(|f| f.id == family)?;
+        let held = |id: &str| {
+            let id = id.split('@').next().unwrap_or(id);
+            f.tables.iter().any(|p| id.starts_with(p.as_str()))
+        };
+        self.rank(question_zh, std::slice::from_ref(&f.en)).candidates.into_iter().find(|c| held(&c.id))
+    }
+
     pub fn top5(&self, question_zh: &str, texts: &[String], months: bool, latest_year: Option<i32>, first_year: Option<i32>) -> Ranking {
         let mut r = self.rank(question_zh, texts);
         let (candidates, refused) =

@@ -158,6 +158,8 @@ pub enum Request<'a> {
     /// The shape request of a question the scope refusal let through (answer_plan::split_ask): the three many-block shapes,
     /// the one its words point to first, and the quantities it names as the slots a reply picks from.
     SplitAsk { catalogue: &'a Opened, question: &'a str },
+    /// The table of one quantity family for a block of a many-block page (l5geo::Catalog::family_table).
+    FamilyTable { catalogue: &'a Opened, question: &'a str, family: &'a str },
     /// The plan of a question for the model's shape reply (answer_plan::plan_for), the reply held against the request
     /// first (answer_plan::check_reply): Err with the refusal's words when it does not hold.
     AnswerPlan {
@@ -292,6 +294,7 @@ pub enum Reply<'a> {
     ScopeRefused(Option<crate::l5geo::ScopeRefusal>),
     SplitAsk(crate::answer_plan::SplitAsk),
     AnswerPlan(Result<crate::answer_plan::Plan, String>),
+    FamilyTable(Option<crate::l5geo::Candidate>),
     GroupBasis(Option<crate::l5geo::GroupBasis>),
     Refs(OpenedRefs),
     Shape(Shape),
@@ -362,6 +365,7 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
         Request::RankAsked { question } => Reply::RankAsked(crate::l5geo::rank_asked_zh(question)),
         Request::ScopeRefused { question, this_year } => Reply::ScopeRefused(crate::l5geo::scope_refused_zh(question, this_year)),
         Request::SplitAsk { catalogue, question } => Reply::SplitAsk(crate::answer_plan::split_ask(&catalogue.catalog, question)),
+        Request::FamilyTable { catalogue, question, family } => Reply::FamilyTable(catalogue.catalog.family_table(question, family)),
         Request::AnswerPlan { catalogue, question, reply } => {
             let ask = crate::answer_plan::split_ask(&catalogue.catalog, question);
             Reply::AnswerPlan(
