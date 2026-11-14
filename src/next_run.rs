@@ -19,7 +19,7 @@ use serde_json::{json, Map, Value};
 
 use crate::agent_loop::ToolRunner;
 use crate::next_flow::{
-    prepare_claims, record_group_calls, Ask, Asker, Catalogue, Choice, PrepareStep, Prepared,
+    record_group_calls, Ask, Asker, Catalogue, Choice, PrepareStep, Prepared,
     Recorder, Stop, Verdict, VISION_QUESTIONS,
 };
 use crate::next_pack;
@@ -4011,6 +4011,16 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
     let blocks: Vec<&Prepared> =
         planned.block_tables.iter().filter_map(|id| planned.prepared.iter().find(|p| &p.id == id)).collect();
     if blocks.len() < 2 {
+        // a plan of many blocks that share one table (过线和时间, 由总到分) is drawn as its first block for now: the later
+        // blocks' own fetches are not built yet, and each is kept as left out
+        if let Some(plan) = planned.plan.as_ref().filter(|p| p.blocks.len() > 1) {
+            for i in 2..=plan.blocks.len() {
+                recorder.program_event(
+                    BLOCK_LEFT_OUT_EVENT,
+                    json!({"block": i, "table": null, "why": "the blocks share one table and a later block's own fetch is not built yet"}),
+                )?;
+            }
+        }
         return page_from(recorder, model, question, &planned.prepared, catalogue, cancel).await;
     }
     // a many-block page (owner 11-14 16:5x item 2): each block's page from its own table, by the same steps and checks;

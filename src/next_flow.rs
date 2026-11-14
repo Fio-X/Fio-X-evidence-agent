@@ -5138,7 +5138,8 @@ fn fill_steps(
 /// sheet → one claims pick over every table (model) → for each table the fetch again with its sheet and picks, which registers
 /// and verifies the claims. Three model calls whatever the number of tables: with no prepare spec the table pick also lists
 /// under each table what its fetch parameters leave to the question, answered in the same call (fill_steps). With a spec, a
-/// picked table with no step there stops as not wired.
+/// picked table with no step there stops as not wired. The flow runs prepare_planned; this is its tests' entry.
+#[cfg(test)]
 pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
     recorder: &mut Recorder<'_>,
     model: &mut (dyn Asker + '_),
