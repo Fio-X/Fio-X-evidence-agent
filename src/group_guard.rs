@@ -160,7 +160,8 @@ fn door_path_holds(path: &str, rel: &str) -> bool {
     }
 }
 
-/// A row's paths with each `{recipe}` written out once per registered recipe name; a path without one is kept as it is.
+/// A row's paths with each `{recipe}` written out once per registered recipe name, and each `{block}` once per later block
+/// of a many-block page, 2 to 9 (owner 11-14 20:5x, next_gate::block_dir); a path without either is kept as it is.
 fn recipe_paths(paths: Vec<String>, names: &[String]) -> Vec<String> {
     paths
         .into_iter()
@@ -168,8 +169,15 @@ fn recipe_paths(paths: Vec<String>, names: &[String]) -> Vec<String> {
             true => names.iter().map(|n| p.replace("{recipe}", n)).collect(),
             false => vec![p],
         })
+        .flat_map(|p| match p.contains("{block}") {
+            true => BLOCKS.map(|b| p.replace("{block}", &b.to_string())).to_vec(),
+            false => vec![p],
+        })
         .collect()
 }
+
+/// The later blocks of a many-block page a door's `{block}` stands for.
+const BLOCKS: [usize; 8] = [2, 3, 4, 5, 6, 7, 8, 9];
 
 fn strings(row: &Value, key: &str) -> Vec<String> {
     row.get(key)
@@ -1992,6 +2000,11 @@ mod tests {
         let paths = recipe_paths(vec!["publications/{recipe}/".into(), "publications/qa/{recipe}/".into(), "x/".into()], &recipe_names(registry));
         assert_eq!(paths, ["publications/column/", "publications/ring-2/", "publications/qa/column/", "publications/qa/ring-2/", "x/"]);
         assert!(recipe_paths(vec!["publications/{recipe}/".into()], &[]).is_empty(), "no recipe, no folder");
+        // a later block's folder: each registered name with -b2 to -b9, nothing else
+        let blocks = recipe_paths(vec!["publications/{recipe}-b{block}/".into()], &["column".to_string()]);
+        assert_eq!(blocks.len(), 8);
+        assert_eq!((blocks[0].as_str(), blocks[7].as_str()), ("publications/column-b2/", "publications/column-b9/"));
+        assert!(recipe_paths(vec!["publications/{recipe}-b{block}/".into()], &[]).is_empty(), "no recipe, no block folder");
     }
 
     #[test]

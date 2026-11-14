@@ -2678,9 +2678,13 @@
     "paths": [
      "publications/{recipe}/",
      "publications/qa/{recipe}/",
-     "publications/plans/{recipe}.json"
+     "publications/plans/{recipe}.json",
+     "publications/{recipe}-b{block}/",
+     "publications/qa/{recipe}-b{block}/",
+     "publications/plans/{recipe}-b{block}.json"
     ],
     "why": "the new route's flow group (next_flow.rs visual_call, publish_leaf_page) calls the visual group's command next_visual::call inside this door, so a write the command ever makes is judged as the visual group's. Measured 10-29 (an observe run of the q1 replay, NEWSROOM_GROUP_HANDOFF_OBSERVE=1): the door wrote publications/column/ with its index.html and manifest.json, and publications/qa/column/ with its spec.json, nothing else. Since 10-29 (owner's nod on the leaf plan, A) it also writes the page's plan publications/plans/{recipe}.json with the manifest, where verify reads a publication's plan: that one file per recipe and the plans folder it sits in, no other name there (group_guard.rs door_path_holds). Held to the page folder, the report folder and that plan by paths, {recipe} standing for each page recipe of the leaf registry (runtime/leaves_py/knobs.json recipes, plain lowercase names; group_guard.rs recipe_names): any other write inside, a visual path or an unregistered name included, is refused. A new recipe's first run is observed the same way.",
+    "block_paths": "owner 11-14 20:5x: a later block of a many-block page is published beside its first under <recipe>-b<n> (next_gate::block_dir); {block} stands for 2 to 9 only, with {recipe} each registered recipe name, the same three paths and no other",
     "remove_when": "when the visual group's command runs as a command of its own"
    }
   ]
