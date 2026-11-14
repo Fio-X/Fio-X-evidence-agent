@@ -4374,6 +4374,18 @@ mod tests {
         assert_eq!(asked_beside_table(q, "SP.POP.65UP.TO@2", Some("65 岁和 65 岁以上女性人口（占女性人口的百分比）")), ["pop65", "population"]);
         // the name up to its edition note is what the question says; the family the table holds stays
         assert_eq!(asked_beside_table("德国天然气进口", "nrg_ti_gas", Some("天然气进口（年度）")), ["energy_imports"]);
+        // a World Bank growth rate with no reviewed name (dev round 15 n28: 人口增长率 printed "also asks about population,
+        // this half cannot be answered"): the population family holds the growth table, so its 人口增长 is the table's own
+        // quantity; a quantity asked beside it stays, and the total's table still holds population
+        let q = "日本、韩国、意大利、尼日尔 2024 年的人口增长率各是多少？";
+        assert_eq!(ids(q), ["population"]);
+        assert_eq!(asked_beside_table(q, "SP.POP.GROW@2", None), ["population"]);
+        assert!(asked_zh(q).iter().all(|a| a.holds("SP.POP.GROW@2")));
+        let q = "日本、韩国 2024 年的人口增长率和人均GDP";
+        let both = asked_beside_table(q, "SP.POP.GROW@2", None);
+        assert!(both.contains(&"population".to_string()) && both.contains(&"gdp_pc".to_string()), "{both:?}");
+        assert!(asked_zh(q).iter().any(|a| a.id == "gdp_pc" && !a.holds("SP.POP.GROW@2")));
+        assert!(asked_zh("各国总人口").iter().all(|a| a.holds("SP.POP.TOTL@2") && !a.holds("SP.POP.65UP.TO@2")));
     }
 
     fn cand(id: &str, score: f64) -> Candidate {
