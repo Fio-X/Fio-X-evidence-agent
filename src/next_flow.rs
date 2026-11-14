@@ -5232,7 +5232,13 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
             BLOCK_TABLES_EVENT,
             json!({"blocks": blocks.iter().map(|(q, t)| json!({"quantity": q, "table": t})).collect::<Vec<_>>()}),
         )?;
-        let order: Vec<&String> = blocks.iter().filter_map(|(_, t)| t.as_ref()).collect();
+        // a table two blocks share is offered once, at the first of them
+        let mut order: Vec<&String> = Vec::new();
+        for t in blocks.iter().filter_map(|(_, t)| t.as_ref()) {
+            if !order.contains(&t) {
+                order.push(t);
+            }
+        }
         offers = order.iter().filter_map(|id| offers.iter().find(|o| &&o.id == id).cloned()).collect();
     }
     // With no spec, each listed table's fetch parameters are drafted from the catalogue before the pick, from the codes its
