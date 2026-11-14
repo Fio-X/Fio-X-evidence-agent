@@ -1763,7 +1763,9 @@ fn parts_selects(d: &J, page_in: &J) -> Result<(J, Vec<J>, Vec<J>), String> {
     let target = number_of(d.g("target"), &view)?;
     view.set("target", J::Int(target));
     let mut rows: Vec<J> = page_in.g("rows").arr().to_vec();
-    rows.extend(page_in.g("sum_rows").arr().iter().cloned());
+    // a sum input the main already holds (one place's split, whose parts are fetched apart too) is the same cell: read once
+    let held: BTreeSet<String> = rows.iter().map(|r| st(r.g("src"))).collect();
+    rows.extend(page_in.g("sum_rows").arr().iter().filter(|r| !held.contains(&st(r.g("src")))).cloned());
     let mut sels = Vec::new();
     for s in d.g("selects").arr() {
         let mut x = subx(&J::Obj(s.obj().iter().filter(|(k, _)| k != "given").cloned().collect()), &view, &[])?;

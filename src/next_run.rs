@@ -1486,9 +1486,12 @@ fn official_flow(s: &mut Shape, _: &[(&str, &[Value])], _: &dyn Catalogue) -> Re
 fn composition_groups(s: &mut Shape, tables: &[(&str, &[Value])], catalogue: &dyn Catalogue) -> Result<(), String> {
     let id = s.main.strip_suffix("@2").unwrap_or(&s.main).to_string();
     let mut found = None;
+    // one place whose parts the program fetched apart (a block of a table its blocks share): its main may hold the total
+    // beside the other codes, and its one bar is the page
+    let single = s.dims.get("geo").is_some_and(|g| g.len() == 1) && tables[1..].iter().any(|(t, _)| *t == s.main);
     for (dim, codes) in &s.dims {
         let total = next_params::parts(&id, dim).into_iter().find(|p| p.level == next_params::PART_LEVELS[0]);
-        let Some(total) = total.filter(|t| codes.len() == 1 && codes.contains(&t.code)) else { continue };
+        let Some(total) = total.filter(|t| (codes.len() == 1 || single) && codes.contains(&t.code)) else { continue };
         let groups = next_params::group_inputs(&id, dim)?;
         if !groups.is_empty() {
             found = Some(Composition { dim: dim.clone(), total: total.code, groups });
@@ -1528,7 +1531,7 @@ fn composition_groups(s: &mut Shape, tables: &[(&str, &[Value])], catalogue: &dy
     ranked.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
     let bars: BTreeSet<String> = idims.get(place).cloned().unwrap_or_default();
     let top: Vec<String> = ranked.iter().take(bars.len()).map(|(_, c)| c.clone()).collect();
-    if bars.len() < 2 || top.iter().cloned().collect::<BTreeSet<_>>() != bars {
+    if bars.len() < if single { 1 } else { 2 } || top.iter().cloned().collect::<BTreeSet<_>>() != bars {
         return Err(format!(
             "the sum inputs of {} hold places {bars:?}, not the main's {} countries with the largest {} at {year}",
             s.main,
@@ -9280,13 +9283,51 @@ mod tests {
             asked: json!([]),
             relation: None,
         };
-        let (args, event) = crate::next_flow::composition_fetch(&first, &main, &Hubs).unwrap().unwrap();
+        let (args, event) = crate::next_flow::composition_fetch(&first, &main, &Hubs, 2).unwrap().unwrap();
         let asked = |d: &str| -> Vec<String> {
             serde_json::from_value(args["filters"].as_array().unwrap().iter().find(|f| f["dimension"] == d).unwrap()["values"].clone()).unwrap()
         };
         let sums: Vec<Value> =
             asked("geo").iter().flat_map(|g| asked("siec").into_iter().filter(|c| de.contains_key(c.as_str())).map(|c| row(g, &c)).collect::<Vec<_>>()).collect();
         (first, args, event, main, sums)
+    }
+
+    /// One place's parts (a block of a table its blocks share, 由总到分, 11-14): its main split over the grouped dimension, the
+    /// total beside the parts, asks for the parts fetched apart only when one place is allowed (a shared block: least 1;
+    /// across places it takes two); the composition reads that one bar only with the parts fetched apart, the cells the main
+    /// already holds read once, and the page fills. With no parts fetched apart, the one place is no composition, as before.
+    #[test]
+    fn one_place_split_is_a_composition_only_with_its_parts_fetched_apart() {
+        let (_, _, _, main, sums) = q3_tables(&[]);
+        let de = |rows: &[Value]| rows.iter().filter(|r| r["dims"]["geo"] == "DE").cloned().collect::<Vec<_>>();
+        let parts: Vec<String> = de(&sums).iter().map(|r| r["dims"]["siec"].as_str().unwrap().to_string()).collect();
+        let split: Vec<Value> = de(&main).into_iter().chain(de(&sums)).collect();
+        let mut codes = vec!["TOTAL".to_string()];
+        codes.extend(parts.iter().cloned());
+        let one = crate::next_flow::Prepared {
+            id: "nrg_bal_peh".into(),
+            title: String::new(),
+            file: "data/main.csv".into(),
+            args: json!({"dataset": "nrg_bal_peh", "filters": [{"dimension": "freq", "values": ["A"]}, {"dimension": "nrg_bal", "values": ["GEP"]},
+                {"dimension": "siec", "values": codes}, {"dimension": "unit", "values": ["GWH"]}, {"dimension": "geo", "values": ["DE"]}],
+                "years": {"start": 2024, "end": 2024}})
+                .as_object().unwrap().clone(),
+            sheet: "0123456789abcdef".into(),
+            claims: Vec::new(),
+            places_zh: Vec::new(),
+            companions: Vec::new(),
+            asked: json!([]),
+            relation: None,
+        };
+        assert!(crate::next_flow::composition_fetch(&one, &split, &Hubs, 2).unwrap().is_none(), "across places it takes two");
+        let (args, _) = crate::next_flow::composition_fetch(&one, &split, &Hubs, 1).unwrap().expect("a shared block's one place");
+        let geo = args["filters"].as_array().unwrap().iter().find(|f| f["dimension"] == "geo").unwrap()["values"].clone();
+        assert_eq!(geo, json!(["DE"]));
+        let composition = recipe("composition");
+        let alone = [("nrg_bal_peh", &split[..])];
+        assert!(shape_of(&composition.eats, &alone, &Hubs).unwrap_err().contains("asks no grouped total alone"));
+        let fill = q3_fill(&split, &de(&sums)).unwrap();
+        assert_eq!(fill["composition"]["bars"], json!(["DE"]), "{}", fill["composition"]);
     }
 
     /// The composition page's fill over q3's tables (q3_tables), by the recipe the registry tries first that reads them.

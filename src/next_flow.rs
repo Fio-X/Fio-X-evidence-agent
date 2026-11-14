@@ -4209,16 +4209,18 @@ fn asked_values(args: &Map<String, Value>, dim: &str) -> Option<Vec<String>> {
 
 /// The dimension of a Eurostat main whose fetch asked for its total code alone and whose registry has composition groups,
 /// with that total code and each group's input codes (next_params::group_inputs); None for any other fetch, and for one
-/// whose place dimension asks one code only (a composition across places needs two or more).
-fn composition_dim(main: &Prepared) -> Result<Option<(String, String, Vec<(String, Vec<String>)>)>, String> {
-    if main.id.ends_with("@2") || asked_values(&main.args, COMPOSITION_PLACE).is_some_and(|v| v.len() < 2) {
+/// whose place dimension asks fewer than `least` codes: two across places; one for a block of a table its blocks share
+/// (由总到分, 11-14), whose fetch may also ask the total beside the other codes (one place's split, the parts fetched apart).
+fn composition_dim(main: &Prepared, least: usize) -> Result<Option<(String, String, Vec<(String, Vec<String>)>)>, String> {
+    if main.id.ends_with("@2") || asked_values(&main.args, COMPOSITION_PLACE).is_some_and(|v| v.len() < least) {
         return Ok(None);
     }
     let dims: Vec<String> = main.args.get("filters").and_then(Value::as_array).into_iter().flatten()
         .filter_map(|f| f["dimension"].as_str().map(str::to_string)).collect();
     for dim in dims {
         let total = next_params::parts(&main.id, &dim).into_iter().find(|p| p.level == next_params::PART_LEVELS[0]);
-        let Some(total) = total.filter(|t| asked_values(&main.args, &dim).is_some_and(|v| v == [t.code.clone()])) else {
+        let asks = |t: &next_params::Part| asked_values(&main.args, &dim).is_some_and(|v| v == [t.code.clone()] || (least == 1 && v.contains(&t.code)));
+        let Some(total) = total.filter(asks) else {
             continue;
         };
         let inputs = next_params::group_inputs(&main.id, &dim)?;
@@ -4237,14 +4239,15 @@ fn composition_dim(main: &Prepared) -> Result<Option<(String, String, Vec<(Strin
 /// are no country), marked
 /// sum_input with the main's file and candidate sheet, so its rows become no candidate, sheet or claim (newsroom.ts
 /// sumInputProblem). The first fetch is unchanged and carries every claim. None when the main is no such fetch: a World
-/// Bank table, no dimension asked for its grouped total alone, or fewer than two countries with a total. Ok is the args and
+/// Bank table, no dimension asked for its grouped total alone, or fewer than `least` countries with a total (two across places, one for a shared table's block). Ok is the args and
 /// the event's fields beside the file.
 pub fn composition_fetch(
     main: &Prepared,
     rows: &[Value],
     catalogue: &dyn Catalogue,
+    least: usize,
 ) -> Result<Option<(Map<String, Value>, Value)>, String> {
-    let Some((dim, total, inputs)) = composition_dim(main)? else {
+    let Some((dim, total, inputs)) = composition_dim(main, least)? else {
         return Ok(None);
     };
     let filters: Vec<Value> = main.args.get("filters").and_then(Value::as_array).cloned().unwrap_or_default();
@@ -4268,7 +4271,7 @@ pub fn composition_fetch(
         .filter_map(|r| Some((r["value"].as_str()?.parse::<f64>().ok()?, r["dims"][place].as_str()?.to_string())))
         .collect();
     ranked.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
-    if ranked.len() < 2 {
+    if ranked.len() < least {
         return Ok(None);
     }
     let asked = next_params::NARROW_TOP + COMPOSITION_RESERVE;
@@ -5554,6 +5557,18 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
                     })
                 }
                 mode => {
+                    // a block's copy of a shared table fetched as one number for its one place has nothing to compare: the
+                    // pick is refused once with what the block needs, and asked again
+                    if mode == "needs_narrowing" && !shared_blocks.is_empty() && !repicked {
+                        let n = picks[k];
+                        repicked = true;
+                        let refused = format!(
+                            "table {n}'s params fetch one number for each place, with nothing to compare; give t{n}.breakdown an option that splits it for its block"
+                        );
+                        recorder.program_event(REPICK_EVENT, json!({"dataset": id, "table": n, "params": params, "why": reason(&called), "refused": refused}))?;
+                        prompt = format!("The table pick was fetched and refused: {refused}\n{asked}");
+                        continue 'pick;
+                    }
                     if mode == "no_rows" && steps.is_empty() && !repicked {
                         let n = picks[k];
                         let draft = drafts[n - 1].1.as_ref();
@@ -5741,8 +5756,10 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
     shared.sort();
     // the main's sum inputs, and each later block's own fetch of a shared table's, when its breakdown asks for them
     let with_sums: Vec<usize> = std::iter::once(0).chain(shared.iter().map(|(_, k)| *k).filter(|k| *k > 0)).filter(|k| *k < prepared.len()).collect();
+    // parts across two or more places; a shared table's block may be one place's own parts
+    let least = if shared.is_empty() { 2 } else { 1 };
     for k in with_sums {
-        composition_inputs(recorder, tools, catalogue, &mut prepared[k], cancel).await?;
+        composition_inputs(recorder, tools, catalogue, &mut prepared[k], cancel, least).await?;
     }
     let block_tables = blocks.iter().flatten().filter_map(|(q, t)| Some((q.clone(), t.clone()?))).fold(Vec::new(), |mut seen: Vec<(String, String)>, (q, t)| {
         if !seen.iter().any(|(_, s)| *s == t) {
@@ -5808,17 +5825,18 @@ async fn composition_inputs<R: ToolRunner + Send + ?Sized>(
     catalogue: &dyn Catalogue,
     main: &mut Prepared,
     cancel: &AtomicBool,
+    least: usize,
 ) -> Result<(), Stop> {
     let not_prepared = |why: String| Stop::NotPrepared { dataset: main.id.clone(), mode: SUM_INPUT_MODE.into(), why };
     // a fetch that asks no grouped total alone, across places, asks for no second fetch and reads no file for it
-    if composition_dim(main).map_err(not_prepared)?.is_none() {
+    if composition_dim(main, least).map_err(not_prepared)?.is_none() {
         return Ok(());
     }
     let meta = catalogue.table(&main.id).ok_or_else(|| not_prepared(format!("the catalogue lists no {}", main.id)))?;
     let csv = std::fs::read_to_string(recorder.run_dir.join(&main.file))
         .map_err(|e| not_prepared(format!("the fetched file {}: {e}", main.file)))?;
     let rows = catalogue.series_rows(&meta, &csv).map_err(not_prepared)?;
-    let fetch = composition_fetch(main, &rows, catalogue).map_err(not_prepared);
+    let fetch = composition_fetch(main, &rows, catalogue, least).map_err(not_prepared);
     record_group_calls(recorder, catalogue)?;
     let Some((args, mut event)) = fetch? else {
         return Ok(());
