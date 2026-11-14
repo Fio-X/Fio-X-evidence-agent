@@ -337,7 +337,7 @@ pub struct ShapeReply {
 pub fn preselect(c: &Catalog, question: &str) -> Option<(Shape, &'static str)> {
     let q = plain(question);
     // the also-word after a leader asked (人最多的，是不是也最富): a leader's positions; without one (增长快的是不是排放也快),
-    // or with 越 (最低工资越高，失业率是不是也越高: 最 there is the measure's name), it is the relation of two quantities,
+    // or with 越 (最低气温越低，用电量是不是也越高: 最 there is the measure's name), it is the relation of two quantities,
     // which the scope refusal keeps refusing (works/complex-split/design.md)
     if let Some((at, w)) = ALSO_ZH.iter().copied().filter_map(|w| q.find(w).map(|at| (at, w))).min() {
         if leader_asked(&q[..at]) && !q.contains('越') && asked_zh_in_order(question).len() >= 2 {
@@ -569,8 +569,8 @@ mod tests {
         // relation, which the scope refusal keeps)
         for q in [
             "经济增长快的国家，是不是碳排放也增长快？",
-            "欧盟各国的最低工资越高，失业率是不是也越高？",
-            "东南亚各国人均 GDP 越高，互联网普及率是不是也越高？",
+            "各国最低气温越低，人均用电量是不是也越高？",
+            "非洲各国人口越多，粮食进口是不是也越多？",
             "德国哪年跨过 20%？", "德国的能源从哪来？", "2023 年金砖国家 GDP 增速排名", "韩国比日本、美国的人均寿命长多少？", "人均GDP最高的是哪国？"] {
             assert_eq!(plan(&c, q).blocks.len(), 1, "{q}");
         }
