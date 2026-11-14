@@ -23,6 +23,12 @@ const LAMBDA: f64 = 0.5;
 const WORLD_MIN: usize = 10;
 const TOP: usize = 5;
 const STOP: &str = "a an and the of in by to for from per on at as or with all each its is are be how what which over";
+/// Search-text tokens (as `toks` cuts them) that name the question's places as a whole, the union, its member states, the
+/// countries, rather than what is measured. The places are read from the Chinese question (scope, places_zh) and filter
+/// the tables; in the ranking these words only lift tables whose titles name the EU or member states (EU trade by member
+/// state for a house price question: dev set t4, t6, r2 and q7, 11-14). Dropped from a search text's tokens after its
+/// place names (split_places), unless nothing else is left.
+const SCOPE_TOKENS: &str = "eu eu27 member state country european union nation";
 const SKIP_DIMS: [&str; 2] = ["geo", "time"];
 /// The member-label dimension a World Bank indicator's name stands in (its table has no other).
 const WB_SERIES: &str = "wb_series";
@@ -1458,6 +1464,17 @@ pub fn toks(s: &str) -> Vec<String> {
         .collect()
 }
 
+/// A search text's tokens without SCOPE_TOKENS; all of them when that would leave none.
+fn quantity_toks(text: &str) -> Vec<String> {
+    let all = toks(text);
+    let kept: Vec<String> = all.iter().filter(|w| !SCOPE_TOKENS.split(' ').any(|t| t == w.as_str())).cloned().collect();
+    if kept.is_empty() {
+        all
+    } else {
+        kept
+    }
+}
+
 /// A place name as matched in English text: lower case, "(...)" removed, letters only.
 /// `code` is `own` or a version of it: `own`, digits, and at most an underscore and digits (EU27_2020, EU28, EA20); the
 /// context-changing aggregate (EU_V); or `own` except a two-letter place (CN_X_HK, China except Hong Kong: the code keeps its
@@ -2563,7 +2580,7 @@ impl Catalog {
             let ok: Vec<bool> = (0..self.docs.len())
                 .map(|i| self.passes(i, &places, scope, far))
                 .collect();
-            let qt = toks(&rest);
+            let qt = quantity_toks(&rest);
             self.s_scores(&qt, &ok, &mut s);
             self.v_scores(&qt, &ok, scope, &mut v);
         }
@@ -3615,6 +3632,24 @@ mod tests {
             lines("a\r\nb\rc\n\nd").collect::<Vec<_>>(),
             ["a", "b", "c", "", "d"]
         );
+    }
+
+    /// A search text's words for the places as a whole (the EU, member states, countries) do not rank tables, the
+    /// quantity's words do (dev set t4, 11-14: "house price index EU member states" listed EU trade tables first).
+    #[test]
+    fn scope_words_of_a_search_text_do_not_rank_tables() {
+        assert_eq!(quantity_toks("house price index EU member states"), ["house", "price", "index"]);
+        assert_eq!(quantity_toks("rail passengers by country"), ["rail", "passenger"]);
+        assert_eq!(quantity_toks("households with internet access EU countries"), ["household", "internet", "access"]);
+        assert_eq!(quantity_toks("EU countries"), ["eu", "country"]);
+        assert_eq!(quantity_toks("national accounts"), ["national", "account"]);
+        let mut raw = small_raw();
+        raw.toc.push_str("\"        House price index\"\t\"hpi\"\t\"table\"\n\"        EU trade by member states\"\t\"trd\"\t\"table\"\n");
+        let c = Catalog::from_raw(&raw);
+        let r = c.rank_in(&texts(&["house price index EU member states"]), Scope::Europe);
+        let at = |id: &str| ids(&r).iter().position(|x| *x == id);
+        assert_eq!(at("hpi"), Some(0), "{:?}", ids(&r));
+        assert!(at("trd").is_none_or(|k| k > 0), "{:?}", ids(&r));
     }
 
     #[test]
