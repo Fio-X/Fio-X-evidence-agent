@@ -576,7 +576,8 @@ mod tests {
         }
         // every block's sentence is the program's, numbers as placeholders
         for b in plan(&c, "东盟各国：人最多的，是不是也最富、最城市化？").blocks {
-            assert!(!b.sentence.chars().any(|ch| ch.is_ascii_digit()), "{}", b.sentence);
+            let outside: String = b.sentence.split('{').map(|part| part.split_once('}').map_or(part, |(_, rest)| rest)).collect();
+            assert!(!outside.chars().any(|ch| ch.is_ascii_digit()), "{}", b.sentence);
         }
     }
 
