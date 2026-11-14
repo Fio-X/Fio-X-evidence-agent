@@ -1391,7 +1391,7 @@ pub const CHECK_HELPERS: &[&str] = &[
     "tree_gen::frame_knobs", "tree_gen::in_input_order", "tree_gen::node_of", "tree_gen::order_of",
     "tree_gen::parts_selects", "tree_gen::place_src", "tree_gen::row_num", "tree_gen::runs_named", "tree_gen::subx",
     "leaf::sampled", "leaf::node", "leaf::python", "leaf::leaves", "leaf::word", "leaf::words", "leaf::name",
-    "leaf::knobs", "leaf::stop", "leaf::reserved", "visual::recipe_layers", "visual::expand",
+    "leaf::knobs", "leaf::stop", "leaf::reserved", "visual::recipe_layers", "visual::expand", "visual::stack_html",
     "nodes::add", "nodes::add_line", "nodes::default", "nodes::default_val", "nodes::fmt", "nodes::get", "nodes::hit",
     "nodes::list", "nodes::names", "nodes::num", "nodes::on_line", "nodes::place", "nodes::tw", "nodes::walk",
     "nodes::within", "nodes::word", "render::bar_card", "render::draw_bars", "render::draw_cards",

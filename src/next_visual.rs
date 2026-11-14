@@ -67,6 +67,10 @@ pub enum Request<'a> {
     Knob { node: &'a str, knob: &'a str },
     /// The page recipes of the leaf registry (runtime/leaves_py/knobs.json recipes), in the order the flow tries them.
     Recipes,
+    /// A many-block page stacked (owner 11-14 20:5x item 1): the question as its title, then each block's published page
+    /// in block order, the first on top, each shown whole as it was checked (`pages`: its path from the stacked page, its
+    /// width and height). No other word or number is added. Nothing is written.
+    Stack { title: &'a str, pages: &'a [(String, f64, f64)] },
     /// A page recipe's layers, each group among them expanded into its own layers (the group's name kept), in the
     /// registry's order; none when the registry has no such recipe.
     RecipeLayers { recipe: &'a str },
@@ -561,6 +565,8 @@ pub enum Reply<'a> {
     Knob { default: f64, min: f64, max: f64 },
     /// The page recipes, in registry order.
     Recipes(&'static [Recipe]),
+    /// The stacked page's bytes.
+    Stacked(String),
     /// A recipe's layers with its groups expanded; none for a recipe the registry does not have.
     Layers(Option<Vec<String>>),
     /// What a published leaf page fails, one line each; empty when it passes.
@@ -646,6 +652,7 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
             }
         }
         Request::Recipes => Reply::Recipes(&leaves().recipes),
+        Request::Stack { title, pages } => Reply::Stacked(stack_html(title, pages)),
         Request::RecipeLayers { recipe } => Reply::Layers(recipe_layers(recipe)),
         Request::LeafRecheck { recipe, html, ledger, refs, facts: (spec, rows, facts), knobs } => {
             let mut off = Vec::new();
@@ -770,6 +777,22 @@ fn browser_check(runner: &Runner, html: &Path, out: &Path) -> Result<Value, Stri
         .ok_or_else(|| "browser check: it wrote no readable browser-qa.json".to_string())
 }
 
+
+
+/// The stacked page (Request::Stack): the question as its h1 and title, escaped, then one frame per block page at its own
+/// size, in order. The block pages are referred to, never copied or changed, so every word and number on it is one its
+/// block's page checks already read.
+fn stack_html(title: &str, pages: &[(String, f64, f64)]) -> String {
+    let esc = |t: &str| t.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;");
+    let frames: String = pages
+        .iter()
+        .map(|(src, w, h)| format!("<iframe src=\"{}\" width=\"{w:.0}\" height=\"{h:.0}\" loading=\"eager\"></iframe>\n", esc(src)))
+        .collect();
+    format!(
+        "<!doctype html>\n<html lang=\"zh-CN\"><head><meta charset=\"utf-8\"><title>{t}</title>\n<style>body{{margin:0;background:#fff}}h1{{font:600 28px/1.35 sans-serif;margin:24px 32px 8px}}iframe{{display:block;border:0;margin:0 0 16px}}</style></head>\n<body><h1>{t}</h1>\n{frames}</body></html>\n",
+        t = esc(title)
+    )
+}
 
 #[cfg(test)]
 mod tests {

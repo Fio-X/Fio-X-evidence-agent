@@ -3072,7 +3072,7 @@ fn leaf_page(
     let drawn = fill["drawn"].as_array().cloned().unwrap_or_default();
     let zeros = declared_zeros(&fill);
     let notes = notes_asked(picked, &fill);
-    Ok(LeafPublished { recipe: picked, dir, published, drawn, strip: strip_ask, ends: fill.get("ends").cloned(), zeros, notes })
+    Ok(LeafPublished { recipe: picked, dir, size: (page.w as f64, page.h as f64), published, drawn, strip: strip_ask, ends: fill.get("ends").cloned(), zeros, notes })
 }
 
 /// The unit line's segments (knobs.segs.unit, facts.worded) when its unit's short form holds a digit: the line's words before
@@ -3184,6 +3184,8 @@ struct LeafPublished {
     recipe: &'static Recipe,
     /// The publication folder: the recipe's name, or a later block's (next_gate::block_dir).
     dir: String,
+    /// The drawn page's width and height (the stacked page frames it at that size).
+    size: (f64, f64),
     published: crate::next_flow::Published,
     drawn: Vec<Value>,
     strip: StripAsk,
@@ -4025,10 +4027,14 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
     }
     // a many-block page (owner 11-14 16:5x item 2): each block's page from its own table, by the same steps and checks;
     // the first block stops the run as a one-block page does, a later block that stops is left out and kept as such
-    let mut answers = vec![page_of_block(recorder, model, question, std::slice::from_ref(blocks[0]), catalogue, cancel, 1).await?];
+    let (first, shown) = page_of_block(recorder, model, question, std::slice::from_ref(blocks[0]), catalogue, cancel, 1).await?;
+    let (mut answers, mut pages) = (vec![first], vec![shown]);
     for (i, table) in blocks.iter().enumerate().skip(1) {
         match page_of_block(recorder, model, question, std::slice::from_ref(*table), catalogue, cancel, i + 1).await {
-            Ok(answer) => answers.push(answer),
+            Ok((answer, shown)) => {
+                answers.push(answer);
+                pages.push(shown);
+            }
             // a page step or a check of the page stopped it, or the text step's reply was refused: that block only
             Err(stopped @ (Stop::Page { .. } | Stop::Refused { .. } | Stop::NoReply { .. })) => {
                 if recorder.resume_under_last_accepted() {
@@ -4039,8 +4045,24 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
             Err(stopped) => return Err(stopped),
         }
     }
+    // the blocks that were published, stacked in block order under the question: no new word or number (owner 11-14 20:5x)
+    let calls = std::sync::Mutex::new(Vec::new());
+    let stacked = crate::next_flow::publish_stack(&calls, recorder.run_dir(), question, &pages);
+    for event in calls.into_inner().unwrap_or_else(|e| e.into_inner()) {
+        recorder.program_event(crate::next_flow::GROUP_CALL_EVENT, event)?;
+    }
+    let (stacked_ref, stacked_sha256) = stacked.map_err(|why| stop("stack", why))?;
+    recorder.program_event(
+        STACKED_EVENT,
+        json!({"published": stacked_ref, "html_sha256": stacked_sha256,
+            "blocks": pages.iter().map(|(dir, _, _)| dir).collect::<Vec<_>>()}),
+    )?;
+    answers.push(format!("The {} blocks are stacked at {stacked_ref} (sha256 {stacked_sha256}).", pages.len()));
     Ok(answers.join("\n"))
 }
+
+/// The stacked page of a many-block page: its path, its sha256 and the block folders it frames, in order.
+pub const STACKED_EVENT: &str = "next_stacked";
 
 /// A later block of a many-block page that stopped and was left out: its number, its table and why.
 pub const BLOCK_LEFT_OUT_EVENT: &str = "next_block_left_out";
@@ -4055,7 +4077,7 @@ pub(crate) async fn page_from(
     catalogue: &dyn Catalogue,
     cancel: &AtomicBool,
 ) -> Result<String, Stop> {
-    page_of_block(recorder, model, question, prepared, catalogue, cancel, 1).await
+    Ok(page_of_block(recorder, model, question, prepared, catalogue, cancel, 1).await?.0)
 }
 
 /// page_from for block `block` of a many-block page (1: the first block, or a one-block page): the same steps and checks,
@@ -4068,7 +4090,7 @@ pub(crate) async fn page_of_block(
     catalogue: &dyn Catalogue,
     cancel: &AtomicBool,
     block: usize,
-) -> Result<String, Stop> {
+) -> Result<(String, (String, f64, f64)), Stop> {
     let page = charts(recorder, prepared, catalogue)?;
     let calls = std::sync::Mutex::new(Vec::new());
     let drawn: Vec<&str> = page.templates.iter().filter_map(|t| t["chart_type"].as_str()).collect();
@@ -4220,10 +4242,13 @@ pub(crate) async fn page_of_block(
             }
             // the image review is the model's advice on the page: recorded, never a stop and never what verifies it
             let review = leaf_vision(recorder, model, question, dir, &state, cancel).await?;
-            return Ok(format!(
-                "The {recipe} page is published at {} (sha256 {}); the browser check and the program's page checks passed \
-                 those bytes. {review}",
-                published.html_ref, published.html_sha256
+            return Ok((
+                format!(
+                    "The {recipe} page is published at {} (sha256 {}); the browser check and the program's page checks passed \
+                     those bytes. {review}",
+                    published.html_ref, published.html_sha256
+                ),
+                (dir.to_string(), leaf.size.0, leaf.size.1),
             ));
         }
         // no other route takes over: the run stops at the stage the leaf page stopped at, and what it wrote stays for the replay

@@ -3373,6 +3373,7 @@ pub(crate) fn visual_call<'a>(
         Request::PagePlan { forms } => format!("{kind} {forms:?}"),
         Request::Page { spec } => format!("{kind} {spec:?}"),
         Request::LeafPage { page } => format!("{kind} {} {:?}", page.frame, page.ledger),
+        Request::Stack { title, pages } => format!("{kind} {title:?} {pages:?}"),
         Request::LeafFill { recipe, knobs, order, runtime, .. } => {
             format!("{kind} {recipe} {order:?} {} {}", knobs["spec"], runtime.display())
         }
@@ -3399,6 +3400,7 @@ pub(crate) fn visual_call<'a>(
     let kept = match &reply {
         Err(e) => format!("error {e}"),
         Ok(Reply::Matched(matched)) => format!("{matched:?}"),
+        Ok(Reply::Stacked(html)) => format!("stacked {}", crate::hash::sha256_bytes(html.as_bytes())),
         Ok(Reply::Plans(plans)) => format!(
             "{:?}",
             plans
@@ -3477,6 +3479,41 @@ pub struct Published {
     pub drawn_checked: Vec<Value>,
     /// Whether the page's h1 states a relation its checks read (next_visual LeafDrawn): the leaf's own headline.
     pub headed: bool,
+}
+
+/// The stacked page's file, beside the first block's page in its publication folder.
+pub const STACKED_PAGE: &str = "stacked.html";
+
+/// The stacked page of a many-block page (owner 11-14 20:5x item 1), written through the visual door as
+/// publications/<first block's folder>/stacked.html: the visual group's Stack of the question and each block's published
+/// page in block order (`blocks`: folder, width, height), the first on top, each page referred to and never changed, so
+/// the stacked page holds no word or number its blocks' checks did not read. Refused when the file is there already.
+/// Ok is its path from the run folder and its sha256.
+pub fn publish_stack(
+    calls: &Mutex<Vec<Value>>,
+    root: &Path,
+    question: &str,
+    blocks: &[(String, f64, f64)],
+) -> Result<(String, String), String> {
+    use crate::group_guard::{as_visual_call, write};
+    use next_visual::{Reply, Request};
+    let Some((first, _, _)) = blocks.first() else {
+        return Err("stack: no block page".into());
+    };
+    let pages: Vec<(String, f64, f64)> = blocks
+        .iter()
+        .enumerate()
+        .map(|(i, (dir, w, h))| (if i == 0 { "index.html".to_string() } else { format!("../{dir}/index.html") }, *w, *h))
+        .collect();
+    let Reply::Stacked(html) = visual_call(calls, "stack", Request::Stack { title: question, pages: &pages })? else {
+        unreachable!("the visual group answered stack with another reply")
+    };
+    let rel = format!("publications/{first}/{STACKED_PAGE}");
+    if root.join(&rel).exists() {
+        return Err(format!("stack: {rel} was written before"));
+    }
+    as_visual_call(|| write(root, &root.join(&rel), &html)).map_err(|e| format!("stack: {e}"))?;
+    Ok((rel, crate::hash::sha256_bytes(html.as_bytes())))
 }
 
 /// The leaf page published at publications/<slug>/ of the run folder at `root`. The visual group draws and bakes it; its
