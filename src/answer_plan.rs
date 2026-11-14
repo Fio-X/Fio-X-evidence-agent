@@ -7,7 +7,7 @@
 //! a question takes one block unless the model answers one of the many-block shapes. The replay below prints the plans of a
 //! question list, so they are judged against the rubrics before any flow code changes.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::l5geo::{asked_zh, asked_zh_in_order, group_aggregate_zh, listed_aggregates, question_span, rank_asked_zh, Catalog, Place};
 
@@ -51,7 +51,7 @@ pub fn years_of(question: &str) -> Years {
 /// What a question asks the page to show (the owner's list, 11-13): one place against each of the others, a ranking or a
 /// place's position in it, a change over time, the year a place catches up with another or crosses a line, the parts of a
 /// whole, a total, a spread, a flow between stages, where on a map.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Rel {
     Deviation = 1,
     Ranking = 2,
@@ -79,7 +79,7 @@ pub const RECIPE_RELATIONS: [(Rel, crate::shape_registry::Relation); 6] = [
 /// What the block's sentence asserts within its relation: the highest, the lowest, both, the first n, one named place's
 /// position, every place's own value or change, the largest rise or fall, the first year past a line, the largest part or
 /// flow, the total.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Focus {
     Max,
     Min,
@@ -105,7 +105,7 @@ pub enum Focus {
 }
 
 /// One block: what it proves and the sentence it proves, numbers as {placeholders}.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Block {
     pub rel: Rel,
     pub focus: Focus,
@@ -121,7 +121,7 @@ pub struct Block {
 }
 
 /// A plan: the blocks in reading order. One block, unless the question takes one of the three many-block shapes (Shape).
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Plan {
     pub blocks: Vec<Block>,
     /// One block for a question the shapes did not take (a none reply, or slots the question cannot fill): the page says
@@ -510,6 +510,18 @@ fn one_block(c: &Catalog, question: &str) -> Plan {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every relation a rank-compare, threshold or whole-to-parts block takes either has its recipe relation or leaves it to
+    /// the table step: a rank block is drawn as a ranking (sample A's fourth run drew its rank blocks as changes).
+    #[test]
+    fn a_rank_block_is_drawn_as_a_ranking() {
+        let of = |r: Rel| RECIPE_RELATIONS.iter().find(|(x, _)| *x == r).map(|(_, y)| *y);
+        assert_eq!(of(Rel::Ranking), Some(crate::shape_registry::Relation::Ranking));
+        assert_eq!(of(Rel::Location), Some(crate::shape_registry::Relation::Map));
+        assert_eq!(of(Rel::Threshold), None, "no recipe answers a threshold yet: the table step's relation stands");
+        let rels: Vec<Rel> = RECIPE_RELATIONS.iter().map(|(r, _)| *r).collect();
+        assert!(rels.iter().enumerate().all(|(i, r)| !rels[..i].contains(r)), "a relation once");
+    }
 
     /// The relation and focus of question shapes the dev set and the exam hold (not their texts).
     #[test]

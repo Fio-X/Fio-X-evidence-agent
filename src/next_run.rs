@@ -4010,6 +4010,20 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
     cancel: &AtomicBool,
 ) -> Result<String, Stop> {
     let planned = crate::next_flow::prepare_planned(recorder, model, tools, question, steps, catalogue, cancel).await?;
+    pages_of(recorder, model, question, &planned, catalogue, cancel).await
+}
+
+/// The page or pages of a prepared question (run_page after prepare_planned): one page as before, or for a plan whose
+/// blocks the program set tables for, each block's page and the stacked page. The sample A walk (next_drive) calls it
+/// with a finished run's prepared tables and plan.
+pub(crate) async fn pages_of(
+    recorder: &mut Recorder<'_>,
+    model: &mut (dyn Asker + '_),
+    question: &str,
+    planned: &crate::next_flow::Planned,
+    catalogue: &dyn Catalogue,
+    cancel: &AtomicBool,
+) -> Result<String, Stop> {
     // each block's own table, its quantity record narrowed to the block's quantity: a block's page answers that one, and
     // the stacked page the question's every quantity, one block each
     let blocks: Vec<Prepared> = planned

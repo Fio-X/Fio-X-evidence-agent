@@ -456,18 +456,34 @@ mod tests {
     /// A run folder holding a published leaf page as publish_leaf_page and run_page leave it: manifest, index.html, plan and
     /// the flow's ring event; `by` is the ring event's actor.
     fn leaf_run(root: &Path, by: &str) -> Value {
+        leaf_run_in(root, by, "column")
+    }
+
+    /// leaf_run with the page in publications/<folder>/ (a later block's: next_gate::block_dir).
+    fn leaf_run_in(root: &Path, by: &str, folder: &str) -> Value {
         let html = "<h1>t</h1><p class=\"dek\">d</p>";
         let sha = crate::hash::sha256_bytes(html.as_bytes());
-        std::fs::create_dir_all(root.join("publications/column")).unwrap();
+        std::fs::create_dir_all(root.join(format!("publications/{folder}"))).unwrap();
         std::fs::create_dir_all(root.join("publications/plans")).unwrap();
         std::fs::create_dir_all(root.join("runtime")).unwrap();
         std::fs::write(root.join("runtime/next-page.json"), r#"{"question": "q"}"#).unwrap();
-        std::fs::write(root.join("publications/column/index.html"), html).unwrap();
-        std::fs::write(root.join(leaf_plan_ref("column")), r#"{"kind": "leaf_plan", "recipe": "column"}"#).unwrap();
-        let event = serde_json::json!({"type": RING_EVENT, "by": by, "auto_parent_call_id": "c1", "recipe": "column",
-            "published": "publications/column/index.html", "html_sha256": sha});
+        std::fs::write(root.join(format!("publications/{folder}/index.html")), html).unwrap();
+        std::fs::write(root.join(leaf_plan_ref(folder)), format!(r#"{{"kind": "leaf_plan", "recipe": "{folder}"}}"#)).unwrap();
+        let event = serde_json::json!({"type": RING_EVENT, "by": by, "auto_parent_call_id": "c1", "recipe": folder,
+            "published": format!("publications/{folder}/index.html"), "html_sha256": sha});
         std::fs::write(root.join("events.jsonl"), format!("{event}\n")).unwrap();
-        serde_json::json!({"kind": "leaf_page", "html_ref": "publications/column/index.html", "html_sha256": sha})
+        serde_json::json!({"kind": "leaf_page", "html_ref": format!("publications/{folder}/index.html"), "html_sha256": sha})
+    }
+
+    /// A later block's page (owner 11-14 21:4x item 2, the seam sample A's third run found): the gate enters on its folder
+    /// and looks its recipe's layers up without the block's suffix, so it finds the same gaps a first block's page would.
+    #[test]
+    fn a_later_block_s_page_is_gated_as_its_recipe_s_page() {
+        let (first, later) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let one = leaf_gate(first.path(), "column", &leaf_run_in(first.path(), RING_ACTOR, "column")).expect("entered");
+        let two = leaf_gate(later.path(), "column-b2", &leaf_run_in(later.path(), RING_ACTOR, "column-b2")).expect("entered");
+        assert!(two.iter().all(|g| !g.contains("no recipe of the leaf registry") && !g.contains("lists no layers")), "{two:?}");
+        assert_eq!(two.len(), one.len(), "{one:?} / {two:?}");
     }
 
     #[test]
