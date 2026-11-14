@@ -1757,6 +1757,20 @@ pub fn holds_series(
 mod tests {
     use super::*;
 
+    /// Measurement, not a check (ignored): this build's year reading of each question of YEARS_CASES (qid<TAB>question
+    /// lines), one YEARS line each: question_years and question_latest_year (design 7: the answer plan's year classes).
+    #[test]
+    #[ignore]
+    fn measure_question_years() {
+        let this_year = chrono::Datelike::year(&chrono::Local::now());
+        let cases = std::fs::read_to_string(std::env::var("YEARS_CASES").expect("YEARS_CASES")).unwrap();
+        for line in cases.lines().filter(|l| !l.starts_with('#') && !l.is_empty()) {
+            let Some((qid, q)) = line.split_once('\t') else { continue };
+            let q = q.split('\t').next().unwrap_or(q);
+            println!("YEARS\t{qid}\t{:?}\t{:?}\t{q}", question_years(q, this_year), question_latest_year(q, this_year));
+        }
+    }
+
     fn dim(id: &str, codes: &[&str]) -> (String, Vec<(String, String)>) {
         (
             id.to_string(),
