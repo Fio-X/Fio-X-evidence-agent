@@ -2769,6 +2769,9 @@ pub const CATALOGUE_EVENT: &str = "next_catalogue";
 /// The event that keeps the question's shape answer and the plan the knowledge group made of it (the blocks, each block's
 /// relation, focus, quantity and years), whole; a 0 answer keeps the answer and no plan.
 pub const PLAN_EVENT: &str = "next_answer_plan";
+/// The event that keeps each block's table as the program set it (block_tables): the block's quantity and the table, or
+/// null when no offered table holds it.
+pub const BLOCK_TABLES_EVENT: &str = "next_block_tables";
 /// The event that keeps how the fetch parameters of the picked tables were filled when no spec was given.
 pub const PARAMS_EVENT: &str = "next_params";
 /// The event that keeps, before the table pick, each listed table's breakdown options: the ones offered (with the years
@@ -5145,6 +5148,21 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
     catalogue: &dyn Catalogue,
     cancel: &AtomicBool,
 ) -> Result<Vec<Prepared>, Stop> {
+    Ok(prepare_planned(recorder, model, tools, question, steps, catalogue, cancel).await?.0)
+}
+
+/// prepare_claims with the question's plan, when the split step gave one (owner 11-14 16:5x item 2): for a plan whose
+/// blocks each take their own quantity (名次对照), the program sets each block's table, the first offered table that holds
+/// the block's quantity (block_tables), and only those are offered, in block order, the model picking all of them.
+pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
+    recorder: &mut Recorder<'_>,
+    model: &mut (dyn Asker + '_),
+    tools: &mut R,
+    question: &str,
+    steps: &[PrepareStep],
+    catalogue: &dyn Catalogue,
+    cancel: &AtomicBool,
+) -> Result<(Vec<Prepared>, Option<crate::answer_plan::Plan>), Stop> {
     let prompt = format!(
         "Question: {question}\nWrite English words to search the data catalogue for tables that answer it."
     );
@@ -5164,8 +5182,8 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
         if let Some(r) = refused {
             return Err(Stop::NoTable(format!("the question is out of scope ({}, \"{}\"): {}", r.class, r.hit, r.reason_zh)));
         }
-        split_step(recorder, model, question, catalogue, cancel).await?;
     }
+    let plan = if steps.is_empty() { split_step(recorder, model, question, catalogue, cancel).await? } else { None };
     // The search words go to the catalogue and into this event only: no later prompt, fetch or page reads them.
     let texts = vec![query];
     let this_year = chrono::Datelike::year(&chrono::Local::now());
@@ -5202,6 +5220,20 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
     offers.truncate(OFFERED_TABLES);
     if offers.is_empty() {
         return Err(Stop::NoTable("the catalogue offers no table".into()));
+    }
+    // each block of a plan that names its own quantity per block gets its table from the program; a block whose quantity
+    // no offered table holds is left out and kept as such (the page answers part of the question)
+    let blocks = plan
+        .as_ref()
+        .and_then(|p| block_tables(p, &ranking.asked))
+        .filter(|blocks| blocks.iter().any(|(_, t)| t.as_ref().is_some_and(|t| offers.iter().any(|o| &o.id == t))));
+    if let Some(blocks) = &blocks {
+        recorder.program_event(
+            BLOCK_TABLES_EVENT,
+            json!({"blocks": blocks.iter().map(|(q, t)| json!({"quantity": q, "table": t})).collect::<Vec<_>>()}),
+        )?;
+        let order: Vec<&String> = blocks.iter().filter_map(|(_, t)| t.as_ref()).collect();
+        offers = order.iter().filter_map(|id| offers.iter().find(|o| &&o.id == id).cloned()).collect();
     }
     // With no spec, each listed table's fetch parameters are drafted from the catalogue before the pick, from the codes its
     // held-series probe found (no fetch).
@@ -5290,14 +5322,19 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
         // under a table whose registry has composition groups, what each place's total splits into (every question)
         listed.extend(next_params::parts_line(i + 1, &t.id));
     }
-    let most = steps.len().clamp(1, offers.len());
+    let most = if blocks.is_some() { offers.len() } else { steps.len().clamp(1, offers.len()) };
     let params_rule = if items.is_empty() {
         ""
     } else {
         "\nFor each picked table also give params: for each of its items t<n>.<item>, the number of the option that fits the question."
     };
+    let pick_rule = if blocks.is_some() {
+        format!("The page has {most} blocks and the program set one table for each, listed in block order: pick all {most} of them.")
+    } else {
+        format!("Pick the table, or up to {most} tables, that answer the question; 0 if none fits.")
+    };
     let prompt = format!(
-        "Question: {question}\nTables:\n{}\nPick the table, or up to {most} tables, that answer the question; 0 if none fits.{params_rule}\nrelation ({})",
+        "Question: {question}\nTables:\n{}\n{pick_rule}{params_rule}\nrelation ({})",
         listed.join("\n"),
         relation_rule()
     );
@@ -5587,7 +5624,19 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
     if let Some(main) = prepared.first_mut() {
         composition_inputs(recorder, tools, catalogue, main, cancel).await?;
     }
-    Ok(prepared)
+    Ok((prepared, plan))
+}
+
+/// The table of each block of a plan whose blocks each take their own quantity (名次对照: two or more blocks, no quantity
+/// twice), in block order: the block's quantity id and the first offered table that holds it (Ranking::asked, best first),
+/// None when no offered table does. None for any other plan: its blocks share the table the model picks.
+fn block_tables(plan: &crate::answer_plan::Plan, asked: &[crate::l5geo::Asked]) -> Option<Vec<(String, Option<String>)>> {
+    let ids: Vec<&String> = plan.blocks.iter().filter_map(|b| b.quantity.first().map(|(id, _)| id)).collect();
+    let distinct: BTreeSet<&&String> = ids.iter().collect();
+    if ids.len() < 2 || ids.len() != plan.blocks.len() || distinct.len() != ids.len() {
+        return None;
+    }
+    Some(ids.into_iter().map(|id| (id.clone(), asked.iter().find(|a| &a.id == id).and_then(|a| a.offered.first().cloned()))).collect())
 }
 
 /// The composition's second fetch (composition_fetch) of the main, when it is one: fetched by the program, its file kept
@@ -8711,6 +8760,41 @@ mod tests {
         assert_eq!(calls[0]["request"], "scope_refused");
         assert!(calls[0]["auto_parent_call_id"].is_string(), "{calls:?}");
         assert!(tools.args.is_empty(), "nothing fetched");
+    }
+
+    /// Each block of a 名次对照 plan gets the first offered table that holds its quantity, in block order, None for one no
+    /// offered table holds; a plan whose blocks share one quantity (过线和时间, 由总到分) sets no tables.
+    #[test]
+    fn a_rank_compare_block_takes_the_first_offered_table_of_its_quantity() {
+        use crate::answer_plan::{Block, Focus, Plan, Rel};
+        let block = |id: &str| Block {
+            rel: Rel::Ranking,
+            focus: Focus::Max,
+            places: Vec::new(),
+            place_words: Vec::new(),
+            years: None,
+            quantity: vec![(id.to_string(), String::new())],
+            sentence: String::new(),
+        };
+        let asked = |id: &str, offered: &[&str]| crate::l5geo::Asked {
+            id: id.into(),
+            zh: String::new(),
+            tables: Vec::new(),
+            offered: offered.iter().map(|t| t.to_string()).collect(),
+        };
+        let listed = [asked("population", &["SP.POP.TOTL", "demo_pjan"]), asked("gdp_pc", &["NY.GDP.PCAP.CD"]), asked("urban", &[])];
+        let plan = Plan { blocks: vec![block("population"), block("gdp_pc"), block("urban")], partial: false };
+        assert_eq!(
+            block_tables(&plan, &listed),
+            Some(vec![
+                ("population".into(), Some("SP.POP.TOTL".into())),
+                ("gdp_pc".into(), Some("NY.GDP.PCAP.CD".into())),
+                ("urban".into(), None)
+            ])
+        );
+        let shared = Plan { blocks: vec![block("population"), block("population")], partial: false };
+        assert_eq!(block_tables(&shared, &listed), None);
+        assert_eq!(block_tables(&Plan { blocks: vec![block("population")], partial: false }, &listed), None);
     }
 
     /// The split step (owner 11-14 16:5x item 2), asked after the search answer: the knowledge group's request, the model's
