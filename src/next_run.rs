@@ -4017,6 +4017,11 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
         .iter()
         .filter_map(|(family, id)| {
             let mut block = planned.prepared.iter().find(|p| &p.id == id)?.clone();
+            // the block's own relation, as the plan reads it from the question (answer_plan::RECIPE_RELATIONS), else the one the
+            // table step kept for the page: each block's recipe answers it, not only the first block's
+            let planned_rel = planned.plan.as_ref().and_then(|p| p.blocks.iter().find(|b| b.quantity.first().is_some_and(|(q, _)| q == family)));
+            let own = planned_rel.and_then(|b| crate::answer_plan::RECIPE_RELATIONS.iter().find(|(r, _)| *r == b.rel).map(|(_, x)| *x));
+            block.relation = own.or_else(|| planned.prepared.first().and_then(|main| main.relation));
             if let Some(all) = block.asked.as_array() {
                 block.asked = Value::Array(all.iter().filter(|a| a["id"] == family.as_str()).cloned().collect());
             }

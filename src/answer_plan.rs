@@ -64,6 +64,18 @@ pub enum Rel {
     Location = 9,
 }
 
+/// The relation a page recipe answers (shape_registry::Relation) for each of these that a recipe draws: the table the
+/// flow gives a block's page picks its recipe by it (a rank block is drawn as a ranking, not as the change its rows also
+/// hold). A relation with no row here leaves the recipe to the table step's relation.
+pub const RECIPE_RELATIONS: [(Rel, crate::shape_registry::Relation); 6] = [
+    (Rel::Ranking, crate::shape_registry::Relation::Ranking),
+    (Rel::Change, crate::shape_registry::Relation::Change),
+    (Rel::Composition, crate::shape_registry::Relation::Composition),
+    (Rel::Flow, crate::shape_registry::Relation::Flow),
+    (Rel::Location, crate::shape_registry::Relation::Map),
+    (Rel::Distribution, crate::shape_registry::Relation::Distribution),
+];
+
 /// What the block's sentence asserts within its relation: the highest, the lowest, both, the first n, one named place's
 /// position, every place's own value or change, the largest rise or fall, the first year past a line, the largest part or
 /// flow, the total.
