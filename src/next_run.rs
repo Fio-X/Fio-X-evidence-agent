@@ -2031,6 +2031,7 @@ impl Filled {
 
 /// What a value in a unit code prints after it: the unit table's number suffix (never a digit, so an index prints none and
 /// its base year stays on the unit line, user 11-05 10:2x), through suffix.
+#[cfg(test)]
 fn num_suffix(code: &str) -> String {
     suffix(next_pack::unit_number_suffix(code).unwrap_or(""))
 }
@@ -2156,6 +2157,7 @@ fn place_names(fill: &Value) -> &Value {
 /// The prefix of a place's name placeholder in a page's words, `{name.<code>}` (finding_of): the leaf prints the name of the
 /// code marked with its name row (the knowledge group's name table, through the ledger), so the model, which must keep every
 /// placeholder, never types which place a number on the page belongs to.
+#[cfg(test)]
 const NAME_PLACEHOLDER: &str = "name.";
 
 

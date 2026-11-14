@@ -7675,7 +7675,7 @@ mod tests {
     }
 
     impl Catalogue for FakeCatalogue {
-        fn top5(&self, question_zh: &str, texts: &[String], months: bool, latest_year: Option<i32>, first_year: Option<i32>) -> Ranking {
+        fn top5(&self, question_zh: &str, texts: &[String], months: bool, latest_year: Option<i32>, _first_year: Option<i32>) -> Ranking {
             self.searched
                 .lock()
                 .unwrap()

@@ -2015,6 +2015,7 @@ fn parts_expand(layer: &str, d: &J, view: &J, (rows, sels): (&[J], &[J]), got: &
 
 /// A fill text ('...{key}...{key.n}...{key.t}...{name.<code>}...') as page tree runs: literal words, fact runs and name runs, in order. A brace that
 /// names no key stays a literal word.
+#[cfg(test)]
 fn runs_of(text: &str) -> J {
     runs_named(text, &|code| J::str(code))
 }
