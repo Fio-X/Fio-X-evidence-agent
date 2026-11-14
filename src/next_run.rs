@@ -4281,7 +4281,7 @@ pub(crate) async fn page_of_block(
                      those bytes. {review}",
                     published.html_ref, published.html_sha256
                 ),
-                (dir.to_string(), leaf.size.0, leaf.size.1),
+                (dir.to_string(), shown_size(recorder.run_dir(), dir).0.max(leaf.size.0), shown_size(recorder.run_dir(), dir).1.max(leaf.size.1)),
             ));
         }
         // no other route takes over: the run stops at the stage the leaf page stopped at, and what it wrote stays for the replay
@@ -4410,6 +4410,19 @@ async fn leaf_vision(
 
 /// The desktop screenshot the publication QA record (browser-qa.json) names, as a run-relative ref, and the sha256 of its bytes
 /// as read from the file now; Err names what is missing.
+/// The size a published page is shown at: its 1440 browser check screenshot's width and height (the PNG header), the
+/// page as a reader scrolls it; (0, 0) when there is none to read. The stacked page frames each block page at it.
+fn shown_size(run_dir: &Path, dir: &str) -> (f64, f64) {
+    let read = || -> Option<(f64, f64)> {
+        let (shot, _) = qa_screenshot(run_dir, &json!(format!("publications/qa/{dir}/browser-qa.json"))).ok()?;
+        let bytes = std::fs::read(run_dir.join(shot)).ok()?;
+        let be = |at: usize| Some(u32::from_be_bytes(bytes.get(at..at + 4)?.try_into().ok()?) as f64);
+        (bytes.get(..8) == Some(b"\x89PNG\r\n\x1a\n".as_slice())).then_some(())?;
+        Some((be(16)?, be(20)?))
+    };
+    read().unwrap_or((0.0, 0.0))
+}
+
 fn qa_screenshot(run_dir: &Path, qa_ref: &Value) -> Result<(String, String), String> {
     let qa_ref = qa_ref
         .as_str()
@@ -4862,6 +4875,24 @@ pub fn ranking_page_spec(
 mod tests {
     use super::*;
     use crate::shape_registry::{Finding, DEK_FINDINGS, HEADLINES};
+
+    /// The stacked page frames each block at the size its browser check showed (sample A run 5: frames at height 0 hid all
+    /// three blocks): the 1440 screenshot's PNG width and height, read from the block's own QA folder; no record, no size.
+    #[test]
+    fn a_block_is_framed_at_the_size_its_browser_check_showed() {
+        let dir = tempfile::tempdir().unwrap();
+        let qa = dir.path().join("publications/qa/column-b2");
+        std::fs::create_dir_all(&qa).unwrap();
+        let mut png = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
+        png.extend(1440u32.to_be_bytes());
+        png.extend(639u32.to_be_bytes());
+        std::fs::write(qa.join("1440.png"), &png).unwrap();
+        std::fs::write(qa.join("browser-qa.json"), r#"{"screenshots":[{"width":1440,"path":"1440.png"}]}"#).unwrap();
+        assert_eq!(shown_size(dir.path(), "column-b2"), (1440.0, 639.0));
+        assert_eq!(shown_size(dir.path(), "column-b3"), (0.0, 0.0), "no QA record of that block");
+        std::fs::write(qa.join("1440.png"), b"not a png at all, not at all").unwrap();
+        assert_eq!(shown_size(dir.path(), "column-b2"), (0.0, 0.0), "not a PNG");
+    }
 
     /// What a value in a unit code prints after it: the unit table's number suffix (never a digit, so an index prints none and
     /// its base year stays on the unit line, user 11-05 10:2x), through suffix.

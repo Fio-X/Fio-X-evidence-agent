@@ -2496,8 +2496,17 @@ mod drive {
             recorder.hang_under(&parent);
             let result = crate::next_run::pages_of(&mut recorder, &mut model, &question, &planned, &catalogue, &cancel).await;
             drop(recorder);
-            let lines: Vec<String> = walked.iter().map(Value::to_string).collect();
-            std::fs::write(dir.join("walk-events.jsonl"), lines.join("\n")).unwrap();
+            // the run's events where the completion check reads them: the source run's records of a kind the walk does not
+            // write and its fetches (the data prepare calls), then the walk's own (leaf_gate's ring events)
+            let kinds: BTreeSet<&str> = walked.iter().filter_map(|e| e["type"].as_str()).collect();
+            let lines: Vec<String> =
+                events
+                    .iter()
+                    .filter(|e| {
+                        !e["type"].as_str().is_some_and(|t| kinds.contains(t))
+                            || e["toolName"] == crate::next_knowledge::DATA_PREPARE_TOOL
+                    }).chain(walked.iter()).map(Value::to_string).collect();
+            std::fs::write(run.join("events.jsonl"), lines.join("\n") + "\n").unwrap();
             let of = |kind: &str| walked.iter().filter(|e| e["type"] == kind).collect::<Vec<_>>();
             for e in of(crate::next_run::LEAF_GATE_EVENT) {
                 println!("SAWALK gate {} gaps {}", e["recipe"], e["gaps"]);
@@ -2523,7 +2532,9 @@ mod drive {
             let stacked = stacked.first().expect("a stacked page");
             assert_eq!(stacked["blocks"].as_array().map(Vec::len), Some(3));
             assert_eq!(stacked["quantities_left_out"], json!([]));
-            assert!(run.join(stacked["published"].as_str().unwrap()).is_file());
+            let page = std::fs::read_to_string(run.join(stacked["published"].as_str().unwrap())).expect("the stacked page is written");
+            assert_eq!(page.matches("<iframe ").count(), 3, "three frames");
+            assert!(!page.contains("height=\"0\""), "a frame shown at no height: {page}");
             println!("SAWALK {} | 3 blocks, gates 0, checks passed, sayings held | {}", stacked["published"], result.lines().last().unwrap_or(""));
         }
 
