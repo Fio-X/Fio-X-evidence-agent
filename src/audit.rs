@@ -1948,9 +1948,10 @@ mod tests {
     /// then the same three for the visual group: src/next_visual.rs, its `call` and `as_visual_call`; then src/next_pack.rs among its files;
     /// then src/next_run.rs and src/next_serve.rs among its files; then src/next_nodes.rs and src/next_ledger.rs among its files; then src/next_render.rs among its files; then src/next_leaf.rs among its files; then src/next_facts.rs among its files; then src/next_gate.rs among its files; then src/next_sayings.rs among its files),
     /// and on 10-27 rule two's one `rule_two` entry;
-    /// and on 11-01 (P3) src/next_tree.rs among rule one's files, and rule three's one `node_rule` entry (what a second-layer node may touch).
+    /// and on 11-01 (P3) src/next_tree.rs among rule one's files, and rule three's one `node_rule` entry (what a second-layer node may touch);
+    /// and on 11-13 src/answer_plan.rs among rule one's files (a knowledge-group file the flow reaches only through next_knowledge's call).
     const CROSS_CALLS_DIGEST: &str =
-        "102f58c7c67399e80a07264139f407d0e722d497157fbd30747ff7d5aa6d1936";
+        "cf3e5d70e62f559bebaf062dc511579705ad7e66cef35d8bb7b2b355f2242cf9";
     const PACK_HTML: &[u8] = b"<html>design pack page</html>";
 
     fn write_pack_file(root: &Path, reference: &str, bytes: &[u8]) {

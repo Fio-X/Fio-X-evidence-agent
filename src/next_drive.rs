@@ -503,6 +503,8 @@ mod drive {
                     Some(json!({"step": "text", "text": {},
                         "names": slots.iter().filter_map(Value::as_str).map(|s| (s.to_string(), json!(name))).collect::<serde_json::Map<_, _>>()}))
                 }
+                // the gold is a one-block page: none of the many-block shapes, the flow it was made on
+                "split" => Some(crate::next_flow::split_answer(0)),
                 // Where the gold run ends: reached, not a failure.
                 "vision" => None,
                 other => {
@@ -1928,6 +1930,8 @@ mod drive {
                         Some(next) => next,
                         None => fitted(&step, last, &refusal)?,
                     },
+                    // a run archived before the shape step was asked answered none of the shapes: the flow it ran on
+                    _ if step == "split" && !self.answers.contains_key(&step) => crate::next_flow::split_answer(0),
                     _ => {
                         let mut ask = self.answers.get_mut(&step).and_then(VecDeque::pop_front)?;
                         let first = ask.pop_front()?;

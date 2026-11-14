@@ -23,7 +23,6 @@ mod group_guard;
 mod hash;
 mod interactive;
 mod l5geo;
-#[cfg(test)]
 mod answer_plan;
 mod llm;
 #[cfg(test)]

@@ -155,6 +155,16 @@ pub enum Request<'a> {
     /// The whole class of question the new route cannot answer, read by rule from its words (scope-refusal-zh.json); None
     /// when no class takes it. `this_year` is the program's clock year (a later four-digit year is a forecast).
     ScopeRefused { question: &'a str, this_year: i32 },
+    /// The shape request of a question the scope refusal let through (answer_plan::split_ask): the three many-block shapes,
+    /// the one its words point to first, and the quantities it names as the slots a reply picks from.
+    SplitAsk { catalogue: &'a Opened, question: &'a str },
+    /// The plan of a question for the model's shape reply (answer_plan::plan_for), the reply held against the request
+    /// first (answer_plan::check_reply): Err with the refusal's words when it does not hold.
+    AnswerPlan {
+        catalogue: &'a Opened,
+        question: &'a str,
+        reply: &'a crate::answer_plan::SplitReply,
+    },
     /// What a page drawn for the group the Chinese question names counts, from the page's first and last years, its place
     /// codes and those with a row at the last (l5geo::Catalog::group_basis).
     GroupBasis {
@@ -280,6 +290,8 @@ pub enum Reply<'a> {
     Places(Vec<Place>),
     RankAsked(Option<RankAsked>),
     ScopeRefused(Option<crate::l5geo::ScopeRefusal>),
+    SplitAsk(crate::answer_plan::SplitAsk),
+    AnswerPlan(Result<crate::answer_plan::Plan, String>),
     GroupBasis(Option<crate::l5geo::GroupBasis>),
     Refs(OpenedRefs),
     Shape(Shape),
@@ -349,6 +361,14 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
         } => Reply::Places(catalogue.catalog.places(question)),
         Request::RankAsked { question } => Reply::RankAsked(crate::l5geo::rank_asked_zh(question)),
         Request::ScopeRefused { question, this_year } => Reply::ScopeRefused(crate::l5geo::scope_refused_zh(question, this_year)),
+        Request::SplitAsk { catalogue, question } => Reply::SplitAsk(crate::answer_plan::split_ask(&catalogue.catalog, question)),
+        Request::AnswerPlan { catalogue, question, reply } => {
+            let ask = crate::answer_plan::split_ask(&catalogue.catalog, question);
+            Reply::AnswerPlan(
+                crate::answer_plan::check_reply(&ask, reply)
+                    .map(|()| crate::answer_plan::plan_for(&catalogue.catalog, question, reply)),
+            )
+        }
         Request::GroupBasis {
             catalogue,
             question,

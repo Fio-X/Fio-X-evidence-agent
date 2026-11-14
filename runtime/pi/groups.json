@@ -1082,7 +1082,7 @@
   },
   "src/answer_plan.rs": {
    "group": "knowledge",
-   "note": "v5 measurement prototype, built for tests only: a Chinese question read by rule into the places, years, quantity and relation the page has to prove (the owner's nine relations of 2026-11-13) and the one sentence it proves, numbers as placeholders. Reads l5geo only; not on the flow. Ownership only; no cross-group call is allowed by this row."
+   "note": "The answer plan: a Chinese question read by rule into the places, years, quantity and relation the page has to prove (the owner's nine relations of 2026-11-13) and the one sentence it proves, numbers as placeholders; the shape request and, for the model's shape answer, the many-block plan. Reads l5geo only; on the flow only through the knowledge group's command (next_knowledge ShapeAsk, AnswerPlan). Ownership only; no cross-group call is allowed by this row."
   },
   "src/l5geo.rs": {
    "group": "knowledge",

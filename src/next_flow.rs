@@ -259,6 +259,11 @@ pub enum Ask {
     /// The image review of the published page's screenshot: each of VISION_QUESTIONS answered yes or no, with a one-line
     /// reason for a no. Advice only: the answer is recorded, it never stops a run and never verifies a page.
     Vision,
+    /// The question's shape (owner 11-14 16:0x item 5, 16:5x item 2): one of the many-block shapes the knowledge group
+    /// offers (answer_plan::SPLIT_TERMS, its preselected one first with the words that point to it) or 0, none of them;
+    /// with a shape, the question's quantities by number in the order its blocks take them (empty: the question's order).
+    /// A 0 keeps the one-block flow; the blocks, their tables and years are the program's.
+    Split { ask: crate::answer_plan::SplitAsk },
 }
 
 /// The image review's yes/no questions, id -> the definition shown to the model, in the order asked and recorded. Whether
@@ -353,6 +358,9 @@ pub enum Choice {
     /// Every VISION_QUESTIONS id with its verdict, in that order.
     Vision {
         answers: Vec<(&'static str, Verdict)>,
+    },
+    Split {
+        reply: crate::answer_plan::SplitReply,
     },
 }
 
@@ -708,6 +716,7 @@ impl Ask {
             Ask::Claims { .. } => "claims",
             Ask::Text { .. } => "text",
             Ask::Vision => "vision",
+            Ask::Split { .. } => "split",
         }
     }
 
@@ -784,6 +793,16 @@ impl Ask {
                                 "description": "with no only: one line on what the image shows"}}}))).collect::<Map<_, _>>(),
                     "description": "question id -> yes or no, judged only on what is visible in the image"}}})
             }
+            Ask::Split { ask } => {
+                let count = ask.quantities.len();
+                let mut quantities = json!({"type": "array", "uniqueItems": true, "maxItems": count,
+                    "description": format!("the question's quantities by number, in the order the blocks take them; [] keeps the question's order: {}", quantity_list(ask))});
+                quantities["items"] = if count == 0 { json!({"type": "integer"}) } else { json!({"type": "integer", "minimum": 0, "maximum": count - 1}) };
+                let mut properties = json!({SPLIT_KEY: {"type": "integer", "enum": split_numbers(ask), "description": split_rule(ask)},
+                    QUANTITIES_KEY: quantities});
+                properties[STEP_KEY] = step;
+                json!({"type": "object", "additionalProperties": false, "required": [STEP_KEY, SPLIT_KEY, QUANTITIES_KEY], "properties": properties})
+            }
         }
     }
 
@@ -813,6 +832,11 @@ impl Ask {
                 );
                 json!({"step": "vision", "answers": answers})
             }
+            // the preselected shape when the knowledge group gave one (its words point there), else none of them
+            Ask::Split { ask } => split_answer(match ask.offered.first() {
+                Some((first, Some(_))) => *first as u8,
+                _ => 0,
+            }),
         }
     }
 
@@ -886,6 +910,9 @@ impl Ask {
             Ask::Vision => json!({"step": "vision",
                 "answers": VISION_QUESTIONS.iter().map(|(id, _)| (id.to_string(), json!(["yes", "no"]))).collect::<Map<_, _>>(),
                 "reason_max_chars": VISION_TEXT_MAX}),
+            Ask::Split { ask } => json!({STEP_KEY: self.step(), SPLIT_KEY: split_numbers(ask),
+                QUANTITIES_KEY: (0..ask.quantities.len()).collect::<Vec<_>>(),
+                "least_quantities": crate::answer_plan::SPLIT_TERMS.iter().map(|(n, _, _, least)| (n.to_string(), json!(least))).collect::<Map<_, _>>()}),
         }
     }
 
@@ -927,18 +954,21 @@ impl Ask {
         let Value::Object(map) = &args else {
             return Err(self.refuse("the answer is not an object"));
         };
-        if map.get("step").and_then(Value::as_str) != Some(self.step()) {
+        if map.get(STEP_KEY).and_then(Value::as_str) != Some(self.step()) {
             return Err(self.refuse(format!("step must be \"{}\"", self.step())));
         }
-        let keys: &[&str] = match self {
-            Ask::Search => &["step", "query"],
-            Ask::Table { items, .. } if !items.is_empty() => &["step", "pick", "params"],
-            Ask::Table { .. } => &["step", "pick"],
-            Ask::Claims { relations, .. } if *relations > 1 => &["step", "pick", "relation"],
-            Ask::Claims { .. } => &["step", "pick"],
-            Ask::Text { .. } => &["step", "text", "names"],
-            Ask::Vision => &["step", "answers"],
+        // every step's answer holds the step key, then the step's own keys
+        let own: &[&str] = match self {
+            Ask::Search => &["query"],
+            Ask::Table { items, .. } if !items.is_empty() => &["pick", "params"],
+            Ask::Table { .. } => &["pick"],
+            Ask::Claims { relations, .. } if *relations > 1 => &["pick", "relation"],
+            Ask::Claims { .. } => &["pick"],
+            Ask::Text { .. } => &["text", "names"],
+            Ask::Vision => &["answers"],
+            Ask::Split { .. } => &[SPLIT_KEY, QUANTITIES_KEY],
         };
+        let keys: Vec<&str> = std::iter::once(STEP_KEY).chain(own.iter().copied()).collect();
         // the table step's relation is optional and never refused (table_relation reads it after every check)
         let optional = |k: &str| matches!(self, Ask::Table { .. }) && k == RELATION_KEY;
         if let Some(key) = map.keys().find(|k| !keys.contains(&k.as_str()) && !optional(k)) {
@@ -1295,8 +1325,75 @@ impl Ask {
                     answers: VISION_QUESTIONS.iter().map(|(id, _)| (*id, verdict_of(given.get(*id)))).collect(),
                 })
             }
+            Ask::Split { ask } => {
+                let number = match map[SPLIT_KEY].as_u64() {
+                    Some(n) if split_numbers(ask).contains(&n) => n as u8,
+                    _ => return Err(self.refuse("split must be 0 or one of the offered numbers")),
+                };
+                let Some(given) = map[QUANTITIES_KEY].as_array() else {
+                    return Err(self.refuse("quantities must be a list of quantity numbers"));
+                };
+                let mut quantities = Vec::new();
+                for v in given {
+                    match v.as_u64() {
+                        Some(i) if (i as usize) < ask.quantities.len() && !quantities.contains(&(i as usize)) => quantities.push(i as usize),
+                        Some(i) if quantities.contains(&(i as usize)) => return Err(self.refuse(format!("quantities lists {i} twice"))),
+                        _ => return Err(self.refuse(format!("quantities: {v} is not a listed quantity number"))),
+                    }
+                }
+                if number != 0 {
+                    let n = if quantities.is_empty() { ask.quantities.len() } else { quantities.len() };
+                    if let Some((_, name, _, least)) = crate::answer_plan::SPLIT_TERMS.iter().find(|t| t.0 == number) {
+                        if n < *least {
+                            return Err(self.refuse(format!("split {number} ({name}) takes {least} quantities or more, and the answer gives {n}; answer 0 when the question names fewer")));
+                        }
+                    }
+                }
+                Ok(Choice::Split { reply: crate::answer_plan::SplitReply { number, quantities } })
+            }
         }
     }
+}
+
+/// The key every answer names its step with.
+const STEP_KEY: &str = "step";
+/// The split step's keys: the number of the shape the question takes (it sets the page's blocks), and the question's
+/// quantities in the order the blocks take them.
+const SPLIT_KEY: &str = "split";
+const QUANTITIES_KEY: &str = "quantities";
+
+/// A split answer with that shape number and the question's quantities in its own order: the example of a split ask, and
+/// the answer of a run recorded before the step was asked (0, the one-block flow it ran on).
+pub fn split_answer(number: u8) -> Value {
+    json!({STEP_KEY: "split", SPLIT_KEY: number, QUANTITIES_KEY: []})
+}
+
+/// The shape numbers a shape answer may give: 0 (none of them), then the offered ones in the order offered.
+fn split_numbers(ask: &crate::answer_plan::SplitAsk) -> Vec<u64> {
+    std::iter::once(0).chain(ask.offered.iter().map(|(offered, _)| *offered as u64)).collect()
+}
+
+/// The question's quantities as the shape request lists them: number, then printed name.
+fn quantity_list(ask: &crate::answer_plan::SplitAsk) -> String {
+    if ask.quantities.is_empty() {
+        return "the question names none".into();
+    }
+    ask.quantities.iter().enumerate().map(|(i, (_, zh))| format!("{i} {zh}")).collect::<Vec<_>>().join(", ")
+}
+
+/// The shape rule: 0, then each offered shape with what it answers (answer_plan::SPLIT_TERMS), the words of the question
+/// that point to one written after it.
+fn split_rule(ask: &crate::answer_plan::SplitAsk) -> String {
+    let offered: Vec<String> = ask
+        .offered
+        .iter()
+        .filter_map(|(offered, words)| {
+            let (n, name, what, least) = crate::answer_plan::SPLIT_TERMS.iter().find(|t| t.0 == *offered as u8)?;
+            let pointed = words.map_or(String::new(), |w| format!("; the question's words \"{w}\" point here"));
+            Some(format!("{n} {name}: {what} (takes {least} quantities or more{pointed})"))
+        })
+        .collect();
+    format!("how the question splits into the page's blocks: 0 none of these (one block answers it); {}", offered.join("; "))
 }
 
 /// The items of the picked tables (1-based table numbers), in pick order.
@@ -2669,6 +2766,9 @@ const NARROWING_MODES: [&str; 3] = ["too_large", "too_open", "needs_narrowing"];
 pub const CATALOGUE_ENV: &str = "NEWS_CATALOG_DIR";
 /// The event that keeps what the catalogue returned for the search, whole, for the replay.
 pub const CATALOGUE_EVENT: &str = "next_catalogue";
+/// The event that keeps the question's shape answer and the plan the knowledge group made of it (the blocks, each block's
+/// relation, focus, quantity and years), whole; a 0 answer keeps the answer and no plan.
+pub const PLAN_EVENT: &str = "next_answer_plan";
 /// The event that keeps how the fetch parameters of the picked tables were filled when no spec was given.
 pub const PARAMS_EVENT: &str = "next_params";
 /// The event that keeps, before the table pick, each listed table's breakdown options: the ones offered (with the years
@@ -2714,6 +2814,20 @@ pub trait Catalogue: Sync {
     /// The whole class of question the knowledge group refuses from its words before any search (scope-refusal-zh.json, user
     /// 11-08 item 1); None when no class takes it.
     fn scope_refused(&self, _question_zh: &str, _this_year: i32) -> Option<crate::l5geo::ScopeRefusal> {
+        None
+    }
+    /// The shape request of a question the scope refusal let through (the knowledge group's answer_plan, through its door);
+    /// None when this catalogue reads none, and then no shape step is asked.
+    fn split_ask(&self, _question_zh: &str) -> Option<crate::answer_plan::SplitAsk> {
+        None
+    }
+    /// The plan of the question for a checked shape answer, the answer held once more against the request by the knowledge
+    /// group (Err with its words when it does not hold); None when this catalogue reads none.
+    fn answer_plan(
+        &self,
+        _question_zh: &str,
+        _reply: &crate::answer_plan::SplitReply,
+    ) -> Option<Result<crate::answer_plan::Plan, String>> {
         None
     }
     /// What a page drawn for the group the Chinese question names counts (the knowledge group's GroupBasis, through its
@@ -3205,6 +3319,9 @@ pub(crate) fn knowledge_call<'a>(
         Ok(Reply::Iso3 { iso3, missing }) => json!({"iso3": iso3, "missing": missing}),
         Ok(Reply::RankAsked(asked)) => json!({"rank_asked": asked}),
         Ok(Reply::ScopeRefused(refused)) => json!({"scope_refused": refused}),
+        Ok(Reply::SplitAsk(ask)) => json!({"shape_ask": ask}),
+        Ok(Reply::AnswerPlan(Ok(plan))) => json!({"plan": plan}),
+        Ok(Reply::AnswerPlan(Err(why))) => json!({"refused": why}),
         Ok(Reply::HeldProbe { url, .. }) => json!({"url": url}),
         Ok(Reply::Held(held)) => json!({"held": format!("{held:?}")}),
         Ok(Reply::UnitAdditive(additive)) => json!(additive),
@@ -3644,6 +3761,26 @@ impl Catalogue for GroupCatalogue {
         }
     }
 
+    fn split_ask(&self, question_zh: &str) -> Option<crate::answer_plan::SplitAsk> {
+        let request = next_knowledge::Request::SplitAsk { catalogue: &self.opened, question: question_zh };
+        match self.call("split_ask", json!({"question": question_zh}), request) {
+            next_knowledge::Reply::SplitAsk(ask) => Some(ask),
+            _ => unreachable!("the knowledge group answered shape_ask with another reply"),
+        }
+    }
+
+    fn answer_plan(
+        &self,
+        question_zh: &str,
+        reply: &crate::answer_plan::SplitReply,
+    ) -> Option<Result<crate::answer_plan::Plan, String>> {
+        let request = next_knowledge::Request::AnswerPlan { catalogue: &self.opened, question: question_zh, reply };
+        match self.call("answer_plan", json!({"question": question_zh, "reply": reply}), request) {
+            next_knowledge::Reply::AnswerPlan(plan) => Some(plan),
+            _ => unreachable!("the knowledge group answered answer_plan with another reply"),
+        }
+    }
+
     fn rank_asked(&self, question_zh: &str) -> Option<RankAsked> {
         let request = next_knowledge::Request::RankAsked {
             question: question_zh,
@@ -3838,6 +3975,43 @@ pub fn record_group_calls(
         recorder.program_event(GROUP_CALL_EVENT, event)?;
     }
     Ok(())
+}
+
+/// The shape step (owner 11-14 16:5x item 2): asked of every question the scope refusal let through, when the catalogue
+/// reads shapes; the answer and the knowledge group's plan of it are kept as a PLAN_EVENT. A 0 answer, or a catalogue
+/// that reads none, gives None and the one-block flow goes on as before.
+pub async fn split_step(
+    recorder: &mut Recorder<'_>,
+    model: &mut (dyn Asker + '_),
+    question: &str,
+    catalogue: &dyn Catalogue,
+    cancel: &AtomicBool,
+) -> Result<Option<crate::answer_plan::Plan>, Stop> {
+    let Some(ask) = catalogue.split_ask(question) else {
+        return Ok(None);
+    };
+    record_group_calls(recorder, catalogue)?;
+    let prompt = format!(
+        "Question: {question}\nWhich shape does the question take? A shape sets the page's blocks; answer 0 when none of them fits."
+    );
+    let reply = match recorder.ask_step(model, &Ask::Split { ask }, &prompt, cancel).await? {
+        (_, Choice::Split { reply }) => reply,
+        (_, other) => unreachable!("the split step was answered with {other:?}"),
+    };
+    if reply.number == 0 {
+        recorder.program_event(PLAN_EVENT, json!({"reply": reply, "plan": null}))?;
+        return Ok(None);
+    }
+    let plan = catalogue.answer_plan(question, &reply);
+    record_group_calls(recorder, catalogue)?;
+    match plan {
+        None => Ok(None),
+        Some(Err(why)) => Err(Stop::Exchange { step: "split", why: format!("the knowledge group refused the checked shape answer: {why}") }),
+        Some(Ok(plan)) => {
+            recorder.program_event(PLAN_EVENT, json!({"reply": reply, "plan": plan}))?;
+            Ok(Some(plan))
+        }
+    }
 }
 
 /// One table after the claims pick: the fetch arguments its sheet was made from, the sheet key, and the verified claims
@@ -4990,6 +5164,7 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
         if let Some(r) = refused {
             return Err(Stop::NoTable(format!("the question is out of scope ({}, \"{}\"): {}", r.class, r.hit, r.reason_zh)));
         }
+        split_step(recorder, model, question, catalogue, cancel).await?;
     }
     // The search words go to the catalogue and into this event only: no later prompt, fetch or page reads them.
     let texts = vec![query];
@@ -6248,6 +6423,40 @@ mod tests {
             schema["properties"]["answers"]["properties"]["single_focus"]["description"],
             "yes if the page has one visual focal point and uses one accent colour for it"
         );
+    }
+
+    /// The shape answer (owner 11-14 16:5x item 2): 0 or an offered shape, the question's quantities by number with none
+    /// twice, and as many as the shape takes (answer_plan::SPLIT_TERMS); the example the refusal sends is itself accepted.
+    #[test]
+    fn a_shape_answer_is_zero_or_an_offered_shape_with_enough_quantities() {
+        use crate::answer_plan::{Shape, SplitAsk, SplitReply};
+        let two = || vec![("population".to_string(), "人口".to_string()), ("gdp_pc".to_string(), "人均GDP".to_string())];
+        let ask = Ask::Split {
+            ask: SplitAsk {
+                offered: vec![(Shape::RankCompare, Some("是不是也")), (Shape::ThresholdTime, None), (Shape::TotalToParts, None)],
+                quantities: two(),
+            },
+        };
+        let answer = |shape: u64, quantities: Value| json!({"step": "split", "split": shape, "quantities": quantities});
+        let reply = |shape: u8, quantities: Vec<usize>| Choice::Split { reply: SplitReply { number: shape, quantities } };
+        assert_eq!(ask.check(&answer(0, json!([]))).unwrap(), reply(0, vec![]));
+        assert_eq!(ask.check(&answer(1, json!([1, 0]))).unwrap(), reply(1, vec![1, 0]));
+        assert_eq!(ask.check(&answer(1, json!([]))).unwrap(), reply(1, vec![]), "[] keeps the question's two");
+        for bad in [answer(4, json!([])), answer(1, json!([0])), answer(1, json!([0, 0])), answer(2, json!([2])), answer(1, json!("0,1"))] {
+            let refused = ask.check(&bad).unwrap_err();
+            assert!(refused.allowed["split"] == json!([0, 1, 2, 3]), "{bad}: {:?}", refused.allowed);
+            assert!(ask.check(&refused.example).is_ok(), "the example is accepted: {}", refused.example);
+        }
+        assert!(ask.check(&json!({"step": "split", "split": 0})).is_err(), "quantities is required");
+        assert_eq!(ask.schema()["properties"]["split"]["enum"], json!([0, 1, 2, 3]));
+        assert!(ask.schema()["properties"]["split"]["description"].as_str().unwrap().contains("\"是不是也\" point here"));
+        // a question that names one quantity cannot take 名次对照, and the example offers nothing else when none is preselected
+        let one = Ask::Split {
+            ask: SplitAsk { offered: vec![(Shape::RankCompare, None), (Shape::ThresholdTime, None), (Shape::TotalToParts, None)], quantities: two()[..1].to_vec() },
+        };
+        assert!(one.check(&answer(1, json!([]))).is_err());
+        assert_eq!(one.check(&answer(2, json!([]))).unwrap(), reply(2, vec![]));
+        assert_eq!(one.example(), answer(0, json!([])));
     }
 
     #[test]
@@ -8502,6 +8711,90 @@ mod tests {
         assert_eq!(calls[0]["request"], "scope_refused");
         assert!(calls[0]["auto_parent_call_id"].is_string(), "{calls:?}");
         assert!(tools.args.is_empty(), "nothing fetched");
+    }
+
+    /// The split step (owner 11-14 16:5x item 2), asked after the search answer: the knowledge group's request, the model's
+    /// answer, and for a shape the group's plan of it kept as a PLAN_EVENT, every group call under a model answer. A 0
+    /// answer keeps the answer and no plan, and the one-block flow goes on (None); a catalogue that reads no splits asks
+    /// nothing.
+    #[tokio::test]
+    async fn the_split_step_keeps_the_answer_and_the_plan_under_model_answers() {
+        use crate::answer_plan::{Plan, Shape, SplitAsk, SplitReply};
+        let _command = crate::group_guard::command_for_test("investigate");
+        struct Splits(Mutex<Vec<Value>>);
+        impl Catalogue for Splits {
+            fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>, _: Option<i32>) -> Ranking {
+                unreachable!()
+            }
+            fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
+                unreachable!()
+            }
+            fn source(&self) -> &Value {
+                unreachable!()
+            }
+            fn take_calls(&self) -> Vec<Value> {
+                std::mem::take(&mut *self.0.lock().unwrap())
+            }
+            fn split_ask(&self, _: &str) -> Option<SplitAsk> {
+                self.0.lock().unwrap().push(json!({"group": "knowledge", "request": "split_ask"}));
+                Some(SplitAsk {
+                    offered: vec![(Shape::RankCompare, Some("是不是也")), (Shape::ThresholdTime, None), (Shape::TotalToParts, None)],
+                    quantities: vec![("population".into(), "人口".into()), ("gdp_pc".into(), "人均GDP".into())],
+                })
+            }
+            fn answer_plan(&self, _: &str, reply: &SplitReply) -> Option<Result<Plan, String>> {
+                self.0.lock().unwrap().push(json!({"group": "knowledge", "request": "answer_plan"}));
+                assert_eq!(reply, &SplitReply { number: 1, quantities: vec![1, 0] });
+                Some(Ok(Plan { blocks: Vec::new(), partial: false }))
+            }
+        }
+        for (answer, planned) in [(json!({"step": "split", "split": 1, "quantities": [1, 0]}), true), (split_answer(0), false)] {
+            let catalogue = Splits(Mutex::new(Vec::new()));
+            let run = tempfile::tempdir().unwrap();
+            let (events, mut sink) = collector();
+            // the first split answer names a quantity twice and is refused; the second is taken
+            let mut model = ScriptedAsker::new(vec![
+                search_reply(),
+                call("toolu_x0", json!({"step": "split", "split": 1, "quantities": [0, 0]})),
+                call("toolu_x1", answer.clone()),
+            ]);
+            let cancel = AtomicBool::new(false);
+            let mut recorder = Recorder::new(&mut sink, run.path(), Vec::new(), Vec::new());
+            recorder.ask_step(&mut model, &Ask::Search, "search", &cancel).await.unwrap();
+            let plan = split_step(&mut recorder, &mut model, "人最多的，是不是也最富？", &catalogue, &cancel).await.unwrap();
+            drop(recorder);
+            assert_eq!(plan.is_some(), planned, "{answer}");
+            let kept = of_type(&events, PLAN_EVENT);
+            assert_eq!(kept.len(), 1, "{kept:?}");
+            assert_eq!(kept[0]["reply"]["number"], answer["split"]);
+            assert_eq!(kept[0]["plan"].is_null(), !planned);
+            let calls = of_type(&events, GROUP_CALL_EVENT);
+            assert_eq!(calls.len(), if planned { 2 } else { 1 }, "{calls:?}");
+            assert!(calls.iter().all(|c| c["auto_parent_call_id"].is_string()), "{calls:?}");
+        }
+        // a catalogue that reads no splits: nothing asked, nothing kept
+        struct NoSplits;
+        impl Catalogue for NoSplits {
+            fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>, _: Option<i32>) -> Ranking {
+                unreachable!()
+            }
+            fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
+                unreachable!()
+            }
+            fn source(&self) -> &Value {
+                unreachable!()
+            }
+        }
+        let catalogue = NoSplits;
+        let run = tempfile::tempdir().unwrap();
+        let (events, mut sink) = collector();
+        let mut model = ScriptedAsker::new(vec![search_reply()]);
+        let cancel = AtomicBool::new(false);
+        let mut recorder = Recorder::new(&mut sink, run.path(), Vec::new(), Vec::new());
+        recorder.ask_step(&mut model, &Ask::Search, "search", &cancel).await.unwrap();
+        assert!(split_step(&mut recorder, &mut model, "德国的人口", &catalogue, &cancel).await.unwrap().is_none());
+        drop(recorder);
+        assert!(of_type(&events, PLAN_EVENT).is_empty());
     }
 
     #[test]
