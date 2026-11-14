@@ -369,6 +369,21 @@ mod tests {
         // The two World Bank bench measures (q4, q5).
         assert_eq!(unit_short_zh("TCO2E_HAB"), Some("吨二氧化碳当量/人"));
         assert_eq!(unit_short_zh("PC_POP"), Some("%"));
+        // the World Bank rate bases with no unit code the owner approved one by one (11-14 15:2x), in Chinese numerals as
+        // the reviewed rows write them (每十万人, 每千名活产婴儿): the indicator's row names the code, the code its form
+        let code_of = |ind: &str| wb.lines().find(|l| l.starts_with(&format!("{ind}\t"))).and_then(|l| l.split('\t').nth(2));
+        for (ind, form) in [
+            ("FB.ATM.TOTL.P5", "每十万成年人"),
+            ("FB.CBK.BRCH.P5", "每十万成年人"),
+            ("SH.STA.MMRT", "每十万例活产"),
+            ("SH.STA.MMRT.NE", "每十万活产婴儿"),
+            ("SP.ADO.TFRT", "每千名十五至十九岁女性"),
+            ("SP.DYN.AMRT.FE", "每千名成年女性"),
+        ] {
+            assert_eq!(code_of(ind).and_then(unit_short_zh), Some(form), "{ind}");
+        }
+        // the two the owner left out: a base the Chinese form would lose (ages 15-64), and a bank name that drops 成年
+        assert_eq!((code_of("IC.BUS.NDNS.ZS"), code_of("SP.DYN.AMRT.MA")), (Some(""), Some("")));
         let additive = |code: &str| UNIT_SHORT_ZH.lines().find(|l| l.starts_with(&format!("{code}\t"))).and_then(|l| l.split('\t').nth(3));
         assert_eq!([additive("PER"), additive("KTOE"), additive("PC"), additive("TCO2E_HAB"), additive("NR")], [Some("yes"), Some("yes"), Some("no"), Some("no"), Some("yes")]);
     }
