@@ -5148,7 +5148,15 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
     catalogue: &dyn Catalogue,
     cancel: &AtomicBool,
 ) -> Result<Vec<Prepared>, Stop> {
-    Ok(prepare_planned(recorder, model, tools, question, steps, catalogue, cancel).await?.0)
+    Ok(prepare_planned(recorder, model, tools, question, steps, catalogue, cancel).await?.prepared)
+}
+
+/// What prepare_planned gives: the prepared tables, the question's plan when the split step gave one, and the table of each
+/// block the program set (block_tables; empty when it set none), in block order.
+pub struct Planned {
+    pub prepared: Vec<Prepared>,
+    pub plan: Option<crate::answer_plan::Plan>,
+    pub block_tables: Vec<String>,
 }
 
 /// prepare_claims with the question's plan, when the split step gave one (owner 11-14 16:5x item 2): for a plan whose
@@ -5162,7 +5170,7 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
     steps: &[PrepareStep],
     catalogue: &dyn Catalogue,
     cancel: &AtomicBool,
-) -> Result<(Vec<Prepared>, Option<crate::answer_plan::Plan>), Stop> {
+) -> Result<Planned, Stop> {
     let prompt = format!(
         "Question: {question}\nWrite English words to search the data catalogue for tables that answer it."
     );
@@ -5630,7 +5638,13 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
     if let Some(main) = prepared.first_mut() {
         composition_inputs(recorder, tools, catalogue, main, cancel).await?;
     }
-    Ok((prepared, plan))
+    let block_tables = blocks.iter().flatten().filter_map(|(_, t)| t.clone()).fold(Vec::new(), |mut seen, t| {
+        if !seen.contains(&t) {
+            seen.push(t);
+        }
+        seen
+    });
+    Ok(Planned { prepared, plan, block_tables })
 }
 
 /// The table of each block of a plan whose blocks each take their own quantity (名次对照: two or more blocks, no quantity

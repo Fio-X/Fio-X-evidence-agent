@@ -64,6 +64,26 @@ pub fn leaf_gate(root: &Path, dir: &str, manifest: &Value) -> Option<Vec<String>
 /// from a recorded fetch (N1 b), the visual group's recheck passes on those bytes (LeafRecheck: a registered recipe, the
 /// bake's own check, each series entry printing its row), every view the question asks for has a layer of the recipe
 /// (GAP-2), and the text checks pass. Anything that cannot be read is a gap.
+/// The folder of block `block` of a many-block page (owner 11-14 16:5x item 2): the first block, and every one-block page,
+/// under its recipe's name as before; each later one under the name and -b<n> (n from 2 to 9).
+pub fn block_dir(recipe: &str, block: usize) -> String {
+    if block <= 1 {
+        recipe.to_string()
+    } else {
+        format!("{recipe}-b{block}")
+    }
+}
+
+/// The recipe a leaf page's folder draws: the folder's name, or for a later block's folder (block_dir) the name before its
+/// -b<n>. Only the recipe's layers are looked up by it; every other match (the ring event, the plan, the manifest) is the
+/// whole folder name, as for any page.
+pub fn recipe_of(dir: &str) -> &str {
+    match dir.rsplit_once("-b") {
+        Some((recipe, n)) if !recipe.is_empty() && n.len() == 1 && n.parse::<u8>().is_ok_and(|n| (2..=9).contains(&n)) => recipe,
+        _ => dir,
+    }
+}
+
 pub fn leaf_gaps(root: &Path, dir: &str, manifest: &Value, fetched: &[Fetch]) -> Vec<String> {
     let at = format!("publications/{dir}");
     let mut gaps = Vec::new();
@@ -91,7 +111,7 @@ pub fn leaf_gaps(root: &Path, dir: &str, manifest: &Value, fetched: &[Fetch]) ->
         None => gaps.push(format!("leaf page {at}: no readable plan {plan_ref}")),
     }
     let calls = Mutex::new(Vec::new());
-    let layers = match visual_call(&calls, "recipe_layers", crate::next_visual::Request::RecipeLayers { recipe: dir }) {
+    let layers = match visual_call(&calls, "recipe_layers", crate::next_visual::Request::RecipeLayers { recipe: recipe_of(dir) }) {
         Ok(crate::next_visual::Reply::Layers(Some(layers))) => layers,
         Ok(_) => {
             gaps.push(format!("leaf page {at}: {dir} is no recipe of the leaf registry"));
@@ -406,6 +426,17 @@ fn strip(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A later block's folder draws its recipe; the first block's, and any other folder, is its recipe's name: a name that
+    /// only looks like a block's (-b1, -b10, -bx, a bare -b2) is a recipe's own.
+    #[test]
+    fn a_block_folder_draws_its_recipe_and_no_other_name_is_cut() {
+        assert_eq!(block_dir("change", 1), "change");
+        assert_eq!(block_dir("change", 3), "change-b3");
+        for (dir, recipe) in [("change-b3", "change"), ("change", "change"), ("change-b1", "change-b1"), ("change-b10", "change-b10"), ("change-bx", "change-bx"), ("-b2", "-b2")] {
+            assert_eq!(recipe_of(dir), recipe, "{dir}");
+        }
+    }
 
     #[test]
     fn text_gaps_reads_headline_dek_and_alt() {

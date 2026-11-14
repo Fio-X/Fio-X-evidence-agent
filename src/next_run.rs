@@ -3030,6 +3030,7 @@ fn leaf_page(
     (picked, mut fill): (&'static Recipe, Value),
     (question, words): (&str, (&str, &str, &str)),
     calls: &std::sync::Mutex<Vec<Value>>,
+    block: usize,
 ) -> Result<LeafPublished, (&'static str, &'static str, String)> {
     use crate::next_visual::{LeafPage, Reply, Request};
     page_words(&mut fill, words);
@@ -3055,8 +3056,10 @@ fn leaf_page(
         facts: (&page.spec, &page.rows, &page.facts),
         strip: strip.as_ref(),
     };
-    let plan = leaf_plan(question, recipe);
-    let published = crate::next_flow::publish_leaf_page(calls, run_dir, recipe, (&leaf, &plan), &page.qa).map_err(|why| {
+    // a later block's page is published beside the first under its own folder (next_gate::block_dir)
+    let dir = crate::next_gate::block_dir(recipe, block);
+    let plan = leaf_plan(question, &dir);
+    let published = crate::next_flow::publish_leaf_page(calls, run_dir, &dir, (&leaf, &plan), &page.qa).map_err(|why| {
         // the call that refused names the stage; a refusal of the folder or of a write is the door's
         let refused = calls.lock().unwrap_or_else(|e| e.into_inner()).last().filter(|e| e["ok"] == false).cloned();
         let stage = match refused.as_ref().and_then(|e| e["request"].as_str()) {
@@ -3069,7 +3072,7 @@ fn leaf_page(
     let drawn = fill["drawn"].as_array().cloned().unwrap_or_default();
     let zeros = declared_zeros(&fill);
     let notes = notes_asked(picked, &fill);
-    Ok(LeafPublished { recipe: picked, published, drawn, strip: strip_ask, ends: fill.get("ends").cloned(), zeros, notes })
+    Ok(LeafPublished { recipe: picked, dir, published, drawn, strip: strip_ask, ends: fill.get("ends").cloned(), zeros, notes })
 }
 
 /// The unit line's segments (knobs.segs.unit, facts.worded) when its unit's short form holds a digit: the line's words before
@@ -3179,6 +3182,8 @@ fn page_strip(
 /// one year).
 struct LeafPublished {
     recipe: &'static Recipe,
+    /// The publication folder: the recipe's name, or a later block's (next_gate::block_dir).
+    dir: String,
     published: crate::next_flow::Published,
     drawn: Vec<Value>,
     strip: StripAsk,
@@ -4002,10 +4007,33 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
     catalogue: &dyn Catalogue,
     cancel: &AtomicBool,
 ) -> Result<String, Stop> {
-    let prepared =
-        prepare_claims(recorder, model, tools, question, steps, catalogue, cancel).await?;
-    page_from(recorder, model, question, &prepared, catalogue, cancel).await
+    let planned = crate::next_flow::prepare_planned(recorder, model, tools, question, steps, catalogue, cancel).await?;
+    let blocks: Vec<&Prepared> =
+        planned.block_tables.iter().filter_map(|id| planned.prepared.iter().find(|p| &p.id == id)).collect();
+    if blocks.len() < 2 {
+        return page_from(recorder, model, question, &planned.prepared, catalogue, cancel).await;
+    }
+    // a many-block page (owner 11-14 16:5x item 2): each block's page from its own table, by the same steps and checks;
+    // the first block stops the run as a one-block page does, a later block that stops is left out and kept as such
+    let mut answers = vec![page_of_block(recorder, model, question, std::slice::from_ref(blocks[0]), catalogue, cancel, 1).await?];
+    for (i, table) in blocks.iter().enumerate().skip(1) {
+        match page_of_block(recorder, model, question, std::slice::from_ref(*table), catalogue, cancel, i + 1).await {
+            Ok(answer) => answers.push(answer),
+            // a page step or a check of the page stopped it, or the text step's reply was refused: that block only
+            Err(stopped @ (Stop::Page { .. } | Stop::Refused { .. } | Stop::NoReply { .. })) => {
+                if recorder.resume_under_last_accepted() {
+                    recorder.program_event(BLOCK_LEFT_OUT_EVENT, json!({"block": i + 1, "table": table.id, "why": stopped.to_string()}))?;
+                }
+                answers.push(format!("Block {} ({}) was left out: {stopped}", i + 1, table.id));
+            }
+            Err(stopped) => return Err(stopped),
+        }
+    }
+    Ok(answers.join("\n"))
 }
+
+/// A later block of a many-block page that stopped and was left out: its number, its table and why.
+pub const BLOCK_LEFT_OUT_EVENT: &str = "next_block_left_out";
 
 /// The first prompt from its prepared tables on (run_page after prepare_claims): the charts, the recipe's pick, the text
 /// step, the leaf page, the completion gate, the page checks and the image review. Returns the answer text.
@@ -4016,6 +4044,20 @@ pub(crate) async fn page_from(
     prepared: &[Prepared],
     catalogue: &dyn Catalogue,
     cancel: &AtomicBool,
+) -> Result<String, Stop> {
+    page_of_block(recorder, model, question, prepared, catalogue, cancel, 1).await
+}
+
+/// page_from for block `block` of a many-block page (1: the first block, or a one-block page): the same steps and checks,
+/// its page published under next_gate::block_dir, every check that reads a publication folder reading that one.
+pub(crate) async fn page_of_block(
+    recorder: &mut Recorder<'_>,
+    model: &mut (dyn Asker + '_),
+    question: &str,
+    prepared: &[Prepared],
+    catalogue: &dyn Catalogue,
+    cancel: &AtomicBool,
+    block: usize,
 ) -> Result<String, Stop> {
     let page = charts(recorder, prepared, catalogue)?;
     let calls = std::sync::Mutex::new(Vec::new());
@@ -4066,7 +4108,7 @@ pub(crate) async fn page_from(
     let headed = picked.as_ref().ok().map(|(_, fill)| fill);
     let (title, kicker) = title_and_kicker(headed, drafts.has_scope, label, measure);
     let fell_back = headline_fell_back(picked.as_ref().map(|(_, fill)| fill).map_err(|(_, _, why)| why.as_str()), drafts.has_scope);
-    let leaf = picked.and_then(|picked| leaf_page(recorder.run_dir(), picked, (question, (&title, &dek, &kicker)), &calls));
+    let leaf = picked.and_then(|picked| leaf_page(recorder.run_dir(), picked, (question, (&title, &dek, &kicker)), &calls, block));
     record_page_calls(recorder, catalogue, calls)?;
     // a fill with no headline falls back to the label, unless the leaf made the page's h1 from its own finding (an h1 that
     // states a relation the page checks read, as a flow page's does): that page did not fall back
@@ -4076,12 +4118,14 @@ pub(crate) async fn page_from(
     match leaf {
         Ok(leaf) => {
             let (recipe, published) = (leaf.recipe.name.as_str(), &leaf.published);
+            // the publication folder every check below reads: the recipe's name, or a later block's
+            let dir = leaf.dir.as_str();
             // each external layer's drawn check, as the visual group gave it ({layer, compared, failed})
             for checked in &published.drawn_checked {
                 recorder.program_event(DRAWN_CHECKED_EVENT, checked.clone())?;
             }
             // what a layer could not place is on record in the run's events too, never only in the request beside the page
-            let mut event = json!({"by": RING_ACTOR, "recipe": recipe, "published": published.html_ref,
+            let mut event = json!({"by": RING_ACTOR, "recipe": dir, "published": published.html_ref,
                 "html_sha256": published.html_sha256,
                 "dropped": published.dropped.iter().map(|(what, why)| json!({"what": what, "why": why})).collect::<Vec<_>>()});
             if let Some(ends) = &leaf.ends {
@@ -4109,10 +4153,10 @@ pub(crate) async fn page_from(
                     Err(unwritten) => unwritten,
                 }
             };
-            let gaps = leaf_gate_now(recorder.run_dir(), recipe, prepared);
+            let gaps = leaf_gate_now(recorder.run_dir(), dir, prepared);
             recorder.program_event(
                 LEAF_GATE_EVENT,
-                json!({"by": RING_ACTOR, "recipe": recipe, "published": published.html_ref,
+                json!({"by": RING_ACTOR, "recipe": dir, "published": published.html_ref,
                     "html_sha256": published.html_sha256, "gaps": gaps}),
             )?;
             // a page the completion gate already holds back is not shown for review: the run stops on its gaps
@@ -4136,7 +4180,7 @@ pub(crate) async fn page_from(
                 .collect();
             recorder.program_event(
                 PAGE_CHECKS_EVENT,
-                json!({"by": RING_ACTOR, "recipe": recipe, "published": published.html_ref,
+                json!({"by": RING_ACTOR, "recipe": dir, "published": published.html_ref,
                     "html_sha256": read_sha256, "checks": measured}),
             )?;
             let failed: Vec<String> = checks.iter().filter(|c| !c.passed).map(|c| format!("{} measured {}", c.name, c.measured)).collect();
@@ -4146,7 +4190,7 @@ pub(crate) async fn page_from(
             }
             // every sentence saying something over a whole set, held to every place the question names and to the source
             // (next_sayings, plan v4 item 1): one that does not hold stops the run, as a failed page check does
-            let sayings = crate::next_sayings::check_published(recorder.run_dir(), recipe, question, prepared, catalogue);
+            let sayings = crate::next_sayings::check_published(recorder.run_dir(), dir, question, prepared, catalogue);
             crate::next_flow::record_group_calls(recorder, catalogue)?;
             let said: Value = match &sayings {
                 Ok(unheld) => json!(unheld.iter().map(crate::next_sayings::Unheld::to_json).collect::<Vec<_>>()),
@@ -4154,7 +4198,7 @@ pub(crate) async fn page_from(
             };
             recorder.program_event(
                 crate::next_sayings::SAYINGS_EVENT,
-                json!({"recipe": recipe, "published": published.html_ref, "html_sha256": published.html_sha256, "unheld": said}),
+                json!({"recipe": dir, "published": published.html_ref, "html_sha256": published.html_sha256, "unheld": said}),
             )?;
             let unheld: Vec<String> = match sayings {
                 Ok(unheld) => unheld.iter().map(|u| format!("{} [{}] {}", u.sentence, u.kind.letter(), u.why)).collect(),
@@ -4165,7 +4209,7 @@ pub(crate) async fn page_from(
                 return Err(stuck_at(recorder, crate::next_sayings::SAYINGS_STAGE, why));
             }
             // the image review is the model's advice on the page: recorded, never a stop and never what verifies it
-            let review = leaf_vision(recorder, model, question, recipe, &state, cancel).await?;
+            let review = leaf_vision(recorder, model, question, dir, &state, cancel).await?;
             return Ok(format!(
                 "The {recipe} page is published at {} (sha256 {}); the browser check and the program's page checks passed \
                  those bytes. {review}",
