@@ -137,7 +137,7 @@ pub fn leaf_gaps(root: &Path, dir: &str, manifest: &Value, fetched: &[Fetch]) ->
         Ok((spec, rows, facts, ledger, refs, knobs)) => {
             gaps.extend(reread_gaps(root, &rows, fetched).into_iter().map(|off| format!("leaf page {at}: {off}")));
             let recheck = crate::next_visual::Request::LeafRecheck {
-                recipe: dir,
+                recipe: recipe_of(dir),
                 html: &html,
                 ledger: &ledger,
                 refs: &refs,
