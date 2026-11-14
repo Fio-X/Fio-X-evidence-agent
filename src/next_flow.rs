@@ -5203,12 +5203,12 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
     Ok(prepare_planned(recorder, model, tools, question, steps, catalogue, cancel).await?.prepared)
 }
 
-/// What prepare_planned gives: the prepared tables, the question's plan when the split step gave one, and the table of each
-/// block the program set (block_tables; empty when it set none), in block order.
+/// What prepare_planned gives: the prepared tables, the question's plan when the split step gave one, and each block's
+/// quantity family and the table the program set for it (block_tables; empty when it set none), in block order.
 pub struct Planned {
     pub prepared: Vec<Prepared>,
     pub plan: Option<crate::answer_plan::Plan>,
-    pub block_tables: Vec<String>,
+    pub block_tables: Vec<(String, String)>,
 }
 
 /// prepare_claims with the question's plan, when the split step gave one (owner 11-14 16:5x item 2): for a plan whose
@@ -5700,9 +5700,9 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
     if let Some(main) = prepared.first_mut() {
         composition_inputs(recorder, tools, catalogue, main, cancel).await?;
     }
-    let block_tables = blocks.iter().flatten().filter_map(|(_, t)| t.clone()).fold(Vec::new(), |mut seen, t| {
-        if !seen.contains(&t) {
-            seen.push(t);
+    let block_tables = blocks.iter().flatten().filter_map(|(q, t)| Some((q.clone(), t.clone()?))).fold(Vec::new(), |mut seen: Vec<(String, String)>, (q, t)| {
+        if !seen.iter().any(|(_, s)| *s == t) {
+            seen.push((q, t));
         }
         seen
     });

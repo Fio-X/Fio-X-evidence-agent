@@ -4010,8 +4010,19 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
     cancel: &AtomicBool,
 ) -> Result<String, Stop> {
     let planned = crate::next_flow::prepare_planned(recorder, model, tools, question, steps, catalogue, cancel).await?;
-    let blocks: Vec<&Prepared> =
-        planned.block_tables.iter().filter_map(|id| planned.prepared.iter().find(|p| &p.id == id)).collect();
+    // each block's own table, its quantity record narrowed to the block's quantity: a block's page answers that one, and
+    // the stacked page the question's every quantity, one block each
+    let blocks: Vec<Prepared> = planned
+        .block_tables
+        .iter()
+        .filter_map(|(family, id)| {
+            let mut block = planned.prepared.iter().find(|p| &p.id == id)?.clone();
+            if let Some(all) = block.asked.as_array() {
+                block.asked = Value::Array(all.iter().filter(|a| a["id"] == family.as_str()).cloned().collect());
+            }
+            Some(block)
+        })
+        .collect();
     if blocks.len() < 2 {
         // a plan of many blocks that share one table (过线和时间, 由总到分) is drawn as its first block for now: the later
         // blocks' own fetches are not built yet, and each is kept as left out
@@ -4027,13 +4038,15 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
     }
     // a many-block page (owner 11-14 16:5x item 2): each block's page from its own table, by the same steps and checks;
     // the first block stops the run as a one-block page does, a later block that stops is left out and kept as such
-    let (first, shown) = page_of_block(recorder, model, question, std::slice::from_ref(blocks[0]), catalogue, cancel, 1).await?;
+    let (first, shown) = page_of_block(recorder, model, question, std::slice::from_ref(&blocks[0]), catalogue, cancel, 1).await?;
     let (mut answers, mut pages) = (vec![first], vec![shown]);
+    let mut drawn: Vec<&str> = vec![planned.block_tables[0].0.as_str()];
     for (i, table) in blocks.iter().enumerate().skip(1) {
-        match page_of_block(recorder, model, question, std::slice::from_ref(*table), catalogue, cancel, i + 1).await {
+        match page_of_block(recorder, model, question, std::slice::from_ref(table), catalogue, cancel, i + 1).await {
             Ok((answer, shown)) => {
                 answers.push(answer);
                 pages.push(shown);
+                drawn.push(planned.block_tables[i].0.as_str());
             }
             // a page step or a check of the page stopped it, or the text step's reply was refused: that block only
             Err(stopped @ (Stop::Page { .. } | Stop::Refused { .. } | Stop::NoReply { .. })) => {
@@ -4055,7 +4068,8 @@ pub async fn run_page<R: ToolRunner + Send + ?Sized>(
     recorder.program_event(
         STACKED_EVENT,
         json!({"published": stacked_ref, "html_sha256": stacked_sha256,
-            "blocks": pages.iter().map(|(dir, _, _)| dir).collect::<Vec<_>>()}),
+            "blocks": pages.iter().map(|(dir, _, _)| dir).collect::<Vec<_>>(), "quantities_drawn": drawn,
+            "quantities_left_out": planned.block_tables.iter().map(|(q, _)| q.as_str()).filter(|q| !drawn.contains(q)).collect::<Vec<_>>()}),
     )?;
     answers.push(format!("The {} blocks are stacked at {stacked_ref} (sha256 {stacked_sha256}).", pages.len()));
     Ok(answers.join("\n"))
