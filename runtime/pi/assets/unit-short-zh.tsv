@@ -217,10 +217,6 @@ P_HTWMN	每十万女性	per_population	no	每十万女性	reviewed	Per hundred t
 P_MHAB	每百万人	per_population	no	每百万人	reviewed	Per million inhabitants	
 P_THAB	每千人	per_population	no	每千人	reviewed	Per thousand inhabitants	
 P_TLBRTH	每千名活产婴儿	per_population	no	每千名活产婴儿	reviewed	Per thousand live birth	
-P_HTADLT	每十万成年人	per_population	no	每十万成年人	reviewed	Per hundred thousand adults	
-P_HTLBRTH	每十万例活产	per_population	no	每十万例活产	reviewed	Per hundred thousand live births	
-P_HTLBRTH_NE	每十万活产婴儿	per_population	no	每十万活产婴儿	reviewed	Per hundred thousand live births (national estimate)	
-P_TW1519	每千名十五至十九岁女性	per_population	no	每千名十五至十九岁女性	reviewed	Per thousand women ages 15-19	
 P_TFADLT	每千名成年女性	per_population	no	每千名成年女性	reviewed	Per thousand female adults	
 T	吨	mass	yes	吨	reviewed	Tonne	
 TCO2E_HAB	吨二氧化碳当量/人	per_capita	no	吨二氧化碳当量/人	reviewed	Tonnes of CO2 equivalent per capita	

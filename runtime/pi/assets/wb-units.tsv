@@ -309,9 +309,9 @@ ER.LND.PTLD.ZS	Terrestrial protected areas (% of total land area)	PC	Percentage	
 ER.MRN.PTMR.ZS	Marine protected areas (% of territorial waters)	PC	Percentage	share	pct_of_part_of_whole
 ER.PTD.TOTL.ZS	Terrestrial and marine protected areas (% of total territorial area)	PC	Percentage	share	pct_of_part_of_whole
 FB.AST.NPER.ZS	Bank nonperforming loans to total gross loans (%)	PC	Percentage		pct_plain
-FB.ATM.TOTL.P5	Automated teller machines (ATMs) (per 100,000 adults)	P_HTADLT	Per hundred thousand adults	rate	per_100000_adults
+FB.ATM.TOTL.P5	Automated teller machines (ATMs) (per 100,000 adults)			rate	per_population_other
 FB.BNK.CAPA.ZS	Bank capital to assets ratio (%)	PC	Percentage		pct_plain
-FB.CBK.BRCH.P5	Commercial bank branches (per 100,000 adults)	P_HTADLT	Per hundred thousand adults	rate	per_100000_adults
+FB.CBK.BRCH.P5	Commercial bank branches (per 100,000 adults)			rate	per_population_other
 FB.CBK.BRWR.P3	Borrowers from commercial banks (per 1,000 adults)			rate	per_population_other
 FB.CBK.DPTR.P3	Depositors with commercial banks (per 1,000 adults)			rate	per_population_other
 FD.AST.PRVT.GD.ZS	Domestic credit to private sector by banks (% of GDP)	PC_GDP	Percentage of gross domestic product (GDP)	rate	pct_gdp
@@ -1066,8 +1066,8 @@ SH.STA.HYGN.ZS	People with basic handwashing facilities including soap and water
 SH.STA.MALN.FE.ZS	Prevalence of underweight, weight for age, female (% of children under 5)	PC	Percentage	share	pct_of_part_of_whole
 SH.STA.MALN.MA.ZS	Prevalence of underweight, weight for age, male (% of children under 5)	PC	Percentage	share	pct_of_part_of_whole
 SH.STA.MALN.ZS	Prevalence of underweight, weight for age (% of children under 5)	PC	Percentage	share	pct_of_part_of_whole
-SH.STA.MMRT	Maternal mortality ratio (modeled estimate, per 100,000 live births)	P_HTLBRTH	Per hundred thousand live births	rate	per_100000_live_births
-SH.STA.MMRT.NE	Maternal mortality ratio (national estimate, per 100,000 live births)	P_HTLBRTH_NE	Per hundred thousand live births (national estimate)	rate	per_100000_live_births
+SH.STA.MMRT	Maternal mortality ratio (modeled estimate, per 100,000 live births)			rate	per_population_other
+SH.STA.MMRT.NE	Maternal mortality ratio (national estimate, per 100,000 live births)			rate	per_population_other
 SH.STA.ODFC.RU.ZS	People practicing open defecation, rural (% of rural population)	PC	Percentage	share	pct_of_part_of_whole
 SH.STA.ODFC.UR.ZS	People practicing open defecation, urban (% of urban population)	PC	Percentage	share	pct_of_part_of_whole
 SH.STA.ODFC.ZS	People practicing open defecation (% of population)	PC_POP	Percentage of total population	share	pct_total_population
@@ -1306,7 +1306,7 @@ SN.ITK.MSFI.ZS	Prevalence of moderate or severe food insecurity in the populatio
 SN.ITK.SALT.ZS	Consumption of iodized salt (% of households)	PC	Percentage	share	pct_of_part_of_whole
 SN.ITK.SVFI.ZS	Prevalence of severe food insecurity in the population (%)	PC	Percentage		pct_plain
 SN.ITK.VITA.ZS	Vitamin A supplementation coverage rate (% of children ages 6-59 months)	PC	Percentage	share	pct_of_part_of_whole
-SP.ADO.TFRT	Adolescent fertility rate (births per 1,000 women ages 15-19)	P_TW1519	Per thousand women ages 15-19	rate	per_1000_women_15_19
+SP.ADO.TFRT	Adolescent fertility rate (births per 1,000 women ages 15-19)			rate	per_population_other
 SP.DYN.AMRT.FE	Mortality rate, adult, female (per 1,000 female adults)	P_TFADLT	Per thousand female adults	rate	per_1000_female_adults
 SP.DYN.AMRT.MA	Mortality rate, adult, male (per 1,000 male adults)			rate	per_population_other
 SP.DYN.CBRT.IN	Birth rate, crude (per 1,000 people)	P_THAB	Per thousand inhabitants	rate	per_1000_people
