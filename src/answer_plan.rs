@@ -609,8 +609,11 @@ mod tests {
         }
     }
 
-    /// The plans of Q_CASES rows (qid, question) on the real catalogue, one line each: qid, relation number, focus, places,
-    /// place words, years, quantity ids, sentence.
+    /// The plans of Q_CASES rows (qid, question, and optionally a shape reply `shape:i,j` — the shape number, then the
+    /// quantity indexes; without it the preselected shape is taken) on the real catalogue. Per row an ASK line (qid, the
+    /// shapes offered in order with the preselecting words, the quantities offered), a REFUSED line for a reply the check
+    /// refuses, and a PLAN line per block: qid, relation number, focus, places, place words, years, quantity ids, sentence,
+    /// partial.
     /// L5GEO_DIR=<registry>/l5geo/catalog Q_CASES=<cases.tsv> cargo test answer_plan::tests::replay_answer_plans -- --include-ignored --nocapture
     #[test]
     #[ignore]
@@ -619,8 +622,31 @@ mod tests {
         let cases = std::fs::read_to_string(std::env::var("Q_CASES").expect("Q_CASES")).unwrap();
         let c = Catalog::load(&dir).unwrap();
         for line in cases.lines().filter(|l| !l.starts_with('#')) {
-            let Some((qid, q)) = line.split_once('\t') else { panic!("Q_CASES row without a tab: {line}") };
-            for b in plan(&c, q).blocks {
+            let cols: Vec<&str> = line.split('\t').collect();
+            let [qid, q, rest @ ..] = cols.as_slice() else { panic!("Q_CASES row without a tab: {line}") };
+            let ask = shape_ask(&c, q);
+            println!(
+                "ASK\t{qid}\t{}\t{}",
+                ask.offered.iter().map(|(s, w)| format!("{}{}", s.number(), w.map_or(String::new(), |w| format!("({w})")))).collect::<Vec<_>>().join(","),
+                ask.quantities.iter().enumerate().map(|(i, (id, _))| format!("{i}={id}")).collect::<Vec<_>>().join(",")
+            );
+            let p = match rest.first().filter(|r| !r.is_empty()) {
+                None => plan(&c, q),
+                Some(r) => {
+                    let (n, qs) = r.split_once(':').unwrap_or((*r, ""));
+                    let reply = ShapeReply {
+                        shape: n.trim().parse().expect("shape number"),
+                        quantities: qs.split(',').filter(|x| !x.trim().is_empty()).map(|x| x.trim().parse().expect("quantity index")).collect(),
+                    };
+                    if let Err(e) = check_reply(&ask, &reply) {
+                        println!("REFUSED\t{qid}\t{e}");
+                        continue;
+                    }
+                    plan_for(&c, q, &reply)
+                }
+            };
+            let partial = p.partial;
+            for b in p.blocks {
                 let years = match b.years {
                     Some((a, Some(z))) => format!("{a}-{z}"),
                     Some((a, None)) if a < 0 => format!("last{}", -a),
@@ -628,13 +654,14 @@ mod tests {
                     None => "latest".into(),
                 };
                 println!(
-                    "PLAN\t{qid}\t{}\t{:?}\t{}\t{}\t{years}\t{}\t{}",
+                    "PLAN\t{qid}\t{}\t{:?}\t{}\t{}\t{years}\t{}\t{}\t{}",
                     b.rel as u8,
                     b.focus,
                     b.places.join(","),
                     b.place_words.join(","),
                     b.quantity.iter().map(|(id, _)| id.as_str()).collect::<Vec<_>>().join(","),
-                    b.sentence
+                    b.sentence,
+                    if partial { "partial" } else { "" }
                 );
             }
         }
