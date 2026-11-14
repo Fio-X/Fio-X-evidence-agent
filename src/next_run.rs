@@ -2384,8 +2384,6 @@ fn fill_of(
     if let Some(code) = accent {
         Filled::set(&mut out.data, "hero data", ACCENT, json!(code)).map_err(no)?;
     }
-    // the place the page marks, kept beside the fill for the flow (pages_of: a many-block page's first block's leader)
-    let marked = accent.cloned();
     let Filled { drawn, rows, facts, mut fmts, data, mut hero, notes, points, named: name_rows, unit_drawn, flow_pairs, composition: cut, .. } = out;
     let mut name_rows = name_rows;
     hero.insert("data".into(), Value::Object(data));
@@ -2439,9 +2437,6 @@ fn fill_of(
         .map(|(layer, r)| json!({"layer": layer, "src": r["src"], "table": r["table"], "time": r["time"]}))
         .collect();
     let mut fill = json!({"order": recipe.layers, "rows": rows, "knobs": knobs, "drawn": drawn});
-    if let Some(code) = marked {
-        fill[MARKED] = json!(code);
-    }
     // the page input the external layers were declared over, for draw_nodes
     if let Some(page_in) = page_in {
         fill["page_in"] = page_in;
@@ -2487,8 +2482,6 @@ fn fill_of(
 /// The hero data key of the one place the page's accent marks (fill_of), as the leaf reads it (column.py focus): its bar and
 /// its circle in the accent, every other in the page's greys, and a legend line that says what the accent means.
 const ACCENT: &str = "accent";
-/// The fill's own key of the place its accent marks (fill_of), which the flow reads back (page_of_block).
-const MARKED: &str = "marked";
 
 /// The page's scope: of the main's place codes that are no country (an aggregate such as EU27_2020), one whose member list
 /// (the knowledge group's) holds every ranked place, the one with the fewest members when several do; none when the data
@@ -4157,7 +4150,9 @@ pub(crate) async fn page_of_block(
     // the page-level fields are drafted for what the picked page draws: a page whose bars draw the change gets a title
     // that names a change. A pick that stopped stops the run after the text step, as before.
     let picked = leaf_request(recorder.run_dir(), prepared, &drawn, catalogue, (question, ("", "", "")), &calls, focus);
-    let accent = picked.as_ref().ok().and_then(|(_, fill)| fill[MARKED].as_str().map(str::to_string));
+    // the page's leader: the first place its ranking pick holds, on a page whose finding made a headline (the highest named
+    // alone, no tie at the top)
+    let accent = picked.as_ref().ok().filter(|(_, fill)| fill.get(HEADLINE).is_some()).and_then(|(_, fill)| fill["page_in"]["picks"]["ranked"][0].as_str().map(str::to_string));
     let form = page_lead(picked.as_ref().ok().map(|(_, fill)| fill), &page.charts);
     let titles: Vec<String> = page.measures.iter().map(|m| m.name.clone()).collect();
     // No typed number on the page text, years included: the design pack's claim-template check refuses every one, so the
