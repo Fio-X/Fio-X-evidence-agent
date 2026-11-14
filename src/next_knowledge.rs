@@ -126,13 +126,15 @@ pub enum Request<'a> {
     /// The first five tables for the Chinese question and the English search texts, with the scope and places it judged;
     /// `months` when the caller read that the question asks for months (a monthly-only table then keeps its place), and
     /// `latest_year` the latest year it read the question to name (a monthly-only table keeps its place when its annual
-    /// twin ends before it).
+    /// twin ends before it), and `first_year` the first (a table whose annual series starts after it is not offered while
+    /// another listed one covers it).
     Top5 {
         catalogue: &'a Opened,
         question: &'a str,
         texts: &'a [String],
         months: bool,
         latest_year: Option<i32>,
+        first_year: Option<i32>,
     },
     /// English place names in the search texts that the question does not name.
     PlacesOutside {
@@ -333,7 +335,8 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
             texts,
             months,
             latest_year,
-        } => Reply::Ranking(catalogue.catalog.top5(question, texts, months, latest_year)),
+            first_year,
+        } => Reply::Ranking(catalogue.catalog.top5(question, texts, months, latest_year, first_year)),
         Request::PlacesOutside {
             catalogue,
             question,

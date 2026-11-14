@@ -571,6 +571,16 @@ pub fn question_latest_year(question: &str, this_year: i32) -> Option<i32> {
     }
 }
 
+/// The first year a question names: the start of question_years' span ("2012 年以来", "2000 年到 2023 年"). None for the
+/// last n years (counted back from the table's own last year) and for a question naming no years. The table pick then
+/// offers no table whose annual series starts after it while another listed one covers it (design 2a).
+pub fn question_first_year(question: &str, this_year: i32) -> Option<i32> {
+    match question_years(question, this_year)? {
+        NamedYears::Span(from, _) => Some(from),
+        NamedYears::Last(_) => None,
+    }
+}
+
 /// Whether a question asks for months, read by rule from its words, spaces aside, as question_years reads its years (no
 /// model): a month it names by its number before 月 (1 to 12, in digits or Chinese numerals: "3 月", "2025 年十月"), a count
 /// of months ("几个月", "近三个月", "过去 6 个月"), one of MONTH_WORDS, or a part of a year: one of PART_YEAR_WORDS or a

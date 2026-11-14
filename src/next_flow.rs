@@ -2693,7 +2693,7 @@ pub trait Catalogue: Sync {
     /// `months` when the question asks for months (next_params::question_months), so a monthly-only table is offered as
     /// itself, not as its annual twin, and `latest_year` the latest year it names (next_params::question_latest_year), so
     /// one is not offered as an annual twin that ends before that year.
-    fn top5(&self, question_zh: &str, texts: &[String], months: bool, latest_year: Option<i32>) -> Ranking;
+    fn top5(&self, question_zh: &str, texts: &[String], months: bool, latest_year: Option<i32>, first_year: Option<i32>) -> Ranking;
     /// English place names in the search texts that the question does not name. Flagged in the event, never refused.
     fn places_outside(&self, question_zh: &str, texts: &[String]) -> Vec<String>;
     /// SOURCE.json of the catalogue directory: the original files it was made from and their hashes.
@@ -3568,21 +3568,25 @@ impl Catalogue for GroupCatalogue {
         }
     }
 
-    fn top5(&self, question_zh: &str, texts: &[String], months: bool, latest_year: Option<i32>) -> Ranking {
+    fn top5(&self, question_zh: &str, texts: &[String], months: bool, latest_year: Option<i32>, first_year: Option<i32>) -> Ranking {
         let request = next_knowledge::Request::Top5 {
             catalogue: &self.opened,
             question: question_zh,
             texts,
             months,
             latest_year,
+            first_year,
         };
-        // "months" and "latest_year" only when set, so a call without them hashes as before.
+        // "months", "latest_year" and "first_year" only when set, so a call without them hashes as before.
         let mut args = json!({"question": question_zh, "texts": texts});
         if months {
             args["months"] = json!(true);
         }
         if let Some(year) = latest_year {
             args["latest_year"] = json!(year);
+        }
+        if let Some(year) = first_year {
+            args["first_year"] = json!(year);
         }
         match self.call("top5", args, request) {
             next_knowledge::Reply::Ranking(ranking) => ranking,
@@ -4995,6 +4999,7 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
         &texts,
         next_params::question_months(question),
         next_params::question_latest_year(question, this_year),
+        next_params::question_first_year(question, this_year),
     );
     recorder.program_event(
         CATALOGUE_EVENT,
@@ -7670,7 +7675,7 @@ mod tests {
     }
 
     impl Catalogue for FakeCatalogue {
-        fn top5(&self, question_zh: &str, texts: &[String], months: bool, latest_year: Option<i32>) -> Ranking {
+        fn top5(&self, question_zh: &str, texts: &[String], months: bool, latest_year: Option<i32>, first_year: Option<i32>) -> Ranking {
             self.searched
                 .lock()
                 .unwrap()
@@ -8441,6 +8446,7 @@ mod tests {
             &["electricity generation".to_string()],
             false,
             None,
+            None,
         );
         println!("{}", serde_json::to_string(&ranking).unwrap());
         assert_eq!(ranking.candidates.len(), OFFERED_TABLES);
@@ -8463,7 +8469,7 @@ mod tests {
         let _command = crate::group_guard::command_for_test("investigate");
         struct Scoped(Mutex<Vec<Value>>, bool);
         impl Catalogue for Scoped {
-            fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>) -> Ranking {
+            fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>, _: Option<i32>) -> Ranking {
                 unreachable!("an out-of-scope question is not searched")
             }
             fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
@@ -8521,7 +8527,7 @@ mod tests {
         }
         struct Queued(Mutex<Vec<Value>>);
         impl Catalogue for Queued {
-            fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>) -> Ranking {
+            fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>, _: Option<i32>) -> Ranking {
                 unreachable!()
             }
             fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
@@ -8657,8 +8663,8 @@ mod tests {
     struct WithTable(FakeCatalogue, TableMeta);
 
     impl Catalogue for WithTable {
-        fn top5(&self, question_zh: &str, texts: &[String], months: bool, latest_year: Option<i32>) -> Ranking {
-            self.0.top5(question_zh, texts, months, latest_year)
+        fn top5(&self, question_zh: &str, texts: &[String], months: bool, latest_year: Option<i32>, first_year: Option<i32>) -> Ranking {
+            self.0.top5(question_zh, texts, months, latest_year, first_year)
         }
         fn places_outside(&self, question_zh: &str, texts: &[String]) -> Vec<String> {
             self.0.places_outside(question_zh, texts)
@@ -8796,8 +8802,8 @@ mod tests {
     struct Probing(WithTable, Option<(u16, &'static str)>);
 
     impl Catalogue for Probing {
-        fn top5(&self, question_zh: &str, texts: &[String], months: bool, latest_year: Option<i32>) -> Ranking {
-            self.0.top5(question_zh, texts, months, latest_year)
+        fn top5(&self, question_zh: &str, texts: &[String], months: bool, latest_year: Option<i32>, first_year: Option<i32>) -> Ranking {
+            self.0.top5(question_zh, texts, months, latest_year, first_year)
         }
         fn places_outside(&self, question_zh: &str, texts: &[String]) -> Vec<String> {
             self.0.places_outside(question_zh, texts)
@@ -9460,8 +9466,8 @@ mod tests {
     struct InTheEu(WithTable);
 
     impl Catalogue for InTheEu {
-        fn top5(&self, question_zh: &str, texts: &[String], months: bool, latest_year: Option<i32>) -> Ranking {
-            self.0.top5(question_zh, texts, months, latest_year)
+        fn top5(&self, question_zh: &str, texts: &[String], months: bool, latest_year: Option<i32>, first_year: Option<i32>) -> Ranking {
+            self.0.top5(question_zh, texts, months, latest_year, first_year)
         }
         fn places_outside(&self, question_zh: &str, texts: &[String]) -> Vec<String> {
             self.0.places_outside(question_zh, texts)
@@ -9634,6 +9640,7 @@ mod tests {
                 &texts,
                 next_params::question_months(question),
                 next_params::question_latest_year(question, this_year),
+                next_params::question_first_year(question, this_year),
             );
             let places = catalogue.places(question);
             let mut rows = Vec::new();
@@ -9947,8 +9954,8 @@ mod tests {
     struct WithCompanions(FakeCatalogue);
 
     impl Catalogue for WithCompanions {
-        fn top5(&self, question_zh: &str, texts: &[String], months: bool, latest_year: Option<i32>) -> Ranking {
-            self.0.top5(question_zh, texts, months, latest_year)
+        fn top5(&self, question_zh: &str, texts: &[String], months: bool, latest_year: Option<i32>, first_year: Option<i32>) -> Ranking {
+            self.0.top5(question_zh, texts, months, latest_year, first_year)
         }
         fn places_outside(&self, question_zh: &str, texts: &[String]) -> Vec<String> {
             self.0.places_outside(question_zh, texts)
@@ -10781,8 +10788,8 @@ mod tests {
     }
 
     impl Catalogue for HubTables {
-        fn top5(&self, question_zh: &str, texts: &[String], months: bool, latest_year: Option<i32>) -> Ranking {
-            self.inner.top5(question_zh, texts, months, latest_year)
+        fn top5(&self, question_zh: &str, texts: &[String], months: bool, latest_year: Option<i32>, first_year: Option<i32>) -> Ranking {
+            self.inner.top5(question_zh, texts, months, latest_year, first_year)
         }
         fn places_outside(&self, question_zh: &str, texts: &[String]) -> Vec<String> {
             self.inner.places_outside(question_zh, texts)

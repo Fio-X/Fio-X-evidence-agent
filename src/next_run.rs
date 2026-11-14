@@ -5817,7 +5817,7 @@ mod tests {
     /// The knowledge group's own name table and nothing else.
     struct NamesOnly;
     impl Catalogue for NamesOnly {
-        fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>) -> crate::l5geo::Ranking {
+        fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>, _: Option<i32>) -> crate::l5geo::Ranking {
             unreachable!()
         }
         fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
@@ -6090,7 +6090,7 @@ mod tests {
     /// Two-letter codes are countries (EU aside); EU27_2020 and EA20 have members, only EU27_2020 a hub row.
     struct Hubs;
     impl Catalogue for Hubs {
-        fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>) -> crate::l5geo::Ranking {
+        fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>, _: Option<i32>) -> crate::l5geo::Ranking {
             unreachable!()
         }
         fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
@@ -6424,7 +6424,7 @@ mod tests {
     /// Hubs, but the name table names no aggregate code: only two-letter codes have a name.
     struct NoAggregateNames;
     impl Catalogue for NoAggregateNames {
-        fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>) -> crate::l5geo::Ranking {
+        fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>, _: Option<i32>) -> crate::l5geo::Ranking {
             unreachable!()
         }
         fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
@@ -6448,7 +6448,7 @@ mod tests {
     /// Hubs, but the EU's members are four and the euro area's two, so only the EU holds every place a page draws below.
     struct Scoped(bool);
     impl Catalogue for Scoped {
-        fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>) -> crate::l5geo::Ranking {
+        fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>, _: Option<i32>) -> crate::l5geo::Ranking {
             unreachable!()
         }
         fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
@@ -6974,7 +6974,7 @@ mod tests {
         }
         struct Refused(String);
         impl Catalogue for Refused {
-            fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>) -> crate::l5geo::Ranking {
+            fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>, _: Option<i32>) -> crate::l5geo::Ranking {
                 unreachable!()
             }
             fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
@@ -7370,7 +7370,7 @@ mod tests {
         // none, so it is said as before; one the list holds stops the page (review 11-09)
         struct Listed(crate::l5geo::TableMeta);
         impl Catalogue for Listed {
-            fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>) -> crate::l5geo::Ranking {
+            fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>, _: Option<i32>) -> crate::l5geo::Ranking {
                 unreachable!()
             }
             fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
@@ -8259,7 +8259,7 @@ mod tests {
         let table = "SP.POP.65UP.TO.ZS@2";
         struct WbNamed;
         impl Catalogue for WbNamed {
-            fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>) -> crate::l5geo::Ranking {
+            fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>, _: Option<i32>) -> crate::l5geo::Ranking {
                 unreachable!()
             }
             fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
@@ -8438,8 +8438,8 @@ mod tests {
     /// gives each fetched table its rows.
     struct Groups(BTreeMap<String, Vec<Value>>);
     impl Catalogue for Groups {
-        fn top5(&self, q: &str, t: &[String], m: bool, y: Option<i32>) -> crate::l5geo::Ranking {
-            Hubs.top5(q, t, m, y)
+        fn top5(&self, q: &str, t: &[String], m: bool, y: Option<i32>, y0: Option<i32>) -> crate::l5geo::Ranking {
+            Hubs.top5(q, t, m, y, y0)
         }
         fn places_outside(&self, q: &str, t: &[String]) -> Vec<String> {
             Hubs.places_outside(q, t)
@@ -8937,7 +8937,7 @@ mod tests {
         // the World Bank table as WbTable lists it (CHN, IND, USA; the unit wb-units.tsv registers for it), named as Hubs names
         struct WbNamed;
         impl Catalogue for WbNamed {
-            fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>) -> crate::l5geo::Ranking {
+            fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>, _: Option<i32>) -> crate::l5geo::Ranking {
                 unreachable!()
             }
             fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
@@ -9102,7 +9102,7 @@ mod tests {
     /// Hubs with some names missing from its name table (`kind:code`), for the composition outcome harness.
     struct NamesOff(Vec<String>);
     impl Catalogue for NamesOff {
-        fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>) -> crate::l5geo::Ranking {
+        fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>, _: Option<i32>) -> crate::l5geo::Ranking {
             unreachable!()
         }
         fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
@@ -9867,7 +9867,7 @@ mod tests {
     /// Hubs, but the name table names no code of `scheme`.
     struct NoNamesOf(&'static str);
     impl Catalogue for NoNamesOf {
-        fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>) -> crate::l5geo::Ranking {
+        fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>, _: Option<i32>) -> crate::l5geo::Ranking {
             unreachable!()
         }
         fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
@@ -9980,7 +9980,7 @@ mod tests {
     /// Hubs, but the names are the knowledge group's own name tables (the trait's zh_names, through its command).
     struct GroupNames;
     impl Catalogue for GroupNames {
-        fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>) -> crate::l5geo::Ranking {
+        fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>, _: Option<i32>) -> crate::l5geo::Ranking {
             unreachable!()
         }
         fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
@@ -10424,7 +10424,7 @@ mod tests {
     fn a_country_code_chart_carries_the_tables_chinese_names_and_an_unknown_code_stops_it() {
         struct NoTables;
         impl Catalogue for NoTables {
-            fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>) -> crate::l5geo::Ranking {
+            fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>, _: Option<i32>) -> crate::l5geo::Ranking {
                 unreachable!()
             }
             fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
@@ -10540,7 +10540,7 @@ mod tests {
     struct SixCountries;
 
     impl Catalogue for SixCountries {
-        fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>) -> crate::l5geo::Ranking {
+        fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>, _: Option<i32>) -> crate::l5geo::Ranking {
             unreachable!()
         }
         fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
@@ -10925,7 +10925,7 @@ mod tests {
     fn a_measure_fetched_in_one_code_of_its_breakdown_is_named_for_that_code() {
         struct OneTable;
         impl Catalogue for OneTable {
-            fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>) -> crate::l5geo::Ranking {
+            fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>, _: Option<i32>) -> crate::l5geo::Ranking {
                 unreachable!()
             }
             fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
@@ -10992,7 +10992,7 @@ mod tests {
     fn a_world_bank_measure_takes_its_registered_unit_and_a_eurostat_one_its_unit_filter() {
         struct Two;
         impl Catalogue for Two {
-            fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>) -> crate::l5geo::Ranking {
+            fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>, _: Option<i32>) -> crate::l5geo::Ranking {
                 unreachable!()
             }
             fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
@@ -12249,7 +12249,7 @@ mod tests {
     struct WorldBank;
 
     impl Catalogue for WorldBank {
-        fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>) -> crate::l5geo::Ranking {
+        fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>, _: Option<i32>) -> crate::l5geo::Ranking {
             unreachable!()
         }
         fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
@@ -12274,7 +12274,7 @@ mod tests {
     }
 
     impl Catalogue for WbTable {
-        fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>) -> crate::l5geo::Ranking {
+        fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>, _: Option<i32>) -> crate::l5geo::Ranking {
             unreachable!()
         }
         fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
@@ -12680,7 +12680,7 @@ mod tests {
     /// its series rows (SDG_VALUES, as the knowledge group reads a fetched file), and Hubs' countries, names and members.
     struct OneTable;
     impl Catalogue for OneTable {
-        fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>) -> crate::l5geo::Ranking {
+        fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>, _: Option<i32>) -> crate::l5geo::Ranking {
             let candidate = crate::l5geo::Candidate {
                 id: "sdg".into(),
                 title: "Share of renewable energy".into(),
@@ -14642,8 +14642,8 @@ for line in sys.stdin:
     /// A catalogue whose names are Hubs's but for the codes given (a long name a note's line may not fit beside the map).
     struct Named(&'static [(&'static str, &'static str)]);
     impl Catalogue for Named {
-        fn top5(&self, q: &str, t: &[String], m: bool, y: Option<i32>) -> crate::l5geo::Ranking {
-            Hubs.top5(q, t, m, y)
+        fn top5(&self, q: &str, t: &[String], m: bool, y: Option<i32>, y0: Option<i32>) -> crate::l5geo::Ranking {
+            Hubs.top5(q, t, m, y, y0)
         }
         fn places_outside(&self, q: &str, t: &[String]) -> Vec<String> {
             Hubs.places_outside(q, t)
@@ -14804,8 +14804,8 @@ for line in sys.stdin:
     /// A catalogue whose names are a stored page's own (its ledger's name:zh_names rows), the rest as Hubs.
     struct Ledgered(BTreeMap<String, String>);
     impl Catalogue for Ledgered {
-        fn top5(&self, q: &str, t: &[String], m: bool, y: Option<i32>) -> crate::l5geo::Ranking {
-            Hubs.top5(q, t, m, y)
+        fn top5(&self, q: &str, t: &[String], m: bool, y: Option<i32>, y0: Option<i32>) -> crate::l5geo::Ranking {
+            Hubs.top5(q, t, m, y, y0)
         }
         fn places_outside(&self, q: &str, t: &[String]) -> Vec<String> {
             Hubs.places_outside(q, t)
@@ -15492,8 +15492,8 @@ for line in sys.stdin:
     /// scheme given, if any), for the recipe loop over a run folder.
     struct Fetched(BTreeMap<String, Vec<Value>>, &'static str);
     impl Catalogue for Fetched {
-        fn top5(&self, q: &str, t: &[String], m: bool, y: Option<i32>) -> crate::l5geo::Ranking {
-            Hubs.top5(q, t, m, y)
+        fn top5(&self, q: &str, t: &[String], m: bool, y: Option<i32>, y0: Option<i32>) -> crate::l5geo::Ranking {
+            Hubs.top5(q, t, m, y, y0)
         }
         fn places_outside(&self, q: &str, t: &[String]) -> Vec<String> {
             Hubs.places_outside(q, t)

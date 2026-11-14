@@ -2698,7 +2698,7 @@ impl Catalog {
     /// code of the table holds (World Bank: its places, by iso2 or id; Eurostat: a code of any dimension, by the code, its
     /// Eurostat form (EL, UK, EU27_2020 for EUU) or a country member (partner CN_X_HK is CN)), or an annual Eurostat table
     /// whose last year is before `latest_year`, a year before this one. A table the catalogue lists no metadata of proves nothing either way: None.
-    pub fn unproven(&self, id: &str, asked: &[String], latest_year: Option<i32>) -> Option<String> {
+    pub fn unproven(&self, id: &str, asked: &[String], (first_year, latest_year): (Option<i32>, Option<i32>)) -> Option<String> {
         let meta = self.table(id)?;
         let estat = |c: &str| -> String {
             if c == "EUU" {
@@ -2718,7 +2718,14 @@ impl Catalog {
         if !missing.is_empty() {
             return Some(format!("{id} holds no row of {missing:?}, places the question names"));
         }
-        let last = meta.freqs.iter().find(|(f, _, _)| f == "A").and_then(|(_, _, last)| last.get(..4)?.parse::<i32>().ok());
+        let annual = meta.freqs.iter().find(|(f, _, _)| f == "A");
+        let first = annual.and_then(|(_, first, _)| first.get(..4)?.parse::<i32>().ok());
+        if let (Some(y), Some(start)) = (first_year, first) {
+            if start > y {
+                return Some(format!("{id}'s annual series starts at {start}, after {y}, the year the question runs from"));
+            }
+        }
+        let last = annual.and_then(|(_, _, last)| last.get(..4)?.parse::<i32>().ok());
         // a span running to this year (X 年以来, 比 X 年: question_latest_year's end is this year) is answered at the table's
         // own last year, as the pages of rounds 8-14 were (s6, h28); only a past year the question names is held to
         let this_year = chrono::Datelike::year(&chrono::Local::now());
@@ -2734,7 +2741,7 @@ impl Catalog {
     /// the model sees any, unless `months`: the caller read that the question asks for months (a month it names, the
     /// latest months), which the annual table, ending a year or two earlier, cannot answer; nor when the annual table ends
     /// before `latest_year`, the latest year the caller read the question to name.
-    pub fn top5(&self, question_zh: &str, texts: &[String], months: bool, latest_year: Option<i32>) -> Ranking {
+    pub fn top5(&self, question_zh: &str, texts: &[String], months: bool, latest_year: Option<i32>, first_year: Option<i32>) -> Ranking {
         let mut r = self.rank(question_zh, texts);
         let (candidates, refused) =
             self.twin_swap(std::mem::take(&mut r.candidates), monthly_twins(), months, latest_year);
@@ -2746,7 +2753,7 @@ impl Catalog {
         // 11-14: a Eurostat table missing a named Switzerland beside EU members is still the best there is)
         let asked: Vec<String> =
             self.places(question_zh).into_iter().filter_map(|p| if let Place::Country(c) = p { Some(c) } else { None }).collect();
-        let verdicts: Vec<Option<String>> = r.candidates.iter().map(|c| self.unproven(&c.id, &asked, latest_year)).collect();
+        let verdicts: Vec<Option<String>> = r.candidates.iter().map(|c| self.unproven(&c.id, &asked, (first_year, latest_year))).collect();
         // a table the catalogue lists no metadata of is unknown: kept, but it proves nothing for the others to be dropped by
         let proves = r.candidates.iter().zip(&verdicts).any(|(c, why)| why.is_none() && self.table(&c.id).is_some());
         if proves {
@@ -3786,7 +3793,7 @@ mod tests {
             None,
             "a topic neither catalog has is left to the table pick"
         );
-        let r = c.top5("中国各省房价", &texts(&["energy"]), false, None);
+        let r = c.top5("中国各省房价", &texts(&["energy"]), false, None, None);
         assert!(r.uncovered.is_some() && r.candidates.is_empty());
     }
 
@@ -4417,7 +4424,7 @@ mod tests {
         let t = texts(&["asylum applicants citizenship monthly"]);
         let all = c.rank(q6, &t).candidates;
         assert_eq!(ids(&all)[..2], ["migr_asyappctzm", "migr_asyappctza"]);
-        let r = c.top5(q6, &t, false, None);
+        let r = c.top5(q6, &t, false, None, None);
         let want: Vec<&str> = std::iter::once("migr_asyappctza")
             .chain(ids(&all)[2..6].iter().copied())
             .collect();
@@ -4449,7 +4456,7 @@ mod tests {
         let t = texts(&["asylum applicants citizenship annual aggregated"]);
         let all = c.rank(q6, &t).candidates;
         assert_eq!(ids(&all)[..2], ["migr_asyappctza", "migr_asyappctzm"]);
-        let r = c.top5(q6, &t, false, None);
+        let r = c.top5(q6, &t, false, None, None);
         let want: Vec<&str> = std::iter::once("migr_asyappctza")
             .chain(ids(&all)[2..6].iter().copied())
             .collect();
@@ -4472,7 +4479,7 @@ mod tests {
             let mut all = c.rank(q6, &t);
             assert!(ids(&all.candidates[..2]).contains(&"migr_asyappctzm"));
             // months: the five as ranked, the monthly table in its place, the pair recorded as not swapped
-            let r = c.top5(q6, &t, true, None);
+            let r = c.top5(q6, &t, true, None, None);
             all.candidates.truncate(TOP);
             assert_eq!(ids(&r.candidates), ids(&all.candidates));
             assert!(r.candidates.iter().all(|c| c.twin_of.is_none()));
@@ -4481,7 +4488,7 @@ mod tests {
             assert_eq!((refused.monthly.as_str(), refused.annual.as_str()), ("migr_asyappctzm", "migr_asyappctza"));
             assert!(refused.why.contains("asks for months"), "{}", refused.why);
             // the same question and words without months: swapped
-            let r = c.top5(q6, &t, false, None);
+            let r = c.top5(q6, &t, false, None, None);
             assert_eq!(r.candidates[0].id, "migr_asyappctza");
             assert!(!ids(&r.candidates).contains(&"migr_asyappctzm"));
             assert!(r.twins_refused.is_empty());
@@ -4501,7 +4508,7 @@ mod tests {
             assert!(ids(&all.candidates[..2]).contains(&"migr_asyappctzm"));
             all.candidates.truncate(TOP);
             // 2026, past the annual table's 2025: the five as ranked, the monthly table in its place, the pair recorded
-            let r = c.top5(q6, &t, false, Some(2026));
+            let r = c.top5(q6, &t, false, Some(2026), None);
             assert_eq!(ids(&r.candidates), ids(&all.candidates));
             assert!(r.candidates.iter().all(|c| c.twin_of.is_none()));
             assert_eq!(r.twins_refused.len(), 1);
@@ -4516,13 +4523,13 @@ mod tests {
             let j = serde_json::to_value(&r).unwrap();
             assert_eq!(j["twins_refused"][0]["monthly"], "migr_asyappctzm");
             // months as well: refused once, for the months
-            let r = c.top5(q6, &t, true, Some(2026));
+            let r = c.top5(q6, &t, true, Some(2026), None);
             assert_eq!(ids(&r.candidates), ids(&all.candidates));
             assert_eq!(r.twins_refused.len(), 1);
             assert!(r.twins_refused[0].why.contains("asks for months"), "{}", r.twins_refused[0].why);
             // a year the annual table holds (its last one too), or no year named: swapped
             for year in [Some(2024), Some(2025), None] {
-                let r = c.top5(q6, &t, false, year);
+                let r = c.top5(q6, &t, false, year, None);
                 assert_eq!(r.candidates[0].id, "migr_asyappctza", "{year:?}");
                 assert_eq!(r.candidates[0].twin_of.as_ref().map(|t| t.used_end.as_str()), Some("2025"), "{year:?}");
                 assert!(!ids(&r.candidates).contains(&"migr_asyappctzm"), "{year:?}");
@@ -4541,7 +4548,7 @@ mod tests {
         all.candidates.truncate(TOP);
         // the asked record's offered tables are the top five's (top5 fills them; rank alone offers none): nrg_cb_pem by its
         // prefix, the four annual ones by their titles ("Electricity generation by fuel ...")
-        let got = c.top5(q3, &t, false, None);
+        let got = c.top5(q3, &t, false, None, None);
         let want: Vec<String> = ["nrg_cb_pem", "nrg_pa_mix", "nrg_pa_more", "nrg_pa_few", "nrg_pa_op"].iter().map(|s| s.to_string()).collect();
         assert_eq!(got.asked.iter().map(|a| a.offered.clone()).collect::<Vec<_>>(), vec![want]);
         all.asked = got.asked.clone();
@@ -4853,6 +4860,7 @@ mod tests {
             &texts(&["energy balance supply sources to final consumption by sector Germany"]),
             false,
             None,
+            None,
         );
         println!(
             "top5 one query {:.3}s: {}",
@@ -4968,7 +4976,7 @@ mod tests {
             plain.candidates.truncate(TOP);
             let plain_ms = ms(t0);
             let t1 = std::time::Instant::now();
-            let after = c.top5(zh, &t, false, None);
+            let after = c.top5(zh, &t, false, None, None);
             let swap_ms = ms(t1);
             let ranked = c.rank(zh, &t).candidates;
             println!("time {label} rank+truncate {plain_ms:.1} ms, top5 {swap_ms:.1} ms, refused {}", after.twins_refused.len());
@@ -5029,15 +5037,15 @@ mod tests {
     fn a_table_holding_no_row_of_a_named_place_is_not_offered() {
         let c = small();
         let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
-        assert!(c.unproven("nrg_bal", &s(&["CN"]), None).is_some_and(|w| w.contains("CN")));
-        assert_eq!(c.unproven("nrg_bal", &s(&["DE", "FR"]), None), None);
-        assert_eq!(c.unproven("nrg_world", &s(&["CN", "US"]), None), None);
-        assert_eq!(c.unproven("EG.USE@2", &s(&["CN", "DE"]), None), None);
-        assert!(c.unproven("nrg_bal", &s(&["EUU"]), None).is_some());
-        assert_eq!(c.unproven("no_such_table", &s(&["CN"]), None), None);
-        let r = c.top5("中国和美国的能源", &texts(&["energy"]), false, None);
+        assert!(c.unproven("nrg_bal", &s(&["CN"]), (None, None)).is_some_and(|w| w.contains("CN")));
+        assert_eq!(c.unproven("nrg_bal", &s(&["DE", "FR"]), (None, None)), None);
+        assert_eq!(c.unproven("nrg_world", &s(&["CN", "US"]), (None, None)), None);
+        assert_eq!(c.unproven("EG.USE@2", &s(&["CN", "DE"]), (None, None)), None);
+        assert!(c.unproven("nrg_bal", &s(&["EUU"]), (None, None)).is_some());
+        assert_eq!(c.unproven("no_such_table", &s(&["CN"]), (None, None)), None);
+        let r = c.top5("中国和美国的能源", &texts(&["energy"]), false, None, None);
         let asked = s(&["CN", "US"]);
-        assert!(r.candidates.iter().all(|x| c.unproven(&x.id, &asked, None).is_none()), "{:?}", r.candidates);
+        assert!(r.candidates.iter().all(|x| c.unproven(&x.id, &asked, (None, None)).is_none()), "{:?}", r.candidates);
         assert!(r.unproven.iter().all(|(id, _)| !r.candidates.iter().any(|x| &x.id == id)));
         // Germany and China with no World Bank table: nrg_bal holds DE only, nrg_world CN only, so none can prove and none
         // is taken out (the page says which place has no data, as before)
@@ -5047,13 +5055,13 @@ mod tests {
         let q = "德国和中国的能源";
         assert_eq!(countries(&eu, q), ["DE", "CN"]);
         let all: Vec<String> = eu.rank(q, &texts(&["energy"])).candidates.into_iter().take(TOP).map(|x| x.id).collect();
-        assert!(all.iter().all(|id| eu.unproven(id, &s(&["DE", "CN"]), None).is_some() || eu.table(id).is_none()), "{all:?}");
-        let none = eu.top5(q, &texts(&["energy"]), false, None);
+        assert!(all.iter().all(|id| eu.unproven(id, &s(&["DE", "CN"]), (None, None)).is_some() || eu.table(id).is_none()), "{all:?}");
+        let none = eu.top5(q, &texts(&["energy"]), false, None, None);
         assert!(none.unproven.is_empty(), "{:?}", none.unproven);
         assert_eq!(none.candidates.into_iter().map(|x| x.id).collect::<Vec<_>>(), all);
         // with the World Bank table there, it proves and the Eurostat ones are taken out
-        let both = c.top5(q, &texts(&["energy"]), false, None);
-        assert!(both.candidates.iter().all(|x| c.unproven(&x.id, &s(&["DE", "CN"]), None).is_none()) && !both.unproven.is_empty(), "{:?}", both.candidates);
+        let both = c.top5(q, &texts(&["energy"]), false, None, None);
+        assert!(both.candidates.iter().all(|x| c.unproven(&x.id, &s(&["DE", "CN"]), (None, None)).is_none()) && !both.unproven.is_empty(), "{:?}", both.candidates);
     }
 
     /// Measurement, not a check (ignored; design 2a): over recorded runs, each a published page (UNPROVEN_RUNS=<label>\t
@@ -5091,8 +5099,9 @@ mod tests {
             let asked: Vec<String> =
                 c.places(question).into_iter().filter_map(|p| if let Place::Country(x) = p { Some(x) } else { None }).collect();
             let latest = crate::next_params::question_latest_year(question, this_year);
-            let mut drops: Vec<(String, String)> = listed.iter().filter_map(|id| c.unproven(id, &asked, latest).map(|why| (id.clone(), why))).collect();
-            if !listed.iter().any(|id| c.unproven(id, &asked, latest).is_none() && c.table(id).is_some()) {
+            let first = crate::next_params::question_first_year(question, this_year);
+            let mut drops: Vec<(String, String)> = listed.iter().filter_map(|id| c.unproven(id, &asked, (first, latest)).map(|why| (id.clone(), why))).collect();
+            if !listed.iter().any(|id| c.unproven(id, &asked, (first, latest)).is_none() && c.table(id).is_some()) {
                 drops.clear(); // none can prove: top5 keeps all
             }
             let main = used.first().cloned().unwrap_or_default();
@@ -5148,7 +5157,7 @@ mod tests {
             assert!(with.split_places(&n.words).0.is_empty(), "{}: a place name", n.id);
         }
         let five = |c: &Catalog, zh: &str, words: &str| -> Vec<String> {
-            let r = c.top5(zh, &texts(&[words]), false, None);
+            let r = c.top5(zh, &texts(&[words]), false, None, None);
             r.candidates.into_iter().map(|c| c.id).collect()
         };
         let (zh, words) = ("德国能源从来源到各部门", "Germany energy supply by source and final consumption by sector");
@@ -5257,7 +5266,7 @@ mod tests {
             let texts: Vec<String> = f[2].split(" | ").map(String::from).collect();
             let want: Vec<&str> = f[3].split(',').collect();
             let is_want = |id: &str| want.contains(&id.split('@').next().unwrap());
-            let top = c.top5(f[1], &texts, false, None);
+            let top = c.top5(f[1], &texts, false, None, None);
             let at5 = top.candidates.iter().position(|x| is_want(&x.id));
             let all = c.rank(f[1], &texts).candidates;
             let at = all.iter().position(|x| is_want(&x.id));
