@@ -105,10 +105,13 @@ pub struct Block {
     pub sentence: String,
 }
 
-/// A plan: the blocks in reading order. One block, unless the question has one of the three many-block shapes (plan).
+/// A plan: the blocks in reading order. One block, unless the question takes one of the three many-block shapes (Shape).
 #[derive(Clone, Debug)]
 pub struct Plan {
     pub blocks: Vec<Block>,
+    /// One block for a question the shapes did not take (a none reply, or slots the question cannot fill): the page says
+    /// it answers only part of the question.
+    pub partial: bool,
 }
 
 /// Words that are a measure's name and hold a change or total word that is no change or total asked (人口增长率 is a level).
@@ -283,53 +286,179 @@ const TO_ZH: [&str; 6] = ["到哪去", "用到哪", "用在哪", "去了哪", "�
 /// Words that a threshold question asks of each member of a group.
 const EACH_ZH: [&str; 4] = ["各国", "各成员国", "各成员", "每个成员国"];
 
-/// The plan of a question on the catalogue `c`: one block, or, for three shapes of question, several (complex pages,
-/// roadmap step 5; works/complex-split/design.md), each block one sentence:
-/// - the first quantity's leader and its position in the others (人最多的，是不是也最富、最城市化): a block per quantity,
-///   in the question's order, the first its highest (or lowest), each later one that place's position;
-/// - a threshold asked of each member of a group (欧盟各国哪年跨过 20%): the group's own whole when it has rows of its own,
-///   each member's year, and the members still below at the last year;
-/// - where a whole comes from and where it goes (能源从哪来、用到哪去): its total, its parts, its flows.
+/// The three many-block shapes (owner 2026-11-14 16:0x item 5; works/complex-split/design.md). The model answers only a
+/// shape number and its slots; the blocks, each block's quantity and the common year are the template's. The main chart
+/// of each block is not named here: the sketch compare lists the nodes registered for the block's relation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Shape {
+    /// The first quantity's leader and its position in the others (sample A).
+    RankCompare = 1,
+    /// A line, the year a group and each member passed it, the members still below (sample B).
+    ThresholdTime = 2,
+    /// A whole: its total, its parts, its flows (sample C).
+    TotalToParts = 3,
+}
+
+pub const SHAPES: [Shape; 3] = [Shape::RankCompare, Shape::ThresholdTime, Shape::TotalToParts];
+
+impl Shape {
+    pub fn number(self) -> u8 {
+        self as u8
+    }
+    pub fn from_number(n: u8) -> Option<Shape> {
+        SHAPES.into_iter().find(|s| s.number() == n)
+    }
+    pub fn name_zh(self) -> &'static str {
+        match self {
+            Shape::RankCompare => "名次对照",
+            Shape::ThresholdTime => "过线和时间",
+            Shape::TotalToParts => "由总到分",
+        }
+    }
+}
+
+/// The shape request: the shapes in the order offered (the preselected one first, with the words that matched), and the
+/// quantities the question names, in its order, as the slot values a reply picks from by index.
+#[derive(Clone, Debug)]
+pub struct ShapeAsk {
+    pub offered: Vec<(Shape, Option<&'static str>)>,
+    pub quantities: Vec<(String, String)>,
+}
+
+/// A reply: a shape number (0: none of them) and, for the shape, the quantities by their index in the request, in the
+/// order the blocks take them (empty: the question's order).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ShapeReply {
+    pub shape: u8,
+    pub quantities: Vec<usize>,
+}
+
+/// The shape the question's words point to, and the words: the program's preselection, offered first; not a decision.
+pub fn preselect(c: &Catalog, question: &str) -> Option<(Shape, &'static str)> {
+    let q = plain(question);
+    if let Some(w) = ALSO_ZH.iter().copied().find(|w| q.contains(w)) {
+        if asked_zh_in_order(question).len() >= 2 {
+            return Some((Shape::RankCompare, w));
+        }
+    }
+    let first = one_block(c, question).blocks.first().map(|b| b.rel);
+    if first == Some(Rel::Threshold) {
+        if let Some(w) = EACH_ZH.iter().copied().find(|w| q.contains(w)) {
+            return Some((Shape::ThresholdTime, w));
+        }
+    }
+    if let (Some(_), Some(w)) = (FROM_ZH.iter().copied().find(|w| q.contains(w)), TO_ZH.iter().copied().find(|w| q.contains(w))) {
+        return Some((Shape::TotalToParts, w));
+    }
+    None
+}
+
+/// The shape request of a question: the preselected shape first, the others after in number order.
+pub fn shape_ask(c: &Catalog, question: &str) -> ShapeAsk {
+    let pre = preselect(c, question);
+    let mut offered: Vec<(Shape, Option<&'static str>)> = pre.map(|(s, w)| (s, Some(w))).into_iter().collect();
+    offered.extend(SHAPES.into_iter().filter(|s| pre.map(|p| p.0) != Some(*s)).map(|s| (s, None)));
+    let quantities = asked_zh_in_order(question).into_iter().map(|a| (a.id, a.zh)).collect();
+    ShapeAsk { offered, quantities }
+}
+
+/// A reply checked against its request: a shape number offered or 0, quantity indexes in range and not repeated, and as
+/// many as the shape takes (名次对照 two or more, the others one). A refusal names the allowed values and an example.
+pub fn check_reply(ask: &ShapeAsk, reply: &ShapeReply) -> Result<(), String> {
+    let allowed = format!(
+        "shape: 0 (none of them) or {}; quantities: indexes 0..{} in the order the blocks take them",
+        ask.offered.iter().map(|(s, _)| s.number().to_string()).collect::<Vec<_>>().join(", "),
+        ask.quantities.len()
+    );
+    let example = match ask.offered.first() {
+        Some((Shape::RankCompare, _)) => format!("{{\"shape\":1,\"quantities\":[{}]}}", (0..ask.quantities.len().max(2)).map(|i| i.to_string()).collect::<Vec<_>>().join(",")),
+        Some((s, _)) => format!("{{\"shape\":{},\"quantities\":[0]}}", s.number()),
+        None => "{\"shape\":0,\"quantities\":[]}".to_string(),
+    };
+    let refuse = |why: &str| Err(format!("{why}; allowed: {allowed}; example: {example}"));
+    if reply.shape == 0 {
+        return Ok(());
+    }
+    let Some(shape) = Shape::from_number(reply.shape) else { return refuse("no such shape") };
+    if reply.quantities.iter().any(|&i| i >= ask.quantities.len()) {
+        return refuse("a quantity index past the list");
+    }
+    let mut seen = reply.quantities.clone();
+    seen.sort_unstable();
+    seen.dedup();
+    if seen.len() != reply.quantities.len() {
+        return refuse("a quantity picked twice");
+    }
+    let n = if reply.quantities.is_empty() { ask.quantities.len() } else { reply.quantities.len() };
+    match shape {
+        Shape::RankCompare if n < 2 => refuse("名次对照 takes two quantities or more"),
+        _ if n == 0 => refuse("the shape takes a quantity and the question names none"),
+        _ => Ok(()),
+    }
+}
+
+/// The plan of a question on the catalogue `c` with the preselected shape taken as the reply (the replay and the tests;
+/// on the flow the model's reply is taken, plan_for).
 pub fn plan(c: &Catalog, question: &str) -> Plan {
-    let one = one_block(c, question);
+    let shape = preselect(c, question).map_or(0, |(s, _)| s.number());
+    plan_for(c, question, &ShapeReply { shape, quantities: vec![] })
+}
+
+/// The plan of a question for a checked reply: the shape's template, or, for 0 or a shape whose slots the question cannot
+/// fill, its best one block marked partial (the page says it answers only part of the question; graded 没答全).
+/// - 名次对照: a block per quantity in the reply's order, the first its highest (or lowest, when the words before the
+///   also-word ask the lowest), each later one that place's position;
+/// - 过线和时间: the group's own whole when it has rows of its own, each member's year, the members still below at the
+///   last year (needs a line: the one block reads a threshold);
+/// - 由总到分: its total, its parts, its flows.
+pub fn plan_for(c: &Catalog, question: &str, reply: &ShapeReply) -> Plan {
+    let mut one = one_block(c, question);
     let Some(b) = one.blocks.first().cloned() else { return one };
+    let all: Vec<(String, String)> = asked_zh_in_order(question).into_iter().map(|a| (a.id, a.zh)).collect();
+    let picked: Vec<(String, String)> =
+        if reply.quantities.is_empty() { all } else { reply.quantities.iter().filter_map(|&i| all.get(i).cloned()).collect() };
     let q = plain(question);
     let with = |rel: Rel, focus: Focus, quantity: Vec<(String, String)>| {
         let name = quantity.first().map_or("{quantity}".to_string(), |(_, zh)| zh.clone());
         let sentence = sentence(rel, &focus, &b.place_words, &name, &b.years);
         Block { rel, focus, quantity, sentence, ..b.clone() }
     };
-    if let Some(at) = ALSO_ZH.iter().filter_map(|w| q.find(w)).min() {
-        let asked: Vec<(String, String)> = asked_zh_in_order(question).into_iter().map(|a| (a.id, a.zh)).collect();
-        if asked.len() >= 2 {
-            let head = &q[..at];
+    let first = |picked: &[(String, String)]| picked.first().map_or(b.quantity.clone(), |x| vec![x.clone()]);
+    let blocks = match Shape::from_number(reply.shape) {
+        Some(Shape::RankCompare) if picked.len() >= 2 => {
+            let head = ALSO_ZH.iter().filter_map(|w| q.find(w)).min().map_or(q.as_str(), |at| &q[..at]);
             let low = any(head, &MIN_ZH) && !any(head, &MAX_ZH);
             let lead = if low { "{b1.min.name}" } else { "{b1.max.name}" };
-            let mut blocks = vec![with(Rel::Ranking, if low { Focus::Min } else { Focus::Max }, vec![asked[0].clone()])];
-            for a in &asked[1..] {
+            let mut blocks = vec![with(Rel::Ranking, if low { Focus::Min } else { Focus::Max }, vec![picked[0].clone()])];
+            for a in &picked[1..] {
                 blocks.push(with(Rel::Ranking, Focus::Position(lead.to_string()), vec![a.clone()]));
             }
-            return Plan { blocks };
+            blocks
         }
-    }
-    if b.rel == Rel::Threshold && any(&q, &EACH_ZH) {
-        let mut blocks = Vec::new();
-        if group_aggregate_zh(question).is_some() {
-            blocks.push(with(Rel::Threshold, Focus::WholeFirstPast, b.quantity.clone()));
+        Some(Shape::ThresholdTime) if b.rel == Rel::Threshold => {
+            let quantity = first(&picked);
+            let mut blocks = Vec::new();
+            if group_aggregate_zh(question).is_some() {
+                blocks.push(with(Rel::Threshold, Focus::WholeFirstPast, quantity.clone()));
+            }
+            blocks.push(with(Rel::Threshold, Focus::EachFirstPast, quantity.clone()));
+            blocks.push(with(Rel::Ranking, Focus::BelowRest, quantity));
+            blocks
         }
-        blocks.push(with(Rel::Threshold, Focus::EachFirstPast, b.quantity.clone()));
-        blocks.push(with(Rel::Ranking, Focus::BelowRest, b.quantity.clone()));
-        return Plan { blocks };
-    }
-    if any(&q, &FROM_ZH) && any(&q, &TO_ZH) {
-        let blocks = vec![
-            with(Rel::Magnitude, Focus::Total, b.quantity.clone()),
-            with(Rel::Composition, Focus::LargestPart, b.quantity.clone()),
-            with(Rel::Flow, Focus::LargestFlow, b.quantity.clone()),
-        ];
-        return Plan { blocks };
-    }
-    one
+        Some(Shape::TotalToParts) if !first(&picked).is_empty() => {
+            let quantity = first(&picked);
+            vec![
+                with(Rel::Magnitude, Focus::Total, quantity.clone()),
+                with(Rel::Composition, Focus::LargestPart, quantity.clone()),
+                with(Rel::Flow, Focus::LargestFlow, quantity),
+            ]
+        }
+        _ => {
+            one.partial = reply.shape != 0 || preselect(c, question).is_some();
+            return one;
+        }
+    };
+    Plan { blocks, partial: false }
 }
 
 /// The one-block plan of a question on the catalogue `c`.
@@ -347,7 +476,7 @@ fn one_block(c: &Catalog, question: &str) -> Plan {
     let focus = focus(question, rel, words.first().map(String::as_str));
     let q_name = quantity.first().map_or("{quantity}".to_string(), |(_, zh)| zh.clone());
     let sentence = sentence(rel, &focus, &words, &q_name, &years);
-    Plan { blocks: vec![Block { rel, focus, places, place_words: words, years, quantity, sentence }] }
+    Plan { blocks: vec![Block { rel, focus, places, place_words: words, years, quantity, sentence }], partial: false }
 }
 
 #[cfg(test)]
@@ -433,6 +562,50 @@ mod tests {
         // every block's sentence is the program's, numbers as placeholders
         for b in plan(&c, "东盟各国：人最多的，是不是也最富、最城市化？").blocks {
             assert!(!b.sentence.chars().any(|ch| ch.is_ascii_digit()), "{}", b.sentence);
+        }
+    }
+
+    /// The model answers a shape number and slots (owner 11-14 16:0x item 5): the preselected shape is offered first;
+    /// the reply's number is what counts, not the preselection; 0, or a shape the question cannot fill, gives one block
+    /// marked partial; a reply out of the offered values is refused with the allowed values and an example.
+    #[test]
+    fn the_reply_shape_number_picks_the_template() {
+        let c = crate::l5geo::test_world();
+        let a = "东盟各国：人最多的，是不是也最富、最城市化？";
+        assert_eq!(SHAPES.map(Shape::name_zh), ["名次对照", "过线和时间", "由总到分"]);
+        let ask = shape_ask(&c, a);
+        assert_eq!(ask.offered.iter().map(|(s, _)| s.number()).collect::<Vec<_>>(), [1, 2, 3]);
+        assert_eq!(ask.offered[0].1, Some("是不是也"));
+        assert_eq!(ask.quantities.iter().map(|(id, _)| id.as_str()).collect::<Vec<_>>(), ["population", "gdp_pc", "urban_share"]);
+        let c_ask = shape_ask(&c, "德国的能源从哪来、用到哪去？");
+        assert_eq!(c_ask.offered.iter().map(|(s, _)| s.number()).collect::<Vec<_>>(), [3, 1, 2], "preselected first");
+        assert!(shape_ask(&c, "2023 年金砖国家 GDP 增速排名").offered.iter().all(|(_, w)| w.is_none()), "no preselection");
+        // the reply's order of quantities is the blocks' order
+        let r = ShapeReply { shape: 1, quantities: vec![1, 0] };
+        assert_eq!(check_reply(&ask, &r), Ok(()));
+        let got: Vec<String> = plan_for(&c, a, &r).blocks.into_iter().map(|b| b.quantity[0].0.clone()).collect();
+        assert_eq!(got, ["gdp_pc", "population"]);
+        // another shape than the preselected one: that template (由总到分 on the first quantity picked)
+        let p = plan_for(&c, a, &ShapeReply { shape: 3, quantities: vec![0] });
+        assert_eq!(p.blocks.iter().map(|b| b.rel).collect::<Vec<_>>(), [Rel::Magnitude, Rel::Composition, Rel::Flow]);
+        assert!(!p.partial);
+        // none of them: the one block, marked partial
+        let none = plan_for(&c, a, &ShapeReply { shape: 0, quantities: vec![] });
+        assert_eq!((none.blocks.len(), none.partial), (1, true));
+        // a shape whose slots the question cannot fill (no line read for 过线和时间): one block, partial
+        let unfilled = plan_for(&c, "德国的能源从哪来、用到哪去？", &ShapeReply { shape: 2, quantities: vec![] });
+        assert_eq!((unfilled.blocks.len(), unfilled.partial), (1, true));
+        // a plain one-block question is not partial
+        assert!(!plan(&c, "2023 年金砖国家 GDP 增速排名").partial);
+        // refusals carry the allowed values and an example
+        for bad in [
+            ShapeReply { shape: 7, quantities: vec![] },
+            ShapeReply { shape: 1, quantities: vec![5] },
+            ShapeReply { shape: 1, quantities: vec![0, 0] },
+            ShapeReply { shape: 1, quantities: vec![2] },
+        ] {
+            let e = check_reply(&ask, &bad).unwrap_err();
+            assert!(e.contains("allowed: shape: 0 (none of them) or 1, 2, 3") && e.contains("example: {\"shape\":1,"), "{bad:?}: {e}");
         }
     }
 
