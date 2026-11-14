@@ -336,10 +336,11 @@ pub struct ShapeReply {
 /// The shape the question's words point to, and the words: the program's preselection, offered first; not a decision.
 pub fn preselect(c: &Catalog, question: &str) -> Option<(Shape, &'static str)> {
     let q = plain(question);
-    // the also-word after a 最 word (人最多的，是不是也最富): a leader's positions; without one (增长快的是不是排放也快) it is
-    // the relation of two quantities, which the scope refusal keeps refusing (works/complex-split/design.md)
+    // the also-word after a leader asked (人最多的，是不是也最富): a leader's positions; without one (增长快的是不是排放也快),
+    // or with 越 (最低工资越高，失业率是不是也越高: 最 there is the measure's name), it is the relation of two quantities,
+    // which the scope refusal keeps refusing (works/complex-split/design.md)
     if let Some((at, w)) = ALSO_ZH.iter().copied().filter_map(|w| q.find(w).map(|at| (at, w))).min() {
-        if q[..at].contains('最') && asked_zh_in_order(question).len() >= 2 {
+        if leader_asked(&q[..at]) && !q.contains('越') && asked_zh_in_order(question).len() >= 2 {
             return Some((Shape::RankCompare, w));
         }
     }
@@ -353,6 +354,13 @@ pub fn preselect(c: &Catalog, question: &str) -> Option<(Shape, &'static str)> {
         return Some((Shape::TotalToParts, w));
     }
     None
+}
+
+/// Whether the words ask for a leader: a 最 followed within four characters by 的 (人最多的, 人均GDP最高的), the place
+/// that leads, not a measure named with 最 (最低工资).
+fn leader_asked(head: &str) -> bool {
+    let chars: Vec<char> = head.chars().collect();
+    chars.iter().enumerate().any(|(i, &ch)| ch == '最' && chars[i + 1..].iter().take(5).skip(1).any(|&c| c == '的'))
 }
 
 /// The shape request of a question: the preselected shape first, the others after in number order.
@@ -559,7 +567,11 @@ mod tests {
         }
         // none of the three shapes: one block, as before (the also-word with no 最 word before it asks two quantities'
         // relation, which the scope refusal keeps)
-        for q in ["经济增长快的国家，是不是碳排放也增长快？", "德国哪年跨过 20%？", "德国的能源从哪来？", "2023 年金砖国家 GDP 增速排名", "韩国比日本、美国的人均寿命长多少？", "人均GDP最高的是哪国？"] {
+        for q in [
+            "经济增长快的国家，是不是碳排放也增长快？",
+            "欧盟各国的最低工资越高，失业率是不是也越高？",
+            "东南亚各国人均 GDP 越高，互联网普及率是不是也越高？",
+            "德国哪年跨过 20%？", "德国的能源从哪来？", "2023 年金砖国家 GDP 增速排名", "韩国比日本、美国的人均寿命长多少？", "人均GDP最高的是哪国？"] {
             assert_eq!(plan(&c, q).blocks.len(), 1, "{q}");
         }
         // every block's sentence is the program's, numbers as placeholders
