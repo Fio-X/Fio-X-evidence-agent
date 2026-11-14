@@ -1034,6 +1034,21 @@ struct ScopeClass {
     future_year: bool,
     #[serde(default)]
     not: Vec<String>,
+    /// Gaps let through after a leader asked (owner 11-14 18:2x): see LeaderGap.
+    #[serde(default)]
+    leader_gaps: Vec<LeaderGap>,
+}
+
+/// A `gaps` rule's first word that is no hit when the words before it ask for a leader: `lead` followed by `mark` within
+/// `within` characters (人最多的，是不是也最富 asks the leader's position on another quantity, the 名次对照 split; owner
+/// 11-14 18:2x). Only this narrowing: a gap with no leader before it is refused as before.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LeaderGap {
+    gap: String,
+    lead: char,
+    mark: char,
+    within: usize,
 }
 
 fn scope_classes_from(text: &str) -> Result<Vec<ScopeClass>, String> {
@@ -1151,7 +1166,11 @@ pub fn scope_refused_zh(question_zh: &str, this_year: i32) -> Option<ScopeRefusa
         for (a, b, n) in &c.gaps {
             for (i, _) in q.match_indices(a.as_str()) {
                 let after: String = q[i + a.len()..].chars().take(n + b.chars().count()).collect();
-                if after.contains(b.as_str()) {
+                let led = c.leader_gaps.iter().any(|l| {
+                    let head: Vec<char> = q[..i].chars().collect();
+                    l.gap == *a && head.iter().enumerate().any(|(k, &ch)| ch == l.lead && head[k + 1..].iter().take(l.within).any(|&m| m == l.mark))
+                });
+                if after.contains(b.as_str()) && !led {
                     return refuse(format!("{a}…{b}"));
                 }
             }
@@ -5343,6 +5362,21 @@ mod tests {
             println!("R2\t{}\t{}\t{}\t{}\t{}", f[0], at5.map(|k| (k + 1).to_string()).unwrap_or("-".into()), at.map(|k| (k + 1).to_string()).unwrap_or("none".into()), w, first.join(" "));
         }
         println!("R2SUM in-five {hit}/{n}");
+    }
+
+    /// Owner 11-14 18:2x: a 是不是…也 after a leader asked (最 then 的 within four characters) asks the leader's position on
+    /// another quantity, the 名次对照 split, and is let through; one asked of two quantities with no leader (dev question n56,
+    /// and lookalikes written for this test) is refused as two measures' relation as before.
+    #[test]
+    fn a_leader_s_position_is_let_through_and_a_correlation_is_still_refused() {
+        for q in ["东盟各国：人最多的，是不是也最富、最城市化？", "欧盟各国中人均GDP最高的，是不是也最长寿？"] {
+            assert_eq!(scope_refused_zh(q, 2026), None, "{q}");
+        }
+        for q in ["经济增长越快的国家，碳排放是不是涨得也越快？", "人口增长快的国家，是不是排放也快？", "出口多的国家是不是失业率也低？"] {
+            assert_eq!(scope_refused_zh(q, 2026).map(|r| (r.class, r.hit)), Some(("two_measures".to_string(), "是不是…也".to_string())), "{q}");
+        }
+        // the 越…越 gap is no 是不是 gap: a leader before it lets nothing through
+        assert_eq!(scope_refused_zh("最大的几个国家，人口越多排放越多吗？", 2026).map(|r| r.class), Some("two_measures".to_string()));
     }
 
     /// User 11-08 item 1: each whole class the new route cannot answer is refused from the question's words, with two
