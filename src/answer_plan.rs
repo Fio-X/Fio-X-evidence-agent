@@ -336,8 +336,10 @@ pub struct ShapeReply {
 /// The shape the question's words point to, and the words: the program's preselection, offered first; not a decision.
 pub fn preselect(c: &Catalog, question: &str) -> Option<(Shape, &'static str)> {
     let q = plain(question);
-    if let Some(w) = ALSO_ZH.iter().copied().find(|w| q.contains(w)) {
-        if asked_zh_in_order(question).len() >= 2 {
+    // the also-word after a 最 word (人最多的，是不是也最富): a leader's positions; without one (增长快的是不是排放也快) it is
+    // the relation of two quantities, which the scope refusal keeps refusing (works/complex-split/design.md)
+    if let Some((at, w)) = ALSO_ZH.iter().copied().filter_map(|w| q.find(w).map(|at| (at, w))).min() {
+        if q[..at].contains('最') && asked_zh_in_order(question).len() >= 2 {
             return Some((Shape::RankCompare, w));
         }
     }
@@ -555,8 +557,9 @@ mod tests {
             assert_eq!(got.iter().map(|(r, f, _)| (*r, f.clone())).collect::<Vec<_>>(), three, "{q}");
             assert!(got.iter().all(|x| x.2 == ids(&["energy_balance"])), "{q}: {got:?}");
         }
-        // none of the three shapes: one block, as before
-        for q in ["德国哪年跨过 20%？", "德国的能源从哪来？", "2023 年金砖国家 GDP 增速排名", "韩国比日本、美国的人均寿命长多少？", "人均GDP最高的是哪国？"] {
+        // none of the three shapes: one block, as before (the also-word with no 最 word before it asks two quantities'
+        // relation, which the scope refusal keeps)
+        for q in ["经济增长快的国家，是不是碳排放也增长快？", "德国哪年跨过 20%？", "德国的能源从哪来？", "2023 年金砖国家 GDP 增速排名", "韩国比日本、美国的人均寿命长多少？", "人均GDP最高的是哪国？"] {
             assert_eq!(plan(&c, q).blocks.len(), 1, "{q}");
         }
         // every block's sentence is the program's, numbers as placeholders
