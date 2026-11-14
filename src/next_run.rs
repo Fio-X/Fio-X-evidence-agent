@@ -4036,7 +4036,7 @@ pub(crate) async fn pages_of(
 ) -> Result<String, Stop> {
     // each block's own table, its quantity record narrowed to the block's quantity: a block's page answers that one, and
     // the stacked page the question's every quantity, one block each
-    let blocks: Vec<Prepared> = planned
+    let mut blocks: Vec<(String, Prepared)> = planned
         .block_tables
         .iter()
         .filter_map(|(family, id)| {
@@ -4049,9 +4049,28 @@ pub(crate) async fn pages_of(
             if let Some(all) = block.asked.as_array() {
                 block.asked = Value::Array(all.iter().filter(|a| a["id"] == family.as_str()).cloned().collect());
             }
-            Some(block)
+            Some((family.clone(), block))
         })
         .collect();
+    // a plan whose blocks share one quantity (由总到分): each drawn block's own fetch of the table, its relation the plan's;
+    // a block no recipe draws is left out and kept as such
+    let mut labels: Vec<String> = planned.block_tables.iter().map(|(q, _)| q.clone()).collect();
+    if let (Some(plan), false) = (planned.plan.as_ref(), planned.shared.is_empty()) {
+        labels = plan.blocks.iter().enumerate().map(|(i, b)| format!("b{}:{:?}", i + 1, b.rel)).collect();
+        for (i, label) in labels.iter().enumerate().filter(|(i, _)| !planned.shared.iter().any(|(b, _)| b == i)) {
+            recorder.program_event(BLOCK_LEFT_OUT_EVENT, json!({"block": i + 1, "table": null, "why": format!("no recipe draws the block {label}")}))?;
+        }
+        blocks = planned
+            .shared
+            .iter()
+            .filter_map(|&(b, k)| {
+                let mut block = planned.prepared.get(k)?.clone();
+                let rel = plan.blocks.get(b)?.rel;
+                block.relation = crate::answer_plan::RECIPE_RELATIONS.iter().find(|(r, _)| *r == rel).map(|(_, x)| *x);
+                Some((labels[b].clone(), block))
+            })
+            .collect();
+    }
     if blocks.len() < 2 {
         // a plan of many blocks that share one table (过线和时间, 由总到分) is drawn as its first block for now: the later
         // blocks' own fetches are not built yet, and each is kept as left out
@@ -4067,13 +4086,30 @@ pub(crate) async fn pages_of(
     }
     // a many-block page (owner 11-14 16:5x item 2): each block's page from its own table, by the same steps and checks;
     // the first block stops the run as a one-block page does, a later block that stops is left out and kept as such
-    let (first, shown, leader) = page_of_block(recorder, model, question, std::slice::from_ref(&blocks[0]), catalogue, cancel, (1, None)).await?;
-    let (mut answers, mut pages) = (vec![first], vec![shown]);
-    let mut drawn: Vec<&str> = vec![planned.block_tables[0].0.as_str()];
-    for (i, table) in blocks.iter().enumerate().skip(1) {
+    // the first block stops the run as a one-block page does; of blocks that share one table (由总到分), one that stops is
+    // left out and the next drawn block is the page's first
+    let mut answers = Vec::new();
+    let mut lead = 0;
+    let (first, shown, leader) = loop {
+        match page_of_block(recorder, model, question, std::slice::from_ref(&blocks[lead].1), catalogue, cancel, (1, None)).await {
+            Ok(page) => break page,
+            Err(stopped @ (Stop::Page { .. } | Stop::Refused { .. } | Stop::NoReply { .. }))
+                if !planned.shared.is_empty() && lead + 1 < blocks.len() && recorder.resume_under_last_accepted() =>
+            {
+                recorder.program_event(BLOCK_LEFT_OUT_EVENT, json!({"block": lead + 1, "table": blocks[lead].1.id, "why": stopped.to_string()}))?;
+                answers.push(format!("Block {} ({}) was left out: {stopped}", lead + 1, blocks[lead].1.id));
+                lead += 1;
+            }
+            Err(stopped) => return Err(stopped),
+        }
+    };
+    answers.push(first);
+    let mut pages = vec![shown];
+    let mut drawn: Vec<&str> = vec![blocks[lead].0.as_str()];
+    for (i, (label, table)) in blocks.iter().enumerate().skip(lead + 1) {
         // a block the plan says gives the first block's leader's place (名次对照, owner 11-14 22:2x item 2) has that place as its
         // focus: its page marks it and its finding says where it stands, a number from the ledger
-        let family = planned.block_tables[i].0.as_str();
+        let family = label.as_str();
         let asks_place = planned.plan.as_ref().and_then(|p| p.blocks.iter().find(|b| b.quantity.first().is_some_and(|(q, _)| q == family))).is_some_and(|b| {
             matches!(&b.focus, crate::answer_plan::Focus::Position(of) if of == crate::answer_plan::FIRST_LEADER)
         });
@@ -4082,7 +4118,7 @@ pub(crate) async fn pages_of(
             Ok((answer, shown, _)) => {
                 answers.push(answer);
                 pages.push(shown);
-                drawn.push(planned.block_tables[i].0.as_str());
+                drawn.push(label.as_str());
             }
             // a page step or a check of the page stopped it, or the text step's reply was refused: that block only
             Err(stopped @ (Stop::Page { .. } | Stop::Refused { .. } | Stop::NoReply { .. })) => {
@@ -4105,7 +4141,7 @@ pub(crate) async fn pages_of(
         STACKED_EVENT,
         json!({"published": stacked_ref, "html_sha256": stacked_sha256,
             "blocks": pages.iter().map(|(dir, _, _)| dir).collect::<Vec<_>>(), "quantities_drawn": drawn,
-            "quantities_left_out": planned.block_tables.iter().map(|(q, _)| q.as_str()).filter(|q| !drawn.contains(q)).collect::<Vec<_>>()}),
+            "quantities_left_out": labels.iter().map(String::as_str).filter(|q| !drawn.contains(q)).collect::<Vec<_>>()}),
     )?;
     answers.push(format!("The {} blocks are stacked at {stacked_ref} (sha256 {stacked_sha256}).", pages.len()));
     Ok(answers.join("\n"))

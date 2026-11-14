@@ -5209,6 +5209,9 @@ pub struct Planned {
     pub prepared: Vec<Prepared>,
     pub plan: Option<crate::answer_plan::Plan>,
     pub block_tables: Vec<(String, String)>,
+    /// For a plan whose blocks share one quantity (由总到分): each block a recipe draws, as (its index in the plan, the index
+    /// of its own fetch of the shared table in `prepared`), in block order; empty for any other plan.
+    pub shared: Vec<(usize, usize)>,
 }
 
 /// prepare_claims with the question's plan, when the split step gave one (owner 11-14 16:5x item 2): for a plan whose
@@ -5297,6 +5300,22 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
     }
     record_group_calls(recorder, catalogue)?;
     let blocks = blocks.filter(|blocks| blocks.iter().any(|(_, t)| t.as_ref().is_some_and(|t| offers.iter().any(|o| &o.id == t))));
+    // a plan whose blocks share one quantity (由总到分): each block a recipe draws gets the table on its own, listed once per
+    // block in block order, so the model gives each block the breakdown it draws and each is fetched on its own (owner
+    // 11-14 22:2x item 2, the existing composition and flow pieces); a block no recipe draws (a total alone) is left out
+    let shared_blocks = shared_blocks(plan.as_ref(), blocks.is_some());
+    if !shared_blocks.is_empty() {
+        let family = plan.as_ref().and_then(|p| p.blocks.first()).and_then(|b| b.quantity.first()).map(|(id, _)| id.clone());
+        let holds = family.as_ref().and_then(|f| ranking.asked.iter().find(|a| &a.id == f));
+        let table = holds.and_then(|a| offers.iter().find(|o| family_holds(a, &o.id))).or(offers.first()).cloned();
+        if let Some(table) = table {
+            recorder.program_event(
+                BLOCK_TABLES_EVENT,
+                json!({"shared": shared_blocks.iter().map(|&(b, rel)| json!({"block": b + 1, "relation": format!("{rel:?}"), "table": table.id})).collect::<Vec<_>>()}),
+            )?;
+            offers = vec![table; shared_blocks.len()];
+        }
+    }
     if let Some(blocks) = &blocks {
         recorder.program_event(
             BLOCK_TABLES_EVENT,
@@ -5398,7 +5417,15 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
         // under a table whose registry has composition groups, what each place's total splits into (every question)
         listed.extend(next_params::parts_line(i + 1, &t.id));
     }
-    let most = if blocks.is_some() { offers.len() } else { steps.len().clamp(1, offers.len()) };
+    // the block each listed copy of a shared table is for, said under it
+    if !shared_blocks.is_empty() {
+        for (i, &(b, rel)) in shared_blocks.iter().enumerate() {
+            if let Some(at) = listed.iter().position(|l| l.starts_with(&format!("{}. ", i + 1))) {
+                listed[at].push_str(&format!(" - for block {} ({rel:?})", b + 1));
+            }
+        }
+    }
+    let most = if blocks.is_some() || !shared_blocks.is_empty() { offers.len() } else { steps.len().clamp(1, offers.len()) };
     let params_rule = if items.is_empty() {
         ""
     } else {
@@ -5406,6 +5433,11 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
     };
     let pick_rule = if blocks.is_some() {
         format!("The page has {most} blocks and the program set one table for each, listed in block order: pick all {most} of them.")
+    } else if !shared_blocks.is_empty() {
+        format!(
+            "The page has {most} blocks that read the same table, listed once for each block in block order: pick all {most} of them, \
+             each with the params that draw its block's relation."
+        )
     } else {
         format!("Pick the table, or up to {most} tables, that answer the question; 0 if none fits.")
     };
@@ -5447,11 +5479,14 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
     let asked = prompt;
     let mut prompt = asked.clone();
     let mut repicked = false;
+    // the listed tables in the order the model picked them (a shared table's copies are its blocks)
+    let mut picked_order: Vec<usize>;
     let (mut tables, main_file, main_narrowed, main_window, cut, kept_relation) = 'pick: loop {
         let (picks, params, relation) = match recorder.ask_step(model, &ask, &prompt, cancel).await? {
             (_, Choice::Table { picks, params, relation }) => (picks, params, relation),
             (_, other) => unreachable!("the table step was answered with {other:?}"),
         };
+        picked_order = picks.clone();
         if picks.is_empty() {
             return Err(Stop::NoTable(
                 "the model answered that none of the listed tables fits".into(),
@@ -5697,8 +5732,17 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
             },
         });
     }
-    if let Some(main) = prepared.first_mut() {
-        composition_inputs(recorder, tools, catalogue, main, cancel).await?;
+    // each block's own fetch of a shared table, as (its block in the plan, its index in prepared), in block order
+    let mut shared: Vec<(usize, usize)> = if shared_blocks.is_empty() {
+        Vec::new()
+    } else {
+        picked_order.iter().enumerate().filter(|(k, _)| *k < prepared.len()).filter_map(|(k, n)| Some((shared_blocks.get(n - 1)?.0, k))).collect()
+    };
+    shared.sort();
+    // the main's sum inputs, and each later block's own fetch of a shared table's, when its breakdown asks for them
+    let with_sums: Vec<usize> = std::iter::once(0).chain(shared.iter().map(|(_, k)| *k).filter(|k| *k > 0)).filter(|k| *k < prepared.len()).collect();
+    for k in with_sums {
+        composition_inputs(recorder, tools, catalogue, &mut prepared[k], cancel).await?;
     }
     let block_tables = blocks.iter().flatten().filter_map(|(q, t)| Some((q.clone(), t.clone()?))).fold(Vec::new(), |mut seen: Vec<(String, String)>, (q, t)| {
         if !seen.iter().any(|(_, s)| *s == t) {
@@ -5706,7 +5750,31 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
         }
         seen
     });
-    Ok(Planned { prepared, plan, block_tables })
+    Ok(Planned { prepared, plan, block_tables, shared })
+}
+
+/// The blocks of a plan whose blocks share one quantity (no table set per block, `per_block` false) that a recipe draws
+/// (answer_plan::RECIPE_RELATIONS), as (index in the plan, relation): two or more, else none (the plan is drawn as before).
+fn shared_blocks(plan: Option<&crate::answer_plan::Plan>, per_block: bool) -> Vec<(usize, crate::answer_plan::Rel)> {
+    let Some(plan) = plan.filter(|p| !per_block && p.blocks.len() > 1) else { return Vec::new() };
+    let drawn: Vec<(usize, crate::answer_plan::Rel)> = plan
+        .blocks
+        .iter()
+        .enumerate()
+        .filter(|(_, b)| crate::answer_plan::RECIPE_RELATIONS.iter().any(|(r, _)| *r == b.rel))
+        .map(|(i, b)| (i, b.rel))
+        .collect();
+    if drawn.len() >= 2 {
+        drawn
+    } else {
+        Vec::new()
+    }
+}
+
+/// Whether table `id` is one of the family's registered tables (Asked::tables), by id only, as block_tables reads it.
+fn family_holds(a: &crate::l5geo::Asked, id: &str) -> bool {
+    let t = id.split('@').next().unwrap_or(id);
+    a.tables.iter().any(|p| t.starts_with(p.as_str()))
 }
 
 /// The table of each block of a plan whose blocks each take their own quantity (名次对照: two or more blocks, no quantity
@@ -8851,6 +8919,31 @@ mod tests {
         assert_eq!(calls[0]["request"], "scope_refused");
         assert!(calls[0]["auto_parent_call_id"].is_string(), "{calls:?}");
         assert!(tools.args.is_empty(), "nothing fetched");
+    }
+
+    /// A plan whose blocks share one quantity lists the table once for each block a recipe draws (由总到分: its parts and its
+    /// flows, the total alone left out); one with fewer than two such blocks (过线和时间 today: one ranking block), a plan
+    /// whose blocks each take their own table, and a one-block plan list it once as before. Only a parts-of-a-whole block is
+    /// fetched whole.
+    #[test]
+    fn a_shared_table_is_listed_once_per_drawn_block() {
+        use crate::answer_plan::{Block, Focus, Plan, Rel};
+        let block = |rel: Rel| Block {
+            rel,
+            focus: Focus::Total,
+            places: Vec::new(),
+            place_words: Vec::new(),
+            years: None,
+            quantity: vec![("energy_balance".to_string(), String::new())],
+            sentence: String::new(),
+        };
+        let parts = Plan { blocks: vec![block(Rel::Magnitude), block(Rel::Composition), block(Rel::Flow)], partial: false };
+        assert_eq!(shared_blocks(Some(&parts), false), vec![(1, Rel::Composition), (2, Rel::Flow)]);
+        assert_eq!(shared_blocks(Some(&parts), true), Vec::new());
+        let threshold = Plan { blocks: vec![block(Rel::Threshold), block(Rel::Threshold), block(Rel::Ranking)], partial: false };
+        assert_eq!(shared_blocks(Some(&threshold), false), Vec::new());
+        assert_eq!(shared_blocks(Some(&Plan { blocks: vec![block(Rel::Composition)], partial: false }), false), Vec::new());
+        assert_eq!(shared_blocks(None, false), Vec::new());
     }
 
     /// Each block of a 名次对照 plan gets the first offered table that holds its quantity, in block order, None for one no

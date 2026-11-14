@@ -2488,7 +2488,7 @@ mod drive {
             let _command = crate::group_guard::command_for_test("investigate");
             crate::runtime::materialize_extension(&run).unwrap();
             let mut model = ReplayAsker { answers: replay_asks(&events), retries: BTreeMap::new(), last: BTreeMap::new(), n: 0 };
-            let planned = crate::next_flow::Planned { prepared, plan: Some(plan), block_tables };
+            let planned = crate::next_flow::Planned { prepared, plan: Some(plan), block_tables, shared: Vec::new() };
             let mut walked = Vec::new();
             let mut sink = |e: Value| walked.push(e);
             let cancel = AtomicBool::new(false);
