@@ -213,6 +213,28 @@ class Refusals(unittest.TestCase):
         self.assertIn("is no number", self.refused(d, rows=bad_tick))
         self.assertIn("digit", self.refused({**d, "title": W("2025 年老龄人口")}))
 
+    def test_the_query_form_draws_what_the_listed_form_does(self):
+        """The registry's form (q, a peak per series, no points, ticks or periods listed) reads the same cells and entries:
+        the picture is the listed form's, byte for byte, over the whole span and over a window of it; its refusals."""
+        def q_form(data, **q):
+            series = [{"code": s["code"], "end_text": s["end_text"], "peak": "fact:top"} for s in data["series"]]
+            out = {k: v for k, v in data.items() if k not in ("series", "periods")}
+            return {**out, "series": series, "axis": {"scale": 1}, "q": {"table": TABLE, "by": "country", **q}}
+        self.assertEqual(draw(hero(q_form(DATA))), draw(hero(DATA)))
+        part_rows, part = build(years=YEARS[3:])
+        self.assertEqual(draw(hero(q_form(part, **{"from": YEARS[3]}))), draw(hero(part), part_rows))
+        d = q_form(DATA)
+        self.assertIn("no table and by-dimension", self.refused({**d, "q": {"table": TABLE}}))
+        self.assertIn("holds no table", self.refused({**d, "q": {"table": "nope", "by": "country"}}))
+        top = max(CODES, key=lambda c: max(v for (k, _), v in TAB.items() if k == c))  # the series drawn highest
+        no_peak = {**d, "series": [{k: v for k, v in s.items() if not (k == "peak" and s["code"] == top)} for s in d["series"]]}
+        self.assertIn(f"series {top} draws highest and names no peak", self.refused(no_peak))
+        lower_only = {**d, "series": [dict(s, peak="fact:none") if s["code"] != top else s for s in d["series"]]}
+        self.assertEqual(draw(hero(lower_only)), draw(hero(DATA)))  # only the top series' peak is read
+        self.assertIn("no tick of the axis", self.refused({**d, "series": [dict(s, peak="fact:other") for s in d["series"]]}))
+        no_periods = [r for r in ROWS if not r["src"].startswith("period:")]
+        self.assertIn("no period entry", self.refused(d, rows=no_periods))
+
 
 class Periods(unittest.TestCase):
     def test_years_quarters_and_months(self):

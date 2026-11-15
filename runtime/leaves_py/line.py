@@ -19,6 +19,11 @@ hero.data (the data shape this leaf eats; on a column frame page, the hero's lea
   "periods": [ledger src, ...],                     # period:<table>:<period> of the period axis, in period order
   "lines": [segs, ...]?, "footnote": segs?}         # layer 1's lines under the picture, one line each
 segs: as wbkit.segs reads them; series src: a cell of the request's rows (geometry only); ledger src: a row {"src", "text"}.
+The query form (what the registry declares for a block page, node-bindings.json nodes.line): with "q": {"table", "filter"?,
+"by", "from"?, "to"?} a series that lists no points is the request's series cells of q's table at the filter and its code on
+q's by-dimension, from..to, in period order; an axis that lists no ticks is the axis of the "peak" fact (a fact key) of the
+series whose highest point is the highest drawn, its ticks every fact:<peak>.tick<i> the ledger holds; no "periods" is every
+period:<q's table>:<period> entry the ledger holds for a period a point has. The leaf picks which entries; it makes none.
 Placement keeps texts off the lines by construction: the tick column left of the plot, the period axis under it, the end
 labels in a band right of it (no line runs past the plot's right edge), the head above it; every text box is checked in
 wbkit.Boxes (outside the picture or over another refuses).
@@ -66,6 +71,35 @@ def period_of(src):
     return parts[1]
 
 
+def query_points(q, code):
+    """A series' points by the query form: the request's series cells of q's table at q's filter and `code` on q's
+    by-dimension, from..to when q bounds them, in period order (geometry only: the values are read back by wbkit.val)."""
+    if q["table"] not in (FX.TABLES or {}): raise Refused(f"line: the request holds no table {q['table']}")
+    lo, hi = (period_at(str(q[k])) if q.get(k) is not None else None for k in ("from", "to"))
+    out = []
+    for c in FX._rows(FX.TABLES, {"table": q["table"], "filter": {**(q.get("filter") or {}), q["by"]: code}}):
+        src = FX.SRCS.get(id(c), "")
+        if not src.startswith("series:"): continue
+        t = period_at(period_of(src))
+        if (lo is None or t >= lo) and (hi is None or t <= hi): out.append((t, src))
+    return [src for _, src in sorted(out)]
+
+
+def peak_ticks(series):
+    """The axis of the series whose highest point is the highest drawn: its "peak" fact's ticks as the ledger holds them
+    (fact:<peak>.tick1, .tick2, ...; layer 1's next_facts::ticks). A top series naming no peak, or a peak with no tick in
+    the ledger, refuses."""
+    top = max(series, key=lambda s: max(v for _, v, _ in s["pts"]))
+    key = top.get("peak")
+    if not isinstance(key, str) or not key: raise Refused(f"line: series {top['code']} draws highest and names no peak fact for the axis")
+    key = key.removeprefix("fact:")
+    out, i = [], 1
+    while f"fact:{key}.tick{i}" in (FX.LEDGER or {}):
+        out.append(f"fact:{key}.tick{i}"); i += 1
+    if not out: raise Refused(f"line: the ledger holds no tick of the axis to {key}")
+    return out
+
+
 class Frame:
     def __init__(f, h):
         d = h["data"]; k = lambda n: K.knob(h, NODE, n)
@@ -77,9 +111,13 @@ class Frame:
         twice = sorted({c for c in codes if codes.count(c) > 1})
         if twice: raise Refused(f"line: the series {twice} come twice")
         f.kind = d.get("series_kind", "place")
+        q = d.get("q")
+        if q is not None and not (isinstance(q, dict) and isinstance(q.get("table"), str) and isinstance(q.get("by"), str)):
+            raise Refused(f"line: the query {q!r} names no table and by-dimension")
         f.series = []
         for s in series:
             pts = s.get("points")
+            if pts is None and q is not None: pts = query_points(q, s["code"])
             if not isinstance(pts, list) or len(pts) < 2: raise Refused(f"line: series {s['code']} has fewer than two points")
             out, seen = [], set()
             for src in pts:
@@ -89,7 +127,7 @@ class Frame:
                 if v < 0: raise Refused(f"line: series {s['code']} has a value below 0 at {p}; the axis starts at 0")
                 seen.add(p); out.append((t, v, p))
             if not s.get("end_text"): raise Refused(f"line: series {s['code']} has no end_text (the ledger entry its last value prints from)")
-            f.series.append(dict(code=s["code"], pts=out, end=K.ent(s["end_text"]), name=K.named(s["code"], f.kind)))
+            f.series.append(dict(code=s["code"], pts=out, end=K.ent(s["end_text"]), name=K.named(s["code"], f.kind), peak=s.get("peak")))
         hl = K.check_codes(NODE, k("highlight"), set(codes)) if k("highlight") else {codes[0]}
         if len(hl) > 1: raise Refused("line: highlight names one series")
         f.hl = next(iter(hl))
@@ -99,7 +137,7 @@ class Frame:
         for s in f.series:
             s["sparse"] = len(s["pts"]) < k("marker_all") or any(b[0] - a[0] > f.step * 1.5 for a, b in zip(s["pts"], s["pts"][1:]))
         axis = d.get("axis") or {}
-        ticks = axis.get("ticks") or []
+        ticks = axis.get("ticks") or (peak_ticks(f.series) if q is not None and "ticks" not in axis else [])
         if not isinstance(ticks, list) or not ticks: raise Refused("line: the axis holds no tick (fact:<key>.tick<i>, layer 1's)")
         scale = axis.get("scale")
         if isinstance(scale, bool) or not isinstance(scale, (int, float)) or not scale > 0: raise Refused(f"line: the axis scale {scale!r} is no number above 0")
@@ -114,7 +152,11 @@ class Frame:
         if f.top <= 0: raise Refused("line: every value is 0; a line over an axis from 0 needs one above it")
         times = {p: t for s in f.series for t, _, p in s["pts"]}
         f.periods = []
-        for src in d.get("periods") or []:
+        listed = d.get("periods")
+        if listed is None and q is not None:
+            listed = [p for p in (f"period:{q['table']}:{p}" for p in sorted(times, key=lambda p: times[p])) if p in (FX.LEDGER or {})]
+            if not listed: raise Refused(f"line: the ledger holds no period entry of {q['table']} for any point")
+        for src in listed or []:
             if not isinstance(src, str) or not src.startswith("period:"): raise Refused(f"line: the period entry {src!r} is no period:<table>:<period>")
             p = src.rsplit(":", 1)[1]
             if p not in times: raise Refused(f"line: the period entry {src} names {p}, which no point has")
