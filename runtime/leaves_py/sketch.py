@@ -21,9 +21,16 @@ best(scores) -> [node, ...]: the highest-scoring nodes of {node: score}, in thei
 Refuses (ValueError): a relation no node is registered for is no error (no candidates); a node sketch.json does not
   register, or a drawn report that is not {"lead_marked": bool, "label_crowded": n >= 0}, is."""
 import json
-import os
 
-DATA = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "sketch.json"), encoding="utf-8"))
+DATA = {}  # sketch.json's content, given by the caller with use(): a second-layer node reads no file (node-file-reads-pinned.json)
+
+
+def use(text):
+    """Take sketch.json's text (the caller reads the file) as the registered nodes, weights, bonus and penalty."""
+    data = json.loads(text)
+    if not isinstance(data, dict) or not {"nodes", "weights", "bonus", "penalty"} <= set(data): raise ValueError("sketch: the text is not sketch.json's shape")
+    DATA.clear(); DATA.update(data)
+
 MOST = 3  # the design's 2-3 candidates a block draws
 
 # each need: the shape key it reads and how the value must stand to it

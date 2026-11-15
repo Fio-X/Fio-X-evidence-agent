@@ -21,12 +21,10 @@ Refuses: fewer than two parts, a part twice, a part with fewer than two points, 
 value below 0, no tick of the axis, a tick whose text is no number or ticks not ascending, an axis below the stacked top
 by more than half a tick, no period entry, more parts than grey steps, a highlight that is no part, a digit in a literal
 word, a text that leaves the picture or overlaps another, end labels that cannot all fit, a board too narrow."""
-import os
-import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import wbkit as K
-from wbkit import FX, prod, Refused, esc, tw
+import wbkit as K  # the shared drawing kit; run.py's folder is on the path (a node reads no file: one import, no path set-up)
+
+FX, prod, Refused, esc, tw = K.FX, K.prod, K.Refused, K.esc, K.tw
 import line as L
 
 NODE = "stacked_area"

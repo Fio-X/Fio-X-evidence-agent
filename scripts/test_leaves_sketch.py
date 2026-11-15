@@ -10,6 +10,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "runtime", "leaves_py"))
 import run  # noqa: E402
 import sketch  # noqa: E402
+sketch.use(open(os.path.join(HERE, "..", "runtime", "leaves_py", "sketch.json"), encoding="utf-8").read())
 
 DRAWN = {"lead_marked": True, "label_crowded": 0}
 
@@ -108,6 +109,9 @@ class Scores(unittest.TestCase):
         self.assertEqual(sketch.best({}), [])
 
     def test_its_refusals(self):
+        for bad in ("[]", '{"nodes": {}}'):
+            with self.assertRaises(ValueError):
+                sketch.use(bad)
         with self.assertRaises(ValueError):
             sketch.score("pie", DRAWN)
         for bad in (None, {"lead_marked": 1, "label_crowded": 0}, {"lead_marked": True, "label_crowded": -1}, {"lead_marked": True, "label_crowded": True}):

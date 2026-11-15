@@ -21,12 +21,10 @@ Refuses: no rows, a row twice, a cell the request lacks, a start and end cell of
 (the axis starts at 0), not two period entries, a period entry no row's cell has, no tick, a tick whose text is no number
 or ticks not ascending, a highlight that is no row, a digit in a literal word, a text that leaves the picture or overlaps
 another, a board too narrow (plot under 240 px)."""
-import os
-import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import wbkit as K
-from wbkit import FX, prod, Refused, esc, tw
+import wbkit as K  # the shared drawing kit; run.py's folder is on the path (a node reads no file: one import, no path set-up)
+
+FX, prod, Refused, esc, tw = K.FX, K.prod, K.Refused, K.esc, K.tw
 
 NODE = "dumbbell"
 prod.KNOBS[NODE] = dict(

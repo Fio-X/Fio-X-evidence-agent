@@ -20,12 +20,10 @@ segs: as wbkit.segs reads them; series src: a cell of the request's rows (geomet
 Refuses: no whole, fewer than two parts, a part twice, a cell the request lacks, a value below 0, parts that do not add up to
 the whole within tol, a highlight that is no part, a digit in a literal word, a text that leaves the picture or overlaps
 another, a board too narrow (plot under 240 px)."""
-import os
-import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import wbkit as K
-from wbkit import FX, prod, Refused, esc, tw
+import wbkit as K  # the shared drawing kit; run.py's folder is on the path (a node reads no file: one import, no path set-up)
+
+FX, prod, Refused, esc, tw = K.FX, K.prod, K.Refused, K.esc, K.tw
 
 NODE = "waterfall"
 prod.KNOBS[NODE] = dict(

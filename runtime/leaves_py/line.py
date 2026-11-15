@@ -33,13 +33,11 @@ period is no year, quarter or month, two points of one series at one period or o
 axis starts at 0), no tick, a tick whose text is no number or ticks not ascending, a period entry no point has, a highlight
 that is no series, a digit in a literal word, a text that leaves the picture or overlaps another, end labels that cannot all
 fit the plot's height, a board too narrow (plot under 240 px)."""
-import os
 import re
-import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import wbkit as K
-from wbkit import FX, prod, Refused, esc, tw
+import wbkit as K  # the shared drawing kit; run.py's folder is on the path (a node reads no file: one import, no path set-up)
+
+FX, prod, Refused, esc, tw = K.FX, K.prod, K.Refused, K.esc, K.tw
 
 NODE = "line"
 prod.KNOBS[NODE] = dict(

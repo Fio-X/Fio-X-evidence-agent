@@ -23,13 +23,11 @@ columns, a rank whose text is no positive whole number, two series at one rank i
 is no series, a highlight that is no series, a digit in a literal word, a text that leaves the picture or overlaps
 another, names that cannot all fit beside a column, neighbouring discs that would touch, a plot taller than plot_max, a board too narrow (columns closer than
 col_min px)."""
-import os
 import re
-import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import wbkit as K
-from wbkit import FX, prod, Refused, esc, tw
+import wbkit as K  # the shared drawing kit; run.py's folder is on the path (a node reads no file: one import, no path set-up)
+
+FX, prod, Refused, esc, tw = K.FX, K.prod, K.Refused, K.esc, K.tw
 
 NODE = "rank_lines"
 prod.KNOBS[NODE] = dict(
