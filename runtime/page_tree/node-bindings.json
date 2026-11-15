@@ -1704,6 +1704,35 @@
     }
    }
   },
+  "rank_lines": {
+   "binding": "external",
+   "geometry": "leaf",
+   "runner": "leaves_py/rank_lines.py",
+   "declares_by_recipe": {
+    "rank_compare": {
+     "for_each": "select:ranked",
+     "blocks": "$blocks",
+     "facts_each_block": {
+      "b{b}_{code_lc}_pos": {"op": "position", "table": "$block.table", "by": "$block.by", "time": "$block.year", "filter": {"$block.by": "select:ranked"}, "code": "{code}", "fmt": "n"}
+     },
+     "rows": {"rule": "rows_of_blocks"},
+     "items_for": "select:ranked",
+     "leaf": {
+      "key": "rank_lines",
+      "codes_as": "series",
+      "columns_by_block": {"head": [{"w": "$block.name"}], "ranks": "b{b}_{code_lc}_pos.n"},
+      "title": {"fixed": "frames:ranking", "frame": "Ranking"},
+      "series_kind": "place"
+     }
+    }
+   },
+   "items": {
+    "for_each": "items_for",
+    "fields": {
+     "code": {"kind": "select_index"}
+    }
+   }
+  },
   "stacked100": {
    "binding": "external",
    "geometry": "leaf",

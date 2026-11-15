@@ -22,11 +22,11 @@ use std::collections::BTreeSet;
 use serde_json::Value;
 
 /// The page input paths a declaration template may read (`$shape.main`, ...); nothing else is substituted.
-const PAGE_IN_PATHS: [&str; 31] = [
+const PAGE_IN_PATHS: [&str; 36] = [
     "shape.scale", "shape.main", "shape.source", "shape.target", "shape.place", "shape.year", "shape.fmt", "shape.suffix", "shape.countries", "shape.hub", "shape.second", "shape.months", "picks.marks", "picks.t0", "picks.t1", "picks.top",
     "picks.focus", "fill.accent", "fmt.change", "shape.members", "shape.point", "shape.extent", "outside", "hub_name",
     "shape.t0", "sum_rows", "composition.dim", "composition.total", "composition.first_group", "composition.first_codes",
-    "fill.composition.bars",
+    "fill.composition.bars", "blocks", "block.table", "block.by", "block.year", "block.name",
 ];
 
 /// A template with every `$path` (a string value or an object key) read from the page input by PAGE_IN_PATHS.
@@ -1208,6 +1208,40 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
             }
         }
     }
+    // for_each over blocks (declares.blocks: a many-block page's blocks, each its table, dimension, year and name): the facts
+    // of every code the for_each select holds in every block (declares.facts_each_block), `{b}` read as the block's number
+    // from 1, `$block.<field>` as its field; each in the built-in count format n or a format the declaration fixes
+    let blocks = match d.get("blocks") {
+        Some(b) => sub(b, page_in)?.arr().to_vec(),
+        None => Vec::new(),
+    };
+    if !blocks.is_empty() {
+        let r = d.get("for_each").ok_or_else(|| format!("{layer}: declares blocks and no for_each"))?;
+        let codes = core::resolve_ref(&st(r), &got)?;
+        // a declaration whose only facts are its blocks' has none of its own to add them to
+        if !matches!(facts, J::Obj(_)) {
+            facts = J::Obj(vec![]);
+        }
+        for (i, b) in blocks.iter().enumerate() {
+            let mut view = facts_in.clone();
+            view.set("block", b.clone());
+            let each = codes_in(&sub(d.g("facts_each_block"), &view)?, &got);
+            for c in codes.arr() {
+                for (k, q) in each.obj() {
+                    let k = st(&core::with_code(&J::Str(k.replace("{b}", &(i + 1).to_string())), &st(c), page_in));
+                    let q = core::with_code(q, &st(c), page_in);
+                    let fm = st(q.g("fmt"));
+                    if fm != "n" && !fmts.has(&fm) && !d.g("formats").has(&fm) {
+                        return Err(format!("{layer}: fact {k} prints in {fm}, a format the declaration does not fix"));
+                    }
+                    if facts.get(&k).is_some_and(|w| *w != q) {
+                        return Err(format!("{layer}: fact {k} is declared two ways"));
+                    }
+                    facts.set(&k, q);
+                }
+            }
+        }
+    }
     for (k, v) in d.g("formats").obj() {
         fmts.set(k, sub(v, page_in)?);
     }
@@ -1230,6 +1264,23 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
         let q = codes_in(&sub(d.g("rows"), page_in)?, &got);
         let hit = |r: &&J| r.g("table") == q.g("table") && q.g("filter").obj().iter().all(|(k, v)| r.g("dims").g(k) == v);
         (page_in.g("rows").arr().iter().chain(page_in.g("sum_rows").arr()).filter(hit).cloned().collect(), Vec::new())
+    } else if d.g("rows").g("rule").s() == Some("rows_of_blocks") {
+        // rows_of_blocks: each block's rows of the for_each select's codes at the block's year, block by block in the input's
+        // order (a many-block page's picture of all its blocks)
+        let codes = core::resolve_ref(&st(d.g("for_each")), &got)?;
+        let mut drawn = Vec::new();
+        for b in &blocks {
+            let by = st(b.g("by"));
+            drawn.extend(
+                page_in
+                    .g("rows")
+                    .arr()
+                    .iter()
+                    .filter(|r| r.g("table") == b.g("table") && r.g("time") == b.g("year") && codes.arr().contains(r.g("dims").g(&by)))
+                    .cloned(),
+            );
+        }
+        (drawn, Vec::new())
     } else if d.g("rows").g("rule").s() == Some("rows_in") {
         // rows_in: the page input's main rows at the table and every filter dimension whose `by` code is in any of the
         // lists `in` names (a select reference among them its codes: select:ranked, the places a block ranked), at every
@@ -1380,11 +1431,42 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
         items.extend(lf.g("items_after").arr().iter().map(|x| core::with_code(x, "", page_in)));
         // the items under the key the leaf reads them by (items_as; items when the declaration names none)
         let items_as = lf.g("items_as").s().unwrap_or("items").to_string();
-        let mut leaf = J::obj_of(vec![(items_as.as_str(), J::Arr(items))]);
+        // a leaf that reads only the items' codes (codes_as, no items fields) has no items key
+        let mut leaf = if lf.has("codes_as") && !lf.has("items") { J::Obj(vec![]) } else { J::obj_of(vec![(items_as.as_str(), J::Arr(items))]) };
         // a text the registry fixes to a name row (a frame's heading, the page's unit in its short form) is segments naming
         // the row, and the row goes out with the declaration (fixed) for the page's ledger to hold
         let mut fixed = Vec::new();
-        for (k, v) in lf.obj().iter().filter(|(k, _)| !["key", "items", "items_as", "items_after", "fact_fields", "into"].contains(&k.as_str())) {
+        // a column per block (columns_by_block: its head read over the block, its ranks each code's fact of the block as
+        // printed, `{b}` the block's number from 1) and the items' codes as a list (codes_as: the key the leaf reads them by)
+        if let Some(cb) = lf.get("columns_by_block") {
+            let codes = core::resolve_ref(&st(d.g("for_each")), &got)?;
+            let mut columns = Vec::new();
+            for (i, b) in blocks.iter().enumerate() {
+                let mut view = page_in.clone();
+                view.set("block", b.clone());
+                let mut ranks = J::Obj(vec![]);
+                for c in codes.arr() {
+                    let key = st(&core::with_code(&J::Str(st(cb.g("ranks")).replace("{b}", &(i + 1).to_string())), &st(c), page_in));
+                    if out.g("facts").get(key.split('.').next().unwrap_or("")).is_none() {
+                        return Err(format!("{layer}: column {} ranks {} by {key}, a fact the declaration does not hold", i + 1, st(c)));
+                    }
+                    ranks.set(&st(c), J::Str(format!("fact:{key}")));
+                }
+                columns.push(J::obj_of(vec![("head", sub(cb.g("head"), &view)?), ("ranks", ranks)]));
+            }
+            if columns.is_empty() {
+                return Err(format!("{layer}: declares columns by block and the page input has no blocks"));
+            }
+            leaf.set("columns", J::Arr(columns));
+        }
+        if let Some(k) = lf.g("codes_as").s() {
+            let codes = n.g("items").arr().iter().map(|it| match it.g("code") {
+                J::Str(c) if core::ref_parts(c).is_some() => core::resolve_ref(c, &got),
+                c => Ok(c.clone()),
+            });
+            leaf.set(k, J::Arr(codes.collect::<Result<Vec<_>, _>>()?));
+        }
+        for (k, v) in lf.obj().iter().filter(|(k, _)| !["key", "items", "items_as", "items_after", "fact_fields", "into", "columns_by_block", "codes_as"].contains(&k.as_str())) {
             match fixed_name(v, page_in)? {
                 Some((segs, row)) => {
                     leaf.set(k, segs);
@@ -2765,6 +2847,84 @@ mod tests {
         assert!(declared_j("line", &bare, &reg).unwrap_err().contains("no short unit"));
     }
 
+    /// The rank lines over a many-block page's blocks (rank_compare): each ranked place's position among the ranked places in
+    /// every block's table at its year (facts_each_block, `{b}` the block's number), each block's rows of them drawn, and
+    /// the leaf's columns a block each (its head the block's name, its ranks the facts as printed) over the places' codes.
+    #[test]
+    fn next_tree_gen_rank_lines_declares_a_column_per_block() {
+        let mut pi = read("q1-gen.json").g("page_in").clone();
+        let ranked: Vec<String> = pi.g("picks").g("ranked").arr().iter().map(st).collect();
+        let main = st(pi.g("shape").g("main"));
+        let (by, year) = (st(pi.g("shape").g("place")), st(pi.g("shape").g("year")));
+        let mut rows = pi.g("rows").arr().to_vec();
+        for (t, y) in [("gdp", "2024"), ("pop", "2023")] {
+            for (k, c) in ranked.iter().enumerate() {
+                // the other tables order the places apart: gdp the reverse, pop the same
+                let v = if t == "gdp" { 10.0 + k as f64 } else { 100.0 - k as f64 };
+                for yy in [y, "2020"] {
+                    rows.push(J::from_value(&serde_json::json!({"src": format!("series:{t}/{c}:{yy}:OBS_VALUE"), "table": t,
+                        "dims": {by.clone(): c}, "time": yy, "value": format!("{v:.1}")})));
+                }
+            }
+        }
+        pi.set("rows", J::Arr(rows));
+        pi.set("recipe", J::str("rank_compare"));
+        let block = |t: &str, y: &str, name: &str| J::from_value(&serde_json::json!({"table": t, "by": by, "year": y, "name": name}));
+        pi.set("blocks", J::Arr(vec![block(&main, &year, "可再生能源占比"), block("gdp", "2024", "人均产出"), block("pop", "2023", "人口")]));
+        let reg = core::load_registry(&core::bindings());
+        let out = declared_j("rank_lines", &pi, &reg).unwrap();
+        for (b, (t, y)) in [(main.as_str(), year.as_str()), ("gdp", "2024"), ("pop", "2023")].into_iter().enumerate() {
+            for c in &ranked {
+                let f = out.g("facts").g(&format!("b{}_{}_pos", b + 1, c.to_lowercase()));
+                assert_eq!(
+                    f.to_value(),
+                    serde_json::json!({"op": "position", "table": t, "by": by, "time": y, "filter": {by.clone(): ranked}, "code": c, "fmt": "n"}),
+                    "block {} {c}", b + 1
+                );
+            }
+        }
+        // drawn: each block's rows of the ranked places at its year, none at another year
+        let drawn: Vec<(String, String)> = out.g("rows").arr().iter().map(|r| (st(r.g("table")), st(r.g("time")))).collect();
+        assert_eq!(drawn.len(), 3 * ranked.len());
+        assert!(drawn.iter().all(|d| [(main.clone(), year.clone()), ("gdp".into(), "2024".into()), ("pop".into(), "2023".into())].contains(d)));
+        let leaf = out.g("leaves").g("rank_lines");
+        assert_eq!(leaf.g("series").to_value(), serde_json::json!(ranked));
+        assert!(!leaf.has("items"), "codes only: no items key");
+        let cols = leaf.g("columns").arr();
+        assert_eq!(cols.len(), 3);
+        assert_eq!(cols[1].g("head").to_value(), serde_json::json!([{"w": "人均产出"}]));
+        assert_eq!(st(cols[2].g("ranks").g(&ranked[0])), format!("fact:b3_{}_pos.n", ranked[0].to_lowercase()));
+        assert_eq!(leaf.g("title").to_value(), serde_json::json!([{"src": "name:frames:ranking"}]));
+        // the core computes them from the page's rows: ranks 1..n in each block, gdp's the reverse of pop's
+        let defs: Vec<(String, serde_json::Value)> = out.g("facts").obj().iter().map(|(k, q)| (k.clone(), q.to_value())).collect();
+        let spec = crate::next_facts::Spec { facts: defs, fmts: out.g("fmts").to_value(), members: None, asked_places: None, basis: None };
+        let rows: Vec<crate::next_facts::Row> = pi
+            .g("rows")
+            .arr()
+            .iter()
+            .map(|r| crate::next_facts::Row {
+                src: st(r.g("src")),
+                table: st(r.g("table")),
+                dims: r.g("dims").obj().iter().map(|(k, v)| (k.clone(), st(v))).collect(),
+                time: st(r.g("time")),
+                value: r.g("value").num().or_else(|| r.g("value").s().and_then(|v| v.parse().ok())).unwrap(),
+            })
+            .collect();
+        let got = crate::next_facts::compute(&spec, &rows).unwrap();
+        let rank = |b: usize, c: &str| got.iter().find(|f| f.key == format!("b{b}_{}_pos", c.to_lowercase())).map(|f| f.v as usize).unwrap();
+        let n = ranked.len();
+        for (k, c) in ranked.iter().enumerate() {
+            assert_eq!((rank(2, c), rank(3, c)), (n - k, k + 1), "{c}");
+        }
+        let mut firsts: Vec<usize> = ranked.iter().map(|c| rank(1, c)).collect();
+        firsts.sort();
+        assert_eq!(firsts, (1..=n).collect::<Vec<_>>(), "the main's ranks are 1..n among the ranked places");
+        // no blocks: no columns to draw
+        let mut bare = pi.clone();
+        bare.set("blocks", J::Arr(vec![]));
+        assert!(declared_j("rank_lines", &bare, &reg).unwrap_err().contains("no blocks"));
+    }
+
     /// C6 through the core's content check (content_problems) on the q1 page tree, with asked records the flow would copy for
     /// a two-quantity question written here ("各国可再生能源占比和碳排放分别怎样？"): the renewables are drawn (the bars' rows of
     /// the main); carbon emissions, with no offered table and the leaf's line, passes; offered a table and not drawn, it is
@@ -3110,7 +3270,7 @@ mod tests {
         let bound = core::bindings();
         let leaf: Vec<&str> = bound.g("nodes").obj().iter().filter(|(_, n)| n.g("geometry").s() == Some("leaf")).map(|(k, _)| k.as_str()).collect();
         // the line leaf (a series over time, the trend declaration) places its own lines, ticks and end labels too
-        assert_eq!(leaf, ["map", "bignums", "leader_notes", "notes", "ring", "strip", "sankey", "line", "stacked100"]);
+        assert_eq!(leaf, ["map", "bignums", "leader_notes", "notes", "ring", "strip", "sankey", "line", "rank_lines", "stacked100"]);
     }
 
     /// A column page's finding with a focus (a many-block page's later block: the first block's leader, owner 11-14 22:2x):
