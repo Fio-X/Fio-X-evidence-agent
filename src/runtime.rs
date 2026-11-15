@@ -448,6 +448,7 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
         (runtime_dir.join("leaves_py/dumbbell.py"), include_str!("../runtime/leaves_py/dumbbell.py")),
         (runtime_dir.join("leaves_py/waterfall.py"), include_str!("../runtime/leaves_py/waterfall.py")),
         (runtime_dir.join("leaves_py/waffle.py"), include_str!("../runtime/leaves_py/waffle.py")),
+        (runtime_dir.join("leaves_py/stacked_area.py"), include_str!("../runtime/leaves_py/stacked_area.py")),
         (runtime_dir.join("leaves_py/text-line-clash.js"), include_str!("../runtime/leaves_py/text-line-clash.js")),
         (runtime_dir.join("leaves_py/text-line-hits.js"), include_str!("../runtime/leaves_py/text-line-hits.js")),
         (runtime_dir.join("leaves_py/tokens.css"), include_str!("../runtime/leaves_py/tokens.css")),

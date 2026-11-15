@@ -1741,6 +1741,54 @@
     "composition_groups"
    ]
   },
+  "stacked_area": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "size",
+     "default": 12,
+     "min": 11,
+     "max": 16,
+     "step": 0.5,
+     "what": "label size px (11 is the page floor)"
+    },
+    {
+     "name": "title_size",
+     "default": 16,
+     "min": 12,
+     "max": 22,
+     "step": 1,
+     "what": "chart name size px"
+    },
+    {
+     "name": "width",
+     "default": 1140,
+     "min": 480,
+     "max": 1400,
+     "step": 10,
+     "what": "picture width in px"
+    },
+    {
+     "name": "plot_h",
+     "default": 300,
+     "min": 160,
+     "max": 600,
+     "step": 10,
+     "what": "plot height in px"
+    },
+    {
+     "name": "highlight",
+     "default": "",
+     "codes": true,
+     "what": "code of the part drawn in the accent; none = the first part"
+    }
+   ],
+   "eats": [
+    "one_freq",
+    "one_unit",
+    "composition_groups"
+   ]
+  },
   "step": {
    "reserve": false,
    "knobs": []
@@ -1962,7 +2010,8 @@
    "rank_lines",
    "dumbbell",
    "waterfall",
-   "waffle"
+   "waffle",
+   "stacked_area"
   ],
   "change": [
    "bignums",
@@ -1978,7 +2027,8 @@
    "rank_lines",
    "dumbbell",
    "waterfall",
-   "waffle"
+   "waffle",
+   "stacked_area"
   ],
   "flow": [
    "bignums",
@@ -1994,7 +2044,8 @@
    "rank_lines",
    "dumbbell",
    "waterfall",
-   "waffle"
+   "waffle",
+   "stacked_area"
   ],
   "composition": [
    "bignums",
@@ -2010,7 +2061,8 @@
    "rank_lines",
    "dumbbell",
    "waterfall",
-   "waffle"
+   "waffle",
+   "stacked_area"
   ],
   "ranked_bars": [
    "bignums",
@@ -2026,7 +2078,8 @@
    "rank_lines",
    "dumbbell",
    "waterfall",
-   "waffle"
+   "waffle",
+   "stacked_area"
   ],
   "scmp": [
    "map",
