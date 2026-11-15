@@ -21,9 +21,10 @@ hero.data (the data shape this leaf eats; on a column frame page, the hero's lea
 segs: as wbkit.segs reads them; series src: a cell of the request's rows (geometry only); ledger src: a row {"src", "text"}.
 The query form (what the registry declares for a block page, node-bindings.json nodes.line): with "q": {"table", "filter"?,
 "by", "from"?, "to"?} a series that lists no points is the request's series cells of q's table at the filter and its code on
-q's by-dimension, from..to, in period order; an axis that lists no ticks is the axis of the "peak" fact (a fact key) of the
-series whose highest point is the highest drawn, its ticks every fact:<peak>.tick<i> the ledger holds; no "periods" is every
-period:<q's table>:<period> entry the ledger holds for a period a point has. The leaf picks which entries; it makes none.
+q's by-dimension, from..to, in period order; an axis that lists no ticks is the axis of the "peak" fact (a fact key; or the
+data's "peak_of", {code_lc} read as each series' code in lowercase) of the series whose highest point is the highest drawn,
+its ticks every fact:<peak>.tick<i> the ledger holds; no "periods" is every period:<q's table>:<period> entry the ledger
+holds for a period a point has. The leaf picks which entries; it makes none.
 Placement keeps texts off the lines by construction: the tick column left of the plot, the period axis under it, the end
 labels in a band right of it (no line runs past the plot's right edge), the head above it; every text box is checked in
 wbkit.Boxes (outside the picture or over another refuses).
@@ -85,6 +86,12 @@ def query_points(q, code):
     return [src for _, src in sorted(out)]
 
 
+def of_code(template, code):
+    """A fact key the registry writes once for every series (peak_of: "{code_lc}_peak"), read for one series' code as
+    layer 1's facts_each names it ({code} the code, {code_lc} it in lowercase); none without a template."""
+    return template.replace("{code_lc}", code.lower()).replace("{code}", code) if isinstance(template, str) else None
+
+
 def peak_ticks(series):
     """The axis of the series whose highest point is the highest drawn: its "peak" fact's ticks as the ledger holds them
     (fact:<peak>.tick1, .tick2, ...; layer 1's next_facts::ticks). A top series naming no peak, or a peak with no tick in
@@ -127,7 +134,7 @@ class Frame:
                 if v < 0: raise Refused(f"line: series {s['code']} has a value below 0 at {p}; the axis starts at 0")
                 seen.add(p); out.append((t, v, p))
             if not s.get("end_text"): raise Refused(f"line: series {s['code']} has no end_text (the ledger entry its last value prints from)")
-            f.series.append(dict(code=s["code"], pts=out, end=K.ent(s["end_text"]), name=K.named(s["code"], f.kind), peak=s.get("peak")))
+            f.series.append(dict(code=s["code"], pts=out, end=K.ent(s["end_text"]), name=K.named(s["code"], f.kind), peak=s.get("peak") or of_code(d.get("peak_of"), s["code"])))
         hl = K.check_codes(NODE, k("highlight"), set(codes)) if k("highlight") else {codes[0]}
         if len(hl) > 1: raise Refused("line: highlight names one series")
         f.hl = next(iter(hl))

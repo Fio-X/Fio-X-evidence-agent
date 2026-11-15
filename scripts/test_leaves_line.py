@@ -232,6 +232,13 @@ class Refusals(unittest.TestCase):
         lower_only = {**d, "series": [dict(s, peak="fact:none") if s["code"] != top else s for s in d["series"]]}
         self.assertEqual(draw(hero(lower_only)), draw(hero(DATA)))  # only the top series' peak is read
         self.assertIn("no tick of the axis", self.refused({**d, "series": [dict(s, peak="fact:other") for s in d["series"]]}))
+        # the registry's one template for every series: {code_lc} read as each code in lowercase
+        lc_rows = ROWS + [{"src": f"fact:{top.lower()}_peak.tick{i}", "text": str(10 * i)} for i in (1, 2, 3)]
+        by_template = {**d, "series": [{k: v for k, v in s.items() if k != "peak"} for s in d["series"]], "peak_of": "{code_lc}_peak"}
+        svg, w, h = draw(hero(by_template), lc_rows)
+        self.assertIn(f'data-src="fact:{top.lower()}_peak.tick1"', svg)  # the top series' own peak's ticks
+        self.assertEqual((svg.replace(f"fact:{top.lower()}_peak.", "fact:top."), w, h), draw(hero(DATA)))
+        self.assertEqual(line.of_code("{code_lc}_peak", "DEU"), "deu_peak")
         no_periods = [r for r in ROWS if not r["src"].startswith("period:")]
         self.assertIn("no period entry", self.refused(d, rows=no_periods))
 
