@@ -2772,6 +2772,40 @@ pub const PLAN_EVENT: &str = "next_answer_plan";
 /// The event that keeps each block's table as the program set it (block_tables): the block's quantity and the table, or
 /// null when no offered table holds it.
 pub const BLOCK_TABLES_EVENT: &str = "next_block_tables";
+
+/// The year a page whose blocks each take their own quantity is told at (common_year), or null when no year holds them all,
+/// with each block table's latest year and whether it was fetched again ending at that year (and why not, when it was due).
+pub const COMMON_YEAR_EVENT: &str = "next_common_year";
+
+/// The year the blocks of a page that each take their own quantity are told at: of the places every block table holds a
+/// number for at some year (each table as its place dimension and rows), the latest year at which each of them has a number
+/// in every table. None when a table holds a time that is no year (a month, a quarter), when no place is in every table (two
+/// sources that code places apart), or when no year holds them all.
+fn common_year(tables: &[(&str, &[Value])]) -> Option<String> {
+    let mut held: Vec<BTreeMap<&str, BTreeSet<&str>>> = Vec::new();
+    for (dim, rows) in tables {
+        let mut at: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+        for r in rows.iter() {
+            let (Some(t), Some(c)) = (r["time"].as_str(), r["dims"][*dim].as_str()) else { continue };
+            if t.len() != 4 || !t.bytes().all(|b| b.is_ascii_digit()) {
+                return None;
+            }
+            at.entry(t).or_default().insert(c);
+        }
+        held.push(at);
+    }
+    let mut every: Option<BTreeSet<&str>> = None;
+    for at in &held {
+        let all: BTreeSet<&str> = at.values().flatten().copied().collect();
+        every = Some(match every {
+            None => all,
+            Some(e) => e.intersection(&all).copied().collect(),
+        });
+    }
+    let every = every.filter(|e| !e.is_empty())?;
+    let years: BTreeSet<&str> = held.iter().flat_map(|at| at.keys().copied()).collect();
+    years.into_iter().rev().find(|y| held.iter().all(|at| at.get(y).is_some_and(|there| every.is_subset(there)))).map(str::to_string)
+}
 /// The event that keeps how the fetch parameters of the picked tables were filled when no spec was given.
 pub const PARAMS_EVENT: &str = "next_params";
 /// The event that keeps, before the table pick, each listed table's breakdown options: the ones offered (with the years
@@ -5484,7 +5518,7 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
     let mut repicked = false;
     // the listed tables in the order the model picked them (a shared table's copies are its blocks)
     let mut picked_order: Vec<usize>;
-    let (mut tables, main_file, main_narrowed, main_window, cut, kept_relation) = 'pick: loop {
+    let (mut tables, mut main_file, main_narrowed, main_window, mut cut, kept_relation, files) = 'pick: loop {
         let (picks, params, relation) = match recorder.ask_step(model, &ask, &prompt, cancel).await? {
             (_, Choice::Table { picks, params, relation }) => (picks, params, relation),
             (_, other) => unreachable!("the table step was answered with {other:?}"),
@@ -5524,6 +5558,8 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
         };
         let mut tables = Vec::new();
         let mut main_file: Option<String> = None;
+        // each table's fetched file under the run folder, in table order (common_year reads the blocks' rows from them)
+        let mut files: Vec<String> = Vec::new();
         let mut main_narrowed: Option<Map<String, Value>> = None;
         let mut main_window: Option<next_params::Window> = None;
         let mut cut: Option<Cut> = None;
@@ -5611,10 +5647,64 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
                     .and_then(|d| d["filePath"].as_str())
                     .map(String::from);
             }
+            files.push(called.details.as_ref().and_then(|d| d["filePath"].as_str()).unwrap_or("").to_string());
             tables.push((id.clone(), args, key, candidates));
         }
-        break 'pick (tables, main_file, main_narrowed, main_window, cut, kept_relation);
+        break 'pick (tables, main_file, main_narrowed, main_window, cut, kept_relation, files);
     };
+    // a page whose blocks each take their own quantity (名次对照, owner 11-15 12:2x item 2) is told at one year, when the
+    // question names none: a block table whose latest year is later than the latest one at which every place each block
+    // table holds has a number in all of them (common_year) is fetched again ending there, so no place drops out of one
+    // block for a year it has not reported yet and the blocks' ranks compare one year; with no such year each keeps its own
+    if blocks.is_some() && tables.len() >= 2 && next_params::question_years(question, this_year).is_none() {
+        let mut read: Vec<Option<(&str, Vec<Value>)>> = Vec::new();
+        for ((id, ..), file) in tables.iter().zip(&files) {
+            let meta = catalogue.table(id);
+            let csv = std::fs::read_to_string(recorder.run_dir.join(file)).ok();
+            let rows = meta.as_ref().zip(csv).and_then(|(meta, csv)| catalogue.series_rows(meta, &csv).ok());
+            read.push(meta.map(|m| if m.worldbank { next_params::WB_PLACE_DIM } else { next_params::GEO_DIM }).zip(rows));
+        }
+        record_group_calls(recorder, catalogue)?;
+        let latest: Vec<Option<String>> = read.iter().map(|r| r.as_ref().and_then(|(_, rows)| rows.iter().filter_map(|r| r["time"].as_str()).max().map(str::to_string))).collect();
+        let read: Option<Vec<(&str, &[Value])>> = read.iter().map(|r| r.as_ref().map(|(dim, rows)| (*dim, rows.as_slice()))).collect();
+        let year = read.as_deref().and_then(common_year);
+        let mut kept = Vec::new();
+        for (k, last) in latest.iter().enumerate() {
+            let (id, args) = (tables[k].0.clone(), tables[k].1.clone());
+            let mut entry = json!({"table": id, "latest": last, "fetched_again": false});
+            let Some(y) = year.as_ref().filter(|y| last.as_ref().is_some_and(|l| l > *y)) else {
+                kept.push(entry);
+                continue;
+            };
+            let end: i64 = y.parse().unwrap_or_default();
+            let mut again = args.clone();
+            let Some(years) = again.get_mut(next_params::YEARS_KEY).and_then(Value::as_object_mut) else {
+                entry["why"] = json!("the fetch has no years");
+                kept.push(entry);
+                continue;
+            };
+            let start = years.get("start").and_then(Value::as_i64).unwrap_or(end).min(end);
+            years.insert("start".into(), json!(start));
+            years.insert("end".into(), json!(end));
+            let called = prepare_fetch(recorder, tools, catalogue, &id, &again, cancel).await?;
+            let mode = mode_of(&called);
+            let key = called.details.as_ref().and_then(|d| d["sheet"].as_str()).unwrap_or("").to_string();
+            let candidates = if mode == "candidates" { read_sheet(&recorder.run_dir, &id, &key)? } else { Vec::new() };
+            if candidates.len() < CLAIMS_MIN {
+                entry["why"] = json!(format!("fetched again as mode {mode} with {} claims; the first fetch is kept", candidates.len()));
+                kept.push(entry);
+                continue;
+            }
+            if k == 0 {
+                main_file = called.details.as_ref().and_then(|d| d["filePath"].as_str()).map(String::from);
+                cut = main_cut(&again, called.details.as_ref());
+            }
+            entry["fetched_again"] = json!(true);
+            kept.push(entry);
+            tables[k] = (id, again, key, candidates);
+        }
+        recorder.program_event(COMMON_YEAR_EVENT, json!({"year": year, "tables": kept}))?;
+    }
     let mut companion_titles = BTreeMap::new();
     let mut companion_files = Vec::new();
     if let (Some((main, main_args, _, _)), Some(file)) = (tables.first().cloned(), main_file) {
@@ -9003,6 +9093,34 @@ mod tests {
         let shared = Plan { blocks: vec![block("population"), block("population")], partial: false };
         assert_eq!(block_tables(&shared, &listed), None);
         assert_eq!(block_tables(&Plan { blocks: vec![block("population")], partial: false }, &listed), None);
+    }
+
+    /// The blocks of a page that each take their own quantity are told at one year (owner 11-15 12:2x item 2): the latest
+    /// year every place that each block table holds has a number at in all of them; a place one table lacks altogether does
+    /// not hold the others back; a month, two sources' codes apart, or no year holding them all give none.
+    #[test]
+    fn the_blocks_of_a_many_quantity_page_take_the_latest_year_every_place_holds() {
+        let row = |dim: &str, place: &str, time: &str| json!({"dims": {dim: place}, "time": time, "value": "1"});
+        let rows = |dim: &str, held: &[(&str, &str)]| -> Vec<Value> { held.iter().map(|(p, t)| row(dim, p, t)).collect() };
+        let a = rows("country", &[("IDN", "2024"), ("IDN", "2025"), ("MYS", "2024"), ("MYS", "2025")]);
+        // one place has not reported the latest year in the second table: both are told at the year before
+        let b = rows("country", &[("IDN", "2024"), ("IDN", "2025"), ("MYS", "2024")]);
+        assert_eq!(common_year(&[("country", &a), ("country", &b)]).as_deref(), Some("2024"));
+        // every place in both at the latest year: that year
+        assert_eq!(common_year(&[("country", &a), ("country", &a)]).as_deref(), Some("2025"));
+        // a place only one table holds at all does not hold the others back
+        let c = rows("country", &[("IDN", "2024"), ("IDN", "2025"), ("MYS", "2024"), ("MYS", "2025"), ("SGP", "2025")]);
+        let d = rows("country", &[("IDN", "2025"), ("MYS", "2025")]);
+        assert_eq!(common_year(&[("country", &c), ("country", &d)]).as_deref(), Some("2025"));
+        // no year holds both places in both tables
+        let e = rows("country", &[("IDN", "2025"), ("MYS", "2024")]);
+        let f = rows("country", &[("IDN", "2024"), ("MYS", "2025")]);
+        assert_eq!(common_year(&[("country", &e), ("country", &f)]), None);
+        // a monthly table, or two sources that code places apart, give none
+        let m = rows("geo", &[("DE", "2025-03"), ("FR", "2025-03")]);
+        assert_eq!(common_year(&[("country", &a), ("geo", &m)]), None);
+        let g = rows("geo", &[("DE", "2025"), ("FR", "2025")]);
+        assert_eq!(common_year(&[("country", &a), ("geo", &g)]), None);
     }
 
     /// The split step (owner 11-14 16:5x item 2), asked after the search answer: the knowledge group's request, the model's
