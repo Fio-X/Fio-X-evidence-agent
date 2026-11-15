@@ -2488,6 +2488,13 @@ mod drive {
             let _command = crate::group_guard::command_for_test("investigate");
             crate::runtime::materialize_extension(&run).unwrap();
             let mut model = ReplayAsker { answers: replay_asks(&events), retries: BTreeMap::new(), last: BTreeMap::new(), n: 0 };
+            // the page over the blocks (pages_of, after the three blocks) asks the text step once more, which the run did not:
+            // its first block's text answer again (the run's own retries after it; fitted when those are refused too)
+            if let Some(text) = model.answers.get_mut("text") {
+                if let Some(first) = text.front().cloned() {
+                    text.push_back(first);
+                }
+            }
             let planned = crate::next_flow::Planned { prepared, plan: Some(plan), block_tables, shared: Vec::new() };
             let mut walked = Vec::new();
             let mut sink = |e: Value| walked.push(e);
@@ -2513,6 +2520,8 @@ mod drive {
             }
             let result = result.unwrap_or_else(|stop| panic!("SAWALK stopped: {stop}"));
             let gates = of(crate::next_run::LEAF_GATE_EVENT);
+            // the page over the blocks heads each block by its table's reviewed Chinese name; the run's three World Bank
+            // tables have none yet, so it is not drawn and the three block pages stand as before
             assert_eq!(gates.len(), 3, "three block pages reached the gate");
             assert!(gates.iter().all(|e| e["gaps"].as_array().is_some_and(Vec::is_empty)), "a gate gap");
             for e in of(crate::next_run::PAGE_CHECKS_EVENT) {
@@ -2542,10 +2551,12 @@ mod drive {
             let stacked = stacked.first().expect("a stacked page");
             assert_eq!(stacked["blocks"].as_array().map(Vec::len), Some(3));
             assert_eq!(stacked["quantities_left_out"], json!([]));
+            assert_eq!(stacked["over_blocks"]["drawn"], json!(false), "{}", stacked["over_blocks"]);
+            assert!(stacked["over_blocks"]["why"].as_str().is_some_and(|w| w.contains("no reviewed Chinese name")), "{}", stacked["over_blocks"]);
             let page = std::fs::read_to_string(run.join(stacked["published"].as_str().unwrap())).expect("the stacked page is written");
             assert_eq!(page.matches("<iframe ").count(), 3, "three frames");
             assert!(!page.contains("height=\"0\""), "a frame shown at no height: {page}");
-            println!("SAWALK {} | 3 blocks, gates 0, checks passed, sayings held | {}", stacked["published"], result.lines().last().unwrap_or(""));
+            println!("SAWALK {} | 3 blocks, the page over them not drawn (no reviewed names), gates 0, checks passed, sayings held | {}", stacked["published"], result.lines().last().unwrap_or(""));
         }
 
         /// One page of any list refilled into NEXT_REPLAY_LINE_OUT/ (record.json beside the refilled run): NEXT_REPLAY_LINE is

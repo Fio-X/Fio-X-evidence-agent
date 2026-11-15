@@ -2436,8 +2436,10 @@ fn fill_of(
     }
     fmts.insert("time".into(), json!({}));
     let mut tables = Map::new();
-    // each table's id as the source line prints it (printed_id), the one id of it the footer marks and the page check takes
-    for t in [&shape.main, &shape.companion].into_iter().filter(|t| !t.is_empty()) {
+    // each table's id as the source line prints it (printed_id), the one id of it the footer marks and the page check takes;
+    // a page over blocks prints every block's table
+    let block_tables: Vec<String> = shape.blocks.iter().filter_map(|b| b["table"].as_str().map(str::to_string)).collect();
+    for t in [&shape.main, &shape.companion].into_iter().chain(&block_tables).filter(|t| !t.is_empty()) {
         tables.insert(t.clone(), json!({"id": printed_id(t)}));
     }
     if let Some(code) = scope.filter(|c| labels.contains_key(c) && facts.contains_key(DRAWN)) {
@@ -2627,20 +2629,29 @@ fn recipe_request(
     if let (Some(p), Some(set)) = (page_in.as_mut(), set) {
         p["set"] = set;
     }
-    // a page over blocks: every block's rows beside the main's, and each block named by the quantity its table answers in
-    // the question's record (asked_name); a block with none is not this shape
+    // a page over blocks: every block's rows beside the main's; a block answers a quantity of the question's record
+    // (answers_asked) and is headed by its table's reviewed Chinese name, printed marked with its name row as the map's key
+    // is (below); a block with none of either is not this shape and the many-block page stays as it was
+    let mut block_names: Vec<(String, String)> = Vec::new();
     if let Some(p) = page_in.as_mut().filter(|_| of_blocks) {
         let mut rows = p["rows"].as_array().cloned().unwrap_or_default();
         rows.extend(block_rows.iter().flat_map(|(_, r)| r.iter().cloned()));
         p["rows"] = Value::Array(rows);
-        let mut named = Vec::new();
+        let mut headed = Vec::new();
         for (b, table) in shape.blocks.iter().zip(prepared) {
-            let name = asked_name(table).ok_or_else(|| shape_err(format!("not this shape: block {} answers no quantity the question asks", table.id)))?;
+            if !answers_asked(table) {
+                return Err(shape_err(format!("not this shape: block {} answers no quantity the question asks", table.id)));
+            }
+            let zh = catalogue.table_zh(&table.id).map_err(|why| ("fill", why))?;
+            let zh = zh.map(|n| n.trim().to_string()).filter(|n| !n.is_empty());
+            let name = zh.ok_or_else(|| shape_err(format!("not this shape: block {} has no reviewed Chinese name for its head", table.id)))?;
+            let src = format!("{LABEL_SRC}catalogue:{}:title", table.id);
             let mut b = b.clone();
-            b["name"] = json!(name);
-            named.push(b);
+            b["src"] = json!(src);
+            headed.push(b);
+            block_names.push((src, name));
         }
-        p["blocks"] = Value::Array(named);
+        p["blocks"] = Value::Array(headed);
     }
     // the quantities the question asks for, the catalogue's record as the flow kept it (never the model's): the page input
     // carries it for the core's answered-all check (next_tree C6), the leaf's spec for its unanswered lines; none read, none
@@ -2661,6 +2672,13 @@ fn recipe_request(
     let asked = Asked { calls, page_in: page_in.as_ref() };
     let mut fill = fill_of(recipe, &shape, &picks, (&main_rows, &comp_rows), catalogue, (title, dek), scoped, Some(&asked))
         .map_err(|why| ("fill", why))?;
+    if !block_names.is_empty() {
+        // the blocks' heads beside the names a node gave (fill_of), never in their place
+        let named = fill["knobs"].as_object_mut().expect("the fill's knobs are an object").entry("named").or_insert_with(|| json!({}));
+        for (src, name) in block_names {
+            named.as_object_mut().map(|n| n.insert(src, json!(name)));
+        }
+    }
     zero_rows(&mut fill, &comp_rows);
     if let Some(b) = &basis {
         // a group's members outside a ranked World Bank set (the ranking beside the group, next_params named_open) are no
@@ -3072,12 +3090,11 @@ fn fetched_rows(run_dir: &Path, catalogue: &dyn Catalogue, id: &str, file: &str)
     catalogue.series_rows(&meta, &csv)
 }
 
-/// The name of the quantity a table answers, as the question's record of asked quantities (the catalogue's, Prepared::asked)
-/// holds it: the first record one of whose tables the table's id starts with.
-fn asked_name(table: &Prepared) -> Option<String> {
-    table.asked.as_array()?.iter().find_map(|a| {
-        let holds = a["tables"].as_array()?.iter().filter_map(Value::as_str).any(|t| !t.is_empty() && table.id.starts_with(t));
-        holds.then(|| a["zh"].as_str().map(str::to_string)).flatten()
+/// Whether a table answers a quantity of the question's record of asked quantities (the catalogue's, Prepared::asked): one
+/// record's tables hold a prefix of the table's id.
+fn answers_asked(table: &Prepared) -> bool {
+    table.asked.as_array().is_some_and(|all| {
+        all.iter().any(|a| a["tables"].as_array().is_some_and(|ts| ts.iter().filter_map(Value::as_str).any(|t| !t.is_empty() && table.id.starts_with(t))))
     })
 }
 

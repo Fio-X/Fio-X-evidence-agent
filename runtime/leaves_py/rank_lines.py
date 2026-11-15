@@ -104,6 +104,9 @@ def spread(want, lo, hi, gap):
     return out if out[0] >= lo - 1e-9 else None
 
 
+GUIDE_OP = 0.15  # the column guide's opacity: a grid line under the ranks, never a data line
+
+
 def cl_rank_lines(f, occ):
     d, size, W, r = f.d, f.size, f.W, f.k("disc_r")
     B = K.Boxes(W, 10 ** 6)
@@ -113,7 +116,8 @@ def cl_rank_lines(f, occ):
     yr = lambda rank: top + (rank - f.top_rank) * f.k("row")
     for i, c in enumerate(f.cols):  # the column heads, each centred over its column, and a hairline down the plot
         o.append(K.words(B, c["head"], f"column {i + 1}", f.x(i), head_y, size, "var(--t-sec)", anchor="middle", weight=700)[0])
-        o.append(K.line(f.x(i), top - r, f.x(i), yr(f.low_rank) + r))
+        # a guide under every rank of the column: faint as a grid line is (the layout check's grid, opacity below 0.2)
+        o.append(K.line(f.x(i), top - r, f.x(i), yr(f.low_rank) + r, op=GUIDE_OP))
     # the lines: the grey ones first, the highlighted one last (on top); a column a series is not ranked in breaks it
     for s in sorted(f.series, key=lambda s: s["code"] == f.hl):
         hot = s["code"] == f.hl
@@ -123,7 +127,7 @@ def cl_rank_lines(f, occ):
         for a, b in zip(pts, pts[1:]):
             if a and b:
                 o.append(f'<line x1="{f.x(a[0]):.1f}" y1="{yr(a[1]):.1f}" x2="{f.x(b[0]):.1f}" y2="{yr(b[1]):.1f}" stroke="{stroke}" '
-                         f'stroke-width="{wd}" stroke-opacity="{op}" stroke-linecap="round" data-code="{esc(s["code"])}"/>')
+                         f'stroke-width="{wd}" stroke-opacity="{op}" stroke-linecap="round" data-code="{esc(s["code"])}" data-line="rank:{esc(s["code"])}"/>')
     # the ranks: a disc on each point (over the lines), the rank printed in it
     for s in sorted(f.series, key=lambda s: s["code"] == f.hl):
         hot = s["code"] == f.hl
@@ -135,8 +139,9 @@ def cl_rank_lines(f, occ):
             x, y = f.x(i), yr(rank)
             o.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{r}" fill="{"var(--accent)" if hot else "var(--bg)"}" '
                      f'stroke="{"var(--accent)" if hot else "var(--t-sec)"}" stroke-width="1" data-code="{esc(s["code"])}"/>')
+            # the rank sits on its own series' line (the line rule's data-on); another series' line over it stays a finding
             o.append(K.txt(B, x, y + (size - 1) * 0.35, size - 1, "#fff" if hot else "var(--t-body)", svg_t, w, anchor="middle",
-                           weight=700 if hot else 400, tag=f"rank {s['code']} column {i + 1}"))
+                           weight=700 if hot else 400, tag=f"rank {s['code']} column {i + 1}", style=f' data-on="rank:{esc(s["code"])}"'))
     # the names: left of the first column a series is ranked in, right of the last, spread so none overlaps another
     for side in ("left", "right"):
         ends = []

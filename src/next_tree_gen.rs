@@ -26,7 +26,7 @@ const PAGE_IN_PATHS: [&str; 36] = [
     "shape.scale", "shape.main", "shape.source", "shape.target", "shape.place", "shape.year", "shape.fmt", "shape.suffix", "shape.countries", "shape.hub", "shape.second", "shape.months", "picks.marks", "picks.t0", "picks.t1", "picks.top",
     "picks.focus", "fill.accent", "fmt.change", "shape.members", "shape.point", "shape.extent", "outside", "hub_name",
     "shape.t0", "sum_rows", "composition.dim", "composition.total", "composition.first_group", "composition.first_codes",
-    "fill.composition.bars", "blocks", "block.table", "block.by", "block.year", "block.name",
+    "fill.composition.bars", "blocks", "block.table", "block.by", "block.year", "block.src",
 ];
 
 /// A template with every `$path` (a string value or an object key) read from the page input by PAGE_IN_PATHS.
@@ -2869,8 +2869,8 @@ mod tests {
         }
         pi.set("rows", J::Arr(rows));
         pi.set("recipe", J::str("block_ranks"));
-        let block = |t: &str, y: &str, name: &str| J::from_value(&serde_json::json!({"table": t, "by": by, "year": y, "name": name}));
-        pi.set("blocks", J::Arr(vec![block(&main, &year, "可再生能源占比"), block("gdp", "2024", "人均产出"), block("pop", "2023", "人口")]));
+        let block = |t: &str, y: &str| J::from_value(&serde_json::json!({"table": t, "by": by, "year": y, "src": format!("name:catalogue:{t}:title")}));
+        pi.set("blocks", J::Arr(vec![block(&main, &year), block("gdp", "2024"), block("pop", "2023")]));
         let reg = core::load_registry(&core::bindings());
         let out = declared_j("rank_lines", &pi, &reg).unwrap();
         for (b, (t, y)) in [(main.as_str(), year.as_str()), ("gdp", "2024"), ("pop", "2023")].into_iter().enumerate() {
@@ -2892,7 +2892,7 @@ mod tests {
         assert!(!leaf.has("items"), "codes only: no items key");
         let cols = leaf.g("columns").arr();
         assert_eq!(cols.len(), 3);
-        assert_eq!(cols[1].g("head").to_value(), serde_json::json!([{"w": "人均产出"}]));
+        assert_eq!(cols[1].g("head").to_value(), serde_json::json!([{"src": "name:catalogue:gdp:title"}]), "each head its table's name row");
         assert_eq!(st(cols[2].g("ranks").g(&ranked[0])), format!("fact:b3_{}_pos.n", ranked[0].to_lowercase()));
         assert_eq!(leaf.g("title").to_value(), serde_json::json!([{"src": "name:frames:ranking"}]));
         // the core computes them from the page's rows: ranks 1..n in each block, gdp's the reverse of pop's

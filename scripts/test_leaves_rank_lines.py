@@ -68,7 +68,7 @@ def check_svg(svg):
 def segments(svg):
     """(code, stroke, width, x1, y1, x2, y2) of every series line, in drawing order."""
     pat = (r'<line x1="([^"]+)" y1="([^"]+)" x2="([^"]+)" y2="([^"]+)" stroke="([^"]+)" stroke-width="([^"]+)" '
-           r'stroke-opacity="[^"]+" stroke-linecap="round" data-code="([^"]+)"/>')
+           r'stroke-opacity="[^"]+" stroke-linecap="round" data-code="([^"]+)" data-line="rank:\7"/>')  # its own line, for the ranks on it
     return [(m.group(7), m.group(5), float(m.group(6)), *(float(m.group(i)) for i in (1, 2, 3, 4))) for m in re.finditer(pat, svg)]
 
 
@@ -118,6 +118,12 @@ class Picture(unittest.TestCase):
             for r in rk.values():
                 self.assertIn(str(r), printed)
         self.assertEqual(sum(len(rk) for rk in RANKS), len(discs(self.svg)))  # a disc per ranked point, none for PHL's gap
+        # each column's guide is a grid line to the layout check (opacity below 0.2), so the ranks it runs under are no finding
+        guides = re.findall(r'<line x1="([^"]+)" y1="[^"]+" x2="\1" y2="[^"]+" stroke="[^"]+" stroke-width="[^"]+" stroke-opacity="([^"]+)"/>', self.svg)
+        self.assertEqual(len(guides), len(RANKS))  # one guide per column
+        self.assertTrue(all(float(op) < 0.2 for _, op in guides), guides)
+        # every rank is marked as sitting on its own series' line (the layout check's line rule lets that one through)
+        self.assertEqual(len(re.findall(r'<text [^>]*data-on="rank:[A-Z]+"', self.svg)), len(discs(self.svg)))
 
     def test_the_highlight_is_drawn_last_in_the_accent_and_wider(self):
         segs = segments(self.svg)
