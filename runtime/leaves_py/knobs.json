@@ -1784,6 +1784,70 @@
   "timeline": {
    "reserve": false,
    "knobs": []
+  },
+  "waterfall": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "size",
+     "default": 12,
+     "min": 11,
+     "max": 16,
+     "step": 0.5,
+     "what": "label size px (11 is the page floor)"
+    },
+    {
+     "name": "title_size",
+     "default": 16,
+     "min": 12,
+     "max": 22,
+     "step": 1,
+     "what": "chart name size px"
+    },
+    {
+     "name": "width",
+     "default": 1140,
+     "min": 480,
+     "max": 1400,
+     "step": 10,
+     "what": "picture width in px"
+    },
+    {
+     "name": "bar_h",
+     "default": 18,
+     "min": 12,
+     "max": 30,
+     "step": 1,
+     "what": "bar height in px"
+    },
+    {
+     "name": "pitch",
+     "default": 28,
+     "min": 18,
+     "max": 44,
+     "step": 1,
+     "what": "distance between two bars' tops in px"
+    },
+    {
+     "name": "tol",
+     "default": 0.005,
+     "min": 0.0,
+     "max": 0.02,
+     "step": 0.001,
+     "what": "how far the parts' sum may be from the whole, as a share of it"
+    },
+    {
+     "name": "highlight",
+     "default": "",
+     "codes": true,
+     "what": "code of the part drawn in the accent; none = the first part"
+    }
+   ],
+   "eats": [
+    "annual",
+    "one_unit",
+    "composition_groups"
+   ]
   }
  },
  "groups": {
@@ -1832,7 +1896,8 @@
    "stacked100",
    "line",
    "rank_lines",
-   "dumbbell"
+   "dumbbell",
+   "waterfall"
   ],
   "change": [
    "bignums",
@@ -1846,7 +1911,8 @@
    "stacked100",
    "line",
    "rank_lines",
-   "dumbbell"
+   "dumbbell",
+   "waterfall"
   ],
   "flow": [
    "bignums",
@@ -1860,7 +1926,8 @@
    "stacked100",
    "line",
    "rank_lines",
-   "dumbbell"
+   "dumbbell",
+   "waterfall"
   ],
   "composition": [
    "bignums",
@@ -1874,7 +1941,8 @@
    "stacked100",
    "line",
    "rank_lines",
-   "dumbbell"
+   "dumbbell",
+   "waterfall"
   ],
   "ranked_bars": [
    "bignums",
@@ -1888,7 +1956,8 @@
    "stacked100",
    "line",
    "rank_lines",
-   "dumbbell"
+   "dumbbell",
+   "waterfall"
   ],
   "scmp": [
    "map",

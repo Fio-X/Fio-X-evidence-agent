@@ -1,5 +1,5 @@
 {
-  "measured_at": "a992a3d67c7a7575f3d3b8f901d38f8b68ebc50f",
+  "measured_at": "16bf49ce12a48876097fe8a82b2d14fd37b5ae15",
   "rules": "scripts/test_group_flow_ratchet.mjs header; totals and per_file may only go down; kind_names only grow, by --lower",
   "totals": {
     "new": {
@@ -84,7 +84,8 @@
     "text": "knobs.json nodes",
     "timeline": "knobs.json nodes",
     "treemap": "P0a word list",
-    "valuelabels": "next_render.rs NodeInfo"
+    "valuelabels": "next_render.rs NodeInfo",
+    "waterfall": "knobs.json nodes"
   },
   "per_file": {
     "runtime/pi/assets/estat-narrow.json": {
