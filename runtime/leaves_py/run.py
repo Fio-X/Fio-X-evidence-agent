@@ -43,6 +43,7 @@ import sankey
 import scmp
 import stacked100
 import line as line_leaf  # main() reads stdin into `line`
+import rank_lines
 import section_head
 import wbkit
 from words import word
@@ -190,9 +191,10 @@ LEAF_LAYERS = dict(section_head=leaf(section_head.Frame, section_head.cl_section
                    leader_notes=(notes_layer, None),
                    sankey=leaf(sankey.Frame, sankey.cl_sankey, "sankey"),
                    stacked100=leaf(stacked100.Frame, stacked100.cl_stacked100, "stacked100"),
-                   line=leaf(line_leaf.Frame, line_leaf.cl_line, "line"))
+                   line=leaf(line_leaf.Frame, line_leaf.cl_line, "line"),
+                   rank_lines=leaf(rank_lines.Frame, rank_lines.cl_rank_lines, "rank_lines"))
 LEAF_SVG = (section_head.SECTION_HEAD_SVG + rankbar.RANKBAR_SVG + bubbles.BUBBLES_SVG + leader_notes.LEADER_NOTES_SVG + sankey.SANKEY_SVG
-            + stacked100.STACKED100_SVG + line_leaf.LINE_SVG)
+            + stacked100.STACKED100_SVG + line_leaf.LINE_SVG + rank_lines.RANK_LINES_SVG)
 
 
 # The page recipes this child draws: each one's layers (name -> (draw, reserve)) and which of them are svg.

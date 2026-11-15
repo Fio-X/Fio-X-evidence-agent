@@ -20,6 +20,7 @@ import scmp
 import section_head
 import stacked100
 import line
+import rank_lines
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "knobs.json")
 PAGE_OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "page_knobs.json")
@@ -79,7 +80,7 @@ EATS = dict(map=["hub_origin", "one_unit"], ring=["monthly_companion"], callouts
             strip=["monthly_companion"], section_head=[], rankbar=["annual", "one_place", "one_unit", "last_year"],
             bubbles=["one_place", "one_unit", "last_year"], bubble_key=["one_place", "one_unit", "last_year"],
             leader_notes=["one_unit"], sankey=["official_flow", "one_unit"], stacked100=["annual", "one_unit", "composition_groups"],
-            line=["one_freq", "one_unit"])
+            line=["one_freq", "one_unit"], rank_lines=["one_freq", "one_place"])
 # The nodes whose dropped items are short notes (a note with no free place, beside the picture, not a mark of it): a page
 # goes on without some of them, each kept in its ledger, when no more than a third of the layer's notes are dropped and none
 # is the note of a place its headline names (user 11-05 10:2x (b)); a dropped item of any other node (a label on the main
