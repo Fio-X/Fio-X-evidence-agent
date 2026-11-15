@@ -2773,22 +2773,24 @@ pub const PLAN_EVENT: &str = "next_answer_plan";
 /// null when no offered table holds it.
 pub const BLOCK_TABLES_EVENT: &str = "next_block_tables";
 
-/// The year a page whose blocks each take their own quantity is told at (common_year), or null when no year holds them all,
-/// with each block table's latest year and whether it was fetched again ending at that year (and why not, when it was due).
+/// The year a page whose blocks each take their own quantity is told at (common_year), or null with why there is none, with
+/// each block table's latest year and whether it was fetched again ending at that year (and why not, when it was due).
 pub const COMMON_YEAR_EVENT: &str = "next_common_year";
 
 /// The year the blocks of a page that each take their own quantity are told at: of the places every block table holds a
 /// number for at some year (each table as its place dimension and rows), the latest year at which each of them has a number
-/// in every table. None when a table holds a time that is no year (a month, a quarter), when no place is in every table (two
-/// sources that code places apart), or when no year holds them all.
-fn common_year(tables: &[(&str, &[Value])]) -> Option<String> {
+/// in every table, and no more than COMMON_YEAR_BACK years before the earliest of the tables' latest years (a place that
+/// reports every few years does not pull every block years back; review 11-15). Err says why there is none: a table holds
+/// a time that is no year (a month, a quarter), no place is in every table (two sources that code places apart), no year
+/// holds them all, or the one that does is further back than that.
+fn common_year(tables: &[(&str, &[Value])]) -> Result<String, &'static str> {
     let mut held: Vec<BTreeMap<&str, BTreeSet<&str>>> = Vec::new();
     for (dim, rows) in tables {
         let mut at: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
         for r in rows.iter() {
             let (Some(t), Some(c)) = (r["time"].as_str(), r["dims"][*dim].as_str()) else { continue };
             if t.len() != 4 || !t.bytes().all(|b| b.is_ascii_digit()) {
-                return None;
+                return Err("a block table holds a time that is no year");
             }
             at.entry(t).or_default().insert(c);
         }
@@ -2802,10 +2804,23 @@ fn common_year(tables: &[(&str, &[Value])]) -> Option<String> {
             Some(e) => e.intersection(&all).copied().collect(),
         });
     }
-    let every = every.filter(|e| !e.is_empty())?;
+    let every = every.filter(|e| !e.is_empty()).ok_or("no place is in every block table")?;
     let years: BTreeSet<&str> = held.iter().flat_map(|at| at.keys().copied()).collect();
-    years.into_iter().rev().find(|y| held.iter().all(|at| at.get(y).is_some_and(|there| every.is_subset(there)))).map(str::to_string)
+    let year = years
+        .into_iter()
+        .rev()
+        .find(|y| held.iter().all(|at| at.get(y).is_some_and(|there| every.is_subset(there))))
+        .ok_or("no year holds every place in every block table")?;
+    let earliest_latest = held.iter().filter_map(|at| at.keys().next_back()).min().and_then(|y| y.parse::<i32>().ok());
+    match (year.parse::<i32>().ok(), earliest_latest) {
+        (Some(y), Some(floor)) if y >= floor - COMMON_YEAR_BACK => Ok(year.to_string()),
+        _ => Err("the year every place holds is further back than a table's latest allows"),
+    }
 }
+
+/// How many years before the earliest of the block tables' latest years the common year may lie (common_year).
+const COMMON_YEAR_BACK: i32 = 1;
+
 /// The event that keeps how the fetch parameters of the picked tables were filled when no spec was given.
 pub const PARAMS_EVENT: &str = "next_params";
 /// The event that keeps, before the table pick, each listed table's breakdown options: the ones offered (with the years
@@ -5667,7 +5682,8 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
         record_group_calls(recorder, catalogue)?;
         let latest: Vec<Option<String>> = read.iter().map(|r| r.as_ref().and_then(|(_, rows)| rows.iter().filter_map(|r| r["time"].as_str()).max().map(str::to_string))).collect();
         let read: Option<Vec<(&str, &[Value])>> = read.iter().map(|r| r.as_ref().map(|(dim, rows)| (*dim, rows.as_slice()))).collect();
-        let year = read.as_deref().and_then(common_year);
+        let told = read.as_deref().ok_or("a block table's rows are unread").and_then(common_year);
+        let year = told.as_ref().ok().cloned();
         let mut kept = Vec::new();
         for (k, last) in latest.iter().enumerate() {
             let (id, args) = (tables[k].0.clone(), tables[k].1.clone());
@@ -5686,15 +5702,36 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
             let start = years.get("start").and_then(Value::as_i64).unwrap_or(end).min(end);
             years.insert("start".into(), json!(start));
             years.insert("end".into(), json!(end));
-            let called = prepare_fetch(recorder, tools, catalogue, &id, &again, cancel).await?;
+            // the first fetch already holds the table: a second one that fails (the source unreachable, its sheet unread) keeps
+            // it, and the page goes on as it did before this step (review 11-15); only a cancelled run stops here
+            let called = match prepare_fetch(recorder, tools, catalogue, &id, &again, cancel).await {
+                Ok(called) => called,
+                Err(stop) if !cancel.load(std::sync::atomic::Ordering::SeqCst) => {
+                    entry["why"] = json!(format!("fetched again and it failed ({stop}); the first fetch is kept"));
+                    kept.push(entry);
+                    continue;
+                }
+                Err(stop) => return Err(stop),
+            };
             let mode = mode_of(&called);
             let key = called.details.as_ref().and_then(|d| d["sheet"].as_str()).unwrap_or("").to_string();
-            let candidates = if mode == "candidates" { read_sheet(&recorder.run_dir, &id, &key)? } else { Vec::new() };
-            if candidates.len() < CLAIMS_MIN {
-                entry["why"] = json!(format!("fetched again as mode {mode} with {} claims; the first fetch is kept", candidates.len()));
-                kept.push(entry);
-                continue;
-            }
+            let candidates = match mode.as_str() {
+                "candidates" => read_sheet(&recorder.run_dir, &id, &key).map_err(|e| e.to_string()),
+                _ => Ok(Vec::new()),
+            };
+            let candidates = match candidates {
+                Ok(c) if c.len() >= CLAIMS_MIN => c,
+                Ok(c) => {
+                    entry["why"] = json!(format!("fetched again as mode {mode} with {} claims; the first fetch is kept", c.len()));
+                    kept.push(entry);
+                    continue;
+                }
+                Err(e) => {
+                    entry["why"] = json!(format!("fetched again and its sheet is unread ({e}); the first fetch is kept"));
+                    kept.push(entry);
+                    continue;
+                }
+            };
             if k == 0 {
                 main_file = called.details.as_ref().and_then(|d| d["filePath"].as_str()).map(String::from);
                 cut = main_cut(&again, called.details.as_ref());
@@ -5703,7 +5740,7 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
             kept.push(entry);
             tables[k] = (id, again, key, candidates);
         }
-        recorder.program_event(COMMON_YEAR_EVENT, json!({"year": year, "tables": kept}))?;
+        recorder.program_event(COMMON_YEAR_EVENT, json!({"year": year, "why": told.err(), "tables": kept}))?;
     }
     let mut companion_titles = BTreeMap::new();
     let mut companion_files = Vec::new();
@@ -9105,22 +9142,28 @@ mod tests {
         let a = rows("country", &[("IDN", "2024"), ("IDN", "2025"), ("MYS", "2024"), ("MYS", "2025")]);
         // one place has not reported the latest year in the second table: both are told at the year before
         let b = rows("country", &[("IDN", "2024"), ("IDN", "2025"), ("MYS", "2024")]);
-        assert_eq!(common_year(&[("country", &a), ("country", &b)]).as_deref(), Some("2024"));
+        assert_eq!(common_year(&[("country", &a), ("country", &b)]).as_deref(), Ok("2024"));
         // every place in both at the latest year: that year
-        assert_eq!(common_year(&[("country", &a), ("country", &a)]).as_deref(), Some("2025"));
+        assert_eq!(common_year(&[("country", &a), ("country", &a)]).as_deref(), Ok("2025"));
         // a place only one table holds at all does not hold the others back
         let c = rows("country", &[("IDN", "2024"), ("IDN", "2025"), ("MYS", "2024"), ("MYS", "2025"), ("SGP", "2025")]);
         let d = rows("country", &[("IDN", "2025"), ("MYS", "2025")]);
-        assert_eq!(common_year(&[("country", &c), ("country", &d)]).as_deref(), Some("2025"));
+        assert_eq!(common_year(&[("country", &c), ("country", &d)]).as_deref(), Ok("2025"));
         // no year holds both places in both tables
         let e = rows("country", &[("IDN", "2025"), ("MYS", "2024")]);
         let f = rows("country", &[("IDN", "2024"), ("MYS", "2025")]);
-        assert_eq!(common_year(&[("country", &e), ("country", &f)]), None);
+        assert_eq!(common_year(&[("country", &e), ("country", &f)]), Err("no year holds every place in every block table"));
         // a monthly table, or two sources that code places apart, give none
         let m = rows("geo", &[("DE", "2025-03"), ("FR", "2025-03")]);
-        assert_eq!(common_year(&[("country", &a), ("geo", &m)]), None);
+        assert_eq!(common_year(&[("country", &a), ("geo", &m)]), Err("a block table holds a time that is no year"));
         let g = rows("geo", &[("DE", "2025"), ("FR", "2025")]);
-        assert_eq!(common_year(&[("country", &a), ("geo", &g)]), None);
+        assert_eq!(common_year(&[("country", &a), ("geo", &g)]), Err("no place is in every block table"));
+        // a place that reports every other year pulls the blocks back no more than a year before the earliest latest year
+        let full = rows("country", &[("IDN", "2022"), ("IDN", "2023"), ("IDN", "2024"), ("IDN", "2025"), ("MYS", "2022"), ("MYS", "2023"), ("MYS", "2024"), ("MYS", "2025")]);
+        let sparse = rows("country", &[("IDN", "2022"), ("IDN", "2023"), ("IDN", "2024"), ("IDN", "2025"), ("MYS", "2022")]);
+        assert_eq!(common_year(&[("country", &full), ("country", &sparse)]), Err("the year every place holds is further back than a table's latest allows"));
+        let lagging = rows("country", &[("IDN", "2022"), ("IDN", "2023"), ("IDN", "2024"), ("IDN", "2025"), ("MYS", "2022"), ("MYS", "2024")]);
+        assert_eq!(common_year(&[("country", &full), ("country", &lagging)]).as_deref(), Ok("2024"));
     }
 
     /// The split step (owner 11-14 16:5x item 2), asked after the search answer: the knowledge group's request, the model's
