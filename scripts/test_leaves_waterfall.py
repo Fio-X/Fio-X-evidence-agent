@@ -141,5 +141,42 @@ class Picture(unittest.TestCase):
         self.assertIn("too narrow", refused({**d, "whole": dict(d["whole"], name=W("欧盟二十七国能源总供应（含全部燃料和电力进口）"))}, width=480, size=16))
 
 
+class OneBar(unittest.TestCase):
+    """The waterfall node is declared as stacked100 is (node-bindings.json declares_as): it reads stacked100's data shape
+    with one bar as one whole, each part a step of its rows (a group of several leaf rows summed), its share as printed."""
+
+    def stacked(self, **over):
+        groups = {"O4000XBIO": ["O4000XBIO"], "G3000": ["G3000"], "RA000": ["RA000"], "N900H": ["N900H"],
+                  "REST": list(REST)}  # the last group several leaf rows
+        bar = {"code": "EU27", "total": src("TOTAL"), "total_text": "fact:total.n",
+               "cells": {g: [src(c) for c in cs] for g, cs in groups.items()},
+               "share_text": {g: (f"fact:part.{g}.n" if g in PARTS else "fact:rest.n") for g in groups}}
+        d = dict(title=DATA["title"], unit=DATA["unit"], bar_kind="place", part_kind=KIND, parts=list(groups), bars=[bar],
+                 total_head=W("总供应"))
+        d.update(over)
+        return d
+
+    def test_one_bar_is_one_whole(self):
+        rows = ROWS + [{"src": f"name:zh_names:{KIND}:REST", "text": "其余"}]
+        svg, _, _ = draw(hero(self.stacked()), rows=rows, names={**NAMES, "REST": "其余"})
+        self.assertEqual(check_svg(svg), [])
+        got = waterfall.one_bar(self.stacked())
+        self.assertEqual([p["code"] for p in got["parts"]], ["O4000XBIO", "G3000", "RA000", "N900H", "REST"])
+        self.assertEqual(got["parts"][-1]["cells"], [src(c) for c in REST])
+        self.assertEqual(got["whole"], {"name": W("总供应"), "value": src("TOTAL"), "text": "fact:total.n"})
+        # a declared zero or an empty part draws no step
+        self.assertNotIn("N900H", [p["code"] for p in waterfall.one_bar(self.stacked(zero=[{"bar": "EU27", "part": "N900H", "cells": []}]))["parts"]])
+        self.assertIs(waterfall.one_bar(DATA), DATA)  # the waterfall's own shape as given
+
+    def test_its_refusals(self):
+        two = self.stacked()
+        two["bars"] = two["bars"] * 2
+        for bad, why in ((two, "one whole"), (self.stacked(others={"head": W("其余"), "codes": ["DEU"]}), "left out"),
+                         (self.stacked(total_head=None), "no total")):
+            with self.assertRaises(Refused) as e:
+                waterfall.one_bar(bad)
+            self.assertIn(why, str(e.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

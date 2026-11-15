@@ -39,8 +39,8 @@
   "change_focus": {"id": "top", "kind": "given", "source": "picks", "path": "picks.top", "given": "$picks.top"},
   "claim_marks": {"id": "marks", "kind": "named_rule", "rule": "marks_from_claims", "inputs": {"ranked": "ranked"}, "given": "$picks.marks"}
  },
- "recipes": {"column": ["bars", "leader_notes"], "change": ["bubbles", "bars", "leader_notes"], "composition": ["stacked100"], "scmp": ["map", "strip", "bignums", "notes"], "ring": ["map", "ring"], "flow": ["sankey"], "ranked_bars": ["bars"], "block_ranks": ["rank_lines"]},
- "main_chart": {"column": "bars", "change": "bars", "composition": "stacked100", "scmp": "map", "ring": "ring", "flow": "sankey", "ranked_bars": "bars", "block_ranks": "rank_lines"},
+ "recipes": {"column": ["bars", "leader_notes"], "change": ["bubbles", "bars", "leader_notes"], "composition": ["stacked100"], "scmp": ["map", "strip", "bignums", "notes"], "ring": ["map", "ring"], "flow": ["sankey"], "ranked_bars": ["bars"], "block_ranks": ["rank_lines"], "composition_steps": ["waterfall"]},
+ "main_chart": {"column": "bars", "change": "bars", "composition": "stacked100", "scmp": "map", "ring": "ring", "flow": "sankey", "ranked_bars": "bars", "block_ranks": "rank_lines", "composition_steps": "waterfall"},
  "nodes": {
   "bars": {
    "binding": "external",
@@ -982,7 +982,8 @@
     "block_ranks": {
      "shape": "finding",
      "rule": "none"
-    }
+    },
+    "composition_steps": "composition"
    }
   },
   "bignums": {
@@ -1737,6 +1738,13 @@
      "code": {"kind": "select_index"}
     }
    }
+  },
+  "waterfall": {
+   "$comment": "One place's whole and its parts as steps (owner 11-14 16:0x item 2): the same rows as stacked100's one bar, declared and checked as stacked100 is (declares_as); the leaf reads that one bar.",
+   "binding": "external",
+   "geometry": "leaf",
+   "runner": "leaves_py/waterfall.py",
+   "declares_as": "stacked100"
   },
   "stacked100": {
    "binding": "external",

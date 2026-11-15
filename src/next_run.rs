@@ -1148,8 +1148,18 @@ const SHAPE_CONDITIONS: &[(&str, Condition)] = &[
     ("two_ends", two_ends),
     ("official_flow", official_flow),
     (COMPOSITION, composition_groups),
+    ("one_whole", one_whole),
     ("blocks", blocks),
 ];
+
+/// One place's whole and its parts (named after the parts' condition in a recipe's eats, which reads the places first: its
+/// one bar, a block of a table its blocks share). Two places or more are not one whole.
+fn one_whole(s: &mut Shape, _tables: &[(&str, &[Value])], _catalogue: &dyn Catalogue) -> Result<(), String> {
+    match s.countries.len() {
+        1 => Ok(()),
+        n => Err(format!("main {} spans {n} places, and one whole is one place", s.main)),
+    }
+}
 
 /// Two tables or more, the main first, each across places at one period (a many-block page's tables): each table's place
 /// dimension and year as one_freq, one_place and last_year read the table alone, the main's as the shape holds them.
@@ -8168,7 +8178,7 @@ mod tests {
     #[test]
     fn each_recipe_reads_the_shape_by_its_own_conditions_and_its_nodes_fill_the_page() {
         let names: Vec<&str> = Hubs.recipes().iter().map(|r| r.name.as_str()).collect();
-        assert_eq!(names, ["scmp", "ring", "composition", "change", "column", "ranked_bars", "flow", "block_ranks"]);
+        assert_eq!(names, ["scmp", "ring", "composition_steps", "composition", "change", "column", "ranked_bars", "flow", "block_ranks"]);
         let mut main = ring_rows("sdg", &[("freq", "A"), ("unit", "PC")], ("geo", &["SE", "BE", "DE", "FR", "EU27_2020"]), &["2025"]);
         for (r, v) in main.iter_mut().zip(["65.4", "14.9", "30.25", "20", "40"]) {
             r["value"] = json!(v);
@@ -9558,7 +9568,10 @@ mod tests {
         let tables = [("nrg_bal_peh", main), ("nrg_bal_peh", sums)];
         let got: Vec<(&str, bool)> =
             Hubs.recipes().iter().map(|r| (r.name.as_str(), shape_of(&r.eats, &tables, &Hubs).is_ok())).collect();
-        assert_eq!(got.iter().find(|(_, ok)| *ok).map(|(n, _)| *n), Some("composition"), "{got:?}");
+        // one place's parts are one whole: the waterfall's recipe is tried first and reads them; composition reads them too
+        let first = if main.iter().filter_map(|r| r["dims"]["geo"].as_str()).collect::<BTreeSet<_>>().len() == 1 { "composition_steps" } else { "composition" };
+        assert_eq!(got.iter().find(|(_, ok)| *ok).map(|(n, _)| *n), Some(first), "{got:?}");
+        assert!(got.iter().any(|(n, ok)| *n == "composition" && *ok), "{got:?}");
         let shape = shape_of(&composition.eats, &tables, &Hubs).unwrap();
         let picks = picks_of(&composition.picks, &shape, main, &[]).unwrap();
         test_fill(composition, &shape, &picks, (main, sums), &Hubs, ("标题", "导语"), false)
@@ -10096,6 +10109,7 @@ mod tests {
             [
                 ("scmp", Err("not this shape: main spans one year (2025)".to_string())),
                 ("ring", Err("not this shape: main spans one year (2025)".to_string())),
+                ("composition_steps", Err("not this shape: main migr asks no grouped total alone".to_string())),
                 ("composition", Err("not this shape: main migr asks no grouped total alone".to_string())),
                 ("change", Err("not this shape: main spans one year (2025)".to_string())),
                 ("column", Ok("citizen PER 2025".to_string())),
@@ -13726,7 +13740,7 @@ for line in sys.stdin:
     #[test]
     fn only_a_recipe_with_a_strip_slot_asks_for_a_strip_and_a_strip_it_did_not_get_is_owed() {
         let slots: Vec<(&str, bool)> = Hubs.recipes().iter().map(|r| (r.name.as_str(), r.strip)).collect();
-        assert_eq!(slots, [("scmp", false), ("ring", false), ("composition", false), ("change", true), ("column", true), ("ranked_bars", true), ("flow", false), ("block_ranks", false)]);
+        assert_eq!(slots, [("scmp", false), ("ring", false), ("composition_steps", false), ("composition", false), ("change", true), ("column", true), ("ranked_bars", true), ("flow", false), ("block_ranks", false)]);
         let energy = ["nrg_ind_ren".to_string()];
         let calls = std::sync::Mutex::new(Vec::new());
         for name in ["scmp", "ring"] {
@@ -13814,7 +13828,7 @@ for line in sys.stdin:
             .iter()
             .map(|r| (r.name.as_str(), r.same_measure.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect()))
             .collect();
-        assert_eq!(declared, [("scmp", vec![]), ("ring", vec![]), ("composition", vec![]), ("change", vec![]), ("column", vec![]), ("ranked_bars", vec![]), ("flow", vec![]), ("block_ranks", vec![])]);
+        assert_eq!(declared, [("scmp", vec![]), ("ring", vec![]), ("composition_steps", vec![]), ("composition", vec![]), ("change", vec![]), ("column", vec![]), ("ranked_bars", vec![]), ("flow", vec![]), ("block_ranks", vec![])]);
     }
 
     /// A pair is known only by the page's own recipe and only as the layers it declares: the bars and bubbles under a recipe

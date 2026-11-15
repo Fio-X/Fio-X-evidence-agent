@@ -1,5 +1,5 @@
 {
-  "measured_at": "b085b8f934aa85e212bad640ee792388f19a7bbb",
+  "measured_at": "a0802650c39560ddbcf92fa733170cb7d5b94027",
   "rules": "scripts/test_group_flow_ratchet.mjs header; totals and per_file may only go down; kind_names only grow, by --lower",
   "totals": {
     "new": {
@@ -38,6 +38,7 @@
     "column": "knobs.json groups",
     "columnpage": "next_render.rs GroupInfo",
     "composition": "knobs.json groups",
+    "compositionsteps": "knobs.json groups",
     "distribution": "shape_registry.rs Relation",
     "dotgrid": "P0a word list",
     "dumbbell": "src/next_run.rs templates",

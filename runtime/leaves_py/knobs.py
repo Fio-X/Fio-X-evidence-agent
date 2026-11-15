@@ -52,6 +52,12 @@ RECIPES = [
     # a composition across places: one 100% bar per place of the main's sum-input fetch (its groups' input codes, the top
     # places by total, layer 1's cut), each bar's total printed beside it; before change and column, which would read the
     # main's totals alone, and only for a main the program fetched sum inputs for (composition_groups)
+    # one place's whole and its parts (a block of a table its blocks share, next_run.rs composition_groups' one bar), as
+    # steps that walk the whole: the sketch compare's pick over the one 100% bar (sketch.json: position 4 + the lead marked
+    # 2 against length 3 + 2 - 1, the reader comparing segments), so it is tried first; the same rows and declaration as
+    # composition's (node-bindings.json waterfall declares_as stacked100). Two places or more are not one whole: composition
+    dict(name="composition_steps", layers=["waterfall"], eats=["annual", "one_unit", "composition_groups", "one_whole"], charts=[],
+         picks=[], exposes=[], main="waterfall"),
     dict(name="composition", layers=["stacked100"], eats=["annual", "one_unit", "composition_groups"], charts=[], picks=[],
          exposes=[], main="stacked100"),
     # two ends of a ten-year table: each place's change from t0 to t1 as signed bars (bars.measure change, set by layer 1),
@@ -172,6 +178,7 @@ def table():
     groups = dict(map=list(prod.MAP_ORDER), ring=list(scmp.RING_LAYERS), charts=list(prod.CHARTS), column=list(columns),
                   change=list(run.KINDS["change"][0]), flow=list(run.KINDS["flow"][0]), composition=list(run.KINDS["composition"][0]),
                   ranked_bars=list(run.KINDS["ranked_bars"][0]), block_ranks=list(run.KINDS["block_ranks"][0]),
+                  composition_steps=list(run.KINDS["composition_steps"][0]),
                   scmp=list(scmp.SCMP_LAYERS))
     reserve = {}
     for reg in (prod.MAP_LAYERS, scmp.RING_LAYERS, columns, scmp.SCMP_LAYERS):

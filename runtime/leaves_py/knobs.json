@@ -2098,6 +2098,23 @@
    "waffle",
    "stacked_area"
   ],
+  "composition_steps": [
+   "bignums",
+   "bars",
+   "section_head",
+   "rankbar",
+   "bubbles",
+   "bubble_key",
+   "leader_notes",
+   "sankey",
+   "stacked100",
+   "line",
+   "rank_lines",
+   "dumbbell",
+   "waterfall",
+   "waffle",
+   "stacked_area"
+  ],
   "scmp": [
    "map",
    "strip",
@@ -2175,6 +2192,25 @@
    "external": [
     "map",
     "ring"
+   ]
+  },
+  {
+   "name": "composition_steps",
+   "layers": [
+    "waterfall"
+   ],
+   "eats": [
+    "annual",
+    "one_unit",
+    "composition_groups",
+    "one_whole"
+   ],
+   "charts": [],
+   "picks": [],
+   "exposes": [],
+   "main": "waterfall",
+   "external": [
+    "waterfall"
    ]
   },
   {

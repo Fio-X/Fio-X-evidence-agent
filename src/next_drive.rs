@@ -2559,6 +2559,104 @@ mod drive {
             println!("SAWALK {} | 3 blocks, the page over them not drawn (no reviewed names), gates 0, checks passed, sayings held | {}", stacked["published"], result.lines().last().unwrap_or(""));
         }
 
+        /// The sample C walk, as sample_a_walk: a finished stand-in run of sample C (blocks of one shared table) walked
+        /// again with no model from its prepared tables on, its plan and its shared blocks read back from its events (each
+        /// shared block's own fetch in the order the run fetched them). Holds: every block page drawn reaches the gate with no
+        /// gap, every page check passed, every saying held, the completion gate finding none again, and the stacked page
+        /// framing every block drawn. Prints SCWALK lines: each gate's recipe, and the reading last.
+        ///
+        ///     NEWS_CATALOG_DIR=.. NEWS_CLASSIFY_REFS=.. SAMPLE_C_RUN=<the run's out folder> CF_WALK_DIR=<tmpd folder> \
+        ///     cargo test --bins sample_c_walk -- --ignored --nocapture
+        #[tokio::test]
+        #[ignore]
+        async fn sample_c_walk() {
+            let src = PathBuf::from(var("SAMPLE_C_RUN"));
+            let dir = PathBuf::from(var("CF_WALK_DIR"));
+            let text = std::fs::read_to_string(src.join("events.jsonl")).expect("SAMPLE_C_RUN holds events.jsonl");
+            let events: Vec<Value> = text.lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
+            let question = events.iter().find(|e| e["type"] == CATALOGUE_EVENT).and_then(|e| e["question"].as_str()).expect("a question").to_string();
+            let catalogue = GroupCatalogue::from_env(|key| std::env::var(key).ok()).unwrap();
+            let (prepared, parent) = prepared_of(&events, &catalogue).expect("the run's prepared tables");
+            let plan: crate::answer_plan::Plan = events
+                .iter()
+                .rev()
+                .find(|e| e["type"] == crate::next_flow::PLAN_EVENT)
+                .and_then(|e| serde_json::from_value(e["plan"].clone()).ok())
+                .expect("the run's plan");
+            // each shared block (its number in the plan, from 1) and its own fetch of the shared table, in fetch order
+            let blocks_event = events.iter().rev().find(|e| e["type"] == crate::next_flow::BLOCK_TABLES_EVENT).expect("the run's block tables");
+            let mut seen: BTreeMap<String, usize> = BTreeMap::new();
+            let shared: Vec<(usize, usize)> = blocks_event["shared"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|b| {
+                    let (n, table) = (b["block"].as_u64()? as usize, b["table"].as_str()?);
+                    let k = seen.entry(table.to_string()).or_insert(0);
+                    let at = prepared.iter().enumerate().filter(|(_, p)| p.id == table).nth(*k).map(|(i, _)| i)?;
+                    *k += 1;
+                    Some((n.checked_sub(1)?, at))
+                })
+                .collect();
+            assert!(shared.len() >= 2, "sample C has two shared blocks or more: {blocks_event}");
+            let run = dir.join("run");
+            let _ = std::fs::remove_dir_all(&run);
+            std::fs::create_dir_all(&run).unwrap();
+            for d in ["data", "computations", "shadow"] {
+                if src.join(d).is_dir() {
+                    copy_tree(&src.join(d), &run.join(d)).unwrap();
+                }
+            }
+            std::fs::copy(src.join("claims.jsonl"), run.join("claims.jsonl")).unwrap();
+            let _command = crate::group_guard::command_for_test("investigate");
+            crate::runtime::materialize_extension(&run).unwrap();
+            let mut model = ReplayAsker { answers: replay_asks(&events), retries: BTreeMap::new(), last: BTreeMap::new(), n: 0 };
+            let planned = crate::next_flow::Planned { prepared, plan: Some(plan), block_tables: Vec::new(), shared };
+            let mut walked = Vec::new();
+            let mut sink = |e: Value| walked.push(e);
+            let cancel = AtomicBool::new(false);
+            let mut recorder = Recorder::new(&mut sink, &run, Vec::new(), Vec::new());
+            recorder.hang_under(&parent);
+            let result = crate::next_run::pages_of(&mut recorder, &mut model, &question, &planned, &catalogue, &cancel).await;
+            drop(recorder);
+            let kinds: BTreeSet<&str> = walked.iter().filter_map(|e| e["type"].as_str()).collect();
+            let lines: Vec<String> = events
+                .iter()
+                .filter(|e| !e["type"].as_str().is_some_and(|t| kinds.contains(t)) || e["toolName"] == crate::next_knowledge::DATA_PREPARE_TOOL)
+                .chain(walked.iter())
+                .map(Value::to_string)
+                .collect();
+            std::fs::write(run.join("events.jsonl"), lines.join("\n") + "\n").unwrap();
+            let of = |kind: &str| walked.iter().filter(|e| e["type"] == kind).collect::<Vec<_>>();
+            for e in of(crate::next_run::LEAF_GATE_EVENT) {
+                println!("SCWALK gate {} gaps {}", e["recipe"], e["gaps"]);
+            }
+            let result = result.unwrap_or_else(|stop| panic!("SCWALK stopped: {stop}"));
+            let gates = of(crate::next_run::LEAF_GATE_EVENT);
+            assert!(gates.len() >= 2, "two block pages or more reached the gate");
+            assert!(gates.iter().all(|e| e["gaps"].as_array().is_some_and(Vec::is_empty)), "a gate gap");
+            for e in of(crate::next_run::PAGE_CHECKS_EVENT) {
+                let failed: Vec<&Value> = e["checks"].as_array().into_iter().flatten().filter(|c| c["passed"] != true).collect();
+                assert!(failed.is_empty(), "{}: failed checks {failed:?}", e["recipe"]);
+            }
+            for e in of(crate::next_sayings::SAYINGS_EVENT) {
+                assert_eq!(e["unheld"], json!([]), "{}: a saying does not hold", e["recipe"]);
+            }
+            for e in &gates {
+                let folder = e["recipe"].as_str().unwrap();
+                let manifest: Value =
+                    serde_json::from_str(&std::fs::read_to_string(run.join(format!("publications/{folder}/manifest.json"))).unwrap()).unwrap();
+                assert_eq!(crate::next_gate::leaf_gate(&run, folder, &manifest), Some(Vec::new()), "{folder}: the completion gate again");
+            }
+            let stacked = of(crate::next_run::STACKED_EVENT);
+            let stacked = stacked.first().expect("a stacked page");
+            let page = std::fs::read_to_string(run.join(stacked["published"].as_str().unwrap())).expect("the stacked page is written");
+            assert_eq!(page.matches("<iframe ").count(), gates.len(), "a frame per block drawn");
+            assert!(!page.contains("height=\"0\""), "a frame shown at no height: {page}");
+            let drawn: Vec<&str> = gates.iter().filter_map(|e| e["recipe"].as_str()).collect();
+            println!("SCWALK {} | blocks {drawn:?}, gates 0, checks passed, sayings held | {}", stacked["published"], result.lines().last().unwrap_or(""));
+        }
+
         /// One page of any list refilled into NEXT_REPLAY_LINE_OUT/ (record.json beside the refilled run): NEXT_REPLAY_LINE is
         /// the page's line (tab-separated: sha16, label, recipe, an ignored field, the run folder under NEXT_REPLAY_DOCS). For
         /// measuring a change over pages of no frozen list (plan v4 item 1, part 2); not the gate, which keeps its own list.

@@ -139,7 +139,9 @@ fn recompute_over(page_in: &J, sels: &[J], given: &[(String, J)], fmts: &J) -> (
 /// A node's declaration on the page input's recipe: the recipe's own (declares_by_recipe) when the registry gives one.
 fn declares<'a>(reg: &'a J, layer: &str, page_in: &J) -> Result<&'a J, String> {
     let n = reg.g("nodes").g(layer);
-    let own = page_in.g("recipe").s().and_then(|r| n.g("declares_by_recipe").get(r));
+    let by = n.g("declares_by_recipe");
+    // a recipe that draws the same rows as another (its entry that recipe's name) is declared as that one is
+    let own = page_in.g("recipe").s().and_then(|r| by.get(r)).map(|d| d.s().and_then(|other| by.get(other)).unwrap_or(d));
     own.or_else(|| n.get("declares")).ok_or_else(|| format!("node {layer}: the registry declares nothing for it"))
 }
 
@@ -3270,7 +3272,7 @@ mod tests {
         let bound = core::bindings();
         let leaf: Vec<&str> = bound.g("nodes").obj().iter().filter(|(_, n)| n.g("geometry").s() == Some("leaf")).map(|(k, _)| k.as_str()).collect();
         // the line leaf (a series over time, the trend declaration) places its own lines, ticks and end labels too
-        assert_eq!(leaf, ["map", "bignums", "leader_notes", "notes", "ring", "strip", "sankey", "line", "rank_lines", "stacked100"]);
+        assert_eq!(leaf, ["map", "bignums", "leader_notes", "notes", "ring", "strip", "sankey", "line", "rank_lines", "waterfall", "stacked100"]);
     }
 
     /// A column page's finding with a focus (a many-block page's later block: the first block's leader, owner 11-14 22:2x):

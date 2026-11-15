@@ -11,7 +11,9 @@ hero.data (the data shape this leaf eats; on a column frame page, the hero's lea
   "title": segs, "unit": segs,                      # the unit is written once, in the head
   "part_kind": <kind>,                              # name rows of the parts: name:zh_names:<kind>:<code>
   "whole": {"name": segs, "value": series src, "text": ledger src},  # the whole's row (its bar from 0)
-  "parts": [{"code": code, "value": series src, "text": ledger src}],  # top down, in layer 1's order (the leaf sorts nothing)
+  "parts": [{"code": code, "value": series src, "text": ledger src}],  # top down, in layer 1's order (the leaf sorts nothing);
+                                                    # "cells": [series src, ...] in place of value: a part of several rows
+  # or stacked100's shape with one bar (one_bar: the waterfall node is declared as stacked100 is)
   "rest": {"name": segs, "cells": [series src, ...], "text": ledger src}?,  # what the listed parts leave (layer 1's rest fact)
   "lines": [segs, ...]?, "footnote": segs?}         # layer 1's lines under the picture, one line each
 segs: as wbkit.segs reads them; series src: a cell of the request's rows (geometry only); ledger src: a row {"src", "text"}.
@@ -34,8 +36,33 @@ prod.KNOBS[NODE] = dict(
     highlight=("", None, "code of the part drawn in the accent; none = the first part"))
 
 
+def one_bar(d):
+    """stacked100's data shape (stacked100.py hero.data) with one bar, read as one whole: the waterfall node is declared as
+    stacked100 is (node-bindings.json declares_as), the same rows and checks. The bar's total is the whole, named by the
+    total's head (its name row) and printed by its total text; each part the bar draws is a step of its cells, its share as
+    printed its text; a part with no row or a declared zero (layer 1 says it in a line) draws no step and adds nothing.
+    Anything else is the data shape as given."""
+    if "bars" not in d: return d
+    bars = d.get("bars") or []
+    if len(bars) != 1: raise Refused(f"waterfall: {len(bars)} bars; one whole is one place's (two places or more: stacked100)")
+    if (d.get("others") or {}).get("codes"): raise Refused("waterfall: places left out beside one whole; a waterfall draws one place")
+    b = bars[0]
+    if not d.get("total_head") or not b.get("total_text"): raise Refused("waterfall: the bar names or prints no total (its whole)")
+    gone = {e.get("part") for e in d.get("empty") or []} | {z.get("part") for z in d.get("zero") or []}
+    parts = []
+    for c in d.get("parts") or []:
+        if c in gone: continue
+        cells, text = (b.get("cells") or {}).get(c), (b.get("share_text") or {}).get(c)
+        if not cells or not text: raise Refused(f"waterfall: part {c} has no cells or no printed share")
+        parts.append({"code": c, "cells": cells, "text": text})
+    out = {k: d[k] for k in ("title", "unit", "part_kind", "lines", "footnote") if k in d}
+    out.update(whole={"name": d["total_head"], "value": b["total"], "text": b["total_text"]}, parts=parts)
+    return out
+
+
 class Frame:
     def __init__(f, h):
+        h = dict(h, data=one_bar(h["data"]))
         d = h["data"]; k = lambda n: K.knob(h, NODE, n)
         f.d, f.k, f.size, f.W = d, k, k("size"), k("width")
         w = d.get("whole")
@@ -53,7 +80,9 @@ class Frame:
         if not isinstance(kind, str) or not kind: raise Refused("waterfall: the spec names no part_kind (the parts' name rows)")
         f.parts = []
         for p in parts:
-            v = K.val(p.get("value"))
+            cells = p.get("cells")
+            if cells is not None and (not isinstance(cells, list) or not cells): raise Refused(f"waterfall: part {p.get('code')}'s cells are not a list of cells")
+            v = sum(K.val(c) for c in cells) if cells is not None else K.val(p.get("value"))  # a part of several rows: their sum
             if v < 0: raise Refused(f"waterfall: part {p['code']} is below 0")
             if not p.get("text"): raise Refused(f"waterfall: part {p['code']} has no text (its ledger entry)")
             f.parts.append(dict(code=p["code"], v=v, t=K.ent(p["text"]), name=K.named(p["code"], kind)))
