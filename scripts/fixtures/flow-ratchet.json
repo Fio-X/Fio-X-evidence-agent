@@ -1,5 +1,5 @@
 {
-  "measured_at": "8d17385b4f36e3df73d53d33b6b8623e05579e76",
+  "measured_at": "b085b8f934aa85e212bad640ee792388f19a7bbb",
   "rules": "scripts/test_group_flow_ratchet.mjs header; totals and per_file may only go down; kind_names only grow, by --lower",
   "totals": {
     "new": {
@@ -25,6 +25,7 @@
     "base": "knobs.json nodes",
     "basemap": "runtime/nodes run.mjs NODES",
     "bignums": "knobs.json nodes",
+    "blockranks": "knobs.json groups",
     "bubble": "P0a word list",
     "bubblekey": "knobs.json nodes",
     "bubbles": "knobs.json nodes",

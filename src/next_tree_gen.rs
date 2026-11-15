@@ -2847,7 +2847,7 @@ mod tests {
         assert!(declared_j("line", &bare, &reg).unwrap_err().contains("no short unit"));
     }
 
-    /// The rank lines over a many-block page's blocks (rank_compare): each ranked place's position among the ranked places in
+    /// The rank lines over a many-block page's blocks (block_ranks): each ranked place's position among the ranked places in
     /// every block's table at its year (facts_each_block, `{b}` the block's number), each block's rows of them drawn, and
     /// the leaf's columns a block each (its head the block's name, its ranks the facts as printed) over the places' codes.
     #[test]
@@ -2868,7 +2868,7 @@ mod tests {
             }
         }
         pi.set("rows", J::Arr(rows));
-        pi.set("recipe", J::str("rank_compare"));
+        pi.set("recipe", J::str("block_ranks"));
         let block = |t: &str, y: &str, name: &str| J::from_value(&serde_json::json!({"table": t, "by": by, "year": y, "name": name}));
         pi.set("blocks", J::Arr(vec![block(&main, &year, "可再生能源占比"), block("gdp", "2024", "人均产出"), block("pop", "2023", "人口")]));
         let reg = core::load_registry(&core::bindings());

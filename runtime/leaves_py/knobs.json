@@ -2081,6 +2081,23 @@
    "waffle",
    "stacked_area"
   ],
+  "block_ranks": [
+   "bignums",
+   "bars",
+   "section_head",
+   "rankbar",
+   "bubbles",
+   "bubble_key",
+   "leader_notes",
+   "sankey",
+   "stacked100",
+   "line",
+   "rank_lines",
+   "dumbbell",
+   "waterfall",
+   "waffle",
+   "stacked_area"
+  ],
   "scmp": [
    "map",
    "strip",
@@ -2301,6 +2318,29 @@
    "main": "sankey",
    "external": [
     "sankey"
+   ]
+  },
+  {
+   "name": "block_ranks",
+   "layers": [
+    "rank_lines"
+   ],
+   "eats": [
+    "one_freq",
+    "one_place",
+    "one_unit",
+    "last_year",
+    "blocks"
+   ],
+   "charts": [],
+   "picks": [
+    "ranked"
+   ],
+   "exposes": [],
+   "main": "rank_lines",
+   "relation": "Ranking",
+   "external": [
+    "rank_lines"
    ]
   }
  ]

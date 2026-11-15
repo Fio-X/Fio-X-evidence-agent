@@ -73,6 +73,11 @@ RECIPES = [
     # a flow between two dimensions of one table (the registry's official pair, one unit) as a sankey across the column
     # page, under the page's header and over its source line; no notes yet (the column page's notes point at a map)
     dict(name="flow", layers=["sankey"], eats=["official_flow", "one_unit"], charts=[], picks=[], exposes=[], main="sankey"),
+    # the places' standing on every quantity of a many-block page whose blocks all rank places (名次对照; owner 11-14 16:0x
+    # items 1 and 5): one column of ranks per block's table, a line per place the first block ranked. It eats blocks, so
+    # layer 1 tries it only for the page over the blocks (src/next_run.rs leaf_request of_blocks) and no other page tries it
+    dict(name="block_ranks", layers=["rank_lines"], eats=["one_freq", "one_place", "one_unit", "last_year", "blocks"], charts=[],
+         picks=["ranked"], exposes=[], main="rank_lines", relation="Ranking"),
 ]
 # The data relations a recipe may declare it answers (recipes[].relation), by the names of src/shape_registry.rs RELATIONS: a
 # recipe that declares one is passed over when the table step kept another for the main table; none answers any relation.
@@ -166,7 +171,7 @@ def table():
     columns = run.KINDS["column"][0]  # the column page's own layers and the chart leaves over its frame (run.LEAF_LAYERS)
     groups = dict(map=list(prod.MAP_ORDER), ring=list(scmp.RING_LAYERS), charts=list(prod.CHARTS), column=list(columns),
                   change=list(run.KINDS["change"][0]), flow=list(run.KINDS["flow"][0]), composition=list(run.KINDS["composition"][0]),
-                  ranked_bars=list(run.KINDS["ranked_bars"][0]),
+                  ranked_bars=list(run.KINDS["ranked_bars"][0]), block_ranks=list(run.KINDS["block_ranks"][0]),
                   scmp=list(scmp.SCMP_LAYERS))
     reserve = {}
     for reg in (prod.MAP_LAYERS, scmp.RING_LAYERS, columns, scmp.SCMP_LAYERS):

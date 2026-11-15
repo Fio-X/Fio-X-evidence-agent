@@ -37,7 +37,7 @@ class Registry(unittest.TestCase):
 
     def test_a_recipe_holds_what_its_nodes_eat_and_exposes_only_real_knobs(self):
         t = knobs.table()
-        self.assertEqual([r["name"] for r in t["recipes"]], ["scmp", "ring", "composition", "change", "column", "ranked_bars", "flow"])
+        self.assertEqual([r["name"] for r in t["recipes"]], ["scmp", "ring", "composition", "change", "column", "ranked_bars", "flow", "block_ranks"])
         ring = next(r for r in knobs.RECIPES if r["name"] == "ring")
         for bad in [dict(ring, eats=["annual"]), dict(ring, layers=["map", "pie"]), dict(ring, exposes=["ring.glow"]),
                     dict(ring, same_measure=[["map", "pie"]]), dict(ring, same_measure=[["map", "map"]])]:
@@ -47,8 +47,8 @@ class Registry(unittest.TestCase):
     def test_a_column_frame_recipe_declares_its_pages_main_layer(self):
         t = knobs.table()
         self.assertEqual({r["name"]: r.get("main") for r in t["recipes"]},
-                         dict(scmp=None, ring=None, composition="stacked100", change="bars", column="bars", ranked_bars="bars", flow="sankey"))
-        self.assertEqual(knobs.run.MAIN, dict(column="bars", change="bars", flow="sankey", composition="stacked100", ranked_bars="bars"))
+                         dict(scmp=None, ring=None, composition="stacked100", change="bars", column="bars", ranked_bars="bars", flow="sankey", block_ranks="rank_lines"))
+        self.assertEqual(knobs.run.MAIN, dict(column="bars", change="bars", flow="sankey", composition="stacked100", ranked_bars="bars", block_ranks="rank_lines"))
         flow = next(r for r in knobs.RECIPES if r["name"] == "flow")
         ring = next(r for r in knobs.RECIPES if r["name"] == "ring")
         for bad in [dict(flow, main="bars"), {k: v for k, v in flow.items() if k != "main"}, dict(flow, layers=[]), dict(ring, main="map")]:

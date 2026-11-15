@@ -39,8 +39,8 @@
   "change_focus": {"id": "top", "kind": "given", "source": "picks", "path": "picks.top", "given": "$picks.top"},
   "claim_marks": {"id": "marks", "kind": "named_rule", "rule": "marks_from_claims", "inputs": {"ranked": "ranked"}, "given": "$picks.marks"}
  },
- "recipes": {"column": ["bars", "leader_notes"], "change": ["bubbles", "bars", "leader_notes"], "composition": ["stacked100"], "scmp": ["map", "strip", "bignums", "notes"], "ring": ["map", "ring"], "flow": ["sankey"], "ranked_bars": ["bars"]},
- "main_chart": {"column": "bars", "change": "bars", "composition": "stacked100", "scmp": "map", "ring": "ring", "flow": "sankey", "ranked_bars": "bars"},
+ "recipes": {"column": ["bars", "leader_notes"], "change": ["bubbles", "bars", "leader_notes"], "composition": ["stacked100"], "scmp": ["map", "strip", "bignums", "notes"], "ring": ["map", "ring"], "flow": ["sankey"], "ranked_bars": ["bars"], "block_ranks": ["rank_lines"]},
+ "main_chart": {"column": "bars", "change": "bars", "composition": "stacked100", "scmp": "map", "ring": "ring", "flow": "sankey", "ranked_bars": "bars", "block_ranks": "rank_lines"},
  "nodes": {
   "bars": {
    "binding": "external",
@@ -1709,7 +1709,7 @@
    "geometry": "leaf",
    "runner": "leaves_py/rank_lines.py",
    "declares_by_recipe": {
-    "rank_compare": {
+    "block_ranks": {
      "for_each": "select:ranked",
      "blocks": "$blocks",
      "facts_each_block": {
