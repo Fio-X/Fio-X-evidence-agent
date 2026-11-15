@@ -5206,6 +5206,16 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
     Ok(prepare_planned(recorder, model, tools, question, steps, catalogue, cancel).await?.prepared)
 }
 
+/// The table card's params sentence: asked only when some listed table has an item to fill (items: each listed table's
+/// t<n>.<item> options, empty for a table with none). A card whose tables have no item asks for no params.
+fn params_rule(items: &[Vec<(String, Vec<String>)>]) -> &'static str {
+    if items.iter().all(Vec::is_empty) {
+        ""
+    } else {
+        "\nFor each picked table also give params: for each of its items t<n>.<item>, the number of the option that fits the question."
+    }
+}
+
 /// What prepare_planned gives: the prepared tables, the question's plan when the split step gave one, and each block's
 /// quantity family and the table the program set for it (block_tables; empty when it set none), in block order.
 pub struct Planned {
@@ -5429,11 +5439,7 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
         }
     }
     let most = if blocks.is_some() || !shared_blocks.is_empty() { offers.len() } else { steps.len().clamp(1, offers.len()) };
-    let params_rule = if items.is_empty() {
-        ""
-    } else {
-        "\nFor each picked table also give params: for each of its items t<n>.<item>, the number of the option that fits the question."
-    };
+    let params_rule = params_rule(&items);
     let pick_rule = if blocks.is_some() {
         format!("The page has {most} blocks and the program set one table for each, listed in block order: pick all {most} of them.")
     } else if !shared_blocks.is_empty() {
@@ -6139,6 +6145,17 @@ mod tests {
             Ask::Search.schema()["properties"]["query"]["maxLength"],
             SEARCH_MAX_CHARS
         );
+    }
+
+    /// 11-15 stand-ins on two questions: a card listing tables none of which has an item asked for params and showed no
+    /// t<n>.<item> line. The sentence comes only when some listed table has an item.
+    #[test]
+    fn the_table_card_asks_for_params_only_when_a_listed_table_has_an_item() {
+        let none: Vec<Vec<(String, Vec<String>)>> = vec![Vec::new(), Vec::new(), Vec::new()];
+        assert_eq!(params_rule(&none), "");
+        assert_eq!(params_rule(&[]), "");
+        let one = vec![Vec::new(), vec![("t2.years".to_string(), vec!["2024".to_string(), "2015-2024".to_string()])]];
+        assert!(params_rule(&one).contains("also give params"));
     }
 
     fn two_tables_with_items() -> Ask {
