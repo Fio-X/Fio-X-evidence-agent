@@ -2818,7 +2818,7 @@ mod tests {
             }
         }
         pi.set("rows", J::Arr(rows));
-        pi.set("recipe", J::str("trend"));
+        pi.set("recipe", J::str("one_line"));
         pi.set("short", J::str("%"));
         assert!(pi.set_path(&["picks", "t0"].map(String::from), J::str("2022")));
         let reg = core::load_registry(&core::bindings());

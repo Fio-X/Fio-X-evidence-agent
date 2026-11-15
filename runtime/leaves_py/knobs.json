@@ -2115,6 +2115,23 @@
    "waffle",
    "stacked_area"
   ],
+  "one_line": [
+   "bignums",
+   "bars",
+   "section_head",
+   "rankbar",
+   "bubbles",
+   "bubble_key",
+   "leader_notes",
+   "sankey",
+   "stacked100",
+   "line",
+   "rank_lines",
+   "dumbbell",
+   "waterfall",
+   "waffle",
+   "stacked_area"
+  ],
   "scmp": [
    "map",
    "strip",
@@ -2229,6 +2246,33 @@
    "main": "stacked100",
    "external": [
     "stacked100"
+   ]
+  },
+  {
+   "name": "one_line",
+   "layers": [
+    "line"
+   ],
+   "eats": [
+    "annual",
+    "one_freq",
+    "years_2",
+    "one_country",
+    "one_unit",
+    "last_year",
+    "two_ends"
+   ],
+   "charts": [
+    "line"
+   ],
+   "picks": [
+    "changed"
+   ],
+   "exposes": [],
+   "main": "line",
+   "relation": "Change",
+   "external": [
+    "line"
    ]
   },
   {

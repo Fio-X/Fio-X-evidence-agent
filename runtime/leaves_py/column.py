@@ -326,7 +326,9 @@ def column_shell(f, bars, unit, pic="", main="bars"):
     its year only."""
     # the period the bars are at: a year (period:<t>:<y>), or a half year's or a month's two parts (period:<t>:<t>.y, .h or .m)
     year = word("date.y", y=FX.entry(f"period:{f.table}:{f.year}", "span", None)) if "-" not in f.year else FX.period_words(f"period:{f.table}:{f.year}")
-    if f.change: year = word("column.change_years", a=FX.entry(f"period:{f.table}:{prod.need(f.d, 't0')}", "span", None), b=year)
+    # a main leaf over a span (hero.data t0: a line from t0 to the year) says its two ends, as the change bars do
+    if main != "bars" and f.d.get("t0"): year = word("column.span_years", a=FX.entry(f"period:{f.table}:{f.d['t0']}", "span", None), b=year)
+    elif f.change: year = word("column.change_years", a=FX.entry(f"period:{f.table}:{prod.need(f.d, 't0')}", "span", None), b=year)
     sc = f.h.get("scope")
     if sc and sc.get("code") in prod.NAMES: unit = word("column.scope", place=prod.named(sc["code"]), n=FX.entry(f"fact:{sc['count']}.n", "span", None)) + unit
     bars = f'<svg class="{main}" viewBox="{f.x0} 0 {f.bw} {f.bh:.0f}" width="{f.bw}" height="{f.bh:.0f}">{bars}</svg>'

@@ -61,6 +61,7 @@
  "column.note.vs_next_name": "，高于第二名",
  "column.note.vs_prev_name": "，低于",
  "column.change_years": "柱：{a} 年至{b}的变化　地图：{b}",
+ "column.span_years": "{a} 年至{b}",
  "column.scope": "{place} {n} 国　",
  "accent.subject": "{name}以红色标出",
  "bubble_key.area": "圆面积＝{m}，{y}",

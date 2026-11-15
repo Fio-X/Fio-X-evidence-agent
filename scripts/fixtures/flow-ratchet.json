@@ -1,5 +1,5 @@
 {
-  "measured_at": "a0802650c39560ddbcf92fa733170cb7d5b94027",
+  "measured_at": "39e409d89905c8286a4924440b8c9d78555fedbc",
   "rules": "scripts/test_group_flow_ratchet.mjs header; totals and per_file may only go down; kind_names only grow, by --lower",
   "totals": {
     "new": {
@@ -12,7 +12,7 @@
       "nodes": 0,
       "ops": 0,
       "copy": 224,
-      "kinds": 418
+      "kinds": 419
     }
   },
   "scanned": {
@@ -65,6 +65,7 @@
     "minimaps": "knobs.json nodes",
     "names": "knobs.json nodes",
     "notes": "knobs.json nodes",
+    "oneline": "knobs.json groups",
     "profile": "knobs.json nodes",
     "prose": "next_render.rs NodeInfo",
     "rankbar": "knobs.json nodes",
@@ -107,7 +108,7 @@
     },
     "runtime/pi/newsroom.ts": {
       "copy": 15,
-      "kinds": 245
+      "kinds": 246
     },
     "runtime/pi/tool_chain.mjs": {
       "kinds": 1

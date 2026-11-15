@@ -1141,6 +1141,7 @@ const SHAPE_CONDITIONS: &[(&str, Condition)] = &[
     ("years_2", years_2),
     ("hub_origin", hub_origin),
     ("one_place", one_place),
+    ("one_country", one_country),
     ("one_unit", one_unit),
     ("others_single", others_single),
     ("monthly_companion", monthly_companion),
@@ -1321,6 +1322,33 @@ fn one_place(s: &mut Shape, _: &[(&str, &[Value])], catalogue: &dyn Catalogue) -
     if countries.len() < 2 {
         return Err(format!("main {place} holds {} countries, not two or more", countries.len()));
     }
+    (s.place, s.countries) = (place, countries);
+    Ok(())
+}
+
+/// One country over the periods: no dimension but freq holds two codes, and the place dimension (the one one_place would read
+/// had it two codes: a World Bank main's place, else geo) holds one code that is a country (the knowledge group's Countries;
+/// for a World Bank main, a code the catalogue lists among its countries, aggregates left out). The shape's place and its one
+/// country, as one_place writes them for two or more.
+fn one_country(s: &mut Shape, _: &[(&str, &[Value])], catalogue: &dyn Catalogue) -> Result<(), String> {
+    let varied: Vec<&String> = s.dims.iter().filter(|(d, c)| d.as_str() != "freq" && c.len() > 1).map(|(d, _)| d).collect();
+    if !varied.is_empty() {
+        return Err(format!("main {} varies on {varied:?}, and one country varies on none", s.main));
+    }
+    let meta = worldbank_main(s, catalogue)?;
+    let place = match &meta {
+        Some(_) => s.dims.keys().find(|d| d.as_str() != "freq").cloned(),
+        None => s.dims.contains_key("geo").then(|| "geo".to_string()),
+    }
+    .ok_or_else(|| format!("main {} has no place dimension", s.main))?;
+    let codes: Vec<String> = s.dims[&place].iter().cloned().collect();
+    let countries: Vec<String> = match meta {
+        Some(meta) => codes.into_iter().filter(|c| meta.places.iter().any(|(_, id)| id == c)).collect(),
+        None => catalogue.countries(&codes)?,
+    };
+    let [_] = countries.as_slice() else {
+        return Err(format!("main {place} holds {} countries, not one", countries.len()));
+    };
     (s.place, s.countries) = (place, countries);
     Ok(())
 }
@@ -8186,7 +8214,7 @@ mod tests {
     #[test]
     fn each_recipe_reads_the_shape_by_its_own_conditions_and_its_nodes_fill_the_page() {
         let names: Vec<&str> = Hubs.recipes().iter().map(|r| r.name.as_str()).collect();
-        assert_eq!(names, ["scmp", "ring", "composition_steps", "composition", "change", "column", "ranked_bars", "flow", "block_ranks"]);
+        assert_eq!(names, ["scmp", "ring", "composition_steps", "composition", "one_line", "change", "column", "ranked_bars", "flow", "block_ranks"]);
         let mut main = ring_rows("sdg", &[("freq", "A"), ("unit", "PC")], ("geo", &["SE", "BE", "DE", "FR", "EU27_2020"]), &["2025"]);
         for (r, v) in main.iter_mut().zip(["65.4", "14.9", "30.25", "20", "40"]) {
             r["value"] = json!(v);
@@ -10119,6 +10147,7 @@ mod tests {
                 ("ring", Err("not this shape: main spans one year (2025)".to_string())),
                 ("composition_steps", Err("not this shape: main migr asks no grouped total alone".to_string())),
                 ("composition", Err("not this shape: main migr asks no grouped total alone".to_string())),
+                ("one_line", Err("not this shape: main spans one year (2025)".to_string())),
                 ("change", Err("not this shape: main spans one year (2025)".to_string())),
                 ("column", Ok("citizen PER 2025".to_string())),
                 ("ranked_bars", Ok("citizen PER 2025".to_string())),
@@ -13748,7 +13777,7 @@ for line in sys.stdin:
     #[test]
     fn only_a_recipe_with_a_strip_slot_asks_for_a_strip_and_a_strip_it_did_not_get_is_owed() {
         let slots: Vec<(&str, bool)> = Hubs.recipes().iter().map(|r| (r.name.as_str(), r.strip)).collect();
-        assert_eq!(slots, [("scmp", false), ("ring", false), ("composition_steps", false), ("composition", false), ("change", true), ("column", true), ("ranked_bars", true), ("flow", false), ("block_ranks", false)]);
+        assert_eq!(slots, [("scmp", false), ("ring", false), ("composition_steps", false), ("composition", false), ("one_line", false), ("change", true), ("column", true), ("ranked_bars", true), ("flow", false), ("block_ranks", false)]);
         let energy = ["nrg_ind_ren".to_string()];
         let calls = std::sync::Mutex::new(Vec::new());
         for name in ["scmp", "ring"] {
@@ -13836,7 +13865,7 @@ for line in sys.stdin:
             .iter()
             .map(|r| (r.name.as_str(), r.same_measure.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect()))
             .collect();
-        assert_eq!(declared, [("scmp", vec![]), ("ring", vec![]), ("composition_steps", vec![]), ("composition", vec![]), ("change", vec![]), ("column", vec![]), ("ranked_bars", vec![]), ("flow", vec![]), ("block_ranks", vec![])]);
+        assert_eq!(declared, [("scmp", vec![]), ("ring", vec![]), ("composition_steps", vec![]), ("composition", vec![]), ("one_line", vec![]), ("change", vec![]), ("column", vec![]), ("ranked_bars", vec![]), ("flow", vec![]), ("block_ranks", vec![])]);
     }
 
     /// A pair is known only by the page's own recipe and only as the layers it declares: the bars and bubbles under a recipe

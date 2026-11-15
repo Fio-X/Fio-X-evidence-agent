@@ -39,8 +39,8 @@
   "change_focus": {"id": "top", "kind": "given", "source": "picks", "path": "picks.top", "given": "$picks.top"},
   "claim_marks": {"id": "marks", "kind": "named_rule", "rule": "marks_from_claims", "inputs": {"ranked": "ranked"}, "given": "$picks.marks"}
  },
- "recipes": {"column": ["bars", "leader_notes"], "change": ["bubbles", "bars", "leader_notes"], "composition": ["stacked100"], "scmp": ["map", "strip", "bignums", "notes"], "ring": ["map", "ring"], "flow": ["sankey"], "ranked_bars": ["bars"], "block_ranks": ["rank_lines"], "composition_steps": ["waterfall"]},
- "main_chart": {"column": "bars", "change": "bars", "composition": "stacked100", "scmp": "map", "ring": "ring", "flow": "sankey", "ranked_bars": "bars", "block_ranks": "rank_lines", "composition_steps": "waterfall"},
+ "recipes": {"column": ["bars", "leader_notes"], "change": ["bubbles", "bars", "leader_notes"], "composition": ["stacked100"], "scmp": ["map", "strip", "bignums", "notes"], "ring": ["map", "ring"], "flow": ["sankey"], "ranked_bars": ["bars"], "block_ranks": ["rank_lines"], "composition_steps": ["waterfall"], "one_line": ["line"]},
+ "main_chart": {"column": "bars", "change": "bars", "composition": "stacked100", "scmp": "map", "ring": "ring", "flow": "sankey", "ranked_bars": "bars", "block_ranks": "rank_lines", "composition_steps": "waterfall", "one_line": "line"},
  "nodes": {
   "bars": {
    "binding": "external",
@@ -983,7 +983,8 @@
      "shape": "finding",
      "rule": "none"
     },
-    "composition_steps": "composition"
+    "composition_steps": "composition",
+    "one_line": {"shape": "finding", "set_count": "drawn", "set_of": "ranked", "change_fmt": {"short": "%", "then": "pp", "else": "$shape.fmt"}, "selects": [{"id": "rise", "kind": "take", "from": "ranked", "at": "first", "tie": {"by": "printed", "outcome": "silence", "fmt": "$fmt.change", "missing": "whole"}}, {"id": "fall", "kind": "take", "from": "ranked", "at": "last", "tie": {"by": "printed", "outcome": "silence", "fmt": "$fmt.change", "missing": "whole"}}], "cases": [{"if": {"key_of": "ranked", "at": "first", "above": 0, "not_outnumbered": true}, "finding": "Grew", "subject": "rise", "named": ["{code}"], "facts": {"lead0": {"op": "last", "table": "$shape.main", "filter": {"$shape.place": "{code}"}, "from": "$shape.t0", "to": "$shape.t0", "fmt": "$shape.fmt"}, "lead1": {"op": "last", "table": "$shape.main", "filter": {"$shape.place": "{code}"}, "from": "$shape.year", "to": "$shape.year", "fmt": "$shape.fmt"}, "lead": {"op": "minus", "a": "lead1", "b": "lead0", "fmt": "$fmt.change"}}, "reads": {"times": ["$shape.t0", "$shape.year"]}, "words": {"{name}": "{name.{code}}", "{value}": "{lead}", "{y0}": "{lead0.t}", "{y1}": "{lead1.t}"}}, {"if": {"key_of": "ranked", "at": "last", "below": 0}, "finding": "Shrank", "subject": "fall", "named": ["{code}"], "facts": {"lead0": {"op": "last", "table": "$shape.main", "filter": {"$shape.place": "{code}"}, "from": "$shape.t0", "to": "$shape.t0", "fmt": "$shape.fmt"}, "lead1": {"op": "last", "table": "$shape.main", "filter": {"$shape.place": "{code}"}, "from": "$shape.year", "to": "$shape.year", "fmt": "$shape.fmt"}, "lead": {"op": "minus", "a": "lead0", "b": "lead1", "fmt": "$fmt.change"}}, "reads": {"times": ["$shape.t0", "$shape.year"]}, "words": {"{name}": "{name.{code}}", "{value}": "{lead}", "{y0}": "{lead0.t}", "{y1}": "{lead1.t}"}}]}
    }
   },
   "bignums": {
@@ -1687,7 +1688,7 @@
    "geometry": "leaf",
    "runner": "leaves_py/line.py",
    "declares_by_recipe": {
-    "trend": {
+    "one_line": {
      "rows": {"rule": "rows_in", "table": "$shape.main", "by": "$shape.place", "in": ["select:ranked"], "from": "$picks.t0", "to": "$shape.year"},
      "facts": {"val": {"each": "$shape.place", "table": "$shape.main", "time": "$shape.year", "fmt": "$shape.fmt"}},
      "for_each": "select:ranked",
@@ -1696,6 +1697,8 @@
      },
      "fmt": {"scale": "$shape.scale", "suffix": "$shape.suffix", "dec_rule": {"rule": "held_decimals", "rows": {"table": "$shape.main", "filter": {"$shape.place": "select:ranked"}, "time": "$shape.year"}, "max": {"const": "COLUMN_DEC", "value": 2}}},
      "items_for": "select:ranked",
+     "data": {"table": "$shape.main", "year": "$shape.year", "t0": "$picks.t0"},
+     "fmt_change": {"rule": "points_if_percent", "percent": "%", "points": {"key": "pp", "suffix": " 个百分点", "max_dec": 1}, "else": {"key": "$shape.fmt", "suffix": "$shape.suffix"}, "dec_rule": {"rule": "held_decimals", "rows": {"table": "$shape.main", "filter": {"$shape.place": "select:ranked"}, "time": "$shape.year"}, "max": {"const": "COLUMN_DEC", "value": 2}}},
      "leaf": {"key": "line", "items_as": "series", "items": {"code": "code", "end_text": "value_text"},
               "title": {"fixed": "frames:change", "frame": "Change"}, "unit": {"fixed_prefix": "unit_short_zh:"}, "series_kind": "place",
               "q": {"table": "$shape.main", "by": "$shape.place", "from": "$picks.t0", "to": "$shape.year"}, "peak_of": "{code_lc}_peak", "axis": {"scale": "$shape.scale"}}

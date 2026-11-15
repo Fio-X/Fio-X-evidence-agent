@@ -60,6 +60,11 @@ RECIPES = [
          picks=[], exposes=[], main="waterfall"),
     dict(name="composition", layers=["stacked100"], eats=["annual", "one_unit", "composition_groups"], charts=[], picks=[],
          exposes=[], main="stacked100"),
+    # one country over the years (a table whose one place holds every row, the shape's two ends: one_country, two_ends): its line
+    # from the earlier end to the later, its highest point the axis; the dek its own rise or fall between the two ends (owner
+    # 11-14 16:0x item 2's line leaf; round 16: v3, r2v14, r2v17, r2v18 asked one place's change and had no page)
+    dict(name="one_line", layers=["line"], eats=["annual", "one_freq", "years_2", "one_country", "one_unit", "last_year", "two_ends"],
+         charts=["line"], picks=["changed"], exposes=[], main="line", relation="Change"),
     # two ends of a ten-year table: each place's change from t0 to t1 as signed bars (bars.measure change, set by layer 1),
     # the map its level at t1; a table of one year has no two ends and goes on to column. It answers the Change relation
     # (relation): a table step that kept another relation for the main table (a ranking of the last year) goes on to column
@@ -119,7 +124,7 @@ BINDINGS_OF_CORE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(
 # What a shape condition reads that an earlier one writes (src/next_run.rs): each list is one need, met by any condition in
 # it standing before. A recipe that names the condition names one of each need first, or the condition can only refuse.
 NEEDS = dict(monthly_companion=[["hub_origin"], ["one_unit"]], others_single=[["hub_origin", "one_place"]],
-             last_year=[["one_place"]], two_ends=[["last_year"]])
+             last_year=[["one_place", "one_country"]], two_ends=[["last_year"]])
 
 
 def num(x):
@@ -178,7 +183,7 @@ def table():
     groups = dict(map=list(prod.MAP_ORDER), ring=list(scmp.RING_LAYERS), charts=list(prod.CHARTS), column=list(columns),
                   change=list(run.KINDS["change"][0]), flow=list(run.KINDS["flow"][0]), composition=list(run.KINDS["composition"][0]),
                   ranked_bars=list(run.KINDS["ranked_bars"][0]), block_ranks=list(run.KINDS["block_ranks"][0]),
-                  composition_steps=list(run.KINDS["composition_steps"][0]),
+                  composition_steps=list(run.KINDS["composition_steps"][0]), one_line=list(run.KINDS["one_line"][0]),
                   scmp=list(scmp.SCMP_LAYERS))
     reserve = {}
     for reg in (prod.MAP_LAYERS, scmp.RING_LAYERS, columns, scmp.SCMP_LAYERS):
