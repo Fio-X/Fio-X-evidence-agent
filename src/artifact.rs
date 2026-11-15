@@ -665,8 +665,7 @@ impl InvestigationBundle {
     /// story.json declares nothing. A page an earlier round left does not count. Unlike `primary_artifact` it is not
     /// overridden by a declared chart.
     pub fn publication_page(&self, since: SystemTime) -> Result<Option<(String, String)>> {
-        let mut candidates = publication_candidates(&self.dir, Some(since))?;
-        candidates.sort_by(|a, b| a.path.cmp(&b.path));
+        let candidates = publication_candidates(&self.dir, Some(since))?;
         Ok(candidates
             .into_iter()
             .find(is_publication_html)
@@ -1249,7 +1248,22 @@ fn publication_candidates(
             }
         }
     }
+    candidates.sort_by(|a, b| delivery_order(&a.path).cmp(&delivery_order(&b.path)));
     Ok(candidates)
+}
+
+/// The order publication pages are offered as the primary when story.json declares none: a page whose folder is a later
+/// block of a many-block page (`publications/<name>-b<n>/`, n a number) after every other one and by n, so the first block
+/// (the main chart, owner 11-14 22:2x item 2) leads; otherwise by path, so the order no longer follows the directory listing.
+/// Without it a path sort puts `column-b2/` before `column/` ('-' sorts before '/').
+fn delivery_order(path: &str) -> (u32, &str) {
+    let folder = path.strip_prefix("publications/").and_then(|rest| rest.split('/').next()).unwrap_or("");
+    let block = folder
+        .rsplit_once("-b")
+        .filter(|(name, n)| !name.is_empty() && !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+        .and_then(|(_, n)| n.parse::<u32>().ok())
+        .unwrap_or(0);
+    (block, path)
 }
 
 /// Every path a top-level manifest can hand a reader as its delivered
@@ -1297,7 +1311,8 @@ fn delivery_candidates(root: &Path) -> Result<Vec<DeliveryCandidate>> {
         }
     }
 
-    candidates.sort_by(|a, b| a.path.cmp(&b.path));
+    // by path, a later block's page after its first (delivery_order)
+    candidates.sort_by(|a, b| delivery_order(&a.path).cmp(&delivery_order(&b.path)));
     Ok(candidates)
 }
 
@@ -1624,7 +1639,8 @@ mod tests {
     }
 
     use super::{
-        discover_delivery, read_rpc_metrics, rust_session_recorded, slugify, switches_off_in,
+        delivery_order, discover_delivery, publication_candidates, read_rpc_metrics, rust_session_recorded, slugify,
+        switches_off_in,
     };
     use std::fs;
     use tempfile::tempdir;
@@ -2054,6 +2070,33 @@ mod tests {
             delivery.primary_artifact.as_deref(),
             Some("publications/999-current/index.html")
         );
+    }
+
+    /// Review list 11-15 item 5: a many-block page's delivery named block 2 (`column-b2/`, which a path sort puts before
+    /// `column/`); the first block leads whatever its recipe, and the later blocks follow by number.
+    #[test]
+    fn the_first_block_of_a_many_block_page_is_the_primary() {
+        for (folders, first) in [
+            (&["column-b3", "column-b2", "column"][..], "column"),
+            (&["bar-b2", "line"][..], "line"),
+            (&["flow-b2", "composition"][..], "composition"),
+        ] {
+            let dir = tempdir().expect("temp dir");
+            for folder in folders {
+                let page = dir.path().join("publications").join(folder);
+                fs::create_dir_all(&page).expect("page dir");
+                fs::write(page.join("index.html"), "<html></html>").expect("page");
+                fs::write(page.join("manifest.json"), format!(r#"{{"html_ref":"publications/{folder}/index.html"}}"#))
+                    .expect("manifest");
+            }
+            let delivery = discover_delivery(dir.path()).expect("delivery");
+            assert_eq!(delivery.primary_artifact, Some(format!("publications/{first}/index.html")), "{folders:?}");
+            let order: Vec<String> =
+                publication_candidates(dir.path(), None).expect("candidates").into_iter().map(|c| c.path).collect();
+            assert_eq!(order[0], format!("publications/{first}/index.html"), "{folders:?}");
+        }
+        assert_eq!(delivery_order("publications/column-b10/index.html").0, 10);
+        assert_eq!(delivery_order("publications/top-b/index.html").0, 0, "no number after -b");
     }
 
     #[test]
