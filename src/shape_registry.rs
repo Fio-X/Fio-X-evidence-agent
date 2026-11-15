@@ -154,6 +154,13 @@ impl Shape {
     }
 }
 
+/// The word of a FRAMES title that stands for the page's compared parties (各方的高低排名): a many-block page's block label
+/// (next_run block_kicker) puts the block quantity's name in its place, and joins the name to a title without it by
+/// KICKER_JOIN. Vocabulary for the flow, kept here with the frames it reads.
+pub const FRAME_PARTIES: &str = "各方";
+/// What joins a block quantity's name to a FRAMES title that has no FRAME_PARTIES word (能源来源与去向：整体的构成与份额).
+pub const KICKER_JOIN: &str = "：";
+
 /// The page wording frames by relation: page title, page dek, chart heading, text module. Chinese, so a page that keeps
 /// the drafts reads as written; no number, no number in words, no placeholder; the title a label, never a question (next_flow
 /// TITLE_RULE) and on the first-to-last change one that names the change (CHANGE_TITLE_RULE); the text module says how to

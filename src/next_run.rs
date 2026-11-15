@@ -4175,10 +4175,11 @@ fn block_quantity_name(plan: Option<&crate::answer_plan::Plan>, label: &str) -> 
 /// A block's label: the quantity's name in place of the registry frame's 各方 (各方的高低排名 -> 人口的高低排名), or before
 /// a frame that has none (整体的构成与份额 -> 能源来源与去向：整体的构成与份额); the name alone with no frame.
 fn block_kicker(name: &str, frame: &str) -> String {
-    match frame.strip_prefix("各方") {
+    use crate::shape_registry::{FRAME_PARTIES, KICKER_JOIN};
+    match frame.strip_prefix(FRAME_PARTIES) {
         Some(rest) => format!("{name}{rest}"),
         None if frame.trim().is_empty() => name.to_string(),
-        None => format!("{name}：{frame}"),
+        None => format!("{name}{KICKER_JOIN}{frame}"),
     }
 }
 
