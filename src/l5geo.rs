@@ -1293,14 +1293,34 @@ fn title_names(title: &str, words: &[String]) -> bool {
 /// The quantities the Chinese question asks for, in the order their words are matched: longest word first, a matched span
 /// used up so a shorter word inside it does not match again, each family once.
 pub fn asked_zh(question_zh: &str) -> Vec<Asked> {
-    asked_of_chars(measure_chars(question_zh))
+    asked_of_chars(question_chars(question_zh))
+}
+
+/// A question in measure_chars form with the span of a ranking phrase that counts its economies (rank_asked_zh: 人口最多的
+/// 十个, 经济规模最大的五个) blanked: it chooses the places, the quantity it ranks by is not one the question asks for
+/// (measure-families.json's note: a big-population filter is no measure word). A phrase with no count (人口最多) stays,
+/// since a question about named places says it of a quantity it asks (人口最多的是不是也最富).
+fn question_chars(question_zh: &str) -> Vec<char> {
+    let mut q = measure_chars(question_zh);
+    if let Some(phrase) = rank_asked_zh(question_zh).filter(|r| r.n.is_some()).map(|r| measure_chars(&r.phrase)) {
+        let mut i = 0;
+        while !phrase.is_empty() && i + phrase.len() <= q.len() {
+            if q[i..i + phrase.len()] == phrase[..] {
+                q[i..i + phrase.len()].iter_mut().for_each(|c| *c = '\0');
+                i += phrase.len();
+            } else {
+                i += 1;
+            }
+        }
+    }
+    q
 }
 
 /// asked_zh's quantities in the order the question first names them (the answer plan's blocks follow the question):
 /// each family at the earliest place one of its words stands in the question; the set is asked_zh's.
 #[cfg_attr(not(test), allow(dead_code))] // read by the answer plan prototype only (built for tests) until it is on the flow
 pub fn asked_zh_in_order(question_zh: &str) -> Vec<Asked> {
-    let q = measure_chars(question_zh);
+    let q = question_chars(question_zh);
     let mut found = asked_of_chars(q.clone());
     let first = |a: &Asked| -> usize {
         measure_families().iter().find(|f| f.id == a.id).map_or(usize::MAX, |f| {
@@ -1331,7 +1351,7 @@ pub fn group_aggregate_zh(question_zh: &str) -> Option<&'static str> {
 /// no second quantity asked. A family the table `table` holds is kept. With no name, or a name the question does not say
 /// whole, the ids are asked_zh's.
 pub fn asked_beside_table(question_zh: &str, table: &str, table_zh: Option<&str>) -> Vec<String> {
-    let mut q = measure_chars(question_zh);
+    let mut q = question_chars(question_zh);
     let name = table_zh.map(|zh| measure_chars(zh.split(['（', '(', '—']).next().unwrap_or(zh))).unwrap_or_default();
     if name.len() >= 2 {
         let mut i = 0;
@@ -5386,6 +5406,40 @@ mod tests {
             }
         }
         assert!(bad.is_empty(), "{}", bad.join("\n"));
+    }
+
+    /// Review list 11-15 item 1 (owner 12:2x: the measure words missed a common way to name a quantity): each family takes
+    /// the common ways news writes it, checked here on sentences of our own; a ranking phrase that counts its economies
+    /// chooses places and asks no quantity, one with no count said of named places asks its quantity. Dev replay: of 132
+    /// questions only e1 (65 岁及以上人口的占比) reads differently, now as pop65.
+    #[test]
+    fn measure_words_take_the_common_names_and_a_counted_ranking_asks_none() {
+        let ids = |q: &str| asked_zh(q).into_iter().map(|a| a.id).collect::<Vec<_>>();
+        for (q, want) in [
+            ("东盟各国：人口最多的，是不是也最富？", &["population", "gdp_pc"][..]),
+            ("拉美哪国人口最少？", &["population"]),
+            ("北欧五国人口规模对比", &["population"]),
+            ("日本、韩国 65 岁及以上人口占比", &["pop65"]),
+            ("各国六十五岁以上老年人比例", &["pop65"]),
+            ("香港和新加坡的人均本地生产总值", &["gdp_pc"]),
+            ("香港本地生产总值十年来的变化", &["gdp"]),
+            ("金砖国家经济规模对比", &["gdp"]),
+            ("中东各国城市人口占比", &["urban_share"]),
+            ("欧盟各国电力来源", &["electricity_mix"]),
+            ("欧盟各国 CO2 排放", &["co2"]),
+            ("欧盟各国避难申请人数", &["asylum"]),
+        ] {
+            let mut got = ids(q);
+            got.sort();
+            let mut want = want.to_vec();
+            want.sort();
+            assert_eq!(got, want, "{q}");
+        }
+        // a counted ranking phrase chooses the places: no quantity of its own (t2 reads as before, none)
+        assert!(ids("世界人口最多的十个国家的预期寿命").is_empty());
+        assert_eq!(ids("经济规模最大的五个国家的人均GDP"), ["gdp_pc"]);
+        assert_eq!(asked_zh_in_order("人口最多的 5 个国家的城镇化率").into_iter().map(|a| a.id).collect::<Vec<_>>(), ["urban_share"]);
+        assert_eq!(asked_beside_table("经济规模最大的五个国家的人均GDP", "NY.GDP.PCAP.CD@2", None), ["gdp_pc"]);
     }
 
     /// t2 and q4: a ranking phrase reads as a ranking by the reference indicator, with the count it writes (Chinese numerals
