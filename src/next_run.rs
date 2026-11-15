@@ -4095,7 +4095,8 @@ pub(crate) async fn pages_of(
     let mut lead = 0;
     let (first, shown, leader) = loop {
         let before = manifested(recorder.run_dir());
-        match page_of_block(recorder, model, question, std::slice::from_ref(&blocks[lead].1), catalogue, cancel, (1, None)).await {
+        let name = block_quantity_name(planned.plan.as_ref(), &blocks[lead].0);
+        match page_of_block(recorder, model, question, std::slice::from_ref(&blocks[lead].1), catalogue, cancel, (1, None, name.as_deref())).await {
             Ok(page) => break page,
             Err(stopped @ (Stop::Page { .. } | Stop::Refused { .. } | Stop::NoReply { .. }))
                 if !planned.shared.is_empty()
@@ -4122,7 +4123,8 @@ pub(crate) async fn pages_of(
         });
         let focus = leader.as_deref().filter(|_| asks_place);
         let before = manifested(recorder.run_dir());
-        match page_of_block(recorder, model, question, std::slice::from_ref(table), catalogue, cancel, (i + 1, focus)).await {
+        let name = block_quantity_name(planned.plan.as_ref(), label);
+        match page_of_block(recorder, model, question, std::slice::from_ref(table), catalogue, cancel, (i + 1, focus, name.as_deref())).await {
             Ok((answer, shown, _)) => {
                 answers.push(answer);
                 pages.push(shown);
@@ -4157,6 +4159,29 @@ pub(crate) async fn pages_of(
     Ok(answers.join("\n"))
 }
 
+/// The printed name of a many-block page's block quantity, as the plan reads it from the question (answer_plan::Block
+/// quantity), for the block's label: a block of its own quantity by that quantity's family id, a block of a shared table
+/// (labelled b<n>:<relation>) by the plan's block n. None with no plan or no name.
+fn block_quantity_name(plan: Option<&crate::answer_plan::Plan>, label: &str) -> Option<String> {
+    let plan = plan?;
+    let shared = label.strip_prefix('b').and_then(|rest| rest.split_once(':')).and_then(|(n, _)| n.parse::<usize>().ok());
+    let block = match shared {
+        Some(n) => plan.blocks.get(n.checked_sub(1)?),
+        None => plan.blocks.iter().find(|b| b.quantity.iter().any(|(q, _)| q == label)),
+    }?;
+    block.quantity.first().map(|(_, name)| name.trim().to_string()).filter(|name| !name.is_empty())
+}
+
+/// A block's label: the quantity's name in place of the registry frame's 各方 (各方的高低排名 -> 人口的高低排名), or before
+/// a frame that has none (整体的构成与份额 -> 能源来源与去向：整体的构成与份额); the name alone with no frame.
+fn block_kicker(name: &str, frame: &str) -> String {
+    match frame.strip_prefix("各方") {
+        Some(rest) => format!("{name}{rest}"),
+        None if frame.trim().is_empty() => name.to_string(),
+        None => format!("{name}：{frame}"),
+    }
+}
+
 /// The run's delivered publications as the delivery scan reads them (artifact.rs publication_candidates): each folder of
 /// publications/ but plans, qa and rejected that holds a manifest.json, sorted; a block left out must add none.
 fn manifested(run_dir: &Path) -> Vec<String> {
@@ -4188,7 +4213,7 @@ pub(crate) async fn page_from(
     catalogue: &dyn Catalogue,
     cancel: &AtomicBool,
 ) -> Result<String, Stop> {
-    Ok(page_of_block(recorder, model, question, prepared, catalogue, cancel, (1, None)).await?.0)
+    Ok(page_of_block(recorder, model, question, prepared, catalogue, cancel, (1, None, None)).await?.0)
 }
 
 /// page_from for block `block` of a many-block page (1: the first block, or a one-block page): the same steps and checks,
@@ -4202,7 +4227,7 @@ pub(crate) async fn page_of_block(
     prepared: &[Prepared],
     catalogue: &dyn Catalogue,
     cancel: &AtomicBool,
-    (block, focus): (usize, Option<&str>),
+    (block, focus, quantity): (usize, Option<&str>, Option<&str>),
 ) -> Result<(String, (String, f64, f64), Option<String>), Stop> {
     let page = charts(recorder, prepared, catalogue)?;
     let calls = std::sync::Mutex::new(Vec::new());
@@ -4248,6 +4273,11 @@ pub(crate) async fn page_of_block(
     // the scope (the EU) is not added to the title, where its bracket wrapped onto a line of its own: the unit line names it
     // with the count of places drawn (fill_of)
     let label = worded.get(&Target::PageTitle).map_or("", String::as_str);
+    // a block of a many-block page is labelled by the program, its quantity's printed name on the registry's title frame,
+    // never by the text step (review list 11-15 item 3: three runs of sample A gave three labels, one naming no quantity)
+    let frame = drafts.fields.iter().find(|(t, _)| *t == Target::PageTitle).map_or("", |(_, d)| d.as_str());
+    let named = quantity.map(|name| block_kicker(name, frame));
+    let label = named.as_deref().unwrap_or(label);
     let dek = worded.get(&Target::PageDek).cloned().unwrap_or_default();
     // the title states the finding's conclusion (the fill's headline, scoped as the dek is) with the text step's label above
     // it as the kicker; a page with no headline keeps the label as its title and names the lead chart's measure as the
@@ -4962,6 +4992,42 @@ mod tests {
 
     /// A block left out of a many-block page must add no delivery (review 11-15): the folders the delivery scan reads are the
     /// publications with a manifest, never plans, qa or rejected; a folder with no manifest is none.
+    #[test]
+    fn a_block_is_labelled_by_its_quantity_name() {
+        use crate::answer_plan::{Block, Focus, Plan, Rel};
+        let block = |rel: Rel, q: &str, name: &str| Block {
+            rel,
+            focus: Focus::Max,
+            places: Vec::new(),
+            place_words: Vec::new(),
+            years: None,
+            quantity: vec![(q.to_string(), name.to_string())],
+            sentence: String::new(),
+        };
+        // sample A: a block of its own quantity, by its family id
+        let a = Plan {
+            blocks: vec![block(Rel::Ranking, "population", "人口"), block(Rel::Ranking, "gdp_pc", "人均GDP"), block(Rel::Ranking, "urban_share", " ")],
+            partial: false,
+        };
+        assert_eq!(block_quantity_name(Some(&a), "gdp_pc").as_deref(), Some("人均GDP"));
+        assert_eq!(block_quantity_name(Some(&a), "urban_share"), None, "no printed name, the text step's label stays");
+        assert_eq!(block_quantity_name(Some(&a), "co2"), None);
+        assert_eq!(block_quantity_name(None, "gdp_pc"), None);
+        // sample C: blocks of one shared table, by their place in the plan
+        let c = Plan {
+            blocks: vec![block(Rel::Magnitude, "energy_balance", "能源来源与去向"), block(Rel::Composition, "energy_balance", "能源来源与去向")],
+            partial: false,
+        };
+        assert_eq!(block_quantity_name(Some(&c), "b2:Composition").as_deref(), Some("能源来源与去向"));
+        assert_eq!(block_quantity_name(Some(&c), "b3:Flow"), None);
+        assert_eq!(block_quantity_name(Some(&c), "b0:Flow"), None);
+        // the label: the name on the registry frame
+        let frame = |r: Relation| crate::shape_registry::FRAMES.iter().find(|(x, v, _)| (*x, *v) == (r, View::Slice)).unwrap().2[0];
+        assert_eq!(block_kicker("人均GDP", frame(Relation::Ranking)), "人均GDP的高低排名");
+        assert_eq!(block_kicker("能源来源与去向", frame(Relation::Composition)), "能源来源与去向：整体的构成与份额");
+        assert_eq!(block_kicker("人口", ""), "人口");
+    }
+
     #[test]
     fn manifested_lists_the_deliveries_the_scan_reads() {
         let dir = tempfile::tempdir().unwrap();
