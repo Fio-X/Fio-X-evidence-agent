@@ -1232,9 +1232,9 @@ pub fn fill(
                     .iter()
                     .any(|p| p.level == PART_LEVELS[0] && listed.contains(&p.code));
                 if draft.kept.contains(dim) {
-                    // a dimension kept to a presentation table's codes: those codes, not the dataset's every one
+                    // a dimension kept to a presentation table's codes: those codes, not the dataset's every one (a filter,
+                    // counted in rows like the registered parts' below, so not left open: one dimension, counted once)
                     put(&mut filters, dim, codes.iter().map(|(c, _)| c.clone()).collect());
-                    open = Some((dim.clone(), codes.len()));
                 } else if whole && listed.len() > 1 {
                     parted.push(json!({"dimension": dim, "source": PARTS_SOURCE, "codes": listed.len(),
                         "registered": registered.len(), "from_codes": codes.len(),
@@ -3628,6 +3628,9 @@ mod tests {
         let filled = fill(&two, 1, &picks(&[("t1.breakdown", at)]), &de, 2026).unwrap();
         let split = filled.args["filters"].as_array().unwrap().iter().find(|f| f["dimension"] == "indic_de").cloned();
         assert_eq!(split.map(|f| f["values"].clone()), Some(serde_json::json!(["PC_Y0_14", "PC_Y65_MAX"])), "{:?}", filled.args);
+        // re-review 11-15: the split dimension is in the predicted shape once, as the presentation table's would be
+        let shape = predicted_shape(&two, 1, &picks(&[("t1.breakdown", at)]), &de, 2026, &|_| None).unwrap();
+        assert_eq!(shape.dims.iter().filter(|d| d.dim == "indic_de").count(), 1, "{:?}", shape.dims);
         // the probe left none of the kept codes: the dimension is left as it is
         let gone = draft_kept(dataset, &keep(&["PC_Y15_64"]), &[], &de);
         assert!(gone.kept.is_empty() && codes(&gone, "indic_de").len() == 4);
