@@ -207,6 +207,29 @@ export async function pickCandidates({ candidates, picks, register }) {
  *  still be written as "verified"; they come back only when a later order lets the model name one total code. */
 export const SUM_KINDS = Object.freeze(["share_of_total", "change_total"]);
 
+/** The dimension names that hold the place of a row (Eurostat geo, World Bank country, SDMX REF_AREA): the entity of a one-place line. */
+export const PLACE_DIMS = /^(geo|country|ref_area)$/i;
+
+/** The kinds a one-place line offers: its move from the first to the last time, and its highest and lowest time. Nothing ranks, gaps or divides
+ *  across places, since there is one. */
+export const ONE_KINDS = Object.freeze(["one_change", "one_peak", "one_low"]);
+
+/** The candidate specs of one place over time (dimensions: the one place column). The series is the whole line, every time in order. */
+export function buildOnePlace({ ref, dimensions, measure, time, entity: alias }) {
+  if (alias !== undefined && !ENTITY_ALIASES.includes(alias)) throw new Error(`candidate entity column must be one of ${ENTITY_ALIASES.join(", ")}, not ${String(alias).slice(0, 40)}`);
+  if (!DATA_REF.test(String(ref))) throw new Error(`candidate data reference must be a data/ file name: ${String(ref).slice(0, 60)}`);
+  if (!Array.isArray(dimensions) || dimensions.length !== 1 || !time) throw new Error("a one-place line takes one place column and a time column");
+  const n = alias ?? "name", d = quote(dimensions[0]), m = quote(measure), t = quote(time), src = `'${ref}'`, word = label(measure);
+  const series = `SELECT ${d} AS ${n}, ${m} AS value, ${t} AS year FROM ${src} ORDER BY year`;
+  const at = (dir) => `SELECT ${d} AS ${n}, ${m} AS value, ${t} AS year FROM ${src} ORDER BY ${m} ${dir}, ${t} DESC LIMIT 1`;
+  return [
+    { kind: "one_change", claim_kind: "quantitative", sql: `SELECT a.${d} AS ${n}, a.${m} AS from_value, b.${m} AS to_value, b.${m} - a.${m} AS change, a.${t} AS from_year, b.${t} AS to_year FROM ${src} a JOIN ${src} b ON a.${d} = b.${d} WHERE a.${t} = (SELECT MIN(${t}) FROM ${src}) AND b.${t} = (SELECT MAX(${t}) FROM ${src})`,
+      template: `{first.${n}}'s ${word} went from {first.from_value} in {first.from_year} to {first.to_value} in {first.to_year}.`, series_sql: series },
+    { kind: "one_peak", claim_kind: "comparative", sql: at("DESC"), template: `{first.${n}}'s ${word} was highest in {first.year}: {first.value}.`, series_sql: series },
+    { kind: "one_low", claim_kind: "comparative", sql: at("ASC"), template: `{first.${n}}'s ${word} was lowest in {first.year}: {first.value}.`, series_sql: series },
+  ];
+}
+
 /**
  * The roles of a downloaded SDMX-style table, read from its rows, never from the request. `header`: column names; `rows`: arrays of cells without the header;
  * `dimensions`: the dimension column names in key order; `time` and `measure`: the provider's time and value columns. Every dimension that holds more than one
@@ -222,7 +245,15 @@ export function detectRoles({ header, rows, dimensions, time, measure, qualifier
   const varying = dimensions.filter((name) => new Set(rows.map((row) => row[at.get(name)])).size > 1);
   const mixed = varying.filter((name) => qualifiers.includes(name));
   if (mixed.length > 0) return { ok: false, varying, problem: `${mixed.join(" and ")} can keep only one code: ${mixed.join(" and ")} qualif${mixed.length > 1 ? "y" : "ies"} the number (the numbers of different codes are not alike), so it is not something to rank or compare` };
-  if (varying.length === 0) return { ok: false, varying, problem: "every dimension holds one code in the rows, so there is nothing to rank or compare: leave one dimension empty (all codes) and give the others one code each" };
+  if (varying.length === 0) {
+    // new route: one place over two years or more is one line (its move over the span, its highest and lowest year); the place is the place dimension,
+    // else the last dimension that is no qualifier. One time value, or the old route, has nothing to compare, as before.
+    const times = new Set(rows.map((row) => row[at.get(time)])).size;
+    const open = dimensions.filter((name) => !qualifiers.includes(name));
+    const place = open.find((name) => PLACE_DIMS.test(name)) ?? open[open.length - 1];
+    if (emptyStop && times >= 2 && place !== undefined) return { ok: true, dimensions: [place], time, measure, varying, times, one: true };
+    return { ok: false, varying, problem: "every dimension holds one code in the rows, so there is nothing to rank or compare: leave one dimension empty (all codes) and give the others one code each" };
+  }
   if (varying.length > MAX_ENTITY_DIMS) return { ok: false, varying, problem: `${varying.length} dimensions hold more than one code (${varying.join(", ")}): keep at most ${MAX_ENTITY_DIMS} of them open and give each of the others one code` };
   const d = varying.map((name) => at.get(name)), t = at.get(time);
   const seen = new Set();
@@ -235,7 +266,11 @@ export function detectRoles({ header, rows, dimensions, time, measure, qualifier
 }
 
 /** The candidates for a prepared data file, without the sum kinds. Same inputs and same data, same candidates, same ids. `dropped` says why a kind is missing. */
-export async function programCandidates({ ref, dimensions, measure, time, times, runSql, fill, seriesMaxRows, entity, cut, scope }) {
+export async function programCandidates({ ref, dimensions, measure, time, times, runSql, fill, seriesMaxRows, entity, cut, scope, one }) {
+  if (one) {
+    const out = await materializeCandidates({ specs: buildOnePlace({ ref, dimensions, measure, time, ...(entity ? { entity } : {}) }), runSql, fill });
+    return { conclusions: out.candidates, dropped: out.dropped };
+  }
   const specs = buildCandidates({ ref, dimensions, measure, time, ...(entity ? { entity } : {}), ...(cut ? { cut } : {}), ...(scope ? { scope } : {}) });
   // A change between the first and the last time needs two of them; with one, "from 2015 to 2015" would be written as a finding.
   const flat = (spec) => (spec.kind.startsWith("change_") || spec.kind.endsWith("_change")) && times === 1;

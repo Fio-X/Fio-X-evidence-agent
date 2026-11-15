@@ -370,6 +370,45 @@ check("picks: literal ids only (number, numbered, # forms, unknown, duplicate, c
   check(`every candidate kind has a series_sql, and every offered one draws its rows (${forms.length} table forms, ${seen.size} offered kinds)`);
 }
 
+// 10d. one place over the years (a World Bank country, a Eurostat geo with a fixed freq): one line, its move, its highest and lowest year
+{
+  const shapes = [
+    { name: "World Bank", header: ["country", "date", "value"], dims: ["country"], time: "date", measure: "value", rows: [["SAU", "2016", "17.4"], ["SAU", "2020", "26.0"], ["SAU", "2025", "35.5"], ["SAU", "2018", "20.1"]], place: "SAU" },
+    { name: "Eurostat", header: ["freq", "geo", "TIME_PERIOD", "OBS_VALUE"], dims: ["freq", "geo"], time: "TIME_PERIOD", measure: "OBS_VALUE", rows: [["A", "DE", "2015", "4.2"], ["A", "DE", "2019", "3.1"], ["A", "DE", "2023", "3.0"]], place: "DE" },
+  ];
+  for (const s of shapes) {
+    const roles = cand.detectRoles({ header: s.header, rows: s.rows, dimensions: s.dims, time: s.time, measure: s.measure, emptyStop: true });
+    assert.equal(roles.ok, true, `${s.name}: ${roles.problem}`);
+    assert.deepEqual([roles.one, roles.dimensions, roles.times], [true, [s.dims[s.dims.length - 1]], s.rows.length], `${s.name}: the place column is the entity`);
+    const old = cand.detectRoles({ header: s.header, rows: s.rows, dimensions: s.dims, time: s.time, measure: s.measure });
+    assert.match(old.problem, /every dimension holds one code/, `${s.name}: the old route stops as before`);
+    const once = cand.detectRoles({ header: s.header, rows: s.rows.slice(0, 1), dimensions: s.dims, time: s.time, measure: s.measure, emptyStop: true });
+    assert.match(once.problem, /every dimension holds one code/, `${s.name}: one time value is nothing to compare`);
+    const csv = [s.header.join(","), ...s.rows.map((r) => r.join(","))].join("\n") + "\n";
+    const r = fresh(csv);
+    const out = await cand.programCandidates({ ref: r.ref, dimensions: roles.dimensions, measure: s.measure, time: s.time, times: roles.times, runSql: r.runSql, fill, seriesMaxRows: 80, one: true });
+    assert.deepEqual(out.conclusions.map((c) => c.kind), [...cand.ONE_KINDS], `${s.name}: ${JSON.stringify(out.dropped)}`);
+    assert.ok(out.conclusions.length >= cand.PICK_MIN);
+    const vals = s.rows.map((row) => Number(row[row.length - 1]));
+    const years = s.rows.map((row) => row[s.header.indexOf(s.time)]);
+    const first = years.indexOf([...years].sort()[0]), last = years.indexOf([...years].sort().at(-1));
+    const text = (k) => out.conclusions.find((c) => c.kind === k).text;
+    assert.ok(text("one_change").startsWith(`${s.place}'s `) && text("one_change").includes(`in ${years[first]} to`) && text("one_change").endsWith(`in ${years[last]}.`), text("one_change"));
+    assert.ok(text("one_peak").includes(`highest in ${years[vals.indexOf(Math.max(...vals))]}`), text("one_peak"));
+    assert.ok(text("one_low").includes(`lowest in ${years[vals.indexOf(Math.min(...vals))]}`), text("one_low"));
+    assert.ok(out.conclusions.every((c) => !/highest .* is|times the lowest|gap between|percent of the total/.test(c.text)), "nothing ranks across places");
+    const series = await r.runSql(out.conclusions[0].series_sql);
+    assert.deepEqual(series.map((row) => String(row.year)), [...years].sort(), `${s.name}: the series is the whole line in time order`);
+    process.env.NEWSROOM_ARTIFACT_DIR = r.art;
+    const done = await pickCandidates({ candidates: out.conclusions, picks: ["c1", "c2", "c3"], register: registerIn(r) });
+    assert.equal(done.status, "ok", JSON.stringify(done));
+    assert.equal(claimsOf(r.art).length, 3, `${s.name}: the three verify on the real claim path`);
+  }
+  assert.throws(() => cand.buildOnePlace({ ref: "data/x.csv", dimensions: ["geo", "freq"], measure: "v", time: "t" }), /one place column/);
+  assert.throws(() => cand.buildOnePlace({ ref: "data/x.csv", dimensions: ["geo"], measure: "v" }), /one place column/);
+  check("one place over the years (World Bank country, Eurostat geo with a fixed freq): new route only, three one-place kinds that verify; one time value or the old route stops as before");
+}
+
 // 11. data stop
 assert.equal(dataStop([{ ok: false, dataset: "A" }]), null);
 assert.deepEqual(dataStop([{ ok: false, dataset: "A" }, { ok: false, dataset: "A" }]), { status: "STOPPED", reason: "data_failed", step: "data_prepare", kept_artifacts: true, failures: 2 });

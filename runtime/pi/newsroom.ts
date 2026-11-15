@@ -5011,7 +5011,7 @@ async function pageBuildPrepare(callId: string, params: any, signal?: AbortSigna
     const roles = detectRoles({ header: data.header, rows: data.rows, dimensions: data.dimensions, time: data.time, measure: data.measure, qualifiers: data.qualifiers, emptyStop: nextRouteEnabled() });
     if (!roles.ok) return failed(roles.empty ? "no_rows" : "needs_narrowing", [`No candidates: ${roles.problem}. Call newsroom_data_prepare again with the narrowed filters.`]);
     let made: { conclusions: any[]; dropped: any[]; narrowing?: string };
-    try { made = await programCandidates({ ref: data.ref, dimensions: roles.dimensions, measure: roles.measure, time: roles.time, times: roles.times, runSql, fill, seriesMaxRows: MAX_CHART_ROWS, entity: nextEntityAlias(data, roles.dimensions), ...(data.cut ? { cut: data.cut } : {}), ...(data.scope ? { scope: data.scope } : {}) }); } catch (error: any) {
+    try { made = await programCandidates({ ref: data.ref, dimensions: roles.dimensions, measure: roles.measure, time: roles.time, times: roles.times, runSql, fill, seriesMaxRows: MAX_CHART_ROWS, entity: nextEntityAlias(data, roles.dimensions), ...(roles.one ? { one: true } : {}), ...(data.cut ? { cut: data.cut } : {}), ...(data.scope ? { scope: data.scope } : {}) }); } catch (error: any) {
       return failed("no_candidates", [`No candidates could be made from this file: ${pageBuildSafeText(error?.message ?? error).slice(0, 300)}`]);
     }
     if (made.narrowing) return failed("needs_narrowing", [`No candidates: ${made.narrowing}. Call newsroom_data_prepare again with the narrowed filters.`]);
