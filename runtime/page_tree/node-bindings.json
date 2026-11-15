@@ -1677,6 +1677,33 @@
    }
   }
 ,
+  "line": {
+   "binding": "external",
+   "geometry": "leaf",
+   "runner": "leaves_py/line.py",
+   "declares_by_recipe": {
+    "trend": {
+     "rows": {"rule": "rows_in", "table": "$shape.main", "by": "$shape.place", "in": ["select:ranked"], "from": "$picks.t0", "to": "$shape.year"},
+     "facts": {"val": {"each": "$shape.place", "table": "$shape.main", "time": "$shape.year", "fmt": "$shape.fmt"}},
+     "for_each": "select:ranked",
+     "facts_each": {
+      "{code_lc}_peak": {"op": "peak", "table": "$shape.main", "filter": {"$shape.place": "{code}"}, "from": "$picks.t0", "to": "$shape.year", "fmt": "$shape.fmt", "axis": true}
+     },
+     "fmt": {"scale": "$shape.scale", "suffix": "$shape.suffix", "dec_rule": {"rule": "held_decimals", "rows": {"table": "$shape.main", "filter": {"$shape.place": "select:ranked"}, "time": "$shape.year"}, "max": {"const": "COLUMN_DEC", "value": 2}}},
+     "items_for": "select:ranked",
+     "leaf": {"key": "line", "items_as": "series", "items": {"code": "code", "end_text": "value_text"},
+              "title": {"fixed": "frames:change", "frame": "Change"}, "unit": {"fixed_prefix": "unit_short_zh:"}, "series_kind": "place",
+              "q": {"table": "$shape.main", "by": "$shape.place", "from": "$picks.t0", "to": "$shape.year"}, "peak_of": "{code_lc}_peak", "axis": {"scale": "$shape.scale"}}
+    }
+   },
+   "items": {
+    "for_each": "items_for",
+    "fields": {
+     "code": {"kind": "select_index"},
+     "value_text": {"kind": "fact_template", "template": "val.{code}.n"}
+    }
+   }
+  },
   "stacked100": {
    "binding": "external",
    "geometry": "leaf",

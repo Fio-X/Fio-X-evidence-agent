@@ -909,6 +909,77 @@
    ],
    "eats": []
   },
+  "line": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "size",
+     "default": 12,
+     "min": 11,
+     "max": 16,
+     "step": 0.5,
+     "what": "label size px (11 is the page floor)"
+    },
+    {
+     "name": "title_size",
+     "default": 16,
+     "min": 12,
+     "max": 22,
+     "step": 1,
+     "what": "chart name size px"
+    },
+    {
+     "name": "width",
+     "default": 1140,
+     "min": 480,
+     "max": 1400,
+     "step": 10,
+     "what": "picture width in px"
+    },
+    {
+     "name": "plot_h",
+     "default": 300,
+     "min": 160,
+     "max": 600,
+     "step": 10,
+     "what": "plot height in px"
+    },
+    {
+     "name": "line_w",
+     "default": 2.5,
+     "min": 1.5,
+     "max": 4,
+     "step": 0.5,
+     "what": "the highlighted line's width in px"
+    },
+    {
+     "name": "context_w",
+     "default": 1.5,
+     "min": 0.8,
+     "max": 2.5,
+     "step": 0.1,
+     "what": "every other line's width in px"
+    },
+    {
+     "name": "marker_all",
+     "default": 6,
+     "min": 2,
+     "max": 24,
+     "step": 1,
+     "what": "a series with fewer points than this is marked at every point"
+    },
+    {
+     "name": "highlight",
+     "default": "",
+     "codes": true,
+     "what": "code of the series drawn in the accent; none = the first series"
+    }
+   ],
+   "eats": [
+    "one_freq",
+    "one_unit"
+   ]
+  },
   "map": {
    "reserve": false,
    "knobs": [],
@@ -1605,7 +1676,8 @@
    "bubble_key",
    "leader_notes",
    "sankey",
-   "stacked100"
+   "stacked100",
+   "line"
   ],
   "change": [
    "bignums",
@@ -1616,7 +1688,8 @@
    "bubble_key",
    "leader_notes",
    "sankey",
-   "stacked100"
+   "stacked100",
+   "line"
   ],
   "flow": [
    "bignums",
@@ -1627,7 +1700,8 @@
    "bubble_key",
    "leader_notes",
    "sankey",
-   "stacked100"
+   "stacked100",
+   "line"
   ],
   "composition": [
    "bignums",
@@ -1638,7 +1712,8 @@
    "bubble_key",
    "leader_notes",
    "sankey",
-   "stacked100"
+   "stacked100",
+   "line"
   ],
   "ranked_bars": [
    "bignums",
@@ -1649,7 +1724,8 @@
    "bubble_key",
    "leader_notes",
    "sankey",
-   "stacked100"
+   "stacked100",
+   "line"
   ],
   "scmp": [
    "map",

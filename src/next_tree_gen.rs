@@ -1232,12 +1232,29 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
         (page_in.g("rows").arr().iter().chain(page_in.g("sum_rows").arr()).filter(hit).cloned().collect(), Vec::new())
     } else if d.g("rows").g("rule").s() == Some("rows_in") {
         // rows_in: the page input's main rows at the table and every filter dimension whose `by` code is in any of the
-        // lists `in` names, at every time; all drawn, in the input's order
+        // lists `in` names (a select reference among them its codes: select:ranked, the places a block ranked), at every
+        // time (from..to when the rule bounds them: the periods a series over time draws); all drawn, in the input's order
         let q = sub(d.g("rows"), page_in)?;
         let by = st(q.g("by"));
-        let codes: Vec<&J> = q.g("in").arr().iter().flat_map(|l| l.arr()).collect();
+        let lists = q
+            .g("in")
+            .arr()
+            .iter()
+            .map(|l| match l.s().filter(|s| core::ref_parts(s).is_some()) {
+                // one code (select:focus[0]) is a list of it
+                Some(s) => core::resolve_ref(s, &got).map(|c| if c.s().is_some() { J::Arr(vec![c]) } else { c }),
+                None => Ok(l.clone()),
+            })
+            .collect::<Result<Vec<J>, String>>()?;
+        let codes: Vec<&J> = lists.iter().flat_map(|l| l.arr()).collect();
+        let (from, to) = (q.g("from").s().unwrap_or(""), q.g("to").s());
         let hit = |r: &&J| {
-            r.g("table") == q.g("table") && q.g("filter").obj().iter().all(|(k, v)| r.g("dims").g(k) == v) && codes.contains(&r.g("dims").g(&by))
+            let t = r.g("time").s().unwrap_or("");
+            r.g("table") == q.g("table")
+                && q.g("filter").obj().iter().all(|(k, v)| r.g("dims").g(k) == v)
+                && codes.contains(&r.g("dims").g(&by))
+                && t >= from
+                && to.is_none_or(|to| t <= to)
         };
         (page_in.g("rows").arr().iter().filter(hit).cloned().collect(), Vec::new())
     } else if d.has("rows") || d.has("reads") {
@@ -1364,8 +1381,22 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
         // the items under the key the leaf reads them by (items_as; items when the declaration names none)
         let items_as = lf.g("items_as").s().unwrap_or("items").to_string();
         let mut leaf = J::obj_of(vec![(items_as.as_str(), J::Arr(items))]);
+        // a text the registry fixes to a name row (a frame's heading, the page's unit in its short form) is segments naming
+        // the row, and the row goes out with the declaration (fixed) for the page's ledger to hold
+        let mut fixed = Vec::new();
         for (k, v) in lf.obj().iter().filter(|(k, _)| !["key", "items", "items_as", "items_after", "fact_fields", "into"].contains(&k.as_str())) {
-            leaf.set(k, sub(v, page_in)?);
+            match fixed_name(v, page_in)? {
+                Some((segs, row)) => {
+                    leaf.set(k, segs);
+                    fixed.push(row);
+                }
+                None => leaf.set(k, sub(v, page_in)?),
+            }
+        }
+        if !fixed.is_empty() {
+            // the unit written once in the picture's head
+            out.set("unit_drawn", J::Bool(lf.obj().iter().any(|(_, v)| v.has("fixed_prefix"))));
+            out.set("fixed", J::Arr(fixed));
         }
         // into data: the items are a key of the hero's data the leaf reads there (the big numbers), no leaf of their own
         if lf.g("into").s() == Some("data") {
@@ -1744,6 +1775,29 @@ fn segments(segs: &J, view: &J, ctx: &[(&str, J)]) -> Result<J, String> {
 }
 
 /// The heading of a relation at one period from the visual group's frames (shape_registry FRAMES), by its name.
+/// A leaf text of a generic declaration that the registry fixes to a name row, as pairs_of_two writes its title and unit: a
+/// frame's heading ({"fixed": "frames:<relation>", "frame": "<Relation>"}, the shape registry's words) or the page's unit
+/// in its short form ({"fixed_prefix": "unit_short_zh:", "words"?: plain words after it}, the page input's short). Its
+/// segments naming the row, and the row [src, text]; none for any other value.
+fn fixed_name(v: &J, page_in: &J) -> Result<Option<(J, J)>, String> {
+    let named = |src: &str| J::obj_of(vec![("src", J::str(src))]);
+    if let Some(f) = v.get("fixed") {
+        let src = format!("name:{}", st(f));
+        let text = frame_words(&st(v.g("frame")))?;
+        return Ok(Some((J::Arr(vec![named(&src)]), J::Arr(vec![J::Str(src), J::Str(text)]))));
+    }
+    if let Some(p) = v.get("fixed_prefix") {
+        let src = format!("name:{}{}", st(p), st(page_in.g("shape").g("unit")));
+        let short = page_in.g("short").s().ok_or_else(|| format!("{src}: the page input has no short unit"))?.to_string();
+        let mut segs = vec![named(&src)];
+        if let Some(w) = v.get("words") {
+            segs.push(J::obj_of(vec![("w", w.clone())]));
+        }
+        return Ok(Some((J::Arr(segs), J::Arr(vec![J::Str(src), J::Str(short)]))));
+    }
+    Ok(None)
+}
+
 fn frame_words(name: &str) -> Result<String, String> {
     crate::shape_registry::FRAMES
         .iter()
@@ -2662,6 +2716,55 @@ mod tests {
         assert_eq!(tree_j(pi, fill, &reg, &["bars".to_string()]).unwrap().dump(), gen.g("tree_p4a1").dump());
     }
 
+    /// The line node's trend declaration, generic (no Rust shape of its own), over the q1 page input widened to five years
+    /// (2021-2025, t0 2022): its drawn rows are the ranked places' from t0 to the year (rows_in over select:ranked, bounded),
+    /// a value fact per place at the year and a peak with an axis per place over t0..year (facts_each), the leaf's series
+    /// in the ranked order each with its end text, the query the leaf reads its points by, the peak template, and the title
+    /// and unit as name rows the declaration hands out (fixed: the frame's heading, the unit's short form; unit_drawn).
+    #[test]
+    fn next_tree_gen_line_declares_series_over_time_generically() {
+        let mut pi = read("q1-gen.json").g("page_in").clone();
+        let ranked: Vec<String> = pi.g("picks").g("ranked").arr().iter().map(st).collect();
+        let mut rows = Vec::new();
+        for (k, c) in ranked.iter().enumerate() {
+            for y in 2021..=2025 {
+                let v = format!("{:.1}", 60.0 - 10.0 * k as f64 + (y - 2021) as f64);
+                rows.push(J::from_value(&serde_json::json!({"src": format!("series:sdg/{c}:{y}:OBS_VALUE"), "table": "sdg",
+                    "dims": {"freq": "A", "unit": "PC", "geo": c}, "time": y.to_string(), "value": v})));
+            }
+        }
+        pi.set("rows", J::Arr(rows));
+        pi.set("recipe", J::str("trend"));
+        pi.set("short", J::str("%"));
+        assert!(pi.set_path(&["picks", "t0"].map(String::from), J::str("2022")));
+        let reg = core::load_registry(&core::bindings());
+        let out = declared_j("line", &pi, &reg).unwrap();
+        // drawn: every ranked place at 2022..2025, none at 2021
+        let drawn: Vec<(String, String)> = out.g("rows").arr().iter().map(|r| (st(r.g("dims").g("geo")), st(r.g("time")))).collect();
+        assert_eq!(drawn.len(), ranked.len() * 4);
+        assert!(drawn.iter().all(|(c, t)| ranked.contains(c) && t.as_str() >= "2022"));
+        // the facts: the value family at the year, each place's peak over the window with its axis
+        assert_eq!(st(out.g("facts").g("val").g("time")), "2025");
+        for c in &ranked {
+            let p = out.g("facts").g(&format!("{}_peak", c.to_lowercase()));
+            assert_eq!((st(p.g("op")), st(p.g("from")), st(p.g("to")), p.g("axis").clone()), ("peak".into(), "2022".into(), "2025".into(), J::Bool(true)));
+        }
+        let leaf = out.g("leaves").g("line");
+        let series: Vec<(String, String)> = leaf.g("series").arr().iter().map(|s| (st(s.g("code")), st(s.g("end_text")))).collect();
+        assert_eq!(series, ranked.iter().map(|c| (c.clone(), format!("fact:val.{c}.n"))).collect::<Vec<_>>());
+        assert_eq!(leaf.g("q").to_value(), serde_json::json!({"table": "sdg", "by": "geo", "from": "2022", "to": "2025"}));
+        assert_eq!(st(leaf.g("peak_of")), "{code_lc}_peak");
+        assert_eq!(leaf.g("title").to_value(), serde_json::json!([{"src": "name:frames:change"}]));
+        assert_eq!(leaf.g("unit").to_value(), serde_json::json!([{"src": "name:unit_short_zh:PC"}]));
+        let fixed: Vec<(String, String)> = out.g("fixed").arr().iter().map(|f| (st(f.at(0)), st(f.at(1)))).collect();
+        assert_eq!(fixed, [("name:frames:change".to_string(), frame_words("Change").unwrap()), ("name:unit_short_zh:PC".into(), "%".into())]);
+        assert_eq!(out.g("unit_drawn"), &J::Bool(true));
+        // a page input with no short unit refuses rather than print an empty unit
+        let mut bare = pi.clone();
+        bare.remove("short");
+        assert!(declared_j("line", &bare, &reg).unwrap_err().contains("no short unit"));
+    }
+
     /// C6 through the core's content check (content_problems) on the q1 page tree, with asked records the flow would copy for
     /// a two-quantity question written here ("各国可再生能源占比和碳排放分别怎样？"): the renewables are drawn (the bars' rows of
     /// the main); carbon emissions, with no offered table and the leaf's line, passes; offered a table and not drawn, it is
@@ -3006,7 +3109,8 @@ mod tests {
     fn next_tree_gen_only_stacked100_declares_geometry_leaf() {
         let bound = core::bindings();
         let leaf: Vec<&str> = bound.g("nodes").obj().iter().filter(|(_, n)| n.g("geometry").s() == Some("leaf")).map(|(k, _)| k.as_str()).collect();
-        assert_eq!(leaf, ["map", "bignums", "leader_notes", "notes", "ring", "strip", "sankey", "stacked100"]);
+        // the line leaf (a series over time, the trend declaration) places its own lines, ticks and end labels too
+        assert_eq!(leaf, ["map", "bignums", "leader_notes", "notes", "ring", "strip", "sankey", "line", "stacked100"]);
     }
 
     /// A column page's finding with a focus (a many-block page's later block: the first block's leader, owner 11-14 22:2x):
