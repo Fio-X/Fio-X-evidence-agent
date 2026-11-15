@@ -1,4 +1,4 @@
-"""waffle layer (单位方块／百点图, owner 11-14 16:0x item 2: written anew, only the chart's idea borrowed): one whole as a grid of
+"""waffle layer (owner 11-14 16:0x item 2: written anew, only the chart's idea borrowed): one whole as a grid of
 100 squares, each part taking as many squares as its share of the whole in hundredths, in rankbar.py's layer style. The
 squares are counted by the largest remainder (each part its whole hundredths, then the parts with the largest leftover
 fractions one more each until the 100 are used), so the grid always holds exactly 100 and no part's count is off its share

@@ -1,4 +1,4 @@
-"""waterfall layer (瀑布图, owner 11-14 16:0x item 2: written anew, only the chart's idea borrowed): a whole and the parts it is
+"""waterfall layer (owner 11-14 16:0x item 2: written anew, only the chart's idea borrowed): a whole and the parts it is
 made of, top down, in rankbar.py's layer style. The first row is the whole as one bar from 0; each later row is one part,
 a bar starting where the part before it ended, so the parts walk the whole's length from left to right and the last one
 ends at the whole's end; a thin dashed connector joins each step's end to the next step's start. The parts must add up to

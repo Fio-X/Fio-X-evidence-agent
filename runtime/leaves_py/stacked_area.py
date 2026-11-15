@@ -1,4 +1,4 @@
-"""stacked_area layer (堆叠面积图, owner 11-14 16:0x item 2: written anew, only the chart's idea borrowed; not the prototype's
+"""stacked_area layer (owner 11-14 16:0x item 2: written anew, only the chart's idea borrowed; not the prototype's
 prod.stack_area, an html chart that formats its own numbers): a whole's parts over
 time, each a band stacked on the ones below it, so the top edge is the whole, in rankbar.py's layer style and line.py's
 time axis. The parts' cells are the request's own, read by line.py's query form (q: the table, the filter, the parts'

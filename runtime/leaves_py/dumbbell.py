@@ -1,4 +1,4 @@
-"""dumbbell layer (哑铃图, owner 11-14 16:0x item 2): each place's value at two periods as two dots on one row, joined by a
+"""dumbbell layer (owner 11-14 16:0x item 2): each place's value at two periods as two dots on one row, joined by a
 line, in rankbar.py's layer style; the old route's dumbbell (runtime/pi/viz.mjs renderDumbbell: a row per place, the name at
 the left, a connector between the start and end dots, a key naming which dot is which period) under the new route's
 rules: one accent only (the start dot hollow grey, the end dot filled ink, the highlighted row's connector and end dot in

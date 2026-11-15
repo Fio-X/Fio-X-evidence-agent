@@ -1,4 +1,4 @@
-"""rank_lines layer (平行名次线, owner 11-14 16:0x item 2): the places' ranks on two or more quantities side by side, one
+"""rank_lines layer (owner 11-14 16:0x item 2): the places' ranks on two or more quantities side by side, one
 column per quantity, one line per place through its rank in each column, in rankbar.py's layer style; the old route's rank
 slope (runtime/pi/viz.mjs renderRankSlope: two columns, rank 1 at the top, a line per place, the highlighted one in the
 accent and wider) carried over to any number of columns. Each rank is printed inside a small disc on its point, so no rank
