@@ -2722,7 +2722,19 @@ fn recipe_request(
     }
     let title = zh.unwrap_or_else(|| main.title.clone());
     // no years here: the leaf footer marks only the table ids (spec.refs) and refuses any other digit in the line
-    fill["knobs"]["spec"]["source"] = json!(source_line(meta.worldbank, &meta.id, &title, &[]));
+    let mut lines = vec![source_line(meta.worldbank, &meta.id, &title, &[])];
+    // a page over blocks draws every block's table: each named in its turn after the main's, as the main's is; the leaf's
+    // footer joins them with the visual registry's list separator (scmp.footer), never a word of the flow's
+    for id in shape.blocks.iter().skip(1).filter_map(|b| b["table"].as_str()) {
+        let meta = catalogue.table(id).ok_or_else(|| ("fill", format!("the catalogue lists no {id}")))?;
+        // every block's table has its reviewed name by now (a block with none is not this shape, above)
+        let title = catalogue.table_zh(&meta.id).map_err(|why| ("fill", why))?.unwrap_or_default();
+        lines.push(source_line(meta.worldbank, &meta.id, &title, &[]));
+    }
+    fill["knobs"]["spec"]["source"] = match lines.len() {
+        1 => json!(lines[0]),
+        _ => json!(lines),
+    };
     Ok(fill)
 }
 

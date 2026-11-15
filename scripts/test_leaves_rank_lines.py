@@ -183,5 +183,28 @@ class Picture(unittest.TestCase):
         self.assertIn("would touch", refused(d, row=20))
 
 
+class Footer(unittest.TestCase):
+    """The page over a many-block page's blocks names every block's table: layer 1 gives one source line per table and
+    scmp.footer joins them with the words' list separator, each table id marked."""
+
+    def test_one_line_per_table_each_id_marked(self):
+        import facts
+        import scmp
+        from words import word
+        old = facts.LEDGER
+        try:
+            facts.LEDGER = {"fact:x": "1"}
+            lines = ["世界银行 SP.POP.TOTL「甲」", "世界银行 NY.GDP.PCAP.CD「乙」"]
+            got = scmp.footer({"source": lines, "refs": ["SP.POP.TOTL", "NY.GDP.PCAP.CD"]})
+            want = '<span data-ref="">SP.POP.TOTL</span>「甲」' + word("list.sep") + '世界银行 <span data-ref="">NY.GDP.PCAP.CD</span>「乙」'
+            self.assertIn(want, got)
+            self.assertEqual(scmp.footer({"source": lines[0], "refs": ["SP.POP.TOTL"]}).count("data-ref"), 1)  # one line as before
+            for bad in ([], [lines[0], ""], [lines[0], 3]):
+                with self.assertRaises(Refused):
+                    scmp.footer({"source": bad, "refs": []})
+        finally:
+            facts.LEDGER = old
+
+
 if __name__ == "__main__":
     unittest.main()
