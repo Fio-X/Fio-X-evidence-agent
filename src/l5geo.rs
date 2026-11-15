@@ -266,6 +266,18 @@ pub struct TwinOf {
     pub asked_end: String,
     pub used_end: String,
     pub why: String,
+    /// For a presentation table's dataset (`source_swap`): per dimension of the dataset whose codes the presentation table
+    /// holds fewer of, the codes it holds, the only ones the dataset is drafted and fetched with. Empty for any other twin.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub keep: Vec<(String, Vec<String>)>,
+}
+
+/// The table a candidate stands for (`stands_for`): its id, how the pair was found, why, and the codes it is kept to.
+struct StandsFor {
+    to: String,
+    found: &'static str,
+    why: String,
+    keep: Vec<(String, Vec<String>)>,
 }
 
 /// A registered pair `top5` reached and did not swap, with why (a check that failed, the question asking for months, or
@@ -539,6 +551,30 @@ fn monthly_twins() -> &'static [Twin] {
         serde_json::from_str::<File>(MONTHLY_TWINS)
             .expect("monthly-twins.json lists pairs")
             .pairs
+    })
+}
+
+/// Eurostat presentation tables (toc type table) and the dataset each is cut from, found by data offline
+/// (runtime/pi/assets/presentation-sources.json), compiled in so a broken file fails its test, not a run.
+const PRESENTATION_SOURCES: &str = include_str!("../runtime/pi/assets/presentation-sources.json");
+
+/// One pair of presentation-sources.json: the presentation table, its dataset, and how many cells were found equal.
+#[derive(Debug, Deserialize)]
+struct PresentationSource {
+    slim: String,
+    source: String,
+    cells: usize,
+}
+
+/// The registered presentation tables, read once.
+fn presentation_sources() -> &'static [PresentationSource] {
+    static PAIRS: OnceLock<Vec<PresentationSource>> = OnceLock::new();
+    PAIRS.get_or_init(|| {
+        #[derive(Deserialize)]
+        struct File {
+            pairs: Vec<PresentationSource>,
+        }
+        serde_json::from_str::<File>(PRESENTATION_SOURCES).expect("presentation-sources.json lists pairs").pairs
     })
 }
 
@@ -2953,6 +2989,7 @@ impl Catalog {
                     asked_end: asked_end.clone(),
                     used_end: used_end.clone(),
                     why,
+                    keep: Vec::new(),
                 })
             };
             let held = format!(
@@ -2982,21 +3019,26 @@ impl Catalog {
     /// holds that series too: the harmonised series compares countries on one method, the national ones each on its own
     /// (review list 11-15, the 选表 class of the dev set's round 15: n4, n33, n41 picked a national estimate, the rubric
     /// the harmonised series, which ranked 7th to 10th). The series takes the estimate's place and scores, `twin_of`
-    /// saying what it stands for. No swap when the series is already offered, or when the estimate proves the answer
-    /// (`proves`: the asked places and years, as `top5` drops by) and the series does not; a twin_swap pair is left as it is.
+    /// saying what it stands for. Likewise a Eurostat presentation table (a toc "table" cut from a dataset, as tps00028
+    /// from demo_pjanind) is offered as the dataset presentation-sources.json registers for it, kept to the table's codes
+    /// (`keep`), so the pick asks what it asked of the table while the page cites the dataset the numbers come from
+    /// (round 15's table-pick class: the rubric names the dataset for 7 of the 8 presentation tables picked). No swap when the
+    /// table it stands for is already offered, or when the candidate proves the answer (`proves`: the asked places and
+    /// years, as `top5` drops by) and the table does not; a twin_swap pair is left as it is.
     fn source_swap(&self, five: Vec<Candidate>, ranked: &[Candidate], proves: impl Fn(&str) -> bool) -> Vec<Candidate> {
         let mut out: Vec<Candidate> = Vec::with_capacity(five.len());
         for c in five {
-            let series = Some(&c)
-                .filter(|c| c.twin_of.is_none())
-                .and_then(|c| wb_harmonised(&c.id))
-                .and_then(|h| ranked.iter().find(|x| x.id == h))
-                .filter(|x| !out.iter().any(|o| o.id == x.id) && (proves(&x.id) || !proves(&c.id)));
-            let Some(x) = series else {
+            let series = Some(&c).filter(|c| c.twin_of.is_none()).and_then(|c| self.stands_for(&c.id)).and_then(|s| {
+                ranked
+                    .iter()
+                    .find(|x| x.id == s.to)
+                    .filter(|x| !out.iter().any(|o| o.id == x.id) && (proves(&x.id) || !proves(&c.id)))
+                    .map(|x| (x, s))
+            });
+            let Some((x, s)) = series else {
                 out.push(c);
                 continue;
             };
-            let why = format!("{} is a national estimate; {} is the same series harmonised across countries", c.id, x.id);
             out.push(Candidate {
                 id: x.id.clone(),
                 title: x.title.clone(),
@@ -3004,10 +3046,11 @@ impl Catalog {
                 twin_of: Some(TwinOf {
                     asked: c.id.clone(),
                     used: x.id.clone(),
-                    found: "catalogue".to_string(),
+                    found: s.found.to_string(),
                     asked_end: String::new(),
                     used_end: String::new(),
-                    why,
+                    why: s.why,
+                    keep: s.keep,
                 }),
                 ..c.clone()
             });
@@ -3028,6 +3071,48 @@ impl Catalog {
             }
         }
         out
+    }
+
+    /// The table a candidate stands for in `source_swap`, when it stands for one: a World Bank national estimate's harmonised
+    /// series (wb_harmonised; found "catalogue"), or the dataset a Eurostat presentation table is cut from
+    /// (presentation-sources.json; found "data"), offered at the presentation table's codes (`kept_codes`; none kept, no
+    /// swap).
+    fn stands_for(&self, id: &str) -> Option<StandsFor> {
+        if let Some(h) = wb_harmonised(id) {
+            let why = format!("{id} is a national estimate; {h} is the same series harmonised across countries");
+            return Some(StandsFor { to: h, found: "catalogue", why, keep: Vec::new() });
+        }
+        let p = presentation_sources().iter().find(|p| p.slim == id)?;
+        let keep = self.kept_codes(id, &p.source)?;
+        let why = format!(
+            "{id} is a presentation table cut from the dataset {} (presentation-sources.json: {} of its cells read again from the dataset, all equal); the dataset is offered at the table's codes",
+            p.source, p.cells
+        );
+        Some(StandsFor { to: p.source.clone(), found: "data", why, keep })
+    }
+
+    /// Per dimension of the dataset `source` but geo whose codes the presentation table `slim` holds fewer of, the codes it
+    /// holds, in the dataset's order: what the dataset is kept to so the pick offers what it offered of the table. None
+    /// when the catalogue lists either table's metadata not, the two have other dimensions, or a dimension of the dataset
+    /// holds none of the table's codes.
+    fn kept_codes(&self, slim: &str, source: &str) -> Option<Vec<(String, Vec<String>)>> {
+        let (s, d) = (self.table(slim)?, self.table(source)?);
+        let names = |t: &TableMeta| t.dims.iter().map(|(n, _)| n.clone()).collect::<BTreeSet<String>>();
+        if names(&s) != names(&d) {
+            return None;
+        }
+        let mut keep = Vec::new();
+        for (dim, codes) in d.dims.iter().filter(|(n, _)| n != "geo") {
+            let held: Vec<&String> = s.dims.iter().find(|(n, _)| n == dim)?.1.iter().map(|(c, _)| c).collect();
+            let kept: Vec<String> = codes.iter().filter(|(c, _)| held.contains(&c)).map(|(c, _)| c.clone()).collect();
+            if kept.is_empty() {
+                return None;
+            }
+            if kept.len() < codes.len() {
+                keep.push((dim.clone(), kept));
+            }
+        }
+        Some(keep)
     }
 
     /// The data end periods (the monthly table's, the annual one's; the metabase's own form, 2026M08 and 2025) of a
@@ -4509,6 +4594,47 @@ mod tests {
         // the estimate proves the asked places and years and the series does not: no swap
         let got = c.source_swap(five[..3].to_vec(), &ranked, |id| id.contains(".NE."));
         assert_eq!(got[2].id, "SL.UEM.1524.NE.ZS@2");
+    }
+
+    /// 11-15 (round 15's table-pick class): a Eurostat presentation table registered in presentation-sources.json is
+    /// offered as its dataset, in its place, kept to its codes (keep: indic_de to the one code it holds; geo never kept);
+    /// no swap when the dataset is not ranked, when the two have other dimensions, or when a dimension of the dataset
+    /// holds none of the table's codes. The file parses, each presentation table once, never its own dataset.
+    #[test]
+    fn a_presentation_table_is_offered_as_its_dataset_at_its_codes() {
+        let pairs = presentation_sources();
+        assert!(pairs.len() > 600, "{}", pairs.len());
+        let slims: BTreeSet<&str> = pairs.iter().map(|p| p.slim.as_str()).collect();
+        assert_eq!(slims.len(), pairs.len(), "each presentation table once");
+        assert!(pairs.iter().all(|p| p.slim != p.source && p.cells >= 3));
+        assert!(pairs.iter().any(|p| p.slim == "tps00028" && p.source == "demo_pjanind"));
+        let with = |meta: &str| {
+            let mut raw = small_raw();
+            raw.toc.push_str("\"        Old-age share\"\t\"tps00028\"\t\"table\"\n\"        Population structure\"\t\"demo_pjanind\"\t\"table\"\n");
+            raw.metabase.push_str(meta);
+            Catalog::from_raw(&raw)
+        };
+        let both = "tps00028\tfreq\tA\ntps00028\tindic_de\tPC_Y65_MAX\ntps00028\tgeo\tDE\n\
+                    demo_pjanind\tfreq\tA\ndemo_pjanind\tindic_de\tMEDAGEPOP\ndemo_pjanind\tindic_de\tPC_Y65_MAX\n\
+                    demo_pjanind\tgeo\tDE\ndemo_pjanind\tgeo\tFR\n";
+        let c = with(both);
+        let five = vec![cand("nrg_bal", 2.0), cand("tps00028", 1.9)];
+        let ranked = vec![five[0].clone(), five[1].clone(), cand("demo_pjanind", 0.5)];
+        let got = c.source_swap(five.clone(), &ranked, |_| true);
+        assert_eq!(got.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(), ["nrg_bal", "demo_pjanind"]);
+        let twin = got[1].twin_of.as_ref().expect("the dataset says what it stands for");
+        assert_eq!((twin.asked.as_str(), twin.used.as_str(), twin.found.as_str()), ("tps00028", "demo_pjanind", "data"));
+        assert_eq!(twin.keep, [("indic_de".to_string(), vec!["PC_Y65_MAX".to_string()])]);
+        assert_eq!(got[1].score, five[1].score, "the table's place and scores");
+        // the dataset not ranked: the table stays
+        assert_eq!(c.source_swap(five.clone(), &five, |_| true)[1].id, "tps00028");
+        // the table proves the answer and the dataset does not: no swap
+        assert_eq!(c.source_swap(five.clone(), &ranked, |id| id == "tps00028")[1].id, "tps00028");
+        // other dimensions, or a dimension holding none of the table's codes: no swap
+        let other = with(&both.replace("demo_pjanind\tfreq\tA\n", "demo_pjanind\tfreq\tA\ndemo_pjanind\tsex\tT\n"));
+        assert_eq!(other.source_swap(five.clone(), &ranked, |_| true)[1].id, "tps00028");
+        let none = with(&both.replace("demo_pjanind\tindic_de\tPC_Y65_MAX\n", ""));
+        assert_eq!(none.source_swap(five, &ranked, |_| true)[1].id, "tps00028");
     }
 
     fn asked_of(id: &str, tables: &[&str]) -> Asked {

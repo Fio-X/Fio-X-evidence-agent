@@ -835,6 +835,18 @@ fn words(s: &str) -> Vec<String> {
         .collect()
 }
 
+/// A table's metadata kept to a presentation table's codes (the search's TwinOf.keep: per dimension, the codes kept, in
+/// the dataset's order); every other dimension as it is. The dataset then drafts, asks and fetches as the presentation
+/// table it stands for did.
+pub fn kept_to(mut table: TableMeta, keep: &[(String, Vec<String>)]) -> TableMeta {
+    for (dim, codes) in table.dims.iter_mut() {
+        if let Some((_, kept)) = keep.iter().find(|(d, _)| d == dim) {
+            codes.retain(|(c, _)| kept.contains(c));
+        }
+    }
+    table
+}
+
 /// What the program fixes and what it asks for one table; `texts` are the model's search words, used only to order options.
 /// `places` are the places the question names: a named country only another dimension lists fixes that dimension.
 pub fn draft(table: TableMeta, texts: &[String], places: &[Place]) -> Draft {
@@ -3578,6 +3590,23 @@ mod tests {
 
     fn draft_of_table(table: TableMeta) -> Draft {
         draft(table, &[], &[Place::Country("DE".into())])
+    }
+
+    /// 11-15: a presentation table's dataset kept to the table's codes (the search's keep) drafts as the table did: the
+    /// kept dimension has its one code (no item, fetched at that code), every other dimension and geo whole; no keep, the
+    /// table as it is.
+    #[test]
+    fn a_dataset_kept_to_a_presentation_tables_codes_drafts_as_that_table() {
+        let dataset = eurostat(
+            "demo_pjanind",
+            vec![dim("geo", &["DE", "FR"]), dim("indic_de", &["MEDAGEPOP", "PC_Y65_MAX", "DEPRATIO1"]), dim("unit", &["PC", "YR"])],
+        );
+        assert_eq!(kept_to(dataset.clone(), &[]), dataset);
+        let kept = kept_to(dataset, &[("indic_de".to_string(), vec!["PC_Y65_MAX".to_string()]), ("unit".to_string(), vec!["PC".to_string()])]);
+        let codes = |d: &str| kept.dims.iter().find(|(n, _)| n == d).map(|(_, c)| c.iter().map(|(x, _)| x.clone()).collect::<Vec<_>>()).unwrap();
+        assert_eq!((codes("indic_de"), codes("unit"), codes("geo").len()), (vec!["PC_Y65_MAX".to_string()], vec!["PC".to_string()], 2));
+        let d = draft_of_table(kept);
+        assert!(d.members.iter().all(|(dim, _, _)| dim != "indic_de") && !d.breakdown.contains(&"indic_de".to_string()), "{d:?}");
     }
 
     /// A table with no registered parts fills as before: the same q2 answer on the same codes under an unregistered id gives

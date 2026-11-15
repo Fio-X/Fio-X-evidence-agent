@@ -5367,9 +5367,11 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
         .map(|(t, p)| {
             (
                 &t.id,
-                p.meta
-                    .take()
-                    .map(|meta| next_params::draft(meta, &texts, &places)),
+                // a presentation table's dataset is kept to the table's codes (the search's keep)
+                p.meta.take().map(|meta| {
+                    let keep = t.twin_of.as_ref().map_or(&[][..], |w| w.keep.as_slice());
+                    next_params::draft(next_params::kept_to(meta, keep), &texts, &places)
+                }),
             )
         })
         .collect();
