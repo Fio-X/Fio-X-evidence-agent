@@ -519,6 +519,16 @@ struct Twin {
 }
 
 /// The registered pairs, read once.
+/// A World Bank national-estimate id's harmonised series: the id without its NE part (SL.UEM.1524.NE.ZS@2 ->
+/// SL.UEM.1524.ZS@2, SL.TLF.CACT.FM.NE.ZS@2 -> SL.TLF.CACT.FM.ZS@2); None for an id with no NE part after its first.
+fn wb_harmonised(id: &str) -> Option<String> {
+    let base = id.strip_suffix("@2")?;
+    let parts: Vec<&str> = base.split('.').collect();
+    let at = parts.iter().skip(1).position(|p| *p == "NE")? + 1;
+    let kept: Vec<&str> = parts.iter().enumerate().filter(|(i, _)| *i != at).map(|(_, p)| *p).collect();
+    Some(format!("{}@2", kept.join(".")))
+}
+
 fn monthly_twins() -> &'static [Twin] {
     static TWINS: OnceLock<Vec<Twin>> = OnceLock::new();
     TWINS.get_or_init(|| {
@@ -2821,9 +2831,8 @@ impl Catalog {
 
     pub fn top5(&self, question_zh: &str, texts: &[String], months: bool, latest_year: Option<i32>, first_year: Option<i32>) -> Ranking {
         let mut r = self.rank(question_zh, texts);
-        let (candidates, refused) =
-            self.twin_swap(std::mem::take(&mut r.candidates), monthly_twins(), months, latest_year);
-        r.candidates = candidates;
+        let ranked = std::mem::take(&mut r.candidates);
+        let (candidates, refused) = self.twin_swap(ranked.clone(), monthly_twins(), months, latest_year);
         r.twins_refused = refused;
         // only fewer: when one listed table can prove an answer over the places the question reads and the past year it
         // names, a table that cannot is not offered, none listed in its place (design 2a). When none can, all stay as
@@ -2831,6 +2840,7 @@ impl Catalog {
         // 11-14: a Eurostat table missing a named Switzerland beside EU members is still the best there is)
         let asked: Vec<String> =
             self.places(question_zh).into_iter().filter_map(|p| if let Place::Country(c) = p { Some(c) } else { None }).collect();
+        r.candidates = self.source_swap(candidates, &ranked, |id| self.unproven(id, &asked, (first_year, latest_year)).is_none());
         let verdicts: Vec<Option<String>> = r.candidates.iter().map(|c| self.unproven(&c.id, &asked, (first_year, latest_year))).collect();
         // a table the catalogue lists no metadata of is unknown: kept, but it proves nothing for the others to be dropped by
         let proves = r.candidates.iter().zip(&verdicts).any(|(c, why)| why.is_none() && self.table(&c.id).is_some());
@@ -2945,6 +2955,59 @@ impl Catalog {
             }
         }
         (out, refused)
+    }
+
+    /// The first TOP after `twin_swap` with each World Bank national estimate (an id with an NE part, SL.UEM.1524.NE.ZS)
+    /// offered as its harmonised series (the id without it, SL.UEM.1524.ZS) when this question's ranking (same filters)
+    /// holds that series too: the harmonised series compares countries on one method, the national ones each on its own
+    /// (review list 11-15, the 选表 class of the dev set's round 15: n4, n33, n41 picked a national estimate, the rubric
+    /// the harmonised series, which ranked 7th to 10th). The series takes the estimate's place and scores, `twin_of`
+    /// saying what it stands for. No swap when the series is already offered, or when the estimate proves the answer
+    /// (`proves`: the asked places and years, as `top5` drops by) and the series does not; a twin_swap pair is left as it is.
+    fn source_swap(&self, five: Vec<Candidate>, ranked: &[Candidate], proves: impl Fn(&str) -> bool) -> Vec<Candidate> {
+        let mut out: Vec<Candidate> = Vec::with_capacity(five.len());
+        for c in five {
+            let series = Some(&c)
+                .filter(|c| c.twin_of.is_none())
+                .and_then(|c| wb_harmonised(&c.id))
+                .and_then(|h| ranked.iter().find(|x| x.id == h))
+                .filter(|x| !out.iter().any(|o| o.id == x.id) && (proves(&x.id) || !proves(&c.id)));
+            let Some(x) = series else {
+                out.push(c);
+                continue;
+            };
+            let why = format!("{} is a national estimate; {} is the same series harmonised across countries", c.id, x.id);
+            out.push(Candidate {
+                id: x.id.clone(),
+                title: x.title.clone(),
+                coverage: x.coverage,
+                twin_of: Some(TwinOf {
+                    asked: c.id.clone(),
+                    used: x.id.clone(),
+                    found: "catalogue".to_string(),
+                    asked_end: String::new(),
+                    used_end: String::new(),
+                    why,
+                }),
+                ..c.clone()
+            });
+        }
+        // a later place holding the series itself is given up to the next ranked table not offered or stood for
+        let mut seen: Vec<String> = Vec::new();
+        out.retain(|o| {
+            let fresh = !seen.contains(&o.id);
+            seen.push(o.id.clone());
+            fresh
+        });
+        for x in ranked {
+            if out.len() >= TOP {
+                break;
+            }
+            if !out.iter().any(|o| o.id == x.id || o.twin_of.as_ref().is_some_and(|t| t.asked == x.id)) {
+                out.push(x.clone());
+            }
+        }
+        out
     }
 
     /// The data end periods (the monthly table's, the annual one's; the metabase's own form, 2026M08 and 2025) of a
@@ -4390,6 +4453,42 @@ mod tests {
 
     fn cand(id: &str, score: f64) -> Candidate {
         Candidate { id: id.into(), title: id.into(), score, s: score, v: 0.0, coverage: Coverage::Europe, twin_of: None }
+    }
+
+    /// Review list 11-15 (选表, dev round 15 n4, n33, n41): a World Bank national estimate in the first five is offered as
+    /// its harmonised series when the ranking holds that series, in the estimate's place and scores; a series already
+    /// offered takes no second place (the next ranked table fills it, never the estimate it stood for); no swap when the
+    /// series is not ranked, or when the estimate proves the answer and the series does not; an id with no NE part stays.
+    #[test]
+    fn a_world_bank_national_estimate_is_offered_as_its_harmonised_series() {
+        assert_eq!(wb_harmonised("SL.UEM.1524.NE.ZS@2").as_deref(), Some("SL.UEM.1524.ZS@2"));
+        assert_eq!(wb_harmonised("SL.TLF.CACT.FM.NE.ZS@2").as_deref(), Some("SL.TLF.CACT.FM.ZS@2"));
+        assert_eq!(wb_harmonised("SL.UEM.1524.ZS@2"), None);
+        assert_eq!(wb_harmonised("NE.EXP.GNFS.ZS@2"), None, "an NE first part is the series' own (national accounts)");
+        assert_eq!(wb_harmonised("une_rt_a"), None);
+        let c = small();
+        let lit = ["SE.ADT.1524.LT.FE.ZS@2", "SE.ADT.1524.LT.ZS@2"];
+        let five: Vec<Candidate> = lit
+            .iter()
+            .chain(&["SL.UEM.1524.NE.ZS@2", "SL.UEM.1524.FE.NE.ZS@2", "SL.UEM.1524.ZS@2"])
+            .enumerate()
+            .map(|(i, id)| cand(id, 2.0 - i as f64 / 10.0))
+            .collect();
+        let mut ranked = five.clone();
+        ranked.extend([cand("SL.UEM.1524.FE.ZS@2", 1.0), cand("SP.POP.TOTL@2", 0.9)]);
+        let got = c.source_swap(five.clone(), &ranked, |_| true);
+        let ids: Vec<&str> = got.iter().map(|c| c.id.as_str()).collect();
+        assert_eq!(ids, [lit[0], lit[1], "SL.UEM.1524.ZS@2", "SL.UEM.1524.FE.ZS@2", "SP.POP.TOTL@2"]);
+        let twin = got[2].twin_of.as_ref().expect("the series says what it stands for");
+        assert_eq!((twin.asked.as_str(), twin.used.as_str()), ("SL.UEM.1524.NE.ZS@2", "SL.UEM.1524.ZS@2"));
+        assert_eq!(got[2].score, five[2].score, "the estimate's place and scores");
+        assert!(got[0].twin_of.is_none() && got[4].twin_of.is_none());
+        // the series not ranked: the estimate stays
+        let got = c.source_swap(five[..4].to_vec(), &five[..4], |_| true);
+        assert_eq!(got.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(), five[..4].iter().map(|c| c.id.as_str()).collect::<Vec<_>>());
+        // the estimate proves the asked places and years and the series does not: no swap
+        let got = c.source_swap(five[..3].to_vec(), &ranked, |id| id.contains(".NE."));
+        assert_eq!(got[2].id, "SL.UEM.1524.NE.ZS@2");
     }
 
     fn asked_of(id: &str, tables: &[&str]) -> Asked {
