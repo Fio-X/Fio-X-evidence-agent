@@ -9,6 +9,13 @@ candidates(relation, shape) -> [node, ...]: the leaves registered for the block'
 score(node, drawn) -> int: the fixed score of a drawn candidate: its encoding's weight, the bonus when the lead reading
   is one mark of it (drawn["lead_marked"]), a penalty when its reader must subtract or compare areas (the node's own
   reader_subtracts) and one per label it had to crowd (drawn["label_crowded"], a count).
+shape(cells, whole=None, tol=0.005) -> the shape candidates() reads, counted from a block's cells (never printed):
+  cells [{"place": code, "period": str, "quantity": code, "value": number}], whole [{"place", "period", "value"}] or None.
+  places, periods, quantities: the distinct members; rank_flips: the place pairs whose order differs between the first
+  and the last quantity (at the last period) when there are two quantities or more, else between the first and the last
+  period (Kendall's discordant pairs; a place missing from either side is left out); parts and parts_add_up only when
+  a whole is given: the quantities are its parts, adding up when every place and period's parts are within tol of
+  its whole (a place and period with no whole, or a part missing, does not add up).
 best(scores) -> [node, ...]: the highest-scoring nodes of {node: score}, in their given order; one is the main picture,
   several tie and the model picks among them by number (none: no candidate passed its checks).
 Refuses (ValueError): a relation no node is registered for is no error (no candidates); a node sketch.json does not
@@ -56,6 +63,36 @@ def score(node, drawn):
     s += DATA["penalty"]["reader_subtracts"] if v.get("reader_subtracts") else 0
     s += DATA["penalty"]["label_crowded"] * drawn["label_crowded"]
     return s
+
+
+def discordant(a, b):
+    """Place pairs ordered one way by a and the other by b (ties on either side are no flip); a, b: {place: value}."""
+    both = sorted(set(a) & set(b))
+    return sum(1 for i, p in enumerate(both) for q in both[i + 1:] if (a[p] - a[q]) * (b[p] - b[q]) < 0)
+
+
+def shape(cells, whole=None, tol=0.005):
+    for c in cells:
+        if not isinstance(c, dict) or not {"place", "period", "quantity", "value"} <= set(c) or isinstance(c["value"], bool) \
+                or not isinstance(c["value"], (int, float)):
+            raise ValueError(f"sketch: a cell {c!r} is not {{place, period, quantity, value: number}}")
+    order = lambda key: list(dict.fromkeys(c[key] for c in cells))
+    places, periods, quantities = order("place"), sorted(order("period")), order("quantity")
+    at = lambda q, t: {c["place"]: c["value"] for c in cells if c["quantity"] == q and c["period"] == t}
+    out = {"places": len(places), "periods": len(periods), "quantities": len(quantities), "rank_flips": 0}
+    if len(quantities) >= 2:
+        out["rank_flips"] = discordant(at(quantities[0], periods[-1]), at(quantities[-1], periods[-1]))
+    elif len(periods) >= 2:
+        out["rank_flips"] = discordant(at(quantities[0], periods[0]), at(quantities[0], periods[-1]))
+    if whole is not None:
+        wh = {(w["place"], w["period"]): w["value"] for w in whole}
+        out["parts"] = len(quantities)
+        sums = {}
+        for c in cells:
+            sums.setdefault((c["place"], c["period"]), []).append(c["value"])
+        out["parts_add_up"] = bool(sums) and all(
+            k in wh and len(v) == len(quantities) and abs(sum(v) - wh[k]) <= tol * abs(wh[k]) for k, v in sums.items())
+    return out
 
 
 def best(scores):

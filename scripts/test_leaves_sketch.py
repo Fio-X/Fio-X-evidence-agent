@@ -53,6 +53,47 @@ class Candidates(unittest.TestCase):
             sketch.DATA["nodes"].clear(); sketch.DATA["nodes"].update(old)
 
 
+def cell(place, period, quantity, value):
+    return {"place": place, "period": period, "quantity": quantity, "value": value}
+
+
+class Shapes(unittest.TestCase):
+    def test_places_by_quantities_one_year(self):  # sample A's shape: places ranked by three quantities in one year
+        pop = {"IND": 1450, "CHN": 1410, "USA": 340, "IDN": 280}
+        gdp = {"IND": 3.9, "CHN": 18.7, "USA": 29.2, "IDN": 1.4}
+        cells = [cell(p, "2024", "POP", v) for p, v in pop.items()] + [cell(p, "2024", "GDP", v) for p, v in gdp.items()]
+        got = sketch.shape(cells)
+        # pairs in the other order by GDP: IND-CHN, IND-USA, CHN-USA (the three pairs with IDN keep their order)
+        self.assertEqual(got, {"places": 4, "periods": 1, "quantities": 2, "rank_flips": 3})
+        self.assertEqual(sketch.candidates("Ranking", got), ["bars", "rank_lines"])
+        same = cells[:4] + [cell(p, "2024", "GDP", v / 100) for p, v in pop.items()]
+        self.assertEqual(sketch.shape(same)["rank_flips"], 0)
+
+    def test_places_over_years(self):  # sample B's shape: one quantity over eleven years
+        cells = [cell(p, str(2014 + i), "RATE", base + i * step) for p, base, step in (("DEU", 2.0, 0.1), ("FRA", 3.0, -0.2)) for i in range(11)]
+        got = sketch.shape(cells)
+        self.assertEqual(got, {"places": 2, "periods": 11, "quantities": 1, "rank_flips": 1})  # FRA above in 2014, below in 2024
+        self.assertEqual(sketch.candidates("Change", got), ["line"])
+        self.assertEqual(sketch.candidates("Change", sketch.shape([c for c in cells if c["period"] in ("2014", "2024")])), ["dumbbell"])
+
+    def test_parts_of_a_whole(self):  # sample C's shape: one place's whole and its parts in one year
+        parts = {"O4000XBIO": 75.6, "E7000": 40.3, "G3000": 33.9, "REST": 27.9}
+        cells = [cell("EU27", "2024", c, v) for c, v in parts.items()]
+        got = sketch.shape(cells, whole=[{"place": "EU27", "period": "2024", "value": 177.7}])
+        self.assertEqual(got, {"places": 1, "periods": 1, "quantities": 4, "rank_flips": 0, "parts": 4, "parts_add_up": True})
+        self.assertEqual(sketch.candidates("Composition", got), ["waterfall"])
+        self.assertFalse(sketch.shape(cells, whole=[{"place": "EU27", "period": "2024", "value": 190.0}])["parts_add_up"])
+        self.assertFalse(sketch.shape(cells, whole=[{"place": "EU27", "period": "2023", "value": 177.7}])["parts_add_up"])  # no whole that year
+        self.assertFalse(sketch.shape(cells[:-1] + [cell("FRA", "2024", "REST", 1.0)],
+                                      whole=[{"place": "EU27", "period": "2024", "value": 177.7}, {"place": "FRA", "period": "2024", "value": 1.0}])["parts_add_up"])  # parts missing
+        self.assertNotIn("parts_add_up", sketch.shape(cells))  # no whole given: adding up unknown
+
+    def test_a_cell_that_is_not_a_cell(self):
+        for bad in ({"place": "DEU", "period": "2024", "value": 1.0}, cell("DEU", "2024", "X", "1.0"), cell("DEU", "2024", "X", True)):
+            with self.assertRaises(ValueError):
+                sketch.shape([bad])
+
+
 class Scores(unittest.TestCase):
     def test_the_fixed_score(self):
         self.assertEqual(sketch.score("rank_lines", DRAWN), 4 + 2)
