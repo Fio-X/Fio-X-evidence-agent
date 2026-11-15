@@ -472,6 +472,9 @@ pub struct Draft {
     /// rank_asked). With `places_open` and a wb-rank-by.json option ranked by its reference, the program keeps that option's
     /// economies and the count the question writes (ranked_option): "t<n>.places" is not asked.
     pub ranked: Option<RankAsked>,
+    /// The dimensions kept to a presentation table's codes (draft_kept): a split by one fetches exactly its kept codes,
+    /// never the dataset's every code. Empty for any other table.
+    pub kept: Vec<String>,
 }
 
 /// The years a question names: a span of years it writes ("2015 年到 2024 年", one year alone a span of one), or the last
@@ -835,16 +838,21 @@ fn words(s: &str) -> Vec<String> {
         .collect()
 }
 
-/// A table's metadata kept to a presentation table's codes (the search's TwinOf.keep: per dimension, the codes kept, in
-/// the dataset's order); every other dimension as it is. The dataset then drafts, asks and fetches as the presentation
-/// table it stands for did.
-pub fn kept_to(mut table: TableMeta, keep: &[(String, Vec<String>)]) -> TableMeta {
+/// `draft` of a dataset kept to a presentation table's codes (the search's TwinOf.keep: per dimension, the codes kept, in
+/// the dataset's order), every other dimension as it is, the kept dimensions named in `kept`: the dataset then drafts, asks
+/// and fetches as the presentation table it stands for did. A dimension none of whose codes the table still lists (its
+/// probe found none held) is left as it is. No keep: `draft` itself.
+pub fn draft_kept(mut table: TableMeta, keep: &[(String, Vec<String>)], texts: &[String], places: &[Place]) -> Draft {
+    let mut kept = Vec::new();
     for (dim, codes) in table.dims.iter_mut() {
-        if let Some((_, kept)) = keep.iter().find(|(d, _)| d == dim) {
-            codes.retain(|(c, _)| kept.contains(c));
+        if let Some((_, k)) = keep.iter().find(|(d, _)| d == dim) {
+            if codes.iter().any(|(c, _)| k.contains(c)) {
+                codes.retain(|(c, _)| k.contains(c));
+                kept.push(dim.clone());
+            }
         }
     }
-    table
+    Draft { kept, ..draft(table, texts, places) }
 }
 
 /// What the program fixes and what it asks for one table; `texts` are the model's search words, used only to order options.
@@ -915,6 +923,7 @@ pub fn draft(table: TableMeta, texts: &[String], places: &[Place]) -> Draft {
         window: None,
         named_years: None,
         ranked: None,
+        kept: Vec::new(),
     }
 }
 
@@ -1222,7 +1231,11 @@ pub fn fill(
                 let whole = registered
                     .iter()
                     .any(|p| p.level == PART_LEVELS[0] && listed.contains(&p.code));
-                if whole && listed.len() > 1 {
+                if draft.kept.contains(dim) {
+                    // a dimension kept to a presentation table's codes: those codes, not the dataset's every one
+                    put(&mut filters, dim, codes.iter().map(|(c, _)| c.clone()).collect());
+                    open = Some((dim.clone(), codes.len()));
+                } else if whole && listed.len() > 1 {
                     parted.push(json!({"dimension": dim, "source": PARTS_SOURCE, "codes": listed.len(),
                         "registered": registered.len(), "from_codes": codes.len(),
                         "unlisted": registered.iter().filter(|p| !listed.contains(&p.code)).map(|p| p.code.as_str()).collect::<Vec<_>>(),
@@ -3593,20 +3606,31 @@ mod tests {
     }
 
     /// 11-15: a presentation table's dataset kept to the table's codes (the search's keep) drafts as the table did: the
-    /// kept dimension has its one code (no item, fetched at that code), every other dimension and geo whole; no keep, the
-    /// table as it is.
+    /// kept dimension has only the table's codes (one code: no item, fetched at it), every other dimension and geo whole;
+    /// a split by a kept dimension fetches exactly its kept codes, never the dataset's every one (review 11-15); a keep the
+    /// probe left none of is not applied; no keep, `draft` itself.
     #[test]
     fn a_dataset_kept_to_a_presentation_tables_codes_drafts_as_that_table() {
         let dataset = eurostat(
             "demo_pjanind",
-            vec![dim("geo", &["DE", "FR"]), dim("indic_de", &["MEDAGEPOP", "PC_Y65_MAX", "DEPRATIO1"]), dim("unit", &["PC", "YR"])],
+            vec![dim("geo", &["DE", "FR"]), dim("indic_de", &["MEDAGEPOP", "PC_Y0_14", "PC_Y65_MAX", "DEPRATIO1"]), dim("unit", &["PC", "YR"])],
         );
-        assert_eq!(kept_to(dataset.clone(), &[]), dataset);
-        let kept = kept_to(dataset, &[("indic_de".to_string(), vec!["PC_Y65_MAX".to_string()]), ("unit".to_string(), vec!["PC".to_string()])]);
-        let codes = |d: &str| kept.dims.iter().find(|(n, _)| n == d).map(|(_, c)| c.iter().map(|(x, _)| x.clone()).collect::<Vec<_>>()).unwrap();
-        assert_eq!((codes("indic_de"), codes("unit"), codes("geo").len()), (vec!["PC_Y65_MAX".to_string()], vec!["PC".to_string()], 2));
-        let d = draft_of_table(kept);
-        assert!(d.members.iter().all(|(dim, _, _)| dim != "indic_de") && !d.breakdown.contains(&"indic_de".to_string()), "{d:?}");
+        let de = [Place::Country("DE".into())];
+        assert_eq!(draft_kept(dataset.clone(), &[], &[], &de), draft(dataset.clone(), &[], &de));
+        let keep = |codes: &[&str]| vec![("indic_de".to_string(), codes.iter().map(|c| c.to_string()).collect::<Vec<_>>())];
+        let one = draft_kept(dataset.clone(), &keep(&["PC_Y65_MAX"]), &[], &de);
+        let codes = |d: &Draft, dim: &str| d.table.dims.iter().find(|(n, _)| n == dim).map(|(_, c)| c.iter().map(|(x, _)| x.clone()).collect::<Vec<_>>()).unwrap();
+        assert_eq!((codes(&one, "indic_de"), codes(&one, "geo").len(), one.kept.clone()), (vec!["PC_Y65_MAX".to_string()], 2, vec!["indic_de".to_string()]));
+        assert!(one.members.iter().all(|(dim, _, _)| dim != "indic_de") && !one.breakdown.contains(&"indic_de".to_string()), "{one:?}");
+        // a split by the kept dimension: its kept codes only
+        let two = draft_kept(dataset.clone(), &keep(&["PC_Y0_14", "PC_Y65_MAX"]), &[], &de);
+        let at = two.breakdown.iter().position(|d| d == "indic_de").expect("indic_de is a breakdown") + 2;
+        let filled = fill(&two, 1, &picks(&[("t1.breakdown", at)]), &de, 2026).unwrap();
+        let split = filled.args["filters"].as_array().unwrap().iter().find(|f| f["dimension"] == "indic_de").cloned();
+        assert_eq!(split.map(|f| f["values"].clone()), Some(serde_json::json!(["PC_Y0_14", "PC_Y65_MAX"])), "{:?}", filled.args);
+        // the probe left none of the kept codes: the dimension is left as it is
+        let gone = draft_kept(dataset, &keep(&["PC_Y15_64"]), &[], &de);
+        assert!(gone.kept.is_empty() && codes(&gone, "indic_de").len() == 4);
     }
 
     /// A table with no registered parts fills as before: the same q2 answer on the same codes under an unregistered id gives

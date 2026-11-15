@@ -3027,12 +3027,15 @@ impl Catalog {
     /// years, as `top5` drops by) and the table does not; a twin_swap pair is left as it is.
     fn source_swap(&self, five: Vec<Candidate>, ranked: &[Candidate], proves: impl Fn(&str) -> bool) -> Vec<Candidate> {
         let mut out: Vec<Candidate> = Vec::with_capacity(five.len());
+        let offered: Vec<String> = five.iter().map(|c| c.id.clone()).collect();
         for c in five {
+            // a table kept to a presentation table's codes never displaces the whole table offered anywhere in the five
             let series = Some(&c).filter(|c| c.twin_of.is_none()).and_then(|c| self.stands_for(&c.id)).and_then(|s| {
                 ranked
                     .iter()
                     .find(|x| x.id == s.to)
-                    .filter(|x| !out.iter().any(|o| o.id == x.id) && (proves(&x.id) || !proves(&c.id)))
+                    .filter(|x| !out.iter().any(|o| o.id == x.id) && (s.keep.is_empty() || !offered.contains(&x.id)))
+                    .filter(|x| proves(&x.id) || !proves(&c.id))
                     .map(|x| (x, s))
             });
             let Some((x, s)) = series else {
@@ -3094,11 +3097,12 @@ impl Catalog {
     /// Per dimension of the dataset `source` but geo whose codes the presentation table `slim` holds fewer of, the codes it
     /// holds, in the dataset's order: what the dataset is kept to so the pick offers what it offered of the table. None
     /// when the catalogue lists either table's metadata not, the two have other dimensions, or a dimension of the dataset
-    /// holds none of the table's codes.
+    /// holds none of the table's codes, or the two are fetched at another frequency (a quarterly table's dataset that also
+    /// holds years is fetched by year).
     fn kept_codes(&self, slim: &str, source: &str) -> Option<Vec<(String, Vec<String>)>> {
         let (s, d) = (self.table(slim)?, self.table(source)?);
         let names = |t: &TableMeta| t.dims.iter().map(|(n, _)| n.clone()).collect::<BTreeSet<String>>();
-        if names(&s) != names(&d) {
+        if names(&s) != names(&d) || s.freq().ok() != d.freq().ok() {
             return None;
         }
         let mut keep = Vec::new();
@@ -4634,7 +4638,15 @@ mod tests {
         let other = with(&both.replace("demo_pjanind\tfreq\tA\n", "demo_pjanind\tfreq\tA\ndemo_pjanind\tsex\tT\n"));
         assert_eq!(other.source_swap(five.clone(), &ranked, |_| true)[1].id, "tps00028");
         let none = with(&both.replace("demo_pjanind\tindic_de\tPC_Y65_MAX\n", ""));
-        assert_eq!(none.source_swap(five, &ranked, |_| true)[1].id, "tps00028");
+        assert_eq!(none.source_swap(five.clone(), &ranked, |_| true)[1].id, "tps00028");
+        // review 11-15: the whole dataset already offered later in the five is never displaced by its kept copy
+        let both_offered = vec![cand("tps00028", 2.0), cand("demo_pjanind", 1.9)];
+        let got = c.source_swap(both_offered.clone(), &both_offered, |_| true);
+        assert_eq!(got.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(), ["tps00028", "demo_pjanind"]);
+        assert!(got.iter().all(|c| c.twin_of.is_none()));
+        // review 11-15: a quarterly table's dataset that also holds years (fetched by year) is not offered for it
+        let quarters = with(&format!("{both}tps00028\ttime\t2024Q1\ndemo_pjanind\ttime\t2024\ndemo_pjanind\ttime\t2024Q1\n"));
+        assert_eq!(quarters.source_swap(five, &ranked, |_| true)[1].id, "tps00028");
     }
 
     fn asked_of(id: &str, tables: &[&str]) -> Asked {
