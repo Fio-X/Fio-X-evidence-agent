@@ -2050,6 +2050,46 @@
    },
    {
     "kind": "materialized_runtime",
+    "exact": "runtime/leaves_py/line.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/leaves_py/): the new route's leaf children. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/leaves_py/rank_lines.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/leaves_py/): the new route's leaf children. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/leaves_py/dumbbell.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/leaves_py/): the new route's leaf children. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/leaves_py/waterfall.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/leaves_py/): the new route's leaf children. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/leaves_py/waffle.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/leaves_py/): the new route's leaf children. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/leaves_py/stacked_area.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/leaves_py/): the new route's leaf children. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/leaves_py/sketch.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/leaves_py/): the sketch compare's candidates and fixed score. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/leaves_py/sketch.json",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/leaves_py/): the sketch compare's data, read by sketch.py. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
     "exact": "runtime/leaves_py/scmp.py",
     "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/leaves_py/): the new route's leaf children. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
    },

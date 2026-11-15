@@ -503,14 +503,18 @@ def unanswered(spec):
     return "".join(out)
 
 def footer(spec):
-    """The sources. With a ledger (a leaf's page) each table id of the source that spec.refs names is a data-ref mark, each
+    """The sources (spec.source: a line, or a page over several tables' lines, joined with the list separator). With a ledger (a leaf's page) each table id of the source that spec.refs names is a data-ref mark, each
     event source the entry of the first record that names it, and the events file's path is not printed; a digit left
     outside the marks, in the source or the note, refuses."""
     note = prod.esc(spec.get("note", ""))
+    source = spec["source"]
+    if isinstance(source, list):  # a page over several tables: one line each, in layer 1's order
+        if not source or not all(isinstance(s, str) and s for s in source): raise FX.Refused(f"footer: the source lines {source!r} are not lines")
+        source = word("list.sep").join(source)
     if FX.LEDGER is None:
         evsrc = word("list.sep").join(sorted({r["source_name"] for r in prod.events({"events": spec["events"]})})) if spec.get("events") else ""
-        return f'<footer>{word("footer.source", v=prod.esc(spec["source"]))}{word("footer.events", v=prod.esc(evsrc), f=prod.esc(spec["events"])) if evsrc else ""}{note}</footer>'
-    src, refs = prod.esc(spec["source"]), sorted(spec.get("refs") or [], key=len, reverse=True)
+        return f'<footer>{word("footer.source", v=prod.esc(source))}{word("footer.events", v=prod.esc(evsrc), f=prod.esc(spec["events"])) if evsrc else ""}{note}</footer>'
+    src, refs = prod.esc(source), sorted(spec.get("refs") or [], key=len, reverse=True)
     if refs: src = re.sub(r"(?<![\w.])(" + "|".join(map(re.escape, refs)) + r")(?![\w.])", r'<span data-ref="">\1</span>', src)
     if FX.digit(re.sub(r'<span data-ref="">[^<]*</span>', "", src)): raise FX.Refused("footer: the source holds a digit outside the table ids spec.refs names")
     if FX.digit(note): raise FX.Refused("footer: the note holds a digit")

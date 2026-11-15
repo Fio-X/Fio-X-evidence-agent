@@ -1113,6 +1113,9 @@ struct Shape {
     /// the input codes its sum reads from the main's sum-input fetch, at `year`; `countries` are the places the fetch asked
     /// (the bars, largest total first) and `outside` the main's other countries with a total there, in the same order.
     composition: Option<Composition>,
+    /// A page over a many-block page's blocks (blocks): each table, the main first, with its place dimension and its year
+    /// ({table, by, year}), as one_freq, one_place and last_year read it alone.
+    blocks: Vec<Value>,
 }
 
 /// What composition_groups reads: the grouped dimension, its total code and the groups' input codes (next_params::group_inputs).
@@ -1145,7 +1148,37 @@ const SHAPE_CONDITIONS: &[(&str, Condition)] = &[
     ("two_ends", two_ends),
     ("official_flow", official_flow),
     (COMPOSITION, composition_groups),
+    ("one_whole", one_whole),
+    ("blocks", blocks),
 ];
+
+/// One place's whole and its parts (named after the parts' condition in a recipe's eats, which reads the places first: its
+/// one bar, a block of a table its blocks share). Two places or more are not one whole.
+fn one_whole(s: &mut Shape, _tables: &[(&str, &[Value])], _catalogue: &dyn Catalogue) -> Result<(), String> {
+    match s.countries.len() {
+        1 => Ok(()),
+        n => Err(format!("main {} spans {n} places, and one whole is one place", s.main)),
+    }
+}
+
+/// Two tables or more, the main first, each across places at one period (a many-block page's tables): each table's place
+/// dimension and year as one_freq, one_place and last_year read the table alone, the main's as the shape holds them.
+fn blocks(s: &mut Shape, tables: &[(&str, &[Value])], catalogue: &dyn Catalogue) -> Result<(), String> {
+    if tables.len() < 2 {
+        return Err(format!("main {} is one table; a page over blocks reads two or more", s.main));
+    }
+    if s.place.is_empty() || s.year.is_empty() {
+        return Err(format!("main {} has no place dimension or year read before its blocks", s.main));
+    }
+    let mut out = vec![json!({"table": s.main, "by": s.place, "year": s.year})];
+    for (id, rows) in &tables[1..] {
+        let eats = ["one_freq", "one_place", "last_year"].map(String::from);
+        let t = shape_of(&eats, &[(id, rows)], catalogue).map_err(|why| format!("block {id}: {why}"))?;
+        out.push(json!({"table": id, "by": t.place, "year": t.year}));
+    }
+    s.blocks = out;
+    Ok(())
+}
 
 /// The codes each dimension of a table's series rows holds, and its periods, both sorted.
 fn dims_of(rows: &[Value]) -> (BTreeMap<String, BTreeSet<String>>, BTreeSet<String>) {
@@ -2413,8 +2446,10 @@ fn fill_of(
     }
     fmts.insert("time".into(), json!({}));
     let mut tables = Map::new();
-    // each table's id as the source line prints it (printed_id), the one id of it the footer marks and the page check takes
-    for t in [&shape.main, &shape.companion].into_iter().filter(|t| !t.is_empty()) {
+    // each table's id as the source line prints it (printed_id), the one id of it the footer marks and the page check takes;
+    // a page over blocks prints every block's table
+    let block_tables: Vec<String> = shape.blocks.iter().filter_map(|b| b["table"].as_str().map(str::to_string)).collect();
+    for t in [&shape.main, &shape.companion].into_iter().chain(&block_tables).filter(|t| !t.is_empty()) {
         tables.insert(t.clone(), json!({"id": printed_id(t)}));
     }
     if let Some(code) = scope.filter(|c| labels.contains_key(c) && facts.contains_key(DRAWN)) {
@@ -2560,9 +2595,16 @@ fn recipe_request(
         Some((id, file)) => fetched_rows(run_dir, catalogue, id, file).map_err(shape_err)?,
         None => Vec::new(),
     };
+    // a page over a many-block page's blocks (a recipe that eats blocks): the other blocks' tables, after the main
+    let of_blocks = recipe.eats.iter().any(|e| e == "blocks");
+    let block_rows: Vec<(&str, Vec<Value>)> = match of_blocks {
+        true => prepared[1..].iter().map(|p| fetched_rows(run_dir, catalogue, &p.id, &p.file).map(|r| (p.id.as_str(), r))).collect::<Result<_, _>>().map_err(shape_err)?,
+        false => Vec::new(),
+    };
     let shape_over = |main_rows: &[Value]| {
         let mut tables: Vec<(&str, &[Value])> = vec![(main.id.as_str(), main_rows)];
         tables.extend(companion.map(|(id, _)| (id.as_str(), &comp_rows[..])));
+        tables.extend(block_rows.iter().map(|(id, rows)| (*id, &rows[..])));
         shape_of(&recipe.eats, &tables, catalogue).map_err(shape_err)
     };
     let mut shape = shape_over(&main_rows)?;
@@ -2597,6 +2639,30 @@ fn recipe_request(
     if let (Some(p), Some(set)) = (page_in.as_mut(), set) {
         p["set"] = set;
     }
+    // a page over blocks: every block's rows beside the main's; a block answers a quantity of the question's record
+    // (answers_asked) and is headed by its table's reviewed Chinese name, printed marked with its name row as the map's key
+    // is (below); a block with none of either is not this shape and the many-block page stays as it was
+    let mut block_names: Vec<(String, String)> = Vec::new();
+    if let Some(p) = page_in.as_mut().filter(|_| of_blocks) {
+        let mut rows = p["rows"].as_array().cloned().unwrap_or_default();
+        rows.extend(block_rows.iter().flat_map(|(_, r)| r.iter().cloned()));
+        p["rows"] = Value::Array(rows);
+        let mut headed = Vec::new();
+        for (b, table) in shape.blocks.iter().zip(prepared) {
+            if !answers_asked(table) {
+                return Err(shape_err(format!("not this shape: block {} answers no quantity the question asks", table.id)));
+            }
+            let zh = catalogue.table_zh(&table.id).map_err(|why| ("fill", why))?;
+            let zh = zh.map(|n| n.trim().to_string()).filter(|n| !n.is_empty());
+            let name = zh.ok_or_else(|| shape_err(format!("not this shape: block {} has no reviewed Chinese name for its head", table.id)))?;
+            let src = format!("{LABEL_SRC}catalogue:{}:title", table.id);
+            let mut b = b.clone();
+            b["src"] = json!(src);
+            headed.push(b);
+            block_names.push((src, name));
+        }
+        p["blocks"] = Value::Array(headed);
+    }
     // the quantities the question asks for, the catalogue's record as the flow kept it (never the model's): the page input
     // carries it for the core's answered-all check (next_tree C6), the leaf's spec for its unanswered lines; none read, none
     // written, and the page is as before
@@ -2616,6 +2682,13 @@ fn recipe_request(
     let asked = Asked { calls, page_in: page_in.as_ref() };
     let mut fill = fill_of(recipe, &shape, &picks, (&main_rows, &comp_rows), catalogue, (title, dek), scoped, Some(&asked))
         .map_err(|why| ("fill", why))?;
+    if !block_names.is_empty() {
+        // the blocks' heads beside the names a node gave (fill_of), never in their place
+        let named = fill["knobs"].as_object_mut().expect("the fill's knobs are an object").entry("named").or_insert_with(|| json!({}));
+        for (src, name) in block_names {
+            named.as_object_mut().map(|n| n.insert(src, json!(name)));
+        }
+    }
     zero_rows(&mut fill, &comp_rows);
     if let Some(b) = &basis {
         // a group's members outside a ranked World Bank set (the ranking beside the group, next_params named_open) are no
@@ -2659,7 +2732,19 @@ fn recipe_request(
     }
     let title = zh.unwrap_or_else(|| main.title.clone());
     // no years here: the leaf footer marks only the table ids (spec.refs) and refuses any other digit in the line
-    fill["knobs"]["spec"]["source"] = json!(source_line(meta.worldbank, &meta.id, &title, &[]));
+    let mut lines = vec![source_line(meta.worldbank, &meta.id, &title, &[])];
+    // a page over blocks draws every block's table: each named in its turn after the main's, as the main's is; the leaf's
+    // footer joins them with the visual registry's list separator (scmp.footer), never a word of the flow's
+    for id in shape.blocks.iter().skip(1).filter_map(|b| b["table"].as_str()) {
+        let meta = catalogue.table(id).ok_or_else(|| ("fill", format!("the catalogue lists no {id}")))?;
+        // every block's table has its reviewed name by now (a block with none is not this shape, above)
+        let title = catalogue.table_zh(&meta.id).map_err(|why| ("fill", why))?.unwrap_or_default();
+        lines.push(source_line(meta.worldbank, &meta.id, &title, &[]));
+    }
+    fill["knobs"]["spec"]["source"] = match lines.len() {
+        1 => json!(lines[0]),
+        _ => json!(lines),
+    };
     Ok(fill)
 }
 
@@ -3027,6 +3112,14 @@ fn fetched_rows(run_dir: &Path, catalogue: &dyn Catalogue, id: &str, file: &str)
     catalogue.series_rows(&meta, &csv)
 }
 
+/// Whether a table answers a quantity of the question's record of asked quantities (the catalogue's, Prepared::asked): one
+/// record's tables hold a prefix of the table's id.
+fn answers_asked(table: &Prepared) -> bool {
+    table.asked.as_array().is_some_and(|all| {
+        all.iter().any(|a| a["tables"].as_array().is_some_and(|ts| ts.iter().filter_map(Value::as_str).any(|t| !t.is_empty() && table.id.starts_with(t))))
+    })
+}
+
 /// The recipe a page stopped at when none of the registry's recipes reads its shape.
 const NO_RECIPE: &str = "leaf";
 
@@ -3291,7 +3384,9 @@ fn zeros_check(zeros: &[Value]) -> Option<PageCheck> {
 /// kept for the main table (a recipe that declares none answers any), draws every view the question asks for (GAP-2,
 /// unanswered_views) and whose shape the first table has, and the page's request by it (recipe_request). Err is
 /// (recipe, stage, why): NO_RECIPE at the shape, every recipe's why given in registry order, when none fits; else the
-/// recipe that stopped past its shape.
+/// recipe that stopped past its shape. `of_blocks`: the page over a many-block page's blocks (pages_of), which only a
+/// recipe that eats blocks draws; every other page passes those by, as if the registry had none.
+#[allow(clippy::too_many_arguments)]
 fn leaf_request(
     run_dir: &Path,
     prepared: &[Prepared],
@@ -3300,12 +3395,13 @@ fn leaf_request(
     (question, words): (&str, (&str, &str, &str)),
     calls: &std::sync::Mutex<Vec<Value>>,
     focus: Option<&str>,
+    of_blocks: bool,
 ) -> Result<(&'static Recipe, Value), (&'static str, &'static str, String)> {
     let mut missed = Vec::new();
     let places = catalogue.places(question);
     // the relation the table step kept for the main table: a recipe that answers another is not this relation
     let kept = prepared.first().and_then(|p| p.relation).map(|r| format!("{r:?}"));
-    for recipe in catalogue.recipes() {
+    for recipe in catalogue.recipes().iter().filter(|r| r.eats.iter().any(|e| e == "blocks") == of_blocks) {
         if let (Some(kept), Some(answers)) = (&kept, &recipe.relation) {
             if kept != answers {
                 missed.push((recipe.name.as_str(), format!("not this relation: the table step kept {kept}, the recipe answers {answers}")));
@@ -4114,6 +4210,7 @@ pub(crate) async fn pages_of(
     answers.push(first);
     let mut pages = vec![shown];
     let mut drawn: Vec<&str> = vec![blocks[lead].0.as_str()];
+    let mut drawn_tables: Vec<Prepared> = vec![blocks[lead].1.clone()];
     for (i, (label, table)) in blocks.iter().enumerate().skip(lead + 1) {
         // a block the plan says gives the first block's leader's place (名次对照, owner 11-14 22:2x item 2) has that place as its
         // focus: its page marks it and its finding says where it stands, a number from the ledger
@@ -4129,6 +4226,7 @@ pub(crate) async fn pages_of(
                 answers.push(answer);
                 pages.push(shown);
                 drawn.push(label.as_str());
+                drawn_tables.push(table.clone());
             }
             // a page step or a check of the page stopped it, or the text step's reply was refused: that block only, while it
             // published nothing; a block whose published page a check then stopped stops the run (review 11-15: its folder
@@ -4138,6 +4236,31 @@ pub(crate) async fn pages_of(
                     recorder.program_event(BLOCK_LEFT_OUT_EVENT, json!({"block": i + 1, "table": table.id, "why": stopped.to_string()}))?;
                 }
                 answers.push(format!("Block {} ({}) was left out: {stopped}", i + 1, table.id));
+            }
+            Err(stopped) => return Err(stopped),
+        }
+    }
+    // a many-block page whose drawn blocks all answer one relation that a recipe eating blocks answers (the registry's: the
+    // ranks of 名次对照): one page more over the drawn blocks' tables (block 0: only such a recipe draws it, by the same steps
+    // and checks), stacked first as the page's main picture (owner 11-14 16:0x items 1 and 5); one that stops having
+    // published nothing is left out, the blocks stacked as they were, and one whose published page a check stopped stops
+    // the run, as a later block's does
+    let mut over_blocks = json!(null);
+    let kept: Vec<Option<String>> = drawn_tables.iter().map(|t| t.relation.map(|r| format!("{r:?}"))).collect();
+    let one = kept.first().cloned().flatten().filter(|k| kept.iter().all(|x| x.as_deref() == Some(k.as_str())));
+    let answered = one.is_some_and(|k| catalogue.recipes().iter().any(|r| r.eats.iter().any(|e| e == "blocks") && r.relation.as_deref() == Some(k.as_str())));
+    if answered && drawn_tables.len() > 1 {
+        let before = manifested(recorder.run_dir());
+        match page_of_block(recorder, model, question, &drawn_tables, catalogue, cancel, (0, None, None)).await {
+            Ok((answer, shown, _)) => {
+                over_blocks = json!({"drawn": true, "page": shown.0});
+                answers.insert(0, answer);
+                pages.insert(0, shown);
+            }
+            Err(stopped @ (Stop::Page { .. } | Stop::Refused { .. } | Stop::NoReply { .. })) if manifested(recorder.run_dir()) == before => {
+                recorder.resume_under_last_accepted();
+                over_blocks = json!({"drawn": false, "why": stopped.to_string()});
+                answers.push(format!("The page over the blocks was left out: {stopped}"));
             }
             Err(stopped) => return Err(stopped),
         }
@@ -4152,7 +4275,7 @@ pub(crate) async fn pages_of(
     recorder.program_event(
         STACKED_EVENT,
         json!({"published": stacked_ref, "html_sha256": stacked_sha256,
-            "blocks": pages.iter().map(|(dir, _, _)| dir).collect::<Vec<_>>(), "quantities_drawn": drawn,
+            "blocks": pages.iter().map(|(dir, _, _)| dir).collect::<Vec<_>>(), "quantities_drawn": drawn, "over_blocks": over_blocks,
             "quantities_left_out": labels.iter().map(String::as_str).filter(|q| !drawn.contains(q)).collect::<Vec<_>>()}),
     )?;
     answers.push(format!("The {} blocks are stacked at {stacked_ref} (sha256 {stacked_sha256}).", pages.len()));
@@ -4236,7 +4359,16 @@ pub(crate) async fn page_of_block(
     // The recipe is picked by the data's shape before the text step (its words go into the fill once worded, leaf_page), so
     // the page-level fields are drafted for what the picked page draws: a page whose bars draw the change gets a title
     // that names a change. A pick that stopped stops the run after the text step, as before.
-    let picked = leaf_request(recorder.run_dir(), prepared, &drawn, catalogue, (question, ("", "", "")), &calls, focus);
+    // block 0 is the page over the blocks (pages_of): only a recipe that eats blocks draws it
+    let picked = leaf_request(recorder.run_dir(), prepared, &drawn, catalogue, (question, ("", "", "")), &calls, focus, block == 0);
+    // the page over the blocks is extra: when no recipe can draw it, it stops here, before the text step asks the model
+    // anything (review 11-16: a page left out must not cost a model call)
+    if block == 0 {
+        if let Err((recipe, stage, why)) = &picked {
+            record_page_calls(recorder, catalogue, calls)?;
+            return Err(stop(stage, format!("the {recipe} leaf page stopped at {stage}: {why}")));
+        }
+    }
     // the page's leader: the first place its ranking pick holds, on a page whose finding made a headline (the highest named
     // alone, no tie at the top)
     let accent = picked.as_ref().ok().filter(|(_, fill)| fill.get(HEADLINE).is_some()).and_then(|(_, fill)| fill["page_in"]["picks"]["ranked"][0].as_str().map(str::to_string));
@@ -7334,9 +7466,12 @@ mod tests {
         }
         let half = at(&["2026-S1"]);
         let main = period_rows("nrg_pc_204", false, &[("SE", &half), ("DE", &half)]);
-        for r in Hubs.recipes().iter().filter(|r| r.name != "column" && r.name != "ranked_bars" && r.name != "flow") {
+        for r in Hubs.recipes().iter().filter(|r| !["column", "ranked_bars", "flow", "block_ranks"].contains(&r.name.as_str())) {
             assert_eq!(shape_of(&r.eats, &[("nrg_pc_204", &main[..])], &Hubs).unwrap_err(), "not this shape: main nrg_pc_204 is not annual", "{}", r.name);
         }
+        // the page over blocks takes a half year as the column does, and one table is no blocks
+        let over = recipe("block_ranks");
+        assert_eq!(shape_of(&over.eats, &[("nrg_pc_204", &main[..])], &Hubs).unwrap_err(), "not this shape: main nrg_pc_204 is one table; a page over blocks reads two or more");
     }
 
     /// A main with no unit dimension takes the unit its currency or indicator carries (unit-carriers.tsv): a half-yearly
@@ -8051,7 +8186,7 @@ mod tests {
     #[test]
     fn each_recipe_reads_the_shape_by_its_own_conditions_and_its_nodes_fill_the_page() {
         let names: Vec<&str> = Hubs.recipes().iter().map(|r| r.name.as_str()).collect();
-        assert_eq!(names, ["scmp", "ring", "composition", "change", "column", "ranked_bars", "flow"]);
+        assert_eq!(names, ["scmp", "ring", "composition_steps", "composition", "change", "column", "ranked_bars", "flow", "block_ranks"]);
         let mut main = ring_rows("sdg", &[("freq", "A"), ("unit", "PC")], ("geo", &["SE", "BE", "DE", "FR", "EU27_2020"]), &["2025"]);
         for (r, v) in main.iter_mut().zip(["65.4", "14.9", "30.25", "20", "40"]) {
             r["value"] = json!(v);
@@ -9441,7 +9576,10 @@ mod tests {
         let tables = [("nrg_bal_peh", main), ("nrg_bal_peh", sums)];
         let got: Vec<(&str, bool)> =
             Hubs.recipes().iter().map(|r| (r.name.as_str(), shape_of(&r.eats, &tables, &Hubs).is_ok())).collect();
-        assert_eq!(got.iter().find(|(_, ok)| *ok).map(|(n, _)| *n), Some("composition"), "{got:?}");
+        // one place's parts are one whole: the waterfall's recipe is tried first and reads them; composition reads them too
+        let first = if main.iter().filter_map(|r| r["dims"]["geo"].as_str()).collect::<BTreeSet<_>>().len() == 1 { "composition_steps" } else { "composition" };
+        assert_eq!(got.iter().find(|(_, ok)| *ok).map(|(n, _)| *n), Some(first), "{got:?}");
+        assert!(got.iter().any(|(n, ok)| *n == "composition" && *ok), "{got:?}");
         let shape = shape_of(&composition.eats, &tables, &Hubs).unwrap();
         let picks = picks_of(&composition.picks, &shape, main, &[]).unwrap();
         test_fill(composition, &shape, &picks, (main, sums), &Hubs, ("标题", "导语"), false)
@@ -9979,11 +10117,13 @@ mod tests {
             [
                 ("scmp", Err("not this shape: main spans one year (2025)".to_string())),
                 ("ring", Err("not this shape: main spans one year (2025)".to_string())),
+                ("composition_steps", Err("not this shape: main migr asks no grouped total alone".to_string())),
                 ("composition", Err("not this shape: main migr asks no grouped total alone".to_string())),
                 ("change", Err("not this shape: main spans one year (2025)".to_string())),
                 ("column", Ok("citizen PER 2025".to_string())),
                 ("ranked_bars", Ok("citizen PER 2025".to_string())),
-                ("flow", Err("not this shape: main migr has no registered flow".to_string()))
+                ("flow", Err("not this shape: main migr has no registered flow".to_string())),
+                ("block_ranks", Err("not this shape: main migr is one table; a page over blocks reads two or more".to_string()))
             ]
         );
     }
@@ -10644,7 +10784,7 @@ mod tests {
         let (prepared, mode) = last_prepare(&run).unwrap();
         println!("prepare {} {} mode {mode}", prepared.id, prepared.file);
         let started = std::time::Instant::now();
-        let request = leaf_request(&run, &[prepared], &["horizontal_bar"], &catalogue, ("", ("标题", "导语", "栏目")), &Default::default(), None);
+        let request = leaf_request(&run, &[prepared], &["horizontal_bar"], &catalogue, ("", ("标题", "导语", "栏目")), &Default::default(), None, false);
         let (recipe, fill) = match request {
             Ok((recipe, fill)) => (recipe.name.as_str(), fill),
             Err((recipe, stage, why)) => panic!("stuck {recipe}-{stage} ms {}: {why}", started.elapsed().as_millis()),
@@ -12740,7 +12880,7 @@ mod tests {
             relation: None,
         };
         println!("main {main} file {} claims {} drawn {drawn:?} question {question}", prepared.file, prepared.claims.len());
-        let got = leaf_request(&run, &[prepared], &drawn, &catalogue, (&question, ("标题", "导语", "栏目")), &Default::default(), None);
+        let got = leaf_request(&run, &[prepared], &drawn, &catalogue, (&question, ("标题", "导语", "栏目")), &Default::default(), None, false);
         match &got {
             Ok((recipe, fill)) => println!("WBRUN {main} recipe {} request made, {} rows", recipe.name, fill["rows"].as_array().map_or(0, Vec::len)),
             Err((recipe, stage, why)) => println!("WBRUN {main} recipe {recipe} stopped at {stage}: {why}"),
@@ -13608,7 +13748,7 @@ for line in sys.stdin:
     #[test]
     fn only_a_recipe_with_a_strip_slot_asks_for_a_strip_and_a_strip_it_did_not_get_is_owed() {
         let slots: Vec<(&str, bool)> = Hubs.recipes().iter().map(|r| (r.name.as_str(), r.strip)).collect();
-        assert_eq!(slots, [("scmp", false), ("ring", false), ("composition", false), ("change", true), ("column", true), ("ranked_bars", true), ("flow", false)]);
+        assert_eq!(slots, [("scmp", false), ("ring", false), ("composition_steps", false), ("composition", false), ("change", true), ("column", true), ("ranked_bars", true), ("flow", false), ("block_ranks", false)]);
         let energy = ["nrg_ind_ren".to_string()];
         let calls = std::sync::Mutex::new(Vec::new());
         for name in ["scmp", "ring"] {
@@ -13696,7 +13836,7 @@ for line in sys.stdin:
             .iter()
             .map(|r| (r.name.as_str(), r.same_measure.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect()))
             .collect();
-        assert_eq!(declared, [("scmp", vec![]), ("ring", vec![]), ("composition", vec![]), ("change", vec![]), ("column", vec![]), ("ranked_bars", vec![]), ("flow", vec![])]);
+        assert_eq!(declared, [("scmp", vec![]), ("ring", vec![]), ("composition_steps", vec![]), ("composition", vec![]), ("change", vec![]), ("column", vec![]), ("ranked_bars", vec![]), ("flow", vec![]), ("block_ranks", vec![])]);
     }
 
     /// A pair is known only by the page's own recipe and only as the layers it declares: the bars and bubbles under a recipe
@@ -15790,7 +15930,7 @@ for line in sys.stdin:
                 relation: None,
             };
             let cat = Fetched(BTreeMap::from([("imp".to_string(), main), ("impm".to_string(), monthly)]), "");
-            let got = leaf_request(run.path(), &[prepared], &[], &cat, ("", ("标题", "导语", "栏目")), &Default::default(), None).unwrap_err();
+            let got = leaf_request(run.path(), &[prepared], &[], &cat, ("", ("标题", "导语", "栏目")), &Default::default(), None, false).unwrap_err();
             assert_eq!(got, ("scmp", "fill", said.to_string()), "{name}: the recipe loop");
         }
     }
@@ -15818,7 +15958,7 @@ for line in sys.stdin:
                 relation,
             };
             let cat = Fetched(BTreeMap::from([("sdg".to_string(), q1_ten_years())]), "");
-            match leaf_request(run.path(), &[prepared], &["horizontal_bar"], &cat, ("", ("标题", "导语", "栏目")), &Default::default(), None) {
+            match leaf_request(run.path(), &[prepared], &["horizontal_bar"], &cat, ("", ("标题", "导语", "栏目")), &Default::default(), None, false) {
                 Ok((recipe, _)) => (recipe.name.clone(), String::new()),
                 Err((recipe, stage, why)) => (format!("{recipe}-{stage}"), why),
             }
@@ -16774,7 +16914,7 @@ for line in sys.stdin:
             asked: json!([]),
             relation: None,
         };
-        let got = leaf_request(run.path(), &[prepared], &[], &cat, ("", ("标题", "导语", "栏目")), &Default::default(), None).unwrap_err();
+        let got = leaf_request(run.path(), &[prepared], &[], &cat, ("", ("标题", "导语", "栏目")), &Default::default(), None, false).unwrap_err();
         assert_eq!(got, ("scmp", "fill", said.to_string()), "the recipe loop");
         println!("P6MAP stop recipe loop: {:?}", got);
         // the two digits: the rust map's words, and the flow's, on picks a century apart

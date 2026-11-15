@@ -4065,6 +4065,19 @@ pub fn load_registry(overlay: &J) -> J {
             e.set(f, x.clone());
         }
     }
+    // a node that eats another's data shape (declares_as: that node, a picture of the same rows) is declared and checked
+    // as that node is: every field of its entry the node does not set itself, its pinned checks among them, never fewer
+    let inherit: Vec<(String, String)> =
+        nodes.obj().iter().filter_map(|(k, v)| v.g("declares_as").s().map(|of| (k.clone(), of.to_string()))).collect();
+    for (k, of) in inherit {
+        let from = nodes.g(&of).clone();
+        let e = nodes.get_mut(&k).expect("listed above");
+        for (f, x) in from.obj() {
+            if !e.has(f) {
+                e.set(f, x.clone());
+            }
+        }
+    }
     reg.set("nodes", nodes);
     // the pick rules the page tree generator writes as selects (next_tree_gen): data the core itself does not read
     if let Some(picks) = overlay.get("picks") {
@@ -7619,11 +7632,11 @@ mod tests {
             let (main, _) = recipe_roles(&reg, r).unwrap_or_else(|e| panic!("{e}"));
             mains.push(format!("{r}={main}"));
         }
-        assert_eq!(mains, ["column=bars", "change=bars", "composition=stacked100", "scmp=map", "ring=ring", "flow=sankey", "ranked_bars=bars"]);
+        assert_eq!(mains, ["column=bars", "change=bars", "composition=stacked100", "scmp=map", "ring=ring", "flow=sankey", "ranked_bars=bars", "block_ranks=rank_lines", "composition_steps=waterfall"]);
         let run_py = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime/leaves_py/run.py")).unwrap();
         let line = run_py.lines().find(|l| l.starts_with("MAIN = dict(")).expect("run.py MAIN");
         let pairs: Vec<&str> = line.trim_start_matches("MAIN = dict(").trim_end_matches(')').split(", ").collect();
-        assert_eq!(pairs.len(), 5, "{line}");
+        assert_eq!(pairs.len(), 7, "{line}");
         for pair in pairs {
             let (r, n) = pair.split_once('=').unwrap();
             assert_eq!(reg.g("main_chart").g(r).s(), Some(n.trim_matches('"')), "run.py MAIN {pair}");
@@ -8310,7 +8323,7 @@ mod tests {
     #[test]
     fn next_tree_production_binds_the_bars_external() {
         let o = bindings();
-        assert_eq!(external_nodes(&o), ["bars", "bubbles", "map", "bignums", "leader_notes", "notes", "ring", "strip", "sankey", "stacked100"]);
+        assert_eq!(external_nodes(&o), ["bars", "bubbles", "map", "bignums", "leader_notes", "notes", "ring", "strip", "sankey", "line", "rank_lines", "waterfall", "stacked100"]);
         assert_eq!(registry_problems(&load_registry(&o)), Vec::<String>::new());
         for n in external_nodes(&o) {
             assert!(runner_allowed(&st(o.g("nodes").g(&n).g("runner"))), "{n}");

@@ -19,6 +19,12 @@ import sankey
 import scmp
 import section_head
 import stacked100
+import line
+import rank_lines
+import dumbbell
+import waterfall
+import waffle
+import stacked_area
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "knobs.json")
 PAGE_OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "page_knobs.json")
@@ -46,6 +52,12 @@ RECIPES = [
     # a composition across places: one 100% bar per place of the main's sum-input fetch (its groups' input codes, the top
     # places by total, layer 1's cut), each bar's total printed beside it; before change and column, which would read the
     # main's totals alone, and only for a main the program fetched sum inputs for (composition_groups)
+    # one place's whole and its parts (a block of a table its blocks share, next_run.rs composition_groups' one bar), as
+    # steps that walk the whole: the sketch compare's pick over the one 100% bar (sketch.json: position 4 + the lead marked
+    # 2 against length 3 + 2 - 1, the reader comparing segments), so it is tried first; the same rows and declaration as
+    # composition's (node-bindings.json waterfall declares_as stacked100). Two places or more are not one whole: composition
+    dict(name="composition_steps", layers=["waterfall"], eats=["annual", "one_unit", "composition_groups", "one_whole"], charts=[],
+         picks=[], exposes=[], main="waterfall"),
     dict(name="composition", layers=["stacked100"], eats=["annual", "one_unit", "composition_groups"], charts=[], picks=[],
          exposes=[], main="stacked100"),
     # two ends of a ten-year table: each place's change from t0 to t1 as signed bars (bars.measure change, set by layer 1),
@@ -67,6 +79,11 @@ RECIPES = [
     # a flow between two dimensions of one table (the registry's official pair, one unit) as a sankey across the column
     # page, under the page's header and over its source line; no notes yet (the column page's notes point at a map)
     dict(name="flow", layers=["sankey"], eats=["official_flow", "one_unit"], charts=[], picks=[], exposes=[], main="sankey"),
+    # the places' standing on every quantity of a many-block page whose blocks all rank places (名次对照; owner 11-14 16:0x
+    # items 1 and 5): one column of ranks per block's table, a line per place the first block ranked. It eats blocks, so
+    # layer 1 tries it only for the page over the blocks (src/next_run.rs leaf_request of_blocks) and no other page tries it
+    dict(name="block_ranks", layers=["rank_lines"], eats=["one_freq", "one_place", "one_unit", "last_year", "blocks"], charts=[],
+         picks=["ranked"], exposes=[], main="rank_lines", relation="Ranking"),
 ]
 # The data relations a recipe may declare it answers (recipes[].relation), by the names of src/shape_registry.rs RELATIONS: a
 # recipe that declares one is passed over when the table step kept another for the main table; none answers any relation.
@@ -77,7 +94,11 @@ EATS = dict(map=["hub_origin", "one_unit"], ring=["monthly_companion"], callouts
             bars=["one_place", "one_unit", "last_year"], bignums=["one_unit"], notes=["hub_origin", "one_unit"],
             strip=["monthly_companion"], section_head=[], rankbar=["annual", "one_place", "one_unit", "last_year"],
             bubbles=["one_place", "one_unit", "last_year"], bubble_key=["one_place", "one_unit", "last_year"],
-            leader_notes=["one_unit"], sankey=["official_flow", "one_unit"], stacked100=["annual", "one_unit", "composition_groups"])
+            leader_notes=["one_unit"], sankey=["official_flow", "one_unit"], stacked100=["annual", "one_unit", "composition_groups"],
+            line=["one_freq", "one_unit"], rank_lines=["one_freq", "one_place"],
+            dumbbell=["annual", "years_2", "one_place", "one_unit", "two_ends"],
+            waterfall=["annual", "one_unit", "composition_groups"],
+            waffle=["annual", "one_unit", "composition_groups"], stacked_area=["one_freq", "one_unit", "composition_groups"])
 # The nodes whose dropped items are short notes (a note with no free place, beside the picture, not a mark of it): a page
 # goes on without some of them, each kept in its ledger, when no more than a third of the layer's notes are dropped and none
 # is the note of a place its headline names (user 11-05 10:2x (b)); a dropped item of any other node (a label on the main
@@ -156,7 +177,8 @@ def table():
     columns = run.KINDS["column"][0]  # the column page's own layers and the chart leaves over its frame (run.LEAF_LAYERS)
     groups = dict(map=list(prod.MAP_ORDER), ring=list(scmp.RING_LAYERS), charts=list(prod.CHARTS), column=list(columns),
                   change=list(run.KINDS["change"][0]), flow=list(run.KINDS["flow"][0]), composition=list(run.KINDS["composition"][0]),
-                  ranked_bars=list(run.KINDS["ranked_bars"][0]),
+                  ranked_bars=list(run.KINDS["ranked_bars"][0]), block_ranks=list(run.KINDS["block_ranks"][0]),
+                  composition_steps=list(run.KINDS["composition_steps"][0]),
                   scmp=list(scmp.SCMP_LAYERS))
     reserve = {}
     for reg in (prod.MAP_LAYERS, scmp.RING_LAYERS, columns, scmp.SCMP_LAYERS):

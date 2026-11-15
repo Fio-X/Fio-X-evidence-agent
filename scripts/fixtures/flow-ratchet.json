@@ -1,5 +1,5 @@
 {
-  "measured_at": "638ff4a483115585d4051df561b41c0118395241",
+  "measured_at": "a0802650c39560ddbcf92fa733170cb7d5b94027",
   "rules": "scripts/test_group_flow_ratchet.mjs header; totals and per_file may only go down; kind_names only grow, by --lower",
   "totals": {
     "new": {
@@ -12,7 +12,7 @@
       "nodes": 0,
       "ops": 0,
       "copy": 224,
-      "kinds": 417
+      "kinds": 418
     }
   },
   "scanned": {
@@ -25,6 +25,7 @@
     "base": "knobs.json nodes",
     "basemap": "runtime/nodes run.mjs NODES",
     "bignums": "knobs.json nodes",
+    "blockranks": "knobs.json groups",
     "bubble": "P0a word list",
     "bubblekey": "knobs.json nodes",
     "bubbles": "knobs.json nodes",
@@ -37,6 +38,7 @@
     "column": "knobs.json groups",
     "columnpage": "next_render.rs GroupInfo",
     "composition": "knobs.json groups",
+    "compositionsteps": "knobs.json groups",
     "distribution": "shape_registry.rs Relation",
     "dotgrid": "P0a word list",
     "dumbbell": "src/next_run.rs templates",
@@ -68,6 +70,7 @@
     "rankbar": "knobs.json nodes",
     "rankedbars": "knobs.json groups",
     "ranking": "shape_registry.rs Relation",
+    "ranklines": "knobs.json nodes",
     "ring": "knobs.json nodes",
     "routenames": "knobs.json nodes",
     "routes": "knobs.json nodes",
@@ -77,13 +80,16 @@
     "slope": "knobs.json nodes",
     "stackarea": "knobs.json nodes",
     "stacked100": "knobs.json nodes",
+    "stackedarea": "knobs.json nodes",
     "stackedbar100": "src/next_run.rs templates",
     "step": "knobs.json nodes",
     "strip": "knobs.json nodes",
     "text": "knobs.json nodes",
     "timeline": "knobs.json nodes",
     "treemap": "P0a word list",
-    "valuelabels": "next_render.rs NodeInfo"
+    "valuelabels": "next_render.rs NodeInfo",
+    "waffle": "knobs.json nodes",
+    "waterfall": "knobs.json nodes"
   },
   "per_file": {
     "runtime/pi/assets/estat-narrow.json": {
@@ -101,7 +107,7 @@
     },
     "runtime/pi/newsroom.ts": {
       "copy": 15,
-      "kinds": 244
+      "kinds": 245
     },
     "runtime/pi/tool_chain.mjs": {
       "kinds": 1

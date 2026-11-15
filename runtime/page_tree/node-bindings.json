@@ -39,8 +39,8 @@
   "change_focus": {"id": "top", "kind": "given", "source": "picks", "path": "picks.top", "given": "$picks.top"},
   "claim_marks": {"id": "marks", "kind": "named_rule", "rule": "marks_from_claims", "inputs": {"ranked": "ranked"}, "given": "$picks.marks"}
  },
- "recipes": {"column": ["bars", "leader_notes"], "change": ["bubbles", "bars", "leader_notes"], "composition": ["stacked100"], "scmp": ["map", "strip", "bignums", "notes"], "ring": ["map", "ring"], "flow": ["sankey"], "ranked_bars": ["bars"]},
- "main_chart": {"column": "bars", "change": "bars", "composition": "stacked100", "scmp": "map", "ring": "ring", "flow": "sankey", "ranked_bars": "bars"},
+ "recipes": {"column": ["bars", "leader_notes"], "change": ["bubbles", "bars", "leader_notes"], "composition": ["stacked100"], "scmp": ["map", "strip", "bignums", "notes"], "ring": ["map", "ring"], "flow": ["sankey"], "ranked_bars": ["bars"], "block_ranks": ["rank_lines"], "composition_steps": ["waterfall"]},
+ "main_chart": {"column": "bars", "change": "bars", "composition": "stacked100", "scmp": "map", "ring": "ring", "flow": "sankey", "ranked_bars": "bars", "block_ranks": "rank_lines", "composition_steps": "waterfall"},
  "nodes": {
   "bars": {
    "binding": "external",
@@ -978,7 +978,12 @@
     "flow": {
      "shape": "finding",
      "rule": "none"
-    }
+    },
+    "block_ranks": {
+     "shape": "finding",
+     "rule": "none"
+    },
+    "composition_steps": "composition"
    }
   },
   "bignums": {
@@ -1677,6 +1682,70 @@
    }
   }
 ,
+  "line": {
+   "binding": "external",
+   "geometry": "leaf",
+   "runner": "leaves_py/line.py",
+   "declares_by_recipe": {
+    "trend": {
+     "rows": {"rule": "rows_in", "table": "$shape.main", "by": "$shape.place", "in": ["select:ranked"], "from": "$picks.t0", "to": "$shape.year"},
+     "facts": {"val": {"each": "$shape.place", "table": "$shape.main", "time": "$shape.year", "fmt": "$shape.fmt"}},
+     "for_each": "select:ranked",
+     "facts_each": {
+      "{code_lc}_peak": {"op": "peak", "table": "$shape.main", "filter": {"$shape.place": "{code}"}, "from": "$picks.t0", "to": "$shape.year", "fmt": "$shape.fmt", "axis": true}
+     },
+     "fmt": {"scale": "$shape.scale", "suffix": "$shape.suffix", "dec_rule": {"rule": "held_decimals", "rows": {"table": "$shape.main", "filter": {"$shape.place": "select:ranked"}, "time": "$shape.year"}, "max": {"const": "COLUMN_DEC", "value": 2}}},
+     "items_for": "select:ranked",
+     "leaf": {"key": "line", "items_as": "series", "items": {"code": "code", "end_text": "value_text"},
+              "title": {"fixed": "frames:change", "frame": "Change"}, "unit": {"fixed_prefix": "unit_short_zh:"}, "series_kind": "place",
+              "q": {"table": "$shape.main", "by": "$shape.place", "from": "$picks.t0", "to": "$shape.year"}, "peak_of": "{code_lc}_peak", "axis": {"scale": "$shape.scale"}}
+    }
+   },
+   "items": {
+    "for_each": "items_for",
+    "fields": {
+     "code": {"kind": "select_index"},
+     "value_text": {"kind": "fact_template", "template": "val.{code}.n"}
+    }
+   }
+  },
+  "rank_lines": {
+   "binding": "external",
+   "geometry": "leaf",
+   "runner": "leaves_py/rank_lines.py",
+   "declares_by_recipe": {
+    "block_ranks": {
+     "for_each": "select:ranked",
+     "blocks": "$blocks",
+     "facts_each_block": {
+      "b{b}_{code_lc}_pos": {"op": "position", "table": "$block.table", "by": "$block.by", "time": "$block.year", "filter": {"$block.by": "select:ranked"}, "code": "{code}", "fmt": "n"}
+     },
+     "rows": {"rule": "rows_of_blocks"},
+     "data": {"table": "$shape.main", "year": "$shape.year"},
+     "items_for": "select:ranked",
+     "leaf": {
+      "key": "rank_lines",
+      "codes_as": "series",
+      "columns_by_block": {"head": [{"src": "$block.src"}], "ranks": "b{b}_{code_lc}_pos.n"},
+      "title": {"fixed": "frames:ranking", "frame": "Ranking"},
+      "series_kind": "place"
+     }
+    }
+   },
+   "items": {
+    "for_each": "items_for",
+    "fields": {
+     "code": {"kind": "select_index"}
+    }
+   }
+  },
+  "waterfall": {
+   "$comment": "One place's whole and its parts as steps (owner 11-14 16:0x item 2): the same rows as stacked100's one bar, declared and checked as stacked100 is (declares_as); the leaf reads that one bar.",
+   "binding": "external",
+   "geometry": "leaf",
+   "runner": "leaves_py/waterfall.py",
+   "declares_as": "stacked100"
+  },
   "stacked100": {
    "binding": "external",
    "geometry": "leaf",

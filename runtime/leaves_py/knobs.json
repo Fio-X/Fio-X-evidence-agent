@@ -511,6 +511,72 @@
     }
    ]
   },
+  "dumbbell": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "size",
+     "default": 12,
+     "min": 11,
+     "max": 16,
+     "step": 0.5,
+     "what": "label size px (11 is the page floor)"
+    },
+    {
+     "name": "title_size",
+     "default": 16,
+     "min": 12,
+     "max": 22,
+     "step": 1,
+     "what": "chart name size px"
+    },
+    {
+     "name": "width",
+     "default": 1140,
+     "min": 480,
+     "max": 1400,
+     "step": 10,
+     "what": "picture width in px"
+    },
+    {
+     "name": "row",
+     "default": 30,
+     "min": 22,
+     "max": 48,
+     "step": 1,
+     "what": "distance between two rows in px"
+    },
+    {
+     "name": "dot_r",
+     "default": 5,
+     "min": 3,
+     "max": 8,
+     "step": 0.5,
+     "what": "dot radius px"
+    },
+    {
+     "name": "line_w",
+     "default": 3,
+     "min": 1.5,
+     "max": 6,
+     "step": 0.5,
+     "what": "connector width px"
+    },
+    {
+     "name": "highlight",
+     "default": "",
+     "codes": true,
+     "what": "code of the row drawn in the accent; none = the first row"
+    }
+   ],
+   "eats": [
+    "annual",
+    "years_2",
+    "one_place",
+    "one_unit",
+    "two_ends"
+   ]
+  },
   "edge": {
    "reserve": false,
    "knobs": [
@@ -909,6 +975,77 @@
    ],
    "eats": []
   },
+  "line": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "size",
+     "default": 12,
+     "min": 11,
+     "max": 16,
+     "step": 0.5,
+     "what": "label size px (11 is the page floor)"
+    },
+    {
+     "name": "title_size",
+     "default": 16,
+     "min": 12,
+     "max": 22,
+     "step": 1,
+     "what": "chart name size px"
+    },
+    {
+     "name": "width",
+     "default": 1140,
+     "min": 480,
+     "max": 1400,
+     "step": 10,
+     "what": "picture width in px"
+    },
+    {
+     "name": "plot_h",
+     "default": 300,
+     "min": 160,
+     "max": 600,
+     "step": 10,
+     "what": "plot height in px"
+    },
+    {
+     "name": "line_w",
+     "default": 2.5,
+     "min": 1.5,
+     "max": 4,
+     "step": 0.5,
+     "what": "the highlighted line's width in px"
+    },
+    {
+     "name": "context_w",
+     "default": 1.5,
+     "min": 0.8,
+     "max": 2.5,
+     "step": 0.1,
+     "what": "every other line's width in px"
+    },
+    {
+     "name": "marker_all",
+     "default": 6,
+     "min": 2,
+     "max": 24,
+     "step": 1,
+     "what": "a series with fewer points than this is marked at every point"
+    },
+    {
+     "name": "highlight",
+     "default": "",
+     "codes": true,
+     "what": "code of the series drawn in the accent; none = the first series"
+    }
+   ],
+   "eats": [
+    "one_freq",
+    "one_unit"
+   ]
+  },
   "map": {
    "reserve": false,
    "knobs": [],
@@ -1005,6 +1142,93 @@
   "profile": {
    "reserve": false,
    "knobs": []
+  },
+  "rank_lines": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "size",
+     "default": 12,
+     "min": 11,
+     "max": 16,
+     "step": 0.5,
+     "what": "label size px (11 is the page floor)"
+    },
+    {
+     "name": "title_size",
+     "default": 16,
+     "min": 12,
+     "max": 22,
+     "step": 1,
+     "what": "chart name size px"
+    },
+    {
+     "name": "width",
+     "default": 1140,
+     "min": 480,
+     "max": 1400,
+     "step": 10,
+     "what": "picture width in px"
+    },
+    {
+     "name": "row",
+     "default": 30,
+     "min": 20,
+     "max": 48,
+     "step": 1,
+     "what": "distance between two ranks in px"
+    },
+    {
+     "name": "plot_max",
+     "default": 600,
+     "min": 200,
+     "max": 900,
+     "step": 10,
+     "what": "the tallest the plot may be in px"
+    },
+    {
+     "name": "col_min",
+     "default": 140,
+     "min": 80,
+     "max": 400,
+     "step": 10,
+     "what": "the least distance between two columns in px"
+    },
+    {
+     "name": "disc_r",
+     "default": 10,
+     "min": 8,
+     "max": 16,
+     "step": 0.5,
+     "what": "radius of the disc a rank is printed in, px"
+    },
+    {
+     "name": "line_w",
+     "default": 2.5,
+     "min": 1.5,
+     "max": 4,
+     "step": 0.5,
+     "what": "the highlighted line's width in px"
+    },
+    {
+     "name": "context_w",
+     "default": 1.5,
+     "min": 0.8,
+     "max": 2.5,
+     "step": 0.1,
+     "what": "every other line's width in px"
+    },
+    {
+     "name": "highlight",
+     "default": "",
+     "codes": true,
+     "what": "code of the series drawn in the accent; none = the first series"
+    }
+   ],
+   "eats": [
+    "one_freq",
+    "one_place"
+   ]
   },
   "rankbar": {
    "reserve": false,
@@ -1517,6 +1741,54 @@
     "composition_groups"
    ]
   },
+  "stacked_area": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "size",
+     "default": 12,
+     "min": 11,
+     "max": 16,
+     "step": 0.5,
+     "what": "label size px (11 is the page floor)"
+    },
+    {
+     "name": "title_size",
+     "default": 16,
+     "min": 12,
+     "max": 22,
+     "step": 1,
+     "what": "chart name size px"
+    },
+    {
+     "name": "width",
+     "default": 1140,
+     "min": 480,
+     "max": 1400,
+     "step": 10,
+     "what": "picture width in px"
+    },
+    {
+     "name": "plot_h",
+     "default": 300,
+     "min": 160,
+     "max": 600,
+     "step": 10,
+     "what": "plot height in px"
+    },
+    {
+     "name": "highlight",
+     "default": "",
+     "codes": true,
+     "what": "code of the part drawn in the accent; none = the first part"
+    }
+   ],
+   "eats": [
+    "one_freq",
+    "one_unit",
+    "composition_groups"
+   ]
+  },
   "step": {
    "reserve": false,
    "knobs": []
@@ -1560,6 +1832,134 @@
   "timeline": {
    "reserve": false,
    "knobs": []
+  },
+  "waffle": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "size",
+     "default": 12,
+     "min": 11,
+     "max": 16,
+     "step": 0.5,
+     "what": "label size px (11 is the page floor)"
+    },
+    {
+     "name": "title_size",
+     "default": 16,
+     "min": 12,
+     "max": 22,
+     "step": 1,
+     "what": "chart name size px"
+    },
+    {
+     "name": "width",
+     "default": 1140,
+     "min": 480,
+     "max": 1400,
+     "step": 10,
+     "what": "picture width in px"
+    },
+    {
+     "name": "cell",
+     "default": 22,
+     "min": 12,
+     "max": 36,
+     "step": 1,
+     "what": "a square's side in px"
+    },
+    {
+     "name": "gap",
+     "default": 3,
+     "min": 1,
+     "max": 6,
+     "step": 0.5,
+     "what": "space between two squares in px"
+    },
+    {
+     "name": "tol",
+     "default": 0.005,
+     "min": 0.0,
+     "max": 0.02,
+     "step": 0.001,
+     "what": "how far the parts' sum may be from the whole, as a share of it"
+    },
+    {
+     "name": "highlight",
+     "default": "",
+     "codes": true,
+     "what": "code of the part drawn in the accent; none = the first part"
+    }
+   ],
+   "eats": [
+    "annual",
+    "one_unit",
+    "composition_groups"
+   ]
+  },
+  "waterfall": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "size",
+     "default": 12,
+     "min": 11,
+     "max": 16,
+     "step": 0.5,
+     "what": "label size px (11 is the page floor)"
+    },
+    {
+     "name": "title_size",
+     "default": 16,
+     "min": 12,
+     "max": 22,
+     "step": 1,
+     "what": "chart name size px"
+    },
+    {
+     "name": "width",
+     "default": 1140,
+     "min": 480,
+     "max": 1400,
+     "step": 10,
+     "what": "picture width in px"
+    },
+    {
+     "name": "bar_h",
+     "default": 18,
+     "min": 12,
+     "max": 30,
+     "step": 1,
+     "what": "bar height in px"
+    },
+    {
+     "name": "pitch",
+     "default": 28,
+     "min": 18,
+     "max": 44,
+     "step": 1,
+     "what": "distance between two bars' tops in px"
+    },
+    {
+     "name": "tol",
+     "default": 0.005,
+     "min": 0.0,
+     "max": 0.02,
+     "step": 0.001,
+     "what": "how far the parts' sum may be from the whole, as a share of it"
+    },
+    {
+     "name": "highlight",
+     "default": "",
+     "codes": true,
+     "what": "code of the part drawn in the accent; none = the first part"
+    }
+   ],
+   "eats": [
+    "annual",
+    "one_unit",
+    "composition_groups"
+   ]
   }
  },
  "groups": {
@@ -1605,7 +2005,13 @@
    "bubble_key",
    "leader_notes",
    "sankey",
-   "stacked100"
+   "stacked100",
+   "line",
+   "rank_lines",
+   "dumbbell",
+   "waterfall",
+   "waffle",
+   "stacked_area"
   ],
   "change": [
    "bignums",
@@ -1616,7 +2022,13 @@
    "bubble_key",
    "leader_notes",
    "sankey",
-   "stacked100"
+   "stacked100",
+   "line",
+   "rank_lines",
+   "dumbbell",
+   "waterfall",
+   "waffle",
+   "stacked_area"
   ],
   "flow": [
    "bignums",
@@ -1627,7 +2039,13 @@
    "bubble_key",
    "leader_notes",
    "sankey",
-   "stacked100"
+   "stacked100",
+   "line",
+   "rank_lines",
+   "dumbbell",
+   "waterfall",
+   "waffle",
+   "stacked_area"
   ],
   "composition": [
    "bignums",
@@ -1638,7 +2056,13 @@
    "bubble_key",
    "leader_notes",
    "sankey",
-   "stacked100"
+   "stacked100",
+   "line",
+   "rank_lines",
+   "dumbbell",
+   "waterfall",
+   "waffle",
+   "stacked_area"
   ],
   "ranked_bars": [
    "bignums",
@@ -1649,7 +2073,47 @@
    "bubble_key",
    "leader_notes",
    "sankey",
-   "stacked100"
+   "stacked100",
+   "line",
+   "rank_lines",
+   "dumbbell",
+   "waterfall",
+   "waffle",
+   "stacked_area"
+  ],
+  "block_ranks": [
+   "bignums",
+   "bars",
+   "section_head",
+   "rankbar",
+   "bubbles",
+   "bubble_key",
+   "leader_notes",
+   "sankey",
+   "stacked100",
+   "line",
+   "rank_lines",
+   "dumbbell",
+   "waterfall",
+   "waffle",
+   "stacked_area"
+  ],
+  "composition_steps": [
+   "bignums",
+   "bars",
+   "section_head",
+   "rankbar",
+   "bubbles",
+   "bubble_key",
+   "leader_notes",
+   "sankey",
+   "stacked100",
+   "line",
+   "rank_lines",
+   "dumbbell",
+   "waterfall",
+   "waffle",
+   "stacked_area"
   ],
   "scmp": [
    "map",
@@ -1728,6 +2192,25 @@
    "external": [
     "map",
     "ring"
+   ]
+  },
+  {
+   "name": "composition_steps",
+   "layers": [
+    "waterfall"
+   ],
+   "eats": [
+    "annual",
+    "one_unit",
+    "composition_groups",
+    "one_whole"
+   ],
+   "charts": [],
+   "picks": [],
+   "exposes": [],
+   "main": "waterfall",
+   "external": [
+    "waterfall"
    ]
   },
   {
@@ -1871,6 +2354,29 @@
    "main": "sankey",
    "external": [
     "sankey"
+   ]
+  },
+  {
+   "name": "block_ranks",
+   "layers": [
+    "rank_lines"
+   ],
+   "eats": [
+    "one_freq",
+    "one_place",
+    "one_unit",
+    "last_year",
+    "blocks"
+   ],
+   "charts": [],
+   "picks": [
+    "ranked"
+   ],
+   "exposes": [],
+   "main": "rank_lines",
+   "relation": "Ranking",
+   "external": [
+    "rank_lines"
    ]
   }
  ]

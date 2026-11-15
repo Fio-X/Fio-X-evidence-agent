@@ -2464,8 +2464,10 @@ mod tests {
         // highlight and the focus laid out first), the
         // bars' measure (level or change), and the bubbles' key (3: its text size, reference circles and line width); the
         // sankey over the flow page's frame (11: its highlight a list of codes, its finding auto or none), and the 100% stacked
-        // bars last (9: its highlight a list of codes)
-        assert_eq!((t.nodes.len(), knobs), (36, 159));
+        // bars (9: its highlight a list of codes), the line leaf (8: its highlight one code), the rank lines (10: its highlight
+        // one code), the dumbbell (7: its highlight one code), the waterfall (7: its highlight one code), the waffle (7: its
+        // highlight one code), and the stacked area last (5: its highlight one code)
+        assert_eq!((t.nodes.len(), knobs), (42, 203));
         let reserve: Vec<_> = t.nodes.iter().filter(|(_, l)| l.reserve).map(|(n, _)| n.as_str()).collect();
         assert_eq!(reserve, ["flows", "labels", "routes"]);
         let legacy: Vec<_> = t.legacy.iter().map(|(n, at)| (n.as_str(), at.join("."))).collect();
@@ -2477,10 +2479,10 @@ mod tests {
         assert!(Layer::registered("base", "base", json!([]), json!({})).is_ok_and(|l| !l.reserve));
         assert!(Layer::registered("pie", "pie", json!([]), json!({})).is_err_and(|e| e[0].contains("no leaf or composite node pie")));
         let groups: Vec<_> = t.groups.keys().map(String::as_str).collect();
-        assert_eq!(groups, ["change", "charts", "column", "composition", "flow", "map", "ranked_bars", "ring", "scmp"]);
+        assert_eq!(groups, ["block_ranks", "change", "charts", "column", "composition", "composition_steps", "flow", "map", "ranked_bars", "ring", "scmp"]);
         assert_eq!(t.groups["composition"], t.groups["column"]);
         assert_eq!(t.groups["scmp"], ["map", "strip", "bignums", "notes"]);
-        assert_eq!(t.groups["column"], ["bignums", "bars", "section_head", "rankbar", "bubbles", "bubble_key", "leader_notes", "sankey", "stacked100"]);
+        assert_eq!(t.groups["column"], ["bignums", "bars", "section_head", "rankbar", "bubbles", "bubble_key", "leader_notes", "sankey", "stacked100", "line", "rank_lines", "dumbbell", "waterfall", "waffle", "stacked_area"]);
         // a change page is a column page whose bars are the places' change (bars.measure); a flow page one whose main layer
         // is the sankey (run.py MAIN)
         assert_eq!(t.groups["change"], t.groups["column"]);

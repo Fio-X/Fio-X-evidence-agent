@@ -1,0 +1,17 @@
+{
+ "$comment": "The sketch compare's data (owner 11-14 16:0x item 1; works/complex-card/design.md): which chart leaves may draw a block's main picture, by the block's relation and the hard conditions its data must meet, and the fixed score of a drawn candidate. Encoding weights after Mackinlay 1986's ranking of encodings by effectiveness; the bonus and penalties as Draco's soft constraints. Read by sketch.py; weights are data, never tuned per question.",
+ "weights": {"position": 4, "length": 3, "slope": 2, "angle": 2, "area": 1, "color": 0},
+ "bonus": {"lead_marked": 2},
+ "penalty": {"reader_subtracts": -1, "label_crowded": -1},
+ "nodes": {
+  "bars": {"relations": ["Ranking", "Magnitude"], "encoding": "length", "needs": {"periods_max": 1}},
+  "rank_lines": {"relations": ["Ranking"], "encoding": "position", "needs": {"quantities_min": 2, "rank_flips_min": 1}},
+  "dumbbell": {"relations": ["Change"], "encoding": "position", "needs": {"periods_exact": 2}},
+  "line": {"relations": ["Change", "Threshold"], "encoding": "position", "needs": {"periods_min": 3}},
+  "stacked100": {"relations": ["Composition"], "encoding": "length", "needs": {"parts_add_up": true, "places_min": 2}, "reader_subtracts": true},
+  "waterfall": {"relations": ["Composition", "Magnitude"], "encoding": "position", "needs": {"parts_add_up": true, "parts_min": 2, "places_max": 1, "periods_max": 1}},
+  "waffle": {"relations": ["Composition"], "encoding": "area", "needs": {"parts_add_up": true, "parts_max": 3, "places_max": 1, "periods_max": 1}},
+  "stacked_area": {"relations": ["Composition"], "encoding": "position", "needs": {"parts_add_up": true, "periods_min": 3, "parts_max": 5, "places_max": 1}, "reader_subtracts": true},
+  "sankey": {"relations": ["Flow"], "encoding": "length", "needs": {}}
+ }
+}
