@@ -97,8 +97,9 @@ fn region_aggregates() -> &'static [(Vec<char>, String)] {
 
 /// The World Bank aggregate codes a Chinese question lists as places of their own, in question order, each once: a word of
 /// region-aggregates-zh.json that is a whole item of a list of places, with the text start or a LIST_JOIN_ZH mark before it
-/// (全 aside: 全世界) and an ITEM_END_ZH mark or the text end after it, and a join mark on at least one side. A word not so
-/// listed is no place, as before the list (世界人口最多的十个国家, 排进世界前几, 东南亚 holding 南亚).
+/// (全 aside: 全世界) and an ITEM_END_ZH mark or the text end after it (地区 aside: 中东北非地区, 南亚地区), and a join mark on
+/// at least one side. A word not so listed is no place, as before the list (世界人口最多的十个国家, 排进世界前几, 东南亚
+/// holding 南亚).
 pub fn listed_aggregates(question_zh: &str) -> Vec<String> {
     let chars: Vec<char> = question_zh.chars().filter(|c| !c.is_whitespace()).collect();
     let join = |c: Option<&char>| c.is_some_and(|c| LIST_JOIN_ZH.contains(*c));
@@ -111,7 +112,10 @@ pub fn listed_aggregates(question_zh: &str) -> Vec<String> {
         };
         let start = if i > 0 && chars[i - 1] == '全' { i - 1 } else { i };
         let before = start.checked_sub(1).map(|b| &chars[b]);
-        let end = i + w.len();
+        let mut end = i + w.len();
+        if chars[end..].starts_with(&['地', '区']) {
+            end += 2;
+        }
         let after = chars.get(end);
         let whole = (start == 0 || join(before)) && (after.is_none() || after.is_some_and(|c| ITEM_END_ZH.contains(*c)));
         if whole && (join(before) || join(after)) {
@@ -3126,6 +3130,11 @@ mod tests {
         // beside a country, and the official name less nothing
         assert_eq!(listed_aggregates("中国和东亚与太平洋地区的人均 GDP"), ["EAS"]);
         assert_eq!(listed_aggregates("印度、南亚的识字率"), ["SAS"]);
+        // the short forms the owner picked on 2026-11-14: 拉美 reads as Latin America & Caribbean, 中东北非 (with or without 地区) as MEA
+        assert_eq!(listed_aggregates("拉美和中东北非地区的人均寿命 1990 年以来怎么变"), ["LCN", "MEA"]);
+        assert_eq!(listed_aggregates("拉美、南亚的识字率"), ["LCN", "SAS"]);
+        assert_eq!(listed_aggregates("印度和南亚地区的识字率"), ["SAS"]);
+        assert!(listed_aggregates("南亚地区各国的识字率").is_empty());
         // not listed: a word in a phrase, a ranking over the world, a longer name holding the word, the region's members
         assert!(listed_aggregates("世界人口最多的十个国家的预期寿命").is_empty());
         assert!(listed_aggregates("加州的 GDP 能排进世界前几？").is_empty());
@@ -3585,12 +3594,13 @@ mod tests {
     }
 
     /// The short forms the owner picked on 2026-11-12: 港澳 reads as Hong Kong and Macao, 大马 as Malaysia, 北欧五国 as the
-    /// five Nordic countries (four before Finland joined in 1955), in question order; 北欧 alone stays a region word.
+    /// five Nordic countries (four before Finland joined in 1955), in question order; 北欧 alone stays a region word. On
+    /// 2026-11-14: 日韩 reads as Japan and Korea, 星马泰 (三国 or not) as Singapore, Malaysia and Thailand.
     #[test]
     fn a_short_form_or_group_word_reads_as_its_places() {
         let mut raw = small_raw();
         let list = raw.wb_countries[1].as_array_mut().unwrap();
-        for c in ["HK", "MO", "MY", "SG", "KR", "DK", "FI", "IS", "NO", "SE", "TH"] {
+        for c in ["HK", "MO", "MY", "SG", "KR", "DK", "FI", "IS", "NO", "SE", "TH", "JP"] {
             list.push(json!({"id": c, "iso2Code": c, "name": format!("Land {c}"), "region": {"value": "Elsewhere"}}));
         }
         let c = Catalog::from_raw(&raw);
@@ -3602,6 +3612,10 @@ mod tests {
         // 北欧 alone stays the Europe region word it was
         assert_eq!(countries(&c, "北欧各国的失业率"), ["REGION"]);
         assert_eq!(countries(&c, "1953年北欧五国的人口"), ["DK", "IS", "NO", "SE"]);
+        assert_eq!(countries(&c, "日韩 65 岁以上人口占比怎么变"), ["JP", "KR"]);
+        assert_eq!(countries(&c, "日韩两国的失业率谁高"), ["JP", "KR"]);
+        assert_eq!(countries(&c, "星马泰三国互联网普及率"), ["SG", "MY", "TH"]);
+        assert_eq!(countries(&c, "星马泰和港澳的出口"), ["SG", "MY", "TH", "HK", "MO"]);
     }
 
     /// A question that counts its places (海合会六国, 比荷卢三国, 两岸三地) and names fewer that the program reads is unread,
@@ -3617,7 +3631,6 @@ mod tests {
         let c = Catalog::from_raw(&raw);
         let un = |q: &str| c.unread(q).map(|u| (u.word_zh, u.read, u.asked));
         assert_eq!(un("南盟八国女性劳动参与率高低"), Some(("南盟八国".into(), 0, 8)), "a group the table does not hold");
-        assert_eq!(un("星马泰三国互联网普及率"), Some(("星马泰三国".into(), 0, 3)));
         assert_eq!(un("两岸三地人均GDP"), Some(("两岸三地".into(), 0, 3)));
         assert_eq!(un("港澳和另一地三地的失业率"), Some(("港澳和另一地三地".into(), 2, 3)), "two of three read");
         assert_eq!(un("欧洲小国四国失业率"), Some(("欧洲小国四国".into(), 0, 4)), "a region word is no country");
@@ -3633,6 +3646,8 @@ mod tests {
             "2020年东盟十国人均GDP",
             "二十国集团的人口",
             "港澳两地的失业率",
+            "星马泰三国互联网普及率",
+            "日韩两国的失业率",
             "韩国和印尼两国的出口",
             "韩国和印尼两个国家的出口",
             "第三国转口贸易",

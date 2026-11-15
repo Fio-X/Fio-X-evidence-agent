@@ -1,13 +1,13 @@
 {
   "note": "World Bank regional aggregates a question may name as places of their own. official_zh is the World Bank's Chinese name as economy-names.json carries it (zh or wb_zh, source worldbank or policy); words are the forms a question writes: the official name, the official name less its trailing 地区, and the short forms reviewed by the owner. A word counts as the aggregate only when it is listed with other places; followed by a word for its members (各国, 哪国) it still names the region's countries. Europe & Central Asia (ECS) is left out: its words clash with 欧洲. near_words: words that are not the aggregate but whose nearest aggregate it is (owner 11-13: 东亚 is not EAS); a listed near word reads as the aggregate, labelled by official_zh, and the page says near_note on its unit line.",
-  "reviewed": "owner, 11-10 22:21 (quick confirm of the draft list)",
+  "reviewed": "owner, 11-10 22:21 (quick confirm of the draft list); 拉美 added by the owner's pick of 11-14",
   "aggregates": [
     {"code": "SSF", "official_zh": "撒哈拉以南非洲地区", "words": ["撒哈拉以南非洲地区", "撒哈拉以南非洲"], "scope_note": ""},
     {"code": "SAS", "official_zh": "南亚", "words": ["南亚"], "scope_note": ""},
     {"code": "EAS", "official_zh": "东亚与太平洋地区", "words": ["东亚与太平洋地区", "东亚与太平洋"], "scope_note": "", "near_words": ["东亚"], "near_note": "世行没有单列『东亚』，最接近的是『东亚与太平洋』，含东南亚和太平洋岛国"},
     {"code": "NAC", "official_zh": "北美", "words": ["北美洲", "北美"], "scope_note": ""},
     {"code": "WLD", "official_zh": "世界", "words": ["世界", "全球"], "scope_note": ""},
-    {"code": "LCN", "official_zh": "拉丁美洲与加勒比海地区", "words": ["拉丁美洲与加勒比海地区", "拉丁美洲与加勒比海", "拉丁美洲"], "scope_note": "含加勒比海"},
+    {"code": "LCN", "official_zh": "拉丁美洲与加勒比海地区", "words": ["拉丁美洲与加勒比海地区", "拉丁美洲与加勒比海", "拉丁美洲", "拉美"], "scope_note": "含加勒比海"},
     {"code": "MEA", "official_zh": "中东、北非、阿富汗与巴基斯坦", "words": ["中东、北非、阿富汗与巴基斯坦", "中东和北非", "中东北非"], "scope_note": "含阿富汗、巴基斯坦"}
   ]
 }

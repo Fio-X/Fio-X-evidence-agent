@@ -2146,6 +2146,49 @@
    ]
   },
   {
+   "id": "JPKR",
+   "names": [
+    "日韩"
+   ],
+   "periods": [
+    {
+     "from": 1960,
+     "to": null,
+     "members": [
+      "JP",
+      "KR"
+     ],
+     "source": {
+      "title": "Common short form of 日本 and 韩国 (MFA of the PRC country list), set by the project owner on 2026-11-14; the first year is the World Bank series' first year",
+      "url": "https://www.mfa.gov.cn/web/gjhdq_676201/gj_676203/yz_676205/",
+      "accessed": "2026-11-15"
+     }
+    }
+   ]
+  },
+  {
+   "id": "SGMYTH",
+   "names": [
+    "星马泰"
+   ],
+   "periods": [
+    {
+     "from": 1960,
+     "to": null,
+     "members": [
+      "SG",
+      "MY",
+      "TH"
+     ],
+     "source": {
+      "title": "Common short form of 新加坡, 马来西亚 and 泰国 (MFA of the PRC country list), set by the project owner on 2026-11-14; the first year is the World Bank series' first year",
+      "url": "https://www.mfa.gov.cn/web/gjhdq_676201/gj_676203/yz_676205/",
+      "accessed": "2026-11-15"
+     }
+    }
+   ]
+  },
+  {
    "id": "NORDIC",
    "names": [
     "北欧五国"
