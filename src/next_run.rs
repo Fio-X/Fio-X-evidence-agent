@@ -4361,6 +4361,14 @@ pub(crate) async fn page_of_block(
     // that names a change. A pick that stopped stops the run after the text step, as before.
     // block 0 is the page over the blocks (pages_of): only a recipe that eats blocks draws it
     let picked = leaf_request(recorder.run_dir(), prepared, &drawn, catalogue, (question, ("", "", "")), &calls, focus, block == 0);
+    // the page over the blocks is extra: when no recipe can draw it, it stops here, before the text step asks the model
+    // anything (review 11-16: a page left out must not cost a model call)
+    if block == 0 {
+        if let Err((recipe, stage, why)) = &picked {
+            record_page_calls(recorder, catalogue, calls)?;
+            return Err(stop(stage, format!("the {recipe} leaf page stopped at {stage}: {why}")));
+        }
+    }
     // the page's leader: the first place its ranking pick holds, on a page whose finding made a headline (the highest named
     // alone, no tie at the top)
     let accent = picked.as_ref().ok().filter(|(_, fill)| fill.get(HEADLINE).is_some()).and_then(|(_, fill)| fill["page_in"]["picks"]["ranked"][0].as_str().map(str::to_string));
