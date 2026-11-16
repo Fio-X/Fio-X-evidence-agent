@@ -1699,7 +1699,11 @@ fn basis_said(html: &str, ledger: &BTreeMap<String, String>, spec: &Spec, rows: 
     let Some(words) = &b.words else { return off };
     let mut want = words.clone();
     let mut marked: Vec<String> = Vec::new();
-    let year_src = format!("{PERIOD_SRC}{}:{}", b.table, b.year);
+    // the member list's year: its own entry when it is not the data year, else the data year's period
+    let year_src = match &b.member_year {
+        Some(_) => crate::next_facts::BASIS_YEAR_SRC.to_string(),
+        None => format!("{PERIOD_SRC}{}:{}", b.table, b.year),
+    };
     for (key, src) in [("{year}", Some(&year_src)), ("{n}", count_src.as_ref())] {
         if !uses(key) {
             continue;

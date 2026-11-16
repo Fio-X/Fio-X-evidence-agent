@@ -719,6 +719,11 @@ fn place_names_zh() -> &'static PlaceNamesZh {
 pub struct GroupBasis {
     pub group: String,
     pub year: i32,
+    /// The year of the member list (`members`): `year` when the question names a year; with none, the group's current
+    /// list, the year it holds from or `year` if later (owner 11-16 08:4x item 1: 东盟 is its 11 members today). The unit
+    /// line prints it.
+    #[serde(default)]
+    pub member_year: i32,
     pub members: Vec<String>,
     pub named: Vec<String>,
     pub dropped: Vec<String>,
@@ -2291,9 +2296,17 @@ impl Catalog {
             return self.union_basis(&scanned, t1, (places, at_t1));
         };
         let g = self.groups.iter().find(|g| g.id == id)?;
-        // the list of the page's own year, whichever year the question names: the line prints that year from the data
+        // a question naming a year: the list of the page's own year, the line printing that year from the data; one naming
+        // none: the group's current list, at the year it holds from (or the page's, if later), drawn whole, a member with no
+        // row at the page's year named as having no data (owner 11-16 08:4x item 1)
         let year = t1;
-        let p = self.group_period(&id, Some(year))?;
+        let (member_year, p) = match question_span(question_zh) {
+            Some(_) => (year, self.group_period(&id, Some(year))?),
+            None => {
+                let p = self.group_period(&id, None).filter(|p| p.to.is_none())?;
+                (year.max(p.from), p)
+            }
+        };
         let words = &place_names_zh().basis;
         let page_code = |c: &str| self.page_code(c, places);
         let members: Vec<String> = p.members.iter().map(|m| page_code(m)).collect();
@@ -2325,12 +2338,14 @@ impl Catalog {
             let others: Vec<&str> = p.non_country_members.iter().map(|m| m.name.as_str()).collect();
             let line = pick(&words.countries_only, &words.countries_only_drawn);
             lines.push(line.replace("{others}", &others.join(&words.others_join)));
-        } else if changes || !missing.is_empty() {
+        } else {
+            // every group page says the year of its member list (owner 11-16 08:4x item 1)
             lines.push(pick(&words.members_of_year, &words.members_of_year_drawn));
         }
         Some(GroupBasis {
             group: id.clone(),
             year,
+            member_year,
             members,
             named,
             dropped,
@@ -2399,6 +2414,7 @@ impl Catalog {
         Some(GroupBasis {
             group: UNION.to_string(),
             year: t1,
+            member_year: t1,
             members,
             named,
             dropped: Vec::new(),
@@ -3528,11 +3544,16 @@ mod tests {
         assert_eq!((b.group.as_str(), b.year, b.members.len(), b.line.as_deref(), b.join.as_str()), ("BRICS", 2025, 10, Some(changes), "；"));
         assert!(b.named.is_empty() && b.dropped.is_empty() && b.missing.is_empty());
         let b = gb(q, Some(2016), 2024, &[&brics10[..], &["SA"]].concat()).unwrap();
-        assert_eq!((b.year, b.members.len(), b.line.as_deref(), b.dropped.clone()), (2024, 9, Some(changes), s(&["ID", "SA"])), "no members in 2024");
-        assert_eq!(gb(q, Some(2012), 2020, &brics10[..5]).unwrap().line, None, "five members all through");
-        assert_eq!(gb(q, None, 2025, &brics10).unwrap().line, None, "a page of one year");
+        // no year asked: today's ten, at the year they hold from (owner 11-16 08:4x item 1); Indonesia counted, Saudi Arabia left out
+        assert_eq!((b.year, b.member_year, b.members.len(), b.line.as_deref(), b.dropped.clone()), (2024, 2025, 10, Some(changes), s(&["SA"])), "today's members");
+        // no year asked, a page of 2012-2020 holding the first five: today's other five have no row and are named
+        let b = gb(q, Some(2012), 2020, &brics10[..5]).unwrap();
+        assert_eq!((b.member_year, b.missing.len(), b.line.as_deref()), (2025, 5, Some("按 {year} 年成员计，画出 {n} 国，{missing}无数据")));
+        // every group page says its member list's year, even one of one year whose list holds (owner 11-16 08:4x item 1)
+        let b = gb(q, None, 2025, &brics10).unwrap();
+        assert_eq!((b.member_year, b.line.as_deref()), (2025, Some(changes)), "a page of one year");
         let named = gb("2010年金砖国家的GDP", Some(2005), 2010, &brics10[..4]).unwrap();
-        assert_eq!((named.year, named.members, named.line), (2010, s(&brics10[..4]), None));
+        assert_eq!((named.year, named.member_year, named.members, named.line.as_deref()), (2010, 2010, s(&brics10[..4]), Some(changes)));
         // a question naming its years spans them too, and the list is the page's last year's, not the year asked
         let b = gb("2016年到2025年金砖国家的GDP增长率", Some(2016), 2025, &brics10).unwrap();
         assert_eq!((b.year, b.line.as_deref()), (2025, Some(changes)), "years named, members changed inside them");
@@ -3540,10 +3561,13 @@ mod tests {
         assert_eq!((b.year, b.members.len(), b.line.as_deref()), (2024, 9, Some(changes)), "asked 2025, the data ends 2024");
         let named = gb("2010年金砖国家的GDP", Some(2005), 2015, &brics10[..5]).unwrap();
         assert_eq!((named.year, named.members.len(), named.line.as_deref()), (2015, 5, Some(changes)), "the page runs past the year asked");
-        assert_eq!(gb("七国集团的人均碳排放", Some(1990), 2024, &["FR", "DE", "IT", "JP", "GB", "US", "CA"]).unwrap().line, None);
+        let g7 = gb("七国集团的人均碳排放", Some(1990), 2024, &["FR", "DE", "IT", "JP", "GB", "US", "CA"]).unwrap();
+        assert_eq!((g7.member_year, g7.line.as_deref()), (2024, Some(changes)), "today's list holds since before the page's year");
         let b = gb("二十国集团的人口", None, 2024, &g20).unwrap();
         assert_eq!((b.members.len(), b.line.as_deref()), (19, Some("按 {n} 个成员国计，不含欧盟、非洲联盟")));
-        assert_eq!(gb("二十国集团的人口", Some(2000), 2020, &g20).unwrap().line.as_deref(), Some("按 {n} 个成员国计，不含欧盟"));
+        // no year asked: today's members, the African Union among those that are no country (it joined in 2023)
+        assert_eq!(gb("二十国集团的人口", Some(2000), 2020, &g20).unwrap().line.as_deref(), Some("按 {n} 个成员国计，不含欧盟、非洲联盟"));
+        assert_eq!(gb("2020年二十国集团的人口", Some(2000), 2020, &g20).unwrap().line.as_deref(), Some("按 {n} 个成员国计，不含欧盟"), "the year named");
         assert_eq!(gb("中国和德国的GDP", Some(2016), 2025, &["CN", "DE"]), None);
         assert_eq!(gb("2000年金砖国家人口", None, 2000, &brics10), None, "a page of 2000: no BRICS that year");
         // a member with no row at t1 is named: the line counts the places drawn, in every case (one year, a list that holds)
@@ -3559,7 +3583,7 @@ mod tests {
         let b = gb("日本和金砖国家近十年的GDP增长率", Some(2016), 2025, &[&brics10[..], &["JP", "SA"]].concat()).unwrap();
         assert_eq!((b.named.clone(), b.dropped.clone(), b.line.as_deref()), (s(&["JP"]), s(&["SA"]), Some("按 {year} 年成员计，画出 {n} 国")));
         let b = gb("中国和七国集团的GDP", Some(2016), 2024, &["CN", "FR", "DE", "IT", "JP", "GB", "US", "CA"]).unwrap();
-        assert_eq!((b.named.clone(), b.dropped.clone(), b.line), (s(&["CN"]), Vec::new(), None), "China kept beside the G7");
+        assert_eq!((b.named.clone(), b.dropped.clone(), b.line), (s(&["CN"]), Vec::new(), Some("按 {year} 年成员计，画出 {n} 国".to_string())), "China kept beside the G7, the count of the places drawn");
         // the codes as the page's rows write them: Eurostat's UK for GB
         let b = gb("七国集团的GDP", None, 2024, &["FR", "DE", "IT", "JP", "UK", "US", "CA"]).unwrap();
         assert!(b.members.contains(&"UK".to_string()) && b.dropped.is_empty() && b.missing.is_empty(), "{b:?}");

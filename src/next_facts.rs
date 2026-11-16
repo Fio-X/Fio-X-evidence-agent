@@ -40,6 +40,11 @@ pub const NOROW_TEXT: &str = "no row";
 /// per pair, so each pair the registry leaves out of a flow is on record apart from a pair with no row and a zero flow.
 pub const EXCLUDED_SRC: &str = "excluded:";
 
+/// Where a group page's member-list year is (BASIS_YEAR_SRC, its text the year): the year the knowledge group's member list
+/// holds from when it is not the page's data year (a question naming no year counts today's members, owner 11-16 08:4x
+/// item 1); the flow writes it into the request's basis (spec.basis.member_year) from the group registry, never a model.
+pub const BASIS_YEAR_SRC: &str = "basis:member_year";
+
 /// The text of an EXCLUDED_SRC entry.
 pub const EXCLUDED_TEXT: &str = "excluded by registry";
 
@@ -151,6 +156,9 @@ pub struct Basis {
     /// The members of `year` the run never fetched; a page with any is refused (its lack is no fact of the data).
     #[serde(default)]
     pub unfetched: Vec<String>,
+    /// The year of the member list when it is not `year` (BASIS_YEAR_SRC); none: the list is `year`'s.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub member_year: Option<String>,
     /// Why a stored request's basis could not be read; a page with one never passes (no check skipped).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unread: Option<String>,
@@ -1371,6 +1379,14 @@ pub fn leaf_ledger(
             {
                 out.insert(n.src, n.text);
             }
+        }
+    }
+    // a group page's member-list year, when it is not the data year (four digits, or the request is off)
+    if let Some(y) = spec.basis.as_ref().and_then(|b| b.member_year.as_ref()) {
+        if y.len() == 4 && y.chars().all(|c| c.is_ascii_digit()) {
+            out.insert(BASIS_YEAR_SRC.to_string(), y.clone());
+        } else {
+            off.push(format!("basis: member_year {y:?} is no year"));
         }
     }
     let mut tables: Vec<&str> = Vec::new();

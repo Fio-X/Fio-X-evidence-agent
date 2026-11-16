@@ -3062,9 +3062,14 @@ fn said_basis(fill: &mut Value, shape: &Shape, basis: &crate::l5geo::GroupBasis,
     let counted = fill["knobs"]["spec"]["facts"].get(DRAWN).is_some();
     let why = left_out(basis);
     let dropped: Vec<Value> = basis.dropped.iter().map(|c| json!({"code": c, "why": why})).collect();
+    // the member list's year when it is not the data year (a question naming no year counts today's members)
+    let member_year = (shape.year.get(..4) != Some(basis.member_year.to_string().as_str())).then(|| basis.member_year.to_string());
     fill["knobs"]["spec"]["basis"] = json!({"words": basis.line, "year": shape.year, "count": counted.then_some(DRAWN), "table": shape.main,
         "members": basis.members, "named": basis.named, "missing": basis.missing, "missing_join": basis.missing_join, "dropped": dropped,
         "unfetched": basis.unfetched});
+    if let Some(y) = &member_year {
+        fill["knobs"]["spec"]["basis"]["member_year"] = json!(y);
+    }
     // a member the run never fetched has no data the page could say it lacks: the page is refused, not drawn without it
     if !basis.unfetched.is_empty() {
         return Err(format!("the page counts the members of {at} and {:?} of them were never fetched", basis.unfetched));
@@ -3090,7 +3095,10 @@ fn said_basis(fill: &mut Value, shape: &Shape, basis: &crate::l5geo::GroupBasis,
             labels.entry(code.clone()).or_insert_with(|| json!(name));
         }
     }
-    let year_src = format!("{}{}:{}", crate::next_facts::PERIOD_SRC, shape.main, shape.year);
+    let year_src = match &member_year {
+        Some(_) => crate::next_facts::BASIS_YEAR_SRC.to_string(),
+        None => format!("{}{}:{}", crate::next_facts::PERIOD_SRC, shape.main, shape.year),
+    };
     let count = format!("{{{DRAWN}.n}}");
     let said = format!("{}{}", basis.join, line);
     let (mut rest, mut tail, mut wording) = (said.as_str(), Vec::new(), unit.clone());
@@ -3106,7 +3114,7 @@ fn said_basis(fill: &mut Value, shape: &Shape, basis: &crate::l5geo::GroupBasis,
             "" => break,
             "{year}" => {
                 tail.push(json!({"src": year_src}));
-                wording.push_str(&shape.year);
+                wording.push_str(member_year.as_deref().unwrap_or(&shape.year));
             }
             _ => {
                 for (i, code) in basis.missing.iter().enumerate() {
@@ -9039,12 +9047,14 @@ mod tests {
         let brics = ["BR", "RU", "IN", "CN", "ZA", "EG", "ET", "IR", "AE", "ID"];
         let g20 = ["AR", "AU", "BR", "CA", "CN", "FR", "DE", "IN", "ID", "IT", "JP", "KR", "MX", "RU", "SA", "ZA", "TR", "GB", "US"];
         let with_sa = [&brics[..], &["SA"]].concat();
-        let cases: [(&str, &str, &[&str], &[&str], &[&str]); 5] = [
+        let cases: [(&str, &str, &[&str], &[&str], &[&str]); 6] = [
             ("change", "金砖国家近十年的GDP增长率", &["2016", "2025"], &with_sa, &[]),
             ("change", "金砖国家近十年的GDP增长率", &["2016", "2025"], &with_sa, &["ET"]),
             ("column", "二十国集团的人口", &["2024"], &g20, &[]),
             ("column", "二十国集团的人口", &["2024"], &g20, &["US"]),
             ("column", "金砖国家的人口", &["2025"], &brics, &[]),
+            // no year asked, data to 2024: today's ten (Indonesia since 2025) at 2025, the year their list holds from
+            ("column", "金砖国家的人口", &["2024"], &brics, &[]),
         ];
         let cat = Groups(BTreeMap::new());
         for (name, question, years, places, lacking) in cases {
@@ -9089,10 +9099,29 @@ mod tests {
             let n = ledger[&format!("fact:{DRAWN}.n")].clone();
             assert_eq!(n, (basis.members.len() - lacking.len()).to_string(), "{at}: the places drawn");
             let names: Vec<String> = lacking.iter().map(|c| format!("名{c}")).collect();
-            let said = line.replace("{year}", &shape.year).replace("{n}", &n).replace("{missing}", &names.join("、"));
+            // the member list's year: the data year's period entry, or its own entry when the list is of a later year
+            let (year, year_src) = match &b.member_year {
+                Some(y) => (y.clone(), crate::next_facts::BASIS_YEAR_SRC.to_string()),
+                None => (shape.year.clone(), format!("period:sdg_07_40:{}", shape.year)),
+            };
+            assert_eq!(b.member_year.is_some(), question.starts_with("金砖") && shape.year == "2024", "{at}: only BRICS at 2024 counts a later list");
+            if let Some(y) = &b.member_year {
+                assert_eq!((y.as_str(), ledger.get(&year_src).map(String::as_str)), ("2025", Some("2025")), "{at}: the list's year in the ledger");
+            }
+            let said = line.replace("{year}", &year).replace("{n}", &n).replace("{missing}", &names.join("、"));
             let plain: String = html.split('<').map(|p| p.split_once('>').map_or(p, |(_, t)| t)).collect();
             assert!(plain.contains(&said), "{at}: the page says {said:?}");
-            assert!(!line.contains("{year}") || html.contains(&format!(r#"data-src="period:sdg_07_40:{}""#, shape.year)), "{at}: the year marked");
+            let year_mark = format!(r#"data-src="{year_src}">{year}<"#);
+            assert!(!line.contains("{year}") || html.contains(&year_mark), "{at}: the year marked");
+            if b.member_year.is_some() {
+                // the list's year printed as the data year, or a request whose list's year is another, fails
+                let fails_here = |page: &str, s: &crate::next_facts::Spec| crate::next_leaf::check_leaf_page(page, &ledger, &refs, s, &rows, &facts);
+                let as_data = html.replace(&year_mark, &format!(r#"data-src="period:sdg_07_40:2024">2024<"#));
+                assert!(fails_here(&as_data, &spec).iter().any(|f| f.starts_with("basis:")), "{at}: the data year in its place passes");
+                let mut other = spec.clone();
+                other.basis.as_mut().unwrap().member_year = Some("19x5".into());
+                assert!(crate::next_facts::leaf_ledger(&other, &rows, &facts).is_err(), "{at}: a list year that is no year");
+            }
             let fails = |page: &str, s: &crate::next_facts::Spec| crate::next_leaf::check_leaf_page(page, &ledger, &refs, s, &rows, &facts);
             // the line removed: its words cut out of the page
             let first = line.split('{').next().unwrap();
