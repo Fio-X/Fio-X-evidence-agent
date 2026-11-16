@@ -3075,6 +3075,15 @@ fn said_basis(fill: &mut Value, shape: &Shape, basis: &crate::l5geo::GroupBasis,
         return Err(format!("the page counts the members of {at} and {:?} of them were never fetched", basis.unfetched));
     }
     let Some(line) = &basis.line else { return Ok(()) };
+    // a line that only states the list's year goes where the page has a count and a unit line; a page without them
+    // (the page over the blocks draws no count) goes without it, as before (review 11-16)
+    if !basis.required && (!counted || unit_at(fill).and_then(|u| u.as_str()).is_none()) {
+        fill["knobs"]["spec"]["basis"]["words"] = Value::Null;
+        if let Some(b) = fill["knobs"]["spec"]["basis"].as_object_mut() {
+            b.remove("member_year");
+        }
+        return Ok(());
+    }
     if !counted {
         return Err(format!("not this shape: the page counts the members of {at} and has no count of the places it draws"));
     }
@@ -9095,6 +9104,15 @@ mod tests {
             let mut fill = test_fill(r, &shape, &picks, (&main, &[]), &cat, ("标题", "导语"), false).unwrap();
             let dek = dek_finding(&fill).map_or_else(|| "导语".to_string(), |d| d.0);
             page_words(&mut fill, ("标题", &dek, "栏目"));
+            // a page with no count of its places (the page over the blocks): a line only stating the list's year is left off
+            // and the page goes on; a line the page must say stops it (review 11-16)
+            let mut uncounted = fill.clone();
+            uncounted["knobs"]["spec"]["facts"].as_object_mut().unwrap().remove(DRAWN);
+            match (basis.required, said_basis(&mut uncounted, &shape, &basis, &cat)) {
+                (false, Ok(())) => assert!(uncounted["knobs"]["spec"]["basis"]["words"].is_null(), "{at}: the year-only line left off"),
+                (true, Err(e)) => assert!(e.contains("no count of the places"), "{at}: {e}"),
+                (required, got) => panic!("{at}: required {required}, got {got:?}"),
+            }
             said_basis(&mut fill, &shape, &basis, &cat).unwrap_or_else(|e| panic!("{at}: {e}"));
             assert!(fill["knobs"]["spec"]["basis"].is_object(), "{at}: the request keeps the basis, a line or not");
             let (html, ledger, refs, spec, rows, facts) = published(name, fill, &at);

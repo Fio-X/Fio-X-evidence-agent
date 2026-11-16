@@ -733,6 +733,11 @@ pub struct GroupBasis {
     #[serde(default)]
     pub unfetched: Vec<String>,
     pub line: Option<String>,
+    /// Whether the page must say its line (the list changes inside its years, a member has no data, or the group has members
+    /// that are no country); a line only stating the list's year (owner 11-16 08:4x item 1) is said where the page has a
+    /// count of its places and a unit line, and a page without them goes without it, as before.
+    #[serde(default)]
+    pub required: bool,
     pub join: String,
     pub missing_join: String,
     /// The basis is said only on a page of whole years (the EU's members', union_basis: its line prints the page's year):
@@ -2322,6 +2327,7 @@ impl Catalog {
         let tail = if missing.is_empty() { "" } else { words.missing.as_str() };
         let pick = |all: &str, part: &str| if drawn { format!("{part}{tail}") } else { all.to_string() };
         let mut lines = Vec::new();
+        let mut required = !missing.is_empty();
         // the page's own years, whether or not the question names any: a question asking 2015 to 2025 spans them too
         let changes = t0.is_some_and(|t0| {
                 t0 < t1
@@ -2334,6 +2340,7 @@ impl Catalog {
                         }
                     })
             });
+        required |= changes || !p.non_country_members.is_empty();
         if !p.non_country_members.is_empty() && !changes {
             let others: Vec<&str> = p.non_country_members.iter().map(|m| m.name.as_str()).collect();
             let line = pick(&words.countries_only, &words.countries_only_drawn);
@@ -2352,6 +2359,7 @@ impl Catalog {
             missing,
             unfetched,
             line: lines.pop(),
+            required,
             join: words.line_join.clone(),
             missing_join: words.missing_join.clone(),
             whole_years_only: false,
@@ -2421,6 +2429,7 @@ impl Catalog {
             missing,
             unfetched: Vec::new(),
             line: Some(words.union_missing.clone()),
+            required: true,
             join: words.line_join.clone(),
             missing_join: words.missing_join.clone(),
             whole_years_only: true,
