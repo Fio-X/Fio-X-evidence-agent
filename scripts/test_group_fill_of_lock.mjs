@@ -34,7 +34,7 @@ const RECORD_KEYS = new Map([
 // The flow ratchet's 9 lines in fill_of (11-03 audit): one node (its own definition), one copy line, seven kinds lines.
 const RATCHET_HITS = [
   ["nodes", [], "fn fill_of("],
-  ["copy", [], 'hero.insert("unit".into(), json!(std::iter::once(format!("单位：{short}")).chain(notes).collect::<Vec<_>>().join("；")));'],
+  ["copy", [], 'let line = std::iter::once(unit_line.unwrap_or_else(|| format!("单位：{short}"))).chain(notes).collect::<Vec<_>>().join("；");'],
   ...[...RECORD_KEYS].map(([text, names]) => ["kinds", names, text]),
 ].map(([c, n, t]) => `${c}\t${[...n].sort().join(",")}\t${t}`).sort();
 

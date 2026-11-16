@@ -2453,7 +2453,8 @@ fn fill_of(
     if let Some(code) = accent {
         Filled::set(&mut out.data, "hero data", ACCENT, json!(code)).map_err(no)?;
     }
-    let Filled { drawn, rows, facts, mut fmts, data, mut hero, notes, points, named: name_rows, unit_drawn, unit_line, flow_pairs, composition: cut, .. } = out;
+    let unit_line = out.unit_line.take();
+    let Filled { drawn, rows, facts, mut fmts, data, mut hero, notes, points, named: name_rows, unit_drawn, flow_pairs, composition: cut, .. } = out;
     let mut name_rows = name_rows;
     hero.insert("data".into(), Value::Object(data));
     // a unit whose short form holds a digit (an index's base year, 指数(2015=100)) prints it as the unit table's registered
@@ -2464,12 +2465,12 @@ fn fill_of(
     let mut segs = None;
     let short = next_pack::unit_line_form(&shape.unit).unwrap_or(short);
     // a layer that writes the unit in its own picture leaves the page's unit line to the year alone (column_page)
-    if let Some(line) = unit_line {
-        // the layer's own line (a picture of ranks says how they run), plain words with no digit, the notes after it
-        hero.insert("unit".into(), json!(std::iter::once(line).chain(notes).collect::<Vec<_>>().join("；")));
-    } else if !unit_drawn {
-        hero.insert("unit".into(), json!(std::iter::once(format!("单位：{short}")).chain(notes).collect::<Vec<_>>().join("；")));
-        if short.chars().any(|c| c.is_ascii_digit() || c.is_numeric()) || next_pack::unit_short(&shape.unit) != Some(short) {
+    // a layer's own line (a picture of ranks says how they run: plain words with no digit) stands in for the unit's
+    let own = unit_line.is_some();
+    if own || !unit_drawn {
+        let line = std::iter::once(unit_line.unwrap_or_else(|| format!("单位：{short}"))).chain(notes).collect::<Vec<_>>().join("；");
+        hero.insert("unit".into(), json!(line));
+        if !own && (short.chars().any(|c| c.is_ascii_digit() || c.is_numeric()) || next_pack::unit_short(&shape.unit) != Some(short)) {
             let src = format!("{}{}", FIXED_NAMES[1], shape.unit);
             if fixed_name(&src).as_deref() != Some(short) {
                 return Err(no(format!("unit {}: its short form {short:?} is not the unit table's", shape.unit)));
