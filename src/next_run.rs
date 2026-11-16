@@ -4302,6 +4302,19 @@ fn block_quantity_name(plan: Option<&crate::answer_plan::Plan>, label: &str) -> 
     block.quantity.first().map(|(_, name)| name.trim().to_string()).filter(|name| !name.is_empty())
 }
 
+/// The one place a page draws, if one: its fill's only name of a place code (two or three capital letters; the labels
+/// also name a flow's fuels and sectors, whose codes are not).
+fn one_place_name(fill: &Value) -> Option<&str> {
+    let mut places = place_names(fill)
+        .as_object()?
+        .iter()
+        .filter(|(code, _)| (2..=3).contains(&code.len()) && code.chars().all(|c| c.is_ascii_uppercase()));
+    match (places.next(), places.next()) {
+        (Some((_, name)), None) => name.as_str(),
+        _ => None,
+    }
+}
+
 /// A block's label: the quantity's name in place of the registry frame's 各方 (各方的高低排名 -> 人口的高低排名), or before
 /// a frame that has none (整体的构成与份额 -> 能源来源与去向：整体的构成与份额); the name alone with no frame, or with a frame
 /// the name already says (来源与去向 in 能源来源与去向: no word twice, owner 11-16 08:4x item 3). `place`: the one place the
@@ -4422,8 +4435,7 @@ pub(crate) async fn page_of_block(
     // a block of a many-block page is labelled by the program, its quantity's printed name on the registry's title frame,
     // never by the text step (review list 11-15 item 3: three runs of sample A gave three labels, one naming no quantity)
     let frame = drafts.fields.iter().find(|(t, _)| *t == Target::PageTitle).map_or("", |(_, d)| d.as_str());
-    // the one place the block draws, if one: its fill's only place name
-    let one_place = picked.as_ref().ok().and_then(|(_, fill)| place_names(fill).as_object()).filter(|m| m.len() == 1).and_then(|m| m.values().next()?.as_str());
+    let one_place = picked.as_ref().ok().and_then(|(_, fill)| one_place_name(fill));
     let named = quantity.map(|name| block_kicker(name, frame, one_place));
     let label = named.as_deref().unwrap_or(label);
     let dek = worded.get(&Target::PageDek).cloned().unwrap_or_default();
@@ -5178,6 +5190,11 @@ mod tests {
         assert_eq!(block_kicker("能源来源与去向", frame(Relation::Flow), Some("德国")), "德国能源来源与去向");
         assert_eq!(block_kicker("能源来源与去向", frame(Relation::Composition), Some("德国")), "德国能源来源与去向：整体的构成与份额");
         assert_eq!(block_kicker("德国人口", "", Some("德国")), "德国人口");
+        // the one place among a flow's labels (its fuels and sectors are no place); two places, none
+        let labels = |l: Value| json!({"knobs": {"labels": l}});
+        assert_eq!(one_place_name(&labels(json!({"DE": "德国", "G3000": "天然气", "FC_IND_E": "工业", "E7000": "电力"}))), Some("德国"));
+        assert_eq!(one_place_name(&labels(json!({"DE": "德国", "FR": "法国", "G3000": "天然气"}))), None);
+        assert_eq!(one_place_name(&labels(json!({"DEU": "德国"}))), Some("德国"));
     }
 
     #[test]
