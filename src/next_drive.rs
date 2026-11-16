@@ -2559,6 +2559,74 @@ mod drive {
             println!("SAWALK {} | the page over the blocks and 3 blocks, gates 0, checks passed, sayings held | {}", stacked["published"], result.lines().last().unwrap_or(""));
         }
 
+        /// Any finished stand-in run walked again with no model, as sample_a_walk walks sample A's: from its prepared tables
+        /// on, its plan and block tables read back, next_run::pages_of with the run's text answers (ReplayAsker), into
+        /// CF_WALK_DIR/run. For comparing one binary's pages with another's on the same recorded choices (owner 11-16 11:0x
+        /// item 1: each page's recipe and words before and after a change); it asserts nothing. Prints RWALK lines: each page
+        /// that reached the gate (its folder), the stacked page if any, then the end (published, or the stop's reason).
+        ///
+        ///     NEWS_CATALOG_DIR=.. NEWS_CLASSIFY_REFS=.. RUN_WALK_SRC=<the run's out folder> CF_WALK_DIR=<tmpd folder> \
+        ///     cargo test --bins run_walk -- --ignored --nocapture
+        #[tokio::test]
+        #[ignore]
+        async fn run_walk() {
+            let src = PathBuf::from(var("RUN_WALK_SRC"));
+            let dir = PathBuf::from(var("CF_WALK_DIR"));
+            let text = std::fs::read_to_string(src.join("events.jsonl")).expect("RUN_WALK_SRC holds events.jsonl");
+            let events: Vec<Value> = text.lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
+            let question = events.iter().find(|e| e["type"] == CATALOGUE_EVENT).and_then(|e| e["question"].as_str()).expect("a question").to_string();
+            let catalogue = GroupCatalogue::from_env(|key| std::env::var(key).ok()).unwrap();
+            let (prepared, parent) = prepared_of(&events, &catalogue).expect("the run's prepared tables");
+            let plan: Option<crate::answer_plan::Plan> =
+                events.iter().rev().find(|e| e["type"] == crate::next_flow::PLAN_EVENT).and_then(|e| serde_json::from_value(e["plan"].clone()).ok());
+            let tables_event = |key: &str| {
+                events.iter().rev().find(|e| e["type"] == crate::next_flow::BLOCK_TABLES_EVENT && e.get(key).is_some()).and_then(|e| e[key].as_array().cloned()).unwrap_or_default()
+            };
+            let block_tables: Vec<(String, String)> =
+                tables_event("blocks").iter().filter_map(|b| Some((b["quantity"].as_str()?.to_string(), b["table"].as_str()?.to_string()))).collect();
+            // a plan whose blocks share one table: each block its own fetch, in block order (as prepare_planned offers them)
+            let shared: Vec<(usize, usize)> =
+                tables_event("shared").iter().enumerate().filter_map(|(i, b)| Some((b["block"].as_u64()? as usize - 1, i))).collect();
+            let run = dir.join("run");
+            let _ = std::fs::remove_dir_all(&run);
+            std::fs::create_dir_all(&run).unwrap();
+            for d in ["data", "computations", "shadow"] {
+                if src.join(d).is_dir() {
+                    copy_tree(&src.join(d), &run.join(d)).unwrap();
+                }
+            }
+            if src.join("claims.jsonl").is_file() {
+                std::fs::copy(src.join("claims.jsonl"), run.join("claims.jsonl")).unwrap();
+            }
+            let _command = crate::group_guard::command_for_test("investigate");
+            crate::runtime::materialize_extension(&run).unwrap();
+            let mut model = ReplayAsker { answers: replay_asks(&events), retries: BTreeMap::new(), last: BTreeMap::new(), n: 0 };
+            // a page the run did not draw (a page over its blocks) asks the text step once more: its first answer again
+            if let Some(text) = model.answers.get_mut("text") {
+                if let Some(first) = text.front().cloned() {
+                    text.push_back(first);
+                }
+            }
+            let planned = crate::next_flow::Planned { prepared, plan, block_tables, shared };
+            let mut walked = Vec::new();
+            let mut sink = |e: Value| walked.push(e);
+            let cancel = AtomicBool::new(false);
+            let mut recorder = Recorder::new(&mut sink, &run, Vec::new(), Vec::new());
+            recorder.hang_under(&parent);
+            let result = crate::next_run::pages_of(&mut recorder, &mut model, &question, &planned, &catalogue, &cancel).await;
+            drop(recorder);
+            for e in walked.iter().filter(|e| e["type"] == crate::next_run::LEAF_GATE_EVENT) {
+                println!("RWALK page {} gaps {}", e["recipe"].as_str().unwrap_or_default(), e["gaps"]);
+            }
+            for e in walked.iter().filter(|e| e["type"] == crate::next_run::STACKED_EVENT) {
+                println!("RWALK stacked {} over_blocks {}", e["published"].as_str().unwrap_or_default(), e["over_blocks"]["drawn"]);
+            }
+            match result {
+                Ok(_) => println!("RWALK end published"),
+                Err(stop) => println!("RWALK end stopped: {}", stop.to_string().replace('\n', " ")),
+            }
+        }
+
         /// The sample C walk, as sample_a_walk: a finished stand-in run of sample C (blocks of one shared table) walked
         /// again with no model from its prepared tables on, its plan and its shared blocks read back from its events (each
         /// shared block's own fetch in the order the run fetched them). Holds: every block page drawn reaches the gate with no
