@@ -56,8 +56,10 @@ RECIPES = [
     # steps that walk the whole: the sketch compare's pick over the one 100% bar (sketch.json: position 4 + the lead marked
     # 2 against length 3 + 2 - 1, the reader comparing segments), so it is tried first; the same rows and declaration as
     # composition's (node-bindings.json waterfall declares_as stacked100). Two places or more are not one whole: composition
+    # only a block of a many-block page draws it (blocks_only, owner 11-16 08:4x item 10): a short page of one place's parts
+    # keeps its 100% bar (composition)
     dict(name="composition_steps", layers=["waterfall"], eats=["annual", "one_unit", "composition_groups", "one_whole"], charts=[],
-         picks=[], exposes=[], main="waterfall"),
+         picks=[], exposes=[], main="waterfall", blocks_only=True),
     dict(name="composition", layers=["stacked100"], eats=["annual", "one_unit", "composition_groups"], charts=[], picks=[],
          exposes=[], main="stacked100"),
     # two ends of a ten-year table: each place's change from t0 to t1 as signed bars (bars.measure change, set by layer 1),
@@ -243,6 +245,8 @@ def recipes(nodes, groups):
                 raise SystemExit(f"{r['name']}: node {n} eats {sorted(set(EATS[n]) - set(r['eats']))}, the recipe does not")
         if r.get("relation") not in (None, *RELATIONS):
             raise SystemExit(f"{r['name']}: relation {r['relation']!r}; one of {RELATIONS} or none (any relation)")
+        if r.get("blocks_only", False) not in (True, False) or (r.get("blocks_only") and "blocks" in r["eats"]):
+            raise SystemExit(f"{r['name']}: blocks_only {r.get('blocks_only')!r}; true or false, and a page over the blocks is no block")
         if r.get("window", []) not in ([], ["t0", "t1"]):
             raise SystemExit(f"{r['name']}: window {r['window']!r}; the one window is ['t0', 't1']")
         if r.get("window") and "change_focus" not in r["picks"]:

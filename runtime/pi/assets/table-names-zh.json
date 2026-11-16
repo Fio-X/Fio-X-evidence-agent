@@ -455,6 +455,24 @@
    "zh": "65岁和65岁以上的人口（占总人口的百分比）",
    "zh_source": "reviewed",
    "reviewed": "2026-10-31"
+  },
+  {
+   "id": "SP.POP.TOTL@2",
+   "zh": "人口，总数",
+   "zh_source": "reviewed",
+   "reviewed": "2026-11-16"
+  },
+  {
+   "id": "NY.GDP.PCAP.CD@2",
+   "zh": "人均 GDP（现价美元）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-11-16"
+  },
+  {
+   "id": "SP.URB.TOTL.IN.ZS@2",
+   "zh": "城镇人口（占总人口比例）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-11-16"
   }
  ]
 }

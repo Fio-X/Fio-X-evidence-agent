@@ -142,6 +142,8 @@ pub struct Recipe {
     /// The data relation the recipe answers, by its name in RELATIONS (knobs.json recipes[].relation, from knobs.py): the flow
     /// passes over it when the table step kept another for the main table; None answers any relation.
     pub relation: Option<String>,
+    /// Only a block of a many-block page draws it (knobs.json recipes[].blocks_only, from knobs.py): a short page passes over it.
+    pub blocks_only: bool,
 }
 
 const LEAVES: &str = include_str!("../runtime/leaves_py/knobs.json");
@@ -208,6 +210,10 @@ pub fn leaves() -> &'static Leaves {
             points: words(&r["points"]),
             short_notes: r["short_notes"].as_array().into_iter().flatten().map(|n| (word(&n["layer"]).to_string(), word(&n["at"]).to_string())).collect(),
             relation: r["relation"].as_str().map(str::to_string),
+            blocks_only: match &r["blocks_only"] {
+                Value::Null => false,
+                v => v.as_bool().expect("knobs.json: a recipe's blocks_only is true or false"),
+            },
         });
         Leaves { nodes: nodes.collect(), groups: groups.collect(), legacy, recipes: recipes.collect() }
     })

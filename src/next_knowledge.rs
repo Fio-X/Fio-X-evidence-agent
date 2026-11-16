@@ -1134,10 +1134,12 @@ mod tests {
         assert_eq!(zh("EG.FEC.RNEW.ZS@2"), None);
         let names = table_names().unwrap();
         let digits: Vec<&str> = names.iter().filter(|(_, zh)| zh.chars().any(char::is_numeric)).map(|(id, _)| id.as_str()).collect();
-        assert_eq!((names.len(), digits.len()), (75, 10), "{digits:?}");
+        assert_eq!((names.len(), digits.len()), (78, 10), "{digits:?}");
         let file: Value = serde_json::from_str(TABLE_NAMES).unwrap();
         let dated = |d: &str| file["tables"].as_array().unwrap().iter().filter(|t| t["reviewed"] == d).count();
-        assert_eq!((dated("2026-10-30"), dated("2026-10-31")), (1, 73));
+        // the three World Bank tables of sample A, reviewed 11-16 (人口，总数; 人均 GDP（现价美元）; 城镇人口（占总人口比例）)
+        assert_eq!((dated("2026-10-30"), dated("2026-10-31"), dated("2026-11-16")), (1, 73, 3));
+        assert_eq!(zh("SP.POP.TOTL@2").as_deref(), Some("人口，总数"));
     }
 
     /// AskedBeside reads the chosen table's reviewed name from the file: a family word inside it is no second quantity,

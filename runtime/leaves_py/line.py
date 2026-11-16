@@ -47,41 +47,8 @@ prod.KNOBS[NODE] = dict(
     marker_all=(6, (2, 24, 1), "a series with fewer points than this is marked at every point"),
     highlight=("", None, "code of the series drawn in the accent; none = the first series"))
 
-# A period as a number of years: 2024, 2024-03 / 2024M03 (a month), 2024-Q2 / 2024Q2 (a quarter).
-_YEAR = re.compile(r"(\d{4})")
-_MONTH = re.compile(r"(\d{4})(?:-|M)(\d{2})")
-_QUARTER = re.compile(r"(\d{4})-?Q([1-4])")
-
-
-def period_at(p):
-    """A period's place on the time axis in years; a period of another form refuses."""
-    if _YEAR.fullmatch(p): return float(p)
-    m = _MONTH.fullmatch(p)
-    if m and 1 <= int(m.group(2)) <= 12: return int(m.group(1)) + (int(m.group(2)) - 1) / 12
-    m = _QUARTER.fullmatch(p)
-    if m: return int(m.group(1)) + (int(m.group(2)) - 1) / 4
-    raise Refused(f"line: the period {p!r} is no year, quarter or month")
-
-
-def period_of(src):
-    """The period a series src names (series:<table>/<codes>:<period>:<column>)."""
-    parts = src.rsplit(":", 2) if isinstance(src, str) else []
-    if len(parts) != 3 or not src.startswith("series:"): raise Refused(f"line: {src!r} is no series src")
-    return parts[1]
-
-
-def query_points(q, code):
-    """A series' points by the query form: the request's series cells of q's table at q's filter and `code` on q's
-    by-dimension, from..to when q bounds them, in period order (geometry only: the values are read back by wbkit.val)."""
-    if q["table"] not in (FX.TABLES or {}): raise Refused(f"line: the request holds no table {q['table']}")
-    lo, hi = (period_at(str(q[k])) if q.get(k) is not None else None for k in ("from", "to"))
-    out = []
-    for c in FX._rows(FX.TABLES, {"table": q["table"], "filter": {**(q.get("filter") or {}), q["by"]: code}}):
-        src = FX.SRCS.get(id(c), "")
-        if not src.startswith("series:"): continue
-        t = period_at(period_of(src))
-        if (lo is None or t >= lo) and (hi is None or t <= hi): out.append((t, src))
-    return [src for _, src in sorted(out)]
+# the period axis and the query form live in wbkit (stacked_area reads them too, and a leaf imports no other leaf)
+period_at, period_of, query_points, spread = K.period_at, K.period_of, K.query_points, K.spread
 
 
 def of_code(template, code):
@@ -177,20 +144,6 @@ class Frame:
 
     def x(f, t):
         return f.x0 + (f.x1 - f.x0) * ((t - f.t0) / (f.t1 - f.t0) if f.t1 > f.t0 else 0.5)
-
-
-def spread(want, lo, hi, gap):
-    """Baselines as near the wanted ones as they can be, in the same order, each `gap` or more below the one before and all
-    within [lo, hi]; None when they cannot all fit."""
-    if not want: return []
-    if (len(want) - 1) * gap > hi - lo + 1e-9: return None
-    out = []
-    for y in want:  # down: each at its wanted place or just below the one above
-        out.append(max(min(max(y, lo), hi), out[-1] + gap if out else lo))
-    out[-1] = min(out[-1], hi)
-    for i in range(len(out) - 2, -1, -1):  # up: no one past the bottom, each just above the one below
-        out[i] = min(out[i], out[i + 1] - gap)
-    return out if out[0] >= lo - 1e-9 else None
 
 
 def cl_line(f, occ):

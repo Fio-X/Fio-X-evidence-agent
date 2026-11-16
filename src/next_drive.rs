@@ -2520,9 +2520,9 @@ mod drive {
             }
             let result = result.unwrap_or_else(|stop| panic!("SAWALK stopped: {stop}"));
             let gates = of(crate::next_run::LEAF_GATE_EVENT);
-            // the page over the blocks heads each block by its table's reviewed Chinese name; the run's three World Bank
-            // tables have none yet, so it is not drawn and the three block pages stand as before
-            assert_eq!(gates.len(), 3, "three block pages reached the gate");
+            // the page over the blocks heads each block by its table's reviewed Chinese name (the run's three World Bank
+            // tables', reviewed 11-16): it is drawn first, and four pages reach the gate
+            assert_eq!(gates.len(), 4, "the page over the blocks and three block pages reached the gate");
             assert!(gates.iter().all(|e| e["gaps"].as_array().is_some_and(Vec::is_empty)), "a gate gap");
             for e in of(crate::next_run::PAGE_CHECKS_EVENT) {
                 let failed: Vec<&Value> = e["checks"].as_array().into_iter().flatten().filter(|c| c["passed"] != true).collect();
@@ -2549,14 +2549,14 @@ mod drive {
             }
             let stacked = of(crate::next_run::STACKED_EVENT);
             let stacked = stacked.first().expect("a stacked page");
-            assert_eq!(stacked["blocks"].as_array().map(Vec::len), Some(3));
+            assert_eq!(stacked["blocks"].as_array().map(Vec::len), Some(4));
             assert_eq!(stacked["quantities_left_out"], json!([]));
-            assert_eq!(stacked["over_blocks"]["drawn"], json!(false), "{}", stacked["over_blocks"]);
-            assert!(stacked["over_blocks"]["why"].as_str().is_some_and(|w| w.contains("no reviewed Chinese name")), "{}", stacked["over_blocks"]);
+            assert_eq!(stacked["over_blocks"]["drawn"], json!(true), "{}", stacked["over_blocks"]);
+            assert!(stacked["blocks"][0].as_str().is_some_and(|d| d.contains("block_ranks")), "{}", stacked["blocks"]);
             let page = std::fs::read_to_string(run.join(stacked["published"].as_str().unwrap())).expect("the stacked page is written");
-            assert_eq!(page.matches("<iframe ").count(), 3, "three frames");
+            assert_eq!(page.matches("<iframe ").count(), 4, "four frames");
             assert!(!page.contains("height=\"0\""), "a frame shown at no height: {page}");
-            println!("SAWALK {} | 3 blocks, the page over them not drawn (no reviewed names), gates 0, checks passed, sayings held | {}", stacked["published"], result.lines().last().unwrap_or(""));
+            println!("SAWALK {} | the page over the blocks and 3 blocks, gates 0, checks passed, sayings held | {}", stacked["published"], result.lines().last().unwrap_or(""));
         }
 
         /// The sample C walk, as sample_a_walk: a finished stand-in run of sample C (blocks of one shared table) walked

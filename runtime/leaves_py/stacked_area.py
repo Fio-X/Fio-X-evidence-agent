@@ -25,7 +25,6 @@ word, a text that leaves the picture or overlaps another, end labels that cannot
 import wbkit as K  # the shared drawing kit; run.py's folder is on the path (a node reads no file: one import, no path set-up)
 
 FX, prod, Refused, esc, tw = K.FX, K.prod, K.Refused, K.esc, K.tw
-import line as L
 
 NODE = "stacked_area"
 prod.KNOBS[NODE] = dict(
@@ -57,21 +56,21 @@ class Frame:
         if len(others) > len(GREYS): raise Refused(f"stacked_area: {len(parts)} parts, more than one accent and its {len(GREYS)} greys tell apart")
         f.parts, periods = [], None
         for p in parts:
-            pts = L.query_points(q, p["code"])
+            pts = K.query_points(q, p["code"])
             if len(pts) < 2: raise Refused(f"stacked_area: part {p['code']} has fewer than two points")
             vals = {}
             for src in pts:
                 v = K.val(src)
-                if v < 0: raise Refused(f"stacked_area: part {p['code']} is below 0 at {L.period_of(src)}")
-                vals[L.period_of(src)] = v
+                if v < 0: raise Refused(f"stacked_area: part {p['code']} is below 0 at {K.period_of(src)}")
+                vals[K.period_of(src)] = v
             if periods is not None and set(vals) != periods:
                 raise Refused(f"stacked_area: part {p['code']} does not hold the same periods as the parts before it; a band with a hole cannot be stacked")
             periods = set(vals)
             if not p.get("end_text"): raise Refused(f"stacked_area: part {p['code']} has no end_text (the ledger entry its last value prints from)")
             fill = "var(--accent)" if p["code"] == f.hl else GREYS[others.index(p["code"])]
             f.parts.append(dict(code=p["code"], vals=vals, end=K.ent(p["end_text"]), name=K.named(p["code"], kind), fill=fill))
-        f.periods = sorted(periods, key=L.period_at)
-        f.t = {p: L.period_at(p) for p in f.periods}
+        f.periods = sorted(periods, key=K.period_at)
+        f.t = {p: K.period_at(p) for p in f.periods}
         f.tops = {p: sum(x["vals"][p] for x in f.parts) for p in f.periods}
         axis = d.get("axis") or {}
         key = str(axis.get("of") or "").removeprefix("fact:")
@@ -143,7 +142,7 @@ def cl_stacked_area(f, occ):
     # the end labels: each band named right of the plot at its last period's middle, spread so none overlaps
     ends.sort(key=lambda e: e[0])
     want = [y + size * 0.35 for y, _ in ends]
-    got = L.spread(want, top + size * 0.8, bottom + size * 0.35, size * 1.3)
+    got = K.spread(want, top + size * 0.8, bottom + size * 0.35, size * 1.3)
     if got is None: raise Refused(f"stacked_area: the {len(ends)} end labels do not fit the plot's height; fewer parts or a taller plot")
     lx = f.x1 + 14
     for (y_mid, x), y, y_want in zip(ends, got, want):
