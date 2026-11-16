@@ -3098,7 +3098,7 @@ fn said_basis(fill: &mut Value, shape: &Shape, basis: &crate::l5geo::GroupBasis,
     for scheme in ["iso2", "iso3"] {
         let codes: Vec<String> = basis.missing.iter().filter(|c| (c.len() == 2) == (scheme == "iso2")).cloned().collect();
         if !codes.is_empty() {
-            let got = catalogue.zh_names(scheme, &codes).map_err(|m| format!("not this shape: the name table names no {m:?}, members of {at} with no data"))?;
+            let got = catalogue.zh_names(scheme, &codes).map_err(|m| format!("the name table names no {m:?}, members of {at} with no data"))?;
             names.extend(got);
         }
     }
@@ -3134,7 +3134,7 @@ fn said_basis(fill: &mut Value, shape: &Shape, basis: &crate::l5geo::GroupBasis,
                         tail.push(json!({"w": basis.missing_join}));
                         wording.push_str(&basis.missing_join);
                     }
-                    let name = names.get(code).ok_or_else(|| format!("not this shape: the name table names no {code}, a member of {at} with no data"))?;
+                    let name = names.get(code).ok_or_else(|| format!("the name table names no {code}, a member of {at} with no data"))?;
                     tail.push(json!({"src": format!("{LABEL_SRC}zh_names:{}:{code}", if code.len() == 2 { "iso2" } else { "iso3" })}));
                     wording.push_str(name);
                 }
