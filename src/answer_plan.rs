@@ -16,33 +16,62 @@ use crate::l5geo::{asked_zh, asked_zh_in_order, group_aggregate_zh, listed_aggre
 /// (-n, None).
 pub type Years = Option<(i32, Option<i32>)>;
 
-/// The years of a question: question_span's, else the last n years after 近, 过去 or 最近 (a count, then 年), as (-n, None).
+/// The years of a question: question_span's, else the last n years the question asks, as (-n, None); none named (the
+/// latest) for 最近一年 (owner 11-16 13:1x item 1: the latest year, not a change over one year). A question that asks the
+/// last n years and names one year inside them (近二十年 … 2015 年那一年) asks the span, the year a point in it (item 2).
 pub fn years_of(question: &str) -> Years {
-    if let Some(span) = question_span(question) {
-        return Some(span);
-    }
     let q: String = question.chars().filter(|c| !c.is_whitespace()).collect();
+    let last = last_years(&q);
+    match question_span(question) {
+        Some((a, Some(b))) if a == b && last.is_some_and(|n| n > 1) => {}
+        Some(span) => return Some(span),
+        None => {}
+    }
+    match last {
+        Some(n) if n > 0 => Some((-n, None)),
+        _ => None,
+    }
+}
+
+/// The last n years a question asks: a count of years after 近, 过去 or 最近 (近十年, 过去 5 年), or before 年来, 年变化 or
+/// 年的变化 (十年来, 五年来, 十年变化; owner 11-16 13:1x item 2); 0 for 最近一年, the latest year. A count is one or two
+/// digits or Chinese numerals, so a calendar year (2010 年来) is none.
+fn last_years(q: &str) -> Option<i32> {
+    const NUMERALS: &str = "一二两三四五六七八九十";
+    let count = |num: &str| -> Option<i32> {
+        if num.chars().all(|c| c.is_ascii_digit()) {
+            return num.parse::<i32>().ok().filter(|_| num.len() <= 2);
+        }
+        let d = |c: char| "零一二三四五六七八九".find(c).map(|i| (i / 3) as i32).or((c == '两').then_some(2));
+        let c: Vec<char> = num.chars().collect();
+        match c.as_slice() {
+            ['十'] => Some(10),
+            [a] => d(*a),
+            ['十', b] => d(*b).map(|b| 10 + b),
+            [a, '十'] => d(*a).map(|a| a * 10),
+            [a, '十', b] => Some(d(*a)? * 10 + d(*b)?),
+            _ => None,
+        }
+    };
+    let is_num = |c: char| c.is_ascii_digit() || NUMERALS.contains(c);
     for mark in ["最近", "过去", "近"] {
         let Some(i) = q.find(mark) else { continue };
         let rest = &q[i + mark.len()..];
-        let num: String = rest.chars().take_while(|c| c.is_ascii_digit() || "一二两三四五六七八九十".contains(*c)).collect();
+        let num: String = rest.chars().take_while(|c| is_num(*c)).collect();
         if num.is_empty() || !rest[num.len()..].starts_with('年') {
             continue;
         }
-        let n = num.parse::<i32>().ok().or_else(|| {
-            let d = |c: char| "零一二三四五六七八九".find(c).map(|i| (i / 3) as i32).or((c == '两').then_some(2));
-            let c: Vec<char> = num.chars().collect();
-            match c.as_slice() {
-                ['十'] => Some(10),
-                [a] => d(*a),
-                ['十', b] => d(*b).map(|b| 10 + b),
-                [a, '十'] => d(*a).map(|a| a * 10),
-                [a, '十', b] => Some(d(*a)? * 10 + d(*b)?),
-                _ => None,
+        if let Some(n) = count(&num) {
+            return Some(if mark == "最近" && n == 1 { 0 } else { n });
+        }
+    }
+    for tail in ["年来", "年变化", "年的变化"] {
+        for (i, _) in q.match_indices(tail) {
+            let before: Vec<char> = q[..i].chars().rev().take_while(|c| is_num(*c)).collect();
+            let num: String = before.into_iter().rev().collect();
+            if let Some(n) = (!num.is_empty()).then(|| count(&num)).flatten() {
+                return Some(n);
             }
-        });
-        if let Some(n) = n {
-            return Some((-n, None));
         }
     }
     None
@@ -555,6 +584,18 @@ mod tests {
         assert_eq!(years_of("过去 5 年的房价"), Some((-5, None)));
         assert_eq!(years_of("2015 到 2024 年"), Some((2015, Some(2024))));
         assert_eq!(years_of("各国人口"), None);
+        // owner 11-16 13:1x: 最近一年 is the latest year; N 年来 / N 年变化 the last N years; a lone year inside the last N
+        // years asked is a point in them, not the span; a calendar year before 年来 is no count
+        assert_eq!(years_of("南非、巴西最近一年的通胀率谁高"), None);
+        assert_eq!(years_of("最近 1 年的失业率"), None);
+        assert_eq!(years_of("欧盟各国出生人数十年来的变化"), Some((-10, None)));
+        assert_eq!(years_of("德国、法国二十年来的能源进口依存度"), Some((-20, None)));
+        assert_eq!(years_of("欧盟各国房价五年来涨了多少"), Some((-5, None)));
+        assert_eq!(years_of("各国 65 岁以上人口比例十年变化"), Some((-10, None)));
+        assert_eq!(years_of("印尼、越南近二十年的谷物单产怎么变？2015 年那一年有没有往下掉？"), Some((-20, None)));
+        assert_eq!(years_of("2015 年印尼的谷物单产"), Some((2015, Some(2015))));
+        assert_eq!(years_of("2010 年来的变化"), question_span("2010 年来的变化"));
+        assert_eq!(years_of("近两年的房价"), Some((-2, None)));
     }
 
     /// The three many-block shapes (works/complex-split/design.md) give the blocks of the hand-written plans of complex
