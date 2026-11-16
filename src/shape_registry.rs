@@ -160,6 +160,8 @@ impl Shape {
 pub const FRAME_PARTIES: &str = "各方";
 /// What joins a block quantity's name to a FRAMES title that has no FRAME_PARTIES word (能源来源与去向：整体的构成与份额).
 pub const KICKER_JOIN: &str = "：";
+/// What joins the names of the quantities a page over blocks ranks, in its label (人口、人均GDP、城镇人口占比的高低排名).
+pub const NAMES_JOIN: &str = "、";
 
 /// The page wording frames by relation: page title, page dek, chart heading, text module. Chinese, so a page that keeps
 /// the drafts reads as written; no number, no number in words, no placeholder; the title a label, never a question (next_flow

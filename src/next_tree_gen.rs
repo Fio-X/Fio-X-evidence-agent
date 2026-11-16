@@ -310,6 +310,8 @@ pub struct NodeDeclared {
     pub unit_drawn: bool,
     /// The notes after the unit the layer writes (declares.notes: what a share is of), in its order.
     pub notes: Vec<String>,
+    /// The unit line the layer writes in place of the unit's (declares.unit_line), if it does.
+    pub unit_line: Option<String>,
     /// The page's finding (the finding node): its dek's two wordings and its headline's, and the code it names first.
     pub finding: Option<(Value, String)>,
     /// Why the finding node gives the page no headline (none, or a finding without one), so its title is the label.
@@ -1160,7 +1162,10 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
         got = again;
     }
     // a declaration with no fmt declares no format and no fact of its own (the facts it prints are another layer's, which
-    // owns their formats): one that declares facts, a change format, formats or a candidate's facts with no fmt refuses
+    // owns their formats), but for a count in the built-in format n (the rank lines' count of the places they draw, which the
+    // unit line's member line says): one that declares other facts, a change format, formats or a candidate's facts with no
+    // fmt refuses
+    let only_counts = d.g("facts").obj().iter().all(|(_, q)| q.g("fmt").s() == Some("n"));
     let mut fmts = J::Obj(vec![]);
     if d.has("fmt") {
         let mut fd = sub(d.g("fmt"), page_in)?;
@@ -1168,7 +1173,7 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
         let dec = dec_of(layer, &rule, page_in, &got, fd.g("suffix") == page_in.g("shape").g("suffix"))?;
         let fd = J::obj_of(vec![("scale", fd.g("scale").clone()), ("dec", J::Int(dec)), ("suffix", fd.g("suffix").clone())]);
         fmts.set(&st(page_in.g("shape").g("fmt")), fd);
-    } else if let Some(k) = ["facts", "fmt_change", "formats"].into_iter().find(|k| d.has(k)).or(carries_facts(d.g("candidates")).then_some("candidates' facts")) {
+    } else if let Some(k) = ["facts", "fmt_change", "formats"].into_iter().find(|k| d.has(k) && !(*k == "facts" && only_counts)).or(carries_facts(d.g("candidates")).then_some("candidates' facts")) {
         return Err(format!("{layer}: declares {k} and no fmt; a declaration with no fmt declares no fact of its own"));
     }
     // a change's format, its key read by the facts that print in it ($fmt.change)
@@ -1392,6 +1397,11 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
     if !notes.is_empty() {
         out.set("notes", J::Arr(notes));
     }
+    // the unit line a layer writes in place of the unit's (declares.unit_line: a picture of ranks, whose line says how the
+    // ranks run, owner 11-16 10:3x item 1), the registry's words with every template read
+    if let Some(words) = d.get("unit_line") {
+        out.set("unit_line", J::Str(words.arr().iter().map(|w| sub(w, page_in).map(|x| st(&x))).collect::<Result<Vec<_>, _>>()?.concat()));
+    }
     if !reads.is_empty() {
         out.set("reads", J::Arr(reads));
     }
@@ -1608,6 +1618,7 @@ pub fn declare(layer: &str, page_in: &Value) -> Result<NodeDeclared, String> {
         record: out.get("record").map(J::to_value),
         unit_drawn: out.g("unit_drawn").truthy(),
         notes: out.g("notes").arr().iter().map(st).collect(),
+        unit_line: out.g("unit_line").s().map(str::to_string),
         finding: out.get("finding").filter(|f| !f.is_null()).map(|f| (f.to_value(), st(out.g("subject")))),
         fell_back: out.g("fell_back").s().map(str::to_string),
     })
@@ -2017,8 +2028,12 @@ fn parts_expand(layer: &str, d: &J, view: &J, (rows, sels): (&[J], &[J]), got: &
     let leaf_d = d.g("leaf");
     let (mut bars, mut zero_decl) = (Vec::new(), Vec::new());
     let mut zero_parts: Vec<(String, Vec<J>)> = Vec::new();
+    // whether a bar's parts, each printed as a whole percent of its total (a share fact's pct), add up to other than 100
+    let mut rounding_off = false;
     for item in res(&st(d.g("items"))).arr() {
         let tot = total_row(item).ok_or_else(|| format!("item {}: no total row at the year", st(item)))?;
+        let whole = row_num(&tot).unwrap_or(f64::NAN);
+        let mut printed = 0_i64;
         take(&mut ordered, vec![tot.clone()], true);
         set_fact(&mut facts, fact("item_total", &[("item", item.clone())])?);
         let (mut cells, mut share) = (J::Obj(vec![]), J::Obj(vec![]));
@@ -2043,11 +2058,14 @@ fn parts_expand(layer: &str, d: &J, view: &J, (rows, sels): (&[J], &[J]), got: &
                 continue;
             }
             cells.set(part, J::Arr(held.iter().map(|r| r.g("src").clone()).collect()));
+            let s: f64 = held.iter().filter_map(row_num).sum();
+            printed += format!("{:.0}", (s / whole * 100.0).abs()).parse::<i64>().unwrap_or(0);
             let ctx = [("item", item.clone()), ("part", J::str(part)), ("part_codes", pcodes.clone())];
             set_fact(&mut facts, fact("part_sum", &ctx)?);
             set_fact(&mut facts, fact("part_share", &ctx)?);
             share.set(part, subx(leaf_d.g("share_text"), view, &ctx)?);
         }
+        rounding_off |= printed != 0 && printed != 100;
         bars.push(J::obj_of(vec![
             ("code", item.clone()),
             ("total", tot.g("src").clone()),
@@ -2069,6 +2087,19 @@ fn parts_expand(layer: &str, d: &J, view: &J, (rows, sels): (&[J], &[J]), got: &
     let line_d = |each: &'static str| d.g("lines").arr().iter().filter(move |l| l.g("each").s() == Some(each));
     for l in line_d("once") {
         lines.push(segments(l.g("segs"), view, &[])?);
+    }
+    // a line about the order of the bars only where there are bars to order (owner 11-16 10:3x item 2: one place's page
+    // has no ranking of places)
+    if items.arr().len() > 1 {
+        for l in line_d("many") {
+            lines.push(segments(l.g("segs"), view, &[])?);
+        }
+    }
+    // the shares as printed do not add up to the whole (owner 11-16 10:3x item 3)
+    if rounding_off {
+        for l in line_d("rounding") {
+            lines.push(segments(l.g("segs"), view, &[])?);
+        }
     }
     let dropped = res(&st(d.g("dropped")));
     let all_codes = J::Arr(groups.obj().iter().flat_map(|(_, cs)| cs.arr().iter().cloned()).collect());
@@ -2875,6 +2906,12 @@ mod tests {
         pi.set("blocks", J::Arr(vec![block(&main, &year), block("gdp", "2024"), block("pop", "2023")]));
         let reg = core::load_registry(&core::bindings());
         let out = declared_j("rank_lines", &pi, &reg).unwrap();
+        // the count of the places it draws (the member line's, owner 11-16 11:0x item 2) and the line saying how ranks run
+        assert_eq!(
+            out.g("facts").g("drawn").to_value(),
+            serde_json::json!({"op": "n", "by": by, "table": main, "time": year, "filter": {by.clone(): ranked}, "fmt": "n"})
+        );
+        assert_eq!(out.g("unit_line").s(), Some("名次：数值越高，名次越靠前"));
         for (b, (t, y)) in [(main.as_str(), year.as_str()), ("gdp", "2024"), ("pop", "2023")].into_iter().enumerate() {
             for c in &ranked {
                 let f = out.g("facts").g(&format!("b{}_{}_pos", b + 1, c.to_lowercase()));

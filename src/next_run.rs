@@ -1897,6 +1897,9 @@ fn ask_node(f: &Filling, out: &mut Filled, page_in: Option<&Value>) -> Result<()
     take_names(f.catalogue, out, &layer, (declared.names, declared.fixed))?;
     out.composition = declared.record.or(out.composition.take());
     out.unit_drawn |= declared.unit_drawn;
+    if declared.unit_line.is_some() {
+        out.unit_line = declared.unit_line;
+    }
     out.notes.extend(declared.notes);
     Ok(())
 }
@@ -2065,6 +2068,8 @@ struct Filled {
     named: Map<String, Value>,
     /// A layer writes the unit in its own picture (the sankey's head), so the page's unit line does not write it again.
     unit_drawn: bool,
+    /// The unit line a layer writes in place of the unit's (a picture of ranks: how the ranks run), if one does.
+    unit_line: Option<String>,
     /// How a flow picture accounted for each pair its fetch asked for (flow_pairs_of), for the run's record.
     flow_pairs: Option<FlowPairs>,
     /// Which candidates a composition drew, left out for their parts, or named under it (the stacked100 declaration (node-bindings.json)), for the record.
@@ -2448,7 +2453,7 @@ fn fill_of(
     if let Some(code) = accent {
         Filled::set(&mut out.data, "hero data", ACCENT, json!(code)).map_err(no)?;
     }
-    let Filled { drawn, rows, facts, mut fmts, data, mut hero, notes, points, named: name_rows, unit_drawn, flow_pairs, composition: cut, .. } = out;
+    let Filled { drawn, rows, facts, mut fmts, data, mut hero, notes, points, named: name_rows, unit_drawn, unit_line, flow_pairs, composition: cut, .. } = out;
     let mut name_rows = name_rows;
     hero.insert("data".into(), Value::Object(data));
     // a unit whose short form holds a digit (an index's base year, 指数(2015=100)) prints it as the unit table's registered
@@ -2459,7 +2464,10 @@ fn fill_of(
     let mut segs = None;
     let short = next_pack::unit_line_form(&shape.unit).unwrap_or(short);
     // a layer that writes the unit in its own picture leaves the page's unit line to the year alone (column_page)
-    if !unit_drawn {
+    if let Some(line) = unit_line {
+        // the layer's own line (a picture of ranks says how they run), plain words with no digit, the notes after it
+        hero.insert("unit".into(), json!(std::iter::once(line).chain(notes).collect::<Vec<_>>().join("；")));
+    } else if !unit_drawn {
         hero.insert("unit".into(), json!(std::iter::once(format!("单位：{short}")).chain(notes).collect::<Vec<_>>().join("；")));
         if short.chars().any(|c| c.is_ascii_digit() || c.is_numeric()) || next_pack::unit_short(&shape.unit) != Some(short) {
             let src = format!("{}{}", FIXED_NAMES[1], shape.unit);
@@ -3075,20 +3083,14 @@ fn said_basis(fill: &mut Value, shape: &Shape, basis: &crate::l5geo::GroupBasis,
         return Err(format!("the page counts the members of {at} and {:?} of them were never fetched", basis.unfetched));
     }
     let Some(line) = &basis.line else { return Ok(()) };
-    // a line that only states the list's year goes where the page has a count and a unit line; a page without them
-    // (the page over the blocks draws no count) goes without it, as before (review 11-16)
-    if !basis.required && (!counted || unit_at(fill).and_then(|u| u.as_str()).is_none()) {
-        fill["knobs"]["spec"]["basis"]["words"] = Value::Null;
-        if let Some(b) = fill["knobs"]["spec"]["basis"].as_object_mut() {
-            b.remove("member_year");
-        }
-        return Ok(());
-    }
+    // every page that draws a group says the year of its member list, a page with no count of its own (the page over the
+    // blocks) too (owner 11-16 11:0x item 2); a page that cannot say it stops there and says why, never trying another
+    // recipe (stage fill, owner 11-16 11:0x item 1)
     if !counted {
-        return Err(format!("not this shape: the page counts the members of {at} and has no count of the places it draws"));
+        return Err(format!("the page draws the members of {at} and has no count of the places it draws to say so"));
     }
     let Some(unit) = unit_at(fill).and_then(|u| u.as_str()).map(str::to_string) else {
-        return Err(format!("not this shape: the page counts the members of {at} and has no unit line to say so"));
+        return Err(format!("the page draws the members of {at} and has no unit line to say so"));
     };
     // the members with no data, named from the name table by their code's scheme
     let mut names: BTreeMap<String, String> = BTreeMap::new();
@@ -4303,7 +4305,10 @@ pub(crate) async fn pages_of(
     let answered = one.is_some_and(|k| catalogue.recipes().iter().any(|r| r.eats.iter().any(|e| e == "blocks") && r.relation.as_deref() == Some(k.as_str())));
     if answered && drawn_tables.len() > 1 {
         let before = manifested(recorder.run_dir());
-        match page_of_block(recorder, model, question, &drawn_tables, catalogue, cancel, (0, None, None, true)).await {
+        // its label names every quantity it ranks (owner 11-16 10:3x item 1), when the plan names each
+        let names: Option<Vec<String>> = drawn.iter().map(|l| block_quantity_name(planned.plan.as_ref(), l)).collect();
+        let names = names.map(|n| n.join(crate::shape_registry::NAMES_JOIN));
+        match page_of_block(recorder, model, question, &drawn_tables, catalogue, cancel, (0, None, names.as_deref(), true)).await {
             Ok((answer, shown, _)) => {
                 over_blocks = json!({"drawn": true, "page": shown.0});
                 answers.insert(0, answer);
@@ -9104,15 +9109,11 @@ mod tests {
             let mut fill = test_fill(r, &shape, &picks, (&main, &[]), &cat, ("标题", "导语"), false).unwrap();
             let dek = dek_finding(&fill).map_or_else(|| "导语".to_string(), |d| d.0);
             page_words(&mut fill, ("标题", &dek, "栏目"));
-            // a page with no count of its places (the page over the blocks): a line only stating the list's year is left off
-            // and the page goes on; a line the page must say stops it (review 11-16)
+            // a page with no count of its places stops at its fill, never left without the line (owner 11-16 11:0x)
             let mut uncounted = fill.clone();
             uncounted["knobs"]["spec"]["facts"].as_object_mut().unwrap().remove(DRAWN);
-            match (basis.required, said_basis(&mut uncounted, &shape, &basis, &cat)) {
-                (false, Ok(())) => assert!(uncounted["knobs"]["spec"]["basis"]["words"].is_null(), "{at}: the year-only line left off"),
-                (true, Err(e)) => assert!(e.contains("no count of the places"), "{at}: {e}"),
-                (required, got) => panic!("{at}: required {required}, got {got:?}"),
-            }
+            let e = said_basis(&mut uncounted, &shape, &basis, &cat).unwrap_err();
+            assert!(e.contains("no count of the places") && !e.starts_with("not this shape"), "{at}: {e}");
             said_basis(&mut fill, &shape, &basis, &cat).unwrap_or_else(|e| panic!("{at}: {e}"));
             assert!(fill["knobs"]["spec"]["basis"].is_object(), "{at}: the request keeps the basis, a line or not");
             let (html, ledger, refs, spec, rows, facts) = published(name, fill, &at);
@@ -9703,6 +9704,49 @@ mod tests {
         assert_eq!(first(&all, (false, true)), Some("composition"));
         let fill = q3_fill(&split, &parts).unwrap();
         assert_eq!(fill["composition"]["bars"], json!(["DE"]), "the short page's one 100% bar: {}", fill["composition"]);
+        // one place's bar says no order of places, and says the rounding only where its printed shares miss 100 (owner
+        // 11-16 10:3x items 2 and 3)
+        let said = |fill: &Value| -> Vec<String> {
+            fill["knobs"]["spec"]["hero"]["leaves"]["stacked100"]["lines"].as_array().unwrap().iter()
+                .map(|l| l.as_array().unwrap().iter().filter_map(|s| s["w"].as_str()).collect::<String>()).collect()
+        };
+        let printed = |rows: &[Value]| -> i64 {
+            let leaf = &fill["knobs"]["spec"]["hero"]["leaves"]["stacked100"];
+            let v = |src: &str| rows.iter().chain(split.iter()).find(|r| r["src"] == src).and_then(|r| r["value"].as_str()?.parse::<f64>().ok()).unwrap();
+            let bar = &leaf["bars"][0];
+            let whole = v(bar["total"].as_str().unwrap());
+            bar["cells"].as_object().unwrap().values().map(|cs| {
+                let s: f64 = cs.as_array().unwrap().iter().map(|c| v(c.as_str().unwrap())).sum();
+                format!("{:.0}", s / whole * 100.0).parse::<i64>().unwrap()
+            }).sum()
+        };
+        let lines = said(&fill);
+        assert!(lines.iter().all(|l| !l.contains("合计最大")), "{lines:?}");
+        let rounding = |l: &Vec<String>| l.iter().any(|w| w.contains("四舍五入"));
+        assert_eq!(rounding(&lines), printed(&parts) != 100, "DE prints {} in all: {lines:?}", printed(&parts));
+        // the parts moved so the printed shares cannot add to 100: each of the three groups a third of the whole, in its first
+        // cell (three thirds print 33 each); the line is said
+        let leaf = &fill["knobs"]["spec"]["hero"]["leaves"]["stacked100"];
+        let bar = &leaf["bars"][0];
+        let whole: f64 = split.iter().find(|r| r["src"] == bar["total"]).unwrap()["value"].as_str().unwrap().parse().unwrap();
+        let groups: Vec<Vec<String>> = bar["cells"].as_object().unwrap().values()
+            .map(|cs| cs.as_array().unwrap().iter().map(|c| c.as_str().unwrap().to_string()).collect()).collect();
+        assert_eq!(groups.len(), 3, "the fixture's DE bar draws three groups (nuclear is zero): {groups:?}");
+        let mut moved = parts.clone();
+        let mut split_moved = split.clone();
+        for cells in &groups {
+            for (j, c) in cells.iter().enumerate() {
+                let v = if j == 0 { whole / 3.0 } else { 0.0 };
+                for r in moved.iter_mut().chain(split_moved.iter_mut()).filter(|r| r["src"] == c.as_str()) {
+                    r["value"] = json!(format!("{v}"));
+                }
+            }
+        }
+        let thirds = q3_fill(&split_moved, &moved).unwrap();
+        assert!(rounding(&said(&thirds)), "three thirds print 99: {:?}", said(&thirds));
+        // twenty places' bars keep their order line
+        let many = q3_fill(&main, &sums).unwrap();
+        assert!(said(&many).iter().any(|l| l.contains("合计最大")), "{:?}", said(&many));
     }
 
     /// The composition page's fill over q3's tables (q3_tables), by the recipe the registry tries first that reads them.

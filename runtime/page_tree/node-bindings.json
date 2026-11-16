@@ -1723,9 +1723,11 @@
      "facts_each_block": {
       "b{b}_{code_lc}_pos": {"op": "position", "table": "$block.table", "by": "$block.by", "time": "$block.year", "filter": {"$block.by": "select:ranked"}, "code": "{code}", "fmt": "n"}
      },
+     "facts": {"drawn": {"op": "n", "by": "$shape.place", "table": "$shape.main", "time": "$shape.year", "filter": {"$shape.place": "select:ranked"}, "fmt": "n"}},
      "rows": {"rule": "rows_of_blocks"},
      "data": {"table": "$shape.main", "year": "$shape.year"},
      "items_for": "select:ranked",
+     "unit_line": ["名次：数值越高，名次越靠前"],
      "leaf": {
       "key": "rank_lines",
       "codes_as": "series",
@@ -1842,8 +1844,9 @@
      "others_head": [{"w": "其余 "}, {"src": "fact:comp_others.n"}, {"w": " 个国家（按合计由大到小）："}]
     },
     "lines": [
-     {"each": "once", "segs": [{"w": "图中为合计最大的 "}, {"src": "fact:comp_bars.n"}, {"w": " 个国家，自上而下由大到小"}]},
+     {"each": "many", "segs": [{"w": "图中为合计最大的 "}, {"src": "fact:comp_bars.n"}, {"w": " 个国家，自上而下由大到小"}]},
      {"each": "dropped", "segs": [{"place_name": "{item}"}, {"w": "：各组之和与合计相差 "}, {"src": "fact:gap.{item}"}, {"w": "，未列入图中，由合计次大的国家递补"}]},
+     {"each": "rounding", "segs": [{"w": "因四舍五入，各项份额相加可能不等于百分之百"}]},
      {"each": "zero_part", "segs": [{"name": "siec_group", "code": "{part}"}, {"w": "为零的国家："}, {"list_places": "{items}", "sep": "、"}]}
     ],
     "names": [
