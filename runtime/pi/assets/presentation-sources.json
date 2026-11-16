@@ -3259,6 +3259,18 @@
    "slim": "yth_educ_060",
    "source": "trng_lfs_09",
    "cells": 8
+  },
+  {
+   "slim": "tps00204",
+   "source": "demo_gind",
+   "cells": 652,
+   "codes": {
+    "indic_de": {
+     "LBIRTH_NR": "LBIRTH",
+     "GBIRTHRT_THSP": "GBIRTHRT"
+    }
+   },
+   "added": "2026-11-16: every cell since 2019 (652) read again from demo_gind under this code map, all equal; the builder matched same codes only"
   }
  ]
 }

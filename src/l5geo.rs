@@ -562,12 +562,16 @@ fn monthly_twins() -> &'static [Twin] {
 /// (runtime/pi/assets/presentation-sources.json), compiled in so a broken file fails its test, not a run.
 const PRESENTATION_SOURCES: &str = include_str!("../runtime/pi/assets/presentation-sources.json");
 
-/// One pair of presentation-sources.json: the presentation table, its dataset, and how many cells were found equal.
+/// One pair of presentation-sources.json: the presentation table, its dataset, and how many cells were found equal; `codes`,
+/// per dimension, the dataset's code for each table code the dataset names otherwise (tps00204's LBIRTH_NR is demo_gind's
+/// LBIRTH), the cells found equal under that map; none: the same codes.
 #[derive(Debug, Deserialize)]
 struct PresentationSource {
     slim: String,
     source: String,
     cells: usize,
+    #[serde(default)]
+    codes: BTreeMap<String, BTreeMap<String, String>>,
 }
 
 /// The registered presentation tables, read once.
@@ -3090,7 +3094,7 @@ impl Catalog {
             return Some(StandsFor { to: h, found: "catalogue", why, keep: Vec::new() });
         }
         let p = presentation_sources().iter().find(|p| p.slim == id)?;
-        let keep = self.kept_codes(id, &p.source)?;
+        let keep = self.kept_codes(id, &p.source, &p.codes)?;
         let why = format!(
             "{id} is a presentation table cut from the dataset {} (presentation-sources.json: {} of its cells read again from the dataset, all equal); the dataset is offered at the table's codes",
             p.source, p.cells
@@ -3102,8 +3106,8 @@ impl Catalog {
     /// holds, in the dataset's order: what the dataset is kept to so the pick offers what it offered of the table. None
     /// when the catalogue lists either table's metadata not, the two have other dimensions, or a dimension of the dataset
     /// holds none of the table's codes, or the two are fetched at another frequency (a quarterly table's dataset that also
-    /// holds years is fetched by year).
-    fn kept_codes(&self, slim: &str, source: &str) -> Option<Vec<(String, Vec<String>)>> {
+    /// holds years is fetched by year). `renamed`: the pair's map of a table code to the dataset's (PresentationSource).
+    fn kept_codes(&self, slim: &str, source: &str, renamed: &BTreeMap<String, BTreeMap<String, String>>) -> Option<Vec<(String, Vec<String>)>> {
         let (s, d) = (self.table(slim)?, self.table(source)?);
         let names = |t: &TableMeta| t.dims.iter().map(|(n, _)| n.clone()).collect::<BTreeSet<String>>();
         if names(&s) != names(&d) || s.freq().ok() != d.freq().ok() {
@@ -3111,7 +3115,9 @@ impl Catalog {
         }
         let mut keep = Vec::new();
         for (dim, codes) in d.dims.iter().filter(|(n, _)| n != "geo") {
-            let held: Vec<&String> = s.dims.iter().find(|(n, _)| n == dim)?.1.iter().map(|(c, _)| c).collect();
+            let map = renamed.get(dim);
+            let held: Vec<&String> =
+                s.dims.iter().find(|(n, _)| n == dim)?.1.iter().map(|(c, _)| map.and_then(|m| m.get(c)).unwrap_or(c)).collect();
             let kept: Vec<String> = codes.iter().filter(|(c, _)| held.contains(&c)).map(|(c, _)| c.clone()).collect();
             if kept.is_empty() {
                 return None;
@@ -4662,6 +4668,19 @@ mod tests {
         // review 11-15: a quarterly table's dataset that also holds years (fetched by year) is not offered for it
         let quarters = with(&format!("{both}tps00028\ttime\t2024Q1\ndemo_pjanind\ttime\t2024\ndemo_pjanind\ttime\t2024Q1\n"));
         assert_eq!(quarters.source_swap(five, &ranked, |_| true)[1].id, "tps00028");
+        // owner 11-16 08:4x item 4: tps00204 (births) is demo_gind under other indicator codes, kept to the dataset's codes
+        let births = presentation_sources().iter().find(|p| p.slim == "tps00204").expect("tps00204 is registered");
+        assert_eq!((births.source.as_str(), births.codes["indic_de"]["LBIRTH_NR"].as_str()), ("demo_gind", "LBIRTH"));
+        let mut raw = small_raw();
+        raw.toc.push_str("\"        Live births\"\t\"tps00204\"\t\"table\"\n\"        Demographic balance\"\t\"demo_gind\"\t\"table\"\n");
+        raw.metabase.push_str("tps00204\tfreq\tA\ntps00204\tindic_de\tLBIRTH_NR\ntps00204\tindic_de\tGBIRTHRT_THSP\ntps00204\tgeo\tDE\n\
+                               demo_gind\tfreq\tA\ndemo_gind\tindic_de\tJAN\ndemo_gind\tindic_de\tLBIRTH\ndemo_gind\tindic_de\tGBIRTHRT\ndemo_gind\tgeo\tDE\n");
+        let c = Catalog::from_raw(&raw);
+        let five = vec![cand("nrg_bal", 2.0), cand("tps00204", 1.9)];
+        let ranked = vec![five[0].clone(), five[1].clone(), cand("demo_gind", 0.5)];
+        let got = c.source_swap(five, &ranked, |_| true);
+        assert_eq!(got[1].id, "demo_gind");
+        assert_eq!(got[1].twin_of.as_ref().unwrap().keep, [("indic_de".to_string(), vec!["LBIRTH".to_string(), "GBIRTHRT".to_string()])]);
     }
 
     fn asked_of(id: &str, tables: &[&str]) -> Asked {
