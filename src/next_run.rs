@@ -3415,6 +3415,13 @@ fn zeros_check(zeros: &[Value]) -> Option<PageCheck> {
 /// recipe that stopped past its shape. `of_blocks`: the page over a many-block page's blocks (pages_of), which only a
 /// recipe that eats blocks draws; every other page passes those by, as if the registry had none.
 #[allow(clippy::too_many_arguments)]
+/// The recipes a page tries, in registry order: the page over the blocks only those that eat blocks, any other page the
+/// rest; `many`: the page is a block of a many-block page (or the page over them), and a short page passes over a recipe
+/// only blocks draw (Recipe::blocks_only, owner 11-16 08:4x item 10: a short page of one place's parts keeps its 100% bar).
+fn recipes_tried(catalogue: &dyn Catalogue, (of_blocks, many): (bool, bool)) -> impl Iterator<Item = &'static Recipe> {
+    catalogue.recipes().iter().filter(move |r| r.eats.iter().any(|e| e == "blocks") == of_blocks && (many || !r.blocks_only))
+}
+
 fn leaf_request(
     run_dir: &Path,
     prepared: &[Prepared],
@@ -3423,13 +3430,13 @@ fn leaf_request(
     (question, words): (&str, (&str, &str, &str)),
     calls: &std::sync::Mutex<Vec<Value>>,
     focus: Option<&str>,
-    of_blocks: bool,
+    (of_blocks, many): (bool, bool),
 ) -> Result<(&'static Recipe, Value), (&'static str, &'static str, String)> {
     let mut missed = Vec::new();
     let places = catalogue.places(question);
     // the relation the table step kept for the main table: a recipe that answers another is not this relation
     let kept = prepared.first().and_then(|p| p.relation).map(|r| format!("{r:?}"));
-    for recipe in catalogue.recipes().iter().filter(|r| r.eats.iter().any(|e| e == "blocks") == of_blocks) {
+    for recipe in recipes_tried(catalogue, (of_blocks, many)) {
         if let (Some(kept), Some(answers)) = (&kept, &recipe.relation) {
             if kept != answers {
                 missed.push((recipe.name.as_str(), format!("not this relation: the table step kept {kept}, the recipe answers {answers}")));
@@ -4220,7 +4227,7 @@ pub(crate) async fn pages_of(
     let (first, shown, leader) = loop {
         let before = manifested(recorder.run_dir());
         let name = block_quantity_name(planned.plan.as_ref(), &blocks[lead].0);
-        match page_of_block(recorder, model, question, std::slice::from_ref(&blocks[lead].1), catalogue, cancel, (1, None, name.as_deref())).await {
+        match page_of_block(recorder, model, question, std::slice::from_ref(&blocks[lead].1), catalogue, cancel, (1, None, name.as_deref(), true)).await {
             Ok(page) => break page,
             Err(stopped @ (Stop::Page { .. } | Stop::Refused { .. } | Stop::NoReply { .. }))
                 if !planned.shared.is_empty()
@@ -4249,7 +4256,7 @@ pub(crate) async fn pages_of(
         let focus = leader.as_deref().filter(|_| asks_place);
         let before = manifested(recorder.run_dir());
         let name = block_quantity_name(planned.plan.as_ref(), label);
-        match page_of_block(recorder, model, question, std::slice::from_ref(table), catalogue, cancel, (i + 1, focus, name.as_deref())).await {
+        match page_of_block(recorder, model, question, std::slice::from_ref(table), catalogue, cancel, (i + 1, focus, name.as_deref(), true)).await {
             Ok((answer, shown, _)) => {
                 answers.push(answer);
                 pages.push(shown);
@@ -4279,7 +4286,7 @@ pub(crate) async fn pages_of(
     let answered = one.is_some_and(|k| catalogue.recipes().iter().any(|r| r.eats.iter().any(|e| e == "blocks") && r.relation.as_deref() == Some(k.as_str())));
     if answered && drawn_tables.len() > 1 {
         let before = manifested(recorder.run_dir());
-        match page_of_block(recorder, model, question, &drawn_tables, catalogue, cancel, (0, None, None)).await {
+        match page_of_block(recorder, model, question, &drawn_tables, catalogue, cancel, (0, None, None, true)).await {
             Ok((answer, shown, _)) => {
                 over_blocks = json!({"drawn": true, "page": shown.0});
                 answers.insert(0, answer);
@@ -4324,13 +4331,19 @@ fn block_quantity_name(plan: Option<&crate::answer_plan::Plan>, label: &str) -> 
 }
 
 /// A block's label: the quantity's name in place of the registry frame's 各方 (各方的高低排名 -> 人口的高低排名), or before
-/// a frame that has none (整体的构成与份额 -> 能源来源与去向：整体的构成与份额); the name alone with no frame.
-fn block_kicker(name: &str, frame: &str) -> String {
+/// a frame that has none (整体的构成与份额 -> 能源来源与去向：整体的构成与份额); the name alone with no frame, or with a frame
+/// the name already says (来源与去向 in 能源来源与去向: no word twice, owner 11-16 08:4x item 3). `place`: the one place the
+/// block draws (its fill's only place name), put before the label unless the label names it already.
+fn block_kicker(name: &str, frame: &str, place: Option<&str>) -> String {
     use crate::shape_registry::{FRAME_PARTIES, KICKER_JOIN};
-    match frame.strip_prefix(FRAME_PARTIES) {
+    let label = match frame.strip_prefix(FRAME_PARTIES) {
         Some(rest) => format!("{name}{rest}"),
-        None if frame.trim().is_empty() => name.to_string(),
+        None if frame.trim().is_empty() || name.contains(frame.trim()) => name.to_string(),
         None => format!("{name}{KICKER_JOIN}{frame}"),
+    };
+    match place.map(str::trim).filter(|p| !p.is_empty() && !label.contains(p)) {
+        Some(place) => format!("{place}{label}"),
+        None => label,
     }
 }
 
@@ -4365,7 +4378,7 @@ pub(crate) async fn page_from(
     catalogue: &dyn Catalogue,
     cancel: &AtomicBool,
 ) -> Result<String, Stop> {
-    Ok(page_of_block(recorder, model, question, prepared, catalogue, cancel, (1, None, None)).await?.0)
+    Ok(page_of_block(recorder, model, question, prepared, catalogue, cancel, (1, None, None, false)).await?.0)
 }
 
 /// page_from for block `block` of a many-block page (1: the first block, or a one-block page): the same steps and checks,
@@ -4379,7 +4392,7 @@ pub(crate) async fn page_of_block(
     prepared: &[Prepared],
     catalogue: &dyn Catalogue,
     cancel: &AtomicBool,
-    (block, focus, quantity): (usize, Option<&str>, Option<&str>),
+    (block, focus, quantity, many): (usize, Option<&str>, Option<&str>, bool),
 ) -> Result<(String, (String, f64, f64), Option<String>), Stop> {
     let page = charts(recorder, prepared, catalogue)?;
     let calls = std::sync::Mutex::new(Vec::new());
@@ -4388,7 +4401,7 @@ pub(crate) async fn page_of_block(
     // the page-level fields are drafted for what the picked page draws: a page whose bars draw the change gets a title
     // that names a change. A pick that stopped stops the run after the text step, as before.
     // block 0 is the page over the blocks (pages_of): only a recipe that eats blocks draws it
-    let picked = leaf_request(recorder.run_dir(), prepared, &drawn, catalogue, (question, ("", "", "")), &calls, focus, block == 0);
+    let picked = leaf_request(recorder.run_dir(), prepared, &drawn, catalogue, (question, ("", "", "")), &calls, focus, (block == 0, many));
     // the page over the blocks is extra: when no recipe can draw it, it stops here, before the text step asks the model
     // anything (review 11-16: a page left out must not cost a model call)
     if block == 0 {
@@ -4437,7 +4450,9 @@ pub(crate) async fn page_of_block(
     // a block of a many-block page is labelled by the program, its quantity's printed name on the registry's title frame,
     // never by the text step (review list 11-15 item 3: three runs of sample A gave three labels, one naming no quantity)
     let frame = drafts.fields.iter().find(|(t, _)| *t == Target::PageTitle).map_or("", |(_, d)| d.as_str());
-    let named = quantity.map(|name| block_kicker(name, frame));
+    // the one place the block draws, if one: its fill's only place name
+    let one_place = picked.as_ref().ok().and_then(|(_, fill)| place_names(fill).as_object()).filter(|m| m.len() == 1).and_then(|m| m.values().next()?.as_str());
+    let named = quantity.map(|name| block_kicker(name, frame, one_place));
     let label = named.as_deref().unwrap_or(label);
     let dek = worded.get(&Target::PageDek).cloned().unwrap_or_default();
     // the title states the finding's conclusion (the fill's headline, scoped as the dek is) with the text step's label above
@@ -5184,9 +5199,13 @@ mod tests {
         assert_eq!(block_quantity_name(Some(&c), "b0:Flow"), None);
         // the label: the name on the registry frame
         let frame = |r: Relation| crate::shape_registry::FRAMES.iter().find(|(x, v, _)| (*x, *v) == (r, View::Slice)).unwrap().2[0];
-        assert_eq!(block_kicker("人均GDP", frame(Relation::Ranking)), "人均GDP的高低排名");
-        assert_eq!(block_kicker("能源来源与去向", frame(Relation::Composition)), "能源来源与去向：整体的构成与份额");
-        assert_eq!(block_kicker("人口", ""), "人口");
+        assert_eq!(block_kicker("人均GDP", frame(Relation::Ranking), None), "人均GDP的高低排名");
+        assert_eq!(block_kicker("能源来源与去向", frame(Relation::Composition), None), "能源来源与去向：整体的构成与份额");
+        assert_eq!(block_kicker("人口", "", None), "人口");
+        // a frame the name already says is not said twice, and the one place a block draws is named (owner 11-16 08:4x item 3)
+        assert_eq!(block_kicker("能源来源与去向", frame(Relation::Flow), Some("德国")), "德国能源来源与去向");
+        assert_eq!(block_kicker("能源来源与去向", frame(Relation::Composition), Some("德国")), "德国能源来源与去向：整体的构成与份额");
+        assert_eq!(block_kicker("德国人口", "", Some("德国")), "德国人口");
     }
 
     #[test]
@@ -9598,6 +9617,30 @@ mod tests {
         assert_eq!(fill["composition"]["bars"], json!(["DE"]), "{}", fill["composition"]);
     }
 
+    /// One place's parts on a short page are its 100% bar, the waterfall only a block's (owner 11-16 08:4x item 10): of the
+    /// recipes a page tries whose shape reads the one place's split and its parts, a short page's first is composition, a
+    /// block's composition_steps; the page over the blocks tries neither. Across places both pages draw the 100% bars.
+    #[test]
+    fn a_short_page_of_one_places_parts_is_the_hundred_percent_bar_and_only_a_block_is_a_waterfall() {
+        assert!(recipe("composition_steps").blocks_only && !recipe("composition").blocks_only);
+        let (_, _, _, main, sums) = q3_tables(&[]);
+        let de = |rows: &[Value]| rows.iter().filter(|r| r["dims"]["geo"] == "DE").cloned().collect::<Vec<_>>();
+        let split: Vec<Value> = de(&main).into_iter().chain(de(&sums)).collect();
+        let parts = de(&sums);
+        let one = [("nrg_bal_peh", &split[..]), ("nrg_bal_peh", &parts[..])];
+        let all = [("nrg_bal_peh", &main[..]), ("nrg_bal_peh", &sums[..])];
+        let first = |tables: &[(&str, &[Value])], page: (bool, bool)| {
+            recipes_tried(&Hubs, page).find(|r| shape_of(&r.eats, tables, &Hubs).is_ok()).map(|r| r.name.as_str())
+        };
+        assert_eq!(first(&one, (false, false)), Some("composition"), "a short page");
+        assert_eq!(first(&one, (false, true)), Some("composition_steps"), "a block of a many-block page");
+        assert!(recipes_tried(&Hubs, (true, true)).all(|r| !r.name.starts_with("composition")), "the page over the blocks");
+        assert_eq!(first(&all, (false, false)), Some("composition"));
+        assert_eq!(first(&all, (false, true)), Some("composition"));
+        let fill = q3_fill(&split, &parts).unwrap();
+        assert_eq!(fill["composition"]["bars"], json!(["DE"]), "the short page's one 100% bar: {}", fill["composition"]);
+    }
+
     /// The composition page's fill over q3's tables (q3_tables), by the recipe the registry tries first that reads them.
     fn q3_fill(main: &[Value], sums: &[Value]) -> Result<Value, String> {
         let composition = recipe("composition");
@@ -10602,6 +10645,7 @@ mod tests {
             points: r.points.clone(),
             short_notes: r.short_notes.clone(),
             relation: r.relation.clone(),
+            blocks_only: r.blocks_only,
         }
     }
 
@@ -10813,7 +10857,7 @@ mod tests {
         let (prepared, mode) = last_prepare(&run).unwrap();
         println!("prepare {} {} mode {mode}", prepared.id, prepared.file);
         let started = std::time::Instant::now();
-        let request = leaf_request(&run, &[prepared], &["horizontal_bar"], &catalogue, ("", ("标题", "导语", "栏目")), &Default::default(), None, false);
+        let request = leaf_request(&run, &[prepared], &["horizontal_bar"], &catalogue, ("", ("标题", "导语", "栏目")), &Default::default(), None, (false, false));
         let (recipe, fill) = match request {
             Ok((recipe, fill)) => (recipe.name.as_str(), fill),
             Err((recipe, stage, why)) => panic!("stuck {recipe}-{stage} ms {}: {why}", started.elapsed().as_millis()),
@@ -12909,7 +12953,7 @@ mod tests {
             relation: None,
         };
         println!("main {main} file {} claims {} drawn {drawn:?} question {question}", prepared.file, prepared.claims.len());
-        let got = leaf_request(&run, &[prepared], &drawn, &catalogue, (&question, ("标题", "导语", "栏目")), &Default::default(), None, false);
+        let got = leaf_request(&run, &[prepared], &drawn, &catalogue, (&question, ("标题", "导语", "栏目")), &Default::default(), None, (false, false));
         match &got {
             Ok((recipe, fill)) => println!("WBRUN {main} recipe {} request made, {} rows", recipe.name, fill["rows"].as_array().map_or(0, Vec::len)),
             Err((recipe, stage, why)) => println!("WBRUN {main} recipe {recipe} stopped at {stage}: {why}"),
@@ -15959,7 +16003,7 @@ for line in sys.stdin:
                 relation: None,
             };
             let cat = Fetched(BTreeMap::from([("imp".to_string(), main), ("impm".to_string(), monthly)]), "");
-            let got = leaf_request(run.path(), &[prepared], &[], &cat, ("", ("标题", "导语", "栏目")), &Default::default(), None, false).unwrap_err();
+            let got = leaf_request(run.path(), &[prepared], &[], &cat, ("", ("标题", "导语", "栏目")), &Default::default(), None, (false, false)).unwrap_err();
             assert_eq!(got, ("scmp", "fill", said.to_string()), "{name}: the recipe loop");
         }
     }
@@ -15987,7 +16031,7 @@ for line in sys.stdin:
                 relation,
             };
             let cat = Fetched(BTreeMap::from([("sdg".to_string(), q1_ten_years())]), "");
-            match leaf_request(run.path(), &[prepared], &["horizontal_bar"], &cat, ("", ("标题", "导语", "栏目")), &Default::default(), None, false) {
+            match leaf_request(run.path(), &[prepared], &["horizontal_bar"], &cat, ("", ("标题", "导语", "栏目")), &Default::default(), None, (false, false)) {
                 Ok((recipe, _)) => (recipe.name.clone(), String::new()),
                 Err((recipe, stage, why)) => (format!("{recipe}-{stage}"), why),
             }
@@ -16943,7 +16987,7 @@ for line in sys.stdin:
             asked: json!([]),
             relation: None,
         };
-        let got = leaf_request(run.path(), &[prepared], &[], &cat, ("", ("标题", "导语", "栏目")), &Default::default(), None, false).unwrap_err();
+        let got = leaf_request(run.path(), &[prepared], &[], &cat, ("", ("标题", "导语", "栏目")), &Default::default(), None, (false, false)).unwrap_err();
         assert_eq!(got, ("scmp", "fill", said.to_string()), "the recipe loop");
         println!("P6MAP stop recipe loop: {:?}", got);
         // the two digits: the rust map's words, and the flow's, on picks a century apart

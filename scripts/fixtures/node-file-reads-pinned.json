@@ -53,7 +53,7 @@
   "hashlib",
   "csv"
  ],
- "pinned_note": "Measured on a clean checkout of 5400f7568165ceb68cfe7269051b93caed287ba8: 16 files, 93 sites. Each file is pinned on its own; counts may only go down.",
+ "pinned_note": "Measured on a clean checkout of 5400f7568165ceb68cfe7269051b93caed287ba8: 16 files, 93 sites. Each file is pinned on its own; counts may only go down. Added 2026-11-16 by the project owner's decision, and only this kind: the six new drawing leaves (dumbbell, line, rank_lines, stacked_area, waffle, waterfall) each import wbkit once, and run.py imports each of them once (12 sites); the same only-down rule holds for them.",
  "pinned": {
   "runtime/leaves_py/bubbles.py": {
    "imports os": 1,
@@ -73,6 +73,9 @@
    "imports prod (runtime/leaves_py/prod.py), which breaks the rule": 1,
    "imports words (runtime/leaves_py/words.py), which breaks the rule": 1
   },
+  "runtime/leaves_py/dumbbell.py": {
+   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1
+  },
   "runtime/leaves_py/facts.py": {
    "imports os": 1,
    "imports sys": 1,
@@ -91,6 +94,9 @@
    "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 2,
    "imports mapkit (runtime/leaves_py/mapkit.py), which breaks the rule": 1
   },
+  "runtime/leaves_py/line.py": {
+   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1
+  },
   "runtime/leaves_py/mapkit.py": {
    "imports os": 1,
    "imports sys": 1,
@@ -103,6 +109,9 @@
    "imports facts (runtime/leaves_py/facts.py), which breaks the rule": 1,
    "imports geo (runtime/leaves_py/geo.py), which breaks the rule": 1,
    "imports words (runtime/leaves_py/words.py), which breaks the rule": 1
+  },
+  "runtime/leaves_py/rank_lines.py": {
+   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1
   },
   "runtime/leaves_py/rankbar.py": {
    "imports os": 1,
@@ -124,7 +133,13 @@
    "imports stacked100 (runtime/leaves_py/stacked100.py), which breaks the rule": 1,
    "imports section_head (runtime/leaves_py/section_head.py), which breaks the rule": 1,
    "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1,
-   "imports words (runtime/leaves_py/words.py), which breaks the rule": 1
+   "imports words (runtime/leaves_py/words.py), which breaks the rule": 1,
+   "imports dumbbell (runtime/leaves_py/dumbbell.py), which breaks the rule": 1,
+   "imports line (runtime/leaves_py/line.py), which breaks the rule": 1,
+   "imports rank_lines (runtime/leaves_py/rank_lines.py), which breaks the rule": 1,
+   "imports stacked_area (runtime/leaves_py/stacked_area.py), which breaks the rule": 1,
+   "imports waffle (runtime/leaves_py/waffle.py), which breaks the rule": 1,
+   "imports waterfall (runtime/leaves_py/waterfall.py), which breaks the rule": 1
   },
   "runtime/leaves_py/sankey.py": {
    "imports os": 1,
@@ -151,6 +166,15 @@
    "imports sys": 1,
    "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 2,
    "imports words (runtime/leaves_py/words.py), which breaks the rule": 1
+  },
+  "runtime/leaves_py/stacked_area.py": {
+   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1
+  },
+  "runtime/leaves_py/waffle.py": {
+   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1
+  },
+  "runtime/leaves_py/waterfall.py": {
+   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1
   },
   "runtime/leaves_py/wbkit.py": {
    "imports facts (runtime/leaves_py/facts.py), which breaks the rule": 1,

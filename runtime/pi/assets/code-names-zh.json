@@ -165,6 +165,18 @@
   },
   {
    "dim": "nrg_bal",
+   "code": "NRGSUP",
+   "en": "Total energy supply",
+   "zh": "能源供应总量",
+   "zh_full": "能源供应总量",
+   "zh_source": "reviewed",
+   "reviewed": "2026-11-16",
+   "basis": "official",
+   "source": "https://unstats.un.org/unsd/energystats/methodology/documents/IRES-ch.pdf; UN, International Recommendations for Energy Statistics (IRES), Chinese edition, 2019",
+   "note": "IRES abbreviations table (p. 12) and 8.17 (p. 129): total energy supply"
+  },
+  {
+   "dim": "nrg_bal",
    "code": "FC_E",
    "en": "Final consumption - energy use",
    "zh": "能源消费",

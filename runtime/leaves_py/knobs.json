@@ -2226,6 +2226,7 @@
    "picks": [],
    "exposes": [],
    "main": "waterfall",
+   "blocks_only": true,
    "external": [
     "waterfall"
    ]
