@@ -793,6 +793,10 @@ struct Family {
     en: String,
     /// The table id prefixes that hold it (a World Bank id without its "@2").
     tables: Vec<String>,
+    /// Phrases that name another quantity around one of its words (人口 in 人口密度, 农村人口): a word of the family that
+    /// stands inside one of them in the question is not this family's (owner 11-16 08:4x item 2: a lone 人口 is population).
+    #[serde(default)]
+    not_in: Vec<String>,
 }
 
 /// The registered families, read once.
@@ -1419,6 +1423,13 @@ pub fn asked_beside_table(question_zh: &str, table: &str, table_zh: Option<&str>
 /// asked_zh over a question already in measure_chars form.
 fn asked_of_chars(mut q: Vec<char>) -> Vec<Asked> {
     blank_denominators(&mut q);
+    // where each family's not_in phrases stand in the question as asked: a word of the family inside one is not matched
+    let original = q.clone();
+    let inside = |f: &Family, at: usize, len: usize| {
+        f.not_in.iter().map(|p| measure_chars(p)).filter(|p| p.len() > len).any(|p| {
+            (at.saturating_sub(p.len() - len)..=at).any(|s| s + p.len() <= original.len() && original[s..s + p.len()] == p[..])
+        })
+    };
     let mut words: Vec<(Vec<char>, &Family)> = measure_families()
         .iter()
         .flat_map(|f| f.words.iter().map(move |w| (measure_chars(w), f)))
@@ -1430,7 +1441,7 @@ fn asked_of_chars(mut q: Vec<char>) -> Vec<Asked> {
         let mut hit = false;
         let mut i = 0;
         while i + w.len() <= q.len() {
-            if q[i..i + w.len()] == w[..] {
+            if q[i..i + w.len()] == w[..] && !inside(f, i, w.len()) {
                 q[i..i + w.len()].iter_mut().for_each(|c| *c = '\0');
                 hit = true;
                 i += w.len();
@@ -4521,6 +4532,26 @@ mod tests {
 
     /// Each dev question asks for one quantity, the DE question for two, and words that only narrow (a big-population
     /// filter) or name a dimension (origin countries) ask for none.
+    /// A lone 人口 asks for population; inside a phrase that names another quantity (人口密度, 农村人口 ...) it does not, and
+    /// that phrase's own family is still read (owner 11-16 08:4x item 2: 农村人口数不算人口).
+    #[test]
+    fn a_lone_population_word_is_population_and_a_phrase_around_it_is_not() {
+        let ids = |q: &str| asked_zh(q).into_iter().map(|a| a.id).collect::<Vec<_>>();
+        let has = |q: &str| ids(q).iter().any(|i| i == "population");
+        for q in ["东盟各国的人口", "印度和中国的人口分别是多少", "人口和人均GDP哪个国家最高", "日本人口这十年怎么变", "欧盟各国人口排名"] {
+            assert!(has(q), "should read population: {q} -> {:?}", ids(q));
+        }
+        for q in ["哪国人口密度最高", "农村人口数最多的是哪国", "城镇人口占比最高的国家", "劳动人口占比", "日本人口老龄化有多严重", "老年人口占比最高的欧盟国家", "城市人口比例变化", "人口超过一亿的国家里谁最富", "人口大国的人均碳排放", "65岁及以上人口占比", "能用上电的人口比例各怎么变", "在农业就业的人口比例"] {
+            assert!(!has(q), "should not read population: {q} -> {:?}", ids(q));
+        }
+        // the phrase's own family is still read
+        assert!(ids("日本人口老龄化有多严重").contains(&"pop65".to_string()));
+        assert!(ids("老年人口占比最高的欧盟国家").contains(&"pop65".to_string()));
+        assert!(ids("城镇人口占比最高的国家").contains(&"urban_share".to_string()));
+        // a lone 人口 beside a phrase: both read
+        assert!(has("人口和人口密度都最高的国家"), "{:?}", ids("人口和人口密度都最高的国家"));
+    }
+
     #[test]
     fn asked_zh_reads_the_quantities_of_the_dev_questions() {
         let ids = |q: &str| asked_zh(q).into_iter().map(|a| a.id).collect::<Vec<_>>();

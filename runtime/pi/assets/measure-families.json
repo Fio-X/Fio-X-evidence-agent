@@ -11,7 +11,7 @@
     {"id": "gdp_pc", "zh": "人均GDP", "words": ["人均国内生产总值", "人均GDP", "最富", "人均本地生产总值", "人均国内总产值", "人均产值", "人均产出", "人均经济产出"], "en": "gross domestic product per capita", "tables": ["nama_10_pc", "NY.GDP.PCAP"]},
     {"id": "gdp", "zh": "GDP", "words": ["国内生产总值", "经济总量", "GDP", "本地生产总值", "国内总产值", "经济规模", "经济体量"], "en": "gross domestic product", "tables": ["nama_10_gdp", "NY.GDP.MKTP"]},
     {"id": "energy_imports", "zh": "能源进口", "words": ["化石能源进口", "进口化石", "能源进口", "进口能源", "天然气进口", "进口天然气", "原油进口", "进口原油", "石油进口", "进口石油", "煤炭进口", "进口煤炭"], "en": "imports of energy products by partner country", "tables": ["nrg_ti_", "nrg_te_"]},
-    {"id": "population", "zh": "人口", "words": ["总人口", "人口总数", "人口数量", "人口增长", "人口变化", "人最多", "人口最多", "人口最少", "人口规模", "人口多少", "多少人口"], "en": "total population", "tables": ["SP.POP.TOTL", "SP.POP.GROW", "demo_pjan", "demo_gind"]},
+    {"id": "population", "zh": "人口", "words": ["总人口", "人口总数", "人口数量", "人口增长", "人口变化", "人最多", "人口最多", "人口最少", "人口规模", "人口多少", "多少人口", "人口"], "en": "total population", "tables": ["SP.POP.TOTL", "SP.POP.GROW", "demo_pjan", "demo_gind"], "not_in": ["人口密度", "人口老龄化", "老年人口", "农村人口", "城镇人口", "城市人口", "劳动人口", "劳动年龄人口", "就业人口", "失业人口", "贫困人口", "流动人口", "适龄人口", "人口抚养比", "以上人口", "以下人口", "岁人口", "人口大国", "人口小国", "人口超过", "人口过亿", "人口大于", "人口少于", "人口不到", "人口不足", "人口比例", "人口占比", "人口比重", "人口份额", "人口的比例", "人口的占比", "人口的比重"]},
     {"id": "urban_share", "zh": "城镇化率", "words": ["城镇人口占比", "城镇化率", "城市化率", "城镇化", "城市化", "城市人口占比", "城市人口比例", "城镇人口比例", "城镇人口比重", "城市人口比重", "城镇化水平"], "en": "urban population percent of total population", "tables": ["SP.URB.TOTL.IN"]}
   ]
 }
