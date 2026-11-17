@@ -32,6 +32,10 @@
   "inspect": {
    "group": "system"
   },
+  "login": {
+   "group": "system",
+   "note": "Person-only: saves the model provider, model and key to the user's credentials file (mode 600). Not a model tool."
+  },
   "review": {
    "group": "system",
    "note": "Person-only: records one human review as a program_saved_review record. Not a model tool; refuses inside an agent or tool child."

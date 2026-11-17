@@ -1,212 +1,195 @@
-# 快速开始指南
+# Quick start
 
-## 🚀 从零到运行只需 5 步
+## From zero to a first run in 5 steps
 
-### 1️⃣ 克隆项目
+### 1. Clone
 
 ```bash
 git clone <repo-url>
 cd PJ004
 ```
 
-### 2️⃣ 一键安装所有依赖
+### 2. Install the tool dependencies
 
 ```bash
 ./scripts/setup.sh
 ```
 
-这个脚本会自动安装：
-- ✅ Pi 0.85.1（LLM 代理框架）
-- ✅ DuckDB 1.5.5（可选，数据查询）
-- ✅ 检查 Node.js、Python、Rust 版本
+The script:
+- checks the Node.js, Python and Rust versions (Node.js runs the tool host)
+- installs DuckDB 1.5.5 (optional, for data queries)
 
-### 3️⃣ 安装 news CLI
+No global npm package is needed: the agent loop is built into `news`.
+
+### 3. Install the news CLI
 
 ```bash
 cargo install --path . --locked
 ```
 
-安装后，你可以在任何目录使用 `news` 命令。
+After this, `news` works from any folder.
 
-### 4️⃣ 配置 API Key
-
-```bash
-# 配置你使用的 LLM 提供商
-export ANTHROPIC_API_KEY=sk-ant-xxxxx
-
-# 或其他提供商
-export OPENAI_API_KEY=sk-xxxxx
-export DEEPSEEK_API_KEY=xxxxx
-```
-
-**持久化配置**（推荐）：
+### 4. Save your API key
 
 ```bash
-# 添加到 ~/.zshrc 或 ~/.bashrc
-echo 'export ANTHROPIC_API_KEY=sk-ant-xxxxx' >> ~/.zshrc
-source ~/.zshrc
+news login
 ```
 
-### 5️⃣ 验证安装
+`news login` asks for:
+
+1. the provider: Anthropic (Claude API), DragonCode, or a custom Anthropic Messages-compatible endpoint;
+2. whether to open the provider's API key page in your browser;
+3. the API key (pasted with echo off);
+4. the model (default `claude-sonnet-4-6` for Anthropic-style providers).
+
+It then sends one one-token test request and, if the key works, saves everything to
+`~/.config/fio-x/credentials` with permissions `600`.
+
+```bash
+news login --show    # show the saved login with the key masked
+news login --clear   # remove it
+```
+
+For scripts, send the key on standard input (there is deliberately no option that takes the key itself):
+
+```bash
+printf '%s\n' "$KEY" | news login --provider anthropic --model claude-sonnet-4-6 --key-stdin
+```
+
+**Already using a `.env` file?** It keeps working: a key set in the shell or in a `.env`
+(the current folder's `.env`, `NEWSROOM_ENV_FILE`, or `~/.config/fio-x/.env`) takes precedence,
+and the saved login is then ignored.
+
+### 5. Check the setup
 
 ```bash
 news doctor
 ```
 
-期望输出：
-```
-pi         0.85.1       PASS  0.85.1
-duckdb     1.5.5        PASS  v1.5.5
-node       >=22.19.0    PASS  v24.14.1
-rustc      1.98.1       PASS  rustc 1.98.1
-python3    optional     PASS  Python 3.14.6
-live ready yes
-```
+Every required line should say `PASS`, ending with `live ready yes`.
 
 ---
 
-## 🎯 立即开始使用
+## Using it
 
-### 示例 1: 数据调查
+### Example 1: an investigation
 
 ```bash
-news investigate "分析2024年全球气候变化趋势"
+news investigate "Global climate trends in 2024"
 ```
 
-这会：
-1. 启动 Pi 代理
-2. 自动搜索相关数据
-3. 分析数据并生成可视化
-4. 保存调查产物到 `.newsroom/investigations/`
+This:
+1. starts the agent
+2. searches for relevant data
+3. analyses it and builds the page
+4. saves the run under `.newsroom/artifacts/<run-id>/`
 
-### 示例 2: 快速提问
+### Example 2: a quick question
 
 ```bash
 news ask "What is the latest climate data?"
 ```
 
-单次无状态查询，不保存历史。
+One stateless request; nothing is kept.
 
-### 示例 3: 继续之前的调查
+### Example 3: continue an investigation
 
 ```bash
-# 列出所有调查
-ls .newsroom/investigations/
-
-# 继续特定调查
-news continue <investigation-id>
+ls .newsroom/artifacts/
+news continue .newsroom/artifacts/<run-id> "Add a chart by region"
 ```
 
 ---
 
-## 📁 产出物在哪里？
+## Where is the output?
 
-所有调查产物保存在：
 ```
-.newsroom/investigations/<investigation-id>/
-├── story.json          # 调查元数据
-├── prompt.txt          # 你的提问
-├── answer.md           # 最新回答
-├── conversation.md     # 完整对话
-├── data/               # 下载的数据
-├── visualizations/     # 生成的可视化
-└── claims.jsonl        # 验证过的声明
+.newsroom/artifacts/<run-id>/
+├── story.json          # run metadata
+├── prompt.txt          # your question
+├── answer.md           # latest answer
+├── conversation.md     # full conversation
+├── data/               # downloaded data
+├── visualizations/     # rendered pages and charts
+└── claims.jsonl        # verified claims
 ```
 
 ---
 
-## 🔧 常见问题
+## Troubleshooting
 
-### Q: Pi 安装失败？
+### `news login` says the connection test failed
 
-```bash
-# 手动安装
-npm install -g @earendil-works/pi-coding-agent@0.85.1
+- `HTTP 401` / `HTTP 403`: the key was not accepted; copy it again from the provider's key page.
+- `HTTP 404`: check the endpoint URL and the model name.
+- `could not connect` / `timed out`: check the URL, your network, or your `HTTPS_PROXY` setting.
 
-# 检查安装
-pi --version
-```
+Nothing is saved until the test passes.
 
-### Q: API Key 配置了但还是报错？
+### "credentials has permissions 644"
 
-```bash
-# 检查环境变量
-echo $ANTHROPIC_API_KEY
-
-# 确保没有多余空格
-export ANTHROPIC_API_KEY=sk-ant-xxxxx  # 正确
-export ANTHROPIC_API_KEY=" sk-ant-xxxxx"  # 错误（有空格）
-```
-
-### Q: 想使用不同的模型？
+The credentials file must be readable by you only:
 
 ```bash
-# 使用 Claude Opus
-news investigate \
-  --provider anthropic \
-  --model claude-opus-5 \
-  "你的任务"
-
-# 使用 OpenAI GPT-4
-news investigate \
-  --provider openai \
-  --model gpt-4 \
-  "你的任务"
+chmod 600 ~/.config/fio-x/credentials
 ```
 
-### Q: 如何查看完整的工具配置？
+### A key is set but the saved login is not used
+
+`news login --show` prints `In use: no` when a key from the shell or a `.env` file takes precedence.
+Remove that key (for example `unset ANTHROPIC_API_KEY`) to use the saved login.
+
+### Another model for one run
+
+```bash
+news investigate --model claude-opus-5 "your question"
+```
+
+### All options
 
 ```bash
 news investigate --help
+news login --help
 ```
 
 ---
 
-## 🎓 进阶使用
+## More
 
-### 工具配置模式
+### Tool profiles
 
 ```bash
-# 基础模式（默认）- 搜索、数据、基础可视化
-news investigate --tool-profile investigate "任务"
+# Default: search, data, basic charts
+news investigate --tool-profile investigate "question"
 
-# 视觉模式 - 完整视觉合成（图表、解释图、插图）
-news investigate --tool-profile visual "任务"
+# Visual: full visual composition (charts, explainers, illustrations)
+news investigate --tool-profile visual "question"
 
-# 发布模式 - 排版、QA、竞赛预检
-news investigate --tool-profile publication "任务"
+# Publication: layout, QA, pre-publication checks
+news investigate --tool-profile publication "question"
 
-# 完整模式 - 所有工具
-news investigate --tool-profile full "任务"
+# Everything
+news investigate --tool-profile full "question"
 ```
 
-### 验证产出
+### Verify the output
 
 ```bash
-# 验证数据完整性、哈希、引用
-news verify .newsroom/investigations/<investigation-id>
+# Evidence, hashes, references
+news verify .newsroom/artifacts/<run-id>
 
-# 审计工具调用
-news inspect .newsroom/investigations/<investigation-id>
+# Tool-call audit trail
+news inspect .newsroom/artifacts/<run-id>
 ```
 
----
-
-## 📚 更多资源
-
-- 完整文档：[README.md](README.md)
-- 迭代计划：[ITERATION_PLAN.md](ITERATION_PLAN.md)
-- 问题反馈：提交 GitHub Issue
+- Full documentation: [README.md](README.md)
+- Iteration plan: [ITERATION_PLAN.md](ITERATION_PLAN.md)
 
 ---
 
-## ✅ 检查清单
+## Checklist
 
-安装完成后，确认：
-
-- [ ] `news doctor` 显示 `live ready yes`
-- [ ] 已配置至少一个 API Key
-- [ ] `news --version` 显示版本号
-- [ ] 可以在任意目录运行 `news` 命令
-
-全部完成？🎉 开始你的数据调查之旅吧！
+- [ ] `news doctor` shows `live ready yes`
+- [ ] `news login --show` shows your provider and a masked key (or you use a `.env`)
+- [ ] `news --version` prints a version
+- [ ] `news` runs from any folder

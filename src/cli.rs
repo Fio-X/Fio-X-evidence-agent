@@ -43,6 +43,8 @@ pub enum Commands {
     Verify(VerifyArgs),
     /// Record one human review of a baseline and a candidate (person-only; refuses inside an agent or tool process).
     Review(ReviewArgs),
+    /// Save the model provider, model and API key to ~/.config/fio-x/credentials (a key from the shell or .env still wins).
+    Login(LoginArgs),
 }
 
 #[derive(Debug, Clone, Args)]
@@ -176,6 +178,37 @@ pub struct ReviewArgs {
 }
 
 #[derive(Debug, Args)]
+pub struct LoginArgs {
+    /// Show the saved login with the key masked.
+    #[arg(long, default_value_t = false, conflicts_with_all = ["clear", "key_stdin"])]
+    pub show: bool,
+
+    /// Remove the saved login.
+    #[arg(long, default_value_t = false, conflicts_with = "key_stdin")]
+    pub clear: bool,
+
+    /// Provider: anthropic, dragoncode or custom (an Anthropic Messages-compatible endpoint). Asked when omitted.
+    #[arg(long)]
+    pub provider: Option<String>,
+
+    /// Model ID. Asked when omitted (the provider's default is offered).
+    #[arg(long)]
+    pub model: Option<String>,
+
+    /// Endpoint URL (required for custom).
+    #[arg(long)]
+    pub base_url: Option<String>,
+
+    /// Read the API key from standard input instead of the terminal (for scripts). There is no option that takes the key itself.
+    #[arg(long, default_value_t = false)]
+    pub key_stdin: bool,
+
+    /// Do not offer to open the provider's key page in a browser.
+    #[arg(long, default_value_t = false)]
+    pub no_browser: bool,
+}
+
+#[derive(Debug, Args)]
 pub struct VerifyArgs {
     /// Existing investigation directory.
     pub artifact: PathBuf,
@@ -206,6 +239,7 @@ pub const COMMAND_ORDER: &[&str] = &[
     "doctor",
     "inspect",
     "review",
+    "login",
 ];
 
 const GROUPS_JSON: &str = include_str!("../runtime/pi/groups.json");
@@ -236,7 +270,7 @@ pub const GROUPS: &[(&str, &str)] = &[
     ),
     (
         "system",
-        "Check the setup and the audit trail: doctor, inspect, review",
+        "Check the setup and the audit trail: doctor, inspect, review, login",
     ),
 ];
 
@@ -382,6 +416,7 @@ mod group_table_tests {
         ("doctor", "system"),
         ("inspect", "system"),
         ("review", "system"),
+        ("login", "system"),
     ];
 
     #[test]

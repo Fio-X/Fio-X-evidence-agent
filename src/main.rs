@@ -121,6 +121,7 @@ async fn main() -> Result<()> {
         Some(Commands::Inspect(_)) => "inspect",
         Some(Commands::Verify(_)) => "verify",
         Some(Commands::Review(_)) => "review",
+        Some(Commands::Login(_)) => "login",
         None => "interactive",
     };
     group_guard::enter_command(command_name, cli::group_of(command_name));
@@ -136,6 +137,7 @@ async fn main() -> Result<()> {
         Some(Commands::Inspect(args)) => commands::inspect::run(args).await,
         Some(Commands::Verify(args)) => commands::verify::run(args).await,
         Some(Commands::Review(args)) => commands::review::run(args).await,
+        Some(Commands::Login(args)) => commands::login::run(args).await,
         None => interactive::run().await,
     };
     // A SIGTERM or SIGHUP that stopped a run: the command has written its failure record by now; die by that signal.

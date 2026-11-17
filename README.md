@@ -1,101 +1,115 @@
 # Agentic Data Newsroom
 
-Rust 控制平面 + Pi 驱动的智能数据新闻编辑室。
+A Rust control plane for an agentic data newsroom: ask a news question, get a verified Chinese infographic page.
 
-## 简介
+## Overview
 
-本项目是一个用于数据调查和可视化的智能代理系统，包含:
-- **Rust CLI**: 核心控制平面 (`news` 命令)
-- **Python 脚本**: 可视化运行时和验证工具
-- **多运行时支持**: Web、D3、Sigma、Map 等可视化引擎
+- **Rust CLI**: the control plane and the agent loop (`news`), talking to the model API directly
+- **Node.js tool host and Python scripts**: the tools the agent calls (data, rendering, checks)
+- **Several renderers**: Web, D3, Sigma, maps and more
 
-## 🚀 快速开始（推荐）
-
-### 一键安装所有依赖
+## Quick start
 
 ```bash
-# 1. 克隆项目
+# 1. Clone
 git clone <repo-url>
 cd PJ004
 
-# 2. 运行自动安装脚本
+# 2. Install the tool dependencies (Node.js, Python packages, optional DuckDB)
 ./scripts/setup.sh
 
-# 3. 安装 news CLI
+# 3. Install the news CLI
 cargo install --path . --locked
 
-# 4. 配置 API Key（推荐把配置放在项目目录的 .env；news 会自动读取白名单设置）
-cat > .env <<'EOF'
-NEWSROOM_PI_PROVIDER=dragoncode
-NEWSROOM_PI_MODEL=claude-sonnet-4-6
-OPENAI_BASE_URL=https://dragoncode.codes
-OPENAI_API_KEY=your_key_here
-EOF
+# 4. Save your model provider and API key (asked interactively; the key is not echoed)
+news login
 
-# 5. 验证安装
+# 5. Check the setup
 news doctor
 
-# 6. 开始使用；结果自动写入当前目录 .newsroom/artifacts/<run-id>
-news investigate "分析2025年全球气候数据"
+# 6. Start; results go to .newsroom/artifacts/<run-id> under the current folder
+news investigate "Global climate data in 2025"
 
-# 最简单的方式：不带子命令进入连续对话式编辑室
+# Or start the conversational newsroom with no subcommand
 news
-# 输入第一句目标，之后继续输入追问或新的图表要求
-# :help 查看命令，:path 查看当前 artifact，:new 开始新调查，:quit 退出
+# Type a first goal, then follow-ups or new chart requests
+# :help lists commands, :path shows the current artifact, :new starts over, :quit exits
 ```
 
-### 手动安装
+No global npm package is needed: the agent loop is built into `news`.
 
-如果自动脚本失败，可以手动安装：
+### API key configuration
 
-### 前置要求
-- Rust 1.98.1+
-- Node.js 22.19.0+
-- Python 3.13+
-- Pi CLI (`@earendil-works/pi-coding-agent`)
+`news login` asks for a provider, opens the provider's key page if you want, reads the key with echo off, sends one
+one-token test request, and saves the result to `~/.config/fio-x/credentials` (or `$XDG_CONFIG_HOME/fio-x/credentials`)
+with permissions `600`.
 
-### 安装
+| Provider | Saved as | Notes |
+|---|---|---|
+| Anthropic (Claude API) | `anthropic` | Key page: https://console.anthropic.com/settings/keys |
+| DragonCode | `dragoncode` | Anthropic Messages-compatible endpoint |
+| Custom endpoint | `anthropic` + `base_url` | Any Anthropic Messages-compatible URL |
 
 ```bash
-# 构建 Rust CLI
+news login --show    # provider, model, endpoint and the key masked (first 8 and last 4 characters)
+news login --clear   # remove the saved login
+
+# Non-interactive (scripts, CI): the key comes on standard input, never as an argument
+printf '%s\n' "$KEY" | news login --provider anthropic --model claude-sonnet-4-6 --key-stdin
+```
+
+Precedence: a key already set in the shell or in a `.env` file (the current folder's `.env`, `NEWSROOM_ENV_FILE`,
+or `~/.config/fio-x/.env`) wins, and the saved login is then not read at all. Existing `.env` setups keep working
+unchanged. A credentials file that other users can read is refused until you run `chmod 600` on it.
+
+The key is handed to the agent over its standard-input protocol, never through a command-line argument or a child
+process's environment, and it is never written to logs, events or error messages.
+
+### Manual installation
+
+If the setup script fails, install the pieces by hand.
+
+Requirements:
+- Rust 1.98.1+
+- Node.js 22.19.0+ (runs the tool host)
+- Python 3.13+
+
+```bash
+# Build the Rust CLI
 cargo build --release
 
-# 安装 Python 依赖
+# Python dependencies
 pip install -r runtimes/viz-browser/requirements.txt
 pip install -r runtimes/viz-graph-extract/requirements.txt
-
-# 安装 Pi
-npm install -g @earendil-works/pi-coding-agent@0.85.1
 ```
 
-### 基本使用
+### Basic use
 
 ```bash
-# 检查环境
+# Check the environment
 ./target/release/news doctor
 
-# 开始调查（相对输出路径以启动命令的当前目录为基准）
-./target/release/news investigate "分析2025年全球气候数据"
+# Start an investigation (relative output paths are taken from the current folder)
+./target/release/news investigate "Global climate data in 2025"
 
-# 进入连续对话式编辑室；news 会自动读取当前目录 .env，或用户配置
-# ~/.config/fio-x/.env，结果仍写入启动命令所在目录
+# Conversational newsroom; reads the configuration as described above, writes results under the current folder
 ./target/release/news
 
-# 输出默认位于启动 CLI 的当前目录：./.newsroom/artifacts/<run-id>
-# 也可以显式指定目录；需要人工确认时加 --confirm-output
-./target/release/news investigate --out ./results --confirm-output "分析2025年全球气候数据"
+# Output defaults to ./.newsroom/artifacts/<run-id> under the folder you start from
+# Pick another folder with --out; add --confirm-output to be asked first
+./target/release/news investigate --out ./results --confirm-output "Global climate data in 2025"
 
-# 如果密钥由外部 symlink 管理，可显式指定它；CLI 只读取，不复制或改写
+# A .env managed elsewhere (for example a symlink) can be named explicitly; the CLI only reads it
 NEWSROOM_ENV_FILE="$HOME/.config/fio-x/.env" \
-  ./target/release/news investigate "分析2025年全球气候数据"
+  ./target/release/news investigate "Global climate data in 2025"
 
-# 继续现有调查
+# Continue an investigation
 ./target/release/news continue <investigation-id>
 
-# 验证产出
+# Verify the output
 ./target/release/news verify <investigation-directory>
 
-# 审计工具调用
+# Audit the tool calls
 ./target/release/news inspect <investigation-directory>
 ```
 
@@ -139,8 +153,17 @@ PJ004/
 ./target/release/news doctor --json
 ```
 
+### `news login`
+Save the model provider, model and API key (see "API key configuration" above).
+
+```bash
+news login            # interactive
+news login --show     # key masked
+news login --clear
+```
+
 ### `news ask`
-发送单次查询到 Pi（无状态）。
+Send one stateless prompt to the agent.
 
 ```bash
 ./target/release/news ask "What is the latest climate data?"
