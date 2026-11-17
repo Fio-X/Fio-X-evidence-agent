@@ -1,14 +1,14 @@
 #[allow(dead_code)]
-// 1011ak 9a: only the Rust agent child (NEWSROOM_AGENT=rust) uses it; unused parts are trimmed later
+// 1011ak 9a: used by the Rust agent child (the default runtime); unused parts are trimmed later
 mod agent_loop;
 #[allow(dead_code)]
-// 1011ak 9a: only the Rust agent child (NEWSROOM_AGENT=rust) uses it; unused parts are trimmed later
+// 1011ak 9a: used by the Rust agent child (the default runtime); unused parts are trimmed later
 mod agent_prompt;
 mod agent_serve;
 #[cfg(test)]
 mod agent_watch;
 #[allow(dead_code)]
-// 1011ak 9a: only the Rust agent child (NEWSROOM_AGENT=rust) uses it; unused parts are trimmed later
+// 1011ak 9a: used by the Rust agent child (the default runtime); unused parts are trimmed later
 mod anthropic_model;
 mod artifact;
 mod audit;
@@ -68,19 +68,19 @@ mod recipes;
 mod repeat_failure;
 mod runtime;
 #[allow(dead_code)]
-// 1011ak 9a: only the Rust agent child (NEWSROOM_AGENT=rust) uses it; unused parts are trimmed later
+// 1011ak 9a: used by the Rust agent child (the default runtime); unused parts are trimmed later
 mod session_store;
 mod shape_registry;
 #[allow(dead_code)]
-// 1011ak 9a: only the Rust agent child (NEWSROOM_AGENT=rust) uses it; unused parts are trimmed later
+// 1011ak 9a: used by the Rust agent child (the default runtime); unused parts are trimmed later
 mod staging;
 mod step_lines;
 #[allow(dead_code)]
-// 1011ak 9a: only the Rust agent child (NEWSROOM_AGENT=rust) uses it; unused parts are trimmed later
+// 1011ak 9a: used by the Rust agent child (the default runtime); unused parts are trimmed later
 mod tool_host;
 mod tool_registry;
 #[allow(dead_code)]
-// 1011ak 9a: only the Rust agent child (NEWSROOM_AGENT=rust) uses it; unused parts are trimmed later
+// 1011ak 9a: used by the Rust agent child (the default runtime); unused parts are trimmed later
 mod tool_schema;
 mod verify;
 
@@ -90,13 +90,14 @@ use cli::{Cli, Commands};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // NEWSROOM_AGENT=rust (exactly): the Rust agent child of a run. It reads no configuration, `.env` file or key (1011ak 9a).
+    // The Rust agent (the default; NEWSROOM_AGENT=pi selects Pi): the child of a run reads no configuration, `.env` file or key (1011ak 9a).
     if agent_loop::agent_rust_enabled() {
         let mut args = std::env::args().skip(1);
         if args.next().as_deref() == Some(agent_serve::SERVE_ARG) {
             return agent_serve::serve(args.collect()).await;
         }
-        // gate A (NEWSROOM_AGENT_REAL=1): the parent of a real-model run reads the configuration as on the Pi path, to hand the key over
+        // gate A (the real model, see agent_serve::real_enabled): the parent reads the configuration as on the Pi path, to hand the key over;
+        // a stand-in run reads none
         if agent_serve::real_enabled() {
             config::load_project_env()?;
         }

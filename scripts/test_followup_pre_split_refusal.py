@@ -57,8 +57,9 @@ def snapshot(run: Path):
 
 
 def follow_up(run: Path, switch):
-    env = {k: v for k, v in os.environ.items() if not k.startswith("NEWSROOM_")}
+    env = {k: v for k, v in os.environ.items() if not (k.startswith("NEWSROOM_") or k.endswith(("_API_KEY", "_BASE_URL", "_TOKEN")))}
     env["NEWSROOM_AGENT"] = "rust"
+    env["NEWSROOM_AGENT_REAL"] = "0"  # the stand-in route, never a real model
     if switch is not None:
         env["NEWSROOM_REVIEW_SPLIT"] = switch
     return subprocess.run(

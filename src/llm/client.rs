@@ -165,7 +165,9 @@ impl LLMClient {
 
     #[cfg(target_os = "macos")]
     fn configured_system_proxy() -> Option<String> {
-        let output = StdCommand::new("scutil").arg("--proxy").output().ok()?;
+        let mut probe = StdCommand::new("scutil");
+        crate::tool_host::strip_keylike_env(&mut probe);
+        let output = probe.arg("--proxy").output().ok()?;
         if !output.status.success() {
             return None;
         }

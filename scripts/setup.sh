@@ -22,30 +22,9 @@ else
     exit 1
 fi
 
-# 检查 npm
-if ! command -v npm &> /dev/null; then
-    echo -e "${RED}✗${NC} npm 未安装"
-    exit 1
-fi
-
-# 安装 Pi
-echo ""
-echo "📦 安装 Pi 0.85.1..."
-if command -v pi &> /dev/null; then
-    CURRENT_PI=$(pi --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "unknown")
-    echo -e "${YELLOW}!${NC} Pi $CURRENT_PI 已安装"
-    read -p "是否重新安装 Pi 0.85.1? (y/N) " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        echo "跳过 Pi 安装"
-    else
-        npm install -g @earendil-works/pi-coding-agent@0.85.1
-        echo -e "${GREEN}✓${NC} Pi 0.85.1 安装完成"
-    fi
-else
-    npm install -g @earendil-works/pi-coding-agent@0.85.1
-    echo -e "${GREEN}✓${NC} Pi 0.85.1 安装完成"
-fi
+# The agent runtime is built into news (Rust); Pi is no longer installed.
+# Only the NEWSROOM_AGENT=pi fallback needs it:
+#   npm install -g @earendil-works/pi-coding-agent@0.85.1
 
 # 检查 Python
 echo ""

@@ -497,7 +497,9 @@ const PROXY_ENV_NAMES: [&str; 6] = [
 fn configured_system_proxy() -> Option<String> {
     #[cfg(target_os = "macos")]
     {
-        let output = StdCommand::new("scutil").arg("--proxy").output().ok()?;
+        let mut probe = StdCommand::new("scutil");
+        crate::tool_host::strip_keylike_env(&mut probe);
+        let output = probe.arg("--proxy").output().ok()?;
         if !output.status.success() {
             return None;
         }
@@ -1043,7 +1045,7 @@ impl PiConfig {
     }
 
     pub fn command(&self) -> Command {
-        // NEWSROOM_AGENT=rust (exactly): the child is this program in its Rust agent mode, speaking the same protocol (1011ak 9a).
+        // The default (anything but NEWSROOM_AGENT=pi): the child is this program in its Rust agent mode, speaking the same protocol (1011ak 9a).
         let rust = crate::agent_loop::agent_rust_enabled();
         let mut cmd = if rust {
             Command::new(std::env::current_exe().unwrap_or_else(|_| self.binary.clone()))
@@ -1052,6 +1054,20 @@ impl PiConfig {
         };
         if rust {
             cmd.arg(crate::agent_serve::SERVE_ARG);
+            // the child takes the parent's runtime and model route by name, so a stand-in run stays a stand-in run in the child even when
+            // the real-model allow list below drops other names
+            cmd.env(crate::agent_loop::AGENT_ENV, "rust");
+            // the Rust child never inherits a key-like name, stand-in or real (the real route also narrows to an allow list below);
+            // its model key, when there is one, arrives only as the first protocol line
+            crate::tool_host::strip_keylike_env(cmd.as_std_mut());
+            cmd.env(
+                crate::agent_serve::REAL_ENV,
+                if crate::agent_serve::real_enabled() {
+                    "1"
+                } else {
+                    "0"
+                },
+            );
         } else {
             cmd.arg("--mode").arg("rpc");
         }
@@ -1280,7 +1296,8 @@ impl PiConfig {
         cmd
     }
 
-    /// Gate A: what the real-model child gets as its first protocol line. `None` unless `NEWSROOM_AGENT=rust` and `NEWSROOM_AGENT_REAL=1`.
+    /// Gate A: what the real-model child gets as its first protocol line. `None` on the Pi runtime (`NEWSROOM_AGENT=pi`) or the stand-in route
+    /// (see `agent_serve::real_enabled`).
     /// The error text never contains a key or a proxy.
     pub fn model_handoff(&self) -> Result<Option<crate::agent_serve::Handoff>> {
         if !(crate::agent_loop::agent_rust_enabled() && crate::agent_serve::real_enabled()) {
@@ -1338,7 +1355,7 @@ impl PiConfig {
         Ok(handoff)
     }
 
-    /// The progress line's runtime description. With `NEWSROOM_AGENT=rust` it says `rust-agent` (what actually runs); otherwise the Pi line, byte for byte as before.
+    /// The progress line's runtime description. On the Rust agent (the default) it says `rust-agent` (what actually runs); with `NEWSROOM_AGENT=pi` the Pi line, byte for byte as before.
     pub fn display_runtime(&self) -> String {
         self.display_runtime_for(crate::agent_loop::agent_rust_enabled())
     }
@@ -2392,8 +2409,10 @@ mod tests {
 
     #[test]
     fn runtime_label_uses_defaults() {
-        // The line now follows NEWSROOM_AGENT, which other tests set while they hold ENV_LOCK: hold it too (the assertion below is unchanged).
+        // The line follows NEWSROOM_AGENT, which other tests set while they hold ENV_LOCK: hold it too. The Pi line needs NEWSROOM_AGENT=pi.
         let _guard = EnvGuard::new();
+        let before = std::env::var(crate::agent_loop::AGENT_ENV).ok();
+        std::env::set_var(crate::agent_loop::AGENT_ENV, "pi");
         let cfg = PiConfig {
             binary: "pi".into(),
             provider: None,
@@ -2410,8 +2429,13 @@ mod tests {
             speed: Default::default(),
             compose: None,
         };
+        let line = cfg.display_runtime();
+        match before {
+            Some(value) => std::env::set_var(crate::agent_loop::AGENT_ENV, value),
+            None => std::env::remove_var(crate::agent_loop::AGENT_ENV),
+        }
         assert_eq!(
-            cfg.display_runtime(),
+            line,
             "pi-rpc provider=<pi-default> model=<pi-default> session=ephemeral tools=investigate"
         );
     }
@@ -4033,14 +4057,14 @@ mod tests {
     }
 
     #[test]
-    fn the_child_is_pi_unless_the_agent_switch_is_exactly_rust() {
+    fn the_child_is_rust_unless_the_agent_switch_is_exactly_pi() {
         let _guard = EnvGuard::new();
         let mut config = visual_story_config("visual-story");
         config.provider = Some("anthropic".into());
         config.api_key = Some("a-key-for-the-test-0000".into());
         config.base_url = Some("http://127.0.0.1:1".into());
         let before = std::env::var(crate::agent_loop::AGENT_ENV).ok();
-        std::env::remove_var(crate::agent_loop::AGENT_ENV);
+        std::env::set_var(crate::agent_loop::AGENT_ENV, "pi");
         let off = child_line(&config);
         assert_eq!(off.0, "pi");
         assert_eq!(&off.1[..2], ["--mode", "rpc"]);
@@ -4048,13 +4072,24 @@ mod tests {
             .2
             .iter()
             .any(|(k, v)| k == "ANTHROPIC_API_KEY" && v.is_some()));
-        // anything but the exact value is the old path, byte for byte
-        for other in ["1", "true", "Rust", "RUST", "rust ", " rust", ""] {
-            std::env::set_var(crate::agent_loop::AGENT_ENV, other);
-            assert_eq!(child_line(&config), off, "{other:?}");
-        }
+        // anything but the exact value "pi", unset included, is the Rust child, byte for byte
         std::env::set_var(crate::agent_loop::AGENT_ENV, "rust");
         let on = child_line(&config);
+        for other in [
+            Some("1"),
+            Some("true"),
+            Some("Pi"),
+            Some("PI"),
+            Some("pi "),
+            Some(""),
+            None,
+        ] {
+            match other {
+                Some(value) => std::env::set_var(crate::agent_loop::AGENT_ENV, value),
+                None => std::env::remove_var(crate::agent_loop::AGENT_ENV),
+            }
+            assert_eq!(child_line(&config), on, "{other:?}");
+        }
         match before {
             Some(value) => std::env::set_var(crate::agent_loop::AGENT_ENV, value),
             None => std::env::remove_var(crate::agent_loop::AGENT_ENV),
@@ -4140,8 +4175,8 @@ mod tests {
             assert_eq!(child_line(&config), reference, "{other:?}");
             assert!(config.model_handoff().unwrap().is_none(), "{other:?}");
         }
-        // real switch without the rust switch is the Pi path, untouched
-        gate_a_switches(None, Some("1"));
+        // the real switch on the Pi runtime is the Pi path, untouched
+        gate_a_switches(Some("pi"), Some("1"));
         let pi = child_line(&config);
         assert_eq!(pi.0, "pi");
         assert!(pi
@@ -4383,7 +4418,7 @@ mod tests {
             elapsed_ms: 5,
             partial_text: String::new(),
         };
-        std::env::remove_var(crate::agent_loop::AGENT_ENV);
+        std::env::set_var(crate::agent_loop::AGENT_ENV, "pi");
         let pi = failure.to_string();
         std::env::set_var(crate::agent_loop::AGENT_ENV, "rust");
         let rust = failure.to_string();
@@ -4599,6 +4634,7 @@ mod tests {
             .env("PATH", std::env::var_os("PATH").unwrap_or_default())
             .env("TERM_GAP_TEST_DIR", &dir)
             .env("PERF_MOCK_MODE", "normal")
+            .env(crate::agent_loop::AGENT_ENV, "pi")
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
@@ -4674,12 +4710,11 @@ mod tests {
             default_speed(),
             "no other switch changes"
         );
-        for not_rust in ["pi", ""] {
-            std::env::set_var(crate::agent_loop::AGENT_ENV, not_rust);
-            assert!(!speed_switches_from_env().page_build, "agent {not_rust:?}");
-        }
+        std::env::set_var(crate::agent_loop::AGENT_ENV, "pi");
+        assert!(!speed_switches_from_env().page_build, "agent pi");
+        // unset is the Rust agent, the default runtime
         std::env::remove_var(crate::agent_loop::AGENT_ENV);
-        assert!(!speed_switches_from_env().page_build, "agent unset");
+        assert!(speed_switches_from_env().page_build, "agent unset");
     }
 
     #[test]

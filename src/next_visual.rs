@@ -749,7 +749,9 @@ fn passed(report: Value, html_sha256: &str) -> Result<Value, String> {
 /// One run of the browser check on `html` (`--html --spec --output`, the spec beside its report in `out`): the report it
 /// wrote. Its exit code is its status (browser_qa.py), so only the report is read; none within QA_DEADLINE is an error.
 fn browser_check(runner: &Runner, html: &Path, out: &Path) -> Result<Value, String> {
-    let mut child = Command::new(&runner.program)
+    let mut command = Command::new(&runner.program);
+    crate::tool_host::strip_keylike_env(&mut command);
+    let mut child = command
         .args(&runner.args)
         .arg("--html")
         .arg(html)

@@ -1,19 +1,23 @@
-//! The Rust agent as the child process of a run (1011ak step 9a, `NEWSROOM_AGENT=rust`, exactly that value, default off).
+//! The Rust agent as the child process of a run (1011ak step 9a). It is the default runtime of `news`; `NEWSROOM_AGENT=pi` (exactly)
+//! selects the old Pi child instead.
 //!
 //! `news` starts this where it used to start Pi: the same binary, first argument `__agent_rpc`, speaking the same JSONL protocol on
 //! stdin and stdout (prompt, abort, get_last_assistant_text, get_session_stats in; the run's events out). The parent's reader, its time
 //! limits, its process group handling and every gate after the run stay exactly as they are; only the producer of the events changes.
 //!
-//! This version only talks to a stand-in model on this machine: the address comes from `NEWSROOM_AGENT_LOCAL_URL` and must be
-//! 127.0.0.1 or localhost; the key is a fixed literal that is not a credential. Nothing here reads the user's configuration, a `.env`
-//! file or any key (`main` leaves `load_project_env` out for this path too). The tool host is started with the same
-//! whitelisted environment as in the tests (key-like and endpoint names dropped).
+//! Two model routes, chosen by `real_enabled()`:
+//! - Stand-in: `NEWSROOM_AGENT_REAL` set to anything but "1", or `NEWSROOM_AGENT_LOCAL_URL` set while `NEWSROOM_AGENT_REAL` is unset,
+//!   or neither set in a debug build (the binary the test suites run).
+//!   The address comes from `NEWSROOM_AGENT_LOCAL_URL` and must be 127.0.0.1 or localhost; the key is a fixed literal that is not a
+//!   credential. Nothing here reads the user's configuration, a `.env` file or any key. Every stand-in test and entry names one of the
+//!   two variables, so it can never reach a real model.
+//! - Real (`NEWSROOM_AGENT_REAL=1`, or neither variable set in a release build, the installed default): the child talks to a real model. The key never
+//!   travels in the child's arguments or environment. The parent computes the route (provider normalisation, address, optional proxy)
+//!   and sends one first protocol line on stdin, `{"type":"model_config","base_url":..,"proxy":..,"api_key":..}`. The child keeps it in
+//!   memory only (never on disk, in an event, in an error text or in the tool host's environment), sends no model request before it has
+//!   arrived, and refuses a second one. With no key configured the parent stops before starting the child and says so.
 //!
-//! Gate A (`NEWSROOM_AGENT_REAL=1`, exactly, together with `NEWSROOM_AGENT=rust`; default off, and off changes nothing above): the child
-//! talks to a real model. The key never travels in the child's arguments or environment. The parent computes the route (provider
-//! normalisation, address, optional proxy) and sends one first protocol line on stdin, `{"type":"model_config","base_url":..,"proxy":..,"api_key":..}`.
-//! The child keeps it in memory only (never on disk, in an event, in an error text or in the tool host's environment), sends no model request
-//! before it has arrived, and refuses a second one.
+//! The tool host is started with the same whitelisted environment as in the tests (key-like and endpoint names dropped).
 
 use crate::agent_loop::{Agent, Config};
 use crate::anthropic_model::{AnthropicConfig, AnthropicModel, ToolDef};
@@ -25,7 +29,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
-/// The first argument that makes `news` the Rust agent child of a run (only honoured with `NEWSROOM_AGENT=rust`).
+/// The first argument that makes `news` the Rust agent child of a run (not honoured with `NEWSROOM_AGENT=pi`).
 pub const SERVE_ARG: &str = "__agent_rpc";
 /// Where the stand-in model listens: 127.0.0.1 or localhost only.
 pub const LOCAL_URL_ENV: &str = "NEWSROOM_AGENT_LOCAL_URL";
@@ -34,18 +38,33 @@ pub const COMMAND_ENV: &str = "NEWSROOM_AGENT_COMMAND";
 /// Not a credential: the stand-in relay ignores the key, and this version never reads a real one.
 const STANDIN_KEY: &str = "standin-local-key";
 const DEFAULT_MODEL: &str = "standin";
-/// Gate A switch: only the exact value "1" turns the real-model route on.
+/// Gate A switch: "1" is the real model, any other set value the local stand-in; unset follows `NEWSROOM_AGENT_LOCAL_URL` (see `real_selected`).
 pub const REAL_ENV: &str = "NEWSROOM_AGENT_REAL";
 /// The type of the first protocol line that hands the model route to the child.
 pub const HANDOFF_TYPE: &str = "model_config";
-const STANDIN_ONLY: &str = "the Rust agent path only supports a stand-in model on this machine in this version; set NEWSROOM_AGENT_LOCAL_URL to an http://127.0.0.1:<port> or http://localhost:<port> address";
+const STANDIN_ONLY: &str = "the Rust agent is in stand-in mode (NEWSROOM_AGENT_REAL is set but not 1, or NEWSROOM_AGENT_LOCAL_URL is set) and only talks to a stand-in model on this machine; set NEWSROOM_AGENT_LOCAL_URL to an http://127.0.0.1:<port> or http://localhost:<port> address, or unset both for the real model";
 
-fn real_selected(value: Option<&str>) -> bool {
-    value == Some("1")
+/// The real model unless the run asked for the stand-in: an explicit `NEWSROOM_AGENT_REAL` decides ("1" real, anything else stand-in);
+/// unset, a non-empty `NEWSROOM_AGENT_LOCAL_URL` means stand-in and its absence means `unset_default`. A stand-in run that sets either
+/// name can therefore never fall through to the real model.
+fn real_selected(real: Option<&str>, local_url: Option<&str>, unset_default: bool) -> bool {
+    match real {
+        Some(value) => value == "1",
+        None => unset_default && local_url.map_or(true, |url| url.trim().is_empty()),
+    }
 }
 
+/// What an unset switch means: the real model in a release build (what `cargo install` makes), the stand-in in a debug build. The
+/// test suites run the debug binary, so a test that forgets to name its stand-in fails on the stand-in address instead of reaching a
+/// real model with the machine's key; a debug run that wants the real model says `NEWSROOM_AGENT_REAL=1`.
+const UNSET_IS_REAL: bool = !cfg!(debug_assertions);
+
 pub fn real_enabled() -> bool {
-    real_selected(std::env::var(REAL_ENV).ok().as_deref())
+    real_selected(
+        std::env::var(REAL_ENV).ok().as_deref(),
+        std::env::var(LOCAL_URL_ENV).ok().as_deref(),
+        UNSET_IS_REAL,
+    )
 }
 
 /// What the parent hands over: the resolved address, an optional proxy and the key. `Debug` never shows the key or the proxy.
@@ -776,16 +795,33 @@ mod tests {
     }
 
     #[test]
-    fn only_the_exact_value_one_switches_the_real_model_route_on() {
+    fn an_explicit_switch_or_a_local_address_keeps_the_stand_in() {
         // the pure reading is shared with real_enabled(); the process-wide variable itself is covered in the pi.rs tests
-        for other in ["0", "true", "yes", "", " 1", "1 ", "on"] {
-            assert_ne!(Some(other), Some("1"));
+        let local = Some("http://127.0.0.1:9");
+        for unset_default in [true, false] {
+            // explicit "1": real, whatever the local address or the build
+            assert!(real_selected(Some("1"), None, unset_default));
+            assert!(real_selected(Some("1"), local, unset_default));
+            // any other explicit value: stand-in, with or without a local address
+            for other in ["0", "true", "yes", "", " 1", "1 ", "on"] {
+                assert!(
+                    !real_selected(Some(other), None, unset_default),
+                    "{other:?}"
+                );
+                assert!(
+                    !real_selected(Some(other), local, unset_default),
+                    "{other:?}"
+                );
+            }
+            // unset with a local address: stand-in
+            assert!(!real_selected(None, local, unset_default));
         }
-        assert!(!real_selected(None));
-        assert!(real_selected(Some("1")));
-        for other in ["0", "true", "yes", "", " 1", "1 ", "on"] {
-            assert!(!real_selected(Some(other)), "{other:?}");
+        // unset, no (or a blank) local address: the build's default, real in a release build, stand-in in a debug build
+        for blank in [None, Some(""), Some("  ")] {
+            assert!(real_selected(None, blank, true), "{blank:?}");
+            assert!(!real_selected(None, blank, false), "{blank:?}");
         }
+        assert_eq!(UNSET_IS_REAL, !cfg!(debug_assertions));
     }
 
     /// Re-run by the pi.rs test `gate_a_child_holds_no_key_in_its_arguments_or_environment` as the child process: it looks at its

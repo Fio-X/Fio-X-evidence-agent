@@ -3,7 +3,7 @@
 
 With NEWSROOM_AGENT=rust, `news continue` on a run folder without `agent-session/session.jsonl` (a session of the old runtime, an empty or
 cleared `session/`, no session at all) prints one line and exits 3 before any child starts. A run folder with an `agent-session/`, and the
-default (old) runtime, never show the line. No provider, no network.
+explicit old runtime (NEWSROOM_AGENT=pi), never show the line. The Rust agent is also the default, so unset is refused the same way. No provider, no network.
 """
 import json
 import os
@@ -34,7 +34,8 @@ def run_folder(base: Path, name: str, old: bool, new: bool, empty_old: bool = Fa
 
 
 def follow_up(run: Path, agent):
-    env = {k: v for k, v in os.environ.items() if not k.startswith("NEWSROOM_")}
+    env = {k: v for k, v in os.environ.items() if not (k.startswith("NEWSROOM_") or k.endswith(("_API_KEY", "_BASE_URL", "_TOKEN")))}
+    env["NEWSROOM_AGENT_REAL"] = "0"  # the stand-in route, never a real model
     if agent is not None:
         env["NEWSROOM_AGENT"] = agent
     return subprocess.run(
@@ -46,11 +47,12 @@ with tempfile.TemporaryDirectory() as tmp:
     base = Path(tmp)
     # refused: only the old runtime's session, only an empty session/ (what a new run folder starts with), nothing at all
     for name, old, empty, new in (("old", True, False, False), ("empty-session", False, True, False), ("none", False, False, False)):
-        refused = follow_up(run_folder(base, name, old=old, new=False, empty_old=empty), "rust")
-        assert refused.returncode == 3, (name, refused.returncode, refused.stderr[-1500:])
-        lines = [l for l in refused.stderr.splitlines() if LINE in l]
-        assert len(lines) == 1, (name, refused.stderr[-1500:])
-        assert "continuing:" not in refused.stderr and refused.stdout == "", (name, refused.stdout, refused.stderr[-1500:])
+        for agent in ("rust", None):  # the Rust agent, named or by default
+            refused = follow_up(run_folder(base, f"{name}-{agent}", old=old, new=False, empty_old=empty), agent)
+            assert refused.returncode == 3, (name, agent, refused.returncode, refused.stderr[-1500:])
+            lines = [l for l in refused.stderr.splitlines() if LINE in l]
+            assert len(lines) == 1, (name, agent, refused.stderr[-1500:])
+            assert "continuing:" not in refused.stderr and refused.stdout == "", (name, agent, refused.stdout, refused.stderr[-1500:])
 
     # not refused: a folder with an agent-session (alone, or beside an old session/). The run goes on to start: "continuing:" is printed
     # right before the child is started.
@@ -60,9 +62,9 @@ with tempfile.TemporaryDirectory() as tmp:
         assert LINE not in other.stderr, (name, other.stderr[-1500:])
         assert "continuing: " in other.stderr, (name, other.stderr[-1500:])
 
-    # the default and the explicit old runtime are untouched, whatever the folder holds
+    # the explicit old runtime is untouched, whatever the folder holds
     old = run_folder(base, "old-for-pi", old=True, new=False)
-    for agent in (None, "pi"):
+    for agent in ("pi",):
         same = follow_up(old, agent)
         assert LINE not in same.stderr, (agent, same.stderr[-1500:])
         assert "continuing: " in same.stderr, (agent, same.stderr[-1500:])

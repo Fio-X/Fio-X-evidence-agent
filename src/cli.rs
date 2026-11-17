@@ -19,7 +19,7 @@ pub enum Commands {
     /// Check required and optional local dependencies.
     Doctor(DoctorArgs),
 
-    /// Send an ephemeral raw prompt to the agent: Pi over RPC, or the Rust agent with NEWSROOM_AGENT=rust.
+    /// Send an ephemeral raw prompt to the agent: the Rust agent, or Pi over RPC with NEWSROOM_AGENT=pi.
     Ask(AskArgs),
 
     /// Start a persistent, tool-using data-news investigation.

@@ -31,7 +31,13 @@ pub async fn run(args: DoctorArgs) -> Result<()> {
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("duckdb"));
 
-    let pi = exact_check("pi", "0.85.1", &args.pi.pi_bin, &["--version"], EXPECTED_PI).await;
+    // Pi is only a fallback runtime now (NEWSROOM_AGENT=pi): checked, and required, only when it is the one selected.
+    let pi_runtime = !crate::agent_loop::agent_rust_enabled();
+    let pi = if pi_runtime {
+        Some(exact_check("pi", "0.85.1", &args.pi.pi_bin, &["--version"], EXPECTED_PI).await)
+    } else {
+        None
+    };
     let duckdb = exact_check(
         "duckdb",
         "1.5.5",
@@ -52,7 +58,11 @@ pub async fn run(args: DoctorArgs) -> Result<()> {
     let python =
         availability_check("python3", "optional", Path::new("python3"), &["--version"]).await;
 
-    let checks = vec![pi, duckdb, node, rustc, python];
+    let pi_ok = pi.as_ref().map(|check| check.ok);
+    let checks: Vec<Check> = pi
+        .into_iter()
+        .chain([duckdb, node, rustc, python])
+        .collect();
     let live_ready = checks
         .iter()
         .filter(|check| check.requirement != "optional")
@@ -80,21 +90,29 @@ pub async fn run(args: DoctorArgs) -> Result<()> {
                 value
             );
         }
-        println!("baseline   v1.1.0       Rust 1.98.1 | Node >=22.19.0 | Pi 0.85.1 | DuckDB 1.5.5");
+        if pi_runtime {
+            println!(
+                "baseline   v1.1.0       Rust 1.98.1 | Node >=22.19.0 | Pi 0.85.1 | DuckDB 1.5.5"
+            );
+        } else {
+            println!("baseline   v1.1.0       Rust 1.98.1 | Node >=22.19.0 | DuckDB 1.5.5 (agent: built-in Rust)");
+        }
         println!("live ready {}", if live_ready { "yes" } else { "no" });
     }
 
     if args.strict && !live_ready {
         bail!("live qualification environment is incomplete; run scripts/bootstrap_live_env.sh or fix the failed checks");
     }
-    if report.checks.first().map(|check| check.ok) != Some(true) && !args.strict {
+    if pi_ok == Some(false) && !args.strict {
         eprintln!("\n❌ Pi 未安装或配置错误");
         eprintln!("\n📦 安装方法:");
         eprintln!("   npm install -g @earendil-works/pi-coding-agent@0.85.1");
         eprintln!("\n🚀 或运行自动安装脚本:");
         eprintln!("   ./scripts/setup.sh");
         eprintln!();
-        bail!("Pi is required. Install/configure Pi or pass --pi-bin <path>");
+        eprintln!("   或去掉 NEWSROOM_AGENT=pi，改用内置的 Rust agent（默认）");
+        eprintln!();
+        bail!("Pi is required with NEWSROOM_AGENT=pi. Install/configure Pi, pass --pi-bin <path>, or unset NEWSROOM_AGENT to use the built-in Rust agent");
     }
 
     // 提供友好的安装建议（如果有失败的检查）
@@ -194,7 +212,9 @@ fn parse_version(text: &str) -> Option<(u64, u64, u64)> {
 }
 
 async fn check(bin: &Path, args: &[&str]) -> std::result::Result<String, String> {
-    match Command::new(bin).args(args).output().await {
+    let mut command = Command::new(bin);
+    crate::tool_host::strip_keylike_env(command.as_std_mut());
+    match command.args(args).output().await {
         Ok(output) if output.status.success() => {
             let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();

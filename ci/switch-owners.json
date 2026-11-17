@@ -18,9 +18,9 @@
  {
   "name": "NEWSROOM_AGENT",
   "owner": "system",
-  "purpose": "Selects the Rust agent runtime only when exactly 'rust'; 'pi' keeps the old one.",
-  "expiry": "until-default-on",
-  "default": "off",
+  "purpose": "Runtime: the Rust agent by default; exactly 'pi' selects the old Pi runtime as a fallback.",
+  "expiry": "remove",
+  "default": "on",
   "status": "approved"
  },
  {
@@ -61,9 +61,9 @@
  {
   "name": "NEWSROOM_AGENT_REAL",
   "owner": "agent",
-  "purpose": "Gate A: lets the Rust child run against a real model, exact 1 only.",
+  "purpose": "Gate A: unset is the real model in a release build (stand-in in debug, or with a stand-in address); 1 real, other values stand-in.",
   "expiry": "permanent",
-  "default": "off",
+  "default": "on",
   "status": "approved",
   "confidence": "low"
  },

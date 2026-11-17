@@ -40,12 +40,14 @@ pub fn next_enabled() -> bool {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Need {
     Exactly(&'static str),
+    /// This value or unset (the program's default is this value); any other value is refused.
+    ExactlyOrUnset(&'static str),
     /// Not "1": the route never calls the tool the switch changes, and an "on" would change that tool's text unseen.
     Off,
 }
 
 /// The older switches the route stands on, checked at start; none is relied on silently.
-/// - NEWSROOM_AGENT=rust: the route runs in the Rust agent child.
+/// - NEWSROOM_AGENT rust or unset (the default): the route runs in the Rust agent child, never under NEWSROOM_AGENT=pi.
 /// - NEWSROOM_DATA_PREPARE=1: newsroom_data_prepare exists only with it (newsroom.ts dataPrepareEnabled).
 /// - NEWSROOM_SPEED_PAGE_BUILD=1: the design pack's "sheet" part exists only with it (newsroom.ts packPageBuildOn).
 /// - NEWSROOM_SPEED_DESIGN_PACK=1: the pack split and the pack's asset source check (agent_serve.rs, newsroom.ts).
@@ -53,7 +55,7 @@ pub enum Need {
 /// - NEWSROOM_LEAN_GATES off: with it the concept, novelty and asset tools are not registered (newsroom.ts leanGatesEnabled), so
 ///   the design pack's first half cannot run and the completion gate would miss them after the data is in.
 pub const LEGACY_SWITCHES: [(&str, Need); 6] = [
-    ("NEWSROOM_AGENT", Need::Exactly("rust")),
+    ("NEWSROOM_AGENT", Need::ExactlyOrUnset("rust")),
     ("NEWSROOM_DATA_PREPARE", Need::Exactly("1")),
     ("NEWSROOM_SPEED_PAGE_BUILD", Need::Exactly("1")),
     ("NEWSROOM_SPEED_DESIGN_PACK", Need::Exactly("1")),
@@ -71,6 +73,10 @@ pub fn legacy_problem(get: impl Fn(&str) -> Option<String>) -> Option<String> {
                 value
                     .as_deref()
                     .map_or("unset".to_string(), |v| format!("'{v}'"))
+            )),
+            Need::ExactlyOrUnset(want) if value.as_deref().is_some_and(|v| v != *want) => Some(format!(
+                "the new route needs {name}={want} or unset; it is '{}'",
+                value.as_deref().unwrap_or_default()
             )),
             Need::Off if value.as_deref() == Some("1") => {
                 Some(format!("the new route needs {name} off; it is '1'"))
@@ -6079,11 +6085,17 @@ mod tests {
             _ => Some("1".to_string()),
         };
         assert_eq!(legacy_problem(good), None);
+        // the runtime switch may also be left unset: the Rust agent is the default
+        assert_eq!(
+            legacy_problem(|n| if n == "NEWSROOM_AGENT" { None } else { good(n) }),
+            None
+        );
         for (name, need) in LEGACY_SWITCHES {
             let bad = |asked: &str| {
                 if asked == name {
                     match need {
                         Need::Exactly(_) => None,
+                        Need::ExactlyOrUnset(_) => Some("pi".to_string()),
                         Need::Off => Some("1".to_string()),
                     }
                 } else {

@@ -1,7 +1,7 @@
 //! The agent loop in Rust (1011ab step 2, agent-spec 4 to 8): takes a prompt, asks a model for a reply, runs the tools it asks for through
 //! the tool host, sends the results back, and repeats until the model stops asking. It reports the run as the 13 JSON event types the
-//! existing readers consume. The model here is a replay of recorded assistant messages: no network, nothing live. Selected only by
-//! `NEWSROOM_AGENT=rust` (exactly that value, default off) and built for tests only until a later step wires it in.
+//! existing readers consume. The model is whatever the run hands it (a replay in tests, a local stand-in, or the real model route in
+//! agent_serve.rs). This is the default runtime of `news`; `NEWSROOM_AGENT=pi` (exactly that value) selects the old Pi runtime instead.
 //!
 //! Verification stays outside the loop: nothing here reads model text to set a verification field, `isError` on a tool result comes from the
 //! tool runner (or from this loop's own refusals), and failed tool results go back to the model as they are.
@@ -26,12 +26,13 @@ const ABORT_WAIT: Duration = Duration::from_secs(5);
 /// in the `NEWSROOM_SPEED_AUTO_CHECKS` row of ci/switch-owners.json.
 pub const AUTO_STEP_TIMEOUT: Duration = Duration::from_secs(120);
 
+/// The Rust agent is the default runtime. Only the exact value "pi" selects the old Pi runtime (kept as a fallback until the Pi code is
+/// removed); unset, "rust" or any other value is the Rust agent, so tests and scripts that need Pi must name it.
 fn rust_selected(value: Option<&str>) -> bool {
-    value == Some("rust")
+    value != Some("pi")
 }
 
-/// True only when `NEWSROOM_AGENT` is exactly "rust". The explicit value "pi" selects the old runtime and behaves exactly like the
-/// variable being unset, so tests and scripts can name the old runtime whatever the default is.
+/// True unless `NEWSROOM_AGENT` is exactly "pi".
 pub fn agent_rust_enabled() -> bool {
     rust_selected(std::env::var(AGENT_ENV).ok().as_deref())
 }
@@ -1180,25 +1181,25 @@ mod tests {
     }
 
     #[test]
-    fn the_switch_is_exactly_rust() {
+    fn only_the_exact_value_pi_selects_the_old_runtime() {
         let _guard = crate::pi::ENV_LOCK
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         assert_eq!(
             agent_rust_enabled(),
-            std::env::var(AGENT_ENV).as_deref() == Ok("rust")
+            std::env::var(AGENT_ENV).as_deref() != Ok("pi")
         );
-        assert!(rust_selected(Some("rust")));
+        assert!(!rust_selected(Some("pi")));
         for other in [
             None,
+            Some("rust"),
             Some(""),
             Some("1"),
-            Some("Rust"),
-            Some("rust "),
+            Some("Pi"),
+            Some("pi "),
             Some("true"),
-            Some("pi"),
         ] {
-            assert!(!rust_selected(other), "{other:?}");
+            assert!(rust_selected(other), "{other:?}");
         }
     }
 

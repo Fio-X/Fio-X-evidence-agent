@@ -6438,6 +6438,7 @@ async fn derive_read_inputs(
 
     let literal = sql.replace('\'', "''");
     let mut command = Command::new(duckdb_bin);
+    crate::tool_host::strip_keylike_env(command.as_std_mut());
     command
         .current_dir(root)
         .kill_on_drop(true)
@@ -6604,6 +6605,7 @@ pub async fn recompute_artifact(
             "SET allowed_directories = ['{data_dir}', '{source_dir}', '{computation_dir}', '{scratch_dir}']"
         );
         let mut command = Command::new(duckdb_bin);
+        crate::tool_host::strip_keylike_env(command.as_std_mut());
         command
             .current_dir(root)
             .kill_on_drop(true)

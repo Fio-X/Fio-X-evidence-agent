@@ -86,6 +86,7 @@ class FakeRust:
                if not (k.startswith("NEWSROOM_") or k.endswith(("_API_KEY", "_BASE_URL", "_TOKEN")))}
         env.update({
             "NEWSROOM_AGENT": "rust",
+            "NEWSROOM_AGENT_REAL": "0",  # the stand-in route by name, in a debug or a release binary
             "NEWSROOM_AGENT_LOCAL_URL": self.url,
             "NEWSROOM_RPC_IDLE_MS": "60000",
             "NEWSROOM_RPC_TOTAL_MS": "120000",

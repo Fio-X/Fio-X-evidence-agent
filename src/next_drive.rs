@@ -313,7 +313,7 @@ mod drive {
         env.retain(|(name, _)| !name.starts_with("NEWSROOM_"));
         // The route's older switches as the route needs them (newsroom_data_prepare exists only with NEWSROOM_DATA_PREPARE=1).
         for (name, need) in LEGACY_SWITCHES {
-            if let Need::Exactly(value) = need {
+            if let Need::Exactly(value) | Need::ExactlyOrUnset(value) = need {
                 env.push((name.into(), value.into()));
             }
         }

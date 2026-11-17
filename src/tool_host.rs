@@ -66,6 +66,17 @@ pub fn is_keylike(name: &str) -> bool {
     })
 }
 
+/// Drops every key-like name (`is_keylike`) of this process's environment from a child it starts, so no child inherits a model key or
+/// endpoint that `.env` or the user's configuration put into the parent's environment. For children that otherwise inherit the whole
+/// environment; children started with `env_clear` and an allow list need nothing more. Names only; values are never read.
+pub fn strip_keylike_env(cmd: &mut std::process::Command) {
+    for (name, _) in std::env::vars_os() {
+        if name.to_str().is_none_or(is_keylike) {
+            cmd.env_remove(&name);
+        }
+    }
+}
+
 /// `--use-env-proxy` when the environment names a proxy (non-empty value), else nothing. Names only decide; values are never read out.
 pub fn node_proxy_args(env: &[(String, String)]) -> Vec<&'static str> {
     let has_proxy = env.iter().any(|(name, value)| {
@@ -83,7 +94,9 @@ pub fn node_proxy_args(env: &[(String, String)]) -> Vec<&'static str> {
 }
 
 fn node_knows_env_proxy(node: &str) -> bool {
-    std::process::Command::new(node)
+    let mut probe = std::process::Command::new(node);
+    strip_keylike_env(&mut probe);
+    probe
         .args(["--use-env-proxy", "--version"])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -617,6 +630,50 @@ impl ToolHost {
 
 #[cfg(test)]
 mod tests {
+    /// A child started through strip_keylike_env sees none of the parent's key-like names (the configuration's model keys and
+    /// endpoints), while an ordinary name still reaches it.
+    #[test]
+    fn a_stripped_child_inherits_no_key_like_name() {
+        let _guard = crate::pi::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let names = [
+            "ANTHROPIC_API_KEY",
+            "DRAGONCODE_API_KEY",
+            "DRAGONCODE_BASE_URL",
+            "OPENAI_API_KEY",
+            "NEWSROOM_API_KEY",
+            "NEWSROOM_BASE_URL",
+            "ZAI_API_KEY",
+        ];
+        let before: Vec<_> = names.iter().map(|n| (*n, std::env::var_os(n))).collect();
+        let plain_before = std::env::var_os("STRIP_PROBE_PLAIN");
+        for name in names {
+            std::env::set_var(name, "not-a-real-value");
+        }
+        std::env::set_var("STRIP_PROBE_PLAIN", "kept");
+        let mut cmd = std::process::Command::new("/usr/bin/env");
+        super::strip_keylike_env(&mut cmd);
+        let out = cmd.output().expect("env runs");
+        for (name, value) in before {
+            match value {
+                Some(v) => std::env::set_var(name, v),
+                None => std::env::remove_var(name),
+            }
+        }
+        match plain_before {
+            Some(v) => std::env::set_var("STRIP_PROBE_PLAIN", v),
+            None => std::env::remove_var("STRIP_PROBE_PLAIN"),
+        }
+        let text = String::from_utf8_lossy(&out.stdout);
+        let seen: Vec<&str> = text.lines().filter_map(|l| l.split('=').next()).collect();
+        for name in names {
+            assert!(!seen.contains(&name), "{name} reached the child");
+        }
+        assert!(text.contains("STRIP_PROBE_PLAIN=kept"));
+        assert!(!text.contains("not-a-real-value"));
+    }
+
     use super::*;
 
     fn repo() -> std::path::PathBuf {
