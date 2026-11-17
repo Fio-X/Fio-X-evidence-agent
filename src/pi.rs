@@ -4059,6 +4059,8 @@ mod tests {
     #[test]
     fn the_child_is_rust_unless_the_agent_switch_is_exactly_pi() {
         let _guard = EnvGuard::new();
+        // the stand-in route, named: unset would be the real route in a release build (EnvGuard puts the switch back)
+        std::env::set_var(crate::agent_serve::REAL_ENV, "0");
         let mut config = visual_story_config("visual-story");
         config.provider = Some("anthropic".into());
         config.api_key = Some("a-key-for-the-test-0000".into());
@@ -4167,7 +4169,7 @@ mod tests {
     fn gate_a_off_leaves_the_rust_child_exactly_as_it_was() {
         let _guard = EnvGuard::new();
         let config = gate_a_config();
-        let before = gate_a_switches(Some("rust"), None);
+        let before = gate_a_switches(Some("rust"), Some("0"));
         let reference = child_line(&config);
         // anything but the exact value 1 is the same command line and environment, byte for byte
         for other in ["0", "true", "yes", "", " 1", "1 "] {

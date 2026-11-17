@@ -85,6 +85,7 @@ def main():
         env.update({
             "NEWSROOM_AGENT": "rust",
             "NEWSROOM_AGENT_LOCAL_URL": url,
+            "NEWSROOM_AGENT_REAL": "0",
             "NEWSROOM_RPC_IDLE_MS": "120000",
             "NEWSROOM_RPC_TOTAL_MS": "600000",
             "NEWSROOM_RPC_FINISH_MS": "120000",

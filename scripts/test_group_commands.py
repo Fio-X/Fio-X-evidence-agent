@@ -40,7 +40,7 @@ def binary() -> str:
 
 
 def run(news: str, args: list[str], home: str, on: bool = False, cwd: str | None = None) -> dict:
-    env = {"HOME": home, "PATH": "/usr/bin:/bin"}
+    env = {"HOME": home, "PATH": "/usr/bin:/bin", "NEWSROOM_AGENT_REAL": "0"}
     if on:
         env[SWITCH] = "1"
     p = subprocess.run([news, *args], env=env, capture_output=True, cwd=cwd or home, timeout=60)
@@ -72,7 +72,7 @@ def main() -> None:
         # 1. switch off: byte-identical to the recorded output, also when the switch is unset, "0", "true" or "" (exact "1" only)
         for value in (None, "0", "true", "", "yes"):
             for args in OFF_CASES:
-                env = {"HOME": home, "PATH": "/usr/bin:/bin"}
+                env = {"HOME": home, "PATH": "/usr/bin:/bin", "NEWSROOM_AGENT_REAL": "0"}
                 if value is not None:
                     env[SWITCH] = value
                 p = subprocess.run([news, *args], env=env, capture_output=True, cwd=home, timeout=60)

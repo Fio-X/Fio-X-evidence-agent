@@ -18,7 +18,7 @@ AUTO_CHECKS = "NEWSROOM_SPEED_AUTO_CHECKS"
 
 def prompt_bytes(topic, extra):
     home = make_test_tmp('speed-off-sha-')  # no user config is read
-    env = {"HOME": home, "PATH": os.environ["PATH"], **extra}
+    env = {"HOME": home, "PATH": os.environ["PATH"], "NEWSROOM_AGENT_REAL": "0", **extra}
     return subprocess.run([binary, "investigate", "--dry-run", topic], env=env, capture_output=True, check=True).stdout
 
 def prompt_sha(topic, extra):

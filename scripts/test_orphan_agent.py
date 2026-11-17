@@ -57,7 +57,7 @@ def run(news, work):
         url = relay.stdout.readline().split()[-1]
         guard.require_loopback(url, 'the relay address')
         env = {k: v for k, v in os.environ.items() if not (k.startswith('NEWSROOM_') or k.endswith(('_API_KEY', '_BASE_URL', '_TOKEN')))}
-        env.update({'NEWSROOM_AGENT': 'rust', 'NEWSROOM_AGENT_LOCAL_URL': url, 'NEWSROOM_RPC_IDLE_MS': '120000',
+        env.update({'NEWSROOM_AGENT': 'rust', 'NEWSROOM_AGENT_LOCAL_URL': url, 'NEWSROOM_AGENT_REAL': '0', 'NEWSROOM_RPC_IDLE_MS': '120000',
                     'NEWSROOM_RPC_TOTAL_MS': '120000', 'NEWSROOM_RPC_FINISH_MS': '120000', 'HOME': str(work / 'home')})
         guard.check_env(env)
         (work / 'home').mkdir()

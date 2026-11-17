@@ -110,7 +110,7 @@ pub async fn run(args: DoctorArgs) -> Result<()> {
         eprintln!("\n🚀 或运行自动安装脚本:");
         eprintln!("   ./scripts/setup.sh");
         eprintln!();
-        eprintln!("   或去掉 NEWSROOM_AGENT=pi，改用内置的 Rust agent（默认）");
+        eprintln!("   Or unset NEWSROOM_AGENT=pi to use the built-in Rust agent (the default)");
         eprintln!();
         bail!("Pi is required with NEWSROOM_AGENT=pi. Install/configure Pi, pass --pi-bin <path>, or unset NEWSROOM_AGENT to use the built-in Rust agent");
     }
