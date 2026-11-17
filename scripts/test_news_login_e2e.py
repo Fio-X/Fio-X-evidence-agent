@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""End-to-end check of `news login` against a fake model endpoint on this machine (16 checks).
+"""End-to-end check of `news login` against a fake model endpoint on this machine (17 checks).
 
 A throwaway HOME under TMPDIR, fake keys only, and a fake Anthropic Messages server bound to 127.0.0.1 that answers 200 for
 the good fake key and 401 (echoing the key it got) for any other. Every child gets a clean environment: HOME, PATH and
@@ -7,7 +7,8 @@ NEWSROOM_AGENT_REAL=1 (login reads the configuration the real route would), with
 Checks: a wrong key is refused and nothing is saved; a good key is saved with mode 600; --show masks the key and says
 whether the saved login is in use; a key in a `.env` wins; a file others can read is refused with the chmod fix; there
 is no --key option; --show with --key-stdin is a usage error; without a terminal and without --key-stdin it is refused;
---clear removes the file; and neither fake key appears in any output.
+inside an agent or tool process (NEWSROOM_ARTIFACT_DIR set) every mode is refused and the file is untouched; --clear removes
+the file; and neither fake key appears in any output.
 
 Run: python3 scripts/test_news_login_e2e.py   (NEWS_BIN=<path> to use a given binary; default target/debug/news)
 """
@@ -121,6 +122,16 @@ def main() -> int:
     rc, out = run("login")
     check("without a terminal and without --key-stdin it is refused", rc != 0 and "--key-stdin" in out)
 
+    saved = creds.read_bytes()
+    env["NEWSROOM_ARTIFACT_DIR"] = str(home / "run")
+    rc_show, out_show = run("login", "--show")
+    rc_clear, out_clear = run("login", "--clear")
+    rc_save, _ = run(*login, stdin_text=BAD + "\n")
+    del env["NEWSROOM_ARTIFACT_DIR"]
+    check("inside an agent or tool process every mode is refused and the saved login is untouched",
+          rc_show != 0 and rc_clear != 0 and rc_save != 0 and "agent or tool process" in out_show + out_clear
+          and creds.read_bytes() == saved and GOOD not in out_show)
+
     run("login", "--clear")
     check("--clear removes the file", not creds.exists())
     rc, out = run("login", "--show")
@@ -130,7 +141,7 @@ def main() -> int:
     check("neither fake key appears in any output", GOOD not in every and BAD not in every and ENV_KEY not in every)
     server.shutdown()
     print(f"news login e2e: {sum(results)}/{len(results)} passed")
-    return 0 if all(results) and len(results) == 16 else 1
+    return 0 if all(results) and len(results) == 17 else 1
 
 
 if __name__ == "__main__":

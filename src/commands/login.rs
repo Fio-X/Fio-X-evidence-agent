@@ -57,7 +57,26 @@ fn choice_named(name: &str) -> Option<&'static Choice> {
         .find(|c| c.name.eq_ignore_ascii_case(name.trim()))
 }
 
+/// Why `news login` refuses in this process, or None when it may run: inside an agent or tool child (the marker every such child
+/// carries, as `news review` checks it) a tool could otherwise start `news login` and overwrite or remove the person's saved login.
+/// Every mode refuses there, --show and --clear included, before the credentials file is read or written. Pure so tests can drive it.
+pub fn child_refusal(marker: Option<&str>) -> Option<String> {
+    marker.filter(|v| !v.is_empty()).map(|_| {
+        format!(
+            "news login is for a person; it refuses inside an agent or tool process ({} is set). The saved login was not read or changed.",
+            crate::commands::review::AGENT_CHILD_MARKER
+        )
+    })
+}
+
 pub async fn run(args: LoginArgs) -> Result<()> {
+    if let Some(text) = child_refusal(
+        std::env::var_os(crate::commands::review::AGENT_CHILD_MARKER)
+            .map(|v| v.to_string_lossy().into_owned())
+            .as_deref(),
+    ) {
+        bail!("{text}");
+    }
     let path = config::credentials_path()
         .context("neither XDG_CONFIG_HOME nor HOME is set; cannot place the credentials file")?;
     if args.show {
@@ -478,6 +497,18 @@ impl EchoOff {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_agent_or_tool_child_is_refused_before_the_file_is_touched() {
+        let text = child_refusal(Some("/r/run")).expect("refused");
+        assert!(
+            text.contains(crate::commands::review::AGENT_CHILD_MARKER)
+                && text.contains("not read or changed"),
+            "{text}"
+        );
+        assert_eq!(child_refusal(None), None);
+        assert_eq!(child_refusal(Some("")), None);
+    }
 
     #[test]
     fn every_menu_choice_saves_a_provider_the_config_reads() {
