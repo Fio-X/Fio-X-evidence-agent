@@ -1400,6 +1400,7 @@ pub const CHECK_HELPERS: &[&str] = &[
     "render::seg_text", "render::x", "shape::axis", "shape::base", "shape::cap", "shape::collapse_time",
     "shape::explain", "shape::first_to_last", "shape::has", "shape::name", "shape::page_plan", "shape::parts_index",
     "shape::rank", "shape::rows", "shape::score", "shape::template", "shape::time_index",
+    "visual::keylike_env_name", "visual::strip_keylike_env",
 ];
 
 /// The comparison set of a request row, from the request's rows alone: every series row of the same table and time but a

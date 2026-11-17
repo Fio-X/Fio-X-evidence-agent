@@ -750,7 +750,7 @@ fn passed(report: Value, html_sha256: &str) -> Result<Value, String> {
 /// wrote. Its exit code is its status (browser_qa.py), so only the report is read; none within QA_DEADLINE is an error.
 fn browser_check(runner: &Runner, html: &Path, out: &Path) -> Result<Value, String> {
     let mut command = Command::new(&runner.program);
-    crate::tool_host::strip_keylike_env(&mut command);
+    strip_keylike_env(&mut command);
     let mut child = command
         .args(&runner.args)
         .arg("--html")
@@ -794,6 +794,33 @@ fn stack_html(title: &str, pages: &[(String, f64, f64)]) -> String {
         "<!doctype html>\n<html lang=\"zh-CN\"><head><meta charset=\"utf-8\"><title>{t}</title>\n<style>body{{margin:0;background:#fff}}h1{{font:600 28px/1.35 sans-serif;margin:24px 32px 8px}}iframe{{display:block;border:0;margin:0 0 16px}}</style></head>\n<body><h1>{t}</h1>\n{frames}</body></html>\n",
         t = esc(title)
     )
+}
+
+/// This group's own copy of the key-name rule in tool_host.rs (`is_keylike`): the cross-group rule lets no group call another group's
+/// function, so each group that starts children keeps a copy; a tool_host test holds every copy equal to the original. Names only.
+pub(crate) fn keylike_env_name(name: &str) -> bool {
+    let upper = name.to_ascii_uppercase();
+    ["_API_KEY", "_BASE_URL", "_TOKEN", "_SECRET", "PASSWORD"]
+        .iter()
+        .any(|suffix| upper.ends_with(suffix))
+        || upper.split('_').any(|part| {
+            part == "KEY"
+                || ["SECRET", "TOKEN", "PASSWORD", "PASSWD", "CREDENTIAL"]
+                    .iter()
+                    .any(|word| part.contains(word))
+                || ["APIKEY", "ACCESSKEY", "PRIVATEKEY", "SECRETKEY"]
+                    .iter()
+                    .any(|compound| part.ends_with(compound))
+        })
+}
+
+/// Drops every key-like name of this process's environment from a child that otherwise inherits it (see `keylike_env_name`).
+fn strip_keylike_env(cmd: &mut std::process::Command) {
+    for (name, _) in std::env::vars_os() {
+        if name.to_str().is_none_or(keylike_env_name) {
+            cmd.env_remove(&name);
+        }
+    }
 }
 
 #[cfg(test)]

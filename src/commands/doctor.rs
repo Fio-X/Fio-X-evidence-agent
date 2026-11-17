@@ -32,7 +32,7 @@ pub async fn run(args: DoctorArgs) -> Result<()> {
         .unwrap_or_else(|| PathBuf::from("duckdb"));
 
     // Pi is only a fallback runtime now (NEWSROOM_AGENT=pi): checked, and required, only when it is the one selected.
-    let pi_runtime = !crate::agent_loop::agent_rust_enabled();
+    let pi_runtime = pi_selected(env::var("NEWSROOM_AGENT").ok().as_deref());
     let pi = if pi_runtime {
         Some(exact_check("pi", "0.85.1", &args.pi.pi_bin, &["--version"], EXPECTED_PI).await)
     } else {
@@ -213,7 +213,7 @@ fn parse_version(text: &str) -> Option<(u64, u64, u64)> {
 
 async fn check(bin: &Path, args: &[&str]) -> std::result::Result<String, String> {
     let mut command = Command::new(bin);
-    crate::tool_host::strip_keylike_env(command.as_std_mut());
+    strip_keylike_env(command.as_std_mut());
     match command.args(args).output().await {
         Ok(output) if output.status.success() => {
             let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
@@ -224,6 +224,39 @@ async fn check(bin: &Path, args: &[&str]) -> std::result::Result<String, String>
         Ok(output) => Err(format!("exit {}", output.status)),
         Err(error) => Err(error.to_string()),
     }
+}
+
+/// This group's own copy of the key-name rule in tool_host.rs (`is_keylike`): the cross-group rule lets no group call another group's
+/// function, so each group that starts children keeps a copy; a tool_host test holds every copy equal to the original. Names only.
+pub(crate) fn keylike_env_name(name: &str) -> bool {
+    let upper = name.to_ascii_uppercase();
+    ["_API_KEY", "_BASE_URL", "_TOKEN", "_SECRET", "PASSWORD"]
+        .iter()
+        .any(|suffix| upper.ends_with(suffix))
+        || upper.split('_').any(|part| {
+            part == "KEY"
+                || ["SECRET", "TOKEN", "PASSWORD", "PASSWD", "CREDENTIAL"]
+                    .iter()
+                    .any(|word| part.contains(word))
+                || ["APIKEY", "ACCESSKEY", "PRIVATEKEY", "SECRETKEY"]
+                    .iter()
+                    .any(|compound| part.ends_with(compound))
+        })
+}
+
+/// Drops every key-like name of this process's environment from a child that otherwise inherits it (see `keylike_env_name`).
+pub(crate) fn strip_keylike_env(cmd: &mut std::process::Command) {
+    for (name, _) in std::env::vars_os() {
+        if name.to_str().is_none_or(keylike_env_name) {
+            cmd.env_remove(&name);
+        }
+    }
+}
+
+/// This group's own reading of the runtime switch (agent_loop.rs `rust_selected`, which the cross-group rule keeps out of reach): only
+/// the exact value "pi" selects the old Pi runtime. An agent_loop test holds the two equal.
+pub(crate) fn pi_selected(value: Option<&str>) -> bool {
+    value == Some("pi")
 }
 
 #[cfg(test)]

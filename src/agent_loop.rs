@@ -1180,6 +1180,26 @@ mod tests {
         }
     }
 
+    /// doctor (system group) reads the switch with its own copy of the rule; it must name the same runtime for every value.
+    #[test]
+    fn doctor_reads_the_runtime_switch_the_same_way() {
+        for value in [
+            None,
+            Some("pi"),
+            Some("rust"),
+            Some(""),
+            Some("Pi"),
+            Some("pi "),
+            Some("1"),
+        ] {
+            assert_eq!(
+                crate::commands::doctor::pi_selected(value),
+                !rust_selected(value),
+                "{value:?}"
+            );
+        }
+    }
+
     #[test]
     fn only_the_exact_value_pi_selects_the_old_runtime() {
         let _guard = crate::pi::ENV_LOCK

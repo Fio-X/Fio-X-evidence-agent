@@ -630,6 +630,56 @@ impl ToolHost {
 
 #[cfg(test)]
 mod tests {
+    /// The groups that start children keep their own copy of the key-name rule (the cross-group rule keeps `is_keylike` out of their
+    /// reach); every copy must judge every name the same as the original, over hand-picked edges and this process's own names.
+    #[test]
+    fn every_group_copy_of_the_key_name_rule_matches_the_original() {
+        let copies: [(&str, fn(&str) -> bool); 3] = [
+            ("verify", crate::verify::keylike_env_name),
+            ("next_visual", crate::next_visual::keylike_env_name),
+            ("doctor", crate::commands::doctor::keylike_env_name),
+        ];
+        let mut names: Vec<String> = [
+            "ANTHROPIC_API_KEY",
+            "OPENAI_BASE_URL",
+            "GH_TOKEN",
+            "APP_SECRET",
+            "DB_PASSWORD",
+            "MYPASSWD",
+            "AWS_ACCESSKEY",
+            "X_PRIVATEKEY_FILE",
+            "SECRETKEY",
+            "KEY",
+            "NEWSROOM_KEY_NOTE",
+            "NEWSROOM_SANKEY_OTHER_NOTE",
+            "CREDENTIALS_PATH",
+            "apikey",
+            "token",
+            "MONKEY",
+            "KEYBOARD",
+            "PATH",
+            "HOME",
+            "NEWSROOM_AGENT",
+            "NEWSROOM_AGENT_REAL",
+            "",
+            "_",
+            "__KEY__",
+        ]
+        .iter()
+        .map(|name| name.to_string())
+        .collect();
+        names.extend(std::env::vars_os().filter_map(|(name, _)| name.into_string().ok()));
+        for (group, copy) in copies {
+            for name in &names {
+                assert_eq!(
+                    copy(name),
+                    super::is_keylike(name),
+                    "{group} copy differs on {name:?}"
+                );
+            }
+        }
+    }
+
     /// A child started through strip_keylike_env sees none of the parent's key-like names (the configuration's model keys and
     /// endpoints), while an ordinary name still reaches it.
     #[test]

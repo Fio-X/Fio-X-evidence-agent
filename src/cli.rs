@@ -7,7 +7,7 @@ use std::path::PathBuf;
     name = "news",
     version,
     about = "Agentic data newsroom CLI",
-    long_about = "A Rust control plane for a Pi-powered agentic data newsroom."
+    long_about = "A Rust control plane for an agentic data newsroom."
 )]
 pub struct Cli {
     #[command(subcommand)]
