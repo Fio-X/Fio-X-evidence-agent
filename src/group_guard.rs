@@ -1696,6 +1696,67 @@ pub fn remove_scratch_dir(path: &Path) {
     }
 }
 
+/// `news login`'s file: an absolute `.../fio-x/credentials`. It is the only file outside the run folder that `write_private_file` and
+/// `remove_private_file` touch, and only while the `login` command runs; anything else is refused, the switch on or off.
+fn private_file_refusal(path: &Path) -> Option<io::Error> {
+    let shape_ok = path.is_absolute()
+        && path.file_name() == Some("credentials".as_ref())
+        && path.parent().and_then(Path::file_name) == Some("fio-x".as_ref())
+        && path
+            .components()
+            .all(|c| matches!(c, Component::RootDir | Component::Prefix(_) | Component::Normal(_)));
+    let message = if !shape_ok {
+        "boundary: the only private file outside the run folder is the login credentials file (fio-x/credentials)"
+    } else if command_name() != "login" {
+        "boundary: only `news login` writes or removes the login credentials file"
+    } else {
+        return None;
+    };
+    Some(io::Error::new(io::ErrorKind::PermissionDenied, message))
+}
+
+/// Write the login credentials file readable by its owner only: its folder 700, the file 600, written as a new file in the same folder and
+/// renamed over the old one, so a reader never sees half a file and the contents never sit in a file others can read.
+pub fn write_private_file(path: &Path, contents: &[u8]) -> io::Result<()> {
+    if let Some(refusal) = private_file_refusal(path) {
+        return Err(refusal);
+    }
+    let dir = path.parent().expect("checked above");
+    fs::create_dir_all(dir)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(dir, fs::Permissions::from_mode(0o700))?;
+    }
+    let staging = dir.join(format!(".credentials.{}.tmp", std::process::id()));
+    let _ = fs::remove_file(&staging);
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let written = (|| -> io::Result<()> {
+        let mut file = options.open(&staging)?;
+        file.write_all(contents)?;
+        file.sync_all()?;
+        fs::rename(&staging, path)
+    })();
+    if written.is_err() {
+        let _ = fs::remove_file(&staging);
+    }
+    written
+}
+
+/// Remove the login credentials file (`news login --clear`); same refusal as `write_private_file`.
+pub fn remove_private_file(path: &Path) -> io::Result<()> {
+    if let Some(refusal) = private_file_refusal(path) {
+        return Err(refusal);
+    }
+    fs::remove_file(path)
+}
+
 /// The verification result file, written with the outcome `verify_and_record` computed. `record["passed"]` must equal it; a record that carries
 /// any other value (for example one a model supplied) is refused and nothing is written. Only the verify module can make a `VerifiedOutcome`,
 /// so a "passed" record exists only where the checks computed it, whoever asked (the verify command or the check at the end of investigate).

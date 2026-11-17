@@ -353,42 +353,11 @@ pub fn render_credentials(login: &SavedLogin) -> String {
     text
 }
 
-/// Write the saved login with permissions 600 (its folder 700): a new file in the same folder, then a rename over the old one, so a reader
-/// never sees half a file and the key never sits in a file others can read.
+/// Write the saved login with permissions 600 (its folder 700) through the guard's private-file writer, which writes only this file and
+/// only while `news login` runs.
 pub fn write_credentials(path: &Path, login: &SavedLogin) -> Result<()> {
-    let dir = path
-        .parent()
-        .context("the credentials path has no folder")?;
-    fs::create_dir_all(dir).with_context(|| format!("cannot create {}", dir.display()))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(dir, fs::Permissions::from_mode(0o700))
-            .with_context(|| format!("cannot set permissions on {}", dir.display()))?;
-    }
-    let staging = dir.join(format!(".credentials.{}.tmp", std::process::id()));
-    let _ = fs::remove_file(&staging);
-    let mut options = fs::OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let written = (|| -> Result<()> {
-        use std::io::Write;
-        let mut file = options
-            .open(&staging)
-            .with_context(|| format!("cannot create {}", staging.display()))?;
-        file.write_all(render_credentials(login).as_bytes())?;
-        file.sync_all()?;
-        fs::rename(&staging, path).with_context(|| format!("cannot write {}", path.display()))?;
-        Ok(())
-    })();
-    if written.is_err() {
-        let _ = fs::remove_file(&staging);
-    }
-    written
+    crate::group_guard::write_private_file(path, render_credentials(login).as_bytes())
+        .with_context(|| format!("cannot write {}", path.display()))
 }
 
 /// Allow an installed `news` binary to find the user's existing external
@@ -553,6 +522,7 @@ mod tests {
 
     #[test]
     fn a_saved_login_roundtrips_with_mode_600_and_odd_characters() {
+        let _login = crate::group_guard::command_for_test("login");
         let root = tempfile::tempdir().expect("tempdir");
         let path = root.path().join("fio-x").join("credentials");
         let mut login = fake_login();
@@ -586,8 +556,9 @@ mod tests {
     #[test]
     fn a_file_others_can_read_is_refused_with_the_fix_and_without_its_text() {
         use std::os::unix::fs::PermissionsExt;
+        let _login = crate::group_guard::command_for_test("login");
         let root = tempfile::tempdir().expect("tempdir");
-        let path = root.path().join("credentials");
+        let path = root.path().join("fio-x").join("credentials");
         write_credentials(&path, &fake_login()).unwrap();
         fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
         let error = format!("{:#}", read_credentials(&path).unwrap_err());
@@ -625,5 +596,38 @@ mod tests {
             assert!(MODEL_KEY_NAMES.contains(&names.key), "{}", names.provider);
             assert!(ALLOWED_KEYS.contains(&names.key), "{}", names.provider);
         }
+    }
+
+    #[test]
+    fn only_news_login_writes_and_only_the_credentials_file() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let path = root.path().join("fio-x").join("credentials");
+        // no command context: refused, nothing written
+        assert!(write_credentials(&path, &fake_login()).is_err());
+        assert!(!path.exists());
+        let _other = crate::group_guard::command_for_test("doctor");
+        assert!(write_credentials(&path, &fake_login()).is_err());
+        drop(_other);
+        let _login = crate::group_guard::command_for_test("login");
+        for wrong in [
+            root.path().join("fio-x").join("other"),
+            root.path().join("elsewhere").join("credentials"),
+            PathBuf::from("fio-x/credentials"),
+            root.path()
+                .join("fio-x")
+                .join("..")
+                .join("fio-x")
+                .join("credentials"),
+        ] {
+            assert!(
+                write_credentials(&wrong, &fake_login()).is_err(),
+                "{}",
+                wrong.display()
+            );
+            assert!(crate::group_guard::remove_private_file(&wrong).is_err());
+        }
+        write_credentials(&path, &fake_login()).unwrap();
+        crate::group_guard::remove_private_file(&path).unwrap();
+        assert!(!path.exists());
     }
 }

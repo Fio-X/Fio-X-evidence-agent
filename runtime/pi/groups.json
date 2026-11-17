@@ -539,6 +539,9 @@
   "src/commands/review.rs": {
    "group": "system"
   },
+  "src/commands/login.rs": {
+   "group": "system"
+  },
   "src/commands/verify.rs": {
    "group": "knowledge"
   },

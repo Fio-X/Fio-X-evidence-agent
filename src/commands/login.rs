@@ -4,7 +4,6 @@
 
 use crate::cli::LoginArgs;
 use crate::config::{self, SavedLogin};
-use crate::llm::{LLMClient, Provider};
 use anyhow::{bail, Context, Result};
 use std::io::{BufRead, IsTerminal, Write};
 use std::time::Duration;
@@ -203,7 +202,7 @@ fn show(path: &std::path::Path) -> Result<()> {
 }
 
 fn clear(path: &std::path::Path) -> Result<()> {
-    match std::fs::remove_file(path) {
+    match crate::group_guard::remove_private_file(path) {
         Ok(()) => println!("Removed {}", path.display()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             println!(
@@ -282,35 +281,25 @@ fn open_in_browser(url: &str) {
 /// One request of at most one output token. Only the HTTP status and the provider's error type are reported; the reply body is never
 /// printed, because a provider may echo the key back.
 async fn test_connection(login: &SavedLogin) -> Result<()> {
-    let provider = match login.provider.as_str() {
-        "dragoncode" => Provider::DragonCode,
-        _ => Provider::Anthropic,
-    };
     let model = login.model.clone().unwrap_or_default();
-    let mut client = LLMClient::new(provider, login.api_key.clone(), model.clone());
-    if let Some(url) = &login.base_url {
-        client = client.with_base_url(url.clone());
-    }
-    let builder = reqwest::Client::builder().timeout(Duration::from_secs(30));
-    let local = login
-        .base_url
-        .as_deref()
-        .is_some_and(crate::anthropic_model::is_loopback);
-    let http = if local {
-        builder
-            .no_proxy()
-            .build()
-            .context("cannot build the HTTP client")?
-    } else {
-        LLMClient::http_client_from(builder)?
+    let url = messages_url(login.base_url.as_deref().unwrap_or(ANTHROPIC_URL));
+    let mut builder = reqwest::Client::builder().timeout(Duration::from_secs(30));
+    // An explicit proxy from the environment is used, except for a local endpoint; nothing else is discovered.
+    builder = match proxy_from_env().filter(|_| !is_local(&url)) {
+        Some(proxy) => builder.proxy(
+            reqwest::Proxy::all(proxy)
+                .context("the proxy in HTTPS_PROXY/HTTP_PROXY/ALL_PROXY is not a valid URL")?,
+        ),
+        None => builder.no_proxy(),
     };
+    let http = builder.build().context("cannot build the HTTP client")?;
     let body = serde_json::json!({
         "model": model,
         "max_tokens": 1,
         "messages": [{"role": "user", "content": "ping"}],
     });
     let request = http
-        .post(client.anthropic_messages_url())
+        .post(&url)
         .header("x-api-key", &login.api_key)
         .header("anthropic-version", "2023-06-01");
     let response = request.json(&body).send().await.map_err(|error| {
@@ -339,10 +328,11 @@ async fn test_connection(login: &SavedLogin) -> Result<()> {
         })
         .filter(|t| {
             t.len() <= 64
+                && !t.starts_with("sk-")
+                && !login.api_key.contains(t.as_str())
                 && t.chars()
                     .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
-        })
-        .map(|t| client.safe_provider_error(t));
+        });
     let hint = match status.as_u16() {
         401 | 403 => "the key was not accepted",
         404 => "the endpoint or model was not found",
@@ -353,6 +343,40 @@ async fn test_connection(login: &SavedLogin) -> Result<()> {
         Some(t) => bail!("HTTP {} ({t}): {hint}", status.as_u16()),
         None => bail!("HTTP {}: {hint}", status.as_u16()),
     }
+}
+
+const ANTHROPIC_URL: &str = "https://api.anthropic.com";
+
+/// The Messages address for a base URL given with or without `/v1` or `/v1/messages`.
+fn messages_url(base: &str) -> String {
+    let base = base.trim().trim_end_matches('/');
+    if base.ends_with("/v1/messages") {
+        base.to_string()
+    } else if base.ends_with("/v1") {
+        format!("{base}/messages")
+    } else {
+        format!("{base}/v1/messages")
+    }
+}
+
+fn proxy_from_env() -> Option<String> {
+    [
+        "HTTPS_PROXY",
+        "https_proxy",
+        "HTTP_PROXY",
+        "http_proxy",
+        "ALL_PROXY",
+        "all_proxy",
+    ]
+    .into_iter()
+    .find_map(|name| std::env::var(name).ok().filter(|v| !v.trim().is_empty()))
+}
+
+fn is_local(url: &str) -> bool {
+    reqwest::Url::parse(url)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_ascii_lowercase))
+        .is_some_and(|host| matches!(host.as_str(), "localhost" | "127.0.0.1" | "[::1]" | "::1"))
 }
 
 /// Lines from standard input, with prompts on standard error.
@@ -461,6 +485,22 @@ mod tests {
         // the built-in agent speaks only Anthropic Messages, so no other route is offered or saved
         assert!(choice_named("openai").is_none());
         assert!(config::provider_names("openai").is_none());
+    }
+
+    #[test]
+    fn the_messages_address_and_the_local_test_follow_the_base_url() {
+        for base in [
+            "https://h",
+            "https://h/",
+            "https://h/v1",
+            "https://h/v1/messages",
+        ] {
+            assert_eq!(messages_url(base), "https://h/v1/messages", "{base}");
+        }
+        assert!(
+            is_local("http://127.0.0.1:9/v1/messages") && is_local("http://localhost/v1/messages")
+        );
+        assert!(!is_local("https://api.anthropic.com/v1/messages"));
     }
 
     const KEY: &str = "sk-fake-login-0123456789abcdef";
