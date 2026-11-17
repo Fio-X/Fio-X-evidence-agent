@@ -126,11 +126,12 @@ def main() -> int:
     env["NEWSROOM_ARTIFACT_DIR"] = str(home / "run")
     rc_show, out_show = run("login", "--show")
     rc_clear, out_clear = run("login", "--clear")
-    rc_save, _ = run(*login, stdin_text=BAD + "\n")
+    rc_save, out_save = run(*login, stdin_text=GOOD + "\n")
     del env["NEWSROOM_ARTIFACT_DIR"]
     check("inside an agent or tool process every mode is refused and the saved login is untouched",
-          rc_show != 0 and rc_clear != 0 and rc_save != 0 and "agent or tool process" in out_show + out_clear
-          and creds.read_bytes() == saved and GOOD not in out_show)
+          rc_show != 0 and rc_clear != 0 and rc_save != 0
+          and all("agent or tool process" in out and "own terminal" in out for out in (out_show, out_clear, out_save))
+          and creds.read_bytes() == saved and GOOD not in out_show + out_save)
 
     run("login", "--clear")
     check("--clear removes the file", not creds.exists())

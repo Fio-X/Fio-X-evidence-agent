@@ -63,7 +63,7 @@ fn choice_named(name: &str) -> Option<&'static Choice> {
 pub fn child_refusal(marker: Option<&str>) -> Option<String> {
     marker.filter(|v| !v.is_empty()).map(|_| {
         format!(
-            "news login is for a person; it refuses inside an agent or tool process ({} is set). The saved login was not read or changed.",
+            "news login cannot run inside an agent or tool process ({} is set); run it in your own terminal. The saved login was not read or changed.",
             crate::commands::review::AGENT_CHILD_MARKER
         )
     })
@@ -439,11 +439,13 @@ impl Input {
         Ok(!answer.to_ascii_lowercase().starts_with('n'))
     }
 
-    /// Read one line with the terminal's echo off; echo comes back even when reading fails.
+    /// Read one line with the terminal's echo off; echo comes back even when reading fails. Echo goes off before the
+    /// prompt is printed and anything typed ahead is discarded (the order Python's getpass uses), so no keystroke is
+    /// ever shown.
     fn ask_hidden(&mut self, prompt: &str) -> Result<String> {
+        let _echo = self.interactive.then(EchoOff::new).flatten();
         eprint!("{prompt}");
         std::io::stderr().flush().ok();
-        let _echo = self.interactive.then(EchoOff::new).flatten();
         let line = self.line();
         drop(_echo);
         eprintln!();
@@ -451,7 +453,7 @@ impl Input {
     }
 }
 
-/// Turns terminal echo off until dropped.
+/// Turns terminal echo off until dropped, discarding input typed before it took effect.
 #[cfg(unix)]
 struct EchoOff(libc::termios);
 
@@ -466,7 +468,7 @@ impl EchoOff {
             }
             let saved = term;
             term.c_lflag &= !libc::ECHO;
-            if libc::tcsetattr(0, libc::TCSANOW, &term) != 0 {
+            if libc::tcsetattr(0, libc::TCSAFLUSH, &term) != 0 {
                 return None;
             }
             Some(Self(saved))
@@ -503,7 +505,8 @@ mod tests {
         let text = child_refusal(Some("/r/run")).expect("refused");
         assert!(
             text.contains(crate::commands::review::AGENT_CHILD_MARKER)
-                && text.contains("not read or changed"),
+                && text.contains("not read or changed")
+                && text.contains("run it in your own terminal"),
             "{text}"
         );
         assert_eq!(child_refusal(None), None);
