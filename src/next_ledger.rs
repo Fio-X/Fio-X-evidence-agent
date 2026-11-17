@@ -547,7 +547,11 @@ pub(crate) fn word_table() -> &'static Value {
 }
 
 /// The word-table key of the scope phrase a comparison over a set narrower than the full set says (scope_said); the leaf
-/// reads the same key (wbkit.FINDING_WORDS["scope"]).
+/// reads the same key (wbkit.FINDING_WORDS["scope"]). The phrase says "among the ones drawn", and it is true
+/// whenever the check passes: the set comparison() compares over holds every drawn member (the family) and may hold more
+/// (a code the rows compute but the cut left off the picture), and the leaf names as first and second only drawn members,
+/// which the check requires to be the set's first and second; first and second of a set are first and second of any part
+/// of it that holds them. It does not claim "every member with data" (a member the cut left out may have data).
 const SCOPE_WORD: &str = "scope.within";
 
 /// The words of a relation, as the word table gives them, their leading and trailing punctuation trimmed.
