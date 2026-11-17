@@ -193,10 +193,15 @@ fn show(path: &std::path::Path) -> Result<()> {
         println!("Endpoint: {url}");
     }
     println!("API key:  {}", config::mask_key(&login.api_key));
-    if !config::saved_login_in_use() {
+    let key_in_env = config::MODEL_KEY_NAMES
+        .iter()
+        .any(|name| std::env::var_os(name).is_some_and(|v| !v.is_empty()));
+    if config::saved_login_in_use() {
+        println!("In use:   yes");
+    } else if key_in_env {
         println!("In use:   no (a key from your shell or .env takes precedence)");
     } else {
-        println!("In use:   yes");
+        println!("In use:   no (this run reads no configuration: a stand-in run, see NEWSROOM_AGENT_REAL)");
     }
     Ok(())
 }
@@ -267,7 +272,10 @@ fn open_in_browser(url: &str) {
     } else {
         "xdg-open"
     };
-    let status = std::process::Command::new(opener)
+    let mut cmd = std::process::Command::new(opener);
+    // the browser opener never inherits a key-like variable (the key may sit in this process's environment from .env or the saved login)
+    crate::commands::doctor::strip_keylike_env(&mut cmd);
+    let status = cmd
         .arg(url)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
