@@ -28,3 +28,10 @@ node_modules/
 .cache/
 .npm/
 /lieflat/
+
+# Run and test leftovers that must not be committed.
+*.bundle.mjs
+run/
+test-diff-leftovers-*.json
+check.txt
+runtime/*/vendor/
