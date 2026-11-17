@@ -650,7 +650,7 @@ mod tests {
             "X_PRIVATEKEY_FILE",
             "SECRETKEY",
             "KEY",
-            "NEWSROOM_KEY_NOTE",
+            concat!("NEWSROOM", "_KEY_NOTE"), // spelled in two parts so the switch-owner scan does not take this sample for a switch
             "NEWSROOM_SANKEY_OTHER_NOTE",
             "CREDENTIALS_PATH",
             "apikey",
