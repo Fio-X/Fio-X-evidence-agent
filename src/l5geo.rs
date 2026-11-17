@@ -2795,13 +2795,16 @@ impl Catalog {
         }
     }
 
-    /// With two or more asked quantities, a place among the first TOP for each one: a quantity none of the first TOP holds
-    /// gets its best ranked table, or, when no ranked table holds it, the best table its family's own English words reach
-    /// under the same filters (scored by that search, not this one). It takes the place of the last table of the first TOP
-    /// that is not the only one there holding another asked quantity; the order is otherwise kept. With fewer than two
-    /// asked quantities, or none to lift, `ranked` comes back unchanged.
+    /// A place among the first TOP for each asked quantity, one or more (dev round 17 g11 r2v15 and the smoke run's
+    /// unemployment and GDP questions: a question asking one quantity whose search words rank only tables that name it,
+    /// such as GDP shares and interest rates, was offered none holding it): a quantity none of the first TOP holds gets its
+    /// best ranked table (one registered under the family's ids before one whose title only names it), or, when no ranked
+    /// table holds it, the best table its family's own English words reach under the same filters (scored by that search,
+    /// not this one). It takes the place of the last table of the first TOP that is
+    /// not the only one there holding another asked quantity; the order is otherwise kept. With no asked quantity, or none
+    /// to lift, `ranked` comes back unchanged.
     fn lift_asked(&self, ranked: Vec<Candidate>, asked: &[Asked], scope: Scope, far: &[String]) -> Vec<Candidate> {
-        if asked.len() < 2 {
+        if asked.is_empty() {
             return ranked;
         }
         let mut lifted: Vec<Candidate> = Vec::new();
@@ -2810,7 +2813,9 @@ impl Catalog {
             if placed {
                 continue;
             }
-            let found = ranked.iter().find(|c| a.holds_candidate(c)).cloned().or_else(|| {
+            // a table registered under the family's own ids first (nama_10_gdp), then one whose title names it (namq_10_gdp,
+            // the quarterly one, for an annual question on the smoke run's GDP question)
+            let found = ranked.iter().find(|c| a.holds(&c.id)).or_else(|| ranked.iter().find(|c| a.holds_candidate(c))).cloned().or_else(|| {
                 let family = measure_families().iter().find(|f| f.id == a.id)?;
                 self.rank_reaching(&[family.en.clone()], scope, far)
                     .into_iter()
@@ -4775,6 +4780,10 @@ mod tests {
         assert_eq!(ids(&lifted[..TOP]), ["ren_a", "ren_b", "ren_c", "ren_d", "gdp_pc_a"]);
         assert_eq!(ids(&lifted[TOP..]), ["ren_e", "ren_f", "gdp_pc_b"]);
         assert_eq!(ids(&c.lift_asked(ranked.clone(), &[ren.clone()], Scope::Beyond, &[])), ids(&ranked));
+        // one asked quantity none of the first five holds: its best ranked table takes the fifth place
+        let alone = c.lift_asked(ranked.clone(), &[gdp.clone()], Scope::Beyond, &[]);
+        assert_eq!(ids(&alone[..TOP]), ["ren_a", "ren_b", "ren_c", "ren_d", "gdp_pc_a"]);
+        assert_eq!(ids(&c.lift_asked(ranked.clone(), &[], Scope::Beyond, &[])), ids(&ranked), "none asked");
         let both = c.lift_asked(ranked.clone(), &[ren.clone(), asked_of("x", &["ren_b"])], Scope::Beyond, &[]);
         assert_eq!(ids(&both), ids(&ranked));
         // The only table of an asked quantity in the first five is not the one displaced.
@@ -5478,6 +5487,35 @@ mod tests {
         let codes: Vec<String> = five.map(String::from).to_vec();
         assert_eq!(c.group_basis(q, (None, 2024), (&codes, &codes)), None);
         assert_eq!(countries(&c, "2024年金砖国家青年失业率怎么排？").len(), 9);
+    }
+
+    /// Measurement, not a check (ignored): the tables offered for each recorded question on the real catalogue. TOP5_CASES
+    /// rows of qid, question and the recorded search texts (a JSON array), tab-separated; prints the qid, the asked
+    /// quantities each with the offered tables that hold it, and the offered ids in order (no question text), the months
+    /// and years read from the question as the flow reads them.
+    /// L5GEO_DIR=<registry>/l5geo/catalog TOP5_CASES=<cases.tsv> cargo test l5geo::tests::replay_top5 -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn replay_top5() {
+        let dir = std::path::PathBuf::from(std::env::var("L5GEO_DIR").expect("L5GEO_DIR"));
+        let c = Catalog::from_raw(&Raw::read(&dir).unwrap());
+        let cases = std::fs::read_to_string(std::env::var("TOP5_CASES").expect("TOP5_CASES")).unwrap();
+        for line in cases.lines() {
+            let mut f = line.splitn(3, '\t');
+            let (Some(q), Some(question), Some(texts)) = (f.next(), f.next(), f.next()) else { continue };
+            let texts: Vec<String> = serde_json::from_str(texts).unwrap_or_default();
+            // the flow's own arguments (next_flow's search step), this year as on the recorded runs (2026)
+            let r = c.top5(
+                question,
+                &texts,
+                crate::next_params::question_months(question),
+                crate::next_params::question_latest_year(question, 2026),
+                crate::next_params::question_first_year(question, 2026),
+            );
+            let asked: Vec<String> = r.asked.iter().map(|a| format!("{}={}", a.id, a.offered.join("+"))).collect();
+            let ids: Vec<&str> = r.candidates.iter().map(|x| x.id.as_str()).collect();
+            println!("T5\t{q}\t{}\t{}", asked.join(","), ids.join(" "));
+        }
     }
 
     /// The places each question reads as on the real catalogue: Q_CASES rows of qid and question (tab-separated); prints
