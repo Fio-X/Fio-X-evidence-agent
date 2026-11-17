@@ -1846,7 +1846,6 @@
     "lines": [
      {"each": "many", "segs": [{"w": "图中为合计最大的 "}, {"src": "fact:comp_bars.n"}, {"w": " 个国家，自上而下由大到小"}]},
      {"each": "dropped", "segs": [{"place_name": "{item}"}, {"w": "：各组之和与合计相差 "}, {"src": "fact:gap.{item}"}, {"w": "，未列入图中，由合计次大的国家递补"}]},
-     {"each": "rounding", "segs": [{"w": "因四舍五入，各项份额相加可能不等于百分之百"}]},
      {"each": "zero_part", "segs": [{"name": "siec_group", "code": "{part}"}, {"w": "为零的国家："}, {"list_places": "{items}", "sep": "、"}]}
     ],
     "names": [

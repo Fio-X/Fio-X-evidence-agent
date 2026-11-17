@@ -2095,7 +2095,9 @@ fn parts_expand(layer: &str, d: &J, view: &J, (rows, sels): (&[J], &[J]), got: &
             lines.push(segments(l.g("segs"), view, &[])?);
         }
     }
-    // the shares as printed do not add up to the whole (owner 11-16 10:3x item 3)
+    // the shares as printed do not add up to the whole (owner 11-16 10:3x item 3). The registry holds no such line for now:
+    // every text on the panel is a number's and has its src, and words alone have none (the leaf stops at draw, run_walk 11-17
+    // q3); the line comes back with the printed shares' sum as its number
     if rounding_off {
         for l in line_d("rounding") {
             lines.push(segments(l.g("segs"), view, &[])?);

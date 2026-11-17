@@ -3071,8 +3071,12 @@ fn said_basis(fill: &mut Value, shape: &Shape, basis: &crate::l5geo::GroupBasis,
     let counted = fill["knobs"]["spec"]["facts"].get(DRAWN).is_some();
     let why = left_out(basis);
     let dropped: Vec<Value> = basis.dropped.iter().map(|c| json!({"code": c, "why": why})).collect();
-    // the member list's year when it is not the data year (a question naming no year counts today's members)
-    let member_year = (shape.year.get(..4) != Some(basis.member_year.to_string().as_str())).then(|| basis.member_year.to_string());
+    // the member list's year when it is not the data year (a question naming no year counts today's members), or when the
+    // data year is a month or a half year (2026-09, 2026-S2), whose year part the ledger lets print only beside its month or
+    // half: the list's year is then its own entry, four digits
+    let sub_year = shape.year.len() > 4;
+    let member_year =
+        (sub_year || shape.year.get(..4) != Some(basis.member_year.to_string().as_str())).then(|| basis.member_year.to_string());
     fill["knobs"]["spec"]["basis"] = json!({"words": basis.line, "year": shape.year, "count": counted.then_some(DRAWN), "table": shape.main,
         "members": basis.members, "named": basis.named, "missing": basis.missing, "missing_join": basis.missing_join, "dropped": dropped,
         "unfetched": basis.unfetched});
@@ -9723,8 +9727,9 @@ mod tests {
         };
         let lines = said(&fill);
         assert!(lines.iter().all(|l| !l.contains("合计最大")), "{lines:?}");
+        // no rounding line for now (words alone on the panel have no src, so the leaf would stop at draw): see parts_expand
         let rounding = |l: &Vec<String>| l.iter().any(|w| w.contains("四舍五入"));
-        assert_eq!(rounding(&lines), printed(&parts) != 100, "DE prints {} in all: {lines:?}", printed(&parts));
+        assert!(!rounding(&lines), "DE prints {} in all: {lines:?}", printed(&parts));
         // the parts moved so the printed shares cannot add to 100: each of the three groups a third of the whole, in its first
         // cell (three thirds print 33 each); the line is said
         let leaf = &fill["knobs"]["spec"]["hero"]["leaves"]["stacked100"];
@@ -9744,7 +9749,7 @@ mod tests {
             }
         }
         let thirds = q3_fill(&split_moved, &moved).unwrap();
-        assert!(rounding(&said(&thirds)), "three thirds print 99: {:?}", said(&thirds));
+        assert!(!rounding(&said(&thirds)), "three thirds print 99, and no words-only line goes on the panel: {:?}", said(&thirds));
         // twenty places' bars keep their order line
         let many = q3_fill(&main, &sums).unwrap();
         assert!(said(&many).iter().any(|l| l.contains("合计最大")), "{:?}", said(&many));
