@@ -76,17 +76,14 @@ else
     echo "访问 https://rustup.rs/ 安装 Rust"
 fi
 
-# 配置提示
+# API key: saved by `news login` in a file only you can read, not exported into every shell (a key in ~/.zshrc
+# would reach every process started from it)
 echo ""
-echo "⚙️  环境配置"
+echo "⚙️  API key"
 echo ""
-echo "需要配置 API Keys (根据使用的模型):"
-echo ""
-echo "  export ANTHROPIC_API_KEY=your_key_here"
-echo "  export OPENAI_API_KEY=your_key_here"
-echo "  export DEEPSEEK_API_KEY=your_key_here"
-echo ""
-echo "将上述命令添加到 ~/.zshrc 或 ~/.bashrc 中以持久化配置"
+echo "Run: news login"
+echo "  It asks for the provider and the key (echo off), tests it, and saves it to ~/.config/fio-x/credentials (mode 600)."
+echo "  A key already set in a .env file (the current folder's .env, NEWSROOM_ENV_FILE or ~/.config/fio-x/.env) still takes precedence."
 echo ""
 
 # 运行 doctor 检查
