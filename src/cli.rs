@@ -29,7 +29,7 @@ pub enum Commands {
     /// stderr line is `VERIFIED` or `NOT VERIFIED: <reason>`.
     Investigate(InvestigateArgs),
 
-    /// Continue an existing investigation with full Pi session context.
+    /// Continue an existing investigation with its saved conversation.
     ///
     /// Exit codes: 0 = completed and VERIFIED; 1 = completed but NOT VERIFIED;
     /// 2 = error before any verdict (usage, I/O or provider failure). The final
@@ -49,23 +49,23 @@ pub enum Commands {
 
 #[derive(Debug, Clone, Args)]
 pub struct PiArgs {
-    /// Pi executable to spawn.
+    /// Pi executable to spawn (only for the old Pi runtime, NEWSROOM_AGENT=pi).
     #[arg(long, env = "NEWSROOM_PI_BIN", default_value = "pi")]
     pub pi_bin: PathBuf,
 
-    /// Pi model provider. If omitted, Pi's configured default is used.
+    /// Model provider. If omitted, the configured provider is used.
     #[arg(long, env = "NEWSROOM_PI_PROVIDER")]
     pub provider: Option<String>,
 
-    /// Pi model ID or model pattern.
+    /// Model ID or model pattern.
     #[arg(long, env = "NEWSROOM_PI_MODEL")]
     pub model: Option<String>,
 
-    /// Pi reasoning level, for models that support it.
+    /// Reasoning level, for models that support it.
     #[arg(long, env = "NEWSROOM_PI_THINKING")]
     pub thinking: Option<String>,
 
-    /// Trust project-local Pi resources for this run. Newsroom's bundled extension is loaded explicitly regardless.
+    /// Trust project-local Pi resources for this run (old Pi runtime only). Newsroom's bundled extension is loaded explicitly regardless.
     #[arg(long, default_value_t = false)]
     pub approve_project: bool,
 
@@ -123,7 +123,7 @@ pub struct InvestigateArgs {
     #[arg(long = "data", value_name = "FILE")]
     pub data: Vec<PathBuf>,
 
-    /// Print the generated newsroom prompt without invoking Pi.
+    /// Print the generated newsroom prompt without starting the agent.
     #[arg(long, default_value_t = false)]
     pub dry_run: bool,
 }
@@ -136,7 +136,7 @@ pub struct ContinueArgs {
     /// Existing investigation directory containing story.json and session/.
     pub artifact: PathBuf,
 
-    /// Follow-up instruction. Pi resumes the same persisted conversation.
+    /// Follow-up instruction. The agent resumes the same saved conversation.
     #[arg(required = true, num_args = 1..)]
     pub message: Vec<String>,
 }

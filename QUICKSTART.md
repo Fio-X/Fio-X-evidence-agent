@@ -5,8 +5,8 @@
 ### 1. Clone
 
 ```bash
-git clone <repo-url>
-cd PJ004
+git clone https://github.com/Fio-X/Fio-X-evidence-agent.git
+cd Fio-X-evidence-agent
 ```
 
 ### 2. Install the tool dependencies
@@ -17,7 +17,12 @@ cd PJ004
 
 The script:
 - checks the Node.js, Python and Rust versions (Node.js runs the tool host)
-- installs DuckDB 1.5.5 (optional, for data queries)
+- offers to install DuckDB (data queries)
+
+`news doctor` (step 5) needs two exact versions:
+- Rust 1.98.1: `rust-toolchain.toml` pins it, so rustup installs and uses it inside the repository folder
+  (`rustup default 1.98.1` makes it the default elsewhere);
+- DuckDB 1.5.5: `python3 -m pip install --user duckdb-cli==1.5.5` (Homebrew may install another version).
 
 No global npm package is needed: the agent loop is built into `news`.
 
@@ -66,7 +71,8 @@ and the saved login is then ignored.
 news doctor
 ```
 
-Every required line should say `PASS`, ending with `live ready yes`.
+Run it in the repository folder. Every required line should say `PASS`, ending with `live ready yes`; a `FAIL` on
+`rustc` or `duckdb` means another version than the two above.
 
 ---
 
@@ -106,7 +112,7 @@ news continue .newsroom/artifacts/<run-id> "Add a chart by region"
 ```
 .newsroom/artifacts/<run-id>/
 ├── story.json          # run metadata
-├── prompt.txt          # your question
+├── prompt.md           # your question
 ├── answer.md           # latest answer
 ├── conversation.md     # full conversation
 ├── data/               # downloaded data

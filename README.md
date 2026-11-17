@@ -12,10 +12,10 @@ A Rust control plane for an agentic data newsroom: ask a news question, get a ve
 
 ```bash
 # 1. Clone
-git clone <repo-url>
-cd PJ004
+git clone https://github.com/Fio-X/Fio-X-evidence-agent.git
+cd Fio-X-evidence-agent
 
-# 2. Install the tool dependencies (Node.js, Python packages, optional DuckDB)
+# 2. Check the tool dependencies (Node.js, Python, Rust) and install DuckDB 1.5.5
 ./scripts/setup.sh
 
 # 3. Install the news CLI
@@ -24,7 +24,7 @@ cargo install --path . --locked
 # 4. Save your model provider and API key (asked interactively; the key is not echoed)
 news login
 
-# 5. Check the setup
+# 5. Check the setup (run it in the repository folder, so rustc is the pinned 1.98.1)
 news doctor
 
 # 6. Start; results go to .newsroom/artifacts/<run-id> under the current folder
@@ -69,8 +69,10 @@ process's environment, and it is never written to logs, events or error messages
 
 If the setup script fails, install the pieces by hand.
 
-Requirements:
-- Rust 1.98.1+
+Requirements (`news doctor` checks the first two by exact version and reports `live ready no` otherwise):
+- Rust 1.98.1 exactly: `rust-toolchain.toml` pins it, so rustup installs and uses it inside the repository folder
+  (run `rustup default 1.98.1` to make it the default elsewhere)
+- DuckDB 1.5.5 exactly: `python3 -m pip install --user duckdb-cli==1.5.5` (a package manager may install another version)
 - Node.js 22.19.0+ (runs the tool host)
 - Python 3.13+
 
@@ -103,8 +105,8 @@ pip install -r runtimes/viz-graph-extract/requirements.txt
 NEWSROOM_ENV_FILE="$HOME/.config/fio-x/.env" \
   ./target/release/news investigate "Global climate data in 2025"
 
-# Continue an investigation
-./target/release/news continue <investigation-id>
+# Continue an investigation: its folder and a follow-up instruction
+./target/release/news continue .newsroom/artifacts/<run-id> "Add a chart by region"
 
 # Verify the output
 ./target/release/news verify <investigation-directory>
@@ -113,43 +115,44 @@ NEWSROOM_ENV_FILE="$HOME/.config/fio-x/.env" \
 ./target/release/news inspect <investigation-directory>
 ```
 
-## 架构
+## Architecture
 
 ```
-PJ004/
-├── src/              # Rust 核心控制平面
-│   ├── main.rs       # CLI 入口
-│   ├── artifact.rs   # 调查产物管理
-│   ├── verify.rs     # 证据完整性验证
-│   ├── audit.rs      # 工具调用审计
-│   ├── pi.rs         # Pi RPC 接口
-│   └── hash.rs       # SHA256 哈希工具
-├── scripts/          # Python/Shell 工具脚本
-├── runtimes/         # 可视化运行时
-│   ├── viz-browser/  # 浏览器可视化
-│   └── viz-graph-extract/ # 图数据提取
-├── config/           # 配置文件
+Fio-X-evidence-agent/
+├── src/              # Rust control plane
+│   ├── main.rs       # CLI entry
+│   ├── agent_loop.rs # the built-in agent loop (the default runtime)
+│   ├── agent_serve.rs# the agent child process and its model route
+│   ├── artifact.rs   # investigation bundles
+│   ├── verify.rs     # evidence integrity checks
+│   ├── audit.rs      # tool-call audit
+│   ├── pi.rs         # runs the agent child; the old Pi runtime is a fallback (NEWSROOM_AGENT=pi)
+│   └── hash.rs       # SHA-256 helpers
+├── scripts/          # Python and shell tools
+├── runtimes/         # visualization runtimes
+│   ├── viz-browser/  # browser rendering
+│   └── viz-graph-extract/ # graph data extraction
+├── config/           # configuration
 │   ├── tool-registry.json
 │   ├── backend-policy.json
 │   └── release-profiles.json
-├── fixtures/         # 测试固件
-├── docs/             # 文档
-└── schemas/          # JSON Schema 定义
+├── fixtures/         # test fixtures
+└── schemas/          # JSON Schema definitions
 ```
 
-## 命令参考
+## Command reference
 
 ### `news doctor`
-环境健康检查，验证所有依赖项是否正确安装。
+Checks the local dependencies and prints `live ready yes` when every required one passes.
 
 ```bash
-# 基本检查
+# Basic check
 ./target/release/news doctor
 
-# 严格模式（要求可选依赖）
+# Strict: exit with an error unless live ready
 ./target/release/news doctor --strict
 
-# JSON 输出
+# JSON output
 ./target/release/news doctor --json
 ```
 
@@ -170,108 +173,125 @@ Send one stateless prompt to the agent.
 ```
 
 ### `news investigate`
-启动持久化的数据调查会话。
+Start a persistent data investigation.
 
 ```bash
-./target/release/news investigate "分析2025年全球气候趋势"
+./target/release/news investigate "Global climate trends in 2025"
 
-# 指定模型
+# Pick the model
 ./target/release/news investigate --provider anthropic --model claude-opus-5 "..."
 
-# 使用完整工具配置
+# Use the full tool profile
 ./target/release/news investigate --tool-profile full "..."
 
-# investigate 同样把报告和生成的 HTML/SVG 放在当前目录的
-# .newsroom/artifacts/<run-id>/ 下；可用 --out 覆盖。
+# The report and the generated HTML/SVG go to .newsroom/artifacts/<run-id>/ under the
+# current folder; --out picks another folder.
 ./target/release/news investigate --out ./results "..."
 ```
 
 ### `news continue`
-继续现有调查会话。
+Continue an existing investigation: give its folder and a follow-up instruction.
 
 ```bash
-./target/release/news continue <investigation-id>
+./target/release/news continue .newsroom/artifacts/<run-id> "Add a chart by region"
 ```
 
 ### `news inspect`
-生成调查的工具调用审计报告。
+Print the tool-call audit of an investigation.
 
 ```bash
 ./target/release/news inspect <investigation-directory>
 
-# JSON 输出
+# JSON output
 ./target/release/news inspect --json <investigation-directory>
 ```
 
 ### `news verify`
-验证调查产物的证据完整性、哈希校验、引用正确性。
+Check an investigation's evidence integrity, hashes and references.
 
 ```bash
 ./target/release/news verify <investigation-directory>
 
-# JSON 输出
+# JSON output
 ./target/release/news verify --json <investigation-directory>
 ```
 
-## 工具配置
+## Tool profiles
 
-通过 `--tool-profile` 选择代理可用的工具集：
+`--tool-profile` picks the tools the agent can use:
 
-- **investigate** (默认): 基础调查工具（搜索、数据、可视化）
-- **visual**: 完整视觉合成工具（图表、解释图、插图）
-- **visual-story**: 复杂信息图工具（StoryGraph、GIS/流/网络 publication 与 portable HTML fallback）
-- **publication**: 发布管线工具（排版、QA、竞赛预检）
-- **competition**: 完整竞赛工具集
-- **full**: 所有可用工具
+- **investigate** (default): basic investigation tools (search, data, charts)
+- **visual**: full visual composition (charts, explainers, illustrations)
+- **visual-story**: complex infographics (StoryGraph, GIS, flow and network publication, portable HTML fallback)
+- **publication**: the publication pipeline (layout, QA, pre-publication checks)
+- **competition**: the full competition tool set
+- **full**: every available tool
 
-### 可视化请求的数据与交付契约
+### Data and delivery for visual requests
 
-当 `news investigate` 的目标包含“图表 / 可视化 / 信息图 / SVG / HTML”等视觉交付词时，默认的 `investigate` profile 会自动提升为 `visual` profile。代理必须先检查本地文件；缺少数据时只能通过 `news_search`、`fetch_url`、`download_data` 获取可复现的 CSV/JSON/Parquet/TSV，再用 `duckdb_query` 计算图表行，不能用模型记忆或 `VALUES` 伪造数据。
+When the goal of `news investigate` asks for a chart, visualization, infographic, SVG or HTML, the default `investigate`
+profile is raised to `visual`. The agent must look at local files first; missing data may only be fetched as
+reproducible CSV, JSON, Parquet or TSV through `news_search`, `fetch_url` and `download_data`, and chart rows are then
+computed with `duckdb_query`, never taken from model memory or made up with `VALUES`.
 
-单图默认输出最小可交付物（SVG 与自包含 HTML 伴随文件）；明确要求完整报告时才生成多模块 HTML。`visual-story` profile 的复杂信息图路径使用其实际暴露的 visual backend、地图/网络分析与发布工具，并通过 `newsroom_publication_plan` → `newsroom_publication_render` → `newsroom_publication_qa` 完成发布链；需要模板保底时可使用 `newsroom_lieflat_catalog` → `newsroom_lieflat_render`。若显式选择 `publication`、`competition` 或 `full` profile，则还可使用这些 profile 暴露的 `newsroom_portable_publication`；该工具不属于 `visual-story` profile。发布路径继续校验 verified claim、source 与 computation 绑定；没有可验证数据时不得生成可发布的事实性图表。
+A single chart produces the smallest deliverable by default (an SVG and a self-contained HTML companion); a multi-module
+HTML report is made only when a full report is asked for. The `visual-story` profile's complex-infographic path uses the
+visual backends, map and network analysis and publication tools it actually exposes, and finishes through
+`newsroom_publication_plan` → `newsroom_publication_render` → `newsroom_publication_qa`; when a template fallback is
+needed it can use `newsroom_lieflat_catalog` → `newsroom_lieflat_render`. With the `publication`, `competition` or
+`full` profile, `newsroom_portable_publication` is also available; it is not part of `visual-story`. Publication keeps
+checking verified claims and their source and computation bindings; without verifiable data no publishable factual
+chart is made.
 
-这里的 verified claim 是“发布事实性图表”的门槛，不是加载可视化 skill 或探索图形语法的门槛。`visual-story` 通过 canonical `visual-story` → `visual` profile inheritance 继承 `visual` 工具面，因此其 effective surface 包含 `newsroom_viz_plan` 等视觉规划工具；在探索阶段可使用 draft verification 语义检查布局和交互。`visual-story` 额外使用自身的设计、合成和 publication 工具链，并在最终交付前继续受 evidence、verification、completion、publication 与 browser-QA gate 约束。`newsroom_portable_publication` 只由 `publication`、`competition` 和 `full` profile 暴露，不属于 `visual-story` 的 effective tool surface。
+A verified claim is the bar for publishing a factual chart, not for loading a visualization skill or exploring a chart
+grammar. `visual-story` inherits the `visual` tool surface (canonical `visual-story` → `visual` profile inheritance), so
+its effective surface includes visual planning tools such as `newsroom_viz_plan`, and draft verification can be used to
+check layout and interaction while exploring. `visual-story` adds its own design, composition and publication tools,
+and stays under the evidence, verification, completion, publication and browser-QA gates before final delivery.
+`newsroom_portable_publication` is exposed only by `publication`, `competition` and `full`, not by `visual-story`.
 
-OpenAI Chat Completions 与 Anthropic Messages 的工具协议由客户端分别编码：OpenAI 使用 `type=function` / `function.parameters`，工具调用参数必须解码为 JSON 对象；数组字段（例如 `data`、`modules`）若被模型编码成字符串会在分发边界被拒绝并返回字段路径。
+The built-in agent talks to the model over Anthropic Messages. Tool-call arguments must decode to a JSON object; an
+array field (for example `data` or `modules`) that the model encodes as a string is refused at the dispatch boundary
+with the field's path.
 
-## 开发
+## Development
 
-### 运行测试
+### Tests
 
 ```bash
-# Rust 单元测试
+# Rust unit tests
 cargo test
 
-# 代码检查
+# Lints
 cargo clippy
 
-# 集成测试
+# Integration
 ./scripts/smoke.sh
 
-# 完整测试套件
+# Full suite
 ./scripts/integration_qualification.sh
 ```
 
-### 代码格式化
+### Formatting
 
 ```bash
 # Rust
 cargo fmt
 
-# Python (需要安装 black)
+# Python (needs black)
 black scripts/
 ```
 
-### 构建发布版本
+### Release build
 
 ```bash
 cargo build --release --locked
 ```
 
-## 许可证
+## License
 
 MIT License - Copyright (c) 2026
 
-## 贡献
+## Contributing
 
-本项目当前处于活跃开发中。如有问题或建议，请提交 issue。
+The project is under active development. Please open an issue with questions or suggestions.
