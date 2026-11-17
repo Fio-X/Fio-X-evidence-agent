@@ -1696,17 +1696,18 @@ pub fn remove_scratch_dir(path: &Path) {
     }
 }
 
-/// `news login`'s file: an absolute `.../fio-x/credentials`. It is the only file outside the run folder that `write_private_file` and
-/// `remove_private_file` touch, and only while the `login` command runs; anything else is refused, the switch on or off.
+/// `news login`'s file: exactly `config::credentials_path()` (`$XDG_CONFIG_HOME/fio-x/credentials`, else
+/// `$HOME/.config/fio-x/credentials`), absolute and without `.` or `..` parts. It is the only file outside the run folder that
+/// `write_private_file` and `remove_private_file` touch, and only while the `login` command runs; anything else, another
+/// `.../fio-x/credentials` included, is refused, the switch on or off.
 fn private_file_refusal(path: &Path) -> Option<io::Error> {
-    let shape_ok = path.is_absolute()
-        && path.file_name() == Some("credentials".as_ref())
-        && path.parent().and_then(Path::file_name) == Some("fio-x".as_ref())
+    let path_ok = path.is_absolute()
         && path
             .components()
-            .all(|c| matches!(c, Component::RootDir | Component::Prefix(_) | Component::Normal(_)));
-    let message = if !shape_ok {
-        "boundary: the only private file outside the run folder is the login credentials file (fio-x/credentials)"
+            .all(|c| matches!(c, Component::RootDir | Component::Prefix(_) | Component::Normal(_)))
+        && crate::config::credentials_path().as_deref() == Some(path);
+    let message = if !path_ok {
+        "boundary: the only private file outside the run folder is the login credentials file (config credentials path)"
     } else if command_name() != "login" {
         "boundary: only `news login` writes or removes the login credentials file"
     } else {

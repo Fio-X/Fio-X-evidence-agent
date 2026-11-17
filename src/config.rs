@@ -432,6 +432,43 @@ fn is_external_symlink(path: &Path) -> bool {
 mod tests {
     use super::*;
 
+    /// `XDG_CONFIG_HOME` pointed at a fresh folder for one test, so `credentials_path()` (the one file `news login` may write)
+    /// is `<folder>/fio-x/credentials`; holds the process-wide environment lock and puts the variable back on drop.
+    struct CredentialsHome {
+        root: tempfile::TempDir,
+        before: Option<std::ffi::OsString>,
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl CredentialsHome {
+        fn new() -> Self {
+            let lock = crate::pi::ENV_LOCK
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            let root = tempfile::tempdir().expect("tempdir");
+            let before = env::var_os("XDG_CONFIG_HOME");
+            env::set_var("XDG_CONFIG_HOME", root.path());
+            Self {
+                root,
+                before,
+                _lock: lock,
+            }
+        }
+
+        fn path(&self) -> PathBuf {
+            self.root.path().join("fio-x").join("credentials")
+        }
+    }
+
+    impl Drop for CredentialsHome {
+        fn drop(&mut self) {
+            match self.before.take() {
+                Some(value) => env::set_var("XDG_CONFIG_HOME", value),
+                None => env::remove_var("XDG_CONFIG_HOME"),
+            }
+        }
+    }
+
     #[test]
     fn parses_export_quotes_and_comments() {
         assert_eq!(
@@ -522,9 +559,9 @@ mod tests {
 
     #[test]
     fn a_saved_login_roundtrips_with_mode_600_and_odd_characters() {
+        let home = CredentialsHome::new();
         let _login = crate::group_guard::command_for_test("login");
-        let root = tempfile::tempdir().expect("tempdir");
-        let path = root.path().join("fio-x").join("credentials");
+        let path = home.path();
         let mut login = fake_login();
         login.api_key = "sk-\"quoted\\back#hash-0123456789".into();
         write_credentials(&path, &login).unwrap();
@@ -556,9 +593,9 @@ mod tests {
     #[test]
     fn a_file_others_can_read_is_refused_with_the_fix_and_without_its_text() {
         use std::os::unix::fs::PermissionsExt;
+        let home = CredentialsHome::new();
         let _login = crate::group_guard::command_for_test("login");
-        let root = tempfile::tempdir().expect("tempdir");
-        let path = root.path().join("fio-x").join("credentials");
+        let path = home.path();
         write_credentials(&path, &fake_login()).unwrap();
         fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
         let error = format!("{:#}", read_credentials(&path).unwrap_err());
@@ -600,8 +637,12 @@ mod tests {
 
     #[test]
     fn only_news_login_writes_and_only_the_credentials_file() {
-        let root = tempfile::tempdir().expect("tempdir");
-        let path = root.path().join("fio-x").join("credentials");
+        let home = CredentialsHome::new();
+        let root = &home.root;
+        let elsewhere = tempfile::tempdir().expect("tempdir");
+        // the one allowed file is credentials_path() itself, compared whole
+        let path = home.path();
+        assert_eq!(credentials_path().as_deref(), Some(path.as_path()));
         // no command context: refused, nothing written
         assert!(write_credentials(&path, &fake_login()).is_err());
         assert!(!path.exists());
@@ -618,6 +659,8 @@ mod tests {
                 .join("..")
                 .join("fio-x")
                 .join("credentials"),
+            // the right shape in another folder is not the credentials path
+            elsewhere.path().join("fio-x").join("credentials"),
         ] {
             assert!(
                 write_credentials(&wrong, &fake_login()).is_err(),
@@ -626,6 +669,7 @@ mod tests {
             );
             assert!(crate::group_guard::remove_private_file(&wrong).is_err());
         }
+        assert!(!elsewhere.path().join("fio-x").exists());
         write_credentials(&path, &fake_login()).unwrap();
         crate::group_guard::remove_private_file(&path).unwrap();
         assert!(!path.exists());
