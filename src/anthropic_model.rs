@@ -27,6 +27,18 @@ pub enum Thinking {
 }
 
 impl Thinking {
+    /// The level a `--thinking` word names (the words of the Pi CLI): `off`, `minimal`, `low`, `medium`, `high`; `xhigh` is the
+    /// highest level here, `high`. Any other word, or none, is `Off`, so an unset switch sends exactly what it sent before.
+    pub(crate) fn from_name(word: Option<&str>) -> Self {
+        match word.map(str::trim) {
+            Some("minimal") => Self::Minimal,
+            Some("low") => Self::Low,
+            Some("medium") => Self::Medium,
+            Some("high" | "xhigh") => Self::High,
+            _ => Self::Off,
+        }
+    }
+
     /// The level's word for providers that take a named effort; `None` for `Off`.
     pub(crate) fn name(self) -> Option<&'static str> {
         match self {
@@ -1457,6 +1469,21 @@ mod tests {
         }
         let body = model_for(&fake, |c| c.thinking = Thinking::Off).request_body(&history);
         assert!(body.get("thinking").is_none());
+        // the --thinking word: medium is a budget of 8192 with max_tokens raised to budget + 4096; unset or unknown sends none
+        let body = model_for(&fake, |c| c.thinking = Thinking::from_name(Some("medium")))
+            .request_body(&history);
+        assert_eq!(
+            body["thinking"],
+            json!({"type": "enabled", "budget_tokens": 8192})
+        );
+        assert_eq!(body["max_tokens"], json!(8192 + 4096));
+        for word in [None, Some("off"), Some(""), Some("Medium"), Some("max")] {
+            let body =
+                model_for(&fake, |c| c.thinking = Thinking::from_name(word)).request_body(&history);
+            assert!(body.get("thinking").is_none(), "{word:?}");
+            assert_eq!(body["max_tokens"], json!(8192), "{word:?}");
+        }
+        assert_eq!(Thinking::from_name(Some("xhigh")), Thinking::High);
         let body = model_for(&fake, |c| {
             c.thinking = Thinking::Low;
             c.thinking_field = ThinkingField::Adaptive;

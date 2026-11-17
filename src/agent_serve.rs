@@ -253,7 +253,7 @@ fn check_local_url(url: &str) -> Result<()> {
     Ok(())
 }
 
-/// The part of the Pi command line this child understands; every other Pi flag is ignored.
+/// The part of the Pi command line this child understands (`--thinking` included); every other Pi flag is ignored.
 #[derive(Debug, Default, PartialEq)]
 pub struct ServeArgs {
     pub session_dir: Option<PathBuf>,
@@ -261,6 +261,8 @@ pub struct ServeArgs {
     pub model: Option<String>,
     pub extension: Option<PathBuf>,
     pub tools: Vec<String>,
+    /// `--thinking <level>` (from `--thinking` or NEWSROOM_PI_THINKING in the parent); unset, the request carries no thinking field.
+    pub thinking: Option<String>,
 }
 
 pub fn parse_args(args: &[String]) -> ServeArgs {
@@ -280,6 +282,10 @@ pub fn parse_args(args: &[String]) -> ServeArgs {
             }
             ("-e", Some(v)) => {
                 out.extension = Some(PathBuf::from(v));
+                i += 1;
+            }
+            ("--thinking", Some(v)) => {
+                out.thinking = Some(v.clone());
                 i += 1;
             }
             ("--tools", Some(v)) => {
@@ -337,6 +343,8 @@ pub async fn serve(args: Vec<String>) -> Result<()> {
     let model_name = parsed.model.as_deref().unwrap_or(DEFAULT_MODEL).to_string();
     let mut config = AnthropicConfig::new(&base_url, STANDIN_KEY, &model_name);
     config.system = crate::agent_prompt::system_prompt(host.tools(), &parsed.tools, &run_dir);
+    // set only when the parent was given a level; the real client built after the handoff copies it (clone_template)
+    config.thinking = crate::anthropic_model::Thinking::from_name(parsed.thinking.as_deref());
     config.name_unfinished_tool = crate::pi::speed_switches_from_env().design_pack;
     config.tools = parsed
         .tools
@@ -663,9 +671,23 @@ mod tests {
                 model: Some("m1".into()),
                 extension: Some("/r/runtime/newsroom.ts".into()),
                 tools: strings(&["a", "b", "c"]),
+                thinking: Some("off".into()),
             }
         );
         assert_eq!(parse_args(&[]), ServeArgs::default());
+        // the level reaches the child as an argument; none given, none read
+        let medium = parse_args(&strings(&["--thinking", "medium", "--model", "m1"]));
+        assert_eq!(medium.thinking.as_deref(), Some("medium"));
+        assert_eq!(
+            crate::anthropic_model::Thinking::from_name(medium.thinking.as_deref()),
+            crate::anthropic_model::Thinking::Medium
+        );
+        assert_eq!(
+            crate::anthropic_model::Thinking::from_name(
+                parse_args(&strings(&["--model", "m1"])).thinking.as_deref()
+            ),
+            crate::anthropic_model::Thinking::Off
+        );
     }
 
     const KEY: &str = "e7-handed-key-0000-not-real";
