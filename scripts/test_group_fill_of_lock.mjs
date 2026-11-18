@@ -24,17 +24,19 @@ const list = (d) => { const f = join(REPO, d); return existsSync(f) ? readdirSyn
 // The record-key lines (11-03 audit): the request's names, the composition record and its bars key.
 const RECORD_KEYS = new Map([
   ['p["names"] = json!(leaf_labels(&[], &picks.ranked, catalogue).map_err(no)?);', ["names"]],
-  ["let Filled { drawn, rows, facts, mut fmts, data, mut hero, notes, points, named: name_rows, unit_drawn, flow_pairs, composition: cut, .. } = out;", ["composition"]],
+  ["composition: cut,", ["composition"]],
   ['let spec = json!({"title": title, "dek": dek, "tables": tables, "facts": facts, "fmts": fmts, "hero": hero});', ["hero"]],
   ['let mut knobs = json!({"spec": spec, "labels": labels});', ["labels"]],
   ["if let (Some(comp), Some(cut)) = (&shape.composition, cut) {", ["composition"]],
   ['fill["composition"] = json!({"template": cut["template"], "dim": comp.dim, "total": comp.total,', ["composition"]],
   ['"groups": comp.groups, "year": shape.year, "place": shape.place, "candidates": shape.countries, "bars": cut["bars"],', ["bars"]],
 ]);
-// The flow ratchet's 9 lines in fill_of (11-03 audit): one node (its own definition), one copy line, seven kinds lines.
+// The flow ratchet's 10 lines in fill_of (11-03 audit; rustfmt split two statements across lines): one node (its own definition), two copy
+// lines (one statement), seven kinds lines.
 const RATCHET_HITS = [
   ["nodes", [], "fn fill_of("],
-  ["copy", [], 'let line = std::iter::once(unit_line.unwrap_or_else(|| format!("单位：{short}"))).chain(notes).collect::<Vec<_>>().join("；");'],
+  ["copy", [], 'let line = std::iter::once(unit_line.unwrap_or_else(|| format!("单位：{short}")))'],
+  ["copy", [], '.join("；");'],
   ...[...RECORD_KEYS].map(([text, names]) => ["kinds", names, text]),
 ].map(([c, n, t]) => `${c}\t${[...n].sort().join(",")}\t${t}`).sort();
 
