@@ -13,7 +13,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { withoutApprovedIllustration, withoutApprovedLieflat, loadPinPatches } from "./lib_pin_patch.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const BASE = "aa76a4c"; // the commit before this switch (it already holds NEWSROOM_FLOW_MAPS_BACK, which 46c3624 lacks)
+const BASE = "2c2cb733e3f2"; // the commit before this switch (it already holds NEWSROOM_FLOW_MAPS_BACK, which e766e752e676 lacks)
 const scratch = mkdtempSync(join(tmpdir(), "flow-back-"));
 process.on("exit", () => rmSync(scratch, { recursive: true, force: true }));
 const stub = (dir, name, source) => {

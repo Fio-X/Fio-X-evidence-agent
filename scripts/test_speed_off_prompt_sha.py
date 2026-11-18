@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """With the five default-off NEWSROOM_SPEED_* switches unset (or set to anything but exactly "1") and NEWSROOM_SPEED_AUTO_CHECKS=0,
-the dry-run investigation prompt must be byte-identical to the 1531ab5 baseline recorded in the fixture.
+the dry-run investigation prompt must be byte-identical to the 76299988d31a baseline recorded in the fixture.
 NEWSROOM_SPEED_AUTO_CHECKS is on unless exactly "0", so its default adds one paragraph: that case is checked on its own below
 (default minus the paragraph equals the "0" output; the paragraph's sha256 is pinned by a second fixture key)."""
 import hashlib, json, os, subprocess, sys, tempfile
@@ -29,7 +29,7 @@ variants = [("five switches unset, AUTO_CHECKS=0", {})]
 for name in SWITCHES:
     for value in ("0", "true", "1 ", ""):
         if name == "NEWSROOM_SPEED_PARALLEL_HINTS" and value == "true":
-            continue  # already accepted as "on" at the 1531ab5 baseline (pi.rs env_switch), not part of this change
+            continue  # already accepted as "on" at the 76299988d31a baseline (pi.rs env_switch), not part of this change
         variants.append((f"{name}={value!r}", {name: value}))
 for label, extra in variants:
     for topic, want in FIXTURE["topics"].items():
@@ -54,4 +54,4 @@ for topic in FIXTURE["topics"]:
             failures.append(f"{what}: the inserted paragraph differs from the pinned sha256")
 if failures:
     print("FAIL\n" + "\n".join(failures)); sys.exit(1)
-print(f"PASS speed-off dry-run prompt equals the 1531ab5 baseline with AUTO_CHECKS=0 ({len(variants)} switch variants x {len(FIXTURE['topics'])} topics); AUTO_CHECKS default adds exactly the pinned paragraph ({len(DEFAULT_VALUES)} values)")
+print(f"PASS speed-off dry-run prompt equals the 76299988d31a baseline with AUTO_CHECKS=0 ({len(variants)} switch variants x {len(FIXTURE['topics'])} topics); AUTO_CHECKS default adds exactly the pinned paragraph ({len(DEFAULT_VALUES)} values)")

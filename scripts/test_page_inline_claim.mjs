@@ -10,7 +10,7 @@
 //     name the chart prints, with the raw value kept in the binding.
 //  2. Source note and alt helpers.
 //  3. Switch off: tool surface, descriptions and schemas equal the page line's
-//     a4d4cb0 (from git; skipped when history is unavailable); record_claim's
+//     9a9de373d7df (from git; skipped when history is unavailable); record_claim's
 //     output and record are unchanged with the switch off and on.
 //  4. Inline flows on five data shapes (three English, two zh whose names the
 //     runtime localizes): one verified claim with its template and bindings,
@@ -310,7 +310,7 @@ const RECORD_CLAIM_REFUSED_ROWS = callRows([
 ]);
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const BASELINE = "a4d4cb0";
+const BASELINE = "9a9de373d7df";
 const scratch = mkdtempSync(join(tmpdir(), "page-inline-claim-"));
 process.on("exit", () => rmSync(scratch, { recursive: true, force: true }));
 // The run's own environment decides nothing: every switch is set explicitly below.
@@ -616,8 +616,8 @@ const recorded = (dir) => [...(existsSync(join(dir, "claims.jsonl")) ? ["claims.
 // ---- 3. Switch off: the page line's tool surface is unchanged ----------------
 // The approved differences from the page line (the page top, the fast-fail vocabulary, the three chart forms, zh names, measure_semantics, the
 // round-3 chart fields) are the entries of scripts/fixtures/pin_patches/page_inline_claim.json, each with the commit that made it. Each is asserted
-// exactly (a4d4cb0 holds the old value, the head the new one), then the list is reversed on a copy of the head and the whole definition (label,
-// description, snippet, guidelines, schema) must equal a4d4cb0's byte for byte (scripts/lib_pin_patch.mjs). A tool without entries must be byte-equal.
+// exactly (9a9de373d7df holds the old value, the head the new one), then the list is reversed on a copy of the head and the whole definition (label,
+// description, snippet, guidelines, schema) must equal 9a9de373d7df's byte for byte (scripts/lib_pin_patch.mjs). A tool without entries must be byte-equal.
 // test_viz_plan_schema.mjs asserts the full measure_semantics schema and the form wiring against schemas/newsroom-viz-spec.schema.json.
 const pins = loadPinPatches("page_inline_claim", { baseline: BASELINE });
 const baselineDir = baselineSource();
@@ -659,7 +659,7 @@ if (baseline) {
   for (const profile of ["full", "investigate", "competition", "visual", "visual-story"]) {
     for (const phase of [undefined, "verify,design"]) {
       const env = { ...ON_ENV, NEWSROOM_TOOL_PROFILE: profile, NEWSROOM_PHASE: phase };
-      // The head's own switch-off surface is the reference: the list pins it to a4d4cb0, and the switch is then compared with it as it is.
+      // The head's own switch-off surface is the reference: the list pins it to 9a9de373d7df, and the switch is then compared with it as it is.
       const [before, after] = [register(mod, { ...env, NEWSROOM_SPEED_INLINE_CLAIM: undefined }), register(mod, env)];
       pins.check(withoutApprovedIllustration(withoutApprovedLieflat(register(baseline, { ...env, NEWSROOM_SPEED_INLINE_CLAIM: undefined }), profile), { ...process.env, ...env }), before, `${profile}/${phase}: switch off, against ${BASELINE}`);
       assert.deepEqual([...after.keys()], [...before.keys()], `${profile}/${phase}: same tools in the same order`);

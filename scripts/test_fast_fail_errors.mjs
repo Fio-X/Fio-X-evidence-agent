@@ -17,7 +17,7 @@
 //      --novelty-digest <dir holding editorial.mjs>).
 //   4. quantity_kind (infographic plan) carries one clause of at most 160 bytes
 //      mapping the values a model reaches for onto the enum; the enum is unchanged.
-//   5. Each tool's explanatory_dimension enum is pinned exactly, with the set it had before 83d5ad1.
+//   5. Each tool's explanatory_dimension enum is pinned exactly, with the set it had before a5325c76c19a.
 import "./group_env_pin.mjs";
 import { makeTestTmp } from "./tmp_helper.mjs";
 import { withoutRunTraces } from "./lib_run_traces.mjs";
@@ -534,7 +534,7 @@ try {
   assert.deepEqual([...story.STORY_DIMENSIONS], STORY, "STORY_DIMENSIONS is the story graph schema's enum");
   const PUBLICATION = [...story.PUBLICATION_DIMENSIONS];
   assert.equal(PUBLICATION.length, 16);
-  assert.deepEqual(PUBLICATION, ["trend", "rank", "spatial", "mechanism", "comparison", "distribution", "uncertainty", "human_scale", "method", "context", "outcome", "flow", "network", "relationship", "hierarchy", "model"], "the publication tools list the values in the order their schema had on abd9d8b, so their definitions do not change");
+  assert.deepEqual(PUBLICATION, ["trend", "rank", "spatial", "mechanism", "comparison", "distribution", "uncertainty", "human_scale", "method", "context", "outcome", "flow", "network", "relationship", "hierarchy", "model"], "the publication tools list the values in the order their schema had on a07cdf998122, so their definitions do not change");
   assert.ok(STORY.every((d) => PUBLICATION.includes(d)));
   assert.deepEqual(PUBLICATION.filter((d) => !STORY.includes(d)), ["flow", "network", "hierarchy", "model"]);
   const sameSet = (a, b) => assert.deepEqual([...a].sort(), [...b].sort());
@@ -645,9 +645,9 @@ try {
   for (const text of texts) assert.match(text, /allowed/, `error text without the allowed values: ${text}`);
   check("no 'unsupported explanatory_dimension' error text in runtime/ is without the allowed values");
 
-  // Semantic novelty: the scoring function is untouched. Digest of 600 full artifacts taken on abd9d8b.
+  // Semantic novelty: the scoring function is untouched. Digest of 600 full artifacts taken on a07cdf998122.
   const NOVELTY_DIGEST_PIN = { count: 600, digest: "bf234211bffbf56dfea063c8e996f62f314dc8838c7055d297f2918b7773b8b5" };
-  assert.deepEqual(noveltyMatrixDigest(editorial.scoreSemanticNovelty), NOVELTY_DIGEST_PIN, "scoring over the ten original dimensions is byte-identical to abd9d8b");
+  assert.deepEqual(noveltyMatrixDigest(editorial.scoreSemanticNovelty), NOVELTY_DIGEST_PIN, "scoring over the ten original dimensions is byte-identical to a07cdf998122");
   assert.deepEqual(NOVELTY_ORIGINAL_DIMENSIONS, STORY.slice(0, 10));
   // The two newly accepted values are compared exactly like the others: equality only, weight 0.05.
   for (const value of STORY) {
@@ -659,7 +659,7 @@ try {
     assert.equal(overlap(value, value), 0.05, `${value} vs itself`);
     assert.equal(overlap(value, other), 0, `${value} vs ${other}`);
   }
-  check("semantic novelty scoring is unchanged for the ten original values (600-artifact digest equals abd9d8b) and equality-only for outcome and relationship");
+  check("semantic novelty scoring is unchanged for the ten original values (600-artifact digest equals a07cdf998122) and equality-only for outcome and relationship");
 }
 
 // ---------------------------------------------------------------- 4. quantity_kind guidance
@@ -667,7 +667,7 @@ try {
   const tools = await freshTools({});
   const encoding = tools.get("newsroom_infographic_plan").parameters.properties.modules.items.properties.quantitative_encoding;
   const kind = encoding.properties.quantity_kind;
-  // Wording only: the enum is what it was on abd9d8b, so the values a model reaches for are still refused by the schema.
+  // Wording only: the enum is what it was on a07cdf998122, so the values a model reaches for are still refused by the schema.
   assert.deepEqual(kind.enum, ["observed_flow", "estimated_flow", "stock", "stock_change", "count", "rate", "share", "index", "other"]);
   for (const reached of ["level", "change", "rate_of_change", "measure"]) assert.ok(!kind.enum.includes(reached), `${reached} is still not a value`);
   assert.ok(Buffer.byteLength(kind.description) <= 160, `the clause is at most 160 bytes (${Buffer.byteLength(kind.description)})`);
@@ -704,7 +704,7 @@ try {
   const T10 = ["trend", "rank", "spatial", "mechanism", "comparison", "distribution", "uncertainty", "human_scale", "method", "context"];
   const T12 = [...T10, "outcome", "relationship"];
   const T16 = [...T10, "outcome", "flow", "network", "relationship", "hierarchy", "model"];
-  // before: the literal list of each tool on abd9d8b (read from that commit's newsroom.ts); added: what 83d5ad1 meant to add.
+  // before: the literal list of each tool on a07cdf998122 (read from that commit's newsroom.ts); added: what a5325c76c19a meant to add.
   const PINS = {
     newsroom_story_graph: { before: T12, added: [], after: T12 },
     newsroom_semantic_novelty: { before: T10, added: ["outcome", "relationship"], after: T12 },
@@ -728,7 +728,7 @@ try {
   assert.deepEqual(PINS.newsroom_publication_plan.after, [...story.PUBLICATION_DIMENSIONS]);
   console.log("explanatory_dimension before/after:");
   for (const [name, pin] of Object.entries(PINS)) console.log(`  ${name}: ${pin.before.length} -> ${pin.after.length}${pin.added.length ? ` (+${pin.added.join(", ")})` : ""}`);
-  check("each tool's explanatory_dimension enum is pinned exactly; every value refused before 83d5ad1 is still refused except semantic_novelty +outcome,+relationship and infographic_plan +relationship");
+  check("each tool's explanatory_dimension enum is pinned exactly; every value refused before a5325c76c19a is still refused except semantic_novelty +outcome,+relationship and infographic_plan +relationship");
 }
 
 for (const name of results) console.log(`${name} -- PASS`);

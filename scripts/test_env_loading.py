@@ -12,7 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 BINARY = Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / "target/release/news").resolve()
 # The scripted mock records a claim and the files a verified run needs, so `investigate` ends VERIFIED (exit 0, the
-# rule since 51685e9). perf_mock_pi.py's normal mode records no claim and ends NOT VERIFIED (exit 1).
+# rule since cb1a22fec1e0). perf_mock_pi.py's normal mode records no claim and ends NOT VERIFIED (exit 1).
 MOCK = ROOT / "scripts/mock_pi.py"
 
 

@@ -116,7 +116,7 @@ def b_run(source, message, plans, switch, browser_qa=True, with_chain=True, betw
     """First question (visual-story, all seven tools called), then A's files and the hand-written publication records, then one follow-up."""
     with tempfile.TemporaryDirectory(dir=tmp_root) as out, tempfile.TemporaryDirectory(dir=tmp_root) as state:
         state = Path(state)
-        # A visual-story first question can be sent back by the completion retry (14b51d1c), up to twice: two plan slots are kept for that,
+        # A visual-story first question can be sent back by the completion retry (41263e4a50e3), up to twice: two plan slots are kept for that,
         # the prompt counter is moved past them before the follow-up starts, and only the follow-up's prompts are judged.
         env = {'MOCK_PLANS': json.dumps([CHAIN2] + [[] for _ in range(RESERVE)] + plans)}
         code, text = run_news(['investigate', '--pi-bin', str(mock_path), '--out', out, *VS, 'fixed question'], env, state)

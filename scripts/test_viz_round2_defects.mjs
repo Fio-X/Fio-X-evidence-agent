@@ -18,7 +18,7 @@ import { getBasemap } from "../runtime/pi/basemap_registry.mjs";
 import { CHOROPLETH_BASEMAP_ID } from "../runtime/pi/choropleth.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const BASE_COMMIT = "b52a5d0";
+const BASE_COMMIT = "1a5075d2933a";
 const base = {
   schema_version: "0.9.0", takeaway: "t", title: "Round two", subtitle: "synthetic", alt: "A synthetic chart used to check round-two layout and colour defects.",
   source_note: "synthetic fixture", claim_id: "claim-round2", sql: "SELECT 1", annotations: [], highlight_values: [], direct_labels: true, language: "zh",

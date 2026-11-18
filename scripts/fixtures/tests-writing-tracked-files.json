@@ -91,7 +91,7 @@
   "scripts/test_tool_defs_unchanged.mjs": {
    "count": 1,
    "sites": [
-    "writeFileSync to fixtures/speed-off/tool-defs-8a75560.json: only under --write, which rewrites fixtures/speed-off/tool-defs-8a75560.json. A golden refresh run by hand on purpose, never in a normal or parallel run; the file it writes is the point of the flag, so it cannot go to a scratch copy."
+    "writeFileSync to fixtures/speed-off/tool-defs-df2ff9671079.json: only under --write, which rewrites fixtures/speed-off/tool-defs-df2ff9671079.json. A golden refresh run by hand on purpose, never in a normal or parallel run; the file it writes is the point of the flag, so it cannot go to a scratch copy."
    ]
   },
   "scripts/test_viz.mjs": {

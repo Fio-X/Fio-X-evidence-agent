@@ -1,6 +1,6 @@
 // Fixture inputs for the schema-refusal wording tests (K814): inline schemas with raw arguments, and the 99-line visual-concepts refusal
-// rebuilt from the registered tool's own schema. The base verdicts in fixtures/schema-refusal/verdicts-ab2f9bf6.json were produced from the
-// tool_host_schema.mjs of ab2f9bf6 with these same inputs (scripts/test_schema_refusal_expected.mjs replays them).
+// rebuilt from the registered tool's own schema. The base verdicts in fixtures/schema-refusal/verdicts-adf7d7261835.json were produced from the
+// tool_host_schema.mjs of adf7d7261835 with these same inputs (scripts/test_schema_refusal_expected.mjs replays them).
 import { mkdirSync, readFileSync, writeFileSync, cpSync, mkdtempSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import { join } from "node:path";

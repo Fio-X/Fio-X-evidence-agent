@@ -261,7 +261,7 @@ await checkAsync("on: a publication module with no chart of its own claim fills 
 // ---- switch off: equal to the base module ----
 // BASE_SHA: the commit that added the next templates and this test. Its own switch-off change (patches may not touch the program-owned
 // kind and asset plan ref) is part of the base; every later commit must leave the switch-off output as it was there.
-const BASE_SHA = "743b6f14990e2be1df4b76e310595e0652ff94c7";
+const BASE_SHA = "290bce9ffb49";
 const baseFromGit = () => {
   const shown = spawnSync("git", ["-C", fileURLToPath(new URL("..", import.meta.url)), "show", `${BASE_SHA}:runtime/pi/design_pack.mjs`], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
   if (shown.status !== 0 || !shown.stdout) return undefined;

@@ -233,7 +233,7 @@ console.log("PASS newsroom_viz_plan registers the full measure_semantics schema 
 // ---- 6. symbol_map's focus_place: absent only when NEWSROOM_SYMBOL_MAP is exactly "0" (every other value, unset included, is on); its definition and the switch's whole cost in tool-definition bytes are pinned ----
 // Relative check, no pinned hash: per profile, the switch-off definitions equal the switch-on definitions with exactly the gated additions removed
 // (the focus_place property and the symbol_map entry of the chart_type enum), so an unrelated tool change cannot turn this red.
-// (One-time evidence, not asserted: at fd9b0a7f the switch-off hashes were equal to the later base's; see the K1046 report.)
+// (One-time evidence, not asserted: at 34417170c078 the switch-off hashes were equal to the later base's; see the K1046 report.)
 {
   const clean = (field) => JSON.parse(JSON.stringify(field, (k, x) => (k === "__optional" ? undefined : x)));
   const defs = (map) => JSON.stringify([...map.values()].map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })));

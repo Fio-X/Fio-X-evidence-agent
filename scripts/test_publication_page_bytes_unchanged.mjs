@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // K807: the published page script is byte-for-byte what the base build produces. The QA-only blocked-reason change (browser_qa.py + the QA tool text)
 // must not touch runtime/pi/publication.mjs or runtime/web/publication.mjs, so a page rendered from the same fixture spec by this tree and by a
-// checkout of the base (K807_BASE_REF, default ab2f9bf6) is identical, in both copies of the renderer. No browser, no provider.
+// checkout of the base (K807_BASE_REF, default adf7d7261835) is identical, in both copies of the renderer. No browser, no provider.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const BASE = process.env.K807_BASE_REF || "ab2f9bf635015308ff4ce8368927b72e6430654a";
+const BASE = process.env.K807_BASE_REF || "adf7d7261835";
 const fixtureLine = readFileSync(join(ROOT, "scripts/test_d3_fail_closed_v19.mjs"), "utf8").split("\n").find((l) => l.startsWith("const spec={"));
 assert.ok(fixtureLine, "fixture spec line found");
 const makeSpec = () => new Function(`${fixtureLine}\nreturn spec;`)();

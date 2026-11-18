@@ -124,7 +124,7 @@ for (const [name, sidecars, mods] of [
 // Mobile is untouched.
 {
   // Later deliberate changes the rhythm does not own (the footer) are carried into it: scripts/lib_parent_infographic.mjs.
-  const parent = await importParentInfographic('a4d4cb0', '_parent_infographic.mjs');
+  const parent = await importParentInfographic('9a9de373d7df', '_parent_infographic.mjs');
   if (parent) {
     const spec = { ...page([chart, text('t1', ONE), stat('s1')]) };
     const a = composeInfographicBundle(spec, assets, { mobilePages: true });
@@ -178,7 +178,7 @@ function checkTiers(name, out) {
 // The mobile page does not change with desktop spacing.
 {
   // the same carried-in later changes as above (scripts/lib_parent_infographic.mjs)
-  const parent = await importParentInfographic('a4d4cb0', '_parent_rhythm.mjs');
+  const parent = await importParentInfographic('9a9de373d7df', '_parent_rhythm.mjs');
   if (parent) {
     for (const modules of [[header('h1'), chart, stat('s1'), text('t1', ONE), header('h2'), text('t2', LONG)], [chart, stat('s1'), stat('s2', { value: '8' }), text('t1', TWO)]]) {
       const spec = page(modules);

@@ -68,7 +68,7 @@ with tempfile.TemporaryDirectory(prefix="news-interactive-") as temp:
         cursor = read_until(fd, output, PROMPT)
         os.write(fd, b":help\n")
         cursor = read_until(fd, output, PROMPT, cursor)
-        # Neither request may read as a visual one (src/prompt.rs is_visual_request): since 45ab05d (2026-09-22) a visual
+        # Neither request may read as a visual one (src/prompt.rs is_visual_request): since 5301ef09781c (2026-09-22) a visual
         # request must finish through the infographic and publication gates, which the mock cannot do, so the loop
         # under test would never return to the prompt.
         os.write(fd, f"整理这份测试数据 {data_file}\n".encode())

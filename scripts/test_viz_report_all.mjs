@@ -1,5 +1,5 @@
 // NEWSROOM_SPEED_VIZ_REPORT_ALL=1: newsroom_viz_plan lists every independent problem in one refusal.
-// Differential: the same case table runs against newsroom.ts at the baseline commit (83de204, the code before the switch), against the head with
+// Differential: the same case table runs against newsroom.ts at the baseline commit (f243092ba0ba, the code before the switch), against the head with
 // the switch off, and against the head with it on. Verdict (accepted / refused) must agree in all three; off must equal the baseline's message
 // exactly; on must start with the baseline's message (the first problem keeps its text) and may only add independent problems. A refused call
 // must not run SQL or write anything (artifact root listing unchanged), and a refusal never records the inline claim.
@@ -16,7 +16,7 @@ import { withoutApprovedIllustration, withoutApprovedLieflat, loadPinPatches } f
 import { REPORT as CALL_REPORT, reportRows, callRows, expectRows, expectRowsDelta } from "./call_report_expect.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const BASELINE_REF = process.env.VIZ_REPORT_ALL_BASE_REF || "83de204";
+const BASELINE_REF = process.env.VIZ_REPORT_ALL_BASE_REF || "f243092ba0ba";
 const TYPEBOX = `
 const OPT = "__optional";
 const mk = (base) => (opts = {}) => ({ ...base, ...(opts && typeof opts === "object" && !Array.isArray(opts) ? opts : {}) });

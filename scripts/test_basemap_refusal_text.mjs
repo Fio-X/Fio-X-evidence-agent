@@ -1,5 +1,5 @@
 // Basemap provenance refusal wording (#263): only the words of five refusals changed. The same specs go through validateVizSpec of main
-// (7ea386d9, `git archive`) and of the working tree: refused-or-allowed and the list of refusals must be the same, each new line equal to the old
+// (d9d3b821bb17, `git archive`) and of the working tree: refused-or-allowed and the list of refusals must be the same, each new line equal to the old
 // one once its new words are mapped back (toOld). The new words never print a registry value, say the program fills the fields, and the
 // [refusal] row of the basemap_id line now carries field basemap_id. Mutation proofs run the same checks on a mutated copy and must go red.
 // The words are also tied to behaviour: every refused cell whose refusal says "leave it out" is changed as the sentence says (the named
@@ -21,7 +21,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const SELF = fileURLToPath(import.meta.url);
-const MAIN_SHA = "7ea386d9479495cc6ec8f7c5d23b1ca283d03a73";
+const MAIN_SHA = "d9d3b821bb17";
 const ID50 = "naturalearth_admin0_50m";
 const ID110 = "naturalearth_admin0_110m";
 const IDUS = "naturalearth_admin1_us_110m";

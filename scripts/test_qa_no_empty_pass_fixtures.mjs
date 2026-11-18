@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// The 14 existing fixtures that went red with NEWSROOM_QA_NO_EMPTY_PASS=1 (cd's finding B on dca367a), run with the switch on (the default; off means exactly "0").
+// The 14 existing fixtures that went red with NEWSROOM_QA_NO_EMPTY_PASS=1 (cd's finding B on 4370fd66517e), run with the switch on (the default; off means exactly "0").
 // kind 1 = no chart shapes (now "not applicable"); kind 2 = chart marks without a data role (now counted); other = red for its own reason.
 // With "0", all 14 pass (checked too). render_qa is now green by default: its rotated-label block runs the old behaviour under "0" and asserts the new refusal itself. Needs no provider; a fixture that needs a tool missing here is reported, not skipped silently.
 import assert from "node:assert/strict";

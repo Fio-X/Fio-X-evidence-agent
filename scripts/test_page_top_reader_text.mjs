@@ -129,7 +129,7 @@ const blockerCases = [
   ['占位符未绑定', 'process_term', ['未绑定']],
   ['该数据行绑定失败', 'process_term', ['行绑定']],
   ['数据行绑定', 'process_term', ['行绑定']],
-  // C4: the c449d94 pipeline phrases come back as blockers, and the subject rule catches them in either order
+  // C4: the 3db7effcf419 pipeline phrases come back as blockers, and the subject rule catches them in either order
   ['这个数字没有通过闸门', 'process_term', ['闸门']],
   ['数值未绑定', 'process_term', ['未绑定']],
   ['未绑定的数值', 'process_term', ['未绑定']],

@@ -165,7 +165,7 @@ const rendered = {
   cartographic_flow_map: { spec: mapSpec, rows: mapRows },
   trajectory_profile: { spec: profileSpec, rows: profileRows },
 };
-// SHA-256 of desktop + mobile, recorded at a5f56b3 (the renderers are untouched).
+// SHA-256 of desktop + mobile, recorded at af466de5413a (the renderers are untouched).
 const PINNED = {
   hierarchy_tree: "38a91f29e926a74045d0a7fa07bf68394f55a85798d791d3af96bde1c431a77b",
   geo_flow_map: "4a65e6faccb88cc087ef093764d48402cc7faf294d31cf936906f303e66f0488",
@@ -175,7 +175,7 @@ const PINNED = {
 for (const [type, { spec, rows }] of Object.entries(rendered)) {
   const bundle = renderVizBundle(spec, rows);
   assert.equal(spec.chart_type, type);
-  assert.equal(createHash("sha256").update(bundle.desktop).update(bundle.mobile ?? "").digest("hex"), PINNED[type], `${type}: renderer output is byte-identical to a5f56b3`);
+  assert.equal(createHash("sha256").update(bundle.desktop).update(bundle.mobile ?? "").digest("hex"), PINNED[type], `${type}: renderer output is byte-identical to af466de5413a`);
 }
 
 // ---- 5. the baseline helper is strict -----------------------------------------------------------------------------------------

@@ -17,7 +17,7 @@ import { runDesignPack } from "../runtime/pi/design_pack.mjs";
 import { lintVizSpec } from "../runtime/pi/viz.mjs";
 
 // The last commit that changed the no-alias specs on purpose: a ratio over a lowest at or below zero gives no ratio (on both routes).
-const BASE = "d6488752d91bff966b205623da07e0471c7f10c4";
+const BASE = "5ffe1c2942f1";
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const tmp = makeTestTmp("next-entity-alias-");
 const stub = (name, source) => {

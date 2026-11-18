@@ -8,18 +8,18 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { makeTestTmp, pointRelativeImportsAt } from "./tmp_helper.mjs";
 
-// 8a5b1131 (never print VERIFIED in the page footer): the page is rendered before verification runs, so a zh page prints
+// e97be1dfea5c (never print VERIFIED in the page footer): the page is rendered before verification runs, so a zh page prints
 // no English footer line and an en page prints only the brand; the desktop top-right brand line is gone.
 const FOOTER = "AGENTIC DATA NEWSROOM · VERIFIED VISUAL STORY</text>`);";
 const LATER_CHANGES = Object.freeze([
   {
-    commit: "8a5b1131",
+    commit: "e97be1dfea5c",
     find: "parts.push(`<text x=\"${layout.width - layout.margin}\" y=\"${pageHeight - 26}\" text-anchor=\"end\" font-family=\"${SANS}\" font-size=\"12\" font-weight=\"700\" letter-spacing=\"1.2\" fill=\"${MUTED}\">" + FOOTER,
     replace:
       "{ const footerLine = pageLang(spec) === \"zh\" ? null : \"AGENTIC DATA NEWSROOM\"; if (footerLine) parts.push(`<text x=\"${layout.width - layout.margin}\" y=\"${pageHeight - 26}\" text-anchor=\"end\" font-family=\"${SANS}\" font-size=\"12\" font-weight=\"700\" letter-spacing=\"1.2\" fill=\"${MUTED}\">${footerLine}</text>`); }",
   },
   {
-    commit: "8a5b1131",
+    commit: "e97be1dfea5c",
     find: "if (!mobile) parts.push(`<text x=\"${width - margin}\" y=\"${h.top}\" text-anchor=\"end\" font-family=\"${SANS}\" font-size=\"12\" font-weight=\"700\" letter-spacing=\"1.5\" fill=\"${MUTED}\">AGENTIC DATA NEWSROOM · 01</text>`);",
     replace: "",
   },

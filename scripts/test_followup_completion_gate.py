@@ -60,7 +60,7 @@ def run_news(args, env_extra, state):
 
 def scenario(message, plans, switch, first=(), first_args=(), kill=False, plant=None, planted=PLANTED, same_gaps=None):
     """First question, a planted passing verification, then one follow-up. A first question with an explicit tool profile now gets the
-    completion-correction retry when that profile requires the chain (ab2f9bf6 and 14b51d1c), so it can take up to three prompts. Its slots in
+    completion-correction retry when that profile requires the chain (adf7d7261835 and 41263e4a50e3), so it can take up to three prompts. Its slots in
     the scripted plan list are reserved (RESERVE empty plans after `first`), the prompt counter is moved past them before the follow-up starts,
     and the returned prompts are only the follow-up's: every follow-up assertion counts exactly what it counted before."""
     with tempfile.TemporaryDirectory() as out, tempfile.TemporaryDirectory() as state:

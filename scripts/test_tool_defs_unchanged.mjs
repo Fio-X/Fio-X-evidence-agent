@@ -1,5 +1,5 @@
 // With the five patch-era switches off, the tool definitions newsroom.ts registers must be
-// byte-identical to the base (8a75560, which this branch sits on; 7f44952 for the commits
+// byte-identical to the base (df2ff9671079, which this branch sits on; b22c061fcc2e for the commits
 // before the merge) for every tool profile, with the older speed switches off and on.
 // Compared as canonical JSON (sorted keys) of name, label, description, promptSnippet,
 // promptGuidelines and parameters; the golden file holds one sha256 per tool per case.
@@ -11,7 +11,7 @@
 //
 // Run: node scripts/test_tool_defs_unchanged.mjs
 // Regenerate the main golden only: node scripts/test_tool_defs_unchanged.mjs --root=<tree> --write; <tree> is an export of the base for a no-change check,
-// and for an approved default text change it is the branch tree that carries the change (K797 f75d9750 → this commit); never the one-chart-0 file.
+// and for an approved default text change it is the branch tree that carries the change (K797 f3b03cfa261f → this commit); never the one-chart-0 file.
 import assert from "node:assert/strict";
 import { makeTestTmp } from "./tmp_helper.mjs";
 import { createHash } from "node:crypto";
@@ -25,7 +25,7 @@ const HERE = fileURLToPath(new URL("..", import.meta.url));
 const arg = (name) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
 const ROOT = arg("root") || HERE;
 const WRITE = process.argv.includes("--write");
-const GOLDEN = arg("golden") || join(HERE, "fixtures/speed-off/tool-defs-8a75560.json");
+const GOLDEN = arg("golden") || join(HERE, "fixtures/speed-off/tool-defs-df2ff9671079.json");
 
 const PROFILES = ["investigate", "visual", "publication", "visual-story", "competition", "full"];
 // The speed switches that exist at the base. The five newer ones stay unset in every case.
@@ -109,13 +109,13 @@ if (WRITE) {
   console.log(`wrote ${Object.keys(cases).length} cases`);
   process.exit(0);
 }
-// The second golden is the file as it stood before the one-chart switch existed (regenerated once, K882a: only the eight newsroom_infographic_plan entries, for the approved infographic field defaults; started at 61a69167). It pins only the tools that the
+// The second golden is the file as it stood before the one-chart switch existed (regenerated once, K882a: only the eight newsroom_infographic_plan entries, for the approved infographic field defaults; started at bb3d53865dcc). It pins only the tools that the
 // switch touches: with the switch at "0" those are byte-identical to it, so "0" is the text from before the switch. Every other tool is pinned
 // to the main golden in both passes, so a default text change to any other tool (K797: publication plan/render/portable) is caught in both.
 // The list is named (see test_one_chart_text.mjs) and must equal the tools whose text differs between pass 1 and pass 2, so a guard that
 // ignores "0" (no tool differs) or a switch that starts touching another tool fails here.
 const ONE_CHART_TOOLS = ["newsroom_infographic_plan"];
-const ONE_CHART_OFF_GOLDEN = join(HERE, "fixtures/speed-off/tool-defs-8a75560-one-chart-0.json");
+const ONE_CHART_OFF_GOLDEN = join(HERE, "fixtures/speed-off/tool-defs-df2ff9671079-one-chart-0.json");
 const bad = [];
 const switched = new Set();
 for (const key of Object.keys(cases)) for (const tool of new Set([...Object.keys(cases[key]), ...Object.keys(casesOneChartOff[key] ?? {})])) if (cases[key][tool] !== casesOneChartOff[key]?.[tool]) switched.add(tool);
@@ -130,10 +130,10 @@ const compare = (label, golden, actual, only) => {
   }
 };
 const mainGolden = JSON.parse(readFileSync(GOLDEN, "utf8"));
-// The whole file is pinned by its sha256 (the bytes at ab2f9bf6): the per-tool comparison below reads only the switch-touched tools, so this is what makes any edit to the other entries go red.
+// The whole file is pinned by its sha256 (the bytes at adf7d7261835): the per-tool comparison below reads only the switch-touched tools, so this is what makes any edit to the other entries go red.
 const ONE_CHART_OFF_GOLDEN_SHA256 = "116bb05be71a032c37988e1ed7f95033610a3763a6d3ce4d4f0aff496ae6bf32";
 const oldGoldenSha = createHash("sha256").update(readFileSync(ONE_CHART_OFF_GOLDEN)).digest("hex");
-if (oldGoldenSha !== ONE_CHART_OFF_GOLDEN_SHA256) bad.push(`tool-defs-8a75560-one-chart-0.json was edited (sha256 ${oldGoldenSha.slice(0, 12)}…, expected ${ONE_CHART_OFF_GOLDEN_SHA256.slice(0, 12)}…)`);
+if (oldGoldenSha !== ONE_CHART_OFF_GOLDEN_SHA256) bad.push(`tool-defs-df2ff9671079-one-chart-0.json was edited (sha256 ${oldGoldenSha.slice(0, 12)}…, expected ${ONE_CHART_OFF_GOLDEN_SHA256.slice(0, 12)}…)`);
 const oldGolden = JSON.parse(readFileSync(ONE_CHART_OFF_GOLDEN, "utf8"));
 compare("", mainGolden, cases);
 compare(" with the one-chart switch at 0", oldGolden, casesOneChartOff, (tool) => ONE_CHART_TOOLS.includes(tool));

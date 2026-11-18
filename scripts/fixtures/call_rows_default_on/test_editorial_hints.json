@@ -1,5 +1,5 @@
 {
-  "story: every cited claim verified [a4d4cb0]#0": [
+  "story: every cited claim verified [9a9de373d7df]#0": [
     {
       "tool": null,
       "tool_group": null,
@@ -103,7 +103,7 @@
     }
   ],
   "story: every cited claim verified [on]#0": [],
-  "story: nodes without claim_ids [a4d4cb0]#0": [
+  "story: nodes without claim_ids [9a9de373d7df]#0": [
     {
       "tool": null,
       "tool_group": null,
@@ -207,7 +207,7 @@
     }
   ],
   "story: nodes without claim_ids [on]#0": [],
-  "story: draft claim (recorded without a computation) [a4d4cb0]#0": [
+  "story: draft claim (recorded without a computation) [9a9de373d7df]#0": [
     {
       "tool": null,
       "tool_group": null,
@@ -263,7 +263,7 @@
       "declared": true
     }
   ],
-  "story: claim id that was never recorded [a4d4cb0]#0": [
+  "story: claim id that was never recorded [9a9de373d7df]#0": [
     {
       "tool": null,
       "tool_group": null,
@@ -319,7 +319,7 @@
       "declared": true
     }
   ],
-  "story: claim whose status says verified but the author is the model [a4d4cb0]#0": [
+  "story: claim whose status says verified but the author is the model [9a9de373d7df]#0": [
     {
       "tool": null,
       "tool_group": null,
@@ -375,7 +375,7 @@
       "declared": true
     }
   ],
-  "story: verified flags without the computation replay [a4d4cb0]#0": [
+  "story: verified flags without the computation replay [9a9de373d7df]#0": [
     {
       "tool": null,
       "tool_group": null,
@@ -431,7 +431,7 @@
       "declared": true
     }
   ],
-  "story: several nodes, repeated and mixed claims (every pair listed once) [a4d4cb0]#0": [
+  "story: several nodes, repeated and mixed claims (every pair listed once) [9a9de373d7df]#0": [
     {
       "tool": null,
       "tool_group": null,
@@ -487,7 +487,7 @@
       "declared": true
     }
   ],
-  "story: fifteen verified claims (twelve most recent offered, text cut) [a4d4cb0]#0": [
+  "story: fifteen verified claims (twelve most recent offered, text cut) [9a9de373d7df]#0": [
     {
       "tool": null,
       "tool_group": null,
@@ -543,7 +543,7 @@
       "declared": true
     }
   ],
-  "story: no claims recorded at all [a4d4cb0]#0": [],
+  "story: no claims recorded at all [9a9de373d7df]#0": [],
   "story: no claims recorded at all [off]#0": [
     {
       "tool": "newsroom_story_graph",
@@ -583,7 +583,7 @@
       "declared": true
     }
   ],
-  "concepts: 8 concepts, 7 framings [a4d4cb0]#0": [
+  "concepts: 8 concepts, 7 framings [9a9de373d7df]#0": [
     {
       "tool": null,
       "tool_group": null,
@@ -673,7 +673,7 @@
     }
   ],
   "concepts: 8 concepts, 7 framings [on]#0": [],
-  "concepts: 20 concepts [a4d4cb0]#0": [
+  "concepts: 20 concepts [9a9de373d7df]#0": [
     {
       "tool": null,
       "tool_group": null,
@@ -763,7 +763,7 @@
     }
   ],
   "concepts: 20 concepts [on]#0": [],
-  "concepts: 7 concepts (the handler's own range check) [a4d4cb0]#0": [
+  "concepts: 7 concepts (the handler's own range check) [9a9de373d7df]#0": [
     {
       "tool": null,
       "tool_group": null,
@@ -797,7 +797,7 @@
     }
   ],
   "concepts: 7 concepts (the handler's own range check) [on]#0": [],
-  "concepts: 21 concepts [a4d4cb0]#0": [
+  "concepts: 21 concepts [9a9de373d7df]#0": [
     {
       "tool": null,
       "tool_group": null,
@@ -831,7 +831,7 @@
     }
   ],
   "concepts: 21 concepts [on]#0": [],
-  "concepts: 8 concepts, two framings [a4d4cb0]#0": [
+  "concepts: 8 concepts, two framings [9a9de373d7df]#0": [
     {
       "tool": null,
       "tool_group": null,
@@ -865,7 +865,7 @@
     }
   ],
   "concepts: 8 concepts, two framings [on]#0": [],
-  "concepts: discovery_ref in the wrong folder (no concept_ref hint here) [a4d4cb0]#0": [
+  "concepts: discovery_ref in the wrong folder (no concept_ref hint here) [9a9de373d7df]#0": [
     {
       "tool": null,
       "tool_group": null,
@@ -892,7 +892,7 @@
     }
   ],
   "concepts: discovery_ref in the wrong folder (no concept_ref hint here) [on]#0": [],
-  "concepts: discovery did not say CONTINUE [a4d4cb0]#0": [
+  "concepts: discovery did not say CONTINUE [9a9de373d7df]#0": [
     {
       "tool": null,
       "tool_group": null,
@@ -926,7 +926,7 @@
     }
   ],
   "concepts: discovery did not say CONTINUE [on]#0": [],
-  "novelty: concept set path [a4d4cb0]#0": [
+  "novelty: concept set path [9a9de373d7df]#0": [
     {
       "tool": null,
       "tool_group": null,
@@ -1016,7 +1016,7 @@
     }
   ],
   "novelty: concept set path [on]#0": [],
-  "novelty: ./ spelling of the same path (accepted today, so no schema pattern may reject it) [a4d4cb0]#0": [
+  "novelty: ./ spelling of the same path (accepted today, so no schema pattern may reject it) [9a9de373d7df]#0": [
     {
       "tool": null,
       "tool_group": null,
@@ -1106,7 +1106,7 @@
     }
   ],
   "novelty: ./ spelling of the same path (accepted today, so no schema pattern may reject it) [on]#0": [],
-  "novelty: absolute path inside the artifact root [a4d4cb0]#0": [
+  "novelty: absolute path inside the artifact root [9a9de373d7df]#0": [
     {
       "tool": null,
       "tool_group": null,
@@ -1196,7 +1196,7 @@
     }
   ],
   "novelty: absolute path inside the artifact root [on]#0": [],
-  "novelty: the discovery path [a4d4cb0]#0": [
+  "novelty: the discovery path [9a9de373d7df]#0": [
     {
       "tool": null,
       "tool_group": null,
@@ -1223,7 +1223,7 @@
     }
   ],
   "novelty: the discovery path [on]#0": [],
-  "novelty: the story-graph path [a4d4cb0]#0": [
+  "novelty: the story-graph path [9a9de373d7df]#0": [
     {
       "tool": null,
       "tool_group": null,
@@ -1250,7 +1250,7 @@
     }
   ],
   "novelty: the story-graph path [on]#0": [],
-  "novelty: right folder, no such file (not a prefix error: no hint) [a4d4cb0]#0": [
+  "novelty: right folder, no such file (not a prefix error: no hint) [9a9de373d7df]#0": [
     {
       "tool": null,
       "tool_group": null,
@@ -1284,7 +1284,7 @@
     }
   ],
   "novelty: right folder, no such file (not a prefix error: no hint) [on]#0": [],
-  "novelty: path outside the artifact root (no hint) [a4d4cb0]#0": [
+  "novelty: path outside the artifact root (no hint) [9a9de373d7df]#0": [
     {
       "tool": null,
       "tool_group": null,
@@ -1311,7 +1311,7 @@
     }
   ],
   "novelty: path outside the artifact root (no hint) [on]#0": [],
-  "novelty: right concept set, one module [a4d4cb0]#0": [
+  "novelty: right concept set, one module [9a9de373d7df]#0": [
     {
       "tool": null,
       "tool_group": null,
@@ -1345,7 +1345,7 @@
     }
   ],
   "novelty: right concept set, one module [on]#0": [],
-  "assets: concept set path, finalist [a4d4cb0]#0": [
+  "assets: concept set path, finalist [9a9de373d7df]#0": [
     {
       "tool": null,
       "tool_group": null,
@@ -1435,7 +1435,7 @@
     }
   ],
   "assets: concept set path, finalist [on]#0": [],
-  "assets: ./ spelling [a4d4cb0]#0": [
+  "assets: ./ spelling [9a9de373d7df]#0": [
     {
       "tool": null,
       "tool_group": null,
@@ -1525,7 +1525,7 @@
     }
   ],
   "assets: ./ spelling [on]#0": [],
-  "assets: the discovery path [a4d4cb0]#0": [
+  "assets: the discovery path [9a9de373d7df]#0": [
     {
       "tool": null,
       "tool_group": null,
@@ -1552,7 +1552,7 @@
     }
   ],
   "assets: the discovery path [on]#0": [],
-  "assets: the story-graph path [a4d4cb0]#0": [
+  "assets: the story-graph path [9a9de373d7df]#0": [
     {
       "tool": null,
       "tool_group": null,
@@ -1579,7 +1579,7 @@
     }
   ],
   "assets: the story-graph path [on]#0": [],
-  "assets: concept_id is not a finalist (no hint) [a4d4cb0]#0": [
+  "assets: concept_id is not a finalist (no hint) [9a9de373d7df]#0": [
     {
       "tool": null,
       "tool_group": null,
@@ -1613,7 +1613,7 @@
     }
   ],
   "assets: concept_id is not a finalist (no hint) [on]#0": [],
-  "assets: right folder, no such file (no hint) [a4d4cb0]#0": [
+  "assets: right folder, no such file (no hint) [9a9de373d7df]#0": [
     {
       "tool": null,
       "tool_group": null,
@@ -1647,7 +1647,7 @@
     }
   ],
   "assets: right folder, no such file (no hint) [on]#0": [],
-  "assets: path outside the artifact root (no hint) [a4d4cb0]#0": [
+  "assets: path outside the artifact root (no hint) [9a9de373d7df]#0": [
     {
       "tool": null,
       "tool_group": null,
@@ -1674,7 +1674,7 @@
     }
   ],
   "assets: path outside the artifact root (no hint) [on]#0": [],
-  "story: every cited claim verified [a4d4cb0]#1": [],
+  "story: every cited claim verified [9a9de373d7df]#1": [],
   "story: every cited claim verified [off]#1": [
     {
       "tool": "newsroom_story_graph",
@@ -1769,7 +1769,7 @@
     }
   ],
   "story: every cited claim verified [on]#1": [],
-  "story: nodes without claim_ids [a4d4cb0]#1": [],
+  "story: nodes without claim_ids [9a9de373d7df]#1": [],
   "story: nodes without claim_ids [off]#1": [
     {
       "tool": "newsroom_story_graph",
@@ -1864,7 +1864,7 @@
     }
   ],
   "story: nodes without claim_ids [on]#1": [],
-  "story: every cited claim verified [a4d4cb0]#2": [],
+  "story: every cited claim verified [9a9de373d7df]#2": [],
   "story: every cited claim verified [off]#2": [
     {
       "tool": "newsroom_story_graph",
@@ -1959,7 +1959,7 @@
     }
   ],
   "story: every cited claim verified [on]#2": [],
-  "story: nodes without claim_ids [a4d4cb0]#2": [],
+  "story: nodes without claim_ids [9a9de373d7df]#2": [],
   "story: nodes without claim_ids [off]#2": [
     {
       "tool": "newsroom_story_graph",
@@ -2054,7 +2054,7 @@
     }
   ],
   "story: nodes without claim_ids [on]#2": [],
-  "story: draft claim (recorded without a computation) [a4d4cb0]#1": [],
+  "story: draft claim (recorded without a computation) [9a9de373d7df]#1": [],
   "story: draft claim (recorded without a computation) [off]#1": [
     {
       "tool": "newsroom_story_graph",
@@ -2101,7 +2101,7 @@
       "declared": true
     }
   ],
-  "story: claim id that was never recorded [a4d4cb0]#1": [],
+  "story: claim id that was never recorded [9a9de373d7df]#1": [],
   "story: claim id that was never recorded [off]#1": [
     {
       "tool": "newsroom_story_graph",
@@ -2148,7 +2148,7 @@
       "declared": true
     }
   ],
-  "story: claim whose status says verified but the author is the model [a4d4cb0]#1": [],
+  "story: claim whose status says verified but the author is the model [9a9de373d7df]#1": [],
   "story: claim whose status says verified but the author is the model [off]#1": [
     {
       "tool": "newsroom_story_graph",
@@ -2195,7 +2195,7 @@
       "declared": true
     }
   ],
-  "story: verified flags without the computation replay [a4d4cb0]#1": [],
+  "story: verified flags without the computation replay [9a9de373d7df]#1": [],
   "story: verified flags without the computation replay [off]#1": [
     {
       "tool": "newsroom_story_graph",
@@ -2242,7 +2242,7 @@
       "declared": true
     }
   ],
-  "story: several nodes, repeated and mixed claims (every pair listed once) [a4d4cb0]#1": [],
+  "story: several nodes, repeated and mixed claims (every pair listed once) [9a9de373d7df]#1": [],
   "story: several nodes, repeated and mixed claims (every pair listed once) [off]#1": [
     {
       "tool": "newsroom_story_graph",
@@ -2289,7 +2289,7 @@
       "declared": true
     }
   ],
-  "story: fifteen verified claims (twelve most recent offered, text cut) [a4d4cb0]#1": [],
+  "story: fifteen verified claims (twelve most recent offered, text cut) [9a9de373d7df]#1": [],
   "story: fifteen verified claims (twelve most recent offered, text cut) [off]#1": [
     {
       "tool": "newsroom_story_graph",
@@ -2336,7 +2336,7 @@
       "declared": true
     }
   ],
-  "story: no claims recorded at all [a4d4cb0]#1": [],
+  "story: no claims recorded at all [9a9de373d7df]#1": [],
   "story: no claims recorded at all [off]#1": [
     {
       "tool": "newsroom_story_graph",
@@ -2376,7 +2376,7 @@
       "declared": true
     }
   ],
-  "concepts: 8 concepts, 7 framings [a4d4cb0]#1": [],
+  "concepts: 8 concepts, 7 framings [9a9de373d7df]#1": [],
   "concepts: 8 concepts, 7 framings [off]#1": [
     {
       "tool": "newsroom_visual_concepts",
@@ -2457,7 +2457,7 @@
     }
   ],
   "concepts: 8 concepts, 7 framings [on]#1": [],
-  "concepts: 20 concepts [a4d4cb0]#1": [],
+  "concepts: 20 concepts [9a9de373d7df]#1": [],
   "concepts: 20 concepts [off]#1": [
     {
       "tool": "newsroom_visual_concepts",
@@ -2538,7 +2538,7 @@
     }
   ],
   "concepts: 20 concepts [on]#1": [],
-  "concepts: 7 concepts (the handler's own range check) [a4d4cb0]#1": [],
+  "concepts: 7 concepts (the handler's own range check) [9a9de373d7df]#1": [],
   "concepts: 7 concepts (the handler's own range check) [off]#1": [
     {
       "tool": "newsroom_visual_concepts",
@@ -2563,7 +2563,7 @@
     }
   ],
   "concepts: 7 concepts (the handler's own range check) [on]#1": [],
-  "concepts: 21 concepts [a4d4cb0]#1": [],
+  "concepts: 21 concepts [9a9de373d7df]#1": [],
   "concepts: 21 concepts [off]#1": [
     {
       "tool": "newsroom_visual_concepts",
@@ -2588,7 +2588,7 @@
     }
   ],
   "concepts: 21 concepts [on]#1": [],
-  "concepts: 8 concepts, two framings [a4d4cb0]#1": [],
+  "concepts: 8 concepts, two framings [9a9de373d7df]#1": [],
   "concepts: 8 concepts, two framings [off]#1": [
     {
       "tool": "newsroom_visual_concepts",
@@ -2613,7 +2613,7 @@
     }
   ],
   "concepts: 8 concepts, two framings [on]#1": [],
-  "concepts: discovery_ref in the wrong folder (no concept_ref hint here) [a4d4cb0]#1": [],
+  "concepts: discovery_ref in the wrong folder (no concept_ref hint here) [9a9de373d7df]#1": [],
   "concepts: discovery_ref in the wrong folder (no concept_ref hint here) [off]#1": [
     {
       "tool": "newsroom_visual_concepts",
@@ -2631,7 +2631,7 @@
     }
   ],
   "concepts: discovery_ref in the wrong folder (no concept_ref hint here) [on]#1": [],
-  "concepts: discovery did not say CONTINUE [a4d4cb0]#1": [],
+  "concepts: discovery did not say CONTINUE [9a9de373d7df]#1": [],
   "concepts: discovery did not say CONTINUE [off]#1": [
     {
       "tool": "newsroom_visual_concepts",
@@ -2656,7 +2656,7 @@
     }
   ],
   "concepts: discovery did not say CONTINUE [on]#1": [],
-  "novelty: concept set path [a4d4cb0]#1": [],
+  "novelty: concept set path [9a9de373d7df]#1": [],
   "novelty: concept set path [off]#1": [
     {
       "tool": "newsroom_semantic_novelty",
@@ -2737,7 +2737,7 @@
     }
   ],
   "novelty: concept set path [on]#1": [],
-  "novelty: ./ spelling of the same path (accepted today, so no schema pattern may reject it) [a4d4cb0]#1": [],
+  "novelty: ./ spelling of the same path (accepted today, so no schema pattern may reject it) [9a9de373d7df]#1": [],
   "novelty: ./ spelling of the same path (accepted today, so no schema pattern may reject it) [off]#1": [
     {
       "tool": "newsroom_semantic_novelty",
@@ -2818,7 +2818,7 @@
     }
   ],
   "novelty: ./ spelling of the same path (accepted today, so no schema pattern may reject it) [on]#1": [],
-  "novelty: absolute path inside the artifact root [a4d4cb0]#1": [],
+  "novelty: absolute path inside the artifact root [9a9de373d7df]#1": [],
   "novelty: absolute path inside the artifact root [off]#1": [
     {
       "tool": "newsroom_semantic_novelty",
@@ -2899,7 +2899,7 @@
     }
   ],
   "novelty: absolute path inside the artifact root [on]#1": [],
-  "novelty: the discovery path [a4d4cb0]#1": [],
+  "novelty: the discovery path [9a9de373d7df]#1": [],
   "novelty: the discovery path [off]#1": [
     {
       "tool": "newsroom_semantic_novelty",
@@ -2917,7 +2917,7 @@
     }
   ],
   "novelty: the discovery path [on]#1": [],
-  "novelty: the story-graph path [a4d4cb0]#1": [],
+  "novelty: the story-graph path [9a9de373d7df]#1": [],
   "novelty: the story-graph path [off]#1": [
     {
       "tool": "newsroom_semantic_novelty",
@@ -2935,7 +2935,7 @@
     }
   ],
   "novelty: the story-graph path [on]#1": [],
-  "novelty: right folder, no such file (not a prefix error: no hint) [a4d4cb0]#1": [],
+  "novelty: right folder, no such file (not a prefix error: no hint) [9a9de373d7df]#1": [],
   "novelty: right folder, no such file (not a prefix error: no hint) [off]#1": [
     {
       "tool": "newsroom_semantic_novelty",
@@ -2960,7 +2960,7 @@
     }
   ],
   "novelty: right folder, no such file (not a prefix error: no hint) [on]#1": [],
-  "story: every cited claim verified [a4d4cb0]#3": [],
+  "story: every cited claim verified [9a9de373d7df]#3": [],
   "story: every cited claim verified [off]#3": [
     {
       "tool": "newsroom_story_graph",
@@ -3055,7 +3055,7 @@
     }
   ],
   "story: every cited claim verified [on]#3": [],
-  "story: nodes without claim_ids [a4d4cb0]#3": [],
+  "story: nodes without claim_ids [9a9de373d7df]#3": [],
   "story: nodes without claim_ids [off]#3": [
     {
       "tool": "newsroom_story_graph",
@@ -3150,7 +3150,7 @@
     }
   ],
   "story: nodes without claim_ids [on]#3": [],
-  "story: draft claim (recorded without a computation) [a4d4cb0]#2": [],
+  "story: draft claim (recorded without a computation) [9a9de373d7df]#2": [],
   "story: draft claim (recorded without a computation) [off]#2": [
     {
       "tool": "newsroom_story_graph",
@@ -3197,7 +3197,7 @@
       "declared": true
     }
   ],
-  "story: every cited claim verified [a4d4cb0]#4": [],
+  "story: every cited claim verified [9a9de373d7df]#4": [],
   "story: every cited claim verified [off]#4": [
     {
       "tool": "newsroom_story_graph",
@@ -3292,7 +3292,7 @@
     }
   ],
   "story: every cited claim verified [on]#4": [],
-  "story: nodes without claim_ids [a4d4cb0]#4": [],
+  "story: nodes without claim_ids [9a9de373d7df]#4": [],
   "story: nodes without claim_ids [off]#4": [
     {
       "tool": "newsroom_story_graph",
@@ -3387,7 +3387,7 @@
     }
   ],
   "story: nodes without claim_ids [on]#4": [],
-  "story: every cited claim verified [a4d4cb0]#5": [],
+  "story: every cited claim verified [9a9de373d7df]#5": [],
   "story: every cited claim verified [off]#5": [
     {
       "tool": "newsroom_story_graph",
@@ -3482,7 +3482,7 @@
     }
   ],
   "story: every cited claim verified [on]#5": [],
-  "story: nodes without claim_ids [a4d4cb0]#5": [],
+  "story: nodes without claim_ids [9a9de373d7df]#5": [],
   "story: nodes without claim_ids [off]#5": [
     {
       "tool": "newsroom_story_graph",
@@ -3577,7 +3577,7 @@
     }
   ],
   "story: nodes without claim_ids [on]#5": [],
-  "story: draft claim (recorded without a computation) [a4d4cb0]#3": [],
+  "story: draft claim (recorded without a computation) [9a9de373d7df]#3": [],
   "story: draft claim (recorded without a computation) [off]#3": [
     {
       "tool": "newsroom_story_graph",
@@ -3624,7 +3624,7 @@
       "declared": true
     }
   ],
-  "story: claim id that was never recorded [a4d4cb0]#2": [],
+  "story: claim id that was never recorded [9a9de373d7df]#2": [],
   "story: claim id that was never recorded [off]#2": [
     {
       "tool": "newsroom_story_graph",
@@ -3671,7 +3671,7 @@
       "declared": true
     }
   ],
-  "story: claim whose status says verified but the author is the model [a4d4cb0]#2": [],
+  "story: claim whose status says verified but the author is the model [9a9de373d7df]#2": [],
   "story: claim whose status says verified but the author is the model [off]#2": [
     {
       "tool": "newsroom_story_graph",
@@ -3718,7 +3718,7 @@
       "declared": true
     }
   ],
-  "story: verified flags without the computation replay [a4d4cb0]#2": [],
+  "story: verified flags without the computation replay [9a9de373d7df]#2": [],
   "story: verified flags without the computation replay [off]#2": [
     {
       "tool": "newsroom_story_graph",
@@ -3765,7 +3765,7 @@
       "declared": true
     }
   ],
-  "story: several nodes, repeated and mixed claims (every pair listed once) [a4d4cb0]#2": [],
+  "story: several nodes, repeated and mixed claims (every pair listed once) [9a9de373d7df]#2": [],
   "story: several nodes, repeated and mixed claims (every pair listed once) [off]#2": [
     {
       "tool": "newsroom_story_graph",
@@ -3812,7 +3812,7 @@
       "declared": true
     }
   ],
-  "story: fifteen verified claims (twelve most recent offered, text cut) [a4d4cb0]#2": [],
+  "story: fifteen verified claims (twelve most recent offered, text cut) [9a9de373d7df]#2": [],
   "story: fifteen verified claims (twelve most recent offered, text cut) [off]#2": [
     {
       "tool": "newsroom_story_graph",
@@ -3859,7 +3859,7 @@
       "declared": true
     }
   ],
-  "story: no claims recorded at all [a4d4cb0]#2": [],
+  "story: no claims recorded at all [9a9de373d7df]#2": [],
   "story: no claims recorded at all [off]#2": [
     {
       "tool": "newsroom_story_graph",
@@ -3899,7 +3899,7 @@
       "declared": true
     }
   ],
-  "concepts: 8 concepts, 7 framings [a4d4cb0]#2": [],
+  "concepts: 8 concepts, 7 framings [9a9de373d7df]#2": [],
   "concepts: 8 concepts, 7 framings [off]#2": [
     {
       "tool": "newsroom_visual_concepts",
@@ -3980,7 +3980,7 @@
     }
   ],
   "concepts: 8 concepts, 7 framings [on]#2": [],
-  "concepts: 20 concepts [a4d4cb0]#2": [],
+  "concepts: 20 concepts [9a9de373d7df]#2": [],
   "concepts: 20 concepts [off]#2": [
     {
       "tool": "newsroom_visual_concepts",
@@ -4061,7 +4061,7 @@
     }
   ],
   "concepts: 20 concepts [on]#2": [],
-  "concepts: 7 concepts (the handler's own range check) [a4d4cb0]#2": [],
+  "concepts: 7 concepts (the handler's own range check) [9a9de373d7df]#2": [],
   "concepts: 7 concepts (the handler's own range check) [off]#2": [
     {
       "tool": "newsroom_visual_concepts",
@@ -4086,7 +4086,7 @@
     }
   ],
   "concepts: 7 concepts (the handler's own range check) [on]#2": [],
-  "concepts: 21 concepts [a4d4cb0]#2": [],
+  "concepts: 21 concepts [9a9de373d7df]#2": [],
   "concepts: 21 concepts [off]#2": [
     {
       "tool": "newsroom_visual_concepts",
@@ -4111,7 +4111,7 @@
     }
   ],
   "concepts: 21 concepts [on]#2": [],
-  "concepts: 8 concepts, two framings [a4d4cb0]#2": [],
+  "concepts: 8 concepts, two framings [9a9de373d7df]#2": [],
   "concepts: 8 concepts, two framings [off]#2": [
     {
       "tool": "newsroom_visual_concepts",
@@ -4136,7 +4136,7 @@
     }
   ],
   "concepts: 8 concepts, two framings [on]#2": [],
-  "concepts: discovery_ref in the wrong folder (no concept_ref hint here) [a4d4cb0]#2": [],
+  "concepts: discovery_ref in the wrong folder (no concept_ref hint here) [9a9de373d7df]#2": [],
   "concepts: discovery_ref in the wrong folder (no concept_ref hint here) [off]#2": [
     {
       "tool": "newsroom_visual_concepts",
@@ -4154,7 +4154,7 @@
     }
   ],
   "concepts: discovery_ref in the wrong folder (no concept_ref hint here) [on]#2": [],
-  "concepts: discovery did not say CONTINUE [a4d4cb0]#2": [],
+  "concepts: discovery did not say CONTINUE [9a9de373d7df]#2": [],
   "concepts: discovery did not say CONTINUE [off]#2": [
     {
       "tool": "newsroom_visual_concepts",
@@ -4179,7 +4179,7 @@
     }
   ],
   "concepts: discovery did not say CONTINUE [on]#2": [],
-  "novelty: concept set path [a4d4cb0]#2": [],
+  "novelty: concept set path [9a9de373d7df]#2": [],
   "novelty: concept set path [off]#2": [
     {
       "tool": "newsroom_semantic_novelty",
@@ -4260,7 +4260,7 @@
     }
   ],
   "novelty: concept set path [on]#2": [],
-  "novelty: ./ spelling of the same path (accepted today, so no schema pattern may reject it) [a4d4cb0]#2": [],
+  "novelty: ./ spelling of the same path (accepted today, so no schema pattern may reject it) [9a9de373d7df]#2": [],
   "novelty: ./ spelling of the same path (accepted today, so no schema pattern may reject it) [off]#2": [
     {
       "tool": "newsroom_semantic_novelty",
@@ -4341,7 +4341,7 @@
     }
   ],
   "novelty: ./ spelling of the same path (accepted today, so no schema pattern may reject it) [on]#2": [],
-  "novelty: absolute path inside the artifact root [a4d4cb0]#2": [],
+  "novelty: absolute path inside the artifact root [9a9de373d7df]#2": [],
   "novelty: absolute path inside the artifact root [off]#2": [
     {
       "tool": "newsroom_semantic_novelty",
@@ -4422,7 +4422,7 @@
     }
   ],
   "novelty: absolute path inside the artifact root [on]#2": [],
-  "novelty: the discovery path [a4d4cb0]#2": [],
+  "novelty: the discovery path [9a9de373d7df]#2": [],
   "novelty: the discovery path [off]#2": [
     {
       "tool": "newsroom_semantic_novelty",
@@ -4440,7 +4440,7 @@
     }
   ],
   "novelty: the discovery path [on]#2": [],
-  "novelty: the story-graph path [a4d4cb0]#2": [],
+  "novelty: the story-graph path [9a9de373d7df]#2": [],
   "novelty: the story-graph path [off]#2": [
     {
       "tool": "newsroom_semantic_novelty",

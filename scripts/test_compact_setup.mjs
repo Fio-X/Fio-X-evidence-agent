@@ -118,7 +118,7 @@ const own = (i) => ({ concept_id: `c${i + 1}`, framing: FRAMES[i], visual_metaph
 const full = (n = 8) => Array.from({ length: n }, (_, i) => ({ ...COMMON, ...own(i) }));
 const compact = (n = 8) => Array.from({ length: n }, (_, i) => own(i));
 
-const BASELINE_REF = process.env.BASELINE_REF ?? "42a5e77";
+const BASELINE_REF = process.env.BASELINE_REF ?? "43e3d370873a";
 const baseSource = process.env.BASELINE_NEWSROOM_TS ? readFileSync(process.env.BASELINE_NEWSROOM_TS, "utf8")
   : spawnSync("git", ["show", `${BASELINE_REF}:runtime/pi/newsroom.ts`], { cwd: ROOT, encoding: "utf8", maxBuffer: 64 << 20 }).stdout;
 assert.ok(baseSource.includes("newsroom_visual_concepts"), "baseline newsroom.ts loaded");

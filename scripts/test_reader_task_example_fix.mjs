@@ -3,13 +3,13 @@
 // (the model copied it and was sent back). This switch swaps that one sentence
 // for the corrected one without the other rule hints (NEWSROOM_SPEED_RULE_HINTS,
 // about 3.4 KB more text).
-//  1. Off: tool definitions of every profile are byte-identical to 35cb1cf, with
+//  1. Off: tool definitions of every profile are byte-identical to eb05cc1061c7, with
 //     and without the other description switches.
-//  2. On, big switch off: the definitions differ from 35cb1cf by that one
+//  2. On, big switch off: the definitions differ from eb05cc1061c7 by that one
 //     sentence and nothing else (the exact difference is asserted).
 //  3. Big switch on: the output is what the big switch alone gives, whatever
 //     the small switch says; the old example appears nowhere.
-// Loads runtime/pi/newsroom.ts from a type-stripped copy. The 35cb1cf side comes
+// Loads runtime/pi/newsroom.ts from a type-stripped copy. The eb05cc1061c7 side comes
 // from `git archive` and is skipped when history is unavailable; the literal
 // checks below it always run. No provider or network access.
 import assert from "node:assert/strict";
@@ -24,7 +24,7 @@ import { withoutApprovedIllustration, withoutApprovedLieflat, loadPinPatches } f
 process.env.NEWSROOM_SYMBOL_MAP = "0";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const BASELINE = "35cb1cf";
+const BASELINE = "eb05cc1061c7";
 const scratch = mkdtempSync(join(tmpdir(), "reader-task-fix-"));
 process.on("exit", () => rmSync(scratch, { recursive: true, force: true }));
 for (const name of Object.keys(process.env)) if (name.startsWith("NEWSROOM_SPEED_")) delete process.env[name];
@@ -118,7 +118,7 @@ for (const profile of PROFILES) for (const other of OTHERS) {
   assert.ok(!JSON.stringify(both).includes("for example ranking, comparison, change, trend"), `${profile}: no old example`);
 }
 
-// ---- 1 and 2. Against 35cb1cf -----------------------------------------------
+// ---- 1 and 2. Against eb05cc1061c7 -----------------------------------------------
 const baselineDir = baselineSource();
 if (!baselineDir) {
   console.log(`${BASELINE} history unavailable; skipped the byte comparison with it`);

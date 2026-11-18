@@ -105,14 +105,14 @@ function outsideFrame(svg, tol = 0.6) {
   assert.equal(ch.symbolCropFrameMode(ch.symbolCropBox([[-120, 40], [150, -30], [20, 60], [-60, -40]])), "world");
 }
 
-// 2 switch off: nothing changes (hashes of the #218 output, fc93bdbb); crop on without the symbol map switch changes nothing either (no chart)
+// 2 switch off: nothing changes (hashes of the #218 output, 5ad8b09271fc); crop on without the symbol map switch changes nothing either (no chart)
 // Outlines of these three (Dutch overseas parts, Portuguese islands, Australia) make the old rule say "world"; their label points do not.
 const SPREAD = rowsOf([["NLD", 100], ["PRT", 40], ["AUS", 20]]);
-const BASELINE = { en: "3e71fdeec765103ee4e76024ab9b79b5e28450c7dda9356757ad1d8a164c8cf3", zh: "6c9d84716dcd99f9871e05fae8013a6d9a9efea3669821c149ecaa2fa43784f5" }; // sha256 of the fc93bdbb output
+const BASELINE = { en: "3e71fdeec765103ee4e76024ab9b79b5e28450c7dda9356757ad1d8a164c8cf3", zh: "6c9d84716dcd99f9871e05fae8013a6d9a9efea3669821c149ecaa2fa43784f5" }; // sha256 of the 5ad8b09271fc output
 {
   for (const language of ["en", "zh"]) {
     const off = render(spec(language), SPREAD);
-    assert.equal(sha(off), BASELINE[language], `${language}: switch off is byte-identical to fc93bdbb`);
+    assert.equal(sha(off), BASELINE[language], `${language}: switch off is byte-identical to 5ad8b09271fc`);
     assert.equal(sha(render(spec(language), SPREAD, "0")), sha(off), `${language}: "0" is off`);
     assert.equal(sha(render(spec(language), SPREAD, "true")), sha(off), `${language}: "true" is off`);
     assert.ok(!/data-frame-source/.test(off) && !/地图已裁剪|is cropped to the area/.test(off), `${language}: off carries no crop marker and no M line`);

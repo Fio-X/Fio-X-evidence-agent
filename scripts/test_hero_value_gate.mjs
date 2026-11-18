@@ -34,5 +34,5 @@ for (const flag of [false, 0, '0', null, undefined, 'off']) {
 }
 // No context at all (no hero_value_gate, no hero_checks): a hero_stat is blocked, never passed untested.
 assert.deepEqual(mine(lintInfographicSpec(page(hero()), {}, ctx())), [`hero_stat 'h1' was not re-checked against its claim bindings (hero value gate)`], 'bare context'); n += 1;
-// The old comparison with a4d4cb0 (gate off = lint unchanged) is gone: there is no off state left to compare.
+// The old comparison with 9a9de373d7df (gate off = lint unchanged) is gone: there is no off state left to compare.
 console.log(`hero value gate: ${n} checks -- PASS`);

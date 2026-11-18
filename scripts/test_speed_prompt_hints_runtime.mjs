@@ -1,6 +1,6 @@
 // Opt-in turn-saving prompt guidance (NEWSROOM_SPEED_PARALLEL_HINTS,
 // NEWSROOM_SPEED_COMPUTE_BATCH). With every switch off, every tool definition the
-// model can read is byte-identical to the baseline newsroom.ts (git bc1ccfd) in
+// model can read is byte-identical to the baseline newsroom.ts (git e7f54b8deb17) in
 // every profile; with a switch on, only that switch's tools change, and only by
 // appended promptGuidelines sentences. Loads the real extension from type-stripped
 // temporary copies (same approach as test_hide_lieflat_runtime.mjs).
@@ -16,7 +16,7 @@ import { definitionOf, loadPinPatches, withoutApprovedIllustration, withoutAppro
 process.env.NEWSROOM_SYMBOL_MAP = "0";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const BASELINE_REF = "bc1ccfd";
+const BASELINE_REF = "e7f54b8deb17";
 const SWITCHES = {
   NEWSROOM_SPEED_PARALLEL_HINTS: ["newsroom_update_plan", "fetch_url", "download_data"],
   NEWSROOM_SPEED_COMPUTE_BATCH: ["duckdb_query", "record_claim"],

@@ -22,8 +22,8 @@ import { withoutApprovedLieflat, loadPinPatches } from "./lib_pin_patch.mjs";
 process.env.NEWSROOM_SYMBOL_MAP = "0";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-// The commit before the switch was added (04d57e7); the hero value gate is already on by default there, as it is now and always.
-const BASELINE = "b56f219";
+// The commit before the switch was added (c21e843516f2); the hero value gate is already on by default there, as it is now and always.
+const BASELINE = "af390716f30d";
 const scratch = mkdtempSync(join(tmpdir(), "refused-options-fix-"));
 process.on("exit", () => rmSync(scratch, { recursive: true, force: true }));
 for (const name of Object.keys(process.env)) if (name.startsWith("NEWSROOM_SPEED_")) delete process.env[name];

@@ -4,7 +4,7 @@
 // the plan files with the extra keys are written by hand, as a model or a person could. No model, no browser.
 // newsroom_portable_publication, the direct tool, is the other path to renderPublication: it resolves no asset and embeds no page, so it drops the same
 // two keys too; called with them on a module, no file it writes holds the injected SVG and its page is the plain one (cases "direct p1" to "direct p3").
-// The PINS are the sha256 of the pages these plans and calls render to on main 7ea386d9, before the change. Run: node scripts/test_publication_render_drops_model_svg.mjs
+// The PINS are the sha256 of the pages these plans and calls render to on main d9d3b821bb17, before the change. Run: node scripts/test_publication_render_drops_model_svg.mjs
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";

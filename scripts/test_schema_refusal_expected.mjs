@@ -1,6 +1,6 @@
 // K814: the refusal text for missing required properties says what the schema expects, and lines that differ only in array indexes are folded.
-// Wording only: pass/fail, the normalized arguments and validate()'s error list must equal the base (ab2f9bf6) verdicts in
-// fixtures/schema-refusal/verdicts-ab2f9bf6.json for every fixture case. Offline; no model, no network.
+// Wording only: pass/fail, the normalized arguments and validate()'s error list must equal the base (adf7d7261835) verdicts in
+// fixtures/schema-refusal/verdicts-adf7d7261835.json for every fixture case. Offline; no model, no network.
 import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
 import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { INLINE_CASES, loadTree, runInline, visualConceptsRaw } from "./schema_refusal_cases.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const BASE = JSON.parse(readFileSync(join(ROOT, "fixtures/schema-refusal/verdicts-ab2f9bf6.json"), "utf8"));
+const BASE = JSON.parse(readFileSync(join(ROOT, "fixtures/schema-refusal/verdicts-adf7d7261835.json"), "utf8"));
 const tmp = makeTestTmp("refusal-expected-");
 const lineBlock = (text) => text.split("\n\nArguments as sent:")[0].split("\n").slice(1);
 const results = [];

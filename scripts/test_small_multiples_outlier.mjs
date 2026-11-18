@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // A small-multiples line chart where one facet's range dwarfs the rest: that facet moves to its own panel under the grid
-// (own vertical scale, a note says so) and the other facets share the narrower scale. Every other chart is byte-identical to fb44c18.
+// (own vertical scale, a note says so) and the other facets share the narrower scale. Every other chart is byte-identical to fa311939ffc7.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -31,7 +31,7 @@ const NOTE_ZH = /与其他各项数值相差悬殊，单独成图，纵轴刻度
 // ---- split shapes ---------------------------------------------------------------------------------------------------------
 const shapeA = { spec: spec({ index_base: 100 }), rows: [...["S1", "S2", "S3", "S4", "S5"].map((n, k) => series(n, wave(100, 6 + k))).flat(), ...series("S6", (i) => 100 + i * 28)] };
 const shapeB = { spec: spec({ unit: "万吨" }), rows: [...["甲", "乙", "丙"].map((n, k) => series(n, wave(20 + 2 * k, 4))).flat(), ...series("丁", (i) => 10 + i * 17)] };
-if (process.env.MEASURE) { // spans (share of plot height) of shapes A and B, also run at a5f56b3 for the before numbers
+if (process.env.MEASURE) { // spans (share of plot height) of shapes A and B, also run at af466de5413a for the before numbers
   for (const [n, { spec: sp, rows }] of [["A", shapeA], ["B", shapeB]]) console.log(n, geometry(renderVizSvg(sp, rows)).map((v) => (v / PLOT_H).toFixed(2)).join(" "));
   process.exit(0);
 }
@@ -106,7 +106,7 @@ const thousands = { spec: spec({ unit: "点" }), rows: [...["甲", "乙", "丙",
   }
 }
 
-// ---- byte-identical to fb44c18 -------------------------------------------------------------------------------------------------
+// ---- byte-identical to fa311939ffc7 -------------------------------------------------------------------------------------------------
 const three = [...series("甲", wave(100, 5)), ...series("乙", wave(100, 6)), ...series("丙", (i) => 100 + i * 40)];
 const twoSame = [...["甲", "乙", "丙", "丁"].slice(0, 2).map((n, k) => series(n, wave(100, 5))).flat(), ...series("丙", (i) => 100 + i * 30), ...series("丁", (i) => 100 + i * 32)];
 const calm = ["甲", "乙", "丙", "丁"].map((n, k) => series(n, wave(100, 5 + 2 * k))).flat();
@@ -133,7 +133,7 @@ const CASES = {
   "no index, 3 facets with an outlier": [spec(), three],
   "no index, 5 facets, no outlier": [spec({ unit: "万吨" }), [...["甲", "乙", "丙", "丁", "戊"].map((n, k) => series(n, wave(20 + k, 4 + k))).flat()]],
 };
-// SHA-256 (first 16 hex) of the desktop SVG at fb44c18, recorded before the change
+// SHA-256 (first 16 hex) of the desktop SVG at fa311939ffc7, recorded before the change
 const PINNED = process.env.PRINT_HASHES ? {} : {
   "3 facets with an outlier": "2c48f736801a3430/854f45c60d21ba30",
   "two outliers moving the same way": "5109637fe6e55ff0/7b8f121dbe0d863e",
@@ -165,19 +165,19 @@ if (mismatched.length) {
   const table = Object.fromEntries(Object.keys(hashes).map((name) => [name, { got: hashes[name], pinned: PINNED[name], file: mismatched.includes(name) ? `case-${mismatched.indexOf(name) + 1}` : null }]));
   writeFileSync(new URL("hashes.json", dir), JSON.stringify(table, null, 2) + "\n");
 }
-for (const [name, hash] of Object.entries(hashes)) assert.equal(hash, PINNED[name], `${name}: byte-identical to fb44c18`);
+for (const [name, hash] of Object.entries(hashes)) assert.equal(hash, PINNED[name], `${name}: byte-identical to fa311939ffc7`);
 // just over 3 splits, with the same grid
 assert.match(renderVizSvg(spec({ index_base: 100 }), nearRows(justOver)), NOTE_ZH, "ratio just over 3 splits");
 assert.ok(!NOTE_ZH.test(renderVizSvg(...CASES["ratio just under 3"])), "ratio just under 3 does not split");
 // mobile is never split
 assert.ok(!NOTE_ZH.test(String(renderVizBundle(shapeA.spec, shapeA.rows).mobile?.svg ?? renderVizBundle(shapeA.spec, shapeA.rows).mobile ?? "")), "mobile is untouched");
-// switch off (unset, and anything but "1"): the outlier fixtures render byte-identical to fb44c18, desktop and mobile
+// switch off (unset, and anything but "1"): the outlier fixtures render byte-identical to fa311939ffc7, desktop and mobile
 const OFF_PINNED = { A: "e78166d88d65bd5c/f33c26c91d62cb81", B: "bc99f7853f709fab/567a08543fba5ddd" };
 const bundleHash = (sp, rows) => { const b = renderVizBundle(sp, rows); return sha(typeof b.desktop === "string" ? b.desktop : b.desktop.svg) + "/" + sha(typeof b.mobile === "string" ? b.mobile : b.mobile?.svg ?? ""); };
 for (const off of [undefined, "0", "true"]) {
   if (off === undefined) delete process.env[SWITCH]; else process.env[SWITCH] = off;
-  assert.equal(bundleHash(shapeA.spec, shapeA.rows), OFF_PINNED.A, `switch ${off}: shape A byte-identical to fb44c18`);
-  assert.equal(bundleHash(shapeB.spec, shapeB.rows), OFF_PINNED.B, `switch ${off}: shape B byte-identical to fb44c18`);
+  assert.equal(bundleHash(shapeA.spec, shapeA.rows), OFF_PINNED.A, `switch ${off}: shape A byte-identical to fa311939ffc7`);
+  assert.equal(bundleHash(shapeB.spec, shapeB.rows), OFF_PINNED.B, `switch ${off}: shape B byte-identical to fa311939ffc7`);
   assert.ok(!NOTE_ZH.test(renderVizSvg(shapeA.spec, shapeA.rows)), `switch ${off}: no outlier panel`);
 }
 process.env[SWITCH] = "1";

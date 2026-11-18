@@ -22,7 +22,7 @@ import { getBasemap } from "../runtime/pi/basemap_registry.mjs";
 import { CHOROPLETH_BASEMAP_ID, classBreaks, lintChoroplethSpec } from "../runtime/pi/choropleth.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const BASE_COMMIT = "abd9d8b";
+const BASE_COMMIT = "a07cdf998122";
 const base = {
   schema_version: "0.9.0", takeaway: "t", title: "Round three", subtitle: "synthetic", alt: "A synthetic chart used to check round-three chart conventions.",
   source_note: "synthetic fixture", claim_id: "claim-round3", sql: "SELECT 1", annotations: [], highlight_values: [], direct_labels: true, language: "zh",

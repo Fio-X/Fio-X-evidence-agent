@@ -1,20 +1,20 @@
 // NEWSROOM_SPEED_EDITORIAL_HINTS=1: wording only. Field descriptions, one guideline line and two refusal suffixes tell
 // the model what the editorial tools need. No schema constraint, fill, default or accept/refuse condition changes.
 //
-// Everything runs the real newsroom.ts (type-stripped) three ways: the pre-change file (a4d4cb0), this tree with the
+// Everything runs the real newsroom.ts (type-stripped) three ways: the pre-change file (9a9de373d7df), this tree with the
 // switch unset, and this tree with it "1".
-//   Part 1  tool definitions: off == a4d4cb0 for every tool in every profile/phase; on changes exactly the four
+//   Part 1  tool definitions: off == 9a9de373d7df for every tool in every profile/phase; on changes exactly the four
 //           editorial tools, only by field descriptions and one guideline line (the schema is equal once descriptions
 //           are dropped, so Pi's validation cannot differ).
 //   Part 2  the real handlers on synthetic artifact roots: the same accept/refuse decision in all three, a refusal
-//           writes nothing, off == a4d4cb0 (result text, refusal text, files written), and on = the old refusal
+//           writes nothing, off == 9a9de373d7df (result text, refusal text, files written), and on = the old refusal
 //           text + one suffix.
 //   Part 3  end to end with the real duckdb_query, record_claim and newsroom_visual_concepts (duckdb needed).
 //   Part 4  the same checks fail on six deliberately broken copies of the on path (a relaxed gate, a leaking schema,
 //           a suffix on every error, an offered forged claim, a file left behind, a refusal turned into an acceptance).
 // No provider, relay or network call. Run: node scripts/test_editorial_hints.mjs
 // BASELINE_NEWSROOM_TS=<file> replaces `git show <ref>:runtime/pi/newsroom.ts`; EDITORIAL_HINTS_BASELINE_REF changes
-// the ref (default a4d4cb0); REQUIRE_BASELINE=1 makes a missing baseline fatal instead of a printed skip; KEEP_TMP=1 keeps
+// the ref (default 9a9de373d7df); REQUIRE_BASELINE=1 makes a missing baseline fatal instead of a printed skip; KEEP_TMP=1 keeps
 // the temp dirs.
 import "./group_env_pin.mjs";
 import assert from "node:assert/strict";
@@ -36,7 +36,7 @@ if (process.env.CALL_ROWS_MODE) delete process.env.NEWSROOM_SPEED_ATOMIC_ARTIFAC
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const SWITCH = "NEWSROOM_SPEED_EDITORIAL_HINTS";
-const BASELINE_REF = process.env.EDITORIAL_HINTS_BASELINE_REF || "a4d4cb0";
+const BASELINE_REF = process.env.EDITORIAL_HINTS_BASELINE_REF || "9a9de373d7df";
 const { deriveClaimVerification } = await import(join(ROOT, "runtime/pi/evidence_gate.mjs"));
 const { TOOL_REGISTRY } = await import(join(ROOT, "runtime/pi/tool_registry.mjs"));
 const { VALID_TOOL_PHASES } = await import(join(ROOT, "runtime/pi/tool_phase_policy.mjs"));
@@ -134,10 +134,10 @@ const EXPECTED_DESCRIPTIONS = {
   [FOUR.assets]: { "properties.concept_ref": WORDING.conceptRef },
   [FOUR.concepts]: {},
 };
-// Default-on tool changes approved after a4d4cb0 are the entries of scripts/fixtures/pin_patches/editorial_hints.json, each with the commit that
+// Default-on tool changes approved after 9a9de373d7df are the entries of scripts/fixtures/pin_patches/editorial_hints.json, each with the commit that
 // made it (page top, fast-fail, the wiring of strip_plot, stacked_bar_100 and mirrored_bar into the plan path, zh names, measure_semantics, the
-// round-3 chart fields). Each is asserted exactly (a4d4cb0 holds the old value, the head the new one), then the list is reversed on a copy of the
-// head and the whole definition must equal a4d4cb0's byte for byte (scripts/lib_pin_patch.mjs). A tool without entries must be byte-equal.
+// round-3 chart fields). Each is asserted exactly (9a9de373d7df holds the old value, the head the new one), then the list is reversed on a copy of the
+// head and the whole definition must equal 9a9de373d7df's byte for byte (scripts/lib_pin_patch.mjs). A tool without entries must be byte-equal.
 // test_viz_plan_schema.mjs asserts the wiring against schemas/newsroom-viz-spec.schema.json. The world choropleth field map_extent is behind
 // NEWSROOM_MAP_WORLD, off by default, and absent here.
 const pins = baseMod ? loadPinPatches("editorial_hints", { baseline: baselineFile.from === `git ${BASELINE_REF}` ? BASELINE_REF : undefined }) : null;
@@ -152,7 +152,7 @@ function checkDefinitions(mod, { quiet = false } = {}) {
     pairs += 1;
     assert.deepEqual([...on.keys()], [...off.keys()], `${where}: the switch adds or removes no tool`);
     if (base) {
-      assert.deepEqual([...off.keys()], [...base.keys()], `${where}: switch off registers the tools a4d4cb0 registers`);
+      assert.deepEqual([...off.keys()], [...base.keys()], `${where}: switch off registers the tools 9a9de373d7df registers`);
       pins.check(base, off, where);
     }
     const changed = [...off.keys()].filter((name) => slim(on.get(name)) !== slim(off.get(name)));
@@ -185,7 +185,7 @@ function checkDefinitions(mod, { quiet = false } = {}) {
     }
   }
   assert.ok(pairs >= 6, "profile/phase pairs ran");
-  if (!quiet) check(`definitions: ${pairs} profile/phase pairs; off == ${baseMod ? "a4d4cb0" : "(baseline skipped)"} for every tool; on differs only in three field descriptions and one guideline line (+${delta} B of tool surface, full profile); only exactly "1" switches it on`);
+  if (!quiet) check(`definitions: ${pairs} profile/phase pairs; off == ${baseMod ? "9a9de373d7df" : "(baseline skipped)"} for every tool; on differs only in three field descriptions and one guideline line (+${delta} B of tool surface, full profile); only exactly "1" switches it on`);
 }
 
 // ---- fixtures: neutral synthetic artifact roots --------------------------------------------------------------------
@@ -248,7 +248,7 @@ function editorialRoot(art) {
 }
 
 // ---- Part 2: the case table ------------------------------------------------------------------------------------------
-// expect: "accept" | "refuse"; reason: what the OLD (a4d4cb0) refusal text must match exactly, so a case cannot refuse
+// expect: "accept" | "refuse"; reason: what the OLD (9a9de373d7df) refusal text must match exactly, so a case cannot refuse
 // for another reason than the one it names; suffix: "story" | "concept_ref" | "none" (on text must equal off text).
 const refuse = (id, tool, setup, reason, suffix, extra = {}) => ({ id, tool, setup, expect: "refuse", reason, suffix, ...extra });
 const accept = (id, tool, setup) => ({ id, tool, setup, expect: "accept" });
@@ -539,21 +539,21 @@ const ROWS = { base: ROWS_BASE, off: ROWS_OFF, on: ROWS_ON };
 function compareCases(base, off, on) {
   for (const c of CASES) {
     const [b, o, n] = [base?.[c.id], off[c.id], on[c.id]];
-    for (const [name, r] of [["a4d4cb0", b], ["off", o], ["on", n]]) {
+    for (const [name, r] of [["9a9de373d7df", b], ["off", o], ["on", n]]) {
       if (!r) continue;
       assert.equal(r.accepted, c.expect === "accept", `${c.id} [${name}]: ${r.accepted ? "was accepted" : `was refused: ${r.text.slice(0, 200)}`}`);
       if (c.expect === "refuse") assert.deepEqual(r.after, r.before, `${c.id} [${name}]: a refusal must write nothing`);
     }
     // the call report is compared by its exact rows (the older commit's newsroom.ts runs on the head's groups.mjs, so it writes the report too); every other part is compared as before
     const bare = ({ report, ...rest }) => rest;
-    if (b) expectRows(b.report, ROWS.base.get(c.id), `${c.id} [a4d4cb0]`);
+    if (b) expectRows(b.report, ROWS.base.get(c.id), `${c.id} [9a9de373d7df]`);
     expectRows(o.report, ROWS.off.get(c.id), `${c.id} [off]`);
     expectRows(n.report, ROWS.on.get(c.id), `${c.id} [on]`);
     // #198: the older commit shows the run root in an ENOENT text, the head shows $ARTIFACT; only that spelling of the root is normalized
     const knownRoot = join(WORK, c.id.replace(/[^a-z0-9]+/gi, "-").slice(0, 60), "run");
     const unrooted = (r) => ({ ...bare(r), text: typeof r.text === "string" ? r.text.split(`${knownRoot}/`).join("$ARTIFACT/") : r.text });
     if (typeof o.text === "string") assert.ok(!o.text.includes(knownRoot), `${c.id}: the head text shows no run root`);
-    if (b) assert.deepEqual(bare(o), unrooted(b), `${c.id}: switch off == a4d4cb0 (result or refusal text, details and files written)`);
+    if (b) assert.deepEqual(bare(o), unrooted(b), `${c.id}: switch off == 9a9de373d7df (result or refusal text, details and files written)`);
     if (c.expect === "accept") {
       assert.ok(Object.keys(o.after).length > Object.keys(o.before).length, `${c.id}: an accepted call writes its artifact`);
       assert.deepEqual(bare(n), bare(o), `${c.id}: switch on accepts the same call with the same text, details and artifact bytes`);
@@ -575,7 +575,7 @@ async function checkHandlers(mod, { quiet = false } = {}) {
   compareCases(base, off, on);
   if (!quiet) {
     const n = (k) => CASES.filter((c) => c.expect === k).length;
-    check(`handlers: ${CASES.length} cases (${n("accept")} accepted, ${n("refuse")} refused) give the same decision off, on${base ? " and on a4d4cb0" : ""}; refusals write nothing; off == a4d4cb0; on = old text + suffix`);
+    check(`handlers: ${CASES.length} cases (${n("accept")} accepted, ${n("refuse")} refused) give the same decision off, on${base ? " and on 9a9de373d7df" : ""}; refusals write nothing; off == 9a9de373d7df; on = old text + suffix`);
   }
 }
 
@@ -625,12 +625,12 @@ async function e2eEditorial(tools) {
 function compareLogs(label, base, off, on) {
   for (const [i, o] of off.log.entries()) {
     const n = on.log[i];
-    if (base) assert.deepEqual(base.log[i], o, `${label} step ${i + 1} (${o.name}): off == a4d4cb0`);
+    if (base) assert.deepEqual(base.log[i], o, `${label} step ${i + 1} (${o.name}): off == 9a9de373d7df`);
     assert.equal(n.accepted, o.accepted, `${label} step ${i + 1} (${o.name}): same decision`);
     if (o.accepted) assert.equal(n.text, o.text, `${label} step ${i + 1} (${o.name}): same result text`);
     else assert.ok(n.text.startsWith(o.text) && n.text.length > o.text.length, `${label} step ${i + 1} (${o.name}): old text + suffix`);
   }
-  if (base) assert.deepEqual(off.files, base.files, `${label}: off writes what a4d4cb0 writes`);
+  if (base) assert.deepEqual(off.files, base.files, `${label}: off writes what 9a9de373d7df writes`);
   assert.deepEqual(on.files, off.files, `${label}: on writes byte-identical artifacts`);
 }
 async function checkEndToEnd(mod) {
@@ -647,7 +647,7 @@ async function checkEndToEnd(mod) {
     assert.ok(suffix.includes(on.ids.goodId) && suffix.includes("\"Total amount by region is computed from the fixture rows\""), "the real verified claim is offered with its stored text");
     assert.ok(!suffix.slice(suffix.indexOf("Verified claims")).includes(on.ids.draftId), "the draft claim is not offered as verified");
     assert.match(suffix, new RegExp(`n2: ${on.ids.draftId}\\.`), "the real draft claim is the listed pair");
-    check("end to end: real duckdb_query + record_claim: draft claim refused with the hint; step (2) and step (1) are both accepted; same artifacts as off and a4d4cb0");
+    check("end to end: real duckdb_query + record_claim: draft claim refused with the hint; step (2) and step (1) are both accepted; same artifacts as off and 9a9de373d7df");
   }
   const [base, off, on] = await variants(e2eEditorial);
   compareLogs("editorial", base, off, on);

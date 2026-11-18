@@ -22,7 +22,7 @@ import types
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-BASE = os.environ.get("K796_BASE_REF", "ab2f9bf635015308ff4ce8368927b72e6430654a")
+BASE = os.environ.get("K796_BASE_REF", "adf7d7261835")
 DIMS = {"style_profile": "analytical_precision", "sw": 1440, "cw": 1440, "modules": [{"id": "m1", "left": 0, "right": 1200}],
         "blocked": [], "plotly": [], "webgl_error": False, "font_status": "loaded", "accessibility_errors": []}
 CURRENT = {"dims": DIMS}
