@@ -19,10 +19,10 @@ The script:
 - checks the Node.js, Python and Rust versions (Node.js runs the tool host)
 - offers to install DuckDB (data queries)
 
-`news doctor` (step 5) needs two exact versions:
-- Rust 1.98.1: `rust-toolchain.toml` pins it, so rustup installs and uses it inside the repository folder
+`news doctor` (step 5) needs at least these versions:
+- Rust 1.98.1: `rust-toolchain.toml` pins it for builds, so rustup installs and uses it inside the repository folder
   (`rustup default 1.98.1` makes it the default elsewhere);
-- DuckDB 1.5.5: `python3 -m pip install --user duckdb-cli==1.5.5` (Homebrew may install another version).
+- DuckDB 1.5.5: `python3 -m pip install --user duckdb-cli==1.5.5` installs the tested version (a later one also passes).
 
 No global npm package is needed: the agent loop is built into `news`.
 
@@ -72,7 +72,7 @@ news doctor
 ```
 
 Run it in the repository folder. Every required line should say `PASS`, ending with `live ready yes`; a `FAIL` on
-`rustc` or `duckdb` means another version than the two above.
+`rustc` or `duckdb` means a version older than the two above.
 
 ---
 

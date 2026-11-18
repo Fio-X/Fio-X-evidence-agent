@@ -69,11 +69,11 @@ process's environment, and it is never written to logs, events or error messages
 
 If the setup script fails, install the pieces by hand.
 
-Requirements (`news doctor` checks the first two by exact version and reports `live ready no` otherwise):
-- Rust 1.98.1 exactly: `rust-toolchain.toml` pins it, so rustup installs and uses it inside the repository folder
+Requirements (`news doctor` checks that Rust, DuckDB and Node.js are at least these versions and reports `live ready no` otherwise):
+- Rust 1.98.1 or later: `rust-toolchain.toml` pins 1.98.1 for builds, so rustup installs and uses it inside the repository folder
   (run `rustup default 1.98.1` to make it the default elsewhere)
-- DuckDB 1.5.5 exactly: `python3 -m pip install --user duckdb-cli==1.5.5` (a package manager may install another version)
-- Node.js 22.19.0+ (runs the tool host)
+- DuckDB 1.5.5 or later: `python3 -m pip install --user duckdb-cli==1.5.5` installs the tested version
+- Node.js 22.19.0 or later (runs the tool host)
 - Python 3.13+
 
 ```bash

@@ -6,8 +6,9 @@ use std::path::{Path, PathBuf};
 use tokio::process::Command;
 
 const EXPECTED_PI: &str = "0.85.1";
-const EXPECTED_DUCKDB: &str = "1.5.5";
-const EXPECTED_RUST: &str = "1.98.1";
+// DuckDB and rustc are checked as "at least" (like Node); rust-toolchain.toml still pins Rust 1.98.1 for builds in the repository.
+const MIN_DUCKDB: (u64, u64, u64) = (1, 5, 5);
+const MIN_RUST: (u64, u64, u64) = (1, 98, 1);
 const MIN_NODE: (u64, u64, u64) = (22, 19, 0);
 
 #[derive(Debug, Serialize)]
@@ -38,21 +39,31 @@ pub async fn run(args: DoctorArgs) -> Result<()> {
     } else {
         None
     };
-    let duckdb = exact_check(
+    let duckdb = min_check(
         "duckdb",
-        "1.5.5",
+        ">=1.5.5",
         &duckdb_bin,
         &["--version"],
-        EXPECTED_DUCKDB,
+        MIN_DUCKDB,
+        None,
     )
     .await;
-    let node = node_check().await;
-    let rustc = exact_check(
+    let node = min_check(
+        "node",
+        ">=22.19.0",
+        Path::new("node"),
+        &["--version"],
+        MIN_NODE,
+        None,
+    )
+    .await;
+    let rustc = min_check(
         "rustc",
-        "1.98.1",
+        ">=1.98.1",
         Path::new("rustc"),
         &["--version"],
-        EXPECTED_RUST,
+        MIN_RUST,
+        Some("rustc"),
     )
     .await;
     let python =
@@ -92,10 +103,10 @@ pub async fn run(args: DoctorArgs) -> Result<()> {
         }
         if pi_runtime {
             println!(
-                "baseline   v1.1.0       Rust 1.98.1 | Node >=22.19.0 | Pi 0.85.1 | DuckDB 1.5.5"
+                "baseline   v1.1.0       Rust >=1.98.1 | Node >=22.19.0 | Pi 0.85.1 | DuckDB >=1.5.5"
             );
         } else {
-            println!("baseline   v1.1.0       Rust 1.98.1 | Node >=22.19.0 | DuckDB 1.5.5 (agent: built-in Rust)");
+            println!("baseline   v1.1.0       Rust >=1.98.1 | Node >=22.19.0 | DuckDB >=1.5.5 (agent: built-in Rust)");
         }
         println!("live ready {}", if live_ready { "yes" } else { "no" });
     }
@@ -173,23 +184,26 @@ async fn availability_check(
     }
 }
 
-async fn node_check() -> Check {
-    match check(Path::new("node"), &["--version"]).await {
-        Ok(version) => {
-            let ok = parse_version(&version)
-                .map(|value| value >= MIN_NODE)
-                .unwrap_or(false);
-            Check {
-                name: "node",
-                requirement: ">=22.19.0",
-                ok,
-                version: Some(version),
-                error: None,
-            }
-        }
+/// A tool that passes at this version or any later one; a version line it cannot read fails.
+async fn min_check(
+    name: &'static str,
+    requirement: &'static str,
+    bin: &Path,
+    args: &[&str],
+    min: (u64, u64, u64),
+    lead: Option<&str>,
+) -> Check {
+    match check(bin, args).await {
+        Ok(version) => Check {
+            name,
+            requirement,
+            ok: at_least(&version, min, lead),
+            version: Some(version),
+            error: None,
+        },
         Err(error) => Check {
-            name: "node",
-            requirement: ">=22.19.0",
+            name,
+            requirement,
             ok: false,
             version: None,
             error: Some(error),
@@ -197,18 +211,31 @@ async fn node_check() -> Check {
     }
 }
 
-fn parse_version(text: &str) -> Option<(u64, u64, u64)> {
-    let token = text
-        .trim()
-        .trim_start_matches('v')
-        .split_whitespace()
-        .next()?;
-    let mut parts = token.split('.');
-    Some((
-        parts.next()?.parse().ok()?,
-        parts.next()?.parse().ok()?,
-        parts.next()?.parse().ok()?,
-    ))
+fn at_least(version: &str, min: (u64, u64, u64), lead: Option<&str>) -> bool {
+    parse_version(version, lead).is_some_and(|value| value >= min)
+}
+
+/// The version of a tool's first output line, read from one fixed word and never searched for further on: the first word, or, when
+/// `lead` is given ("rustc"), the second word after a first word that is exactly `lead`. The word (one leading "v" dropped) is read
+/// strictly as major.minor.patch: "v22.19.0" (node), "v1.5.5 (Variegata) 08a1d3a" (duckdb), "rustc 1.98.1 (5f4bd0ee6 2026-06-25)"
+/// (the hash and the date after it are never read). Any suffix ("-rc.1", "-beta", "-dev", "-nightly", "+build"), a missing part or
+/// another leading word ("node 22.19.0", "Warning: ...") makes the line unreadable, so a pre-release version or a stray line fails.
+fn parse_version(text: &str, lead: Option<&str>) -> Option<(u64, u64, u64)> {
+    let mut words = text.lines().next()?.split_whitespace();
+    if let Some(lead) = lead {
+        if words.next()? != lead {
+            return None;
+        }
+    }
+    let word = words.next()?;
+    let mut parts = word.strip_prefix('v').unwrap_or(word).split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    let patch = parts.next()?.parse().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some((major, minor, patch))
 }
 
 async fn check(bin: &Path, args: &[&str]) -> std::result::Result<String, String> {
@@ -265,8 +292,111 @@ mod tests {
 
     #[test]
     fn parses_node_versions() {
-        assert_eq!(parse_version("v22.19.0"), Some((22, 19, 0)));
-        assert_eq!(parse_version("22.20.1"), Some((22, 20, 1)));
-        assert!(parse_version("v22.18.9").unwrap() < MIN_NODE);
+        assert_eq!(parse_version("v22.19.0", None), Some((22, 19, 0)));
+        assert_eq!(parse_version("22.20.1", None), Some((22, 20, 1)));
+        assert!(parse_version("v22.18.9", None).unwrap() < MIN_NODE);
+    }
+
+    #[test]
+    fn parses_duckdb_and_rustc_version_lines() {
+        assert_eq!(
+            parse_version("v1.5.5 (Variegata) 08a1d3a", None),
+            Some((1, 5, 5))
+        );
+        assert_eq!(
+            parse_version("rustc 1.98.1 (5f4bd0ee6 2026-06-25)", Some("rustc")),
+            Some((1, 98, 1))
+        );
+        assert_eq!(
+            parse_version("rustc 1.99.0-nightly (abc 2026-07-01)", Some("rustc")),
+            None
+        );
+    }
+
+    #[test]
+    fn a_later_version_passes() {
+        assert!(at_least("v1.5.5 (Variegata) 08a1d3a", MIN_DUCKDB, None));
+        assert!(at_least("v1.6.0 (Next) 0000000", MIN_DUCKDB, None));
+        assert!(at_least("v2.0.0", MIN_DUCKDB, None));
+        assert!(at_least(
+            "rustc 1.98.1 (5f4bd0ee6 2026-06-25)",
+            MIN_RUST,
+            Some("rustc")
+        ));
+        assert!(at_least(
+            "rustc 1.98.2 (abc 2026-07-01)",
+            MIN_RUST,
+            Some("rustc")
+        ));
+        assert!(at_least(
+            "rustc 1.100.0 (abc 2026-09-01)",
+            MIN_RUST,
+            Some("rustc")
+        ));
+    }
+
+    #[test]
+    fn an_earlier_version_fails() {
+        assert!(!at_least("v1.5.4 (Variegata) 0000000", MIN_DUCKDB, None));
+        assert!(!at_least("v1.4.9", MIN_DUCKDB, None));
+        assert!(!at_least(
+            "rustc 1.98.0 (abc 2026-05-14)",
+            MIN_RUST,
+            Some("rustc")
+        ));
+        assert!(!at_least(
+            "rustc 1.9.9 (abc 2016-01-01)",
+            MIN_RUST,
+            Some("rustc")
+        ));
+    }
+
+    #[test]
+    fn a_pre_release_version_fails() {
+        assert!(!at_least("v22.19.0-rc.1", MIN_NODE, None));
+        assert!(!at_least("v22.19.0-nightly20260101abc", MIN_NODE, None));
+        assert!(!at_least(
+            "rustc 1.98.1-beta (abc 2026-07-01)",
+            MIN_RUST,
+            Some("rustc")
+        ));
+        assert!(!at_least("1.98.1-beta", MIN_RUST, Some("rustc")));
+        assert!(!at_least("v1.5.5-dev", MIN_DUCKDB, None));
+        assert!(!at_least(
+            "v1.5.5+build7 (Variegata) 08a1d3a",
+            MIN_DUCKDB,
+            None
+        ));
+        assert!(at_least("v22.20.0", MIN_NODE, None));
+    }
+
+    #[test]
+    fn a_stray_or_misplaced_word_fails() {
+        assert!(!at_least("node 22.19.0", MIN_NODE, None));
+        assert!(!at_least("Node.js v22.20.0", MIN_NODE, None));
+        assert!(!at_least("WARNING: using 22.19.0", MIN_NODE, None));
+        assert!(!at_least("Warning: config 2.0.0", MIN_DUCKDB, None));
+        assert!(!at_least(
+            "cargo 1.98.1 (abc 2026-06-25)",
+            MIN_RUST,
+            Some("rustc")
+        ));
+        assert!(!at_least("rustc", MIN_RUST, Some("rustc")));
+        assert!(!at_least("1.98.1 rustc", MIN_RUST, Some("rustc")));
+        assert!(!at_least("Warning: x\nv2.0.0", MIN_DUCKDB, None));
+        assert!(at_least(
+            "rustc 1.98.1 (abc 2026-06-25)",
+            MIN_RUST,
+            Some("rustc")
+        ));
+    }
+
+    #[test]
+    fn an_unreadable_version_fails() {
+        assert!(!at_least("", MIN_DUCKDB, None));
+        assert!(!at_least("duckdb", MIN_DUCKDB, None));
+        assert!(!at_least("v1.5", MIN_DUCKDB, None));
+        assert!(!at_least("rustc unknown", MIN_RUST, Some("rustc")));
+        assert!(!at_least("rustc 1.x.1", MIN_RUST, Some("rustc")));
     }
 }
