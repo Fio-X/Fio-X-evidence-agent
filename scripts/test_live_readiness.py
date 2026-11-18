@@ -90,4 +90,43 @@ for tool,line,want in cases:
     if got!=want: raise SystemExit(f'--meets {tool} on {line!r}: exit {got}, wanted {want}')
 if meets({},'node')!=1: raise SystemExit('--meets node with no node should exit 1')
 if meets({'node':'v22.19.0'},'bogus')!=64: raise SystemExit('--meets with an unknown name should exit 64')
+# bootstrap_live_env.sh: its "already installed" tests call `meets`. Only the three install functions are pulled out of the script and
+# run with every installer command replaced by a stub that prints a marker, so nothing is downloaded or changed on this machine.
+import shutil
+bash=shutil.which('bash')
+script=(ROOT/'scripts/bootstrap_live_env.sh').read_text(encoding='utf-8').split('\n')
+def block(start):
+    first=script.index(start)
+    last=next(i for i in range(first,len(script)) if script[i]=='}')
+    return '\n'.join(script[first:last+1])
+meets_line=next(line for line in script if line.startswith('meets()'))
+functions='\n'.join([meets_line]+[block(f'{name}() {{') for name in ('install_node','install_rust','install_duckdb')])
+stubs='\n'.join(f'{name}() {{ echo "FAKE-INSTALL {name} $*"; }}' for name in ('timeout','rustup','curl','npm','nvm'))
+def bootstrap_step(step,tools,with_python):
+    with tempfile.TemporaryDirectory(prefix='boot-') as folder:
+        for tool,line in tools.items():
+            path=Path(folder)/tool
+            path.write_text(f"#!/bin/sh\necho '{line}'\n"); path.chmod(path.stat().st_mode|stat.S_IXUSR)
+        if with_python:
+            path=Path(folder)/'python3'
+            path.write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n'); path.chmod(path.stat().st_mode|stat.S_IXUSR)
+        code=f'ROOT="{ROOT}"\n{stubs}\n{functions}\n{step}\necho "exit=$?"\n'
+        cp=subprocess.run([bash,'-c',code],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,env={'PATH':folder,'HOME':folder})
+        return cp.stdout
+good={'node':'v22.19.0','duckdb':'v1.5.5 (Variegata) 08a1d3a','rustc':'rustc 1.98.1 (abc 2026-06-25)','cargo':'cargo 1.98.1 (abc 2026-06-25)'}
+newer={'node':'v24.14.1','duckdb':'v1.6.0 (Next) 0000000','rustc':'rustc 1.100.0 (abc 2026-09-01)','cargo':'cargo 1.100.0 (abc 2026-09-01)'}
+for step in ('install_node','install_rust','install_duckdb'):
+    for label,tools in (('pinned',good),('newer',newer)):
+        out=bootstrap_step(step,tools,True)
+        if 'FAKE-INSTALL' in out or 'requesting' in out or 'unavailable' in out or 'exit=0' not in out:
+            raise SystemExit(f'{step} with {label} tools must skip the install: {out!r}')
+    # no python3 on PATH: the test cannot run, so it counts as "not good enough" and the install branch is taken
+    out=bootstrap_step(step,good,False)
+    if 'exit=0' in out and 'FAKE-INSTALL' not in out:
+        raise SystemExit(f'{step} without python3 must go to the install branch: {out!r}')
+    if not ('FAKE-INSTALL' in out or 'requesting' in out or 'unavailable' in out):
+        raise SystemExit(f'{step} without python3 did not reach the install branch: {out!r}')
+# a tool that is too old also goes to the install branch
+old=dict(good,rustc='rustc 1.98.0 (abc 2026-05-14)')
+if 'FAKE-INSTALL' not in bootstrap_step('install_rust',old,True): raise SystemExit('install_rust with an older rustc must install')
 print(f"live readiness contract: PASS (live_ready={str(report['live_ready']).lower()})")
