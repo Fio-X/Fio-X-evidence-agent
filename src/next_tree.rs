@@ -55,7 +55,9 @@ impl PartialEq for J {
             (J::Null, J::Null) => true,
             (J::Str(a), J::Str(b)) => a == b,
             (J::Arr(a), J::Arr(b)) => a.len() == b.len() && a.iter().zip(b).all(|(x, y)| x == y),
-            (J::Obj(a), J::Obj(b)) => a.len() == b.len() && a.iter().all(|(k, v)| other.get(k).is_some_and(|w| v == w)),
+            (J::Obj(a), J::Obj(b)) => {
+                a.len() == b.len() && a.iter().all(|(k, v)| other.get(k).is_some_and(|w| v == w))
+            }
             (a, b) => match (a.num_like(), b.num_like()) {
                 (Some(x), Some(y)) => x == y,
                 _ => false,
@@ -158,7 +160,10 @@ impl J {
     }
     pub fn remove(&mut self, k: &str) -> Option<J> {
         match self {
-            J::Obj(m) => m.iter().position(|(key, _)| key == k).map(|i| m.remove(i).1),
+            J::Obj(m) => m
+                .iter()
+                .position(|(key, _)| key == k)
+                .map(|i| m.remove(i).1),
             _ => None,
         }
     }
@@ -174,7 +179,9 @@ impl J {
     /// Sets the value at a path of keys (the last one set in place or added); false when a step is missing.
     #[cfg(test)]
     pub fn set_path(&mut self, p: &[String], v: J) -> bool {
-        let Some((last, head)) = p.split_last() else { return false };
+        let Some((last, head)) = p.split_last() else {
+            return false;
+        };
         let mut o = self;
         for k in head {
             o = match o {
@@ -231,10 +238,16 @@ impl J {
         match v {
             Value::Null => J::Null,
             Value::Bool(b) => J::Bool(*b),
-            Value::Number(n) => n.as_i64().map_or_else(|| J::Num(n.as_f64().unwrap_or(f64::NAN)), J::Int),
+            Value::Number(n) => n
+                .as_i64()
+                .map_or_else(|| J::Num(n.as_f64().unwrap_or(f64::NAN)), J::Int),
             Value::String(s) => J::Str(s.clone()),
             Value::Array(a) => J::Arr(a.iter().map(J::from_value).collect()),
-            Value::Object(m) => J::Obj(m.iter().map(|(k, v)| (k.clone(), J::from_value(v))).collect()),
+            Value::Object(m) => J::Obj(
+                m.iter()
+                    .map(|(k, v)| (k.clone(), J::from_value(v)))
+                    .collect(),
+            ),
         }
     }
 }
@@ -260,17 +273,33 @@ pub fn py_float(x: f64) -> String {
         } else if point as usize >= digits.len() {
             format!("{}{}.0", digits, "0".repeat(point as usize - digits.len()))
         } else {
-            format!("{}.{}", &digits[..point as usize], &digits[point as usize..])
+            format!(
+                "{}.{}",
+                &digits[..point as usize],
+                &digits[point as usize..]
+            )
         };
         format!("{sign}{s}")
     } else {
-        let m = if digits.len() > 1 { format!("{}.{}", &digits[..1], &digits[1..]) } else { digits };
-        format!("{sign}{m}e{}{:02}", if exp < 0 { '-' } else { '+' }, exp.abs())
+        let m = if digits.len() > 1 {
+            format!("{}.{}", &digits[..1], &digits[1..])
+        } else {
+            digits
+        };
+        format!(
+            "{sign}{m}e{}{:02}",
+            if exp < 0 { '-' } else { '+' },
+            exp.abs()
+        )
     }
 }
 
 fn py_str_repr(s: &str, out: &mut String) {
-    let q = if s.contains('\'') && !s.contains('"') { '"' } else { '\'' };
+    let q = if s.contains('\'') && !s.contains('"') {
+        '"'
+    } else {
+        '\''
+    };
     out.push(q);
     for c in s.chars() {
         match c {
@@ -341,7 +370,9 @@ fn dump_into(v: &J, out: &mut String) {
             let _ = write!(out, "{i}");
         }
         J::Num(x) if x.is_nan() => out.push_str("NaN"),
-        J::Num(x) if x.is_infinite() => out.push_str(if *x > 0.0 { "Infinity" } else { "-Infinity" }),
+        J::Num(x) if x.is_infinite() => {
+            out.push_str(if *x > 0.0 { "Infinity" } else { "-Infinity" })
+        }
         J::Num(x) => out.push_str(&py_float(*x)),
         J::Str(s) => out.push_str(&serde_json::to_string(s).expect("a string serializes")),
         J::Arr(a) => {
@@ -406,7 +437,9 @@ impl Parser<'_> {
         Err(format!("json: {what} at byte {}", self.i))
     }
     fn value(&mut self) -> Result<J, String> {
-        let Some(&c) = self.b.get(self.i) else { return self.err("unexpected end") };
+        let Some(&c) = self.b.get(self.i) else {
+            return self.err("unexpected end");
+        };
         match c {
             b'{' => {
                 self.i += 1;
@@ -516,10 +549,16 @@ impl Parser<'_> {
                 return Ok(J::Int(i));
             }
         }
-        text.parse::<f64>().map(J::Num).map_err(|e| format!("json: number {text}: {e}"))
+        text.parse::<f64>()
+            .map(J::Num)
+            .map_err(|e| format!("json: number {text}: {e}"))
     }
     fn hex4(&mut self) -> Result<u32, String> {
-        let h = self.b.get(self.i..self.i + 4).and_then(|h| std::str::from_utf8(h).ok()).and_then(|h| u32::from_str_radix(h, 16).ok());
+        let h = self
+            .b
+            .get(self.i..self.i + 4)
+            .and_then(|h| std::str::from_utf8(h).ok())
+            .and_then(|h| u32::from_str_radix(h, 16).ok());
         match h {
             Some(v) => {
                 self.i += 4;
@@ -536,7 +575,9 @@ impl Parser<'_> {
             while self.i < self.b.len() && self.b[self.i] != b'"' && self.b[self.i] != b'\\' {
                 self.i += 1;
             }
-            out.push_str(std::str::from_utf8(&self.b[start..self.i]).map_err(|e| format!("json: {e}"))?);
+            out.push_str(
+                std::str::from_utf8(&self.b[start..self.i]).map_err(|e| format!("json: {e}"))?,
+            );
             match self.b.get(self.i) {
                 Some(b'"') => {
                     self.i += 1;
@@ -544,7 +585,9 @@ impl Parser<'_> {
                 }
                 Some(b'\\') => {
                     self.i += 1;
-                    let Some(&e) = self.b.get(self.i) else { return self.err("an unfinished escape") };
+                    let Some(&e) = self.b.get(self.i) else {
+                        return self.err("an unfinished escape");
+                    };
                     self.i += 1;
                     match e {
                         b'"' => out.push('"'),
@@ -557,7 +600,9 @@ impl Parser<'_> {
                         b't' => out.push('\t'),
                         b'u' => {
                             let hi = self.hex4()?;
-                            let c = if (0xD800..0xDC00).contains(&hi) && self.b[self.i..].starts_with(b"\\u") {
+                            let c = if (0xD800..0xDC00).contains(&hi)
+                                && self.b[self.i..].starts_with(b"\\u")
+                            {
                                 self.i += 2;
                                 let lo = self.hex4()?;
                                 if (0xDC00..0xE000).contains(&lo) {
@@ -615,10 +660,32 @@ fn schema() -> &'static J {
     S.get_or_init(|| parse(SCHEMA_TEXT).expect("page-tree.schema.json parses"))
 }
 
-const SCHEMA_IGNORED: [&str; 6] = ["$schema", "$id", "$comment", "title", "description", "$defs"];
+const SCHEMA_IGNORED: [&str; 6] = [
+    "$schema",
+    "$id",
+    "$comment",
+    "title",
+    "description",
+    "$defs",
+];
 const SCHEMA_KNOWN: [&str; 17] = [
-    "$ref", "type", "properties", "required", "additionalProperties", "items", "minItems", "maxItems", "enum", "const",
-    "pattern", "minimum", "maximum", "anyOf", "oneOf", "propertyNames", "minLength",
+    "$ref",
+    "type",
+    "properties",
+    "required",
+    "additionalProperties",
+    "items",
+    "minItems",
+    "maxItems",
+    "enum",
+    "const",
+    "pattern",
+    "minimum",
+    "maximum",
+    "anyOf",
+    "oneOf",
+    "propertyNames",
+    "minLength",
 ];
 
 fn is_type(v: &J, t: &str) -> bool {
@@ -636,8 +703,22 @@ fn is_type(v: &J, t: &str) -> bool {
 
 const NUMERALS: &str = "零〇一二两三四五六七八九十百千万亿几";
 const RATIO_AFTER: [&str; 6] = ["倍", "成", "％", "%", "分之", "个百分点"];
-const RATIO_WORDS: [&str; 11] = ["一半", "过半", "大半", "半数", "减半", "近半", "逾半", "超半", "翻番", "翻倍", "数倍"];
-const NUMBER_FREE: [&str; 11] = ["二氧化碳", "统一成", "一成不变", "十分", "万一", "千万", "一一", "两者", "千瓦", "百分比", "零售"];
+const RATIO_WORDS: [&str; 11] = [
+    "一半", "过半", "大半", "半数", "减半", "近半", "逾半", "超半", "翻番", "翻倍", "数倍",
+];
+const NUMBER_FREE: [&str; 11] = [
+    "二氧化碳",
+    "统一成",
+    "一成不变",
+    "十分",
+    "万一",
+    "千万",
+    "一一",
+    "两者",
+    "千瓦",
+    "百分比",
+    "零售",
+];
 const QUANTITY_BEFORE: &str = "数上近逾超余多几";
 /// The knowledge group's list of words that write a fixed term, a unit or a band with a numeral or a digit (user 11-07
 /// 「全按推荐」⑤), read as data: number_free is a port of next_flow::number_free.
@@ -653,16 +734,31 @@ fn free_words() -> &'static J {
 /// 15-24岁), as the text checks read it (number_free, next_flow::number_free).
 pub fn digit_term_spellings() -> Vec<(String, String)> {
     let w = free_words();
-    let marks: Vec<char> = w.g("age_range").arr().iter().flat_map(|x| st(x).chars().collect::<Vec<_>>()).collect();
+    let marks: Vec<char> = w
+        .g("age_range")
+        .arr()
+        .iter()
+        .flat_map(|x| st(x).chars().collect::<Vec<_>>())
+        .collect();
     let ages: Vec<String> = w.g("ages").arr().iter().map(st).collect();
     let mut out = Vec::new();
     for t in digit_terms() {
         if ages.contains(&t) && t.contains('-') {
-            out.extend(marks.iter().filter(|m| **m != '-').map(|m| (t.replace('-', &m.to_string()), t.clone())));
+            out.extend(
+                marks
+                    .iter()
+                    .filter(|m| **m != '-')
+                    .map(|m| (t.replace('-', &m.to_string()), t.clone())),
+            );
         }
         out.push((t.clone(), t));
     }
-    out.sort_by(|a, b| b.0.chars().count().cmp(&a.0.chars().count()).then(a.0.cmp(&b.0)));
+    out.sort_by(|a, b| {
+        b.0.chars()
+            .count()
+            .cmp(&a.0.chars().count())
+            .then(a.0.cmp(&b.0))
+    });
     out
 }
 
@@ -683,19 +779,40 @@ pub fn digit_terms() -> Vec<String> {
 /// or an age band of number-free-words.json (next_flow::number_free, ported).
 fn number_free(chars: &[char], held: &[bool]) -> Vec<bool> {
     let w = free_words();
-    let words = |k: &str| w.g(k).arr().iter().map(|x| st(x).to_string()).collect::<Vec<String>>();
-    let list = |k: &str| words(k).iter().map(|x| x.chars().collect::<Vec<char>>()).collect::<Vec<_>>();
-    let (terms, si_units, rates, scales, scale_open, scale_close) =
-        (list("terms"), list("si_units"), list("rates"), list("scales"), list("scale_open"), list("scale_close"));
+    let words = |k: &str| {
+        w.g(k)
+            .arr()
+            .iter()
+            .map(|x| st(x).to_string())
+            .collect::<Vec<String>>()
+    };
+    let list = |k: &str| {
+        words(k)
+            .iter()
+            .map(|x| x.chars().collect::<Vec<char>>())
+            .collect::<Vec<_>>()
+    };
+    let (terms, si_units, rates, scales, scale_open, scale_close) = (
+        list("terms"),
+        list("si_units"),
+        list("rates"),
+        list("scales"),
+        list("scale_open"),
+        list("scale_close"),
+    );
     let ages = words("ages");
     let age_range: Vec<char> = words("age_range").iter().flat_map(|x| x.chars()).collect();
     let numeral = |c: char| c.is_numeric() || NUMERALS.contains(c);
-    let at = |i: usize, word: &[char]| !word.is_empty() && chars.get(i..i + word.len()) == Some(word);
+    let at =
+        |i: usize, word: &[char]| !word.is_empty() && chars.get(i..i + word.len()) == Some(word);
     let before = |i: usize| (0..i).rev().find(|&j| held[j] || !chars[j].is_whitespace());
     let counted = |j: usize| numeral(chars[j]) || QUANTITY_BEFORE.contains(chars[j]);
     let run_end = |i: usize| {
         let mut e = i;
-        while e < chars.len() && (numeral(chars[e]) || (chars[e] == '.' && chars.get(e + 1).is_some_and(|&n| numeral(n)))) {
+        while e < chars.len()
+            && (numeral(chars[e])
+                || (chars[e] == '.' && chars.get(e + 1).is_some_and(|&n| numeral(n))))
+        {
             e += 1;
         }
         e
@@ -724,18 +841,26 @@ fn number_free(chars: &[char], held: &[bool]) -> Vec<bool> {
                 mark(i + o.len(), i + o.len() + s.len());
             }
         }
-        if numeral(chars[i]) && (i == 0 || !numeral(chars[i - 1])) && before(i).is_none_or(|j| !held[j]) {
+        if numeral(chars[i])
+            && (i == 0 || !numeral(chars[i - 1]))
+            && before(i).is_none_or(|j| !held[j])
+        {
             let e = run_end(i);
             let mut end = e;
             if chars.get(e).is_some_and(|c| age_range.contains(c)) && run_end(e + 1) > e + 1 {
                 end = run_end(e + 1);
             }
             if chars.get(end) == Some(&'岁') {
-                let band: String = chars[i..=end].iter().map(|&c| if age_range.contains(&c) { '-' } else { c }).collect();
+                let band: String = chars[i..=end]
+                    .iter()
+                    .map(|&c| if age_range.contains(&c) { '-' } else { c })
+                    .collect();
                 // an age band alone, or a single age with the words its official name writes after it (5岁以下); a bare age
                 // (增加了5岁) is a number (next_flow::number_free)
                 let rest: String = chars[end + 1..].iter().collect();
-                let named = ages.iter().filter(|a| a.starts_with(band.as_str()) && rest.starts_with(&a[band.len()..]));
+                let named = ages
+                    .iter()
+                    .filter(|a| a.starts_with(band.as_str()) && rest.starts_with(&a[band.len()..]));
                 if let Some(a) = named.max_by_key(|a| a.len()) {
                     mark(i, end + 1 + a[band.len()..].chars().count());
                 }
@@ -822,7 +947,12 @@ fn numeral_value(run: &[char]) -> Option<usize> {
 fn place_count(chars: &[char], held: &[bool], places: Option<usize>) -> Vec<bool> {
     let mut free = vec![false; chars.len()];
     let Some(places) = places else { return free };
-    let nouns: Vec<Vec<char>> = free_words().g("place_counts").arr().iter().map(|x| st(x).chars().collect()).collect();
+    let nouns: Vec<Vec<char>> = free_words()
+        .g("place_counts")
+        .arr()
+        .iter()
+        .map(|x| st(x).chars().collect())
+        .collect();
     let numeral = |c: char| NUMERALS.contains(c);
     let mut i = 0;
     while i < chars.len() {
@@ -834,9 +964,14 @@ fn place_count(chars: &[char], held: &[bool], places: Option<usize>) -> Vec<bool
         while i < chars.len() && numeral(chars[i]) {
             i += 1;
         }
-        let before = (0..start).rev().find(|&j| held[j] || !chars[j].is_whitespace());
-        let free_before = before.is_none_or(|j| !held[j] && chars[j] != '第' && !QUANTITY_BEFORE.contains(chars[j]));
-        let noun = nouns.iter().any(|n| chars.get(i..i + n.len()) == Some(n.as_slice()));
+        let before = (0..start)
+            .rev()
+            .find(|&j| held[j] || !chars[j].is_whitespace());
+        let free_before = before
+            .is_none_or(|j| !held[j] && chars[j] != '第' && !QUANTITY_BEFORE.contains(chars[j]));
+        let noun = nouns
+            .iter()
+            .any(|n| chars.get(i..i + n.len()) == Some(n.as_slice()));
         if free_before && noun && numeral_value(&chars[start..i]) == Some(places) {
             free[start..i].iter_mut().for_each(|f| *f = true);
         }
@@ -848,12 +983,22 @@ fn place_count(chars: &[char], held: &[bool], places: Option<usize>) -> Vec<bool
 /// its record's drawn entries (each a row of `rows` by its src), as next_run counts them on the fill. None when no drawn
 /// row holds a place.
 fn places_drawn(page: &J, rows: &[J]) -> Option<usize> {
-    let srcs: BTreeSet<String> = page.g("record").g("drawn").arr().iter().map(|d| st(d.g("src"))).collect();
+    let srcs: BTreeSet<String> = page
+        .g("record")
+        .g("drawn")
+        .arr()
+        .iter()
+        .map(|d| st(d.g("src")))
+        .collect();
     let dims: Vec<String> = free_words().g("place_dims").arr().iter().map(st).collect();
     let codes: BTreeSet<String> = rows
         .iter()
         .filter(|r| srcs.contains(&st(r.g("src"))))
-        .flat_map(|r| dims.iter().filter_map(|d| r.g("dims").g(d).s().map(str::to_string)).collect::<Vec<_>>())
+        .flat_map(|r| {
+            dims.iter()
+                .filter_map(|d| r.g("dims").g(d).s().map(str::to_string))
+                .collect::<Vec<_>>()
+        })
         .collect();
     (!codes.is_empty()).then_some(codes.len())
 }
@@ -871,11 +1016,13 @@ fn nonempty_all(s: &str, f: impl Fn(char) -> bool) -> bool {
 /// A palette id (runtime/page_tree/palettes.json): lowercase letters, digits, hyphens, a letter first.
 fn palette_id(s: &str) -> bool {
     let mut c = s.chars();
-    c.next().is_some_and(|c| c.is_ascii_lowercase()) && c.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    c.next().is_some_and(|c| c.is_ascii_lowercase())
+        && c.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 fn ident_lower(s: &str) -> bool {
     let mut c = s.chars();
-    c.next().is_some_and(|c| c.is_ascii_lowercase()) && c.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+    c.next().is_some_and(|c| c.is_ascii_lowercase())
+        && c.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
 }
 
 /// The schema's patterns, each as a matcher (Python re.search; each is anchored at the start). None: a pattern this
@@ -886,9 +1033,12 @@ fn pattern_match(p: &str, s: &str) -> Option<bool> {
         r"^[a-z][a-z0-9-]*$" => full(s, palette_id),
         r"^[A-Za-z_][A-Za-z0-9_.\-]*$" => full(s, |t| {
             let mut c = t.chars();
-            c.next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_') && c.all(code)
+            c.next()
+                .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+                && c.all(code)
         }),
-        r"^(?!.*(一半|过半|大半|半数|减半|近半|逾半|超半|翻番|翻倍|数倍|[零〇一二两三四五六七八九十百千万亿几]\s*(倍|分之|个百分点|%|％)))[^0-9０-９]*$" => {
+        r"^(?!.*(一半|过半|大半|半数|减半|近半|逾半|超半|翻番|翻倍|数倍|[零〇一二两三四五六七八九十百千万亿几]\s*(倍|分之|个百分点|%|％)))[^0-9０-９]*$" =>
+        {
             let line = s.split('\n').next().unwrap_or("");
             let mut hit = false;
             for (i, c) in line.char_indices() {
@@ -897,20 +1047,36 @@ fn pattern_match(p: &str, s: &str) -> Option<bool> {
                 }
                 if NUMERALS.contains(c) {
                     let rest = s[i + c.len_utf8()..].trim_start();
-                    if ["倍", "分之", "个百分点", "%", "％"].iter().any(|w| rest.starts_with(w)) {
+                    if ["倍", "分之", "个百分点", "%", "％"]
+                        .iter()
+                        .any(|w| rest.starts_with(w))
+                    {
                         hit = true;
                     }
                 }
             }
-            !hit && !s.chars().any(|c| c.is_ascii_digit() || ('０'..='９').contains(&c))
+            !hit && !s
+                .chars()
+                .any(|c| c.is_ascii_digit() || ('０'..='９').contains(&c))
         }
         r"^(?!select:)[A-Za-z0-9_.@:>\-]+$" => {
-            !s.starts_with("select:") && full(s, |t| nonempty_all(t, |c| code(c) || matches!(c, '@' | ':' | '>')))
+            !s.starts_with("select:")
+                && full(s, |t| {
+                    nonempty_all(t, |c| code(c) || matches!(c, '@' | ':' | '>'))
+                })
         }
         r"^(fact|name|period|record):.+$" => full(s, |t| {
-            ["fact:", "name:", "period:", "record:"].iter().any(|p| t.strip_prefix(p).is_some_and(|r| nonempty_all(r, |c| c != '\n')))
+            ["fact:", "name:", "period:", "record:"].iter().any(|p| {
+                t.strip_prefix(p)
+                    .is_some_and(|r| nonempty_all(r, |c| c != '\n'))
+            })
         }),
-        r"^(n|t|tick[0-9]+)$" => full(s, |t| t == "n" || t == "t" || t.strip_prefix("tick").is_some_and(|d| nonempty_all(d, |c| c.is_ascii_digit()))),
+        r"^(n|t|tick[0-9]+)$" => full(s, |t| {
+            t == "n"
+                || t == "t"
+                || t.strip_prefix("tick")
+                    .is_some_and(|d| nonempty_all(d, |c| c.is_ascii_digit()))
+        }),
         r"^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$" => full(s, |t| {
             let t = t.strip_prefix('-').unwrap_or(t);
             let (m, e) = match t.find(['e', 'E']) {
@@ -922,14 +1088,23 @@ fn pattern_match(p: &str, s: &str) -> Option<bool> {
                 None => (m, None),
             };
             let digits = |x: &str| nonempty_all(x, |c| c.is_ascii_digit());
-            digits(a) && b.is_none_or(digits) && e.is_none_or(|e| digits(e.strip_prefix(['+', '-']).unwrap_or(e)))
+            digits(a)
+                && b.is_none_or(digits)
+                && e.is_none_or(|e| digits(e.strip_prefix(['+', '-']).unwrap_or(e)))
         }),
-        r"^[0-9a-f]{64}$" => full(s, |t| t.len() == 64 && t.chars().all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c))),
+        r"^[0-9a-f]{64}$" => full(s, |t| {
+            t.len() == 64
+                && t.chars()
+                    .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c))
+        }),
         r"^[A-Z][A-Z0-9_]*$" => full(s, |t| {
             let mut c = t.chars();
-            c.next().is_some_and(|c| c.is_ascii_uppercase()) && c.all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+            c.next().is_some_and(|c| c.is_ascii_uppercase())
+                && c.all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
         }),
-        r"^[A-Za-z0-9_.\-]+(/[A-Za-z0-9_.\-]+)*$" => full(s, |t| t.split('/').all(|seg| nonempty_all(seg, code))),
+        r"^[A-Za-z0-9_.\-]+(/[A-Za-z0-9_.\-]+)*$" => {
+            full(s, |t| t.split('/').all(|seg| nonempty_all(seg, code)))
+        }
         r"^[A-Za-z0-9_][A-Za-z0-9_.@\-]*$" => full(s, |t| {
             let mut c = t.chars();
             c.next().is_some_and(word_c) && c.all(|c| code(c) || c == '@')
@@ -937,17 +1112,23 @@ fn pattern_match(p: &str, s: &str) -> Option<bool> {
         r"^[^0-9]*$" => full(s, |t| !t.chars().any(|c| c.is_ascii_digit())),
         r"^[a-z0-9_]+\.[a-z0-9_]+$" => full(s, |t| {
             let low = |c: char| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_';
-            t.split_once('.').is_some_and(|(a, b)| nonempty_all(a, low) && nonempty_all(b, low))
+            t.split_once('.')
+                .is_some_and(|(a, b)| nonempty_all(a, low) && nonempty_all(b, low))
         }),
         r"^[a-z][a-z0-9_]*$" => full(s, ident_lower),
         r"^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*$" => full(s, |t| {
             let mut parts = t.split('.');
             parts.next().is_some_and(ident_lower)
-                && parts.all(|p| nonempty_all(p, |c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'))
+                && parts.all(|p| {
+                    nonempty_all(p, |c| {
+                        c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'
+                    })
+                })
         }),
         r"^[a-z_]+:[A-Za-z0-9_.@:\-]+$" => full(s, |t| {
             t.split_once(':').is_some_and(|(a, b)| {
-                nonempty_all(a, |c| c.is_ascii_lowercase() || c == '_') && nonempty_all(b, |c| code(c) || matches!(c, '@' | ':'))
+                nonempty_all(a, |c| c.is_ascii_lowercase() || c == '_')
+                    && nonempty_all(b, |c| code(c) || matches!(c, '@' | ':'))
             })
         }),
         r"^fact:[A-Za-z0-9_][A-Za-z0-9_.@\-]*$" => full(s, |t| {
@@ -957,8 +1138,13 @@ fn pattern_match(p: &str, s: &str) -> Option<bool> {
             })
         }),
         "^name:" => s.starts_with("name:"),
-        r"^select:[a-z][a-z0-9_]*(\.[A-Za-z0-9_]+)?(\[-?[0-9]+\])?$" => full(s, |t| ref_parts(t).is_some()),
-        "^series:.+$" => full(s, |t| t.strip_prefix("series:").is_some_and(|r| nonempty_all(r, |c| c != '\n'))),
+        r"^select:[a-z][a-z0-9_]*(\.[A-Za-z0-9_]+)?(\[-?[0-9]+\])?$" => {
+            full(s, |t| ref_parts(t).is_some())
+        }
+        "^series:.+$" => full(s, |t| {
+            t.strip_prefix("series:")
+                .is_some_and(|r| nonempty_all(r, |c| c != '\n'))
+        }),
         _ => return None,
     })
 }
@@ -982,7 +1168,9 @@ fn schema_errors(root: &J, s: &J, v: &J, path: &str) -> Vec<String> {
         .filter(|k| !SCHEMA_IGNORED.contains(k) && !SCHEMA_KNOWN.contains(k))
         .collect();
     if !unknown.is_empty() {
-        return vec![format!("{path}: schema uses unsupported keywords {unknown:?}")];
+        return vec![format!(
+            "{path}: schema uses unsupported keywords {unknown:?}"
+        )];
     }
     if let Some(r) = s.get("$ref") {
         match r.s().and_then(|r| schema_ref(root, r)) {
@@ -1021,7 +1209,9 @@ fn schema_errors(root: &J, s: &J, v: &J, path: &str) -> Vec<String> {
             match pattern_match(p, text) {
                 Some(true) => {}
                 Some(false) => out.push(format!("{path}: {} does not match {p}", v.repr())),
-                None => out.push(format!("{path}: schema pattern {p} has no matcher in the core")),
+                None => out.push(format!(
+                    "{path}: schema pattern {p} has no matcher in the core"
+                )),
             }
         }
     }
@@ -1034,10 +1224,16 @@ fn schema_errors(root: &J, s: &J, v: &J, path: &str) -> Vec<String> {
         }
     }
     if let J::Arr(a) = v {
-        if s.get("minItems").and_then(J::num).is_some_and(|n| (a.len() as f64) < n) {
+        if s.get("minItems")
+            .and_then(J::num)
+            .is_some_and(|n| (a.len() as f64) < n)
+        {
             out.push(format!("{path}: fewer than {} items", st(s.g("minItems"))));
         }
-        if s.get("maxItems").and_then(J::num).is_some_and(|n| (a.len() as f64) > n) {
+        if s.get("maxItems")
+            .and_then(J::num)
+            .is_some_and(|n| (a.len() as f64) > n)
+        {
             out.push(format!("{path}: more than {} items", st(s.g("maxItems"))));
         }
         if let Some(items) = s.get("items") {
@@ -1055,32 +1251,59 @@ fn schema_errors(root: &J, s: &J, v: &J, path: &str) -> Vec<String> {
         let props = s.g("properties");
         for (k, x) in m {
             if let Some(pn) = s.get("propertyNames") {
-                out.extend(schema_errors(root, pn, &J::str(k), &format!("{path}.<{k}>")));
+                out.extend(schema_errors(
+                    root,
+                    pn,
+                    &J::str(k),
+                    &format!("{path}.<{k}>"),
+                ));
             }
             if let Some(p) = props.get(k) {
                 out.extend(schema_errors(root, p, x, &format!("{path}.{k}")));
             } else {
                 match s.get("additionalProperties") {
                     Some(J::Bool(false)) => out.push(format!("{path}: unexpected key {k}")),
-                    Some(ap @ J::Obj(_)) => out.extend(schema_errors(root, ap, x, &format!("{path}.{k}"))),
+                    Some(ap @ J::Obj(_)) => {
+                        out.extend(schema_errors(root, ap, x, &format!("{path}.{k}")))
+                    }
                     _ => {}
                 }
             }
         }
     }
     if let Some(any) = s.get("anyOf") {
-        let tries: Vec<Vec<String>> = any.arr().iter().map(|sub| schema_errors(root, sub, v, path)).collect();
+        let tries: Vec<Vec<String>> = any
+            .arr()
+            .iter()
+            .map(|sub| schema_errors(root, sub, v, path))
+            .collect();
         if tries.iter().all(|t| !t.is_empty()) {
-            let closest = tries.iter().min_by_key(|t| t.len()).map(|t| t.iter().take(2).cloned().collect::<Vec<_>>()).unwrap_or_default();
-            out.push(format!("{path}: matches none of anyOf; closest: {closest:?}"));
+            let closest = tries
+                .iter()
+                .min_by_key(|t| t.len())
+                .map(|t| t.iter().take(2).cloned().collect::<Vec<_>>())
+                .unwrap_or_default();
+            out.push(format!(
+                "{path}: matches none of anyOf; closest: {closest:?}"
+            ));
         }
     }
     if let Some(one) = s.get("oneOf") {
-        let tries: Vec<Vec<String>> = one.arr().iter().map(|sub| schema_errors(root, sub, v, path)).collect();
+        let tries: Vec<Vec<String>> = one
+            .arr()
+            .iter()
+            .map(|sub| schema_errors(root, sub, v, path))
+            .collect();
         let ok = tries.iter().filter(|t| t.is_empty()).count();
         if ok != 1 {
-            let closest = tries.iter().min_by_key(|t| t.len()).map(|t| t.iter().take(2).cloned().collect::<Vec<_>>()).unwrap_or_default();
-            out.push(format!("{path}: matches {ok} of oneOf (needs 1); closest: {closest:?}"));
+            let closest = tries
+                .iter()
+                .min_by_key(|t| t.len())
+                .map(|t| t.iter().take(2).cloned().collect::<Vec<_>>())
+                .unwrap_or_default();
+            out.push(format!(
+                "{path}: matches {ok} of oneOf (needs 1); closest: {closest:?}"
+            ));
         }
     }
     out
@@ -1093,7 +1316,9 @@ fn schema_errors(root: &J, s: &J, v: &J, path: &str) -> Vec<String> {
 /// `select:<id>[.<key>][[<index>]]`: (id, key, index).
 pub fn ref_parts(s: &str) -> Option<(String, Option<String>, Option<i64>)> {
     let rest = s.strip_prefix("select:")?;
-    let n = rest.find(|c: char| !(c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')).unwrap_or(rest.len());
+    let n = rest
+        .find(|c: char| !(c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'))
+        .unwrap_or(rest.len());
     let sid = &rest[..n];
     if !ident_lower(sid) {
         return None;
@@ -1161,7 +1386,10 @@ fn index(v: &J, i: i64) -> Result<J, String> {
 
 pub(crate) fn resolve_ref(v: &str, got: &Got) -> Result<J, String> {
     let (sid, key, idx) = ref_parts(v).ok_or_else(|| format!("{v}: no select reference"))?;
-    let mut r = got.get(&sid).cloned().ok_or_else(|| format!("'{v}: no select {sid}'"))?;
+    let mut r = got
+        .get(&sid)
+        .cloned()
+        .ok_or_else(|| format!("'{v}: no select {sid}'"))?;
     if let Some(k) = key {
         r = r.get(&k).cloned().ok_or_else(|| format!("'{k}'"))?;
     }
@@ -1176,7 +1404,11 @@ pub(crate) fn resolve_ref(v: &str, got: &Got) -> Result<J, String> {
 pub(crate) fn resolved(v: &J, got: &Got) -> Result<J, String> {
     Ok(match v {
         J::Str(s) if ref_parts(s).is_some() => resolve_ref(s, got)?,
-        J::Obj(m) => J::Obj(m.iter().map(|(k, x)| Ok((k.clone(), resolved(x, got)?))).collect::<Result<_, String>>()?),
+        J::Obj(m) => J::Obj(
+            m.iter()
+                .map(|(k, x)| Ok((k.clone(), resolved(x, got)?)))
+                .collect::<Result<_, String>>()?,
+        ),
         J::Arr(a) => {
             let mut out = Vec::new();
             for x in a {
@@ -1196,7 +1428,10 @@ fn result_codes(r: &J) -> BTreeSet<String> {
     match r {
         J::Str(s) => [s.clone()].into(),
         J::Arr(a) => a.iter().filter_map(J::s).map(str::to_string).collect(),
-        J::Obj(m) => m.iter().flat_map(|(_, vs)| vs.arr().iter().filter_map(J::s).map(str::to_string)).collect(),
+        J::Obj(m) => m
+            .iter()
+            .flat_map(|(_, vs)| vs.arr().iter().filter_map(J::s).map(str::to_string))
+            .collect(),
         _ => BTreeSet::new(),
     }
 }
@@ -1204,7 +1439,10 @@ fn result_codes(r: &J) -> BTreeSet<String> {
 /// A row's value as a number (Python float(row["value"])).
 fn num(r: &J) -> Result<f64, String> {
     match r.g("value") {
-        J::Str(s) => s.trim().parse::<f64>().map_err(|_| format!("could not convert string to float: {}", J::str(s).repr())),
+        J::Str(s) => s
+            .trim()
+            .parse::<f64>()
+            .map_err(|_| format!("could not convert string to float: {}", J::str(s).repr())),
         J::Bool(b) => Ok(f64::from(u8::from(*b))),
         v => v.num().ok_or_else(|| format!("float() of {}", v.repr())),
     }
@@ -1241,13 +1479,20 @@ struct Compute<'a> {
 
 impl<'a> Compute<'a> {
     fn new(facts: &'a J, rows: &'a [J]) -> Self {
-        Compute { facts, rows, done: Default::default() }
+        Compute {
+            facts,
+            rows,
+            done: Default::default(),
+        }
     }
     fn fam(&self, key: &str) -> Result<Vec<(String, f64)>, String> {
         let q = self.facts.get(key).ok_or_else(|| format!("'{key}'"))?;
         let each = q.g("each").s().ok_or("each")?;
         let mut out: Vec<(String, f64)> = Vec::new();
-        for r in select_rows(self.rows, q).into_iter().filter(|r| r.g("time") == q.g("time")) {
+        for r in select_rows(self.rows, q)
+            .into_iter()
+            .filter(|r| r.g("time") == q.g("time"))
+        {
             let code = st(r.g("dims").get(each).ok_or_else(|| format!("'{each}'"))?);
             let v = num(r)?;
             match out.iter_mut().find(|(c, _)| *c == code) {
@@ -1270,7 +1515,11 @@ impl<'a> Compute<'a> {
             let (fam_key, code) = key.rsplit_once('.').unwrap_or(("", key));
             if let Some(q) = self.facts.get(fam_key).filter(|q| q.has("each")) {
                 let member = |k: &str| -> Result<f64, String> {
-                    self.fam(k)?.into_iter().find(|(c, _)| c == code).map(|(_, v)| v).ok_or_else(|| format!("'{code}'"))
+                    self.fam(k)?
+                        .into_iter()
+                        .find(|(c, _)| c == code)
+                        .map(|(_, v)| v)
+                        .ok_or_else(|| format!("'{code}'"))
                 };
                 return if q.g("op").s() == Some("minus") {
                     Ok(member(&st(q.g("a")))? - member(&st(q.g("b")))?)
@@ -1312,7 +1561,10 @@ impl<'a> Compute<'a> {
                 if !q.has("time") {
                     return Err("'time'".into());
                 }
-                let at: Vec<&J> = select_rows(self.rows, q).into_iter().filter(|r| r.g("time") == time).collect();
+                let at: Vec<&J> = select_rows(self.rows, q)
+                    .into_iter()
+                    .filter(|r| r.g("time") == time)
+                    .collect();
                 if at.is_empty() {
                     return Err(format!("{key}: value has no row at {}", st(time)));
                 }
@@ -1325,7 +1577,10 @@ impl<'a> Compute<'a> {
             "n" => {
                 let by = q.g("by").s().ok_or("'by'")?;
                 let mut seen: Vec<&J> = Vec::new();
-                for r in select_rows(self.rows, q).into_iter().filter(|r| r.g("time") == time) {
+                for r in select_rows(self.rows, q)
+                    .into_iter()
+                    .filter(|r| r.g("time") == time)
+                {
                     let c = r.g("dims").get(by).ok_or_else(|| format!("'{by}'"))?;
                     if !seen.contains(&c) {
                         seen.push(c);
@@ -1338,7 +1593,10 @@ impl<'a> Compute<'a> {
                 let by = q.g("by").s().ok_or("'by'")?;
                 let code = q.g("code");
                 let mut at: Vec<(&J, f64)> = Vec::new();
-                for r in select_rows(self.rows, q).into_iter().filter(|r| r.g("time") == time) {
+                for r in select_rows(self.rows, q)
+                    .into_iter()
+                    .filter(|r| r.g("time") == time)
+                {
                     let c = r.g("dims").get(by).ok_or_else(|| format!("'{by}'"))?;
                     let v = num(r)?;
                     match at.iter_mut().find(|(k, _)| *k == c) {
@@ -1346,12 +1604,19 @@ impl<'a> Compute<'a> {
                         None => at.push((c, v)),
                     }
                 }
-                let own = at.iter().find(|(c, _)| *c == code).map(|(_, v)| *v).ok_or_else(|| format!("{key}: position has no row of {}", code.repr()))?;
+                let own = at
+                    .iter()
+                    .find(|(c, _)| *c == code)
+                    .map(|(_, v)| *v)
+                    .ok_or_else(|| format!("{key}: position has no row of {}", code.repr()))?;
                 (1 + at.iter().filter(|(_, v)| *v > own).count()) as f64
             }
             "zeros" => {
                 let mut n = 0;
-                for r in select_rows(self.rows, q).into_iter().filter(|r| r.g("time") == time) {
+                for r in select_rows(self.rows, q)
+                    .into_iter()
+                    .filter(|r| r.g("time") == time)
+                {
                     if num(r)? == 0.0 {
                         n += 1;
                     }
@@ -1366,7 +1631,10 @@ impl<'a> Compute<'a> {
                 let mut ser: Vec<(String, f64)> = Vec::new();
                 for r in select_rows(self.rows, q) {
                     let t = r.g("time").s().unwrap_or("");
-                    if t >= from && q.get("to").is_none_or(|to| to.s().is_some_and(|to| t <= to)) {
+                    if t >= from
+                        && q.get("to")
+                            .is_none_or(|to| to.s().is_some_and(|to| t <= to))
+                    {
                         let v = num(r)?;
                         match ser.iter_mut().find(|(k, _)| k == t) {
                             Some(slot) => slot.1 += v,
@@ -1379,8 +1647,12 @@ impl<'a> Compute<'a> {
                 }
                 let pick = match op {
                     "last" => ser.iter().max_by(|a, b| a.0.cmp(&b.0)).expect("not empty"),
-                    "peak" => ser.iter().fold(&ser[0], |m, x| if x.1 > m.1 { x } else { m }),
-                    _ => ser.iter().fold(&ser[0], |m, x| if x.1 < m.1 { x } else { m }),
+                    "peak" => ser
+                        .iter()
+                        .fold(&ser[0], |m, x| if x.1 > m.1 { x } else { m }),
+                    _ => ser
+                        .iter()
+                        .fold(&ser[0], |m, x| if x.1 < m.1 { x } else { m }),
                 };
                 pick.1
             }
@@ -1397,9 +1669,15 @@ fn worded_number(chars: &[char], held: &[bool]) -> Option<String> {
     let mut chars = chars.to_vec();
     let words: Vec<Vec<char>> = NUMBER_FREE.iter().map(|w| w.chars().collect()).collect();
     for pos in 0..chars.len() {
-        let Some(word) = words.iter().find(|w| chars[pos..].starts_with(w)) else { continue };
-        let before = (0..pos).rev().find(|&j| held[j] || !chars[j].is_whitespace());
-        if before.is_none_or(|j| !held[j] && !numeral(chars[j]) && !QUANTITY_BEFORE.contains(chars[j])) {
+        let Some(word) = words.iter().find(|w| chars[pos..].starts_with(w)) else {
+            continue;
+        };
+        let before = (0..pos)
+            .rev()
+            .find(|&j| held[j] || !chars[j].is_whitespace());
+        if before
+            .is_none_or(|j| !held[j] && !numeral(chars[j]) && !QUANTITY_BEFORE.contains(chars[j]))
+        {
             chars[pos..pos + word.len()].fill(' ');
         }
     }
@@ -1414,7 +1692,10 @@ fn worded_number(chars: &[char], held: &[bool]) -> Option<String> {
             continue;
         }
         let start = i;
-        while i < chars.len() && (numeral(chars[i]) || (matches!(chars[i], '.' | ',') && chars.get(i + 1).is_some_and(|&n| numeral(n)))) {
+        while i < chars.len()
+            && (numeral(chars[i])
+                || (matches!(chars[i], '.' | ',') && chars.get(i + 1).is_some_and(|&n| numeral(n))))
+        {
             i += 1;
         }
         if start > 0 && chars[start - 1] == '第' {
@@ -1422,10 +1703,15 @@ fn worded_number(chars: &[char], held: &[bool]) -> Option<String> {
         }
         let run: String = chars[start..i].iter().collect();
         let rest: String = chars[i..].iter().collect();
-        if let Some(after) = RATIO_AFTER.iter().find(|a| rest.trim_start().starts_with(*a)) {
+        if let Some(after) = RATIO_AFTER
+            .iter()
+            .find(|a| rest.trim_start().starts_with(*a))
+        {
             return Some(format!("{run}{after}"));
         }
-        if run.chars().any(|c| NUMERALS.contains(c)) && (run.chars().count() > 1 || !matches!(run.as_str(), "一" | "几")) {
+        if run.chars().any(|c| NUMERALS.contains(c))
+            && (run.chars().count() > 1 || !matches!(run.as_str(), "一" | "几"))
+        {
             return Some(run);
         }
     }
@@ -1449,14 +1735,21 @@ fn plain_tie(t: Option<&J>) -> bool {
 pub(crate) fn change_from(s: &J) -> Option<&J> {
     let k = s.g("key");
     let ends = k.g("change").arr();
-    (k.is_obj() && k.obj().len() == 1 && ends.len() == 2 && ends[1] == *s.g("over").g("time") && ends[0].s().is_some()).then(|| &ends[0])
+    (k.is_obj()
+        && k.obj().len() == 1
+        && ends.len() == 2
+        && ends[1] == *s.g("over").g("time")
+        && ends[0].s().is_some())
+    .then(|| &ends[0])
 }
 
 /// A rank's key {"part_share": {"dim", "codes", "rows"}}: each code's parts (its `rows` at over.time whose `dim` is one of
 /// `codes`) summed, over its own row's value (the total, above 0); a code with no part row or no total above 0 is left out.
 fn part_share_key(s: &J) -> Option<&J> {
     let k = s.g("key");
-    (k.is_obj() && k.obj().len() == 1).then(|| k.get("part_share")).flatten()
+    (k.is_obj() && k.obj().len() == 1)
+        .then(|| k.get("part_share"))
+        .flatten()
 }
 
 /// The share of a code's parts in its total (part_share_key): none when its total is not above 0 or it has no part row.
@@ -1469,7 +1762,11 @@ fn part_share_of(ps: &J, by: &str, time: &J, code: &J, total: f64) -> Option<f64
         .g("rows")
         .arr()
         .iter()
-        .filter(|r| r.g("time") == time && dims(r, by) == code && ps.g("codes").arr().contains(dims(r, &dim)))
+        .filter(|r| {
+            r.g("time") == time
+                && dims(r, by) == code
+                && ps.g("codes").arr().contains(dims(r, &dim))
+        })
         .filter_map(text_num)
         .collect();
     (!parts.is_empty()).then(|| parts.iter().sum::<f64>() / total)
@@ -1477,18 +1774,34 @@ fn part_share_of(ps: &J, by: &str, time: &J, code: &J, total: f64) -> Option<f64
 
 fn cannot_rank(s: &J) -> Option<String> {
     if s.g("key").s() != Some("value") && change_from(s).is_none() && part_share_key(s).is_none() {
-        return Some(format!("key {} (only value, {{\"change\": [a time, over.time]}} or {{\"part_share\": ...}})", s.g("key").repr()));
+        return Some(format!(
+            "key {} (only value, {{\"change\": [a time, over.time]}} or {{\"part_share\": ...}})",
+            s.g("key").repr()
+        ));
     }
-    let extra: Vec<&str> = s.g("over").obj().iter().map(|(k, _)| k.as_str()).filter(|k| !RANK_OVER.contains(k)).collect();
+    let extra: Vec<&str> = s
+        .g("over")
+        .obj()
+        .iter()
+        .map(|(k, _)| k.as_str())
+        .filter(|k| !RANK_OVER.contains(k))
+        .collect();
     if !extra.is_empty() {
         let mut extra = extra;
         extra.sort();
         let mut over = RANK_OVER.to_vec();
         over.sort();
-        return Some(format!("over fields {} (only {})", J::strs(&extra).repr(), J::strs(&over).repr()));
+        return Some(format!(
+            "over fields {} (only {})",
+            J::strs(&extra).repr(),
+            J::strs(&over).repr()
+        ));
     }
     if !plain_tie(s.get("tie")) && !last_in_only(s) {
-        return Some(format!("tie {} (only by code, outcome order; or by only, outcome last)", s.g("tie").repr()));
+        return Some(format!(
+            "tie {} (only by code, outcome order; or by only, outcome last)",
+            s.g("tie").repr()
+        ));
     }
     None
 }
@@ -1496,7 +1809,9 @@ fn cannot_rank(s: &J) -> Option<String> {
 /// A rank's tie {"by": "only", "outcome": "last"}: of equal keys the code later in its `only` list ranks first (a max
 /// over the list in its order that keeps the last of equals, as the flow's big numbers took the origin that grew most).
 fn last_in_only(s: &J) -> bool {
-    s.get("tie").is_some_and(|t| *t == J::obj_of(vec![("by", J::str("only")), ("outcome", J::str("last"))])) && s.has("only")
+    s.get("tie")
+        .is_some_and(|t| *t == J::obj_of(vec![("by", J::str("only")), ("outcome", J::str("last"))]))
+        && s.has("only")
 }
 
 /// The rows of a pairs select (held_codes, group_sum, share_merge): at its over.table and over.time, each holding every
@@ -1505,13 +1820,21 @@ fn pair_rows<'a>(rows: &'a [J], s: &J) -> Vec<&'a J> {
     let q = s.g("over");
     rows.iter()
         .filter(|r| r.g("table") == q.g("table") && r.g("time") == q.g("time"))
-        .filter(|r| s.g("with").arr().iter().all(|d| dims(r, &st(d)).s().is_some()))
+        .filter(|r| {
+            s.g("with")
+                .arr()
+                .iter()
+                .all(|d| dims(r, &st(d)).s().is_some())
+        })
         .collect()
 }
 
 /// A row's value as the map reads one: a text that parses to a finite number (none for anything else).
 fn text_num(r: &J) -> Option<f64> {
-    r.g("value").s().and_then(|v| v.parse::<f64>().ok()).filter(|v| v.is_finite())
+    r.g("value")
+        .s()
+        .and_then(|v| v.parse::<f64>().ok())
+        .filter(|v| v.is_finite())
 }
 
 fn cannot_take(s: &J) -> Option<String> {
@@ -1524,7 +1847,10 @@ fn cannot_take(s: &J) -> Option<String> {
     }
     let t = t.expect("not plain, so present");
     let at = s.g("at").s().unwrap_or("");
-    if matches!(t.g("by").s(), Some("printed" | "value")) && t.g("outcome").s() == Some("silence") && matches!(at, "first" | "last" | "second") {
+    if matches!(t.g("by").s(), Some("printed" | "value"))
+        && t.g("outcome").s() == Some("silence")
+        && matches!(at, "first" | "last" | "second")
+    {
         return None;
     }
     Some(format!("tie {} at {at} (only by code, or by printed or value with silence at first, second or last)", t.repr()))
@@ -1533,15 +1859,27 @@ fn cannot_take(s: &J) -> Option<String> {
 /// The value a take's code is ordered by: the root rank's key of it, as the rank computes it. Its rows under the rank's over
 /// at over.time (read as the map reads a number when the rank reads only numbers), less its rows at the time a change runs
 /// from (key change), or their parts' share (key part_share).
-pub(crate) fn take_value(sel: &[(String, &J)], sid: &str, code: &J, rows: &[J]) -> Result<f64, String> {
+pub(crate) fn take_value(
+    sel: &[(String, &J)],
+    sid: &str,
+    code: &J,
+    rows: &[J],
+) -> Result<f64, String> {
     let root = root_rank(sel, sid)?;
     let q = root.g("over");
     let by = q.g("by").s().unwrap_or("");
     let lenient = root.g("numbers_only").truthy() || root.has("from_above");
     let sum_at = |t: &J| -> Result<f64, String> {
         let mut s = 0.0;
-        for r in select_rows(rows, q).into_iter().filter(|r| r.g("time") == t && dims(r, by) == code) {
-            s += if lenient { text_num(r).unwrap_or(0.0) } else { num(r)? };
+        for r in select_rows(rows, q)
+            .into_iter()
+            .filter(|r| r.g("time") == t && dims(r, by) == code)
+        {
+            s += if lenient {
+                text_num(r).unwrap_or(0.0)
+            } else {
+                num(r)?
+            };
         }
         Ok(s)
     };
@@ -1550,7 +1888,8 @@ pub(crate) fn take_value(sel: &[(String, &J)], sid: &str, code: &J, rows: &[J]) 
         v -= sum_at(t0)?;
     }
     if let Some(ps) = part_share_key(root) {
-        v = part_share_of(ps, by, q.g("time"), code, v).ok_or_else(|| format!("{}: no share of its parts", st(code)))?;
+        v = part_share_of(ps, by, q.g("time"), code, v)
+            .ok_or_else(|| format!("{}: no share of its parts", st(code)))?;
     }
     Ok(v)
 }
@@ -1568,13 +1907,19 @@ pub(crate) fn root_rank<'a>(sel: &[(String, &'a J)], sid: &str) -> Result<&'a J,
         let from = st(s.g("from"));
         s = sel_get(sel, &from).ok_or_else(|| format!("'{from}'"))?;
     }
-    Err(format!("select {sid}: no rank at the root of its from chain"))
+    Err(format!(
+        "select {sid}: no rank at the root of its from chain"
+    ))
 }
 
 fn int_or_knob(v: &J) -> Result<i64, String> {
     match v {
         J::Int(i) => Ok(*i),
-        v => v.g("value").num().map(|x| x.trunc() as i64).ok_or_else(|| format!("{} is no int or knob value", v.repr())),
+        v => v
+            .g("value")
+            .num()
+            .map(|x| x.trunc() as i64)
+            .ok_or_else(|| format!("{} is no int or knob value", v.repr())),
     }
 }
 
@@ -1594,7 +1939,9 @@ fn py_fixed(x: f64, dec: usize) -> String {
 /// it (the leaf's facts.fmt): "-1234567.5" is "-1,234,567.5".
 fn py_grouped(fixed: &str) -> String {
     let (sign, rest) = fixed.strip_prefix('-').map_or(("", fixed), |r| ("-", r));
-    let (whole, frac) = rest.split_once('.').map_or((rest, None), |(w, f)| (w, Some(f)));
+    let (whole, frac) = rest
+        .split_once('.')
+        .map_or((rest, None), |(w, f)| (w, Some(f)));
     let mut out = String::new();
     for (i, c) in whole.chars().enumerate() {
         if i > 0 && (whole.len() - i) % 3 == 0 {
@@ -1602,7 +1949,10 @@ fn py_grouped(fixed: &str) -> String {
         }
         out.push(c);
     }
-    format!("{sign}{out}{}", frac.map_or(String::new(), |f| format!(".{f}")))
+    format!(
+        "{sign}{out}{}",
+        frac.map_or(String::new(), |f| format!(".{f}"))
+    )
 }
 
 /// The registered parts table (runtime/pi/assets/estat-parts.tsv, the knowledge group's catalogue data), which the core reads
@@ -1614,8 +1964,21 @@ const PARTS_TEXT: &str = include_str!("../runtime/pi/assets/estat-parts.tsv");
 pub(crate) fn parts_rows() -> Result<Vec<[String; 7]>, String> {
     let mut lines = PARTS_TEXT.lines();
     let header: Vec<&str> = lines.next().unwrap_or("").split('\t').collect();
-    let col = |name: &str| header.iter().position(|h| *h == name).ok_or_else(|| format!("estat-parts.tsv has no column {name}"));
-    let cols = [col("tables")?, col("dim")?, col("code")?, col("level")?, col("parent")?, col("flow")?, col("excluded_from")?];
+    let col = |name: &str| {
+        header
+            .iter()
+            .position(|h| *h == name)
+            .ok_or_else(|| format!("estat-parts.tsv has no column {name}"))
+    };
+    let cols = [
+        col("tables")?,
+        col("dim")?,
+        col("code")?,
+        col("level")?,
+        col("parent")?,
+        col("flow")?,
+        col("excluded_from")?,
+    ];
     let mut out = Vec::new();
     for line in lines.filter(|l| !l.is_empty()) {
         let f: Vec<&str> = line.split('\t').collect();
@@ -1630,9 +1993,19 @@ pub(crate) fn parts_rows() -> Result<Vec<[String; 7]>, String> {
 /// The leaves of `dim` of `table` whose parents lead up to its total, in file order (the dimension's level-2 codes under its
 /// total: an aggregate is never one), each with its excluded_from.
 fn leaves_under_total(rows: &[[String; 7]], table: &str, dim: &str) -> Vec<(String, String)> {
-    let of: Vec<&[String; 7]> = rows.iter().filter(|r| r[0] == table && r[1] == dim && r[3] != "overlap").collect();
-    let Some(total) = of.iter().find(|r| r[3] == "total").map(|r| r[2].clone()) else { return Vec::new() };
-    let parent = |code: &str| of.iter().find(|r| r[2] == code).map(|r| r[4].clone()).unwrap_or_default();
+    let of: Vec<&[String; 7]> = rows
+        .iter()
+        .filter(|r| r[0] == table && r[1] == dim && r[3] != "overlap")
+        .collect();
+    let Some(total) = of.iter().find(|r| r[3] == "total").map(|r| r[2].clone()) else {
+        return Vec::new();
+    };
+    let parent = |code: &str| {
+        of.iter()
+            .find(|r| r[2] == code)
+            .map(|r| r[4].clone())
+            .unwrap_or_default()
+    };
     let under = |r: &[String; 7]| {
         let mut at = r[4].clone();
         for _ in 0..of.len() {
@@ -1646,7 +2019,10 @@ fn leaves_under_total(rows: &[[String; 7]], table: &str, dim: &str) -> Vec<(Stri
         }
         false
     };
-    of.iter().filter(|r| r[3] == "leaf" && under(r)).map(|r| (r[2].clone(), r[6].clone())).collect()
+    of.iter()
+        .filter(|r| r[3] == "leaf" && under(r))
+        .map(|r| (r[2].clone(), r[6].clone()))
+        .collect()
 }
 
 /// A registry_list select's codes recomputed from the registered parts table, in its order: `flow_excluded:<table>`, the
@@ -1659,15 +2035,32 @@ fn registry_list(registry: &str) -> Option<Result<J, String>> {
         Err(e) => return Some(Err(e)),
     };
     let excluded = |table: &str| -> Vec<String> {
-        let source = rows.iter().find(|r| r[0] == table && r[3] == "total" && r[5] == "source").map(|r| r[1].clone());
-        source.map(|d| leaves_under_total(&rows, table, &d).into_iter().filter(|(_, x)| !x.is_empty()).map(|(c, _)| c).collect()).unwrap_or_default()
+        let source = rows
+            .iter()
+            .find(|r| r[0] == table && r[3] == "total" && r[5] == "source")
+            .map(|r| r[1].clone());
+        source
+            .map(|d| {
+                leaves_under_total(&rows, table, &d)
+                    .into_iter()
+                    .filter(|(_, x)| !x.is_empty())
+                    .map(|(c, _)| c)
+                    .collect()
+            })
+            .unwrap_or_default()
     };
     let codes = |c: Vec<String>| J::Arr(c.into_iter().map(J::Str).collect());
     match registry.split(':').collect::<Vec<_>>()[..] {
         ["flow_excluded", table] => Some(Ok(codes(excluded(table)))),
         ["flow_asked", table, dim] => {
             let out = excluded(table);
-            Some(Ok(codes(leaves_under_total(&rows, table, dim).into_iter().map(|(c, _)| c).filter(|c| !out.contains(c)).collect())))
+            Some(Ok(codes(
+                leaves_under_total(&rows, table, dim)
+                    .into_iter()
+                    .map(|(c, _)| c)
+                    .filter(|c| !out.contains(c))
+                    .collect(),
+            )))
         }
         _ => None,
     }
@@ -1680,33 +2073,62 @@ fn registry_list(registry: &str) -> Option<Result<J, String>> {
 /// page of the recipe must print. Refused: a recipe with no main chart, a main chart that is no layer of the recipe or is
 /// registered wholly reference, a role other than reference, a reference with no legend word or one the word table lacks,
 /// and a recipe whose every layer is wholly reference. (main chart, [(layer or layer.part, its legend word)])
-pub(crate) fn recipe_roles(reg: &J, recipe: &str) -> Result<(String, Vec<(String, String)>), String> {
+pub(crate) fn recipe_roles(
+    reg: &J,
+    recipe: &str,
+) -> Result<(String, Vec<(String, String)>), String> {
     let layers: Vec<String> = reg.g("recipes").g(recipe).arr().iter().map(st).collect();
     if layers.is_empty() {
         return Err(format!("recipe {recipe}: the registry lists no layers"));
     }
-    let main = reg.g("main_chart").g(recipe).s().ok_or_else(|| format!("recipe {recipe}: the registry names no main chart (main_chart)"))?.to_string();
+    let main = reg
+        .g("main_chart")
+        .g(recipe)
+        .s()
+        .ok_or_else(|| format!("recipe {recipe}: the registry names no main chart (main_chart)"))?
+        .to_string();
     if !layers.contains(&main) {
-        return Err(format!("recipe {recipe}: its main chart {main} is no layer of it"));
+        return Err(format!(
+            "recipe {recipe}: its main chart {main} is no layer of it"
+        ));
     }
     let entry = |what: &str, role: &J| -> Result<(String, String), String> {
         if role.g("role").s() != Some("reference") {
-            return Err(format!("recipe {recipe}: {what} has role {}, and reference is the only role", role.g("role").repr()));
+            return Err(format!(
+                "recipe {recipe}: {what} has role {}, and reference is the only role",
+                role.g("role").repr()
+            ));
         }
-        let word = role.g("legend").g("word").s().filter(|w| !w.is_empty()).ok_or_else(|| format!("recipe {recipe}: reference {what} names no legend word"))?;
-        let Some(template) = crate::next_ledger::word_table().get(word).and_then(serde_json::Value::as_str) else {
-            return Err(format!("recipe {recipe}: reference {what}'s legend word {word} is not in the word table"));
+        let word = role
+            .g("legend")
+            .g("word")
+            .s()
+            .filter(|w| !w.is_empty())
+            .ok_or_else(|| format!("recipe {recipe}: reference {what} names no legend word"))?;
+        let Some(template) = crate::next_ledger::word_table()
+            .get(word)
+            .and_then(serde_json::Value::as_str)
+        else {
+            return Err(format!(
+                "recipe {recipe}: reference {what}'s legend word {word} is not in the word table"
+            ));
         };
         // the legend it sits in, and how each placeholder of its word is filled (reference_legend_gaps)
         if role.g("legend").g("within").s().is_none_or(str::is_empty) {
-            return Err(format!("recipe {recipe}: reference {what}'s legend names no legend it sits within"));
+            return Err(format!(
+                "recipe {recipe}: reference {what}'s legend names no legend it sits within"
+            ));
         }
         // each entry it prints is one the layer draws (legend.entries over legend.draws, drawn_entry_gaps), not any entry
         // of that kind on the page: a template per entry placeholder, tied to what the layer draws by a value of draws or by
         // a value another such template shares
         let known = draws_vars(role.g("legend").g("draws"));
         let mut tied: Vec<(String, Vec<String>)> = Vec::new();
-        for ph in template.split('{').skip(1).filter_map(|p| p.split_once('}').map(|x| x.0)) {
+        for ph in template
+            .split('{')
+            .skip(1)
+            .filter_map(|p| p.split_once('}').map(|x| x.0))
+        {
             let kind = role.g("legend").g("fills").g(ph).s().unwrap_or("");
             if !LEGEND_FILLS.contains(&kind) {
                 return Err(format!("recipe {recipe}: reference {what}'s legend fills {{{ph}}} as {kind:?}, not one of {LEGEND_FILLS:?}"));
@@ -1714,7 +2136,13 @@ pub(crate) fn recipe_roles(reg: &J, recipe: &str) -> Result<(String, Vec<(String
             if kind == "unit" {
                 continue;
             }
-            let Some(e) = role.g("legend").g("entries").g(ph).s().filter(|e| !e.is_empty()) else {
+            let Some(e) = role
+                .g("legend")
+                .g("entries")
+                .g(ph)
+                .s()
+                .filter(|e| !e.is_empty())
+            else {
                 return Err(format!("recipe {recipe}: reference {what}'s legend names no entry its layer draws for {{{ph}}} (legend.entries)"));
             };
             if !e.starts_with(&format!("{}:", kind.strip_suffix("_unit").unwrap_or(kind))) {
@@ -1723,7 +2151,11 @@ pub(crate) fn recipe_roles(reg: &J, recipe: &str) -> Result<(String, Vec<(String
             tied.push((ph.to_string(), template_vars(e)));
         }
         for (ph, vars) in &tied {
-            let shared = |v: &String| tied.iter().any(|(p, vs)| p != ph && vs.contains(v) && vs.iter().any(|w| known.contains(w)));
+            let shared = |v: &String| {
+                tied.iter().any(|(p, vs)| {
+                    p != ph && vs.contains(v) && vs.iter().any(|w| known.contains(w))
+                })
+            };
             if !vars.iter().any(|v| known.contains(v) || shared(v)) {
                 return Err(format!("recipe {recipe}: reference {what}'s entry for {{{ph}}} names nothing its layer draws (legend.draws)"));
             }
@@ -1732,7 +2164,9 @@ pub(crate) fn recipe_roles(reg: &J, recipe: &str) -> Result<(String, Vec<(String
     };
     let (mut refs, mut whole) = (Vec::new(), 0);
     for layer in &layers {
-        let Some(roles) = reg.g("nodes").g(layer).g("roles").get(recipe) else { continue };
+        let Some(roles) = reg.g("nodes").g(layer).g("roles").get(recipe) else {
+            continue;
+        };
         if roles.has("role") {
             if *layer == main {
                 return Err(format!("recipe {recipe}: its main chart {main} is registered wholly reference; the main chart draws the headline's quantity"));
@@ -1765,12 +2199,25 @@ pub(crate) struct Drawn<'a> {
 /// The values a reference's legend.draws gives its entry templates: each key but `span` (a path into the knobs), and
 /// `first`, `last` for a `span`.
 fn draws_vars(draws: &J) -> BTreeSet<String> {
-    draws.obj().iter().flat_map(|(k, _)| if k == "span" { vec!["first".to_string(), "last".to_string()] } else { vec![k.clone()] }).collect()
+    draws
+        .obj()
+        .iter()
+        .flat_map(|(k, _)| {
+            if k == "span" {
+                vec!["first".to_string(), "last".to_string()]
+            } else {
+                vec![k.clone()]
+            }
+        })
+        .collect()
 }
 
 /// The {placeholders} of an entry template, in order.
 fn template_vars(t: &str) -> Vec<String> {
-    t.split('{').skip(1).filter_map(|p| p.split_once('}').map(|x| x.0.to_string())).collect()
+    t.split('{')
+        .skip(1)
+        .filter_map(|p| p.split_once('}').map(|x| x.0.to_string()))
+        .collect()
 }
 
 /// The knobs' value at a dotted path.
@@ -1785,16 +2232,28 @@ fn drawn_vars(draws: &J, d: &Drawn) -> Result<BTreeMap<String, String>, String> 
     let mut out = BTreeMap::new();
     for (var, path) in draws.obj() {
         if var != "span" {
-            let v = knob_at(d.hero, &st(path)).s().ok_or_else(|| format!("the knobs give no {var} at {}", st(path)))?;
+            let v = knob_at(d.hero, &st(path))
+                .s()
+                .ok_or_else(|| format!("the knobs give no {var} at {}", st(path)))?;
             out.insert(var.clone(), v.to_string());
             continue;
         }
         let q = knob_at(d.hero, &st(path.g("q")));
-        let table = q.g("table").s().ok_or_else(|| format!("the knobs give no query at {}", st(path.g("q"))))?;
-        let from = knob_at(d.hero, &st(path.g("from"))).s().ok_or_else(|| format!("the knobs give no first period at {}", st(path.g("from"))))?;
+        let table = q
+            .g("table")
+            .s()
+            .ok_or_else(|| format!("the knobs give no query at {}", st(path.g("q"))))?;
+        let from = knob_at(d.hero, &st(path.g("from")))
+            .s()
+            .ok_or_else(|| format!("the knobs give no first period at {}", st(path.g("from"))))?;
         let to = path.g("to").s().and_then(|p| knob_at(d.hero, p).s());
         let by = q.g("by").s();
-        let out_of = |r: &J| matches!(q.g("not_eu"), J::Bool(true)) && by.is_some_and(|b| d.members.iter().any(|m| m == &st(dims(r, b))) || st(dims(r, b)) == "TOTAL");
+        let out_of = |r: &J| {
+            matches!(q.g("not_eu"), J::Bool(true))
+                && by.is_some_and(|b| {
+                    d.members.iter().any(|m| m == &st(dims(r, b))) || st(dims(r, b)) == "TOTAL"
+                })
+        };
         let times: BTreeSet<String> = select_rows(d.rows, q)
             .into_iter()
             .filter(|r| !out_of(r))
@@ -1814,12 +2273,18 @@ fn drawn_vars(draws: &J, d: &Drawn) -> Result<BTreeMap<String, String>, String> 
 /// src_is's matcher: the segments (is a var, literal or name) read off `src` in order, a var not yet bound trying each
 /// length from one character.
 fn segs_match(src: &str, segs: &[(bool, String)], bound: &mut BTreeMap<String, String>) -> bool {
-    let Some(((is_var, s), rest)) = segs.split_first() else { return src.is_empty() };
+    let Some(((is_var, s), rest)) = segs.split_first() else {
+        return src.is_empty();
+    };
     if !is_var {
-        return src.strip_prefix(s.as_str()).is_some_and(|r| segs_match(r, rest, bound));
+        return src
+            .strip_prefix(s.as_str())
+            .is_some_and(|r| segs_match(r, rest, bound));
     }
     if let Some(v) = bound.get(s).cloned() {
-        return src.strip_prefix(v.as_str()).is_some_and(|r| segs_match(r, rest, bound));
+        return src
+            .strip_prefix(v.as_str())
+            .is_some_and(|r| segs_match(r, rest, bound));
     }
     for end in src.char_indices().map(|(i, c)| i + c.len_utf8()) {
         let mut b = bound.clone();
@@ -1834,12 +2299,25 @@ fn segs_match(src: &str, segs: &[(bool, String)], bound: &mut BTreeMap<String, S
 
 /// Whether `src` is the entry `template` names: its literal parts and the known values exactly, each other {var} one or
 /// more characters, bound once (`bound`: the same in every entry of the line).
-fn src_is(src: &str, template: &str, known: &BTreeMap<String, String>, bound: &mut BTreeMap<String, String>) -> bool {
+fn src_is(
+    src: &str,
+    template: &str,
+    known: &BTreeMap<String, String>,
+    bound: &mut BTreeMap<String, String>,
+) -> bool {
     let mut segs = Vec::new();
     for (i, p) in template.split('{').enumerate() {
-        let (var, lit) = if i == 0 { (None, p) } else { p.split_once('}').map_or((None, p), |(v, l)| (Some(v), l)) };
+        let (var, lit) = if i == 0 {
+            (None, p)
+        } else {
+            p.split_once('}').map_or((None, p), |(v, l)| (Some(v), l))
+        };
         if let Some(v) = var {
-            segs.push(known.get(v).map_or((true, v.to_string()), |k| (false, k.clone())));
+            segs.push(
+                known
+                    .get(v)
+                    .map_or((true, v.to_string()), |k| (false, k.clone())),
+            );
         }
         if !lit.is_empty() {
             segs.push((false, lit.to_string()));
@@ -1860,20 +2338,41 @@ fn drawn_entry_gaps(legend: &J, entries: &[(String, String)], d: &Drawn) -> Vec<
     let mut out = Vec::new();
     // an entry tied to what the layer draws binds the values it shares first (the halo's {code} by its value, then its name)
     let mut entries: Vec<&(String, String)> = entries.iter().collect();
-    entries.sort_by_key(|(ph, _)| !template_vars(&st(legend.g("entries").g(ph))).iter().any(|v| known.contains_key(v)));
+    entries.sort_by_key(|(ph, _)| {
+        !template_vars(&st(legend.g("entries").g(ph)))
+            .iter()
+            .any(|v| known.contains_key(v))
+    });
     for (ph, src) in entries {
         let template = st(legend.g("entries").g(ph));
         if !src_is(src, &template, &known, &mut bound) {
-            let want = known.iter().fold(template.clone(), |t, (k, v)| t.replace(&format!("{{{k}}}"), v));
-            out.push(format!("{{{ph}}} is the entry {src}, and its layer draws {want}"));
+            let want = known.iter().fold(template.clone(), |t, (k, v)| {
+                t.replace(&format!("{{{k}}}"), v)
+            });
+            out.push(format!(
+                "{{{ph}}} is the entry {src}, and its layer draws {want}"
+            ));
             continue;
         }
-        let Some(key) = src.strip_prefix("fact:") else { continue };
-        let (Some(time), key) = (known.get("time"), key.strip_suffix(".n").or(key.strip_suffix(".t")).unwrap_or(key)) else { continue };
+        let Some(key) = src.strip_prefix("fact:") else {
+            continue;
+        };
+        let (Some(time), key) = (
+            known.get("time"),
+            key.strip_suffix(".n")
+                .or(key.strip_suffix(".t"))
+                .unwrap_or(key),
+        ) else {
+            continue;
+        };
         let reads = d.reads.get(key).map(Vec::as_slice).unwrap_or_default();
-        let at = |r: &String| r.strip_prefix("series:").and_then(|r| r.rsplit(':').nth(1)) == Some(time.as_str());
+        let at = |r: &String| {
+            r.strip_prefix("series:").and_then(|r| r.rsplit(':').nth(1)) == Some(time.as_str())
+        };
         if reads.is_empty() || !reads.iter().all(at) {
-            out.push(format!("{{{ph}}} is the fact {key}, which reads {reads:?}, not its layer's {time}"));
+            out.push(format!(
+                "{{{ph}}} is the fact {key}, which reads {reads:?}, not its layer's {time}"
+            ));
         }
     }
     out
@@ -1882,7 +2381,10 @@ fn drawn_entry_gaps(legend: &J, entries: &[(String, String)], d: &Drawn) -> Vec<
 /// The element of `html` whose opening tag starts at `open`: (its name, where its body starts, where its closing tag
 /// starts), elements of the same name inside it counted; none when it does not close.
 fn element_at(html: &str, open: usize) -> Option<(String, usize, usize)> {
-    let name: String = html[open + 1..].chars().take_while(|c| c.is_ascii_alphanumeric()).collect();
+    let name: String = html[open + 1..]
+        .chars()
+        .take_while(|c| c.is_ascii_alphanumeric())
+        .collect();
     if name.is_empty() {
         return None;
     }
@@ -1891,7 +2393,10 @@ fn element_at(html: &str, open: usize) -> Option<(String, usize, usize)> {
     loop {
         let next = html[i..].find('<')? + i;
         let tag = &html[next + 1..];
-        if tag.strip_prefix('/').is_some_and(|t| t.starts_with(&name) && t[name.len()..].starts_with('>')) {
+        if tag
+            .strip_prefix('/')
+            .is_some_and(|t| t.starts_with(&name) && t[name.len()..].starts_with('>'))
+        {
             depth -= 1;
             if depth == 0 {
                 return Some((name, body, next));
@@ -1923,7 +2428,12 @@ fn pieces(html: &str, from: usize, to: usize) -> Option<Vec<Piece>> {
             Some(0) => {
                 let (_, body, close) = element_at(html, i)?;
                 let tag = &html[i..body];
-                let src = tag.split("data-src=\"").nth(1)?.split('"').next()?.to_string();
+                let src = tag
+                    .split("data-src=\"")
+                    .nth(1)?
+                    .split('"')
+                    .next()?
+                    .to_string();
                 out.push(Piece::Entry(src));
                 i = close + html[close..].find('>')? + 1;
             }
@@ -1940,7 +2450,12 @@ fn pieces(html: &str, from: usize, to: usize) -> Option<Vec<Piece>> {
 /// filled as the registry's legend says (fills: `period`, `fact`, `name`: one entry of that kind; `fact_unit`: such an
 /// entry, then the unit of a page format; `unit`: the unit of a page format as text). A page format's unit is its suffix
 /// less its spaces.
-fn is_the_word(pieces: &[Piece], template: &str, fills: &J, units: &[String]) -> Result<Vec<(String, String)>, String> {
+fn is_the_word(
+    pieces: &[Piece],
+    template: &str,
+    fills: &J,
+    units: &[String],
+) -> Result<Vec<(String, String)>, String> {
     let mut entries = Vec::new();
     let mut text = String::new();
     let mut rest = pieces.iter();
@@ -1948,7 +2463,11 @@ fn is_the_word(pieces: &[Piece], template: &str, fills: &J, units: &[String]) ->
         .split('{')
         .enumerate()
         .flat_map(|(i, p)| {
-            let (ph, lit) = if i == 0 { ("", p) } else { p.split_once('}').unwrap_or((p, "")) };
+            let (ph, lit) = if i == 0 {
+                ("", p)
+            } else {
+                p.split_once('}').unwrap_or((p, ""))
+            };
             [(true, ph.to_string()), (false, lit.to_string())]
         })
         .collect();
@@ -1964,7 +2483,10 @@ fn is_the_word(pieces: &[Piece], template: &str, fills: &J, units: &[String]) ->
         }
     };
     let take_unit = |text: &mut String, upto: Option<&str>| -> Result<(), String> {
-        let end = upto.filter(|l| !l.is_empty()).and_then(|l| text.find(l)).unwrap_or(text.len());
+        let end = upto
+            .filter(|l| !l.is_empty())
+            .and_then(|l| text.find(l))
+            .unwrap_or(text.len());
         let u = text[..end].trim().to_string();
         if !units.contains(&u) {
             return Err(format!("{u:?} is the unit of no format of the page"));
@@ -1984,7 +2506,10 @@ fn is_the_word(pieces: &[Piece], template: &str, fills: &J, units: &[String]) ->
         if s.is_empty() {
             continue;
         }
-        let kind = fills.g(s).s().ok_or_else(|| format!("the legend names no fill for {{{s}}}"))?;
+        let kind = fills
+            .g(s)
+            .s()
+            .ok_or_else(|| format!("the legend names no fill for {{{s}}}"))?;
         let following = all.get(n + 1).map(|(_, l)| l.as_str());
         if kind == "unit" {
             next_text(&mut text, &mut rest);
@@ -1992,13 +2517,19 @@ fn is_the_word(pieces: &[Piece], template: &str, fills: &J, units: &[String]) ->
             continue;
         }
         if !text.trim().is_empty() {
-            return Err(format!("the line reads {text:?} where the word has {{{s}}}"));
+            return Err(format!(
+                "the line reads {text:?} where the word has {{{s}}}"
+            ));
         }
         text.clear();
         let want = kind.strip_suffix("_unit").unwrap_or(kind);
         match rest.next() {
-            Some(Piece::Entry(src)) if src.starts_with(&format!("{want}:")) => entries.push((s.clone(), src.clone())),
-            Some(Piece::Entry(src)) => return Err(format!("{{{s}}} is the entry {src}, not a {want}")),
+            Some(Piece::Entry(src)) if src.starts_with(&format!("{want}:")) => {
+                entries.push((s.clone(), src.clone()))
+            }
+            Some(Piece::Entry(src)) => {
+                return Err(format!("{{{s}}} is the entry {src}, not a {want}"))
+            }
             _ => return Err(format!("{{{s}}} is no entry of the page")),
         }
         if kind.ends_with("_unit") {
@@ -2021,7 +2552,13 @@ fn is_the_word(pieces: &[Piece], template: &str, fills: &J, units: &[String]) ->
 /// layers were given; none, a gap). `units`: the units of the page's formats. A registry the roles cannot be read from is
 /// one gap; one that names no main chart at all is a prototype fixture's (as registry_lint reads it: the registry in
 /// force names one per recipe, a test holds it) and asks for no line.
-pub(crate) fn reference_legend_gaps(reg: &J, recipe: &str, html: &str, units: &[String], drawn: Option<&Drawn>) -> Vec<String> {
+pub(crate) fn reference_legend_gaps(
+    reg: &J,
+    recipe: &str,
+    html: &str,
+    units: &[String],
+    drawn: Option<&Drawn>,
+) -> Vec<String> {
     if !reg.has("main_chart") {
         return Vec::new();
     }
@@ -2032,7 +2569,15 @@ pub(crate) fn reference_legend_gaps(reg: &J, recipe: &str, html: &str, units: &[
     let mut out = Vec::new();
     for (what, word) in refs {
         let legend = reference_legend(reg, recipe, &what);
-        out.extend(legend_line_gaps(&what, "is drawn as a reference", &word, &legend, html, units, drawn));
+        out.extend(legend_line_gaps(
+            &what,
+            "is drawn as a reference",
+            &word,
+            &legend,
+            html,
+            units,
+            drawn,
+        ));
     }
     out
 }
@@ -2041,17 +2586,27 @@ pub(crate) fn reference_legend_gaps(reg: &J, recipe: &str, html: &str, units: &[
 /// `data-word="<word>"` inside the legend legend.within names (`data-legend`), its text the word with each placeholder
 /// filled as legend.fills says, each entry the one its layer draws (drawn_entry_gaps). `why`: what the layer does that
 /// the line says.
-fn legend_line_gaps(what: &str, why: &str, word: &str, legend: &J, html: &str, units: &[String], drawn: Option<&Drawn>) -> Vec<String> {
+fn legend_line_gaps(
+    what: &str,
+    why: &str,
+    word: &str,
+    legend: &J,
+    html: &str,
+    units: &[String],
+    drawn: Option<&Drawn>,
+) -> Vec<String> {
     let mut out = Vec::new();
     let within = st(legend.g("within"));
     // the legend it names, and the line inside it
-    let line = html.match_indices(&format!("data-legend=\"{within}\"")).find_map(|(at, _)| {
-        let (_, body, close) = element_at(html, html[..at].rfind('<')?)?;
-        let mark = html[body..close].find(&format!("data-word=\"{word}\""))? + body;
-        let open = html[..mark].rfind('<')?;
-        let (_, lb, lc) = element_at(html, open)?;
-        Some((lb, lc))
-    });
+    let line = html
+        .match_indices(&format!("data-legend=\"{within}\""))
+        .find_map(|(at, _)| {
+            let (_, body, close) = element_at(html, html[..at].rfind('<')?)?;
+            let mark = html[body..close].find(&format!("data-word=\"{word}\""))? + body;
+            let open = html[..mark].rfind('<')?;
+            let (_, lb, lc) = element_at(html, open)?;
+            Some((lb, lc))
+        });
     let Some((lb, lc)) = line else {
         let anywhere = html.contains(&format!("data-word=\"{word}\""));
         out.push(match anywhere {
@@ -2060,14 +2615,26 @@ fn legend_line_gaps(what: &str, why: &str, word: &str, legend: &J, html: &str, u
         });
         return out;
     };
-    let template = crate::next_ledger::word_table().get(word).and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
-    let said = pieces(html, lb, lc).ok_or_else(|| "a child element names no data-src".to_string()).and_then(|p| is_the_word(&p, &template, legend.g("fills"), units));
+    let template = crate::next_ledger::word_table()
+        .get(word)
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let said = pieces(html, lb, lc)
+        .ok_or_else(|| "a child element names no data-src".to_string())
+        .and_then(|p| is_the_word(&p, &template, legend.g("fills"), units));
     match (said, drawn) {
-        (Err(e), _) => out.push(format!("roles: {what}'s legend line is not the registry's word {word} ({template:?}): {e}")),
-        (Ok(_), None) => out.push(format!("roles: {what}'s legend line: the page gives no knobs to read what its layer draws")),
-        (Ok(entries), Some(d)) => {
-            out.extend(drawn_entry_gaps(legend, &entries, d).into_iter().map(|e| format!("roles: {what}'s legend line {word}: {e}")))
-        }
+        (Err(e), _) => out.push(format!(
+            "roles: {what}'s legend line is not the registry's word {word} ({template:?}): {e}"
+        )),
+        (Ok(_), None) => out.push(format!(
+            "roles: {what}'s legend line: the page gives no knobs to read what its layer draws"
+        )),
+        (Ok(entries), Some(d)) => out.extend(
+            drawn_entry_gaps(legend, &entries, d)
+                .into_iter()
+                .map(|e| format!("roles: {what}'s legend line {word}: {e}")),
+        ),
     }
     out
 }
@@ -2080,16 +2647,32 @@ const UNFADED: f64 = 1.0;
 /// each piece faded (its fill-opacity below 1) exactly when its months fall outside the years legend.draws names (from,
 /// to), no piece holding months of both, no month in two pieces; when a piece is faded, the legend line names the years
 /// (legend_line_gaps). A page with no knobs to read the years from is one gap.
-pub(crate) fn split_gaps(reg: &J, recipe: &str, html: &str, units: &[String], drawn: Option<&Drawn>) -> Vec<String> {
+pub(crate) fn split_gaps(
+    reg: &J,
+    recipe: &str,
+    html: &str,
+    units: &[String],
+    drawn: Option<&Drawn>,
+) -> Vec<String> {
     let mut out = Vec::new();
     for layer in reg.g("recipes").g(recipe).arr().iter().map(st) {
-        let Some(split) = reg.g("nodes").g(&layer).g("split").get(recipe) else { continue };
-        let legend = split.g("legend");
-        let Some(d) = drawn else {
-            out.push(format!("split: {layer}: the page gives no knobs to read the years its months are split by"));
+        let Some(split) = reg.g("nodes").g(&layer).g("split").get(recipe) else {
             continue;
         };
-        let years = match drawn_vars(&J::obj_of(vec![("from", legend.g("draws").g("from").clone()), ("to", legend.g("draws").g("to").clone())]), d) {
+        let legend = split.g("legend");
+        let Some(d) = drawn else {
+            out.push(format!(
+                "split: {layer}: the page gives no knobs to read the years its months are split by"
+            ));
+            continue;
+        };
+        let years = match drawn_vars(
+            &J::obj_of(vec![
+                ("from", legend.g("draws").g("from").clone()),
+                ("to", legend.g("draws").g("to").clone()),
+            ]),
+            d,
+        ) {
             Ok(y) => y,
             Err(e) => {
                 out.push(format!("split: {layer}: {e}"));
@@ -2099,21 +2682,47 @@ pub(crate) fn split_gaps(reg: &J, recipe: &str, html: &str, units: &[String], dr
         let (from, to) = (years["from"].clone(), years["to"].clone());
         let (mut seen, mut faded_any) = (BTreeSet::new(), false);
         for (at, _) in html.match_indices("data-ms=\"") {
-            let Some(open) = html[..at].rfind('<') else { continue };
+            let Some(open) = html[..at].rfind('<') else {
+                continue;
+            };
             let tag = &html[open..open + html[open..].find('>').unwrap_or(0)];
-            let months: Vec<&str> = html[at + 9..].split('"').next().unwrap_or("").split_whitespace().collect();
-            let opacity = tag.split("fill-opacity=\"").nth(1).and_then(|v| v.split('"').next()).map_or(Some(UNFADED), |v| v.parse::<f64>().ok());
+            let months: Vec<&str> = html[at + 9..]
+                .split('"')
+                .next()
+                .unwrap_or("")
+                .split_whitespace()
+                .collect();
+            let opacity = tag
+                .split("fill-opacity=\"")
+                .nth(1)
+                .and_then(|v| v.split('"').next())
+                .map_or(Some(UNFADED), |v| v.parse::<f64>().ok());
             let faded = opacity.is_some_and(|o| o < UNFADED);
-            let inside = |m: &str| m.get(..4).is_some_and(|y| from.as_str() <= y && y <= to.as_str());
+            let inside = |m: &str| {
+                m.get(..4)
+                    .is_some_and(|y| from.as_str() <= y && y <= to.as_str())
+            };
             let inn = months.iter().filter(|m| inside(m)).count();
             let outside = months.len() - inn;
             if opacity.is_none() {
-                out.push(format!("split: {layer}: a piece's fill-opacity is no number"));
+                out.push(format!(
+                    "split: {layer}: a piece's fill-opacity is no number"
+                ));
             } else if inn > 0 && outside > 0 {
-                out.push(format!("split: {layer}: a piece holds months inside {from}..{to} and outside them"));
+                out.push(format!(
+                    "split: {layer}: a piece holds months inside {from}..{to} and outside them"
+                ));
             } else if faded != (outside > 0) {
-                let say = if faded { "faded" } else { "drawn as the band is" };
-                out.push(format!("split: {layer}: months {}..{} are {say}, and the years are {from}..{to}", months.first().unwrap_or(&""), months.last().unwrap_or(&"")));
+                let say = if faded {
+                    "faded"
+                } else {
+                    "drawn as the band is"
+                };
+                out.push(format!(
+                    "split: {layer}: months {}..{} are {say}, and the years are {from}..{to}",
+                    months.first().unwrap_or(&""),
+                    months.last().unwrap_or(&"")
+                ));
             }
             for m in months {
                 if !seen.insert(m.to_string()) {
@@ -2124,7 +2733,15 @@ pub(crate) fn split_gaps(reg: &J, recipe: &str, html: &str, units: &[String], dr
         }
         if faded_any {
             let word = st(legend.g("word"));
-            out.extend(legend_line_gaps(&layer, "fades its months outside the headline's years", &word, legend, html, units, drawn));
+            out.extend(legend_line_gaps(
+                &layer,
+                "fades its months outside the headline's years",
+                &word,
+                legend,
+                html,
+                units,
+                drawn,
+            ));
         }
     }
     out
@@ -2132,7 +2749,9 @@ pub(crate) fn split_gaps(reg: &J, recipe: &str, html: &str, units: &[String], dr
 
 /// A reference's legend as the registry declares it (roles.<recipe> of the layer, or its parts.<part>).
 fn reference_legend(reg: &J, recipe: &str, what: &str) -> J {
-    let (layer, part) = what.split_once('.').map_or((what, None), |(l, p)| (l, Some(p)));
+    let (layer, part) = what
+        .split_once('.')
+        .map_or((what, None), |(l, p)| (l, Some(p)));
     let roles = reg.g("nodes").g(layer).g("roles").g(recipe);
     match part {
         Some(p) => roles.g("parts").g(p).g("legend").clone(),
@@ -2157,12 +2776,22 @@ pub fn recheck(page: &J) -> (Vec<String>, Got, Option<J>) {
     let mut bad: Vec<String> = Vec::new();
     let same = |bad: &mut Vec<String>, name: String, want: &J, have: &J| {
         if want != have {
-            bad.push(format!("{name}: declared {} recomputed {}", want.repr(), have.repr()));
+            bad.push(format!(
+                "{name}: declared {} recomputed {}",
+                want.repr(),
+                have.repr()
+            ));
         }
     };
     for s0 in items {
         let id = st(s0.g("id"));
-        let ways = J::Obj(s0.obj().iter().filter(|(k, _)| !matches!(k.as_str(), "result" | "declared" | "dropped")).cloned().collect());
+        let ways = J::Obj(
+            s0.obj()
+                .iter()
+                .filter(|(k, _)| !matches!(k.as_str(), "result" | "declared" | "dropped"))
+                .cloned()
+                .collect(),
+        );
         let mut s = match resolved(&ways, &got) {
             Ok(s) => s,
             Err(e) => {
@@ -2188,15 +2817,24 @@ pub fn recheck(page: &J) -> (Vec<String>, Got, Option<J>) {
             continue;
         }
         let sid = st(c.g("select"));
-        let d = got.get(&format!("{sid}#dropped")).map_or(0, |d| d.arr().len()) as f64;
-        let t = got.get(&format!("{sid}#target")).and_then(J::num).unwrap_or(1.0);
+        let d = got
+            .get(&format!("{sid}#dropped"))
+            .map_or(0, |d| d.arr().len()) as f64;
+        let t = got
+            .get(&format!("{sid}#target"))
+            .and_then(J::num)
+            .unwrap_or(1.0);
         let ok = if kind == "max_dropped" {
             d * c.g("den").num().unwrap_or(f64::NAN) <= t * c.g("num").num().unwrap_or(f64::NAN)
         } else {
             d == 0.0 || got.get(&sid).map_or(0, |x| x.arr().len()) as f64 >= t
         };
         if c.get("passed").is_some_and(|p| *p != J::Bool(ok)) || (!c.has("passed") && !ok) {
-            bad.push(format!("check {} ({kind}): passed {}", st(c.g("id")), if ok { "True" } else { "False" }));
+            bad.push(format!(
+                "check {} ({kind}): passed {}",
+                st(c.g("id")),
+                if ok { "True" } else { "False" }
+            ));
         }
     }
     let rpage = match resolved(page, &got) {
@@ -2208,7 +2846,12 @@ pub fn recheck(page: &J) -> (Vec<String>, Got, Option<J>) {
     };
     let facts = rpage.g("facts").g("facts");
     let val = Compute::new(facts, rows);
-    let mut keys: Vec<&str> = facts.obj().iter().filter(|(_, q)| !q.has("each")).map(|(k, _)| k.as_str()).collect();
+    let mut keys: Vec<&str> = facts
+        .obj()
+        .iter()
+        .filter(|(_, q)| !q.has("each"))
+        .map(|(k, _)| k.as_str())
+        .collect();
     keys.sort();
     for k in keys {
         if let Err(e) = val.val(k) {
@@ -2217,8 +2860,22 @@ pub fn recheck(page: &J) -> (Vec<String>, Got, Option<J>) {
     }
     // a printed difference is the difference of the two values as the page prints them (differences_disagree): what the
     // page prints read from it less its facts
-    let shown = printed_keys(&J::Obj(rpage.obj().iter().filter(|(k, _)| k != "facts").cloned().collect()), facts);
-    bad.extend(differences_disagree(facts, rpage.g("facts").g("fmts"), rows, &shown).into_iter().map(|(e, _)| e));
+    let shown = printed_keys(
+        &J::Obj(
+            rpage
+                .obj()
+                .iter()
+                .filter(|(k, _)| k != "facts")
+                .cloned()
+                .collect(),
+        ),
+        facts,
+    );
+    bad.extend(
+        differences_disagree(facts, rpage.g("facts").g("fmts"), rows, &shown)
+            .into_iter()
+            .map(|(e, _)| e),
+    );
     (bad, got, Some(rpage))
 }
 
@@ -2239,7 +2896,9 @@ fn recheck_one(
     match kind {
         "rank" => {
             if let Some(why) = cannot_rank(s) {
-                bad.push(format!("select {id} (rank): {why}; the core cannot compute it, so it is refused"));
+                bad.push(format!(
+                    "select {id} (rank): {why}; the core cannot compute it, so it is refused"
+                ));
                 got.insert(id.into(), s0.g("result").clone());
                 return Ok(());
             }
@@ -2247,14 +2906,22 @@ fn recheck_one(
             let by = q.g("by").s().ok_or("'by'")?;
             let only = s.g("only");
             let mut at: Vec<&J> = Vec::new();
-            for r in select_rows(rows, q).into_iter().filter(|r| r.g("time") == q.g("time")) {
+            for r in select_rows(rows, q)
+                .into_iter()
+                .filter(|r| r.g("time") == q.g("time"))
+            {
                 let c = r.g("dims").get(by).ok_or_else(|| format!("'{by}'"))?;
                 if !only.truthy() || only.arr().contains(c) {
                     at.push(r);
                 }
             }
             let codes: Vec<&J> = at.iter().map(|r| dims(r, by)).collect();
-            if s.g("one_row_per_code").truthy() && codes.iter().enumerate().any(|(i, c)| codes[..i].contains(c)) {
+            if s.g("one_row_per_code").truthy()
+                && codes
+                    .iter()
+                    .enumerate()
+                    .any(|(i, c)| codes[..i].contains(c))
+            {
                 bad.push(format!("rank {id}: a code has two rows"));
             }
             let desc = s.g("order").s() == Some("desc");
@@ -2281,15 +2948,26 @@ fn recheck_one(
                 }
                 if let Some(t0) = change_from(s) {
                     let c = dims(r, by);
-                    let from: Vec<&J> = select_rows(rows, q).into_iter().filter(|x| x.g("time") == t0 && dims(x, by) == c).collect();
+                    let from: Vec<&J> = select_rows(rows, q)
+                        .into_iter()
+                        .filter(|x| x.g("time") == t0 && dims(x, by) == c)
+                        .collect();
                     match (above, &from[..]) {
-                        (Some(th), from) => match (from.iter().any(|x| text_num(x).is_some_and(|v0| v0 > th)), from.first().and_then(|x| text_num(x))) {
+                        (Some(th), from) => match (
+                            from.iter().any(|x| text_num(x).is_some_and(|v0| v0 > th)),
+                            from.first().and_then(|x| text_num(x)),
+                        ) {
                             (true, Some(v0)) => v -= v0,
                             _ => continue,
                         },
                         (None, [r0]) => v -= num(r0)?,
                         (None, _) => {
-                            bad.push(format!("rank {id}: {} has {} rows at {}, the change needs one", st(c), from.len(), st(t0)));
+                            bad.push(format!(
+                                "rank {id}: {} has {} rows at {}, the change needs one",
+                                st(c),
+                                from.len(),
+                                st(t0)
+                            ));
                             got.insert(id.into(), s0.g("result").clone());
                             return Ok(());
                         }
@@ -2303,8 +2981,14 @@ fn recheck_one(
             let pos = |c: &str| only.arr().iter().position(|x| x.s() == Some(c));
             let last = last_in_only(s);
             keyed.sort_by(|a, b| {
-                let tie = if last { pos(&b.1).cmp(&pos(&a.1)) } else { a.1.cmp(&b.1) };
-                a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal).then(tie)
+                let tie = if last {
+                    pos(&b.1).cmp(&pos(&a.1))
+                } else {
+                    a.1.cmp(&b.1)
+                };
+                a.0.partial_cmp(&b.0)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then(tie)
             });
             let have = J::Arr(keyed.iter().map(|(_, _, r)| dims(r, by).clone()).collect());
             same(bad, format!("select {id} (rank)"), s.g("result"), &have);
@@ -2330,25 +3014,42 @@ fn recheck_one(
                 _ => return Err(format!("at {}", s.g("at").repr())),
             };
             if let Some(why) = cannot_take(s) {
-                bad.push(format!("select {id} (take): {why}; the core cannot compute it, so it is refused"));
+                bad.push(format!(
+                    "select {id} (take): {why}; the core cannot compute it, so it is refused"
+                ));
                 got.insert(id.into(), s0.g("result").clone());
                 return Ok(());
             }
             let n = src.len() as i64;
             if !src.is_empty() && !(-n <= i && i < n) {
-                bad.push(format!("select {id} (take): at {at} of {n} codes is out of range"));
+                bad.push(format!(
+                    "select {id} (take): at {at} of {n} codes is out of range"
+                ));
                 got.insert(id.into(), J::Null);
                 return Ok(());
             }
-            let mut pick = if src.is_empty() { J::Null } else { src[(if i < 0 { n + i } else { i }) as usize].clone() };
+            let mut pick = if src.is_empty() {
+                J::Null
+            } else {
+                src[(if i < 0 { n + i } else { i }) as usize].clone()
+            };
             let tie = s.g("tie");
             let by = tie.g("by").s();
             // the pick against each place beside it in the list (first and last have one, the second has two: the first and
             // the third), silent when it prints as either does
             let at_i = if i < 0 { n + i } else { i };
-            let beside: Vec<&J> = [at_i - 1, at_i + 1].iter().filter(|&&k| 0 <= k && k < n).map(|&k| &src[k as usize]).collect();
-            for nb in beside.into_iter().filter(|_| !pick.is_null() && matches!(by, Some("printed" | "value")) && src.len() > 1) {
-                let (a, b) = (take_value(sel, &from, &pick, rows)?, take_value(sel, &from, nb, rows)?);
+            let beside: Vec<&J> = [at_i - 1, at_i + 1]
+                .iter()
+                .filter(|&&k| 0 <= k && k < n)
+                .map(|&k| &src[k as usize])
+                .collect();
+            for nb in beside.into_iter().filter(|_| {
+                !pick.is_null() && matches!(by, Some("printed" | "value")) && src.len() > 1
+            }) {
+                let (a, b) = (
+                    take_value(sel, &from, &pick, rows)?,
+                    take_value(sel, &from, nb, rows)?,
+                );
                 let alike = match by {
                     // by value: the two keys are one number
                     Some("value") => a == b,
@@ -2358,16 +3059,35 @@ fn recheck_one(
                         let fm = f.g("fmts").g(&st(tie.g("fmt")));
                         let whole = tie.g("missing").s() == Some("whole");
                         let at: Option<(usize, f64)> = if tie.has("dec") {
-                            Some((tie.g("dec").num().ok_or("tie dec")? as usize, tie.get("scale").map_or(Ok(1.0), |x| x.num().ok_or("tie scale"))?))
+                            Some((
+                                tie.g("dec").num().ok_or("tie dec")? as usize,
+                                tie.get("scale")
+                                    .map_or(Ok(1.0), |x| x.num().ok_or("tie scale"))?,
+                            ))
                         } else if whole && fm.is_null() {
                             None
                         } else if whole {
-                            Some((fm.g("dec").num().unwrap_or(0.0) as usize, fm.g("scale").num().unwrap_or(1.0)))
+                            Some((
+                                fm.g("dec").num().unwrap_or(0.0) as usize,
+                                fm.g("scale").num().unwrap_or(1.0),
+                            ))
                         } else {
-                            let dec = fm.g("dec").num().ok_or_else(|| format!("tie fmt {}: no dec", st(tie.g("fmt"))))? as usize;
-                            Some((dec, fm.get("scale").map_or(Ok(1.0), |x| x.num().ok_or("scale"))?))
+                            let dec =
+                                fm.g("dec").num().ok_or_else(|| {
+                                    format!("tie fmt {}: no dec", st(tie.g("fmt")))
+                                })? as usize;
+                            Some((
+                                dec,
+                                fm.get("scale")
+                                    .map_or(Ok(1.0), |x| x.num().ok_or("scale"))?,
+                            ))
                         };
-                        let pr = |v: f64| at.map_or_else(|| v.to_string(), |(dec, scale)| py_fixed(v * scale, dec));
+                        let pr = |v: f64| {
+                            at.map_or_else(
+                                || v.to_string(),
+                                |(dec, scale)| py_fixed(v * scale, dec),
+                            )
+                        };
                         pr(a) == pr(b)
                     }
                 };
@@ -2386,7 +3106,12 @@ fn recheck_one(
             // a flow's registry lists read again: a list the page was handed that is not the registry's is refused. Another
             // registry (composition_groups) is taken as handed, as before 11-03: the core reads only the flow's two
             match registry_list(&st(s.g("registry"))) {
-                Some(Ok(want)) => same(bad, format!("select {id} (registry_list {})", st(s.g("registry"))), s.g("result"), &want),
+                Some(Ok(want)) => same(
+                    bad,
+                    format!("select {id} (registry_list {})", st(s.g("registry"))),
+                    s.g("result"),
+                    &want,
+                ),
                 Some(Err(e)) => bad.push(format!("select {id} (registry_list): {e}")),
                 None => {}
             }
@@ -2394,8 +3119,19 @@ fn recheck_one(
         }
         "exclude_codes" => {
             got.insert(id.into(), s.g("codes").clone());
-            let drs: Vec<&J> = sel.iter().map(|(_, d)| *d).filter(|d| d.g("kind").s() == Some("drop_replace")).collect();
-            let named = drs.iter().find(|d| d.g("check").g("sum_within").g("less").arr().iter().any(|x| x.s() == Some(id)));
+            let drs: Vec<&J> = sel
+                .iter()
+                .map(|(_, d)| *d)
+                .filter(|d| d.g("kind").s() == Some("drop_replace"))
+                .collect();
+            let named = drs.iter().find(|d| {
+                d.g("check")
+                    .g("sum_within")
+                    .g("less")
+                    .arr()
+                    .iter()
+                    .any(|x| x.s() == Some(id))
+            });
             let dr = match named {
                 Some(d) => *d,
                 None => {
@@ -2410,15 +3146,26 @@ fn recheck_one(
             let at = |codes: &[J]| -> Vec<&J> {
                 rows.iter()
                     .filter(|r| r.g("table") == c.g("table") && r.g("time") == c.g("time"))
-                    .filter(|r| dims(r, &st(c.g("place"))) == s.g("place") && codes.contains(dims(r, &st(c.g("dim")))))
+                    .filter(|r| {
+                        dims(r, &st(c.g("place"))) == s.g("place")
+                            && codes.contains(dims(r, &st(c.g("dim"))))
+                    })
                     .collect()
             };
             let whole = sum_rows(at(&[c.g("total").clone()]))?;
-            let all: Vec<J> = c.g("parts").obj().iter().flat_map(|(_, cs)| cs.arr().iter().cloned()).collect();
+            let all: Vec<J> = c
+                .g("parts")
+                .obj()
+                .iter()
+                .flat_map(|(_, cs)| cs.arr().iter().cloned())
+                .collect();
             let gap = sum_rows(at(&all))? - whole;
             let vkey = st(s.g("value"));
             let v = (|| -> Result<f64, String> {
-                let q = resolved(f.g("facts").get(&vkey).ok_or_else(|| format!("'{vkey}'"))?, got)?;
+                let q = resolved(
+                    f.g("facts").get(&vkey).ok_or_else(|| format!("'{vkey}'"))?,
+                    got,
+                )?;
                 let one = J::Obj(vec![(vkey.clone(), q)]);
                 Compute::new(&one, rows).val(&vkey)
             })();
@@ -2452,30 +3199,66 @@ fn recheck_one(
             }
             let tol = c.g("tol").g("value").num().ok_or("'tol'")?;
             let target = int_or_knob(s.g("target"))?;
-            let every: Vec<J> = c.g("parts").obj().iter().flat_map(|(_, cs)| cs.arr().iter().cloned()).collect();
+            let every: Vec<J> = c
+                .g("parts")
+                .obj()
+                .iter()
+                .flat_map(|(_, cs)| cs.arr().iter().cloned())
+                .collect();
             let (place, dim) = (st(c.g("place")), st(c.g("dim")));
             let (mut drawn, mut dropped): (Vec<J>, Vec<J>) = (Vec::new(), Vec::new());
             let from = st(s.g("from"));
-            for code in got.get(&from).ok_or_else(|| format!("'{from}'"))?.arr().to_vec() {
+            for code in got
+                .get(&from)
+                .ok_or_else(|| format!("'{from}'"))?
+                .arr()
+                .to_vec()
+            {
                 if drawn.len() as i64 == target {
                     break;
                 }
                 let at: Vec<&J> = rows
                     .iter()
-                    .filter(|r| r.g("table") == c.g("table") && r.g("time") == c.g("time") && *dims(r, &place) == code)
+                    .filter(|r| {
+                        r.g("table") == c.g("table")
+                            && r.g("time") == c.g("time")
+                            && *dims(r, &place) == code
+                    })
                     .collect();
                 let whole = sum_rows(at.iter().copied().filter(|r| dims(r, &dim) == c.g("total")))?;
-                let out: &[J] = less.iter().find(|(p, _)| *p == code).map_or(&[], |(_, cs)| cs.as_slice());
-                let parts = sum_rows(at.iter().copied().filter(|r| every.contains(dims(r, &dim)) && !out.contains(dims(r, &dim))))?;
+                let out: &[J] = less
+                    .iter()
+                    .find(|(p, _)| *p == code)
+                    .map_or(&[], |(_, cs)| cs.as_slice());
+                let parts =
+                    sum_rows(at.iter().copied().filter(|r| {
+                        every.contains(dims(r, &dim)) && !out.contains(dims(r, &dim))
+                    }))?;
                 if (parts - whole).abs() > tol * whole.abs() {
                     dropped.push(code);
                 } else {
                     drawn.push(code);
                 }
             }
-            let declared = J::Arr(s.g("dropped").arr().iter().map(|d| d.g("code").clone()).collect());
-            same(bad, format!("select {id} (drop_replace)"), s.g("result"), &J::Arr(drawn.clone()));
-            same(bad, format!("select {id} dropped"), &declared, &J::Arr(dropped.clone()));
+            let declared = J::Arr(
+                s.g("dropped")
+                    .arr()
+                    .iter()
+                    .map(|d| d.g("code").clone())
+                    .collect(),
+            );
+            same(
+                bad,
+                format!("select {id} (drop_replace)"),
+                s.g("result"),
+                &J::Arr(drawn.clone()),
+            );
+            same(
+                bad,
+                format!("select {id} dropped"),
+                &declared,
+                &J::Arr(dropped.clone()),
+            );
             got.insert(id.into(), J::Arr(drawn));
             got.insert(format!("{id}#dropped"), J::Arr(dropped));
             got.insert(format!("{id}#target"), J::Int(target));
@@ -2484,18 +3267,30 @@ fn recheck_one(
             let bars = st(s0.g("bars"));
             let (place, dim) = (st(s.g("place")), st(s.g("dim")));
             let mut want: Vec<J> = Vec::new();
-            for bar in got.get(&bars).ok_or_else(|| format!("'{bars}'"))?.arr().to_vec() {
+            for bar in got
+                .get(&bars)
+                .ok_or_else(|| format!("'{bars}'"))?
+                .arr()
+                .to_vec()
+            {
                 for (part, codes) in s.g("parts").obj() {
                     let held: Vec<&J> = rows
                         .iter()
-                        .filter(|r| r.g("table") == s.g("table") && r.g("time") == s.g("time") && *dims(r, &place) == bar)
+                        .filter(|r| {
+                            r.g("table") == s.g("table")
+                                && r.g("time") == s.g("time")
+                                && *dims(r, &place) == bar
+                        })
                         .filter(|r| codes.arr().contains(dims(r, &dim)))
                         .collect();
                     let mut all_zero = true;
                     for r in &held {
                         all_zero &= num(r)? == 0.0;
                     }
-                    let every = codes.arr().iter().all(|c| held.iter().any(|r| r.g("dims").get(&dim) == Some(c)));
+                    let every = codes
+                        .arr()
+                        .iter()
+                        .all(|c| held.iter().any(|r| r.g("dims").get(&dim) == Some(c)));
                     if !held.is_empty() && all_zero && every {
                         let mut srcs: Vec<String> = held.iter().map(|r| st(r.g("src"))).collect();
                         srcs.sort();
@@ -2510,13 +3305,25 @@ fn recheck_one(
                     .map(|d| {
                         let mut cells: Vec<String> = d.g("cells").arr().iter().map(st).collect();
                         cells.sort();
-                        J::Arr(vec![d.g("bar").clone(), d.g("part").clone(), J::strs(&cells)])
+                        J::Arr(vec![
+                            d.g("bar").clone(),
+                            d.g("part").clone(),
+                            J::strs(&cells),
+                        ])
                     })
                     .collect(),
             );
-            same(bad, format!("select {id} (zero_parts)"), &have, &J::Arr(want.clone()));
+            same(
+                bad,
+                format!("select {id} (zero_parts)"),
+                &have,
+                &J::Arr(want.clone()),
+            );
             let bars_set: BTreeSet<String> = want.iter().map(|w| st(w.at(0))).collect();
-            got.insert(id.into(), J::strs(&bars_set.into_iter().collect::<Vec<_>>()));
+            got.insert(
+                id.into(),
+                J::strs(&bars_set.into_iter().collect::<Vec<_>>()),
+            );
         }
         "set_op" => {
             let side = |k: &str| -> Result<J, String> {
@@ -2524,16 +3331,31 @@ fn recheck_one(
                 if is_ref(x) {
                     resolved(x, got)
                 } else {
-                    got.get(&st(x)).cloned().ok_or_else(|| format!("'{}'", st(x)))
+                    got.get(&st(x))
+                        .cloned()
+                        .ok_or_else(|| format!("'{}'", st(x)))
                 }
             };
             let (a, b) = (side("a")?, side("b")?);
             let have: Vec<J> = if s.g("op").s() == Some("minus") {
-                a.arr().iter().filter(|x| !b.arr().contains(x)).cloned().collect()
+                a.arr()
+                    .iter()
+                    .filter(|x| !b.arr().contains(x))
+                    .cloned()
+                    .collect()
             } else {
-                a.arr().iter().cloned().chain(b.arr().iter().filter(|x| !a.arr().contains(x)).cloned()).collect()
+                a.arr()
+                    .iter()
+                    .cloned()
+                    .chain(b.arr().iter().filter(|x| !a.arr().contains(x)).cloned())
+                    .collect()
             };
-            same(bad, format!("select {id} (set_op {})", st(s.g("op"))), s.g("result"), &J::Arr(have.clone()));
+            same(
+                bad,
+                format!("select {id} (set_op {})", st(s.g("op"))),
+                s.g("result"),
+                &J::Arr(have.clone()),
+            );
             got.insert(id.into(), J::Arr(have));
         }
         "empty_parts" => {
@@ -2551,20 +3373,35 @@ fn recheck_one(
                 for (part, codes) in c.g("parts").obj() {
                     let held: Vec<&J> = rows
                         .iter()
-                        .filter(|r| r.g("table") == c.g("table") && r.g("time") == c.g("time") && *dims(r, &place) == bar)
+                        .filter(|r| {
+                            r.g("table") == c.g("table")
+                                && r.g("time") == c.g("time")
+                                && *dims(r, &place) == bar
+                        })
                         .filter(|r| codes.arr().contains(dims(r, &dim)))
                         .collect();
-                    let every = codes.arr().iter().all(|x| held.iter().any(|r| dims(r, &dim) == x));
+                    let every = codes
+                        .arr()
+                        .iter()
+                        .all(|x| held.iter().any(|r| dims(r, &dim) == x));
                     let mut all_zero = true;
                     for r in &held {
                         all_zero &= num(r)? == 0.0;
                     }
                     if held.is_empty() || (all_zero && !every) {
-                        want.push(J::obj_of(vec![("bar", bar.clone()), ("part", J::str(part))]));
+                        want.push(J::obj_of(vec![
+                            ("bar", bar.clone()),
+                            ("part", J::str(part)),
+                        ]));
                     }
                 }
             }
-            same(bad, format!("select {id} (empty_parts)"), s.g("result"), &J::Arr(want.clone()));
+            same(
+                bad,
+                format!("select {id} (empty_parts)"),
+                s.g("result"),
+                &J::Arr(want.clone()),
+            );
             got.insert(id.into(), J::Arr(want));
         }
         // the codes of `by` among the rows at the table and time that hold every `with` dimension, in row order (held_codes:
@@ -2573,12 +3410,20 @@ fn recheck_one(
             let at = pair_rows(rows, s);
             let by = st(s.g("by"));
             let mut have: Vec<J> = Vec::new();
-            for r in at.iter().filter(|r| kind == "held_codes" || text_num(r) != Some(0.0)) {
+            for r in at
+                .iter()
+                .filter(|r| kind == "held_codes" || text_num(r) != Some(0.0))
+            {
                 if !have.contains(dims(r, &by)) {
                     have.push(dims(r, &by).clone());
                 }
             }
-            same(bad, format!("select {id} ({kind})"), s.g("result"), &J::Arr(have.clone()));
+            same(
+                bad,
+                format!("select {id} ({kind})"),
+                s.g("result"),
+                &J::Arr(have.clone()),
+            );
             got.insert(id.into(), J::Arr(have));
         }
         // share_merge: the codes of a group_sum (`from`, in its order) whose rows' sum is under `share` of all the rows'
@@ -2597,10 +3442,24 @@ fn recheck_one(
                 }
             }
             let from = got.get(&st(s.g("from"))).cloned().unwrap_or(J::Arr(vec![]));
-            let small: Vec<J> = from.arr().iter().filter(|c| sums.iter().any(|(x, v)| x == *c && *v / total < share)).cloned().collect();
+            let small: Vec<J> = from
+                .arr()
+                .iter()
+                .filter(|c| sums.iter().any(|(x, v)| x == *c && *v / total < share))
+                .cloned()
+                .collect();
             let min = s.g("min_count").num().unwrap_or(2.0) as usize;
-            let have = J::Arr(if small.len() >= min { small } else { Vec::new() });
-            same(bad, format!("select {id} (share_merge)"), s.g("result"), &have);
+            let have = J::Arr(if small.len() >= min {
+                small
+            } else {
+                Vec::new()
+            });
+            same(
+                bad,
+                format!("select {id} (share_merge)"),
+                s.g("result"),
+                &have,
+            );
             got.insert(id.into(), have);
         }
         k => {
@@ -2615,15 +3474,45 @@ fn recheck_one(
 // C1: lint, words, shared fields and the node registry over the page (validate.py parts 2, 4-7).
 // ================================================================================================================
 
-const EXEMPT: [&str; 6] = ["$.facts.rows", "$.facts.labels", "$.facts.named", "$.facts.points", "$.record", "$.$comment"];
-const SELECT_OUT: [&str; 10] = ["result", "declared", "dropped", "rest", "unread", "kept", "id", "from", "bars", "select"];
-const NOT_A_CHOICE: [&str; 16] =
-    ["node", "kind", "id", "recipe", "role", "rule", "table", "by", "dim", "place", "total", "part", "time", "name_kind", "registry", "w"];
+const EXEMPT: [&str; 6] = [
+    "$.facts.rows",
+    "$.facts.labels",
+    "$.facts.named",
+    "$.facts.points",
+    "$.record",
+    "$.$comment",
+];
+const SELECT_OUT: [&str; 10] = [
+    "result", "declared", "dropped", "rest", "unread", "kept", "id", "from", "bars", "select",
+];
+const NOT_A_CHOICE: [&str; 16] = [
+    "node",
+    "kind",
+    "id",
+    "recipe",
+    "role",
+    "rule",
+    "table",
+    "by",
+    "dim",
+    "place",
+    "total",
+    "part",
+    "time",
+    "name_kind",
+    "registry",
+    "w",
+];
 
 /// A fact key less its printed part: `.n`, `.t` or `.tick<k>`.
 fn strip_part(key: &str) -> &str {
     if let Some((head, tail)) = key.rsplit_once('.') {
-        if tail == "n" || tail == "t" || tail.strip_prefix("tick").is_some_and(|d| nonempty_all(d, |c| c.is_ascii_digit())) {
+        if tail == "n"
+            || tail == "t"
+            || tail
+                .strip_prefix("tick")
+                .is_some_and(|d| nonempty_all(d, |c| c.is_ascii_digit()))
+        {
             return head;
         }
     }
@@ -2641,22 +3530,33 @@ fn lint(page: &J, got: &Got, rpage: Option<&J>) -> Vec<String> {
     let (facts, rows, fmts) = (f.g("facts"), f.g("rows").arr(), f.g("fmts"));
     let labels = f.g("labels");
     let by_src: BTreeMap<String, &J> = rows.iter().map(|r| (st(r.g("src")), r)).collect();
-    let fams: BTreeSet<&str> = facts.obj().iter().filter(|(_, q)| q.has("each")).map(|(k, _)| k.as_str()).collect();
+    let fams: BTreeSet<&str> = facts
+        .obj()
+        .iter()
+        .filter(|(_, q)| q.has("each"))
+        .map(|(k, _)| k.as_str())
+        .collect();
     let items = page.g("selects").g("items").arr();
     let selects: BTreeMap<String, &J> = items.iter().map(|s| (st(s.g("id")), s)).collect();
     let mut errs = Vec::new();
     let mut chosen: BTreeSet<String> = BTreeSet::new();
     for (sid, s) in &selects {
         let k = s.g("kind").s().unwrap_or("");
-        if matches!(k, "rank" | "top_n" | "take" | "drop_replace" | "given" | "exclude_codes") {
+        if matches!(
+            k,
+            "rank" | "top_n" | "take" | "drop_replace" | "given" | "exclude_codes"
+        ) {
             chosen.extend(result_codes(got.get(sid).unwrap_or(s.g("result"))));
         }
         if k == "registry_list" {
             chosen.extend(result_codes(s.g("result")));
         }
     }
-    let sel_dims: BTreeSet<String> =
-        selects.values().filter(|s| s.g("kind").s() == Some("rank")).map(|s| st(s.g("over").g("by"))).collect();
+    let sel_dims: BTreeSet<String> = selects
+        .values()
+        .filter(|s| s.g("kind").s() == Some("rank"))
+        .map(|s| st(s.g("over").g("by")))
+        .collect();
     let fact_ok = |key: &str| -> bool {
         let key = strip_part(key);
         if facts.has(key) {
@@ -2684,7 +3584,9 @@ fn lint(page: &J, got: &Got, rpage: Option<&J>) -> Vec<String> {
         }
     }
     for (path, v) in walk(page, "$") {
-        if EXEMPT.iter().any(|e| path.starts_with(e)) || (path.starts_with("$.selects") && SELECT_OUT.contains(&last_name(&path))) {
+        if EXEMPT.iter().any(|e| path.starts_with(e))
+            || (path.starts_with("$.selects") && SELECT_OUT.contains(&last_name(&path)))
+        {
             continue;
         }
         let last = last_name(&path);
@@ -2696,7 +3598,10 @@ fn lint(page: &J, got: &Got, rpage: Option<&J>) -> Vec<String> {
                     && !path.contains(".only")
                     && !path.contains(".place");
                 if !in_select {
-                    errs.push(format!("{path}: literal {} is a chosen code; write the select reference", v.repr()));
+                    errs.push(format!(
+                        "{path}: literal {} is a chosen code; write the select reference",
+                        v.repr()
+                    ));
                 }
             }
             if let Some((sid, ..)) = ref_parts(x) {
@@ -2715,14 +3620,23 @@ fn lint(page: &J, got: &Got, rpage: Option<&J>) -> Vec<String> {
     }
     let Some(rpage) = rpage else { return errs };
     let rfacts = rpage.g("facts").g("facts");
-    fn places(rfacts: &J, sel_dims: &BTreeSet<String>, key: &str, seen: &[String]) -> BTreeSet<String> {
+    fn places(
+        rfacts: &J,
+        sel_dims: &BTreeSet<String>,
+        key: &str,
+        seen: &[String],
+    ) -> BTreeSet<String> {
         let key = strip_part(key);
         if seen.iter().any(|s| s == key) {
             return BTreeSet::new();
         }
         let Some(q) = rfacts.get(key) else {
             let (fam, code) = key.rsplit_once('.').unwrap_or(("", key));
-            return if rfacts.has(fam) { [code.to_string()].into() } else { BTreeSet::new() };
+            return if rfacts.has(fam) {
+                [code.to_string()].into()
+            } else {
+                BTreeSet::new()
+            };
         };
         let mut out = BTreeSet::new();
         for (dim, codes) in q.g("filter").obj() {
@@ -2754,12 +3668,18 @@ fn lint(page: &J, got: &Got, rpage: Option<&J>) -> Vec<String> {
                     errs.push(format!("{path}: {x} is not declared"));
                 }
             }
-            if x.starts_with("series:") && !path.starts_with("$.facts.rows") && !by_src.contains_key(x) {
+            if x.starts_with("series:")
+                && !path.starts_with("$.facts.rows")
+                && !by_src.contains_key(x)
+            {
                 errs.push(format!("{path}: {x} is no row of the page"));
             }
         }
         if let J::Obj(m) = v {
-            if v.has("fact") && m.iter().all(|(k, _)| k == "fact" || k == "part") && !fact_ok(&st(v.g("fact"))) {
+            if v.has("fact")
+                && m.iter().all(|(k, _)| k == "fact" || k == "part")
+                && !fact_ok(&st(v.g("fact")))
+            {
                 errs.push(format!("{path}: fact {} is not declared", st(v.g("fact"))));
             }
             if m.len() == 1 && v.has("name") {
@@ -2785,7 +3705,11 @@ fn lint(page: &J, got: &Got, rpage: Option<&J>) -> Vec<String> {
                     if fact_ok(k) {
                         let ps = places(rfacts, &sel_dims, k, &[]);
                         if !ps.is_empty() && !ps.contains(&st(code)) {
-                            errs.push(format!("{path}: {vt} reads {:?}, not the item's {}", ps, st(code)));
+                            errs.push(format!(
+                                "{path}: {vt} reads {:?}, not the item's {}",
+                                ps,
+                                st(code)
+                            ));
                         }
                     }
                 }
@@ -2795,16 +3719,30 @@ fn lint(page: &J, got: &Got, rpage: Option<&J>) -> Vec<String> {
                     J::Arr(a) => J::Arr(a.clone()),
                     x => J::Arr(vec![x.clone()]),
                 };
-                let have = J::Arr(v.g("items").arr().iter().map(|i| i.g("code").clone()).collect());
+                let have = J::Arr(
+                    v.g("items")
+                        .arr()
+                        .iter()
+                        .map(|i| i.g("code").clone())
+                        .collect(),
+                );
                 if have != want {
-                    errs.push(format!("{path} ({}): items {} are not its items_for {}", st(v.g("id")), have.repr(), want.repr()));
+                    errs.push(format!(
+                        "{path} ({}): items {} are not its items_for {}",
+                        st(v.g("id")),
+                        have.repr(),
+                        want.repr()
+                    ));
                 }
             }
         }
     }
     let mut placed: BTreeSet<String> = BTreeSet::new();
     for (sid, s) in &selects {
-        if matches!(s.g("kind").s().unwrap_or(""), "rank" | "top_n" | "take" | "drop_replace" | "given") {
+        if matches!(
+            s.g("kind").s().unwrap_or(""),
+            "rank" | "top_n" | "take" | "drop_replace" | "given"
+        ) {
             placed.extend(result_codes(got.get(sid).unwrap_or(s.g("result"))));
         }
     }
@@ -2822,7 +3760,10 @@ fn lint(page: &J, got: &Got, rpage: Option<&J>) -> Vec<String> {
 
 fn sha256_hex(text: &str) -> String {
     use sha2::{Digest, Sha256};
-    Sha256::digest(text.as_bytes()).iter().map(|b| format!("{b:02x}")).collect()
+    Sha256::digest(text.as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 fn digit_runs(s: &str) -> BTreeSet<String> {
@@ -2871,7 +3812,10 @@ fn words_lint(page: &J, errs: &mut Vec<String>) {
             if let Some(t) = r.get("term") {
                 let t = st(t);
                 if !digit_terms().contains(&t) {
-                    errs.push(format!("{path}: term {} is no word of number-free-words.json with a digit", J::str(&t).repr()));
+                    errs.push(format!(
+                        "{path}: term {} is no word of number-free-words.json with a digit",
+                        J::str(&t).repr()
+                    ));
                 }
                 chars.extend(t.chars());
                 held.extend(t.chars().map(|_| false));
@@ -2890,11 +3834,17 @@ fn words_lint(page: &J, errs: &mut Vec<String>) {
             if let Some(q) = r.get("quote") {
                 let q = st(q);
                 match req {
-                    None => errs.push(format!("{path}: quote {} but the page holds no request", J::str(&q).repr())),
+                    None => errs.push(format!(
+                        "{path}: quote {} but the page holds no request",
+                        J::str(&q).repr()
+                    )),
                     Some(req) => {
                         let text = st(req.g("text"));
                         if !text.contains(&q) || !digit_runs(&q).is_subset(&digit_runs(&text)) {
-                            errs.push(format!("{path}: quote {} is not a digit string of the request", J::str(&q).repr()));
+                            errs.push(format!(
+                                "{path}: quote {} is not a digit string of the request",
+                                J::str(&q).repr()
+                            ));
                         }
                     }
                 }
@@ -2902,10 +3852,17 @@ fn words_lint(page: &J, errs: &mut Vec<String>) {
         }
         let free = number_free(&chars, &held);
         let counted = place_count(&chars, &held, places);
-        chars.iter_mut().zip(free.into_iter().zip(counted)).filter(|(_, (f, n))| *f || *n).for_each(|(c, _)| *c = ' ');
+        chars
+            .iter_mut()
+            .zip(free.into_iter().zip(counted))
+            .filter(|(_, (f, n))| *f || *n)
+            .for_each(|(c, _)| *c = ' ');
         if let Some(hit) = worded_number(&chars, &held) {
             if path.starts_with("$.texts") || path.starts_with("$.finding") {
-                errs.push(format!("{path}: literal words type a number ({}); a number is a fact run", J::str(&hit).repr()));
+                errs.push(format!(
+                    "{path}: literal words type a number ({}); a number is a fact run",
+                    J::str(&hit).repr()
+                ));
             }
         }
     }
@@ -2934,16 +3891,31 @@ fn shared_lint(page: &J, got: &Got, errs: &mut Vec<String>) {
             return vec![];
         }
         if let J::Arr(a) = v {
-            return if a.iter().any(|x| x.is_obj() || is_ref(x)) { a.iter().flat_map(|x| codes_of(x, got)).collect() } else { a.clone() };
+            return if a.iter().any(|x| x.is_obj() || is_ref(x)) {
+                a.iter().flat_map(|x| codes_of(x, got)).collect()
+            } else {
+                a.clone()
+            };
         }
         vec![]
     }
     let labels = page.g("facts").g("labels");
     let mut accents: Vec<(String, Option<String>)> = Vec::new();
-    fn scope(n: &J, inherited: &[(String, J)], path: &str, got: &Got, labels: &J, errs: &mut Vec<String>, accents: &mut Vec<(String, Option<String>)>) {
+    fn scope(
+        n: &J,
+        inherited: &[(String, J)],
+        path: &str,
+        got: &Got,
+        labels: &J,
+        errs: &mut Vec<String>,
+        accents: &mut Vec<(String, Option<String>)>,
+    ) {
         let sh = n.g("shared");
         let mut here = inherited.to_vec();
-        let put = |here: &mut Vec<(String, J)>, k: String, v: J| match here.iter_mut().find(|(x, _)| *x == k) {
+        let put = |here: &mut Vec<(String, J)>, k: String, v: J| match here
+            .iter_mut()
+            .find(|(x, _)| *x == k)
+        {
             Some(slot) => slot.1 = v,
             None => here.push((k, v)),
         };
@@ -2975,34 +3947,72 @@ fn shared_lint(page: &J, got: &Got, errs: &mut Vec<String>) {
             if let Some(a) = binds.get("accent") {
                 accents.push((format!("{path}.binds.accent"), ref_id(a)));
             }
-            let all = binds.obj().iter().chain(n.g("knobs").obj()).chain(n.g("shared").g("knobs").obj());
+            let all = binds
+                .obj()
+                .iter()
+                .chain(n.g("knobs").obj())
+                .chain(n.g("shared").g("knobs").obj());
             for (name, v) in all {
                 if inh(name).is_some() || inh(&format!("knob:{name}")).is_some() {
-                    errs.push(format!("{path} ({}): sets shared {} again", st(n.g("id")), J::str(name).repr()));
+                    errs.push(format!(
+                        "{path} ({}): sets shared {} again",
+                        st(n.g("id")),
+                        J::str(name).repr()
+                    ));
                 } else if let Some(co) = inh("category_order") {
                     let order = codes_of(co, got);
-                    let mine = if matches!(v, J::Int(_) | J::Num(_) | J::Bool(_)) { vec![] } else { codes_of(v, got) };
+                    let mine = if matches!(v, J::Int(_) | J::Num(_) | J::Bool(_)) {
+                        vec![]
+                    } else {
+                        codes_of(v, got)
+                    };
                     if mine.iter().filter(|c| order.contains(c)).count() >= 2 {
-                        errs.push(format!("{path} ({}): {} restates the shared category order", st(n.g("id")), J::str(name).repr()));
+                        errs.push(format!(
+                            "{path} ({}): {} restates the shared category order",
+                            st(n.g("id")),
+                            J::str(name).repr()
+                        ));
                     }
                 }
             }
             if let Some(co) = inh("category_order") {
                 if n.has("items_for") && ref_id(n.g("items_for")) != ref_id(co) {
-                    errs.push(format!("{path} ({}): items_for {} is not the shared category order", st(n.g("id")), st(n.g("items_for"))));
+                    errs.push(format!(
+                        "{path} ({}): items_for {} is not the shared category order",
+                        st(n.g("id")),
+                        st(n.g("items_for"))
+                    ));
                 }
             }
         }
         for (i, c) in n.g("children").arr().iter().enumerate() {
             if matches!(c.g("kind").s(), Some("Frame" | "Node")) {
-                scope(c, &here, &format!("{path}.children[{i}]"), got, labels, errs, accents);
+                scope(
+                    c,
+                    &here,
+                    &format!("{path}.children[{i}]"),
+                    got,
+                    labels,
+                    errs,
+                    accents,
+                );
             }
         }
     }
-    scope(page.g("body"), &Vec::new(), "$.body", got, labels, errs, &mut accents);
+    scope(
+        page.g("body"),
+        &Vec::new(),
+        "$.body",
+        got,
+        labels,
+        errs,
+        &mut accents,
+    );
     let distinct: BTreeSet<&Option<String>> = accents.iter().map(|(_, a)| a).collect();
     if distinct.len() > 1 {
-        errs.push(format!("accent: nodes mark different places {accents:?}; declare one accent in shared"));
+        errs.push(format!(
+            "accent: nodes mark different places {accents:?}; declare one accent in shared"
+        ));
     }
 }
 
@@ -3019,27 +4029,36 @@ fn registry_lint(page: &J, reg: &J, errs: &mut Vec<String>) {
     let selects: BTreeMap<String, &J> = items.iter().map(|s| (st(s.g("id")), s)).collect();
     let checks = page.g("checks").g("items").arr();
     let has_check = |want: &J, bound: &BTreeMap<String, String>| -> bool {
-        checks.iter().filter(|c| c.g("kind") == want.g("kind")).any(|c| {
-            want.obj().iter().filter(|(f, _)| f != "kind").all(|(f, x)| {
-                let x = match x.s().and_then(|s| s.strip_prefix('$')) {
-                    Some(name) => bound.get(name).map_or(J::Null, |s| J::str(s)),
-                    None => x.clone(),
-                };
-                let mut have = c.get(f).cloned().unwrap_or_else(|| c.g("args").g(f).clone());
-                if f == "knob" {
-                    have = have.g("knob").clone();
-                }
-                if f == "declared" {
-                    match &have {
-                        J::Arr(a) => a.contains(&x),
-                        J::Str(s) => x.s().is_some_and(|x| s.contains(x)),
-                        _ => false,
-                    }
-                } else {
-                    have == x
-                }
+        checks
+            .iter()
+            .filter(|c| c.g("kind") == want.g("kind"))
+            .any(|c| {
+                want.obj()
+                    .iter()
+                    .filter(|(f, _)| f != "kind")
+                    .all(|(f, x)| {
+                        let x = match x.s().and_then(|s| s.strip_prefix('$')) {
+                            Some(name) => bound.get(name).map_or(J::Null, |s| J::str(s)),
+                            None => x.clone(),
+                        };
+                        let mut have = c
+                            .get(f)
+                            .cloned()
+                            .unwrap_or_else(|| c.g("args").g(f).clone());
+                        if f == "knob" {
+                            have = have.g("knob").clone();
+                        }
+                        if f == "declared" {
+                            match &have {
+                                J::Arr(a) => a.contains(&x),
+                                J::Str(s) => x.s().is_some_and(|x| s.contains(x)),
+                                _ => false,
+                            }
+                        } else {
+                            have == x
+                        }
+                    })
             })
-        })
     };
     for want in reg.g("page").g("checks").arr() {
         if !has_check(want, &BTreeMap::new()) {
@@ -3084,13 +4103,22 @@ fn registry_lint(page: &J, reg: &J, errs: &mut Vec<String>) {
                 let one = |v: Option<String>| v.map(|x| vec![Some(x)]);
                 match wh.as_str() {
                     "items[*].code" => {
-                        let ids: Vec<Option<String>> = n.g("items").arr().iter().map(|i| ref_id(i.g("code"))).collect();
+                        let ids: Vec<Option<String>> = n
+                            .g("items")
+                            .arr()
+                            .iter()
+                            .map(|i| ref_id(i.g("code")))
+                            .collect();
                         if !ids.is_empty() && ids.iter().all(Option::is_some) {
                             found = Some(ids);
                         }
                     }
                     "shared.category_order" => {
-                        let co = inherited.iter().find(|(k, _)| k == "category_order").map(|(_, v)| v).unwrap_or(&NULL);
+                        let co = inherited
+                            .iter()
+                            .find(|(k, _)| k == "category_order")
+                            .map(|(_, v)| v)
+                            .unwrap_or(&NULL);
                         if let Some(f) = one(ref_id(co)) {
                             found = Some(f);
                         }
@@ -3112,7 +4140,11 @@ fn registry_lint(page: &J, reg: &J, errs: &mut Vec<String>) {
                 }
             }
             let Some(found) = found.filter(|f| !f.is_empty()) else {
-                errs.push(format!("registry: {id} must bind {} to a select of kind {}", b.g("any_of").repr(), b.g("kinds").repr()));
+                errs.push(format!(
+                    "registry: {id} must bind {} to a select of kind {}",
+                    b.g("any_of").repr(),
+                    b.g("kinds").repr()
+                ));
                 continue;
             };
             for sid in found.iter().flatten() {
@@ -3122,7 +4154,10 @@ fn registry_lint(page: &J, reg: &J, errs: &mut Vec<String>) {
                         if b.g("from_kinds").truthy() {
                             let fk = selects.get(&st(s.g("from"))).map_or(&NULL, |x| x.g("kind"));
                             if !b.g("from_kinds").arr().contains(fk) {
-                                errs.push(format!("registry: {id}: {sid} must come from a {} select", b.g("from_kinds").repr()));
+                                errs.push(format!(
+                                    "registry: {id}: {sid} must come from a {} select",
+                                    b.g("from_kinds").repr()
+                                ));
                             }
                         }
                     }
@@ -3137,17 +4172,26 @@ fn registry_lint(page: &J, reg: &J, errs: &mut Vec<String>) {
         }
         for want in r.g("selects").arr() {
             if !selects.values().any(|s| s.g("kind") == want.g("kind")) {
-                errs.push(format!("registry: {id} ({name}) needs a select of kind {}", st(want.g("kind"))));
+                errs.push(format!(
+                    "registry: {id} ({name}) needs a select of kind {}",
+                    st(want.g("kind"))
+                ));
             }
         }
         for want in r.g("checks").arr() {
             if !has_check(want, &bound) {
-                errs.push(format!("registry: {id} ({name}) lacks check {}", want.repr()));
+                errs.push(format!(
+                    "registry: {id} ({name}) lacks check {}",
+                    want.repr()
+                ));
             }
         }
         for f in r.g("shared").arr() {
             if !n.g("shared").has(&st(f)) {
-                errs.push(format!("registry: {id} ({name}) must declare shared {}", st(f)));
+                errs.push(format!(
+                    "registry: {id} ({name}) must declare shared {}",
+                    st(f)
+                ));
             }
         }
     }
@@ -3158,7 +4202,14 @@ fn part_a(page: &J, inp: &J, reg: &J) -> (Vec<String>, Got, Option<J>) {
     let root = schema();
     let errs = schema_errors(root, root, page, "$");
     if !errs.is_empty() {
-        return (errs.into_iter().take(6).map(|e| format!("schema: {e}")).collect(), BTreeMap::new(), None);
+        return (
+            errs.into_iter()
+                .take(6)
+                .map(|e| format!("schema: {e}"))
+                .collect(),
+            BTreeMap::new(),
+            None,
+        );
     }
     let mut page = page.clone();
     if let Some(f) = page.get_mut("facts") {
@@ -3194,11 +4245,19 @@ const LATER: [(&str, &str); 4] = [
     ("has_flow", "the flow's shape condition (next_run.rs official_flow)"),
     ("pairs_accounted", "the flow's pair accounting and its page checks (next_run.rs flow_pairs_of)"),
 ];
-const PAGE_CHECKS: [&str; 6] = ["same_numbers_twice", "type_size", "text_contrast", "zeros_declared", "notes_dropped", "strip_placed"];
+const PAGE_CHECKS: [&str; 6] = [
+    "same_numbers_twice",
+    "type_size",
+    "text_contrast",
+    "zeros_declared",
+    "notes_dropped",
+    "strip_placed",
+];
 const ROW_WHATS: [&str; 2] = ["total_row", "number_in_row"];
 
 fn has_digit(s: &str) -> bool {
-    s.chars().any(|c| c.is_ascii_digit() || ('０'..='９').contains(&c))
+    s.chars()
+        .any(|c| c.is_ascii_digit() || ('０'..='９').contains(&c))
 }
 
 fn pathlike(s: &str) -> bool {
@@ -3207,14 +4266,22 @@ fn pathlike(s: &str) -> bool {
         || s.starts_with('~')
         || s.starts_with("./")
         || s.starts_with("../")
-        || ["runtime/", "data/", "out/", "config/", "session/"].iter().any(|p| s.starts_with(p))
-        || [".geojson", ".json", ".csv", ".tsv", ".shp", ".txt", ".py", ".mjs", ".cjs", ".js", ".html"]
+        || ["runtime/", "data/", "out/", "config/", "session/"]
             .iter()
-            .any(|e| s.ends_with(e) || t.ends_with(e))
+            .any(|p| s.starts_with(p))
+        || [
+            ".geojson", ".json", ".csv", ".tsv", ".shp", ".txt", ".py", ".mjs", ".cjs", ".js",
+            ".html",
+        ]
+        .iter()
+        .any(|e| s.ends_with(e) || t.ends_with(e))
 }
 
 fn nodes_of(body: &J) -> Vec<(String, &J)> {
-    walk(body, "$.body").into_iter().filter(|(_, n)| n.g("kind").s() == Some("Node")).collect()
+    walk(body, "$.body")
+        .into_iter()
+        .filter(|(_, n)| n.g("kind").s() == Some("Node"))
+        .collect()
 }
 
 fn check_codes(v: &J, got: &Got) -> Result<Vec<J>, String> {
@@ -3234,12 +4301,24 @@ fn check_codes(v: &J, got: &Got) -> Result<Vec<J>, String> {
 }
 
 fn named_in(code: &str, table: &J) -> bool {
-    table.g("labels").has(code) || table.g("named").obj().iter().any(|(k, _)| k.ends_with(&format!(":{code}")))
+    table.g("labels").has(code)
+        || table
+            .g("named")
+            .obj()
+            .iter()
+            .any(|(k, _)| k.ends_with(&format!(":{code}")))
 }
 
 fn names_of(code: &str, table: &J) -> BTreeSet<String> {
     let mut out: BTreeSet<String> = table.g("labels").get(code).map(st).into_iter().collect();
-    out.extend(table.g("named").obj().iter().filter(|(k, _)| k.ends_with(&format!(":{code}"))).map(|(_, t)| st(t)));
+    out.extend(
+        table
+            .g("named")
+            .obj()
+            .iter()
+            .filter(|(k, _)| k.ends_with(&format!(":{code}")))
+            .map(|(_, t)| st(t)),
+    );
     out
 }
 
@@ -3252,24 +4331,42 @@ fn knob_problem(have: &J, sent: Option<&J>) -> Option<String> {
     if !is_knob(have) {
         return Some(format!("{} is no knob value", have.repr()));
     }
-    let Some(sent) = sent else { return Some(format!("knob {name} was not sent with the request")) };
+    let Some(sent) = sent else {
+        return Some(format!("knob {name} was not sent with the request"));
+    };
     let v = have.g("value");
     let mut out = Vec::new();
     if v != sent.g("value") {
-        out.push(format!("knob {name} = {}, not the value sent {}", st(v), st(sent.g("value"))));
+        out.push(format!(
+            "knob {name} = {}, not the value sent {}",
+            st(v),
+            st(sent.g("value"))
+        ));
     }
     let inside = match (v.num(), sent.g("min").num(), sent.g("max").num()) {
         (Some(x), Some(lo), Some(hi)) => lo <= x && x <= hi,
         _ => false,
     };
     if !inside {
-        out.push(format!("knob {name} = {} outside the registry range [{}, {}]", st(v), st(sent.g("min")), st(sent.g("max"))));
+        out.push(format!(
+            "knob {name} = {} outside the registry range [{}, {}]",
+            st(v),
+            st(sent.g("min")),
+            st(sent.g("max"))
+        ));
     }
     (!out.is_empty()).then(|| out.join("; "))
 }
 
 /// (passed, why): passed as the core computes it; (None, why) a later core step computes it; (None, None) the core cannot.
-fn evaluate(c: &J, page: &J, inp: &J, got: &Got, items_of: &BTreeMap<String, usize>, table: &J) -> (Option<bool>, Option<String>) {
+fn evaluate(
+    c: &J,
+    page: &J,
+    inp: &J,
+    got: &Got,
+    items_of: &BTreeMap<String, usize>,
+    table: &J,
+) -> (Option<bool>, Option<String>) {
     let (k, a) = (c.g("kind").s().unwrap_or(""), c.g("args"));
     let f = page.g("facts");
     let len = |v: Option<&J>| -> usize {
@@ -3284,11 +4381,23 @@ fn evaluate(c: &J, page: &J, inp: &J, got: &Got, items_of: &BTreeMap<String, usi
         "count_equals" => {
             let n = items_of.get(&st(a.g("items"))).copied().unwrap_or(0);
             let want = len(got.get(&st(a.g("select"))));
-            (Some(n == want), Some(format!("{n} items, select {} holds {want}", st(a.g("select")))))
+            (
+                Some(n == want),
+                Some(format!(
+                    "{n} items, select {} holds {want}",
+                    st(a.g("select"))
+                )),
+            )
         }
         "points_pinned" => {
             let ok = f.g("points").g("sha256").s() == Some(PINNED_POINTS);
-            (Some(ok), Some(format!("table sha256 {}", if ok { "pinned" } else { "not pinned" })))
+            (
+                Some(ok),
+                Some(format!(
+                    "table sha256 {}",
+                    if ok { "pinned" } else { "not pinned" }
+                )),
+            )
         }
         "named" | "one_name" => match check_codes(c.g("codes"), got) {
             Err(e) => (Some(false), Some(e)),
@@ -3296,33 +4405,67 @@ fn evaluate(c: &J, page: &J, inp: &J, got: &Got, items_of: &BTreeMap<String, usi
                 let off: Vec<String> = codes
                     .iter()
                     .map(st)
-                    .filter(|x| if k == "named" { !named_in(x, table) } else { names_of(x, table).len() != 1 })
+                    .filter(|x| {
+                        if k == "named" {
+                            !named_in(x, table)
+                        } else {
+                            names_of(x, table).len() != 1
+                        }
+                    })
                     .collect();
-                (Some(off.is_empty()), Some(if off.is_empty() { "every code named".into() } else { format!("off {off:?}") }))
+                (
+                    Some(off.is_empty()),
+                    Some(if off.is_empty() {
+                        "every code named".into()
+                    } else {
+                        format!("off {off:?}")
+                    }),
+                )
             }
         },
         "tolerance_fixed" => {
             let kn = c.g("knob");
             let bad = knob_problem(kn, inp.g("knobs").get(&st(kn.g("knob"))));
-            (Some(bad.is_none()), Some(bad.unwrap_or_else(|| "the value sent, in the registry range".into())))
+            (
+                Some(bad.is_none()),
+                Some(bad.unwrap_or_else(|| "the value sent, in the registry range".into())),
+            )
         }
         "ranks_some" => {
             let ok = got.get(&st(a.g("select"))).is_some_and(J::truthy);
             (Some(ok), Some(if ok { "some" } else { "none" }.into()))
         }
-        "one_row_per_code" | "max_dropped" | "fill_after_drop" => {
-            (Some(true), Some("computed in part A from the input rows (a failure there stops the page)".into()))
-        }
+        "one_row_per_code" | "max_dropped" | "fill_after_drop" => (
+            Some(true),
+            Some("computed in part A from the input rows (a failure there stops the page)".into()),
+        ),
         "has_composition" => {
             let ok = page.g("record").g("composition").is_obj();
-            (Some(ok), Some(if ok { "a composition record, derived in R10" } else { "no composition record" }.into()))
+            (
+                Some(ok),
+                Some(
+                    if ok {
+                        "a composition record, derived in R10"
+                    } else {
+                        "no composition record"
+                    }
+                    .into(),
+                ),
+            )
         }
         "row_exists" => {
             if !c.g("what").s().is_some_and(|w| ROW_WHATS.contains(&w)) {
                 return (None, None);
             }
             // for_each names the codes each of which must have the row: without it the core has nothing to check (11-01)
-            let Some(codes) = c.g("for_each").s().and_then(|s| got.get(s)).filter(|v| v.is_arr()) else { return (None, None) };
+            let Some(codes) = c
+                .g("for_each")
+                .s()
+                .and_then(|s| got.get(s))
+                .filter(|v| v.is_arr())
+            else {
+                return (None, None);
+            };
             let q = c.g("query");
             let mut lack = Vec::new();
             for x in codes.arr() {
@@ -3331,18 +4474,32 @@ fn evaluate(c: &J, page: &J, inp: &J, got: &Got, items_of: &BTreeMap<String, usi
                     .arr()
                     .iter()
                     .filter(|r| r.g("table") == q.g("table") && r.g("time") == q.g("time"))
-                    .filter(|r| q.g("filter").obj().iter().all(|(d, v)| r.g("dims").get(d).is_some_and(|x| x == v)))
+                    .filter(|r| {
+                        q.g("filter")
+                            .obj()
+                            .iter()
+                            .all(|(d, v)| r.g("dims").get(d).is_some_and(|x| x == v))
+                    })
                     .filter(|r| r.g("dims").obj().iter().any(|(_, v)| v == x))
                     .collect();
-                if rs.is_empty() || (c.g("what").s() == Some("number_in_row") && !rs.iter().all(|r| num(r).is_ok())) {
+                if rs.is_empty()
+                    || (c.g("what").s() == Some("number_in_row")
+                        && !rs.iter().all(|r| num(r).is_ok()))
+                {
                     lack.push(st(x));
                 }
             }
-            (Some(lack.is_empty()), Some(format!("{} for {lack:?}", st(c.g("what")))))
+            (
+                Some(lack.is_empty()),
+                Some(format!("{} for {lack:?}", st(c.g("what")))),
+            )
         }
         "page_check" => {
             if c.g("name").s().is_some_and(|n| PAGE_CHECKS.contains(&n)) {
-                (None, Some(format!("computed by the page checks ({})", st(c.g("name")))))
+                (
+                    None,
+                    Some(format!("computed by the page checks ({})", st(c.g("name")))),
+                )
             } else {
                 (None, None)
             }
@@ -3357,13 +4514,22 @@ fn evaluate(c: &J, page: &J, inp: &J, got: &Got, items_of: &BTreeMap<String, usi
 fn spec_diff(path: &str, want: &J, have: &J, knobs: &J, out: &mut Vec<String>) {
     if is_knob(want) {
         if !is_knob(have) || have.g("knob") != want.g("knob") {
-            out.push(format!("{path} {} is not the declared knob {}", have.repr(), st(want.g("knob"))));
+            out.push(format!(
+                "{path} {} is not the declared knob {}",
+                have.repr(),
+                st(want.g("knob"))
+            ));
             return;
         }
         let bad = match knobs.get(&st(want.g("knob"))) {
             Some(sent) => knob_problem(have, Some(sent)),
             None if have.g("value") == want.g("value") => None,
-            None => Some(format!("knob {} = {}, not the value sent {}", st(want.g("knob")), st(have.g("value")), st(want.g("value")))),
+            None => Some(format!(
+                "knob {} = {}, not the value sent {}",
+                st(want.g("knob")),
+                st(have.g("value")),
+                st(want.g("value"))
+            )),
         };
         if let Some(b) = bad {
             out.push(format!("{path} {b}"));
@@ -3371,14 +4537,23 @@ fn spec_diff(path: &str, want: &J, have: &J, knobs: &J, out: &mut Vec<String>) {
         return;
     }
     if want.is_obj() && have.is_obj() {
-        let mut keys: Vec<&str> = want.obj().iter().chain(have.obj()).map(|(k, _)| k.as_str()).collect();
+        let mut keys: Vec<&str> = want
+            .obj()
+            .iter()
+            .chain(have.obj())
+            .map(|(k, _)| k.as_str())
+            .collect();
         keys.sort();
         keys.dedup();
         for k in keys {
             if path.is_empty() && OUTPUT_FIELDS.contains(&k) {
                 continue;
             }
-            let sub = if path.is_empty() { k.to_string() } else { format!("{path}.{k}") };
+            let sub = if path.is_empty() {
+                k.to_string()
+            } else {
+                format!("{path}.{k}")
+            };
             match (want.get(k), have.get(k)) {
                 (Some(w), None) => out.push(format!("{sub} is missing; declared {}", w.repr())),
                 (None, Some(h)) => out.push(format!("{sub} {} is not declared", h.repr())),
@@ -3389,7 +4564,11 @@ fn spec_diff(path: &str, want: &J, have: &J, knobs: &J, out: &mut Vec<String>) {
         return;
     }
     if want != have {
-        out.push(format!("{path} {} is not the declared {}", have.repr(), want.repr()));
+        out.push(format!(
+            "{path} {} is not the declared {}",
+            have.repr(),
+            want.repr()
+        ));
     }
 }
 
@@ -3433,13 +4612,19 @@ fn part_b(inp: &J, page: &J, ext: &[String], got: &Got, rpage: Option<&J>) -> Ve
         for fld in ["value_text", "total_text"] {
             if let Some(x) = v.get(fld) {
                 if !x.s().is_some_and(|s| s.starts_with("fact:")) {
-                    errs.push(format!("R2 {path}.{fld} = {}: a printed number with no fact reference", x.repr()));
+                    errs.push(format!(
+                        "R2 {path}.{fld} = {}: a printed number with no fact reference",
+                        x.repr()
+                    ));
                 }
             }
         }
         for (k, x) in v.g("share_text").obj() {
             if !x.s().is_some_and(|s| s.starts_with("fact:")) {
-                errs.push(format!("R2 {path}.share_text.{k} = {}: a printed number with no fact reference", x.repr()));
+                errs.push(format!(
+                    "R2 {path}.share_text.{k} = {}: a printed number with no fact reference",
+                    x.repr()
+                ));
             }
         }
     }
@@ -3448,7 +4633,11 @@ fn part_b(inp: &J, page: &J, ext: &[String], got: &Got, rpage: Option<&J>) -> Ve
             for (p2, w) in walk(v, &path) {
                 if let Some(x) = w.g("w").s() {
                     if w.is_obj() && has_digit(x) {
-                        errs.push(format!("R2 {p2}: external node {} prints a number outside a fact ({})", st(v.g("id")), J::str(x).repr()));
+                        errs.push(format!(
+                            "R2 {p2}: external node {} prints a number outside a fact ({})",
+                            st(v.g("id")),
+                            J::str(x).repr()
+                        ));
                     }
                 }
             }
@@ -3459,21 +4648,35 @@ fn part_b(inp: &J, page: &J, ext: &[String], got: &Got, rpage: Option<&J>) -> Ve
     let table = inp.g("name_table");
     for (code, zh) in f.g("labels").obj() {
         if table.g("labels").get(code) != Some(zh) {
-            errs.push(format!("R4 label {code} = {}: not the name table's ({})", zh.repr(), table.g("labels").g(code).repr()));
+            errs.push(format!(
+                "R4 label {code} = {}: not the name table's ({})",
+                zh.repr(),
+                table.g("labels").g(code).repr()
+            ));
         }
     }
     for (src, text) in f.g("named").obj() {
         if table.g("named").get(src) != Some(text) {
-            errs.push(format!("R4 name row {src} = {}: not the name table's ({})", text.repr(), table.g("named").g(src).repr()));
+            errs.push(format!(
+                "R4 name row {src} = {}: not the name table's ({})",
+                text.repr(),
+                table.g("named").g(src).repr()
+            ));
         }
     }
     // R5 picks the flow made
     let selects = page.g("selects").g("items").arr();
     for s in selects {
-        if matches!(s.g("kind").s().unwrap_or(""), "given" | "named_rule" | "registry_list") {
+        if matches!(
+            s.g("kind").s().unwrap_or(""),
+            "given" | "named_rule" | "registry_list"
+        ) {
             let id = st(s.g("id"));
             match inp.g("given").get(&id) {
-                None => errs.push(format!("R5 select {id} ({}): the flow's record holds no such pick", st(s.g("kind")))),
+                None => errs.push(format!(
+                    "R5 select {id} ({}): the flow's record holds no such pick",
+                    st(s.g("kind"))
+                )),
                 Some(want) if s.g("result") != want => errs.push(format!(
                     "R5 select {id} ({}): result {} is not the flow's record {}",
                     st(s.g("kind")),
@@ -3485,30 +4688,51 @@ fn part_b(inp: &J, page: &J, ext: &[String], got: &Got, rpage: Option<&J>) -> Ve
         }
     }
     let returned: BTreeSet<String> = selects.iter().map(|s| st(s.g("id"))).collect();
-    let mut given: Vec<&String> = inp.g("given").obj().iter().map(|(k, _)| k).filter(|k| !returned.contains(*k)).collect();
+    let mut given: Vec<&String> = inp
+        .g("given")
+        .obj()
+        .iter()
+        .map(|(k, _)| k)
+        .filter(|k| !returned.contains(*k))
+        .collect();
     given.sort();
     for sid in given {
-        errs.push(format!("R5 the flow's pick {sid} has no select on the page"));
+        errs.push(format!(
+            "R5 the flow's pick {sid} has no select on the page"
+        ));
     }
     // R6 / R11 every check evaluated by the core; passed comes from nowhere else
     if rpage.is_none() {
-        errs.push("R6 not evaluated: the page failed part A before its selects were recomputed".into());
+        errs.push(
+            "R6 not evaluated: the page failed part A before its selects were recomputed".into(),
+        );
     } else {
-        let items_of: BTreeMap<String, usize> = nodes_of(body).iter().map(|(_, n)| (st(n.g("id")), n.g("items").arr().len())).collect();
+        let items_of: BTreeMap<String, usize> = nodes_of(body)
+            .iter()
+            .map(|(_, n)| (st(n.g("id")), n.g("items").arr().len()))
+            .collect();
         for c in page.g("checks").g("items").arr() {
             let (id, k) = (st(c.g("id")), st(c.g("kind")));
             if let Some(p) = c.get("passed") {
-                errs.push(format!("R6 check {id} {k}: carries passed={}; only the core computes passed", p.repr()));
+                errs.push(format!(
+                    "R6 check {id} {k}: carries passed={}; only the core computes passed",
+                    p.repr()
+                ));
             }
             match evaluate(c, page, inp, got, &items_of, table) {
-                (None, None) => errs.push(format!("R11 check {id} {k}: the core cannot compute this check, so it is refused")),
+                (None, None) => errs.push(format!(
+                    "R11 check {id} {k}: the core cannot compute this check, so it is refused"
+                )),
                 (None, Some(_)) | (Some(true), _) => {}
                 (Some(false), why) => {
                     let why = why.unwrap_or_default();
                     if c.g("on_fail").s() == Some("stop") {
                         errs.push(format!("R6 check {id} {k}: {why}; it stops the page"));
                     } else {
-                        errs.push(format!("R6 check {id} {k}: {why}; on_fail {}", c.g("on_fail").repr()));
+                        errs.push(format!(
+                            "R6 check {id} {k}: {why}; on_fail {}",
+                            c.g("on_fail").repr()
+                        ));
                     }
                 }
             }
@@ -3516,7 +4740,10 @@ fn part_b(inp: &J, page: &J, ext: &[String], got: &Got, rpage: Option<&J>) -> Ve
     }
     // R7 no file
     if f.g("assets").truthy() {
-        errs.push("R7 facts.assets: the node names a file; assets come from the entry by id and sha256".into());
+        errs.push(
+            "R7 facts.assets: the node names a file; assets come from the entry by id and sha256"
+                .into(),
+        );
     }
     for (path, v) in walk(page, "$") {
         if path.starts_with("$.$comment") || path.starts_with("$.facts.assets") {
@@ -3536,7 +4763,11 @@ fn part_b(inp: &J, page: &J, ext: &[String], got: &Got, rpage: Option<&J>) -> Ve
         }
         for (code, p) in have.g("at").obj() {
             if want.g("at").get(code) != Some(p) {
-                errs.push(format!("R8 point {code} = {}: not the input's {}", p.repr(), want.g("at").g(code).repr()));
+                errs.push(format!(
+                    "R8 point {code} = {}: not the input's {}",
+                    p.repr(),
+                    want.g("at").g(code).repr()
+                ));
             }
         }
     }
@@ -3545,7 +4776,9 @@ fn part_b(inp: &J, page: &J, ext: &[String], got: &Got, rpage: Option<&J>) -> Ve
     for s in selects {
         let id = st(s.g("id"));
         match spec.get(&id) {
-            None => errs.push(format!("R9 select {id}: neither the flow's record nor the registry declares it")),
+            None => errs.push(format!(
+                "R9 select {id}: neither the flow's record nor the registry declares it"
+            )),
             Some(want) => {
                 let mut diffs = Vec::new();
                 spec_diff("", want, s, knobs, &mut diffs);
@@ -3562,30 +4795,50 @@ fn part_b(inp: &J, page: &J, ext: &[String], got: &Got, rpage: Option<&J>) -> Ve
 
 fn r10(inp: &J, page: &J, got: &Got, rpage: Option<&J>, errs: &mut Vec<String>) {
     let Some(rpage) = rpage else {
-        errs.push("R10 not evaluated: the page failed part A before its selects were recomputed".into());
+        errs.push(
+            "R10 not evaluated: the page failed part A before its selects were recomputed".into(),
+        );
         return;
     };
     let rows = inp.g("rows").arr();
     let items = page.g("selects").g("items").arr();
     let sel: Vec<(String, &J)> = items.iter().map(|s| (st(s.g("id")), s)).collect();
-    let nodes: Vec<(String, &J)> = nodes_of(page.g("body")).into_iter().map(|(_, n)| (st(n.g("id")), n)).collect();
+    let nodes: Vec<(String, &J)> = nodes_of(page.g("body"))
+        .into_iter()
+        .map(|(_, n)| (st(n.g("id")), n))
+        .collect();
     let node = |id: &str| nodes.iter().find(|(k, _)| k == id).map(|(_, n)| *n);
     let mut bound: BTreeMap<String, (String, J)> = BTreeMap::new();
     for (nid, n) in &nodes {
         let b = n.g("binds");
-        let r = if b.g("ranked").truthy() { b.g("ranked") } else { n.g("items_for") };
+        let r = if b.g("ranked").truthy() {
+            b.g("ranked")
+        } else {
+            n.g("items_for")
+        };
         let sid = if r.truthy() { ref_id(r) } else { None };
         let Some(sid) = sid else { continue };
-        let Some(s) = sel_get(&sel, &sid) else { continue };
-        if !matches!(s.g("kind").s().unwrap_or(""), "rank" | "top_n" | "drop_replace") {
+        let Some(s) = sel_get(&sel, &sid) else {
+            continue;
+        };
+        if !matches!(
+            s.g("kind").s().unwrap_or(""),
+            "rank" | "top_n" | "drop_replace"
+        ) {
             continue;
         }
-        let Ok(root) = root_rank(&sel, &sid) else { continue };
+        let Ok(root) = root_rank(&sel, &sid) else {
+            continue;
+        };
         let over = root.g("over").clone();
         for (fl, of) in [("by", "by"), ("year", "time")] {
             if let Some(x) = b.get(fl) {
                 if x != over.g(of) {
-                    errs.push(format!("R10 node {nid}: binds.{fl} {} is not its select's over.{of} {}", x.repr(), over.g(of).repr()));
+                    errs.push(format!(
+                        "R10 node {nid}: binds.{fl} {} is not its select's over.{of} {}",
+                        x.repr(),
+                        over.g(of).repr()
+                    ));
                 }
             }
         }
@@ -3599,23 +4852,41 @@ fn r10(inp: &J, page: &J, got: &Got, rpage: Option<&J>, errs: &mut Vec<String>) 
             layers.insert(nid.clone());
         }
     }
-    let quad = |l: &str, r: &J| [l.to_string(), st(r.g("src")), st(r.g("table")), st(r.g("time"))];
+    let quad = |l: &str, r: &J| {
+        [
+            l.to_string(),
+            st(r.g("src")),
+            st(r.g("table")),
+            st(r.g("time")),
+        ]
+    };
     for nid in layers {
-        let have: Vec<[String; 4]> = drawn.iter().filter(|d| st(d.g("layer")) == nid).map(|d| quad(&nid, d)).collect();
-        let rule_ok = node(&nid).is_some_and(|n| rules.g(&st(n.g("node"))).s() == Some("rows_of_select"));
+        let have: Vec<[String; 4]> = drawn
+            .iter()
+            .filter(|d| st(d.g("layer")) == nid)
+            .map(|d| quad(&nid, d))
+            .collect();
+        let rule_ok =
+            node(&nid).is_some_and(|n| rules.g(&st(n.g("node"))).s() == Some("rows_of_select"));
         if !rule_ok {
             errs.push(format!("R10 drawn {nid}: the registry gives this node no drawn rule, so nothing it hands to Filled.drawn can be derived"));
             continue;
         }
         let Some((sid, over)) = bound.get(&nid) else {
-            errs.push(format!("R10 drawn {nid}: no select of the page binds what this layer draws"));
+            errs.push(format!(
+                "R10 drawn {nid}: no select of the page binds what this layer draws"
+            ));
             continue;
         };
         let codes = got.get(sid).map(|c| c.arr().to_vec()).unwrap_or_default();
         let by = st(over.g("by"));
         let want: Vec<[String; 4]> = rows
             .iter()
-            .filter(|r| r.g("table") == over.g("table") && r.g("time") == over.g("time") && codes.contains(dims(r, &by)))
+            .filter(|r| {
+                r.g("table") == over.g("table")
+                    && r.g("time") == over.g("time")
+                    && codes.contains(dims(r, &by))
+            })
             .map(|r| quad(&nid, r))
             .collect();
         if have != want {
@@ -3626,7 +4897,11 @@ fn r10(inp: &J, page: &J, got: &Got, rpage: Option<&J>, errs: &mut Vec<String>) 
             if a == b {
                 errs.push(format!("R10 drawn {nid}: the rows of select {sid}, but in the order {:?}, not the input order", srcs(&have)));
             } else {
-                errs.push(format!("R10 drawn {nid}: {:?} are not the input rows of select {sid} {:?}", srcs(&have), srcs(&want)));
+                errs.push(format!(
+                    "R10 drawn {nid}: {:?} are not the input rows of select {sid} {:?}",
+                    srcs(&have),
+                    srcs(&want)
+                ));
             }
         }
     }
@@ -3643,10 +4918,22 @@ fn r10(inp: &J, page: &J, got: &Got, rpage: Option<&J>, errs: &mut Vec<String>) 
         composition(have, inp, &sel, got, errs);
     }
     read.extend(drawn.iter().map(|d| st(d.g("src"))));
-    let want: Vec<String> = rows.iter().map(|r| st(r.g("src"))).filter(|s| read.contains(s)).collect();
-    let have: Vec<String> = page.g("facts").g("rows").arr().iter().map(|r| st(r.g("src"))).collect();
+    let want: Vec<String> = rows
+        .iter()
+        .map(|r| st(r.g("src")))
+        .filter(|s| read.contains(s))
+        .collect();
+    let have: Vec<String> = page
+        .g("facts")
+        .g("rows")
+        .arr()
+        .iter()
+        .map(|r| st(r.g("src")))
+        .collect();
     if have != want {
-        errs.push(format!("R10 rows: facts.rows {have:?} is not the drawn and read input rows {want:?}"));
+        errs.push(format!(
+            "R10 rows: facts.rows {have:?} is not the drawn and read input rows {want:?}"
+        ));
     }
 }
 
@@ -3656,8 +4943,15 @@ fn select_rows_read(sel: &[(String, &J)], got: &Got, rows: &[J]) -> BTreeSet<Str
     for (id, s) in sel {
         match s.g("kind").s() {
             Some("drop_replace") => {
-                let Ok(c) = resolved(s.g("check").g("sum_within"), got) else { continue };
-                let mut codes: Vec<J> = c.g("parts").obj().iter().flat_map(|(_, cs)| cs.arr().iter().cloned()).collect();
+                let Ok(c) = resolved(s.g("check").g("sum_within"), got) else {
+                    continue;
+                };
+                let mut codes: Vec<J> = c
+                    .g("parts")
+                    .obj()
+                    .iter()
+                    .flat_map(|(_, cs)| cs.arr().iter().cloned())
+                    .collect();
                 codes.push(c.g("total").clone());
                 let bars = got.get(id).map(|b| b.arr().to_vec()).unwrap_or_default();
                 let (place, dim) = (st(c.g("place")), st(c.g("dim")));
@@ -3681,20 +4975,45 @@ fn select_rows_read(sel: &[(String, &J)], got: &Got, rows: &[J]) -> BTreeSet<Str
 
 /// Filled.composition derived from the recomputed selects and the flow's record.
 fn composition(have: &J, inp: &J, sel: &[(String, &J)], got: &Got, errs: &mut Vec<String>) {
-    let dr = sel.iter().map(|(_, s)| *s).find(|s| s.g("kind").s() == Some("drop_replace"));
-    let zp = sel.iter().map(|(_, s)| *s).find(|s| s.g("kind").s() == Some("zero_parts"));
+    let dr = sel
+        .iter()
+        .map(|(_, s)| *s)
+        .find(|s| s.g("kind").s() == Some("drop_replace"));
+    let zp = sel
+        .iter()
+        .map(|(_, s)| *s)
+        .find(|s| s.g("kind").s() == Some("zero_parts"));
     let Some(dr) = dr else {
         errs.push("R10 composition: no drop_replace select to derive it from".into());
         return;
     };
     let c = dr.g("check").g("sum_within");
     let id = st(dr.g("id"));
-    let arr = |k: &str| got.get(k).filter(|v| v.truthy()).cloned().unwrap_or(J::Arr(vec![]));
-    let (bars, dropped, cands) = (arr(&id), arr(&format!("{id}#dropped")), arr(&st(dr.g("from"))));
+    let arr = |k: &str| {
+        got.get(k)
+            .filter(|v| v.truthy())
+            .cloned()
+            .unwrap_or(J::Arr(vec![]))
+    };
+    let (bars, dropped, cands) = (
+        arr(&id),
+        arr(&format!("{id}#dropped")),
+        arr(&st(dr.g("from"))),
+    );
     let flow = inp.g("flow_record");
     let left = flow.get("left_out").cloned().unwrap_or(J::Arr(vec![]));
-    let mut others: Vec<J> = cands.arr().iter().filter(|x| !bars.arr().contains(x) && !dropped.arr().contains(x)).cloned().collect();
-    others.extend(left.arr().iter().filter(|x| !cands.arr().contains(x)).cloned());
+    let mut others: Vec<J> = cands
+        .arr()
+        .iter()
+        .filter(|x| !bars.arr().contains(x) && !dropped.arr().contains(x))
+        .cloned()
+        .collect();
+    others.extend(
+        left.arr()
+            .iter()
+            .filter(|x| !cands.arr().contains(x))
+            .cloned(),
+    );
     let want = vec![
         ("template", flow.g("template").clone()),
         ("dim", c.g("dim").clone()),
@@ -3705,20 +5024,50 @@ fn composition(have: &J, inp: &J, sel: &[(String, &J)], got: &Got, errs: &mut Ve
         ("bars", bars.clone()),
         ("dropped", dropped.clone()),
         ("others", J::Arr(others)),
-        ("zero", zp.map_or(J::Arr(vec![]), |z| z.g("declared").clone())),
+        (
+            "zero",
+            zp.map_or(J::Arr(vec![]), |z| z.g("declared").clone()),
+        ),
         ("left_out", left.clone()),
     ];
-    let got_dropped = J::Arr(have.g("dropped").arr().iter().map(|d| if d.is_obj() { d.g("code").clone() } else { d.clone() }).collect());
+    let got_dropped = J::Arr(
+        have.g("dropped")
+            .arr()
+            .iter()
+            .map(|d| {
+                if d.is_obj() {
+                    d.g("code").clone()
+                } else {
+                    d.clone()
+                }
+            })
+            .collect(),
+    );
     for (k, w) in &want {
-        let h = if *k == "dropped" { got_dropped.clone() } else { have.g(k).clone() };
+        let h = if *k == "dropped" {
+            got_dropped.clone()
+        } else {
+            have.g(k).clone()
+        };
         if h != *w {
-            errs.push(format!("R10 composition.{k} {} is not the one derived from the selects {}", h.repr(), w.repr()));
+            errs.push(format!(
+                "R10 composition.{k} {} is not the one derived from the selects {}",
+                h.repr(),
+                w.repr()
+            ));
         }
     }
-    let mut extra: Vec<&str> = have.obj().iter().map(|(k, _)| k.as_str()).filter(|k| !want.iter().any(|(w, _)| w == k)).collect();
+    let mut extra: Vec<&str> = have
+        .obj()
+        .iter()
+        .map(|(k, _)| k.as_str())
+        .filter(|k| !want.iter().any(|(w, _)| w == k))
+        .collect();
     extra.sort();
     if !extra.is_empty() {
-        errs.push(format!("R10 composition: fields {extra:?} have no derivation"));
+        errs.push(format!(
+            "R10 composition: fields {extra:?} have no derivation"
+        ));
     }
 }
 
@@ -3742,7 +5091,11 @@ fn r12(inp: &J, page: &J, got: &Got, ext: &[String], errs: &mut Vec<String>) {
                     }
                 }
             }
-            let mine = |src: &str| by_src.get(src).is_some_and(|r| r.g("dims").obj().iter().any(|(_, v)| *v == code));
+            let mine = |src: &str| {
+                by_src
+                    .get(src)
+                    .is_some_and(|r| r.g("dims").obj().iter().any(|(_, v)| *v == code))
+            };
             let mut bad: Vec<String> = walk(it, "$")
                 .into_iter()
                 .filter_map(|(_, v)| v.s())
@@ -3751,48 +5104,80 @@ fn r12(inp: &J, page: &J, got: &Got, ext: &[String], errs: &mut Vec<String>) {
                 .collect();
             if it.has("cells") {
                 let parts = inp.get("part_codes");
-                let tot = it.g("total").s().and_then(|s| by_src.get(s)).copied().unwrap_or(&NULL);
+                let tot = it
+                    .g("total")
+                    .s()
+                    .and_then(|s| by_src.get(s))
+                    .copied()
+                    .unwrap_or(&NULL);
                 let Some(parts) = parts else {
                     errs.push(format!("R12 node {nid} item {i}: cells, but the input holds no part table to derive them from"));
                     continue;
                 };
-                let mut names: Vec<&str> = it.g("cells").obj().iter().chain(parts.obj()).map(|(k, _)| k.as_str()).collect();
+                let mut names: Vec<&str> = it
+                    .g("cells")
+                    .obj()
+                    .iter()
+                    .chain(parts.obj())
+                    .map(|(k, _)| k.as_str())
+                    .collect();
                 names.sort();
                 names.dedup();
                 for part in names {
                     let have = it.g("cells").get(part).filter(|h| h.truthy()).cloned();
                     let mut out: Vec<J> = Vec::new();
                     for s in sel {
-                        if s.g("kind").s() == Some("exclude_codes") && s.g("part").s() == Some(part) {
+                        if s.g("kind").s() == Some("exclude_codes") && s.g("part").s() == Some(part)
+                        {
                             let place = s.g("place").s().map(|p| resolve_ref(p, got));
                             if matches!(place, Some(Ok(ref p)) if *p == code) {
                                 out.extend(s.g("codes").arr().iter().cloned());
                             }
                         }
                     }
-                    let zero = sel.iter().filter(|s| s.g("kind").s() == Some("zero_parts")).any(|s| {
-                        s.g("declared").arr().iter().any(|d| *d.g("bar") == code && d.g("part").s() == Some(part))
-                    });
+                    let zero = sel
+                        .iter()
+                        .filter(|s| s.g("kind").s() == Some("zero_parts"))
+                        .any(|s| {
+                            s.g("declared")
+                                .arr()
+                                .iter()
+                                .any(|d| *d.g("bar") == code && d.g("part").s() == Some(part))
+                        });
                     let want: Option<J> = if zero {
                         None
                     } else {
                         let pc = parts.g(part).arr();
                         let w: Vec<J> = rows
                             .iter()
-                            .filter(|r| r.g("table") == tot.g("table") && r.g("time") == tot.g("time"))
+                            .filter(|r| {
+                                r.g("table") == tot.g("table") && r.g("time") == tot.g("time")
+                            })
                             .filter(|r| r.g("dims").obj().iter().any(|(_, v)| *v == code))
-                            .filter(|r| r.g("dims").obj().iter().any(|(_, x)| pc.contains(x) && !out.contains(x)))
+                            .filter(|r| {
+                                r.g("dims")
+                                    .obj()
+                                    .iter()
+                                    .any(|(_, x)| pc.contains(x) && !out.contains(x))
+                            })
                             .map(|r| r.g("src").clone())
                             .collect();
                         (!w.is_empty()).then_some(J::Arr(w))
                     };
                     if !parts.has(part) || have != want {
-                        bad.push(format!("cells.{part} {} (derived: {})", have.map_or("None".into(), |h| h.repr()), want.map_or("None".into(), |w| w.repr())));
+                        bad.push(format!(
+                            "cells.{part} {} (derived: {})",
+                            have.map_or("None".into(), |h| h.repr()),
+                            want.map_or("None".into(), |w| w.repr())
+                        ));
                     }
                 }
             }
             if !bad.is_empty() {
-                errs.push(format!("R12 node {nid} item {i} ({}): {bad:?} are not its own code's input rows", st(&code)));
+                errs.push(format!(
+                    "R12 node {nid} item {i} ({}): {bad:?} are not its own code's input rows",
+                    st(&code)
+                ));
             }
         }
     }
@@ -3830,36 +5215,112 @@ pub const SEP_PX_MIN: f64 = 2.0;
 pub const DOT_R_PX: f64 = 1.6;
 const DOT_OVER_PX: f64 = 0.5;
 const CHECK_KINDS: [&str; 16] = [
-    "count_equals", "points_pinned", "named", "one_name", "tolerance_fixed", "ranks_some", "one_row_per_code", "max_dropped",
-    "fill_after_drop", "has_composition", "row_exists", "page_check", "unit_short", "finding_words", "has_flow", "pairs_accounted",
+    "count_equals",
+    "points_pinned",
+    "named",
+    "one_name",
+    "tolerance_fixed",
+    "ranks_some",
+    "one_row_per_code",
+    "max_dropped",
+    "fill_after_drop",
+    "has_composition",
+    "row_exists",
+    "page_check",
+    "unit_short",
+    "finding_words",
+    "has_flow",
+    "pairs_accounted",
 ];
 /// Value-determined geometry: channel -> (the field tuples it decides, what it encodes, scale kind, domain source, range).
 /// Every part of a scale is the core's; a registry may only add the declared constants (band padding, max radius).
 /// A channel the core recomputes: (name, its field sets, what it encodes, scale kind, domain, range).
-type Channel = (&'static str, &'static [&'static [&'static str]], &'static str, &'static str, &'static str, &'static str);
+type Channel = (
+    &'static str,
+    &'static [&'static [&'static str]],
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+);
 const CHANNELS: [Channel; 10] = [
-    ("length_up", &[&["h", "y"]], "value", "linear", "zero_to_max", "plot.y"),
+    (
+        "length_up",
+        &[&["h", "y"]],
+        "value",
+        "linear",
+        "zero_to_max",
+        "plot.y",
+    ),
     // K11 (P4a-2, in place of K1): a bar from a zero line, its length the value's size over the span from the lowest (or 0)
     // to the highest (or 0), right of the line for a value of 0 or more, left of it below 0; on values of 0 or more it is
     // K1's bar from the plot's left edge, bit for bit
-    ("length_signed", &[&["x", "w"]], "value", "linear", "lo0_to_hi0", "plot.x"),
+    (
+        "length_signed",
+        &[&["x", "w"]],
+        "value",
+        "linear",
+        "lo0_to_hi0",
+        "plot.x",
+    ),
     // K2 (P4a): one row per item down a rows frame, the mark inset from its row's top and bottom
     ("rows_y", &[&["y", "h"]], "item", "rows", "items", "plot.y"),
     ("band_x", &[&["x", "w"]], "item", "band", "items", "plot.x"),
     ("band_y", &[&["y", "h"]], "item", "band", "items", "plot.y"),
-    ("radius_area", &[&["r"]], "value", "sqrt", "zero_to_max", "max_px"),
-    ("point", &[&["cx", "cy"], &["x2", "y2"]], "at", "mercator", "ext", "plot"),
+    (
+        "radius_area",
+        &[&["r"]],
+        "value",
+        "sqrt",
+        "zero_to_max",
+        "max_px",
+    ),
+    (
+        "point",
+        &[&["cx", "cy"], &["x2", "y2"]],
+        "at",
+        "mercator",
+        "ext",
+        "plot",
+    ),
     // K3 (P4a-2): a place's point as the map leaves project it (mapkit.View over the page's extent, the frame's width)
     ("point", &[&["cx", "cy"]], "at", "view", "ext", "plot"),
     // K4 (P4a-2): r = max(r_min, r_used * sqrt(v / vmax)), r_used the largest circle's, on the core's grid under r_max
-    ("radius_floor", &[&["r"]], "value", "sqrt", "zero_to_max", "r_max"),
-    ("stack_x", &[&["x", "w"]], "share", "linear", "zero_to_one", "plot.x"),
+    (
+        "radius_floor",
+        &[&["r"]],
+        "value",
+        "sqrt",
+        "zero_to_max",
+        "r_max",
+    ),
+    (
+        "stack_x",
+        &[&["x", "w"]],
+        "share",
+        "linear",
+        "zero_to_one",
+        "plot.x",
+    ),
 ];
-const FIELD_KINDS: [&str; 9] =
-    ["select_index", "row_of_code", "row_of_code_from", "fact_template", "code_is", "point_of_code", "cells_by_part", "fact_per_part", "first_holding"];
+const FIELD_KINDS: [&str; 9] = [
+    "select_index",
+    "row_of_code",
+    "row_of_code_from",
+    "fact_template",
+    "code_is",
+    "point_of_code",
+    "cells_by_part",
+    "fact_per_part",
+    "first_holding",
+];
 const FOR_EACH: [&str; 4] = ["binds.ranked", "binds.bars", "items_for", "spec"];
 /// The reply allow-list: each shape's fields, a text's fields, the anchors, the one refusal.
-pub const SHAPES: [(&str, &[&str]); 3] = [("rect", &["x", "y", "w", "h"]), ("circle", &["cx", "cy", "r"]), ("line", &["x1", "y1", "x2", "y2"])];
+pub const SHAPES: [(&str, &[&str]); 3] = [
+    ("rect", &["x", "y", "w", "h"]),
+    ("circle", &["cx", "cy", "r"]),
+    ("line", &["x1", "y1", "x2", "y2"]),
+];
 pub const TEXT_FIELDS: [&str; 3] = ["x", "y", "anchor"];
 pub const ANCHORS: [&str; 3] = ["start", "middle", "end"];
 pub const REFUSALS: [&str; 1] = ["no_room"];
@@ -3873,20 +5334,40 @@ fn shape_fields(shape: &str) -> Option<&'static [&'static str]> {
 /// the core lays it out by, and the two texts that size its columns are texts of the node; a channel rows_y needs such a
 /// frame, and a frame of any other kind is one the core cannot lay out.
 fn rows_frame_problem(fr: &J, e: &J) -> Option<String> {
-    let rows_y = e.g("marks").g("encode").arr().iter().any(|c| c.g("channel").s() == Some("rows_y"));
+    let rows_y = e
+        .g("marks")
+        .g("encode")
+        .arr()
+        .iter()
+        .any(|c| c.g("channel").s() == Some("rows_y"));
     match fr.get("kind") {
         None if rows_y => Some("channel rows_y needs a frame of kind rows".into()),
         None => None,
         // K3 (P4a-2): a map view, the core's projection over the page's extent at the frame's width, its land inset px in
         Some(k) if k.s() == Some("view") && !rows_y => {
-            let ok = matches!(fr.g("w"), J::Int(x) if *x > 0) && matches!(fr.g("inset"), J::Int(x) if *x >= 0);
+            let ok = matches!(fr.g("w"), J::Int(x) if *x > 0)
+                && matches!(fr.g("inset"), J::Int(x) if *x >= 0);
             (!ok).then(|| "a view frame needs a whole w above 0 and a whole inset".into())
         }
-        Some(k) if k.s() != Some("rows") => Some(format!("kind {}: not one the core lays out", k.repr())),
+        Some(k) if k.s() != Some("rows") => {
+            Some(format!("kind {}: not one the core lays out", k.repr()))
+        }
         Some(_) => {
-            let whole = ["w", "top", "row", "inset", "foot"].iter().all(|f| matches!(fr.g(f), J::Int(x) if *x >= 0));
-            let side = |s: &str| fr.g(s).g("gap").finite() && fr.g(s).g("text").s().is_some_and(|t| e.g("texts").g("item").has(t));
-            let ok = whole && side("left") && side("right") && fr.g("inset").num().unwrap_or(0.0) * 2.0 < fr.g("row").num().unwrap_or(0.0);
+            let whole = ["w", "top", "row", "inset", "foot"]
+                .iter()
+                .all(|f| matches!(fr.g(f), J::Int(x) if *x >= 0));
+            let side = |s: &str| {
+                fr.g(s).g("gap").finite()
+                    && fr
+                        .g(s)
+                        .g("text")
+                        .s()
+                        .is_some_and(|t| e.g("texts").g("item").has(t))
+            };
+            let ok = whole
+                && side("left")
+                && side("right")
+                && fr.g("inset").num().unwrap_or(0.0) * 2.0 < fr.g("row").num().unwrap_or(0.0);
             (!ok).then(|| "a rows frame needs whole w, top, row, inset (under half a row) and foot, and a left and right text of the node".into())
         }
     }
@@ -4054,7 +5535,10 @@ fn circles_registry_problems(p: &str, e: &J) -> Vec<String> {
 /// P1's node registry with an overlay over it: the overlay's frames, and each overlay node's fields set over P1's entry.
 pub fn load_registry(overlay: &J) -> J {
     let mut reg = parse(P1_REGISTRY_TEXT).expect("node-registry.json parses");
-    reg.set("frames", overlay.get("frames").cloned().unwrap_or(J::Obj(vec![])));
+    reg.set(
+        "frames",
+        overlay.get("frames").cloned().unwrap_or(J::Obj(vec![])),
+    );
     let mut nodes = reg.remove("nodes").unwrap_or(J::Obj(vec![]));
     for (k, v) in overlay.g("nodes").obj() {
         if !nodes.has(k) {
@@ -4067,8 +5551,11 @@ pub fn load_registry(overlay: &J) -> J {
     }
     // a node that eats another's data shape (declares_as: that node, a picture of the same rows) is declared and checked
     // as that node is: every field of its entry the node does not set itself, its pinned checks among them, never fewer
-    let inherit: Vec<(String, String)> =
-        nodes.obj().iter().filter_map(|(k, v)| v.g("declares_as").s().map(|of| (k.clone(), of.to_string()))).collect();
+    let inherit: Vec<(String, String)> = nodes
+        .obj()
+        .iter()
+        .filter_map(|(k, v)| v.g("declares_as").s().map(|of| (k.clone(), of.to_string())))
+        .collect();
     for (k, of) in inherit {
         let from = nodes.g(&of).clone();
         let e = nodes.get_mut(&k).expect("listed above");
@@ -4097,7 +5584,10 @@ pub fn registry_problems(reg: &J) -> Vec<String> {
     let mut out = Vec::new();
     for c in reg.g("page").g("checks").arr() {
         if !c.g("kind").s().is_some_and(|k| CHECK_KINDS.contains(&k)) {
-            out.push(format!("C5 registry page check {}: the core cannot compute it", st(c.g("kind"))));
+            out.push(format!(
+                "C5 registry page check {}: the core cannot compute it",
+                st(c.g("kind"))
+            ));
         }
     }
     for (name, e) in reg.g("nodes").obj() {
@@ -4108,7 +5598,9 @@ pub fn registry_problems(reg: &J) -> Vec<String> {
         out.extend(registry_scale_problems(name, e, palettes()));
         if let Some(sid) = e.g("marks").g("paint").g("scale").s() {
             if e.g("marks").g("per").s() != Some("item") {
-                out.push(format!("{p} marks.paint: scale {sid} paints one mark per item"));
+                out.push(format!(
+                    "{p} marks.paint: scale {sid} paints one mark per item"
+                ));
             }
             let lg = reg.g("frames").g(&st(e.g("frame"))).g("legend");
             if lg.arr().len() != 2 || !lg.arr().iter().all(J::finite) {
@@ -4119,10 +5611,19 @@ pub fn registry_problems(reg: &J) -> Vec<String> {
             let k = st(c.g("kind"));
             if !CHECK_KINDS.contains(&k.as_str()) {
                 out.push(format!("{p} check {k}: the core cannot compute it"));
-            } else if k == "row_exists" && !c.g("what").s().is_some_and(|w| ROW_WHATS.contains(&w)) {
-                out.push(format!("{p} check row_exists what={}: the core cannot compute it", c.g("what").repr()));
-            } else if k == "page_check" && !c.g("name").s().is_some_and(|n| PAGE_CHECKS.contains(&n)) {
-                out.push(format!("{p} page check {}: no core page check computes it", c.g("name").repr()));
+            } else if k == "row_exists" && !c.g("what").s().is_some_and(|w| ROW_WHATS.contains(&w))
+            {
+                out.push(format!(
+                    "{p} check row_exists what={}: the core cannot compute it",
+                    c.g("what").repr()
+                ));
+            } else if k == "page_check"
+                && !c.g("name").s().is_some_and(|n| PAGE_CHECKS.contains(&n))
+            {
+                out.push(format!(
+                    "{p} page check {}: no core page check computes it",
+                    c.g("name").repr()
+                ));
             }
         }
         // a node whose leaf lays itself out (geometry leaf) is asked for no geometry: it has no frame, items or marks here
@@ -4130,64 +5631,107 @@ pub fn registry_problems(reg: &J) -> Vec<String> {
             continue;
         }
         if !e.g("frame").s().is_some_and(|f| reg.g("frames").has(f)) {
-            out.push(format!("{p} frame {}: not a registered frame", e.g("frame").repr()));
+            out.push(format!(
+                "{p} frame {}: not a registered frame",
+                e.g("frame").repr()
+            ));
         }
         if let Some(why) = rows_frame_problem(reg.g("frames").g(&st(e.g("frame"))), e) {
             out.push(format!("{p} frame {}: {why}", e.g("frame").repr()));
-        }        let it = e.g("items");
+        }
+        let it = e.g("items");
         if !it.g("for_each").s().is_some_and(|f| FOR_EACH.contains(&f)) {
-            out.push(format!("{p} items.for_each {}: not one the core expands", it.g("for_each").repr()));
+            out.push(format!(
+                "{p} items.for_each {}: not one the core expands",
+                it.g("for_each").repr()
+            ));
         }
         for (f, d) in it.g("fields").obj() {
             if !d.g("kind").s().is_some_and(|k| FIELD_KINDS.contains(&k)) {
-                out.push(format!("{p} items.fields.{f} kind {}: the core cannot expand it", d.g("kind").repr()));
+                out.push(format!(
+                    "{p} items.fields.{f} kind {}: the core cannot expand it",
+                    d.g("kind").repr()
+                ));
             }
         }
         let m = e.g("marks");
         let tol = m.g("tol_px");
         if tol.finite() && !(0.0..=TOL_PX_MAX).contains(&tol.num().expect("finite")) {
-            out.push(format!("{p} marks: tol_px {} is over the core's cap {}; a registry may only be stricter", st(tol), py_float(TOL_PX_MAX)));
+            out.push(format!(
+                "{p} marks: tol_px {} is over the core's cap {}; a registry may only be stricter",
+                st(tol),
+                py_float(TOL_PX_MAX)
+            ));
         }
         let shape = m.g("shape").s().and_then(shape_fields);
-        if shape.is_none() || !m.g("per").s().is_some_and(|x| x == "item" || x == "part") || !tol.finite() {
-            out.push(format!("{p} marks: shape {} / per {} / tol_px not one the core checks", m.g("shape").repr(), m.g("per").repr()));
+        if shape.is_none()
+            || !m.g("per").s().is_some_and(|x| x == "item" || x == "part")
+            || !tol.finite()
+        {
+            out.push(format!(
+                "{p} marks: shape {} / per {} / tol_px not one the core checks",
+                m.g("shape").repr(),
+                m.g("per").repr()
+            ));
             continue;
         }
         let mut covered: Vec<String> = m.g("free").arr().iter().map(st).collect();
         for ch in m.g("encode").arr() {
             let sc = ch.g("scale");
             let fields: Vec<String> = ch.g("fields").arr().iter().map(st).collect();
-            let ok = CHANNELS.iter().filter(|c| ch.g("channel").s() == Some(c.0)).any(|(_, ftuples, of, kind, domain, range)| {
-                let consts: &[&str] = if *kind == "band" { &["padding"] } else { &[] };
-                let rng = sc.g("range");
-                ftuples.iter().any(|t| t.len() == fields.len() && t.iter().zip(&fields).all(|(a, b)| a == b))
-                    && ch.g("of").s() == Some(of)
-                    && sc.g("kind").s() == Some(kind)
-                    && sc.g("domain").s() == Some(domain)
-                    && (rng.s() == Some(range)
-                        || (*range == "max_px"
-                            && rng.is_obj()
-                            && rng.obj().len() == 1
-                            && rng.g("max_px").num().is_some_and(|r| r > 0.0 && r <= RADIUS_PX_MAX)))
-                    && {
-                        let mut extra: Vec<&str> = sc.obj().iter().map(|(k, _)| k.as_str()).filter(|k| !["kind", "domain", "range"].contains(k)).collect();
-                        extra.sort();
-                        extra == consts
-                    }
-                    && consts.iter().all(|k| sc.g(k).finite() && (0.0..1.0).contains(&sc.g(k).num().expect("finite")))
-                    && {
-                        let mut keys: Vec<&str> = ch.obj().iter().map(|(k, _)| k.as_str()).collect();
-                        keys.sort();
-                        keys == ["channel", "fields", "of", "scale"]
-                    }
-            });
+            let ok = CHANNELS
+                .iter()
+                .filter(|c| ch.g("channel").s() == Some(c.0))
+                .any(|(_, ftuples, of, kind, domain, range)| {
+                    let consts: &[&str] = if *kind == "band" { &["padding"] } else { &[] };
+                    let rng = sc.g("range");
+                    ftuples.iter().any(|t| {
+                        t.len() == fields.len() && t.iter().zip(&fields).all(|(a, b)| a == b)
+                    }) && ch.g("of").s() == Some(of)
+                        && sc.g("kind").s() == Some(kind)
+                        && sc.g("domain").s() == Some(domain)
+                        && (rng.s() == Some(range)
+                            || (*range == "max_px"
+                                && rng.is_obj()
+                                && rng.obj().len() == 1
+                                && rng
+                                    .g("max_px")
+                                    .num()
+                                    .is_some_and(|r| r > 0.0 && r <= RADIUS_PX_MAX)))
+                        && {
+                            let mut extra: Vec<&str> = sc
+                                .obj()
+                                .iter()
+                                .map(|(k, _)| k.as_str())
+                                .filter(|k| !["kind", "domain", "range"].contains(k))
+                                .collect();
+                            extra.sort();
+                            extra == consts
+                        }
+                        && consts.iter().all(|k| {
+                            sc.g(k).finite() && (0.0..1.0).contains(&sc.g(k).num().expect("finite"))
+                        })
+                        && {
+                            let mut keys: Vec<&str> =
+                                ch.obj().iter().map(|(k, _)| k.as_str()).collect();
+                            keys.sort();
+                            keys == ["channel", "fields", "of", "scale"]
+                        }
+                });
             if !ok {
-                out.push(format!("{p} channel {}: not a field -> channel -> scale the core recomputes", ch.repr()));
+                out.push(format!(
+                    "{p} channel {}: not a field -> channel -> scale the core recomputes",
+                    ch.repr()
+                ));
             }
             covered.extend(fields);
         }
         let shape_name = st(m.g("shape"));
-        let mut want: Vec<String> = shape.expect("checked").iter().map(|s| s.to_string()).collect();
+        let mut want: Vec<String> = shape
+            .expect("checked")
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         covered.sort();
         want.sort();
         if covered != want {
@@ -4197,20 +5741,32 @@ pub fn registry_problems(reg: &J) -> Vec<String> {
                 J::strs(&want).repr()
             ));
         }
-        if m.g("free").arr().iter().any(|f| !matches!(f.s(), Some("x1" | "y1"))) {
-            out.push(format!("{p} marks: free {}: only a line's start may be free (tied to its text)", m.g("free").repr()));
+        if m.g("free")
+            .arr()
+            .iter()
+            .any(|f| !matches!(f.s(), Some("x1" | "y1")))
+        {
+            out.push(format!(
+                "{p} marks: free {}: only a line's start may be free (tied to its text)",
+                m.g("free").repr()
+            ));
         }
         let view = reg.g("frames").g(&st(e.g("frame"))).g("kind").s() == Some("view");
         if view {
             out.extend(circles_registry_problems(&p, e));
         }
         for (f, rel) in e.g("texts").g("item").obj() {
-            let ok = matches!(rel.g("near").s(), Some("item" | "part")) && matches!(rel.g("from").s(), Some("anchor" | "box")) && rel.g("max_px").finite();
+            let ok = matches!(rel.g("near").s(), Some("item" | "part"))
+                && matches!(rel.g("from").s(), Some("anchor" | "box"))
+                && rel.g("max_px").finite();
             // K2 (P4a-2): a text at its row's start in a rows frame (the left column's right edge, gap_px before it), its
             // place the core's own: a closer check than near
             let row_left = rel.g("row").s() == Some("left")
                 && rel.obj().len() == 2
-                && rel.g("gap_px").num().is_some_and(|g| g > 0.0 && g <= MAX_PX_MAX)
+                && rel
+                    .g("gap_px")
+                    .num()
+                    .is_some_and(|g| g > 0.0 && g <= MAX_PX_MAX)
                 && reg.g("frames").g(&st(e.g("frame"))).g("kind").s() == Some("rows")
                 && reg.g("frames").g(&st(e.g("frame"))).g("left").g("text").s() == Some(f.as_str());
             // K8 (P4a-2): a map circle's label beside it or at a leader's end, by the knobs the core bounds
@@ -4219,8 +5775,15 @@ pub fn registry_problems(reg: &J) -> Vec<String> {
                 continue;
             }
             if !ok {
-                out.push(format!("{p} text {f} relation {}: not one the core checks", rel.repr()));
-            } else if !rel.g("max_px").num().is_some_and(|d| d > 0.0 && d <= MAX_PX_MAX) {
+                out.push(format!(
+                    "{p} text {f} relation {}: not one the core checks",
+                    rel.repr()
+                ));
+            } else if !rel
+                .g("max_px")
+                .num()
+                .is_some_and(|d| d > 0.0 && d <= MAX_PX_MAX)
+            {
                 let cap = py_float(MAX_PX_MAX);
                 let cap = cap.strip_suffix(".0").unwrap_or(&cap);
                 out.push(format!("{p} text {f}: max_px {} is over the core's cap {cap}; a registry may only be stricter", st(rel.g("max_px"))));
@@ -4267,20 +5830,46 @@ const ACCENT_CHROMA_MIN: f64 = 50.0;
 /// Machado, Oliveira, Fernandes 2009, severity 1.0, applied to linear RGB.
 type Cvd = [[f64; 3]; 3];
 const CVDS: [(&str, Cvd); 2] = [
-    ("protan", [[0.152286, 1.052583, -0.204868], [0.114503, 0.786281, 0.099216], [-0.003882, -0.048116, 1.051998]]),
-    ("deutan", [[0.367322, 0.860646, -0.227968], [0.280085, 0.672501, 0.047413], [-0.011820, 0.042940, 0.968881]]),
+    (
+        "protan",
+        [
+            [0.152286, 1.052583, -0.204868],
+            [0.114503, 0.786281, 0.099216],
+            [-0.003882, -0.048116, 1.051998],
+        ],
+    ),
+    (
+        "deutan",
+        [
+            [0.367322, 0.860646, -0.227968],
+            [0.280085, 0.672501, 0.047413],
+            [-0.011820, 0.042940, 0.968881],
+        ],
+    ),
 ];
 
 /// The one spelling the core writes: '#' and six lowercase hex digits.
 fn canon_hex(s: &str) -> bool {
-    s.len() == 7 && s.starts_with('#') && s[1..].bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    s.len() == 7
+        && s.starts_with('#')
+        && s[1..]
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 /// Linear RGB of a canonical colour (sRGB transfer, WCAG's 0.04045 knee).
 fn rgb_lin(h: &str) -> [f64; 3] {
     [1, 3, 5].map(|i| {
-        let c = h.get(i..i + 2).and_then(|x| u8::from_str_radix(x, 16).ok()).unwrap_or(0) as f64 / 255.0;
-        if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
+        let c = h
+            .get(i..i + 2)
+            .and_then(|x| u8::from_str_radix(x, 16).ok())
+            .unwrap_or(0) as f64
+            / 255.0;
+        if c <= 0.04045 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
     })
 }
 
@@ -4306,7 +5895,13 @@ fn lab(h: &str, cvd: Option<&Cvd>) -> [f64; 3] {
     let x = (0.4124564 * r + 0.3575761 * g + 0.1804375 * b) / 0.95047;
     let y = 0.2126729 * r + 0.7151522 * g + 0.0721750 * b;
     let z = (0.0193339 * r + 0.1191920 * g + 0.9503041 * b) / 1.08883;
-    let f = |t: f64| if t > 216.0 / 24389.0 { t.powf(1.0 / 3.0) } else { (24389.0 / 27.0 * t + 16.0) / 116.0 };
+    let f = |t: f64| {
+        if t > 216.0 / 24389.0 {
+            t.powf(1.0 / 3.0)
+        } else {
+            (24389.0 / 27.0 * t + 16.0) / 116.0
+        }
+    };
     let (fx, fy, fz) = (f(x), f(y), f(z));
     [116.0 * fy - 16.0, 500.0 * (fx - fy), 200.0 * (fy - fz)]
 }
@@ -4325,16 +5920,29 @@ fn de76(a: &str, b: &str, cvd: Option<&Cvd>) -> f64 {
 /// palette_ok: every reason the colour file cannot be loaded; empty means it loads. The core runs it before any page it
 /// checks; a file with any problem stops them all.
 pub fn palette_problems(pf: &J) -> Vec<String> {
-    let mut top: Vec<&str> = pf.obj().iter().map(|(k, _)| k.as_str()).filter(|k| *k != "$comment").collect();
+    let mut top: Vec<&str> = pf
+        .obj()
+        .iter()
+        .map(|(k, _)| k.as_str())
+        .filter(|k| *k != "$comment")
+        .collect();
     top.sort();
     if top != ["grounds", "roles", "sequential"] {
-        return vec!["palette_ok: the file has exactly roles, grounds, sequential (and a $comment)".into()];
+        return vec![
+            "palette_ok: the file has exactly roles, grounds, sequential (and a $comment)".into(),
+        ];
     }
     let mut out = Vec::new();
     for (k, v) in pf.obj().iter().filter(|(k, _)| k != "$comment") {
         for (path, x) in walk(v, &format!("$.{k}")) {
-            if !matches!(x, J::Obj(_) | J::Arr(_)) && !x.s().is_some_and(canon_hex) && !path.ends_with(".$comment") {
-                out.push(format!("palette_ok: {path} {} is not '#' and six lowercase hex digits", x.repr()));
+            if !matches!(x, J::Obj(_) | J::Arr(_))
+                && !x.s().is_some_and(canon_hex)
+                && !path.ends_with(".$comment")
+            {
+                out.push(format!(
+                    "palette_ok: {path} {} is not '#' and six lowercase hex digits",
+                    x.repr()
+                ));
             }
         }
     }
@@ -4346,7 +5954,11 @@ pub fn palette_problems(pf: &J) -> Vec<String> {
     names.sort();
     let mut want = ROLES.to_vec();
     want.sort();
-    if names != want || !roles.obj().iter().all(|(_, v)| v.s().is_some()) || !grounds.arr().iter().all(|g| g.s().is_some()) || !seq.is_obj() {
+    if names != want
+        || !roles.obj().iter().all(|(_, v)| v.s().is_some())
+        || !grounds.arr().iter().all(|g| g.s().is_some())
+        || !seq.is_obj()
+    {
         return vec![format!(
             "palette_ok: roles are exactly {} (one colour each), grounds a list of colours; got {}",
             J::strs(&ROLES).repr(),
@@ -4360,14 +5972,22 @@ pub fn palette_problems(pf: &J) -> Vec<String> {
     }
     let (acc, edge) = (role("accent"), role("edge"));
     if chroma(acc) < ACCENT_CHROMA_MIN {
-        out.push(format!("palette_ok: accent {acc} chroma {:.1} under {}", chroma(acc), py_float(ACCENT_CHROMA_MIN)));
+        out.push(format!(
+            "palette_ok: accent {acc} chroma {:.1} under {}",
+            chroma(acc),
+            py_float(ACCENT_CHROMA_MIN)
+        ));
     }
     for g in &gs {
         if contrast(acc, g) < TEXT_MIN {
             out.push(format!("palette_ok: accent {acc} on ground {g} is {:.2}:1, under {} (accent is printed as text)", contrast(acc, g), py_float(TEXT_MIN)));
         }
         if contrast(edge, g) < NONTEXT_MIN {
-            out.push(format!("palette_ok: edge {edge} on ground {g} is {:.2}:1, under {}", contrast(edge, g), py_float(NONTEXT_MIN)));
+            out.push(format!(
+                "palette_ok: edge {edge} on ground {g} is {:.2}:1, under {}",
+                contrast(edge, g),
+                py_float(NONTEXT_MIN)
+            ));
         }
     }
     for r in ROLES.iter().filter(|r| **r != "accent") {
@@ -4381,7 +6001,11 @@ pub fn palette_problems(pf: &J) -> Vec<String> {
             out.push(format!("palette_ok: ground {g} is not neutral"));
         }
     }
-    let taken: Vec<&str> = ROLES.iter().map(|r| role(r)).chain(gs.iter().copied()).collect();
+    let taken: Vec<&str> = ROLES
+        .iter()
+        .map(|r| role(r))
+        .chain(gs.iter().copied())
+        .collect();
     let nd = role("nodata");
     let k_of = |k: &str| k.parse::<usize>().ok().filter(|n| n.to_string() == k);
     for (pid, by_k) in seq.obj() {
@@ -4393,7 +6017,10 @@ pub fn palette_problems(pf: &J) -> Vec<String> {
         ks.sort_by_key(|k| k_of(k).unwrap_or(usize::MAX));
         let whole: Vec<String> = (K_MIN..=K_MAX).map(|k| k.to_string()).collect();
         if !by_k.is_obj() || ks != whole {
-            out.push(format!("{p}: has tables {}; needs one for every k in {K_MIN}..{K_MAX}", J::strs(&ks).repr()));
+            out.push(format!(
+                "{p}: has tables {}; needs one for every k in {K_MIN}..{K_MAX}",
+                J::strs(&ks).repr()
+            ));
             continue;
         }
         for (k, table) in by_k.obj() {
@@ -4406,23 +6033,38 @@ pub fn palette_problems(pf: &J) -> Vec<String> {
             let l: Vec<f64> = cols.iter().map(|c| lab(c, None)[0]).collect();
             if !l.windows(2).all(|w| w[0] > w[1]) {
                 let shown: Vec<String> = l.iter().map(|x| py_float(py_round(*x, 1))).collect();
-                out.push(format!("{q}: lightness does not fall step by step [{}]", shown.join(", ")));
+                out.push(format!(
+                    "{q}: lightness does not fall step by step [{}]",
+                    shown.join(", ")
+                ));
             }
             for (i, w) in cols.windows(2).enumerate() {
                 let d = de76(w[0], w[1], None);
                 if d < ADJ_DE_MIN {
-                    out.push(format!("{q}: steps {i},{} dE76 {d:.2} under {}", i + 1, py_float(ADJ_DE_MIN)));
+                    out.push(format!(
+                        "{q}: steps {i},{} dE76 {d:.2} under {}",
+                        i + 1,
+                        py_float(ADJ_DE_MIN)
+                    ));
                 }
                 for (name, m) in &CVDS {
                     let d = de76(w[0], w[1], Some(m));
                     if d < ADJ_DE_CVD_MIN {
-                        out.push(format!("{q}: steps {i},{} under {name} dE76 {d:.2} under {}", i + 1, py_float(ADJ_DE_CVD_MIN)));
+                        out.push(format!(
+                            "{q}: steps {i},{} under {name} dE76 {d:.2} under {}",
+                            i + 1,
+                            py_float(ADJ_DE_CVD_MIN)
+                        ));
                     }
                 }
             }
             for (i, c) in cols.iter().enumerate() {
                 if chroma(c) > DATA_CHROMA_MAX {
-                    out.push(format!("{q}: step {i} {c} chroma {:.1} over {}", chroma(c), py_float(DATA_CHROMA_MAX)));
+                    out.push(format!(
+                        "{q}: step {i} {c} chroma {:.1} over {}",
+                        chroma(c),
+                        py_float(DATA_CHROMA_MAX)
+                    ));
                 }
                 let (ink, white) = (contrast(c, role("ink")), contrast(c, role("white")));
                 if ink.max(white) < TEXT_MIN {
@@ -4431,7 +6073,11 @@ pub fn palette_problems(pf: &J) -> Vec<String> {
                 if taken.contains(c) {
                     out.push(format!("{q}: step {i} {c} is also a role or ground colour"));
                 }
-                if de76(c, nd, None) < ADJ_DE_MIN || CVDS.iter().any(|(_, m)| de76(c, nd, Some(m)) < ADJ_DE_CVD_MIN) {
+                if de76(c, nd, None) < ADJ_DE_MIN
+                    || CVDS
+                        .iter()
+                        .any(|(_, m)| de76(c, nd, Some(m)) < ADJ_DE_CVD_MIN)
+                {
                     out.push(format!("{q}: step {i} {c} too close to nodata {nd}"));
                 }
             }
@@ -4447,15 +6093,27 @@ fn colour_literal(s: &str) -> bool {
     let cs: Vec<char> = s.chars().collect();
     for (i, c) in cs.iter().enumerate() {
         if *c == '#' {
-            let run = cs[i + 1..].iter().take_while(|c| c.is_ascii_hexdigit()).count();
+            let run = cs[i + 1..]
+                .iter()
+                .take_while(|c| c.is_ascii_hexdigit())
+                .count();
             if (3..=8).contains(&run) && cs.get(i + 1 + run).is_none_or(|c| !word(*c)) {
                 return true;
             }
         } else if *c == '(' {
-            let mut name: Vec<char> = cs[..i].iter().rev().take_while(|c| word(**c)).copied().collect();
+            let mut name: Vec<char> = cs[..i]
+                .iter()
+                .rev()
+                .take_while(|c| word(**c))
+                .copied()
+                .collect();
             name.reverse();
             let name: String = name.into_iter().collect::<String>().to_lowercase();
-            if ["rgb", "rgba", "hsl", "hsla", "hwb", "lab", "lch", "oklab", "oklch", "color"].contains(&name.as_str()) {
+            if [
+                "rgb", "rgba", "hsl", "hsla", "hwb", "lab", "lch", "oklab", "oklch", "color",
+            ]
+            .contains(&name.as_str())
+            {
                 return true;
             }
         }
@@ -4469,7 +6127,10 @@ fn tree_colour_problems(spec: &J, pf: &J) -> Vec<String> {
     fn frames(n: &J, path: &str, pf: &J, out: &mut Vec<String>) {
         if let Some(pal) = n.g("shared").get("palette") {
             if !pal.s().is_some_and(|p| pf.g("sequential").has(p)) {
-                out.push(format!("tree: {path}.shared.palette {} is not a palette id of the palette file", pal.repr()));
+                out.push(format!(
+                    "tree: {path}.shared.palette {} is not a palette id of the palette file",
+                    pal.repr()
+                ));
             }
         }
         for (i, c) in n.g("children").arr().iter().enumerate() {
@@ -4500,7 +6161,10 @@ fn registry_scale_problems(name: &str, e: &J, pf: &J) -> Vec<String> {
     let mut out = Vec::new();
     for (path, x) in walk(e, "$") {
         if x.s().is_some_and(colour_literal) {
-            out.push(format!("{p} {path}: a literal colour {}; colours come only from the palette file", x.repr()));
+            out.push(format!(
+                "{p} {path}: a literal colour {}; colours come only from the palette file",
+                x.repr()
+            ));
         }
     }
     let scales = e.g("scales");
@@ -4519,8 +6183,16 @@ fn registry_scale_problems(name: &str, e: &J, pf: &J) -> Vec<String> {
             out.push(format!("{q}: fields {}; a threshold scale has kind, encodes, cuts, palette, no_data, printed", J::strs(&sorted_keys(sc)).repr()));
             continue;
         }
-        if !sc.g("kind").s().is_some_and(|k| SCALE_KINDS.contains(&k)) || sc.g("encodes").s() != Some("value") || sc.g("no_data").s() != Some("nodata") {
-            out.push(format!("{q}: kind/encodes/no_data {}/{}/{} not one the core recomputes", sc.g("kind").repr(), sc.g("encodes").repr(), sc.g("no_data").repr()));
+        if !sc.g("kind").s().is_some_and(|k| SCALE_KINDS.contains(&k))
+            || sc.g("encodes").s() != Some("value")
+            || sc.g("no_data").s() != Some("nodata")
+        {
+            out.push(format!(
+                "{q}: kind/encodes/no_data {}/{}/{} not one the core recomputes",
+                sc.g("kind").repr(),
+                sc.g("encodes").repr(),
+                sc.g("no_data").repr()
+            ));
         }
         if sc.has("printed") && !matches!(sc.g("printed"), J::Bool(_)) {
             out.push(format!("{q}: printed is true or false"));
@@ -4529,26 +6201,54 @@ fn registry_scale_problems(name: &str, e: &J, pf: &J) -> Vec<String> {
         let rule = cu.g("rule").s();
         let from = cu.g("from").arr();
         if !cu.is_obj() || !rule.is_some_and(|r| CUT_RULES.contains(&r)) {
-            out.push(format!("{q}: cuts {}: rule is quantile or facts", cu.repr()));
-        } else if rule == Some("quantile") && (sorted_keys(cu) != ["k", "rule"] || !matches!(cu.g("k"), J::Int(k) if (K_MIN as i64..=K_MAX as i64).contains(k))) {
-            out.push(format!("{q}: quantile cuts take one integer k in {K_MIN}..{K_MAX}"));
+            out.push(format!(
+                "{q}: cuts {}: rule is quantile or facts",
+                cu.repr()
+            ));
+        } else if rule == Some("quantile")
+            && (sorted_keys(cu) != ["k", "rule"]
+                || !matches!(cu.g("k"), J::Int(k) if (K_MIN as i64..=K_MAX as i64).contains(k)))
+        {
+            out.push(format!(
+                "{q}: quantile cuts take one integer k in {K_MIN}..{K_MAX}"
+            ));
         } else if rule == Some("facts")
             && (sorted_keys(cu) != ["from", "rule"]
                 || !cu.g("from").is_arr()
                 || !(K_MIN - 1..=K_MAX - 1).contains(&from.len())
-                || !from.iter().all(|r| r.s().is_some_and(|r| r.starts_with("fact:"))))
+                || !from
+                    .iter()
+                    .all(|r| r.s().is_some_and(|r| r.starts_with("fact:"))))
         {
-            out.push(format!("{q}: facts cuts are {}..{} fact: references", K_MIN - 1, K_MAX - 1));
+            out.push(format!(
+                "{q}: facts cuts are {}..{} fact: references",
+                K_MIN - 1,
+                K_MAX - 1
+            ));
         }
-        if !sc.g("palette").s().is_some_and(|x| pf.g("sequential").has(x)) {
-            out.push(format!("{q}: palette {} is not in the palette file", sc.g("palette").repr()));
+        if !sc
+            .g("palette")
+            .s()
+            .is_some_and(|x| pf.g("sequential").has(x))
+        {
+            out.push(format!(
+                "{q}: palette {} is not in the palette file",
+                sc.g("palette").repr()
+            ));
         }
     }
     if let Some(paint) = e.g("marks").get("paint") {
         let ok = paint.obj().len() == 1
-            && (paint.g("scale").s().is_some_and(|s| scales.has(s)) || paint.g("role").s().is_some_and(|r| PAINT_ROLES.contains(&r)));
+            && (paint.g("scale").s().is_some_and(|s| scales.has(s))
+                || paint
+                    .g("role")
+                    .s()
+                    .is_some_and(|r| PAINT_ROLES.contains(&r)));
         if !ok {
-            out.push(format!("{p} marks.paint {}: one {{scale: id}} of this entry or one {{role: base|accent}}", paint.repr()));
+            out.push(format!(
+                "{p} marks.paint {}: one {{scale: id}} of this entry or one {{role: base|accent}}",
+                paint.repr()
+            ));
         }
     }
     out
@@ -4556,13 +6256,24 @@ fn registry_scale_problems(name: &str, e: &J, pf: &J) -> Vec<String> {
 
 /// The text colour the core prints on a painted mark: ink or white, whichever has the higher WCAG contrast.
 fn ink_on<'p>(fill: &str, pf: &'p J) -> &'p str {
-    let (ink, white) = (pf.g("roles").g("ink").s().unwrap_or(""), pf.g("roles").g("white").s().unwrap_or(""));
-    if contrast(fill, ink) >= contrast(fill, white) { ink } else { white }
+    let (ink, white) = (
+        pf.g("roles").g("ink").s().unwrap_or(""),
+        pf.g("roles").g("white").s().unwrap_or(""),
+    );
+    if contrast(fill, ink) >= contrast(fill, white) {
+        ink
+    } else {
+        white
+    }
 }
 
 /// A painted mark under 3:1 on any page ground gets the edge outline (WCAG SC 1.4.11).
 fn needs_edge(fill: &str, pf: &J) -> bool {
-    pf.g("grounds").arr().iter().filter_map(J::s).any(|g| contrast(fill, g) < NONTEXT_MIN)
+    pf.g("grounds")
+        .arr()
+        .iter()
+        .filter_map(J::s)
+        .any(|g| contrast(fill, g) < NONTEXT_MIN)
 }
 
 /// A number as printed with `dec` decimals, read back.
@@ -4574,7 +6285,12 @@ fn printed_value(v: f64, dec: usize) -> f64 {
 /// of the sorted values, so every cut is a value of the data; equal cuts merge, a cut equal to the least value is dropped
 /// (its class would be empty). facts: each cut a fact the core recomputes (`fact` resolves only the core's own facts),
 /// strictly ascending. Fewer than K_MIN classes is refused.
-fn cuts_of(sc: &J, values: &[f64], fact: &dyn Fn(&str) -> Result<f64, String>, dec: usize) -> Result<Vec<f64>, String> {
+fn cuts_of(
+    sc: &J,
+    values: &[f64],
+    fact: &dyn Fn(&str) -> Result<f64, String>,
+    dec: usize,
+) -> Result<Vec<f64>, String> {
     let cu = sc.g("cuts");
     let mut cuts: Vec<f64> = Vec::new();
     if cu.g("rule").s() == Some("quantile") {
@@ -4592,16 +6308,33 @@ fn cuts_of(sc: &J, values: &[f64], fact: &dyn Fn(&str) -> Result<f64, String>, d
         }
     } else {
         for r in cu.g("from").arr().iter().map(st) {
-            let v = r.strip_prefix("fact:").and_then(|k| fact(k).ok()).filter(|v| v.is_finite());
-            let v = v.ok_or_else(|| format!("cut {r}: not a fact the core resolves to a number"))?;
-            cuts.push(if sc.g("printed").truthy() { printed_value(v, dec) } else { v });
+            let v = r
+                .strip_prefix("fact:")
+                .and_then(|k| fact(k).ok())
+                .filter(|v| v.is_finite());
+            let v =
+                v.ok_or_else(|| format!("cut {r}: not a fact the core resolves to a number"))?;
+            cuts.push(if sc.g("printed").truthy() {
+                printed_value(v, dec)
+            } else {
+                v
+            });
         }
         if cuts.windows(2).any(|w| w[0] >= w[1] || w[0].is_nan()) {
-            return Err(format!("cuts_not_ascending: [{}]", cuts.iter().map(|c| py_float(*c)).collect::<Vec<_>>().join(", ")));
+            return Err(format!(
+                "cuts_not_ascending: [{}]",
+                cuts.iter()
+                    .map(|c| py_float(*c))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
         }
     }
     if cuts.len() + 1 < K_MIN {
-        return Err(format!("too_few_classes: {} after equal cuts merge", cuts.len() + 1));
+        return Err(format!(
+            "too_few_classes: {} after equal cuts merge",
+            cuts.len() + 1
+        ));
     }
     Ok(cuts)
 }
@@ -4638,9 +6371,25 @@ pub struct Paint {
 }
 
 impl Paint {
-    fn new(sid: &str, sc: &J, cells: Vec<Cell>, cuts: Vec<f64>, dec: usize, legend: (f64, f64), nodata_word: String) -> Paint {
+    fn new(
+        sid: &str,
+        sc: &J,
+        cells: Vec<Cell>,
+        cuts: Vec<f64>,
+        dec: usize,
+        legend: (f64, f64),
+        nodata_word: String,
+    ) -> Paint {
         let cut_texts = cuts.iter().map(|c| py_fixed(*c, dec)).collect();
-        Paint { sid: sid.to_string(), palette: st(sc.g("palette")), cells, cuts, cut_texts, legend, nodata_word }
+        Paint {
+            sid: sid.to_string(),
+            palette: st(sc.g("palette")),
+            cells,
+            cuts,
+            cut_texts,
+            legend,
+            nodata_word,
+        }
     }
     fn k(&self) -> usize {
         self.cuts.len() + 1
@@ -4650,7 +6399,13 @@ impl Paint {
     }
     /// The palette's table for this scale's number of classes (empty when the file has none).
     fn steps<'p>(&self, pf: &'p J) -> Vec<&'p str> {
-        pf.g("sequential").g(&self.palette).g(&self.k().to_string()).arr().iter().filter_map(J::s).collect()
+        pf.g("sequential")
+            .g(&self.palette)
+            .g(&self.k().to_string())
+            .arr()
+            .iter()
+            .filter_map(J::s)
+            .collect()
     }
     /// A cell's class tag and colour, recomputed from its value and the cuts: `nodata` and the nodata role, or the step.
     fn paint_of<'p>(&self, c: &Cell, pf: &'p J) -> (String, &'p str) {
@@ -4674,14 +6429,26 @@ impl Paint {
         } else {
             String::new()
         };
-        format!(" data-paint=\"{}:{tag}\" fill=\"{fill}\"{stroke}", xml(&self.sid))
+        format!(
+            " data-paint=\"{}:{tag}\" fill=\"{fill}\"{stroke}",
+            xml(&self.sid)
+        )
     }
     /// The legend: the k steps in order, the k-1 cut texts from the cut facts, and the nodata swatch with its word
     /// exactly when a cell has no value.
     fn legend_svg(&self, pf: &J) -> String {
         let (x, y) = self.legend;
         let (sid, ink) = (xml(&self.sid), st(pf.g("roles").g("ink")));
-        let edge = |fill: &str| if needs_edge(fill, pf) { format!(" stroke=\"{}\" stroke-width=\"0.5\"", st(pf.g("roles").g("edge"))) } else { String::new() };
+        let edge = |fill: &str| {
+            if needs_edge(fill, pf) {
+                format!(
+                    " stroke=\"{}\" stroke-width=\"0.5\"",
+                    st(pf.g("roles").g("edge"))
+                )
+            } else {
+                String::new()
+            }
+        };
         let mut o = format!("<g data-legend=\"{sid}\">");
         let steps = self.steps(pf);
         for (i, fill) in steps.iter().enumerate() {
@@ -4714,7 +6481,15 @@ impl Paint {
 /// or from the core's own facts (Compute), never from a number the page tree wrote; the legend's place from the frame.
 /// `texts`: per cell, the id, source and words of the number it prints (value_text), which sits in the mark when the
 /// scale is printed.
-fn paint_record(sid: &str, e: &J, fr: &J, mut cells: Vec<Cell>, texts: &[Option<(String, String, String)>], words: &Words, inp: &J) -> Result<Paint, String> {
+fn paint_record(
+    sid: &str,
+    e: &J,
+    fr: &J,
+    mut cells: Vec<Cell>,
+    texts: &[Option<(String, String, String)>],
+    words: &Words,
+    inp: &J,
+) -> Result<Paint, String> {
     let sc = e.g("scales").g(sid);
     let printed = sc.g("printed").truthy();
     for (c, t) in cells.iter_mut().zip(texts) {
@@ -4724,7 +6499,13 @@ fn paint_record(sid: &str, e: &J, fr: &J, mut cells: Vec<Cell>, texts: &[Option<
     }
     let cut_refs: Vec<String> = sc.g("cuts").g("from").arr().iter().map(st).collect();
     let mut fmts: Vec<String> = Vec::new();
-    for k in texts.iter().flatten().map(|t| &t.1).chain(&cut_refs).filter_map(|s| s.strip_prefix("fact:")) {
+    for k in texts
+        .iter()
+        .flatten()
+        .map(|t| &t.1)
+        .chain(&cut_refs)
+        .filter_map(|s| s.strip_prefix("fact:"))
+    {
         let q = words.query(k).1;
         let f = st(q.g("fmt"));
         if !q.is_null() && !fmts.contains(&f) {
@@ -4735,26 +6516,48 @@ fn paint_record(sid: &str, e: &J, fr: &J, mut cells: Vec<Cell>, texts: &[Option<
         [f] => words.fmts.g(f),
         _ => &NULL,
     };
-    let (Some(dec), Some(scale)) = (m.g("dec").num(), m.get("scale").map_or(Some(1.0), J::num)) else {
+    let (Some(dec), Some(scale)) = (m.g("dec").num(), m.get("scale").map_or(Some(1.0), J::num))
+    else {
         return Err(format!("scale {sid}: its marks and cuts print with the fmts {}; a scale prints with one fmt that has a dec", J::strs(&fmts).repr()));
     };
     let dec = dec as usize;
     if printed && texts.iter().all(Option::is_none) {
-        return Err(format!("scale {sid} prints its numbers but no mark prints one"));
+        return Err(format!(
+            "scale {sid} prints its numbers but no mark prints one"
+        ));
     }
     for c in &mut cells {
-        c.value = c.value.map(|v| if printed { printed_value(v * scale, dec) } else { v * scale });
+        c.value = c.value.map(|v| {
+            if printed {
+                printed_value(v * scale, dec)
+            } else {
+                v * scale
+            }
+        });
     }
     let values: Vec<f64> = cells.iter().filter_map(|c| c.value).collect();
     let fact = |k: &str| -> Result<f64, String> { Ok(words.val.val(words.query(k).0)? * scale) };
     let cuts = cuts_of(sc, &values, &fact, dec).map_err(|e| format!("refused: {e}"))?;
     let nodata_word = if cells.iter().any(|c| c.value.is_none()) {
-        inp.g("word_table").get("legend.no_data").map(st).ok_or_else(|| format!("scale {sid}: a mark has no value and the word table has no legend.no_data"))?
+        inp.g("word_table")
+            .get("legend.no_data")
+            .map(st)
+            .ok_or_else(|| {
+                format!("scale {sid}: a mark has no value and the word table has no legend.no_data")
+            })?
     } else {
         String::new()
     };
     let lg = fr.g("legend");
-    Ok(Paint::new(sid, sc, cells, cuts, dec, (lg.at(0).num().unwrap_or(0.0), lg.at(1).num().unwrap_or(0.0)), nodata_word))
+    Ok(Paint::new(
+        sid,
+        sc,
+        cells,
+        cuts,
+        dec,
+        (lg.at(0).num().unwrap_or(0.0), lg.at(1).num().unwrap_or(0.0)),
+        nodata_word,
+    ))
 }
 
 /// One element of an SVG the core wrote: its tag (`#stray` for text outside any element), its attributes in order, the
@@ -4769,7 +6572,11 @@ struct El {
 
 impl El {
     fn get(&self, k: &str) -> Option<&str> {
-        self.attrs.iter().rev().find(|(a, _)| a == k).map(|(_, v)| v.as_str())
+        self.attrs
+            .iter()
+            .rev()
+            .find(|(a, _)| a == k)
+            .map(|(_, v)| v.as_str())
     }
     fn id(&self) -> &str {
         self.get("data-id").unwrap_or("None")
@@ -4785,16 +6592,32 @@ fn svg_elements(svg: &str) -> Vec<El> {
         let mut j = i + 1;
         let close = svg[j..].starts_with('/');
         j += usize::from(close);
-        let name_len = svg[j..].char_indices().find(|(k, c)| !(if *k == 0 { c.is_ascii_alphabetic() } else { word(*c) || *c == '-' })).map_or(svg.len() - j, |x| x.0);
+        let name_len = svg[j..]
+            .char_indices()
+            .find(|(k, c)| {
+                !(if *k == 0 {
+                    c.is_ascii_alphabetic()
+                } else {
+                    word(*c) || *c == '-'
+                })
+            })
+            .map_or(svg.len() - j, |x| x.0);
         if name_len == 0 {
             return None;
         }
-        let mut el = El { tag: svg[j..j + name_len].to_string(), ..Default::default() };
+        let mut el = El {
+            tag: svg[j..j + name_len].to_string(),
+            ..Default::default()
+        };
         j += name_len;
         loop {
-            let ws = svg[j..].find(|c: char| !c.is_whitespace()).unwrap_or(svg.len() - j);
+            let ws = svg[j..]
+                .find(|c: char| !c.is_whitespace())
+                .unwrap_or(svg.len() - j);
             let rest = &svg[j + ws..];
-            let an = rest.find(|c: char| !(word(c) || c == ':' || c == '-')).unwrap_or(rest.len());
+            let an = rest
+                .find(|c: char| !(word(c) || c == ':' || c == '-'))
+                .unwrap_or(rest.len());
             if ws == 0 || an == 0 || !rest[an..].starts_with("=\"") {
                 j += ws;
                 break;
@@ -4812,14 +6635,19 @@ fn svg_elements(svg: &str) -> Vec<El> {
         j += usize::from(selfclose);
         (b.get(j) == Some(&b'>')).then_some((j + 1, close, el, selfclose))
     };
-    let (mut out, mut stack, mut pos, mut i): (Vec<El>, Vec<usize>, usize, usize) = (Vec::new(), Vec::new(), 0, 0);
+    let (mut out, mut stack, mut pos, mut i): (Vec<El>, Vec<usize>, usize, usize) =
+        (Vec::new(), Vec::new(), 0, 0);
     let between = |out: &mut Vec<El>, stack: &[usize], text: &str| {
         if text.trim().is_empty() {
             return;
         }
         match stack.last() {
             Some(&k) if out[k].tag == "text" => out[k].text.push_str(text),
-            _ => out.push(El { tag: "#stray".into(), text: text.trim().to_string(), ..Default::default() }),
+            _ => out.push(El {
+                tag: "#stray".into(),
+                text: text.trim().to_string(),
+                ..Default::default()
+            }),
         }
     };
     while let Some(k) = svg[i..].find('<').map(|k| i + k) {
@@ -4853,13 +6681,22 @@ pub fn paint_problems(svg: &str, rec: &Paint, pf: &J) -> Vec<String> {
     let els = svg_elements(svg);
     let pal = rec.steps(pf);
     let (accent, edge) = (pf.g("roles").g("accent").s(), pf.g("roles").g("edge").s());
-    let in_legend = |e: &El| e.get("data-paint").is_some_and(|p| p.starts_with(&format!("{sid}:"))) && e.id().starts_with(&format!("legend/{sid}/"));
+    let in_legend = |e: &El| {
+        e.get("data-paint")
+            .is_some_and(|p| p.starts_with(&format!("{sid}:")))
+            && e.id().starts_with(&format!("legend/{sid}/"))
+    };
     let cell_of = |did: &str| rec.cells.iter().find(|c| xml(&c.id) == did);
     let mut seen: BTreeMap<String, usize> = BTreeMap::new();
-    for e in els.iter().filter(|e| e.get("data-paint").is_some() && !in_legend(*e)) {
+    for e in els
+        .iter()
+        .filter(|e| e.get("data-paint").is_some() && !in_legend(*e))
+    {
         let did = e.id();
         let Some(c) = cell_of(did) else {
-            out.push(format!("paint_matches_scale: {did} is painted but is no cell of the core's record"));
+            out.push(format!(
+                "paint_matches_scale: {did} is painted but is no cell of the core's record"
+            ));
             continue;
         };
         *seen.entry(c.id.clone()).or_default() += 1;
@@ -4868,87 +6705,176 @@ pub fn paint_problems(svg: &str, rec: &Paint, pf: &J) -> Vec<String> {
             out.push(format!("paint_matches_scale: {did} tagged {}, the core's class is {sid}:{tag} (value {:?}, cuts {:?})", e.get("data-paint").unwrap_or(""), c.value, rec.cuts));
         }
         if e.get("fill") != Some(fill) {
-            out.push(format!("paint_matches_scale: {did} fill {:?}, the core's colour is {fill:?} ({sid}:{tag})", e.get("fill")));
+            out.push(format!(
+                "paint_matches_scale: {did} fill {:?}, the core's colour is {fill:?} ({sid}:{tag})",
+                e.get("fill")
+            ));
         }
-        let want = if c.focus { accent } else if needs_edge(fill, pf) { edge } else { None };
+        let want = if c.focus {
+            accent
+        } else if needs_edge(fill, pf) {
+            edge
+        } else {
+            None
+        };
         if e.get("stroke") != want {
-            out.push(format!("paint_matches_scale: {did} stroke {:?}, the core's outline is {want:?}", e.get("stroke")));
+            out.push(format!(
+                "paint_matches_scale: {did} stroke {:?}, the core's outline is {want:?}",
+                e.get("stroke")
+            ));
         }
     }
     for c in &rec.cells {
         let n = seen.get(&c.id).copied().unwrap_or(0);
         if n != 1 {
-            out.push(format!("paint_matches_scale: cell {} painted {n} times, not once", c.id));
+            out.push(format!(
+                "paint_matches_scale: cell {} painted {n} times, not once",
+                c.id
+            ));
         }
     }
     for e in els.iter().filter(|e| e.tag == "text") {
-        let Some(c) = rec.cells.iter().find(|c| c.text_id.as_ref().is_some_and(|t| xml(t) == e.id())) else { continue };
+        let Some(c) = rec
+            .cells
+            .iter()
+            .find(|c| c.text_id.as_ref().is_some_and(|t| xml(t) == e.id()))
+        else {
+            continue;
+        };
         let fill = rec.paint_of(c, pf).1;
         if e.get("fill") != Some(ink_on(fill, pf)) {
-            out.push(format!("paint_matches_scale: {} text fill {:?} on {fill}, the core's ink is {:?}", e.id(), e.get("fill"), ink_on(fill, pf)));
+            out.push(format!(
+                "paint_matches_scale: {} text fill {:?} on {fill}, the core's ink is {:?}",
+                e.id(),
+                e.get("fill"),
+                ink_on(fill, pf)
+            ));
         }
-        let (words, src) = (c.text.as_deref().map(xml).unwrap_or_default(), c.src.as_deref().map(xml));
+        let (words, src) = (
+            c.text.as_deref().map(xml).unwrap_or_default(),
+            c.src.as_deref().map(xml),
+        );
         if e.text.trim() != words || e.get("data-src").map(str::to_string) != src {
             out.push(format!("paint_matches_scale: {} prints {:?} from {:?}, the record has {words:?} from {src:?}", e.id(), e.text, e.get("data-src")));
         }
     }
     let legend: Vec<&El> = els.iter().filter(|e| in_legend(*e)).collect();
-    let (nd, steps): (Vec<&El>, Vec<&El>) = legend.into_iter().partition(|e| e.get("data-paint").is_some_and(|p| p.ends_with(":nodata")));
+    let (nd, steps): (Vec<&El>, Vec<&El>) = legend
+        .into_iter()
+        .partition(|e| e.get("data-paint").is_some_and(|p| p.ends_with(":nodata")));
     let tags: Vec<&str> = steps.iter().filter_map(|e| e.get("data-paint")).collect();
-    if tags != (0..rec.k()).map(|i| format!("{sid}:{i}")).collect::<Vec<_>>() {
-        out.push(format!("paint_matches_scale: legend swatches {tags:?}, the core's are {sid}:0..{} in order", rec.k() - 1));
+    if tags
+        != (0..rec.k())
+            .map(|i| format!("{sid}:{i}"))
+            .collect::<Vec<_>>()
+    {
+        out.push(format!(
+            "paint_matches_scale: legend swatches {tags:?}, the core's are {sid}:0..{} in order",
+            rec.k() - 1
+        ));
     }
     for (i, e) in steps.iter().enumerate() {
         if i < pal.len() && e.get("fill") != Some(pal[i]) {
-            out.push(format!("paint_matches_scale: legend swatch {i} fill {:?}, the palette's step {i} is {:?}", e.get("fill"), pal[i]));
+            out.push(format!(
+                "paint_matches_scale: legend swatch {i} fill {:?}, the palette's step {i} is {:?}",
+                e.get("fill"),
+                pal[i]
+            ));
         }
     }
     let nodata = pf.g("roles").g("nodata").s();
-    if nd.is_empty() == rec.any_missing() || nd.len() > 1 || nd.iter().any(|e| e.get("fill") != nodata) {
+    if nd.is_empty() == rec.any_missing()
+        || nd.len() > 1
+        || nd.iter().any(|e| e.get("fill") != nodata)
+    {
         let fills: Vec<Option<&str>> = nd.iter().map(|e| e.get("fill")).collect();
         out.push(format!("paint_matches_scale: legend nodata swatches {fills:?}; the core draws one ({nodata:?}) exactly when a cell has no value ({})", rec.any_missing()));
     }
-    let have: Vec<(Option<&str>, &str)> =
-        els.iter().filter(|e| e.tag == "text" && e.id().starts_with(&format!("legend/{sid}/cut"))).map(|e| (e.get("data-src"), e.text.trim())).collect();
-    let want: Vec<(String, String)> = rec.cut_texts.iter().enumerate().map(|(j, t)| (format!("fact:{sid}.cut.{}", j + 1), xml(t))).collect();
-    if have.len() != want.len() || have.iter().zip(&want).any(|(h, w)| h.0 != Some(w.0.as_str()) || h.1 != w.1) {
-        out.push(format!("paint_matches_scale: legend cut texts {have:?}, the core's cut facts {want:?}"));
+    let have: Vec<(Option<&str>, &str)> = els
+        .iter()
+        .filter(|e| e.tag == "text" && e.id().starts_with(&format!("legend/{sid}/cut")))
+        .map(|e| (e.get("data-src"), e.text.trim()))
+        .collect();
+    let want: Vec<(String, String)> = rec
+        .cut_texts
+        .iter()
+        .enumerate()
+        .map(|(j, t)| (format!("fact:{sid}.cut.{}", j + 1), xml(t)))
+        .collect();
+    if have.len() != want.len()
+        || have
+            .iter()
+            .zip(&want)
+            .any(|(h, w)| h.0 != Some(w.0.as_str()) || h.1 != w.1)
+    {
+        out.push(format!(
+            "paint_matches_scale: legend cut texts {have:?}, the core's cut facts {want:?}"
+        ));
     }
     out
 }
 
 /// The attributes that carry a colour: the two the core writes, and the ones it never writes.
 const COLOUR_ATTRS: [&str; 2] = ["fill", "stroke"];
-const OTHER_COLOUR_ATTRS: [&str; 5] = ["color", "stop-color", "flood-color", "lighting-color", "style"];
+const OTHER_COLOUR_ATTRS: [&str; 5] = [
+    "color",
+    "stop-color",
+    "flood-color",
+    "lighting-color",
+    "style",
+];
 
 /// single_accent: every colour on the node's SVG is spelled '#rrggbb' lowercase and comes from the palette file (a role,
 /// a ground, or a step of a scale the node declares); the only saturated colour besides the declared steps is the one
 /// accent; a painted mark is never filled with the accent (emphasis on a painted mark is the accent outline).
 pub fn accent_problems(svg: &str, recs: &[&Paint], pf: &J) -> Vec<String> {
     let mut out = Vec::new();
-    let roles: Vec<&str> = pf.g("roles").obj().iter().filter_map(|(_, v)| v.s()).chain(pf.g("grounds").arr().iter().filter_map(J::s)).collect();
+    let roles: Vec<&str> = pf
+        .g("roles")
+        .obj()
+        .iter()
+        .filter_map(|(_, v)| v.s())
+        .chain(pf.g("grounds").arr().iter().filter_map(J::s))
+        .collect();
     let steps: Vec<&str> = recs.iter().flat_map(|r| r.steps(pf)).collect();
     let acc = pf.g("roles").g("accent").s().unwrap_or("");
     let mut saturated: BTreeSet<&str> = BTreeSet::new();
     let low = svg.to_ascii_lowercase();
-    if low.match_indices("<style").any(|(i, m)| low[i + m.len()..].chars().next().is_none_or(|c| !(c.is_alphanumeric() || c == '_'))) {
+    if low.match_indices("<style").any(|(i, m)| {
+        low[i + m.len()..]
+            .chars()
+            .next()
+            .is_none_or(|c| !(c.is_alphanumeric() || c == '_'))
+    }) {
         out.push("single_accent: the SVG holds a <style>; the core writes colours as fill/stroke attributes only".into());
     }
     let els = svg_elements(svg);
     for e in &els {
         if e.tag == "#stray" {
-            out.push(format!("single_accent: text outside any element {}", J::str(&e.text.chars().take(40).collect::<String>()).repr()));
+            out.push(format!(
+                "single_accent: text outside any element {}",
+                J::str(&e.text.chars().take(40).collect::<String>()).repr()
+            ));
         }
         if let Some(a) = &e.repeats {
-            out.push(format!("single_accent: {} repeats the attribute {a}", e.id()));
+            out.push(format!(
+                "single_accent: {} repeats the attribute {a}",
+                e.id()
+            ));
         }
         for a in OTHER_COLOUR_ATTRS {
             if let Some(v) = e.get(a) {
-                out.push(format!("single_accent: {} has {a}={}; the core writes colours only as fill/stroke", e.id(), J::str(v).repr()));
+                out.push(format!(
+                    "single_accent: {} has {a}={}; the core writes colours only as fill/stroke",
+                    e.id(),
+                    J::str(v).repr()
+                ));
             }
         }
         for a in COLOUR_ATTRS {
-            let Some(v) = e.get(a).filter(|v| *v != "none") else { continue };
+            let Some(v) = e.get(a).filter(|v| *v != "none") else {
+                continue;
+            };
             if !canon_hex(v) {
                 out.push(format!(
                     "single_accent: {} {a}={} is not spelled '#rrggbb' lowercase; the core writes no other spelling, so another writer drew it",
@@ -4978,8 +6904,15 @@ pub fn accent_problems(svg: &str, recs: &[&Paint], pf: &J) -> Vec<String> {
 /// single_accent always.
 fn colour_problems(svg: &str, meta: &Meta) -> Vec<String> {
     let pf = palettes();
-    let mut out = meta.paint.as_ref().map_or_else(Vec::new, |p| paint_problems(svg, p, pf));
-    out.extend(accent_problems(svg, &meta.paint.iter().collect::<Vec<_>>(), pf));
+    let mut out = meta
+        .paint
+        .as_ref()
+        .map_or_else(Vec::new, |p| paint_problems(svg, p, pf));
+    out.extend(accent_problems(
+        svg,
+        &meta.paint.iter().collect::<Vec<_>>(),
+        pf,
+    ));
     out
 }
 
@@ -5015,7 +6948,9 @@ fn fill_template(template: &str, ctx: &[(&str, &str)], n: &J) -> Result<String, 
     while let Some(i) = rest.find('{') {
         out.push_str(&rest[..i]);
         let after = &rest[i + 1..];
-        let end = after.find(|c: char| !(c.is_ascii_lowercase() || c == '_' || c == '.')).unwrap_or(after.len());
+        let end = after
+            .find(|c: char| !(c.is_ascii_lowercase() || c == '_' || c == '.'))
+            .unwrap_or(after.len());
         let optional = after[end..].starts_with("?}");
         if end > 0 && (optional || after[end..].starts_with('}')) {
             let k = &after[..end];
@@ -5038,21 +6973,40 @@ fn fill_template(template: &str, ctx: &[(&str, &str)], n: &J) -> Result<String, 
 pub fn expand_items(n: &J, entry: &J, spec: &J, got: &Got, inp: &J) -> Result<Vec<J>, String> {
     let it = entry.g("items");
     let rows = inp.g("rows").arr();
-    let sel: Vec<(String, &J)> = spec.g("selects").g("items").arr().iter().map(|s| (st(s.g("id")), s)).collect();
+    let sel: Vec<(String, &J)> = spec
+        .g("selects")
+        .g("items")
+        .arr()
+        .iter()
+        .map(|s| (st(s.g("id")), s))
+        .collect();
     let fe = it.g("for_each").s().unwrap_or("");
     let (mut items, codes, sid): (Vec<J>, Vec<J>, Option<String>) = if fe == "spec" {
         let items = n.g("items").arr().to_vec();
-        let codes = items.iter().map(|x| resolve_sel(x.g("code"), got)).collect::<Result<Vec<_>, _>>()?;
+        let codes = items
+            .iter()
+            .map(|x| resolve_sel(x.g("code"), got))
+            .collect::<Result<Vec<_>, _>>()?;
         (items, codes, None)
     } else {
         let r = if fe == "items_for" {
             n.g("items_for")
         } else {
-            n.g("binds").get(fe.split_once('.').map_or("", |x| x.1)).ok_or_else(|| format!("'{fe}'"))?
+            n.g("binds")
+                .get(fe.split_once('.').map_or("", |x| x.1))
+                .ok_or_else(|| format!("'{fe}'"))?
         };
         let sid = ref_id(r).ok_or_else(|| format!("{} is no select reference", r.repr()))?;
-        let codes = got.get(&sid).ok_or_else(|| format!("'{sid}'"))?.arr().to_vec();
-        (codes.iter().map(|_| J::Obj(vec![])).collect(), codes, Some(sid))
+        let codes = got
+            .get(&sid)
+            .ok_or_else(|| format!("'{sid}'"))?
+            .arr()
+            .to_vec();
+        (
+            codes.iter().map(|_| J::Obj(vec![])).collect(),
+            codes,
+            Some(sid),
+        )
     };
     // the rows the items' rank reads, for the fields that name a row (row_of_code); items over a select with no rank at
     // its root (a given one: a flow's top origins) have none, and such a field refuses below
@@ -5070,22 +7024,39 @@ pub fn expand_items(n: &J, entry: &J, spec: &J, got: &Got, inp: &J) -> Result<Ve
                 continue;
             }
             let v = match kind {
-                "select_index" => J::Str(format!("select:{}[{i}]", sid.as_deref().unwrap_or("None"))),
+                "select_index" => {
+                    J::Str(format!("select:{}[{i}]", sid.as_deref().unwrap_or("None")))
+                }
                 "row_of_code" | "row_of_code_from" => {
                     let over = over.as_ref().ok_or("'over'")?;
                     let by = st(over.g("by"));
-                    let time = if kind == "row_of_code" { over.g("time") } else { from.as_ref().expect("checked above") };
+                    let time = if kind == "row_of_code" {
+                        over.g("time")
+                    } else {
+                        from.as_ref().expect("checked above")
+                    };
                     let hit: Vec<&J> = rows
                         .iter()
-                        .filter(|r| r.g("table") == over.g("table") && r.g("time") == time && dims(r, &by) == code)
+                        .filter(|r| {
+                            r.g("table") == over.g("table")
+                                && r.g("time") == time
+                                && dims(r, &by) == code
+                        })
                         .filter(|r| over.g("filter").obj().iter().all(|(a, b)| dims(r, a) == b))
                         .collect();
                     if hit.len() != 1 {
-                        return Err(format!("{} item {i} ({cs}): {} rows, the expansion needs exactly one", st(n.g("id")), hit.len()));
+                        return Err(format!(
+                            "{} item {i} ({cs}): {} rows, the expansion needs exactly one",
+                            st(n.g("id")),
+                            hit.len()
+                        ));
                     }
                     hit[0].g("src").clone()
                 }
-                "fact_template" => J::Str(format!("fact:{}", fill_template(&st(d.g("template")), &[("code", &cs)], n)?)),
+                "fact_template" => J::Str(format!(
+                    "fact:{}",
+                    fill_template(&st(d.g("template")), &[("code", &cs)], n)?
+                )),
                 // the first candidate whose conditions hold (CONDITIONS), from the list the item's `by` field names; its
                 // value is the candidate less its conditions, `{code}` read as the item's code
                 "first_holding" => {
@@ -5101,18 +7072,48 @@ pub fn expand_items(n: &J, entry: &J, spec: &J, got: &Got, inp: &J) -> Result<Ve
                         }
                     }
                     let fact = |k: &str| fact_value(&facts, rows, k);
-                    let word = |k: &str| crate::next_ledger::word_table().get(k).and_then(serde_json::Value::as_str).map(str::to_string);
+                    let word = |k: &str| {
+                        crate::next_ledger::word_table()
+                            .get(k)
+                            .and_then(serde_json::Value::as_str)
+                            .map(str::to_string)
+                    };
                     // the code's name, read only by a condition that prints it (width_at_most's {name})
                     let name = inp.g("names").g(&cs).s();
-                    let hold = Holding { facts: &fact, fmts: spec.g("facts").g("fmts"), got, page: inp, code: &cs, name, word: &word };
+                    let hold = Holding {
+                        facts: &fact,
+                        fmts: spec.g("facts").g("fmts"),
+                        got,
+                        page: inp,
+                        code: &cs,
+                        name,
+                        word: &word,
+                    };
                     let i = first_holding(&list, &hold)?;
                     // a name segment of its words naming a select's one code (the other place a note compares with) names that code
-                    let mut picked = J::Obj(list.at(i).obj().iter().filter(|(k, _)| k != "when").cloned().collect());
+                    let mut picked = J::Obj(
+                        list.at(i)
+                            .obj()
+                            .iter()
+                            .filter(|(k, _)| k != "when")
+                            .cloned()
+                            .collect(),
+                    );
                     if let Some(text) = picked.get("text").cloned() {
-                        let segs = text.arr().iter().map(|s| match s.g("name").s().filter(|r| r.starts_with("select:")) {
-                            Some(r) => resolve_ref(r, got).map(|c| { let mut s = s.clone(); s.set("name", c); s }),
-                            None => Ok(s.clone()),
-                        }).collect::<Result<Vec<_>, String>>()?;
+                        let segs = text
+                            .arr()
+                            .iter()
+                            .map(
+                                |s| match s.g("name").s().filter(|r| r.starts_with("select:")) {
+                                    Some(r) => resolve_ref(r, got).map(|c| {
+                                        let mut s = s.clone();
+                                        s.set("name", c);
+                                        s
+                                    }),
+                                    None => Ok(s.clone()),
+                                },
+                            )
+                            .collect::<Result<Vec<_>, String>>()?;
                         picked.set("text", J::Arr(segs));
                     }
                     picked
@@ -5122,10 +7123,21 @@ pub fn expand_items(n: &J, entry: &J, spec: &J, got: &Got, inp: &J) -> Result<Ve
                     Ok(r) => J::Bool(*code == resolve_sel(r, got)?),
                     Err(_) => J::Bool(false),
                 },
-                "point_of_code" => inp.g("points").g("at").get(&cs).cloned().ok_or_else(|| format!("'{cs}'"))?,
+                "point_of_code" => inp
+                    .g("points")
+                    .g("at")
+                    .get(&cs)
+                    .cloned()
+                    .ok_or_else(|| format!("'{cs}'"))?,
                 "cells_by_part" => {
                     let sid = sid.as_deref().ok_or("'None'")?;
-                    let c = cells_of(code, sel_get(&sel, sid).ok_or_else(|| format!("'{sid}'"))?, &sel, got, rows)?;
+                    let c = cells_of(
+                        code,
+                        sel_get(&sel, sid).ok_or_else(|| format!("'{sid}'"))?,
+                        &sel,
+                        got,
+                        rows,
+                    )?;
                     cells = Some(c.clone());
                     c
                 }
@@ -5135,7 +7147,19 @@ pub fn expand_items(n: &J, entry: &J, spec: &J, got: &Got, inp: &J) -> Result<Ve
                         .map(|c| c.obj().to_vec())
                         .unwrap_or_default()
                         .iter()
-                        .map(|(p, _)| Ok((p.clone(), J::Str(format!("fact:{}", fill_template(&st(d.g("template")), &[("code", &cs), ("part", p)], n)?)))))
+                        .map(|(p, _)| {
+                            Ok((
+                                p.clone(),
+                                J::Str(format!(
+                                    "fact:{}",
+                                    fill_template(
+                                        &st(d.g("template")),
+                                        &[("code", &cs), ("part", p)],
+                                        n
+                                    )?
+                                )),
+                            ))
+                        })
                         .collect::<Result<_, String>>()?,
                 ),
                 k => return Err(format!("field kind {k} is not one the core expands")),
@@ -5155,16 +7179,29 @@ fn cells_of(code: &J, dr: &J, sel: &[(String, &J)], got: &Got, rows: &[J]) -> Re
     for (part, codes) in c.g("parts").obj() {
         let mut excl: Vec<J> = Vec::new();
         for (_, s) in sel {
-            if s.g("kind").s() == Some("exclude_codes") && s.g("part").s() == Some(part) && resolve_sel(s.g("place"), got)? == *code {
+            if s.g("kind").s() == Some("exclude_codes")
+                && s.g("part").s() == Some(part)
+                && resolve_sel(s.g("place"), got)? == *code
+            {
                 excl.extend(s.g("codes").arr().iter().cloned());
             }
         }
-        let zero = sel.iter().filter(|(_, s)| s.g("kind").s() == Some("zero_parts")).any(|(_, s)| {
-            s.g("declared").arr().iter().any(|d| d.g("bar") == code && d.g("part").s() == Some(part))
-        });
+        let zero = sel
+            .iter()
+            .filter(|(_, s)| s.g("kind").s() == Some("zero_parts"))
+            .any(|(_, s)| {
+                s.g("declared")
+                    .arr()
+                    .iter()
+                    .any(|d| d.g("bar") == code && d.g("part").s() == Some(part))
+            });
         let srcs: Vec<J> = rows
             .iter()
-            .filter(|r| r.g("table") == c.g("table") && r.g("time") == c.g("time") && dims(r, &place) == code)
+            .filter(|r| {
+                r.g("table") == c.g("table")
+                    && r.g("time") == c.g("time")
+                    && dims(r, &place) == code
+            })
             .filter(|r| codes.arr().contains(dims(r, &dim)) && !excl.contains(dims(r, &dim)))
             .map(|r| r.g("src").clone())
             .collect();
@@ -5248,9 +7285,20 @@ pub(crate) fn conditions_hold(conds: &J, h: &Holding) -> Result<bool, String> {
 /// One condition of CONDITIONS over what `h` gives.
 fn condition_holds(cond: &J, h: &Holding) -> Result<bool, String> {
     let kind = st(cond.g("if"));
-    let args = CONDITIONS.iter().find(|(k, _)| *k == kind).map(|(_, a)| *a).ok_or_else(|| format!("condition {kind}: not one the core computes"))?;
-    if let Some((k, _)) = cond.obj().iter().find(|(k, _)| k != "if" && !args.contains(&k.as_str())) {
-        return Err(format!("condition {kind}: no argument {k} (it reads {})", args.join(", ")));
+    let args = CONDITIONS
+        .iter()
+        .find(|(k, _)| *k == kind)
+        .map(|(_, a)| *a)
+        .ok_or_else(|| format!("condition {kind}: not one the core computes"))?;
+    if let Some((k, _)) = cond
+        .obj()
+        .iter()
+        .find(|(k, _)| k != "if" && !args.contains(&k.as_str()))
+    {
+        return Err(format!(
+            "condition {kind}: no argument {k} (it reads {})",
+            args.join(", ")
+        ));
     }
     let key = |k: &str| st(cond.g(k)).replace("{code}", h.code);
     match kind.as_str() {
@@ -5269,9 +7317,17 @@ fn condition_holds(cond: &J, h: &Holding) -> Result<bool, String> {
         "prints_nonzero" => {
             let v = (h.facts)(&key("fact"))?;
             let fmt = st(cond.g("fmt"));
-            let fm = h.fmts.get(&fmt).ok_or_else(|| format!("condition prints_nonzero: no format {fmt}"))?;
-            let dec = fm.g("dec").num().ok_or_else(|| format!("format {fmt}: no dec"))? as usize;
-            let scale = fm.get("scale").map_or(Ok(1.0), |x| x.num().ok_or_else(|| format!("format {fmt}: scale")))?;
+            let fm = h
+                .fmts
+                .get(&fmt)
+                .ok_or_else(|| format!("condition prints_nonzero: no format {fmt}"))?;
+            let dec = fm
+                .g("dec")
+                .num()
+                .ok_or_else(|| format!("format {fmt}: no dec"))? as usize;
+            let scale = fm.get("scale").map_or(Ok(1.0), |x| {
+                x.num().ok_or_else(|| format!("format {fmt}: scale"))
+            })?;
             Ok(py_fixed(v * scale, dec) != py_fixed(0.0 * scale, dec))
         }
         "width_at_most" => {
@@ -5279,23 +7335,36 @@ fn condition_holds(cond: &J, h: &Holding) -> Result<bool, String> {
             for part in cond.g("text").arr() {
                 match part {
                     J::Str(s) if s.contains("{name}") => {
-                        let name = h.name.ok_or_else(|| format!("'{}': the page input names no {}", h.code, h.code))?;
+                        let name = h.name.ok_or_else(|| {
+                            format!("'{}': the page input names no {}", h.code, h.code)
+                        })?;
                         line.push_str(&s.replace("{name}", name))
                     }
                     J::Str(s) => line.push_str(s),
                     J::Obj(_) if part.has("word") => {
                         let k = st(part.g("word"));
-                        line.push_str(&(h.word)(&k).ok_or_else(|| format!("condition width_at_most: the word table has no {k}"))?);
+                        line.push_str(&(h.word)(&k).ok_or_else(|| {
+                            format!("condition width_at_most: the word table has no {k}")
+                        })?);
                     }
                     p => return Err(format!("condition width_at_most: text part {}", p.repr())),
                 }
             }
-            let size = cond.g("size").num().ok_or("condition width_at_most: size")?;
+            let size = cond
+                .g("size")
+                .num()
+                .ok_or("condition width_at_most: size")?;
             let max = cond.g("max").num().ok_or("condition width_at_most: max")?;
             Ok(line_width(&line, size) <= max)
         }
         "unit_adds_up" => {
-            let units: std::collections::BTreeSet<Option<&str>> = h.page.g("rows").arr().iter().map(|r| dims(r, "unit").s()).collect();
+            let units: std::collections::BTreeSet<Option<&str>> = h
+                .page
+                .g("rows")
+                .arr()
+                .iter()
+                .map(|r| dims(r, "unit").s())
+                .collect();
             Ok(match units.into_iter().collect::<Vec<_>>()[..] {
                 [Some(unit)] => unit_additive(unit)?,
                 _ => false,
@@ -5303,43 +7372,98 @@ fn condition_holds(cond: &J, h: &Holding) -> Result<bool, String> {
         }
         "covers_whole" => {
             let sid = key("select");
-            let codes = h.got.get(&sid).ok_or_else(|| format!("condition covers_whole: no select {sid}"))?.arr().to_vec();
+            let codes = h
+                .got
+                .get(&sid)
+                .ok_or_else(|| format!("condition covers_whole: no select {sid}"))?
+                .arr()
+                .to_vec();
             let (table, by, time) = (key("table"), key("by"), key("time"));
             let fmt = key("fmt");
-            let fm = h.fmts.get(&fmt).ok_or_else(|| format!("condition covers_whole: no format {fmt}"))?;
-            let dec = fm.g("dec").num().ok_or_else(|| format!("format {fmt}: no dec"))? as usize;
-            let scale = fm.get("scale").map_or(Ok(1.0), |x| x.num().ok_or_else(|| format!("format {fmt}: scale")))?;
-            let at: Vec<&J> = h.page.g("rows").arr().iter().filter(|r| st(r.g("table")) == table && st(r.g("time")) == time).collect();
-            let totals: Vec<&J> = at.iter().copied().filter(|r| dims(r, &by).s().is_some_and(|c| crate::next_ledger::total_row(&table, &by, c))).collect();
-            let [total] = totals.as_slice() else { return Ok(false) };
+            let fm = h
+                .fmts
+                .get(&fmt)
+                .ok_or_else(|| format!("condition covers_whole: no format {fmt}"))?;
+            let dec = fm
+                .g("dec")
+                .num()
+                .ok_or_else(|| format!("format {fmt}: no dec"))? as usize;
+            let scale = fm.get("scale").map_or(Ok(1.0), |x| {
+                x.num().ok_or_else(|| format!("format {fmt}: scale"))
+            })?;
+            let at: Vec<&J> = h
+                .page
+                .g("rows")
+                .arr()
+                .iter()
+                .filter(|r| st(r.g("table")) == table && st(r.g("time")) == time)
+                .collect();
+            let totals: Vec<&J> = at
+                .iter()
+                .copied()
+                .filter(|r| {
+                    dims(r, &by)
+                        .s()
+                        .is_some_and(|c| crate::next_ledger::total_row(&table, &by, c))
+                })
+                .collect();
+            let [total] = totals.as_slice() else {
+                return Ok(false);
+            };
             let mut sum = 0.0;
             for c in &codes {
                 let rows: Vec<&J> = at.iter().copied().filter(|r| dims(r, &by) == c).collect();
-                match (rows.as_slice(), c.s().is_some_and(|c| crate::next_ledger::total_row(&table, &by, c))) {
-                    ([r], false) => sum += text_num(r).ok_or_else(|| format!("condition covers_whole: {} has no number", st(c)))?,
+                match (
+                    rows.as_slice(),
+                    c.s()
+                        .is_some_and(|c| crate::next_ledger::total_row(&table, &by, c)),
+                ) {
+                    ([r], false) => {
+                        sum += text_num(r).ok_or_else(|| {
+                            format!("condition covers_whole: {} has no number", st(c))
+                        })?
+                    }
                     _ => return Ok(false),
                 }
             }
-            let whole = text_num(total).ok_or("condition covers_whole: the total row has no number")?;
+            let whole =
+                text_num(total).ok_or("condition covers_whole: the total row has no number")?;
             Ok(!codes.is_empty() && py_fixed(sum * scale, dec) == py_fixed(whole * scale, dec))
         }
         "count_at_least" => {
             let sid = key("select");
             let n = cond.g("n").num().ok_or("condition count_at_least: n")?;
-            let have = h.got.get(&sid).ok_or_else(|| format!("condition count_at_least: no select {sid}"))?.arr().len();
+            let have = h
+                .got
+                .get(&sid)
+                .ok_or_else(|| format!("condition count_at_least: no select {sid}"))?
+                .arr()
+                .len();
             Ok(have as f64 >= n)
         }
         "gap_printable" => {
-            let prints = !h.page.g("gap_order").arr().iter().any(|o| o.s() == Some(key("fact").as_str()));
+            let prints = !h
+                .page
+                .g("gap_order")
+                .arr()
+                .iter()
+                .any(|o| o.s() == Some(key("fact").as_str()));
             match cond.get("is") {
                 None | Some(J::Bool(true)) => Ok(prints),
                 Some(J::Bool(false)) => Ok(!prints),
-                Some(v) => Err(format!("condition gap_printable: is {} (true or false)", v.repr())),
+                Some(v) => Err(format!(
+                    "condition gap_printable: is {} (true or false)",
+                    v.repr()
+                )),
             }
         }
         "page_is" => match at_path(h.page, &st(cond.g("path")))? {
             J::Bool(b) => Ok(*b),
-            v => Err(format!("condition page_is {}: {} is not true or false", st(cond.g("path")), v.repr())),
+            v => Err(format!(
+                "condition page_is {}: {} is not true or false",
+                st(cond.g("path")),
+                v.repr()
+            )),
         },
         "row_above" => {
             let than = cond.g("than").num().ok_or("condition row_above: than")?;
@@ -5348,11 +7472,20 @@ fn condition_holds(cond: &J, h: &Holding) -> Result<bool, String> {
                 r.g("table") == cond.g("table")
                     && r.g("time") == cond.g("time")
                     && filter.iter().all(|(d, c)| dims(r, d) == c)
-                    && r.g("value").s().and_then(|v| v.parse::<f64>().ok()).is_some_and(|v| v > than)
+                    && r.g("value")
+                        .s()
+                        .and_then(|v| v.parse::<f64>().ok())
+                        .is_some_and(|v| v > than)
             }))
         }
         "layer_before" => {
-            let at = |k: &str| h.page.g("order").arr().iter().position(|l| l.s() == Some(st(cond.g(k)).as_str()));
+            let at = |k: &str| {
+                h.page
+                    .g("order")
+                    .arr()
+                    .iter()
+                    .position(|l| l.s() == Some(st(cond.g(k)).as_str()))
+            };
             Ok(matches!((at("layer"), at("than")), (Some(a), Some(b)) if a < b))
         }
         _ => unreachable!("CONDITIONS holds the arms"),
@@ -5368,7 +7501,11 @@ const UNIT_TSV: &str = include_str!("../runtime/pi/assets/unit-short-zh.tsv");
 fn unit_additive(unit: &str) -> Result<bool, String> {
     let mut lines = UNIT_TSV.lines();
     let head: Vec<&str> = lines.next().unwrap_or_default().split('\t').collect();
-    let at = |name: &str| head.iter().position(|h| *h == name).ok_or_else(|| format!("unit registry: no column {name}"));
+    let at = |name: &str| {
+        head.iter()
+            .position(|h| *h == name)
+            .ok_or_else(|| format!("unit registry: no column {name}"))
+    };
     let (code, additive) = (at("code")?, at("additive")?);
     for line in lines {
         let p: Vec<&str> = line.split('\t').collect();
@@ -5416,12 +7553,22 @@ pub(crate) const DIFF_MOST_DEC: usize = 2;
 /// A number its format printed (py_fixed: "-0.35") as an integer of `dec` decimals (-35 at 2, -350 at 3); none when it
 /// holds more decimals than `dec` or is no number.
 fn printed_int(printed: &str, dec: usize) -> Option<i128> {
-    let (neg, body) = printed.strip_prefix('-').map_or((false, printed), |b| (true, b));
+    let (neg, body) = printed
+        .strip_prefix('-')
+        .map_or((false, printed), |b| (true, b));
     let (whole, frac) = body.split_once('.').unwrap_or((body, ""));
-    if frac.len() > dec || whole.is_empty() || !whole.chars().chain(frac.chars()).all(|c| c.is_ascii_digit()) {
+    if frac.len() > dec
+        || whole.is_empty()
+        || !whole
+            .chars()
+            .chain(frac.chars())
+            .all(|c| c.is_ascii_digit())
+    {
         return None;
     }
-    let n: i128 = format!("{whole}{frac}{}", "0".repeat(dec - frac.len())).parse().ok()?;
+    let n: i128 = format!("{whole}{frac}{}", "0".repeat(dec - frac.len()))
+        .parse()
+        .ok()?;
     Some(if neg { -n } else { n })
 }
 
@@ -5475,7 +7622,11 @@ pub(crate) fn printed_keys(v: &J, facts: &J) -> BTreeSet<String> {
     }
     let (mut refs, mut fams) = (Vec::new(), Vec::new());
     walk(v, &mut refs, &mut fams);
-    let held = |k: &str| facts.get(k).is_some() || k.rsplit_once('.').is_some_and(|(f, _)| facts.get(f).is_some_and(|q| q.has("each")));
+    let held = |k: &str| {
+        facts.get(k).is_some()
+            || k.rsplit_once('.')
+                .is_some_and(|(f, _)| facts.get(f).is_some_and(|q| q.has("each")))
+    };
     let mut out = BTreeSet::new();
     for r in refs {
         let k = r.strip_suffix(".n").unwrap_or(&r);
@@ -5483,7 +7634,10 @@ pub(crate) fn printed_keys(v: &J, facts: &J) -> BTreeSet<String> {
             out.insert(k.to_string());
         }
     }
-    for f in fams.into_iter().filter(|f| facts.get(f).is_some_and(|q| q.has("each"))) {
+    for f in fams
+        .into_iter()
+        .filter(|f| facts.get(f).is_some_and(|q| q.has("each")))
+    {
         out.insert(format!("{f}.*"));
     }
     out
@@ -5497,7 +7651,11 @@ pub(crate) fn fact_fmt(facts: &J, key: &str) -> Option<String> {
     }
     let (fam, code) = key.rsplit_once('.')?;
     let q = facts.get(fam).filter(|q| q.has("each"))?;
-    q.g("fmt_each").g(code).s().or(q.g("fmt").s()).map(str::to_string)
+    q.g("fmt_each")
+        .g(code)
+        .s()
+        .or(q.g("fmt").s())
+        .map(str::to_string)
 }
 
 /// A printed difference read against its true difference (owner 11-06, superseding 11-03 and J2 of 11-04): for every
@@ -5507,7 +7665,12 @@ pub(crate) fn fact_fmt(facts: &J, key: &str) -> Option<String> {
 /// print 2.8 when the raw values differ by 2.78). An operand the page does not print leaves its difference no case; so do
 /// formats of two scales and a fact the core cannot compute (the facts check reports it). Each failure: (its words, [the
 /// difference, the printed key of each operand]).
-pub(crate) fn differences_disagree(facts: &J, fmts: &J, rows: &[J], printed: &BTreeSet<String>) -> Vec<(String, Vec<String>)> {
+pub(crate) fn differences_disagree(
+    facts: &J,
+    fmts: &J,
+    rows: &[J],
+    printed: &BTreeSet<String>,
+) -> Vec<(String, Vec<String>)> {
     let mut out = Vec::new();
     for d in printed_differences(facts, fmts, rows, printed) {
         let keys = vec![d.key.clone(), d.pa.clone(), d.pb.clone()];
@@ -5535,11 +7698,24 @@ pub(crate) struct PrintedDiff {
 }
 
 /// The page's printed differences (differences_disagree's cases), each read whole (PrintedDiff).
-pub(crate) fn printed_differences(facts: &J, fmts: &J, rows: &[J], printed: &BTreeSet<String>) -> Vec<PrintedDiff> {
+pub(crate) fn printed_differences(
+    facts: &J,
+    fmts: &J,
+    rows: &[J],
+    printed: &BTreeSet<String>,
+) -> Vec<PrintedDiff> {
     let val = Compute::new(facts, rows);
-    let shown = |k: &str| printed.contains(k) || k.rsplit_once('.').is_some_and(|(f, _)| printed.contains(&format!("{f}.*")));
+    let shown = |k: &str| {
+        printed.contains(k)
+            || k.rsplit_once('.')
+                .is_some_and(|(f, _)| printed.contains(&format!("{f}.*")))
+    };
     // the printed keys, each family bound whole as its members
-    let mut keys: Vec<String> = printed.iter().filter(|k| !k.ends_with(".*")).cloned().collect();
+    let mut keys: Vec<String> = printed
+        .iter()
+        .filter(|k| !k.ends_with(".*"))
+        .cloned()
+        .collect();
     for f in printed.iter().filter_map(|k| k.strip_suffix(".*")) {
         // a family of differences has its first family's codes
         let of = match facts.g(f).g("op").s() {
@@ -5553,7 +7729,11 @@ pub(crate) fn printed_differences(facts: &J, fmts: &J, rows: &[J], printed: &BTr
     let form = |key: &str| -> Option<(String, f64, usize)> {
         let f = fact_fmt(facts, key)?;
         let fm = fmts.get(&f)?;
-        Some((f, fm.get("scale").map_or(Some(1.0), J::num)?, fm.g("dec").num()? as usize))
+        Some((
+            f,
+            fm.get("scale").map_or(Some(1.0), J::num)?,
+            fm.g("dec").num()? as usize,
+        ))
     };
     // where the page prints an operand: itself, else a printed fact of its value (its own format's first)
     let twin = |key: &str| -> Option<String> {
@@ -5562,33 +7742,67 @@ pub(crate) fn printed_differences(facts: &J, fmts: &J, rows: &[J], printed: &BTr
         }
         let v = val.val(key).ok()?;
         let own = fact_fmt(facts, key);
-        let same: Vec<&String> = keys.iter().filter(|k| val.val(k).is_ok_and(|w| w == v)).collect();
-        same.iter().find(|k| fact_fmt(facts, k) == own).or(same.first()).map(|k| k.to_string())
+        let same: Vec<&String> = keys
+            .iter()
+            .filter(|k| val.val(k).is_ok_and(|w| w == v))
+            .collect();
+        same.iter()
+            .find(|k| fact_fmt(facts, k) == own)
+            .or(same.first())
+            .map(|k| k.to_string())
     };
     let mut out = Vec::new();
     for (k, q) in facts.obj() {
         if q.g("op").s() != Some("minus") || q.has("each") || !shown(k) {
             continue;
         }
-        let (Some(pa), Some(pb)) = (twin(&st(q.g("a"))), twin(&st(q.g("b")))) else { continue };
-        let (Some((_, sk, dk)), Some((_, sa, da)), Some((_, sb, db))) = (form(k), form(&pa), form(&pb)) else { continue };
+        let (Some(pa), Some(pb)) = (twin(&st(q.g("a"))), twin(&st(q.g("b")))) else {
+            continue;
+        };
+        let (Some((_, sk, dk)), Some((_, sa, da)), Some((_, sb, db))) =
+            (form(k), form(&pa), form(&pb))
+        else {
+            continue;
+        };
         if sk != sa || sk != sb {
             continue;
         }
-        let (Ok(vk), Ok(va), Ok(vb)) = (val.val(k), val.val(&pa), val.val(&pb)) else { continue };
+        let (Ok(vk), Ok(va), Ok(vb)) = (val.val(k), val.val(&pa), val.val(&pb)) else {
+            continue;
+        };
         if !(vk.is_finite() && va.is_finite() && vb.is_finite()) {
             continue;
         }
-        let (tk, ta, tb) = (py_fixed(vk * sk, dk), py_fixed(va * sa, da), py_fixed(vb * sb, db));
+        let (tk, ta, tb) = (
+            py_fixed(vk * sk, dk),
+            py_fixed(va * sa, da),
+            py_fixed(vb * sb, db),
+        );
         let most = da.max(db).max(dk);
-        let (Some(ik), Some(ia), Some(ib)) = (printed_int(&tk, dk), printed_int(&ta, most), printed_int(&tb, most)) else { continue };
+        let (Some(ik), Some(ia), Some(ib)) = (
+            printed_int(&tk, dk),
+            printed_int(&ta, most),
+            printed_int(&tb, most),
+        ) else {
+            continue;
+        };
         let want = round_even(ia - ib, most, dk);
         // the true difference of the two values, and the printed one against it (in the difference's own unit)
         let truth = va - vb;
         let shown_v = ik as f64 / 10f64.powi(dk as i32) / sk;
         // owner 11-06: within half a unit of the difference's last printed place of the raw difference
         let close = (shown_v - truth).abs() <= 0.5 * 10f64.powi(-(dk as i32)) / sk + 1e-9;
-        out.push(PrintedDiff { key: k.clone(), pa, pb, tk, forms: [(sa, da), (sb, db)], dec: dk, equal: want == ik, truth, close });
+        out.push(PrintedDiff {
+            key: k.clone(),
+            pa,
+            pb,
+            tk,
+            forms: [(sa, da), (sb, db)],
+            dec: dk,
+            equal: want == ik,
+            truth,
+            close,
+        });
     }
     out
 }
@@ -5596,13 +7810,17 @@ pub(crate) fn printed_differences(facts: &J, fmts: &J, rows: &[J], printed: &BTr
 /// One line's width as the flow's leader notes measured it (note_fits): a character above U+2E7F `size`, any other 0.58
 /// `size`, summed left to right in a plain sum (not tw_leaf's compensated one: the two may differ at the limit).
 fn line_width(text: &str, size: f64) -> f64 {
-    text.chars().map(|c| if c as u32 > 0x2e7f { size } else { 0.58 * size }).sum()
+    text.chars()
+        .map(|c| if c as u32 > 0x2e7f { size } else { 0.58 * size })
+        .sum()
 }
 
 /// The first layer's width rule (runtime/nodes/common.mjs tw): a CJK character 1 em, any other 0.58 em.
 fn tw(text: &str, size: f64) -> f64 {
     let cjk = |c: char| matches!(c as u32, 0x2E80..=0x9FFF | 0xF900..=0xFAFF | 0xFF00..=0xFFEF);
-    text.chars().fold(0.0, |s, c| s + if cjk(c) { 1.0 } else { 0.58 }) * size
+    text.chars()
+        .fold(0.0, |s, c| s + if cjk(c) { 1.0 } else { 0.58 })
+        * size
 }
 
 /// Python's round(x, n).
@@ -5616,9 +7834,17 @@ pub fn tw_leaf(text: &str, size: f64) -> f64 {
     // Python's sum() over floats (3.12+) is Neumaier's compensated sum; the leaf's widths come from it, so this does the same.
     let (mut s, mut c) = (0.0f64, 0.0f64);
     for ch in text.chars() {
-        let x = if ch as u32 > 0x2E7F { size } else { 0.58 * size };
+        let x = if ch as u32 > 0x2E7F {
+            size
+        } else {
+            0.58 * size
+        };
         let t = s + x;
-        c += if s.abs() >= x.abs() { (s - t) + x } else { (x - t) + s };
+        c += if s.abs() >= x.abs() {
+            (s - t) + x
+        } else {
+            (x - t) + s
+        };
         s = t;
     }
     s + c
@@ -5658,13 +7884,27 @@ fn rows_frame(fr: &J, n: &J, meta: &Meta, size: f64, values: &[f64]) -> Result<(
     let widest = |side: &str| -> Result<f64, String> {
         let end = format!("/{}", st(fr.g(side).g("text")));
         let gap = fr.g(side).g("gap").num().ok_or("rows frame gap")?;
-        let w = meta.texts.iter().filter(|t| t.0.ends_with(&end)).map(|t| tw_leaf(&t.1, size)).reduce(pmax).ok_or("rows frame: no text sizes a column")?;
+        let w = meta
+            .texts
+            .iter()
+            .filter(|t| t.0.ends_with(&end))
+            .map(|t| tw_leaf(&t.1, size))
+            .reduce(pmax)
+            .ok_or("rows frame: no text sizes a column")?;
         Ok(w + gap)
     };
     let (lw, vw) = (widest("left")?, widest("right")?);
     let x0 = n.g("knobs").get("x0").cloned().unwrap_or(J::Int(0));
-    let num = |v: &J, what: &str| v.num().ok_or_else(|| format!("rows frame: {what} is no number"));
-    let (w, x, top, row) = (num(fr.g("w"), "w")?, num(&x0, "x0")?, num(fr.g("top"), "top")?, num(fr.g("row"), "row")?);
+    let num = |v: &J, what: &str| {
+        v.num()
+            .ok_or_else(|| format!("rows frame: {what} is no number"))
+    };
+    let (w, x, top, row) = (
+        num(fr.g("w"), "w")?,
+        num(&x0, "x0")?,
+        num(fr.g("top"), "top")?,
+        num(fr.g("row"), "row")?,
+    );
     let count = n.g("items").arr().len() as f64;
     let whole = w - x;
     let (_, _, neg, pos) = signed_room(values, vw);
@@ -5731,7 +7971,13 @@ struct Words<'a> {
 impl<'a> Words<'a> {
     fn new(spec: &'a J, rpage: &'a J, inp: &'a J, got: &'a Got) -> Self {
         let rfacts = rpage.g("facts").g("facts");
-        Words { fmts: spec.g("facts").g("fmts"), rfacts, inp, got, val: Compute::new(rfacts, inp.g("rows").arr()) }
+        Words {
+            fmts: spec.g("facts").g("fmts"),
+            rfacts,
+            inp,
+            got,
+            val: Compute::new(rfacts, inp.g("rows").arr()),
+        }
     }
     /// A printed fact key's base (less a final .n or .t) and its query (its own, or its family's).
     fn query<'k>(&self, key: &'k str) -> (&'k str, &'a J) {
@@ -5739,29 +7985,44 @@ impl<'a> Words<'a> {
             Some((head, "n" | "t")) => head,
             _ => key,
         };
-        let q = [self.rfacts.get(base), self.rfacts.get(base.rsplit_once('.').map_or("", |x| x.0))]
-            .into_iter()
-            .flatten()
-            .find(|q| q.truthy())
-            .unwrap_or(&NULL);
+        let q = [
+            self.rfacts.get(base),
+            self.rfacts.get(base.rsplit_once('.').map_or("", |x| x.0)),
+        ]
+        .into_iter()
+        .flatten()
+        .find(|q| q.truthy())
+        .unwrap_or(&NULL);
         (base, q)
     }
     fn fact(&self, key: &str, part: Option<&str>) -> Result<String, String> {
         let (base, q) = self.query(key);
         if part == Some("t") {
-            let t = if q.g("to").truthy() { q.g("to") } else { q.g("time") };
+            let t = if q.g("to").truthy() {
+                q.g("to")
+            } else {
+                q.g("time")
+            };
             return Ok(if t.is_null() { "None".into() } else { st(t) });
         }
         let v = self.val.val(base)?;
         // a family member's own format when the family names one (fact_fmt: fmt_each), else the fact's
         let f = fact_fmt(self.rfacts, base).map_or_else(|| q.g("fmt").clone(), J::Str);
         let f = &f;
-        if let Some(m) = f.s().and_then(|f| self.fmts.get(f)).filter(|m| m.has("dec")) {
+        if let Some(m) = f
+            .s()
+            .and_then(|f| self.fmts.get(f))
+            .filter(|m| m.has("dec"))
+        {
             let scale = m.get("scale").map_or(Some(1.0), J::num).ok_or("scale")?;
             let dec = m.g("dec").num().ok_or("dec")? as usize;
             // a key's .n part is the number without its unit, as the leaf's ledger prints fact:<key>.n (facts.py)
             let bare = part == Some("n") || key.ends_with(".n");
-            let suffix = if bare { String::new() } else { m.get("suffix").map_or(String::new(), st) };
+            let suffix = if bare {
+                String::new()
+            } else {
+                m.get("suffix").map_or(String::new(), st)
+            };
             return Ok(format!("{}{suffix}", py_grouped(&py_fixed(v * scale, dec))));
         }
         if f.s() == Some("n") {
@@ -5774,7 +8035,12 @@ impl<'a> Words<'a> {
         if let Some(n) = t.g("labels").get(code).filter(|n| n.truthy()) {
             return Ok(st(n));
         }
-        t.g("named").obj().iter().find(|(s, _)| s.ends_with(&format!(":{code}"))).map(|(_, x)| st(x)).ok_or_else(|| format!("no name for {code}"))
+        t.g("named")
+            .obj()
+            .iter()
+            .find(|(s, _)| s.ends_with(&format!(":{code}")))
+            .map(|(_, x)| st(x))
+            .ok_or_else(|| format!("no name for {code}"))
     }
     fn run(&self, r: &J) -> Result<String, String> {
         if r.has("w") {
@@ -5785,7 +8051,12 @@ impl<'a> Words<'a> {
         }
         if r.has("word") {
             let k = st(r.g("word"));
-            return self.inp.g("word_table").get(&k).map(st).ok_or_else(|| format!("'{k}'"));
+            return self
+                .inp
+                .g("word_table")
+                .get(&k)
+                .map(st)
+                .ok_or_else(|| format!("'{k}'"));
         }
         if r.has("fact") {
             return self.fact(&st(r.g("fact")), r.g("part").s());
@@ -5800,11 +8071,19 @@ impl<'a> Words<'a> {
                 return Ok(st(x));
             }
             let code = s.rsplit_once(':').map_or(s.as_str(), |x| x.1);
-            return t.g("labels").get(code).map(st).ok_or_else(|| format!("'{code}'"));
+            return t
+                .g("labels")
+                .get(code)
+                .map(st)
+                .ok_or_else(|| format!("'{code}'"));
         }
         if let Some(x) = r.get("name") {
             let x = st(x);
-            let code = if ref_parts(&x).is_some() { st(&resolve_sel(&J::Str(x.clone()), self.got)?) } else { x };
+            let code = if ref_parts(&x).is_some() {
+                st(&resolve_sel(&J::Str(x.clone()), self.got)?)
+            } else {
+                x
+            };
             return self.name(&code);
         }
         if r.has("table") {
@@ -5826,7 +8105,11 @@ fn literal_chars(rs: &J, inp: &J) -> (Vec<char>, Vec<bool>) {
         } else if r.has("term") {
             Some(st(r.g("term")))
         } else if r.has("word") {
-            Some(inp.g("word_table").get(&st(r.g("word"))).map_or(String::new(), st))
+            Some(
+                inp.g("word_table")
+                    .get(&st(r.g("word")))
+                    .map_or(String::new(), st),
+            )
         } else {
             None
         };
@@ -5845,13 +8128,24 @@ fn literal_chars(rs: &J, inp: &J) -> (Vec<char>, Vec<bool>) {
 }
 
 fn merc(lon: f64, lat: f64) -> (f64, f64) {
-    (lon.to_radians(), (std::f64::consts::PI / 4.0 + lat.to_radians() / 2.0).tan().ln())
+    (
+        lon.to_radians(),
+        (std::f64::consts::PI / 4.0 + lat.to_radians() / 2.0)
+            .tan()
+            .ln(),
+    )
 }
 
 /// d3 geoMercator().fitExtent(plot box, ext box): (scale, tx, ty); px = tx + s*x, py = ty - s*y.
 fn fit(ext: [f64; 4], plot: [f64; 4]) -> (f64, f64, f64) {
     let [x0, y0, x1, y1] = plot;
-    let pts = [(ext[0], ext[1]), (ext[2], ext[1]), (ext[2], ext[3]), (ext[0], ext[3])].map(|(a, b)| merc(a, b));
+    let pts = [
+        (ext[0], ext[1]),
+        (ext[2], ext[1]),
+        (ext[2], ext[3]),
+        (ext[0], ext[3]),
+    ]
+    .map(|(a, b)| merc(a, b));
     let xs = pts.map(|p| p.0);
     let ys = pts.map(|p| -p.1);
     let min = |v: [f64; 4]| v.iter().copied().fold(f64::INFINITY, f64::min);
@@ -5859,7 +8153,11 @@ fn fit(ext: [f64; 4], plot: [f64; 4]) -> (f64, f64, f64) {
     let (bx0, bx1, by0, by1) = (min(xs), max(xs), min(ys), max(ys));
     let (w, h) = (x1 - x0, y1 - y0);
     let k = (w / (bx1 - bx0)).min(h / (by1 - by0));
-    (k, x0 + (w - k * (bx1 + bx0)) / 2.0, y0 + (h - k * (by1 + by0)) / 2.0)
+    (
+        k,
+        x0 + (w - k * (bx1 + bx0)) / 2.0,
+        y0 + (h - k * (by1 + by0)) / 2.0,
+    )
 }
 
 fn project(pt: (f64, f64), proj: (f64, f64, f64)) -> [f64; 2] {
@@ -5873,7 +8171,10 @@ fn four(v: &J) -> Result<[f64; 4], String> {
     if a.len() != 4 {
         return Err(format!("{} is no box of four numbers", v.repr()));
     }
-    let n = |i: usize| a[i].num().ok_or_else(|| format!("{} is no number", a[i].repr()));
+    let n = |i: usize| {
+        a[i].num()
+            .ok_or_else(|| format!("{} is no number", a[i].repr()))
+    };
     Ok([n(0)?, n(1)?, n(2)?, n(3)?])
 }
 
@@ -5890,7 +8191,8 @@ pub fn expected(req: &J) -> Result<Expected, String> {
             order.push(m.g("item"));
         }
     }
-    let mut out: Vec<(String, Vec<(String, f64)>)> = ms.iter().map(|m| (st(m.g("id")), Vec::new())).collect();
+    let mut out: Vec<(String, Vec<(String, f64)>)> =
+        ms.iter().map(|m| (st(m.g("id")), Vec::new())).collect();
     let put = |out: &mut Vec<(String, Vec<(String, f64)>)>, i: usize, f: &str, v: f64| {
         let fs = &mut out[i].1;
         match fs.iter_mut().find(|(k, _)| k == f) {
@@ -5898,7 +8200,11 @@ pub fn expected(req: &J) -> Result<Expected, String> {
             None => fs.push((f.to_string(), v)),
         }
     };
-    let value = |m: &J, k: &str| m.g(k).num().ok_or_else(|| format!("mark {} has no {k}", st(m.g("id"))));
+    let value = |m: &J, k: &str| {
+        m.g(k)
+            .num()
+            .ok_or_else(|| format!("mark {} has no {k}", st(m.g("id"))))
+    };
     for ch in req.g("encode").arr() {
         let (c, sc) = (ch.g("channel").s().unwrap_or(""), ch.g("scale"));
         let f: Vec<String> = ch.g("fields").arr().iter().map(st).collect();
@@ -5911,11 +8217,19 @@ pub fn expected(req: &J) -> Result<Expected, String> {
                 for (i, m) in ms.iter().enumerate() {
                     let v = value(m, "value")?;
                     if c == "length_up" {
-                        let h = if vmax > 0.0 { (v / vmax) * (y1 - y0) } else { 0.0 };
+                        let h = if vmax > 0.0 {
+                            (v / vmax) * (y1 - y0)
+                        } else {
+                            0.0
+                        };
                         put(&mut out, i, "h", h);
                         put(&mut out, i, "y", y1 - h);
                     } else {
-                        let r = if vmax > 0.0 { sc.g("range").g("max_px").num().ok_or("max_px")? * (v / vmax).sqrt() } else { 0.0 };
+                        let r = if vmax > 0.0 {
+                            sc.g("range").g("max_px").num().ok_or("max_px")? * (v / vmax).sqrt()
+                        } else {
+                            0.0
+                        };
                         put(&mut out, i, "r", r);
                     }
                 }
@@ -5925,7 +8239,10 @@ pub fn expected(req: &J) -> Result<Expected, String> {
                 let step = (a1 - a0) / order.len() as f64;
                 let pad = sc.g("padding").num().ok_or("padding")?;
                 for (i, m) in ms.iter().enumerate() {
-                    let j = order.iter().position(|o| *o == m.g("item")).expect("in order") as f64;
+                    let j = order
+                        .iter()
+                        .position(|o| *o == m.g("item"))
+                        .expect("in order") as f64;
                     put(&mut out, i, &f[0], a0 + j * step + step * pad / 2.0);
                     put(&mut out, i, &f[1], step * (1.0 - pad));
                 }
@@ -5939,8 +8256,12 @@ pub fn expected(req: &J) -> Result<Expected, String> {
             }
             "length_signed" => {
                 // K11: from the zero line, each value's size over the span, right of the line or left of it by its sign
-                let values = ms.iter().map(|m| value(m, "value")).collect::<Result<Vec<f64>, String>>()?;
-                let (_, bars) = signed_bars(req.g("rows"), &values).ok_or("length_signed: no value differs from 0, or no signed rows frame")?;
+                let values = ms
+                    .iter()
+                    .map(|m| value(m, "value"))
+                    .collect::<Result<Vec<f64>, String>>()?;
+                let (_, bars) = signed_bars(req.g("rows"), &values)
+                    .ok_or("length_signed: no value differs from 0, or no signed rows frame")?;
                 for (i, (x, w)) in bars.into_iter().enumerate() {
                     put(&mut out, i, "x", x);
                     put(&mut out, i, "w", w);
@@ -5949,9 +8270,15 @@ pub fn expected(req: &J) -> Result<Expected, String> {
             "rows_y" => {
                 // K2: item j's row from the plot's top, the mark inset from its row's top and bottom
                 let rows = req.g("rows");
-                let (row, inset) = (rows.g("row").num().ok_or("rows_y: no row")?, rows.g("inset").num().ok_or("rows_y: no inset")?);
+                let (row, inset) = (
+                    rows.g("row").num().ok_or("rows_y: no row")?,
+                    rows.g("inset").num().ok_or("rows_y: no inset")?,
+                );
                 for (i, m) in ms.iter().enumerate() {
-                    let j = order.iter().position(|o| *o == m.g("item")).expect("in order") as f64;
+                    let j = order
+                        .iter()
+                        .position(|o| *o == m.g("item"))
+                        .expect("in order") as f64;
                     put(&mut out, i, "y", y0 + j * row + inset);
                     put(&mut out, i, "h", row - 2.0 * inset);
                 }
@@ -5959,7 +8286,10 @@ pub fn expected(req: &J) -> Result<Expected, String> {
             "stack_x" => {
                 let mut cum: Vec<(J, f64)> = Vec::new();
                 for (i, m) in ms.iter().enumerate() {
-                    let start = cum.iter().find(|(k, _)| *k == *m.g("item")).map_or(0.0, |x| x.1);
+                    let start = cum
+                        .iter()
+                        .find(|(k, _)| *k == *m.g("item"))
+                        .map_or(0.0, |x| x.1);
                     let share = value(m, "share")?;
                     put(&mut out, i, "x", x0 + start * (x1 - x0));
                     put(&mut out, i, "w", share * (x1 - x0));
@@ -5994,10 +8324,26 @@ impl Meta {
 /// The one request per external node, and the core's own record of what each id stands for.
 /// The requests the core issues, by node id, and what it keeps beside each to check the reply.
 type Issued = (Vec<(String, J)>, BTreeMap<String, Meta>);
-fn issue(spec: &J, inp: &J, reg: &J, ext: &[String], got: &Got, rpage: &J) -> Result<Issued, String> {
+fn issue(
+    spec: &J,
+    inp: &J,
+    reg: &J,
+    ext: &[String],
+    got: &Got,
+    rpage: &J,
+) -> Result<Issued, String> {
     let words = Words::new(spec, rpage, inp, got);
-    let rows: BTreeMap<String, &J> = inp.g("rows").arr().iter().map(|r| (st(r.g("src")), r)).collect();
-    let row = |src: &J| rows.get(&st(src)).copied().ok_or_else(|| format!("'{}'", st(src)));
+    let rows: BTreeMap<String, &J> = inp
+        .g("rows")
+        .arr()
+        .iter()
+        .map(|r| (st(r.g("src")), r))
+        .collect();
+    let row = |src: &J| {
+        rows.get(&st(src))
+            .copied()
+            .ok_or_else(|| format!("'{}'", st(src)))
+    };
     let (mut reqs, mut metas) = (Vec::new(), BTreeMap::new());
     for (_, n) in walk(spec.g("body"), "$") {
         let nid = st(n.g("id"));
@@ -6014,7 +8360,11 @@ fn issue(spec: &J, inp: &J, reg: &J, ext: &[String], got: &Got, rpage: &J) -> Re
         }
         let enc = e.g("marks").g("encode");
         let ofs: Vec<&str> = enc.arr().iter().filter_map(|c| c.g("of").s()).collect();
-        let proj = if ofs.contains(&"at") { Some(fit(four(n.g("geometry").g("ext"))?, four(fr.g("plot"))?)) } else { None };
+        let proj = if ofs.contains(&"at") {
+            Some(fit(four(n.g("geometry").g("ext"))?, four(fr.g("plot"))?))
+        } else {
+            None
+        };
         let (mut marks, mut texts, mut meta) = (Vec::new(), Vec::new(), Meta::default());
         let mut row_left: Vec<(usize, usize, f64)> = Vec::new();
         let shape = e.g("marks").g("shape").clone();
@@ -6026,7 +8376,11 @@ fn issue(spec: &J, inp: &J, reg: &J, ext: &[String], got: &Got, rpage: &J) -> Re
             let focus = it.g("focus").truthy();
             if per_item {
                 let id = format!("{nid}/{i}");
-                let mut m = J::obj_of(vec![("id", J::str(&id)), ("shape", shape.clone()), ("item", J::Int(i as i64))]);
+                let mut m = J::obj_of(vec![
+                    ("id", J::str(&id)),
+                    ("shape", shape.clone()),
+                    ("item", J::Int(i as i64)),
+                ]);
                 if ofs.contains(&"value") {
                     let mut v = num(row(it.g("value"))?)?;
                     // K10: an item ranked by its change is drawn by it, the later value less the earlier
@@ -6036,14 +8390,32 @@ fn issue(spec: &J, inp: &J, reg: &J, ext: &[String], got: &Got, rpage: &J) -> Re
                     m.set("value", J::Num(v));
                 }
                 if let Some(proj) = proj {
-                    let p = project((it.g("at").at(0).num().ok_or("at")?, it.g("at").at(1).num().ok_or("at")?), proj);
-                    m.set("pin", J::Arr(p.iter().map(|v| J::Num(py_round(*v, 3))).collect()));
+                    let p = project(
+                        (
+                            it.g("at").at(0).num().ok_or("at")?,
+                            it.g("at").at(1).num().ok_or("at")?,
+                        ),
+                        proj,
+                    );
+                    m.set(
+                        "pin",
+                        J::Arr(p.iter().map(|v| J::Num(py_round(*v, 3))).collect()),
+                    );
                 }
                 marks.push(m);
                 if paint_sid.is_some() {
                     let v = it.g("value");
-                    let value = if v.is_null() || row(v)?.g("value").is_null() { None } else { Some(num(row(v)?)?) };
-                    cells.push(Cell { id: id.clone(), value, focus, ..Default::default() });
+                    let value = if v.is_null() || row(v)?.g("value").is_null() {
+                        None
+                    } else {
+                        Some(num(row(v)?)?)
+                    };
+                    cells.push(Cell {
+                        id: id.clone(),
+                        value,
+                        focus,
+                        ..Default::default()
+                    });
                 }
                 meta.marks.push((id, i, None, focus));
             } else {
@@ -6054,22 +8426,54 @@ fn issue(spec: &J, inp: &J, reg: &J, ext: &[String], got: &Got, rpage: &J) -> Re
                     for s in srcs.arr() {
                         sum += num(row(s)?)?;
                     }
-                    marks.push(J::obj_of(vec![("id", J::str(&id)), ("shape", shape.clone()), ("item", J::Int(i as i64)), ("share", J::Num(sum / total))]));
+                    marks.push(J::obj_of(vec![
+                        ("id", J::str(&id)),
+                        ("shape", shape.clone()),
+                        ("item", J::Int(i as i64)),
+                        ("share", J::Num(sum / total)),
+                    ]));
                     meta.marks.push((id, i, Some(part.clone()), focus));
                 }
             }
-            let own: Vec<String> = meta.marks.iter().filter(|m| m.1 == i).map(|m| m.0.clone()).collect();
+            let own: Vec<String> = meta
+                .marks
+                .iter()
+                .filter(|m| m.1 == i)
+                .map(|m| m.0.clone())
+                .collect();
             for (f, rel) in e.g("texts").g("item").obj() {
                 let found: Vec<(String, String, J, Vec<String>)> = match f.as_str() {
-                    "label" => vec![(format!("{nid}/{i}/label"), words.name(&st(&resolve_sel(it.g("code"), got)?))?, it.g("code").clone(), own.clone())],
+                    "label" => vec![(
+                        format!("{nid}/{i}/label"),
+                        words.name(&st(&resolve_sel(it.g("code"), got)?))?,
+                        it.g("code").clone(),
+                        own.clone(),
+                    )],
                     "share_text" => it
                         .g(f)
                         .obj()
                         .iter()
-                        .map(|(p, r)| Ok((format!("{nid}/{i}/share_text/{p}"), words.fact(st(r).get(5..).unwrap_or(""), None)?, r.clone(), vec![format!("{nid}/{i}/{p}")])))
+                        .map(|(p, r)| {
+                            Ok((
+                                format!("{nid}/{i}/share_text/{p}"),
+                                words.fact(st(r).get(5..).unwrap_or(""), None)?,
+                                r.clone(),
+                                vec![format!("{nid}/{i}/{p}")],
+                            ))
+                        })
                         .collect::<Result<_, String>>()?,
-                    "text" if it.has(f) => vec![(format!("{nid}/{i}/text"), words.runs(it.g(f))?, it.g(f).clone(), own.clone())],
-                    _ if it.has(f) => vec![(format!("{nid}/{i}/{f}"), words.fact(st(it.g(f)).get(5..).unwrap_or(""), None)?, it.g(f).clone(), own.clone())],
+                    "text" if it.has(f) => vec![(
+                        format!("{nid}/{i}/text"),
+                        words.runs(it.g(f))?,
+                        it.g(f).clone(),
+                        own.clone(),
+                    )],
+                    _ if it.has(f) => vec![(
+                        format!("{nid}/{i}/{f}"),
+                        words.fact(st(it.g(f)).get(5..).unwrap_or(""), None)?,
+                        it.g(f).clone(),
+                        own.clone(),
+                    )],
                     _ => vec![],
                 };
                 for (tid, s, src, near) in found {
@@ -6082,7 +8486,14 @@ fn issue(spec: &J, inp: &J, reg: &J, ext: &[String], got: &Got, rpage: &J) -> Re
                     match rel.g("gap_px").num() {
                         // K2: at its row's start, placed below once the rows frame is laid out
                         Some(gap) => row_left.push((texts.len(), i, gap)),
-                        None => t.set("near", J::obj_of(vec![("marks", J::strs(&near)), ("from", rel.g("from").clone()), ("max_px", rel.g("max_px").clone())])),
+                        None => t.set(
+                            "near",
+                            J::obj_of(vec![
+                                ("marks", J::strs(&near)),
+                                ("from", rel.g("from").clone()),
+                                ("max_px", rel.g("max_px").clone()),
+                            ]),
+                        ),
                     }
                     texts.push(t);
                     meta.texts.push((tid, s, src));
@@ -6090,41 +8501,88 @@ fn issue(spec: &J, inp: &J, reg: &J, ext: &[String], got: &Got, rpage: &J) -> Re
             }
         }
         if e.g("texts").g("node").truthy() {
-            let size = if e.g("texts").has("head_size") { e.g("texts").g("head_size") } else { e.g("texts").g("size") };
+            let size = if e.g("texts").has("head_size") {
+                e.g("texts").g("head_size")
+            } else {
+                e.g("texts").g("size")
+            };
             let sz = size.num().ok_or("head_size")?;
-            let parts = n.g("texts").obj().iter().map(|(k, t)| (format!("{nid}/texts/{k}"), t)).chain(n.g("lines").arr().iter().enumerate().map(|(j, t)| (format!("{nid}/lines/{j}"), t)));
+            let parts = n
+                .g("texts")
+                .obj()
+                .iter()
+                .map(|(k, t)| (format!("{nid}/texts/{k}"), t))
+                .chain(
+                    n.g("lines")
+                        .arr()
+                        .iter()
+                        .enumerate()
+                        .map(|(j, t)| (format!("{nid}/lines/{j}"), t)),
+                );
             for (tid, t) in parts {
                 let s = words.runs(t.g("runs"))?;
-                texts.push(J::obj_of(vec![("id", J::str(&tid)), ("w", J::Num(py_round(tw(&s, sz), 3))), ("h", J::Num(py_round(sz * 1.15, 3))), ("size", size.clone())]));
+                texts.push(J::obj_of(vec![
+                    ("id", J::str(&tid)),
+                    ("w", J::Num(py_round(tw(&s, sz), 3))),
+                    ("h", J::Num(py_round(sz * 1.15, 3))),
+                    ("size", size.clone()),
+                ]));
                 meta.texts.push((tid, s, t.g("runs").clone()));
             }
         }
         if let Some(sid) = paint_sid {
             let texts: Vec<Option<(String, String, String)>> = cells
                 .iter()
-                .map(|c| meta.texts.iter().find(|t| t.0 == format!("{}/value_text", c.id)).and_then(|t| t.2.s().map(|s| (t.0.clone(), s.to_string(), t.1.clone()))))
+                .map(|c| {
+                    meta.texts
+                        .iter()
+                        .find(|t| t.0 == format!("{}/value_text", c.id))
+                        .and_then(|t| t.2.s().map(|s| (t.0.clone(), s.to_string(), t.1.clone())))
+                })
                 .collect();
             meta.paint = Some(paint_record(sid, e, fr, cells, &texts, &words, inp)?);
         }
         meta.tol_px = e.g("marks").g("tol_px").num().ok_or("tol_px")?;
         let mut req = J::obj_of(vec![
             ("node", n.g("node").clone()),
-            ("frame", J::obj_of(vec![("w", fr.g("w").clone()), ("h", fr.g("h").clone())])),
+            (
+                "frame",
+                J::obj_of(vec![("w", fr.g("w").clone()), ("h", fr.g("h").clone())]),
+            ),
             ("plot", fr.g("plot").clone()),
             ("encode", enc.clone()),
             ("marks", J::Arr(marks)),
             ("texts", J::Arr(texts)),
         ]);
         if fr.g("kind").s() == Some("rows") {
-            let values = req.g("marks").arr().iter().filter_map(|m| m.g("value").num()).collect::<Vec<f64>>();
+            let values = req
+                .g("marks")
+                .arr()
+                .iter()
+                .filter_map(|m| m.g("value").num())
+                .collect::<Vec<f64>>();
             let (frame, plot, rows) = rows_frame(fr, n, &meta, tsize, &values)?;
             // K2: a text at its row's start: right-aligned gap_px before the left column's edge, on its row's middle
-            let (x0, lw, top, row) = (rows.g("x0").num(), rows.g("lw").num(), rows.g("top").num(), rows.g("row").num());
-            let (Some(x0), Some(lw), Some(top), Some(row)) = (x0, lw, top, row) else { return Err("rows frame: x0, lw, top, row".into()) };
+            let (x0, lw, top, row) = (
+                rows.g("x0").num(),
+                rows.g("lw").num(),
+                rows.g("top").num(),
+                rows.g("row").num(),
+            );
+            let (Some(x0), Some(lw), Some(top), Some(row)) = (x0, lw, top, row) else {
+                return Err("rows frame: x0, lw, top, row".into());
+            };
             let mut ts = req.g("texts").arr().to_vec();
             for (k, i, gap) in &row_left {
                 let y = top + *i as f64 * row;
-                ts[*k].set("at", J::Arr(vec![J::Num(x0 + lw - gap), J::Num(y + row / 2.0), J::str("end")]));
+                ts[*k].set(
+                    "at",
+                    J::Arr(vec![
+                        J::Num(x0 + lw - gap),
+                        J::Num(y + row / 2.0),
+                        J::str("end"),
+                    ]),
+                );
             }
             req.set("texts", J::Arr(ts));
             req.set("frame", frame);
@@ -6144,7 +8602,12 @@ pub struct Content {
 }
 
 /// C1-C5 on the core's own spec: (failure lines, the content when it passed).
-pub fn content_problems(spec: &J, inp: &J, ext: &[String], reg: &J) -> (Vec<String>, Option<Content>) {
+pub fn content_problems(
+    spec: &J,
+    inp: &J,
+    ext: &[String],
+    reg: &J,
+) -> (Vec<String>, Option<Content>) {
     let pal = palette_problems(palettes());
     if !pal.is_empty() {
         return (pal, None);
@@ -6152,16 +8615,27 @@ pub fn content_problems(spec: &J, inp: &J, ext: &[String], reg: &J) -> (Vec<Stri
     let mut errs = registry_problems(reg);
     let (a_errs, got, rpage) = part_a(spec, inp, reg);
     errs.extend(a_errs.into_iter().map(|x| format!("C1 {x}")));
-    let Some(rpage) = rpage else { return (errs, None) };
-    errs.extend(part_b(inp, spec, ext, &got, Some(&rpage)).into_iter().map(|x| format!("C4 {x}")));
+    let Some(rpage) = rpage else {
+        return (errs, None);
+    };
+    errs.extend(
+        part_b(inp, spec, ext, &got, Some(&rpage))
+            .into_iter()
+            .map(|x| format!("C4 {x}")),
+    );
     for (_, n) in walk(spec.g("body"), "$") {
         let nid = st(n.g("id"));
         if n.g("kind").s() != Some("Node") || !ext.contains(&nid) {
             continue;
         }
         let entry = reg.g("nodes").get(&st(n.g("node")));
-        match entry.ok_or_else(|| format!("'{}'", st(n.g("node")))).and_then(|e| expand_items(n, e, spec, &got, inp)) {
-            Err(ex) => errs.push(format!("C2 node {nid}: the core cannot expand its items ({ex})")),
+        match entry
+            .ok_or_else(|| format!("'{}'", st(n.g("node"))))
+            .and_then(|e| expand_items(n, e, spec, &got, inp))
+        {
+            Err(ex) => errs.push(format!(
+                "C2 node {nid}: the core cannot expand its items ({ex})"
+            )),
             Ok(want) => {
                 if J::Arr(want.clone()) != *n.get("items").unwrap_or(&J::Arr(vec![])) {
                     errs.push(format!("C2 node {nid}: items are not the expansion of its registry binding: {} != {}", n.g("items").repr(), J::Arr(want).repr()));
@@ -6182,11 +8656,23 @@ pub fn content_problems(spec: &J, inp: &J, ext: &[String], reg: &J) -> (Vec<Stri
         let (mut chars, held) = literal_chars(rs, inp);
         let free = number_free(&chars, &held);
         let counted = place_count(&chars, &held, places);
-        chars.iter_mut().zip(free.into_iter().zip(counted)).filter(|(_, (f, n))| *f || *n).for_each(|(c, _)| *c = ' ');
+        chars
+            .iter_mut()
+            .zip(free.into_iter().zip(counted))
+            .filter(|(_, (f, n))| *f || *n)
+            .for_each(|(c, _)| *c = ' ');
         let hit = worded_number(&chars, &held);
-        let literal: String = chars.iter().zip(&held).filter(|(_, h)| !**h).map(|(c, _)| *c).collect();
+        let literal: String = chars
+            .iter()
+            .zip(&held)
+            .filter(|(_, h)| !**h)
+            .map(|(c, _)| *c)
+            .collect();
         if hit.is_some() || has_digit(&literal) {
-            errs.push(format!("C3 {path}: the core's words type a number ({}); a number is a fact run", J::str(hit.as_deref().unwrap_or("a digit")).repr()));
+            errs.push(format!(
+                "C3 {path}: the core's words type a number ({}); a number is a fact run",
+                J::str(hit.as_deref().unwrap_or("a digit")).repr()
+            ));
         }
     }
     errs.extend(asked_problems(spec, inp));
@@ -6204,9 +8690,21 @@ pub fn content_problems(spec: &J, inp: &J, ext: &[String], reg: &J) -> (Vec<Stri
 /// those rows): a count of places (op n) draws none.
 fn asked_problems(spec: &J, inp: &J) -> Vec<String> {
     let strs = |v: &J| v.arr().iter().map(st).collect::<Vec<_>>();
-    let mut drawn = spec.g("record").g("drawn").arr().iter().map(|d| st(d.g("table"))).collect::<Vec<_>>();
+    let mut drawn = spec
+        .g("record")
+        .g("drawn")
+        .arr()
+        .iter()
+        .map(|d| st(d.g("table")))
+        .collect::<Vec<_>>();
     let facts = spec.g("facts").g("facts");
-    let page = J::Obj(spec.obj().iter().filter(|(k, _)| k != "facts").cloned().collect());
+    let page = J::Obj(
+        spec.obj()
+            .iter()
+            .filter(|(k, _)| k != "facts")
+            .cloned()
+            .collect(),
+    );
     for k in printed_keys(&page, facts) {
         let base = match k.strip_suffix(".*") {
             Some(f) => f,
@@ -6216,25 +8714,43 @@ fn asked_problems(spec: &J, inp: &J) -> Vec<String> {
         fact_tables(facts, base, &mut drawn, 0);
     }
     let (asked, leaf) = (inp.g("asked").arr(), inp.g("leaf_asked").arr());
-    let lined: Vec<String> = leaf.iter().filter(|a| a.g("offered").arr().is_empty()).map(|a| st(a.g("id"))).collect();
+    let lined: Vec<String> = leaf
+        .iter()
+        .filter(|a| a.g("offered").arr().is_empty())
+        .map(|a| st(a.g("id")))
+        .collect();
     let mut out = Vec::new();
     for a in asked {
         let (id, tables, offered) = (st(a.g("id")), strs(a.g("tables")), strs(a.g("offered")));
         // drawn from a table one of its prefixes starts, or one the catalogue offered for it (a title naming it: l5geo
         // Asked::holds_candidate)
-        if drawn.iter().any(|t| tables.iter().any(|p| !p.is_empty() && t.starts_with(p.as_str())) || offered.contains(t)) {
+        if drawn.iter().any(|t| {
+            tables
+                .iter()
+                .any(|p| !p.is_empty() && t.starts_with(p.as_str()))
+                || offered.contains(t)
+        }) {
             continue;
         }
-        let head = format!("C6: the question asks for {id} but the page draws no row from {}", tables.join(", "));
+        let head = format!(
+            "C6: the question asks for {id} but the page draws no row from {}",
+            tables.join(", ")
+        );
         match (offered.is_empty(), lined.contains(&id)) {
             (true, true) => {}
             (true, false) => out.push(format!("{head} and carries no unanswered line for it")),
-            (false, true) => out.push(format!("{head}; its unanswered line does not stand, as {} was offered for it", offered.join(", "))),
+            (false, true) => out.push(format!(
+                "{head}; its unanswered line does not stand, as {} was offered for it",
+                offered.join(", ")
+            )),
             (false, false) => out.push(head),
         }
     }
     for a in leaf.iter().filter(|a| !asked.contains(a)) {
-        out.push(format!("C6: the leaf's asked {} is not the catalogue's record", a.repr()));
+        out.push(format!(
+            "C6: the leaf's asked {} is not the catalogue's record",
+            a.repr()
+        ));
     }
     out
 }
@@ -6262,7 +8778,9 @@ fn fact_tables(facts: &J, key: &str, out: &mut Vec<String>, depth: usize) {
 
 /// B0 over every node's reply: one line per place the reply leaves the allow-list, naming its path.
 pub fn reply_problems(replies: &J, reqs: &[(String, J)]) -> Vec<String> {
-    let J::Obj(rs) = replies else { return vec!["B0 reply: not an object keyed by node id".into()] };
+    let J::Obj(rs) = replies else {
+        return vec!["B0 reply: not an object keyed by node id".into()];
+    };
     let mut out = Vec::new();
     for (nid, _) in reqs {
         if !replies.has(nid) {
@@ -6271,7 +8789,10 @@ pub fn reply_problems(replies: &J, reqs: &[(String, J)]) -> Vec<String> {
     }
     for (nid, r) in rs {
         match reqs.iter().find(|(k, _)| k == nid) {
-            None => out.push(format!("B0 reply.{nid}: no request was sent to a node {}", J::str(nid).repr())),
+            None => out.push(format!(
+                "B0 reply.{nid}: no request was sent to a node {}",
+                J::str(nid).repr()
+            )),
             Some((_, req)) => out.extend(node_problems(nid, r, req)),
         }
     }
@@ -6280,14 +8801,37 @@ pub fn reply_problems(replies: &J, reqs: &[(String, J)]) -> Vec<String> {
 
 fn node_problems(nid: &str, r: &J, req: &J) -> Vec<String> {
     let p = format!("B0 reply.{nid}");
-    let J::Obj(top) = r else { return vec![format!("{p}: not an object")] };
+    let J::Obj(top) = r else {
+        return vec![format!("{p}: not an object")];
+    };
     if r.has("refused") {
         let ok = top.len() == 1 && r.g("refused").s().is_some_and(|x| REFUSALS.contains(&x));
-        return if ok { vec![] } else { vec![format!("{p}.refused: a refusal is {{\"refused\": one of {}}} alone", J::strs(&REFUSALS).repr())] };
+        return if ok {
+            vec![]
+        } else {
+            vec![format!(
+                "{p}.refused: a refusal is {{\"refused\": one of {}}} alone",
+                J::strs(&REFUSALS).repr()
+            )]
+        };
     }
-    let mut out: Vec<String> = top.iter().filter(|(k, _)| !TOP.contains(&k.as_str())).map(|(k, _)| format!("{p}.{k}: not a reply field (only marks, texts)")).collect();
-    let marks: Vec<(&str, &J)> = req.g("marks").arr().iter().map(|m| (m.g("id").s().unwrap_or(""), m)).collect();
-    let texts: Vec<&str> = req.g("texts").arr().iter().filter_map(|t| t.g("id").s()).collect();
+    let mut out: Vec<String> = top
+        .iter()
+        .filter(|(k, _)| !TOP.contains(&k.as_str()))
+        .map(|(k, _)| format!("{p}.{k}: not a reply field (only marks, texts)"))
+        .collect();
+    let marks: Vec<(&str, &J)> = req
+        .g("marks")
+        .arr()
+        .iter()
+        .map(|m| (m.g("id").s().unwrap_or(""), m))
+        .collect();
+    let texts: Vec<&str> = req
+        .g("texts")
+        .arr()
+        .iter()
+        .filter_map(|t| t.g("id").s())
+        .collect();
     for sec in TOP {
         let Some(v) = r.get(sec) else { continue };
         let J::Obj(entries) = v else {
@@ -6296,7 +8840,11 @@ fn node_problems(nid: &str, r: &J, req: &J) -> Vec<String> {
         };
         for (i, o) in entries {
             let q = format!("{p}.{sec}.{i}");
-            let issued = if sec == "marks" { marks.iter().any(|(k, _)| k == i) } else { texts.contains(&i.as_str()) };
+            let issued = if sec == "marks" {
+                marks.iter().any(|(k, _)| k == i)
+            } else {
+                texts.contains(&i.as_str())
+            };
             if !issued {
                 out.push(format!("{q}: not an id the core issued to this node"));
                 continue;
@@ -6310,12 +8858,24 @@ fn node_problems(nid: &str, r: &J, req: &J) -> Vec<String> {
                 let Some(fields) = shape.s().and_then(shape_fields) else {
                     let mut names: Vec<&str> = SHAPES.iter().map(|s| s.0).collect();
                     names.sort();
-                    out.push(format!("{q}.shape: {} is not one of {}", shape.repr(), J::strs(&names).repr()));
+                    out.push(format!(
+                        "{q}.shape: {} is not one of {}",
+                        shape.repr(),
+                        J::strs(&names).repr()
+                    ));
                     continue;
                 };
-                let registered = marks.iter().find(|(k, _)| k == i).map(|(_, m)| m.g("shape")).unwrap_or(&NULL);
+                let registered = marks
+                    .iter()
+                    .find(|(k, _)| k == i)
+                    .map(|(_, m)| m.g("shape"))
+                    .unwrap_or(&NULL);
                 if shape != registered {
-                    out.push(format!("{q}.shape: {}, the registry gives this mark {}", shape.repr(), registered.repr()));
+                    out.push(format!(
+                        "{q}.shape: {}, the registry gives this mark {}",
+                        shape.repr(),
+                        registered.repr()
+                    ));
                     continue;
                 }
                 (fields.to_vec(), true)
@@ -6325,13 +8885,27 @@ fn node_problems(nid: &str, r: &J, req: &J) -> Vec<String> {
             for (f, x) in o.obj() {
                 let known = need.contains(&f.as_str()) || (with_shape && f == "shape");
                 if !known {
-                    let only = if with_shape { std::iter::once("shape").chain(need.iter().copied()).collect::<Vec<_>>().join(", ") } else { need.join(", ") };
-                    out.push(format!("{q}.{f}: not a field of this {} (only {only})", if with_shape { "mark" } else { "text" }));
+                    let only = if with_shape {
+                        std::iter::once("shape")
+                            .chain(need.iter().copied())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    } else {
+                        need.join(", ")
+                    };
+                    out.push(format!(
+                        "{q}.{f}: not a field of this {} (only {only})",
+                        if with_shape { "mark" } else { "text" }
+                    ));
                 } else if f == "shape" {
                     continue;
                 } else if f == "anchor" {
                     if !x.s().is_some_and(|a| ANCHORS.contains(&a)) {
-                        out.push(format!("{q}.anchor: {} is not one of {}", x.repr(), J::strs(&ANCHORS).repr()));
+                        out.push(format!(
+                            "{q}.anchor: {} is not one of {}",
+                            x.repr(),
+                            J::strs(&ANCHORS).repr()
+                        ));
                     }
                 } else if !x.finite() {
                     out.push(format!("{q}.{f}: {} is not a finite number", x.repr()));
@@ -6357,13 +8931,23 @@ fn coord(o: &J, f: &str) -> f64 {
 
 fn mbox(m: &J) -> Bx {
     match m.g("shape").s() {
-        Some("rect") => (coord(m, "x"), coord(m, "y"), coord(m, "x") + coord(m, "w"), coord(m, "y") + coord(m, "h")),
+        Some("rect") => (
+            coord(m, "x"),
+            coord(m, "y"),
+            coord(m, "x") + coord(m, "w"),
+            coord(m, "y") + coord(m, "h"),
+        ),
         Some("circle") => {
             let (cx, cy, r) = (coord(m, "cx"), coord(m, "cy"), coord(m, "r"));
             (cx - r, cy - r, cx + r, cy + r)
         }
         _ => {
-            let (x1, y1, x2, y2) = (coord(m, "x1"), coord(m, "y1"), coord(m, "x2"), coord(m, "y2"));
+            let (x1, y1, x2, y2) = (
+                coord(m, "x1"),
+                coord(m, "y1"),
+                coord(m, "x2"),
+                coord(m, "y2"),
+            );
             (x1.min(x2), y1.min(y2), x1.max(x2), y1.max(y2))
         }
     }
@@ -6387,12 +8971,21 @@ fn tbox(t: &J, req_t: &J) -> Bx {
         Some("end") => x - w,
         _ => x,
     };
-    (x0, coord(t, "y") - 0.9 * s, x0 + w, coord(t, "y") + 0.25 * s)
+    (
+        x0,
+        coord(t, "y") - 0.9 * s,
+        x0 + w,
+        coord(t, "y") + 0.25 * s,
+    )
 }
 
 fn pmax(a: f64, b: f64) -> f64 {
     // Python's max(a, b) keeps a when b is not greater (NaN included)
-    if b > a { b } else { a }
+    if b > a {
+        b
+    } else {
+        a
+    }
 }
 
 fn dist(a: Bx, b: Bx) -> f64 {
@@ -6400,7 +8993,9 @@ fn dist(a: Bx, b: Bx) -> f64 {
 }
 
 fn union(boxes: &[Bx]) -> Bx {
-    boxes.iter().skip(1).fold(boxes[0], |u, b| (u.0.min(b.0), u.1.min(b.1), u.2.max(b.2), u.3.max(b.3)))
+    boxes.iter().skip(1).fold(boxes[0], |u, b| {
+        (u.0.min(b.0), u.1.min(b.1), u.2.max(b.2), u.3.max(b.3))
+    })
 }
 
 fn inside(b: Bx, w: f64, h: f64) -> bool {
@@ -6409,16 +9004,33 @@ fn inside(b: Bx, w: f64, h: f64) -> bool {
 }
 
 fn fmt2(b: Bx) -> String {
-    format!("({}, {}, {}, {})", py_float(py_round(b.0, 2)), py_float(py_round(b.1, 2)), py_float(py_round(b.2, 2)), py_float(py_round(b.3, 2)))
+    format!(
+        "({}, {}, {}, {})",
+        py_float(py_round(b.0, 2)),
+        py_float(py_round(b.1, 2)),
+        py_float(py_round(b.2, 2)),
+        py_float(py_round(b.3, 2))
+    )
 }
 
 /// B1-B7 for one node's reply that passed B0.
-pub fn geometry_problems(nid: &str, req: &J, reply: &J, meta: &Meta) -> Result<Vec<String>, String> {
+pub fn geometry_problems(
+    nid: &str,
+    req: &J,
+    reply: &J,
+    meta: &Meta,
+) -> Result<Vec<String>, String> {
     let mut out = Vec::new();
     if reply.has("refused") {
-        return Ok(vec![format!("B7 node {nid} refused ({}): the page stops; nothing is dropped or repaired", st(reply.g("refused")))]);
+        return Ok(vec![format!(
+            "B7 node {nid} refused ({}): the page stops; nothing is dropped or repaired",
+            st(reply.g("refused"))
+        )]);
     }
-    let (w, h) = (req.g("frame").g("w").num().ok_or("frame")?, req.g("frame").g("h").num().ok_or("frame")?);
+    let (w, h) = (
+        req.g("frame").g("w").num().ok_or("frame")?,
+        req.g("frame").g("h").num().ok_or("frame")?,
+    );
     let (marks, texts) = (reply.g("marks"), reply.g("texts"));
     let miss: Vec<String> = req
         .g("marks")
@@ -6427,33 +9039,84 @@ pub fn geometry_problems(nid: &str, req: &J, reply: &J, meta: &Meta) -> Result<V
         .chain(req.g("texts").arr())
         .map(|x| st(x.g("id")))
         .enumerate()
-        .filter(|(k, id)| if *k < req.g("marks").arr().len() { !marks.has(id) } else { !texts.has(id) })
+        .filter(|(k, id)| {
+            if *k < req.g("marks").arr().len() {
+                !marks.has(id)
+            } else {
+                !texts.has(id)
+            }
+        })
         .map(|(_, id)| id)
         .collect();
     if !miss.is_empty() {
-        return Ok(vec![format!("B1 node {nid}: no geometry for issued {}; every issued mark and text has exactly one", J::strs(&miss).repr())]);
+        return Ok(vec![format!(
+            "B1 node {nid}: no geometry for issued {}; every issued mark and text has exactly one",
+            J::strs(&miss).repr()
+        )]);
     }
-    let rm: Vec<(String, &J)> = req.g("marks").arr().iter().map(|m| (st(m.g("id")), marks.g(&st(m.g("id"))))).collect();
-    let rt: Vec<(String, &J, &J)> = req.g("texts").arr().iter().map(|t| (st(t.g("id")), t, texts.g(&st(t.g("id"))))).collect();
-    let boxes: Vec<(String, Bx, bool)> = rm.iter().map(|(i, m)| (i.clone(), mbox(m), matches!(m.g("shape").s(), Some("rect" | "circle")))).collect();
+    let rm: Vec<(String, &J)> = req
+        .g("marks")
+        .arr()
+        .iter()
+        .map(|m| (st(m.g("id")), marks.g(&st(m.g("id")))))
+        .collect();
+    let rt: Vec<(String, &J, &J)> = req
+        .g("texts")
+        .arr()
+        .iter()
+        .map(|t| (st(t.g("id")), t, texts.g(&st(t.g("id")))))
+        .collect();
+    let boxes: Vec<(String, Bx, bool)> = rm
+        .iter()
+        .map(|(i, m)| {
+            (
+                i.clone(),
+                mbox(m),
+                matches!(m.g("shape").s(), Some("rect" | "circle")),
+            )
+        })
+        .collect();
     let tb: Vec<(String, Bx)> = rt.iter().map(|(i, t, r)| (i.clone(), tbox(r, t))).collect();
     // B2
-    for (i, b, solid) in boxes.iter().map(|(i, b, s)| (i, *b, *s)).chain(tb.iter().map(|(i, b)| (i, *b, false))) {
+    for (i, b, solid) in boxes
+        .iter()
+        .map(|(i, b, s)| (i, *b, *s))
+        .chain(tb.iter().map(|(i, b)| (i, *b, false)))
+    {
         if !inside(b, w, h) || (solid && (b.2 < b.0 || b.3 < b.1)) {
-            out.push(format!("B2 node {nid} {i}: box {} is not inside the frame {}x{}", fmt2(b), st(req.g("frame").g("w")), st(req.g("frame").g("h"))));
+            out.push(format!(
+                "B2 node {nid} {i}: box {} is not inside the frame {}x{}",
+                fmt2(b),
+                st(req.g("frame").g("w")),
+                st(req.g("frame").g("h"))
+            ));
         }
     }
     // B3 / B4: every value-determined field equals the core's recomputation; free fields only B2, B5
     let want = expected(req)?;
-    let point: Vec<String> =
-        req.g("encode").arr().iter().filter(|c| c.g("channel").s() == Some("point")).flat_map(|c| c.g("fields").arr().iter().map(st)).collect();
+    let point: Vec<String> = req
+        .g("encode")
+        .arr()
+        .iter()
+        .filter(|c| c.g("channel").s() == Some("point"))
+        .flat_map(|c| c.g("fields").arr().iter().map(st))
+        .collect();
     for (i, m) in &rm {
-        let fields = want.iter().find(|(k, _)| k == i).map(|(_, f)| f.as_slice()).unwrap_or(&[]);
+        let fields = want
+            .iter()
+            .find(|(k, _)| k == i)
+            .map(|(_, f)| f.as_slice())
+            .unwrap_or(&[]);
         for (f, v) in fields {
             let tag = if point.contains(f) { "B4" } else { "B3" };
             let have = coord(m, f);
             if (have - v).abs() > meta.tol_px {
-                let ch = req.g("encode").arr().iter().find(|c| c.g("fields").arr().iter().any(|x| x.s() == Some(f))).unwrap_or(&NULL);
+                let ch = req
+                    .g("encode")
+                    .arr()
+                    .iter()
+                    .find(|c| c.g("fields").arr().iter().any(|x| x.s() == Some(f)))
+                    .unwrap_or(&NULL);
                 let sc = ch.g("scale");
                 out.push(format!(
                     "{tag} node {nid} {i}.{f}: {have:.3} drawn, the declared {} ({} scale, domain {}, range {}) gives {v:.3}",
@@ -6494,7 +9157,11 @@ pub fn geometry_problems(nid: &str, req: &J, reply: &J, meta: &Meta) -> Result<V
             continue;
         }
         let tb_i = tb.iter().find(|(k, _)| k == i).expect("every text boxed").1;
-        let frm = if nr.g("from").s() == Some("box") { tb_i } else { (coord(r, "x"), coord(r, "y"), coord(r, "x"), coord(r, "y")) };
+        let frm = if nr.g("from").s() == Some("box") {
+            tb_i
+        } else {
+            (coord(r, "x"), coord(r, "y"), coord(r, "x"), coord(r, "y"))
+        };
         let mut own: Vec<String> = nr.g("marks").arr().iter().map(st).collect();
         own.sort();
         let mut groups: Vec<(String, Vec<Bx>)> = Vec::new();
@@ -6512,11 +9179,16 @@ pub fn geometry_problems(nid: &str, req: &J, reply: &J, meta: &Meta) -> Result<V
             }
         }
         let Some(pos) = groups.iter().position(|(k, _)| k == "own") else {
-            return Err(format!("B5 node {nid} {i}: none of its own marks {own:?} was drawn"));
+            return Err(format!(
+                "B5 node {nid} {i}: none of its own marks {own:?} was drawn"
+            ));
         };
         let own_boxes = groups.remove(pos).1;
         let d_own = dist(frm, union(&own_boxes));
-        let d_other = groups.iter().map(|(_, v)| dist(frm, union(v))).fold(f64::INFINITY, f64::min);
+        let d_other = groups
+            .iter()
+            .map(|(_, v)| dist(frm, union(v)))
+            .fold(f64::INFINITY, f64::min);
         let max_px = nr.g("max_px").num().unwrap_or(f64::NAN);
         if d_own > max_px || d_own >= d_other {
             out.push(format!("B5 node {nid} {i}: {d_own:.1} px from its own mark (max {}), {d_other:.1} px from another", st(nr.g("max_px"))));
@@ -6529,7 +9201,10 @@ pub fn geometry_problems(nid: &str, req: &J, reply: &J, meta: &Meta) -> Result<V
         for y in x + 1..ids.len() {
             let (a, b) = (ids[x].1, ids[y].1);
             if a.0 < b.2 && b.0 < a.2 && a.1 < b.3 && b.1 < a.3 {
-                out.push(format!("B6 node {nid}: texts {} and {} overlap", ids[x].0, ids[y].0));
+                out.push(format!(
+                    "B6 node {nid}: texts {} and {} overlap",
+                    ids[x].0, ids[y].0
+                ));
             }
         }
     }
@@ -7223,7 +9898,13 @@ pub fn circles_problems(nid: &str, req: &J, rep: &J) -> Result<J, Vec<String>> {
     let placed_texts = texts
         .obj()
         .iter()
-        .map(|(c, t)| J::Obj(std::iter::once(("id".to_string(), J::str(c))).chain(t.obj().iter().cloned()).collect()))
+        .map(|(c, t)| {
+            J::Obj(
+                std::iter::once(("id".to_string(), J::str(c)))
+                    .chain(t.obj().iter().cloned())
+                    .collect(),
+            )
+        })
         .collect();
     Ok(J::obj_of(vec![
         ("order", J::strs(&codes)),
@@ -7244,7 +9925,11 @@ pub fn rendered(replies: &J, metas: &BTreeMap<String, Meta>) -> Vec<String> {
         let Some(meta) = metas.get(nid) else { continue };
         for (i, g) in r.g("marks").obj() {
             let focus = meta.marks.iter().find(|m| m.0 == *i).is_some_and(|m| m.3);
-            out.push(format!("mark {i} {} {}", st(g.g("shape")), if focus { "accent" } else { "base" }));
+            out.push(format!(
+                "mark {i} {} {}",
+                st(g.g("shape")),
+                if focus { "accent" } else { "base" }
+            ));
         }
         for (i, _) in r.g("texts").obj() {
             if let Some((_, printed, src)) = meta.texts.iter().find(|t| t.0 == *i) {
@@ -7256,12 +9941,19 @@ pub fn rendered(replies: &J, metas: &BTreeMap<String, Meta>) -> Vec<String> {
 }
 
 fn xml(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 fn num_attr(x: f64) -> String {
     let r = py_round(x, 2);
-    if r == r.trunc() && r.abs() < 1e15 { format!("{}", r as i64) } else { format!("{r}") }
+    if r == r.trunc() && r.abs() < 1e15 {
+        format!("{}", r as i64)
+    } else {
+        format!("{r}")
+    }
 }
 
 /// The node's SVG as the core draws it: each shape at the reply's coordinates, its emphasis from the core's record; each
@@ -7275,19 +9967,51 @@ pub fn svg(nid: &str, req: &J, reply: &J, meta: &Meta) -> String {
     for (id, _, part, focus) in &meta.marks {
         let g = reply.g("marks").g(id);
         let class = if *focus { "mark accent" } else { "mark base" };
-        let part = part.as_ref().map_or(String::new(), |p| format!(" data-part=\"{}\"", xml(p)));
+        let part = part
+            .as_ref()
+            .map_or(String::new(), |p| format!(" data-part=\"{}\"", xml(p)));
         let a = |f: &str| num_attr(coord(g, f));
         let el = match g.g("shape").s() {
-            Some("rect") => format!("<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"", a("x"), a("y"), a("w"), a("h")),
-            Some("circle") => format!("<circle cx=\"{}\" cy=\"{}\" r=\"{}\"", a("cx"), a("cy"), a("r")),
-            _ => format!("<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\"", a("x1"), a("y1"), a("x2"), a("y2")),
+            Some("rect") => format!(
+                "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"",
+                a("x"),
+                a("y"),
+                a("w"),
+                a("h")
+            ),
+            Some("circle") => format!(
+                "<circle cx=\"{}\" cy=\"{}\" r=\"{}\"",
+                a("cx"),
+                a("cy"),
+                a("r")
+            ),
+            _ => format!(
+                "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\"",
+                a("x1"),
+                a("y1"),
+                a("x2"),
+                a("y2")
+            ),
         };
-        match meta.paint.as_ref().and_then(|p| p.cells.iter().find(|c| c.id == *id).map(|c| (p, c))) {
+        match meta
+            .paint
+            .as_ref()
+            .and_then(|p| p.cells.iter().find(|c| c.id == *id).map(|c| (p, c)))
+        {
             Some((p, c)) => {
-                let _ = write!(out, "{el} class=\"mark paint\" data-id=\"{}\"{part}{}/>", xml(id), p.mark_attrs(c, pf));
+                let _ = write!(
+                    out,
+                    "{el} class=\"mark paint\" data-id=\"{}\"{part}{}/>",
+                    xml(id),
+                    p.mark_attrs(c, pf)
+                );
             }
             None => {
-                let _ = write!(out, "{el} class=\"{class}\" data-id=\"{}\"{part}/>", xml(id));
+                let _ = write!(
+                    out,
+                    "{el} class=\"{class}\" data-id=\"{}\"{part}/>",
+                    xml(id)
+                );
             }
         }
     }
@@ -7297,8 +10021,15 @@ pub fn svg(nid: &str, req: &J, reply: &J, meta: &Meta) -> String {
             J::Str(s) => s.clone(),
             other => other.dump(),
         };
-        let ink = meta.paint.as_ref().and_then(|p| p.cells.iter().find(|c| c.text_id.as_deref() == Some(id.as_str())).map(|c| (p, c)));
-        let ink = ink.map_or(String::new(), |(p, c)| format!(" fill=\"{}\"", ink_on(p.paint_of(c, pf).1, pf)));
+        let ink = meta.paint.as_ref().and_then(|p| {
+            p.cells
+                .iter()
+                .find(|c| c.text_id.as_deref() == Some(id.as_str()))
+                .map(|c| (p, c))
+        });
+        let ink = ink.map_or(String::new(), |(p, c)| {
+            format!(" fill=\"{}\"", ink_on(p.paint_of(c, pf).1, pf))
+        });
         let _ = write!(
             out,
             "<text x=\"{}\" y=\"{}\" text-anchor=\"{}\" data-id=\"{}\" data-src=\"{}\"{ink}>{}</text>",
@@ -7325,7 +10056,9 @@ pub fn check_envelope(env: &J, reg: &J) -> Result<Vec<String>, String> {
     let spec = inp.g("page_spec");
     let ext: Vec<String> = env.g("external").arr().iter().map(st).collect();
     let (errs, content) = content_problems(spec, inp, &ext, reg);
-    let Some(content) = content else { return Ok(errs) };
+    let Some(content) = content else {
+        return Ok(errs);
+    };
     let (reqs, metas) = issue(spec, inp, reg, &ext, &content.got, &content.rpage)?;
     let reply = env.g("reply");
     let b0 = reply_problems(reply, &reqs);
@@ -7338,7 +10071,10 @@ pub fn check_envelope(env: &J, reg: &J) -> Result<Vec<String>, String> {
     }
     if out.is_empty() {
         for (nid, req) in &reqs {
-            out.extend(colour_problems(&svg(nid, req, reply.g(nid), &metas[nid]), &metas[nid]));
+            out.extend(colour_problems(
+                &svg(nid, req, reply.g(nid), &metas[nid]),
+                &metas[nid],
+            ));
         }
     }
     Ok(out)
@@ -7367,7 +10103,11 @@ thread_local! {
 
 /// Test-only: runs `f` with `overlay` as the bindings and `runner` as every external node's child.
 #[cfg(test)]
-pub fn with_test_bindings<R>(overlay: J, runner: crate::next_leaf::Runner, f: impl FnOnce() -> R) -> R {
+pub fn with_test_bindings<R>(
+    overlay: J,
+    runner: crate::next_leaf::Runner,
+    f: impl FnOnce() -> R,
+) -> R {
     TEST_BINDINGS.with(|t| *t.borrow_mut() = Some((overlay, runner)));
     let out = f();
     TEST_BINDINGS.with(|t| *t.borrow_mut() = None);
@@ -7391,15 +10131,25 @@ pub(crate) fn registry_in_force() -> (J, Option<crate::next_leaf::Runner>) {
 /// The nodes a bindings overlay binds external.
 #[cfg(test)]
 pub fn external_nodes(overlay: &J) -> Vec<String> {
-    overlay.g("nodes").obj().iter().filter(|(_, e)| e.g("binding").s() == Some("external")).map(|(k, _)| k.clone()).collect()
+    overlay
+        .g("nodes")
+        .obj()
+        .iter()
+        .filter(|(_, e)| e.g("binding").s() == Some("external"))
+        .map(|(k, _)| k.clone())
+        .collect()
 }
 
 /// A runner path the registry may name: under one of RUNNER_DIRS, none of NOT_NODES, no `..`, a code file.
 pub fn runner_allowed(rel: &str) -> bool {
     RUNNER_DIRS.iter().any(|d| rel.starts_with(d))
         && !NOT_NODES.contains(&rel)
-        && !rel.split('/').any(|s| s == ".." || s == "." || s.is_empty())
-        && [".mjs", ".cjs", ".js", ".py"].iter().any(|e| rel.ends_with(e))
+        && !rel
+            .split('/')
+            .any(|s| s == ".." || s == "." || s.is_empty())
+        && [".mjs", ".cjs", ".js", ".py"]
+            .iter()
+            .any(|e| rel.ends_with(e))
 }
 
 /// One external node drawn over the core's page tree (Request::NodeDraw, P4a): the geometry the core checked, as the leaf
@@ -7415,7 +10165,10 @@ pub struct NodeDrawn {
 }
 
 fn node_in<'a>(spec: &'a J, id: &str) -> Option<&'a J> {
-    walk(spec.g("body"), "$").into_iter().map(|(_, n)| n).find(|n| n.g("kind").s() == Some("Node") && n.g("id").s() == Some(id))
+    walk(spec.g("body"), "$")
+        .into_iter()
+        .map(|(_, n)| n)
+        .find(|n| n.g("kind").s() == Some("Node") && n.g("id").s() == Some(id))
 }
 
 /// The checked geometry as the leaf reads it, from the core's own record (meta) and its select results (got); the
@@ -7436,13 +10189,19 @@ fn placed_of(n: &J, reply: &J, meta: &Meta, got: &Got) -> Result<J, String> {
         // in the core's order (the registry's), which the leaf prints them in and the drawn check reads them back in
         let mut texts = Vec::new();
         for (tid, _, src) in &meta.texts {
-            let Some(name) = tid.strip_prefix(&prefix) else { continue };
+            let Some(name) = tid.strip_prefix(&prefix) else {
+                continue;
+            };
             let mut t = reply.g("texts").g(tid).clone();
             t.set("name", J::str(name));
             t.set("src", src.clone());
             texts.push(t);
         }
-        items.push(J::obj_of(vec![("code", code), ("mark", mark), ("texts", J::Arr(texts))]));
+        items.push(J::obj_of(vec![
+            ("code", code),
+            ("mark", mark),
+            ("texts", J::Arr(texts)),
+        ]));
     }
     Ok(J::obj_of(vec![("items", J::Arr(items))]))
 }
@@ -7454,16 +10213,27 @@ fn placed_of(n: &J, reply: &J, meta: &Meta, got: &Got) -> Result<J, String> {
 pub fn node_draw(node: &str, inp: &J, runtime: &std::path::Path) -> Result<NodeDrawn, String> {
     let started = std::time::Instant::now();
     let spec = inp.g("page_spec");
-    let n = node_in(spec, node).ok_or_else(|| format!("node {node}: the page tree has no node {node}"))?;
+    let n = node_in(spec, node)
+        .ok_or_else(|| format!("node {node}: the page tree has no node {node}"))?;
     let (reg, runner_override) = registry_in_force();
     let entry = reg.g("nodes").g(&st(n.g("node")));
     if entry.g("binding").s() != Some("external") {
-        return Err(format!("node {node}: the registry binds {} rust, not external", st(n.g("node"))));
+        return Err(format!(
+            "node {node}: the registry binds {} rust, not external",
+            st(n.g("node"))
+        ));
     }
     let ext = vec![node.to_string()];
     let (errs, content) = content_problems(spec, inp, &ext, &reg);
-    let Some(content) = content else { return Err(errs.iter().map(|e| format!("node {node}: recheck: {e}")).collect::<Vec<_>>().join("\n")) };
-    let (reqs, metas) = issue(spec, inp, &reg, &ext, &content.got, &content.rpage).map_err(|e| format!("node {node}: recheck: {e}"))?;
+    let Some(content) = content else {
+        return Err(errs
+            .iter()
+            .map(|e| format!("node {node}: recheck: {e}"))
+            .collect::<Vec<_>>()
+            .join("\n"));
+    };
+    let (reqs, metas) = issue(spec, inp, &reg, &ext, &content.got, &content.rpage)
+        .map_err(|e| format!("node {node}: recheck: {e}"))?;
     let runner = match runner_override {
         Some(r) => r,
         None => {
@@ -7472,37 +10242,71 @@ pub fn node_draw(node: &str, inp: &J, runtime: &std::path::Path) -> Result<NodeD
                 return Err(format!("node {node}: runner {rel:?} is not a code file under {RUNNER_DIRS:?} of the runtime"));
             }
             let path = runtime.join(&rel);
-            if rel.ends_with(".py") { crate::next_leaf::Runner::python(&path) } else { crate::next_leaf::Runner::node(&path) }
+            if rel.ends_with(".py") {
+                crate::next_leaf::Runner::python(&path)
+            } else {
+                crate::next_leaf::Runner::node(&path)
+            }
         }
     };
     let before_child = started.elapsed();
-    let (line, child_ms) = crate::next_leaf::ask_once(&runner, &reqs[0].1.dump(), crate::next_leaf::FILL_DEADLINE)
-        .map_err(|e| format!("node {node}: the child: {e}"))?;
+    let (line, child_ms) =
+        crate::next_leaf::ask_once(&runner, &reqs[0].1.dump(), crate::next_leaf::FILL_DEADLINE)
+            .map_err(|e| format!("node {node}: the child: {e}"))?;
     let after_child = std::time::Instant::now();
     let reply = parse(&line).map_err(|e| format!("node {node}: recheck: B0 reply: {e}"))?;
-    let lines = |fails: Vec<String>| fails.iter().map(|e| format!("node {node}: recheck: {e}")).collect::<Vec<_>>().join("\n");
+    let lines = |fails: Vec<String>| {
+        fails
+            .iter()
+            .map(|e| format!("node {node}: recheck: {e}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
     // a map circles node (P4a-2): its own checks, K3-K9; the placed geometry is the checked reply
     if reqs[0].1.has("scale") {
         let placed = circles_problems(node, &reqs[0].1, &reply).map_err(lines)?;
         let recheck_ms = (before_child + after_child.elapsed()).as_millis() as u64;
-        return Ok(NodeDrawn { placed, child_ms: child_ms as u64, recheck_ms });
+        return Ok(NodeDrawn {
+            placed,
+            child_ms: child_ms as u64,
+            recheck_ms,
+        });
     }
     let replies = J::Obj(vec![(node.to_string(), reply)]);
     let mut fails = reply_problems(&replies, &reqs);
     if fails.is_empty() {
-        fails = geometry_problems(node, &reqs[0].1, replies.g(node), &metas[node]).map_err(|e| format!("node {node}: recheck: {e}"))?;
+        fails = geometry_problems(node, &reqs[0].1, replies.g(node), &metas[node])
+            .map_err(|e| format!("node {node}: recheck: {e}"))?;
     }
     if fails.is_empty() {
-        fails = colour_problems(&svg(node, &reqs[0].1, replies.g(node), &metas[node]), &metas[node]);
+        fails = colour_problems(
+            &svg(node, &reqs[0].1, replies.g(node), &metas[node]),
+            &metas[node],
+        );
     }
     if !fails.is_empty() {
-        return Err(fails.iter().map(|e| format!("node {node}: recheck: {e}")).collect::<Vec<_>>().join("\n"));
+        return Err(fails
+            .iter()
+            .map(|e| format!("node {node}: recheck: {e}"))
+            .collect::<Vec<_>>()
+            .join("\n"));
     }
-    let mut placed = placed_of(n, replies.g(node), &metas[node], &content.got).map_err(|e| format!("node {node}: recheck: {e}"))?;
+    let mut placed = placed_of(n, replies.g(node), &metas[node], &content.got)
+        .map_err(|e| format!("node {node}: recheck: {e}"))?;
     // K11: the bars' zero line, the core's own (the leaf draws it there; the bars' ends were checked against it)
     let req = &reqs[0].1;
-    if req.g("encode").arr().iter().any(|c| c.g("channel").s() == Some("length_signed")) {
-        let values: Vec<f64> = req.g("marks").arr().iter().filter_map(|m| m.g("value").num()).collect();
+    if req
+        .g("encode")
+        .arr()
+        .iter()
+        .any(|c| c.g("channel").s() == Some("length_signed"))
+    {
+        let values: Vec<f64> = req
+            .g("marks")
+            .arr()
+            .iter()
+            .filter_map(|m| m.g("value").num())
+            .collect();
         if let Some((z, _)) = signed_bars(req.g("rows"), &values) {
             placed.set("axis", J::obj_of(vec![("x", J::Num(z))]));
         }
@@ -7521,7 +10325,12 @@ mod tests {
     /// An asked record as the catalogue writes it (l5geo Asked): the family id, its page name, its table prefixes and the
     /// offered tables that hold it.
     fn asked_rec(id: &str, tables: &[&str], offered: &[&str]) -> J {
-        J::obj_of(vec![("id", J::str(id)), ("zh", J::str(id)), ("tables", J::strs(tables)), ("offered", J::strs(offered))])
+        J::obj_of(vec![
+            ("id", J::str(id)),
+            ("zh", J::str(id)),
+            ("tables", J::strs(tables)),
+            ("offered", J::strs(offered)),
+        ])
     }
 
     /// A page tree's drawn record, one row per (layer, table), and the envelope over it holding the asked records (the flow's
@@ -7529,9 +10338,19 @@ mod tests {
     fn asked_page(drawn: &[(&str, &str)], asked: Option<Vec<J>>, leaf: Option<Vec<J>>) -> (J, J) {
         let rows: Vec<J> = drawn
             .iter()
-            .map(|(layer, table)| J::obj_of(vec![("layer", J::str(layer)), ("src", J::Str(format!("series:{table}/DE:2024:OBS_VALUE"))), ("table", J::str(table)), ("time", J::str("2024"))]))
+            .map(|(layer, table)| {
+                J::obj_of(vec![
+                    ("layer", J::str(layer)),
+                    ("src", J::Str(format!("series:{table}/DE:2024:OBS_VALUE"))),
+                    ("table", J::str(table)),
+                    ("time", J::str("2024")),
+                ])
+            })
             .collect();
-        let spec = J::obj_of(vec![("kind", J::str("Page")), ("record", J::obj_of(vec![("drawn", J::Arr(rows))]))]);
+        let spec = J::obj_of(vec![
+            ("kind", J::str("Page")),
+            ("record", J::obj_of(vec![("drawn", J::Arr(rows))])),
+        ]);
         let mut inp = J::obj_of(vec![("page_spec", spec.clone())]);
         for (k, v) in [("asked", asked), ("leaf_asked", leaf)] {
             if let Some(v) = v {
@@ -7548,67 +10367,181 @@ mod tests {
     /// before; and the leaf's record must be the catalogue's.
     #[test]
     fn c6_each_asked_quantity_is_drawn_or_named_unanswered_where_no_table_was_offered() {
-        let co2 = asked_rec("co2", &["EN.GHG.", "env_air_gge"], &["EN.GHG.CO2.PC.CE.AR5@2"]);
-        let pop65 = asked_rec("pop65", &["SP.POP.65UP", "demo_pjanind"], &["SP.POP.65UP.TO.ZS@2"]);
+        let co2 = asked_rec(
+            "co2",
+            &["EN.GHG.", "env_air_gge"],
+            &["EN.GHG.CO2.PC.CE.AR5@2"],
+        );
+        let pop65 = asked_rec(
+            "pop65",
+            &["SP.POP.65UP", "demo_pjanind"],
+            &["SP.POP.65UP.TO.ZS@2"],
+        );
         let run = |drawn: &[(&str, &str)], asked: Vec<J>| {
             let (spec, inp) = asked_page(drawn, Some(asked.clone()), Some(asked));
             asked_problems(&spec, &inp)
         };
         // both drawn: pass
-        let both = [("bars", "EN.GHG.CO2.PC.CE.AR5@2"), ("bubbles", "SP.POP.65UP.TO.ZS@2")];
-        assert_eq!(run(&both, vec![co2.clone(), pop65.clone()]), Vec::<String>::new());
+        let both = [
+            ("bars", "EN.GHG.CO2.PC.CE.AR5@2"),
+            ("bubbles", "SP.POP.65UP.TO.ZS@2"),
+        ];
+        assert_eq!(
+            run(&both, vec![co2.clone(), pop65.clone()]),
+            Vec::<String>::new()
+        );
         // one drawn, the other with no offered table and the leaf's line: pass
         let asylum = asked_rec("asylum", &["migr_asy"], &["migr_asyappctza"]);
-        let population = asked_rec("population", &["SP.POP.TOTL", "demo_pjan", "demo_gind"], &[]);
-        assert_eq!(run(&[("bars", "migr_asyappctza")], vec![asylum.clone(), population.clone()]), Vec::<String>::new());
+        let population = asked_rec(
+            "population",
+            &["SP.POP.TOTL", "demo_pjan", "demo_gind"],
+            &[],
+        );
+        assert_eq!(
+            run(
+                &[("bars", "migr_asyappctza")],
+                vec![asylum.clone(), population.clone()]
+            ),
+            Vec::<String>::new()
+        );
         // one drawn, the other offered a table but not drawn, so no line stands for it: refused, naming it and its tables
-        let off = run(&[("bars", "EN.GHG.CO2.PC.CE.AR5@2")], vec![co2.clone(), pop65.clone()]);
+        let off = run(
+            &[("bars", "EN.GHG.CO2.PC.CE.AR5@2")],
+            vec![co2.clone(), pop65.clone()],
+        );
         assert_eq!(off, vec!["C6: the question asks for pop65 but the page draws no row from SP.POP.65UP, demo_pjanind".to_string()]);
         // one drawn, the other with no offered table but no line on the page (the leaf's spec lacks it): refused
-        let (spec, inp) = asked_page(&[("bars", "migr_asyappctza")], Some(vec![asylum.clone(), population.clone()]), Some(vec![asylum.clone()]));
+        let (spec, inp) = asked_page(
+            &[("bars", "migr_asyappctza")],
+            Some(vec![asylum.clone(), population.clone()]),
+            Some(vec![asylum.clone()]),
+        );
         let off = asked_problems(&spec, &inp);
-        assert!(off.len() == 1 && off[0].ends_with("and carries no unanswered line for it"), "{off:?}");
+        assert!(
+            off.len() == 1 && off[0].ends_with("and carries no unanswered line for it"),
+            "{off:?}"
+        );
         // the line refused: the leaf's spec says no table was offered for pop65, the catalogue's record offered one
         let unoffered = asked_rec("pop65", &["SP.POP.65UP", "demo_pjanind"], &[]);
-        let (spec, inp) = asked_page(&[("bars", "EN.GHG.CO2.PC.CE.AR5@2")], Some(vec![co2.clone(), pop65.clone()]), Some(vec![co2.clone(), unoffered]));
+        let (spec, inp) = asked_page(
+            &[("bars", "EN.GHG.CO2.PC.CE.AR5@2")],
+            Some(vec![co2.clone(), pop65.clone()]),
+            Some(vec![co2.clone(), unoffered]),
+        );
         let off = asked_problems(&spec, &inp);
         assert_eq!(off.len(), 2, "{off:?}");
-        assert!(off[0].contains("its unanswered line does not stand, as SP.POP.65UP.TO.ZS@2 was offered for it"), "{off:?}");
-        assert!(off[1].starts_with("C6: the leaf's asked ") && off[1].ends_with("is not the catalogue's record"), "{off:?}");
+        assert!(
+            off[0].contains(
+                "its unanswered line does not stand, as SP.POP.65UP.TO.ZS@2 was offered for it"
+            ),
+            "{off:?}"
+        );
+        assert!(
+            off[1].starts_with("C6: the leaf's asked ")
+                && off[1].ends_with("is not the catalogue's record"),
+            "{off:?}"
+        );
         // a change page (user 11-05 17:1x, C): bars print val1 - val0 from the asked table and draw no row of their own; the
         // printed change draws its table, on a Eurostat shape and a World Bank shape alike; a page that prints only a count of
         // places, or a change from another table, is refused as before
-        let ghg = asked_rec("co2", &["EN.GHG.", "env_air_gge"], &["env_air_gge", "sdg_13_10"]);
+        let ghg = asked_rec(
+            "co2",
+            &["EN.GHG.", "env_air_gge"],
+            &["env_air_gge", "sdg_13_10"],
+        );
         for table in ["sdg_13_10", "EN.GHG.CO2.PC.CE.AR5@2"] {
             let change = |table: &str, printed: &str| {
-                let (mut spec, inp) = asked_page(&[], Some(vec![ghg.clone()]), Some(vec![ghg.clone()]));
-                let fact = |t: &str, time: &str| J::obj_of(vec![("each", J::str("geo")), ("table", J::str(t)), ("time", J::str(time))]);
+                let (mut spec, inp) =
+                    asked_page(&[], Some(vec![ghg.clone()]), Some(vec![ghg.clone()]));
+                let fact = |t: &str, time: &str| {
+                    J::obj_of(vec![
+                        ("each", J::str("geo")),
+                        ("table", J::str(t)),
+                        ("time", J::str(time)),
+                    ])
+                };
                 let facts = J::obj_of(vec![
                     ("val0", fact(table, "2015")),
                     ("val1", fact(table, "2023")),
-                    ("chg", J::obj_of(vec![("op", J::str("minus")), ("each", J::str("geo")), ("a", J::str("val0")), ("b", J::str("val1"))])),
-                    ("drawn", J::obj_of(vec![("op", J::str("n")), ("table", J::str(table)), ("time", J::str("2023"))])),
+                    (
+                        "chg",
+                        J::obj_of(vec![
+                            ("op", J::str("minus")),
+                            ("each", J::str("geo")),
+                            ("a", J::str("val0")),
+                            ("b", J::str("val1")),
+                        ]),
+                    ),
+                    (
+                        "drawn",
+                        J::obj_of(vec![
+                            ("op", J::str("n")),
+                            ("table", J::str(table)),
+                            ("time", J::str("2023")),
+                        ]),
+                    ),
                 ]);
                 spec.set("facts", J::obj_of(vec![("facts", facts)]));
-                spec.set("body", J::obj_of(vec![("kind", J::str("Text")), ("runs", J::Arr(vec![J::obj_of(vec![("src", J::str(printed))])]))]));
+                spec.set(
+                    "body",
+                    J::obj_of(vec![
+                        ("kind", J::str("Text")),
+                        (
+                            "runs",
+                            J::Arr(vec![J::obj_of(vec![("src", J::str(printed))])]),
+                        ),
+                    ]),
+                );
                 asked_problems(&spec, &inp)
             };
-            assert_eq!(change(table, "fact:chg.DE"), Vec::<String>::new(), "{table}");
-            assert_eq!(change(table, "fact:drawn").len(), 1, "{table}: a count of places draws nothing");
-            assert_eq!(change("sdg_07_40", "fact:chg.DE").len(), 1, "a change from another table");
+            assert_eq!(
+                change(table, "fact:chg.DE"),
+                Vec::<String>::new(),
+                "{table}"
+            );
+            assert_eq!(
+                change(table, "fact:drawn").len(),
+                1,
+                "{table}: a count of places draws nothing"
+            );
+            assert_eq!(
+                change("sdg_07_40", "fact:chg.DE").len(),
+                1,
+                "a change from another table"
+            );
         }
         // no asked field, an empty one, or one quantity drawn: as before
         let (spec, inp) = asked_page(&[("bars", "sdg_07_40")], None, None);
         assert_eq!(asked_problems(&spec, &inp), Vec::<String>::new());
-        assert_eq!(run(&[("bars", "sdg_07_40")], Vec::new()), Vec::<String>::new());
-        let ren = asked_rec("renewable_share", &["sdg_07_40", "nrg_ind_ren"], &["sdg_07_40"]);
-        assert_eq!(run(&[("bars", "sdg_07_40")], vec![ren]), Vec::<String>::new());
+        assert_eq!(
+            run(&[("bars", "sdg_07_40")], Vec::new()),
+            Vec::<String>::new()
+        );
+        let ren = asked_rec(
+            "renewable_share",
+            &["sdg_07_40", "nrg_ind_ren"],
+            &["sdg_07_40"],
+        );
+        assert_eq!(
+            run(&[("bars", "sdg_07_40")], vec![ren]),
+            Vec::<String>::new()
+        );
         // a prefix matches the table id's start only
         assert_eq!(run(&[("bars", "XEN.GHG.CO2")], vec![co2]).len(), 1);
         // a table the catalogue offered for the quantity (its title names it) counts as drawn, though no prefix starts it
         let asylum_tps = asked_rec("asylum", &["migr_asy"], &["tps00191", "migr_asyappctza"]);
-        let pop_offered = asked_rec("population", &["SP.POP.TOTL", "demo_pjan", "demo_gind"], &["demo_gind"]);
-        assert_eq!(run(&[("bars", "tps00191"), ("bubbles", "demo_gind")], vec![asylum_tps.clone(), pop_offered.clone()]), Vec::<String>::new());
+        let pop_offered = asked_rec(
+            "population",
+            &["SP.POP.TOTL", "demo_pjan", "demo_gind"],
+            &["demo_gind"],
+        );
+        assert_eq!(
+            run(
+                &[("bars", "tps00191"), ("bubbles", "demo_gind")],
+                vec![asylum_tps.clone(), pop_offered.clone()]
+            ),
+            Vec::<String>::new()
+        );
         // the stand-in's page (11-05): asylum from tps00191, population offered but not drawn: only population is refused
         let off = run(&[("bars", "tps00191")], vec![asylum_tps, pop_offered]);
         assert_eq!(off, vec!["C6: the question asks for population but the page draws no row from SP.POP.TOTL, demo_pjan, demo_gind".to_string()]);
@@ -7626,20 +10559,53 @@ mod tests {
     #[test]
     fn every_recipe_names_its_main_chart_and_the_leafs_main_agrees() {
         let (reg, _) = registry_in_force();
-        let recipes: Vec<String> = reg.g("recipes").obj().iter().map(|(k, _)| k.clone()).collect();
+        let recipes: Vec<String> = reg
+            .g("recipes")
+            .obj()
+            .iter()
+            .map(|(k, _)| k.clone())
+            .collect();
         let mut mains = Vec::new();
         for r in &recipes {
             let (main, _) = recipe_roles(&reg, r).unwrap_or_else(|e| panic!("{e}"));
             mains.push(format!("{r}={main}"));
         }
-        assert_eq!(mains, ["column=bars", "change=bars", "composition=stacked100", "scmp=map", "ring=ring", "flow=sankey", "ranked_bars=bars", "block_ranks=rank_lines", "composition_steps=waterfall", "one_line=line"]);
-        let run_py = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime/leaves_py/run.py")).unwrap();
-        let line = run_py.lines().find(|l| l.starts_with("MAIN = dict(")).expect("run.py MAIN");
-        let pairs: Vec<&str> = line.trim_start_matches("MAIN = dict(").trim_end_matches(')').split(", ").collect();
+        assert_eq!(
+            mains,
+            [
+                "column=bars",
+                "change=bars",
+                "composition=stacked100",
+                "scmp=map",
+                "ring=ring",
+                "flow=sankey",
+                "ranked_bars=bars",
+                "block_ranks=rank_lines",
+                "composition_steps=waterfall",
+                "one_line=line"
+            ]
+        );
+        let run_py = std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime/leaves_py/run.py"),
+        )
+        .unwrap();
+        let line = run_py
+            .lines()
+            .find(|l| l.starts_with("MAIN = dict("))
+            .expect("run.py MAIN");
+        let pairs: Vec<&str> = line
+            .trim_start_matches("MAIN = dict(")
+            .trim_end_matches(')')
+            .split(", ")
+            .collect();
         assert_eq!(pairs.len(), 8, "{line}");
         for pair in pairs {
             let (r, n) = pair.split_once('=').unwrap();
-            assert_eq!(reg.g("main_chart").g(r).s(), Some(n.trim_matches('"')), "run.py MAIN {pair}");
+            assert_eq!(
+                reg.g("main_chart").g(r).s(),
+                Some(n.trim_matches('"')),
+                "run.py MAIN {pair}"
+            );
         }
     }
 
@@ -7654,7 +10620,9 @@ mod tests {
             "draws": {"table": "data.q.table", "time": "data.t0", "family": "data.legend_fact"},
             "entries": {"y": "period:{table}:{time}", "val": "fact:{family}.{code}.n", "name": "name:{names}:{code}"}}"#;
         let reg = |main: &str, roles: &str| {
-            let map = format!(r#"{{"roles": {{"ring": {{"parts": {{"halo": {{"role": "reference", "legend": {halo}}}}}}}}}}}"#);
+            let map = format!(
+                r#"{{"roles": {{"ring": {{"parts": {{"halo": {{"role": "reference", "legend": {halo}}}}}}}}}}}"#
+            );
             parse(&format!(r#"{{"recipes": {{"ring": ["map", "ring"]}}, "main_chart": {{"ring": {main}}}, "nodes": {{"map": {map}, "ring": {{"roles": {{"ring": {roles}}}}}}}}}"#)).unwrap()
         };
         let strip = r#"{"role": "reference", "legend": {"word": "scmp.strip.peak", "within": "strip", "fills": {"t": "period", "v": "fact_unit"},
@@ -7663,41 +10631,153 @@ mod tests {
         let good = reg(r#""map""#, strip);
         let (main, refs) = recipe_roles(&good, "ring").unwrap();
         assert_eq!(main, "map");
-        assert_eq!(refs, [("map.halo".to_string(), "halo.t0".to_string()), ("ring".to_string(), "scmp.strip.peak".to_string())]);
+        assert_eq!(
+            refs,
+            [
+                ("map.halo".to_string(), "halo.t0".to_string()),
+                ("ring".to_string(), "scmp.strip.peak".to_string())
+            ]
+        );
         for (what, bad, says) in [
             ("no main chart", reg("null", strip), "names no main chart"),
-            ("a main chart of no layer", reg(r#""bars""#, strip), "is no layer of it"),
-            ("the main chart wholly reference", reg(r#""ring""#, strip), "wholly reference"),
-            ("a role that is no reference", reg(r#""map""#, &strip.replace("\"reference\"", "\"aux\"")), "the only role"),
-            ("no legend word", reg(r#""map""#, r#"{"role": "reference"}"#), "names no legend word"),
-            ("a word the table lacks", reg(r#""map""#, &strip.replace("scmp.strip.peak", "no.such.word")), "not in the word table"),
-            ("no legend it sits within", reg(r#""map""#, &strip.replace(r#""within": "strip", "#, "")), "names no legend it sits within"),
-            ("a fill of no kind", reg(r#""map""#, &strip.replace(r#""t": "period""#, r#""t": "words""#)), "fills {t}"),
-            ("a placeholder not filled", reg(r#""map""#, &strip.replace(r#""t": "period", "#, "")), "fills {t}"),
+            (
+                "a main chart of no layer",
+                reg(r#""bars""#, strip),
+                "is no layer of it",
+            ),
+            (
+                "the main chart wholly reference",
+                reg(r#""ring""#, strip),
+                "wholly reference",
+            ),
+            (
+                "a role that is no reference",
+                reg(r#""map""#, &strip.replace("\"reference\"", "\"aux\"")),
+                "the only role",
+            ),
+            (
+                "no legend word",
+                reg(r#""map""#, r#"{"role": "reference"}"#),
+                "names no legend word",
+            ),
+            (
+                "a word the table lacks",
+                reg(
+                    r#""map""#,
+                    &strip.replace("scmp.strip.peak", "no.such.word"),
+                ),
+                "not in the word table",
+            ),
+            (
+                "no legend it sits within",
+                reg(r#""map""#, &strip.replace(r#""within": "strip", "#, "")),
+                "names no legend it sits within",
+            ),
+            (
+                "a fill of no kind",
+                reg(
+                    r#""map""#,
+                    &strip.replace(r#""t": "period""#, r#""t": "words""#),
+                ),
+                "fills {t}",
+            ),
+            (
+                "a placeholder not filled",
+                reg(r#""map""#, &strip.replace(r#""t": "period", "#, "")),
+                "fills {t}",
+            ),
             // each entry it prints is one its layer draws (reviewer 11-03): a template per entry, of its kind, tied to draws
-            ("no entry template", reg(r#""map""#, &strip.replace(r#""t": "period:{table}:{last}.y", "#, "")), "no entry its layer draws for {t}"),
-            ("an entry of another kind", reg(r#""map""#, &strip.replace(r#""t": "period:{table}"#, r#""t": "fact:{table}"#)), "is no period entry"),
-            ("an entry tied to nothing drawn", reg(r#""map""#, &strip.replace(r#""v": "fact:{peak}.n""#, r#""v": "fact:{any}.n""#)), "names nothing its layer draws"),
+            (
+                "no entry template",
+                reg(
+                    r#""map""#,
+                    &strip.replace(r#""t": "period:{table}:{last}.y", "#, ""),
+                ),
+                "no entry its layer draws for {t}",
+            ),
+            (
+                "an entry of another kind",
+                reg(
+                    r#""map""#,
+                    &strip.replace(r#""t": "period:{table}"#, r#""t": "fact:{table}"#),
+                ),
+                "is no period entry",
+            ),
+            (
+                "an entry tied to nothing drawn",
+                reg(
+                    r#""map""#,
+                    &strip.replace(r#""v": "fact:{peak}.n""#, r#""v": "fact:{any}.n""#),
+                ),
+                "names nothing its layer draws",
+            ),
         ] {
             let e = recipe_roles(&bad, "ring").expect_err(what);
             assert!(e.contains(says), "{what}: {e}");
-            assert_eq!(reference_legend_gaps(&bad, "ring", "", &[], None).len(), 1, "{what}: one gap");
+            assert_eq!(
+                reference_legend_gaps(&bad, "ring", "", &[], None).len(),
+                1,
+                "{what}: one gap"
+            );
         }
         // what the page's layers were given and read: the map's halo at 2015 of lab_t0, the strip over m's RU rows from 2021-01
         let hero = parse(r#"{"data": {"q": {"table": "t"}, "t0": "2015", "legend_fact": "lab_t0"},
             "strip": {"q": {"table": "m", "filter": {"partner": "RU"}, "by": "partner"}, "from": "2021-01", "peak": "ru_s_peak"}}"#).unwrap();
-        let row = |p: &str, t: &str| format!(r#"{{"src": "series:m/{p}:{t}:OBS_VALUE", "table": "m", "dims": {{"partner": "{p}"}}, "time": "{t}", "value": 1}}"#);
-        let rows = parse(&format!("[{}]", [row("RU", "2019-01"), row("RU", "2021-01"), row("RU", "2025-12"), row("NO", "2026-01")].join(","))).unwrap();
-        let reads_at = |y: &str| BTreeMap::from([("lab_t0.RU".to_string(), vec![format!("series:t/RU:{y}:OBS_VALUE")]), ("ru_s_peak".to_string(), vec![])]);
+        let row = |p: &str, t: &str| {
+            format!(
+                r#"{{"src": "series:m/{p}:{t}:OBS_VALUE", "table": "m", "dims": {{"partner": "{p}"}}, "time": "{t}", "value": 1}}"#
+            )
+        };
+        let rows = parse(&format!(
+            "[{}]",
+            [
+                row("RU", "2019-01"),
+                row("RU", "2021-01"),
+                row("RU", "2025-12"),
+                row("NO", "2026-01")
+            ]
+            .join(",")
+        ))
+        .unwrap();
+        let reads_at = |y: &str| {
+            BTreeMap::from([
+                (
+                    "lab_t0.RU".to_string(),
+                    vec![format!("series:t/RU:{y}:OBS_VALUE")],
+                ),
+                ("ru_s_peak".to_string(), vec![]),
+            ])
+        };
         let (reads, reads_late) = (reads_at("2015"), reads_at("2024"));
-        let drawn = Drawn { hero: &hero, rows: rows.arr(), members: &[], reads: &reads };
-        let late = Drawn { reads: &reads_late, ..drawn };
+        let drawn = Drawn {
+            hero: &hero,
+            rows: rows.arr(),
+            members: &[],
+            reads: &reads,
+        };
+        let late = Drawn {
+            reads: &reads_late,
+            ..drawn
+        };
         // the page: each line the registry's word, its numbers the page's entries, inside its legend
         let units = ["百万立方米".to_string()];
         let halo_line = r#"<text data-word="halo.t0">浅色宽带＝<tspan data-src="period:t:2015">2015</tspan> 年（<tspan data-src="name:zh_names:iso2:RU">俄罗斯</tspan> <tspan data-src="fact:lab_t0.RU.n">126,027</tspan> 百万立方米）</text>"#;
         let strip_line = r#"<span data-word="scmp.strip.peak">最多：<span data-src="period:m:2025-12.y">2025</span> <span data-src="fact:ru_s_peak.n">3,261</span> 百万立方米</span>"#;
-        let page = |h: &str, s: &str| format!(r#"<g data-legend="map"><rect/>{h}</g><div data-legend="strip"><b>剖面</b>{s}</div>"#);
-        assert_eq!(reference_legend_gaps(&good, "ring", &page(halo_line, strip_line), &units, Some(&drawn)), Vec::<String>::new());
+        let page = |h: &str, s: &str| {
+            format!(
+                r#"<g data-legend="map"><rect/>{h}</g><div data-legend="strip"><b>剖面</b>{s}</div>"#
+            )
+        };
+        assert_eq!(
+            reference_legend_gaps(
+                &good,
+                "ring",
+                &page(halo_line, strip_line),
+                &units,
+                Some(&drawn)
+            ),
+            Vec::<String>::new()
+        );
         let fails_with = |d: Option<&Drawn>, html: &str, says: &str| {
             let gaps = reference_legend_gaps(&good, "ring", html, &units, d);
             assert_eq!(gaps.len(), 1, "{says}: {gaps:?}");
@@ -7705,40 +10785,134 @@ mod tests {
         };
         // each entry the one its layer draws, not any entry of its kind: the strip's last month, the halo's year, its value
         // a member of the map's legend family read at that year, its name that member's
-        fails_with(Some(&drawn), &page(halo_line, &strip_line.replace("period:m:2025-12.y", "period:m:2024-12.y")), "its layer draws period:m:2025-12.y");
-        fails_with(Some(&drawn), &page(&halo_line.replace("period:t:2015", "period:t:2024"), strip_line), "its layer draws period:t:2015");
-        fails_with(Some(&drawn), &page(&halo_line.replace("period:t:2015", "period:m:2015"), strip_line), "its layer draws period:t:2015");
-        fails_with(Some(&drawn), &page(&halo_line.replace("fact:lab_t0.RU.n", "fact:lab_t1.RU.n"), strip_line), "its layer draws fact:lab_t0.{code}.n");
-        fails_with(Some(&drawn), &page(&halo_line.replace("iso2:RU", "iso2:NO"), strip_line), "{name} is the entry name:zh_names:iso2:NO");
-        fails_with(Some(&drawn), &page(halo_line, &strip_line.replace("fact:ru_s_peak.n", "fact:no_s_peak.n")), "its layer draws fact:ru_s_peak.n");
-        fails_with(Some(&late), &page(halo_line, strip_line), "not its layer's 2015");
+        fails_with(
+            Some(&drawn),
+            &page(
+                halo_line,
+                &strip_line.replace("period:m:2025-12.y", "period:m:2024-12.y"),
+            ),
+            "its layer draws period:m:2025-12.y",
+        );
+        fails_with(
+            Some(&drawn),
+            &page(
+                &halo_line.replace("period:t:2015", "period:t:2024"),
+                strip_line,
+            ),
+            "its layer draws period:t:2015",
+        );
+        fails_with(
+            Some(&drawn),
+            &page(
+                &halo_line.replace("period:t:2015", "period:m:2015"),
+                strip_line,
+            ),
+            "its layer draws period:t:2015",
+        );
+        fails_with(
+            Some(&drawn),
+            &page(
+                &halo_line.replace("fact:lab_t0.RU.n", "fact:lab_t1.RU.n"),
+                strip_line,
+            ),
+            "its layer draws fact:lab_t0.{code}.n",
+        );
+        fails_with(
+            Some(&drawn),
+            &page(&halo_line.replace("iso2:RU", "iso2:NO"), strip_line),
+            "{name} is the entry name:zh_names:iso2:NO",
+        );
+        fails_with(
+            Some(&drawn),
+            &page(
+                halo_line,
+                &strip_line.replace("fact:ru_s_peak.n", "fact:no_s_peak.n"),
+            ),
+            "its layer draws fact:ru_s_peak.n",
+        );
+        fails_with(
+            Some(&late),
+            &page(halo_line, strip_line),
+            "not its layer's 2015",
+        );
         // no knobs: each of the two references says it cannot read what its layer draws
-        let blind = reference_legend_gaps(&good, "ring", &page(halo_line, strip_line), &units, None);
-        assert!(blind.len() == 2 && blind.iter().all(|g| g.contains("gives no knobs")), "{blind:?}");
+        let blind =
+            reference_legend_gaps(&good, "ring", &page(halo_line, strip_line), &units, None);
+        assert!(
+            blind.len() == 2 && blind.iter().all(|g| g.contains("gives no knobs")),
+            "{blind:?}"
+        );
         let fails = |html: &str, says: &str| {
             let gaps = reference_legend_gaps(&good, "ring", html, &units, Some(&drawn));
             assert_eq!(gaps.len(), 1, "{says}: {gaps:?}");
             assert!(gaps[0].contains(says), "{says}: {}", gaps[0]);
         };
         // missing, or outside its legend
-        fails(&page(halo_line, ""), "prints no line data-word=scmp.strip.peak");
-        fails(&format!(r#"{}<p>{strip_line}</p>"#, page(halo_line, "")), "sits outside the legend data-legend=strip");
-        fails(&format!(r#"<g data-legend="map">{halo_line}</g><div data-legend="map">{strip_line}</div>"#), "sits outside the legend data-legend=strip");
+        fails(
+            &page(halo_line, ""),
+            "prints no line data-word=scmp.strip.peak",
+        );
+        fails(
+            &format!(r#"{}<p>{strip_line}</p>"#, page(halo_line, "")),
+            "sits outside the legend data-legend=strip",
+        );
+        fails(
+            &format!(
+                r#"<g data-legend="map">{halo_line}</g><div data-legend="map">{strip_line}</div>"#
+            ),
+            "sits outside the legend data-legend=strip",
+        );
         // the attribute there and its text changed: a literal, an entry of another kind, a unit of no format, more text
-        fails(&page(&halo_line.replace("浅色宽带＝", "浅色＝"), strip_line), "not the registry's word halo.t0");
-        fails(&page(&halo_line.replace(r#"data-src="period:t:2015""#, r#"data-src="fact:y0""#), strip_line), "not a period");
-        fails(&page(halo_line, &strip_line.replace("百万立方米", "吨")), "the unit of no format");
-        fails(&page(&halo_line.replace("）</text>", "）以前</text>"), strip_line), "more than the word");
-        fails(&page(&halo_line.replace(r#"<tspan data-src="period:t:2015">2015</tspan>"#, "2015"), strip_line), "not the registry's word halo.t0");
+        fails(
+            &page(&halo_line.replace("浅色宽带＝", "浅色＝"), strip_line),
+            "not the registry's word halo.t0",
+        );
+        fails(
+            &page(
+                &halo_line.replace(r#"data-src="period:t:2015""#, r#"data-src="fact:y0""#),
+                strip_line,
+            ),
+            "not a period",
+        );
+        fails(
+            &page(halo_line, &strip_line.replace("百万立方米", "吨")),
+            "the unit of no format",
+        );
+        fails(
+            &page(&halo_line.replace("）</text>", "）以前</text>"), strip_line),
+            "more than the word",
+        );
+        fails(
+            &page(
+                &halo_line.replace(r#"<tspan data-src="period:t:2015">2015</tspan>"#, "2015"),
+                strip_line,
+            ),
+            "not the registry's word halo.t0",
+        );
         // a page of the registry in force: scmp's strip and the map's halo are references (step 2)
         let (in_force, _) = registry_in_force();
         let (_, scmp) = recipe_roles(&in_force, "scmp").unwrap();
-        assert_eq!(scmp, [("map.halo".to_string(), "halo.t0".to_string()), ("strip".to_string(), "scmp.strip.ref".to_string())]);
-        assert_eq!(reference_legend_gaps(&in_force, "scmp", "", &[], None).len(), 2);
+        assert_eq!(
+            scmp,
+            [
+                ("map.halo".to_string(), "halo.t0".to_string()),
+                ("strip".to_string(), "scmp.strip.ref".to_string())
+            ]
+        );
+        assert_eq!(
+            reference_legend_gaps(&in_force, "scmp", "", &[], None).len(),
+            2
+        );
         // the ring page's map is wholly a reference (owner 11-03 15:14): it draws each source at the later year, said in the ring's legend
         let (ring_main, ring) = recipe_roles(&in_force, "ring").unwrap();
-        assert_eq!((ring_main.as_str(), ring), ("ring", vec![("map".to_string(), "ring.map.t1".to_string())]));
-        assert_eq!(reference_legend_gaps(&in_force, "ring", "", &[], None).len(), 1);
+        assert_eq!(
+            (ring_main.as_str(), ring),
+            ("ring", vec![("map".to_string(), "ring.map.t1".to_string())])
+        );
+        assert_eq!(
+            reference_legend_gaps(&in_force, "ring", "", &[], None).len(),
+            1
+        );
         assert!(reference_legend_gaps(&in_force, "column", "", &[], None).is_empty());
     }
 
@@ -7753,32 +10927,102 @@ mod tests {
             "entries": {"ay": "period:{table}:{from}", "by": "period:{table}:{to}"}}}}}}}"#).unwrap();
         let hero = parse(r#"{"data": {"q": {"table": "t"}}, "ring": {"inside": {"from": "2021", "to": "2023"}}}"#).unwrap();
         let reads = BTreeMap::new();
-        let drawn = Drawn { hero: &hero, rows: &[], members: &[], reads: &reads };
-        let piece = |ms: &str, faded: bool| format!(r#"<path data-ms="{ms}" d="M0,0" fill="red"{}/>"#, if faded { r#" fill-opacity="0.35""# } else { "" });
-        let line = |a: &str, b: &str| format!(r#"<div class="hu" data-legend="ring"><div class="gapw" data-word="ring.inside">深色＝<span data-src="period:t:{a}">{a}</span> 年至 <span data-src="period:t:{b}">{b}</span> 年各月，浅色＝其余月份</div></div>"#);
-        let page = |pieces: &[String], legend: &str| format!("{legend}<svg>{}</svg>", pieces.concat());
-        let good = [piece("2021-01 2023-12", false), piece("2020-11 2020-12 2024-01", true)];
-        assert_eq!(split_gaps(&reg, "ring", &page(&good, &line("2021", "2023")), &[], Some(&drawn)), Vec::<String>::new());
+        let drawn = Drawn {
+            hero: &hero,
+            rows: &[],
+            members: &[],
+            reads: &reads,
+        };
+        let piece = |ms: &str, faded: bool| {
+            format!(
+                r#"<path data-ms="{ms}" d="M0,0" fill="red"{}/>"#,
+                if faded { r#" fill-opacity="0.35""# } else { "" }
+            )
+        };
+        let line = |a: &str, b: &str| {
+            format!(
+                r#"<div class="hu" data-legend="ring"><div class="gapw" data-word="ring.inside">深色＝<span data-src="period:t:{a}">{a}</span> 年至 <span data-src="period:t:{b}">{b}</span> 年各月，浅色＝其余月份</div></div>"#
+            )
+        };
+        let page =
+            |pieces: &[String], legend: &str| format!("{legend}<svg>{}</svg>", pieces.concat());
+        let good = [
+            piece("2021-01 2023-12", false),
+            piece("2020-11 2020-12 2024-01", true),
+        ];
+        assert_eq!(
+            split_gaps(
+                &reg,
+                "ring",
+                &page(&good, &line("2021", "2023")),
+                &[],
+                Some(&drawn)
+            ),
+            Vec::<String>::new()
+        );
         // nothing faded (every month inside): no line asked for
-        assert_eq!(split_gaps(&reg, "ring", &page(&[piece("2021-01 2022-06", false)], ""), &[], Some(&drawn)), Vec::<String>::new());
+        assert_eq!(
+            split_gaps(
+                &reg,
+                "ring",
+                &page(&[piece("2021-01 2022-06", false)], ""),
+                &[],
+                Some(&drawn)
+            ),
+            Vec::<String>::new()
+        );
         let fails = |html: &str, d: Option<&Drawn>, says: &str| {
             let gaps = split_gaps(&reg, "ring", html, &[], d);
             assert_eq!(gaps.len(), 1, "{says}: {gaps:?}");
             assert!(gaps[0].contains(says), "{says}: {}", gaps[0]);
         };
         let lg = line("2021", "2023");
-        fails(&page(&[piece("2021-01", false), piece("2024-01", false)], &lg), Some(&drawn), "2024-01..2024-01 are drawn as the band is");
-        fails(&page(&[piece("2021-01", true), piece("2024-01", true)], &lg), Some(&drawn), "2021-01..2021-01 are faded");
-        fails(&page(&[piece("2023-12 2024-01", false)], &lg), Some(&drawn), "inside 2021..2023 and outside them");
-        fails(&page(&[piece("2021-01", false), piece("2021-01", false), piece("2024-01", true)], &lg), Some(&drawn), "month 2021-01 is in two pieces");
-        fails(&page(&good, ""), Some(&drawn), "prints no line data-word=ring.inside");
-        fails(&page(&good, &line("2015", "2023")), Some(&drawn), "its layer draws period:t:2021");
+        fails(
+            &page(&[piece("2021-01", false), piece("2024-01", false)], &lg),
+            Some(&drawn),
+            "2024-01..2024-01 are drawn as the band is",
+        );
+        fails(
+            &page(&[piece("2021-01", true), piece("2024-01", true)], &lg),
+            Some(&drawn),
+            "2021-01..2021-01 are faded",
+        );
+        fails(
+            &page(&[piece("2023-12 2024-01", false)], &lg),
+            Some(&drawn),
+            "inside 2021..2023 and outside them",
+        );
+        fails(
+            &page(
+                &[
+                    piece("2021-01", false),
+                    piece("2021-01", false),
+                    piece("2024-01", true),
+                ],
+                &lg,
+            ),
+            Some(&drawn),
+            "month 2021-01 is in two pieces",
+        );
+        fails(
+            &page(&good, ""),
+            Some(&drawn),
+            "prints no line data-word=ring.inside",
+        );
+        fails(
+            &page(&good, &line("2015", "2023")),
+            Some(&drawn),
+            "its layer draws period:t:2021",
+        );
         fails(&page(&good, &lg), None, "gives no knobs");
         // the registry in force: the ring node splits the ring page's months, and no other recipe's
         let (in_force, _) = registry_in_force();
         assert!(in_force.g("nodes").g("ring").g("split").has("ring"));
         assert_eq!(split_gaps(&in_force, "ring", "", &[], None).len(), 1);
-        assert!(split_gaps(&in_force, "scmp", "", &[], None).is_empty() && split_gaps(&in_force, "column", "", &[], None).is_empty());
+        assert!(
+            split_gaps(&in_force, "scmp", "", &[], None).is_empty()
+                && split_gaps(&in_force, "column", "", &[], None).is_empty()
+        );
     }
 
     /// Owner 11-06 (superseding J2 of 11-04): a printed difference is computed from the raw values and only then rounded,
@@ -7788,17 +11032,38 @@ mod tests {
     /// prints; a true difference of 0 printed 0 passes.
     #[test]
     fn a_printed_difference_is_within_half_a_unit_of_the_true_one() {
-        let rows: Vec<J> = [("RO", "0.568"), ("HR", "0.234"), ("SE", "0.3"), ("FI", "0.3")].iter()
-            .map(|(g, v)| parse(&format!(r#"{{"table": "t", "time": "2024", "dims": {{"geo": "{g}"}}, "value": "{v}"}}"#)).unwrap()).collect();
+        let rows: Vec<J> = [
+            ("RO", "0.568"),
+            ("HR", "0.234"),
+            ("SE", "0.3"),
+            ("FI", "0.3"),
+        ]
+        .iter()
+        .map(|(g, v)| {
+            parse(&format!(
+                r#"{{"table": "t", "time": "2024", "dims": {{"geo": "{g}"}}, "value": "{v}"}}"#
+            ))
+            .unwrap()
+        })
+        .collect();
         let fmts = parse(r#"{"d1": {"scale": 1, "dec": 1, "suffix": ""}, "d2": {"scale": 1, "dec": 2, "suffix": ""}}"#).unwrap();
         let facts = |dec: usize, of: bool| {
             let f = format!("d{dec}");
-            let of = if of { format!(r#", "of_printed": [{{"scale": 1, "dec": {dec}}}, {{"scale": 1, "dec": {dec}}}]"#) } else { String::new() };
+            let of = if of {
+                format!(
+                    r#", "of_printed": [{{"scale": 1, "dec": {dec}}}, {{"scale": 1, "dec": {dec}}}]"#
+                )
+            } else {
+                String::new()
+            };
             parse(&format!(r#"{{"ro": {{"table": "t", "filter": {{"geo": "RO"}}, "time": "2024", "fmt": "{f}"}}, "hr": {{"table": "t", "filter": {{"geo": "HR"}}, "time": "2024", "fmt": "{f}"}},
                 "se": {{"table": "t", "filter": {{"geo": "SE"}}, "time": "2024", "fmt": "{f}"}}, "fi": {{"table": "t", "filter": {{"geo": "FI"}}, "time": "2024", "fmt": "{f}"}},
                 "gap": {{"op": "minus", "a": "ro", "b": "hr", "fmt": "{f}"{of}}}, "tie": {{"op": "minus", "a": "se", "b": "fi", "fmt": "{f}"{of}}}}}"#)).unwrap()
         };
-        let shown: BTreeSet<String> = ["ro", "hr", "gap", "se", "fi", "tie"].iter().map(|k| k.to_string()).collect();
+        let shown: BTreeSet<String> = ["ro", "hr", "gap", "se", "fi", "tie"]
+            .iter()
+            .map(|k| k.to_string())
+            .collect();
         // from the raw values: 0.334 prints 0.3 and 0.33, each within half a unit; the tie 0 prints 0
         assert!(differences_disagree(&facts(1, false), &fmts, &rows, &shown).is_empty());
         assert!(differences_disagree(&facts(2, false), &fmts, &rows, &shown).is_empty());
@@ -7806,9 +11071,15 @@ mod tests {
         for dec in [1, 2] {
             let why = fact_value(&facts(dec, true), &rows, "gap").unwrap_err();
             assert!(why.contains("of_printed is refused"), "{why}");
-            assert!(differences_disagree(&facts(dec, true), &fmts, &rows, &shown).is_empty(), "no value, no printed number");
+            assert!(
+                differences_disagree(&facts(dec, true), &fmts, &rows, &shown).is_empty(),
+                "no value, no printed number"
+            );
         }
-        let d = printed_differences(&facts(2, false), &fmts, &rows, &shown).into_iter().find(|d| d.key == "gap").unwrap();
+        let d = printed_differences(&facts(2, false), &fmts, &rows, &shown)
+            .into_iter()
+            .find(|d| d.key == "gap")
+            .unwrap();
         assert_eq!((d.close, d.forms, d.dec), (true, [(1.0, 2), (1.0, 2)], 2));
         assert!((d.truth - 0.334).abs() < 1e-12);
     }
@@ -7824,10 +11095,30 @@ mod tests {
         let rows = |vals: &[(&str, &str, &str)]| -> Vec<J> {
             vals.iter().map(|(g, t, v)| parse(&format!(r#"{{"table": "sdg", "time": "{t}", "dims": {{"geo": "{g}"}}, "value": "{v}"}}"#)).unwrap()).collect()
         };
-        let fmts = |decs: &[(&str, i64)]| J::Obj(decs.iter().map(|(k, d)| (k.to_string(), parse(&format!(r#"{{"scale": 1, "dec": {d}, "suffix": ""}}"#)).unwrap())).collect());
-        let set = |ks: &[&str]| ks.iter().map(|k| k.to_string()).collect::<BTreeSet<String>>();
+        let fmts = |decs: &[(&str, i64)]| {
+            J::Obj(
+                decs.iter()
+                    .map(|(k, d)| {
+                        (
+                            k.to_string(),
+                            parse(&format!(r#"{{"scale": 1, "dec": {d}, "suffix": ""}}"#)).unwrap(),
+                        )
+                    })
+                    .collect(),
+            )
+        };
+        let set = |ks: &[&str]| {
+            ks.iter()
+                .map(|k| k.to_string())
+                .collect::<BTreeSet<String>>()
+        };
         // the change page: BE +5.5, FR -2.25; the note's gap 7.75 prints 7.8, the bars 5.5 and -2.2 (7.7)
-        let change = rows(&[("BE", "2016", "10"), ("BE", "2024", "15.5"), ("FR", "2016", "9.25"), ("FR", "2024", "7")]);
+        let change = rows(&[
+            ("BE", "2016", "10"),
+            ("BE", "2024", "15.5"),
+            ("FR", "2016", "9.25"),
+            ("FR", "2024", "7"),
+        ]);
         let facts = |each: &str| {
             parse(&format!(
                 r#"{{"val0": {{"each": "geo", "table": "sdg", "time": "2016", "fmt": "pc"}}, "val1": {{"each": "geo", "table": "sdg", "time": "2024", "fmt": "pc"}},
@@ -7841,19 +11132,66 @@ mod tests {
             .unwrap()
         };
         // what the page prints: the bars bind the family (every member), the note its gap
-        let shown = printed_keys(&parse(r#"{"bars": {"family": "chg"}, "note": "fact:vs_lo", "dek": "{a0.t} {a1.t}"}"#).unwrap(), &facts(""));
-        assert_eq!(shown, set(&["chg.*", "vs_lo"]), "a .t year prints no number of its fact");
+        let shown = printed_keys(
+            &parse(r#"{"bars": {"family": "chg"}, "note": "fact:vs_lo", "dek": "{a0.t} {a1.t}"}"#)
+                .unwrap(),
+            &facts(""),
+        );
+        assert_eq!(
+            shown,
+            set(&["chg.*", "vs_lo"]),
+            "a .t year prints no number of its fact"
+        );
         // the gap 7.75 prints 7.8 though the bars print 5.5 and -2.2 (7.7): within half a unit of the raw difference
-        let d = printed_differences(&facts(""), &fmts(&[("pc", 2), ("pp", 1)]), &change, &shown).into_iter().find(|d| d.key == "vs_lo").unwrap();
-        assert_eq!((d.pa.as_str(), d.pb.as_str(), d.tk.as_str(), d.equal, d.close), ("chg.BE", "chg.FR", "7.8", false, true));
-        assert!(differences_disagree(&facts(""), &fmts(&[("pc", 2), ("pp", 1)]), &change, &shown).is_empty());
+        let d = printed_differences(&facts(""), &fmts(&[("pc", 2), ("pp", 1)]), &change, &shown)
+            .into_iter()
+            .find(|d| d.key == "vs_lo")
+            .unwrap();
+        assert_eq!(
+            (
+                d.pa.as_str(),
+                d.pb.as_str(),
+                d.tk.as_str(),
+                d.equal,
+                d.close
+            ),
+            ("chg.BE", "chg.FR", "7.8", false, true)
+        );
+        assert!(
+            differences_disagree(&facts(""), &fmts(&[("pc", 2), ("pp", 1)]), &change, &shown)
+                .is_empty()
+        );
         // the three at two decimals, each in its own format; the other bars keep one
         let raised = facts(r#", "fmt_each": {"BE": "pp_d2", "FR": "pp_d2"}"#);
-        assert_eq!((fact_fmt(&raised, "chg.BE").as_deref(), fact_fmt(&raised, "chg.SE").as_deref()), (Some("pp_d2"), Some("pp")));
-        assert!(differences_disagree(&raised, &fmts(&[("pc", 2), ("pp", 1), ("pp_d2", 2)]), &change, &shown).is_empty());
+        assert_eq!(
+            (
+                fact_fmt(&raised, "chg.BE").as_deref(),
+                fact_fmt(&raised, "chg.SE").as_deref()
+            ),
+            (Some("pp_d2"), Some("pp"))
+        );
+        assert!(differences_disagree(
+            &raised,
+            &fmts(&[("pc", 2), ("pp", 1), ("pp_d2", 2)]),
+            &change,
+            &shown
+        )
+        .is_empty());
         // the gap not printed, or no operand printed: no case
-        assert!(differences_disagree(&facts(""), &fmts(&[("pc", 2), ("pp", 1)]), &change, &set(&["chg.*"])).is_empty());
-        assert!(differences_disagree(&facts(""), &fmts(&[("pc", 2), ("pp", 1)]), &change, &set(&["vs_lo"])).is_empty());
+        assert!(differences_disagree(
+            &facts(""),
+            &fmts(&[("pc", 2), ("pp", 1)]),
+            &change,
+            &set(&["chg.*"])
+        )
+        .is_empty());
+        assert!(differences_disagree(
+            &facts(""),
+            &fmts(&[("pc", 2), ("pp", 1)]),
+            &change,
+            &set(&["vs_lo"])
+        )
+        .is_empty());
         // the column page: two shares at two decimals, their gap in points at one: 65.43 - 14.92 = 50.51 prints 50.5
         let column = rows(&[("SE", "2025", "65.43"), ("BE", "2025", "14.92")]);
         let gap = |a: &str, b: &str, f: &str| {
@@ -7864,26 +11202,78 @@ mod tests {
             .unwrap()
         };
         let all = set(&["hi", "lo", "gap"]);
-        assert!(differences_disagree(&gap("SE", "BE", "pc"), &fmts(&[("pc", 2), ("pp", 1)]), &column, &all).is_empty());
+        assert!(differences_disagree(
+            &gap("SE", "BE", "pc"),
+            &fmts(&[("pc", 2), ("pp", 1)]),
+            &column,
+            &all
+        )
+        .is_empty());
         // at none: 65 - 15 = 50 as printed, the raw gap 50.51 prints 51: no failure
-        assert!(differences_disagree(&gap("SE", "BE", "pc"), &fmts(&[("pc", 0), ("pp", 0)]), &column, &all).is_empty());
+        assert!(differences_disagree(
+            &gap("SE", "BE", "pc"),
+            &fmts(&[("pc", 0), ("pp", 0)]),
+            &column,
+            &all
+        )
+        .is_empty());
         // whole units: 10.6 and 3.4 print 11 and 3 (8), their raw gap 7.2 prints 7: no failure; at one decimal 7.2
         let levels = rows(&[("DE", "2025", "10.6"), ("FR", "2025", "3.4")]);
-        assert!(differences_disagree(&gap("DE", "FR", "ktoe"), &fmts(&[("ktoe", 0), ("pp", 0)]), &levels, &all).is_empty());
-        assert!(differences_disagree(&gap("DE", "FR", "ktoe"), &fmts(&[("ktoe", 1), ("pp", 1)]), &levels, &all).is_empty());
+        assert!(differences_disagree(
+            &gap("DE", "FR", "ktoe"),
+            &fmts(&[("ktoe", 0), ("pp", 0)]),
+            &levels,
+            &all
+        )
+        .is_empty());
+        assert!(differences_disagree(
+            &gap("DE", "FR", "ktoe"),
+            &fmts(&[("ktoe", 1), ("pp", 1)]),
+            &levels,
+            &all
+        )
+        .is_empty());
         // a half tie: 2.25 and 1.00, their 1.25 to one decimal is 1.2 by the even digit, as the gap prints
         let tie = rows(&[("DE", "2025", "2.25"), ("FR", "2025", "1")]);
-        assert!(differences_disagree(&gap("DE", "FR", "ktoe"), &fmts(&[("ktoe", 2), ("pp", 1)]), &tie, &all).is_empty());
+        assert!(differences_disagree(
+            &gap("DE", "FR", "ktoe"),
+            &fmts(&[("ktoe", 2), ("pp", 1)]),
+            &tie,
+            &all
+        )
+        .is_empty());
         // formats of two scales are no case
         let mut scaled = fmts(&[("ktoe", 0), ("pp", 0)]);
-        scaled.set("pp", parse(r#"{"scale": 100, "dec": 0, "suffix": ""}"#).unwrap());
+        scaled.set(
+            "pp",
+            parse(r#"{"scale": 100, "dec": 0, "suffix": ""}"#).unwrap(),
+        );
         assert!(differences_disagree(&gap("DE", "FR", "ktoe"), &scaled, &levels, &all).is_empty());
         // the printed numbers as integers, and the half tie to the even digit
-        assert_eq!((printed_int("-2.2", 2), printed_int("7", 1), printed_int("1.234", 2)), (Some(-220), Some(70), None));
-        assert_eq!((round_even(775, 2, 1), round_even(765, 2, 1), round_even(-775, 2, 1), round_even(-226, 2, 1)), (78, 76, -78, -23));
+        assert_eq!(
+            (
+                printed_int("-2.2", 2),
+                printed_int("7", 1),
+                printed_int("1.234", 2)
+            ),
+            (Some(-220), Some(70), None)
+        );
+        assert_eq!(
+            (
+                round_even(775, 2, 1),
+                round_even(765, 2, 1),
+                round_even(-775, 2, 1),
+                round_even(-226, 2, 1)
+            ),
+            (78, 76, -78, -23)
+        );
     }
     fn read(name: &str) -> J {
-        parse(&std::fs::read_to_string(fixtures().join(name)).unwrap_or_else(|e| panic!("{name}: {e}"))).unwrap_or_else(|e| panic!("{name}: {e}"))
+        parse(
+            &std::fs::read_to_string(fixtures().join(name))
+                .unwrap_or_else(|e| panic!("{name}: {e}")),
+        )
+        .unwrap_or_else(|e| panic!("{name}: {e}"))
     }
     /// P4a-2: the map circles' honest requests and replies (scripts/fixtures/p4a2/circles.json, exported from the design's
     /// prototype): q1 (dots, labels beside), q6 (leaders), and q1 with two places on one point and no nudge.
@@ -7908,16 +11298,39 @@ mod tests {
         let fx = circles();
         for case in ["q1", "q6", "floor"] {
             let c = fx.g(case);
-            let placed = circles_problems("bubbles", c.g("request"), c.g("reply")).unwrap_or_else(|e| panic!("{case}: {e:?}"));
+            let placed = circles_problems("bubbles", c.g("request"), c.g("reply"))
+                .unwrap_or_else(|e| panic!("{case}: {e:?}"));
             // the core keeps r_used whole when r_max is (the leaf's own int, so its records print as before) and adds the
             // labels' size; the prototype wrote r_used as a float
-            let (have, want) = (if placed.has("floor") { placed.g("floor") } else { &placed }, c.g("placed").get("floor").unwrap_or(c.g("placed")));
+            let (have, want) = (
+                if placed.has("floor") {
+                    placed.g("floor")
+                } else {
+                    &placed
+                },
+                c.g("placed").get("floor").unwrap_or(c.g("placed")),
+            );
             assert_eq!(have.g("r_used").num(), want.g("r_used").num(), "{case}");
-            for k in ["order", "marks", "texts", "dropped", "pairs", "max_overlaps"] {
+            for k in [
+                "order",
+                "marks",
+                "texts",
+                "dropped",
+                "pairs",
+                "max_overlaps",
+            ] {
                 assert_eq!(have.g(k).dump(), want.g(k).dump(), "{case} {k}");
             }
         }
-        assert!(fx.g("floor").g("placed").g("floor").g("pairs").arr().len() > fx.g("floor").g("request").g("scale").g("max_overlaps").num().unwrap() as usize);
+        assert!(
+            fx.g("floor").g("placed").g("floor").g("pairs").arr().len()
+                > fx.g("floor")
+                    .g("request")
+                    .g("scale")
+                    .g("max_overlaps")
+                    .num()
+                    .unwrap() as usize
+        );
     }
 
     /// F1-F17 (P4a-2 design 8): each tampered reply stops at the check kind it names, never passes (design tests/must_fail.py).
@@ -7925,70 +11338,243 @@ mod tests {
     fn next_tree_circles_tampered_replies_stop_at_their_check() {
         let fx = circles();
         let (q1, q6) = (fx.g("q1"), fx.g("q6"));
-        let (req1, rep1, req6, rep6) = (q1.g("request"), q1.g("reply"), q6.g("request"), q6.g("reply"));
+        let (req1, rep1, req6, rep6) = (
+            q1.g("request"),
+            q1.g("reply"),
+            q6.g("request"),
+            q6.g("reply"),
+        );
         let marks = rep1.g("marks");
-        let moved = req1.g("marks").arr().iter().map(|m| st(m.g("id"))).find(|c| marks.has(&format!("{c}/dot"))).expect("a moved circle");
-        let still = req1.g("marks").arr().iter().map(|m| st(m.g("id"))).find(|c| !marks.has(&format!("{c}/dot"))).expect("a still circle");
-        let led = rep6.g("marks").obj().iter().find_map(|(k, _)| k.strip_suffix("/leader").map(String::from)).expect("a leader");
+        let moved = req1
+            .g("marks")
+            .arr()
+            .iter()
+            .map(|m| st(m.g("id")))
+            .find(|c| marks.has(&format!("{c}/dot")))
+            .expect("a moved circle");
+        let still = req1
+            .g("marks")
+            .arr()
+            .iter()
+            .map(|m| st(m.g("id")))
+            .find(|c| !marks.has(&format!("{c}/dot")))
+            .expect("a still circle");
+        let led = rep6
+            .g("marks")
+            .obj()
+            .iter()
+            .find_map(|(k, _)| k.strip_suffix("/leader").map(String::from))
+            .expect("a leader");
         let lab = rep1.g("texts").obj()[0].0.clone();
         let num = |r: &J, path: &[&str]| r.g(path[0]).g(path[1]).g(path[2]).num().unwrap();
-        let set = |r: &mut J, path: &[&str], v: J| assert!(r.set_path(&path.iter().map(|x| x.to_string()).collect::<Vec<_>>(), v), "{path:?}");
+        let set = |r: &mut J, path: &[&str], v: J| {
+            assert!(
+                r.set_path(&path.iter().map(|x| x.to_string()).collect::<Vec<_>>(), v),
+                "{path:?}"
+            )
+        };
         type Tamper<'a> = Box<dyn Fn(&mut J) + 'a>;
-        let pin = req1.g("marks").arr().iter().find(|m| st(m.g("id")) == moved).unwrap().g("pin").clone();
+        let pin = req1
+            .g("marks")
+            .arr()
+            .iter()
+            .find(|m| st(m.g("id")) == moved)
+            .unwrap()
+            .g("pin")
+            .clone();
         let most = req1.g("nudge").g("most").num().unwrap();
         let cases: Vec<(&str, &str, bool, Tamper)> = vec![
-            ("F1 a circle 0.1 px past nudge.most", "K5", true, Box::new(|r: &mut J| {
-                let (cx, cy) = (num(r, &["marks", &moved, "cx"]), num(r, &["marks", &moved, "cy"]));
-                let (px, py) = (pin.at(0).num().unwrap(), pin.at(1).num().unwrap());
-                let k = (most + 0.1) / (cx - px).hypot(cy - py);
-                set(r, &["marks", &moved, "cx"], J::Num(px + (cx - px) * k));
-                set(r, &["marks", &moved, "cy"], J::Num(py + (cy - py) * k));
-            })),
-            ("F2 one radius +0.1 px", "K4", true, Box::new(|r: &mut J| { let v = num(r, &["marks", &still, "r"]); set(r, &["marks", &still, "r"], J::Num(v + 0.1)) })),
-            ("F3 r_used 21, off the 2 px grid", "K4", true, Box::new(|r: &mut J| {
-                for m in req1.g("marks").arr() {
-                    let c = st(m.g("id"));
-                    let v = num(r, &["marks", &c, "r"]);
-                    set(r, &["marks", &c, "r"], J::Num(if v > 3.0 { (v * 21.0 / 22.0).max(3.0) } else { 3.0 }));
-                }
-            })),
-            ("F4 a moved circle's dot left out", "K5", true, Box::new(|r: &mut J| { r.get_mut("marks").unwrap().remove(&format!("{moved}/dot")); })),
-            ("F5 a dot 0.1 px off its pin", "K5", true, Box::new(|r: &mut J| { let d = format!("{moved}/dot"); let v = num(r, &["marks", &d, "cx"]); set(r, &["marks", &d, "cx"], J::Num(v + 0.1)) })),
-            ("F6 a dot on a circle that did not move", "K5", true, Box::new(|r: &mut J| {
-                r.get_mut("marks").unwrap().set(&format!("{still}/dot"), J::obj_of(vec![("shape", J::str("circle")), ("cx", J::Int(1)), ("cy", J::Int(1)), ("r", J::Num(1.6))]));
-            })),
-            ("F7 a beside label 0.1 px off its place", "K8", true, Box::new(|r: &mut J| { let v = num(r, &["texts", &lab, "x"]); set(r, &["texts", &lab, "x"], J::Num(v + 0.1)) })),
-            ("F8 a beside label with another anchor", "K8", true, Box::new(|r: &mut J| {
-                let a = if r.g("texts").g(&lab).g("anchor").s() != Some("middle") { "middle" } else { "start" };
-                set(r, &["texts", &lab, "anchor"], J::str(a));
-            })),
-            ("F10 a label left off and not listed", "K9", true, Box::new(|r: &mut J| { r.get_mut("texts").unwrap().remove(&lab); })),
-            ("F11 a label placed and listed as dropped", "K9", true, Box::new(|r: &mut J| {
-                let mut d = r.g("dropped").arr().to_vec();
-                d.push(J::str(&lab));
-                r.set("dropped", J::Arr(d));
-            })),
-            ("F12 two dropped, out of the subset's order", "K9", true, Box::new(|r: &mut J| {
-                let (a, b) = (r.g("texts").obj()[0].0.clone(), r.g("texts").obj()[1].0.clone());
-                let t = r.get_mut("texts").unwrap();
-                t.remove(&a);
-                t.remove(&b);
-                let mut d = r.g("dropped").arr().to_vec();
-                d.extend([J::str(&b), J::str(&a)]);
-                r.set("dropped", J::Arr(d));
-            })),
-            ("F13 a reply field the core does not read", "B0", true, Box::new(|r: &mut J| r.set("scale", J::obj_of(vec![("r_used", J::Int(22))])))),
-            ("F14 a label for a circle outside the subset", "B0", true, Box::new(|r: &mut J| {
-                let out = st(req1.g("marks").arr()[req1.g("marks").arr().len() - 2].g("id"));
-                r.get_mut("texts").unwrap().set(&out, J::obj_of(vec![("x", J::Int(1)), ("y", J::Int(1)), ("anchor", J::str("start"))]));
-            })),
-            ("F17 a circle answered as a rect", "B1", true, Box::new(|r: &mut J| set(r, &["marks", &still, "shape"], J::str("rect")))),
-            ("F9 a leader starting 0.1 px off the circle's edge", "K8", false, Box::new(|r: &mut J| { let l = format!("{led}/leader"); let v = num(r, &["marks", &l, "x1"]); set(r, &["marks", &l, "x1"], J::Num(v + 0.1)) })),
-            ("F16 a leader 8 px longer than its label's place", "K8", false, Box::new(|r: &mut J| { let l = format!("{led}/leader"); let v = num(r, &["marks", &l, "x2"]); set(r, &["marks", &l, "x2"], J::Num(v + 8.0)) })),
+            (
+                "F1 a circle 0.1 px past nudge.most",
+                "K5",
+                true,
+                Box::new(|r: &mut J| {
+                    let (cx, cy) = (
+                        num(r, &["marks", &moved, "cx"]),
+                        num(r, &["marks", &moved, "cy"]),
+                    );
+                    let (px, py) = (pin.at(0).num().unwrap(), pin.at(1).num().unwrap());
+                    let k = (most + 0.1) / (cx - px).hypot(cy - py);
+                    set(r, &["marks", &moved, "cx"], J::Num(px + (cx - px) * k));
+                    set(r, &["marks", &moved, "cy"], J::Num(py + (cy - py) * k));
+                }),
+            ),
+            (
+                "F2 one radius +0.1 px",
+                "K4",
+                true,
+                Box::new(|r: &mut J| {
+                    let v = num(r, &["marks", &still, "r"]);
+                    set(r, &["marks", &still, "r"], J::Num(v + 0.1))
+                }),
+            ),
+            (
+                "F3 r_used 21, off the 2 px grid",
+                "K4",
+                true,
+                Box::new(|r: &mut J| {
+                    for m in req1.g("marks").arr() {
+                        let c = st(m.g("id"));
+                        let v = num(r, &["marks", &c, "r"]);
+                        set(
+                            r,
+                            &["marks", &c, "r"],
+                            J::Num(if v > 3.0 {
+                                (v * 21.0 / 22.0).max(3.0)
+                            } else {
+                                3.0
+                            }),
+                        );
+                    }
+                }),
+            ),
+            (
+                "F4 a moved circle's dot left out",
+                "K5",
+                true,
+                Box::new(|r: &mut J| {
+                    r.get_mut("marks").unwrap().remove(&format!("{moved}/dot"));
+                }),
+            ),
+            (
+                "F5 a dot 0.1 px off its pin",
+                "K5",
+                true,
+                Box::new(|r: &mut J| {
+                    let d = format!("{moved}/dot");
+                    let v = num(r, &["marks", &d, "cx"]);
+                    set(r, &["marks", &d, "cx"], J::Num(v + 0.1))
+                }),
+            ),
+            (
+                "F6 a dot on a circle that did not move",
+                "K5",
+                true,
+                Box::new(|r: &mut J| {
+                    r.get_mut("marks").unwrap().set(
+                        &format!("{still}/dot"),
+                        J::obj_of(vec![
+                            ("shape", J::str("circle")),
+                            ("cx", J::Int(1)),
+                            ("cy", J::Int(1)),
+                            ("r", J::Num(1.6)),
+                        ]),
+                    );
+                }),
+            ),
+            (
+                "F7 a beside label 0.1 px off its place",
+                "K8",
+                true,
+                Box::new(|r: &mut J| {
+                    let v = num(r, &["texts", &lab, "x"]);
+                    set(r, &["texts", &lab, "x"], J::Num(v + 0.1))
+                }),
+            ),
+            (
+                "F8 a beside label with another anchor",
+                "K8",
+                true,
+                Box::new(|r: &mut J| {
+                    let a = if r.g("texts").g(&lab).g("anchor").s() != Some("middle") {
+                        "middle"
+                    } else {
+                        "start"
+                    };
+                    set(r, &["texts", &lab, "anchor"], J::str(a));
+                }),
+            ),
+            (
+                "F10 a label left off and not listed",
+                "K9",
+                true,
+                Box::new(|r: &mut J| {
+                    r.get_mut("texts").unwrap().remove(&lab);
+                }),
+            ),
+            (
+                "F11 a label placed and listed as dropped",
+                "K9",
+                true,
+                Box::new(|r: &mut J| {
+                    let mut d = r.g("dropped").arr().to_vec();
+                    d.push(J::str(&lab));
+                    r.set("dropped", J::Arr(d));
+                }),
+            ),
+            (
+                "F12 two dropped, out of the subset's order",
+                "K9",
+                true,
+                Box::new(|r: &mut J| {
+                    let (a, b) = (
+                        r.g("texts").obj()[0].0.clone(),
+                        r.g("texts").obj()[1].0.clone(),
+                    );
+                    let t = r.get_mut("texts").unwrap();
+                    t.remove(&a);
+                    t.remove(&b);
+                    let mut d = r.g("dropped").arr().to_vec();
+                    d.extend([J::str(&b), J::str(&a)]);
+                    r.set("dropped", J::Arr(d));
+                }),
+            ),
+            (
+                "F13 a reply field the core does not read",
+                "B0",
+                true,
+                Box::new(|r: &mut J| r.set("scale", J::obj_of(vec![("r_used", J::Int(22))]))),
+            ),
+            (
+                "F14 a label for a circle outside the subset",
+                "B0",
+                true,
+                Box::new(|r: &mut J| {
+                    let out = st(req1.g("marks").arr()[req1.g("marks").arr().len() - 2].g("id"));
+                    r.get_mut("texts").unwrap().set(
+                        &out,
+                        J::obj_of(vec![
+                            ("x", J::Int(1)),
+                            ("y", J::Int(1)),
+                            ("anchor", J::str("start")),
+                        ]),
+                    );
+                }),
+            ),
+            (
+                "F17 a circle answered as a rect",
+                "B1",
+                true,
+                Box::new(|r: &mut J| set(r, &["marks", &still, "shape"], J::str("rect"))),
+            ),
+            (
+                "F9 a leader starting 0.1 px off the circle's edge",
+                "K8",
+                false,
+                Box::new(|r: &mut J| {
+                    let l = format!("{led}/leader");
+                    let v = num(r, &["marks", &l, "x1"]);
+                    set(r, &["marks", &l, "x1"], J::Num(v + 0.1))
+                }),
+            ),
+            (
+                "F16 a leader 8 px longer than its label's place",
+                "K8",
+                false,
+                Box::new(|r: &mut J| {
+                    let l = format!("{led}/leader");
+                    let v = num(r, &["marks", &l, "x2"]);
+                    set(r, &["marks", &l, "x2"], J::Num(v + 8.0))
+                }),
+            ),
         ];
         let mut off = Vec::new();
         for (name, kind, on_q1, tamper) in &cases {
-            let (req, mut rep) = if *on_q1 { (req1, rep1.clone()) } else { (req6, rep6.clone()) };
+            let (req, mut rep) = if *on_q1 {
+                (req1, rep1.clone())
+            } else {
+                (req6, rep6.clone())
+            };
             tamper(&mut rep);
             let first = circles_first(req, &rep);
             if !first.starts_with(kind) {
@@ -7996,17 +11582,40 @@ mod tests {
             }
         }
         // F15: a label moved to an earlier beside place, one the node found taken
-        let (sz, g) = (req1.g("labels").g("size").num().unwrap(), req1.g("labels").g("gap").num().unwrap() + 1.0);
+        let (sz, g) = (
+            req1.g("labels").g("size").num().unwrap(),
+            req1.g("labels").g("gap").num().unwrap() + 1.0,
+        );
         let mut rep = rep1.clone();
         let mut done = false;
         for (c, t) in rep1.g("texts").obj() {
             let m = rep1.g("marks").g(c);
-            let (x, y, r) = (m.g("cx").num().unwrap(), m.g("cy").num().unwrap(), m.g("r").num().unwrap());
-            let places = [("start", x + r + g, y - sz * 0.2), ("end", x - r - g, y - sz * 0.2), ("middle", x, y - r - g - sz * 1.65), ("middle", x, y + r + g + sz * 0.8)];
-            let at = places.iter().position(|p| Some(p.0) == t.g("anchor").s() && (p.1 - t.g("x").num().unwrap()).abs() < 1e-9 && (p.2 - t.g("y").num().unwrap()).abs() < 1e-9);
+            let (x, y, r) = (
+                m.g("cx").num().unwrap(),
+                m.g("cy").num().unwrap(),
+                m.g("r").num().unwrap(),
+            );
+            let places = [
+                ("start", x + r + g, y - sz * 0.2),
+                ("end", x - r - g, y - sz * 0.2),
+                ("middle", x, y - r - g - sz * 1.65),
+                ("middle", x, y + r + g + sz * 0.8),
+            ];
+            let at = places.iter().position(|p| {
+                Some(p.0) == t.g("anchor").s()
+                    && (p.1 - t.g("x").num().unwrap()).abs() < 1e-9
+                    && (p.2 - t.g("y").num().unwrap()).abs() < 1e-9
+            });
             if at.is_some_and(|a| a > 0) {
                 let (a, px, py) = places[0];
-                rep.get_mut("texts").unwrap().set(c, J::obj_of(vec![("x", J::Num(px)), ("y", J::Num(py)), ("anchor", J::str(a))]));
+                rep.get_mut("texts").unwrap().set(
+                    c,
+                    J::obj_of(vec![
+                        ("x", J::Num(px)),
+                        ("y", J::Num(py)),
+                        ("anchor", J::str(a)),
+                    ]),
+                );
                 done = true;
                 break;
             }
@@ -8014,7 +11623,9 @@ mod tests {
         assert!(done, "F15: q1 has a label past its first beside place");
         let first = circles_first(req1, &rep);
         if !first.starts_with("K8") {
-            off.push(format!("F15 a label at an earlier beside place: want K8, got {first}"));
+            off.push(format!(
+                "F15 a label at an earlier beside place: want K8, got {first}"
+            ));
         }
         assert!(off.is_empty(), "{off:#?}");
     }
@@ -8024,20 +11635,48 @@ mod tests {
     /// production knobs and the bounds themselves pass.
     #[test]
     fn next_tree_circles_knobs_past_the_core_bounds_are_refused() {
-        let widen = [("reach", 208.0, "REACH_PX_MAX"), ("nudge", 17.0, "NUDGE_PX_MAX"), ("r_max", 30.0, "RADIUS_PX_MAX"), ("max_overlaps", 21.0, "OVERLAPS_MAX"), ("label_gap", 0.5, "GAP_PX_MIN"), ("label_sep", 1.0, "SEP_PX_MIN")];
-        let at_bound = [("reach", 200.0), ("nudge", 16.0), ("r_max", 28.0), ("max_overlaps", 20.0), ("label_gap", 1.0), ("label_sep", 2.0)];
+        let widen = [
+            ("reach", 208.0, "REACH_PX_MAX"),
+            ("nudge", 17.0, "NUDGE_PX_MAX"),
+            ("r_max", 30.0, "RADIUS_PX_MAX"),
+            ("max_overlaps", 21.0, "OVERLAPS_MAX"),
+            ("label_gap", 0.5, "GAP_PX_MIN"),
+            ("label_sep", 1.0, "SEP_PX_MIN"),
+        ];
+        let at_bound = [
+            ("reach", 200.0),
+            ("nudge", 16.0),
+            ("r_max", 28.0),
+            ("max_overlaps", 20.0),
+            ("label_gap", 1.0),
+            ("label_sep", 2.0),
+        ];
         let with_knob = |k: &str, v: f64| {
             let mut o = bindings();
-            assert!(o.set_path(&["nodes", "bubbles", "knobs", k].map(String::from), J::Num(v)));
+            assert!(o.set_path(
+                &["nodes", "bubbles", "knobs", k].map(String::from),
+                J::Num(v)
+            ));
             registry_problems(&load_registry(&o))
         };
-        assert_eq!(registry_problems(&load_registry(&bindings())), Vec::<String>::new());
+        assert_eq!(
+            registry_problems(&load_registry(&bindings())),
+            Vec::<String>::new()
+        );
         for (k, v, cap) in widen {
             let errs = with_knob(k, v);
-            assert!(errs.iter().any(|e| e.starts_with("C5 registry bubbles knobs") && e.contains(cap)), "C {k} {v}: {errs:?}");
+            assert!(
+                errs.iter()
+                    .any(|e| e.starts_with("C5 registry bubbles knobs") && e.contains(cap)),
+                "C {k} {v}: {errs:?}"
+            );
         }
         for (k, v) in at_bound {
-            assert_eq!(with_knob(k, v), Vec::<String>::new(), "{k} at its bound {v}");
+            assert_eq!(
+                with_knob(k, v),
+                Vec::<String>::new(),
+                "{k} at its bound {v}"
+            );
         }
         let fx = circles();
         let (req, rep) = (fx.g("q1").g("request"), fx.g("q1").g("reply"));
@@ -8052,7 +11691,10 @@ mod tests {
             let mut rq = req.clone();
             assert!(rq.set_path(&path.map(String::from), J::Num(v)));
             let first = circles_first(&rq, rep);
-            assert!(first.starts_with("B0 request bubbles") && first.contains(cap), "D {k} {v}: {first}");
+            assert!(
+                first.starts_with("B0 request bubbles") && first.contains(cap),
+                "D {k} {v}: {first}"
+            );
         }
     }
 
@@ -8060,13 +11702,21 @@ mod tests {
     /// the room after the bars only, as K1 laid the level bars; every value 0 gives no bars to scale.
     #[test]
     fn next_tree_signed_bars_run_from_one_zero_line() {
-        let rows = J::obj_of(vec![("x0", J::Int(0)), ("lw", J::Num(40.0)), ("vw", J::Num(30.0)), ("bw", J::Num(400.0))]);
+        let rows = J::obj_of(vec![
+            ("x0", J::Int(0)),
+            ("lw", J::Num(40.0)),
+            ("vw", J::Num(30.0)),
+            ("bw", J::Num(400.0)),
+        ]);
         let (z, bars) = signed_bars(&rows, &[3.0, -1.0]).unwrap();
         // left 0 + 40 + 30 = 70, bw 400 - 40 - 30 - 30 = 300, z = 70 + 1/4 * 300
         assert_eq!((z, bars), (145.0, vec![(145.0, 225.0), (70.0, 75.0)]));
         let (z, bars) = signed_bars(&rows, &[4.0, 1.0, 0.0]).unwrap();
         // no room left of the zero line: left 70 - 30 = 40, bw 400 - 40 - 30 = 330
-        assert_eq!((z, bars), (40.0, vec![(40.0, 330.0), (40.0, 82.5), (40.0, 0.0)]));
+        assert_eq!(
+            (z, bars),
+            (40.0, vec![(40.0, 330.0), (40.0, 82.5), (40.0, 0.0)])
+        );
         assert_eq!(signed_room(&[0.0, -2.0], 30.0), (-2.0, 0.0, 30.0, 0.0));
         assert!(signed_bars(&rows, &[0.0, 0.0]).is_none());
     }
@@ -8077,36 +11727,89 @@ mod tests {
     #[test]
     fn next_tree_a_rank_by_change_recomputes_the_flow_s_changed() {
         let row = |c: &str, t: &str, v: &str| {
-            J::obj_of(vec![("src", J::Str(format!("series:T/{c}:{t}"))), ("table", J::str("T")), ("dims", J::obj_of(vec![("geo", J::str(c))])), ("time", J::str(t)), ("value", J::str(v))])
+            J::obj_of(vec![
+                ("src", J::Str(format!("series:T/{c}:{t}"))),
+                ("table", J::str("T")),
+                ("dims", J::obj_of(vec![("geo", J::str(c))])),
+                ("time", J::str(t)),
+                ("value", J::str(v)),
+            ])
         };
-        let rows = J::Arr(vec![row("AT", "2016", "10"), row("AT", "2024", "14"), row("BE", "2016", "5"), row("BE", "2024", "9"), row("CY", "2016", "8"), row("CY", "2024", "7")]);
+        let rows = J::Arr(vec![
+            row("AT", "2016", "10"),
+            row("AT", "2024", "14"),
+            row("BE", "2016", "5"),
+            row("BE", "2024", "9"),
+            row("CY", "2016", "8"),
+            row("CY", "2024", "7"),
+        ]);
         let page = |key: J, result: &[&str]| {
             let s = J::obj_of(vec![
                 ("id", J::str("ranked")),
                 ("kind", J::str("rank")),
-                ("over", J::obj_of(vec![("table", J::str("T")), ("by", J::str("geo")), ("time", J::str("2024"))])),
+                (
+                    "over",
+                    J::obj_of(vec![
+                        ("table", J::str("T")),
+                        ("by", J::str("geo")),
+                        ("time", J::str("2024")),
+                    ]),
+                ),
                 ("key", key),
                 ("order", J::str("desc")),
-                ("tie", J::obj_of(vec![("by", J::str("code")), ("outcome", J::str("order"))])),
+                (
+                    "tie",
+                    J::obj_of(vec![("by", J::str("code")), ("outcome", J::str("order"))]),
+                ),
                 ("result", J::strs(result)),
             ]);
             J::obj_of(vec![
                 ("kind", J::str("Page")),
-                ("selects", J::obj_of(vec![("kind", J::str("Selects")), ("items", J::Arr(vec![s]))])),
-                ("facts", J::obj_of(vec![("kind", J::str("Facts")), ("tables", J::Obj(vec![])), ("rows", rows.clone()), ("facts", J::Obj(vec![])), ("fmts", J::Obj(vec![]))])),
-                ("checks", J::obj_of(vec![("kind", J::str("Checks")), ("items", J::Arr(vec![]))])),
+                (
+                    "selects",
+                    J::obj_of(vec![
+                        ("kind", J::str("Selects")),
+                        ("items", J::Arr(vec![s])),
+                    ]),
+                ),
+                (
+                    "facts",
+                    J::obj_of(vec![
+                        ("kind", J::str("Facts")),
+                        ("tables", J::Obj(vec![])),
+                        ("rows", rows.clone()),
+                        ("facts", J::Obj(vec![])),
+                        ("fmts", J::Obj(vec![])),
+                    ]),
+                ),
+                (
+                    "checks",
+                    J::obj_of(vec![("kind", J::str("Checks")), ("items", J::Arr(vec![]))]),
+                ),
             ])
         };
         let change = |a: &str, b: &str| J::obj_of(vec![("change", J::strs(&[a, b]))]);
         // AT +4 and BE +4 tie to code order, CY -1 last
         let (bad, got, _) = recheck(&page(change("2016", "2024"), &["AT", "BE", "CY"]));
-        assert_eq!((bad, got.get("ranked").map(J::dump)), (Vec::<String>::new(), Some(r#"["AT","BE","CY"]"#.to_string())));
+        assert_eq!(
+            (bad, got.get("ranked").map(J::dump)),
+            (
+                Vec::<String>::new(),
+                Some(r#"["AT","BE","CY"]"#.to_string())
+            )
+        );
         let (bad, _, _) = recheck(&page(change("2016", "2024"), &["BE", "AT", "CY"]));
         assert!(!bad.is_empty(), "the flow's ranked in another order passed");
         let (bad, _, _) = recheck(&page(change("2016", "2025"), &["AT", "BE", "CY"]));
-        assert!(bad.iter().any(|e| e.contains("key")), "a change whose later end is not over.time: {bad:?}");
+        assert!(
+            bad.iter().any(|e| e.contains("key")),
+            "a change whose later end is not over.time: {bad:?}"
+        );
         let (bad, _, _) = recheck(&page(change("2015", "2024"), &["AT", "BE", "CY"]));
-        assert!(bad.iter().any(|e| e.contains("has 0 rows at 2015")), "{bad:?}");
+        assert!(
+            bad.iter().any(|e| e.contains("has 0 rows at 2015")),
+            "{bad:?}"
+        );
     }
 
     /// The core writes a number as the leaf's facts.fmt does: Python's `,.{dec}f` (outputs taken from Python 3.13).
@@ -8126,28 +11829,56 @@ mod tests {
         }
     }
     fn heads(errs: &[String]) -> Vec<String> {
-        errs.iter().map(|e| e.split(':').next().unwrap_or("").to_string()).collect()
+        errs.iter()
+            .map(|e| e.split(':').next().unwrap_or("").to_string())
+            .collect()
     }
     fn reg_of(env: &J) -> J {
-        load_registry(env.get("registry_overlay").unwrap_or(&read("registry-b.json")))
+        load_registry(
+            env.get("registry_overlay")
+                .unwrap_or(&read("registry-b.json")),
+        )
     }
 
     /// Reads JSON as Python does: document order, NaN and Infinity, ints and floats apart, Python's equality and repr.
     #[test]
     fn next_tree_json_reads_and_prints_as_the_prototype() {
         let v = parse(r#"{"b": 1, "a": [1.0, Infinity, -Infinity, "xé😀"], "b": 2}"#).unwrap();
-        assert_eq!(v.obj().iter().map(|(k, _)| k.as_str()).collect::<Vec<_>>(), ["b", "a"]);
+        assert_eq!(
+            v.obj().iter().map(|(k, _)| k.as_str()).collect::<Vec<_>>(),
+            ["b", "a"]
+        );
         assert_eq!(v.g("b"), &J::Int(2));
         assert!(matches!(v.g("a").at(0), J::Num(_)) && v.g("a").at(0) == &J::Int(1));
         assert!(!v.g("a").at(1).finite());
-        assert_eq!(J::obj_of(vec![("x", J::Int(1)), ("y", J::Int(2))]), J::obj_of(vec![("y", J::Int(2)), ("x", J::Bool(true))]));
-        for (x, want) in [(1e-5, "1e-05"), (0.0001, "0.0001"), (170.0, "170.0"), (65.4, "65.4"), (1e16, "1e+16"), (-2.5e-7, "-2.5e-07"), (123456.789, "123456.789")] {
+        assert_eq!(
+            J::obj_of(vec![("x", J::Int(1)), ("y", J::Int(2))]),
+            J::obj_of(vec![("y", J::Int(2)), ("x", J::Bool(true))])
+        );
+        for (x, want) in [
+            (1e-5, "1e-05"),
+            (0.0001, "0.0001"),
+            (170.0, "170.0"),
+            (65.4, "65.4"),
+            (1e16, "1e+16"),
+            (-2.5e-7, "-2.5e-07"),
+            (123456.789, "123456.789"),
+        ] {
             assert_eq!(py_float(x), want);
         }
         assert_eq!(J::str("from_node").repr(), "'from_node'");
-        assert_eq!(parse(r#"{"fields": ["x"], "of": 0.4}"#).unwrap().repr(), "{'fields': ['x'], 'of': 0.4}");
-        assert_eq!(ref_parts("select:ranked[0]"), Some(("ranked".into(), None, Some(0))));
-        assert_eq!(ref_parts("select:groups.other"), Some(("groups".into(), Some("other".into()), None)));
+        assert_eq!(
+            parse(r#"{"fields": ["x"], "of": 0.4}"#).unwrap().repr(),
+            "{'fields': ['x'], 'of': 0.4}"
+        );
+        assert_eq!(
+            ref_parts("select:ranked[0]"),
+            Some(("ranked".into(), None, Some(0)))
+        );
+        assert_eq!(
+            ref_parts("select:groups.other"),
+            Some(("groups".into(), Some("other".into()), None))
+        );
         assert_eq!(ref_parts("select:Ranked"), None);
         assert_eq!(py_round(12.649999999999999, 3), 12.65);
     }
@@ -8165,8 +11896,14 @@ mod tests {
         }
         assert!(missing.is_empty(), "{missing:?}");
         assert_eq!(pattern_match("^[a-z]+x$", "ax"), None);
-        assert_eq!(pattern_match(r"^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*$", "ab.c_1"), Some(true));
-        assert_eq!(pattern_match(r"^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*$", "ab..c"), Some(false));
+        assert_eq!(
+            pattern_match(r"^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*$", "ab.c_1"),
+            Some(true)
+        );
+        assert_eq!(
+            pattern_match(r"^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*$", "ab..c"),
+            Some(false)
+        );
         let words = r"^(?!.*(一半|过半|大半|半数|减半|近半|逾半|超半|翻番|翻倍|数倍|[零〇一二两三四五六七八九十百千万亿几]\s*(倍|分之|个百分点|%|％)))[^0-9０-９]*$";
         assert_eq!(pattern_match(words, "约三成"), Some(true));
         assert_eq!(pattern_match(words, "三 倍"), Some(false));
@@ -8183,16 +11920,28 @@ mod tests {
         let mut n = 0;
         for (name, proto) in want.g("fixtures").obj() {
             let env = read(name);
-            let errs = check_envelope(&env, &reg_of(&env)).unwrap_or_else(|e| vec![format!("CRASH: {e}")]);
+            let errs =
+                check_envelope(&env, &reg_of(&env)).unwrap_or_else(|e| vec![format!("CRASH: {e}")]);
             let expect = st(env.g("expect"));
-            let as_expected = if expect == "pass" { errs.is_empty() } else { errs.iter().any(|e| e.contains(&expect)) };
+            let as_expected = if expect == "pass" {
+                errs.is_empty()
+            } else {
+                errs.iter().any(|e| e.contains(&expect))
+            };
             let proto: Vec<String> = proto.arr().iter().map(st).collect();
             if !as_expected || heads(&errs) != proto {
-                off.push(format!("{name}: expect {expect:?}; rust {:?}; prototype {proto:?}; first lines {:?}", heads(&errs), errs.iter().take(3).collect::<Vec<_>>()));
+                off.push(format!(
+                    "{name}: expect {expect:?}; rust {:?}; prototype {proto:?}; first lines {:?}",
+                    heads(&errs),
+                    errs.iter().take(3).collect::<Vec<_>>()
+                ));
             }
             n += 1;
         }
-        println!("next_tree fixtures: {}/{n} equal to the prototype", n - off.len());
+        println!(
+            "next_tree fixtures: {}/{n} equal to the prototype",
+            n - off.len()
+        );
         assert!(off.is_empty(), "{}", off.join("\n"));
         assert_eq!(n, 54);
     }
@@ -8209,17 +11958,29 @@ mod tests {
                 None => {
                     let mut env = read(&st(f.g("base")));
                     let path: Vec<String> = f.g("path").arr().iter().map(st).collect();
-                    assert!(env.set_path(&path, f.g("value").clone()), "form {k}: no path {path:?}");
+                    assert!(
+                        env.set_path(&path, f.g("value").clone()),
+                        "form {k}: no path {path:?}"
+                    );
                     (env, path.join("."))
                 }
             };
-            let errs = check_envelope(&env, &reg_of(&env)).unwrap_or_else(|e| vec![format!("CRASH: {e}")]);
+            let errs =
+                check_envelope(&env, &reg_of(&env)).unwrap_or_else(|e| vec![format!("CRASH: {e}")]);
             let proto: Vec<String> = f.g("heads").arr().iter().map(st).collect();
             if errs.is_empty() || heads(&errs) != proto {
-                off.push(format!("hole {} form {label}: rust {:?}, prototype {proto:?}", st(f.g("hole")), heads(&errs)));
+                off.push(format!(
+                    "hole {} form {label}: rust {:?}, prototype {proto:?}",
+                    st(f.g("hole")),
+                    heads(&errs)
+                ));
             }
         }
-        println!("next_tree holes: {}/{} forms stopped as in the prototype", forms.len() - off.len(), forms.len());
+        println!(
+            "next_tree holes: {}/{} forms stopped as in the prototype",
+            forms.len() - off.len(),
+            forms.len()
+        );
         assert!(off.is_empty(), "{}", off.join("\n"));
         assert_eq!(forms.len(), 38);
     }
@@ -8256,12 +12017,18 @@ mod tests {
                 }
                 let mut g = Vec::new();
                 for (nid, req) in &reqs {
-                    g.extend(geometry_problems(nid, req, reply.g(nid), &metas[nid]).unwrap_or_else(|e| vec![format!("CRASH: {e}")]));
+                    g.extend(
+                        geometry_problems(nid, req, reply.g(nid), &metas[nid])
+                            .unwrap_or_else(|e| vec![format!("CRASH: {e}")]),
+                    );
                 }
                 let mut h = heads(&g);
                 h.sort();
                 if h != proto {
-                    off.push(format!("{name} {path:?} = {}: rust {h:?}, prototype {proto:?}", case.at(1).repr()));
+                    off.push(format!(
+                        "{name} {path:?} = {}: rust {h:?}, prototype {proto:?}",
+                        case.at(1).repr()
+                    ));
                 } else if h.is_empty() {
                     passed += count;
                     if rendered(&reply, &metas) != honest {
@@ -8271,7 +12038,11 @@ mod tests {
             }
         }
         println!("next_tree tamper geometry: {} cases, {} passed with the honest content, {} not as the prototype", total, passed, off.len());
-        assert!(off.is_empty(), "{}", off.iter().take(12).cloned().collect::<Vec<_>>().join("\n"));
+        assert!(
+            off.is_empty(),
+            "{}",
+            off.iter().take(12).cloned().collect::<Vec<_>>().join("\n")
+        );
         assert_eq!((total, passed), (all.g("total").num().unwrap() as i64, 890));
     }
 
@@ -8281,26 +12052,49 @@ mod tests {
     fn next_tree_a_registry_text_distance_or_radius_over_the_cap_is_refused() {
         fn at_mut<'a>(mut o: &'a mut J, path: &[&str]) -> &'a mut J {
             for k in path {
-                o = o.get_mut(k).unwrap_or_else(|| panic!("registry-b.json has no {k}"));
+                o = o
+                    .get_mut(k)
+                    .unwrap_or_else(|| panic!("registry-b.json has no {k}"));
             }
             o
         }
         let base = read("registry-b.json");
         assert!(registry_problems(&load_registry(&base)).is_empty());
-        for (d, refused) in [(25.0, true), (24.0, false), (6.0, false), (0.0, true), (-1.0, true)] {
+        for (d, refused) in [
+            (25.0, true),
+            (24.0, false),
+            (6.0, false),
+            (0.0, true),
+            (-1.0, true),
+        ] {
             let mut o = base.clone();
             let label = at_mut(&mut o, &["nodes", "bars", "texts", "item", "label"]);
             label.set("max_px", J::Num(d));
             let errs = registry_problems(&load_registry(&o));
-            assert_eq!(errs.iter().any(|e| e.starts_with("C5 registry bars text label: max_px")), refused, "{d}: {errs:?}");
+            assert_eq!(
+                errs.iter()
+                    .any(|e| e.starts_with("C5 registry bars text label: max_px")),
+                refused,
+                "{d}: {errs:?}"
+            );
         }
         for (r, refused) in [(29.0, true), (28.0, false), (10.0, false), (0.0, true)] {
             let mut o = base.clone();
             let enc = at_mut(&mut o, &["nodes", "bubbles", "marks", "encode"]);
-            let J::Arr(chs) = enc else { panic!("encode is a list") };
-            chs[0].get_mut("scale").unwrap().set("range", J::obj_of(vec![("max_px", J::Num(r))]));
+            let J::Arr(chs) = enc else {
+                panic!("encode is a list")
+            };
+            chs[0]
+                .get_mut("scale")
+                .unwrap()
+                .set("range", J::obj_of(vec![("max_px", J::Num(r))]));
             let errs = registry_problems(&load_registry(&o));
-            assert_eq!(errs.iter().any(|e| e.starts_with("C5 registry bubbles channel")), refused, "{r}: {errs:?}");
+            assert_eq!(
+                errs.iter()
+                    .any(|e| e.starts_with("C5 registry bubbles channel")),
+                refused,
+                "{r}: {errs:?}"
+            );
         }
     }
 
@@ -8309,9 +12103,18 @@ mod tests {
     fn next_tree_a_registry_tolerance_over_the_cap_is_refused() {
         let mut o = read("registry-b.json");
         for (tol, refused) in [(0.6, true), (0.5, false), (0.1, false), (-0.1, true)] {
-            o.get_mut("nodes").and_then(|n| n.get_mut("bars")).and_then(|b| b.get_mut("marks")).unwrap().set("tol_px", J::Num(tol));
+            o.get_mut("nodes")
+                .and_then(|n| n.get_mut("bars"))
+                .and_then(|b| b.get_mut("marks"))
+                .unwrap()
+                .set("tol_px", J::Num(tol));
             let errs = registry_problems(&load_registry(&o));
-            assert_eq!(errs.iter().any(|e| e.starts_with("C5 registry bars marks: tol_px")), refused, "{tol}: {errs:?}");
+            assert_eq!(
+                errs.iter()
+                    .any(|e| e.starts_with("C5 registry bars marks: tol_px")),
+                refused,
+                "{tol}: {errs:?}"
+            );
         }
     }
 
@@ -8323,7 +12126,24 @@ mod tests {
     #[test]
     fn next_tree_production_binds_the_bars_external() {
         let o = bindings();
-        assert_eq!(external_nodes(&o), ["bars", "bubbles", "map", "bignums", "leader_notes", "notes", "ring", "strip", "sankey", "line", "rank_lines", "waterfall", "stacked100"]);
+        assert_eq!(
+            external_nodes(&o),
+            [
+                "bars",
+                "bubbles",
+                "map",
+                "bignums",
+                "leader_notes",
+                "notes",
+                "ring",
+                "strip",
+                "sankey",
+                "line",
+                "rank_lines",
+                "waterfall",
+                "stacked100"
+            ]
+        );
         assert_eq!(registry_problems(&load_registry(&o)), Vec::<String>::new());
         for n in external_nodes(&o) {
             assert!(runner_allowed(&st(o.g("nodes").g(&n).g("runner"))), "{n}");
@@ -8332,28 +12152,78 @@ mod tests {
             let want: Vec<String> = o.g("recipes").g(&r.name).arr().iter().map(st).collect();
             assert_eq!(r.external, want, "recipe {}", r.name);
             assert!(r.external.iter().all(|l| external_nodes(&o).contains(l)));
-            let view: Vec<String> =
-                want.iter().filter(|l| o.g("frames").g(&st(o.g("nodes").g(l.as_str()).g("frame"))).g("kind").s() == Some("view")).cloned().collect();
+            let view: Vec<String> = want
+                .iter()
+                .filter(|l| {
+                    o.g("frames")
+                        .g(&st(o.g("nodes").g(l.as_str()).g("frame")))
+                        .g("kind")
+                        .s()
+                        == Some("view")
+                })
+                .cloned()
+                .collect();
             assert_eq!(r.points, view, "recipe {}", r.name);
         }
-        let leaf = |k: &str| match crate::next_leaf::leaves().nodes["bubbles"].info.knobs.iter().find(|x| x.name == k).map(|x| &x.kind) {
+        let leaf = |k: &str| match crate::next_leaf::leaves().nodes["bubbles"]
+            .info
+            .knobs
+            .iter()
+            .find(|x| x.name == k)
+            .map(|x| &x.kind)
+        {
             Some(crate::next_nodes::Kind::Range { default, .. }) => *default,
             _ => panic!("bubbles.{k}"),
         };
         let kn = o.g("nodes").g("bubbles").g("knobs");
-        for (k, map_style) in [("label_top", Some(12.0)), ("label_sep", Some(8.0)), ("r_max", None), ("nudge", None), ("max_overlaps", None), ("reach", None), ("r_min", None), ("circle_gap", None), ("label_gap", None), ("land_cost", None)] {
-            assert_eq!(kn.g(k).num(), Some(map_style.unwrap_or_else(|| leaf(k))), "bubbles knob {k}");
+        for (k, map_style) in [
+            ("label_top", Some(12.0)),
+            ("label_sep", Some(8.0)),
+            ("r_max", None),
+            ("nudge", None),
+            ("max_overlaps", None),
+            ("reach", None),
+            ("r_min", None),
+            ("circle_gap", None),
+            ("label_gap", None),
+            ("land_cost", None),
+        ] {
+            assert_eq!(
+                kn.g(k).num(),
+                Some(map_style.unwrap_or_else(|| leaf(k))),
+                "bubbles knob {k}"
+            );
         }
         // the rows frame repeats the bars leaf's knob defaults (column.py ColumnFrame reads top, row and size)
-        let knob = |k: &str| match crate::next_leaf::leaves().nodes["bars"].info.knobs.iter().find(|x| x.name == k).map(|x| &x.kind) {
+        let knob = |k: &str| match crate::next_leaf::leaves().nodes["bars"]
+            .info
+            .knobs
+            .iter()
+            .find(|x| x.name == k)
+            .map(|x| &x.kind)
+        {
             Some(crate::next_nodes::Kind::Range { default, .. }) => *default,
             _ => panic!("bars.{k}"),
         };
         let fr = o.g("frames").g("bars_rows");
-        assert_eq!((fr.g("top").num(), fr.g("row").num()), (Some(knob("top")), Some(knob("row"))));
-        assert_eq!(o.g("nodes").g("bars").g("texts").g("size").num(), Some(knob("size")));
+        assert_eq!(
+            (fr.g("top").num(), fr.g("row").num()),
+            (Some(knob("top")), Some(knob("row")))
+        );
+        assert_eq!(
+            o.g("nodes").g("bars").g("texts").g("size").num(),
+            Some(knob("size"))
+        );
         assert!(runner_allowed("nodes/bars.mjs") && runner_allowed("leaves_py/bars.py"));
-        for bad in ["pi/x.mjs", "nodes/../pi/x.mjs", "nodes/x.json", "/nodes/x.mjs", "nodes/./x.py", "leaves_py/bake.py", "leaves_py/knobs.py"] {
+        for bad in [
+            "pi/x.mjs",
+            "nodes/../pi/x.mjs",
+            "nodes/x.json",
+            "/nodes/x.mjs",
+            "nodes/./x.py",
+            "leaves_py/bake.py",
+            "leaves_py/knobs.py",
+        ] {
             assert!(!runner_allowed(bad), "{bad}");
         }
     }
@@ -8367,37 +12237,89 @@ mod tests {
         let o = bindings();
         assert!(heads(&o).is_empty());
         let mut no_kind = o.clone();
-        no_kind.get_mut("frames").and_then(|f| f.get_mut("bars_rows")).unwrap().remove("kind");
-        assert!(heads(&no_kind).iter().any(|e| e.contains("channel rows_y needs a frame of kind rows")), "{:?}", heads(&no_kind));
+        no_kind
+            .get_mut("frames")
+            .and_then(|f| f.get_mut("bars_rows"))
+            .unwrap()
+            .remove("kind");
+        assert!(
+            heads(&no_kind)
+                .iter()
+                .any(|e| e.contains("channel rows_y needs a frame of kind rows")),
+            "{:?}",
+            heads(&no_kind)
+        );
         let mut other = o.clone();
-        other.get_mut("frames").and_then(|f| f.get_mut("bars_rows")).unwrap().set("kind", J::str("columns"));
-        assert!(heads(&other).iter().any(|e| e.contains("not one the core lays out")));
-        for (field, v) in [("inset", J::Int(12)), ("row", J::Num(24.5)), ("foot", J::Null)] {
+        other
+            .get_mut("frames")
+            .and_then(|f| f.get_mut("bars_rows"))
+            .unwrap()
+            .set("kind", J::str("columns"));
+        assert!(heads(&other)
+            .iter()
+            .any(|e| e.contains("not one the core lays out")));
+        for (field, v) in [
+            ("inset", J::Int(12)),
+            ("row", J::Num(24.5)),
+            ("foot", J::Null),
+        ] {
             let mut bad = o.clone();
-            bad.get_mut("frames").and_then(|f| f.get_mut("bars_rows")).unwrap().set(field, v);
-            assert!(heads(&bad).iter().any(|e| e.contains("a rows frame needs")), "{field}");
+            bad.get_mut("frames")
+                .and_then(|f| f.get_mut("bars_rows"))
+                .unwrap()
+                .set(field, v);
+            assert!(
+                heads(&bad).iter().any(|e| e.contains("a rows frame needs")),
+                "{field}"
+            );
         }
         let mut side = o.clone();
-        assert!(side.set_path(&["frames", "bars_rows", "left", "text"].map(String::from), J::str("share_text")));
-        assert!(heads(&side).iter().any(|e| e.contains("a rows frame needs")));
+        assert!(side.set_path(
+            &["frames", "bars_rows", "left", "text"].map(String::from),
+            J::str("share_text")
+        ));
+        assert!(heads(&side)
+            .iter()
+            .any(|e| e.contains("a rows frame needs")));
         let mut chan = o.clone();
-        assert!(chan.set_path(&["nodes", "bars", "marks", "encode", "0", "channel"].map(String::from), J::str("length_left")));
-        assert!(heads(&chan).iter().any(|e| e.starts_with("C5 registry bars channel")));
+        assert!(chan.set_path(
+            &["nodes", "bars", "marks", "encode", "0", "channel"].map(String::from),
+            J::str("length_left")
+        ));
+        assert!(heads(&chan)
+            .iter()
+            .any(|e| e.starts_with("C5 registry bars channel")));
     }
 
     /// K2's width rule is the leaf's (prod.py tw): equal bit for bit on every name and value the 14 column pages print, a
     /// code point scan and a few scripts, at three sizes (scripts/fixtures/p4a/tw-leaf.json, Python's repr of prod.tw).
     #[test]
     fn next_tree_tw_leaf_is_the_leaf_rule_bit_for_bit() {
-        let f = parse(&std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/fixtures/p4a/tw-leaf.json")).unwrap()).unwrap();
+        let f = parse(
+            &std::fs::read_to_string(
+                Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/fixtures/p4a/tw-leaf.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
         let mut off = Vec::new();
         for c in f.g("cases").arr() {
             let w = tw_leaf(&st(c.at(0)), c.at(1).num().unwrap());
             // Python's sum stays an int while every term is (no Latin char, an int size): the same number, printed bare
-            let int = (matches!(c.at(1), J::Int(_)) || st(c.at(0)).is_empty()) && st(c.at(0)).chars().all(|ch| ch as u32 > 0x2E7F);
-            let got = if int { format!("{}", w as i64) } else { py_float(w) };
+            let int = (matches!(c.at(1), J::Int(_)) || st(c.at(0)).is_empty())
+                && st(c.at(0)).chars().all(|ch| ch as u32 > 0x2E7F);
+            let got = if int {
+                format!("{}", w as i64)
+            } else {
+                py_float(w)
+            };
             if got != st(c.at(2)) {
-                off.push(format!("{:?} at {}: {got} != {}", st(c.at(0)), st(c.at(1)), st(c.at(2))));
+                off.push(format!(
+                    "{:?} at {}: {got} != {}",
+                    st(c.at(0)),
+                    st(c.at(1)),
+                    st(c.at(2))
+                ));
             }
         }
         assert!(off.is_empty() && f.g("cases").arr().len() > 400, "{off:?}");
@@ -8408,7 +12330,13 @@ mod tests {
     /// on it, print every number the page printed (the axis, each name, bar x and width, value), as ColumnFrame did.
     #[test]
     fn next_tree_k1_k2_print_the_column_pages_numbers() {
-        let pages = parse(&std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/fixtures/p4a/column-bars.json")).unwrap()).unwrap();
+        let pages = parse(
+            &std::fs::read_to_string(
+                Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/fixtures/p4a/column-bars.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
         let reg = load_registry(&bindings());
         let e = reg.g("nodes").g("bars");
         let fr = reg.g("frames").g("bars_rows");
@@ -8419,25 +12347,52 @@ mod tests {
             let texts: Vec<String> = p.g("values_text").arr().iter().map(st).collect();
             let mut meta = Meta::default();
             for (i, (n, v)) in names.iter().zip(&texts).enumerate() {
-                meta.texts.push((format!("bars/{i}/label"), n.clone(), J::Null));
-                meta.texts.push((format!("bars/{i}/value_text"), v.clone(), J::Null));
+                meta.texts
+                    .push((format!("bars/{i}/label"), n.clone(), J::Null));
+                meta.texts
+                    .push((format!("bars/{i}/value_text"), v.clone(), J::Null));
             }
             let node = J::obj_of(vec![
                 ("knobs", J::obj_of(vec![("x0", p.g("x0").clone())])),
-                ("items", J::Arr(names.iter().map(|_| J::Obj(vec![])).collect())),
+                (
+                    "items",
+                    J::Arr(names.iter().map(|_| J::Obj(vec![])).collect()),
+                ),
             ]);
             let values: Vec<f64> = p.g("values").arr().iter().filter_map(J::num).collect();
             let (frame, plot, rows) = rows_frame(fr, &node, &meta, 13.0, &values).unwrap();
-            let marks: Vec<J> = p.g("values").arr().iter().enumerate().map(|(i, v)| {
-                J::obj_of(vec![("id", J::Str(format!("bars/{i}"))), ("shape", J::str("rect")), ("item", J::Int(i as i64)), ("value", v.clone())])
-            }).collect();
-            let req = J::obj_of(vec![("frame", frame), ("plot", plot.clone()), ("rows", rows), ("encode", e.g("marks").g("encode").clone()), ("marks", J::Arr(marks))]);
+            let marks: Vec<J> = p
+                .g("values")
+                .arr()
+                .iter()
+                .enumerate()
+                .map(|(i, v)| {
+                    J::obj_of(vec![
+                        ("id", J::Str(format!("bars/{i}"))),
+                        ("shape", J::str("rect")),
+                        ("item", J::Int(i as i64)),
+                        ("value", v.clone()),
+                    ])
+                })
+                .collect();
+            let req = J::obj_of(vec![
+                ("frame", frame),
+                ("plot", plot.clone()),
+                ("rows", rows),
+                ("encode", e.g("marks").g("encode").clone()),
+                ("marks", J::Arr(marks)),
+            ]);
             let want = expected(&req).unwrap();
             let left = plot.at(0).num().unwrap();
             let mut printed = vec![format!("{left:.1}")];
             for (_, f) in &want {
                 let get = |k: &str| f.iter().find(|(x, _)| x == k).unwrap().1;
-                printed.extend([format!("{:.1}", left - 8.0), format!("{:.1}", get("x")), format!("{:.1}", get("w")), format!("{:.1}", left + get("w") + 6.0)]);
+                printed.extend([
+                    format!("{:.1}", left - 8.0),
+                    format!("{:.1}", get("x")),
+                    format!("{:.1}", get("w")),
+                    format!("{:.1}", left + get("w") + 6.0),
+                ]);
                 assert_eq!(get("h"), 18.0, "{sha}");
             }
             let page: Vec<String> = p.g("printed").arr().iter().map(st).collect();
@@ -8455,31 +12410,97 @@ mod tests {
         let e = reg.g("nodes").g("bars");
         let fr = reg.g("frames").g("bars_rows");
         let (names, vals) = (["瑞典", "芬兰", "丹麦"], [65.4, 53.0, 48.2]);
-        let mut meta = Meta { tol_px: 0.5, ..Meta::default() };
+        let mut meta = Meta {
+            tol_px: 0.5,
+            ..Meta::default()
+        };
         let mut texts = Vec::new();
         for (i, n) in names.iter().enumerate() {
             meta.marks.push((format!("bars/{i}"), i, None, false));
-            for (f, s) in [("label", n.to_string()), ("value_text", format!("{}", vals[i]))] {
+            for (f, s) in [
+                ("label", n.to_string()),
+                ("value_text", format!("{}", vals[i])),
+            ] {
                 let id = format!("bars/{i}/{f}");
-                texts.push(J::obj_of(vec![("id", J::str(&id)), ("w", J::Num(tw(&s, 13.0))), ("h", J::Num(14.95)), ("size", J::Int(13)),
-                    ("near", J::obj_of(vec![("marks", J::strs(&[format!("bars/{i}")])), ("from", J::str("anchor")), ("max_px", J::Int(12))]))]));
+                texts.push(J::obj_of(vec![
+                    ("id", J::str(&id)),
+                    ("w", J::Num(tw(&s, 13.0))),
+                    ("h", J::Num(14.95)),
+                    ("size", J::Int(13)),
+                    (
+                        "near",
+                        J::obj_of(vec![
+                            ("marks", J::strs(&[format!("bars/{i}")])),
+                            ("from", J::str("anchor")),
+                            ("max_px", J::Int(12)),
+                        ]),
+                    ),
+                ]));
                 meta.texts.push((id, s, J::Null));
             }
         }
-        let node = J::obj_of(vec![("knobs", J::obj_of(vec![("x0", J::Int(600))])), ("items", J::Arr(vec![J::Obj(vec![]); 3]))]);
+        let node = J::obj_of(vec![
+            ("knobs", J::obj_of(vec![("x0", J::Int(600))])),
+            ("items", J::Arr(vec![J::Obj(vec![]); 3])),
+        ]);
         let (frame, plot, rows) = rows_frame(fr, &node, &meta, 13.0, &vals).unwrap();
-        let marks: Vec<J> = vals.iter().enumerate().map(|(i, v)| J::obj_of(vec![("id", J::Str(format!("bars/{i}"))), ("shape", J::str("rect")), ("item", J::Int(i as i64)), ("value", J::Num(*v))])).collect();
-        let req = J::obj_of(vec![("node", J::str("bars")), ("frame", frame), ("plot", plot), ("rows", rows), ("encode", e.g("marks").g("encode").clone()), ("marks", J::Arr(marks)), ("texts", J::Arr(texts))]);
+        let marks: Vec<J> = vals
+            .iter()
+            .enumerate()
+            .map(|(i, v)| {
+                J::obj_of(vec![
+                    ("id", J::Str(format!("bars/{i}"))),
+                    ("shape", J::str("rect")),
+                    ("item", J::Int(i as i64)),
+                    ("value", J::Num(*v)),
+                ])
+            })
+            .collect();
+        let req = J::obj_of(vec![
+            ("node", J::str("bars")),
+            ("frame", frame),
+            ("plot", plot),
+            ("rows", rows),
+            ("encode", e.g("marks").g("encode").clone()),
+            ("marks", J::Arr(marks)),
+            ("texts", J::Arr(texts)),
+        ]);
         let honest = {
             let r = req.g("rows");
-            let (left, bw) = (600.0 + r.g("lw").num().unwrap(), r.g("bw").num().unwrap() - r.g("lw").num().unwrap() - r.g("vw").num().unwrap());
+            let (left, bw) = (
+                600.0 + r.g("lw").num().unwrap(),
+                r.g("bw").num().unwrap() - r.g("lw").num().unwrap() - r.g("vw").num().unwrap(),
+            );
             let mut m = Vec::new();
             let mut t = Vec::new();
             for (i, v) in vals.iter().enumerate() {
                 let (y, w) = (6.0 + 24.0 * i as f64, v / 65.4 * bw);
-                m.push((format!("bars/{i}"), J::obj_of(vec![("shape", J::str("rect")), ("x", J::Num(left)), ("y", J::Num(y + 3.0)), ("w", J::Num(w)), ("h", J::Int(18))])));
-                t.push((format!("bars/{i}/label"), J::obj_of(vec![("x", J::Num(left - 8.0)), ("y", J::Num(y + 12.0)), ("anchor", J::str("end"))])));
-                t.push((format!("bars/{i}/value_text"), J::obj_of(vec![("x", J::Num(left + w + 6.0)), ("y", J::Num(y + 12.0)), ("anchor", J::str("start"))])));
+                m.push((
+                    format!("bars/{i}"),
+                    J::obj_of(vec![
+                        ("shape", J::str("rect")),
+                        ("x", J::Num(left)),
+                        ("y", J::Num(y + 3.0)),
+                        ("w", J::Num(w)),
+                        ("h", J::Int(18)),
+                    ]),
+                ));
+                t.push((
+                    format!("bars/{i}/label"),
+                    J::obj_of(vec![
+                        ("x", J::Num(left - 8.0)),
+                        ("y", J::Num(y + 12.0)),
+                        ("anchor", J::str("end")),
+                    ]),
+                ));
+                t.push((
+                    format!("bars/{i}/value_text"),
+                    J::obj_of(vec![
+                        ("x", J::Num(left + w + 6.0)),
+                        ("y", J::Num(y + 12.0)),
+                        ("anchor", J::str("start")),
+                    ]),
+                ));
             }
             J::obj_of(vec![("marks", J::Obj(m)), ("texts", J::Obj(t))])
         };
@@ -8488,14 +12509,34 @@ mod tests {
         let mut longer = honest.clone();
         let w = longer.g("marks").g("bars/1").g("w").num().unwrap();
         assert!(longer.set_path(&["marks", "bars/1", "w"].map(String::from), J::Num(w + 1.0)));
-        assert!(fails(&longer).iter().any(|f| f.starts_with("B3 node bars bars/1.w")), "{:?}", fails(&longer));
+        assert!(
+            fails(&longer)
+                .iter()
+                .any(|f| f.starts_with("B3 node bars bars/1.w")),
+            "{:?}",
+            fails(&longer)
+        );
         let mut moved = honest.clone();
         assert!(moved.set_path(&["marks", "bars/1", "y"].map(String::from), J::Num(57.0)));
-        assert!(fails(&moved).iter().any(|f| f.starts_with("B3 node bars bars/1.y")));
+        assert!(fails(&moved)
+            .iter()
+            .any(|f| f.starts_with("B3 node bars bars/1.y")));
         let mut swapped = honest.clone();
-        let (a, b) = (swapped.g("texts").g("bars/0/label").clone(), swapped.g("texts").g("bars/2/label").clone());
-        assert!(swapped.set_path(&["texts", "bars/0/label"].map(String::from), b) && swapped.set_path(&["texts", "bars/2/label"].map(String::from), a));
-        assert!(fails(&swapped).iter().any(|f| f.starts_with("B5 node bars bars/0/label")), "{:?}", fails(&swapped));
+        let (a, b) = (
+            swapped.g("texts").g("bars/0/label").clone(),
+            swapped.g("texts").g("bars/2/label").clone(),
+        );
+        assert!(
+            swapped.set_path(&["texts", "bars/0/label"].map(String::from), b)
+                && swapped.set_path(&["texts", "bars/2/label"].map(String::from), a)
+        );
+        assert!(
+            fails(&swapped)
+                .iter()
+                .any(|f| f.starts_with("B5 node bars bars/0/label")),
+            "{:?}",
+            fails(&swapped)
+        );
     }
 
     // ---- R11: colour --------------------------------------------------------------------------------------------
@@ -8505,10 +12546,22 @@ mod tests {
     /// print unless every generated text's sha256 is the one recorded for the case file it replaced, byte for byte.
     fn r11_cases() -> Vec<(String, J)> {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let out = std::process::Command::new("python3").arg(root.join("scripts/r11_fixtures.py")).arg("dump").output().unwrap();
-        assert!(out.status.success(), "r11_fixtures.py dump: {}", String::from_utf8_lossy(&out.stderr));
+        let out = std::process::Command::new("python3")
+            .arg(root.join("scripts/r11_fixtures.py"))
+            .arg("dump")
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "r11_fixtures.py dump: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
         let all = parse(std::str::from_utf8(&out.stdout).unwrap()).unwrap();
-        let cases: Vec<(String, J)> = all.obj().iter().map(|(id, text)| (id.clone(), parse(&st(text)).unwrap())).collect();
+        let cases: Vec<(String, J)> = all
+            .obj()
+            .iter()
+            .map(|(id, text)| (id.clone(), parse(&st(text)).unwrap()))
+            .collect();
         assert_eq!(cases.len(), 35);
         cases
     }
@@ -8519,11 +12572,17 @@ mod tests {
     fn next_tree_r11_palette_ok_loads_the_shipped_file_and_refuses_the_bad_ones() {
         assert_eq!(palette_problems(palettes()), Vec::<String>::new());
         let mut n = 0;
-        for (id, c) in r11_cases().into_iter().filter(|(id, _)| id == "N5c" || id.starts_with("N8")) {
+        for (id, c) in r11_cases()
+            .into_iter()
+            .filter(|(id, _)| id == "N5c" || id.starts_with("N8"))
+        {
             let got = palette_problems(c.g("palettes"));
             let proto: Vec<String> = c.g("got").arr().iter().map(st).collect();
             assert_eq!(heads(&got), heads(&proto), "{id}: {got:?}");
-            assert!(got.iter().any(|e| e.contains(&st(c.g("expect")))), "{id}: {got:?}");
+            assert!(
+                got.iter().any(|e| e.contains(&st(c.g("expect")))),
+                "{id}: {got:?}"
+            );
             n += 1;
         }
         assert_eq!(n, 7);
@@ -8536,7 +12595,12 @@ mod tests {
         let acc = st(palettes().g("roles").g("accent"));
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime");
         let mut seen = Vec::new();
-        for (file, key) in [("leaves_py/tokens.css", "--accent:"), ("leaves_py/scmp.py", "--accent:"), ("leaves_py/prod.py", "--accent:"), ("nodes/common.mjs", "accent: \"")] {
+        for (file, key) in [
+            ("leaves_py/tokens.css", "--accent:"),
+            ("leaves_py/scmp.py", "--accent:"),
+            ("leaves_py/prod.py", "--accent:"),
+            ("nodes/common.mjs", "accent: \""),
+        ] {
             let text = std::fs::read_to_string(root.join(file)).unwrap();
             for (i, _) in text.match_indices(key) {
                 let v = text.get(i + key.len()..i + key.len() + 7).unwrap_or("");
@@ -8563,8 +12627,13 @@ mod tests {
         ]);
         let bars = o.get_mut("nodes").and_then(|n| n.get_mut("bars")).unwrap();
         bars.set("scales", J::obj_of(vec![("s1", sc)]));
-        bars.get_mut("marks").unwrap().set("paint", J::obj_of(vec![("scale", J::str("s1"))]));
-        o.get_mut("frames").and_then(|f| f.get_mut("chart")).unwrap().set("legend", J::Arr(vec![J::Int(30), J::Int(228)]));
+        bars.get_mut("marks")
+            .unwrap()
+            .set("paint", J::obj_of(vec![("scale", J::str("s1"))]));
+        o.get_mut("frames")
+            .and_then(|f| f.get_mut("chart"))
+            .unwrap()
+            .set("legend", J::Arr(vec![J::Int(30), J::Int(228)]));
         o
     }
 
@@ -8577,26 +12646,63 @@ mod tests {
         let reg = reg_of(&env);
         let inp = env.g("input");
         let ext: Vec<String> = env.g("external").arr().iter().map(st).collect();
-        assert_eq!(places_drawn(inp.g("page_spec"), inp.g("rows").arr()), Some(4));
+        assert_eq!(
+            places_drawn(inp.g("page_spec"), inp.g("rows").arr()),
+            Some(4)
+        );
         let with_kicker = |w: &str| {
             let mut spec = inp.g("page_spec").clone();
-            spec.get_mut("texts").and_then(|t| t.get_mut("kicker")).unwrap().set("runs", J::Arr(vec![J::obj_of(vec![("w", J::str(w))])]));
+            spec.get_mut("texts")
+                .and_then(|t| t.get_mut("kicker"))
+                .unwrap()
+                .set("runs", J::Arr(vec![J::obj_of(vec![("w", J::str(w))])]));
             content_problems(&spec, inp, &ext, &reg).0
         };
         for w in ["四国对比", "四个经济体对比", "四个国家对比", "四地对比"] {
             assert_eq!(with_kicker(w), Vec::<String>::new(), "{w}");
         }
-        for w in ["三国对比", "两国对比", "五个国家对比", "十年前对比", "四国占三成", "近四国对比"] {
+        for w in [
+            "三国对比",
+            "两国对比",
+            "五个国家对比",
+            "十年前对比",
+            "四国占三成",
+            "近四国对比",
+        ] {
             let errs = with_kicker(w);
-            assert!(errs.iter().any(|e| e.starts_with("C3 $.texts.kicker")), "{w}: {errs:?}");
-            assert!(errs.iter().any(|e| e.contains("lint: $.texts.kicker")), "{w}: {errs:?}");
+            assert!(
+                errs.iter().any(|e| e.starts_with("C3 $.texts.kicker")),
+                "{w}: {errs:?}"
+            );
+            assert!(
+                errs.iter().any(|e| e.contains("lint: $.texts.kicker")),
+                "{w}: {errs:?}"
+            );
         }
         // digits stay refused, by the schema before C3
-        assert!(with_kicker("4个国家对比").iter().any(|e| e.starts_with("C1 schema")));
-        let lit = |w: &str| (w.chars().collect::<Vec<char>>(), vec![false; w.chars().count()]);
-        for (w, places, blanked) in [("三国", Some(3), true), ("三国", Some(4), false), ("两国", Some(2), true), ("四个经济体", Some(4), true), ("三国", None, false), ("十年前", Some(10), false)] {
+        assert!(with_kicker("4个国家对比")
+            .iter()
+            .any(|e| e.starts_with("C1 schema")));
+        let lit = |w: &str| {
+            (
+                w.chars().collect::<Vec<char>>(),
+                vec![false; w.chars().count()],
+            )
+        };
+        for (w, places, blanked) in [
+            ("三国", Some(3), true),
+            ("三国", Some(4), false),
+            ("两国", Some(2), true),
+            ("四个经济体", Some(4), true),
+            ("三国", None, false),
+            ("十年前", Some(10), false),
+        ] {
             let (chars, held) = lit(w);
-            assert_eq!(place_count(&chars, &held, places)[0], blanked, "{w} {places:?}");
+            assert_eq!(
+                place_count(&chars, &held, places)[0],
+                blanked,
+                "{w} {places:?}"
+            );
         }
         // a page with no drawn record knows no count
         let bare = J::obj_of(vec![("kind", J::str("Page"))]);
@@ -8614,7 +12720,10 @@ mod tests {
         let content = content.ok_or_else(|| errs.join("\n"))?;
         let (reqs, metas) = issue(spec, inp, &reg, &ext, &content.got, &content.rpage)?;
         let (nid, req) = reqs.iter().find(|(k, _)| k == "bars").unwrap();
-        Ok((svg(nid, req, env.g("reply").g(nid), &metas[nid]), metas[nid].clone()))
+        Ok((
+            svg(nid, req, env.g("reply").g(nid), &metas[nid]),
+            metas[nid].clone(),
+        ))
     }
 
     /// A node the registry paints by a scale: each mark's class and colour recomputed by the core from its own row and the
@@ -8633,13 +12742,35 @@ mod tests {
         assert_eq!(steps.len(), 3);
         for c in &p.cells {
             let b = bin_of(c.value.unwrap(), &p.cuts);
-            assert!(svg_q.contains(&format!("data-id=\"{}\" data-paint=\"s1:{b}\" fill=\"{}\"", c.id, steps[b])), "{}: {svg_q}", c.id);
+            assert!(
+                svg_q.contains(&format!(
+                    "data-id=\"{}\" data-paint=\"s1:{b}\" fill=\"{}\"",
+                    c.id, steps[b]
+                )),
+                "{}: {svg_q}",
+                c.id
+            );
         }
-        assert!(svg_q.contains("<g data-legend=\"s1\">") && svg_q.matches("data-src=\"fact:s1.cut.").count() == 2, "{svg_q}");
-        assert!(!svg_q.contains("legend/s1/nodata") && !svg_q.contains("class=\"mark base\"") && !svg_q.contains("class=\"mark accent\""), "{svg_q}");
+        assert!(
+            svg_q.contains("<g data-legend=\"s1\">")
+                && svg_q.matches("data-src=\"fact:s1.cut.").count() == 2,
+            "{svg_q}"
+        );
+        assert!(
+            !svg_q.contains("legend/s1/nodata")
+                && !svg_q.contains("class=\"mark base\"")
+                && !svg_q.contains("class=\"mark accent\""),
+            "{svg_q}"
+        );
         // not printed in the marks: the value texts keep the page's own colour
         let body = &svg_q[..svg_q.find("<g data-legend").unwrap()];
-        assert!(!body.split("<text").skip(1).any(|t| t[..t.find('>').unwrap()].contains(" fill=")), "{svg_q}");
+        assert!(
+            !body
+                .split("<text")
+                .skip(1)
+                .any(|t| t[..t.find('>').unwrap()].contains(" fill=")),
+            "{svg_q}"
+        );
 
         let (svg_p, meta) = painted_svg(&painted_bars(quantile, true)).unwrap();
         let p = meta.paint.as_ref().unwrap();
@@ -8647,17 +12778,44 @@ mod tests {
             let ink = ink_on(p.paint_of(c, pf).1, pf);
             let tid = c.text_id.clone().unwrap();
             let tail = &svg_p[svg_p.find(&format!("data-id=\"{tid}\"")).unwrap()..];
-            assert!(tail[..tail.find('>').unwrap()].ends_with(&format!(" fill=\"{ink}\"")), "{tid}: {svg_p}");
+            assert!(
+                tail[..tail.find('>').unwrap()].ends_with(&format!(" fill=\"{ink}\"")),
+                "{tid}: {svg_p}"
+            );
         }
 
-        let facts = |from: &[&str]| J::obj_of(vec![("rule", J::str("facts")), ("from", J::strs(from))]);
-        let (_, meta) = painted_svg(&painted_bars(facts(&["fact:val.BE.n", "fact:val.FR.n"]), false)).unwrap();
+        let facts =
+            |from: &[&str]| J::obj_of(vec![("rule", J::str("facts")), ("from", J::strs(from))]);
+        let (_, meta) = painted_svg(&painted_bars(
+            facts(&["fact:val.BE.n", "fact:val.FR.n"]),
+            false,
+        ))
+        .unwrap();
         let p = meta.paint.as_ref().unwrap();
-        let classes: Vec<usize> = p.cells.iter().map(|c| bin_of(c.value.unwrap(), &p.cuts)).collect();
-        assert_eq!((p.cuts.len(), classes), (2, vec![2, 2, 2, 1]), "{:?} {:?}", p.cuts, p.cells);
-        for (from, why) in [(&["fact:val.FR.n", "fact:val.BE.n"][..], "cuts_not_ascending"), (&["fact:val.BE.n", "fact:99"][..], "cut fact:99: not a fact")] {
+        let classes: Vec<usize> = p
+            .cells
+            .iter()
+            .map(|c| bin_of(c.value.unwrap(), &p.cuts))
+            .collect();
+        assert_eq!(
+            (p.cuts.len(), classes),
+            (2, vec![2, 2, 2, 1]),
+            "{:?} {:?}",
+            p.cuts,
+            p.cells
+        );
+        for (from, why) in [
+            (
+                &["fact:val.FR.n", "fact:val.BE.n"][..],
+                "cuts_not_ascending",
+            ),
+            (&["fact:val.BE.n", "fact:99"][..], "cut fact:99: not a fact"),
+        ] {
             let errs = painted_svg(&painted_bars(facts(from), false)).unwrap_err();
-            assert!(errs.starts_with("refused: ") && errs.contains(why), "{from:?}: {errs}");
+            assert!(
+                errs.starts_with("refused: ") && errs.contains(why),
+                "{from:?}: {errs}"
+            );
         }
     }
 
@@ -8666,30 +12824,87 @@ mod tests {
     #[test]
     fn next_tree_r11_registry_refuses_a_scale_the_core_cannot_recompute() {
         let quantile = |k: i64| J::obj_of(vec![("rule", J::str("quantile")), ("k", J::Int(k))]);
-        assert_eq!(registry_problems(&load_registry(&painted_bars(quantile(3), true))), Vec::<String>::new());
+        assert_eq!(
+            registry_problems(&load_registry(&painted_bars(quantile(3), true))),
+            Vec::<String>::new()
+        );
         let edit = |f: &dyn Fn(&mut J)| {
             let mut o = painted_bars(quantile(3), true);
             f(o.get_mut("nodes").and_then(|n| n.get_mut("bars")).unwrap());
             registry_problems(&load_registry(&o))
         };
         fn scale(b: &mut J, k: &str, v: J) {
-            b.get_mut("scales").and_then(|s| s.get_mut("s1")).unwrap().set(k, v);
+            b.get_mut("scales")
+                .and_then(|s| s.get_mut("s1"))
+                .unwrap()
+                .set(k, v);
         }
         let cases: Vec<(&str, Box<dyn Fn(&mut J)>)> = vec![
-            ("quantile cuts take one integer k", Box::new(move |b| scale(b, "cuts", quantile(10)))),
-            ("rule is quantile or facts", Box::new(|b| scale(b, "cuts", J::obj_of(vec![("rule", J::str("jenks"))])))),
-            ("facts cuts are 2..8 fact: references", Box::new(|b| scale(b, "cuts", J::obj_of(vec![("rule", J::str("facts")), ("from", J::Arr(vec![J::Int(1), J::Int(5)]))])))),
-            ("is not in the palette file", Box::new(|b| scale(b, "palette", J::str("viridis")))),
-            ("a threshold scale has kind", Box::new(|b| scale(b, "domain", J::str("zero_to_max")))),
-            ("not one the core recomputes", Box::new(|b| scale(b, "kind", J::str("linear")))),
-            ("a literal colour", Box::new(|b| b.get_mut("marks").unwrap().set("paint", J::obj_of(vec![("fill", J::str("#ff00ff"))])))),
-            ("one {scale: id} of this entry", Box::new(|b| b.get_mut("marks").unwrap().set("paint", J::obj_of(vec![("scale", J::str("s2"))])))),
-            ("paints one mark per item", Box::new(|b| b.get_mut("marks").unwrap().set("per", J::str("part")))),
-            ("needs the legend's place", Box::new(|b| b.set("frame", J::str("rows")))),
+            (
+                "quantile cuts take one integer k",
+                Box::new(move |b| scale(b, "cuts", quantile(10))),
+            ),
+            (
+                "rule is quantile or facts",
+                Box::new(|b| scale(b, "cuts", J::obj_of(vec![("rule", J::str("jenks"))]))),
+            ),
+            (
+                "facts cuts are 2..8 fact: references",
+                Box::new(|b| {
+                    scale(
+                        b,
+                        "cuts",
+                        J::obj_of(vec![
+                            ("rule", J::str("facts")),
+                            ("from", J::Arr(vec![J::Int(1), J::Int(5)])),
+                        ]),
+                    )
+                }),
+            ),
+            (
+                "is not in the palette file",
+                Box::new(|b| scale(b, "palette", J::str("viridis"))),
+            ),
+            (
+                "a threshold scale has kind",
+                Box::new(|b| scale(b, "domain", J::str("zero_to_max"))),
+            ),
+            (
+                "not one the core recomputes",
+                Box::new(|b| scale(b, "kind", J::str("linear"))),
+            ),
+            (
+                "a literal colour",
+                Box::new(|b| {
+                    b.get_mut("marks")
+                        .unwrap()
+                        .set("paint", J::obj_of(vec![("fill", J::str("#ff00ff"))]))
+                }),
+            ),
+            (
+                "one {scale: id} of this entry",
+                Box::new(|b| {
+                    b.get_mut("marks")
+                        .unwrap()
+                        .set("paint", J::obj_of(vec![("scale", J::str("s2"))]))
+                }),
+            ),
+            (
+                "paints one mark per item",
+                Box::new(|b| b.get_mut("marks").unwrap().set("per", J::str("part"))),
+            ),
+            (
+                "needs the legend's place",
+                Box::new(|b| b.set("frame", J::str("rows"))),
+            ),
         ];
         for (why, f) in cases {
             let errs = edit(&*f);
-            assert!(errs.iter().any(|e| e.starts_with("C5 registry bars") && e.contains(why)), "{why}: {errs:?}");
+            assert!(
+                errs.iter()
+                    .any(|e| e.starts_with("C5 registry bars") && e.contains(why)),
+                "{why}: {errs:?}"
+            );
         }
     }
 
@@ -8719,28 +12934,67 @@ mod tests {
         let values: Vec<f64> = cells.iter().filter_map(|c| c.value).collect();
         let facts = case.g("facts");
         let cuts = if !lenient {
-            cuts_of(sc, &values, &|k| facts.g(k).num().ok_or_else(|| format!("'{k}'")), dec)?
+            cuts_of(
+                sc,
+                &values,
+                &|k| facts.g(k).num().ok_or_else(|| format!("'{k}'")),
+                dec,
+            )?
         } else if sc.g("cuts").g("rule").s() == Some("quantile") {
             let mut d = values.clone();
             d.sort_by(f64::total_cmp);
             d.dedup();
             d.into_iter().skip(1).take(4).collect()
         } else {
-            sc.g("cuts").g("from").arr().iter().filter_map(|r| facts.g(st(r).get(5..).unwrap_or("")).num()).collect()
+            sc.g("cuts")
+                .g("from")
+                .arr()
+                .iter()
+                .filter_map(|r| facts.g(st(r).get(5..).unwrap_or("")).num())
+                .collect()
         };
-        Ok(Paint::new(&st(case.g("sid")), sc, cells, cuts, dec, (0.0, 300.0), "\u{65e0}\u{6570}\u{636e}".into()))
+        Ok(Paint::new(
+            &st(case.g("sid")),
+            sc,
+            cells,
+            cuts,
+            dec,
+            (0.0, 300.0),
+            "\u{65e0}\u{6570}\u{636e}".into(),
+        ))
     }
 
     /// The core's own drawing of a case (the prototype's render, cells 40 x 22 at their grid place), from the record.
     fn r11_render(rec: &Paint, case: &J, pf: &J) -> String {
         let ink = st(pf.g("roles").g("ink"));
-        let mut o = format!("<svg xmlns=\"http://www.w3.org/2000/svg\" data-node=\"{}\">", rec.sid);
+        let mut o = format!(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" data-node=\"{}\">",
+            rec.sid
+        );
         for l in case.g("labels").arr() {
-            let _ = write!(o, "<text x=\"{}\" y=\"{}\" data-id=\"{}\" data-src=\"{}\" fill=\"{ink}\">{}</text>", st(l.g("x")), st(l.g("y")), st(l.g("id")), st(l.g("src")), st(l.g("text")));
+            let _ = write!(
+                o,
+                "<text x=\"{}\" y=\"{}\" data-id=\"{}\" data-src=\"{}\" fill=\"{ink}\">{}</text>",
+                st(l.g("x")),
+                st(l.g("y")),
+                st(l.g("id")),
+                st(l.g("src")),
+                st(l.g("text"))
+            );
         }
         for (c, it) in rec.cells.iter().zip(case.g("items").arr()) {
-            let (x, y) = (it.g("at").at(0).num().unwrap() * 40.0, it.g("at").at(1).num().unwrap() * 22.0);
-            let _ = write!(o, "<rect x=\"{}\" y=\"{}\" width=\"40\" height=\"22\" data-id=\"{}\"{}/>", num_attr(x), num_attr(y), c.id, rec.mark_attrs(c, pf));
+            let (x, y) = (
+                it.g("at").at(0).num().unwrap() * 40.0,
+                it.g("at").at(1).num().unwrap() * 22.0,
+            );
+            let _ = write!(
+                o,
+                "<rect x=\"{}\" y=\"{}\" width=\"40\" height=\"22\" data-id=\"{}\"{}/>",
+                num_attr(x),
+                num_attr(y),
+                c.id,
+                rec.mark_attrs(c, pf)
+            );
             if let (Some(tid), Some(t)) = (&c.text_id, &c.text) {
                 let fill = ink_on(rec.paint_of(c, pf).1, pf);
                 let src = c.src.clone().unwrap_or_default();
@@ -8765,7 +13019,11 @@ mod tests {
         }
         let mut errs = Vec::new();
         if off != "registry" {
-            errs.extend(registry_scale_problems(&st(case.g("node")), case.g("registry"), pf));
+            errs.extend(registry_scale_problems(
+                &st(case.g("node")),
+                case.g("registry"),
+                pf,
+            ));
         }
         if off != "tree" {
             errs.extend(tree_colour_problems(case.g("tree"), pf));
@@ -8780,7 +13038,11 @@ mod tests {
         // a must-pass case is drawn by the core (as the prototype's check_node draws it); a must-fail case brings its SVG
         let given = c.g("svg").s().filter(|_| st(c.g("expect")) != "pass");
         let svg = given.map_or_else(|| r11_render(&rec, case, pf), str::to_string);
-        let mut out = if off == "paint_matches_scale" { vec![] } else { paint_problems(&svg, &rec, pf) };
+        let mut out = if off == "paint_matches_scale" {
+            vec![]
+        } else {
+            paint_problems(&svg, &rec, pf)
+        };
         if off != "single_accent" {
             out.extend(accent_problems(&svg, &[&rec], pf));
         }
@@ -8789,7 +13051,11 @@ mod tests {
 
     fn r11_as_expected(c: &J, errs: &[String]) -> bool {
         let expect = st(c.g("expect"));
-        if expect == "pass" { errs.is_empty() } else { errs.iter().any(|e| e.contains(&expect)) }
+        if expect == "pass" {
+            errs.is_empty()
+        } else {
+            errs.iter().any(|e| e.contains(&expect))
+        }
     }
 
     /// The 35 R11 prototype cases (scripts/fixtures/r11, copied from the prototype's cases/): the 3 that must pass pass,
@@ -8802,7 +13068,12 @@ mod tests {
             let errs = r11_check(&c, "none");
             let proto: Vec<String> = c.g("got").arr().iter().map(st).collect();
             if !r11_as_expected(&c, &errs) || heads(&errs) != heads(&proto) {
-                off.push(format!("{id}: rust {:?}; prototype {:?}; first lines {:?}", heads(&errs), heads(&proto), errs.iter().take(3).collect::<Vec<_>>()));
+                off.push(format!(
+                    "{id}: rust {:?}; prototype {:?}; first lines {:?}",
+                    heads(&errs),
+                    heads(&proto),
+                    errs.iter().take(3).collect::<Vec<_>>()
+                ));
             }
             if st(c.g("expect")) == "pass" {
                 pass += 1;
@@ -8816,7 +13087,11 @@ mod tests {
                 fail += 1;
             }
         }
-        println!("next_tree r11 cases: {}/{} equal to the prototype", pass + fail - off.len(), pass + fail);
+        println!(
+            "next_tree r11 cases: {}/{} equal to the prototype",
+            pass + fail - off.len(),
+            pass + fail
+        );
         assert!(off.is_empty(), "{}", off.join("\n"));
         assert_eq!((pass, fail), (3, 32));
     }
@@ -8826,10 +13101,23 @@ mod tests {
     #[test]
     fn next_tree_r11_each_colour_check_turns_cases_red_when_off() {
         let cases = r11_cases();
-        let red = |off: &str| -> Vec<String> { cases.iter().filter(|(_, c)| !r11_as_expected(c, &r11_check(c, off))).map(|(id, _)| id.clone()).collect() };
+        let red = |off: &str| -> Vec<String> {
+            cases
+                .iter()
+                .filter(|(_, c)| !r11_as_expected(c, &r11_check(c, off)))
+                .map(|(id, _)| id.clone())
+                .collect()
+        };
         assert_eq!(red("none"), Vec::<String>::new());
         let mut counts = Vec::new();
-        for off in ["palette_ok", "registry", "tree", "paint_matches_scale", "single_accent", "cuts"] {
+        for off in [
+            "palette_ok",
+            "registry",
+            "tree",
+            "paint_matches_scale",
+            "single_accent",
+            "cuts",
+        ] {
             let r = red(off);
             println!("next_tree r11 {off} off: {} red {r:?}", r.len());
             counts.push(r.len());
@@ -8842,14 +13130,32 @@ mod tests {
     #[test]
     fn next_tree_r11_svg_reader_takes_only_the_core_form() {
         let els = svg_elements("<svg a=\"1\"><g><rect x=\"0\" fill=\"#ffffff\"/><text data-id=\"t\">6.9</text></g></svg>");
-        assert_eq!(els.iter().map(|e| e.tag.as_str()).collect::<Vec<_>>(), ["svg", "g", "rect", "text"]);
-        assert_eq!((els[2].get("fill"), els[3].text.as_str()), (Some("#ffffff"), "6.9"));
+        assert_eq!(
+            els.iter().map(|e| e.tag.as_str()).collect::<Vec<_>>(),
+            ["svg", "g", "rect", "text"]
+        );
+        assert_eq!(
+            (els[2].get("fill"), els[3].text.as_str()),
+            (Some("#ffffff"), "6.9")
+        );
         for (bad, why) in [
-            ("<svg><rect x=0 fill=\"#ffffff\"/></svg>", "text outside any element"),
+            (
+                "<svg><rect x=0 fill=\"#ffffff\"/></svg>",
+                "text outside any element",
+            ),
             ("<svg><g>stray</g></svg>", "text outside any element"),
-            ("<svg><rect fill=\"#ffffff\" fill=\"#ff00ff\"/></svg>", "repeats the attribute fill"),
-            ("<svg><style>rect{fill:red}</style></svg>", "holds a <style>"),
-            ("<svg><rect stop-color=\"#ffffff\"/></svg>", "has stop-color="),
+            (
+                "<svg><rect fill=\"#ffffff\" fill=\"#ff00ff\"/></svg>",
+                "repeats the attribute fill",
+            ),
+            (
+                "<svg><style>rect{fill:red}</style></svg>",
+                "holds a <style>",
+            ),
+            (
+                "<svg><rect stop-color=\"#ffffff\"/></svg>",
+                "has stop-color=",
+            ),
         ] {
             let errs = accent_problems(bad, &[], palettes());
             assert!(errs.iter().any(|e| e.contains(why)), "{bad}: {errs:?}");
@@ -8863,19 +13169,40 @@ mod tests {
         let quantile = J::obj_of(vec![("rule", J::str("quantile")), ("k", J::Int(3))]);
         for printed in [false, true] {
             let (drawn, meta) = painted_svg(&painted_bars(quantile.clone(), printed)).unwrap();
-            assert_eq!(colour_problems(&drawn, &meta), Vec::<String>::new(), "{drawn}");
+            assert_eq!(
+                colour_problems(&drawn, &meta),
+                Vec::<String>::new(),
+                "{drawn}"
+            );
             let p = meta.paint.as_ref().unwrap();
-            let c = p.cells.iter().find(|c| bin_of(c.value.unwrap(), &p.cuts) == 0).unwrap();
+            let c = p
+                .cells
+                .iter()
+                .find(|c| bin_of(c.value.unwrap(), &p.cuts) == 0)
+                .unwrap();
             let (tag, fill) = p.paint_of(c, palettes());
             let up = p.steps(palettes())[1];
-            let moved = drawn.replace(&format!("data-paint=\"s1:{tag}\" fill=\"{fill}\""), &format!("data-paint=\"s1:1\" fill=\"{up}\""));
+            let moved = drawn.replace(
+                &format!("data-paint=\"s1:{tag}\" fill=\"{fill}\""),
+                &format!("data-paint=\"s1:1\" fill=\"{up}\""),
+            );
             assert_ne!(moved, drawn);
-            assert!(colour_problems(&moved, &meta).iter().any(|e| e.starts_with("paint_matches_scale")), "{moved}");
+            assert!(
+                colour_problems(&moved, &meta)
+                    .iter()
+                    .any(|e| e.starts_with("paint_matches_scale")),
+                "{moved}"
+            );
             let cut = drawn.find("data-id=\"legend/s1/cut1\"").unwrap();
             let start = drawn[..cut].rfind("<text").unwrap();
             let end = cut + drawn[cut..].find("</text>").unwrap() + "</text>".len();
             let cutless = format!("{}{}", &drawn[..start], &drawn[end..]);
-            assert!(colour_problems(&cutless, &meta).iter().any(|e| e.contains("legend cut texts")), "{cutless}");
+            assert!(
+                colour_problems(&cutless, &meta)
+                    .iter()
+                    .any(|e| e.contains("legend cut texts")),
+                "{cutless}"
+            );
         }
     }
 
@@ -8895,8 +13222,13 @@ mod tests {
             let inp = env.g("input");
             let spec = inp.g("page_spec");
             let ext: Vec<String> = env.g("external").arr().iter().map(st).collect();
-            let Some(content) = content_problems(spec, inp, &ext, &reg).1 else { continue };
-            let Ok((reqs, metas)) = issue(spec, inp, &reg, &ext, &content.got, &content.rpage) else { continue };
+            let Some(content) = content_problems(spec, inp, &ext, &reg).1 else {
+                continue;
+            };
+            let Ok((reqs, metas)) = issue(spec, inp, &reg, &ext, &content.got, &content.rpage)
+            else {
+                continue;
+            };
             let reply = env.g("reply");
             for (nid, req) in &reqs {
                 all.push_str(&svg(nid, req, reply.g(nid), &metas[nid]));
@@ -8904,15 +13236,29 @@ mod tests {
             }
             n += 1;
         }
-        println!("next_tree r11 unpainted svg: {n} fixtures, {} svgs, sha256 {}", all.lines().count(), sha256_hex(&all));
+        println!(
+            "next_tree r11 unpainted svg: {n} fixtures, {} svgs, sha256 {}",
+            all.lines().count(),
+            sha256_hex(&all)
+        );
         // measured at R11 part 1, whose svg() is the base's; re-measured at S5b (numbers printed as the leaf prints them)
-        assert_eq!((n, all.lines().count(), sha256_hex(&all).as_str()), (30, 72, "cfd1b685951d4431b14ff8873a7e9109cc8404b303af00524f3881c5a334c39d"));
+        assert_eq!(
+            (n, all.lines().count(), sha256_hex(&all).as_str()),
+            (
+                30,
+                72,
+                "cfd1b685951d4431b14ff8873a7e9109cc8404b303af00524f3881c5a334c39d"
+            )
+        );
     }
 
     /// The flow's leader-note width rule (next_run note_fits, at NOTE_PX 16 and half the 560 px map panel), copied here as
     /// the reference the core's width_at_most is held to.
     fn note_fits_old(words: &str) -> bool {
-        let w: f64 = words.chars().map(|c| if c as u32 > 0x2e7f { 16.0 } else { 0.58 * 16.0 }).sum();
+        let w: f64 = words
+            .chars()
+            .map(|c| if c as u32 > 0x2e7f { 16.0 } else { 0.58 * 16.0 })
+            .sum();
         w <= 560.0 / 2.0
     }
 
@@ -8924,27 +13270,100 @@ mod tests {
     fn covers_whole_holds_only_when_the_codes_sum_to_the_total_row() {
         let facts = |k: &str| -> Result<f64, String> { Err(format!("'{k}'")) };
         let words = |_: &str| -> Option<String> { None };
-        let fmts = parse(r#"{"per": {"scale": 1, "dec": 0}, "ktoe": {"scale": 1, "dec": 1}}"#).unwrap();
+        let fmts =
+            parse(r#"{"per": {"scale": 1, "dec": 0}, "ktoe": {"scale": 1, "dec": 1}}"#).unwrap();
         let holds = |table: &str, by: &str, fmt: &str, codes: &[&str], rows: &[(&str, &str)]| {
             let mut got = Got::new();
-            got.insert("ranked".into(), J::Arr(codes.iter().map(|c| J::str(c)).collect()));
+            got.insert(
+                "ranked".into(),
+                J::Arr(codes.iter().map(|c| J::str(c)).collect()),
+            );
             let rows: Vec<String> = rows.iter().map(|(c, v)| format!(r#"{{"table": "{table}", "time": "2024", "dims": {{"{by}": "{c}"}}, "value": "{v}"}}"#)).collect();
             let page = parse(&format!(r#"{{"rows": [{}]}}"#, rows.join(", "))).unwrap();
-            let hold = Holding { facts: &facts, fmts: &fmts, got: &got, page: &page, code: "", name: None, word: &words };
-            let cond = format!(r#"[{{"if": "covers_whole", "select": "ranked", "table": "{table}", "by": "{by}", "time": "2024", "fmt": "{fmt}"}}]"#);
+            let hold = Holding {
+                facts: &facts,
+                fmts: &fmts,
+                got: &got,
+                page: &page,
+                code: "",
+                name: None,
+                word: &words,
+            };
+            let cond = format!(
+                r#"[{{"if": "covers_whole", "select": "ranked", "table": "{table}", "by": "{by}", "time": "2024", "fmt": "{fmt}"}}]"#
+            );
             conditions_hold(&parse(&cond).unwrap(), &hold).unwrap()
         };
-        let bars = |total: &str| holds("migr", "citizen", "per", &["SY", "AF", "VE"], &[("SY", "50"), ("AF", "30"), ("VE", "20"), ("TOTAL", total)]);
+        let bars = |total: &str| {
+            holds(
+                "migr",
+                "citizen",
+                "per",
+                &["SY", "AF", "VE"],
+                &[("SY", "50"), ("AF", "30"), ("VE", "20"), ("TOTAL", total)],
+            )
+        };
         assert!(bars("100"), "the three are every citizenship");
         assert!(!bars("150"), "a narrowed page: the rest not fetched");
-        assert!(!holds("migr", "citizen", "per", &["SY", "AF", "VE"], &[("SY", "50"), ("AF", "30"), ("VE", "20")]), "no total row");
-        assert!(!holds("migr", "citizen", "per", &["SY", "AF", "VE"], &[("SY", "50"), ("SY", "1"), ("AF", "30"), ("VE", "20"), ("TOTAL", "100")]), "a code with two rows");
-        assert!(!holds("migr", "citizen", "per", &["SY", "AF", "TOTAL"], &[("SY", "50"), ("AF", "50"), ("TOTAL", "100")]), "the total among the codes");
-        let side = |total: &str| holds("nrg_bal_c", "nrg_bal", "ktoe", &["FC_IND_E", "FC_TRA_E"], &[("FC_IND_E", "60.004"), ("FC_TRA_E", "40.004"), ("FC_E", total)]);
+        assert!(
+            !holds(
+                "migr",
+                "citizen",
+                "per",
+                &["SY", "AF", "VE"],
+                &[("SY", "50"), ("AF", "30"), ("VE", "20")]
+            ),
+            "no total row"
+        );
+        assert!(
+            !holds(
+                "migr",
+                "citizen",
+                "per",
+                &["SY", "AF", "VE"],
+                &[
+                    ("SY", "50"),
+                    ("SY", "1"),
+                    ("AF", "30"),
+                    ("VE", "20"),
+                    ("TOTAL", "100")
+                ]
+            ),
+            "a code with two rows"
+        );
+        assert!(
+            !holds(
+                "migr",
+                "citizen",
+                "per",
+                &["SY", "AF", "TOTAL"],
+                &[("SY", "50"), ("AF", "50"), ("TOTAL", "100")]
+            ),
+            "the total among the codes"
+        );
+        let side = |total: &str| {
+            holds(
+                "nrg_bal_c",
+                "nrg_bal",
+                "ktoe",
+                &["FC_IND_E", "FC_TRA_E"],
+                &[
+                    ("FC_IND_E", "60.004"),
+                    ("FC_TRA_E", "40.004"),
+                    ("FC_E", total),
+                ],
+            )
+        };
         assert!(side("100.01"), "100.008 and 100.01 both print 100.0");
         assert!(!side("100.06"), "100.0 against 100.1: a part left out");
         // FC_E is a total only on nrg_bal of the tables the parts table names
-        assert!(!holds("other_table", "nrg_bal", "ktoe", &["FC_IND_E", "FC_TRA_E"], &[("FC_IND_E", "60"), ("FC_TRA_E", "40"), ("FC_E", "100")]));
+        assert!(!holds(
+            "other_table",
+            "nrg_bal",
+            "ktoe",
+            &["FC_IND_E", "FC_TRA_E"],
+            &[("FC_IND_E", "60"), ("FC_TRA_E", "40"), ("FC_E", "100")]
+        ));
     }
 
     /// first_holding over each condition: the first candidate whose conditions all hold, a refusal when none does or a
@@ -8968,93 +13387,287 @@ mod tests {
             "w.ascii" => Some("abcdefghijklmnopqrstuvw".to_string()),
             _ => None,
         };
-        let fmts = parse(r#"{"pp": {"scale": 1, "dec": 2, "suffix": "x"}, "pct": {"scale": 100, "dec": 0}}"#).unwrap();
+        let fmts = parse(
+            r#"{"pp": {"scale": 1, "dec": 2, "suffix": "x"}, "pct": {"scale": 100, "dec": 0}}"#,
+        )
+        .unwrap();
         let mut got = Got::new();
         got.insert("ranked".into(), parse(r#"["SE", "FI"]"#).unwrap());
-        let row = |geo: &str, v: &str| format!(r#"{{"table": "t", "time": "2019", "dims": {{"geo": "{geo}", "partner": "EU"}}, "value": {v}}}"#);
-        let rows = [row("SE", r#""2.5""#), row("FI", r#""0""#), row("NO", r#""-1""#), row("DK", r#"":""#), row("IS", "4"), row("LV", r#""1""#), row("LV", r#""-3""#)];
-        let page = parse(&format!(r#"{{"scoped": true, "plain": false, "n": 1, "rows": [{}]}}"#, rows.join(", "))).unwrap();
+        let row = |geo: &str, v: &str| {
+            format!(
+                r#"{{"table": "t", "time": "2019", "dims": {{"geo": "{geo}", "partner": "EU"}}, "value": {v}}}"#
+            )
+        };
+        let rows = [
+            row("SE", r#""2.5""#),
+            row("FI", r#""0""#),
+            row("NO", r#""-1""#),
+            row("DK", r#"":""#),
+            row("IS", "4"),
+            row("LV", r#""1""#),
+            row("LV", r#""-3""#),
+        ];
+        let page = parse(&format!(
+            r#"{{"scoped": true, "plain": false, "n": 1, "rows": [{}]}}"#,
+            rows.join(", ")
+        ))
+        .unwrap();
         let run = |cands: &str, code: &str, name: &str| {
             let name = (name != "?").then_some(name);
-            let hold = Holding { facts: &facts, fmts: &fmts, got: &got, page: &page, code, name, word: &words };
+            let hold = Holding {
+                facts: &facts,
+                fmts: &fmts,
+                got: &got,
+                page: &page,
+                code,
+                name,
+                word: &words,
+            };
             first_holding(&parse(cands).unwrap(), &hold)
         };
-        let sign = |is: &str| format!(r#"[{{"when": [{{"if": "sign", "fact": "chg.{{code}}", "is": "{is}"}}]}}, {{"when": []}}]"#);
+        let sign = |is: &str| {
+            format!(
+                r#"[{{"when": [{{"if": "sign", "fact": "chg.{{code}}", "is": "{is}"}}]}}, {{"when": []}}]"#
+            )
+        };
         assert_eq!(run(&sign("pos"), "SE", "瑞典"), Ok(0));
         assert_eq!(run(&sign("pos"), "FI", "芬兰"), Ok(1));
         assert_eq!(run(&sign("neg"), "FI", "芬兰"), Ok(0));
         assert_eq!(run(&sign("zero"), "NO", "挪威"), Ok(0));
-        assert_eq!(run(&sign("zero"), "NA", "x"), Ok(0), "a NaN reads as zero, as the flow's partial_cmp did");
-        assert!(run(&sign("up"), "SE", "瑞典").unwrap_err().contains("is up"));
+        assert_eq!(
+            run(&sign("zero"), "NA", "x"),
+            Ok(0),
+            "a NaN reads as zero, as the flow's partial_cmp did"
+        );
+        assert!(run(&sign("up"), "SE", "瑞典")
+            .unwrap_err()
+            .contains("is up"));
         // a tie: the gap prints as 0 in its format, so the gap candidate does not hold
-        let tie = |fact: &str, fmt: &str| format!(r#"[{{"when": [{{"if": "prints_nonzero", "fact": "{fact}", "fmt": "{fmt}"}}]}}, {{"when": []}}]"#);
+        let tie = |fact: &str, fmt: &str| {
+            format!(
+                r#"[{{"when": [{{"if": "prints_nonzero", "fact": "{fact}", "fmt": "{fmt}"}}]}}, {{"when": []}}]"#
+            )
+        };
         assert_eq!(run(&tie("tie", "pp"), "SE", "瑞典"), Ok(1));
         assert_eq!(run(&tie("gap", "pp"), "SE", "瑞典"), Ok(0));
-        assert_eq!(run(&tie("tie", "pct"), "SE", "瑞典"), Ok(1), "0.4 prints as 0 at dec 0");
-        assert_eq!(run(&tie("gap", "pct"), "SE", "瑞典"), Ok(0), "0.6 prints as 1");
-        assert!(run(&tie("gap", "none"), "SE", "瑞典").unwrap_err().contains("no format none"));
+        assert_eq!(
+            run(&tie("tie", "pct"), "SE", "瑞典"),
+            Ok(1),
+            "0.4 prints as 0 at dec 0"
+        );
+        assert_eq!(
+            run(&tie("gap", "pct"), "SE", "瑞典"),
+            Ok(0),
+            "0.6 prints as 1"
+        );
+        assert!(run(&tie("gap", "none"), "SE", "瑞典")
+            .unwrap_err()
+            .contains("no format none"));
         // a neighbour: the ranked select's length
-        let count = |n: u32| format!(r#"[{{"when": [{{"if": "count_at_least", "select": "ranked", "n": {n}}}]}}, {{"when": []}}]"#);
+        let count = |n: u32| {
+            format!(
+                r#"[{{"when": [{{"if": "count_at_least", "select": "ranked", "n": {n}}}]}}, {{"when": []}}]"#
+            )
+        };
         assert_eq!(run(&count(2), "SE", "瑞典"), Ok(0));
         assert_eq!(run(&count(3), "SE", "瑞典"), Ok(1));
         // the scoped words: a boolean at a path, anything else refused, and no comparison argument
-        let flag = |p: &str| format!(r#"[{{"when": [{{"if": "page_is", "path": "{p}"}}]}}, {{"when": []}}]"#);
+        let flag = |p: &str| {
+            format!(r#"[{{"when": [{{"if": "page_is", "path": "{p}"}}]}}, {{"when": []}}]"#)
+        };
         assert_eq!(run(&flag("scoped"), "SE", "瑞典"), Ok(0));
         assert_eq!(run(&flag("plain"), "SE", "瑞典"), Ok(1));
-        assert!(run(&flag("n"), "SE", "瑞典").unwrap_err().contains("is not true or false"));
-        assert!(run(r#"[{"when": [{"if": "page_is", "path": "n", "is": 1}]}]"#, "SE", "瑞典").unwrap_err().contains("no argument is"));
+        assert!(run(&flag("n"), "SE", "瑞典")
+            .unwrap_err()
+            .contains("is not true or false"));
+        assert!(run(
+            r#"[{"when": [{"if": "page_is", "path": "n", "is": 1}]}]"#,
+            "SE",
+            "瑞典"
+        )
+        .unwrap_err()
+        .contains("no argument is"));
         // what CONDITIONS does not hold is refused, and an item no candidate fits
-        assert!(run(r#"[{"when": [{"if": "larger", "fact": "gap"}]}]"#, "SE", "瑞典").unwrap_err().contains("not one the core computes"));
-        assert!(run(r#"[{"when": [{"if": "sign", "fact": "chg.{code}", "is": "neg"}]}]"#, "SE", "瑞典").unwrap_err().contains("no candidate"));
+        assert!(run(
+            r#"[{"when": [{"if": "larger", "fact": "gap"}]}]"#,
+            "SE",
+            "瑞典"
+        )
+        .unwrap_err()
+        .contains("not one the core computes"));
+        assert!(run(
+            r#"[{"when": [{"if": "sign", "fact": "chg.{code}", "is": "neg"}]}]"#,
+            "SE",
+            "瑞典"
+        )
+        .unwrap_err()
+        .contains("no candidate"));
         // width_at_most: the line "{name} {word}{vs}" in note_fits's order, the separator space included
-        let width = |parts: &str| format!(r#"[{{"when": [{{"if": "width_at_most", "text": {parts}, "size": 16, "max": 280}}]}}, {{"when": []}}]"#);
-        for (name, word) in [("瑞典", "w.rise"), ("波斯尼亚和黑塞哥维那", "w.rise"), ("AB", "w.ascii"), ("中文", "w.ascii")] {
+        let width = |parts: &str| {
+            format!(
+                r#"[{{"when": [{{"if": "width_at_most", "text": {parts}, "size": 16, "max": 280}}]}}, {{"when": []}}]"#
+            )
+        };
+        for (name, word) in [
+            ("瑞典", "w.rise"),
+            ("波斯尼亚和黑塞哥维那", "w.rise"),
+            ("AB", "w.ascii"),
+            ("中文", "w.ascii"),
+        ] {
             let line = format!("{name} {}{}", words(word).unwrap(), words("w.vs").unwrap());
             let parts = format!(r#"["{{name}}", " ", {{"word": "{word}"}}, {{"word": "w.vs"}}]"#);
             let want = if note_fits_old(&line) { 0 } else { 1 };
-            assert_eq!(run(&width(&parts), "SE", name), Ok(want), "{line}: {} px", line_width(&line, 16.0));
+            assert_eq!(
+                run(&width(&parts), "SE", name),
+                Ok(want),
+                "{line}: {} px",
+                line_width(&line, 16.0)
+            );
         }
         // the limit: 3 CJK (48 px) and 25 others (232 px), 279.99999999999994 by the plain sum; one more character is over, one
         // fewer (short by one space width) holds; each held to note_fits's own answer
         let exact = "A中文字 abcdefghijklmnopqrstuvw";
-        assert_eq!((exact.chars().filter(|c| (*c as u32) > 0x2e7f).count(), exact.chars().count()), (3, 28));
-        for line in [exact.to_string(), format!("{exact}x"), format!("{exact} "), exact[..exact.len() - 1].to_string(), "AB中文字 abcdefghijklmnopqrstuvw".to_string()] {
+        assert_eq!(
+            (
+                exact.chars().filter(|c| (*c as u32) > 0x2e7f).count(),
+                exact.chars().count()
+            ),
+            (3, 28)
+        );
+        for line in [
+            exact.to_string(),
+            format!("{exact}x"),
+            format!("{exact} "),
+            exact[..exact.len() - 1].to_string(),
+            "AB中文字 abcdefghijklmnopqrstuvw".to_string(),
+        ] {
             let parts = format!(r#"["{line}"]"#);
-            assert_eq!(run(&width(&parts), "SE", "-"), Ok(if note_fits_old(&line) { 0 } else { 1 }), "{line}");
+            assert_eq!(
+                run(&width(&parts), "SE", "-"),
+                Ok(if note_fits_old(&line) { 0 } else { 1 }),
+                "{line}"
+            );
         }
         assert!(!note_fits_old(&format!("{exact}x")) && note_fits_old(&exact[..exact.len() - 1]));
-        assert!(run(&width(r#"[{"word": "w.none"}]"#), "SE", "瑞典").unwrap_err().contains("no w.none"));
+        assert!(run(&width(r#"[{"word": "w.none"}]"#), "SE", "瑞典")
+            .unwrap_err()
+            .contains("no w.none"));
         // a code the page input names none of: only a condition that prints its name refuses, in the expansion's words
-        assert_eq!(run(&width(r#"["{name}"]"#), "XK", "?"), Err("candidate 0: 'XK': the page input names no XK".to_string()));
+        assert_eq!(
+            run(&width(r#"["{name}"]"#), "XK", "?"),
+            Err("candidate 0: 'XK': the page input names no XK".to_string())
+        );
         assert_eq!(run(&width(r#"["abc"]"#), "XK", "?"), Ok(0));
         // row_above: the map's above_0, a text value above `than` at the table, time and filter; a 0, a negative, an
         // unparsed text, a number that is no text and a missing row do not hold; of two rows any one above holds
-        let above = |code: &str, than: &str| format!(r#"[{{"when": [{{"if": "row_above", "table": "t", "time": "2019", "filter": {{"geo": "{code}", "partner": "EU"}}, "than": {than}}}]}}, {{"when": []}}]"#);
-        for (code, want) in [("SE", 0), ("FI", 1), ("NO", 1), ("DK", 1), ("IS", 1), ("EE", 1), ("LV", 0)] {
+        let above = |code: &str, than: &str| {
+            format!(
+                r#"[{{"when": [{{"if": "row_above", "table": "t", "time": "2019", "filter": {{"geo": "{code}", "partner": "EU"}}, "than": {than}}}]}}, {{"when": []}}]"#
+            )
+        };
+        for (code, want) in [
+            ("SE", 0),
+            ("FI", 1),
+            ("NO", 1),
+            ("DK", 1),
+            ("IS", 1),
+            ("EE", 1),
+            ("LV", 0),
+        ] {
             assert_eq!(run(&above(code, "0"), code, "-"), Ok(want), "{code}");
         }
         assert_eq!(run(&above("NO", "-2"), "NO", "-"), Ok(0));
-        assert!(run(&above("SE", r#""0""#), "SE", "-").unwrap_err().contains("row_above: than"));
+        assert!(run(&above("SE", r#""0""#), "SE", "-")
+            .unwrap_err()
+            .contains("row_above: than"));
         // with_code: the code, its lowercase and the page's two years where it has them
         let years = parse(r#"{"picks": {"y0": "19", "y1": "24"}}"#).unwrap();
-        assert_eq!(with_code(&J::str("{code_lc}{y0}/{code}{y1}"), "DE", &years), J::str("de19/DE24"));
-        assert_eq!(with_code(&J::str("{code_lc}{y0}"), "DE", &page), J::str("de{y0}"));
+        assert_eq!(
+            with_code(&J::str("{code_lc}{y0}/{code}{y1}"), "DE", &years),
+            J::str("de19/DE24")
+        );
+        assert_eq!(
+            with_code(&J::str("{code_lc}{y0}"), "DE", &page),
+            J::str("de{y0}")
+        );
         // layer_before: the page's order, both layers in it, the first earlier
         let ordered = parse(r#"{"order": ["map", "strip", "bignums"]}"#).unwrap();
         let before = |a: &str, b: &str| {
-            let hold = Holding { facts: &facts, fmts: &fmts, got: &got, page: &ordered, code: "", name: None, word: &words };
-            conditions_hold(&parse(&format!(r#"[{{"if": "layer_before", "layer": "{a}", "than": "{b}"}}]"#)).unwrap(), &hold).unwrap()
+            let hold = Holding {
+                facts: &facts,
+                fmts: &fmts,
+                got: &got,
+                page: &ordered,
+                code: "",
+                name: None,
+                word: &words,
+            };
+            conditions_hold(
+                &parse(&format!(
+                    r#"[{{"if": "layer_before", "layer": "{a}", "than": "{b}"}}]"#
+                ))
+                .unwrap(),
+                &hold,
+            )
+            .unwrap()
         };
-        assert_eq!([before("strip", "bignums"), before("bignums", "strip"), before("ring", "bignums"), before("strip", "notes")], [true, false, false, false]);
+        assert_eq!(
+            [
+                before("strip", "bignums"),
+                before("bignums", "strip"),
+                before("ring", "bignums"),
+                before("strip", "notes")
+            ],
+            [true, false, false, false]
+        );
         // gap_printable (J2): the page prints the difference unless printed_raise left it in gap_order; is false, the other way
         let gapped = parse(r#"{"gap_order": ["vs_lo"]}"#).unwrap();
         let gap = |fact: &str, is: &str| {
-            let hold = Holding { facts: &facts, fmts: &fmts, got: &got, page: &gapped, code: "", name: None, word: &words };
-            conditions_hold(&parse(&format!(r#"[{{"if": "gap_printable", "fact": "{fact}"{is}}}]"#)).unwrap(), &hold)
+            let hold = Holding {
+                facts: &facts,
+                fmts: &fmts,
+                got: &got,
+                page: &gapped,
+                code: "",
+                name: None,
+                word: &words,
+            };
+            conditions_hold(
+                &parse(&format!(
+                    r#"[{{"if": "gap_printable", "fact": "{fact}"{is}}}]"#
+                ))
+                .unwrap(),
+                &hold,
+            )
         };
-        assert_eq!([gap("vs_lo", ""), gap("vs_hi", ""), gap("vs_lo", r#", "is": false"#), gap("vs_hi", r#", "is": false"#)].map(Result::unwrap), [false, true, true, false]);
-        assert!(gap("vs_lo", r#", "is": "no""#).unwrap_err().contains("true or false"));
-        assert_eq!(CONDITIONS.map(|(k, _)| k), ["sign", "prints_nonzero", "width_at_most", "count_at_least", "unit_adds_up", "covers_whole", "gap_printable", "page_is", "row_above", "layer_before"]);
+        assert_eq!(
+            [
+                gap("vs_lo", ""),
+                gap("vs_hi", ""),
+                gap("vs_lo", r#", "is": false"#),
+                gap("vs_hi", r#", "is": false"#)
+            ]
+            .map(Result::unwrap),
+            [false, true, true, false]
+        );
+        assert!(gap("vs_lo", r#", "is": "no""#)
+            .unwrap_err()
+            .contains("true or false"));
+        assert_eq!(
+            CONDITIONS.map(|(k, _)| k),
+            [
+                "sign",
+                "prints_nonzero",
+                "width_at_most",
+                "count_at_least",
+                "unit_adds_up",
+                "covers_whole",
+                "gap_printable",
+                "page_is",
+                "row_above",
+                "layer_before"
+            ]
+        );
         // unit_adds_up (B1): the page's rows' one unit, as the unit registry's additive column says; persons (a count) and
         // ktoe (an amount) add up, a percentage and a per-person rate do not; rows with no unit, or two units, never
         let adds = |units: &[Option<&str>]| {
@@ -9070,24 +13683,81 @@ mod tests {
                 })
                 .collect();
             let page = J::from_value(&serde_json::json!({"rows": rows}));
-            let hold = Holding { facts: &facts, fmts: &fmts, got: &got, page: &page, code: "", name: None, word: &words };
+            let hold = Holding {
+                facts: &facts,
+                fmts: &fmts,
+                got: &got,
+                page: &page,
+                code: "",
+                name: None,
+                word: &words,
+            };
             conditions_hold(&parse(r#"[{"if": "unit_adds_up"}]"#).unwrap(), &hold).unwrap()
         };
-        assert_eq!([adds(&[Some("PER"), Some("PER")]), adds(&[Some("KTOE"), Some("KTOE")])], [true, true], "a count, an amount");
-        assert_eq!([adds(&[Some("PC"), Some("PC")]), adds(&[Some("TCO2E_HAB"), Some("TCO2E_HAB")])], [false, false], "a share, a rate");
-        assert_eq!([adds(&[None, None]), adds(&[Some("PER"), Some("KTOE")]), adds(&[Some("PER"), None]), adds(&[Some("NO_SUCH_UNIT")])], [false; 4]);
-        assert!(conditions_hold(&parse(r#"[{"if": "unit_adds_up", "unit": "PER"}]"#).unwrap(), &Holding { facts: &facts, fmts: &fmts, got: &got, page: &gapped, code: "", name: None, word: &words }).unwrap_err().contains("no argument unit"));
+        assert_eq!(
+            [
+                adds(&[Some("PER"), Some("PER")]),
+                adds(&[Some("KTOE"), Some("KTOE")])
+            ],
+            [true, true],
+            "a count, an amount"
+        );
+        assert_eq!(
+            [
+                adds(&[Some("PC"), Some("PC")]),
+                adds(&[Some("TCO2E_HAB"), Some("TCO2E_HAB")])
+            ],
+            [false, false],
+            "a share, a rate"
+        );
+        assert_eq!(
+            [
+                adds(&[None, None]),
+                adds(&[Some("PER"), Some("KTOE")]),
+                adds(&[Some("PER"), None]),
+                adds(&[Some("NO_SUCH_UNIT")])
+            ],
+            [false; 4]
+        );
+        assert!(conditions_hold(
+            &parse(r#"[{"if": "unit_adds_up", "unit": "PER"}]"#).unwrap(),
+            &Holding {
+                facts: &facts,
+                fmts: &fmts,
+                got: &got,
+                page: &gapped,
+                code: "",
+                name: None,
+                word: &words
+            }
+        )
+        .unwrap_err()
+        .contains("no argument unit"));
     }
-
 
     /// A page of selects over rows and formats, recomputed by the core: each select's result.
     fn selects_over(rows: Vec<J>, sels: &[&str], fmts: &str) -> Got {
         let items: Vec<J> = sels.iter().map(|s| parse(s).unwrap()).collect();
         let page = J::obj_of(vec![
             ("kind", J::str("Page")),
-            ("selects", J::obj_of(vec![("kind", J::str("Selects")), ("items", J::Arr(items))])),
-            ("facts", J::obj_of(vec![("kind", J::str("Facts")), ("tables", J::Obj(vec![])), ("rows", J::Arr(rows)), ("facts", J::Obj(vec![])), ("fmts", parse(fmts).unwrap())])),
-            ("checks", J::obj_of(vec![("kind", J::str("Checks")), ("items", J::Arr(vec![]))])),
+            (
+                "selects",
+                J::obj_of(vec![("kind", J::str("Selects")), ("items", J::Arr(items))]),
+            ),
+            (
+                "facts",
+                J::obj_of(vec![
+                    ("kind", J::str("Facts")),
+                    ("tables", J::Obj(vec![])),
+                    ("rows", J::Arr(rows)),
+                    ("facts", J::Obj(vec![])),
+                    ("fmts", parse(fmts).unwrap()),
+                ]),
+            ),
+            (
+                "checks",
+                J::obj_of(vec![("kind", J::str("Checks")), ("items", J::Arr(vec![]))]),
+            ),
         ]);
         recheck(&page).1
     }
@@ -9097,7 +13767,9 @@ mod tests {
         if let Some((d, c)) = dim {
             dims[d] = serde_json::json!(c);
         }
-        J::from_value(&serde_json::json!({"src": format!("series:t/{code}:{t}"), "table": "t", "dims": dims, "time": t, "value": v}))
+        J::from_value(
+            &serde_json::json!({"src": format!("series:t/{code}:{t}"), "table": "t", "dims": dims, "time": t, "value": v}),
+        )
     }
 
     /// P6 step 7 (finding): a take's value is its root rank's key, as the rank orders by it, not the rank's rows at over.time.
@@ -9107,25 +13779,44 @@ mod tests {
     #[test]
     fn take_value_is_the_root_rank_s_key_and_the_tie_reads_it() {
         // change: A and B both 50 at 2024, up 40 and 20; C and D both up 25, at 25 and 45
-        let rows: Vec<J> = [("A", "10", "50"), ("B", "30", "50"), ("C", "0", "25"), ("D", "20", "45")]
-            .iter()
-            .flat_map(|(c, a, b)| [a_row(c, None, "2020", a), a_row(c, None, "2024", b)])
-            .collect();
+        let rows: Vec<J> = [
+            ("A", "10", "50"),
+            ("B", "30", "50"),
+            ("C", "0", "25"),
+            ("D", "20", "45"),
+        ]
+        .iter()
+        .flat_map(|(c, a, b)| [a_row(c, None, "2020", a), a_row(c, None, "2024", b)])
+        .collect();
         let rank = r#"{"id": "r", "kind": "rank", "over": {"table": "t", "by": "geo", "time": "2024"}, "key": {"change": ["2020", "2024"]}, "order": "desc"}"#;
         let take = r#"{"id": "k", "kind": "take", "from": "r", "at": "first", "tie": {"by": "printed", "outcome": "silence", "dec": 0}}"#;
         let (r, k) = (parse(rank).unwrap(), parse(take).unwrap());
         let sel = vec![("r".to_string(), &r), ("k".to_string(), &k)];
         let key = |c: &str| take_value(&sel, "k", &J::str(c), &rows);
-        assert_eq!([key("A"), key("B"), key("C"), key("D")], [Ok(40.0), Ok(20.0), Ok(25.0), Ok(25.0)], "the change, not the level");
+        assert_eq!(
+            [key("A"), key("B"), key("C"), key("D")],
+            [Ok(40.0), Ok(20.0), Ok(25.0), Ok(25.0)],
+            "the change, not the level"
+        );
         // A first (40), B next (20): one level, two changes, no tie
         let got = selects_over(rows.clone(), &[rank, take], "{}");
-        assert_eq!((got["r"].clone(), got["k"].clone()), (parse(r#"["A", "C", "D", "B"]"#).unwrap(), J::str("A")));
+        assert_eq!(
+            (got["r"].clone(), got["k"].clone()),
+            (parse(r#"["A", "C", "D", "B"]"#).unwrap(), J::str("A"))
+        );
         // C and D alone: two levels, one change, a tie
-        let cd: Vec<J> = rows.iter().filter(|r| ["C", "D"].contains(&r.g("dims").g("geo").s().unwrap())).cloned().collect();
+        let cd: Vec<J> = rows
+            .iter()
+            .filter(|r| ["C", "D"].contains(&r.g("dims").g("geo").s().unwrap()))
+            .cloned()
+            .collect();
         let got = selects_over(cd, &[rank, take], "{}");
         assert_eq!(got["k"], J::Null, "one change at two levels is a tie");
         // part_share: P and Q both 100 in total, 30 and 60 of it in F1; R and S both half, of 100 and of 200
-        let totals: Vec<J> = [("P", "100"), ("Q", "100"), ("R", "100"), ("S", "200")].iter().map(|(c, v)| a_row(c, Some(("siec", "TOTAL")), "2024", v)).collect();
+        let totals: Vec<J> = [("P", "100"), ("Q", "100"), ("R", "100"), ("S", "200")]
+            .iter()
+            .map(|(c, v)| a_row(c, Some(("siec", "TOTAL")), "2024", v))
+            .collect();
         let parts: Vec<serde_json::Value> = [("P", "30"), ("Q", "60"), ("R", "50"), ("S", "100")]
             .iter()
             .map(|(c, v)| a_row(c, Some(("siec", "F1")), "2024", v).to_value())
@@ -9140,7 +13831,11 @@ mod tests {
         let (r, k) = (parse(&pq).unwrap(), parse(take).unwrap());
         let sel = vec![("r".to_string(), &r), ("k".to_string(), &k)];
         let key = |c: &str| take_value(&sel, "k", &J::str(c), &totals);
-        assert_eq!([key("P"), key("Q"), key("R"), key("S")], [Ok(0.3), Ok(0.6), Ok(0.5), Ok(0.5)], "the share, not the total");
+        assert_eq!(
+            [key("P"), key("Q"), key("R"), key("S")],
+            [Ok(0.3), Ok(0.6), Ok(0.5), Ok(0.5)],
+            "the share, not the total"
+        );
         // Q first (60 %), P next (30 %): one total, two shares, no tie
         let got = selects_over(totals.clone(), &[pq.as_str(), take], "{}");
         assert_eq!(got["k"], J::str("Q"));
@@ -9154,20 +13849,46 @@ mod tests {
         assert_eq!(take_value(&sel, "k", &J::str("C"), &rows), Ok(25.0));
         // a tie by value: one number; a tie printed by a format the page lacks prints whole when the tie says so, else refuses
         let by_value = r#"{"id": "k", "kind": "take", "from": "r", "at": "first", "tie": {"by": "value", "outcome": "silence"}}"#;
-        let ab: Vec<J> = rows.iter().filter(|r| r.g("time").s() == Some("2024")).cloned().collect();
-        assert_eq!(selects_over(ab.clone(), &[rank, by_value], "{}")["k"], J::Null, "A and B are both 50");
+        let ab: Vec<J> = rows
+            .iter()
+            .filter(|r| r.g("time").s() == Some("2024"))
+            .cloned()
+            .collect();
+        assert_eq!(
+            selects_over(ab.clone(), &[rank, by_value], "{}")["k"],
+            J::Null,
+            "A and B are both 50"
+        );
         let whole = r#"{"id": "k", "kind": "take", "from": "r", "at": "first", "tie": {"by": "printed", "outcome": "silence", "fmt": "chg", "missing": "whole"}}"#;
         assert_eq!(selects_over(ab.clone(), &[rank, whole], "{}")["k"], J::Null);
         let strict = r#"{"id": "k", "kind": "take", "from": "r", "at": "first", "tie": {"by": "printed", "outcome": "silence", "fmt": "chg"}}"#;
         let items: Vec<J> = [rank, strict].iter().map(|s| parse(s).unwrap()).collect();
         let page = J::obj_of(vec![
             ("kind", J::str("Page")),
-            ("selects", J::obj_of(vec![("kind", J::str("Selects")), ("items", J::Arr(items))])),
-            ("facts", J::obj_of(vec![("kind", J::str("Facts")), ("tables", J::Obj(vec![])), ("rows", J::Arr(ab)), ("facts", J::Obj(vec![])), ("fmts", J::Obj(vec![]))])),
-            ("checks", J::obj_of(vec![("kind", J::str("Checks")), ("items", J::Arr(vec![]))])),
+            (
+                "selects",
+                J::obj_of(vec![("kind", J::str("Selects")), ("items", J::Arr(items))]),
+            ),
+            (
+                "facts",
+                J::obj_of(vec![
+                    ("kind", J::str("Facts")),
+                    ("tables", J::Obj(vec![])),
+                    ("rows", J::Arr(ab)),
+                    ("facts", J::Obj(vec![])),
+                    ("fmts", J::Obj(vec![])),
+                ]),
+            ),
+            (
+                "checks",
+                J::obj_of(vec![("kind", J::str("Checks")), ("items", J::Arr(vec![]))]),
+            ),
         ]);
         let (bad, _, _) = recheck(&page);
-        assert!(bad.iter().any(|b| b.contains("tie fmt chg: no dec")), "{bad:?}");
+        assert!(
+            bad.iter().any(|b| b.contains("tie fmt chg: no dec")),
+            "{bad:?}"
+        );
     }
 
     /// A take at second with a printed tie (a cut page's headline naming the second kept place) is silent when the second
@@ -9175,34 +13896,84 @@ mod tests {
     /// read only the one place beside them.
     #[test]
     fn a_second_printed_as_the_third_is_no_pick() {
-        let rows = |vals: &[(&str, &str)]| -> Vec<J> { vals.iter().map(|(c, v)| a_row(c, None, "2024", v)).collect() };
+        let rows = |vals: &[(&str, &str)]| -> Vec<J> {
+            vals.iter()
+                .map(|(c, v)| a_row(c, None, "2024", v))
+                .collect()
+        };
         let rank = r#"{"id": "r", "kind": "rank", "over": {"table": "t", "by": "geo", "time": "2024"}, "key": "value", "order": "desc"}"#;
         let second = r#"{"id": "k", "kind": "take", "from": "r", "at": "second", "tie": {"by": "printed", "outcome": "silence", "dec": 0}}"#;
         let first = r#"{"id": "k", "kind": "take", "from": "r", "at": "first", "tie": {"by": "printed", "outcome": "silence", "dec": 0}}"#;
         // A 50, C 30.4, B 30: the second (C) prints 30 as the third does
         let tied = rows(&[("A", "50"), ("B", "30"), ("C", "30.4")]);
         let got = selects_over(tied.clone(), &[rank, second], "{}");
-        assert_eq!((got["r"].clone(), got["k"].clone()), (parse(r#"["A", "C", "B"]"#).unwrap(), J::Null), "a second printed as the third");
+        assert_eq!(
+            (got["r"].clone(), got["k"].clone()),
+            (parse(r#"["A", "C", "B"]"#).unwrap(), J::Null),
+            "a second printed as the third"
+        );
         // the first is apart from the second there, so the first's take still names it
         assert_eq!(selects_over(tied, &[rank, first], "{}")["k"], J::str("A"));
         // C 34 prints apart from both: the pick
-        assert_eq!(selects_over(rows(&[("A", "50"), ("B", "30"), ("C", "34")]), &[rank, second], "{}")["k"], J::str("C"));
+        assert_eq!(
+            selects_over(
+                rows(&[("A", "50"), ("B", "30"), ("C", "34")]),
+                &[rank, second],
+                "{}"
+            )["k"],
+            J::str("C")
+        );
         // C 49.8 prints 50 as the first does: silent too
-        assert_eq!(selects_over(rows(&[("A", "50"), ("B", "30"), ("C", "49.8")]), &[rank, second], "{}")["k"], J::Null);
+        assert_eq!(
+            selects_over(
+                rows(&[("A", "50"), ("B", "30"), ("C", "49.8")]),
+                &[rank, second],
+                "{}"
+            )["k"],
+            J::Null
+        );
         // by value: the second and the third one number
         let by_value = r#"{"id": "k", "kind": "take", "from": "r", "at": "second", "tie": {"by": "value", "outcome": "silence"}}"#;
-        assert_eq!(selects_over(rows(&[("A", "50"), ("B", "30"), ("C", "30")]), &[rank, by_value], "{}")["k"], J::Null);
+        assert_eq!(
+            selects_over(
+                rows(&[("A", "50"), ("B", "30"), ("C", "30")]),
+                &[rank, by_value],
+                "{}"
+            )["k"],
+            J::Null
+        );
         // two codes: the second is the last, beside the first only
-        assert_eq!(selects_over(rows(&[("A", "50"), ("C", "34")]), &[rank, second], "{}")["k"], J::str("C"));
+        assert_eq!(
+            selects_over(rows(&[("A", "50"), ("C", "34")]), &[rank, second], "{}")["k"],
+            J::str("C")
+        );
     }
 
     /// The core's printed tie (py_fixed) and the flow's old printed() are one call, format!("{:.*}"): at every .x5 boundary,
     /// either sign, 0 to 2 decimals, they print the same.
     #[test]
     fn the_printed_tie_rounds_as_the_flow_s_printed_did_at_every_x5_boundary() {
-        for (v, dec) in [(0.125, 2), (2.675, 2), (1.005, 2), (0.5, 0), (1.5, 0), (2.5, 0), (0.05, 1), (0.15, 1), (0.25, 1), (16.005, 2), (-0.125, 2), (-2.5, 0), (-0.15, 1)] {
+        for (v, dec) in [
+            (0.125, 2),
+            (2.675, 2),
+            (1.005, 2),
+            (0.5, 0),
+            (1.5, 0),
+            (2.5, 0),
+            (0.05, 1),
+            (0.15, 1),
+            (0.25, 1),
+            (16.005, 2),
+            (-0.125, 2),
+            (-2.5, 0),
+            (-0.15, 1),
+        ] {
             assert_eq!(py_fixed(v, dec), format!("{:.*}", dec, v), "{v} at {dec}");
-            assert_eq!(py_fixed(v * 100.0, 0), format!("{:.0}", v * 100.0), "{v} as a whole percent");
+            assert_eq!(
+                py_fixed(v * 100.0, 0),
+                format!("{:.0}", v * 100.0),
+                "{v} as a whole percent"
+            );
         }
     }
 }

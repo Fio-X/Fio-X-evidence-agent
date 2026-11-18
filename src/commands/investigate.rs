@@ -158,7 +158,10 @@ pub(crate) fn visual_completion_gaps_for_profile(
 /// next_gate::leaf_gate takes for one; None when the run has none. Only the first is gated here: a route publishes one leaf
 /// page, and verification (verify_publications) still walks every publication folder.
 fn leaf_page_gaps(run_dir: &std::path::Path) -> Option<Vec<String>> {
-    let mut dirs: Vec<_> = std::fs::read_dir(run_dir.join("publications")).ok()?.filter_map(|e| e.ok()).collect();
+    let mut dirs: Vec<_> = std::fs::read_dir(run_dir.join("publications"))
+        .ok()?
+        .filter_map(|e| e.ok())
+        .collect();
     dirs.sort_by_key(|e| e.file_name());
     dirs.iter().find_map(|entry| {
         let name = entry.file_name().into_string().ok()?;
@@ -178,7 +181,12 @@ pub(crate) fn leaf_page_gated(run_dir: &std::path::Path) -> bool {
 /// qualification line) when it does not: the old route shows it by the model driving its own tool loop (`loop_evidence`,
 /// audit has_agent_loop_evidence), unchanged; the new route by the program's own record, its leaf page gated and passed
 /// (leaf_page_gated), since there the program drives every step and the model only picks, so no tool loop is ever seen.
-pub(crate) fn run_status(completion_gaps: &[String], next_route: bool, loop_evidence: bool, run_dir: &std::path::Path) -> &'static str {
+pub(crate) fn run_status(
+    completion_gaps: &[String],
+    next_route: bool,
+    loop_evidence: bool,
+    run_dir: &std::path::Path,
+) -> &'static str {
     if !completion_gaps.is_empty() {
         "failed"
     } else if next_route {
@@ -683,7 +691,12 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
             if next_route && !completion_gaps.is_empty() {
                 bundle.write_answer(&failure_answer(&completion_gap_error(&completion_gaps)))?;
             }
-            let status = run_status(&completion_gaps, next_route, audit.has_agent_loop_evidence(), &bundle.dir);
+            let status = run_status(
+                &completion_gaps,
+                next_route,
+                audit.has_agent_loop_evidence(),
+                &bundle.dir,
+            );
             bundle.append_run_metric(
                 "investigate",
                 reported_provider.as_deref(),
@@ -778,11 +791,10 @@ mod completion_tests {
         chart_critic_record_passed, completion_chain_required, completion_correction,
         completion_gap_error, completion_gap_hints_on, completion_plan_gap_on, completion_rerun_on,
         completion_retry_applies, completion_same_gaps_on, compose_allowed, effective_tool_profile,
-        gap_supplier, is_transient_completion_provider_error, leaf_page_gated, leaf_page_gaps,
+        gap_supplier, is_transient_completion_provider_error, leaf_page_gaps, leaf_page_gated,
         lieflat_hidden_for, missing_visual_modes, run_status, skip_completion_attempt,
-        visual_completion_gaps_for_profile,
-        SentAttempt, COMPLETION_GAP_HINTS_ENV, COMPLETION_PLAN_GAP_ENV, COMPLETION_SAME_GAPS_ENV,
-        PLAN_GAP_TEXT,
+        visual_completion_gaps_for_profile, SentAttempt, COMPLETION_GAP_HINTS_ENV,
+        COMPLETION_PLAN_GAP_ENV, COMPLETION_SAME_GAPS_ENV, PLAN_GAP_TEXT,
     };
     use crate::artifact::InvestigationBundle;
     use crate::audit;
@@ -1020,7 +1032,10 @@ mod completion_tests {
         let empty = tempfile::tempdir().unwrap();
         for next_route in [false, true] {
             for loop_evidence in [false, true] {
-                assert_eq!(run_status(&gap, next_route, loop_evidence, empty.path()), "failed");
+                assert_eq!(
+                    run_status(&gap, next_route, loop_evidence, empty.path()),
+                    "failed"
+                );
             }
         }
         // the old route, as before
@@ -1038,9 +1053,17 @@ mod completion_tests {
         for sub in ["publications/column", "publications/plans", "runtime"] {
             fs::create_dir_all(run.path().join(sub)).unwrap();
         }
-        fs::write(run.path().join("runtime/next-page.json"), r#"{"question": "q"}"#).unwrap();
+        fs::write(
+            run.path().join("runtime/next-page.json"),
+            r#"{"question": "q"}"#,
+        )
+        .unwrap();
         fs::write(run.path().join("publications/column/index.html"), html).unwrap();
-        fs::write(run.path().join(crate::next_run::leaf_plan_ref("column")), r#"{"kind": "leaf_plan", "recipe": "column"}"#).unwrap();
+        fs::write(
+            run.path().join(crate::next_run::leaf_plan_ref("column")),
+            r#"{"kind": "leaf_plan", "recipe": "column"}"#,
+        )
+        .unwrap();
         fs::write(
             run.path().join("publications/column/manifest.json"),
             json!({"kind": "leaf_page", "html_ref": "publications/column/index.html", "html_sha256": sha}).to_string(),
@@ -1060,12 +1083,20 @@ mod completion_tests {
         assert!(body.contains(
             "if status == \"incomplete\" {\n                eprintln!(\n                    \"\\n[qualification] investigation completed without enough observable planning/tool evidence"
         ));
-        assert_eq!(body.matches("[qualification] investigation completed without").count(), 1);
-        assert!(include_str!("continue_investigation.rs").contains("let status = crate::commands::investigate::run_status("));
+        assert_eq!(
+            body.matches("[qualification] investigation completed without")
+                .count(),
+            1
+        );
+        assert!(include_str!("continue_investigation.rs")
+            .contains("let status = crate::commands::investigate::run_status("));
         // its words are failed, draft and incomplete: no "verified" in any case is returned by it
         let at = body.find("pub(crate) fn run_status(").unwrap();
         let status_fn = &body[at..at + body[at..].find("\n}\n").unwrap()];
-        assert!(!status_fn.to_ascii_lowercase().contains("verified"), "{status_fn}");
+        assert!(
+            !status_fn.to_ascii_lowercase().contains("verified"),
+            "{status_fn}"
+        );
     }
 
     #[test]

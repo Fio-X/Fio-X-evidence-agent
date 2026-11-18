@@ -1257,10 +1257,15 @@ fn publication_candidates(
 /// (the main chart, owner 11-14 22:2x item 2) leads; otherwise by path, so the order no longer follows the directory listing.
 /// Without it a path sort puts `column-b2/` before `column/` ('-' sorts before '/').
 fn delivery_order(path: &str) -> (u32, &str) {
-    let folder = path.strip_prefix("publications/").and_then(|rest| rest.split('/').next()).unwrap_or("");
+    let folder = path
+        .strip_prefix("publications/")
+        .and_then(|rest| rest.split('/').next())
+        .unwrap_or("");
     let block = folder
         .rsplit_once("-b")
-        .filter(|(name, n)| !name.is_empty() && !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+        .filter(|(name, n)| {
+            !name.is_empty() && !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())
+        })
         .and_then(|(_, n)| n.parse::<u32>().ok())
         .unwrap_or(0);
     (block, path)
@@ -1639,8 +1644,8 @@ mod tests {
     }
 
     use super::{
-        delivery_order, discover_delivery, publication_candidates, read_rpc_metrics, rust_session_recorded, slugify,
-        switches_off_in,
+        delivery_order, discover_delivery, publication_candidates, read_rpc_metrics,
+        rust_session_recorded, slugify, switches_off_in,
     };
     use std::fs;
     use tempfile::tempdir;
@@ -2086,17 +2091,35 @@ mod tests {
                 let page = dir.path().join("publications").join(folder);
                 fs::create_dir_all(&page).expect("page dir");
                 fs::write(page.join("index.html"), "<html></html>").expect("page");
-                fs::write(page.join("manifest.json"), format!(r#"{{"html_ref":"publications/{folder}/index.html"}}"#))
-                    .expect("manifest");
+                fs::write(
+                    page.join("manifest.json"),
+                    format!(r#"{{"html_ref":"publications/{folder}/index.html"}}"#),
+                )
+                .expect("manifest");
             }
             let delivery = discover_delivery(dir.path()).expect("delivery");
-            assert_eq!(delivery.primary_artifact, Some(format!("publications/{first}/index.html")), "{folders:?}");
-            let order: Vec<String> =
-                publication_candidates(dir.path(), None).expect("candidates").into_iter().map(|c| c.path).collect();
-            assert_eq!(order[0], format!("publications/{first}/index.html"), "{folders:?}");
+            assert_eq!(
+                delivery.primary_artifact,
+                Some(format!("publications/{first}/index.html")),
+                "{folders:?}"
+            );
+            let order: Vec<String> = publication_candidates(dir.path(), None)
+                .expect("candidates")
+                .into_iter()
+                .map(|c| c.path)
+                .collect();
+            assert_eq!(
+                order[0],
+                format!("publications/{first}/index.html"),
+                "{folders:?}"
+            );
         }
         assert_eq!(delivery_order("publications/column-b10/index.html").0, 10);
-        assert_eq!(delivery_order("publications/top-b/index.html").0, 0, "no number after -b");
+        assert_eq!(
+            delivery_order("publications/top-b/index.html").0,
+            0,
+            "no number after -b"
+        );
     }
 
     #[test]

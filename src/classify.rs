@@ -33,7 +33,10 @@ const ISO_ALIAS: [(&str, &str); 2] = [("EL", "GR"), ("UK", "GB")];
 
 /// Whether a Eurostat code names a country: an ISO 3166-1 alpha-2 code the list holds, or one of Eurostat's two exceptions to it.
 pub fn country_code(code: &str, refs: &Refs) -> bool {
-    refs.iso2.contains(code) || ISO_ALIAS.iter().any(|(a, iso)| *a == code && refs.iso2.contains(*iso))
+    refs.iso2.contains(code)
+        || ISO_ALIAS
+            .iter()
+            .any(|(a, iso)| *a == code && refs.iso2.contains(*iso))
 }
 
 /// One table cell: codes in `dims` order, the period, the value.
@@ -1163,15 +1166,26 @@ fn registered_flow(dataset: &str) -> Option<[(String, Vec<String>); 2]> {
     let mut lines = ESTAT_PARTS.lines();
     let header: Vec<&str> = lines.next()?.split('\t').collect();
     let col = |name: &str| header.iter().position(|h| *h == name);
-    let (t, d, c, l, f) = (col("tables")?, col("dim")?, col("code")?, col("level")?, col("flow")?);
+    let (t, d, c, l, f) = (
+        col("tables")?,
+        col("dim")?,
+        col("code")?,
+        col("level")?,
+        col("flow")?,
+    );
     let id = dataset.strip_suffix("@2").unwrap_or(dataset);
     // a row registers its code for every table its "tables" names (a family that shares the codelist)
     let rows: Vec<Vec<&str>> = lines
         .map(|line| line.split('\t').collect::<Vec<&str>>())
-        .filter(|r| r.get(t).is_some_and(|tables| tables.split_whitespace().any(|x| x == id)))
+        .filter(|r| {
+            r.get(t)
+                .is_some_and(|tables| tables.split_whitespace().any(|x| x == id))
+        })
         .collect();
     let side = |s: &str| -> Option<(String, Vec<String>)> {
-        let dim = rows.iter().find(|r| r.get(l) == Some(&"total") && r.get(f) == Some(&s))?[d];
+        let dim = rows
+            .iter()
+            .find(|r| r.get(l) == Some(&"total") && r.get(f) == Some(&s))?[d];
         let codes = rows
             .iter()
             .filter(|r| r.get(d) == Some(&dim) && r.get(l) == Some(&"leaf"))
@@ -1936,15 +1950,28 @@ mod tests {
                     codes.push(code.to_string());
                 }
             }
-            rows.push((s(&[f[0], f[1], "KTOE"]), Some("2024".into()), f[2].parse::<f64>().unwrap()));
+            rows.push((
+                s(&[f[0], f[1], "KTOE"]),
+                Some("2024".into()),
+                f[2].parse::<f64>().unwrap(),
+            ));
         }
         TableInput {
             provider: "eurostat".into(),
             dataset: dataset.into(),
             dims: vec![
-                DimInput { id: "nrg_bal".into(), codes: bals },
-                DimInput { id: "siec".into(), codes: siecs },
-                DimInput { id: "unit".into(), codes: s(&["KTOE"]) },
+                DimInput {
+                    id: "nrg_bal".into(),
+                    codes: bals,
+                },
+                DimInput {
+                    id: "siec".into(),
+                    codes: siecs,
+                },
+                DimInput {
+                    id: "unit".into(),
+                    codes: s(&["KTOE"]),
+                },
             ],
             rows,
             zero_cells: Vec::new(),
@@ -1959,52 +1986,104 @@ mod tests {
     fn a_registered_final_use_flow_is_read_and_the_supply_rule_is_unchanged() {
         let leaves = |bal: &str, siec: &str| bal != "FC_E" && siec != "TOTAL";
         let t = fixture_table("nrg_bal_s", &leaves);
-        assert_eq!((t.dims[0].codes.len(), t.dims[1].codes.len(), t.rows.len()), (7, 10, 69));
+        assert_eq!(
+            (t.dims[0].codes.len(), t.dims[1].codes.len(), t.rows.len()),
+            (7, 10, 69)
+        );
         let roles = classify(&t, &refs(), &Ask::default());
         let flow = roles.flow.clone().unwrap();
         assert_eq!(
-            (flow.source_dim.as_str(), flow.target_dim.as_str(), &flow.direction),
+            (
+                flow.source_dim.as_str(),
+                flow.target_dim.as_str(),
+                &flow.direction
+            ),
             ("siec", "nrg_bal", &FlowDirection::Official)
         );
         assert!(flow.basis.starts_with("estat-parts.tsv"), "{}", flow.basis);
-        let tags = |dim: &str| roles.dims.iter().find(|d| d.dim == dim).unwrap().roles.iter().map(|r| r.role).collect::<Vec<_>>();
-        assert!(tags("siec").contains(&Role::FlowSource) && tags("nrg_bal").contains(&Role::FlowTarget));
+        let tags = |dim: &str| {
+            roles
+                .dims
+                .iter()
+                .find(|d| d.dim == dim)
+                .unwrap()
+                .roles
+                .iter()
+                .map(|r| r.role)
+                .collect::<Vec<_>>()
+        };
+        assert!(
+            tags("siec").contains(&Role::FlowSource) && tags("nrg_bal").contains(&Role::FlowTarget)
+        );
         let shape = varying(
             &roles,
             &Slice::from([("time".into(), "2024".into())]),
             &[("siec", &t.dims[1].codes), ("nrg_bal", &t.dims[0].codes)],
         );
-        assert_eq!(shape.official_flow, Some(("siec".to_string(), "nrg_bal".to_string())));
+        assert_eq!(
+            shape.official_flow,
+            Some(("siec".to_string(), "nrg_bal".to_string()))
+        );
         // nrg_bal_c is of the same family (one row registers both): the same rows read the same flow
-        assert_eq!(classify(&fixture_table("nrg_bal_c", &leaves), &refs(), &Ask::default()).flow, roles.flow);
+        assert_eq!(
+            classify(
+                &fixture_table("nrg_bal_c", &leaves),
+                &refs(),
+                &Ask::default()
+            )
+            .flow,
+            roles.flow
+        );
         // unregistered: no flow, as before
         let other = classify(&fixture_table("nrg_x", &leaves), &refs(), &Ask::default());
         assert_eq!(other.flow, None);
-        assert!(!other.dims.iter().any(|d| d.roles.iter().any(|r| matches!(r.role, Role::FlowSource | Role::FlowTarget))));
+        assert!(!other.dims.iter().any(|d| d
+            .roles
+            .iter()
+            .any(|r| matches!(r.role, Role::FlowSource | Role::FlowTarget))));
         // a split by one dimension (siec TOTAL alone) is no flow
-        let one = classify(&fixture_table("nrg_bal_s", &|_, siec| siec == "TOTAL"), &refs(), &Ask::default());
+        let one = classify(
+            &fixture_table("nrg_bal_s", &|_, siec| siec == "TOTAL"),
+            &refs(),
+            &Ask::default(),
+        );
         assert_eq!(one.flow, None);
         // registered, but GIC, GEP, A and B are no registered codes
         assert_eq!(classify(&q2_like(), &refs(), &Ask::default()).flow, None);
         // a total or a subtotal beside the leaves is no flow: FC_OTH_E with its own parts, FC_E, siec TOTAL
-        for (bal, siec) in [("FC_OTH_E", "G3000"), ("FC_E", "G3000"), ("FC_IND_E", "TOTAL")] {
+        for (bal, siec) in [
+            ("FC_OTH_E", "G3000"),
+            ("FC_E", "G3000"),
+            ("FC_IND_E", "TOTAL"),
+        ] {
             let mut wider = fixture_table("nrg_bal_s", &leaves);
             for (i, code) in [(0, bal), (1, siec)] {
                 if !wider.dims[i].codes.iter().any(|c| c == code) {
                     wider.dims[i].codes.push(code.into());
                 }
             }
-            wider.rows.push((s(&[bal, siec, "KTOE"]), Some("2024".into()), 1.0));
-            assert_eq!(classify(&wider, &refs(), &Ask::default()).flow, None, "{bal} x {siec}");
+            wider
+                .rows
+                .push((s(&[bal, siec, "KTOE"]), Some("2024".into()), 1.0));
+            assert_eq!(
+                classify(&wider, &refs(), &Ask::default()).flow,
+                None,
+                "{bal} x {siec}"
+            );
         }
         // supply codes: the supply rule reads the flow first, with its own basis
         let mut supply = fixture_table("nrg_bal_s", &|bal, _| bal == "FC_E");
         supply.dims[0].codes = s(&["PPRD", "IMP", "FC_E"]);
         for (bal, v) in [("PPRD", 1.0), ("IMP", 2.0)] {
-            supply.rows.push((s(&[bal, "TOTAL", "KTOE"]), Some("2024".into()), v));
+            supply
+                .rows
+                .push((s(&[bal, "TOTAL", "KTOE"]), Some("2024".into()), v));
         }
         let read = classify(&supply, &refs(), &Ask::default()).flow.unwrap();
-        assert_eq!((read.source_dim.as_str(), read.target_dim.as_str()), ("siec", "nrg_bal"));
+        assert_eq!(
+            (read.source_dim.as_str(), read.target_dim.as_str()),
+            ("siec", "nrg_bal")
+        );
         assert!(read.basis.starts_with("方向表第 3 行"), "{}", read.basis);
     }
 

@@ -304,7 +304,11 @@ impl Numerals {
     }
 
     fn unit(&self, c: char) -> Option<u32> {
-        self.units.iter().position(|u| *u == c).map(|i| i as u32).or((self.two == Some(c)).then_some(2))
+        self.units
+            .iter()
+            .position(|u| *u == c)
+            .map(|i| i as u32)
+            .or((self.two == Some(c)).then_some(2))
     }
 }
 
@@ -312,10 +316,15 @@ impl Numerals {
 fn numerals() -> &'static Numerals {
     static NUMERALS: std::sync::OnceLock<Numerals> = std::sync::OnceLock::new();
     NUMERALS.get_or_init(|| {
-        let set: Value = serde_json::from_str(crate::next_knowledge::SET_SAYINGS_ZH).unwrap_or_default();
+        let set: Value =
+            serde_json::from_str(crate::next_knowledge::SET_SAYINGS_ZH).unwrap_or_default();
         let n = &set["numerals"];
         let one = |k: &str| n[k].as_str().and_then(|s| s.chars().next());
-        Numerals { units: n["units"].as_str().unwrap_or("").chars().collect(), two: one("two"), ten: one("ten") }
+        Numerals {
+            units: n["units"].as_str().unwrap_or("").chars().collect(),
+            two: one("two"),
+            ten: one("ten"),
+        }
     })
 }
 
@@ -829,7 +838,12 @@ pub fn check_published(
     }
     let mut named = named_of(catalogue, question, &meta)?;
     let source = source_of(run_dir, catalogue, &meta, main, &rows, &place_dim, &origins)?;
-    held_members(&mut named, request.pointer("/knobs/spec/basis/members"), &page, &source);
+    held_members(
+        &mut named,
+        request.pointer("/knobs/spec/basis/members"),
+        &page,
+        &source,
+    );
     let narrow = match narrow_rec {
         Some(rec) => narrow_of(run_dir, rec, &rows)?,
         None => None,
@@ -843,9 +857,16 @@ pub fn check_published(
 /// has it after all (A). A member already named stays as it is; one the fetched rows hold no value of, or one with a value
 /// at the page's year, is no member lacking the page's year and is held to nothing new.
 fn held_members(named: &mut Vec<Named>, members: Option<&Value>, page: &Page, source: &Source) {
-    for m in members.and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str) {
+    for m in members
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+    {
         let with_value = source.fetched.keys().any(|(c, _)| c == m);
-        let at_t1 = source.fetched.contains_key(&(m.to_string(), page.t1.clone()));
+        let at_t1 = source
+            .fetched
+            .contains_key(&(m.to_string(), page.t1.clone()));
         if named.iter().any(|n| n.is(m)) || page.drawn.contains(m) || !with_value || at_t1 {
             continue;
         }
@@ -1330,24 +1351,42 @@ mod tests {
     #[test]
     fn a_group_member_without_a_value_at_the_page_year_is_held_as_named() {
         let page_with = |unit: Block| Page {
-            blocks: vec![block("2024 年，德国最高，最低的是塞浦路斯", &["fact:hi.n"]), unit],
+            blocks: vec![
+                block("2024 年，德国最高，最低的是塞浦路斯", &["fact:hi.n"]),
+                unit,
+            ],
             drawn: ["DE", "CY", "AT"].iter().map(|s| s.to_string()).collect(),
             t1: "2024".into(),
             ..Page::default()
         };
         let mut fetched = BTreeMap::new();
-        for (c, t, v) in [("DE", "2024", 69.0), ("CY", "2024", 15.8), ("AT", "2024", 60.0), ("RO", "2023", 12.4), ("SK", "2024", 50.0)] {
+        for (c, t, v) in [
+            ("DE", "2024", 69.0),
+            ("CY", "2024", 15.8),
+            ("AT", "2024", 60.0),
+            ("RO", "2023", 12.4),
+            ("SK", "2024", 50.0),
+        ] {
             fetched.insert((c.to_string(), t.to_string()), v);
         }
         let source = Source {
-            asked: Some(["DE", "CY", "AT", "RO", "SK", "EL"].iter().map(|s| s.to_string()).collect()),
+            asked: Some(
+                ["DE", "CY", "AT", "RO", "SK", "EL"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+            ),
             fetched,
             whole: None,
         };
         let members = json!(["AT", "CY", "DE", "EL", "RO", "SK"]);
         let line = block(
             "单位：%；按现有成员国计，画出 3 国，2024 年罗马尼亚无数据",
-            &["fact:drawn.n", "period:cei_wm011:2024", "name:zh_names:iso2:RO"],
+            &[
+                "fact:drawn.n",
+                "period:cei_wm011:2024",
+                "name:zh_names:iso2:RO",
+            ],
         );
         let page = page_with(line);
         let mut held: Vec<Named> = Vec::new();
@@ -1360,7 +1399,10 @@ mod tests {
         held_members(&mut held, Some(&members), &bare, &source);
         let u = unheld(&held, &bare, &source, None, &words());
         assert_eq!(u.len(), 1, "{u:?}");
-        assert!(u[0].kind == Kind::Unshown && u[0].why.contains("RO"), "{u:?}");
+        assert!(
+            u[0].kind == Kind::Unshown && u[0].why.contains("RO"),
+            "{u:?}"
+        );
         // a member already named stays once; no basis, nothing held
         let mut held = vec![named("RO")];
         held_members(&mut held, Some(&members), &bare, &source);
@@ -1483,7 +1525,13 @@ mod tests {
     fn a_near_note_on_the_unit_line_holds_as_words() {
         let note = "；世行没有单列『东亚』，最接近的是『东亚与太平洋』，含东南亚和太平洋岛国";
         let page = n37_page(block(&format!("单位：%；2022 年{note}"), &[]));
-        let u = unheld(&[named("USA"), named("CHN")], &page, &Source::default(), None, &words());
+        let u = unheld(
+            &[named("USA"), named("CHN")],
+            &page,
+            &Source::default(),
+            None,
+            &words(),
+        );
         assert!(u.is_empty(), "{u:?}");
     }
 

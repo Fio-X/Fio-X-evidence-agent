@@ -209,14 +209,46 @@ pub enum Finding {
 /// ({<fact>.t}, which the leaf prints with its 年 from the ledger), so every number and year prints from the ledger. Same
 /// rules as FRAMES but the placeholders.
 pub const DEK_FINDINGS: [(Finding, &str, &str); 8] = [
-    (Finding::Rise, "{y0}至{y1}，{name}增幅最大，增加{value}", "{y0}至{y1}，{name}{set}增幅最大，增加{value}"),
-    (Finding::Fall, "{y0}至{y1}，{name}降幅最大，减少{value}", "{y0}至{y1}，{name}{set}降幅最大，减少{value}"),
-    (Finding::Level, "{y1}，{name}最高，为{value}，比最低的{other}高{gap}", "{y1}，{name}{set}居首，为{value}，比第二位的{other}高{gap}"),
-    (Finding::Share, "{y1}，{name}最多，占{value}", "{y1}，{name}{set}居首，占{value}"),
-    (Finding::Part, "{y1}，{name}占比最高，为{value}", "{y1}，{set}，{name}占比居首，为{value}"),
-    (Finding::Grew, "{y0}至{y1}，{name}增长{value}", "{y0}至{y1}，{name}{set}增长{value}"),
-    (Finding::Shrank, "{y0}至{y1}，{name}下降{value}", "{y0}至{y1}，{name}{set}下降{value}"),
-    (Finding::Position, "{y1}，{name}排第{rank}，为{value}", "{y1}，{name}{set}排第{rank}，为{value}"),
+    (
+        Finding::Rise,
+        "{y0}至{y1}，{name}增幅最大，增加{value}",
+        "{y0}至{y1}，{name}{set}增幅最大，增加{value}",
+    ),
+    (
+        Finding::Fall,
+        "{y0}至{y1}，{name}降幅最大，减少{value}",
+        "{y0}至{y1}，{name}{set}降幅最大，减少{value}",
+    ),
+    (
+        Finding::Level,
+        "{y1}，{name}最高，为{value}，比最低的{other}高{gap}",
+        "{y1}，{name}{set}居首，为{value}，比第二位的{other}高{gap}",
+    ),
+    (
+        Finding::Share,
+        "{y1}，{name}最多，占{value}",
+        "{y1}，{name}{set}居首，占{value}",
+    ),
+    (
+        Finding::Part,
+        "{y1}，{name}占比最高，为{value}",
+        "{y1}，{set}，{name}占比居首，为{value}",
+    ),
+    (
+        Finding::Grew,
+        "{y0}至{y1}，{name}增长{value}",
+        "{y0}至{y1}，{name}{set}增长{value}",
+    ),
+    (
+        Finding::Shrank,
+        "{y0}至{y1}，{name}下降{value}",
+        "{y0}至{y1}，{name}{set}下降{value}",
+    ),
+    (
+        Finding::Position,
+        "{y1}，{name}排第{rank}，为{value}",
+        "{y1}，{name}{set}排第{rank}，为{value}",
+    ),
 ];
 
 /// The page title's conclusion per Finding, unscoped then scoped (next_run finding_of fills it as it fills the dek's, and the
@@ -228,12 +260,32 @@ pub const DEK_FINDINGS: [(Finding, &str, &str); 8] = [
 pub const HEADLINES: [(Finding, &str, &str); 8] = [
     (Finding::Rise, "{name}增幅最大", "{name}{set}增幅最大"),
     (Finding::Fall, "{name}降幅最大", "{name}{set}降幅最大"),
-    (Finding::Level, "{name}最高，是最低者{other}的{times}", "{name}{set}居首，是第二位{other}的{times}"),
-    (Finding::Share, "{name}最多，占{value}", "{name}{set}居首，占{value}"),
-    (Finding::Part, "{name}占比最高，达{value}", "{set}{name}占比居首，达{value}"),
+    (
+        Finding::Level,
+        "{name}最高，是最低者{other}的{times}",
+        "{name}{set}居首，是第二位{other}的{times}",
+    ),
+    (
+        Finding::Share,
+        "{name}最多，占{value}",
+        "{name}{set}居首，占{value}",
+    ),
+    (
+        Finding::Part,
+        "{name}占比最高，达{value}",
+        "{set}{name}占比居首，达{value}",
+    ),
     (Finding::Grew, "{name}增长{value}", "{name}{set}增长{value}"),
-    (Finding::Shrank, "{name}下降{value}", "{name}{set}下降{value}"),
-    (Finding::Position, "{name}排第{rank}，最高的是{other}", "{name}{set}排第{rank}，居首的是{other}"),
+    (
+        Finding::Shrank,
+        "{name}下降{value}",
+        "{name}{set}下降{value}",
+    ),
+    (
+        Finding::Position,
+        "{name}排第{rank}，最高的是{other}",
+        "{name}{set}排第{rank}，居首的是{other}",
+    ),
 ];
 
 /// A level headline when its times do not hold (the other is not above 0, 11-07: a page with a value below 0): the finding said
@@ -290,7 +342,10 @@ pub struct Concept {
 
 /// The page leads that draw one period's levels of their measure, no change between periods: a title over one of them
 /// names what it ranks or maps, not a change (next_page Drafts::level_title; plan v4 item 7).
-pub const LEVEL_LEADS: [(Relation, View); 2] = [(Relation::Ranking, View::Slice), (Relation::Map, View::Slice)];
+pub const LEVEL_LEADS: [(Relation, View); 2] = [
+    (Relation::Ranking, View::Slice),
+    (Relation::Map, View::Slice),
+];
 
 /// What each template shows of its measure, in the English a chart's draft title adds when two charts on a page share one
 /// table title (a ranking and a dumbbell of the same table), so their names differ before the model words them.
@@ -326,21 +381,33 @@ pub const CONCEPTS: [Concept; 7] = [
         view: View::Slice,
         reader_problem: "读者想知道这些数值随时间怎样变化，在哪里转折。",
         visual_thesis: "沿着时间看走势，转折点和总的方向就是答案。",
-        questions: ["总体是上升还是下降？", "变化最大的是哪段时期？", "最近的时期和最早相比如何？"],
+        questions: [
+            "总体是上升还是下降？",
+            "变化最大的是哪段时期？",
+            "最近的时期和最早相比如何？",
+        ],
     },
     Concept {
         relation: Relation::Change,
         view: View::FirstToLast,
         reader_problem: "读者想知道从起始时期到最近时期，各方变了多少，谁变得最多。",
         visual_thesis: "把起点和终点并排放，变化的大小和方向清楚可见。",
-        questions: ["谁的变化最大？", "哪些在增加，哪些在减少？", "最近时期和起始时期相比，高低次序有什么不同？"],
+        questions: [
+            "谁的变化最大？",
+            "哪些在增加，哪些在减少？",
+            "最近时期和起始时期相比，高低次序有什么不同？",
+        ],
     },
     Concept {
         relation: Relation::Composition,
         view: View::Slice,
         reader_problem: "读者想知道整体由哪些部分构成，哪部分占得最多。",
         visual_thesis: "把整体切开来看，最大的部分决定了整体的样子。",
-        questions: ["整体由哪些部分构成？", "哪个部分占比最大？", "各部分的份额差别有多大？"],
+        questions: [
+            "整体由哪些部分构成？",
+            "哪个部分占比最大？",
+            "各部分的份额差别有多大？",
+        ],
     },
     Concept {
         relation: Relation::Flow,
@@ -361,7 +428,11 @@ pub const CONCEPTS: [Concept; 7] = [
         view: View::Slice,
         reader_problem: "读者想知道大多数数值落在哪里，哪些明显偏离。",
         visual_thesis: "把所有数值排进格子里，常见的范围和异常值自然分开。",
-        questions: ["大多数数值落在哪个范围？", "哪些数值明显偏离？", "行与列之间有什么规律？"],
+        questions: [
+            "大多数数值落在哪个范围？",
+            "哪些数值明显偏离？",
+            "行与列之间有什么规律？",
+        ],
     },
 ];
 
@@ -375,7 +446,6 @@ pub struct PagePlan {
     /// The module visual_grammar of the chart (infographic.mjs VISUAL_GRAMMAR_FORMS lists the chart type under it).
     pub visual_grammar: &'static str,
 }
-
 
 pub const PAGE_PLANS: [PagePlan; 7] = [
     PagePlan {
@@ -446,7 +516,10 @@ pub const HERO_LABELS: [(&str, &str); 12] = [
     ("change_largest_rise", "{name}升幅最大"),
     ("change_largest_fall", "{name}降幅最大或升幅最小"),
     ("change_total", "总量的变化幅度"),
-    ("cut_members_largest_change", "排在前面的成员中{name}变化最大"),
+    (
+        "cut_members_largest_change",
+        "排在前面的成员中{name}变化最大",
+    ),
     ("cut_total_change", "总量的变化"),
 ];
 

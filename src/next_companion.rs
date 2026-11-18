@@ -38,7 +38,16 @@ const FINER_THAN_YEAR: [&str; 5] = ["S", "Q", "M", "W", "D"];
 /// Title words that say how often a table is published, not what it counts ("Natural gas imports - annual data" and
 /// "... - monthly data", "... - annual aggregated data"): a twin's title without them is the main's.
 const FREQUENCY_WORDS: [&str; 10] = [
-    "annual", "yearly", "semi", "half", "quarterly", "monthly", "weekly", "daily", "aggregated", "data",
+    "annual",
+    "yearly",
+    "semi",
+    "half",
+    "quarterly",
+    "monthly",
+    "weekly",
+    "daily",
+    "aggregated",
+    "data",
 ];
 
 /// The share of the best year's shared countries a year must reach to be the overlap year (the latest such year wins), so
@@ -191,7 +200,11 @@ impl CompanionIndex {
             let words = toks(r[0].trim());
             quantity.insert(
                 r[1].to_string(),
-                words.iter().filter(|w| !FREQUENCY_WORDS.contains(&w.as_str())).cloned().collect(),
+                words
+                    .iter()
+                    .filter(|w| !FREQUENCY_WORDS.contains(&w.as_str()))
+                    .cloned()
+                    .collect(),
             );
             title_words.insert(r[1].to_string(), words.into_iter().collect());
             folder.insert(r[1].to_string(), path.clone());
@@ -199,7 +212,10 @@ impl CompanionIndex {
         }
         let mut by_parent: BTreeMap<String, Vec<String>> = BTreeMap::new();
         for (path, tables) in &by_folder {
-            by_parent.entry(parent(path).to_string()).or_default().extend(tables.iter().cloned());
+            by_parent
+                .entry(parent(path).to_string())
+                .or_default()
+                .extend(tables.iter().cloned());
         }
         let mut dims: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
         let mut freqs: BTreeMap<String, BTreeSet<&'static str>> = BTreeMap::new();
@@ -306,12 +322,18 @@ impl CompanionIndex {
             .filter(|(t, theirs)| *theirs == mine && self.quantity(main) == self.quantity(t))
             .filter_map(|(t, _)| {
                 let finer = self.freqs.get(t)?;
-                let grain = FINER_THAN_YEAR.iter().copied().find(|f| finer.contains(f))?;
-                finer.iter().all(|f| FINER_THAN_YEAR.contains(f)).then(|| Candidate {
-                    id: t.clone(),
-                    adds: Vec::new(),
-                    grain: Some(grain),
-                })
+                let grain = FINER_THAN_YEAR
+                    .iter()
+                    .copied()
+                    .find(|f| finer.contains(f))?;
+                finer
+                    .iter()
+                    .all(|f| FINER_THAN_YEAR.contains(f))
+                    .then(|| Candidate {
+                        id: t.clone(),
+                        adds: Vec::new(),
+                        grain: Some(grain),
+                    })
             });
         adds.chain(twins).collect()
     }
@@ -391,7 +413,9 @@ impl CompanionIndex {
             _ => true,
         });
         // The twin sorts first and is at most one: it takes a place beside MAX_COMPANIONS.
-        found.truncate(MAX_COMPANIONS + usize::from(found.first().is_some_and(|c| c.grain.is_some())));
+        found.truncate(
+            MAX_COMPANIONS + usize::from(found.first().is_some_and(|c| c.grain.is_some())),
+        );
         found
     }
 }
@@ -482,7 +506,14 @@ pub fn companions(
             };
             let Some(overlap) = overlap(&main_rows, &theirs) else {
                 let shared = overlap_places(&main_rows, &theirs);
-                dropped.push((id, if shared { DropWhy::NoCountryLevel } else { DropWhy::NoSharedPlaceYear }));
+                dropped.push((
+                    id,
+                    if shared {
+                        DropWhy::NoCountryLevel
+                    } else {
+                        DropWhy::NoSharedPlaceYear
+                    },
+                ));
                 return None;
             };
             let axis = axis(main, &id, &main_rows, &theirs);
@@ -504,7 +535,11 @@ pub fn companions(
             .then(a.id.cmp(&b.id))
     });
     let room = MAX_COMPANIONS + usize::from(found.first().is_some_and(|c| c.grain.is_some()));
-    dropped.extend(found.drain(found.len().min(room)..).map(|c| (c.id, DropWhy::NoRoom)));
+    dropped.extend(
+        found
+            .drain(found.len().min(room)..)
+            .map(|c| (c.id, DropWhy::NoRoom)),
+    );
     (found, dropped)
 }
 
@@ -637,19 +672,36 @@ mod tests {
              \"            Natural gas stocks - monthly data\"\t\"gs_m\"\t\"table\"\n\
              \"    Trade\"",
         );
-        split.toc.push_str("\"        Natural gas exports - quarterly data\"\t\"gx_q\"\t\"table\"\n");
+        split
+            .toc
+            .push_str("\"        Natural gas exports - quarterly data\"\t\"gx_q\"\t\"table\"\n");
         for id in ["gx_a", "gx_s", "gx_m", "gs_m", "gx_q"] {
-            let time = if id == "gx_a" { "2024" } else if id == "gx_q" { "2024Q1" } else { "2024M01" };
-            split.metabase.push_str(&format!("{id}\tgeo\tAT\n{id}\tpartner\tRU\n{id}\ttime\t{time}\n"));
+            let time = if id == "gx_a" {
+                "2024"
+            } else if id == "gx_q" {
+                "2024Q1"
+            } else {
+                "2024M01"
+            };
+            split.metabase.push_str(&format!(
+                "{id}\tgeo\tAT\n{id}\tpartner\tRU\n{id}\ttime\t{time}\n"
+            ));
         }
         let index = CompanionIndex::from_raw(&split);
-        let twins: Vec<(String, Option<&str>)> =
-            index.candidates("gx_a").into_iter().map(|c| (c.id, c.grain)).collect();
+        let twins: Vec<(String, Option<&str>)> = index
+            .candidates("gx_a")
+            .into_iter()
+            .map(|c| (c.id, c.grain))
+            .collect();
         assert_eq!(twins, vec![("gx_m".to_string(), Some("M"))]);
         // In one folder the title gate holds as well: gas_n has gas_a's dimensions, a finer frequency and another title.
         let mut one = raw();
-        one.toc = one.toc.replace("\"    Trade\"", "\"        Natural gas stocks, monthly data\"\t\"gas_n\"\t\"table\"\n\"    Trade\"");
-        one.metabase.push_str("gas_n\tgeo\tAT\ngas_n\tpartner\tRU\ngas_n\ttime\t2024M05\n");
+        one.toc = one.toc.replace(
+            "\"    Trade\"",
+            "\"        Natural gas stocks, monthly data\"\t\"gas_n\"\t\"table\"\n\"    Trade\"",
+        );
+        one.metabase
+            .push_str("gas_n\tgeo\tAT\ngas_n\tpartner\tRU\ngas_n\ttime\t2024M05\n");
         let twins: Vec<String> = CompanionIndex::from_raw(&one)
             .candidates("gas_a")
             .into_iter()
@@ -800,7 +852,10 @@ mod tests {
         for main in ["gas_a", "gas_m", "SP.POP.65UP.TO.ZS@2"] {
             assert!(index.candidates(main).iter().all(|c| c.id != main));
             assert!(index.shortlist(main).iter().all(|c| c.id != main));
-            assert!(companions(&index, main, &rows).0.iter().all(|c| c.id != main));
+            assert!(companions(&index, main, &rows)
+                .0
+                .iter()
+                .all(|c| c.id != main));
         }
     }
 
@@ -912,7 +967,12 @@ mod tests {
             via: Some("citizen".into()),
             ..row(code, year, true)
         };
-        let main = [hub("SY", 2024), hub("AF", 2024), hub("SY", 2025), hub("AF", 2025)];
+        let main = [
+            hub("SY", 2024),
+            hub("AF", 2024),
+            hub("SY", 2025),
+            hub("AF", 2025),
+        ];
         let twin = [hub("SY", 2025), hub("AF", 2025), hub("SY", 2024)];
         assert_eq!(
             overlap(&main, &twin),
@@ -933,18 +993,40 @@ mod tests {
         let main = vec![row("EU27_2020", 2024, false), row("AT", 2024, true)];
         let with = |other: Option<Vec<Row>>| {
             let main = main.clone();
-            move |t: &str| if t == "gas_a" { Some(main.clone()) } else { other.clone() }
+            move |t: &str| {
+                if t == "gas_a" {
+                    Some(main.clone())
+                } else {
+                    other.clone()
+                }
+            }
         };
         let why = |other| companions(&index, "gas_a", &with(other)).1;
         // the shortlist is gas_m (the monthly twin) and gas_b; both are given the same rows here
         let both = |w: DropWhy| [("gas_m".to_string(), w), ("gas_b".to_string(), w)];
         assert_eq!(why(None), both(DropWhy::NoRows));
-        assert_eq!(why(Some(vec![row("AT", 2019, true)])), both(DropWhy::NoSharedPlaceYear));
-        assert_eq!(why(Some(vec![row("EU27_2020", 2024, false)])), both(DropWhy::NoCountryLevel));
+        assert_eq!(
+            why(Some(vec![row("AT", 2019, true)])),
+            both(DropWhy::NoSharedPlaceYear)
+        );
+        assert_eq!(
+            why(Some(vec![row("EU27_2020", 2024, false)])),
+            both(DropWhy::NoCountryLevel)
+        );
         assert!(why(Some(vec![row("AT", 2024, true)])).is_empty());
         assert_eq!(
-            serde_json::json!([DropWhy::NoRows, DropWhy::NoSharedPlaceYear, DropWhy::NoCountryLevel, DropWhy::NoRoom]),
-            serde_json::json!(["no_rows", "no_shared_place_year", "no_country_level", "no_room"])
+            serde_json::json!([
+                DropWhy::NoRows,
+                DropWhy::NoSharedPlaceYear,
+                DropWhy::NoCountryLevel,
+                DropWhy::NoRoom
+            ]),
+            serde_json::json!([
+                "no_rows",
+                "no_shared_place_year",
+                "no_country_level",
+                "no_room"
+            ])
         );
     }
 
@@ -984,12 +1066,17 @@ mod tests {
             "\"    Trade\"",
             "\"        Natural gas imports by partner and sector annual data\"\t\"gas_e\"\t\"table\"\n\"    Trade\"",
         );
-        three.metabase.push_str("gas_e\tgeo\tAT\ngas_e\tpartner\tRU\ngas_e\tsector\tX\ngas_e\ttime\t2024\n");
+        three
+            .metabase
+            .push_str("gas_e\tgeo\tAT\ngas_e\tpartner\tRU\ngas_e\tsector\tX\ngas_e\ttime\t2024\n");
         let index = CompanionIndex::from_raw(&three);
         let shortlist: Vec<String> = index.shortlist("gas_a").into_iter().map(|c| c.id).collect();
         assert_eq!(shortlist.len(), MAX_COMPANIONS + 1, "{shortlist:?}");
         assert_eq!(shortlist[0], "gas_m");
-        assert!(shortlist.contains(&"gas_b".to_string()) && shortlist.contains(&"gas_e".to_string()), "{shortlist:?}");
+        assert!(
+            shortlist.contains(&"gas_b".to_string()) && shortlist.contains(&"gas_e".to_string()),
+            "{shortlist:?}"
+        );
         let rows = |_: &str| Some(vec![row("AT", 2024, true)]);
         let (kept, dropped) = companions(&index, "gas_a", &rows);
         let mut ids: Vec<String> = kept.iter().map(|c| c.id.clone()).collect();
@@ -1037,10 +1124,17 @@ mod tests {
             if f.len() != 1 || !f.contains("A") || index.support.contains(main) {
                 continue;
             }
-            let offered: BTreeSet<String> = index.shortlist(main).into_iter().filter(|c| c.grain.is_some()).map(|c| c.id).collect();
+            let offered: BTreeSet<String> = index
+                .shortlist(main)
+                .into_iter()
+                .filter(|c| c.grain.is_some())
+                .map(|c| c.id)
+                .collect();
             for &t in &by_dims[mine] {
                 let tf = &index.folder[t];
-                let finer_only = index.freqs.get(t).is_some_and(|f| !f.is_empty() && f.iter().all(|f| FINER_THAN_YEAR.contains(f)));
+                let finer_only = index.freqs.get(t).is_some_and(|f| {
+                    !f.is_empty() && f.iter().all(|f| FINER_THAN_YEAR.contains(f))
+                });
                 if t == main || !finer_only || index.support.contains(t) {
                     continue;
                 }
@@ -1052,8 +1146,13 @@ mod tests {
                     continue;
                 };
                 let same = index.quantity(main) == index.quantity(t);
-                let topic = index.topic(main, t).is_some_and(|x| x >= MIN_TOPIC_SIMILARITY);
-                let key = format!("{place} title_same={same} topic_ok={topic} offered={}", offered.contains(t));
+                let topic = index
+                    .topic(main, t)
+                    .is_some_and(|x| x >= MIN_TOPIC_SIMILARITY);
+                let key = format!(
+                    "{place} title_same={same} topic_ok={topic} offered={}",
+                    offered.contains(t)
+                );
                 *counts.entry(key).or_default() += 1;
                 if place == "same_folder" && !same && offered.contains(t) {
                     println!("{}", serde_json::json!({"offered_other_title": [main, t]}));
@@ -1063,10 +1162,17 @@ mod tests {
         for (k, n) in &counts {
             println!("{}", serde_json::json!({"pairs": k, "n": n}));
         }
-        let cases: Vec<serde_json::Value> =
-            serde_json::from_str(&std::fs::read_to_string(std::env::var("NEXT_WINDOW_CASES").unwrap()).unwrap()).unwrap();
+        let cases: Vec<serde_json::Value> = serde_json::from_str(
+            &std::fs::read_to_string(std::env::var("NEXT_WINDOW_CASES").unwrap()).unwrap(),
+        )
+        .unwrap();
         for case in &cases {
-            for id in case["tables"].as_array().unwrap().iter().filter_map(|v| v.as_str()) {
+            for id in case["tables"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|v| v.as_str())
+            {
                 // A twin is marked =title when its title without FREQUENCY_WORDS is the main's, !title when not.
                 let list: Vec<String> = index
                     .shortlist(id)
@@ -1074,12 +1180,19 @@ mod tests {
                     .map(|c| match c.grain {
                         None => c.id.clone(),
                         Some(g) => {
-                            let same = if index.quantity(id) == index.quantity(&c.id) { "=title" } else { "!title" };
+                            let same = if index.quantity(id) == index.quantity(&c.id) {
+                                "=title"
+                            } else {
+                                "!title"
+                            };
                             format!("{}:{g}{same}", c.id)
                         }
                     })
                     .collect();
-                println!("{}", serde_json::json!({"run": case["run"], "table": id, "shortlist": list}));
+                println!(
+                    "{}",
+                    serde_json::json!({"run": case["run"], "table": id, "shortlist": list})
+                );
             }
         }
     }

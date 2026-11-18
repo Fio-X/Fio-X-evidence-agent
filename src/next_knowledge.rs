@@ -157,9 +157,16 @@ pub enum Request<'a> {
     ScopeRefused { question: &'a str, this_year: i32 },
     /// The shape request of a question the scope refusal let through (answer_plan::split_ask): the three many-block shapes,
     /// the one its words point to first, and the quantities it names as the slots a reply picks from.
-    SplitAsk { catalogue: &'a Opened, question: &'a str },
+    SplitAsk {
+        catalogue: &'a Opened,
+        question: &'a str,
+    },
     /// The table of one quantity family for a block of a many-block page (l5geo::Catalog::family_table).
-    FamilyTable { catalogue: &'a Opened, question: &'a str, family: &'a str },
+    FamilyTable {
+        catalogue: &'a Opened,
+        question: &'a str,
+        family: &'a str,
+    },
     /// The plan of a question for the model's shape reply (answer_plan::plan_for), the reply held against the request
     /// first (answer_plan::check_reply): Err with the refusal's words when it does not hold.
     AnswerPlan {
@@ -351,7 +358,13 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
             months,
             latest_year,
             first_year,
-        } => Reply::Ranking(catalogue.catalog.top5(question, texts, months, latest_year, first_year)),
+        } => {
+            Reply::Ranking(
+                catalogue
+                    .catalog
+                    .top5(question, texts, months, latest_year, first_year),
+            )
+        }
         Request::PlacesOutside {
             catalogue,
             question,
@@ -363,10 +376,24 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
             question,
         } => Reply::Places(catalogue.catalog.places(question)),
         Request::RankAsked { question } => Reply::RankAsked(crate::l5geo::rank_asked_zh(question)),
-        Request::ScopeRefused { question, this_year } => Reply::ScopeRefused(crate::l5geo::scope_refused_zh(question, this_year)),
-        Request::SplitAsk { catalogue, question } => Reply::SplitAsk(crate::answer_plan::split_ask(&catalogue.catalog, question)),
-        Request::FamilyTable { catalogue, question, family } => Reply::FamilyTable(catalogue.catalog.family_table(question, family)),
-        Request::AnswerPlan { catalogue, question, reply } => {
+        Request::ScopeRefused {
+            question,
+            this_year,
+        } => Reply::ScopeRefused(crate::l5geo::scope_refused_zh(question, this_year)),
+        Request::SplitAsk {
+            catalogue,
+            question,
+        } => Reply::SplitAsk(crate::answer_plan::split_ask(&catalogue.catalog, question)),
+        Request::FamilyTable {
+            catalogue,
+            question,
+            family,
+        } => Reply::FamilyTable(catalogue.catalog.family_table(question, family)),
+        Request::AnswerPlan {
+            catalogue,
+            question,
+            reply,
+        } => {
             let ask = crate::answer_plan::split_ask(&catalogue.catalog, question);
             Reply::AnswerPlan(
                 crate::answer_plan::check_reply(&ask, reply)
@@ -432,17 +459,23 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
             Reply::ZhNames { names, missing }
         }
         Request::TableZh { id } => Reply::TableZh(table_names()?.get(id).cloned()),
-        Request::AskedBeside { question, table } => Reply::AskedIds(crate::l5geo::asked_beside_table(
-            question,
-            table,
-            table_names()?.get(table).map(String::as_str),
-        )),
+        Request::AskedBeside { question, table } => {
+            Reply::AskedIds(crate::l5geo::asked_beside_table(
+                question,
+                table,
+                table_names()?.get(table).map(String::as_str),
+            ))
+        }
         Request::Iso3Of { codes } => {
             let iso3_of = iso3_table()?;
             let (mut iso3, mut missing) = (BTreeMap::new(), Vec::new());
             for code in codes.iter().map(|c| c.trim()) {
                 let three = code.len() == 3 && code.bytes().all(|b| b.is_ascii_uppercase());
-                match if three { Some(code) } else { iso3_of.get(code).map(String::as_str) } {
+                match if three {
+                    Some(code)
+                } else {
+                    iso3_of.get(code).map(String::as_str)
+                } {
                     Some(c) => {
                         iso3.insert(code.to_string(), c.to_string());
                     }
@@ -501,8 +534,9 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
             main,
             rows,
         } => {
-            let (kept, dropped) =
-                next_companion::companions(&catalogue.companions, main, &|id| rows.get(id).cloned());
+            let (kept, dropped) = next_companion::companions(&catalogue.companions, main, &|id| {
+                rows.get(id).cloned()
+            });
             Reply::Companions(kept, dropped)
         }
         Request::HubOrigin {
@@ -539,9 +573,22 @@ fn companion_rows(
                 dims.entry(d.id.clone()).or_default().insert(c.clone());
             }
         }
-        let countries = dims.values().flatten().filter(|c| classify::country_code(c, refs)).cloned().collect();
-        let aggregates = dims.get("geo").into_iter().flatten().filter(|g| refs.members.contains_key(*g)).cloned().collect();
-        hub_origin(&dims, &countries, &aggregates).ok().map(|h| h.origin)
+        let countries = dims
+            .values()
+            .flatten()
+            .filter(|c| classify::country_code(c, refs))
+            .cloned()
+            .collect();
+        let aggregates = dims
+            .get("geo")
+            .into_iter()
+            .flatten()
+            .filter(|g| refs.members.contains_key(*g))
+            .cloned()
+            .collect();
+        hub_origin(&dims, &countries, &aggregates)
+            .ok()
+            .map(|h| h.origin)
     };
     let place_at = match &via {
         Some(origin) => at(origin).ok_or("the fetched file has no column for its origin")?,
@@ -581,8 +628,14 @@ pub fn hub_origin(
     countries: &BTreeSet<String>,
     aggregates: &BTreeSet<String>,
 ) -> Result<HubOrigin, HubMiss> {
-    let holds = |codes: &BTreeSet<String>| codes.len() > 1 && codes.iter().filter(|c| countries.contains(*c)).count() >= 2;
-    let mut origins: Vec<String> = dims.iter().filter(|(d, c)| d.as_str() != "geo" && holds(c)).map(|(d, _)| d.clone()).collect();
+    let holds = |codes: &BTreeSet<String>| {
+        codes.len() > 1 && codes.iter().filter(|c| countries.contains(*c)).count() >= 2
+    };
+    let mut origins: Vec<String> = dims
+        .iter()
+        .filter(|(d, c)| d.as_str() != "geo" && holds(c))
+        .map(|(d, _)| d.clone())
+        .collect();
     let geo: Vec<String> = dims.get("geo").into_iter().flatten().cloned().collect();
     if dims.get("geo").is_some_and(holds) {
         origins.push("geo".into());
@@ -593,7 +646,10 @@ pub fn hub_origin(
         Err(many) => return Err(HubMiss::ManyOrigins(many)),
     };
     match geo.as_slice() {
-        [hub] if aggregates.contains(hub) => Ok(HubOrigin { hub: hub.clone(), origin }),
+        [hub] if aggregates.contains(hub) => Ok(HubOrigin {
+            hub: hub.clone(),
+            origin,
+        }),
         _ => Err(HubMiss::NoHub(geo)),
     }
 }
@@ -644,8 +700,9 @@ fn series_rows(table: &TableMeta, csv: &str) -> Result<Vec<Value>, String> {
         if !v.parse::<f64>().is_ok_and(f64::is_finite) {
             return Err(format!("line {}: OBS_VALUE {v} is not a number", n + 2));
         }
-        let dims: serde_json::Map<String, Value> =
-            (first..time).map(|i| (header[i].clone(), json!(f[i]))).collect();
+        let dims: serde_json::Map<String, Value> = (first..time)
+            .map(|i| (header[i].clone(), json!(f[i])))
+            .collect();
         let key = f[first..time].join(".");
         rows.push(json!({"src": format!("series:{}/{key}:{}:OBS_VALUE", table.id, f[time]), "table": table.id,
             "dims": dims, "time": f[time], "value": v}));
@@ -781,13 +838,19 @@ fn table_names() -> Result<&'static BTreeMap<String, String>, String> {
     static NAMES: OnceLock<Result<BTreeMap<String, String>, String>> = OnceLock::new();
     NAMES
         .get_or_init(|| {
-            let file: Value = serde_json::from_str(TABLE_NAMES).map_err(|e| format!("table-names-zh.json: {e}"))?;
+            let file: Value = serde_json::from_str(TABLE_NAMES)
+                .map_err(|e| format!("table-names-zh.json: {e}"))?;
             let mut names = BTreeMap::new();
             for t in file["tables"].as_array().into_iter().flatten() {
-                let (Some(id), Some(zh), Some("reviewed"), Some(_)) =
-                    (t["id"].as_str(), t["zh"].as_str(), t["zh_source"].as_str(), t["reviewed"].as_str())
-                else {
-                    return Err(format!("table-names-zh.json: {t} is not an id with a reviewed name and its date"));
+                let (Some(id), Some(zh), Some("reviewed"), Some(_)) = (
+                    t["id"].as_str(),
+                    t["zh"].as_str(),
+                    t["zh_source"].as_str(),
+                    t["reviewed"].as_str(),
+                ) else {
+                    return Err(format!(
+                        "table-names-zh.json: {t} is not an id with a reviewed name and its date"
+                    ));
                 };
                 if names.insert(id.to_string(), zh.to_string()).is_some() {
                     return Err(format!("table-names-zh.json: {id} is listed twice"));
@@ -803,8 +866,12 @@ fn table_names() -> Result<&'static BTreeMap<String, String>, String> {
 /// `dims` a table (empty while none is reviewed), each entry of `codes` a listed dimension, a code, a name and zh_source
 /// "reviewed" with its date; any other entry, or a code listed twice, is a broken file.
 fn code_names() -> Result<&'static BTreeMap<String, BTreeMap<String, String>>, String> {
-    static NAMES: OnceLock<Result<BTreeMap<String, BTreeMap<String, String>>, String>> = OnceLock::new();
-    NAMES.get_or_init(|| read_code_names(CODE_NAMES)).as_ref().map_err(Clone::clone)
+    static NAMES: OnceLock<Result<BTreeMap<String, BTreeMap<String, String>>, String>> =
+        OnceLock::new();
+    NAMES
+        .get_or_init(|| read_code_names(CODE_NAMES))
+        .as_ref()
+        .map_err(Clone::clone)
 }
 
 /// A code-names-zh.json text read by dimension (code_names).
@@ -812,16 +879,24 @@ fn read_code_names(text: &str) -> Result<BTreeMap<String, BTreeMap<String, Strin
     let file: Value = serde_json::from_str(text).map_err(|e| format!("code-names-zh.json: {e}"))?;
     let mut names: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
     for dim in file["dims"].as_array().into_iter().flatten() {
-        let dim = dim.as_str().ok_or_else(|| format!("code-names-zh.json: dims holds {dim}, not a dimension id"))?;
+        let dim = dim
+            .as_str()
+            .ok_or_else(|| format!("code-names-zh.json: dims holds {dim}, not a dimension id"))?;
         names.insert(dim.to_string(), BTreeMap::new());
     }
     for c in file["codes"].as_array().into_iter().flatten() {
-        let (Some(dim), Some(code), Some(zh), Some("reviewed"), Some(_)) =
-            (c["dim"].as_str(), c["code"].as_str(), c["zh"].as_str(), c["zh_source"].as_str(), c["reviewed"].as_str())
-        else {
+        let (Some(dim), Some(code), Some(zh), Some("reviewed"), Some(_)) = (
+            c["dim"].as_str(),
+            c["code"].as_str(),
+            c["zh"].as_str(),
+            c["zh_source"].as_str(),
+            c["reviewed"].as_str(),
+        ) else {
             return Err(format!("code-names-zh.json: {c} is not a dimension's code with a reviewed name and its date"));
         };
-        let table = names.get_mut(dim).ok_or_else(|| format!("code-names-zh.json: {c} names a dimension dims does not list"))?;
+        let table = names.get_mut(dim).ok_or_else(|| {
+            format!("code-names-zh.json: {c} names a dimension dims does not list")
+        })?;
         if table.insert(code.to_string(), zh.to_string()).is_some() {
             return Err(format!("code-names-zh.json: {dim} {code} is listed twice"));
         }
@@ -835,16 +910,29 @@ fn iso3_table() -> Result<&'static BTreeMap<String, String>, String> {
     static TABLE: OnceLock<Result<BTreeMap<String, String>, String>> = OnceLock::new();
     TABLE
         .get_or_init(|| {
-            let names: Value = serde_json::from_str(ECONOMY_NAMES).map_err(|e| format!("economy-names.json: {e}"))?;
+            let names: Value = serde_json::from_str(ECONOMY_NAMES)
+                .map_err(|e| format!("economy-names.json: {e}"))?;
             let list = |key: &str| names[key].as_array().cloned().unwrap_or_default();
             let mut iso3_of: BTreeMap<String, String> = [list("economies"), list("territories")]
                 .concat()
                 .iter()
-                .filter_map(|e| Some((e["iso2"].as_str()?.to_string(), e["iso3"].as_str()?.to_string())))
+                .filter_map(|e| {
+                    Some((
+                        e["iso2"].as_str()?.to_string(),
+                        e["iso3"].as_str()?.to_string(),
+                    ))
+                })
                 .collect();
             for alias in list("aliases").iter().filter(|a| a["mode"] == "iso2") {
-                let (name, target) = (alias["alias"].as_str().unwrap_or(""), alias["target"].as_str().unwrap_or(""));
-                let iso3 = iso3_of.get(target).cloned().ok_or_else(|| format!("economy-names.json: alias '{name}' targets '{target}', which has no iso3"))?;
+                let (name, target) = (
+                    alias["alias"].as_str().unwrap_or(""),
+                    alias["target"].as_str().unwrap_or(""),
+                );
+                let iso3 = iso3_of.get(target).cloned().ok_or_else(|| {
+                    format!(
+                        "economy-names.json: alias '{name}' targets '{target}', which has no iso3"
+                    )
+                })?;
                 iso3_of.insert(name.to_string(), iso3);
             }
             Ok(iso3_of)
@@ -988,7 +1076,10 @@ fn worldbank_cells(csv: &str) -> Result<WbCells, String> {
             .ok_or(format!("the fetched file has no {name} column"))
     };
     let (place, time, value) = (at(WB_COUNTRY)?, at(WB_DATE)?, at(WB_VALUE)?);
-    let mut read = WbCells { places: Vec::new(), cells: Vec::new() };
+    let mut read = WbCells {
+        places: Vec::new(),
+        cells: Vec::new(),
+    };
     for (n, line) in lines.enumerate() {
         let f = fields(line);
         if f.len() < header.len() {
@@ -1004,7 +1095,9 @@ fn worldbank_cells(csv: &str) -> Result<WbCells, String> {
         }
         match f[value].trim() {
             "" => {}
-            v => read.cells.push((n + 2, f[place].clone(), f[time].clone(), v.to_string())),
+            v => read
+                .cells
+                .push((n + 2, f[place].clone(), f[time].clone(), v.to_string())),
         }
     }
     Ok(read)
@@ -1014,7 +1107,10 @@ fn worldbank_cells(csv: &str) -> Result<WbCells, String> {
 /// order (a code the catalogue does not list follows, in file order). The World Bank has no flags, so a row with no value is left
 /// out; a value that is not a number stops the read.
 fn worldbank_csv(table: &TableMeta, csv: &str) -> Result<TableInput, String> {
-    let WbCells { places: in_file, cells } = worldbank_cells(csv)?;
+    let WbCells {
+        places: in_file,
+        cells,
+    } = worldbank_cells(csv)?;
     let rows = cells
         .into_iter()
         .map(|(line, place, date, v)| {
@@ -1127,18 +1223,39 @@ mod tests {
             Ok(Reply::TableZh(name)) => name,
             _ => panic!("not a table name"),
         };
-        assert_eq!(zh("sdg_07_40").as_deref(), Some("可再生能源在最终能源消费总量中的占比（按部门）"));
+        assert_eq!(
+            zh("sdg_07_40").as_deref(),
+            Some("可再生能源在最终能源消费总量中的占比（按部门）")
+        );
         assert_eq!(zh("nrg_ind_ren").as_deref(), Some("可再生能源占比"));
         assert_eq!(zh("nrg_x"), None);
         assert_eq!(zh("SDG_07_40"), None);
         assert_eq!(zh("EG.FEC.RNEW.ZS@2"), None);
         let names = table_names().unwrap();
-        let digits: Vec<&str> = names.iter().filter(|(_, zh)| zh.chars().any(char::is_numeric)).map(|(id, _)| id.as_str()).collect();
+        let digits: Vec<&str> = names
+            .iter()
+            .filter(|(_, zh)| zh.chars().any(char::is_numeric))
+            .map(|(id, _)| id.as_str())
+            .collect();
         assert_eq!((names.len(), digits.len()), (78, 10), "{digits:?}");
         let file: Value = serde_json::from_str(TABLE_NAMES).unwrap();
-        let dated = |d: &str| file["tables"].as_array().unwrap().iter().filter(|t| t["reviewed"] == d).count();
+        let dated = |d: &str| {
+            file["tables"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|t| t["reviewed"] == d)
+                .count()
+        };
         // the three World Bank tables of sample A, reviewed 11-16 (人口，总数; 人均 GDP（现价美元）; 城镇人口（占总人口比例）)
-        assert_eq!((dated("2026-10-30"), dated("2026-10-31"), dated("2026-11-16")), (1, 73, 3));
+        assert_eq!(
+            (
+                dated("2026-10-30"),
+                dated("2026-10-31"),
+                dated("2026-11-16")
+            ),
+            (1, 73, 3)
+        );
         assert_eq!(zh("SP.POP.TOTL@2").as_deref(), Some("人口，总数"));
     }
 
@@ -1146,13 +1263,23 @@ mod tests {
     /// and a table the file names none for leaves every quantity the question asks for.
     #[test]
     fn asked_beside_reads_the_tables_reviewed_name() {
-        let ids = |question: &str, table: &str| match call(Request::AskedBeside { question, table }) {
+        let ids = |question: &str, table: &str| match call(Request::AskedBeside { question, table })
+        {
             Ok(Reply::AskedIds(ids)) => ids,
             _ => panic!("not asked ids"),
         };
-        assert_eq!(ids("各国 65岁和65岁以上的人口总数", "SP.POP.65UP.TO@2"), ["pop65"]);
-        assert_eq!(ids("各国 65岁和65岁以上的人口总数", "SP.POP.65UP.FE.ZS@2"), ["pop65", "population"]);
-        assert_eq!(ids("各国 65岁和65岁以上的人口总数", "nrg_x"), ["pop65", "population"]);
+        assert_eq!(
+            ids("各国 65岁和65岁以上的人口总数", "SP.POP.65UP.TO@2"),
+            ["pop65"]
+        );
+        assert_eq!(
+            ids("各国 65岁和65岁以上的人口总数", "SP.POP.65UP.FE.ZS@2"),
+            ["pop65", "population"]
+        );
+        assert_eq!(
+            ids("各国 65岁和65岁以上的人口总数", "nrg_x"),
+            ["pop65", "population"]
+        );
         // s3: the energy import dependency table's reviewed name holds the energy imports family's words
         assert!(ids("德国、法国、意大利二十年来的能源进口依存度", "nrg_ind_id").is_empty());
     }
@@ -1161,18 +1288,45 @@ mod tests {
     /// dimension, siec_group, as a fuel is: the page prints a group by this name only.
     #[test]
     fn a_composition_group_is_named_by_a_reviewed_entry() {
-        let codes: Vec<String> = ["fossil", "renewable", "nuclear", "other", "coal"].iter().map(|c| c.to_string()).collect();
-        let Ok(Reply::ZhNames { names, missing }) = call(Request::ZhNames { scheme: "siec_group", codes: &codes }) else {
+        let codes: Vec<String> = ["fossil", "renewable", "nuclear", "other", "coal"]
+            .iter()
+            .map(|c| c.to_string())
+            .collect();
+        let Ok(Reply::ZhNames { names, missing }) = call(Request::ZhNames {
+            scheme: "siec_group",
+            codes: &codes,
+        }) else {
             panic!("no names")
         };
-        let got: Vec<(&str, &str)> = names.iter().map(|(c, z)| (c.as_str(), z.as_str())).collect();
-        assert_eq!(got, [("fossil", "化石能源"), ("nuclear", "核能"), ("other", "其他"), ("renewable", "可再生能源")]);
+        let got: Vec<(&str, &str)> = names
+            .iter()
+            .map(|(c, z)| (c.as_str(), z.as_str()))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                ("fossil", "化石能源"),
+                ("nuclear", "核能"),
+                ("other", "其他"),
+                ("renewable", "可再生能源")
+            ]
+        );
         assert_eq!(missing, ["coal"]);
         // every group a registered leaf is in has its name
         let parts = include_str!("../runtime/pi/assets/estat-parts.tsv");
-        let groups: BTreeSet<&str> = parts.lines().skip(1).filter_map(|l| l.split('\t').nth(7)).filter(|g| !g.is_empty()).collect();
-        assert_eq!(groups.iter().copied().collect::<Vec<_>>(), ["fossil", "nuclear", "other", "renewable"]);
-        assert!(groups.iter().all(|g| code_names().unwrap()["siec_group"].contains_key(*g)));
+        let groups: BTreeSet<&str> = parts
+            .lines()
+            .skip(1)
+            .filter_map(|l| l.split('\t').nth(7))
+            .filter(|g| !g.is_empty())
+            .collect();
+        assert_eq!(
+            groups.iter().copied().collect::<Vec<_>>(),
+            ["fossil", "nuclear", "other", "renewable"]
+        );
+        assert!(groups
+            .iter()
+            .all(|g| code_names().unwrap()["siec_group"].contains_key(*g)));
     }
 
     #[test]
@@ -1212,19 +1366,40 @@ mod tests {
     /// broken file.
     #[test]
     fn a_code_of_a_listed_dimension_is_named_only_by_a_reviewed_entry() {
-        let codes: Vec<String> = ["G3000", "E7000", "XX"].iter().map(|c| c.to_string()).collect();
-        let Ok(Reply::ZhNames { names, missing }) = call(Request::ZhNames { scheme: "siec", codes: &codes }) else {
+        let codes: Vec<String> = ["G3000", "E7000", "XX"]
+            .iter()
+            .map(|c| c.to_string())
+            .collect();
+        let Ok(Reply::ZhNames { names, missing }) = call(Request::ZhNames {
+            scheme: "siec",
+            codes: &codes,
+        }) else {
             panic!("no names")
         };
-        assert_eq!((names["G3000"].as_str(), names["E7000"].as_str()), ("天然气", "电力"));
+        assert_eq!(
+            (names["G3000"].as_str(), names["E7000"].as_str()),
+            ("天然气", "电力")
+        );
         assert_eq!(missing, ["XX"]);
-        assert!(call(Request::ZhNames { scheme: "unit", codes: &codes }).is_err());
+        assert!(call(Request::ZhNames {
+            scheme: "unit",
+            codes: &codes
+        })
+        .is_err());
         let file = |codes: &str| format!(r#"{{"dims": ["siec", "nrg_bal"], "codes": [{codes}]}}"#);
-        let entry = |dim: &str, source: &str| format!(r#"{{"dim": "{dim}", "code": "G3000", "zh": "名", "zh_source": "{source}", "reviewed": "2026-10-31"}}"#);
+        let entry = |dim: &str, source: &str| {
+            format!(
+                r#"{{"dim": "{dim}", "code": "G3000", "zh": "名", "zh_source": "{source}", "reviewed": "2026-10-31"}}"#
+            )
+        };
         let read = read_code_names(&file(&entry("siec", "reviewed"))).unwrap();
         assert_eq!(read["siec"]["G3000"], "名");
         assert!(read["nrg_bal"].is_empty());
-        for broken in [entry("siec", "machine"), entry("unit", "reviewed"), [entry("siec", "reviewed"), entry("siec", "reviewed")].join(",")] {
+        for broken in [
+            entry("siec", "machine"),
+            entry("unit", "reviewed"),
+            [entry("siec", "reviewed"), entry("siec", "reviewed")].join(","),
+        ] {
             assert!(read_code_names(&file(&broken)).is_err(), "{broken}");
         }
     }
@@ -1240,20 +1415,44 @@ mod tests {
         let header: Vec<&str> = lines.next().unwrap().split('\t').collect();
         let at = |name: &str| header.iter().position(|h| *h == name).unwrap();
         let (t, d, c, fl) = (at("tables"), at("dim"), at("code"), at("flow"));
-        let rows: Vec<Vec<&str>> = lines.filter(|l| !l.is_empty()).map(|l| l.split('\t').collect()).collect();
-        let flowing: Vec<&str> = rows.iter().filter(|f| f.get(fl).is_some_and(|v| !v.is_empty())).map(|f| f[t]).collect();
-        assert_eq!(flowing.iter().collect::<BTreeSet<_>>().len(), 1, "{flowing:?}");
+        let rows: Vec<Vec<&str>> = lines
+            .filter(|l| !l.is_empty())
+            .map(|l| l.split('\t').collect())
+            .collect();
+        let flowing: Vec<&str> = rows
+            .iter()
+            .filter(|f| f.get(fl).is_some_and(|v| !v.is_empty()))
+            .map(|f| f[t])
+            .collect();
+        assert_eq!(
+            flowing.iter().collect::<BTreeSet<_>>().len(),
+            1,
+            "{flowing:?}"
+        );
         let names = code_names().unwrap();
         let mut seen = 0;
         for f in rows.iter().filter(|f| flowing.contains(&f[t])) {
-            let Some(table) = names.get(f[d]) else { continue };
-            assert!(table.get(f[c]).is_some_and(|zh| !zh.is_empty()), "{} {} has no reviewed name", f[d], f[c]);
+            let Some(table) = names.get(f[d]) else {
+                continue;
+            };
+            assert!(
+                table.get(f[c]).is_some_and(|zh| !zh.is_empty()),
+                "{} {} has no reviewed name",
+                f[d],
+                f[c]
+            );
             seen += 1;
         }
         assert_eq!(seen, 21);
         let file: Value = serde_json::from_str(CODE_NAMES).unwrap();
         for e in file["codes"].as_array().unwrap() {
-            assert!(e["zh_full"].as_str().is_some_and(|z| !z.is_empty()) && e["source"].as_str().is_some_and(|s| s.starts_with("https://")), "{e}");
+            assert!(
+                e["zh_full"].as_str().is_some_and(|z| !z.is_empty())
+                    && e["source"]
+                        .as_str()
+                        .is_some_and(|s| s.starts_with("https://")),
+                "{e}"
+            );
         }
     }
 
@@ -1261,7 +1460,10 @@ mod tests {
     /// letters as they are; an aggregate or an unknown code is missing, once, in the order asked.
     #[test]
     fn a_code_gets_its_iso3_from_the_name_table_and_one_without_is_missing() {
-        let codes: Vec<String> = ["DE", "EL", "UK", "DEU", "EU27_2020", "XX", "DE", "XX"].iter().map(|c| c.to_string()).collect();
+        let codes: Vec<String> = ["DE", "EL", "UK", "DEU", "EU27_2020", "XX", "DE", "XX"]
+            .iter()
+            .map(|c| c.to_string())
+            .collect();
         let Ok(Reply::Iso3 { iso3, missing }) = call(Request::Iso3Of { codes: &codes }) else {
             panic!("no iso3")
         };
@@ -1342,7 +1544,10 @@ ESTAT:SDG_07_40(1.0),15/09/26 23:00:00,A,REN,PC,XX,2025,,m,
 
     fn refs() -> OpenedRefs {
         let refs = classify::Refs {
-            iso2: ["AT", "BE", "GR", "SE"].iter().map(|c| c.to_string()).collect(),
+            iso2: ["AT", "BE", "GR", "SE"]
+                .iter()
+                .map(|c| c.to_string())
+                .collect(),
             members: [(
                 "EU27_2020".to_string(),
                 vec!["AT".to_string(), "EL".to_string()],
@@ -1358,7 +1563,10 @@ ESTAT:SDG_07_40(1.0),15/09/26 23:00:00,A,REN,PC,XX,2025,,m,
     /// World Bank table's (it has no country column).
     #[test]
     fn a_fetched_file_reads_as_series_rows_with_each_value_as_written() {
-        let Ok(Reply::SeriesRows(rows)) = call(Request::SeriesRows { table: &meta(), csv: Q1_CSV }) else {
+        let Ok(Reply::SeriesRows(rows)) = call(Request::SeriesRows {
+            table: &meta(),
+            csv: Q1_CSV,
+        }) else {
             panic!("no series rows")
         };
         assert_eq!(rows.len(), 4);
@@ -1367,14 +1575,27 @@ ESTAT:SDG_07_40(1.0),15/09/26 23:00:00,A,REN,PC,XX,2025,,m,
             json!({"src": "series:sdg_07_40/A.REN.PC.EU27_2020:2025:OBS_VALUE", "table": "sdg_07_40",
                 "dims": {"freq": "A", "nrg_bal": "REN", "unit": "PC", "geo": "EU27_2020"}, "time": "2025", "value": "25.2"})
         );
-        let wb = TableMeta { worldbank: true, ..meta() };
+        let wb = TableMeta {
+            worldbank: true,
+            ..meta()
+        };
         assert_eq!(
-            call(Request::SeriesRows { table: &wb, csv: Q1_CSV }).err().unwrap(),
+            call(Request::SeriesRows {
+                table: &wb,
+                csv: Q1_CSV
+            })
+            .err()
+            .unwrap(),
             "the fetched file has no country column"
         );
         for cell in [",n/a,", ",NaN,", ",inf,"] {
             let bad = Q1_CSV.replace(",44.2,", cell);
-            let why = call(Request::SeriesRows { table: &meta(), csv: &bad }).err().unwrap();
+            let why = call(Request::SeriesRows {
+                table: &meta(),
+                csv: &bad,
+            })
+            .err()
+            .unwrap();
             assert!(why.contains("not a number"), "{why}");
         }
     }
@@ -1383,29 +1604,77 @@ ESTAT:SDG_07_40(1.0),15/09/26 23:00:00,A,REN,PC,XX,2025,,m,
     /// table whose geo holds the countries keeps geo, and two dimensions of countries or a geo with no members is no hub.
     #[test]
     fn a_hub_table_is_placed_by_its_one_dimension_of_countries() {
-        let set = |c: &[&str]| c.iter().map(|c| c.to_string()).collect::<BTreeSet<String>>();
-        let dims = |d: &[(&str, &[&str])]| d.iter().map(|(k, c)| (k.to_string(), set(c))).collect::<BTreeMap<_, _>>();
+        let set = |c: &[&str]| {
+            c.iter()
+                .map(|c| c.to_string())
+                .collect::<BTreeSet<String>>()
+        };
+        let dims = |d: &[(&str, &[&str])]| {
+            d.iter()
+                .map(|(k, c)| (k.to_string(), set(c)))
+                .collect::<BTreeMap<_, _>>()
+        };
         let countries = set(&["AT", "BE", "SE", "SY", "AF", "DE", "FR"]);
         let aggregates = set(&["EU27_2020"]);
-        let q6 = dims(&[("citizen", &["SY", "AF", "TOTAL"]), ("geo", &["EU27_2020"]), ("unit", &["PER"])]);
-        let gas = dims(&[("partner", &["DE", "FR", "NSP"]), ("geo", &["EU27_2020"]), ("siec", &["G3000"])]);
+        let q6 = dims(&[
+            ("citizen", &["SY", "AF", "TOTAL"]),
+            ("geo", &["EU27_2020"]),
+            ("unit", &["PER"]),
+        ]);
+        let gas = dims(&[
+            ("partner", &["DE", "FR", "NSP"]),
+            ("geo", &["EU27_2020"]),
+            ("siec", &["G3000"]),
+        ]);
         for (d, origin) in [(&q6, "citizen"), (&gas, "partner")] {
-            let hub = HubOrigin { hub: "EU27_2020".into(), origin: origin.into() };
+            let hub = HubOrigin {
+                hub: "EU27_2020".into(),
+                origin: origin.into(),
+            };
             assert_eq!(hub_origin(d, &countries, &aggregates), Ok(hub));
         }
         let by_geo = dims(&[("geo", &["AT", "BE", "EU27_2020"]), ("unit", &["PC"])]);
-        assert_eq!(hub_origin(&by_geo, &countries, &aggregates), Err(HubMiss::NoHub(vec!["AT".into(), "BE".into(), "EU27_2020".into()])));
-        let two = dims(&[("citizen", &["SY", "AF"]), ("partner", &["DE", "FR"]), ("geo", &["EU27_2020"])]);
-        assert_eq!(hub_origin(&two, &countries, &aggregates), Err(HubMiss::ManyOrigins(vec!["citizen".into(), "partner".into()])));
+        assert_eq!(
+            hub_origin(&by_geo, &countries, &aggregates),
+            Err(HubMiss::NoHub(vec![
+                "AT".into(),
+                "BE".into(),
+                "EU27_2020".into()
+            ]))
+        );
+        let two = dims(&[
+            ("citizen", &["SY", "AF"]),
+            ("partner", &["DE", "FR"]),
+            ("geo", &["EU27_2020"]),
+        ]);
+        assert_eq!(
+            hub_origin(&two, &countries, &aggregates),
+            Err(HubMiss::ManyOrigins(vec![
+                "citizen".into(),
+                "partner".into()
+            ]))
+        );
         let ea = dims(&[("citizen", &["SY", "AF"]), ("geo", &["EA20"])]);
-        assert_eq!(hub_origin(&ea, &countries, &aggregates), Err(HubMiss::NoHub(vec!["EA20".into()])));
-        assert_eq!(hub_origin(&dims(&[("geo", &["EU27_2020"])]), &countries, &aggregates), Err(HubMiss::NoOrigin));
+        assert_eq!(
+            hub_origin(&ea, &countries, &aggregates),
+            Err(HubMiss::NoHub(vec!["EA20".into()]))
+        );
+        assert_eq!(
+            hub_origin(&dims(&[("geo", &["EU27_2020"])]), &countries, &aggregates),
+            Err(HubMiss::NoOrigin)
+        );
 
         let table = TableMeta {
             id: "migr_hub".into(),
             dims: vec![
                 ("freq".into(), vec![("A".into(), String::new())]),
-                ("citizen".into(), ["AT", "BE", "TOTAL"].iter().map(|c| (c.to_string(), String::new())).collect()),
+                (
+                    "citizen".into(),
+                    ["AT", "BE", "TOTAL"]
+                        .iter()
+                        .map(|c| (c.to_string(), String::new()))
+                        .collect(),
+                ),
                 ("geo".into(), vec![("EU27_2020".into(), String::new())]),
             ],
             ..meta()
@@ -1415,15 +1684,36 @@ ESTAT:MIGR(1.0),15/09/26 23:00:00,A,AT,EU27_2020,2025,10,,
 ESTAT:MIGR(1.0),15/09/26 23:00:00,A,BE,EU27_2020,2025,20,,
 ESTAT:MIGR(1.0),15/09/26 23:00:00,A,TOTAL,EU27_2020,2025,30,,
 ";
-        let Ok(Reply::Rows(rows)) = call(Request::CompanionRows { refs: &refs(), table: &table, csv }) else {
+        let Ok(Reply::Rows(rows)) = call(Request::CompanionRows {
+            refs: &refs(),
+            table: &table,
+            csv,
+        }) else {
             panic!("no rows")
         };
-        let placed: Vec<(&str, bool, Option<&str>)> = rows.iter().map(|r| (r.geo.as_str(), r.country, r.via.as_deref())).collect();
-        assert_eq!(placed, [("AT", true, Some("citizen")), ("BE", true, Some("citizen")), ("TOTAL", false, Some("citizen"))]);
-        let Ok(Reply::Rows(rows)) = call(Request::CompanionRows { refs: &refs(), table: &meta(), csv: Q1_CSV }) else {
+        let placed: Vec<(&str, bool, Option<&str>)> = rows
+            .iter()
+            .map(|r| (r.geo.as_str(), r.country, r.via.as_deref()))
+            .collect();
+        assert_eq!(
+            placed,
+            [
+                ("AT", true, Some("citizen")),
+                ("BE", true, Some("citizen")),
+                ("TOTAL", false, Some("citizen"))
+            ]
+        );
+        let Ok(Reply::Rows(rows)) = call(Request::CompanionRows {
+            refs: &refs(),
+            table: &meta(),
+            csv: Q1_CSV,
+        }) else {
             panic!("no rows")
         };
-        assert!(rows.iter().all(|r| r.via.is_none()) && rows.iter().any(|r| r.geo == "EU27_2020" && !r.country));
+        assert!(
+            rows.iter().all(|r| r.via.is_none())
+                && rows.iter().any(|r| r.geo == "EU27_2020" && !r.country)
+        );
     }
 
     #[test]
@@ -1447,7 +1737,10 @@ ESTAT:MIGR(1.0),15/09/26 23:00:00,A,TOTAL,EU27_2020,2025,30,,
 
     #[test]
     fn a_country_is_an_iso_code_the_list_holds_or_eurostat_s_name_for_one() {
-        let codes: Vec<String> = ["SE", "EL", "UK", "TOTAL", "EU27_2020", "AFR_OTH", "AT"].iter().map(|c| c.to_string()).collect();
+        let codes: Vec<String> = ["SE", "EL", "UK", "TOTAL", "EU27_2020", "AFR_OTH", "AT"]
+            .iter()
+            .map(|c| c.to_string())
+            .collect();
         let Ok(Reply::Countries(c)) = call(Request::Countries {
             refs: &refs(),
             codes: &codes,
@@ -1529,7 +1822,10 @@ IND,\"India\",\"South Asia\",2024,2.1
     /// finite number refused. Each row is a value classify reads, at the same place and year.
     #[test]
     fn a_world_bank_file_reads_as_series_rows_from_the_cells_classify_reads() {
-        let Ok(Reply::SeriesRows(rows)) = call(Request::SeriesRows { table: &wb_meta(), csv: Q4_CSV }) else {
+        let Ok(Reply::SeriesRows(rows)) = call(Request::SeriesRows {
+            table: &wb_meta(),
+            csv: Q4_CSV,
+        }) else {
             panic!("no series rows")
         };
         assert_eq!(rows.len(), 5, "the row with no value is left out");
@@ -1538,32 +1834,66 @@ IND,\"India\",\"South Asia\",2024,2.1
             json!({"src": "series:EN.GHG.CO2.PC.CE.AR5@2/USA:2024:value", "table": "EN.GHG.CO2.PC.CE.AR5@2",
                 "dims": {"country": "USA"}, "time": "2024", "value": "13.8"})
         );
-        let places: Vec<&str> = rows.iter().filter_map(|r| r["dims"]["country"].as_str()).collect();
+        let places: Vec<&str> = rows
+            .iter()
+            .filter_map(|r| r["dims"]["country"].as_str())
+            .collect();
         assert_eq!(places, ["USA", "USA", "CHN", "WLD", "IND"]);
-        assert_eq!(rows[3]["src"], "series:EN.GHG.CO2.PC.CE.AR5@2/WLD:2024:value");
+        assert_eq!(
+            rows[3]["src"],
+            "series:EN.GHG.CO2.PC.CE.AR5@2/WLD:2024:value"
+        );
         let input = sdmx_csv(&wb_meta(), Q4_CSV).unwrap();
         let read: Vec<(String, String, f64)> = rows
             .iter()
             .map(|r| {
                 let text = |k: &str| r[k].as_str().unwrap().to_string();
-                (r["dims"]["country"].as_str().unwrap().to_string(), text("time"), text("value").parse().unwrap())
+                (
+                    r["dims"]["country"].as_str().unwrap().to_string(),
+                    text("time"),
+                    text("value").parse().unwrap(),
+                )
             })
             .collect();
-        let classified: Vec<(String, String, f64)> =
-            input.rows.iter().map(|(codes, period, v)| (codes[0].clone(), period.clone().unwrap(), *v)).collect();
+        let classified: Vec<(String, String, f64)> = input
+            .rows
+            .iter()
+            .map(|(codes, period, v)| (codes[0].clone(), period.clone().unwrap(), *v))
+            .collect();
         assert_eq!(read, classified);
         for cell in [",1x\n", ",NaN\n", ",inf\n"] {
             let bad = Q4_CSV.replace(",13.8\n", cell);
-            let why = call(Request::SeriesRows { table: &wb_meta(), csv: &bad }).err().unwrap();
-            assert!(why.starts_with("line 2: value ") && why.ends_with(" is not a number"), "{why}");
+            let why = call(Request::SeriesRows {
+                table: &wb_meta(),
+                csv: &bad,
+            })
+            .err()
+            .unwrap();
+            assert!(
+                why.starts_with("line 2: value ") && why.ends_with(" is not a number"),
+                "{why}"
+            );
         }
-        let short = Q4_CSV.replace("USA,\"United States\",\"North America\",2023,14.1", "USA,2023");
+        let short = Q4_CSV.replace(
+            "USA,\"United States\",\"North America\",2023,14.1",
+            "USA,2023",
+        );
         assert_eq!(
-            call(Request::SeriesRows { table: &wb_meta(), csv: &short }).err().unwrap(),
+            call(Request::SeriesRows {
+                table: &wb_meta(),
+                csv: &short
+            })
+            .err()
+            .unwrap(),
             "line 3 of the fetched file has 2 fields, the header 5"
         );
         assert_eq!(
-            call(Request::SeriesRows { table: &wb_meta(), csv: "" }).err().unwrap(),
+            call(Request::SeriesRows {
+                table: &wb_meta(),
+                csv: ""
+            })
+            .err()
+            .unwrap(),
             "the fetched file is empty"
         );
     }

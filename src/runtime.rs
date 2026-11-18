@@ -403,61 +403,201 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
     write_if_changed(artifact_dir, &browser_qa_path, BROWSER_QA_RUNTIME)?;
     // The leaf children of the new route's second layer (next_leaf Runner: draw, bake), each by its fixed name.
     let leaves_dir = runtime_dir.join("leaves_py");
-    crate::group_guard::create_dir_all(artifact_dir, &leaves_dir)
-        .with_context(|| format!("failed to create leaf runtime directory: {}", leaves_dir.display()))?;
+    crate::group_guard::create_dir_all(artifact_dir, &leaves_dir).with_context(|| {
+        format!(
+            "failed to create leaf runtime directory: {}",
+            leaves_dir.display()
+        )
+    })?;
     // The illustration strip's child (next_leaf::strip), its piece sets and the rough.js bundle it draws with.
     let strip_dir = runtime_dir.join("leaves_js");
-    crate::group_guard::create_dir_all(artifact_dir, &strip_dir)
-        .with_context(|| format!("failed to create strip runtime directory: {}", strip_dir.display()))?;
+    crate::group_guard::create_dir_all(artifact_dir, &strip_dir).with_context(|| {
+        format!(
+            "failed to create strip runtime directory: {}",
+            strip_dir.display()
+        )
+    })?;
     for (path, text) in [
-        (runtime_dir.join("leaves_js/illus_strip.cjs"), include_str!("../runtime/leaves_js/illus_strip.cjs")),
-        (runtime_dir.join("leaves_js/pieces-energy.cjs"), include_str!("../runtime/leaves_js/pieces-energy.cjs")),
-        (runtime_dir.join("leaves_js/pieces-energy.json"), include_str!("../runtime/leaves_js/pieces-energy.json")),
-        (runtime_dir.join("leaves_js/roughjs-4.6.6.cjs.js"), include_str!("../runtime/leaves_js/roughjs-4.6.6.cjs.js")),
+        (
+            runtime_dir.join("leaves_js/illus_strip.cjs"),
+            include_str!("../runtime/leaves_js/illus_strip.cjs"),
+        ),
+        (
+            runtime_dir.join("leaves_js/pieces-energy.cjs"),
+            include_str!("../runtime/leaves_js/pieces-energy.cjs"),
+        ),
+        (
+            runtime_dir.join("leaves_js/pieces-energy.json"),
+            include_str!("../runtime/leaves_js/pieces-energy.json"),
+        ),
+        (
+            runtime_dir.join("leaves_js/roughjs-4.6.6.cjs.js"),
+            include_str!("../runtime/leaves_js/roughjs-4.6.6.cjs.js"),
+        ),
     ] {
         write_if_changed(artifact_dir, &path, text)?;
     }
     for (path, text) in [
-        (runtime_dir.join("leaves_py/bake.py"), include_str!("../runtime/leaves_py/bake.py")),
-        (runtime_dir.join("leaves_py/bars_node.py"), include_str!("../runtime/leaves_py/bars_node.py")),
-        (runtime_dir.join("leaves_py/bubbles.py"), include_str!("../runtime/leaves_py/bubbles.py")),
-        (runtime_dir.join("leaves_py/bubbles_node.py"), include_str!("../runtime/leaves_py/bubbles_node.py")),
-        (runtime_dir.join("leaves_py/cards.py"), include_str!("../runtime/leaves_py/cards.py")),
-        (runtime_dir.join("leaves_py/column.py"), include_str!("../runtime/leaves_py/column.py")),
-        (runtime_dir.join("leaves_py/facts.py"), include_str!("../runtime/leaves_py/facts.py")),
-        (runtime_dir.join("leaves_py/geo.py"), include_str!("../runtime/leaves_py/geo.py")),
-        (runtime_dir.join("leaves_py/illus.py"), include_str!("../runtime/leaves_py/illus.py")),
-        (runtime_dir.join("leaves_py/knobs.json"), include_str!("../runtime/leaves_py/knobs.json")),
-        (runtime_dir.join("leaves_py/knobs.py"), include_str!("../runtime/leaves_py/knobs.py")),
-        (runtime_dir.join("leaves_py/leader_notes.py"), include_str!("../runtime/leaves_py/leader_notes.py")),
-        (runtime_dir.join("leaves_py/mapkit.py"), include_str!("../runtime/leaves_py/mapkit.py")),
-        (runtime_dir.join("leaves_py/page-width.js"), include_str!("../runtime/leaves_py/page-width.js")),
-        (runtime_dir.join("leaves_py/page_knobs.json"), include_str!("../runtime/leaves_py/page_knobs.json")),
-        (runtime_dir.join("leaves_py/places.json"), include_str!("../runtime/leaves_py/places.json")),
-        (runtime_dir.join("leaves_py/prod.py"), include_str!("../runtime/leaves_py/prod.py")),
-        (runtime_dir.join("leaves_py/qa-layers.js"), include_str!("../runtime/leaves_py/qa-layers.js")),
-        (runtime_dir.join("leaves_py/qa.js"), include_str!("../runtime/leaves_py/qa.js")),
-        (runtime_dir.join("leaves_py/rankbar.py"), include_str!("../runtime/leaves_py/rankbar.py")),
-        (runtime_dir.join("leaves_py/run.py"), include_str!("../runtime/leaves_py/run.py")),
-        (runtime_dir.join("leaves_py/sankey.py"), include_str!("../runtime/leaves_py/sankey.py")),
-        (runtime_dir.join("leaves_py/scmp.py"), include_str!("../runtime/leaves_py/scmp.py")),
-        (runtime_dir.join("leaves_py/section_head.py"), include_str!("../runtime/leaves_py/section_head.py")),
-        (runtime_dir.join("leaves_py/stacked100.py"), include_str!("../runtime/leaves_py/stacked100.py")),
-        (runtime_dir.join("leaves_py/line.py"), include_str!("../runtime/leaves_py/line.py")),
-        (runtime_dir.join("leaves_py/rank_lines.py"), include_str!("../runtime/leaves_py/rank_lines.py")),
-        (runtime_dir.join("leaves_py/dumbbell.py"), include_str!("../runtime/leaves_py/dumbbell.py")),
-        (runtime_dir.join("leaves_py/waterfall.py"), include_str!("../runtime/leaves_py/waterfall.py")),
-        (runtime_dir.join("leaves_py/waffle.py"), include_str!("../runtime/leaves_py/waffle.py")),
-        (runtime_dir.join("leaves_py/stacked_area.py"), include_str!("../runtime/leaves_py/stacked_area.py")),
-        (runtime_dir.join("leaves_py/sketch.py"), include_str!("../runtime/leaves_py/sketch.py")),
-        (runtime_dir.join("leaves_py/sketch.json"), include_str!("../runtime/leaves_py/sketch.json")),
-        (runtime_dir.join("leaves_py/text-line-clash.js"), include_str!("../runtime/leaves_py/text-line-clash.js")),
-        (runtime_dir.join("leaves_py/text-line-hits.js"), include_str!("../runtime/leaves_py/text-line-hits.js")),
-        (runtime_dir.join("leaves_py/tokens.css"), include_str!("../runtime/leaves_py/tokens.css")),
-        (runtime_dir.join("leaves_py/type-contrast.js"), include_str!("../runtime/leaves_py/type-contrast.js")),
-        (runtime_dir.join("leaves_py/wbkit.py"), include_str!("../runtime/leaves_py/wbkit.py")),
-        (runtime_dir.join("leaves_py/words.py"), include_str!("../runtime/leaves_py/words.py")),
-        (runtime_dir.join("leaves_py/words.zh.json"), include_str!("../runtime/leaves_py/words.zh.json")),
+        (
+            runtime_dir.join("leaves_py/bake.py"),
+            include_str!("../runtime/leaves_py/bake.py"),
+        ),
+        (
+            runtime_dir.join("leaves_py/bars_node.py"),
+            include_str!("../runtime/leaves_py/bars_node.py"),
+        ),
+        (
+            runtime_dir.join("leaves_py/bubbles.py"),
+            include_str!("../runtime/leaves_py/bubbles.py"),
+        ),
+        (
+            runtime_dir.join("leaves_py/bubbles_node.py"),
+            include_str!("../runtime/leaves_py/bubbles_node.py"),
+        ),
+        (
+            runtime_dir.join("leaves_py/cards.py"),
+            include_str!("../runtime/leaves_py/cards.py"),
+        ),
+        (
+            runtime_dir.join("leaves_py/column.py"),
+            include_str!("../runtime/leaves_py/column.py"),
+        ),
+        (
+            runtime_dir.join("leaves_py/facts.py"),
+            include_str!("../runtime/leaves_py/facts.py"),
+        ),
+        (
+            runtime_dir.join("leaves_py/geo.py"),
+            include_str!("../runtime/leaves_py/geo.py"),
+        ),
+        (
+            runtime_dir.join("leaves_py/illus.py"),
+            include_str!("../runtime/leaves_py/illus.py"),
+        ),
+        (
+            runtime_dir.join("leaves_py/knobs.json"),
+            include_str!("../runtime/leaves_py/knobs.json"),
+        ),
+        (
+            runtime_dir.join("leaves_py/knobs.py"),
+            include_str!("../runtime/leaves_py/knobs.py"),
+        ),
+        (
+            runtime_dir.join("leaves_py/leader_notes.py"),
+            include_str!("../runtime/leaves_py/leader_notes.py"),
+        ),
+        (
+            runtime_dir.join("leaves_py/mapkit.py"),
+            include_str!("../runtime/leaves_py/mapkit.py"),
+        ),
+        (
+            runtime_dir.join("leaves_py/page-width.js"),
+            include_str!("../runtime/leaves_py/page-width.js"),
+        ),
+        (
+            runtime_dir.join("leaves_py/page_knobs.json"),
+            include_str!("../runtime/leaves_py/page_knobs.json"),
+        ),
+        (
+            runtime_dir.join("leaves_py/places.json"),
+            include_str!("../runtime/leaves_py/places.json"),
+        ),
+        (
+            runtime_dir.join("leaves_py/prod.py"),
+            include_str!("../runtime/leaves_py/prod.py"),
+        ),
+        (
+            runtime_dir.join("leaves_py/qa-layers.js"),
+            include_str!("../runtime/leaves_py/qa-layers.js"),
+        ),
+        (
+            runtime_dir.join("leaves_py/qa.js"),
+            include_str!("../runtime/leaves_py/qa.js"),
+        ),
+        (
+            runtime_dir.join("leaves_py/rankbar.py"),
+            include_str!("../runtime/leaves_py/rankbar.py"),
+        ),
+        (
+            runtime_dir.join("leaves_py/run.py"),
+            include_str!("../runtime/leaves_py/run.py"),
+        ),
+        (
+            runtime_dir.join("leaves_py/sankey.py"),
+            include_str!("../runtime/leaves_py/sankey.py"),
+        ),
+        (
+            runtime_dir.join("leaves_py/scmp.py"),
+            include_str!("../runtime/leaves_py/scmp.py"),
+        ),
+        (
+            runtime_dir.join("leaves_py/section_head.py"),
+            include_str!("../runtime/leaves_py/section_head.py"),
+        ),
+        (
+            runtime_dir.join("leaves_py/stacked100.py"),
+            include_str!("../runtime/leaves_py/stacked100.py"),
+        ),
+        (
+            runtime_dir.join("leaves_py/line.py"),
+            include_str!("../runtime/leaves_py/line.py"),
+        ),
+        (
+            runtime_dir.join("leaves_py/rank_lines.py"),
+            include_str!("../runtime/leaves_py/rank_lines.py"),
+        ),
+        (
+            runtime_dir.join("leaves_py/dumbbell.py"),
+            include_str!("../runtime/leaves_py/dumbbell.py"),
+        ),
+        (
+            runtime_dir.join("leaves_py/waterfall.py"),
+            include_str!("../runtime/leaves_py/waterfall.py"),
+        ),
+        (
+            runtime_dir.join("leaves_py/waffle.py"),
+            include_str!("../runtime/leaves_py/waffle.py"),
+        ),
+        (
+            runtime_dir.join("leaves_py/stacked_area.py"),
+            include_str!("../runtime/leaves_py/stacked_area.py"),
+        ),
+        (
+            runtime_dir.join("leaves_py/sketch.py"),
+            include_str!("../runtime/leaves_py/sketch.py"),
+        ),
+        (
+            runtime_dir.join("leaves_py/sketch.json"),
+            include_str!("../runtime/leaves_py/sketch.json"),
+        ),
+        (
+            runtime_dir.join("leaves_py/text-line-clash.js"),
+            include_str!("../runtime/leaves_py/text-line-clash.js"),
+        ),
+        (
+            runtime_dir.join("leaves_py/text-line-hits.js"),
+            include_str!("../runtime/leaves_py/text-line-hits.js"),
+        ),
+        (
+            runtime_dir.join("leaves_py/tokens.css"),
+            include_str!("../runtime/leaves_py/tokens.css"),
+        ),
+        (
+            runtime_dir.join("leaves_py/type-contrast.js"),
+            include_str!("../runtime/leaves_py/type-contrast.js"),
+        ),
+        (
+            runtime_dir.join("leaves_py/wbkit.py"),
+            include_str!("../runtime/leaves_py/wbkit.py"),
+        ),
+        (
+            runtime_dir.join("leaves_py/words.py"),
+            include_str!("../runtime/leaves_py/words.py"),
+        ),
+        (
+            runtime_dir.join("leaves_py/words.zh.json"),
+            include_str!("../runtime/leaves_py/words.zh.json"),
+        ),
     ] {
         write_if_changed(artifact_dir, &path, text)?;
     }
@@ -674,7 +814,10 @@ mod tests {
             .iter()
             .filter(|name| !root.path().join("runtime/assets").join(name).is_file())
             .collect();
-        assert!(missing.is_empty(), "read by the tool but not materialized: {missing:?}");
+        assert!(
+            missing.is_empty(),
+            "read by the tool but not materialized: {missing:?}"
+        );
     }
 
     #[test]

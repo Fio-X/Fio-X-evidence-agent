@@ -113,8 +113,15 @@ pub(crate) fn unit_short(code: &str) -> Option<&'static str> {
 /// unit_short is none.
 pub(crate) fn unit_line_form(code: &str) -> Option<&'static str> {
     let short = unit_short(code)?;
-    let row = UNIT_SHORT_ZH.lines().skip(1).find(|l| l.split('\t').next() == Some(code));
-    Some(row.and_then(|l| l.trim_end_matches('\r').split('\t').nth(7)).filter(|s| !s.is_empty()).unwrap_or(short))
+    let row = UNIT_SHORT_ZH
+        .lines()
+        .skip(1)
+        .find(|l| l.split('\t').next() == Some(code));
+    Some(
+        row.and_then(|l| l.trim_end_matches('\r').split('\t').nth(7))
+            .filter(|s| !s.is_empty())
+            .unwrap_or(short),
+    )
 }
 
 /// What a number prints after it in a unit code (the row's suffix_zh): never a digit, so an index ("指数(2015=100)", its
@@ -124,8 +131,14 @@ pub(crate) fn unit_number_suffix(code: &str) -> Option<&'static str> {
     if unit_short(code).is_none() {
         return None;
     }
-    let row = UNIT_SHORT_ZH.lines().skip(1).find(|l| l.split('\t').next() == Some(code));
-    Some(row.and_then(|l| l.trim_end_matches('\r').split('\t').nth(4)).unwrap_or("%"))
+    let row = UNIT_SHORT_ZH
+        .lines()
+        .skip(1)
+        .find(|l| l.split('\t').next() == Some(code));
+    Some(
+        row.and_then(|l| l.trim_end_matches('\r').split('\t').nth(4))
+            .unwrap_or("%"),
+    )
 }
 
 /// The magnitudes a page may print an amount at, largest first (owner 11-06 22:02: one magnitude for the whole page, chosen
@@ -140,20 +153,31 @@ pub(crate) fn unit_at_magnitude(code: &str, largest: f64) -> (String, Option<f64
         .iter()
         .map(|(tag, least, factor)| (format!("{code}{tag}"), *least, *factor))
         .find(|(scaled, least, _)| largest >= *least && unit_short(scaled).is_some())
-        .map_or((code.to_string(), None), |(scaled, _, factor)| (scaled, Some(factor)))
+        .map_or((code.to_string(), None), |(scaled, _, factor)| {
+            (scaled, Some(factor))
+        })
 }
 
 /// Whether amounts in a unit code compare across places: not when each place counts in its own currency (the row's rule
 /// amount_own_currency, a World Bank "LCU" amount), so a page of two or more places in it has no common scale.
 pub(crate) fn unit_compares_across_places(code: &str) -> bool {
-    let row = UNIT_SHORT_ZH.lines().skip(1).find(|l| l.split('\t').next() == Some(code));
+    let row = UNIT_SHORT_ZH
+        .lines()
+        .skip(1)
+        .find(|l| l.split('\t').next() == Some(code));
     row.and_then(|l| l.split('\t').nth(2)) != Some("amount_own_currency")
 }
 
 /// The catalogue's English label of a unit code, as the unit registry keeps it (its label_en); None for no row or none.
 pub(crate) fn unit_label_en(code: &str) -> Option<&'static str> {
-    let row = UNIT_SHORT_ZH.lines().skip(1).find(|l| l.split('\t').next() == Some(code))?;
-    row.trim_end_matches('\r').split('\t').nth(6).filter(|s| !s.is_empty())
+    let row = UNIT_SHORT_ZH
+        .lines()
+        .skip(1)
+        .find(|l| l.split('\t').next() == Some(code))?;
+    row.trim_end_matches('\r')
+        .split('\t')
+        .nth(6)
+        .filter(|s| !s.is_empty())
 }
 
 /// The registry of the dimensions a table may carry its unit in when no unit dimension says it all (dims, codes, unit
@@ -163,7 +187,8 @@ pub(crate) fn unit_label_en(code: &str) -> Option<&'static str> {
 pub(crate) const UNIT_CARRIERS: &str = include_str!("../runtime/pi/assets/unit-carriers.tsv");
 
 /// The registry's rows as (dimensions, their codes in the same order, unit code).
-fn unit_carrier_rows() -> impl Iterator<Item = (Vec<&'static str>, Vec<&'static str>, &'static str)> {
+fn unit_carrier_rows() -> impl Iterator<Item = (Vec<&'static str>, Vec<&'static str>, &'static str)>
+{
     UNIT_CARRIERS.lines().skip(1).filter_map(|line| {
         let mut p = line.trim_end_matches('\r').split('\t');
         let (dims, codes, unit) = (p.next()?, p.next()?, p.next()?);
@@ -177,7 +202,9 @@ fn unit_carrier_rows() -> impl Iterator<Item = (Vec<&'static str>, Vec<&'static 
 /// read only beside the quantity unit it is registered with). Ok(None) when no set applies: the unit dimension's own code
 /// is the unit, as before. Err, naming what is missing, when a set applies but a dimension of it holds other than one code,
 /// two sets apply, or the codes have no row: a currency or an indicator the registry does not map stays refused.
-pub(crate) fn carried_unit(dims: &BTreeMap<String, BTreeSet<String>>) -> Result<Option<&'static str>, String> {
+pub(crate) fn carried_unit(
+    dims: &BTreeMap<String, BTreeSet<String>>,
+) -> Result<Option<&'static str>, String> {
     let rows: Vec<_> = unit_carrier_rows().collect();
     let unit_codes = dims.get("unit");
     let applies = |set: &[&str]| {
@@ -185,29 +212,49 @@ pub(crate) fn carried_unit(dims: &BTreeMap<String, BTreeSet<String>>) -> Result<
             && set.contains(&"unit") == unit_codes.is_some()
             && unit_codes.is_none_or(|held| {
                 let at = set.iter().position(|d| *d == "unit");
-                rows.iter().any(|(s, codes, _)| s.as_slice() == set && at.is_some_and(|i| held.contains(codes[i])))
+                rows.iter().any(|(s, codes, _)| {
+                    s.as_slice() == set && at.is_some_and(|i| held.contains(codes[i]))
+                })
             })
     };
-    let sets: BTreeSet<&Vec<&str>> = rows.iter().map(|(set, ..)| set).filter(|set| applies(set.as_slice())).collect();
+    let sets: BTreeSet<&Vec<&str>> = rows
+        .iter()
+        .map(|(set, ..)| set)
+        .filter(|set| applies(set.as_slice()))
+        .collect();
     let set = match sets.into_iter().collect::<Vec<_>>().as_slice() {
         [] => return Ok(None),
         [one] => *one,
         many => {
             let named: Vec<String> = many.iter().map(|s| s.join(",")).collect();
-            return Err(format!("the unit is carried by two dimension sets: {}", named.join("; ")));
+            return Err(format!(
+                "the unit is carried by two dimension sets: {}",
+                named.join("; ")
+            ));
         }
     };
     let mut codes = Vec::new();
     for d in set {
         match dims[*d].iter().collect::<Vec<_>>().as_slice() {
             [one] => codes.push(one.as_str()),
-            held => return Err(format!("the unit is carried by {d}, which holds {} codes, not one", held.len())),
+            held => {
+                return Err(format!(
+                    "the unit is carried by {d}, which holds {} codes, not one",
+                    held.len()
+                ))
+            }
         }
     }
     rows.iter()
         .find(|(s, c, _)| s == set && *c == codes)
         .map(|(.., unit)| Some(*unit))
-        .ok_or_else(|| format!("the unit is carried by {} {}, which has no row in unit-carriers", set.join(","), codes.join(",")))
+        .ok_or_else(|| {
+            format!(
+                "the unit is carried by {} {}, which has no row in unit-carriers",
+                set.join(","),
+                codes.join(",")
+            )
+        })
 }
 
 #[cfg(test)]
@@ -297,32 +344,95 @@ mod tests {
         assert_eq!(unit_short("TCO2E_HAB"), Some("吨二氧化碳当量/人"));
         assert_eq!(unit_short("PC_POP"), Some("%"));
         // a count reads 数量 on its unit line and prints nothing after a number (generated, 11-05)
-        assert_eq!((unit_short("NR"), unit_number_suffix("NR")), (Some("数量"), Some("")));
-        assert_eq!((unit_short("I15"), unit_number_suffix("I15")), (Some("指数(2015=100)"), Some("")));
-        assert_eq!((unit_short("PC"), unit_number_suffix("PC")), (Some("%"), Some("%")));
+        assert_eq!(
+            (unit_short("NR"), unit_number_suffix("NR")),
+            (Some("数量"), Some(""))
+        );
+        assert_eq!(
+            (unit_short("I15"), unit_number_suffix("I15")),
+            (Some("指数(2015=100)"), Some(""))
+        );
+        assert_eq!(
+            (unit_short("PC"), unit_number_suffix("PC")),
+            (Some("%"), Some("%"))
+        );
         assert_eq!(unit_number_suffix("XYZ"), None);
         // a rate of change keeps "%" as its short form and number suffix; its unit line says against what
-        assert_eq!((unit_short("PCH_SM"), unit_number_suffix("PCH_SM"), unit_line_form("PCH_SM")), (Some("%"), Some("%"), Some("%（同比）")));
+        assert_eq!(
+            (
+                unit_short("PCH_SM"),
+                unit_number_suffix("PCH_SM"),
+                unit_line_form("PCH_SM")
+            ),
+            (Some("%"), Some("%"), Some("%（同比）"))
+        );
         assert_eq!(unit_line_form("PCH_PRE"), Some("%（较上期）"));
-        assert_eq!((unit_line_form("PC"), unit_line_form("I15"), unit_line_form("XYZ")), (Some("%"), Some("指数(2015=100)"), None));
+        assert_eq!(
+            (
+                unit_line_form("PC"),
+                unit_line_form("I15"),
+                unit_line_form("XYZ")
+            ),
+            (Some("%"), Some("指数(2015=100)"), None)
+        );
         // a rate of change whose label states no basis has no row (Annual average rate of change: against what is unsaid)
         assert_eq!(unit_short("RCH_A_AVG"), None);
         // a chain-linked volume's rate of change reads its basis past the price-basis prefix (n02's quarter on the same
         // quarter a year before); an annualized one, a chain-linked level or index is not read
-        assert_eq!((unit_short("CLV_PCH_SM"), unit_number_suffix("CLV_PCH_SM"), unit_line_form("CLV_PCH_SM")), (Some("%"), Some("%"), Some("%（同比）")));
+        assert_eq!(
+            (
+                unit_short("CLV_PCH_SM"),
+                unit_number_suffix("CLV_PCH_SM"),
+                unit_line_form("CLV_PCH_SM")
+            ),
+            (Some("%"), Some("%"), Some("%（同比）"))
+        );
         assert_eq!(unit_line_form("CLV_PCH_PRE"), Some("%（较上期）"));
-        assert_eq!((unit_short("CLV_PCH_ANN"), unit_short("CLV10_MEUR"), unit_short("CLV_I20")), (None, None, None));
+        assert_eq!(
+            (
+                unit_short("CLV_PCH_ANN"),
+                unit_short("CLV10_MEUR"),
+                unit_short("CLV_I20")
+            ),
+            (None, None, None)
+        );
         // a per-capita amount at current prices, in euro or in purchasing power standards (s4a)
-        assert_eq!((unit_line_form("CP_EUR_HAB"), unit_number_suffix("CP_EUR_HAB")), (Some("欧元/人"), Some("欧元/人")));
-        assert_eq!((unit_line_form("CP_PPS_EU27_2020_HAB"), unit_number_suffix("CP_PPS_EU27_2020_HAB")), (Some("购买力标准/人"), Some("购买力标准/人")));
+        assert_eq!(
+            (
+                unit_line_form("CP_EUR_HAB"),
+                unit_number_suffix("CP_EUR_HAB")
+            ),
+            (Some("欧元/人"), Some("欧元/人"))
+        );
+        assert_eq!(
+            (
+                unit_line_form("CP_PPS_EU27_2020_HAB"),
+                unit_number_suffix("CP_PPS_EU27_2020_HAB")
+            ),
+            (Some("购买力标准/人"), Some("购买力标准/人"))
+        );
         // a change against a year the label names prints that year as its basis (World Bank "% change from 1990", s6)
-        assert_eq!((unit_short("PCH_1990"), unit_number_suffix("PCH_1990"), unit_line_form("PCH_1990")), (Some("%"), Some("%"), Some("%（较1990年）")));
+        assert_eq!(
+            (
+                unit_short("PCH_1990"),
+                unit_number_suffix("PCH_1990"),
+                unit_line_form("PCH_1990")
+            ),
+            (Some("%"), Some("%"), Some("%（较1990年）"))
+        );
         // every World Bank change registered with a code prints a basis on its unit line: a change whose basis no rule
         // reads has no code, so the shape gate refuses it
-        for row in include_str!("../runtime/pi/assets/wb-units.tsv").lines().skip(1) {
+        for row in include_str!("../runtime/pi/assets/wb-units.tsv")
+            .lines()
+            .skip(1)
+        {
             let p: Vec<&str> = row.split('\t').collect();
             if p[4] == "change" && !p[2].is_empty() {
-                assert_ne!(unit_line_form(p[2]), unit_short(p[2]), "{row}: a registered change with no basis on its line");
+                assert_ne!(
+                    unit_line_form(p[2]),
+                    unit_short(p[2]),
+                    "{row}: a registered change with no basis on its line"
+                );
             }
         }
     }
@@ -330,27 +440,56 @@ mod tests {
     #[test]
     fn unit_short_zh_registers_one_form_per_code_with_its_rule() {
         let mut rows = UNIT_SHORT_ZH.lines();
-        assert_eq!(rows.next(), Some("code\tshort_zh\trule\tadditive\tsuffix_zh\tsource\tlabel_en\tline_zh"));
+        assert_eq!(
+            rows.next(),
+            Some("code\tshort_zh\trule\tadditive\tsuffix_zh\tsource\tlabel_en\tline_zh")
+        );
         let mut seen = BTreeSet::new();
         for row in rows {
             let p: Vec<&str> = row.split('\t').collect();
             assert_eq!(p.len(), 8, "{row}");
             // what a number prints after it never holds a digit (the page tree's suffix rule); a generated row names the
             // catalogue label it was made from, and every digit of its form is that label's (a base year from the data)
-            assert!(!p[4].chars().any(|c| c.is_ascii_digit()), "{row}: a digit in the number suffix");
+            assert!(
+                !p[4].chars().any(|c| c.is_ascii_digit()),
+                "{row}: a digit in the number suffix"
+            );
             assert!(matches!(p[5], "reviewed" | "generated"), "{row}: source");
-            let digits = |t: &str| t.split(|c: char| !c.is_ascii_digit()).filter(|d| !d.is_empty()).map(str::to_string).collect::<Vec<_>>();
+            let digits = |t: &str| {
+                t.split(|c: char| !c.is_ascii_digit())
+                    .filter(|d| !d.is_empty())
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            };
             if p[5] == "generated" {
-                assert!(!p[6].is_empty() && !p[1].is_empty(), "{row}: a generated row has its label and a form");
+                assert!(
+                    !p[6].is_empty() && !p[1].is_empty(),
+                    "{row}: a generated row has its label and a form"
+                );
             }
             if !p[6].is_empty() {
-                assert!(digits(p[1]).iter().chain(&digits(p[7])).all(|d| digits(p[6]).contains(d)), "{row}: a digit of the form is not the label's");
+                assert!(
+                    digits(p[1])
+                        .iter()
+                        .chain(&digits(p[7]))
+                        .all(|d| digits(p[6]).contains(d)),
+                    "{row}: a digit of the form is not the label's"
+                );
             }
             // a rate of change prints its comparison basis on the unit line: a line form that starts with the short form and
             // says more (user 11-05 16:1x); a row that is no rate of change prints its short form
-            let change = p[2] == "pct_change" || p[6].to_lowercase().starts_with("percentage change") || p[6].to_lowercase().starts_with("growth rate");
-            assert_eq!(change, !p[7].is_empty(), "{row}: a rate of change, and only one, has a line form");
-            assert!(p[7].is_empty() || (p[7].starts_with(p[1]) && p[7].len() > p[1].len()), "{row}: the line form is the short form and its basis");
+            let change = p[2] == "pct_change"
+                || p[6].to_lowercase().starts_with("percentage change")
+                || p[6].to_lowercase().starts_with("growth rate");
+            assert_eq!(
+                change,
+                !p[7].is_empty(),
+                "{row}: a rate of change, and only one, has a line form"
+            );
+            assert!(
+                p[7].is_empty() || (p[7].starts_with(p[1]) && p[7].len() > p[1].len()),
+                "{row}: the line form is the short form and its basis"
+            );
             assert!(seen.insert(p[0]), "{} twice", p[0]);
             assert!(!p[2].is_empty(), "{row}: no rule");
             // B1 (owner 11-04): whether amounts in the unit add up, which the core reads (a share of a sum says
@@ -371,15 +510,50 @@ mod tests {
         assert_eq!(unit_short_zh("PC_POP"), Some("%"));
         // of the World Bank rate bases the owner approved (11-14 15:2x), the one whose Chinese form the number check lets
         // through (owner 11-14 20:2x): the indicator's row names the code, the code its form
-        let code_of = |ind: &str| wb.lines().find(|l| l.starts_with(&format!("{ind}\t"))).and_then(|l| l.split('\t').nth(2));
-        assert_eq!(code_of("SP.DYN.AMRT.FE").and_then(unit_short_zh), Some("每千名成年女性"));
+        let code_of = |ind: &str| {
+            wb.lines()
+                .find(|l| l.starts_with(&format!("{ind}\t")))
+                .and_then(|l| l.split('\t').nth(2))
+        };
+        assert_eq!(
+            code_of("SP.DYN.AMRT.FE").and_then(unit_short_zh),
+            Some("每千名成年女性")
+        );
         // the others keep no unit code (20:2x: each form holds a number word the number check refuses, 十万, 十五), nor do
         // the two the owner left out on 15:2x (a base the Chinese form would lose, a bank name that drops 成年)
-        for ind in ["FB.ATM.TOTL.P5", "FB.CBK.BRCH.P5", "SH.STA.MMRT", "SH.STA.MMRT.NE", "SP.ADO.TFRT", "IC.BUS.NDNS.ZS", "SP.DYN.AMRT.MA"] {
+        for ind in [
+            "FB.ATM.TOTL.P5",
+            "FB.CBK.BRCH.P5",
+            "SH.STA.MMRT",
+            "SH.STA.MMRT.NE",
+            "SP.ADO.TFRT",
+            "IC.BUS.NDNS.ZS",
+            "SP.DYN.AMRT.MA",
+        ] {
             assert_eq!(code_of(ind), Some(""), "{ind}");
         }
-        let additive = |code: &str| UNIT_SHORT_ZH.lines().find(|l| l.starts_with(&format!("{code}\t"))).and_then(|l| l.split('\t').nth(3));
-        assert_eq!([additive("PER"), additive("KTOE"), additive("PC"), additive("TCO2E_HAB"), additive("NR")], [Some("yes"), Some("yes"), Some("no"), Some("no"), Some("yes")]);
+        let additive = |code: &str| {
+            UNIT_SHORT_ZH
+                .lines()
+                .find(|l| l.starts_with(&format!("{code}\t")))
+                .and_then(|l| l.split('\t').nth(3))
+        };
+        assert_eq!(
+            [
+                additive("PER"),
+                additive("KTOE"),
+                additive("PC"),
+                additive("TCO2E_HAB"),
+                additive("NR")
+            ],
+            [
+                Some("yes"),
+                Some("yes"),
+                Some("no"),
+                Some("no"),
+                Some("yes")
+            ]
+        );
     }
 
     /// The unit-carriers registry: each row's dimensions and codes pair up, no pair twice, and every unit code it maps to
@@ -394,35 +568,92 @@ mod tests {
         for row in rows {
             let p: Vec<&str> = row.split('\t').collect();
             assert_eq!(p.len(), 4, "{row}");
-            assert_eq!(p[0].split(',').count(), p[1].split(',').count(), "{row}: dims and codes pair up");
+            assert_eq!(
+                p[0].split(',').count(),
+                p[1].split(',').count(),
+                "{row}: dims and codes pair up"
+            );
             assert!(!p[3].is_empty(), "{row}: no evidence");
-            assert!(unit_short(p[2]).is_some(), "{row}: unit {} has no unit-short-zh row", p[2]);
+            assert!(
+                unit_short(p[2]).is_some(),
+                "{row}: unit {} has no unit-short-zh row",
+                p[2]
+            );
             assert!(seen.insert((p[0], p[1])), "{row}: twice");
         }
         fn dims(held: &[(&str, &[&str])]) -> BTreeMap<String, BTreeSet<String>> {
-            held.iter().map(|(d, codes)| (d.to_string(), codes.iter().map(|c| c.to_string()).collect())).collect()
+            held.iter()
+                .map(|(d, codes)| (d.to_string(), codes.iter().map(|c| c.to_string()).collect()))
+                .collect()
         }
         fn no(held: &[(&str, &[&str])]) -> String {
             carried_unit(&dims(held)).unwrap_err()
         }
         let geo: (&str, &[&str]) = ("geo", &["DE", "FR"]);
-        assert_eq!(carried_unit(&dims(&[geo, ("freq", &["S"]), ("currency", &["EUR"])])), Ok(Some("EUR")));
-        assert_eq!(carried_unit(&dims(&[geo, ("currency", &["EUR"]), ("unit", &["KWH"]), ("tax", &["I_TAX"])])), Ok(Some("EUR_KWH")));
-        assert_eq!(carried_unit(&dims(&[geo, ("indic_de", &["NATGROWRT"])])), Ok(Some("P_THAB")));
-        assert_eq!(carried_unit(&dims(&[geo, ("indic_de", &["LBIRTH"])])), Ok(Some("NR")));
-        assert_eq!(carried_unit(&dims(&[geo, ("indic_de", &["PC_Y65_MAX"])])), Ok(Some("PC")));
+        assert_eq!(
+            carried_unit(&dims(&[geo, ("freq", &["S"]), ("currency", &["EUR"])])),
+            Ok(Some("EUR"))
+        );
+        assert_eq!(
+            carried_unit(&dims(&[
+                geo,
+                ("currency", &["EUR"]),
+                ("unit", &["KWH"]),
+                ("tax", &["I_TAX"])
+            ])),
+            Ok(Some("EUR_KWH"))
+        );
+        assert_eq!(
+            carried_unit(&dims(&[geo, ("indic_de", &["NATGROWRT"])])),
+            Ok(Some("P_THAB"))
+        );
+        assert_eq!(
+            carried_unit(&dims(&[geo, ("indic_de", &["LBIRTH"])])),
+            Ok(Some("NR"))
+        );
+        assert_eq!(
+            carried_unit(&dims(&[geo, ("indic_de", &["PC_Y65_MAX"])])),
+            Ok(Some("PC"))
+        );
         // a plain unit dimension, and a currency beside a unit the registry pairs with none (an exchange rate), read as before
         assert_eq!(carried_unit(&dims(&[geo, ("unit", &["GWH"])])), Ok(None));
-        assert_eq!(carried_unit(&dims(&[("currency", &["USD"]), ("unit", &["AVG"])])), Ok(None));
-        assert_eq!(carried_unit(&dims(&[geo, ("indic_de", &["LBIRTH"]), ("unit", &["NR"])])), Ok(None));
-        assert_eq!(no(&[geo, ("currency", &["PPS"])]), "the unit is carried by currency PPS, which has no row in unit-carriers");
-        assert_eq!(no(&[geo, ("currency", &["NAC"])]), "the unit is carried by currency NAC, which has no row in unit-carriers");
-        assert_eq!(no(&[geo, ("currency", &["PPS"]), ("unit", &["KWH"])]), "the unit is carried by currency,unit PPS,KWH, which has no row in unit-carriers");
-        assert_eq!(no(&[geo, ("indic_de", &["GROW"])]), "the unit is carried by indic_de GROW, which has no row in unit-carriers");
-        assert_eq!(no(&[geo, ("currency", &["EUR", "NAC"])]), "the unit is carried by currency, which holds 2 codes, not one");
-        assert_eq!(no(&[geo, ("currency", &["EUR"]), ("indic_de", &["LBIRTH"])]), "the unit is carried by two dimension sets: currency; indic_de");
+        assert_eq!(
+            carried_unit(&dims(&[("currency", &["USD"]), ("unit", &["AVG"])])),
+            Ok(None)
+        );
+        assert_eq!(
+            carried_unit(&dims(&[geo, ("indic_de", &["LBIRTH"]), ("unit", &["NR"])])),
+            Ok(None)
+        );
+        assert_eq!(
+            no(&[geo, ("currency", &["PPS"])]),
+            "the unit is carried by currency PPS, which has no row in unit-carriers"
+        );
+        assert_eq!(
+            no(&[geo, ("currency", &["NAC"])]),
+            "the unit is carried by currency NAC, which has no row in unit-carriers"
+        );
+        assert_eq!(
+            no(&[geo, ("currency", &["PPS"]), ("unit", &["KWH"])]),
+            "the unit is carried by currency,unit PPS,KWH, which has no row in unit-carriers"
+        );
+        assert_eq!(
+            no(&[geo, ("indic_de", &["GROW"])]),
+            "the unit is carried by indic_de GROW, which has no row in unit-carriers"
+        );
+        assert_eq!(
+            no(&[geo, ("currency", &["EUR", "NAC"])]),
+            "the unit is carried by currency, which holds 2 codes, not one"
+        );
+        assert_eq!(
+            no(&[geo, ("currency", &["EUR"]), ("indic_de", &["LBIRTH"])]),
+            "the unit is carried by two dimension sets: currency; indic_de"
+        );
         // the carried code prints as the registry's forms; its label is the catalogue's
-        assert_eq!((unit_short("EUR_KWH"), unit_label_en("EUR_KWH")), (Some("欧元/千瓦时"), Some("Euro per kilowatt-hour")));
+        assert_eq!(
+            (unit_short("EUR_KWH"), unit_label_en("EUR_KWH")),
+            (Some("欧元/千瓦时"), Some("Euro per kilowatt-hour"))
+        );
         assert_eq!(unit_label_en("XYZ"), None);
     }
 
@@ -440,26 +671,51 @@ mod tests {
             ("SCORE", "分", "分"),
             ("BIRTH_W", "个/妇女", "个/妇女"),
         ] {
-            assert_eq!((unit_short(code), unit_number_suffix(code)), (Some(short), Some(suffix)), "{code}");
+            assert_eq!(
+                (unit_short(code), unit_number_suffix(code)),
+                (Some(short), Some(suffix)),
+                "{code}"
+            );
         }
         // a page prints a dollar amount at one magnitude chosen by its largest number; a unit with no magnitude row as it is
-        assert_eq!(unit_at_magnitude("USD", 1.77e13), ("USD_E12".to_string(), Some(1e-12)));
-        assert_eq!(unit_at_magnitude("USD", 9.9e11), ("USD_E8".to_string(), Some(1e-8)));
+        assert_eq!(
+            unit_at_magnitude("USD", 1.77e13),
+            ("USD_E12".to_string(), Some(1e-12))
+        );
+        assert_eq!(
+            unit_at_magnitude("USD", 9.9e11),
+            ("USD_E8".to_string(), Some(1e-8))
+        );
         assert_eq!(unit_at_magnitude("USD", 9.9e7), ("USD".to_string(), None));
-        assert_eq!(unit_at_magnitude("INTD_K21", 3e12), ("INTD_K21_E12".to_string(), Some(1e-12)));
+        assert_eq!(
+            unit_at_magnitude("INTD_K21", 3e12),
+            ("INTD_K21_E12".to_string(), Some(1e-12))
+        );
         assert_eq!(unit_at_magnitude("LCU", 3e14), ("LCU".to_string(), None));
         assert_eq!(unit_at_magnitude("GWH", 3e9), ("GWH".to_string(), None));
-        assert_eq!((unit_short("USD_E8"), unit_number_suffix("USD_E8")), (Some("亿美元"), Some("亿美元")));
+        assert_eq!(
+            (unit_short("USD_E8"), unit_number_suffix("USD_E8")),
+            (Some("亿美元"), Some("亿美元"))
+        );
         // each place's own currency does not compare across places; a dollar amount and a share do
         assert!(!unit_compares_across_places("LCU") && !unit_compares_across_places("LCU_K"));
         assert!(unit_compares_across_places("USD") && unit_compares_across_places("PC"));
         // every code the World Bank table holds has a row here, so no filled code stops the page on a missing form
-        for row in include_str!("../runtime/pi/assets/wb-units.tsv").lines().skip(1) {
+        for row in include_str!("../runtime/pi/assets/wb-units.tsv")
+            .lines()
+            .skip(1)
+        {
             let code = row.split('\t').nth(2).unwrap_or("");
             assert!(code.is_empty() || unit_short(code).is_some(), "{row}");
             // an amount per someone (per worker, per capita) is no total, so it never takes a total amount's code
-            if [" per worker", " per capita", " per person"].iter().any(|w| row.split('\t').nth(1).unwrap_or("").contains(w)) {
-                assert!(!["USD", "USD_K15", "LCU", "LCU_K", "INTD", "INTD_K21"].contains(&code), "{row}");
+            if [" per worker", " per capita", " per person"]
+                .iter()
+                .any(|w| row.split('\t').nth(1).unwrap_or("").contains(w))
+            {
+                assert!(
+                    !["USD", "USD_K15", "LCU", "LCU_K", "INTD", "INTD_K21"].contains(&code),
+                    "{row}"
+                );
             }
         }
     }
@@ -474,14 +730,25 @@ mod tests {
         }
         // K4 round 1 for s6 (11-05, after the table moved to the knowledge group): every I## the unit list labels
         // "Index, YYYY=100" reads its own base year (s6's I90), none adding up
-        for (code, short) in [("I90", "指数(1990=100)"), ("I95", "指数(1995=100)"), ("I00", "指数(2000=100)"), ("I21", "指数(2021=100)"), ("I15", "指数(2015=100)")] {
+        for (code, short) in [
+            ("I90", "指数(1990=100)"),
+            ("I95", "指数(1995=100)"),
+            ("I00", "指数(2000=100)"),
+            ("I21", "指数(2021=100)"),
+            ("I15", "指数(2015=100)"),
+        ] {
             assert_eq!(unit_short_zh(code), Some(short), "{code}");
         }
         for row in UNIT_SHORT_ZH.lines().skip(1) {
             let p: Vec<&str> = row.split('\t').collect();
-            if p[2] == "pct_family" { assert_eq!((p[1], p[3]), ("%", "no"), "{row}: a share does not add up"); }
+            if p[2] == "pct_family" {
+                assert_eq!((p[1], p[3]), ("%", "no"), "{row}: a share does not add up");
+            }
             if p[2] == "index_base" {
-                assert!(p[1] == format!("指数({}=100)", &p[1][7..11]) && p[3] == "no", "{row}: an index reads its base year and does not add up");
+                assert!(
+                    p[1] == format!("指数({}=100)", &p[1][7..11]) && p[3] == "no",
+                    "{row}: an index reads its base year and does not add up"
+                );
             }
         }
     }

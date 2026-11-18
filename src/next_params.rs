@@ -65,10 +65,31 @@ pub const SINCE_AFTER: [&str; 6] = ["以来", "至今", "到现在", "起", "相
 /// The marks between the two years of a range ("2015 到 2024 年").
 pub const RANGE_MARKS: [char; 7] = ['到', '至', '-', '–', '—', '~', '～'];
 /// The words that ask for months, not a year: each month of a span ("每月", "逐月", "月度") or the latest one ("上个月").
-const MONTH_WORDS: [&str; 12] = ["每月", "每个月", "逐月", "按月", "各月", "月度", "月份", "上个月", "上月", "本月", "这个月", "当月"];
+const MONTH_WORDS: [&str; 12] = [
+    "每月",
+    "每个月",
+    "逐月",
+    "按月",
+    "各月",
+    "月度",
+    "月份",
+    "上个月",
+    "上月",
+    "本月",
+    "这个月",
+    "当月",
+];
 /// The words that ask for a part of a year, which months add up to and a year's figure cannot answer: a quarter ("一季度",
 /// "第三季度", "前三季度", "按季度"), a half ("上半年", "下半年", "近半年") or the year so far ("今年以来").
-const PART_YEAR_WORDS: [&str; 7] = ["季度", "半年", "今年以来", "今年至今", "今年迄今", "年初以来", "年初至今"];
+const PART_YEAR_WORDS: [&str; 7] = [
+    "季度",
+    "半年",
+    "今年以来",
+    "今年至今",
+    "今年迄今",
+    "年初以来",
+    "年初至今",
+];
 /// The words of a table card's line under a table with composition groups (parts_line), around the grouped dimension and
 /// its total code, then the groups' registry names; English program words with no number.
 const PARTS_LINE_WORDS: [&str; 2] = ["each place's", "splits into the registered groups"];
@@ -140,7 +161,10 @@ pub fn composition_groups(table: &str, dim: &str) -> Result<Vec<(String, Vec<Par
     let mut groups: Vec<(String, Vec<Part>)> = Vec::new();
     for leaf in leaves {
         let Some(group) = leaf.group.clone() else {
-            return Err(format!("{PARTS_SOURCE}: {table} {dim} {} is a leaf with no group", leaf.code));
+            return Err(format!(
+                "{PARTS_SOURCE}: {table} {dim} {} is a leaf with no group",
+                leaf.code
+            ));
         };
         match groups.iter_mut().find(|(g, _)| *g == group) {
             Some((_, members)) => members.push(leaf),
@@ -164,9 +188,17 @@ pub fn group_inputs(table: &str, dim: &str) -> Result<Vec<(String, Vec<String>)>
         return Ok(Vec::new());
     }
     let registered = parts(table, dim);
-    let leaves: Vec<Part> = groups.iter().flat_map(|(_, members)| members.iter().cloned()).collect();
+    let leaves: Vec<Part> = groups
+        .iter()
+        .flat_map(|(_, members)| members.iter().cloned())
+        .collect();
     // the group of each leaf under a code (itself, for a leaf), each group once
-    fn groups_under(code: &str, registered: &[Part], leaves: &[Part], depth: usize) -> BTreeSet<String> {
+    fn groups_under(
+        code: &str,
+        registered: &[Part],
+        leaves: &[Part],
+        depth: usize,
+    ) -> BTreeSet<String> {
         let mut out = BTreeSet::new();
         if depth > registered.len() {
             return out;
@@ -175,18 +207,31 @@ pub fn group_inputs(table: &str, dim: &str) -> Result<Vec<(String, Vec<String>)>
             out.extend(leaf.group.clone());
             return out;
         }
-        for child in registered.iter().filter(|p| p.parent.as_deref() == Some(code)) {
+        for child in registered
+            .iter()
+            .filter(|p| p.parent.as_deref() == Some(code))
+        {
             out.extend(groups_under(&child.code, registered, leaves, depth + 1));
         }
         out
     }
-    let Some(total) = registered.iter().find(|p| p.level == PART_LEVELS[0]).map(|p| p.code.clone()) else {
+    let Some(total) = registered
+        .iter()
+        .find(|p| p.level == PART_LEVELS[0])
+        .map(|p| p.code.clone())
+    else {
         return Ok(Vec::new());
     };
-    let mut inputs: Vec<(String, Vec<String>)> = groups.iter().map(|(g, _)| (g.clone(), Vec::new())).collect();
+    let mut inputs: Vec<(String, Vec<String>)> = groups
+        .iter()
+        .map(|(g, _)| (g.clone(), Vec::new()))
+        .collect();
     let mut at = vec![(total, 0usize)];
     while let Some((code, depth)) = at.pop() {
-        let children: Vec<&Part> = registered.iter().filter(|p| p.parent.as_deref() == Some(code.as_str())).collect();
+        let children: Vec<&Part> = registered
+            .iter()
+            .filter(|p| p.parent.as_deref() == Some(code.as_str()))
+            .collect();
         for child in children {
             let under = groups_under(&child.code, &registered, &leaves, depth + 1);
             match under.iter().collect::<Vec<_>>()[..] {
@@ -201,12 +246,19 @@ pub fn group_inputs(table: &str, dim: &str) -> Result<Vec<(String, Vec<String>)>
         }
     }
     // a mixed code's children are visited after its siblings: each group's inputs back in file order
-    let order = |c: &String| registered.iter().position(|p| p.code == *c).unwrap_or(usize::MAX);
+    let order = |c: &String| {
+        registered
+            .iter()
+            .position(|p| p.code == *c)
+            .unwrap_or(usize::MAX)
+    };
     for (_, codes) in inputs.iter_mut() {
         codes.sort_by_key(order);
     }
     if let Some((g, _)) = inputs.iter().find(|(_, codes)| codes.is_empty()) {
-        return Err(format!("{PARTS_SOURCE}: {table} {dim} group {g} has no input code"));
+        return Err(format!(
+            "{PARTS_SOURCE}: {table} {dim} group {g} has no input code"
+        ));
     }
     Ok(inputs)
 }
@@ -217,7 +269,9 @@ pub fn flow_dims(table: &str) -> Option<(String, String)> {
     let side = |s: &str| {
         registry()
             .iter()
-            .find(|(t, _, p)| t == table && p.level == PART_LEVELS[0] && p.flow.as_deref() == Some(s))
+            .find(|(t, _, p)| {
+                t == table && p.level == PART_LEVELS[0] && p.flow.as_deref() == Some(s)
+            })
             .map(|(_, d, _)| d.clone())
     };
     Some((side(FLOW_SIDES[0])?, side(FLOW_SIDES[1])?))
@@ -241,7 +295,12 @@ fn leaves_under_total(table: &str, dim: &str) -> Vec<Part> {
         for _ in 0..registered.len() {
             match at {
                 Some(code) if code == total.code => return true,
-                Some(code) => at = registered.iter().find(|p| p.code == code).and_then(|p| p.parent.clone()),
+                Some(code) => {
+                    at = registered
+                        .iter()
+                        .find(|p| p.code == code)
+                        .and_then(|p| p.parent.clone())
+                }
                 None => return false,
             }
         }
@@ -262,12 +321,24 @@ pub fn flow_excluded(table: &str) -> Result<Vec<Part>, String> {
     let Some((source, target)) = flow_dims(table) else {
         return Ok(Vec::new());
     };
-    let total = parts(table, &target).into_iter().find(|p| p.level == PART_LEVELS[0]).map(|p| p.code);
-    if let Some(p) = flow_parts(table, &target).into_iter().find(|p| p.excluded_from.is_some()) {
-        return Err(format!("{PARTS_SOURCE}: target {target} {} is excluded, and only a source leaf may be", p.code));
+    let total = parts(table, &target)
+        .into_iter()
+        .find(|p| p.level == PART_LEVELS[0])
+        .map(|p| p.code);
+    if let Some(p) = flow_parts(table, &target)
+        .into_iter()
+        .find(|p| p.excluded_from.is_some())
+    {
+        return Err(format!(
+            "{PARTS_SOURCE}: target {target} {} is excluded, and only a source leaf may be",
+            p.code
+        ));
     }
     let mut out = Vec::new();
-    for p in flow_parts(table, &source).into_iter().filter(|p| p.excluded_from.is_some()) {
+    for p in flow_parts(table, &source)
+        .into_iter()
+        .filter(|p| p.excluded_from.is_some())
+    {
         if p.excluded_from != total {
             return Err(format!(
                 "{PARTS_SOURCE}: {source} {} is excluded from {}, and an exclusion is from the target's total {}",
@@ -277,7 +348,10 @@ pub fn flow_excluded(table: &str) -> Result<Vec<Part>, String> {
             ));
         }
         if p.excluded_source.is_none() {
-            return Err(format!("{PARTS_SOURCE}: {source} {} is excluded with no source", p.code));
+            return Err(format!(
+                "{PARTS_SOURCE}: {source} {} is excluded with no source",
+                p.code
+            ));
         }
         out.push(p);
     }
@@ -288,7 +362,10 @@ pub fn flow_excluded(table: &str) -> Result<Vec<Part>, String> {
 /// flow (flow_excluded).
 pub fn flow_asked(table: &str, dim: &str) -> Result<Vec<Part>, String> {
     let excluded = flow_excluded(table)?;
-    Ok(flow_parts(table, dim).into_iter().filter(|p| !excluded.iter().any(|x| x.code == p.code)).collect())
+    Ok(flow_parts(table, dim)
+        .into_iter()
+        .filter(|p| !excluded.iter().any(|x| x.code == p.code))
+        .collect())
 }
 
 /// A flow split's breakdown entry read back as its (source, target) dimensions; None for a split by one dimension.
@@ -302,7 +379,11 @@ pub fn flow_split(entry: &str) -> Option<(&str, &str)> {
 fn listed_flow_parts(table: &TableMeta, dim: &str) -> Option<Vec<String>> {
     let dataset = table.id.strip_suffix("@2").unwrap_or(&table.id);
     let codes = &table.dims.iter().find(|(d, _)| d == dim)?.1;
-    let leaves: Vec<String> = flow_asked(dataset, dim).ok()?.into_iter().map(|p| p.code).collect();
+    let leaves: Vec<String> = flow_asked(dataset, dim)
+        .ok()?
+        .into_iter()
+        .map(|p| p.code)
+        .collect();
     (leaves.len() > 1 && leaves.iter().all(|l| codes.iter().any(|(c, _)| c == l))).then_some(leaves)
 }
 
@@ -322,8 +403,19 @@ fn registry() -> &'static Vec<(String, String, Part)> {
                 .position(|h| *h == name)
                 .unwrap_or_else(|| panic!("estat-parts.tsv lacks {name}"))
         };
-        let (t, d, c, l, p, f) = (col("tables"), col("dim"), col("code"), col("level"), col("parent"), col("flow"));
-        let (x, xs, g) = (col("excluded_from"), col("excluded_source"), col("group_en"));
+        let (t, d, c, l, p, f) = (
+            col("tables"),
+            col("dim"),
+            col("code"),
+            col("level"),
+            col("parent"),
+            col("flow"),
+        );
+        let (x, xs, g) = (
+            col("excluded_from"),
+            col("excluded_source"),
+            col("group_en"),
+        );
         lines
             .filter(|line| !line.is_empty())
             .flat_map(|line| {
@@ -340,7 +432,10 @@ fn registry() -> &'static Vec<(String, String, Part)> {
                 };
                 // one row registers the code for every table of its family (the tables that share the codelist)
                 let dim = at(d);
-                at(t).split_whitespace().map(|table| (table.to_string(), dim.clone(), part.clone())).collect::<Vec<_>>()
+                at(t)
+                    .split_whitespace()
+                    .map(|table| (table.to_string(), dim.clone(), part.clone()))
+                    .collect::<Vec<_>>()
             })
             .collect()
     })
@@ -404,7 +499,9 @@ pub fn wb_rank_year_share() -> f64 {
     static SHARE: OnceLock<f64> = OnceLock::new();
     *SHARE.get_or_init(|| {
         let asset: Value = serde_json::from_str(WB_RANK_BY).expect("wb-rank-by.json is JSON");
-        asset["year_share"].as_f64().expect("wb-rank-by.json has year_share")
+        asset["year_share"]
+            .as_f64()
+            .expect("wb-rank-by.json has year_share")
     })
 }
 
@@ -497,7 +594,16 @@ pub fn question_years(question: &str, this_year: i32) -> Option<NamedYears> {
     let four = |i: usize| -> Option<i32> {
         let run = chars[i..].iter().take_while(|c| c.is_ascii_digit()).count();
         let before = i > 0 && chars[i - 1].is_ascii_digit();
-        (run == 4 && !before).then(|| chars[i..i + 4].iter().collect::<String>().parse::<i32>().ok()).flatten().filter(|y| *y >= NAMED_FROM)
+        (run == 4 && !before)
+            .then(|| {
+                chars[i..i + 4]
+                    .iter()
+                    .collect::<String>()
+                    .parse::<i32>()
+                    .ok()
+            })
+            .flatten()
+            .filter(|y| *y >= NAMED_FROM)
     };
     // each year with where its digits start and where the text after its 年 starts
     let mut years: Vec<(i32, usize, usize)> = Vec::new();
@@ -515,18 +621,27 @@ pub fn question_years(question: &str, this_year: i32) -> Option<NamedYears> {
     }
     years.dedup();
     let last = last_years(&chars);
-    if let (Some(a), Some(b)) = (years.iter().map(|y| y.0).min(), years.iter().map(|y| y.0).max()) {
+    if let (Some(a), Some(b)) = (
+        years.iter().map(|y| y.0).min(),
+        years.iter().map(|y| y.0).max(),
+    ) {
         let text = |r: std::ops::Range<usize>| chars[r].iter().collect::<String>();
         let since = a == b
             && years.iter().any(|&(_, at, after)| {
-                SINCE_BEFORE.iter().any(|w| text(0..at).ends_with(w)) || SINCE_AFTER.iter().any(|w| text(after..chars.len()).starts_with(w))
+                SINCE_BEFORE.iter().any(|w| text(0..at).ends_with(w))
+                    || SINCE_AFTER
+                        .iter()
+                        .any(|w| text(after..chars.len()).starts_with(w))
             });
         // one year inside the last n years the question also counts back ("近二十年……2015 年那一年有没有往下掉", e9): the
         // year is a point the question asks about within the span, not the span (rounds 7-10 fetched 2015 alone)
         if let Some(n) = last.filter(|&n| a == b && !since && n > 1 && a > this_year - 1 - n) {
             return Some(NamedYears::Last(n));
         }
-        return Some(NamedYears::Span(a, if since { this_year.max(a) } else { b }));
+        return Some(NamedYears::Span(
+            a,
+            if since { this_year.max(a) } else { b },
+        ));
     }
     // "最近一年" / "近一年" counts back one year: the latest year, which is the program's when the question names none (an
     // annual table's last ten years, the page at the latest year most places hold); Last(1) fetched this year minus one alone,
@@ -538,8 +653,16 @@ pub fn question_years(question: &str, this_year: i32) -> Option<NamedYears> {
 fn last_years(chars: &[char]) -> Option<i32> {
     let text: String = chars.iter().filter(|c| !c.is_whitespace()).collect();
     let numeral = |c: &char| c.is_ascii_digit() || "一二两三四五六七八九十".contains(*c);
-    let words: Value = serde_json::from_str(include_str!("../runtime/pi/assets/year-words.json")).unwrap_or_default();
-    let list = |k: &str| -> Vec<String> { words[k].as_array().into_iter().flatten().filter_map(|w| w.as_str().map(str::to_string)).collect() };
+    let words: Value = serde_json::from_str(include_str!("../runtime/pi/assets/year-words.json"))
+        .unwrap_or_default();
+    let list = |k: &str| -> Vec<String> {
+        words[k]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|w| w.as_str().map(str::to_string))
+            .collect()
+    };
     for lead in list("last_lead") {
         let lead = lead.as_str();
         for (at, _) in text.match_indices(lead) {
@@ -555,7 +678,14 @@ fn last_years(chars: &[char]) -> Option<i32> {
     // a count of years the question runs back over with no word before it: "五年来", "10 年以来" (t4, 11-05 10:2x (e))
     for tail in list("last_tail") {
         for (at, _) in text.match_indices(tail.as_str()) {
-            let count: String = text[..at].chars().rev().take_while(numeral).collect::<Vec<_>>().into_iter().rev().collect();
+            let count: String = text[..at]
+                .chars()
+                .rev()
+                .take_while(numeral)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect();
             if let Some(n) = count_of(&count).filter(|n| *n >= 1 && count.chars().count() < 4) {
                 return Some(n);
             }
@@ -592,7 +722,12 @@ pub fn question_first_year(question: &str, this_year: i32) -> Option<i32> {
 /// which ends a year or two earlier.
 pub fn question_months(question: &str) -> bool {
     let text: String = question.chars().filter(|c| !c.is_whitespace()).collect();
-    if text.contains("个月") || MONTH_WORDS.iter().chain(&PART_YEAR_WORDS).any(|w| text.contains(w)) {
+    if text.contains("个月")
+        || MONTH_WORDS
+            .iter()
+            .chain(&PART_YEAR_WORDS)
+            .any(|w| text.contains(w))
+    {
         return true;
     }
     let chars: Vec<char> = text.chars().collect();
@@ -604,9 +739,11 @@ pub fn question_months(question: &str) -> bool {
     quarter
         || chars.iter().enumerate().any(|(i, c)| {
             *c == '月' && {
-                let numeral = |c: &&char| c.is_ascii_digit() || "一二两三四五六七八九十".contains(**c);
+                let numeral =
+                    |c: &&char| c.is_ascii_digit() || "一二两三四五六七八九十".contains(**c);
                 let n = chars[..i].iter().rev().take_while(numeral).count();
-                count_of(&chars[i - n..i].iter().collect::<String>()).is_some_and(|m| (1..=12).contains(&m))
+                count_of(&chars[i - n..i].iter().collect::<String>())
+                    .is_some_and(|m| (1..=12).contains(&m))
             }
         })
 }
@@ -625,9 +762,15 @@ pub fn grouped_dim(table: &str) -> Option<(String, String, Vec<String>)> {
         }
     }
     dims.into_iter().find_map(|dim| {
-        let total = parts(table, dim).into_iter().find(|p| p.level == PART_LEVELS[0])?;
+        let total = parts(table, dim)
+            .into_iter()
+            .find(|p| p.level == PART_LEVELS[0])?;
         match group_inputs(table, dim) {
-            Ok(groups) if !groups.is_empty() => Some((dim.to_string(), total.code, groups.into_iter().map(|(g, _)| g).collect())),
+            Ok(groups) if !groups.is_empty() => Some((
+                dim.to_string(),
+                total.code,
+                groups.into_iter().map(|(g, _)| g).collect(),
+            )),
             _ => None,
         }
     })
@@ -639,7 +782,10 @@ pub fn grouped_dim(table: &str) -> Option<(String, String, Vec<String>)> {
 pub fn parts_line(n: usize, table: &str) -> Option<String> {
     let (dim, total, groups) = grouped_dim(table)?;
     let [before, after] = PARTS_LINE_WORDS;
-    Some(format!("   t{n}: {before} {dim} {total} {after} {}", groups.join(", ")))
+    Some(format!(
+        "   t{n}: {before} {dim} {total} {after} {}",
+        groups.join(", ")
+    ))
 }
 
 /// A count in digits, or in Chinese numerals up to 九十九 (十 ten, 两 two).
@@ -647,7 +793,12 @@ fn count_of(s: &str) -> Option<i32> {
     if !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()) {
         return s.parse().ok();
     }
-    let digit = |c: char| "一二三四五六七八九".find(c).map(|i| i as i32 / 3 + 1).or((c == '两').then_some(2));
+    let digit = |c: char| {
+        "一二三四五六七八九"
+            .find(c)
+            .map(|i| i as i32 / 3 + 1)
+            .or((c == '两').then_some(2))
+    };
     let c: Vec<char> = s.chars().collect();
     match c.as_slice() {
         [d] => digit(*d).or((*d == '十').then_some(10)),
@@ -842,7 +993,12 @@ fn words(s: &str) -> Vec<String> {
 /// the dataset's order), every other dimension as it is, the kept dimensions named in `kept`: the dataset then drafts, asks
 /// and fetches as the presentation table it stands for did. A dimension none of whose codes the table still lists (its
 /// probe found none held) is left as it is. No keep: `draft` itself.
-pub fn draft_kept(mut table: TableMeta, keep: &[(String, Vec<String>)], texts: &[String], places: &[Place]) -> Draft {
+pub fn draft_kept(
+    mut table: TableMeta,
+    keep: &[(String, Vec<String>)],
+    texts: &[String],
+    places: &[Place],
+) -> Draft {
     let mut kept = Vec::new();
     for (dim, codes) in table.dims.iter_mut() {
         if let Some((_, k)) = keep.iter().find(|(d, _)| d == dim) {
@@ -852,7 +1008,10 @@ pub fn draft_kept(mut table: TableMeta, keep: &[(String, Vec<String>)], texts: &
             }
         }
     }
-    Draft { kept, ..draft(table, texts, places) }
+    Draft {
+        kept,
+        ..draft(table, texts, places)
+    }
 }
 
 /// What the program fixes and what it asks for one table; `texts` are the model's search words, used only to order options.
@@ -911,7 +1070,8 @@ pub fn draft(table: TableMeta, texts: &[String], places: &[Place]) -> Draft {
     }
     let many = table.worldbank && table.places.len() > MAX_CHART_ROWS;
     let places_open = many && places.is_empty();
-    let named_open = many && (1..=RANK_SUBJECTS_MAX).contains(&places.len()) && !places.contains(&Place::Region);
+    let named_open =
+        many && (1..=RANK_SUBJECTS_MAX).contains(&places.len()) && !places.contains(&Place::Region);
     Draft {
         table,
         breakdown,
@@ -931,7 +1091,10 @@ pub fn draft(table: TableMeta, texts: &[String], places: &[Place]) -> Draft {
 /// country open, or one whose question names countries beside the ranking (named_open), and only an option ranked by another
 /// indicator that is the ranking's reference. None leaves "t<n>.places" to the pick, or the named places to fill, as before.
 pub fn ranked_option(d: &Draft) -> Option<(usize, &'static RankBy)> {
-    let asked = d.ranked.as_ref().filter(|_| d.places_open || d.named_open)?;
+    let asked = d
+        .ranked
+        .as_ref()
+        .filter(|_| d.places_open || d.named_open)?;
     wb_rank_by()
         .1
         .iter()
@@ -955,7 +1118,11 @@ fn splits_taking<'a>(d: &'a Draft, dim: &str) -> Vec<&'a str> {
     if !d.members.iter().any(|(m, _, _)| m == dim) {
         return Vec::new();
     }
-    d.breakdown.iter().map(String::as_str).filter(|b| split_dims(b).contains(&dim)).collect()
+    d.breakdown
+        .iter()
+        .map(String::as_str)
+        .filter(|b| split_dims(b).contains(&dim))
+        .collect()
 }
 
 /// A member dimension that is also a breakdown option, by itself or as a side of a flow split (splits_taking).
@@ -1003,7 +1170,12 @@ pub fn items(n: usize, d: &Draft) -> Vec<(String, Vec<String>)> {
                 let out: String = flow_excluded(dataset)
                     .unwrap_or_default()
                     .iter()
-                    .map(|p| format!("; {source} {} left out (registered as not applicable)", p.code))
+                    .map(|p| {
+                        format!(
+                            "; {source} {} left out (registered as not applicable)",
+                            p.code
+                        )
+                    })
                     .collect();
                 options.push(format!(
                     "flow from {source} to {target}: each place × {} {source} parts × {} {target} parts, the leaves under each total (no total or subtotal drawn){out}{leave}",
@@ -1122,7 +1294,11 @@ pub fn fill(
     let flow = breakdown.as_deref().and_then(flow_split);
     let dataset_id = table.id.strip_suffix("@2").unwrap_or(&table.id);
     // the source leaves the registry leaves out of the flow: not fetched, every pair of them said in the event
-    let excluded = if flow.is_some() { flow_excluded(dataset_id)? } else { Vec::new() };
+    let excluded = if flow.is_some() {
+        flow_excluded(dataset_id)?
+    } else {
+        Vec::new()
+    };
     // The named countries geo is filled from: those another dimension holds are that dimension's (Draft::named).
     let countries: Vec<&str> = places
         .iter()
@@ -1234,7 +1410,11 @@ pub fn fill(
                 if draft.kept.contains(dim) {
                     // a dimension kept to a presentation table's codes: those codes, not the dataset's every one (a filter,
                     // counted in rows like the registered parts' below, so not left open: one dimension, counted once)
-                    put(&mut filters, dim, codes.iter().map(|(c, _)| c.clone()).collect());
+                    put(
+                        &mut filters,
+                        dim,
+                        codes.iter().map(|(c, _)| c.clone()).collect(),
+                    );
                 } else if whole && listed.len() > 1 {
                     parted.push(json!({"dimension": dim, "source": PARTS_SOURCE, "codes": listed.len(),
                         "registered": registered.len(), "from_codes": codes.len(),
@@ -1346,7 +1526,9 @@ pub fn fill(
     // one is the program's own (a split that draws only with the latest year, next_flow). Any other table's are the item's.
     let given = picks.get(&format!("t{n}.{YEARS_KEY}")).copied();
     let window = draft.window_for(breakdown.as_deref());
-    let named = draft.named_years.filter(|_| annual(table) && window.is_none());
+    let named = draft
+        .named_years
+        .filter(|_| annual(table) && window.is_none());
     let (asked, rule) = match (window, named, annual(table), given) {
         (Some(_), ..) => (given.unwrap_or(1), "window"),
         (None, Some(_), ..) => (ANNUAL_YEARS, "question"),
@@ -1397,10 +1579,9 @@ pub fn fill(
     let mut narrow = Value::Null;
     // A World Bank table with every country open: the tool keeps the economies of the picked registry option (aggregates
     // out, ranked at the latest year most of them have), at most the chart's rows over the years.
-    if let Some((_, count)) = open
-        .as_ref()
-        .filter(|(dim, _)| (draft.places_open || ranked_option(draft).is_some()) && dim == WB_PLACE_DIM)
-    {
+    if let Some((_, count)) = open.as_ref().filter(|(dim, _)| {
+        (draft.places_open || ranked_option(draft).is_some()) && dim == WB_PLACE_DIM
+    }) {
         let (cap, options) = wb_rank_by();
         let fixed = ranked_option(draft);
         let (option, rank) = fixed.unwrap_or_else(|| {
@@ -1495,7 +1676,10 @@ pub fn fill(
         event["flow"] = json!({"source": source, "target": target, "from": PARTS_SOURCE});
         if !excluded.is_empty() {
             // the pairs the registry's leaves span (each source leaf with each target leaf), less the excluded leaves' own
-            let (from, to) = (flow_parts(dataset_id, source).len(), flow_parts(dataset_id, target).len());
+            let (from, to) = (
+                flow_parts(dataset_id, source).len(),
+                flow_parts(dataset_id, target).len(),
+            );
             event["flow"]["pairs"] = json!({"registered": from * to, "excluded": excluded.len() * to, "asked": (from - excluded.len()) * to});
             event["flow"]["excluded"] = excluded
                 .iter()
@@ -1621,9 +1805,12 @@ pub fn predicted_shape(
         });
     }
     // A flow split's pair is the flow estat-parts.tsv registers for the table (flow_dims), as classify reads it after the fetch.
-    let official_flow = filled.event["flow"]
-        .as_object()
-        .and_then(|f| Some((f.get("source")?.as_str()?.to_string(), f.get("target")?.as_str()?.to_string())));
+    let official_flow = filled.event["flow"].as_object().and_then(|f| {
+        Some((
+            f.get("source")?.as_str()?.to_string(),
+            f.get("target")?.as_str()?.to_string(),
+        ))
+    });
     Ok(Shape {
         dims,
         unit_additive: false,
@@ -1798,11 +1985,21 @@ mod tests {
     #[ignore]
     fn measure_question_years() {
         let this_year = chrono::Datelike::year(&chrono::Local::now());
-        let cases = std::fs::read_to_string(std::env::var("YEARS_CASES").expect("YEARS_CASES")).unwrap();
-        for line in cases.lines().filter(|l| !l.starts_with('#') && !l.is_empty()) {
-            let Some((qid, q)) = line.split_once('\t') else { continue };
+        let cases =
+            std::fs::read_to_string(std::env::var("YEARS_CASES").expect("YEARS_CASES")).unwrap();
+        for line in cases
+            .lines()
+            .filter(|l| !l.starts_with('#') && !l.is_empty())
+        {
+            let Some((qid, q)) = line.split_once('\t') else {
+                continue;
+            };
             let q = q.split('\t').next().unwrap_or(q);
-            println!("YEARS\t{qid}\t{:?}\t{:?}\t{q}", question_years(q, this_year), question_latest_year(q, this_year));
+            println!(
+                "YEARS\t{qid}\t{:?}\t{:?}\t{q}",
+                question_years(q, this_year),
+                question_latest_year(q, this_year)
+            );
         }
     }
 
@@ -2084,12 +2281,29 @@ mod tests {
     #[test]
     fn the_eu_named_as_a_place_is_fetched_by_its_eurostat_code() {
         let eu_us = [Place::Country("EUU".into()), Place::Country("US".into())];
-        let table = eurostat("rd_e_gerdtot", vec![dim("geo", &["EU27_2020", "DE", "US", "CN"])]);
-        let filled = fill(&draft(table, &[], &eu_us), 1, &picks(&[("t1.years", 1)]), &eu_us, 2026).unwrap();
+        let table = eurostat(
+            "rd_e_gerdtot",
+            vec![dim("geo", &["EU27_2020", "DE", "US", "CN"])],
+        );
+        let filled = fill(
+            &draft(table, &[], &eu_us),
+            1,
+            &picks(&[("t1.years", 1)]),
+            &eu_us,
+            2026,
+        )
+        .unwrap();
         assert_eq!(filter(&filled, "geo").unwrap(), ["EU27_2020", "US"]);
         assert_eq!(filled.event["dropped"], json!([]));
         let without = eurostat("rd_e_gerdtot", vec![dim("geo", &["DE", "US"])]);
-        let filled = fill(&draft(without, &[], &eu_us), 1, &picks(&[("t1.years", 1)]), &eu_us, 2026).unwrap();
+        let filled = fill(
+            &draft(without, &[], &eu_us),
+            1,
+            &picks(&[("t1.years", 1)]),
+            &eu_us,
+            2026,
+        )
+        .unwrap();
         assert_eq!(filter(&filled, "geo").unwrap(), ["US"]);
         assert_eq!(filled.event["dropped"], json!(["EU27_2020"]));
     }
@@ -2271,7 +2485,10 @@ mod tests {
                 dim("sex", &["T", "M", "F"]),
                 dim("geo", &["EU27_2020", "DE", "FR"]),
                 dim("unit", &["PER"]),
-                dim("citizen", &["TOTAL", "AF", "SY", "VE", "TR", "CO", "UA", "BD", "PK"]),
+                dim(
+                    "citizen",
+                    &["TOTAL", "AF", "SY", "VE", "TR", "CO", "UA", "BD", "PK"],
+                ),
             ],
         );
         let plain = draft(table, &[], &[]);
@@ -2282,15 +2499,38 @@ mod tests {
             fill(d, 1, &p, &[Place::Region], 2026).unwrap()
         };
         // No window: an annual table asks no years item; it takes the last ten, and the event says by which rule.
-        assert!(items(1, &plain).iter().all(|(key, _)| key != "t1.years"), "{:?}", items(1, &plain));
+        assert!(
+            items(1, &plain).iter().all(|(key, _)| key != "t1.years"),
+            "{:?}",
+            items(1, &plain)
+        );
         let today = fill_k(&plain, &[]);
         assert_eq!(today.args["years"], json!({"start": 2015, "end": 2024}));
-        assert_eq!((&today.event["years"]["option"], &today.event["years"]["rule"]), (&json!(ANNUAL_YEARS), &json!("annual")));
+        assert_eq!(
+            (
+                &today.event["years"]["option"],
+                &today.event["years"]["rule"]
+            ),
+            (&json!(ANNUAL_YEARS), &json!("annual"))
+        );
         // A window on every answer: no years item; the fetch takes ring.years ending at the last year, and the event says
         // where from.
-        let window = Window { years: 5, months: 60, hub: "EU27_2020".into(), twin: "migr_asyappctzm".into(), only: None };
-        let windowed = Draft { window: Some(window.clone()), ..plain.clone() };
-        assert!(items(1, &windowed).iter().all(|(key, _)| key != "t1.years"), "{:?}", items(1, &windowed));
+        let window = Window {
+            years: 5,
+            months: 60,
+            hub: "EU27_2020".into(),
+            twin: "migr_asyappctzm".into(),
+            only: None,
+        };
+        let windowed = Draft {
+            window: Some(window.clone()),
+            ..plain.clone()
+        };
+        assert!(
+            items(1, &windowed).iter().all(|(key, _)| key != "t1.years"),
+            "{:?}",
+            items(1, &windowed)
+        );
         let filled = fill_k(&windowed, &[]);
         assert_eq!(filled.args["years"], json!({"start": 2020, "end": 2024}));
         assert_eq!(
@@ -2303,40 +2543,111 @@ mod tests {
         assert_eq!(filled.args["filters"], today.args["filters"]);
         // A window on the citizen split only: still no years item; the split takes the window, the other answers the
         // program's years (a years option the program gives, as for a split that draws only with the latest year, holds).
-        let split = Draft { window: Some(Window { only: Some(vec!["citizen".into()]), ..window }), ..plain.clone() };
+        let split = Draft {
+            window: Some(Window {
+                only: Some(vec!["citizen".into()]),
+                ..window
+            }),
+            ..plain.clone()
+        };
         assert!(items(1, &split).iter().all(|(key, _)| key != "t1.years"));
-        assert_eq!(fill_k(&split, &[]).args["years"], json!({"start": 2020, "end": 2024}));
-        let none = fill(&split, 1, &picks(&[("t1.breakdown", 1)]), &[Place::Region], 2026).unwrap();
+        assert_eq!(
+            fill_k(&split, &[]).args["years"],
+            json!({"start": 2020, "end": 2024})
+        );
+        let none = fill(
+            &split,
+            1,
+            &picks(&[("t1.breakdown", 1)]),
+            &[Place::Region],
+            2026,
+        )
+        .unwrap();
         assert_eq!(none.args["years"], json!({"start": 2015, "end": 2024}));
-        let given = fill(&split, 1, &picks(&[("t1.breakdown", 1), ("t1.years", 1)]), &[Place::Region], 2026).unwrap();
+        let given = fill(
+            &split,
+            1,
+            &picks(&[("t1.breakdown", 1), ("t1.years", 1)]),
+            &[Place::Region],
+            2026,
+        )
+        .unwrap();
         assert_eq!(given.args["years"], json!({"start": 2024, "end": 2024}));
-        assert_eq!((&given.event["years"]["option"], &given.event["years"]["rule"]), (&json!(1), &json!("split")));
+        assert_eq!(
+            (
+                &given.event["years"]["option"],
+                &given.event["years"]["rule"]
+            ),
+            (&json!(1), &json!("split"))
+        );
         // Years the question names win over the ten, kept to the table's last year, and the event names them.
-        let named = |n: NamedYears| fill(&Draft { named_years: Some(n), ..plain.clone() }, 1, &picks(&[("t1.breakdown", 1)]), &[Place::Region], 2026).unwrap();
+        let named = |n: NamedYears| {
+            fill(
+                &Draft {
+                    named_years: Some(n),
+                    ..plain.clone()
+                },
+                1,
+                &picks(&[("t1.breakdown", 1)]),
+                &[Place::Region],
+                2026,
+            )
+            .unwrap()
+        };
         let span = named(NamedYears::Span(2018, 2026));
         assert_eq!(span.args["years"], json!({"start": 2018, "end": 2024}));
-        assert_eq!((&span.event["years"]["rule"], &span.event["years"]["named"]), (&json!("question"), &json!({"from": 2018, "to": 2026})));
-        assert_eq!(named(NamedYears::Span(2021, 2021)).args["years"], json!({"start": 2021, "end": 2021}));
-        assert_eq!(named(NamedYears::Last(5)).args["years"], json!({"start": 2020, "end": 2024}));
+        assert_eq!(
+            (&span.event["years"]["rule"], &span.event["years"]["named"]),
+            (&json!("question"), &json!({"from": 2018, "to": 2026}))
+        );
+        assert_eq!(
+            named(NamedYears::Span(2021, 2021)).args["years"],
+            json!({"start": 2021, "end": 2021})
+        );
+        assert_eq!(
+            named(NamedYears::Last(5)).args["years"],
+            json!({"start": 2020, "end": 2024})
+        );
         // A window still wins over the question's years.
-        let ring = fill_k(&Draft { named_years: Some(NamedYears::Span(2010, 2011)), ..windowed.clone() }, &[]);
+        let ring = fill_k(
+            &Draft {
+                named_years: Some(NamedYears::Span(2010, 2011)),
+                ..windowed.clone()
+            },
+            &[],
+        );
         assert_eq!(ring.args["years"], json!({"start": 2020, "end": 2024}));
     }
 
     #[test]
     fn the_years_a_question_names_are_read_by_rule() {
         let q = |s: &str| question_years(s, 2026);
-        assert_eq!(q("2015 年到 2024 年欧盟各国可再生能源占比"), Some(NamedYears::Span(2015, 2024)));
-        assert_eq!(q("2024年欧盟各国失业率"), Some(NamedYears::Span(2024, 2024)));
-        assert_eq!(q("2015 年以来欧盟各国可再生能源占比"), Some(NamedYears::Span(2015, 2026)));
+        assert_eq!(
+            q("2015 年到 2024 年欧盟各国可再生能源占比"),
+            Some(NamedYears::Span(2015, 2024))
+        );
+        assert_eq!(
+            q("2024年欧盟各国失业率"),
+            Some(NamedYears::Span(2024, 2024))
+        );
+        assert_eq!(
+            q("2015 年以来欧盟各国可再生能源占比"),
+            Some(NamedYears::Span(2015, 2026))
+        );
         assert_eq!(q("近五年欧盟各国失业率怎么变"), Some(NamedYears::Last(5)));
         assert_eq!(q("过去 10 年各国人均碳排放"), Some(NamedYears::Last(10)));
         assert_eq!(q("最近十二年"), Some(NamedYears::Last(12)));
         assert_eq!(q("近二十年"), Some(NamedYears::Last(20)));
         // one year counted back is the latest year, the program's own when none is named (n14, n34: Last(1) fetched 2025
         // alone, a year a sparse table holds for none of the asked places)
-        assert_eq!(q("南非、巴西、哥伦比亚、墨西哥最近一年的基尼系数，谁的收入最不平等？"), None);
-        assert_eq!(q("日本、意大利、希腊、新加坡、美国最近一年的中央政府债务占 GDP，谁最高？"), None);
+        assert_eq!(
+            q("南非、巴西、哥伦比亚、墨西哥最近一年的基尼系数，谁的收入最不平等？"),
+            None
+        );
+        assert_eq!(
+            q("日本、意大利、希腊、新加坡、美国最近一年的中央政府债务占 GDP，谁最高？"),
+            None
+        );
         assert_eq!(q("近一年各国通胀"), None);
         // one year asked about inside the last n years the question counts back: the span (e9 fetched 2015 alone); a year
         // before the span, or a year run on from, stays the question's years
@@ -2344,9 +2655,18 @@ mod tests {
             q("印尼、菲律宾、泰国、越南近二十年的谷物单产怎么变？2015 年厄尔尼诺那一年有没有往下掉？"),
             Some(NamedYears::Last(20))
         );
-        assert_eq!(q("近五年各国失业率，和 2000 年比呢"), Some(NamedYears::Span(2000, 2000)));
-        assert_eq!(q("2015 年以来近十年各国失业率"), Some(NamedYears::Span(2015, 2026)));
-        assert_eq!(q("2015 年到 2024 年，近十年各国失业率"), Some(NamedYears::Span(2015, 2024)));
+        assert_eq!(
+            q("近五年各国失业率，和 2000 年比呢"),
+            Some(NamedYears::Span(2000, 2000))
+        );
+        assert_eq!(
+            q("2015 年以来近十年各国失业率"),
+            Some(NamedYears::Span(2015, 2026))
+        );
+        assert_eq!(
+            q("2015 年到 2024 年，近十年各国失业率"),
+            Some(NamedYears::Span(2015, 2024))
+        );
         // a count of years run back over with no word before it, or after 这 (11-05: a question asking five years was fetched
         // and printed over the table's whole ten)
         assert_eq!(q("五年来欧盟各国房价涨了多少"), Some(NamedYears::Last(5)));
@@ -2367,18 +2687,39 @@ mod tests {
         assert_eq!(q("人均 GDP 超过 2000 美元的国家"), None);
         assert_eq!(q("人口 2000 万以上的国家"), None);
         assert_eq!(q("月薪低于 1990 欧元"), None);
-        assert_eq!(q("2015-2024 年各国失业率"), Some(NamedYears::Span(2015, 2024)));
+        assert_eq!(
+            q("2015-2024 年各国失业率"),
+            Some(NamedYears::Span(2015, 2024))
+        );
         assert_eq!(q("2015至2024年"), Some(NamedYears::Span(2015, 2024)));
-        assert_eq!(q("人口超过 2000 万的国家 2020 年的失业率"), Some(NamedYears::Span(2020, 2020)));
+        assert_eq!(
+            q("人口超过 2000 万的国家 2020 年的失业率"),
+            Some(NamedYears::Span(2020, 2020))
+        );
         // a year later than this one is kept (the fill keeps the fetch to the table's last year)
-        assert_eq!(q("2020 年到 2030 年欧盟可再生能源"), Some(NamedYears::Span(2020, 2030)));
+        assert_eq!(
+            q("2020 年到 2030 年欧盟可再生能源"),
+            Some(NamedYears::Span(2020, 2030))
+        );
         // one year compared with runs to this year, as one run on from
-        assert_eq!(q("欧盟各国碳排放比 1990 年下降多少"), Some(NamedYears::Span(1990, 2026)));
-        assert_eq!(q("与 2015 年相比各国失业率"), Some(NamedYears::Span(2015, 2026)));
-        assert_eq!(q("失业率较2015年上升的国家"), Some(NamedYears::Span(2015, 2026)));
+        assert_eq!(
+            q("欧盟各国碳排放比 1990 年下降多少"),
+            Some(NamedYears::Span(1990, 2026))
+        );
+        assert_eq!(
+            q("与 2015 年相比各国失业率"),
+            Some(NamedYears::Span(2015, 2026))
+        );
+        assert_eq!(
+            q("失业率较2015年上升的国家"),
+            Some(NamedYears::Span(2015, 2026))
+        );
         assert_eq!(q("2015 年起"), Some(NamedYears::Span(2015, 2026)));
         // a share (比重, 比例) is no comparison with the year
-        assert_eq!(q("2020 年可再生能源比重"), Some(NamedYears::Span(2020, 2020)));
+        assert_eq!(
+            q("2020 年可再生能源比重"),
+            Some(NamedYears::Span(2020, 2020))
+        );
     }
 
     #[test]
@@ -2686,7 +3027,13 @@ mod tests {
         assert_eq!(filled.event["dropped"].as_array().unwrap().len(), 24);
         assert_eq!(filter(&filled, "nrg_bal").unwrap(), ["REN_ELC"]);
         assert_eq!(filled.args["years"], json!({"start": 2015, "end": 2024}));
-        assert_eq!((&filled.event["years"]["rule"], &filled.event["years"]["option"]), (&json!("annual"), &json!(ANNUAL_YEARS)));
+        assert_eq!(
+            (
+                &filled.event["years"]["rule"],
+                &filled.event["years"]["option"]
+            ),
+            (&json!("annual"), &json!(ANNUAL_YEARS))
+        );
         assert_eq!(filled.event["open"], Value::Null);
     }
 
@@ -2961,8 +3308,16 @@ mod tests {
             // Ranked by another indicator, the tool ranks only the economies with a value in both tables: the words say the
             // count is of economies with data, never "the n most populous" of all (round 8 n31). Ranked by the table's own
             // values, an economy without one cannot be highest or lowest.
-            assert_eq!(o.by.is_some(), o.zh_scope.contains("有数据的{n}个"), "{o:?}");
-            assert_eq!(o.by.is_some(), o.zh_line.contains("有数据的前 {n} 个"), "{o:?}");
+            assert_eq!(
+                o.by.is_some(),
+                o.zh_scope.contains("有数据的{n}个"),
+                "{o:?}"
+            );
+            assert_eq!(
+                o.by.is_some(),
+                o.zh_line.contains("有数据的前 {n} 个"),
+                "{o:?}"
+            );
         }
     }
 
@@ -3060,7 +3415,11 @@ mod tests {
     }
 
     fn asked(by: &str, n: Option<usize>) -> Option<RankAsked> {
-        Some(RankAsked { by: by.into(), n, phrase: "p".into() })
+        Some(RankAsked {
+            by: by.into(),
+            n,
+            phrase: "p".into(),
+        })
     }
 
     /// t2 and q4: a ranking the question asks for fixes the economies a table with every country open keeps. The option is
@@ -3080,7 +3439,10 @@ mod tests {
         }
         for years in [None, Some(NamedYears::Span(2024, 2024))] {
             let five = ranked("SP.POP.TOTL", Some(5), years);
-            assert!(items(1, &five).iter().all(|(k, _)| k != "t1.places"), "{years:?}");
+            assert!(
+                items(1, &five).iter().all(|(k, _)| k != "t1.places"),
+                "{years:?}"
+            );
             let filled = narrow(&five, &[]);
             assert_eq!(
                 filled.args["narrow"],
@@ -3089,9 +3451,15 @@ mod tests {
             );
             assert_eq!(filled.event["narrow"]["from"], "question");
             assert_eq!(filled.event["narrow"]["option"], 3);
-            assert_eq!(filled.event["narrow"]["asked"], json!({"phrase": "p", "by": "SP.POP.TOTL", "n": 5}));
+            assert_eq!(
+                filled.event["narrow"]["asked"],
+                json!({"phrase": "p", "by": "SP.POP.TOTL", "n": 5})
+            );
             // a pick of the item the program fixed does not move it
-            assert_eq!(narrow(&five, &[("t1.places", 1)]).args["narrow"], filled.args["narrow"]);
+            assert_eq!(
+                narrow(&five, &[("t1.places", 1)]).args["narrow"],
+                filled.args["narrow"]
+            );
             // asked ten: the registry's cap keeps eight, the event keeps the ten asked
             let ten = narrow(&ranked("SP.POP.TOTL", Some(10), years), &[]);
             assert_eq!(ten.args["narrow"]["n"], 8);
@@ -3121,7 +3489,9 @@ mod tests {
             ..draft(world_bank(217), &[], &[])
         };
         assert_eq!(ranked_option(&unregistered), None);
-        assert!(items(1, &unregistered).iter().any(|(k, _)| k == "t1.places"));
+        assert!(items(1, &unregistered)
+            .iter()
+            .any(|(k, _)| k == "t1.places"));
         let filled = fill(&unregistered, 1, &picks(&[("t1.places", 2)]), &[], 2026).unwrap();
         assert_eq!(filled.args["narrow"]["rule"], "bottom");
         assert_eq!(filled.args["narrow"]["n"], 8);
@@ -3138,9 +3508,17 @@ mod tests {
             ..draft(world_bank(80), &[], &[])
         };
         assert_eq!(ranked_option(&few), None);
-        assert!(!fill(&few, 1, &picks(&[]), &[], 2026).unwrap().args.contains_key("narrow"));
+        assert!(!fill(&few, 1, &picks(&[]), &[], 2026)
+            .unwrap()
+            .args
+            .contains_key("narrow"));
         let none = draft(world_bank(217), &[], &[]);
-        assert_eq!(fill(&none, 1, &picks(&[("t1.places", 3)]), &[], 2026).unwrap().event["narrow"]["from"], "pick");
+        assert_eq!(
+            fill(&none, 1, &picks(&[("t1.places", 3)]), &[], 2026)
+                .unwrap()
+                .event["narrow"]["from"],
+            "pick"
+        );
     }
 
     /// n45: a ranking the question asks for beside the countries it names ("the ten most populous countries, where does
@@ -3149,7 +3527,10 @@ mod tests {
     /// and two; with no ranking asked the named ones fill the places as before.
     #[test]
     fn a_ranking_beside_named_countries_keeps_the_rankings_economies() {
-        for named in [vec![Place::Country("X3".into())], vec![Place::Country("X3".into()), Place::Country("X4".into())]] {
+        for named in [
+            vec![Place::Country("X3".into())],
+            vec![Place::Country("X3".into()), Place::Country("X4".into())],
+        ] {
             let d = Draft {
                 ranked: asked("SP.POP.TOTL", Some(5)),
                 ..draft(world_bank(217), &[], &named)
@@ -3163,14 +3544,21 @@ mod tests {
                 json!({"dimension": "country", "rule": "top", "by": "SP.POP.TOTL", "n": 5, "exclude": []})
             );
             assert!(
-                !filled.args.get("filters").and_then(Value::as_array).is_some_and(|f| f.iter().any(|f| f["dimension"] == "country")),
+                !filled
+                    .args
+                    .get("filters")
+                    .and_then(Value::as_array)
+                    .is_some_and(|f| f.iter().any(|f| f["dimension"] == "country")),
                 "every country is fetched, the tool ranks"
             );
             assert_eq!(filled.event["narrow"]["from"], "question");
             let unranked = draft(world_bank(217), &[], &named);
             // a group (more than RANK_SUBJECTS_MAX places) is the set, drawn whole as before
             let group: Vec<Place> = (0..5).map(|i| Place::Country(format!("X{i}"))).collect();
-            let g = Draft { ranked: asked("SP.POP.TOTL", Some(5)), ..draft(world_bank(217), &[], &group) };
+            let g = Draft {
+                ranked: asked("SP.POP.TOTL", Some(5)),
+                ..draft(world_bank(217), &[], &group)
+            };
             assert!(!g.named_open && ranked_option(&g).is_none());
             let filled = fill(&unranked, 1, &picks(&[]), &named, 2026).unwrap();
             assert!(!filled.args.contains_key("narrow"));
@@ -3188,15 +3576,33 @@ mod tests {
         let d = |places: &[Place]| draft(eurostat("edat_x", vec![dim("geo", &geo)]), &[], places);
         for places in [
             vec![Place::Region, Place::Country("IT".into())],
-            vec![Place::Region, Place::Country("GR".into()), Place::Country("IT".into())],
+            vec![
+                Place::Region,
+                Place::Country("GR".into()),
+                Place::Country("IT".into()),
+            ],
         ] {
             let filled = fill(&d(&places), 1, &picks(&[]), &places, 2026).unwrap();
             assert_eq!(filter(&filled, "geo").unwrap(), EU27, "{places:?}");
         }
         let eu_cn = [Place::Region, Place::Country("CN".into())];
-        assert_eq!(filter(&fill(&d(&eu_cn), 1, &picks(&[]), &eu_cn, 2026).unwrap(), "geo").unwrap(), ["CN"]);
+        assert_eq!(
+            filter(
+                &fill(&d(&eu_cn), 1, &picks(&[]), &eu_cn, 2026).unwrap(),
+                "geo"
+            )
+            .unwrap(),
+            ["CN"]
+        );
         let italy = [Place::Country("IT".into())];
-        assert_eq!(filter(&fill(&d(&italy), 1, &picks(&[]), &italy, 2026).unwrap(), "geo").unwrap(), ["IT"]);
+        assert_eq!(
+            filter(
+                &fill(&d(&italy), 1, &picks(&[]), &italy, 2026).unwrap(),
+                "geo"
+            )
+            .unwrap(),
+            ["IT"]
+        );
     }
 
     /// The nrg_bal codes of nrg_bal_s the q2 stand-in run's probe found held for DE (the metabase's 95 but GIC2020-2030,
@@ -3210,8 +3616,18 @@ mod tests {
         FC_TRA_DNAVI_E FC_TRA_PIPE_E FC_TRA_NSP_E FC_OTH_E FC_OTH_CP_E FC_OTH_HH_E FC_OTH_AF_E FC_OTH_FISH_E FC_OTH_NSP_E STATDIFF \
         GEP GHP";
     const Q2_SIEC: [&str; 12] = [
-        "TOTAL", "C0000X0350-0370", "C0350-0370", "P1000", "S2000", "G3000", "O4000XBIO", "RA000", "W6100_6220", "N900H",
-        "E7000", "H8000",
+        "TOTAL",
+        "C0000X0350-0370",
+        "C0350-0370",
+        "P1000",
+        "S2000",
+        "G3000",
+        "O4000XBIO",
+        "RA000",
+        "W6100_6220",
+        "N900H",
+        "E7000",
+        "H8000",
     ];
 
     /// q2's table as the 10-31 stand-in run's table pick held it (nrg_bal_s, cut to three geo codes), under `id`.
@@ -3251,26 +3667,61 @@ mod tests {
             let registered = parts(table, dim);
             let codes: Vec<&str> = registered.iter().map(|p| p.code.as_str()).collect();
             assert_eq!(
-                registered.iter().filter(|p| p.level == PART_LEVELS[0]).count(),
+                registered
+                    .iter()
+                    .filter(|p| p.level == PART_LEVELS[0])
+                    .count(),
                 1,
                 "{table} {dim}: one total"
             );
             for p in &registered {
-                assert!(PART_LEVELS.contains(&p.level.as_str()), "{table} {dim} {}", p.code);
-                assert_eq!(codes.iter().filter(|c| **c == p.code).count(), 1, "{table} {dim} {} once", p.code);
+                assert!(
+                    PART_LEVELS.contains(&p.level.as_str()),
+                    "{table} {dim} {}",
+                    p.code
+                );
+                assert_eq!(
+                    codes.iter().filter(|c| **c == p.code).count(),
+                    1,
+                    "{table} {dim} {} once",
+                    p.code
+                );
                 match &p.parent {
-                    None => assert_eq!(p.level, PART_LEVELS[0], "{table} {dim} {}: only the total has no parent", p.code),
-                    Some(parent) => assert!(codes.contains(&parent.as_str()), "{table} {dim} {}: parent {parent}", p.code),
+                    None => assert_eq!(
+                        p.level, PART_LEVELS[0],
+                        "{table} {dim} {}: only the total has no parent",
+                        p.code
+                    ),
+                    Some(parent) => assert!(
+                        codes.contains(&parent.as_str()),
+                        "{table} {dim} {}: parent {parent}",
+                        p.code
+                    ),
                 }
             }
             // a subtotal that overlaps the tree is read apart: no part, no parent, no group, never a part's parent
             for o in overlaps(table, dim) {
-                assert_eq!((o.parent.as_deref(), o.group.as_deref()), (None, None), "{table} {dim} {}", o.code);
-                assert!(!codes.contains(&o.code.as_str()), "{table} {dim} {}: an overlap is no part", o.code);
+                assert_eq!(
+                    (o.parent.as_deref(), o.group.as_deref()),
+                    (None, None),
+                    "{table} {dim} {}",
+                    o.code
+                );
+                assert!(
+                    !codes.contains(&o.code.as_str()),
+                    "{table} {dim} {}: an overlap is no part",
+                    o.code
+                );
             }
         }
         assert_eq!(parts("nrg_bal_peh", "siec").len(), 73);
-        assert_eq!(overlaps("nrg_bal_peh", "siec").iter().map(|p| p.code.as_str()).collect::<Vec<_>>(), ["BIOE", "FE"]);
+        assert_eq!(
+            overlaps("nrg_bal_peh", "siec")
+                .iter()
+                .map(|p| p.code.as_str())
+                .collect::<Vec<_>>(),
+            ["BIOE", "FE"]
+        );
         assert!(overlaps("nrg_bal_s", "siec").is_empty());
         assert_eq!(parts("nrg_bal_s", "siec").len(), 12);
         assert_eq!(parts("nrg_bal_s", "nrg_bal").len(), 9);
@@ -3315,7 +3766,11 @@ mod tests {
                     .filter(|c| c.parent.as_deref() == Some(p.code.as_str()))
                     .map(|c| of(&c.code, &registered, &read))
                     .sum();
-                assert!((whole - sum).abs() < 0.005, "{dim} {}: {whole} vs parts {sum}", p.code);
+                assert!(
+                    (whole - sum).abs() < 0.005,
+                    "{dim} {}: {whole} vs parts {sum}",
+                    p.code
+                );
             }
         }
     }
@@ -3326,15 +3781,36 @@ mod tests {
     /// nrg_bal_peh alone.
     #[test]
     fn the_tables_with_composition_groups_and_their_card_line() {
-        let four: Vec<String> = ["fossil", "renewable", "other", "nuclear"].iter().map(|g| g.to_string()).collect();
+        let four: Vec<String> = ["fossil", "renewable", "other", "nuclear"]
+            .iter()
+            .map(|g| g.to_string())
+            .collect();
         for t in ["nrg_bal_peh", "nrg_bal_s", "nrg_bal_c"] {
-            assert_eq!(grouped_dim(t), Some(("siec".into(), "TOTAL".into(), four.clone())), "{t}");
+            assert_eq!(
+                grouped_dim(t),
+                Some(("siec".into(), "TOTAL".into(), four.clone())),
+                "{t}"
+            );
         }
-        for none in ["nrg_cb_pem", "nrg_cb_e", "nrg_ind_ren", "SP.POP.65UP.TO.ZS@2"] {
+        for none in [
+            "nrg_cb_pem",
+            "nrg_cb_e",
+            "nrg_ind_ren",
+            "SP.POP.65UP.TO.ZS@2",
+        ] {
             assert_eq!(grouped_dim(none), None, "{none}");
         }
-        let card: Vec<Option<String>> =
-            ["nrg_ind_pehnf", "nrg_cb_pem", "nrg_ind_pehcf", "nrg_bal_peh", "nrg_ind_peh"].iter().enumerate().map(|(i, t)| parts_line(i + 1, t)).collect();
+        let card: Vec<Option<String>> = [
+            "nrg_ind_pehnf",
+            "nrg_cb_pem",
+            "nrg_ind_pehcf",
+            "nrg_bal_peh",
+            "nrg_ind_peh",
+        ]
+        .iter()
+        .enumerate()
+        .map(|(i, t)| parts_line(i + 1, t))
+        .collect();
         assert_eq!(
             card,
             [None, None, None, Some("   t4: each place's siec TOTAL splits into the registered groups fossil, renewable, other, nuclear".into()), None]
@@ -3362,10 +3838,29 @@ mod tests {
         let registered = parts("nrg_bal_peh", "siec");
         let groups = composition_groups("nrg_bal_peh", "siec").unwrap();
         let names: Vec<(&str, usize)> = groups.iter().map(|(g, m)| (g.as_str(), m.len())).collect();
-        assert_eq!(names, [("fossil", 40), ("renewable", 18), ("other", 7), ("nuclear", 1)]);
-        let leaves: Vec<&str> = groups.iter().flat_map(|(_, m)| m.iter().map(|p| p.code.as_str())).collect();
-        assert_eq!(leaves.len(), registered.iter().filter(|p| p.level == PART_LEVELS[2]).count());
-        assert!(!leaves.iter().any(|c| ["BIOE", "FE", "TOTAL", "RA000"].contains(c)));
+        assert_eq!(
+            names,
+            [
+                ("fossil", 40),
+                ("renewable", 18),
+                ("other", 7),
+                ("nuclear", 1)
+            ]
+        );
+        let leaves: Vec<&str> = groups
+            .iter()
+            .flat_map(|(_, m)| m.iter().map(|p| p.code.as_str()))
+            .collect();
+        assert_eq!(
+            leaves.len(),
+            registered
+                .iter()
+                .filter(|p| p.level == PART_LEVELS[2])
+                .count()
+        );
+        assert!(!leaves
+            .iter()
+            .any(|c| ["BIOE", "FE", "TOTAL", "RA000"].contains(c)));
         let mut sums = Vec::new();
         for geo in ["DE", "EU27_2020"] {
             let read = |code: &str| value.get(&(geo.to_string(), code.to_string())).copied();
@@ -3387,17 +3882,38 @@ mod tests {
                     .filter(|c| c.parent.as_deref() == Some(p.code.as_str()))
                     .map(|c| of(&c.code, &registered, &read))
                     .sum();
-                assert!((whole - sum).abs() <= tol, "{geo} {}: {whole} vs parts {sum}", p.code);
+                assert!(
+                    (whole - sum).abs() <= tol,
+                    "{geo} {}: {whole} vs parts {sum}",
+                    p.code
+                );
             }
-            let by_group: Vec<f64> = groups.iter().map(|(_, m)| m.iter().filter_map(|p| read(&p.code)).sum()).collect();
-            assert!((by_group.iter().sum::<f64>() - total).abs() <= tol, "{geo}: groups {by_group:?} vs TOTAL {total}");
-            sums.push((geo, by_group.iter().map(|v| (v * 1000.0).round() / 1000.0).collect::<Vec<_>>(), total));
+            let by_group: Vec<f64> = groups
+                .iter()
+                .map(|(_, m)| m.iter().filter_map(|p| read(&p.code)).sum())
+                .collect();
+            assert!(
+                (by_group.iter().sum::<f64>() - total).abs() <= tol,
+                "{geo}: groups {by_group:?} vs TOTAL {total}"
+            );
+            sums.push((
+                geo,
+                by_group
+                    .iter()
+                    .map(|v| (v * 1000.0).round() / 1000.0)
+                    .collect::<Vec<_>>(),
+                total,
+            ));
         }
         assert_eq!(
             sums,
             [
                 ("DE", vec![210282.0, 289417.0, 14310.0, 0.0], 514009.0),
-                ("EU27_2020", vec![786337.045, 1332512.227, 60339.919, 649545.843], 2828734.401)
+                (
+                    "EU27_2020",
+                    vec![786337.045, 1332512.227, 60339.919, 649545.843],
+                    2828734.401
+                )
             ]
         );
         // a table with no registered parts has no groups
@@ -3408,19 +3924,38 @@ mod tests {
         assert_eq!(
             inputs,
             [
-                ("fossil", vec!["C0000X0350-0370", "C0350-0370", "P1000", "S2000", "G3000", "O4000XBIO"]),
+                (
+                    "fossil",
+                    vec![
+                        "C0000X0350-0370",
+                        "C0350-0370",
+                        "P1000",
+                        "S2000",
+                        "G3000",
+                        "O4000XBIO"
+                    ]
+                ),
                 ("renewable", vec!["RA000"]),
-                ("other", vec!["RA130", "W6100_6220", "E7000", "H8000", "X9900", "BA100"]),
+                (
+                    "other",
+                    vec!["RA130", "W6100_6220", "E7000", "H8000", "X9900", "BA100"]
+                ),
                 ("nuclear", vec!["N900H"]),
             ]
-            .map(|(g, codes)| (g.to_string(), codes.into_iter().map(String::from).collect::<Vec<_>>()))
+            .map(|(g, codes)| (
+                g.to_string(),
+                codes.into_iter().map(String::from).collect::<Vec<_>>()
+            ))
         );
         assert_eq!(inputs.iter().map(|(_, c)| c.len()).sum::<usize>(), 14);
         for (geo, by_group, total) in &sums {
             let read = |code: &str| value.get(&(geo.to_string(), code.to_string())).copied();
             for ((g, codes), want) in inputs.iter().zip(by_group) {
                 let got: f64 = codes.iter().filter_map(|c| read(c)).sum();
-                assert!((got - want).abs() <= 1e-5 * total, "{geo} {g}: inputs {got} vs leaves {want}");
+                assert!(
+                    (got - want).abs() <= 1e-5 * total,
+                    "{geo} {g}: inputs {got} vs leaves {want}"
+                );
             }
         }
         assert!(group_inputs("nrg_x", "siec").unwrap().is_empty());
@@ -3434,11 +3969,31 @@ mod tests {
         let de = [Place::Country("DE".into())];
         let draft = draft(q2_table("nrg_bal_s"), &[], &de);
         assert_eq!(draft.breakdown, ["nrg_bal", "siec", "siec>nrg_bal"]);
-        let filled = fill(&draft, 2, &picks(&[("t2.breakdown", 2), ("t2.unit", 1)]), &de, 2026).unwrap();
-        let sectors: Vec<String> = parts("nrg_bal_s", "nrg_bal").into_iter().map(|p| p.code).collect();
+        let filled = fill(
+            &draft,
+            2,
+            &picks(&[("t2.breakdown", 2), ("t2.unit", 1)]),
+            &de,
+            2026,
+        )
+        .unwrap();
+        let sectors: Vec<String> = parts("nrg_bal_s", "nrg_bal")
+            .into_iter()
+            .map(|p| p.code)
+            .collect();
         assert_eq!(
             sectors,
-            ["FC_E", "FC_IND_E", "FC_TRA_E", "FC_OTH_E", "FC_OTH_CP_E", "FC_OTH_HH_E", "FC_OTH_AF_E", "FC_OTH_FISH_E", "FC_OTH_NSP_E"]
+            [
+                "FC_E",
+                "FC_IND_E",
+                "FC_TRA_E",
+                "FC_OTH_E",
+                "FC_OTH_CP_E",
+                "FC_OTH_HH_E",
+                "FC_OTH_AF_E",
+                "FC_OTH_FISH_E",
+                "FC_OTH_NSP_E"
+            ]
         );
         assert_eq!(
             filled.args,
@@ -3477,12 +4032,29 @@ mod tests {
         // a part the table does not list is left out and named; a table that lists not even the total is left open as before
         let mut cut = q2_table("nrg_bal_s");
         cut.dims[1].1.retain(|(c, _)| c != "FC_OTH_FISH_E");
-        let filled = fill(&draft_of_table(cut), 2, &picks(&[("t2.breakdown", 2), ("t2.unit", 1)]), &de, 2026).unwrap();
+        let filled = fill(
+            &draft_of_table(cut),
+            2,
+            &picks(&[("t2.breakdown", 2), ("t2.unit", 1)]),
+            &de,
+            2026,
+        )
+        .unwrap();
         assert_eq!(filter(&filled, "nrg_bal").unwrap().len(), 8);
-        assert_eq!(filled.event["parts"][0]["unlisted"], json!(["FC_OTH_FISH_E"]));
+        assert_eq!(
+            filled.event["parts"][0]["unlisted"],
+            json!(["FC_OTH_FISH_E"])
+        );
         let mut no_total = q2_table("nrg_bal_s");
         no_total.dims[1].1.retain(|(c, _)| c != "FC_E");
-        let filled = fill(&draft_of_table(no_total), 2, &picks(&[("t2.breakdown", 2), ("t2.unit", 1)]), &de, 2026).unwrap();
+        let filled = fill(
+            &draft_of_table(no_total),
+            2,
+            &picks(&[("t2.breakdown", 2), ("t2.unit", 1)]),
+            &de,
+            2026,
+        )
+        .unwrap();
         assert_eq!(filled.event["open"], "nrg_bal");
         assert!(filled.event.get("parts").is_none());
         assert!(filter(&filled, "nrg_bal").is_none());
@@ -3498,37 +4070,89 @@ mod tests {
     #[test]
     fn a_flow_split_fetches_the_leaves_of_both_dimensions_and_they_add_up_to_the_total() {
         let de = [Place::Country("DE".into())];
-        assert_eq!(flow_dims("nrg_bal_s"), Some(("siec".to_string(), "nrg_bal".to_string())));
+        assert_eq!(
+            flow_dims("nrg_bal_s"),
+            Some(("siec".to_string(), "nrg_bal".to_string()))
+        );
         let draft = draft(q2_table("nrg_bal_s"), &[], &de);
         assert_eq!(draft.breakdown, ["nrg_bal", "siec", "siec>nrg_bal"]);
         assert_eq!(flow_split("siec>nrg_bal"), Some(("siec", "nrg_bal")));
         assert_eq!(flow_split("siec"), None);
-        let (_, options) = items(2, &draft).into_iter().find(|(k, _)| k == "t2.breakdown").unwrap();
+        let (_, options) = items(2, &draft)
+            .into_iter()
+            .find(|(k, _)| k == "t2.breakdown")
+            .unwrap();
         assert_eq!(
             options[3],
             "flow from siec to nrg_bal: each place × 10 siec parts × 7 nrg_bal parts, the leaves under each total (no total or subtotal drawn); siec N900H left out (registered as not applicable); leave out t2.nrg_bal"
         );
         // nrg_bal is a member item (no total code) that both its own split and the flow take; siec has TOTAL, so no item
         let listed = lines(2, &draft, &items(2, &draft));
-        assert!(listed.contains(&"   t2.nrg_bal (only when t2.breakdown is not nrg_bal or siec>nrg_bal):".to_string()), "{listed:?}");
-        assert!(!listed.iter().any(|l| l.starts_with("   t2.siec")), "{listed:?}");
-        let fuels: Vec<String> = flow_parts("nrg_bal_s", "siec").into_iter().map(|p| p.code).collect();
-        let sectors: Vec<String> = flow_parts("nrg_bal_s", "nrg_bal").into_iter().map(|p| p.code).collect();
+        assert!(
+            listed.contains(
+                &"   t2.nrg_bal (only when t2.breakdown is not nrg_bal or siec>nrg_bal):"
+                    .to_string()
+            ),
+            "{listed:?}"
+        );
+        assert!(
+            !listed.iter().any(|l| l.starts_with("   t2.siec")),
+            "{listed:?}"
+        );
+        let fuels: Vec<String> = flow_parts("nrg_bal_s", "siec")
+            .into_iter()
+            .map(|p| p.code)
+            .collect();
+        let sectors: Vec<String> = flow_parts("nrg_bal_s", "nrg_bal")
+            .into_iter()
+            .map(|p| p.code)
+            .collect();
         assert_eq!(fuels, Q2_SIEC[1..].to_vec());
         let excluded = flow_excluded("nrg_bal_s").unwrap();
-        assert_eq!(excluded.iter().map(|p| (p.code.as_str(), p.excluded_from.as_deref())).collect::<Vec<_>>(), [("N900H", Some("FC_E"))]);
+        assert_eq!(
+            excluded
+                .iter()
+                .map(|p| (p.code.as_str(), p.excluded_from.as_deref()))
+                .collect::<Vec<_>>(),
+            [("N900H", Some("FC_E"))]
+        );
         let source = excluded[0].excluded_source.as_deref().unwrap();
-        for words in ["KS-HB-20-001", "https://ec.europa.eu/eurostat/documents/3217494/11099022/KS-HB-20-001-EN-N.pdf", "PDF p.26 (printed p.24)", "PDF p.16 (printed p.14)",
-            "Symbol \"Z\" means data are not applicable.", "Basis: the cell-by-cell Z flags, not a one-sentence definition."] {
+        for words in [
+            "KS-HB-20-001",
+            "https://ec.europa.eu/eurostat/documents/3217494/11099022/KS-HB-20-001-EN-N.pdf",
+            "PDF p.26 (printed p.24)",
+            "PDF p.16 (printed p.14)",
+            "Symbol \"Z\" means data are not applicable.",
+            "Basis: the cell-by-cell Z flags, not a one-sentence definition.",
+        ] {
             assert!(source.contains(words), "{words}");
         }
-        let asked: Vec<String> = flow_asked("nrg_bal_s", "siec").unwrap().into_iter().map(|p| p.code).collect();
-        assert_eq!(asked, fuels.iter().filter(|f| *f != "N900H").cloned().collect::<Vec<_>>());
+        let asked: Vec<String> = flow_asked("nrg_bal_s", "siec")
+            .unwrap()
+            .into_iter()
+            .map(|p| p.code)
+            .collect();
+        assert_eq!(
+            asked,
+            fuels
+                .iter()
+                .filter(|f| *f != "N900H")
+                .cloned()
+                .collect::<Vec<_>>()
+        );
         assert_eq!(flow_asked("nrg_bal_s", "nrg_bal").unwrap().len(), 7);
         assert!(flow_excluded("nrg_x").unwrap().is_empty());
         assert_eq!(
             sectors,
-            ["FC_IND_E", "FC_TRA_E", "FC_OTH_CP_E", "FC_OTH_HH_E", "FC_OTH_AF_E", "FC_OTH_FISH_E", "FC_OTH_NSP_E"]
+            [
+                "FC_IND_E",
+                "FC_TRA_E",
+                "FC_OTH_CP_E",
+                "FC_OTH_HH_E",
+                "FC_OTH_AF_E",
+                "FC_OTH_FISH_E",
+                "FC_OTH_NSP_E"
+            ]
         );
         let answer = picks(&[("t2.breakdown", 4), ("t2.unit", 1), ("t2.years", 1)]);
         let filled = fill(&draft, 2, &answer, &de, 2026).unwrap();
@@ -3545,36 +4169,66 @@ mod tests {
         assert_eq!(filled.event["open"], Value::Null);
         assert_eq!(filled.event["breakdown"], "siec>nrg_bal");
         assert_eq!(filled.event["estimate"], 70);
-        assert_eq!(filled.event["flow"]["pairs"], json!({"registered": 77, "excluded": 7, "asked": 70}));
+        assert_eq!(
+            filled.event["flow"]["pairs"],
+            json!({"registered": 77, "excluded": 7, "asked": 70})
+        );
         assert_eq!(
             filled.event["flow"]["excluded"],
             json!([{"dimension": "siec", "code": "N900H", "from": "FC_E", "pairs": 7, "source": source}])
         );
-        for (k, v) in [("source", "siec"), ("target", "nrg_bal"), ("from", PARTS_SOURCE)] {
+        for (k, v) in [
+            ("source", "siec"),
+            ("target", "nrg_bal"),
+            ("from", PARTS_SOURCE),
+        ] {
             assert_eq!(filled.event["flow"][k], v);
         }
         assert_eq!(filled.event["parts"][0]["dimension"], "nrg_bal");
         assert_eq!(filled.event["parts"][0]["flow"], "target");
-        assert_eq!(filled.event["parts"][0]["totals"], json!(["FC_E", "FC_OTH_E"]));
+        assert_eq!(
+            filled.event["parts"][0]["totals"],
+            json!(["FC_E", "FC_OTH_E"])
+        );
         assert_eq!(filled.event["parts"][1]["dimension"], "siec");
         assert_eq!(filled.event["parts"][1]["flow"], "source");
         assert_eq!(filled.event["parts"][1]["totals"], json!(["TOTAL"]));
         let shape = predicted_shape(&draft, 2, &answer, &de, 2026, &|_| Some(true)).unwrap();
-        assert_eq!(shape.official_flow, Some(("siec".to_string(), "nrg_bal".to_string())));
-        let members: Vec<(&str, usize)> = shape.dims.iter().map(|d| (d.dim.as_str(), d.members)).collect();
+        assert_eq!(
+            shape.official_flow,
+            Some(("siec".to_string(), "nrg_bal".to_string()))
+        );
+        let members: Vec<(&str, usize)> = shape
+            .dims
+            .iter()
+            .map(|d| (d.dim.as_str(), d.members))
+            .collect();
         assert_eq!(members, [("nrg_bal", 7), ("siec", 10)]);
         assert!(shape.dims.iter().map(|d| d.members).product::<usize>() <= MAX_CHART_ROWS);
         // a split by one dimension reports no flow
-        let one = predicted_shape(&draft, 2, &picks(&[("t2.breakdown", 3), ("t2.unit", 1), ("t2.years", 1)]), &de, 2026, &|_| Some(true));
+        let one = predicted_shape(
+            &draft,
+            2,
+            &picks(&[("t2.breakdown", 3), ("t2.unit", 1), ("t2.years", 1)]),
+            &de,
+            2026,
+            &|_| Some(true),
+        );
         assert_eq!(one.unwrap().official_flow, None);
         // a table that leaves one leaf out is offered no flow, and a flow answer for it is refused, not short of the total
         let mut cut = q2_table("nrg_bal_s");
         cut.dims[1].1.retain(|(c, _)| c != "FC_OTH_FISH_E");
         let short = draft_of_table(cut);
         assert_eq!(short.breakdown, ["nrg_bal", "siec"]);
-        let forced = Draft { breakdown: draft.breakdown.clone(), ..short };
+        let forced = Draft {
+            breakdown: draft.breakdown.clone(),
+            ..short
+        };
         let refused = fill(&forced, 2, &answer, &de, 2026).unwrap_err();
-        assert!(refused.contains("does not list every registered leaf of nrg_bal"), "{refused}");
+        assert!(
+            refused.contains("does not list every registered leaf of nrg_bal"),
+            "{refused}"
+        );
         // On the DE 2024 fixture (KTOE): the 77 registered leaf pairs hold 69 rows (no N900H row: the registry's exclusion
         // stands on the data too; no FC_TRA_E x H8000 row), 32 of them non-zero, and their sum is TOTAL at FC_E within
         // classify's tolerance.
@@ -3594,11 +4248,17 @@ mod tests {
             .filter_map(|pair| value.get(&pair).copied())
             .collect();
         assert_eq!(flows.len(), 69);
-        assert!(!value.keys().any(|(_, siec)| siec == "N900H"), "no row of an excluded code");
+        assert!(
+            !value.keys().any(|(_, siec)| siec == "N900H"),
+            "no row of an excluded code"
+        );
         assert_eq!(flows.iter().filter(|v| **v != 0.0).count(), 32);
         let total = value[&("FC_E".to_string(), "TOTAL".to_string())];
         let sum: f64 = flows.iter().sum();
-        assert!((sum - total).abs() <= crate::classify::TOLERANCE * total, "flows {sum} vs total {total}");
+        assert!(
+            (sum - total).abs() <= crate::classify::TOLERANCE * total,
+            "flows {sum} vs total {total}"
+        );
     }
 
     fn draft_of_table(table: TableMeta) -> Draft {
@@ -3613,24 +4273,89 @@ mod tests {
     fn a_dataset_kept_to_a_presentation_tables_codes_drafts_as_that_table() {
         let dataset = eurostat(
             "demo_pjanind",
-            vec![dim("geo", &["DE", "FR"]), dim("indic_de", &["MEDAGEPOP", "PC_Y0_14", "PC_Y65_MAX", "DEPRATIO1"]), dim("unit", &["PC", "YR"])],
+            vec![
+                dim("geo", &["DE", "FR"]),
+                dim(
+                    "indic_de",
+                    &["MEDAGEPOP", "PC_Y0_14", "PC_Y65_MAX", "DEPRATIO1"],
+                ),
+                dim("unit", &["PC", "YR"]),
+            ],
         );
         let de = [Place::Country("DE".into())];
-        assert_eq!(draft_kept(dataset.clone(), &[], &[], &de), draft(dataset.clone(), &[], &de));
-        let keep = |codes: &[&str]| vec![("indic_de".to_string(), codes.iter().map(|c| c.to_string()).collect::<Vec<_>>())];
+        assert_eq!(
+            draft_kept(dataset.clone(), &[], &[], &de),
+            draft(dataset.clone(), &[], &de)
+        );
+        let keep = |codes: &[&str]| {
+            vec![(
+                "indic_de".to_string(),
+                codes.iter().map(|c| c.to_string()).collect::<Vec<_>>(),
+            )]
+        };
         let one = draft_kept(dataset.clone(), &keep(&["PC_Y65_MAX"]), &[], &de);
-        let codes = |d: &Draft, dim: &str| d.table.dims.iter().find(|(n, _)| n == dim).map(|(_, c)| c.iter().map(|(x, _)| x.clone()).collect::<Vec<_>>()).unwrap();
-        assert_eq!((codes(&one, "indic_de"), codes(&one, "geo").len(), one.kept.clone()), (vec!["PC_Y65_MAX".to_string()], 2, vec!["indic_de".to_string()]));
-        assert!(one.members.iter().all(|(dim, _, _)| dim != "indic_de") && !one.breakdown.contains(&"indic_de".to_string()), "{one:?}");
+        let codes = |d: &Draft, dim: &str| {
+            d.table
+                .dims
+                .iter()
+                .find(|(n, _)| n == dim)
+                .map(|(_, c)| c.iter().map(|(x, _)| x.clone()).collect::<Vec<_>>())
+                .unwrap()
+        };
+        assert_eq!(
+            (
+                codes(&one, "indic_de"),
+                codes(&one, "geo").len(),
+                one.kept.clone()
+            ),
+            (
+                vec!["PC_Y65_MAX".to_string()],
+                2,
+                vec!["indic_de".to_string()]
+            )
+        );
+        assert!(
+            one.members.iter().all(|(dim, _, _)| dim != "indic_de")
+                && !one.breakdown.contains(&"indic_de".to_string()),
+            "{one:?}"
+        );
         // a split by the kept dimension: its kept codes only
-        let two = draft_kept(dataset.clone(), &keep(&["PC_Y0_14", "PC_Y65_MAX"]), &[], &de);
-        let at = two.breakdown.iter().position(|d| d == "indic_de").expect("indic_de is a breakdown") + 2;
+        let two = draft_kept(
+            dataset.clone(),
+            &keep(&["PC_Y0_14", "PC_Y65_MAX"]),
+            &[],
+            &de,
+        );
+        let at = two
+            .breakdown
+            .iter()
+            .position(|d| d == "indic_de")
+            .expect("indic_de is a breakdown")
+            + 2;
         let filled = fill(&two, 1, &picks(&[("t1.breakdown", at)]), &de, 2026).unwrap();
-        let split = filled.args["filters"].as_array().unwrap().iter().find(|f| f["dimension"] == "indic_de").cloned();
-        assert_eq!(split.map(|f| f["values"].clone()), Some(serde_json::json!(["PC_Y0_14", "PC_Y65_MAX"])), "{:?}", filled.args);
+        let split = filled.args["filters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["dimension"] == "indic_de")
+            .cloned();
+        assert_eq!(
+            split.map(|f| f["values"].clone()),
+            Some(serde_json::json!(["PC_Y0_14", "PC_Y65_MAX"])),
+            "{:?}",
+            filled.args
+        );
         // re-review 11-15: the split dimension is in the predicted shape once, as the presentation table's would be
-        let shape = predicted_shape(&two, 1, &picks(&[("t1.breakdown", at)]), &de, 2026, &|_| None).unwrap();
-        assert_eq!(shape.dims.iter().filter(|d| d.dim == "indic_de").count(), 1, "{:?}", shape.dims);
+        let shape = predicted_shape(&two, 1, &picks(&[("t1.breakdown", at)]), &de, 2026, &|_| {
+            None
+        })
+        .unwrap();
+        assert_eq!(
+            shape.dims.iter().filter(|d| d.dim == "indic_de").count(),
+            1,
+            "{:?}",
+            shape.dims
+        );
         // the probe left none of the kept codes: the dimension is left as it is
         let gone = draft_kept(dataset, &keep(&["PC_Y15_64"]), &[], &de);
         assert!(gone.kept.is_empty() && codes(&gone, "indic_de").len() == 4);
@@ -3648,9 +4373,21 @@ mod tests {
         assert_eq!(draft.breakdown, ["nrg_bal", "siec"]);
         let registered = super::draft(q2_table("nrg_bal_s"), &[], &de);
         let mut options = items(2, &registered);
-        options.iter_mut().find(|(k, _)| k == "t2.breakdown").unwrap().1.pop();
+        options
+            .iter_mut()
+            .find(|(k, _)| k == "t2.breakdown")
+            .unwrap()
+            .1
+            .pop();
         assert_eq!(items(2, &draft), options);
-        let filled = fill(&draft, 2, &picks(&[("t2.breakdown", 2), ("t2.unit", 1)]), &de, 2026).unwrap();
+        let filled = fill(
+            &draft,
+            2,
+            &picks(&[("t2.breakdown", 2), ("t2.unit", 1)]),
+            &de,
+            2026,
+        )
+        .unwrap();
         // the run's next_params args, with only the dataset id changed
         let run = json!({"dataset": "nrg_x", "filters": [{"dimension": "freq", "values": ["A"]},
             {"dimension": "siec", "values": ["TOTAL"]}, {"dimension": "unit", "values": ["KTOE"]}, {"dimension": "geo", "values": ["DE"]}],
@@ -3675,31 +4412,63 @@ mod tests {
         let de = [Place::Country("DE".into())];
         let listed = include_str!("../scripts/fixtures/data_prepare/nrg_bal_c_codes.tsv");
         let of = |d: &str| -> Vec<&str> {
-            listed.lines().filter(|l| !l.starts_with('#')).skip(1).filter_map(|l| l.split_once('\t')).filter(|(x, _)| *x == d).map(|(_, c)| c).collect()
+            listed
+                .lines()
+                .filter(|l| !l.starts_with('#'))
+                .skip(1)
+                .filter_map(|l| l.split_once('\t'))
+                .filter(|(x, _)| *x == d)
+                .map(|(_, c)| c)
+                .collect()
         };
         let (nrg_bal, siec) = (of("nrg_bal"), of("siec"));
         assert_eq!((nrg_bal.len(), siec.len()), (142, 72));
         let table = eurostat(
             "nrg_bal_c",
-            vec![dim("geo", &["EU27_2020", "DE", "FR"]), dim("nrg_bal", &nrg_bal), dim("siec", &siec), dim("unit", &["KTOE", "GWH", "TJ"])],
+            vec![
+                dim("geo", &["EU27_2020", "DE", "FR"]),
+                dim("nrg_bal", &nrg_bal),
+                dim("siec", &siec),
+                dim("unit", &["KTOE", "GWH", "TJ"]),
+            ],
         );
         let draft = draft(table, &[], &de);
         assert_eq!(draft.breakdown, ["nrg_bal", "siec", "siec>nrg_bal"]);
-        let filled = fill(&draft, 1, &picks(&[("t1.breakdown", 2), ("t1.unit", 1)]), &de, 2026).unwrap();
-        let sectors: Vec<String> = parts("nrg_bal_c", "nrg_bal").into_iter().map(|p| p.code).collect();
+        let filled = fill(
+            &draft,
+            1,
+            &picks(&[("t1.breakdown", 2), ("t1.unit", 1)]),
+            &de,
+            2026,
+        )
+        .unwrap();
+        let sectors: Vec<String> = parts("nrg_bal_c", "nrg_bal")
+            .into_iter()
+            .map(|p| p.code)
+            .collect();
         assert_eq!(filter(&filled, "nrg_bal").unwrap(), sectors);
         assert_eq!(filled.event["open"], Value::Null);
         assert_eq!(filled.event["estimate"], 90);
         assert_eq!(filled.event["parts"][0]["from_codes"], 142);
         assert_eq!(filled.event["parts"][0]["unlisted"], json!([]));
         // the flow: 10 x 7 leaves for the latest year, none open, the family's exclusion read from the same row (N900H)
-        let flow = fill(&draft, 1, &picks(&[("t1.breakdown", 4), ("t1.unit", 1), ("t1.years", 1)]), &de, 2026).unwrap();
+        let flow = fill(
+            &draft,
+            1,
+            &picks(&[("t1.breakdown", 4), ("t1.unit", 1), ("t1.years", 1)]),
+            &de,
+            2026,
+        )
+        .unwrap();
         assert_eq!(filter(&flow, "siec").unwrap().len(), 10);
         assert!(!filter(&flow, "siec").unwrap().iter().any(|c| c == "N900H"));
         assert_eq!(filter(&flow, "nrg_bal").unwrap().len(), 7);
         assert_eq!(flow.event["open"], Value::Null);
         assert_eq!(flow.event["estimate"], 70);
-        assert_eq!(flow.event["flow"]["pairs"], json!({"registered": 77, "excluded": 7, "asked": 70}));
+        assert_eq!(
+            flow.event["flow"]["pairs"],
+            json!({"registered": 77, "excluded": 7, "asked": 70})
+        );
         assert_eq!(flow.event["flow"]["excluded"][0]["code"], "N900H");
         // the run's DE 2024 sector rows
         let fixture = include_str!("../scripts/fixtures/data_prepare/nrg_bal_c_DE_2024_TOTAL.tsv");
@@ -3712,7 +4481,10 @@ mod tests {
                 (f[0], f[2].parse().unwrap())
             })
             .collect();
-        let leaves: f64 = flow_parts("nrg_bal_c", "nrg_bal").iter().map(|p| value[p.code.as_str()]).sum();
+        let leaves: f64 = flow_parts("nrg_bal_c", "nrg_bal")
+            .iter()
+            .map(|p| value[p.code.as_str()])
+            .sum();
         let other: f64 = parts("nrg_bal_c", "nrg_bal")
             .iter()
             .filter(|p| p.parent.as_deref() == Some("FC_OTH_E"))
@@ -3731,11 +4503,28 @@ mod tests {
             .collect();
         let fuels = flow_parts("nrg_bal_c", "siec");
         assert_eq!(fuels.len(), 11);
-        assert_eq!(fuels.iter().filter(|p| !by_fuel.contains_key(p.code.as_str())).map(|p| p.code.as_str()).collect::<Vec<_>>(), ["N900H"]);
-        let fuel_leaves: f64 = fuels.iter().filter_map(|p| by_fuel.get(p.code.as_str())).sum();
+        assert_eq!(
+            fuels
+                .iter()
+                .filter(|p| !by_fuel.contains_key(p.code.as_str()))
+                .map(|p| p.code.as_str())
+                .collect::<Vec<_>>(),
+            ["N900H"]
+        );
+        let fuel_leaves: f64 = fuels
+            .iter()
+            .filter_map(|p| by_fuel.get(p.code.as_str()))
+            .sum();
         assert_eq!(by_fuel["TOTAL"], value["FC_E"]);
-        for (whole, sum) in [(value["FC_E"], leaves), (value["FC_OTH_E"], other), (by_fuel["TOTAL"], fuel_leaves)] {
-            assert!((whole - sum).abs() <= crate::classify::TOLERANCE * whole, "{whole} vs parts {sum}");
+        for (whole, sum) in [
+            (value["FC_E"], leaves),
+            (value["FC_OTH_E"], other),
+            (by_fuel["TOTAL"], fuel_leaves),
+        ] {
+            assert!(
+                (whole - sum).abs() <= crate::classify::TOLERANCE * whole,
+                "{whole} vs parts {sum}"
+            );
         }
     }
 }

@@ -69,7 +69,9 @@ pub fn table_id(t: &str) -> bool {
     // not ruled further (the catalogue's World Bank ids hold lower case, e.g. account.t.d.1), so "cities.csv@2" has
     // the shape of one: what keeps a file's name off a page is leaf_refs, which takes only the request's own table ids
     id.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
-        && id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-') || (dot && c == '.'))
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-') || (dot && c == '.'))
         && id.split('.').all(|part| !part.is_empty())
 }
 
@@ -244,7 +246,10 @@ impl Exact {
         }
         let g = gcd(n.unsigned_abs(), d.unsigned_abs()).max(1) as i128;
         let s = if d < 0 { -1 } else { 1 };
-        Some(Exact { n: s * (n / g), d: s * (d / g) })
+        Some(Exact {
+            n: s * (n / g),
+            d: s * (d / g),
+        })
     }
     fn int(k: i128) -> Exact {
         Exact { n: k, d: 1 }
@@ -256,17 +261,27 @@ impl Exact {
             return None;
         }
         let t = format!("{x}");
-        let (neg, t) = t.strip_prefix('-').map_or((false, t.as_str()), |r| (true, r));
+        let (neg, t) = t
+            .strip_prefix('-')
+            .map_or((false, t.as_str()), |r| (true, r));
         let (whole, frac) = t.split_once('.').unwrap_or((t, ""));
         let digits: i128 = format!("{whole}{frac}").parse().ok()?;
         let d = 10i128.checked_pow(u32::try_from(frac.len()).ok()?)?;
         Exact::new(if neg { -digits } else { digits }, d)
     }
     fn add(self, o: Exact) -> Option<Exact> {
-        Exact::new(self.n.checked_mul(o.d)?.checked_add(o.n.checked_mul(self.d)?)?, self.d.checked_mul(o.d)?)
+        Exact::new(
+            self.n
+                .checked_mul(o.d)?
+                .checked_add(o.n.checked_mul(self.d)?)?,
+            self.d.checked_mul(o.d)?,
+        )
     }
     fn sub(self, o: Exact) -> Option<Exact> {
-        self.add(Exact { n: o.n.checked_neg()?, d: o.d })
+        self.add(Exact {
+            n: o.n.checked_neg()?,
+            d: o.d,
+        })
     }
     fn mul(self, o: Exact) -> Option<Exact> {
         Exact::new(self.n.checked_mul(o.n)?, self.d.checked_mul(o.d)?)
@@ -275,7 +290,10 @@ impl Exact {
         Exact::new(self.n.checked_mul(o.d)?, self.d.checked_mul(o.n)?)
     }
     fn abs(self) -> Exact {
-        Exact { n: self.n.abs(), d: self.d }
+        Exact {
+            n: self.n.abs(),
+            d: self.d,
+        }
     }
 }
 
@@ -291,7 +309,11 @@ fn gcd(mut a: u128, mut b: u128) -> u128 {
 /// fact whose reads or op cannot be worked out exactly keeps none, and so does every fact made from it.
 fn exact_values(facts: &mut [Fact], rows: &[Row]) {
     let row: BTreeMap<&str, f64> = rows.iter().map(|r| (r.src.as_str(), r.value)).collect();
-    let sum = |reads: &[String]| reads.iter().try_fold(Exact::int(0), |s, src| s.add(Exact::of(*row.get(src.as_str())?)?));
+    let sum = |reads: &[String]| {
+        reads.iter().try_fold(Exact::int(0), |s, src| {
+            s.add(Exact::of(*row.get(src.as_str())?)?)
+        })
+    };
     let mut known: BTreeMap<String, Exact> = BTreeMap::new();
     // a fact of two facts may come before them in declared order: pass again until nothing more is worked out
     loop {
@@ -300,17 +322,25 @@ fn exact_values(facts: &mut [Fact], rows: &[Row]) {
             let of = |k: &str| k.strip_prefix(FACT_SRC).and_then(|k| known.get(k)).copied();
             f.exact = match f.op.as_str() {
                 "value" | "peak" | "low" | "last" | "rest" if !f.reads.is_empty() => sum(&f.reads),
-                "mean" if !f.reads.is_empty() => sum(&f.reads).and_then(|s| s.div(Exact::int(f.reads.len() as i128))),
-                "count" | "n" | "position" | "zeros" | "unrowed" | "excluded" if f.v.fract() == 0.0 => Some(Exact::int(f.v as i128)),
-                "share" | "times" | "change" | "minus" | "plus" if f.reads.len() == 2 => match (of(&f.reads[0]), of(&f.reads[1])) {
-                    (Some(a), Some(b)) => match f.op.as_str() {
-                        "share" | "times" => a.div(b),
-                        "change" => a.div(b).and_then(|q| q.sub(Exact::int(1))),
-                        "minus" => a.sub(b),
-                        _ => a.add(b),
-                    },
-                    _ => None,
-                },
+                "mean" if !f.reads.is_empty() => {
+                    sum(&f.reads).and_then(|s| s.div(Exact::int(f.reads.len() as i128)))
+                }
+                "count" | "n" | "position" | "zeros" | "unrowed" | "excluded"
+                    if f.v.fract() == 0.0 =>
+                {
+                    Some(Exact::int(f.v as i128))
+                }
+                "share" | "times" | "change" | "minus" | "plus" if f.reads.len() == 2 => {
+                    match (of(&f.reads[0]), of(&f.reads[1])) {
+                        (Some(a), Some(b)) => match f.op.as_str() {
+                            "share" | "times" => a.div(b),
+                            "change" => a.div(b).and_then(|q| q.sub(Exact::int(1))),
+                            "minus" => a.sub(b),
+                            _ => a.add(b),
+                        },
+                        _ => None,
+                    }
+                }
                 _ => None,
             };
             if let Some(e) = f.exact {
@@ -328,7 +358,8 @@ fn exact_values(facts: &mut [Fact], rows: &[Row]) {
 fn fixed_exact(x: Exact, dec: usize, sep: bool) -> Option<String> {
     let sign = if x.n < 0 { "-" } else { "" };
     let a = x.abs();
-    let scaled = a.n.checked_mul(10i128.checked_pow(u32::try_from(dec).ok()?)?)?;
+    let scaled =
+        a.n.checked_mul(10i128.checked_pow(u32::try_from(dec).ok()?)?)?;
     let (mut q, r) = (scaled / a.d, scaled % a.d);
     // r / d against one half: 2r against d
     let twice = r.checked_mul(2)?;
@@ -338,7 +369,11 @@ fn fixed_exact(x: Exact, dec: usize, sep: bool) -> Option<String> {
     let digits = format!("{q:0>width$}", width = dec + 1);
     let (int, frac) = digits.split_at(digits.len() - dec);
     let int = if sep { thousands(int) } else { int.to_string() };
-    Some(if dec == 0 { format!("{sign}{int}") } else { format!("{sign}{int}.{frac}") })
+    Some(if dec == 0 {
+        format!("{sign}{int}")
+    } else {
+        format!("{sign}{int}.{frac}")
+    })
 }
 
 /// Whole digits with a comma between thousands.
@@ -457,7 +492,8 @@ fn one(
         n: None,
         who: Vec::new(),
         fmt: String::new(),
-        reads: Vec::new(), exact: None
+        reads: Vec::new(),
+        exact: None,
     };
     if matches!(op, "share" | "change" | "times" | "minus" | "plus") {
         let mut of = |side: &str| -> Result<f64, String> {
@@ -470,7 +506,9 @@ fn one(
         };
         // owner 11-06: a difference or ratio is computed from the raw values, never from its operands as printed
         if q.get("of_printed").is_some() {
-            return Err(format!("{key}: of_printed is refused, a difference is computed from the raw values"));
+            return Err(format!(
+                "{key}: of_printed is refused, a difference is computed from the raw values"
+            ));
         }
         let (a, b) = (of("a")?, of("b")?);
         if b == 0.0 && matches!(op, "share" | "change" | "times") {
@@ -529,7 +567,10 @@ fn one(
             .map(String::as_str)
             .collect();
         if !gone.is_empty() {
-            return Err(format!("{key}: count has no row of b at {time} for {}", gone.join(", ")));
+            return Err(format!(
+                "{key}: count has no row of b at {time} for {}",
+                gone.join(", ")
+            ));
         }
         let mut hit: Vec<String> = members
             .iter()
@@ -652,7 +693,10 @@ fn one(
         // how many of the selected rows hold 0 at `time`: the flows a picture leaves out as zero, each one read
         "zeros" => {
             let time = word(key, &q["time"], "time")?;
-            let at: Vec<&Row> = picked.into_iter().filter(|r| r.time == time && r.value == 0.0).collect();
+            let at: Vec<&Row> = picked
+                .into_iter()
+                .filter(|r| r.time == time && r.value == 0.0)
+                .collect();
             if at.is_empty() {
                 return Err(format!("{key}: zeros has no row of 0 at {time}"));
             }
@@ -666,22 +710,42 @@ fn one(
             let time = word(key, &q["time"], "time")?;
             let words = |v: &Value, what: &str| -> Result<Vec<String>, String> {
                 v.as_array()
-                    .map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect::<Vec<_>>())
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(Value::as_str)
+                            .map(str::to_string)
+                            .collect::<Vec<_>>()
+                    })
                     .filter(|w| Some(w.len()) == v.as_array().map(Vec::len))
                     .ok_or_else(|| format!("{key}: unrowed has no list of words as {what}"))
             };
             let by = words(&q["by"], "by")?;
-            let codes = q["codes"].as_array().ok_or_else(|| format!("{key}: unrowed has no lists as codes"))?;
+            let codes = q["codes"]
+                .as_array()
+                .ok_or_else(|| format!("{key}: unrowed has no lists as codes"))?;
             let ([a, b], [ca, cb]) = (by.as_slice(), codes.as_slice()) else {
-                return Err(format!("{key}: unrowed takes two dimensions and a code list for each"));
+                return Err(format!(
+                    "{key}: unrowed takes two dimensions and a code list for each"
+                ));
             };
             let (ca, cb) = (words(ca, "codes")?, words(cb, "codes")?);
             let held = |x: &str, y: &str| {
-                picked.iter().any(|r| r.time == time && r.dims.get(a).map(String::as_str) == Some(x) && r.dims.get(b).map(String::as_str) == Some(y))
+                picked.iter().any(|r| {
+                    r.time == time
+                        && r.dims.get(a).map(String::as_str) == Some(x)
+                        && r.dims.get(b).map(String::as_str) == Some(y)
+                })
             };
-            let who: Vec<String> = ca.iter().flat_map(|x| cb.iter().map(move |y| (x, y))).filter(|(x, y)| !held(x, y)).map(|(x, y)| format!("{x}>{y}")).collect();
+            let who: Vec<String> = ca
+                .iter()
+                .flat_map(|x| cb.iter().map(move |y| (x, y)))
+                .filter(|(x, y)| !held(x, y))
+                .map(|(x, y)| format!("{x}>{y}"))
+                .collect();
             if who.is_empty() {
-                return Err(format!("{key}: unrowed finds a row of every pair at {time}"));
+                return Err(format!(
+                    "{key}: unrowed finds a row of every pair at {time}"
+                ));
             }
             f.v = who.len() as f64;
             f.n = Some(who.len());
@@ -692,18 +756,30 @@ fn one(
         // would contradict the registry) or when it names none
         "excluded" => {
             let time = word(key, &q["time"], "time")?;
-            let by: Vec<&str> = q["by"].as_array().map(|a| a.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
+            let by: Vec<&str> = q["by"]
+                .as_array()
+                .map(|a| a.iter().filter_map(Value::as_str).collect())
+                .unwrap_or_default();
             let [a, b] = by.as_slice() else {
                 return Err(format!("{key}: excluded takes two dimensions as by"));
             };
             let mut who = Vec::new();
             for pair in q["pairs"].as_array().into_iter().flatten() {
                 let (Some(x), Some(y)) = (pair[0].as_str(), pair[1].as_str()) else {
-                    return Err(format!("{key}: excluded has a pair that is no two codes: {pair}"));
+                    return Err(format!(
+                        "{key}: excluded has a pair that is no two codes: {pair}"
+                    ));
                 };
-                let at = |r: &&&Row| r.time == time && r.dims.get(*a).map(String::as_str) == Some(x) && r.dims.get(*b).map(String::as_str) == Some(y);
+                let at = |r: &&&Row| {
+                    r.time == time
+                        && r.dims.get(*a).map(String::as_str) == Some(x)
+                        && r.dims.get(*b).map(String::as_str) == Some(y)
+                };
                 if let Some(r) = picked.iter().find(at) {
-                    return Err(format!("{key}: the registry leaves {x}>{y} out, and the row {} holds it", r.src));
+                    return Err(format!(
+                        "{key}: the registry leaves {x}>{y} out, and the row {} holds it",
+                        r.src
+                    ));
                 }
                 who.push(format!("{x}>{y}"));
             }
@@ -743,7 +819,10 @@ fn one(
             let code = word(key, &q["code"], "code")?;
             let mut at: Vec<(&String, f64)> = Vec::new();
             for r in picked.into_iter().filter(|r| r.time == time) {
-                let c = r.dims.get(&by).ok_or_else(|| format!("{key}: the row {} has no {by}", r.src))?;
+                let c = r
+                    .dims
+                    .get(&by)
+                    .ok_or_else(|| format!("{key}: the row {} has no {by}", r.src))?;
                 let v = finite(key, r)?;
                 match at.iter_mut().find(|(k, _)| *k == c) {
                     Some((_, s)) => *s += v,
@@ -751,7 +830,11 @@ fn one(
                 }
                 f.reads.push(r.src.clone());
             }
-            let own = at.iter().find(|(c, _)| **c == code).map(|(_, v)| *v).ok_or_else(|| format!("{key}: position has no row of {code} at {time}"))?;
+            let own = at
+                .iter()
+                .find(|(c, _)| **c == code)
+                .map(|(_, v)| *v)
+                .ok_or_else(|| format!("{key}: position has no row of {code} at {time}"))?;
             f.v = (1 + at.iter().filter(|(_, v)| *v > own).count()) as f64;
             f.n = Some(at.len());
         }
@@ -790,7 +873,10 @@ pub(crate) fn printed_value(x: f64, scale: f64, dec: usize) -> Option<f64> {
     if !x.is_finite() || scale == 0.0 {
         return None;
     }
-    format!("{:.dec$}", x * scale).parse::<f64>().ok().map(|p| p / scale)
+    format!("{:.dec$}", x * scale)
+        .parse::<f64>()
+        .ok()
+        .map(|p| p / scale)
 }
 
 fn member_fmt(q: &Value, code: &str, fmt: &str) -> String {
@@ -849,7 +935,8 @@ fn family(key: &str, q: &Value, spec: &Spec, rows: &[Row]) -> Result<Vec<Fact>, 
                 n: None,
                 who: Vec::new(),
                 fmt: member_fmt(q, &code, &fmt),
-                reads: rs.iter().map(|r| r.src.clone()).collect(), exact: None
+                reads: rs.iter().map(|r| r.src.clone()).collect(),
+                exact: None,
             })
         })
         .collect()
@@ -874,9 +961,13 @@ fn minus_family(
             .get(k.as_str())
             .filter(|of| of["each"].as_str() == Some(each.as_str()))
             .ok_or_else(|| format!("{key}: minus names no family over {each} as {s} ({k})"))?;
-        let members = family(&k, of, spec, rows).map_err(|e| format!("{key}: {s} {k} fails ({e})"))?;
+        let members =
+            family(&k, of, spec, rows).map_err(|e| format!("{key}: {s} {k} fails ({e})"))?;
         // a member's key is <family>.<code>
-        let codes = members.into_iter().map(|f| (f.key[k.len() + 1..].to_string(), f.v)).collect();
+        let codes = members
+            .into_iter()
+            .map(|f| (f.key[k.len() + 1..].to_string(), f.v))
+            .collect();
         Ok((k, codes))
     };
     let ((a, of_a), (b, of_b)) = (side("a")?, side("b")?);
@@ -898,7 +989,11 @@ fn minus_family(
                 n: None,
                 who: Vec::new(),
                 fmt: member_fmt(q, &code, &fmt),
-                reads: vec![format!("{FACT_SRC}{a}.{code}"), format!("{FACT_SRC}{b}.{code}")], exact: None
+                reads: vec![
+                    format!("{FACT_SRC}{a}.{code}"),
+                    format!("{FACT_SRC}{b}.{code}"),
+                ],
+                exact: None,
             })
         })
         .collect()
@@ -972,7 +1067,11 @@ fn sum(key: &str, rows: &[&Row]) -> Result<f64, String> {
 pub fn text(f: &Fact, fmts: &Value, bare: bool) -> Result<String, String> {
     Ok(match f.fmt.as_str() {
         "pct" => {
-            let s = match f.exact.and_then(|e| e.abs().mul(Exact::int(100))).and_then(|e| fixed_exact(e, 0, false)) {
+            let s = match f
+                .exact
+                .and_then(|e| e.abs().mul(Exact::int(100)))
+                .and_then(|e| fixed_exact(e, 0, false))
+            {
                 Some(s) => s,
                 None => fixed(f.v.abs() * 100.0, 0, false),
             };
@@ -1135,7 +1234,11 @@ pub fn num(f: &Fact, fmts: &Value, part: Part) -> Result<Num, String> {
             Num {
                 src: src(&format!(".t.{tail}")),
                 value: f64::from(v),
-                text: if part == Part::Half { HALF_WORDS[v as usize - 1].to_string() } else { v.to_string() },
+                text: if part == Part::Half {
+                    HALF_WORDS[v as usize - 1].to_string()
+                } else {
+                    v.to_string()
+                },
             }
         }
     })
@@ -1153,9 +1256,17 @@ pub fn display(f: &Fact, fmts: &Value) -> Result<Option<Num>, String> {
     if !x.is_finite() {
         return Ok(None);
     }
-    let whole = if x.abs() >= 1.0 { fixed(x.abs().trunc(), 0, false).len() } else { 0 };
+    let whole = if x.abs() >= 1.0 {
+        fixed(x.abs().trunc(), 0, false).len()
+    } else {
+        0
+    };
     let places = dec.min(3usize.saturating_sub(whole));
-    Ok((places < dec).then(|| Num { src: format!("{FACT_SRC}{}.r", f.key), value: f.v, text: rounded(f, scale, places, true) }))
+    Ok((places < dec).then(|| Num {
+        src: format!("{FACT_SRC}{}.r", f.key),
+        value: f.v,
+        text: rounded(f, scale, places, true),
+    }))
 }
 
 /// The ticks of an axis from 0 to a fact (0 left out), in the fact's format without its unit: steps of 1, 2, 5 or 10
@@ -1274,7 +1385,9 @@ pub fn halves(table: &str, rows: &[Row]) -> Vec<Num> {
     for r in rows.iter().filter(|r| r.table == table) {
         let t = r.time.as_str();
         let (Some(y), Some(h)) = (
-            t.get(..4).filter(|y| y.bytes().all(|b| b.is_ascii_digit())).and_then(|y| y.parse::<u32>().ok()),
+            t.get(..4)
+                .filter(|y| y.bytes().all(|b| b.is_ascii_digit()))
+                .and_then(|y| y.parse::<u32>().ok()),
             match t.get(4..) {
                 Some("-S1") => Some(1usize),
                 Some("-S2") => Some(2),
@@ -1283,11 +1396,22 @@ pub fn halves(table: &str, rows: &[Row]) -> Vec<Num> {
         ) else {
             continue;
         };
-        if out.iter().any(|n| n.src == format!("{PERIOD_SRC}{table}:{t}.y")) {
+        if out
+            .iter()
+            .any(|n| n.src == format!("{PERIOD_SRC}{table}:{t}.y"))
+        {
             continue;
         }
-        out.push(Num { src: format!("{PERIOD_SRC}{table}:{t}.y"), value: f64::from(y), text: y.to_string() });
-        out.push(Num { src: format!("{PERIOD_SRC}{table}:{t}.h"), value: h as f64, text: HALF_WORDS[h - 1].to_string() });
+        out.push(Num {
+            src: format!("{PERIOD_SRC}{table}:{t}.y"),
+            value: f64::from(y),
+            text: y.to_string(),
+        });
+        out.push(Num {
+            src: format!("{PERIOD_SRC}{table}:{t}.h"),
+            value: h as f64,
+            text: HALF_WORDS[h - 1].to_string(),
+        });
     }
     out
 }
@@ -1346,7 +1470,11 @@ pub fn leaf_ledger(
         if let Ok(Some(n)) = display(f, &spec.fmts) {
             out.insert(n.src, n.text);
         }
-        if spec.facts.iter().any(|(k, q)| *k == f.key && q["axis"] == json!(true)) {
+        if spec
+            .facts
+            .iter()
+            .any(|(k, q)| *k == f.key && q["axis"] == json!(true))
+        {
             match ticks(f, &spec.fmts) {
                 Ok(ts) => out.extend(ts.into_iter().map(|n| (n.src, n.text))),
                 Err(e) => off.push(e),
@@ -1395,9 +1523,18 @@ pub fn leaf_ledger(
             tables.push(&r.table);
         }
     }
-    off.extend(tables.iter().filter(|t| !table_id(t)).map(|t| format!("series table {t}: its name must be a table id")));
+    off.extend(
+        tables
+            .iter()
+            .filter(|t| !table_id(t))
+            .map(|t| format!("series table {t}: its name must be a table id")),
+    );
     for t in tables.into_iter().filter(|t| table_id(t)) {
-        for n in periods(t, rows).into_iter().chain(months(t, rows)).chain(halves(t, rows)) {
+        for n in periods(t, rows)
+            .into_iter()
+            .chain(months(t, rows))
+            .chain(halves(t, rows))
+        {
             out.insert(n.src, n.text);
         }
     }
@@ -1464,7 +1601,12 @@ pub fn wording_segs(
         let v = |k: &str| ledger.get(k).map_or("", String::as_str);
         ledger
             .keys()
-            .filter_map(|k| k.strip_prefix(&pre).filter(|r| r.contains('-')).and_then(|r| r.strip_suffix(".y")).map(|r| (k, r)))
+            .filter_map(|k| {
+                k.strip_prefix(&pre)
+                    .filter(|r| r.contains('-'))
+                    .and_then(|r| r.strip_suffix(".y"))
+                    .map(|r| (k, r))
+            })
             .last()
             .map_or(String::new(), |(k, r)| {
                 let stem = &k[..k.len() - 2];
@@ -1586,7 +1728,9 @@ pub fn wording_segs(
             .into_iter()
             .collect();
         let example = if sub.is_empty() {
-            years.last().map_or(String::new(), |y| format!(", as \"{y} 年\""))
+            years
+                .last()
+                .map_or(String::new(), |y| format!(", as \"{y} 年\""))
         } else {
             format!(", as \"{sub}\"")
         };
@@ -1609,7 +1753,13 @@ fn read_entry(src: &str, rows: &[Row]) -> Result<Num, String> {
         let (table, at) = rest
             .rsplit_once(':')
             .ok_or_else(|| "names no table and year".to_string())?;
-        let what = if at.contains("-S") { "half year" } else if at.contains('-') { "month" } else { "year" };
+        let what = if at.contains("-S") {
+            "half year"
+        } else if at.contains('-') {
+            "month"
+        } else {
+            "year"
+        };
         return periods(table, rows)
             .into_iter()
             .chain(months(table, rows))
@@ -1716,7 +1866,8 @@ pub fn recheck(
         let want = match tail {
             "" => num(f, &spec.fmts, Part::Text),
             "n" => num(f, &spec.fmts, Part::Bare),
-            "r" => display(f, &spec.fmts).and_then(|n| n.ok_or_else(|| format!("{key} has no display part"))),
+            "r" => display(f, &spec.fmts)
+                .and_then(|n| n.ok_or_else(|| format!("{key} has no display part"))),
             "t" => num(f, &spec.fmts, Part::Period),
             "t.y" => num(f, &spec.fmts, Part::Year),
             "t.m" => num(f, &spec.fmts, Part::Month),
@@ -1798,13 +1949,18 @@ pub(crate) fn stored_request(req: &Value) -> (Spec, Vec<Row>, Vec<String>) {
         // none when the request has none; one that does not read keeps why, so the page check refuses the page instead
         // of passing it unchecked
         asked_places: (!s["asked_places"].is_null()).then(|| {
-            serde_json::from_value(s["asked_places"].clone())
-                .unwrap_or_else(|e| AskedPlaces { unread: Some(e.to_string()), ..Default::default() })
+            serde_json::from_value(s["asked_places"].clone()).unwrap_or_else(|e| AskedPlaces {
+                unread: Some(e.to_string()),
+                ..Default::default()
+            })
         }),
         // none when the request has none; one that does not read keeps why, so the page check refuses the page instead
         // of passing it unchecked
         basis: (!s["basis"].is_null()).then(|| {
-            serde_json::from_value(s["basis"].clone()).unwrap_or_else(|e| Basis { unread: Some(e.to_string()), ..Default::default() })
+            serde_json::from_value(s["basis"].clone()).unwrap_or_else(|e| Basis {
+                unread: Some(e.to_string()),
+                ..Default::default()
+            })
         }),
     };
     (spec, rows, tables)
@@ -2025,24 +2181,47 @@ mod tests {
         );
         s.fmts = json!({"yr": {"scale": 1, "dec": 2, "suffix": " 年"}, "p": {"scale": 1, "dec": 1, "suffix": ""},
             "w": {"scale": 1, "dec": 0, "suffix": ""}, "time": {}});
-        let f: BTreeMap<String, Fact> = compute(&s, &rows).unwrap().into_iter().map(|f| (f.key.clone(), f)).collect();
+        let f: BTreeMap<String, Fact> = compute(&s, &rows)
+            .unwrap()
+            .into_iter()
+            .map(|f| (f.key.clone(), f))
+            .collect();
         let t = |k: &str| text(&f[k], &s.fmts, true).unwrap();
-        assert_eq!((t("lo"), t("ind")), ("54.64".to_string(), "72.24".to_string()));
-        assert_eq!(fixed(f["lo"].v, 2, false), "54.63", "the float alone rounds the other way");
+        assert_eq!(
+            (t("lo"), t("ind")),
+            ("54.64".to_string(), "72.24".to_string())
+        );
+        assert_eq!(
+            fixed(f["lo"].v, 2, false),
+            "54.63",
+            "the float alone rounds the other way"
+        );
         assert_eq!(f["vs_mean"].v, 10.450000000000003);
-        assert_eq!((t("mean"), t("vs_mean")), ("103.0".to_string(), "10.4".to_string()));
+        assert_eq!(
+            (t("mean"), t("vs_mean")),
+            ("103.0".to_string(), "10.4".to_string())
+        );
         assert_eq!((t("x"), t("gap")), ("12,422".to_string(), "10".to_string()));
         // 34.5 / 45 = 76.666...%
         assert_eq!(t("part"), "77");
         // a negative value keeps its minus; a stored fact has no exact value and prints its float
         let mut neg = f["gap"].clone();
         neg.exact = Some(Exact::of(-0.25).unwrap());
-        assert_eq!(text(&neg, &json!({"w": {"scale": 1, "dec": 1}}), true).unwrap(), "-0.2");
+        assert_eq!(
+            text(&neg, &json!({"w": {"scale": 1, "dec": 1}}), true).unwrap(),
+            "-0.2"
+        );
         let stored: Fact = serde_json::from_value(serde_json::to_value(&f["lo"]).unwrap()).unwrap();
-        assert_eq!((stored.exact, text(&stored, &s.fmts, true).unwrap()), (None, "54.63".to_string()));
+        assert_eq!(
+            (stored.exact, text(&stored, &s.fmts, true).unwrap()),
+            (None, "54.63".to_string())
+        );
         assert_eq!(stored, f["lo"], "the stored fields are the same fact");
         // the display part rounds the exact value too
-        assert_eq!(display(&f["lo"], &s.fmts).unwrap().map(|n| n.text), Some("54.6".to_string()));
+        assert_eq!(
+            display(&f["lo"], &s.fmts).unwrap().map(|n| n.text),
+            Some("54.6".to_string())
+        );
     }
 
     /// Owner 11-06: a difference asked of its operands as printed (of_printed) is refused, never computed.
@@ -2168,7 +2347,12 @@ mod tests {
             Some(&["BB", "AA"]),
         );
         assert_eq!(
-            recheck(&BTreeMap::new(), &counted, &[rows[0].clone(), rows[2].clone(), rows[4].clone()], &f),
+            recheck(
+                &BTreeMap::new(),
+                &counted,
+                &[rows[0].clone(), rows[2].clone(), rows[4].clone()],
+                &f
+            ),
             ["cannot recompute c: count has no row of b at 2020 for BB"]
         );
         let by = |p: &str, v: f64| Row {
@@ -2244,7 +2428,8 @@ mod tests {
             n: None,
             who: vec![],
             fmt: "m".into(),
-            reads: vec!["x".into()], exact: None
+            reads: vec!["x".into()],
+            exact: None,
         };
         let fmts = json!({"m": {"scale": 0.01, "dec": 0, "suffix": " 亿"}});
         let t = ticks(&f, &fmts).unwrap();
@@ -2290,7 +2475,13 @@ mod tests {
         .collect();
         assert_eq!(two, ["1", "2"]);
         // at least three ticks up to the top, and at most seven: a top of 9,500 once got the one tick 5,000
-        let texts = |v: f64| -> Vec<String> { ticks(&Fact { v, ..f.clone() }, &whole).unwrap().into_iter().map(|n| n.text).collect() };
+        let texts = |v: f64| -> Vec<String> {
+            ticks(&Fact { v, ..f.clone() }, &whole)
+                .unwrap()
+                .into_iter()
+                .map(|n| n.text)
+                .collect()
+        };
         assert_eq!(texts(9_500.0), ["2,000", "4,000", "6,000", "8,000"]);
         assert_eq!(texts(3.0), ["1", "2", "3"]);
         for v in [3.0, 4.9, 7.4, 9.9, 15.0, 29.9, 99.0, 9_500.0, 123_456.0] {
@@ -2325,7 +2516,8 @@ mod tests {
             n: None,
             who: vec!["AT".into(), "HU".into()],
             fmt: "n".into(),
-            reads: vec![], exact: None
+            reads: vec![],
+            exact: None,
         };
         let label = |src: &str, text: &str| Label {
             src: src.into(),
@@ -2508,27 +2700,49 @@ mod tests {
             None,
         );
         // RU is the one code at both years: 300 - 1500 by hand; the others have no 2021 row, so the family refuses them
-        let both = |rows: &[Row]| -> Vec<Row> { rows.iter().filter(|r| r.dims.get("partner").is_some_and(|p| p == "RU")).cloned().collect() };
+        let both = |rows: &[Row]| -> Vec<Row> {
+            rows.iter()
+                .filter(|r| r.dims.get("partner").is_some_and(|p| p == "RU"))
+                .cloned()
+                .collect()
+        };
         let ru = both(&rows);
         let facts = compute(&sp, &ru).unwrap();
         let ch = facts.iter().find(|f| f.key == "ch.RU").unwrap();
-        assert_eq!((ch.op.as_str(), ch.v, ch.fmt.as_str()), ("minus", 300.0 - 1500.0, "m"));
+        assert_eq!(
+            (ch.op.as_str(), ch.v, ch.fmt.as_str()),
+            ("minus", 300.0 - 1500.0, "m")
+        );
         assert_eq!(ch.reads, ["fact:v1.RU", "fact:v0.RU"]);
         assert_eq!(text(ch, &sp.fmts, false).unwrap(), "-12 亿");
         let ledger: BTreeMap<String, String> = facts
             .iter()
-            .flat_map(|f| [num(f, &sp.fmts, Part::Text).unwrap(), num(f, &sp.fmts, Part::Bare).unwrap()])
+            .flat_map(|f| {
+                [
+                    num(f, &sp.fmts, Part::Text).unwrap(),
+                    num(f, &sp.fmts, Part::Bare).unwrap(),
+                ]
+            })
             .map(|n| (n.src, n.text))
             .collect();
         assert_eq!(ledger["fact:ch.RU"], "-12 亿");
         assert_eq!(recheck(&ledger, &sp, &ru, &facts), Vec::<String>::new());
         // a code one end holds and the other not is refused, never left out
-        let kept: Vec<Row> = rows.iter().filter(|r| r.dims.get("siec").is_some_and(|s| s == "a")).cloned().collect();
+        let kept: Vec<Row> = rows
+            .iter()
+            .filter(|r| r.dims.get("siec").is_some_and(|s| s == "a"))
+            .cloned()
+            .collect();
         let err = compute(&sp, &kept).unwrap_err();
         assert!(err.contains("ch: v1 has NO, v0 has not"), "{err}");
         // a side that is no family over the same dimension
-        let off = spec(json!({"v1": q("2024"), "ch": {"op": "minus", "each": "siec", "a": "v1", "b": "v1", "fmt": "m"}}), None);
-        assert!(compute(&off, &ru).unwrap_err().contains("ch: minus names no family over siec as a (v1)"));
+        let off = spec(
+            json!({"v1": q("2024"), "ch": {"op": "minus", "each": "siec", "a": "v1", "b": "v1", "fmt": "m"}}),
+            None,
+        );
+        assert!(compute(&off, &ru)
+            .unwrap_err()
+            .contains("ch: minus names no family over siec as a (v1)"));
     }
 
     /// A change family's facts as the flow writes them to a page's request (serde_json) and the completion gate reads them
@@ -2536,11 +2750,22 @@ mod tests {
     /// are the q1 page's whose differences print 17 digits (44.2 - 33.37 is 10.830000000000005).
     #[test]
     fn a_change_family_read_back_from_its_json_is_rechecked_bit_for_bit() {
-        let pairs = [("AT", 33.37, 44.2), ("DE", 14.885, 23.9), ("LU", 5.364, 20.2), ("LV", 37.138, 46.3)];
+        let pairs = [
+            ("AT", 33.37, 44.2),
+            ("DE", 14.885, 23.9),
+            ("LU", 5.364, 20.2),
+            ("LV", 37.138, 46.3),
+        ];
         let mut rows = Vec::new();
         for (geo, v0, v1) in pairs {
             for (t, v) in [("2016", v0), ("2025", v1)] {
-                rows.push(cell(&format!("series:sdg_07_40/A.REN.PC.{geo}:{t}:OBS_VALUE"), "sdg_07_40", &[("geo", geo)], t, v));
+                rows.push(cell(
+                    &format!("series:sdg_07_40/A.REN.PC.{geo}:{t}:OBS_VALUE"),
+                    "sdg_07_40",
+                    &[("geo", geo)],
+                    t,
+                    v,
+                ));
             }
         }
         let q = |t: &str| json!({"each": "geo", "table": "sdg_07_40", "time": t, "fmt": "pc"});
@@ -2552,17 +2777,30 @@ mod tests {
         let facts = compute(&sp, &rows).unwrap();
         // the later end less the earlier, each read from its two value facts
         for (geo, v0, v1) in pairs {
-            let ch = facts.iter().find(|f| f.key == format!("chg.{geo}")).unwrap();
-            assert_eq!((ch.v, &ch.reads[..]), (v1 - v0, &[format!("fact:val1.{geo}"), format!("fact:val0.{geo}")][..]));
+            let ch = facts
+                .iter()
+                .find(|f| f.key == format!("chg.{geo}"))
+                .unwrap();
+            assert_eq!(
+                (ch.v, &ch.reads[..]),
+                (
+                    v1 - v0,
+                    &[format!("fact:val1.{geo}"), format!("fact:val0.{geo}")][..]
+                )
+            );
         }
         let ledger = leaf_ledger(&sp, &rows, &facts).unwrap();
-        let text = serde_json::to_string_pretty(&json!({"spec": sp, "rows": rows, "facts": facts, "ledger": ledger})).unwrap();
+        let text = serde_json::to_string_pretty(
+            &json!({"spec": sp, "rows": rows, "facts": facts, "ledger": ledger}),
+        )
+        .unwrap();
         // read back as the gate reads a page's request: the text to a value, then each part from it
         let mut back: Value = serde_json::from_str(&text).unwrap();
         let read: Vec<Fact> = serde_json::from_value(back["facts"].take()).unwrap();
         let read_rows: Vec<Row> = serde_json::from_value(back["rows"].take()).unwrap();
         let read_spec: Spec = serde_json::from_value(back["spec"].take()).unwrap();
-        let read_ledger: BTreeMap<String, String> = serde_json::from_value(back["ledger"].take()).unwrap();
+        let read_ledger: BTreeMap<String, String> =
+            serde_json::from_value(back["ledger"].take()).unwrap();
         let bits: Vec<(String, u64, u64)> = facts
             .iter()
             .zip(&read)
@@ -2642,20 +2880,44 @@ mod tests {
     /// the rows, and a half the rows do not give is refused by the recheck.
     #[test]
     fn half_years_are_a_year_and_a_half_word_read_back_from_the_rows() {
-        let rows = [row("nrg_pc_204", "DE", "2025-S2", 0.38), row("nrg_pc_204", "DE", "2026-S1", 0.39), row("nrg_pc_204", "SE", "2026-S1", 0.21)];
-        let got: Vec<(String, String)> = halves("nrg_pc_204", &rows).into_iter().map(|n| (n.src, n.text)).collect();
-        let want: Vec<(String, String)> = [("2025-S2.y", "2025"), ("2025-S2.h", "下"), ("2026-S1.y", "2026"), ("2026-S1.h", "上")]
-            .iter()
-            .map(|(k, t)| (format!("period:nrg_pc_204:{k}"), t.to_string()))
+        let rows = [
+            row("nrg_pc_204", "DE", "2025-S2", 0.38),
+            row("nrg_pc_204", "DE", "2026-S1", 0.39),
+            row("nrg_pc_204", "SE", "2026-S1", 0.21),
+        ];
+        let got: Vec<(String, String)> = halves("nrg_pc_204", &rows)
+            .into_iter()
+            .map(|n| (n.src, n.text))
             .collect();
+        let want: Vec<(String, String)> = [
+            ("2025-S2.y", "2025"),
+            ("2025-S2.h", "下"),
+            ("2026-S1.y", "2026"),
+            ("2026-S1.h", "上"),
+        ]
+        .iter()
+        .map(|(k, t)| (format!("period:nrg_pc_204:{k}"), t.to_string()))
+        .collect();
         assert_eq!(got, want);
-        assert!(months("nrg_pc_204", &rows).is_empty() && halves("une_rt_m", &[row("une_rt_m", "DE", "2026-08", 1.0)]).is_empty());
-        let words: Value = serde_json::from_str(include_str!("../runtime/leaves_py/words.zh.json")).unwrap();
-        assert_eq!((words["half.1"].as_str(), words["half.2"].as_str()), (Some(HALF_WORDS[0]), Some(HALF_WORDS[1])), "the leaves' half words");
+        assert!(
+            months("nrg_pc_204", &rows).is_empty()
+                && halves("une_rt_m", &[row("une_rt_m", "DE", "2026-08", 1.0)]).is_empty()
+        );
+        let words: Value =
+            serde_json::from_str(include_str!("../runtime/leaves_py/words.zh.json")).unwrap();
+        assert_eq!(
+            (words["half.1"].as_str(), words["half.2"].as_str()),
+            (Some(HALF_WORDS[0]), Some(HALF_WORDS[1])),
+            "the leaves' half words"
+        );
         let s = spec(json!({}), None);
         let facts: Vec<Fact> = Vec::new();
         let ledger = leaf_ledger(&s, &rows, &facts).unwrap();
-        for (k, t) in [("period:nrg_pc_204:2026-S1.y", "2026"), ("period:nrg_pc_204:2026-S1.h", "上"), ("period:nrg_pc_204:2026", "2026")] {
+        for (k, t) in [
+            ("period:nrg_pc_204:2026-S1.y", "2026"),
+            ("period:nrg_pc_204:2026-S1.h", "上"),
+            ("period:nrg_pc_204:2026", "2026"),
+        ] {
             assert_eq!(ledger.get(k).map(String::as_str), Some(t), "{k}");
         }
         assert_eq!(recheck(&ledger, &s, &rows, &facts), Vec::<String>::new());
@@ -2663,7 +2925,12 @@ mod tests {
         wrong.insert("period:nrg_pc_204:2026-S1.h".into(), "下".into());
         wrong.insert("period:nrg_pc_204:2026-S2.y".into(), "2026".into());
         let off = recheck(&wrong, &s, &rows, &facts);
-        assert!(off.len() == 2 && off[0].contains("the rows give \"上\"") && off[1].contains("no row of nrg_pc_204 is in that half year"), "{off:?}");
+        assert!(
+            off.len() == 2
+                && off[0].contains("the rows give \"上\"")
+                && off[1].contains("no row of nrg_pc_204 is in that half year"),
+            "{off:?}"
+        );
         // a wording on this half-yearly main: "YYYY 年上半年" is the year and the half of one entry the rows hold; a half
         // no row is in, and a bare "YYYY 年", go back to be reworded with the latest half held as the example
         let tables = ["nrg_pc_204".to_string()];
@@ -2672,11 +2939,17 @@ mod tests {
             json!([{"src": "period:nrg_pc_204:2026-S1.y"}, {"w": " 年"}, {"src": "period:nrg_pc_204:2026-S1.h"}, {"w": "半年德国最高"}])
         );
         for (text, why) in [
-            ("2026 年下半年德国最高", "\"2026 年下半年\" is a half year no table of the page holds"),
+            (
+                "2026 年下半年德国最高",
+                "\"2026 年下半年\" is a half year no table of the page holds",
+            ),
             ("2026 年德国最高", "\"2026 年\" names no half year or month"),
         ] {
             let e = wording_segs(text, &ledger, &tables).unwrap_err();
-            assert!(e.contains(why) && e.contains("as \"2026 年上半年\""), "{text}: {e}");
+            assert!(
+                e.contains(why) && e.contains("as \"2026 年上半年\""),
+                "{text}: {e}"
+            );
         }
     }
 
@@ -2814,22 +3087,38 @@ mod tests {
         );
         assert_eq!(recheck(&l, &s, &rows, &facts), Vec::<String>::new());
         // C4: a record table named by its file's path, or a src naming another table, is no ledger
-        for (src, table) in [("record:../a.b/ev.csv/0", "../a.b/ev.csv"), ("record:notes/0", "events")] {
+        for (src, table) in [
+            ("record:../a.b/ev.csv/0", "../a.b/ev.csv"),
+            ("record:notes/0", "events"),
+        ] {
             let mut bad = rows.clone();
             bad.push(cell(src, table, &[("date", "2022-09-26")], "", f64::NAN));
             let why = leaf_ledger(&s, &bad, &facts).err().unwrap();
             assert_eq!(why, format!("{src}: a record row's table must be its table id (not a path) and its src must name it"));
         }
-        assert!(table_id("MIGR_ASYAPPCTZM") && table_id("nrg-pc") && !table_id("2022") && !table_id("data/cities.csv"));
+        assert!(
+            table_id("MIGR_ASYAPPCTZM")
+                && table_id("nrg-pc")
+                && !table_id("2022")
+                && !table_id("data/cities.csv")
+        );
         // a World Bank table by its catalogue name; a dot only with the World Bank's mark, never a path
         assert!(table_id("EN.GHG.CO2.PC.CE.AR5@2") && table_id("SP.POP.65UP.TO.ZS@2"));
-        assert!(!table_id("cities.csv") && !table_id("data/cities.csv@2") && !table_id("@2") && !table_id("EN.X@3"));
+        assert!(
+            !table_id("cities.csv")
+                && !table_id("data/cities.csv@2")
+                && !table_id("@2")
+                && !table_id("EN.X@3")
+        );
         assert!(!table_id("X.@2") && !table_id("a..b@2") && !table_id("EN.@2"));
         // shaped as a World Bank id with lower case, as the catalogue's are; only leaf_refs decides what a page may name
         assert!(table_id("account.t.d.1@2") && table_id("cities.csv@2"));
         let mut path = rows.clone();
         path.push(row("data/mo.csv", "X", "2021-01", 1.0));
-        assert_eq!(leaf_ledger(&s, &path, &facts).err().unwrap(), "series table data/mo.csv: its name must be a table id");
+        assert_eq!(
+            leaf_ledger(&s, &path, &facts).err().unwrap(),
+            "series table data/mo.csv: its name must be a table id"
+        );
         for (src, text, why) in [
             // a month the table lacks
             ("period:mo:2021-03.m", "3", "period:mo:2021-03.m: no row of mo is in that month"),
@@ -2906,9 +3195,15 @@ mod tests {
     #[test]
     fn a_leaf_page_names_only_the_dataset_ids_of_its_tables() {
         let tables = json!({"m": {"csv": "a/m.csv", "id": "MIGR_ASYAPPCTZM"}, "a": {"id": "MIGR_ASYAPPCTZA"}, "g": {"id": "MIGR_ASYAPPCTZA"}});
-        assert_eq!(leaf_refs(&tables).unwrap(), ["MIGR_ASYAPPCTZA", "MIGR_ASYAPPCTZM"]);
+        assert_eq!(
+            leaf_refs(&tables).unwrap(),
+            ["MIGR_ASYAPPCTZA", "MIGR_ASYAPPCTZM"]
+        );
         let wb = json!({"land": {"id": "AG.LND.AGRI.K2"}, "gdp": {"id": "NY.GDP.MKTP.CD"}});
-        assert_eq!(leaf_refs(&wb).unwrap(), ["AG.LND.AGRI.K2", "NY.GDP.MKTP.CD"]);
+        assert_eq!(
+            leaf_refs(&wb).unwrap(),
+            ["AG.LND.AGRI.K2", "NY.GDP.MKTP.CD"]
+        );
         let bad = json!({"b": {"csv": "b.csv"}, "c": {"id": ""}});
         assert_eq!(
             leaf_refs(&bad).err().unwrap(),
@@ -2953,13 +3248,24 @@ mod tests {
         let row = |geo: &str, time: &str, v: f64| Row {
             src: format!("series:t/A.{geo}:{time}:OBS_VALUE"),
             table: "t".into(),
-            dims: BTreeMap::from([("geo".to_string(), geo.to_string()), ("freq".to_string(), "A".to_string())]),
+            dims: BTreeMap::from([
+                ("geo".to_string(), geo.to_string()),
+                ("freq".to_string(), "A".to_string()),
+            ]),
             time: time.into(),
             value: v,
         };
-        let rows = vec![row("SE", "2025", 65.4), row("BE", "2025", 14.9), row("SE", "2025", 1.0), row("DE", "2024", 20.0)];
+        let rows = vec![
+            row("SE", "2025", 65.4),
+            row("BE", "2025", 14.9),
+            row("SE", "2025", 1.0),
+            row("DE", "2024", 20.0),
+        ];
         let spec = Spec {
-            facts: vec![("drawn".into(), json!({"op": "n", "by": "geo", "table": "t", "time": "2025", "fmt": "n"}))],
+            facts: vec![(
+                "drawn".into(),
+                json!({"op": "n", "by": "geo", "table": "t", "time": "2025", "fmt": "n"}),
+            )],
             fmts: json!({}),
             members: None,
             asked_places: None,
@@ -2971,8 +3277,16 @@ mod tests {
         let ledger = leaf_ledger(&spec, &rows, &facts).unwrap();
         assert_eq!(ledger.get("fact:drawn.n").map(String::as_str), Some("2"));
         assert_eq!(recheck(&ledger, &spec, &rows, &facts), Vec::<String>::new());
-        let none = Spec { facts: vec![("drawn".into(), json!({"op": "n", "by": "geo", "table": "t", "time": "2023", "fmt": "n"}))], ..spec };
-        assert!(compute(&none, &rows).unwrap_err().contains("n has no row at 2023"));
+        let none = Spec {
+            facts: vec![(
+                "drawn".into(),
+                json!({"op": "n", "by": "geo", "table": "t", "time": "2023", "fmt": "n"}),
+            )],
+            ..spec
+        };
+        assert!(compute(&none, &rows)
+            .unwrap_err()
+            .contains("n has no row at 2023"));
     }
 
     /// position is where a code stands among the codes of `by` at its time, highest first: 1 and the codes above it, a tie
@@ -2983,24 +3297,49 @@ mod tests {
         let row = |geo: &str, time: &str, v: f64| Row {
             src: format!("series:t/A.{geo}:{time}:OBS_VALUE"),
             table: "t".into(),
-            dims: BTreeMap::from([("geo".to_string(), geo.to_string()), ("freq".to_string(), "A".to_string())]),
+            dims: BTreeMap::from([
+                ("geo".to_string(), geo.to_string()),
+                ("freq".to_string(), "A".to_string()),
+            ]),
             time: time.into(),
             value: v,
         };
-        let rows = vec![row("SE", "2025", 65.4), row("BE", "2025", 14.9), row("FI", "2025", 14.9), row("DE", "2025", 10.0), row("DE", "2025", 6.0), row("PL", "2024", 99.0)];
+        let rows = vec![
+            row("SE", "2025", 65.4),
+            row("BE", "2025", 14.9),
+            row("FI", "2025", 14.9),
+            row("DE", "2025", 10.0),
+            row("DE", "2025", 6.0),
+            row("PL", "2024", 99.0),
+        ];
         let q = |code: &str| json!({"op": "position", "by": "geo", "table": "t", "time": "2025", "code": code, "fmt": "n"});
         let at = |code: &str| {
-            let spec = Spec { facts: vec![("pos".into(), q(code))], fmts: json!({}), members: None, asked_places: None, basis: None };
+            let spec = Spec {
+                facts: vec![("pos".into(), q(code))],
+                fmts: json!({}),
+                members: None,
+                asked_places: None,
+                basis: None,
+            };
             compute(&spec, &rows).map(|f| (f[0].v, spec, f))
         };
         assert_eq!(at("SE").unwrap().0, 1.0);
         // DE's two rows are 16, so it is second; BE and FI tie at 14.9 and share the third place
-        assert_eq!((at("DE").unwrap().0, at("BE").unwrap().0, at("FI").unwrap().0), (2.0, 3.0, 3.0));
+        assert_eq!(
+            (
+                at("DE").unwrap().0,
+                at("BE").unwrap().0,
+                at("FI").unwrap().0
+            ),
+            (2.0, 3.0, 3.0)
+        );
         let (_, spec, facts) = at("BE").unwrap();
         let ledger = leaf_ledger(&spec, &rows, &facts).unwrap();
         assert_eq!(ledger.get("fact:pos.n").map(String::as_str), Some("3"));
         assert_eq!(recheck(&ledger, &spec, &rows, &facts), Vec::<String>::new());
-        assert!(at("PL").unwrap_err().contains("position has no row of PL at 2025"));
+        assert!(at("PL")
+            .unwrap_err()
+            .contains("position has no row of PL at 2025"));
     }
 
     /// excluded names each pair the registry leaves out of a flow, keeps each in the ledger as excluded by registry (apart from
@@ -3010,25 +3349,56 @@ mod tests {
         let row = |a: &str, b: &str, v: f64| Row {
             src: format!("series:t/A.{a}.{b}:2024:OBS_VALUE"),
             table: "t".into(),
-            dims: BTreeMap::from([("s".to_string(), a.to_string()), ("d".to_string(), b.to_string())]),
+            dims: BTreeMap::from([
+                ("s".to_string(), a.to_string()),
+                ("d".to_string(), b.to_string()),
+            ]),
             time: "2024".into(),
             value: v,
         };
         let rows = vec![row("G", "IND", 5.0), row("G", "TRA", 0.0)];
         let q = |pairs: Value| json!({"op": "excluded", "table": "t", "time": "2024", "by": ["s", "d"], "pairs": pairs, "fmt": "n"});
-        let spec = Spec { facts: vec![("x".into(), q(json!([["N", "IND"], ["N", "TRA"]])))], fmts: json!({}), members: None, asked_places: None, basis: None };
+        let spec = Spec {
+            facts: vec![("x".into(), q(json!([["N", "IND"], ["N", "TRA"]])))],
+            fmts: json!({}),
+            members: None,
+            asked_places: None,
+            basis: None,
+        };
         let facts = compute(&spec, &rows).unwrap();
-        assert_eq!((facts[0].v, facts[0].who.as_slice()), (2.0, &["N>IND".to_string(), "N>TRA".to_string()][..]));
+        assert_eq!(
+            (facts[0].v, facts[0].who.as_slice()),
+            (2.0, &["N>IND".to_string(), "N>TRA".to_string()][..])
+        );
         assert!(facts[0].reads.is_empty());
         let ledger = leaf_ledger(&spec, &rows, &facts).unwrap();
-        assert_eq!(ledger.get("excluded:N>IND").map(String::as_str), Some(EXCLUDED_TEXT));
-        assert_eq!(ledger.keys().filter(|k| k.starts_with(EXCLUDED_SRC)).count(), 2);
+        assert_eq!(
+            ledger.get("excluded:N>IND").map(String::as_str),
+            Some(EXCLUDED_TEXT)
+        );
+        assert_eq!(
+            ledger
+                .keys()
+                .filter(|k| k.starts_with(EXCLUDED_SRC))
+                .count(),
+            2
+        );
         assert!(!ledger.keys().any(|k| k.starts_with(NOROW_SRC)));
         assert_eq!(recheck(&ledger, &spec, &rows, &facts), Vec::<String>::new());
-        let held = Spec { facts: vec![("x".into(), q(json!([["G", "TRA"]])))], ..spec.clone() };
-        assert!(compute(&held, &rows).unwrap_err().contains("the registry leaves G>TRA out, and the row series:t/A.G.TRA:2024:OBS_VALUE holds it"));
-        let none = Spec { facts: vec![("x".into(), q(json!([])))], ..spec };
-        assert!(compute(&none, &rows).unwrap_err().contains("excluded names no pair"));
+        let held = Spec {
+            facts: vec![("x".into(), q(json!([["G", "TRA"]])))],
+            ..spec.clone()
+        };
+        assert!(compute(&held, &rows).unwrap_err().contains(
+            "the registry leaves G>TRA out, and the row series:t/A.G.TRA:2024:OBS_VALUE holds it"
+        ));
+        let none = Spec {
+            facts: vec![("x".into(), q(json!([])))],
+            ..spec
+        };
+        assert!(compute(&none, &rows)
+            .unwrap_err()
+            .contains("excluded names no pair"));
     }
 
     /// B11: a value fact's display part (`.r`) holds three significant digits, never more places than its format's, and is
@@ -3044,21 +3414,45 @@ mod tests {
             n: None,
             who: Vec::new(),
             fmt: fmt.into(),
-            reads: Vec::new(), exact: None
+            reads: Vec::new(),
+            exact: None,
         };
         let fmts = json!({"k2": {"dec": 2, "scale": 1, "suffix": " u"}, "k0": {"dec": 0}, "m": {"dec": 2, "scale": 0.001}});
-        let shown = |v: f64, fmt: &str| display(&f("a", "value", v, fmt), &fmts).unwrap().map(|n| (n.src, n.text));
-        assert_eq!(shown(60699.059, "k2"), Some(("fact:a.r".into(), "60,699".into())));
+        let shown = |v: f64, fmt: &str| {
+            display(&f("a", "value", v, fmt), &fmts)
+                .unwrap()
+                .map(|n| (n.src, n.text))
+        };
+        assert_eq!(
+            shown(60699.059, "k2"),
+            Some(("fact:a.r".into(), "60,699".into()))
+        );
         assert_eq!(shown(45.67, "k2").unwrap().1, "45.7");
-        assert_eq!(shown(5.678, "k2"), None, "three significant digits are the format's two places");
+        assert_eq!(
+            shown(5.678, "k2"),
+            None,
+            "three significant digits are the format's two places"
+        );
         assert_eq!(shown(0.631, "k2"), None, "under 1: the format's two places");
-        assert_eq!(shown(-1234.5, "k2").unwrap().1, "-1,234", "a minus kept, half to even");
-        assert_eq!(shown(15000.0, "m").unwrap().1, "15.0", "the format's scale first");
+        assert_eq!(
+            shown(-1234.5, "k2").unwrap().1,
+            "-1,234",
+            "a minus kept, half to even"
+        );
+        assert_eq!(
+            shown(15000.0, "m").unwrap().1,
+            "15.0",
+            "the format's scale first"
+        );
         assert_eq!(shown(60699.0, "k0"), None, "no places: no display part");
         for fmt in ["pct", "n", "x"] {
             assert_eq!(shown(1234.56, fmt), None, "{fmt}");
         }
-        assert_eq!(display(&f("a", "sum", 1234.56, "k2"), &fmts).unwrap(), None, "a value fact's only");
+        assert_eq!(
+            display(&f("a", "sum", 1234.56, "k2"), &fmts).unwrap(),
+            None,
+            "a value fact's only"
+        );
         assert!(display(&f("a", "value", 1.0, "nope"), &fmts).is_err());
         // in the ledger and rechecked, from a request's rows
         let row = |code: &str, v: f64| Row {
@@ -3070,17 +3464,32 @@ mod tests {
         };
         let rows = vec![row("A", 60699.059), row("B", 0.631)];
         let q = |code: &str| json!({"op": "value", "table": "t", "time": "2024", "fmt": "k2", "filter": {"s": code}});
-        let spec = Spec { facts: vec![("a".into(), q("A")), ("b".into(), q("B"))], fmts, members: None, asked_places: None, basis: None };
+        let spec = Spec {
+            facts: vec![("a".into(), q("A")), ("b".into(), q("B"))],
+            fmts,
+            members: None,
+            asked_places: None,
+            basis: None,
+        };
         let facts = compute(&spec, &rows).unwrap();
         let ledger = leaf_ledger(&spec, &rows, &facts).unwrap();
-        assert_eq!((ledger["fact:a.n"].as_str(), ledger["fact:a.r"].as_str()), ("60,699.06", "60,699"));
+        assert_eq!(
+            (ledger["fact:a.n"].as_str(), ledger["fact:a.r"].as_str()),
+            ("60,699.06", "60,699")
+        );
         assert!(ledger.contains_key("fact:b.n") && !ledger.contains_key("fact:b.r"));
         assert_eq!(recheck(&ledger, &spec, &rows, &facts), Vec::<String>::new());
         let mut bent = ledger.clone();
         bent.insert("fact:a.r".into(), "60,700".into());
-        assert_eq!(recheck(&bent, &spec, &rows, &facts), ["fact:a.r prints \"60,700\", the rows give \"60,699\""]);
+        assert_eq!(
+            recheck(&bent, &spec, &rows, &facts),
+            ["fact:a.r prints \"60,700\", the rows give \"60,699\""]
+        );
         let mut extra = ledger.clone();
         extra.insert("fact:b.r".into(), "0.6".into());
-        assert_eq!(recheck(&extra, &spec, &rows, &facts), ["fact:b.r: b has no display part"]);
+        assert_eq!(
+            recheck(&extra, &spec, &rows, &facts),
+            ["fact:b.r: b has no display part"]
+        );
     }
 }

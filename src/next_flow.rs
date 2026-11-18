@@ -74,10 +74,12 @@ pub fn legacy_problem(get: impl Fn(&str) -> Option<String>) -> Option<String> {
                     .as_deref()
                     .map_or("unset".to_string(), |v| format!("'{v}'"))
             )),
-            Need::ExactlyOrUnset(want) if value.as_deref().is_some_and(|v| v != *want) => Some(format!(
-                "the new route needs {name}={want} or unset; it is '{}'",
-                value.as_deref().unwrap_or_default()
-            )),
+            Need::ExactlyOrUnset(want) if value.as_deref().is_some_and(|v| v != *want) => {
+                Some(format!(
+                    "the new route needs {name}={want} or unset; it is '{}'",
+                    value.as_deref().unwrap_or_default()
+                ))
+            }
             Need::Off if value.as_deref() == Some("1") => {
                 Some(format!("the new route needs {name} off; it is '1'"))
             }
@@ -275,12 +277,30 @@ pub enum Ask {
 /// The image review's yes/no questions, id -> the definition shown to the model, in the order asked and recorded. Whether
 /// the illustration fits the topic is left to a later step.
 pub const VISION_QUESTIONS: [(&str, &str); 6] = [
-    ("headline_finding", "the headline states one finding (a claim about the data), not just a topic"),
-    ("single_focus", "the page has one visual focal point and uses one accent colour for it"),
-    ("notes_answer_so_what", "every short note says why its number matters, not only what it is"),
-    ("legend_matches_marks", "every legend entry matches the marks it explains (colour, shape, size)"),
-    ("headline_matches_chart", "the headline and the main chart tell the same story"),
-    ("no_unreadable_encoding", "there is no encoding a reader cannot decode at a glance"),
+    (
+        "headline_finding",
+        "the headline states one finding (a claim about the data), not just a topic",
+    ),
+    (
+        "single_focus",
+        "the page has one visual focal point and uses one accent colour for it",
+    ),
+    (
+        "notes_answer_so_what",
+        "every short note says why its number matters, not only what it is",
+    ),
+    (
+        "legend_matches_marks",
+        "every legend entry matches the marks it explains (colour, shape, size)",
+    ),
+    (
+        "headline_matches_chart",
+        "the headline and the main chart tell the same story",
+    ),
+    (
+        "no_unreadable_encoding",
+        "there is no encoding a reader cannot decode at a glance",
+    ),
 ];
 /// The longest reason of a no.
 pub const VISION_TEXT_MAX: usize = 200;
@@ -309,15 +329,22 @@ impl Verdict {
 /// read strictly: an object of `answer` and, for a no, `reason`; answer exactly "yes" or "no"; a no's reason one line of 1
 /// to VISION_TEXT_MAX characters; no other key.
 fn verdict_of(value: Option<&Value>) -> Verdict {
-    let unanswered = |why: &str| Verdict::Unanswered { why: why.to_string() };
+    let unanswered = |why: &str| Verdict::Unanswered {
+        why: why.to_string(),
+    };
     let Some(value) = value else {
         return unanswered("not answered");
     };
     let Value::Object(fields) = value else {
         return unanswered("the answer is not an object of answer and reason");
     };
-    if let Some(key) = fields.keys().find(|k| !["answer", "reason"].contains(&k.as_str())) {
-        return Verdict::Unanswered { why: format!("unknown key '{key}'") };
+    if let Some(key) = fields
+        .keys()
+        .find(|k| !["answer", "reason"].contains(&k.as_str()))
+    {
+        return Verdict::Unanswered {
+            why: format!("unknown key '{key}'"),
+        };
     }
     let reason = match fields.get("reason") {
         None => None,
@@ -328,11 +355,17 @@ fn verdict_of(value: Option<&Value>) -> Verdict {
         Some("yes") => Verdict::Yes,
         Some("no") => match reason.map(str::trim) {
             Some(text)
-                if !text.is_empty() && !text.contains(['\n', '\r']) && text.chars().count() <= VISION_TEXT_MAX =>
+                if !text.is_empty()
+                    && !text.contains(['\n', '\r'])
+                    && text.chars().count() <= VISION_TEXT_MAX =>
             {
-                Verdict::No { reason: text.to_string() }
+                Verdict::No {
+                    reason: text.to_string(),
+                }
             }
-            _ => Verdict::Unanswered { why: format!("a no needs a one-line reason of 1 to {VISION_TEXT_MAX} characters") },
+            _ => Verdict::Unanswered {
+                why: format!("a no needs a one-line reason of 1 to {VISION_TEXT_MAX} characters"),
+            },
         },
         _ => unanswered("answer is not exactly yes or no"),
     }
@@ -401,7 +434,8 @@ impl Split {
     /// table: next_params fills its last ten years): the split's own when it draws only with the latest year; None when it
     /// takes the ring's years or draws with the ten.
     pub fn program_years(&self) -> Option<usize> {
-        (!self.years.is_empty() && !self.years.contains(&next_params::ANNUAL_YEARS)).then(|| self.years[0])
+        (!self.years.is_empty() && !self.years.contains(&next_params::ANNUAL_YEARS))
+            .then(|| self.years[0])
     }
 }
 
@@ -431,13 +465,13 @@ impl HeldCheck {
         !self.empty.contains(params)
             && fills
             && next_params::holds_series(
-            &self.draft,
-            n,
-            params,
-            &self.places,
-            self.this_year,
-            &self.held,
-        )
+                &self.draft,
+                n,
+                params,
+                &self.places,
+                self.this_year,
+                &self.held,
+            )
     }
 
     /// The codes the answer fixes in each dimension the probe left open, as "dim=code".
@@ -556,21 +590,38 @@ fn held_refused(
     refuse: &dyn Fn(String) -> Refused,
 ) -> Option<Refused> {
     let prefix = format!("t{n}.");
-    let mine: BTreeMap<String, usize> =
-        params.iter().filter(|(k, _)| k.starts_with(&prefix)).map(|(k, v)| (k.clone(), *v)).collect();
+    let mine: BTreeMap<String, usize> = params
+        .iter()
+        .filter(|(k, _)| k.starts_with(&prefix))
+        .map(|(k, v)| (k.clone(), *v))
+        .collect();
     if check.holds(n, &mine) {
         return None;
     }
     let table_items = items.get(n - 1).map_or(&[][..], Vec::as_slice);
-    let example = check.example(n, &mine, table_items, splits.get(n - 1).map_or(&[][..], Vec::as_slice))?;
+    let example = check.example(
+        n,
+        &mine,
+        table_items,
+        splits.get(n - 1).map_or(&[][..], Vec::as_slice),
+    )?;
     // the example names the items the model answers, not the years the program gives
-    let example: BTreeMap<String, usize> =
-        example.into_iter().filter(|(k, _)| table_items.iter().any(|(i, _)| i == k)).collect();
-    let shown = example.iter().map(|(k, v)| format!("{k} {v}")).collect::<Vec<_>>().join(", ");
+    let example: BTreeMap<String, usize> = example
+        .into_iter()
+        .filter(|(k, _)| table_items.iter().any(|(i, _)| i == k))
+        .collect();
+    let shown = example
+        .iter()
+        .map(|(k, v)| format!("{k} {v}"))
+        .collect::<Vec<_>>()
+        .join(", ");
     let mut refused = refuse(if check.empty.contains(&mine) {
         let asked = check.asked(n, &mine);
         let asked = if asked.is_empty() {
-            mine.iter().map(|(k, v)| format!("{k} {v}")).collect::<Vec<_>>().join(", ")
+            mine.iter()
+                .map(|(k, v)| format!("{k} {v}"))
+                .collect::<Vec<_>>()
+                .join(", ")
         } else {
             asked
         };
@@ -602,26 +653,43 @@ fn no_rows_refused(
     places: &[Place],
     this_year: i32,
 ) -> Option<Refused> {
-    let Ask::Table { items, splits, held, .. } = ask else {
+    let Ask::Table {
+        items,
+        splits,
+        held,
+        ..
+    } = ask
+    else {
         return None;
     };
     let (items, splits): (&Vec<Vec<(String, usize)>>, &Vec<Vec<Split>>) = (items, splits);
     let draft = draft?;
     let prefix = format!("t{n}.");
-    let mine: BTreeMap<String, usize> =
-        params.iter().filter(|(k, _)| k.starts_with(&prefix)).map(|(k, v)| (k.clone(), *v)).collect();
-    let mut check = held.get(n - 1).cloned().flatten().unwrap_or_else(|| HeldCheck {
-        draft: draft.clone(),
-        places: places.to_vec(),
-        this_year,
-        held: next_knowledge::Held::Unprobed("no probe".into()),
-        empty: Vec::new(),
-    });
+    let mine: BTreeMap<String, usize> = params
+        .iter()
+        .filter(|(k, _)| k.starts_with(&prefix))
+        .map(|(k, v)| (k.clone(), *v))
+        .collect();
+    let mut check = held
+        .get(n - 1)
+        .cloned()
+        .flatten()
+        .unwrap_or_else(|| HeldCheck {
+            draft: draft.clone(),
+            places: places.to_vec(),
+            this_year,
+            held: next_knowledge::Held::Unprobed("no probe".into()),
+            empty: Vec::new(),
+        });
     check.empty.push(mine);
     let picks = [n];
     let refuse = |problem: String| Refused {
         problem,
-        allowed: table_answer(&picks, items, |count| json!((1..=count).collect::<Vec<_>>())),
+        allowed: table_answer(
+            &picks,
+            items,
+            |count| json!((1..=count).collect::<Vec<_>>()),
+        ),
         example: table_answer(&picks, items, |_| json!(1)),
     };
     let refused = held_refused(n, params, &check, items, splits, &refuse)?;
@@ -696,13 +764,19 @@ const RELATIONS: [Relation; 6] = crate::shape_registry::RELATIONS;
 /// The relation key's rule as the table step's schema words it: the numbered relations, Composition only with a table
 /// whose card says what it splits into (next_params::parts_line).
 fn relation_rule() -> String {
-    let named: Vec<String> = RELATIONS.iter().enumerate().map(|(i, r)| format!("{} {r:?}", i + 1)).collect();
+    let named: Vec<String> = RELATIONS
+        .iter()
+        .enumerate()
+        .map(|(i, r)| format!("{} {r:?}", i + 1))
+        .collect();
     format!("optional: the number of the data relation the page should draw, {}; Composition only with a table that has a 'splits into' line", named.join(", "))
 }
 
 /// The relation number an answer gives, as given (any other value is none); never a refusal.
 fn relation_of(map: &Map<String, Value>) -> Option<usize> {
-    map.get(RELATION_KEY).and_then(Value::as_u64).map(|n| n as usize)
+    map.get(RELATION_KEY)
+        .and_then(Value::as_u64)
+        .map(|n| n as usize)
 }
 
 /// The table step's relation, by the picked main table's data shape only (P4b-4; the question's words are never read): a
@@ -748,8 +822,7 @@ impl Ask {
                         "properties": items.iter().flatten().map(|(k, count)| (k.clone(), json!({"type": "integer", "enum": (1..=*count).collect::<Vec<_>>()}))).collect::<Map<_, _>>(),
                         "description": "item -> the number of the option that fits the question, for every item of each picked table and no other, except an item its breakdown says to leave out"});
                 }
-                schema["properties"]["relation"] =
-                    json!({"type": "integer", "enum": (1..=RELATIONS.len()).collect::<Vec<_>>(), "description": relation_rule()});
+                schema["properties"]["relation"] = json!({"type": "integer", "enum": (1..=RELATIONS.len()).collect::<Vec<_>>(), "description": relation_rule()});
                 schema
             }
             Ask::Claims { groups, relations } => {
@@ -803,7 +876,11 @@ impl Ask {
                 let count = ask.quantities.len();
                 let mut quantities = json!({"type": "array", "uniqueItems": true, "maxItems": count,
                     "description": format!("the question's quantities by number, in the order the blocks take them; [] keeps the question's order: {}", quantity_list(ask))});
-                quantities["items"] = if count == 0 { json!({"type": "integer"}) } else { json!({"type": "integer", "minimum": 0, "maximum": count - 1}) };
+                quantities["items"] = if count == 0 {
+                    json!({"type": "integer"})
+                } else {
+                    json!({"type": "integer", "minimum": 0, "maximum": count - 1})
+                };
                 let mut properties = json!({SPLIT_KEY: {"type": "integer", "enum": split_numbers(ask), "description": split_rule(ask)},
                     QUANTITIES_KEY: quantities});
                 properties[STEP_KEY] = step;
@@ -830,8 +907,10 @@ impl Ask {
             Ask::Text { slots, .. } => json!({"step": "text", "text": {},
                 "names": slots.iter().map(|k| (k.clone(), json!("<中文名>"))).collect::<Map<_, _>>()}),
             Ask::Vision => {
-                let mut answers: Map<String, Value> =
-                    VISION_QUESTIONS.iter().map(|(id, _)| (id.to_string(), json!({"answer": "yes"}))).collect();
+                let mut answers: Map<String, Value> = VISION_QUESTIONS
+                    .iter()
+                    .map(|(id, _)| (id.to_string(), json!({"answer": "yes"})))
+                    .collect();
                 answers.insert(
                     VISION_QUESTIONS[5].0.to_string(),
                     json!({"answer": "no", "reason": "<one line: what the image shows>"}),
@@ -894,10 +973,12 @@ impl Ask {
                     allowed["changes"] = json!({"fields": changes, "words": CHANGE_WORDS});
                 }
                 if !levels.is_empty() {
-                    allowed["levels"] = json!({"fields": levels, "words": CHANGE_WORDS, "rule": LEVEL_RULE});
+                    allowed["levels"] =
+                        json!({"fields": levels, "words": CHANGE_WORDS, "rule": LEVEL_RULE});
                 }
                 if !scoped.is_empty() {
-                    allowed["scoped"] = json!({"fields": scoped, "words": crate::next_page::SUPERLATIVES});
+                    allowed["scoped"] =
+                        json!({"fields": scoped, "words": crate::next_page::SUPERLATIVES});
                 }
                 if !titles.is_empty() {
                     allowed["titles"] = json!({"fields": titles, "words": QUESTION_WORDS});
@@ -974,10 +1055,15 @@ impl Ask {
             Ask::Vision => &["answers"],
             Ask::Split { .. } => &[SPLIT_KEY, QUANTITIES_KEY],
         };
-        let keys: Vec<&str> = std::iter::once(STEP_KEY).chain(own.iter().copied()).collect();
+        let keys: Vec<&str> = std::iter::once(STEP_KEY)
+            .chain(own.iter().copied())
+            .collect();
         // the table step's relation is optional and never refused (table_relation reads it after every check)
         let optional = |k: &str| matches!(self, Ask::Table { .. }) && k == RELATION_KEY;
-        if let Some(key) = map.keys().find(|k| !keys.contains(&k.as_str()) && !optional(k)) {
+        if let Some(key) = map
+            .keys()
+            .find(|k| !keys.contains(&k.as_str()) && !optional(k))
+        {
             return Err(self.refuse(format!("unknown key '{key}'")));
         }
         if let Some(key) = keys.iter().find(|k| !map.contains_key(**k)) {
@@ -1138,11 +1224,18 @@ impl Ask {
                 // the latest year gets that option here, never from the model.
                 for &n in &picks {
                     let years_key = format!("t{n}.{}", next_params::YEARS_KEY);
-                    if items.get(n - 1).is_some_and(|its| its.iter().any(|(k, _)| *k == years_key)) {
+                    if items
+                        .get(n - 1)
+                        .is_some_and(|its| its.iter().any(|(k, _)| *k == years_key))
+                    {
                         continue;
                     }
                     let breakdown = params.get(&format!("t{n}.breakdown")).copied();
-                    let split = splits.get(n - 1).into_iter().flatten().find(|s| Some(s.option) == breakdown);
+                    let split = splits
+                        .get(n - 1)
+                        .into_iter()
+                        .flatten()
+                        .find(|s| Some(s.option) == breakdown);
                     if let Some(y) = split.and_then(Split::program_years) {
                         params.insert(years_key, y);
                     }
@@ -1157,7 +1250,11 @@ impl Ask {
                         return Err(refused);
                     }
                 }
-                Ok(Choice::Table { picks, params, relation: relation_of(map) })
+                Ok(Choice::Table {
+                    picks,
+                    params,
+                    relation: relation_of(map),
+                })
             }
             Ask::Claims { groups, relations } => {
                 let picks = numbers(&map["pick"]).unwrap_or_default();
@@ -1208,8 +1305,16 @@ impl Ask {
                     // A draft that ranks under the scope's own words (the page's set phrase, `mark`, its count a placeholder)
                     // keeps them, with the draft as the example: said first, before the placeholder its count is.
                     let mark = mark.as_str();
-                    if scoped.contains(id) && revised != draft && !mark.is_empty() && draft.contains(mark) && !revised.contains(mark) {
-                        return Err(self.refuse(format!("field '{id}': drops '{mark}'{}, e.g. '{draft}'", scope_rule(scoped))));
+                    if scoped.contains(id)
+                        && revised != draft
+                        && !mark.is_empty()
+                        && draft.contains(mark)
+                        && !revised.contains(mark)
+                    {
+                        return Err(self.refuse(format!(
+                            "field '{id}': drops '{mark}'{}, e.g. '{draft}'",
+                            scope_rule(scoped)
+                        )));
                     }
                     if let Err(why) = same_placeholders(draft, revised) {
                         return Err(self.refuse(format!("field '{id}': {why}")));
@@ -1240,22 +1345,37 @@ impl Ask {
                             .refuse(format!("field '{id}': '{written}'{}", period_rule(periods))));
                     }
                     if let Some(written) = year_after_fact_period(revised) {
-                        return Err(self.refuse(format!("field '{id}': '{written}'; {FACT_PERIOD_RULE}")));
+                        return Err(
+                            self.refuse(format!("field '{id}': '{written}'; {FACT_PERIOD_RULE}"))
+                        );
                     }
                     if let Some(level) = level_question(revised).filter(|_| changes.contains(id)) {
-                        return Err(self.refuse(format!("field '{id}': '{level}' asks a level{}", change_rule(changes))));
+                        return Err(self.refuse(format!(
+                            "field '{id}': '{level}' asks a level{}",
+                            change_rule(changes)
+                        )));
                     }
                     if let Some(word) = change_word(revised).filter(|_| levels.contains(id)) {
-                        return Err(self.refuse(format!("field '{id}': '{word}' names a change{}, e.g. '{draft}'", level_rule(levels))));
+                        return Err(self.refuse(format!(
+                            "field '{id}': '{word}' names a change{}, e.g. '{draft}'",
+                            level_rule(levels)
+                        )));
                     }
                     // On a scoped page a ranking word holds only among the kept places: refused here, so the model words
                     // it again, rather than put back after acceptance (next_page Drafts::scoped).
                     // the set phrase is the registry's words, which may rank the set itself (人口最多的): read without it
-                    let unmarked = if mark.is_empty() { revised.clone() } else { revised.replace(mark, "") };
+                    let unmarked = if mark.is_empty() {
+                        revised.clone()
+                    } else {
+                        revised.replace(mark, "")
+                    };
                     if let Some(word) =
                         ranking_word(&unmarked).filter(|_| scoped.contains(id) && revised != draft)
                     {
-                        return Err(self.refuse(format!("field '{id}': '{word}' ranks{}", scope_rule(scoped))));
+                        return Err(self.refuse(format!(
+                            "field '{id}': '{word}' ranks{}",
+                            scope_rule(scoped)
+                        )));
                     }
                     // A title is a label or a conclusion: a question there is refused with the field's own draft, a title
                     // of this page's kind that passes every check above.
@@ -1268,12 +1388,18 @@ impl Ask {
                     // A place or part the page draws is named through its placeholder, which the program fills from the
                     // data: one the question does not write, typed where the draft does not, names what no fact gave.
                     if let Some(name) = typed_member(revised, draft, unasked) {
-                        return Err(self.refuse(format!("field '{id}': '{name}' {MEMBER_RULE}, e.g. '{draft}'")));
+                        return Err(self.refuse(format!(
+                            "field '{id}': '{name}' {MEMBER_RULE}, e.g. '{draft}'"
+                        )));
                     }
                     // A title that names a drawn place or part says no standing of it: the finding is the program's headline.
                     if titles.contains(id) {
-                        if let Some(word) = typed_member(revised, draft, members).and_then(|_| finding_word(revised, draft)) {
-                            return Err(self.refuse(format!("field '{id}': '{word}' {TITLE_FINDING_RULE}, e.g. '{draft}'")));
+                        if let Some(word) = typed_member(revised, draft, members)
+                            .and_then(|_| finding_word(revised, draft))
+                        {
+                            return Err(self.refuse(format!(
+                                "field '{id}': '{word}' {TITLE_FINDING_RULE}, e.g. '{draft}'"
+                            )));
                         }
                     }
                 }
@@ -1322,13 +1448,21 @@ impl Ask {
             // the reply's frame is refused as any other step's; within it, each question is read on its own (verdict_of)
             Ask::Vision => {
                 let Value::Object(given) = &map["answers"] else {
-                    return Err(self.refuse("answers must map each question id to {answer, reason}"));
+                    return Err(
+                        self.refuse("answers must map each question id to {answer, reason}")
+                    );
                 };
-                if let Some(key) = given.keys().find(|k| !VISION_QUESTIONS.iter().any(|(id, _)| id == k)) {
+                if let Some(key) = given
+                    .keys()
+                    .find(|k| !VISION_QUESTIONS.iter().any(|(id, _)| id == k))
+                {
                     return Err(self.refuse(format!("answers has no question '{key}'")));
                 }
                 Ok(Choice::Vision {
-                    answers: VISION_QUESTIONS.iter().map(|(id, _)| (*id, verdict_of(given.get(*id)))).collect(),
+                    answers: VISION_QUESTIONS
+                        .iter()
+                        .map(|(id, _)| (*id, verdict_of(given.get(*id))))
+                        .collect(),
                 })
             }
             Ask::Split { ask } => {
@@ -1342,20 +1476,40 @@ impl Ask {
                 let mut quantities = Vec::new();
                 for v in given {
                     match v.as_u64() {
-                        Some(i) if (i as usize) < ask.quantities.len() && !quantities.contains(&(i as usize)) => quantities.push(i as usize),
-                        Some(i) if quantities.contains(&(i as usize)) => return Err(self.refuse(format!("quantities lists {i} twice"))),
-                        _ => return Err(self.refuse(format!("quantities: {v} is not a listed quantity number"))),
+                        Some(i)
+                            if (i as usize) < ask.quantities.len()
+                                && !quantities.contains(&(i as usize)) =>
+                        {
+                            quantities.push(i as usize)
+                        }
+                        Some(i) if quantities.contains(&(i as usize)) => {
+                            return Err(self.refuse(format!("quantities lists {i} twice")))
+                        }
+                        _ => {
+                            return Err(self.refuse(format!(
+                                "quantities: {v} is not a listed quantity number"
+                            )))
+                        }
                     }
                 }
                 if number != 0 {
-                    let n = if quantities.is_empty() { ask.quantities.len() } else { quantities.len() };
-                    if let Some((_, name, _, least)) = crate::answer_plan::SPLIT_TERMS.iter().find(|t| t.0 == number) {
+                    let n = if quantities.is_empty() {
+                        ask.quantities.len()
+                    } else {
+                        quantities.len()
+                    };
+                    if let Some((_, name, _, least)) = crate::answer_plan::SPLIT_TERMS
+                        .iter()
+                        .find(|t| t.0 == number)
+                    {
                         if n < *least {
                             return Err(self.refuse(format!("split {number} ({name}) takes {least} quantities or more, and the answer gives {n}; answer 0 when the question names fewer")));
                         }
                     }
                 }
-                Ok(Choice::Split { reply: crate::answer_plan::SplitReply { number, quantities } })
+                Ok(Choice::Split {
+                    reply: crate::answer_plan::SplitReply { number, quantities },
+                })
             }
         }
     }
@@ -1376,7 +1530,9 @@ pub fn split_answer(number: u8) -> Value {
 
 /// The shape numbers a shape answer may give: 0 (none of them), then the offered ones in the order offered.
 fn split_numbers(ask: &crate::answer_plan::SplitAsk) -> Vec<u64> {
-    std::iter::once(0).chain(ask.offered.iter().map(|(offered, _)| *offered as u64)).collect()
+    std::iter::once(0)
+        .chain(ask.offered.iter().map(|(offered, _)| *offered as u64))
+        .collect()
 }
 
 /// The question's quantities as the shape request lists them: number, then printed name.
@@ -1384,7 +1540,12 @@ fn quantity_list(ask: &crate::answer_plan::SplitAsk) -> String {
     if ask.quantities.is_empty() {
         return "the question names none".into();
     }
-    ask.quantities.iter().enumerate().map(|(i, (_, zh))| format!("{i} {zh}")).collect::<Vec<_>>().join(", ")
+    ask.quantities
+        .iter()
+        .enumerate()
+        .map(|(i, (_, zh))| format!("{i} {zh}"))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// The shape rule: 0, then each offered shape with what it answers (answer_plan::SPLIT_TERMS), the words of the question
@@ -1394,9 +1555,15 @@ fn split_rule(ask: &crate::answer_plan::SplitAsk) -> String {
         .offered
         .iter()
         .filter_map(|(offered, words)| {
-            let (n, name, what, least) = crate::answer_plan::SPLIT_TERMS.iter().find(|t| t.0 == *offered as u8)?;
-            let pointed = words.map_or(String::new(), |w| format!("; the question's words \"{w}\" point here"));
-            Some(format!("{n} {name}: {what} (takes {least} quantities or more{pointed})"))
+            let (n, name, what, least) = crate::answer_plan::SPLIT_TERMS
+                .iter()
+                .find(|t| t.0 == *offered as u8)?;
+            let pointed = words.map_or(String::new(), |w| {
+                format!("; the question's words \"{w}\" point here")
+            });
+            Some(format!(
+                "{n} {name}: {what} (takes {least} quantities or more{pointed})"
+            ))
         })
         .collect();
     format!("how the question splits into the page's blocks: 0 none of these (one block answers it); {}", offered.join("; "))
@@ -1597,12 +1764,18 @@ struct FreeWords {
 fn free_words() -> &'static FreeWords {
     static W: std::sync::OnceLock<FreeWords> = std::sync::OnceLock::new();
     W.get_or_init(|| {
-        let v: Value = serde_json::from_str(include_str!("../runtime/pi/assets/number-free-words.json"))
-            .expect("number-free-words.json parses");
+        let v: Value =
+            serde_json::from_str(include_str!("../runtime/pi/assets/number-free-words.json"))
+                .expect("number-free-words.json parses");
         let words = |k: &str| -> Vec<String> {
-            v[k].as_array().expect("a word list").iter().map(|w| w.as_str().expect("a word").to_string()).collect()
+            v[k].as_array()
+                .expect("a word list")
+                .iter()
+                .map(|w| w.as_str().expect("a word").to_string())
+                .collect()
         };
-        let list = |k: &str| -> Vec<Vec<char>> { words(k).iter().map(|w| w.chars().collect()).collect() };
+        let list =
+            |k: &str| -> Vec<Vec<char>> { words(k).iter().map(|w| w.chars().collect()).collect() };
         FreeWords {
             terms: list("terms"),
             si_units: list("si_units"),
@@ -1717,9 +1890,15 @@ fn place_count(chars: &[char], held: &[bool], places: Option<usize>) -> Vec<bool
         while i < chars.len() && numeral(chars[i]) {
             i += 1;
         }
-        let before = (0..start).rev().find(|&j| held[j] || !chars[j].is_whitespace());
-        let free_before = before.is_none_or(|j| !held[j] && chars[j] != '第' && !QUANTITY_BEFORE.contains(chars[j]));
-        let noun = w.place_counts.iter().any(|n| chars.get(i..i + n.len()) == Some(n.as_slice()));
+        let before = (0..start)
+            .rev()
+            .find(|&j| held[j] || !chars[j].is_whitespace());
+        let free_before = before
+            .is_none_or(|j| !held[j] && chars[j] != '第' && !QUANTITY_BEFORE.contains(chars[j]));
+        let noun = w
+            .place_counts
+            .iter()
+            .any(|n| chars.get(i..i + n.len()) == Some(n.as_slice()));
         if free_before && noun && numeral_value(&chars[start..i]) == Some(places) {
             free[start..i].iter_mut().for_each(|f| *f = true);
         }
@@ -1731,9 +1910,16 @@ fn place_count(chars: &[char], held: &[bool], places: Option<usize>) -> Vec<bool
 /// written; any other numeral as written.
 pub fn place_count_free(text: &str, places: Option<usize>) -> String {
     let outside = outside_placeholders(text);
-    let held: Vec<bool> = outside.iter().zip(text.chars()).map(|(o, t)| *o == ' ' && t != ' ').collect();
+    let held: Vec<bool> = outside
+        .iter()
+        .zip(text.chars())
+        .map(|(o, t)| *o == ' ' && t != ' ')
+        .collect();
     let free = place_count(&outside, &held, places);
-    text.chars().zip(free).map(|(c, f)| if f { ' ' } else { c }).collect()
+    text.chars()
+        .zip(free)
+        .map(|(c, f)| if f { ' ' } else { c })
+        .collect()
 }
 
 /// Which chars of `chars` (a text outside its placeholders, `held` marking a placeholder's blank) write a FreeWords word:
@@ -1743,12 +1929,16 @@ pub fn place_count_free(text: &str, places: Option<usize>) -> String {
 fn number_free(chars: &[char], held: &[bool]) -> Vec<bool> {
     let w = free_words();
     let numeral = |c: char| c.is_numeric() || NUMERALS.contains(c);
-    let at = |i: usize, word: &[char]| !word.is_empty() && chars.get(i..i + word.len()) == Some(word);
+    let at =
+        |i: usize, word: &[char]| !word.is_empty() && chars.get(i..i + word.len()) == Some(word);
     let before = |i: usize| (0..i).rev().find(|&j| held[j] || !chars[j].is_whitespace());
     let counted = |j: usize| numeral(chars[j]) || QUANTITY_BEFORE.contains(chars[j]);
     let run_end = |i: usize| {
         let mut e = i;
-        while e < chars.len() && (numeral(chars[e]) || (chars[e] == '.' && chars.get(e + 1).is_some_and(|&n| numeral(n)))) {
+        while e < chars.len()
+            && (numeral(chars[e])
+                || (chars[e] == '.' && chars.get(e + 1).is_some_and(|&n| numeral(n))))
+        {
             e += 1;
         }
         e
@@ -1761,7 +1951,12 @@ fn number_free(chars: &[char], held: &[bool]) -> Vec<bool> {
             let code = |c: Option<&char>| c.is_some_and(|c| c.is_ascii_alphanumeric() || *c == '.');
             !code(i.checked_sub(1).and_then(|j| chars.get(j))) && !code(chars.get(i + t.len()))
         };
-        if let Some(t) = w.terms.iter().chain(&w.rates).find(|t| at(i, t) && alone(t)) {
+        if let Some(t) = w
+            .terms
+            .iter()
+            .chain(&w.rates)
+            .find(|t| at(i, t) && alone(t))
+        {
             if before(i).is_none_or(|j| !held[j] && !counted(j)) {
                 mark(i, i + t.len());
             }
@@ -1777,19 +1972,27 @@ fn number_free(chars: &[char], held: &[bool]) -> Vec<bool> {
                 mark(i + o.len(), i + o.len() + s.len());
             }
         }
-        if numeral(chars[i]) && (i == 0 || !numeral(chars[i - 1])) && before(i).is_none_or(|j| !held[j]) {
+        if numeral(chars[i])
+            && (i == 0 || !numeral(chars[i - 1]))
+            && before(i).is_none_or(|j| !held[j])
+        {
             let e = run_end(i);
             let mut end = e;
             if chars.get(e).is_some_and(|c| w.age_range.contains(c)) && run_end(e + 1) > e + 1 {
                 end = run_end(e + 1);
             }
             if chars.get(end) == Some(&'岁') {
-                let band: String =
-                    chars[i..=end].iter().map(|&c| if w.age_range.contains(&c) { '-' } else { c }).collect();
+                let band: String = chars[i..=end]
+                    .iter()
+                    .map(|&c| if w.age_range.contains(&c) { '-' } else { c })
+                    .collect();
                 // an age band alone, or a single age with the words its official name writes after it (5岁以下); a bare age
                 // (增加了5岁) is a number
                 let rest: String = chars[end + 1..].iter().collect();
-                let named = w.ages.iter().filter(|a| a.starts_with(band.as_str()) && rest.starts_with(&a[band.len()..]));
+                let named = w
+                    .ages
+                    .iter()
+                    .filter(|a| a.starts_with(band.as_str()) && rest.starts_with(&a[band.len()..]));
                 if let Some(a) = named.max_by_key(|a| a.len()) {
                     mark(i, end + 1 + a[band.len()..].chars().count());
                 }
@@ -1802,9 +2005,16 @@ fn number_free(chars: &[char], held: &[bool]) -> Vec<bool> {
 /// The text with each number_free span blanked, one space per char (placeholders kept as written), for the digit checks.
 pub fn number_free_text(text: &str) -> String {
     let outside = outside_placeholders(text);
-    let held: Vec<bool> = outside.iter().zip(text.chars()).map(|(o, t)| *o == ' ' && t != ' ').collect();
+    let held: Vec<bool> = outside
+        .iter()
+        .zip(text.chars())
+        .map(|(o, t)| *o == ' ' && t != ' ')
+        .collect();
     let free = number_free(&outside, &held);
-    text.chars().zip(free).map(|(c, f)| if f { ' ' } else { c }).collect()
+    text.chars()
+        .zip(free)
+        .map(|(c, f)| if f { ' ' } else { c })
+        .collect()
 }
 
 /// The first number a text types in words outside its placeholders: a RATIO_WORDS word; a run of NUMERALS or digits
@@ -1820,7 +2030,11 @@ pub fn worded_number(text: &str) -> Option<String> {
         .map(|(o, t)| *o == ' ' && t != ' ')
         .collect();
     let free = number_free(&chars, &held);
-    chars.iter_mut().zip(free).filter(|(_, f)| *f).for_each(|(c, _)| *c = ' ');
+    chars
+        .iter_mut()
+        .zip(free)
+        .filter(|(_, f)| *f)
+        .for_each(|(c, _)| *c = ' ');
     let words: Vec<Vec<char>> = NUMBER_FREE.iter().map(|w| w.chars().collect()).collect();
     for pos in 0..chars.len() {
         let Some(word) = words.iter().find(|w| chars[pos..].starts_with(w)) else {
@@ -1881,12 +2095,19 @@ pub fn unanswered_word(text: &str) -> Option<String> {
         .lines()
         .map(str::trim)
         .filter(|w| !w.is_empty() && !w.starts_with('#'))
-        .find(|w| text.chars().filter(|c| !c.is_whitespace()).collect::<String>().contains(w))
+        .find(|w| {
+            text.chars()
+                .filter(|c| !c.is_whitespace())
+                .collect::<String>()
+                .contains(w)
+        })
         .map(str::to_string)
 }
 
 pub fn year_after_period(text: &str) -> Option<String> {
-    year_after(text, |column| crate::next_page::TIME_COLUMNS.contains(&column))
+    year_after(text, |column| {
+        crate::next_page::TIME_COLUMNS.contains(&column)
+    })
 }
 
 /// The first fact period placeholder ("{lead1.t}", next_run finding_of) of a text written with 年 right after it, as
@@ -1912,7 +2133,8 @@ fn year_after(text: &str, timed: impl Fn(&str) -> bool) -> Option<String> {
 }
 
 /// The rule of a fact period placeholder, said in a refusal of year_after_fact_period.
-pub const FACT_PERIOD_RULE: &str = "a {<fact>.t} placeholder prints its year with 年 already, so write no 年 after it";
+pub const FACT_PERIOD_RULE: &str =
+    "a {<fact>.t} placeholder prints its year with 年 already, so write no 年 after it";
 
 /// The rule of a page whose time values are not years, said to the model in the ask and in a refusal; empty on an
 /// annual page.
@@ -1962,9 +2184,13 @@ pub const CHANGE_TITLE_RULE: &str = "this page draws how much each changed betwe
      change, as a label or a conclusion: it holds 变化, 增, 减, 升, 降, 涨, 跌 or 从…到, e.g. '各方数值的变化' or \
      '少数地区升幅居前', not '各地数值最高'";
 /// Words a title asks a level with (who is highest, most, first).
-pub const LEVEL_WORDS: [&str; 10] = ["最高", "最低", "最多", "最少", "最大", "最小", "领先", "垫底", "第一", "居首"];
+pub const LEVEL_WORDS: [&str; 10] = [
+    "最高", "最低", "最多", "最少", "最大", "最小", "领先", "垫底", "第一", "居首",
+];
 /// Words that name a change; 从 with 到 after it (从起始到最近) names one too.
-pub const CHANGE_WORDS: [&str; 10] = ["变", "增", "减", "升", "降", "涨", "跌", "提高", "扩大", "缩小"];
+pub const CHANGE_WORDS: [&str; 10] = [
+    "变", "增", "减", "升", "降", "涨", "跌", "提高", "扩大", "缩小",
+];
 
 /// The rule of the fields of a scoped page (Ask::Text scoped), said to the model in the ask and in a refusal, with an
 /// example that passes; the words are next_page SUPERLATIVES.
@@ -1978,7 +2204,20 @@ pub const TITLE_RULE: &str = "the title is a label (what the page is about, e.g.
      the chart shows, e.g. '少数地区明显偏高'), never a question: no ？ or ?, and none of 为什么, 什么, 为何, 怎么, 怎样, 如何, 多少, \
      多大, 谁, 哪, 吗, 几";
 /// Words that make a wording ask; 几乎 (almost) is none of them. Longest first, so a refusal names the whole word.
-pub const QUESTION_WORDS: [&str; 12] = ["为什么", "什么", "为何", "怎么", "怎样", "如何", "多少", "多大", "谁", "哪", "吗", "几"];
+pub const QUESTION_WORDS: [&str; 12] = [
+    "为什么",
+    "什么",
+    "为何",
+    "怎么",
+    "怎样",
+    "如何",
+    "多少",
+    "多大",
+    "谁",
+    "哪",
+    "吗",
+    "几",
+];
 
 /// TITLE_RULE with the field it holds for; empty when the ask holds no title.
 fn title_rule(titles: &[String]) -> String {
@@ -2027,7 +2266,8 @@ pub const TITLE_FINDING_RULE: &str = "says where a place or part the title names
 pub fn finding_words() -> &'static [String] {
     static WORDS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
     WORDS.get_or_init(|| {
-        let v: Value = serde_json::from_str(crate::next_knowledge::TITLE_FINDINGS_ZH).expect("title-findings-zh.json parses");
+        let v: Value = serde_json::from_str(crate::next_knowledge::TITLE_FINDINGS_ZH)
+            .expect("title-findings-zh.json parses");
         let words: Vec<String> = v["words"]
             .as_array()
             .expect("title-findings-zh.json holds words")
@@ -2054,7 +2294,9 @@ fn own_words(text: &str) -> String {
             _ => {}
         }
     }
-    level_terms().iter().fold(out, |t, term| t.replace(term.as_str(), ""))
+    level_terms()
+        .iter()
+        .fold(out, |t, term| t.replace(term.as_str(), ""))
 }
 
 /// The first of `names` (longest first) a reworded field types in its own words that its draft does not type.
@@ -2062,23 +2304,42 @@ pub fn typed_member(revised: &str, draft: &str, names: &[String]) -> Option<Stri
     let (said, drafted) = (own_words(revised), own_words(draft));
     let mut names: Vec<&String> = names.iter().filter(|n| !n.trim().is_empty()).collect();
     names.sort_by_key(|n| std::cmp::Reverse(n.chars().count()));
-    names.into_iter().find(|n| said.contains(n.as_str()) && !drafted.contains(n.as_str())).cloned()
+    names
+        .into_iter()
+        .find(|n| said.contains(n.as_str()) && !drafted.contains(n.as_str()))
+        .cloned()
 }
 
 /// The first finding_words() word a reworded field holds in its own words that its draft does not.
 pub fn finding_word(revised: &str, draft: &str) -> Option<&'static str> {
     let (said, drafted) = (own_words(revised), own_words(draft));
-    finding_words().iter().map(String::as_str).find(|w| said.contains(*w) && !drafted.contains(*w))
+    finding_words()
+        .iter()
+        .map(String::as_str)
+        .find(|w| said.contains(*w) && !drafted.contains(*w))
 }
 
 /// MEMBER_RULE with the names it holds for, and TITLE_FINDING_RULE with the title field; empty when the ask knows no names.
 fn member_rule(unasked: &[String], titles: &[String], members: &[String]) -> String {
     let mut rule = String::new();
     if !unasked.is_empty() {
-        rule += &format!("; a name such as {} {MEMBER_RULE}", unasked.iter().take(6).cloned().collect::<Vec<_>>().join(", "));
+        rule += &format!(
+            "; a name such as {} {MEMBER_RULE}",
+            unasked
+                .iter()
+                .take(6)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
     }
     if !members.is_empty() && !titles.is_empty() {
-        let words = finding_words().iter().take(6).cloned().collect::<Vec<_>>().join(", ");
+        let words = finding_words()
+            .iter()
+            .take(6)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(", ");
         rule += &format!("; a title that names one, with a word such as {words}, {TITLE_FINDING_RULE} (field {})", titles.join(", "));
     }
     rule
@@ -2088,7 +2349,9 @@ fn member_rule(unasked: &[String], titles: &[String], members: &[String]) -> Str
 /// value added holds a change word's character and names no change): on a page that draws one period's levels, such a
 /// title names a change the page does not show.
 pub fn change_word(text: &str) -> Option<&'static str> {
-    let read = level_terms().iter().fold(text.to_string(), |t, term| t.replace(term.as_str(), ""));
+    let read = level_terms()
+        .iter()
+        .fold(text.to_string(), |t, term| t.replace(term.as_str(), ""));
     CHANGE_WORDS.iter().copied().find(|w| read.contains(*w))
 }
 
@@ -2101,7 +2364,11 @@ fn level_terms() -> &'static [String] {
             .ok()
             .and_then(|v| {
                 v["terms"].as_array().map(|ts| {
-                    ts.iter().filter_map(|t| t["zh"].as_str()).filter(|t| !t.is_empty()).map(str::to_string).collect()
+                    ts.iter()
+                        .filter_map(|t| t["zh"].as_str())
+                        .filter(|t| !t.is_empty())
+                        .map(str::to_string)
+                        .collect()
                 })
             })
             .unwrap_or_default()
@@ -2326,7 +2593,8 @@ pub fn secret_in(value: &Value, secrets: &[String]) -> Option<SecretKind> {
     if all.iter().any(listed) {
         return Some(SecretKind::Handoff);
     }
-    all.into_iter().find_map(|text| secret_in_text(text, secrets))
+    all.into_iter()
+        .find_map(|text| secret_in_text(text, secrets))
 }
 
 /// A tool call id that can name a file in the run folder.
@@ -2496,10 +2764,7 @@ impl<'a> Recorder<'a> {
                 "tools": [{"name": tool.name, "description": tool.description, "parameters": tool.parameters}],
                 "history": sent,
             });
-            let Some(mut reply) = model
-                .ask(sent, std::slice::from_ref(&tool), cancel)
-                .await
-            else {
+            let Some(mut reply) = model.ask(sent, std::slice::from_ref(&tool), cancel).await else {
                 return Err(Stop::NoReply { step });
             };
             reply["role"] = json!("assistant");
@@ -2794,7 +3059,9 @@ fn common_year(tables: &[(&str, &[Value])]) -> Result<String, &'static str> {
     for (dim, rows) in tables {
         let mut at: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
         for r in rows.iter() {
-            let (Some(t), Some(c)) = (r["time"].as_str(), r["dims"][*dim].as_str()) else { continue };
+            let (Some(t), Some(c)) = (r["time"].as_str(), r["dims"][*dim].as_str()) else {
+                continue;
+            };
             if t.len() != 4 || !t.bytes().all(|b| b.is_ascii_digit()) {
                 return Err("a block table holds a time that is no year");
             }
@@ -2810,14 +3077,23 @@ fn common_year(tables: &[(&str, &[Value])]) -> Result<String, &'static str> {
             Some(e) => e.intersection(&all).copied().collect(),
         });
     }
-    let every = every.filter(|e| !e.is_empty()).ok_or("no place is in every block table")?;
+    let every = every
+        .filter(|e| !e.is_empty())
+        .ok_or("no place is in every block table")?;
     let years: BTreeSet<&str> = held.iter().flat_map(|at| at.keys().copied()).collect();
     let year = years
         .into_iter()
         .rev()
-        .find(|y| held.iter().all(|at| at.get(y).is_some_and(|there| every.is_subset(there))))
+        .find(|y| {
+            held.iter()
+                .all(|at| at.get(y).is_some_and(|there| every.is_subset(there)))
+        })
         .ok_or("no year holds every place in every block table")?;
-    let earliest_latest = held.iter().filter_map(|at| at.keys().next_back()).min().and_then(|y| y.parse::<i32>().ok());
+    let earliest_latest = held
+        .iter()
+        .filter_map(|at| at.keys().next_back())
+        .min()
+        .and_then(|y| y.parse::<i32>().ok());
     match (year.parse::<i32>().ok(), earliest_latest) {
         (Some(y), Some(floor)) if y >= floor - COMMON_YEAR_BACK => Ok(year.to_string()),
         _ => Err("the year every place holds is further back than a table's latest allows"),
@@ -2851,7 +3127,14 @@ pub trait Catalogue: Sync {
     /// `months` when the question asks for months (next_params::question_months), so a monthly-only table is offered as
     /// itself, not as its annual twin, and `latest_year` the latest year it names (next_params::question_latest_year), so
     /// one is not offered as an annual twin that ends before that year.
-    fn top5(&self, question_zh: &str, texts: &[String], months: bool, latest_year: Option<i32>, first_year: Option<i32>) -> Ranking;
+    fn top5(
+        &self,
+        question_zh: &str,
+        texts: &[String],
+        months: bool,
+        latest_year: Option<i32>,
+        first_year: Option<i32>,
+    ) -> Ranking;
     /// English place names in the search texts that the question does not name. Flagged in the event, never refused.
     fn places_outside(&self, question_zh: &str, texts: &[String]) -> Vec<String>;
     /// SOURCE.json of the catalogue directory: the original files it was made from and their hashes.
@@ -2871,7 +3154,11 @@ pub trait Catalogue: Sync {
     }
     /// The whole class of question the knowledge group refuses from its words before any search (scope-refusal-zh.json, user
     /// 11-08 item 1); None when no class takes it.
-    fn scope_refused(&self, _question_zh: &str, _this_year: i32) -> Option<crate::l5geo::ScopeRefusal> {
+    fn scope_refused(
+        &self,
+        _question_zh: &str,
+        _this_year: i32,
+    ) -> Option<crate::l5geo::ScopeRefusal> {
         None
     }
     /// The shape request of a question the scope refusal let through (the knowledge group's answer_plan, through its door);
@@ -2897,7 +3184,12 @@ pub trait Catalogue: Sync {
     /// door), from the page's first and last years, its place codes and those with a row at the last: the members of the
     /// year the page counts, the places to leave out and the words of the line that says so; None when the question names
     /// no group, or this catalogue reads none.
-    fn group_basis(&self, _question_zh: &str, _years: (Option<i32>, i32), _places: (&[String], &[String])) -> Option<crate::l5geo::GroupBasis> {
+    fn group_basis(
+        &self,
+        _question_zh: &str,
+        _years: (Option<i32>, i32),
+        _places: (&[String], &[String]),
+    ) -> Option<crate::l5geo::GroupBasis> {
         None
     }
     /// The shape of the slice a fetched file varies over, read by the knowledge group against the table's own metadata.
@@ -2934,7 +3226,10 @@ pub trait Catalogue: Sync {
         &self,
         _main: &str,
         _rows: &BTreeMap<String, Vec<next_knowledge::CompanionRow>>,
-    ) -> (Vec<next_knowledge::Companion>, Vec<(String, next_knowledge::DropWhy)>) {
+    ) -> (
+        Vec<next_knowledge::Companion>,
+        Vec<(String, next_knowledge::DropWhy)>,
+    ) {
         (Vec::new(), Vec::new())
     }
     /// Whether a table is a hub table (the knowledge group's hub_origin, through its door): `dims` holds each dimension's
@@ -3031,7 +3326,11 @@ pub trait Catalogue: Sync {
     }
     /// The leaf registry's page recipes, in the order the flow tries them (next_visual's `call`, through its door).
     fn recipes(&self) -> &'static [crate::next_leaf::Recipe] {
-        recipes_reply(visual_call(&Mutex::new(Vec::new()), "recipes", next_visual::Request::Recipes))
+        recipes_reply(visual_call(
+            &Mutex::new(Vec::new()),
+            "recipes",
+            next_visual::Request::Recipes,
+        ))
     }
     /// The Chinese name of each code in the name table's scheme, through the knowledge group's command; Err lists the codes the
     /// table does not hold (a name is never translated, and a code is never shown in its place).
@@ -3050,7 +3349,12 @@ pub trait Catalogue: Sync {
     /// The reviewed Chinese name of a catalogue table through the knowledge group's command (TableZh); none when it lists
     /// none, and the source line keeps the English title.
     fn table_zh(&self, id: &str) -> Result<Option<String>, String> {
-        table_zh_reply(knowledge_call(&Mutex::new(Vec::new()), "table_zh", json!({"id": id}), next_knowledge::Request::TableZh { id }))
+        table_zh_reply(knowledge_call(
+            &Mutex::new(Vec::new()),
+            "table_zh",
+            json!({"id": id}),
+            next_knowledge::Request::TableZh { id },
+        ))
     }
     /// The ids of the quantities the Chinese question asks for once `table` is chosen, through the knowledge group's
     /// command (AskedBeside): the table's reviewed name said whole in the question is one quantity.
@@ -3071,7 +3375,12 @@ pub trait Catalogue: Sync {
     /// The iso3 code of each iso2 code by the knowledge group's name table (Iso3Of, through its door); a code it has none
     /// for is left out.
     fn iso3_of(&self, codes: &[String]) -> Result<BTreeMap<String, String>, String> {
-        match knowledge_call(&Mutex::new(Vec::new()), "iso3_of", json!({"codes": codes}), next_knowledge::Request::Iso3Of { codes })? {
+        match knowledge_call(
+            &Mutex::new(Vec::new()),
+            "iso3_of",
+            json!({"codes": codes}),
+            next_knowledge::Request::Iso3Of { codes },
+        )? {
             next_knowledge::Reply::Iso3 { iso3, .. } => Ok(iso3),
             _ => unreachable!("the knowledge group answered iso3_of with another reply"),
         }
@@ -3193,19 +3502,37 @@ impl GroupCatalogue {
 /// The sha256 of the Natural Earth attributes table a map point may come from (runtime/pi/assets/
 /// naturalearth-admin0-50m-attributes.json, the bytes the visual group embeds): a point from any other table is refused,
 /// so the points a page drew are the ones a replay of this table gives.
-pub const NE_POINTS_SHA256: &str = "206fbe5e671c3c3f19db0709a7d85093ed935b2490b25b4d5b50a3c0a4120d1a";
+pub const NE_POINTS_SHA256: &str =
+    "206fbe5e671c3c3f19db0709a7d85093ed935b2490b25b4d5b50a3c0a4120d1a";
 
 /// Catalogue::place_points through the two group commands, kept in `calls`: the knowledge group says each code's iso3, the
 /// visual group each iso3's point, and the points come back under the codes asked.
-fn place_points_call(calls: &Mutex<Vec<Value>>, codes: &[String]) -> Result<BTreeMap<String, [f64; 2]>, String> {
+fn place_points_call(
+    calls: &Mutex<Vec<Value>>,
+    codes: &[String],
+) -> Result<BTreeMap<String, [f64; 2]>, String> {
     // a code with no iso3 is not in the map, so it is named with the codes that have no point
-    let iso3_of = match knowledge_call(calls, "iso3_of", json!({"codes": codes}), next_knowledge::Request::Iso3Of { codes }) {
+    let iso3_of = match knowledge_call(
+        calls,
+        "iso3_of",
+        json!({"codes": codes}),
+        next_knowledge::Request::Iso3Of { codes },
+    ) {
         Ok(next_knowledge::Reply::Iso3 { iso3, .. }) => iso3,
         Ok(_) => unreachable!("the knowledge group answered iso3_of with another reply"),
         Err(e) => return Err(e),
     };
-    let iso3: Vec<String> = iso3_of.values().cloned().collect::<BTreeSet<_>>().into_iter().collect();
-    let reply = visual_call(calls, "place_points", next_visual::Request::PlacePoints { iso3: &iso3 });
+    let iso3: Vec<String> = iso3_of
+        .values()
+        .cloned()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let reply = visual_call(
+        calls,
+        "place_points",
+        next_visual::Request::PlacePoints { iso3: &iso3 },
+    );
     place_points_reply(codes, &iso3_of, reply)
 }
 
@@ -3221,19 +3548,27 @@ fn place_points_reply(
     reply: Result<next_visual::Reply, String>,
 ) -> Result<BTreeMap<String, [f64; 2]>, String> {
     let (points, missing) = match reply {
-        Ok(next_visual::Reply::Points { table, .. }) if crate::hash::sha256_bytes(table.as_bytes()) != NE_POINTS_SHA256 => {
+        Ok(next_visual::Reply::Points { table, .. })
+            if crate::hash::sha256_bytes(table.as_bytes()) != NE_POINTS_SHA256 =>
+        {
             return Err(format!(
                 "the map points come from a table of sha256 {}, not the pinned {NE_POINTS_SHA256}",
                 crate::hash::sha256_bytes(table.as_bytes())
             ))
         }
-        Ok(next_visual::Reply::Points { points, missing, .. }) => (points, missing),
+        Ok(next_visual::Reply::Points {
+            points, missing, ..
+        }) => (points, missing),
         Ok(_) => unreachable!("the visual group answered place_points with another reply"),
         Err(e) => return Err(e),
     };
     let (mut found, mut none) = (BTreeMap::new(), Vec::<&str>::new());
     for code in codes.iter().map(|c| c.trim()) {
-        match iso3_of.get(code).filter(|i| !missing.contains(i)).and_then(|i| points.get(i)) {
+        match iso3_of
+            .get(code)
+            .filter(|i| !missing.contains(i))
+            .and_then(|i| points.get(i))
+        {
             Some(p) => {
                 found.insert(code.to_string(), *p);
             }
@@ -3330,7 +3665,11 @@ fn hub_origin_call(
     countries: &BTreeSet<String>,
     aggregates: &BTreeSet<String>,
 ) -> Result<next_knowledge::HubOrigin, next_knowledge::HubMiss> {
-    let request = next_knowledge::Request::HubOrigin { dims, countries, aggregates };
+    let request = next_knowledge::Request::HubOrigin {
+        dims,
+        countries,
+        aggregates,
+    };
     let args = json!({"dims": dims, "countries": countries, "aggregates": aggregates});
     match knowledge_call(calls, "hub_origin", args, request) {
         Ok(next_knowledge::Reply::HubOrigin(found)) => found,
@@ -3435,20 +3774,49 @@ pub(crate) fn visual_call<'a>(
         Request::Page { spec } => format!("{kind} {spec:?}"),
         Request::LeafPage { page } => format!("{kind} {} {:?}", page.frame, page.ledger),
         Request::Stack { title, pages } => format!("{kind} {title:?} {pages:?}"),
-        Request::LeafFill { recipe, knobs, order, runtime, .. } => {
-            format!("{kind} {recipe} {order:?} {} {}", knobs["spec"], runtime.display())
+        Request::LeafFill {
+            recipe,
+            knobs,
+            order,
+            runtime,
+            ..
+        } => {
+            format!(
+                "{kind} {recipe} {order:?} {} {}",
+                knobs["spec"],
+                runtime.display()
+            )
         }
-        Request::BrowserCheck { html, html_sha256, .. } => format!("{kind} {} {html_sha256}", html.display()),
+        Request::BrowserCheck {
+            html, html_sha256, ..
+        } => format!("{kind} {} {html_sha256}", html.display()),
         Request::Knob { node, knob } => format!("{kind} {node}.{knob}"),
         Request::Recipes => kind.to_string(),
         Request::RecipeLayers { recipe } => format!("{kind} {recipe}"),
-        Request::LeafRecheck { recipe, html, ledger, .. } => {
-            format!("{kind} {recipe} {} {ledger:?}", crate::hash::sha256_bytes(html.as_bytes()))
+        Request::LeafRecheck {
+            recipe,
+            html,
+            ledger,
+            ..
+        } => {
+            format!(
+                "{kind} {recipe} {} {ledger:?}",
+                crate::hash::sha256_bytes(html.as_bytes())
+            )
         }
         Request::PlacePoints { iso3 } => format!("{kind} {iso3:?}"),
-        Request::IllusStrip { tables, width, runtime } => format!("{kind} {tables:?} {width} {}", runtime.display()),
+        Request::IllusStrip {
+            tables,
+            width,
+            runtime,
+        } => format!("{kind} {tables:?} {width} {}", runtime.display()),
         Request::NodeDeclare { layer, page_in } => format!("{kind} {layer} {page_in}"),
-        Request::NodeDraw { fill, page_in, layers, runtime } => format!("{kind} {layers:?} {fill} {page_in} {}", runtime.display()),
+        Request::NodeDraw {
+            fill,
+            page_in,
+            layers,
+            runtime,
+        } => format!("{kind} {layers:?} {fill} {page_in} {}", runtime.display()),
     };
     let node = match &request {
         Request::NodeDeclare { layer, .. } => Some(layer.to_string()),
@@ -3461,7 +3829,9 @@ pub(crate) fn visual_call<'a>(
     let kept = match &reply {
         Err(e) => format!("error {e}"),
         Ok(Reply::Matched(matched)) => format!("{matched:?}"),
-        Ok(Reply::Stacked(html)) => format!("stacked {}", crate::hash::sha256_bytes(html.as_bytes())),
+        Ok(Reply::Stacked(html)) => {
+            format!("stacked {}", crate::hash::sha256_bytes(html.as_bytes()))
+        }
         Ok(Reply::Plans(plans)) => format!(
             "{:?}",
             plans
@@ -3474,13 +3844,26 @@ pub(crate) fn visual_call<'a>(
         Ok(Reply::Filled(page)) => format!("{:?} {:?}", page.ledger, page.refs),
         Ok(Reply::Checked(report)) => report.to_string(),
         Ok(Reply::Knob { default, min, max }) => format!("{default} {min} {max}"),
-        Ok(Reply::Recipes(recipes)) => recipes.iter().map(|r| r.name.as_str()).collect::<Vec<_>>().join(" "),
+        Ok(Reply::Recipes(recipes)) => recipes
+            .iter()
+            .map(|r| r.name.as_str())
+            .collect::<Vec<_>>()
+            .join(" "),
         Ok(Reply::Layers(layers)) => format!("{layers:?}"),
         Ok(Reply::Rechecked(off)) => off.join("\n"),
-        Ok(Reply::Points { points, missing, table }) => {
-            format!("{points:?} {missing:?} {}", crate::hash::sha256_bytes(table.as_bytes()))
+        Ok(Reply::Points {
+            points,
+            missing,
+            table,
+        }) => {
+            format!(
+                "{points:?} {missing:?} {}",
+                crate::hash::sha256_bytes(table.as_bytes())
+            )
         }
-        Ok(Reply::Strip { strip, note }) => format!("{} {note}", strip.as_ref().map_or("", |s| s.svg.as_str())),
+        Ok(Reply::Strip { strip, note }) => {
+            format!("{} {note}", strip.as_ref().map_or("", |s| s.svg.as_str()))
+        }
         Ok(Reply::NodeDeclared(declared)) => format!("{declared:?}"),
         Ok(Reply::NodesDrawn(drawn)) => format!("{drawn:?}"),
     };
@@ -3510,7 +3893,11 @@ pub(crate) fn visual_call<'a>(
         event["failures"] = json!(failures);
         // a layer left to its leaf, which refuses it before drawing (next_tree_gen leaf_stops), and by which rule
         if let Ok(Reply::NodesDrawn(drawn)) = &reply {
-            let left: Vec<Value> = drawn.timing.iter().filter_map(|t| t.3.as_ref().map(|r| json!({"layer": t.0, "rule": r}))).collect();
+            let left: Vec<Value> = drawn
+                .timing
+                .iter()
+                .filter_map(|t| t.3.as_ref().map(|r| json!({"layer": t.0, "rule": r})))
+                .collect();
             if !left.is_empty() {
                 event["left_to_leaf"] = json!(left);
             }
@@ -3564,9 +3951,27 @@ pub fn publish_stack(
     let pages: Vec<(String, f64, f64)> = blocks
         .iter()
         .enumerate()
-        .map(|(i, (dir, w, h))| (if i == 0 { "index.html".to_string() } else { format!("../{dir}/index.html") }, *w, *h))
+        .map(|(i, (dir, w, h))| {
+            (
+                if i == 0 {
+                    "index.html".to_string()
+                } else {
+                    format!("../{dir}/index.html")
+                },
+                *w,
+                *h,
+            )
+        })
         .collect();
-    let Reply::Stacked(html) = visual_call(calls, "stack", Request::Stack { title: question, pages: &pages })? else {
+    let Reply::Stacked(html) = visual_call(
+        calls,
+        "stack",
+        Request::Stack {
+            title: question,
+            pages: &pages,
+        },
+    )?
+    else {
         unreachable!("the visual group answered stack with another reply")
     };
     let rel = format!("publications/{first}/{STACKED_PAGE}");
@@ -3597,11 +4002,19 @@ pub fn publish_leaf_page(
 ) -> Result<Published, String> {
     use crate::group_guard::{as_visual_call, create_dir_all, write};
     use next_visual::{Reply, Request};
-    let named = !slug.is_empty() && slug.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    let named = !slug.is_empty()
+        && slug
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
     if !named || matches!(slug, "plans" | "qa" | "rejected") {
-        return Err(format!("publish: {slug:?} is not a publication folder name"));
+        return Err(format!(
+            "publish: {slug:?} is not a publication folder name"
+        ));
     }
-    let (dir, out) = (root.join("publications").join(slug), root.join("publications/qa").join(slug));
+    let (dir, out) = (
+        root.join("publications").join(slug),
+        root.join("publications/qa").join(slug),
+    );
     let plan_file = root.join("publications/plans").join(format!("{slug}.json"));
     if dir.exists() || out.exists() || plan_file.exists() {
         return Err(format!("publish: publications/{slug} was written before; a page is published once, under a new name"));
@@ -3616,8 +4029,10 @@ pub fn publish_leaf_page(
     let mut ledger = page.ledger.clone();
     ledger.extend(drawn.dropped.iter().cloned());
     // and the knobs its layers were given, from which the recheck reads what a reference layer draws
-    let request = serde_json::to_string_pretty(&json!({"spec": spec, "rows": rows, "facts": facts, "ledger": ledger,
-        "refs": page.refs, "knobs": drawn.knobs}))
+    let request = serde_json::to_string_pretty(
+        &json!({"spec": spec, "rows": rows, "facts": facts, "ledger": ledger,
+        "refs": page.refs, "knobs": drawn.knobs}),
+    )
     .map_err(|e| format!("publish: {e}"))?;
     let io = |e: std::io::Error| format!("publish: {e}");
     as_visual_call(|| {
@@ -3754,7 +4169,12 @@ impl Catalogue for GroupCatalogue {
             refs: &self.refs,
             aggregate,
         };
-        match knowledge_call(&self.calls, "members", json!({"aggregate": aggregate}), request)? {
+        match knowledge_call(
+            &self.calls,
+            "members",
+            json!({"aggregate": aggregate}),
+            request,
+        )? {
             next_knowledge::Reply::Members(found) => Ok(found),
             _ => unreachable!("the knowledge group answered members with another reply"),
         }
@@ -3773,7 +4193,10 @@ impl Catalogue for GroupCatalogue {
         &self,
         main: &str,
         rows: &BTreeMap<String, Vec<next_knowledge::CompanionRow>>,
-    ) -> (Vec<next_knowledge::Companion>, Vec<(String, next_knowledge::DropWhy)>) {
+    ) -> (
+        Vec<next_knowledge::Companion>,
+        Vec<(String, next_knowledge::DropWhy)>,
+    ) {
         let request = next_knowledge::Request::Companions {
             catalogue: &self.opened,
             main,
@@ -3786,7 +4209,14 @@ impl Catalogue for GroupCatalogue {
         }
     }
 
-    fn top5(&self, question_zh: &str, texts: &[String], months: bool, latest_year: Option<i32>, first_year: Option<i32>) -> Ranking {
+    fn top5(
+        &self,
+        question_zh: &str,
+        texts: &[String],
+        months: bool,
+        latest_year: Option<i32>,
+        first_year: Option<i32>,
+    ) -> Ranking {
         let request = next_knowledge::Request::Top5 {
             catalogue: &self.opened,
             question: question_zh,
@@ -3854,16 +4284,30 @@ impl Catalogue for GroupCatalogue {
         }
     }
 
-    fn scope_refused(&self, question_zh: &str, this_year: i32) -> Option<crate::l5geo::ScopeRefusal> {
-        let request = next_knowledge::Request::ScopeRefused { question: question_zh, this_year };
-        match self.call("scope_refused", json!({"question": question_zh, "this_year": this_year}), request) {
+    fn scope_refused(
+        &self,
+        question_zh: &str,
+        this_year: i32,
+    ) -> Option<crate::l5geo::ScopeRefusal> {
+        let request = next_knowledge::Request::ScopeRefused {
+            question: question_zh,
+            this_year,
+        };
+        match self.call(
+            "scope_refused",
+            json!({"question": question_zh, "this_year": this_year}),
+            request,
+        ) {
             next_knowledge::Reply::ScopeRefused(refused) => refused,
             _ => unreachable!("the knowledge group answered scope_refused with another reply"),
         }
     }
 
     fn split_ask(&self, question_zh: &str) -> Option<crate::answer_plan::SplitAsk> {
-        let request = next_knowledge::Request::SplitAsk { catalogue: &self.opened, question: question_zh };
+        let request = next_knowledge::Request::SplitAsk {
+            catalogue: &self.opened,
+            question: question_zh,
+        };
         match self.call("split_ask", json!({"question": question_zh}), request) {
             next_knowledge::Reply::SplitAsk(ask) => Some(ask),
             _ => unreachable!("the knowledge group answered shape_ask with another reply"),
@@ -3871,8 +4315,16 @@ impl Catalogue for GroupCatalogue {
     }
 
     fn family_table(&self, question_zh: &str, family: &str) -> Option<crate::l5geo::Candidate> {
-        let request = next_knowledge::Request::FamilyTable { catalogue: &self.opened, question: question_zh, family };
-        match self.call("family_table", json!({"question": question_zh, "family": family}), request) {
+        let request = next_knowledge::Request::FamilyTable {
+            catalogue: &self.opened,
+            question: question_zh,
+            family,
+        };
+        match self.call(
+            "family_table",
+            json!({"question": question_zh, "family": family}),
+            request,
+        ) {
             next_knowledge::Reply::FamilyTable(found) => found,
             _ => unreachable!("the knowledge group answered family_table with another reply"),
         }
@@ -3883,8 +4335,16 @@ impl Catalogue for GroupCatalogue {
         question_zh: &str,
         reply: &crate::answer_plan::SplitReply,
     ) -> Option<Result<crate::answer_plan::Plan, String>> {
-        let request = next_knowledge::Request::AnswerPlan { catalogue: &self.opened, question: question_zh, reply };
-        match self.call("answer_plan", json!({"question": question_zh, "reply": reply}), request) {
+        let request = next_knowledge::Request::AnswerPlan {
+            catalogue: &self.opened,
+            question: question_zh,
+            reply,
+        };
+        match self.call(
+            "answer_plan",
+            json!({"question": question_zh, "reply": reply}),
+            request,
+        ) {
             next_knowledge::Reply::AnswerPlan(plan) => Some(plan),
             _ => unreachable!("the knowledge group answered answer_plan with another reply"),
         }
@@ -3900,7 +4360,12 @@ impl Catalogue for GroupCatalogue {
         }
     }
 
-    fn group_basis(&self, question_zh: &str, years: (Option<i32>, i32), places: (&[String], &[String])) -> Option<crate::l5geo::GroupBasis> {
+    fn group_basis(
+        &self,
+        question_zh: &str,
+        years: (Option<i32>, i32),
+        places: (&[String], &[String]),
+    ) -> Option<crate::l5geo::GroupBasis> {
         let request = next_knowledge::Request::GroupBasis {
             catalogue: &self.opened,
             question: question_zh,
@@ -4005,7 +4470,12 @@ impl Catalogue for GroupCatalogue {
     }
 
     fn table_zh(&self, id: &str) -> Result<Option<String>, String> {
-        table_zh_reply(knowledge_call(&self.calls, "table_zh", json!({"id": id}), next_knowledge::Request::TableZh { id }))
+        table_zh_reply(knowledge_call(
+            &self.calls,
+            "table_zh",
+            json!({"id": id}),
+            next_knowledge::Request::TableZh { id },
+        ))
     }
 
     fn asked_beside(&self, question: &str, table: &str) -> Result<Vec<String>, String> {
@@ -4067,7 +4537,11 @@ impl Catalogue for GroupCatalogue {
     }
 
     fn recipes(&self) -> &'static [crate::next_leaf::Recipe] {
-        recipes_reply(visual_call(&self.calls, "recipes", next_visual::Request::Recipes))
+        recipes_reply(visual_call(
+            &self.calls,
+            "recipes",
+            next_visual::Request::Recipes,
+        ))
     }
 
     fn take_calls(&self) -> Vec<Value> {
@@ -4103,7 +4577,10 @@ pub async fn split_step(
     let prompt = format!(
         "Question: {question}\nWhich shape does the question take? A shape sets the page's blocks; answer 0 when none of them fits."
     );
-    let reply = match recorder.ask_step(model, &Ask::Split { ask }, &prompt, cancel).await? {
+    let reply = match recorder
+        .ask_step(model, &Ask::Split { ask }, &prompt, cancel)
+        .await?
+    {
         (_, Choice::Split { reply }) => reply,
         (_, other) => unreachable!("the split step was answered with {other:?}"),
     };
@@ -4115,7 +4592,10 @@ pub async fn split_step(
     record_group_calls(recorder, catalogue)?;
     match plan {
         None => Ok(None),
-        Some(Err(why)) => Err(Stop::Exchange { step: "split", why: format!("the knowledge group refused the checked shape answer: {why}") }),
+        Some(Err(why)) => Err(Stop::Exchange {
+            step: "split",
+            why: format!("the knowledge group refused the checked shape answer: {why}"),
+        }),
         Some(Ok(plan)) => {
             recorder.program_event(PLAN_EVENT, json!({"reply": reply, "plan": plan}))?;
             Ok(Some(plan))
@@ -4202,7 +4682,12 @@ pub const REASON_MAX_CHARS: usize = 200;
 
 /// A tool result's words: its text parts, joined by a space.
 fn words_of(called: &Called) -> String {
-    called.content.iter().filter_map(|c| c["text"].as_str()).collect::<Vec<_>>().join(" ")
+    called
+        .content
+        .iter()
+        .filter_map(|c| c["text"].as_str())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// The start of a tool result's text, each address (http:// or https:// up to the next space) replaced by <address>.
@@ -4258,23 +4743,47 @@ const COMPOSITION_PLACE: &str = "geo";
 
 /// The filter values a fetch's args ask dimension `dim` for (None when it asks no filter of it: every code).
 fn asked_values(args: &Map<String, Value>, dim: &str) -> Option<Vec<String>> {
-    let filter = args.get("filters")?.as_array()?.iter().find(|f| f["dimension"] == dim)?;
-    filter["values"].as_array()?.iter().map(|v| v.as_str().map(str::to_string)).collect()
+    let filter = args
+        .get("filters")?
+        .as_array()?
+        .iter()
+        .find(|f| f["dimension"] == dim)?;
+    filter["values"]
+        .as_array()?
+        .iter()
+        .map(|v| v.as_str().map(str::to_string))
+        .collect()
 }
 
 /// The dimension of a Eurostat main whose fetch asked for its total code alone and whose registry has composition groups,
 /// with that total code and each group's input codes (next_params::group_inputs); None for any other fetch, and for one
 /// whose place dimension asks fewer than `least` codes: two across places; one for a block of a table its blocks share
 /// (由总到分, 11-14), whose fetch may also ask the total beside the other codes (one place's split, the parts fetched apart).
-fn composition_dim(main: &Prepared, least: usize) -> Result<Option<(String, String, Vec<(String, Vec<String>)>)>, String> {
-    if main.id.ends_with("@2") || asked_values(&main.args, COMPOSITION_PLACE).is_some_and(|v| v.len() < least) {
+fn composition_dim(
+    main: &Prepared,
+    least: usize,
+) -> Result<Option<(String, String, Vec<(String, Vec<String>)>)>, String> {
+    if main.id.ends_with("@2")
+        || asked_values(&main.args, COMPOSITION_PLACE).is_some_and(|v| v.len() < least)
+    {
         return Ok(None);
     }
-    let dims: Vec<String> = main.args.get("filters").and_then(Value::as_array).into_iter().flatten()
-        .filter_map(|f| f["dimension"].as_str().map(str::to_string)).collect();
+    let dims: Vec<String> = main
+        .args
+        .get("filters")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|f| f["dimension"].as_str().map(str::to_string))
+        .collect();
     for dim in dims {
-        let total = next_params::parts(&main.id, &dim).into_iter().find(|p| p.level == next_params::PART_LEVELS[0]);
-        let asks = |t: &next_params::Part| asked_values(&main.args, &dim).is_some_and(|v| v == [t.code.clone()] || (least == 1 && v.contains(&t.code)));
+        let total = next_params::parts(&main.id, &dim)
+            .into_iter()
+            .find(|p| p.level == next_params::PART_LEVELS[0]);
+        let asks = |t: &next_params::Part| {
+            asked_values(&main.args, &dim)
+                .is_some_and(|v| v == [t.code.clone()] || (least == 1 && v.contains(&t.code)))
+        };
         let Some(total) = total.filter(asks) else {
             continue;
         };
@@ -4305,25 +4814,54 @@ pub fn composition_fetch(
     let Some((dim, total, inputs)) = composition_dim(main, least)? else {
         return Ok(None);
     };
-    let filters: Vec<Value> = main.args.get("filters").and_then(Value::as_array).cloned().unwrap_or_default();
+    let filters: Vec<Value> = main
+        .args
+        .get("filters")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
     let place = COMPOSITION_PLACE;
     let held: Vec<&Value> = rows
         .iter()
         .filter(|r| r["dims"][&dim] == total.as_str() && r["dims"][place].is_string())
-        .filter(|r| r["value"].as_str().and_then(|v| v.parse::<f64>().ok()).is_some_and(f64::is_finite))
+        .filter(|r| {
+            r["value"]
+                .as_str()
+                .and_then(|v| v.parse::<f64>().ok())
+                .is_some_and(f64::is_finite)
+        })
         .collect();
-    let codes: Vec<String> =
-        held.iter().filter_map(|r| r["dims"][place].as_str().map(str::to_string)).collect::<BTreeSet<_>>().into_iter().collect();
+    let codes: Vec<String> = held
+        .iter()
+        .filter_map(|r| r["dims"][place].as_str().map(str::to_string))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
     let countries = catalogue.countries(&codes)?;
-    let of_country = |r: &&&Value| r["dims"][place].as_str().is_some_and(|c| countries.iter().any(|k| k == c));
-    let Some(year) = held.iter().filter(of_country).filter_map(|r| r["time"].as_str()).max().map(str::to_string) else {
+    let of_country = |r: &&&Value| {
+        r["dims"][place]
+            .as_str()
+            .is_some_and(|c| countries.iter().any(|k| k == c))
+    };
+    let Some(year) = held
+        .iter()
+        .filter(of_country)
+        .filter_map(|r| r["time"].as_str())
+        .max()
+        .map(str::to_string)
+    else {
         return Ok(None);
     };
     let mut ranked: Vec<(f64, String)> = held
         .iter()
         .filter(of_country)
         .filter(|r| r["time"] == year.as_str())
-        .filter_map(|r| Some((r["value"].as_str()?.parse::<f64>().ok()?, r["dims"][place].as_str()?.to_string())))
+        .filter_map(|r| {
+            Some((
+                r["value"].as_str()?.parse::<f64>().ok()?,
+                r["dims"][place].as_str()?.to_string(),
+            ))
+        })
         .collect();
     ranked.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
     if ranked.len() < least {
@@ -4333,7 +4871,10 @@ pub fn composition_fetch(
     let left_out = ranked.len().saturating_sub(asked);
     let top: Vec<String> = ranked.into_iter().take(asked).map(|(_, c)| c).collect();
     let all: Vec<String> = inputs.iter().flat_map(|(_, c)| c.iter().cloned()).collect();
-    let mut filters: Vec<Value> = filters.into_iter().filter(|f| f["dimension"] != dim.as_str() && f["dimension"] != place).collect();
+    let mut filters: Vec<Value> = filters
+        .into_iter()
+        .filter(|f| f["dimension"] != dim.as_str() && f["dimension"] != place)
+        .collect();
     filters.push(json!({"dimension": dim, "values": all}));
     filters.push(json!({"dimension": place, "values": top}));
     let mut args = main.args.clone();
@@ -4341,9 +4882,14 @@ pub fn composition_fetch(
         args.remove(key);
     }
     args.insert("filters".into(), Value::Array(filters));
-    let y: i64 = year.parse().map_err(|_| format!("{} has a total at {year}, not a year", main.id))?;
+    let y: i64 = year
+        .parse()
+        .map_err(|_| format!("{} has a total at {year}, not a year", main.id))?;
     args.insert("years".into(), json!({"start": y, "end": y}));
-    args.insert("sum_input".into(), json!({"main": main.file, "sheet": main.sheet}));
+    args.insert(
+        "sum_input".into(),
+        json!({"main": main.file, "sheet": main.sheet}),
+    );
     let event = json!({"table": main.id, "dim": dim, "groups": inputs, "places": top, "year": year, "ranked_by": total,
         "top": next_params::NARROW_TOP, "reserve": COMPOSITION_RESERVE, "left_out": left_out});
     Ok(Some((args, event)))
@@ -4385,8 +4931,7 @@ fn source_unreachable(called: &Called) -> Option<bool> {
 /// Whether a failed fetch is the host's structured download timeout (evidence_gate.mjs DOWNLOAD_TIMEOUT: the request ran past the
 /// download limit), which the host allows one identical retry; its refusal of a repeat (DOWNLOAD_TIMEOUT_REPEAT) is not one.
 fn download_timed_out(called: &Called) -> bool {
-    mode_of(called) == "failed"
-        && words_of(called).contains(next_knowledge::DOWNLOAD_TIMEOUT_WORDS)
+    mode_of(called) == "failed" && words_of(called).contains(next_knowledge::DOWNLOAD_TIMEOUT_WORDS)
 }
 
 /// Further fetches a download timeout may take: one, the same request again (a cold request the source's cache answers after).
@@ -4522,7 +5067,11 @@ fn companion_args(
     );
     let mut filters = Vec::new();
     let main_wb = main.get("provider").and_then(Value::as_str) == Some("worldbank");
-    let place_dim = if main_wb { next_params::WB_PLACE_DIM } else { next_params::GEO_DIM };
+    let place_dim = if main_wb {
+        next_params::WB_PLACE_DIM
+    } else {
+        next_params::GEO_DIM
+    };
     for filter in main
         .get("filters")
         .and_then(Value::as_array)
@@ -4810,7 +5359,10 @@ async fn companion_tables<R: ToolRunner + Send + ?Sized>(
     let (mut kept, mut dropped) = catalogue.companions(main, &rows);
     record_group_calls(recorder, catalogue)?;
     let room = room + usize::from(kept.first().is_some_and(|c| c.grain.is_some()));
-    dropped.extend(kept.drain(kept.len().min(room)..).map(|c| (c.id, next_knowledge::DropWhy::NoRoom)));
+    dropped.extend(
+        kept.drain(kept.len().min(room)..)
+            .map(|c| (c.id, next_knowledge::DropWhy::NoRoom)),
+    );
     recorder.program_event(
         COMPANION_EVENT,
         json!({"main": main, "cut": cut.map(|c| json!({"dimension": c.dimension, "codes": c.codes})), "tables": entries,
@@ -4868,7 +5420,12 @@ fn ring_window(
     }
     let geo_of = |picks: BTreeMap<String, usize>| -> Option<String> {
         let filled = next_params::fill(draft, n, &picks, places, this_year).ok()?;
-        let geo = filled.args.get("filters")?.as_array()?.iter().find(|f| f["dimension"] == "geo")?;
+        let geo = filled
+            .args
+            .get("filters")?
+            .as_array()?
+            .iter()
+            .find(|f| f["dimension"] == "geo")?;
         match geo["values"].as_array()?.as_slice() {
             [one] => one.as_str().map(String::from),
             _ => None,
@@ -4879,14 +5436,23 @@ fn ring_window(
         .breakdown
         .iter()
         .enumerate()
-        .map(|(i, dim)| (dim, geo_of(BTreeMap::from([(format!("t{n}.breakdown"), i + 2)]))))
+        .map(|(i, dim)| {
+            (
+                dim,
+                geo_of(BTreeMap::from([(format!("t{n}.breakdown"), i + 2)])),
+            )
+        })
         .collect();
     let (hub, only) = match plain {
         Some(hub) if splits.iter().all(|(_, g)| g.as_ref() == Some(&hub)) => (hub, None),
         Some(_) => return None,
         None => {
             let hub = splits.iter().find_map(|(_, g)| g.clone())?;
-            let only = splits.iter().filter(|(_, g)| g.as_ref() == Some(&hub)).map(|(d, _)| d.to_string()).collect();
+            let only = splits
+                .iter()
+                .filter(|(_, g)| g.as_ref() == Some(&hub))
+                .map(|(d, _)| d.to_string())
+                .collect();
             (hub, Some(only))
         }
     };
@@ -4946,7 +5512,11 @@ fn drawable_splits(
                     &crate::next_run::FILLED_TEMPLATES
                 };
                 let matched = catalogue.rank(&shape, templates, &[]);
-                let dims = shape.dims.iter().map(|d| json!([d.dim, d.members])).collect::<Vec<_>>();
+                let dims = shape
+                    .dims
+                    .iter()
+                    .map(|d| json!([d.dim, d.members]))
+                    .collect::<Vec<_>>();
                 if matched.candidates.is_empty() {
                     Err(json!({"years": y, "shape": dims,
                         "rejected": matched.rejected.iter().map(|r| format!("{:?}: {}", r.relation, r.reason)).collect::<Vec<_>>()}))
@@ -4963,7 +5533,11 @@ fn drawable_splits(
         let mut why = Vec::new();
         // A split that takes the draft's window asks no years: its one fetch is tried, and when drawable it keeps no years options.
         let windowed = draft.window_for(Some(dim.as_str())).is_some();
-        let tried = if windowed { 1 } else { next_params::YEARS_OPTIONS.len() };
+        let tried = if windowed {
+            1
+        } else {
+            next_params::YEARS_OPTIONS.len()
+        };
         for y in 1..=tried {
             match tried_years(&*draft, i, y) {
                 Ok(_) => years.push(y),
@@ -4975,10 +5549,16 @@ fn drawable_splits(
             for w in &mut why {
                 w["window"] = json!("ring");
             }
-            let window = draft.window.as_ref().expect("a windowed split has the draft's window");
+            let window = draft
+                .window
+                .as_ref()
+                .expect("a windowed split has the draft's window");
             match window_without(window, std::slice::from_ref(dim)) {
                 Ok(left) => {
-                    let own = next_params::Draft { window: left, ..draft.clone() };
+                    let own = next_params::Draft {
+                        window: left,
+                        ..draft.clone()
+                    };
                     match tried_years(&own, i, 1) {
                         Ok(mut w) => {
                             w["window"] = json!("none");
@@ -4999,7 +5579,15 @@ fn drawable_splits(
             dropped.push(json!({"dim": dim, "why": why}));
         } else {
             let in_window = !unwindowed.contains(dim);
-            kept.push((dim.clone(), if windowed && in_window { Vec::new() } else { years }, both));
+            kept.push((
+                dim.clone(),
+                if windowed && in_window {
+                    Vec::new()
+                } else {
+                    years
+                },
+                both,
+            ));
         }
     }
     let left = draft
@@ -5042,9 +5630,16 @@ fn window_without(
     dims: &[String],
 ) -> Result<Option<next_params::Window>, String> {
     let Some(only) = &window.only else {
-        return Err("every answer of this table takes the ring's years, so a split cannot leave them".into());
+        return Err(
+            "every answer of this table takes the ring's years, so a split cannot leave them"
+                .into(),
+        );
     };
-    let left: Vec<String> = only.iter().filter(|d| !dims.contains(*d)).cloned().collect();
+    let left: Vec<String> = only
+        .iter()
+        .filter(|d| !dims.contains(*d))
+        .cloned()
+        .collect();
     Ok((!left.is_empty()).then(|| next_params::Window {
         only: Some(left),
         ..window.clone()
@@ -5258,7 +5853,11 @@ pub async fn prepare_claims<R: ToolRunner + Send + ?Sized>(
     catalogue: &dyn Catalogue,
     cancel: &AtomicBool,
 ) -> Result<Vec<Prepared>, Stop> {
-    Ok(prepare_planned(recorder, model, tools, question, steps, catalogue, cancel).await?.prepared)
+    Ok(
+        prepare_planned(recorder, model, tools, question, steps, catalogue, cancel)
+            .await?
+            .prepared,
+    )
 }
 
 /// The table card's params sentence: asked only when some listed table has an item to fill (items: each listed table's
@@ -5308,13 +5907,21 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
     // stopped before the catalogue is searched, nothing searched or fetched; the group's call is recorded under the search
     // answer, as every group call follows a model answer (the program never calls on its own, Stop::NoModelParent)
     if steps.is_empty() {
-        let refused = catalogue.scope_refused(question, chrono::Datelike::year(&chrono::Local::now()));
+        let refused =
+            catalogue.scope_refused(question, chrono::Datelike::year(&chrono::Local::now()));
         record_group_calls(recorder, catalogue)?;
         if let Some(r) = refused {
-            return Err(Stop::NoTable(format!("the question is out of scope ({}, \"{}\"): {}", r.class, r.hit, r.reason_zh)));
+            return Err(Stop::NoTable(format!(
+                "the question is out of scope ({}, \"{}\"): {}",
+                r.class, r.hit, r.reason_zh
+            )));
         }
     }
-    let plan = if steps.is_empty() { split_step(recorder, model, question, catalogue, cancel).await? } else { None };
+    let plan = if steps.is_empty() {
+        split_step(recorder, model, question, catalogue, cancel).await?
+    } else {
+        None
+    };
     // The search words go to the catalogue and into this event only: no later prompt, fetch or page reads them.
     let texts = vec![query];
     let this_year = chrono::Datelike::year(&chrono::Local::now());
@@ -5367,15 +5974,29 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
         }
     }
     record_group_calls(recorder, catalogue)?;
-    let blocks = blocks.filter(|blocks| blocks.iter().any(|(_, t)| t.as_ref().is_some_and(|t| offers.iter().any(|o| &o.id == t))));
+    let blocks = blocks.filter(|blocks| {
+        blocks.iter().any(|(_, t)| {
+            t.as_ref()
+                .is_some_and(|t| offers.iter().any(|o| &o.id == t))
+        })
+    });
     // a plan whose blocks share one quantity (由总到分): each block a recipe draws gets the table on its own, listed once per
     // block in block order, so the model gives each block the breakdown it draws and each is fetched on its own (owner
     // 11-14 22:2x item 2, the existing composition and flow pieces); a block no recipe draws (a total alone) is left out
     let shared_blocks = shared_blocks(plan.as_ref(), blocks.is_some());
     if !shared_blocks.is_empty() {
-        let family = plan.as_ref().and_then(|p| p.blocks.first()).and_then(|b| b.quantity.first()).map(|(id, _)| id.clone());
-        let holds = family.as_ref().and_then(|f| ranking.asked.iter().find(|a| &a.id == f));
-        let table = holds.and_then(|a| offers.iter().find(|o| family_holds(a, &o.id))).or(offers.first()).cloned();
+        let family = plan
+            .as_ref()
+            .and_then(|p| p.blocks.first())
+            .and_then(|b| b.quantity.first())
+            .map(|(id, _)| id.clone());
+        let holds = family
+            .as_ref()
+            .and_then(|f| ranking.asked.iter().find(|a| &a.id == f));
+        let table = holds
+            .and_then(|a| offers.iter().find(|o| family_holds(a, &o.id)))
+            .or(offers.first())
+            .cloned();
         if let Some(table) = table {
             recorder.program_event(
                 BLOCK_TABLES_EVENT,
@@ -5396,7 +6017,10 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
                 order.push(t);
             }
         }
-        offers = order.iter().filter_map(|id| offers.iter().find(|o| &&o.id == id).cloned()).collect();
+        offers = order
+            .iter()
+            .filter_map(|id| offers.iter().find(|o| &&o.id == id).cloned())
+            .collect();
     }
     // With no spec, each listed table's fetch parameters are drafted from the catalogue before the pick, from the codes its
     // held-series probe found (no fetch).
@@ -5490,12 +6114,19 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
     // the block each listed copy of a shared table is for, said under it
     if !shared_blocks.is_empty() {
         for (i, &(b, rel)) in shared_blocks.iter().enumerate() {
-            if let Some(at) = listed.iter().position(|l| l.starts_with(&format!("{}. ", i + 1))) {
+            if let Some(at) = listed
+                .iter()
+                .position(|l| l.starts_with(&format!("{}. ", i + 1)))
+            {
                 listed[at].push_str(&format!(" - for block {} ({rel:?})", b + 1));
             }
         }
     }
-    let most = if blocks.is_some() || !shared_blocks.is_empty() { offers.len() } else { steps.len().clamp(1, offers.len()) };
+    let most = if blocks.is_some() || !shared_blocks.is_empty() {
+        offers.len()
+    } else {
+        steps.len().clamp(1, offers.len())
+    };
     let params_rule = params_rule(&items);
     let pick_rule = if blocks.is_some() {
         format!("The page has {most} blocks and the program set one table for each, listed in block order: pick all {most} of them.")
@@ -5548,10 +6179,18 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
     // the listed tables in the order the model picked them (a shared table's copies are its blocks)
     let mut picked_order: Vec<usize>;
     let (mut tables, mut main_file, main_narrowed, main_window, mut cut, kept_relation, files) = 'pick: loop {
-        let (picks, params, relation) = match recorder.ask_step(model, &ask, &prompt, cancel).await? {
-            (_, Choice::Table { picks, params, relation }) => (picks, params, relation),
-            (_, other) => unreachable!("the table step was answered with {other:?}"),
-        };
+        let (picks, params, relation) =
+            match recorder.ask_step(model, &ask, &prompt, cancel).await? {
+                (
+                    _,
+                    Choice::Table {
+                        picks,
+                        params,
+                        relation,
+                    },
+                ) => (picks, params, relation),
+                (_, other) => unreachable!("the table step was answered with {other:?}"),
+            };
         picked_order = picks.clone();
         if picks.is_empty() {
             return Err(Stop::NoTable(
@@ -5565,7 +6204,10 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
         let kept_relation = table_relation(relation, ids[0]);
         if relation.is_some() {
             let kept = kept_relation.map(|r| format!("{r:?}"));
-            recorder.program_event(TABLE_RELATION_EVENT, json!({"table": ids[0], "relation": relation, "kept": kept}))?;
+            recorder.program_event(
+                TABLE_RELATION_EVENT,
+                json!({"table": ids[0], "relation": relation, "kept": kept}),
+            )?;
         }
         let chosen: Vec<(&String, PrepareStep)> = if steps.is_empty() {
             ids.iter()
@@ -5631,19 +6273,25 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
                             "table {n}'s params fetch one number for each place, with nothing to compare; give t{n}.breakdown an option that splits it for its block"
                         );
                         recorder.program_event(REPICK_EVENT, json!({"dataset": id, "table": n, "params": params, "why": reason(&called), "refused": refused}))?;
-                        prompt = format!("The table pick was fetched and refused: {refused}\n{asked}");
+                        prompt =
+                            format!("The table pick was fetched and refused: {refused}\n{asked}");
                         continue 'pick;
                     }
                     if mode == "no_rows" && steps.is_empty() && !repicked {
                         let n = picks[k];
                         let draft = drafts[n - 1].1.as_ref();
-                        if let Some(refused) = no_rows_refused(&mut ask, n, &params, draft, &places, this_year) {
+                        if let Some(refused) =
+                            no_rows_refused(&mut ask, n, &params, draft, &places, this_year)
+                        {
                             repicked = true;
                             recorder.program_event(
                                 REPICK_EVENT,
                                 json!({"dataset": id, "table": n, "params": params, "why": reason(&called), "refused": refused.problem}),
                             )?;
-                            prompt = format!("The table pick was fetched and refused: {}\n{asked}", refused.message());
+                            prompt = format!(
+                                "The table pick was fetched and refused: {}\n{asked}",
+                                refused.message()
+                            );
                             continue 'pick;
                         }
                     }
@@ -5651,7 +6299,7 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
                         dataset: id.clone(),
                         mode: mode.to_string(),
                         why: reason(&called),
-                    })
+                    });
                 }
             }
             let key = called
@@ -5676,59 +6324,123 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
                     .and_then(|d| d["filePath"].as_str())
                     .map(String::from);
             }
-            files.push(called.details.as_ref().and_then(|d| d["filePath"].as_str()).unwrap_or("").to_string());
+            files.push(
+                called
+                    .details
+                    .as_ref()
+                    .and_then(|d| d["filePath"].as_str())
+                    .unwrap_or("")
+                    .to_string(),
+            );
             tables.push((id.clone(), args, key, candidates));
         }
-        break 'pick (tables, main_file, main_narrowed, main_window, cut, kept_relation, files);
+        break 'pick (
+            tables,
+            main_file,
+            main_narrowed,
+            main_window,
+            cut,
+            kept_relation,
+            files,
+        );
     };
     // a page whose blocks each take their own quantity (名次对照, owner 11-15 12:2x item 2) is told at one year, when the
     // question names none: a block table whose latest year is later than the latest one at which every place each block
     // table holds has a number in all of them (common_year) is fetched again ending there, so no place drops out of one
     // block for a year it has not reported yet and the blocks' ranks compare one year; with no such year each keeps its own
-    if blocks.is_some() && tables.len() >= 2 && next_params::question_years(question, this_year).is_none() {
+    if blocks.is_some()
+        && tables.len() >= 2
+        && next_params::question_years(question, this_year).is_none()
+    {
         let mut read: Vec<Option<(&str, Vec<Value>)>> = Vec::new();
         for ((id, ..), file) in tables.iter().zip(&files) {
             let meta = catalogue.table(id);
             let csv = std::fs::read_to_string(recorder.run_dir.join(file)).ok();
-            let rows = meta.as_ref().zip(csv).and_then(|(meta, csv)| catalogue.series_rows(meta, &csv).ok());
-            read.push(meta.map(|m| if m.worldbank { next_params::WB_PLACE_DIM } else { next_params::GEO_DIM }).zip(rows));
+            let rows = meta
+                .as_ref()
+                .zip(csv)
+                .and_then(|(meta, csv)| catalogue.series_rows(meta, &csv).ok());
+            read.push(
+                meta.map(|m| {
+                    if m.worldbank {
+                        next_params::WB_PLACE_DIM
+                    } else {
+                        next_params::GEO_DIM
+                    }
+                })
+                .zip(rows),
+            );
         }
         record_group_calls(recorder, catalogue)?;
-        let latest: Vec<Option<String>> = read.iter().map(|r| r.as_ref().and_then(|(_, rows)| rows.iter().filter_map(|r| r["time"].as_str()).max().map(str::to_string))).collect();
-        let read: Option<Vec<(&str, &[Value])>> = read.iter().map(|r| r.as_ref().map(|(dim, rows)| (*dim, rows.as_slice()))).collect();
-        let told = read.as_deref().ok_or("a block table's rows are unread").and_then(common_year);
+        let latest: Vec<Option<String>> = read
+            .iter()
+            .map(|r| {
+                r.as_ref().and_then(|(_, rows)| {
+                    rows.iter()
+                        .filter_map(|r| r["time"].as_str())
+                        .max()
+                        .map(str::to_string)
+                })
+            })
+            .collect();
+        let read: Option<Vec<(&str, &[Value])>> = read
+            .iter()
+            .map(|r| r.as_ref().map(|(dim, rows)| (*dim, rows.as_slice())))
+            .collect();
+        let told = read
+            .as_deref()
+            .ok_or("a block table's rows are unread")
+            .and_then(common_year);
         let year = told.as_ref().ok().cloned();
         let mut kept = Vec::new();
         for (k, last) in latest.iter().enumerate() {
             let (id, args) = (tables[k].0.clone(), tables[k].1.clone());
             let mut entry = json!({"table": id, "latest": last, "fetched_again": false});
-            let Some(y) = year.as_ref().filter(|y| last.as_ref().is_some_and(|l| l > *y)) else {
+            let Some(y) = year
+                .as_ref()
+                .filter(|y| last.as_ref().is_some_and(|l| l > *y))
+            else {
                 kept.push(entry);
                 continue;
             };
             let end: i64 = y.parse().unwrap_or_default();
             let mut again = args.clone();
-            let Some(years) = again.get_mut(next_params::YEARS_KEY).and_then(Value::as_object_mut) else {
+            let Some(years) = again
+                .get_mut(next_params::YEARS_KEY)
+                .and_then(Value::as_object_mut)
+            else {
                 entry["why"] = json!("the fetch has no years");
                 kept.push(entry);
                 continue;
             };
-            let start = years.get("start").and_then(Value::as_i64).unwrap_or(end).min(end);
+            let start = years
+                .get("start")
+                .and_then(Value::as_i64)
+                .unwrap_or(end)
+                .min(end);
             years.insert("start".into(), json!(start));
             years.insert("end".into(), json!(end));
             // the first fetch already holds the table: a second one that fails (the source unreachable, its sheet unread) keeps
             // it, and the page goes on as it did before this step (review 11-15); only a cancelled run stops here
-            let called = match prepare_fetch(recorder, tools, catalogue, &id, &again, cancel).await {
+            let called = match prepare_fetch(recorder, tools, catalogue, &id, &again, cancel).await
+            {
                 Ok(called) => called,
                 Err(stop) if !cancel.load(std::sync::atomic::Ordering::SeqCst) => {
-                    entry["why"] = json!(format!("fetched again and it failed ({stop}); the first fetch is kept"));
+                    entry["why"] = json!(format!(
+                        "fetched again and it failed ({stop}); the first fetch is kept"
+                    ));
                     kept.push(entry);
                     continue;
                 }
                 Err(stop) => return Err(stop),
             };
             let mode = mode_of(&called);
-            let key = called.details.as_ref().and_then(|d| d["sheet"].as_str()).unwrap_or("").to_string();
+            let key = called
+                .details
+                .as_ref()
+                .and_then(|d| d["sheet"].as_str())
+                .unwrap_or("")
+                .to_string();
             let candidates = match mode.as_str() {
                 "candidates" => read_sheet(&recorder.run_dir, &id, &key).map_err(|e| e.to_string()),
                 _ => Ok(Vec::new()),
@@ -5736,25 +6448,37 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
             let candidates = match candidates {
                 Ok(c) if c.len() >= CLAIMS_MIN => c,
                 Ok(c) => {
-                    entry["why"] = json!(format!("fetched again as mode {mode} with {} claims; the first fetch is kept", c.len()));
+                    entry["why"] = json!(format!(
+                        "fetched again as mode {mode} with {} claims; the first fetch is kept",
+                        c.len()
+                    ));
                     kept.push(entry);
                     continue;
                 }
                 Err(e) => {
-                    entry["why"] = json!(format!("fetched again and its sheet is unread ({e}); the first fetch is kept"));
+                    entry["why"] = json!(format!(
+                        "fetched again and its sheet is unread ({e}); the first fetch is kept"
+                    ));
                     kept.push(entry);
                     continue;
                 }
             };
             if k == 0 {
-                main_file = called.details.as_ref().and_then(|d| d["filePath"].as_str()).map(String::from);
+                main_file = called
+                    .details
+                    .as_ref()
+                    .and_then(|d| d["filePath"].as_str())
+                    .map(String::from);
                 cut = main_cut(&again, called.details.as_ref());
             }
             entry["fetched_again"] = json!(true);
             kept.push(entry);
             tables[k] = (id, again, key, candidates);
         }
-        recorder.program_event(COMMON_YEAR_EVENT, json!({"year": year, "why": told.err(), "tables": kept}))?;
+        recorder.program_event(
+            COMMON_YEAR_EVENT,
+            json!({"year": year, "why": told.err(), "tables": kept}),
+        )?;
     }
     let mut companion_titles = BTreeMap::new();
     let mut companion_files = Vec::new();
@@ -5880,7 +6604,11 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
             claims,
             places_zh: ranking.places_zh.clone(),
             asked: json!(ranking.asked),
-            relation: if prepared.is_empty() { kept_relation } else { None },
+            relation: if prepared.is_empty() {
+                kept_relation
+            } else {
+                None
+            },
             companions: if prepared.is_empty() {
                 std::mem::take(&mut companion_files)
             } else {
@@ -5892,34 +6620,60 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
     let mut shared: Vec<(usize, usize)> = if shared_blocks.is_empty() {
         Vec::new()
     } else {
-        picked_order.iter().enumerate().filter(|(k, _)| *k < prepared.len()).filter_map(|(k, n)| Some((shared_blocks.get(n - 1)?.0, k))).collect()
+        picked_order
+            .iter()
+            .enumerate()
+            .filter(|(k, _)| *k < prepared.len())
+            .filter_map(|(k, n)| Some((shared_blocks.get(n - 1)?.0, k)))
+            .collect()
     };
     shared.sort();
     // the main's sum inputs, and each later block's own fetch of a shared table's, when its breakdown asks for them
-    let with_sums: Vec<usize> = std::iter::once(0).chain(shared.iter().map(|(_, k)| *k).filter(|k| *k > 0)).filter(|k| *k < prepared.len()).collect();
+    let with_sums: Vec<usize> = std::iter::once(0)
+        .chain(shared.iter().map(|(_, k)| *k).filter(|k| *k > 0))
+        .filter(|k| *k < prepared.len())
+        .collect();
     // parts across two or more places; a shared table's block may be one place's own parts
     let least = if shared.is_empty() { 2 } else { 1 };
     for k in with_sums {
         composition_inputs(recorder, tools, catalogue, &mut prepared[k], cancel, least).await?;
     }
-    let block_tables = blocks.iter().flatten().filter_map(|(q, t)| Some((q.clone(), t.clone()?))).fold(Vec::new(), |mut seen: Vec<(String, String)>, (q, t)| {
-        if !seen.iter().any(|(_, s)| *s == t) {
-            seen.push((q, t));
-        }
-        seen
-    });
-    Ok(Planned { prepared, plan, block_tables, shared })
+    let block_tables = blocks
+        .iter()
+        .flatten()
+        .filter_map(|(q, t)| Some((q.clone(), t.clone()?)))
+        .fold(Vec::new(), |mut seen: Vec<(String, String)>, (q, t)| {
+            if !seen.iter().any(|(_, s)| *s == t) {
+                seen.push((q, t));
+            }
+            seen
+        });
+    Ok(Planned {
+        prepared,
+        plan,
+        block_tables,
+        shared,
+    })
 }
 
 /// The blocks of a plan whose blocks share one quantity (no table set per block, `per_block` false) that a recipe draws
 /// (answer_plan::RECIPE_RELATIONS), as (index in the plan, relation): two or more, else none (the plan is drawn as before).
-fn shared_blocks(plan: Option<&crate::answer_plan::Plan>, per_block: bool) -> Vec<(usize, crate::answer_plan::Rel)> {
-    let Some(plan) = plan.filter(|p| !per_block && p.blocks.len() > 1) else { return Vec::new() };
+fn shared_blocks(
+    plan: Option<&crate::answer_plan::Plan>,
+    per_block: bool,
+) -> Vec<(usize, crate::answer_plan::Rel)> {
+    let Some(plan) = plan.filter(|p| !per_block && p.blocks.len() > 1) else {
+        return Vec::new();
+    };
     let drawn: Vec<(usize, crate::answer_plan::Rel)> = plan
         .blocks
         .iter()
         .enumerate()
-        .filter(|(_, b)| crate::answer_plan::RECIPE_RELATIONS.iter().any(|(r, _)| *r == b.rel))
+        .filter(|(_, b)| {
+            crate::answer_plan::RECIPE_RELATIONS
+                .iter()
+                .any(|(r, _)| *r == b.rel)
+        })
         .map(|(i, b)| (i, b.rel))
         .collect();
     if drawn.len() >= 2 {
@@ -5938,8 +6692,15 @@ fn family_holds(a: &crate::l5geo::Asked, id: &str) -> bool {
 /// The table of each block of a plan whose blocks each take their own quantity (名次对照: two or more blocks, no quantity
 /// twice), in block order: the block's quantity id and the first offered table that holds it (Ranking::asked, best first),
 /// None when no offered table does. None for any other plan: its blocks share the table the model picks.
-fn block_tables(plan: &crate::answer_plan::Plan, asked: &[crate::l5geo::Asked]) -> Option<Vec<(String, Option<String>)>> {
-    let ids: Vec<&String> = plan.blocks.iter().filter_map(|b| b.quantity.first().map(|(id, _)| id)).collect();
+fn block_tables(
+    plan: &crate::answer_plan::Plan,
+    asked: &[crate::l5geo::Asked],
+) -> Option<Vec<(String, Option<String>)>> {
+    let ids: Vec<&String> = plan
+        .blocks
+        .iter()
+        .filter_map(|b| b.quantity.first().map(|(id, _)| id))
+        .collect();
     let distinct: BTreeSet<&&String> = ids.iter().collect();
     if ids.len() < 2 || ids.len() != plan.blocks.len() || distinct.len() != ids.len() {
         return None;
@@ -5951,7 +6712,15 @@ fn block_tables(plan: &crate::answer_plan::Plan, asked: &[crate::l5geo::Asked]) 
     };
     Some(
         ids.into_iter()
-            .map(|id| (id.clone(), asked.iter().find(|a| &a.id == id).and_then(|a| a.offered.iter().find(|t| registered(a, t)).cloned())))
+            .map(|id| {
+                (
+                    id.clone(),
+                    asked
+                        .iter()
+                        .find(|a| &a.id == id)
+                        .and_then(|a| a.offered.iter().find(|t| registered(a, t)).cloned()),
+                )
+            })
             .collect(),
     )
 }
@@ -5968,12 +6737,21 @@ async fn composition_inputs<R: ToolRunner + Send + ?Sized>(
     cancel: &AtomicBool,
     least: usize,
 ) -> Result<(), Stop> {
-    let not_prepared = |why: String| Stop::NotPrepared { dataset: main.id.clone(), mode: SUM_INPUT_MODE.into(), why };
+    let not_prepared = |why: String| Stop::NotPrepared {
+        dataset: main.id.clone(),
+        mode: SUM_INPUT_MODE.into(),
+        why,
+    };
     // a fetch that asks no grouped total alone, across places, asks for no second fetch and reads no file for it
-    if composition_dim(main, least).map_err(not_prepared)?.is_none() {
+    if composition_dim(main, least)
+        .map_err(not_prepared)?
+        .is_none()
+    {
         return Ok(());
     }
-    let meta = catalogue.table(&main.id).ok_or_else(|| not_prepared(format!("the catalogue lists no {}", main.id)))?;
+    let meta = catalogue
+        .table(&main.id)
+        .ok_or_else(|| not_prepared(format!("the catalogue lists no {}", main.id)))?;
     let csv = std::fs::read_to_string(recorder.run_dir.join(&main.file))
         .map_err(|e| not_prepared(format!("the fetched file {}: {e}", main.file)))?;
     let rows = catalogue.series_rows(&meta, &csv).map_err(not_prepared)?;
@@ -5983,9 +6761,20 @@ async fn composition_inputs<R: ToolRunner + Send + ?Sized>(
         return Ok(());
     };
     let called = prepare_fetch(recorder, tools, catalogue, &main.id, &args, cancel).await?;
-    let (mode, file) = (mode_of(&called), called.details.as_ref().and_then(|d| d["filePath"].as_str()).map(String::from));
+    let (mode, file) = (
+        mode_of(&called),
+        called
+            .details
+            .as_ref()
+            .and_then(|d| d["filePath"].as_str())
+            .map(String::from),
+    );
     let (true, Some(file)) = (mode == SUM_INPUT_MODE, file) else {
-        return Err(Stop::NotPrepared { dataset: main.id.clone(), mode, why: reason(&called) });
+        return Err(Stop::NotPrepared {
+            dataset: main.id.clone(),
+            mode,
+            why: reason(&called),
+        });
     };
     event["file"] = json!(file);
     recorder.program_event(COMPOSITION_FETCH_EVENT, event)?;
@@ -6001,10 +6790,22 @@ mod tests {
     /// leaves a chart's reading words (a map's 灰色是没有数据) and the drafted fields alone.
     #[test]
     fn a_wording_that_says_a_part_cannot_be_answered_is_found() {
-        assert_eq!(unanswered_word("失业率这一半答不了"), Some("答不了".to_string()));
-        assert_eq!(unanswered_word("目录里没有这张表"), Some("目录里没有".to_string()));
-        assert_eq!(unanswered_word("暂时无法回答"), Some("无法回答".to_string()));
-        assert_eq!(unanswered_word("读图：颜色越深，数值越高，灰色是没有数据。"), None);
+        assert_eq!(
+            unanswered_word("失业率这一半答不了"),
+            Some("答不了".to_string())
+        );
+        assert_eq!(
+            unanswered_word("目录里没有这张表"),
+            Some("目录里没有".to_string())
+        );
+        assert_eq!(
+            unanswered_word("暂时无法回答"),
+            Some("无法回答".to_string())
+        );
+        assert_eq!(
+            unanswered_word("读图：颜色越深，数值越高，灰色是没有数据。"),
+            None
+        );
         assert_eq!(unanswered_word("{first.name}居首"), None);
     }
     use crate::l5geo::{Candidate, Coverage, Scope, Uncovered};
@@ -6030,23 +6831,65 @@ mod tests {
         assert_eq!(NE_POINTS_SHA256, crate::hash::sha256_bytes(&file));
         let said: Value = serde_json::from_slice(&file).unwrap();
         let geometry = std::fs::read(dir.join("naturalearth-admin0-50m.geojson")).unwrap();
-        assert_eq!(said["vendored_geometry"]["content_hash"], crate::hash::sha256_bytes(&geometry));
-        let codes: Vec<String> = ["SE", "EL", "DE", "DEU"].iter().map(|c| c.to_string()).collect();
-        let fake = FakeCatalogue { candidates: Vec::new(), uncovered: None, source: Value::Null, searched: Default::default() };
+        assert_eq!(
+            said["vendored_geometry"]["content_hash"],
+            crate::hash::sha256_bytes(&geometry)
+        );
+        let codes: Vec<String> = ["SE", "EL", "DE", "DEU"]
+            .iter()
+            .map(|c| c.to_string())
+            .collect();
+        let fake = FakeCatalogue {
+            candidates: Vec::new(),
+            uncovered: None,
+            source: Value::Null,
+            searched: Default::default(),
+        };
         let calls = Mutex::new(Vec::new());
         let points = place_points_call(&calls, &codes).unwrap();
         assert_eq!(points.keys().collect::<Vec<_>>(), ["DE", "DEU", "EL", "SE"]);
         assert_eq!(points["EL"], [21.72568, 39.492763]);
         assert_eq!(points["DE"], points["DEU"]);
         // one call through each group's door, the knowledge group's first
-        let asked: Vec<(String, String)> = calls.lock().unwrap().iter().map(|e| (e["group"].as_str().unwrap().to_string(), e["request"].as_str().unwrap().to_string())).collect();
-        assert_eq!(asked, [("knowledge".to_string(), "iso3_of".to_string()), ("visual".to_string(), "place_points".to_string())]);
-        assert_eq!(fake.place_points(&["EU27_2020".to_string()]).unwrap_err(), "the map point table has no point for EU27_2020");
-        let some: Vec<String> = ["XX", "DE", "WLD", "EU27_2020"].iter().map(|c| c.to_string()).collect();
-        assert_eq!(fake.place_points(&some).unwrap_err(), "the map point table has no point for XX, WLD, EU27_2020");
+        let asked: Vec<(String, String)> = calls
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|e| {
+                (
+                    e["group"].as_str().unwrap().to_string(),
+                    e["request"].as_str().unwrap().to_string(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            asked,
+            [
+                ("knowledge".to_string(), "iso3_of".to_string()),
+                ("visual".to_string(), "place_points".to_string())
+            ]
+        );
+        assert_eq!(
+            fake.place_points(&["EU27_2020".to_string()]).unwrap_err(),
+            "the map point table has no point for EU27_2020"
+        );
+        let some: Vec<String> = ["XX", "DE", "WLD", "EU27_2020"]
+            .iter()
+            .map(|c| c.to_string())
+            .collect();
+        assert_eq!(
+            fake.place_points(&some).unwrap_err(),
+            "the map point table has no point for XX, WLD, EU27_2020"
+        );
         let iso3_of = BTreeMap::from([("SE".to_string(), "SWE".to_string())]);
-        let other = next_visual::Reply::Points { points: BTreeMap::from([("SWE".to_string(), [18.0, 60.0])]), missing: Vec::new(), table: "{}" };
-        assert!(place_points_reply(&codes[..1], &iso3_of, Ok(other)).unwrap_err().contains("not the pinned"));
+        let other = next_visual::Reply::Points {
+            points: BTreeMap::from([("SWE".to_string(), [18.0, 60.0])]),
+            missing: Vec::new(),
+            table: "{}",
+        };
+        assert!(place_points_reply(&codes[..1], &iso3_of, Ok(other))
+            .unwrap_err()
+            .contains("not the pinned"));
     }
 
     #[test]
@@ -6295,7 +7138,13 @@ mod tests {
         let none: Vec<Vec<(String, Vec<String>)>> = vec![Vec::new(), Vec::new(), Vec::new()];
         assert_eq!(params_rule(&none), "");
         assert_eq!(params_rule(&[]), "");
-        let one = vec![Vec::new(), vec![("t2.years".to_string(), vec!["2024".to_string(), "2015-2024".to_string()])]];
+        let one = vec![
+            Vec::new(),
+            vec![(
+                "t2.years".to_string(),
+                vec!["2024".to_string(), "2015-2024".to_string()],
+            )],
+        ];
         assert!(params_rule(&one).contains("also give params"));
     }
 
@@ -6379,9 +7228,24 @@ mod tests {
             most: 1,
             items: vec![vec![("t1.breakdown".into(), 4), ("t1.nrg_bal".into(), 5)]],
             splits: vec![vec![
-                Split { option: 2, dim: "nrg_bal".into(), years: vec![1, 2], member: true },
-                Split { option: 3, dim: "siec".into(), years: vec![1, 2], member: false },
-                Split { option: 4, dim: "siec>nrg_bal".into(), years: vec![1], member: true },
+                Split {
+                    option: 2,
+                    dim: "nrg_bal".into(),
+                    years: vec![1, 2],
+                    member: true,
+                },
+                Split {
+                    option: 3,
+                    dim: "siec".into(),
+                    years: vec![1, 2],
+                    member: false,
+                },
+                Split {
+                    option: 4,
+                    dim: "siec>nrg_bal".into(),
+                    years: vec![1],
+                    member: true,
+                },
             ]],
             held: Vec::new(),
         };
@@ -6391,18 +7255,35 @@ mod tests {
             "t1.breakdown 4 (siec>nrg_bal) takes the registered nrg_bal leaves, so t1.nrg_bal has no place: leave it out, or keep it and set t1.breakdown 1"
         );
         assert_eq!(given.allowed["params"], json!({"t1.breakdown": 4}));
-        assert_eq!(given.example, json!({"step": "table", "pick": [1], "params": {"t1.breakdown": 1, "t1.nrg_bal": 1}}));
+        assert_eq!(
+            given.example,
+            json!({"step": "table", "pick": [1], "params": {"t1.breakdown": 1, "t1.nrg_bal": 1}})
+        );
         // left out, the program gives the flow's years (the latest only)
         assert_eq!(
             ask.check(&json!({"step": "table", "pick": [1], "params": {"t1.breakdown": 4}})),
-            Ok(Choice::Table { relation: None, picks: vec![1], params: BTreeMap::from([("t1.breakdown".into(), 4), ("t1.years".into(), 1)]) })
+            Ok(Choice::Table {
+                relation: None,
+                picks: vec![1],
+                params: BTreeMap::from([("t1.breakdown".into(), 4), ("t1.years".into(), 1)])
+            })
         );
         // the split by siec alone takes no member item: t1.nrg_bal is still asked
-        let missing = ask.check(&json!({"step": "table", "pick": [1], "params": {"t1.breakdown": 3}})).unwrap_err();
-        assert_eq!(missing.problem, "params needs item 't1.nrg_bal' as one of its option numbers 1 to 5");
+        let missing = ask
+            .check(&json!({"step": "table", "pick": [1], "params": {"t1.breakdown": 3}}))
+            .unwrap_err();
+        assert_eq!(
+            missing.problem,
+            "params needs item 't1.nrg_bal' as one of its option numbers 1 to 5"
+        );
         assert!(ask.check(&json!({"step": "table", "pick": [1], "params": {"t1.breakdown": 1, "t1.nrg_bal": 3}})).is_ok());
         let own = ask.check(&json!({"step": "table", "pick": [1], "params": {"t1.breakdown": 2, "t1.nrg_bal": 3}})).unwrap_err();
-        assert!(own.problem.starts_with("t1.breakdown 2 (nrg_bal) takes every nrg_bal code"), "{}", own.problem);
+        assert!(
+            own.problem
+                .starts_with("t1.breakdown 2 (nrg_bal) takes every nrg_bal code"),
+            "{}",
+            own.problem
+        );
     }
 
     #[test]
@@ -6413,26 +7294,48 @@ mod tests {
             count: 1,
             most: 1,
             items: vec![vec![("t1.breakdown".into(), 2), ("t1.nrg_bal".into(), 4)]],
-            splits: vec![vec![Split { option: 2, dim: "nrg_bal".into(), years, member: true }]],
+            splits: vec![vec![Split {
+                option: 2,
+                dim: "nrg_bal".into(),
+                years,
+                member: true,
+            }]],
             held: Vec::new(),
         };
         let split = json!({"step": "table", "pick": [1], "params": {"t1.breakdown": 2}});
         assert_eq!(
             ask(vec![1]).check(&split).unwrap(),
-            Choice::Table { relation: None, picks: vec![1], params: BTreeMap::from([("t1.breakdown".into(), 2), ("t1.years".into(), 1)]) }
+            Choice::Table {
+                relation: None,
+                picks: vec![1],
+                params: BTreeMap::from([("t1.breakdown".into(), 2), ("t1.years".into(), 1)])
+            }
         );
         assert_eq!(
             ask(vec![1, 2]).check(&split).unwrap(),
-            Choice::Table { relation: None, picks: vec![1], params: BTreeMap::from([("t1.breakdown".into(), 2)]) }
+            Choice::Table {
+                relation: None,
+                picks: vec![1],
+                params: BTreeMap::from([("t1.breakdown".into(), 2)])
+            }
         );
-        let none = json!({"step": "table", "pick": [1], "params": {"t1.breakdown": 1, "t1.nrg_bal": 1}});
+        let none =
+            json!({"step": "table", "pick": [1], "params": {"t1.breakdown": 1, "t1.nrg_bal": 1}});
         assert_eq!(
             ask(vec![1]).check(&none).unwrap(),
-            Choice::Table { relation: None, picks: vec![1], params: BTreeMap::from([("t1.breakdown".into(), 1), ("t1.nrg_bal".into(), 1)]) }
+            Choice::Table {
+                relation: None,
+                picks: vec![1],
+                params: BTreeMap::from([("t1.breakdown".into(), 1), ("t1.nrg_bal".into(), 1)])
+            }
         );
         // the model's years for it is no item
-        let years = json!({"step": "table", "pick": [1], "params": {"t1.breakdown": 2, "t1.years": 1}});
-        assert_eq!(ask(vec![1]).check(&years).unwrap_err().problem, "params has no item 't1.years' among the items of the picked tables");
+        let years =
+            json!({"step": "table", "pick": [1], "params": {"t1.breakdown": 2, "t1.years": 1}});
+        assert_eq!(
+            ask(vec![1]).check(&years).unwrap_err().problem,
+            "params has no item 't1.years' among the items of the picked tables"
+        );
     }
 
     #[test]
@@ -6443,7 +7346,12 @@ mod tests {
             count: 1,
             most: 1,
             items: vec![vec![("t1.years".into(), 2), ("t1.breakdown".into(), 2)]],
-            splits: vec![vec![Split { option: 2, dim: "citizen".into(), years: Vec::new(), member: false }]],
+            splits: vec![vec![Split {
+                option: 2,
+                dim: "citizen".into(),
+                years: Vec::new(),
+                member: false,
+            }]],
             held: Vec::new(),
         };
         let given = ask.check(&json!({"step": "table", "pick": [1], "params": {"t1.years": 1, "t1.breakdown": 2}})).unwrap_err();
@@ -6454,14 +7362,29 @@ mod tests {
         assert_eq!(given.allowed["params"], json!({"t1.breakdown": 2}));
         assert_eq!(
             ask.check(&json!({"step": "table", "pick": [1], "params": {"t1.breakdown": 2}})),
-            Ok(Choice::Table { relation: None, picks: vec![1], params: BTreeMap::from([("t1.breakdown".into(), 2)]) })
+            Ok(Choice::Table {
+                relation: None,
+                picks: vec![1],
+                params: BTreeMap::from([("t1.breakdown".into(), 2)])
+            })
         );
         assert_eq!(
-            ask.check(&json!({"step": "table", "pick": [1], "params": {"t1.years": 2, "t1.breakdown": 1}})),
-            Ok(Choice::Table { relation: None, picks: vec![1], params: BTreeMap::from([("t1.breakdown".into(), 1), ("t1.years".into(), 2)]) })
+            ask.check(
+                &json!({"step": "table", "pick": [1], "params": {"t1.years": 2, "t1.breakdown": 1}})
+            ),
+            Ok(Choice::Table {
+                relation: None,
+                picks: vec![1],
+                params: BTreeMap::from([("t1.breakdown".into(), 1), ("t1.years".into(), 2)])
+            })
         );
-        let missing = ask.check(&json!({"step": "table", "pick": [1], "params": {"t1.breakdown": 1}})).unwrap_err();
-        assert_eq!(missing.problem, "params needs item 't1.years' as one of its option numbers 1 to 2");
+        let missing = ask
+            .check(&json!({"step": "table", "pick": [1], "params": {"t1.breakdown": 1}}))
+            .unwrap_err();
+        assert_eq!(
+            missing.problem,
+            "params needs item 't1.years' as one of its option numbers 1 to 2"
+        );
     }
 
     #[test]
@@ -6733,11 +7656,17 @@ mod tests {
     #[test]
     fn every_prompt_names_the_step_the_check_takes() {
         for ask in [Ask::Search, Ask::Vision] {
-            let step = ask.schema()["properties"]["step"]["enum"][0].as_str().unwrap().to_string();
+            let step = ask.schema()["properties"]["step"]["enum"][0]
+                .as_str()
+                .unwrap()
+                .to_string();
             assert_eq!(step, ask.step());
-            assert!(with_step_line("p", ask.step()).ends_with(&format!("\nAnswer with step \"{step}\".")));
+            assert!(with_step_line("p", ask.step())
+                .ends_with(&format!("\nAnswer with step \"{step}\".")));
         }
-        let refused = Ask::Vision.check(&json!({"step": "image", "answers": {}})).unwrap_err();
+        let refused = Ask::Vision
+            .check(&json!({"step": "image", "answers": {}}))
+            .unwrap_err();
         assert_eq!(refused.problem, "step must be \"vision\"");
     }
 
@@ -6746,11 +7675,13 @@ mod tests {
     /// never a yes. Only the reply's frame is refused: no answers object, or a question id that is not one of the six.
     #[test]
     fn the_image_review_reads_each_question_yes_no_or_unanswered() {
-        let reply = |answers: Vec<(&str, Value)>| {
-            json!({"step": "vision", "answers": answers.into_iter().map(|(k, v)| (k.to_string(), v)).collect::<Map<_, _>>()})
-        };
+        let reply = |answers: Vec<(&str, Value)>| json!({"step": "vision", "answers": answers.into_iter().map(|(k, v)| (k.to_string(), v)).collect::<Map<_, _>>()});
         let ids: Vec<&str> = VISION_QUESTIONS.iter().map(|(id, _)| *id).collect();
-        let all_yes = || ids.iter().map(|id| (*id, json!({"answer": "yes"}))).collect::<Vec<_>>();
+        let all_yes = || {
+            ids.iter()
+                .map(|id| (*id, json!({"answer": "yes"})))
+                .collect::<Vec<_>>()
+        };
         let verdicts = |args: &Value| match Ask::Vision.check(args) {
             Ok(Choice::Vision { answers }) => answers,
             other => panic!("expected a vision choice, got {other:?}"),
@@ -6762,7 +7693,15 @@ mod tests {
         let mut answers = all_yes();
         answers[3].1 = json!({"answer": "no", "reason": " the red dots have no legend entry "});
         let got = verdicts(&reply(answers));
-        assert_eq!(got[3], ("legend_matches_marks", Verdict::No { reason: "the red dots have no legend entry".into() }));
+        assert_eq!(
+            got[3],
+            (
+                "legend_matches_marks",
+                Verdict::No {
+                    reason: "the red dots have no legend entry".into()
+                }
+            )
+        );
         assert_eq!(got.iter().filter(|(_, v)| *v == Verdict::Yes).count(), 5);
         // malformed answers: each of them unanswered, the rest read as given
         let long = "x".repeat(VISION_TEXT_MAX + 1);
@@ -6783,15 +7722,33 @@ mod tests {
             let mut answers = all_yes();
             answers[0].1 = bad.clone();
             let got = verdicts(&reply(answers));
-            assert!(matches!(&got[0], ("headline_finding", Verdict::Unanswered { .. })), "{bad}: {got:?}");
-            assert!(got[1..].iter().all(|(_, v)| *v == Verdict::Yes), "{bad}: {got:?}");
+            assert!(
+                matches!(&got[0], ("headline_finding", Verdict::Unanswered { .. })),
+                "{bad}: {got:?}"
+            );
+            assert!(
+                got[1..].iter().all(|(_, v)| *v == Verdict::Yes),
+                "{bad}: {got:?}"
+            );
         }
         // a question left out is unanswered
         let got = verdicts(&reply(all_yes()[1..].to_vec()));
-        assert_eq!(got[0], ("headline_finding", Verdict::Unanswered { why: "not answered".into() }));
+        assert_eq!(
+            got[0],
+            (
+                "headline_finding",
+                Verdict::Unanswered {
+                    why: "not answered".into()
+                }
+            )
+        );
         // the frame is refused: no answers object, an id not asked, the old score shape
-        assert!(Ask::Vision.check(&json!({"step": "vision", "answers": "yes"})).is_err());
-        assert!(Ask::Vision.check(&json!({"step": "vision", "answers": [true]})).is_err());
+        assert!(Ask::Vision
+            .check(&json!({"step": "vision", "answers": "yes"}))
+            .is_err());
+        assert!(Ask::Vision
+            .check(&json!({"step": "vision", "answers": [true]}))
+            .is_err());
         let mut extra = all_yes();
         extra.push(("illustration_fits", json!({"answer": "yes"})));
         let why = Ask::Vision.check(&reply(extra)).unwrap_err();
@@ -6799,7 +7756,9 @@ mod tests {
         assert!(Ask::Vision.check(&json!({"step": "vision", "score": 95, "confidence": 0.9, "rubric": {}, "issues": []})).is_err());
         // an answers object sent as JSON text is decoded once, as any object-typed value
         let text = reply(all_yes())["answers"].to_string();
-        assert!(verdicts(&json!({"step": "vision", "answers": text})).iter().all(|(_, v)| *v == Verdict::Yes));
+        assert!(verdicts(&json!({"step": "vision", "answers": text}))
+            .iter()
+            .all(|(_, v)| *v == Verdict::Yes));
         // the schema shows every question with its definition
         let schema = Ask::Vision.schema();
         assert_eq!(schema["properties"]["answers"]["required"], json!(ids));
@@ -6814,29 +7773,80 @@ mod tests {
     #[test]
     fn a_shape_answer_is_zero_or_an_offered_shape_with_enough_quantities() {
         use crate::answer_plan::{Shape, SplitAsk, SplitReply};
-        let two = || vec![("population".to_string(), "人口".to_string()), ("gdp_pc".to_string(), "人均GDP".to_string())];
+        let two = || {
+            vec![
+                ("population".to_string(), "人口".to_string()),
+                ("gdp_pc".to_string(), "人均GDP".to_string()),
+            ]
+        };
         let ask = Ask::Split {
             ask: SplitAsk {
-                offered: vec![(Shape::RankCompare, Some("是不是也")), (Shape::ThresholdTime, None), (Shape::TotalToParts, None)],
+                offered: vec![
+                    (Shape::RankCompare, Some("是不是也")),
+                    (Shape::ThresholdTime, None),
+                    (Shape::TotalToParts, None),
+                ],
                 quantities: two(),
             },
         };
         let answer = |shape: u64, quantities: Value| json!({"step": "split", "split": shape, "quantities": quantities});
-        let reply = |shape: u8, quantities: Vec<usize>| Choice::Split { reply: SplitReply { number: shape, quantities } };
+        let reply = |shape: u8, quantities: Vec<usize>| Choice::Split {
+            reply: SplitReply {
+                number: shape,
+                quantities,
+            },
+        };
         assert_eq!(ask.check(&answer(0, json!([]))).unwrap(), reply(0, vec![]));
-        assert_eq!(ask.check(&answer(1, json!([1, 0]))).unwrap(), reply(1, vec![1, 0]));
-        assert_eq!(ask.check(&answer(1, json!([]))).unwrap(), reply(1, vec![]), "[] keeps the question's two");
-        for bad in [answer(4, json!([])), answer(1, json!([0])), answer(1, json!([0, 0])), answer(2, json!([2])), answer(1, json!("0,1"))] {
+        assert_eq!(
+            ask.check(&answer(1, json!([1, 0]))).unwrap(),
+            reply(1, vec![1, 0])
+        );
+        assert_eq!(
+            ask.check(&answer(1, json!([]))).unwrap(),
+            reply(1, vec![]),
+            "[] keeps the question's two"
+        );
+        for bad in [
+            answer(4, json!([])),
+            answer(1, json!([0])),
+            answer(1, json!([0, 0])),
+            answer(2, json!([2])),
+            answer(1, json!("0,1")),
+        ] {
             let refused = ask.check(&bad).unwrap_err();
-            assert!(refused.allowed["split"] == json!([0, 1, 2, 3]), "{bad}: {:?}", refused.allowed);
-            assert!(ask.check(&refused.example).is_ok(), "the example is accepted: {}", refused.example);
+            assert!(
+                refused.allowed["split"] == json!([0, 1, 2, 3]),
+                "{bad}: {:?}",
+                refused.allowed
+            );
+            assert!(
+                ask.check(&refused.example).is_ok(),
+                "the example is accepted: {}",
+                refused.example
+            );
         }
-        assert!(ask.check(&json!({"step": "split", "split": 0})).is_err(), "quantities is required");
-        assert_eq!(ask.schema()["properties"]["split"]["enum"], json!([0, 1, 2, 3]));
-        assert!(ask.schema()["properties"]["split"]["description"].as_str().unwrap().contains("\"是不是也\" point here"));
+        assert!(
+            ask.check(&json!({"step": "split", "split": 0})).is_err(),
+            "quantities is required"
+        );
+        assert_eq!(
+            ask.schema()["properties"]["split"]["enum"],
+            json!([0, 1, 2, 3])
+        );
+        assert!(ask.schema()["properties"]["split"]["description"]
+            .as_str()
+            .unwrap()
+            .contains("\"是不是也\" point here"));
         // a question that names one quantity cannot take 名次对照, and the example offers nothing else when none is preselected
         let one = Ask::Split {
-            ask: SplitAsk { offered: vec![(Shape::RankCompare, None), (Shape::ThresholdTime, None), (Shape::TotalToParts, None)], quantities: two()[..1].to_vec() },
+            ask: SplitAsk {
+                offered: vec![
+                    (Shape::RankCompare, None),
+                    (Shape::ThresholdTime, None),
+                    (Shape::TotalToParts, None),
+                ],
+                quantities: two()[..1].to_vec(),
+            },
         };
         assert!(one.check(&answer(1, json!([]))).is_err());
         assert_eq!(one.check(&answer(2, json!([]))).unwrap(), reply(2, vec![]));
@@ -6928,22 +7938,36 @@ mod tests {
         let answer = |n: &str, t: &str| json!({"step": "text", "text": {n: t}, "names": {}});
         let refused = ask(&["1"]).check(&answer("1", "哪国最高")).unwrap_err();
         assert!(
-            refused.problem.starts_with("field '1': '最高' asks a level; "),
+            refused
+                .problem
+                .starts_with("field '1': '最高' asks a level; "),
             "{}",
             refused.problem
         );
-        assert!(refused.problem.contains(CHANGE_TITLE_RULE), "{}", refused.problem);
+        assert!(
+            refused.problem.contains(CHANGE_TITLE_RULE),
+            "{}",
+            refused.problem
+        );
         assert_eq!(
             refused.allowed["changes"],
             json!({"fields": ["1"], "words": CHANGE_WORDS})
         );
         assert_eq!(refused.allowed["text"]["1"], "变化多大");
-        assert_eq!(refused.example, json!({"step": "text", "text": {}, "names": {}}));
+        assert_eq!(
+            refused.example,
+            json!({"step": "text", "text": {}, "names": {}})
+        );
         assert!(ask(&["1"]).check(&answer("1", "哪国升得最多")).is_ok());
         assert!(ask(&["1"]).check(&answer("2", "哪国最高")).is_ok());
         assert!(ask(&[]).check(&answer("1", "哪国最高")).is_ok());
         assert!(ask(&[]).allowed().get("changes").is_none());
-        let described = |a: &Ask| a.schema()["properties"]["text"]["description"].as_str().unwrap().to_string();
+        let described = |a: &Ask| {
+            a.schema()["properties"]["text"]["description"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
         assert!(described(&ask(&["1"])).contains(CHANGE_TITLE_RULE));
         assert!(!described(&ask(&[])).contains(CHANGE_TITLE_RULE));
     }
@@ -6958,7 +7982,9 @@ mod tests {
             assert!(!term.chars().any(|c| c.is_ascii_digit()), "{term}");
             assert_eq!(change_word(term), None, "{term}");
             // a bare change word (增长, 变化) would free every such word: a term keeps two characters besides its change word
-            let rest = CHANGE_WORDS.iter().fold(term.clone(), |t, w| t.replace(*w, ""));
+            let rest = CHANGE_WORDS
+                .iter()
+                .fold(term.clone(), |t, w| t.replace(*w, ""));
             assert!(rest.chars().count() >= 2, "{term}");
         }
     }
@@ -6983,32 +8009,83 @@ mod tests {
             unasked: Vec::new(),
         };
         let answer = |t: &str| json!({"step": "text", "text": {"1": t}, "names": {}});
-        for (title, word) in [("各国温室气体排放的水平与变化", "变"), ("各国房价指数的涨幅", "涨"), ("欧盟各国排放下降了吗", "降")] {
+        for (title, word) in [
+            ("各国温室气体排放的水平与变化", "变"),
+            ("各国房价指数的涨幅", "涨"),
+            ("欧盟各国排放下降了吗", "降"),
+        ] {
             let refused = ask(&["1"]).check(&answer(title)).unwrap_err();
-            assert!(refused.problem.starts_with(&format!("field '1': '{word}' names a change; ")), "{}", refused.problem);
-            assert!(refused.problem.contains(LEVEL_RULE) && refused.problem.contains("各国温室气体排放量"), "{}", refused.problem);
-            assert_eq!(refused.allowed["levels"], json!({"fields": ["1"], "words": CHANGE_WORDS, "rule": LEVEL_RULE}));
+            assert!(
+                refused
+                    .problem
+                    .starts_with(&format!("field '1': '{word}' names a change; ")),
+                "{}",
+                refused.problem
+            );
+            assert!(
+                refused.problem.contains(LEVEL_RULE)
+                    && refused.problem.contains("各国温室气体排放量"),
+                "{}",
+                refused.problem
+            );
+            assert_eq!(
+                refused.allowed["levels"],
+                json!({"fields": ["1"], "words": CHANGE_WORDS, "rule": LEVEL_RULE})
+            );
         }
         assert!(ask(&["1"]).check(&answer("德国温室气体排放量居首")).is_ok());
-        assert!(ask(&[]).check(&answer("各国温室气体排放的水平与变化")).is_ok());
-        let described = |a: &Ask| a.schema()["properties"]["text"]["description"].as_str().unwrap().to_string();
-        assert!(described(&ask(&["1"])).contains(LEVEL_RULE) && !described(&ask(&[])).contains(LEVEL_RULE));
+        assert!(ask(&[])
+            .check(&answer("各国温室气体排放的水平与变化"))
+            .is_ok());
+        let described = |a: &Ask| {
+            a.schema()["properties"]["text"]["description"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
+        assert!(
+            described(&ask(&["1"])).contains(LEVEL_RULE)
+                && !described(&ask(&[])).contains(LEVEL_RULE)
+        );
         // A measure's name that holds a change word's character and names no change passes (round 10 q7: value added, which
         // the stand-in reworded to a wrong name when refused); a change word beside it is still refused.
-        assert!(ask(&["1"]).check(&answer("欧盟各国对华出口的国内增加值排名")).is_ok());
-        assert!(ask(&["1"]).check(&answer("不含土地利用变化的人均排放")).is_ok());
-        let grew = ask(&["1"]).check(&answer("国内增加值增长最快的国家")).unwrap_err();
-        assert!(grew.problem.starts_with("field '1': '增' names a change; "), "{}", grew.problem);
+        assert!(ask(&["1"])
+            .check(&answer("欧盟各国对华出口的国内增加值排名"))
+            .is_ok());
+        assert!(ask(&["1"])
+            .check(&answer("不含土地利用变化的人均排放"))
+            .is_ok());
+        let grew = ask(&["1"])
+            .check(&answer("国内增加值增长最快的国家"))
+            .unwrap_err();
+        assert!(
+            grew.problem.starts_with("field '1': '增' names a change; "),
+            "{}",
+            grew.problem
+        );
         // n47 (round 9, user 11-11 item 2): freeing 土地利用变化 leaves the 变化 of a title that names a change refused
-        let n47 = ask(&["1"]).check(&answer("各国温室气体排放的水平与变化")).unwrap_err();
-        assert!(n47.problem.starts_with("field '1': '变' names a change; "), "{}", n47.problem);
+        let n47 = ask(&["1"])
+            .check(&answer("各国温室气体排放的水平与变化"))
+            .unwrap_err();
+        assert!(
+            n47.problem.starts_with("field '1': '变' names a change; "),
+            "{}",
+            n47.problem
+        );
         assert_eq!(change_word("各国温室气体排放的水平与变化"), Some("变"));
-        assert_eq!(change_word("不含土地利用变化的人均排放量的变化"), Some("变"));
+        assert_eq!(
+            change_word("不含土地利用变化的人均排放量的变化"),
+            Some("变")
+        );
         // A wording a rule offers on every page passes on a level page; only the change rule's own examples name a change,
         // and that rule is said only on a change page.
         for suggested in RULE_SUGGESTIONS {
             let on_change_pages = CHANGE_TITLE_RULE.contains(suggested);
-            assert_eq!(ask(&["1"]).check(&answer(suggested)).is_ok(), !on_change_pages, "{suggested}");
+            assert_eq!(
+                ask(&["1"]).check(&answer(suggested)).is_ok(),
+                !on_change_pages,
+                "{suggested}"
+            );
         }
     }
 
@@ -7036,25 +8113,47 @@ mod tests {
         };
         let answer = |n: &str, t: &str| json!({"step": "text", "text": {n: t}, "names": {}});
         let both = ask(&["1", "2"]);
-        let refused = both.check(&answer("1", "从起始到最近，谁升得最多")).unwrap_err();
-        assert!(refused.problem.starts_with("field '1': '最多' ranks; "), "{}", refused.problem);
+        let refused = both
+            .check(&answer("1", "从起始到最近，谁升得最多"))
+            .unwrap_err();
+        assert!(
+            refused.problem.starts_with("field '1': '最多' ranks; "),
+            "{}",
+            refused.problem
+        );
         assert!(refused.problem.contains(SCOPE_RULE), "{}", refused.problem);
-        assert!(refused.problem.contains("'各地的高低分布'"), "{}", refused.problem);
+        assert!(
+            refused.problem.contains("'各地的高低分布'"),
+            "{}",
+            refused.problem
+        );
         assert_eq!(
             refused.allowed["scoped"],
             json!({"fields": ["1", "2"], "words": crate::next_page::SUPERLATIVES})
         );
         assert!(both.check(&answer("1", "各方数值的变化")).is_ok());
-        assert!(both.check(&answer("2", "{max.v.geo}最多")).is_ok(), "the draft as it stands");
+        assert!(
+            both.check(&answer("2", "{max.v.geo}最多")).is_ok(),
+            "the draft as it stands"
+        );
         assert!(both.check(&answer("2", "{max.v.geo}居首")).is_ok());
         assert!(both.check(&answer("2", "{max.v.geo}领先")).is_err());
-        assert!(ask(&[]).check(&answer("1", "从起始到最近，谁升得最多")).is_ok());
+        assert!(ask(&[])
+            .check(&answer("1", "从起始到最近，谁升得最多"))
+            .is_ok());
         assert!(ask(&[]).allowed().get("scoped").is_none());
-        let described = |a: &Ask| a.schema()["properties"]["text"]["description"].as_str().unwrap().to_string();
+        let described = |a: &Ask| {
+            a.schema()["properties"]["text"]["description"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
         assert!(described(&both).contains(SCOPE_RULE));
         assert!(!described(&ask(&[])).contains(SCOPE_RULE));
         // The rule says every SUPERLATIVES word, and no wording a rule suggests ranks.
-        assert!(crate::next_page::SUPERLATIVES.iter().all(|w| SCOPE_RULE.contains(w)));
+        assert!(crate::next_page::SUPERLATIVES
+            .iter()
+            .all(|w| SCOPE_RULE.contains(w)));
         for suggested in RULE_SUGGESTIONS {
             assert_eq!(ranking_word(suggested), None, "{suggested}");
             assert!(both.check(&answer("1", suggested)).is_ok(), "{suggested}");
@@ -7098,16 +8197,28 @@ mod tests {
         ] {
             let refused = titled.check(&answer("1", asked)).unwrap_err();
             assert!(
-                refused.problem.starts_with(&format!("field '1': '{word}' makes it a question; ")),
+                refused
+                    .problem
+                    .starts_with(&format!("field '1': '{word}' makes it a question; ")),
                 "{asked}: {}",
                 refused.problem
             );
             assert!(refused.problem.contains(TITLE_RULE), "{}", refused.problem);
-            assert!(refused.problem.ends_with(", e.g. '各方的变化'"), "{}", refused.problem);
-            assert_eq!(refused.allowed["titles"], json!({"fields": ["1"], "words": QUESTION_WORDS}));
+            assert!(
+                refused.problem.ends_with(", e.g. '各方的变化'"),
+                "{}",
+                refused.problem
+            );
+            assert_eq!(
+                refused.allowed["titles"],
+                json!({"fields": ["1"], "words": QUESTION_WORDS})
+            );
             // only the title is a title: the dek may ask, and an ask with no title field refuses none of it
             assert!(titled.check(&answer("2", asked)).is_ok(), "{asked}");
-            assert!(ask(&[], &[], &[]).check(&answer("1", asked)).is_ok(), "{asked}");
+            assert!(
+                ask(&[], &[], &[]).check(&answer("1", asked)).is_ok(),
+                "{asked}"
+            );
         }
         for (label_or_conclusion, kind) in [
             ("欧盟各国可再生能源占比", "a label"),
@@ -7115,10 +8226,18 @@ mod tests {
             ("北欧国家占比升幅居前", "a conclusion"),
             ("几乎每国的占比都在上升", "几乎 is no question"),
         ] {
-            assert!(titled.check(&answer("1", label_or_conclusion)).is_ok(), "{kind}: {label_or_conclusion}");
+            assert!(
+                titled.check(&answer("1", label_or_conclusion)).is_ok(),
+                "{kind}: {label_or_conclusion}"
+            );
         }
         assert!(ask(&[], &[], &[]).allowed().get("titles").is_none());
-        let described = |a: &Ask| a.schema()["properties"]["text"]["description"].as_str().unwrap().to_string();
+        let described = |a: &Ask| {
+            a.schema()["properties"]["text"]["description"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
         assert!(described(&titled).contains(TITLE_RULE));
         assert!(!described(&ask(&[], &[], &[])).contains(TITLE_RULE));
         // The rule names every word it refuses for; a wording a rule suggests asks nothing and passes as the title of a
@@ -7133,16 +8252,28 @@ mod tests {
         // a rule says not to write; every suggestion is a rule's example.
         let mut examples: Vec<&str> = Vec::new();
         for rule in [TITLE_RULE, CHANGE_TITLE_RULE, SCOPE_RULE] {
-            let quoted: Vec<&str> = rule.split(" '").skip(1).filter_map(|q| q.split('\'').next()).collect();
+            let quoted: Vec<&str> = rule
+                .split(" '")
+                .skip(1)
+                .filter_map(|q| q.split('\'').next())
+                .collect();
             assert!(!quoted.is_empty(), "{rule}");
             examples.extend(quoted.into_iter().filter(|q| !q.contains('最')));
         }
-        examples.extend(TYPED_NUMBER_RULE.split("write ").nth(1).and_then(|w| w.split(',').next()));
+        examples.extend(
+            TYPED_NUMBER_RULE
+                .split("write ")
+                .nth(1)
+                .and_then(|w| w.split(',').next()),
+        );
         for example in &examples {
             assert!(RULE_SUGGESTIONS.contains(example), "{example}");
         }
         for suggested in RULE_SUGGESTIONS {
-            assert!(examples.contains(&suggested), "{suggested} is no rule's example");
+            assert!(
+                examples.contains(&suggested),
+                "{suggested} is no rule's example"
+            );
         }
     }
 
@@ -7307,7 +8438,12 @@ mod tests {
             assert_eq!(number_free_text(text), typed, "{text}");
         }
         let w = free_words();
-        assert!(w.terms.iter().any(|t| t.iter().collect::<String>() == "PM2.5"), "the digit terms are taken in bulk too");
+        assert!(
+            w.terms
+                .iter()
+                .any(|t| t.iter().collect::<String>() == "PM2.5"),
+            "the digit terms are taken in bulk too"
+        );
         assert!(w.ages.iter().any(|a| a == "15-24岁"));
         // Still numbers: a count, a span, a rate's base that is a count, a scale after a value or a count, an SI unit after
         // a numeral, a term after a placeholder, and the words no source writes (an age band in Chinese numerals, 零排放,
@@ -7369,20 +8505,46 @@ mod tests {
             ("二十七国中{first.name}最高", 27),
             ("三方之中{first.name}最高", 3),
         ] {
-            assert!(ask(Some(n)).check(&said(text)).is_ok(), "{text} on a page of {n}");
-            assert!(ask(Some(n + 1)).check(&said(text)).is_err(), "{text} on a page of {}", n + 1);
-            assert!(ask(None).check(&said(text)).is_err(), "{text} with no count");
+            assert!(
+                ask(Some(n)).check(&said(text)).is_ok(),
+                "{text} on a page of {n}"
+            );
+            assert!(
+                ask(Some(n + 1)).check(&said(text)).is_err(),
+                "{text} on a page of {}",
+                n + 1
+            );
+            assert!(
+                ask(None).check(&said(text)).is_err(),
+                "{text} with no count"
+            );
         }
         assert_eq!(ask(Some(3)).allowed()["place_count"]["places"], 3);
         // digits stay a typed number: the core's schema refuses a digit in a literal word
-        assert!(ask(Some(5)).check(&said("5个国家里{first.name}最高")).is_err());
+        assert!(ask(Some(5))
+            .check(&said("5个国家里{first.name}最高"))
+            .is_err());
         // still numbers on a page of three: a span, a share, a count after a quantity word or a placeholder
-        for text in ["十年前{first.name}最高", "三国中{first.name}占三成", "近三国{first.name}最高", "{first.name}三国最高"] {
+        for text in [
+            "十年前{first.name}最高",
+            "三国中{first.name}占三成",
+            "近三国{first.name}最高",
+            "{first.name}三国最高",
+        ] {
             assert!(ask(Some(3)).check(&said(text)).is_err(), "{text}");
             assert!(ask(Some(10)).check(&said(text)).is_err(), "{text}");
         }
         assert_eq!(place_count_free("三国与两国", Some(3)), " 国与两国");
-        for (run, n) in [("两", Some(2)), ("十", Some(10)), ("十二", Some(12)), ("二十七", Some(27)), ("一百零五", Some(105)), ("27", None), ("几", None), ("2十", None)] {
+        for (run, n) in [
+            ("两", Some(2)),
+            ("十", Some(10)),
+            ("十二", Some(12)),
+            ("二十七", Some(27)),
+            ("一百零五", Some(105)),
+            ("27", None),
+            ("几", None),
+            ("2十", None),
+        ] {
             assert_eq!(numeral_value(&run.chars().collect::<Vec<_>>()), n, "{run}");
         }
     }
@@ -7596,11 +8758,21 @@ mod tests {
                 .await
                 .unwrap();
             recorder
-                .prepare(&catalogue, &mut tools, json!({"sheet": "s", "picks": [1]}), &cancel)
+                .prepare(
+                    &catalogue,
+                    &mut tools,
+                    json!({"sheet": "s", "picks": [1]}),
+                    &cancel,
+                )
                 .await
                 .unwrap();
             recorder
-                .prepare(&catalogue, &mut tools, json!({"sheet": "s", "picks": [2]}), &cancel)
+                .prepare(
+                    &catalogue,
+                    &mut tools,
+                    json!({"sheet": "s", "picks": [2]}),
+                    &cancel,
+                )
                 .await
                 .unwrap();
         }
@@ -7808,7 +8980,12 @@ mod tests {
         fn route(&self) -> ModelRoute {
             ModelRoute::Standin
         }
-        async fn ask(&mut self, history: &[Value], _tools: &[ToolDef], _cancel: &AtomicBool) -> Option<Value> {
+        async fn ask(
+            &mut self,
+            history: &[Value],
+            _tools: &[ToolDef],
+            _cancel: &AtomicBool,
+        ) -> Option<Value> {
             self.asked.push(history.to_vec());
             self.replies.pop_front()
         }
@@ -7823,22 +9000,38 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (_events, mut sink) = collector();
         let cancel = AtomicBool::new(false);
-        let earlier = vec![json!({"role": "user", "content": text_content("the question"), "timestamp": 1})];
+        let earlier =
+            vec![json!({"role": "user", "content": text_content("the question"), "timestamp": 1})];
         let mut recorder = Recorder::new(&mut sink, dir.path(), Vec::new(), earlier);
-        let yes: Map<String, Value> = VISION_QUESTIONS.iter().map(|(id, _)| (id.to_string(), json!({"answer": "yes"}))).collect();
+        let yes: Map<String, Value> = VISION_QUESTIONS
+            .iter()
+            .map(|(id, _)| (id.to_string(), json!({"answer": "yes"})))
+            .collect();
         let mut model = HistoryAsker {
             replies: vec![
-                call("toolu_s", json!({"step": "search", "query": "renewable energy"})),
+                call(
+                    "toolu_s",
+                    json!({"step": "search", "query": "renewable energy"}),
+                ),
                 call("toolu_r", json!({"step": "vision", "answers": "all good"})),
                 call("toolu_v", json!({"step": "vision", "answers": yes})),
             ]
             .into(),
             asked: Vec::new(),
         };
-        recorder.ask_step(&mut model, &Ask::Search, "search", &cancel).await.unwrap();
+        recorder
+            .ask_step(&mut model, &Ask::Search, "search", &cancel)
+            .await
+            .unwrap();
         let image = json!({"type": "image", "data": "AAEC", "mimeType": "image/png"});
         let (id, choice) = recorder
-            .ask_step_alone(&mut model, &Ask::Vision, "review the page", std::slice::from_ref(&image), &cancel)
+            .ask_step_alone(
+                &mut model,
+                &Ask::Vision,
+                "review the page",
+                std::slice::from_ref(&image),
+                &cancel,
+            )
             .await
             .unwrap();
         assert_eq!(id, "toolu_v");
@@ -7847,14 +9040,21 @@ mod tests {
         assert_eq!(model.asked[0].len(), 2);
         let first = &model.asked[1];
         assert_eq!(first.len(), 1, "{first:?}");
-        assert_eq!(first[0]["content"], json!([{"type": "text", "text": with_step_line("review the page", "vision")}, image]));
+        assert_eq!(
+            first[0]["content"],
+            json!([{"type": "text", "text": with_step_line("review the page", "vision")}, image])
+        );
         let second = &model.asked[2];
         let roles: Vec<&str> = second.iter().map(|m| m["role"].as_str().unwrap()).collect();
         assert_eq!(roles, ["user", "assistant", "toolResult"]);
         assert_eq!(second[0], first[0]);
-        assert!(!second.iter().any(|m| m.to_string().contains("the question") || m.to_string().contains("toolu_s")));
-        let filed: Value =
-            serde_json::from_str(&std::fs::read_to_string(dir.path().join(EXCHANGE_DIR).join("toolu_v.json")).unwrap()).unwrap();
+        assert!(!second
+            .iter()
+            .any(|m| m.to_string().contains("the question") || m.to_string().contains("toolu_s")));
+        let filed: Value = serde_json::from_str(
+            &std::fs::read_to_string(dir.path().join(EXCHANGE_DIR).join("toolu_v.json")).unwrap(),
+        )
+        .unwrap();
         assert_eq!(filed["request"]["history"], json!(second));
         // the run's history keeps it all
         assert_eq!(recorder.history().len(), 1 + 3 + 5);
@@ -8268,11 +9468,20 @@ mod tests {
     }
 
     impl Catalogue for FakeCatalogue {
-        fn top5(&self, question_zh: &str, texts: &[String], months: bool, latest_year: Option<i32>, _first_year: Option<i32>) -> Ranking {
-            self.searched
-                .lock()
-                .unwrap()
-                .push((question_zh.to_string(), texts.to_vec(), months, latest_year));
+        fn top5(
+            &self,
+            question_zh: &str,
+            texts: &[String],
+            months: bool,
+            latest_year: Option<i32>,
+            _first_year: Option<i32>,
+        ) -> Ranking {
+            self.searched.lock().unwrap().push((
+                question_zh.to_string(),
+                texts.to_vec(),
+                months,
+                latest_year,
+            ));
             let mut ranking = self.ranking();
             ranking.candidates.truncate(5);
             ranking
@@ -8418,19 +9627,50 @@ mod tests {
         // the host's structured download timeout (a cold request): one identical retry, logged, then the source answers
         let cold = || json!({"mode": "failed", "text": "Data preparation failed: DOWNLOAD_TIMEOUT: api.worldbank.org did not finish the download in 30.0 s (limit 30 s). One identical retry is allowed."});
         let drove = fetch(vec![cold(), json!({"mode": "no_candidates"})]).await;
-        assert!(matches!(drove.result, Err(Stop::TooFewClaims { .. })), "{:?}", drove.result);
-        assert_eq!((drove.tools.args.len(), drove.tools.args[0] == drove.tools.args[1]), (2, true));
+        assert!(
+            matches!(drove.result, Err(Stop::TooFewClaims { .. })),
+            "{:?}",
+            drove.result
+        );
+        assert_eq!(
+            (
+                drove.tools.args.len(),
+                drove.tools.args[0] == drove.tools.args[1]
+            ),
+            (2, true)
+        );
         let retries = of_type(&drove.events, FETCH_RETRY_EVENT);
         assert_eq!(retries.len(), 1);
-        assert!(retries[0]["after"].as_str().unwrap().contains("DOWNLOAD_TIMEOUT"), "{:?}", retries[0]);
+        assert!(
+            retries[0]["after"]
+                .as_str()
+                .unwrap()
+                .contains("DOWNLOAD_TIMEOUT"),
+            "{:?}",
+            retries[0]
+        );
         // a second timeout still refuses the page, after two fetches and one retry event; a third detail is never asked
         let drove = fetch(vec![cold(), cold(), json!({"mode": "no_candidates"})]).await;
-        assert!(matches!(&drove.result, Err(Stop::SourceUnreachable { tries: 2, why, .. }) if why.contains("DOWNLOAD_TIMEOUT")), "{:?}", drove.result);
-        assert_eq!((drove.tools.args.len(), of_type(&drove.events, FETCH_RETRY_EVENT).len()), (2, 1));
+        assert!(
+            matches!(&drove.result, Err(Stop::SourceUnreachable { tries: 2, why, .. }) if why.contains("DOWNLOAD_TIMEOUT")),
+            "{:?}",
+            drove.result
+        );
+        assert_eq!(
+            (
+                drove.tools.args.len(),
+                of_type(&drove.events, FETCH_RETRY_EVENT).len()
+            ),
+            (2, 1)
+        );
         // the host's refusal of a repeat is not retried
         let repeat = json!({"mode": "failed", "text": "Data preparation failed: DOWNLOAD_TIMEOUT_REPEAT: this exact request to api.worldbank.org timed out 2 times."});
         let drove = fetch(vec![repeat]).await;
-        assert!(matches!(&drove.result, Err(Stop::NotPrepared { mode, .. }) if mode == "failed"), "{:?}", drove.result);
+        assert!(
+            matches!(&drove.result, Err(Stop::NotPrepared { mode, .. }) if mode == "failed"),
+            "{:?}",
+            drove.result
+        );
         assert_eq!(drove.tools.args.len(), 1);
         // a host the circuit blocked or marked unreachable is not fetched again
         let marked = failed(
@@ -8564,31 +9804,74 @@ mod tests {
         };
         let today = run(json!({"step": "table", "pick": [2, 4]})).await;
         assert!(of_type(&today.events, TABLE_RELATION_EVENT).is_empty());
-        let card = today.history.iter().filter(|m| m["role"] == "user").map(|m| m["content"].to_string()).find(|c| c.contains("Tables:")).unwrap();
+        let card = today
+            .history
+            .iter()
+            .filter(|m| m["role"] == "user")
+            .map(|m| m["content"].to_string())
+            .find(|c| c.contains("Tables:"))
+            .unwrap();
         assert!(card.contains("t2: each place's siec TOTAL splits into the registered groups fossil, renewable, other, nuclear"), "{card}");
-        assert!(!card.contains("t4: each place's"), "a World Bank table has no groups");
-        assert!(card.contains("2 Composition") && card.contains("Composition only with a table that has a 'splits into' line"), "{card}");
+        assert!(
+            !card.contains("t4: each place's"),
+            "a World Bank table has no groups"
+        );
+        assert!(
+            card.contains("2 Composition")
+                && card.contains("Composition only with a table that has a 'splits into' line"),
+            "{card}"
+        );
         let prepared = format!("{:?}", today.result.as_ref().unwrap());
         for (answer, kept) in [
-            (json!({"step": "table", "pick": [2, 4], "relation": 2}), json!("Composition")),
-            (json!({"step": "table", "pick": [2, 4], "relation": 5}), json!("Ranking")),
-            (json!({"step": "table", "pick": [2, 4], "relation": 7}), Value::Null),
-            (json!({"step": "table", "pick": [2, 4], "relation": "two"}), Value::Null),
+            (
+                json!({"step": "table", "pick": [2, 4], "relation": 2}),
+                json!("Composition"),
+            ),
+            (
+                json!({"step": "table", "pick": [2, 4], "relation": 5}),
+                json!("Ranking"),
+            ),
+            (
+                json!({"step": "table", "pick": [2, 4], "relation": 7}),
+                Value::Null,
+            ),
+            (
+                json!({"step": "table", "pick": [2, 4], "relation": "two"}),
+                Value::Null,
+            ),
         ] {
             let drove = run(answer.clone()).await;
             // the same tables and claims; the main table carries the kept relation, every other none
             let mut got = drove.result.as_ref().unwrap().clone();
-            let carried: Vec<Option<String>> = got.iter().map(|p| p.relation.map(|r| format!("{r:?}"))).collect();
-            assert_eq!(carried, [kept.as_str().map(str::to_string), None], "{answer}");
+            let carried: Vec<Option<String>> = got
+                .iter()
+                .map(|p| p.relation.map(|r| format!("{r:?}")))
+                .collect();
+            assert_eq!(
+                carried,
+                [kept.as_str().map(str::to_string), None],
+                "{answer}"
+            );
             got.iter_mut().for_each(|p| p.relation = None);
             assert_eq!(format!("{got:?}"), prepared, "{answer}");
             assert_eq!(drove.tools.args, today.tools.args, "{answer}: the fetches");
-            assert_eq!(drove.model.offered.len(), today.model.offered.len(), "{answer}: no round added");
+            assert_eq!(
+                drove.model.offered.len(),
+                today.model.offered.len(),
+                "{answer}: no round added"
+            );
             let ev = of_type(&drove.events, TABLE_RELATION_EVENT);
             if answer["relation"].is_u64() {
-                assert_eq!((ev.len(), &ev[0]["table"], &ev[0]["kept"]), (1, &json!("nrg_bal_peh"), &kept), "{answer}");
+                assert_eq!(
+                    (ev.len(), &ev[0]["table"], &ev[0]["kept"]),
+                    (1, &json!("nrg_bal_peh"), &kept),
+                    "{answer}"
+                );
             } else {
-                assert!(ev.is_empty(), "{answer}: a relation that is no number is none");
+                assert!(
+                    ev.is_empty(),
+                    "{answer}: a relation that is no number is none"
+                );
             }
         }
     }
@@ -8598,24 +9881,71 @@ mod tests {
     /// six dropped. The table step's check takes an answer with any relation (or none) as the same pick and params.
     #[test]
     fn the_table_relation_is_kept_or_dropped_by_the_tables_shape_only() {
-        assert_eq!(table_relation(Some(2), "nrg_bal_peh"), Some(Relation::Composition));
+        assert_eq!(
+            table_relation(Some(2), "nrg_bal_peh"),
+            Some(Relation::Composition)
+        );
         assert_eq!(table_relation(Some(2), "nrg_cb_pem"), None);
         assert_eq!(table_relation(Some(2), "SP.POP.65UP.TO.ZS@2"), None);
-        assert_eq!(table_relation(Some(5), "nrg_cb_pem"), Some(Relation::Ranking));
+        assert_eq!(
+            table_relation(Some(5), "nrg_cb_pem"),
+            Some(Relation::Ranking)
+        );
         for none in [None, Some(0), Some(7)] {
             assert_eq!(table_relation(none, "nrg_bal_peh"), None, "{none:?}");
         }
-        let ask = Ask::Table { count: 2, most: 1, items: Vec::new(), splits: Vec::new(), held: Vec::new() };
+        let ask = Ask::Table {
+            count: 2,
+            most: 1,
+            items: Vec::new(),
+            splits: Vec::new(),
+            held: Vec::new(),
+        };
         assert!(ask.schema()["properties"]["relation"].is_object());
-        assert_eq!(ask.schema()["required"], json!(["step", "pick"]), "the relation is optional");
+        assert_eq!(
+            ask.schema()["required"],
+            json!(["step", "pick"]),
+            "the relation is optional"
+        );
         let plain = ask.check(&json!({"step": "table", "pick": [1]})).unwrap();
         for (r, given) in [(json!(2), Some(2)), (json!(9), Some(9)), (json!("x"), None)] {
-            let Choice::Table { picks, params, relation } = ask.check(&json!({"step": "table", "pick": [1], "relation": r})).unwrap() else { panic!() };
-            assert_eq!((Choice::Table { picks, params, relation: None }, relation), (plain.clone(), given));
+            let Choice::Table {
+                picks,
+                params,
+                relation,
+            } = ask
+                .check(&json!({"step": "table", "pick": [1], "relation": r}))
+                .unwrap()
+            else {
+                panic!()
+            };
+            assert_eq!(
+                (
+                    Choice::Table {
+                        picks,
+                        params,
+                        relation: None
+                    },
+                    relation
+                ),
+                (plain.clone(), given)
+            );
         }
-        assert!(ask.check(&json!({"step": "table", "pick": [1], "other": 1})).is_err(), "another key is still refused");
-        let claims = Ask::Claims { groups: vec![2], relations: 1 };
-        assert!(claims.check(&json!({"step": "claims", "pick": [1, 2], "relation": 1})).is_err(), "the claims step asks no relation here");
+        assert!(
+            ask.check(&json!({"step": "table", "pick": [1], "other": 1}))
+                .is_err(),
+            "another key is still refused"
+        );
+        let claims = Ask::Claims {
+            groups: vec![2],
+            relations: 1,
+        };
+        assert!(
+            claims
+                .check(&json!({"step": "claims", "pick": [1, 2], "relation": 1}))
+                .is_err(),
+            "the claims step asks no relation here"
+        );
     }
 
     /// P4b-4 replay (design 4.2 (a), (c)): every recorded table-step answer of the bank's last runs (P4B_TABLE_REPLIES,
@@ -8627,48 +9957,101 @@ mod tests {
     #[test]
     #[ignore]
     fn table_relation_replay() {
-        let runs: Vec<Value> = serde_json::from_str(&std::fs::read_to_string(std::env::var("P4B_TABLE_REPLIES").unwrap()).unwrap()).unwrap();
+        let runs: Vec<Value> = serde_json::from_str(
+            &std::fs::read_to_string(std::env::var("P4B_TABLE_REPLIES").unwrap()).unwrap(),
+        )
+        .unwrap();
         let (mut cases, mut equal, mut changed) = (0, 0, 0);
         for run in &runs {
             let mut line = Vec::new();
-            for r in run["replies"].as_array().unwrap().iter().filter(|r| r["args"]["step"] == "table") {
+            for r in run["replies"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|r| r["args"]["step"] == "table")
+            {
                 let args = &r["args"];
                 let listed = r["listed"].as_object().unwrap();
                 // the check as the step asked it: its listed tables, one pick, an item per param given (its options at least
                 // the number given), no held-series probe
                 let params = args["params"].as_object().cloned().unwrap_or_default();
                 let items: Vec<Vec<(String, usize)>> = (1..=listed.len().max(1))
-                    .map(|n| params.iter().filter(|(k, _)| k.starts_with(&format!("t{n}."))).map(|(k, v)| (k.clone(), v.as_u64().unwrap_or(1).max(4) as usize)).collect())
+                    .map(|n| {
+                        params
+                            .iter()
+                            .filter(|(k, _)| k.starts_with(&format!("t{n}.")))
+                            .map(|(k, v)| (k.clone(), v.as_u64().unwrap_or(1).max(4) as usize))
+                            .collect()
+                    })
                     .collect();
-                let items = if items.iter().all(Vec::is_empty) { Vec::new() } else { items };
-                let ask = Ask::Table { count: listed.len().max(1), most: 1, items, splits: Vec::new(), held: Vec::new() };
+                let items = if items.iter().all(Vec::is_empty) {
+                    Vec::new()
+                } else {
+                    items
+                };
+                let ask = Ask::Table {
+                    count: listed.len().max(1),
+                    most: 1,
+                    items,
+                    splits: Vec::new(),
+                    held: Vec::new(),
+                };
                 let plain = ask.check(args).map_err(|e| e.problem);
-                assert!(args.get("relation").is_none(), "{}: a recorded answer gives a relation", run["q"]);
+                assert!(
+                    args.get("relation").is_none(),
+                    "{}: a recorded answer gives a relation",
+                    run["q"]
+                );
                 for rel in 1..=7usize {
                     cases += 1;
                     let mut with = args.clone();
                     with["relation"] = json!(rel);
                     let got = ask.check(&with).map_err(|e| e.problem);
                     let same = match (&plain, &got) {
-                        (Ok(Choice::Table { picks: p0, params: q0, .. }), Ok(Choice::Table { picks, params, relation })) => {
-                            p0 == picks && q0 == params && *relation == Some(rel)
-                        }
+                        (
+                            Ok(Choice::Table {
+                                picks: p0,
+                                params: q0,
+                                ..
+                            }),
+                            Ok(Choice::Table {
+                                picks,
+                                params,
+                                relation,
+                            }),
+                        ) => p0 == picks && q0 == params && *relation == Some(rel),
                         (Err(a), Err(b)) => a == b,
                         _ => false,
                     };
                     equal += usize::from(same);
                     // the table the program fetches is the model's main pick, whatever the rule keeps
                     if let Ok(Choice::Table { picks, .. }) = &got {
-                        let main = picks.first().and_then(|n| listed.get(&n.to_string())).and_then(Value::as_str).unwrap_or("");
+                        let main = picks
+                            .first()
+                            .and_then(|n| listed.get(&n.to_string()))
+                            .and_then(Value::as_str)
+                            .unwrap_or("");
                         let kept = table_relation(Some(rel), main);
-                        changed += usize::from(kept.is_some_and(|k| k == Relation::Composition) && next_params::grouped_dim(main).is_none());
+                        changed += usize::from(
+                            kept.is_some_and(|k| k == Relation::Composition)
+                                && next_params::grouped_dim(main).is_none(),
+                        );
                         if rel == 2 {
-                            line.push(format!("t{} {main} composition {}", picks.first().unwrap_or(&0), if kept.is_some() { "kept" } else { "dropped" }));
+                            line.push(format!(
+                                "t{} {main} composition {}",
+                                picks.first().unwrap_or(&0),
+                                if kept.is_some() { "kept" } else { "dropped" }
+                            ));
                         }
                     }
                 }
             }
-            println!("TABLEREPLAY {} {}: {}", run["q"].as_str().unwrap(), run["run"].as_str().unwrap(), line.join("; "));
+            println!(
+                "TABLEREPLAY {} {}: {}",
+                run["q"].as_str().unwrap(),
+                run["run"].as_str().unwrap(),
+                line.join("; ")
+            );
         }
         println!("TABLEREPLAY cases {cases} same as today {equal} composition kept on a table with no groups {changed} refusals added 0 stops 0");
         assert_eq!((equal, changed), (cases, 0));
@@ -8983,10 +10366,19 @@ mod tests {
                 },
             )
             .await;
-            assert!(matches!(&drove.result, Err(Stop::NoTable(_))), "{:?}", drove.result);
+            assert!(
+                matches!(&drove.result, Err(Stop::NoTable(_))),
+                "{:?}",
+                drove.result
+            );
             assert_eq!(
                 drove.searched,
-                [(question.to_string(), vec!["electricity generation".to_string()], months, year)],
+                [(
+                    question.to_string(),
+                    vec!["electricity generation".to_string()],
+                    months,
+                    year
+                )],
                 "{question}"
             );
         }
@@ -9019,10 +10411,19 @@ mod tests {
                 },
             )
             .await;
-            assert!(matches!(&drove.result, Err(Stop::NoTable(_))), "{:?}", drove.result);
+            assert!(
+                matches!(&drove.result, Err(Stop::NoTable(_))),
+                "{:?}",
+                drove.result
+            );
             assert_eq!(
                 drove.searched,
-                [(question.to_string(), vec!["electricity generation".to_string()], false, year)],
+                [(
+                    question.to_string(),
+                    vec!["electricity generation".to_string()],
+                    false,
+                    year
+                )],
                 "{question}"
             );
         }
@@ -9062,7 +10463,14 @@ mod tests {
         let _command = crate::group_guard::command_for_test("investigate");
         struct Scoped(Mutex<Vec<Value>>, bool);
         impl Catalogue for Scoped {
-            fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>, _: Option<i32>) -> Ranking {
+            fn top5(
+                &self,
+                _: &str,
+                _: &[String],
+                _: bool,
+                _: Option<i32>,
+                _: Option<i32>,
+            ) -> Ranking {
                 unreachable!("an out-of-scope question is not searched")
             }
             fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
@@ -9075,8 +10483,15 @@ mod tests {
                 std::mem::take(&mut *self.0.lock().unwrap())
             }
             fn scope_refused(&self, _: &str, _: i32) -> Option<crate::l5geo::ScopeRefusal> {
-                self.0.lock().unwrap().push(json!({"group": "knowledge", "request": "scope_refused"}));
-                self.1.then(|| crate::l5geo::ScopeRefusal { class: "cause".into(), reason_zh: "原因".into(), hit: "为什么".into() })
+                self.0
+                    .lock()
+                    .unwrap()
+                    .push(json!({"group": "knowledge", "request": "scope_refused"}));
+                self.1.then(|| crate::l5geo::ScopeRefusal {
+                    class: "cause".into(),
+                    reason_zh: "原因".into(),
+                    hit: "为什么".into(),
+                })
             }
         }
         let catalogue = Scoped(Mutex::new(Vec::new()), true);
@@ -9086,7 +10501,16 @@ mod tests {
         let mut tools = claims_tools();
         let cancel = AtomicBool::new(false);
         let mut recorder = Recorder::new(&mut sink, run.path(), Vec::new(), Vec::new());
-        let result = prepare_claims(&mut recorder, &mut model, &mut tools, "为什么日本的老龄化更严重？", &[], &catalogue, &cancel).await;
+        let result = prepare_claims(
+            &mut recorder,
+            &mut model,
+            &mut tools,
+            "为什么日本的老龄化更严重？",
+            &[],
+            &catalogue,
+            &cancel,
+        )
+        .await;
         drop(recorder);
         let why = result.unwrap_err().to_string();
         assert!(why.contains("out of scope (cause"), "{why}");
@@ -9113,12 +10537,38 @@ mod tests {
             quantity: vec![("energy_balance".to_string(), String::new())],
             sentence: String::new(),
         };
-        let parts = Plan { blocks: vec![block(Rel::Magnitude), block(Rel::Composition), block(Rel::Flow)], partial: false };
-        assert_eq!(shared_blocks(Some(&parts), false), vec![(1, Rel::Composition), (2, Rel::Flow)]);
+        let parts = Plan {
+            blocks: vec![
+                block(Rel::Magnitude),
+                block(Rel::Composition),
+                block(Rel::Flow),
+            ],
+            partial: false,
+        };
+        assert_eq!(
+            shared_blocks(Some(&parts), false),
+            vec![(1, Rel::Composition), (2, Rel::Flow)]
+        );
         assert_eq!(shared_blocks(Some(&parts), true), Vec::new());
-        let threshold = Plan { blocks: vec![block(Rel::Threshold), block(Rel::Threshold), block(Rel::Ranking)], partial: false };
+        let threshold = Plan {
+            blocks: vec![
+                block(Rel::Threshold),
+                block(Rel::Threshold),
+                block(Rel::Ranking),
+            ],
+            partial: false,
+        };
         assert_eq!(shared_blocks(Some(&threshold), false), Vec::new());
-        assert_eq!(shared_blocks(Some(&Plan { blocks: vec![block(Rel::Composition)], partial: false }), false), Vec::new());
+        assert_eq!(
+            shared_blocks(
+                Some(&Plan {
+                    blocks: vec![block(Rel::Composition)],
+                    partial: false
+                }),
+                false
+            ),
+            Vec::new()
+        );
         assert_eq!(shared_blocks(None, false), Vec::new());
     }
 
@@ -9145,11 +10595,18 @@ mod tests {
         // a listed table that only names the family's words in its title (a survey's per capita, total population) is no
         // block's table: sample A's first run drew its population block from SI.SPR.PCAP@2
         let listed = [
-            asked("population", &["SP.POP.TOTL", "demo_pjan"], &["SI.SPR.PCAP@2", "SP.POP.TOTL@2", "demo_pjan"]),
+            asked(
+                "population",
+                &["SP.POP.TOTL", "demo_pjan"],
+                &["SI.SPR.PCAP@2", "SP.POP.TOTL@2", "demo_pjan"],
+            ),
             asked("gdp_pc", &["NY.GDP.PCAP"], &["NY.GDP.PCAP.CD@2"]),
             asked("urban", &["SP.URB.TOTL.IN"], &["SI.SPR.PCAP@2"]),
         ];
-        let plan = Plan { blocks: vec![block("population"), block("gdp_pc"), block("urban")], partial: false };
+        let plan = Plan {
+            blocks: vec![block("population"), block("gdp_pc"), block("urban")],
+            partial: false,
+        };
         assert_eq!(
             block_tables(&plan, &listed),
             Some(vec![
@@ -9158,9 +10615,21 @@ mod tests {
                 ("urban".into(), None)
             ])
         );
-        let shared = Plan { blocks: vec![block("population"), block("population")], partial: false };
+        let shared = Plan {
+            blocks: vec![block("population"), block("population")],
+            partial: false,
+        };
         assert_eq!(block_tables(&shared, &listed), None);
-        assert_eq!(block_tables(&Plan { blocks: vec![block("population")], partial: false }, &listed), None);
+        assert_eq!(
+            block_tables(
+                &Plan {
+                    blocks: vec![block("population")],
+                    partial: false
+                },
+                &listed
+            ),
+            None
+        );
     }
 
     /// The blocks of a page that each take their own quantity are told at one year (owner 11-15 12:2x item 2): the latest
@@ -9169,32 +10638,109 @@ mod tests {
     #[test]
     fn the_blocks_of_a_many_quantity_page_take_the_latest_year_every_place_holds() {
         let row = |dim: &str, place: &str, time: &str| json!({"dims": {dim: place}, "time": time, "value": "1"});
-        let rows = |dim: &str, held: &[(&str, &str)]| -> Vec<Value> { held.iter().map(|(p, t)| row(dim, p, t)).collect() };
-        let a = rows("country", &[("IDN", "2024"), ("IDN", "2025"), ("MYS", "2024"), ("MYS", "2025")]);
+        let rows = |dim: &str, held: &[(&str, &str)]| -> Vec<Value> {
+            held.iter().map(|(p, t)| row(dim, p, t)).collect()
+        };
+        let a = rows(
+            "country",
+            &[
+                ("IDN", "2024"),
+                ("IDN", "2025"),
+                ("MYS", "2024"),
+                ("MYS", "2025"),
+            ],
+        );
         // one place has not reported the latest year in the second table: both are told at the year before
-        let b = rows("country", &[("IDN", "2024"), ("IDN", "2025"), ("MYS", "2024")]);
-        assert_eq!(common_year(&[("country", &a), ("country", &b)]).as_deref(), Ok("2024"));
+        let b = rows(
+            "country",
+            &[("IDN", "2024"), ("IDN", "2025"), ("MYS", "2024")],
+        );
+        assert_eq!(
+            common_year(&[("country", &a), ("country", &b)]).as_deref(),
+            Ok("2024")
+        );
         // every place in both at the latest year: that year
-        assert_eq!(common_year(&[("country", &a), ("country", &a)]).as_deref(), Ok("2025"));
+        assert_eq!(
+            common_year(&[("country", &a), ("country", &a)]).as_deref(),
+            Ok("2025")
+        );
         // a place only one table holds at all does not hold the others back
-        let c = rows("country", &[("IDN", "2024"), ("IDN", "2025"), ("MYS", "2024"), ("MYS", "2025"), ("SGP", "2025")]);
+        let c = rows(
+            "country",
+            &[
+                ("IDN", "2024"),
+                ("IDN", "2025"),
+                ("MYS", "2024"),
+                ("MYS", "2025"),
+                ("SGP", "2025"),
+            ],
+        );
         let d = rows("country", &[("IDN", "2025"), ("MYS", "2025")]);
-        assert_eq!(common_year(&[("country", &c), ("country", &d)]).as_deref(), Ok("2025"));
+        assert_eq!(
+            common_year(&[("country", &c), ("country", &d)]).as_deref(),
+            Ok("2025")
+        );
         // no year holds both places in both tables
         let e = rows("country", &[("IDN", "2025"), ("MYS", "2024")]);
         let f = rows("country", &[("IDN", "2024"), ("MYS", "2025")]);
-        assert_eq!(common_year(&[("country", &e), ("country", &f)]), Err("no year holds every place in every block table"));
+        assert_eq!(
+            common_year(&[("country", &e), ("country", &f)]),
+            Err("no year holds every place in every block table")
+        );
         // a monthly table, or two sources that code places apart, give none
         let m = rows("geo", &[("DE", "2025-03"), ("FR", "2025-03")]);
-        assert_eq!(common_year(&[("country", &a), ("geo", &m)]), Err("a block table holds a time that is no year"));
+        assert_eq!(
+            common_year(&[("country", &a), ("geo", &m)]),
+            Err("a block table holds a time that is no year")
+        );
         let g = rows("geo", &[("DE", "2025"), ("FR", "2025")]);
-        assert_eq!(common_year(&[("country", &a), ("geo", &g)]), Err("no place is in every block table"));
+        assert_eq!(
+            common_year(&[("country", &a), ("geo", &g)]),
+            Err("no place is in every block table")
+        );
         // a place that reports every other year pulls the blocks back no more than a year before the earliest latest year
-        let full = rows("country", &[("IDN", "2022"), ("IDN", "2023"), ("IDN", "2024"), ("IDN", "2025"), ("MYS", "2022"), ("MYS", "2023"), ("MYS", "2024"), ("MYS", "2025")]);
-        let sparse = rows("country", &[("IDN", "2022"), ("IDN", "2023"), ("IDN", "2024"), ("IDN", "2025"), ("MYS", "2022")]);
-        assert_eq!(common_year(&[("country", &full), ("country", &sparse)]), Err("the year every place holds is further back than a table's latest allows"));
-        let lagging = rows("country", &[("IDN", "2022"), ("IDN", "2023"), ("IDN", "2024"), ("IDN", "2025"), ("MYS", "2022"), ("MYS", "2024")]);
-        assert_eq!(common_year(&[("country", &full), ("country", &lagging)]).as_deref(), Ok("2024"));
+        let full = rows(
+            "country",
+            &[
+                ("IDN", "2022"),
+                ("IDN", "2023"),
+                ("IDN", "2024"),
+                ("IDN", "2025"),
+                ("MYS", "2022"),
+                ("MYS", "2023"),
+                ("MYS", "2024"),
+                ("MYS", "2025"),
+            ],
+        );
+        let sparse = rows(
+            "country",
+            &[
+                ("IDN", "2022"),
+                ("IDN", "2023"),
+                ("IDN", "2024"),
+                ("IDN", "2025"),
+                ("MYS", "2022"),
+            ],
+        );
+        assert_eq!(
+            common_year(&[("country", &full), ("country", &sparse)]),
+            Err("the year every place holds is further back than a table's latest allows")
+        );
+        let lagging = rows(
+            "country",
+            &[
+                ("IDN", "2022"),
+                ("IDN", "2023"),
+                ("IDN", "2024"),
+                ("IDN", "2025"),
+                ("MYS", "2022"),
+                ("MYS", "2024"),
+            ],
+        );
+        assert_eq!(
+            common_year(&[("country", &full), ("country", &lagging)]).as_deref(),
+            Ok("2024")
+        );
     }
 
     /// The split step (owner 11-14 16:5x item 2), asked after the search answer: the knowledge group's request, the model's
@@ -9207,7 +10753,14 @@ mod tests {
         let _command = crate::group_guard::command_for_test("investigate");
         struct Splits(Mutex<Vec<Value>>);
         impl Catalogue for Splits {
-            fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>, _: Option<i32>) -> Ranking {
+            fn top5(
+                &self,
+                _: &str,
+                _: &[String],
+                _: bool,
+                _: Option<i32>,
+                _: Option<i32>,
+            ) -> Ranking {
                 unreachable!()
             }
             fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
@@ -9220,32 +10773,74 @@ mod tests {
                 std::mem::take(&mut *self.0.lock().unwrap())
             }
             fn split_ask(&self, _: &str) -> Option<SplitAsk> {
-                self.0.lock().unwrap().push(json!({"group": "knowledge", "request": "split_ask"}));
+                self.0
+                    .lock()
+                    .unwrap()
+                    .push(json!({"group": "knowledge", "request": "split_ask"}));
                 Some(SplitAsk {
-                    offered: vec![(Shape::RankCompare, Some("是不是也")), (Shape::ThresholdTime, None), (Shape::TotalToParts, None)],
-                    quantities: vec![("population".into(), "人口".into()), ("gdp_pc".into(), "人均GDP".into())],
+                    offered: vec![
+                        (Shape::RankCompare, Some("是不是也")),
+                        (Shape::ThresholdTime, None),
+                        (Shape::TotalToParts, None),
+                    ],
+                    quantities: vec![
+                        ("population".into(), "人口".into()),
+                        ("gdp_pc".into(), "人均GDP".into()),
+                    ],
                 })
             }
             fn answer_plan(&self, _: &str, reply: &SplitReply) -> Option<Result<Plan, String>> {
-                self.0.lock().unwrap().push(json!({"group": "knowledge", "request": "answer_plan"}));
-                assert_eq!(reply, &SplitReply { number: 1, quantities: vec![1, 0] });
-                Some(Ok(Plan { blocks: Vec::new(), partial: false }))
+                self.0
+                    .lock()
+                    .unwrap()
+                    .push(json!({"group": "knowledge", "request": "answer_plan"}));
+                assert_eq!(
+                    reply,
+                    &SplitReply {
+                        number: 1,
+                        quantities: vec![1, 0]
+                    }
+                );
+                Some(Ok(Plan {
+                    blocks: Vec::new(),
+                    partial: false,
+                }))
             }
         }
-        for (answer, planned) in [(json!({"step": "split", "split": 1, "quantities": [1, 0]}), true), (split_answer(0), false)] {
+        for (answer, planned) in [
+            (
+                json!({"step": "split", "split": 1, "quantities": [1, 0]}),
+                true,
+            ),
+            (split_answer(0), false),
+        ] {
             let catalogue = Splits(Mutex::new(Vec::new()));
             let run = tempfile::tempdir().unwrap();
             let (events, mut sink) = collector();
             // the first split answer names a quantity twice and is refused; the second is taken
             let mut model = ScriptedAsker::new(vec![
                 search_reply(),
-                call("toolu_x0", json!({"step": "split", "split": 1, "quantities": [0, 0]})),
+                call(
+                    "toolu_x0",
+                    json!({"step": "split", "split": 1, "quantities": [0, 0]}),
+                ),
                 call("toolu_x1", answer.clone()),
             ]);
             let cancel = AtomicBool::new(false);
             let mut recorder = Recorder::new(&mut sink, run.path(), Vec::new(), Vec::new());
-            recorder.ask_step(&mut model, &Ask::Search, "search", &cancel).await.unwrap();
-            let plan = split_step(&mut recorder, &mut model, "人最多的，是不是也最富？", &catalogue, &cancel).await.unwrap();
+            recorder
+                .ask_step(&mut model, &Ask::Search, "search", &cancel)
+                .await
+                .unwrap();
+            let plan = split_step(
+                &mut recorder,
+                &mut model,
+                "人最多的，是不是也最富？",
+                &catalogue,
+                &cancel,
+            )
+            .await
+            .unwrap();
             drop(recorder);
             assert_eq!(plan.is_some(), planned, "{answer}");
             let kept = of_type(&events, PLAN_EVENT);
@@ -9254,12 +10849,22 @@ mod tests {
             assert_eq!(kept[0]["plan"].is_null(), !planned);
             let calls = of_type(&events, GROUP_CALL_EVENT);
             assert_eq!(calls.len(), if planned { 2 } else { 1 }, "{calls:?}");
-            assert!(calls.iter().all(|c| c["auto_parent_call_id"].is_string()), "{calls:?}");
+            assert!(
+                calls.iter().all(|c| c["auto_parent_call_id"].is_string()),
+                "{calls:?}"
+            );
         }
         // a catalogue that reads no splits: nothing asked, nothing kept
         struct NoSplits;
         impl Catalogue for NoSplits {
-            fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>, _: Option<i32>) -> Ranking {
+            fn top5(
+                &self,
+                _: &str,
+                _: &[String],
+                _: bool,
+                _: Option<i32>,
+                _: Option<i32>,
+            ) -> Ranking {
                 unreachable!()
             }
             fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
@@ -9275,8 +10880,16 @@ mod tests {
         let mut model = ScriptedAsker::new(vec![search_reply()]);
         let cancel = AtomicBool::new(false);
         let mut recorder = Recorder::new(&mut sink, run.path(), Vec::new(), Vec::new());
-        recorder.ask_step(&mut model, &Ask::Search, "search", &cancel).await.unwrap();
-        assert!(split_step(&mut recorder, &mut model, "德国的人口", &catalogue, &cancel).await.unwrap().is_none());
+        recorder
+            .ask_step(&mut model, &Ask::Search, "search", &cancel)
+            .await
+            .unwrap();
+        assert!(
+            split_step(&mut recorder, &mut model, "德国的人口", &catalogue, &cancel)
+                .await
+                .unwrap()
+                .is_none()
+        );
         drop(recorder);
         assert!(of_type(&events, PLAN_EVENT).is_empty());
     }
@@ -9304,7 +10917,14 @@ mod tests {
         }
         struct Queued(Mutex<Vec<Value>>);
         impl Catalogue for Queued {
-            fn top5(&self, _: &str, _: &[String], _: bool, _: Option<i32>, _: Option<i32>) -> Ranking {
+            fn top5(
+                &self,
+                _: &str,
+                _: &[String],
+                _: bool,
+                _: Option<i32>,
+                _: Option<i32>,
+            ) -> Ranking {
                 unreachable!()
             }
             fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
@@ -9440,8 +11060,16 @@ mod tests {
     struct WithTable(FakeCatalogue, TableMeta);
 
     impl Catalogue for WithTable {
-        fn top5(&self, question_zh: &str, texts: &[String], months: bool, latest_year: Option<i32>, first_year: Option<i32>) -> Ranking {
-            self.0.top5(question_zh, texts, months, latest_year, first_year)
+        fn top5(
+            &self,
+            question_zh: &str,
+            texts: &[String],
+            months: bool,
+            latest_year: Option<i32>,
+            first_year: Option<i32>,
+        ) -> Ranking {
+            self.0
+                .top5(question_zh, texts, months, latest_year, first_year)
         }
         fn places_outside(&self, question_zh: &str, texts: &[String]) -> Vec<String> {
             self.0.places_outside(question_zh, texts)
@@ -9579,8 +11207,16 @@ mod tests {
     struct Probing(WithTable, Option<(u16, &'static str)>);
 
     impl Catalogue for Probing {
-        fn top5(&self, question_zh: &str, texts: &[String], months: bool, latest_year: Option<i32>, first_year: Option<i32>) -> Ranking {
-            self.0.top5(question_zh, texts, months, latest_year, first_year)
+        fn top5(
+            &self,
+            question_zh: &str,
+            texts: &[String],
+            months: bool,
+            latest_year: Option<i32>,
+            first_year: Option<i32>,
+        ) -> Ranking {
+            self.0
+                .top5(question_zh, texts, months, latest_year, first_year)
         }
         fn places_outside(&self, question_zh: &str, texts: &[String]) -> Vec<String> {
             self.0.places_outside(question_zh, texts)
@@ -9756,24 +11392,67 @@ mod tests {
             call("toolu_c", json!({"step": "claims", "pick": [1, 2, 3]})),
         ]);
         let mut tools = claims_tools();
-        tools.details.push_front(json!({"mode": "no_rows", "text": "These codes have no values in these years."}));
+        tools.details.push_front(
+            json!({"mode": "no_rows", "text": "These codes have no values in these years."}),
+        );
         let cancel = AtomicBool::new(false);
         let mut recorder = Recorder::new(&mut sink, run.path(), Vec::new(), Vec::new());
-        let result = prepare_claims(&mut recorder, &mut model, &mut tools, "德国各能源发电量", &[], &catalogue, &cancel).await;
+        let result = prepare_claims(
+            &mut recorder,
+            &mut model,
+            &mut tools,
+            "德国各能源发电量",
+            &[],
+            &catalogue,
+            &cancel,
+        )
+        .await;
         let history = serde_json::to_string(recorder.history()).unwrap();
         drop(recorder);
         result.unwrap();
-        assert_eq!(of_type(&events, HELD_EVENT)[0]["tables"][1]["unprobed"], "HTTP 400");
-        let refused = "t2: the fetch of siec=TOTAL, unit=PC came back with no row (fetched after the pick)";
-        assert_eq!(history.matches(refused).count(), 2, "once after the fetch, once by the check: {history}");
-        assert!(history.contains("The table pick was fetched and refused"), "{history}");
-        let unit = |args: &Value| args["filters"].as_array().unwrap().iter().find(|f| f["dimension"] == "unit").unwrap()["values"].clone();
-        assert_eq!(tools.args.len(), 3, "the fetch of no row, the fetch after the second pick, the claims");
-        assert_eq!((unit(&tools.args[0]), unit(&tools.args[1])), (json!(["PC"]), json!(["GWH"])));
+        assert_eq!(
+            of_type(&events, HELD_EVENT)[0]["tables"][1]["unprobed"],
+            "HTTP 400"
+        );
+        let refused =
+            "t2: the fetch of siec=TOTAL, unit=PC came back with no row (fetched after the pick)";
+        assert_eq!(
+            history.matches(refused).count(),
+            2,
+            "once after the fetch, once by the check: {history}"
+        );
+        assert!(
+            history.contains("The table pick was fetched and refused"),
+            "{history}"
+        );
+        let unit = |args: &Value| {
+            args["filters"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|f| f["dimension"] == "unit")
+                .unwrap()["values"]
+                .clone()
+        };
+        assert_eq!(
+            tools.args.len(),
+            3,
+            "the fetch of no row, the fetch after the second pick, the claims"
+        );
+        assert_eq!(
+            (unit(&tools.args[0]), unit(&tools.args[1])),
+            (json!(["PC"]), json!(["GWH"]))
+        );
         let repick = of_type(&events, REPICK_EVENT);
         assert_eq!(repick.len(), 1);
-        assert_eq!((repick[0]["dataset"].as_str(), &repick[0]["table"]), (Some("nrg_bal_peh"), &json!(2)));
-        assert_eq!(repick[0]["params"], json!({"t2.breakdown": 1, "t2.unit": 2, "t2.years": 1}));
+        assert_eq!(
+            (repick[0]["dataset"].as_str(), &repick[0]["table"]),
+            (Some("nrg_bal_peh"), &json!(2))
+        );
+        assert_eq!(
+            repick[0]["params"],
+            json!({"t2.breakdown": 1, "t2.unit": 2, "t2.years": 1})
+        );
     }
 
     /// Another table and dimension with holes, which no probe covers (an annual table with no probe): heat in nrg_bal
@@ -9793,7 +11472,15 @@ mod tests {
             worldbank: false,
             dims: dims
                 .into_iter()
-                .map(|(d, codes)| (d.to_string(), codes.into_iter().map(|c| (c.to_string(), String::new())).collect()))
+                .map(|(d, codes)| {
+                    (
+                        d.to_string(),
+                        codes
+                            .into_iter()
+                            .map(|c| (c.to_string(), String::new()))
+                            .collect(),
+                    )
+                })
                 .collect(),
             end_year: Some(2024),
             places: Vec::new(),
@@ -9802,18 +11489,33 @@ mod tests {
             unit: None,
         };
         let catalogue = WithTable(
-            FakeCatalogue { candidates: offers(), uncovered: None, source: json!({}), searched: Default::default() },
+            FakeCatalogue {
+                candidates: offers(),
+                uncovered: None,
+                source: json!({}),
+                searched: Default::default(),
+            },
             meta,
         );
-        let no_row = || json!({"mode": "no_rows", "text": "These codes have no values in these years."});
-        for second in [json!({"mode": "candidates", "sheet": SHEET_A, "conclusions": 3}), no_row()] {
+        let no_row =
+            || json!({"mode": "no_rows", "text": "These codes have no values in these years."});
+        for second in [
+            json!({"mode": "candidates", "sheet": SHEET_A, "conclusions": 3}),
+            no_row(),
+        ] {
             let run = tempfile::tempdir().unwrap();
             write_sheet(run.path(), SHEET_A, &["c1", "c2", "c3"]);
             let (events, mut sink) = collector();
             let mut model = ScriptedAsker::new(vec![
                 search_reply(),
-                call("toolu_t", json!({"step": "table", "pick": [2], "params": {"t2.breakdown": 3, "t2.nrg_bal": 2}})),
-                call("toolu_t2", json!({"step": "table", "pick": [2], "params": {"t2.breakdown": 3, "t2.nrg_bal": 1}})),
+                call(
+                    "toolu_t",
+                    json!({"step": "table", "pick": [2], "params": {"t2.breakdown": 3, "t2.nrg_bal": 2}}),
+                ),
+                call(
+                    "toolu_t2",
+                    json!({"step": "table", "pick": [2], "params": {"t2.breakdown": 3, "t2.nrg_bal": 1}}),
+                ),
                 call("toolu_c", json!({"step": "claims", "pick": [1, 2, 3]})),
             ]);
             let stops = second["mode"] == "no_rows";
@@ -9828,14 +11530,39 @@ mod tests {
             };
             let cancel = AtomicBool::new(false);
             let mut recorder = Recorder::new(&mut sink, run.path(), Vec::new(), Vec::new());
-            let result = prepare_claims(&mut recorder, &mut model, &mut tools, "德国的发电结构", &[], &catalogue, &cancel).await;
+            let result = prepare_claims(
+                &mut recorder,
+                &mut model,
+                &mut tools,
+                "德国的发电结构",
+                &[],
+                &catalogue,
+                &cancel,
+            )
+            .await;
             let history = serde_json::to_string(recorder.history()).unwrap();
             drop(recorder);
-            assert!(of_type(&events, HELD_EVENT).is_empty(), "this catalogue probes nothing");
-            assert!(history.contains("came back with no row (fetched after the pick)"), "{history}");
-            let nrg_bal =
-                |args: &Value| args["filters"].as_array().unwrap().iter().find(|f| f["dimension"] == "nrg_bal").unwrap()["values"].clone();
-            assert_eq!((nrg_bal(&tools.args[0]), nrg_bal(&tools.args[1])), (json!(["GHP"]), json!(["GEP"])));
+            assert!(
+                of_type(&events, HELD_EVENT).is_empty(),
+                "this catalogue probes nothing"
+            );
+            assert!(
+                history.contains("came back with no row (fetched after the pick)"),
+                "{history}"
+            );
+            let nrg_bal = |args: &Value| {
+                args["filters"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|f| f["dimension"] == "nrg_bal")
+                    .unwrap()["values"]
+                    .clone()
+            };
+            assert_eq!(
+                (nrg_bal(&tools.args[0]), nrg_bal(&tools.args[1])),
+                (json!(["GHP"]), json!(["GEP"]))
+            );
             assert_eq!(of_type(&events, REPICK_EVENT).len(), 1);
             if stops {
                 assert!(
@@ -9961,15 +11688,25 @@ mod tests {
         let this_year = chrono::Datelike::year(&chrono::Local::now());
         for path in std::env::var("NEXT_FILL_RUNS").unwrap().split(',') {
             let text = std::fs::read_to_string(path).unwrap();
-            let Some(event) = text.lines().filter_map(|l| serde_json::from_str::<Value>(l).ok()).find(|e| e["type"] == CATALOGUE_EVENT) else {
+            let Some(event) = text
+                .lines()
+                .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+                .find(|e| e["type"] == CATALOGUE_EVENT)
+            else {
                 println!("FILL\t{path}\tno catalogue event");
                 continue;
             };
             let question = event["question"].as_str().unwrap_or_default();
-            let texts: Vec<String> = serde_json::from_value(event["texts"].clone()).unwrap_or_default();
+            let texts: Vec<String> =
+                serde_json::from_value(event["texts"].clone()).unwrap_or_default();
             let places = catalogue.places(question);
             println!("PLACES\t{question}\t{places:?}");
-            let ids = event["ranking"]["candidates"].as_array().into_iter().flatten().take(OFFERED_TABLES).filter_map(|c| c["id"].as_str());
+            let ids = event["ranking"]["candidates"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .take(OFFERED_TABLES)
+                .filter_map(|c| c["id"].as_str());
             for id in ids {
                 let Some(meta) = catalogue.table(id) else {
                     println!("FILL\t{id}\tno meta");
@@ -9978,13 +11715,26 @@ mod tests {
                 let draft = next_params::draft(meta, &texts, &places);
                 match next_params::fill(&draft, 1, &BTreeMap::new(), &places, this_year) {
                     Ok(filled) => {
-                        let place_filters: Vec<String> = filled.args["filters"].as_array().into_iter().flatten()
-                            .filter(|f| matches!(f["dimension"].as_str(), Some("geo" | "country" | "partner" | "c_orig" | "c_dest")))
-                            .map(|f| format!("{}={}", f["dimension"].as_str().unwrap_or(""), f["values"]))
+                        let place_filters: Vec<String> = filled.args["filters"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter(|f| {
+                                matches!(
+                                    f["dimension"].as_str(),
+                                    Some("geo" | "country" | "partner" | "c_orig" | "c_dest")
+                                )
+                            })
+                            .map(|f| {
+                                format!("{}={}", f["dimension"].as_str().unwrap_or(""), f["values"])
+                            })
                             .collect();
                         println!("FILL\t{id}\t{}", place_filters.join(" "));
                     }
-                    Err(why) => println!("FILL\t{id}\trefused: {}", why.chars().take(160).collect::<String>()),
+                    Err(why) => println!(
+                        "FILL\t{id}\trefused: {}",
+                        why.chars().take(160).collect::<String>()
+                    ),
                 }
             }
         }
@@ -10243,8 +11993,16 @@ mod tests {
     struct InTheEu(WithTable);
 
     impl Catalogue for InTheEu {
-        fn top5(&self, question_zh: &str, texts: &[String], months: bool, latest_year: Option<i32>, first_year: Option<i32>) -> Ranking {
-            self.0.top5(question_zh, texts, months, latest_year, first_year)
+        fn top5(
+            &self,
+            question_zh: &str,
+            texts: &[String],
+            months: bool,
+            latest_year: Option<i32>,
+            first_year: Option<i32>,
+        ) -> Ranking {
+            self.0
+                .top5(question_zh, texts, months, latest_year, first_year)
         }
         fn places_outside(&self, question_zh: &str, texts: &[String]) -> Vec<String> {
             self.0.places_outside(question_zh, texts)
@@ -10731,8 +12489,16 @@ mod tests {
     struct WithCompanions(FakeCatalogue);
 
     impl Catalogue for WithCompanions {
-        fn top5(&self, question_zh: &str, texts: &[String], months: bool, latest_year: Option<i32>, first_year: Option<i32>) -> Ranking {
-            self.0.top5(question_zh, texts, months, latest_year, first_year)
+        fn top5(
+            &self,
+            question_zh: &str,
+            texts: &[String],
+            months: bool,
+            latest_year: Option<i32>,
+            first_year: Option<i32>,
+        ) -> Ranking {
+            self.0
+                .top5(question_zh, texts, months, latest_year, first_year)
         }
         fn places_outside(&self, question_zh: &str, texts: &[String]) -> Vec<String> {
             self.0.places_outside(question_zh, texts)
@@ -10808,9 +12574,13 @@ mod tests {
             &self,
             main: &str,
             rows: &BTreeMap<String, Vec<next_knowledge::CompanionRow>>,
-        ) -> (Vec<next_knowledge::Companion>, Vec<(String, next_knowledge::DropWhy)>) {
+        ) -> (
+            Vec<next_knowledge::Companion>,
+            Vec<(String, next_knowledge::DropWhy)>,
+        ) {
             assert!(rows.contains_key(main));
-            let kept = rows.keys()
+            let kept = rows
+                .keys()
                 .filter(|id| *id != main)
                 .map(|id| next_knowledge::Companion {
                     id: id.clone(),
@@ -10970,7 +12740,8 @@ mod tests {
         // (its summing) is not carried over
         assert_eq!(
             Value::Object(
-                companion_args(&main, None, &table(&[("geo", &["DE", "FR", "EA21"])]), None).unwrap()
+                companion_args(&main, None, &table(&[("geo", &["DE", "FR", "EA21"])]), None)
+                    .unwrap()
             ),
             json!({"dataset": "b", "filters": [{"dimension": "geo", "values": ["DE", "EA21"]}], "years": {"start": 2024, "end": 2024}})
         );
@@ -10980,11 +12751,19 @@ mod tests {
             None
         );
         assert_eq!(
-            companion_args(&main, None, &table(&[("geo", &["DE"]), ("sex", &["T"])]), None),
+            companion_args(
+                &main,
+                None,
+                &table(&[("geo", &["DE"]), ("sex", &["T"])]),
+                None
+            ),
             None
         );
         // a companion lacking the main's place dimension is not fetched rather than fetched for every place
-        assert_eq!(companion_args(&main, None, &table(&[("unit", &["PC"])]), None), None);
+        assert_eq!(
+            companion_args(&main, None, &table(&[("unit", &["PC"])]), None),
+            None
+        );
         // two versions of the aggregate: neither is guessed; only a place is mapped
         assert_eq!(
             own_code(
@@ -11114,7 +12893,15 @@ mod tests {
             json!({"provider": "worldbank", "dataset": "b", "filters": [{"dimension": "country", "values": ["JPN", "DEU"]}],
                 "years": {"start": 2015, "end": 2024}})
         );
-        assert_eq!(companion_args(&fixed, None, &meta(false, &[("geo", &["AT", "BE"])], &[]), None), None);
+        assert_eq!(
+            companion_args(
+                &fixed,
+                None,
+                &meta(false, &[("geo", &["AT", "BE"])], &[]),
+                None
+            ),
+            None
+        );
         // no narrow: no cut, the companion as before
         let mut plain = main.clone();
         plain.remove("narrow");
@@ -11351,7 +13138,14 @@ mod tests {
 
     /// An echo page (fixtures/next_leaf: one svg layer, one html layer) published into a fresh run folder, the doors as
     /// `open` says, the browser check the twin (fixtures/next_visual/qa_twin.py) in `qa` mode: the reply and the run.
-    fn publish_with(open: bool, qa: &str) -> (Result<Published, String>, crate::artifact::InvestigationBundle, tempfile::TempDir) {
+    fn publish_with(
+        open: bool,
+        qa: &str,
+    ) -> (
+        Result<Published, String>,
+        crate::artifact::InvestigationBundle,
+        tempfile::TempDir,
+    ) {
         let dir = tempfile::tempdir().unwrap();
         let bundle = {
             let _command = crate::group_guard::command_for_test("investigate");
@@ -11367,7 +13161,12 @@ mod tests {
     }
 
     /// The same, the svg layer's knobs `events` (what it says it dropped, say).
-    fn publish_layers(root: &Path, open: bool, qa: &str, events: Value) -> Result<Published, String> {
+    fn publish_layers(
+        root: &Path,
+        open: bool,
+        qa: &str,
+        events: Value,
+    ) -> Result<Published, String> {
         use crate::next_leaf::{Layer, Runner};
         let _command = crate::group_guard::command_for_test("investigate");
         let _doors = crate::group_guard::doors_for_test(open);
@@ -11400,18 +13199,31 @@ mod tests {
             strip: None,
         };
         let plan = json!({"kind": "leaf_plan", "recipe": "column"});
-        publish_leaf_page(&Mutex::new(Vec::new()), root, if open { "column" } else { "leaf" }, (&page, &plan), &check)
+        publish_leaf_page(
+            &Mutex::new(Vec::new()),
+            root,
+            if open { "column" } else { "leaf" },
+            (&page, &plan),
+            &check,
+        )
     }
 
     /// The visual door is measured for publications/column/ and publications/qa/column/ only, so a page under any other name is
     /// refused: no page, no report, no manifest, nothing counted. Through the door, the baked bytes are written once, the PASS
     /// report names their sha256 and the manifest binds them.
     #[test]
-    fn a_leaf_page_is_published_only_through_an_open_door_and_a_passing_browser_check_of_its_bytes() {
+    fn a_leaf_page_is_published_only_through_an_open_door_and_a_passing_browser_check_of_its_bytes()
+    {
         let (reply, bundle, _dir) = publish_with(false, "pass");
         let why = reply.unwrap_err();
-        assert!(why.starts_with("publish: boundary:") && why.contains("visual_command"), "{why}");
-        assert!(!bundle.dir.join("publications/leaf").exists() && !bundle.dir.join("publications/qa").exists());
+        assert!(
+            why.starts_with("publish: boundary:") && why.contains("visual_command"),
+            "{why}"
+        );
+        assert!(
+            !bundle.dir.join("publications/leaf").exists()
+                && !bundle.dir.join("publications/qa").exists()
+        );
         assert!(bundle.measured_publication_gap().unwrap().is_some());
 
         let (reply, bundle, _dir) = publish_with(true, "pass");
@@ -11419,15 +13231,33 @@ mod tests {
         let html = std::fs::read(bundle.dir.join(&published.html_ref)).unwrap();
         assert_eq!(crate::hash::sha256_bytes(&html), published.html_sha256);
         let html = String::from_utf8(html).unwrap();
-        assert!(html.contains("<div>图例</div>") && html.contains(&format!("<script>{}</script>", crate::next_ledger::READY_JS)));
-        let manifest: Value =
-            serde_json::from_str(&std::fs::read_to_string(bundle.dir.join("publications/column/manifest.json")).unwrap()).unwrap();
+        assert!(
+            html.contains("<div>图例</div>")
+                && html.contains(&format!(
+                    "<script>{}</script>",
+                    crate::next_ledger::READY_JS
+                ))
+        );
+        let manifest: Value = serde_json::from_str(
+            &std::fs::read_to_string(bundle.dir.join("publications/column/manifest.json")).unwrap(),
+        )
+        .unwrap();
         assert_eq!(manifest["html_ref"], "publications/column/index.html");
-        assert_eq!(manifest["html_sha256"].as_str(), Some(published.html_sha256.as_str()));
+        assert_eq!(
+            manifest["html_sha256"].as_str(),
+            Some(published.html_sha256.as_str())
+        );
         assert_eq!(bundle.measured_publication_gap().unwrap(), None);
 
-        std::fs::write(bundle.dir.join(&published.html_ref), html.replacen("图例", "图列", 1)).unwrap();
-        assert!(bundle.measured_publication_gap().unwrap().is_some(), "a byte changed after the PASS is not published");
+        std::fs::write(
+            bundle.dir.join(&published.html_ref),
+            html.replacen("图例", "图列", 1),
+        )
+        .unwrap();
+        assert!(
+            bundle.measured_publication_gap().unwrap().is_some(),
+            "a byte changed after the PASS is not published"
+        );
     }
 
     /// A layer that could not place either of its two notes (it draws nothing) does not stop the page: it is published, and
@@ -11444,14 +13274,20 @@ mod tests {
         let published = publish_layers(&bundle.dir, true, "pass", events).unwrap();
         assert!(bundle.dir.join(&published.html_ref).is_file());
         assert_eq!(bundle.measured_publication_gap().unwrap(), None);
-        let request: Value =
-            serde_json::from_str(&std::fs::read_to_string(bundle.dir.join("publications/column").join(LEAF_REQUEST)).unwrap()).unwrap();
+        let request: Value = serde_json::from_str(
+            &std::fs::read_to_string(bundle.dir.join("publications/column").join(LEAF_REQUEST))
+                .unwrap(),
+        )
+        .unwrap();
         assert_eq!(
             request["ledger"],
             json!({"dropped:events:AT": "no free place for the note", "dropped:events:LU": "past label_count"})
         );
         let html = std::fs::read_to_string(bundle.dir.join(&published.html_ref)).unwrap();
-        assert!(!html.contains("dropped:") && !html.contains("no free place"), "a dropped entry is never printed");
+        assert!(
+            !html.contains("dropped:") && !html.contains("no free place"),
+            "a dropped entry is never printed"
+        );
     }
 
     /// A FAIL, a PASS for other bytes or no report at all leaves the page and whatever report there is for replay, with no
@@ -11461,14 +13297,33 @@ mod tests {
         for (qa, says) in [
             ("fail", "browser check: FAIL: overflow:1440"),
             ("other", "not the page written"),
-            ("silent", "browser check: it wrote no readable browser-qa.json"),
+            (
+                "silent",
+                "browser check: it wrote no readable browser-qa.json",
+            ),
         ] {
             let (reply, bundle, _dir) = publish_with(true, qa);
             let why = reply.unwrap_err();
             assert!(why.contains(says), "{qa}: {why}");
-            assert!(bundle.dir.join("publications/column/index.html").is_file(), "{qa}");
-            assert_eq!(bundle.dir.join("publications/qa/column/browser-qa.json").is_file(), qa != "silent", "{qa}");
-            assert!(!bundle.dir.join("publications/column/manifest.json").exists(), "{qa}");
+            assert!(
+                bundle.dir.join("publications/column/index.html").is_file(),
+                "{qa}"
+            );
+            assert_eq!(
+                bundle
+                    .dir
+                    .join("publications/qa/column/browser-qa.json")
+                    .is_file(),
+                qa != "silent",
+                "{qa}"
+            );
+            assert!(
+                !bundle
+                    .dir
+                    .join("publications/column/manifest.json")
+                    .exists(),
+                "{qa}"
+            );
             assert!(bundle.measured_publication_gap().unwrap().is_some(), "{qa}");
         }
     }
@@ -11479,19 +13334,41 @@ mod tests {
     fn a_leaf_page_is_not_published_twice_under_one_name() {
         let (reply, bundle, _dir) = publish_with(true, "pass");
         let first = reply.unwrap();
-        let files = ["publications/column/index.html", "publications/column/manifest.json", "publications/qa/column/browser-qa.json"];
-        let read = |root: &Path| -> Vec<Vec<u8>> { files.iter().map(|f| std::fs::read(root.join(f)).unwrap()).collect() };
+        let files = [
+            "publications/column/index.html",
+            "publications/column/manifest.json",
+            "publications/qa/column/browser-qa.json",
+        ];
+        let read = |root: &Path| -> Vec<Vec<u8>> {
+            files
+                .iter()
+                .map(|f| std::fs::read(root.join(f)).unwrap())
+                .collect()
+        };
         let before = read(&bundle.dir);
         let why = publish_into(&bundle.dir, true, "silent").unwrap_err();
-        assert!(why.contains("publications/column was written before"), "{why}");
-        assert_eq!(read(&bundle.dir), before, "the refused publish changed nothing");
+        assert!(
+            why.contains("publications/column was written before"),
+            "{why}"
+        );
+        assert_eq!(
+            read(&bundle.dir),
+            before,
+            "the refused publish changed nothing"
+        );
         assert_eq!(crate::hash::sha256_bytes(&before[0]), first.html_sha256);
 
         let (reply, bundle, _dir) = publish_with(true, "fail");
         assert!(reply.is_err());
         let why = publish_into(&bundle.dir, true, "pass").unwrap_err();
-        assert!(why.contains("publications/column was written before"), "{why}");
-        assert!(!bundle.dir.join("publications/column/manifest.json").exists());
+        assert!(
+            why.contains("publications/column was written before"),
+            "{why}"
+        );
+        assert!(!bundle
+            .dir
+            .join("publications/column/manifest.json")
+            .exists());
         assert!(bundle.measured_publication_gap().unwrap().is_some());
     }
 
@@ -11503,7 +13380,11 @@ mod tests {
         while let Some(dir) = dirs.pop() {
             for entry in std::fs::read_dir(&dir).unwrap() {
                 let path = entry.unwrap().path();
-                let rel = path.strip_prefix(root).unwrap().to_string_lossy().replace('\\', "/");
+                let rel = path
+                    .strip_prefix(root)
+                    .unwrap()
+                    .to_string_lossy()
+                    .replace('\\', "/");
                 if path.is_dir() {
                     files.insert(format!("{rel}/"), Vec::new());
                     dirs.push(path);
@@ -11521,7 +13402,13 @@ mod tests {
     /// door (another name) the only change is the guard's own refusal record (and its runtime/ folder if new), grown by a line naming the door.
     #[test]
     fn the_visual_door_writes_only_the_page_folder_and_its_report_folder() {
-        for (open, qa) in [(false, "pass"), (true, "pass"), (true, "fail"), (true, "other"), (true, "silent")] {
+        for (open, qa) in [
+            (false, "pass"),
+            (true, "pass"),
+            (true, "fail"),
+            (true, "other"),
+            (true, "silent"),
+        ] {
             let dir = tempfile::tempdir().unwrap();
             let bundle = {
                 let _command = crate::group_guard::command_for_test("investigate");
@@ -11529,16 +13416,32 @@ mod tests {
             };
             let before = files_of(&bundle.dir);
             let reply = publish_into(&bundle.dir, open, qa);
-            assert_eq!(reply.is_ok(), open && qa == "pass", "{open} {qa}: {reply:?}");
+            assert_eq!(
+                reply.is_ok(),
+                open && qa == "pass",
+                "{open} {qa}: {reply:?}"
+            );
             let after = files_of(&bundle.dir);
-            let touched: Vec<&String> = after.iter().filter(|(k, v)| before.get(*k) != Some(*v)).map(|(k, _)| k).collect();
+            let touched: Vec<&String> = after
+                .iter()
+                .filter(|(k, v)| before.get(*k) != Some(*v))
+                .map(|(k, _)| k)
+                .collect();
             let gone: Vec<&String> = before.keys().filter(|k| !after.contains_key(*k)).collect();
             assert!(gone.is_empty(), "{open} {qa}: removed {gone:?}");
             if !open {
                 let log = crate::group_guard::REFUSAL_LOG_PATH;
-                assert!(touched.iter().all(|k| *k == log || (k.ends_with('/') && log.starts_with(k.as_str()))), "{qa}: a closed door changed {touched:?}");
+                assert!(
+                    touched
+                        .iter()
+                        .all(|k| *k == log || (k.ends_with('/') && log.starts_with(k.as_str()))),
+                    "{qa}: a closed door changed {touched:?}"
+                );
                 let earlier = before.get(log).map_or(&[][..], Vec::as_slice);
-                assert!(after[log].starts_with(earlier), "{qa}: the refusal record was rewritten, not grown");
+                assert!(
+                    after[log].starts_with(earlier),
+                    "{qa}: the refusal record was rewritten, not grown"
+                );
                 let added = String::from_utf8_lossy(&after[log][earlier.len()..]).into_owned();
                 assert!(added.contains("visual_command"), "{added}");
                 continue;
@@ -11547,12 +13450,22 @@ mod tests {
             let plan = crate::next_run::leaf_plan_ref("column");
             let within = |k: &str| {
                 k == plan
-                    || ["publications/column/", "publications/qa/column/", plan.as_str()]
-                        .iter()
-                        .any(|p| (k.ends_with('/') && p.starts_with(k)) || (p.ends_with('/') && k.starts_with(p)))
+                    || [
+                        "publications/column/",
+                        "publications/qa/column/",
+                        plan.as_str(),
+                    ]
+                    .iter()
+                    .any(|p| {
+                        (k.ends_with('/') && p.starts_with(k))
+                            || (p.ends_with('/') && k.starts_with(p))
+                    })
             };
             let outside: Vec<&&String> = touched.iter().filter(|k| !within(k)).collect();
-            assert!(outside.is_empty(), "{open} {qa}: written outside the two folders and the plan {outside:?}");
+            assert!(
+                outside.is_empty(),
+                "{open} {qa}: written outside the two folders and the plan {outside:?}"
+            );
             assert!(!touched.is_empty(), "{qa}: an open door wrote nothing");
         }
     }
@@ -11565,8 +13478,16 @@ mod tests {
     }
 
     impl Catalogue for HubTables {
-        fn top5(&self, question_zh: &str, texts: &[String], months: bool, latest_year: Option<i32>, first_year: Option<i32>) -> Ranking {
-            self.inner.top5(question_zh, texts, months, latest_year, first_year)
+        fn top5(
+            &self,
+            question_zh: &str,
+            texts: &[String],
+            months: bool,
+            latest_year: Option<i32>,
+            first_year: Option<i32>,
+        ) -> Ranking {
+            self.inner
+                .top5(question_zh, texts, months, latest_year, first_year)
         }
         fn places_outside(&self, question_zh: &str, texts: &[String]) -> Vec<String> {
             self.inner.places_outside(question_zh, texts)
@@ -11583,8 +13504,15 @@ mod tests {
                 _ => Err(format!("{aggregate} has no members")),
             }
         }
-        fn companion_shortlist(&self, _main: &str) -> Vec<(next_knowledge::CompanionCandidate, String)> {
-            let candidate = |id: &str, grain| next_knowledge::CompanionCandidate { id: id.into(), adds: Vec::new(), grain };
+        fn companion_shortlist(
+            &self,
+            _main: &str,
+        ) -> Vec<(next_knowledge::CompanionCandidate, String)> {
+            let candidate = |id: &str, grain| next_knowledge::CompanionCandidate {
+                id: id.into(),
+                adds: Vec::new(),
+                grain,
+            };
             let mut shortlist = vec![(candidate("asy_x", None), "Another unit".to_string())];
             if self.twin {
                 shortlist.push((candidate("asy_m", Some("M")), "Monthly applications".into()));
@@ -11601,12 +13529,18 @@ mod tests {
             dims: vec![
                 ("sex".into(), codes(&["T", "M", "F"])),
                 ("geo".into(), codes(&["EU27_2020", "DE", "FR"])),
-                ("citizen".into(), codes(&["TOTAL", "AF", "SY", "VE", "TR", "CO", "UA"])),
+                (
+                    "citizen".into(),
+                    codes(&["TOTAL", "AF", "SY", "VE", "TR", "CO", "UA"]),
+                ),
             ],
             end_year: Some(2024),
             places: Vec::new(),
             place_members: Vec::new(),
-            freqs: freqs.iter().map(|(f, a, b)| (f.to_string(), a.to_string(), b.to_string())).collect(),
+            freqs: freqs
+                .iter()
+                .map(|(f, a, b)| (f.to_string(), a.to_string(), b.to_string()))
+                .collect(),
             unit: None,
         }
     }
@@ -11616,23 +13550,47 @@ mod tests {
     #[test]
     fn only_a_hub_table_with_a_monthly_twin_gets_the_ring_s_window() {
         let window = |twin: bool, table: TableMeta, places: &[Place]| {
-            let catalogue = HubTables { twin, inner: offers_catalogue() };
+            let catalogue = HubTables {
+                twin,
+                inner: offers_catalogue(),
+            };
             let draft = next_params::draft(table, &[], places);
             ring_window(&draft, 1, places, 2026, &catalogue)
         };
         let region = [Place::Region];
         let ring = |only: Option<Vec<String>>| {
-            Some(next_params::Window { years: 5, months: 60, hub: "EU27_2020".into(), twin: "asy_m".into(), only })
+            Some(next_params::Window {
+                years: 5,
+                months: 60,
+                hub: "EU27_2020".into(),
+                twin: "asy_m".into(),
+                only,
+            })
         };
         // geo holds the members too: no breakdown, or a split by sex, fetches the members; a split by citizen the hub.
-        assert_eq!(window(true, hub_table(&[]), &region), ring(Some(vec!["citizen".into()])));
+        assert_eq!(
+            window(true, hub_table(&[]), &region),
+            ring(Some(vec!["citizen".into()]))
+        );
         // geo is the hub alone: every answer fetches it.
         let mut whole = hub_table(&[]);
         whole.dims[1].1.retain(|(c, _)| c == "EU27_2020");
         assert_eq!(window(true, whole, &region), ring(None));
-        assert_eq!(window(false, hub_table(&[]), &region), None, "no monthly twin on the shortlist");
-        assert_eq!(window(true, hub_table(&[]), &[Place::Country("DE".into())]), None, "geo DE is no hub");
-        assert_eq!(window(true, hub_table(&[("M", "2008M01", "2026M08")]), &region), None, "a monthly main");
+        assert_eq!(
+            window(false, hub_table(&[]), &region),
+            None,
+            "no monthly twin on the shortlist"
+        );
+        assert_eq!(
+            window(true, hub_table(&[]), &[Place::Country("DE".into())]),
+            None,
+            "geo DE is no hub"
+        );
+        assert_eq!(
+            window(true, hub_table(&[("M", "2008M01", "2026M08")]), &region),
+            None,
+            "a monthly main"
+        );
     }
 
     /// Replay (5c-2 part 2): for each stored run's question and tables (NEXT_WINDOW_CASES, a JSON list of {run, question,
@@ -11643,14 +13601,21 @@ mod tests {
     fn replay_ring_window_over_recorded_runs() {
         let catalogue = GroupCatalogue::from_env(|key| std::env::var(key).ok()).unwrap();
         let this_year = chrono::Datelike::year(&chrono::Local::now());
-        let cases: Vec<Value> =
-            serde_json::from_str(&std::fs::read_to_string(std::env::var("NEXT_WINDOW_CASES").unwrap()).unwrap()).unwrap();
+        let cases: Vec<Value> = serde_json::from_str(
+            &std::fs::read_to_string(std::env::var("NEXT_WINDOW_CASES").unwrap()).unwrap(),
+        )
+        .unwrap();
         let (mut tables, mut windowed) = (0, 0);
         for case in &cases {
             let question = case["question"].as_str().unwrap();
             let texts: Vec<String> = serde_json::from_value(case["texts"].clone()).unwrap();
             let places = catalogue.places(question);
-            for id in case["tables"].as_array().unwrap().iter().filter_map(Value::as_str) {
+            for id in case["tables"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(Value::as_str)
+            {
                 let Some(meta) = catalogue.table(id) else {
                     continue;
                 };
@@ -11672,15 +13637,18 @@ mod tests {
                     let twin_years = |args: &Map<String, Value>, months| {
                         companion_args(args, None, &twin, months).map(|a| a["years"].clone())
                     };
-                    line["main_years"] = json!({"before": before.args["years"], "after": after.args["years"]});
-                    line["twin_years"] =
-                        json!({"before": twin_years(&before.args, None), "after": twin_years(&after.args, Some(w.months))});
+                    line["main_years"] =
+                        json!({"before": before.args["years"], "after": after.args["years"]});
+                    line["twin_years"] = json!({"before": twin_years(&before.args, None), "after": twin_years(&after.args, Some(w.months))});
                     line["after_event"] = after.event["years"].clone();
                 }
                 println!("{line}");
             }
         }
-        println!("{}", json!({"cases": cases.len(), "tables": tables, "windowed": windowed}));
+        println!(
+            "{}",
+            json!({"cases": cases.len(), "tables": tables, "windowed": windowed})
+        );
     }
 
     /// A window on the citizen split only goes to the step of that answer: no breakdown (or sex) fetches the main for the
@@ -11692,7 +13660,10 @@ mod tests {
         let (_events, mut sink) = collector();
         let mut recorder = Recorder::new(&mut sink, dir.path(), Vec::new(), Vec::new());
         recorder.parent = Some("toolu_t".into());
-        let catalogue = HubTables { twin: true, inner: offers_catalogue() };
+        let catalogue = HubTables {
+            twin: true,
+            inner: offers_catalogue(),
+        };
         let window = next_params::Window {
             years: 5,
             months: 60,
@@ -11700,14 +13671,25 @@ mod tests {
             twin: "asy_m".into(),
             only: Some(vec!["citizen".into()]),
         };
-        let draft = next_params::Draft { window: Some(window.clone()), ..next_params::draft(hub_table(&[]), &[], &[Place::Region]) };
+        let draft = next_params::Draft {
+            window: Some(window.clone()),
+            ..next_params::draft(hub_table(&[]), &[], &[Place::Region])
+        };
         let citizen = draft.breakdown.iter().position(|d| d == "citizen").unwrap() + 2;
         let id = "asy_a".to_string();
         let drafts = [(&id, Some(draft))];
-        let twin = TableMeta { id: "asy_m".into(), ..hub_table(&[("M", "2008M01", "2026M08")]) };
+        let twin = TableMeta {
+            id: "asy_m".into(),
+            ..hub_table(&[("M", "2008M01", "2026M08")])
+        };
         let mut step = |breakdown: usize| {
-            let params = BTreeMap::from([("t1.breakdown".to_string(), breakdown), ("t1.years".to_string(), 1)]);
-            fill_steps(&mut recorder, "q", &[1], &drafts, &params, &catalogue).unwrap().remove(0)
+            let params = BTreeMap::from([
+                ("t1.breakdown".to_string(), breakdown),
+                ("t1.years".to_string(), 1),
+            ]);
+            fill_steps(&mut recorder, "q", &[1], &drafts, &params, &catalogue)
+                .unwrap()
+                .remove(0)
         };
         let split = step(citizen);
         assert_eq!(split.window, Some(window));
@@ -11715,7 +13697,14 @@ mod tests {
         let none = step(1);
         assert_eq!(none.window, None);
         assert_eq!(none.args["years"], json!({"start": 2024, "end": 2024}));
-        let twin_years = companion_args(&none.args, None, &twin, none.window.as_ref().map(|w| w.months)).unwrap()["years"].clone();
+        let twin_years = companion_args(
+            &none.args,
+            None,
+            &twin,
+            none.window.as_ref().map(|w| w.months),
+        )
+        .unwrap()["years"]
+            .clone();
         assert_eq!(twin_years, none.args["years"]);
     }
 
@@ -11723,19 +13712,37 @@ mod tests {
     /// without one, or with no monthly span in the catalogue, it takes the main's years as before.
     #[test]
     fn a_monthly_twin_is_fetched_for_the_ring_s_months() {
-        let main: Map<String, Value> = serde_json::from_value(json!({"dataset": "asy_a", "years": {"start": 2020, "end": 2024}})).unwrap();
-        let twin = TableMeta { id: "asy_m".into(), ..hub_table(&[("M", "2008M01", "2026M08")]) };
-        let years = |table: &TableMeta, months| companion_args(&main, None, table, months).unwrap()["years"].clone();
+        let main: Map<String, Value> = serde_json::from_value(
+            json!({"dataset": "asy_a", "years": {"start": 2020, "end": 2024}}),
+        )
+        .unwrap();
+        let twin = TableMeta {
+            id: "asy_m".into(),
+            ..hub_table(&[("M", "2008M01", "2026M08")])
+        };
+        let years = |table: &TableMeta, months| {
+            companion_args(&main, None, table, months).unwrap()["years"].clone()
+        };
         assert_eq!(years(&twin, Some(60)), json!({"start": 2021, "end": 2026}));
         assert_eq!(years(&twin, Some(24)), json!({"start": 2024, "end": 2026}));
         assert_eq!(years(&twin, None), json!({"start": 2020, "end": 2024}));
-        assert_eq!(years(&hub_table(&[]), Some(60)), json!({"start": 2020, "end": 2024}), "no monthly span");
+        assert_eq!(
+            years(&hub_table(&[]), Some(60)),
+            json!({"start": 2020, "end": 2024}),
+            "no monthly span"
+        );
     }
 
     /// TOTAL and `count` two-letter codes: a place dimension (next_params::place_like) that has a total.
     fn place_codes(count: usize) -> Vec<(String, String)> {
         std::iter::once("TOTAL".to_string())
-            .chain((b'A'..=b'Z').flat_map(|a| (b'A'..=b'Z').map(move |b| String::from_utf8(vec![a, b]).unwrap())).take(count))
+            .chain(
+                (b'A'..=b'Z')
+                    .flat_map(|a| {
+                        (b'A'..=b'Z').map(move |b| String::from_utf8(vec![a, b]).unwrap())
+                    })
+                    .take(count),
+            )
             .map(|c| (c, String::new()))
             .collect()
     }
@@ -11752,9 +13759,15 @@ mod tests {
     }
 
     /// drawable_splits on table 1 of a region question, with the window `window`.
-    fn splits_with(draft: &mut next_params::Draft, window: next_params::Window) -> (Vec<Split>, Value) {
+    fn splits_with(
+        draft: &mut next_params::Draft,
+        window: next_params::Window,
+    ) -> (Vec<Split>, Value) {
         let _command = crate::group_guard::command_for_test("investigate");
-        let catalogue = HubTables { twin: true, inner: offers_catalogue() };
+        let catalogue = HubTables {
+            twin: true,
+            inner: offers_catalogue(),
+        };
         draft.window = Some(window);
         drawable_splits(draft, 1, &[Place::Region], 2026, &catalogue)
     }
@@ -11782,10 +13795,39 @@ mod tests {
             worldbank: false,
             dims: vec![
                 ("geo".into(), codes(&["EU27_2020", "DE", "FR"])),
-                ("nrg_bal".into(), codes(&["PPRD", "GIC", "FC_E", "FC_IND_E", "FC_TRA_E", "FC_OTH_E", "FC_OTH_CP_E", "FC_OTH_HH_E",
-                    "FC_OTH_AF_E", "FC_OTH_FISH_E", "FC_OTH_NSP_E"])),
-                ("siec".into(), codes(&["TOTAL", "C0000X0350-0370", "C0350-0370", "P1000", "S2000", "G3000", "O4000XBIO", "RA000",
-                    "W6100_6220", "N900H", "E7000", "H8000"])),
+                (
+                    "nrg_bal".into(),
+                    codes(&[
+                        "PPRD",
+                        "GIC",
+                        "FC_E",
+                        "FC_IND_E",
+                        "FC_TRA_E",
+                        "FC_OTH_E",
+                        "FC_OTH_CP_E",
+                        "FC_OTH_HH_E",
+                        "FC_OTH_AF_E",
+                        "FC_OTH_FISH_E",
+                        "FC_OTH_NSP_E",
+                    ]),
+                ),
+                (
+                    "siec".into(),
+                    codes(&[
+                        "TOTAL",
+                        "C0000X0350-0370",
+                        "C0350-0370",
+                        "P1000",
+                        "S2000",
+                        "G3000",
+                        "O4000XBIO",
+                        "RA000",
+                        "W6100_6220",
+                        "N900H",
+                        "E7000",
+                        "H8000",
+                    ]),
+                ),
                 ("unit".into(), codes(&["KTOE", "GWH", "TJ"])),
             ],
             end_year: Some(2024),
@@ -11800,16 +13842,33 @@ mod tests {
         let (splits, event) = drawable_splits(&mut draft, 1, &de, 2026, &catalogue);
         assert_eq!(event["dropped"], json!([]));
         // nrg_bal is a member item (no total code), so the flow leaves t1.nrg_bal out as its own split does
-        assert_eq!(event["offered"][2], json!({"option": 4, "dim": "siec>nrg_bal", "years": [1], "member": true}));
+        assert_eq!(
+            event["offered"][2],
+            json!({"option": 4, "dim": "siec>nrg_bal", "years": [1], "member": true})
+        );
         let flow = &splits[2];
-        let mut picks = BTreeMap::from([("t1.breakdown".to_string(), flow.option), ("t1.unit".to_string(), 1)]);
+        let mut picks = BTreeMap::from([
+            ("t1.breakdown".to_string(), flow.option),
+            ("t1.unit".to_string(), 1),
+        ]);
         picks.insert("t1.years".into(), flow.program_years().unwrap());
         let filled = next_params::fill(&draft, 1, &picks, &de, 2026).unwrap();
         let values = |dim: &str| {
-            filled.args["filters"].as_array().unwrap().iter().find(|f| f["dimension"] == dim).map(|f| f["values"].clone())
+            filled.args["filters"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|f| f["dimension"] == dim)
+                .map(|f| f["values"].clone())
         };
         // the leaves the flow asks for: nuclear heat is left out by the registry, so 10 x 7
-        let leaves = |dim: &str| json!(next_params::flow_asked("nrg_bal_s", dim).unwrap().into_iter().map(|p| p.code).collect::<Vec<_>>());
+        let leaves = |dim: &str| {
+            json!(next_params::flow_asked("nrg_bal_s", dim)
+                .unwrap()
+                .into_iter()
+                .map(|p| p.code)
+                .collect::<Vec<_>>())
+        };
         assert_eq!(values("siec"), Some(leaves("siec")));
         assert_eq!(values("nrg_bal"), Some(leaves("nrg_bal")));
         assert_eq!(values("geo"), Some(json!(["DE"])));
@@ -11820,7 +13879,12 @@ mod tests {
         let mut plain = next_params::draft(table("nrg_x"), &[], &de);
         assert_eq!(plain.breakdown, ["nrg_bal", "siec"]);
         let (_, event) = drawable_splits(&mut plain, 1, &de, 2026, &catalogue);
-        let dims: Vec<&Value> = event["offered"].as_array().unwrap().iter().map(|o| &o["dim"]).collect();
+        let dims: Vec<&Value> = event["offered"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|o| &o["dim"])
+            .collect();
         assert_eq!(dims, [&json!("nrg_bal"), &json!("siec")]);
     }
 
@@ -11834,14 +13898,34 @@ mod tests {
         table.dims[2] = ("citizen".into(), place_codes(100));
         let mut draft = next_params::draft(table, &[], &[Place::Region]);
         let (splits, event) = splits_with(&mut draft, ring_on(Some(&["citizen"][..])));
-        assert_eq!(splits, vec![Split { option: 2, dim: "citizen".into(), years: vec![1], member: false }]);
+        assert_eq!(
+            splits,
+            vec![Split {
+                option: 2,
+                dim: "citizen".into(),
+                years: vec![1],
+                member: false
+            }]
+        );
         let tried = &event["offered"][0]["tried"];
         assert_eq!(tried[0]["window"], "ring");
         assert_eq!(tried[0]["shape"], json!([["citizen", 16], ["time", 5]]));
-        assert!(tried[0]["rejected"].as_array().unwrap().contains(&json!("Change: 16 lines; at most 8")), "{tried}");
+        assert!(
+            tried[0]["rejected"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("Change: 16 lines; at most 8")),
+            "{tried}"
+        );
         assert_eq!(tried[1]["window"], "none");
         assert_eq!(tried[1]["shape"], json!([["citizen", 20]]));
-        assert!(tried[1]["drawn"].as_array().unwrap().contains(&json!("horizontal_bar")), "{tried}");
+        assert!(
+            tried[1]["drawn"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("horizontal_bar")),
+            "{tried}"
+        );
         assert_eq!(event["dropped"][0]["dim"], "sex");
         // the only split on the window left it: no answer takes the ring's years
         assert_eq!(draft.window, None);
@@ -11850,7 +13934,13 @@ mod tests {
         assert_eq!(fetch.args["years"], json!({"start": 2024, "end": 2024}));
         assert_eq!(fetch.window, None);
         assert_eq!(fetch.event["years"]["rule"], "split");
-        let geo = fetch.args["filters"].as_array().unwrap().iter().find(|f| f["dimension"] == "geo").unwrap().clone();
+        let geo = fetch.args["filters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["dimension"] == "geo")
+            .unwrap()
+            .clone();
         assert_eq!(geo["values"], json!(["EU27_2020"]));
     }
 
@@ -11858,7 +13948,8 @@ mod tests {
     /// is 12 lines; for one year a ranking draws it. A second split on the window that draws over 5 years (7 citizens) keeps
     /// it, and only that split's answer takes the ring's years. Red before: the 12-code split was dropped (only citizen offered).
     #[test]
-    fn another_place_split_the_ring_window_refuses_is_kept_for_one_year_and_the_others_keep_the_window() {
+    fn another_place_split_the_ring_window_refuses_is_kept_for_one_year_and_the_others_keep_the_window(
+    ) {
         let mut table = hub_table(&[]);
         table.dims.push(("c_birth".into(), place_codes(11)));
         let mut draft = next_params::draft(table, &[], &[Place::Region]);
@@ -11866,17 +13957,39 @@ mod tests {
         assert_eq!(
             splits,
             vec![
-                Split { option: 2, dim: "citizen".into(), years: Vec::new(), member: false },
-                Split { option: 3, dim: "c_birth".into(), years: vec![1], member: false },
+                Split {
+                    option: 2,
+                    dim: "citizen".into(),
+                    years: Vec::new(),
+                    member: false
+                },
+                Split {
+                    option: 3,
+                    dim: "c_birth".into(),
+                    years: vec![1],
+                    member: false
+                },
             ]
         );
-        assert_eq!(event["offered"][0], json!({"option": 2, "dim": "citizen", "years": [], "member": false}));
+        assert_eq!(
+            event["offered"][0],
+            json!({"option": 2, "dim": "citizen", "years": [], "member": false})
+        );
         let tried = &event["offered"][1]["tried"];
         assert_eq!(tried[0]["shape"], json!([["c_birth", 12], ["time", 5]]));
-        assert!(tried[0]["rejected"].as_array().unwrap().contains(&json!("Change: 12 lines; at most 8")), "{tried}");
+        assert!(
+            tried[0]["rejected"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("Change: 12 lines; at most 8")),
+            "{tried}"
+        );
         assert_eq!(tried[1]["shape"], json!([["c_birth", 12]]));
         assert_eq!(draft.window, Some(ring_on(Some(&["citizen"][..]))));
-        assert_eq!(split_fetch(&draft, &splits[1]).args["years"], json!({"start": 2024, "end": 2024}));
+        assert_eq!(
+            split_fetch(&draft, &splits[1]).args["years"],
+            json!({"start": 2024, "end": 2024})
+        );
         let citizen = split_fetch(&draft, &splits[0]);
         assert_eq!(citizen.args["years"], json!({"start": 2020, "end": 2024}));
         assert_eq!(citizen.window, Some(ring_on(Some(&["citizen"][..]))));
@@ -11888,20 +14001,46 @@ mod tests {
     fn a_split_refused_with_and_without_the_ring_window_is_dropped_with_both_reasons() {
         let mut table = hub_table(&[]);
         table.dims[2] = ("citizen".into(), place_codes(11));
-        table.dims.insert(2, ("partner".into(), ["TOTAL", "CN", "US", "JP"].iter().map(|c| (c.to_string(), String::new())).collect()));
+        table.dims.insert(
+            2,
+            (
+                "partner".into(),
+                ["TOTAL", "CN", "US", "JP"]
+                    .iter()
+                    .map(|c| (c.to_string(), String::new()))
+                    .collect(),
+            ),
+        );
         let mut draft = next_params::draft(table, &[], &[Place::Region]);
-        draft.named = vec![("partner".into(), vec![("CN".into(), "CN".into()), ("US".into(), "US".into())])];
+        draft.named = vec![(
+            "partner".into(),
+            vec![("CN".into(), "CN".into()), ("US".into(), "US".into())],
+        )];
         draft.breakdown.retain(|d| d != "partner");
         let (splits, event) = splits_with(&mut draft, ring_on(Some(&["citizen"][..])));
         assert_eq!(splits, Vec::new());
-        let citizen = event["dropped"].as_array().unwrap().iter().find(|d| d["dim"] == "citizen").unwrap().clone();
+        let citizen = event["dropped"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|d| d["dim"] == "citizen")
+            .unwrap()
+            .clone();
         let why = citizen["why"].as_array().unwrap();
         assert_eq!(why.len(), 2, "{citizen}");
         assert_eq!(why[0]["window"], "ring");
-        assert_eq!(why[0]["shape"], json!([["partner", 2], ["citizen", 12], ["time", 5]]));
+        assert_eq!(
+            why[0]["shape"],
+            json!([["partner", 2], ["citizen", 12], ["time", 5]])
+        );
         assert_eq!(why[1]["window"], "none");
         assert_eq!(why[1]["shape"], json!([["partner", 2], ["citizen", 12]]));
-        assert!(why[1]["rejected"].as_array().unwrap().contains(&json!("Ranking: a bar ranking holds 1 varying dimension, not 2")), "{citizen}");
+        assert!(
+            why[1]["rejected"].as_array().unwrap().contains(&json!(
+                "Ranking: a bar ranking holds 1 varying dimension, not 2"
+            )),
+            "{citizen}"
+        );
         assert_eq!(draft.window, Some(ring_on(Some(&["citizen"][..]))));
     }
 
@@ -11911,12 +14050,30 @@ mod tests {
     fn a_split_the_ring_window_draws_is_offered_as_before() {
         let mut draft = next_params::draft(hub_table(&[]), &[], &[Place::Region]);
         let (splits, event) = splits_with(&mut draft, ring_on(Some(&["citizen"][..])));
-        assert_eq!(splits, vec![Split { option: 2, dim: "citizen".into(), years: Vec::new(), member: false }]);
-        assert_eq!(event["offered"], json!([{"option": 2, "dim": "citizen", "years": [], "member": false}]));
+        assert_eq!(
+            splits,
+            vec![Split {
+                option: 2,
+                dim: "citizen".into(),
+                years: Vec::new(),
+                member: false
+            }]
+        );
+        assert_eq!(
+            event["offered"],
+            json!([{"option": 2, "dim": "citizen", "years": [], "member": false}])
+        );
         assert_eq!(draft.window, Some(ring_on(Some(&["citizen"][..]))));
         let sex = &event["dropped"][0];
         assert_eq!(sex["dim"], "sex");
-        assert!(sex["why"].as_array().unwrap().iter().all(|w| w.get("window").is_none()), "{sex}");
+        assert!(
+            sex["why"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|w| w.get("window").is_none()),
+            "{sex}"
+        );
     }
 
     /// When every answer takes the window (a table of the hub alone), a split cannot leave it without taking the
@@ -11935,12 +14092,26 @@ mod tests {
         );
         let mut draft = next_params::draft(table, &[], &[Place::Region]);
         let (splits, event) = splits_with(&mut draft, ring_on(None));
-        assert_eq!(splits, vec![Split { option: 2, dim: "sex".into(), years: Vec::new(), member: false }]);
+        assert_eq!(
+            splits,
+            vec![Split {
+                option: 2,
+                dim: "sex".into(),
+                years: Vec::new(),
+                member: false
+            }]
+        );
         let age = &event["dropped"][0];
         assert_eq!(age["dim"], "age");
         assert_eq!(age["why"][0]["shape"], json!([["age", 13], ["time", 5]]));
         assert_eq!(age["why"][1]["window"], "none");
-        assert!(age["why"][1]["error"].as_str().unwrap().contains("every answer"), "{age}");
+        assert!(
+            age["why"][1]["error"]
+                .as_str()
+                .unwrap()
+                .contains("every answer"),
+            "{age}"
+        );
         assert_eq!(draft.window, Some(ring_on(None)));
     }
     /// Round 12 q3 (works/devset-v3/round12-audit.md): the stand-in reworded the label of a composition page into
@@ -11948,9 +14119,14 @@ mod tests {
     /// the 20 drawn countries are above half). A reworded field types no drawn name the question does not write; a reworded
     /// title that names a drawn place or part says no standing of it. Two shapes: a composition's parts, a ranking's places.
     #[test]
-    fn a_reworded_field_types_no_drawn_name_the_question_does_not_write_and_a_title_says_no_standing() {
+    fn a_reworded_field_types_no_drawn_name_the_question_does_not_write_and_a_title_says_no_standing(
+    ) {
         let ask = |drafts: &[&str], members: &[&str], question: &str| Ask::Text {
-            fields: drafts.iter().enumerate().map(|(i, d)| ((i + 1).to_string(), d.to_string())).collect(),
+            fields: drafts
+                .iter()
+                .enumerate()
+                .map(|(i, d)| ((i + 1).to_string(), d.to_string()))
+                .collect(),
             slots: Vec::new(),
             numbers: Vec::new(),
             periods: Vec::new(),
@@ -11961,61 +14137,165 @@ mod tests {
             mark: String::new(),
             places: None,
             members: members.iter().map(|m| m.to_string()).collect(),
-            unasked: members.iter().filter(|m| !question.contains(**m)).map(|m| m.to_string()).collect(),
+            unasked: members
+                .iter()
+                .filter(|m| !question.contains(**m))
+                .map(|m| m.to_string())
+                .collect(),
         };
         let answer = |n: &str, t: &str| json!({"step": "text", "text": {n: t}, "names": {}});
         // the composition (q3): parts and places, none of them written by the question
         let parts = ask(
-            &["整体的构成与份额", "{lead1.t}，图中各国中，{name.PL}{name.fossil}占比居首，为{comp_top}", "整体由哪些部分构成？"],
+            &[
+                "整体的构成与份额",
+                "{lead1.t}，图中各国中，{name.PL}{name.fossil}占比居首，为{comp_top}",
+                "整体由哪些部分构成？",
+            ],
             &["化石能源", "可再生能源", "核能", "波兰", "法国"],
             "欧盟各国发电结构",
         );
-        let refused = parts.check(&answer("1", "各国发电结构以化石能源为主要构成")).unwrap_err();
-        assert!(refused.problem.starts_with("field '1': '化石能源' is a place or part the page draws"), "{}", refused.problem);
-        assert!(refused.problem.contains("e.g. '整体的构成与份额'"), "{}", refused.problem);
-        assert_eq!(refused.allowed["members"]["unasked"], json!(["化石能源", "可再生能源", "核能", "波兰", "法国"]));
-        assert!(parts.check(&answer("3", "可再生能源占多大份额？")).is_err(), "any field, not only the title");
-        assert_eq!(typed_member("可再生能源的份额", "整体", &["可再生能源".into(), "能源".into()]), Some("可再生能源".into()), "longest first");
-        for passes in ["各国发电结构的构成", "欧盟各国发电结构", "{lead1.t}，{name.PL}{name.fossil}占比居首，为{comp_top}"] {
+        let refused = parts
+            .check(&answer("1", "各国发电结构以化石能源为主要构成"))
+            .unwrap_err();
+        assert!(
+            refused
+                .problem
+                .starts_with("field '1': '化石能源' is a place or part the page draws"),
+            "{}",
+            refused.problem
+        );
+        assert!(
+            refused.problem.contains("e.g. '整体的构成与份额'"),
+            "{}",
+            refused.problem
+        );
+        assert_eq!(
+            refused.allowed["members"]["unasked"],
+            json!(["化石能源", "可再生能源", "核能", "波兰", "法国"])
+        );
+        assert!(
+            parts.check(&answer("3", "可再生能源占多大份额？")).is_err(),
+            "any field, not only the title"
+        );
+        assert_eq!(
+            typed_member(
+                "可再生能源的份额",
+                "整体",
+                &["可再生能源".into(), "能源".into()]
+            ),
+            Some("可再生能源".into()),
+            "longest first"
+        );
+        for passes in [
+            "各国发电结构的构成",
+            "欧盟各国发电结构",
+            "{lead1.t}，{name.PL}{name.fossil}占比居首，为{comp_top}",
+        ] {
             let n = if passes.contains('{') { "2" } else { "1" };
             assert!(parts.check(&answer(n, passes)).is_ok(), "{passes}");
         }
         // the ranking (round 11 n4, n5, n44): places the question writes may be named, a title names no standing of them
         let places = ask(
-            &["各方的高低排名", "{lead1.t}，{name.ZAF}最高，为{hi}", "读者想知道在同样的口径下谁领先、谁落后，差距有多大。"],
+            &[
+                "各方的高低排名",
+                "{lead1.t}，{name.ZAF}最高，为{hi}",
+                "读者想知道在同样的口径下谁领先、谁落后，差距有多大。",
+            ],
             &["南非", "意大利", "西班牙", "印度", "中国"],
             "南非和南欧国家的青年失业率，印度和中国",
         );
-        for (claim, word) in [("南非的青年失业率明显偏高", "偏高"), ("印度增速领先，中国相对较慢", "领先"), ("南非青年失业率居首", "居首")] {
+        for (claim, word) in [
+            ("南非的青年失业率明显偏高", "偏高"),
+            ("印度增速领先，中国相对较慢", "领先"),
+            ("南非青年失业率居首", "居首"),
+        ] {
             let refused = places.check(&answer("1", claim)).unwrap_err();
-            assert!(refused.problem.starts_with(&format!("field '1': '{word}' says where a place or part the title names stands")), "{}", refused.problem);
-            assert!(refused.problem.contains("e.g. '各方的高低排名'"), "{}", refused.problem);
+            assert!(
+                refused.problem.starts_with(&format!(
+                    "field '1': '{word}' says where a place or part the title names stands"
+                )),
+                "{}",
+                refused.problem
+            );
+            assert!(
+                refused.problem.contains("e.g. '各方的高低排名'"),
+                "{}",
+                refused.problem
+            );
         }
-        for label in ["印度和中国青年失业率的高低排名", "南非与南欧各国青年失业率", "少数地区明显偏高", "各国最低工资的高低排名"] {
+        for label in [
+            "印度和中国青年失业率的高低排名",
+            "南非与南欧各国青年失业率",
+            "少数地区明显偏高",
+            "各国最低工资的高低排名",
+        ] {
             assert!(places.check(&answer("1", label)).is_ok(), "{label}");
         }
         // a field that is no title may name the question's places with any word; the draft's own words stay
-        assert!(places.check(&answer("3", "读者想知道南非是否明显领先，印度处在什么位置。")).is_ok());
-        assert!(places.check(&answer("3", "读者想知道意大利处在什么位置。")).is_err(), "a place the question does not write");
-        assert_eq!(finding_word("南非领先", "谁领先、谁落后"), None, "a word the draft holds");
+        assert!(places
+            .check(&answer(
+                "3",
+                "读者想知道南非是否明显领先，印度处在什么位置。"
+            ))
+            .is_ok());
+        assert!(
+            places
+                .check(&answer("3", "读者想知道意大利处在什么位置。"))
+                .is_err(),
+            "a place the question does not write"
+        );
+        assert_eq!(
+            finding_word("南非领先", "谁领先、谁落后"),
+            None,
+            "a word the draft holds"
+        );
         // no names known (a run that does not pass them): no member check, as before
         let none = ask(&["各方的高低排名"], &[], "南非");
         assert!(none.check(&answer("1", "南非的青年失业率明显偏高")).is_ok());
-        assert!(none.allowed().get("members").is_none() && none.allowed().get("title_findings").is_none());
+        assert!(
+            none.allowed().get("members").is_none()
+                && none.allowed().get("title_findings").is_none()
+        );
         // a change page (round 9 e7, exam h6 and h10): a title says no place's direction; the label of the change passes
-        let change = ask(&["各方的变化", "{lead1.t}"], &["中国", "越南", "墨西哥", "印度"], "中国、越南、墨西哥和印度");
-        for (claim, word) in [("制造业占比：中国下降，越南上升", "上升"), ("墨西哥外资增加，印度减少", "增加"), ("中国排放大增", "大增")] {
+        let change = ask(
+            &["各方的变化", "{lead1.t}"],
+            &["中国", "越南", "墨西哥", "印度"],
+            "中国、越南、墨西哥和印度",
+        );
+        for (claim, word) in [
+            ("制造业占比：中国下降，越南上升", "上升"),
+            ("墨西哥外资增加，印度减少", "增加"),
+            ("中国排放大增", "大增"),
+        ] {
             let refused = change.check(&answer("1", claim)).unwrap_err();
-            assert!(refused.problem.starts_with(&format!("field '1': '{word}' says where")), "{}", refused.problem);
+            assert!(
+                refused
+                    .problem
+                    .starts_with(&format!("field '1': '{word}' says where")),
+                "{}",
+                refused.problem
+            );
         }
-        for label in ["中国与越南制造业占比的变化", "墨西哥和印度吸引外资的变化", "出口增加值的变化"] {
+        for label in [
+            "中国与越南制造业占比的变化",
+            "墨西哥和印度吸引外资的变化",
+            "出口增加值的变化",
+        ] {
             assert!(change.check(&answer("1", label)).is_ok(), "{label}");
         }
         // the words are the knowledge group's list (title-findings-zh.json), read once
-        assert!(["为主", "居前", "偏高", "领先", "下降", "增加"].iter().all(|w| finding_words().iter().any(|f| f == w)));
+        assert!(["为主", "居前", "偏高", "领先", "下降", "增加"]
+            .iter()
+            .all(|w| finding_words().iter().any(|f| f == w)));
         // the rule goes to the model with the names, and every wording a rule suggests passes it
-        let described = places.schema()["properties"]["text"]["description"].as_str().unwrap().to_string();
-        assert!(described.contains(TITLE_FINDING_RULE) && described.contains(MEMBER_RULE), "{described}");
+        let described = places.schema()["properties"]["text"]["description"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(
+            described.contains(TITLE_FINDING_RULE) && described.contains(MEMBER_RULE),
+            "{described}"
+        );
         for suggested in RULE_SUGGESTIONS {
             assert!(places.check(&answer("1", suggested)).is_ok(), "{suggested}");
         }
@@ -12124,7 +14404,11 @@ pub fn parse_prepare_spec(text: &str) -> Result<Vec<PrepareStep>, Stop> {
             .filter(|(k, _)| k.as_str() != "narrowed")
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
-        steps.push(PrepareStep { args, narrowed, window: None });
+        steps.push(PrepareStep {
+            args,
+            narrowed,
+            window: None,
+        });
     }
     Ok(steps)
 }
@@ -12145,11 +14429,15 @@ fn dollar_path(value: &Value, at: &str) -> Option<String> {
             .find_map(|(k, v)| dollar_path(v, &format!("{at}/{k}"))),
         _ => None,
     }
-
 }
 
 /// Every wording the rules above suggest (TYPED_NUMBER_RULE, CHANGE_TITLE_RULE, SCOPE_RULE, TITLE_RULE), and only those, each
 /// of which must pass the text and the names checks it is offered for, the title's on every page kind among them. The rules
 /// go to the model on every question, so each is topic-neutral: no place, measure or topic of any one page.
 #[cfg(test)]
-pub const RULE_SUGGESTIONS: [&str; 4] = ["各方数值的变化", "少数地区升幅居前", "各地的高低分布", "少数地区明显偏高"];
+pub const RULE_SUGGESTIONS: [&str; 4] = [
+    "各方数值的变化",
+    "少数地区升幅居前",
+    "各地的高低分布",
+    "少数地区明显偏高",
+];

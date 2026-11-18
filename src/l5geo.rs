@@ -64,7 +64,8 @@ const PEER_AGGREGATES_ZH: [(&str, &str); 2] = [("欧盟", "EUU"), ("欧洲联盟
 /// own, each with the words a question writes for it (the official Chinese name, it less 地区, and the short forms the owner
 /// reviewed 11-10). Not in the name table zh_names: a word there is read everywhere a place is (scope, groups, the page's
 /// codes); an aggregate is a place only when listed_aggregates finds it listed.
-pub(crate) const REGION_AGGREGATES_ZH: &str = include_str!("../runtime/pi/assets/region-aggregates-zh.json");
+pub(crate) const REGION_AGGREGATES_ZH: &str =
+    include_str!("../runtime/pi/assets/region-aggregates-zh.json");
 /// The marks that join the items of a list of places (撒哈拉以南非洲、南亚、拉丁美洲; 中东和北非、全世界).
 const LIST_JOIN_ZH: &str = "、，,和与及跟";
 /// What may follow a whole item of a list of places: a join, a mark that ends a clause, or 的 before the measure.
@@ -87,7 +88,9 @@ fn region_aggregates() -> &'static [(Vec<char>, String)] {
                 Some((a["code"].as_str()?.to_string(), ws))
             })
             .flat_map(|(code, ws)| {
-                ws.into_iter().filter_map(move |w| Some((w.as_str()?.chars().collect::<Vec<_>>(), code.clone())))
+                ws.into_iter().filter_map(move |w| {
+                    Some((w.as_str()?.chars().collect::<Vec<_>>(), code.clone()))
+                })
             })
             .collect();
         words.sort_by_key(|(w, _)| std::cmp::Reverse(w.len()));
@@ -106,18 +109,26 @@ pub fn listed_aggregates(question_zh: &str) -> Vec<String> {
     let mut codes: Vec<String> = Vec::new();
     let mut i = 0;
     while i < chars.len() {
-        let Some((w, code)) = region_aggregates().iter().find(|(w, _)| chars[i..].starts_with(w)) else {
+        let Some((w, code)) = region_aggregates()
+            .iter()
+            .find(|(w, _)| chars[i..].starts_with(w))
+        else {
             i += 1;
             continue;
         };
-        let start = if i > 0 && chars[i - 1] == '全' { i - 1 } else { i };
+        let start = if i > 0 && chars[i - 1] == '全' {
+            i - 1
+        } else {
+            i
+        };
         let before = start.checked_sub(1).map(|b| &chars[b]);
         let mut end = i + w.len();
         if chars[end..].starts_with(&['地', '区']) {
             end += 2;
         }
         let after = chars.get(end);
-        let whole = (start == 0 || join(before)) && (after.is_none() || after.is_some_and(|c| ITEM_END_ZH.contains(*c)));
+        let whole = (start == 0 || join(before))
+            && (after.is_none() || after.is_some_and(|c| ITEM_END_ZH.contains(*c)));
         if whole && (join(before) || join(after)) {
             if !codes.contains(code) {
                 codes.push(code.clone());
@@ -169,17 +180,25 @@ fn listed_groups(chars: &[char], found: &[(usize, usize, String, String)]) -> Ve
             continue;
         }
         let from = at + len;
-        let Some(open) = (from..chars.len()).find(|&j| LIST_OPEN_ZH.contains(chars[j]) || CLAUSE_ENDS_ZH.contains(chars[j])) else {
+        let Some(open) = (from..chars.len())
+            .find(|&j| LIST_OPEN_ZH.contains(chars[j]) || CLAUSE_ENDS_ZH.contains(chars[j]))
+        else {
             continue;
         };
         if !LIST_OPEN_ZH.contains(chars[open]) {
             continue;
         }
-        let Some(close) = (open + 1..chars.len()).find(|&j| LIST_CLOSE_ZH.contains(chars[j])) else {
+        let Some(close) = (open + 1..chars.len()).find(|&j| LIST_CLOSE_ZH.contains(chars[j]))
+        else {
             continue;
         };
-        let inside: Vec<&(usize, usize, String, String)> = found.iter().filter(|(s, _, _, _)| *s > open && *s < close).collect();
-        let countries = inside.iter().all(|(s, l, _, c)| c != REGION && !c.starts_with(GROUP) && s + l <= close);
+        let inside: Vec<&(usize, usize, String, String)> = found
+            .iter()
+            .filter(|(s, _, _, _)| *s > open && *s < close)
+            .collect();
+        let countries = inside
+            .iter()
+            .all(|(s, l, _, c)| c != REGION && !c.starts_with(GROUP) && s + l <= close);
         let covered = |j: usize| inside.iter().any(|(s, l, _, _)| (*s..s + l).contains(&j));
         let bare = (open + 1..close).all(|j| covered(j) || LIST_JOINS_ZH.contains(chars[j]));
         if inside.len() >= 2 && countries && bare {
@@ -324,7 +343,12 @@ fn count_zh(n: &str) -> Option<usize> {
     if !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()) {
         return n.parse().ok();
     }
-    let digit = |c: char| "零一二三四五六七八九".find(c).map(|i| i / 3).or((c == '两').then_some(2));
+    let digit = |c: char| {
+        "零一二三四五六七八九"
+            .find(c)
+            .map(|i| i / 3)
+            .or((c == '两').then_some(2))
+    };
     let c: Vec<char> = n.chars().collect();
     match c.as_slice() {
         [a] if *a == '十' => Some(10),
@@ -360,11 +384,18 @@ fn place_counts_zh(chars: &[char], masked: &[bool], owns: &[bool]) -> Vec<(Strin
             continue;
         }
         let year = before == Some('年') || rest.starts_with('年');
-        if let (Some(u), false, false) = (unit, before.is_some_and(|b| NOT_COUNT_BEFORE_ZH.contains(b)), year) {
+        if let (Some(u), false, false) = (
+            unit,
+            before.is_some_and(|b| NOT_COUNT_BEFORE_ZH.contains(b)),
+            year,
+        ) {
             let num: String = chars[i..j].iter().collect();
             if let Some(n) = count_zh(&num).filter(|n| *n >= 2) {
                 let from = i.saturating_sub(10);
-                let start = (from..i).rev().find(|&k| !chars[k].is_alphanumeric()).map_or(from, |k| k + 1);
+                let start = (from..i)
+                    .rev()
+                    .find(|&k| !chars[k].is_alphanumeric())
+                    .map_or(from, |k| k + 1);
                 let word: String = chars[start..j + u.chars().count()].iter().collect();
                 out.push((word, n));
             }
@@ -541,7 +572,12 @@ fn wb_harmonised(id: &str) -> Option<String> {
     let base = id.strip_suffix("@2")?;
     let parts: Vec<&str> = base.split('.').collect();
     let at = parts.iter().skip(1).position(|p| *p == "NE")? + 1;
-    let kept: Vec<&str> = parts.iter().enumerate().filter(|(i, _)| *i != at).map(|(_, p)| *p).collect();
+    let kept: Vec<&str> = parts
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i != at)
+        .map(|(_, p)| *p)
+        .collect();
     Some(format!("{}@2", kept.join(".")))
 }
 
@@ -582,7 +618,9 @@ fn presentation_sources() -> &'static [PresentationSource] {
         struct File {
             pairs: Vec<PresentationSource>,
         }
-        serde_json::from_str::<File>(PRESENTATION_SOURCES).expect("presentation-sources.json lists pairs").pairs
+        serde_json::from_str::<File>(PRESENTATION_SOURCES)
+            .expect("presentation-sources.json lists pairs")
+            .pairs
     })
 }
 
@@ -702,7 +740,10 @@ struct PlaceNamesZh {
 /// The registered short names, groups and the basis line's words, read once.
 fn place_names_zh() -> &'static PlaceNamesZh {
     static NAMES: OnceLock<PlaceNamesZh> = OnceLock::new();
-    NAMES.get_or_init(|| serde_json::from_str(PLACE_NAMES_ZH).expect("place-names-zh.json lists aliases, groups and basis words"))
+    NAMES.get_or_init(|| {
+        serde_json::from_str(PLACE_NAMES_ZH)
+            .expect("place-names-zh.json lists aliases, groups and basis words")
+    })
 }
 
 /// What a page drawn for a group the question names counts (Catalog::group_basis), every code as the page's rows write it
@@ -762,9 +803,15 @@ pub(crate) fn question_span(text: &str) -> Option<(i32, Option<i32>)> {
         while i < chars.len() && chars[i].is_ascii_digit() {
             i += 1;
         }
-        let marked = chars.get(i).is_some_and(|c| *c == '年' || RANGE_MARKS.contains(c));
+        let marked = chars
+            .get(i)
+            .is_some_and(|c| *c == '年' || RANGE_MARKS.contains(c));
         if i - start == 4 && marked {
-            let y: i32 = chars[start..i].iter().collect::<String>().parse().unwrap_or(0);
+            let y: i32 = chars[start..i]
+                .iter()
+                .collect::<String>()
+                .parse()
+                .unwrap_or(0);
             if (NAMED_FROM..=2100).contains(&y) {
                 years.push((y, start));
             }
@@ -777,7 +824,10 @@ pub(crate) fn question_span(text: &str) -> Option<(i32, Option<i32>)> {
         && years.iter().any(|&(_, at)| {
             let after = at + 5;
             SINCE_BEFORE.iter().any(|w| text(0..at).ends_with(w))
-                || (chars.get(at + 4) == Some(&'年') && SINCE_AFTER.iter().any(|w| text(after.min(chars.len())..chars.len()).starts_with(w)))
+                || (chars.get(at + 4) == Some(&'年')
+                    && SINCE_AFTER
+                        .iter()
+                        .any(|w| text(after.min(chars.len())..chars.len()).starts_with(w)))
         });
     Some((a, if since { None } else { Some(b) }))
 }
@@ -847,8 +897,18 @@ fn denominator() -> &'static Denominator {
 /// `q` (measure_chars) with each share's whole blanked (`denominator`), so no family word matches inside it.
 fn blank_denominators(q: &mut [char]) {
     let d = denominator();
-    let words = |ws: &[String]| ws.iter().map(|w| measure_chars(w)).filter(|w| !w.is_empty()).collect::<Vec<_>>();
-    let (opens, closes, stops, not_after) = (words(&d.opens), words(&d.closes), words(&d.stops), words(&d.not_after_open));
+    let words = |ws: &[String]| {
+        ws.iter()
+            .map(|w| measure_chars(w))
+            .filter(|w| !w.is_empty())
+            .collect::<Vec<_>>()
+    };
+    let (opens, closes, stops, not_after) = (
+        words(&d.opens),
+        words(&d.closes),
+        words(&d.stops),
+        words(&d.not_after_open),
+    );
     let at = |q: &[char], i: usize, w: &[char]| q.get(i..i + w.len()) == Some(w);
     let mut i = 0;
     while i < q.len() {
@@ -861,7 +921,8 @@ fn blank_denominators(q: &mut [char]) {
             i = from;
             continue;
         }
-        let stop = (from..q.len().min(from + d.max_chars + 1)).find(|&j| stops.iter().any(|w| at(q, j, w)));
+        let stop = (from..q.len().min(from + d.max_chars + 1))
+            .find(|&j| stops.iter().any(|w| at(q, j, w)));
         let end = stop.unwrap_or_else(|| q.len().min(from + d.max_chars + 1));
         let close = (from..end).find(|&j| closes.iter().any(|w| at(q, j, w)));
         // with no closing word the whole runs to the clause's end (占 GDP，谁顺差最大: user 11-07 「全按推荐」⑦, only the
@@ -920,14 +981,20 @@ fn rank_phrases_from(text: &str) -> Result<Vec<RankPhrase>, String> {
         note: String,
         phrases: Vec<RankPhrase>,
     }
-    let file: File = serde_json::from_str(text).map_err(|e| format!("rank-phrases-zh.json: {e}"))?;
+    let file: File =
+        serde_json::from_str(text).map_err(|e| format!("rank-phrases-zh.json: {e}"))?;
     let mut seen = BTreeSet::new();
     for p in &file.phrases {
         let code = !p.by.is_empty()
             && p.by.chars().next().is_some_and(|c| c.is_ascii_uppercase())
-            && p.by.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '.' || c == '_');
+            && p.by
+                .chars()
+                .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '.' || c == '_');
         if !code {
-            return Err(format!("rank-phrases-zh.json: {:?} is not an indicator code", p.by));
+            return Err(format!(
+                "rank-phrases-zh.json: {:?} is not an indicator code",
+                p.by
+            ));
         }
         if !seen.insert(p.by.clone()) {
             return Err(format!("rank-phrases-zh.json: {} has two entries", p.by));
@@ -937,7 +1004,9 @@ fn rank_phrases_from(text: &str) -> Result<Vec<RankPhrase>, String> {
         }
         for w in &p.words {
             if !w.chars().any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c)) {
-                return Err(format!("rank-phrases-zh.json: {w:?} has no Chinese character"));
+                return Err(format!(
+                    "rank-phrases-zh.json: {w:?} has no Chinese character"
+                ));
             }
             if w.matches(COUNT_SLOT).count() > 1 {
                 return Err(format!("rank-phrases-zh.json: {w:?} has two count slots"));
@@ -950,19 +1019,31 @@ fn rank_phrases_from(text: &str) -> Result<Vec<RankPhrase>, String> {
 /// The registered ranking words, read once.
 fn rank_phrases() -> &'static [RankPhrase] {
     static PHRASES: OnceLock<Vec<RankPhrase>> = OnceLock::new();
-    PHRASES.get_or_init(|| rank_phrases_from(RANK_PHRASES).expect("rank-phrases-zh.json is the registered form"))
+    PHRASES.get_or_init(|| {
+        rank_phrases_from(RANK_PHRASES).expect("rank-phrases-zh.json is the registered form")
+    })
 }
 
 /// A count written at `at`: Arabic digits (1 to 999), or one to ninety-nine in Chinese numerals (a digit word alone, ten, ten
 /// and a digit word, a digit word and ten with or without one more digit word), with the characters it takes. None for no
 /// count or zero.
 fn count_at(chars: &[char], at: usize) -> Option<(usize, usize)> {
-    let digits: String = chars[at..].iter().take_while(|c| c.is_ascii_digit()).take(3).collect();
+    let digits: String = chars[at..]
+        .iter()
+        .take_while(|c| c.is_ascii_digit())
+        .take(3)
+        .collect();
     if !digits.is_empty() {
         let n: usize = digits.parse().ok()?;
         return (n > 0).then_some((n, digits.chars().count()));
     }
-    let unit = |c: char| "一二三四五六七八九".chars().position(|d| d == c).map(|i| i + 1).or((c == '两').then_some(2));
+    let unit = |c: char| {
+        "一二三四五六七八九"
+            .chars()
+            .position(|d| d == c)
+            .map(|i| i + 1)
+            .or((c == '两').then_some(2))
+    };
     let ten = |i: usize| chars.get(i) == Some(&'十');
     match (chars.get(at).copied().and_then(unit), ten(at)) {
         // ten, or ten and a digit word (10 to 19)
@@ -997,7 +1078,10 @@ fn word_at(chars: &[char], at: usize, word: &str) -> Option<(Option<usize>, usiz
         return Some((None, before.len()));
     };
     // an ordinal (the second largest economy) names one place in a ranking, never how many the question asks for
-    if (at + before.len()).checked_sub(1).is_some_and(|i| chars[i] == ORDINAL_MARK) {
+    if (at + before.len())
+        .checked_sub(1)
+        .is_some_and(|i| chars[i] == ORDINAL_MARK)
+    {
         return None;
     }
     let (n, took) = count_at(chars, at + before.len())?;
@@ -1012,7 +1096,11 @@ fn word_at(chars: &[char], at: usize, word: &str) -> Option<(Option<usize>, usiz
 fn below_country_asked(question_zh: &str) -> bool {
     let not: Vec<(usize, usize)> = NOT_BELOW_COUNTRY_ZH
         .iter()
-        .flat_map(|n| question_zh.match_indices(*n).map(|(at, m)| (at, at + m.len())))
+        .flat_map(|n| {
+            question_zh
+                .match_indices(*n)
+                .map(|(at, m)| (at, at + m.len()))
+        })
         .collect();
     BELOW_COUNTRY_ZH.iter().any(|w| {
         question_zh
@@ -1038,7 +1126,10 @@ pub fn rank_asked_zh(question_zh: &str) -> Option<RankAsked> {
     let mut found: Option<RankAsked> = None;
     let mut i = 0;
     while i < chars.len() {
-        match words.iter().find_map(|(p, w)| word_at(&chars, i, w).map(|m| (p, m))) {
+        match words
+            .iter()
+            .find_map(|(p, w)| word_at(&chars, i, w).map(|m| (p, m)))
+        {
             Some((p, (n, took))) => {
                 match found.as_ref().map(|f| f.by == p.by) {
                     None => {
@@ -1122,10 +1213,19 @@ fn scope_classes_from(text: &str) -> Result<Vec<ScopeClass>, String> {
         note: String,
         classes: Vec<ScopeClass>,
     }
-    let file: File = serde_json::from_str(text).map_err(|e| format!("scope-refusal-zh.json: {e}"))?;
+    let file: File =
+        serde_json::from_str(text).map_err(|e| format!("scope-refusal-zh.json: {e}"))?;
     for c in &file.classes {
-        if c.words.iter().chain(c.not.iter()).any(|w| w.trim().is_empty()) || c.reason_zh.trim().is_empty() {
-            return Err(format!("scope-refusal-zh.json: class {} holds an empty word or reason", c.id));
+        if c.words
+            .iter()
+            .chain(c.not.iter())
+            .any(|w| w.trim().is_empty())
+            || c.reason_zh.trim().is_empty()
+        {
+            return Err(format!(
+                "scope-refusal-zh.json: class {} holds an empty word or reason",
+                c.id
+            ));
         }
     }
     Ok(file.classes)
@@ -1133,7 +1233,9 @@ fn scope_classes_from(text: &str) -> Result<Vec<ScopeClass>, String> {
 
 fn scope_classes() -> &'static [ScopeClass] {
     static CLASSES: OnceLock<Vec<ScopeClass>> = OnceLock::new();
-    CLASSES.get_or_init(|| scope_classes_from(SCOPE_REFUSAL).expect("scope-refusal-zh.json is the registered form"))
+    CLASSES.get_or_init(|| {
+        scope_classes_from(SCOPE_REFUSAL).expect("scope-refusal-zh.json is the registered form")
+    })
 }
 
 /// The knowledge group's country name table (economy-names.json; its Chinese names), read for the scope check's place words.
@@ -1144,14 +1246,24 @@ const ECONOMY_NAMES_ZH: &str = include_str!("../runtime/pi/assets/economy-names.
 fn place_words_zh() -> &'static [String] {
     static W: OnceLock<Vec<String>> = OnceLock::new();
     W.get_or_init(|| {
-        let v: serde_json::Value = serde_json::from_str(ECONOMY_NAMES_ZH).expect("economy-names.json parses");
-        let mut w: Vec<String> =
-            v["economies"].as_array().into_iter().flatten().filter_map(|e| e["zh"].as_str().map(str::to_string)).collect();
+        let v: serde_json::Value =
+            serde_json::from_str(ECONOMY_NAMES_ZH).expect("economy-names.json parses");
+        let mut w: Vec<String> = v["economies"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|e| e["zh"].as_str().map(str::to_string))
+            .collect();
         let p = place_names_zh();
         w.extend(p.aliases.iter().map(|a| a.name.clone()));
         w.extend(p.groups.iter().flat_map(|g| g.names.iter().cloned()));
         // the region words (欧元区, 北欧) and the group nouns no country holds (发展中国家, read whole, never its 中国)
-        w.extend(REGION_WORDS_ZH.iter().chain(NOT_PLACE_ZH.iter()).map(|x| x.to_string()));
+        w.extend(
+            REGION_WORDS_ZH
+                .iter()
+                .chain(NOT_PLACE_ZH.iter())
+                .map(|x| x.to_string()),
+        );
         w.retain(|x| !x.is_empty());
         w.sort_by(|a, b| b.chars().count().cmp(&a.chars().count()).then(a.cmp(b)));
         w.dedup();
@@ -1172,7 +1284,10 @@ const OBJECT_MARKS_ZH: [char; 4] = ['对', '向', '从', '自'];
 fn measure_after_place(side: &str) -> Option<String> {
     let c: Vec<char> = side.chars().collect();
     let year = c.len() >= 5 && c[..4].iter().all(|d| d.is_ascii_digit()) && c[4] == '年';
-    let place = place_words_zh().iter().find(|w| side.starts_with(w.as_str())).map(|w| w.chars().count());
+    let place = place_words_zh()
+        .iter()
+        .find(|w| side.starts_with(w.as_str()))
+        .map(|w| w.chars().count());
     let end = if year { Some(5) } else { place }?;
     let rest: String = c[end..].iter().collect();
     let mut rest = rest.as_str();
@@ -1186,14 +1301,22 @@ fn measure_after_place(side: &str) -> Option<String> {
 /// words between them allowed), the place not the object of a mark before it (德国对东欧出口总量 does not name 出口总量
 /// of 东欧): then the two sides name one measure twice.
 fn names_measure_after_place(left: &str, m: &str) -> bool {
-    let Some(mut head) = left.strip_suffix(m) else { return false };
+    let Some(mut head) = left.strip_suffix(m) else {
+        return false;
+    };
     while let Some(h) = AFTER_PLACE_ZH.iter().find_map(|p| head.strip_suffix(p)) {
         head = h;
     }
     let c: Vec<char> = head.chars().collect();
     let n = c.len();
-    let year = n >= 5 && c[n - 1] == '年' && c[n - 5..n - 1].iter().all(|d| d.is_ascii_digit()) && (n == 5 || !c[n - 6].is_ascii_digit());
-    let place = place_words_zh().iter().find(|w| head.ends_with(w.as_str())).map(|w| w.chars().count());
+    let year = n >= 5
+        && c[n - 1] == '年'
+        && c[n - 5..n - 1].iter().all(|d| d.is_ascii_digit())
+        && (n == 5 || !c[n - 6].is_ascii_digit());
+    let place = place_words_zh()
+        .iter()
+        .find(|w| head.ends_with(w.as_str()))
+        .map(|w| w.chars().count());
     match (year, place) {
         (true, _) => true,
         (false, Some(k)) => !(n > k && OBJECT_MARKS_ZH.contains(&c[n - k - 1])),
@@ -1212,7 +1335,13 @@ pub fn scope_refused_zh(question_zh: &str, this_year: i32) -> Option<ScopeRefusa
             q = q.replace(n.as_str(), &"\u{3000}".repeat(n.chars().count()));
         }
         let chars: Vec<char> = q.chars().collect();
-        let refuse = |hit: String| Some(ScopeRefusal { class: c.id.clone(), reason_zh: c.reason_zh.clone(), hit });
+        let refuse = |hit: String| {
+            Some(ScopeRefusal {
+                class: c.id.clone(),
+                reason_zh: c.reason_zh.clone(),
+                hit,
+            })
+        };
         // a word starting with 年 (年后) right after a four-digit year before this one asks from that past year on (2008年以后)
         let after_year = |i: usize| {
             let back: Vec<char> = q[..i].chars().rev().take(5).collect();
@@ -1222,16 +1351,26 @@ pub fn scope_refused_zh(question_zh: &str, this_year: i32) -> Option<ScopeRefusa
                 && back.get(4).is_none_or(|d| !d.is_ascii_digit())
                 && year.parse::<i32>().is_ok_and(|y| y < this_year)
         };
-        let hit = |w: &String| q.match_indices(w.as_str()).any(|(i, _)| !(w.starts_with('年') && after_year(i)));
+        let hit = |w: &String| {
+            q.match_indices(w.as_str())
+                .any(|(i, _)| !(w.starts_with('年') && after_year(i)))
+        };
         if let Some(w) = c.words.iter().find(|w| hit(w)) {
             return refuse(w.clone());
         }
         for (a, b, n) in &c.gaps {
             for (i, _) in q.match_indices(a.as_str()) {
-                let after: String = q[i + a.len()..].chars().take(n + b.chars().count()).collect();
+                let after: String = q[i + a.len()..]
+                    .chars()
+                    .take(n + b.chars().count())
+                    .collect();
                 let led = c.leader_gaps.iter().any(|l| {
                     let head: Vec<char> = q[..i].chars().collect();
-                    l.gap == *a && head.iter().enumerate().any(|(k, &ch)| ch == l.lead && head[k + 1..].iter().take(l.within).any(|&m| m == l.mark))
+                    l.gap == *a
+                        && head.iter().enumerate().any(|(k, &ch)| {
+                            ch == l.lead
+                                && head[k + 1..].iter().take(l.within).any(|&m| m == l.mark)
+                        })
                 });
                 if after.contains(b.as_str()) && !led {
                     return refuse(format!("{a}…{b}"));
@@ -1246,7 +1385,9 @@ pub fn scope_refused_zh(question_zh: &str, this_year: i32) -> Option<ScopeRefusa
                     // one measure named twice, by two places or two years (德国失业率和法国失业率, 2000年的失业率和2023年的
                     // 失业率): the same words follow a place or a year on both sides; two quantities that end alike
                     // (GDP增长率和人口增长率) stay two measures (review 11-08)
-                    let same = |l: &str, r: &str, _x: &str| measure_after_place(r).is_some_and(|m| names_measure_after_place(l, &m));
+                    let same = |l: &str, r: &str, _x: &str| {
+                        measure_after_place(r).is_some_and(|m| names_measure_after_place(l, &m))
+                    };
                     let ends = |s: &str| j.suffixes.iter().find(|x| s.ends_with(x.as_str()));
                     let right_ok = (1..=right.chars().count()).any(|k| {
                         let r: String = right.chars().take(k).collect();
@@ -1259,18 +1400,34 @@ pub fn scope_refused_zh(question_zh: &str, this_year: i32) -> Option<ScopeRefusa
             }
         }
         if c.month_numbers {
-            const NUMS: [&str; 12] = ["十二", "十一", "十", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
+            const NUMS: [&str; 12] = [
+                "十二", "十一", "十", "一", "二", "三", "四", "五", "六", "七", "八", "九",
+            ];
             for (k, ch) in chars.iter().enumerate() {
                 if *ch == '月' && k > 0 {
                     let before: String = chars[..k].iter().collect();
-                    let digits: String = before.chars().rev().take_while(|d| d.is_ascii_digit()).collect::<Vec<_>>().into_iter().rev().collect();
-                    let month_digit = digits.parse::<u32>().is_ok_and(|m| (1..=12).contains(&m)) && digits.len() <= 2;
+                    let digits: String = before
+                        .chars()
+                        .rev()
+                        .take_while(|d| d.is_ascii_digit())
+                        .collect::<Vec<_>>()
+                        .into_iter()
+                        .rev()
+                        .collect();
+                    let month_digit = digits.parse::<u32>().is_ok_and(|m| (1..=12).contains(&m))
+                        && digits.len() <= 2;
                     let month_word = NUMS.iter().any(|w| before.ends_with(w));
                     if month_digit || month_word {
-                        return refuse(format!("{}月", if month_digit { digits } else { String::new() }));
+                        return refuse(format!(
+                            "{}月",
+                            if month_digit { digits } else { String::new() }
+                        ));
                     }
                 }
-                if (*ch == 'Q' || *ch == 'q') && chars.get(k + 1).is_some_and(|d| ('1'..='4').contains(d)) && (k == 0 || !chars[k - 1].is_ascii_alphabetic()) {
+                if (*ch == 'Q' || *ch == 'q')
+                    && chars.get(k + 1).is_some_and(|d| ('1'..='4').contains(d))
+                    && (k == 0 || !chars[k - 1].is_ascii_alphabetic())
+                {
                     return refuse(format!("Q{}", chars[k + 1]));
                 }
             }
@@ -1278,8 +1435,13 @@ pub fn scope_refused_zh(question_zh: &str, this_year: i32) -> Option<ScopeRefusa
         if c.future_year {
             for (k, _) in chars.iter().enumerate() {
                 let run: String = chars[k..].iter().take(4).collect();
-                let bounded = (k == 0 || !chars[k - 1].is_ascii_digit()) && chars.get(k + 4).is_none_or(|d| !d.is_ascii_digit());
-                if run.len() == 4 && run.chars().all(|d| d.is_ascii_digit()) && bounded && run.parse::<i32>().is_ok_and(|y| y > this_year) {
+                let bounded = (k == 0 || !chars[k - 1].is_ascii_digit())
+                    && chars.get(k + 4).is_none_or(|d| !d.is_ascii_digit());
+                if run.len() == 4
+                    && run.chars().all(|d| d.is_ascii_digit())
+                    && bounded
+                    && run.parse::<i32>().is_ok_and(|y| y > this_year)
+                {
                     return refuse(format!("{run}年"));
                 }
             }
@@ -1323,7 +1485,10 @@ impl Asked {
                     title_names(&c.title, &mine)
                         && !fams.iter().any(|g| {
                             let theirs = words(g);
-                            g.id != f.id && theirs.len() > mine.len() && mine.iter().all(|w| theirs.contains(w)) && title_names(&c.title, &theirs)
+                            g.id != f.id
+                                && theirs.len() > mine.len()
+                                && mine.iter().all(|w| theirs.contains(w))
+                                && title_names(&c.title, &theirs)
                         })
                 }
                 None => false,
@@ -1334,12 +1499,18 @@ impl Asked {
 
 /// The content words of a family's English search words: lowercase, letters only, four letters or more.
 fn en_words(en: &str) -> Vec<String> {
-    en.split(|c: char| !c.is_ascii_alphabetic()).filter(|w| w.len() >= 4).map(str::to_ascii_lowercase).collect()
+    en.split(|c: char| !c.is_ascii_alphabetic())
+        .filter(|w| w.len() >= 4)
+        .map(str::to_ascii_lowercase)
+        .collect()
 }
 
 /// Whether a catalogue title holds every one of `words` as a word of its own (case aside); no words, no match.
 fn title_names(title: &str, words: &[String]) -> bool {
-    let t: Vec<String> = title.split(|c: char| !c.is_ascii_alphanumeric()).map(str::to_ascii_lowercase).collect();
+    let t: Vec<String> = title
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .map(str::to_ascii_lowercase)
+        .collect();
     !words.is_empty() && words.iter().all(|w| t.iter().any(|x| x == w))
 }
 
@@ -1355,7 +1526,10 @@ pub fn asked_zh(question_zh: &str) -> Vec<Asked> {
 /// since a question about named places says it of a quantity it asks (人口最多的是不是也最富).
 fn question_chars(question_zh: &str) -> Vec<char> {
     let mut q = measure_chars(question_zh);
-    if let Some(phrase) = rank_asked_zh(question_zh).filter(|r| r.n.is_some()).map(|r| measure_chars(&r.phrase)) {
+    if let Some(phrase) = rank_asked_zh(question_zh)
+        .filter(|r| r.n.is_some())
+        .map(|r| measure_chars(&r.phrase))
+    {
         let mut i = 0;
         while !phrase.is_empty() && i + phrase.len() <= q.len() {
             if q[i..i + phrase.len()] == phrase[..] {
@@ -1376,16 +1550,21 @@ pub fn asked_zh_in_order(question_zh: &str) -> Vec<Asked> {
     let q = question_chars(question_zh);
     let mut found = asked_of_chars(q.clone());
     let first = |a: &Asked| -> usize {
-        measure_families().iter().find(|f| f.id == a.id).map_or(usize::MAX, |f| {
-            f.words
-                .iter()
-                .filter_map(|w| {
-                    let w = measure_chars(w);
-                    (!w.is_empty() && w.len() <= q.len()).then(|| q.windows(w.len()).position(|x| x == &w[..])).flatten()
-                })
-                .min()
-                .unwrap_or(usize::MAX)
-        })
+        measure_families()
+            .iter()
+            .find(|f| f.id == a.id)
+            .map_or(usize::MAX, |f| {
+                f.words
+                    .iter()
+                    .filter_map(|w| {
+                        let w = measure_chars(w);
+                        (!w.is_empty() && w.len() <= q.len())
+                            .then(|| q.windows(w.len()).position(|x| x == &w[..]))
+                            .flatten()
+                    })
+                    .min()
+                    .unwrap_or(usize::MAX)
+            })
     };
     found.sort_by_key(|a| first(a));
     found
@@ -1395,7 +1574,10 @@ pub fn asked_zh_in_order(question_zh: &str) -> Vec<Asked> {
 /// a page about its members can also draw; none for a group with no rows of its own (东盟) or no group.
 #[cfg_attr(not(test), allow(dead_code))] // read by the answer plan prototype only (built for tests) until it is on the flow
 pub fn group_aggregate_zh(question_zh: &str) -> Option<&'static str> {
-    PEER_AGGREGATES_ZH.iter().find(|(w, _)| question_zh.contains(w)).map(|(_, code)| *code)
+    PEER_AGGREGATES_ZH
+        .iter()
+        .find(|(w, _)| question_zh.contains(w))
+        .map(|(_, code)| *code)
 }
 
 /// The ids of the quantities the Chinese question asks for once the chosen table is known: its reviewed Chinese name
@@ -1405,7 +1587,9 @@ pub fn group_aggregate_zh(question_zh: &str) -> Option<&'static str> {
 /// whole, the ids are asked_zh's.
 pub fn asked_beside_table(question_zh: &str, table: &str, table_zh: Option<&str>) -> Vec<String> {
     let mut q = question_chars(question_zh);
-    let name = table_zh.map(|zh| measure_chars(zh.split(['（', '(', '—']).next().unwrap_or(zh))).unwrap_or_default();
+    let name = table_zh
+        .map(|zh| measure_chars(zh.split(['（', '(', '—']).next().unwrap_or(zh)))
+        .unwrap_or_default();
     if name.len() >= 2 {
         let mut i = 0;
         while i + name.len() <= q.len() {
@@ -1431,9 +1615,14 @@ fn asked_of_chars(mut q: Vec<char>) -> Vec<Asked> {
     // where each family's not_in phrases stand in the question as asked: a word of the family inside one is not matched
     let original = q.clone();
     let inside = |f: &Family, at: usize, len: usize| {
-        f.not_in.iter().map(|p| measure_chars(p)).filter(|p| p.len() > len).any(|p| {
-            (at.saturating_sub(p.len() - len)..=at).any(|s| s + p.len() <= original.len() && original[s..s + p.len()] == p[..])
-        })
+        f.not_in
+            .iter()
+            .map(|p| measure_chars(p))
+            .filter(|p| p.len() > len)
+            .any(|p| {
+                (at.saturating_sub(p.len() - len)..=at)
+                    .any(|s| s + p.len() <= original.len() && original[s..s + p.len()] == p[..])
+            })
     };
     let mut words: Vec<(Vec<char>, &Family)> = measure_families()
         .iter()
@@ -1605,7 +1794,11 @@ pub fn toks(s: &str) -> Vec<String> {
 /// A search text's tokens without SCOPE_TOKENS; all of them when that would leave none.
 fn quantity_toks(text: &str) -> Vec<String> {
     let all = toks(text);
-    let kept: Vec<String> = all.iter().filter(|w| !SCOPE_TOKENS.split(' ').any(|t| t == w.as_str())).cloned().collect();
+    let kept: Vec<String> = all
+        .iter()
+        .filter(|w| !SCOPE_TOKENS.split(' ').any(|t| t == w.as_str()))
+        .cloned()
+        .collect();
     if kept.is_empty() {
         all
     } else {
@@ -1834,7 +2027,8 @@ impl Catalog {
         for x in list(&raw.wb_countries) {
             let id = field(x, &["id"]);
             if field(x, &["region", "value"]).trim() == "Aggregates"
-                && (PEER_AGGREGATES_ZH.iter().any(|(_, c)| *c == id) || region_aggregates().iter().any(|(_, c)| c == id))
+                && (PEER_AGGREGATES_ZH.iter().any(|(_, c)| *c == id)
+                    || region_aggregates().iter().any(|(_, c)| c == id))
                 && !wb_places.iter().any(|(_, i)| i == id)
             {
                 wb_places.push((id.to_string(), id.to_string()));
@@ -2238,12 +2432,17 @@ impl Catalog {
     /// one place among the others by its code ("欧盟、美国、中国": the EU is compared, not the set its members are drawn from).
     pub fn places(&self, question_zh: &str) -> Vec<Place> {
         let named = self.places_zh(question_zh);
-        let beside_far = named.iter().any(|(_, c)| c != REGION && !self.europe.contains(c));
+        let beside_far = named
+            .iter()
+            .any(|(_, c)| c != REGION && !self.europe.contains(c));
         let mut places: Vec<Place> = Vec::new();
         for (word, c) in named {
             let place = if c != REGION {
                 Place::Country(c)
-            } else if let Some((_, code)) = PEER_AGGREGATES_ZH.iter().find(|(w, _)| beside_far && *w == word) {
+            } else if let Some((_, code)) = PEER_AGGREGATES_ZH
+                .iter()
+                .find(|(w, _)| beside_far && *w == word)
+            {
                 Place::Country(code.to_string())
             } else {
                 Place::Region
@@ -2292,7 +2491,10 @@ impl Catalog {
         (places, at_t1): (&[String], &[String]),
     ) -> Option<GroupBasis> {
         let scanned = self.scan_zh(question_zh);
-        let Some(id) = scanned.iter().find_map(|(_, c)| c.strip_prefix(GROUP).map(str::to_string)) else {
+        let Some(id) = scanned
+            .iter()
+            .find_map(|(_, c)| c.strip_prefix(GROUP).map(str::to_string))
+        else {
             return self.union_basis(&scanned, t1, (places, at_t1));
         };
         let g = self.groups.iter().find(|g| g.id == id)?;
@@ -2311,31 +2513,63 @@ impl Catalog {
         let page_code = |c: &str| self.page_code(c, places);
         let members: Vec<String> = p.members.iter().map(|m| page_code(m)).collect();
         let named = self.named_on_page(&scanned, places);
-        let dropped: Vec<String> = places.iter().filter(|c| !members.contains(c) && !named.contains(c)).cloned().collect();
+        let dropped: Vec<String> = places
+            .iter()
+            .filter(|c| !members.contains(c) && !named.contains(c))
+            .cloned()
+            .collect();
         // a member is fetched when the question's places hold it (the flow fetches places_zh's list) or the page has a row
         // of it; one that is neither was never asked for, and its lack is no fact of the data
-        let asked: Vec<String> = self.places_zh(question_zh).into_iter().map(|(_, c)| page_code(&c)).collect();
-        let unfetched: Vec<String> = members.iter().filter(|m| !places.contains(m) && !asked.contains(m)).cloned().collect();
-        let missing: Vec<String> = members.iter().filter(|m| !at_t1.contains(m) && !unfetched.contains(m)).cloned().collect();
-        let beside = named.iter().any(|c| !members.contains(c) && places.contains(c));
+        let asked: Vec<String> = self
+            .places_zh(question_zh)
+            .into_iter()
+            .map(|(_, c)| page_code(&c))
+            .collect();
+        let unfetched: Vec<String> = members
+            .iter()
+            .filter(|m| !places.contains(m) && !asked.contains(m))
+            .cloned()
+            .collect();
+        let missing: Vec<String> = members
+            .iter()
+            .filter(|m| !at_t1.contains(m) && !unfetched.contains(m))
+            .cloned()
+            .collect();
+        let beside = named
+            .iter()
+            .any(|c| !members.contains(c) && places.contains(c));
         let drawn = !missing.is_empty() || beside;
-        let tail = if missing.is_empty() { "" } else { words.missing.as_str() };
-        let pick = |all: &str, part: &str| if drawn { format!("{part}{tail}") } else { all.to_string() };
+        let tail = if missing.is_empty() {
+            ""
+        } else {
+            words.missing.as_str()
+        };
+        let pick = |all: &str, part: &str| {
+            if drawn {
+                format!("{part}{tail}")
+            } else {
+                all.to_string()
+            }
+        };
         let mut lines = Vec::new();
         // the page's own years, whether or not the question names any: a question asking 2015 to 2025 spans them too
         let changes = t0.is_some_and(|t0| {
-                t0 < t1
-                    && g.periods.iter().any(|q| {
-                        q.from <= t1 && q.to.is_none_or(|to| t0 <= to) && {
-                            let (mut a, mut b) = (q.members.clone(), p.members.clone());
-                            a.sort();
-                            b.sort();
-                            a != b
-                        }
-                    })
-            });
+            t0 < t1
+                && g.periods.iter().any(|q| {
+                    q.from <= t1 && q.to.is_none_or(|to| t0 <= to) && {
+                        let (mut a, mut b) = (q.members.clone(), p.members.clone());
+                        a.sort();
+                        b.sort();
+                        a != b
+                    }
+                })
+        });
         if !p.non_country_members.is_empty() && !changes {
-            let others: Vec<&str> = p.non_country_members.iter().map(|m| m.name.as_str()).collect();
+            let others: Vec<&str> = p
+                .non_country_members
+                .iter()
+                .map(|m| m.name.as_str())
+                .collect();
             let line = pick(&words.countries_only, &words.countries_only_drawn);
             lines.push(line.replace("{others}", &others.join(&words.others_join)));
         } else {
@@ -2361,8 +2595,16 @@ impl Catalog {
     /// An iso2 country as a page with these place codes writes it: the form its rows hold, else iso3 on an iso3 page, else
     /// iso2.
     fn page_code(&self, c: &str, places: &[String]) -> String {
-        let iso3 = || self.wb_places.iter().find(|(i, _)| i == c).map(|(_, id)| id.clone());
-        let estat = ESTAT_ISO.iter().find(|(_, i)| *i == c).map(|(e, _)| e.to_string());
+        let iso3 = || {
+            self.wb_places
+                .iter()
+                .find(|(i, _)| i == c)
+                .map(|(_, id)| id.clone())
+        };
+        let estat = ESTAT_ISO
+            .iter()
+            .find(|(_, i)| *i == c)
+            .map(|(e, _)| e.to_string());
         [Some(c.to_string()), iso3(), estat]
             .into_iter()
             .flatten()
@@ -2378,7 +2620,11 @@ impl Catalog {
     fn named_on_page(&self, scanned: &[(String, String)], places: &[String]) -> Vec<String> {
         let mut named: Vec<String> = Vec::new();
         for (_, c) in scanned {
-            if c != REGION && c != NOT_PLACE && !c.starts_with(GROUP) && !named.contains(&self.page_code(c, places)) {
+            if c != REGION
+                && c != NOT_PLACE
+                && !c.starts_with(GROUP)
+                && !named.contains(&self.page_code(c, places))
+            {
                 named.push(self.page_code(c, places));
             }
         }
@@ -2392,21 +2638,42 @@ impl Catalog {
     /// t1 (`at_t1`), which the page's line names (union_missing: no year's member list is claimed). None, and the page is as
     /// before, when no member lacks a row at t1, when no place is a member, or when a place is neither a member nor named
     /// (an aggregate, an origin country): the page is then no page of the members.
-    fn union_basis(&self, scanned: &[(String, String)], t1: i32, (places, at_t1): (&[String], &[String])) -> Option<GroupBasis> {
-        if !scanned.iter().any(|(n, c)| c == REGION && UNION_WORDS_ZH.contains(&n.as_str())) {
+    fn union_basis(
+        &self,
+        scanned: &[(String, String)],
+        t1: i32,
+        (places, at_t1): (&[String], &[String]),
+    ) -> Option<GroupBasis> {
+        if !scanned
+            .iter()
+            .any(|(n, c)| c == REGION && UNION_WORDS_ZH.contains(&n.as_str()))
+        {
             return None;
         }
-        let iso2 = |e: &str| crate::next_params::ESTAT_ISO.iter().find(|(x, _)| *x == e).map_or(e.to_string(), |(_, i)| i.to_string());
+        let iso2 = |e: &str| {
+            crate::next_params::ESTAT_ISO
+                .iter()
+                .find(|(x, _)| *x == e)
+                .map_or(e.to_string(), |(_, i)| i.to_string())
+        };
         let members: Vec<String> = crate::next_params::EU27
             .iter()
             .map(|e| self.page_code(&iso2(e), places))
             .filter(|m| places.contains(m))
             .collect();
         let named = self.named_on_page(scanned, places);
-        if members.is_empty() || places.iter().any(|p| !members.contains(p) && !named.contains(p)) {
+        if members.is_empty()
+            || places
+                .iter()
+                .any(|p| !members.contains(p) && !named.contains(p))
+        {
             return None;
         }
-        let missing: Vec<String> = members.iter().filter(|m| !at_t1.contains(m)).cloned().collect();
+        let missing: Vec<String> = members
+            .iter()
+            .filter(|m| !at_t1.contains(m))
+            .cloned()
+            .collect();
         if missing.is_empty() {
             return None;
         }
@@ -2450,7 +2717,9 @@ impl Catalog {
     /// that overlaps it in year order, each member once; the latest list when no span is given; none when the group has no
     /// list in the span.
     fn group_members_over(&self, id: &str, span: Option<(i32, Option<i32>)>) -> Vec<String> {
-        let Some(g) = self.groups.iter().find(|g| g.id == id) else { return Vec::new() };
+        let Some(g) = self.groups.iter().find(|g| g.id == id) else {
+            return Vec::new();
+        };
         let periods: Vec<&GroupPeriod> = match span {
             None => g.periods.last().into_iter().collect(),
             Some((from, to)) => g
@@ -2574,12 +2843,15 @@ impl Catalog {
         let mut owns = vec![false; chars.len()];
         for (name, code) in self.scan_zh(question_zh) {
             let n: Vec<char> = name.chars().collect();
-            let has_members = code.starts_with(GROUP) || (code == REGION && MEMBERED_REGION_WORDS_ZH.contains(&name.as_str()));
+            let has_members = code.starts_with(GROUP)
+                || (code == REGION && MEMBERED_REGION_WORDS_ZH.contains(&name.as_str()));
             let mut k = 0;
             while k + n.len() <= chars.len() {
                 if chars[k..k + n.len()] == n[..] {
                     masked[k..k + n.len()].iter_mut().for_each(|m| *m = true);
-                    owns[k..k + n.len()].iter_mut().for_each(|m| *m = has_members);
+                    owns[k..k + n.len()]
+                        .iter_mut()
+                        .for_each(|m| *m = has_members);
                     k += n.len();
                 } else {
                     k += 1;
@@ -2587,11 +2859,19 @@ impl Catalog {
             }
         }
         // places() holds the listed aggregates already (review 11-14: they were counted twice, so 三个地区 with two read passed)
-        let read = self.places(question_zh).iter().filter(|p| matches!(p, Place::Country(_))).count();
+        let read = self
+            .places(question_zh)
+            .iter()
+            .filter(|p| matches!(p, Place::Country(_)))
+            .count();
         place_counts_zh(&chars, &masked, &owns)
             .into_iter()
             .find(|(_, n)| *n > read)
-            .map(|(word_zh, asked)| Unread { word_zh, asked, read })
+            .map(|(word_zh, asked)| Unread {
+                word_zh,
+                asked,
+                read,
+            })
     }
 
     /// English place names in the search texts that the Chinese question does not name, each once, in text order.
@@ -2648,7 +2928,11 @@ impl Catalog {
                     .any(|c| d.geo.contains(c) || d.places.contains(c))
             }),
             Source::Wb => {
-                self.place_wb.contains(p) || self.place_iso.get(p).is_some_and(|c| self.wb_iso.contains(c))
+                self.place_wb.contains(p)
+                    || self
+                        .place_iso
+                        .get(p)
+                        .is_some_and(|c| self.wb_iso.contains(c))
             }
         });
         let europe_only =
@@ -2790,7 +3074,7 @@ impl Catalog {
             unread,
             candidates,
             twins_refused: Vec::new(),
-                unproven: Vec::new(),
+            unproven: Vec::new(),
             asked,
         }
     }
@@ -2803,24 +3087,39 @@ impl Catalog {
     /// not this one). It takes the place of the last table of the first TOP that is
     /// not the only one there holding another asked quantity; the order is otherwise kept. With no asked quantity, or none
     /// to lift, `ranked` comes back unchanged.
-    fn lift_asked(&self, ranked: Vec<Candidate>, asked: &[Asked], scope: Scope, far: &[String]) -> Vec<Candidate> {
+    fn lift_asked(
+        &self,
+        ranked: Vec<Candidate>,
+        asked: &[Asked],
+        scope: Scope,
+        far: &[String],
+    ) -> Vec<Candidate> {
         if asked.is_empty() {
             return ranked;
         }
         let mut lifted: Vec<Candidate> = Vec::new();
         for a in asked {
-            let placed = ranked.iter().take(TOP).chain(lifted.iter()).any(|c| a.holds_candidate(c));
+            let placed = ranked
+                .iter()
+                .take(TOP)
+                .chain(lifted.iter())
+                .any(|c| a.holds_candidate(c));
             if placed {
                 continue;
             }
             // a table registered under the family's own ids first (nama_10_gdp), then one whose title names it (namq_10_gdp,
             // the quarterly one, for an annual question on the smoke run's GDP question)
-            let found = ranked.iter().find(|c| a.holds(&c.id)).or_else(|| ranked.iter().find(|c| a.holds_candidate(c))).cloned().or_else(|| {
-                let family = measure_families().iter().find(|f| f.id == a.id)?;
-                self.rank_reaching(&[family.en.clone()], scope, far)
-                    .into_iter()
-                    .find(|c| a.holds_candidate(c))
-            });
+            let found = ranked
+                .iter()
+                .find(|c| a.holds(&c.id))
+                .or_else(|| ranked.iter().find(|c| a.holds_candidate(c)))
+                .cloned()
+                .or_else(|| {
+                    let family = measure_families().iter().find(|f| f.id == a.id)?;
+                    self.rank_reaching(&[family.en.clone()], scope, far)
+                        .into_iter()
+                        .find(|c| a.holds_candidate(c))
+                });
             if let Some(c) = found {
                 lifted.push(c);
             }
@@ -2830,7 +3129,12 @@ impl Catalog {
             return ranked;
         }
         let is_lifted = |c: &Candidate| lifted.iter().any(|l| l.id == c.id);
-        let mut head: Vec<Candidate> = ranked.iter().filter(|c| !is_lifted(c)).take(TOP).cloned().collect();
+        let mut head: Vec<Candidate> = ranked
+            .iter()
+            .filter(|c| !is_lifted(c))
+            .take(TOP)
+            .cloned()
+            .collect();
         while head.len() + lifted.len() > TOP {
             // The last table that is not the only one among head and lifted holding an asked quantity.
             let sole = |k: usize| {
@@ -2869,25 +3173,40 @@ impl Catalog {
     /// code of the table holds (World Bank: its places, by iso2 or id; Eurostat: a code of any dimension, by the code, its
     /// Eurostat form (EL, UK, EU27_2020 for EUU) or a country member (partner CN_X_HK is CN)), or an annual Eurostat table
     /// whose last year is before `latest_year`, a year before this one. A table the catalogue lists no metadata of proves nothing either way: None.
-    pub fn unproven(&self, id: &str, asked: &[String], (first_year, latest_year): (Option<i32>, Option<i32>)) -> Option<String> {
+    pub fn unproven(
+        &self,
+        id: &str,
+        asked: &[String],
+        (first_year, latest_year): (Option<i32>, Option<i32>),
+    ) -> Option<String> {
         let meta = self.table(id)?;
         let estat = |c: &str| -> String {
             if c == "EUU" {
                 return crate::next_params::EU_AGGREGATE.to_string();
             }
-            ESTAT_ISO.iter().find(|(_, i)| *i == c).map_or(c.to_string(), |(e, _)| e.to_string())
+            ESTAT_ISO
+                .iter()
+                .find(|(_, i)| *i == c)
+                .map_or(c.to_string(), |(e, _)| e.to_string())
         };
         let held = |c: &str| {
             if meta.worldbank {
                 return meta.places.iter().any(|(i, w)| i == c || w == c);
             }
             let e = estat(c);
-            meta.dims.iter().any(|(_, codes)| codes.iter().any(|(k, _)| k == c || *k == e))
-                || meta.place_members.iter().any(|(_, m)| m.iter().any(|(_, iso)| iso == c))
+            meta.dims
+                .iter()
+                .any(|(_, codes)| codes.iter().any(|(k, _)| k == c || *k == e))
+                || meta
+                    .place_members
+                    .iter()
+                    .any(|(_, m)| m.iter().any(|(_, iso)| iso == c))
         };
         let missing: Vec<&String> = asked.iter().filter(|c| !held(c)).collect();
         if !missing.is_empty() {
-            return Some(format!("{id} holds no row of {missing:?}, places the question names"));
+            return Some(format!(
+                "{id} holds no row of {missing:?}, places the question names"
+            ));
         }
         let annual = meta.freqs.iter().find(|(f, _, _)| f == "A");
         let first = annual.and_then(|(_, first, _)| first.get(..4)?.parse::<i32>().ok());
@@ -2901,9 +3220,9 @@ impl Catalog {
         // own last year, as the pages of rounds 8-14 were (s6, h28); only a past year the question names is held to
         let this_year = chrono::Datelike::year(&chrono::Local::now());
         match (latest_year, last) {
-            (Some(y), Some(end)) if y < this_year && end < y => {
-                Some(format!("{id}'s annual series ends at {end}, before {y}, the year the question names"))
-            }
+            (Some(y), Some(end)) if y < this_year && end < y => Some(format!(
+                "{id}'s annual series ends at {end}, before {y}, the year the question names"
+            )),
             _ => None,
         }
     }
@@ -2922,24 +3241,55 @@ impl Catalog {
             let id = id.split('@').next().unwrap_or(id);
             f.tables.iter().any(|p| id.starts_with(p.as_str()))
         };
-        self.rank(question_zh, std::slice::from_ref(&f.en)).candidates.into_iter().find(|c| held(&c.id))
+        self.rank(question_zh, std::slice::from_ref(&f.en))
+            .candidates
+            .into_iter()
+            .find(|c| held(&c.id))
     }
 
-    pub fn top5(&self, question_zh: &str, texts: &[String], months: bool, latest_year: Option<i32>, first_year: Option<i32>) -> Ranking {
+    pub fn top5(
+        &self,
+        question_zh: &str,
+        texts: &[String],
+        months: bool,
+        latest_year: Option<i32>,
+        first_year: Option<i32>,
+    ) -> Ranking {
         let mut r = self.rank(question_zh, texts);
         let ranked = std::mem::take(&mut r.candidates);
-        let (candidates, refused) = self.twin_swap(ranked.clone(), monthly_twins(), months, latest_year);
+        let (candidates, refused) =
+            self.twin_swap(ranked.clone(), monthly_twins(), months, latest_year);
         r.twins_refused = refused;
         // only fewer: when one listed table can prove an answer over the places the question reads and the past year it
         // names, a table that cannot is not offered, none listed in its place (design 2a). When none can, all stay as
         // before: the page answers what a table holds and says which named place has no data (answered_places; review
         // 11-14: a Eurostat table missing a named Switzerland beside EU members is still the best there is)
-        let asked: Vec<String> =
-            self.places(question_zh).into_iter().filter_map(|p| if let Place::Country(c) = p { Some(c) } else { None }).collect();
-        r.candidates = self.source_swap(candidates, &ranked, |id| self.unproven(id, &asked, (first_year, latest_year)).is_none());
-        let verdicts: Vec<Option<String>> = r.candidates.iter().map(|c| self.unproven(&c.id, &asked, (first_year, latest_year))).collect();
+        let asked: Vec<String> = self
+            .places(question_zh)
+            .into_iter()
+            .filter_map(|p| {
+                if let Place::Country(c) = p {
+                    Some(c)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        r.candidates = self.source_swap(candidates, &ranked, |id| {
+            self.unproven(id, &asked, (first_year, latest_year))
+                .is_none()
+        });
+        let verdicts: Vec<Option<String>> = r
+            .candidates
+            .iter()
+            .map(|c| self.unproven(&c.id, &asked, (first_year, latest_year)))
+            .collect();
         // a table the catalogue lists no metadata of is unknown: kept, but it proves nothing for the others to be dropped by
-        let proves = r.candidates.iter().zip(&verdicts).any(|(c, why)| why.is_none() && self.table(&c.id).is_some());
+        let proves = r
+            .candidates
+            .iter()
+            .zip(&verdicts)
+            .any(|(c, why)| why.is_none() && self.table(&c.id).is_some());
         if proves {
             let (mut kept, mut out) = (Vec::new(), Vec::new());
             for (c, why) in std::mem::take(&mut r.candidates).into_iter().zip(verdicts) {
@@ -3039,7 +3389,10 @@ impl Catalog {
             match out.iter_mut().find(|o| o.id == a.id) {
                 Some(o) => {
                     if o.twin_of.is_none() {
-                        o.twin_of = twin_of(format!("{held}; it is ranked above {}, which is not offered", c.id));
+                        o.twin_of = twin_of(format!(
+                            "{held}; it is ranked above {}, which is not offered",
+                            c.id
+                        ));
                     }
                 }
                 None => out.push(Candidate {
@@ -3065,19 +3418,30 @@ impl Catalog {
     /// (round 15's table-pick class: the rubric names the dataset for 7 of the 8 presentation tables picked). No swap when the
     /// table it stands for is already offered, or when the candidate proves the answer (`proves`: the asked places and
     /// years, as `top5` drops by) and the table does not; a twin_swap pair is left as it is.
-    fn source_swap(&self, five: Vec<Candidate>, ranked: &[Candidate], proves: impl Fn(&str) -> bool) -> Vec<Candidate> {
+    fn source_swap(
+        &self,
+        five: Vec<Candidate>,
+        ranked: &[Candidate],
+        proves: impl Fn(&str) -> bool,
+    ) -> Vec<Candidate> {
         let mut out: Vec<Candidate> = Vec::with_capacity(five.len());
         let offered: Vec<String> = five.iter().map(|c| c.id.clone()).collect();
         for c in five {
             // a table kept to a presentation table's codes never displaces the whole table offered anywhere in the five
-            let series = Some(&c).filter(|c| c.twin_of.is_none()).and_then(|c| self.stands_for(&c.id)).and_then(|s| {
-                ranked
-                    .iter()
-                    .find(|x| x.id == s.to)
-                    .filter(|x| !out.iter().any(|o| o.id == x.id) && (s.keep.is_empty() || !offered.contains(&x.id)))
-                    .filter(|x| proves(&x.id) || !proves(&c.id))
-                    .map(|x| (x, s))
-            });
+            let series = Some(&c)
+                .filter(|c| c.twin_of.is_none())
+                .and_then(|c| self.stands_for(&c.id))
+                .and_then(|s| {
+                    ranked
+                        .iter()
+                        .find(|x| x.id == s.to)
+                        .filter(|x| {
+                            !out.iter().any(|o| o.id == x.id)
+                                && (s.keep.is_empty() || !offered.contains(&x.id))
+                        })
+                        .filter(|x| proves(&x.id) || !proves(&c.id))
+                        .map(|x| (x, s))
+                });
             let Some((x, s)) = series else {
                 out.push(c);
                 continue;
@@ -3109,7 +3473,10 @@ impl Catalog {
             if out.len() >= TOP {
                 break;
             }
-            if !out.iter().any(|o| o.id == x.id || o.twin_of.as_ref().is_some_and(|t| t.asked == x.id)) {
+            if !out
+                .iter()
+                .any(|o| o.id == x.id || o.twin_of.as_ref().is_some_and(|t| t.asked == x.id))
+            {
                 out.push(x.clone());
             }
         }
@@ -3122,8 +3489,15 @@ impl Catalog {
     /// swap).
     fn stands_for(&self, id: &str) -> Option<StandsFor> {
         if let Some(h) = wb_harmonised(id) {
-            let why = format!("{id} is a national estimate; {h} is the same series harmonised across countries");
-            return Some(StandsFor { to: h, found: "catalogue", why, keep: Vec::new() });
+            let why = format!(
+                "{id} is a national estimate; {h} is the same series harmonised across countries"
+            );
+            return Some(StandsFor {
+                to: h,
+                found: "catalogue",
+                why,
+                keep: Vec::new(),
+            });
         }
         let p = presentation_sources().iter().find(|p| p.slim == id)?;
         let keep = self.kept_codes(id, &p.source, &p.codes)?;
@@ -3131,7 +3505,12 @@ impl Catalog {
             "{id} is a presentation table cut from the dataset {} (presentation-sources.json: {} of its cells read again from the dataset, all equal); the dataset is offered at the table's codes",
             p.source, p.cells
         );
-        Some(StandsFor { to: p.source.clone(), found: "data", why, keep })
+        Some(StandsFor {
+            to: p.source.clone(),
+            found: "data",
+            why,
+            keep,
+        })
     }
 
     /// Per dimension of the dataset `source` but geo whose codes the presentation table `slim` holds fewer of, the codes it
@@ -3139,18 +3518,38 @@ impl Catalog {
     /// when the catalogue lists either table's metadata not, the two have other dimensions, or a dimension of the dataset
     /// holds none of the table's codes, or the two are fetched at another frequency (a quarterly table's dataset that also
     /// holds years is fetched by year). `renamed`: the pair's map of a table code to the dataset's (PresentationSource).
-    fn kept_codes(&self, slim: &str, source: &str, renamed: &BTreeMap<String, BTreeMap<String, String>>) -> Option<Vec<(String, Vec<String>)>> {
+    fn kept_codes(
+        &self,
+        slim: &str,
+        source: &str,
+        renamed: &BTreeMap<String, BTreeMap<String, String>>,
+    ) -> Option<Vec<(String, Vec<String>)>> {
         let (s, d) = (self.table(slim)?, self.table(source)?);
-        let names = |t: &TableMeta| t.dims.iter().map(|(n, _)| n.clone()).collect::<BTreeSet<String>>();
+        let names = |t: &TableMeta| {
+            t.dims
+                .iter()
+                .map(|(n, _)| n.clone())
+                .collect::<BTreeSet<String>>()
+        };
         if names(&s) != names(&d) || s.freq().ok() != d.freq().ok() {
             return None;
         }
         let mut keep = Vec::new();
         for (dim, codes) in d.dims.iter().filter(|(n, _)| n != "geo") {
             let map = renamed.get(dim);
-            let held: Vec<&String> =
-                s.dims.iter().find(|(n, _)| n == dim)?.1.iter().map(|(c, _)| map.and_then(|m| m.get(c)).unwrap_or(c)).collect();
-            let kept: Vec<String> = codes.iter().filter(|(c, _)| held.contains(&c)).map(|(c, _)| c.clone()).collect();
+            let held: Vec<&String> = s
+                .dims
+                .iter()
+                .find(|(n, _)| n == dim)?
+                .1
+                .iter()
+                .map(|(c, _)| map.and_then(|m| m.get(c)).unwrap_or(c))
+                .collect();
+            let kept: Vec<String> = codes
+                .iter()
+                .filter(|(c, _)| held.contains(&c))
+                .map(|(c, _)| c.clone())
+                .collect();
             if kept.is_empty() {
                 return None;
             }
@@ -3181,10 +3580,20 @@ impl Catalog {
             ));
         };
         let (m_end, a_end) = match (m.freqs.as_slice(), a.freqs.as_slice()) {
-            ([(mf, _, m_end)], [(af, _, a_end)]) if mf == "M" && af == "A" => (m_end.clone(), a_end.clone()),
+            ([(mf, _, m_end)], [(af, _, a_end)]) if mf == "M" && af == "A" => {
+                (m_end.clone(), a_end.clone())
+            }
             ([(mf, _, _)], _) if mf == "M" => {
-                let what = if freqs(&a).contains(&"A") { "more than annual data" } else { "no annual data" };
-                return Err(format!("{} holds {what}: its time codes hold [{}]", a.id, freqs(&a).join(", ")));
+                let what = if freqs(&a).contains(&"A") {
+                    "more than annual data"
+                } else {
+                    "no annual data"
+                };
+                return Err(format!(
+                    "{} holds {what}: its time codes hold [{}]",
+                    a.id,
+                    freqs(&a).join(", ")
+                ));
             }
             _ => {
                 return Err(format!(
@@ -3253,12 +3662,23 @@ mod tests {
             listed_aggregates("撒哈拉以南非洲、南亚、拉丁美洲，能喝上安全饮用水的人口比例 2000 年到 2022 年各涨了多少？"),
             ["SSF", "SAS", "LCN"]
         );
-        assert_eq!(listed_aggregates("中东和北非、撒哈拉以南非洲、全世界的婴儿死亡率，2000 年到 2023 年各降了多少？"), ["MEA", "SSF", "WLD"]);
+        assert_eq!(
+            listed_aggregates(
+                "中东和北非、撒哈拉以南非洲、全世界的婴儿死亡率，2000 年到 2023 年各降了多少？"
+            ),
+            ["MEA", "SSF", "WLD"]
+        );
         // beside a country, and the official name less nothing
-        assert_eq!(listed_aggregates("中国和东亚与太平洋地区的人均 GDP"), ["EAS"]);
+        assert_eq!(
+            listed_aggregates("中国和东亚与太平洋地区的人均 GDP"),
+            ["EAS"]
+        );
         assert_eq!(listed_aggregates("印度、南亚的识字率"), ["SAS"]);
         // the short forms the owner picked on 2026-11-14: 拉美 reads as Latin America & Caribbean, 中东北非 (with or without 地区) as MEA
-        assert_eq!(listed_aggregates("拉美和中东北非地区的人均寿命 1990 年以来怎么变"), ["LCN", "MEA"]);
+        assert_eq!(
+            listed_aggregates("拉美和中东北非地区的人均寿命 1990 年以来怎么变"),
+            ["LCN", "MEA"]
+        );
         assert_eq!(listed_aggregates("拉美、南亚的识字率"), ["LCN", "SAS"]);
         assert_eq!(listed_aggregates("印度和南亚地区的识字率"), ["SAS"]);
         assert!(listed_aggregates("南亚地区各国的识字率").is_empty());
@@ -3267,12 +3687,20 @@ mod tests {
         assert!(listed_aggregates("加州的 GDP 能排进世界前几？").is_empty());
         // a near word reads as its nearest aggregate (owner 11-13: 东亚 is not EAS, the page says so), listed as a word is
         assert_eq!(listed_aggregates("东南亚、东亚的出口"), ["EAS"]);
-        assert_eq!(listed_aggregates("撒哈拉以南非洲、南亚、东亚，2000 年到 2023 年能用上电的人口比例各怎么变？"), ["SSF", "SAS", "EAS"]);
+        assert_eq!(
+            listed_aggregates(
+                "撒哈拉以南非洲、南亚、东亚，2000 年到 2023 年能用上电的人口比例各怎么变？"
+            ),
+            ["SSF", "SAS", "EAS"]
+        );
         assert!(listed_aggregates("东亚国家的出口").is_empty());
         assert!(listed_aggregates("撒哈拉以南非洲哪国的识字率最高？").is_empty());
         assert!(listed_aggregates("撒哈拉以南非洲各国的识字率").is_empty());
         // each once, the longest word first (北美洲 not 北美 + 洲)
-        assert_eq!(listed_aggregates("北美洲、世界、全球的碳排放"), ["NAC", "WLD"]);
+        assert_eq!(
+            listed_aggregates("北美洲、世界、全球的碳排放"),
+            ["NAC", "WLD"]
+        );
     }
 
     #[test]
@@ -3281,8 +3709,14 @@ mod tests {
         for code in ["SSF", "SAS", "EAS", "NAC", "WLD", "LCN", "MEA"] {
             assert!(words.iter().any(|(_, c)| c == code), "{code}");
         }
-        assert!(!words.iter().any(|(_, c)| c == "ECS"), "Europe & Central Asia clashes with 欧洲");
-        assert!(words.windows(2).all(|p| p[0].0.len() >= p[1].0.len()), "longest first");
+        assert!(
+            !words.iter().any(|(_, c)| c == "ECS"),
+            "Europe & Central Asia clashes with 欧洲"
+        );
+        assert!(
+            words.windows(2).all(|p| p[0].0.len() >= p[1].0.len()),
+            "longest first"
+        );
     }
     use serde_json::json;
 
@@ -3361,8 +3795,8 @@ mod tests {
     pub(super) fn world() -> Catalog {
         let mut raw = small_raw();
         let more = [
-            "RU", "ID", "MY", "PH", "SG", "TH", "BN", "VN", "LA", "MM", "KH", "TL", "GB", "IT", "EG", "ET", "IR", "AE",
-            "AR", "SA", "TR",
+            "RU", "ID", "MY", "PH", "SG", "TH", "BN", "VN", "LA", "MM", "KH", "TL", "GB", "IT",
+            "EG", "ET", "IR", "AE", "AR", "SA", "TR",
         ];
         let list = raw.wb_countries[1].as_array_mut().unwrap();
         for c in more {
@@ -3382,13 +3816,18 @@ mod tests {
         );
         let c = Catalog::from_raw(&raw);
         for t in ["energy use Laos", "energy use Lao PDR"] {
-            assert!(ids(&c.rank_in(&texts(&[t]), Scope::Beyond)).contains(&"EG.USE@2"), "{t}");
+            assert!(
+                ids(&c.rank_in(&texts(&[t]), Scope::Beyond)).contains(&"EG.USE@2"),
+                "{t}"
+            );
         }
         // Without Laos among the World Bank's economies the Eurostat name still drops it, as before.
         let mut raw = small_raw();
         raw.cl[0].1.push_str("LA\tLaos\r\n");
         let c = Catalog::from_raw(&raw);
-        assert!(!ids(&c.rank_in(&texts(&["energy use Laos"]), Scope::Beyond)).contains(&"EG.USE@2"));
+        assert!(
+            !ids(&c.rank_in(&texts(&["energy use Laos"]), Scope::Beyond)).contains(&"EG.USE@2")
+        );
     }
 
     /// A World Bank indicator's name is its table's one member label, scored as a Eurostat member is, beyond Europe only:
@@ -3420,7 +3859,10 @@ mod tests {
     #[test]
     fn a_short_country_name_reads_as_its_country() {
         let c = world();
-        assert_eq!(countries(&c, "中国、日本、韩国人口老龄化的速度"), ["CN", "JP", "KR"]);
+        assert_eq!(
+            countries(&c, "中国、日本、韩国人口老龄化的速度"),
+            ["CN", "JP", "KR"]
+        );
         assert_eq!(countries(&c, "2020年韩国的人均GDP"), ["KR"]);
         assert_eq!(countries(&c, "俄罗斯和伊朗的石油出口"), ["RU", "IR"]);
         assert_eq!(countries(&c, "埃及人口"), ["EG"]);
@@ -3439,7 +3881,10 @@ mod tests {
             json!({"id": "EUU", "iso2Code": "EU", "name": "European Union", "region": {"value": "Aggregates"}}),
         );
         let c = Catalog::from_raw(&raw);
-        assert_eq!(countries(&c, "欧盟、美国、中国 2022 年研发支出占 GDP 的比重谁最高？"), ["EUU", "US", "CN"]);
+        assert_eq!(
+            countries(&c, "欧盟、美国、中国 2022 年研发支出占 GDP 的比重谁最高？"),
+            ["EUU", "US", "CN"]
+        );
         assert_eq!(countries(&c, "欧洲联盟和欧盟与日本的人口"), ["EUU", "JP"]);
         assert_eq!(countries(&c, "欧盟各国研发投入占GDP的比例"), [REGION]);
         assert_eq!(countries(&c, "欧盟和德国的失业率"), [REGION, "DE"]);
@@ -3458,7 +3903,11 @@ mod tests {
     #[test]
     fn a_listed_region_aggregate_is_held_by_a_world_bank_table() {
         let mut raw = small_raw();
-        for (id, name) in [("SSF", "Sub-Saharan Africa"), ("SAS", "South Asia"), ("SST", "Small states")] {
+        for (id, name) in [
+            ("SSF", "Sub-Saharan Africa"),
+            ("SAS", "South Asia"),
+            ("SST", "Small states"),
+        ] {
             raw.wb_countries[1].as_array_mut().unwrap().push(json!({"id": id, "iso2Code": "ZZ", "name": name, "region": {"value": "Aggregates"}}));
         }
         let c = Catalog::from_raw(&raw);
@@ -3484,14 +3933,32 @@ mod tests {
         assert_eq!(countries(&c, q), ["RU", "IN", "CN", "ZA"]);
         // a name the list does not know is another word in the brackets: the group stays
         let brics24 = ["BR", "RU", "IN", "CN", "ZA", "EG", "ET", "IR", "AE"];
-        assert_eq!(countries(&c, "金砖最早的成员（巴西、印度）2024 年")[..9], brics24);
+        assert_eq!(
+            countries(&c, "金砖最早的成员（巴西、印度）2024 年")[..9],
+            brics24
+        );
         let five: Vec<String> = ["RU", "IN", "CN", "ZA"].map(String::from).to_vec();
         assert_eq!(c.group_basis(q, (None, 2024), (&five, &five)), None);
-        assert_eq!(countries(&c, "七国集团(美国, 日本 和 德国)的GDP"), ["US", "JP", "DE"]);
-        assert_eq!(countries(&c, "2024年金砖国家（不含中国）人口")[..9], brics24);
-        assert_eq!(countries(&c, "2024年金砖国家（印度、中国等）人口")[..9], brics24);
-        assert_eq!(countries(&c, "2024年金砖国家（印度）人口"), [&brics24[..], &["IN"]].concat());
-        assert_eq!(countries(&c, "2024年金砖国家人口。（印度、中国）")[..9], brics24);
+        assert_eq!(
+            countries(&c, "七国集团(美国, 日本 和 德国)的GDP"),
+            ["US", "JP", "DE"]
+        );
+        assert_eq!(
+            countries(&c, "2024年金砖国家（不含中国）人口")[..9],
+            brics24
+        );
+        assert_eq!(
+            countries(&c, "2024年金砖国家（印度、中国等）人口")[..9],
+            brics24
+        );
+        assert_eq!(
+            countries(&c, "2024年金砖国家（印度）人口"),
+            [&brics24[..], &["IN"]].concat()
+        );
+        assert_eq!(
+            countries(&c, "2024年金砖国家人口。（印度、中国）")[..9],
+            brics24
+        );
     }
 
     #[test]
@@ -3499,15 +3966,29 @@ mod tests {
         let c = world();
         let brics = |q: &str| countries(&c, q);
         assert_eq!(brics("2010年金砖国家的GDP"), ["BR", "RU", "IN", "CN"]);
-        assert_eq!(brics("金砖国家2011年GDP增长率"), ["BR", "RU", "IN", "CN", "ZA"]);
+        assert_eq!(
+            brics("金砖国家2011年GDP增长率"),
+            ["BR", "RU", "IN", "CN", "ZA"]
+        );
         assert_eq!(brics("2023年金砖的人口"), ["BR", "RU", "IN", "CN", "ZA"]);
-        assert_eq!(brics("2024年金砖国家人口"), ["BR", "RU", "IN", "CN", "ZA", "EG", "ET", "IR", "AE"]);
+        assert_eq!(
+            brics("2024年金砖国家人口"),
+            ["BR", "RU", "IN", "CN", "ZA", "EG", "ET", "IR", "AE"]
+        );
         let latest = ["BR", "RU", "IN", "CN", "ZA", "EG", "ET", "IR", "AE", "ID"];
         assert_eq!(brics("金砖国家近十年的GDP增长率"), latest);
         let p = c.group_period("BRICS", None).unwrap();
         assert_eq!(p.members, latest);
-        assert!(p.source.title.contains("Indonesia") && p.source.title.contains("2025"), "{:?}", p.source);
-        assert!(p.source.url.starts_with("https://www.mfa.gov.cn/"), "{:?}", p.source);
+        assert!(
+            p.source.title.contains("Indonesia") && p.source.title.contains("2025"),
+            "{:?}",
+            p.source
+        );
+        assert!(
+            p.source.url.starts_with("https://www.mfa.gov.cn/"),
+            "{:?}",
+            p.source
+        );
         assert!(brics("2000年金砖国家人口").is_empty(), "no BRICS in 2000");
 
         assert_eq!(
@@ -3524,12 +4005,26 @@ mod tests {
         assert!(countries(&c, "G77的人均碳排放").is_empty(), "G77 is not G7");
         assert_eq!(countries(&c, "二十国集团的人口").len(), 19);
         // a group and a country: in question order, the group word named once
-        assert_eq!(countries(&c, "七国集团和中国的GDP"), [&g7[..], &["CN"]].concat());
+        assert_eq!(
+            countries(&c, "七国集团和中国的GDP"),
+            [&g7[..], &["CN"]].concat()
+        );
         let (scope, named) = c.scope("七国集团和中国的GDP");
-        assert_eq!((scope, named), (Scope::Beyond, vec!["七国集团".to_string(), "中国".to_string()]));
+        assert_eq!(
+            (scope, named),
+            (
+                Scope::Beyond,
+                vec!["七国集团".to_string(), "中国".to_string()]
+            )
+        );
         // a member's English name in a search text is inside the group
-        assert!(c.places_outside("七国集团的GDP", &texts(&["land jp gdp"])).is_empty());
-        assert_eq!(c.places_outside("七国集团的GDP", &texts(&["land cn gdp"])), ["land cn"]);
+        assert!(c
+            .places_outside("七国集团的GDP", &texts(&["land jp gdp"]))
+            .is_empty());
+        assert_eq!(
+            c.places_outside("七国集团的GDP", &texts(&["land cn gdp"])),
+            ["land cn"]
+        );
     }
 
     /// A group page's basis: the members of the page's last year when the question names none (of the named year when it
@@ -3540,73 +4035,256 @@ mod tests {
         let c = world();
         let s = |xs: &[&str]| xs.iter().map(|x| x.to_string()).collect::<Vec<_>>();
         let brics10 = ["BR", "RU", "IN", "CN", "ZA", "EG", "ET", "IR", "AE", "ID"];
-        let g20 = ["AR", "AU", "BR", "CA", "CN", "FR", "DE", "IN", "ID", "IT", "JP", "KR", "MX", "RU", "SA", "ZA", "TR", "GB", "US"];
+        let g20 = [
+            "AR", "AU", "BR", "CA", "CN", "FR", "DE", "IN", "ID", "IT", "JP", "KR", "MX", "RU",
+            "SA", "ZA", "TR", "GB", "US",
+        ];
         // every place with a row at t1
-        let gb = |q: &str, t0: Option<i32>, t1: i32, places: &[&str]| c.group_basis(q, (t0, t1), (&s(places), &s(places)));
+        let gb = |q: &str, t0: Option<i32>, t1: i32, places: &[&str]| {
+            c.group_basis(q, (t0, t1), (&s(places), &s(places)))
+        };
         let q = "金砖国家近十年的GDP增长率";
         let changes = "按 {year} 年成员（{n} 国）计";
         let b = gb(q, Some(2016), 2025, &brics10).unwrap();
-        assert_eq!((b.group.as_str(), b.year, b.members.len(), b.line.as_deref(), b.join.as_str()), ("BRICS", 2025, 10, Some(changes), "；"));
+        assert_eq!(
+            (
+                b.group.as_str(),
+                b.year,
+                b.members.len(),
+                b.line.as_deref(),
+                b.join.as_str()
+            ),
+            ("BRICS", 2025, 10, Some(changes), "；")
+        );
         assert!(b.named.is_empty() && b.dropped.is_empty() && b.missing.is_empty());
         let b = gb(q, Some(2016), 2024, &[&brics10[..], &["SA"]].concat()).unwrap();
         // no year asked: today's ten, at the year they hold from (owner 11-16 08:4x item 1); Indonesia counted, Saudi Arabia left out
-        assert_eq!((b.year, b.member_year, b.members.len(), b.line.as_deref(), b.dropped.clone()), (2024, 2025, 10, Some(changes), s(&["SA"])), "today's members");
+        assert_eq!(
+            (
+                b.year,
+                b.member_year,
+                b.members.len(),
+                b.line.as_deref(),
+                b.dropped.clone()
+            ),
+            (2024, 2025, 10, Some(changes), s(&["SA"])),
+            "today's members"
+        );
         // no year asked, a page of 2012-2020 holding the first five: today's other five have no row and are named
         let b = gb(q, Some(2012), 2020, &brics10[..5]).unwrap();
-        assert_eq!((b.member_year, b.missing.len(), b.line.as_deref()), (2025, 5, Some("按 {year} 年成员计，画出 {n} 国，{missing}无数据")));
+        assert_eq!(
+            (b.member_year, b.missing.len(), b.line.as_deref()),
+            (
+                2025,
+                5,
+                Some("按 {year} 年成员计，画出 {n} 国，{missing}无数据")
+            )
+        );
         // every group page says its member list's year, even one of one year whose list holds (owner 11-16 08:4x item 1)
         let b = gb(q, None, 2025, &brics10).unwrap();
-        assert_eq!((b.member_year, b.line.as_deref()), (2025, Some(changes)), "a page of one year");
+        assert_eq!(
+            (b.member_year, b.line.as_deref()),
+            (2025, Some(changes)),
+            "a page of one year"
+        );
         let named = gb("2010年金砖国家的GDP", Some(2005), 2010, &brics10[..4]).unwrap();
-        assert_eq!((named.year, named.member_year, named.members, named.line.as_deref()), (2010, 2010, s(&brics10[..4]), Some(changes)));
+        assert_eq!(
+            (
+                named.year,
+                named.member_year,
+                named.members,
+                named.line.as_deref()
+            ),
+            (2010, 2010, s(&brics10[..4]), Some(changes))
+        );
         // a question naming its years spans them too, and the list is the page's last year's, not the year asked
-        let b = gb("2016年到2025年金砖国家的GDP增长率", Some(2016), 2025, &brics10).unwrap();
-        assert_eq!((b.year, b.line.as_deref()), (2025, Some(changes)), "years named, members changed inside them");
-        let b = gb("2025年金砖国家的GDP", Some(2016), 2024, &[&brics10[..], &["SA"]].concat()).unwrap();
-        assert_eq!((b.year, b.members.len(), b.line.as_deref()), (2024, 9, Some(changes)), "asked 2025, the data ends 2024");
+        let b = gb(
+            "2016年到2025年金砖国家的GDP增长率",
+            Some(2016),
+            2025,
+            &brics10,
+        )
+        .unwrap();
+        assert_eq!(
+            (b.year, b.line.as_deref()),
+            (2025, Some(changes)),
+            "years named, members changed inside them"
+        );
+        let b = gb(
+            "2025年金砖国家的GDP",
+            Some(2016),
+            2024,
+            &[&brics10[..], &["SA"]].concat(),
+        )
+        .unwrap();
+        assert_eq!(
+            (b.year, b.members.len(), b.line.as_deref()),
+            (2024, 9, Some(changes)),
+            "asked 2025, the data ends 2024"
+        );
         let named = gb("2010年金砖国家的GDP", Some(2005), 2015, &brics10[..5]).unwrap();
-        assert_eq!((named.year, named.members.len(), named.line.as_deref()), (2015, 5, Some(changes)), "the page runs past the year asked");
-        let g7 = gb("七国集团的人均碳排放", Some(1990), 2024, &["FR", "DE", "IT", "JP", "GB", "US", "CA"]).unwrap();
-        assert_eq!((g7.member_year, g7.line.as_deref()), (2024, Some(changes)), "today's list holds since before the page's year");
+        assert_eq!(
+            (named.year, named.members.len(), named.line.as_deref()),
+            (2015, 5, Some(changes)),
+            "the page runs past the year asked"
+        );
+        let g7 = gb(
+            "七国集团的人均碳排放",
+            Some(1990),
+            2024,
+            &["FR", "DE", "IT", "JP", "GB", "US", "CA"],
+        )
+        .unwrap();
+        assert_eq!(
+            (g7.member_year, g7.line.as_deref()),
+            (2024, Some(changes)),
+            "today's list holds since before the page's year"
+        );
         let b = gb("二十国集团的人口", None, 2024, &g20).unwrap();
-        assert_eq!((b.members.len(), b.line.as_deref()), (19, Some("按 {n} 个成员国计，不含欧盟、非洲联盟")));
+        assert_eq!(
+            (b.members.len(), b.line.as_deref()),
+            (19, Some("按 {n} 个成员国计，不含欧盟、非洲联盟"))
+        );
         // no year asked: today's members, the African Union among those that are no country (it joined in 2023)
-        assert_eq!(gb("二十国集团的人口", Some(2000), 2020, &g20).unwrap().line.as_deref(), Some("按 {n} 个成员国计，不含欧盟、非洲联盟"));
-        assert_eq!(gb("2020年二十国集团的人口", Some(2000), 2020, &g20).unwrap().line.as_deref(), Some("按 {n} 个成员国计，不含欧盟"), "the year named");
+        assert_eq!(
+            gb("二十国集团的人口", Some(2000), 2020, &g20)
+                .unwrap()
+                .line
+                .as_deref(),
+            Some("按 {n} 个成员国计，不含欧盟、非洲联盟")
+        );
+        assert_eq!(
+            gb("2020年二十国集团的人口", Some(2000), 2020, &g20)
+                .unwrap()
+                .line
+                .as_deref(),
+            Some("按 {n} 个成员国计，不含欧盟"),
+            "the year named"
+        );
         assert_eq!(gb("中国和德国的GDP", Some(2016), 2025, &["CN", "DE"]), None);
-        assert_eq!(gb("2000年金砖国家人口", None, 2000, &brics10), None, "a page of 2000: no BRICS that year");
+        assert_eq!(
+            gb("2000年金砖国家人口", None, 2000, &brics10),
+            None,
+            "a page of 2000: no BRICS that year"
+        );
         // a member with no row at t1 is named: the line counts the places drawn, in every case (one year, a list that holds)
         let no_et: Vec<String> = s(&brics10).into_iter().filter(|c| c != "ET").collect();
-        let b = c.group_basis(q, (Some(2016), 2025), (&s(&brics10), &no_et)).unwrap();
-        assert_eq!((b.missing.clone(), b.line.as_deref(), b.missing_join.as_str()), (s(&["ET"]), Some("按 {year} 年成员计，画出 {n} 国，{missing}无数据"), "、"));
-        let b = c.group_basis(q, (None, 2025), (&s(&brics10), &no_et)).unwrap();
-        assert_eq!(b.line.as_deref(), Some("按 {year} 年成员计，画出 {n} 国，{missing}无数据"), "one year, a member missing");
+        let b = c
+            .group_basis(q, (Some(2016), 2025), (&s(&brics10), &no_et))
+            .unwrap();
+        assert_eq!(
+            (
+                b.missing.clone(),
+                b.line.as_deref(),
+                b.missing_join.as_str()
+            ),
+            (
+                s(&["ET"]),
+                Some("按 {year} 年成员计，画出 {n} 国，{missing}无数据"),
+                "、"
+            )
+        );
+        let b = c
+            .group_basis(q, (None, 2025), (&s(&brics10), &no_et))
+            .unwrap();
+        assert_eq!(
+            b.line.as_deref(),
+            Some("按 {year} 年成员计，画出 {n} 国，{missing}无数据"),
+            "one year, a member missing"
+        );
         let no_us: Vec<String> = s(&g20).into_iter().filter(|c| c != "US").collect();
-        let b = c.group_basis("二十国集团的人口", (None, 2024), (&no_us, &no_us)).unwrap();
-        assert_eq!((b.missing.clone(), b.line.as_deref()), (s(&["US"]), Some("按成员国计，不含欧盟、非洲联盟，画出 {n} 国，{missing}无数据")));
+        let b = c
+            .group_basis("二十国集团的人口", (None, 2024), (&no_us, &no_us))
+            .unwrap();
+        assert_eq!(
+            (b.missing.clone(), b.line.as_deref()),
+            (
+                s(&["US"]),
+                Some("按成员国计，不含欧盟、非洲联盟，画出 {n} 国，{missing}无数据")
+            )
+        );
         // a place the question names on its own stays, and the count is of the places drawn
-        let b = gb("日本和金砖国家近十年的GDP增长率", Some(2016), 2025, &[&brics10[..], &["JP", "SA"]].concat()).unwrap();
-        assert_eq!((b.named.clone(), b.dropped.clone(), b.line.as_deref()), (s(&["JP"]), s(&["SA"]), Some("按 {year} 年成员计，画出 {n} 国")));
-        let b = gb("中国和七国集团的GDP", Some(2016), 2024, &["CN", "FR", "DE", "IT", "JP", "GB", "US", "CA"]).unwrap();
-        assert_eq!((b.named.clone(), b.dropped.clone(), b.line), (s(&["CN"]), Vec::new(), Some("按 {year} 年成员计，画出 {n} 国".to_string())), "China kept beside the G7, the count of the places drawn");
+        let b = gb(
+            "日本和金砖国家近十年的GDP增长率",
+            Some(2016),
+            2025,
+            &[&brics10[..], &["JP", "SA"]].concat(),
+        )
+        .unwrap();
+        assert_eq!(
+            (b.named.clone(), b.dropped.clone(), b.line.as_deref()),
+            (
+                s(&["JP"]),
+                s(&["SA"]),
+                Some("按 {year} 年成员计，画出 {n} 国")
+            )
+        );
+        let b = gb(
+            "中国和七国集团的GDP",
+            Some(2016),
+            2024,
+            &["CN", "FR", "DE", "IT", "JP", "GB", "US", "CA"],
+        )
+        .unwrap();
+        assert_eq!(
+            (b.named.clone(), b.dropped.clone(), b.line),
+            (
+                s(&["CN"]),
+                Vec::new(),
+                Some("按 {year} 年成员计，画出 {n} 国".to_string())
+            ),
+            "China kept beside the G7, the count of the places drawn"
+        );
         // the codes as the page's rows write them: Eurostat's UK for GB
-        let b = gb("七国集团的GDP", None, 2024, &["FR", "DE", "IT", "JP", "UK", "US", "CA"]).unwrap();
-        assert!(b.members.contains(&"UK".to_string()) && b.dropped.is_empty() && b.missing.is_empty(), "{b:?}");
+        let b = gb(
+            "七国集团的GDP",
+            None,
+            2024,
+            &["FR", "DE", "IT", "JP", "UK", "US", "CA"],
+        )
+        .unwrap();
+        assert!(
+            b.members.contains(&"UK".to_string()) && b.dropped.is_empty() && b.missing.is_empty(),
+            "{b:?}"
+        );
     }
 
     /// `small` with the EU's other 23 members as World Bank countries by their iso3 ids, and Italy's Chinese name.
     fn eu_world() -> Catalog {
         let mut raw = small_raw();
         let more = [
-            ("AT", "AUT"), ("BE", "BEL"), ("BG", "BGR"), ("CY", "CYP"), ("CZ", "CZE"), ("DK", "DNK"), ("EE", "EST"), ("GR", "GRC"),
-            ("ES", "ESP"), ("HR", "HRV"), ("HU", "HUN"), ("IE", "IRL"), ("IT", "ITA"), ("LT", "LTU"), ("LU", "LUX"), ("LV", "LVA"),
-            ("NL", "NLD"), ("PL", "POL"), ("PT", "PRT"), ("RO", "ROU"), ("SE", "SWE"), ("SI", "SVN"), ("SK", "SVK"),
+            ("AT", "AUT"),
+            ("BE", "BEL"),
+            ("BG", "BGR"),
+            ("CY", "CYP"),
+            ("CZ", "CZE"),
+            ("DK", "DNK"),
+            ("EE", "EST"),
+            ("GR", "GRC"),
+            ("ES", "ESP"),
+            ("HR", "HRV"),
+            ("HU", "HUN"),
+            ("IE", "IRL"),
+            ("IT", "ITA"),
+            ("LT", "LTU"),
+            ("LU", "LUX"),
+            ("LV", "LVA"),
+            ("NL", "NLD"),
+            ("PL", "POL"),
+            ("PT", "PRT"),
+            ("RO", "ROU"),
+            ("SE", "SWE"),
+            ("SI", "SVN"),
+            ("SK", "SVK"),
         ];
         let list = raw.wb_countries[1].as_array_mut().unwrap();
         for (c, id) in more {
             list.push(json!({"id": id, "iso2Code": c, "name": format!("Land {c}"), "region": {"value": "Europe & Central Asia"}}));
         }
-        raw.wb_countries_zh[1].as_array_mut().unwrap().push(json!({"iso2Code": "IT", "name": "意大利"}));
+        raw.wb_countries_zh[1]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"iso2Code": "IT", "name": "意大利"}));
         Catalog::from_raw(&raw)
     }
 
@@ -3620,50 +4298,125 @@ mod tests {
         let s = |xs: &[&str]| xs.iter().map(|x| x.to_string()).collect::<Vec<_>>();
         let line = Some("按现有成员国计，画出 {n} 国，{year} 年{missing}无数据");
         let wb27 = s(&[
-            "AUT", "BEL", "BGR", "CYP", "CZE", "DEU", "DNK", "EST", "GRC", "ESP", "FIN", "FRA", "HRV", "HUN", "IRL", "ITA",
-            "LTU", "LUX", "LVA", "MLT", "NLD", "POL", "PRT", "ROU", "SWE", "SVN", "SVK",
+            "AUT", "BEL", "BGR", "CYP", "CZE", "DEU", "DNK", "EST", "GRC", "ESP", "FIN", "FRA",
+            "HRV", "HUN", "IRL", "ITA", "LTU", "LUX", "LVA", "MLT", "NLD", "POL", "PRT", "ROU",
+            "SWE", "SVN", "SVK",
         ]);
         // r1: 15 of the 27 with a row at 2024, the other 12 with rows in earlier years only
-        let r1_2024 = s(&["LUX", "IRL", "DEU", "NLD", "DNK", "AUT", "SWE", "FRA", "ITA", "SVN", "PRT", "CZE", "EST", "LTU", "POL"]);
+        let r1_2024 = s(&[
+            "LUX", "IRL", "DEU", "NLD", "DNK", "AUT", "SWE", "FRA", "ITA", "SVN", "PRT", "CZE",
+            "EST", "LTU", "POL",
+        ]);
         let q = "欧盟各国人均医疗支出";
         let b = c.group_basis(q, (None, 2024), (&wb27, &r1_2024)).unwrap();
-        assert_eq!((b.group.as_str(), b.year, b.members.clone(), b.line.as_deref()), ("EU", 2024, wb27.clone(), line));
-        assert_eq!(b.missing, s(&["BEL", "BGR", "CYP", "GRC", "ESP", "FIN", "HRV", "HUN", "LVA", "MLT", "ROU", "SVK"]));
-        assert!(b.named.is_empty() && b.dropped.is_empty() && b.unfetched.is_empty(), "{b:?}");
-        assert!(b.whole_years_only, "the union's line prints a year: said on a page of whole years only");
-        assert_eq!(c.group_basis(q, (None, 2023), (&wb27, &wb27)), None, "every member at 2023: no basis");
+        assert_eq!(
+            (
+                b.group.as_str(),
+                b.year,
+                b.members.clone(),
+                b.line.as_deref()
+            ),
+            ("EU", 2024, wb27.clone(), line)
+        );
+        assert_eq!(
+            b.missing,
+            s(&[
+                "BEL", "BGR", "CYP", "GRC", "ESP", "FIN", "HRV", "HUN", "LVA", "MLT", "ROU", "SVK"
+            ])
+        );
+        assert!(
+            b.named.is_empty() && b.dropped.is_empty() && b.unfetched.is_empty(),
+            "{b:?}"
+        );
+        assert!(
+            b.whole_years_only,
+            "the union's line prints a year: said on a page of whole years only"
+        );
+        assert_eq!(
+            c.group_basis(q, (None, 2023), (&wb27, &wb27)),
+            None,
+            "every member at 2023: no basis"
+        );
         // r5: Eurostat's codes, Romania with rows to 2023 only
         let es27: Vec<String> = s(&crate::next_params::EU27);
         let no_ro: Vec<String> = es27.iter().filter(|c| *c != "RO").cloned().collect();
         let q = "欧盟各国生活垃圾回收率";
         let b = c.group_basis(q, (None, 2024), (&es27, &no_ro)).unwrap();
-        assert_eq!((b.members.clone(), b.missing.clone(), b.line.as_deref()), (es27.clone(), s(&["RO"]), line));
+        assert_eq!(
+            (b.members.clone(), b.missing.clone(), b.line.as_deref()),
+            (es27.clone(), s(&["RO"]), line)
+        );
         assert!(b.members.contains(&"EL".to_string()));
         // a member the rows hold in no year is no member of the count, as before (round 10's t4: no row of Greece)
         let no_el: Vec<String> = es27.iter().filter(|c| *c != "EL").cloned().collect();
         let no_el_ro: Vec<String> = no_el.iter().filter(|c| *c != "RO").cloned().collect();
-        let b = c.group_basis(q, (Some(2015), 2024), (&no_el, &no_el_ro)).unwrap();
+        let b = c
+            .group_basis(q, (Some(2015), 2024), (&no_el, &no_el_ro))
+            .unwrap();
         assert_eq!((b.members.len(), b.missing.clone()), (26, s(&["RO"])));
         assert_eq!(c.group_basis(q, (Some(2015), 2024), (&no_el, &no_el)), None);
         // a member the question names on its own stays named (n51), as does a place beside the members
-        let b = c.group_basis("2024 年欧盟各国的早期离校率，意大利排第几？", (None, 2024), (&es27, &no_ro)).unwrap();
-        assert_eq!((b.named.clone(), b.missing.clone()), (s(&["IT"]), s(&["RO"])));
+        let b = c
+            .group_basis(
+                "2024 年欧盟各国的早期离校率，意大利排第几？",
+                (None, 2024),
+                (&es27, &no_ro),
+            )
+            .unwrap();
+        assert_eq!(
+            (b.named.clone(), b.missing.clone()),
+            (s(&["IT"]), s(&["RO"]))
+        );
         let with_us: Vec<String> = es27.iter().cloned().chain(s(&["US"])).collect();
         let with_us_no_ro: Vec<String> = no_ro.iter().cloned().chain(s(&["US"])).collect();
-        let b = c.group_basis("欧盟各国和美国的生活垃圾回收率", (None, 2024), (&with_us, &with_us_no_ro)).unwrap();
-        assert_eq!((b.named.clone(), b.missing.clone(), b.dropped.clone()), (s(&["US"]), s(&["RO"]), Vec::new()));
+        let b = c
+            .group_basis(
+                "欧盟各国和美国的生活垃圾回收率",
+                (None, 2024),
+                (&with_us, &with_us_no_ro),
+            )
+            .unwrap();
+        assert_eq!(
+            (b.named.clone(), b.missing.clone(), b.dropped.clone()),
+            (s(&["US"]), s(&["RO"]), Vec::new())
+        );
         // no page of the members: the aggregate beside far countries (n37), origin countries (q6), Europe the continent
-        assert_eq!(c.group_basis("欧盟、美国、中国 2022 年研发支出占 GDP 的比重谁最高？", (None, 2022), (&s(&["EU27_2020", "US", "CN"]), &s(&["EU27_2020", "US"]))), None);
-        assert_eq!(c.group_basis("欧盟、美国、中国 2022 年研发支出占 GDP 的比重谁最高？", (None, 2022), (&s(&["EUU", "USA", "CHN"]), &s(&["USA"]))), None);
-        assert_eq!(c.group_basis("欧盟庇护申请的来源国", (None, 2024), (&s(&["SY", "AF", "RO"]), &s(&["SY", "AF"]))), None);
-        assert_eq!(c.group_basis("欧洲各国生活垃圾回收率", (None, 2024), (&es27, &no_ro)), None);
+        assert_eq!(
+            c.group_basis(
+                "欧盟、美国、中国 2022 年研发支出占 GDP 的比重谁最高？",
+                (None, 2022),
+                (&s(&["EU27_2020", "US", "CN"]), &s(&["EU27_2020", "US"]))
+            ),
+            None
+        );
+        assert_eq!(
+            c.group_basis(
+                "欧盟、美国、中国 2022 年研发支出占 GDP 的比重谁最高？",
+                (None, 2022),
+                (&s(&["EUU", "USA", "CHN"]), &s(&["USA"]))
+            ),
+            None
+        );
+        assert_eq!(
+            c.group_basis(
+                "欧盟庇护申请的来源国",
+                (None, 2024),
+                (&s(&["SY", "AF", "RO"]), &s(&["SY", "AF"]))
+            ),
+            None
+        );
+        assert_eq!(
+            c.group_basis("欧洲各国生活垃圾回收率", (None, 2024), (&es27, &no_ro)),
+            None
+        );
     }
 
     /// A question's years fetch every member the page can end at (round-3 fix): a year it runs on from (since 2010) reads
     /// every list from that year to the latest, two years every list between them; the page's basis then names as having
     /// no data only a member that was fetched, and a member never fetched refuses the page (unfetched), never "no data".
     #[test]
-    fn a_group_is_fetched_over_the_years_the_question_spans_and_a_member_never_fetched_is_no_missing_member() {
+    fn a_group_is_fetched_over_the_years_the_question_spans_and_a_member_never_fetched_is_no_missing_member(
+    ) {
         let c = world();
         let s = |xs: &[&str]| xs.iter().map(|x| x.to_string()).collect::<Vec<_>>();
         let brics10 = ["BR", "RU", "IN", "CN", "ZA", "EG", "ET", "IR", "AE", "ID"];
@@ -3671,40 +4424,91 @@ mod tests {
         let q = "2010年以来金砖国家的GDP增长率";
         assert_eq!(countries(&c, q), brics10);
         let fetched = s(&brics10);
-        let b = c.group_basis(q, (Some(2010), 2025), (&fetched, &fetched)).unwrap();
-        assert_eq!((b.year, b.members.len(), b.missing.clone(), b.unfetched.clone()), (2025, 10, Vec::new(), Vec::new()));
-        assert_eq!(b.line.as_deref(), Some("按 {year} 年成员（{n} 国）计"), "the list changes inside 2010..2025");
+        let b = c
+            .group_basis(q, (Some(2010), 2025), (&fetched, &fetched))
+            .unwrap();
+        assert_eq!(
+            (
+                b.year,
+                b.members.len(),
+                b.missing.clone(),
+                b.unfetched.clone()
+            ),
+            (2025, 10, Vec::new(), Vec::new())
+        );
+        assert_eq!(
+            b.line.as_deref(),
+            Some("按 {year} 年成员（{n} 国）计"),
+            "the list changes inside 2010..2025"
+        );
         // a member fetched with no row at all is missing (a fact of the data), not unfetched
         let no_et: Vec<String> = fetched.iter().filter(|c| *c != "ET").cloned().collect();
-        let b = c.group_basis(q, (Some(2010), 2025), (&no_et, &no_et)).unwrap();
-        assert_eq!((b.missing.clone(), b.unfetched.clone()), (s(&["ET"]), Vec::new()));
+        let b = c
+            .group_basis(q, (Some(2010), 2025), (&no_et, &no_et))
+            .unwrap();
+        assert_eq!(
+            (b.missing.clone(), b.unfetched.clone()),
+            (s(&["ET"]), Vec::new())
+        );
         // ASEAN since 2015: Timor-Leste, which joins in 2025, is fetched
         let q = "2015年以来东盟国家人均GDP";
-        let asean11 = ["ID", "MY", "PH", "SG", "TH", "BN", "VN", "LA", "MM", "KH", "TL"];
+        let asean11 = [
+            "ID", "MY", "PH", "SG", "TH", "BN", "VN", "LA", "MM", "KH", "TL",
+        ];
         assert_eq!(countries(&c, q), asean11);
-        let b = c.group_basis(q, (Some(2015), 2025), (&s(&asean11), &s(&asean11[..10]))).unwrap();
-        assert_eq!((b.members.len(), b.missing.clone(), b.unfetched.clone()), (11, s(&["TL"]), Vec::new()), "fetched, no row at 2025");
+        let b = c
+            .group_basis(q, (Some(2015), 2025), (&s(&asean11), &s(&asean11[..10])))
+            .unwrap();
+        assert_eq!(
+            (b.members.len(), b.missing.clone(), b.unfetched.clone()),
+            (11, s(&["TL"]), Vec::new()),
+            "fetched, no row at 2025"
+        );
         // two years: every list between them, none after
         let q = "2010年和2024年金砖国家的GDP";
         let nine = &brics10[..9];
         assert_eq!(countries(&c, q), nine);
-        let b = c.group_basis(q, (Some(2010), 2024), (&s(nine), &s(nine))).unwrap();
-        assert_eq!((b.year, b.members.len(), b.missing.clone(), b.unfetched.clone()), (2024, 9, Vec::new(), Vec::new()));
+        let b = c
+            .group_basis(q, (Some(2010), 2024), (&s(nine), &s(nine)))
+            .unwrap();
+        assert_eq!(
+            (
+                b.year,
+                b.members.len(),
+                b.missing.clone(),
+                b.unfetched.clone()
+            ),
+            (2024, 9, Vec::new(), Vec::new())
+        );
         assert_eq!(countries(&c, "2010年至2015年金砖国家的GDP"), &brics10[..5]);
         // one year with nothing run on from: its list alone; a page that runs past it to 2025 has members never fetched,
         // which are unfetched (the page is refused), never named as having no data
         let q = "2010年金砖国家的GDP";
         assert_eq!(countries(&c, q), &brics10[..4]);
-        let b = c.group_basis(q, (Some(2010), 2025), (&s(&brics10[..4]), &s(&brics10[..4]))).unwrap();
-        assert_eq!((b.missing.clone(), b.unfetched.clone()), (Vec::new(), s(&brics10[4..])));
-        assert!(countries(&c, "2000年以来金砖国家人口").len() == 10 && countries(&c, "2000年金砖国家人口").is_empty());
+        let b = c
+            .group_basis(
+                q,
+                (Some(2010), 2025),
+                (&s(&brics10[..4]), &s(&brics10[..4])),
+            )
+            .unwrap();
+        assert_eq!(
+            (b.missing.clone(), b.unfetched.clone()),
+            (Vec::new(), s(&brics10[4..]))
+        );
+        assert!(
+            countries(&c, "2000年以来金砖国家人口").len() == 10
+                && countries(&c, "2000年金砖国家人口").is_empty()
+        );
     }
 
     #[test]
     fn the_published_lists_give_short_names_the_world_bank_list_holds_only_long() {
         let mut raw = small_raw();
         let list = raw.wb_countries[1].as_array_mut().unwrap();
-        for c in ["HK", "MO", "SO", "YE", "BA", "CF", "CG", "CD", "ID", "SA", "BY"] {
+        for c in [
+            "HK", "MO", "SO", "YE", "BA", "CF", "CG", "CD", "ID", "SA", "BY",
+        ] {
             list.push(json!({"id": c, "iso2Code": c, "name": format!("Land {c}"), "region": {"value": "Elsewhere"}}));
         }
         let c = Catalog::from_raw(&raw);
@@ -3714,17 +4518,31 @@ mod tests {
         assert_eq!(countries(&c, "波黑的失业率"), ["BA"]);
         // short forms the project owner set: they read, and the registered long names still read as the same place
         assert_eq!(countries(&c, "印尼、沙特和白俄的人口"), ["ID", "SA", "BY"]);
-        assert_eq!(countries(&c, "印度尼西亚共和国和沙特阿拉伯王国的人口"), ["ID", "SA"]);
+        assert_eq!(
+            countries(&c, "印度尼西亚共和国和沙特阿拉伯王国的人口"),
+            ["ID", "SA"]
+        );
         assert_eq!(countries(&c, "刚果金和刚果布的人口"), ["CD", "CG"]);
         // the excluded words do not read: China-Africa and an 'among them' split are no country, bare Congo is either one
         assert!(countries(&c, "中非合作论坛的贸易额").is_empty());
         assert!(countries(&c, "其中非洲国家的人口").is_empty());
         assert!(countries(&c, "刚果河流域的降雨").is_empty());
         let names = place_names_zh();
-        assert!(names.aliases.iter().all(|a| !["中非", "刚果", "欧盟"].contains(&a.name.as_str())));
+        assert!(names
+            .aliases
+            .iter()
+            .all(|a| !["中非", "刚果", "欧盟"].contains(&a.name.as_str())));
         // one name, one code across all lists
         for a in &names.aliases {
-            assert!(names.aliases.iter().filter(|b| b.name == a.name).all(|b| b.iso2 == a.iso2), "{}", a.name);
+            assert!(
+                names
+                    .aliases
+                    .iter()
+                    .filter(|b| b.name == a.name)
+                    .all(|b| b.iso2 == a.iso2),
+                "{}",
+                a.name
+            );
         }
     }
 
@@ -3735,22 +4553,33 @@ mod tests {
     fn a_short_form_or_group_word_reads_as_its_places() {
         let mut raw = small_raw();
         let list = raw.wb_countries[1].as_array_mut().unwrap();
-        for c in ["HK", "MO", "MY", "SG", "KR", "DK", "FI", "IS", "NO", "SE", "TH", "JP"] {
+        for c in [
+            "HK", "MO", "MY", "SG", "KR", "DK", "FI", "IS", "NO", "SE", "TH", "JP",
+        ] {
             list.push(json!({"id": c, "iso2Code": c, "name": format!("Land {c}"), "region": {"value": "Elsewhere"}}));
         }
         let c = Catalog::from_raw(&raw);
-        assert_eq!(countries(&c, "港澳和韩国的失业率怎么比？"), ["HK", "MO", "KR"]);
+        assert_eq!(
+            countries(&c, "港澳和韩国的失业率怎么比？"),
+            ["HK", "MO", "KR"]
+        );
         assert_eq!(countries(&c, "韩国和大马的出口"), ["KR", "MY"]);
         let nordic = ["DK", "FI", "IS", "NO", "SE"];
         assert_eq!(countries(&c, "北欧五国的人均寿命谁最长？"), nordic);
         assert_eq!(countries(&c, "2010 年以来北欧五国各自的失业率"), nordic);
         // 北欧 alone stays the Europe region word it was
         assert_eq!(countries(&c, "北欧各国的失业率"), ["REGION"]);
-        assert_eq!(countries(&c, "1953年北欧五国的人口"), ["DK", "IS", "NO", "SE"]);
+        assert_eq!(
+            countries(&c, "1953年北欧五国的人口"),
+            ["DK", "IS", "NO", "SE"]
+        );
         assert_eq!(countries(&c, "日韩 65 岁以上人口占比怎么变"), ["JP", "KR"]);
         assert_eq!(countries(&c, "日韩两国的失业率谁高"), ["JP", "KR"]);
         assert_eq!(countries(&c, "星马泰三国互联网普及率"), ["SG", "MY", "TH"]);
-        assert_eq!(countries(&c, "星马泰和港澳的出口"), ["SG", "MY", "TH", "HK", "MO"]);
+        assert_eq!(
+            countries(&c, "星马泰和港澳的出口"),
+            ["SG", "MY", "TH", "HK", "MO"]
+        );
     }
 
     /// A question that counts its places (海合会六国, 比荷卢三国, 两岸三地) and names fewer that the program reads is unread,
@@ -3760,18 +4589,49 @@ mod tests {
     fn a_question_counting_more_places_than_the_program_reads_is_unread() {
         let mut raw = small_raw();
         let list = raw.wb_countries[1].as_array_mut().unwrap();
-        for c in ["HK", "MO", "KR", "DK", "FI", "IS", "NO", "SE", "ID", "MY", "PH", "SG", "TH", "BN", "VN", "LA", "MM", "KH", "TL"] {
+        for c in [
+            "HK", "MO", "KR", "DK", "FI", "IS", "NO", "SE", "ID", "MY", "PH", "SG", "TH", "BN",
+            "VN", "LA", "MM", "KH", "TL",
+        ] {
             list.push(json!({"id": c, "iso2Code": c, "name": format!("Land {c}"), "region": {"value": "Elsewhere"}}));
         }
         let c = Catalog::from_raw(&raw);
         let un = |q: &str| c.unread(q).map(|u| (u.word_zh, u.read, u.asked));
-        assert_eq!(un("南盟八国女性劳动参与率高低"), Some(("南盟八国".into(), 0, 8)), "a group the table does not hold");
+        assert_eq!(
+            un("南盟八国女性劳动参与率高低"),
+            Some(("南盟八国".into(), 0, 8)),
+            "a group the table does not hold"
+        );
         assert_eq!(un("两岸三地人均GDP"), Some(("两岸三地".into(), 0, 3)));
-        assert_eq!(un("港澳和另一地三地的失业率"), Some(("港澳和另一地三地".into(), 2, 3)), "two of three read");
-        assert_eq!(un("欧洲小国四国失业率"), Some(("欧洲小国四国".into(), 0, 4)), "a region word is no country");
-        assert!(c.rank("南盟八国女性劳动参与率", &texts(&["female labor participation"])).candidates.is_empty());
-        assert!(c.rank("南盟八国女性劳动参与率", &texts(&["female labor participation"])).unread.is_some());
-        assert_eq!(un("波罗的海沿岸四国失业率"), Some(("波罗的海沿岸四国".into(), 0, 4)), "a sea's name holds no members");
+        assert_eq!(
+            un("港澳和另一地三地的失业率"),
+            Some(("港澳和另一地三地".into(), 2, 3)),
+            "two of three read"
+        );
+        assert_eq!(
+            un("欧洲小国四国失业率"),
+            Some(("欧洲小国四国".into(), 0, 4)),
+            "a region word is no country"
+        );
+        assert!(c
+            .rank(
+                "南盟八国女性劳动参与率",
+                &texts(&["female labor participation"])
+            )
+            .candidates
+            .is_empty());
+        assert!(c
+            .rank(
+                "南盟八国女性劳动参与率",
+                &texts(&["female labor participation"])
+            )
+            .unread
+            .is_some());
+        assert_eq!(
+            un("波罗的海沿岸四国失业率"),
+            Some(("波罗的海沿岸四国".into(), 0, 4)),
+            "a sea's name holds no members"
+        );
         for q in [
             "欧盟27国的失业率",
             "欧元区二十国通胀",
@@ -3809,25 +4669,57 @@ mod tests {
         let mut raw = small_raw();
         let list = raw.wb_countries[1].as_array_mut().unwrap();
         let more = [
-            "SA", "AE", "KW", "QA", "OM", "BH", "AT", "DK", "NO", "PT", "SE", "CH", "GB", "IS", "FI", "LI", "PL", "CZ", "SK", "HU",
-            "BE", "NL", "LU", "EE", "LV", "LT",
+            "SA", "AE", "KW", "QA", "OM", "BH", "AT", "DK", "NO", "PT", "SE", "CH", "GB", "IS",
+            "FI", "LI", "PL", "CZ", "SK", "HU", "BE", "NL", "LU", "EE", "LV", "LT",
         ];
         for c in more {
             list.push(json!({"id": c, "iso2Code": c, "name": format!("Land {c}"), "region": {"value": "Elsewhere"}}));
         }
         let c = Catalog::from_raw(&raw);
-        assert_eq!(countries(&c, "海合会六国女性劳动参与率"), ["SA", "AE", "KW", "QA", "OM", "BH"]);
+        assert_eq!(
+            countries(&c, "海合会六国女性劳动参与率"),
+            ["SA", "AE", "KW", "QA", "OM", "BH"]
+        );
         assert_eq!(c.unread("海合会六国女性劳动参与率"), None);
-        assert_eq!(countries(&c, "1972年欧自联的出口"), ["AT", "DK", "NO", "PT", "SE", "CH", "GB", "IS"]);
-        assert_eq!(countries(&c, "1990年欧洲自由贸易联盟的出口"), ["AT", "NO", "SE", "CH", "IS", "FI"]);
-        assert_eq!(countries(&c, "2024年欧洲自由贸易联盟四国失业率"), ["NO", "CH", "IS", "LI"]);
+        assert_eq!(
+            countries(&c, "1972年欧自联的出口"),
+            ["AT", "DK", "NO", "PT", "SE", "CH", "GB", "IS"]
+        );
+        assert_eq!(
+            countries(&c, "1990年欧洲自由贸易联盟的出口"),
+            ["AT", "NO", "SE", "CH", "IS", "FI"]
+        );
+        assert_eq!(
+            countries(&c, "2024年欧洲自由贸易联盟四国失业率"),
+            ["NO", "CH", "IS", "LI"]
+        );
         assert_eq!(c.unread("2024年欧洲自由贸易联盟四国失业率"), None);
-        assert_eq!(countries(&c, "维谢格拉德四国最低工资"), ["PL", "CZ", "SK", "HU"]);
-        assert_eq!(countries(&c, "比荷卢三国可再生能源占比"), ["BE", "NL", "LU"]);
+        assert_eq!(
+            countries(&c, "维谢格拉德四国最低工资"),
+            ["PL", "CZ", "SK", "HU"]
+        );
+        assert_eq!(
+            countries(&c, "比荷卢三国可再生能源占比"),
+            ["BE", "NL", "LU"]
+        );
         assert_eq!(countries(&c, "波罗的海三国失业率"), ["EE", "LV", "LT"]);
         let names = place_names_zh();
-        let latest = |id: &str| names.groups.iter().find(|g| g.id == id).unwrap().periods.last().unwrap().members.len();
-        assert_eq!((latest("NATO"), latest("OECD"), latest("SCO"), latest("EAC")), (32, 38, 10, 8));
+        let latest = |id: &str| {
+            names
+                .groups
+                .iter()
+                .find(|g| g.id == id)
+                .unwrap()
+                .periods
+                .last()
+                .unwrap()
+                .members
+                .len()
+        };
+        assert_eq!(
+            (latest("NATO"), latest("OECD"), latest("SCO"), latest("EAC")),
+            (32, 38, 10, 8)
+        );
     }
 
     #[test]
@@ -3850,25 +4742,53 @@ mod tests {
     #[test]
     fn the_registered_groups_are_whole() {
         let names = place_names_zh();
-        let sourced = |s: &SourceZh| !s.title.is_empty() && s.url.starts_with("https://") && s.accessed.len() == 10;
-        assert!(names.aliases.iter().all(|a| a.iso2.len() == 2 && !a.name.is_empty() && sourced(&a.source)));
-        assert!(names.aliases.iter().any(|a| a.name == "韩国" && a.iso2 == "KR"));
+        let sourced = |s: &SourceZh| {
+            !s.title.is_empty() && s.url.starts_with("https://") && s.accessed.len() == 10
+        };
+        assert!(names
+            .aliases
+            .iter()
+            .all(|a| a.iso2.len() == 2 && !a.name.is_empty() && sourced(&a.source)));
+        assert!(names
+            .aliases
+            .iter()
+            .any(|a| a.name == "韩国" && a.iso2 == "KR"));
         for id in [
-            "BRICS", "ASEAN", "G7", "G20", "HKMO", "NORDIC", "GCC", "EAEU", "EAC", "PACALL", "SCO", "EFTA", "V4", "BENELUX", "NATO",
-            "OECD", "BALTIC3",
+            "BRICS", "ASEAN", "G7", "G20", "HKMO", "NORDIC", "GCC", "EAEU", "EAC", "PACALL", "SCO",
+            "EFTA", "V4", "BENELUX", "NATO", "OECD", "BALTIC3",
         ] {
             let g = names.groups.iter().find(|g| g.id == id).expect(id);
             assert!(!g.names.is_empty(), "{id}");
             for d in &g.disputed {
-                assert!(d.sources.len() >= 2 && d.sources.iter().all(sourced), "{id} {}", d.iso2);
-                assert!(g.periods.iter().all(|p| !p.members.contains(&d.iso2)), "{id}: disputed {} is no member", d.iso2);
+                assert!(
+                    d.sources.len() >= 2 && d.sources.iter().all(sourced),
+                    "{id} {}",
+                    d.iso2
+                );
+                assert!(
+                    g.periods.iter().all(|p| !p.members.contains(&d.iso2)),
+                    "{id}: disputed {} is no member",
+                    d.iso2
+                );
             }
             for (i, p) in g.periods.iter().enumerate() {
-                assert!(sourced(&p.source) && !p.members.is_empty(), "{id} {}", p.from);
-                assert!(p.non_country_members.iter().all(|m| !m.name.is_empty() && sourced(&m.source)), "{id} {}", p.from);
+                assert!(
+                    sourced(&p.source) && !p.members.is_empty(),
+                    "{id} {}",
+                    p.from
+                );
+                assert!(
+                    p.non_country_members
+                        .iter()
+                        .all(|m| !m.name.is_empty() && sourced(&m.source)),
+                    "{id} {}",
+                    p.from
+                );
                 assert!(p.members.iter().all(|c| c.len() == 2), "{id} {}", p.from);
                 match g.periods.get(i + 1) {
-                    Some(next) => assert_eq!(p.to.map(|t| t + 1), Some(next.from), "{id} periods meet"),
+                    Some(next) => {
+                        assert_eq!(p.to.map(|t| t + 1), Some(next.from), "{id} periods meet")
+                    }
                     None => assert_eq!(p.to, None, "{id} latest period is current"),
                 }
             }
@@ -3880,7 +4800,11 @@ mod tests {
         assert_eq!(question_span("与 2015 年相比"), Some((2015, None)));
         assert_eq!(question_span("金砖国家近十年"), None);
         assert_eq!(question_span("12010年 65 岁"), None);
-        assert_eq!(question_span("人均 2000 美元"), None, "a number before no year mark is no year");
+        assert_eq!(
+            question_span("人均 2000 美元"),
+            None,
+            "a number before no year mark is no year"
+        );
     }
 
     #[test]
@@ -3932,15 +4856,27 @@ mod tests {
     /// quantity's words do (dev set t4, 11-14: "house price index EU member states" listed EU trade tables first).
     #[test]
     fn scope_words_of_a_search_text_do_not_rank_tables() {
-        assert_eq!(quantity_toks("house price index EU member states"), ["house", "price", "index"]);
-        assert_eq!(quantity_toks("rail passengers by country"), ["rail", "passenger"]);
-        assert_eq!(quantity_toks("households with internet access EU countries"), ["household", "internet", "access"]);
+        assert_eq!(
+            quantity_toks("house price index EU member states"),
+            ["house", "price", "index"]
+        );
+        assert_eq!(
+            quantity_toks("rail passengers by country"),
+            ["rail", "passenger"]
+        );
+        assert_eq!(
+            quantity_toks("households with internet access EU countries"),
+            ["household", "internet", "access"]
+        );
         assert_eq!(quantity_toks("EU countries"), ["eu", "country"]);
         assert_eq!(quantity_toks("national accounts"), ["national", "account"]);
         let mut raw = small_raw();
         raw.toc.push_str("\"        House price index\"\t\"hpi\"\t\"table\"\n\"        EU trade by member states\"\t\"trd\"\t\"table\"\n");
         let c = Catalog::from_raw(&raw);
-        let r = c.rank_in(&texts(&["house price index EU member states"]), Scope::Europe);
+        let r = c.rank_in(
+            &texts(&["house price index EU member states"]),
+            Scope::Europe,
+        );
         let at = |id: &str| ids(&r).iter().position(|x| *x == id);
         assert_eq!(at("hpi"), Some(0), "{:?}", ids(&r));
         assert!(at("trd").is_none_or(|k| k > 0), "{:?}", ids(&r));
@@ -4305,7 +5241,12 @@ mod tests {
         }
         // A percentage change against a year its unit text names ("% change from 1990") takes that change's own code,
         // whose unit line prints the basis (unit-short-zh.tsv line_zh), never PC: s6's main and its three siblings.
-        for id in ["EN.GHG.CH4.ZG.AR5", "EN.GHG.CO2.ZG.AR5", "EN.GHG.N2O.ZG.AR5", "EN.GHG.TOT.ZG.AR5@2"] {
+        for id in [
+            "EN.GHG.CH4.ZG.AR5",
+            "EN.GHG.CO2.ZG.AR5",
+            "EN.GHG.N2O.ZG.AR5",
+            "EN.GHG.TOT.ZG.AR5@2",
+        ] {
             assert_eq!(unit(id), Some(("PCH_1990".into(), Some("change"))), "{id}");
         }
         // A percentage change or growth rate whose unit text states no basis the registry reads stays codeless: PC would
@@ -4486,7 +5427,10 @@ mod tests {
         let noted = Catalog::with_notes(&raw, &[note("nrg_src")]);
         let q = texts(&["supply by source"]);
         let before = plain.rank_in(&q, Scope::Europe);
-        assert!(before.iter().all(|c| c.s == 0.0), "no title or folder holds the words");
+        assert!(
+            before.iter().all(|c| c.s == 0.0),
+            "no title or folder holds the words"
+        );
         let after = noted.rank_in(&q, Scope::Europe);
         assert_eq!(ids(&after)[0], "nrg_src");
         assert!(after[0].s > 0.0 && after[1..].iter().all(|c| c.s == 0.0));
@@ -4494,11 +5438,20 @@ mod tests {
         // ranking as with no notes, scores included.
         let absent = Catalog::with_notes(&raw, &[note("nrg_absent")]);
         let registered = Catalog::from_raw(&raw);
-        for words in ["energy balance solar", "supply by source", "energy", "France energy prices"] {
+        for words in [
+            "energy balance solar",
+            "supply by source",
+            "energy",
+            "France energy prices",
+        ] {
             for scope in [Scope::Europe, Scope::Beyond] {
                 let want = serde_json::to_value(plain.rank_in(&texts(&[words]), scope)).unwrap();
                 for c in [&absent, &registered] {
-                    assert_eq!(serde_json::to_value(c.rank_in(&texts(&[words]), scope)).unwrap(), want, "{words}");
+                    assert_eq!(
+                        serde_json::to_value(c.rank_in(&texts(&[words]), scope)).unwrap(),
+                        want,
+                        "{words}"
+                    );
                 }
             }
         }
@@ -4514,14 +5467,23 @@ mod tests {
         assert_eq!(ids.len(), families.len(), "a family twice");
         let mut words: HashSet<Vec<char>> = HashSet::new();
         for f in families {
-            assert!(!f.zh.is_empty() && !f.words.is_empty() && !toks(&f.en).is_empty() && !f.tables.is_empty(), "{f:?}");
+            assert!(
+                !f.zh.is_empty()
+                    && !f.words.is_empty()
+                    && !toks(&f.en).is_empty()
+                    && !f.tables.is_empty(),
+                "{f:?}"
+            );
             // The name is printed on a page that says a half cannot be answered: no number but from the data.
             assert!(!f.zh.chars().any(|c| c.is_ascii_digit()), "{f:?}");
             for w in &f.words {
                 assert!(!measure_chars(w).is_empty(), "{f:?}: an empty word");
                 assert!(words.insert(measure_chars(w)), "{f:?}: {w} in two families");
             }
-            assert!(f.tables.iter().all(|t| !t.is_empty() && !t.contains('@')), "{f:?}");
+            assert!(
+                f.tables.iter().all(|t| !t.is_empty() && !t.contains('@')),
+                "{f:?}"
+            );
         }
     }
 
@@ -4539,7 +5501,9 @@ mod tests {
         assert_eq!(ids("各国碳排放占了多少，和GDP"), ["co2", "gdp"]);
         // with no closing word the whole runs to the clause end (user 11-07 ⑦): 占 GDP's GDP is the whole, the numerator
         // alone is asked; a quantity after the clause still asks; 占领 opens no whole
-        assert!(ids("德国、中国 2024 年经常账户余额占 GDP，谁顺差最大？").iter().all(|id| id != "gdp"));
+        assert!(ids("德国、中国 2024 年经常账户余额占 GDP，谁顺差最大？")
+            .iter()
+            .all(|id| id != "gdp"));
         assert_eq!(ids("各国研发支出占 GDP，和总人口"), ["population"]);
         assert_eq!(ids("占领区总人口的变化"), ["population"]);
         // GDP the question asks for is still checked (user 11-08 item 4): the numerator of a share, the quantity ranked,
@@ -4553,10 +5517,19 @@ mod tests {
         assert_eq!(ids("研发占GDP多少？谁GDP最高"), ["gdp"]);
         assert_eq!(ids("研发占GDP多少。GDP谁最高"), ["gdp"]);
         // 占比 is a share said whole, and a joining word ends a whole: the quantity asked after it stays asked (review 11-05)
-        assert_eq!(ids("可再生能源占比和人均GDP的比重"), ["renewable_share", "gdp_pc"]);
-        assert_eq!(ids("各国可再生能源占比，以及煤炭发电份额"), ["renewable_share", "electricity_mix"]);
+        assert_eq!(
+            ids("可再生能源占比和人均GDP的比重"),
+            ["renewable_share", "gdp_pc"]
+        );
+        assert_eq!(
+            ids("各国可再生能源占比，以及煤炭发电份额"),
+            ["renewable_share", "electricity_mix"]
+        );
         // the asked list is in the families' order, not the question's
-        assert_eq!(ids("人均GDP和可再生能源占比的关系"), ["renewable_share", "gdp_pc"]);
+        assert_eq!(
+            ids("人均GDP和可再生能源占比的关系"),
+            ["renewable_share", "gdp_pc"]
+        );
     }
 
     /// Each dev question asks for one quantity, the DE question for two, and words that only narrow (a big-population
@@ -4567,10 +5540,29 @@ mod tests {
     fn a_lone_population_word_is_population_and_a_phrase_around_it_is_not() {
         let ids = |q: &str| asked_zh(q).into_iter().map(|a| a.id).collect::<Vec<_>>();
         let has = |q: &str| ids(q).iter().any(|i| i == "population");
-        for q in ["东盟各国的人口", "印度和中国的人口分别是多少", "人口和人均GDP哪个国家最高", "日本人口这十年怎么变", "欧盟各国人口排名"] {
+        for q in [
+            "东盟各国的人口",
+            "印度和中国的人口分别是多少",
+            "人口和人均GDP哪个国家最高",
+            "日本人口这十年怎么变",
+            "欧盟各国人口排名",
+        ] {
             assert!(has(q), "should read population: {q} -> {:?}", ids(q));
         }
-        for q in ["哪国人口密度最高", "农村人口数最多的是哪国", "城镇人口占比最高的国家", "劳动人口占比", "日本人口老龄化有多严重", "老年人口占比最高的欧盟国家", "城市人口比例变化", "人口超过一亿的国家里谁最富", "人口大国的人均碳排放", "65岁及以上人口占比", "能用上电的人口比例各怎么变", "在农业就业的人口比例"] {
+        for q in [
+            "哪国人口密度最高",
+            "农村人口数最多的是哪国",
+            "城镇人口占比最高的国家",
+            "劳动人口占比",
+            "日本人口老龄化有多严重",
+            "老年人口占比最高的欧盟国家",
+            "城市人口比例变化",
+            "人口超过一亿的国家里谁最富",
+            "人口大国的人均碳排放",
+            "65岁及以上人口占比",
+            "能用上电的人口比例各怎么变",
+            "在农业就业的人口比例",
+        ] {
             assert!(!has(q), "should not read population: {q} -> {:?}", ids(q));
         }
         // the phrase's own family is still read
@@ -4578,7 +5570,11 @@ mod tests {
         assert!(ids("老年人口占比最高的欧盟国家").contains(&"pop65".to_string()));
         assert!(ids("城镇人口占比最高的国家").contains(&"urban_share".to_string()));
         // a lone 人口 beside a phrase: both read
-        assert!(has("人口和人口密度都最高的国家"), "{:?}", ids("人口和人口密度都最高的国家"));
+        assert!(
+            has("人口和人口密度都最高的国家"),
+            "{:?}",
+            ids("人口和人口密度都最高的国家")
+        );
     }
 
     #[test]
@@ -4619,14 +5615,37 @@ mod tests {
         let q = "德国、法国、意大利二十年来的能源进口依存度";
         assert_eq!(ids(q), ["energy_imports"]);
         assert!(asked_beside_table(q, "nrg_ind_id", Some("能源进口依存度")).is_empty());
-        assert_eq!(asked_beside_table(q, "nrg_ind_id", None), ["energy_imports"]);
-        assert_eq!(asked_beside_table("能源进口依存度和人均GDP", "nrg_ind_id", Some("能源进口依存度")), ["gdp_pc"]);
+        assert_eq!(
+            asked_beside_table(q, "nrg_ind_id", None),
+            ["energy_imports"]
+        );
+        assert_eq!(
+            asked_beside_table(
+                "能源进口依存度和人均GDP",
+                "nrg_ind_id",
+                Some("能源进口依存度")
+            ),
+            ["gdp_pc"]
+        );
         let q = "各国 65岁和65岁以上的人口总数";
         assert_eq!(ids(q), ["pop65", "population"]);
-        assert_eq!(asked_beside_table(q, "SP.POP.65UP.TO@2", Some("65岁和65岁以上的人口总数")), ["pop65"]);
-        assert_eq!(asked_beside_table(q, "SP.POP.65UP.TO@2", Some("65 岁和 65 岁以上女性人口（占女性人口的百分比）")), ["pop65", "population"]);
+        assert_eq!(
+            asked_beside_table(q, "SP.POP.65UP.TO@2", Some("65岁和65岁以上的人口总数")),
+            ["pop65"]
+        );
+        assert_eq!(
+            asked_beside_table(
+                q,
+                "SP.POP.65UP.TO@2",
+                Some("65 岁和 65 岁以上女性人口（占女性人口的百分比）")
+            ),
+            ["pop65", "population"]
+        );
         // the name up to its edition note is what the question says; the family the table holds stays
-        assert_eq!(asked_beside_table("德国天然气进口", "nrg_ti_gas", Some("天然气进口（年度）")), ["energy_imports"]);
+        assert_eq!(
+            asked_beside_table("德国天然气进口", "nrg_ti_gas", Some("天然气进口（年度）")),
+            ["energy_imports"]
+        );
         // a World Bank growth rate with no reviewed name (dev round 15 n28: 人口增长率 printed "also asks about population,
         // this half cannot be answered"): the population family holds the growth table, so its 人口增长 is the table's own
         // quantity; a quantity asked beside it stays, and the total's table still holds population
@@ -4636,13 +5655,28 @@ mod tests {
         assert!(asked_zh(q).iter().all(|a| a.holds("SP.POP.GROW@2")));
         let q = "日本、韩国 2024 年的人口增长率和人均GDP";
         let both = asked_beside_table(q, "SP.POP.GROW@2", None);
-        assert!(both.contains(&"population".to_string()) && both.contains(&"gdp_pc".to_string()), "{both:?}");
-        assert!(asked_zh(q).iter().any(|a| a.id == "gdp_pc" && !a.holds("SP.POP.GROW@2")));
-        assert!(asked_zh("各国总人口").iter().all(|a| a.holds("SP.POP.TOTL@2") && !a.holds("SP.POP.65UP.TO@2")));
+        assert!(
+            both.contains(&"population".to_string()) && both.contains(&"gdp_pc".to_string()),
+            "{both:?}"
+        );
+        assert!(asked_zh(q)
+            .iter()
+            .any(|a| a.id == "gdp_pc" && !a.holds("SP.POP.GROW@2")));
+        assert!(asked_zh("各国总人口")
+            .iter()
+            .all(|a| a.holds("SP.POP.TOTL@2") && !a.holds("SP.POP.65UP.TO@2")));
     }
 
     fn cand(id: &str, score: f64) -> Candidate {
-        Candidate { id: id.into(), title: id.into(), score, s: score, v: 0.0, coverage: Coverage::Europe, twin_of: None }
+        Candidate {
+            id: id.into(),
+            title: id.into(),
+            score,
+            s: score,
+            v: 0.0,
+            coverage: Coverage::Europe,
+            twin_of: None,
+        }
     }
 
     /// Review list 11-15 (选表, dev round 15 n4, n33, n41): a World Bank national estimate in the first five is offered as
@@ -4651,16 +5685,30 @@ mod tests {
     /// series is not ranked, or when the estimate proves the answer and the series does not; an id with no NE part stays.
     #[test]
     fn a_world_bank_national_estimate_is_offered_as_its_harmonised_series() {
-        assert_eq!(wb_harmonised("SL.UEM.1524.NE.ZS@2").as_deref(), Some("SL.UEM.1524.ZS@2"));
-        assert_eq!(wb_harmonised("SL.TLF.CACT.FM.NE.ZS@2").as_deref(), Some("SL.TLF.CACT.FM.ZS@2"));
+        assert_eq!(
+            wb_harmonised("SL.UEM.1524.NE.ZS@2").as_deref(),
+            Some("SL.UEM.1524.ZS@2")
+        );
+        assert_eq!(
+            wb_harmonised("SL.TLF.CACT.FM.NE.ZS@2").as_deref(),
+            Some("SL.TLF.CACT.FM.ZS@2")
+        );
         assert_eq!(wb_harmonised("SL.UEM.1524.ZS@2"), None);
-        assert_eq!(wb_harmonised("NE.EXP.GNFS.ZS@2"), None, "an NE first part is the series' own (national accounts)");
+        assert_eq!(
+            wb_harmonised("NE.EXP.GNFS.ZS@2"),
+            None,
+            "an NE first part is the series' own (national accounts)"
+        );
         assert_eq!(wb_harmonised("une_rt_a"), None);
         let c = small();
         let lit = ["SE.ADT.1524.LT.FE.ZS@2", "SE.ADT.1524.LT.ZS@2"];
         let five: Vec<Candidate> = lit
             .iter()
-            .chain(&["SL.UEM.1524.NE.ZS@2", "SL.UEM.1524.FE.NE.ZS@2", "SL.UEM.1524.ZS@2"])
+            .chain(&[
+                "SL.UEM.1524.NE.ZS@2",
+                "SL.UEM.1524.FE.NE.ZS@2",
+                "SL.UEM.1524.ZS@2",
+            ])
             .enumerate()
             .map(|(i, id)| cand(id, 2.0 - i as f64 / 10.0))
             .collect();
@@ -4668,14 +5716,35 @@ mod tests {
         ranked.extend([cand("SL.UEM.1524.FE.ZS@2", 1.0), cand("SP.POP.TOTL@2", 0.9)]);
         let got = c.source_swap(five.clone(), &ranked, |_| true);
         let ids: Vec<&str> = got.iter().map(|c| c.id.as_str()).collect();
-        assert_eq!(ids, [lit[0], lit[1], "SL.UEM.1524.ZS@2", "SL.UEM.1524.FE.ZS@2", "SP.POP.TOTL@2"]);
-        let twin = got[2].twin_of.as_ref().expect("the series says what it stands for");
-        assert_eq!((twin.asked.as_str(), twin.used.as_str()), ("SL.UEM.1524.NE.ZS@2", "SL.UEM.1524.ZS@2"));
-        assert_eq!(got[2].score, five[2].score, "the estimate's place and scores");
+        assert_eq!(
+            ids,
+            [
+                lit[0],
+                lit[1],
+                "SL.UEM.1524.ZS@2",
+                "SL.UEM.1524.FE.ZS@2",
+                "SP.POP.TOTL@2"
+            ]
+        );
+        let twin = got[2]
+            .twin_of
+            .as_ref()
+            .expect("the series says what it stands for");
+        assert_eq!(
+            (twin.asked.as_str(), twin.used.as_str()),
+            ("SL.UEM.1524.NE.ZS@2", "SL.UEM.1524.ZS@2")
+        );
+        assert_eq!(
+            got[2].score, five[2].score,
+            "the estimate's place and scores"
+        );
         assert!(got[0].twin_of.is_none() && got[4].twin_of.is_none());
         // the series not ranked: the estimate stays
         let got = c.source_swap(five[..4].to_vec(), &five[..4], |_| true);
-        assert_eq!(got.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(), five[..4].iter().map(|c| c.id.as_str()).collect::<Vec<_>>());
+        assert_eq!(
+            got.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(),
+            five[..4].iter().map(|c| c.id.as_str()).collect::<Vec<_>>()
+        );
         // the estimate proves the asked places and years and the series does not: no swap
         let got = c.source_swap(five[..3].to_vec(), &ranked, |id| id.contains(".NE."));
         assert_eq!(got[2].id, "SL.UEM.1524.NE.ZS@2");
@@ -4692,7 +5761,9 @@ mod tests {
         let slims: BTreeSet<&str> = pairs.iter().map(|p| p.slim.as_str()).collect();
         assert_eq!(slims.len(), pairs.len(), "each presentation table once");
         assert!(pairs.iter().all(|p| p.slim != p.source && p.cells >= 3));
-        assert!(pairs.iter().any(|p| p.slim == "tps00028" && p.source == "demo_pjanind"));
+        assert!(pairs
+            .iter()
+            .any(|p| p.slim == "tps00028" && p.source == "demo_pjanind"));
         let with = |meta: &str| {
             let mut raw = small_raw();
             raw.toc.push_str("\"        Old-age share\"\t\"tps00028\"\t\"table\"\n\"        Population structure\"\t\"demo_pjanind\"\t\"table\"\n");
@@ -4706,31 +5777,75 @@ mod tests {
         let five = vec![cand("nrg_bal", 2.0), cand("tps00028", 1.9)];
         let ranked = vec![five[0].clone(), five[1].clone(), cand("demo_pjanind", 0.5)];
         let got = c.source_swap(five.clone(), &ranked, |_| true);
-        assert_eq!(got.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(), ["nrg_bal", "demo_pjanind"]);
-        let twin = got[1].twin_of.as_ref().expect("the dataset says what it stands for");
-        assert_eq!((twin.asked.as_str(), twin.used.as_str(), twin.found.as_str()), ("tps00028", "demo_pjanind", "data"));
-        assert_eq!(twin.keep, [("indic_de".to_string(), vec!["PC_Y65_MAX".to_string()])]);
+        assert_eq!(
+            got.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(),
+            ["nrg_bal", "demo_pjanind"]
+        );
+        let twin = got[1]
+            .twin_of
+            .as_ref()
+            .expect("the dataset says what it stands for");
+        assert_eq!(
+            (twin.asked.as_str(), twin.used.as_str(), twin.found.as_str()),
+            ("tps00028", "demo_pjanind", "data")
+        );
+        assert_eq!(
+            twin.keep,
+            [("indic_de".to_string(), vec!["PC_Y65_MAX".to_string()])]
+        );
         assert_eq!(got[1].score, five[1].score, "the table's place and scores");
         // the dataset not ranked: the table stays
-        assert_eq!(c.source_swap(five.clone(), &five, |_| true)[1].id, "tps00028");
+        assert_eq!(
+            c.source_swap(five.clone(), &five, |_| true)[1].id,
+            "tps00028"
+        );
         // the table proves the answer and the dataset does not: no swap
-        assert_eq!(c.source_swap(five.clone(), &ranked, |id| id == "tps00028")[1].id, "tps00028");
+        assert_eq!(
+            c.source_swap(five.clone(), &ranked, |id| id == "tps00028")[1].id,
+            "tps00028"
+        );
         // other dimensions, or a dimension holding none of the table's codes: no swap
-        let other = with(&both.replace("demo_pjanind\tfreq\tA\n", "demo_pjanind\tfreq\tA\ndemo_pjanind\tsex\tT\n"));
-        assert_eq!(other.source_swap(five.clone(), &ranked, |_| true)[1].id, "tps00028");
+        let other = with(&both.replace(
+            "demo_pjanind\tfreq\tA\n",
+            "demo_pjanind\tfreq\tA\ndemo_pjanind\tsex\tT\n",
+        ));
+        assert_eq!(
+            other.source_swap(five.clone(), &ranked, |_| true)[1].id,
+            "tps00028"
+        );
         let none = with(&both.replace("demo_pjanind\tindic_de\tPC_Y65_MAX\n", ""));
-        assert_eq!(none.source_swap(five.clone(), &ranked, |_| true)[1].id, "tps00028");
+        assert_eq!(
+            none.source_swap(five.clone(), &ranked, |_| true)[1].id,
+            "tps00028"
+        );
         // review 11-15: the whole dataset already offered later in the five is never displaced by its kept copy
         let both_offered = vec![cand("tps00028", 2.0), cand("demo_pjanind", 1.9)];
         let got = c.source_swap(both_offered.clone(), &both_offered, |_| true);
-        assert_eq!(got.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(), ["tps00028", "demo_pjanind"]);
+        assert_eq!(
+            got.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(),
+            ["tps00028", "demo_pjanind"]
+        );
         assert!(got.iter().all(|c| c.twin_of.is_none()));
         // review 11-15: a quarterly table's dataset that also holds years (fetched by year) is not offered for it
-        let quarters = with(&format!("{both}tps00028\ttime\t2024Q1\ndemo_pjanind\ttime\t2024\ndemo_pjanind\ttime\t2024Q1\n"));
-        assert_eq!(quarters.source_swap(five, &ranked, |_| true)[1].id, "tps00028");
+        let quarters = with(&format!(
+            "{both}tps00028\ttime\t2024Q1\ndemo_pjanind\ttime\t2024\ndemo_pjanind\ttime\t2024Q1\n"
+        ));
+        assert_eq!(
+            quarters.source_swap(five, &ranked, |_| true)[1].id,
+            "tps00028"
+        );
         // owner 11-16 08:4x item 4: tps00204 (births) is demo_gind under other indicator codes, kept to the dataset's codes
-        let births = presentation_sources().iter().find(|p| p.slim == "tps00204").expect("tps00204 is registered");
-        assert_eq!((births.source.as_str(), births.codes["indic_de"]["LBIRTH_NR"].as_str()), ("demo_gind", "LBIRTH"));
+        let births = presentation_sources()
+            .iter()
+            .find(|p| p.slim == "tps00204")
+            .expect("tps00204 is registered");
+        assert_eq!(
+            (
+                births.source.as_str(),
+                births.codes["indic_de"]["LBIRTH_NR"].as_str()
+            ),
+            ("demo_gind", "LBIRTH")
+        );
         let mut raw = small_raw();
         raw.toc.push_str("\"        Live births\"\t\"tps00204\"\t\"table\"\n\"        Demographic balance\"\t\"demo_gind\"\t\"table\"\n");
         raw.metabase.push_str("tps00204\tfreq\tA\ntps00204\tindic_de\tLBIRTH_NR\ntps00204\tindic_de\tGBIRTHRT_THSP\ntps00204\tgeo\tDE\n\
@@ -4740,11 +5855,22 @@ mod tests {
         let ranked = vec![five[0].clone(), five[1].clone(), cand("demo_gind", 0.5)];
         let got = c.source_swap(five, &ranked, |_| true);
         assert_eq!(got[1].id, "demo_gind");
-        assert_eq!(got[1].twin_of.as_ref().unwrap().keep, [("indic_de".to_string(), vec!["LBIRTH".to_string(), "GBIRTHRT".to_string()])]);
+        assert_eq!(
+            got[1].twin_of.as_ref().unwrap().keep,
+            [(
+                "indic_de".to_string(),
+                vec!["LBIRTH".to_string(), "GBIRTHRT".to_string()]
+            )]
+        );
     }
 
     fn asked_of(id: &str, tables: &[&str]) -> Asked {
-        Asked { id: id.into(), zh: id.into(), tables: tables.iter().map(|t| t.to_string()).collect(), offered: Vec::new() }
+        Asked {
+            id: id.into(),
+            zh: id.into(),
+            tables: tables.iter().map(|t| t.to_string()).collect(),
+            offered: Vec::new(),
+        }
     }
 
     /// Two asked quantities, the first filling the first five: the second's best ranked table takes the fifth place and
@@ -4754,42 +5880,110 @@ mod tests {
     /// per-capita GDP title (gdp_pc's, not gdp's), and titles naming another quantity or only part of the words.
     #[test]
     fn an_asked_quantity_is_held_by_a_title_naming_its_words() {
-        let fam = |id: &str| asked_zh(match id { "asylum" => "庇护申请", "co2" => "碳排放", "gdp" => "GDP", "gdp_pc" => "人均GDP", "population" => "总人口", _ => unreachable!() }).remove(0);
-        let titled = |id: &str, title: &str| Candidate { title: title.into(), ..cand(id, 1.0) };
-        let (asylum, co2, gdp, gdp_pc, population) = (fam("asylum"), fam("co2"), fam("gdp"), fam("gdp_pc"), fam("population"));
-        assert_eq!((asylum.id.as_str(), gdp_pc.id.as_str()), ("asylum", "gdp_pc"));
-        assert!(asylum.holds_candidate(&titled("tps00191", "Asylum applicants by type - annual aggregated data")));
-        assert!(asylum.holds_candidate(&titled("migr_asyappctza", "migr_asyappctza")), "a prefix still holds");
+        let fam = |id: &str| {
+            asked_zh(match id {
+                "asylum" => "庇护申请",
+                "co2" => "碳排放",
+                "gdp" => "GDP",
+                "gdp_pc" => "人均GDP",
+                "population" => "总人口",
+                _ => unreachable!(),
+            })
+            .remove(0)
+        };
+        let titled = |id: &str, title: &str| Candidate {
+            title: title.into(),
+            ..cand(id, 1.0)
+        };
+        let (asylum, co2, gdp, gdp_pc, population) = (
+            fam("asylum"),
+            fam("co2"),
+            fam("gdp"),
+            fam("gdp_pc"),
+            fam("population"),
+        );
+        assert_eq!(
+            (asylum.id.as_str(), gdp_pc.id.as_str()),
+            ("asylum", "gdp_pc")
+        );
+        assert!(asylum.holds_candidate(&titled(
+            "tps00191",
+            "Asylum applicants by type - annual aggregated data"
+        )));
+        assert!(
+            asylum.holds_candidate(&titled("migr_asyappctza", "migr_asyappctza")),
+            "a prefix still holds"
+        );
         assert!(co2.holds_candidate(&titled("XYZ.CO2", "Carbon dioxide emissions by sector")));
         let per_capita = titled("tec00114", "Gross domestic product per capita in PPS");
         assert!(gdp_pc.holds_candidate(&per_capita) && !gdp.holds_candidate(&per_capita));
-        assert!(gdp.holds_candidate(&titled("tec00001", "Gross domestic product at market prices")));
+        assert!(gdp.holds_candidate(&titled(
+            "tec00001",
+            "Gross domestic product at market prices"
+        )));
         assert!(!asylum.holds_candidate(&titled("tps00001", "Population on 1 January")));
-        assert!(!population.holds_candidate(&titled("tps00001", "Population on 1 January")), "total is not in the title");
-        assert!(!co2.holds_candidate(&titled("env_x", "Carbon footprint")), "part of the words");
+        assert!(
+            !population.holds_candidate(&titled("tps00001", "Population on 1 January")),
+            "total is not in the title"
+        );
+        assert!(
+            !co2.holds_candidate(&titled("env_x", "Carbon footprint")),
+            "part of the words"
+        );
     }
 
     #[test]
     fn lift_asked_keeps_a_place_for_each_asked_quantity() {
         let c = small();
-        let ranked: Vec<Candidate> =
-            ["ren_a", "ren_b", "ren_c", "ren_d", "ren_e", "ren_f", "gdp_pc_a", "gdp_pc_b"].iter().enumerate().map(|(k, id)| cand(id, 10.0 - k as f64)).collect();
+        let ranked: Vec<Candidate> = [
+            "ren_a", "ren_b", "ren_c", "ren_d", "ren_e", "ren_f", "gdp_pc_a", "gdp_pc_b",
+        ]
+        .iter()
+        .enumerate()
+        .map(|(k, id)| cand(id, 10.0 - k as f64))
+        .collect();
         let ren = asked_of("renewable_share", &["ren_"]);
         let gdp = asked_of("gdp_pc", &["gdp_pc_"]);
-        let lifted = c.lift_asked(ranked.clone(), &[ren.clone(), gdp.clone()], Scope::Beyond, &[]);
-        assert_eq!(ids(&lifted[..TOP]), ["ren_a", "ren_b", "ren_c", "ren_d", "gdp_pc_a"]);
+        let lifted = c.lift_asked(
+            ranked.clone(),
+            &[ren.clone(), gdp.clone()],
+            Scope::Beyond,
+            &[],
+        );
+        assert_eq!(
+            ids(&lifted[..TOP]),
+            ["ren_a", "ren_b", "ren_c", "ren_d", "gdp_pc_a"]
+        );
         assert_eq!(ids(&lifted[TOP..]), ["ren_e", "ren_f", "gdp_pc_b"]);
-        assert_eq!(ids(&c.lift_asked(ranked.clone(), &[ren.clone()], Scope::Beyond, &[])), ids(&ranked));
+        assert_eq!(
+            ids(&c.lift_asked(ranked.clone(), &[ren.clone()], Scope::Beyond, &[])),
+            ids(&ranked)
+        );
         // one asked quantity none of the first five holds: its best ranked table takes the fifth place
         let alone = c.lift_asked(ranked.clone(), &[gdp.clone()], Scope::Beyond, &[]);
-        assert_eq!(ids(&alone[..TOP]), ["ren_a", "ren_b", "ren_c", "ren_d", "gdp_pc_a"]);
-        assert_eq!(ids(&c.lift_asked(ranked.clone(), &[], Scope::Beyond, &[])), ids(&ranked), "none asked");
-        let both = c.lift_asked(ranked.clone(), &[ren.clone(), asked_of("x", &["ren_b"])], Scope::Beyond, &[]);
+        assert_eq!(
+            ids(&alone[..TOP]),
+            ["ren_a", "ren_b", "ren_c", "ren_d", "gdp_pc_a"]
+        );
+        assert_eq!(
+            ids(&c.lift_asked(ranked.clone(), &[], Scope::Beyond, &[])),
+            ids(&ranked),
+            "none asked"
+        );
+        let both = c.lift_asked(
+            ranked.clone(),
+            &[ren.clone(), asked_of("x", &["ren_b"])],
+            Scope::Beyond,
+            &[],
+        );
         assert_eq!(ids(&both), ids(&ranked));
         // The only table of an asked quantity in the first five is not the one displaced.
         let third = asked_of("third", &["ren_e"]);
         let kept = c.lift_asked(ranked.clone(), &[ren, third, gdp], Scope::Beyond, &[]);
-        assert_eq!(ids(&kept[..TOP]), ["ren_a", "ren_b", "ren_c", "ren_e", "gdp_pc_a"]);
+        assert_eq!(
+            ids(&kept[..TOP]),
+            ["ren_a", "ren_b", "ren_c", "ren_e", "gdp_pc_a"]
+        );
     }
 
     #[test]
@@ -4802,8 +5996,16 @@ mod tests {
         assert_eq!(tables.len(), notes.len(), "a table twice");
         for (n, entry) in notes.iter().zip(file["tables"].as_array().unwrap()) {
             assert_eq!(entry["id"], json!(n.id));
-            let dims: Vec<&str> = entry["dims"].as_array().unwrap().iter().filter_map(|d| d.as_str()).collect();
-            assert!(!dims.is_empty() && !dims.iter().any(|d| SKIP_DIMS.contains(d)), "{n:?}: {dims:?}");
+            let dims: Vec<&str> = entry["dims"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|d| d.as_str())
+                .collect();
+            assert!(
+                !dims.is_empty() && !dims.iter().any(|d| SKIP_DIMS.contains(d)),
+                "{n:?}: {dims:?}"
+            );
             assert!(!n.id.is_empty() && !n.id.ends_with("@2"), "{n:?}");
             assert!(!toks(&n.words).is_empty(), "{n:?}");
             assert!(!n.words.chars().any(|c| c.is_ascii_digit()), "{n:?}");
@@ -4838,23 +6040,74 @@ mod tests {
             ("sex", &["T"]),
             ("unit", &["PER"]),
         ];
-        let power: &[(&str, &[&str])] = &[("geo", &["DE", "FR"]), ("siec", &["TOTAL", "CF"]), ("unit", &["GWH"])];
+        let power: &[(&str, &[&str])] = &[
+            ("geo", &["DE", "FR"]),
+            ("siec", &["TOTAL", "CF"]),
+            ("unit", &["GWH"]),
+        ];
         let monthly: &[(&str, &[&str])] = &[("time", &["2026M08", "2008M01"])];
         let annual: &[(&str, &[&str])] = &[("time", &["2025", "2008"])];
         let mut metabase = String::new();
         for (table, parts) in [
             ("migr_asyappctzm", vec![asylum, monthly]),
             ("migr_asyappctza", vec![asylum, annual]),
-            ("migr_asyunaa", vec![&[("geo", &["EU27_2020"][..])][..], annual]),
-            ("migr_asydcfsta", vec![&[("geo", &["EU27_2020"][..]), ("citizen", &["SY"][..])][..], annual]),
-            ("migr_asytpsm", vec![&[("geo", &["EU27_2020"][..])][..], monthly]),
-            ("migr_resfirst", vec![&[("geo", &["EU27_2020"][..])][..], annual]),
-            ("nrg_cb_pem", vec![power, &[("time", &["2026M08", "2016M01"][..])][..]]),
-            ("nrg_pa_op", vec![power, &[("operator", &["TOTAL"][..])][..], annual]),
-            ("nrg_pa_few", vec![&[("geo", &["DE"][..]), ("siec", &["TOTAL", "CF"][..]), ("unit", &["GWH"][..])][..], annual]),
-            ("nrg_pa_more", vec![&[("geo", &["DE", "FR", "IT", "ES"][..]), ("siec", &["TOTAL", "CF"][..]), ("unit", &["GWH"][..])][..], annual]),
-            ("nrg_pq", vec![power, &[("time", &["2024Q1", "2024Q2"][..])][..]]),
-            ("nrg_pa_mix", vec![power, &[("time", &["2025", "2025M01"][..])][..]]),
+            (
+                "migr_asyunaa",
+                vec![&[("geo", &["EU27_2020"][..])][..], annual],
+            ),
+            (
+                "migr_asydcfsta",
+                vec![
+                    &[("geo", &["EU27_2020"][..]), ("citizen", &["SY"][..])][..],
+                    annual,
+                ],
+            ),
+            (
+                "migr_asytpsm",
+                vec![&[("geo", &["EU27_2020"][..])][..], monthly],
+            ),
+            (
+                "migr_resfirst",
+                vec![&[("geo", &["EU27_2020"][..])][..], annual],
+            ),
+            (
+                "nrg_cb_pem",
+                vec![power, &[("time", &["2026M08", "2016M01"][..])][..]],
+            ),
+            (
+                "nrg_pa_op",
+                vec![power, &[("operator", &["TOTAL"][..])][..], annual],
+            ),
+            (
+                "nrg_pa_few",
+                vec![
+                    &[
+                        ("geo", &["DE"][..]),
+                        ("siec", &["TOTAL", "CF"][..]),
+                        ("unit", &["GWH"][..]),
+                    ][..],
+                    annual,
+                ],
+            ),
+            (
+                "nrg_pa_more",
+                vec![
+                    &[
+                        ("geo", &["DE", "FR", "IT", "ES"][..]),
+                        ("siec", &["TOTAL", "CF"][..]),
+                        ("unit", &["GWH"][..]),
+                    ][..],
+                    annual,
+                ],
+            ),
+            (
+                "nrg_pq",
+                vec![power, &[("time", &["2024Q1", "2024Q2"][..])][..]],
+            ),
+            (
+                "nrg_pa_mix",
+                vec![power, &[("time", &["2025", "2025M01"][..])][..]],
+            ),
         ] {
             for (dim, codes) in parts.into_iter().flatten() {
                 for code in *codes {
@@ -4897,14 +6150,24 @@ mod tests {
             (first.score, first.s, first.v, first.title.as_str()),
             (all[0].score, all[0].s, all[0].v, all[1].title.as_str())
         );
-        let twin = first.twin_of.as_ref().expect("the twin says what it stands for");
+        let twin = first
+            .twin_of
+            .as_ref()
+            .expect("the twin says what it stands for");
         assert_eq!(
             (twin.asked.as_str(), twin.used.as_str(), twin.found.as_str()),
             ("migr_asyappctzm", "migr_asyappctza", "id")
         );
         // What the swap costs: the annual table ends at 2025, the monthly one at 2026M08, both in the record.
-        assert_eq!((twin.asked_end.as_str(), twin.used_end.as_str()), ("2026M08", "2025"));
-        assert!(twin.why.contains("to 2026M08") && twin.why.contains("to 2025"), "{}", twin.why);
+        assert_eq!(
+            (twin.asked_end.as_str(), twin.used_end.as_str()),
+            ("2026M08", "2025")
+        );
+        assert!(
+            twin.why.contains("to 2026M08") && twin.why.contains("to 2025"),
+            "{}",
+            twin.why
+        );
         assert!(r.candidates[1..].iter().all(|c| c.twin_of.is_none()));
         assert!(r.twins_refused.is_empty());
         // As the catalogue event records it: only the twin carries the new field.
@@ -4948,7 +6211,10 @@ mod tests {
             assert!(r.candidates.iter().all(|c| c.twin_of.is_none()));
             assert_eq!(r.twins_refused.len(), 1);
             let refused = &r.twins_refused[0];
-            assert_eq!((refused.monthly.as_str(), refused.annual.as_str()), ("migr_asyappctzm", "migr_asyappctza"));
+            assert_eq!(
+                (refused.monthly.as_str(), refused.annual.as_str()),
+                ("migr_asyappctzm", "migr_asyappctza")
+            );
             assert!(refused.why.contains("asks for months"), "{}", refused.why);
             // the same question and words without months: swapped
             let r = c.top5(q6, &t, false, None, None);
@@ -4976,9 +6242,14 @@ mod tests {
             assert!(r.candidates.iter().all(|c| c.twin_of.is_none()));
             assert_eq!(r.twins_refused.len(), 1);
             let refused = &r.twins_refused[0];
-            assert_eq!((refused.monthly.as_str(), refused.annual.as_str()), ("migr_asyappctzm", "migr_asyappctza"));
+            assert_eq!(
+                (refused.monthly.as_str(), refused.annual.as_str()),
+                ("migr_asyappctzm", "migr_asyappctza")
+            );
             assert!(
-                refused.why.contains("names 2026") && refused.why.contains("last year 2025") && refused.why.contains("to 2026M08"),
+                refused.why.contains("names 2026")
+                    && refused.why.contains("last year 2025")
+                    && refused.why.contains("to 2026M08"),
                 "{}",
                 refused.why
             );
@@ -4989,12 +6260,23 @@ mod tests {
             let r = c.top5(q6, &t, true, Some(2026), None);
             assert_eq!(ids(&r.candidates), ids(&all.candidates));
             assert_eq!(r.twins_refused.len(), 1);
-            assert!(r.twins_refused[0].why.contains("asks for months"), "{}", r.twins_refused[0].why);
+            assert!(
+                r.twins_refused[0].why.contains("asks for months"),
+                "{}",
+                r.twins_refused[0].why
+            );
             // a year the annual table holds (its last one too), or no year named: swapped
             for year in [Some(2024), Some(2025), None] {
                 let r = c.top5(q6, &t, false, year, None);
                 assert_eq!(r.candidates[0].id, "migr_asyappctza", "{year:?}");
-                assert_eq!(r.candidates[0].twin_of.as_ref().map(|t| t.used_end.as_str()), Some("2025"), "{year:?}");
+                assert_eq!(
+                    r.candidates[0]
+                        .twin_of
+                        .as_ref()
+                        .map(|t| t.used_end.as_str()),
+                    Some("2025"),
+                    "{year:?}"
+                );
                 assert!(!ids(&r.candidates).contains(&"migr_asyappctzm"), "{year:?}");
                 assert!(r.twins_refused.is_empty(), "{year:?}");
             }
@@ -5012,10 +6294,28 @@ mod tests {
         // the asked record's offered tables are the top five's (top5 fills them; rank alone offers none): nrg_cb_pem by its
         // prefix, the four annual ones by their titles ("Electricity generation by fuel ...")
         let got = c.top5(q3, &t, false, None, None);
-        let want: Vec<String> = ["nrg_cb_pem", "nrg_pa_mix", "nrg_pa_more", "nrg_pa_few", "nrg_pa_op"].iter().map(|s| s.to_string()).collect();
-        assert_eq!(got.asked.iter().map(|a| a.offered.clone()).collect::<Vec<_>>(), vec![want]);
+        let want: Vec<String> = [
+            "nrg_cb_pem",
+            "nrg_pa_mix",
+            "nrg_pa_more",
+            "nrg_pa_few",
+            "nrg_pa_op",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        assert_eq!(
+            got.asked
+                .iter()
+                .map(|a| a.offered.clone())
+                .collect::<Vec<_>>(),
+            vec![want]
+        );
         all.asked = got.asked.clone();
-        assert_eq!(serde_json::to_value(got).unwrap(), serde_json::to_value(all).unwrap());
+        assert_eq!(
+            serde_json::to_value(got).unwrap(),
+            serde_json::to_value(all).unwrap()
+        );
     }
 
     #[test]
@@ -5034,7 +6334,12 @@ mod tests {
         };
         let dims = ["geo", "siec", "unit"];
         // Every monthly code in the annual table, with no more extra codes than the file counts: swapped.
-        let (got, refused) = c.twin_swap(ranked.clone(), &[pair("nrg_pa_more", &dims, &[("geo", 2)], &["GWH"])], false, None);
+        let (got, refused) = c.twin_swap(
+            ranked.clone(),
+            &[pair("nrg_pa_more", &dims, &[("geo", 2)], &["GWH"])],
+            false,
+            None,
+        );
         assert!(refused.is_empty(), "{refused:?}");
         assert_eq!(got.len(), TOP);
         assert!(!ids(&got).contains(&"nrg_cb_pem"));
@@ -5054,19 +6359,43 @@ mod tests {
                 pair("nrg_pa_more", &dims, &[("geo", 1)], &["GWH"]),
                 "nrg_pa_more has 2 geo codes beyond those of nrg_cb_pem, the file counts 1",
             ),
-            (pair("nrg_pa_op", &dims, &[], &["GWH"]), "the dimensions differ"),
             (
-                pair("nrg_pa_op", &["geo", "operator", "siec", "unit"], &[], &["GWH"]),
+                pair("nrg_pa_op", &dims, &[], &["GWH"]),
                 "the dimensions differ",
             ),
-            (pair("nrg_pa_few", &dims, &[], &["GWH"]), "nrg_pa_few lacks the geo code FR of nrg_cb_pem"),
-            (pair("nrg_pq", &dims, &[], &["GWH"]), "nrg_pq holds no annual data"),
-            (pair("nrg_pa_mix", &dims, &[], &["GWH"]), "nrg_pa_mix holds more than annual data"),
-            (pair("nrg_pa_more", &dims, &[("geo", 2)], &["TJ"]), "nrg_pa_more lacks the unit TJ"),
-            (pair("nrg_no_such", &dims, &[], &[]), "nrg_no_such is not among the tables"),
+            (
+                pair(
+                    "nrg_pa_op",
+                    &["geo", "operator", "siec", "unit"],
+                    &[],
+                    &["GWH"],
+                ),
+                "the dimensions differ",
+            ),
+            (
+                pair("nrg_pa_few", &dims, &[], &["GWH"]),
+                "nrg_pa_few lacks the geo code FR of nrg_cb_pem",
+            ),
+            (
+                pair("nrg_pq", &dims, &[], &["GWH"]),
+                "nrg_pq holds no annual data",
+            ),
+            (
+                pair("nrg_pa_mix", &dims, &[], &["GWH"]),
+                "nrg_pa_mix holds more than annual data",
+            ),
+            (
+                pair("nrg_pa_more", &dims, &[("geo", 2)], &["TJ"]),
+                "nrg_pa_more lacks the unit TJ",
+            ),
+            (
+                pair("nrg_no_such", &dims, &[], &[]),
+                "nrg_no_such is not among the tables",
+            ),
             (not_monthly, "nrg_pa_more is not monthly only"),
         ] {
-            let (got, refused) = c.twin_swap(ranked.clone(), std::slice::from_ref(&twin), false, None);
+            let (got, refused) =
+                c.twin_swap(ranked.clone(), std::slice::from_ref(&twin), false, None);
             assert_eq!(ids(&got), ids(&ranked[..TOP]), "{why}");
             assert!(got.iter().all(|c| c.twin_of.is_none()), "{why}");
             assert_eq!(refused.len(), 1, "{why}");
@@ -5090,11 +6419,27 @@ mod tests {
         assert_eq!(annual.len(), twins.len(), "an annual table twice");
         assert!(monthly.is_disjoint(&annual), "a table on both sides");
         for t in twins {
-            assert!(["id", "title", "id+title"].contains(&t.found.as_str()), "{t:?}");
-            assert!(!t.dims.is_empty() && !t.dims.iter().any(|d| d == "time"), "{t:?}");
-            assert!(t.extra_annual_codes.keys().all(|d| t.dims.contains(d)), "{t:?}");
-            assert_eq!(t.unit.is_empty(), !t.dims.iter().any(|d| d == "unit"), "{t:?}");
-            assert!(!t.monthly.ends_with("@2") && !t.annual.ends_with("@2"), "{t:?}");
+            assert!(
+                ["id", "title", "id+title"].contains(&t.found.as_str()),
+                "{t:?}"
+            );
+            assert!(
+                !t.dims.is_empty() && !t.dims.iter().any(|d| d == "time"),
+                "{t:?}"
+            );
+            assert!(
+                t.extra_annual_codes.keys().all(|d| t.dims.contains(d)),
+                "{t:?}"
+            );
+            assert_eq!(
+                t.unit.is_empty(),
+                !t.dims.iter().any(|d| d == "unit"),
+                "{t:?}"
+            );
+            assert!(
+                !t.monthly.ends_with("@2") && !t.annual.ends_with("@2"),
+                "{t:?}"
+            );
         }
     }
 
@@ -5353,28 +6698,46 @@ mod tests {
         let c = Catalog::load(&dir).unwrap();
         let want: serde_json::Value = serde_json::from_str(&read("v5geo/out-v5geo.json")).unwrap();
         let twins = monthly_twins();
-        let monthly: HashMap<&str, &str> = twins.iter().map(|t| (t.monthly.as_str(), t.annual.as_str())).collect();
+        let monthly: HashMap<&str, &str> = twins
+            .iter()
+            .map(|t| (t.monthly.as_str(), t.annual.as_str()))
+            .collect();
         let mut bad = Vec::new();
         let mut changed = 0;
         let mut rows = 0;
-        let mut row = |kind: &str, label: String, scope: &str, ranked: &[Candidate], after: &Ranking| {
+        let mut row = |kind: &str,
+                       label: String,
+                       scope: &str,
+                       ranked: &[Candidate],
+                       after: &Ranking| {
             let before = ids(&ranked[..ranked.len().min(TOP)]);
             let got = ids(&after.candidates);
-            let removed: Vec<&str> = before.iter().copied().filter(|i| !got.contains(i)).collect();
-            let added: Vec<&str> = got.iter().copied().filter(|i| !before.contains(i)).collect();
+            let removed: Vec<&str> = before
+                .iter()
+                .copied()
+                .filter(|i| !got.contains(i))
+                .collect();
+            let added: Vec<&str> = got
+                .iter()
+                .copied()
+                .filter(|i| !before.contains(i))
+                .collect();
             for r in &removed {
                 if !monthly.contains_key(r) {
                     bad.push(format!("{kind} {label} {scope}: {r} left the five and is no registered monthly table"));
                 }
             }
-            let fills = ids(&ranked[TOP.min(ranked.len())..(TOP + removed.len()).min(ranked.len())]);
+            let fills =
+                ids(&ranked[TOP.min(ranked.len())..(TOP + removed.len()).min(ranked.len())]);
             for a in &added {
                 if !removed.iter().any(|r| monthly.get(r) == Some(a)) && !fills.contains(a) {
                     bad.push(format!("{kind} {label} {scope}: {a} joined the five as neither a twin nor the next ranked"));
                 }
             }
             for t in after.candidates.iter().filter_map(|c| c.twin_of.as_ref()) {
-                if monthly.get(t.asked.as_str()) != Some(&t.used.as_str()) || !before.contains(&t.asked.as_str()) {
+                if monthly.get(t.asked.as_str()) != Some(&t.used.as_str())
+                    || !before.contains(&t.asked.as_str())
+                {
                     bad.push(format!("{kind} {label} {scope}: twin_of {t:?}"));
                 }
             }
@@ -5390,7 +6753,16 @@ mod tests {
         };
         let swapped = |ranked: &[Candidate]| {
             let (candidates, twins_refused) = c.twin_swap(ranked.to_vec(), twins, false, None);
-            Ranking { scope: Scope::Europe, places_zh: Vec::new(), uncovered: None, unread: None, candidates, twins_refused, unproven: Vec::new(), asked: Vec::new() }
+            Ranking {
+                scope: Scope::Europe,
+                places_zh: Vec::new(),
+                uncovered: None,
+                unread: None,
+                candidates,
+                twins_refused,
+                unproven: Vec::new(),
+                asked: Vec::new(),
+            }
         };
         let scope_of = |q: &str| c.scope(ORIG.iter().find(|(k, _)| *k == q).unwrap().1).0;
         for r in want["phrasings"].as_array().unwrap() {
@@ -5398,7 +6770,13 @@ mod tests {
             let ph = texts(&[r["phrasing"].as_str().unwrap()]);
             for (name, scope) in [("L5-none", Scope::Europe), ("L5geo", scope_of(q))] {
                 let ranked = c.rank_in(&ph, scope);
-                row("phrasing", format!("{q} {}", ph[0]), name, &ranked, &swapped(&ranked));
+                row(
+                    "phrasing",
+                    format!("{q} {}", ph[0]),
+                    name,
+                    &ranked,
+                    &swapped(&ranked),
+                );
             }
         }
         let a_file = read("standin-query-1025/A-one-query.txt");
@@ -5414,7 +6792,12 @@ mod tests {
             let t: Vec<String> = if r["variant"] == "A" {
                 texts(&[a[q].trim()])
             } else {
-                b[q]["terms"].as_array().unwrap().iter().map(|t| t.as_str().unwrap().to_string()).collect()
+                b[q]["terms"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|t| t.as_str().unwrap().to_string())
+                    .collect()
             };
             for (name, scope) in [("L5-none", Scope::Europe), ("L5geo", scope_of(q))] {
                 let ranked = c.rank_in(&t, scope);
@@ -5422,8 +6805,10 @@ mod tests {
                 row("standin", label, name, &ranked, &swapped(&ranked));
             }
         }
-        let mut asked: Vec<(String, String, String)> =
-            ORIG.iter().map(|(q, zh)| (q.to_string(), zh.to_string(), a[q].trim().to_string())).collect();
+        let mut asked: Vec<(String, String, String)> = ORIG
+            .iter()
+            .map(|(q, zh)| (q.to_string(), zh.to_string(), a[q].trim().to_string()))
+            .collect();
         if let Ok(path) = std::env::var("L5GEO_TWINS_ROWS") {
             for line in std::fs::read_to_string(path).unwrap().lines() {
                 if let [label, question, words] = line.split('\t').collect::<Vec<_>>()[..] {
@@ -5442,8 +6827,17 @@ mod tests {
             let after = c.top5(zh, &t, false, None, None);
             let swap_ms = ms(t1);
             let ranked = c.rank(zh, &t).candidates;
-            println!("time {label} rank+truncate {plain_ms:.1} ms, top5 {swap_ms:.1} ms, refused {}", after.twins_refused.len());
-            row("question", format!("{label} {zh} {words}"), "top5", &ranked, &after);
+            println!(
+                "time {label} rank+truncate {plain_ms:.1} ms, top5 {swap_ms:.1} ms, refused {}",
+                after.twins_refused.len()
+            );
+            row(
+                "question",
+                format!("{label} {zh} {words}"),
+                "top5",
+                &ranked,
+                &after,
+            );
         }
         println!("rows {rows}, changed {changed}");
         assert!(bad.is_empty(), "{}", bad.join("\n"));
@@ -5452,25 +6846,101 @@ mod tests {
     /// The search words of the other five dev questions as their stand-in runs wrote them (each run's first search answer
     /// that reached the catalogue, runs of 10-28 to 10-31), with the run's question.
     const NOTE_LOCKED: [(&str, &str, &str); 19] = [
-        ("q1", "欧盟各国可再生能源占比", "share of renewable energy in gross final energy consumption by country"),
-        ("q1", "欧盟各国可再生能源占比", "share of renewable energy in gross final energy consumption"),
-        ("q1", "欧盟各国可再生能源占比", "share of renewable energy in gross final energy consumption EU countries"),
-        ("q1", "欧盟各国可再生能源占比", "renewable energy share of gross final energy consumption"),
-        ("q1", "欧盟各国可再生能源占比", "renewable energy share gross final energy consumption"),
-        ("q1", "欧盟各国可再生能源占比", "renewable energy share gross final energy consumption by country"),
-        ("q1", "欧盟各国可再生能源占比", "renewable energy share gross final energy consumption EU countries"),
-        ("q1", "欧盟各国可再生能源占比", "renewable energy share gross final consumption by country"),
-        ("q1", "欧盟各国可再生能源占比", "renewable energy share by country EU"),
-        ("q1", "欧盟各国可再生能源占比", "renewable energy share EU countries"),
-        ("q3", "欧盟各国发电结构", "electricity generation by fuel type EU countries"),
-        ("q4", "人口大国 × 年份的人均碳排放", "CO2 emissions per capita by country"),
-        ("q4", "人口大国 × 年份的人均碳排放", "carbon dioxide emissions per capita population country year"),
-        ("q5", "各国 65 岁以上人口比例十年变化", "population aged 65+ share of total population by country"),
-        ("q5", "各国 65 岁以上人口比例十年变化", "population aged 65+ share of total population"),
-        ("q5", "各国 65 岁以上人口比例十年变化", "population aged 65+ share by country"),
-        ("q5", "各国 65 岁以上人口比例十年变化", "population aged 65 and over percent of total population ageing age structure"),
-        ("q6", "欧盟庇护申请的来源国", "asylum applicants by citizenship"),
-        ("q6", "欧盟庇护申请的来源国", "asylum applicants by citizenship EU"),
+        (
+            "q1",
+            "欧盟各国可再生能源占比",
+            "share of renewable energy in gross final energy consumption by country",
+        ),
+        (
+            "q1",
+            "欧盟各国可再生能源占比",
+            "share of renewable energy in gross final energy consumption",
+        ),
+        (
+            "q1",
+            "欧盟各国可再生能源占比",
+            "share of renewable energy in gross final energy consumption EU countries",
+        ),
+        (
+            "q1",
+            "欧盟各国可再生能源占比",
+            "renewable energy share of gross final energy consumption",
+        ),
+        (
+            "q1",
+            "欧盟各国可再生能源占比",
+            "renewable energy share gross final energy consumption",
+        ),
+        (
+            "q1",
+            "欧盟各国可再生能源占比",
+            "renewable energy share gross final energy consumption by country",
+        ),
+        (
+            "q1",
+            "欧盟各国可再生能源占比",
+            "renewable energy share gross final energy consumption EU countries",
+        ),
+        (
+            "q1",
+            "欧盟各国可再生能源占比",
+            "renewable energy share gross final consumption by country",
+        ),
+        (
+            "q1",
+            "欧盟各国可再生能源占比",
+            "renewable energy share by country EU",
+        ),
+        (
+            "q1",
+            "欧盟各国可再生能源占比",
+            "renewable energy share EU countries",
+        ),
+        (
+            "q3",
+            "欧盟各国发电结构",
+            "electricity generation by fuel type EU countries",
+        ),
+        (
+            "q4",
+            "人口大国 × 年份的人均碳排放",
+            "CO2 emissions per capita by country",
+        ),
+        (
+            "q4",
+            "人口大国 × 年份的人均碳排放",
+            "carbon dioxide emissions per capita population country year",
+        ),
+        (
+            "q5",
+            "各国 65 岁以上人口比例十年变化",
+            "population aged 65+ share of total population by country",
+        ),
+        (
+            "q5",
+            "各国 65 岁以上人口比例十年变化",
+            "population aged 65+ share of total population",
+        ),
+        (
+            "q5",
+            "各国 65 岁以上人口比例十年变化",
+            "population aged 65+ share by country",
+        ),
+        (
+            "q5",
+            "各国 65 岁以上人口比例十年变化",
+            "population aged 65 and over percent of total population ageing age structure",
+        ),
+        (
+            "q6",
+            "欧盟庇护申请的来源国",
+            "asylum applicants by citizenship",
+        ),
+        (
+            "q6",
+            "欧盟庇护申请的来源国",
+            "asylum applicants by citizenship EU",
+        ),
     ];
 
     /// n41's question on the real catalogue: the five BRICS members it lists in brackets are the places asked, not the
@@ -5499,10 +6969,13 @@ mod tests {
     fn replay_top5() {
         let dir = std::path::PathBuf::from(std::env::var("L5GEO_DIR").expect("L5GEO_DIR"));
         let c = Catalog::from_raw(&Raw::read(&dir).unwrap());
-        let cases = std::fs::read_to_string(std::env::var("TOP5_CASES").expect("TOP5_CASES")).unwrap();
+        let cases =
+            std::fs::read_to_string(std::env::var("TOP5_CASES").expect("TOP5_CASES")).unwrap();
         for line in cases.lines() {
             let mut f = line.splitn(3, '\t');
-            let (Some(q), Some(question), Some(texts)) = (f.next(), f.next(), f.next()) else { continue };
+            let (Some(q), Some(question), Some(texts)) = (f.next(), f.next(), f.next()) else {
+                continue;
+            };
             let texts: Vec<String> = serde_json::from_str(texts).unwrap_or_default();
             // the flow's own arguments (next_flow's search step), this year as on the recorded runs (2026)
             let r = c.top5(
@@ -5512,7 +6985,11 @@ mod tests {
                 crate::next_params::question_latest_year(question, 2026),
                 crate::next_params::question_first_year(question, 2026),
             );
-            let asked: Vec<String> = r.asked.iter().map(|a| format!("{}={}", a.id, a.offered.join("+"))).collect();
+            let asked: Vec<String> = r
+                .asked
+                .iter()
+                .map(|a| format!("{}={}", a.id, a.offered.join("+")))
+                .collect();
             let ids: Vec<&str> = r.candidates.iter().map(|x| x.id.as_str()).collect();
             println!("T5\t{q}\t{}\t{}", asked.join(","), ids.join(" "));
         }
@@ -5529,16 +7006,33 @@ mod tests {
     fn a_table_holding_no_row_of_a_named_place_is_not_offered() {
         let c = small();
         let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
-        assert!(c.unproven("nrg_bal", &s(&["CN"]), (None, None)).is_some_and(|w| w.contains("CN")));
+        assert!(c
+            .unproven("nrg_bal", &s(&["CN"]), (None, None))
+            .is_some_and(|w| w.contains("CN")));
         assert_eq!(c.unproven("nrg_bal", &s(&["DE", "FR"]), (None, None)), None);
-        assert_eq!(c.unproven("nrg_world", &s(&["CN", "US"]), (None, None)), None);
-        assert_eq!(c.unproven("EG.USE@2", &s(&["CN", "DE"]), (None, None)), None);
+        assert_eq!(
+            c.unproven("nrg_world", &s(&["CN", "US"]), (None, None)),
+            None
+        );
+        assert_eq!(
+            c.unproven("EG.USE@2", &s(&["CN", "DE"]), (None, None)),
+            None
+        );
         assert!(c.unproven("nrg_bal", &s(&["EUU"]), (None, None)).is_some());
         assert_eq!(c.unproven("no_such_table", &s(&["CN"]), (None, None)), None);
         let r = c.top5("中国和美国的能源", &texts(&["energy"]), false, None, None);
         let asked = s(&["CN", "US"]);
-        assert!(r.candidates.iter().all(|x| c.unproven(&x.id, &asked, (None, None)).is_none()), "{:?}", r.candidates);
-        assert!(r.unproven.iter().all(|(id, _)| !r.candidates.iter().any(|x| &x.id == id)));
+        assert!(
+            r.candidates
+                .iter()
+                .all(|x| c.unproven(&x.id, &asked, (None, None)).is_none()),
+            "{:?}",
+            r.candidates
+        );
+        assert!(r
+            .unproven
+            .iter()
+            .all(|(id, _)| !r.candidates.iter().any(|x| &x.id == id)));
         // Germany and China with no World Bank table: nrg_bal holds DE only, nrg_world CN only, so none can prove and none
         // is taken out (the page says which place has no data, as before)
         let mut raw = small_raw();
@@ -5546,14 +7040,39 @@ mod tests {
         let eu = Catalog::from_raw(&raw);
         let q = "德国和中国的能源";
         assert_eq!(countries(&eu, q), ["DE", "CN"]);
-        let all: Vec<String> = eu.rank(q, &texts(&["energy"])).candidates.into_iter().take(TOP).map(|x| x.id).collect();
-        assert!(all.iter().all(|id| eu.unproven(id, &s(&["DE", "CN"]), (None, None)).is_some() || eu.table(id).is_none()), "{all:?}");
+        let all: Vec<String> = eu
+            .rank(q, &texts(&["energy"]))
+            .candidates
+            .into_iter()
+            .take(TOP)
+            .map(|x| x.id)
+            .collect();
+        assert!(
+            all.iter().all(
+                |id| eu.unproven(id, &s(&["DE", "CN"]), (None, None)).is_some()
+                    || eu.table(id).is_none()
+            ),
+            "{all:?}"
+        );
         let none = eu.top5(q, &texts(&["energy"]), false, None, None);
         assert!(none.unproven.is_empty(), "{:?}", none.unproven);
-        assert_eq!(none.candidates.into_iter().map(|x| x.id).collect::<Vec<_>>(), all);
+        assert_eq!(
+            none.candidates
+                .into_iter()
+                .map(|x| x.id)
+                .collect::<Vec<_>>(),
+            all
+        );
         // with the World Bank table there, it proves and the Eurostat ones are taken out
         let both = c.top5(q, &texts(&["energy"]), false, None, None);
-        assert!(both.candidates.iter().all(|x| c.unproven(&x.id, &s(&["DE", "CN"]), (None, None)).is_none()) && !both.unproven.is_empty(), "{:?}", both.candidates);
+        assert!(
+            both.candidates
+                .iter()
+                .all(|x| c.unproven(&x.id, &s(&["DE", "CN"]), (None, None)).is_none())
+                && !both.unproven.is_empty(),
+            "{:?}",
+            both.candidates
+        );
     }
 
     /// Measurement, not a check (ignored; design 2a): over recorded runs, each a published page (UNPROVEN_RUNS=<label>\t
@@ -5567,14 +7086,21 @@ mod tests {
         let dir = std::path::PathBuf::from(std::env::var("L5GEO_DIR").expect("L5GEO_DIR"));
         let c = Catalog::load(&dir).unwrap();
         let this_year = chrono::Datelike::year(&chrono::Local::now());
-        let list = std::fs::read_to_string(std::env::var("UNPROVEN_RUNS").expect("UNPROVEN_RUNS")).unwrap();
-        for line in list.lines().filter(|l| !l.starts_with('#') && !l.is_empty()) {
+        let list = std::fs::read_to_string(std::env::var("UNPROVEN_RUNS").expect("UNPROVEN_RUNS"))
+            .unwrap();
+        for line in list
+            .lines()
+            .filter(|l| !l.starts_with('#') && !l.is_empty())
+        {
             let (label, path) = line.split_once('\t').expect("label<TAB>events path");
             let Ok(text) = std::fs::read_to_string(path) else {
                 println!("UNPROVEN\t{label}\tno events");
                 continue;
             };
-            let events: Vec<serde_json::Value> = text.lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
+            let events: Vec<serde_json::Value> = text
+                .lines()
+                .filter_map(|l| serde_json::from_str(l).ok())
+                .collect();
             let Some(cat) = events.iter().find(|e| e["type"] == "next_catalogue") else {
                 println!("UNPROVEN\t{label}\tno catalogue event");
                 continue;
@@ -5586,24 +7112,52 @@ mod tests {
                 .flat_map(|e| e["tables"].as_array().cloned().unwrap_or_default())
                 .filter_map(|t| t["args"]["dataset"].as_str().map(str::to_string))
                 .collect();
-            let listed: Vec<String> =
-                cat["ranking"]["candidates"].as_array().into_iter().flatten().take(TOP).filter_map(|x| x["id"].as_str().map(str::to_string)).collect();
-            let asked: Vec<String> =
-                c.places(question).into_iter().filter_map(|p| if let Place::Country(x) = p { Some(x) } else { None }).collect();
+            let listed: Vec<String> = cat["ranking"]["candidates"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .take(TOP)
+                .filter_map(|x| x["id"].as_str().map(str::to_string))
+                .collect();
+            let asked: Vec<String> = c
+                .places(question)
+                .into_iter()
+                .filter_map(|p| {
+                    if let Place::Country(x) = p {
+                        Some(x)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
             let latest = crate::next_params::question_latest_year(question, this_year);
             let first = crate::next_params::question_first_year(question, this_year);
-            let mut drops: Vec<(String, String)> = listed.iter().filter_map(|id| c.unproven(id, &asked, (first, latest)).map(|why| (id.clone(), why))).collect();
-            if !listed.iter().any(|id| c.unproven(id, &asked, (first, latest)).is_none() && c.table(id).is_some()) {
+            let mut drops: Vec<(String, String)> = listed
+                .iter()
+                .filter_map(|id| {
+                    c.unproven(id, &asked, (first, latest))
+                        .map(|why| (id.clone(), why))
+                })
+                .collect();
+            if !listed.iter().any(|id| {
+                c.unproven(id, &asked, (first, latest)).is_none() && c.table(id).is_some()
+            }) {
                 drops.clear(); // none can prove: top5 keeps all
             }
             let main = used.first().cloned().unwrap_or_default();
-            let hit = drops.iter().any(|(id, _)| id.strip_suffix("@2").unwrap_or(id) == main);
+            let hit = drops
+                .iter()
+                .any(|(id, _)| id.strip_suffix("@2").unwrap_or(id) == main);
             println!(
                 "UNPROVEN\t{label}\t{main}\t{}/{}\t{}\t{}",
                 listed.len() - drops.len(),
                 listed.len(),
                 if hit { "HIT" } else { "" },
-                drops.iter().map(|(_, w)| w.as_str()).collect::<Vec<_>>().join(" | ")
+                drops
+                    .iter()
+                    .map(|(_, w)| w.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" | ")
             );
         }
     }
@@ -5615,14 +7169,19 @@ mod tests {
         let cases = std::fs::read_to_string(std::env::var("Q_CASES").expect("Q_CASES")).unwrap();
         let c = Catalog::load(&dir).unwrap();
         for line in cases.lines().filter(|l| !l.starts_with('#')) {
-            let Some((qid, q)) = line.split_once('\t') else { panic!("Q_CASES row without a tab: {line}") };
+            let Some((qid, q)) = line.split_once('\t') else {
+                panic!("Q_CASES row without a tab: {line}")
+            };
             let (scope, named) = c.scope(q);
             println!(
                 "PLACES\t{qid}\t{}\t{}\t{scope:?}\t{}\t{}",
                 countries(&c, q).join(","),
                 listed_aggregates(q).join(","),
                 named.join(","),
-                c.unread(q).map_or(String::new(), |u| format!("UNREAD {} {}/{}", u.word_zh, u.read, u.asked))
+                c.unread(q).map_or(String::new(), |u| format!(
+                    "UNREAD {} {}/{}",
+                    u.word_zh, u.read, u.asked
+                ))
             );
         }
     }
@@ -5643,21 +7202,44 @@ mod tests {
             let t = with
                 .table(&n.id)
                 .unwrap_or_else(|| panic!("{} is not in the catalogue", n.id));
-            for d in entry["dims"].as_array().unwrap().iter().filter_map(|d| d.as_str()) {
-                assert!(t.dims.iter().any(|(dim, _)| dim == d), "{}: no dimension {d}", n.id);
+            for d in entry["dims"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|d| d.as_str())
+            {
+                assert!(
+                    t.dims.iter().any(|(dim, _)| dim == d),
+                    "{}: no dimension {d}",
+                    n.id
+                );
             }
-            assert!(with.split_places(&n.words).0.is_empty(), "{}: a place name", n.id);
+            assert!(
+                with.split_places(&n.words).0.is_empty(),
+                "{}: a place name",
+                n.id
+            );
         }
         let five = |c: &Catalog, zh: &str, words: &str| -> Vec<String> {
             let r = c.top5(zh, &texts(&[words]), false, None, None);
             r.candidates.into_iter().map(|c| c.id).collect()
         };
-        let (zh, words) = ("德国能源从来源到各部门", "Germany energy supply by source and final consumption by sector");
+        let (zh, words) = (
+            "德国能源从来源到各部门",
+            "Germany energy supply by source and final consumption by sector",
+        );
         let place = |c: &Catalog| {
             let r = c.rank(zh, &texts(&[words]));
-            r.candidates.iter().position(|c| c.id == "nrg_bal_s").map(|n| n + 1)
+            r.candidates
+                .iter()
+                .position(|c| c.id == "nrg_bal_s")
+                .map(|n| n + 1)
         };
-        println!("q2 nrg_bal_s ranked {:?} without the notes, {:?} with them", place(&without), place(&with));
+        println!(
+            "q2 nrg_bal_s ranked {:?} without the notes, {:?} with them",
+            place(&without),
+            place(&with)
+        );
         let (before, after) = (five(&without, zh, words), five(&with, zh, words));
         println!("q2 first five without {before:?}, with {after:?}");
         assert!(!before.iter().any(|id| id == "nrg_bal_s"), "{before:?}");
@@ -5681,7 +7263,10 @@ mod tests {
     fn measure_words_take_the_common_names_and_a_counted_ranking_asks_none() {
         let ids = |q: &str| asked_zh(q).into_iter().map(|a| a.id).collect::<Vec<_>>();
         for (q, want) in [
-            ("东盟各国：人口最多的，是不是也最富？", &["population", "gdp_pc"][..]),
+            (
+                "东盟各国：人口最多的，是不是也最富？",
+                &["population", "gdp_pc"][..],
+            ),
             ("拉美哪国人口最少？", &["population"]),
             ("北欧五国人口规模对比", &["population"]),
             ("日本、韩国 65 岁及以上人口占比", &["pop65"]),
@@ -5703,8 +7288,17 @@ mod tests {
         // a counted ranking phrase chooses the places: no quantity of its own (t2 reads as before, none)
         assert!(ids("世界人口最多的十个国家的预期寿命").is_empty());
         assert_eq!(ids("经济规模最大的五个国家的人均GDP"), ["gdp_pc"]);
-        assert_eq!(asked_zh_in_order("人口最多的 5 个国家的城镇化率").into_iter().map(|a| a.id).collect::<Vec<_>>(), ["urban_share"]);
-        assert_eq!(asked_beside_table("经济规模最大的五个国家的人均GDP", "NY.GDP.PCAP.CD@2", None), ["gdp_pc"]);
+        assert_eq!(
+            asked_zh_in_order("人口最多的 5 个国家的城镇化率")
+                .into_iter()
+                .map(|a| a.id)
+                .collect::<Vec<_>>(),
+            ["urban_share"]
+        );
+        assert_eq!(
+            asked_beside_table("经济规模最大的五个国家的人均GDP", "NY.GDP.PCAP.CD@2", None),
+            ["gdp_pc"]
+        );
     }
 
     /// t2 and q4: a ranking phrase reads as a ranking by the reference indicator, with the count it writes (Chinese numerals
@@ -5712,16 +7306,34 @@ mod tests {
     #[test]
     fn a_ranking_phrase_reads_as_a_ranking_with_its_count() {
         let asked = |q: &str| rank_asked_zh(q).map(|r| (r.by, r.n, r.phrase));
-        let pop = |n: Option<usize>, phrase: &str| Some(("SP.POP.TOTL".to_string(), n, phrase.to_string()));
-        assert_eq!(asked("世界人口最多的十个国家的预期寿命"), pop(Some(10), "人口最多的十个"));
+        let pop = |n: Option<usize>, phrase: &str| {
+            Some(("SP.POP.TOTL".to_string(), n, phrase.to_string()))
+        };
+        assert_eq!(
+            asked("世界人口最多的十个国家的预期寿命"),
+            pop(Some(10), "人口最多的十个")
+        );
         assert_eq!(asked("人口大国 × 年份的人均碳排放"), pop(None, "人口大国"));
-        assert_eq!(asked("人口最多的 5 个国家的失业率"), pop(Some(5), "人口最多的5个"));
-        assert_eq!(asked("人口最多的前二十个国家"), pop(Some(20), "人口最多的前二十个"));
-        assert_eq!(asked("十二大人口国的城市化率"), pop(Some(12), "十二大人口国"));
+        assert_eq!(
+            asked("人口最多的 5 个国家的失业率"),
+            pop(Some(5), "人口最多的5个")
+        );
+        assert_eq!(
+            asked("人口最多的前二十个国家"),
+            pop(Some(20), "人口最多的前二十个")
+        );
+        assert_eq!(
+            asked("十二大人口国的城市化率"),
+            pop(Some(12), "十二大人口国")
+        );
         assert_eq!(asked("人口最多的几个国家"), pop(None, "人口最多"));
         assert_eq!(
             asked("全球十大经济体的通胀率"),
-            Some(("NY.GDP.MKTP.CD".to_string(), Some(10), "十大经济体".to_string()))
+            Some((
+                "NY.GDP.MKTP.CD".to_string(),
+                Some(10),
+                "十大经济体".to_string()
+            ))
         );
         // no phrase: the question reads as before
         assert_eq!(asked("欧盟各国可再生能源占比"), None);
@@ -5732,7 +7344,11 @@ mod tests {
     /// populous cities) read as no ranking.
     #[test]
     fn a_ranking_phrase_that_is_not_fixed_or_is_below_the_country_is_not_read() {
-        assert_eq!(rank_asked_zh("中国作为世界第二大经济体的出口增长"), None, "an ordinal is no count");
+        assert_eq!(
+            rank_asked_zh("中国作为世界第二大经济体的出口增长"),
+            None,
+            "an ordinal is no count"
+        );
         assert_eq!(rank_asked_zh("第3大人口国的城市化率"), None);
         assert_eq!(rank_asked_zh("人口最多和经济规模最大的国家"), None);
         assert_eq!(rank_asked_zh("中国人口最多的主要城市"), None);
@@ -5746,21 +7362,37 @@ mod tests {
     fn a_typed_list_of_economies_in_the_ranking_words_is_refused() {
         assert!(rank_phrases_from(RANK_PHRASES).is_ok());
         assert!(scope_classes_from(SCOPE_REFUSAL).is_ok());
-        let file = |phrases: serde_json::Value| json!({"note": "x", "phrases": phrases}).to_string();
-        let typed = file(json!([{"by": "SP.POP.TOTL", "words": ["人口最多"], "members": ["CN", "IN", "US"]}]));
-        assert!(rank_phrases_from(&typed).unwrap_err().contains("members"), "{typed}");
+        let file =
+            |phrases: serde_json::Value| json!({"note": "x", "phrases": phrases}).to_string();
+        let typed = file(
+            json!([{"by": "SP.POP.TOTL", "words": ["人口最多"], "members": ["CN", "IN", "US"]}]),
+        );
+        assert!(
+            rank_phrases_from(&typed).unwrap_err().contains("members"),
+            "{typed}"
+        );
         let codes = file(json!([{"by": "SP.POP.TOTL", "words": ["人口最多"], "codes": ["CHN"]}]));
         assert!(rank_phrases_from(&codes).is_err());
         let top = json!({"note": "x", "phrases": [], "economies": ["CN"]}).to_string();
         assert!(rank_phrases_from(&top).is_err());
         let not_code = file(json!([{"by": "China, India", "words": ["人口最多"]}]));
-        assert!(rank_phrases_from(&not_code).unwrap_err().contains("not an indicator code"));
+        assert!(rank_phrases_from(&not_code)
+            .unwrap_err()
+            .contains("not an indicator code"));
         let no_zh = file(json!([{"by": "SP.POP.TOTL", "words": ["top {n}"]}]));
-        assert!(rank_phrases_from(&no_zh).unwrap_err().contains("no Chinese"));
+        assert!(rank_phrases_from(&no_zh)
+            .unwrap_err()
+            .contains("no Chinese"));
         let two = file(json!([{"by": "SP.POP.TOTL", "words": ["前{n}到{n}"]}]));
-        assert!(rank_phrases_from(&two).unwrap_err().contains("two count slots"));
-        let twice = file(json!([{"by": "SP.POP.TOTL", "words": ["人口最多"]}, {"by": "SP.POP.TOTL", "words": ["人口大国"]}]));
-        assert!(rank_phrases_from(&twice).unwrap_err().contains("two entries"));
+        assert!(rank_phrases_from(&two)
+            .unwrap_err()
+            .contains("two count slots"));
+        let twice = file(
+            json!([{"by": "SP.POP.TOTL", "words": ["人口最多"]}, {"by": "SP.POP.TOTL", "words": ["人口大国"]}]),
+        );
+        assert!(rank_phrases_from(&twice)
+            .unwrap_err()
+            .contains("two entries"));
     }
 
     #[test]
@@ -5800,9 +7432,28 @@ mod tests {
             if at5.is_some() {
                 hit += 1;
             }
-            let first: Vec<String> = top.candidates.iter().take(5).map(|x| format!("{}:{:.2}", x.id, x.score)).collect();
-            let w = at.map(|k| format!("{}:{:.2}/s{:.1}/v{:.1}", all[k].id, all[k].score, all[k].s, all[k].v)).unwrap_or_default();
-            println!("R2\t{}\t{}\t{}\t{}\t{}", f[0], at5.map(|k| (k + 1).to_string()).unwrap_or("-".into()), at.map(|k| (k + 1).to_string()).unwrap_or("none".into()), w, first.join(" "));
+            let first: Vec<String> = top
+                .candidates
+                .iter()
+                .take(5)
+                .map(|x| format!("{}:{:.2}", x.id, x.score))
+                .collect();
+            let w = at
+                .map(|k| {
+                    format!(
+                        "{}:{:.2}/s{:.1}/v{:.1}",
+                        all[k].id, all[k].score, all[k].s, all[k].v
+                    )
+                })
+                .unwrap_or_default();
+            println!(
+                "R2\t{}\t{}\t{}\t{}\t{}",
+                f[0],
+                at5.map(|k| (k + 1).to_string()).unwrap_or("-".into()),
+                at.map(|k| (k + 1).to_string()).unwrap_or("none".into()),
+                w,
+                first.join(" ")
+            );
         }
         println!("R2SUM in-five {hit}/{n}");
     }
@@ -5812,14 +7463,28 @@ mod tests {
     /// and lookalikes written for this test) is refused as two measures' relation as before.
     #[test]
     fn a_leader_s_position_is_let_through_and_a_correlation_is_still_refused() {
-        for q in ["东盟各国：人最多的，是不是也最富、最城市化？", "欧盟各国中人均GDP最高的，是不是也最长寿？"] {
+        for q in [
+            "东盟各国：人最多的，是不是也最富、最城市化？",
+            "欧盟各国中人均GDP最高的，是不是也最长寿？",
+        ] {
             assert_eq!(scope_refused_zh(q, 2026), None, "{q}");
         }
-        for q in ["经济增长越快的国家，碳排放是不是涨得也越快？", "人口增长快的国家，是不是排放也快？", "出口多的国家是不是失业率也低？"] {
-            assert_eq!(scope_refused_zh(q, 2026).map(|r| (r.class, r.hit)), Some(("two_measures".to_string(), "是不是…也".to_string())), "{q}");
+        for q in [
+            "经济增长越快的国家，碳排放是不是涨得也越快？",
+            "人口增长快的国家，是不是排放也快？",
+            "出口多的国家是不是失业率也低？",
+        ] {
+            assert_eq!(
+                scope_refused_zh(q, 2026).map(|r| (r.class, r.hit)),
+                Some(("two_measures".to_string(), "是不是…也".to_string())),
+                "{q}"
+            );
         }
         // the 越…越 gap is no 是不是 gap: a leader before it lets nothing through
-        assert_eq!(scope_refused_zh("最大的几个国家，人口越多排放越多吗？", 2026).map(|r| r.class), Some("two_measures".to_string()));
+        assert_eq!(
+            scope_refused_zh("最大的几个国家，人口越多排放越多吗？", 2026).map(|r| r.class),
+            Some("two_measures".to_string())
+        );
     }
 
     /// User 11-08 item 1: each whole class the new route cannot answer is refused from the question's words, with two
@@ -5827,18 +7492,88 @@ mod tests {
     #[test]
     fn a_whole_class_out_of_scope_is_refused_and_its_lookalikes_are_not() {
         let cases: [(&str, [&str; 2], &[&str]); 7] = [
-            ("cause", ["为什么日本的老龄化比韩国更严重？", "德国近十年碳排放下降的原因是什么？"], &["德国、日本、韩国 2023 年的老龄化程度谁最高？", "欧盟各国 2022 年原油进口量谁最多？"]),
-            ("forecast", ["到 2050 年印度人口会超过多少？", "未来十年欧盟各国失业率会怎么变？"], &["2015 年到 2023 年欧盟各国失业率各怎么变？", "2024 年中国、印度的预期寿命谁更高？"]),
-            ("subnational", ["广东和江苏哪个省 2023 年的人均 GDP 更高？", "纽约州和德克萨斯州的人口谁多？"], &["撒哈拉以南非洲和东亚与太平洋地区的婴儿死亡率各降了多少？", "巴黎协定之后，法国、德国的二氧化碳排放各降了多少？", "东盟各国 2023 年城市人口比例谁最高？"]),
-            ("two_measures", ["各国人均收入和预期寿命有没有关系？", "德国、法国、波兰的出生率和死亡率各是多少？"], &["德国、法国、波兰的出生率，2000 年到 2023 年各降了多少？", "印度和中国 2023 年的人口，谁更多？", "2023 年欧盟各国研发支出占 GDP 的比重，谁最高？"]),
-            ("derived_ratio", ["美国的军费是中国的几倍？", "日本人口相当于印度的几分之几？"], &["印度人口 2000 年到 2024 年涨了几倍？", "2024 年德国和法国的人均 GDP 差多少？"]),
-            ("sub_year", ["2025 年第二季度欧盟各国失业率谁最高？", "德国 2026 年 8 月的通胀率是多少？"], &["2025 年欧盟各国失业率谁最高？", "欧盟各国 2023 年的最低月工资谁最高？"]),
-            ("opinion", ["你觉得哪个国家的医疗体系最好？", "欧盟应该提高最低工资吗？"], &["2023 年欧盟各国人均医疗支出谁最高？", "2023 年欧盟各国的最低工资，谁最高？"]),
+            (
+                "cause",
+                [
+                    "为什么日本的老龄化比韩国更严重？",
+                    "德国近十年碳排放下降的原因是什么？",
+                ],
+                &[
+                    "德国、日本、韩国 2023 年的老龄化程度谁最高？",
+                    "欧盟各国 2022 年原油进口量谁最多？",
+                ],
+            ),
+            (
+                "forecast",
+                [
+                    "到 2050 年印度人口会超过多少？",
+                    "未来十年欧盟各国失业率会怎么变？",
+                ],
+                &[
+                    "2015 年到 2023 年欧盟各国失业率各怎么变？",
+                    "2024 年中国、印度的预期寿命谁更高？",
+                ],
+            ),
+            (
+                "subnational",
+                [
+                    "广东和江苏哪个省 2023 年的人均 GDP 更高？",
+                    "纽约州和德克萨斯州的人口谁多？",
+                ],
+                &[
+                    "撒哈拉以南非洲和东亚与太平洋地区的婴儿死亡率各降了多少？",
+                    "巴黎协定之后，法国、德国的二氧化碳排放各降了多少？",
+                    "东盟各国 2023 年城市人口比例谁最高？",
+                ],
+            ),
+            (
+                "two_measures",
+                [
+                    "各国人均收入和预期寿命有没有关系？",
+                    "德国、法国、波兰的出生率和死亡率各是多少？",
+                ],
+                &[
+                    "德国、法国、波兰的出生率，2000 年到 2023 年各降了多少？",
+                    "印度和中国 2023 年的人口，谁更多？",
+                    "2023 年欧盟各国研发支出占 GDP 的比重，谁最高？",
+                ],
+            ),
+            (
+                "derived_ratio",
+                ["美国的军费是中国的几倍？", "日本人口相当于印度的几分之几？"],
+                &[
+                    "印度人口 2000 年到 2024 年涨了几倍？",
+                    "2024 年德国和法国的人均 GDP 差多少？",
+                ],
+            ),
+            (
+                "sub_year",
+                [
+                    "2025 年第二季度欧盟各国失业率谁最高？",
+                    "德国 2026 年 8 月的通胀率是多少？",
+                ],
+                &[
+                    "2025 年欧盟各国失业率谁最高？",
+                    "欧盟各国 2023 年的最低月工资谁最高？",
+                ],
+            ),
+            (
+                "opinion",
+                ["你觉得哪个国家的医疗体系最好？", "欧盟应该提高最低工资吗？"],
+                &[
+                    "2023 年欧盟各国人均医疗支出谁最高？",
+                    "2023 年欧盟各国的最低工资，谁最高？",
+                ],
+            ),
         ];
         for (class, yes, no) in cases {
             for q in yes {
                 let got = scope_refused_zh(q, 2026);
-                assert_eq!(got.as_ref().map(|r| r.class.as_str()), Some(class), "{q}: {got:?}");
+                assert_eq!(
+                    got.as_ref().map(|r| r.class.as_str()),
+                    Some(class),
+                    "{q}: {got:?}"
+                );
                 assert!(!got.unwrap().reason_zh.is_empty());
             }
             for q in no {
@@ -5867,12 +7602,19 @@ mod tests {
             ("5年后欧盟失业率怎么走？", "forecast"),
             ("2026年以后欧盟失业率怎么走？", "forecast"),
             ("各国失业率和通胀率谁高？", "two_measures"),
-            ("中国、印度的GDP增长率和人口增长率各是多少？", "two_measures"),
+            (
+                "中国、印度的GDP增长率和人口增长率各是多少？",
+                "two_measures",
+            ),
             ("各国出口增长率和进口增长率谁高？", "two_measures"),
             ("德国对东欧出口总量和法国出口总量谁高？", "two_measures"),
             ("德国对中国出口总量和法国出口总量谁高？", "two_measures"),
         ] {
-            assert_eq!(scope_refused_zh(q, 2026).map(|r| r.class), Some(class.to_string()), "{q}");
+            assert_eq!(
+                scope_refused_zh(q, 2026).map(|r| r.class),
+                Some(class.to_string()),
+                "{q}"
+            );
         }
         // the clock decides a forecast: 2027 is one in 2026, not in 2027
         assert!(scope_refused_zh("2027 年德国的人口是多少？", 2026).is_some());
@@ -5884,11 +7626,18 @@ mod tests {
     #[test]
     #[ignore]
     fn no_in_scope_dev_question_is_refused() {
-        let Ok(path) = std::env::var("SCOPE_DEVSET") else { return };
-        let rows: Vec<serde_json::Value> = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let Ok(path) = std::env::var("SCOPE_DEVSET") else {
+            return;
+        };
+        let rows: Vec<serde_json::Value> =
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
         let (mut out_caught, mut out_all, mut wrong) = (0, 0, Vec::new());
         for r in &rows {
-            let (id, q, scope) = (r["id"].as_str().unwrap(), r["question"].as_str().unwrap(), r["scope"].as_str().unwrap());
+            let (id, q, scope) = (
+                r["id"].as_str().unwrap(),
+                r["question"].as_str().unwrap(),
+                r["scope"].as_str().unwrap(),
+            );
             let got = scope_refused_zh(q, 2026);
             if let Some(g) = &got {
                 println!("SCOPE {id} {scope} {} {}", g.class, g.hit);
@@ -5900,8 +7649,10 @@ mod tests {
                 wrong.push(id.to_string());
             }
         }
-        println!("SCOPE out caught {out_caught}/{out_all}, in refused {}", wrong.len());
+        println!(
+            "SCOPE out caught {out_caught}/{out_all}, in refused {}",
+            wrong.len()
+        );
         assert!(wrong.is_empty(), "in-scope questions refused: {wrong:?}");
     }
-
 }

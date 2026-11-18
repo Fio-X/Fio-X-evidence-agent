@@ -6,7 +6,9 @@
 //! group's door) and asks here whether the browser check passed those bytes.
 
 use crate::next_facts::{compute, leaf_ledger, leaf_refs, stored_request, Fact, Row, Spec};
-use crate::next_leaf::{bake_leaf_page, draw_page_given, leaves, Layer, Recipe, Record, Runner, Strip};
+use crate::next_leaf::{
+    bake_leaf_page, draw_page_given, leaves, Layer, Recipe, Record, Runner, Strip,
+};
 use crate::next_ledger::{check_numbers, dropped_entry, name_src, point_entry};
 use crate::next_nodes::{Kind, Style};
 use crate::next_render::{render, PageSpec, Rendered};
@@ -70,7 +72,10 @@ pub enum Request<'a> {
     /// A many-block page stacked (owner 11-14 20:5x item 1): the question as its title, then each block's published page
     /// in block order, the first on top, each shown whole as it was checked (`pages`: its path from the stacked page, its
     /// width and height). No other word or number is added. Nothing is written.
-    Stack { title: &'a str, pages: &'a [(String, f64, f64)] },
+    Stack {
+        title: &'a str,
+        pages: &'a [(String, f64, f64)],
+    },
     /// A page recipe's layers, each group among them expanded into its own layers (the group's name kept), in the
     /// registry's order; none when the registry has no such recipe.
     RecipeLayers { recipe: &'a str },
@@ -95,7 +100,11 @@ pub enum Request<'a> {
     /// The illustration strip for a page of these tables (its refs), `width` wide: by the first piece set of PIECE_SETS that
     /// names one of them, drawn by the strip child under `runtime` (the run's materialized runtime/) in the page's ink and
     /// accent and taken only as line art in those (next_leaf::strip); none when no set names them. Nothing is written.
-    IllusStrip { tables: &'a [String], width: f64, runtime: &'a Path },
+    IllusStrip {
+        tables: &'a [String],
+        width: f64,
+        runtime: &'a Path,
+    },
     /// What the flow's fill takes from a layer its recipe binds external (next_tree_gen::declare, P4a): the rows it draws,
     /// the facts and the format it declares and its hero data, from the registry's declaration over the flow's page input
     /// (plain data: shape, picks, rows), every select recomputed by the core.
@@ -104,7 +113,12 @@ pub enum Request<'a> {
     /// and the page input, each layer's node asked for its geometry by its registered runner under `runtime`, every select,
     /// fact, check, item and word the core's own and checked before the child starts (C1-C5), the reply's geometry checked
     /// against the core's recomputation (B0-B7); the checked geometry by layer, which the leaves draw.
-    NodeDraw { fill: &'a Value, page_in: &'a Value, layers: &'a [String], runtime: &'a Path },
+    NodeDraw {
+        fill: &'a Value,
+        page_in: &'a Value,
+        layers: &'a [String],
+        runtime: &'a Path,
+    },
 }
 
 /// The illustration piece sets the second layer describes (runtime/leaves_js/pieces-<set>.json: its pieces, knobs and the
@@ -120,35 +134,59 @@ const STRIP_SECOND: &str = "--t-sec";
 
 /// The strip of a page of `tables` and why: none when no piece set names one of them; Err when the set does not parse, the
 /// palette lacks a colour, or the strip is refused or not taken.
-fn illus_strip(tables: &[String], width: f64, runtime: &Path) -> Result<(Option<Strip>, String), String> {
+fn illus_strip(
+    tables: &[String],
+    width: f64,
+    runtime: &Path,
+) -> Result<(Option<Strip>, String), String> {
     let mut picked = None;
     for text in PIECE_SETS {
-        let set: Value = serde_json::from_str(text).map_err(|e| format!("illus: a piece set does not parse: {e}"))?;
-        let named = set["tables"].as_array().into_iter().flatten().any(|t| t.as_str().is_some_and(|t| tables.iter().any(|x| x == t)));
+        let set: Value = serde_json::from_str(text)
+            .map_err(|e| format!("illus: a piece set does not parse: {e}"))?;
+        let named = set["tables"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|t| t.as_str().is_some_and(|t| tables.iter().any(|x| x == t)));
         if named {
             picked = Some(set);
             break;
         }
     }
     let Some(set) = picked else {
-        return Ok((None, format!("illus: no piece set illustrates {}", tables.join(", "))));
+        return Ok((
+            None,
+            format!("illus: no piece set illustrates {}", tables.join(", ")),
+        ));
     };
     let name = set["set"].as_str().unwrap_or_default().to_string();
     let colours = [STRIP_INK, STRIP_SECOND].map(|c| format!("var({c})"));
-    if let Some(c) = [STRIP_INK, STRIP_SECOND].iter().find(|c| !PAGE_TOKENS.contains(&format!("{c}:"))) {
+    if let Some(c) = [STRIP_INK, STRIP_SECOND]
+        .iter()
+        .find(|c| !PAGE_TOKENS.contains(&format!("{c}:")))
+    {
         return Err(format!("illus: the page palette defines no {c}"));
     }
-    let request = json!({"set": set, "width": width, "ink": colours[0], "accent": colours[1], "knobs": {}});
+    let request =
+        json!({"set": set, "width": width, "ink": colours[0], "accent": colours[1], "knobs": {}});
     let runner = Runner::node(&runtime.join("leaves_js/illus_strip.cjs"));
     let strip = crate::next_leaf::strip(&runner, &request, &colours.each_ref().map(String::as_str))
         .map_err(|why| format!("illus: the {name} strip was not taken: {why}"))?;
-    let note = format!("illus: {name} drawn {}x{} in {} ms, left out {}: {}", strip.w, strip.h, strip.ms, strip.dropped.len(), strip.dropped.join("; "));
+    let note = format!(
+        "illus: {name} drawn {}x{} in {} ms, left out {}: {}",
+        strip.w,
+        strip.h,
+        strip.ms,
+        strip.dropped.len(),
+        strip.dropped.join("; ")
+    );
     Ok((Some(strip), note))
 }
 
 /// The vendored Natural Earth admin-0 attributes (scripts/build_ne_attributes.mjs): each country's label point
 /// (features[].label, [lon, lat]) by iso3. The bytes the binary embeds are the table PlacePoints answers from and hashes.
-const NE_ATTRIBUTES: &str = include_str!("../runtime/pi/assets/naturalearth-admin0-50m-attributes.json");
+const NE_ATTRIBUTES: &str =
+    include_str!("../runtime/pi/assets/naturalearth-admin0-50m-attributes.json");
 
 /// The label points by iso3: the NE_ATTRIBUTES features with an iso3 and a finite [lon, lat] on the globe, a country's own
 /// feature only (adm0_a3 its iso3, or the one feature filed under it); an iso3 with no such feature, or with two, has none.
@@ -156,20 +194,34 @@ fn label_points() -> Result<&'static BTreeMap<String, [f64; 2]>, String> {
     static POINTS: OnceLock<Result<BTreeMap<String, [f64; 2]>, String>> = OnceLock::new();
     POINTS
         .get_or_init(|| {
-            let ne: Value = serde_json::from_str(NE_ATTRIBUTES).map_err(|e| format!("naturalearth attributes: {e}"))?;
+            let ne: Value = serde_json::from_str(NE_ATTRIBUTES)
+                .map_err(|e| format!("naturalearth attributes: {e}"))?;
             let features = ne["features"].as_array().map_or(&[][..], Vec::as_slice);
             let mut own: BTreeMap<String, Vec<[f64; 2]>> = BTreeMap::new();
             for f in features {
-                let (Some(iso3), Some(lon), Some(lat)) = (f["iso3"].as_str(), f["label"][0].as_f64(), f["label"][1].as_f64()) else { continue };
+                let (Some(iso3), Some(lon), Some(lat)) = (
+                    f["iso3"].as_str(),
+                    f["label"][0].as_f64(),
+                    f["label"][1].as_f64(),
+                ) else {
+                    continue;
+                };
                 if !((-180.0..=180.0).contains(&lon) && (-90.0..=90.0).contains(&lat)) {
-                    return Err(format!("naturalearth attributes: {iso3} has its label off the globe"));
+                    return Err(format!(
+                        "naturalearth attributes: {iso3} has its label off the globe"
+                    ));
                 }
                 let mine = own.entry(iso3.to_string()).or_default();
-                if f["adm0_a3"].as_str() == Some(iso3) || features.iter().filter(|g| g["iso3"] == iso3).count() == 1 {
+                if f["adm0_a3"].as_str() == Some(iso3)
+                    || features.iter().filter(|g| g["iso3"] == iso3).count() == 1
+                {
                     mine.push([lon, lat]);
                 }
             }
-            Ok(own.into_iter().filter_map(|(c, p)| (p.len() == 1).then(|| (c, p[0]))).collect())
+            Ok(own
+                .into_iter()
+                .filter_map(|(c, p)| (p.len() == 1).then(|| (c, p[0])))
+                .collect())
         })
         .as_ref()
         .map_err(Clone::clone)
@@ -248,17 +300,25 @@ fn drawn_checked(html: &str, layers: &[Layer<'_>]) -> Result<Vec<Value>, String>
     let mut out = Vec::new();
     for layer in layers {
         let (name, knobs) = (layer.name(), layer.knobs());
-        if !knobs["external"].as_array().is_some_and(|e| e.iter().any(|x| x == name)) {
+        if !knobs["external"]
+            .as_array()
+            .is_some_and(|e| e.iter().any(|x| x == name))
+        {
             continue;
         }
         let refuse = |why: String| format!("drawn: layer {name}: {why}");
         let marker = format!("data-layer=\"{name}\"");
         if html.matches(&marker).count() != 1 {
-            return Err(refuse(format!("the page has {} elements tagged {marker}, not one", html.matches(&marker).count())));
+            return Err(refuse(format!(
+                "the page has {} elements tagged {marker}, not one",
+                html.matches(&marker).count()
+            )));
         }
         let start = html.find(&marker).expect("counted once");
         if let Some(rule) = knobs["placed"][name]["leaf_stop"].as_str() {
-            return Err(refuse(format!("left to its leaf to stop ({rule}), and the page was drawn")));
+            return Err(refuse(format!(
+                "left to its leaf to stop ({rule}), and the page was drawn"
+            )));
         }
         if knobs["placed"][name]["order"].is_array() {
             out.push(circles_drawn(&html[start..], &knobs["placed"][name]).map_err(refuse)?);
@@ -266,13 +326,23 @@ fn drawn_checked(html: &str, layers: &[Layer<'_>]) -> Result<Vec<Value>, String>
             continue;
         }
         let body = &html[start..];
-        let body = &body[..body.find("</g>").ok_or_else(|| refuse("its group is not closed".into()))?];
+        let body = &body[..body
+            .find("</g>")
+            .ok_or_else(|| refuse("its group is not closed".into()))?];
         if body.contains("<g") {
-            return Err(refuse("a group nested in it, which the check cannot read".into()));
+            return Err(refuse(
+                "a group nested in it, which the check cannot read".into(),
+            ));
         }
         let (rects, texts) = (tags_in(body, "rect"), tags_in(body, "text"));
-        let items = knobs["placed"][name]["items"].as_array().cloned().unwrap_or_default();
-        let want_texts: Vec<&Value> = items.iter().flat_map(|it| it["texts"].as_array().into_iter().flatten()).collect();
+        let items = knobs["placed"][name]["items"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        let want_texts: Vec<&Value> = items
+            .iter()
+            .flat_map(|it| it["texts"].as_array().into_iter().flatten())
+            .collect();
         let (mut compared, mut failed, mut first) = (0usize, 0usize, None::<String>);
         let mut miss = |what: String, ok: bool, first: &mut Option<String>| {
             compared += 1;
@@ -287,7 +357,11 @@ fn drawn_checked(html: &str, layers: &[Layer<'_>]) -> Result<Vec<Value>, String>
             for (a, k) in [("x", "x"), ("y", "y"), ("width", "w"), ("height", "h")] {
                 let page = printed(attr(rect, a).and_then(|v| v.parse().ok()));
                 let placed = printed(it["mark"][k].as_f64());
-                miss(format!("item {i} rect {a}: drawn {page:?}, placed {placed:?}"), page.is_some() && page == placed, &mut first);
+                miss(
+                    format!("item {i} rect {a}: drawn {page:?}, placed {placed:?}"),
+                    page.is_some() && page == placed,
+                    &mut first,
+                );
             }
         }
         for (j, t) in want_texts.iter().enumerate() {
@@ -295,18 +369,41 @@ fn drawn_checked(html: &str, layers: &[Layer<'_>]) -> Result<Vec<Value>, String>
             for a in ["x", "y"] {
                 let page = printed(attr(text, a).and_then(|v| v.parse().ok()));
                 let placed = printed(t[a].as_f64());
-                miss(format!("text {j} {a}: drawn {page:?}, placed {placed:?}"), page.is_some() && page == placed, &mut first);
+                miss(
+                    format!("text {j} {a}: drawn {page:?}, placed {placed:?}"),
+                    page.is_some() && page == placed,
+                    &mut first,
+                );
             }
-            let anchor = if text.is_empty() { None } else { Some(attr(text, "text-anchor").unwrap_or("start")) };
-            miss(format!("text {j} anchor: drawn {anchor:?}, placed {}", t["anchor"]), anchor.is_some() && anchor == t["anchor"].as_str(), &mut first);
+            let anchor = if text.is_empty() {
+                None
+            } else {
+                Some(attr(text, "text-anchor").unwrap_or("start"))
+            };
+            miss(
+                format!("text {j} anchor: drawn {anchor:?}, placed {}", t["anchor"]),
+                anchor.is_some() && anchor == t["anchor"].as_str(),
+                &mut first,
+            );
         }
-        miss(format!("{} rects drawn, {} placed", rects.len(), items.len()), rects.len() == items.len(), &mut first);
-        miss(format!("{} texts drawn, {} placed", texts.len(), want_texts.len()), texts.len() == want_texts.len(), &mut first);
+        miss(
+            format!("{} rects drawn, {} placed", rects.len(), items.len()),
+            rects.len() == items.len(),
+            &mut first,
+        );
+        miss(
+            format!("{} texts drawn, {} placed", texts.len(), want_texts.len()),
+            texts.len() == want_texts.len(),
+            &mut first,
+        );
         if items.is_empty() {
             return Err(refuse("the request gives no placed items for it".into()));
         }
         if failed > 0 {
-            return Err(refuse(format!("{failed} of {compared} drawn numbers are not the placed ones, first {}", first.unwrap_or_default())));
+            return Err(refuse(format!(
+                "{failed} of {compared} drawn numbers are not the placed ones, first {}",
+                first.unwrap_or_default()
+            )));
         }
         out.push(json!({"layer": name, "compared": compared, "failed": failed}));
     }
@@ -316,7 +413,9 @@ fn drawn_checked(html: &str, layers: &[Layer<'_>]) -> Result<Vec<Value>, String>
 /// Each start tag `<el ...` in `body`, in order.
 fn tags_in<'b>(body: &'b str, el: &str) -> Vec<&'b str> {
     let open = format!("<{el} ");
-    body.match_indices(&open).map(|(i, _)| &body[i..i + body[i..].find('>').unwrap_or(body.len() - i)]).collect()
+    body.match_indices(&open)
+        .map(|(i, _)| &body[i..i + body[i..].find('>').unwrap_or(body.len() - i)])
+        .collect()
 }
 
 /// The drawn check of a map circles layer (from its data-layer tag on): its group up to the </g> that closes it, groups
@@ -346,15 +445,34 @@ fn circles_drawn(from: &str, placed: &Value) -> Result<Value, String> {
     }
     let body = &from[..end.ok_or("its group is not closed")?];
     let open_tag = body.find('>').map_or(body, |e| &body[..e]);
-    if tags_in(&body[open_tag.len()..], "g").iter().any(|t| t.contains(" transform=")) || body.contains("<svg") || open_tag.contains(" transform=") {
+    if tags_in(&body[open_tag.len()..], "g")
+        .iter()
+        .any(|t| t.contains(" transform="))
+        || body.contains("<svg")
+        || open_tag.contains(" transform=")
+    {
         return Err("a group in it moves what it holds, which the check cannot read".into());
     }
-    let order: Vec<&str> = placed["order"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
-    let (marks, texts) = (&placed["marks"], placed["texts"].as_array().cloned().unwrap_or_default());
-    let size = placed["size"].as_f64().ok_or("the placed geometry has no text size")?;
+    let order: Vec<&str> = placed["order"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect();
+    let (marks, texts) = (
+        &placed["marks"],
+        placed["texts"].as_array().cloned().unwrap_or_default(),
+    );
+    let size = placed["size"]
+        .as_f64()
+        .ok_or("the placed geometry has no text size")?;
     let circles = tags_in(body, "circle");
-    let (drawn, dots): (Vec<&str>, Vec<&str>) = circles.iter().partition(|c| attr(c, "data-code").is_some());
-    let dots: Vec<&str> = dots.into_iter().filter(|c| attr(c, "data-at").is_some()).collect();
+    let (drawn, dots): (Vec<&str>, Vec<&str>) =
+        circles.iter().partition(|c| attr(c, "data-code").is_some());
+    let dots: Vec<&str> = dots
+        .into_iter()
+        .filter(|c| attr(c, "data-at").is_some())
+        .collect();
     let (lines, words) = (tags_in(body, "line"), tags_in(body, "text"));
     let (mut compared, mut first) = (0usize, None::<String>);
     let mut miss = |what: String, ok: bool| {
@@ -365,26 +483,59 @@ fn circles_drawn(from: &str, placed: &Value) -> Result<Value, String> {
     };
     let printed = |v: Option<f64>| v.map(|v| format!("{v:.1}"));
     let num = |tag: &str, a: &str| printed(attr(tag, a).and_then(|v| v.parse().ok()));
-    let same = |miss: &mut dyn FnMut(String, bool), what: String, tag: &str, a: &str, want: Option<f64>| {
+    let same = |miss: &mut dyn FnMut(String, bool),
+                what: String,
+                tag: &str,
+                a: &str,
+                want: Option<f64>| {
         let (page, placed) = (num(tag, a), printed(want));
-        miss(format!("{what} {a}: drawn {page:?}, placed {placed:?}"), page.is_some() && page == placed);
+        miss(
+            format!("{what} {a}: drawn {page:?}, placed {placed:?}"),
+            page.is_some() && page == placed,
+        );
     };
     for (i, c) in order.iter().enumerate() {
         let tag = drawn.get(i).copied().unwrap_or("");
-        miss(format!("circle {i}: drawn {:?}, placed {c}", attr(tag, "data-code")), attr(tag, "data-code") == Some(c));
+        miss(
+            format!("circle {i}: drawn {:?}, placed {c}", attr(tag, "data-code")),
+            attr(tag, "data-code") == Some(c),
+        );
         for a in ["cx", "cy", "r"] {
-            same(&mut miss, format!("circle {c}"), tag, a, marks[*c][a].as_f64());
+            same(
+                &mut miss,
+                format!("circle {c}"),
+                tag,
+                a,
+                marks[*c][a].as_f64(),
+            );
         }
     }
-    let placed_dots: Vec<&&str> = order.iter().filter(|c| marks[format!("{c}/dot")].is_object()).collect();
+    let placed_dots: Vec<&&str> = order
+        .iter()
+        .filter(|c| marks[format!("{c}/dot")].is_object())
+        .collect();
     for (i, c) in placed_dots.iter().enumerate() {
         let tag = dots.get(i).copied().unwrap_or("");
-        miss(format!("dot {i}: drawn {:?}, placed {c}", attr(tag, "data-at")), attr(tag, "data-at") == Some(**c));
+        miss(
+            format!("dot {i}: drawn {:?}, placed {c}", attr(tag, "data-at")),
+            attr(tag, "data-at") == Some(**c),
+        );
         for a in ["cx", "cy"] {
-            same(&mut miss, format!("dot {c}"), tag, a, marks[format!("{c}/dot")][a].as_f64());
+            same(
+                &mut miss,
+                format!("dot {c}"),
+                tag,
+                a,
+                marks[format!("{c}/dot")][a].as_f64(),
+            );
         }
     }
-    let leaders: Vec<&Value> = texts.iter().filter_map(|t| t["id"].as_str()).map(|c| &marks[format!("{c}/leader")]).filter(|l| l.is_object()).collect();
+    let leaders: Vec<&Value> = texts
+        .iter()
+        .filter_map(|t| t["id"].as_str())
+        .map(|c| &marks[format!("{c}/leader")])
+        .filter(|l| l.is_object())
+        .collect();
     for (i, l) in leaders.iter().enumerate() {
         let tag = lines.get(i).copied().unwrap_or("");
         for a in ["x1", "y1", "x2", "y2"] {
@@ -394,20 +545,49 @@ fn circles_drawn(from: &str, placed: &Value) -> Result<Value, String> {
     for (j, t) in texts.iter().enumerate() {
         for (k, dy) in [(0, 0.0), (1, size * 1.4)] {
             let tag = words.get(2 * j + k).copied().unwrap_or("");
-            same(&mut miss, format!("text {j}.{k}"), tag, "x", t["x"].as_f64());
-            same(&mut miss, format!("text {j}.{k}"), tag, "y", t["y"].as_f64().map(|y| y + dy));
-            let anchor = if tag.is_empty() { None } else { Some(attr(tag, "text-anchor").unwrap_or("start")) };
-            miss(format!("text {j}.{k} anchor: drawn {anchor:?}, placed {}", t["anchor"]), anchor.is_some() && anchor == t["anchor"].as_str());
+            same(
+                &mut miss,
+                format!("text {j}.{k}"),
+                tag,
+                "x",
+                t["x"].as_f64(),
+            );
+            same(
+                &mut miss,
+                format!("text {j}.{k}"),
+                tag,
+                "y",
+                t["y"].as_f64().map(|y| y + dy),
+            );
+            let anchor = if tag.is_empty() {
+                None
+            } else {
+                Some(attr(tag, "text-anchor").unwrap_or("start"))
+            };
+            miss(
+                format!(
+                    "text {j}.{k} anchor: drawn {anchor:?}, placed {}",
+                    t["anchor"]
+                ),
+                anchor.is_some() && anchor == t["anchor"].as_str(),
+            );
         }
     }
-    for (what, n, want) in [("circles", drawn.len(), order.len()), ("dots", dots.len(), placed_dots.len()), ("leaders", lines.len(), leaders.len()), ("texts", words.len(), 2 * texts.len())] {
+    for (what, n, want) in [
+        ("circles", drawn.len(), order.len()),
+        ("dots", dots.len(), placed_dots.len()),
+        ("leaders", lines.len(), leaders.len()),
+        ("texts", words.len(), 2 * texts.len()),
+    ] {
         miss(format!("{n} {what} drawn, {want} placed"), n == want);
     }
     if order.is_empty() {
         return Err("the request gives no placed circles for it".into());
     }
     match first {
-        Some(f) => Err(format!("a drawn number is not the placed one ({compared} compared), first {f}")),
+        Some(f) => Err(format!(
+            "a drawn number is not the placed one ({compared} compared), first {f}"
+        )),
         None => Ok(json!({"compared": compared, "failed": 0})),
     }
 }
@@ -429,12 +609,20 @@ fn fill<'a>(
     let groups = &leaves().groups;
     let Some(holds) = groups.get(recipe) else {
         let names: Vec<_> = groups.keys().map(String::as_str).collect();
-        return Err(format!("fill: no recipe {recipe}; e.g. one of {}", names.join("|")));
+        return Err(format!(
+            "fill: no recipe {recipe}; e.g. one of {}",
+            names.join("|")
+        ));
     };
     let stray: Vec<String> = order
         .iter()
         .filter(|n| !holds.contains(n))
-        .map(|n| format!("fill: the recipe {recipe} holds no layer {n}; e.g. one of {}", holds.join("|")))
+        .map(|n| {
+            format!(
+                "fill: the recipe {recipe} holds no layer {n}; e.g. one of {}",
+                holds.join("|")
+            )
+        })
         .collect();
     if !stray.is_empty() {
         return Err(stray.join("\n"));
@@ -456,7 +644,12 @@ fn fill<'a>(
             Some(name) if src.starts_with(crate::next_ledger::LABEL_SRC) => {
                 ledger.insert(src.clone(), name.to_string());
             }
-            _ => return Err(format!("fill: knobs.named {src} is no name row ({}...) with a text", crate::next_ledger::LABEL_SRC)),
+            _ => {
+                return Err(format!(
+                    "fill: knobs.named {src} is no name row ({}...) with a text",
+                    crate::next_ledger::LABEL_SRC
+                ))
+            }
         }
     }
     // the places a group's page left out (spec.basis.dropped: no member that year, not named), each a never-printed entry
@@ -469,8 +662,15 @@ fn fill<'a>(
     // with the page's request: never printed, there for a replay of that table
     let points = &knobs["points"];
     for (code, at) in points["at"].as_object().into_iter().flatten() {
-        let (Some(table), Some(sha), Some(lon), Some(lat)) = (points["table"].as_str(), points["sha256"].as_str(), at[0].as_f64(), at[1].as_f64()) else {
-            return Err(format!("fill: the map point of {code} names no table, sha256 or [lon, lat]"));
+        let (Some(table), Some(sha), Some(lon), Some(lat)) = (
+            points["table"].as_str(),
+            points["sha256"].as_str(),
+            at[0].as_f64(),
+            at[1].as_f64(),
+        ) else {
+            return Err(format!(
+                "fill: the map point of {code} names no table, sha256 or [lon, lat]"
+            ));
         };
         let (src, text) = point_entry(table, sha, code, [lon, lat]);
         ledger.insert(src, text);
@@ -485,7 +685,13 @@ fn fill<'a>(
         .recipes
         .iter()
         .find(|r| r.name == recipe)
-        .map(|r| r.external.iter().filter(|l| bound.g("nodes").g(l).g("geometry").s() != Some("leaf")).cloned().collect())
+        .map(|r| {
+            r.external
+                .iter()
+                .filter(|l| bound.g("nodes").g(l).g("geometry").s() != Some("leaf"))
+                .cloned()
+                .collect()
+        })
         .unwrap_or_default();
     knobs["external"] = json!(external);
     // the footer marks these ids in the source line (scmp.footer), the same the page check reads; a request's own kept
@@ -498,7 +704,11 @@ fn fill<'a>(
     // (always sent, an empty one too: a leaf states only what is in it)
     knobs["comparisons"] = crate::next_ledger::comparisons(&spec, &table_rows, &facts);
     let mut all = rows.to_vec();
-    all.extend(ledger.iter().map(|(src, text)| json!({"src": src, "text": text})));
+    all.extend(
+        ledger
+            .iter()
+            .map(|(src, text)| json!({"src": src, "text": text})),
+    );
     let all = Value::Array(all);
     let (mut layers, mut off) = (Vec::new(), Vec::new());
     for name in order {
@@ -529,17 +739,26 @@ fn fill<'a>(
 /// The ring's marks (hero.ring.marks, each {key: <fact>}) keep one per period: a mark whose fact was read at the period of
 /// a mark before it (a peak in the last month) is dropped, so two marks never sit on one month.
 fn one_mark_per_period(knobs: &mut Value, facts: &[Fact]) {
-    let Some(marks) = knobs.pointer_mut("/spec/hero/ring/marks").and_then(Value::as_array_mut) else {
+    let Some(marks) = knobs
+        .pointer_mut("/spec/hero/ring/marks")
+        .and_then(Value::as_array_mut)
+    else {
         return;
     };
     let mut seen: Vec<String> = Vec::new();
-    marks.retain(|m| match facts.iter().find(|f| m["key"] == f.key.as_str()).and_then(|f| f.t.clone()) {
-        Some(t) if seen.contains(&t) => false,
-        Some(t) => {
-            seen.push(t);
-            true
+    marks.retain(|m| {
+        match facts
+            .iter()
+            .find(|f| m["key"] == f.key.as_str())
+            .and_then(|f| f.t.clone())
+        {
+            Some(t) if seen.contains(&t) => false,
+            Some(t) => {
+                seen.push(t);
+                true
+            }
+            None => true,
         }
-        None => true,
     });
 }
 
@@ -619,24 +838,49 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
             Reply::Page(page)
         }
         Request::LeafPage { page } => {
-            let given: Vec<(&str, &Strip)> = page.strip.map(|s| ("illus_strip", s)).into_iter().collect();
-            let (panel, html, records) = draw_page_given(page.draw, page.w, page.h, page.frame.clone(), page.layers, &given)
-                .map_err(|(_, why)| why.join("\n"))?;
+            let given: Vec<(&str, &Strip)> =
+                page.strip.map(|s| ("illus_strip", s)).into_iter().collect();
+            let (panel, html, records) = draw_page_given(
+                page.draw,
+                page.w,
+                page.h,
+                page.frame.clone(),
+                page.layers,
+                &given,
+            )
+            .map_err(|(_, why)| why.join("\n"))?;
             let checked = drawn_checked(&html, page.layers)?;
-            let baked = bake_leaf_page(page.bake, &html, page.ledger, page.refs, page.facts).map_err(|off| off.join("\n"))?;
+            let baked = bake_leaf_page(page.bake, &html, page.ledger, page.refs, page.facts)
+                .map_err(|off| off.join("\n"))?;
             let headed = crate::next_ledger::h1_states_relation(&baked.html);
             Reply::Leaf(LeafDrawn {
                 headed,
                 html: baked.html,
                 records,
-                dropped: panel.dropped.iter().map(|d| dropped_entry(&d.layer, &d.id, &d.why)).collect(),
+                dropped: panel
+                    .dropped
+                    .iter()
+                    .map(|d| dropped_entry(&d.layer, &d.id, &d.why))
+                    .collect(),
                 type_measured: baked.type_measured,
                 scales: panel.scales.clone(),
                 drawn_checked: checked,
-                knobs: page.layers.iter().map(|l| l.knobs()).find(|k| !k.is_null()).cloned().unwrap_or(Value::Null),
+                knobs: page
+                    .layers
+                    .iter()
+                    .map(|l| l.knobs())
+                    .find(|k| !k.is_null())
+                    .cloned()
+                    .unwrap_or(Value::Null),
             })
         }
-        Request::LeafFill { recipe, rows, knobs, order, runtime } => Reply::Filled(fill(recipe, rows, knobs, order, runtime)?),
+        Request::LeafFill {
+            recipe,
+            rows,
+            knobs,
+            order,
+            runtime,
+        } => Reply::Filled(fill(recipe, rows, knobs, order, runtime)?),
         Request::BrowserCheck {
             qa,
             html,
@@ -644,41 +888,100 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
             html_sha256,
         } => Reply::Checked(passed(browser_check(qa, html, out)?, html_sha256)?),
         Request::Knob { node, knob } => {
-            let leaf = leaves().nodes.get(node).ok_or_else(|| format!("knob: the leaf registry has no node {node}"))?;
-            match leaf.info.knobs.iter().find(|k| k.name == knob).map(|k| &k.kind) {
-                Some(Kind::Range { default, min, max, .. }) => Reply::Knob { default: *default, min: *min, max: *max },
-                Some(Kind::Pick { .. } | Kind::Codes { .. }) => return Err(format!("knob: {node}.{knob} is a word, not a number")),
+            let leaf = leaves()
+                .nodes
+                .get(node)
+                .ok_or_else(|| format!("knob: the leaf registry has no node {node}"))?;
+            match leaf
+                .info
+                .knobs
+                .iter()
+                .find(|k| k.name == knob)
+                .map(|k| &k.kind)
+            {
+                Some(Kind::Range {
+                    default, min, max, ..
+                }) => Reply::Knob {
+                    default: *default,
+                    min: *min,
+                    max: *max,
+                },
+                Some(Kind::Pick { .. } | Kind::Codes { .. }) => {
+                    return Err(format!("knob: {node}.{knob} is a word, not a number"))
+                }
                 None => return Err(format!("knob: node {node} has no knob {knob}")),
             }
         }
         Request::Recipes => Reply::Recipes(&leaves().recipes),
         Request::Stack { title, pages } => Reply::Stacked(stack_html(title, pages)),
         Request::RecipeLayers { recipe } => Reply::Layers(recipe_layers(recipe)),
-        Request::LeafRecheck { recipe, html, ledger, refs, facts: (spec, rows, facts), knobs } => {
+        Request::LeafRecheck {
+            recipe,
+            html,
+            ledger,
+            refs,
+            facts: (spec, rows, facts),
+            knobs,
+        } => {
             let mut off = Vec::new();
             if !leaves().recipes.iter().any(|r| r.name == recipe) {
                 off.push(format!("page: {recipe} is no recipe of the leaf registry"));
             }
-            off.extend(crate::next_leaf::check_leaf_page(html, ledger, refs, spec, rows, facts));
+            off.extend(crate::next_leaf::check_leaf_page(
+                html, ledger, refs, spec, rows, facts,
+            ));
             // each reference layer or part the registry gives the recipe prints its legend line (next_tree recipe_roles)
-            let units: Vec<String> = spec.fmts.as_object().into_iter().flatten().filter_map(|(_, f)| f["suffix"].as_str()).map(|u| u.trim().to_string()).filter(|u| !u.is_empty()).collect();
+            let units: Vec<String> = spec
+                .fmts
+                .as_object()
+                .into_iter()
+                .flatten()
+                .filter_map(|(_, f)| f["suffix"].as_str())
+                .map(|u| u.trim().to_string())
+                .filter(|u| !u.is_empty())
+                .collect();
             let as_j = |v: &Value| crate::next_tree::parse(&v.to_string());
-            let rows_j = serde_json::to_value(rows).map_err(|e| e.to_string()).and_then(|v| as_j(&v));
+            let rows_j = serde_json::to_value(rows)
+                .map_err(|e| e.to_string())
+                .and_then(|v| as_j(&v));
             let hero = &knobs["spec"]["hero"];
             let (hero_j, members) = (as_j(hero), spec.members.clone().unwrap_or_default());
-            let reads: BTreeMap<String, Vec<String>> = facts.iter().map(|f| (f.key.clone(), f.reads.clone())).collect();
+            let reads: BTreeMap<String, Vec<String>> = facts
+                .iter()
+                .map(|f| (f.key.clone(), f.reads.clone()))
+                .collect();
             let drawn = match (&hero_j, &rows_j) {
-                (Ok(h), Ok(r)) if !hero.is_null() => Some(crate::next_tree::Drawn { hero: h, rows: r.arr(), members: &members, reads: &reads }),
+                (Ok(h), Ok(r)) if !hero.is_null() => Some(crate::next_tree::Drawn {
+                    hero: h,
+                    rows: r.arr(),
+                    members: &members,
+                    reads: &reads,
+                }),
                 _ => None,
             };
             let reg = crate::next_tree::registry_in_force().0;
-            off.extend(crate::next_tree::reference_legend_gaps(&reg, recipe, html, &units, drawn.as_ref()));
+            off.extend(crate::next_tree::reference_legend_gaps(
+                &reg,
+                recipe,
+                html,
+                &units,
+                drawn.as_ref(),
+            ));
             // and a layer that splits its months by the headline's years fades those outside them and names the years
-            off.extend(crate::next_tree::split_gaps(&reg, recipe, html, &units, drawn.as_ref()));
+            off.extend(crate::next_tree::split_gaps(
+                &reg,
+                recipe,
+                html,
+                &units,
+                drawn.as_ref(),
+            ));
             for (src, text) in ledger.iter().filter(|(s, _)| s.starts_with("series:")) {
                 match rows.iter().find(|r| r.src == *src) {
                     Some(row) if crate::next_ledger::prints(text, row.value) => {}
-                    Some(row) => off.push(format!("{src}: prints {text:?}, the row holds {}", row.value)),
+                    Some(row) => off.push(format!(
+                        "{src}: prints {text:?}, the row holds {}",
+                        row.value
+                    )),
                     None => off.push(format!("{src}: no row of the request holds it")),
                 }
             }
@@ -696,16 +999,31 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
                     None => {}
                 }
             }
-            Reply::Points { points, missing, table: NE_ATTRIBUTES }
+            Reply::Points {
+                points,
+                missing,
+                table: NE_ATTRIBUTES,
+            }
         }
-        Request::IllusStrip { tables, width, runtime } => {
+        Request::IllusStrip {
+            tables,
+            width,
+            runtime,
+        } => {
             let (strip, note) = illus_strip(tables, width, runtime)?;
             Reply::Strip { strip, note }
         }
-        Request::NodeDeclare { layer, page_in } => Reply::NodeDeclared(Box::new(crate::next_tree_gen::declare(layer, page_in)?)),
-        Request::NodeDraw { fill, page_in, layers, runtime } => {
-            Reply::NodesDrawn(Box::new(crate::next_tree_gen::draw(fill, page_in, layers, runtime)?))
+        Request::NodeDeclare { layer, page_in } => {
+            Reply::NodeDeclared(Box::new(crate::next_tree_gen::declare(layer, page_in)?))
         }
+        Request::NodeDraw {
+            fill,
+            page_in,
+            layers,
+            runtime,
+        } => Reply::NodesDrawn(Box::new(crate::next_tree_gen::draw(
+            fill, page_in, layers, runtime,
+        )?)),
     })
 }
 
@@ -734,7 +1052,13 @@ fn recipe_layers(recipe: &str) -> Option<Vec<String>> {
 fn passed(report: Value, html_sha256: &str) -> Result<Value, String> {
     let status = report["status"].as_str().unwrap_or("no status");
     if status != "PASS" {
-        let errors: Vec<&str> = report["errors"].as_array().into_iter().flatten().filter_map(Value::as_str).take(8).collect();
+        let errors: Vec<&str> = report["errors"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .take(8)
+            .collect();
         return Err(format!("browser check: {status}: {}", errors.join("; ")));
     }
     if report["html_sha256"].as_str() != Some(html_sha256) {
@@ -765,11 +1089,18 @@ fn browser_check(runner: &Runner, html: &Path, out: &Path) -> Result<Value, Stri
         .spawn()
         .map_err(|e| format!("browser check: {} would not start: {e}", runner.program))?;
     let started = Instant::now();
-    while child.try_wait().map_err(|e| format!("browser check: {e}"))?.is_none() {
+    while child
+        .try_wait()
+        .map_err(|e| format!("browser check: {e}"))?
+        .is_none()
+    {
         if started.elapsed() > QA_DEADLINE {
             let _ = child.kill();
             let _ = child.wait();
-            return Err(format!("browser check: no report within {}s", QA_DEADLINE.as_secs()));
+            return Err(format!(
+                "browser check: no report within {}s",
+                QA_DEADLINE.as_secs()
+            ));
         }
         std::thread::sleep(Duration::from_millis(50));
     }
@@ -779,13 +1110,16 @@ fn browser_check(runner: &Runner, html: &Path, out: &Path) -> Result<Value, Stri
         .ok_or_else(|| "browser check: it wrote no readable browser-qa.json".to_string())
 }
 
-
-
 /// The stacked page (Request::Stack): the question as its h1 and title, escaped, then one frame per block page at its own
 /// size, in order. The block pages are referred to, never copied or changed, so every word and number on it is one its
 /// block's page checks already read.
 fn stack_html(title: &str, pages: &[(String, f64, f64)]) -> String {
-    let esc = |t: &str| t.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;");
+    let esc = |t: &str| {
+        t.replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('"', "&quot;")
+    };
     let frames: String = pages
         .iter()
         .map(|(src, w, h)| format!("<iframe src=\"{}\" width=\"{w:.0}\" height=\"{h:.0}\" loading=\"eager\"></iframe>\n", esc(src)))
@@ -844,33 +1178,82 @@ mod tests {
             let w = w.map_or(format!("{:.1}", m["w"].as_f64().unwrap()), str::to_string);
             format!(
                 r#"<text x="{:.1}" y="{:.1}" text-anchor="end" font-size="13">N</text><rect x="{:.1}" y="{:.1}" width="{w}" height="18" fill="x"/><text x="{:.1}" y="{:.1}" font-size="13"><tspan data-src="s">1</tspan></text>"#,
-                t[0]["x"].as_f64().unwrap(), t[0]["y"].as_f64().unwrap(), m["x"].as_f64().unwrap(), m["y"].as_f64().unwrap(),
-                t[1]["x"].as_f64().unwrap(), t[1]["y"].as_f64().unwrap()
+                t[0]["x"].as_f64().unwrap(),
+                t[0]["y"].as_f64().unwrap(),
+                m["x"].as_f64().unwrap(),
+                m["y"].as_f64().unwrap(),
+                t[1]["x"].as_f64().unwrap(),
+                t[1]["y"].as_f64().unwrap()
             )
         };
-        let page = |inner: &str| format!(r#"<svg class="bars"><g data-layer="bars"><line x1="100.2" x2="100.2" y1="6" y2="54"/>{inner}</g></svg>"#);
+        let page = |inner: &str| {
+            format!(
+                r#"<svg class="bars"><g data-layer="bars"><line x1="100.2" x2="100.2" y1="6" y2="54"/>{inner}</g></svg>"#
+            )
+        };
         let good = page(&format!("{}{}", bar(&items[0], None), bar(&items[1], None)));
         let knobs = json!({"external": ["bars"], "placed": {"bars": {"items": items}}});
-        let layers = |knobs: Value| vec![Layer::registered("column", "bars", json!([]), knobs).unwrap()];
-        assert_eq!(drawn_checked(&good, &layers(knobs.clone())).unwrap(), vec![json!({"layer": "bars", "compared": 22, "failed": 0})]);
+        let layers =
+            |knobs: Value| vec![Layer::registered("column", "bars", json!([]), knobs).unwrap()];
+        assert_eq!(
+            drawn_checked(&good, &layers(knobs.clone())).unwrap(),
+            vec![json!({"layer": "bars", "compared": 22, "failed": 0})]
+        );
         let refused = |html: &str, words: &str| {
             let why = drawn_checked(html, &layers(knobs.clone())).unwrap_err();
-            assert!(why.starts_with("drawn: layer bars: ") && why.contains(words), "{words}: {why}");
+            assert!(
+                why.starts_with("drawn: layer bars: ") && why.contains(words),
+                "{words}: {why}"
+            );
         };
-        refused(&page(&format!("{}{}", bar(&items[0], Some("400.2")), bar(&items[1], None))), "item 0 rect width");
-        refused(&format!("{}<rect x=\"1\" y=\"1\" width=\"1\" height=\"1\"/></g>", good.trim_end_matches("</g></svg>")), "3 rects drawn, 2 placed");
-        refused(&good.replacen("<text x=\"92.2\" y=\"18.0\" text-anchor=\"end\" font-size=\"13\">N</text>", "", 1), "11 of 22 drawn numbers are not the placed ones, first text 0 x");
-        refused(&good.replacen("text-anchor=\"end\"", "text-anchor=\"middle\"", 1), "text 0 anchor");
-        refused(&page(&format!("{}{}", bar(&items[1], None), bar(&items[0], None))), "item 0 rect");
+        refused(
+            &page(&format!(
+                "{}{}",
+                bar(&items[0], Some("400.2")),
+                bar(&items[1], None)
+            )),
+            "item 0 rect width",
+        );
+        refused(
+            &format!(
+                "{}<rect x=\"1\" y=\"1\" width=\"1\" height=\"1\"/></g>",
+                good.trim_end_matches("</g></svg>")
+            ),
+            "3 rects drawn, 2 placed",
+        );
+        refused(
+            &good.replacen(
+                "<text x=\"92.2\" y=\"18.0\" text-anchor=\"end\" font-size=\"13\">N</text>",
+                "",
+                1,
+            ),
+            "11 of 22 drawn numbers are not the placed ones, first text 0 x",
+        );
+        refused(
+            &good.replacen("text-anchor=\"end\"", "text-anchor=\"middle\"", 1),
+            "text 0 anchor",
+        );
+        refused(
+            &page(&format!("{}{}", bar(&items[1], None), bar(&items[0], None))),
+            "item 0 rect",
+        );
         refused("<svg></svg>", "elements tagged");
         refused(&good.replacen("<line", "<g><line", 1), "nested");
         let off = json!({"external": [], "placed": {}});
-        assert_eq!(drawn_checked("<svg></svg>", &layers(off)).unwrap(), Vec::<Value>::new());
+        assert_eq!(
+            drawn_checked("<svg></svg>", &layers(off)).unwrap(),
+            Vec::<Value>::new()
+        );
         let none = json!({"external": ["bars"], "placed": {"bars": {"items": []}}});
-        assert!(drawn_checked(&page(""), &layers(none)).unwrap_err().contains("no placed items"));
+        assert!(drawn_checked(&page(""), &layers(none))
+            .unwrap_err()
+            .contains("no placed items"));
         // a layer left to its leaf to stop (P4a-2 leaf_draws) that was drawn after all never passes
-        let left = json!({"external": ["bars"], "placed": {"bars": {"leaf_stop": "zero_end_past_frame"}}});
-        assert!(drawn_checked(&good, &layers(left)).unwrap_err().contains("left to its leaf to stop (zero_end_past_frame)"));
+        let left =
+            json!({"external": ["bars"], "placed": {"bars": {"leaf_stop": "zero_end_past_frame"}}});
+        assert!(drawn_checked(&good, &layers(left))
+            .unwrap_err()
+            .contains("left to its leaf to stop (zero_end_past_frame)"));
     }
 
     /// The drawn check of a map circles layer (P4a-2): circles, dots, leaders and both lines of each label where the core
@@ -886,17 +1269,34 @@ mod tests {
         let html = |circle_at: &str, leader: bool, at_y: &str| {
             format!(
                 r#"<svg><g data-layer="bubbles"><clipPath id="c"><rect x="12" y="12" width="9" height="9"/></clipPath><g clip-path="url(#c)"><path d="M0 0Z"/></g><circle cx="{circle_at}" cy="50.0" r="22.0" data-code="AT"/><circle cx="200.0" cy="80.0" r="10.5" data-code="BE"/><circle cx="102.0" cy="51.0" r="1.6" data-at="AT"/>{}<text x="125.0" y="{at_y}" text-anchor="start">a</text><text x="125.0" y="65.6" text-anchor="start">1</text><text x="262.0" y="77.4" text-anchor="start">b</text><text x="262.0" y="95.6" text-anchor="start">2</text></g></svg>"#,
-                if leader { r#"<line x1="210.5" y1="80.0" x2="260.0" y2="80.0"/>"# } else { "" }
+                if leader {
+                    r#"<line x1="210.5" y1="80.0" x2="260.0" y2="80.0"/>"#
+                } else {
+                    ""
+                }
             )
         };
         let check = |h: String| circles_drawn(&h[h.find("data-layer").unwrap()..], &placed);
-        assert_eq!(check(html("100.0", true, "47.4")).unwrap(), json!({"compared": 31, "failed": 0}));
+        assert_eq!(
+            check(html("100.0", true, "47.4")).unwrap(),
+            json!({"compared": 31, "failed": 0})
+        );
         for (h, words) in [
             (html("100.1", true, "47.4"), "circle AT cx"),
             (html("100.0", false, "47.4"), "leader 0 x1"),
             (html("100.0", true, "47.5"), "text 0.0 y"),
-            (html("100.0", true, "47.4").replacen("data-code=\"AT\"", "data-code=\"BE\"", 1), "circle 0: drawn Some(\"BE\")"),
-            (html("100.0", true, "47.4").replacen("<g clip-path", "<g transform=\"translate(1 0)\" clip-path", 1), "moves what it holds"),
+            (
+                html("100.0", true, "47.4").replacen("data-code=\"AT\"", "data-code=\"BE\"", 1),
+                "circle 0: drawn Some(\"BE\")",
+            ),
+            (
+                html("100.0", true, "47.4").replacen(
+                    "<g clip-path",
+                    "<g transform=\"translate(1 0)\" clip-path",
+                    1,
+                ),
+                "moves what it holds",
+            ),
         ] {
             let why = check(h).unwrap_err();
             assert!(why.contains(words), "{words}: {why}");
@@ -922,16 +1322,30 @@ mod tests {
             one_mark_per_period(&mut knobs, facts);
             knobs["spec"]["hero"]["ring"]["marks"].clone()
         };
-        assert_eq!(marks(&[fact("p", "2024-03"), fact("l", "2024-03")]), json!([{"key": "p"}, {"key": "x"}]));
-        assert_eq!(marks(&[fact("p", "2022-01"), fact("l", "2024-03")]), json!([{"key": "p"}, {"key": "l"}, {"key": "x"}]));
+        assert_eq!(
+            marks(&[fact("p", "2024-03"), fact("l", "2024-03")]),
+            json!([{"key": "p"}, {"key": "x"}])
+        );
+        assert_eq!(
+            marks(&[fact("p", "2022-01"), fact("l", "2024-03")]),
+            json!([{"key": "p"}, {"key": "l"}, {"key": "x"}])
+        );
     }
 
     /// An iso3's point is its Natural Earth label point (DEU, GRC); with three features filed under AUS it is Australia's own;
     /// a code with none is missing, once; the reply carries the embedded table, the vendored file's bytes.
     #[test]
     fn an_iso3_gets_its_natural_earth_label_point_and_one_without_is_missing() {
-        let iso3: Vec<String> = ["DEU", "GRC", "AUS", "WLD", "XXX", "DEU", "WLD"].iter().map(|c| c.to_string()).collect();
-        let Ok(Reply::Points { points, missing, table }) = call(Request::PlacePoints { iso3: &iso3 }) else {
+        let iso3: Vec<String> = ["DEU", "GRC", "AUS", "WLD", "XXX", "DEU", "WLD"]
+            .iter()
+            .map(|c| c.to_string())
+            .collect();
+        let Ok(Reply::Points {
+            points,
+            missing,
+            table,
+        }) = call(Request::PlacePoints { iso3: &iso3 })
+        else {
             panic!("no points")
         };
         assert_eq!(points["DEU"], [9.678348, 50.961733]);
@@ -939,7 +1353,11 @@ mod tests {
         assert_eq!(points["AUS"], [134.04972, -24.129522]);
         assert_eq!(points.len(), 3);
         assert_eq!(missing, ["WLD", "XXX"]);
-        let file = std::fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime/pi/assets/naturalearth-admin0-50m-attributes.json")).unwrap();
+        let file = std::fs::read(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("runtime/pi/assets/naturalearth-admin0-50m-attributes.json"),
+        )
+        .unwrap();
         assert_eq!(table.as_bytes(), &file[..]);
     }
 
@@ -953,8 +1371,17 @@ mod tests {
         };
         assert_eq!(knob("ring", "years"), Ok((5.0, 2.0, 10.0)));
         assert_eq!(knob("ring", "months"), Ok((60.0, 24.0, 120.0)));
-        assert_eq!(knob("ring", "color"), Err("knob: ring.color is a word, not a number".to_string()));
-        assert_eq!(knob("ring", "decades"), Err("knob: node ring has no knob decades".to_string()));
-        assert_eq!(knob("rings", "years"), Err("knob: the leaf registry has no node rings".to_string()));
+        assert_eq!(
+            knob("ring", "color"),
+            Err("knob: ring.color is a word, not a number".to_string())
+        );
+        assert_eq!(
+            knob("ring", "decades"),
+            Err("knob: node ring has no knob decades".to_string())
+        );
+        assert_eq!(
+            knob("rings", "years"),
+            Err("knob: the leaf registry has no node rings".to_string())
+        );
     }
 }

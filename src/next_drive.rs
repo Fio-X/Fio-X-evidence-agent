@@ -648,7 +648,11 @@ mod drive {
 
     /// A gold file through the whole first prompt (run_page) in `run` with the real catalogue and tool host, the gold's prepare
     /// steps and a GoldAsker (fetch log in `out`): the asker as it ended, the run's events, where the run stopped and its seconds.
-    async fn walk_gold(gold: Value, out: &Path, run: &Path) -> (GoldAsker, Vec<Value>, String, f64) {
+    async fn walk_gold(
+        gold: Value,
+        out: &Path,
+        run: &Path,
+    ) -> (GoldAsker, Vec<Value>, String, f64) {
         let question = gold["question"].as_str().unwrap_or("").to_string();
         for dir in [out, run] {
             std::fs::create_dir_all(dir).unwrap();
@@ -705,13 +709,16 @@ mod drive {
             serde_json::from_str(&std::fs::read_to_string(var("Q1WALK_GOLD")).unwrap()).unwrap();
         assert_eq!(gold["qid"], "q1", "Q1WALK_GOLD is not q1's gold file");
         let dir = PathBuf::from(var("CF_WALK_DIR"));
-        let (model, events, stopped, seconds) = walk_gold(gold, &dir.join("out"), &dir.join("run")).await;
+        let (model, events, stopped, seconds) =
+            walk_gold(gold, &dir.join("out"), &dir.join("run")).await;
         // the run's events stay next to its pages, for the quick check to keep when the walk stops short
         let lines: Vec<String> = events.iter().map(Value::to_string).collect();
         std::fs::write(dir.join("run/events.jsonl"), lines.join("\n")).unwrap();
         let last = |kind: &str| events.iter().rev().find(|e| e["type"] == kind);
         let page = match last(crate::next_run::RING_EVENT) {
-            Some(e) if e["published"].is_string() => format!("{} published", e["recipe"].as_str().unwrap_or("?")),
+            Some(e) if e["published"].is_string() => {
+                format!("{} published", e["recipe"].as_str().unwrap_or("?"))
+            }
             Some(e) => format!("stuck {}", e["stuck"].as_str().unwrap_or("?")),
             None => "no page".to_string(),
         };
@@ -729,8 +736,17 @@ mod drive {
             println!("Q1WALK gap {gap}");
         }
         // the program's page checks past the gate, each with what it measured
-        for check in last(crate::next_run::PAGE_CHECKS_EVENT).and_then(|e| e["checks"].as_array()).into_iter().flatten() {
-            println!("Q1WALK check {} passed {} measured {}", check["name"].as_str().unwrap_or("?"), check["passed"], check["measured"]);
+        for check in last(crate::next_run::PAGE_CHECKS_EVENT)
+            .and_then(|e| e["checks"].as_array())
+            .into_iter()
+            .flatten()
+        {
+            println!(
+                "Q1WALK check {} passed {} measured {}",
+                check["name"].as_str().unwrap_or("?"),
+                check["passed"],
+                check["measured"]
+            );
         }
         // the gaps the flow recorded are the ones the completion check finds again from the written run; a page the ring
         // event says was published always has the flow's gate event, so the comparison cannot be skipped for it
@@ -747,13 +763,21 @@ mod drive {
             let recipe = event["recipe"].as_str().unwrap();
             let run = dir.join("run");
             let manifest: Value = serde_json::from_str(
-                &std::fs::read_to_string(run.join(format!("publications/{recipe}/manifest.json"))).unwrap(),
+                &std::fs::read_to_string(run.join(format!("publications/{recipe}/manifest.json")))
+                    .unwrap(),
             )
             .unwrap();
             let again = crate::next_gate::leaf_gate(&run, recipe, &manifest);
-            assert_eq!(again.as_deref(), Some(&gaps.iter().map(|g| g.to_string()).collect::<Vec<_>>()[..]), "flow gaps != completion gaps");
+            assert_eq!(
+                again.as_deref(),
+                Some(&gaps.iter().map(|g| g.to_string()).collect::<Vec<_>>()[..]),
+                "flow gaps != completion gaps"
+            );
         }
-        println!("Q1WALK stopped {}", stopped.chars().take(300).collect::<String>());
+        println!(
+            "Q1WALK stopped {}",
+            stopped.chars().take(300).collect::<String>()
+        );
         // the stub gives no reply to the image review (advice only, answered by a stand-in that sees the screenshot): a page
         // with no gap reads "vision pending"
         let gate = match last(crate::next_run::LEAF_GATE_EVENT) {
@@ -878,28 +902,65 @@ mod drive {
 
         use crate::anthropic_model::ToolDef;
         use crate::next_flow::{
-            Asker, Catalogue, GroupCatalogue, ModelRoute, Prepared, Recorder, Stop, CATALOGUE_EVENT, CHOOSE_TOOL,
-            COMPANION_EVENT, COMPOSITION_FETCH_EVENT, DATA_PREPARE_TOOL,
+            Asker, Catalogue, GroupCatalogue, ModelRoute, Prepared, Recorder, Stop,
+            CATALOGUE_EVENT, CHOOSE_TOOL, COMPANION_EVENT, COMPOSITION_FETCH_EVENT,
+            DATA_PREPARE_TOOL,
         };
 
         /// The frozen list's sha256 (11-01 15:49, design section 6): every later list is it with recorded swaps.
-        const MANIFEST_SHA256: &str = "9ac9b0cd42fdb1e6b7c68ac2d61a963e141c95d7b55f83275da20f5e8e73bcbb";
+        const MANIFEST_SHA256: &str =
+            "9ac9b0cd42fdb1e6b7c68ac2d61a963e141c95d7b55f83275da20f5e8e73bcbb";
         /// Never lowered: a re-freeze swaps a column page for a column page (user 11-01 21:41).
         const COLUMN_PAGES: usize = 14;
         const FIELDS: [&str; 5] = ["sha", "q", "recipe", "runs", "run"];
-        const ITEMS: [&str; 10] = ["refill", "end", "facts", "text", "drawn", "ring", "gate", "checks", "layers", "page"];
+        const ITEMS: [&str; 10] = [
+            "refill", "end", "facts", "text", "drawn", "ring", "gate", "checks", "layers", "page",
+        ];
         /// Sorted by their whole normalised value: sets, whatever order a run wrote them in.
         const SET_ITEMS: [&str; 2] = ["facts", "drawn"];
-        const REFILL_REASONS: [&str; 4] =
-            ["data file missing", "claims missing", "events missing", "ledger facts differ from request.json"];
+        const REFILL_REASONS: [&str; 4] = [
+            "data file missing",
+            "claims missing",
+            "events missing",
+            "ledger facts differ from request.json",
+        ];
         const FLOAT_SIG: usize = 12;
         const NUM_ATTRS: [&str; 21] = [
-            "x", "y", "x1", "x2", "y1", "y2", "cx", "cy", "r", "rx", "ry", "dx", "dy", "width", "height", "font-size",
-            "stroke-width", "opacity", "fill-opacity", "stroke-opacity", "stroke-dashoffset",
+            "x",
+            "y",
+            "x1",
+            "x2",
+            "y1",
+            "y2",
+            "cx",
+            "cy",
+            "r",
+            "rx",
+            "ry",
+            "dx",
+            "dy",
+            "width",
+            "height",
+            "font-size",
+            "stroke-width",
+            "opacity",
+            "fill-opacity",
+            "stroke-opacity",
+            "stroke-dashoffset",
         ];
         const MULTI_ATTRS: [&str; 4] = ["d", "points", "transform", "viewbox"];
-        const VOID: [&str; 13] = ["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"];
-        const RING_KEEP: [&str; 6] = ["dropped", "r_used", "r_steps", "r_min_lifted", "r_min_codes", "ends"];
+        const VOID: [&str; 13] = [
+            "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source",
+            "track", "wbr",
+        ];
+        const RING_KEEP: [&str; 6] = [
+            "dropped",
+            "r_used",
+            "r_steps",
+            "r_min_lifted",
+            "r_min_codes",
+            "ends",
+        ];
         /// The layer a column page's bars are drawn in: a column page counts only when its bars were compared.
         const BARS_LAYER: &str = "bars";
 
@@ -947,7 +1008,11 @@ mod drive {
             let mut digits: Vec<u8> = int.bytes().chain(frac.bytes()).map(|b| b - b'0').collect();
             let lead = digits.iter().take_while(|&&d| d == 0).count();
             digits.drain(..lead);
-            Some(Dec { neg, digits, exp: exp - frac.len() as i64 })
+            Some(Dec {
+                neg,
+                digits,
+                exp: exp - frac.len() as i64,
+            })
         }
 
         /// The decimal printed as Python's format(d.normalize(), "f") does, and 0 for any zero.
@@ -965,7 +1030,11 @@ mod drive {
             } else {
                 let point = digits.len() as i64 + d.exp;
                 if point > 0 {
-                    format!("{}.{}", &digits[..point as usize], &digits[point as usize..])
+                    format!(
+                        "{}.{}",
+                        &digits[..point as usize],
+                        &digits[point as usize..]
+                    )
                 } else {
                     format!("0.{}{digits}", "0".repeat((-point) as usize))
                 }
@@ -1004,7 +1073,14 @@ mod drive {
         /// N2: a float rounded to FLOAT_SIG significant digits of its shortest repr, half to even, printed plain.
         fn canon_float(x: f64) -> String {
             if !x.is_finite() {
-                return if x.is_nan() { "nan" } else if x > 0.0 { "inf" } else { "-inf" }.into();
+                return if x.is_nan() {
+                    "nan"
+                } else if x > 0.0 {
+                    "inf"
+                } else {
+                    "-inf"
+                }
+                .into();
             }
             let d = parse_dec(&format!("{x:e}")).expect("a finite float prints as a decimal");
             dec_text(round_sig(d, FLOAT_SIG))
@@ -1031,11 +1107,17 @@ mod drive {
                     None => s.clone(),
                 })
                 .to_string(),
-                Value::Array(a) => format!("[{}]", a.iter().map(|x| cj(x, run)).collect::<Vec<_>>().join(",")),
+                Value::Array(a) => format!(
+                    "[{}]",
+                    a.iter().map(|x| cj(x, run)).collect::<Vec<_>>().join(",")
+                ),
                 Value::Object(o) => {
                     let mut kv: Vec<(&String, &Value)> = o.iter().collect();
                     kv.sort_by(|a, b| a.0.cmp(b.0));
-                    let kv: Vec<String> = kv.iter().map(|(k, x)| format!("{}:{}", Value::String((*k).clone()), cj(x, run))).collect();
+                    let kv: Vec<String> = kv
+                        .iter()
+                        .map(|(k, x)| format!("{}:{}", Value::String((*k).clone()), cj(x, run)))
+                        .collect();
                     format!("{{{}}}", kv.join(","))
                 }
             }
@@ -1173,7 +1255,9 @@ mod drive {
                                 j = k;
                             }
                         }
-                        o.push_str(&num_token(&v[start..j]).unwrap_or_else(|| v[start..j].to_string()));
+                        o.push_str(
+                            &num_token(&v[start..j]).unwrap_or_else(|| v[start..j].to_string()),
+                        );
                         i = j;
                     }
                     None => {
@@ -1211,10 +1295,15 @@ mod drive {
                 if VOID.contains(&tag) {
                     return;
                 }
-                let layer = attrs.iter().rev().find(|(k, _)| k == "data-layer").and_then(|(_, v)| v.clone());
+                let layer = attrs
+                    .iter()
+                    .rev()
+                    .find(|(k, _)| k == "data-layer")
+                    .and_then(|(_, v)| v.clone());
                 if let Some(layer) = layer {
                     let first = self.out.last().cloned().unwrap_or_default();
-                    self.open.push((layer, vec![first], self.stack.len(), self.out.len() - 1));
+                    self.open
+                        .push((layer, vec![first], self.stack.len(), self.out.len() - 1));
                 }
                 self.stack.push(tag.to_string());
                 if ["style", "script", "head"].contains(&tag) {
@@ -1287,12 +1376,16 @@ mod drive {
                     }
                     let value = if j < b.len() && (b[j] == b'"' || b[j] == b'\'') {
                         let q = b[j];
-                        let e = inner[j + 1..].find(char::from(q)).map_or(b.len(), |e| j + 1 + e);
+                        let e = inner[j + 1..]
+                            .find(char::from(q))
+                            .map_or(b.len(), |e| j + 1 + e);
                         let v = &inner[j + 1..e];
                         i = (e + 1).min(b.len());
                         v
                     } else {
-                        let e = inner[j..].find(|c: char| c.is_ascii_whitespace()).map_or(b.len(), |e| j + e);
+                        let e = inner[j..]
+                            .find(|c: char| c.is_ascii_whitespace())
+                            .map_or(b.len(), |e| j + e);
                         let v = &inner[j..e];
                         i = e;
                         v
@@ -1318,7 +1411,11 @@ mod drive {
             let mut i = 0;
             let n = page.len();
             while i < n {
-                let raw_elem = c.stack.last().filter(|t| *t == "script" || *t == "style").cloned();
+                let raw_elem = c
+                    .stack
+                    .last()
+                    .filter(|t| *t == "script" || *t == "style")
+                    .cloned();
                 if let Some(elem) = raw_elem {
                     // raw text up to its own end tag, not decoded
                     let close = format!("</{elem}");
@@ -1348,7 +1445,11 @@ mod drive {
                     i += 4 + e + 3;
                 } else if let Some(body) = rest.strip_prefix("</") {
                     let gt = body.find('>').unwrap_or(body.len());
-                    let name: String = body[..gt].split(|ch: char| ch.is_ascii_whitespace() || ch == '/').next().unwrap_or("").to_lowercase();
+                    let name: String = body[..gt]
+                        .split(|ch: char| ch.is_ascii_whitespace() || ch == '/')
+                        .next()
+                        .unwrap_or("")
+                        .to_lowercase();
                     c.end(&name);
                     i += 2 + gt + 1;
                 } else if let Some(body) = rest.strip_prefix("<!") {
@@ -1360,7 +1461,9 @@ mod drive {
                 } else if rest.as_bytes().get(1).is_some_and(u8::is_ascii_alphabetic) {
                     let gt = tag_end(rest);
                     let inner = &rest[1..gt];
-                    let name_end = inner.find(|ch: char| ch.is_ascii_whitespace() || ch == '/' || ch == '>').unwrap_or(inner.len());
+                    let name_end = inner
+                        .find(|ch: char| ch.is_ascii_whitespace() || ch == '/' || ch == '>')
+                        .unwrap_or(inner.len());
                     let tag = inner[..name_end].to_lowercase();
                     let (attrs, closes) = tag_attrs(&inner[name_end..]);
                     c.start(&tag, &attrs);
@@ -1376,7 +1479,11 @@ mod drive {
             // close(): what is still open stays open, as the parser leaves it
             let mut layers = c.layers;
             layers.sort();
-            CanonHtml { text: c.text, layers: layers.into_iter().map(|(_, n, s)| (n, s)).collect(), page: c.out.concat() }
+            CanonHtml {
+                text: c.text,
+                layers: layers.into_iter().map(|(_, n, s)| (n, s)).collect(),
+                page: c.out.concat(),
+            }
         }
 
         /// Where a start tag ends: its '>' outside quoted attribute values.
@@ -1406,7 +1513,12 @@ mod drive {
                     item,
                     v.map(|v| {
                         if SET_ITEMS.contains(&item) {
-                            let mut all: Vec<String> = v.as_array().into_iter().flatten().map(|x| cj(x, run)).collect();
+                            let mut all: Vec<String> = v
+                                .as_array()
+                                .into_iter()
+                                .flatten()
+                                .map(|x| cj(x, run))
+                                .collect();
                             all.sort();
                             format!("[{}]", all.join(","))
                         } else {
@@ -1446,10 +1558,18 @@ mod drive {
         impl Page {
             fn of(fields: &[&str]) -> Page {
                 let f = |i: usize| fields.get(i).copied().unwrap_or("").to_string();
-                Page { sha: f(0), q: f(1), recipe: f(2), runs: f(3), run: f(4) }
+                Page {
+                    sha: f(0),
+                    q: f(1),
+                    recipe: f(2),
+                    runs: f(3),
+                    run: f(4),
+                }
             }
             fn line(&self) -> String {
-                [&self.sha, &self.q, &self.recipe, &self.runs, &self.run].map(String::as_str).join("\t")
+                [&self.sha, &self.q, &self.recipe, &self.runs, &self.run]
+                    .map(String::as_str)
+                    .join("\t")
             }
         }
 
@@ -1467,8 +1587,15 @@ mod drive {
             /// The gate's: the list at `manifest`, replay-swaps.tsv beside it, the local docs three folders up from it (the
             /// list lives in works/<design>/<plan>/ of them), BEFORE files beside it.
             fn beside(manifest: Option<&Path>) -> Inputs {
-                let dir = manifest.and_then(Path::parent).map(Path::to_path_buf).unwrap_or_default();
-                let docs = dir.ancestors().nth(3).map(Path::to_path_buf).unwrap_or_default();
+                let dir = manifest
+                    .and_then(Path::parent)
+                    .map(Path::to_path_buf)
+                    .unwrap_or_default();
+                let docs = dir
+                    .ancestors()
+                    .nth(3)
+                    .map(Path::to_path_buf)
+                    .unwrap_or_default();
                 Inputs {
                     manifest: manifest.and_then(|m| std::fs::read(m).ok()),
                     swaps: std::fs::read(dir.join("replay-swaps.tsv")).ok(),
@@ -1486,10 +1613,15 @@ mod drive {
         /// The file beside the list whose sha256 is `sha`, read as json.
         fn before_file(beside: &Path, sha: &str) -> Option<Value> {
             let entries = std::fs::read_dir(beside).ok()?;
-            entries.flatten().filter(|e| e.path().is_file()).find_map(|e| {
-                let bytes = std::fs::read(e.path()).ok()?;
-                (sha256(&bytes) == sha).then(|| serde_json::from_slice(&bytes).ok()).flatten()
-            })
+            entries
+                .flatten()
+                .filter(|e| e.path().is_file())
+                .find_map(|e| {
+                    let bytes = std::fs::read(e.path()).ok()?;
+                    (sha256(&bytes) == sha)
+                        .then(|| serde_json::from_slice(&bytes).ok())
+                        .flatten()
+                })
         }
 
         /// Why a column page of a BEFORE first pass does not count, in the words a swap must give: it did not refill, it
@@ -1507,7 +1639,11 @@ mod drive {
                 ));
             }
             let html = rec["html"].as_str().unwrap_or("");
-            if !canon_html(html).layers.iter().any(|(name, _)| name == BARS_LAYER) {
+            if !canon_html(html)
+                .layers
+                .iter()
+                .any(|(name, _)| name == BARS_LAYER)
+            {
                 return Some("published with no bars layer".into());
             }
             None
@@ -1515,20 +1651,37 @@ mod drive {
 
         /// The list judged with its swap record: Ok is its pages and its sha256, Err why it is refused.
         fn read_manifest(inputs: &Inputs) -> Result<(Vec<Page>, String), String> {
-            let raw = inputs.manifest.as_ref().ok_or("no manifest (NEXT_TREE_REPLAY_RUNS not given or not readable)")?;
-            let sraw = inputs.swaps.as_ref().ok_or("no swap record beside the manifest (replay-swaps.tsv)")?;
+            let raw = inputs
+                .manifest
+                .as_ref()
+                .ok_or("no manifest (NEXT_TREE_REPLAY_RUNS not given or not readable)")?;
+            let sraw = inputs
+                .swaps
+                .as_ref()
+                .ok_or("no swap record beside the manifest (replay-swaps.tsv)")?;
             let text = String::from_utf8(raw.clone()).map_err(|_| "manifest is not utf-8")?;
             let lines: Vec<&str> = text.split('\n').collect();
             let head: Vec<&str> = lines[0].split(' ').collect();
             let count = |at: usize| {
-                head.get(at).filter(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())).and_then(|n| n.parse::<usize>().ok())
+                head.get(at)
+                    .filter(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+                    .and_then(|n| n.parse::<usize>().ok())
             };
             let header_ok = head.len() == 9
-                && [head[0], head[1], head[3], head[5], head[7]] == ["#", "pages", "column", "change", "other"]
+                && [head[0], head[1], head[3], head[5], head[7]]
+                    == ["#", "pages", "column", "change", "other"]
                 && (2..=8).step_by(2).all(|k| count(k).is_some());
-            let pages: Vec<Page> = lines[1..].iter().filter(|l| !l.is_empty()).map(|l| Page::of(&l.split('\t').collect::<Vec<_>>())).collect();
+            let pages: Vec<Page> = lines[1..]
+                .iter()
+                .filter(|l| !l.is_empty())
+                .map(|l| Page::of(&l.split('\t').collect::<Vec<_>>()))
+                .collect();
             let distinct: BTreeSet<&str> = pages.iter().map(|p| p.sha.as_str()).collect();
-            if !header_ok || count(2) != Some(pages.len()) || pages.is_empty() || distinct.len() != pages.len() {
+            if !header_ok
+                || count(2) != Some(pages.len())
+                || pages.is_empty()
+                || distinct.len() != pages.len()
+            {
                 return Err("manifest header and lines disagree (or empty)".into());
             }
             let stext = String::from_utf8(sraw.clone()).map_err(|_| "swap record is not utf-8")?;
@@ -1554,8 +1707,14 @@ mod drive {
             }
             let ins: Vec<&str> = swapped.iter().map(|s| s.1.sha.as_str()).collect();
             let outs: Vec<&str> = swapped.iter().map(|s| s.0.sha.as_str()).collect();
-            let (ins_set, outs_set): (BTreeSet<&str>, BTreeSet<&str>) = (ins.iter().copied().collect(), outs.iter().copied().collect());
-            if ins_set.len() != ins.len() || outs_set.len() != outs.len() || !ins_set.is_disjoint(&outs_set) {
+            let (ins_set, outs_set): (BTreeSet<&str>, BTreeSet<&str>) = (
+                ins.iter().copied().collect(),
+                outs.iter().copied().collect(),
+            );
+            if ins_set.len() != ins.len()
+                || outs_set.len() != outs.len()
+                || !ins_set.is_disjoint(&outs_set)
+            {
                 return Err("swap record names a page twice (record each swap once, from the frozen page to the page now on)".into());
             }
             let cols = pages.iter().filter(|p| p.recipe == "column").count();
@@ -1572,20 +1731,35 @@ mod drive {
             for (out, inn, before_sha, why) in swapped.iter().rev() {
                 let name = format!("swap {} -> {}", out.sha, inn.sha);
                 if on.get(inn.sha.as_str()) != Some(&inn) {
-                    return Err(format!("{name}: the page brought in is not on the manifest as recorded"));
+                    return Err(format!(
+                        "{name}: the page brought in is not on the manifest as recorded"
+                    ));
                 }
                 if on.contains_key(out.sha.as_str()) {
-                    return Err(format!("{name}: the page taken out is still on the manifest"));
+                    return Err(format!(
+                        "{name}: the page taken out is still on the manifest"
+                    ));
                 }
-                let req = inputs.docs.join(&inn.run).join("publications/column/request.json");
-                if std::fs::read(&req).map(|b| sha256(&b)[..16] == inn.sha).ok() != Some(true) {
+                let req = inputs
+                    .docs
+                    .join(&inn.run)
+                    .join("publications/column/request.json");
+                if std::fs::read(&req)
+                    .map(|b| sha256(&b)[..16] == inn.sha)
+                    .ok()
+                    != Some(true)
+                {
                     return Err(format!("{name}: its run folder holds no column page with that request (publications/column/request.json)"));
                 }
-                let at = undone.iter().position(|l| *l == inn.line()).ok_or_else(|| format!("{name}: the line brought in is not on the list"))?;
+                let at = undone
+                    .iter()
+                    .position(|l| *l == inn.line())
+                    .ok_or_else(|| format!("{name}: the line brought in is not on the list"))?;
                 undone[at] = out.line();
                 let pre = sha256(undone.join("\n").as_bytes());
-                let before = before_file(&inputs.beside, before_sha)
-                    .ok_or_else(|| format!("{name}: no BEFORE file beside the manifest has sha256 {before_sha}"))?;
+                let before = before_file(&inputs.beside, before_sha).ok_or_else(|| {
+                    format!("{name}: no BEFORE file beside the manifest has sha256 {before_sha}")
+                })?;
                 if before["kind"] != "before" || before["manifest_sha256"] != pre.as_str() {
                     return Err(format!("{name}: its BEFORE file is not a before run of the list as it was before the swap"));
                 }
@@ -1607,7 +1781,9 @@ mod drive {
         }
 
         fn hex40(v: &Value) -> bool {
-            v.as_str().is_some_and(|h| h.len() == 40 && h.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')))
+            v.as_str().is_some_and(|h| {
+                h.len() == 40 && h.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+            })
         }
 
         /// The problems of one outcome file of `kind` over the list's pages (none: it holds).
@@ -1629,16 +1805,27 @@ mod drive {
             }
             let shas: BTreeSet<&str> = pages.iter().map(|x| x.sha.as_str()).collect();
             for (i, recs) in ps.iter().enumerate() {
-                let keys: BTreeSet<&str> = recs.as_object().map(|o| o.keys().map(String::as_str).collect()).unwrap_or_default();
+                let keys: BTreeSet<&str> = recs
+                    .as_object()
+                    .map(|o| o.keys().map(String::as_str).collect())
+                    .unwrap_or_default();
                 if keys != shas {
-                    p.push(format!("{kind} pass {} is not one record per manifest page ({} of {})", i + 1, keys.len(), shas.len()));
+                    p.push(format!(
+                        "{kind} pass {} is not one record per manifest page ({} of {})",
+                        i + 1,
+                        keys.len(),
+                        shas.len()
+                    ));
                     continue;
                 }
                 for (sha, r) in recs.as_object().into_iter().flatten() {
                     let rf = &r["refill"];
                     let known = rf.as_str().is_some_and(|rf| {
                         rf == "ok"
-                            || REFILL_REASONS.iter().any(|c| rf.strip_prefix(&format!("{c}: ")).is_some_and(|d| !d.trim().is_empty()))
+                            || REFILL_REASONS.iter().any(|c| {
+                                rf.strip_prefix(&format!("{c}: "))
+                                    .is_some_and(|d| !d.trim().is_empty())
+                            })
                     });
                     if !known {
                         p.push(format!("{kind} pass {} page {sha}: refill {rf} is neither ok nor a known reason with detail", i + 1));
@@ -1646,7 +1833,11 @@ mod drive {
                 }
             }
             if p.is_empty() {
-                let again: Vec<&str> = pages.iter().map(|x| x.sha.as_str()).filter(|s| !differs(&ps[0][s], &ps[1][s]).is_empty()).collect();
+                let again: Vec<&str> = pages
+                    .iter()
+                    .map(|x| x.sha.as_str())
+                    .filter(|s| !differs(&ps[0][s], &ps[1][s]).is_empty())
+                    .collect();
                 if let Some(first) = again.first() {
                     p.push(format!("{kind} file's two passes differ on {} page(s), first {first}: the gate is not repeatable", again.len()));
                 }
@@ -1654,8 +1845,10 @@ mod drive {
             if p.is_empty() && kind == "before" {
                 // every column page of the first pass refilled and published its bars: no margin (user 11-01 21:41, 22:0x)
                 let cols: Vec<&Page> = pages.iter().filter(|x| x.recipe == "column").collect();
-                let failed: Vec<(&str, String)> =
-                    cols.iter().filter_map(|x| column_failure(&ps[0][&x.sha]).map(|f| (x.sha.as_str(), f))).collect();
+                let failed: Vec<(&str, String)> = cols
+                    .iter()
+                    .filter_map(|x| column_failure(&ps[0][&x.sha]).map(|f| (x.sha.as_str(), f)))
+                    .collect();
                 if let Some((first, why)) = failed.first() {
                     p.push(format!(
                         "before pass 1: {} of {} column page(s) not refilled and published, first {first} ({why}): every column \
@@ -1665,7 +1858,13 @@ mod drive {
                     ));
                 }
             }
-            if p.is_empty() && ps[0].as_object().into_iter().flatten().all(|(_, r)| r["refill"] != "ok") {
+            if p.is_empty()
+                && ps[0]
+                    .as_object()
+                    .into_iter()
+                    .flatten()
+                    .all(|(_, r)| r["refill"] != "ok")
+            {
                 p.push(format!("{kind} file refilled no page: an empty run"));
             }
             p
@@ -1683,7 +1882,9 @@ mod drive {
                     bad.extend(file_problems(run, "before", &pages, &msha));
                 }
                 Some("after") => {
-                    let Some(before) = before else { return Err(vec!["after run without BEFORE".into()]) };
+                    let Some(before) = before else {
+                        return Err(vec!["after run without BEFORE".into()]);
+                    };
                     bad.extend(file_problems(before, "before", &pages, &msha));
                     bad.extend(file_problems(run, "after", &pages, &msha));
                     if bad.is_empty() && before["head40"] == run["head40"] {
@@ -1691,23 +1892,35 @@ mod drive {
                     }
                     if bad.is_empty() {
                         for page in &pages {
-                            let d = differs(&before["passes"][0][&page.sha], &run["passes"][0][&page.sha]);
+                            let d = differs(
+                                &before["passes"][0][&page.sha],
+                                &run["passes"][0][&page.sha],
+                            );
                             if !d.is_empty() {
                                 bad.push(format!("page {}: {} differ", page.sha, d.join(", ")));
                             }
                         }
                     }
                 }
-                other => return Err(vec![format!("run kind {other:?} is neither before nor after")]),
+                other => {
+                    return Err(vec![format!(
+                        "run kind {other:?} is neither before nor after"
+                    )])
+                }
             }
-            if bad.is_empty() { Ok(()) } else { Err(bad) }
+            if bad.is_empty() {
+                Ok(())
+            } else {
+                Err(bad)
+            }
         }
 
         // ------------------------------------------------------------ the fixture page set (acceptance H2, 11-02)
 
         /// The fixture list's sha256: the column pages and the change pages that refilled and published in the BEFORE at
         /// ad4b05f541b934c6627db58ef98276bd9070ddae (pass 1), each pinned to the run records a refill reads.
-        const FIXTURE_LIST_SHA256: &str = "ac6d62bc590a8c62e8dd90e21386986929d619ba1053277a94d6e32f5fc8ef93";
+        const FIXTURE_LIST_SHA256: &str =
+            "ac6d62bc590a8c62e8dd90e21386986929d619ba1053277a94d6e32f5fc8ef93";
 
         /// The sha256 of the run records a refill reads from a run folder: events.jsonl, claims.jsonl and every file under
         /// computations/, data/ and shadow/, as "<relative path>\0<sha256 of its bytes>\n" lines in byte order of the paths.
@@ -1718,7 +1931,12 @@ mod drive {
                     if path.is_dir() {
                         walk(root, &path, out)?;
                     } else {
-                        out.push(path.strip_prefix(root).unwrap_or(&path).to_string_lossy().into_owned());
+                        out.push(
+                            path.strip_prefix(root)
+                                .unwrap_or(&path)
+                                .to_string_lossy()
+                                .into_owned(),
+                        );
                     }
                 }
                 Ok(())
@@ -1742,10 +1960,16 @@ mod drive {
         /// The fixture list (`# fixture pages <n> column <c> change <h>`, then a line per page: the gate list's five fields
         /// and inputs_sha256 of its run folder under `docs`): Ok its pages and its sha256, Err why it is refused. Only the
         /// pinned list, and only pages whose run folder holds that page and those records.
-        fn read_fixture_list(raw: &[u8], docs: &Path, pinned: &str) -> Result<(Vec<Page>, String), String> {
+        fn read_fixture_list(
+            raw: &[u8],
+            docs: &Path,
+            pinned: &str,
+        ) -> Result<(Vec<Page>, String), String> {
             let sha = sha256(raw);
             if sha != pinned {
-                return Err(format!("fixture list sha256 {sha} is not the pinned {pinned}"));
+                return Err(format!(
+                    "fixture list sha256 {sha} is not the pinned {pinned}"
+                ));
             }
             let text = String::from_utf8(raw.to_vec()).map_err(|_| "fixture list is not utf-8")?;
             let mut lines = text.split('\n').filter(|l| !l.is_empty());
@@ -1754,16 +1978,32 @@ mod drive {
             for l in lines {
                 let f: Vec<&str> = l.split('\t').collect();
                 if f.len() != FIELDS.len() + 1 {
-                    return Err(format!("fixture line {:?} has not six fields", l.chars().take(40).collect::<String>()));
+                    return Err(format!(
+                        "fixture line {:?} has not six fields",
+                        l.chars().take(40).collect::<String>()
+                    ));
                 }
                 let page = Page::of(&f[..5]);
                 if !["column", "change"].contains(&page.recipe.as_str()) {
-                    return Err(format!("fixture page {} is a {} page, not a column or change page", page.sha, page.recipe));
+                    return Err(format!(
+                        "fixture page {} is a {} page, not a column or change page",
+                        page.sha, page.recipe
+                    ));
                 }
                 let run = docs.join(&page.run);
-                let req = run.join("publications").join(&page.recipe).join("request.json");
-                if std::fs::read(&req).map(|b| sha256(&b)[..16] == page.sha).ok() != Some(true) {
-                    return Err(format!("fixture page {}: its run folder holds no {} page with that request", page.sha, page.recipe));
+                let req = run
+                    .join("publications")
+                    .join(&page.recipe)
+                    .join("request.json");
+                if std::fs::read(&req)
+                    .map(|b| sha256(&b)[..16] == page.sha)
+                    .ok()
+                    != Some(true)
+                {
+                    return Err(format!(
+                        "fixture page {}: its run folder holds no {} page with that request",
+                        page.sha, page.recipe
+                    ));
                 }
                 if inputs_sha256(&run)? != f[5] {
                     return Err(format!("fixture page {}: its run records are not the pinned ones (inputs_sha256 differs)", page.sha));
@@ -1771,7 +2011,16 @@ mod drive {
                 pages.push(page);
             }
             let n = |r: &str| pages.iter().filter(|p| p.recipe == r).count().to_string();
-            let want = ["#", "fixture", "pages", &pages.len().to_string(), "column", &n("column"), "change", &n("change")];
+            let want = [
+                "#",
+                "fixture",
+                "pages",
+                &pages.len().to_string(),
+                "column",
+                &n("column"),
+                "change",
+                &n("change"),
+            ];
             if head != want || pages.is_empty() {
                 return Err("fixture list header and lines disagree (or empty)".into());
             }
@@ -1781,7 +2030,12 @@ mod drive {
         /// The fixture set's pass rule (H2): a BEFORE whose two passes agree and in whose first pass every page refilled
         /// and published (a column page with its bars, file_problems), and an AFTER at another head, repeatable too, whose
         /// first pass equals BEFORE's on every item of every page. Ok(()) or every problem.
-        fn fixture_judge(pages: &[Page], lsha: &str, run: &Value, before: Option<&Value>) -> Result<(), Vec<String>> {
+        fn fixture_judge(
+            pages: &[Page],
+            lsha: &str,
+            run: &Value,
+            before: Option<&Value>,
+        ) -> Result<(), Vec<String>> {
             let green = |f: &Value| -> Vec<String> {
                 pages
                     .iter()
@@ -1808,7 +2062,10 @@ mod drive {
                     }
                     if bad.is_empty() {
                         for page in pages {
-                            let d = differs(&before["passes"][0][&page.sha], &run["passes"][0][&page.sha]);
+                            let d = differs(
+                                &before["passes"][0][&page.sha],
+                                &run["passes"][0][&page.sha],
+                            );
                             if !d.is_empty() {
                                 bad.push(format!("page {}: {} differ", page.sha, d.join(", ")));
                             }
@@ -1819,7 +2076,11 @@ mod drive {
                 (Some("after"), None) => bad.push("after run without BEFORE".into()),
                 (other, _) => bad.push(format!("run kind {other:?} is neither before nor after")),
             }
-            if bad.is_empty() { Ok(()) } else { Err(bad) }
+            if bad.is_empty() {
+                Ok(())
+            } else {
+                Err(bad)
+            }
         }
 
         // ------------------------------------------------------------ refill: a page through the production path again
@@ -1848,19 +2109,29 @@ mod drive {
         fn replay_asks(events: &[Value]) -> BTreeMap<String, VecDeque<VecDeque<Value>>> {
             let refused: BTreeSet<&str> = events
                 .iter()
-                .filter(|e| e["type"] == "tool_execution_end" && e["toolName"] == CHOOSE_TOOL && e["isError"] == true)
+                .filter(|e| {
+                    e["type"] == "tool_execution_end"
+                        && e["toolName"] == CHOOSE_TOOL
+                        && e["isError"] == true
+                })
                 .filter_map(|e| e["toolCallId"].as_str())
                 .collect();
             let mut asks: BTreeMap<String, VecDeque<VecDeque<Value>>> = BTreeMap::new();
             let mut open: BTreeSet<String> = BTreeSet::new();
-            for e in events.iter().filter(|e| e["type"] == "tool_execution_start" && e["toolName"] == CHOOSE_TOOL) {
+            for e in events
+                .iter()
+                .filter(|e| e["type"] == "tool_execution_start" && e["toolName"] == CHOOSE_TOOL)
+            {
                 let step = e["args"]["step"].as_str().unwrap_or("").to_string();
                 let of_step = asks.entry(step.clone()).or_default();
                 if !open.contains(&step) {
                     of_step.push_back(VecDeque::new());
                 }
                 of_step.back_mut().unwrap().push_back(e["args"].clone());
-                if e["toolCallId"].as_str().is_some_and(|id| refused.contains(id)) {
+                if e["toolCallId"]
+                    .as_str()
+                    .is_some_and(|id| refused.contains(id))
+                {
                     open.insert(step);
                 } else {
                     open.remove(&step);
@@ -1890,12 +2161,21 @@ mod drive {
                     }
                     out["params"] = Value::Object(params);
                     let picks = recorded["pick"].as_array().cloned().unwrap_or_default();
-                    if !picks.is_empty() && picks.iter().all(|p| allowed["pick"].as_array().is_some_and(|a| a.contains(p))) {
+                    if !picks.is_empty()
+                        && picks
+                            .iter()
+                            .all(|p| allowed["pick"].as_array().is_some_and(|a| a.contains(p)))
+                    {
                         out["pick"] = json!(picks);
                     }
                 }
                 "text" => {
-                    for k in allowed["names"].as_array().into_iter().flatten().filter_map(Value::as_str) {
+                    for k in allowed["names"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(Value::as_str)
+                    {
                         if let Some(name) = recorded["names"].get(k) {
                             out["names"][k] = name.clone();
                         }
@@ -1913,8 +2193,15 @@ mod drive {
                 ModelRoute::Standin
             }
 
-            async fn ask(&mut self, history: &[Value], tools: &[ToolDef], _cancel: &AtomicBool) -> Option<Value> {
-                let step = tools.first()?.parameters["properties"]["step"]["enum"][0].as_str()?.to_string();
+            async fn ask(
+                &mut self,
+                history: &[Value],
+                tools: &[ToolDef],
+                _cancel: &AtomicBool,
+            ) -> Option<Value> {
+                let step = tools.first()?.parameters["properties"]["step"]["enum"][0]
+                    .as_str()?
+                    .to_string();
                 if step == "vision" {
                     return None;
                 }
@@ -1926,12 +2213,16 @@ mod drive {
                     .and_then(|t| serde_json::from_str::<Value>(t).ok());
                 let args = match (refusal, self.last.get(&step)) {
                     // the run's program refused the answer just given too: the run's own next attempt at this ask
-                    (Some(refusal), Some(last)) => match self.retries.get_mut(&step).and_then(VecDeque::pop_front) {
-                        Some(next) => next,
-                        None => fitted(&step, last, &refusal)?,
-                    },
+                    (Some(refusal), Some(last)) => {
+                        match self.retries.get_mut(&step).and_then(VecDeque::pop_front) {
+                            Some(next) => next,
+                            None => fitted(&step, last, &refusal)?,
+                        }
+                    }
                     // a run archived before the shape step was asked answered none of the shapes: the flow it ran on
-                    _ if step == "split" && !self.answers.contains_key(&step) => crate::next_flow::split_answer(0),
+                    _ if step == "split" && !self.answers.contains_key(&step) => {
+                        crate::next_flow::split_answer(0)
+                    }
                     _ => {
                         let mut ask = self.answers.get_mut(&step).and_then(VecDeque::pop_front)?;
                         let first = ask.pop_front()?;
@@ -1941,8 +2232,10 @@ mod drive {
                 };
                 self.last.insert(step, args.clone());
                 self.n += 1;
-                Some(json!({"content": [{"type": "toolCall", "id": format!("replay-{}", self.n), "name": CHOOSE_TOOL, "arguments": args}],
-                    "stopReason": "toolUse", "usage": {}}))
+                Some(
+                    json!({"content": [{"type": "toolCall", "id": format!("replay-{}", self.n), "name": CHOOSE_TOOL, "arguments": args}],
+                    "stopReason": "toolUse", "usage": {}}),
+                )
             }
         }
 
@@ -1958,8 +2251,10 @@ mod drive {
                     json!({"type": "tool_execution_end", "toolName": CHOOSE_TOOL, "toolCallId": id, "isError": refused}),
                 ]
             };
-            let first = json!({"step": "text", "names": {"s1": "四类慢病的变化"}, "text": {"1": "四地"}});
-            let second = json!({"step": "text", "names": {"s1": "慢性病的变化"}, "text": {"1": "各地"}});
+            let first =
+                json!({"step": "text", "names": {"s1": "四类慢病的变化"}, "text": {"1": "四地"}});
+            let second =
+                json!({"step": "text", "names": {"s1": "慢性病的变化"}, "text": {"1": "各地"}});
             let later = json!({"step": "text", "names": {"s1": "后来的"}, "text": {}});
             let table = json!({"step": "table", "params": {}, "pick": [1]});
             let events: Vec<Value> = [
@@ -1971,25 +2266,48 @@ mod drive {
             ]
             .concat();
             let asks = replay_asks(&events);
-            assert_eq!(asks["text"], VecDeque::from([VecDeque::from([first.clone(), second.clone()]), VecDeque::from([later.clone()]), VecDeque::from([first.clone()])]));
+            assert_eq!(
+                asks["text"],
+                VecDeque::from([
+                    VecDeque::from([first.clone(), second.clone()]),
+                    VecDeque::from([later.clone()]),
+                    VecDeque::from([first.clone()])
+                ])
+            );
             assert_eq!(asks["table"], VecDeque::from([VecDeque::from([table])]));
-            let mut model = ReplayAsker { answers: asks, retries: BTreeMap::new(), last: BTreeMap::new(), n: 0 };
+            let mut model = ReplayAsker {
+                answers: asks,
+                retries: BTreeMap::new(),
+                last: BTreeMap::new(),
+                n: 0,
+            };
             let tools = [ToolDef {
                 name: CHOOSE_TOOL.into(),
                 description: String::new(),
                 parameters: json!({"properties": {"step": {"enum": ["text"]}}}),
             }];
             let refusal = json!({"allowed": {"names": ["s1"]}, "example": {"step": "text", "names": {"s1": "<name>"}, "text": {"1": "<x>"}}});
-            let refused = [json!({"role": "toolResult", "isError": true, "content": [{"type": "text", "text": refusal.to_string()}]})];
+            let refused = [
+                json!({"role": "toolResult", "isError": true, "content": [{"type": "text", "text": refusal.to_string()}]}),
+            ];
             let cancel = AtomicBool::new(false);
             macro_rules! give {
                 ($history:expr) => {
-                    model.ask($history, &tools, &cancel).await.unwrap()["content"][0]["arguments"].clone()
+                    model.ask($history, &tools, &cancel).await.unwrap()["content"][0]["arguments"]
+                        .clone()
                 };
             }
             assert_eq!(give!(&[]), first, "the ask's first attempt");
-            assert_eq!(give!(&refused), second, "refused as the run's program refused it: the run's own retry");
-            assert_eq!(give!(&refused), json!({"step": "text", "names": {"s1": "慢性病的变化"}, "text": {}}), "the accepted attempt refused: fitted");
+            assert_eq!(
+                give!(&refused),
+                second,
+                "refused as the run's program refused it: the run's own retry"
+            );
+            assert_eq!(
+                give!(&refused),
+                json!({"step": "text", "names": {"s1": "慢性病的变化"}, "text": {}}),
+                "the accepted attempt refused: fitted"
+            );
             assert_eq!(give!(&[]), later, "a new ask takes the run's next ask");
         }
 
@@ -1997,7 +2315,6 @@ mod drive {
             json!({"run": dir.display().to_string(), "refill": reason, "end": null, "facts": null, "drawn": null, "ring": null,
                 "gate": null, "checks": null, "html": null})
         }
-
 
         fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
             std::fs::create_dir_all(to)?;
@@ -2032,9 +2349,17 @@ mod drive {
         /// (a companion's: the main's companion shortlist), its claims in pick order; the main carries the companions the
         /// run kept (next_companions) with their fetched files and its sum-input fetch (next_composition_fetch). With them
         /// the claims step's call id, the program events' parent. Err names what the events lack.
-        fn prepared_of(events: &[Value], catalogue: &dyn Catalogue) -> Result<(Vec<Prepared>, String), String> {
-            let ranking = events.iter().find(|e| e["type"] == CATALOGUE_EVENT).map(|e| e["ranking"].clone()).ok_or("no next_catalogue")?;
-            let places_zh: Vec<String> = serde_json::from_value(ranking["places_zh"].clone()).unwrap_or_default();
+        fn prepared_of(
+            events: &[Value],
+            catalogue: &dyn Catalogue,
+        ) -> Result<(Vec<Prepared>, String), String> {
+            let ranking = events
+                .iter()
+                .find(|e| e["type"] == CATALOGUE_EVENT)
+                .map(|e| e["ranking"].clone())
+                .ok_or("no next_catalogue")?;
+            let places_zh: Vec<String> =
+                serde_json::from_value(ranking["places_zh"].clone()).unwrap_or_default();
             let ends: BTreeMap<&str, &Value> = events
                 .iter()
                 .filter(|e| e["type"] == "tool_execution_end" && e["toolName"] == DATA_PREPARE_TOOL)
@@ -2042,36 +2367,72 @@ mod drive {
                 .collect();
             let id_of = |args: &Value| {
                 let dataset = args["dataset"].as_str().unwrap_or("");
-                if args["provider"] == "worldbank" { format!("{dataset}@2") } else { dataset.to_string() }
+                if args["provider"] == "worldbank" {
+                    format!("{dataset}@2")
+                } else {
+                    dataset.to_string()
+                }
             };
             // every fetch's file by table id, the last one fetched (the companions' files)
             let mut files: BTreeMap<String, String> = BTreeMap::new();
             let mut prepared: Vec<Prepared> = Vec::new();
             let mut parent = None;
-            for start in events.iter().filter(|e| e["type"] == "tool_execution_start" && e["toolName"] == DATA_PREPARE_TOOL) {
-                let Some(end) = start["toolCallId"].as_str().and_then(|id| ends.get(id)) else { continue };
+            for start in events.iter().filter(|e| {
+                e["type"] == "tool_execution_start" && e["toolName"] == DATA_PREPARE_TOOL
+            }) {
+                let Some(end) = start["toolCallId"].as_str().and_then(|id| ends.get(id)) else {
+                    continue;
+                };
                 let (args, details) = (&start["args"], &end["result"]["details"]);
                 let id = id_of(args);
                 if let Some(file) = details["filePath"].as_str() {
                     files.insert(id.clone(), file.to_string());
                 }
-                let picks: Vec<&str> = args["picks"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
-                let Some(sheet) = args["sheet"].as_str().filter(|_| !picks.is_empty()) else { continue };
+                let picks: Vec<&str> = args["picks"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .collect();
+                let Some(sheet) = args["sheet"].as_str().filter(|_| !picks.is_empty()) else {
+                    continue;
+                };
                 let mut claims = details["claims"].as_array().cloned().unwrap_or_default();
-                if details["mode"] != "picks" || !details["runStop"].is_null() || claims.len() != picks.len() {
+                if details["mode"] != "picks"
+                    || !details["runStop"].is_null()
+                    || claims.len() != picks.len()
+                {
                     continue;
                 }
-                claims.sort_by_key(|c| c["candidate"].as_str().and_then(|k| picks.iter().position(|p| *p == k)).unwrap_or(usize::MAX));
-                parent.get_or_insert_with(|| start["auto_parent_call_id"].as_str().unwrap_or("").to_string());
+                claims.sort_by_key(|c| {
+                    c["candidate"]
+                        .as_str()
+                        .and_then(|k| picks.iter().position(|p| *p == k))
+                        .unwrap_or(usize::MAX)
+                });
+                parent.get_or_insert_with(|| {
+                    start["auto_parent_call_id"]
+                        .as_str()
+                        .unwrap_or("")
+                        .to_string()
+                });
                 let mut fetch = args.as_object().cloned().unwrap_or_default();
                 fetch.remove("sheet");
                 fetch.remove("picks");
-                let ranked = ranking["candidates"].as_array().into_iter().flatten().find(|c| c["id"] == id.as_str()).and_then(|c| c["title"].as_str());
+                let ranked = ranking["candidates"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .find(|c| c["id"] == id.as_str())
+                    .and_then(|c| c["title"].as_str());
                 let title = match (ranked, prepared.first()) {
                     (Some(t), _) => t.to_string(),
-                    (None, Some(main)) => {
-                        catalogue.companion_shortlist(&main.id).into_iter().find(|(c, _)| c.id == id).map(|(_, t)| t).unwrap_or_default()
-                    }
+                    (None, Some(main)) => catalogue
+                        .companion_shortlist(&main.id)
+                        .into_iter()
+                        .find(|(c, _)| c.id == id)
+                        .map(|(_, t)| t)
+                        .unwrap_or_default(),
                     (None, None) => String::new(),
                 };
                 prepared.push(Prepared {
@@ -2088,20 +2449,39 @@ mod drive {
                     relation: None,
                 });
             }
-            let main = prepared.first_mut().ok_or("no claims-step fetch registered its picks")?;
-            for kept in events.iter().filter(|e| e["type"] == COMPANION_EVENT).flat_map(|e| e["kept"].as_array().cloned().unwrap_or_default()) {
+            let main = prepared
+                .first_mut()
+                .ok_or("no claims-step fetch registered its picks")?;
+            for kept in events
+                .iter()
+                .filter(|e| e["type"] == COMPANION_EVENT)
+                .flat_map(|e| e["kept"].as_array().cloned().unwrap_or_default())
+            {
                 let table = kept["table"].as_str().unwrap_or("").to_string();
-                let file = files.get(&table).ok_or_else(|| format!("no fetch of the kept companion {table}"))?;
+                let file = files
+                    .get(&table)
+                    .ok_or_else(|| format!("no fetch of the kept companion {table}"))?;
                 main.companions.push((table, file.clone()));
             }
-            for e in events.iter().filter(|e| e["type"] == COMPOSITION_FETCH_EVENT) {
-                let file = e["file"].as_str().ok_or("a next_composition_fetch with no file")?;
+            for e in events
+                .iter()
+                .filter(|e| e["type"] == COMPOSITION_FETCH_EVENT)
+            {
+                let file = e["file"]
+                    .as_str()
+                    .ok_or("a next_composition_fetch with no file")?;
                 main.companions.push((main.id.clone(), file.to_string()));
             }
             // the relation the table step kept for the main table, as recorded (none on a run that gave none)
-            main.relation = events.iter().filter(|e| e["type"] == crate::next_flow::TABLE_RELATION_EVENT).last().and_then(|e| {
-                crate::shape_registry::RELATIONS.into_iter().find(|r| e["kept"].as_str() == Some(format!("{r:?}").as_str()))
-            });
+            main.relation = events
+                .iter()
+                .filter(|e| e["type"] == crate::next_flow::TABLE_RELATION_EVENT)
+                .last()
+                .and_then(|e| {
+                    crate::shape_registry::RELATIONS
+                        .into_iter()
+                        .find(|r| e["kept"].as_str() == Some(format!("{r:?}").as_str()))
+                });
             Ok((prepared, parent.unwrap_or_default()))
         }
 
@@ -2118,15 +2498,31 @@ mod drive {
             let Ok(text) = std::fs::read_to_string(src.join("events.jsonl")) else {
                 return failed(dir, "events missing: events.jsonl".into());
             };
-            let events: Vec<Value> = text.lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
+            let events: Vec<Value> = text
+                .lines()
+                .filter_map(|l| serde_json::from_str(l).ok())
+                .collect();
             let answers = replay_asks(&events);
-            let Some(question) = events.iter().find(|e| e["type"] == CATALOGUE_EVENT).and_then(|e| e["question"].as_str()) else {
-                return failed(dir, "events missing: no next_catalogue question in events.jsonl".into());
+            let Some(question) = events
+                .iter()
+                .find(|e| e["type"] == CATALOGUE_EVENT)
+                .and_then(|e| e["question"].as_str())
+            else {
+                return failed(
+                    dir,
+                    "events missing: no next_catalogue question in events.jsonl".into(),
+                );
             };
-            let Some(records) = std::fs::read_to_string(src.join("claims.jsonl")).ok().filter(|t| !t.trim().is_empty()) else {
+            let Some(records) = std::fs::read_to_string(src.join("claims.jsonl"))
+                .ok()
+                .filter(|t| !t.trim().is_empty())
+            else {
                 return failed(dir, "claims missing: claims.jsonl".into());
             };
-            let records: Vec<Value> = records.lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
+            let records: Vec<Value> = records
+                .lines()
+                .filter_map(|l| serde_json::from_str(l).ok())
+                .collect();
             let catalogue = GroupCatalogue::from_env(|key| std::env::var(key).ok()).unwrap();
             let (prepared, parent) = match prepared_of(&events, &catalogue) {
                 Ok(p) => p,
@@ -2134,19 +2530,40 @@ mod drive {
             };
             // every file the page step reads is the run's own
             let mut needed: Vec<String> = prepared.iter().map(|p| p.file.clone()).collect();
-            needed.extend(prepared.iter().flat_map(|p| p.companions.iter().map(|(_, f)| f.clone())));
-            needed.extend(prepared.iter().map(|p| format!("shadow/candidate_sheet-{}.json", p.sheet)));
+            needed.extend(
+                prepared
+                    .iter()
+                    .flat_map(|p| p.companions.iter().map(|(_, f)| f.clone())),
+            );
+            needed.extend(
+                prepared
+                    .iter()
+                    .map(|p| format!("shadow/candidate_sheet-{}.json", p.sheet)),
+            );
             for r in &records {
                 for key in ["source_refs", "computation_refs"] {
-                    needed.extend(r[key].as_array().into_iter().flatten().filter_map(Value::as_str).map(str::to_string));
+                    needed.extend(
+                        r[key]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter_map(Value::as_str)
+                            .map(str::to_string),
+                    );
                 }
             }
             if let Some(f) = needed.iter().find(|f| !src.join(f).is_file()) {
                 return failed(dir, format!("data file missing: {f}"));
             }
-            let verified: BTreeSet<&str> =
-                records.iter().filter(|r| r["status"] == "verified").filter_map(|r| r["claim_id"].as_str()).collect();
-            let named: Vec<&str> = prepared.iter().flat_map(|p| p.claims.iter().filter_map(|c| c["claim_id"].as_str())).collect();
+            let verified: BTreeSet<&str> = records
+                .iter()
+                .filter(|r| r["status"] == "verified")
+                .filter_map(|r| r["claim_id"].as_str())
+                .collect();
+            let named: Vec<&str> = prepared
+                .iter()
+                .flat_map(|p| p.claims.iter().filter_map(|c| c["claim_id"].as_str()))
+                .collect();
             if let Some(c) = named.iter().find(|c| !verified.contains(*c)) {
                 return failed(dir, format!("ledger facts differ from request.json: {c}, a claim of a prepared table, is no verified record of claims.jsonl"));
             }
@@ -2161,13 +2578,26 @@ mod drive {
             std::fs::copy(src.join("claims.jsonl"), run.join("claims.jsonl")).unwrap();
             let _command = crate::group_guard::command_for_test("investigate");
             crate::runtime::materialize_extension(&run).unwrap();
-            let mut model = ReplayAsker { answers, retries: BTreeMap::new(), last: BTreeMap::new(), n: 0 };
+            let mut model = ReplayAsker {
+                answers,
+                retries: BTreeMap::new(),
+                last: BTreeMap::new(),
+                n: 0,
+            };
             let mut walked = Vec::new();
             let mut sink = |e: Value| walked.push(e);
             let cancel = AtomicBool::new(false);
             let mut recorder = Recorder::new(&mut sink, &run, Vec::new(), Vec::new());
             recorder.hang_under(&parent);
-            let result = crate::next_run::page_from(&mut recorder, &mut model, question, &prepared, &catalogue, &cancel).await;
+            let result = crate::next_run::page_from(
+                &mut recorder,
+                &mut model,
+                question,
+                &prepared,
+                &catalogue,
+                &cancel,
+            )
+            .await;
             drop(recorder);
             // the walk's events beside it, as the q1 walk keeps them, for a reader of a refill that went wrong
             let lines: Vec<String> = walked.iter().map(Value::to_string).collect();
@@ -2177,7 +2607,12 @@ mod drive {
 
         /// The outcome record of a refilled walk: where it ended, and the published page's facts, rows, html and the flow's
         /// ring, gate and checks events (each absent when the walk did not reach it).
-        fn outcome_of(dir: &Path, run: &Path, events: &[Value], result: &Result<String, Stop>) -> Value {
+        fn outcome_of(
+            dir: &Path,
+            run: &Path,
+            events: &[Value],
+            result: &Result<String, Stop>,
+        ) -> Value {
             let last = |kind: &str| events.iter().rev().find(|e| e["type"] == kind);
             let end = match result {
                 Ok(_) => json!({"published": true}),
@@ -2187,10 +2622,13 @@ mod drive {
                 }
             };
             let ring = last(crate::next_run::RING_EVENT);
-            let published = ring.filter(|e| e["published"].is_string()).and_then(|e| e["recipe"].as_str());
+            let published = ring
+                .filter(|e| e["published"].is_string())
+                .and_then(|e| e["recipe"].as_str());
             let read = |rel: String| std::fs::read_to_string(run.join(rel)).ok();
-            let request: Option<Value> =
-                published.and_then(|r| read(format!("publications/{r}/request.json"))).and_then(|t| serde_json::from_str(&t).ok());
+            let request: Option<Value> = published
+                .and_then(|r| read(format!("publications/{r}/request.json")))
+                .and_then(|t| serde_json::from_str(&t).ok());
             let html = published.and_then(|r| read(format!("publications/{r}/index.html")));
             // the rows the layers draw, as the request lists them (fill.drawn is not written to the run)
             let drawn = request.as_ref().map(|q| {
@@ -2202,8 +2640,10 @@ mod drive {
                     .collect::<Vec<_>>()
             });
             let ring = ring.map(|e| {
-                let kept: Map<String, Value> =
-                    RING_KEEP.iter().filter_map(|k| e.get(*k).map(|v| (k.to_string(), v.clone()))).collect();
+                let kept: Map<String, Value> = RING_KEEP
+                    .iter()
+                    .filter_map(|k| e.get(*k).map(|v| (k.to_string(), v.clone())))
+                    .collect();
                 Value::Object(kept)
             });
             json!({"run": dir.display().to_string(), "refill": "ok", "end": end,
@@ -2234,30 +2674,50 @@ mod drive {
             let out = PathBuf::from(var("NEXT_SAYINGS_OUT"));
             let inputs = Inputs::beside(Some(&list));
             let catalogue = GroupCatalogue::from_env(|key| std::env::var(key).ok()).unwrap();
-            let text = std::fs::read_to_string(&list).unwrap_or_else(|e| panic!("{}: {e}", list.display()));
+            let text = std::fs::read_to_string(&list)
+                .unwrap_or_else(|e| panic!("{}: {e}", list.display()));
             let mut lines = Vec::new();
             let (mut pages, mut caught, mut errors) = (0, 0, 0);
-            for line in text.lines().filter(|l| !l.trim().is_empty() && !l.starts_with('#')) {
+            for line in text
+                .lines()
+                .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
+            {
                 let f: Vec<&str> = line.split('\t').collect();
-                assert!(f.len() >= 5, "a line of {} has fewer than 5 fields: {line}", list.display());
+                assert!(
+                    f.len() >= 5,
+                    "a line of {} has fewer than 5 fields: {line}",
+                    list.display()
+                );
                 let (sha, label, recipe, run) = (f[0], f[1], f[2], inputs.docs.join(f[4]));
-                let dir = f.get(5).filter(|d| !d.is_empty()).map_or(run.clone(), PathBuf::from);
+                let dir = f
+                    .get(5)
+                    .filter(|d| !d.is_empty())
+                    .map_or(run.clone(), PathBuf::from);
                 let checked = (|| -> Result<Vec<crate::next_sayings::Unheld>, String> {
-                    let text = std::fs::read_to_string(run.join("events.jsonl")).map_err(|e| format!("events.jsonl: {e}"))?;
-                    let events: Vec<Value> = text.lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
+                    let text = std::fs::read_to_string(run.join("events.jsonl"))
+                        .map_err(|e| format!("events.jsonl: {e}"))?;
+                    let events: Vec<Value> = text
+                        .lines()
+                        .filter_map(|l| serde_json::from_str(l).ok())
+                        .collect();
                     let question = events
                         .iter()
                         .find(|e| e["type"] == CATALOGUE_EVENT)
                         .and_then(|e| e["question"].as_str())
                         .ok_or("no next_catalogue question in events.jsonl")?;
                     let (prepared, _) = prepared_of(&events, &catalogue)?;
-                    crate::next_sayings::check_published(&dir, recipe, question, &prepared, &catalogue)
+                    crate::next_sayings::check_published(
+                        &dir, recipe, question, &prepared, &catalogue,
+                    )
                 })();
                 pages += 1;
                 let rec = match checked {
                     Ok(unheld) => {
                         caught += usize::from(!unheld.is_empty());
-                        let unheld: Vec<Value> = unheld.iter().map(crate::next_sayings::Unheld::to_json).collect();
+                        let unheld: Vec<Value> = unheld
+                            .iter()
+                            .map(crate::next_sayings::Unheld::to_json)
+                            .collect();
                         json!({"sha": sha, "label": label, "recipe": recipe, "unheld": unheld})
                     }
                     Err(why) => {
@@ -2267,8 +2727,12 @@ mod drive {
                 };
                 lines.push(rec.to_string());
             }
-            std::fs::write(&out, lines.join("\n") + "\n").unwrap_or_else(|e| panic!("{}: {e}", out.display()));
-            println!("SAYINGS pages {pages} with unheld {caught} unread {errors} out {}", out.display());
+            std::fs::write(&out, lines.join("\n") + "\n")
+                .unwrap_or_else(|e| panic!("{}: {e}", out.display()));
+            println!(
+                "SAYINGS pages {pages} with unheld {caught} unread {errors} out {}",
+                out.display()
+            );
         }
 
         /// The text a page's element holds between its opening tag's end and its closing tag: the first `<{open}` and the first
@@ -2289,9 +2753,15 @@ mod drive {
         /// - year: the first year the headline or the dek prints (a span whose src is a period or a fact's year part), one later;
         /// - undrawn: the dek says a place the page does not draw comes second (a name from PLANT_PLACES the page does not hold).
         fn plants(html: &str, knobs: &Value) -> Vec<(&'static str, Option<String>)> {
-            const PLANT_PLACES: [&str; 6] = ["巴西", "加拿大", "澳大利亚", "墨西哥", "阿根廷", "南非"];
+            const PLANT_PLACES: [&str; 6] =
+                ["巴西", "加拿大", "澳大利亚", "墨西哥", "阿根廷", "南非"];
             let labels = &knobs["labels"];
-            let ranked: Vec<&str> = knobs["spec"]["hero"]["data"]["ranked"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+            let ranked: Vec<&str> = knobs["spec"]["hero"]["data"]["ranked"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .collect();
             let name = |i: usize| ranked.get(i).and_then(|c| labels[*c].as_str());
             let h1 = inner_at(html, "<h1", "h1");
             let dek = inner_at(html, "<p class=\"dek\"", "p");
@@ -2303,18 +2773,26 @@ mod drive {
                 _ => None,
             };
             // the first span of the headline, then of the dek, whose src `want` takes and whose text `edit` changes
-            let first_span = |want: &dyn Fn(&str) -> bool, edit: &dyn Fn(&str) -> Option<String>| -> Option<String> {
+            let first_span = |want: &dyn Fn(&str) -> bool,
+                              edit: &dyn Fn(&str) -> Option<String>|
+             -> Option<String> {
                 for (s, e) in [h1, dek].into_iter().flatten() {
                     let part = &html[s..e];
                     let mut from = 0;
                     while let Some(a) = part[from..].find("<span data-src=\"") {
                         let a = from + a;
                         let src_at = a + "<span data-src=\"".len();
-                        let Some(q) = part[src_at..].find('"') else { break };
+                        let Some(q) = part[src_at..].find('"') else {
+                            break;
+                        };
                         let src = &part[src_at..src_at + q];
-                        let Some(t) = part[src_at + q..].find('>') else { break };
+                        let Some(t) = part[src_at + q..].find('>') else {
+                            break;
+                        };
                         let text_at = src_at + q + t + 1;
-                        let Some(z) = part[text_at..].find("</span>") else { break };
+                        let Some(z) = part[text_at..].find("</span>") else {
+                            break;
+                        };
                         let text = &part[text_at..text_at + z];
                         if want(src) && !text.contains('<') {
                             if let Some(new) = edit(text) {
@@ -2328,23 +2806,56 @@ mod drive {
                 }
                 None
             };
-            let number = first_span(&|src| src.starts_with("fact:") && !src.contains(".t"), &|text| {
-                let at = text.char_indices().filter(|(_, c)| c.is_ascii_digit()).last()?.0;
-                let d = text[at..].chars().next()?.to_digit(10)?;
-                Some(format!("{}{}{}", &text[..at], (d + 1) % 10, &text[at + 1..]))
-            });
-            let year = first_span(&|src| src.starts_with("period:") || src.ends_with(".t.y") || src.ends_with(".t"), &|text| {
-                let y: u32 = text.trim().parse().ok().filter(|y| (1900..2100).contains(y))?;
-                Some((y + 1).to_string())
-            });
-            let held: Vec<&str> = labels.as_object().into_iter().flatten().filter_map(|(_, v)| v.as_str()).collect();
-            let undrawn = match (dek, PLANT_PLACES.iter().find(|p| !held.contains(p) && !html.contains(*p))) {
+            let number = first_span(
+                &|src| src.starts_with("fact:") && !src.contains(".t"),
+                &|text| {
+                    let at = text
+                        .char_indices()
+                        .filter(|(_, c)| c.is_ascii_digit())
+                        .last()?
+                        .0;
+                    let d = text[at..].chars().next()?.to_digit(10)?;
+                    Some(format!(
+                        "{}{}{}",
+                        &text[..at],
+                        (d + 1) % 10,
+                        &text[at + 1..]
+                    ))
+                },
+            );
+            let year = first_span(
+                &|src| src.starts_with("period:") || src.ends_with(".t.y") || src.ends_with(".t"),
+                &|text| {
+                    let y: u32 = text
+                        .trim()
+                        .parse()
+                        .ok()
+                        .filter(|y| (1900..2100).contains(y))?;
+                    Some((y + 1).to_string())
+                },
+            );
+            let held: Vec<&str> = labels
+                .as_object()
+                .into_iter()
+                .flatten()
+                .filter_map(|(_, v)| v.as_str())
+                .collect();
+            let undrawn = match (
+                dek,
+                PLANT_PLACES
+                    .iter()
+                    .find(|p| !held.contains(p) && !html.contains(*p)),
+            ) {
                 (Some((_, e)), Some(p)) => Some(format!("{}，{p}次之{}", &html[..e], &html[e..])),
                 _ => None,
             };
-            vec![("second_as_top", second_as_top), ("number", number), ("year", year), ("undrawn", undrawn)]
+            vec![
+                ("second_as_top", second_as_top),
+                ("number", number),
+                ("year", year),
+                ("undrawn", undrawn),
+            ]
         }
-
 
         /// Roadmap step 3's planted-error measure (ignored; PLANT_LIST, PLANT_OUT and PLANT_TMP all required). Each line of the
         /// list is a published leaf page's folder (`<run out>/publications/<recipe>`), and optionally, after a tab, the run
@@ -2362,38 +2873,80 @@ mod drive {
         #[test]
         #[ignore]
         fn planted_errors() {
-            let (list, out, tmp) = (PathBuf::from(var("PLANT_LIST")), PathBuf::from(var("PLANT_OUT")), PathBuf::from(var("PLANT_TMP")));
+            let (list, out, tmp) = (
+                PathBuf::from(var("PLANT_LIST")),
+                PathBuf::from(var("PLANT_OUT")),
+                PathBuf::from(var("PLANT_TMP")),
+            );
             assert!(tmp.is_dir(), "PLANT_TMP {} is not a folder", tmp.display());
             let catalogue = GroupCatalogue::from_env(|key| std::env::var(key).ok()).unwrap();
             let copy = tmp.join("run");
             let mut lines = vec!["page\trecipe\tchange\tapplied\tcaught\tby".to_string()];
-            let text = std::fs::read_to_string(&list).unwrap_or_else(|e| panic!("{}: {e}", list.display()));
-            for line in text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')) {
-                let (dir, events_at) = line.split_once('\t').map_or((line, None), |(d, e)| (d, Some(Path::new(e))));
+            let text = std::fs::read_to_string(&list)
+                .unwrap_or_else(|e| panic!("{}: {e}", list.display()));
+            for line in text
+                .lines()
+                .map(str::trim)
+                .filter(|l| !l.is_empty() && !l.starts_with('#'))
+            {
+                let (dir, events_at) = line
+                    .split_once('\t')
+                    .map_or((line, None), |(d, e)| (d, Some(Path::new(e))));
                 let page = Path::new(dir);
-                let (Some(recipe), Some(root)) = (page.file_name().and_then(|n| n.to_str()), page.parent().and_then(Path::parent)) else {
+                let (Some(recipe), Some(root)) = (
+                    page.file_name().and_then(|n| n.to_str()),
+                    page.parent().and_then(Path::parent),
+                ) else {
                     lines.push(format!("{dir}\t\t-\tnot a publication folder\t\t"));
                     continue;
                 };
                 let prepared = (|| -> Result<(Vec<Prepared>, String, String, Value), String> {
                     if copy.exists() {
-                        std::fs::remove_dir_all(&copy).map_err(|e| format!("clearing the copy: {e}"))?;
+                        std::fs::remove_dir_all(&copy)
+                            .map_err(|e| format!("clearing the copy: {e}"))?;
                     }
                     std::fs::create_dir_all(copy.join("runtime")).map_err(|e| e.to_string())?;
                     for part in ["publications", "data"] {
-                        let ok = std::process::Command::new("/bin/cp").arg("-R").arg(root.join(part)).arg(copy.join(part)).status().map_err(|e| e.to_string())?;
+                        let ok = std::process::Command::new("/bin/cp")
+                            .arg("-R")
+                            .arg(root.join(part))
+                            .arg(copy.join(part))
+                            .status()
+                            .map_err(|e| e.to_string())?;
                         if !ok.success() {
                             return Err(format!("copying {part} failed"));
                         }
                     }
-                    std::fs::copy(events_at.unwrap_or(root).join("events.jsonl"), copy.join("events.jsonl")).map_err(|e| format!("events.jsonl: {e}"))?;
-                    std::fs::copy(root.join("runtime/next-page.json"), copy.join("runtime/next-page.json")).map_err(|e| format!("runtime/next-page.json: {e}"))?;
-                    let text = std::fs::read_to_string(copy.join("events.jsonl")).map_err(|e| format!("events.jsonl: {e}"))?;
-                    let events: Vec<Value> = text.lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
-                    let question = events.iter().find(|e| e["type"] == CATALOGUE_EVENT).and_then(|e| e["question"].as_str()).ok_or("no next_catalogue question")?.to_string();
+                    std::fs::copy(
+                        events_at.unwrap_or(root).join("events.jsonl"),
+                        copy.join("events.jsonl"),
+                    )
+                    .map_err(|e| format!("events.jsonl: {e}"))?;
+                    std::fs::copy(
+                        root.join("runtime/next-page.json"),
+                        copy.join("runtime/next-page.json"),
+                    )
+                    .map_err(|e| format!("runtime/next-page.json: {e}"))?;
+                    let text = std::fs::read_to_string(copy.join("events.jsonl"))
+                        .map_err(|e| format!("events.jsonl: {e}"))?;
+                    let events: Vec<Value> = text
+                        .lines()
+                        .filter_map(|l| serde_json::from_str(l).ok())
+                        .collect();
+                    let question = events
+                        .iter()
+                        .find(|e| e["type"] == CATALOGUE_EVENT)
+                        .and_then(|e| e["question"].as_str())
+                        .ok_or("no next_catalogue question")?
+                        .to_string();
                     let (prepared, _) = prepared_of(&events, &catalogue)?;
-                    let html = std::fs::read_to_string(page.join("index.html")).map_err(|e| format!("index.html: {e}"))?;
-                    let manifest: Value = serde_json::from_str(&std::fs::read_to_string(page.join("manifest.json")).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+                    let html = std::fs::read_to_string(page.join("index.html"))
+                        .map_err(|e| format!("index.html: {e}"))?;
+                    let manifest: Value = serde_json::from_str(
+                        &std::fs::read_to_string(page.join("manifest.json"))
+                            .map_err(|e| e.to_string())?,
+                    )
+                    .map_err(|e| e.to_string())?;
                     Ok((prepared, question, html, manifest))
                 })();
                 let (prepared, question, html, manifest) = match prepared {
@@ -2407,29 +2960,56 @@ mod drive {
                 let check = |h: &str| -> Vec<String> {
                     let mut manifest = manifest.clone();
                     manifest["html_sha256"] = json!(crate::hash::sha256_bytes(h.as_bytes()));
-                    if let Err(e) = std::fs::write(at.join("index.html"), h).and_then(|_| std::fs::write(at.join("manifest.json"), manifest.to_string())) {
+                    if let Err(e) = std::fs::write(at.join("index.html"), h).and_then(|_| {
+                        std::fs::write(at.join("manifest.json"), manifest.to_string())
+                    }) {
                         return vec![format!("writing the copy: {e}")];
                     }
-                    let mut off: Vec<String> = crate::next_gate::leaf_gaps(&copy, recipe, &manifest, &crate::next_gate::fetches(&copy)).into_iter().map(|g| format!("gate: {g}")).collect();
-                    match crate::next_sayings::check_published(&copy, recipe, &question, &prepared, &catalogue) {
-                        Ok(unheld) => off.extend(unheld.iter().map(|u| format!("sayings: {}", u.to_json()))),
+                    let mut off: Vec<String> = crate::next_gate::leaf_gaps(
+                        &copy,
+                        recipe,
+                        &manifest,
+                        &crate::next_gate::fetches(&copy),
+                    )
+                    .into_iter()
+                    .map(|g| format!("gate: {g}"))
+                    .collect();
+                    match crate::next_sayings::check_published(
+                        &copy, recipe, &question, &prepared, &catalogue,
+                    ) {
+                        Ok(unheld) => {
+                            off.extend(unheld.iter().map(|u| format!("sayings: {}", u.to_json())))
+                        }
                         Err(e) => off.push(format!("sayings: {e}")),
                     }
                     off
                 };
                 let one = |s: &str| s.replace(['\t', '\n'], " ");
                 if let Some(first) = check(&html).first() {
-                    lines.push(format!("{dir}\t{recipe}\t-\tits own bytes fail\t\t{}", one(first)));
+                    lines.push(format!(
+                        "{dir}\t{recipe}\t-\tits own bytes fail\t\t{}",
+                        one(first)
+                    ));
                     continue;
                 }
-                let knobs = serde_json::from_str::<Value>(&std::fs::read_to_string(page.join("request.json")).unwrap_or_default()).map(|r| r["knobs"].clone()).unwrap_or(Value::Null);
+                let knobs = serde_json::from_str::<Value>(
+                    &std::fs::read_to_string(page.join("request.json")).unwrap_or_default(),
+                )
+                .map(|r| r["knobs"].clone())
+                .unwrap_or(Value::Null);
                 for (change, planted) in plants(&html, &knobs) {
                     lines.push(match planted {
                         None => format!("{dir}\t{recipe}\t{change}\tn\t\t"),
-                        Some(h) if h == html => format!("{dir}\t{recipe}\t{change}\tn (no text changed)\t\t"),
+                        Some(h) if h == html => {
+                            format!("{dir}\t{recipe}\t{change}\tn (no text changed)\t\t")
+                        }
                         Some(h) => {
                             let off = check(&h);
-                            format!("{dir}\t{recipe}\t{change}\ty\t{}\t{}", if off.is_empty() { "n" } else { "y" }, off.first().map(|s| one(s)).unwrap_or_default())
+                            format!(
+                                "{dir}\t{recipe}\t{change}\ty\t{}\t{}",
+                                if off.is_empty() { "n" } else { "y" },
+                                off.first().map(|s| one(s)).unwrap_or_default()
+                            )
                         }
                     });
                 }
@@ -2437,7 +3017,8 @@ mod drive {
             if copy.exists() {
                 let _ = std::fs::remove_dir_all(&copy);
             }
-            std::fs::write(&out, lines.join("\n") + "\n").unwrap_or_else(|e| panic!("{}: {e}", out.display()));
+            std::fs::write(&out, lines.join("\n") + "\n")
+                .unwrap_or_else(|e| panic!("{}: {e}", out.display()));
         }
 
         /// The sample A walk (owner 11-14 21:4x item 2): a finished stand-in run of sample A walked again with no model, from
@@ -2455,11 +3036,21 @@ mod drive {
         async fn sample_a_walk() {
             let src = PathBuf::from(var("SAMPLE_A_RUN"));
             let dir = PathBuf::from(var("CF_WALK_DIR"));
-            let text = std::fs::read_to_string(src.join("events.jsonl")).expect("SAMPLE_A_RUN holds events.jsonl");
-            let events: Vec<Value> = text.lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
-            let question = events.iter().find(|e| e["type"] == CATALOGUE_EVENT).and_then(|e| e["question"].as_str()).expect("a question").to_string();
+            let text = std::fs::read_to_string(src.join("events.jsonl"))
+                .expect("SAMPLE_A_RUN holds events.jsonl");
+            let events: Vec<Value> = text
+                .lines()
+                .filter_map(|l| serde_json::from_str(l).ok())
+                .collect();
+            let question = events
+                .iter()
+                .find(|e| e["type"] == CATALOGUE_EVENT)
+                .and_then(|e| e["question"].as_str())
+                .expect("a question")
+                .to_string();
             let catalogue = GroupCatalogue::from_env(|key| std::env::var(key).ok()).unwrap();
-            let (prepared, parent) = prepared_of(&events, &catalogue).expect("the run's prepared tables");
+            let (prepared, parent) =
+                prepared_of(&events, &catalogue).expect("the run's prepared tables");
             let plan: crate::answer_plan::Plan = events
                 .iter()
                 .rev()
@@ -2473,9 +3064,18 @@ mod drive {
                 .and_then(|e| e["blocks"].as_array().cloned())
                 .into_iter()
                 .flatten()
-                .filter_map(|b| Some((b["quantity"].as_str()?.to_string(), b["table"].as_str()?.to_string())))
+                .filter_map(|b| {
+                    Some((
+                        b["quantity"].as_str()?.to_string(),
+                        b["table"].as_str()?.to_string(),
+                    ))
+                })
                 .collect();
-            assert_eq!(block_tables.len(), 3, "sample A has three block tables: {block_tables:?}");
+            assert_eq!(
+                block_tables.len(),
+                3,
+                "sample A has three block tables: {block_tables:?}"
+            );
             let run = dir.join("run");
             let _ = std::fs::remove_dir_all(&run);
             std::fs::create_dir_all(&run).unwrap();
@@ -2487,7 +3087,12 @@ mod drive {
             std::fs::copy(src.join("claims.jsonl"), run.join("claims.jsonl")).unwrap();
             let _command = crate::group_guard::command_for_test("investigate");
             crate::runtime::materialize_extension(&run).unwrap();
-            let mut model = ReplayAsker { answers: replay_asks(&events), retries: BTreeMap::new(), last: BTreeMap::new(), n: 0 };
+            let mut model = ReplayAsker {
+                answers: replay_asks(&events),
+                retries: BTreeMap::new(),
+                last: BTreeMap::new(),
+                n: 0,
+            };
             // the page over the blocks (pages_of, after the three blocks) asks the text step once more, which the run did not:
             // its first block's text answer again (the run's own retries after it; fitted when those are refused too)
             if let Some(text) = model.answers.get_mut("text") {
@@ -2495,26 +3100,46 @@ mod drive {
                     text.push_back(first);
                 }
             }
-            let planned = crate::next_flow::Planned { prepared, plan: Some(plan), block_tables, shared: Vec::new() };
+            let planned = crate::next_flow::Planned {
+                prepared,
+                plan: Some(plan),
+                block_tables,
+                shared: Vec::new(),
+            };
             let mut walked = Vec::new();
             let mut sink = |e: Value| walked.push(e);
             let cancel = AtomicBool::new(false);
             let mut recorder = Recorder::new(&mut sink, &run, Vec::new(), Vec::new());
             recorder.hang_under(&parent);
-            let result = crate::next_run::pages_of(&mut recorder, &mut model, &question, &planned, &catalogue, &cancel).await;
+            let result = crate::next_run::pages_of(
+                &mut recorder,
+                &mut model,
+                &question,
+                &planned,
+                &catalogue,
+                &cancel,
+            )
+            .await;
             drop(recorder);
             // the run's events where the completion check reads them: the source run's records of a kind the walk does not
             // write and its fetches (the data prepare calls), then the walk's own (leaf_gate's ring events)
             let kinds: BTreeSet<&str> = walked.iter().filter_map(|e| e["type"].as_str()).collect();
-            let lines: Vec<String> =
-                events
-                    .iter()
-                    .filter(|e| {
-                        !e["type"].as_str().is_some_and(|t| kinds.contains(t))
-                            || e["toolName"] == crate::next_knowledge::DATA_PREPARE_TOOL
-                    }).chain(walked.iter()).map(Value::to_string).collect();
+            let lines: Vec<String> = events
+                .iter()
+                .filter(|e| {
+                    !e["type"].as_str().is_some_and(|t| kinds.contains(t))
+                        || e["toolName"] == crate::next_knowledge::DATA_PREPARE_TOOL
+                })
+                .chain(walked.iter())
+                .map(Value::to_string)
+                .collect();
             std::fs::write(run.join("events.jsonl"), lines.join("\n") + "\n").unwrap();
-            let of = |kind: &str| walked.iter().filter(|e| e["type"] == kind).collect::<Vec<_>>();
+            let of = |kind: &str| {
+                walked
+                    .iter()
+                    .filter(|e| e["type"] == kind)
+                    .collect::<Vec<_>>()
+            };
             for e in of(crate::next_run::LEAF_GATE_EVENT) {
                 println!("SAWALK gate {} gaps {}", e["recipe"], e["gaps"]);
             }
@@ -2522,40 +3147,102 @@ mod drive {
             let gates = of(crate::next_run::LEAF_GATE_EVENT);
             // the page over the blocks heads each block by its table's reviewed Chinese name (the run's three World Bank
             // tables', reviewed 11-16): it is drawn first, and four pages reach the gate
-            assert_eq!(gates.len(), 4, "the page over the blocks and three block pages reached the gate");
-            assert!(gates.iter().all(|e| e["gaps"].as_array().is_some_and(Vec::is_empty)), "a gate gap");
+            assert_eq!(
+                gates.len(),
+                4,
+                "the page over the blocks and three block pages reached the gate"
+            );
+            assert!(
+                gates
+                    .iter()
+                    .all(|e| e["gaps"].as_array().is_some_and(Vec::is_empty)),
+                "a gate gap"
+            );
             for e in of(crate::next_run::PAGE_CHECKS_EVENT) {
-                let failed: Vec<&Value> = e["checks"].as_array().into_iter().flatten().filter(|c| c["passed"] != true).collect();
-                assert!(failed.is_empty(), "{}: failed checks {failed:?}", e["recipe"]);
+                let failed: Vec<&Value> = e["checks"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter(|c| c["passed"] != true)
+                    .collect();
+                assert!(
+                    failed.is_empty(),
+                    "{}: failed checks {failed:?}",
+                    e["recipe"]
+                );
             }
             for e in of(crate::next_sayings::SAYINGS_EVENT) {
-                assert_eq!(e["unheld"], json!([]), "{}: a saying does not hold", e["recipe"]);
+                assert_eq!(
+                    e["unheld"],
+                    json!([]),
+                    "{}: a saying does not hold",
+                    e["recipe"]
+                );
             }
             for e in &gates {
                 let folder = e["recipe"].as_str().unwrap();
-                let manifest: Value =
-                    serde_json::from_str(&std::fs::read_to_string(run.join(format!("publications/{folder}/manifest.json"))).unwrap()).unwrap();
-                assert_eq!(crate::next_gate::leaf_gate(&run, folder, &manifest), Some(Vec::new()), "{folder}: the completion gate again");
+                let manifest: Value = serde_json::from_str(
+                    &std::fs::read_to_string(
+                        run.join(format!("publications/{folder}/manifest.json")),
+                    )
+                    .unwrap(),
+                )
+                .unwrap();
+                assert_eq!(
+                    crate::next_gate::leaf_gate(&run, folder, &manifest),
+                    Some(Vec::new()),
+                    "{folder}: the completion gate again"
+                );
             }
             // the later blocks mark the first block's leader and say its place (owner 11-14 22:2x item 2): the headline's
             // place is a fact of op position, and that place is the page's accent
             for folder in ["column-b2", "column-b3"] {
-                let req: Value =
-                    serde_json::from_str(&std::fs::read_to_string(run.join(format!("publications/{folder}/request.json"))).unwrap()).unwrap();
+                let req: Value = serde_json::from_str(
+                    &std::fs::read_to_string(
+                        run.join(format!("publications/{folder}/request.json")),
+                    )
+                    .unwrap(),
+                )
+                .unwrap();
                 let spec = &req["knobs"]["spec"];
-                assert_eq!(spec["facts"]["pos1"]["op"], "position", "{folder}: no position fact");
-                assert_eq!(spec["facts"]["pos1"]["code"], spec["hero"]["data"]["accent"], "{folder}: the accent is not the place said");
-                assert!(spec["title"].as_str().is_some_and(|t| t.contains("排第")), "{folder}: the headline says no place: {}", spec["title"]);
+                assert_eq!(
+                    spec["facts"]["pos1"]["op"], "position",
+                    "{folder}: no position fact"
+                );
+                assert_eq!(
+                    spec["facts"]["pos1"]["code"], spec["hero"]["data"]["accent"],
+                    "{folder}: the accent is not the place said"
+                );
+                assert!(
+                    spec["title"].as_str().is_some_and(|t| t.contains("排第")),
+                    "{folder}: the headline says no place: {}",
+                    spec["title"]
+                );
             }
             let stacked = of(crate::next_run::STACKED_EVENT);
             let stacked = stacked.first().expect("a stacked page");
             assert_eq!(stacked["blocks"].as_array().map(Vec::len), Some(4));
             assert_eq!(stacked["quantities_left_out"], json!([]));
-            assert_eq!(stacked["over_blocks"]["drawn"], json!(true), "{}", stacked["over_blocks"]);
-            assert!(stacked["blocks"][0].as_str().is_some_and(|d| d.contains("block_ranks")), "{}", stacked["blocks"]);
-            let page = std::fs::read_to_string(run.join(stacked["published"].as_str().unwrap())).expect("the stacked page is written");
+            assert_eq!(
+                stacked["over_blocks"]["drawn"],
+                json!(true),
+                "{}",
+                stacked["over_blocks"]
+            );
+            assert!(
+                stacked["blocks"][0]
+                    .as_str()
+                    .is_some_and(|d| d.contains("block_ranks")),
+                "{}",
+                stacked["blocks"]
+            );
+            let page = std::fs::read_to_string(run.join(stacked["published"].as_str().unwrap()))
+                .expect("the stacked page is written");
             assert_eq!(page.matches("<iframe ").count(), 4, "four frames");
-            assert!(!page.contains("height=\"0\""), "a frame shown at no height: {page}");
+            assert!(
+                !page.contains("height=\"0\""),
+                "a frame shown at no height: {page}"
+            );
             println!("SAWALK {} | the page over the blocks and 3 blocks, gates 0, checks passed, sayings held | {}", stacked["published"], result.lines().last().unwrap_or(""));
         }
 
@@ -2572,21 +3259,51 @@ mod drive {
         async fn run_walk() {
             let src = PathBuf::from(var("RUN_WALK_SRC"));
             let dir = PathBuf::from(var("CF_WALK_DIR"));
-            let text = std::fs::read_to_string(src.join("events.jsonl")).expect("RUN_WALK_SRC holds events.jsonl");
-            let events: Vec<Value> = text.lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
-            let question = events.iter().find(|e| e["type"] == CATALOGUE_EVENT).and_then(|e| e["question"].as_str()).expect("a question").to_string();
+            let text = std::fs::read_to_string(src.join("events.jsonl"))
+                .expect("RUN_WALK_SRC holds events.jsonl");
+            let events: Vec<Value> = text
+                .lines()
+                .filter_map(|l| serde_json::from_str(l).ok())
+                .collect();
+            let question = events
+                .iter()
+                .find(|e| e["type"] == CATALOGUE_EVENT)
+                .and_then(|e| e["question"].as_str())
+                .expect("a question")
+                .to_string();
             let catalogue = GroupCatalogue::from_env(|key| std::env::var(key).ok()).unwrap();
-            let (prepared, parent) = prepared_of(&events, &catalogue).expect("the run's prepared tables");
-            let plan: Option<crate::answer_plan::Plan> =
-                events.iter().rev().find(|e| e["type"] == crate::next_flow::PLAN_EVENT).and_then(|e| serde_json::from_value(e["plan"].clone()).ok());
+            let (prepared, parent) =
+                prepared_of(&events, &catalogue).expect("the run's prepared tables");
+            let plan: Option<crate::answer_plan::Plan> = events
+                .iter()
+                .rev()
+                .find(|e| e["type"] == crate::next_flow::PLAN_EVENT)
+                .and_then(|e| serde_json::from_value(e["plan"].clone()).ok());
             let tables_event = |key: &str| {
-                events.iter().rev().find(|e| e["type"] == crate::next_flow::BLOCK_TABLES_EVENT && e.get(key).is_some()).and_then(|e| e[key].as_array().cloned()).unwrap_or_default()
+                events
+                    .iter()
+                    .rev()
+                    .find(|e| {
+                        e["type"] == crate::next_flow::BLOCK_TABLES_EVENT && e.get(key).is_some()
+                    })
+                    .and_then(|e| e[key].as_array().cloned())
+                    .unwrap_or_default()
             };
-            let block_tables: Vec<(String, String)> =
-                tables_event("blocks").iter().filter_map(|b| Some((b["quantity"].as_str()?.to_string(), b["table"].as_str()?.to_string()))).collect();
+            let block_tables: Vec<(String, String)> = tables_event("blocks")
+                .iter()
+                .filter_map(|b| {
+                    Some((
+                        b["quantity"].as_str()?.to_string(),
+                        b["table"].as_str()?.to_string(),
+                    ))
+                })
+                .collect();
             // a plan whose blocks share one table: each block its own fetch, in block order (as prepare_planned offers them)
-            let shared: Vec<(usize, usize)> =
-                tables_event("shared").iter().enumerate().filter_map(|(i, b)| Some((b["block"].as_u64()? as usize - 1, i))).collect();
+            let shared: Vec<(usize, usize)> = tables_event("shared")
+                .iter()
+                .enumerate()
+                .filter_map(|(i, b)| Some((b["block"].as_u64()? as usize - 1, i)))
+                .collect();
             let run = dir.join("run");
             let _ = std::fs::remove_dir_all(&run);
             std::fs::create_dir_all(&run).unwrap();
@@ -2600,26 +3317,58 @@ mod drive {
             }
             let _command = crate::group_guard::command_for_test("investigate");
             crate::runtime::materialize_extension(&run).unwrap();
-            let mut model = ReplayAsker { answers: replay_asks(&events), retries: BTreeMap::new(), last: BTreeMap::new(), n: 0 };
+            let mut model = ReplayAsker {
+                answers: replay_asks(&events),
+                retries: BTreeMap::new(),
+                last: BTreeMap::new(),
+                n: 0,
+            };
             // a page the run did not draw (a page over its blocks) asks the text step once more: its first answer again
             if let Some(text) = model.answers.get_mut("text") {
                 if let Some(first) = text.front().cloned() {
                     text.push_back(first);
                 }
             }
-            let planned = crate::next_flow::Planned { prepared, plan, block_tables, shared };
+            let planned = crate::next_flow::Planned {
+                prepared,
+                plan,
+                block_tables,
+                shared,
+            };
             let mut walked = Vec::new();
             let mut sink = |e: Value| walked.push(e);
             let cancel = AtomicBool::new(false);
             let mut recorder = Recorder::new(&mut sink, &run, Vec::new(), Vec::new());
             recorder.hang_under(&parent);
-            let result = crate::next_run::pages_of(&mut recorder, &mut model, &question, &planned, &catalogue, &cancel).await;
+            let result = crate::next_run::pages_of(
+                &mut recorder,
+                &mut model,
+                &question,
+                &planned,
+                &catalogue,
+                &cancel,
+            )
+            .await;
             drop(recorder);
-            for e in walked.iter().filter(|e| e["type"] == crate::next_run::LEAF_GATE_EVENT) {
-                println!("RWALK page {} gaps {}", e["recipe"].as_str().unwrap_or_default(), e["gaps"]);
+            for e in walked
+                .iter()
+                .filter(|e| e["type"] == crate::next_run::LEAF_GATE_EVENT)
+            {
+                println!(
+                    "RWALK page {} gaps {}",
+                    e["recipe"].as_str().unwrap_or_default(),
+                    e["gaps"]
+                );
             }
-            for e in walked.iter().filter(|e| e["type"] == crate::next_run::STACKED_EVENT) {
-                println!("RWALK stacked {} over_blocks {}", e["published"].as_str().unwrap_or_default(), e["over_blocks"]["drawn"]);
+            for e in walked
+                .iter()
+                .filter(|e| e["type"] == crate::next_run::STACKED_EVENT)
+            {
+                println!(
+                    "RWALK stacked {} over_blocks {}",
+                    e["published"].as_str().unwrap_or_default(),
+                    e["over_blocks"]["drawn"]
+                );
             }
             match result {
                 Ok(_) => println!("RWALK end published"),
@@ -2640,11 +3389,21 @@ mod drive {
         async fn sample_c_walk() {
             let src = PathBuf::from(var("SAMPLE_C_RUN"));
             let dir = PathBuf::from(var("CF_WALK_DIR"));
-            let text = std::fs::read_to_string(src.join("events.jsonl")).expect("SAMPLE_C_RUN holds events.jsonl");
-            let events: Vec<Value> = text.lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
-            let question = events.iter().find(|e| e["type"] == CATALOGUE_EVENT).and_then(|e| e["question"].as_str()).expect("a question").to_string();
+            let text = std::fs::read_to_string(src.join("events.jsonl"))
+                .expect("SAMPLE_C_RUN holds events.jsonl");
+            let events: Vec<Value> = text
+                .lines()
+                .filter_map(|l| serde_json::from_str(l).ok())
+                .collect();
+            let question = events
+                .iter()
+                .find(|e| e["type"] == CATALOGUE_EVENT)
+                .and_then(|e| e["question"].as_str())
+                .expect("a question")
+                .to_string();
             let catalogue = GroupCatalogue::from_env(|key| std::env::var(key).ok()).unwrap();
-            let (prepared, parent) = prepared_of(&events, &catalogue).expect("the run's prepared tables");
+            let (prepared, parent) =
+                prepared_of(&events, &catalogue).expect("the run's prepared tables");
             let plan: crate::answer_plan::Plan = events
                 .iter()
                 .rev()
@@ -2652,7 +3411,11 @@ mod drive {
                 .and_then(|e| serde_json::from_value(e["plan"].clone()).ok())
                 .expect("the run's plan");
             // each shared block (its number in the plan, from 1) and its own fetch of the shared table, in fetch order
-            let blocks_event = events.iter().rev().find(|e| e["type"] == crate::next_flow::BLOCK_TABLES_EVENT).expect("the run's block tables");
+            let blocks_event = events
+                .iter()
+                .rev()
+                .find(|e| e["type"] == crate::next_flow::BLOCK_TABLES_EVENT)
+                .expect("the run's block tables");
             let mut seen: BTreeMap<String, usize> = BTreeMap::new();
             let shared: Vec<(usize, usize)> = blocks_event["shared"]
                 .as_array()
@@ -2661,12 +3424,20 @@ mod drive {
                 .filter_map(|b| {
                     let (n, table) = (b["block"].as_u64()? as usize, b["table"].as_str()?);
                     let k = seen.entry(table.to_string()).or_insert(0);
-                    let at = prepared.iter().enumerate().filter(|(_, p)| p.id == table).nth(*k).map(|(i, _)| i)?;
+                    let at = prepared
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, p)| p.id == table)
+                        .nth(*k)
+                        .map(|(i, _)| i)?;
                     *k += 1;
                     Some((n.checked_sub(1)?, at))
                 })
                 .collect();
-            assert!(shared.len() >= 2, "sample C has two shared blocks or more: {blocks_event}");
+            assert!(
+                shared.len() >= 2,
+                "sample C has two shared blocks or more: {blocks_event}"
+            );
             let run = dir.join("run");
             let _ = std::fs::remove_dir_all(&run);
             std::fs::create_dir_all(&run).unwrap();
@@ -2678,51 +3449,117 @@ mod drive {
             std::fs::copy(src.join("claims.jsonl"), run.join("claims.jsonl")).unwrap();
             let _command = crate::group_guard::command_for_test("investigate");
             crate::runtime::materialize_extension(&run).unwrap();
-            let mut model = ReplayAsker { answers: replay_asks(&events), retries: BTreeMap::new(), last: BTreeMap::new(), n: 0 };
-            let planned = crate::next_flow::Planned { prepared, plan: Some(plan), block_tables: Vec::new(), shared };
+            let mut model = ReplayAsker {
+                answers: replay_asks(&events),
+                retries: BTreeMap::new(),
+                last: BTreeMap::new(),
+                n: 0,
+            };
+            let planned = crate::next_flow::Planned {
+                prepared,
+                plan: Some(plan),
+                block_tables: Vec::new(),
+                shared,
+            };
             let mut walked = Vec::new();
             let mut sink = |e: Value| walked.push(e);
             let cancel = AtomicBool::new(false);
             let mut recorder = Recorder::new(&mut sink, &run, Vec::new(), Vec::new());
             recorder.hang_under(&parent);
-            let result = crate::next_run::pages_of(&mut recorder, &mut model, &question, &planned, &catalogue, &cancel).await;
+            let result = crate::next_run::pages_of(
+                &mut recorder,
+                &mut model,
+                &question,
+                &planned,
+                &catalogue,
+                &cancel,
+            )
+            .await;
             drop(recorder);
             let kinds: BTreeSet<&str> = walked.iter().filter_map(|e| e["type"].as_str()).collect();
             let lines: Vec<String> = events
                 .iter()
-                .filter(|e| !e["type"].as_str().is_some_and(|t| kinds.contains(t)) || e["toolName"] == crate::next_knowledge::DATA_PREPARE_TOOL)
+                .filter(|e| {
+                    !e["type"].as_str().is_some_and(|t| kinds.contains(t))
+                        || e["toolName"] == crate::next_knowledge::DATA_PREPARE_TOOL
+                })
                 .chain(walked.iter())
                 .map(Value::to_string)
                 .collect();
             std::fs::write(run.join("events.jsonl"), lines.join("\n") + "\n").unwrap();
-            let of = |kind: &str| walked.iter().filter(|e| e["type"] == kind).collect::<Vec<_>>();
+            let of = |kind: &str| {
+                walked
+                    .iter()
+                    .filter(|e| e["type"] == kind)
+                    .collect::<Vec<_>>()
+            };
             for e in of(crate::next_run::LEAF_GATE_EVENT) {
                 println!("SCWALK gate {} gaps {}", e["recipe"], e["gaps"]);
             }
             let result = result.unwrap_or_else(|stop| panic!("SCWALK stopped: {stop}"));
             let gates = of(crate::next_run::LEAF_GATE_EVENT);
             assert!(gates.len() >= 2, "two block pages or more reached the gate");
-            assert!(gates.iter().all(|e| e["gaps"].as_array().is_some_and(Vec::is_empty)), "a gate gap");
+            assert!(
+                gates
+                    .iter()
+                    .all(|e| e["gaps"].as_array().is_some_and(Vec::is_empty)),
+                "a gate gap"
+            );
             for e in of(crate::next_run::PAGE_CHECKS_EVENT) {
-                let failed: Vec<&Value> = e["checks"].as_array().into_iter().flatten().filter(|c| c["passed"] != true).collect();
-                assert!(failed.is_empty(), "{}: failed checks {failed:?}", e["recipe"]);
+                let failed: Vec<&Value> = e["checks"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter(|c| c["passed"] != true)
+                    .collect();
+                assert!(
+                    failed.is_empty(),
+                    "{}: failed checks {failed:?}",
+                    e["recipe"]
+                );
             }
             for e in of(crate::next_sayings::SAYINGS_EVENT) {
-                assert_eq!(e["unheld"], json!([]), "{}: a saying does not hold", e["recipe"]);
+                assert_eq!(
+                    e["unheld"],
+                    json!([]),
+                    "{}: a saying does not hold",
+                    e["recipe"]
+                );
             }
             for e in &gates {
                 let folder = e["recipe"].as_str().unwrap();
-                let manifest: Value =
-                    serde_json::from_str(&std::fs::read_to_string(run.join(format!("publications/{folder}/manifest.json"))).unwrap()).unwrap();
-                assert_eq!(crate::next_gate::leaf_gate(&run, folder, &manifest), Some(Vec::new()), "{folder}: the completion gate again");
+                let manifest: Value = serde_json::from_str(
+                    &std::fs::read_to_string(
+                        run.join(format!("publications/{folder}/manifest.json")),
+                    )
+                    .unwrap(),
+                )
+                .unwrap();
+                assert_eq!(
+                    crate::next_gate::leaf_gate(&run, folder, &manifest),
+                    Some(Vec::new()),
+                    "{folder}: the completion gate again"
+                );
             }
             let stacked = of(crate::next_run::STACKED_EVENT);
             let stacked = stacked.first().expect("a stacked page");
-            let page = std::fs::read_to_string(run.join(stacked["published"].as_str().unwrap())).expect("the stacked page is written");
-            assert_eq!(page.matches("<iframe ").count(), gates.len(), "a frame per block drawn");
-            assert!(!page.contains("height=\"0\""), "a frame shown at no height: {page}");
+            let page = std::fs::read_to_string(run.join(stacked["published"].as_str().unwrap()))
+                .expect("the stacked page is written");
+            assert_eq!(
+                page.matches("<iframe ").count(),
+                gates.len(),
+                "a frame per block drawn"
+            );
+            assert!(
+                !page.contains("height=\"0\""),
+                "a frame shown at no height: {page}"
+            );
             let drawn: Vec<&str> = gates.iter().filter_map(|e| e["recipe"].as_str()).collect();
-            println!("SCWALK {} | blocks {drawn:?}, gates 0, checks passed, sayings held | {}", stacked["published"], result.lines().last().unwrap_or(""));
+            println!(
+                "SCWALK {} | blocks {drawn:?}, gates 0, checks passed, sayings held | {}",
+                stacked["published"],
+                result.lines().last().unwrap_or("")
+            );
         }
 
         /// One page of any list refilled into NEXT_REPLAY_LINE_OUT/ (record.json beside the refilled run): NEXT_REPLAY_LINE is
@@ -2738,11 +3575,18 @@ mod drive {
             let docs = PathBuf::from(var("NEXT_REPLAY_DOCS"));
             let dir = PathBuf::from(var("NEXT_REPLAY_LINE_OUT"));
             let fields: Vec<&str> = line.split('\t').collect();
-            assert!(fields.len() >= 5, "NEXT_REPLAY_LINE has fewer than 5 fields: {line}");
+            assert!(
+                fields.len() >= 5,
+                "NEXT_REPLAY_LINE has fewer than 5 fields: {line}"
+            );
             let page = Page::of(&fields);
             let rec = refill(&docs, &page, &dir).await;
-            std::fs::write(dir.join("record.json"), rec.to_string()).unwrap_or_else(|e| panic!("{}: record: {e}", page.sha));
-            println!("REFILL {} refill {} | end {} | sayings {}", page.sha, rec["refill"], rec["end"], rec["sayings"]);
+            std::fs::write(dir.join("record.json"), rec.to_string())
+                .unwrap_or_else(|e| panic!("{}: record: {e}", page.sha));
+            println!(
+                "REFILL {} refill {} | end {} | sayings {}",
+                page.sha, rec["refill"], rec["end"], rec["sayings"]
+            );
         }
 
         /// One page of the list refilled into target/page-replay/one/<sha16>/ (NEXT_TREE_REPLAY_RUNS, NEXT_TREE_REPLAY_PAGE: its
@@ -2754,12 +3598,24 @@ mod drive {
             let sha = var("NEXT_TREE_REPLAY_PAGE");
             let inputs = Inputs::beside(Some(&manifest));
             let (pages, _) = read_manifest(&inputs).unwrap_or_else(|why| panic!("{why}"));
-            let page = pages.iter().find(|p| p.sha == sha).unwrap_or_else(|| panic!("{sha} is not on the list"));
-            let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/page-replay/one").join(&sha);
+            let page = pages
+                .iter()
+                .find(|p| p.sha == sha)
+                .unwrap_or_else(|| panic!("{sha} is not on the list"));
+            let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("target/page-replay/one")
+                .join(&sha);
             let rec = refill(&inputs.docs, page, &dir).await;
-            let layers: Vec<String> = rec["html"].as_str().map(|h| canon_html(h).layers.into_iter().map(|(n, _)| n).collect()).unwrap_or_default();
-            std::fs::write(dir.join("record.json"), rec.to_string()).unwrap_or_else(|e| panic!("{sha}: record: {e}"));
-            println!("REFILL {sha} refill {} | end {} | layers {layers:?}", rec["refill"], rec["end"]);
+            let layers: Vec<String> = rec["html"]
+                .as_str()
+                .map(|h| canon_html(h).layers.into_iter().map(|(n, _)| n).collect())
+                .unwrap_or_default();
+            std::fs::write(dir.join("record.json"), rec.to_string())
+                .unwrap_or_else(|e| panic!("{sha}: record: {e}"));
+            println!(
+                "REFILL {sha} refill {} | end {} | layers {layers:?}",
+                rec["refill"], rec["end"]
+            );
         }
 
         /// The gate (design section 6.3): the list at NEXT_TREE_REPLAY_RUNS (its swap record beside it) refilled page by page
@@ -2773,28 +3629,46 @@ mod drive {
         #[tokio::test]
         #[ignore]
         async fn page_tree_replay() {
-            let manifest = std::env::var("NEXT_TREE_REPLAY_RUNS").ok().map(PathBuf::from);
+            let manifest = std::env::var("NEXT_TREE_REPLAY_RUNS")
+                .ok()
+                .map(PathBuf::from);
             let kind = var("NEXT_TREE_REPLAY_KIND");
             let out = PathBuf::from(var("NEXT_TREE_REPLAY_OUT"));
-            let before: Option<Value> = std::env::var("NEXT_TREE_REPLAY_BEFORE")
-                .ok()
-                .map(|p| serde_json::from_slice(&std::fs::read(&p).unwrap_or_else(|e| panic!("BEFORE {p}: {e}"))).unwrap());
+            let before: Option<Value> = std::env::var("NEXT_TREE_REPLAY_BEFORE").ok().map(|p| {
+                serde_json::from_slice(
+                    &std::fs::read(&p).unwrap_or_else(|e| panic!("BEFORE {p}: {e}")),
+                )
+                .unwrap()
+            });
             let inputs = Inputs::beside(manifest.as_deref());
-            let (pages, msha) = read_manifest(&inputs).unwrap_or_else(|why| panic!("REPLAY {kind} refused: {why}"));
-            assert!(kind == "before" || kind == "after", "NEXT_TREE_REPLAY_KIND {kind} is neither before nor after");
+            let (pages, msha) =
+                read_manifest(&inputs).unwrap_or_else(|why| panic!("REPLAY {kind} refused: {why}"));
+            assert!(
+                kind == "before" || kind == "after",
+                "NEXT_TREE_REPLAY_KIND {kind} is neither before nor after"
+            );
             let repo = Path::new(env!("CARGO_MANIFEST_DIR"));
-            let head = std::process::Command::new("git").arg("-C").arg(repo).args(["rev-parse", "HEAD"]).output().unwrap();
+            let head = std::process::Command::new("git")
+                .arg("-C")
+                .arg(repo)
+                .args(["rev-parse", "HEAD"])
+                .output()
+                .unwrap();
             let head40 = String::from_utf8_lossy(&head.stdout).trim().to_string();
             let mut passes = Vec::new();
             for pass in 1..=2 {
                 let mut recs = Map::new();
                 for page in &pages {
-                    let dir = repo.join("target/page-replay").join(format!("{kind}-{pass}")).join(&page.sha);
+                    let dir = repo
+                        .join("target/page-replay")
+                        .join(format!("{kind}-{pass}"))
+                        .join(&page.sha);
                     recs.insert(page.sha.clone(), refill(&inputs.docs, page, &dir).await);
                 }
                 passes.push(Value::Object(recs));
             }
-            let file = json!({"kind": kind, "head40": head40, "manifest_sha256": msha, "passes": passes});
+            let file =
+                json!({"kind": kind, "head40": head40, "manifest_sha256": msha, "passes": passes});
             std::fs::write(&out, serde_json::to_vec(&file).unwrap()).unwrap();
             let other = match &before {
                 Some(b) => &b["passes"][0],
@@ -2804,15 +3678,26 @@ mod drive {
             for page in &pages {
                 let rec = &file["passes"][0][&page.sha];
                 let d = differs(&other[&page.sha], rec);
-                if d.is_empty() { equal += 1 } else { differ += 1 }
+                if d.is_empty() {
+                    equal += 1
+                } else {
+                    differ += 1
+                }
                 let refill = rec["refill"].as_str().unwrap_or("?");
                 let end = match rec["end"].get("stop") {
                     Some(stage) => stage.as_str().unwrap_or("?").to_string(),
                     None if rec["end"].is_null() => "-".into(),
                     None => "published".into(),
                 };
-                let d = if d.is_empty() { String::new() } else { format!(" differ: {}", d.join(",")) };
-                println!("replay: {} {} refill {refill} end {end}{d}", page.sha, page.recipe);
+                let d = if d.is_empty() {
+                    String::new()
+                } else {
+                    format!(" differ: {}", d.join(","))
+                };
+                println!(
+                    "replay: {} {} refill {refill} end {end}{d}",
+                    page.sha, page.recipe
+                );
             }
             if kind == "before" {
                 // each column page's end in the first pass, then the ones that do not count, each with its failure sentence
@@ -2835,8 +3720,15 @@ mod drive {
             for problem in judged.as_ref().err().into_iter().flatten() {
                 println!("replay problem: {problem}");
             }
-            println!("REPLAY {kind} pages {} equal {equal} differ {differ}", pages.len());
-            assert!(judged.is_ok(), "the replay gate does not pass: {:?}", judged.err());
+            println!(
+                "REPLAY {kind} pages {} equal {equal} differ {differ}",
+                pages.len()
+            );
+            assert!(
+                judged.is_ok(),
+                "the replay gate does not pass: {:?}",
+                judged.err()
+            );
         }
 
         /// The fixture page set (acceptance H2): the pinned list at NEXT_TREE_FIXTURE_LIST (beside the gate's list; the
@@ -2853,26 +3745,46 @@ mod drive {
             let list = PathBuf::from(var("NEXT_TREE_FIXTURE_LIST"));
             let kind = var("NEXT_TREE_FIXTURE_KIND");
             let out = PathBuf::from(var("NEXT_TREE_FIXTURE_OUT"));
-            let before: Option<Value> = std::env::var("NEXT_TREE_FIXTURE_BEFORE")
-                .ok()
-                .map(|p| serde_json::from_slice(&std::fs::read(&p).unwrap_or_else(|e| panic!("BEFORE {p}: {e}"))).unwrap());
-            let docs = list.parent().and_then(|d| d.ancestors().nth(3)).map(Path::to_path_buf).unwrap_or_default();
+            let before: Option<Value> = std::env::var("NEXT_TREE_FIXTURE_BEFORE").ok().map(|p| {
+                serde_json::from_slice(
+                    &std::fs::read(&p).unwrap_or_else(|e| panic!("BEFORE {p}: {e}")),
+                )
+                .unwrap()
+            });
+            let docs = list
+                .parent()
+                .and_then(|d| d.ancestors().nth(3))
+                .map(Path::to_path_buf)
+                .unwrap_or_default();
             let raw = std::fs::read(&list).unwrap_or_else(|e| panic!("fixture list: {e}"));
-            let (pages, lsha) = read_fixture_list(&raw, &docs, FIXTURE_LIST_SHA256).unwrap_or_else(|why| panic!("FIXTURES {kind} refused: {why}"));
-            assert!(kind == "before" || kind == "after", "NEXT_TREE_FIXTURE_KIND {kind} is neither before nor after");
+            let (pages, lsha) = read_fixture_list(&raw, &docs, FIXTURE_LIST_SHA256)
+                .unwrap_or_else(|why| panic!("FIXTURES {kind} refused: {why}"));
+            assert!(
+                kind == "before" || kind == "after",
+                "NEXT_TREE_FIXTURE_KIND {kind} is neither before nor after"
+            );
             let repo = Path::new(env!("CARGO_MANIFEST_DIR"));
-            let head = std::process::Command::new("git").arg("-C").arg(repo).args(["rev-parse", "HEAD"]).output().unwrap();
+            let head = std::process::Command::new("git")
+                .arg("-C")
+                .arg(repo)
+                .args(["rev-parse", "HEAD"])
+                .output()
+                .unwrap();
             let head40 = String::from_utf8_lossy(&head.stdout).trim().to_string();
             let mut passes = Vec::new();
             for pass in 1..=2 {
                 let mut recs = Map::new();
                 for page in &pages {
-                    let dir = repo.join("target/page-replay").join(format!("fixture-{kind}-{pass}")).join(&page.sha);
+                    let dir = repo
+                        .join("target/page-replay")
+                        .join(format!("fixture-{kind}-{pass}"))
+                        .join(&page.sha);
                     recs.insert(page.sha.clone(), refill(&docs, page, &dir).await);
                 }
                 passes.push(Value::Object(recs));
             }
-            let file = json!({"kind": kind, "head40": head40, "manifest_sha256": lsha, "passes": passes});
+            let file =
+                json!({"kind": kind, "head40": head40, "manifest_sha256": lsha, "passes": passes});
             std::fs::write(&out, serde_json::to_vec(&file).unwrap()).unwrap();
             let other = match &before {
                 Some(b) => &b["passes"][0],
@@ -2882,21 +3794,41 @@ mod drive {
             for page in &pages {
                 let rec = &file["passes"][0][&page.sha];
                 let d = differs(&other[&page.sha], rec);
-                if d.is_empty() { equal += 1 } else { differ += 1 }
+                if d.is_empty() {
+                    equal += 1
+                } else {
+                    differ += 1
+                }
                 let end = match rec["end"].get("stop") {
                     Some(stage) => stage.as_str().unwrap_or("?").to_string(),
                     None if rec["end"].is_null() => "-".into(),
                     None => "published".into(),
                 };
-                let d = if d.is_empty() { String::new() } else { format!(" differ: {}", d.join(",")) };
-                println!("fixture: {} {} refill {} end {end}{d}", page.sha, page.recipe, rec["refill"].as_str().unwrap_or("?"));
+                let d = if d.is_empty() {
+                    String::new()
+                } else {
+                    format!(" differ: {}", d.join(","))
+                };
+                println!(
+                    "fixture: {} {} refill {} end {end}{d}",
+                    page.sha,
+                    page.recipe,
+                    rec["refill"].as_str().unwrap_or("?")
+                );
             }
             let judged = fixture_judge(&pages, &lsha, &file, before.as_ref());
             for problem in judged.as_ref().err().into_iter().flatten() {
                 println!("fixture problem: {problem}");
             }
-            println!("FIXTURES {kind} pages {} equal {equal} differ {differ}", pages.len());
-            assert!(judged.is_ok(), "the fixture set does not pass: {:?}", judged.err());
+            println!(
+                "FIXTURES {kind} pages {} equal {equal} differ {differ}",
+                pages.len()
+            );
+            assert!(
+                judged.is_ok(),
+                "the fixture set does not pass: {:?}",
+                judged.err()
+            );
         }
 
         // ------------------------------------------------------------ the gate's own cases (design section 6.4)
@@ -2913,18 +3845,41 @@ mod drive {
             assert_ne!(n("65.4"), n("65.5"));
             assert_ne!(n("1234567.8"), n("1234567.9"));
             assert_ne!(n("true"), n("1"));
-            assert_ne!(n("\"65.4\""), n("65.4"), "a string is never read as a number");
+            assert_ne!(
+                n("\"65.4\""),
+                n("65.4"),
+                "a string is never read as a number"
+            );
             // N1: key order is no difference
-            assert_eq!(n(r#"{"a": 1, "b": [2.0, {"d": 3, "c": 4}]}"#), n(r#"{"b": [2, {"c": 4, "d": 3.0}], "a": 1.0}"#));
+            assert_eq!(
+                n(r#"{"a": 1, "b": [2.0, {"d": 3, "c": 4}]}"#),
+                n(r#"{"b": [2, {"c": 4, "d": 3.0}], "a": 1.0}"#)
+            );
             assert_ne!(n("[1, 2]"), n("[2, 1]"), "a list keeps its order");
-            for (t, want) in [("424.80", "424.8"), ("18.0", "18"), ("-0.0", "0"), ("5.", "5"), (".5", "0.5"), ("1e3", "1000"), ("007", "7")] {
+            for (t, want) in [
+                ("424.80", "424.8"),
+                ("18.0", "18"),
+                ("-0.0", "0"),
+                ("5.", "5"),
+                (".5", "0.5"),
+                ("1e3", "1000"),
+                ("007", "7"),
+            ] {
                 assert_eq!(num_token(t).as_deref(), Some(want), "{t}");
             }
-            let page = |rect: &str| canon_html(&format!(r#"<svg><g data-layer="bars">{rect}<text x="1">A</text></g></svg>"#));
+            let page = |rect: &str| {
+                canon_html(&format!(
+                    r#"<svg><g data-layer="bars">{rect}<text x="1">A</text></g></svg>"#
+                ))
+            };
             let a = page(r#"<rect x="120.0" y="6" width="30.50" height="18"/>"#);
             let b = page(r#"<rect height="18.0" width="30.5" y="6.0" x="120"></rect>"#);
             assert_eq!((a.page.as_str(), &a.layers), (b.page.as_str(), &b.layers));
-            assert_ne!(a.page, page(r#"<rect x="120" y="6" width="30.6" height="18"/>"#).page, "0.1 px is a difference");
+            assert_ne!(
+                a.page,
+                page(r#"<rect x="120" y="6" width="30.6" height="18"/>"#).page,
+                "0.1 px is a difference"
+            );
             assert_eq!(a.text, ["A"]);
             assert_eq!(numbers_in("M1.50,2 L-0.0 3e2 Z"), "M1.5,2 L0 300 Z");
         }
@@ -2935,25 +3890,49 @@ mod drive {
         #[test]
         fn replay_normalisation_equals_the_prototype() {
             let fx = Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/fixtures/p4a");
-            let fix: Value = serde_json::from_slice(&std::fs::read(fx.join("replay-norm.json")).unwrap()).unwrap();
+            let fix: Value =
+                serde_json::from_slice(&std::fs::read(fx.join("replay-norm.json")).unwrap())
+                    .unwrap();
             let html = std::fs::read_to_string(fx.join("golden-q1-column.html")).unwrap();
             let walk = &fix["walks"][fix["committed_walk"].as_str().unwrap()];
             assert_eq!(sha256(html.as_bytes()), walk["html_sha256"]);
             let c = canon_html(&html);
-            assert_eq!(sha256(c.page.as_bytes()), walk["page_sha256"], "the page's normal form");
-            let layers: Vec<Value> = c.layers.iter().map(|(n, s)| json!([n, sha256(s.as_bytes())])).collect();
+            assert_eq!(
+                sha256(c.page.as_bytes()),
+                walk["page_sha256"],
+                "the page's normal form"
+            );
+            let layers: Vec<Value> = c
+                .layers
+                .iter()
+                .map(|(n, s)| json!([n, sha256(s.as_bytes())]))
+                .collect();
             assert_eq!(json!(layers), walk["layers"]);
             assert_eq!(json!(c.text), walk["text"]);
             let mut floats = 0;
-            for case in fix["float_cases"].as_array().unwrap().iter().chain(fix["walks"].as_object().unwrap().values().flat_map(|w| w["floats"].as_array().unwrap())) {
+            for case in fix["float_cases"].as_array().unwrap().iter().chain(
+                fix["walks"]
+                    .as_object()
+                    .unwrap()
+                    .values()
+                    .flat_map(|w| w["floats"].as_array().unwrap()),
+            ) {
                 let x: f64 = case[0].as_str().unwrap().parse().unwrap();
                 assert_eq!(canon_float(x), case[1].as_str().unwrap(), "{case}");
                 floats += 1;
             }
             for case in fix["token_cases"].as_array().unwrap() {
-                assert_eq!(num_token(case[0].as_str().unwrap()).as_deref(), case[1].as_str(), "{case}");
+                assert_eq!(
+                    num_token(case[0].as_str().unwrap()).as_deref(),
+                    case[1].as_str(),
+                    "{case}"
+                );
             }
-            assert!(floats > 100 && layers.len() == 5, "{floats} floats, {} layers", layers.len());
+            assert!(
+                floats > 100 && layers.len() == 5,
+                "{floats} floats, {} layers",
+                layers.len()
+            );
         }
 
         /// The world of the judge's cases, under the worktree's target/: local docs with a run folder per page holding its
@@ -2975,7 +3954,10 @@ mod drive {
             fn new() -> World {
                 let target = Path::new(env!("CARGO_MANIFEST_DIR")).join("target");
                 std::fs::create_dir_all(&target).unwrap();
-                let tmp = tempfile::Builder::new().prefix("replay-judge-").tempdir_in(&target).unwrap();
+                let tmp = tempfile::Builder::new()
+                    .prefix("replay-judge-")
+                    .tempdir_in(&target)
+                    .unwrap();
                 let docs = tmp.path().to_path_buf();
                 let plan = docs.join("w/d/p");
                 std::fs::create_dir_all(&plan).unwrap();
@@ -2985,15 +3967,41 @@ mod drive {
                     let dir = docs.join(&run).join("publications").join(recipe);
                     std::fs::create_dir_all(&dir).unwrap();
                     std::fs::write(dir.join("request.json"), &body).unwrap();
-                    Page { sha: sha256(body.as_bytes())[..16].to_string(), q: q.into(), recipe: recipe.into(), runs: "1".into(), run }
+                    Page {
+                        sha: sha256(body.as_bytes())[..16].to_string(),
+                        q: q.into(),
+                        recipe: recipe.into(),
+                        runs: "1".into(),
+                        run,
+                    }
                 };
                 let mut pages: Vec<Page> = (0..14).map(|i| make(i, "q1", "column")).collect();
                 pages.extend((14..16).map(|i| make(i, "q5", "change")));
-                let spares = vec![make(16, "q6", "column"), make(17, "q6", "column"), make(18, "q5", "change")];
+                let spares = vec![
+                    make(16, "q6", "column"),
+                    make(17, "q6", "column"),
+                    make(18, "q5", "change"),
+                ];
                 let lines: Vec<String> = pages.iter().map(Page::line).collect();
-                let frozen = format!("# pages 16 column 14 change 2 other 0\n{}\n", lines.join("\n")).into_bytes();
-                let base = pages.iter().enumerate().map(|(i, p)| (p.sha.clone(), record(i, &p.recipe, false))).collect();
-                World { _tmp: tmp, docs, plan, pages, spares, frozen, base }
+                let frozen = format!(
+                    "# pages 16 column 14 change 2 other 0\n{}\n",
+                    lines.join("\n")
+                )
+                .into_bytes();
+                let base = pages
+                    .iter()
+                    .enumerate()
+                    .map(|(i, p)| (p.sha.clone(), record(i, &p.recipe, false)))
+                    .collect();
+                World {
+                    _tmp: tmp,
+                    docs,
+                    plan,
+                    pages,
+                    spares,
+                    frozen,
+                    base,
+                }
             }
 
             fn inputs(&self, manifest: Option<&[u8]>, swaps: &[u8]) -> Inputs {
@@ -3010,7 +4018,12 @@ mod drive {
             fn keep(&self, before: &Value) -> String {
                 let bytes = serde_json::to_vec(before).unwrap();
                 let sha = sha256(&bytes);
-                std::fs::write(self.plan.join(format!("replay-outcome-before-{}.json", &sha[..8])), &bytes).unwrap();
+                std::fs::write(
+                    self.plan
+                        .join(format!("replay-outcome-before-{}.json", &sha[..8])),
+                    &bytes,
+                )
+                .unwrap();
                 sha
             }
 
@@ -3027,16 +4040,29 @@ mod drive {
         }
 
         /// One re-freeze step: the list's line of `out` replaced in place by `inn`'s, the swap appended to the record.
-        fn swap_lines(manifest: &[u8], swaps: &[u8], out: &str, inn: &Page, before_sha: &str, why: &str) -> (Vec<u8>, Vec<u8>) {
+        fn swap_lines(
+            manifest: &[u8],
+            swaps: &[u8],
+            out: &str,
+            inn: &Page,
+            before_sha: &str,
+            why: &str,
+        ) -> (Vec<u8>, Vec<u8>) {
             let text = String::from_utf8(manifest.to_vec()).unwrap();
             let mut lines: Vec<String> = text.split('\n').map(str::to_string).collect();
-            let at = lines.iter().position(|l| l.split('\t').next() == Some(out)).unwrap();
+            let at = lines
+                .iter()
+                .position(|l| l.split('\t').next() == Some(out))
+                .unwrap();
             let out_line = std::mem::replace(&mut lines[at], inn.line());
             let mut rec = String::from_utf8(swaps.to_vec()).unwrap();
             if !rec.ends_with('\n') {
                 rec.push('\n');
             }
-            rec.push_str(&format!("{out_line}\t{}\t{before_sha}\t{why}\n", inn.line()));
+            rec.push_str(&format!(
+                "{out_line}\t{}\t{before_sha}\t{why}\n",
+                inn.line()
+            ));
             (lines.join("\n").into_bytes(), rec.into_bytes())
         }
 
@@ -3044,13 +4070,21 @@ mod drive {
         /// names, a note layer, facts, rows, ring, gate and checks; `noisy` writes every element's attributes reversed and
         /// every whole number with ".0" (what N3 forgives).
         fn record(i: usize, recipe: &str, noisy: bool) -> Value {
-            let layer = if recipe == "column" { "bars" } else { "change_bars" };
+            let layer = if recipe == "column" {
+                "bars"
+            } else {
+                "change_bars"
+            };
             let run = format!("/w/run-{i}");
             let el = |tag: &str, attrs: &[(&str, &str)], inner: &str| {
                 let mut a: Vec<String> = attrs
                     .iter()
                     .map(|(k, v)| {
-                        let v = if noisy && v.parse::<i64>().is_ok() { format!("{v}.0") } else { v.to_string() };
+                        let v = if noisy && v.parse::<i64>().is_ok() {
+                            format!("{v}.0")
+                        } else {
+                            v.to_string()
+                        };
                         format!(" {k}=\"{v}\"")
                     })
                     .collect();
@@ -3061,10 +4095,26 @@ mod drive {
             };
             let (w1, w2) = (format!("{}.5", 300 + i), format!("{}.0", 100 + i));
             let bars = [
-                el("rect", &[("x", "120"), ("y", "6"), ("width", &w1), ("height", "18")], ""),
-                el("text", &[("x", "112"), ("y", "18"), ("text-anchor", "end")], "Alpha"),
-                el("rect", &[("x", "120"), ("y", "30"), ("width", &w2), ("height", "18")], ""),
-                el("text", &[("x", "112"), ("y", "42"), ("text-anchor", "end")], "Beta"),
+                el(
+                    "rect",
+                    &[("x", "120"), ("y", "6"), ("width", &w1), ("height", "18")],
+                    "",
+                ),
+                el(
+                    "text",
+                    &[("x", "112"), ("y", "18"), ("text-anchor", "end")],
+                    "Alpha",
+                ),
+                el(
+                    "rect",
+                    &[("x", "120"), ("y", "30"), ("width", &w2), ("height", "18")],
+                    "",
+                ),
+                el(
+                    "text",
+                    &[("x", "112"), ("y", "42"), ("text-anchor", "end")],
+                    "Beta",
+                ),
             ]
             .concat();
             let html = format!(
@@ -3138,7 +4188,14 @@ mod drive {
                 i = e;
             }
             let ((s0, e0), (s1, e1)) = (spans[0], spans[1]);
-            r["html"] = json!(format!("{}{}{}{}{}", &h[..s0], &h[s1..e1], &h[e0..s1], &h[s0..e0], &h[e1..]));
+            r["html"] = json!(format!(
+                "{}{}{}{}{}",
+                &h[..s0],
+                &h[s1..e1],
+                &h[e0..s1],
+                &h[s0..e0],
+                &h[e1..]
+            ));
             r
         }
 
@@ -3158,17 +4215,31 @@ mod drive {
                     if x.fract() == 0.0 && x.abs() < 1e15 {
                         json!(x as i64)
                     } else {
-                        let up = if x == 0.0 { f64::from_bits(1) } else if x > 0.0 { f64::from_bits(x.to_bits() + 1) } else { f64::from_bits(x.to_bits() - 1) };
+                        let up = if x == 0.0 {
+                            f64::from_bits(1)
+                        } else if x > 0.0 {
+                            f64::from_bits(x.to_bits() + 1)
+                        } else {
+                            f64::from_bits(x.to_bits() - 1)
+                        };
                         json!(up)
                     }
                 }
                 Value::Array(a) => Value::Array(a.iter().map(last_digits).collect()),
-                Value::Object(o) => Value::Object(o.iter().map(|(k, x)| (k.clone(), last_digits(x))).collect()),
+                Value::Object(o) => {
+                    Value::Object(o.iter().map(|(k, x)| (k.clone(), last_digits(x))).collect())
+                }
                 other => other.clone(),
             }
         }
 
-        fn file(kind: &str, head: &str, msha: &str, p1: &Map<String, Value>, p2: &Map<String, Value>) -> Value {
+        fn file(
+            kind: &str,
+            head: &str,
+            msha: &str,
+            p1: &Map<String, Value>,
+            p2: &Map<String, Value>,
+        ) -> Value {
             json!({"kind": kind, "head40": head, "manifest_sha256": msha, "passes": [p1, p2]})
         }
 
@@ -3185,25 +4256,42 @@ mod drive {
                 m.insert(sha.to_string(), f(&base[sha]));
                 m
             };
-            let each = |f: &dyn Fn(&Value) -> Value| -> Map<String, Value> { base.iter().map(|(k, v)| (k.clone(), f(v))).collect() };
+            let each = |f: &dyn Fn(&Value) -> Value| -> Map<String, Value> {
+                base.iter().map(|(k, v)| (k.clone(), f(v))).collect()
+            };
             let b = |p1: &Map<String, Value>| file("before", H0, &msha, p1, p1);
             let a = |p1: &Map<String, Value>| file("after", &"a".repeat(40), &msha, p1, p1);
             let (c0, chg) = (w.col(0).to_string(), w.chg().to_string());
             let rf_col_why = "ledger facts differ from request.json: fact val.SE";
             let rf_col = at(&c0, &|r| refill_failed(r, rf_col_why));
-            let rf = at(&chg, &|r| refill_failed(r, "ledger facts differ from request.json: fact chg.SE"));
+            let rf = at(&chg, &|r| {
+                refill_failed(r, "ledger facts differ from request.json: fact chg.SE")
+            });
             let mut rf_other = rf.clone();
-            rf_other.insert(chg.clone(), refill_failed(&base[&chg], "data file missing: data/x.xml"));
+            rf_other.insert(
+                chg.clone(),
+                refill_failed(&base[&chg], "data file missing: data/x.xml"),
+            );
             let all_rf = each(&|r| refill_failed(r, "data file missing: data/x.xml"));
-            let unpub_why = "the column leaf page stopped at fill: node bars: recheck: B5 node bars";
+            let unpub_why =
+                "the column leaf page stopped at fill: node bars: recheck: B5 node bars";
             let unpub = at(&c0, &|r| stop_at(r, "fill", unpub_why));
             let frozen = w.frozen.clone();
             let text = String::from_utf8(frozen.clone()).unwrap();
-            let short = text.as_bytes()[..text.trim_end_matches('\n').rfind('\n').unwrap() + 1].to_vec();
+            let short =
+                text.as_bytes()[..text.trim_end_matches('\n').rfind('\n').unwrap() + 1].to_vec();
 
             // the swaps: the failing column page out, a spare column page in; the record names the BEFORE file that showed it
             let swapped_recs = |out: &str, inn: &Page, rec: Value| -> Map<String, Value> {
-                base.iter().map(|(k, v)| if k == out { (inn.sha.clone(), rec.clone()) } else { (k.clone(), v.clone()) }).collect()
+                base.iter()
+                    .map(|(k, v)| {
+                        if k == out {
+                            (inn.sha.clone(), rec.clone())
+                        } else {
+                            (k.clone(), v.clone())
+                        }
+                    })
+                    .collect()
             };
             let before_rf = b(&rf_col);
             let rf_sha = w.keep(&before_rf);
@@ -3220,13 +4308,27 @@ mod drive {
             // (b): the page brought in for the unpublished one does not publish either: 13 column pages compared
             let up13 = {
                 let mut m = swapped_recs(&c0, spare, record(16, "column", false));
-                m.insert(spare.sha.clone(), stop_at(&m[&spare.sha], "fill", unpub_why));
+                m.insert(
+                    spare.sha.clone(),
+                    stop_at(&m[&spare.sha], "fill", unpub_why),
+                );
                 m
             };
             let (nr_man, _) = swap_lines(&frozen, &hdr, &c0, spare, &rf_sha, &not_refilled);
-            let lie = Page { recipe: "column".into(), ..spare_chg.clone() };
-            let (ch_man0, ch_sw) = swap_lines(&frozen, &hdr, &c0, spare_chg, &rf_sha, &not_refilled);
-            let ch_man = String::from_utf8(ch_man0).unwrap().replacen("# pages 16 column 14 change 2", "# pages 16 column 13 change 3", 1).into_bytes();
+            let lie = Page {
+                recipe: "column".into(),
+                ..spare_chg.clone()
+            };
+            let (ch_man0, ch_sw) =
+                swap_lines(&frozen, &hdr, &c0, spare_chg, &rf_sha, &not_refilled);
+            let ch_man = String::from_utf8(ch_man0)
+                .unwrap()
+                .replacen(
+                    "# pages 16 column 14 change 2",
+                    "# pages 16 column 13 change 3",
+                    1,
+                )
+                .into_bytes();
             let (li_man, li_sw) = swap_lines(&frozen, &hdr, &c0, &lie, &rf_sha, &not_refilled);
             let c13 = {
                 let lines: Vec<&str> = text.split('\n').collect();
@@ -3234,7 +4336,11 @@ mod drive {
                 kept.extend(lines[1..].iter().filter(|l| !l.starts_with(c0.as_str())));
                 kept.join("\n").into_bytes()
             };
-            let c13_recs: Map<String, Value> = base.iter().filter(|(k, _)| **k != c0).map(|(k, v)| (k.clone(), v.clone())).collect();
+            let c13_recs: Map<String, Value> = base
+                .iter()
+                .filter(|(k, _)| **k != c0)
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
             let c13_sha = sha256(&c13);
             // swap records that do not hold: no BEFORE column, a BEFORE nobody kept, one of another list, one where the page
             // published, a why that is not its failure
@@ -3247,7 +4353,8 @@ mod drive {
                 lines[1] = f.join("\t");
                 format!("{}\n", lines.join("\n")).into_bytes()
             };
-            let (_, nofile_sw) = swap_lines(&frozen, &hdr, &c0, spare, &"0".repeat(64), &not_refilled);
+            let (_, nofile_sw) =
+                swap_lines(&frozen, &hdr, &c0, spare, &"0".repeat(64), &not_refilled);
             let other_list = w.keep(&file("before", H0, &"1".repeat(64), &rf_col, &rf_col));
             let (_, other_sw) = swap_lines(&frozen, &hdr, &c0, spare, &other_list, &not_refilled);
             let fine = w.keep(&file("before", "b".repeat(40).as_str(), &msha, base, base));
@@ -3257,19 +4364,31 @@ mod drive {
             type Case<'a> = (&'a str, Inputs, Value, Option<Value>, bool, Option<&'a str>);
             let at_list = |m: &[u8], s: &[u8]| w.inputs(Some(m), s);
             let list = || w.inputs(Some(&frozen), &hdr);
-            let after_on = |sha: &str, recs: &Map<String, Value>| file("after", &"a".repeat(40), sha, recs, recs);
-            let before_on = |sha: &str, recs: &Map<String, Value>| file("before", H0, sha, recs, recs);
+            let after_on = |sha: &str, recs: &Map<String, Value>| {
+                file("after", &"a".repeat(40), sha, recs, recs)
+            };
+            let before_on =
+                |sha: &str, recs: &Map<String, Value>| file("before", H0, sha, recs, recs);
             let mut two = b(base);
-            two["passes"][1][&chg]["html"] = json!(base[&chg]["html"].as_str().unwrap().replace("Beta", "Gamma"));
+            two["passes"][1][&chg]["html"] = json!(base[&chg]["html"]
+                .as_str()
+                .unwrap()
+                .replace("Beta", "Gamma"));
             let mut late = a(base);
-            late["passes"][1][&c0] = stop_at(&base[&c0], "fill", "node bars: the child took more than 2 s");
+            late["passes"][1][&c0] = stop_at(
+                &base[&c0],
+                "fill",
+                "node bars: the child took more than 2 s",
+            );
             let mut miss = b(base);
             miss["passes"][0].as_object_mut().unwrap().remove(&c0);
             miss["passes"][1].as_object_mut().unwrap().remove(&c0);
             let mut moved = base.clone();
             for (k, v) in moved.iter_mut() {
                 let other = format!("/w/elsewhere-{k}");
-                let text = serde_json::to_string(v).unwrap().replace(v["run"].as_str().unwrap(), &other);
+                let text = serde_json::to_string(v)
+                    .unwrap()
+                    .replace(v["run"].as_str().unwrap(), &other);
                 *v = serde_json::from_str(&text).unwrap();
             }
             let noisy: Map<String, Value> = w
@@ -3338,15 +4457,37 @@ mod drive {
                 let got = judge(inputs, run, before.as_ref());
                 let problems = got.as_ref().err().cloned().unwrap_or_default();
                 let own = words.is_none_or(|w| problems.iter().any(|p| p.contains(w)));
-                println!("replay gate {name}: judged {}{}", if got.is_ok() { "PASS" } else { "FAIL" }, problems.first().map(|p| format!("; {}", p.chars().take(160).collect::<String>())).unwrap_or_default());
+                println!(
+                    "replay gate {name}: judged {}{}",
+                    if got.is_ok() { "PASS" } else { "FAIL" },
+                    problems
+                        .first()
+                        .map(|p| format!("; {}", p.chars().take(160).collect::<String>()))
+                        .unwrap_or_default()
+                );
                 if got.is_ok() != *want || !own {
                     off.push(format!("{name}: {problems:?}"));
                 }
             }
             // the must-pass noise did touch the raw records (else P1 would pass by doing nothing)
-            let touched = w.pages.iter().filter(|p| noisy[&p.sha]["html"] != base[&p.sha]["html"] && noisy[&p.sha]["facts"] != base[&p.sha]["facts"]).count();
-            assert_eq!(touched, w.pages.len(), "P1's noise changed the raw html and facts of every page");
-            assert!(off.is_empty() && cases.len() == 48, "{} cases; not as expected: {off:#?}", cases.len());
+            let touched = w
+                .pages
+                .iter()
+                .filter(|p| {
+                    noisy[&p.sha]["html"] != base[&p.sha]["html"]
+                        && noisy[&p.sha]["facts"] != base[&p.sha]["facts"]
+                })
+                .count();
+            assert_eq!(
+                touched,
+                w.pages.len(),
+                "P1's noise changed the raw html and facts of every page"
+            );
+            assert!(
+                off.is_empty() && cases.len() == 48,
+                "{} cases; not as expected: {off:#?}",
+                cases.len()
+            );
         }
 
         /// One published run's outcome as the gate records it, read from the run folder (outcome.py capture: the rows of the
@@ -3359,14 +4500,30 @@ mod drive {
             let w = World::new();
             for i in 0..16 {
                 std::fs::create_dir_all(w.docs.join(format!("runs/p{i}/data"))).unwrap();
-                std::fs::write(w.docs.join(format!("runs/p{i}/events.jsonl")), format!("{{\"e\": {i}}}\n")).unwrap();
+                std::fs::write(
+                    w.docs.join(format!("runs/p{i}/events.jsonl")),
+                    format!("{{\"e\": {i}}}\n"),
+                )
+                .unwrap();
                 std::fs::write(w.docs.join(format!("runs/p{i}/claims.jsonl")), "{}\n").unwrap();
-                std::fs::write(w.docs.join(format!("runs/p{i}/data/a.csv")), format!("x,{i}\n")).unwrap();
+                std::fs::write(
+                    w.docs.join(format!("runs/p{i}/data/a.csv")),
+                    format!("x,{i}\n"),
+                )
+                .unwrap();
             }
             let take: Vec<&Page> = [0, 1, 14].iter().map(|&i| &w.pages[i]).collect();
             let list = |pages: &[&Page], head: &str| -> Vec<u8> {
-                let lines: Vec<String> =
-                    pages.iter().map(|p| format!("{}\t{}", p.line(), inputs_sha256(&w.docs.join(&p.run)).unwrap())).collect();
+                let lines: Vec<String> = pages
+                    .iter()
+                    .map(|p| {
+                        format!(
+                            "{}\t{}",
+                            p.line(),
+                            inputs_sha256(&w.docs.join(&p.run)).unwrap()
+                        )
+                    })
+                    .collect();
                 format!("{head}\n{}\n", lines.join("\n")).into_bytes()
             };
             let good = list(&take, "# fixture pages 3 column 2 change 1");
@@ -3375,12 +4532,18 @@ mod drive {
             assert_eq!(pages.len(), 3);
             // the list
             let refused = |raw: &[u8], pin: &str, words: &str| {
-                let why = read_fixture_list(raw, &w.docs, pin).err().unwrap_or_default();
+                let why = read_fixture_list(raw, &w.docs, pin)
+                    .err()
+                    .unwrap_or_default();
                 assert!(why.contains(words), "{words:?} not in {why:?}");
             };
             refused(&good, &"0".repeat(64), "is not the pinned");
             let wrong_head = list(&take, "# fixture pages 3 column 3 change 0");
-            refused(&wrong_head, &sha256(&wrong_head), "header and lines disagree");
+            refused(
+                &wrong_head,
+                &sha256(&wrong_head),
+                "header and lines disagree",
+            );
             std::fs::write(w.docs.join("runs/p1/data/a.csv"), "x,changed\n").unwrap();
             refused(&good, &gsha, "run records are not the pinned ones");
             std::fs::write(w.docs.join("runs/p1/data/a.csv"), "x,1\n").unwrap();
@@ -3389,43 +4552,94 @@ mod drive {
             let flow = list(&[&other], "# fixture pages 1 column 0 change 0");
             refused(&flow, &sha256(&flow), "not a column or change page");
             // the judge
-            let p1: Map<String, Value> = pages.iter().map(|p| (p.sha.clone(), w.base[&p.sha].clone())).collect();
+            let p1: Map<String, Value> = pages
+                .iter()
+                .map(|p| (p.sha.clone(), w.base[&p.sha].clone()))
+                .collect();
             let before = file("before", H0, &lsha, &p1, &p1);
             assert_eq!(fixture_judge(&pages, &lsha, &before, None), Ok(()));
             let after = file("after", &"a".repeat(40), &lsha, &p1, &p1);
             assert_eq!(fixture_judge(&pages, &lsha, &after, Some(&before)), Ok(()));
             let fails = |run: &Value, before: Option<&Value>, words: &str| {
-                let bad = fixture_judge(&pages, &lsha, run, before).err().unwrap_or_default();
-                assert!(bad.first().is_some_and(|b| b.contains(words)), "{words:?} not first in {bad:?}");
+                let bad = fixture_judge(&pages, &lsha, run, before)
+                    .err()
+                    .unwrap_or_default();
+                assert!(
+                    bad.first().is_some_and(|b| b.contains(words)),
+                    "{words:?} not first in {bad:?}"
+                );
             };
             let mut stopped = p1.clone();
             stopped.insert(w.chg().to_string(), stop_at(&p1[w.chg()], "checks", "x"));
-            fails(&file("before", H0, &lsha, &stopped, &stopped), None, "did not publish");
+            fails(
+                &file("before", H0, &lsha, &stopped, &stopped),
+                None,
+                "did not publish",
+            );
             let mut barless = p1.clone();
             let c0 = w.col(0).to_string();
-            barless[&c0]["html"] = json!(p1[&c0]["html"].as_str().unwrap().replace("data-layer=\"bars\"", "data-layer=\"other\""));
-            fails(&file("before", H0, &lsha, &barless, &barless), None, "published with no bars layer");
+            barless[&c0]["html"] = json!(p1[&c0]["html"]
+                .as_str()
+                .unwrap()
+                .replace("data-layer=\"bars\"", "data-layer=\"other\""));
+            fails(
+                &file("before", H0, &lsha, &barless, &barless),
+                None,
+                "published with no bars layer",
+            );
             let mut moved = p1.clone();
             moved.insert(c0.clone(), bar_width(&p1[&c0], 0.5));
-            fails(&file("after", &"a".repeat(40), &lsha, &moved, &moved), Some(&before), "differ");
-            fails(&file("after", &"a".repeat(40), &lsha, &moved, &p1), Some(&before), "the gate is not repeatable");
-            fails(&file("after", H0, &lsha, &p1, &p1), Some(&before), "same head");
-            fails(&file("after", &"a".repeat(40), &"0".repeat(64), &p1, &p1), Some(&before), "another manifest");
+            fails(
+                &file("after", &"a".repeat(40), &lsha, &moved, &moved),
+                Some(&before),
+                "differ",
+            );
+            fails(
+                &file("after", &"a".repeat(40), &lsha, &moved, &p1),
+                Some(&before),
+                "the gate is not repeatable",
+            );
+            fails(
+                &file("after", H0, &lsha, &p1, &p1),
+                Some(&before),
+                "same head",
+            );
+            fails(
+                &file("after", &"a".repeat(40), &"0".repeat(64), &p1, &p1),
+                Some(&before),
+                "another manifest",
+            );
             fails(&after, None, "without BEFORE");
             fails(&before, Some(&before), "given a BEFORE file");
         }
 
         fn capture(run: &Path, recipe: &str) -> Value {
             let text = std::fs::read_to_string(run.join("events.jsonl")).unwrap();
-            let events: Vec<Value> = text.lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
+            let events: Vec<Value> = text
+                .lines()
+                .filter_map(|l| serde_json::from_str(l).ok())
+                .collect();
             let last = |kind: &str| events.iter().rev().find(|e| e["type"] == kind);
             let pubd = run.join("publications").join(recipe);
-            let req: Value = serde_json::from_slice(&std::fs::read(pubd.join("request.json")).unwrap()).unwrap();
+            let req: Value =
+                serde_json::from_slice(&std::fs::read(pubd.join("request.json")).unwrap()).unwrap();
             let checks = last(crate::next_run::PAGE_CHECKS_EVENT).map(|e| e["checks"].clone());
-            let failed = checks.as_ref().and_then(Value::as_array).map_or(0, |c| c.iter().filter(|c| c["passed"] != true).count());
-            let end = if failed > 0 { json!({"stop": "checks", "why": format!("{failed} page check(s) failed")}) } else { json!({"published": true}) };
+            let failed = checks
+                .as_ref()
+                .and_then(Value::as_array)
+                .map_or(0, |c| c.iter().filter(|c| c["passed"] != true).count());
+            let end = if failed > 0 {
+                json!({"stop": "checks", "why": format!("{failed} page check(s) failed")})
+            } else {
+                json!({"published": true})
+            };
             let ring = last(crate::next_run::RING_EVENT).map(|e| {
-                Value::Object(RING_KEEP.iter().filter_map(|k| e.get(*k).map(|v| (k.to_string(), v.clone()))).collect())
+                Value::Object(
+                    RING_KEEP
+                        .iter()
+                        .filter_map(|k| e.get(*k).map(|v| (k.to_string(), v.clone())))
+                        .collect(),
+                )
             });
             let drawn: Vec<Value> = req["rows"].as_array().into_iter().flatten()
                 .map(|r| json!({"layer": r.get("layer"), "src": r.get("src"), "table": r.get("table"), "time": r.get("time")}))
@@ -3445,28 +4659,58 @@ mod drive {
         #[ignore]
         fn replay_golden_walks() {
             let runs = PathBuf::from(var("NEXT_TREE_REPLAY_GOLDEN"));
-            let fx = Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/fixtures/p4a/replay-norm.json");
+            let fx =
+                Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/fixtures/p4a/replay-norm.json");
             let fix: Value = serde_json::from_slice(&std::fs::read(fx).unwrap()).unwrap();
             for (tag, walk) in fix["walks"].as_object().unwrap() {
                 let rec = capture(&runs.join(tag), "column");
                 let c = canon_html(rec["html"].as_str().unwrap());
                 assert_eq!(sha256(c.page.as_bytes()), walk["page_sha256"], "{tag}");
-                let layers: Vec<Value> = c.layers.iter().map(|(n, s)| json!([n, sha256(s.as_bytes())])).collect();
+                let layers: Vec<Value> = c
+                    .layers
+                    .iter()
+                    .map(|(n, s)| json!([n, sha256(s.as_bytes())]))
+                    .collect();
                 assert_eq!(json!(layers), walk["layers"], "{tag}");
                 assert_eq!(json!(c.text), walk["text"], "{tag}");
             }
             let walk = |tag: &str| capture(&runs.join(tag), "column");
             for (name, x, y, want) in [
-                ("R1 two walks at one commit", "44382c0c-1", "44382c0c-2", vec![]),
-                ("R2 no change to the q1 page between", "f7602679-1", "44382c0c-1", vec![]),
-                ("R3 the 1 px circle edge between", "44382c0c-1", "1c62e0e1-1", vec!["layers", "page"]),
-                ("R4 across 9e7dbc20", "9e7dbc20-1", "44382c0c-1", vec!["layers", "page"]),
+                (
+                    "R1 two walks at one commit",
+                    "44382c0c-1",
+                    "44382c0c-2",
+                    vec![],
+                ),
+                (
+                    "R2 no change to the q1 page between",
+                    "f7602679-1",
+                    "44382c0c-1",
+                    vec![],
+                ),
+                (
+                    "R3 the 1 px circle edge between",
+                    "44382c0c-1",
+                    "1c62e0e1-1",
+                    vec!["layers", "page"],
+                ),
+                (
+                    "R4 across 9e7dbc20",
+                    "9e7dbc20-1",
+                    "44382c0c-1",
+                    vec!["layers", "page"],
+                ),
             ] {
                 let (a, b) = (walk(x), walk(y));
                 let d = differs(&a, &b);
                 let la = canon_html(a["html"].as_str().unwrap()).layers;
                 let lb = canon_html(b["html"].as_str().unwrap()).layers;
-                let moved: Vec<&str> = la.iter().zip(&lb).filter(|(p, q)| p != q).map(|(p, _)| p.0.as_str()).collect();
+                let moved: Vec<&str> = la
+                    .iter()
+                    .zip(&lb)
+                    .filter(|(p, q)| p != q)
+                    .map(|(p, _)| p.0.as_str())
+                    .collect();
                 println!("replay outcome {name}: differ {d:?}, layers {moved:?}");
                 assert_eq!(d, want, "{name}");
                 assert!(want.is_empty() || moved == ["bubbles"], "{name}: {moved:?}");

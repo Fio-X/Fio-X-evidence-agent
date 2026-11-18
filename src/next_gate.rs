@@ -79,7 +79,13 @@ pub fn block_dir(recipe: &str, block: usize) -> String {
 /// whole folder name, as for any page.
 pub fn recipe_of(dir: &str) -> &str {
     match dir.rsplit_once("-b") {
-        Some((recipe, n)) if !recipe.is_empty() && n.len() == 1 && n.parse::<u8>().is_ok_and(|n| (2..=9).contains(&n)) => recipe,
+        Some((recipe, n))
+            if !recipe.is_empty()
+                && n.len() == 1
+                && n.parse::<u8>().is_ok_and(|n| (2..=9).contains(&n)) =>
+        {
+            recipe
+        }
         _ => dir,
     }
 }
@@ -87,16 +93,25 @@ pub fn recipe_of(dir: &str) -> &str {
 pub fn leaf_gaps(root: &Path, dir: &str, manifest: &Value, fetched: &[Fetch]) -> Vec<String> {
     let at = format!("publications/{dir}");
     let mut gaps = Vec::new();
-    let (Some(html_ref), Some(sha)) = (manifest["html_ref"].as_str(), manifest["html_sha256"].as_str()) else {
-        return vec![format!("leaf page {at}: the manifest names no html_ref and html_sha256")];
+    let (Some(html_ref), Some(sha)) = (
+        manifest["html_ref"].as_str(),
+        manifest["html_sha256"].as_str(),
+    ) else {
+        return vec![format!(
+            "leaf page {at}: the manifest names no html_ref and html_sha256"
+        )];
     };
     if html_ref != format!("{at}/index.html") {
-        gaps.push(format!("leaf page {at}: html_ref {html_ref} is not its index.html"));
+        gaps.push(format!(
+            "leaf page {at}: html_ref {html_ref} is not its index.html"
+        ));
     }
     let html = match std::fs::read(root.join(&at).join("index.html")) {
         Ok(bytes) if crate::hash::sha256_bytes(&bytes) == sha => String::from_utf8(bytes).ok(),
         Ok(_) => {
-            gaps.push(format!("leaf page {at}: index.html is not the bytes its manifest and ring event name"));
+            gaps.push(format!(
+                "leaf page {at}: index.html is not the bytes its manifest and ring event name"
+            ));
             None
         }
         Err(e) => {
@@ -107,14 +122,24 @@ pub fn leaf_gaps(root: &Path, dir: &str, manifest: &Value, fetched: &[Fetch]) ->
     let plan_ref = leaf_plan_ref(dir);
     match read_json(root, &plan_ref) {
         Some(plan) if plan["kind"] == "leaf_plan" && plan["recipe"] == dir => {}
-        Some(_) => gaps.push(format!("leaf page {at}: {plan_ref} is not this recipe's leaf plan")),
+        Some(_) => gaps.push(format!(
+            "leaf page {at}: {plan_ref} is not this recipe's leaf plan"
+        )),
         None => gaps.push(format!("leaf page {at}: no readable plan {plan_ref}")),
     }
     let calls = Mutex::new(Vec::new());
-    let layers = match visual_call(&calls, "recipe_layers", crate::next_visual::Request::RecipeLayers { recipe: recipe_of(dir) }) {
+    let layers = match visual_call(
+        &calls,
+        "recipe_layers",
+        crate::next_visual::Request::RecipeLayers {
+            recipe: recipe_of(dir),
+        },
+    ) {
         Ok(crate::next_visual::Reply::Layers(Some(layers))) => layers,
         Ok(_) => {
-            gaps.push(format!("leaf page {at}: {dir} is no recipe of the leaf registry"));
+            gaps.push(format!(
+                "leaf page {at}: {dir} is no recipe of the leaf registry"
+            ));
             Vec::new()
         }
         Err(e) => {
@@ -135,7 +160,11 @@ pub fn leaf_gaps(root: &Path, dir: &str, manifest: &Value, fetched: &[Fetch]) ->
     };
     match request(root, &at) {
         Ok((spec, rows, facts, ledger, refs, knobs)) => {
-            gaps.extend(reread_gaps(root, &rows, fetched).into_iter().map(|off| format!("leaf page {at}: {off}")));
+            gaps.extend(
+                reread_gaps(root, &rows, fetched)
+                    .into_iter()
+                    .map(|off| format!("leaf page {at}: {off}")),
+            );
             let recheck = crate::next_visual::Request::LeafRecheck {
                 recipe: recipe_of(dir),
                 html: &html,
@@ -154,7 +183,11 @@ pub fn leaf_gaps(root: &Path, dir: &str, manifest: &Value, fetched: &[Fetch]) ->
         }
         Err(why) => gaps.push(format!("leaf page {at}: {LEAF_REQUEST}: {why}")),
     }
-    gaps.extend(text_gaps(&html).into_iter().map(|off| format!("leaf page {at}: {off}")));
+    gaps.extend(
+        text_gaps(&html)
+            .into_iter()
+            .map(|off| format!("leaf page {at}: {off}")),
+    );
     gaps
 }
 
@@ -220,22 +253,32 @@ fn reread_gaps(root: &Path, rows: &[Row], fetched: &[Fetch]) -> Vec<String> {
     for table in tables {
         let files: Vec<&Fetch> = fetched.iter().filter(|f| f.table == table).collect();
         if files.is_empty() {
-            off.push(format!("no recorded fetch of {table} to read its rows again from"));
+            off.push(format!(
+                "no recorded fetch of {table} to read its rows again from"
+            ));
         }
         for fetch in files {
             let file = &fetch.file;
             if fetch.worldbank != table.ends_with("@2") {
-                off.push(format!("the fetch of {table} in {file} is not its provider's"));
+                off.push(format!(
+                    "the fetch of {table} in {file} is not its provider's"
+                ));
                 continue;
             }
-            if !file.starts_with("data/") || file.split('/').any(|part| part == ".." || part.is_empty()) {
-                off.push(format!("the fetch of {table} names {file}, not a file under data/"));
+            if !file.starts_with("data/")
+                || file.split('/').any(|part| part == ".." || part.is_empty())
+            {
+                off.push(format!(
+                    "the fetch of {table} names {file}, not a file under data/"
+                ));
                 continue;
             }
             let bytes = match std::fs::read(root.join(file)) {
                 Ok(bytes) if crate::hash::sha256_bytes(&bytes) == fetch.sha256 => bytes,
                 Ok(_) => {
-                    off.push(format!("{file} is not the bytes the fetch of {table} recorded"));
+                    off.push(format!(
+                        "{file} is not the bytes the fetch of {table} recorded"
+                    ));
                     continue;
                 }
                 Err(e) => {
@@ -259,23 +302,32 @@ fn reread_gaps(root: &Path, rows: &[Row], fetched: &[Fetch]) -> Vec<String> {
                 unit: None,
             };
             let args = json!({"table": table, "csv_sha256": fetch.sha256});
-            let request = crate::next_knowledge::Request::SeriesRows { table: &meta, csv: &csv };
+            let request = crate::next_knowledge::Request::SeriesRows {
+                table: &meta,
+                csv: &csv,
+            };
             let found = match knowledge_call(&calls, "series_rows", args, request) {
                 Ok(crate::next_knowledge::Reply::SeriesRows(found)) => found,
-                Ok(_) => unreachable!("the knowledge group answered series_rows with another reply"),
+                Ok(_) => {
+                    unreachable!("the knowledge group answered series_rows with another reply")
+                }
                 Err(e) => {
                     off.push(format!("{file}: {e}"));
                     continue;
                 }
             };
             for row in found {
-                let value = row["value"].as_str().and_then(|v| v.trim().parse::<f64>().ok());
+                let value = row["value"]
+                    .as_str()
+                    .and_then(|v| v.trim().parse::<f64>().ok());
                 let (Some(src), Some(value), Ok(dims)) = (
                     row["src"].as_str(),
                     value,
                     serde_json::from_value::<BTreeMap<String, String>>(row["dims"].clone()),
                 ) else {
-                    off.push(format!("{file}: a row the knowledge group read is not a series row"));
+                    off.push(format!(
+                        "{file}: a row the knowledge group read is not a series row"
+                    ));
                     continue;
                 };
                 let again = Row {
@@ -286,7 +338,9 @@ fn reread_gaps(root: &Path, rows: &[Row], fetched: &[Fetch]) -> Vec<String> {
                     value,
                 };
                 match read.get(src) {
-                    Some(first) if *first != again => off.push(format!("{src} is read two ways from the fetched files")),
+                    Some(first) if *first != again => {
+                        off.push(format!("{src} is read two ways from the fetched files"))
+                    }
                     Some(_) => {}
                     None => {
                         read.insert(src.to_string(), again);
@@ -319,13 +373,26 @@ fn read_json(root: &Path, rel: &str) -> Option<Value> {
     serde_json::from_str(&std::fs::read_to_string(root.join(rel)).ok()?).ok()
 }
 
-type Checked = (Spec, Vec<Row>, Vec<Fact>, BTreeMap<String, String>, Vec<String>, Value);
+type Checked = (
+    Spec,
+    Vec<Row>,
+    Vec<Fact>,
+    BTreeMap<String, String>,
+    Vec<String>,
+    Value,
+);
 
 /// What the page was checked against at its bake, as publish_leaf_page wrote it beside index.html.
 fn request(root: &Path, at: &str) -> Result<Checked, String> {
-    let text = std::fs::read_to_string(root.join(at).join(LEAF_REQUEST)).map_err(|e| e.to_string())?;
+    let text =
+        std::fs::read_to_string(root.join(at).join(LEAF_REQUEST)).map_err(|e| e.to_string())?;
     let mut value: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
-    let mut take = |key: &str| value.get_mut(key).map(Value::take).ok_or(format!("no {key}"));
+    let mut take = |key: &str| {
+        value
+            .get_mut(key)
+            .map(Value::take)
+            .ok_or(format!("no {key}"))
+    };
     let field = |e: serde_json::Error| e.to_string();
     Ok((
         serde_json::from_value(take("spec")?).map_err(field)?,
@@ -344,14 +411,23 @@ fn text_gaps(html: &str) -> Vec<String> {
     let heads = elements(html, "h1");
     match heads.as_slice() {
         [title] if title.trim().is_empty() => gaps.push("the headline is empty".to_string()),
-        [title] if title.chars().count() > TITLE_MAX => gaps.push(format!("the headline is over {TITLE_MAX} characters")),
+        [title] if title.chars().count() > TITLE_MAX => {
+            gaps.push(format!("the headline is over {TITLE_MAX} characters"))
+        }
         [_] => {}
         _ => gaps.push(format!("the page has {} headlines, not one", heads.len())),
     }
-    if elements(html, "p").iter().zip(attrs(html, "p")).any(|(text, a)| a.contains("class=\"dek\"") && text.chars().count() > DEK_MAX) {
+    if elements(html, "p")
+        .iter()
+        .zip(attrs(html, "p"))
+        .any(|(text, a)| a.contains("class=\"dek\"") && text.chars().count() > DEK_MAX)
+    {
         gaps.push(format!("the dek is over {DEK_MAX} characters"));
     }
-    for a in attrs(html, "svg").into_iter().filter(|a| a.contains("role=\"img\"")) {
+    for a in attrs(html, "svg")
+        .into_iter()
+        .filter(|a| a.contains("role=\"img\""))
+    {
         let label = attr(&a, "aria-label").unwrap_or_default();
         let described = attr(&a, "aria-describedby")
             .and_then(|id| {
@@ -380,7 +456,9 @@ fn elements(html: &str, tag: &str) -> Vec<String> {
             rest = after;
             continue;
         }
-        let Some(body) = after.find('>').map(|g| &after[g + 1..]) else { break };
+        let Some(body) = after.find('>').map(|g| &after[g + 1..]) else {
+            break;
+        };
         let end = body.find(&close).unwrap_or(body.len());
         out.push(strip(&body[..end]));
         rest = &body[end..];
@@ -433,7 +511,14 @@ mod tests {
     fn a_block_folder_draws_its_recipe_and_no_other_name_is_cut() {
         assert_eq!(block_dir("change", 1), "change");
         assert_eq!(block_dir("change", 3), "change-b3");
-        for (dir, recipe) in [("change-b3", "change"), ("change", "change"), ("change-b1", "change-b1"), ("change-b10", "change-b10"), ("change-bx", "change-bx"), ("-b2", "-b2")] {
+        for (dir, recipe) in [
+            ("change-b3", "change"),
+            ("change", "change"),
+            ("change-b1", "change-b1"),
+            ("change-b10", "change-b10"),
+            ("change-bx", "change-bx"),
+            ("-b2", "-b2"),
+        ] {
             assert_eq!(recipe_of(dir), recipe, "{dir}");
         }
     }
@@ -443,12 +528,27 @@ mod tests {
         let ok = "<h1>标题</h1><p class=\"dek\">导语</p><svg role=\"img\" aria-label=\"图\" aria-describedby=\"d\"></svg><p id=\"d\" hidden>说明</p>";
         assert!(text_gaps(ok).is_empty(), "{:?}", text_gaps(ok));
         let long = format!("<h1>{}</h1>", "字".repeat(TITLE_MAX + 1));
-        assert_eq!(text_gaps(&long), [format!("the headline is over {TITLE_MAX} characters")]);
-        assert_eq!(text_gaps("<h1>a</h1><h1>b</h1>"), ["the page has 2 headlines, not one"]);
-        let dek = format!("<h1>t</h1><p class=\"dek\">{}</p>", "字".repeat(DEK_MAX + 1));
-        assert_eq!(text_gaps(&dek), [format!("the dek is over {DEK_MAX} characters")]);
+        assert_eq!(
+            text_gaps(&long),
+            [format!("the headline is over {TITLE_MAX} characters")]
+        );
+        assert_eq!(
+            text_gaps("<h1>a</h1><h1>b</h1>"),
+            ["the page has 2 headlines, not one"]
+        );
+        let dek = format!(
+            "<h1>t</h1><p class=\"dek\">{}</p>",
+            "字".repeat(DEK_MAX + 1)
+        );
+        assert_eq!(
+            text_gaps(&dek),
+            [format!("the dek is over {DEK_MAX} characters")]
+        );
         let bare = "<h1>t</h1><svg role=\"img\" aria-label=\"图\"></svg>";
-        assert_eq!(text_gaps(bare), ["a graphic has no alt text (aria-label and a described-by text)"]);
+        assert_eq!(
+            text_gaps(bare),
+            ["a graphic has no alt text (aria-label and a described-by text)"]
+        );
         let empty = "<h1>t</h1><svg role=\"img\" aria-label=\"图\" aria-describedby=\"d\"></svg><p id=\"d\"></p>";
         assert_eq!(text_gaps(empty).len(), 1);
     }
@@ -468,7 +568,11 @@ mod tests {
         std::fs::create_dir_all(root.join("runtime")).unwrap();
         std::fs::write(root.join("runtime/next-page.json"), r#"{"question": "q"}"#).unwrap();
         std::fs::write(root.join(format!("publications/{folder}/index.html")), html).unwrap();
-        std::fs::write(root.join(leaf_plan_ref(folder)), format!(r#"{{"kind": "leaf_plan", "recipe": "{folder}"}}"#)).unwrap();
+        std::fs::write(
+            root.join(leaf_plan_ref(folder)),
+            format!(r#"{{"kind": "leaf_plan", "recipe": "{folder}"}}"#),
+        )
+        .unwrap();
         let event = serde_json::json!({"type": RING_EVENT, "by": by, "auto_parent_call_id": "c1", "recipe": folder,
             "published": format!("publications/{folder}/index.html"), "html_sha256": sha});
         std::fs::write(root.join("events.jsonl"), format!("{event}\n")).unwrap();
@@ -480,9 +584,24 @@ mod tests {
     #[test]
     fn a_later_block_s_page_is_gated_as_its_recipe_s_page() {
         let (first, later) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
-        let one = leaf_gate(first.path(), "column", &leaf_run_in(first.path(), RING_ACTOR, "column")).expect("entered");
-        let two = leaf_gate(later.path(), "column-b2", &leaf_run_in(later.path(), RING_ACTOR, "column-b2")).expect("entered");
-        assert!(two.iter().all(|g| !g.contains("no recipe of the leaf registry") && !g.contains("lists no layers")), "{two:?}");
+        let one = leaf_gate(
+            first.path(),
+            "column",
+            &leaf_run_in(first.path(), RING_ACTOR, "column"),
+        )
+        .expect("entered");
+        let two = leaf_gate(
+            later.path(),
+            "column-b2",
+            &leaf_run_in(later.path(), RING_ACTOR, "column-b2"),
+        )
+        .expect("entered");
+        assert!(
+            two.iter()
+                .all(|g| !g.contains("no recipe of the leaf registry")
+                    && !g.contains("lists no layers")),
+            "{two:?}"
+        );
         assert_eq!(two.len(), one.len(), "{one:?} / {two:?}");
     }
 
@@ -491,7 +610,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let manifest = leaf_run(dir.path(), RING_ACTOR);
         let gaps = leaf_gate(dir.path(), "column", &manifest).expect("a leaf page of this run");
-        assert!(gaps.iter().any(|g| g.contains(LEAF_REQUEST)), "no request is a gap: {gaps:?}");
+        assert!(
+            gaps.iter().any(|g| g.contains(LEAF_REQUEST)),
+            "no request is a gap: {gaps:?}"
+        );
         // the folder is a registered recipe, so the only gaps are what the run does not hold: no request, no fetch
         assert!(!gaps.iter().any(|g| g.contains("no recipe")), "{gaps:?}");
         // another actor, another folder, another kind, another sha: not a leaf page, the old checks apply
@@ -513,27 +635,48 @@ mod tests {
     fn leaf_gate_finds_changed_bytes_and_a_missing_plan() {
         let dir = tempfile::tempdir().unwrap();
         let manifest = leaf_run(dir.path(), RING_ACTOR);
-        std::fs::write(dir.path().join("publications/column/index.html"), "<h1>other</h1>").unwrap();
+        std::fs::write(
+            dir.path().join("publications/column/index.html"),
+            "<h1>other</h1>",
+        )
+        .unwrap();
         std::fs::remove_file(dir.path().join(leaf_plan_ref("column"))).unwrap();
         let gaps = leaf_gate(dir.path(), "column", &manifest).unwrap();
         assert!(gaps.iter().any(|g| g.contains("not the bytes")), "{gaps:?}");
-        assert!(gaps.iter().any(|g| g.contains("no readable plan")), "{gaps:?}");
+        assert!(
+            gaps.iter().any(|g| g.contains("no readable plan")),
+            "{gaps:?}"
+        );
     }
 
     #[test]
     fn unanswered_modes_reads_the_recipes_layers() {
         let layers = |l: &[&str]| l.iter().map(|s| s.to_string()).collect::<Vec<_>>();
         // q1's question asks for no view; a map question needs a map layer; network is never answered
-        assert!(unanswered_modes("欧盟各国可再生能源占比", &layers(&["bignums", "bars"])).is_empty());
-        assert_eq!(unanswered_modes("show it on a map", &layers(&["bignums", "bars"])), ["map/spatial"]);
+        assert!(
+            unanswered_modes("欧盟各国可再生能源占比", &layers(&["bignums", "bars"])).is_empty()
+        );
+        assert_eq!(
+            unanswered_modes("show it on a map", &layers(&["bignums", "bars"])),
+            ["map/spatial"]
+        );
         assert!(unanswered_modes("show it on a map", &layers(&["map", "strip"])).is_empty());
-        assert_eq!(unanswered_modes("draw it as a network graph", &layers(&["map", "flows"])), ["network"]);
+        assert_eq!(
+            unanswered_modes("draw it as a network graph", &layers(&["map", "flows"])),
+            ["network"]
+        );
         // a sankey question is answered by the flow page's sankey, and not by the column page's bars
         assert!(unanswered_modes("draw it as a sankey", &layers(&["sankey"])).is_empty());
-        assert_eq!(unanswered_modes("draw it as a sankey", &layers(&["bignums", "bars"])), ["sankey/flow"]);
+        assert_eq!(
+            unanswered_modes("draw it as a sankey", &layers(&["bignums", "bars"])),
+            ["sankey/flow"]
+        );
         // a composition question is answered by the 100% stacked bars, and not by the bars alone
         assert!(unanswered_modes("各国发电量的构成", &layers(&["stacked100"])).is_empty());
-        assert_eq!(unanswered_modes("各国发电量的构成", &layers(&["bignums", "bars"])), ["composition"]);
+        assert_eq!(
+            unanswered_modes("各国发电量的构成", &layers(&["bignums", "bars"])),
+            ["composition"]
+        );
     }
 
     #[test]
@@ -543,20 +686,38 @@ mod tests {
         let sha = crate::hash::sha256_bytes(csv.as_bytes());
         std::fs::create_dir_all(dir.path().join("data")).unwrap();
         std::fs::write(dir.path().join(format!("data/{sha}.csv")), csv).unwrap();
-        let fetch = || vec![Fetch { table: "t".into(), file: format!("data/{sha}.csv"), sha256: sha.clone(), worldbank: false }];
+        let fetch = || {
+            vec![Fetch {
+                table: "t".into(),
+                file: format!("data/{sha}.csv"),
+                sha256: sha.clone(),
+                worldbank: false,
+            }]
+        };
         let row = |value: f64| Row {
             src: "series:t/A.PC.AT:2025:OBS_VALUE".into(),
             table: "t".into(),
-            dims: [("freq", "A"), ("unit", "PC"), ("geo", "AT")].map(|(k, v)| (k.to_string(), v.to_string())).into(),
+            dims: [("freq", "A"), ("unit", "PC"), ("geo", "AT")]
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .into(),
             time: "2025".into(),
             value,
         };
-        assert!(reread_gaps(dir.path(), &[row(44.2)], &fetch()).is_empty(), "{:?}", reread_gaps(dir.path(), &[row(44.2)], &fetch()));
-        assert_eq!(reread_gaps(dir.path(), &[row(45.0)], &fetch()), ["series:t/A.PC.AT:2025:OBS_VALUE: not as its fetched file holds it"]);
+        assert!(
+            reread_gaps(dir.path(), &[row(44.2)], &fetch()).is_empty(),
+            "{:?}",
+            reread_gaps(dir.path(), &[row(44.2)], &fetch())
+        );
+        assert_eq!(
+            reread_gaps(dir.path(), &[row(45.0)], &fetch()),
+            ["series:t/A.PC.AT:2025:OBS_VALUE: not as its fetched file holds it"]
+        );
         assert!(reread_gaps(dir.path(), &[row(44.2)], &[])[0].starts_with("no recorded fetch of t"));
         let mut other = fetch();
         other[0].sha256 = "0".repeat(64);
-        assert!(reread_gaps(dir.path(), &[row(44.2)], &other).iter().any(|g| g.contains("not the bytes")));
+        assert!(reread_gaps(dir.path(), &[row(44.2)], &other)
+            .iter()
+            .any(|g| g.contains("not the bytes")));
     }
 
     /// A World Bank fetch as the knowledge group records it, the file written under its sha256 in `root`: the events.jsonl
@@ -590,48 +751,86 @@ mod tests {
         write(&[event.clone()]);
         let got = fetches(dir.path());
         assert_eq!(got.len(), 1);
-        assert_eq!((got[0].table.as_str(), got[0].worldbank, got[0].sha256.as_str()), ("SP.X@2", true, sha.as_str()));
+        assert_eq!(
+            (
+                got[0].table.as_str(),
+                got[0].worldbank,
+                got[0].sha256.as_str()
+            ),
+            ("SP.X@2", true, sha.as_str())
+        );
         let gaps = reread_gaps(dir.path(), &[row.clone()], &got);
         assert!(gaps.is_empty(), "{gaps:?}");
         // a value the file does not hold, and a row of a table no fetch read
         let mut changed = row.clone();
         changed.value = 23.0;
-        assert_eq!(reread_gaps(dir.path(), &[changed], &got), ["series:SP.X@2/DEU:2024:value: not as its fetched file holds it"]);
+        assert_eq!(
+            reread_gaps(dir.path(), &[changed], &got),
+            ["series:SP.X@2/DEU:2024:value: not as its fetched file holds it"]
+        );
         // a mismatched sha256, a missing file, a run the model made, an error, another provider: no read-back passes
         let mut bad = event.clone();
         bad["result"]["details"]["sha256"] = "0".repeat(64).into();
         write(&[bad]);
-        assert!(reread_gaps(dir.path(), &[row.clone()], &fetches(dir.path())).iter().any(|g| g.contains("not the bytes")));
+        assert!(
+            reread_gaps(dir.path(), &[row.clone()], &fetches(dir.path()))
+                .iter()
+                .any(|g| g.contains("not the bytes"))
+        );
         let mut gone = event.clone();
         gone["result"]["details"]["filePath"] = "data/none.csv".into();
         write(&[gone]);
-        assert!(reread_gaps(dir.path(), &[row.clone()], &fetches(dir.path())).iter().any(|g| g.starts_with("data/none.csv:")));
+        assert!(
+            reread_gaps(dir.path(), &[row.clone()], &fetches(dir.path()))
+                .iter()
+                .any(|g| g.starts_with("data/none.csv:"))
+        );
         for (key, value) in [("auto", Value::Null), ("isError", true.into())] {
             let mut not = event.clone();
             not[key] = value;
             write(&[not]);
             assert!(fetches(dir.path()).is_empty());
-            assert!(reread_gaps(dir.path(), &[row.clone()], &fetches(dir.path()))[0].starts_with("no recorded fetch of SP.X@2"));
+            assert!(
+                reread_gaps(dir.path(), &[row.clone()], &fetches(dir.path()))[0]
+                    .starts_with("no recorded fetch of SP.X@2")
+            );
         }
-        for (provider, dataset) in [("eurostat", "SP.X"), ("eurostat", "SP.X@2"), ("worldbank", "SP.X@2"), ("oecd", "SP.X")] {
+        for (provider, dataset) in [
+            ("eurostat", "SP.X"),
+            ("eurostat", "SP.X@2"),
+            ("worldbank", "SP.X@2"),
+            ("oecd", "SP.X"),
+        ] {
             let mut other = event.clone();
             other["result"]["details"]["provider"] = provider.into();
             other["result"]["details"]["dataset"] = dataset.into();
             write(&[other]);
             let gaps = reread_gaps(dir.path(), &[row.clone()], &fetches(dir.path()));
-            assert!(gaps[0].starts_with("no recorded fetch of SP.X@2"), "{provider} {dataset}: {gaps:?}");
+            assert!(
+                gaps[0].starts_with("no recorded fetch of SP.X@2"),
+                "{provider} {dataset}: {gaps:?}"
+            );
         }
         // a fetch lent as Eurostat's for a World Bank table, or as World Bank's for a Eurostat one, is not read
         let mut lent = fetches_of(&sha, "SP.X@2", false);
-        assert!(reread_gaps(dir.path(), &[row.clone()], &lent).iter().any(|g| g.contains("is not its provider's")));
+        assert!(reread_gaps(dir.path(), &[row.clone()], &lent)
+            .iter()
+            .any(|g| g.contains("is not its provider's")));
         lent = fetches_of(&sha, "t", true);
         let mut eu = row;
         eu.table = "t".into();
-        assert!(reread_gaps(dir.path(), &[eu], &lent).iter().any(|g| g.contains("is not its provider's")));
+        assert!(reread_gaps(dir.path(), &[eu], &lent)
+            .iter()
+            .any(|g| g.contains("is not its provider's")));
     }
 
     fn fetches_of(sha: &str, table: &str, worldbank: bool) -> Vec<Fetch> {
-        vec![Fetch { table: table.into(), file: format!("data/{sha}.csv"), sha256: sha.into(), worldbank }]
+        vec![Fetch {
+            table: table.into(),
+            file: format!("data/{sha}.csv"),
+            sha256: sha.into(),
+            worldbank,
+        }]
     }
 
     /// Every row a run's recorded fetches hold, whoever ran them: each DATA_PREPARE_TOOL end event without error that names
@@ -641,7 +840,10 @@ mod tests {
         let calls = Mutex::new(Vec::new());
         let mut rows: BTreeMap<String, Row> = BTreeMap::new();
         let events = std::fs::read_to_string(root.join("events.jsonl")).unwrap_or_default();
-        for e in events.lines().filter_map(|line| serde_json::from_str::<Value>(line).ok()) {
+        for e in events
+            .lines()
+            .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        {
             let d = &e["result"]["details"];
             if e["type"] != "tool_execution_end"
                 || e["toolName"] != crate::next_knowledge::DATA_PREPARE_TOOL
@@ -649,21 +851,32 @@ mod tests {
             {
                 continue;
             }
-            let (Some(provider), Some(dataset), Some(file), Some(sha)) =
-                (d["provider"].as_str(), d["dataset"].as_str(), d["filePath"].as_str(), d["sha256"].as_str())
-            else {
+            let (Some(provider), Some(dataset), Some(file), Some(sha)) = (
+                d["provider"].as_str(),
+                d["dataset"].as_str(),
+                d["filePath"].as_str(),
+                d["sha256"].as_str(),
+            ) else {
                 continue;
             };
             if !file.starts_with("data/") || file.split('/').any(|p| p == ".." || p.is_empty()) {
                 continue;
             }
-            let Ok(bytes) = std::fs::read(root.join(file)) else { continue };
+            let Ok(bytes) = std::fs::read(root.join(file)) else {
+                continue;
+            };
             if crate::hash::sha256_bytes(&bytes) != sha {
                 continue;
             }
-            let Ok(csv) = String::from_utf8(bytes) else { continue };
+            let Ok(csv) = String::from_utf8(bytes) else {
+                continue;
+            };
             let worldbank = provider == "worldbank";
-            let table = if worldbank { format!("{dataset}@2") } else { dataset.to_string() };
+            let table = if worldbank {
+                format!("{dataset}@2")
+            } else {
+                dataset.to_string()
+            };
             let meta = TableMeta {
                 id: table.clone(),
                 worldbank,
@@ -675,13 +888,19 @@ mod tests {
                 unit: None,
             };
             let args = json!({"table": table, "csv_sha256": sha});
-            let request = crate::next_knowledge::Request::SeriesRows { table: &meta, csv: &csv };
-            let Ok(crate::next_knowledge::Reply::SeriesRows(found)) = knowledge_call(&calls, "series_rows", args, request)
+            let request = crate::next_knowledge::Request::SeriesRows {
+                table: &meta,
+                csv: &csv,
+            };
+            let Ok(crate::next_knowledge::Reply::SeriesRows(found)) =
+                knowledge_call(&calls, "series_rows", args, request)
             else {
                 continue;
             };
             for row in found {
-                let value = row["value"].as_str().and_then(|v| v.trim().parse::<f64>().ok());
+                let value = row["value"]
+                    .as_str()
+                    .and_then(|v| v.trim().parse::<f64>().ok());
                 let (Some(src), Some(value), Ok(dims)) = (
                     row["src"].as_str(),
                     value,
@@ -708,16 +927,24 @@ mod tests {
     #[test]
     #[ignore]
     fn replay_germany_read_back() {
-        let runs = std::env::var("NEXT_GATE_REPLAY_RUNS").expect("NEXT_GATE_REPLAY_RUNS: run folders, one per line");
-        let out = std::env::var("NEXT_GATE_REPLAY_OUT").expect("NEXT_GATE_REPLAY_OUT: the verdict file to write");
+        let runs = std::env::var("NEXT_GATE_REPLAY_RUNS")
+            .expect("NEXT_GATE_REPLAY_RUNS: run folders, one per line");
+        let out = std::env::var("NEXT_GATE_REPLAY_OUT")
+            .expect("NEXT_GATE_REPLAY_OUT: the verdict file to write");
         let mut lines = String::new();
         for run in runs.lines().map(str::trim).filter(|r| !r.is_empty()) {
             let root = Path::new(run);
-            assert!(root.join("events.jsonl").is_file(), "{run}: no events.jsonl");
+            assert!(
+                root.join("events.jsonl").is_file(),
+                "{run}: no events.jsonl"
+            );
             let fetched = fetches(root);
             let rows = recorded_rows(root);
             let gaps = reread_gaps(root, &rows, &fetched);
-            let taken: Vec<Value> = fetched.iter().map(|f| json!([f.table, f.file, f.sha256])).collect();
+            let taken: Vec<Value> = fetched
+                .iter()
+                .map(|f| json!([f.table, f.file, f.sha256]))
+                .collect();
             let verdict = json!({"run": run, "fetches": taken, "rows": rows.len(), "gaps": gaps});
             lines.push_str(&format!("{verdict}\n"));
         }

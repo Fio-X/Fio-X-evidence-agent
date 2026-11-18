@@ -7,6 +7,7 @@ mod agent_prompt;
 mod agent_serve;
 #[cfg(test)]
 mod agent_watch;
+mod answer_plan;
 #[allow(dead_code)]
 // 1011ak 9a: used by the Rust agent child (the default runtime); unused parts are trimmed later
 mod anthropic_model;
@@ -23,7 +24,6 @@ mod group_guard;
 mod hash;
 mod interactive;
 mod l5geo;
-mod answer_plan;
 mod llm;
 #[cfg(test)]
 mod model_fake;

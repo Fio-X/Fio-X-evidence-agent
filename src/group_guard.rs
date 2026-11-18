@@ -144,7 +144,11 @@ fn recipe_names(registry: &str) -> Vec<String> {
         .into_iter()
         .flatten()
         .filter_map(|r| r["name"].as_str())
-        .filter(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_'))
+        .filter(|n| {
+            !n.is_empty()
+                && n.bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_')
+        })
         .filter(|n| !matches!(*n, "plans" | "qa" | "rejected"))
         .map(str::to_string)
         .collect()
@@ -156,7 +160,12 @@ fn recipe_names(registry: &str) -> Vec<String> {
 fn door_path_holds(path: &str, rel: &str) -> bool {
     match path.ends_with('/') {
         true => rel.starts_with(path),
-        false => rel == path || path.rsplit_once('/').is_some_and(|(folder, _)| rel == format!("{folder}/")),
+        false => {
+            rel == path
+                || path
+                    .rsplit_once('/')
+                    .is_some_and(|(folder, _)| rel == format!("{folder}/"))
+        }
     }
 }
 
@@ -170,7 +179,9 @@ fn recipe_paths(paths: Vec<String>, names: &[String]) -> Vec<String> {
             false => vec![p],
         })
         .flat_map(|p| match p.contains("{block}") {
-            true => BLOCKS.map(|b| p.replace("{block}", &b.to_string())).to_vec(),
+            true => BLOCKS
+                .map(|b| p.replace("{block}", &b.to_string()))
+                .to_vec(),
             false => vec![p],
         })
         .collect()
@@ -237,7 +248,10 @@ fn parse_table(text: &str) -> Option<Table> {
     for row in value.get("handoffs")?.get("rust")?.as_array()? {
         let writer = row.get("writer")?.as_str()?.to_string();
         if row.get("paths").is_some() {
-            handoff_paths.push((writer.clone(), recipe_paths(strings(row, "paths"), &recipe_names(LEAF_REGISTRY))));
+            handoff_paths.push((
+                writer.clone(),
+                recipe_paths(strings(row, "paths"), &recipe_names(LEAF_REGISTRY)),
+            ));
         }
         for command in row
             .get("not_measured")
@@ -653,7 +667,13 @@ pub(crate) struct DoorsForTest;
 #[cfg(test)]
 pub(crate) fn doors_for_test(open: bool) -> DoorsForTest {
     TEST_ACTIVE.with(|c| *c.borrow_mut() = Some(true));
-    TEST_TABLE.with(|c| *c.borrow_mut() = Some(if open { measured_groups() } else { GROUPS_JSON.to_string() }));
+    TEST_TABLE.with(|c| {
+        *c.borrow_mut() = Some(if open {
+            measured_groups()
+        } else {
+            GROUPS_JSON.to_string()
+        })
+    });
     DoorsForTest
 }
 #[cfg(test)]
@@ -864,9 +884,13 @@ fn judge(root: &Path, path: &Path, op: Op) -> io::Result<()> {
                     .unmeasured
                     .iter()
                     .any(|(w, c)| w == h.writer && c == h.requested_by)
-                    && t.handoff_paths.iter().filter(|(w, _)| w == h.writer).all(|(_, paths)| {
-                        rel.as_deref().is_some_and(|rel| paths.iter().any(|p| door_path_holds(p, rel)))
-                    })
+                    && t.handoff_paths
+                        .iter()
+                        .filter(|(w, _)| w == h.writer)
+                        .all(|(_, paths)| {
+                            rel.as_deref()
+                                .is_some_and(|rel| paths.iter().any(|p| door_path_holds(p, rel)))
+                        })
             })
         })
     });
@@ -1702,9 +1726,12 @@ pub fn remove_scratch_dir(path: &Path) {
 /// `.../fio-x/credentials` included, is refused, the switch on or off.
 fn private_file_refusal(path: &Path) -> Option<io::Error> {
     let path_ok = path.is_absolute()
-        && path
-            .components()
-            .all(|c| matches!(c, Component::RootDir | Component::Prefix(_) | Component::Normal(_)))
+        && path.components().all(|c| {
+            matches!(
+                c,
+                Component::RootDir | Component::Prefix(_) | Component::Normal(_)
+            )
+        })
         && crate::config::credentials_path().as_deref() == Some(path);
     let message = if !path_ok {
         "boundary: the only private file outside the run folder is the login credentials file (config credentials path)"
@@ -2055,18 +2082,49 @@ mod tests {
     #[test]
     fn a_door_s_recipe_paths_are_the_registry_s_plain_names_only() {
         let names = recipe_names(LEAF_REGISTRY);
-        assert!(names.iter().any(|n| n == "column") && names.iter().any(|n| n == "scmp"), "{names:?}");
+        assert!(
+            names.iter().any(|n| n == "column") && names.iter().any(|n| n == "scmp"),
+            "{names:?}"
+        );
         let registry = r#"{"recipes": [{"name": "column"}, {"name": ""}, {"name": "a/b"}, {"name": "Column"}, {"name": "qa"},
             {"name": ".."}, {"name": "x y"}, {"name": "ring-2"}]}"#;
         assert_eq!(recipe_names(registry), ["column", "ring-2"]);
-        let paths = recipe_paths(vec!["publications/{recipe}/".into(), "publications/qa/{recipe}/".into(), "x/".into()], &recipe_names(registry));
-        assert_eq!(paths, ["publications/column/", "publications/ring-2/", "publications/qa/column/", "publications/qa/ring-2/", "x/"]);
-        assert!(recipe_paths(vec!["publications/{recipe}/".into()], &[]).is_empty(), "no recipe, no folder");
+        let paths = recipe_paths(
+            vec![
+                "publications/{recipe}/".into(),
+                "publications/qa/{recipe}/".into(),
+                "x/".into(),
+            ],
+            &recipe_names(registry),
+        );
+        assert_eq!(
+            paths,
+            [
+                "publications/column/",
+                "publications/ring-2/",
+                "publications/qa/column/",
+                "publications/qa/ring-2/",
+                "x/"
+            ]
+        );
+        assert!(
+            recipe_paths(vec!["publications/{recipe}/".into()], &[]).is_empty(),
+            "no recipe, no folder"
+        );
         // a later block's folder: each registered name with -b2 to -b9, nothing else
-        let blocks = recipe_paths(vec!["publications/{recipe}-b{block}/".into()], &["column".to_string()]);
+        let blocks = recipe_paths(
+            vec!["publications/{recipe}-b{block}/".into()],
+            &["column".to_string()],
+        );
         assert_eq!(blocks.len(), 8);
-        assert_eq!((blocks[0].as_str(), blocks[7].as_str()), ("publications/column-b2/", "publications/column-b9/"));
-        assert!(recipe_paths(vec!["publications/{recipe}-b{block}/".into()], &[]).is_empty(), "no recipe, no block folder");
+        assert_eq!(
+            (blocks[0].as_str(), blocks[7].as_str()),
+            ("publications/column-b2/", "publications/column-b9/")
+        );
+        assert!(
+            recipe_paths(vec!["publications/{recipe}-b{block}/".into()], &[]).is_empty(),
+            "no recipe, no block folder"
+        );
     }
 
     #[test]
@@ -2074,14 +2132,32 @@ mod tests {
         let file = "publications/plans/column.json";
         assert!(door_path_holds(file, file));
         assert!(door_path_holds(file, "publications/plans/"));
-        for other in ["publications/plans/column.json.bak", "publications/plans/column.jsonl", "publications/plans/x.json",
-            "publications/", "publications/plans/column.json/", "publications/plans/column.json/x"] {
+        for other in [
+            "publications/plans/column.json.bak",
+            "publications/plans/column.jsonl",
+            "publications/plans/x.json",
+            "publications/",
+            "publications/plans/column.json/",
+            "publications/plans/column.json/x",
+        ] {
             assert!(!door_path_holds(file, other), "{other}");
         }
-        assert!(door_path_holds("publications/column/", "publications/column/index.html"));
-        assert!(door_path_holds("publications/column/", "publications/column/"));
-        assert!(!door_path_holds("publications/column/", "publications/columns/index.html"));
-        assert!(door_path_holds("claims.jsonl", "claims.jsonl") && !door_path_holds("claims.jsonl", "claims.jsonl.tmp"));
+        assert!(door_path_holds(
+            "publications/column/",
+            "publications/column/index.html"
+        ));
+        assert!(door_path_holds(
+            "publications/column/",
+            "publications/column/"
+        ));
+        assert!(!door_path_holds(
+            "publications/column/",
+            "publications/columns/index.html"
+        ));
+        assert!(
+            door_path_holds("claims.jsonl", "claims.jsonl")
+                && !door_path_holds("claims.jsonl", "claims.jsonl.tmp")
+        );
     }
 
     #[test]
@@ -2093,14 +2169,18 @@ mod tests {
             std::fs::create_dir_all(root.join("publications/qa")).unwrap();
             let _setup = Setup::real(Some("investigate"));
             as_visual_call(|| create_dir_all(root, &root.join("publications/column"))).unwrap();
-            as_visual_call(|| write(root, &root.join("publications/column/index.html"), "x")).unwrap();
+            as_visual_call(|| write(root, &root.join("publications/column/index.html"), "x"))
+                .unwrap();
             as_visual_call(|| create_dir_all(root, &root.join("publications/qa/column"))).unwrap();
-            as_visual_call(|| write(root, &root.join("publications/qa/column/spec.json"), "x")).unwrap();
+            as_visual_call(|| write(root, &root.join("publications/qa/column/spec.json"), "x"))
+                .unwrap();
             as_visual_call(|| create_dir_all(root, &root.join("publications/scmp"))).unwrap();
-            as_visual_call(|| write(root, &root.join("publications/scmp/index.html"), "x")).unwrap();
+            as_visual_call(|| write(root, &root.join("publications/scmp/index.html"), "x"))
+                .unwrap();
             // the page's plan: its one file in the plans folder, which the door may make
             as_visual_call(|| create_dir_all(root, &root.join("publications/plans"))).unwrap();
-            as_visual_call(|| write(root, &root.join("publications/plans/column.json"), "x")).unwrap();
+            as_visual_call(|| write(root, &root.join("publications/plans/column.json"), "x"))
+                .unwrap();
             for other in [
                 "publications/plans/nope.json",
                 "publications/plans/Column.json",
@@ -2120,7 +2200,10 @@ mod tests {
                 // on a case-blind disk publications/Column/ is the column folder: what it holds must not change
                 let before = std::fs::read(root.join(other)).ok();
                 let text = refused(as_visual_call(|| write(root, &root.join(other), "refused")));
-                assert!(text.contains("may not ask visual_command") || text.contains("boundary"), "{other}: {text}");
+                assert!(
+                    text.contains("may not ask visual_command") || text.contains("boundary"),
+                    "{other}: {text}"
+                );
                 assert_eq!(std::fs::read(root.join(other)).ok(), before, "{other}");
             }
         }

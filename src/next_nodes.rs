@@ -73,7 +73,9 @@ impl Knob {
                 x.is_finite() && *x >= min && *x <= max && (n - n.round()).abs() < 1e-6
             }
             (Kind::Pick { options, .. }, Val::Word(w)) => options.contains(&w.as_str()),
-            (Kind::Codes { .. }, Val::Word(w)) => w.chars().all(|c| c.is_ascii_alphanumeric() || "_.,:-".contains(c)),
+            (Kind::Codes { .. }, Val::Word(w)) => w
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "_.,:-".contains(c)),
             _ => false,
         };
         if ok {

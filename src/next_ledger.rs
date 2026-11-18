@@ -27,7 +27,10 @@ pub const LABEL_SRC: &str = "name:";
 /// The name row a leaf marks a place's name with (runtime/leaves_py/prod.py name_src): the Chinese name table, two-letter
 /// codes as iso2 and the rest as iso3, as next_run's leaf_labels looks them up.
 pub fn name_src(code: &str) -> String {
-    format!("{LABEL_SRC}zh_names:{}:{code}", if code.len() == 2 { "iso2" } else { "iso3" })
+    format!(
+        "{LABEL_SRC}zh_names:{}:{code}",
+        if code.len() == 2 { "iso2" } else { "iso3" }
+    )
 }
 
 /// Where a map point a leaf drew a place at is read: the point table (its name and sha256) and the code. A ledger entry of
@@ -37,7 +40,10 @@ pub const POINT_SRC: &str = "point:";
 
 /// The ledger entry of a place's map point read from `table` of `sha256`, and its text.
 pub fn point_entry(table: &str, sha256: &str, code: &str, at: [f64; 2]) -> (String, String) {
-    (format!("{POINT_SRC}{table}@{sha256}:{code}"), format!("{},{}", at[0], at[1]))
+    (
+        format!("{POINT_SRC}{table}@{sha256}:{code}"),
+        format!("{},{}", at[0], at[1]),
+    )
 }
 
 /// Where a thing a layer was given and did not draw is kept: the layer and the thing's id (a place's code where the leaf
@@ -313,9 +319,14 @@ pub(crate) fn tag_parts(tag: &str) -> (String, Vec<(String, String)>) {
 /// followed: what comes after its early end would be drawn and read by nobody here.
 pub(crate) fn comment_len(body: &str) -> Result<usize, String> {
     let end = body.find("-->");
-    if body.starts_with('>') || body.starts_with("->") || body[..end.unwrap_or(body.len())].contains("--!>") {
+    if body.starts_with('>')
+        || body.starts_with("->")
+        || body[..end.unwrap_or(body.len())].contains("--!>")
+    {
         let head: String = body.chars().take(30).collect();
-        return Err(format!("a comment the browser ends early: <!--{head:?}; only <!-- ... --> is read"));
+        return Err(format!(
+            "a comment the browser ends early: <!--{head:?}; only <!-- ... --> is read"
+        ));
     }
     Ok(end.map_or(body.len(), |e| e + 3))
 }
@@ -353,7 +364,12 @@ fn unanswered_word(text: &str) -> Option<&'static str> {
         .lines()
         .map(str::trim)
         .filter(|w| !w.is_empty() && !w.starts_with('#'))
-        .find(|w| text.chars().filter(|c| !c.is_whitespace()).collect::<String>().contains(w))
+        .find(|w| {
+            text.chars()
+                .filter(|c| !c.is_whitespace())
+                .collect::<String>()
+                .contains(w)
+        })
 }
 
 /// The page check: every text of the page (and every attribute a reader is read), with its character references read, holds
@@ -377,7 +393,10 @@ pub fn check_numbers(
         // a half year's word is a period too: the leaf prints it marked (<span data-src="...Sn.h">上</span>半年), so an
         // unmarked 上半年 / 下半年 names a half no row was read for
         if ["上半年", "下半年"].iter().any(|h| text.contains(h)) {
-            off.push(format!("the half year in {:?} comes from no ledger entry", text.trim()));
+            off.push(format!(
+                "the half year in {:?} comes from no ledger entry",
+                text.trim()
+            ));
         }
     };
     let close = |shut: Open, off: &mut Vec<String>| match shut.mark {
@@ -412,7 +431,10 @@ pub fn check_numbers(
         }
         if let Some(section) = rest.strip_prefix("<![CDATA[") {
             // In svg the browser shows it as text, which no reader here would see: refused, never skipped.
-            off.push(format!("a CDATA section is not read: {:?}", section.split("]]>").next().unwrap_or("")));
+            off.push(format!(
+                "a CDATA section is not read: {:?}",
+                section.split("]]>").next().unwrap_or("")
+            ));
             rest = section.find("]]>").map_or("", |e| &section[e + 3..]);
             continue;
         }
@@ -538,12 +560,18 @@ pub fn saturated_colours(html: &str) -> Vec<String> {
 /// The relations a page may state over value facts (data-cmp) and the word-table keys whose words state each: a headline or
 /// note marked with one must print one of them. The words are the leaf's table, read here as data (include_str), so the
 /// check and the leaf hold the same few words.
-const RELATIONS: [(&str, &[&str]); 3] = [("max", &["column.note.vs_next"]), ("next", &["column.note.vs_next"]), ("gt", &["column.note.vs_next"])];
+const RELATIONS: [(&str, &[&str]); 3] = [
+    ("max", &["column.note.vs_next"]),
+    ("next", &["column.note.vs_next"]),
+    ("gt", &["column.note.vs_next"]),
+];
 
 /// The leaf's word table, read here as data (include_str), so the check and the leaf hold the same words.
 pub(crate) fn word_table() -> &'static Value {
     static WORDS: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
-    WORDS.get_or_init(|| serde_json::from_str(include_str!("../runtime/leaves_py/words.zh.json")).unwrap_or_default())
+    WORDS.get_or_init(|| {
+        serde_json::from_str(include_str!("../runtime/leaves_py/words.zh.json")).unwrap_or_default()
+    })
 }
 
 /// The word-table key of the scope phrase a comparison over a set narrower than the full set says (scope_said); the leaf
@@ -557,8 +585,18 @@ const SCOPE_WORD: &str = "scope.within";
 /// The words of a relation, as the word table gives them, their leading and trailing punctuation trimmed.
 fn relation_words(rel: &str) -> Vec<String> {
     let table = word_table();
-    let keys = RELATIONS.iter().find(|(r, _)| *r == rel).map_or(&[][..], |(_, k)| *k);
-    keys.iter().filter_map(|k| table[*k].as_str()).map(|w| w.trim_matches(['\u{ff0c}', '\u{3001}', '\u{ff1b}']).to_string()).filter(|w| !w.is_empty()).collect()
+    let keys = RELATIONS
+        .iter()
+        .find(|(r, _)| *r == rel)
+        .map_or(&[][..], |(_, k)| *k);
+    keys.iter()
+        .filter_map(|k| table[*k].as_str())
+        .map(|w| {
+            w.trim_matches(['\u{ff0c}', '\u{3001}', '\u{ff1b}'])
+                .to_string()
+        })
+        .filter(|w| !w.is_empty())
+        .collect()
 }
 
 /// An element of a page: its name, its attributes and the byte range of its inner html (empty for a void or self-closed one).
@@ -570,7 +608,10 @@ struct El {
 
 impl El {
     fn attr(&self, key: &str) -> Option<&str> {
-        self.attrs.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
+        self.attrs
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.as_str())
     }
 }
 
@@ -584,7 +625,9 @@ fn elements(html: &str) -> Vec<El> {
             at = lt + 4 + comment_len(body).unwrap_or(body.len());
             continue;
         }
-        let Some(end) = tag_end(&html[lt..]) else { break };
+        let Some(end) = tag_end(&html[lt..]) else {
+            break;
+        };
         let tag = &html[lt + 1..lt + end];
         at = lt + end + 1;
         if tag.starts_with('!') {
@@ -599,9 +642,16 @@ fn elements(html: &str) -> Vec<El> {
         }
         let (name, attrs) = tag_parts(tag);
         let shut = tag.trim_end().ends_with('/') || VOID.contains(&name.as_str());
-        out.push(El { name: name.clone(), attrs, inner: at..at });
+        out.push(El {
+            name: name.clone(),
+            attrs,
+            inner: at..at,
+        });
         if name == "style" || name == "script" {
-            let close = html[at..].to_ascii_lowercase().find(&format!("</{name}")).map_or(html.len(), |i| at + i);
+            let close = html[at..]
+                .to_ascii_lowercase()
+                .find(&format!("</{name}"))
+                .map_or(html.len(), |i| at + i);
             if let Some(e) = out.last_mut() {
                 e.inner.end = close;
             }
@@ -616,7 +666,11 @@ fn elements(html: &str) -> Vec<El> {
 
 /// The text of an html fragment, character references read, leaving out what lies inside any element carrying `skip`.
 pub(crate) fn text_outside(frag: &str, skip: &str) -> String {
-    let inside: Vec<_> = elements(frag).into_iter().filter(|e| e.attr(skip).is_some()).map(|e| e.inner).collect();
+    let inside: Vec<_> = elements(frag)
+        .into_iter()
+        .filter(|e| e.attr(skip).is_some())
+        .map(|e| e.inner)
+        .collect();
     let (mut out, mut at) = (String::new(), 0);
     while at < frag.len() {
         if frag[at..].starts_with('<') {
@@ -634,7 +688,10 @@ pub(crate) fn text_outside(frag: &str, skip: &str) -> String {
 
 /// The data-src values printed in an html fragment.
 pub(crate) fn printed(frag: &str) -> Vec<String> {
-    elements(frag).into_iter().filter_map(|e| e.attr("data-src").map(str::to_string)).collect()
+    elements(frag)
+        .into_iter()
+        .filter_map(|e| e.attr("data-src").map(str::to_string))
+        .collect()
 }
 
 /// The comparison set of a value fact, derived from the request's fact definitions alone (never from the page): every fact
@@ -650,30 +707,60 @@ fn family<'a>(key: &str, spec: &'a Spec) -> Vec<&'a str> {
         (q["op"] == "value").then(|| (q["table"].clone(), q["time"].clone(), q["fmt"].clone(), dim))
     };
     let total = |q: &Value| {
-        let one = q["filter"].as_object().and_then(|f| f.iter().next()).and_then(|(d, c)| Some((d, c.as_str()?)));
+        let one = q["filter"]
+            .as_object()
+            .and_then(|f| f.iter().next())
+            .and_then(|(d, c)| Some((d, c.as_str()?)));
         one.is_some_and(|(d, c)| total_row(q["table"].as_str().unwrap_or_default(), d, c))
     };
-    let Some(want) = spec.facts.iter().find(|(k, _)| k == key).filter(|(_, q)| !total(q)).and_then(|(_, q)| shape(q)) else {
+    let Some(want) = spec
+        .facts
+        .iter()
+        .find(|(k, _)| k == key)
+        .filter(|(_, q)| !total(q))
+        .and_then(|(_, q)| shape(q))
+    else {
         return Vec::new();
     };
-    let mut set: Vec<&str> =
-        spec.facts.iter().filter(|(_, q)| shape(q).as_ref() == Some(&want) && !total(q)).map(|(k, _)| k.as_str()).collect();
+    let mut set: Vec<&str> = spec
+        .facts
+        .iter()
+        .filter(|(_, q)| shape(q).as_ref() == Some(&want) && !total(q))
+        .map(|(k, _)| k.as_str())
+        .collect();
     set.sort_unstable();
     set.dedup();
     // each member's codes on the set's one dimension; a list holding all the others' is their sum, no part of them
     let codes = |k: &str| -> (bool, Vec<String>) {
-        let v = spec.facts.iter().find(|(key, _)| key == k).and_then(|(_, q)| q["filter"].as_object()?.values().next().cloned());
+        let v = spec
+            .facts
+            .iter()
+            .find(|(key, _)| key == k)
+            .and_then(|(_, q)| q["filter"].as_object()?.values().next().cloned());
         match v {
-            Some(Value::Array(cs)) => (true, cs.iter().filter_map(Value::as_str).map(str::to_string).collect()),
+            Some(Value::Array(cs)) => (
+                true,
+                cs.iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect(),
+            ),
             Some(Value::String(c)) => (false, vec![c]),
             _ => (false, Vec::new()),
         }
     };
     let held: Vec<(&str, (bool, Vec<String>))> = set.iter().map(|k| (*k, codes(k))).collect();
     let whole = |k: &str| {
-        held.iter().find(|(m, _)| *m == k).is_some_and(|(_, (list, cs))| {
-            *list && held.len() > 1 && held.iter().filter(|(m, _)| *m != k).all(|(_, (_, o))| o.iter().all(|c| cs.contains(c)))
-        })
+        held.iter()
+            .find(|(m, _)| *m == k)
+            .is_some_and(|(_, (list, cs))| {
+                *list
+                    && held.len() > 1
+                    && held
+                        .iter()
+                        .filter(|(m, _)| *m != k)
+                        .all(|(_, (_, o))| o.iter().all(|c| cs.contains(c)))
+            })
     };
     if whole(key) {
         return Vec::new();
@@ -694,35 +781,62 @@ fn share_family<'a>(key: &str, spec: &'a Spec) -> Vec<(&'a str, String)> {
 
 /// share_family with the dimension its codes stand on.
 fn share_split<'a>(key: &str, spec: &'a Spec) -> Option<(String, Vec<(&'a str, String)>)> {
-    let def = move |k: &Value| k.as_str().and_then(|k| spec.facts.iter().find(|(key, _)| key == k)).map(|(_, q)| q);
+    let def = move |k: &Value| {
+        k.as_str()
+            .and_then(|k| spec.facts.iter().find(|(key, _)| key == k))
+            .map(|(_, q)| q)
+    };
     let side = |k: &Value, d: &str| {
         let q = def(k).filter(|q| q["op"] == "value")?;
         let mut filter = q.get("filter")?.as_object()?.clone();
         let code = filter.remove(d)?.as_str()?.to_string();
-        Some((code, Value::Array(vec![Value::Object(filter), q["table"].clone(), q["time"].clone(), q["fmt"].clone()])))
+        Some((
+            code,
+            Value::Array(vec![
+                Value::Object(filter),
+                q["table"].clone(),
+                q["time"].clone(),
+                q["fmt"].clone(),
+            ]),
+        ))
     };
     let split = |q: &Value, d: &str| {
         let ((ca, num), (cb, den)) = (side(&q["a"], d)?, side(&q["b"], d)?);
         (q["op"] == "share" && ca == cb).then_some((ca, num, den))
     };
     let own = def(&Value::from(key)).filter(|q| q["op"] == "share")?;
-    let dims: Vec<String> = def(&own["a"]).and_then(|q| q["filter"].as_object()).map(|f| f.keys().cloned().collect()).unwrap_or_default();
+    let dims: Vec<String> = def(&own["a"])
+        .and_then(|q| q["filter"].as_object())
+        .map(|f| f.keys().cloned().collect())
+        .unwrap_or_default();
     let mut found = Vec::new();
     for d in &dims {
-        let Some((code, num, den)) = split(own, d) else { continue };
+        let Some((code, num, den)) = split(own, d) else {
+            continue;
+        };
         if num == den {
             return None;
         }
         // a total row's code on `d` (total_row, at the numerator's table) is no member, nor compared
-        let table = def(&own["a"]).and_then(|q| q["table"].as_str()).unwrap_or_default();
+        let table = def(&own["a"])
+            .and_then(|q| q["table"].as_str())
+            .unwrap_or_default();
         if total_row(table, d, &code) {
             continue;
         }
         let at = |want: &Value| -> Vec<(&'a str, String, bool)> {
-            let held = spec.facts.iter().filter_map(|(k, q)| split(q, d).map(|(c, n, b)| (k.as_str(), c, n, b, q.get("fmt") == own.get("fmt"))));
-            held.filter(|(_, c, _, b, _)| b == want && !total_row(table, d, c)).map(|(k, c, n, _, fmt)| (k, c, fmt && n == num)).collect()
+            let held = spec.facts.iter().filter_map(|(k, q)| {
+                split(q, d).map(|(c, n, b)| (k.as_str(), c, n, b, q.get("fmt") == own.get("fmt")))
+            });
+            held.filter(|(_, c, _, b, _)| b == want && !total_row(table, d, c))
+                .map(|(k, c, n, _, fmt)| (k, c, fmt && n == num))
+                .collect()
         };
-        let mut set: Vec<(&str, String)> = at(&den).into_iter().filter(|m| m.2).map(|(k, c, _)| (k, c)).collect();
+        let mut set: Vec<(&str, String)> = at(&den)
+            .into_iter()
+            .filter(|m| m.2)
+            .map(|(k, c, _)| (k, c))
+            .collect();
         let codes: std::collections::BTreeSet<&String> = set.iter().map(|(_, c)| c).collect();
         if codes.len() >= 2 {
             let covered = at(&den).iter().all(|(_, c, _)| codes.contains(c));
@@ -750,7 +864,10 @@ impl Member<'_> {
     }
 
     fn label(&self) -> String {
-        self.key.map_or_else(|| format!("code:{}", self.code.as_deref().unwrap_or_default()), str::to_string)
+        self.key.map_or_else(
+            || format!("code:{}", self.code.as_deref().unwrap_or_default()),
+            str::to_string,
+        )
     }
 }
 
@@ -760,49 +877,116 @@ impl Member<'_> {
 /// (computed_at), and whether the full set holds a code it could not compute (scoped: a comparison stated over it must say
 /// its scope). None when the fact has no set of two codes or more, a member has no computed value, or a code of the full
 /// set holds rows the set's definition cannot read alike (computed_at Unsupported): no comparison is judged then.
-pub(crate) fn comparison<'a>(key: &str, spec: &'a Spec, rows: &[Row], facts: &[Fact]) -> Option<(Vec<Member<'a>>, bool)> {
+pub(crate) fn comparison<'a>(
+    key: &str,
+    spec: &'a Spec,
+    rows: &[Row],
+    facts: &[Fact],
+) -> Option<(Vec<Member<'a>>, bool)> {
     let def = move |k: &str| spec.facts.iter().find(|(key, _)| key == k).map(|(_, q)| q);
     let value = move |k: &str| facts.iter().find(|f| f.key == k).map(|f| f.v);
     let fam = family(key, spec);
-    let (dim, mut members, template): (String, Vec<Member<'a>>, Vec<&'a Value>) = if !fam.is_empty() {
+    let (dim, mut members, template): (String, Vec<Member<'a>>, Vec<&'a Value>) = if !fam.is_empty()
+    {
         let q = def(key)?;
         let dim = q["filter"].as_object()?.keys().next()?.clone();
-        let members = fam.iter().map(|k| Some(Member { key: Some(*k), code: None, v: value(*k)? })).collect::<Option<Vec<_>>>()?;
-        let template = fam.iter().filter_map(|k| def(*k)).find(|q| q["filter"][&dim].is_string()).into_iter().collect();
+        let members = fam
+            .iter()
+            .map(|k| {
+                Some(Member {
+                    key: Some(*k),
+                    code: None,
+                    v: value(*k)?,
+                })
+            })
+            .collect::<Option<Vec<_>>>()?;
+        let template = fam
+            .iter()
+            .filter_map(|k| def(*k))
+            .find(|q| q["filter"][&dim].is_string())
+            .into_iter()
+            .collect();
         (dim, members, template)
     } else {
         let (dim, set) = share_split(key, spec)?;
-        let members = set.iter().map(|(k, c)| Some(Member { key: Some(*k), code: Some(c.clone()), v: value(*k)? })).collect::<Option<Vec<_>>>()?;
+        let members = set
+            .iter()
+            .map(|(k, c)| {
+                Some(Member {
+                    key: Some(*k),
+                    code: Some(c.clone()),
+                    v: value(*k)?,
+                })
+            })
+            .collect::<Option<Vec<_>>>()?;
         let first = def(set[0].0)?;
-        (dim, members, vec![def(first["a"].as_str()?)?, def(first["b"].as_str()?)?])
+        (
+            dim,
+            members,
+            vec![def(first["a"].as_str()?)?, def(first["b"].as_str()?)?],
+        )
     };
     // the codes the set holds: each member's code on its dimension, a merged node's list whole
     let mut held: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     for m in &members {
-        match m.key.and_then(def).and_then(|q| if fam.is_empty() { def(q["a"].as_str()?) } else { Some(q) }).map(|q| &q["filter"][&dim]) {
+        match m
+            .key
+            .and_then(def)
+            .and_then(|q| {
+                if fam.is_empty() {
+                    def(q["a"].as_str()?)
+                } else {
+                    Some(q)
+                }
+            })
+            .map(|q| &q["filter"][&dim])
+        {
             Some(Value::String(c)) => {
                 held.insert(c.clone());
             }
-            Some(Value::Array(cs)) => held.extend(cs.iter().filter_map(Value::as_str).map(str::to_string)),
+            Some(Value::Array(cs)) => {
+                held.extend(cs.iter().filter_map(Value::as_str).map(str::to_string))
+            }
             _ => {}
         }
     }
     let at: Vec<(&Value, &Value)> = template.iter().map(|q| (&q["table"], &q["time"])).collect();
     let full: std::collections::BTreeSet<&String> = rows
         .iter()
-        .filter(|r| at.iter().any(|(t, y)| t.as_str() == Some(r.table.as_str()) && y.as_str() == Some(r.time.as_str())))
+        .filter(|r| {
+            at.iter().any(|(t, y)| {
+                t.as_str() == Some(r.table.as_str()) && y.as_str() == Some(r.time.as_str())
+            })
+        })
         .filter_map(|r| r.dims.get(&dim))
         .collect();
     // a total row's code (total_row, at a table of the set) is no code of the full set: the whole is not one of its parts
-    let total = |c: &str| at.iter().any(|(t, _)| total_row(t.as_str().unwrap_or_default(), &dim, c));
+    let total = |c: &str| {
+        at.iter()
+            .any(|(t, _)| total_row(t.as_str().unwrap_or_default(), &dim, c))
+    };
     let mut scoped = false;
-    for c in full.into_iter().filter(|c| !held.contains(*c) && !total(c.as_str())) {
-        let got: Vec<At> = template.iter().map(|q| computed_at(q, &dim, c, rows)).collect();
+    for c in full
+        .into_iter()
+        .filter(|c| !held.contains(*c) && !total(c.as_str()))
+    {
+        let got: Vec<At> = template
+            .iter()
+            .map(|q| computed_at(q, &dim, c, rows))
+            .collect();
         match got[..] {
             // a definition the check cannot apply to the code's rows alike: no comparison it could stand behind
             _ if got.is_empty() || got.contains(&At::Unsupported) => return None,
-            [At::Value(v)] => members.push(Member { key: None, code: Some(c.clone()), v }),
-            [At::Value(a), At::Value(b)] if b != 0.0 => members.push(Member { key: None, code: Some(c.clone()), v: a / b }),
+            [At::Value(v)] => members.push(Member {
+                key: None,
+                code: Some(c.clone()),
+                v,
+            }),
+            [At::Value(a), At::Value(b)] if b != 0.0 => members.push(Member {
+                key: None,
+                code: Some(c.clone()),
+                v: a / b,
+            }),
             _ => scoped = true,
         }
     }
@@ -826,20 +1010,49 @@ enum At {
 /// filter with no row. A definition with keys beyond op, table, time, fmt and filter is Unsupported.
 fn computed_at(q: &Value, dim: &str, code: &str, rows: &[Row]) -> At {
     use std::collections::{BTreeMap as Map, BTreeSet as Set};
-    let plain = q.as_object().is_some_and(|o| o.keys().all(|k| matches!(k.as_str(), "op" | "table" | "time" | "fmt" | "filter")));
-    let Some(filter) = q["filter"].as_object().filter(|_| plain && q["op"] == "value") else { return At::Unsupported };
+    let plain = q.as_object().is_some_and(|o| {
+        o.keys()
+            .all(|k| matches!(k.as_str(), "op" | "table" | "time" | "fmt" | "filter"))
+    });
+    let Some(filter) = q["filter"]
+        .as_object()
+        .filter(|_| plain && q["op"] == "value")
+    else {
+        return At::Unsupported;
+    };
     let codes = |v: &Value| match v {
         Value::String(c) => Some(vec![c.clone()]),
         Value::Array(cs) => cs.iter().map(|c| c.as_str().map(str::to_string)).collect(),
         _ => None,
     };
     let want = |swap: bool| -> Option<Vec<(&String, Vec<String>)>> {
-        filter.iter().map(|(d, v)| Some((d, if swap && d == dim { vec![code.to_string()] } else { codes(v)? }))).collect()
+        filter
+            .iter()
+            .map(|(d, v)| {
+                Some((
+                    d,
+                    if swap && d == dim {
+                        vec![code.to_string()]
+                    } else {
+                        codes(v)?
+                    },
+                ))
+            })
+            .collect()
     };
-    let (Some(mine_want), Some(there_want)) = (want(false), want(true)) else { return At::Unsupported };
+    let (Some(mine_want), Some(there_want)) = (want(false), want(true)) else {
+        return At::Unsupported;
+    };
     let pick = |want: &[(&String, Vec<String>)]| -> Vec<&Row> {
-        let at = rows.iter().filter(|r| Some(r.table.as_str()) == q["table"].as_str() && Some(r.time.as_str()) == q["time"].as_str());
-        at.filter(|r| want.iter().all(|(d, cs)| r.dims.get(*d).is_some_and(|c| cs.contains(c)))).collect()
+        let at = rows.iter().filter(|r| {
+            Some(r.table.as_str()) == q["table"].as_str()
+                && Some(r.time.as_str()) == q["time"].as_str()
+        });
+        at.filter(|r| {
+            want.iter()
+                .all(|(d, cs)| r.dims.get(*d).is_some_and(|c| cs.contains(c)))
+        })
+        .collect()
     };
     let (mine, there) = (pick(&mine_want), pick(&there_want));
     // the template's other dimensions and their codes, and its rows per combination of filter codes (dim left out)
@@ -855,7 +1068,14 @@ fn computed_at(q: &Value, dim: &str, code: &str, rows: &[Row]) -> At {
     let per = |rs: &[&Row]| -> Set<usize> {
         let mut n: Map<Vec<Option<&String>>, usize> = Map::new();
         for r in rs {
-            *n.entry(filter.keys().filter(|d| *d != dim).map(|d| r.dims.get(d)).collect()).or_default() += 1;
+            *n.entry(
+                filter
+                    .keys()
+                    .filter(|d| *d != dim)
+                    .map(|d| r.dims.get(d))
+                    .collect(),
+            )
+            .or_default() += 1;
         }
         n.into_values().collect()
     };
@@ -864,21 +1084,36 @@ fn computed_at(q: &Value, dim: &str, code: &str, rows: &[Row]) -> At {
     if mine.is_empty() || one.len() != 1 {
         return At::Unsupported;
     }
-    let inside: Vec<&Row> = there.iter().copied().filter(|r| profile.iter().all(|(d, cs)| r.dims.get(d).is_some_and(|c| cs.contains(c)))).collect();
+    let inside: Vec<&Row> = there
+        .iter()
+        .copied()
+        .filter(|r| {
+            profile
+                .iter()
+                .all(|(d, cs)| r.dims.get(d).is_some_and(|c| cs.contains(c)))
+        })
+        .collect();
     if inside.is_empty() {
         return At::Missing;
     }
     if inside.len() != there.len() {
         return At::Unsupported;
     }
-    if !there_want.iter().all(|(d, cs)| cs.iter().all(|c| inside.iter().any(|r| r.dims.get(*d) == Some(c)))) {
+    if !there_want.iter().all(|(d, cs)| {
+        cs.iter()
+            .all(|c| inside.iter().any(|r| r.dims.get(*d) == Some(c)))
+    }) {
         return At::Missing;
     }
     if others(&inside[..]) != profile || per(&inside[..]) != one {
         return At::Unsupported;
     }
     let v: f64 = inside.iter().map(|r| r.value).sum();
-    if v.is_finite() { At::Value(v) } else { At::Unsupported }
+    if v.is_finite() {
+        At::Value(v)
+    } else {
+        At::Unsupported
+    }
 }
 
 /// For the leaf: each fact of a comparison set, the codes the check finds first and second over it and whether a
@@ -890,12 +1125,22 @@ pub fn comparisons(spec: &Spec, rows: &[Row], facts: &[Fact]) -> Value {
         if out.contains_key(key) {
             continue;
         }
-        let Some((mut members, scoped)) = comparison(key, spec, rows, facts) else { continue };
+        let Some((mut members, scoped)) = comparison(key, spec, rows, facts) else {
+            continue;
+        };
         members.sort_by(|a, b| b.v.total_cmp(&a.v));
-        let name = |m: &Member| m.code.clone().or_else(|| m.key.and_then(|k| member_code(k, spec))).unwrap_or_else(|| m.label());
+        let name = |m: &Member| {
+            m.code
+                .clone()
+                .or_else(|| m.key.and_then(|k| member_code(k, spec)))
+                .unwrap_or_else(|| m.label())
+        };
         let first = &members[0];
-        let Some(second) = members.iter().find(|m| !m.same(first)) else { continue };
-        let one = serde_json::json!({"first": name(first), "second": name(second), "scoped": scoped});
+        let Some(second) = members.iter().find(|m| !m.same(first)) else {
+            continue;
+        };
+        let one =
+            serde_json::json!({"first": name(first), "second": name(second), "scoped": scoped});
         for k in members.iter().filter_map(|m| m.key) {
             out.insert(k.to_string(), one.clone());
         }
@@ -910,15 +1155,27 @@ fn member_code(key: &str, spec: &Spec) -> Option<String> {
         return Some(code);
     }
     let def = spec.facts.iter().find(|(k, _)| k == key).map(|(_, q)| q);
-    def.and_then(|q| q["filter"].as_object()).and_then(|f| f.values().next()).and_then(Value::as_str).map(str::to_string)
+    def.and_then(|q| q["filter"].as_object())
+        .and_then(|f| f.values().next())
+        .and_then(Value::as_str)
+        .map(str::to_string)
 }
 
 /// The fact key a ledger src prints (`fact:<k>.n`, `fact:<k>.r` its display part, or `fact:<k>`), when `k` is a fact the
 /// request defines.
 fn fact_key<'a>(src: &str, spec: &'a Spec) -> Option<&'a str> {
     let k = src.strip_prefix("fact:")?;
-    let known = |k: &str| spec.facts.iter().find(|(key, _)| key == k).map(|(key, _)| key.as_str());
-    known(k).or_else(|| k.strip_suffix(".n").or_else(|| k.strip_suffix(".r")).and_then(known))
+    let known = |k: &str| {
+        spec.facts
+            .iter()
+            .find(|(key, _)| key == k)
+            .map(|(key, _)| key.as_str())
+    };
+    known(k).or_else(|| {
+        k.strip_suffix(".n")
+            .or_else(|| k.strip_suffix(".r"))
+            .and_then(known)
+    })
 }
 
 /// The part of a fact a compared src prints: `.r` (display) or `.n` (bare; its text too, as the comparison has always read).
@@ -943,47 +1200,89 @@ fn part_of(src: &str) -> &'static str {
 /// filter holds or a share's code in its set; a merged node's list is exempt), so a number cannot stand under another node's name; its words (outside data-src) hold
 /// the relation's words. A set of fewer than two facts, or a fact of it with no computed value, refuses. A relation word in
 /// an h1 outside a data-cmp element refuses, and every text of a g[data-notes] group must carry data-cmp. One line per finding.
-pub fn check_relations(html: &str, ledger: &BTreeMap<String, String>, spec: &Spec, facts: &[Fact], rows: &[Row]) -> Vec<String> {
+pub fn check_relations(
+    html: &str,
+    ledger: &BTreeMap<String, String>,
+    spec: &Spec,
+    facts: &[Fact],
+    rows: &[Row],
+) -> Vec<String> {
     let mut off = Vec::new();
     let els = elements(html);
     let value = |k: &str| facts.iter().find(|f| f.key == k).map(|f| f.v);
     // "prints differently" compares the part data-a prints (`.r` or `.n`), each member read at that part (one with no such
     // entry at `.n`, then its text)
     let text = |k: &str, part: &str| {
-        ledger.get(&format!("fact:{k}{part}")).or_else(|| ledger.get(&format!("fact:{k}.n"))).or_else(|| ledger.get(&format!("fact:{k}")))
+        ledger
+            .get(&format!("fact:{k}{part}"))
+            .or_else(|| ledger.get(&format!("fact:{k}.n")))
+            .or_else(|| ledger.get(&format!("fact:{k}")))
     };
-    for g in els.iter().filter(|e| e.name == "g" && e.attr("data-notes").is_some()) {
-        for t in els.iter().filter(|t| t.name == "text" && g.inner.contains(&t.inner.start) && t.attr("data-cmp").is_none()) {
-            off.push(format!("note {:?}: no comparison marked (data-cmp)", text_outside(&html[t.inner.clone()], "\0")));
+    for g in els
+        .iter()
+        .filter(|e| e.name == "g" && e.attr("data-notes").is_some())
+    {
+        for t in els.iter().filter(|t| {
+            t.name == "text" && g.inner.contains(&t.inner.start) && t.attr("data-cmp").is_none()
+        }) {
+            off.push(format!(
+                "note {:?}: no comparison marked (data-cmp)",
+                text_outside(&html[t.inner.clone()], "\0")
+            ));
         }
     }
-    let words: Vec<String> = RELATIONS.iter().flat_map(|(r, _)| relation_words(r)).collect();
+    let words: Vec<String> = RELATIONS
+        .iter()
+        .flat_map(|(r, _)| relation_words(r))
+        .collect();
     for h in els.iter().filter(|e| e.name == "h1") {
         let bare = text_outside(&html[h.inner.clone()], "data-cmp");
-        off.extend(words.iter().filter(|w| bare.contains(w.as_str())).map(|w| format!("h1: the relation word {w:?} with no data-cmp")));
+        off.extend(
+            words
+                .iter()
+                .filter(|w| bare.contains(w.as_str()))
+                .map(|w| format!("h1: the relation word {w:?} with no data-cmp")),
+        );
     }
     for e in els.iter().filter(|e| e.attr("data-cmp").is_some()) {
         let body = &html[e.inner.clone()];
         let shown = text_outside(body, "\0");
         let rel = e.attr("data-cmp").unwrap_or_default();
-        let srcs: Vec<&str> = std::iter::once(e.attr("data-a")).chain((rel != "max").then(|| e.attr("data-b"))).flatten().collect();
-        if !RELATIONS.iter().any(|(r, _)| *r == rel) || srcs.len() != if rel == "max" { 1 } else { 2 } {
-            off.push(format!("{shown:?}: data-cmp {rel:?} is not max, next or gt with its entries"));
+        let srcs: Vec<&str> = std::iter::once(e.attr("data-a"))
+            .chain((rel != "max").then(|| e.attr("data-b")))
+            .flatten()
+            .collect();
+        if !RELATIONS.iter().any(|(r, _)| *r == rel)
+            || srcs.len() != if rel == "max" { 1 } else { 2 }
+        {
+            off.push(format!(
+                "{shown:?}: data-cmp {rel:?} is not max, next or gt with its entries"
+            ));
             continue;
         }
         let seen = printed(body);
         if srcs.iter().any(|s| !seen.iter().any(|p| p == s)) {
-            off.push(format!("{shown:?}: its compared entries {srcs:?} are not all printed in it"));
+            off.push(format!(
+                "{shown:?}: its compared entries {srcs:?} are not all printed in it"
+            ));
             continue;
         }
-        let Some(keys) = srcs.iter().map(|s| fact_key(s, spec)).collect::<Option<Vec<&str>>>() else {
+        let Some(keys) = srcs
+            .iter()
+            .map(|s| fact_key(s, spec))
+            .collect::<Option<Vec<&str>>>()
+        else {
             off.push(format!("{shown:?}: {srcs:?} are not all defined facts"));
             continue;
         };
         // a share fact's set where no value set holds it (share_family), its members compared once per code: a copy of a
         // member under another key (as comp_top is of share.fossil.PL) is no other member, and must hold the same value
         let mut set = family(keys[0], spec);
-        let shares = if set.is_empty() { share_family(keys[0], spec) } else { Vec::new() };
+        let shares = if set.is_empty() {
+            share_family(keys[0], spec)
+        } else {
+            Vec::new()
+        };
         if !shares.is_empty() {
             set = shares.iter().map(|(k, _)| *k).collect();
         }
@@ -992,7 +1291,9 @@ pub fn check_relations(html: &str, ledger: &BTreeMap<String, String>, spec: &Spe
             continue;
         }
         if set.iter().any(|k| value(k).is_none()) {
-            off.push(format!("{shown:?}: a fact of {set:?} has no computed value"));
+            off.push(format!(
+                "{shown:?}: a fact of {set:?} has no computed value"
+            ));
             continue;
         }
         // the set compared over: its members, and every code the request rows let the check compute alike (comparison)
@@ -1000,24 +1301,49 @@ pub fn check_relations(html: &str, ledger: &BTreeMap<String, String>, spec: &Spe
             off.push(format!("{shown:?}: {} has no comparison set its rows compute alike (a code of the rows it cannot read alike)", keys[0]));
             continue;
         };
-        if let Some((a, b)) = members.iter().flat_map(|a| members.iter().map(move |b| (a, b))).find(|(a, b)| a.code.is_some() && a.code == b.code && a.v != b.v) {
-            off.push(format!("{shown:?}: {} and {} stand for {} with different values", a.label(), b.label(), a.code.as_deref().unwrap_or_default()));
+        if let Some((a, b)) = members
+            .iter()
+            .flat_map(|a| members.iter().map(move |b| (a, b)))
+            .find(|(a, b)| a.code.is_some() && a.code == b.code && a.v != b.v)
+        {
+            off.push(format!(
+                "{shown:?}: {} and {} stand for {} with different values",
+                a.label(),
+                b.label(),
+                a.code.as_deref().unwrap_or_default()
+            ));
             continue;
         }
         for k in &keys {
-            if let Some(code) = member_code(k, spec).filter(|c| !seen.iter().any(|p| p.starts_with(LABEL_SRC) && p.ends_with(&format!(":{c}")))) {
-                off.push(format!("{shown:?}: {k} is printed without the name of its code {code}"));
+            if let Some(code) = member_code(k, spec).filter(|c| {
+                !seen
+                    .iter()
+                    .any(|p| p.starts_with(LABEL_SRC) && p.ends_with(&format!(":{c}")))
+            }) {
+                off.push(format!(
+                    "{shown:?}: {k} is printed without the name of its code {code}"
+                ));
             }
         }
         let part = part_of(srcs[0]);
         // above: strictly, and printing differently from each member the page could print (a computed code prints nothing)
         let above = |a: &Member, others: &[&Member]| {
-            others.iter().all(|o| a.v > o.v && o.key.is_none_or(|k| text(a.key.unwrap_or_default(), part) != text(k, part)))
+            others.iter().all(|o| {
+                a.v > o.v
+                    && o.key
+                        .is_none_or(|k| text(a.key.unwrap_or_default(), part) != text(k, part))
+            })
         };
         let find = |k: &str| members.iter().find(|m| m.key == Some(k));
         let me = find(keys[0]);
-        let other = keys.get(1).and_then(|k| find(*k)).filter(|b| me.is_some_and(|a| !b.same(a)));
-        let rest: Vec<&Member> = members.iter().filter(|m| me.is_some_and(|a| !m.same(a))).collect();
+        let other = keys
+            .get(1)
+            .and_then(|k| find(*k))
+            .filter(|b| me.is_some_and(|a| !b.same(a)));
+        let rest: Vec<&Member> = members
+            .iter()
+            .filter(|m| me.is_some_and(|a| !m.same(a)))
+            .collect();
         let holds = match (rel, me, other) {
             ("max", Some(a), _) => above(a, &rest[..]),
             ("next", Some(a), Some(b)) => {
@@ -1029,10 +1355,15 @@ pub fn check_relations(html: &str, ledger: &BTreeMap<String, String>, spec: &Spe
         };
         if !holds {
             let set: Vec<(String, f64)> = members.iter().map(|m| (m.label(), m.v)).collect();
-            off.push(format!("{shown:?}: {rel} does not hold over {keys:?} and its derived set {set:?}"));
+            off.push(format!(
+                "{shown:?}: {rel} does not hold over {keys:?} and its derived set {set:?}"
+            ));
         }
         let said = text_outside(body, "data-src");
-        if !relation_words(rel).iter().any(|w| said.contains(w.as_str())) {
+        if !relation_words(rel)
+            .iter()
+            .any(|w| said.contains(w.as_str()))
+        {
             off.push(format!("{shown:?}: its words state no {rel} comparison"));
         }
         off.extend(scope_said(&shown, body, scoped));
@@ -1058,9 +1389,12 @@ fn scope_said(shown: &str, body: &str, scoped: bool) -> Option<String> {
 /// data). A title the text step's label stays as states none.
 pub fn h1_states_relation(html: &str) -> bool {
     let els = elements(html);
-    els.iter()
-        .filter(|e| e.name == "h1")
-        .any(|h| els.iter().any(|e| (e.attr("data-cmp").is_some() || e.attr("data-claim").is_some()) && h.inner.contains(&e.inner.start)))
+    els.iter().filter(|e| e.name == "h1").any(|h| {
+        els.iter().any(|e| {
+            (e.attr("data-cmp").is_some() || e.attr("data-claim").is_some())
+                && h.inner.contains(&e.inner.start)
+        })
+    })
 }
 
 /// The place names of the knowledge group's name table (economy-names.json: its economies and territories, ECONOMY_NAMES,
@@ -1068,7 +1402,8 @@ pub fn h1_states_relation(html: &str) -> bool {
 fn table_place_names() -> &'static [String] {
     static NAMES: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
     NAMES.get_or_init(|| {
-        let table: Value = serde_json::from_str(crate::next_knowledge::ECONOMY_NAMES).unwrap_or_default();
+        let table: Value =
+            serde_json::from_str(crate::next_knowledge::ECONOMY_NAMES).unwrap_or_default();
         let mut names: Vec<String> = ["economies", "territories"]
             .iter()
             .flat_map(|k| table[*k].as_array().into_iter().flatten())
@@ -1094,14 +1429,24 @@ pub fn check_names_drawn(html: &str) -> Vec<String> {
     let drawn: std::collections::BTreeSet<&str> = els
         .iter()
         .filter(|e| e.name == "svg")
-        .flat_map(|s| els.iter().filter(move |e| s.inner.start <= e.inner.start && e.inner.start < s.inner.end))
+        .flat_map(|s| {
+            els.iter()
+                .filter(move |e| s.inner.start <= e.inner.start && e.inner.start < s.inner.end)
+        })
         .filter_map(|e| e.attr("data-src"))
         .filter(|src| src.starts_with(LABEL_SRC))
         .collect();
     let place = |src: &str| matches!(src.split(':').nth(2), Some("iso2" | "iso3"));
-    let heads = || els.iter().filter(|e| e.name == "h1" || (e.name == "p" && e.attr("class") == Some("dek")));
+    let heads = || {
+        els.iter()
+            .filter(|e| e.name == "h1" || (e.name == "p" && e.attr("class") == Some("dek")))
+    };
     let named_places: std::collections::BTreeSet<&str> = heads()
-        .flat_map(|h| els.iter().filter(move |e| h.inner.start <= e.inner.start && e.inner.start < h.inner.end && e.inner != h.inner))
+        .flat_map(|h| {
+            els.iter().filter(move |e| {
+                h.inner.start <= e.inner.start && e.inner.start < h.inner.end && e.inner != h.inner
+            })
+        })
         .filter_map(|e| e.attr("data-src"))
         .filter(|s| s.starts_with(LABEL_SRC) && place(s))
         .collect();
@@ -1109,8 +1454,13 @@ pub fn check_names_drawn(html: &str) -> Vec<String> {
     let mut off = Vec::new();
     for el in heads() {
         let which = if el.name == "h1" { "h1" } else { "dek" };
-        let within = |e: &El| el.inner.start <= e.inner.start && e.inner.start < el.inner.end && e.inner != el.inner;
-        let marked: Vec<&El> = els.iter().filter(|e| within(e) && e.attr("data-src").is_some()).collect();
+        let within = |e: &El| {
+            el.inner.start <= e.inner.start && e.inner.start < el.inner.end && e.inner != el.inner
+        };
+        let marked: Vec<&El> = els
+            .iter()
+            .filter(|e| within(e) && e.attr("data-src").is_some())
+            .collect();
         // the words outside every marked element and every tag, a marked element's text and a tag each a break
         let mut bare = String::new();
         let mut in_tag = false;
@@ -1132,7 +1482,11 @@ pub fn check_names_drawn(html: &str) -> Vec<String> {
         let (mut i, mut found) = (0, Vec::new());
         while i < bare.len() {
             let at: String = bare[i..].iter().collect();
-            match table_place_names().iter().filter(|n| at.starts_with(n.as_str())).max_by_key(|n| n.chars().count()) {
+            match table_place_names()
+                .iter()
+                .filter(|n| at.starts_with(n.as_str()))
+                .max_by_key(|n| n.chars().count())
+            {
                 Some(name) => {
                     if !found.contains(name) {
                         found.push(name.clone());
@@ -1143,11 +1497,19 @@ pub fn check_names_drawn(html: &str) -> Vec<String> {
             }
         }
         for name in found {
-            off.push(format!("{which}: the place name {name:?} is printed bare, not marked by its name row"));
+            off.push(format!(
+                "{which}: the place name {name:?} is printed bare, not marked by its name row"
+            ));
         }
-        for src in marked.iter().filter_map(|e| e.attr("data-src")).filter(|s| s.starts_with(LABEL_SRC)) {
+        for src in marked
+            .iter()
+            .filter_map(|e| e.attr("data-src"))
+            .filter(|s| s.starts_with(LABEL_SRC))
+        {
             if !drawn.contains(src) && !(one_place && place(src)) {
-                off.push(format!("{which}: {src} is named, and no picture of the page draws it"));
+                off.push(format!(
+                    "{which}: {src} is named, and no picture of the page draws it"
+                ));
             }
         }
     }
@@ -1163,19 +1525,33 @@ pub fn check_accent_named(html: &str) -> Vec<String> {
     if !h1_states_relation(html) {
         return Vec::new();
     }
-    let dek = |e: &El| e.name == "p" && e.attr("class").is_some_and(|c| c.split_whitespace().any(|w| w == "dek"));
-    let named: Vec<String> =
-        els.iter().filter(|e| e.name == "h1" || dek(e)).flat_map(|e| printed(&html[e.inner.clone()])).collect();
+    let dek = |e: &El| {
+        e.name == "p"
+            && e.attr("class")
+                .is_some_and(|c| c.split_whitespace().any(|w| w == "dek"))
+    };
+    let named: Vec<String> = els
+        .iter()
+        .filter(|e| e.name == "h1" || dek(e))
+        .flat_map(|e| printed(&html[e.inner.clone()]))
+        .collect();
     let mut codes: Vec<&str> = els
         .iter()
-        .filter(|e| matches!(e.name.as_str(), "rect" | "path" | "polygon" | "circle") && e.attr("fill") == Some("var(--accent)"))
+        .filter(|e| {
+            matches!(e.name.as_str(), "rect" | "path" | "polygon" | "circle")
+                && e.attr("fill") == Some("var(--accent)")
+        })
         .filter_map(|e| e.attr("data-code"))
         .collect();
     codes.sort_unstable();
     codes.dedup();
     codes
         .into_iter()
-        .filter(|c| !named.iter().any(|p| p.starts_with(LABEL_SRC) && p.ends_with(&format!(":{c}"))))
+        .filter(|c| {
+            !named
+                .iter()
+                .any(|p| p.starts_with(LABEL_SRC) && p.ends_with(&format!(":{c}")))
+        })
         .map(|c| format!("the accent marks {c}, which the h1 and the dek do not name"))
         .collect()
 }
@@ -1186,26 +1562,53 @@ pub fn check_accent_named(html: &str) -> Vec<String> {
 ///   off   and none of these: another relation, a rank below first, a negation, a trend, a multiple or share, a hedge;
 ///   verb  the leaf's alone (it keeps a title only when it also reads as a conclusion); the check never reads it.
 pub const CLAIM_WORDS: [(&str, &[&str]); 3] = [
-    ("max", &["最大", "最多", "最高", "最粗", "最宽", "最主要", "居首", "首位", "第一大", "领先", "领跑"]),
+    (
+        "max",
+        &[
+            "最大",
+            "最多",
+            "最高",
+            "最粗",
+            "最宽",
+            "最主要",
+            "居首",
+            "首位",
+            "第一大",
+            "领先",
+            "领跑",
+        ],
+    ),
     (
         "off",
         &[
-            "最小", "最少", "最低", "最细", "最窄", "最弱", "垫底", "末位", "第二", "次之", "其次", "仅次", "不", "非", "没", "未", "无",
-            "比", "倍", "半", "少于", "低于", "多于", "高于", "超过", "不及", "落后", "减", "增", "降", "升", "曾", "将", "约", "近", "逾",
-            "左右", "？", "?",
+            "最小", "最少", "最低", "最细", "最窄", "最弱", "垫底", "末位", "第二", "次之", "其次",
+            "仅次", "不", "非", "没", "未", "无", "比", "倍", "半", "少于", "低于", "多于", "高于",
+            "超过", "不及", "落后", "减", "增", "降", "升", "曾", "将", "约", "近", "逾", "左右",
+            "？", "?",
         ],
     ),
-    ("verb", &["居首", "集中", "占", "达", "成为", "领先", "是", "领跑"]),
+    (
+        "verb",
+        &["居首", "集中", "占", "达", "成为", "领先", "是", "领跑"],
+    ),
 ];
 
 /// One list of CLAIM_WORDS.
 fn claim_list(kind: &str) -> &'static [&'static str] {
-    CLAIM_WORDS.iter().find(|(k, _)| *k == kind).map_or(&[][..], |(_, w)| *w)
+    CLAIM_WORDS
+        .iter()
+        .find(|(k, _)| *k == kind)
+        .map_or(&[][..], |(_, w)| *w)
 }
 
 /// CLAIM_WORDS as the page line gives them to the leaf: {"max": [...], "off": [...], "verb": [...]}.
 pub fn claim_words() -> Value {
-    Value::Object(CLAIM_WORDS.iter().map(|(k, w)| (k.to_string(), Value::from(w.to_vec()))).collect())
+    Value::Object(
+        CLAIM_WORDS
+            .iter()
+            .map(|(k, w)| (k.to_string(), Value::from(w.to_vec())))
+            .collect(),
+    )
 }
 
 /// The visual group's Rust files, each with the short name its functions go by in CHECK_REGISTRY and CHECK_HELPERS: every
@@ -1236,87 +1639,575 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     // the page's numbers: every digit a marked ledger entry printed one way, or a table id the request names
     // a page whose comments the browser reads as written (one ended early is refused)
     ("page_html_read", "", &["ledger::comment_len"]),
-    ("numbers", "", &["ledger::check_numbers", "ledger::unanswered_word", "ledger::prints", "ledger::digit_runs", "ledger::num", "ledger::label", "ledger::enter", "ledger::segs", "ledger::finish", "facts::table_id", "facts::leaf_refs"]),
+    (
+        "numbers",
+        "",
+        &[
+            "ledger::check_numbers",
+            "ledger::unanswered_word",
+            "ledger::prints",
+            "ledger::digit_runs",
+            "ledger::num",
+            "ledger::label",
+            "ledger::enter",
+            "ledger::segs",
+            "ledger::finish",
+            "facts::table_id",
+            "facts::leaf_refs",
+        ],
+    ),
     // every fact recomputed from the request rows by its declared query (ops value, share, change, ...)
-    ("fact_recompute", "", &["facts::compute", "facts::fact", "facts::one", "facts::family", "facts::member_fmt", "facts::printed_value", "facts::minus_family", "facts::select", "facts::word", "facts::members", "facts::finite", "facts::sum", "facts::exact_values", "facts::new", "facts::int", "facts::of", "facts::add", "facts::sub", "facts::mul", "facts::div", "facts::abs", "facts::gcd", "facts::eq"]),
+    (
+        "fact_recompute",
+        "",
+        &[
+            "facts::compute",
+            "facts::fact",
+            "facts::one",
+            "facts::family",
+            "facts::member_fmt",
+            "facts::printed_value",
+            "facts::minus_family",
+            "facts::select",
+            "facts::word",
+            "facts::members",
+            "facts::finite",
+            "facts::sum",
+            "facts::exact_values",
+            "facts::new",
+            "facts::int",
+            "facts::of",
+            "facts::add",
+            "facts::sub",
+            "facts::mul",
+            "facts::div",
+            "facts::abs",
+            "facts::gcd",
+            "facts::eq",
+        ],
+    ),
     // every ledger entry recomputed and reprinted (its text, bare .n and display .r parts, ticks, periods, dates, names)
-    ("ledger_recheck", "", &["facts::recheck", "facts::read_entry", "facts::reads_back", "facts::leaf_ledger", "facts::who", "facts::text", "facts::scaled", "facts::fixed", "facts::fixed_exact", "facts::rounded", "facts::thousands", "facts::tlabel", "facts::num", "facts::display", "facts::ticks", "facts::periods", "facts::months", "facts::halves", "facts::date_parts", "facts::wording_segs"]),
+    (
+        "ledger_recheck",
+        "",
+        &[
+            "facts::recheck",
+            "facts::read_entry",
+            "facts::reads_back",
+            "facts::leaf_ledger",
+            "facts::who",
+            "facts::text",
+            "facts::scaled",
+            "facts::fixed",
+            "facts::fixed_exact",
+            "facts::rounded",
+            "facts::thousands",
+            "facts::tlabel",
+            "facts::num",
+            "facts::display",
+            "facts::ticks",
+            "facts::periods",
+            "facts::months",
+            "facts::halves",
+            "facts::date_parts",
+            "facts::wording_segs",
+        ],
+    ),
     // relation_holds: data-cmp max, next, gt over the set the request's definitions give, each named by its code's row
-    ("relations", "next_ledger::RELATIONS", &["ledger::check_relations", "ledger::relation_words", "ledger::family", "ledger::fact_key", "ledger::part_of", "ledger::member_code"]),
+    (
+        "relations",
+        "next_ledger::RELATIONS",
+        &[
+            "ledger::check_relations",
+            "ledger::relation_words",
+            "ledger::family",
+            "ledger::fact_key",
+            "ledger::part_of",
+            "ledger::member_code",
+        ],
+    ),
     // P4b-5: a share fact's set (one varying dimension, the rest of numerator and denominator alike), same-code copies one
-    ("share_family", "", &["ledger::share_family", "ledger::share_split", "ledger::same"]),
+    (
+        "share_family",
+        "",
+        &[
+            "ledger::share_family",
+            "ledger::share_split",
+            "ledger::same",
+        ],
+    ),
     // P4b-5: the set plus every code of the request rows its definition computes alike, or the comparison refused
-    ("full_set_members", "", &["ledger::comparison", "ledger::computed_at", "ledger::comparisons", "ledger::total_row"]),
+    (
+        "full_set_members",
+        "",
+        &[
+            "ledger::comparison",
+            "ledger::computed_at",
+            "ledger::comparisons",
+            "ledger::total_row",
+        ],
+    ),
     // P4b-5: over a narrowed set the words say the scope phrase (words.zh.json scope.within), over the full set they do not
     ("scope_phrase", "", &["ledger::scope_said"]),
     // claim_holds C1-C9: a number-free title's max claim over its derived set
-    ("claims", "next_ledger::CLAIM_WORDS", &["ledger::check_claims", "ledger::claim_list", "ledger::claim_words", "ledger::row_family"]),
+    (
+        "claims",
+        "next_ledger::CLAIM_WORDS",
+        &[
+            "ledger::check_claims",
+            "ledger::claim_list",
+            "ledger::claim_words",
+            "ledger::row_family",
+        ],
+    ),
     ("accent_named", "", &["ledger::check_accent_named"]),
     // names_drawn (planted errors 11-13): the h1 and the dek name places only by their name rows, places the page draws
-    ("names_drawn", "", &["ledger::check_names_drawn", "ledger::table_place_names"]),
+    (
+        "names_drawn",
+        "",
+        &["ledger::check_names_drawn", "ledger::table_place_names"],
+    ),
     ("saturated_colours", "", &["ledger::saturated_colours"]),
     // the page tree (next_tree.rs): its schema
     // a page tree that is JSON the checker reads (each value, number, string and escape), no extra data, a number
     // where float() takes one
     // a first_holding field: the first candidate whose conditions (CONDITIONS, recomputed by the core) all hold
-    ("tree.first_holding", "next_tree::CONDITIONS", &["tree::first_holding", "tree::conditions_hold", "tree::condition_holds", "tree::unit_additive", "tree::line_width", "tree::with_code", "tree::fact_value", "tree_gen::plain_holding", "tree_gen::no_fact", "tree_gen::no_word", "tree_gen::codes_in", "tree_gen::filter_codes"]),
-    ("tree.json_input", "", &["tree::parse", "tree::err", "tree::num", "tree::value", "tree::number", "tree::string", "tree::hex4"]),
+    (
+        "tree.first_holding",
+        "next_tree::CONDITIONS",
+        &[
+            "tree::first_holding",
+            "tree::conditions_hold",
+            "tree::condition_holds",
+            "tree::unit_additive",
+            "tree::line_width",
+            "tree::with_code",
+            "tree::fact_value",
+            "tree_gen::plain_holding",
+            "tree_gen::no_fact",
+            "tree_gen::no_word",
+            "tree_gen::codes_in",
+            "tree_gen::filter_codes",
+        ],
+    ),
+    (
+        "tree.json_input",
+        "",
+        &[
+            "tree::parse",
+            "tree::err",
+            "tree::num",
+            "tree::value",
+            "tree::number",
+            "tree::string",
+            "tree::hex4",
+        ],
+    ),
     // the node the core asks: in the page tree, bound external, its runner a code file under the runtime, its content
     // rechecked before the child starts and its reply after (C1-C5, B0-B7 and the colour checks)
     ("tree.node_bound", "", &["tree::node_draw"]),
-    ("tree.schema", "", &["tree::schema", "tree::is_type", "tree::full", "tree::word_c", "tree::nonempty_all", "tree::palette_id", "tree::ident_lower", "tree::pattern_match", "tree::schema_ref", "tree::schema_errors"]),
+    (
+        "tree.schema",
+        "",
+        &[
+            "tree::schema",
+            "tree::is_type",
+            "tree::full",
+            "tree::word_c",
+            "tree::nonempty_all",
+            "tree::palette_id",
+            "tree::ident_lower",
+            "tree::pattern_match",
+            "tree::schema_ref",
+            "tree::schema_errors",
+        ],
+    ),
     // its facts recomputed by the checker's own ops (the op arms of Compute)
-    ("tree.fact_ops", "next_tree::Compute ops", &["tree::fam", "tree::val", "tree::val_new"]),
+    (
+        "tree.fact_ops",
+        "next_tree::Compute ops",
+        &["tree::fam", "tree::val", "tree::val_new"],
+    ),
     // its selects recomputed (ranks, takes, sums) and every reference resolved
-    ("tree.registry_list", "", &["tree::registry_list", "tree::parts_rows", "tree::leaves_under_total"]),
-    ("tree.printed_difference", "", &["tree::differences_disagree", "tree::printed_keys", "tree::fact_fmt", "tree::printed_int", "tree::round_even", "tree::printed_differences"]),
-    ("tree.roles", "", &["tree::recipe_roles", "tree::reference_legend_gaps", "tree::reference_legend", "tree::element_at", "tree::pieces", "tree::is_the_word", "tree::draws_vars", "tree::template_vars", "tree::knob_at", "tree::drawn_vars", "tree::segs_match", "tree::src_is", "tree::drawn_entry_gaps", "tree::legend_line_gaps", "tree::split_gaps"]),
-    ("tree.selects", "", &["tree::ref_parts", "tree::is_ref", "tree::ref_id", "tree::index", "tree::resolve_ref", "tree::resolved", "tree::result_codes", "tree::dims", "tree::select_rows", "tree::plain_tie", "tree::last_in_only", "tree::text_num", "tree::pair_rows", "tree::change_from", "tree::part_share_key", "tree::part_share_of", "tree::cannot_rank", "tree::cannot_take", "tree::take_value", "tree::sel_get", "tree::root_rank", "tree::int_or_knob", "tree::sum_rows", "tree::py_fixed", "tree::py_grouped", "tree::recheck", "tree::recheck_one", "tree::strip_part"]),
-    ("tree.check_kinds", "next_tree::CHECK_KINDS", &["tree::evaluate", "tree::check_codes", "tree::named_in", "tree::names_of", "tree::is_knob", "tree::knob_problem", "tree::has_digit", "tree::pathlike", "tree::nodes_of"]),
+    (
+        "tree.registry_list",
+        "",
+        &[
+            "tree::registry_list",
+            "tree::parts_rows",
+            "tree::leaves_under_total",
+        ],
+    ),
+    (
+        "tree.printed_difference",
+        "",
+        &[
+            "tree::differences_disagree",
+            "tree::printed_keys",
+            "tree::fact_fmt",
+            "tree::printed_int",
+            "tree::round_even",
+            "tree::printed_differences",
+        ],
+    ),
+    (
+        "tree.roles",
+        "",
+        &[
+            "tree::recipe_roles",
+            "tree::reference_legend_gaps",
+            "tree::reference_legend",
+            "tree::element_at",
+            "tree::pieces",
+            "tree::is_the_word",
+            "tree::draws_vars",
+            "tree::template_vars",
+            "tree::knob_at",
+            "tree::drawn_vars",
+            "tree::segs_match",
+            "tree::src_is",
+            "tree::drawn_entry_gaps",
+            "tree::legend_line_gaps",
+            "tree::split_gaps",
+        ],
+    ),
+    (
+        "tree.selects",
+        "",
+        &[
+            "tree::ref_parts",
+            "tree::is_ref",
+            "tree::ref_id",
+            "tree::index",
+            "tree::resolve_ref",
+            "tree::resolved",
+            "tree::result_codes",
+            "tree::dims",
+            "tree::select_rows",
+            "tree::plain_tie",
+            "tree::last_in_only",
+            "tree::text_num",
+            "tree::pair_rows",
+            "tree::change_from",
+            "tree::part_share_key",
+            "tree::part_share_of",
+            "tree::cannot_rank",
+            "tree::cannot_take",
+            "tree::take_value",
+            "tree::sel_get",
+            "tree::root_rank",
+            "tree::int_or_knob",
+            "tree::sum_rows",
+            "tree::py_fixed",
+            "tree::py_grouped",
+            "tree::recheck",
+            "tree::recheck_one",
+            "tree::strip_part",
+        ],
+    ),
+    (
+        "tree.check_kinds",
+        "next_tree::CHECK_KINDS",
+        &[
+            "tree::evaluate",
+            "tree::check_codes",
+            "tree::named_in",
+            "tree::names_of",
+            "tree::is_knob",
+            "tree::knob_problem",
+            "tree::has_digit",
+            "tree::pathlike",
+            "tree::nodes_of",
+        ],
+    ),
     // P1 lints: words (no worded number), shared fields, registered nodes
-    ("tree.lint", "", &["tree::lint", "tree::places", "tree::last_name", "tree::sha256_hex", "tree::digit_runs", "tree::words_lint", "tree::worded_number", "tree::free_words", "tree::digit_terms", "tree::digit_term_spellings", "tree::number_free", "tree::numeral_value", "tree::place_count", "tree::places_drawn", "tree::literal_chars", "tree::shared_lint", "tree::codes_of", "tree::scope", "tree::registry_lint", "tree::scoped"]),
+    (
+        "tree.lint",
+        "",
+        &[
+            "tree::lint",
+            "tree::places",
+            "tree::last_name",
+            "tree::sha256_hex",
+            "tree::digit_runs",
+            "tree::words_lint",
+            "tree::worded_number",
+            "tree::free_words",
+            "tree::digit_terms",
+            "tree::digit_term_spellings",
+            "tree::number_free",
+            "tree::numeral_value",
+            "tree::place_count",
+            "tree::places_drawn",
+            "tree::literal_chars",
+            "tree::shared_lint",
+            "tree::codes_of",
+            "tree::scope",
+            "tree::registry_lint",
+            "tree::scoped",
+        ],
+    ),
     // P1 and P2 over the page (parts A and B, R10 composition, R12)
-    ("tree.page_parts", "", &["tree::part_a", "tree::part_b", "tree::spec_diff", "tree::fact_rows", "tree::r10", "tree::r12", "tree::select_rows_read", "tree::composition"]),
+    (
+        "tree.page_parts",
+        "",
+        &[
+            "tree::part_a",
+            "tree::part_b",
+            "tree::spec_diff",
+            "tree::fact_rows",
+            "tree::r10",
+            "tree::r12",
+            "tree::select_rows_read",
+            "tree::composition",
+        ],
+    ),
     // C5: a node's registry entry names only what the core computes
-    ("tree.registry", "next_tree::FIELD_KINDS", &["tree::rows_frame_problem", "tree::circle_bound_problems", "tree::circles_registry_problems", "tree::load_registry", "tree::registry_problems", "tree::runner_allowed"]),
-    ("tree.items", "next_tree::FOR_EACH", &["tree::resolve_sel", "tree::at_path", "tree::fill_template", "tree::expand_items", "tree::cells_of"]),
-    ("tree.palette", "", &["tree::palettes", "tree::canon_hex", "tree::rgb_lin", "tree::lum", "tree::contrast", "tree::lab", "tree::chroma", "tree::de76", "tree::palette_problems"]),
-    ("tree.no_literal_colour", "", &["tree::colour_literal", "tree::tree_colour_problems", "tree::frames"]),
-    ("tree.paint_matches_scale", "next_tree::SCALE_KINDS", &["tree::registry_scale_problems", "tree::ink_on", "tree::needs_edge", "tree::printed_value", "tree::cuts_of", "tree::bin_of", "tree::k", "tree::any_missing", "tree::steps", "tree::paint_of", "tree::mark_attrs", "tree::legend_svg", "tree::paint_record", "tree::id", "tree::svg_elements", "tree::paint_problems", "tree::colour_problems"]),
+    (
+        "tree.registry",
+        "next_tree::FIELD_KINDS",
+        &[
+            "tree::rows_frame_problem",
+            "tree::circle_bound_problems",
+            "tree::circles_registry_problems",
+            "tree::load_registry",
+            "tree::registry_problems",
+            "tree::runner_allowed",
+        ],
+    ),
+    (
+        "tree.items",
+        "next_tree::FOR_EACH",
+        &[
+            "tree::resolve_sel",
+            "tree::at_path",
+            "tree::fill_template",
+            "tree::expand_items",
+            "tree::cells_of",
+        ],
+    ),
+    (
+        "tree.palette",
+        "",
+        &[
+            "tree::palettes",
+            "tree::canon_hex",
+            "tree::rgb_lin",
+            "tree::lum",
+            "tree::contrast",
+            "tree::lab",
+            "tree::chroma",
+            "tree::de76",
+            "tree::palette_problems",
+        ],
+    ),
+    (
+        "tree.no_literal_colour",
+        "",
+        &[
+            "tree::colour_literal",
+            "tree::tree_colour_problems",
+            "tree::frames",
+        ],
+    ),
+    (
+        "tree.paint_matches_scale",
+        "next_tree::SCALE_KINDS",
+        &[
+            "tree::registry_scale_problems",
+            "tree::ink_on",
+            "tree::needs_edge",
+            "tree::printed_value",
+            "tree::cuts_of",
+            "tree::bin_of",
+            "tree::k",
+            "tree::any_missing",
+            "tree::steps",
+            "tree::paint_of",
+            "tree::mark_attrs",
+            "tree::legend_svg",
+            "tree::paint_record",
+            "tree::id",
+            "tree::svg_elements",
+            "tree::paint_problems",
+            "tree::colour_problems",
+        ],
+    ),
     ("tree.single_accent", "", &["tree::accent_problems"]),
     // value-determined geometry the core recomputes (K1-K3, K11)
-    ("tree.channels", "next_tree::CHANNELS", &["tree::tw", "tree::py_round", "tree::tw_leaf", "tree::signed_room", "tree::rows_frame", "tree::signed_bars", "tree::merc", "tree::fit", "tree::project", "tree::four", "tree::expected", "tree::item_of"]),
+    (
+        "tree.channels",
+        "next_tree::CHANNELS",
+        &[
+            "tree::tw",
+            "tree::py_round",
+            "tree::tw_leaf",
+            "tree::signed_room",
+            "tree::rows_frame",
+            "tree::signed_bars",
+            "tree::merc",
+            "tree::fit",
+            "tree::project",
+            "tree::four",
+            "tree::expected",
+            "tree::item_of",
+        ],
+    ),
     // the request the core issues to a node, every number and word in it the core's
-    ("tree.node_request", "", &["tree::issue", "tree::query", "tree::fact", "tree::name", "tree::run", "tree::runs"]),
-    ("tree.content", "", &["tree::content_problems", "tree::asked_problems", "tree::fact_tables"]),
+    (
+        "tree.node_request",
+        "",
+        &[
+            "tree::issue",
+            "tree::query",
+            "tree::fact",
+            "tree::name",
+            "tree::run",
+            "tree::runs",
+        ],
+    ),
+    (
+        "tree.content",
+        "",
+        &[
+            "tree::content_problems",
+            "tree::asked_problems",
+            "tree::fact_tables",
+        ],
+    ),
     // B0: a reply within the allow-list
-    ("tree.reply_allow_list", "next_tree::SHAPES", &["tree::reply_problems", "tree::node_problems", "tree::shape_fields"]),
+    (
+        "tree.reply_allow_list",
+        "next_tree::SHAPES",
+        &[
+            "tree::reply_problems",
+            "tree::node_problems",
+            "tree::shape_fields",
+        ],
+    ),
     // B1-B7: a reply's geometry
-    ("tree.geometry", "", &["tree::coord", "tree::mbox", "tree::region", "tree::tbox", "tree::pmax", "tree::dist", "tree::union", "tree::inside", "tree::fmt2", "tree::geometry_problems"]),
+    (
+        "tree.geometry",
+        "",
+        &[
+            "tree::coord",
+            "tree::mbox",
+            "tree::region",
+            "tree::tbox",
+            "tree::pmax",
+            "tree::dist",
+            "tree::union",
+            "tree::inside",
+            "tree::fmt2",
+            "tree::geometry_problems",
+        ],
+    ),
     // K3-K9: map circles
-    ("tree.map_circles", "", &["tree::view_projection", "tree::ends_then_largest", "tree::whole_or", "tree::circles_request", "tree::lens", "tree::crosses", "tree::along", "tree::pdist", "tree::circles_problems"]),
+    (
+        "tree.map_circles",
+        "",
+        &[
+            "tree::view_projection",
+            "tree::ends_then_largest",
+            "tree::whole_or",
+            "tree::circles_request",
+            "tree::lens",
+            "tree::crosses",
+            "tree::along",
+            "tree::pdist",
+            "tree::circles_problems",
+        ],
+    ),
     // what an external layer's leaf refuses before it draws (the page stops there): each rule a match arm of
     // next_tree_gen.rs leaf_stops, the one place the names are implemented; node-bindings.json leaf_stops and
     // leaf_stops_by_recipe name only those (the test below holds it)
-    ("leaf_stops", "next_tree_gen::leaf_stops rules", &["tree_gen::leaf_stops"]),
+    (
+        "leaf_stops",
+        "next_tree_gen::leaf_stops rules",
+        &["tree_gen::leaf_stops"],
+    ),
     // the generator (next_tree_gen.rs): what it refuses in a parts_of_whole declaration
     ("tree_gen.parts_lint", "", &["tree_gen::parts_lint"]),
     // its selects recomputed over the page input's rows, every given result held to its recomputation
-    ("tree_gen.selects_recompute", "", &["tree_gen::recompute", "tree_gen::recompute_over", "tree_gen::recheck_selects", "tree_gen::with_results_of", "tree_gen::selects_of", "tree_gen::given_of", "tree_gen::with_result"]),
+    (
+        "tree_gen.selects_recompute",
+        "",
+        &[
+            "tree_gen::recompute",
+            "tree_gen::recompute_over",
+            "tree_gen::recheck_selects",
+            "tree_gen::with_results_of",
+            "tree_gen::selects_of",
+            "tree_gen::given_of",
+            "tree_gen::with_result",
+        ],
+    ),
     // a fill fact held to the page's rows, its chosen codes select references; one no select holds refuses
-    ("tree_gen.facts_held", "", &["tree_gen::held_to_page", "tree_gen::as_refs", "tree_gen::code_ref"]),
+    (
+        "tree_gen.facts_held",
+        "",
+        &[
+            "tree_gen::held_to_page",
+            "tree_gen::as_refs",
+            "tree_gen::code_ref",
+        ],
+    ),
     // the registry's checks put on the page tree, per page and per external node
     ("tree_gen.registry_checks", "", &["tree_gen::checks_of"]),
     // a declaration the generator computes, else refused: the page input paths and knobs it reads, its dec_rule,
     // fmt_change, rows rule, line segments and frame headings, its numbers, the select its items follow
-    ("tree_gen.declaration", "", &["tree_gen::sub", "tree_gen::declares", "tree_gen::held_decimals", "tree_gen::dec_of", "tree_gen::change_fmt", "tree_gen::printed_raise", "tree_gen::declared_j", "tree_gen::carries_facts", "tree_gen::value_of", "tree_gen::with_values", "tree_gen::extent_of", "tree_gen::label_px", "tree_gen::printed_len", "tree_gen::knob_default", "tree_gen::pairs_declared", "tree_gen::from", "tree_gen::view_path", "tree_gen::number_of", "tree_gen::segments", "tree_gen::frame_words", "tree_gen::fixed_name", "tree_gen::declare"]),
+    (
+        "tree_gen.declaration",
+        "",
+        &[
+            "tree_gen::sub",
+            "tree_gen::declares",
+            "tree_gen::held_decimals",
+            "tree_gen::dec_of",
+            "tree_gen::change_fmt",
+            "tree_gen::printed_raise",
+            "tree_gen::declared_j",
+            "tree_gen::carries_facts",
+            "tree_gen::value_of",
+            "tree_gen::with_values",
+            "tree_gen::extent_of",
+            "tree_gen::label_px",
+            "tree_gen::printed_len",
+            "tree_gen::knob_default",
+            "tree_gen::pairs_declared",
+            "tree_gen::from",
+            "tree_gen::view_path",
+            "tree_gen::number_of",
+            "tree_gen::segments",
+            "tree_gen::frame_words",
+            "tree_gen::fixed_name",
+            "tree_gen::declare",
+        ],
+    ),
     // a parts_of_whole page stops in the registry's words: its needs, and each stop rule (the rule names parts_declared
     // reads; node-bindings.json stops name only those, the test below holds it); its expansion refuses a part with no
     // total row, a fact the declaration lacks, a format it does not compute
-    ("tree_gen.parts_stops", "next_tree_gen::parts_declared rules", &["tree_gen::parts_declared", "tree_gen::first_row_of_no_number", "tree_gen::parts_expand"]),
+    (
+        "tree_gen.parts_stops",
+        "next_tree_gen::parts_declared rules",
+        &[
+            "tree_gen::parts_declared",
+            "tree_gen::first_row_of_no_number",
+            "tree_gen::parts_expand",
+        ],
+    ),
     // the page's finding (node finding): the first case that holds over the core's selects, no finding on a tie, an unnamed
     // code or a fact the page lacks; declared again over the finished fill at draw, its facts, reads, words and accent held
-    ("tree_gen.finding", "", &["tree_gen::finding_declared", "tree_gen::walk", "tree_gen::finding_recheck", "ledger::ratio_free_unit"]),
+    (
+        "tree_gen.finding",
+        "",
+        &[
+            "tree_gen::finding_declared",
+            "tree_gen::walk",
+            "tree_gen::finding_recheck",
+            "ledger::ratio_free_unit",
+        ],
+    ),
     // a note against the mean of the compared places: the places averaged are the places the page draws
     ("tree_gen.mean_drawn", "", &["tree_gen::mean_recheck"]),
     // the page tree over the fill: selects recompute, every format the fill names, the accent held by a select
@@ -1328,28 +2219,90 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     // the leaf bridge (next_leaf.rs): a layer's node registered, every knob a page sets against the leaf registry's ranges
     ("leaf.style", "", &["leaf::check_style", "leaf::registered"]),
     // a child that gives no pipes, closes its input, exits with no reply or answers past its deadline
-    ("leaf.child", "", &["leaf::start", "leaf::ask_once", "leaf::ask"]),
+    (
+        "leaf.child",
+        "",
+        &["leaf::start", "leaf::ask_once", "leaf::ask"],
+    ),
     // a layer's reply taken onto the panel or refused: sources, positions, overlaps, dropped items, svg markup, its size
-    ("leaf.reply", "", &["leaf::take", "leaf::faults", "leaf::dropped_items", "leaf::text_box", "leaf::turn", "leaf::corners", "leaf::bounds", "leaf::overlap", "leaf::on_line", "leaf::drawn_texts", "leaf::svg_markup", "leaf::strs", "leaf::drawn"]),
+    (
+        "leaf.reply",
+        "",
+        &[
+            "leaf::take",
+            "leaf::faults",
+            "leaf::dropped_items",
+            "leaf::text_box",
+            "leaf::turn",
+            "leaf::corners",
+            "leaf::bounds",
+            "leaf::overlap",
+            "leaf::on_line",
+            "leaf::drawn_texts",
+            "leaf::svg_markup",
+            "leaf::strs",
+            "leaf::drawn",
+        ],
+    ),
     // the page holds each layer's bytes as Rust took them, once
-    ("leaf.page_holds_layers", "", &["leaf::held", "leaf::element", "leaf::unseen", "leaf::svgs", "leaf::drawing"]),
+    (
+        "leaf.page_holds_layers",
+        "",
+        &[
+            "leaf::held",
+            "leaf::element",
+            "leaf::unseen",
+            "leaf::svgs",
+            "leaf::drawing",
+        ],
+    ),
     // an illustration strip is line art in the page's colours only, as wide as asked
     ("leaf.strip", "", &["leaf::strip_faults", "leaf::strip"]),
     // the bake changes no text and no mark of the page
     ("leaf.bake_keeps_text", "", &["leaf::bake", "leaf::read"]),
     // the whole page as written: no placeholder left, no month read from two periods, the ready script Rust's alone
-    ("leaf.page", "", &["leaf::check_leaf_page", "leaf::placeholders", "leaf::split_months", "leaf::bake_leaf_page"]),
+    (
+        "leaf.page",
+        "",
+        &[
+            "leaf::check_leaf_page",
+            "leaf::placeholders",
+            "leaf::split_months",
+            "leaf::bake_leaf_page",
+        ],
+    ),
     // each country the question names on its own is printed from its rows or named as having no data, never said to lack
     // data it has, never dropped silently (spec.asked_places, the knowledge group's words)
-    ("leaf.places_answered", "", &["leaf::places_answered", "leaf::entry_places"]),
+    (
+        "leaf.places_answered",
+        "",
+        &["leaf::places_answered", "leaf::entry_places"],
+    ),
     // a page for a country group says the member basis its request keeps (knowledge group words), year and count from its
     // entries, the count at that year and over the members only
     ("leaf.member_basis", "", &["leaf::basis_said"]),
     // the group command (next_visual.rs): each external layer prints the geometry the core placed
-    ("visual.drawn_check", "", &["visual::drawn_checked", "visual::attr", "visual::tags_in", "visual::circles_drawn"]),
+    (
+        "visual.drawn_check",
+        "",
+        &[
+            "visual::drawn_checked",
+            "visual::attr",
+            "visual::tags_in",
+            "visual::circles_drawn",
+        ],
+    ),
     // the browser check of the page, a pass only for these bytes
-    ("visual.browser_check", "", &["visual::browser_check", "visual::passed"]),
-    ("visual.one_mark_per_period", "", &["visual::one_mark_per_period"]),
+    (
+        "visual.browser_check",
+        "",
+        &["visual::browser_check", "visual::passed"],
+    ),
+    (
+        "visual.one_mark_per_period",
+        "",
+        &["visual::one_mark_per_period"],
+    ),
     // the strip's piece set in the page palette's colours
     ("visual.strip_palette", "", &["visual::illus_strip"]),
     // the map label points the binary embeds: each on the globe, else the table is refused
@@ -1359,22 +2312,47 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     // the command: the page check's findings stop the page; a knob request names a leaf's number knob
     ("visual.command", "", &["visual::call"]),
     // the node registry (next_nodes.rs): a knob set within its range, else refused with the range and one example
-    ("nodes.knob_range", "", &["nodes::check", "nodes::range_text", "nodes::set", "nodes::find"]),
+    (
+        "nodes.knob_range",
+        "",
+        &[
+            "nodes::check",
+            "nodes::range_text",
+            "nodes::set",
+            "nodes::find",
+        ],
+    ),
     // a node's registration: defaults in range, ranges sound, no name twice, every layer's node drawn by code
-    ("nodes.registration", "", &["nodes::check_info", "nodes::layered"]),
+    (
+        "nodes.registration",
+        "",
+        &["nodes::check_info", "nodes::layered"],
+    ),
     // the Rust column page (next_render.rs): every number its spec prints, for the number checks to read
     ("render.spec_numbers", "", &["render::nums", "render::of"]),
     ("render.accent_colour", "", &["render::is_hex_colour"]),
     // a bars frame with rows whose values it can draw, a page whose every card draws
-    ("render.page_refusals", "", &["render::new", "render::render"]),
+    (
+        "render.page_refusals",
+        "",
+        &["render::new", "render::render"],
+    ),
     // the chart matcher (shape_registry.rs): a template that cannot hold every varying dimension does not pass
     ("shape.gate", "", &["shape::gate", "shape::judge"]),
     // a slice cut to its cap by shape alone, a remaining dimension that adds up or has a total row, a first-to-last
     // view only of a slice whose time collapses; else refused (every relation rejected with its reason)
-    ("shape.slice_fits", "", &["shape::fit", "shape::rank_by", "shape::rank_first_to_last"]),
+    (
+        "shape.slice_fits",
+        "",
+        &["shape::fit", "shape::rank_by", "shape::rank_first_to_last"],
+    ),
     // the entries that run the kinds above and refuse nothing themselves (the test below holds it): the leaf panel and
     // page draws
-    ("entry", "", &["leaf::draw", "leaf::draw_page", "leaf::draw_page_given"]),
+    (
+        "entry",
+        "",
+        &["leaf::draw", "leaf::draw_page", "leaf::draw_page_given"],
+    ),
 ];
 
 /// The non-test fns of CHECK_FILES that implement no check: JSON and HTML reading and writing (Python-compatible where
@@ -1383,46 +2361,163 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
 #[allow(dead_code)] // read by its test and by scripts/reuse_rate.py
 pub const CHECK_HELPERS: &[&str] = &[
     "tree_gen::page_scale",
-    "ledger::name_src", "ledger::point_entry", "ledger::dropped_entry", "ledger::esc", "ledger::unescape",
-    "ledger::tag_parts", "ledger::tag_end", "ledger::attr", "ledger::elements", "ledger::text_outside",
-    "ledger::printed", "ledger::word_table", "ledger::h1_states_relation", "facts::stored_request", "tree::eq", "tree::num_like", "tree::finite",
-    "tree::get", "tree::g", "tree::has", "tree::at", "tree::s", "tree::arr", "tree::obj", "tree::is_obj",
-    "tree::is_arr", "tree::is_null", "tree::truthy", "tree::get_mut", "tree::set", "tree::remove", "tree::str",
-    "tree::obj_of", "tree::strs", "tree::repr", "tree::dump", "tree::to_value", "tree::from_value", "tree::py_float",
-    "tree::py_str_repr", "tree::repr_into", "tree::st", "tree::dump_into", "tree::ws", "tree::lit",
-    "tree::walk", "tree::go", "tree::new", "tree::xml", "tree::num_attr",
-    "tree::svg", "tree::bindings", "tree::registry_in_force", "tree::node_in", "tree::placed_of",
-    "tree_gen::frame_knobs", "tree_gen::in_input_order", "tree_gen::node_of", "tree_gen::order_of",
-    "tree_gen::parts_selects", "tree_gen::place_src", "tree_gen::row_num", "tree_gen::runs_named", "tree_gen::subx",
-    "leaf::sampled", "leaf::node", "leaf::python", "leaf::leaves", "leaf::word", "leaf::words", "leaf::name",
-    "leaf::knobs", "leaf::stop", "leaf::reserved", "visual::recipe_layers", "visual::expand", "visual::stack_html",
-    "nodes::add", "nodes::add_line", "nodes::default", "nodes::default_val", "nodes::fmt", "nodes::get", "nodes::hit",
-    "nodes::list", "nodes::names", "nodes::num", "nodes::on_line", "nodes::place", "nodes::tw", "nodes::walk",
-    "nodes::within", "nodes::word", "render::bar_card", "render::draw_bars", "render::draw_cards",
-    "render::draw_header", "render::draw_hero", "render::draw_highlight", "render::draw_prose",
-    "render::draw_value_labels", "render::height", "render::mid", "render::reserve_bars", "render::seg",
-    "render::seg_text", "render::x", "shape::axis", "shape::base", "shape::cap", "shape::collapse_time",
-    "shape::explain", "shape::first_to_last", "shape::has", "shape::name", "shape::page_plan", "shape::parts_index",
-    "shape::rank", "shape::rows", "shape::score", "shape::template", "shape::time_index",
-    "visual::keylike_env_name", "visual::strip_keylike_env",
+    "ledger::name_src",
+    "ledger::point_entry",
+    "ledger::dropped_entry",
+    "ledger::esc",
+    "ledger::unescape",
+    "ledger::tag_parts",
+    "ledger::tag_end",
+    "ledger::attr",
+    "ledger::elements",
+    "ledger::text_outside",
+    "ledger::printed",
+    "ledger::word_table",
+    "ledger::h1_states_relation",
+    "facts::stored_request",
+    "tree::eq",
+    "tree::num_like",
+    "tree::finite",
+    "tree::get",
+    "tree::g",
+    "tree::has",
+    "tree::at",
+    "tree::s",
+    "tree::arr",
+    "tree::obj",
+    "tree::is_obj",
+    "tree::is_arr",
+    "tree::is_null",
+    "tree::truthy",
+    "tree::get_mut",
+    "tree::set",
+    "tree::remove",
+    "tree::str",
+    "tree::obj_of",
+    "tree::strs",
+    "tree::repr",
+    "tree::dump",
+    "tree::to_value",
+    "tree::from_value",
+    "tree::py_float",
+    "tree::py_str_repr",
+    "tree::repr_into",
+    "tree::st",
+    "tree::dump_into",
+    "tree::ws",
+    "tree::lit",
+    "tree::walk",
+    "tree::go",
+    "tree::new",
+    "tree::xml",
+    "tree::num_attr",
+    "tree::svg",
+    "tree::bindings",
+    "tree::registry_in_force",
+    "tree::node_in",
+    "tree::placed_of",
+    "tree_gen::frame_knobs",
+    "tree_gen::in_input_order",
+    "tree_gen::node_of",
+    "tree_gen::order_of",
+    "tree_gen::parts_selects",
+    "tree_gen::place_src",
+    "tree_gen::row_num",
+    "tree_gen::runs_named",
+    "tree_gen::subx",
+    "leaf::sampled",
+    "leaf::node",
+    "leaf::python",
+    "leaf::leaves",
+    "leaf::word",
+    "leaf::words",
+    "leaf::name",
+    "leaf::knobs",
+    "leaf::stop",
+    "leaf::reserved",
+    "visual::recipe_layers",
+    "visual::expand",
+    "visual::stack_html",
+    "nodes::add",
+    "nodes::add_line",
+    "nodes::default",
+    "nodes::default_val",
+    "nodes::fmt",
+    "nodes::get",
+    "nodes::hit",
+    "nodes::list",
+    "nodes::names",
+    "nodes::num",
+    "nodes::on_line",
+    "nodes::place",
+    "nodes::tw",
+    "nodes::walk",
+    "nodes::within",
+    "nodes::word",
+    "render::bar_card",
+    "render::draw_bars",
+    "render::draw_cards",
+    "render::draw_header",
+    "render::draw_hero",
+    "render::draw_highlight",
+    "render::draw_prose",
+    "render::draw_value_labels",
+    "render::height",
+    "render::mid",
+    "render::reserve_bars",
+    "render::seg",
+    "render::seg_text",
+    "render::x",
+    "shape::axis",
+    "shape::base",
+    "shape::cap",
+    "shape::collapse_time",
+    "shape::explain",
+    "shape::first_to_last",
+    "shape::has",
+    "shape::name",
+    "shape::page_plan",
+    "shape::parts_index",
+    "shape::rank",
+    "shape::rows",
+    "shape::score",
+    "shape::template",
+    "shape::time_index",
+    "visual::keylike_env_name",
+    "visual::strip_keylike_env",
 ];
 
 /// The comparison set of a request row, from the request's rows alone: every series row of the same table and time but a
 /// total row's (one whose code on a dim that varies among them is a total_row: the whole is not one of its parts), and the
 /// dims whose code differs among them (the varying dims). None when `src` is no series row, or a total row.
 fn row_family<'r>(src: &str, rows: &'r [Row]) -> Option<(Vec<&'r Row>, Vec<String>)> {
-    let me = rows.iter().find(|r| r.src == src && r.src.starts_with(SERIES_SRC))?;
+    let me = rows
+        .iter()
+        .find(|r| r.src == src && r.src.starts_with(SERIES_SRC))?;
     let vary = |same: &[&Row]| -> Vec<String> {
-        let dims: std::collections::BTreeSet<&String> = same.iter().flat_map(|r| r.dims.keys()).collect();
+        let dims: std::collections::BTreeSet<&String> =
+            same.iter().flat_map(|r| r.dims.keys()).collect();
         dims.into_iter()
-            .filter(|d| same.iter().map(|r| r.dims.get(*d)).collect::<std::collections::BTreeSet<_>>().len() > 1)
+            .filter(|d| {
+                same.iter()
+                    .map(|r| r.dims.get(*d))
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .len()
+                    > 1
+            })
             .cloned()
             .collect()
     };
-    let all: Vec<&Row> =
-        rows.iter().filter(|r| r.src.starts_with(SERIES_SRC) && r.table == me.table && r.time == me.time).collect();
+    let all: Vec<&Row> = rows
+        .iter()
+        .filter(|r| r.src.starts_with(SERIES_SRC) && r.table == me.table && r.time == me.time)
+        .collect();
     let varying = vary(&all);
-    let whole = |r: &Row| varying.iter().any(|d| r.dims.get(d).is_some_and(|c| total_row(&r.table, d, c)));
+    let whole = |r: &Row| {
+        varying
+            .iter()
+            .any(|d| r.dims.get(d).is_some_and(|c| total_row(&r.table, d, c)))
+    };
     if whole(me) {
         return None;
     }
@@ -1446,7 +2541,13 @@ pub(crate) fn ratio_free_unit(unit: &str) -> bool {
         .get_or_init(|| {
             serde_json::from_str::<serde_json::Value>(crate::next_knowledge::RATIO_FREE_UNITS)
                 .ok()
-                .and_then(|v| v["codes"].as_array().map(|a| a.iter().filter_map(|c| c.as_str().map(String::from)).collect()))
+                .and_then(|v| {
+                    v["codes"].as_array().map(|a| {
+                        a.iter()
+                            .filter_map(|c| c.as_str().map(String::from))
+                            .collect()
+                    })
+                })
                 .unwrap_or_default()
         })
         .iter()
@@ -1455,12 +2556,20 @@ pub(crate) fn ratio_free_unit(unit: &str) -> bool {
 
 pub(crate) fn total_row(table: &str, dim: &str, code: &str) -> bool {
     code == crate::next_facts::TOTAL_CODE
-        || crate::next_tree::parts_rows().is_ok_and(|rows| rows.iter().any(|r| r[0] == table && r[1] == dim && r[2] == code && r[3] == "total"))
+        || crate::next_tree::parts_rows().is_ok_and(|rows| {
+            rows.iter()
+                .any(|r| r[0] == table && r[1] == dim && r[2] == code && r[3] == "total")
+        })
 }
 
 /// A claim's subject (its fact key or row src), its derived set with each member's computed value, its subject codes and
 /// the member codes of its set.
-type Claimed = (String, Vec<(String, Option<f64>)>, Vec<String>, std::collections::BTreeSet<String>);
+type Claimed = (
+    String,
+    Vec<(String, Option<f64>)>,
+    Vec<String>,
+    std::collections::BTreeSet<String>,
+);
 
 /// claim_holds: every element with data-claim states the claim a number-free title makes, over a set this check derives
 /// from the request (never from the page; a data-of or data-scope it carries is not read):
@@ -1481,107 +2590,180 @@ type Claimed = (String, Vec<(String, Option<f64>)>, Vec<String>, std::collection
 ///   C9 a value fact's set is comparison's (C4 over it too), and the scope rule holds (scope_said): a set narrower than
 ///      the full set says the scope phrase, one over the full set (a request row's always) does not.
 /// One line per finding; empty when the page passes (a page with no data-claim passes).
-pub fn check_claims(html: &str, ledger: &BTreeMap<String, String>, spec: &Spec, facts: &[Fact], rows: &[Row]) -> Vec<String> {
+pub fn check_claims(
+    html: &str,
+    ledger: &BTreeMap<String, String>,
+    spec: &Spec,
+    facts: &[Fact],
+    rows: &[Row],
+) -> Vec<String> {
     let mut off = Vec::new();
     let els = elements(html);
     let value = |k: &str| facts.iter().find(|f| f.key == k).map(|f| f.v);
     for e in els.iter().filter(|e| e.attr("data-claim").is_some()) {
         let body = &html[e.inner.clone()];
         let shown = text_outside(body, "\0");
-        let h1 = els.iter().find(|h| h.name == "h1" && !std::ptr::eq(*h, e) && h.inner.contains(&e.inner.start));
+        let h1 = els
+            .iter()
+            .find(|h| h.name == "h1" && !std::ptr::eq(*h, e) && h.inner.contains(&e.inner.start));
         if h1.is_none_or(|h| text_outside(&html[h.inner.clone()], "\0").trim() != shown.trim()) {
             off.push(format!("{shown:?}: a claim is the whole of an h1 (C1)"));
             continue;
         }
         if e.attr("data-claim") != Some("max") {
-            off.push(format!("{shown:?}: data-claim {:?} is not max (C2)", e.attr("data-claim").unwrap_or_default()));
+            off.push(format!(
+                "{shown:?}: data-claim {:?} is not max (C2)",
+                e.attr("data-claim").unwrap_or_default()
+            ));
             continue;
         }
         let src = e.attr("data-a").unwrap_or_default();
-        let def = src.strip_prefix("fact:").and_then(|k| spec.facts.iter().find(|(key, _)| key == k));
+        let def = src
+            .strip_prefix("fact:")
+            .and_then(|k| spec.facts.iter().find(|(key, _)| key == k));
         let mut scoped = false;
-        let (me, set, subject, members): Claimed =
-            if let Some((k, q)) = def {
-                let code = q["filter"].as_object().filter(|f| f.len() == 1).and_then(|f| f.values().next());
-                let Some(code) = code.and_then(Value::as_str) else {
-                    off.push(format!("{shown:?}: {k} is a merged node or filters no one code, no subject (C3)"));
-                    continue;
-                };
-                let mut members = std::collections::BTreeSet::new();
-                let alike = spec.facts.iter().map(|(_, o)| o).filter(|o| o["op"] == "value" && o["table"] == q["table"] && o["time"] == q["time"]);
-                for v in alike.filter_map(|o| o["filter"].as_object()).flat_map(|f| f.values()) {
-                    match v {
-                        Value::String(c) => {
-                            members.insert(c.clone());
-                        }
-                        Value::Array(cs) => members.extend(cs.iter().filter_map(Value::as_str).map(str::to_string)),
-                        _ => {}
-                    }
-                }
-                let mut set: Vec<(String, Option<f64>)> = family(k, spec).into_iter().map(|o| (o.to_string(), value(o))).collect();
-                if set.iter().any(|(_, v)| v.is_none()) {
-                    off.push(format!("{shown:?}: a fact of the set of {k} has no computed value (C3)"));
-                    continue;
-                }
-                // C9: the set compared over is comparison's, the codes the rows let the check compute alike with it
-                let Some((all, narrower)) = comparison(k, spec, rows, facts) else {
-                    off.push(format!("{shown:?}: the rows hold a code of the set of {k} its definition cannot read alike (C9)"));
-                    continue;
-                };
-                set.extend(all.iter().filter(|m| m.key.is_none()).map(|m| (m.label(), Some(m.v))));
-                scoped = narrower;
-                (k.clone(), set, vec![code.to_string()], members)
-            } else if let Some((same, vary)) = row_family(src, rows) {
-                let Some(subject) = same.iter().find(|r| r.src == src).and_then(|r| vary.iter().map(|d| r.dims.get(d).cloned()).collect::<Option<Vec<_>>>())
-                else {
-                    off.push(format!("{shown:?}: {src} holds no code on a dimension its set varies on (C3)"));
-                    continue;
-                };
-                let members = same.iter().flat_map(|r| vary.iter().filter_map(move |d| r.dims.get(d).cloned())).collect();
-                (src.to_string(), same.iter().map(|r| (r.src.clone(), Some(r.value))).collect(), subject, members)
-            } else {
-                off.push(format!("{shown:?}: data-a {src:?} is neither a value fact nor a request row (C3)"));
+        let (me, set, subject, members): Claimed = if let Some((k, q)) = def {
+            let code = q["filter"]
+                .as_object()
+                .filter(|f| f.len() == 1)
+                .and_then(|f| f.values().next());
+            let Some(code) = code.and_then(Value::as_str) else {
+                off.push(format!(
+                    "{shown:?}: {k} is a merged node or filters no one code, no subject (C3)"
+                ));
                 continue;
             };
+            let mut members = std::collections::BTreeSet::new();
+            let alike = spec.facts.iter().map(|(_, o)| o).filter(|o| {
+                o["op"] == "value" && o["table"] == q["table"] && o["time"] == q["time"]
+            });
+            for v in alike
+                .filter_map(|o| o["filter"].as_object())
+                .flat_map(|f| f.values())
+            {
+                match v {
+                    Value::String(c) => {
+                        members.insert(c.clone());
+                    }
+                    Value::Array(cs) => {
+                        members.extend(cs.iter().filter_map(Value::as_str).map(str::to_string))
+                    }
+                    _ => {}
+                }
+            }
+            let mut set: Vec<(String, Option<f64>)> = family(k, spec)
+                .into_iter()
+                .map(|o| (o.to_string(), value(o)))
+                .collect();
+            if set.iter().any(|(_, v)| v.is_none()) {
+                off.push(format!(
+                    "{shown:?}: a fact of the set of {k} has no computed value (C3)"
+                ));
+                continue;
+            }
+            // C9: the set compared over is comparison's, the codes the rows let the check compute alike with it
+            let Some((all, narrower)) = comparison(k, spec, rows, facts) else {
+                off.push(format!("{shown:?}: the rows hold a code of the set of {k} its definition cannot read alike (C9)"));
+                continue;
+            };
+            set.extend(
+                all.iter()
+                    .filter(|m| m.key.is_none())
+                    .map(|m| (m.label(), Some(m.v))),
+            );
+            scoped = narrower;
+            (k.clone(), set, vec![code.to_string()], members)
+        } else if let Some((same, vary)) = row_family(src, rows) {
+            let Some(subject) = same.iter().find(|r| r.src == src).and_then(|r| {
+                vary.iter()
+                    .map(|d| r.dims.get(d).cloned())
+                    .collect::<Option<Vec<_>>>()
+            }) else {
+                off.push(format!(
+                    "{shown:?}: {src} holds no code on a dimension its set varies on (C3)"
+                ));
+                continue;
+            };
+            let members = same
+                .iter()
+                .flat_map(|r| vary.iter().filter_map(move |d| r.dims.get(d).cloned()))
+                .collect();
+            (
+                src.to_string(),
+                same.iter()
+                    .map(|r| (r.src.clone(), Some(r.value)))
+                    .collect(),
+                subject,
+                members,
+            )
+        } else {
+            off.push(format!(
+                "{shown:?}: data-a {src:?} is neither a value fact nor a request row (C3)"
+            ));
+            continue;
+        };
         if set.len() < 2 {
             off.push(format!("{shown:?}: {me} has no comparison set (C3)"));
             continue;
         }
         let mine = set.iter().find(|(k, _)| *k == me).and_then(|(_, v)| *v);
         if mine.is_none() || !set.iter().filter(|(k, _)| *k != me).all(|(_, v)| mine > *v) {
-            off.push(format!("{shown:?}: max does not hold for {me} over its derived set of {} (C4)", set.len()));
+            off.push(format!(
+                "{shown:?}: max does not hold for {me} over its derived set of {} (C4)",
+                set.len()
+            ));
         }
         let seen = printed(body);
-        if shown.chars().any(|c| c.is_ascii_digit() || ('\u{ff10}'..='\u{ff19}').contains(&c)) || seen.iter().any(|p| p.starts_with("fact:")) {
+        if shown
+            .chars()
+            .any(|c| c.is_ascii_digit() || ('\u{ff10}'..='\u{ff19}').contains(&c))
+            || seen.iter().any(|p| p.starts_with("fact:"))
+        {
             off.push(format!("{shown:?}: a claim title carries no number (C5)"));
         }
         let names: Vec<&String> = seen.iter().filter(|p| p.starts_with(LABEL_SRC)).collect();
         for c in &subject {
             if !names.iter().any(|p| p.ends_with(&format!(":{c}"))) {
-                off.push(format!("{shown:?}: the subject {c} is not named by its name row (C6)"));
+                off.push(format!(
+                    "{shown:?}: the subject {c} is not named by its name row (C6)"
+                ));
             }
         }
         let others: Vec<&String> = members.iter().filter(|c| !subject.contains(*c)).collect();
         for p in &names {
             if let Some(c) = others.iter().find(|o| p.ends_with(&format!(":{o}"))) {
-                off.push(format!("{shown:?}: names {c}, a member that is not the subject (C6)"));
+                off.push(format!(
+                    "{shown:?}: names {c}, a member that is not the subject (C6)"
+                ));
             }
         }
         let bare = text_outside(body, "data-src");
         for c in &others {
-            let rows_of = ledger.iter().filter(|(s, t)| s.starts_with(LABEL_SRC) && s.ends_with(&format!(":{c}")) && !t.is_empty());
+            let rows_of = ledger.iter().filter(|(s, t)| {
+                s.starts_with(LABEL_SRC) && s.ends_with(&format!(":{c}")) && !t.is_empty()
+            });
             for (_, name) in rows_of {
                 let two: String = name.chars().take(2).collect();
-                let aliases = if name.chars().count() > 2 { vec![name.clone(), two] } else { vec![name.clone()] };
+                let aliases = if name.chars().count() > 2 {
+                    vec![name.clone(), two]
+                } else {
+                    vec![name.clone()]
+                };
                 for a in aliases.iter().filter(|a| bare.contains(a.as_str())) {
-                    off.push(format!("{shown:?}: {a:?} names {c}, a member that is not the subject (C7)"));
+                    off.push(format!(
+                        "{shown:?}: {a:?} names {c}, a member that is not the subject (C7)"
+                    ));
                 }
             }
         }
         if !claim_list("max").iter().any(|w| bare.contains(w)) {
             off.push(format!("{shown:?}: its words state no max (C8)"));
         }
-        let held: Vec<&str> = claim_list("off").iter().copied().filter(|w| bare.contains(w)).collect();
+        let held: Vec<&str> = claim_list("off")
+            .iter()
+            .copied()
+            .filter(|w| bare.contains(w))
+            .collect();
         if !held.is_empty() {
             off.push(format!("{shown:?}: its words hold {held:?}, another relation or a qualifier the claim does not state (C8)"));
         }
@@ -1603,9 +2785,13 @@ mod tests {
         let column = r#"<h1><span data-cmp="max" data-a="fact:hi"><span data-src="name:zh_names:iso2:SE">瑞典</span>最高</span></h1>"#;
         let claim = r#"<h1><span data-claim="max" data-a="fact:val.SE">瑞典居首</span></h1>"#;
         let label = r#"<h1>各国可再生能源占比排名</h1><svg><text data-cmp="next" data-a="fact:a" data-b="fact:b">比第二名高</text></svg>"#;
-        assert!(h1_states_relation(flow) && h1_states_relation(column) && h1_states_relation(claim));
+        assert!(
+            h1_states_relation(flow) && h1_states_relation(column) && h1_states_relation(claim)
+        );
         assert!(!h1_states_relation(label));
-        assert!(!h1_states_relation("<p class=\"dek\"><span data-cmp=\"next\">x</span></p>"));
+        assert!(!h1_states_relation(
+            "<p class=\"dek\"><span data-cmp=\"next\">x</span></p>"
+        ));
     }
 
     fn num(src: &str, value: f64, text: &str) -> Num {
@@ -1632,13 +2818,19 @@ mod tests {
     fn a_dropped_entry_names_its_layer_and_id_and_says_why() {
         assert_eq!(
             dropped_entry("leader_notes", "AT", "no free place for the note"),
-            ("dropped:leader_notes:AT".to_string(), "no free place for the note".to_string())
+            (
+                "dropped:leader_notes:AT".to_string(),
+                "no free place for the note".to_string()
+            )
         );
     }
 
     #[test]
     fn a_map_point_entry_names_its_table_and_hash() {
-        assert_eq!(point_entry("ne", "ab12", "DE", [9.678348, -50.5]), ("point:ne@ab12:DE".to_string(), "9.678348,-50.5".to_string()));
+        assert_eq!(
+            point_entry("ne", "ab12", "DE", [9.678348, -50.5]),
+            ("point:ne@ab12:DE".to_string(), "9.678348,-50.5".to_string())
+        );
     }
 
     /// A small page put together the way a node would: a headline, a big number, prose with a year from its data row,
@@ -1740,12 +2932,17 @@ mod tests {
             .any(|f| f.contains("the digits 12")));
         // only the program's unanswered line may say a part cannot be answered: a model's words saying it are refused
         let typed_line = format!("{}<p>失业率这一半答不了</p>", sample().0);
-        assert!(check_numbers(&typed_line, &ledger, &refs()).iter().any(|f| f.contains("only the program's unanswered line may")));
+        assert!(check_numbers(&typed_line, &ledger, &refs())
+            .iter()
+            .any(|f| f.contains("only the program's unanswered line may")));
         let program_line = format!(
             "{}<p class=\"unanswered\" data-asked=\"population\">本题还问到人口，目录里没有能对上的表，这一半答不了。</p>",
             sample().0
         );
-        assert_eq!(check_numbers(&program_line, &ledger, &refs()), check_numbers(&sample().0, &ledger, &refs()));
+        assert_eq!(
+            check_numbers(&program_line, &ledger, &refs()),
+            check_numbers(&sample().0, &ledger, &refs())
+        );
         // a year printed as plain words is not exempt: it must come from its data row through the ledger
         let year = sample().0.replacen(
             "<span class=\"n\" data-src=\"series:s1:time\">2025</span>",
@@ -1816,15 +3013,26 @@ mod tests {
         assert!(check_numbers(&unknown, &ledger, &refs())
             .iter()
             .any(|f| f.contains("not in the ledger")));
-        let cdata = html.replacen("</body>", "<svg><text><![CDATA[44%]]></text></svg></body>", 1);
+        let cdata = html.replacen(
+            "</body>",
+            "<svg><text><![CDATA[44%]]></text></svg></body>",
+            1,
+        );
         assert!(check_numbers(&cdata, &ledger, &refs())
             .iter()
             .any(|f| f.contains("CDATA section is not read")));
-        for early in ["<!--><b>44</b>-->", "<!---><b>44</b>-->", "<!-- x --!><b>44</b><!-- -->"] {
+        for early in [
+            "<!--><b>44</b>-->",
+            "<!---><b>44</b>-->",
+            "<!-- x --!><b>44</b><!-- -->",
+        ] {
             let page = html.replacen("</body>", &format!("{early}</body>"), 1);
-            assert!(check_numbers(&page, &ledger, &refs())
-                .iter()
-                .any(|f| f.contains("ends early")), "{early}");
+            assert!(
+                check_numbers(&page, &ledger, &refs())
+                    .iter()
+                    .any(|f| f.contains("ends early")),
+                "{early}"
+            );
         }
         let bogus = html.replacen("</body>", "<!x 7></body>", 1);
         assert!(check_numbers(&bogus, &ledger, &refs())
@@ -1929,17 +3137,94 @@ mod tests {
     /// nrg_bal, a merged node on each side, and one fact of another op.
     fn flow_request() -> (Spec, Vec<Fact>, BTreeMap<String, String>) {
         let nodes: [(&str, &str, Value, f64, &str, &str); 11] = [
-            ("from.O4000XBIO", "siec", json!("O4000XBIO"), 60699.059, "60,699.06", "Oil"),
-            ("from.G3000", "siec", json!("G3000"), 45028.241, "45,028.24", "Gas"),
-            ("from.E7000", "siec", json!("E7000"), 40566.981, "40,566.98", "Power"),
-            ("from.RA000", "siec", json!("RA000"), 16893.734, "16,893.73", "Renewables"),
-            ("from.H8000", "siec", json!("H8000"), 8682.741, "8,682.74", "Heat"),
-            ("from_other", "siec", json!(["C0000X0350-0370", "C0350-0370", "W6100_6220"]), 5874.307, "5,874.31", ""),
-            ("to.FC_OTH_HH_E", "nrg_bal", json!("FC_OTH_HH_E"), 52455.833, "52,455.83", "Homes"),
-            ("to.FC_TRA_E", "nrg_bal", json!("FC_TRA_E"), 49522.114, "49,522.11", "Transport"),
-            ("to.FC_IND_E", "nrg_bal", json!("FC_IND_E"), 48368.385, "48,368.38", "Industry"),
-            ("to.FC_OTH_CP_E", "nrg_bal", json!("FC_OTH_CP_E"), 23800.773, "23,800.77", "Services"),
-            ("to_other", "nrg_bal", json!(["FC_OTH_AF_E", "FC_OTH_FISH_E", "FC_OTH_NSP_E"]), 3597.958, "3,597.96", ""),
+            (
+                "from.O4000XBIO",
+                "siec",
+                json!("O4000XBIO"),
+                60699.059,
+                "60,699.06",
+                "Oil",
+            ),
+            (
+                "from.G3000",
+                "siec",
+                json!("G3000"),
+                45028.241,
+                "45,028.24",
+                "Gas",
+            ),
+            (
+                "from.E7000",
+                "siec",
+                json!("E7000"),
+                40566.981,
+                "40,566.98",
+                "Power",
+            ),
+            (
+                "from.RA000",
+                "siec",
+                json!("RA000"),
+                16893.734,
+                "16,893.73",
+                "Renewables",
+            ),
+            (
+                "from.H8000",
+                "siec",
+                json!("H8000"),
+                8682.741,
+                "8,682.74",
+                "Heat",
+            ),
+            (
+                "from_other",
+                "siec",
+                json!(["C0000X0350-0370", "C0350-0370", "W6100_6220"]),
+                5874.307,
+                "5,874.31",
+                "",
+            ),
+            (
+                "to.FC_OTH_HH_E",
+                "nrg_bal",
+                json!("FC_OTH_HH_E"),
+                52455.833,
+                "52,455.83",
+                "Homes",
+            ),
+            (
+                "to.FC_TRA_E",
+                "nrg_bal",
+                json!("FC_TRA_E"),
+                49522.114,
+                "49,522.11",
+                "Transport",
+            ),
+            (
+                "to.FC_IND_E",
+                "nrg_bal",
+                json!("FC_IND_E"),
+                48368.385,
+                "48,368.38",
+                "Industry",
+            ),
+            (
+                "to.FC_OTH_CP_E",
+                "nrg_bal",
+                json!("FC_OTH_CP_E"),
+                23800.773,
+                "23,800.77",
+                "Services",
+            ),
+            (
+                "to_other",
+                "nrg_bal",
+                json!(["FC_OTH_AF_E", "FC_OTH_FISH_E", "FC_OTH_NSP_E"]),
+                3597.958,
+                "3,597.96",
+                "",
+            ),
         ];
         let fact = |key: &str, op: &str, v: f64, fmt: &str| Fact {
             key: key.into(),
@@ -1952,9 +3237,13 @@ mod tests {
             reads: Vec::new(),
             exact: None,
         };
-        let mut defs = vec![("zero_flows".to_string(), json!({"op": "zeros", "table": "nrg_bal_c", "time": "2024", "fmt": "n"}))];
+        let mut defs = vec![(
+            "zero_flows".to_string(),
+            json!({"op": "zeros", "table": "nrg_bal_c", "time": "2024", "fmt": "n"}),
+        )];
         let mut facts = vec![fact("zero_flows", "zeros", 12.0, "n")];
-        let mut ledger = BTreeMap::from([("name:unit_short_zh:KTOE".to_string(), "ktoe".to_string())]);
+        let mut ledger =
+            BTreeMap::from([("name:unit_short_zh:KTOE".to_string(), "ktoe".to_string())]);
         for (key, dim, code, v, text, name) in nodes {
             defs.push((key.into(), json!({"op": "value", "table": "nrg_bal_c", "time": "2024", "fmt": "ktoe", "filter": {dim: code}})));
             facts.push(fact(key, "value", v, "ktoe"));
@@ -1963,12 +3252,26 @@ mod tests {
                 ledger.insert(format!("name:zh_names:{dim}:{code}"), name.into());
             }
         }
-        (Spec { facts: defs, fmts: json!({}), members: None, asked_places: None, basis: None }, facts, ledger)
+        (
+            Spec {
+                facts: defs,
+                fmts: json!({}),
+                members: None,
+                asked_places: None,
+                basis: None,
+            },
+            facts,
+            ledger,
+        )
     }
 
     /// A node's name and its value marked as the leaf prints them (svg: tspan, html: span), the value bold.
     fn named_value(tag: &str, dim: &str, code: &str, name: &str, key: &str, text: &str) -> String {
-        let bold = if tag == "span" { ("<b class=\"n\">", "</b>") } else { ("<tspan font-weight=\"700\">", "</tspan>") };
+        let bold = if tag == "span" {
+            ("<b class=\"n\">", "</b>")
+        } else {
+            ("<tspan font-weight=\"700\">", "</tspan>")
+        };
         format!("<{tag} data-src=\"name:zh_names:{dim}:{code}\">{name}</{tag}> {}<{tag} data-src=\"fact:{key}.n\">{text}</{tag}>{}", bold.0, bold.1)
     }
 
@@ -2010,13 +3313,26 @@ mod tests {
     #[test]
     fn a_flow_finding_holds_over_the_set_its_fact_definitions_give() {
         let (spec, facts, _) = flow_request();
-        assert_eq!(family("from.G3000", &spec), ["from.E7000", "from.G3000", "from.H8000", "from.O4000XBIO", "from.RA000", "from_other"]);
+        assert_eq!(
+            family("from.G3000", &spec),
+            [
+                "from.E7000",
+                "from.G3000",
+                "from.H8000",
+                "from.O4000XBIO",
+                "from.RA000",
+                "from_other"
+            ]
+        );
         assert_eq!(family("to_other", &spec).len(), 5);
         assert!(family("zero_flows", &spec).is_empty() && family("nothing", &spec).is_empty());
         assert_eq!(fact_key("fact:from.G3000.n", &spec), Some("from.G3000"));
         assert_eq!(fact_key("fact:from_other", &spec), Some("from_other"));
         assert_eq!(fact_key("series:from.G3000", &spec), None);
-        assert_eq!(new_checks(&flow_page(), &facts), (Vec::<String>::new(), Vec::<String>::new()));
+        assert_eq!(
+            new_checks(&flow_page(), &facts),
+            (Vec::<String>::new(), Vec::<String>::new())
+        );
         // a page with no relation marked is out of both checks' way, its accent unnamed included
         let plain = "<h1>Energy</h1><svg><circle fill=\"var(--accent)\" data-code=\"DE\"/></svg>";
         assert_eq!(new_checks(plain, &facts).0, Vec::<String>::new());
@@ -2029,25 +3345,70 @@ mod tests {
         let page = flow_page();
         let word = relation_words("next")[0].clone();
         let refused = |html: &str| !new_checks(html, &facts).0.is_empty();
-        assert!(refused(&page.replacen(&word, "x", 2)), "F6 a note without its comparison word");
+        assert!(
+            refused(&page.replacen(&word, "x", 2)),
+            "F6 a note without its comparison word"
+        );
         let swapped = page.replacen(
             "data-a=\"fact:from.O4000XBIO.n\" data-b=\"fact:from.G3000.n\"",
             "data-a=\"fact:from.G3000.n\" data-b=\"fact:from.O4000XBIO.n\"",
             1,
         );
         assert!(refused(&swapped), "F7 a note's two entries swapped");
-        assert!(refused(&page.replacen("data-b=\"fact:from.G3000.n\"", "data-b=\"fact:from.O4000XBIO.n\"", 1)), "F8 compared with itself");
-        assert!(refused(&page.replacen(" data-cmp=\"next\"", "", 1)), "F9 a note with no comparison marked");
-        assert!(refused(&page.replacen("data-b=\"fact:from.G3000.n\"", "data-b=\"fact:from.E7000.n\"", 1)), "F10 an entry it does not print");
-        let moved = page.replacen("fill=\"var(--accent)\" data-code=\"O4000XBIO\"", "fill=\"var(--accent)\" data-code=\"G3000\"", 1);
-        assert!(refused(&moved), "F11 the accent on an entity the title does not name");
+        assert!(
+            refused(&page.replacen(
+                "data-b=\"fact:from.G3000.n\"",
+                "data-b=\"fact:from.O4000XBIO.n\"",
+                1
+            )),
+            "F8 compared with itself"
+        );
+        assert!(
+            refused(&page.replacen(" data-cmp=\"next\"", "", 1)),
+            "F9 a note with no comparison marked"
+        );
+        assert!(
+            refused(&page.replacen(
+                "data-b=\"fact:from.G3000.n\"",
+                "data-b=\"fact:from.E7000.n\"",
+                1
+            )),
+            "F10 an entry it does not print"
+        );
+        let moved = page.replacen(
+            "fill=\"var(--accent)\" data-code=\"O4000XBIO\"",
+            "fill=\"var(--accent)\" data-code=\"G3000\"",
+            1,
+        );
+        assert!(
+            refused(&moved),
+            "F11 the accent on an entity the title does not name"
+        );
         let lie = page
-            .replacen("data-cmp=\"max\" data-a=\"fact:from.O4000XBIO.n\"", "data-cmp=\"max\" data-a=\"fact:from.G3000.n\"", 1)
-            .replacen("name:zh_names:siec:O4000XBIO\">Oil<", "name:zh_names:siec:G3000\">Gas<", 1)
-            .replacen("data-src=\"fact:from.O4000XBIO.n\">60,699.06<", "data-src=\"fact:from.G3000.n\">45,028.24<", 1);
-        assert!(refused(&lie), "F18 the headline names a node that is not the largest");
+            .replacen(
+                "data-cmp=\"max\" data-a=\"fact:from.O4000XBIO.n\"",
+                "data-cmp=\"max\" data-a=\"fact:from.G3000.n\"",
+                1,
+            )
+            .replacen(
+                "name:zh_names:siec:O4000XBIO\">Oil<",
+                "name:zh_names:siec:G3000\">Gas<",
+                1,
+            )
+            .replacen(
+                "data-src=\"fact:from.O4000XBIO.n\">60,699.06<",
+                "data-src=\"fact:from.G3000.n\">45,028.24<",
+                1,
+            );
+        assert!(
+            refused(&lie),
+            "F18 the headline names a node that is not the largest"
+        );
         let h1 = &page[page.find("<h1>").unwrap()..page.find("</h1>").unwrap()];
-        assert!(refused(&page.replacen(h1, &h1.replacen(&word, "x", 1), 1)), "F19 the headline's comparison word removed");
+        assert!(
+            refused(&page.replacen(h1, &h1.replacen(&word, "x", 1), 1)),
+            "F19 the headline's comparison word removed"
+        );
     }
 
     /// F20-F28 of the prototype: each refused by relation_holds or accent_named alone, the existing number check passing it.
@@ -2058,7 +3419,10 @@ mod tests {
         let h1 = page[page.find("<h1>").unwrap() + 4..page.find("</h1>").unwrap()].to_string();
         let alone = |name: &str, html: &str, facts: &[Fact]| {
             let (new, old) = new_checks(html, facts);
-            assert!(!new.is_empty() && old.is_empty(), "{name}: new {new:?} numbers {old:?}");
+            assert!(
+                !new.is_empty() && old.is_empty(),
+                "{name}: new {new:?} numbers {old:?}"
+            );
         };
         let word = relation_words("max")[0].clone();
         let gas = format!(
@@ -2076,30 +3440,94 @@ mod tests {
             &head(format!("<span data-cmp=\"max\" data-a=\"fact:from.G3000.n\" data-of=\"fact:from.G3000.n fact:to.FC_OTH_CP_E.n fact:to_other.n\">{gas}</span>")),
             &facts,
         );
-        let tied: Vec<Fact> =
-            facts.iter().cloned().map(|f| if f.key == "from.G3000" { Fact { v: 60699.059, ..f } } else { f }).collect();
-        alone("F22 gt where the two values tie", &page.replacen("data-cmp=\"next\"", "data-cmp=\"gt\"", 1), &tied);
+        let tied: Vec<Fact> = facts
+            .iter()
+            .cloned()
+            .map(|f| {
+                if f.key == "from.G3000" {
+                    Fact { v: 60699.059, ..f }
+                } else {
+                    f
+                }
+            })
+            .collect();
+        alone(
+            "F22 gt where the two values tie",
+            &page.replacen("data-cmp=\"next\"", "data-cmp=\"gt\"", 1),
+            &tied,
+        );
         alone("F23 next where the two values tie", &page, &tied);
-        let third = page.replacen("data-b=\"fact:from.G3000.n\"", "data-b=\"fact:from.E7000.n\"", 1).replacen(
-            &named_value("tspan", "siec", "G3000", "Gas", "from.G3000", "45,028.24"),
-            &named_value("tspan", "siec", "E7000", "Power", "from.E7000", "40,566.98"),
-            1,
-        );
+        let third = page
+            .replacen(
+                "data-b=\"fact:from.G3000.n\"",
+                "data-b=\"fact:from.E7000.n\"",
+                1,
+            )
+            .replacen(
+                &named_value("tspan", "siec", "G3000", "Gas", "from.G3000", "45,028.24"),
+                &named_value("tspan", "siec", "E7000", "Power", "from.E7000", "40,566.98"),
+                1,
+            );
         alone("F24 the note's second is the third", &third, &facts);
-        let cross = page.replacen("data-b=\"fact:from.G3000.n\"", "data-b=\"fact:to.FC_TRA_E.n\"", 1).replacen(
-            &named_value("tspan", "siec", "G3000", "Gas", "from.G3000", "45,028.24"),
-            &named_value("tspan", "nrg_bal", "FC_TRA_E", "Transport", "to.FC_TRA_E", "49,522.11"),
+        let cross = page
+            .replacen(
+                "data-b=\"fact:from.G3000.n\"",
+                "data-b=\"fact:to.FC_TRA_E.n\"",
+                1,
+            )
+            .replacen(
+                &named_value("tspan", "siec", "G3000", "Gas", "from.G3000", "45,028.24"),
+                &named_value(
+                    "tspan",
+                    "nrg_bal",
+                    "FC_TRA_E",
+                    "Transport",
+                    "to.FC_TRA_E",
+                    "49,522.11",
+                ),
+                1,
+            );
+        alone(
+            "F25 a note compared with a node of the other side",
+            &cross,
+            &facts,
+        );
+        let borrowed = page
+            .replacen(
+                "data-cmp=\"max\" data-a=\"fact:from.O4000XBIO.n\"",
+                "data-cmp=\"max\" data-a=\"fact:to.FC_OTH_HH_E.n\"",
+                1,
+            )
+            .replacen(
+                "data-src=\"fact:from.O4000XBIO.n\">60,699.06<",
+                "data-src=\"fact:to.FC_OTH_HH_E.n\">52,455.83<",
+                1,
+            );
+        alone(
+            "F26 the other side's true max under another node's name",
+            &borrowed,
+            &facts,
+        );
+        alone(
+            "F27 a relation word in the h1 with no data-cmp",
+            &head(h1.replacen(
+                "<span data-cmp=\"max\" data-a=\"fact:from.O4000XBIO.n\">",
+                "<span>",
+                1,
+            )),
+            &facts,
+        );
+        let on_target = page.replacen(
+            "fill=\"var(--t-sec)\" data-code=\"FC_TRA_E\"",
+            "fill=\"var(--accent)\" data-code=\"FC_TRA_E\"",
             1,
         );
-        alone("F25 a note compared with a node of the other side", &cross, &facts);
-        let borrowed = page
-            .replacen("data-cmp=\"max\" data-a=\"fact:from.O4000XBIO.n\"", "data-cmp=\"max\" data-a=\"fact:to.FC_OTH_HH_E.n\"", 1)
-            .replacen("data-src=\"fact:from.O4000XBIO.n\">60,699.06<", "data-src=\"fact:to.FC_OTH_HH_E.n\">52,455.83<", 1);
-        alone("F26 the other side's true max under another node's name", &borrowed, &facts);
-        alone("F27 a relation word in the h1 with no data-cmp", &head(h1.replacen("<span data-cmp=\"max\" data-a=\"fact:from.O4000XBIO.n\">", "<span>", 1)), &facts);
-        let on_target = page.replacen("fill=\"var(--t-sec)\" data-code=\"FC_TRA_E\"", "fill=\"var(--accent)\" data-code=\"FC_TRA_E\"", 1);
         assert_ne!(on_target, page);
-        alone("F28 the accent on a code the h1 does not name", &on_target, &facts);
+        alone(
+            "F28 the accent on a code the h1 does not name",
+            &on_target,
+            &facts,
+        );
     }
 
     /// The leaf's side rule (wbkit.finding_side_top) and this check agree: a side whose merged node is above its second named
@@ -2109,23 +3537,38 @@ mod tests {
     fn a_side_the_leaf_leaves_out_is_one_the_check_would_refuse() {
         let (spec, facts, ledger) = flow_request();
         let page = flow_page();
-        let check = |html: &str, facts: &[Fact], ledger: &BTreeMap<String, String>| -> Vec<String> {
-            let mut off = check_relations(html, ledger, &spec, facts, &[]);
-            off.extend(check_accent_named(html));
-            off
-        };
+        let check =
+            |html: &str, facts: &[Fact], ledger: &BTreeMap<String, String>| -> Vec<String> {
+                let mut off = check_relations(html, ledger, &spec, facts, &[]);
+                off.extend(check_accent_named(html));
+                off
+            };
         let note_of = |html: &str, a: &str| -> String {
-            let at = html.find(&format!("data-a=\"fact:{a}.n\" data-b=")).unwrap();
+            let at = html
+                .find(&format!("data-a=\"fact:{a}.n\" data-b="))
+                .unwrap();
             let start = html[..at].rfind("<text").unwrap();
             let end = at + html[at..].find("</text>").unwrap() + "</text>".len();
             html[start..end].to_string()
         };
         // the merged sources above the second named source: the sources claim nothing, the destinations take the finding
-        let merged: Vec<Fact> =
-            facts.iter().cloned().map(|f| if f.key == "from_other" { Fact { v: 46000.0, ..f } } else { f }).collect();
+        let merged: Vec<Fact> = facts
+            .iter()
+            .cloned()
+            .map(|f| {
+                if f.key == "from_other" {
+                    Fact { v: 46000.0, ..f }
+                } else {
+                    f
+                }
+            })
+            .collect();
         let mut merged_ledger = ledger.clone();
         merged_ledger.insert("fact:from_other.n".into(), "46,000.00".into());
-        assert!(!check(&page, &merged, &merged_ledger).is_empty(), "the sources' note: its second is below the merged node");
+        assert!(
+            !check(&page, &merged, &merged_ledger).is_empty(),
+            "the sources' note: its second is below the merged node"
+        );
         let homes = format!(
             "<span data-cmp=\"max\" data-a=\"fact:to.FC_OTH_HH_E.n\">{} <span data-src=\"name:unit_short_zh:KTOE\">ktoe</span>\u{ff0c}{}</span>",
             named_value("span", "nrg_bal", "FC_OTH_HH_E", "Homes", "to.FC_OTH_HH_E", "52,455.83"),
@@ -2139,11 +3582,17 @@ mod tests {
             .replacen("fill=\"var(--accent)\" data-code=\"O4000XBIO\"", "fill=\"var(--t-sec)\" data-code=\"O4000XBIO\"", 1)
             .replacen(tra, &format!("{tra}<rect x=\"990.4\" y=\"60\" width=\"14\" height=\"120\" fill=\"var(--accent)\" data-code=\"FC_OTH_HH_E\"/>"), 1);
         assert!(!to_side.contains("data-a=\"fact:from.O4000XBIO.n\""));
-        assert_eq!(check(&to_side, &merged, &merged_ledger), Vec::<String>::new());
+        assert_eq!(
+            check(&to_side, &merged, &merged_ledger),
+            Vec::<String>::new()
+        );
         // the second destination prints like the third: the destinations claim nothing, the sources keep the finding
         let mut alike = ledger.clone();
         alike.insert("fact:to.FC_IND_E.n".into(), "49,522.11".into());
-        assert!(!check(&page, &facts, &alike).is_empty(), "the destinations' note: its second prints like the third");
+        assert!(
+            !check(&page, &facts, &alike).is_empty(),
+            "the destinations' note: its second prints like the third"
+        );
         let from_side = page.replacen(&note_of(&page, "to.FC_OTH_HH_E"), "", 1);
         assert!(!from_side.contains("data-a=\"fact:to.FC_OTH_HH_E.n\""));
         assert_eq!(check(&from_side, &facts, &alike), Vec::<String>::new());
@@ -2156,8 +3605,18 @@ mod tests {
     fn relation_checks_over_stored_pages() {
         let mut hits = 0;
         let list = std::fs::read_to_string(std::env::var("P5_PAGES").unwrap()).unwrap();
-        let pages: Vec<&str> = list.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
-        let none = Spec { facts: Vec::new(), fmts: json!({}), members: None, asked_places: None, basis: None };
+        let pages: Vec<&str> = list
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .collect();
+        let none = Spec {
+            facts: Vec::new(),
+            fmts: json!({}),
+            members: None,
+            asked_places: None,
+            basis: None,
+        };
         for p in &pages {
             let html = std::fs::read_to_string(p).unwrap();
             let mut off = check_relations(&html, &BTreeMap::new(), &none, &[], &[]);
@@ -2171,8 +3630,14 @@ mod tests {
             let req: Value = serde_json::from_str(&std::fs::read_to_string(req).unwrap()).unwrap();
             let spec: Spec = serde_json::from_value(req["spec"].clone()).unwrap();
             let facts: Vec<Fact> = serde_json::from_value(req["facts"].clone()).unwrap();
-            let ledger: BTreeMap<String, String> = serde_json::from_value(req["ledger"].clone()).unwrap();
-            let rows: Vec<Row> = req["rows"].as_array().into_iter().flatten().filter_map(|r| serde_json::from_value(r.clone()).ok()).collect();
+            let ledger: BTreeMap<String, String> =
+                serde_json::from_value(req["ledger"].clone()).unwrap();
+            let rows: Vec<Row> = req["rows"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|r| serde_json::from_value(r.clone()).ok())
+                .collect();
             let mut off = check_relations(&html, &ledger, &spec, &facts, &rows);
             off.extend(check_claims(&html, &ledger, &spec, &facts, &rows));
             off.extend(check_accent_named(&html));
@@ -2189,7 +3654,8 @@ mod tests {
     type ShareRequest = (Spec, Vec<Fact>, BTreeMap<String, String>, Vec<Row>);
 
     fn share_request() -> ShareRequest {
-        let r: Value = serde_json::from_str(include_str!("../scripts/fixtures/p4b5/q3-share.json")).unwrap();
+        let r: Value =
+            serde_json::from_str(include_str!("../scripts/fixtures/p4b5/q3-share.json")).unwrap();
         let part = |k: &str| r[k].clone();
         (
             serde_json::from_value(part("spec")).unwrap(),
@@ -2200,9 +3666,24 @@ mod tests {
     }
 
     /// The request with one more fact definition; a share also with its value and its ledger entries (printed and bare).
-    fn with_fact(mut r: ShareRequest, key: &str, def: Value, share: Option<(f64, &str)>) -> ShareRequest {
+    fn with_fact(
+        mut r: ShareRequest,
+        key: &str,
+        def: Value,
+        share: Option<(f64, &str)>,
+    ) -> ShareRequest {
         if let Some((v, text)) = share {
-            r.1.push(Fact { key: key.into(), op: "share".into(), v, t: None, n: None, who: Vec::new(), fmt: "pct".into(), reads: Vec::new(), exact: None });
+            r.1.push(Fact {
+                key: key.into(),
+                op: "share".into(),
+                v,
+                t: None,
+                n: None,
+                who: Vec::new(),
+                fmt: "pct".into(),
+                reads: Vec::new(),
+                exact: None,
+            });
             r.2.insert(format!("fact:{key}"), format!("{text}%"));
             r.2.insert(format!("fact:{key}.n"), text.into());
         }
@@ -2212,27 +3693,52 @@ mod tests {
 
     /// A request row at 2024, its src from its codes.
     fn row_at(table: &str, dims: &[(&str, &str)], value: f64) -> Row {
-        let dims: BTreeMap<String, String> = dims.iter().map(|(d, c)| (d.to_string(), c.to_string())).collect();
+        let dims: BTreeMap<String, String> = dims
+            .iter()
+            .map(|(d, c)| (d.to_string(), c.to_string()))
+            .collect();
         let codes: Vec<&str> = dims.values().map(String::as_str).collect();
-        Row { src: format!("{SERIES_SRC}{table}/{}:2024:OBS_VALUE", codes.join(".")), table: table.into(), dims, time: "2024".into(), value }
+        Row {
+            src: format!("{SERIES_SRC}{table}/{}:2024:OBS_VALUE", codes.join(".")),
+            table: table.into(),
+            dims,
+            time: "2024".into(),
+            value,
+        }
     }
 
     /// The scope phrase, as the word table gives it (the leaf reads the same key).
     fn scope() -> String {
-        word_table()[SCOPE_WORD].as_str().expect("the word table holds the scope phrase").to_string()
+        word_table()[SCOPE_WORD]
+            .as_str()
+            .expect("the word table holds the scope phrase")
+            .to_string()
     }
 
     /// A place's name as its name row prints it.
     fn place(l: &BTreeMap<String, String>, code: &str) -> String {
-        format!("<tspan data-src=\"name:zh_names:iso2:{code}\">{}</tspan>", l[&format!("name:zh_names:iso2:{code}")])
+        format!(
+            "<tspan data-src=\"name:zh_names:iso2:{code}\">{}</tspan>",
+            l[&format!("name:zh_names:iso2:{code}")]
+        )
     }
 
     /// The note under the bars as stacked100 draws it: `lead` (the scope phrase and its comma, or nothing), then `rel` of a
     /// over b, each (place code, share fact) printed by its name row and its share in bold, the relation's and the paren's
     /// words from the word table.
-    fn share_note(l: &BTreeMap<String, String>, rel: &str, a: (&str, &str), b: (&str, &str), lead: &str) -> String {
+    fn share_note(
+        l: &BTreeMap<String, String>,
+        rel: &str,
+        a: (&str, &str),
+        b: (&str, &str),
+        lead: &str,
+    ) -> String {
         let nv = |(code, key): (&str, &str)| {
-            format!("{} <tspan font-weight=\"700\"><tspan data-src=\"fact:{key}\">{}</tspan></tspan>", place(l, code), l[&format!("fact:{key}")])
+            format!(
+                "{} <tspan font-weight=\"700\"><tspan data-src=\"fact:{key}\">{}</tspan></tspan>",
+                place(l, code),
+                l[&format!("fact:{key}")]
+            )
         };
         format!(
             "<!doctype html><html><body><h1>Composition</h1><svg><g data-layer=\"stacked100\"><g data-notes=\"share\">\
@@ -2246,16 +3752,29 @@ mod tests {
         )
     }
 
-    fn share_page(l: &BTreeMap<String, String>, rel: &str, a: (&str, &str), b: (&str, &str)) -> String {
+    fn share_page(
+        l: &BTreeMap<String, String>,
+        rel: &str,
+        a: (&str, &str),
+        b: (&str, &str),
+    ) -> String {
         share_note(l, rel, a, b, "")
     }
 
-    fn scoped_page(l: &BTreeMap<String, String>, rel: &str, a: (&str, &str), b: (&str, &str)) -> String {
+    fn scoped_page(
+        l: &BTreeMap<String, String>,
+        rel: &str,
+        a: (&str, &str),
+        b: (&str, &str),
+    ) -> String {
         share_note(l, rel, a, b, &format!("{}\u{ff0c}", scope()))
     }
 
     /// The relation checks on a page over a request, and the existing number check on it (which a must-fail must pass).
-    fn share_checks(html: &str, (spec, facts, ledger, rows): &ShareRequest) -> (Vec<String>, Vec<String>) {
+    fn share_checks(
+        html: &str,
+        (spec, facts, ledger, rows): &ShareRequest,
+    ) -> (Vec<String>, Vec<String>) {
         let mut off = check_relations(html, ledger, spec, facts, rows);
         off.extend(check_accent_named(html));
         (off, check_numbers(html, ledger, &[]))
@@ -2263,20 +3782,59 @@ mod tests {
 
     /// Transport's rows at a place: its use (FC_TRA_E) when given, its final use (FC_E) 1000.
     fn transport_rows(geo: &str, tra: Option<f64>) -> Vec<Row> {
-        let at = |bal: &str, v: f64| row_at("nrg_bal_c", &[("geo", geo), ("nrg_bal", bal), ("siec", "TOTAL"), ("unit", "KTOE")], v);
-        tra.map(|v| at("FC_TRA_E", v)).into_iter().chain([at("FC_E", 1000.0)]).collect()
+        let at = |bal: &str, v: f64| {
+            row_at(
+                "nrg_bal_c",
+                &[
+                    ("geo", geo),
+                    ("nrg_bal", bal),
+                    ("siec", "TOTAL"),
+                    ("unit", "KTOE"),
+                ],
+                v,
+            )
+        };
+        tra.map(|v| at("FC_TRA_E", v))
+            .into_iter()
+            .chain([at("FC_E", 1000.0)])
+            .collect()
     }
 
     /// P3, a second data shape: transport's share of final energy use by place, numerator and denominator one code each on
     /// nrg_bal (not siec) and alike on siec, with their rows, over the q3 request's place names.
     fn transport() -> ShareRequest {
-        let mut r = (Spec { facts: Vec::new(), fmts: json!({}), members: None, asked_places: None, basis: None }, Vec::new(), share_request().2, Vec::new());
-        for (geo, tra, text) in [("DE", 301.0, "30"), ("FR", 334.0, "33"), ("IT", 287.0, "29")] {
+        let mut r = (
+            Spec {
+                facts: Vec::new(),
+                fmts: json!({}),
+                members: None,
+                asked_places: None,
+                basis: None,
+            },
+            Vec::new(),
+            share_request().2,
+            Vec::new(),
+        );
+        for (geo, tra, text) in [
+            ("DE", 301.0, "30"),
+            ("FR", 334.0, "33"),
+            ("IT", 287.0, "29"),
+        ] {
             for (k, bal) in [("tra", "FC_TRA_E"), ("fc", "FC_E")] {
                 let filter = json!({"geo": geo, "nrg_bal": bal, "siec": "TOTAL"});
-                r = with_fact(r, &format!("{k}.{geo}"), json!({"op": "value", "table": "nrg_bal_c", "time": "2024", "fmt": "ktoe", "filter": filter}), None);
+                r = with_fact(
+                    r,
+                    &format!("{k}.{geo}"),
+                    json!({"op": "value", "table": "nrg_bal_c", "time": "2024", "fmt": "ktoe", "filter": filter}),
+                    None,
+                );
             }
-            r = with_fact(r, &format!("share.tra.{geo}"), json!({"op": "share", "a": format!("tra.{geo}"), "b": format!("fc.{geo}")}), Some((tra / 1000.0, text)));
+            r = with_fact(
+                r,
+                &format!("share.tra.{geo}"),
+                json!({"op": "share", "a": format!("tra.{geo}"), "b": format!("fc.{geo}")}),
+                Some((tra / 1000.0, text)),
+            );
             r.3.extend(transport_rows(geo, Some(tra)));
         }
         r
@@ -2285,12 +3843,41 @@ mod tests {
     /// q3 with Portugal's fossil share made `share` (its gas row and its total raised alike).
     fn portugal_at(share: f64) -> ShareRequest {
         let mut r = share_request();
-        let fossil: Vec<String> = r.0.facts.iter().find(|(k, _)| k == "sum.fossil.PT").map_or_else(
-            || r.0.facts.iter().find(|(k, _)| k == "sum.fossil.PL").unwrap().1["filter"]["siec"].as_array().unwrap().iter().map(|c| c.as_str().unwrap().to_string()).collect(),
-            |(_, q)| q["filter"]["siec"].as_array().unwrap().iter().map(|c| c.as_str().unwrap().to_string()).collect(),
-        );
-        let at = |r: &ShareRequest, siec: &str| r.3.iter().position(|x| x.dims["geo"] == "PT" && x.dims["siec"] == siec);
-        let f: f64 = r.3.iter().filter(|x| x.dims["geo"] == "PT" && fossil.contains(&x.dims["siec"])).map(|x| x.value).sum();
+        let fossil: Vec<String> =
+            r.0.facts
+                .iter()
+                .find(|(k, _)| k == "sum.fossil.PT")
+                .map_or_else(
+                    || {
+                        r.0.facts
+                            .iter()
+                            .find(|(k, _)| k == "sum.fossil.PL")
+                            .unwrap()
+                            .1["filter"]["siec"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .map(|c| c.as_str().unwrap().to_string())
+                            .collect()
+                    },
+                    |(_, q)| {
+                        q["filter"]["siec"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .map(|c| c.as_str().unwrap().to_string())
+                            .collect()
+                    },
+                );
+        let at = |r: &ShareRequest, siec: &str| {
+            r.3.iter()
+                .position(|x| x.dims["geo"] == "PT" && x.dims["siec"] == siec)
+        };
+        let f: f64 =
+            r.3.iter()
+                .filter(|x| x.dims["geo"] == "PT" && fossil.contains(&x.dims["siec"]))
+                .map(|x| x.value)
+                .sum();
         let t = r.3[at(&r, "TOTAL").unwrap()].value;
         let more = (share * t - f) / (1.0 - share);
         let (g, tot) = (at(&r, "G3000").unwrap(), at(&r, "TOTAL").unwrap());
@@ -2307,25 +3894,55 @@ mod tests {
         let r = share_request();
         let (spec, facts, l, rows) = &r;
         let fossil = share_family("share.fossil.PL", spec);
-        let codes: std::collections::BTreeSet<&str> = fossil.iter().map(|(_, c)| c.as_str()).collect();
+        let codes: std::collections::BTreeSet<&str> =
+            fossil.iter().map(|(_, c)| c.as_str()).collect();
         assert_eq!((fossil.len(), codes.len()), (21, 20));
         assert!(fossil.contains(&("comp_top", "PL".to_string())));
-        assert!(fossil.iter().all(|(k, c)| *k == "comp_top" || *k == format!("share.fossil.{c}")));
+        assert!(fossil
+            .iter()
+            .all(|(k, c)| *k == "comp_top" || *k == format!("share.fossil.{c}")));
         assert_eq!(share_family("comp_top", spec), fossil);
         assert_eq!(share_family("share.renewable.DK", spec).len(), 20);
-        assert!(share_family("share.nuclear.FR", spec).is_empty(), "nuclear holds 12 of the 20 places shared out");
-        assert!(family("share.fossil.PL", spec).is_empty() && share_family("total.PL", spec).is_empty());
-        assert_eq!((member_code("comp_top", spec), member_code("share.renewable.AT", spec)), (Some("PL".into()), Some("AT".into())));
+        assert!(
+            share_family("share.nuclear.FR", spec).is_empty(),
+            "nuclear holds 12 of the 20 places shared out"
+        );
+        assert!(
+            family("share.fossil.PL", spec).is_empty() && share_family("total.PL", spec).is_empty()
+        );
+        assert_eq!(
+            (
+                member_code("comp_top", spec),
+                member_code("share.renewable.AT", spec)
+            ),
+            (Some("PL".into()), Some("AT".into()))
+        );
         let computed = |k: &str| {
             let (set, scoped) = comparison(k, spec, rows, facts).unwrap();
-            let extra: Vec<(String, i64)> = set.iter().filter(|m| m.key.is_none()).map(|m| (m.code.clone().unwrap(), (m.v * 1000.0).round() as i64)).collect();
+            let extra: Vec<(String, i64)> = set
+                .iter()
+                .filter(|m| m.key.is_none())
+                .map(|m| (m.code.clone().unwrap(), (m.v * 1000.0).round() as i64))
+                .collect();
             (extra, scoped)
         };
-        assert_eq!(computed("share.fossil.PL"), (vec![("PT".to_string(), 133)], true));
-        assert_eq!(computed("share.renewable.DK"), (vec![("PT".to_string(), 790)], true));
-        assert_eq!(computed("share.other.AT"), (Vec::new(), true), "Portugal's other share: no E7000 row");
+        assert_eq!(
+            computed("share.fossil.PL"),
+            (vec![("PT".to_string(), 133)], true)
+        );
+        assert_eq!(
+            computed("share.renewable.DK"),
+            (vec![("PT".to_string(), 790)], true)
+        );
+        assert_eq!(
+            computed("share.other.AT"),
+            (Vec::new(), true),
+            "Portugal's other share: no E7000 row"
+        );
         assert!(comparison("share.nuclear.FR", spec, rows, facts).is_none());
-        let pass = |html: String, r: &ShareRequest| assert_eq!(share_checks(&html, r), (Vec::new(), Vec::new()), "{html}");
+        let pass = |html: String, r: &ShareRequest| {
+            assert_eq!(share_checks(&html, r), (Vec::new(), Vec::new()), "{html}")
+        };
         let (pl, ie) = (("PL", "share.fossil.PL"), ("IE", "share.fossil.IE"));
         // P1: Poland 68% above Ireland 52% above Greece 51%, Portugal 13% computed, data-a the share or its copy comp_top
         pass(scoped_page(l, "next", pl, ie), &r);
@@ -2333,32 +3950,75 @@ mod tests {
         pass(scoped_page(l, "max", pl, ie), &r);
         pass(scoped_page(l, "gt", ie, ("EL", "share.fossil.EL")), &r);
         // P2: Denmark 89% above Austria 82%, Portugal 79% computed below them, a numerator of one code
-        pass(scoped_page(l, "next", ("DK", "share.renewable.DK"), ("AT", "share.renewable.AT")), &r);
+        pass(
+            scoped_page(
+                l,
+                "next",
+                ("DK", "share.renewable.DK"),
+                ("AT", "share.renewable.AT"),
+            ),
+            &r,
+        );
         let handed = comparisons(spec, rows, facts);
-        assert_eq!(handed["share.fossil.PL"], json!({"first": "PL", "second": "IE", "scoped": true}));
+        assert_eq!(
+            handed["share.fossil.PL"],
+            json!({"first": "PL", "second": "IE", "scoped": true})
+        );
         assert_eq!(handed["comp_top"], handed["share.fossil.PL"]);
-        assert_eq!(handed["share.renewable.AT"], json!({"first": "DK", "second": "AT", "scoped": true}));
+        assert_eq!(
+            handed["share.renewable.AT"],
+            json!({"first": "DK", "second": "AT", "scoped": true})
+        );
         assert!(handed.get("share.nuclear.FR").is_none() && handed.get("sum.fossil.PL").is_none());
         // P3: France 33% above Germany 30% above Italy 29%, every place of the rows in the set: no phrase
         let t = transport();
-        assert_eq!(share_family("share.tra.FR", &t.0).iter().map(|(_, c)| c.as_str()).collect::<Vec<_>>(), ["DE", "FR", "IT"]);
-        assert_eq!(comparison("share.tra.FR", &t.0, &t.3, &t.1).map(|(m, s)| (m.len(), s)), Some((3, false)));
+        assert_eq!(
+            share_family("share.tra.FR", &t.0)
+                .iter()
+                .map(|(_, c)| c.as_str())
+                .collect::<Vec<_>>(),
+            ["DE", "FR", "IT"]
+        );
+        assert_eq!(
+            comparison("share.tra.FR", &t.0, &t.3, &t.1).map(|(m, s)| (m.len(), s)),
+            Some((3, false))
+        );
         let (fr, de) = (("FR", "share.tra.FR"), ("DE", "share.tra.DE"));
         pass(share_page(&t.2, "next", fr, de), &t);
-        assert!(!share_checks(&share_page(&t.2, "next", fr, ("IT", "share.tra.IT")), &t).0.is_empty(), "P3's third");
+        assert!(
+            !share_checks(&share_page(&t.2, "next", fr, ("IT", "share.tra.IT")), &t)
+                .0
+                .is_empty(),
+            "P3's third"
+        );
         // a place with its final use only: not computed, so the set is scoped; one with both rows is computed into it
         let mut lone = t.clone();
         lone.3.extend(transport_rows("ES", None));
-        assert!(!share_checks(&share_page(&lone.2, "next", fr, de), &lone).0.is_empty(), "P3 scoped, no phrase");
+        assert!(
+            !share_checks(&share_page(&lone.2, "next", fr, de), &lone)
+                .0
+                .is_empty(),
+            "P3 scoped, no phrase"
+        );
         pass(scoped_page(&lone.2, "next", fr, de), &lone);
         let mut more = lone.clone();
         more.3.extend(transport_rows("PL", Some(250.0)));
         let (set, scoped) = comparison("share.tra.FR", &more.0, &more.3, &more.1).unwrap();
-        assert!(scoped && set.iter().any(|m| m.key.is_none() && m.code.as_deref() == Some("PL") && (m.v - 0.25).abs() < 1e-12));
+        assert!(
+            scoped
+                && set.iter().any(|m| m.key.is_none()
+                    && m.code.as_deref() == Some("PL")
+                    && (m.v - 0.25).abs() < 1e-12)
+        );
         pass(scoped_page(&more.2, "next", fr, de), &more);
         let mut above = lone.clone();
         above.3.extend(transport_rows("PL", Some(320.0)));
-        assert!(!share_checks(&scoped_page(&above.2, "next", fr, de), &above).0.is_empty(), "P3: a computed place second");
+        assert!(
+            !share_checks(&scoped_page(&above.2, "next", fr, de), &above)
+                .0
+                .is_empty(),
+            "P3: a computed place second"
+        );
     }
 
     /// F6-F31 over the share set and M1-M6, M8 of the scope rule: each refused by the relation check, the number check
@@ -2369,79 +4029,263 @@ mod tests {
         let l = r.2.clone();
         let alone = |name: &str, html: &str, r: &ShareRequest| {
             let (new, old) = share_checks(html, r);
-            assert!(!new.is_empty() && old.is_empty(), "{name}: new {new:?} numbers {old:?}");
+            assert!(
+                !new.is_empty() && old.is_empty(),
+                "{name}: new {new:?} numbers {old:?}"
+            );
             new
         };
         let said = |name: &str, html: &str, r: &ShareRequest, why: &str| {
             let off = alone(name, html, r);
             assert!(off.iter().any(|f| f.contains(why)), "{name}: {off:?}");
         };
-        let (pl, ie, el) = (("PL", "share.fossil.PL"), ("IE", "share.fossil.IE"), ("EL", "share.fossil.EL"));
+        let (pl, ie, el) = (
+            ("PL", "share.fossil.PL"),
+            ("IE", "share.fossil.IE"),
+            ("EL", "share.fossil.EL"),
+        );
         let page = scoped_page(&l, "next", pl, ie);
         let p = scope();
         // the scope rule
-        said("M1 no scope phrase over a scoped set", &share_page(&l, "next", pl, ie), &r, "do not say");
+        said(
+            "M1 no scope phrase over a scoped set",
+            &share_page(&l, "next", pl, ie),
+            &r,
+            "do not say",
+        );
         let cut: String = p.chars().skip(1).collect();
-        said("M2 the phrase cut short", &page.replacen(&p, &cut, 1), &r, "do not say");
+        said(
+            "M2 the phrase cut short",
+            &page.replacen(&p, &cut, 1),
+            &r,
+            "do not say",
+        );
         let k = p.char_indices().nth(3).unwrap().0;
-        said("M2b the phrase split by a tspan", &page.replacen(&p, &format!("{}<tspan>{}</tspan>", &p[..k], &p[k..]), 1), &r, "do not say");
-        let outside = share_page(&l, "next", pl, ie).replacen("<h1>Composition</h1>", &format!("<h1>{p}</h1>"), 1);
-        said("M2c the phrase outside the data-cmp element", &outside, &r, "do not say");
+        said(
+            "M2b the phrase split by a tspan",
+            &page.replacen(&p, &format!("{}<tspan>{}</tspan>", &p[..k], &p[k..]), 1),
+            &r,
+            "do not say",
+        );
+        let outside = share_page(&l, "next", pl, ie).replacen(
+            "<h1>Composition</h1>",
+            &format!("<h1>{p}</h1>"),
+            1,
+        );
+        said(
+            "M2c the phrase outside the data-cmp element",
+            &outside,
+            &r,
+            "do not say",
+        );
         let wrong: String = p.chars().rev().collect();
-        said("M4 another scope's words", &page.replacen(&p, &wrong, 1), &r, "do not say");
-        said("M5 gt over a scoped set, no phrase", &share_page(&l, "gt", ie, el), &r, "do not say");
-        let of = share_page(&l, "max", pl, ie).replacen("data-cmp=\"max\"", "data-cmp=\"max\" data-of=\"fact:share.fossil.PL fact:share.fossil.IE\"", 1);
+        said(
+            "M4 another scope's words",
+            &page.replacen(&p, &wrong, 1),
+            &r,
+            "do not say",
+        );
+        said(
+            "M5 gt over a scoped set, no phrase",
+            &share_page(&l, "gt", ie, el),
+            &r,
+            "do not say",
+        );
+        let of = share_page(&l, "max", pl, ie).replacen(
+            "data-cmp=\"max\"",
+            "data-cmp=\"max\" data-of=\"fact:share.fossil.PL fact:share.fossil.IE\"",
+            1,
+        );
         said("M6 a page-given set and no phrase", &of, &r, "do not say");
         // M8: Portugal computed above Poland (70%), then between Poland and Ireland (60%): refused, the phrase said
-        said("M8 a computed code above data-a", &page, &portugal_at(0.70), "does not hold");
-        said("M8b a computed code above data-b", &page, &portugal_at(0.60), "does not hold");
-        assert_eq!(comparisons(&portugal_at(0.70).0, &portugal_at(0.70).3, &portugal_at(0.70).1)["share.fossil.PL"]["first"], "PT");
+        said(
+            "M8 a computed code above data-a",
+            &page,
+            &portugal_at(0.70),
+            "does not hold",
+        );
+        said(
+            "M8b a computed code above data-b",
+            &page,
+            &portugal_at(0.60),
+            "does not hold",
+        );
+        assert_eq!(
+            comparisons(
+                &portugal_at(0.70).0,
+                &portugal_at(0.70).3,
+                &portugal_at(0.70).1
+            )["share.fossil.PL"]["first"],
+            "PT"
+        );
         // M9: a row of Portugal's in a second unit, under its numerator's or its denominator's codes: never summed in, the
         // comparison refused and nothing handed to the leaf
         for siec in ["G3000", "TOTAL"] {
             let mut tj = r.clone();
-            let mut extra = tj.3.iter().find(|x| x.dims["geo"] == "PT" && x.dims["siec"] == siec).unwrap().clone();
+            let mut extra =
+                tj.3.iter()
+                    .find(|x| x.dims["geo"] == "PT" && x.dims["siec"] == siec)
+                    .unwrap()
+                    .clone();
             extra.dims.insert("unit".into(), "TJ".into());
             extra.src = extra.src.replace(".GWH.", ".TJ.");
             extra.value *= 3.6;
             tj.3.push(extra);
-            assert!(comparison("share.fossil.PL", &tj.0, &tj.3, &tj.1).is_none(), "{siec}");
-            assert!(comparisons(&tj.0, &tj.3, &tj.1).get("share.fossil.PL").is_none(), "{siec}");
-            said(&format!("M9 a second-unit row under {siec}"), &page, &tj, "cannot read alike");
+            assert!(
+                comparison("share.fossil.PL", &tj.0, &tj.3, &tj.1).is_none(),
+                "{siec}"
+            );
+            assert!(
+                comparisons(&tj.0, &tj.3, &tj.1)
+                    .get("share.fossil.PL")
+                    .is_none(),
+                "{siec}"
+            );
+            said(
+                &format!("M9 a second-unit row under {siec}"),
+                &page,
+                &tj,
+                "cannot read alike",
+            );
         }
         // M10: a definition with a key the check does not apply (not_eu) while the rows hold a code to compute by it: the
         // comparison refused, not scoped out; with no such code the key is never read
         let mut keyed = transport();
-        keyed.0.facts.iter_mut().filter(|(k, _)| k.starts_with("tra.")).for_each(|(_, q)| q["not_eu"] = json!("geo"));
-        let kpage = share_page(&keyed.2, "next", ("FR", "share.tra.FR"), ("DE", "share.tra.DE"));
-        assert_eq!(share_checks(&kpage, &keyed), (Vec::new(), Vec::new()), "no code to compute: the key is not read");
+        keyed
+            .0
+            .facts
+            .iter_mut()
+            .filter(|(k, _)| k.starts_with("tra."))
+            .for_each(|(_, q)| q["not_eu"] = json!("geo"));
+        let kpage = share_page(
+            &keyed.2,
+            "next",
+            ("FR", "share.tra.FR"),
+            ("DE", "share.tra.DE"),
+        );
+        assert_eq!(
+            share_checks(&kpage, &keyed),
+            (Vec::new(), Vec::new()),
+            "no code to compute: the key is not read"
+        );
         let mut more = keyed.clone();
         more.3.extend(transport_rows("PL", Some(250.0)));
         assert!(comparison("share.tra.FR", &more.0, &more.3, &more.1).is_none());
-        let koff = share_checks(&scoped_page(&more.2, "next", ("FR", "share.tra.FR"), ("DE", "share.tra.DE")), &more).0;
-        assert!(koff.iter().any(|f| f.contains("cannot read alike")) && check_numbers(&scoped_page(&more.2, "next", ("FR", "share.tra.FR"), ("DE", "share.tra.DE")), &more.2, &[]).is_empty(), "M10 {koff:?}");
+        let koff = share_checks(
+            &scoped_page(
+                &more.2,
+                "next",
+                ("FR", "share.tra.FR"),
+                ("DE", "share.tra.DE"),
+            ),
+            &more,
+        )
+        .0;
+        assert!(
+            koff.iter().any(|f| f.contains("cannot read alike"))
+                && check_numbers(
+                    &scoped_page(
+                        &more.2,
+                        "next",
+                        ("FR", "share.tra.FR"),
+                        ("DE", "share.tra.DE")
+                    ),
+                    &more.2,
+                    &[]
+                )
+                .is_empty(),
+            "M10 {koff:?}"
+        );
         // the share set
-        alone("F6 no comparison word", &page.replacen(&relation_words("next")[0], "x", 1), &r);
-        alone("F7 the two entries swapped", &scoped_page(&l, "next", ie, pl), &r);
-        alone("F8 compared with itself", &scoped_page(&l, "next", pl, pl), &r);
-        alone("F8b compared with its copy", &scoped_page(&l, "next", pl, ("PL", "comp_top")), &r);
+        alone(
+            "F6 no comparison word",
+            &page.replacen(&relation_words("next")[0], "x", 1),
+            &r,
+        );
+        alone(
+            "F7 the two entries swapped",
+            &scoped_page(&l, "next", ie, pl),
+            &r,
+        );
+        alone(
+            "F8 compared with itself",
+            &scoped_page(&l, "next", pl, pl),
+            &r,
+        );
+        alone(
+            "F8b compared with its copy",
+            &scoped_page(&l, "next", pl, ("PL", "comp_top")),
+            &r,
+        );
         let mut copy = r.clone();
-        copy.1.iter_mut().filter(|f| f.key == "comp_top").for_each(|f| f.v = 0.70);
-        said("F8c a copy of a member holding another value", &page, &copy, "with different values");
-        alone("F9 no comparison marked", &page.replacen(" data-cmp=\"next\"", "", 1), &r);
-        alone("F10 an entry it does not print", &page.replacen("data-b=\"fact:share.fossil.IE\"", "data-b=\"fact:share.fossil.EL\"", 1), &r);
+        copy.1
+            .iter_mut()
+            .filter(|f| f.key == "comp_top")
+            .for_each(|f| f.v = 0.70);
+        said(
+            "F8c a copy of a member holding another value",
+            &page,
+            &copy,
+            "with different values",
+        );
+        alone(
+            "F9 no comparison marked",
+            &page.replacen(" data-cmp=\"next\"", "", 1),
+            &r,
+        );
+        alone(
+            "F10 an entry it does not print",
+            &page.replacen(
+                "data-b=\"fact:share.fossil.IE\"",
+                "data-b=\"fact:share.fossil.EL\"",
+                1,
+            ),
+            &r,
+        );
         let mut tied = r.clone();
         let v_pl = r.1.iter().find(|f| f.key == "share.fossil.PL").unwrap().v;
-        tied.1.iter_mut().filter(|f| f.key == "share.fossil.IE").for_each(|f| f.v = v_pl);
-        alone("F22 gt where the two values tie", &scoped_page(&l, "gt", pl, ie), &tied);
+        tied.1
+            .iter_mut()
+            .filter(|f| f.key == "share.fossil.IE")
+            .for_each(|f| f.v = v_pl);
+        alone(
+            "F22 gt where the two values tie",
+            &scoped_page(&l, "gt", pl, ie),
+            &tied,
+        );
         alone("F23 next where the two values tie", &page, &tied);
-        alone("F22b gt over two values printed alike (41% and 41%)", &scoped_page(&l, "gt", ("CZ", "share.fossil.CZ"), ("DE", "share.fossil.DE")), &r);
-        alone("F24 the note's second is the third", &scoped_page(&l, "next", pl, el), &r);
-        alone("F25 a share of another numerator", &scoped_page(&l, "next", pl, ("IE", "share.renewable.IE")), &r);
+        alone(
+            "F22b gt over two values printed alike (41% and 41%)",
+            &scoped_page(
+                &l,
+                "gt",
+                ("CZ", "share.fossil.CZ"),
+                ("DE", "share.fossil.DE"),
+            ),
+            &r,
+        );
+        alone(
+            "F24 the note's second is the third",
+            &scoped_page(&l, "next", pl, el),
+            &r,
+        );
+        alone(
+            "F25 a share of another numerator",
+            &scoped_page(&l, "next", pl, ("IE", "share.renewable.IE")),
+            &r,
+        );
         // F25b-d: Ireland's fossil share once more, over another denominator, period or numerator code list
         let value = |filter: Value, table: &str, time: &str| json!({"op": "value", "table": table, "time": time, "fmt": "gwh", "filter": filter});
         let share = |a: &str, b: &str| json!({"op": "share", "a": a, "b": b});
-        let list: Vec<Value> = r.0.facts.iter().find(|(k, _)| k == "sum.fossil.IE").unwrap().1["filter"]["siec"].as_array().unwrap().clone();
+        let list: Vec<Value> =
+            r.0.facts
+                .iter()
+                .find(|(k, _)| k == "sum.fossil.IE")
+                .unwrap()
+                .1["filter"]["siec"]
+                .as_array()
+                .unwrap()
+                .clone();
         let other = |r: &ShareRequest, a: Option<Value>, b: Option<Value>| {
             let mut r = r.clone();
             if let Some(a) = a {
@@ -2450,44 +4294,181 @@ mod tests {
             if let Some(b) = b {
                 r = with_fact(r, "total.IE.x", b, None);
             }
-            let num = if r.0.facts.iter().any(|(k, _)| k == "sum.fossil.IE.x") { "sum.fossil.IE.x" } else { "sum.fossil.IE" };
-            let den = if r.0.facts.iter().any(|(k, _)| k == "total.IE.x") { "total.IE.x" } else { "total.IE" };
+            let num = if r.0.facts.iter().any(|(k, _)| k == "sum.fossil.IE.x") {
+                "sum.fossil.IE.x"
+            } else {
+                "sum.fossil.IE"
+            };
+            let den = if r.0.facts.iter().any(|(k, _)| k == "total.IE.x") {
+                "total.IE.x"
+            } else {
+                "total.IE"
+            };
             let r = with_fact(r, "share.fossil.IE.x", share(num, den), Some((0.5, "50")));
-            assert_eq!(share_family("share.fossil.PL", &r.0), share_family("share.fossil.PL", &share_request().0));
+            assert_eq!(
+                share_family("share.fossil.PL", &r.0),
+                share_family("share.fossil.PL", &share_request().0)
+            );
             let html = scoped_page(&r.2, "next", pl, ("IE", "share.fossil.IE.x"));
             (html, r)
         };
-        let (html, x) = other(&r, None, Some(value(json!({"geo": "IE", "siec": "TOTAL"}), "nrg_bal_c", "2024")));
+        let (html, x) = other(
+            &r,
+            None,
+            Some(value(
+                json!({"geo": "IE", "siec": "TOTAL"}),
+                "nrg_bal_c",
+                "2024",
+            )),
+        );
         alone("F25b another denominator", &html, &x);
-        let (html, x) = other(&r, Some(value(json!({"geo": "IE", "siec": list.clone()}), "nrg_bal_peh", "2023")), None);
+        let (html, x) = other(
+            &r,
+            Some(value(
+                json!({"geo": "IE", "siec": list.clone()}),
+                "nrg_bal_peh",
+                "2023",
+            )),
+            None,
+        );
         alone("F25c another period", &html, &x);
         let reversed: Vec<Value> = list.iter().rev().cloned().collect();
-        let (html, x) = other(&r, Some(value(json!({"geo": "IE", "siec": reversed}), "nrg_bal_peh", "2024")), None);
+        let (html, x) = other(
+            &r,
+            Some(value(
+                json!({"geo": "IE", "siec": reversed}),
+                "nrg_bal_peh",
+                "2024",
+            )),
+            None,
+        );
         alone("F25d the numerator's codes in another order", &html, &x);
-        let (html, x) = other(&r, Some(value(json!({"geo": "IE", "siec": list[1..].to_vec()}), "nrg_bal_peh", "2024")), None);
+        let (html, x) = other(
+            &r,
+            Some(value(
+                json!({"geo": "IE", "siec": list[1..].to_vec()}),
+                "nrg_bal_peh",
+                "2024",
+            )),
+            None,
+        );
         alone("F25d2 the numerator one code short", &html, &x);
-        alone("F26 the true max under another place's name", &page.replacen(&place(&l, "PL"), &place(&l, "IE"), 1), &r);
-        alone("F26b another member's name", &page.replacen(&place(&l, "PL"), &place(&l, "SE"), 1), &r);
-        let of = scoped_page(&l, "max", ie, el).replacen("data-cmp=\"max\"", "data-cmp=\"max\" data-of=\"fact:share.fossil.IE fact:share.fossil.EL\"", 1);
+        alone(
+            "F26 the true max under another place's name",
+            &page.replacen(&place(&l, "PL"), &place(&l, "IE"), 1),
+            &r,
+        );
+        alone(
+            "F26b another member's name",
+            &page.replacen(&place(&l, "PL"), &place(&l, "SE"), 1),
+            &r,
+        );
+        let of = scoped_page(&l, "max", ie, el).replacen(
+            "data-cmp=\"max\"",
+            "data-cmp=\"max\" data-of=\"fact:share.fossil.IE fact:share.fossil.EL\"",
+            1,
+        );
         alone("F27 a page-given set is not read", &of, &r);
-        let cross = with_fact(r.clone(), "share.fossil.PLDE", share("sum.fossil.PL", "total.DE"), Some((0.99, "99")));
-        assert_eq!(share_family("share.fossil.PL", &cross.0), share_family("share.fossil.PL", &r.0));
-        alone("F28 a cross-place share as the second", &scoped_page(&cross.2, "next", pl, ("DE", "share.fossil.PLDE")), &cross);
-        alone("F28b a cross-place share as the max", &scoped_page(&cross.2, "max", ("DE", "share.fossil.PLDE"), pl), &cross);
-        alone("F29 nuclear, held at 12 of the 20 places", &scoped_page(&l, "next", ("FR", "share.nuclear.FR"), ("SK", "share.nuclear.SK")), &r);
+        let cross = with_fact(
+            r.clone(),
+            "share.fossil.PLDE",
+            share("sum.fossil.PL", "total.DE"),
+            Some((0.99, "99")),
+        );
+        assert_eq!(
+            share_family("share.fossil.PL", &cross.0),
+            share_family("share.fossil.PL", &r.0)
+        );
+        alone(
+            "F28 a cross-place share as the second",
+            &scoped_page(&cross.2, "next", pl, ("DE", "share.fossil.PLDE")),
+            &cross,
+        );
+        alone(
+            "F28b a cross-place share as the max",
+            &scoped_page(&cross.2, "max", ("DE", "share.fossil.PLDE"), pl),
+            &cross,
+        );
+        alone(
+            "F29 nuclear, held at 12 of the 20 places",
+            &scoped_page(
+                &l,
+                "next",
+                ("FR", "share.nuclear.FR"),
+                ("SK", "share.nuclear.SK"),
+            ),
+            &r,
+        );
         let mut one = r.clone();
-        for (k, q) in r.0.facts.iter().filter(|(k, _)| k.starts_with("share.fossil.")) {
+        for (k, q) in
+            r.0.facts
+                .iter()
+                .filter(|(k, _)| k.starts_with("share.fossil."))
+        {
             let geo = &k["share.fossil.".len()..];
             let v = r.1.iter().find(|f| &f.key == k).unwrap().v;
-            one = with_fact(one, &format!("share.one.{geo}"), share(q["b"].as_str().unwrap(), q["b"].as_str().unwrap()), Some((v, l[&format!("fact:{k}.n")].as_str())));
+            one = with_fact(
+                one,
+                &format!("share.one.{geo}"),
+                share(q["b"].as_str().unwrap(), q["b"].as_str().unwrap()),
+                Some((v, l[&format!("fact:{k}.n")].as_str())),
+            );
         }
-        alone("F30 a share of numerator equal to its denominator", &scoped_page(&one.2, "next", ("PL", "share.one.PL"), ("IE", "share.one.IE")), &one);
+        alone(
+            "F30 a share of numerator equal to its denominator",
+            &scoped_page(
+                &one.2,
+                "next",
+                ("PL", "share.one.PL"),
+                ("IE", "share.one.IE"),
+            ),
+            &one,
+        );
         // F31: shares by place and by unit at once (no rows: no scope); the same page over the one unit's shares passes
-        let mut two = (Spec { facts: Vec::new(), fmts: json!({}), members: None, asked_places: None, basis: None }, Vec::new(), l.clone(), Vec::new());
-        for (geo, unit, v, text) in [("PL", "U1", 0.6, "60"), ("IE", "U1", 0.5, "50"), ("PL", "U2", 0.4, "40"), ("IE", "U2", 0.3, "30")] {
-            two = with_fact(two, &format!("n.{geo}.{unit}"), value(json!({"geo": geo, "unit": unit, "siec": ["A", "B"]}), "t", "2024"), None);
-            two = with_fact(two, &format!("d.{geo}.{unit}"), value(json!({"geo": geo, "unit": unit, "siec": "TOTAL"}), "t", "2024"), None);
-            two = with_fact(two, &format!("s.{geo}.{unit}"), share(&format!("n.{geo}.{unit}"), &format!("d.{geo}.{unit}")), Some((v, text)));
+        let mut two = (
+            Spec {
+                facts: Vec::new(),
+                fmts: json!({}),
+                members: None,
+                asked_places: None,
+                basis: None,
+            },
+            Vec::new(),
+            l.clone(),
+            Vec::new(),
+        );
+        for (geo, unit, v, text) in [
+            ("PL", "U1", 0.6, "60"),
+            ("IE", "U1", 0.5, "50"),
+            ("PL", "U2", 0.4, "40"),
+            ("IE", "U2", 0.3, "30"),
+        ] {
+            two = with_fact(
+                two,
+                &format!("n.{geo}.{unit}"),
+                value(
+                    json!({"geo": geo, "unit": unit, "siec": ["A", "B"]}),
+                    "t",
+                    "2024",
+                ),
+                None,
+            );
+            two = with_fact(
+                two,
+                &format!("d.{geo}.{unit}"),
+                value(
+                    json!({"geo": geo, "unit": unit, "siec": "TOTAL"}),
+                    "t",
+                    "2024",
+                ),
+                None,
+            );
+            two = with_fact(
+                two,
+                &format!("s.{geo}.{unit}"),
+                share(&format!("n.{geo}.{unit}"), &format!("d.{geo}.{unit}")),
+                Some((v, text)),
+            );
         }
         let gt = share_page(&two.2, "gt", ("PL", "s.PL.U1"), ("IE", "s.IE.U1"));
         alone("F31 two dimensions each give a set", &gt, &two);
@@ -2496,17 +4477,40 @@ mod tests {
         assert_eq!(share_checks(&gt, &u1), (Vec::new(), Vec::new()));
         // M3: a set over every code of the rows (transport) saying the scope
         let t = transport();
-        said("M3 the phrase over the full set", &scoped_page(&t.2, "next", ("FR", "share.tra.FR"), ("DE", "share.tra.DE")), &t, "its words say");
+        said(
+            "M3 the phrase over the full set",
+            &scoped_page(&t.2, "next", ("FR", "share.tra.FR"), ("DE", "share.tra.DE")),
+            &t,
+            "its words say",
+        );
     }
 
     /// A value family by fuel (siec) of one sector's rows: A 50, B 30, C 20, and D's rows as given (another sector's rows
     /// only, in the reviewer's fixture); fact v.<code> for A, B, C; English test names.
     fn value_family(d: &[(&str, f64)]) -> ClaimRequest {
-        let mut rows: Vec<Row> = [("A", 50.0), ("B", 30.0), ("C", 20.0)].iter().map(|(c, v)| row_at("t", &[("nrg_bal", "N1"), ("siec", c)], *v)).collect();
-        rows.extend(d.iter().map(|(bal, v)| row_at("t", &[("nrg_bal", bal), ("siec", "D")], *v)));
+        let mut rows: Vec<Row> = [("A", 50.0), ("B", 30.0), ("C", 20.0)]
+            .iter()
+            .map(|(c, v)| row_at("t", &[("nrg_bal", "N1"), ("siec", c)], *v))
+            .collect();
+        rows.extend(
+            d.iter()
+                .map(|(bal, v)| row_at("t", &[("nrg_bal", bal), ("siec", "D")], *v)),
+        );
         let defs: Vec<(String, Value)> = ["A", "B", "C"].map(|c| (format!("v.{c}"), json!({"op": "value", "table": "t", "time": "2024", "fmt": "n", "filter": {"siec": c}}))).into();
-        let names: [(&str, &str); 4] = [("A", "Alpha"), ("B", "Beta"), ("C", "Gamma"), ("D", "Delta")];
-        claim_request("t", rows, defs, json!({"time": {}}), &[("siec", &names)], ("name:unit_short_zh:N", "n"))
+        let names: [(&str, &str); 4] = [
+            ("A", "Alpha"),
+            ("B", "Beta"),
+            ("C", "Gamma"),
+            ("D", "Delta"),
+        ];
+        claim_request(
+            "t",
+            rows,
+            defs,
+            json!({"time": {}}),
+            &[("siec", &names)],
+            ("name:unit_short_zh:N", "n"),
+        )
     }
 
     /// A value note: `lead`, then A's name and value and the max word (data-cmp max).
@@ -2521,7 +4525,17 @@ mod tests {
 
     /// A claim title on A (a value fact) or on A's row, `lead` before it.
     fn value_claim(l: &BTreeMap<String, String>, a: &str, lead: &str) -> String {
-        format!("<!doctype html><html><body><h1>{}</h1></body></html>", cl(a, &format!("{lead}{}{}", nm(l, "span", "siec", "A"), claim_list("max")[0])))
+        format!(
+            "<!doctype html><html><body><h1>{}</h1></body></html>",
+            cl(
+                a,
+                &format!(
+                    "{lead}{}{}",
+                    nm(l, "span", "siec", "A"),
+                    claim_list("max")[0]
+                )
+            )
+        )
     }
 
     /// P5 and M7: a value family's set and the scope rule. A code of the rows the family's definition computes is compared
@@ -2538,29 +4552,101 @@ mod tests {
             off
         };
         let below = value_family(&[("N1", 10.0)]);
-        assert_eq!(comparison("v.A", &below.0, &below.1, &below.2).map(|(m, s)| (m.len(), s)), Some((4, false)));
-        assert_eq!(checks(&value_note(&below.3, ""), &below), Vec::<String>::new(), "P5 a computed code below");
-        assert!(checks(&value_note(&below.3, &lead), &below).iter().any(|f| f.contains("its words say")), "M3 the phrase over the full set");
+        assert_eq!(
+            comparison("v.A", &below.0, &below.1, &below.2).map(|(m, s)| (m.len(), s)),
+            Some((4, false))
+        );
+        assert_eq!(
+            checks(&value_note(&below.3, ""), &below),
+            Vec::<String>::new(),
+            "P5 a computed code below"
+        );
+        assert!(
+            checks(&value_note(&below.3, &lead), &below)
+                .iter()
+                .any(|f| f.contains("its words say")),
+            "M3 the phrase over the full set"
+        );
         let higher = value_family(&[("N1", 60.0)]);
-        assert!(checks(&value_note(&higher.3, ""), &higher).iter().any(|f| f.contains("does not hold")), "P5 a computed code above");
-        assert!(checks(&value_note(&higher.3, &lead), &higher).iter().any(|f| f.contains("does not hold")), "P5 the phrase does not help");
+        assert!(
+            checks(&value_note(&higher.3, ""), &higher)
+                .iter()
+                .any(|f| f.contains("does not hold")),
+            "P5 a computed code above"
+        );
+        assert!(
+            checks(&value_note(&higher.3, &lead), &higher)
+                .iter()
+                .any(|f| f.contains("does not hold")),
+            "P5 the phrase does not help"
+        );
         // the reviewer's fixture: D's rows under another sector only
         let other = value_family(&[("N2", 60.0)]);
-        assert_eq!(comparison("v.A", &other.0, &other.1, &other.2).map(|(m, s)| (m.len(), s)), Some((3, true)));
-        assert!(checks(&value_note(&other.3, ""), &other).iter().any(|f| f.contains("do not say")), "a scoped value note, no phrase");
-        assert_eq!(checks(&value_note(&other.3, &lead), &other), Vec::<String>::new(), "a scoped value note with the phrase");
+        assert_eq!(
+            comparison("v.A", &other.0, &other.1, &other.2).map(|(m, s)| (m.len(), s)),
+            Some((3, true))
+        );
+        assert!(
+            checks(&value_note(&other.3, ""), &other)
+                .iter()
+                .any(|f| f.contains("do not say")),
+            "a scoped value note, no phrase"
+        );
+        assert_eq!(
+            checks(&value_note(&other.3, &lead), &other),
+            Vec::<String>::new(),
+            "a scoped value note with the phrase"
+        );
         // M9b: D's rows under the family's sector and another: never summed in; the note and the claim refused
         let both = value_family(&[("N1", 10.0), ("N2", 60.0)]);
         assert!(comparison("v.A", &both.0, &both.1, &both.2).is_none());
-        assert!(checks(&value_note(&both.3, ""), &both).iter().any(|f| f.contains("cannot read alike")), "M9b a note");
-        assert!(checks(&value_claim(&both.3, "fact:v.A", ""), &both).iter().any(|f| f.contains("cannot read alike")), "M9b a claim");
+        assert!(
+            checks(&value_note(&both.3, ""), &both)
+                .iter()
+                .any(|f| f.contains("cannot read alike")),
+            "M9b a note"
+        );
+        assert!(
+            checks(&value_claim(&both.3, "fact:v.A", ""), &both)
+                .iter()
+                .any(|f| f.contains("cannot read alike")),
+            "M9b a claim"
+        );
         // M7: claim titles
-        assert_eq!(checks(&value_claim(&below.3, "fact:v.A", ""), &below), Vec::<String>::new(), "a value claim over the full set");
-        assert!(checks(&value_claim(&other.3, "fact:v.A", ""), &other).iter().any(|f| f.contains("(C9)")), "M7 a scoped value claim, no phrase");
-        assert_eq!(checks(&value_claim(&other.3, "fact:v.A", &lead), &other), Vec::<String>::new(), "a scoped value claim with the phrase");
-        let a_row = below.1.iter().find(|x| x.dims["siec"] == "A").unwrap().src.clone();
-        assert_eq!(checks(&value_claim(&below.3, &a_row, ""), &below), Vec::<String>::new(), "a row claim");
-        assert!(checks(&value_claim(&below.3, &a_row, &lead), &below).iter().any(|f| f.contains("(C9)")), "M7 a row claim saying the scope");
+        assert_eq!(
+            checks(&value_claim(&below.3, "fact:v.A", ""), &below),
+            Vec::<String>::new(),
+            "a value claim over the full set"
+        );
+        assert!(
+            checks(&value_claim(&other.3, "fact:v.A", ""), &other)
+                .iter()
+                .any(|f| f.contains("(C9)")),
+            "M7 a scoped value claim, no phrase"
+        );
+        assert_eq!(
+            checks(&value_claim(&other.3, "fact:v.A", &lead), &other),
+            Vec::<String>::new(),
+            "a scoped value claim with the phrase"
+        );
+        let a_row = below
+            .1
+            .iter()
+            .find(|x| x.dims["siec"] == "A")
+            .unwrap()
+            .src
+            .clone();
+        assert_eq!(
+            checks(&value_claim(&below.3, &a_row, ""), &below),
+            Vec::<String>::new(),
+            "a row claim"
+        );
+        assert!(
+            checks(&value_claim(&below.3, &a_row, &lead), &below)
+                .iter()
+                .any(|f| f.contains("(C9)")),
+            "M7 a row claim saying the scope"
+        );
         // q2 (P2): every flow set over every code of its rows, no phrase
         let q2 = claim_q2();
         for k in ["from.O4000XBIO", "to.FC_OTH_HH_E"] {
@@ -2577,15 +4663,43 @@ mod tests {
     fn a_bar_page_prints_its_total_row_and_compares_its_parts_only() {
         let lead = "";
         let bars = |extra: (&str, f64)| -> ClaimRequest {
-            let mut rows: Vec<Row> = [("A", 50.0), ("B", 30.0), ("C", 20.0)].iter().map(|(c, v)| row_at("t", &[("nrg_bal", "N1"), ("siec", c)], *v)).collect();
-            rows.push(row_at("t", &[("nrg_bal", "N1"), ("siec", extra.0)], extra.1));
+            let mut rows: Vec<Row> = [("A", 50.0), ("B", 30.0), ("C", 20.0)]
+                .iter()
+                .map(|(c, v)| row_at("t", &[("nrg_bal", "N1"), ("siec", c)], *v))
+                .collect();
+            rows.push(row_at(
+                "t",
+                &[("nrg_bal", "N1"), ("siec", extra.0)],
+                extra.1,
+            ));
             let defs: Vec<(String, Value)> =
                 ["A", "B", "C", extra.0].map(|c| (format!("v.{c}"), json!({"op": "value", "table": "t", "time": "2024", "fmt": "n", "filter": {"siec": c}}))).into();
-            let names: [(&str, &str); 4] = [("A", "Alpha"), ("B", "Beta"), ("C", "Gamma"), (extra.0, "Whole")];
-            claim_request("t", rows, defs, json!({"time": {}}), &[("siec", &names)], ("name:unit_short_zh:N", "n"))
+            let names: [(&str, &str); 4] = [
+                ("A", "Alpha"),
+                ("B", "Beta"),
+                ("C", "Gamma"),
+                (extra.0, "Whole"),
+            ];
+            claim_request(
+                "t",
+                rows,
+                defs,
+                json!({"time": {}}),
+                &[("siec", &names)],
+                ("name:unit_short_zh:N", "n"),
+            )
         };
         // the total printed beside the notes, outside them
-        let with_total = |html: String, l: &BTreeMap<String, String>, code: &str| html.replacen("</svg>", &format!("<text>{}</text></svg>", nv(l, "tspan", &format!("v.{code}"), ".n")), 1);
+        let with_total = |html: String, l: &BTreeMap<String, String>, code: &str| {
+            html.replacen(
+                "</svg>",
+                &format!(
+                    "<text>{}</text></svg>",
+                    nv(l, "tspan", &format!("v.{code}"), ".n")
+                ),
+                1,
+            )
+        };
         let checks = |html: &str, (spec, rows, facts, ledger): &ClaimRequest| {
             let mut off = check_relations(html, ledger, spec, facts, rows);
             off.extend(check_claims(html, ledger, spec, facts, rows));
@@ -2595,22 +4709,89 @@ mod tests {
         let total = bars(("TOTAL", 100.0));
         assert_eq!(family("v.A", &total.0), ["v.A", "v.B", "v.C"]);
         assert!(family("v.TOTAL", &total.0).is_empty());
-        assert_eq!(comparison("v.A", &total.0, &total.1, &total.2).map(|(m, s)| (m.len(), s)), Some((3, false)));
-        assert_eq!(checks(&with_total(value_note(&total.3, lead), &total.3, "TOTAL"), &total), Vec::<String>::new(), "the total printed, A the max of its parts");
-        let a_row = total.1.iter().find(|x| x.dims["siec"] == "A").unwrap().src.clone();
-        assert_eq!(row_family(&a_row, &total.1).map(|(s, v)| (s.len(), v)), Some((3, vec!["siec".to_string()])));
-        assert_eq!(checks(&value_claim(&total.3, &a_row, ""), &total), Vec::<String>::new(), "a row claim over the parts");
-        let t_row = total.1.iter().find(|x| x.dims["siec"] == "TOTAL").unwrap().src.clone();
-        assert!(row_family(&t_row, &total.1).is_none(), "a total row is compared with nothing");
+        assert_eq!(
+            comparison("v.A", &total.0, &total.1, &total.2).map(|(m, s)| (m.len(), s)),
+            Some((3, false))
+        );
+        assert_eq!(
+            checks(
+                &with_total(value_note(&total.3, lead), &total.3, "TOTAL"),
+                &total
+            ),
+            Vec::<String>::new(),
+            "the total printed, A the max of its parts"
+        );
+        let a_row = total
+            .1
+            .iter()
+            .find(|x| x.dims["siec"] == "A")
+            .unwrap()
+            .src
+            .clone();
+        assert_eq!(
+            row_family(&a_row, &total.1).map(|(s, v)| (s.len(), v)),
+            Some((3, vec!["siec".to_string()]))
+        );
+        assert_eq!(
+            checks(&value_claim(&total.3, &a_row, ""), &total),
+            Vec::<String>::new(),
+            "a row claim over the parts"
+        );
+        let t_row = total
+            .1
+            .iter()
+            .find(|x| x.dims["siec"] == "TOTAL")
+            .unwrap()
+            .src
+            .clone();
+        assert!(
+            row_family(&t_row, &total.1).is_none(),
+            "a total row is compared with nothing"
+        );
         // must fail: a note stating the total the max
-        let on_total = value_note(&total.3, lead).replacen("data-a=\"fact:v.A.n\"", "data-a=\"fact:v.TOTAL.n\"", 1).replacen(&nm(&total.3, "tspan", "siec", "A"), &nm(&total.3, "tspan", "siec", "TOTAL"), 1).replacen(&nv(&total.3, "tspan", "v.A", ".n"), &nv(&total.3, "tspan", "v.TOTAL", ".n"), 1);
-        assert!(checks(&on_total, &total).iter().any(|f| f.contains("has no comparison set")), "a total stated the max of its parts");
+        let on_total = value_note(&total.3, lead)
+            .replacen("data-a=\"fact:v.A.n\"", "data-a=\"fact:v.TOTAL.n\"", 1)
+            .replacen(
+                &nm(&total.3, "tspan", "siec", "A"),
+                &nm(&total.3, "tspan", "siec", "TOTAL"),
+                1,
+            )
+            .replacen(
+                &nv(&total.3, "tspan", "v.A", ".n"),
+                &nv(&total.3, "tspan", "v.TOTAL", ".n"),
+                1,
+            );
+        assert!(
+            checks(&on_total, &total)
+                .iter()
+                .any(|f| f.contains("has no comparison set")),
+            "a total stated the max of its parts"
+        );
         // must fail: a code of no total type at the same value is a part, compared as ever
         let other = bars(("E", 100.0));
         assert_eq!(family("v.A", &other.0).len(), 4);
-        assert!(checks(&with_total(value_note(&other.3, lead), &other.3, "E"), &other).iter().any(|f| f.contains("does not hold")), "E is no total row");
-        let a_row = other.1.iter().find(|x| x.dims["siec"] == "A").unwrap().src.clone();
-        assert!(checks(&value_claim(&other.3, &a_row, ""), &other).iter().any(|f| f.contains("(C4)")), "a row claim under E");
+        assert!(
+            checks(
+                &with_total(value_note(&other.3, lead), &other.3, "E"),
+                &other
+            )
+            .iter()
+            .any(|f| f.contains("does not hold")),
+            "E is no total row"
+        );
+        let a_row = other
+            .1
+            .iter()
+            .find(|x| x.dims["siec"] == "A")
+            .unwrap()
+            .src
+            .clone();
+        assert!(
+            checks(&value_claim(&other.3, &a_row, ""), &other)
+                .iter()
+                .any(|f| f.contains("(C4)")),
+            "a row claim under E"
+        );
     }
 
     /// The owner 11-04 on a flow page: each side's whole printed (siec TOTAL; nrg_bal FC_E, typed total in the registered
@@ -2619,35 +4800,83 @@ mod tests {
     #[test]
     fn a_flow_page_prints_each_sides_total_and_its_finding_still_holds() {
         let (mut spec, mut facts, mut ledger) = flow_request();
-        let add = |spec: &mut Spec, facts: &mut Vec<Fact>, ledger: &mut BTreeMap<String, String>, (key, dim, code, v, text): (&str, &str, &str, f64, &str)| {
+        let add = |spec: &mut Spec,
+                   facts: &mut Vec<Fact>,
+                   ledger: &mut BTreeMap<String, String>,
+                   (key, dim, code, v, text): (&str, &str, &str, f64, &str)| {
             spec.facts.push((key.into(), json!({"op": "value", "table": "nrg_bal_c", "time": "2024", "fmt": "ktoe", "filter": {dim: code}})));
-            facts.push(Fact { key: key.into(), op: "value".into(), v, t: None, n: None, who: Vec::new(), fmt: "ktoe".into(), reads: Vec::new(), exact: None });
+            facts.push(Fact {
+                key: key.into(),
+                op: "value".into(),
+                v,
+                t: None,
+                n: None,
+                who: Vec::new(),
+                fmt: "ktoe".into(),
+                reads: Vec::new(),
+                exact: None,
+            });
             ledger.insert(format!("fact:{key}.n"), text.into());
             ledger.insert(format!("name:zh_names:{dim}:{code}"), "Whole".into());
         };
-        let totals = [("from.TOTAL", "siec", "TOTAL", 177745.063, "177,745.06"), ("to.FC_E", "nrg_bal", "FC_E", 177745.063, "177,745.06")];
+        let totals = [
+            ("from.TOTAL", "siec", "TOTAL", 177745.063, "177,745.06"),
+            ("to.FC_E", "nrg_bal", "FC_E", 177745.063, "177,745.06"),
+        ];
         for t in totals {
             add(&mut spec, &mut facts, &mut ledger, t);
         }
         let printed = |page: String, ledger: &BTreeMap<String, String>, keys: &[&str]| {
-            let texts: String = keys.iter().map(|k| format!("<text><tspan data-src=\"fact:{k}.n\">{}</tspan></text>", ledger[&format!("fact:{k}.n")])).collect();
+            let texts: String = keys
+                .iter()
+                .map(|k| {
+                    format!(
+                        "<text><tspan data-src=\"fact:{k}.n\">{}</tspan></text>",
+                        ledger[&format!("fact:{k}.n")]
+                    )
+                })
+                .collect();
             page.replacen("</g></svg>", &format!("</g>{texts}</svg>"), 1)
         };
         assert_eq!(family("from.G3000", &spec).len(), 6);
         assert_eq!(family("to.FC_TRA_E", &spec).len(), 5);
         assert!(family("from.TOTAL", &spec).is_empty() && family("to.FC_E", &spec).is_empty());
         let page = printed(flow_page(), &ledger, &["from.TOTAL", "to.FC_E"]);
-        assert_eq!(check_relations(&page, &ledger, &spec, &facts, &[]), Vec::<String>::new(), "both wholes printed, the finding holds");
+        assert_eq!(
+            check_relations(&page, &ledger, &spec, &facts, &[]),
+            Vec::<String>::new(),
+            "both wholes printed, the finding holds"
+        );
         // must fail: the whole stated the max
         let on_whole = page
-            .replacen("data-cmp=\"max\" data-a=\"fact:from.O4000XBIO.n\"", "data-cmp=\"max\" data-a=\"fact:from.TOTAL.n\"", 1)
-            .replacen("data-src=\"fact:from.O4000XBIO.n\">60,699.06", "data-src=\"fact:from.TOTAL.n\">177,745.06", 1);
-        assert!(check_relations(&on_whole, &ledger, &spec, &facts, &[]).iter().any(|f| f.contains("has no comparison set")));
+            .replacen(
+                "data-cmp=\"max\" data-a=\"fact:from.O4000XBIO.n\"",
+                "data-cmp=\"max\" data-a=\"fact:from.TOTAL.n\"",
+                1,
+            )
+            .replacen(
+                "data-src=\"fact:from.O4000XBIO.n\">60,699.06",
+                "data-src=\"fact:from.TOTAL.n\">177,745.06",
+                1,
+            );
+        assert!(check_relations(&on_whole, &ledger, &spec, &facts, &[])
+            .iter()
+            .any(|f| f.contains("has no comparison set")));
         // must fail: a source of no total type at the whole's value
         let (mut spec, mut facts, mut ledger) = flow_request();
-        add(&mut spec, &mut facts, &mut ledger, ("from.X9999", "siec", "X9999", 177745.063, "177,745.06"));
+        add(
+            &mut spec,
+            &mut facts,
+            &mut ledger,
+            ("from.X9999", "siec", "X9999", 177745.063, "177,745.06"),
+        );
         let page = printed(flow_page(), &ledger, &["from.X9999"]);
-        assert!(check_relations(&page, &ledger, &spec, &facts, &[]).iter().any(|f| f.contains("does not hold")), "X9999 is no total row");
+        assert!(
+            check_relations(&page, &ledger, &spec, &facts, &[])
+                .iter()
+                .any(|f| f.contains("does not hold")),
+            "X9999 is no total row"
+        );
     }
 
     /// B1's flow side whole summed in the request ({node}_total: a list of every code its side's facts hold, in the side's
@@ -2656,45 +4885,161 @@ mod tests {
     #[test]
     fn a_flow_side_summed_whole_is_no_part_and_the_other_node_stays() {
         let (mut spec, mut facts, mut ledger) = flow_request();
-        let add = |spec: &mut Spec, facts: &mut Vec<Fact>, ledger: &mut BTreeMap<String, String>, (key, dim, codes, v, text): (&str, &str, &[&str], f64, &str)| {
+        let add = |spec: &mut Spec,
+                   facts: &mut Vec<Fact>,
+                   ledger: &mut BTreeMap<String, String>,
+                   (key, dim, codes, v, text): (&str, &str, &[&str], f64, &str)| {
             spec.facts.push((key.into(), json!({"op": "value", "table": "nrg_bal_c", "time": "2024", "fmt": "ktoe", "filter": {dim: codes}})));
-            facts.push(Fact { key: key.into(), op: "value".into(), v, t: None, n: None, who: Vec::new(), fmt: "ktoe".into(), reads: Vec::new(), exact: None });
+            facts.push(Fact {
+                key: key.into(),
+                op: "value".into(),
+                v,
+                t: None,
+                n: None,
+                who: Vec::new(),
+                fmt: "ktoe".into(),
+                reads: Vec::new(),
+                exact: None,
+            });
             ledger.insert(format!("fact:{key}.n"), text.into());
         };
-        let sources = ["O4000XBIO", "G3000", "E7000", "RA000", "H8000", "C0000X0350-0370", "C0350-0370", "W6100_6220"];
-        let uses = ["FC_OTH_HH_E", "FC_TRA_E", "FC_IND_E", "FC_OTH_CP_E", "FC_OTH_AF_E", "FC_OTH_FISH_E", "FC_OTH_NSP_E"];
-        add(&mut spec, &mut facts, &mut ledger, ("sankey_total.source", "siec", &sources, 177745.063, "177,745.06"));
-        add(&mut spec, &mut facts, &mut ledger, ("sankey_total.target", "nrg_bal", &uses, 177745.063, "177,745.06"));
+        let sources = [
+            "O4000XBIO",
+            "G3000",
+            "E7000",
+            "RA000",
+            "H8000",
+            "C0000X0350-0370",
+            "C0350-0370",
+            "W6100_6220",
+        ];
+        let uses = [
+            "FC_OTH_HH_E",
+            "FC_TRA_E",
+            "FC_IND_E",
+            "FC_OTH_CP_E",
+            "FC_OTH_AF_E",
+            "FC_OTH_FISH_E",
+            "FC_OTH_NSP_E",
+        ];
+        add(
+            &mut spec,
+            &mut facts,
+            &mut ledger,
+            (
+                "sankey_total.source",
+                "siec",
+                &sources,
+                177745.063,
+                "177,745.06",
+            ),
+        );
+        add(
+            &mut spec,
+            &mut facts,
+            &mut ledger,
+            (
+                "sankey_total.target",
+                "nrg_bal",
+                &uses,
+                177745.063,
+                "177,745.06",
+            ),
+        );
         let printed = |page: String, ledger: &BTreeMap<String, String>, keys: &[&str]| {
-            let texts: String = keys.iter().map(|k| format!("<text><tspan data-src=\"fact:{k}.n\">{}</tspan></text>", ledger[&format!("fact:{k}.n")])).collect();
+            let texts: String = keys
+                .iter()
+                .map(|k| {
+                    format!(
+                        "<text><tspan data-src=\"fact:{k}.n\">{}</tspan></text>",
+                        ledger[&format!("fact:{k}.n")]
+                    )
+                })
+                .collect();
             page.replacen("</g></svg>", &format!("</g>{texts}</svg>"), 1)
         };
-        assert_eq!(family("from.G3000", &spec), ["from.E7000", "from.G3000", "from.H8000", "from.O4000XBIO", "from.RA000", "from_other"], "the other node stays");
+        assert_eq!(
+            family("from.G3000", &spec),
+            [
+                "from.E7000",
+                "from.G3000",
+                "from.H8000",
+                "from.O4000XBIO",
+                "from.RA000",
+                "from_other"
+            ],
+            "the other node stays"
+        );
         assert_eq!(family("to_other", &spec).len(), 5);
-        assert!(family("sankey_total.source", &spec).is_empty() && family("sankey_total.target", &spec).is_empty());
-        let page = printed(flow_page(), &ledger, &["sankey_total.source", "sankey_total.target"]);
-        assert_eq!(check_relations(&page, &ledger, &spec, &facts, &[]), Vec::<String>::new(), "both summed wholes printed, the finding holds");
+        assert!(
+            family("sankey_total.source", &spec).is_empty()
+                && family("sankey_total.target", &spec).is_empty()
+        );
+        let page = printed(
+            flow_page(),
+            &ledger,
+            &["sankey_total.source", "sankey_total.target"],
+        );
+        assert_eq!(
+            check_relations(&page, &ledger, &spec, &facts, &[]),
+            Vec::<String>::new(),
+            "both summed wholes printed, the finding holds"
+        );
         let on_whole = page
-            .replacen("data-cmp=\"max\" data-a=\"fact:from.O4000XBIO.n\"", "data-cmp=\"max\" data-a=\"fact:sankey_total.source.n\"", 1)
-            .replacen("data-src=\"fact:from.O4000XBIO.n\">60,699.06", "data-src=\"fact:sankey_total.source.n\">177,745.06", 1);
-        assert!(check_relations(&on_whole, &ledger, &spec, &facts, &[]).iter().any(|f| f.contains("has no comparison set")));
+            .replacen(
+                "data-cmp=\"max\" data-a=\"fact:from.O4000XBIO.n\"",
+                "data-cmp=\"max\" data-a=\"fact:sankey_total.source.n\"",
+                1,
+            )
+            .replacen(
+                "data-src=\"fact:from.O4000XBIO.n\">60,699.06",
+                "data-src=\"fact:sankey_total.source.n\">177,745.06",
+                1,
+            );
+        assert!(check_relations(&on_whole, &ledger, &spec, &facts, &[])
+            .iter()
+            .any(|f| f.contains("has no comparison set")));
         // must fail: a list missing one source (RA000) is no whole, a part above the largest
         let (mut spec, mut facts, mut ledger) = flow_request();
         let short: Vec<&str> = sources.iter().copied().filter(|c| *c != "RA000").collect();
-        add(&mut spec, &mut facts, &mut ledger, ("sankey_most.source", "siec", &short, 160851.329, "160,851.33"));
+        add(
+            &mut spec,
+            &mut facts,
+            &mut ledger,
+            (
+                "sankey_most.source",
+                "siec",
+                &short,
+                160851.329,
+                "160,851.33",
+            ),
+        );
         assert_eq!(family("from.G3000", &spec).len(), 7);
         let page = printed(flow_page(), &ledger, &["sankey_most.source"]);
-        assert!(check_relations(&page, &ledger, &spec, &facts, &[]).iter().any(|f| f.contains("does not hold")), "a list short of the side is a part");
+        assert!(
+            check_relations(&page, &ledger, &spec, &facts, &[])
+                .iter()
+                .any(|f| f.contains("does not hold")),
+            "a list short of the side is a part"
+        );
     }
 
     /// The comparisons a stored request hands the leaf (run with --ignored; P5_REQUEST a request.json), as one JSON line.
     #[test]
     #[ignore]
     fn comparisons_of_a_stored_request() {
-        let req: Value = serde_json::from_str(&std::fs::read_to_string(std::env::var("P5_REQUEST").unwrap()).unwrap()).unwrap();
+        let req: Value = serde_json::from_str(
+            &std::fs::read_to_string(std::env::var("P5_REQUEST").unwrap()).unwrap(),
+        )
+        .unwrap();
         let spec: Spec = serde_json::from_value(req["spec"].clone()).unwrap();
         let facts: Vec<Fact> = serde_json::from_value(req["facts"].clone()).unwrap();
-        let rows: Vec<Row> = req["rows"].as_array().into_iter().flatten().filter_map(|r| serde_json::from_value(r.clone()).ok()).collect();
+        let rows: Vec<Row> = req["rows"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|r| serde_json::from_value(r.clone()).ok())
+            .collect();
         println!("COMPARISONS {}", comparisons(&spec, &rows, &facts));
     }
 
@@ -2724,12 +5069,28 @@ mod tests {
     /// display part with it) with the name rows.
     type ClaimRequest = (Spec, Vec<Row>, Vec<Fact>, BTreeMap<String, String>);
 
-    fn claim_request(table: &str, rows: Vec<Row>, defs: Vec<(String, Value)>, fmts: Value, names: &[(&str, &[(&str, &str)])], unit: (&str, &str)) -> ClaimRequest {
-        let spec = Spec { facts: defs, fmts, members: None, asked_places: None, basis: None };
+    fn claim_request(
+        table: &str,
+        rows: Vec<Row>,
+        defs: Vec<(String, Value)>,
+        fmts: Value,
+        names: &[(&str, &[(&str, &str)])],
+        unit: (&str, &str),
+    ) -> ClaimRequest {
+        let spec = Spec {
+            facts: defs,
+            fmts,
+            members: None,
+            asked_places: None,
+            basis: None,
+        };
         let facts = crate::next_facts::compute(&spec, &rows).unwrap();
         let mut ledger = crate::next_facts::leaf_ledger(&spec, &rows, &facts).unwrap();
         for (dim, list) in names {
-            ledger.extend(list.iter().map(|(c, n)| (format!("name:zh_names:{dim}:{c}"), n.to_string())));
+            ledger.extend(
+                list.iter()
+                    .map(|(c, n)| (format!("name:zh_names:{dim}:{c}"), n.to_string())),
+            );
         }
         ledger.insert(unit.0.into(), unit.1.into());
         assert!(rows.iter().all(|r| r.table == table));
@@ -2751,22 +5112,64 @@ mod tests {
             .skip(1)
             .filter_map(|l| {
                 let f: Vec<&str> = l.split('\t').collect();
-                (Q2_SECTORS.iter().any(|(c, _)| *c == f[0]) && Q2_FUELS.iter().any(|(c, _)| *c == f[1])).then(|| Row {
-                    src: format!("series:nrg_bal_s/A.{}.{}.KTOE.DE:2024:OBS_VALUE", f[0], f[1]),
+                (Q2_SECTORS.iter().any(|(c, _)| *c == f[0])
+                    && Q2_FUELS.iter().any(|(c, _)| *c == f[1]))
+                .then(|| Row {
+                    src: format!(
+                        "series:nrg_bal_s/A.{}.{}.KTOE.DE:2024:OBS_VALUE",
+                        f[0], f[1]
+                    ),
                     table: "nrg_bal_s".into(),
-                    dims: [("freq", "A"), ("nrg_bal", f[0]), ("siec", f[1]), ("unit", "KTOE"), ("geo", "DE")].map(|(d, c)| (d.to_string(), c.to_string())).into(),
+                    dims: [
+                        ("freq", "A"),
+                        ("nrg_bal", f[0]),
+                        ("siec", f[1]),
+                        ("unit", "KTOE"),
+                        ("geo", "DE"),
+                    ]
+                    .map(|(d, c)| (d.to_string(), c.to_string()))
+                    .into(),
                     time: "2024".into(),
-                    value: f[2].parse::<f64>().unwrap() + if (f[0], f[1]) == ("FC_OTH_HH_E", "G3000") { more } else { 0.0 },
+                    value: f[2].parse::<f64>().unwrap()
+                        + if (f[0], f[1]) == ("FC_OTH_HH_E", "G3000") {
+                            more
+                        } else {
+                            0.0
+                        },
                 })
             })
             .collect();
         let q = |dim: &str, code: Value| json!({"op": "value", "table": "nrg_bal_s", "time": "2024", "fmt": "ktoe", "filter": {dim: code}});
-        let mut defs: Vec<(String, Value)> = ["E7000", "G3000", "H8000", "O4000XBIO", "RA000"].map(|c| (format!("from.{c}"), q("siec", json!(c)))).into();
-        defs.push(("from_other".into(), q("siec", json!(["C0000X0350-0370", "C0350-0370", "W6100_6220"]))));
-        defs.extend(["FC_IND_E", "FC_OTH_CP_E", "FC_OTH_HH_E", "FC_TRA_E"].map(|c| (format!("to.{c}"), q("nrg_bal", json!(c)))));
-        defs.push(("to_other".into(), q("nrg_bal", json!(["FC_OTH_AF_E", "FC_OTH_FISH_E", "FC_OTH_NSP_E"]))));
+        let mut defs: Vec<(String, Value)> = ["E7000", "G3000", "H8000", "O4000XBIO", "RA000"]
+            .map(|c| (format!("from.{c}"), q("siec", json!(c))))
+            .into();
+        defs.push((
+            "from_other".into(),
+            q(
+                "siec",
+                json!(["C0000X0350-0370", "C0350-0370", "W6100_6220"]),
+            ),
+        ));
+        defs.extend(
+            ["FC_IND_E", "FC_OTH_CP_E", "FC_OTH_HH_E", "FC_TRA_E"]
+                .map(|c| (format!("to.{c}"), q("nrg_bal", json!(c)))),
+        );
+        defs.push((
+            "to_other".into(),
+            q(
+                "nrg_bal",
+                json!(["FC_OTH_AF_E", "FC_OTH_FISH_E", "FC_OTH_NSP_E"]),
+            ),
+        ));
         let fmts = json!({"ktoe": {"dec": 2, "scale": 1, "suffix": " 千吨油当量"}, "time": {}});
-        claim_request("nrg_bal_s", rows, defs, fmts, &[("siec", &Q2_FUELS), ("nrg_bal", &Q2_SECTORS)], ("name:unit_short_zh:KTOE", "千吨油当量"))
+        claim_request(
+            "nrg_bal_s",
+            rows,
+            defs,
+            fmts,
+            &[("siec", &Q2_FUELS), ("nrg_bal", &Q2_SECTORS)],
+            ("name:unit_short_zh:KTOE", "千吨油当量"),
+        )
     }
 
     /// Another data shape (test-only numbers): fuel groups to three countries, GWH in whole numbers (no display part), no
@@ -2790,17 +5193,35 @@ mod tests {
             .map(|(g, c, v)| Row {
                 src: format!("series:gen/{g}.{c}:2024:OBS_VALUE"),
                 table: "gen".into(),
-                dims: [("siec_group", g), ("geo", c)].map(|(d, c)| (d.to_string(), c.to_string())).into(),
+                dims: [("siec_group", g), ("geo", c)]
+                    .map(|(d, c)| (d.to_string(), c.to_string()))
+                    .into(),
                 time: "2024".into(),
                 value: v,
             })
             .into();
         let q = |dim: &str, code: &str| json!({"op": "value", "table": "gen", "time": "2024", "fmt": "gwh", "filter": {dim: code}});
-        let groups = [("fossil", "化石能源"), ("nuclear", "核能"), ("renewable", "可再生能源"), ("other", "其他能源")];
+        let groups = [
+            ("fossil", "化石能源"),
+            ("nuclear", "核能"),
+            ("renewable", "可再生能源"),
+            ("other", "其他能源"),
+        ];
         let geos = [("DE", "德国"), ("FR", "法国"), ("ES", "西班牙")];
-        let defs = groups.iter().map(|(g, _)| (format!("n.{g}"), q("siec_group", g))).chain(geos.iter().map(|(c, _)| (format!("n.{c}"), q("geo", c)))).collect();
+        let defs = groups
+            .iter()
+            .map(|(g, _)| (format!("n.{g}"), q("siec_group", g)))
+            .chain(geos.iter().map(|(c, _)| (format!("n.{c}"), q("geo", c))))
+            .collect();
         let fmts = json!({"gwh": {"dec": 0, "scale": 1, "suffix": " 吉瓦时"}, "time": {}});
-        claim_request("gen", rows, defs, fmts, &[("siec_group", &groups), ("iso2", &geos)], ("name:unit_short_zh:GWH", "吉瓦时"))
+        claim_request(
+            "gen",
+            rows,
+            defs,
+            fmts,
+            &[("siec_group", &groups), ("iso2", &geos)],
+            ("name:unit_short_zh:GWH", "吉瓦时"),
+        )
     }
 
     /// The two largest nodes of each side and the unit of a flow page, as (name dim, code, fact key).
@@ -2811,12 +5232,21 @@ mod tests {
     }
 
     const Q2_SIDES: Sides = Sides {
-        a: [("siec", "O4000XBIO", "from.O4000XBIO"), ("siec", "G3000", "from.G3000")],
-        b: [("nrg_bal", "FC_OTH_HH_E", "to.FC_OTH_HH_E"), ("nrg_bal", "FC_TRA_E", "to.FC_TRA_E")],
+        a: [
+            ("siec", "O4000XBIO", "from.O4000XBIO"),
+            ("siec", "G3000", "from.G3000"),
+        ],
+        b: [
+            ("nrg_bal", "FC_OTH_HH_E", "to.FC_OTH_HH_E"),
+            ("nrg_bal", "FC_TRA_E", "to.FC_TRA_E"),
+        ],
         unit: "name:unit_short_zh:KTOE",
     };
     const GEN_SIDES: Sides = Sides {
-        a: [("siec_group", "renewable", "n.renewable"), ("siec_group", "nuclear", "n.nuclear")],
+        a: [
+            ("siec_group", "renewable", "n.renewable"),
+            ("siec_group", "nuclear", "n.nuclear"),
+        ],
         b: [("iso2", "FR", "n.FR"), ("iso2", "DE", "n.DE")],
         unit: "name:unit_short_zh:GWH",
     };
@@ -2830,17 +5260,31 @@ mod tests {
     /// A fact's number at `part` (".r", ".n"), bold, as the leaf prints it.
     fn nv(l: &BTreeMap<String, String>, tag: &str, key: &str, part: &str) -> String {
         let src = format!("fact:{key}{part}");
-        let (b, e) = if tag == "span" { ("<b class=\"n\">", "</b>") } else { ("<tspan font-weight=\"700\">", "</tspan>") };
+        let (b, e) = if tag == "span" {
+            ("<b class=\"n\">", "</b>")
+        } else {
+            ("<tspan font-weight=\"700\">", "</tspan>")
+        };
         format!("{b}<{tag} data-src=\"{src}\">{}</{tag}>{e}", l[&src])
     }
 
     /// The flow page as the B11 leaf draws it: `h1` (a claim span, or None: the finding's headline at `part`), the dek (with
     /// a claim: the finding with its second, at `part`; else words), the accent on the first source, a note per side.
-    fn claim_page(l: &BTreeMap<String, String>, s: &Sides, part: &str, h1: Option<String>, kicker: &str) -> String {
+    fn claim_page(
+        l: &BTreeMap<String, String>,
+        s: &Sides,
+        part: &str,
+        h1: Option<String>,
+        kicker: &str,
+    ) -> String {
         let above = relation_words("next")[0].clone();
         let unit = format!("<span data-src=\"{}\">{}</span>", s.unit, l[s.unit]);
         let [(da, ca, ka), (db, cb, kb)] = s.a;
-        let head = format!("{} {} {unit}\u{ff0c}{above}", nm(l, "span", da, ca), nv(l, "span", ka, part));
+        let head = format!(
+            "{} {} {unit}\u{ff0c}{above}",
+            nm(l, "span", da, ca),
+            nv(l, "span", ka, part)
+        );
         let (h1, dek) = match h1 {
             Some(claim) => (
                 claim,
@@ -2878,11 +5322,20 @@ mod tests {
     }
 
     /// Every check a leaf page meets (check_leaf_page's, but the placeholders and months), each with its findings.
-    fn all_checks(html: &str, (spec, rows, facts, ledger): &ClaimRequest) -> BTreeMap<&'static str, Vec<String>> {
+    fn all_checks(
+        html: &str,
+        (spec, rows, facts, ledger): &ClaimRequest,
+    ) -> BTreeMap<&'static str, Vec<String>> {
         BTreeMap::from([
             ("numbers", check_numbers(html, ledger, &[])),
-            ("recheck", crate::next_facts::recheck(ledger, spec, rows, facts)),
-            ("relations", check_relations(html, ledger, spec, facts, rows)),
+            (
+                "recheck",
+                crate::next_facts::recheck(ledger, spec, rows, facts),
+            ),
+            (
+                "relations",
+                check_relations(html, ledger, spec, facts, rows),
+            ),
             ("claims", check_claims(html, ledger, spec, facts, rows)),
             ("accent", check_accent_named(html)),
         ])
@@ -2890,7 +5343,11 @@ mod tests {
 
     /// The request with no display part in its ledger (a core before B11).
     fn without_display((spec, rows, facts, ledger): &ClaimRequest) -> ClaimRequest {
-        let ledger = ledger.iter().filter(|(k, _)| !(k.starts_with("fact:") && k.ends_with(".r"))).map(|(k, v)| (k.clone(), v.clone())).collect();
+        let ledger = ledger
+            .iter()
+            .filter(|(k, _)| !(k.starts_with("fact:") && k.ends_with(".r")))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
         (spec.clone(), rows.clone(), facts.clone(), ledger)
     }
 
@@ -2902,25 +5359,62 @@ mod tests {
         vec![
             ("q2-opus", "q2", None, "德国能源：石油产品最大一股流向交通"),
             ("q2-sonnet", "q2", None, "德国能源从来源流向各部门"),
-            ("q2-node", "q2", Some(cl("fact:from.O4000XBIO", &format!("{oil}是德国最大的能源来源"))), "德国能源从来源到各部门"),
+            (
+                "q2-node",
+                "q2",
+                Some(cl(
+                    "fact:from.O4000XBIO",
+                    &format!("{oil}是德国最大的能源来源"),
+                )),
+                "德国能源从来源到各部门",
+            ),
             (
                 "q2-flow",
                 "q2",
                 Some(cl(
                     "series:nrg_bal_s/A.FC_TRA_E.O4000XBIO.KTOE.DE:2024:OBS_VALUE",
-                    &format!("{oil}流向{}是最大的一股能源流", nm(&q, "span", "nrg_bal", "FC_TRA_E")),
+                    &format!(
+                        "{oil}流向{}是最大的一股能源流",
+                        nm(&q, "span", "nrg_bal", "FC_TRA_E")
+                    ),
                 )),
                 "德国能源从来源到各部门",
             ),
-            ("q2-dest", "q2", Some(cl("fact:to.FC_OTH_HH_E", &format!("{}是德国用能最多的部门", nm(&q, "span", "nrg_bal", "FC_OTH_HH_E")))), "德国能源从来源到各部门"),
-            ("gen-node", "gen", Some(cl("fact:n.renewable", &format!("{}是发电大国最大的电源", nm(&g, "span", "siec_group", "renewable")))), "发电流向"),
+            (
+                "q2-dest",
+                "q2",
+                Some(cl(
+                    "fact:to.FC_OTH_HH_E",
+                    &format!(
+                        "{}是德国用能最多的部门",
+                        nm(&q, "span", "nrg_bal", "FC_OTH_HH_E")
+                    ),
+                )),
+                "德国能源从来源到各部门",
+            ),
+            (
+                "gen-node",
+                "gen",
+                Some(cl(
+                    "fact:n.renewable",
+                    &format!(
+                        "{}是发电大国最大的电源",
+                        nm(&g, "span", "siec_group", "renewable")
+                    ),
+                )),
+                "发电流向",
+            ),
             ("gen-label", "gen", None, "欧盟发电大国的能源构成"),
         ]
     }
 
     fn proto_page(case: &str) -> (String, ClaimRequest) {
         let (_, shape, h1, kicker) = claim_cases().into_iter().find(|c| c.0 == case).unwrap();
-        let (req, sides, part) = if shape == "q2" { (claim_q2(), &Q2_SIDES, ".r") } else { (claim_gen(), &GEN_SIDES, ".n") };
+        let (req, sides, part) = if shape == "q2" {
+            (claim_q2(), &Q2_SIDES, ".r")
+        } else {
+            (claim_gen(), &GEN_SIDES, ".n")
+        };
         (claim_page(&req.3, sides, part, h1, kicker), req)
     }
 
@@ -2928,14 +5422,21 @@ mod tests {
     fn claim_pages_pass_every_check_as_the_b11_leaf_and_as_todays_leaf_draw_them() {
         let mut passed = 0;
         for (case, shape, h1, kicker) in claim_cases() {
-            let (req, sides) = if shape == "q2" { (claim_q2(), &Q2_SIDES) } else { (claim_gen(), &GEN_SIDES) };
+            let (req, sides) = if shape == "q2" {
+                (claim_q2(), &Q2_SIDES)
+            } else {
+                (claim_gen(), &GEN_SIDES)
+            };
             let part = if shape == "q2" { ".r" } else { ".n" };
             let proto = claim_page(&req.3, sides, part, h1.clone(), kicker);
             assert_eq!(proto.contains("data-claim="), h1.is_some(), "{case}");
             let base_req = without_display(&req);
             let base = claim_page(&base_req.3, sides, ".n", None, kicker);
             for (which, html, r) in [("proto", &proto, &req), ("base", &base, &base_req)] {
-                let hits: Vec<_> = all_checks(html, r).into_iter().filter(|(_, v)| !v.is_empty()).collect();
+                let hits: Vec<_> = all_checks(html, r)
+                    .into_iter()
+                    .filter(|(_, v)| !v.is_empty())
+                    .collect();
                 assert!(hits.is_empty(), "{case} {which}: {hits:?}");
                 passed += 1;
             }
@@ -2943,7 +5444,13 @@ mod tests {
         assert_eq!(passed, 14);
         // the display part is in the q2 ledger (two places held, three significant digits shown), not in gen's (no places)
         let (q, g) = (claim_q2().3, claim_gen().3);
-        assert_eq!((q["fact:from.O4000XBIO.n"].as_str(), q["fact:from.O4000XBIO.r"].as_str()), ("60,699.06", "60,699"));
+        assert_eq!(
+            (
+                q["fact:from.O4000XBIO.n"].as_str(),
+                q["fact:from.O4000XBIO.r"].as_str()
+            ),
+            ("60,699.06", "60,699")
+        );
         assert_eq!(q["fact:from.G3000.r"], "45,028");
         assert!(!g.keys().any(|k| k.ends_with(".r")));
         let spec = claim_q2().0;
@@ -2959,13 +5466,24 @@ mod tests {
         let (flow, _) = proto_page("q2-flow");
         let (gen, greq) = proto_page("gen-node");
         let l = &req.3;
-        let h1 = |html: &str| html[html.find("<h1>").unwrap()..html.find("</h1>").unwrap() + 5].to_string();
-        let with_h1 = |html: &str, inner: &str| html.replacen(&h1(html), &format!("<h1>{inner}</h1>"), 1);
+        let h1 = |html: &str| {
+            html[html.find("<h1>").unwrap()..html.find("</h1>").unwrap() + 5].to_string()
+        };
+        let with_h1 =
+            |html: &str, inner: &str| html.replacen(&h1(html), &format!("<h1>{inner}</h1>"), 1);
         let n = |dim: &str, code: &str| nm(l, "span", dim, code);
-        let (oil, gas, hh, ind, heat) = (n("siec", "O4000XBIO"), n("siec", "G3000"), n("nrg_bal", "FC_OTH_HH_E"), n("nrg_bal", "FC_IND_E"), n("siec", "H8000"));
+        let (oil, gas, hh, ind, heat) = (
+            n("siec", "O4000XBIO"),
+            n("siec", "G3000"),
+            n("nrg_bal", "FC_OTH_HH_E"),
+            n("nrg_bal", "FC_IND_E"),
+            n("siec", "H8000"),
+        );
         let oil_k = "fact:from.O4000XBIO";
         let node_h1 = |inner: String| with_h1(&node, &cl(oil_k, &inner));
-        let row = |bal: &str, siec: &str| format!("series:nrg_bal_s/A.{bal}.{siec}.KTOE.DE:2024:OBS_VALUE");
+        let row = |bal: &str, siec: &str| {
+            format!("series:nrg_bal_s/A.{bal}.{siec}.KTOE.DE:2024:OBS_VALUE")
+        };
         let g45 = "<span data-src=\"fact:from.G3000.r\">45,028</span>";
         let bent = |key: &str, text: &str| {
             let mut r = req.clone();
@@ -2973,7 +5491,15 @@ mod tests {
             r
         };
         let alike = claim_q2_with(15670.5);
-        let alike_page = |part: &str| claim_page(&alike.3, &Q2_SIDES, part, Some(cl(oil_k, &format!("{oil}是德国最大的能源来源"))), "kicker");
+        let alike_page = |part: &str| {
+            claim_page(
+                &alike.3,
+                &Q2_SIDES,
+                part,
+                Some(cl(oil_k, &format!("{oil}是德国最大的能源来源"))),
+                "kicker",
+            )
+        };
         // (id, page, request, refused by: "new" check_claims alone, or the one check named)
         let cases: Vec<(&str, String, ClaimRequest, &str)> = vec![
             ("F1 a digit in the title", node_h1(format!("{oil}是德国2024年最大的能源来源")), req.clone(), "numbers"),
@@ -3039,7 +5565,10 @@ mod tests {
                 // before B11: no digit, number entry, recomputed entry or relation refuses it (the accent's scope then: an
                 // h1 with data-cmp, which these h1s have none of); check_claims does
                 "new" => {
-                    assert!(!hit("numbers") && !hit("recheck") && !hit("relations"), "{id}: an existing check refuses it: {got:?}");
+                    assert!(
+                        !hit("numbers") && !hit("recheck") && !hit("relations"),
+                        "{id}: an existing check refuses it: {got:?}"
+                    );
                     assert!(hit("claims"), "{id}: check_claims passed it");
                 }
                 check => assert!(hit(check), "{id}: {check} passed it: {got:?}"),
@@ -3051,28 +5580,57 @@ mod tests {
         let (_, html, r, _) = f("F5d");
         assert!(check_numbers(html, &r.3, &[]).is_empty());
         let (_, html, r, _) = f("F5e");
-        assert_eq!((alike.3["fact:from.G3000.n"].as_str(), alike.3["fact:from.G3000.r"].as_str()), ("60,698.74", "60,699"));
-        let others: Vec<_> = all_checks(html, r).into_iter().filter(|(k, v)| *k != "relations" && !v.is_empty()).collect();
+        assert_eq!(
+            (
+                alike.3["fact:from.G3000.n"].as_str(),
+                alike.3["fact:from.G3000.r"].as_str()
+            ),
+            ("60,698.74", "60,699")
+        );
+        let others: Vec<_> = all_checks(html, r)
+            .into_iter()
+            .filter(|(k, v)| *k != "relations" && !v.is_empty())
+            .collect();
         assert!(others.is_empty(), "F5e: {others:?}");
         // the same page printing .n holds (the values and their .n texts differ): what refuses is the comparison at the part
         // the page prints
-        assert_eq!(check_relations(&alike_page(".n"), &alike.3, &alike.0, &alike.2, &alike.1), Vec::<String>::new());
+        assert_eq!(
+            check_relations(&alike_page(".n"), &alike.3, &alike.0, &alike.2, &alike.1),
+            Vec::<String>::new()
+        );
         let (_, html, _, _) = f("F10");
-        assert!(!h1(html).contains("data-cmp=") && check_claims(html, &req.3, &req.0, &req.2, &req.1).is_empty());
+        assert!(
+            !h1(html).contains("data-cmp=")
+                && check_claims(html, &req.3, &req.0, &req.2, &req.1).is_empty()
+        );
     }
 
     /// CLAIM_WORDS goes to the leaf as three lists; the check reads max and off, the verb list is the leaf's alone.
     #[test]
     fn claim_words_go_to_the_leaf_as_three_lists() {
         let w = claim_words();
-        assert_eq!(w.as_object().unwrap().keys().collect::<Vec<_>>(), ["max", "off", "verb"]);
-        assert!(w["max"].as_array().unwrap().iter().any(|x| x == "最大") && w["off"].as_array().unwrap().iter().any(|x| x == "不"));
+        assert_eq!(
+            w.as_object().unwrap().keys().collect::<Vec<_>>(),
+            ["max", "off", "verb"]
+        );
+        assert!(
+            w["max"].as_array().unwrap().iter().any(|x| x == "最大")
+                && w["off"].as_array().unwrap().iter().any(|x| x == "不")
+        );
         let (node, req) = proto_page("q2-node");
-        let title = "<span data-src=\"name:zh_names:siec:O4000XBIO\">石油</span>是德国最大的能源来源";
+        let title =
+            "<span data-src=\"name:zh_names:siec:O4000XBIO\">石油</span>是德国最大的能源来源";
         assert!(node.contains(title));
         // no verb of a conclusion: the check does not read the verb list (the leaf does, and falls back before it)
-        let no_verb = node.replacen(title, "<span data-src=\"name:zh_names:siec:O4000XBIO\">石油</span>最大", 1);
-        assert_eq!(check_claims(&no_verb, &req.3, &req.0, &req.2, &req.1), Vec::<String>::new());
+        let no_verb = node.replacen(
+            title,
+            "<span data-src=\"name:zh_names:siec:O4000XBIO\">石油</span>最大",
+            1,
+        );
+        assert_eq!(
+            check_claims(&no_verb, &req.3, &req.0, &req.2, &req.1),
+            Vec::<String>::new()
+        );
     }
 
     // ---- the check registry (owner 11-02): no check outside a registered kind
@@ -3082,7 +5640,9 @@ mod tests {
     fn code_only(src: &str) -> String {
         let b = src.as_bytes();
         let (mut out, mut i) = (Vec::with_capacity(b.len()), 0);
-        let blank = |out: &mut Vec<u8>, s: &[u8]| out.extend(s.iter().map(|c| if *c == b'\n' { b'\n' } else { b' ' }));
+        let blank = |out: &mut Vec<u8>, s: &[u8]| {
+            out.extend(s.iter().map(|c| if *c == b'\n' { b'\n' } else { b' ' }))
+        };
         // a string keeps its quotes, so a literal is seen (`self.err("...")` against `.err()`)
         let quoted = |out: &mut Vec<u8>, s: &[u8]| {
             let at = out.len();
@@ -3095,18 +5655,29 @@ mod tests {
         while i < b.len() {
             let ident_before = i > 0 && (b[i - 1].is_ascii_alphanumeric() || b[i - 1] == b'_');
             if b[i..].starts_with(b"//") {
-                let j = b[i..].iter().position(|c| *c == b'\n').map_or(b.len(), |p| i + p);
+                let j = b[i..]
+                    .iter()
+                    .position(|c| *c == b'\n')
+                    .map_or(b.len(), |p| i + p);
                 blank(&mut out, &b[i..j]);
                 i = j;
             } else if b[i..].starts_with(b"/*") {
                 let j = src[i + 2..].find("*/").map_or(b.len(), |p| i + 2 + p + 2);
                 blank(&mut out, &b[i..j]);
                 i = j;
-            } else if b[i] == b'r' && !ident_before && b[i + 1..].iter().position(|c| *c != b'#').is_some_and(|p| b[i + 1 + p] == b'"') {
+            } else if b[i] == b'r'
+                && !ident_before
+                && b[i + 1..]
+                    .iter()
+                    .position(|c| *c != b'#')
+                    .is_some_and(|p| b[i + 1 + p] == b'"')
+            {
                 let hashes = b[i + 1..].iter().take_while(|c| **c == b'#').count();
                 let open = i + 1 + hashes + 1;
                 let close = format!("\"{}", "#".repeat(hashes));
-                let j = src[open..].find(&close).map_or(b.len(), |p| open + p + close.len());
+                let j = src[open..]
+                    .find(&close)
+                    .map_or(b.len(), |p| open + p + close.len());
                 quoted(&mut out, &b[i..j]);
                 i = j;
             } else if b[i] == b'"' {
@@ -3116,9 +5687,15 @@ mod tests {
                 }
                 quoted(&mut out, &b[i..(j + 1).min(b.len())]);
                 i = j + 1;
-            } else if b[i] == b'\'' && (b.get(i + 1) == Some(&b'\\') || src[i + 1..].chars().nth(1) == Some('\'')) {
+            } else if b[i] == b'\''
+                && (b.get(i + 1) == Some(&b'\\') || src[i + 1..].chars().nth(1) == Some('\''))
+            {
                 let j = src[i + 1..].find('\'').map_or(b.len(), |p| {
-                    let p = if b[i + 1] == b'\\' && b[i + 2] == b'\'' { p + 1 } else { p };
+                    let p = if b[i + 1] == b'\\' && b[i + 2] == b'\'' {
+                        p + 1
+                    } else {
+                        p
+                    };
                     i + 1 + p + 1
                 });
                 blank(&mut out, &b[i..j]);
@@ -3153,8 +5730,14 @@ mod tests {
                     }
                     i += 1;
                 }
-            } else if c[i..].starts_with("fn ") && (i == 0 || !(b[i - 1].is_ascii_alphanumeric() || b[i - 1] == b'_')) {
-                let name: String = c[i + 3..].trim_start().chars().take_while(|ch| ch.is_alphanumeric() || *ch == '_').collect();
+            } else if c[i..].starts_with("fn ")
+                && (i == 0 || !(b[i - 1].is_ascii_alphanumeric() || b[i - 1] == b'_'))
+            {
+                let name: String = c[i + 3..]
+                    .trim_start()
+                    .chars()
+                    .take_while(|ch| ch.is_alphanumeric() || *ch == '_')
+                    .collect();
                 out.push(name);
             }
             i += 1;
@@ -3166,9 +5749,15 @@ mod tests {
     /// The rule names a next_tree_gen.rs fn implements: its match arms `"name" =>` or `Some("name") =>`, and the rules it
     /// reads by `g("rule").s() == Some("name")` (not the `_` arm). scripts/reuse_rate.py reads them alike.
     fn rules_of(gen: &str, name: &str) -> Vec<String> {
-        let body = &gen[gen.find(&format!("\nfn {name}(")).unwrap_or_else(|| panic!("next_tree_gen.rs has fn {name}"))..];
+        let body = &gen[gen
+            .find(&format!("\nfn {name}("))
+            .unwrap_or_else(|| panic!("next_tree_gen.rs has fn {name}"))..];
         let body = &body[..body[1..].find("\nfn ").map_or(body.len(), |p| p + 1)];
-        let quoted = |s: &str| s.strip_prefix('"').and_then(|s| s.split_once('"')).map(|(n, rest)| (n.to_string(), rest.to_string()));
+        let quoted = |s: &str| {
+            s.strip_prefix('"')
+                .and_then(|s| s.split_once('"'))
+                .map(|(n, rest)| (n.to_string(), rest.to_string()))
+        };
         let mut out = Vec::new();
         for l in body.lines().map(str::trim) {
             let arm = l.strip_prefix("Some(").unwrap_or(l);
@@ -3190,7 +5779,9 @@ mod tests {
             Value::Object(m) => m
                 .iter()
                 .flat_map(|(k, x)| match (k.as_str(), x) {
-                    ("stops", Value::Array(a)) => a.iter().filter_map(|s| s["rule"].as_str()).collect(),
+                    ("stops", Value::Array(a)) => {
+                        a.iter().filter_map(|s| s["rule"].as_str()).collect()
+                    }
                     _ => stop_rules(x),
                 })
                 .collect(),
@@ -3209,12 +5800,19 @@ mod tests {
         let b = line.as_bytes();
         let after = |pat: &'static str| {
             line.match_indices(pat)
-                .filter(move |(i, _)| pat.starts_with('.') || *i == 0 || !(b[i - 1].is_ascii_alphanumeric() || b[i - 1] == b'_'))
+                .filter(move |(i, _)| {
+                    pat.starts_with('.')
+                        || *i == 0
+                        || !(b[i - 1].is_ascii_alphanumeric() || b[i - 1] == b'_')
+                })
                 .map(move |(i, _)| &line[i + pat.len()..])
         };
         let passes_on = |rest: &str| {
             let r = rest.trim_start();
-            let n = r.chars().take_while(|c| c.is_alphanumeric() || *c == '_').count();
+            let n = r
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .count();
             n > 0 && r[n..].trim_start().starts_with(')')
         };
         let message = |r: &str| r.starts_with('"') || r.starts_with("format!(");
@@ -3234,7 +5832,10 @@ mod tests {
         let rejected = line.match_indices("Rejected").any(|(i, _)| {
             let built = line[i + "Rejected".len()..].trim_start().starts_with('{');
             let before = &line[..i];
-            built && !before.ends_with("struct ") && !before.ends_with('<') && !before.ends_with(|c: char| c.is_alphanumeric() || c == '_')
+            built
+                && !before.ends_with("struct ")
+                && !before.ends_with('<')
+                && !before.ends_with(|c: char| c.is_alphanumeric() || c == '_')
         });
         after("Err(").chain(after(".ok_or(")).any(|r| !passes_on(r))
             || line.contains("Halt::Stop(")
@@ -3246,7 +5847,10 @@ mod tests {
                 a.contains('"') || a.contains("format!(")
             })
             || rejected
-            || after("rejected.push(").chain(after("rejected.extend(")).next().is_some()
+            || after("rejected.push(")
+                .chain(after("rejected.extend("))
+                .next()
+                .is_some()
     }
 
     /// Each non-test fn's own code (code_only), the bodies of fns nested in it blanked: (name, code). A fn runs to its
@@ -3278,8 +5882,14 @@ mod tests {
         while i < b.len() {
             if c[i..].starts_with("#[cfg(test)]") {
                 i = end_of(i + "#[cfg(test)]".len());
-            } else if c[i..].starts_with("fn ") && (i == 0 || !(b[i - 1].is_ascii_alphanumeric() || b[i - 1] == b'_')) {
-                let name: String = c[i + 3..].trim_start().chars().take_while(|ch| ch.is_alphanumeric() || *ch == '_').collect();
+            } else if c[i..].starts_with("fn ")
+                && (i == 0 || !(b[i - 1].is_ascii_alphanumeric() || b[i - 1] == b'_'))
+            {
+                let name: String = c[i + 3..]
+                    .trim_start()
+                    .chars()
+                    .take_while(|ch| ch.is_alphanumeric() || *ch == '_')
+                    .collect();
                 spans.push((name, i, end_of(i)));
             }
             i += 1;
@@ -3290,7 +5900,10 @@ mod tests {
                 let mut own = b[*a..=*z].to_vec();
                 for (_, a2, z2) in &spans {
                     if a < a2 && z2 <= z {
-                        own[a2 - a..=z2 - a].iter_mut().filter(|x| **x != b'\n').for_each(|x| *x = b' ');
+                        own[a2 - a..=z2 - a]
+                            .iter_mut()
+                            .filter(|x| **x != b'\n')
+                            .for_each(|x| *x = b' ');
                     }
                 }
                 (name.clone(), String::from_utf8(own).unwrap())
@@ -3304,10 +5917,15 @@ mod tests {
             Value::Object(m) => {
                 for (k, x) in m {
                     match (k.as_str(), x) {
-                        ("leaf_stops", Value::Array(a)) => out.extend(a.iter().filter_map(Value::as_str).map(str::to_string)),
-                        ("leaf_stops_by_recipe", Value::Object(r)) => {
-                            out.extend(r.values().flat_map(|a| a.as_array().into_iter().flatten()).filter_map(Value::as_str).map(str::to_string))
+                        ("leaf_stops", Value::Array(a)) => {
+                            out.extend(a.iter().filter_map(Value::as_str).map(str::to_string))
                         }
+                        ("leaf_stops_by_recipe", Value::Object(r)) => out.extend(
+                            r.values()
+                                .flat_map(|a| a.as_array().into_iter().flatten())
+                                .filter_map(Value::as_str)
+                                .map(str::to_string),
+                        ),
                         _ => named_leaf_stops(x, out),
                     }
                 }
@@ -3322,18 +5940,37 @@ mod tests {
     #[test]
     fn the_headline_and_the_dek_name_only_marked_places_the_page_draws() {
         let svg = r#"<svg><text><tspan data-src="name:zh_names:iso3:VNM">越南</tspan></text><text><tspan data-src="name:zh_names:iso3:IDN">印度尼西亚</tspan></text></svg>"#;
-        let page = |h1: &str, dek: &str| format!(r#"<h1>{h1}</h1><p class="dek">{dek}</p>{svg}<p id="d" hidden="">越南增幅最大</p>"#);
+        let page = |h1: &str, dek: &str| {
+            format!(
+                r#"<h1>{h1}</h1><p class="dek">{dek}</p>{svg}<p id="d" hidden="">越南增幅最大</p>"#
+            )
+        };
         let vn = r#"<span data-src="name:zh_names:iso3:VNM">越南</span>"#;
-        let ok = page(&format!("{vn}增幅最大"), &format!(r#"<span data-src="fact:lead0.t.y">2006</span> 年起，{vn}增幅最大"#));
+        let ok = page(
+            &format!("{vn}增幅最大"),
+            &format!(r#"<span data-src="fact:lead0.t.y">2006</span> 年起，{vn}增幅最大"#),
+        );
         assert_eq!(check_names_drawn(&ok), Vec::<String>::new());
         // the second place's name put over the first's, bare
         let swapped = page("印度尼西亚增幅最大", &format!("{vn}增幅最大"));
-        assert_eq!(check_names_drawn(&swapped), ["h1: the place name \"印度尼西亚\" is printed bare, not marked by its name row"]);
+        assert_eq!(
+            check_names_drawn(&swapped),
+            ["h1: the place name \"印度尼西亚\" is printed bare, not marked by its name row"]
+        );
         // a place the page does not draw, bare and marked
         let bare = page(&format!("{vn}增幅最大"), &format!("{vn}增幅最大，巴西次之"));
-        assert_eq!(check_names_drawn(&bare), ["dek: the place name \"巴西\" is printed bare, not marked by its name row"]);
-        let marked = page(&format!("{vn}增幅最大"), &format!(r#"{vn}增幅最大，<span data-src="name:zh_names:iso3:BRA">巴西</span>次之"#));
-        assert_eq!(check_names_drawn(&marked), ["dek: name:zh_names:iso3:BRA is named, and no picture of the page draws it"]);
+        assert_eq!(
+            check_names_drawn(&bare),
+            ["dek: the place name \"巴西\" is printed bare, not marked by its name row"]
+        );
+        let marked = page(
+            &format!("{vn}增幅最大"),
+            &format!(r#"{vn}增幅最大，<span data-src="name:zh_names:iso3:BRA">巴西</span>次之"#),
+        );
+        assert_eq!(
+            check_names_drawn(&marked),
+            ["dek: name:zh_names:iso3:BRA is named, and no picture of the page draws it"]
+        );
         // a marked name's own text and the words beside it never join into a name (几内亚 beside 比绍)
         let beside = page(&format!("{vn}比绍"), &format!("{vn}"));
         assert_eq!(check_names_drawn(&beside), Vec::<String>::new());
@@ -3343,19 +5980,38 @@ mod tests {
         let de = r#"<span data-src="name:zh_names:iso2:DE">德国</span>"#;
         let fr = r#"<span data-src="name:zh_names:iso2:FR">法国</span>"#;
         let oil = r#"<span data-src="name:zh_names:siec:O4000XBIO">石油</span>"#;
-        let of_one = |h1: &str, dek: &str| format!(r#"<h1>{h1}</h1><p class="dek">{dek}</p>{parts}"#);
-        assert_eq!(check_names_drawn(&of_one(&format!("{oil}最多"), &format!("{de}能源的最大流量"))), Vec::<String>::new());
+        let of_one =
+            |h1: &str, dek: &str| format!(r#"<h1>{h1}</h1><p class="dek">{dek}</p>{parts}"#);
         assert_eq!(
-            check_names_drawn(&of_one(&format!("{de}{oil}最多"), &format!("{fr}能源的最大流量"))),
-            ["h1: name:zh_names:iso2:DE is named, and no picture of the page draws it", "dek: name:zh_names:iso2:FR is named, and no picture of the page draws it"]
+            check_names_drawn(&of_one(
+                &format!("{oil}最多"),
+                &format!("{de}能源的最大流量")
+            )),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            check_names_drawn(&of_one(
+                &format!("{de}{oil}最多"),
+                &format!("{fr}能源的最大流量")
+            )),
+            [
+                "h1: name:zh_names:iso2:DE is named, and no picture of the page draws it",
+                "dek: name:zh_names:iso2:FR is named, and no picture of the page draws it"
+            ]
         );
         assert_eq!(
             check_names_drawn(&of_one(&format!("{oil}最多"), "德国能源的最大流量")),
             ["dek: the place name \"德国\" is printed bare, not marked by its name row"]
         );
         // a page whose pictures draw places keeps the rule: the undrawn place stops it however few the headline names
-        let undrawn = page(&format!("{vn}增幅最大"), r#"<span data-src="name:zh_names:iso3:BRA">巴西</span>"#);
-        assert_eq!(check_names_drawn(&undrawn), ["dek: name:zh_names:iso3:BRA is named, and no picture of the page draws it"]);
+        let undrawn = page(
+            &format!("{vn}增幅最大"),
+            r#"<span data-src="name:zh_names:iso3:BRA">巴西</span>"#,
+        );
+        assert_eq!(
+            check_names_drawn(&undrawn),
+            ["dek: name:zh_names:iso3:BRA is named, and no picture of the page draws it"]
+        );
     }
 
     /// Every non-test fn of the visual group's Rust files (CHECK_FILES, which are the visual `.rs` files of groups.json) is
@@ -3365,20 +6021,44 @@ mod tests {
     #[test]
     fn every_check_is_a_registered_kind() {
         let files = [
-            ("ledger", "src/next_ledger.rs", include_str!("next_ledger.rs")),
+            (
+                "ledger",
+                "src/next_ledger.rs",
+                include_str!("next_ledger.rs"),
+            ),
             ("facts", "src/next_facts.rs", include_str!("next_facts.rs")),
             ("tree", "src/next_tree.rs", include_str!("next_tree.rs")),
-            ("tree_gen", "src/next_tree_gen.rs", include_str!("next_tree_gen.rs")),
+            (
+                "tree_gen",
+                "src/next_tree_gen.rs",
+                include_str!("next_tree_gen.rs"),
+            ),
             ("leaf", "src/next_leaf.rs", include_str!("next_leaf.rs")),
-            ("visual", "src/next_visual.rs", include_str!("next_visual.rs")),
+            (
+                "visual",
+                "src/next_visual.rs",
+                include_str!("next_visual.rs"),
+            ),
             ("nodes", "src/next_nodes.rs", include_str!("next_nodes.rs")),
-            ("render", "src/next_render.rs", include_str!("next_render.rs")),
-            ("shape", "src/shape_registry.rs", include_str!("shape_registry.rs")),
+            (
+                "render",
+                "src/next_render.rs",
+                include_str!("next_render.rs"),
+            ),
+            (
+                "shape",
+                "src/shape_registry.rs",
+                include_str!("shape_registry.rs"),
+            ),
         ];
         let read: Vec<(&str, &str)> = files.iter().map(|(s, p, _)| (*s, *p)).collect();
-        assert_eq!(read, CHECK_FILES, "the files this test reads are CHECK_FILES");
+        assert_eq!(
+            read, CHECK_FILES,
+            "the files this test reads are CHECK_FILES"
+        );
         // CHECK_FILES are the visual group's .rs files, as groups.json gives them
-        let groups: Value = serde_json::from_str(include_str!("../runtime/pi/groups.json")).unwrap();
+        let groups: Value =
+            serde_json::from_str(include_str!("../runtime/pi/groups.json")).unwrap();
         let mut visual: Vec<&str> = groups["files"]
             .as_object()
             .unwrap()
@@ -3389,55 +6069,123 @@ mod tests {
         let mut ours: Vec<&str> = CHECK_FILES.iter().map(|(_, p)| *p).collect();
         visual.sort();
         ours.sort();
-        assert_eq!(ours, visual, "CHECK_FILES against the visual .rs files of runtime/pi/groups.json");
+        assert_eq!(
+            ours, visual,
+            "CHECK_FILES against the visual .rs files of runtime/pi/groups.json"
+        );
         let mut have = std::collections::BTreeSet::new();
         for (short, _, src) in files {
-            have.extend(non_test_fns(src).into_iter().map(|f| format!("{short}::{f}")));
+            have.extend(
+                non_test_fns(src)
+                    .into_iter()
+                    .map(|f| format!("{short}::{f}")),
+            );
         }
         assert!(have.len() > 400, "the parse found {} fns", have.len());
-        let listed: Vec<&str> = CHECK_REGISTRY.iter().flat_map(|(_, _, fns)| fns.iter().copied()).chain(CHECK_HELPERS.iter().copied()).collect();
-        let unregistered: Vec<&String> = have.iter().filter(|f| !listed.contains(&f.as_str())).collect();
-        assert!(unregistered.is_empty(), "unregistered checks: {} {unregistered:?}", unregistered.len());
+        let listed: Vec<&str> = CHECK_REGISTRY
+            .iter()
+            .flat_map(|(_, _, fns)| fns.iter().copied())
+            .chain(CHECK_HELPERS.iter().copied())
+            .collect();
+        let unregistered: Vec<&String> = have
+            .iter()
+            .filter(|f| !listed.contains(&f.as_str()))
+            .collect();
+        assert!(
+            unregistered.is_empty(),
+            "unregistered checks: {} {unregistered:?}",
+            unregistered.len()
+        );
         let stale: Vec<&&str> = listed.iter().filter(|f| !have.contains(**f)).collect();
         assert!(stale.is_empty(), "listed, no such fn: {stale:?}");
-        let twice: Vec<&&str> = listed.iter().enumerate().filter(|(i, f)| listed[..*i].contains(f)).map(|(_, f)| f).collect();
+        let twice: Vec<&&str> = listed
+            .iter()
+            .enumerate()
+            .filter(|(i, f)| listed[..*i].contains(f))
+            .map(|(_, f)| f)
+            .collect();
         assert!(twice.is_empty(), "listed twice: {twice:?}");
         let names: Vec<&str> = CHECK_REGISTRY.iter().map(|(n, _, _)| *n).collect();
-        assert!(names.iter().enumerate().all(|(i, n)| !names[..i].contains(n)), "a kind named twice: {names:?}");
+        assert!(
+            names
+                .iter()
+                .enumerate()
+                .all(|(i, n)| !names[..i].contains(n)),
+            "a kind named twice: {names:?}"
+        );
         for (kind, vocab, fns) in CHECK_REGISTRY {
             assert!(!fns.is_empty(), "{kind}: no fn");
             if let Some((file, name)) = vocab.split_once("::") {
-                let src = files.iter().find(|(_, p, _)| p.ends_with(&format!("/{file}.rs"))).map_or("", |(_, _, s)| *s);
+                let src = files
+                    .iter()
+                    .find(|(_, p, _)| p.ends_with(&format!("/{file}.rs")))
+                    .map_or("", |(_, _, s)| *s);
                 let name = name.split(' ').next().unwrap_or_default();
-                let defined = ["const", "struct", "fn"].iter().any(|k| src.contains(&format!("{k} {name}")));
-                assert!(defined, "{kind}: its vocabulary {vocab} is not defined in {file}.rs");
+                let defined = ["const", "struct", "fn"]
+                    .iter()
+                    .any(|k| src.contains(&format!("{k} {name}")));
+                assert!(
+                    defined,
+                    "{kind}: its vocabulary {vocab} is not defined in {file}.rs"
+                );
             }
         }
         let gen = include_str!("next_tree_gen.rs");
         // every leaf stop node-bindings.json names is a rule the registered leaf_stops kind implements
         let rules = rules_of(gen, "leaf_stops");
-        assert!(rules.len() >= 15 && rules.contains(&"zero_end_past_frame".to_string()), "leaf_stops rules: {rules:?}");
-        let bindings: Value = serde_json::from_str(include_str!("../runtime/page_tree/node-bindings.json")).unwrap();
+        assert!(
+            rules.len() >= 15 && rules.contains(&"zero_end_past_frame".to_string()),
+            "leaf_stops rules: {rules:?}"
+        );
+        let bindings: Value =
+            serde_json::from_str(include_str!("../runtime/page_tree/node-bindings.json")).unwrap();
         let mut named = Vec::new();
         named_leaf_stops(&bindings, &mut named);
-        assert!(named.len() >= 20, "node-bindings.json leaf_stops: {named:?}");
+        assert!(
+            named.len() >= 20,
+            "node-bindings.json leaf_stops: {named:?}"
+        );
         let unregistered: Vec<&String> = named.iter().filter(|s| !rules.contains(s)).collect();
-        assert!(unregistered.is_empty(), "leaf stops in node-bindings.json no registered rule implements: {unregistered:?}");
-        assert!(CHECK_REGISTRY.iter().any(|(k, v, f)| *k == "leaf_stops" && v.starts_with("next_tree_gen::leaf_stops") && f == &["tree_gen::leaf_stops"]));
+        assert!(
+            unregistered.is_empty(),
+            "leaf stops in node-bindings.json no registered rule implements: {unregistered:?}"
+        );
+        assert!(CHECK_REGISTRY.iter().any(|(k, v, f)| *k == "leaf_stops"
+            && v.starts_with("next_tree_gen::leaf_stops")
+            && f == &["tree_gen::leaf_stops"]));
         // every parts_of_whole stop rule node-bindings.json names is one parts_declared reads (tree_gen.parts_stops)
         let parts = rules_of(gen, "parts_declared");
-        assert_eq!(parts, ["number_in_rows_read", "max_dropped", "fill_after_drop"]);
+        assert_eq!(
+            parts,
+            ["number_in_rows_read", "max_dropped", "fill_after_drop"]
+        );
         let stops = stop_rules(&bindings);
-        assert!(!stops.is_empty() && stops.iter().all(|s| parts.iter().any(|p| p == s)), "node-bindings.json stops: {stops:?} against {parts:?}");
+        assert!(
+            !stops.is_empty() && stops.iter().all(|s| parts.iter().any(|p| p == s)),
+            "node-bindings.json stops: {stops:?} against {parts:?}"
+        );
         // a helper or an entry refuses nothing in its own body: a refusal is a check, so it belongs to a registered kind
-        let entry: &[&str] = CHECK_REGISTRY.iter().find(|(k, _, _)| *k == "entry").map_or(&[][..], |(_, _, f)| *f);
+        let entry: &[&str] = CHECK_REGISTRY
+            .iter()
+            .find(|(k, _, _)| *k == "entry")
+            .map_or(&[][..], |(_, _, f)| *f);
         let refusing: Vec<String> = files
             .iter()
-            .flat_map(|(short, _, src)| own_bodies(src).into_iter().map(move |(n, b)| (format!("{short}::{n}"), b)))
-            .filter(|(n, b)| (CHECK_HELPERS.contains(&n.as_str()) || entry.contains(&n.as_str())) && b.lines().any(refuses))
+            .flat_map(|(short, _, src)| {
+                own_bodies(src)
+                    .into_iter()
+                    .map(move |(n, b)| (format!("{short}::{n}"), b))
+            })
+            .filter(|(n, b)| {
+                (CHECK_HELPERS.contains(&n.as_str()) || entry.contains(&n.as_str()))
+                    && b.lines().any(refuses)
+            })
             .map(|(n, _)| n)
             .collect();
-        assert!(refusing.is_empty(), "helpers or entries that refuse in their own body: {refusing:?}");
+        assert!(
+            refusing.is_empty(),
+            "helpers or entries that refuse in their own body: {refusing:?}"
+        );
         // the guard reads refusals as the reuse script does
         for (line, hit) in [
             ("return Err(format!(\"no\"));", true),
@@ -3450,13 +6198,22 @@ mod tests {
             ("return Err(stop(w));", true),
             ("let x = f(y)?;", false),
             ("let n = OkErr(e);", false),
-            ("let Some(&c) = self.b.get(self.i) else { return self.err(\"unexpected end\") };", true),
+            (
+                "let Some(&c) = self.b.get(self.i) else { return self.err(\"unexpected end\") };",
+                true,
+            ),
             ("_ => self.err(format!(\"no {x}\")),", true),
             ("let e = r.err();", false),
-            ("let n = s.parse().map_err(|e| format!(\"number {s}: {e}\"))?;", true),
+            (
+                "let n = s.parse().map_err(|e| format!(\"number {s}: {e}\"))?;",
+                true,
+            ),
             ("let n = s.parse().map_err(|e| e.to_string())?;", false),
             ("let n = s.parse().map_err(lines)?; let w = \"x\";", false),
-            ("None => out.rejected.extend(RELATIONS.map(|relation| Rejected {", true),
+            (
+                "None => out.rejected.extend(RELATIONS.map(|relation| Rejected {",
+                true,
+            ),
             ("out.rejected.push(reject(why));", true),
             ("pub struct Rejected {", false),
             ("pub rejected: Vec<Rejected>,", false),
@@ -3465,7 +6222,13 @@ mod tests {
             assert_eq!(refuses(&code_only(line)), hit, "{line}");
         }
         let bodies = own_bodies("fn a() -> [u8; 2] { fn b() { Err(\"x\") } ok(1) }\nfn c();\n#[cfg(test)]\nfn d() { Err(\"t\") }\n");
-        assert_eq!(bodies.iter().map(|(n, b)| (n.as_str(), b.lines().any(refuses))).collect::<Vec<_>>(), [("a", false), ("b", true), ("c", false)]);
+        assert_eq!(
+            bodies
+                .iter()
+                .map(|(n, b)| (n.as_str(), b.lines().any(refuses)))
+                .collect::<Vec<_>>(),
+            [("a", false), ("b", true), ("c", false)]
+        );
         // the helper test above parses as the reuse script does: a fn in a comment, a string or a test item is no fn
         assert_eq!(non_test_fns("fn a() {}\n// fn b()\nconst S: &str = \"fn c()\";\n#[cfg(test)]\nmod t { fn d() {} }\nfn e<'x>(c: char) -> bool { c == '}' }\n"), ["a", "e"]);
     }

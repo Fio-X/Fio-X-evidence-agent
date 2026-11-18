@@ -153,69 +153,155 @@ pub fn leaves() -> &'static Leaves {
     static TABLE: OnceLock<Leaves> = OnceLock::new();
     // NodeInfo keeps 'static names, as the Rust-drawn nodes have; the table is read once, so leaking it is bounded.
     fn word(s: &Value) -> &'static str {
-        Box::leak(s.as_str().expect("knobs.json: a word").to_string().into_boxed_str())
+        Box::leak(
+            s.as_str()
+                .expect("knobs.json: a word")
+                .to_string()
+                .into_boxed_str(),
+        )
     }
     // a list of words; an absent one is empty
     fn words(v: &Value) -> Vec<String> {
-        v.as_array().into_iter().flatten().map(|w| w.as_str().expect("knobs.json: a word").to_string()).collect()
+        v.as_array()
+            .into_iter()
+            .flatten()
+            .map(|w| w.as_str().expect("knobs.json: a word").to_string())
+            .collect()
     }
     TABLE.get_or_init(|| {
         let t: Value = serde_json::from_str(LEAVES).expect("knobs.json");
         let knob = |k: &Value| Knob {
             name: word(&k["name"]),
             kind: match k["options"].as_array() {
-                None if k["codes"].as_bool() == Some(true) => Kind::Codes { default: word(&k["default"]) },
+                None if k["codes"].as_bool() == Some(true) => Kind::Codes {
+                    default: word(&k["default"]),
+                },
                 Some(o) => Kind::Pick {
                     default: word(&k["default"]),
                     options: Box::leak(o.iter().map(word).collect::<Vec<_>>().into_boxed_slice()),
                 },
                 None => {
                     let n = |f: &str| k[f].as_f64().expect("knobs.json: a number");
-                    Kind::Range { default: n("default"), min: n("min"), max: n("max"), step: n("step") }
+                    Kind::Range {
+                        default: n("default"),
+                        min: n("min"),
+                        max: n("max"),
+                        step: n("step"),
+                    }
                 }
             },
         };
-        let nodes = t["nodes"].as_object().expect("knobs.json: nodes").iter().map(|(name, n)| {
-            let knobs: Vec<Knob> = n["knobs"].as_array().expect("knobs.json: knobs").iter().map(knob).collect();
-            let info = NodeInfo { name: word(&json!(name)), needs: &[], knobs: Box::leak(knobs.into_boxed_slice()), inner: None };
-            let reserve = n["reserve"].as_bool().expect("knobs.json: reserve");
-            (name.clone(), Leaf { info: Box::leak(Box::new(info)), reserve, eats: words(&n["eats"]) })
-        });
-        let legacy = t["legacy"].as_object().expect("knobs.json: legacy").iter().map(|(node, at)| {
-            (node.clone(), at.as_array().expect("knobs.json: a path").iter().map(|p| word(p).to_string()).collect())
-        });
+        let nodes = t["nodes"]
+            .as_object()
+            .expect("knobs.json: nodes")
+            .iter()
+            .map(|(name, n)| {
+                let knobs: Vec<Knob> = n["knobs"]
+                    .as_array()
+                    .expect("knobs.json: knobs")
+                    .iter()
+                    .map(knob)
+                    .collect();
+                let info = NodeInfo {
+                    name: word(&json!(name)),
+                    needs: &[],
+                    knobs: Box::leak(knobs.into_boxed_slice()),
+                    inner: None,
+                };
+                let reserve = n["reserve"].as_bool().expect("knobs.json: reserve");
+                (
+                    name.clone(),
+                    Leaf {
+                        info: Box::leak(Box::new(info)),
+                        reserve,
+                        eats: words(&n["eats"]),
+                    },
+                )
+            });
+        let legacy = t["legacy"]
+            .as_object()
+            .expect("knobs.json: legacy")
+            .iter()
+            .map(|(node, at)| {
+                (
+                    node.clone(),
+                    at.as_array()
+                        .expect("knobs.json: a path")
+                        .iter()
+                        .map(|p| word(p).to_string())
+                        .collect(),
+                )
+            });
         let legacy = legacy.collect();
-        let groups = t["groups"].as_object().expect("knobs.json: groups").iter().map(|(name, layers)| {
-            (name.clone(), layers.as_array().expect("knobs.json: a group").iter().map(|l| word(l).to_string()).collect())
-        });
-        let recipes = t["recipes"].as_array().expect("knobs.json: recipes").iter().map(|r| Recipe {
-            name: r["name"].as_str().expect("knobs.json: a recipe name").to_string(),
-            layers: words(&r["layers"]),
-            eats: words(&r["eats"]),
-            charts: words(&r["charts"]),
-            picks: words(&r["picks"]),
-            exposes: words(&r["exposes"]),
-            window: words(&r["window"]),
-            // TODO(item 5): the column page's map (bubbles) and its bars show the same numbers; once item 5 gives one of
-            // them other values, the column recipe's declaration goes, and with it page_checks' warning path
-            same_measure: r["same_measure"].as_array().into_iter().flatten().map(|p| match &words(p)[..] {
-                [a, b] => (a.clone(), b.clone()),
-                _ => panic!("knobs.json: a same_measure pair is two layers"),
-            }).collect(),
-            strip: match &r["strip"] {
-                Value::Null => false,
-                v => v.as_bool().expect("knobs.json: a recipe's strip is true or false"),
-            },
-            external: words(&r["external"]),
-            points: words(&r["points"]),
-            short_notes: r["short_notes"].as_array().into_iter().flatten().map(|n| (word(&n["layer"]).to_string(), word(&n["at"]).to_string())).collect(),
-            relation: r["relation"].as_str().map(str::to_string),
-            blocks_only: match &r["blocks_only"] {
-                Value::Null => false,
-                v => v.as_bool().expect("knobs.json: a recipe's blocks_only is true or false"),
-            },
-        });
-        Leaves { nodes: nodes.collect(), groups: groups.collect(), legacy, recipes: recipes.collect() }
+        let groups = t["groups"]
+            .as_object()
+            .expect("knobs.json: groups")
+            .iter()
+            .map(|(name, layers)| {
+                (
+                    name.clone(),
+                    layers
+                        .as_array()
+                        .expect("knobs.json: a group")
+                        .iter()
+                        .map(|l| word(l).to_string())
+                        .collect(),
+                )
+            });
+        let recipes = t["recipes"]
+            .as_array()
+            .expect("knobs.json: recipes")
+            .iter()
+            .map(|r| Recipe {
+                name: r["name"]
+                    .as_str()
+                    .expect("knobs.json: a recipe name")
+                    .to_string(),
+                layers: words(&r["layers"]),
+                eats: words(&r["eats"]),
+                charts: words(&r["charts"]),
+                picks: words(&r["picks"]),
+                exposes: words(&r["exposes"]),
+                window: words(&r["window"]),
+                // TODO(item 5): the column page's map (bubbles) and its bars show the same numbers; once item 5 gives one of
+                // them other values, the column recipe's declaration goes, and with it page_checks' warning path
+                same_measure: r["same_measure"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(|p| match &words(p)[..] {
+                        [a, b] => (a.clone(), b.clone()),
+                        _ => panic!("knobs.json: a same_measure pair is two layers"),
+                    })
+                    .collect(),
+                strip: match &r["strip"] {
+                    Value::Null => false,
+                    v => v
+                        .as_bool()
+                        .expect("knobs.json: a recipe's strip is true or false"),
+                },
+                external: words(&r["external"]),
+                points: words(&r["points"]),
+                short_notes: r["short_notes"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(|n| (word(&n["layer"]).to_string(), word(&n["at"]).to_string()))
+                    .collect(),
+                relation: r["relation"].as_str().map(str::to_string),
+                blocks_only: match &r["blocks_only"] {
+                    Value::Null => false,
+                    v => v
+                        .as_bool()
+                        .expect("knobs.json: a recipe's blocks_only is true or false"),
+                },
+            });
+        Leaves {
+            nodes: nodes.collect(),
+            groups: groups.collect(),
+            legacy,
+            recipes: recipes.collect(),
+        }
     })
 }
 
@@ -232,37 +318,62 @@ pub fn check_style(hero: &Value) -> Vec<String> {
         Some(Some(style)) => {
             for (node, kv) in style {
                 match kv.as_object() {
-                    Some(kv) => set.extend(kv.iter().map(|(k, v)| (format!("style.{node}.{k}"), node.as_str(), k.as_str(), v))),
+                    Some(kv) => {
+                        set.extend(kv.iter().map(|(k, v)| {
+                            (format!("style.{node}.{k}"), node.as_str(), k.as_str(), v)
+                        }))
+                    }
                     None => bad.push(format!("style.{node}: not a table of knobs")),
                 }
             }
         }
     }
     for (node, at) in &t.legacy {
-        let Some(cfg) = at.iter().try_fold(hero, |c, p| c.get(p)) else { continue };
+        let Some(cfg) = at.iter().try_fold(hero, |c, p| c.get(p)) else {
+            continue;
+        };
         for k in t.nodes.get(node).map_or(&[][..], |l| l.info.knobs) {
             if let Some(v) = cfg.get(k.name) {
-                let path = at.iter().map(String::as_str).chain([k.name]).collect::<Vec<_>>().join(".");
+                let path = at
+                    .iter()
+                    .map(String::as_str)
+                    .chain([k.name])
+                    .collect::<Vec<_>>()
+                    .join(".");
                 set.push((format!("{path} (read by {node})"), node, k.name, v));
             }
         }
     }
     for (path, node, k, v) in set {
         let Some(leaf) = t.nodes.get(node).filter(|l| !l.info.knobs.is_empty()) else {
-            let with: Vec<_> = t.nodes.iter().filter(|(_, l)| !l.info.knobs.is_empty()).map(|(n, _)| n.as_str()).collect();
-            bad.push(format!("{path}: no leaf node {node} takes knobs; e.g. one of {}", with.join("|")));
+            let with: Vec<_> = t
+                .nodes
+                .iter()
+                .filter(|(_, l)| !l.info.knobs.is_empty())
+                .map(|(n, _)| n.as_str())
+                .collect();
+            bad.push(format!(
+                "{path}: no leaf node {node} takes knobs; e.g. one of {}",
+                with.join("|")
+            ));
             continue;
         };
         let Some(knob) = leaf.info.knobs.iter().find(|x| x.name == k) else {
             let names: Vec<_> = leaf.info.knobs.iter().map(|x| x.name).collect();
-            bad.push(format!("{path}: {node} has no knob {k}; e.g. one of {}", names.join("|")));
+            bad.push(format!(
+                "{path}: {node} has no knob {k}; e.g. one of {}",
+                names.join("|")
+            ));
             continue;
         };
         let val = match v {
             Value::Number(x) => Val::Num(x.as_f64().unwrap_or(f64::NAN)),
             Value::String(w) => Val::Word(w.clone()),
             _ => {
-                bad.push(format!("{path}: {v} is neither a number nor a word; e.g. {}", knob.default_val()));
+                bad.push(format!(
+                    "{path}: {v} is neither a number nor a word; e.g. {}",
+                    knob.default_val()
+                ));
                 continue;
             }
         };
@@ -288,21 +399,43 @@ impl<'a> Layer<'a> {
     /// A layer of a registered leaf node or composite node: it reserves room first when the registry says the leaf does
     /// (a composite reserves none itself), and the page's knob values (`knobs.spec.hero`) are checked against the registry
     /// before any leaf runs.
-    pub fn registered(node: &'a str, layer: &'a str, rows: Value, knobs: Value) -> Result<Layer<'a>, Vec<String>> {
+    pub fn registered(
+        node: &'a str,
+        layer: &'a str,
+        rows: Value,
+        knobs: Value,
+    ) -> Result<Layer<'a>, Vec<String>> {
         let t = leaves();
         let reserve = match t.nodes.get(node) {
             Some(leaf) => leaf.reserve,
             None if t.groups.contains_key(node) => false,
             None => {
-                let names: Vec<_> = t.nodes.keys().chain(t.groups.keys()).map(String::as_str).collect();
-                return Err(vec![format!("{layer}: no leaf or composite node {node}; e.g. one of {}", names.join("|"))]);
+                let names: Vec<_> = t
+                    .nodes
+                    .keys()
+                    .chain(t.groups.keys())
+                    .map(String::as_str)
+                    .collect();
+                return Err(vec![format!(
+                    "{layer}: no leaf or composite node {node}; e.g. one of {}",
+                    names.join("|")
+                )]);
             }
         };
-        let bad = knobs.pointer("/spec/hero").map(check_style).unwrap_or_default();
+        let bad = knobs
+            .pointer("/spec/hero")
+            .map(check_style)
+            .unwrap_or_default();
         if !bad.is_empty() {
             return Err(bad.into_iter().map(|b| format!("{layer}: {b}")).collect());
         }
-        Ok(Layer { node, layer, rows, knobs, reserve })
+        Ok(Layer {
+            node,
+            layer,
+            rows,
+            knobs,
+            reserve,
+        })
     }
 
     /// Test-only: the layer's node and rows, to draw it again with other knobs.
@@ -314,7 +447,13 @@ impl<'a> Layer<'a> {
     /// Test-only: a layer of a twin leaf no registry lists (fixtures/next_leaf), with no rows and its knobs as given.
     #[cfg(test)]
     pub(crate) fn twin(node: &'a str, layer: &'a str, knobs: Value) -> Layer<'a> {
-        Layer { node, layer, rows: json!([]), knobs, reserve: false }
+        Layer {
+            node,
+            layer,
+            rows: json!([]),
+            knobs,
+            reserve: false,
+        }
     }
 }
 
@@ -379,9 +518,17 @@ fn dropped_items(layer: &str, reply: &Value) -> Result<Vec<Dropped>, Vec<String>
     for item in items {
         let said = |k: &str| item[k].as_str().map(str::trim).filter(|s| !s.is_empty());
         match (said("id"), said("why")) {
-            (Some(id), _) if out.iter().any(|d| d.id == id) => bad.push(format!("{layer}: dropped {id} twice")),
-            (Some(id), Some(why)) => out.push(Dropped { layer: layer.to_string(), id: id.to_string(), why: why.to_string() }),
-            _ => bad.push(format!("{layer}: a dropped item {item} names no id and why")),
+            (Some(id), _) if out.iter().any(|d| d.id == id) => {
+                bad.push(format!("{layer}: dropped {id} twice"))
+            }
+            (Some(id), Some(why)) => out.push(Dropped {
+                layer: layer.to_string(),
+                id: id.to_string(),
+                why: why.to_string(),
+            }),
+            _ => bad.push(format!(
+                "{layer}: a dropped item {item} names no id and why"
+            )),
         }
     }
     if bad.is_empty() {
@@ -566,8 +713,26 @@ fn drawn_texts(svg: &str) -> Vec<(String, String)> {
 /// Filter primitives go in by name: feImage loads a file like image does. Out until a node needs one: image and a, and
 /// use, symbol, pattern, marker and textPath, which re-place, repeat or bend a text where `drawn_texts` reads no box.
 const SVG_TAGS: &[&str] = &[
-    "svg", "g", "path", "line", "polyline", "polygon", "rect", "circle", "ellipse", "text", "tspan", "defs",
-    "clippath", "lineargradient", "radialgradient", "stop", "title", "desc", "filter", "fegaussianblur",
+    "svg",
+    "g",
+    "path",
+    "line",
+    "polyline",
+    "polygon",
+    "rect",
+    "circle",
+    "ellipse",
+    "text",
+    "tspan",
+    "defs",
+    "clippath",
+    "lineargradient",
+    "radialgradient",
+    "stop",
+    "title",
+    "desc",
+    "filter",
+    "fegaussianblur",
 ];
 
 /// Why an svg fragment cannot be drawn as svg: a start tag off `SVG_TAGS` (any prefix such as `svg:` dropped), a CDATA
@@ -597,7 +762,10 @@ fn svg_markup(svg: &str) -> Option<String> {
         let name = svg[start..i].to_ascii_lowercase();
         let local = name.rsplit(':').next().unwrap_or("");
         if !SVG_TAGS.contains(&local) {
-            return Some(format!("holds <{}>, which is not svg; html goes in an html layer", &svg[start..i]));
+            return Some(format!(
+                "holds <{}>, which is not svg; html goes in an html layer",
+                &svg[start..i]
+            ));
         }
         loop {
             while i < b.len() && (b[i].is_ascii_whitespace() || b[i] == b'/') {
@@ -607,7 +775,8 @@ fn svg_markup(svg: &str) -> Option<String> {
                 break;
             }
             let at = i;
-            while i < b.len() && !b[i].is_ascii_whitespace() && !matches!(b[i], b'=' | b'>' | b'/') {
+            while i < b.len() && !b[i].is_ascii_whitespace() && !matches!(b[i], b'=' | b'>' | b'/')
+            {
                 i += 1;
             }
             let attr = svg[at..i].to_ascii_lowercase();
@@ -618,7 +787,9 @@ fn svg_markup(svg: &str) -> Option<String> {
                 let from = i + q.is_some() as usize;
                 let end = match q {
                     Some(q) => svg[from..].find(q as char).map_or(b.len(), |e| from + e),
-                    None => svg[from..].find(|c: char| c.is_ascii_whitespace() || c == '>').map_or(b.len(), |e| from + e),
+                    None => svg[from..]
+                        .find(|c: char| c.is_ascii_whitespace() || c == '>')
+                        .map_or(b.len(), |e| from + e),
                 };
                 value = &svg[from..end];
                 i = (end + q.is_some() as usize).min(b.len());
@@ -627,7 +798,9 @@ fn svg_markup(svg: &str) -> Option<String> {
                 return Some(format!("<{name}> carries the handler {attr}"));
             }
             if (attr == "href" || attr.ends_with(":href")) && !value.trim_start().starts_with('#') {
-                return Some(format!("<{name}> {attr} points outside the page ({value:?}); only #ids inside it"));
+                return Some(format!(
+                    "<{name}> {attr} points outside the page ({value:?}); only #ids inside it"
+                ));
             }
         }
     }
@@ -664,7 +837,9 @@ fn take(
             )]);
         }
         panel.html.push(html.to_string());
-        panel.layers.push((layer.to_string(), html.to_string(), true));
+        panel
+            .layers
+            .push((layer.to_string(), html.to_string(), true));
         panel.dropped.extend(dropped);
         return Ok(());
     }
@@ -729,7 +904,9 @@ fn take(
         return Err(bad);
     }
     panel.svg.push(svg.to_string());
-    panel.layers.push((layer.to_string(), svg.to_string(), false));
+    panel
+        .layers
+        .push((layer.to_string(), svg.to_string(), false));
     panel.texts.extend(texts);
     panel
         .lines
@@ -739,8 +916,10 @@ fn take(
     }
     panel.dropped.extend(dropped);
     if !reply["r_used"].is_null() {
-        panel.scales.push(json!({"layer": layer, "r_used": reply["r_used"], "r_steps": reply["r_steps"],
-            "r_min_lifted": reply["r_min_lifted"], "r_min_codes": reply["r_min_codes"]}));
+        panel.scales.push(
+            json!({"layer": layer, "r_used": reply["r_used"], "r_steps": reply["r_steps"],
+            "r_min_lifted": reply["r_min_lifted"], "r_min_codes": reply["r_min_codes"]}),
+        );
     }
     Ok(())
 }
@@ -786,20 +965,35 @@ fn start(runner: &Runner) -> Result<(Child, ChildStdin, Lines), String> {
 /// One request line to a fill child started by `runner` and its one reply line back within `deadline`, the child stopped
 /// after: (the line, milliseconds from start to reply). The child's environment is tighter than a leaf's: PATH and LANG
 /// only (no HOME), and it runs in its own folder.
-pub fn ask_once(runner: &Runner, request: &str, deadline: Duration) -> Result<(String, u128), String> {
+pub fn ask_once(
+    runner: &Runner,
+    request: &str,
+    deadline: Duration,
+) -> Result<(String, u128), String> {
     let started = Instant::now();
-    let dir = runner.args.last().map(Path::new).and_then(Path::parent).filter(|d| d.is_dir());
+    let dir = runner
+        .args
+        .last()
+        .map(Path::new)
+        .and_then(Path::parent)
+        .filter(|d| d.is_dir());
     let mut cmd = Command::new(&runner.program);
     cmd.args(&runner.args)
         .env_clear()
-        .envs(["PATH", "LANG"].iter().filter_map(|k| Some((*k, std::env::var(k).ok()?))))
+        .envs(
+            ["PATH", "LANG"]
+                .iter()
+                .filter_map(|k| Some((*k, std::env::var(k).ok()?))),
+        )
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
     if let Some(dir) = dir {
         cmd.current_dir(dir);
     }
-    let mut child = cmd.spawn().map_err(|e| format!("{} did not start: {e}", runner.program))?;
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("{} did not start: {e}", runner.program))?;
     let (Some(mut stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else {
         stop(child);
         return Err(format!("{} gave no pipes", runner.program));
@@ -906,7 +1100,8 @@ pub fn draw_page_given(
     layers: &[Layer<'_>],
     given: &[(&str, &Strip)],
 ) -> Result<(Panel, String, Vec<Record>), Refused> {
-    drawn(runner, w, h, frame, layers, true, given).map(|(panel, html, records)| (panel, html.unwrap_or_default(), records))
+    drawn(runner, w, h, frame, layers, true, given)
+        .map(|(panel, html, records)| (panel, html.unwrap_or_default(), records))
 }
 
 /// Every way the page does not hold the layers as Rust took them. Each layer's bytes sit on the page exactly once, its root
@@ -921,19 +1116,31 @@ fn held(html: &str, layers: &[(String, String, bool)]) -> Vec<String> {
     let mut page = html.to_string();
     let mut at = vec![None; layers.len()];
     let mut off = Vec::new();
-    let mut longest: Vec<usize> = (0..layers.len()).filter(|&i| !layers[i].1.is_empty()).collect();
+    let mut longest: Vec<usize> = (0..layers.len())
+        .filter(|&i| !layers[i].1.is_empty())
+        .collect();
     longest.sort_by_key(|&i| std::cmp::Reverse(layers[i].1.len()));
     for i in longest {
         let (name, frag, _) = &layers[i];
         let tagged = frag.strip_prefix('<').and_then(|rest| {
-            let n = rest.find(|c: char| !c.is_ascii_alphanumeric()).filter(|n| *n > 0)?;
-            Some(format!("<{} data-layer=\"{name}\"{}", &rest[..n], &rest[n..]))
+            let n = rest
+                .find(|c: char| !c.is_ascii_alphanumeric())
+                .filter(|n| *n > 0)?;
+            Some(format!(
+                "<{} data-layer=\"{name}\"{}",
+                &rest[..n],
+                &rest[n..]
+            ))
         });
         // spent bytes are NULs, which no layer holds
         let found: Vec<(usize, usize)> = std::iter::once(frag.as_str())
             .chain(tagged.as_deref())
             .filter(|f| !f.contains('\0'))
-            .flat_map(|f| page.match_indices(f).map(|(p, _)| (p, f.len())).collect::<Vec<_>>())
+            .flat_map(|f| {
+                page.match_indices(f)
+                    .map(|(p, _)| (p, f.len()))
+                    .collect::<Vec<_>>()
+            })
             .collect();
         match found[..] {
             [] => off.push(format!("page: the layer {name} is not on the page byte for byte as it was drawn")),
@@ -948,19 +1155,27 @@ fn held(html: &str, layers: &[(String, String, bool)]) -> Vec<String> {
         }
     }
     let svgs = svgs(&page, &unseen);
-    let inside = |p: usize| svgs.iter().filter(|s| s.1 <= p && p < s.2).max_by_key(|s| s.1).map(|s| s.0);
+    let inside = |p: usize| {
+        svgs.iter()
+            .filter(|s| s.1 <= p && p < s.2)
+            .max_by_key(|s| s.1)
+            .map(|s| s.0)
+    };
     let mut kept: BTreeMap<(bool, Option<usize>), Vec<(usize, &str)>> = BTreeMap::new();
     for ((name, _, is_html), p) in layers.iter().zip(&at) {
         if let Some(p) = *p {
             let svg = if *is_html { None } else { inside(p) };
-            kept.entry((*is_html, svg)).or_default().push((p, name.as_str()));
+            kept.entry((*is_html, svg))
+                .or_default()
+                .push((p, name.as_str()));
         }
     }
     for taken in kept.values() {
         if taken.windows(2).any(|w| w[0].0 > w[1].0) {
             let mut on_page = taken.clone();
             on_page.sort();
-            let names = |l: &[(usize, &str)]| l.iter().map(|(_, n)| n.to_string()).collect::<Vec<_>>();
+            let names =
+                |l: &[(usize, &str)]| l.iter().map(|(_, n)| n.to_string()).collect::<Vec<_>>();
             off.push(format!(
                 "page: the layers {:?} are on the page as {:?}; they keep the order they were drawn, bottom first",
                 names(taken),
@@ -969,7 +1184,9 @@ fn held(html: &str, layers: &[(String, String, bool)]) -> Vec<String> {
         }
     }
     for &(start, body, end) in &svgs {
-        let names: Vec<&str> = kept.get(&(false, Some(start))).map_or(Vec::new(), |t| t.iter().map(|(_, n)| *n).collect());
+        let names: Vec<&str> = kept
+            .get(&(false, Some(start)))
+            .map_or(Vec::new(), |t| t.iter().map(|(_, n)| *n).collect());
         if let Some(own) = drawing(&page[body..end], &names) {
             let own: String = own.chars().take_while(|c| *c != '\0').take(60).collect();
             off.push(format!(
@@ -984,7 +1201,9 @@ fn held(html: &str, layers: &[(String, String, bool)]) -> Vec<String> {
 fn element(s: &str, name: &str) -> bool {
     s.strip_prefix('<')
         .and_then(|r| r.strip_prefix(name))
-        .is_some_and(|r| r.is_empty() || r.starts_with(|c: char| c == '>' || c == '/' || c.is_ascii_whitespace()))
+        .is_some_and(|r| {
+            r.is_empty() || r.starts_with(|c: char| c == '>' || c == '/' || c.is_ascii_whitespace())
+        })
 }
 
 /// The parts of the page nothing is drawn from, by byte range: comments, and the elements template (to its own close,
@@ -995,8 +1214,13 @@ fn unseen(html: &str) -> Vec<Range<usize>> {
     let mut i = 0;
     while let Some(p) = low[i..].find('<').map(|p| p + i) {
         let end = if low[p..].starts_with("<!--") {
-            low[p + 4..].find("-->").map_or(low.len(), |e| p + 4 + e + 3)
-        } else if let Some(name) = ["template", "script", "style", "noscript"].into_iter().find(|n| element(&low[p..], n)) {
+            low[p + 4..]
+                .find("-->")
+                .map_or(low.len(), |e| p + 4 + e + 3)
+        } else if let Some(name) = ["template", "script", "style", "noscript"]
+            .into_iter()
+            .find(|n| element(&low[p..], n))
+        {
             let close = format!("/{name}");
             let (mut depth, mut j, mut end) = (0, p, low.len());
             while let Some(q) = low[j..].find('<').map(|q| q + j) {
@@ -1034,7 +1258,9 @@ fn svgs(page: &str, unseen: &[Range<usize>]) -> Vec<(usize, usize, usize)> {
             continue;
         }
         if element(&low[p..], "svg") {
-            let Some(e) = low[p..].find('>').map(|e| p + e + 1) else { break };
+            let Some(e) = low[p..].find('>').map(|e| p + e + 1) else {
+                break;
+            };
             if !low[p..e].ends_with("/>") {
                 open.push((p, e));
             }
@@ -1064,7 +1290,8 @@ fn drawing<'a>(mut s: &'a str, names: &[&str]) -> Option<&'a str> {
         } else {
             s.strip_prefix("<g data-layer=\"").and_then(|r| {
                 let e = r.find('"')?;
-                (names.contains(&&r[..e]) && r[e..].starts_with("\">")).then_some("<g data-layer=\"".len() + e + 2)
+                (names.contains(&&r[..e]) && r[e..].starts_with("\">"))
+                    .then_some("<g data-layer=\"".len() + e + 2)
             })
         };
         match tag {
@@ -1107,8 +1334,13 @@ fn drawn(
                     return Err(refused);
                 }
                 match (r["w"].as_f64(), r["h"].as_f64()) {
-                    (Some(cw), Some(ch)) if cw > 0.0 && ch > 0.0 && ch.is_finite() && cw <= w => Ok((cw, ch)),
-                    _ => Err(vec![format!("size: the panel {} {} is no size within the width {w}", r["w"], r["h"])]),
+                    (Some(cw), Some(ch)) if cw > 0.0 && ch > 0.0 && ch.is_finite() && cw <= w => {
+                        Ok((cw, ch))
+                    }
+                    _ => Err(vec![format!(
+                        "size: the panel {} {} is no size within the width {w}",
+                        r["w"], r["h"]
+                    )]),
                 }
             });
         records.push(Record {
@@ -1195,13 +1427,23 @@ fn drawn(
     if page {
         let started = Instant::now();
         // a strip is svg: held in the svg the page puts it in, as a layer of that svg
-        panel.layers.extend(given.iter().map(|(name, s)| (name.to_string(), s.svg.clone(), false)));
-        let sent: serde_json::Map<String, Value> =
-            panel.layers.iter().map(|(n, f, _)| (n.clone(), json!(f))).collect();
+        panel.layers.extend(
+            given
+                .iter()
+                .map(|(name, s)| (name.to_string(), s.svg.clone(), false)),
+        );
+        let sent: serde_json::Map<String, Value> = panel
+            .layers
+            .iter()
+            .map(|(n, f, _)| (n.clone(), json!(f)))
+            .collect();
         // claim_words: the words check_claims reads a title's claim by, so the leaf keeps a title only where the check holds it
         let mut request = json!({"phase": "page", "layers": sent, "claim_words": crate::next_ledger::claim_words()});
         if !given.is_empty() {
-            request["sizes"] = given.iter().map(|(name, s)| (name.to_string(), json!([s.w, s.h]))).collect();
+            request["sizes"] = given
+                .iter()
+                .map(|(name, s)| (name.to_string(), json!([s.w, s.h])))
+                .collect();
         }
         let taken = ask(&mut stdin, &rx, "page", &request, LAYER_DEADLINE)
             .map_err(|e| vec![e])
@@ -1210,7 +1452,9 @@ fn drawn(
                 if !refused.is_empty() {
                     return Err(refused);
                 }
-                let page = r["html"].as_str().ok_or_else(|| vec!["page: no html".to_string()])?;
+                let page = r["html"]
+                    .as_str()
+                    .ok_or_else(|| vec!["page: no html".to_string()])?;
                 let off = held(page, &panel.layers);
                 if off.is_empty() {
                     Ok(page.to_string())
@@ -1434,12 +1678,19 @@ pub fn strip(runner: &Runner, request: &Value, colours: &[&str]) -> Result<Strip
     if !refused.is_empty() {
         return Err(refused.join("\n"));
     }
-    let (Some(svg), Some(w), Some(h)) = (reply["svg"].as_str(), reply["w"].as_f64(), reply["h"].as_f64()) else {
+    let (Some(svg), Some(w), Some(h)) = (
+        reply["svg"].as_str(),
+        reply["w"].as_f64(),
+        reply["h"].as_f64(),
+    ) else {
         return Err("strip: the reply has no svg, w or h".into());
     };
     let mut off = strip_faults(svg, colours);
     if Some(w) != request["width"].as_f64() || !(h > 0.0 && h.is_finite()) {
-        off.push(format!("strip: drawn {w}x{h}, asked {} wide", request["width"]));
+        off.push(format!(
+            "strip: drawn {w}x{h}, asked {} wide",
+            request["width"]
+        ));
     }
     if !off.is_empty() {
         return Err(off.join("\n"));
@@ -1459,10 +1710,18 @@ pub fn strip(runner: &Runner, request: &Value, colours: &[&str]) -> Result<Strip
 pub fn strip_faults(svg: &str, colours: &[&str]) -> Vec<String> {
     let transform = |v: &str| {
         let num = |s: &str| s.parse::<f64>().is_ok_and(f64::is_finite);
-        let Some(rest) = v.strip_prefix("translate(") else { return false };
-        let Some((xy, rest)) = rest.split_once(')') else { return false };
+        let Some(rest) = v.strip_prefix("translate(") else {
+            return false;
+        };
+        let Some((xy, rest)) = rest.split_once(')') else {
+            return false;
+        };
         let at = xy.split(',').collect::<Vec<_>>();
-        let scale = rest.is_empty() || rest.strip_prefix(" scale(").and_then(|r| r.strip_suffix(')')).is_some_and(num);
+        let scale = rest.is_empty()
+            || rest
+                .strip_prefix(" scale(")
+                .and_then(|r| r.strip_suffix(')'))
+                .is_some_and(num);
         at.len() == 2 && at.iter().all(|s| num(s)) && scale
     };
     let mut off = Vec::new();
@@ -1470,7 +1729,10 @@ pub fn strip_faults(svg: &str, colours: &[&str]) -> Vec<String> {
     while !rest.is_empty() {
         let lt = rest.find('<').unwrap_or(rest.len());
         if !rest[..lt].trim().is_empty() {
-            off.push(format!("strip: text {:?} between the tags", &rest[..lt.min(40)]));
+            off.push(format!(
+                "strip: text {:?} between the tags",
+                &rest[..lt.min(40)]
+            ));
             break;
         }
         rest = &rest[lt..];
@@ -1497,16 +1759,29 @@ pub fn strip_faults(svg: &str, colours: &[&str]) -> Vec<String> {
         };
         let allowed: &[&str] = match (name, closed) {
             ("g", false) => &["transform"],
-            ("path", true) => &["d", "stroke", "stroke-width", "fill", "stroke-linecap", "stroke-linejoin", "transform"],
+            ("path", true) => &[
+                "d",
+                "stroke",
+                "stroke-width",
+                "fill",
+                "stroke-linecap",
+                "stroke-linejoin",
+                "transform",
+            ],
             _ => {
-                off.push(format!("strip: <{name}> is no element a strip draws; e.g. <path .../>"));
+                off.push(format!(
+                    "strip: <{name}> is no element a strip draws; e.g. <path .../>"
+                ));
                 break;
             }
         };
         let mut a = attrs[name.len()..].trim_end_matches('/').trim();
         while !a.is_empty() {
             let Some((key, after)) = a.split_once("=\"") else {
-                off.push(format!("strip: <{name}> has an attribute that is not key=\"value\": {:?}", &a[..a.len().min(40)]));
+                off.push(format!(
+                    "strip: <{name}> has an attribute that is not key=\"value\": {:?}",
+                    &a[..a.len().min(40)]
+                ));
                 break;
             };
             let Some((value, after)) = after.split_once('"') else {
@@ -1515,7 +1790,9 @@ pub fn strip_faults(svg: &str, colours: &[&str]) -> Vec<String> {
             };
             let ok = allowed.contains(&key)
                 && match key {
-                    "d" => value.chars().all(|c| c.is_ascii_digit() || " ,.-eEMCLQTZmclqtz".contains(c)),
+                    "d" => value
+                        .chars()
+                        .all(|c| c.is_ascii_digit() || " ,.-eEMCLQTZmclqtz".contains(c)),
                     "stroke" => colours.contains(&value),
                     "stroke-width" => value.parse::<f64>().is_ok_and(|w| w > 0.0 && w.is_finite()),
                     "fill" => value == "none",
@@ -1524,7 +1801,10 @@ pub fn strip_faults(svg: &str, colours: &[&str]) -> Vec<String> {
                     _ => false,
                 };
             if !ok {
-                off.push(format!("strip: <{name} {key}={value:?}> is not drawn by a strip; strokes only in {}", colours.join(" or ")));
+                off.push(format!(
+                    "strip: <{name} {key}={value:?}> is not drawn by a strip; strokes only in {}",
+                    colours.join(" or ")
+                ));
             }
             a = after.trim_start();
         }
@@ -1622,8 +1902,12 @@ pub fn check_leaf_page(
     off.extend(split_months(html));
     off.extend(check_numbers(html, ledger, refs));
     off.extend(recheck(ledger, spec, rows, facts));
-    off.extend(crate::next_ledger::check_relations(html, ledger, spec, facts, rows));
-    off.extend(crate::next_ledger::check_claims(html, ledger, spec, facts, rows));
+    off.extend(crate::next_ledger::check_relations(
+        html, ledger, spec, facts, rows,
+    ));
+    off.extend(crate::next_ledger::check_claims(
+        html, ledger, spec, facts, rows,
+    ));
     off.extend(crate::next_ledger::check_accent_named(html));
     off.extend(crate::next_ledger::check_names_drawn(html));
     off.extend(places_answered(html, ledger, spec, rows, facts));
@@ -1637,10 +1921,20 @@ pub fn check_leaf_page(
 /// holds the line's words with the year as its period entry in the basis table, the count as the count fact's bare number
 /// and each member with no data as its name row, all printed marked. A basis with no line asks only the count's rule (and
 /// no member missing); a request with no basis asks nothing of the page.
-fn basis_said(html: &str, ledger: &BTreeMap<String, String>, spec: &Spec, rows: &[Row], facts: &[Fact]) -> Vec<String> {
-    let Some(b) = &spec.basis else { return Vec::new() };
+fn basis_said(
+    html: &str,
+    ledger: &BTreeMap<String, String>,
+    spec: &Spec,
+    rows: &[Row],
+    facts: &[Fact],
+) -> Vec<String> {
+    let Some(b) = &spec.basis else {
+        return Vec::new();
+    };
     if let Some(why) = &b.unread {
-        return vec![format!("basis: the request's member basis does not read: {why}")];
+        return vec![format!(
+            "basis: the request's member basis does not read: {why}"
+        )];
     }
     let mut off = Vec::new();
     if !b.unfetched.is_empty() {
@@ -1648,17 +1942,31 @@ fn basis_said(html: &str, ledger: &BTreeMap<String, String>, spec: &Spec, rows: 
     }
     // a member is the basis line's to name: the countries the question names on its own are asked of the page only when
     // they are no member, so no member is named twice
-    for code in spec.asked_places.iter().flat_map(|a| &a.asked).filter(|c| b.members.contains(c)) {
+    for code in spec
+        .asked_places
+        .iter()
+        .flat_map(|a| &a.asked)
+        .filter(|c| b.members.contains(c))
+    {
         off.push(format!("basis: {code} is a member of the group in {} and is asked again as a place the question names", b.year));
     }
     let uses = |key: &str| b.words.as_deref().is_some_and(|w| w.contains(key));
-    let count_src = b.count.as_ref().map(|c| format!("{}{c}.n", crate::next_facts::FACT_SRC));
+    let count_src = b
+        .count
+        .as_ref()
+        .map(|c| format!("{}{c}.n", crate::next_facts::FACT_SRC));
     // the places the count fact counts, each once
     let counted: Option<Vec<String>> = b.count.as_ref().and_then(|count| {
-        match (spec.facts.iter().find(|(k, _)| k == count), facts.iter().find(|f| &f.key == count)) {
+        match (
+            spec.facts.iter().find(|(k, _)| k == count),
+            facts.iter().find(|f| &f.key == count),
+        ) {
             (Some((_, q)), Some(f)) if f.op == "n" => {
                 if q["time"].as_str() != Some(b.year.as_str()) {
-                    off.push(format!("basis: {count} counts at {}, the basis is of {}", q["time"], b.year));
+                    off.push(format!(
+                        "basis: {count} counts at {}, the basis is of {}",
+                        q["time"], b.year
+                    ));
                 }
                 let by = q["by"].as_str().unwrap_or_default();
                 let mut codes: Vec<String> = Vec::new();
@@ -1666,35 +1974,51 @@ fn basis_said(html: &str, ledger: &BTreeMap<String, String>, spec: &Spec, rows: 
                     match r.dims.get(by) {
                         Some(code) if !codes.contains(code) => codes.push(code.clone()),
                         Some(_) => {}
-                        None => off.push(format!("basis: {count} reads {}, which has no {by}", r.src)),
+                        None => {
+                            off.push(format!("basis: {count} reads {}, which has no {by}", r.src))
+                        }
                     }
                 }
                 Some(codes)
             }
             _ => {
-                off.push(format!("basis: the request holds no count fact {count} for the member basis"));
+                off.push(format!(
+                    "basis: the request holds no count fact {count} for the member basis"
+                ));
                 None
             }
         }
     });
     match &counted {
         Some(codes) => {
-            for code in codes.iter().filter(|c| !b.members.contains(c) && !b.named.contains(c)) {
-                off.push(format!("basis: the page counts {code}, no member in {} and not named in the question", b.year));
+            for code in codes
+                .iter()
+                .filter(|c| !b.members.contains(c) && !b.named.contains(c))
+            {
+                off.push(format!(
+                    "basis: the page counts {code}, no member in {} and not named in the question",
+                    b.year
+                ));
             }
-            let lacking: std::collections::BTreeSet<&String> = b.members.iter().filter(|m| !codes.contains(m)).collect();
+            let lacking: std::collections::BTreeSet<&String> =
+                b.members.iter().filter(|m| !codes.contains(m)).collect();
             let said: std::collections::BTreeSet<&String> = b.missing.iter().collect();
             if lacking != said {
                 off.push(format!("basis: the members of {} the page does not draw are {lacking:?}, it names {said:?} as with no data", b.year));
             }
         }
         None if b.count.is_none() && (b.words.is_some() || !b.missing.is_empty()) => {
-            off.push("basis: the page states a member basis and has no count of its places".to_string());
+            off.push(
+                "basis: the page states a member basis and has no count of its places".to_string(),
+            );
         }
         None => {}
     }
     if !b.missing.is_empty() && !uses("{missing}") {
-        off.push(format!("basis: members {:?} have no data and the page's line does not name them", b.missing));
+        off.push(format!(
+            "basis: members {:?} have no data and the page's line does not name them",
+            b.missing
+        ));
     }
     let Some(words) = &b.words else { return off };
     let mut want = words.clone();
@@ -1714,7 +2038,9 @@ fn basis_said(html: &str, ledger: &BTreeMap<String, String>, spec: &Spec, rows: 
                 marked.push(s.clone());
             }
             None => {
-                off.push(format!("basis: the ledger holds no entry for {key} of the member basis {words:?}"));
+                off.push(format!(
+                    "basis: the ledger holds no entry for {key} of the member basis {words:?}"
+                ));
                 return off;
             }
         }
@@ -1725,7 +2051,9 @@ fn basis_said(html: &str, ledger: &BTreeMap<String, String>, spec: &Spec, rows: 
             let src = crate::next_ledger::name_src(code);
             match ledger.get(&src) {
                 Some(name) => names.push(name.as_str()),
-                None => off.push(format!("basis: the ledger names no {code}, a member with no data")),
+                None => off.push(format!(
+                    "basis: the ledger names no {code}, a member with no data"
+                )),
             }
             marked.push(src);
         }
@@ -1742,13 +2070,22 @@ fn basis_said(html: &str, ledger: &BTreeMap<String, String>, spec: &Spec, rows: 
             _ => {}
         }
     }
-    let text = text.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&#39;", "'").replace("&amp;", "&");
+    let text = text
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&amp;", "&");
     if !text.contains(&want) {
-        off.push(format!("basis: the page does not say its member basis {want:?}"));
+        off.push(format!(
+            "basis: the page does not say its member basis {want:?}"
+        ));
     }
     for src in marked {
         if !html.contains(&format!("data-src=\"{src}\"")) {
-            off.push(format!("basis: the page prints no {src} for its member basis"));
+            off.push(format!(
+                "basis: the page prints no {src} for its member basis"
+            ));
         }
     }
     off
@@ -1762,10 +2099,20 @@ fn basis_said(html: &str, ledger: &BTreeMap<String, String>, spec: &Spec, rows: 
 /// a place the question names; a named place with a row there that the page neither prints nor names is refused; and the
 /// page's text holds the line's `words` with {missing} the missing places' name rows joined by `join`, each name printed
 /// marked. A request with none asks nothing of the page.
-fn places_answered(html: &str, ledger: &BTreeMap<String, String>, spec: &Spec, rows: &[Row], facts: &[Fact]) -> Vec<String> {
-    let Some(a) = &spec.asked_places else { return Vec::new() };
+fn places_answered(
+    html: &str,
+    ledger: &BTreeMap<String, String>,
+    spec: &Spec,
+    rows: &[Row],
+    facts: &[Fact],
+) -> Vec<String> {
+    let Some(a) = &spec.asked_places else {
+        return Vec::new();
+    };
     if let Some(why) = &a.unread {
-        return vec![format!("places: the request's asked places do not read: {why}")];
+        return vec![format!(
+            "places: the request's asked places do not read: {why}"
+        )];
     }
     let mut off = Vec::new();
     let marked = crate::next_ledger::printed(html);
@@ -1774,7 +2121,14 @@ fn places_answered(html: &str, ledger: &BTreeMap<String, String>, spec: &Spec, r
         answered.extend(entry_places(src, &a.dims, rows, facts));
     }
     // an empty year (a page whose shape names none) is every period of the request's rows
-    let has_row = |code: &str| rows.iter().any(|r| (a.year.is_empty() || r.time == a.year) && a.dims.iter().any(|d| r.dims.get(d).is_some_and(|c| c == code)));
+    let has_row = |code: &str| {
+        rows.iter().any(|r| {
+            (a.year.is_empty() || r.time == a.year)
+                && a.dims
+                    .iter()
+                    .any(|d| r.dims.get(d).is_some_and(|c| c == code))
+        })
+    };
     for code in &a.asked {
         let missing = a.missing.contains(code);
         match (answered.contains(code), missing, has_row(code.as_str())) {
@@ -1789,13 +2143,18 @@ fn places_answered(html: &str, ledger: &BTreeMap<String, String>, spec: &Spec, r
         }
     }
     for code in a.missing.iter().filter(|c| !a.asked.contains(c)) {
-        off.push(format!("places: {code} is said to have no data and the question does not name it"));
+        off.push(format!(
+            "places: {code} is said to have no data and the question does not name it"
+        ));
     }
     if a.missing.is_empty() {
         return off;
     }
     let Some((before, after)) = a.words.split_once("{missing}") else {
-        off.push(format!("places: the line {:?} names no {{missing}} for {:?}", a.words, a.missing));
+        off.push(format!(
+            "places: the line {:?} names no {{missing}} for {:?}",
+            a.words, a.missing
+        ));
         return off;
     };
     let mut names = Vec::new();
@@ -1803,10 +2162,14 @@ fn places_answered(html: &str, ledger: &BTreeMap<String, String>, spec: &Spec, r
         let src = crate::next_ledger::name_src(code);
         match ledger.get(&src) {
             Some(name) => names.push(name.as_str()),
-            None => off.push(format!("places: the ledger names no {code}, a place with no data")),
+            None => off.push(format!(
+                "places: the ledger names no {code}, a place with no data"
+            )),
         }
         if !marked.contains(&src) {
-            off.push(format!("places: the page prints no {src} for a place with no data"));
+            off.push(format!(
+                "places: the page prints no {src} for a place with no data"
+            ));
         }
     }
     let want = format!("{before}{}{after}", names.join(&a.join));
@@ -1819,14 +2182,30 @@ fn places_answered(html: &str, ledger: &BTreeMap<String, String>, spec: &Spec, r
 /// The places (codes in `dims`) every request row a marked entry reads belongs to: a request row itself, or a `fact:`
 /// entry's fact (the longest fact key the entry starts with) and the facts it reads in turn; none when it reads no row,
 /// or anything that is neither a request row nor a fact.
-fn entry_places(src: &str, dims: &[String], rows: &[Row], facts: &[Fact]) -> std::collections::BTreeSet<String> {
+fn entry_places(
+    src: &str,
+    dims: &[String],
+    rows: &[Row],
+    facts: &[Fact],
+) -> std::collections::BTreeSet<String> {
     let fact_of = |src: &str| {
         facts
             .iter()
-            .filter(|f| src.strip_prefix(crate::next_facts::FACT_SRC).is_some_and(|k| k == f.key || k.strip_prefix(f.key.as_str()).is_some_and(|t| t.starts_with('.'))))
+            .filter(|f| {
+                src.strip_prefix(crate::next_facts::FACT_SRC)
+                    .is_some_and(|k| {
+                        k == f.key
+                            || k.strip_prefix(f.key.as_str())
+                                .is_some_and(|t| t.starts_with('.'))
+                    })
+            })
             .max_by_key(|f| f.key.len())
     };
-    let (mut read, mut todo, mut seen) = (Vec::new(), vec![src.to_string()], std::collections::BTreeSet::new());
+    let (mut read, mut todo, mut seen) = (
+        Vec::new(),
+        vec![src.to_string()],
+        std::collections::BTreeSet::new(),
+    );
     while let Some(s) = todo.pop() {
         if !seen.insert(s.clone()) {
             continue;
@@ -1839,10 +2218,16 @@ fn entry_places(src: &str, dims: &[String], rows: &[Row], facts: &[Fact]) -> std
             },
         }
     }
-    let of = |r: &Row| -> std::collections::BTreeSet<String> { dims.iter().filter_map(|d| r.dims.get(d).cloned()).collect() };
+    let of = |r: &Row| -> std::collections::BTreeSet<String> {
+        dims.iter().filter_map(|d| r.dims.get(d).cloned()).collect()
+    };
     let mut rest = read.into_iter();
-    let Some(first) = rest.next() else { return Default::default() };
-    rest.fold(of(first), |all, r| all.intersection(&of(r)).cloned().collect())
+    let Some(first) = rest.next() else {
+        return Default::default();
+    };
+    rest.fold(of(first), |all, r| {
+        all.intersection(&of(r)).cloned().collect()
+    })
 }
 
 /// The leaf page as it is published: Rust adds the renderer's ready script once before `</body>` (the child never writes
@@ -1887,10 +2272,21 @@ mod tests {
     /// own half (period:<t>:2026-S1.y, then .h), and neither beside another period's part.
     #[test]
     fn a_half_year_s_year_and_half_come_from_one_period() {
-        let span = |src: &str, text: &str| format!(r#"<span data-src="period:t:{src}">{text}</span>"#);
+        let span =
+            |src: &str, text: &str| format!(r#"<span data-src="period:t:{src}">{text}</span>"#);
         let page = |a: &str, b: &str| format!("{} 年{}半年", span(a, "2026"), span(b, "上"));
-        assert_eq!(split_months(&page("2026-S1.y", "2026-S1.h")), Vec::<String>::new());
-        assert_eq!(split_months(&format!("{} 年 {} 月", span("2026-08.y", "2026"), span("2026-08.m", "8"))), Vec::<String>::new());
+        assert_eq!(
+            split_months(&page("2026-S1.y", "2026-S1.h")),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            split_months(&format!(
+                "{} 年 {} 月",
+                span("2026-08.y", "2026"),
+                span("2026-08.m", "8")
+            )),
+            Vec::<String>::new()
+        );
         assert_eq!(split_months(&page("2026-S1.y", "2025-S2.h")).len(), 2);
         assert_eq!(split_months(&span("2026-S1.y", "2026")).len(), 1);
         assert_eq!(split_months(&span("2026-S1.h", "上")).len(), 1);
@@ -1904,9 +2300,13 @@ mod tests {
         let path = |attrs: &str| format!(r#"<path d="M0 1 C2.5 -3e-1, 4 5" {attrs}/>"#);
         let ok = format!(
             r#"<g transform="translate(316.00,47.38) scale(0.7190)">{}{}</g>{}"#,
-            path(r#"stroke="var(--t-title)" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round""#),
+            path(
+                r#"stroke="var(--t-title)" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round""#
+            ),
             path(r#"stroke="var(--accent)" stroke-width="1.300""#),
-            path(r#"transform="translate(12.22,10.4) scale(1.4)" stroke="var(--t-title)" stroke-width="1.0""#),
+            path(
+                r#"transform="translate(12.22,10.4) scale(1.4)" stroke="var(--t-title)" stroke-width="1.0""#
+            ),
         );
         assert_eq!(strip_faults(&ok, &colours), Vec::<String>::new());
         let refused = |svg: &str| {
@@ -1950,7 +2350,14 @@ mod tests {
         let twin = Runner::python(Path::new("fixtures/next_leaf/bake_twin.py"));
         let baked = bake(&twin, LAID, "READY", 1440).unwrap();
         assert!(!baked.html.contains("layout()") && baked.html.contains("<script>READY</script>"));
-        assert!(baked.type_measured.as_ref().is_some_and(|t| t["below"] == json!([])), "{:?}", baked.type_measured);
+        assert!(
+            baked
+                .type_measured
+                .as_ref()
+                .is_some_and(|t| t["below"] == json!([])),
+            "{:?}",
+            baked.type_measured
+        );
         assert!(baked.html.contains("<path"));
         let tampered = format!("{LAID}<!--tamper-->");
         let why = bake(&twin, &tampered, "READY", 1440).err().unwrap();
@@ -1985,7 +2392,14 @@ mod tests {
         assert!(!baked.html.contains("data-bake"));
         // the type check measured the one text, black on white at the default size
         let typed = baked.type_measured.as_ref().expect("the bake's type");
-        assert_eq!((&typed["texts"], &typed["min_font_px"], &typed["min_contrast_body"]), (&json!(1), &json!(16), &json!(21)));
+        assert_eq!(
+            (
+                &typed["texts"],
+                &typed["min_font_px"],
+                &typed["min_contrast_body"]
+            ),
+            (&json!(1), &json!(16), &json!(21))
+        );
         let asks = page.replace("<svg>", "<img src=\"http://example.invalid/a.png\"><svg>");
         let why = bake(&real, &asks, ready, 1440).err().unwrap();
         assert_eq!(why, "bake: the page asked for http://example.invalid/a.png");
@@ -2015,7 +2429,12 @@ mod tests {
         let ledger = leaf_ledger(&spec, &rows, &[]).unwrap();
         let refs = ["MIGR_ASYAPPCTZM".to_string()];
         let y = ["y", "m"]
-            .map(|p| format!("<b data-src=\"period:mo:2021-01.{p}\">{}</b>", ledger[&format!("period:mo:2021-01.{p}")]))
+            .map(|p| {
+                format!(
+                    "<b data-src=\"period:mo:2021-01.{p}\">{}</b>",
+                    ledger[&format!("period:mo:2021-01.{p}")]
+                )
+            })
             .join(" 年 ");
         let page = |body: &str| {
             format!("<!doctype html><html><body><p>{body}</p><svg><g></g></svg><footer><span data-ref=\"\">MIGR_ASYAPPCTZM</span></footer><script>layout()</script></body></html>")
@@ -2023,14 +2442,25 @@ mod tests {
         let run = |html: &str| bake_leaf_page(&twin, html, &ledger, &refs, (&spec, &rows, &[]));
         let baked = run(&page(&format!("{y} 年"))).unwrap();
         assert_eq!(baked.html.matches("<script").count(), 1);
-        assert!(baked.html.contains(&format!("<script>{READY_JS}</script></body>")));
+        assert!(baked
+            .html
+            .contains(&format!("<script>{READY_JS}</script></body>")));
         assert!(!baked.html.contains("layout()") && baked.html.contains("<path"));
         let wrote = page(&format!("{y} 年")).replace("layout()", READY_JS);
-        assert_eq!(run(&wrote).err().unwrap(), ["page: the child wrote the ready script itself"]);
+        assert_eq!(
+            run(&wrote).err().unwrap(),
+            ["page: the child wrote the ready script itself"]
+        );
         let bodiless = page(&format!("{y} 年")).replace("</body>", "");
-        assert_eq!(run(&bodiless).err().unwrap(), ["page: the page has no </body>"]);
+        assert_eq!(
+            run(&bodiless).err().unwrap(),
+            ["page: the page has no </body>"]
+        );
         let failed = page(&format!("{y} 年<!--fail-->"));
-        assert_eq!(run(&failed).err().unwrap(), ["bake: the page asked for http://x/"]);
+        assert_eq!(
+            run(&failed).err().unwrap(),
+            ["bake: the page asked for http://x/"]
+        );
         let raw = run(&page("2021 年")).err().unwrap();
         assert!(raw.iter().any(|f| f.contains("2021")), "{raw:?}");
     }
@@ -2039,8 +2469,12 @@ mod tests {
     fn the_bake_refuses_a_text_over_a_text_out_of_its_svg_or_over_a_note_and_passes_a_clean_page() {
         let real = Runner::python(Path::new("runtime/leaves_py/bake.py"));
         // the page's box (.pg) as every leaf page has one: the width check refuses a page without it
-        let page = |body: &str| format!("<!doctype html><meta charset=\"utf-8\"><body style=\"margin:0\"><div class=\"pg\">{body}</div></body>");
-        let svg = |texts: &str| format!("<svg width=\"400\" height=\"200\" data-layer=\"map\">{texts}</svg>");
+        let page = |body: &str| {
+            format!("<!doctype html><meta charset=\"utf-8\"><body style=\"margin:0\"><div class=\"pg\">{body}</div></body>")
+        };
+        let svg = |texts: &str| {
+            format!("<svg width=\"400\" height=\"200\" data-layer=\"map\">{texts}</svg>")
+        };
         let clean = page(&svg("<text x=\"20\" y=\"40\" font-size=\"14\">德国</text><text x=\"20\" y=\"120\" font-size=\"14\">法国</text>"));
         bake(&real, &clean, "", 1440).unwrap();
         let cases = [
@@ -2055,7 +2489,10 @@ mod tests {
         ];
         for (body, why) in cases {
             let got = bake(&real, &page(&body), "", 1440).err().unwrap();
-            assert!(got.contains("layout finding") && got.contains(why), "{why}: {got}");
+            assert!(
+                got.contains("layout finding") && got.contains(why),
+                "{why}: {got}"
+            );
         }
     }
 
@@ -2070,8 +2507,12 @@ mod tests {
         let line = |layer: &str, id: &str| {
             format!("<g data-layer=\"{layer}\"><path data-line=\"{id}\" d=\"M0,35 L400,35\" stroke=\"#c33\" stroke-width=\"1\" fill=\"none\"/></g>")
         };
-        let text = |layer: &str, on: &str| format!("<g data-layer=\"{layer}\"><text data-on=\"{on}\" x=\"20\" y=\"40\" font-size=\"14\">德国</text></g>");
-        let sea = |layer: &str| format!("<g data-layer=\"{layer}\"><rect x=\"30\" y=\"0\" width=\"100\" height=\"35\" fill=\"#dde\"/></g>");
+        let text = |layer: &str, on: &str| {
+            format!("<g data-layer=\"{layer}\"><text data-on=\"{on}\" x=\"20\" y=\"40\" font-size=\"14\">德国</text></g>")
+        };
+        let sea = |layer: &str| {
+            format!("<g data-layer=\"{layer}\"><rect x=\"30\" y=\"0\" width=\"100\" height=\"35\" fill=\"#dde\"/></g>")
+        };
         // too pale for the svg check, still a line to the layer check, which reports each text and layer pair once
         let pale = "<g data-layer=\"map.flows\"><path data-line=\"flow:FR\" d=\"M0,33 L400,33\" stroke=\"#fafafa\" stroke-width=\"1\" fill=\"none\"/></g>";
         for body in [
@@ -2081,17 +2522,41 @@ mod tests {
             bake(&real, &page(&body), "", 1440).unwrap();
         }
         let cases = [
-            (line("map.flows", "flow:FR") + &text("map.flows", "flow:DE"), "line: svg0: 德国 x path (map.flows)"),
-            (line("map.flows", "flow:DE") + &text("map.labels", ""), "line: svg0: 德国 x path (map.flows)"),
-            (line("map.routes", "") + &text("map.labels", ""), "layers: map.labels × map.routes line: 德国"),
-            (sea("map") + &text("map.labels", ""), "line: svg0: 德国 x rect (map edge)"),
-            (sea("map.base") + &text("map.labels", ""), "line: svg0: 德国 x rect (map.base edge)"),
-            (pale.to_string() + &text("map.flows", "flow:DE"), "layers: map.flows × map.flows line: 德国"),
-            (pale.to_string() + &line("map.flows", "flow:DE") + &text("map.flows", "flow:DE"), "layers: map.flows × map.flows line: 德国"),
+            (
+                line("map.flows", "flow:FR") + &text("map.flows", "flow:DE"),
+                "line: svg0: 德国 x path (map.flows)",
+            ),
+            (
+                line("map.flows", "flow:DE") + &text("map.labels", ""),
+                "line: svg0: 德国 x path (map.flows)",
+            ),
+            (
+                line("map.routes", "") + &text("map.labels", ""),
+                "layers: map.labels × map.routes line: 德国",
+            ),
+            (
+                sea("map") + &text("map.labels", ""),
+                "line: svg0: 德国 x rect (map edge)",
+            ),
+            (
+                sea("map.base") + &text("map.labels", ""),
+                "line: svg0: 德国 x rect (map.base edge)",
+            ),
+            (
+                pale.to_string() + &text("map.flows", "flow:DE"),
+                "layers: map.flows × map.flows line: 德国",
+            ),
+            (
+                pale.to_string() + &line("map.flows", "flow:DE") + &text("map.flows", "flow:DE"),
+                "layers: map.flows × map.flows line: 德国",
+            ),
         ];
         for (body, why) in cases {
             let got = bake(&real, &page(&body), "", 1440).err().unwrap();
-            assert!(got.contains("layout finding") && got.contains(why), "{why}: {got}");
+            assert!(
+                got.contains("layout finding") && got.contains(why),
+                "{why}: {got}"
+            );
         }
     }
 
@@ -2173,15 +2638,33 @@ mod tests {
             json!({"texts": [text("name:x/DE", 10.0, 30.0)],
                    "dropped": [{"id": "AT", "why": "no free place for the note"}, {"id": "note3", "why": "past label_count"}]}),
         );
-        let legend = layer("echo", "legend", json!({"html": "<div>图例</div>", "dropped": [{"id": "LU", "why": "no free place for the label"}]}));
+        let legend = layer(
+            "echo",
+            "legend",
+            json!({"html": "<div>图例</div>", "dropped": [{"id": "LU", "why": "no free place for the label"}]}),
+        );
         for done in both(&[notes, legend]) {
             let (panel, records) = done.unwrap();
             assert_eq!(panel.svg.len(), 1);
-            assert_eq!(records.iter().map(|r| r.outcome.as_str()).collect::<Vec<_>>(), ["drawn", "drawn"]);
-            let named: Vec<(&str, &str, &str)> = panel.dropped.iter().map(|d| (d.layer.as_str(), d.id.as_str(), d.why.as_str())).collect();
+            assert_eq!(
+                records
+                    .iter()
+                    .map(|r| r.outcome.as_str())
+                    .collect::<Vec<_>>(),
+                ["drawn", "drawn"]
+            );
+            let named: Vec<(&str, &str, &str)> = panel
+                .dropped
+                .iter()
+                .map(|d| (d.layer.as_str(), d.id.as_str(), d.why.as_str()))
+                .collect();
             assert_eq!(
                 named,
-                [("notes", "AT", "no free place for the note"), ("notes", "note3", "past label_count"), ("legend", "LU", "no free place for the label")]
+                [
+                    ("notes", "AT", "no free place for the note"),
+                    ("notes", "note3", "past label_count"),
+                    ("legend", "LU", "no free place for the label")
+                ]
             );
         }
     }
@@ -2239,14 +2722,31 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         let inner = r#"<g data-layer="events"></g>"#;
-        for done in [page(None, ""), page(Some("own"), ""), page(Some("wrap"), ""), page(None, inner)].into_iter().flatten() {
+        for done in [
+            page(None, ""),
+            page(Some("own"), ""),
+            page(Some("wrap"), ""),
+            page(None, inner),
+        ]
+        .into_iter()
+        .flatten()
+        {
             let (panel, html, records) = done.unwrap();
             assert_eq!(
-                panel.layers.iter().map(|(n, _, h)| (n.as_str(), *h)).collect::<Vec<_>>(),
+                panel
+                    .layers
+                    .iter()
+                    .map(|(n, _, h)| (n.as_str(), *h))
+                    .collect::<Vec<_>>(),
                 [("events", false), ("ring", false), ("legend", true)]
             );
             assert!(html.contains("<div>图例</div>"), "{html}");
-            assert_eq!(records.last().map(|r| (r.layer.as_str(), r.outcome.as_str())), Some(("page", "drawn")));
+            assert_eq!(
+                records
+                    .last()
+                    .map(|r| (r.layer.as_str(), r.outcome.as_str())),
+                Some(("page", "drawn"))
+            );
         }
         let lost = "page: the layer events is not on the page byte for byte as it was drawn";
         let hidden = "page: the layer events sits inside a comment, template, script, style or noscript, where nothing is drawn";
@@ -2277,7 +2777,10 @@ mod tests {
         for (alter, ring, want) in cases {
             for done in page(Some(alter), ring) {
                 let (records, why) = done.unwrap_err();
-                assert!(why.len() == want.len() && why.iter().zip(want).all(|(w, s)| w.contains(s)), "{alter}: {why:?}");
+                assert!(
+                    why.len() == want.len() && why.iter().zip(want).all(|(w, s)| w.contains(s)),
+                    "{alter}: {why:?}"
+                );
                 assert_eq!(records.last().unwrap().outcome, "refused");
             }
         }
@@ -2287,24 +2790,50 @@ mod tests {
     /// every text is checked against it; a size it cannot give refuses the panel before any layer is drawn.
     #[test]
     fn a_panel_left_to_the_child_is_checked_against_the_size_it_says() {
-        let at = |y: f64, size: Value| layer("echo", "notes", json!({"texts": [text("name:x/DE", 10.0, y)], "size": size}));
+        let at = |y: f64, size: Value| {
+            layer(
+                "echo",
+                "notes",
+                json!({"texts": [text("name:x/DE", 10.0, y)], "size": size}),
+            )
+        };
         for r in runners() {
-            let (_, records) = draw(&r, 900.0, 0.0, json!({}), &[at(30.0, json!([900, 460]))]).unwrap();
-            let outcomes: Vec<_> = records.iter().map(|r| (r.layer.as_str(), r.outcome.as_str())).collect();
+            let (_, records) =
+                draw(&r, 900.0, 0.0, json!({}), &[at(30.0, json!([900, 460]))]).unwrap();
+            let outcomes: Vec<_> = records
+                .iter()
+                .map(|r| (r.layer.as_str(), r.outcome.as_str()))
+                .collect();
             assert_eq!(outcomes, [("size", "sized"), ("notes", "drawn")]);
             // Given a height, no size line is sent.
-            let (_, records) = draw(&r, 900.0, 460.0, json!({}), &[at(30.0, json!([900, 40]))]).unwrap();
+            let (_, records) =
+                draw(&r, 900.0, 460.0, json!({}), &[at(30.0, json!([900, 40]))]).unwrap();
             assert_eq!(records.len(), 1);
         }
         let cases = [
             (at(60.0, json!([900, 40])), "is outside the panel 900x40"),
-            (at(30.0, json!([1200, 460])), "size: the panel 1200 460 is no size within the width 900"),
-            (at(30.0, json!([900, 0])), "size: the panel 900 0 is no size"),
-            (at(30.0, json!(null)), "size: the panel null null is no size"),
-            (layer("echo", "notes", json!({"size_refused": ["size: no frame"]})), "size: no frame"),
+            (
+                at(30.0, json!([1200, 460])),
+                "size: the panel 1200 460 is no size within the width 900",
+            ),
+            (
+                at(30.0, json!([900, 0])),
+                "size: the panel 900 0 is no size",
+            ),
+            (
+                at(30.0, json!(null)),
+                "size: the panel null null is no size",
+            ),
+            (
+                layer("echo", "notes", json!({"size_refused": ["size: no frame"]})),
+                "size: no frame",
+            ),
         ];
         for (l, want) in cases {
-            let out: Vec<_> = runners().iter().map(|r| draw(r, 900.0, 0.0, json!({}), std::slice::from_ref(&l))).collect();
+            let out: Vec<_> = runners()
+                .iter()
+                .map(|r| draw(r, 900.0, 0.0, json!({}), std::slice::from_ref(&l)))
+                .collect();
             for done in out {
                 let (records, why) = done.unwrap_err();
                 assert!(why.iter().any(|w| w.contains(want)), "{want}: {why:?}");
@@ -2344,7 +2873,10 @@ mod tests {
             ),
             (json!({"dropped": ["卢森堡"]}), "names no id and why"),
             (json!({"dropped": [{"id": "LU"}]}), "names no id and why"),
-            (json!({"dropped": [{"id": "LU", "why": "x"}, {"id": "LU", "why": "y"}]}), "dropped LU twice"),
+            (
+                json!({"dropped": [{"id": "LU", "why": "x"}, {"id": "LU", "why": "y"}]}),
+                "dropped LU twice",
+            ),
             (json!({"dropped": "LU"}), "is no list"),
             (
                 json!({"frame": {"scale": 1}}),
@@ -2362,10 +2894,22 @@ mod tests {
                 json!({"extra_svg": "<g><ForeignObject/></g>"}),
                 "which is not svg",
             ),
-            (json!({"extra_svg": "<g><div>德国</div></g>"}), "<div>, which is not svg"),
-            (json!({"extra_svg": "<svg:foreignObject/>"}), "which is not svg"),
-            (json!({"extra_svg": "<g onload=\"x()\"/>"}), "handler onload"),
-            (json!({"extra_svg": "<g href=\"https://e.x/a.svg#p\"/>"}), "points outside the page"),
+            (
+                json!({"extra_svg": "<g><div>德国</div></g>"}),
+                "<div>, which is not svg",
+            ),
+            (
+                json!({"extra_svg": "<svg:foreignObject/>"}),
+                "which is not svg",
+            ),
+            (
+                json!({"extra_svg": "<g onload=\"x()\"/>"}),
+                "handler onload",
+            ),
+            (
+                json!({"extra_svg": "<g href=\"https://e.x/a.svg#p\"/>"}),
+                "points outside the page",
+            ),
         ];
         for (knobs, why) in cases {
             let base = layer("echo", "base", json!({"lines": [[[0, 50], [900, 50]]]}));
@@ -2478,29 +3022,100 @@ mod tests {
         // one code), the dumbbell (7: its highlight one code), the waterfall (7: its highlight one code), the waffle (7: its
         // highlight one code), and the stacked area last (5: its highlight one code)
         assert_eq!((t.nodes.len(), knobs), (42, 203));
-        let reserve: Vec<_> = t.nodes.iter().filter(|(_, l)| l.reserve).map(|(n, _)| n.as_str()).collect();
+        let reserve: Vec<_> = t
+            .nodes
+            .iter()
+            .filter(|(_, l)| l.reserve)
+            .map(|(n, _)| n.as_str())
+            .collect();
         assert_eq!(reserve, ["flows", "labels", "routes"]);
-        let legacy: Vec<_> = t.legacy.iter().map(|(n, at)| (n.as_str(), at.join("."))).collect();
-        assert_eq!(legacy, [("base", "data".to_string()), ("frame", String::new())]);
+        let legacy: Vec<_> = t
+            .legacy
+            .iter()
+            .map(|(n, at)| (n.as_str(), at.join(".")))
+            .collect();
+        assert_eq!(
+            legacy,
+            [("base", "data".to_string()), ("frame", String::new())]
+        );
         for l in t.nodes.values() {
             assert_eq!(crate::next_nodes::check_info(l.info), Vec::<String>::new());
         }
-        assert!(Layer::registered("routes", "routes", json!([]), json!({})).is_ok_and(|l| l.reserve));
+        assert!(
+            Layer::registered("routes", "routes", json!([]), json!({})).is_ok_and(|l| l.reserve)
+        );
         assert!(Layer::registered("base", "base", json!([]), json!({})).is_ok_and(|l| !l.reserve));
-        assert!(Layer::registered("pie", "pie", json!([]), json!({})).is_err_and(|e| e[0].contains("no leaf or composite node pie")));
+        assert!(Layer::registered("pie", "pie", json!([]), json!({}))
+            .is_err_and(|e| e[0].contains("no leaf or composite node pie")));
         let groups: Vec<_> = t.groups.keys().map(String::as_str).collect();
-        assert_eq!(groups, ["block_ranks", "change", "charts", "column", "composition", "composition_steps", "flow", "map", "one_line", "ranked_bars", "ring", "scmp"]);
+        assert_eq!(
+            groups,
+            [
+                "block_ranks",
+                "change",
+                "charts",
+                "column",
+                "composition",
+                "composition_steps",
+                "flow",
+                "map",
+                "one_line",
+                "ranked_bars",
+                "ring",
+                "scmp"
+            ]
+        );
         assert_eq!(t.groups["composition"], t.groups["column"]);
         assert_eq!(t.groups["scmp"], ["map", "strip", "bignums", "notes"]);
-        assert_eq!(t.groups["column"], ["bignums", "bars", "section_head", "rankbar", "bubbles", "bubble_key", "leader_notes", "sankey", "stacked100", "line", "rank_lines", "dumbbell", "waterfall", "waffle", "stacked_area"]);
+        assert_eq!(
+            t.groups["column"],
+            [
+                "bignums",
+                "bars",
+                "section_head",
+                "rankbar",
+                "bubbles",
+                "bubble_key",
+                "leader_notes",
+                "sankey",
+                "stacked100",
+                "line",
+                "rank_lines",
+                "dumbbell",
+                "waterfall",
+                "waffle",
+                "stacked_area"
+            ]
+        );
         // a change page is a column page whose bars are the places' change (bars.measure); a flow page one whose main layer
         // is the sankey (run.py MAIN)
         assert_eq!(t.groups["change"], t.groups["column"]);
         assert_eq!(t.groups["flow"], t.groups["column"]);
-        assert!(matches!(t.nodes["bubbles"].info.knobs.iter().find(|k| k.name == "projection").map(|k| k.kind),
-            Some(Kind::Pick { default: "equal_earth", options: ["equal_earth", "equirect", "view"] })));
-        assert!(matches!(t.nodes["rankbar"].info.knobs.iter().find(|k| k.name == "highlight_row").map(|k| k.kind), Some(Kind::Codes { default: "" })));
-        assert_eq!(t.groups["ring"], ["map", "ring", "events", "callouts", "legend", "inset"]);
+        assert!(matches!(
+            t.nodes["bubbles"]
+                .info
+                .knobs
+                .iter()
+                .find(|k| k.name == "projection")
+                .map(|k| k.kind),
+            Some(Kind::Pick {
+                default: "equal_earth",
+                options: ["equal_earth", "equirect", "view"]
+            })
+        ));
+        assert!(matches!(
+            t.nodes["rankbar"]
+                .info
+                .knobs
+                .iter()
+                .find(|k| k.name == "highlight_row")
+                .map(|k| k.kind),
+            Some(Kind::Codes { default: "" })
+        ));
+        assert_eq!(
+            t.groups["ring"],
+            ["map", "ring", "events", "callouts", "legend", "inset"]
+        );
         // a composite reserves no room itself, though one of its layers' leaves does
         assert!(Layer::registered("map", "routes", json!([]), json!({})).is_ok_and(|l| !l.reserve));
         assert!(Layer::registered("charts", "bars", json!([]), json!({})).is_ok_and(|l| !l.reserve));
@@ -2513,29 +3128,60 @@ mod tests {
             "data": {"member": "#efebe4", "land": "#ecebe5", "bw": 0.6}});
         assert_eq!(check_style(&ok), Vec::<String>::new());
         for (style, why) in [
-            (json!({"style": {"edge": {"join": 61}}}), "style.edge.join: 61 is not 0..120 step 2; e.g. 0"),
-            (json!({"style": {"names": {"font": "comic"}}}), "style.names.font: comic is not one of"),
-            (json!({"style": {"names": {"glow": 1}}}), "names has no knob glow"),
-            (json!({"style": {"pie": {"r": 1}}}), "no leaf node pie takes knobs"),
-            (json!({"style": {"edge": {"join": true}}}), "neither a number nor a word"),
-            (json!({"style": {"rankbar": {"highlight_row": "DE\"/><script>"}}}), "is not a comma list of codes"),
-            (json!({"r": 999}), "r (read by frame): 999 is not 160..400 step 5"),
-            (json!({"data": {"member": "#000000"}}), "data.member (read by base): #000000 is not one of"),
-            (json!({"data": {"bw": 2.5}}), "data.bw (read by base): 2.5 is not"),
+            (
+                json!({"style": {"edge": {"join": 61}}}),
+                "style.edge.join: 61 is not 0..120 step 2; e.g. 0",
+            ),
+            (
+                json!({"style": {"names": {"font": "comic"}}}),
+                "style.names.font: comic is not one of",
+            ),
+            (
+                json!({"style": {"names": {"glow": 1}}}),
+                "names has no knob glow",
+            ),
+            (
+                json!({"style": {"pie": {"r": 1}}}),
+                "no leaf node pie takes knobs",
+            ),
+            (
+                json!({"style": {"edge": {"join": true}}}),
+                "neither a number nor a word",
+            ),
+            (
+                json!({"style": {"rankbar": {"highlight_row": "DE\"/><script>"}}}),
+                "is not a comma list of codes",
+            ),
+            (
+                json!({"r": 999}),
+                "r (read by frame): 999 is not 160..400 step 5",
+            ),
+            (
+                json!({"data": {"member": "#000000"}}),
+                "data.member (read by base): #000000 is not one of",
+            ),
+            (
+                json!({"data": {"bw": 2.5}}),
+                "data.bw (read by base): 2.5 is not",
+            ),
             (json!({"style": []}), "not a table of nodes"),
         ] {
             let got = check_style(&style);
             assert!(got.iter().any(|g| g.contains(why)), "{why}: {got:?}");
         }
         let knobs = json!({"spec": {"hero": {"style": {"edge": {"join": 61}}}}});
-        assert!(Layer::registered("edge", "map.edge", json!([]), knobs).is_err_and(|e| e[0].starts_with("map.edge: style.edge.join")));
+        assert!(Layer::registered("edge", "map.edge", json!([]), knobs)
+            .is_err_and(|e| e[0].starts_with("map.edge: style.edge.join")));
     }
 
     /// For the gates: the knob values of a stored request (`LEAF_REQ`, as the gate scripts dump it) against the registry.
     #[test]
     #[ignore]
     fn knob_values_of_a_stored_request() {
-        let req: Value = serde_json::from_str(&std::fs::read_to_string(std::env::var("LEAF_REQ").expect("LEAF_REQ")).unwrap()).unwrap();
+        let req: Value = serde_json::from_str(
+            &std::fs::read_to_string(std::env::var("LEAF_REQ").expect("LEAF_REQ")).unwrap(),
+        )
+        .unwrap();
         let bad = check_style(&req["knobs"]["spec"]["hero"]);
         println!("knobcheck refused {}: {bad:?}", bad.len());
         assert!(bad.is_empty());
@@ -2548,17 +3194,27 @@ mod tests {
             <feGaussianBlur stdDeviation=\"2\"/></filter></defs><!-- <div> --><g clip-path=\"url(#c)\">\
             <path d=\"M0 0L9 9\"/><text x='1' y=2>a &lt; b<tspan>c</tspan></text><path xlink:href=\"#c\"/></g>";
         assert_eq!(svg_markup(plain), None);
-        assert!(read("<html><body><!--><b>44</b>--></body></html>").is_err_and(|e| e.contains("ends early")));
+        assert!(read("<html><body><!--><b>44</b>--></body></html>")
+            .is_err_and(|e| e.contains("ends early")));
         for (bad, why) in [
             ("<g><B>德国</B></g>", "<B>, which is not svg"),
-            ("<font color=\"red\">德国</font>", "<font>, which is not svg"),
+            (
+                "<font color=\"red\">德国</font>",
+                "<font>, which is not svg",
+            ),
             ("<feImage href=\"#a\"/>", "<feImage>, which is not svg"),
             ("<image href=\"a.png\"/>", "which is not svg"),
             ("<a><text>x</text></a>", "which is not svg"),
             ("<rect ONCLICK='x()'/>", "handler onclick"),
-            ("<path xlink:href=\"other.svg#p\"/>", "points outside the page"),
+            (
+                "<path xlink:href=\"other.svg#p\"/>",
+                "points outside the page",
+            ),
             ("<use href=\"#c\"/>", "<use>, which is not svg"),
-            ("<g><textPath>x</textPath></g>", "<textPath>, which is not svg"),
+            (
+                "<g><textPath>x</textPath></g>",
+                "<textPath>, which is not svg",
+            ),
             ("<text x=\"1\" y=\"2\"><![CDATA[44%]]></text>", "CDATA"),
             ("<!--><text>44</text>-->", "ends early"),
             ("<!-- a --!><text>44</text><!-- -->", "ends early"),
@@ -2566,7 +3222,10 @@ mod tests {
             ("<path href=\"#a", ""),
         ] {
             let got = svg_markup(bad);
-            assert!(why.is_empty() || got.as_deref().is_some_and(|g| g.contains(why)), "{bad}: {got:?}");
+            assert!(
+                why.is_empty() || got.as_deref().is_some_and(|g| g.contains(why)),
+                "{bad}: {got:?}"
+            );
         }
     }
 
@@ -2722,7 +3381,10 @@ mod tests {
         // a bare year in a data-ref does not
         let wb = ["AG.LND.AGRI.K2".to_string()];
         let wb_page = one_key.replace("MIGR_ASYAPPCTZM</span>", "AG.LND.AGRI.K2</span>。");
-        assert_eq!(check_leaf_page(&wb_page, &ledger, &wb, &spec, &rows, &[]), Vec::<String>::new());
+        assert_eq!(
+            check_leaf_page(&wb_page, &ledger, &wb, &spec, &rows, &[]),
+            Vec::<String>::new()
+        );
         let year = one_key.replace("MIGR_ASYAPPCTZM</span>", "2022</span>");
         assert!(!check(&year).is_empty(), "a data-ref 2022 passed");
         // a year and a month from two keys, each a true entry alone
@@ -2752,7 +3414,10 @@ mod tests {
                 check(&html)
             );
         }
-        assert_eq!(placeholders("<script>`${a}`; x={a:1}; y={ }</script>"), ["{a}"]);
+        assert_eq!(
+            placeholders("<script>`${a}`; x={a:1}; y={ }</script>"),
+            ["{a}"]
+        );
         assert!(placeholders(READY_JS).is_empty());
         // a table id the request does not name, and an entry the rows do not give
         let off = check(&page("").replace("MIGR_ASYAPPCTZM", "MIGR_ASYAPPCTZA"));
@@ -2787,7 +3452,11 @@ mod tests {
                 match bake_leaf_page(&python, &html, &ledger, &refs, (&spec, &rows, &facts)) {
                     Ok(baked) => {
                         std::fs::write(&out, &baked.html).unwrap();
-                        println!("baked ms {} scripts {}", baked.ms, baked.html.matches("<script").count());
+                        println!(
+                            "baked ms {} scripts {}",
+                            baked.ms,
+                            baked.html.matches("<script").count()
+                        );
                         Vec::new()
                     }
                     Err(off) => off,
@@ -2805,7 +3474,11 @@ mod tests {
         Row {
             src: format!("series:t/{code}:{time}:OBS_VALUE"),
             table: "t".into(),
-            dims: [(dim.to_string(), code.to_string()), ("unit".to_string(), "PC".to_string())].into(),
+            dims: [
+                (dim.to_string(), code.to_string()),
+                ("unit".to_string(), "PC".to_string()),
+            ]
+            .into(),
             time: time.into(),
             value,
         }
@@ -2813,7 +3486,17 @@ mod tests {
 
     /// A fact as compute writes it, reading `reads`.
     fn read_fact(key: &str, op: &str, reads: &[String]) -> Fact {
-        Fact { key: key.into(), op: op.into(), v: 1.0, t: None, n: None, who: Vec::new(), fmt: "pc".into(), reads: reads.to_vec(), exact: None }
+        Fact {
+            key: key.into(),
+            op: op.into(),
+            v: 1.0,
+            t: None,
+            n: None,
+            who: Vec::new(),
+            fmt: "pc".into(),
+            reads: reads.to_vec(),
+            exact: None,
+        }
     }
 
     /// A named country whose rows sit under a member's code (a partner CN_X_HK for China) is asked by that code, as the
@@ -2822,8 +3505,14 @@ mod tests {
     #[test]
     fn a_named_country_under_a_member_code_is_answered_by_that_code() {
         use crate::next_facts::AskedPlaces;
-        let rows = vec![place_row("partner", "RU", "2024", 5.0), place_row("partner", "CN_X_HK", "2024", 9.0)];
-        let facts = vec![read_fact("val.RU", "value", &[rows[0].src.clone()]), read_fact("val.CN_X_HK", "value", &[rows[1].src.clone()])];
+        let rows = vec![
+            place_row("partner", "RU", "2024", 5.0),
+            place_row("partner", "CN_X_HK", "2024", 9.0),
+        ];
+        let facts = vec![
+            read_fact("val.RU", "value", &[rows[0].src.clone()]),
+            read_fact("val.CN_X_HK", "value", &[rows[1].src.clone()]),
+        ];
         let asked = |code: &str| AskedPlaces {
             asked: vec!["RU".into(), code.into()],
             missing: Vec::new(),
@@ -2833,9 +3522,24 @@ mod tests {
             year: "2024".into(),
             unread: None,
         };
-        let spec_of = |a: AskedPlaces| Spec { facts: Vec::new(), fmts: json!({}), members: None, asked_places: Some(a), basis: None };
+        let spec_of = |a: AskedPlaces| Spec {
+            facts: Vec::new(),
+            fmts: json!({}),
+            members: None,
+            asked_places: Some(a),
+            basis: None,
+        };
         let html = r#"<html><body><span data-src="fact:val.RU.n">5</span><span data-src="fact:val.CN_X_HK.n">9</span></body></html>"#;
-        assert_eq!(places_answered(html, &BTreeMap::new(), &spec_of(asked("CN_X_HK")), &rows, &facts), Vec::<String>::new());
+        assert_eq!(
+            places_answered(
+                html,
+                &BTreeMap::new(),
+                &spec_of(asked("CN_X_HK")),
+                &rows,
+                &facts
+            ),
+            Vec::<String>::new()
+        );
         let off = places_answered(html, &BTreeMap::new(), &spec_of(asked("CN")), &rows, &facts);
         assert!(off.iter().any(|f| f.contains("names CN")), "{off:?}");
     }
@@ -2872,9 +3576,19 @@ mod tests {
             year: "2024".into(),
             unread: None,
         };
-        let ledger1: BTreeMap<String, String> = [(name_src("IT"), "意大利".to_string()), (name_src("DE"), "德国".to_string())].into();
-        let bars1 = format!("{}{}", span("fact:val.DE.n", "20"), span("fact:val.FR.n", "30"));
-        let page1 = |bars: &str, line: &str| format!(r#"<html><body><div class="hu">单位：%；{line}</div>{bars}</body></html>"#);
+        let ledger1: BTreeMap<String, String> = [
+            (name_src("IT"), "意大利".to_string()),
+            (name_src("DE"), "德国".to_string()),
+        ]
+        .into();
+        let bars1 = format!(
+            "{}{}",
+            span("fact:val.DE.n", "20"),
+            span("fact:val.FR.n", "30")
+        );
+        let page1 = |bars: &str, line: &str| {
+            format!(r#"<html><body><div class="hu">单位：%；{line}</div>{bars}</body></html>"#)
+        };
         let said1 = format!("{}无数据", span(&name_src("IT"), "意大利"));
         // shape 2: a change page by World Bank country, and a hub row whose geo is fixed
         let rows2 = vec![
@@ -2888,8 +3602,16 @@ mod tests {
             read_fact("val0.CHN", "value", &[rows2[1].src.clone()]),
             read_fact("val1.JPN", "value", &[rows2[2].src.clone()]),
             read_fact("val0.JPN", "value", &[rows2[3].src.clone()]),
-            read_fact("chg.CHN", "minus", &["fact:val1.CHN".to_string(), "fact:val0.CHN".to_string()]),
-            read_fact("chg.JPN", "minus", &["fact:val1.JPN".to_string(), "fact:val0.JPN".to_string()]),
+            read_fact(
+                "chg.CHN",
+                "minus",
+                &["fact:val1.CHN".to_string(), "fact:val0.CHN".to_string()],
+            ),
+            read_fact(
+                "chg.JPN",
+                "minus",
+                &["fact:val1.JPN".to_string(), "fact:val0.JPN".to_string()],
+            ),
         ];
         let asked2 = AskedPlaces {
             asked: vec!["CHN".into(), "JPN".into(), "KOR".into()],
@@ -2901,74 +3623,188 @@ mod tests {
             unread: None,
         };
         let ledger2: BTreeMap<String, String> = [(name_src("KOR"), "韩国".to_string())].into();
-        let bars2 = format!("{}{}", span("fact:chg.CHN.n", "4.0"), span("fact:chg.JPN.n", "3.0"));
+        let bars2 = format!(
+            "{}{}",
+            span("fact:chg.CHN.n", "4.0"),
+            span("fact:chg.JPN.n", "3.0")
+        );
         let said2 = format!("{}无数据", span(&name_src("KOR"), "韩国"));
-        let spec_of = |a: Option<AskedPlaces>| Spec { facts: Vec::new(), fmts: json!({}), members: None, asked_places: a, basis: None };
+        let spec_of = |a: Option<AskedPlaces>| Spec {
+            facts: Vec::new(),
+            fmts: json!({}),
+            members: None,
+            asked_places: a,
+            basis: None,
+        };
         let shapes = [
-            ("column", rows1.clone(), facts1.clone(), asked1.clone(), ledger1.clone(), bars1.clone(), said1.clone(), "FR", "fact:val.FR.n"),
-            ("change", rows2.clone(), facts2.clone(), asked2.clone(), ledger2.clone(), bars2.clone(), said2.clone(), "JPN", "fact:chg.JPN.n"),
+            (
+                "column",
+                rows1.clone(),
+                facts1.clone(),
+                asked1.clone(),
+                ledger1.clone(),
+                bars1.clone(),
+                said1.clone(),
+                "FR",
+                "fact:val.FR.n",
+            ),
+            (
+                "change",
+                rows2.clone(),
+                facts2.clone(),
+                asked2.clone(),
+                ledger2.clone(),
+                bars2.clone(),
+                said2.clone(),
+                "JPN",
+                "fact:chg.JPN.n",
+            ),
         ];
         for (at, rows, facts, asked, ledger, bars, said, other, other_src) in shapes {
-            let check = |html: &str, a: &AskedPlaces| places_answered(html, &ledger, &spec_of(Some(a.clone())), &rows, &facts);
+            let check = |html: &str, a: &AskedPlaces| {
+                places_answered(html, &ledger, &spec_of(Some(a.clone())), &rows, &facts)
+            };
             let refused = |html: &str, a: &AskedPlaces, why: &str| {
                 let off = check(html, a);
-                assert!(off.iter().any(|f| f.starts_with("places:") && f.contains(why)), "{at}: {why:?} not in {off:?}");
+                assert!(
+                    off.iter()
+                        .any(|f| f.starts_with("places:") && f.contains(why)),
+                    "{at}: {why:?} not in {off:?}"
+                );
             };
             // one missing place named by its name row: passes
             let good = page1(&bars, &said);
             assert_eq!(check(&good, &asked), Vec::<String>::new(), "{at}");
-            assert_eq!(places_answered(&good, &ledger, &spec_of(None), &rows, &facts), Vec::<String>::new(), "{at}: none asked");
+            assert_eq!(
+                places_answered(&good, &ledger, &spec_of(None), &rows, &facts),
+                Vec::<String>::new(),
+                "{at}: none asked"
+            );
             // the missing place not named
             refused(&page1(&bars, ""), &asked, "does not say");
             refused(&page1(&bars, ""), &asked, "prints no name:zh_names");
             // another name in its place (marked, the text not the ledger's)
             let missing = &asked.missing[0];
-            refused(&page1(&bars, &format!("{}无数据", span(&name_src(missing), "另一国"))), &asked, "does not say");
+            refused(
+                &page1(
+                    &bars,
+                    &format!("{}无数据", span(&name_src(missing), "另一国")),
+                ),
+                &asked,
+                "does not say",
+            );
             // "no data" said of a place the request holds a row of at the year
             let mut wrong = asked.clone();
             wrong.missing.push(other.to_string());
             refused(&good, &wrong, "the request holds its row");
             // a place with a row dropped silently: its value not printed
-            let dropped = bars.replace(&span(other_src, if at == "column" { "30" } else { "3.0" }), "");
+            let dropped = bars.replace(
+                &span(other_src, if at == "column" { "30" } else { "3.0" }),
+                "",
+            );
             assert_ne!(dropped, bars, "{at}");
-            refused(&page1(&dropped, &said), &asked, "neither prints a value of it nor says it has none");
+            refused(
+                &page1(&dropped, &said),
+                &asked,
+                "neither prints a value of it nor says it has none",
+            );
             // a missing place the request does not keep as missing
             let mut silent = asked.clone();
             silent.missing.clear();
             refused(&page1(&bars, ""), &silent, "and the page does not say so");
             // a request that does not read
-            let unread = AskedPlaces { unread: Some("no dims".into()), ..asked.clone() };
+            let unread = AskedPlaces {
+                unread: Some("no dims".into()),
+                ..asked.clone()
+            };
             refused(&good, &unread, "do not read");
         }
         // a count over every place answers none of them
         let count_only = page1(&span("fact:drawn.n", "2"), &said1);
-        let off = places_answered(&count_only, &ledger1, &spec_of(Some(asked1.clone())), &rows1, &facts1);
-        assert_eq!(off.iter().filter(|f| f.contains("neither prints")).count(), 2, "{off:?}");
+        let off = places_answered(
+            &count_only,
+            &ledger1,
+            &spec_of(Some(asked1.clone())),
+            &rows1,
+            &facts1,
+        );
+        assert_eq!(
+            off.iter().filter(|f| f.contains("neither prints")).count(),
+            2,
+            "{off:?}"
+        );
         // a hub page: the place is its fixed geo, beside the varying partner, so every partner value is of the hub
         let mut hub = place_row("partner", "RU", "2024", 5.0);
         hub.dims.insert("geo".into(), "DE".into());
         let hub_fact = read_fact("val.RU", "value", &[hub.src.clone()]);
-        let hub_asked = AskedPlaces { asked: vec!["DE".into(), "RU".into()], missing: Vec::new(), dims: vec!["partner".into(), "geo".into()], ..asked1.clone() };
-        let off = places_answered(&page1(&span("fact:val.RU.n", "5"), ""), &BTreeMap::new(), &spec_of(Some(hub_asked)), &[hub], &[hub_fact]);
+        let hub_asked = AskedPlaces {
+            asked: vec!["DE".into(), "RU".into()],
+            missing: Vec::new(),
+            dims: vec!["partner".into(), "geo".into()],
+            ..asked1.clone()
+        };
+        let off = places_answered(
+            &page1(&span("fact:val.RU.n", "5"), ""),
+            &BTreeMap::new(),
+            &spec_of(Some(hub_asked)),
+            &[hub],
+            &[hub_fact],
+        );
         assert_eq!(off, Vec::<String>::new());
         // a hub page whose shape names no year: a partner with a row in any period has data, so "no data" for it is refused,
         // and one with no row at all may be named as having none
         let mut hub2 = place_row("partner", "RU", "2023", 5.0);
         hub2.dims.insert("geo".into(), "EU27_2020".into());
         let hub2_fact = read_fact("val.RU", "value", &[hub2.src.clone()]);
-        let no_year = AskedPlaces { asked: vec!["RU".into()], missing: vec!["RU".into()], dims: vec!["partner".into(), "geo".into()], year: String::new(), ..asked1.clone() };
+        let no_year = AskedPlaces {
+            asked: vec!["RU".into()],
+            missing: vec!["RU".into()],
+            dims: vec!["partner".into(), "geo".into()],
+            year: String::new(),
+            ..asked1.clone()
+        };
         let ru_said = format!("{}无数据", span(&name_src("RU"), "俄罗斯"));
         let ru_ledger: BTreeMap<String, String> = [(name_src("RU"), "俄罗斯".to_string())].into();
-        let off = places_answered(&page1("", &ru_said), &ru_ledger, &spec_of(Some(no_year.clone())), &[hub2.clone()], &[hub2_fact.clone()]);
-        assert!(off.iter().any(|f| f.contains("the request holds its row")), "{off:?}");
-        let off = places_answered(&page1("", &ru_said), &ru_ledger, &spec_of(Some(no_year)), &[], &[]);
+        let off = places_answered(
+            &page1("", &ru_said),
+            &ru_ledger,
+            &spec_of(Some(no_year.clone())),
+            &[hub2.clone()],
+            &[hub2_fact.clone()],
+        );
+        assert!(
+            off.iter().any(|f| f.contains("the request holds its row")),
+            "{off:?}"
+        );
+        let off = places_answered(
+            &page1("", &ru_said),
+            &ru_ledger,
+            &spec_of(Some(no_year)),
+            &[],
+            &[],
+        );
         assert_eq!(off, Vec::<String>::new());
         // a stored request keeps its asked places, and one that does not read keeps why
         let req = json!({"knobs": {"spec": {"asked_places": asked1}}, "rows": []});
-        assert_eq!(crate::next_facts::stored_request(&req).0.asked_places.as_ref().map(|a| a.missing.clone()), Some(vec!["IT".to_string()]));
+        assert_eq!(
+            crate::next_facts::stored_request(&req)
+                .0
+                .asked_places
+                .as_ref()
+                .map(|a| a.missing.clone()),
+            Some(vec!["IT".to_string()])
+        );
         let bad = json!({"knobs": {"spec": {"asked_places": {"asked": "DE"}}}, "rows": []});
-        assert!(crate::next_facts::stored_request(&bad).0.asked_places.unwrap().unread.is_some());
+        assert!(crate::next_facts::stored_request(&bad)
+            .0
+            .asked_places
+            .unwrap()
+            .unread
+            .is_some());
         let none = json!({"knobs": {"spec": {}}, "rows": []});
-        assert!(crate::next_facts::stored_request(&none).0.asked_places.is_none());
+        assert!(crate::next_facts::stored_request(&none)
+            .0
+            .asked_places
+            .is_none());
     }
 }
