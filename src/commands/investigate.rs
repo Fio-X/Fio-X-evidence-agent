@@ -1008,7 +1008,7 @@ mod completion_tests {
             .find("if next_route && !completion_gaps.is_empty() {\n                bundle.write_answer(&failure_answer(&completion_gap_error(&completion_gaps)))?;")
             .expect("new-route gap answer");
         let status = run
-            .find("let status = run_status(&completion_gaps, next_route, audit.has_agent_loop_evidence(), &bundle.dir);")
+            .find("let status = run_status(\n                &completion_gaps,\n                next_route,\n                audit.has_agent_loop_evidence(),\n                &bundle.dir,\n            );")
             .expect("the run's status");
         let returned = run
             .find("return Err(completion_gap_error(&completion_gaps));")
