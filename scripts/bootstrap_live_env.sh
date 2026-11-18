@@ -60,7 +60,10 @@ install_duckdb() {
 }
 
 attempt "Node 22.19.0+" install_node
-attempt "Pi 0.85.1" install_pi
+# Pi is only a fallback runtime: installed only when it is the selected one (NEWSROOM_AGENT=pi), as `news doctor` requires it.
+if [[ "${NEWSROOM_AGENT:-}" == "pi" ]]; then
+  attempt "Pi 0.85.1" install_pi
+fi
 attempt "Rust 1.98.1 + Cargo" install_rust
 attempt "DuckDB 1.5.5" install_duckdb
 

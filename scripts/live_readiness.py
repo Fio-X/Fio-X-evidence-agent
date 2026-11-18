@@ -30,9 +30,11 @@ def run(name, command, expected=None, minimum=None, required=True):
         out["error"] = str(exc)
     return out
 
+# Pi is only a fallback runtime (NEWSROOM_AGENT=pi), as in `news doctor`: listed, and required, only when it is the selected one.
+pi_runtime = os.environ.get("NEWSROOM_AGENT") == "pi"
 checks = [
     run("node", ["node", "--version"], minimum=(22, 19, 0)),
-    run("pi", [os.environ.get("NEWSROOM_PI_BIN", "pi"), "--version"], expected=VERSIONS["pi_coding_agent"]),
+    *([run("pi", [os.environ.get("NEWSROOM_PI_BIN", "pi"), "--version"], expected=VERSIONS["pi_coding_agent"])] if pi_runtime else []),
     run("duckdb", [os.environ.get("NEWSROOM_DUCKDB_BIN", "duckdb"), "--version"], expected=VERSIONS["duckdb"]),
     run("rustc", ["rustc", "--version"], expected=VERSIONS["rust"]),
     run("cargo", ["cargo", "--version"]),
