@@ -69,4 +69,25 @@ for text,minimum,lead in failing:
 # node is never looser than before: whatever passes now passed with the old search
 for text,minimum,lead in passing+failing:
     if minimum==NODE and ok(text,minimum) and not old_node_ok(text): raise SystemExit(f'node got looser on {text!r}')
+# `--meets <name>` (what bootstrap_live_env.sh asks before it installs anything): fake tools on a PATH of their own, no network
+def meets(tools,name):
+    with tempfile.TemporaryDirectory(prefix='meets-') as folder:
+        for tool,line in tools.items():
+            path=Path(folder)/tool
+            path.write_text(f"#!/bin/sh\necho '{line}'\n")
+            path.chmod(path.stat().st_mode|stat.S_IXUSR)
+        env={'PATH':folder,'HOME':folder}
+        return subprocess.run([sys.executable,str(ROOT/'scripts/live_readiness.py'),'--meets',name],capture_output=True,text=True,env=env).returncode
+cases=[
+ ('node','v22.19.0',0),('node','v24.14.1',0),('node','v22.18.9',1),('node','v22.19.0-rc.1',1),('node','v22.19',1),('node','node 22.19.0',1),
+ ('duckdb','v1.5.5 (Variegata) 08a1d3a',0),('duckdb','v1.6.0 (Next) 0000000',0),('duckdb','v1.5.4 (Variegata) 0000000',1),
+ ('duckdb','v1.5.5-dev',1),('duckdb','v1.5',1),('duckdb','Warning: config 2.0.0',1),
+ ('rustc','rustc 1.98.1 (abc 2026-06-25)',0),('rustc','rustc 1.100.0 (abc 2026-09-01)',0),('rustc','rustc 1.98.0 (abc 2026-05-14)',1),
+ ('rustc','rustc 1.99.0-nightly (abc 2026-07-01)',1),('rustc','rustc 1.98',1),('rustc','cargo 1.98.1 (abc 2026-06-25)',1),
+ ('cargo','cargo 1.98.1 (abc 2026-06-25)',0)]
+for tool,line,want in cases:
+    got=meets({tool:line},tool)
+    if got!=want: raise SystemExit(f'--meets {tool} on {line!r}: exit {got}, wanted {want}')
+if meets({},'node')!=1: raise SystemExit('--meets node with no node should exit 1')
+if meets({'node':'v22.19.0'},'bogus')!=64: raise SystemExit('--meets with an unknown name should exit 64')
 print(f"live readiness contract: PASS (live_ready={str(report['live_ready']).lower()})")

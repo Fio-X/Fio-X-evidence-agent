@@ -52,10 +52,10 @@ def run(name, command, expected=None, minimum=None, required=True, lead=None):
         out["error"] = str(exc)
     return out
 
-def main():
+def build_checks():
     # Pi is only a fallback runtime (NEWSROOM_AGENT=pi), as in `news doctor`: listed, and required, only when it is the selected one.
     pi_runtime = os.environ.get("NEWSROOM_AGENT") == "pi"
-    checks = [
+    return [
         run("node", ["node", "--version"], minimum=(22, 19, 0)),
         *([run("pi", [os.environ.get("NEWSROOM_PI_BIN", "pi"), "--version"], expected=VERSIONS["pi_coding_agent"])] if pi_runtime else []),
         # DuckDB and rustc need at least the pinned version (as `news doctor` does); rust-toolchain.toml still pins the build's Rust.
@@ -64,6 +64,23 @@ def main():
         run("cargo", ["cargo", "--version"]),
         run("python3", ["python3", "--version"], required=False),
     ]
+
+def meets(name):
+    """`--meets <name>`: exit 0 if that one check passes, 1 if it does not, 64 if there is no such check. Prints nothing. The install
+    steps in bootstrap_live_env.sh call this to decide whether a tool is already good enough, so the rule exists only in this file."""
+    for check in build_checks():
+        if check["name"] == name:
+            return 0 if check["ok"] else 1
+    print(f"unknown check: {name}", file=sys.stderr)
+    return 64
+
+def main():
+    if len(sys.argv) == 3 and sys.argv[1] == "--meets":
+        sys.exit(meets(sys.argv[2]))
+    if len(sys.argv) != 1:
+        print("usage: live_readiness.py [--meets <name>]", file=sys.stderr)
+        sys.exit(64)
+    checks = build_checks()
     credential_names = [name for name in [
         "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "DEEPSEEK_API_KEY", "MOONSHOT_API_KEY", "ZAI_API_KEY", "ZHIPUAI_API_KEY"
     ] if os.environ.get(name)]
