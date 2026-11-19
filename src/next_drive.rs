@@ -2475,8 +2475,7 @@ mod drive {
             // the relation the table step kept for the main table, as recorded (none on a run that gave none)
             main.relation = events
                 .iter()
-                .filter(|e| e["type"] == crate::next_flow::TABLE_RELATION_EVENT)
-                .next_back()
+                .rfind(|e| e["type"] == crate::next_flow::TABLE_RELATION_EVENT)
                 .and_then(|e| {
                     crate::shape_registry::RELATIONS
                         .into_iter()
@@ -2809,11 +2808,7 @@ mod drive {
             let number = first_span(
                 &|src| src.starts_with("fact:") && !src.contains(".t"),
                 &|text| {
-                    let at = text
-                        .char_indices()
-                        .filter(|(_, c)| c.is_ascii_digit())
-                        .next_back()?
-                        .0;
+                    let at = text.char_indices().rfind(|(_, c)| c.is_ascii_digit())?.0;
                     let d = text[at..].chars().next()?.to_digit(10)?;
                     Some(format!(
                         "{}{}{}",

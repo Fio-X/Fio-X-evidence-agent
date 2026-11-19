@@ -634,7 +634,8 @@ mod tests {
     /// reach); every copy must judge every name the same as the original, over hand-picked edges and this process's own names.
     #[test]
     fn every_group_copy_of_the_key_name_rule_matches_the_original() {
-        let copies: [(&str, fn(&str) -> bool); 3] = [
+        type NameRule = fn(&str) -> bool;
+        let copies: [(&str, NameRule); 3] = [
             ("verify", crate::verify::keylike_env_name),
             ("next_visual", crate::next_visual::keylike_env_name),
             ("doctor", crate::commands::doctor::keylike_env_name),

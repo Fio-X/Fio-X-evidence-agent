@@ -238,8 +238,7 @@ fn node_of(
     layer: &str,
     page_in: &J,
     reg: &J,
-    got: &Got,
-    sels: &[J],
+    (got, sels): (&Got, &[J]),
     after: Option<&J>,
     knobs: Option<J>,
     facts: Option<&J>,
@@ -1264,7 +1263,6 @@ const FINDING: &str = "finding";
 /// headline in shape_registry's words (DEK_FINDINGS, HEADLINES) with each token the case's template. Every input but the
 /// rows is the page's own fill: `fill` {facts: keys, fmts, named: codes, composition: {bars}}, which the flow gives when it
 /// asks and the draw recheck reads from the finished fill. {facts, reads, finding, subject}; a page with none: no finding.
-
 fn finding_declared(d: &J, page_in: &J, reg: &J) -> Result<J, String> {
     // no finding, and why (`fell_back`: the page's title falls back to the text step's label, which the run records)
     let none = |why: &str| {
@@ -1807,7 +1805,6 @@ fn finding_recheck(page_in: &J, fill: &J, reg: &J) -> Result<(), String> {
 }
 
 /// The declaration as JSON in the generator's own order (the prototype's), for the fixtures.
-
 fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
     let d = declares(reg, layer, page_in)?;
     // a page input value the declaration cannot do without (declares.needs: its path, and the registry's words for the
@@ -1994,7 +1991,7 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
         ("fmts", fmts.clone()),
         ("in", facts_in.clone()),
     ]);
-    let n = node_of(layer, page_in, reg, &got, &sels, None, None, Some(&held))?;
+    let n = node_of(layer, page_in, reg, (&got, &sels), None, None, Some(&held))?;
     // the facts of each item's chosen candidate (a first_holding field's): one key two items declare apart refuses
     for it in n.g("items").arr() {
         for (_, v) in it.obj() {
@@ -3962,8 +3959,7 @@ pub(crate) fn tree_j(page_in: &J, fill: &J, reg: &J, external: &[String]) -> Res
             &layer,
             view.as_ref().unwrap_or(page_in),
             reg,
-            &got,
-            &sels,
+            (&got, &sels),
             Some(&after),
             frame_knobs(&layer, reg, fill),
             None,

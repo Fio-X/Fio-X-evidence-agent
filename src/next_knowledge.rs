@@ -862,12 +862,14 @@ fn table_names() -> Result<&'static BTreeMap<String, String>, String> {
         .map_err(Clone::clone)
 }
 
+/// The reviewed names of each dimension's codes: dimension, then code, then name.
+type NamesByDimension = BTreeMap<String, BTreeMap<String, String>>;
+
 /// The reviewed code names by dimension (CODE_NAMES), read as table_names reads table-names-zh.json: each dimension of
 /// `dims` a table (empty while none is reviewed), each entry of `codes` a listed dimension, a code, a name and zh_source
 /// "reviewed" with its date; any other entry, or a code listed twice, is a broken file.
-fn code_names() -> Result<&'static BTreeMap<String, BTreeMap<String, String>>, String> {
-    static NAMES: OnceLock<Result<BTreeMap<String, BTreeMap<String, String>>, String>> =
-        OnceLock::new();
+fn code_names() -> Result<&'static NamesByDimension, String> {
+    static NAMES: OnceLock<Result<NamesByDimension, String>> = OnceLock::new();
     NAMES
         .get_or_init(|| read_code_names(CODE_NAMES))
         .as_ref()

@@ -662,7 +662,6 @@ fn no_rows_refused(
     else {
         return None;
     };
-    let (items, splits): (&Vec<Vec<(String, usize)>>, &Vec<Vec<Split>>) = (items, splits);
     let draft = draft?;
     let prefix = format!("t{n}.");
     let mine: BTreeMap<String, usize> = params
@@ -4755,14 +4754,17 @@ fn asked_values(args: &Map<String, Value>, dim: &str) -> Option<Vec<String>> {
         .collect()
 }
 
+/// A grouped-total fetch's dimension, its total code and each group's input codes.
+type TotalAndGroups = (String, String, Vec<(String, Vec<String>)>);
+
+/// A grouped-total fetch's args and the event's fields beside the file.
+pub type FetchArgsAndEvent = (Map<String, Value>, Value);
+
 /// The dimension of a Eurostat main whose fetch asked for its total code alone and whose registry has composition groups,
 /// with that total code and each group's input codes (next_params::group_inputs); None for any other fetch, and for one
 /// whose place dimension asks fewer than `least` codes: two across places; one for a block of a table its blocks share
 /// (由总到分, 11-14), whose fetch may also ask the total beside the other codes (one place's split, the parts fetched apart).
-fn composition_dim(
-    main: &Prepared,
-    least: usize,
-) -> Result<Option<(String, String, Vec<(String, Vec<String>)>)>, String> {
+fn composition_dim(main: &Prepared, least: usize) -> Result<Option<TotalAndGroups>, String> {
     if main.id.ends_with("@2")
         || asked_values(&main.args, COMPOSITION_PLACE).is_some_and(|v| v.len() < least)
     {
@@ -4810,7 +4812,7 @@ pub fn composition_fetch(
     rows: &[Value],
     catalogue: &dyn Catalogue,
     least: usize,
-) -> Result<Option<(Map<String, Value>, Value)>, String> {
+) -> Result<Option<FetchArgsAndEvent>, String> {
     let Some((dim, total, inputs)) = composition_dim(main, least)? else {
         return Ok(None);
     };
@@ -5361,7 +5363,7 @@ async fn companion_tables<R: ToolRunner + Send + ?Sized>(
     let room = room + usize::from(kept.first().is_some_and(|c| c.grain.is_some()));
     dropped.extend(
         kept.drain(kept.len().min(room)..)
-            .map(|c| (c.id, next_knowledge::DropWhy::NoRoom)),
+            .map(|c| (c.id, next_knowledge::DropWhy::Cut)),
     );
     recorder.program_event(
         COMPANION_EVENT,

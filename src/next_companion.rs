@@ -74,18 +74,22 @@ pub struct Row {
 }
 
 /// Why a fetched candidate was not kept: a closed list, so a candidate dropped with no reason cannot be written. It is
-/// written as its snake_case name (no_rows).
+/// written under a fixed name (no_rows, no_shared_place_year, no_country_level, no_room), which the variant names do not
+/// have to repeat.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
-#[serde(rename_all = "snake_case")]
 pub enum DropWhy {
     /// Its fetch failed, timed out or came back empty.
-    NoRows,
+    #[serde(rename = "no_rows")]
+    Empty,
     /// No (place, year) of its rows is one of the main's.
-    NoSharedPlaceYear,
+    #[serde(rename = "no_shared_place_year")]
+    Disjoint,
     /// It shares places and years with the main, but only aggregates.
-    NoCountryLevel,
+    #[serde(rename = "no_country_level")]
+    AggregatesOnly,
     /// Kept by overlap, but cut by the number of companions a page takes.
-    NoRoom,
+    #[serde(rename = "no_room")]
+    Cut,
 }
 
 /// How the companion's numbers may sit next to the main's.
@@ -501,7 +505,7 @@ pub fn companions(
         .into_iter()
         .filter_map(|Candidate { id, adds, grain }| {
             let Some(theirs) = rows(&id) else {
-                dropped.push((id, DropWhy::NoRows));
+                dropped.push((id, DropWhy::Empty));
                 return None;
             };
             let Some(overlap) = overlap(&main_rows, &theirs) else {
@@ -509,9 +513,9 @@ pub fn companions(
                 dropped.push((
                     id,
                     if shared {
-                        DropWhy::NoCountryLevel
+                        DropWhy::AggregatesOnly
                     } else {
-                        DropWhy::NoSharedPlaceYear
+                        DropWhy::Disjoint
                     },
                 ));
                 return None;
@@ -538,7 +542,7 @@ pub fn companions(
     dropped.extend(
         found
             .drain(found.len().min(room)..)
-            .map(|c| (c.id, DropWhy::NoRoom)),
+            .map(|c| (c.id, DropWhy::Cut)),
     );
     (found, dropped)
 }
@@ -1004,22 +1008,22 @@ mod tests {
         let why = |other| companions(&index, "gas_a", &with(other)).1;
         // the shortlist is gas_m (the monthly twin) and gas_b; both are given the same rows here
         let both = |w: DropWhy| [("gas_m".to_string(), w), ("gas_b".to_string(), w)];
-        assert_eq!(why(None), both(DropWhy::NoRows));
+        assert_eq!(why(None), both(DropWhy::Empty));
         assert_eq!(
             why(Some(vec![row("AT", 2019, true)])),
-            both(DropWhy::NoSharedPlaceYear)
+            both(DropWhy::Disjoint)
         );
         assert_eq!(
             why(Some(vec![row("EU27_2020", 2024, false)])),
-            both(DropWhy::NoCountryLevel)
+            both(DropWhy::AggregatesOnly)
         );
         assert!(why(Some(vec![row("AT", 2024, true)])).is_empty());
         assert_eq!(
             serde_json::json!([
-                DropWhy::NoRows,
-                DropWhy::NoSharedPlaceYear,
-                DropWhy::NoCountryLevel,
-                DropWhy::NoRoom
+                DropWhy::Empty,
+                DropWhy::Disjoint,
+                DropWhy::AggregatesOnly,
+                DropWhy::Cut
             ]),
             serde_json::json!([
                 "no_rows",

@@ -1161,7 +1161,8 @@ fn held(html: &str, layers: &[(String, String, bool)]) -> Vec<String> {
             .max_by_key(|s| s.1)
             .map(|s| s.0)
     };
-    let mut kept: BTreeMap<(bool, Option<usize>), Vec<(usize, &str)>> = BTreeMap::new();
+    type Kept<'a> = BTreeMap<(bool, Option<usize>), Vec<(usize, &'a str)>>;
+    let mut kept: Kept = BTreeMap::new();
     for ((name, _, is_html), p) in layers.iter().zip(&at) {
         if let Some(p) = *p {
             let svg = if *is_html { None } else { inside(p) };

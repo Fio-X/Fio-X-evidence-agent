@@ -777,7 +777,7 @@ pub enum Reply<'a> {
     /// The leaf page, baked and checked.
     Leaf(LeafDrawn),
     /// The filled page's pieces, for the flow to lend as a LeafPage.
-    Filled(LeafFill<'a>),
+    Filled(Box<LeafFill<'a>>),
     /// The browser check's PASS report for the bytes asked about.
     Checked(Value),
     /// A number knob's default and range.
@@ -880,7 +880,7 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
             knobs,
             order,
             runtime,
-        } => Reply::Filled(fill(recipe, rows, knobs, order, runtime)?),
+        } => Reply::Filled(Box::new(fill(recipe, rows, knobs, order, runtime)?)),
         Request::BrowserCheck {
             qa,
             html,

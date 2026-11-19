@@ -445,9 +445,9 @@ pub fn check_numbers(
             };
             let tag = &rest[1..end];
             rest = &rest[end + 1..];
-            if tag.starts_with('!') {
+            if let Some(bang) = tag.strip_prefix('!') {
                 // only comments (above) and the doctype are skipped
-                if !tag[1..].to_ascii_lowercase().starts_with("doctype") {
+                if !bang.to_ascii_lowercase().starts_with("doctype") {
                     off.push(format!("<{tag}> is neither a comment nor the doctype"));
                 }
                 continue;
@@ -1846,7 +1846,6 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
             "tree::printed_keys",
             "tree::fact_fmt",
             "tree::printed_int",
-            "tree::round_even",
             "tree::printed_differences",
         ],
     ),
@@ -5972,7 +5971,7 @@ mod tests {
             ["dek: name:zh_names:iso3:BRA is named, and no picture of the page draws it"]
         );
         // a marked name's own text and the words beside it never join into a name (几内亚 beside 比绍)
-        let beside = page(&format!("{vn}比绍"), &vn.to_string());
+        let beside = page(&format!("{vn}比绍"), vn);
         assert_eq!(check_names_drawn(&beside), Vec::<String>::new());
         // a picture of one place's parts (a flow page of one country: its svg marks parts' rows, no place's): the h1 and the
         // dek may name that one place, not two, and a part they name is drawn as before

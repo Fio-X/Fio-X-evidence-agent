@@ -1629,7 +1629,7 @@ fn asked_of_chars(mut q: Vec<char>) -> Vec<Asked> {
         .flat_map(|f| f.words.iter().map(move |w| (measure_chars(w), f)))
         .filter(|(w, _)| !w.is_empty())
         .collect();
-    words.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+    words.sort_by_key(|a| std::cmp::Reverse(a.0.len()));
     let mut found: Vec<Asked> = Vec::new();
     for (w, f) in &words {
         let mut hit = false;

@@ -7572,17 +7572,6 @@ fn printed_int(printed: &str, dec: usize) -> Option<i128> {
     Some(if neg { -n } else { n })
 }
 
-/// An integer of `from` decimals rounded half to even to `to` (at most `from`) decimals.
-fn round_even(x: i128, from: usize, to: usize) -> i128 {
-    let k = 10i128.pow((from - to) as u32);
-    let (q, r) = (x.div_euclid(k), x.rem_euclid(k));
-    match (2 * r).cmp(&k) {
-        std::cmp::Ordering::Greater => q + 1,
-        std::cmp::Ordering::Equal => q + (q & 1),
-        std::cmp::Ordering::Less => q,
-    }
-}
-
 /// The fact keys a page prints: every `fact:<key>` ledger reference and every `{<key>}` placeholder in `v` (a page tree
 /// less its facts, or what a layer declared), a `.n` ending read as the number itself; a `.t` (its year) or any other
 /// ending of a key the facts do not hold is no number of it. A family's members print where a layer binds the family
@@ -7682,9 +7671,8 @@ pub(crate) fn differences_disagree(
 }
 
 /// One printed difference of the page as differences_disagree reads it: the difference and its operands' printed keys,
-/// what the difference prints, the operands' (scale, decimals), whether it is the difference of its operands as printed
-/// (kept for reading, no longer asked), the true difference of the operands, and whether the printed one is within half a
-/// unit of its last place of it.
+/// what the difference prints, the operands' (scale, decimals), the true difference of the operands, and whether the
+/// printed one is within half a unit of its last place of it.
 pub(crate) struct PrintedDiff {
     pub key: String,
     pub pa: String,
@@ -7692,7 +7680,6 @@ pub(crate) struct PrintedDiff {
     pub tk: String,
     pub forms: [(f64, usize); 2],
     pub dec: usize,
-    pub equal: bool,
     pub truth: f64,
     pub close: bool,
 }
@@ -7779,14 +7766,13 @@ pub(crate) fn printed_differences(
             py_fixed(vb * sb, db),
         );
         let most = da.max(db).max(dk);
-        let (Some(ik), Some(ia), Some(ib)) = (
-            printed_int(&tk, dk),
-            printed_int(&ta, most),
-            printed_int(&tb, most),
-        ) else {
+        let Some(ik) = printed_int(&tk, dk) else {
             continue;
         };
-        let want = round_even(ia - ib, most, dk);
+        // an operand whose printed number has no integer reading (too large for one) is left out, as before
+        if printed_int(&ta, most).is_none() || printed_int(&tb, most).is_none() {
+            continue;
+        }
         // the true difference of the two values, and the printed one against it (in the difference's own unit)
         let truth = va - vb;
         let shown_v = ik as f64 / 10f64.powi(dk as i32) / sk;
@@ -7799,7 +7785,6 @@ pub(crate) fn printed_differences(
             tk,
             forms: [(sa, da), (sb, db)],
             dec: dk,
-            equal: want == ik,
             truth,
             close,
         });
@@ -9217,15 +9202,15 @@ pub fn geometry_problems(
 // a reply that passes is the placed geometry the leaf draws. Nothing here is read from a node but the reply.
 // ================================================================================================================
 
+/// A point as the map's projection gives it.
+type XY = [f64; 2];
+
 /// Below this a recomputed number equals the reply's: the node computes in the same order (no rounding in between).
 const CIRCLE_EPS: f64 = 1e-9;
 
 /// K3: the map view's height and each place's point, as the map leaves project it (mapkit.View and prod.proj, in their
 /// order): H = round(W (lat1 - lat0) / ((lon1 - lon0) cos(mid latitude + 2 deg))), the scale the smaller of the two fits.
-pub fn view_projection(
-    w: f64,
-    ext: [f64; 4],
-) -> Result<(f64, impl Fn(f64, f64) -> [f64; 2]), String> {
+pub fn view_projection(w: f64, ext: [f64; 4]) -> Result<(f64, impl Fn(f64, f64) -> XY), String> {
     let [lon0, lat0, lon1, lat1] = ext;
     if !(lon0 < lon1
         && lat0 < lat1
@@ -9646,7 +9631,11 @@ pub fn circles_problems(nid: &str, req: &J, rep: &J) -> Result<J, Vec<String>> {
             q.g("pin").at(1).num().unwrap_or(f64::NAN),
         );
         let off = pdist((c.0, c.1), (px, py));
-        if !(off <= most + CIRCLE_EPS) {
+        // not (off <= limit) also holds when off is NaN, so a missing distance still fails
+        if !matches!(
+            off.partial_cmp(&(most + CIRCLE_EPS)),
+            Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
+        ) {
             bad.push(format!(
                 "K5 node {nid} mark {id}: {off:.3} px off its point, most {}",
                 py_float(most)
@@ -11148,14 +11137,8 @@ mod tests {
             .find(|d| d.key == "vs_lo")
             .unwrap();
         assert_eq!(
-            (
-                d.pa.as_str(),
-                d.pb.as_str(),
-                d.tk.as_str(),
-                d.equal,
-                d.close
-            ),
-            ("chg.BE", "chg.FR", "7.8", false, true)
+            (d.pa.as_str(), d.pb.as_str(), d.tk.as_str(), d.close),
+            ("chg.BE", "chg.FR", "7.8", true)
         );
         assert!(
             differences_disagree(&facts(""), &fmts(&[("pc", 2), ("pp", 1)]), &change, &shown)
@@ -11249,7 +11232,7 @@ mod tests {
             parse(r#"{"scale": 100, "dec": 0, "suffix": ""}"#).unwrap(),
         );
         assert!(differences_disagree(&gap("DE", "FR", "ktoe"), &scaled, &levels, &all).is_empty());
-        // the printed numbers as integers, and the half tie to the even digit
+        // the printed numbers as integers
         assert_eq!(
             (
                 printed_int("-2.2", 2),
@@ -11257,15 +11240,6 @@ mod tests {
                 printed_int("1.234", 2)
             ),
             (Some(-220), Some(70), None)
-        );
-        assert_eq!(
-            (
-                round_even(775, 2, 1),
-                round_even(765, 2, 1),
-                round_even(-775, 2, 1),
-                round_even(-226, 2, 1)
-            ),
-            (78, 76, -78, -23)
         );
     }
     fn read(name: &str) -> J {
@@ -12839,7 +12813,8 @@ mod tests {
                 .unwrap()
                 .set(k, v);
         }
-        let cases: Vec<(&str, Box<dyn Fn(&mut J)>)> = vec![
+        type Mutation = Box<dyn Fn(&mut J)>;
+        let cases: Vec<(&str, Mutation)> = vec![
             (
                 "quantile cuts take one integer k",
                 Box::new(move |b| scale(b, "cuts", quantile(10))),

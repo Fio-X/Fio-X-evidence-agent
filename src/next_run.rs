@@ -3313,8 +3313,7 @@ fn recipe_request(
     recipe: &Recipe,
     catalogue: &dyn Catalogue,
     (question, (title, dek, kicker), places): (&str, (&str, &str, &str), &[crate::l5geo::Place]),
-    calls: &std::sync::Mutex<Vec<Value>>,
-    focus: Option<&str>,
+    (calls, focus): (&std::sync::Mutex<Vec<Value>>, Option<&str>),
 ) -> Result<Value, (&'static str, String)> {
     let shape_err = |why: String| ("shape", why);
     let main = prepared
@@ -4607,8 +4606,7 @@ fn leaf_request(
     drawn: &[&str],
     catalogue: &dyn Catalogue,
     (question, words): (&str, (&str, &str, &str)),
-    calls: &std::sync::Mutex<Vec<Value>>,
-    focus: Option<&str>,
+    (calls, focus): (&std::sync::Mutex<Vec<Value>>, Option<&str>),
     (of_blocks, many): (bool, bool),
 ) -> Result<(&'static Recipe, Value), (&'static str, &'static str, String)> {
     let mut missed = Vec::new();
@@ -4644,8 +4642,7 @@ fn leaf_request(
             recipe,
             catalogue,
             (question, words, &places),
-            calls,
-            focus,
+            (calls, focus),
         ) {
             Ok(fill) => {
                 // a composition never leaves out a place the question names (the places the knowledge group reads in it)
@@ -5263,6 +5260,7 @@ struct PageCheck {
 ///   image or unread paint under it, an outline-only text, a ::before/::after text), and the least contrast of the body
 ///   texts is at least CONTRAST_FLOOR_BODY and of the large ones CONTRAST_FLOOR_LARGE (a kind with no text measured has
 ///   nothing to fall below).
+///
 /// Both name the first texts below a floor; with no measurement both fail, measured {"measured": false}.
 fn page_checks(
     recipe: &Recipe,
@@ -5871,8 +5869,7 @@ pub(crate) async fn page_of_block(
         &drawn,
         catalogue,
         (question, ("", "", "")),
-        &calls,
-        focus,
+        (&calls, focus),
         (block == 0, many),
     );
     // the page over the blocks is extra: when no recipe can draw it, it stops here, before the text step asks the model
@@ -6802,6 +6799,34 @@ mod tests {
     use super::*;
     use crate::shape_registry::{Finding, DEK_FINDINGS, HEADLINES};
 
+    /// What `published` and `group_published` read back: the page, its request's ledger, refs, spec, rows and facts.
+    type PublishedPage = (
+        String,
+        BTreeMap<String, String>,
+        Vec<String>,
+        crate::next_facts::Spec,
+        Vec<crate::next_facts::Row>,
+        Vec<crate::next_facts::Fact>,
+    );
+    /// What `cut_page` gives: the scope, the run folder, then the page's text, its refs and its rows.
+    type CutPage = (
+        Option<Scope>,
+        tempfile::TempDir,
+        String,
+        Vec<String>,
+        Vec<(String, String)>,
+    );
+    /// What `gas_fixture` gives: the main and companion rows, the catalogue, the shape and the picked claims.
+    type GasFixture = (
+        Vec<Value>,
+        Vec<Value>,
+        crate::next_flow::GroupCatalogue,
+        Shape,
+        Vec<(String, Value)>,
+    );
+    /// The map point of each ranked country and the map's extent.
+    type PointsAndExtent = (BTreeMap<String, [f64; 2]>, [f64; 4]);
+
     /// A block left out of a many-block page must add no delivery (review 11-15): the folders the delivery scan reads are the
     /// publications with a manifest, never plans, qa or rejected; a folder with no manifest is none.
     #[test]
@@ -7123,10 +7148,7 @@ mod tests {
     /// the map's extent (map_extent: the points' box with room past each side for the labels of the circles nearest it, each
     /// circle's value its row at the year and its name the name table's, as the bubbles print them). A country without a point
     /// refuses.
-    fn ranked_points(
-        f: &Filling,
-        out: &mut Filled,
-    ) -> Result<(BTreeMap<String, [f64; 2]>, [f64; 4]), String> {
+    fn ranked_points(f: &Filling, out: &mut Filled) -> Result<PointsAndExtent, String> {
         let points = f.catalogue.place_points(&f.picks.ranked)?;
         out.points
             .extend(points.iter().map(|(c, p)| (c.clone(), *p)));
@@ -8569,7 +8591,12 @@ mod tests {
             let vals = |v: [Option<&'static str>; 4]| -> Vec<(&str, Option<&str>)> {
                 codes.iter().copied().zip(v).collect()
             };
-            let cases: Vec<(&str, Vec<(&str, Option<&str>)>, Vec<(&str, &str)>)> = vec![
+            type Case<'a> = (
+                &'a str,
+                Vec<(&'a str, Option<&'a str>)>,
+                Vec<(&'a str, &'a str)>,
+            );
+            let cases: Vec<Case> = vec![
                 (
                     "latin names, dec 2",
                     vals([Some("18.39"), Some("7.1"), Some("12"), Some("3.05")]),
@@ -10159,8 +10186,7 @@ mod tests {
                 recipe(RING_RECIPE),
                 &Hubs,
                 ("", ("", "", ""), &[]),
-                &Default::default(),
-                None,
+                (&Default::default(), None),
             )
             .unwrap_err()
         };
@@ -10209,13 +10235,7 @@ mod tests {
 
     /// The gas fixture read as the run reads it: the main's and the companion's rows, the catalogue, the ring shape, and the
     /// picked claims joined to their kinds (picked_claims, the one join the run makes).
-    fn gas_fixture() -> (
-        Vec<Value>,
-        Vec<Value>,
-        crate::next_flow::GroupCatalogue,
-        Shape,
-        Vec<(String, Value)>,
-    ) {
+    fn gas_fixture() -> GasFixture {
         let var = |k: &str| std::env::var(k).unwrap();
         let run = std::path::PathBuf::from(var("GAS_RUN"));
         let main = sdmx_rows(
@@ -13626,18 +13646,7 @@ mod tests {
 
     /// A fill drawn by the real leaf child, baked, checked by the twins and published, then read back: the page and its
     /// request's ledger, refs, spec, rows and facts.
-    fn published(
-        name: &str,
-        mut fill: Value,
-        at: &str,
-    ) -> (
-        String,
-        BTreeMap<String, String>,
-        Vec<String>,
-        crate::next_facts::Spec,
-        Vec<crate::next_facts::Row>,
-        Vec<crate::next_facts::Fact>,
-    ) {
+    fn published(name: &str, mut fill: Value, at: &str) -> PublishedPage {
         fill["knobs"]["shapes"] = json!("runtime/pi/assets/naturalearth-admin0-50m.geojson");
         fill["knobs"]["spec"]["kicker"] = json!("栏目");
         fill["knobs"]["spec"]["source"] = json!("来源");
@@ -13723,7 +13732,14 @@ mod tests {
             "SA", "ZA", "TR", "GB", "US",
         ];
         let with_sa = [&brics[..], &["SA"]].concat();
-        let cases: [(&str, &str, &[&str], &[&str], &[&str]); 6] = [
+        type Case<'a> = (
+            &'a str,
+            &'a str,
+            &'a [&'a str],
+            &'a [&'a str],
+            &'a [&'a str],
+        );
+        let cases: [Case; 6] = [
             (
                 "change",
                 "金砖国家近十年的GDP增长率",
@@ -13878,10 +13894,7 @@ mod tests {
                 let fails_here = |page: &str, s: &crate::next_facts::Spec| {
                     crate::next_leaf::check_leaf_page(page, &ledger, &refs, s, &rows, &facts)
                 };
-                let as_data = html.replace(
-                    &year_mark,
-                    &r#"data-src="period:sdg_07_40:2024">2024<"#.to_string(),
-                );
+                let as_data = html.replace(&year_mark, r#"data-src="period:sdg_07_40:2024">2024<"#);
                 assert!(
                     fails_here(&as_data, &spec)
                         .iter()
@@ -14103,8 +14116,7 @@ mod tests {
             recipe("change"),
             &cat,
             (question, ("标题", "导语", "栏目"), &places),
-            &calls,
-            None,
+            (&calls, None),
         );
         let events = calls.lock().unwrap().clone();
         (fill, events)
@@ -14112,17 +14124,7 @@ mod tests {
 
     /// A group's fill laid out where leaf_page lays the external layers out, by the repository's own nodes (whole paths: the
     /// child runs in its own folder), then drawn, published and read back.
-    fn group_published(
-        mut fill: Value,
-        at: &str,
-    ) -> (
-        String,
-        BTreeMap<String, String>,
-        Vec<String>,
-        crate::next_facts::Spec,
-        Vec<crate::next_facts::Row>,
-        Vec<crate::next_facts::Fact>,
-    ) {
+    fn group_published(mut fill: Value, at: &str) -> PublishedPage {
         let calls = std::sync::Mutex::new(Vec::new());
         fill["knobs"]["shapes"] = json!(Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("runtime/pi/assets/naturalearth-admin0-50m.geojson"));
@@ -17265,8 +17267,7 @@ mod tests {
             &["horizontal_bar"],
             &catalogue,
             ("", ("标题", "导语", "栏目")),
-            &Default::default(),
-            None,
+            (&Default::default(), None),
             (false, false),
         );
         let (recipe, fill) = match request {
@@ -18502,16 +18503,7 @@ mod tests {
     /// data/t.csv: the scope read from the run's files (narrowed, as the charts step reads it), the fill's notes by it
     /// (recipe_request), and the dek the fill's finding under the scope (with_scopes, then with_finding). Returns the scope,
     /// the run folder, the dek, every drafted field's text, and each leader note's (place, word key).
-    fn cut_page(
-        records: &[Value],
-        main: &[Value],
-    ) -> (
-        Option<Scope>,
-        tempfile::TempDir,
-        String,
-        Vec<String>,
-        Vec<(String, String)>,
-    ) {
+    fn cut_page(records: &[Value], main: &[Value]) -> CutPage {
         let dir = tempfile::tempdir().unwrap();
         let origins = dir.path().join("data/origins");
         std::fs::create_dir_all(&origins).unwrap();
@@ -19896,8 +19888,7 @@ mod tests {
             &drawn,
             &catalogue,
             (&question, ("标题", "导语", "栏目")),
-            &Default::default(),
-            None,
+            (&Default::default(), None),
             (false, false),
         );
         match &got {
@@ -23662,13 +23653,14 @@ for line in sys.stdin:
         let one_year = |pairs: &[(&'static str, &'static str)]| -> Vec<(&'static str, &'static str, &'static str)> {
             pairs.iter().map(|(g, v)| (*g, "2024", *v)).collect()
         };
-        let cases: Vec<(
-            &str,
-            &str,
+        type Case<'a> = (
+            &'a str,
+            &'a str,
             Vec<Value>,
             bool,
             Option<&'static [(&'static str, &'static str)]>,
-        )> = vec![
+        );
+        let cases: Vec<Case> = vec![
             ("gap at both ends a", "change", q1_ten_years(), false, None),
             (
                 "gap at both ends b",
@@ -24571,7 +24563,13 @@ for line in sys.stdin:
             x
         };
         let none: [Option<&'static str>; 3] = [None, Some("1"), Some("30000")];
-        let cases: Vec<(&str, Vec<(&str, [Option<&str>; 3])>, &str, &[&str])> = vec![
+        type Case<'a> = (
+            &'a str,
+            Vec<(&'a str, [Option<&'a str>; 3])>,
+            &'a str,
+            &'a [&'a str],
+        );
+        let cases: Vec<Case> = vec![
             (
                 "A one t0 at 0",
                 a(v("0", "1", "30000"), "126027.316"),
@@ -24892,7 +24890,8 @@ for line in sys.stdin:
     /// months than another origin (its own rows only, the window from the companion's last month).
     #[test]
     fn declared_ring_equals_the_rust_ring_on_every_branch() {
-        let cases: [(&str, &str, &[(&str, &str, i64)], &str); 7] = [
+        type Case<'a> = (&'a str, &'a str, &'a [(&'a str, &'a str, i64)], &'a str);
+        let cases: [Case; 7] = [
             ("S1 63 months", "RU", &[("RU", "2019-01", 63)], "2019-04"),
             (
                 "S1 last month December",
@@ -25166,13 +25165,14 @@ for line in sys.stdin:
             ("LY", v("3000", "2500", "2500")),
         ];
         b.extend(rest);
-        let cases: [(
-            &str,
-            &Vec<(&str, [Option<&str>; 3])>,
-            &str,
-            &[(&str, &str, i64)],
-            (&str, &str),
-        ); 8] = [
+        type Case<'a> = (
+            &'a str,
+            &'a Vec<(&'a str, [Option<&'a str>; 3])>,
+            &'a str,
+            &'a [(&'a str, &'a str, i64)],
+            (&'a str, &'a str),
+        );
+        let cases: [Case; 8] = [
             (
                 "A past the window's first month",
                 &a,
@@ -25364,8 +25364,7 @@ for line in sys.stdin:
                 &[],
                 &cat,
                 ("", ("标题", "导语", "栏目")),
-                &Default::default(),
-                None,
+                (&Default::default(), None),
                 (false, false),
             )
             .unwrap_err();
@@ -25406,8 +25405,7 @@ for line in sys.stdin:
                 &["horizontal_bar"],
                 &cat,
                 ("", ("标题", "导语", "栏目")),
-                &Default::default(),
-                None,
+                (&Default::default(), None),
                 (false, false),
             ) {
                 Ok((recipe, _)) => (recipe.name.clone(), String::new()),
@@ -25534,12 +25532,14 @@ for line in sys.stdin:
     /// The rows of `main` with each row whose source code is `code` given the values in turn (the rest as they were).
     fn with_values(main: &[Value], source: &str, code: &str, values: &[&str]) -> Vec<Value> {
         let mut out = main.to_vec();
-        let mut k = 0;
-        for r in out.iter_mut().filter(|r| r["dims"][source] == code) {
+        for (k, r) in out
+            .iter_mut()
+            .filter(|r| r["dims"][source] == code)
+            .enumerate()
+        {
             if let Some(v) = values.get(k) {
                 r["value"] = json!(v);
             }
-            k += 1;
         }
         out
     }
@@ -26112,7 +26112,8 @@ for line in sys.stdin:
             ("migr", main)
         };
         let two_falls: Vec<(&str, &str, &str)> = [&falls[..], &[("BE", "2016", "24.5")]].concat();
-        let cases: Vec<(&str, (&str, Vec<Value>), bool)> = vec![
+        type Case<'a> = (&'a str, (&'a str, Vec<Value>), bool);
+        let cases: Vec<Case> = vec![
             ("q1 a rise alone", q1(&[]), true),
             (
                 "q1 two rises alike, FR falls",
@@ -26282,7 +26283,8 @@ for line in sys.stdin:
             x.extend(rest);
             x
         };
-        let cases: Vec<(&str, Vec<(&str, [Option<&str>; 3])>, &str, bool)> = vec![
+        type RankCase<'a> = (&'a str, Vec<(&'a str, [Option<&'a str>; 3])>, &'a str, bool);
+        let cases: Vec<RankCase> = vec![
             ("A the largest", a(v("80000", "85000", "90000")), "RU", true),
             (
                 "A two largest alike",
@@ -26497,15 +26499,17 @@ for line in sys.stdin:
         let mut labels: BTreeMap<String, String> =
             serde_json::from_value(fill["knobs"]["labels"].clone()).unwrap();
         labels.remove("SE");
-        let mut out = Filled::default();
-        out.facts = fill["knobs"]["spec"]["facts"]
-            .as_object()
-            .unwrap()
-            .iter()
-            .filter(|(k, _)| !FINDING_KEYS.contains(&k.as_str()))
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-        out.fmts = fill["knobs"]["spec"]["fmts"].as_object().unwrap().clone();
+        let mut out = Filled {
+            facts: fill["knobs"]["spec"]["facts"]
+                .as_object()
+                .unwrap()
+                .iter()
+                .filter(|(k, _)| !FINDING_KEYS.contains(&k.as_str()))
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+            fmts: fill["knobs"]["spec"]["fmts"].as_object().unwrap().clone(),
+            ..Default::default()
+        };
         let short = next_pack::unit_short(&shape.unit).unwrap();
         let filling = Filling {
             shape: &shape,
@@ -26539,15 +26543,17 @@ for line in sys.stdin:
                 v["fill"]["fmts"].as_object_mut().unwrap().remove(gone);
             })
             .unwrap_or_else(|e| panic!("{gone}: {e}"));
-            let mut out = Filled::default();
-            out.facts = fill["knobs"]["spec"]["facts"]
-                .as_object()
-                .unwrap()
-                .iter()
-                .filter(|(k, _)| !FINDING_KEYS.contains(&k.as_str()))
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect();
-            out.fmts = fill["knobs"]["spec"]["fmts"].as_object().unwrap().clone();
+            let mut out = Filled {
+                facts: fill["knobs"]["spec"]["facts"]
+                    .as_object()
+                    .unwrap()
+                    .iter()
+                    .filter(|(k, _)| !FINDING_KEYS.contains(&k.as_str()))
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
+                fmts: fill["knobs"]["spec"]["fmts"].as_object().unwrap().clone(),
+                ..Default::default()
+            };
             out.fmts.remove(gone);
             let labels: BTreeMap<String, String> =
                 serde_json::from_value(fill["knobs"]["labels"].clone()).unwrap();
@@ -26768,21 +26774,23 @@ for line in sys.stdin:
             .unwrap_or_else(|e| panic!("{path}: {e}"));
             // the frozen finding over the same page and labels (old_finding_over reads the catalogue's names from the fill)
             let spec = &fill["knobs"]["spec"];
-            let mut out = Filled::default();
-            out.facts = spec["facts"]
-                .as_object()
-                .unwrap()
-                .iter()
-                .filter(|(k, _)| !FINDING_KEYS.contains(&k.as_str()))
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect();
-            out.fmts = spec["fmts"]
-                .as_object()
-                .unwrap()
-                .iter()
-                .filter(|(k, _)| *k != "time")
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect();
+            let mut out = Filled {
+                facts: spec["facts"]
+                    .as_object()
+                    .unwrap()
+                    .iter()
+                    .filter(|(k, _)| !FINDING_KEYS.contains(&k.as_str()))
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
+                fmts: spec["fmts"]
+                    .as_object()
+                    .unwrap()
+                    .iter()
+                    .filter(|(k, _)| *k != "time")
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
+                ..Default::default()
+            };
             let labels: BTreeMap<String, String> =
                 serde_json::from_value(fill["knobs"]["labels"].clone()).unwrap();
             let short = next_pack::unit_short(&shape.unit).unwrap();
@@ -27188,7 +27196,13 @@ for line in sys.stdin:
             x
         };
         let none: [Option<&'static str>; 3] = [None, Some("1"), Some("30000")];
-        let cases: Vec<(&str, Vec<(&str, [Option<&str>; 3])>, &str, &str)> = vec![
+        type Case<'a> = (
+            &'a str,
+            Vec<(&'a str, [Option<&'a str>; 3])>,
+            &'a str,
+            &'a str,
+        );
+        let cases: Vec<Case> = vec![
             (
                 "A one t0 at 0",
                 a(v("0", "1", "30000"), "126027.316"),
@@ -27358,8 +27372,7 @@ for line in sys.stdin:
             &[],
             &cat,
             ("", ("标题", "导语", "栏目")),
-            &Default::default(),
-            None,
+            (&Default::default(), None),
             (false, false),
         )
         .unwrap_err();

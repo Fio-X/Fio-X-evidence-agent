@@ -1079,13 +1079,16 @@ fn source_of(
     })
 }
 
+/// A World Bank indicator's values by (iso3, year).
+type WorldBankValues = BTreeMap<(String, String), f64>;
+
 /// The World Bank local copy of an indicator the run kept (its worldbank_local_copy record's file, a gzipped table of
 /// indicator, country_id, iso3, year, value, obs_status) by (iso3, year); None when the run kept none.
 fn worldbank_whole(
     run_dir: &Path,
     id: &str,
     origins: &[Value],
-) -> Result<Option<BTreeMap<(String, String), f64>>, String> {
+) -> Result<Option<WorldBankValues>, String> {
     let indicator = id.strip_suffix("@2").unwrap_or(id);
     let marker = format!("/indicator/{indicator}?");
     let Some(file) = origins
