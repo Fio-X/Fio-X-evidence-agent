@@ -75,7 +75,7 @@
   "rc": 0
  },
  "verify --help": {
-  "stdout": "Verify evidence references, hashes, claims, computations, and visualization provenance\n\nUsage: news verify [OPTIONS] <ARTIFACT>\n\nArguments:\n  <ARTIFACT>  Existing investigation directory\n\nOptions:\n      --recompute\n          Re-run every stored SQL computation with DuckDB and compare canonical rows\n      --duckdb-bin <DUCKDB_BIN>\n          DuckDB executable used for --recompute [env: NEWSROOM_DUCKDB_BIN=] [default: duckdb]\n      --recompute-timeout <RECOMPUTE_TIMEOUT>\n          Per-query recomputation timeout in seconds [default: 30]\n  -h, --help\n          Print help\n",
+  "stdout": "Verify evidence references, hashes, claims, computations, and visualization provenance\n\nUsage: news verify [OPTIONS] <ARTIFACT>\n\nArguments:\n  <ARTIFACT>  Existing investigation directory\n\nOptions:\n      --recompute\n          Re-run every stored SQL computation with DuckDB and compare canonical rows\n      --duckdb-bin <DUCKDB_BIN>\n          DuckDB executable used for --recompute [env: NEWSROOM_DUCKDB_BIN=] [default: duckdb]\n      --recompute-timeout <RECOMPUTE_TIMEOUT>\n          Per-query recomputation timeout in seconds [default: 30]\n      --json\n          Print one JSON object on stdout (passed, checks, errors) instead of the text lines; exit codes are unchanged\n  -h, --help\n          Print help\n",
   "stderr": "",
   "rc": 0
  },
@@ -105,7 +105,7 @@
   "rc": 0
  },
  "verify -h": {
-  "stdout": "Verify evidence references, hashes, claims, computations, and visualization provenance\n\nUsage: news verify [OPTIONS] <ARTIFACT>\n\nArguments:\n  <ARTIFACT>  Existing investigation directory\n\nOptions:\n      --recompute\n          Re-run every stored SQL computation with DuckDB and compare canonical rows\n      --duckdb-bin <DUCKDB_BIN>\n          DuckDB executable used for --recompute [env: NEWSROOM_DUCKDB_BIN=] [default: duckdb]\n      --recompute-timeout <RECOMPUTE_TIMEOUT>\n          Per-query recomputation timeout in seconds [default: 30]\n  -h, --help\n          Print help\n",
+  "stdout": "Verify evidence references, hashes, claims, computations, and visualization provenance\n\nUsage: news verify [OPTIONS] <ARTIFACT>\n\nArguments:\n  <ARTIFACT>  Existing investigation directory\n\nOptions:\n      --recompute\n          Re-run every stored SQL computation with DuckDB and compare canonical rows\n      --duckdb-bin <DUCKDB_BIN>\n          DuckDB executable used for --recompute [env: NEWSROOM_DUCKDB_BIN=] [default: duckdb]\n      --recompute-timeout <RECOMPUTE_TIMEOUT>\n          Per-query recomputation timeout in seconds [default: 30]\n      --json\n          Print one JSON object on stdout (passed, checks, errors) instead of the text lines; exit codes are unchanged\n  -h, --help\n          Print help\n",
   "stderr": "",
   "rc": 0
  }
