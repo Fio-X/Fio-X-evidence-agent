@@ -1671,8 +1671,8 @@ mod tests {
     }
 
     use super::{
-        delivery_order, discover_delivery, publication_candidates, read_rpc_metrics,
-        rust_session_recorded, slugify, switches_off_in,
+        delivery_order, discover_delivery, existing_parent, publication_candidates,
+        read_rpc_metrics, rust_session_recorded, slugify, switches_off_in,
     };
     use std::fs;
     use tempfile::tempdir;

@@ -518,14 +518,19 @@ pub fn added_folder(before: &HashSet<String>, after: &HashSet<String>) -> Option
 /// Run a child `news investigate` on this terminal, wait for it, and give the folder it made with its exit code. A code other than 0
 /// is the child's own (a run that ended unverified); the folder is given all the same, and no folder is an error.
 pub async fn run_as_child(run: &ChildRun<'_>) -> Result<(PathBuf, i32)> {
-    let exe = std::env::current_exe().context("cannot find this program to start the follow-up run")?;
+    let exe =
+        std::env::current_exe().context("cannot find this program to start the follow-up run")?;
     let before = folder_set(run.out);
     let status = tokio::process::Command::from(child_command(&exe, run))
         .status()
         .await
         .context("failed to start the follow-up run")?;
-    let name = added_folder(&before, &folder_set(run.out))
-        .with_context(|| format!("the follow-up run ended ({status}) and made no folder under {}", run.out.display()))?;
+    let name = added_folder(&before, &folder_set(run.out)).with_context(|| {
+        format!(
+            "the follow-up run ended ({status}) and made no folder under {}",
+            run.out.display()
+        )
+    })?;
     Ok((run.out.join(name), status.code().unwrap_or(1)))
 }
 
@@ -1621,7 +1626,10 @@ mod child_tests {
     }
 
     fn args_of(command: &std::process::Command) -> Vec<String> {
-        command.get_args().map(|a| a.to_string_lossy().into_owned()).collect()
+        command
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect()
     }
 
     #[test]
@@ -1634,7 +1642,13 @@ mod child_tests {
     #[test]
     fn the_child_is_investigate_with_the_settings_the_data_and_the_question_last() {
         let data = [PathBuf::from("a.csv"), PathBuf::from("b.csv")];
-        let run = ChildRun { question: "q text", out: Path::new("root"), pi: &pi(), data: &data, parent: Some("run-1") };
+        let run = ChildRun {
+            question: "q text",
+            out: Path::new("root"),
+            pi: &pi(),
+            data: &data,
+            parent: Some("run-1"),
+        };
         let command = child_command(Path::new("/bin/news"), &run);
         let args = args_of(&command);
         assert_eq!(command.get_program(), OsStr::new("/bin/news"));
@@ -1650,12 +1664,27 @@ mod child_tests {
     #[test]
     fn the_child_drops_the_command_identity_and_carries_the_parent_only_when_there_is_one() {
         let env = |command: &std::process::Command, key: &str| {
-            command.get_envs().find(|(k, _)| *k == OsStr::new(key)).map(|(_, v)| v.map(|v| v.to_string_lossy().into_owned()))
+            command
+                .get_envs()
+                .find(|(k, _)| *k == OsStr::new(key))
+                .map(|(_, v)| v.map(|v| v.to_string_lossy().into_owned()))
         };
-        let mut run = ChildRun { question: "q", out: Path::new("root"), pi: &pi(), data: &[], parent: Some("run-1") };
+        let mut run = ChildRun {
+            question: "q",
+            out: Path::new("root"),
+            pi: &pi(),
+            data: &[],
+            parent: Some("run-1"),
+        };
         let with_parent = child_command(Path::new("news"), &run);
-        assert_eq!(env(&with_parent, crate::agent_serve::COMMAND_ENV), Some(None));
-        assert_eq!(env(&with_parent, crate::artifact::FOLLOW_UP_OF_ENV), Some(Some("run-1".into())));
+        assert_eq!(
+            env(&with_parent, crate::agent_serve::COMMAND_ENV),
+            Some(None)
+        );
+        assert_eq!(
+            env(&with_parent, crate::artifact::FOLLOW_UP_OF_ENV),
+            Some(Some("run-1".into()))
+        );
         run.parent = None;
         let first = child_command(Path::new("news"), &run);
         assert_eq!(env(&first, crate::artifact::FOLLOW_UP_OF_ENV), Some(None));
@@ -1665,7 +1694,10 @@ mod child_tests {
     fn the_added_folder_is_the_latest_new_name_or_none() {
         let set = |names: &[&str]| names.iter().map(|n| n.to_string()).collect::<HashSet<_>>();
         let before = set(&["run-0101"]);
-        assert_eq!(added_folder(&before, &set(&["run-0101", "run-0102", "run-0103"])), Some("run-0103".to_string()));
+        assert_eq!(
+            added_folder(&before, &set(&["run-0101", "run-0102", "run-0103"])),
+            Some("run-0103".to_string())
+        );
         assert_eq!(added_folder(&before, &before), None);
     }
 

@@ -367,7 +367,8 @@ impl std::error::Error for Refused {}
 
 /// The refusal for a result with no session of this runtime (`rust`: the Rust agent is the runtime): none when it is not.
 pub fn old_result_refusal(artifact: &Path, rust: bool) -> Option<Refused> {
-    (rust && !crate::session_store::SessionWriter::has_session(artifact)).then_some(Refused(OLD_RESULT_LINE))
+    (rust && !crate::session_store::SessionWriter::has_session(artifact))
+        .then_some(Refused(OLD_RESULT_LINE))
 }
 
 /// Whether the events of a run folder are the new route's: any record of a type that starts with `next_` (the old runtime never
@@ -378,13 +379,18 @@ pub fn is_new_route_result(events: &Path) -> bool {
     };
     text.lines()
         .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
-        .any(|event| event["type"].as_str().is_some_and(|t| t.starts_with("next_")))
+        .any(|event| {
+            event["type"]
+                .as_str()
+                .is_some_and(|t| t.starts_with("next_"))
+        })
 }
 
 /// Whether a follow-up on this folder runs as a new question: the new route is on and the folder is a result of it.
 pub fn follows_as_new_question(artifact: &Path) -> bool {
     crate::next_flow::next_enabled()
-        && InvestigationBundle::open(artifact).is_ok_and(|bundle| is_new_route_result(&bundle.events_path))
+        && InvestigationBundle::open(artifact)
+            .is_ok_and(|bundle| is_new_route_result(&bundle.events_path))
 }
 
 /// What a follow-up came to: asked of the same folder, or run as a new question in a folder of its own with the exit code of that run.
@@ -414,16 +420,23 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
 pub async fn follow_up(args: ContinueArgs, data: &[PathBuf]) -> Result<Followed> {
     if follows_as_new_question(&args.artifact) {
         let bundle = InvestigationBundle::open(&args.artifact)?;
-        let question = crate::commands::investigate::follow_up_question(&bundle.topic()?, &args.message.join(" "));
-        let root = bundle.dir.parent().context("the result folder has no folder around it")?;
-        let (dir, code) = crate::commands::investigate::run_as_child(&crate::commands::investigate::ChildRun {
-            question: &question,
-            out: root,
-            pi: &args.pi,
-            data,
-            parent: Some(&bundle.id),
-        })
-        .await?;
+        let question = crate::commands::investigate::follow_up_question(
+            &bundle.topic()?,
+            &args.message.join(" "),
+        );
+        let root = bundle
+            .dir
+            .parent()
+            .context("the result folder has no folder around it")?;
+        let (dir, code) =
+            crate::commands::investigate::run_as_child(&crate::commands::investigate::ChildRun {
+                question: &question,
+                out: root,
+                pi: &args.pi,
+                data,
+                parent: Some(&bundle.id),
+            })
+            .await?;
         return Ok(Followed::NewRun { dir, code });
     }
     run_in_place(args).await.map(|()| Followed::InPlace)
@@ -439,7 +452,8 @@ async fn run_in_place(args: ContinueArgs) -> Result<()> {
     }
     let bundle = InvestigationBundle::open(&args.artifact)?;
     // The Rust agent continues only a session of its own: a folder without one gets one line before anything starts (1012zi step 3).
-    if let Some(refused) = old_result_refusal(&bundle.dir, crate::agent_loop::agent_rust_enabled()) {
+    if let Some(refused) = old_result_refusal(&bundle.dir, crate::agent_loop::agent_rust_enabled())
+    {
         return Err(refused.into());
     }
     // Before the first model request and before anything is written to the run folder.
@@ -764,7 +778,11 @@ mod tests {
         assert!(!is_new_route_result(&events));
         std::fs::write(&events, "{\"type\":\"tool_call\"}\nnot json\n").unwrap();
         assert!(!is_new_route_result(&events));
-        std::fs::write(&events, "{\"type\":\"tool_call\"}\n{\"type\":\"next_answer_plan\"}\n").unwrap();
+        std::fs::write(
+            &events,
+            "{\"type\":\"tool_call\"}\n{\"type\":\"next_answer_plan\"}\n",
+        )
+        .unwrap();
         assert!(is_new_route_result(&events));
     }
 
@@ -791,8 +809,9 @@ mod tests {
     }
 
     use super::{
-        effective_tool_profile, follow_up_text, followup_same_settings_on, followup_settings,
-        FOLLOWUP_SAME_SETTINGS_ENV,
+        effective_tool_profile, follow_up_text, follows_as_new_question, followup_same_settings_on,
+        followup_settings, is_new_route_result, old_result_refusal, Refused,
+        FOLLOWUP_SAME_SETTINGS_ENV, OLD_RESULT_LINE,
     };
     use crate::artifact::InvestigationBundle;
     use crate::pi::{PiConfig, ENV_LOCK};
