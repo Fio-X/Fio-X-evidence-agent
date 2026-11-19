@@ -321,8 +321,9 @@ fn verify_that_ends_before_a_verdict_or_contradicts_its_exit_code_is_a_tool_erro
     }
 }
 
-/// The handshake of 2026-07-28: no `initialize`; each request carries its version in `_meta`. The message shapes here come from the
-/// spec text (basic/versioning, basic/transports/stdio) and have not been run against rmcp 3.8 yet.
+/// Follows MCP spec revision 2026-07-28 (the handshake-less one): no `initialize`, each request carries its version in `_meta`, and
+/// `server/discover` is the probe. The message shapes come from the spec text (basic/versioning, basic/transports/stdio) only: this test
+/// is UNVERIFIED against rmcp 3.8 until it has been run, and against any real host (Claude Code, Codex, Cursor) until one is tried.
 #[test]
 fn verify_also_works_without_the_initialize_handshake() {
     let (temp, id, _broken) = run_root();
