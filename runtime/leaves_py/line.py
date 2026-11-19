@@ -66,7 +66,7 @@ def _change_note(f):
     "lead0", "lead1" of the one_line finding; the ledger holds them only on a page whose finding is that series' rise or
     fall). Only where those three entries and the base period's entry are in the ledger, the last value prints as this
     series' end label does and the series starts at the base period (so the change is this series' own), the last value is
-    above (or below) the first by the direction's word, and the base period is a year (the words write 年 after it). The
+    above (or below) the first by the direction's word, and the base period is a year (the words write the year word after it). The
     page's comparison check (check_relations, data-cmp change) judges the fact: its two values, their periods and the
     direction word."""
     c, q = f.d.get("change"), f.d.get("q")
