@@ -32,6 +32,10 @@ mod commands {
 // runs them) and look up command groups in the CLI, so the example carries the real cli.rs (it uses nothing from the rest of the crate).
 #[path = "../src/cli.rs"]
 mod cli;
+// group_guard.rs checks the login credentials file against `crate::config::credentials_path()`, so the example carries the real config.rs too
+// (it needs only anyhow, std and group_guard::write_private_file, which are all here).
+#[path = "../src/config.rs"]
+mod config;
 use std::{fs, time::Instant};
 fn main() -> anyhow::Result<()> {
     let root = std::env::temp_dir().join(format!("news-perf-phases-{}", std::process::id()));
