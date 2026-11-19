@@ -3420,6 +3420,11 @@ fn recipe_request(
     if let (Some(p), Some(set)) = (page_in.as_mut(), set) {
         p["set"] = set;
     }
+    // a question that asks for the lowest (the knowledge group's reading of its words): a run fact a finding's case reads
+    // (requires $picks.asked_low), so the title starts from the place the question asks about
+    if let Some(p) = page_in.as_mut().filter(|_| catalogue.asks_lowest(question)) {
+        p["picks"]["asked_low"] = json!(true);
+    }
     // a page over blocks: every block's rows beside the main's; a block answers a quantity of the question's record
     // (answers_asked) and is headed by its table's reviewed Chinese name, printed marked with its name row as the map's key
     // is (below); a block with none of either is not this shape and the many-block page stays as it was

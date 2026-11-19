@@ -337,6 +337,15 @@ pub fn relation(question: &str) -> Rel {
     }
 }
 
+/// Whether the question asks for the lowest of its places (the lowest one or the last n), by its words: the focus of its
+/// relation (relation, focus) is Min or Bottom. A question that asks both ends (MaxMin), a change, or anything else: false.
+pub fn asks_lowest(question: &str) -> bool {
+    matches!(
+        focus(question, relation(question), None),
+        Focus::Min | Focus::Bottom(_)
+    )
+}
+
 /// What the sentence asserts, by the question's words, within the relation `rel`; `first_place` is the first place word,
 /// the one a deviation or a position is of.
 pub fn focus(question: &str, rel: Rel, first_place: Option<&str>) -> Focus {
@@ -793,6 +802,26 @@ mod tests {
             rels.iter().enumerate().all(|(i, r)| !rels[..i].contains(r)),
             "a relation once"
         );
+    }
+
+    /// A question asks for the lowest when its focus is the lowest one or the last n (sentences written for the test): not
+    /// when it asks both ends, the highest, or a change.
+    #[test]
+    fn a_question_asks_for_the_lowest_by_its_focus() {
+        for q in [
+            "2024 年欧盟哪个国家的失业率最低？",
+            "人均 GDP 排名倒数后五的国家是哪些？",
+        ] {
+            assert!(asks_lowest(q), "{q}");
+        }
+        for q in [
+            "2024 年欧盟哪个国家的失业率最高？",
+            "欧盟各国失业率谁最高谁最低？",
+            "2015 年到 2024 年哪国失业率降得最多？",
+            "东盟各国人均 GDP 排名",
+        ] {
+            assert!(!asks_lowest(q), "{q}");
+        }
     }
 
     /// The relation and focus of question shapes the dev set and the exam hold (not their texts).

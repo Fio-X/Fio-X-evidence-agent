@@ -152,6 +152,8 @@ pub enum Request<'a> {
     /// The ranking the Chinese question asks for in place of named places (the ten most populous economies), read by rule
     /// from its words (rank-phrases-zh.json); None when it asks for none.
     RankAsked { question: &'a str },
+    /// Whether the Chinese question asks for the lowest of its places (answer_plan::asks_lowest), read by rule from its words.
+    AsksLowest { question: &'a str },
     /// The whole class of question the new route cannot answer, read by rule from its words (scope-refusal-zh.json); None
     /// when no class takes it. `this_year` is the program's clock year (a later four-digit year is a forecast).
     ScopeRefused { question: &'a str, this_year: i32 },
@@ -298,6 +300,7 @@ pub enum Reply<'a> {
     Table(Option<TableMeta>),
     Places(Vec<Place>),
     RankAsked(Option<RankAsked>),
+    AsksLowest(bool),
     ScopeRefused(Option<crate::l5geo::ScopeRefusal>),
     SplitAsk(crate::answer_plan::SplitAsk),
     AnswerPlan(Result<crate::answer_plan::Plan, String>),
@@ -376,6 +379,9 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
             question,
         } => Reply::Places(catalogue.catalog.places(question)),
         Request::RankAsked { question } => Reply::RankAsked(crate::l5geo::rank_asked_zh(question)),
+        Request::AsksLowest { question } => {
+            Reply::AsksLowest(crate::answer_plan::asks_lowest(question))
+        }
         Request::ScopeRefused {
             question,
             this_year,

@@ -3151,6 +3151,11 @@ pub trait Catalogue: Sync {
     fn rank_asked(&self, _question_zh: &str) -> Option<RankAsked> {
         None
     }
+    /// Whether the Chinese question asks for the lowest of its places (the knowledge group's reading of its words, through
+    /// its door), a run fact a page's finding may read; false when this catalogue reads none.
+    fn asks_lowest(&self, _question_zh: &str) -> bool {
+        false
+    }
     /// The whole class of question the knowledge group refuses from its words before any search (scope-refusal-zh.json, user
     /// 11-08 item 1); None when no class takes it.
     fn scope_refused(
@@ -3719,6 +3724,7 @@ pub(crate) fn knowledge_call<'a>(
         Ok(Reply::AskedIds(ids)) => json!({"asked": ids}),
         Ok(Reply::Iso3 { iso3, missing }) => json!({"iso3": iso3, "missing": missing}),
         Ok(Reply::RankAsked(asked)) => json!({"rank_asked": asked}),
+        Ok(Reply::AsksLowest(low)) => json!({"asks_lowest": low}),
         Ok(Reply::ScopeRefused(refused)) => json!({"scope_refused": refused}),
         Ok(Reply::SplitAsk(ask)) => json!({"shape_ask": ask}),
         Ok(Reply::AnswerPlan(Ok(plan))) => json!({"plan": plan}),
@@ -4356,6 +4362,16 @@ impl Catalogue for GroupCatalogue {
         match self.call("rank_asked", json!({"question": question_zh}), request) {
             next_knowledge::Reply::RankAsked(asked) => asked,
             _ => unreachable!("the knowledge group answered rank_asked with another reply"),
+        }
+    }
+
+    fn asks_lowest(&self, question_zh: &str) -> bool {
+        let request = next_knowledge::Request::AsksLowest {
+            question: question_zh,
+        };
+        match self.call("asks_lowest", json!({"question": question_zh}), request) {
+            next_knowledge::Reply::AsksLowest(low) => low,
+            _ => unreachable!("the knowledge group answered asks_lowest with another reply"),
         }
     }
 

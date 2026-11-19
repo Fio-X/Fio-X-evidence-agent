@@ -1346,9 +1346,15 @@ fn finding_declared(d: &J, page_in: &J, reg: &J) -> Result<J, String> {
     let key = |sid: &str, code: &J| core::take_value(&refs, sid, code, rows);
     // the first case whose bound holds over its select's first or last code
     let mut case = None;
+    // a page the program narrowed: its set words (page input set) or the scoped flag
+    let narrowed = view.g("scoped").truthy() || view.g("set").truthy();
     for c in d.g("cases").arr() {
         // a case that reads a page input value only some pages have (a many-block page's focus) is passed over on the others
         if !c.g("requires").arr().iter().all(&held) {
+            continue;
+        }
+        // a case with its own words (said) names no set: it holds only on a page the program did not narrow
+        if c.has("said") && narrowed {
             continue;
         }
         // lower: the case holds only for a subject below its other (a focus that is not the leader); a subject that leads,
@@ -1538,8 +1544,21 @@ fn finding_declared(d: &J, page_in: &J, reg: &J) -> Result<J, String> {
             .find(|(f, _, _)| format!("{f:?}") == name)
             .map(|&(_, a, b)| (a, b))
     };
-    let Some((plain, scoped)) = of(&crate::shape_registry::DEK_FINDINGS) else {
-        return Err(format!("not this shape: no DEK_FINDINGS words for {name}"));
+    // a case's own words (said: its dek, its headline and the headline without a ratio, the registry's second-layer data, as
+    // its tokens are), in place of shape_registry's for its finding; a page it holds on is never narrowed, so one wording
+    let own = c.get("said");
+    let said_of = |k: &str| -> Result<(String, String), String> {
+        let w = own
+            .and_then(|s| s.g(k).s())
+            .ok_or_else(|| format!("finding: a case's said has no {k}"))?;
+        Ok((w.to_string(), w.to_string()))
+    };
+    let (plain, scoped) = match own {
+        Some(_) => said_of("dek")?,
+        None => match of(&crate::shape_registry::DEK_FINDINGS) {
+            Some((a, b)) => (a.to_string(), b.to_string()),
+            None => return Err(format!("not this shape: no DEK_FINDINGS words for {name}")),
+        },
     };
     // each token as written (never read as a template), its text the case's template over the codes
     let mut tokens: Vec<(String, String)> = c
@@ -1592,11 +1611,15 @@ fn finding_declared(d: &J, page_in: &J, reg: &J) -> Result<J, String> {
                 .fold(t.to_string(), |t, (k, v)| t.replace(k.as_str(), v)),
         )
     };
-    let mut said = J::obj_of(vec![("dek", worded(plain)), ("scoped", worded(scoped))]);
+    let mut said = J::obj_of(vec![("dek", worded(&plain)), ("scoped", worded(&scoped))]);
     if let Some(set) = set {
         said.set("set", J::Str(set));
     }
-    let headline = of(&crate::shape_registry::HEADLINES).filter(|_| {
+    let headline = match own {
+        Some(_) => Some(said_of("headline")?),
+        None => of(&crate::shape_registry::HEADLINES).map(|(a, b)| (a.to_string(), b.to_string())),
+    }
+    .filter(|_| {
         c.g("headline_needs_facts")
             .arr()
             .iter()
@@ -1609,10 +1632,13 @@ fn finding_declared(d: &J, page_in: &J, reg: &J) -> Result<J, String> {
         (true, Some(o)) => key(&st(c.g("other")), o)? > 0.0,
         (true, None) => false,
     };
+    // the same over the subject, when the subject is what the ratio divides by (the lowest, as many times as it the highest)
+    let by_subject = c.g("headline_needs_subject_above_0").truthy();
+    let ratio_holds = ratio_holds && (!by_subject || key(&sid, &subject)? > 0.0);
     // nor over a unit whose values do not divide (owner 11-13: life expectancy and the like get no "N 倍"): the knowledge
     // group's list of years, scores, base-year indices and rates of change
     let ratio_holds = ratio_holds
-        && !(c.g("headline_needs_other_above_0").truthy()
+        && !((c.g("headline_needs_other_above_0").truthy() || by_subject)
             && crate::next_ledger::ratio_free_unit(&st(view.g("shape").g("unit"))));
     let mut out = J::obj_of(vec![
         ("facts", facts),
@@ -1622,14 +1648,18 @@ fn finding_declared(d: &J, page_in: &J, reg: &J) -> Result<J, String> {
     ]);
     // with the ratio not holding, a level finding keeps a headline without it (LEVEL_PLAIN_HEADLINE)
     let headline = match (headline, ratio_holds) {
-        (Some(_), false) if name == "Level" => Some(crate::shape_registry::LEVEL_PLAIN_HEADLINE),
+        (Some(_), false) if own.is_some() => Some(said_of("headline_plain")?),
+        (Some(_), false) if name == "Level" => {
+            let (a, b) = crate::shape_registry::LEVEL_PLAIN_HEADLINE;
+            Some((a.to_string(), b.to_string()))
+        }
         (h, true) => h,
         (_, false) => None,
     };
     match headline {
         Some((plain, scoped)) => said.set(
             "headline",
-            J::obj_of(vec![("title", worded(plain)), ("scoped", worded(scoped))]),
+            J::obj_of(vec![("title", worded(&plain)), ("scoped", worded(&scoped))]),
         ),
         None if !ratio_holds => out.set(
             "fell_back",
@@ -5521,6 +5551,76 @@ mod tests {
             let level = said(lead);
             assert_eq!(level["subject"], "SGP", "{lead:?}");
             assert!(level["facts"].get("pos1").is_none(), "{lead:?}");
+        }
+    }
+
+    /// A question that asks for the lowest (picks.asked_low, the knowledge group's reading): the column and ranked bars
+    /// pages' finding starts from the lowest, its own words (the case's said) for the dek and the headline, so the dek never
+    /// calls the lowest the highest; the ratio is the highest over the lowest (the times fact), and with the lowest not above
+    /// 0, or a unit whose values do not divide, the headline keeps no ratio. A narrowed page, or a question that does not ask
+    /// for the lowest, gives the level finding from the highest as before.
+    #[test]
+    fn next_tree_gen_a_question_asking_the_lowest_starts_the_title_from_the_lowest() {
+        let row = |p: &str, v: &str| serde_json::json!({"src": format!("series:gdp/{p}:2025:OBS_VALUE"), "table": "gdp", "dims": {"country": p}, "time": "2025", "value": v});
+        let (reg, _) = core::registry_in_force();
+        for recipe in ["column", "ranked_bars"] {
+            let d = declares(
+                &reg,
+                FINDING,
+                &J::from_value(&serde_json::json!({"recipe": recipe})),
+            )
+            .unwrap()
+            .clone();
+            let pi = |low: bool, last: &str, unit: &str, set: bool| {
+                let rows = [row("SGP", "90"), row("MYS", "13"), row("KHM", last)];
+                let mut v = serde_json::json!({"recipe": recipe,
+                    "shape": {"main": "gdp", "place": "country", "year": "2025", "unit": unit, "fmt": "usd", "countries": ["KHM", "MYS", "SGP"]},
+                    "picks": {"rules": ["ranked"], "ranked": ["SGP", "MYS", "KHM"], "marks": [], "t0": "", "t1": ""},
+                    "rows": rows, "short": "美元",
+                    "fill": {"facts": ["drawn", "hi", "lo", "gap", "times"], "fmts": {"usd": {"dec": 0}}, "named": ["KHM", "MYS", "SGP"]}});
+                if low {
+                    v["picks"]["asked_low"] = serde_json::json!(true);
+                }
+                if set {
+                    v["set"] = serde_json::json!({"words": "所选{n}国中", "members": 3});
+                }
+                J::from_value(&v)
+            };
+            let said = |low, last, unit, set| {
+                finding_declared(&d, &pi(low, last, unit, set), &reg)
+                    .unwrap()
+                    .to_value()
+            };
+            let low = said(true, "2", "USD", false);
+            assert_eq!(low["subject"], "KHM", "{recipe}");
+            assert_eq!(
+                low["finding"]["dek"],
+                "{lead1.t}，{name.KHM}最低，为{lo}，比最高的{name.SGP}低{gap}",
+                "{recipe}"
+            );
+            assert_eq!(
+                low["finding"]["headline"]["title"],
+                "{name.KHM}最低，最高的{name.SGP}是它的{times}",
+                "{recipe}"
+            );
+            assert!(
+                !low["finding"]["dek"].as_str().unwrap().contains("最高，"),
+                "{recipe}: the lowest is never called the highest"
+            );
+            // the lowest not above 0, or a unit whose values do not divide: no ratio in the headline
+            for (last, unit) in [("-1", "USD"), ("2", "YR")] {
+                let plain = said(true, last, unit, false);
+                assert_eq!(plain["subject"], "KHM", "{recipe} {last} {unit}");
+                assert_eq!(
+                    plain["finding"]["headline"]["title"], "{name.KHM}最低",
+                    "{recipe} {last} {unit}"
+                );
+            }
+            // not asked for the lowest, or a narrowed page: the highest leads, as before
+            for (asked, set) in [(false, false), (true, true)] {
+                let high = said(asked, "2", "USD", set);
+                assert_eq!(high["subject"], "SGP", "{recipe} asked {asked} set {set}");
+            }
         }
     }
 
