@@ -4622,6 +4622,21 @@ fn leaf_request(
         .first()
         .and_then(|p| p.relation)
         .map(|r| format!("{r:?}"));
+    // a relation no recipe tried here answers (the table step may keep any of RELATIONS) narrows nothing: every recipe
+    // would pass it over and the page would stop after its data was read; the recipes are tried as with none kept
+    let kept = match kept {
+        Some(k)
+            if !recipes_tried(catalogue, (of_blocks, many))
+                .any(|r| r.relation.as_deref() == Some(k.as_str())) =>
+        {
+            missed.push((
+                "relation",
+                format!("the table step kept {k}, which no recipe answers: tried as kept none"),
+            ));
+            None
+        }
+        k => k,
+    };
     for recipe in recipes_tried(catalogue, (of_blocks, many)) {
         if let (Some(kept), Some(answers)) = (&kept, &recipe.relation) {
             if kept != answers {
@@ -25492,7 +25507,8 @@ for line in sys.stdin:
     /// The relation the table step kept for the main table picks among the recipes whose shape a ten-year table has: none
     /// kept or Change goes to the change page (its two ends), Ranking passes over it, which answers Change, to the column
     /// page of the last year; the change recipe declares Change, the column recipe Ranking. A one-year table kept as a change
-    /// has no two ends: no recipe answers Change for it, and the pick stops rather than drawing the year's ranking.
+    /// has no two ends: no recipe answers Change for it, and the pick stops rather than drawing the year's ranking. A relation
+    /// no recipe answers at all is tried as none kept.
     #[test]
     fn a_ten_year_table_kept_as_a_ranking_is_a_column_page_not_a_change_page() {
         assert_eq!(recipe("change").relation.as_deref(), Some("Change"));
@@ -25526,7 +25542,7 @@ for line in sys.stdin:
                 (&Default::default(), None),
                 (false, false),
             ) {
-                Ok((recipe, _, _)) => (recipe.name.clone(), String::new()),
+                Ok((recipe, _, passed)) => (recipe.name.clone(), passed.join("; ")),
                 Err((recipe, stage, why)) => (format!("{recipe}-{stage}"), why),
             }
         };
@@ -25553,6 +25569,21 @@ for line in sys.stdin:
             "Ranking: {recipe} {why}"
         );
         assert!(!recipe.starts_with("change"), "Ranking: {recipe} {why}");
+        // a relation no recipe answers (Map, Distribution) narrows nothing: tried as kept none, and said so
+        for kept in [Relation::Map, Relation::Distribution] {
+            let (recipe, why) = reached(Some(kept));
+            assert!(
+                recipe.starts_with("change") || why.contains("change: shadow/candidate_sheet"),
+                "{kept:?}: {recipe} {why}"
+            );
+            assert!(
+                why.contains(&format!(
+                    "relation: the table step kept {kept:?}, which no recipe answers"
+                )),
+                "{kept:?}: {why}"
+            );
+            assert!(!why.contains("not this relation"), "{kept:?}: {why}");
+        }
         // one year kept as a change: the change recipes are not its shape, the ranking ones not its relation
         let one_year = ten_years(&[
             ("SE", "2024", "66"),
