@@ -74,6 +74,25 @@ pub struct PiArgs {
     pub tool_profile: String,
 }
 
+impl PiArgs {
+    /// The command-line form of the settings a child `news investigate` takes over from this run: the model settings that were
+    /// given and the tool setting. The Pi executable and project approval belong to the old runtime and are not passed.
+    pub fn settings_args(&self) -> Vec<String> {
+        let mut args = vec!["--tool-profile".to_string(), self.tool_profile.clone()];
+        for (flag, value) in [
+            ("--provider", &self.provider),
+            ("--model", &self.model),
+            ("--thinking", &self.thinking),
+        ] {
+            if let Some(value) = value {
+                args.push(flag.to_string());
+                args.push(value.clone());
+            }
+        }
+        args
+    }
+}
+
 #[derive(Debug, Args)]
 pub struct DoctorArgs {
     #[command(flatten)]
@@ -126,6 +145,10 @@ pub struct InvestigateArgs {
     /// Print the generated newsroom prompt without starting the agent.
     #[arg(long, default_value_t = false)]
     pub dry_run: bool,
+
+    /// The folder of the run this one follows up, set by the parent that starts it for a follow-up; recorded as `parent` in story.json.
+    #[arg(long = "follow-up-of", value_name = "ID", hide = true)]
+    pub follow_up_of: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -467,5 +490,32 @@ mod group_table_tests {
                 Launch::Done(_) => panic!("the switch is off: nothing is printed here"),
             }
         }
+    }
+
+    #[test]
+    fn follow_up_of_is_read_by_investigate_and_left_out_of_its_help() {
+        let parsed = <Cli as clap::Parser>::try_parse_from([
+            "news",
+            "investigate",
+            "--follow-up-of",
+            "run-1",
+            "--",
+            "a question",
+        ])
+        .expect("investigate takes --follow-up-of");
+        match parsed.command {
+            Some(Commands::Investigate(args)) => {
+                assert_eq!(args.follow_up_of.as_deref(), Some("run-1"));
+                assert_eq!(args.topic, ["a question"]);
+            }
+            _ => panic!("not the investigate command"),
+        }
+        let mut command = <Cli as clap::CommandFactory>::command();
+        let help = command
+            .find_subcommand_mut("investigate")
+            .expect("investigate is a command")
+            .render_long_help()
+            .to_string();
+        assert!(!help.contains("follow-up-of"), "{help}");
     }
 }

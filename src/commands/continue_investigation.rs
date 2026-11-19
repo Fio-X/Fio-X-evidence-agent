@@ -6,7 +6,7 @@ use crate::pi::{run_prompt, PiConfig};
 use crate::prompt::PromptSpeed;
 use crate::{prompt, runtime};
 use anyhow::{bail, Context, Result};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{Instant, SystemTime};
 
 /// Opt-in (exactly `1`): a follow-up hands Pi the settings the first question
@@ -352,7 +352,98 @@ pub fn pre_split_refusal(artifact: &Path) -> Result<Option<&'static str>> {
     )
 }
 
+/// A follow-up the command refuses: the one line it prints. `news continue` exits with EXIT_OLD_RESULT after it; a conversation that
+/// follows up in its own process gets it as an error and stays where it is.
+#[derive(Debug)]
+pub struct Refused(pub &'static str);
+
+impl std::fmt::Display for Refused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.0)
+    }
+}
+
+impl std::error::Error for Refused {}
+
+/// The refusal for a result with no session of this runtime (`rust`: the Rust agent is the runtime): none when it is not.
+pub fn old_result_refusal(artifact: &Path, rust: bool) -> Option<Refused> {
+    (rust && !crate::session_store::SessionWriter::has_session(artifact))
+        .then_some(Refused(OLD_RESULT_LINE))
+}
+
+/// Whether the events of a run folder are the new route's: any record of a type that starts with `next_` (the old runtime never
+/// writes one). A missing or unreadable file is not.
+pub fn is_new_route_result(events: &Path) -> bool {
+    let Ok(text) = std::fs::read_to_string(events) else {
+        return false;
+    };
+    text.lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .any(|event| {
+            event["type"]
+                .as_str()
+                .is_some_and(|t| t.starts_with("next_"))
+        })
+}
+
+/// Whether a follow-up on this folder runs as a new question: the new route is on and the folder is a result of it.
+pub fn follows_as_new_question(artifact: &Path) -> bool {
+    crate::next_flow::next_enabled()
+        && InvestigationBundle::open(artifact)
+            .is_ok_and(|bundle| is_new_route_result(&bundle.events_path))
+}
+
+/// What a follow-up came to: asked of the same folder, or run as a new question in a folder of its own with the exit code of that run.
+pub enum Followed {
+    InPlace,
+    NewRun { dir: PathBuf, code: i32 },
+}
+
+/// `news continue`: a refusal prints its line and exits with EXIT_OLD_RESULT, a new run that ended with a code ends this command with it.
 pub async fn run(args: ContinueArgs) -> Result<()> {
+    match follow_up(args, &[]).await {
+        Ok(Followed::NewRun { code, .. }) if code != 0 => std::process::exit(code),
+        Ok(_) => Ok(()),
+        Err(error) => match error.downcast_ref::<Refused>() {
+            Some(refused) => {
+                eprintln!("{refused}");
+                std::process::exit(EXIT_OLD_RESULT);
+            }
+            None => Err(error),
+        },
+    }
+}
+
+/// A follow-up, as a call: a result of the new route (NEWSROOM_NEXT=1, its events say so) is followed up as a new question, which a
+/// child `news investigate` answers in a new folder (its own command identity, `parent` in its story.json, `data` seeded into it); any
+/// other result is asked of its own folder as before. A refusal is an error of the type Refused, never an exit.
+pub async fn follow_up(args: ContinueArgs, data: &[PathBuf]) -> Result<Followed> {
+    if follows_as_new_question(&args.artifact) {
+        let bundle = InvestigationBundle::open(&args.artifact)?;
+        let question = crate::commands::investigate::follow_up_question(
+            &bundle.topic()?,
+            &args.message.join(" "),
+        );
+        let root = bundle
+            .dir
+            .parent()
+            .context("the result folder has no folder around it")?;
+        let settings = args.pi.settings_args();
+        let (dir, code) =
+            crate::commands::investigate::run_as_child(&crate::commands::investigate::ChildRun {
+                question: &question,
+                out: root,
+                settings: &settings,
+                data,
+                parent: Some(&bundle.id),
+            })
+            .await?;
+        return Ok(Followed::NewRun { dir, code });
+    }
+    run_in_place(args).await.map(|()| Followed::InPlace)
+}
+
+async fn run_in_place(args: ContinueArgs) -> Result<()> {
     let run_started = Instant::now();
     if !crate::step_lines::enabled() {
         eprintln!(
@@ -362,16 +453,13 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
     }
     let bundle = InvestigationBundle::open(&args.artifact)?;
     // The Rust agent continues only a session of its own: a folder without one gets one line before anything starts (1012zi step 3).
-    if crate::agent_loop::agent_rust_enabled()
-        && !crate::session_store::SessionWriter::has_session(&bundle.dir)
+    if let Some(refused) = old_result_refusal(&bundle.dir, crate::agent_loop::agent_rust_enabled())
     {
-        eprintln!("{OLD_RESULT_LINE}");
-        std::process::exit(EXIT_OLD_RESULT);
+        return Err(refused.into());
     }
     // Before the first model request and before anything is written to the run folder.
     if let Some(line) = pre_split_refusal(&bundle.dir)? {
-        eprintln!("{line}");
-        std::process::exit(EXIT_OLD_RESULT);
+        return Err(Refused(line).into());
     }
     let topic = bundle.topic()?;
     let message = args.message.join(" ");
@@ -684,9 +772,47 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_result_is_the_new_routes_when_an_event_type_starts_with_next() {
+        let dir = tempfile::tempdir().unwrap();
+        let events = dir.path().join("events.jsonl");
+        assert!(!is_new_route_result(&events));
+        std::fs::write(&events, "{\"type\":\"tool_call\"}\nnot json\n").unwrap();
+        assert!(!is_new_route_result(&events));
+        std::fs::write(
+            &events,
+            "{\"type\":\"tool_call\"}\n{\"type\":\"next_answer_plan\"}\n",
+        )
+        .unwrap();
+        assert!(is_new_route_result(&events));
+    }
+
+    #[test]
+    fn a_result_without_a_session_is_refused_only_when_the_rust_agent_runs() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(old_result_refusal(dir.path(), false).is_none());
+        let refused = old_result_refusal(dir.path(), true).expect("no session, rust agent");
+        assert_eq!(refused.0, OLD_RESULT_LINE);
+    }
+
+    #[test]
+    fn a_refusal_is_an_error_that_keeps_its_line_and_can_be_told_apart() {
+        let error: anyhow::Error = Refused(OLD_RESULT_LINE).into();
+        assert_eq!(error.to_string(), OLD_RESULT_LINE);
+        assert!(error.downcast_ref::<Refused>().is_some());
+        assert!(anyhow::anyhow!("other").downcast_ref::<Refused>().is_none());
+    }
+
+    #[test]
+    fn a_folder_with_no_events_does_not_follow_as_a_new_question() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!follows_as_new_question(dir.path()));
+    }
+
     use super::{
-        effective_tool_profile, follow_up_text, followup_same_settings_on, followup_settings,
-        FOLLOWUP_SAME_SETTINGS_ENV,
+        effective_tool_profile, follow_up_text, follows_as_new_question, followup_same_settings_on,
+        followup_settings, is_new_route_result, old_result_refusal, Refused,
+        FOLLOWUP_SAME_SETTINGS_ENV, OLD_RESULT_LINE,
     };
     use crate::artifact::InvestigationBundle;
     use crate::pi::{PiConfig, ENV_LOCK};

@@ -5,7 +5,7 @@ use crate::commands::verify;
 use crate::compose_answer;
 use crate::pi::{self, run_prompt, PiConfig, PiRunResult};
 use crate::{output, prompt, runtime};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde_json::Value;
 use std::collections::HashSet;
 use std::fs;
@@ -465,6 +465,75 @@ pub async fn run(args: InvestigateArgs) -> Result<()> {
     Ok(())
 }
 
+/// What a child `news investigate` is started with (a follow-up delegated to a run of its own, design-1119-continue way B): the
+/// child has the command identity of `news investigate`, so the group rules and the page checks are that command's own.
+pub struct ChildRun<'a> {
+    pub question: &'a str,
+    pub out: &'a Path,
+    /// The model settings of the parent as `news investigate` arguments (the caller builds them from its own settings).
+    pub settings: &'a [String],
+    pub data: &'a [PathBuf],
+    /// The folder it follows up, if any: its name goes to the child's story.json as `parent` (`--follow-up-of`).
+    pub parent: Option<&'a str>,
+}
+
+/// The question of a follow-up on an earlier run: its topic with the follow-up beside it.
+pub fn follow_up_question(topic: &str, message: &str) -> String {
+    format!("{topic} {message}")
+}
+
+/// The command of a child run: this binary, `investigate`, the folder root and the model settings of the parent, the data files and
+/// the question; the follow-up link as its own argument, and no command identity carried over from the parent (the child sets its own).
+pub fn child_command(exe: &Path, run: &ChildRun<'_>) -> std::process::Command {
+    let mut command = std::process::Command::new(exe);
+    command.arg("investigate").arg("--out").arg(run.out);
+    command.args(run.settings);
+    for file in run.data {
+        command.arg("--data").arg(file);
+    }
+    if let Some(parent) = run.parent {
+        command.arg("--follow-up-of").arg(parent);
+    }
+    command.arg("--").arg(run.question);
+    command.env_remove(crate::agent_serve::COMMAND_ENV);
+    command
+}
+
+/// The folders directly under `root`, by name.
+fn folder_set(root: &Path) -> HashSet<String> {
+    fs::read_dir(root)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|entry| entry.path().is_dir())
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .collect()
+}
+
+/// The folder a child run added: of the names that were not there before, the last (a run folder starts with its timestamp).
+pub fn added_folder(before: &HashSet<String>, after: &HashSet<String>) -> Option<String> {
+    after.difference(before).max().cloned()
+}
+
+/// Run a child `news investigate` on this terminal, wait for it, and give the folder it made with its exit code. A code other than 0
+/// is the child's own (a run that ended unverified); the folder is given all the same, and no folder is an error.
+pub async fn run_as_child(run: &ChildRun<'_>) -> Result<(PathBuf, i32)> {
+    let exe =
+        std::env::current_exe().context("cannot find this program to start the follow-up run")?;
+    let before = folder_set(run.out);
+    let status = tokio::process::Command::from(child_command(&exe, run))
+        .status()
+        .await
+        .context("failed to start the follow-up run")?;
+    let name = added_folder(&before, &folder_set(run.out)).with_context(|| {
+        format!(
+            "the follow-up run ended ({status}) and made no folder under {}",
+            run.out.display()
+        )
+    })?;
+    Ok((run.out.join(name), status.code().unwrap_or(1)))
+}
+
 /// Run a persistent investigation and return its directory so interactive
 /// callers can continue the same Pi session without asking the user to copy a
 /// path from stderr.
@@ -505,6 +574,7 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
         );
     }
     let mut bundle = InvestigationBundle::create(&output_root, &topic)?;
+    bundle.parent = args.follow_up_of.clone();
     let mut local_data = Vec::new();
     for source in &args.data {
         local_data.push(bundle.import_data(source)?);
@@ -1537,5 +1607,111 @@ mod completion_tests {
         assert!(!is_transient_completion_provider_error(&anyhow::anyhow!(
             "visual delivery incomplete"
         )));
+    }
+}
+
+#[cfg(test)]
+mod child_tests {
+    use super::*;
+    use std::ffi::OsStr;
+
+    fn settings() -> Vec<String> {
+        [
+            "--tool-profile",
+            "visual",
+            "--provider",
+            "p",
+            "--model",
+            "m",
+        ]
+        .map(String::from)
+        .to_vec()
+    }
+
+    fn args_of(command: &std::process::Command) -> Vec<String> {
+        command
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    #[test]
+    fn the_follow_up_question_holds_the_topic_and_the_message() {
+        let question = follow_up_question("EU unemployment", "and for youth");
+        assert!(question.starts_with("EU unemployment"));
+        assert!(question.ends_with("and for youth"));
+    }
+
+    #[test]
+    fn the_child_is_investigate_with_the_settings_the_data_and_the_question_last() {
+        let data = [PathBuf::from("a.csv"), PathBuf::from("b.csv")];
+        let run = ChildRun {
+            question: "q text",
+            out: Path::new("root"),
+            settings: &settings(),
+            data: &data,
+            parent: Some("run-1"),
+        };
+        let command = child_command(Path::new("/bin/news"), &run);
+        let args = args_of(&command);
+        assert_eq!(command.get_program(), OsStr::new("/bin/news"));
+        assert_eq!(&args[..3], ["investigate", "--out", "root"]);
+        assert!(args.windows(2).any(|w| w == ["--tool-profile", "visual"]));
+        assert!(args.windows(2).any(|w| w == ["--provider", "p"]));
+        assert!(args.windows(2).any(|w| w == ["--model", "m"]));
+        assert!(!args.iter().any(|a| a == "--thinking"));
+        assert_eq!(args.iter().filter(|a| *a == "--data").count(), 2);
+        assert_eq!(&args[args.len() - 2..], ["--", "q text"]);
+        assert!(args.windows(2).any(|w| w == ["--follow-up-of", "run-1"]));
+    }
+
+    #[test]
+    fn the_child_drops_the_command_identity_and_carries_the_parent_only_when_there_is_one() {
+        let env = |command: &std::process::Command, key: &str| {
+            command
+                .get_envs()
+                .find(|(k, _)| *k == OsStr::new(key))
+                .map(|(_, v)| v.map(|v| v.to_string_lossy().into_owned()))
+        };
+        let mut run = ChildRun {
+            question: "q",
+            out: Path::new("root"),
+            settings: &settings(),
+            data: &[],
+            parent: Some("run-1"),
+        };
+        let with_parent = child_command(Path::new("news"), &run);
+        assert_eq!(
+            env(&with_parent, crate::agent_serve::COMMAND_ENV),
+            Some(None)
+        );
+        let args = args_of(&with_parent);
+        assert!(args.windows(2).any(|w| w == ["--follow-up-of", "run-1"]));
+        assert!(
+            args.iter().position(|a| a == "--follow-up-of") < args.iter().position(|a| a == "--")
+        );
+        run.parent = None;
+        let first = child_command(Path::new("news"), &run);
+        assert!(!args_of(&first).iter().any(|a| a == "--follow-up-of"));
+    }
+
+    #[test]
+    fn the_added_folder_is_the_latest_new_name_or_none() {
+        let set = |names: &[&str]| names.iter().map(|n| n.to_string()).collect::<HashSet<_>>();
+        let before = set(&["run-0101"]);
+        assert_eq!(
+            added_folder(&before, &set(&["run-0101", "run-0102", "run-0103"])),
+            Some("run-0103".to_string())
+        );
+        assert_eq!(added_folder(&before, &before), None);
+    }
+
+    #[test]
+    fn the_folder_set_lists_folders_only() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join("run-a")).unwrap();
+        fs::write(dir.path().join("note.txt"), "x").unwrap();
+        assert_eq!(folder_set(dir.path()), HashSet::from(["run-a".to_string()]));
+        assert!(folder_set(&dir.path().join("missing")).is_empty());
     }
 }
