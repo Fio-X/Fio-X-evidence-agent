@@ -218,6 +218,9 @@ pub enum Ask {
         /// One per listed table: the series its held-series probe found (HeldCheck); None when it was not probed or the
         /// probe gave no answer, and then nothing is checked until a fetch of it comes back with no row (no_rows_refused).
         held: Vec<Option<HeldCheck>>,
+        /// Whether the relation is due (a one-block page: its recipe is picked by it, design-1119-kept-none (c)): the schema
+        /// lists it as required and the request words say so; the check never refuses an answer without it (table_relation).
+        relation_due: bool,
     },
     /// Claims of one or more tables, numbered on across the tables (`groups` holds each table's count, each at least
     /// CLAIMS_MIN): from each table CLAIMS_MIN to min(CLAIMS_MAX, its count); with more than one candidate relation, also one of them.
@@ -761,14 +764,16 @@ const RELATION_KEY: &str = "relation";
 const RELATIONS: [Relation; 6] = crate::shape_registry::RELATIONS;
 
 /// The relation key's rule as the table step's schema words it: the numbered relations, Composition only with a table
-/// whose card says what it splits into (next_params::parts_line).
-fn relation_rule() -> String {
+/// whose card says what it splits into (next_params::parts_line); `due` on a one-block page, where it says required.
+fn relation_rule(due: bool) -> String {
     let named: Vec<String> = RELATIONS
         .iter()
         .enumerate()
         .map(|(i, r)| format!("{} {r:?}", i + 1))
         .collect();
-    format!("optional: the number of the data relation the page should draw, {}; Composition only with a table that has a 'splits into' line", named.join(", "))
+    // a one-block page's relation is due: the page's recipe is picked by it (owner 11-19 23:5x, design-1119-kept-none)
+    let need = if due { "required" } else { "optional" };
+    format!("{need}: the number of the data relation the page should draw, {}; Composition only with a table that has a 'splits into' line", named.join(", "))
 }
 
 /// The relation number an answer gives, as given (any other value is none); never a refusal.
@@ -783,8 +788,30 @@ fn relation_of(map: &Map<String, Value>) -> Option<usize> {
 /// (next_params::grouped_dim), else dropped; any other is kept. The pick, its tables and params are never changed, nothing
 /// is refused or stopped, and no round is added.
 fn table_relation(relation: Option<usize>, table: &str) -> Option<Relation> {
-    let r = *RELATIONS.get(relation?.checked_sub(1)?)?;
+    shape_keeps(*RELATIONS.get(relation?.checked_sub(1)?)?, table)
+}
+
+/// A relation as the main table's shape keeps it: Composition only for a table whose registry has composition groups.
+fn shape_keeps(r: Relation, table: &str) -> Option<Relation> {
     (r != Relation::Composition || next_params::grouped_dim(table).is_some()).then_some(r)
+}
+
+/// The relation of a plan of one block (the program's reading of the question, answer_plan::RECIPE_RELATIONS), when `ask`
+/// (the table step's answer gave none on a one-block page), kept or dropped by the main table's shape as table_relation
+/// keeps an answer's; none for a plan of other than one block, a relation no recipe answers, or when not asked.
+fn plan_relation(
+    plan: Option<&crate::answer_plan::Plan>,
+    ask: bool,
+    table: &str,
+) -> Option<Relation> {
+    let [block] = plan.filter(|_| ask)?.blocks.as_slice() else {
+        return None;
+    };
+    let r = crate::answer_plan::RECIPE_RELATIONS
+        .iter()
+        .find(|(rel, _)| *rel == block.rel)
+        .map(|(_, r)| *r)?;
+    shape_keeps(r, table)
 }
 
 impl Ask {
@@ -809,7 +836,11 @@ impl Ask {
                     "description": format!("English words (letters, digits, spaces, hyphens, + and .: CO2, aged 65+), at most {SEARCH_MAX_CHARS} characters; used only to search the catalogue")}}})
             }
             Ask::Table {
-                count, most, items, ..
+                count,
+                most,
+                items,
+                relation_due,
+                ..
             } => {
                 let mut schema = json!({"type": "object", "additionalProperties": false, "required": ["step", "pick"],
                 "properties": {"step": step, "pick": {"type": "array", "minItems": 1, "maxItems": most, "uniqueItems": true,
@@ -821,7 +852,12 @@ impl Ask {
                         "properties": items.iter().flatten().map(|(k, count)| (k.clone(), json!({"type": "integer", "enum": (1..=*count).collect::<Vec<_>>()}))).collect::<Map<_, _>>(),
                         "description": "item -> the number of the option that fits the question, for every item of each picked table and no other, except an item its breakdown says to leave out"});
                 }
-                schema["properties"]["relation"] = json!({"type": "integer", "enum": (1..=RELATIONS.len()).collect::<Vec<_>>(), "description": relation_rule()});
+                schema["properties"]["relation"] = json!({"type": "integer", "enum": (1..=RELATIONS.len()).collect::<Vec<_>>(), "description": relation_rule(*relation_due)});
+                if *relation_due {
+                    if let Some(required) = schema["required"].as_array_mut() {
+                        required.push(json!(RELATION_KEY));
+                    }
+                }
                 schema
             }
             Ask::Claims { groups, relations } => {
@@ -1092,6 +1128,7 @@ impl Ask {
                 items,
                 splits,
                 held,
+                ..
             } => {
                 let picks = numbers(&map["pick"]).unwrap_or_default();
                 let unique: BTreeSet<_> = picks.iter().collect();
@@ -4732,8 +4769,10 @@ pub const YEARS_BACK_EVENT: &str = "next_years_back";
 /// The event of a table pick asked again after its fetch came back with no row (prepare_claims): the dataset, its table
 /// number, the answer, what the tool said and the refusal the model got back.
 pub const REPICK_EVENT: &str = "next_table_repick";
-/// The event of a table pick that gave its optional relation (prepare_claims, table_relation): the main table, the number
-/// given and the relation kept by the table's shape (none when dropped). An answer with none records no such event.
+/// The event of a table pick that gave its relation (prepare_claims, table_relation): the main table, the number given and
+/// the relation kept by the table's shape (none when dropped). An answer with none on a one-block page records the
+/// relation of the question's one-block plan when there is one (plan_relation; "relation" null, "from" "plan"); any other
+/// answer with none records no such event.
 pub const TABLE_RELATION_EVENT: &str = "next_table_relation";
 /// The event of the companion stage (D8): the main table, each candidate the catalogue offered with its seconds and what
 /// came of it (fetched, or why it was dropped), the companions kept with their role, and the stage's seconds.
@@ -6156,10 +6195,12 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
     } else {
         format!("Pick the table, or up to {most} tables, that answer the question; 0 if none fits.")
     };
+    // a one-block page: its recipe is picked by the relation, which is asked as due
+    let one_block = blocks.is_none() && shared_blocks.is_empty();
     let prompt = format!(
         "Question: {question}\nTables:\n{}\n{pick_rule}{params_rule}\nrelation ({})",
         listed.join("\n"),
-        relation_rule()
+        relation_rule(one_block)
     );
     let mut ask = Ask::Table {
         count: offers.len(),
@@ -6174,6 +6215,8 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
             })
             .collect(),
         splits,
+        // a one-block page: the relation is asked as due (the schema requires it; the check still never refuses it)
+        relation_due: one_block,
         held: drafts
             .iter()
             .zip(probed.iter_mut())
@@ -6220,11 +6263,21 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
         // relation); an answer with none records nothing
         // and kept on the main table's Prepared, where the page step passes over a recipe that answers another relation
         let kept_relation = table_relation(relation, ids[0]);
+        // a one-block page whose answer gave none: the relation the program read the question's one block into (its plan,
+        // design-1119-kept-none (c) 2), kept or dropped by the main table's shape as an answer's is, and recorded with where
+        // it came from; never the charts step's (a change asked would be drawn as its ranking)
+        let from_plan = plan_relation(plan.as_ref(), relation.is_none() && one_block, ids[0]);
+        let kept_relation = kept_relation.or(from_plan);
         if relation.is_some() {
             let kept = kept_relation.map(|r| format!("{r:?}"));
             recorder.program_event(
                 TABLE_RELATION_EVENT,
                 json!({"table": ids[0], "relation": relation, "kept": kept}),
+            )?;
+        } else if let Some(r) = from_plan {
+            recorder.program_event(
+                TABLE_RELATION_EVENT,
+                json!({"table": ids[0], "relation": null, "kept": format!("{r:?}"), "from": "plan"}),
             )?;
         }
         let chosen: Vec<(&String, PrepareStep)> = if steps.is_empty() {
@@ -6804,6 +6857,87 @@ async fn composition_inputs<R: ToolRunner + Send + ?Sized>(
 mod tests {
     use super::*;
 
+    /// A one-block page's table step asks for the relation as due (design-1119-kept-none (c)): the schema requires it and
+    /// says so, the check still takes an answer without it; on a page of blocks it stays optional.
+    #[test]
+    fn a_one_block_page_asks_the_relation_as_due_and_never_refuses_without_it() {
+        let ask = |due| Ask::Table {
+            count: 2,
+            most: 1,
+            items: vec![],
+            splits: vec![vec![], vec![]],
+            held: vec![None, None],
+            relation_due: due,
+        };
+        assert_eq!(
+            ask(true).schema()["required"],
+            json!(["step", "pick", "relation"])
+        );
+        assert_eq!(ask(false).schema()["required"], json!(["step", "pick"]));
+        for (due, said) in [(true, "required: "), (false, "optional: ")] {
+            let words = ask(due).schema()["properties"]["relation"]["description"].clone();
+            assert!(words.as_str().unwrap().starts_with(said), "{due}: {words}");
+            assert_eq!(
+                ask(due).check(&json!({"step": "table", "pick": [1]})),
+                Ok(Choice::Table {
+                    relation: None,
+                    picks: vec![1],
+                    params: BTreeMap::new()
+                }),
+                "{due}"
+            );
+        }
+    }
+
+    /// The relation of a one-block plan stands in for an answer that gave none (sm6's 11-18 Opus run: the shape step's one
+    /// block, a ranking, and a table step with no relation), kept by the table's shape as an answer's is; a plan of two
+    /// blocks, no plan, or an answer that gave one: none from the plan.
+    #[test]
+    fn a_one_block_plan_s_relation_stands_in_when_the_table_step_gave_none() {
+        let block = |rel| crate::answer_plan::Block {
+            rel,
+            focus: crate::answer_plan::Focus::Max,
+            places: vec!["SG".into()],
+            place_words: vec!["东盟".into()],
+            years: None,
+            quantity: vec![("gdp_pc".into(), "人均GDP".into())],
+            sentence: String::new(),
+        };
+        let plan = |rels: &[crate::answer_plan::Rel]| crate::answer_plan::Plan {
+            blocks: rels.iter().map(|r| block(*r)).collect(),
+            partial: true,
+        };
+        use crate::answer_plan::Rel;
+        let wb = "NY.GDP.PCAP.CD@2";
+        assert_eq!(
+            plan_relation(Some(&plan(&[Rel::Ranking])), true, wb),
+            Some(Relation::Ranking)
+        );
+        assert_eq!(
+            plan_relation(Some(&plan(&[Rel::Change])), true, wb),
+            Some(Relation::Change)
+        );
+        assert_eq!(plan_relation(Some(&plan(&[Rel::Ranking])), false, wb), None);
+        assert_eq!(
+            plan_relation(Some(&plan(&[Rel::Ranking, Rel::Ranking])), true, wb),
+            None
+        );
+        assert_eq!(plan_relation(None, true, wb), None);
+        // a total or a line past a threshold has no recipe relation; Composition only with a table that splits
+        assert_eq!(
+            plan_relation(Some(&plan(&[Rel::Magnitude])), true, wb),
+            None
+        );
+        assert_eq!(
+            plan_relation(Some(&plan(&[Rel::Composition])), true, wb),
+            None
+        );
+        assert_eq!(
+            plan_relation(Some(&plan(&[Rel::Composition])), true, "nrg_bal_s"),
+            Some(Relation::Composition)
+        );
+    }
+
     /// Only the program says a part cannot be answered (user 11-05 10:2x): the word list catches a model's wording, and
     /// leaves a chart's reading words (a map's 灰色是没有数据) and the drafted fields alone.
     #[test]
@@ -7175,6 +7309,7 @@ mod tests {
                 vec![("t2.years".into(), 2), ("t2.breakdown".into(), 3)],
             ],
             splits: vec![Vec::new(), Vec::new()],
+            relation_due: false,
             held: Vec::new(),
         }
     }
@@ -7196,6 +7331,7 @@ mod tests {
                 years: vec![1],
                 member: true,
             }]],
+            relation_due: false,
             held: Vec::new(),
         };
         let pair = ask.check(&json!({"step": "table", "pick": [1], "params": {"t1.years": 1, "t1.breakdown": 2, "t1.nrg_bal": 1}})).unwrap_err();
@@ -7265,6 +7401,7 @@ mod tests {
                     member: true,
                 },
             ]],
+            relation_due: false,
             held: Vec::new(),
         };
         let given = ask.check(&json!({"step": "table", "pick": [1], "params": {"t1.breakdown": 4, "t1.nrg_bal": 2}})).unwrap_err();
@@ -7318,6 +7455,7 @@ mod tests {
                 years,
                 member: true,
             }]],
+            relation_due: false,
             held: Vec::new(),
         };
         let split = json!({"step": "table", "pick": [1], "params": {"t1.breakdown": 2}});
@@ -7370,6 +7508,7 @@ mod tests {
                 years: Vec::new(),
                 member: false,
             }]],
+            relation_due: false,
             held: Vec::new(),
         };
         let given = ask.check(&json!({"step": "table", "pick": [1], "params": {"t1.years": 1, "t1.breakdown": 2}})).unwrap_err();
@@ -7500,6 +7639,7 @@ mod tests {
             most: 1,
             items: vec![],
             splits: vec![],
+            relation_due: false,
             held: Vec::new(),
         };
         assert_eq!(
@@ -7534,6 +7674,7 @@ mod tests {
             most: 2,
             items: vec![],
             splits: vec![],
+            relation_due: false,
             held: Vec::new(),
         };
         assert_eq!(
@@ -7660,6 +7801,7 @@ mod tests {
             most: 1,
             items: vec![],
             splits: vec![],
+            relation_due: false,
             held: Vec::new(),
         };
         assert!(ask.check(&json!({"step": "claims", "pick": [1]})).is_err());
@@ -8618,6 +8760,7 @@ mod tests {
             most: 1,
             items: vec![vec![("t1.years".into(), 2)], Vec::new()],
             splits: vec![],
+            relation_due: false,
             held: Vec::new(),
         };
         let params = json!({"step": "table", "pick": [1], "params": "{\"t1.years\": 2}"});
@@ -8635,6 +8778,7 @@ mod tests {
             most: 1,
             items: Vec::new(),
             splits: vec![],
+            relation_due: false,
             held: Vec::new(),
         }
         .decode(&json!({"step": "table", "pick": "[1]"}))
@@ -8748,6 +8892,7 @@ mod tests {
                         most: 1,
                         items: vec![],
                         splits: vec![],
+                        relation_due: false,
                         held: Vec::new(),
                     },
                     "pick the table",
@@ -8963,6 +9108,7 @@ mod tests {
                     most: 1,
                     items: vec![],
                     splits: vec![],
+                    relation_due: false,
                     held: Vec::new(),
                 },
                 "pick",
@@ -9094,6 +9240,7 @@ mod tests {
                     most: 1,
                     items: vec![],
                     splits: vec![],
+                    relation_due: false,
                     held: Vec::new(),
                 },
                 "pick",
@@ -9118,6 +9265,7 @@ mod tests {
                         most: 1,
                         items: vec![],
                         splits: vec![],
+                        relation_due: false,
                         held: Vec::new(),
                     },
                     "pick",
@@ -9168,6 +9316,7 @@ mod tests {
                         most: 1,
                         items: vec![],
                         splits: vec![],
+                        relation_due: false,
                         held: Vec::new(),
                     },
                     "pick",
@@ -9226,6 +9375,7 @@ mod tests {
                     most: 1,
                     items: vec![],
                     splits: vec![],
+                    relation_due: false,
                     held: Vec::new(),
                 },
                 prompt,
@@ -9254,6 +9404,7 @@ mod tests {
                     most: 1,
                     items: vec![],
                     splits: vec![],
+                    relation_due: false,
                     held: Vec::new(),
                 },
                 "pick",
@@ -9285,6 +9436,7 @@ mod tests {
             most: 1,
             items: vec![],
             splits: vec![],
+            relation_due: false,
             held: Vec::new(),
         };
         let cancel = AtomicBool::new(false);
@@ -9350,6 +9502,7 @@ mod tests {
                     most: 1,
                     items: vec![],
                     splits: vec![],
+                    relation_due: false,
                     held: Vec::new(),
                 },
                 "pick",
@@ -9917,6 +10070,7 @@ mod tests {
             most: 1,
             items: Vec::new(),
             splits: Vec::new(),
+            relation_due: false,
             held: Vec::new(),
         };
         assert!(ask.schema()["properties"]["relation"].is_object());
@@ -10012,6 +10166,7 @@ mod tests {
                     most: 1,
                     items,
                     splits: Vec::new(),
+                    relation_due: false,
                     held: Vec::new(),
                 };
                 let plain = ask.check(args).map_err(|e| e.problem);
