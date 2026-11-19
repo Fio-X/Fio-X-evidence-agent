@@ -2477,7 +2477,7 @@ fn page_input(
             "suffix": next_pack::unit_number_suffix(&shape.unit).map(suffix), "countries": shape.countries},
         "picks": {"rules": recipe.picks, "ranked": picks.ranked, "marks": picks.marks, "t0": picks.t0, "t1": picks.t1},
         "rows": main, "name_kind": scheme, "sum_rows": sums, "outside": shape.outside, "top": next_params::NARROW_TOP,
-        "short": next_pack::unit_short(&shape.unit), "composition": shape.composition.as_ref().map(|c| json!({"dim": c.dim, "total": c.total, "groups": c.groups,
+        "short": next_pack::unit_short(&shape.unit), "line": next_pack::unit_line_form(&shape.unit), "composition": shape.composition.as_ref().map(|c| json!({"dim": c.dim, "total": c.total, "groups": c.groups,
             "first_group": c.groups.first().map(|g| &g.0), "first_codes": c.groups.first().map(|g| &g.1)}))});
     if let Some(scale) = shape.scale {
         p["shape"]["scale"] = json!(scale);

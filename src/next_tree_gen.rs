@@ -757,7 +757,7 @@ fn pairs_declared(layer: &str, d: &J, page_in: &J, reg: &J) -> Result<J, String>
         ),
         (
             format!("name:{}{unit}", st(d.g("unit").g("fixed_prefix"))),
-            st(page_in.g("short")),
+            st(unit_named(page_in)),
         ),
     ];
     let q = |filter: J| {
@@ -1253,6 +1253,16 @@ pub(crate) fn extent_of(layer: &str, name: &str, r: &J, page_in: &J, reg: &J) ->
 
 /// The declaration shape of a page's finding (finding_declared).
 const FINDING: &str = "finding";
+
+/// The text a unit's fixed name row (name:unit_short_zh:<code>) prints: the unit table's registered line form (page input
+/// "line", next_pack::unit_line_form: a rate of change with its comparison basis) the check holds it to, else
+/// its short form (a page input of a test that gives no line). The short form stays the number's (change_fmt, suffix).
+fn unit_named(page_in: &J) -> &J {
+    match page_in.g("line") {
+        l @ J::Str(_) => l,
+        _ => page_in.g("short"),
+    }
+}
 
 /// The page's finding (node finding, declared for the page's recipe): the first case whose `if` holds over the core's
 /// recomputed selects (a rank's key at its first or last code above or below a bound) is the page's, and no other is tried;
@@ -2999,8 +3009,7 @@ fn fixed_name(v: &J, page_in: &J) -> Result<Option<(J, J)>, String> {
     }
     if let Some(p) = v.get("fixed_prefix") {
         let src = format!("name:{}{}", st(p), st(page_in.g("shape").g("unit")));
-        let short = page_in
-            .g("short")
+        let short = unit_named(page_in)
             .s()
             .ok_or_else(|| format!("{src}: the page input has no short unit"))?
             .to_string();
@@ -4675,6 +4684,19 @@ mod tests {
             ]
         );
         assert_eq!(out.g("unit_drawn"), &J::Bool(true));
+        // a rate of change's unit row prints its registered line form (the comparison basis, unit_line_form), never the
+        // bare short form the check refuses (sm5: CLV_PCH_PRE, "%" against "%（较上期）"); the change's format stays the short's
+        let mut rate = pi.clone();
+        rate.set("line", J::str("%（较上期）"));
+        let out = declared_j("line", &rate, &reg).unwrap();
+        let unit_row: Vec<String> = out
+            .g("fixed")
+            .arr()
+            .iter()
+            .filter(|f| st(f.at(0)) == "name:unit_short_zh:PC")
+            .map(|f| st(f.at(1)))
+            .collect();
+        assert_eq!(unit_row, ["%（较上期）"]);
         // a page input with no short unit refuses rather than print an empty unit
         let mut bare = pi.clone();
         bare.remove("short");
