@@ -10569,6 +10569,7 @@ mod tests {
                 "ring=ring",
                 "flow=sankey",
                 "ranked_bars=bars",
+                "change_bars=bars",
                 "block_ranks=rank_lines",
                 "composition_steps=waterfall",
                 "one_line=line"
@@ -10587,7 +10588,7 @@ mod tests {
             .trim_end_matches(')')
             .split(", ")
             .collect();
-        assert_eq!(pairs.len(), 8, "{line}");
+        assert_eq!(pairs.len(), 9, "{line}");
         for pair in pairs {
             let (r, n) = pair.split_once('=').unwrap();
             assert_eq!(
