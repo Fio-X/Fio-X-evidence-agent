@@ -152,14 +152,30 @@ pub async fn run() -> Result<()> {
             continue;
         }
 
-        import_follow_up_data(&artifact, &input)?;
+        // A result of the new route is followed up as a new question in a folder of its own (the data in the line goes into that
+        // run); any other result gets the data in its own folder first. A refusal is an error here, so the prompt stays.
+        let data = discover_data_files(&input);
+        let as_new_question = continue_investigation::follows_as_new_question(&artifact);
+        if !as_new_question {
+            if let Err(error) = import_follow_up_data(&artifact, &input) {
+                eprintln!("[interactive] follow-up failed: {error:#}");
+                continue;
+            }
+        }
         let args = ContinueArgs {
             pi: default_pi_args(Force::Auto),
             artifact: artifact.clone(),
             message: vec![input],
         };
-        if let Err(error) = continue_investigation::run(args).await {
-            eprintln!("[interactive] follow-up failed: {error:#}");
+        match continue_investigation::follow_up(args, &data).await {
+            Ok(continue_investigation::Followed::NewRun { dir, code }) => {
+                if code != 0 {
+                    eprintln!("[interactive] follow-up ended with exit code {code}");
+                }
+                artifact = dir;
+            }
+            Ok(continue_investigation::Followed::InPlace) => {}
+            Err(error) => eprintln!("[interactive] follow-up failed: {error:#}"),
         }
     }
 
@@ -194,6 +210,23 @@ fn force_notice(force: Force) -> String {
 }
 
 async fn start_investigation(topic: &str, force: Force) -> Result<PathBuf> {
+    if crate::next_flow::next_enabled() {
+        let root = artifact_root();
+        let data = discover_data_files(topic);
+        let pi = default_pi_args(force);
+        let (dir, code) = investigate::run_as_child(&investigate::ChildRun {
+            question: topic,
+            out: &root,
+            pi: &pi,
+            data: &data,
+            parent: None,
+        })
+        .await?;
+        if code != 0 {
+            eprintln!("[interactive] the run ended with exit code {code}");
+        }
+        return Ok(dir);
+    }
     investigate::run_with_artifact(InvestigateArgs {
         pi: default_pi_args(force),
         topic: vec![topic.to_owned()],

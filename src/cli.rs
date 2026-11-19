@@ -74,6 +74,25 @@ pub struct PiArgs {
     pub tool_profile: String,
 }
 
+impl PiArgs {
+    /// The command-line form of the settings a child `news investigate` takes over from this run: the model settings that were
+    /// given and the tool setting. The Pi executable and project approval belong to the old runtime and are not passed.
+    pub fn settings_args(&self) -> Vec<String> {
+        let mut args = vec!["--tool-profile".to_string(), self.tool_profile.clone()];
+        for (flag, value) in [
+            ("--provider", &self.provider),
+            ("--model", &self.model),
+            ("--thinking", &self.thinking),
+        ] {
+            if let Some(value) = value {
+                args.push(flag.to_string());
+                args.push(value.clone());
+            }
+        }
+        args
+    }
+}
+
 #[derive(Debug, Args)]
 pub struct DoctorArgs {
     #[command(flatten)]

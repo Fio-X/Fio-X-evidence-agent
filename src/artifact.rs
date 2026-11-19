@@ -33,6 +33,10 @@ pub struct InvestigationBundle {
     pub source_note_warnings: Vec<String>,
 }
 
+/// The folder a child run follows up (set by the parent that starts `news investigate` for a follow-up); the run's story.json
+/// records its name as `parent`.
+pub const FOLLOW_UP_OF_ENV: &str = "NEWSROOM_FOLLOW_UP_OF";
+
 #[derive(Debug, Serialize)]
 struct Manifest<'a> {
     schema_version: &'static str,
@@ -51,6 +55,8 @@ struct Manifest<'a> {
     recipe: Option<RecipeRecord>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     source_note_warnings: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    parent: Option<String>,
 }
 
 /// The recipe the program appended to the first prompt: its name and the sha256 of the text sent.
@@ -643,6 +649,10 @@ impl InvestigationBundle {
             },
             delivery,
             source_note_warnings: self.all_source_note_warnings(),
+            parent: std::env::var(FOLLOW_UP_OF_ENV)
+                .ok()
+                .filter(|name| !name.is_empty())
+                .or_else(|| existing_parent(&self.manifest_path)),
             recipe: self
                 .recipe
                 .clone()
@@ -934,6 +944,12 @@ fn read_user_messages(path: &Path) -> Option<usize> {
         .get("userMessages")?
         .as_u64()
         .map(|value| value as usize)
+}
+
+/// The `parent` an earlier write of this manifest recorded, kept when a later write (a follow-up round) rewrites the file.
+fn existing_parent(manifest_path: &Path) -> Option<String> {
+    let manifest: Value = serde_json::from_str(&fs::read_to_string(manifest_path).ok()?).ok()?;
+    manifest.get("parent")?.as_str().map(str::to_owned)
 }
 
 fn existing_created_at(path: &Path) -> Option<String> {
@@ -1584,6 +1600,17 @@ fn switches_off_in(get: impl Fn(&str) -> Option<String>) -> Vec<&'static str> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_manifests_parent_is_read_back_and_absent_means_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("story.json");
+        assert_eq!(existing_parent(&path), None);
+        std::fs::write(&path, r#"{"topic":"t"}"#).unwrap();
+        assert_eq!(existing_parent(&path), None);
+        std::fs::write(&path, r#"{"topic":"t","parent":"run-1"}"#).unwrap();
+        assert_eq!(existing_parent(&path), Some("run-1".to_string()));
+    }
+
     #[test]
     fn switches_turned_off_names_only_the_exact_zero() {
         // pure: the lookup is injected, so no environment variable is touched
