@@ -2104,6 +2104,7 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
             "tree::with_code",
             "tree::fact_value",
             "tree_gen::plain_holding",
+            "tree_gen::unit_named",
             "tree_gen::no_fact",
             "tree_gen::no_word",
             "tree_gen::codes_in",
