@@ -6051,7 +6051,7 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
             .as_ref()
             .and_then(|f| ranking.asked.iter().find(|a| &a.id == f));
         let table = holds
-            .and_then(|a| offers.iter().find(|o| family_holds(a, &o.id)))
+            .and_then(|a| shared_table(a, &offers, |o| o.id.as_str()))
             .or(offers.first())
             .cloned();
         if let Some(table) = table {
@@ -6752,6 +6752,21 @@ fn shared_blocks(
     } else {
         Vec::new()
     }
+}
+
+/// The table a plan whose blocks share one quantity (由总到分) reads, of `items` (the offers, best first; `id` their table):
+/// the first the family holds whose registry splits it into parts (next_params::grouped_dim: the blocks draw a whole's parts
+/// and their flows), else the first the family holds; None when it holds none. q3's power mix (11-17) took nrg_ind_pehnf,
+/// a prefix match of nrg_ind_peh offered above nrg_bal_peh, and had no parts to draw.
+fn shared_table<'a, T>(
+    a: &crate::l5geo::Asked,
+    items: &'a [T],
+    id: impl Fn(&T) -> &str,
+) -> Option<&'a T> {
+    let mut held = items.iter().filter(|o| family_holds(a, id(o)));
+    let first = held.clone().next();
+    held.find(|o| next_params::grouped_dim(id(o)).is_some())
+        .or(first)
 }
 
 /// Whether table `id` is one of the family's registered tables (Asked::tables), by id only, as block_tables reads it.
@@ -10743,6 +10758,36 @@ mod tests {
             Vec::new()
         );
         assert_eq!(shared_blocks(None, false), Vec::new());
+    }
+
+    /// A shared table (由总到分) is the first offer of the family that splits into parts, else its first offer: q3's power mix
+    /// takes nrg_bal_peh over nrg_ind_pehnf (offered above it, held by nrg_ind_peh's prefix, no parts); an energy balance
+    /// keeps its first offer; a family whose offers have no parts keeps its first.
+    #[test]
+    fn a_shared_table_is_the_family_s_first_offer_that_splits_into_parts() {
+        let asked = |tables: &[&str]| crate::l5geo::Asked {
+            id: "f".into(),
+            zh: String::new(),
+            tables: tables.iter().map(|t| t.to_string()).collect(),
+            offered: Vec::new(),
+        };
+        let power = asked(&["nrg_bal_peh", "nrg_ind_peh", "nrg_cb_pem", "EG.ELC."]);
+        let offers = ["nrg_ind_pehnf", "nrg_cb_pem", "nrg_bal_c", "nrg_bal_peh"];
+        assert!(
+            next_params::grouped_dim("nrg_bal_peh").is_some()
+                && next_params::grouped_dim("nrg_ind_pehnf").is_none()
+        );
+        assert_eq!(shared_table(&power, &offers, |o| *o), Some(&"nrg_bal_peh"));
+        assert_eq!(
+            shared_table(&power, &offers[..2], |o| *o),
+            Some(&"nrg_ind_pehnf"),
+            "no parts: the first held"
+        );
+        assert_eq!(
+            shared_table(&asked(&["nrg_bal_c"]), &offers, |o| *o),
+            Some(&"nrg_bal_c")
+        );
+        assert_eq!(shared_table(&asked(&["sdg_07"]), &offers, |o| *o), None);
     }
 
     /// Each block of a 名次对照 plan gets the first offered table that holds its quantity, in block order, None for one no
