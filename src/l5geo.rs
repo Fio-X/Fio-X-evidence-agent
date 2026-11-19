@@ -7197,7 +7197,7 @@ mod tests {
     }
 
     /// The registered table notes on the real catalogue: q2's stand-in search words reach nrg_bal_s in the first five only
-    /// with the notes, and every NOTE_LOCKED row gets the same first five with and without them. Each note's table is
+    /// with the notes, q3's "by source" words nrg_bal_peh, and every NOTE_LOCKED row gets the same first five with and without them. Each note's table is
     /// listed with the dimensions the note names, and its words hold no place name.
     /// L5GEO_DIR=<registry>/l5geo/catalog cargo test l5geo::tests::table_notes_on_the_real_catalogue -- --include-ignored --nocapture
     #[test]
@@ -7254,6 +7254,16 @@ mod tests {
         println!("q2 first five without {before:?}, with {after:?}");
         assert!(!before.iter().any(|id| id == "nrg_bal_s"), "{before:?}");
         assert!(after.iter().any(|id| id == "nrg_bal_s"), "{after:?}");
+        // q3's stand-ins that searched the power mix "by source" (10 of 69 stored runs, 11-20) were never offered the
+        // table that splits it into fuels, whose title says "by type of fuel"; with its note they are
+        let (zh, words) = (
+            "欧盟各国发电结构",
+            "electricity generation by source EU countries",
+        );
+        let (before, after) = (five(&without, zh, words), five(&with, zh, words));
+        println!("q3 by source: first five without {before:?}, with {after:?}");
+        assert!(!before.iter().any(|id| id == "nrg_bal_peh"), "{before:?}");
+        assert!(after.iter().any(|id| id == "nrg_bal_peh"), "{after:?}");
         let mut bad = Vec::new();
         for (q, zh, words) in NOTE_LOCKED {
             let (before, after) = (five(&without, zh, words), five(&with, zh, words));

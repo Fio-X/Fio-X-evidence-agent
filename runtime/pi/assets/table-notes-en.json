@@ -11,6 +11,11 @@
    "id": "nrg_bal_c",
    "dims": ["siec", "nrg_bal"],
    "words": "final energy consumption by sector and fuel, energy supply by source, energy flow from fuel to sector"
+  },
+  {
+   "id": "nrg_bal_peh",
+   "dims": ["siec", "nrg_bal"],
+   "words": "electricity generation by source, electricity production by source, power generation mix"
   }
  ]
 }
