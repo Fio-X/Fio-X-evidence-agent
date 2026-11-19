@@ -42,6 +42,16 @@ jobs:
           ln -sf "$chromium_path" "$RUNNER_TEMP/newsroom-bin/chromium"
           "$RUNNER_TEMP/newsroom-bin/chromium" --version
           echo "$RUNNER_TEMP/newsroom-bin" >> "$GITHUB_PATH"
+      - name: Let Chrome start its own sandbox
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Ubuntu 23.10 and later block unprivileged user namespaces through AppArmor, so Chrome's sandbox cannot start
+          # and Chrome aborts. The page bake keeps Chrome's sandbox on (it adds --no-sandbox only inside an OS sandbox), so
+          # lift the restriction on this throwaway runner, then show that a sandboxed headless Chrome lays out a page.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          page="$("$RUNNER_TEMP/newsroom-bin/chromium" --headless=new --disable-gpu --user-data-dir="$RUNNER_TEMP/chrome-sandbox-check" --dump-dom 'data:text/html,<p>sandboxed</p>')"
+          grep -q '<p>sandboxed</p>' <<<"$page"
       - name: System tools for the extraction and type-check sections
         run: |
           sudo apt-get update
