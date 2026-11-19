@@ -7215,11 +7215,13 @@ fn cells_of(code: &J, dr: &J, sel: &[(String, &J)], got: &Got, rows: &[J]) -> Re
 /// The conditions a `first_holding` field's candidates are held by, all recomputed here from the core's own facts,
 /// formats, selects and the page input (registered: next_ledger CHECK_REGISTRY tree.first_holding). A candidate names
 /// only these; any other condition, or another argument, is refused.
-pub const CONDITIONS: [(&str, &[&str]); 10] = [
+pub const CONDITIONS: [(&str, &[&str]); 11] = [
     // the sign of a fact the core computes: pos, neg or zero (a NaN reads as zero, as a partial_cmp with 0 does)
     ("sign", &["fact", "is"]),
     // the fact as the format prints it differs from 0 as the format prints it (a tie prints as no gap)
     ("prints_nonzero", &["fact", "fmt"]),
+    // the fact as the format prints it is above `than` (times that print 1.0 state no gap: e8, g10, vc2 11-16)
+    ("prints_above", &["fact", "fmt", "than"]),
     // one line's width: its parts (a `{name}`, a literal, a `{"word": key}` of the word table) joined in order, each
     // character above U+2E7F `size` px, any other 0.58 `size`, summed left to right, at most `max` px
     ("width_at_most", &["text", "size", "max"]),
@@ -7329,6 +7331,29 @@ fn condition_holds(cond: &J, h: &Holding) -> Result<bool, String> {
                 x.num().ok_or_else(|| format!("format {fmt}: scale"))
             })?;
             Ok(py_fixed(v * scale, dec) != py_fixed(0.0 * scale, dec))
+        }
+        "prints_above" => {
+            let v = (h.facts)(&key("fact"))?;
+            let fmt = st(cond.g("fmt"));
+            let fm = h
+                .fmts
+                .get(&fmt)
+                .ok_or_else(|| format!("condition prints_above: no format {fmt}"))?;
+            let dec = fm
+                .g("dec")
+                .num()
+                .ok_or_else(|| format!("format {fmt}: no dec"))? as usize;
+            let scale = fm.get("scale").map_or(Ok(1.0), |x| {
+                x.num().ok_or_else(|| format!("format {fmt}: scale"))
+            })?;
+            let than = cond
+                .g("than")
+                .num()
+                .ok_or_else(|| "condition prints_above: than is no number".to_string())?;
+            let printed: f64 = py_fixed(v * scale, dec)
+                .parse()
+                .map_err(|_| format!("condition prints_above: {v} prints as no number"))?;
+            Ok(printed > than)
         }
         "width_at_most" => {
             let mut line = String::new();
@@ -13354,6 +13379,8 @@ mod tests {
                 "chg.NA" => Ok(f64::NAN),
                 "tie" => Ok(0.004),
                 "gap" => Ok(0.006),
+                "near" => Ok(1.04),
+                "far" => Ok(1.06),
                 k => Err(format!("'{k}'")),
             }
         };
@@ -13364,7 +13391,7 @@ mod tests {
             _ => None,
         };
         let fmts = parse(
-            r#"{"pp": {"scale": 1, "dec": 2, "suffix": "x"}, "pct": {"scale": 100, "dec": 0}}"#,
+            r#"{"pp": {"scale": 1, "dec": 2, "suffix": "x"}, "pct": {"scale": 100, "dec": 0}, "times": {"scale": 1, "dec": 1}}"#,
         )
         .unwrap();
         let mut got = Got::new();
@@ -13439,6 +13466,18 @@ mod tests {
         assert!(run(&tie("gap", "none"), "SE", "瑞典")
             .unwrap_err()
             .contains("no format none"));
+        // times that print 1.0 are not above 1: 1.04 prints 1.0, 1.06 prints 1.1
+        let above = |fact: &str, than: &str| {
+            format!(
+                r#"[{{"when": [{{"if": "prints_above", "fact": "{fact}", "fmt": "times", "than": {than}}}]}}, {{"when": []}}]"#
+            )
+        };
+        assert_eq!(run(&above("near", "1"), "SE", "瑞典"), Ok(1));
+        assert_eq!(run(&above("far", "1"), "SE", "瑞典"), Ok(0));
+        assert_eq!(run(&above("far", "1.1"), "SE", "瑞典"), Ok(1));
+        assert!(run(&above("far", "\"x\""), "SE", "瑞典")
+            .unwrap_err()
+            .contains("than is no number"));
         // a neighbour: the ranked select's length
         let count = |n: u32| {
             format!(
@@ -13634,6 +13673,7 @@ mod tests {
             [
                 "sign",
                 "prints_nonzero",
+                "prints_above",
                 "width_at_most",
                 "count_at_least",
                 "unit_adds_up",

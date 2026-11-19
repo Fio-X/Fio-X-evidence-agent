@@ -1273,6 +1273,17 @@ fn unit_named(page_in: &J) -> &J {
 /// headline in shape_registry's words (DEK_FINDINGS, HEADLINES) with each token the case's template. Every input but the
 /// rows is the page's own fill: `fill` {facts: keys, fmts, named: codes, composition: {bars}}, which the flow gives when it
 /// asks and the draw recheck reads from the finished fill. {facts, reads, finding, subject}; a page with none: no finding.
+/// The decimals the times of a finding print at (node-bindings formats.times.dec, pinned by a test).
+const TIMES_DEC: i32 = 1;
+
+/// Whether two values' times (the larger over the smaller) print as 1.0 at TIMES_DEC decimals or below: no gap to state.
+/// False when the smaller is not above 0 (no times at all, which the ratio's own guards refuse).
+fn prints_no_gap(a: f64, b: f64) -> bool {
+    let (big, small) = (a.max(b), a.min(b));
+    let at = 10f64.powi(TIMES_DEC);
+    small > 0.0 && (big / small * at).round() / at <= 1.0
+}
+
 fn finding_declared(d: &J, page_in: &J, reg: &J) -> Result<J, String> {
     // no finding, and why (`fell_back`: the page's title falls back to the text step's label, which the run records)
     let none = |why: &str| {
@@ -1650,6 +1661,18 @@ fn finding_declared(d: &J, page_in: &J, reg: &J) -> Result<J, String> {
     let ratio_holds = ratio_holds
         && !((c.g("headline_needs_other_above_0").truthy() || by_subject)
             && crate::next_ledger::ratio_free_unit(&st(view.g("shape").g("unit"))));
+    // nor where the times print as 1.0 at their format's decimals: "是最低者韩国的1.0倍" (e8, n45, 11-16) states no gap; the
+    // larger of the subject and the other over the smaller, as the highest's times and the lowest's alike divide
+    let needs_times = c
+        .g("headline_needs_facts")
+        .arr()
+        .iter()
+        .any(|k| st(k) == "times");
+    let ratio_holds = ratio_holds
+        && match (&other, needs_times) {
+            (Some(o), true) => !prints_no_gap(key(&sid, &subject)?, key(&st(c.g("other")), o)?),
+            _ => true,
+        };
     let mut out = J::obj_of(vec![
         ("facts", facts),
         ("reads", J::Arr(reads)),
@@ -5643,6 +5666,101 @@ mod tests {
                 let high = said(asked, "2", "USD", set);
                 assert_eq!(high["subject"], "SGP", "{recipe} asked {asked} set {set}");
             }
+        }
+    }
+
+    /// A level headline whose times print as 1.0 (e8, n45: "是最低者韩国的1.0倍") says the finding without them, from the
+    /// highest and from the lowest, in two data shapes (dollars, percentages), plain and narrowed; times that print above
+    /// 1.0 stay. The decimals are the registry's (formats.times.dec).
+    #[test]
+    fn next_tree_gen_times_that_print_one_state_no_gap() {
+        assert!(prints_no_gap(90.0, 88.0) && prints_no_gap(88.0, 90.0) && prints_no_gap(5.0, 5.0));
+        assert!(
+            !prints_no_gap(90.0, 85.0) && !prints_no_gap(90.0, 0.0) && !prints_no_gap(1.0, -1.0)
+        );
+        let bindings = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("runtime/page_tree/node-bindings.json"),
+        )
+        .unwrap();
+        let mut decs = Vec::new();
+        fn walk(v: &serde_json::Value, decs: &mut Vec<i64>) {
+            match v {
+                serde_json::Value::Object(m) => {
+                    if let Some(t) = m.get("formats").and_then(|f| f.get("times")) {
+                        decs.push(t["dec"].as_i64().unwrap_or(-1));
+                    }
+                    m.values().for_each(|x| walk(x, decs));
+                }
+                serde_json::Value::Array(a) => a.iter().for_each(|x| walk(x, decs)),
+                _ => {}
+            }
+        }
+        walk(&serde_json::from_str(&bindings).unwrap(), &mut decs);
+        assert!(
+            !decs.is_empty() && decs.iter().all(|d| *d == TIMES_DEC as i64),
+            "{decs:?}"
+        );
+        let (reg, _) = core::registry_in_force();
+        for (unit, fmt, vals) in [
+            ("USD", "usd", ["90", "89", "88", "85"]),
+            ("PC", "pc", ["50.4", "50.2", "50", "45"]),
+        ] {
+            let row = |p: &str, v: &str| serde_json::json!({"src": format!("series:t/{p}:2025:OBS_VALUE"), "table": "t", "dims": {"country": p}, "time": "2025", "value": v});
+            let d = declares(
+                &reg,
+                FINDING,
+                &J::from_value(&serde_json::json!({"recipe": "column"})),
+            )
+            .unwrap()
+            .clone();
+            let said = |low: bool, last: &str, set: bool| {
+                let mut v = serde_json::json!({"recipe": "column",
+                    "shape": {"main": "t", "place": "country", "year": "2025", "unit": unit, "fmt": fmt, "countries": ["KHM", "MYS", "SGP"]},
+                    "picks": {"rules": ["ranked"], "ranked": ["SGP", "MYS", "KHM"], "marks": [], "t0": "", "t1": ""},
+                    "rows": [row("SGP", vals[0]), row("MYS", vals[1]), row("KHM", last)], "short": "x",
+                    "fill": {"facts": ["drawn", "hi", "lo", "gap", "times", "next_times"], "fmts": {fmt: {"dec": 1}}, "named": ["KHM", "MYS", "SGP"]}});
+                if low {
+                    v["picks"]["asked_low"] = serde_json::json!(true);
+                }
+                if set {
+                    v["set"] = serde_json::json!({"words": "所选{n}国中", "members": 3});
+                    v["scoped"] = serde_json::json!(true);
+                }
+                finding_declared(&d, &J::from_value(&v), &reg)
+                    .unwrap()
+                    .to_value()
+            };
+            let title = |v: &serde_json::Value| {
+                v["finding"]["headline"]["title"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string()
+            };
+            // 90 over 88 prints 1.0: the plain headline, from the highest and from the lowest
+            assert_eq!(
+                title(&said(false, vals[2], false)),
+                "{name.SGP}最高",
+                "{unit}"
+            );
+            assert_eq!(
+                title(&said(true, vals[2], false)),
+                "{name.KHM}最低",
+                "{unit}"
+            );
+            // 90 over 85 prints 1.1: the times stay
+            assert!(
+                title(&said(false, vals[3], false)).contains("{times}"),
+                "{unit}"
+            );
+            assert!(
+                title(&said(true, vals[3], false)).contains("{times}"),
+                "{unit}"
+            );
+            // a narrowed page compares the first with the second: 90 over 89 prints 1.0, no times on either line
+            let narrowed = said(false, vals[3], true);
+            let h = &narrowed["finding"]["headline"];
+            assert!(!format!("{h}").contains("times"), "{unit}: {h}");
         }
     }
 

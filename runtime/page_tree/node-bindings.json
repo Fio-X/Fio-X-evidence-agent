@@ -1184,8 +1184,8 @@
        {"when": [], "text": [{"word": "column.note.hi"}], "value_text": "fact:gap"}
       ],
       "lo": [
-       {"when": [{"if": "page_is", "path": "scoped"}, {"if": "sign", "fact": "lo", "is": "pos"}], "text": [{"word": "column.note.lo.scoped"}], "value_text": "fact:times"},
-       {"when": [{"if": "sign", "fact": "lo", "is": "pos"}], "text": [{"word": "column.note.lo"}], "value_text": "fact:times"},
+       {"when": [{"if": "page_is", "path": "scoped"}, {"if": "sign", "fact": "lo", "is": "pos"}, {"if": "prints_above", "fact": "times", "fmt": "times", "than": 1}], "text": [{"word": "column.note.lo.scoped"}], "value_text": "fact:times"},
+       {"when": [{"if": "sign", "fact": "lo", "is": "pos"}, {"if": "prints_above", "fact": "times", "fmt": "times", "than": 1}], "text": [{"word": "column.note.lo"}], "value_text": "fact:times"},
        {"when": [{"if": "page_is", "path": "scoped"}], "text": [{"word": "column.note.lo_gap.scoped"}], "value_text": "fact:gap"},
        {"when": [], "text": [{"word": "column.note.lo_gap"}], "value_text": "fact:gap"}
       ]
