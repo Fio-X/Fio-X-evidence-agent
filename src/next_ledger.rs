@@ -566,6 +566,144 @@ const RELATIONS: [(&str, &[&str]); 3] = [
     ("gt", &["column.note.vs_next"]),
 ];
 
+/// The change a note states of one series between two of its periods (data-cmp="change", design-1119-notes-relations 2.2,
+/// sm2's one line), and the word-table keys whose words state it by its direction: kept apart from RELATIONS, whose words
+/// an h1 may not hold bare (a title like 人口增长率 holds 增长 and states no change).
+const CHANGE: &str = "change";
+const CHANGE_WORDS: [(&str, &[&str]); 2] =
+    [("up", &["line.note.up"]), ("down", &["line.note.down"])];
+
+/// The words of a change's direction ("up" or "down"): each of its word-table phrases as the words between its slots
+/// ({base}, {v}: printed sources, left out of the text the check reads), non-empty, in their order.
+fn change_words(dir: &str) -> Vec<Vec<String>> {
+    let table = word_table();
+    CHANGE_WORDS
+        .iter()
+        .filter(|(d, _)| *d == dir)
+        .flat_map(|(_, keys)| keys.iter())
+        .filter_map(|k| table[*k].as_str())
+        .map(|w| {
+            let mut parts = Vec::new();
+            let mut rest = w;
+            while let Some(i) = rest.find('{') {
+                parts.push(rest[..i].trim().to_string());
+                rest = rest[i..].find('}').map_or("", |j| &rest[i + j + 1..]);
+            }
+            parts.push(rest.trim().to_string());
+            parts.retain(|p| !p.is_empty());
+            parts
+        })
+        .filter(|parts| !parts.is_empty())
+        .collect()
+}
+
+/// Whether `said` holds every word of `parts` in their order.
+fn says_in_order(said: &str, parts: &[String]) -> bool {
+    let mut at = 0;
+    parts.iter().all(|p| {
+        said[at..]
+            .find(p.as_str())
+            .map(|i| at += i + p.len())
+            .is_some()
+    })
+}
+
+/// change_holds: an element with data-cmp="change" states the change of one series between two periods, from the
+/// request's fact definitions alone: data-a is a fact of op minus or change whose two operands read one series (op last at
+/// one period, or op value at its time: the same table, filter and format) at two different periods. Its computed value
+/// must be above 0: with the first operand the later period the words say it went up (up words, never down words); with
+/// it the earlier, down (a fall written as the earlier less the later, printed positive; a change is a share of its base,
+/// so only up, over the earlier). The element prints data-a and the earlier period (period:<table>:<period>), the base it
+/// is said from. One line per finding.
+fn change_holds(
+    shown: &str,
+    body: &str,
+    a: Option<&str>,
+    spec: &Spec,
+    facts: &[Fact],
+) -> Vec<String> {
+    let def = |k: &str| spec.facts.iter().find(|(key, _)| key == k).map(|(_, q)| q);
+    let seen = printed(body);
+    let Some(a) = a.filter(|a| seen.iter().any(|p| p == a)) else {
+        return vec![format!(
+            "{shown:?}: data-cmp \"change\" with no data-a printed in it"
+        )];
+    };
+    let Some(key) = fact_key(a, spec) else {
+        return vec![format!("{shown:?}: {a} is no defined fact")];
+    };
+    // one operand: its series (table, filter, format) and the period it reads
+    let read = |k: &Value| -> Option<(Value, String)> {
+        let q = def(k.as_str()?)?;
+        let at = match q["op"].as_str()? {
+            "last" if q["from"] == q["to"] => q["from"].as_str()?,
+            "value" => q["time"].as_str()?,
+            _ => return None,
+        };
+        let series = Value::Array(vec![
+            q["table"].clone(),
+            q["filter"].clone(),
+            q["fmt"].clone(),
+        ]);
+        Some((series, at.to_string()))
+    };
+    let Some(q) = def(key).filter(|q| q["op"] == "minus" || q["op"] == "change") else {
+        return vec![format!(
+            "{shown:?}: {key} is not a change (op minus or change)"
+        )];
+    };
+    let (Some((sx, px)), Some((sy, py))) = (read(&q["a"]), read(&q["b"])) else {
+        return vec![format!(
+            "{shown:?}: {key} is not one series read at two periods"
+        )];
+    };
+    if sx != sy || px == py {
+        return vec![format!(
+            "{shown:?}: {key} is not one series read at two periods"
+        )];
+    }
+    let Some(v) = facts.iter().find(|f| f.key == key).map(|f| f.v) else {
+        return vec![format!("{shown:?}: {key} has no computed value")];
+    };
+    let mut off = Vec::new();
+    let up = px > py;
+    if v <= 0.0 || (q["op"] == "change" && !up) {
+        off.push(format!(
+            "{shown:?}: {key} is not a change above 0 over its earlier period"
+        ));
+    }
+    let table = sx[0].as_str().unwrap_or_default();
+    let base = if up { &py } else { &px };
+    if !seen.iter().any(|p| *p == format!("period:{table}:{base}")) {
+        off.push(format!(
+            "{shown:?}: it does not print the period {base} it changes from"
+        ));
+    }
+    // the series it is of: a code of the series' filter printed as a name (a number under another series' name is off)
+    let codes: Vec<&str> = sx[1].as_object().map_or(Vec::new(), |f| {
+        f.values().filter_map(Value::as_str).collect()
+    });
+    if !seen
+        .iter()
+        .any(|p| p.starts_with("name:") && codes.iter().any(|c| p.rsplit(':').next() == Some(*c)))
+    {
+        off.push(format!(
+            "{shown:?}: it prints no name of the series {key} reads"
+        ));
+    }
+    let said = text_outside(body, "data-src");
+    let (dir, other) = if up { ("up", "down") } else { ("down", "up") };
+    if !change_words(dir).iter().any(|w| says_in_order(&said, w)) {
+        off.push(format!("{shown:?}: its words state no {dir} change"));
+    }
+    if change_words(other).iter().any(|w| says_in_order(&said, w)) {
+        off.push(format!(
+            "{shown:?}: its words state a change that went {other}, not {dir}"
+        ));
+    }
+    off
+}
+
 /// The leaf's word table, read here as data (include_str), so the check and the leaf hold the same words.
 pub(crate) fn word_table() -> &'static Value {
     static WORDS: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
@@ -848,6 +986,103 @@ fn share_split<'a>(key: &str, spec: &'a Spec) -> Option<(String, Vec<(&'a str, S
     (found.len() == 1 && !found[0].1.is_empty()).then(|| found.remove(0))
 }
 
+/// The prefix of a part's code in a comparison set (share_parts): `parts:<dimension>:<its codes, sorted, comma-joined>`, so
+/// a part's copies under other keys are one member, as a share's code makes them.
+const PARTS_CODE: &str = "parts:";
+
+/// The code of the rest of a whole (share_parts): one less the parts' shares, a member computed by the check.
+const PARTS_REST: &str = "rest";
+
+/// How far the parts' shares may sum past one (floating noise) before they say more than the whole.
+const PARTS_NOISE: f64 = 1e-9;
+
+/// The parts of one whole a share fact is one of (design-1119-notes-relations 2.1, q2's composition steps), from the
+/// request's fact definitions alone (never from the page): a share whose numerator and denominator are plain value facts
+/// (op value, nothing past table, time, fmt and filter) of one table, time and format whose filters differ on one dimension
+/// only, the denominator's code there a total row (total_row) and none of the numerator's codes (one, or a list) one. Its
+/// set: every share fact of the same format over the same denominator and dimension, each standing for its codes
+/// (PARTS_CODE); a part's copies (the same codes under another key, as comp_top is of share.fossil.DE) are one part.
+/// None when `key` is no such share, two parts' codes overlap, or fewer than two parts stand.
+fn share_parts<'a>(key: &str, spec: &'a Spec) -> Option<Vec<(&'a str, String)>> {
+    let def = |k: &str| spec.facts.iter().find(|(key, _)| key == k).map(|(_, q)| q);
+    let plain = |q: &Value| {
+        q["op"] == "value"
+            && q.as_object().is_some_and(|o| {
+                o.keys()
+                    .all(|k| matches!(k.as_str(), "op" | "table" | "time" | "fmt" | "filter"))
+            })
+    };
+    // a share's whole (its denominator's key), the dimension it splits on and its codes there, sorted
+    let part = |q: &Value| -> Option<(String, String, Vec<String>)> {
+        if q["op"] != "share" {
+            return None;
+        }
+        let (a, b) = (def(q["a"].as_str()?)?, def(q["b"].as_str()?)?);
+        if !plain(a)
+            || !plain(b)
+            || a["table"] != b["table"]
+            || a["time"] != b["time"]
+            || a["fmt"] != b["fmt"]
+        {
+            return None;
+        }
+        let (fa, fb) = (a["filter"].as_object()?, b["filter"].as_object()?);
+        if fa.len() != fb.len() || fa.keys().any(|k| !fb.contains_key(k)) {
+            return None;
+        }
+        let differ: Vec<&String> = fa.keys().filter(|k| fa[*k] != fb[*k]).collect();
+        let [d] = differ[..] else {
+            return None;
+        };
+        let table = a["table"].as_str()?;
+        if !total_row(table, d, fb[d].as_str()?) {
+            return None;
+        }
+        let mut codes: Vec<String> = match &fa[d] {
+            Value::String(c) => vec![c.clone()],
+            Value::Array(cs) => cs
+                .iter()
+                .map(|c| c.as_str().map(str::to_string))
+                .collect::<Option<_>>()?,
+            _ => return None,
+        };
+        if codes.is_empty() || codes.iter().any(|c| total_row(table, d, c)) {
+            return None;
+        }
+        codes.sort_unstable();
+        codes.dedup();
+        Some((q["b"].as_str()?.to_string(), d.clone(), codes))
+    };
+    let own = def(key)?;
+    let (whole, dim, _) = part(own)?;
+    let set: Vec<(&'a str, Vec<String>)> = spec
+        .facts
+        .iter()
+        .filter(|(_, q)| q.get("fmt") == own.get("fmt"))
+        .filter_map(|(k, q)| {
+            part(q)
+                .filter(|(w, d, _)| *w == whole && *d == dim)
+                .map(|(_, _, cs)| (k.as_str(), cs))
+        })
+        .collect();
+    let mut distinct: Vec<&Vec<String>> = set.iter().map(|(_, cs)| cs).collect();
+    distinct.sort_unstable();
+    distinct.dedup();
+    let overlap = distinct.iter().enumerate().any(|(i, a)| {
+        distinct[i + 1..]
+            .iter()
+            .any(|b| a.iter().any(|c| b.contains(c)))
+    });
+    if overlap || distinct.len() < 2 {
+        return None;
+    }
+    Some(
+        set.into_iter()
+            .map(|(k, cs)| (k, format!("{PARTS_CODE}{dim}:{}", cs.join(","))))
+            .collect(),
+    )
+}
+
 /// A member of a comparison set: the fact that holds it (none for a code the check computed itself), the code it stands
 /// for where it is compared by code (a share's, or a computed code's; a value family's members by key), and its value.
 #[derive(Clone, Debug, PartialEq)]
@@ -886,6 +1121,41 @@ pub(crate) fn comparison<'a>(
     let def = move |k: &str| spec.facts.iter().find(|(key, _)| key == k).map(|(_, q)| q);
     let value = move |k: &str| facts.iter().find(|f| f.key == k).map(|f| f.v);
     let fam = family(key, spec);
+    // the parts of one whole (share_parts), with the rest of the whole as a member the check computed (one less the
+    // distinct parts' shares, when above the noise): the set is whole as drawn, never scoped; the parts' shares past one,
+    // none (they say more than the whole)
+    if fam.is_empty() && share_split(key, spec).is_none() {
+        if let Some(parts) = share_parts(key, spec) {
+            let members = parts
+                .iter()
+                .map(|(k, code)| {
+                    Some(Member {
+                        key: Some(*k),
+                        code: Some(code.clone()),
+                        v: value(k)?,
+                    })
+                })
+                .collect::<Option<Vec<_>>>()?;
+            let mut once: BTreeMap<&str, f64> = BTreeMap::new();
+            for m in &members {
+                once.entry(m.code.as_deref().unwrap_or_default())
+                    .or_insert(m.v);
+            }
+            let rest = 1.0 - once.values().sum::<f64>();
+            if rest < -PARTS_NOISE {
+                return None;
+            }
+            let mut members = members;
+            if rest > PARTS_NOISE {
+                members.push(Member {
+                    key: None,
+                    code: Some(PARTS_REST.to_string()),
+                    v: rest,
+                });
+            }
+            return Some((members, false));
+        }
+    }
     let (dim, mut members, template): (String, Vec<Member<'a>>, Vec<&'a Value>) = if !fam.is_empty()
     {
         let q = def(key)?;
@@ -1129,7 +1399,28 @@ pub fn comparisons(spec: &Spec, rows: &[Row], facts: &[Fact]) -> Value {
             continue;
         };
         members.sort_by(|a, b| b.v.total_cmp(&a.v));
-        let name = |m: &Member| {
+        // a part of a whole (share_parts) is named by a fact key, as the leaf names parts by their group, not by codes: the
+        // key it is asked for when that key is a copy of it, else the copy whose key begins most like the asked key's (the
+        // leaf's own share.<part>.<place> over a finding's comp_top), the first of those
+        let name = |m: &Member, asked: &str| {
+            if let Some(code) = m.code.as_deref().filter(|c| c.starts_with(PARTS_CODE)) {
+                let like = |k: &str| {
+                    k.bytes()
+                        .zip(asked.bytes())
+                        .take_while(|(a, b)| a == b)
+                        .count()
+                };
+                let keys = members
+                    .iter()
+                    .filter(|o| o.code.as_deref() == Some(code))
+                    .filter_map(|o| o.key);
+                return keys
+                    .clone()
+                    .find(|k| *k == asked)
+                    .or_else(|| keys.min_by(|a, b| like(b).cmp(&like(a)).then(a.cmp(b))))
+                    .unwrap_or_default()
+                    .to_string();
+            }
             m.code
                 .clone()
                 .or_else(|| m.key.and_then(|k| member_code(k, spec)))
@@ -1139,10 +1430,9 @@ pub fn comparisons(spec: &Spec, rows: &[Row], facts: &[Fact]) -> Value {
         let Some(second) = members.iter().find(|m| !m.same(first)) else {
             continue;
         };
-        let one =
-            serde_json::json!({"first": name(first), "second": name(second), "scoped": scoped});
         for k in members.iter().filter_map(|m| m.key) {
-            out.insert(k.to_string(), one.clone());
+            let one = serde_json::json!({"first": name(first, k), "second": name(second, k), "scoped": scoped});
+            out.insert(k.to_string(), one);
         }
     }
     Value::Object(out)
@@ -1248,6 +1538,11 @@ pub fn check_relations(
         let body = &html[e.inner.clone()];
         let shown = text_outside(body, "\0");
         let rel = e.attr("data-cmp").unwrap_or_default();
+        // a change of one series between two periods, judged by its own rule (change_holds), no set compared over
+        if rel == CHANGE {
+            off.extend(change_holds(&shown, body, e.attr("data-a"), spec, facts));
+            continue;
+        }
         let srcs: Vec<&str> = std::iter::once(e.attr("data-a"))
             .chain((rel != "max").then(|| e.attr("data-b")))
             .flatten()
@@ -1256,7 +1551,7 @@ pub fn check_relations(
             || srcs.len() != if rel == "max" { 1 } else { 2 }
         {
             off.push(format!(
-                "{shown:?}: data-cmp {rel:?} is not max, next or gt with its entries"
+                "{shown:?}: data-cmp {rel:?} is not max, next, gt or change with its entries"
             ));
             continue;
         }
@@ -1286,6 +1581,15 @@ pub fn check_relations(
         if !shares.is_empty() {
             set = shares.iter().map(|(k, _)| *k).collect();
         }
+        // the parts of one whole where no value or share set holds it (share_parts); its copies are one part, as above
+        let parts = if set.is_empty() {
+            share_parts(keys[0], spec).unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        if !parts.is_empty() {
+            set = parts.iter().map(|(k, _)| *k).collect();
+        }
         if set.len() < 2 {
             off.push(format!("{shown:?}: {} has no comparison set", keys[0]));
             continue;
@@ -1298,7 +1602,11 @@ pub fn check_relations(
         }
         // the set compared over: its members, and every code the request rows let the check compute alike (comparison)
         let Some((members, scoped)) = comparison(keys[0], spec, rows, facts) else {
-            off.push(format!("{shown:?}: {} has no comparison set its rows compute alike (a code of the rows it cannot read alike)", keys[0]));
+            off.push(if parts.is_empty() {
+                format!("{shown:?}: {} has no comparison set its rows compute alike (a code of the rows it cannot read alike)", keys[0])
+            } else {
+                format!("{shown:?}: the parts of {}'s whole add to more than the whole", keys[0])
+            });
             continue;
         };
         if let Some((a, b)) = members
@@ -1726,6 +2034,18 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
             "ledger::member_code",
         ],
     ),
+    // design-1119-notes-relations 2.2: data-cmp change, one series between two periods, said by its direction's words
+    (
+        "change",
+        "next_ledger::CHANGE_WORDS",
+        &[
+            "ledger::change_holds",
+            "ledger::change_words",
+            "ledger::says_in_order",
+        ],
+    ),
+    // design-1119-notes-relations 2.1: the parts of one whole (shares over its total row) and the rest no part holds
+    ("share_parts", "", &["ledger::share_parts"]),
     // P4b-5: a share fact's set (one varying dimension, the rest of numerator and denominator alike), same-code copies one
     (
         "share_family",
@@ -3307,6 +3627,271 @@ mod tests {
         let mut off = check_relations(html, &ledger, &spec, facts, &[]);
         off.extend(check_accent_named(html));
         (off, check_numbers(html, &ledger, &[]))
+    }
+
+    // ---- change_holds (data-cmp "change") and share_parts (a whole's parts): the notes the line and waterfall leaves draw
+
+    fn plain_fact(key: &str, op: &str, v: f64, fmt: &str) -> Fact {
+        Fact {
+            key: key.into(),
+            op: op.into(),
+            v,
+            t: None,
+            n: None,
+            who: Vec::new(),
+            fmt: fmt.into(),
+            reads: Vec::new(),
+            exact: None,
+        }
+    }
+
+    fn spec_of(defs: Vec<(&str, Value)>) -> Spec {
+        Spec {
+            facts: defs.into_iter().map(|(k, q)| (k.to_string(), q)).collect(),
+            fmts: json!({}),
+            members: None,
+            asked_places: None,
+            basis: None,
+        }
+    }
+
+    /// One series read at two periods (op last, the one_line finding's lead0/lead1) and their change `op` taken `later_first`
+    /// (Grew: lead1 - lead0) or not (Shrank: lead0 - lead1), or both operands of op value at a time (`at_time`).
+    fn change_request(op: &str, later_first: bool, at_time: bool, v: f64) -> (Spec, Vec<Fact>) {
+        let read = |p: &str| {
+            if at_time {
+                json!({"op": "value", "table": "pop", "time": p, "filter": {"geo": "IN"}, "fmt": "%"})
+            } else {
+                json!({"op": "last", "table": "pop", "from": p, "to": p, "filter": {"geo": "IN"}, "fmt": "%"})
+            }
+        };
+        let (a, b) = if later_first {
+            ("lead1", "lead0")
+        } else {
+            ("lead0", "lead1")
+        };
+        let spec = spec_of(vec![
+            ("lead0", read("2000")),
+            ("lead1", read("2023")),
+            ("lead", json!({"op": op, "a": a, "b": b, "fmt": "pp"})),
+        ]);
+        let facts = vec![
+            plain_fact("lead0", "last", 1.8, "%"),
+            plain_fact("lead1", "last", 0.8, "%"),
+            plain_fact("lead", op, v, "pp"),
+        ];
+        (spec, facts)
+    }
+
+    /// The line leaf's note (line.py _change_note): the series' name, then the direction's phrase with the base period and
+    /// the change in its slots.
+    fn change_note(code: &str, dir: &str, base: &str) -> String {
+        let phrase = word_table()[format!("line.note.{dir}")].as_str().unwrap();
+        let filled = phrase
+            .replace(
+                "{base}",
+                &format!("<tspan data-src=\"period:pop:{base}\">{base}</tspan>"),
+            )
+            .replace(
+                "{v}",
+                "<tspan font-weight=\"700\" data-src=\"fact:lead.n\">1.0</tspan>",
+            );
+        format!(
+            "<h1>印度人口增长率</h1><svg><g data-notes=\"line\"><text x=\"1\" y=\"2\" data-cmp=\"change\" data-a=\"fact:lead.n\">\
+             <tspan data-src=\"name:zh_names:geo:{code}\">印度</tspan> {filled}</text></g></svg>"
+        )
+    }
+
+    #[test]
+    fn a_change_note_holds_over_one_series_read_at_two_periods_in_three_shapes() {
+        let ok = |spec: &Spec, facts: &[Fact], html: &str| {
+            check_relations(html, &BTreeMap::new(), spec, facts, &[])
+        };
+        // a fall (Shrank: the earlier less the later, printed positive) from its earlier period, said down; the h1's 增长
+        // (a growth rate's name) is no relation word
+        let (spec, facts) = change_request("minus", false, false, 1.0);
+        assert_eq!(
+            ok(&spec, &facts, &change_note("IN", "down", "2000")),
+            Vec::<String>::new()
+        );
+        // a rise (Grew: the later less the earlier), said up
+        let (spec, facts) = change_request("minus", true, false, 1.0);
+        assert_eq!(
+            ok(&spec, &facts, &change_note("IN", "up", "2000")),
+            Vec::<String>::new()
+        );
+        // a change in percent of its base, both operands read as values at their times, said up
+        let (spec, facts) = change_request("change", true, true, 12.5);
+        assert_eq!(
+            ok(&spec, &facts, &change_note("IN", "up", "2000")),
+            Vec::<String>::new()
+        );
+        // its words are the word table's, read as the phrase between its slots
+        assert!(change_words("up")
+            .iter()
+            .all(|w| !w.is_empty() && w.iter().all(|p| !p.contains('{'))));
+        assert!(
+            says_in_order("比 年增长", &change_words("up")[0])
+                && !says_in_order("年增长 比", &change_words("up")[0])
+        );
+    }
+
+    #[test]
+    fn a_change_note_refuses_a_wrong_direction_base_series_or_value() {
+        let refused = |spec: &Spec, facts: &[Fact], html: &str| {
+            !check_relations(html, &BTreeMap::new(), spec, facts, &[]).is_empty()
+        };
+        let (spec, facts) = change_request("minus", false, false, 1.0);
+        assert!(
+            refused(&spec, &facts, &change_note("IN", "up", "2000")),
+            "a fall said up"
+        );
+        assert!(
+            refused(&spec, &facts, &change_note("IN", "down", "2023")),
+            "the later period as its base"
+        );
+        assert!(
+            refused(&spec, &facts, &change_note("CN", "down", "2000")),
+            "another series' name over it"
+        );
+        let (spec, facts) = change_request("minus", true, false, -1.0);
+        assert!(
+            refused(&spec, &facts, &change_note("IN", "up", "2000")),
+            "a change not above 0"
+        );
+        let (spec, facts) = change_request("change", false, false, 12.5);
+        assert!(
+            refused(&spec, &facts, &change_note("IN", "down", "2000")),
+            "a percent change from the later period"
+        );
+        // two series, or one period twice, are no change of one series
+        let (mut spec, facts) = change_request("minus", true, false, 1.0);
+        spec.facts[1].1["filter"] = json!({"geo": "CN"});
+        assert!(
+            refused(&spec, &facts, &change_note("IN", "up", "2000")),
+            "two series"
+        );
+        let (mut spec, facts) = change_request("minus", true, false, 1.0);
+        spec.facts[1].1 = spec.facts[0].1.clone();
+        assert!(
+            refused(&spec, &facts, &change_note("IN", "up", "2000")),
+            "one period twice"
+        );
+        let (spec, facts) = change_request("plus", true, false, 1.0);
+        assert!(
+            refused(&spec, &facts, &change_note("IN", "up", "2000")),
+            "no change op"
+        );
+        let html = change_note("IN", "up", "2000").replace(" data-a=\"fact:lead.n\"", "");
+        let (spec, facts) = change_request("minus", true, false, 1.0);
+        assert!(refused(&spec, &facts, &html), "no data-a");
+        // 增长 marked as a change outside a note, unmarked in an h1, is still no relation word the h1 is refused for
+        assert!(!relation_words("next")
+            .iter()
+            .any(|w| change_words("up").iter().flatten().any(|p| p == w)));
+    }
+
+    /// A whole's parts as shares (q2's composition steps): each part's codes over the whole's total row, one copy of a part.
+    fn parts_request(shares: [f64; 3]) -> (Spec, Vec<Fact>) {
+        let value = |codes: Value| json!({"op": "value", "table": "nrg_bal_c", "time": "2024", "fmt": "ktoe", "filter": {"nrg_bal": "GIC", "siec": codes}});
+        let spec = spec_of(vec![
+            ("total", value(json!("TOTAL"))),
+            (
+                "fossil",
+                value(json!(["C0000X0350-0370", "O4000XBIO", "G3000"])),
+            ),
+            ("ren", value(json!("RA000"))),
+            ("nuc", value(json!("N900H"))),
+            (
+                "share.fossil.DE",
+                json!({"op": "share", "a": "fossil", "b": "total", "fmt": "%"}),
+            ),
+            (
+                "share.ren.DE",
+                json!({"op": "share", "a": "ren", "b": "total", "fmt": "%"}),
+            ),
+            (
+                "share.nuc.DE",
+                json!({"op": "share", "a": "nuc", "b": "total", "fmt": "%"}),
+            ),
+            (
+                "comp_top",
+                json!({"op": "share", "a": "fossil", "b": "total", "fmt": "%"}),
+            ),
+        ]);
+        let facts = vec![
+            plain_fact("share.fossil.DE", "share", shares[0], "%"),
+            plain_fact("share.ren.DE", "share", shares[1], "%"),
+            plain_fact("share.nuc.DE", "share", shares[2], "%"),
+            plain_fact("comp_top", "share", shares[0], "%"),
+        ];
+        (spec, facts)
+    }
+
+    /// The waterfall leaf's note (waterfall.py _share_note): the largest part above the second, over the two share facts.
+    fn parts_note(a: &str, b: &str) -> String {
+        let above = format!("\u{ff0c}{}", relation_words("next")[0]);
+        format!(
+            "<h1>Energy mix</h1><svg><g data-notes=\"share\"><text x=\"1\" y=\"2\" data-cmp=\"next\" data-a=\"fact:{a}.n\" \
+             data-b=\"fact:{b}.n\"><tspan data-src=\"fact:{a}.n\">x</tspan>{above}\u{ff08}<tspan data-src=\"fact:{b}.n\">y</tspan>\u{ff09}</text></g></svg>"
+        )
+    }
+
+    #[test]
+    fn a_share_of_a_whole_is_compared_over_the_whole_s_parts_and_its_rest() {
+        let (spec, facts) = parts_request([0.55, 0.30, 0.10]);
+        let parts = share_parts("share.ren.DE", &spec).unwrap();
+        assert_eq!(parts.len(), 4, "three parts and one copy");
+        assert_eq!(
+            parts
+                .iter()
+                .filter(|(_, c)| c.ends_with("O4000XBIO"))
+                .count(),
+            2,
+            "comp_top is fossil's copy"
+        );
+        assert!(share_parts("fossil", &spec).is_none() && share_parts("total", &spec).is_none());
+        let first = |facts: &[Fact]| comparisons(&spec, &[], facts)["share.ren.DE"].clone();
+        assert_eq!(first(&facts)["first"], "share.fossil.DE");
+        assert_eq!(first(&facts)["second"], "share.ren.DE");
+        // the ledger prints each share as the leaf does (the check compares printed texts too)
+        let check = |facts: &[Fact], html: &str| {
+            let ledger: BTreeMap<String, String> = facts
+                .iter()
+                .map(|f| (format!("fact:{}.n", f.key), format!("{:.1}%", f.v * 100.0)))
+                .collect();
+            check_relations(html, &ledger, &spec, facts, &[])
+        };
+        assert_eq!(
+            check(&facts, &parts_note("share.fossil.DE", "share.ren.DE")),
+            Vec::<String>::new()
+        );
+        assert!(
+            !check(&facts, &parts_note("share.ren.DE", "share.fossil.DE")).is_empty(),
+            "swapped"
+        );
+        assert!(
+            !check(&facts, &parts_note("share.fossil.DE", "share.nuc.DE")).is_empty(),
+            "not the second"
+        );
+        // the rest (what no part holds) is a member: here 0.6 of the whole, above every part
+        let (_, small) = parts_request([0.25, 0.10, 0.05]);
+        assert_eq!(first(&small)["first"], PARTS_REST);
+        assert!(
+            !check(&small, &parts_note("share.fossil.DE", "share.ren.DE")).is_empty(),
+            "the rest is larger"
+        );
+        // parts that add to more than the whole are refused, never compared
+        let (_, over) = parts_request([0.80, 0.30, 0.10]);
+        let off = check(&over, &parts_note("share.fossil.DE", "share.ren.DE"));
+        assert!(
+            off.iter().any(|l| l.contains("add to more than the whole")),
+            "{off:?}"
+        );
+        // two parts whose codes overlap are no parts of one whole
+        let (mut spec2, _) = parts_request([0.55, 0.30, 0.10]);
+        spec2.facts[2].1["filter"]["siec"] = json!("G3000");
+        assert!(share_parts("share.ren.DE", &spec2).is_none());
     }
 
     #[test]
