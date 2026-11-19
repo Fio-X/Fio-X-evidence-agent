@@ -178,5 +178,46 @@ class OneBar(unittest.TestCase):
             self.assertIn(why, str(e.exception))
 
 
+class Note(unittest.TestCase):
+    """The note under the steps (_share_note): the largest part's share above the second's, stated only where the core's
+    comparison (knobs.comparisons, here set by hand) names the same two share facts; marked data-cmp next in g[data-notes]."""
+
+    A, B = "fact:part.O4000XBIO.n", "fact:part.G3000.n"
+
+    def tearDown(self):
+        K.COMPARISONS = None
+
+    def drawn(self, comparisons, data=DATA, rows=ROWS):
+        K.COMPARISONS = comparisons
+        return draw(hero(data, highlight="RA000"), rows=rows)[0]
+
+    def agreed(self, **over):
+        return {"part.O4000XBIO": dict({"first": "part.O4000XBIO", "second": "part.G3000", "scoped": False}, **over)}
+
+    def test_the_note_is_drawn_where_the_core_agrees(self):
+        svg = self.drawn(self.agreed())
+        self.assertIn('<g data-notes="share">', svg)
+        self.assertIn(f'data-cmp="next" data-a="{self.A}" data-b="{self.B}"', svg)
+        self.assertEqual(check_svg(svg), [])
+        self.assertIn("石油", re.sub(r"<[^>]+>", "", svg.split('<g data-notes="share">')[1]))
+        boxes = dict(text_boxes(svg))
+        note = [t for t in boxes if "石油" in t and "天然气" in t]
+        self.assertEqual(len(note), 1, boxes.keys())
+        self.assertLessEqual(boxes[note[0]][2], 1140)
+
+    def test_no_note_without_the_core_agreeing(self):
+        plain = self.drawn(None)
+        self.assertNotIn("data-notes", plain)
+        self.assertNotIn("data-notes", self.drawn({}))  # the core sent none for this share
+        self.assertNotIn("data-notes", self.drawn(self.agreed(second="part.RA000")))  # another second
+        self.assertNotIn("data-notes", self.drawn(self.agreed(first="part.G3000")))  # another first
+        self.assertNotIn("data-notes", self.drawn(self.agreed(scoped=True)))  # a scoped set says its scope: not this leaf's note
+        self.assertEqual(check_svg(plain), [])
+
+    def test_no_note_over_a_tie_or_a_single_part(self):
+        rows, tied = build(parts={"O4000XBIO": 70.0, "G3000": 70.0, "RA000": 49.9}, rest={"N900H": 52.5}, whole=242.4)
+        self.assertNotIn("data-notes", self.drawn(self.agreed(), data=tied, rows=rows))  # printed alike: no strict first
+
+
 if __name__ == "__main__":
     unittest.main()
