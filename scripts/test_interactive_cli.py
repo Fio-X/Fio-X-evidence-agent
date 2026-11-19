@@ -113,7 +113,7 @@ with tempfile.TemporaryDirectory(prefix="news-interactive-") as temp:
     assert len(artifacts) == 1, artifacts
     artifact_dir = artifacts[0].parent
     assert list((artifact_dir / "data").glob("*.csv")), artifact_dir
-    # The follow-up announces itself with "continuing:" (src/commands/continue_investigation.rs:373); "updated:" is no longer printed.
+    # The follow-up announces itself with "continuing:" (src/commands/continue_investigation.rs:496); "updated:" is no longer printed.
     assert "continuing:" in text
 
     # The completion gate stays covered: a first-turn visual request under the mock is still stopped by it.
