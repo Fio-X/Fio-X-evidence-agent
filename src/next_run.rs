@@ -4606,6 +4606,9 @@ fn recipes_tried(
     })
 }
 
+/// The recipe a page takes, its fill, and each recipe tried before it as "recipe: why it was passed over".
+type LeafPick = (&'static Recipe, Value, Vec<String>);
+
 fn leaf_request(
     run_dir: &Path,
     prepared: &[Prepared],
@@ -4614,7 +4617,7 @@ fn leaf_request(
     (question, words): (&str, (&str, &str, &str)),
     (calls, focus): (&std::sync::Mutex<Vec<Value>>, Option<&str>),
     (of_blocks, many): (bool, bool),
-) -> Result<(&'static Recipe, Value, Vec<String>), (&'static str, &'static str, String)> {
+) -> Result<LeafPick, (&'static str, &'static str, String)> {
     let mut missed = Vec::new();
     let places = catalogue.places(question);
     // the relation the table step kept for the main table: a recipe that answers another is not this relation
