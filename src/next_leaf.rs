@@ -3770,7 +3770,7 @@ mod tests {
             &ru_ledger,
             &spec_of(Some(no_year.clone())),
             &[hub2.clone()],
-            &[hub2_fact.clone()],
+            std::slice::from_ref(&hub2_fact),
         );
         assert!(
             off.iter().any(|f| f.contains("the request holds its row")),

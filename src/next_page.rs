@@ -533,6 +533,13 @@ impl Drafts {
     }
 }
 
+/// Drafts every page field from the picked claims and the sheet's charts, the page-level fields for the lead chart. A claim
+/// on no chart gets no field. The run drafts through draft_for, with the form its picked recipe draws.
+#[cfg(test)]
+pub fn draft(claims: &[Claim], charts: &[Chart], numbers: Vec<String>) -> Drafts {
+    draft_for(claims, charts, numbers, lead(charts))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1697,11 +1704,4 @@ mod tests {
             "{described}"
         );
     }
-}
-
-/// Drafts every page field from the picked claims and the sheet's charts, the page-level fields for the lead chart. A claim
-/// on no chart gets no field. The run drafts through draft_for, with the form its picked recipe draws.
-#[cfg(test)]
-pub fn draft(claims: &[Claim], charts: &[Chart], numbers: Vec<String>) -> Drafts {
-    draft_for(claims, charts, numbers, lead(charts))
 }

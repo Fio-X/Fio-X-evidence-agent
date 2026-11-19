@@ -128,9 +128,7 @@ pub(crate) fn unit_line_form(code: &str) -> Option<&'static str> {
 /// base year printed on the unit line as the registry's marked name) prints none; "%" for a plain percentage. None
 /// where unit_short is none.
 pub(crate) fn unit_number_suffix(code: &str) -> Option<&'static str> {
-    if unit_short(code).is_none() {
-        return None;
-    }
+    unit_short(code)?;
     let row = UNIT_SHORT_ZH
         .lines()
         .skip(1)

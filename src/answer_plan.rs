@@ -406,7 +406,7 @@ pub fn sentence(
     };
     match (rel, focus) {
         (_, Focus::Against(x)) => format!("{span}{x}的{quantity}比其余各地分别{{高或低}}{{each.d}}"),
-        (_, Focus::FirstPast) => format!("{{first.name}}在{{first.year}}年最早过线{{line}}，到{{last.year}}年仍有{{n.below}}个未过线"),
+        (_, Focus::FirstPast) => "{first.name}在{first.year}年最早过线{line}，到{last.year}年仍有{n.below}个未过线".to_string(),
         (_, Focus::LargestPart) => format!("{span}{who}的{quantity}中，{{part.max}}占{{part.share}}，是最大的部分"),
         (_, Focus::LargestFlow) => format!("{span}最大的一股是{{flow.src}}流向{{flow.dst}}，{{flow.v}}"),
         (_, Focus::Total) => format!("{span}{who}的{quantity}合计{{sum}}"),

@@ -896,13 +896,13 @@ pub(crate) fn comparison<'a>(
                 Some(Member {
                     key: Some(*k),
                     code: None,
-                    v: value(*k)?,
+                    v: value(k)?,
                 })
             })
             .collect::<Option<Vec<_>>>()?;
         let template = fam
             .iter()
-            .filter_map(|k| def(*k))
+            .filter_map(|k| def(k))
             .find(|q| q["filter"][&dim].is_string())
             .into_iter()
             .collect();
@@ -915,7 +915,7 @@ pub(crate) fn comparison<'a>(
                 Some(Member {
                     key: Some(*k),
                     code: Some(c.clone()),
-                    v: value(*k)?,
+                    v: value(k)?,
                 })
             })
             .collect::<Option<Vec<_>>>()?;
@@ -1338,7 +1338,7 @@ pub fn check_relations(
         let me = find(keys[0]);
         let other = keys
             .get(1)
-            .and_then(|k| find(*k))
+            .and_then(|k| find(k))
             .filter(|b| me.is_some_and(|a| !b.same(a)));
         let rest: Vec<&Member> = members
             .iter()
@@ -5972,7 +5972,7 @@ mod tests {
             ["dek: name:zh_names:iso3:BRA is named, and no picture of the page draws it"]
         );
         // a marked name's own text and the words beside it never join into a name (几内亚 beside 比绍)
-        let beside = page(&format!("{vn}比绍"), &format!("{vn}"));
+        let beside = page(&format!("{vn}比绍"), &vn.to_string());
         assert_eq!(check_names_drawn(&beside), Vec::<String>::new());
         // a picture of one place's parts (a flow page of one country: its svg marks parts' rows, no place's): the h1 and the
         // dek may name that one place, not two, and a part they name is drawn as before

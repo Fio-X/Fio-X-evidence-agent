@@ -846,8 +846,8 @@ fn wb_narrow_again(run_dir: &Path, rel: &str, record: &Value) -> Result<(), Stri
     let mut ranked = holding(rank_year.as_str());
     let value = |id: &String| reference[id][rank_year];
     ranked.sort_by(|a, b| {
-        let order = value(*a)
-            .partial_cmp(&value(*b))
+        let order = value(a)
+            .partial_cmp(&value(b))
             .unwrap_or(std::cmp::Ordering::Equal);
         let order = if option.rule == "bottom" {
             order
@@ -1900,7 +1900,7 @@ fn composition_groups(
         .filter(|(d, _)| **d != comp.dim && d.as_str() != place && d.as_str() != "freq")
     {
         let main_code = one_code(&s.dims, d);
-        if codes.len() != 1 || main_code.as_ref().map_or(true, |m| !codes.contains(m)) {
+        if codes.len() != 1 || main_code.as_ref().is_none_or(|m| !codes.contains(m)) {
             return Err(format!(
                 "the sum inputs of {} hold {d} {codes:?}, the main {main_code:?}",
                 s.main
@@ -3472,7 +3472,7 @@ fn recipe_request(
                 })
                 .cloned()
                 .collect();
-            (!kept.is_empty()).then(|| Value::Array(kept))
+            (!kept.is_empty()).then_some(Value::Array(kept))
         }
         None => None,
     };
@@ -4272,7 +4272,7 @@ fn leaf_page(
     Ok(LeafPublished {
         recipe: picked,
         dir,
-        size: (page.w as f64, page.h as f64),
+        size: (page.w, page.h),
         published,
         drawn,
         strip: strip_ask,
@@ -6131,7 +6131,7 @@ pub(crate) async fn page_of_block(
             }
             // the image review is the model's advice on the page: recorded, never a stop and never what verifies it
             let review = leaf_vision(recorder, model, question, dir, &state, cancel).await?;
-            return Ok((
+            Ok((
                 format!(
                     "The {recipe} page is published at {} (sha256 {}); the browser check and the program's page checks passed \
                      those bytes. {review}",
@@ -6139,7 +6139,7 @@ pub(crate) async fn page_of_block(
                 ),
                 (dir.to_string(), shown_size(recorder.run_dir(), dir).0.max(leaf.size.0), shown_size(recorder.run_dir(), dir).1.max(leaf.size.1)),
                 accent,
-            ));
+            ))
         }
         // no other route takes over: the run stops at the stage the leaf page stopped at, and what it wrote stays for the replay
         Err((recipe, stage, why)) => {
@@ -10473,15 +10473,15 @@ mod tests {
             (s(&["USA", "EUU", "CHN"]), "EUU"),
             (s(&["US", "EU27_2020", "CN"]), "EU27_2020"),
         ] {
-            let (stage, why) = on_the_map(&column, &ranked, &Hubs).unwrap_err();
+            let (stage, why) = on_the_map(column, &ranked, &Hubs).unwrap_err();
             assert!(
                 stage == "shape" && why.starts_with("not this shape: ") && why.contains(off),
                 "{why}"
             );
-            assert_eq!(on_the_map(&bars, &ranked, &Hubs), Ok(()));
+            assert_eq!(on_the_map(bars, &ranked, &Hubs), Ok(()));
         }
         for ranked in [s(&["USA", "CHN"]), s(&["US", "DE", "CN"])] {
-            assert_eq!(on_the_map(&column, &ranked, &Hubs), Ok(()), "{ranked:?}");
+            assert_eq!(on_the_map(column, &ranked, &Hubs), Ok(()), "{ranked:?}");
         }
         let names: Vec<&str> = Hubs.recipes().iter().map(|r| r.name.as_str()).collect();
         let at = |n: &str| names.iter().position(|x| *x == n).unwrap();
@@ -10510,7 +10510,7 @@ mod tests {
                 "the producer's words"
             );
             assert_eq!(
-                on_the_map(&column, &[code.to_string()], &Hubs),
+                on_the_map(column, &[code.to_string()], &Hubs),
                 Err(("shape", format!("not this shape: {why}")))
             );
         }
@@ -10555,7 +10555,7 @@ mod tests {
             format!("visual group: {} EUU", crate::next_flow::NO_POINT),
         ] {
             assert_eq!(
-                on_the_map(&column, &ranked, &Refused(other.clone())),
+                on_the_map(column, &ranked, &Refused(other.clone())),
                 Err(("fill", other))
             );
         }
@@ -11851,7 +11851,7 @@ mod tests {
         .unwrap();
         let drafts = next_page::draft_for(&[], &[], Vec::new(), None)
             .with_finding(dek_finding(&fill))
-            .with_periods(&[shape.year.clone()]);
+            .with_periods(std::slice::from_ref(&shape.year));
         let dek = drafts
             .fields
             .iter()
@@ -13880,7 +13880,7 @@ mod tests {
                 };
                 let as_data = html.replace(
                     &year_mark,
-                    &format!(r#"data-src="period:sdg_07_40:2024">2024<"#),
+                    &r#"data-src="period:sdg_07_40:2024">2024<"#.to_string(),
                 );
                 assert!(
                     fails_here(&as_data, &spec)
@@ -18562,7 +18562,7 @@ mod tests {
         }];
         let drafts =
             next_page::draft_for(&[], &charts, Vec::new(), page_lead(Some(&fill), &charts))
-                .with_scopes(&[scope.clone()])
+                .with_scopes(std::slice::from_ref(&scope))
                 .with_finding(dek_finding(&fill))
                 .with_scope_mark(fill["finding"]["set"].as_str().map(str::to_string));
         let dek = drafts
@@ -18646,7 +18646,7 @@ mod tests {
             "dimension": "citizen", "rule": "top", "n": 20, "exclude": ["EXT_EU27_2020"], "total": "TOTAL", "total_held": true,
             "at": "2025", "ranked": 199, "of": 199, "members": &codes[..20],
             "first": {"file": "data/all.csv", "sha256": "0".repeat(64)}});
-        let (scope, dir, dek, texts, notes) = cut_page(&[record.clone()], &main);
+        let (scope, dir, dek, texts, notes) = cut_page(std::slice::from_ref(&record), &main);
         let scope = scope.expect("the narrow record scopes the page");
         assert_eq!(
             scope,

@@ -1975,6 +1975,17 @@ pub fn holds_series(
     })
 }
 
+/// The registered subtotals of dimension `dim` of `table` that overlap its tree (OVERLAP_LEVEL), in file order: never a part,
+/// a parent or a group's member, listed so a page can say they are left out. Only the tests read it yet.
+#[cfg(test)]
+pub fn overlaps(table: &str, dim: &str) -> Vec<Part> {
+    registry()
+        .iter()
+        .filter(|(t, d, p)| t == table && d == dim && p.level == OVERLAP_LEVEL)
+        .map(|(_, _, part)| part.clone())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4527,15 +4538,4 @@ mod tests {
             );
         }
     }
-}
-
-/// The registered subtotals of dimension `dim` of `table` that overlap its tree (OVERLAP_LEVEL), in file order: never a part,
-/// a parent or a group's member, listed so a page can say they are left out. Only the tests read it yet.
-#[cfg(test)]
-pub fn overlaps(table: &str, dim: &str) -> Vec<Part> {
-    registry()
-        .iter()
-        .filter(|(t, d, p)| t == table && d == dim && p.level == OVERLAP_LEVEL)
-        .map(|(_, _, part)| part.clone())
-        .collect()
 }

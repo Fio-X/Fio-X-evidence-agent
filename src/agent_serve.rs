@@ -50,7 +50,7 @@ const STANDIN_ONLY: &str = "the Rust agent is in stand-in mode (NEWSROOM_AGENT_R
 fn real_selected(real: Option<&str>, local_url: Option<&str>, unset_default: bool) -> bool {
     match real {
         Some(value) => value == "1",
-        None => unset_default && local_url.map_or(true, |url| url.trim().is_empty()),
+        None => unset_default && local_url.is_none_or(|url| url.trim().is_empty()),
     }
 }
 

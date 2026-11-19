@@ -2359,6 +2359,25 @@ async fn send_json(
 }
 
 #[cfg(test)]
+pub(crate) static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// The child command of the old runtime, selected explicitly with NEWSROOM_AGENT=pi so the test does not depend on the default (1012zi step 0).
+/// Tests that call it hold ENV_LOCK; the previous value of the switch is put back.
+#[cfg(test)]
+impl PiConfig {
+    pub(crate) fn pi_command(&self) -> Command {
+        let before = std::env::var(crate::agent_loop::AGENT_ENV).ok();
+        std::env::set_var(crate::agent_loop::AGENT_ENV, "pi");
+        let command = self.command();
+        match before {
+            Some(value) => std::env::set_var(crate::agent_loop::AGENT_ENV, value),
+            None => std::env::remove_var(crate::agent_loop::AGENT_ENV),
+        }
+        command
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -4828,24 +4847,5 @@ mod tests {
                 && !first.contains("newsroom_infographic_vision_critic"),
             "{first}"
         );
-    }
-}
-
-#[cfg(test)]
-pub(crate) static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-/// The child command of the old runtime, selected explicitly with NEWSROOM_AGENT=pi so the test does not depend on the default (1012zi step 0).
-/// Tests that call it hold ENV_LOCK; the previous value of the switch is put back.
-#[cfg(test)]
-impl PiConfig {
-    pub(crate) fn pi_command(&self) -> Command {
-        let before = std::env::var(crate::agent_loop::AGENT_ENV).ok();
-        std::env::set_var(crate::agent_loop::AGENT_ENV, "pi");
-        let command = self.command();
-        match before {
-            Some(value) => std::env::set_var(crate::agent_loop::AGENT_ENV, value),
-            None => std::env::remove_var(crate::agent_loop::AGENT_ENV),
-        }
-        command
     }
 }

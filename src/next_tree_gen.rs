@@ -4853,7 +4853,10 @@ mod tests {
         let lined = rec("co2", &["EN.GHG.", "env_air_gge"], &[]);
         let offered = rec("co2", &["EN.GHG.", "env_air_gge"], &["env_air_gge"]);
         assert_eq!(check(&[], &[]), Vec::<String>::new());
-        assert_eq!(check(&[ren.clone()], &[ren.clone()]), Vec::<String>::new());
+        assert_eq!(
+            check(std::slice::from_ref(&ren), std::slice::from_ref(&ren)),
+            Vec::<String>::new()
+        );
         assert_eq!(
             check(&[ren.clone(), lined.clone()], &[ren.clone(), lined.clone()]),
             Vec::<String>::new()

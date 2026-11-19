@@ -260,7 +260,7 @@ fn parse_credentials(text: &str) -> Option<SavedLogin> {
             continue;
         }
         if line.starts_with('[') {
-            in_default = line.trim_end_matches(|c: char| c == ' ' || c == '\t') == "[default]";
+            in_default = line.trim_end_matches([' ', '\t']) == "[default]";
             continue;
         }
         if !in_default {

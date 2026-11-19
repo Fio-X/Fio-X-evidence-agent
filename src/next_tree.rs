@@ -6690,7 +6690,7 @@ pub fn paint_problems(svg: &str, rec: &Paint, pf: &J) -> Vec<String> {
     let mut seen: BTreeMap<String, usize> = BTreeMap::new();
     for e in els
         .iter()
-        .filter(|e| e.get("data-paint").is_some() && !in_legend(*e))
+        .filter(|e| e.get("data-paint").is_some() && !in_legend(e))
     {
         let did = e.id();
         let Some(c) = cell_of(did) else {
@@ -6758,7 +6758,7 @@ pub fn paint_problems(svg: &str, rec: &Paint, pf: &J) -> Vec<String> {
             out.push(format!("paint_matches_scale: {} prints {:?} from {:?}, the record has {words:?} from {src:?}", e.id(), e.text, e.get("data-src")));
         }
     }
-    let legend: Vec<&El> = els.iter().filter(|e| in_legend(*e)).collect();
+    let legend: Vec<&El> = els.iter().filter(|e| in_legend(e)).collect();
     let (nd, steps): (Vec<&El>, Vec<&El>) = legend
         .into_iter()
         .partition(|e| e.get("data-paint").is_some_and(|p| p.ends_with(":nodata")));

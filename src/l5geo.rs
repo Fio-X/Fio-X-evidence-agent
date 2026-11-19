@@ -3116,7 +3116,7 @@ impl Catalog {
                 .cloned()
                 .or_else(|| {
                     let family = measure_families().iter().find(|f| f.id == a.id)?;
-                    self.rank_reaching(&[family.en.clone()], scope, far)
+                    self.rank_reaching(std::slice::from_ref(&family.en), scope, far)
                         .into_iter()
                         .find(|c| a.holds_candidate(c))
                 });
@@ -5956,11 +5956,21 @@ mod tests {
         );
         assert_eq!(ids(&lifted[TOP..]), ["ren_e", "ren_f", "gdp_pc_b"]);
         assert_eq!(
-            ids(&c.lift_asked(ranked.clone(), &[ren.clone()], Scope::Beyond, &[])),
+            ids(&c.lift_asked(
+                ranked.clone(),
+                std::slice::from_ref(&ren),
+                Scope::Beyond,
+                &[]
+            )),
             ids(&ranked)
         );
         // one asked quantity none of the first five holds: its best ranked table takes the fifth place
-        let alone = c.lift_asked(ranked.clone(), &[gdp.clone()], Scope::Beyond, &[]);
+        let alone = c.lift_asked(
+            ranked.clone(),
+            std::slice::from_ref(&gdp),
+            Scope::Beyond,
+            &[],
+        );
         assert_eq!(
             ids(&alone[..TOP]),
             ["ren_a", "ren_b", "ren_c", "ren_d", "gdp_pc_a"]

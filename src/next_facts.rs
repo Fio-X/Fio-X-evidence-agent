@@ -1607,7 +1607,7 @@ pub fn wording_segs(
                     .and_then(|r| r.strip_suffix(".y"))
                     .map(|r| (k, r))
             })
-            .last()
+            .next_back()
             .map_or(String::new(), |(k, r)| {
                 let stem = &k[..k.len() - 2];
                 if r.contains("-S") {

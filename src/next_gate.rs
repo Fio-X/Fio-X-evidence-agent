@@ -726,7 +726,7 @@ mod tests {
         let csv = "country,country_name,region,date,value\nDEU,\"Germany\",\"Europe\",2024,22.9\n";
         let sha = crate::hash::sha256_bytes(csv.as_bytes());
         std::fs::create_dir_all(root.join("data")).unwrap();
-        std::fs::write(root.join(format!("data/{sha}.csv")), &csv).unwrap();
+        std::fs::write(root.join(format!("data/{sha}.csv")), csv).unwrap();
         let event = json!({"type": "tool_execution_end", "toolName": crate::next_knowledge::DATA_PREPARE_TOOL, "auto": true,
             "isError": false, "result": {"details": {"provider": "worldbank", "dataset": "SP.X",
             "filePath": format!("data/{sha}.csv"), "sha256": sha}}});
@@ -748,7 +748,7 @@ mod tests {
             let text: String = events.iter().map(|e| format!("{e}\n")).collect();
             std::fs::write(dir.path().join("events.jsonl"), text).unwrap();
         };
-        write(&[event.clone()]);
+        write(std::slice::from_ref(&event));
         let got = fetches(dir.path());
         assert_eq!(got.len(), 1);
         assert_eq!(
@@ -759,7 +759,7 @@ mod tests {
             ),
             ("SP.X@2", true, sha.as_str())
         );
-        let gaps = reread_gaps(dir.path(), &[row.clone()], &got);
+        let gaps = reread_gaps(dir.path(), std::slice::from_ref(&row), &got);
         assert!(gaps.is_empty(), "{gaps:?}");
         // a value the file does not hold, and a row of a table no fetch read
         let mut changed = row.clone();
@@ -773,7 +773,7 @@ mod tests {
         bad["result"]["details"]["sha256"] = "0".repeat(64).into();
         write(&[bad]);
         assert!(
-            reread_gaps(dir.path(), &[row.clone()], &fetches(dir.path()))
+            reread_gaps(dir.path(), std::slice::from_ref(&row), &fetches(dir.path()))
                 .iter()
                 .any(|g| g.contains("not the bytes"))
         );
@@ -781,7 +781,7 @@ mod tests {
         gone["result"]["details"]["filePath"] = "data/none.csv".into();
         write(&[gone]);
         assert!(
-            reread_gaps(dir.path(), &[row.clone()], &fetches(dir.path()))
+            reread_gaps(dir.path(), std::slice::from_ref(&row), &fetches(dir.path()))
                 .iter()
                 .any(|g| g.starts_with("data/none.csv:"))
         );
@@ -791,7 +791,7 @@ mod tests {
             write(&[not]);
             assert!(fetches(dir.path()).is_empty());
             assert!(
-                reread_gaps(dir.path(), &[row.clone()], &fetches(dir.path()))[0]
+                reread_gaps(dir.path(), std::slice::from_ref(&row), &fetches(dir.path()))[0]
                     .starts_with("no recorded fetch of SP.X@2")
             );
         }
@@ -805,7 +805,7 @@ mod tests {
             other["result"]["details"]["provider"] = provider.into();
             other["result"]["details"]["dataset"] = dataset.into();
             write(&[other]);
-            let gaps = reread_gaps(dir.path(), &[row.clone()], &fetches(dir.path()));
+            let gaps = reread_gaps(dir.path(), std::slice::from_ref(&row), &fetches(dir.path()));
             assert!(
                 gaps[0].starts_with("no recorded fetch of SP.X@2"),
                 "{provider} {dataset}: {gaps:?}"
@@ -813,7 +813,7 @@ mod tests {
         }
         // a fetch lent as Eurostat's for a World Bank table, or as World Bank's for a Eurostat one, is not read
         let mut lent = fetches_of(&sha, "SP.X@2", false);
-        assert!(reread_gaps(dir.path(), &[row.clone()], &lent)
+        assert!(reread_gaps(dir.path(), std::slice::from_ref(&row), &lent)
             .iter()
             .any(|g| g.contains("is not its provider's")));
         lent = fetches_of(&sha, "t", true);

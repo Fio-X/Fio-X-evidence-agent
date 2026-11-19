@@ -2476,7 +2476,7 @@ mod drive {
             main.relation = events
                 .iter()
                 .filter(|e| e["type"] == crate::next_flow::TABLE_RELATION_EVENT)
-                .last()
+                .next_back()
                 .and_then(|e| {
                     crate::shape_registry::RELATIONS
                         .into_iter()
@@ -2812,7 +2812,7 @@ mod drive {
                     let at = text
                         .char_indices()
                         .filter(|(_, c)| c.is_ascii_digit())
-                        .last()?
+                        .next_back()?
                         .0;
                     let d = text[at..].chars().next()?.to_digit(10)?;
                     Some(format!(
