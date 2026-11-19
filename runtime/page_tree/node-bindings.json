@@ -1704,7 +1704,7 @@
      "fmt_change": {"rule": "points_if_percent", "percent": "%", "points": {"key": "pp", "suffix": " 个百分点", "max_dec": 1}, "else": {"key": "$shape.fmt", "suffix": "$shape.suffix"}, "dec_rule": {"rule": "held_decimals", "rows": {"table": "$shape.main", "filter": {"$shape.place": "select:ranked"}, "time": "$shape.year"}, "max": {"const": "COLUMN_DEC", "value": 2}}},
      "leaf": {"key": "line", "items_as": "series", "items": {"code": "code", "end_text": "value_text"},
               "title": {"fixed": "frames:change", "frame": "Change"}, "unit": {"fixed_prefix": "unit_short_zh:"}, "series_kind": "place",
-              "q": {"table": "$shape.main", "by": "$shape.place", "from": "$picks.t0", "to": "$shape.year"}, "peak_of": "{code_lc}_peak", "axis": {"scale": "$shape.scale"}}
+              "q": {"table": "$shape.main", "by": "$shape.place", "from": "$picks.t0", "to": "$shape.year"}, "peak_of": "{code_lc}_peak", "change": {"value": "lead", "from": "lead0", "to": "lead1"}, "axis": {"scale": "$shape.scale"}}
     }
    },
    "items": {

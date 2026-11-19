@@ -260,5 +260,64 @@ class Periods(unittest.TestCase):
         self.assertIsNone(line.spread([10, 11, 12], 0, 20, 12))
 
 
+class Note(unittest.TestCase):
+    """The change note under the period axis (_change_note): the highlighted series' change since the query's first period, said
+    with the direction's words and the finding's change fact; drawn only where the ledger holds layer 1's finding facts (here
+    test-only texts, the bare numbers) for this series, marked data-cmp change in g[data-notes]."""
+
+    def fixture(self, codes=("KOR", "JPN"), **ledger):
+        rows, data = build(codes=list(codes))
+        v0, v1 = TAB[(codes[0], "2015")], TAB[(codes[0], "2025")]
+        rows = [dict(r, text=f"{v1:.1f}") if r["src"] == f"fact:last.{codes[0]}" else r for r in rows]
+        rows += [{"src": "fact:lead.n", "text": f"{abs(v1 - v0):.1f}"}, {"src": "fact:lead0.n", "text": f"{v0:.1f}"},
+                 {"src": "fact:lead1.n", "text": f"{v1:.1f}"}, {"src": "fact:lead0.t.y", "text": "2015"}]
+        rows = [r for r in rows if r["src"] not in ledger] + [{"src": k, "text": v} for k, v in ledger.items() if v is not None]
+        data = dict(data, q={"table": TABLE, "by": "country", "from": "2015", "to": "2025"},
+                    change={"value": "lead", "from": "lead0", "to": "lead1"})
+        return rows, data
+
+    def svg(self, rows, data, **style):
+        return draw(hero(data, **style), rows=rows)[0]
+
+    def test_the_note_is_drawn_for_the_series_the_finding_names(self):
+        rows, data = self.fixture()
+        svg = self.svg(rows, data)
+        self.assertIn('<g data-notes="change">', svg)
+        self.assertIn('data-cmp="change" data-a="fact:lead.n"', svg)
+        note = re.sub(r"<[^>]+>", "", svg.split('<g data-notes="change">')[1].split("</g>")[0])
+        self.assertTrue(note.startswith("韩国 比") and "年增长" in note and "下降" not in note, note)
+        self.assertEqual(check_svg(svg), [])
+        self.assertIn('data-src="period:%s:2015"' % TABLE, svg.split('<g data-notes="change">')[1])
+        self.assertIn('data-src="fact:lead.n"', svg.split('<g data-notes="change">')[1])
+
+    def test_a_fall_says_fall(self):
+        rows, data = self.fixture(codes=("KOR", "JPN"), **{"fact:lead0.n": "99.9"})  # the first value above the last: down
+        rows = [r for r in rows if r["src"] != "fact:lead.n"] + [{"src": "fact:lead.n", "text": "5.0"}]
+        svg = self.svg(rows, data)
+        note = re.sub(r"<[^>]+>", "", svg.split('<g data-notes="change">')[1].split("</g>")[0])
+        self.assertIn("年下降", note)
+        self.assertEqual(check_svg(svg), [])
+
+    def test_no_note_where_the_finding_is_not_this_series(self):
+        rows, data = self.fixture()
+        for gone in ("fact:lead.n", "fact:lead0.n", "fact:lead1.n", "fact:lead0.t.y"):  # a page with no finding holds none
+            r2 = [r for r in rows if r["src"] != gone]
+            self.assertNotIn("data-notes", self.svg(r2, data), gone)
+        for key, text in (("fact:lead1.n", "1.0"),   # the last value is not this series' end label
+                          ("fact:lead0.t.y", "2016"),  # the finding starts at another period than the query
+                          ("fact:lead.n", "0"),        # nothing to say
+                          ("fact:lead0.n", rows and next(r["text"] for r in rows if r["src"] == "fact:lead1.n"))):  # no change
+            self.assertNotIn("data-notes", self.svg(self.fixture(**{key: text})[0], data), key)
+        plain, d0 = build()
+        self.assertNotIn("data-notes", self.svg(plain, d0))  # no change keys at all: the picture as before
+        self.assertNotIn("data-notes", self.svg(rows, {k: v for k, v in data.items() if k != "change"}))
+        self.assertNotIn("data-notes", self.svg(rows, dict(data, q={**data["q"], "from": "2016"})))  # the series starts at 2015
+
+    def test_a_period_that_is_not_a_year_says_nothing(self):
+        rows, data = self.fixture()
+        r2 = [dict(r, text="2015-01") if r["src"] == f"period:{TABLE}:2015" else r for r in rows]
+        self.assertNotIn("data-notes", self.svg(r2, data))
+
+
 if __name__ == "__main__":
     unittest.main()

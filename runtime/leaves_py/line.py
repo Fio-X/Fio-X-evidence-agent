@@ -19,6 +19,8 @@ hero.data (the data shape this leaf eats; on a column frame page, the hero's lea
   "periods": [ledger src, ...],                     # period:<table>:<period> of the period axis, in period order
   "lines": [segs, ...]?, "footnote": segs?}         # layer 1's lines under the picture, one line each
 segs: as wbkit.segs reads them; series src: a cell of the request's rows (geometry only); ledger src: a row {"src", "text"}.
+  "change": {"value": key, "from": key, "to": key}? # layer 1's finding facts of this series' rise or fall (the bare keys of the
+                                                    # change and of its first and last value); the leaf draws a note only where the ledger holds them
 The query form (what the registry declares for a block page, node-bindings.json nodes.line): with "q": {"table", "filter"?,
 "by", "from"?, "to"?} a series that lists no points is the request's series cells of q's table at the filter and its code on
 q's by-dimension, from..to, in period order; an axis that lists no ticks is the axis of the "peak" fact (a fact key; or the
@@ -55,6 +57,35 @@ def of_code(template, code):
     """A fact key the registry writes once for every series (peak_of: "{code_lc}_peak"), read for one series' code as
     layer 1's facts_each names it ({code} the code, {code_lc} it in lowercase); none without a template."""
     return template.replace("{code_lc}", code.lower()).replace("{code}", code) if isinstance(template, str) else None
+
+
+def _change_note(f):
+    """(segs, ("change", value src)) of the note under the period axis, or None (no note; the page is drawn all the same):
+    the highlighted series' change since the period the query starts at, said with the words of its direction and the
+    change as layer 1's finding facts print it (data.change: the keys of the change, its first and its last value, "lead",
+    "lead0", "lead1" of the one_line finding; the ledger holds them only on a page whose finding is that series' rise or
+    fall). Only where those three entries and the base period's entry are in the ledger, the last value prints as this
+    series' end label does and the series starts at the base period (so the change is this series' own), the last value is
+    above (or below) the first by the direction's word, and the base period is a year (the words write 年 after it). The
+    page's comparison check (check_relations, data-cmp change) judges the fact: its two values, their periods and the
+    direction word."""
+    c, q = f.d.get("change"), f.d.get("q")
+    if not (isinstance(c, dict) and isinstance(q, dict) and isinstance(q.get("from"), str)): return None
+    keys = [c.get(k) for k in ("value", "from", "to")]
+    if not all(isinstance(k, str) and k for k in keys): return None
+    ledger = FX.LEDGER or {}
+    base = f"period:{q['table']}:{q['from']}"
+    srcs = [f"fact:{k}.n" for k in keys]
+    if base not in ledger or not re.fullmatch(r"[0-9]{4}", str(ledger[base])) or any(x not in ledger for x in srcs): return None
+    s = next(x for x in f.series if x["code"] == f.hl)
+    if s["pts"][0][2] != q["from"] or ledger[srcs[2]] != s["end"][1] or ledger.get(f"fact:{keys[1]}.t.y") != q["from"]: return None
+    try: a, b = (float(ledger[x].replace(",", "")) for x in srcs[1:])
+    except ValueError: return None
+    if a == b or float(ledger[srcs[0]].replace(",", "") or 0) == 0: return None
+    word = "line.note.up" if b > a else "line.note.down"
+    segs = [{"name": s["code"], "kind": f.kind}, {"w": " "}] + K._finding_word(word, base=[{"src": base}], v=[{"src": srcs[0], "bold": True}])
+    if tw(K.finding_plain(segs), f.size) > f.W - 16: return None
+    return segs, ("change", srcs[0])
 
 
 def peak_ticks(series):
@@ -203,6 +234,12 @@ def cl_line(f, occ):
             o.append(K.line(f.x(t_last) + 3, yv(v_last), lx - 3, y - size * 0.35, stroke=fill, w=0.6, op=0.8))
         o.append(K.txt(B, lx, y, size, fill, nm_svg + " " + val_svg, tw(nm + " " + val, size), weight=700 if hot else 400, tag=f"end {s['code']}"))
     y = ly + size * 0.5
+    note = _change_note(f)
+    if note:  # one short note under the period axis, marked for the page's comparison check (data-cmp)
+        segs, (rel, a_src) = note; y += size * 1.5
+        mark = f' data-cmp="{rel}" data-a="{esc(a_src)}"'
+        o.append('<g data-notes="change">' + K.txt(B, 8, y, size, "var(--t-title)", K.finding_html(segs), tw(K.finding_plain(segs), size),
+                                                    tag="note", style=mark) + "</g>")
     lns = d.get("lines") or []
     if not isinstance(lns, list): raise Refused(f"line: lines is {lns!r}; lines is a list of segment lists")
     for i, ln in enumerate(lns):

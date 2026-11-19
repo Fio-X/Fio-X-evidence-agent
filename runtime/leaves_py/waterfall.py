@@ -17,6 +17,9 @@ hero.data (the data shape this leaf eats; on a column frame page, the hero's lea
   "rest": {"name": segs, "cells": [series src, ...], "text": ledger src}?,  # what the listed parts leave (layer 1's rest fact)
   "lines": [segs, ...]?, "footnote": segs?}         # layer 1's lines under the picture, one line each
 segs: as wbkit.segs reads them; series src: a cell of the request's rows (geometry only); ledger src: a row {"src", "text"}.
+Note (_share_note): one line under the steps, the largest part's share above the second's (data-cmp next, in g[data-notes]), only where
+the shares' ledger values order the first two strictly and print them apart and the core's comparison (knobs.comparisons) names the
+same two share facts as first and second; else none. It uses the word table's existing words.
 Refuses: no whole, fewer than two parts, a part twice, a cell the request lacks, a value below 0, parts that do not add up to
 the whole within tol, a highlight that is no part, a digit in a literal word, a text that leaves the picture or overlaps
 another, a board too narrow (plot under 240 px)."""
@@ -83,7 +86,7 @@ class Frame:
             v = sum(K.val(c) for c in cells) if cells is not None else K.val(p.get("value"))  # a part of several rows: their sum
             if v < 0: raise Refused(f"waterfall: part {p['code']} is below 0")
             if not p.get("text"): raise Refused(f"waterfall: part {p['code']} has no text (its ledger entry)")
-            f.parts.append(dict(code=p["code"], v=v, t=K.ent(p["text"]), name=K.named(p["code"], kind)))
+            f.parts.append(dict(code=p["code"], v=v, t=K.ent(p["text"]), src=p["text"], name=K.named(p["code"], kind)))
         f.rest = None
         r = d.get("rest")
         if r is not None:
@@ -108,6 +111,36 @@ class Frame:
 
     def x(f, v):
         return f.x0 + (f.x1 - f.x0) * v / max(f.whole, sum(p["v"] for p in f.parts) + (f.rest["v"] if f.rest else 0))
+
+
+def _key(src):
+    """The fact key a ledger src prints (fact:<k>, its .n or .r part)."""
+    k = src.removeprefix("fact:")
+    return k[:-2] if k.endswith((".n", ".r")) else k
+
+
+def _share_note(f):
+    """(segs, (relation, a_src, b_src)) of the note under the steps, or None (no note; the page is drawn all the same): the
+    largest part's share above the second's (wbkit.finding_side_top over the parts, each share's value the number of its
+    fact's bare ledger entry, never a sum of cells), each printing differently, at least two parts, each from its own share
+    entry; and only where the core's comparison of that share (wbkit.compared) names the same two facts as first and second
+    (the parts of one whole are compared by their facts: the core's set is the parts and the rest they leave). The words are
+    the word table's own (the note column's above and paren); a note that does not fit the width is left out."""
+    nodes = []
+    for p in f.parts:
+        try: nodes.append((p["code"], float(FX.text(p["src"].removesuffix(".r").removesuffix(".n") + ".n").replace(",", "")), p["src"]))
+        except (Refused, ValueError): return None
+    top = K.finding_side_top(nodes) if len(nodes) >= 2 and len({n[2] for n in nodes}) == len(nodes) else None
+    if not top: return None
+    (a, _, a_src), (b, _, b_src) = top
+    c = K.compared(a_src)
+    if not c or c.get("scoped") or (c.get("first"), c.get("second")) != (_key(a_src), _key(b_src)): return None
+    kind = f.d["part_kind"]
+    nm = lambda code: {"name": code, "kind": kind}
+    segs = [nm(a), {"w": " "}, {"src": a_src, "bold": True}] + K._finding_word(K.FINDING_WORDS["above"]) + \
+        K._finding_word(K.FINDING_WORDS["paren"], v=[nm(b), {"w": " "}, {"src": b_src, "bold": True}])
+    if tw(K.finding_plain(segs), f.size) > f.W - 16: return None
+    return segs, (K.FINDING_RELATION["note"], a_src, b_src)
 
 
 def cl_waterfall(f, occ):
@@ -143,6 +176,12 @@ def cl_waterfall(f, occ):
         o.append(K.txt(B, x1 + 6, mid, size, "var(--accent)" if hot else "var(--t-body)", val_svg, tw(val_txt, size), weight=700 if hot or key == "whole" else 400,
                        tag=f"value {key}"))
     y = top + len(rows) * pitch + size * 0.4
+    note = _share_note(f)
+    if note:  # one short note under the steps, marked for the page's comparison check (data-cmp)
+        segs, (rel, a_src, b_src) = note; y += size * 1.5
+        mark = f' data-cmp="{rel}" data-a="{esc(a_src)}" data-b="{esc(b_src)}"'
+        o.append('<g data-notes="share">' + K.txt(B, 8, y, size, "var(--t-title)", K.finding_html(segs), tw(K.finding_plain(segs), size),
+                                                   tag="note", style=mark) + "</g>")
     lns = d.get("lines") or []
     if not isinstance(lns, list): raise Refused(f"waterfall: lines is {lns!r}; lines is a list of segment lists")
     for i, ln in enumerate(lns):
