@@ -5607,7 +5607,8 @@ pub(crate) async fn pages_of(
     // a many-block page (owner 11-14 16:5x item 2): each block's page from its own table, by the same steps and checks;
     // the first block stops the run as a one-block page does, a later block that stops is left out and kept as such
     // the first block stops the run as a one-block page does; of blocks that share one table (由总到分), one that stops is
-    // left out and the next drawn block is the page's first
+    // left out and the next drawn block is the page's first, and when the last of them stops too, having published nothing,
+    // the page is the shared table's one-block page, as for a plan whose blocks fewer than two recipes draw
     let mut answers = Vec::new();
     let mut lead = 0;
     let (first, shown, leader) = loop {
@@ -5627,11 +5628,21 @@ pub(crate) async fn pages_of(
             Ok(page) => break page,
             Err(stopped @ (Stop::Page { .. } | Stop::Refused { .. } | Stop::NoReply { .. }))
                 if !planned.shared.is_empty()
-                    && lead + 1 < blocks.len()
                     && manifested(recorder.run_dir()) == before
                     && recorder.resume_under_last_accepted() =>
             {
                 recorder.program_event(BLOCK_LEFT_OUT_EVENT, json!({"block": lead + 1, "table": blocks[lead].1.id, "why": stopped.to_string()}))?;
+                if lead + 1 == blocks.len() {
+                    return page_from(
+                        recorder,
+                        model,
+                        question,
+                        &planned.prepared,
+                        catalogue,
+                        cancel,
+                    )
+                    .await;
+                }
                 answers.push(format!(
                     "Block {} ({}) was left out: {stopped}",
                     lead + 1,
