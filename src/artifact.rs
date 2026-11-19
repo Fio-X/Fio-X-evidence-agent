@@ -31,11 +31,10 @@ pub struct InvestigationBundle {
     /// Reasons a `<file>.source.json` beside a local data file was ignored (`NEWSROOM_LOCAL_SOURCE_NOTE`): file name and
     /// reason only, never the note's content. Written to the manifest when not empty.
     pub source_note_warnings: Vec<String>,
+    /// The folder of the run this one follows up (`news investigate --follow-up-of`), set by the caller; a bundle reopened later
+    /// reads it back from the manifest instead.
+    pub parent: Option<String>,
 }
-
-/// The folder a child run follows up (set by the parent that starts `news investigate` for a follow-up); the run's story.json
-/// records its name as `parent`.
-pub const FOLLOW_UP_OF_ENV: &str = "NEWSROOM_FOLLOW_UP_OF";
 
 #[derive(Debug, Serialize)]
 struct Manifest<'a> {
@@ -216,6 +215,7 @@ impl InvestigationBundle {
             session_dir: dir.join("session"),
             recipe: None,
             source_note_warnings: Vec::new(),
+            parent: None,
             dir,
         })
     }
@@ -649,8 +649,9 @@ impl InvestigationBundle {
             },
             delivery,
             source_note_warnings: self.all_source_note_warnings(),
-            parent: std::env::var(FOLLOW_UP_OF_ENV)
-                .ok()
+            parent: self
+                .parent
+                .clone()
                 .filter(|name| !name.is_empty())
                 .or_else(|| existing_parent(&self.manifest_path)),
             recipe: self

@@ -1,6 +1,6 @@
 use crate::artifact::InvestigationBundle;
 use crate::audit;
-use crate::cli::{InvestigateArgs, PiArgs};
+use crate::cli::InvestigateArgs;
 use crate::commands::verify;
 use crate::compose_answer;
 use crate::pi::{self, run_prompt, PiConfig, PiRunResult};
@@ -470,9 +470,10 @@ pub async fn run(args: InvestigateArgs) -> Result<()> {
 pub struct ChildRun<'a> {
     pub question: &'a str,
     pub out: &'a Path,
-    pub pi: &'a PiArgs,
+    /// The model settings of the parent as `news investigate` arguments (the caller builds them from its own settings).
+    pub settings: &'a [String],
     pub data: &'a [PathBuf],
-    /// The folder it follows up, if any: its name goes to the child's story.json as `parent`.
+    /// The folder it follows up, if any: its name goes to the child's story.json as `parent` (`--follow-up-of`).
     pub parent: Option<&'a str>,
 }
 
@@ -482,20 +483,19 @@ pub fn follow_up_question(topic: &str, message: &str) -> String {
 }
 
 /// The command of a child run: this binary, `investigate`, the folder root and the model settings of the parent, the data files and
-/// the question; the follow-up link in the environment, and no command identity carried over from the parent (the child sets its own).
+/// the question; the follow-up link as its own argument, and no command identity carried over from the parent (the child sets its own).
 pub fn child_command(exe: &Path, run: &ChildRun<'_>) -> std::process::Command {
     let mut command = std::process::Command::new(exe);
     command.arg("investigate").arg("--out").arg(run.out);
-    command.args(run.pi.settings_args());
+    command.args(run.settings);
     for file in run.data {
         command.arg("--data").arg(file);
     }
+    if let Some(parent) = run.parent {
+        command.arg("--follow-up-of").arg(parent);
+    }
     command.arg("--").arg(run.question);
     command.env_remove(crate::agent_serve::COMMAND_ENV);
-    match run.parent {
-        Some(parent) => command.env(crate::artifact::FOLLOW_UP_OF_ENV, parent),
-        None => command.env_remove(crate::artifact::FOLLOW_UP_OF_ENV),
-    };
     command
 }
 
@@ -574,6 +574,7 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
         );
     }
     let mut bundle = InvestigationBundle::create(&output_root, &topic)?;
+    bundle.parent = args.follow_up_of.clone();
     let mut local_data = Vec::new();
     for source in &args.data {
         local_data.push(bundle.import_data(source)?);
@@ -1614,15 +1615,17 @@ mod child_tests {
     use super::*;
     use std::ffi::OsStr;
 
-    fn pi() -> PiArgs {
-        PiArgs {
-            pi_bin: PathBuf::from("pi"),
-            provider: Some("p".into()),
-            model: Some("m".into()),
-            thinking: None,
-            approve_project: false,
-            tool_profile: "visual".into(),
-        }
+    fn settings() -> Vec<String> {
+        [
+            "--tool-profile",
+            "visual",
+            "--provider",
+            "p",
+            "--model",
+            "m",
+        ]
+        .map(String::from)
+        .to_vec()
     }
 
     fn args_of(command: &std::process::Command) -> Vec<String> {
@@ -1645,7 +1648,7 @@ mod child_tests {
         let run = ChildRun {
             question: "q text",
             out: Path::new("root"),
-            pi: &pi(),
+            settings: &settings(),
             data: &data,
             parent: Some("run-1"),
         };
@@ -1659,6 +1662,7 @@ mod child_tests {
         assert!(!args.iter().any(|a| a == "--thinking"));
         assert_eq!(args.iter().filter(|a| *a == "--data").count(), 2);
         assert_eq!(&args[args.len() - 2..], ["--", "q text"]);
+        assert!(args.windows(2).any(|w| w == ["--follow-up-of", "run-1"]));
     }
 
     #[test]
@@ -1672,7 +1676,7 @@ mod child_tests {
         let mut run = ChildRun {
             question: "q",
             out: Path::new("root"),
-            pi: &pi(),
+            settings: &settings(),
             data: &[],
             parent: Some("run-1"),
         };
@@ -1681,13 +1685,14 @@ mod child_tests {
             env(&with_parent, crate::agent_serve::COMMAND_ENV),
             Some(None)
         );
-        assert_eq!(
-            env(&with_parent, crate::artifact::FOLLOW_UP_OF_ENV),
-            Some(Some("run-1".into()))
+        let args = args_of(&with_parent);
+        assert!(args.windows(2).any(|w| w == ["--follow-up-of", "run-1"]));
+        assert!(
+            args.iter().position(|a| a == "--follow-up-of") < args.iter().position(|a| a == "--")
         );
         run.parent = None;
         let first = child_command(Path::new("news"), &run);
-        assert_eq!(env(&first, crate::artifact::FOLLOW_UP_OF_ENV), Some(None));
+        assert!(!args_of(&first).iter().any(|a| a == "--follow-up-of"));
     }
 
     #[test]

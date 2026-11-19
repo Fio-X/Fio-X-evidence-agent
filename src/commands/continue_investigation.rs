@@ -428,11 +428,12 @@ pub async fn follow_up(args: ContinueArgs, data: &[PathBuf]) -> Result<Followed>
             .dir
             .parent()
             .context("the result folder has no folder around it")?;
+        let settings = args.pi.settings_args();
         let (dir, code) =
             crate::commands::investigate::run_as_child(&crate::commands::investigate::ChildRun {
                 question: &question,
                 out: root,
-                pi: &args.pi,
+                settings: &settings,
                 data,
                 parent: Some(&bundle.id),
             })

@@ -213,11 +213,11 @@ async fn start_investigation(topic: &str, force: Force) -> Result<PathBuf> {
     if crate::next_flow::next_enabled() {
         let root = artifact_root();
         let data = discover_data_files(topic);
-        let pi = default_pi_args(force);
+        let settings = default_pi_args(force).settings_args();
         let (dir, code) = investigate::run_as_child(&investigate::ChildRun {
             question: topic,
             out: &root,
-            pi: &pi,
+            settings: &settings,
             data: &data,
             parent: None,
         })
@@ -234,6 +234,7 @@ async fn start_investigation(topic: &str, force: Force) -> Result<PathBuf> {
         confirm_output: false,
         data: discover_data_files(topic),
         dry_run: false,
+        follow_up_of: None,
     })
     .await
 }
