@@ -428,6 +428,8 @@ jobs:
         run: ./scripts/test_control_plane.sh
       - name: Investigate and continue exit-code acceptance
         run: python3 scripts/test_investigate_exit_codes.py
+      - name: Verify --json output
+        run: python3 scripts/test_verify_json.py
       - name: Visualization performance budget
         run: node scripts/benchmark_viz.mjs
       - name: Complex visualization performance budget

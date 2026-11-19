@@ -247,6 +247,10 @@ pub struct VerifyArgs {
     /// Per-query recomputation timeout in seconds.
     #[arg(long, default_value_t = 30)]
     pub recompute_timeout: u64,
+
+    /// Print one JSON object on stdout (passed, checks, errors) instead of the text lines; exit codes are unchanged.
+    #[arg(long, default_value_t = false)]
+    pub json: bool,
 }
 
 /// The commands in the order the group help shows them. Only names: which group a command belongs to comes from the `commands` section of

@@ -245,13 +245,38 @@ pub fn exit_on_error(error: &anyhow::Error, before_exit: fn()) -> anyhow::Error 
     std::process::exit(EXIT_ERROR);
 }
 
+/// The machine-readable form of one verification, printed by `news verify --json`. It only restates what `verify_and_record` decided
+/// (and wrote to verification.json): `passed`, the total `checks`, every error (integrity first, then recompute) and the two stages
+/// as verification.json has them, less the recompute duration and the duckdb path, which differ between runs.
+fn verification_json(result: &Verification) -> serde_json::Value {
+    let recompute_errors = result.replay.iter().flat_map(|value| value.errors.iter());
+    let errors: Vec<&String> = result
+        .report
+        .errors
+        .iter()
+        .chain(recompute_errors)
+        .collect();
+    json!({
+        "passed": result.passed,
+        "checks": result.report.checks + result.replay.as_ref().map(|value| value.checks).unwrap_or(0),
+        "errors": errors,
+        "integrity": {
+            "passed": result.report.passed,
+            "checks": result.report.checks,
+            "errors": &result.report.errors,
+            "warnings": &result.report.warnings,
+        },
+        "recompute": result.replay.as_ref().map(|value| json!({
+            "passed": value.passed,
+            "checks": value.checks,
+            "errors": value.errors,
+        })),
+        "report": &result.path,
+    })
+}
+
 pub async fn run(args: VerifyArgs) -> Result<()> {
-    let Verification {
-        report,
-        replay,
-        passed,
-        path,
-    } = verify_and_record(
+    let result = verify_and_record(
         &args.artifact,
         &args.duckdb_bin,
         args.recompute_timeout,
@@ -259,13 +284,32 @@ pub async fn run(args: VerifyArgs) -> Result<()> {
     )
     .await
     .map_err(|error| exit_on_error(&error, || {}))?;
+    if args.json {
+        println!("{}", verification_json(&result));
+    } else {
+        print_text(&result);
+    }
+    if !result.passed {
+        eprintln!("NOT VERIFIED: artifact verification failed; see the FAIL lines above");
+        std::process::exit(EXIT_NOT_VERIFIED);
+    }
+    eprintln!("VERIFIED");
+    Ok(())
+}
 
+fn print_text(result: &Verification) {
+    let Verification {
+        report,
+        replay,
+        path,
+        ..
+    } = result;
     println!(
         "artifact integrity: {}",
         if report.passed { "PASS" } else { "FAIL" }
     );
     println!("integrity checks: {}", report.checks);
-    if let Some(replay) = &replay {
+    if let Some(replay) = replay {
         println!(
             "SQL recompute: {}",
             if replay.passed { "PASS" } else { "FAIL" }
@@ -283,10 +327,62 @@ pub async fn run(args: VerifyArgs) -> Result<()> {
     for error in &report.errors {
         println!("FAIL  {error}");
     }
-    if !passed {
-        eprintln!("NOT VERIFIED: artifact verification failed; see the FAIL lines above");
-        std::process::exit(EXIT_NOT_VERIFIED);
+}
+
+#[cfg(test)]
+mod json_tests {
+    use super::*;
+
+    fn result(
+        report: (bool, usize, &[&str]),
+        replay: Option<(bool, usize, &[&str])>,
+    ) -> Verification {
+        let list = |items: &[&str]| {
+            items
+                .iter()
+                .map(|item| item.to_string())
+                .collect::<Vec<_>>()
+        };
+        let replay = replay.map(|(passed, checks, errors)| RecomputeReport {
+            passed,
+            checks,
+            errors: list(errors),
+            duration_ms: 7,
+        });
+        Verification {
+            passed: report.0 && replay.as_ref().map(|value| value.passed).unwrap_or(true),
+            report: VerificationReport {
+                passed: report.0,
+                checks: report.1,
+                errors: list(report.2),
+                warnings: vec!["w".to_string()],
+            },
+            replay,
+            path: std::path::PathBuf::from("run/verification.json"),
+        }
     }
-    eprintln!("VERIFIED");
-    Ok(())
+
+    #[test]
+    fn json_restates_the_verdict_it_was_given() {
+        let value = verification_json(&result((true, 12, &[]), None));
+        assert_eq!(value["passed"], json!(true));
+        assert_eq!(value["checks"], json!(12));
+        assert_eq!(value["errors"], json!([]));
+        assert_eq!(value["integrity"]["warnings"], json!(["w"]));
+        assert_eq!(value["recompute"], json!(null));
+        assert_eq!(value["report"], json!("run/verification.json"));
+    }
+
+    #[test]
+    fn json_lists_integrity_errors_then_recompute_errors_and_adds_the_checks() {
+        let value = verification_json(&result((true, 12, &[]), Some((false, 3, &["rows differ"]))));
+        assert_eq!(value["passed"], json!(false));
+        assert_eq!(value["checks"], json!(15));
+        assert_eq!(value["errors"], json!(["rows differ"]));
+        assert_eq!(value["recompute"]["errors"], json!(["rows differ"]));
+        let value = verification_json(&result((false, 9, &["a", "b"]), None));
+        assert_eq!(value["passed"], json!(false));
+        assert_eq!(value["errors"], json!(["a", "b"]));
+        assert_eq!(value["integrity"]["passed"], json!(false));
+    }
 }
