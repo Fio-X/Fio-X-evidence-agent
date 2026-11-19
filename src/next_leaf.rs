@@ -3054,6 +3054,7 @@ mod tests {
             [
                 "block_ranks",
                 "change",
+                "change_bars",
                 "charts",
                 "column",
                 "composition",

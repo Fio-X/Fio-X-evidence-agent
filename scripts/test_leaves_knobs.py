@@ -37,7 +37,7 @@ class Registry(unittest.TestCase):
 
     def test_a_recipe_holds_what_its_nodes_eat_and_exposes_only_real_knobs(self):
         t = knobs.table()
-        self.assertEqual([r["name"] for r in t["recipes"]], ["scmp", "ring", "composition_steps", "composition", "one_line", "change", "column", "ranked_bars", "flow", "block_ranks"])
+        self.assertEqual([r["name"] for r in t["recipes"]], ["scmp", "ring", "composition_steps", "composition", "one_line", "change", "change_bars", "column", "ranked_bars", "flow", "block_ranks"])
         ring = next(r for r in knobs.RECIPES if r["name"] == "ring")
         for bad in [dict(ring, eats=["annual"]), dict(ring, layers=["map", "pie"]), dict(ring, exposes=["ring.glow"]),
                     dict(ring, same_measure=[["map", "pie"]]), dict(ring, same_measure=[["map", "map"]])]:
@@ -47,9 +47,9 @@ class Registry(unittest.TestCase):
     def test_a_column_frame_recipe_declares_its_pages_main_layer(self):
         t = knobs.table()
         self.assertEqual({r["name"]: r.get("main") for r in t["recipes"]},
-                         dict(scmp=None, ring=None, composition_steps="waterfall", composition="stacked100", one_line="line", change="bars", column="bars", ranked_bars="bars", flow="sankey", block_ranks="rank_lines"))
+                         dict(scmp=None, ring=None, composition_steps="waterfall", composition="stacked100", one_line="line", change="bars", change_bars="bars", column="bars", ranked_bars="bars", flow="sankey", block_ranks="rank_lines"))
         self.assertEqual(knobs.run.MAIN, dict(column="bars", change="bars", flow="sankey", composition_steps="waterfall", composition="stacked100", one_line="line", ranked_bars="bars",
-                                              block_ranks="rank_lines"))
+                                              change_bars="bars", block_ranks="rank_lines"))
         flow = next(r for r in knobs.RECIPES if r["name"] == "flow")
         ring = next(r for r in knobs.RECIPES if r["name"] == "ring")
         for bad in [dict(flow, main="bars"), {k: v for k, v in flow.items() if k != "main"}, dict(flow, layers=[]), dict(ring, main="map")]:
@@ -100,6 +100,25 @@ class Registry(unittest.TestCase):
         with self.assertRaises(SystemExit) as e:
             knobs.none_left(dict(scmp, external=["strip", "bignums", "notes"]))
         self.assertIn("layers ['map'] are neither bound external", str(e.exception))
+
+    def test_every_recipe_answers_one_relation_and_a_change_without_map_points_has_its_own(self):
+        t = knobs.table()
+        self.assertEqual({r["name"]: r["relation"] for r in t["recipes"]},
+                         dict(scmp="Flow", ring="Flow", composition_steps="Composition", composition="Composition", one_line="Change",
+                              change="Change", change_bars="Change", column="Ranking", ranked_bars="Ranking", flow="Flow",
+                              block_ranks="Ranking"))
+        # change stands on map points; change_bars, tried after it, draws the same bars with no layer on the map
+        by = {r["name"]: r for r in t["recipes"]}
+        self.assertEqual(by["change"]["points"], ["bubbles", "leader_notes"])
+        self.assertNotIn("points", by["change_bars"])
+        self.assertEqual((by["change_bars"]["eats"], by["change_bars"]["picks"]), (by["change"]["eats"], by["change"]["picks"]))
+        names = [r["name"] for r in t["recipes"]]
+        self.assertEqual(names.index("change_bars"), names.index("change") + 1)
+        column = next(r for r in knobs.RECIPES if r["name"] == "column")
+        for bad in [{k: v for k, v in column.items() if k != "relation"}, dict(column, relation="Level")]:
+            with self.assertRaises(SystemExit) as e:
+                self._with(bad, t)
+            self.assertIn("relation", str(e.exception))
 
     def _with(self, recipe, t):
         saved = knobs.RECIPES[:]

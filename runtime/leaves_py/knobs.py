@@ -45,10 +45,11 @@ READS = {"frame": [], "base": ["data"]}
 RECIPES = [
     dict(name="scmp", layers=["map", "strip", "bignums", "notes"],
          eats=["annual", "years_2", "hub_origin", "one_unit", "others_single", "monthly_companion"], charts=[],
-         picks=["change_focus"], exposes=[], window=["t0", "t1"]),
+         picks=["change_focus"], exposes=[], window=["t0", "t1"], relation="Flow"),
     dict(name="ring", layers=["map", "ring", "callouts", "legend", "inset"],
          eats=["annual", "years_2", "hub_origin", "one_unit", "others_single", "monthly_companion"], charts=[],
-         picks=["change_focus"], exposes=["frame.gap_dir", "frame.title_in", "ring.months", "ring.color", "names.font"]),
+         picks=["change_focus"], exposes=["frame.gap_dir", "frame.title_in", "ring.months", "ring.color", "names.font"],
+         relation="Flow"),
     # a composition across places: one 100% bar per place of the main's sum-input fetch (its groups' input codes, the top
     # places by total, layer 1's cut), each bar's total printed beside it; before change and column, which would read the
     # main's totals alone, and only for a main the program fetched sum inputs for (composition_groups)
@@ -59,9 +60,9 @@ RECIPES = [
     # only a block of a many-block page draws it (blocks_only, owner 11-16 08:4x item 10): a short page of one place's parts
     # keeps its 100% bar (composition)
     dict(name="composition_steps", layers=["waterfall"], eats=["annual", "one_unit", "composition_groups", "one_whole"], charts=[],
-         picks=[], exposes=[], main="waterfall", blocks_only=True),
+         picks=[], exposes=[], main="waterfall", blocks_only=True, relation="Composition"),
     dict(name="composition", layers=["stacked100"], eats=["annual", "one_unit", "composition_groups"], charts=[], picks=[],
-         exposes=[], main="stacked100"),
+         exposes=[], main="stacked100", relation="Composition"),
     # one country over the years (a table whose one place holds every row, the shape's two ends: one_country, two_ends): its line
     # from the earlier end to the later, its highest point the axis; the dek its own rise or fall between the two ends (owner
     # 11-14 16:0x item 2's line leaf; round 16: v3, r2v14, r2v17, r2v18 asked one place's change and had no page)
@@ -74,26 +75,37 @@ RECIPES = [
          eats=["annual", "years_2", "one_place", "one_unit", "last_year", "two_ends"],
          charts=["choropleth", "horizontal_bar", "dumbbell", "line"], picks=["changed", "claim_marks"], exposes=[], strip=True,
          main="bars", relation="Change"),
+    # the same two ends when a place has no map point (an aggregate: World Bank's regions and the world, the EU; owner
+    # 11-19 23:1x): each place's change as signed bars alone, no map, no circles; change, whose circles and notes stand on map
+    # points, is not that shape (the flow asks for the points before it fills), as column goes on to ranked_bars. No notes
+    # yet: the change page's notes point at a map
+    dict(name="change_bars", layers=["bars"], eats=["annual", "years_2", "one_place", "one_unit", "last_year", "two_ends"],
+         charts=["horizontal_bar", "dumbbell", "line"], picks=["changed", "claim_marks"], exposes=[], strip=True, main="bars",
+         relation="Change"),
     # one period across places: a year, or the half year or month most places have a value at (one_freq, last_year)
     # (11-13, v5 item 2: no map: it drew the bars' own values at their year; the notes point at the bars, run.bar_notes)
     dict(name="column", layers=["bars", "leader_notes"], eats=["one_freq", "one_place", "one_unit", "last_year"],
-         charts=["choropleth", "horizontal_bar"], picks=["ranked", "claim_marks"], exposes=[], strip=True, main="bars"),
+         charts=["choropleth", "horizontal_bar"], picks=["ranked", "claim_marks"], exposes=[], strip=True, main="bars",
+         relation="Ranking"),
     # the same period across places when a place has no map point (an aggregate the question names beside countries, the
     # EU): the bars alone, no map; column, whose circles and notes stand on map points, is not that shape (the flow asks
     # for the points before it fills). No notes yet: the column page's notes point at a map, as flow's
     dict(name="ranked_bars", layers=["bars"], eats=["one_freq", "one_place", "one_unit", "last_year"],
-         charts=["horizontal_bar"], picks=["ranked", "claim_marks"], exposes=[], strip=True, main="bars"),
+         charts=["horizontal_bar"], picks=["ranked", "claim_marks"], exposes=[], strip=True, main="bars", relation="Ranking"),
     # a flow between two dimensions of one table (the registry's official pair, one unit) as a sankey across the column
     # page, under the page's header and over its source line; no notes yet (the column page's notes point at a map)
-    dict(name="flow", layers=["sankey"], eats=["official_flow", "one_unit"], charts=[], picks=[], exposes=[], main="sankey"),
+    dict(name="flow", layers=["sankey"], eats=["official_flow", "one_unit"], charts=[], picks=[], exposes=[], main="sankey",
+         relation="Flow"),
     # the places' standing on every quantity of a many-block page whose blocks all rank places (名次对照; owner 11-14 16:0x
     # items 1 and 5): one column of ranks per block's table, a line per place the first block ranked. It eats blocks, so
     # layer 1 tries it only for the page over the blocks (src/next_run.rs leaf_request of_blocks) and no other page tries it
     dict(name="block_ranks", layers=["rank_lines"], eats=["one_freq", "one_place", "one_unit", "last_year", "blocks"], charts=[],
          picks=["ranked"], exposes=[], main="rank_lines", relation="Ranking"),
 ]
-# The data relations a recipe may declare it answers (recipes[].relation), by the names of src/shape_registry.rs RELATIONS: a
-# recipe that declares one is passed over when the table step kept another for the main table; none answers any relation.
+# The data relations a recipe declares it answers (recipes[].relation), by the names of src/shape_registry.rs RELATIONS: a
+# recipe is passed over when the table step kept another for the main table, so a page never answers a relation the table
+# step did not keep (a change asked is never drawn as a ranking); every recipe declares one (recipes), and a kept relation
+# no recipe of the data's shape answers stops the page (src/next_run.rs leaf_request) rather than drawing another.
 RELATIONS = ("Flow", "Composition", "Map", "Change", "Ranking", "Distribution")
 # The shape conditions each node of a recipe needs its tables to meet; a recipe's conditions hold every one its layers'
 # nodes need.
@@ -184,7 +196,7 @@ def table():
     columns = run.KINDS["column"][0]  # the column page's own layers and the chart leaves over its frame (run.LEAF_LAYERS)
     groups = dict(map=list(prod.MAP_ORDER), ring=list(scmp.RING_LAYERS), charts=list(prod.CHARTS), column=list(columns),
                   change=list(run.KINDS["change"][0]), flow=list(run.KINDS["flow"][0]), composition=list(run.KINDS["composition"][0]),
-                  ranked_bars=list(run.KINDS["ranked_bars"][0]), block_ranks=list(run.KINDS["block_ranks"][0]),
+                  ranked_bars=list(run.KINDS["ranked_bars"][0]), change_bars=list(run.KINDS["change_bars"][0]), block_ranks=list(run.KINDS["block_ranks"][0]),
                   composition_steps=list(run.KINDS["composition_steps"][0]), one_line=list(run.KINDS["one_line"][0]),
                   scmp=list(scmp.SCMP_LAYERS))
     reserve = {}
@@ -248,8 +260,8 @@ def recipes(nodes, groups):
                 raise SystemExit(f"{r['name']}: node {n} states no shape it eats (EATS)")
             if set(EATS[n]) - set(r["eats"]):
                 raise SystemExit(f"{r['name']}: node {n} eats {sorted(set(EATS[n]) - set(r['eats']))}, the recipe does not")
-        if r.get("relation") not in (None, *RELATIONS):
-            raise SystemExit(f"{r['name']}: relation {r['relation']!r}; one of {RELATIONS} or none (any relation)")
+        if r.get("relation") not in RELATIONS:
+            raise SystemExit(f"{r['name']}: relation {r.get('relation')!r}; one of {RELATIONS}, the one its page answers")
         if r.get("blocks_only", False) not in (True, False) or (r.get("blocks_only") and "blocks" in r["eats"]):
             raise SystemExit(f"{r['name']}: blocks_only {r.get('blocks_only')!r}; true or false, and a page over the blocks is no block")
         if r.get("window", []) not in ([], ["t0", "t1"]):

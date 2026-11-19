@@ -4583,9 +4583,10 @@ fn zeros_check(zeros: &[Value]) -> Option<PageCheck> {
 
 /// The first recipe of the leaf registry (the visual group's Recipes, in its order) that answers the relation the table step
 /// kept for the main table (a recipe that declares none answers any), draws every view the question asks for (GAP-2,
-/// unanswered_views) and whose shape the first table has, and the page's request by it (recipe_request). Err is
-/// (recipe, stage, why): NO_RECIPE at the shape, every recipe's why given in registry order, when none fits; else the
-/// recipe that stopped past its shape. `of_blocks`: the page over a many-block page's blocks (pages_of), which only a
+/// unanswered_views) and whose shape the first table has, and the page's request by it (recipe_request), with each recipe
+/// passed over before it as "recipe: why" in registry order (the ring event records them). Err is (recipe, stage, why):
+/// NO_RECIPE at the shape, every recipe's why given in registry order, when none fits; else the recipe that stopped past
+/// its shape. `of_blocks`: the page over a many-block page's blocks (pages_of), which only a
 /// recipe that eats blocks draws; every other page passes those by, as if the registry had none.
 #[allow(clippy::too_many_arguments)]
 /// The recipes a page tries, in registry order: the page over the blocks only those that eat blocks, any other page the
@@ -4608,7 +4609,7 @@ fn leaf_request(
     (question, words): (&str, (&str, &str, &str)),
     (calls, focus): (&std::sync::Mutex<Vec<Value>>, Option<&str>),
     (of_blocks, many): (bool, bool),
-) -> Result<(&'static Recipe, Value), (&'static str, &'static str, String)> {
+) -> Result<(&'static Recipe, Value, Vec<String>), (&'static str, &'static str, String)> {
     let mut missed = Vec::new();
     let places = catalogue.places(question);
     // the relation the table step kept for the main table: a recipe that answers another is not this relation
@@ -4647,7 +4648,11 @@ fn leaf_request(
             Ok(fill) => {
                 // a composition never leaves out a place the question names (the places the knowledge group reads in it)
                 named_dropped(&fill, &places).map_err(|why| (recipe.name.as_str(), "fill", why))?;
-                return Ok((recipe, fill));
+                let passed = missed
+                    .iter()
+                    .map(|(r, why)| format!("{r}: {why}"))
+                    .collect();
+                return Ok((recipe, fill, passed));
             }
             Err(("shape", why)) => missed.push((recipe.name.as_str(), why)),
             Err((stage, why)) => return Err((recipe.name.as_str(), stage, why)),
@@ -5862,8 +5867,9 @@ pub(crate) async fn page_of_block(
     // The recipe is picked by the data's shape before the text step (its words go into the fill once worded, leaf_page), so
     // the page-level fields are drafted for what the picked page draws: a page whose bars draw the change gets a title
     // that names a change. A pick that stopped stops the run after the text step, as before.
-    // block 0 is the page over the blocks (pages_of): only a recipe that eats blocks draws it
-    let picked = leaf_request(
+    // block 0 is the page over the blocks (pages_of): only a recipe that eats blocks draws it; the recipes passed over
+    // before the picked one go on the ring event with why (a stopped pick's why already names each)
+    let (picked, passed_over) = match leaf_request(
         recorder.run_dir(),
         prepared,
         &drawn,
@@ -5871,7 +5877,10 @@ pub(crate) async fn page_of_block(
         (question, ("", "", "")),
         (&calls, focus),
         (block == 0, many),
-    );
+    ) {
+        Ok((recipe, fill, passed)) => (Ok((recipe, fill)), passed),
+        Err(stopped) => (Err(stopped), Vec::new()),
+    };
     // the page over the blocks is extra: when no recipe can draw it, it stops here, before the text step asks the model
     // anything (review 11-16: a page left out must not cost a model call)
     if block == 0 {
@@ -5996,6 +6005,9 @@ pub(crate) async fn page_of_block(
                 "dropped": published.dropped.iter().map(|(what, why)| json!({"what": what, "why": why})).collect::<Vec<_>>()});
             if let Some(ends) = &leaf.ends {
                 event["ends"] = ends.clone();
+            }
+            if !passed_over.is_empty() {
+                event["passed_over"] = json!(passed_over);
             }
             // the radius scale the circles were drawn at, as the layer said it (r_used, and r_steps under its r_max), and the
             // circles it lifted to r_min on that scale, whose areas no longer keep to it (r_min_lifted, r_min_codes)
@@ -10511,6 +10523,36 @@ mod tests {
         );
     }
 
+    /// The same for a change (owner 11-19 23:1x): a place the map has no point for (World Bank's regions and the world, the
+    /// EU) is not the change page's shape, whose circles and notes stand on map points, and goes to the change bars alone
+    /// (change_bars: the change page's bars, its eats and picks, no layer on the map), which answers Change as the change
+    /// page does and is tried right after it; countries alone stay on the change page.
+    #[test]
+    fn a_change_with_a_place_off_the_map_goes_to_the_change_bars_alone() {
+        let s = |c: &[&str]| c.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        let (change, bars) = (recipe("change"), recipe("change_bars"));
+        assert!(!change.points.is_empty() && bars.points.is_empty() && bars.layers == ["bars"]);
+        assert_eq!((&bars.eats, &bars.picks), (&change.eats, &change.picks));
+        assert_eq!(bars.relation.as_deref(), Some("Change"));
+        for (ranked, off) in [
+            (s(&["WLD", "SSF", "SAS"]), "WLD"),
+            (s(&["DE", "EU27_2020", "FR"]), "EU27_2020"),
+        ] {
+            let (stage, why) = on_the_map(change, &ranked, &Hubs).unwrap_err();
+            assert!(
+                stage == "shape" && why.starts_with("not this shape: ") && why.contains(off),
+                "{why}"
+            );
+            assert_eq!(on_the_map(bars, &ranked, &Hubs), Ok(()));
+        }
+        for ranked in [s(&["USA", "CHN"]), s(&["SE", "DE", "FR"])] {
+            assert_eq!(on_the_map(change, &ranked, &Hubs), Ok(()), "{ranked:?}");
+        }
+        let names: Vec<&str> = Hubs.recipes().iter().map(|r| r.name.as_str()).collect();
+        let at = |n: &str| names.iter().position(|x| *x == n).unwrap();
+        assert_eq!(at("change_bars"), at("change") + 1);
+    }
+
     /// on_the_map tells "try the next recipe" from "stop the page" by the refusal's words alone, so the words (NO_POINT),
     /// the place that writes them (next_flow place_points_reply, reached here through the catalogue's own place_points and
     /// the two groups' doors) and that reading are held together: a reworded refusal fails here instead of quietly turning
@@ -12178,6 +12220,7 @@ mod tests {
                 "composition",
                 "one_line",
                 "change",
+                "change_bars",
                 "column",
                 "ranked_bars",
                 "flow",
@@ -16100,6 +16143,7 @@ mod tests {
                 ("composition", Err("not this shape: main migr asks no grouped total alone".to_string())),
                 ("one_line", Err("not this shape: main spans one year (2025)".to_string())),
                 ("change", Err("not this shape: main spans one year (2025)".to_string())),
+                ("change_bars", Err("not this shape: main spans one year (2025)".to_string())),
                 ("column", Ok("citizen PER 2025".to_string())),
                 ("ranked_bars", Ok("citizen PER 2025".to_string())),
                 ("flow", Err("not this shape: main migr has no registered flow".to_string())),
@@ -17271,7 +17315,7 @@ mod tests {
             (false, false),
         );
         let (recipe, fill) = match request {
-            Ok((recipe, fill)) => (recipe.name.as_str(), fill),
+            Ok((recipe, fill, _)) => (recipe.name.as_str(), fill),
             Err((recipe, stage, why)) => panic!(
                 "stuck {recipe}-{stage} ms {}: {why}",
                 started.elapsed().as_millis()
@@ -19806,17 +19850,12 @@ mod tests {
         .is_err());
     }
 
-    /// The main of a stored World Bank run (a copy of its events.jsonl, claims.jsonl, data/, shadow/ and computations/ at
-    /// STORED_WB_RUN; the catalogue env as the product's; run with --ignored) as leaf_page asks for its page: the table of the
-    /// run's first next_chart event, prepared as its candidates and picks calls left it (file, sheet, claims; no companion),
-    /// drawn as the run's next_chart templates, under the question of its next_catalogue event; then leaf_request. Prints
-    /// each recipe's outcome: the recipe whose request was made, or the recipe and stage it stopped at, and why.
-    #[test]
-    #[ignore]
-    fn a_stored_world_bank_run_s_leaf_request() {
-        let run = std::path::PathBuf::from(std::env::var("STORED_WB_RUN").unwrap());
-        let catalogue =
-            crate::next_flow::GroupCatalogue::from_env(|k| std::env::var(k).ok()).unwrap();
+    /// The main of a stored World Bank run (`run`: a copy of its events.jsonl, claims.jsonl, data/, shadow/ and
+    /// computations/) as leaf_page asks for its page: the table of the run's first next_chart event, prepared as its
+    /// candidates and picks calls left it (file, sheet, claims; no companion), with the relation its next_table_relation
+    /// event kept when `kept` (none without that event), drawn as the run's next_chart templates, under the question of its
+    /// next_catalogue event. Returns (question, prepared, drawn).
+    fn stored_world_bank_main(run: &Path, kept: bool) -> (String, Prepared, Vec<String>) {
         let events: Vec<Value> = std::fs::read_to_string(run.join("events.jsonl"))
             .unwrap()
             .lines()
@@ -19834,10 +19873,11 @@ mod tests {
             .filter(|e| e["type"] == "next_chart")
             .collect();
         let main = charts[0]["table"].as_str().unwrap().to_string();
-        let drawn: Vec<&str> = charts
+        let drawn: Vec<String> = charts
             .iter()
             .flat_map(|e| [e["template"].as_str(), e["second"]["template"].as_str()])
             .flatten()
+            .map(str::to_string)
             .collect();
         let dataset = main.strip_suffix("@2").unwrap();
         let (mut args, mut sheet, mut picked) = (Map::new(), String::new(), None);
@@ -19864,9 +19904,22 @@ mod tests {
                 _ => {}
             }
         }
+        let relation = events
+            .iter()
+            .filter(|_| kept)
+            .rfind(|e| {
+                e["type"] == crate::next_flow::TABLE_RELATION_EVENT && e["table"] == main.as_str()
+            })
+            .and_then(|e| e["kept"].as_str())
+            .map(|k| {
+                *crate::shape_registry::RELATIONS
+                    .iter()
+                    .find(|r| format!("{r:?}") == k)
+                    .unwrap_or_else(|| panic!("no relation {k}"))
+            });
         let (file, claims) = picked.unwrap();
         let prepared = Prepared {
-            id: main.clone(),
+            id: main,
             title: String::new(),
             file,
             args,
@@ -19875,8 +19928,23 @@ mod tests {
             places_zh: Vec::new(),
             companions: Vec::new(),
             asked: json!([]),
-            relation: None,
+            relation,
         };
+        (question, prepared, drawn)
+    }
+
+    /// The main of a stored World Bank run (STORED_WB_RUN, as stored_world_bank_main reads it, no relation kept; the
+    /// catalogue env as the product's; run with --ignored) through leaf_request. Prints each recipe's outcome: the recipe
+    /// whose request was made, or the recipe and stage it stopped at, and why.
+    #[test]
+    #[ignore]
+    fn a_stored_world_bank_run_s_leaf_request() {
+        let run = std::path::PathBuf::from(std::env::var("STORED_WB_RUN").unwrap());
+        let catalogue =
+            crate::next_flow::GroupCatalogue::from_env(|k| std::env::var(k).ok()).unwrap();
+        let (question, prepared, drawn) = stored_world_bank_main(&run, false);
+        let drawn: Vec<&str> = drawn.iter().map(String::as_str).collect();
+        let main = prepared.id.clone();
         println!(
             "main {main} file {} claims {} drawn {drawn:?} question {question}",
             prepared.file,
@@ -19892,7 +19960,7 @@ mod tests {
             (false, false),
         );
         match &got {
-            Ok((recipe, fill)) => println!(
+            Ok((recipe, fill, _)) => println!(
                 "WBRUN {main} recipe {} request made, {} rows",
                 recipe.name,
                 fill["rows"].as_array().map_or(0, Vec::len)
@@ -19902,11 +19970,49 @@ mod tests {
             }
         }
         let reached = match &got {
-            Ok((recipe, _)) => recipe.name.as_str(),
+            Ok((recipe, _, _)) => recipe.name.as_str(),
             Err((recipe, stage, _)) if *stage != "shape" => *recipe,
             Err((_, _, why)) => panic!("no recipe takes the shape: {why}"),
         };
         assert_eq!(reached, "column");
+    }
+
+    /// Each stored World Bank run of STORED_WB_RUNS (run folders, ':' between them; the catalogue env as the product's; run
+    /// with --ignored) through leaf_request under the relation its table step kept (stored_world_bank_main): prints the
+    /// picked recipe and each recipe passed over before it with why, or where the pick stopped. A measurement, no assert.
+    #[test]
+    #[ignore]
+    fn stored_world_bank_runs_recipes_passed_over() {
+        let runs = std::env::var("STORED_WB_RUNS").unwrap();
+        let catalogue =
+            crate::next_flow::GroupCatalogue::from_env(|k| std::env::var(k).ok()).unwrap();
+        for run in runs.split(':').map(std::path::PathBuf::from) {
+            let (question, prepared, drawn) = stored_world_bank_main(&run, true);
+            let drawn: Vec<&str> = drawn.iter().map(String::as_str).collect();
+            println!(
+                "RUN {} main {} kept {:?} drawn {drawn:?}",
+                run.display(),
+                prepared.id,
+                prepared.relation
+            );
+            match leaf_request(
+                &run,
+                &[prepared],
+                &drawn,
+                &catalogue,
+                (&question, ("标题", "导语", "栏目")),
+                (&Default::default(), None),
+                (false, false),
+            ) {
+                Ok((recipe, _, passed)) => {
+                    println!("  PICKED {}", recipe.name);
+                    for p in passed {
+                        println!("  PASSED {p}");
+                    }
+                }
+                Err((recipe, stage, why)) => println!("  STOPPED {recipe}-{stage}: {why}"),
+            }
+        }
     }
 
     // A second topic through the same nodes: a World Bank ranking of eight economies (q5, its share aged 65 and above).
@@ -21193,6 +21299,7 @@ for line in sys.stdin:
                 ("composition", false),
                 ("one_line", false),
                 ("change", true),
+                ("change_bars", true),
                 ("column", true),
                 ("ranked_bars", true),
                 ("flow", false),
@@ -21410,6 +21517,7 @@ for line in sys.stdin:
                 ("composition", vec![]),
                 ("one_line", vec![]),
                 ("change", vec![]),
+                ("change_bars", vec![]),
                 ("column", vec![]),
                 ("ranked_bars", vec![]),
                 ("flow", vec![]),
@@ -25378,11 +25486,16 @@ for line in sys.stdin:
 
     /// The relation the table step kept for the main table picks among the recipes whose shape a ten-year table has: none
     /// kept or Change goes to the change page (its two ends), Ranking passes over it, which answers Change, to the column
-    /// page of the last year; the change recipe declares Change, the column recipe none.
+    /// page of the last year; the change recipe declares Change, the column recipe Ranking. A one-year table kept as a change
+    /// has no two ends: no recipe answers Change for it, and the pick stops rather than drawing the year's ranking.
     #[test]
     fn a_ten_year_table_kept_as_a_ranking_is_a_column_page_not_a_change_page() {
         assert_eq!(recipe("change").relation.as_deref(), Some("Change"));
-        assert_eq!(recipe("column").relation, None);
+        assert_eq!(recipe("column").relation.as_deref(), Some("Ranking"));
+        assert!(
+            Hubs.recipes().iter().all(|r| r.relation.is_some()),
+            "every recipe answers one relation"
+        );
         let run = tempfile::tempdir().unwrap();
         std::fs::write(run.path().join("sdg.csv"), "").unwrap();
         let reached = |relation: Option<Relation>| {
@@ -25408,7 +25521,7 @@ for line in sys.stdin:
                 (&Default::default(), None),
                 (false, false),
             ) {
-                Ok((recipe, _)) => (recipe.name.clone(), String::new()),
+                Ok((recipe, _, _)) => (recipe.name.clone(), String::new()),
                 Err((recipe, stage, why)) => (format!("{recipe}-{stage}"), why),
             }
         };
@@ -25422,7 +25535,12 @@ for line in sys.stdin:
                 recipe.starts_with("change") || why.contains("change: shadow/candidate_sheet"),
                 "{kept:?}: {recipe} {why}"
             );
-            assert!(!why.contains("not this relation"), "{kept:?}: {why}");
+            // kept Change passes over the recipes that answer another relation, never a change recipe
+            let other = match kept {
+                None => "not this relation",
+                Some(_) => "change: not this relation",
+            };
+            assert!(!why.contains(other), "{kept:?}: {why}");
         }
         let (recipe, why) = reached(Some(Relation::Ranking));
         assert!(
@@ -25430,6 +25548,42 @@ for line in sys.stdin:
             "Ranking: {recipe} {why}"
         );
         assert!(!recipe.starts_with("change"), "Ranking: {recipe} {why}");
+        // one year kept as a change: the change recipes are not its shape, the ranking ones not its relation
+        let one_year = ten_years(&[
+            ("SE", "2024", "66"),
+            ("DE", "2024", "22.4"),
+            ("FR", "2024", "13.25"),
+        ]);
+        let prepared = Prepared {
+            id: "sdg".into(),
+            title: String::new(),
+            file: "sdg.csv".into(),
+            args: Map::new(),
+            sheet: "s1".into(),
+            claims: Vec::new(),
+            places_zh: Vec::new(),
+            companions: Vec::new(),
+            asked: json!([]),
+            relation: Some(Relation::Change),
+        };
+        let cat = Fetched(BTreeMap::from([("sdg".to_string(), one_year)]), "");
+        let (recipe, stage, why) = leaf_request(
+            run.path(),
+            &[prepared],
+            &["horizontal_bar"],
+            &cat,
+            ("", ("标题", "导语", "栏目")),
+            (&Default::default(), None),
+            (false, false),
+        )
+        .unwrap_err();
+        assert_eq!((recipe, stage), (NO_RECIPE, "shape"), "{why}");
+        for r in ["column", "ranked_bars"] {
+            assert!(
+                why.contains(&format!("{r}: not this relation: the table step kept Change, the recipe answers Ranking")),
+                "{r}: {why}"
+            );
+        }
     }
 
     /// A catalogue whose fetched files are given rows by table (the rest as Hubs, but its name table names nothing of the

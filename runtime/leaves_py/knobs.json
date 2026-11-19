@@ -2081,6 +2081,23 @@
    "waffle",
    "stacked_area"
   ],
+  "change_bars": [
+   "bignums",
+   "bars",
+   "section_head",
+   "rankbar",
+   "bubbles",
+   "bubble_key",
+   "leader_notes",
+   "sankey",
+   "stacked100",
+   "line",
+   "rank_lines",
+   "dumbbell",
+   "waterfall",
+   "waffle",
+   "stacked_area"
+  ],
   "block_ranks": [
    "bignums",
    "bars",
@@ -2171,6 +2188,7 @@
     "t0",
     "t1"
    ],
+   "relation": "Flow",
    "external": [
     "map",
     "strip",
@@ -2206,6 +2224,7 @@
     "ring.color",
     "names.font"
    ],
+   "relation": "Flow",
    "external": [
     "map",
     "ring"
@@ -2227,6 +2246,7 @@
    "exposes": [],
    "main": "waterfall",
    "blocks_only": true,
+   "relation": "Composition",
    "external": [
     "waterfall"
    ]
@@ -2245,6 +2265,7 @@
    "picks": [],
    "exposes": [],
    "main": "stacked100",
+   "relation": "Composition",
    "external": [
     "stacked100"
    ]
@@ -2323,6 +2344,36 @@
    ]
   },
   {
+   "name": "change_bars",
+   "layers": [
+    "bars"
+   ],
+   "eats": [
+    "annual",
+    "years_2",
+    "one_place",
+    "one_unit",
+    "last_year",
+    "two_ends"
+   ],
+   "charts": [
+    "horizontal_bar",
+    "dumbbell",
+    "line"
+   ],
+   "picks": [
+    "changed",
+    "claim_marks"
+   ],
+   "exposes": [],
+   "strip": true,
+   "main": "bars",
+   "relation": "Change",
+   "external": [
+    "bars"
+   ]
+  },
+  {
    "name": "column",
    "layers": [
     "bars",
@@ -2345,6 +2396,7 @@
    "exposes": [],
    "strip": true,
    "main": "bars",
+   "relation": "Ranking",
    "external": [
     "bars",
     "leader_notes"
@@ -2380,6 +2432,7 @@
    "exposes": [],
    "strip": true,
    "main": "bars",
+   "relation": "Ranking",
    "external": [
     "bars"
    ]
@@ -2397,6 +2450,7 @@
    "picks": [],
    "exposes": [],
    "main": "sankey",
+   "relation": "Flow",
    "external": [
     "sankey"
    ]
