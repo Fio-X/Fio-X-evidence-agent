@@ -1204,7 +1204,7 @@
  {
   "name": "NEWSROOM_PI_PROVIDER",
   "owner": "system",
-  "purpose": "Provider the Pi agent uses; defaults to dragoncode.",
+  "purpose": "Provider the Pi agent uses; defaults to relay.",
   "expiry": "permanent",
   "default": "other",
   "status": "approved",
@@ -1419,6 +1419,33 @@
   "expiry": "remove",
   "default": "on",
   "status": "approved"
+ },
+ {
+  "name": "NEWSROOM_RELAY_API_KEY",
+  "owner": "system",
+  "purpose": "Model-provider API key for the relay provider (an OpenAI-compatible relay on the Anthropic Messages route); the legacy variable of the old provider id is still read.",
+  "expiry": "permanent",
+  "default": "other",
+  "status": "approved",
+  "confidence": "low"
+ },
+ {
+  "name": "NEWSROOM_RELAY_BASE_URL",
+  "owner": "system",
+  "purpose": "Address of the relay provider; the legacy variable of the old provider id is still read.",
+  "expiry": "permanent",
+  "default": "other",
+  "status": "approved",
+  "confidence": "low"
+ },
+ {
+  "name": "NEWSROOM_RELAY_MODEL",
+  "owner": "system",
+  "purpose": "Model id for the relay provider, read by the Pi custom-provider example configuration.",
+  "expiry": "permanent",
+  "default": "other",
+  "status": "approved",
+  "confidence": "low"
  },
  {
   "name": "NEWSROOM_RENDER_STYLES",

@@ -210,7 +210,7 @@ pub struct LoginArgs {
     #[arg(long, default_value_t = false, conflicts_with = "key_stdin")]
     pub clear: bool,
 
-    /// Provider: anthropic, dragoncode or custom (an Anthropic Messages-compatible endpoint). Asked when omitted.
+    /// Provider: anthropic, relay (an OpenAI-compatible relay on the Anthropic Messages route) or custom (an Anthropic Messages-compatible endpoint). Asked when omitted.
     #[arg(long)]
     pub provider: Option<String>,
 

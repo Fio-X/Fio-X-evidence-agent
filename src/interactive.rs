@@ -251,7 +251,8 @@ fn default_pi_args(force: Force) -> PiArgs {
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("pi")),
         provider: Some(
-            env::var("NEWSROOM_PI_PROVIDER").unwrap_or_else(|_| "dragoncode".to_string()),
+            env::var("NEWSROOM_PI_PROVIDER")
+                .unwrap_or_else(|_| crate::config::RELAY_PROVIDER.to_string()),
         ),
         model: Some(
             env::var("NEWSROOM_PI_MODEL").unwrap_or_else(|_| "claude-sonnet-4-6".to_string()),

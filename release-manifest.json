@@ -119,7 +119,7 @@
         "bytes": 885
       },
       {
-        "path": "DRAGONCODE_SETUP.md",
+        "path": "RELAY_SETUP.md",
         "sha256": "2b14232cf1441d21878ca47da249e3c558246c35fe1649d3ac7f654dea18399a",
         "bytes": 2717
       },
@@ -3384,7 +3384,7 @@
         "bytes": 3110
       },
       {
-        "path": "scripts/configure-pi-dragoncode.sh",
+        "path": "scripts/configure-pi-relay.sh",
         "sha256": "6448b454659c9556b5fbe20b77d0e4b76e92ff06517a112ef305d50867931b29",
         "bytes": 1980
       },

@@ -9,9 +9,6 @@ use std::path::{Path, PathBuf};
 const ALLOWED_KEYS: &[&str] = &[
     "ANTHROPIC_API_KEY",
     "DEEPSEEK_API_KEY",
-    "DRAGONCODE_API_KEY",
-    "DRAGONCODE_BASE_URL",
-    "DRAGONCODE_MODEL",
     "KIMI_API_KEY",
     "MOONSHOT_API_KEY",
     "NEWSROOM_API_KEY",
@@ -24,6 +21,9 @@ const ALLOWED_KEYS: &[&str] = &[
     "NEWSROOM_PI_PROVIDER",
     "NEWSROOM_PI_THINKING",
     "NEWSROOM_PROVIDER",
+    "NEWSROOM_RELAY_API_KEY",
+    "NEWSROOM_RELAY_BASE_URL",
+    "NEWSROOM_RELAY_MODEL",
     "NEWSROOM_TOOL_PROFILE",
     "OPENAI_API_KEY",
     "OPENAI_BASE_URL",
@@ -66,7 +66,7 @@ pub fn load_project_env() -> Result<()> {
         let Some((key, value)) = parse_assignment(line) else {
             continue;
         };
-        if !ALLOWED_KEYS.contains(&key.as_str()) || env::var_os(&key).is_some() {
+        if !key_allowed(&key) || env::var_os(&key).is_some() {
             continue;
         }
         env::set_var(&key, value);
@@ -82,18 +82,80 @@ pub fn load_project_env() -> Result<()> {
     Ok(())
 }
 
-/// Every name a model key can arrive under. When any of them is already set (by the shell or a `.env`), the saved login is not read at all.
-pub const MODEL_KEY_NAMES: &[&str] = &[
+/// The one place that holds the names the relay provider was first saved and exported under: its provider id, its three variables and
+/// its public address. legacy alias, kept so existing local setups keep working: each of these still resolves to the relay provider
+/// (id `relay`, variables `NEWSROOM_RELAY_*`), and nothing else in the repository spells them.
+pub struct LegacyRelay {
+    pub provider: &'static str,
+    pub key: &'static str,
+    pub base_url: &'static str,
+    pub model: &'static str,
+    pub url: &'static str,
+}
+
+pub const LEGACY_RELAY: LegacyRelay = LegacyRelay {
+    provider: "dragoncode",
+    key: "DRAGONCODE_API_KEY",
+    base_url: "DRAGONCODE_BASE_URL",
+    model: "DRAGONCODE_MODEL",
+    url: "https://dragoncode.codes",
+};
+
+/// The provider id of the relay route (an Anthropic Messages-compatible endpoint behind an OpenAI-style key and address).
+pub const RELAY_PROVIDER: &str = "relay";
+pub const RELAY_KEY: &str = "NEWSROOM_RELAY_API_KEY";
+pub const RELAY_BASE_URL: &str = "NEWSROOM_RELAY_BASE_URL";
+
+/// The relay provider's id as the program spells it: the legacy id becomes `relay`, anything else stays as given.
+pub fn canonical_provider(provider: &str) -> &str {
+    if provider == LEGACY_RELAY.provider {
+        RELAY_PROVIDER
+    } else {
+        provider
+    }
+}
+
+/// True for the relay's own id and for its legacy alias.
+pub fn is_relay_provider(provider: &str) -> bool {
+    canonical_provider(provider) == RELAY_PROVIDER
+}
+
+/// Every key and address name the relay can arrive under, current names first, then the legacy ones.
+pub fn relay_key_names() -> [&'static str; 2] {
+    [RELAY_KEY, LEGACY_RELAY.key]
+}
+
+pub fn relay_base_url_names() -> [&'static str; 2] {
+    [RELAY_BASE_URL, LEGACY_RELAY.base_url]
+}
+
+/// Whether a project `.env` may set this name: the allow list above plus the legacy relay variables.
+fn key_allowed(key: &str) -> bool {
+    ALLOWED_KEYS.contains(&key)
+        || [LEGACY_RELAY.key, LEGACY_RELAY.base_url, LEGACY_RELAY.model].contains(&key)
+}
+
+const MODEL_KEY_NAMES: &[&str] = &[
     "ANTHROPIC_API_KEY",
     "DEEPSEEK_API_KEY",
-    "DRAGONCODE_API_KEY",
     "KIMI_API_KEY",
     "MOONSHOT_API_KEY",
     "NEWSROOM_API_KEY",
+    "NEWSROOM_RELAY_API_KEY",
     "OPENAI_API_KEY",
     "ZAI_API_KEY",
     "ZHIPUAI_API_KEY",
 ];
+
+/// Every name a model key can arrive under. When any of them is already set (by the shell or a `.env`), the saved login is not read at all.
+pub fn model_key_names() -> impl Iterator<Item = &'static str> {
+    MODEL_KEY_NAMES.iter().copied().chain([LEGACY_RELAY.key])
+}
+
+#[cfg(test)]
+pub fn is_model_key_name(name: &str) -> bool {
+    model_key_names().any(|known| known == name)
+}
 
 /// The providers `news login` can save, with the variable names each one is read under. Only Anthropic Messages routes: the built-in
 /// agent speaks nothing else.
@@ -110,13 +172,14 @@ pub const PROVIDERS: &[ProviderNames] = &[
         base_url: "ANTHROPIC_BASE_URL",
     },
     ProviderNames {
-        provider: "dragoncode",
-        key: "DRAGONCODE_API_KEY",
-        base_url: "DRAGONCODE_BASE_URL",
+        provider: RELAY_PROVIDER,
+        key: RELAY_KEY,
+        base_url: RELAY_BASE_URL,
     },
 ];
 
 pub fn provider_names(provider: &str) -> Option<&'static ProviderNames> {
+    let provider = canonical_provider(provider);
     PROVIDERS.iter().find(|p| p.provider == provider)
 }
 
@@ -174,10 +237,7 @@ pub fn saved_login_in_use() -> bool {
 /// After the `.env` step: when no model key is in the environment, take the saved login (if any) as the configuration, without replacing a
 /// provider, model or address the shell already set. The note names the file, provider and model only, never the key or any part of it.
 fn apply_saved_login() {
-    if MODEL_KEY_NAMES
-        .iter()
-        .any(|name| env::var_os(name).is_some_and(|v| !v.is_empty()))
-    {
+    if model_key_names().any(|name| env::var_os(name).is_some_and(|v| !v.is_empty())) {
         return;
     }
     let Some(path) = credentials_path() else {
@@ -207,7 +267,7 @@ fn apply_saved_login() {
             env::set_var(name, value);
         }
     };
-    set_if_unset("NEWSROOM_PI_PROVIDER", &login.provider);
+    set_if_unset("NEWSROOM_PI_PROVIDER", names.provider);
     if let Some(model) = &login.model {
         set_if_unset("NEWSROOM_PI_MODEL", model);
     }
@@ -492,15 +552,15 @@ mod tests {
             "MOONSHOT_API_KEY",
             "ZAI_API_KEY",
             "ZHIPUAI_API_KEY",
-            "DRAGONCODE_API_KEY",
+            "NEWSROOM_RELAY_API_KEY",
             "OPENAI_BASE_URL",
-            "DRAGONCODE_BASE_URL",
-            "DRAGONCODE_MODEL",
+            "NEWSROOM_RELAY_BASE_URL",
+            "NEWSROOM_RELAY_MODEL",
+            LEGACY_RELAY.key,
+            LEGACY_RELAY.base_url,
+            LEGACY_RELAY.model,
         ] {
-            assert!(
-                ALLOWED_KEYS.contains(&key),
-                "missing .env allowlist key: {key}"
-            );
+            assert!(key_allowed(key), "missing .env allowlist key: {key}");
         }
     }
 
@@ -608,9 +668,9 @@ mod tests {
 
     #[test]
     fn the_reader_takes_only_the_default_table_and_never_needs_a_key_line_echoed() {
-        let text = "# c\n[other]\napi_key = \"nope-nope-nope-nope\"\n[default]\nprovider = 'dragoncode' # trailing\napi_key = \"k-0123456789abcdef\"\nbroken line\nmodel = \"m\"\n";
+        let text = "# c\n[other]\napi_key = \"nope-nope-nope-nope\"\n[default]\nprovider = 'relay' # trailing\napi_key = \"k-0123456789abcdef\"\nbroken line\nmodel = \"m\"\n";
         let login = parse_credentials(text).unwrap();
-        assert_eq!(login.provider, "dragoncode");
+        assert_eq!(login.provider, "relay");
         assert_eq!(login.api_key, "k-0123456789abcdef");
         assert_eq!(login.model.as_deref(), Some("m"));
         assert_eq!(login.base_url, None);
@@ -630,9 +690,36 @@ mod tests {
     #[test]
     fn every_saved_provider_reads_a_key_name_the_env_file_also_accepts() {
         for names in PROVIDERS {
-            assert!(MODEL_KEY_NAMES.contains(&names.key), "{}", names.provider);
-            assert!(ALLOWED_KEYS.contains(&names.key), "{}", names.provider);
+            assert!(is_model_key_name(names.key), "{}", names.provider);
+            assert!(key_allowed(names.key), "{}", names.provider);
         }
+    }
+
+    #[test]
+    fn the_legacy_relay_names_still_resolve_to_the_relay_provider() {
+        // a login saved under the old provider id is read as the relay provider, with the relay's variables
+        let names = provider_names(LEGACY_RELAY.provider).expect("the legacy id resolves");
+        assert_eq!(names.provider, RELAY_PROVIDER);
+        assert_eq!(names.key, RELAY_KEY);
+        assert_eq!(names.base_url, RELAY_BASE_URL);
+        assert_eq!(canonical_provider(LEGACY_RELAY.provider), RELAY_PROVIDER);
+        assert!(is_relay_provider(LEGACY_RELAY.provider) && is_relay_provider(RELAY_PROVIDER));
+        assert!(!is_relay_provider("anthropic"));
+        // the old variables are still read from a `.env`, still count as a model key, and the new ones do too
+        for name in [LEGACY_RELAY.key, LEGACY_RELAY.base_url, LEGACY_RELAY.model] {
+            assert!(key_allowed(name), "{name}");
+        }
+        assert!(is_model_key_name(LEGACY_RELAY.key));
+        assert!(is_model_key_name(RELAY_KEY));
+        assert!(relay_key_names().contains(&LEGACY_RELAY.key));
+        assert!(relay_base_url_names().contains(&LEGACY_RELAY.base_url));
+        // a saved file written under the old id parses and keeps its provider text
+        let text = format!(
+            "[default]\nprovider = '{}'\napi_key = \"k-0123456789abcdef\"\n",
+            LEGACY_RELAY.provider
+        );
+        let login = parse_credentials(&text).unwrap();
+        assert!(provider_names(&login.provider).is_some());
     }
 
     #[test]

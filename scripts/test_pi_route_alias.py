@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Verify the legacy OpenAI env alias selects the DragonCode Pi provider."""
+"""Verify the legacy OpenAI env alias selects the relay Pi provider."""
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -13,6 +14,14 @@ BINARY = ROOT / "target" / "release" / "news"
 FIXTURE_KEY = "fixture-key-do-not-print"
 
 
+def relay_url() -> str:
+    """The relay address the program recognises, read from the one constant in src/config.rs that keeps it."""
+    text = (ROOT / "src" / "config.rs").read_text(encoding="utf-8")
+    match = re.search(r'LEGACY_RELAY: LegacyRelay = LegacyRelay \{.*?url: "([^"]+)"', text, re.S)
+    assert match, "the relay address constant was not found in src/config.rs"
+    return match.group(1)
+
+
 MOCK = r'''#!/usr/bin/env python3
 import json, os, sys
 capture = os.environ["PI_ROUTE_CAPTURE"]
@@ -22,7 +31,7 @@ for line in sys.stdin:
         with open(capture, "w", encoding="utf-8") as handle:
             json.dump({
                 "provider": os.environ.get("NEWSROOM_ACTIVE_PROVIDER"),
-                "dragoncode_key_present": bool(os.environ.get("DRAGONCODE_API_KEY")),
+                "relay_key_present": bool(os.environ.get("NEWSROOM_RELAY_API_KEY")),
             }, handle)
         print(json.dumps({"type":"response","command":"prompt","success":True}), flush=True)
         print(json.dumps({"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"ok"}}), flush=True)
@@ -44,12 +53,15 @@ def main() -> int:
         mock.write_text(MOCK, encoding="utf-8")
         mock.chmod(0o755)
         env = os.environ.copy()
+        # no relay or other key from the developer shell may stand in for the fixture key
+        for name in [n for n in env if n.endswith("_API_KEY")]:
+            env.pop(name)
         env.update(
             {
                 "NEWSROOM_AGENT": "pi",
                 "NEWSROOM_PI_PROVIDER": "openai",
                 "NEWSROOM_PI_MODEL": "claude-sonnet-4-6",
-                "OPENAI_BASE_URL": "https://dragoncode.codes",
+                "OPENAI_BASE_URL": relay_url(),
                 "OPENAI_API_KEY": FIXTURE_KEY,
                 "PI_ROUTE_CAPTURE": str(capture),
                 "NEWSROOM_RPC_STARTUP_MS": "3000",
@@ -58,7 +70,6 @@ def main() -> int:
                 "NEWSROOM_RPC_TOTAL_MS": "10000",
             }
         )
-        env.pop("DRAGONCODE_API_KEY", None)
         result = subprocess.run(
             [str(BINARY), "ask", "--pi-bin", str(mock), "route alias"],
             cwd=ROOT,
@@ -69,9 +80,9 @@ def main() -> int:
         )
         assert result.returncode == 0, result.stderr + result.stdout
         observed = json.loads(capture.read_text(encoding="utf-8"))
-        assert observed == {"provider": "dragoncode", "dragoncode_key_present": True}
+        assert observed == {"provider": "relay", "relay_key_present": True}
         assert FIXTURE_KEY not in result.stdout + result.stderr
-    print("Pi DragonCode route alias: PASS")
+    print("Pi relay route alias: PASS")
     return 0
 
 

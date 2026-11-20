@@ -47,7 +47,7 @@ with permissions `600`.
 | Provider | Saved as | Notes |
 |---|---|---|
 | Anthropic (Claude API) | `anthropic` | Key page: https://console.anthropic.com/settings/keys |
-| DragonCode | `dragoncode` | Anthropic Messages-compatible endpoint |
+| OpenAI-compatible relay | `relay` | Anthropic Messages route |
 | Custom endpoint | `anthropic` + `base_url` | Any Anthropic Messages-compatible URL |
 
 ```bash

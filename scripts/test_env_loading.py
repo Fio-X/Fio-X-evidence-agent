@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -14,6 +15,14 @@ BINARY = Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / "target/release/news"
 # The scripted mock records a claim and the files a verified run needs, so `investigate` ends VERIFIED (exit 0, the
 # rule since cb1a22fec1e0). perf_mock_pi.py's normal mode records no claim and ends NOT VERIFIED (exit 1).
 MOCK = ROOT / "scripts/mock_pi.py"
+
+
+def relay_url() -> str:
+    """The relay address the program recognises, read from the one constant in src/config.rs that keeps it."""
+    text = (ROOT / "src" / "config.rs").read_text(encoding="utf-8")
+    match = re.search(r'LEGACY_RELAY: LegacyRelay = LegacyRelay \{.*?url: "([^"]+)"', text, re.S)
+    assert match, "the relay address constant was not found in src/config.rs"
+    return match.group(1)
 
 
 def run_env_case(cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -32,10 +41,13 @@ def run_env_case(cwd: Path) -> subprocess.CompletedProcess[str]:
         "MOONSHOT_API_KEY",
         "ZAI_API_KEY",
         "ZHIPUAI_API_KEY",
-        "DRAGONCODE_API_KEY",
-        "DRAGONCODE_MODEL",
+        "NEWSROOM_RELAY_API_KEY",
+        "NEWSROOM_RELAY_MODEL",
     ):
         env.pop(key, None)
+    # any other model key from the developer shell (the relay's older variable names included) must not reach the run either
+    for key in [name for name in env if name.endswith("_API_KEY")]:
+        env.pop(key)
     env.update(
         {
             "NEWSROOM_AGENT": "pi",
@@ -67,7 +79,7 @@ with tempfile.TemporaryDirectory(prefix="news-env-cwd-") as cwd_name, tempfile.T
         "# A project-managed external file; this test value is not a real key.\n"
         "NEWSROOM_PI_PROVIDER=openai\n"
         "NEWSROOM_PI_MODEL='claude-sonnet-4-6'\n"
-        "OPENAI_BASE_URL=https://dragoncode.codes\n"
+        f"OPENAI_BASE_URL={relay_url()}\n"
         "OPENAI_API_KEY=test-only-openai-value\n"
         "ANTHROPIC_API_KEY=test-only-anthropic-value\n"
         "DEEPSEEK_API_KEY=test-only-deepseek-value\n"
@@ -75,7 +87,7 @@ with tempfile.TemporaryDirectory(prefix="news-env-cwd-") as cwd_name, tempfile.T
         "MOONSHOT_API_KEY=test-only-moonshot-value\n"
         "ZAI_API_KEY=test-only-zai-value\n"
         "ZHIPUAI_API_KEY=test-only-zhipu-value\n"
-        "DRAGONCODE_MODEL=claude-sonnet-4-6\n"
+        "NEWSROOM_RELAY_MODEL=claude-sonnet-4-6\n"
         "UNRELATED_ENV=must-not-be-imported\n",
         encoding="utf-8",
     )
@@ -84,7 +96,7 @@ with tempfile.TemporaryDirectory(prefix="news-env-cwd-") as cwd_name, tempfile.T
     result = run_env_case(cwd)
     if result.returncode != 0:
         raise SystemExit(f".env workflow failed: {result.stderr}")
-    if "provider=dragoncode model=claude-sonnet-4-6" not in result.stderr:
+    if "provider=relay model=claude-sonnet-4-6" not in result.stderr:
         raise SystemExit(".env provider/model did not reach the Pi runtime")
     for marker in (
         "test-only-openai-value",

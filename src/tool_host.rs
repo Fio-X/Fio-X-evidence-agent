@@ -690,8 +690,10 @@ mod tests {
             .unwrap_or_else(|e| e.into_inner());
         let names = [
             "ANTHROPIC_API_KEY",
-            "DRAGONCODE_API_KEY",
-            "DRAGONCODE_BASE_URL",
+            crate::config::RELAY_KEY,
+            crate::config::RELAY_BASE_URL,
+            crate::config::LEGACY_RELAY.key,
+            crate::config::LEGACY_RELAY.base_url,
             "OPENAI_API_KEY",
             "NEWSROOM_API_KEY",
             "NEWSROOM_BASE_URL",

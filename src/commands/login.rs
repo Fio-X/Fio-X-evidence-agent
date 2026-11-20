@@ -9,7 +9,8 @@ use std::io::{BufRead, IsTerminal, Write};
 use std::time::Duration;
 
 const DEFAULT_ANTHROPIC_MODEL: &str = "claude-sonnet-4-6";
-const DEFAULT_DRAGONCODE_URL: &str = "https://dragoncode.codes";
+// The relay address used when none is given.
+const DEFAULT_RELAY_URL: &str = config::LEGACY_RELAY.url;
 
 /// One choice of the provider menu.
 struct Choice {
@@ -34,12 +35,12 @@ const CHOICES: &[Choice] = &[
         default_base_url: None,
     },
     Choice {
-        name: "dragoncode",
-        label: "DragonCode",
-        saved_as: "dragoncode",
+        name: config::RELAY_PROVIDER,
+        label: "OpenAI-compatible relay (Anthropic Messages route)",
+        saved_as: config::RELAY_PROVIDER,
         key_page: None,
         default_model: DEFAULT_ANTHROPIC_MODEL,
-        default_base_url: Some(DEFAULT_DRAGONCODE_URL),
+        default_base_url: Some(DEFAULT_RELAY_URL),
     },
     Choice {
         name: "custom",
@@ -52,9 +53,14 @@ const CHOICES: &[Choice] = &[
 ];
 
 fn choice_named(name: &str) -> Option<&'static Choice> {
-    CHOICES
-        .iter()
-        .find(|c| c.name.eq_ignore_ascii_case(name.trim()))
+    let name = name.trim();
+    // the relay's legacy provider id still selects the relay choice
+    let name = if name.eq_ignore_ascii_case(config::LEGACY_RELAY.provider) {
+        config::RELAY_PROVIDER
+    } else {
+        name
+    };
+    CHOICES.iter().find(|c| c.name.eq_ignore_ascii_case(name))
 }
 
 /// Why `news login` refuses in this process, or None when it may run: inside an agent or tool child (the marker every such child
@@ -95,7 +101,7 @@ pub async fn run(args: LoginArgs) -> Result<()> {
 
     let choice = match &args.provider {
         Some(name) => choice_named(name).with_context(|| {
-            format!("unknown provider `{name}`; use one of: anthropic, dragoncode, custom")
+            format!("unknown provider `{name}`; use one of: anthropic, relay, custom")
         })?,
         None if interactive => ask_provider(&mut input)?,
         None => &CHOICES[0],
@@ -168,8 +174,7 @@ pub async fn run(args: LoginArgs) -> Result<()> {
                     login.provider,
                     model
                 );
-                if config::MODEL_KEY_NAMES
-                    .iter()
+                if config::model_key_names()
                     .any(|name| std::env::var_os(name).is_some_and(|v| !v.is_empty()))
                     && !config::saved_login_in_use()
                 {
@@ -212,9 +217,8 @@ fn show(path: &std::path::Path) -> Result<()> {
         println!("Endpoint: {url}");
     }
     println!("API key:  {}", config::mask_key(&login.api_key));
-    let key_in_env = config::MODEL_KEY_NAMES
-        .iter()
-        .any(|name| std::env::var_os(name).is_some_and(|v| !v.is_empty()));
+    let key_in_env =
+        config::model_key_names().any(|name| std::env::var_os(name).is_some_and(|v| !v.is_empty()));
     if config::saved_login_in_use() {
         println!("In use:   yes");
     } else if key_in_env {
@@ -524,6 +528,11 @@ mod tests {
             assert_eq!(choice_named(choice.name).map(|c| c.name), Some(choice.name));
         }
         assert!(choice_named("nosuch").is_none());
+        // the legacy provider id still picks the relay choice
+        assert_eq!(
+            choice_named(config::LEGACY_RELAY.provider).map(|c| c.name),
+            Some(config::RELAY_PROVIDER)
+        );
         // the built-in agent speaks only Anthropic Messages, so no other route is offered or saved
         assert!(choice_named("openai").is_none());
         assert!(config::provider_names("openai").is_none());

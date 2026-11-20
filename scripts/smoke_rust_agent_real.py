@@ -135,9 +135,9 @@ def main():
 
     standin = StandIn()
     env_file = work / "fake-config.env"
-    # `news investigate` has no --base-url flag: the address reaches the child through the provider's own variable, so the fake file names the DragonCode
+    # `news investigate` has no --base-url flag: the address reaches the child through the provider's own variable, so the fake file names the relay
     # route (an Anthropic Messages-compatible endpoint). Without an address from the file the handoff would fall back to the provider's public address.
-    config_text = f"NEWSROOM_PI_PROVIDER=dragoncode\nDRAGONCODE_API_KEY={FAKE_KEY}\nDRAGONCODE_BASE_URL={standin.url}\n"
+    config_text = f"NEWSROOM_PI_PROVIDER=relay\nNEWSROOM_RELAY_API_KEY={FAKE_KEY}\nNEWSROOM_RELAY_BASE_URL={standin.url}\n"
     guard.require_loopback(standin.url, "the stand-in address")
     guard.check_env_file_text(config_text)
     env_file.write_text(config_text)

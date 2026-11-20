@@ -38,7 +38,7 @@
 
 **影响**：
 - 用户体验差，不是"一键启动"
-- 对第三方 API（如 DragonCode）支持不友好
+- 对第三方 API（如 an OpenAI-compatible relay）支持不友好
 
 **建议解决方案**：
 
@@ -64,7 +64,7 @@ fn setup_pi_environment(config: &Config) -> Result<()> {
 
 ```bash
 # 用户体验
-news login --provider openai --api-key xxx --base-url https://dragoncode.codes
+news login --provider openai --api-key xxx --base-url https://relay.example.invalid
 
 # 存储到 .newsroom/config.json
 # 在调用 Pi 时自动注入
@@ -112,7 +112,7 @@ if pi_not_configured {
     eprintln!("  1. 运行: pi /login");
     eprintln!("  2. 或设置环境变量: export OPENAI_API_KEY=...");
     eprintln!("  3. 或使用: news login");
-    eprintln!("\n查看详细配置指南: ./DRAGONCODE_SETUP.md");
+    eprintln!("\n查看详细配置指南: ./RELAY_SETUP.md");
 }
 ```
 
@@ -216,8 +216,8 @@ echo "  B) 使用 OpenAI:"
 echo "     pi /login"
 echo "     选择 'openai' 并输入你的 API key"
 echo ""
-echo "  C) 使用 DragonCode (第三方):"
-echo "     查看 DRAGONCODE_SETUP.md"
+echo "  C) 使用 an OpenAI-compatible relay (第三方):"
+echo "     查看 RELAY_SETUP.md"
 ```
 
 ### 3. 在第一次运行时提供引导
