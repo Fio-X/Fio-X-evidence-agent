@@ -483,9 +483,12 @@ pub fn follow_up_question(topic: &str, message: &str) -> String {
 }
 
 /// The command of a child run: this binary, `investigate`, the folder root and the model settings of the parent, the data files and
-/// the question; the follow-up link as its own argument, and no command identity carried over from the parent (the child sets its own).
+/// the question; the follow-up link as its own argument, and no command identity or key-like name carried over from the parent (the
+/// child sets its own identity and reads its model settings itself).
 pub fn child_command(exe: &Path, run: &ChildRun<'_>) -> std::process::Command {
     let mut command = std::process::Command::new(exe);
+    // no key-like name reaches the child through inheritance; it reads its model settings itself, as the parent did
+    crate::tool_host::strip_keylike_env(&mut command);
     command.arg("investigate").arg("--out").arg(run.out);
     command.args(run.settings);
     for file in run.data {
