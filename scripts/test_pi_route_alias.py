@@ -14,11 +14,11 @@ BINARY = ROOT / "target" / "release" / "news"
 FIXTURE_KEY = "fixture-key-do-not-print"
 
 
-def relay_url() -> str:
-    """The relay address the program recognises, read from the one constant in src/config.rs that keeps it."""
+def relay_constant(field: str) -> str:
+    """One field of the legacy relay constant in src/config.rs, the only place that spells it."""
     text = (ROOT / "src" / "config.rs").read_text(encoding="utf-8")
-    match = re.search(r'LEGACY_RELAY: LegacyRelay = LegacyRelay \{.*?\n\s+url: "([^"]+)"', text, re.S)
-    assert match, "the relay address constant was not found in src/config.rs"
+    match = re.search(r'LEGACY_RELAY: LegacyRelay = LegacyRelay \{.*?\n\s+' + field + r': "([^"]+)"', text, re.S)
+    assert match, f"the {field} field of the relay constant was not found in src/config.rs"
     return match.group(1)
 
 
@@ -61,7 +61,7 @@ def main() -> int:
                 "NEWSROOM_AGENT": "pi",
                 "NEWSROOM_PI_PROVIDER": "openai",
                 "NEWSROOM_PI_MODEL": "claude-sonnet-4-6",
-                "OPENAI_BASE_URL": relay_url(),
+                "OPENAI_BASE_URL": relay_constant("url"),
                 "OPENAI_API_KEY": FIXTURE_KEY,
                 "PI_ROUTE_CAPTURE": str(capture),
                 "NEWSROOM_RPC_STARTUP_MS": "3000",
@@ -80,7 +80,8 @@ def main() -> int:
         )
         assert result.returncode == 0, result.stderr + result.stdout
         observed = json.loads(capture.read_text(encoding="utf-8"))
-        assert observed == {"provider": "relay", "relay_key_present": True}
+        # the Pi child is given the relay under the id a local Pi models configuration defines
+        assert observed == {"provider": relay_constant("provider"), "relay_key_present": True}
         assert FIXTURE_KEY not in result.stdout + result.stderr
     print("Pi relay route alias: PASS")
     return 0

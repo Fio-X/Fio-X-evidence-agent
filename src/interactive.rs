@@ -368,6 +368,25 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_interactive_default_provider_reaches_the_pi_child_as_the_legacy_relay_id() {
+        let _guard = crate::pi::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let before = env::var("NEWSROOM_PI_PROVIDER").ok();
+        env::remove_var("NEWSROOM_PI_PROVIDER");
+        let provider = default_pi_args(Force::Auto).provider;
+        match before {
+            Some(value) => env::set_var("NEWSROOM_PI_PROVIDER", value),
+            None => env::remove_var("NEWSROOM_PI_PROVIDER"),
+        }
+        assert_eq!(provider.as_deref(), Some(crate::config::RELAY_PROVIDER));
+        let (arg, active) =
+            crate::pi::PiConfig::provider_args_for_test(provider.as_deref(), None, "pi");
+        assert_eq!(arg, crate::config::LEGACY_RELAY.provider);
+        assert_eq!(active, crate::config::LEGACY_RELAY.provider);
+    }
+
+    #[test]
     fn the_profile_is_the_old_rule_when_the_switch_is_off() {
         for force in [Force::Auto, Force::Story, Force::Quick] {
             assert_eq!(profile_arg(false, force, None), "visual");

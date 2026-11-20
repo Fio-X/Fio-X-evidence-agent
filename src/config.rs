@@ -272,7 +272,17 @@ fn apply_saved_login() {
         set_if_unset("NEWSROOM_PI_MODEL", model);
     }
     if let Some(base_url) = &login.base_url {
-        set_if_unset(names.base_url, base_url);
+        // the relay's address may already be set under any of its names (the legacy one included): the person's value wins
+        let relay_bases = relay_base_url_names();
+        let own = [names.base_url];
+        let base_names: &[&str] = if is_relay_provider(names.provider) {
+            &relay_bases
+        } else {
+            &own
+        };
+        if base_names.iter().all(|name| env::var_os(name).is_none()) {
+            env::set_var(names.base_url, base_url);
+        }
     }
     env::set_var(names.key, &login.api_key);
     SAVED_LOGIN_IN_USE.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -693,6 +703,67 @@ mod tests {
             assert!(is_model_key_name(names.key), "{}", names.provider);
             assert!(key_allowed(names.key), "{}", names.provider);
         }
+    }
+
+    #[test]
+    fn a_saved_login_does_not_override_an_address_set_under_the_legacy_name() {
+        use std::os::unix::fs::PermissionsExt;
+        let home = CredentialsHome::new();
+        let names = [
+            "NEWSROOM_PI_PROVIDER",
+            "NEWSROOM_PI_MODEL",
+            RELAY_KEY,
+            RELAY_BASE_URL,
+            LEGACY_RELAY.base_url,
+        ];
+        let before: Vec<_> = names
+            .iter()
+            .chain(model_key_names().collect::<Vec<_>>().iter())
+            .map(|n| (*n, env::var_os(n)))
+            .collect();
+        for (name, _) in &before {
+            env::remove_var(name);
+        }
+        let saved = SavedLogin {
+            provider: LEGACY_RELAY.provider.to_string(),
+            model: None,
+            base_url: Some("https://saved.example.invalid".to_string()),
+            api_key: "k-0123456789abcdef".to_string(),
+        };
+        let path = home.path();
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, render_credentials(&saved)).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+
+        // the address is set only under the legacy name: the saved login leaves it alone and writes no second name
+        env::set_var(LEGACY_RELAY.base_url, "https://shell.example.invalid");
+        apply_saved_login();
+        let resolved = relay_base_url_names()
+            .iter()
+            .find_map(|name| env::var(name).ok());
+        let wrote_new_name = env::var_os(RELAY_BASE_URL).is_some();
+        let provider = env::var("NEWSROOM_PI_PROVIDER").ok();
+        let key_taken = env::var(RELAY_KEY).ok();
+
+        // nothing set: the saved address is applied under the current name
+        env::remove_var(LEGACY_RELAY.base_url);
+        env::remove_var(RELAY_KEY);
+        env::remove_var("NEWSROOM_PI_PROVIDER");
+        apply_saved_login();
+        let applied = env::var(RELAY_BASE_URL).ok();
+
+        for (name, value) in before {
+            match value {
+                Some(v) => env::set_var(name, v),
+                None => env::remove_var(name),
+            }
+        }
+        SAVED_LOGIN_IN_USE.store(false, std::sync::atomic::Ordering::Relaxed);
+        assert_eq!(resolved.as_deref(), Some("https://shell.example.invalid"));
+        assert!(!wrote_new_name);
+        assert_eq!(provider.as_deref(), Some(RELAY_PROVIDER));
+        assert_eq!(key_taken.as_deref(), Some("k-0123456789abcdef"));
+        assert_eq!(applied.as_deref(), Some("https://saved.example.invalid"));
     }
 
     #[test]

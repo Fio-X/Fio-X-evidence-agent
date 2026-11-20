@@ -1100,16 +1100,16 @@ impl PiConfig {
                     "[agent] normalized Pi provider to relay for the relay address (Anthropic Messages route)"
                 );
             }
-            // Pi is started with the provider id the person configured: an old local Pi setup may define the relay under its legacy id.
-            let pi_provider = if !rust
-                && self.provider.as_deref() == Some(crate::config::LEGACY_RELAY.provider)
-            {
+            // The Pi child gets the relay under its legacy id on every path that resolves to the relay (the legacy id typed, the relay
+            // address behind an OpenAI-style provider, a saved login, the interactive default): a local Pi models configuration defines
+            // only that id. The Rust child keeps the canonical id.
+            let pi_provider = if !rust && crate::config::is_relay_provider(&provider) {
                 crate::config::LEGACY_RELAY.provider
             } else {
                 provider.as_str()
             };
             cmd.arg("--provider").arg(pi_provider);
-            cmd.env("NEWSROOM_ACTIVE_PROVIDER", &provider);
+            cmd.env("NEWSROOM_ACTIVE_PROVIDER", pi_provider);
             if let Some(api_key) = self
                 .api_key
                 .as_deref()
@@ -2411,6 +2411,54 @@ pub(crate) static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// Tests that call it hold ENV_LOCK; the previous value of the switch is put back.
 #[cfg(test)]
 impl PiConfig {
+    /// The `--provider` argument and the NEWSROOM_ACTIVE_PROVIDER value of the child for a provider and address, on the route named by
+    /// `agent` ("pi" or "rust"). The caller holds ENV_LOCK; the previous value of the switch is put back.
+    pub(crate) fn provider_args_for_test(
+        provider: Option<&str>,
+        base_url: Option<&str>,
+        agent: &str,
+    ) -> (String, String) {
+        let config = PiConfig {
+            binary: "pi".into(),
+            provider: provider.map(str::to_string),
+            model: None,
+            api_key: None,
+            base_url: base_url.map(str::to_string),
+            thinking: None,
+            approve_project: false,
+            extension: None,
+            artifact_dir: None,
+            session_dir: None,
+            continue_session: false,
+            tool_profile: "investigate".to_string(),
+            speed: Default::default(),
+            compose: None,
+        };
+        let before = std::env::var(crate::agent_loop::AGENT_ENV).ok();
+        std::env::set_var(crate::agent_loop::AGENT_ENV, agent);
+        let command = config.command();
+        match before {
+            Some(value) => std::env::set_var(crate::agent_loop::AGENT_ENV, value),
+            None => std::env::remove_var(crate::agent_loop::AGENT_ENV),
+        }
+        let std_command = command.as_std();
+        let args: Vec<String> = std_command
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        let at = args
+            .iter()
+            .position(|a| a == "--provider")
+            .expect("the child gets a --provider argument");
+        let active = std_command
+            .get_envs()
+            .find(|(name, _)| *name == "NEWSROOM_ACTIVE_PROVIDER")
+            .and_then(|(_, value)| value)
+            .map(|v| v.to_string_lossy().into_owned())
+            .expect("the child gets NEWSROOM_ACTIVE_PROVIDER");
+        (args[at + 1].clone(), active)
+    }
+
     pub(crate) fn pi_command(&self) -> Command {
         let before = std::env::var(crate::agent_loop::AGENT_ENV).ok();
         std::env::set_var(crate::agent_loop::AGENT_ENV, "pi");
@@ -3884,6 +3932,50 @@ mod tests {
             &url.replacen("://", "://api.", 1)
         ));
         assert!(!PiConfig::relay_endpoint(&format!("{url}.example")));
+    }
+
+    #[test]
+    fn the_pi_child_gets_the_legacy_relay_id_on_every_path_that_resolves_to_the_relay() {
+        let _guard = EnvGuard::new();
+        let legacy = crate::config::LEGACY_RELAY.provider;
+        let url = crate::config::LEGACY_RELAY.url;
+        for (what, provider, base) in [
+            (
+                "the relay address behind an OpenAI-style provider",
+                Some("openai"),
+                Some(url),
+            ),
+            (
+                "the canonical id, as a saved login or the interactive default gives it",
+                Some("relay"),
+                None,
+            ),
+            ("the legacy id typed", Some(legacy), None),
+        ] {
+            let (arg, active) = PiConfig::provider_args_for_test(provider, base, "pi");
+            assert_eq!((arg.as_str(), active.as_str()), (legacy, legacy), "{what}");
+        }
+        // an OpenAI-style provider at some other address stays OpenAI
+        let (arg, active) = PiConfig::provider_args_for_test(
+            Some("openai"),
+            Some("https://other.example.invalid"),
+            "pi",
+        );
+        assert_eq!((arg.as_str(), active.as_str()), ("openai", "openai"));
+        // the Rust child keeps the canonical id, whichever spelling came in
+        for (provider, base) in [
+            (Some("openai"), Some(url)),
+            (Some("relay"), None),
+            (Some(legacy), None),
+        ] {
+            let (arg, active) = PiConfig::provider_args_for_test(provider, base, "rust");
+            assert_eq!((arg.as_str(), active.as_str()), ("relay", "relay"));
+        }
+        // other providers are untouched on both routes
+        for agent in ["pi", "rust"] {
+            let (arg, _) = PiConfig::provider_args_for_test(Some("anthropic"), None, agent);
+            assert_eq!(arg, "anthropic");
+        }
     }
 
     #[test]
