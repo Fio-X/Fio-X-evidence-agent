@@ -7273,7 +7273,10 @@ mod tests {
         // (q3 "by fuel type", 11-20: nrg_bal_peh 4th -> 1st, the others in their order)
         let noted: Vec<String> = table_notes().iter().map(|n| n.id.clone()).collect();
         let others = |five: &[String]| -> Vec<String> {
-            five.iter().filter(|id| !noted.contains(id)).cloned().collect()
+            five.iter()
+                .filter(|id| !noted.contains(id))
+                .cloned()
+                .collect()
         };
         let mut bad = Vec::new();
         for (q, zh, words) in NOTE_LOCKED {
@@ -7288,7 +7291,8 @@ mod tests {
             let lifted_only = same_five
                 && others(&before) == others(&after)
                 && before.iter().enumerate().all(|(i, id)| {
-                    !noted.contains(id) || after.iter().position(|x| x == id).is_some_and(|j| j <= i)
+                    !noted.contains(id)
+                        || after.iter().position(|x| x == id).is_some_and(|j| j <= i)
                 });
             if before != after && !lifted_only {
                 bad.push(format!("{q} {words}: {before:?} -> {after:?}"));
