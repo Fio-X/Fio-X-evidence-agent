@@ -7196,8 +7196,8 @@ mod tests {
         }
     }
 
-    /// The registered table notes on the real catalogue: q2's stand-in search words reach nrg_bal_s in the first five only
-    /// with the notes, q3's "by source" words nrg_bal_peh, and every NOTE_LOCKED row gets the same first five with and without them. Each note's table is
+    /// The registered table notes on the real catalogue: q2's stand-in search words rank nrg_bal_s higher with the notes, in
+    /// the first five, q3's "by source" words nrg_bal_peh, and every NOTE_LOCKED row gets the same first five with and without them, a noted table at most moving up. Each note's table is
     /// listed with the dimensions the note names, and its words hold no place name.
     /// L5GEO_DIR=<registry>/l5geo/catalog cargo test l5geo::tests::table_notes_on_the_real_catalogue -- --include-ignored --nocapture
     #[test]
@@ -7252,7 +7252,12 @@ mod tests {
         );
         let (before, after) = (five(&without, zh, words), five(&with, zh, words));
         println!("q2 first five without {before:?}, with {after:?}");
-        assert!(!before.iter().any(|id| id == "nrg_bal_s"), "{before:?}");
+        // on 10-31 it ranked 32nd without the notes; later search changes lifted it to 5th, so the note is held to lifting it
+        let (rank_without, rank_with) = (place(&without), place(&with));
+        assert!(
+            rank_with.is_some_and(|w| rank_without.is_none_or(|b| w < b)),
+            "{rank_without:?} -> {rank_with:?}"
+        );
         assert!(after.iter().any(|id| id == "nrg_bal_s"), "{after:?}");
         // q3's stand-ins that searched the power mix "by source" (10 of 69 stored runs, 11-20) were never offered the
         // table that splits it into fuels, whose title says "by type of fuel"; with its note they are
@@ -7264,11 +7269,28 @@ mod tests {
         println!("q3 by source: first five without {before:?}, with {after:?}");
         assert!(!before.iter().any(|id| id == "nrg_bal_peh"), "{before:?}");
         assert!(after.iter().any(|id| id == "nrg_bal_peh"), "{after:?}");
+        // a locked row keeps its first five; the only change let through is a noted table moving up among the same five
+        // (q3 "by fuel type", 11-20: nrg_bal_peh 4th -> 1st, the others in their order)
+        let noted: Vec<String> = table_notes().iter().map(|n| n.id.clone()).collect();
+        let others = |five: &[String]| -> Vec<String> {
+            five.iter().filter(|id| !noted.contains(id)).cloned().collect()
+        };
         let mut bad = Vec::new();
         for (q, zh, words) in NOTE_LOCKED {
             let (before, after) = (five(&without, zh, words), five(&with, zh, words));
             println!("{q} {words}: {after:?}");
-            if before != after {
+            let same_five = {
+                let (mut b, mut a) = (before.clone(), after.clone());
+                b.sort();
+                a.sort();
+                b == a
+            };
+            let lifted_only = same_five
+                && others(&before) == others(&after)
+                && before.iter().enumerate().all(|(i, id)| {
+                    !noted.contains(id) || after.iter().position(|x| x == id).is_some_and(|j| j <= i)
+                });
+            if before != after && !lifted_only {
                 bad.push(format!("{q} {words}: {before:?} -> {after:?}"));
             }
         }
