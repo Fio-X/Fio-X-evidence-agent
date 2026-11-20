@@ -44,7 +44,7 @@ with tempfile.TemporaryDirectory(prefix="news-interactive-") as temp:
     data_file.write_text("source,target,value\nA,B,1\n")
     env_file = workdir / "settings.env"
     env_file.write_text(
-        "NEWSROOM_PI_PROVIDER=dragoncode\nNEWSROOM_PI_MODEL=claude-sonnet-4-6\n"
+        "NEWSROOM_PI_PROVIDER=relay\nNEWSROOM_PI_MODEL=claude-sonnet-4-6\n"
     )
     env = {
         **os.environ,

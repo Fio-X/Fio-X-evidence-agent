@@ -6,14 +6,14 @@ use anyhow::{Context, Result};
 #[cfg(target_os = "macos")]
 use std::process::Command as StdCommand;
 
-// OpenAI and DragonCode are kept on purpose (user decision, K276) although nothing constructs them now that investigate-v2 is gone
+// OpenAI and the relay are kept on purpose (user decision, K276) although nothing constructs them now that investigate-v2 is gone
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum Provider {
     Anthropic,
     OpenAI,
-    /// DragonCode exposes an Anthropic Messages-compatible endpoint.
-    DragonCode,
+    /// The relay exposes an Anthropic Messages-compatible endpoint.
+    Relay,
 }
 
 pub struct LLMClient {
@@ -287,36 +287,36 @@ mod tests {
     #[test]
     fn anthropic_messages_url_does_not_duplicate_version_path() {
         let root = LLMClient::new(
-            Provider::DragonCode,
+            Provider::Relay,
             "test-key".to_string(),
             "claude-sonnet-4-6".to_string(),
         )
-        .with_base_url("https://dragoncode.codes".to_string());
+        .with_base_url("https://relay.example.invalid".to_string());
         assert_eq!(
             root.anthropic_messages_url(),
-            "https://dragoncode.codes/v1/messages"
+            "https://relay.example.invalid/v1/messages"
         );
 
         let versioned = LLMClient::new(
-            Provider::DragonCode,
+            Provider::Relay,
             "test-key".to_string(),
             "claude-sonnet-4-6".to_string(),
         )
-        .with_base_url("https://dragoncode.codes/v1".to_string());
+        .with_base_url("https://relay.example.invalid/v1".to_string());
         assert_eq!(
             versioned.anthropic_messages_url(),
-            "https://dragoncode.codes/v1/messages"
+            "https://relay.example.invalid/v1/messages"
         );
 
         let endpoint = LLMClient::new(
-            Provider::DragonCode,
+            Provider::Relay,
             "test-key".to_string(),
             "claude-sonnet-4-6".to_string(),
         )
-        .with_base_url("https://dragoncode.codes/v1/messages/".to_string());
+        .with_base_url("https://relay.example.invalid/v1/messages/".to_string());
         assert_eq!(
             endpoint.anthropic_messages_url(),
-            "https://dragoncode.codes/v1/messages"
+            "https://relay.example.invalid/v1/messages"
         );
     }
 
@@ -338,7 +338,7 @@ mod tests {
     #[test]
     fn provider_errors_redact_credentials_and_are_bounded() {
         let client = LLMClient::new(
-            Provider::DragonCode,
+            Provider::Relay,
             "configured-test-key-1234567890".to_string(),
             "test-model".to_string(),
         );
@@ -355,7 +355,7 @@ mod tests {
     #[test]
     fn provider_errors_redact_the_proxy_address_and_its_credentials() {
         let proxy = "http://pxuser:pxpass@127.0.0.1:9";
-        let client = LLMClient::new(Provider::DragonCode, "k".to_string(), "m".to_string())
+        let client = LLMClient::new(Provider::Relay, "k".to_string(), "m".to_string())
             .with_redacted(proxy_secrets(proxy));
         let safe = client.safe_provider_error(format!(
             "connect via {proxy} failed; auth pxuser:pxpass; password pxpass; user pxuser"
@@ -368,7 +368,7 @@ mod tests {
     #[test]
     fn proxy_redaction_covers_the_encoded_and_the_decoded_password() {
         let proxy = "http://pxuser:p%40ss@127.0.0.1:9";
-        let client = LLMClient::new(Provider::DragonCode, "k".to_string(), "m".to_string())
+        let client = LLMClient::new(Provider::Relay, "k".to_string(), "m".to_string())
             .with_redacted(proxy_secrets(proxy));
         let safe = client.safe_provider_error(
             "tried pxuser:p%40ss and pxuser:p@ss; password p%40ss / p@ss".to_string(),

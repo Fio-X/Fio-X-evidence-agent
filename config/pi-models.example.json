@@ -41,14 +41,14 @@
         }
       ]
     },
-    "dragoncode": {
-      "baseUrl": "${DRAGONCODE_BASE_URL}",
+    "relay": {
+      "baseUrl": "${NEWSROOM_RELAY_BASE_URL}",
       "api": "anthropic-messages",
-      "apiKey": "$DRAGONCODE_API_KEY",
+      "apiKey": "$NEWSROOM_RELAY_API_KEY",
       "models": [
         {
-          "id": "${DRAGONCODE_MODEL}",
-          "name": "DragonCode routed model",
+          "id": "${NEWSROOM_RELAY_MODEL}",
+          "name": "Relay routed model",
           "reasoning": true,
           "input": ["text"],
           "contextWindow": 128000,

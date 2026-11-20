@@ -251,7 +251,8 @@ fn default_pi_args(force: Force) -> PiArgs {
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("pi")),
         provider: Some(
-            env::var("NEWSROOM_PI_PROVIDER").unwrap_or_else(|_| "dragoncode".to_string()),
+            env::var("NEWSROOM_PI_PROVIDER")
+                .unwrap_or_else(|_| crate::config::RELAY_PROVIDER.to_string()),
         ),
         model: Some(
             env::var("NEWSROOM_PI_MODEL").unwrap_or_else(|_| "claude-sonnet-4-6".to_string()),
@@ -365,6 +366,25 @@ fn print_help() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_interactive_default_provider_reaches_the_pi_child_as_the_legacy_relay_id() {
+        let _guard = crate::pi::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let before = env::var("NEWSROOM_PI_PROVIDER").ok();
+        env::remove_var("NEWSROOM_PI_PROVIDER");
+        let provider = default_pi_args(Force::Auto).provider;
+        match before {
+            Some(value) => env::set_var("NEWSROOM_PI_PROVIDER", value),
+            None => env::remove_var("NEWSROOM_PI_PROVIDER"),
+        }
+        assert_eq!(provider.as_deref(), Some(crate::config::RELAY_PROVIDER));
+        let (arg, active) =
+            crate::pi::PiConfig::provider_args_for_test(provider.as_deref(), None, "pi");
+        assert_eq!(arg, crate::config::LEGACY_RELAY.provider);
+        assert_eq!(active, crate::config::LEGACY_RELAY.provider);
+    }
 
     #[test]
     fn the_profile_is_the_old_rule_when_the_switch_is_off() {

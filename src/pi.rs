@@ -999,8 +999,9 @@ impl PiConfig {
         names
     }
 
-    fn dragoncode_endpoint(value: &str) -> bool {
-        let authority = value
+    /// The host part of an address: no scheme, user info, port or path.
+    fn address_host(value: &str) -> &str {
+        value
             .split_once("://")
             .map(|(_, rest)| rest)
             .unwrap_or(value)
@@ -1012,8 +1013,13 @@ impl PiConfig {
             .unwrap_or("")
             .split(':')
             .next()
-            .unwrap_or("");
-        authority.eq_ignore_ascii_case("dragoncode.codes")
+            .unwrap_or("")
+    }
+
+    /// True when the address is the relay's public address (the one `config::LEGACY_RELAY` keeps), exactly, not a subdomain or a longer name.
+    fn relay_endpoint(value: &str) -> bool {
+        Self::address_host(value)
+            .eq_ignore_ascii_case(Self::address_host(crate::config::LEGACY_RELAY.url))
     }
 
     fn normalize_provider_with_base(
@@ -1021,18 +1027,20 @@ impl PiConfig {
         configured_base_url: Option<&str>,
     ) -> Option<String> {
         let provider = provider?;
-        let dragoncode_base = configured_base_url
+        let relay_base = configured_base_url
             .map(str::to_owned)
-            .or_else(|| std::env::var("DRAGONCODE_BASE_URL").ok())
+            .or_else(|| {
+                crate::config::relay_base_url_names()
+                    .iter()
+                    .find_map(|name| std::env::var(name).ok())
+            })
             .or_else(|| std::env::var("OPENAI_BASE_URL").ok());
         if provider.eq_ignore_ascii_case("openai")
-            && dragoncode_base
-                .as_deref()
-                .is_some_and(Self::dragoncode_endpoint)
+            && relay_base.as_deref().is_some_and(Self::relay_endpoint)
         {
-            Some("dragoncode".to_string())
+            Some(crate::config::RELAY_PROVIDER.to_string())
         } else {
-            Some(provider.to_string())
+            Some(crate::config::canonical_provider(provider).to_string())
         }
     }
 
@@ -1082,45 +1090,89 @@ impl PiConfig {
         }
 
         if let Some(provider) = self.effective_provider() {
-            if self.provider.as_deref() != Some(provider.as_str()) {
+            if self.provider.as_deref() != Some(provider.as_str())
+                && !self
+                    .provider
+                    .as_deref()
+                    .is_some_and(crate::config::is_relay_provider)
+            {
                 eprintln!(
-                    "[agent] normalized Pi provider to dragoncode for dragoncode.codes (Anthropic Messages route)"
+                    "[agent] normalized Pi provider to relay for the relay address (Anthropic Messages route)"
                 );
             }
-            cmd.arg("--provider").arg(&provider);
-            cmd.env("NEWSROOM_ACTIVE_PROVIDER", &provider);
+            // The Pi child gets the relay under its legacy id on every path that resolves to the relay (the legacy id typed, the relay
+            // address behind an OpenAI-style provider, a saved login, the interactive default): a local Pi models configuration defines
+            // only that id. The Rust child keeps the canonical id.
+            let pi_provider = if !rust && crate::config::is_relay_provider(&provider) {
+                crate::config::LEGACY_RELAY.provider
+            } else {
+                provider.as_str()
+            };
+            cmd.arg("--provider").arg(pi_provider);
+            cmd.env("NEWSROOM_ACTIVE_PROVIDER", pi_provider);
+            if !rust && crate::config::is_relay_provider(&provider) {
+                // The Pi child reads the relay's key and address under whichever name its models configuration was written with, so
+                // whichever name is set here (the current one wins) is copied onto both name sets, in the child's environment only:
+                // never into an argument, a log or an error. A key or address given to this config explicitly is set below and wins.
+                for names in [
+                    crate::config::relay_key_names(),
+                    crate::config::relay_base_url_names(),
+                ] {
+                    let value = names
+                        .iter()
+                        .find_map(|name| std::env::var(name).ok().filter(|v| !v.is_empty()));
+                    if let Some(value) = value {
+                        for name in names {
+                            cmd.env(name, &value);
+                        }
+                    }
+                }
+            }
             if let Some(api_key) = self
                 .api_key
                 .as_deref()
                 .filter(|value| !value.is_empty() && !rust)
             {
-                let key_name = match provider.as_str() {
-                    "anthropic" => "ANTHROPIC_API_KEY",
-                    "openai" => "OPENAI_API_KEY",
-                    "dragoncode" => "DRAGONCODE_API_KEY",
-                    _ => "NEWSROOM_API_KEY",
+                let relay_keys = crate::config::relay_key_names();
+                let key_names: &[&str] = match provider.as_str() {
+                    "anthropic" => &["ANTHROPIC_API_KEY"],
+                    "openai" => &["OPENAI_API_KEY"],
+                    p if crate::config::is_relay_provider(p) => &relay_keys,
+                    _ => &["NEWSROOM_API_KEY"],
                 };
-                cmd.env(key_name, api_key);
+                for key_name in key_names {
+                    cmd.env(key_name, api_key);
+                }
             }
             if let Some(base_url) = self
                 .base_url
                 .as_deref()
                 .filter(|value| !value.is_empty() && !rust)
             {
-                let base_name = match provider.as_str() {
-                    "anthropic" => "ANTHROPIC_BASE_URL",
-                    "openai" => "OPENAI_BASE_URL",
-                    "dragoncode" => "DRAGONCODE_BASE_URL",
-                    _ => "NEWSROOM_BASE_URL",
+                let relay_bases = crate::config::relay_base_url_names();
+                let base_names: &[&str] = match provider.as_str() {
+                    "anthropic" => &["ANTHROPIC_BASE_URL"],
+                    "openai" => &["OPENAI_BASE_URL"],
+                    p if crate::config::is_relay_provider(p) => &relay_bases,
+                    _ => &["NEWSROOM_BASE_URL"],
                 };
-                cmd.env(base_name, base_url);
+                for base_name in base_names {
+                    cmd.env(base_name, base_url);
+                }
             }
-            if provider == "dragoncode" && !rust && std::env::var("DRAGONCODE_API_KEY").is_err() {
+            if crate::config::is_relay_provider(&provider)
+                && !rust
+                && crate::config::relay_key_names()
+                    .iter()
+                    .all(|name| std::env::var(name).is_err())
+            {
                 if let Ok(key) = std::env::var("OPENAI_API_KEY") {
                     // The existing external .env uses the OpenAI-compatible name
-                    // for this DragonCode key. Pass it only to the child process;
+                    // for the relay key. Pass it only to the child process;
                     // never write it to the worktree or a command-line argument.
-                    cmd.env("DRAGONCODE_API_KEY", key);
+                    for name in crate::config::relay_key_names() {
+                        cmd.env(name, &key);
+                    }
                 }
             }
         }
@@ -1316,16 +1368,23 @@ impl PiConfig {
         let provider = self
             .effective_provider()
             .unwrap_or_else(|| "anthropic".to_string());
-        if !matches!(provider.as_str(), "anthropic" | "dragoncode") {
-            bail!("the Rust agent speaks only the Anthropic Messages route (provider anthropic or dragoncode), not {provider}");
+        let relay = crate::config::is_relay_provider(&provider);
+        if provider != "anthropic" && !relay {
+            bail!("the Rust agent speaks only the Anthropic Messages route (provider anthropic or relay), not {provider}");
         }
         let api_key = self
             .api_key
             .clone()
             .filter(|v| !v.is_empty())
-            .or_else(|| match provider.as_str() {
-                "dragoncode" => present("DRAGONCODE_API_KEY").or_else(|| present("OPENAI_API_KEY")),
-                _ => present("ANTHROPIC_API_KEY"),
+            .or_else(|| {
+                if relay {
+                    crate::config::relay_key_names()
+                        .iter()
+                        .find_map(|name| present(name))
+                        .or_else(|| present("OPENAI_API_KEY"))
+                } else {
+                    present("ANTHROPIC_API_KEY")
+                }
             })
             .or_else(|| present("NEWSROOM_API_KEY"))
             .context("no model key was found for the Rust agent (nothing was started)")?;
@@ -1333,12 +1392,17 @@ impl PiConfig {
             .base_url
             .clone()
             .filter(|v| !v.is_empty())
-            .or_else(|| match provider.as_str() {
-                "dragoncode" => present("DRAGONCODE_BASE_URL")
-                    .or_else(|| present("OPENAI_BASE_URL"))
-                    .or_else(|| Some("https://dragoncode.codes".to_string())),
-                _ => present("ANTHROPIC_BASE_URL")
-                    .or_else(|| Some("https://api.anthropic.com".to_string())),
+            .or_else(|| {
+                if relay {
+                    crate::config::relay_base_url_names()
+                        .iter()
+                        .find_map(|name| present(name))
+                        .or_else(|| present("OPENAI_BASE_URL"))
+                        .or_else(|| Some(crate::config::LEGACY_RELAY.url.to_string()))
+                } else {
+                    present("ANTHROPIC_BASE_URL")
+                        .or_else(|| Some("https://api.anthropic.com".to_string()))
+                }
             })
             .context("no model address was found for the Rust agent")?;
         let proxy = if crate::anthropic_model::is_loopback(&base_url) {
@@ -2365,6 +2429,64 @@ pub(crate) static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// Tests that call it hold ENV_LOCK; the previous value of the switch is put back.
 #[cfg(test)]
 impl PiConfig {
+    /// The `--provider` argument and the NEWSROOM_ACTIVE_PROVIDER value of the child for a provider and address, on the route named by
+    /// `agent` ("pi" or "rust"). The caller holds ENV_LOCK; the previous value of the switch is put back.
+    pub(crate) fn provider_args_for_test(
+        provider: Option<&str>,
+        base_url: Option<&str>,
+        agent: &str,
+    ) -> (String, String) {
+        let command = Self::provider_command_for_test(provider, base_url, agent);
+        let std_command = command.as_std();
+        let args: Vec<String> = std_command
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        let at = args
+            .iter()
+            .position(|a| a == "--provider")
+            .expect("the child gets a --provider argument");
+        let active = std_command
+            .get_envs()
+            .find(|(name, _)| *name == "NEWSROOM_ACTIVE_PROVIDER")
+            .and_then(|(_, value)| value)
+            .map(|v| v.to_string_lossy().into_owned())
+            .expect("the child gets NEWSROOM_ACTIVE_PROVIDER");
+        (args[at + 1].clone(), active)
+    }
+
+    /// The child command for a provider and address on the route named by `agent`; no key is given to the config.
+    pub(crate) fn provider_command_for_test(
+        provider: Option<&str>,
+        base_url: Option<&str>,
+        agent: &str,
+    ) -> Command {
+        let config = PiConfig {
+            binary: "pi".into(),
+            provider: provider.map(str::to_string),
+            model: None,
+            api_key: None,
+            base_url: base_url.map(str::to_string),
+            thinking: None,
+            approve_project: false,
+            extension: None,
+            artifact_dir: None,
+            session_dir: None,
+            continue_session: false,
+            tool_profile: "investigate".to_string(),
+            speed: Default::default(),
+            compose: None,
+        };
+        let before = std::env::var(crate::agent_loop::AGENT_ENV).ok();
+        std::env::set_var(crate::agent_loop::AGENT_ENV, agent);
+        let command = config.command();
+        match before {
+            Some(value) => std::env::set_var(crate::agent_loop::AGENT_ENV, value),
+            None => std::env::remove_var(crate::agent_loop::AGENT_ENV),
+        }
+        command
+    }
+
     pub(crate) fn pi_command(&self) -> Command {
         let before = std::env::var(crate::agent_loop::AGENT_ENV).ok();
         std::env::set_var(crate::agent_loop::AGENT_ENV, "pi");
@@ -2463,7 +2585,7 @@ mod tests {
     fn runtime_label_names_the_rust_agent_on_the_rust_path() {
         let cfg = PiConfig {
             binary: "pi".into(),
-            provider: Some("dragoncode".to_string()),
+            provider: Some("relay".to_string()),
             model: Some("claude-sonnet-4-6".to_string()),
             api_key: Some("not-a-real-key".to_string()),
             base_url: Some("https://relay.example.invalid:8443/v1".to_string()),
@@ -2480,7 +2602,7 @@ mod tests {
         let rust = cfg.display_runtime_for(true);
         assert_eq!(
             rust,
-            "rust-agent provider=dragoncode model=claude-sonnet-4-6 session=persistent/resume tools=investigate"
+            "rust-agent provider=relay model=claude-sonnet-4-6 session=persistent/resume tools=investigate"
         );
         assert!(
             !rust.contains("pi-rpc")
@@ -2491,7 +2613,7 @@ mod tests {
         );
         assert_eq!(
             cfg.display_runtime_for(false),
-            "pi-rpc provider=dragoncode model=claude-sonnet-4-6 session=persistent/resume tools=investigate",
+            "pi-rpc provider=relay model=claude-sonnet-4-6 session=persistent/resume tools=investigate",
             "the Pi path keeps its line"
         );
         let bare = PiConfig {
@@ -3830,15 +3952,139 @@ mod tests {
     }
 
     #[test]
-    fn dragoncode_endpoint_matching_is_exact() {
-        assert!(PiConfig::dragoncode_endpoint("https://dragoncode.codes"));
-        assert!(PiConfig::dragoncode_endpoint("https://dragoncode.codes/v1"));
-        assert!(!PiConfig::dragoncode_endpoint(
-            "https://api.dragoncode.codes"
+    fn relay_endpoint_matching_is_exact() {
+        let url = crate::config::LEGACY_RELAY.url;
+        assert!(PiConfig::relay_endpoint(url));
+        assert!(PiConfig::relay_endpoint(&format!("{url}/v1")));
+        assert!(!PiConfig::relay_endpoint(
+            &url.replacen("://", "://api.", 1)
         ));
-        assert!(!PiConfig::dragoncode_endpoint(
-            "https://dragoncode.codes.example"
-        ));
+        assert!(!PiConfig::relay_endpoint(&format!("{url}.example")));
+    }
+
+    #[test]
+    fn the_pi_child_gets_the_legacy_relay_id_on_every_path_that_resolves_to_the_relay() {
+        let _guard = EnvGuard::new();
+        let legacy = crate::config::LEGACY_RELAY.provider;
+        let url = crate::config::LEGACY_RELAY.url;
+        for (what, provider, base) in [
+            (
+                "the relay address behind an OpenAI-style provider",
+                Some("openai"),
+                Some(url),
+            ),
+            (
+                "the canonical id, as a saved login or the interactive default gives it",
+                Some("relay"),
+                None,
+            ),
+            ("the legacy id typed", Some(legacy), None),
+        ] {
+            let (arg, active) = PiConfig::provider_args_for_test(provider, base, "pi");
+            assert_eq!((arg.as_str(), active.as_str()), (legacy, legacy), "{what}");
+        }
+        // an OpenAI-style provider at some other address stays OpenAI
+        let (arg, active) = PiConfig::provider_args_for_test(
+            Some("openai"),
+            Some("https://other.example.invalid"),
+            "pi",
+        );
+        assert_eq!((arg.as_str(), active.as_str()), ("openai", "openai"));
+        // the Rust child keeps the canonical id, whichever spelling came in
+        for (provider, base) in [
+            (Some("openai"), Some(url)),
+            (Some("relay"), None),
+            (Some(legacy), None),
+        ] {
+            let (arg, active) = PiConfig::provider_args_for_test(provider, base, "rust");
+            assert_eq!((arg.as_str(), active.as_str()), ("relay", "relay"));
+        }
+        // other providers are untouched on both routes
+        for agent in ["pi", "rust"] {
+            let (arg, _) = PiConfig::provider_args_for_test(Some("anthropic"), None, agent);
+            assert_eq!(arg, "anthropic");
+        }
+    }
+
+    /// The value a command sets for one variable (None: not set, or removed), found by name.
+    fn set_value(command: &Command, name: &str) -> Option<String> {
+        command
+            .as_std()
+            .get_envs()
+            .find(|(n, _)| *n == name)
+            .and_then(|(_, v)| v)
+            .map(|v| v.to_string_lossy().into_owned())
+    }
+
+    #[test]
+    fn the_pi_child_gets_the_relay_key_and_address_under_both_name_sets() {
+        let _guard = EnvGuard::new();
+        let keys = crate::config::relay_key_names();
+        let bases = crate::config::relay_base_url_names();
+        let all: Vec<&str> = keys.iter().chain(bases.iter()).copied().collect();
+        let before: Vec<_> = all
+            .iter()
+            .chain(["OPENAI_API_KEY"].iter())
+            .map(|n| (*n, std::env::var_os(n)))
+            .collect();
+        let restore = |before: &Vec<(&str, Option<std::ffi::OsString>)>| {
+            for (name, value) in before {
+                match value {
+                    Some(v) => std::env::set_var(name, v),
+                    None => std::env::remove_var(name),
+                }
+            }
+        };
+        let clear = || {
+            for name in all.iter().chain(["OPENAI_API_KEY"].iter()) {
+                std::env::remove_var(name);
+            }
+        };
+        // dummy values, compared inside the test and never printed
+        let (key_value, base_value) = ("dummy-key-0001-not-real", "https://dummy-base.invalid");
+        for set_names in [0usize, 1] {
+            clear();
+            std::env::set_var(keys[set_names], key_value);
+            std::env::set_var(bases[set_names], base_value);
+            let relay = PiConfig::provider_command_for_test(Some("relay"), None, "pi");
+            for name in keys {
+                assert!(set_value(&relay, name).as_deref() == Some(key_value));
+            }
+            for name in bases {
+                assert!(set_value(&relay, name).as_deref() == Some(base_value));
+            }
+            // only the relay: another provider's child gets no relay names, and the Rust child has them stripped
+            let other = PiConfig::provider_command_for_test(Some("anthropic"), None, "pi");
+            let rust = PiConfig::provider_command_for_test(Some("relay"), None, "rust");
+            for name in &all {
+                assert!(set_value(&other, name).is_none());
+                assert!(set_value(&rust, name).is_none());
+            }
+        }
+        // both sets present with different values: the current name wins and the legacy name carries its value
+        clear();
+        std::env::set_var(keys[0], key_value);
+        std::env::set_var(keys[1], "dummy-key-0002-not-real");
+        let relay = PiConfig::provider_command_for_test(Some("relay"), None, "pi");
+        assert!(set_value(&relay, keys[1]).as_deref() == Some(key_value));
+        restore(&before);
+    }
+
+    #[test]
+    fn the_legacy_relay_id_normalizes_to_the_relay_provider() {
+        let legacy = crate::config::LEGACY_RELAY.provider;
+        assert_eq!(
+            PiConfig::normalize_provider_with_base(Some(legacy), None).as_deref(),
+            Some("relay")
+        );
+        assert_eq!(
+            PiConfig::normalize_provider_with_base(Some("relay"), None).as_deref(),
+            Some("relay")
+        );
+        assert_eq!(
+            PiConfig::normalize_provider_with_base(Some("anthropic"), None).as_deref(),
+            Some("anthropic")
+        );
     }
 
     #[test]
@@ -4399,12 +4645,12 @@ mod tests {
             )
             .unwrap();
         assert_eq!(ordered.proxy.as_deref(), Some("http://lower:1"));
-        // dragoncode: the endpoint decides the provider; the OpenAI-style key name is the fallback
-        let mut dragon = gate_a_config();
-        dragon.provider = Some("openai".into());
-        dragon.api_key = None;
-        dragon.base_url = Some("https://dragoncode.codes".into());
-        let handed = dragon
+        // relay: the endpoint decides the provider; the OpenAI-style key name is the fallback
+        let mut relay = gate_a_config();
+        relay.provider = Some("openai".into());
+        relay.api_key = None;
+        relay.base_url = Some(crate::config::LEGACY_RELAY.url.into());
+        let handed = relay
             .resolve_handoff(
                 |n| (n == "OPENAI_API_KEY").then(|| GATE_A_KEY.to_string()),
                 || None,

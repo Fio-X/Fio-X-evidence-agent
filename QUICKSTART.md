@@ -42,7 +42,7 @@ news login
 
 `news login` asks for:
 
-1. the provider: Anthropic (Claude API), DragonCode, or a custom Anthropic Messages-compatible endpoint;
+1. the provider: Anthropic (Claude API), an OpenAI-compatible relay, or a custom Anthropic Messages-compatible endpoint;
 2. whether to open the provider's API key page in your browser;
 3. the API key (pasted with echo off);
 4. the model (default `claude-sonnet-4-6` for Anthropic-style providers).
