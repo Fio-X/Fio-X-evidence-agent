@@ -151,6 +151,22 @@ pub(crate) fn unit_rule(code: &str) -> Option<&'static str> {
     })
 }
 
+/// Whether a unit code's values add up, by the unit table's additive column (USD and NR yes; per head, rates and indices
+/// no); None where the table has no row.
+pub(crate) fn unit_table_additive(code: &str) -> Option<bool> {
+    UNIT_SHORT_ZH.lines().skip(1).find_map(|line| {
+        let mut p = line.trim_end_matches('\r').split('\t');
+        (p.next() == Some(code))
+            .then(|| p.nth(2))
+            .flatten()
+            .and_then(|a| match a {
+                "yes" => Some(true),
+                "no" => Some(false),
+                _ => None,
+            })
+    })
+}
+
 /// The magnitudes a page may print an amount at, largest first (owner 11-06 22:02: one magnitude for the whole page, chosen
 /// by its largest number): the code suffix of the unit table's row that names it, the least value that takes it, and the
 /// factor its numbers print at. A unit with no such row prints as the data gives it.
@@ -445,6 +461,25 @@ mod tests {
                     "{row}: a registered change with no basis on its line"
                 );
             }
+        }
+    }
+
+    /// The unit table's rule and additive column as the page input reads them: an index's rule (its change in points), a
+    /// percentage's; amounts and counts add up, per head and rates do not; a code with no row reads none.
+    #[test]
+    fn unit_rule_and_additive_read_the_unit_table() {
+        assert_eq!(unit_rule("CLV_I20"), Some("index_base"));
+        assert_eq!(unit_rule("PC"), Some("pct_family"));
+        assert_eq!(unit_rule("NO_SUCH_UNIT"), None);
+        for (code, adds) in [
+            ("USD", Some(true)),
+            ("NR", Some(true)),
+            ("USD_HAB", Some(false)),
+            ("PC", Some(false)),
+            ("CLV_I20", Some(false)),
+            ("NO_SUCH_UNIT", None),
+        ] {
+            assert_eq!(unit_table_additive(code), adds, "{code}");
         }
     }
 

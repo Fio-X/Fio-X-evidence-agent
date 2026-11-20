@@ -3425,13 +3425,13 @@ fn recipe_request(
     if let Some(p) = page_in.as_mut().filter(|_| catalogue.asks_lowest(question)) {
         p["picks"]["asked_low"] = json!(true);
     }
-    // a question that asks for the total of its places, over a unit that adds up (the knowledge group's unit rule) on a page
+    // a question that asks for the total of its places, over a unit that adds up (the unit table's additive column) on a page
     // the program did not narrow: a run fact a finding's case reads (requires $picks.asked_total), so the title says the
     // total of the places drawn, never a total over a rate or over places the page left out
     if let Some(p) = page_in.as_mut().filter(|_| {
         !scoped
             && catalogue.asks_total(question)
-            && catalogue.unit_additive(&shape.unit) == Some(true)
+            && next_pack::unit_table_additive(&shape.unit) == Some(true)
     }) {
         p["picks"]["asked_total"] = json!(true);
     }

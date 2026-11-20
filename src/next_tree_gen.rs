@@ -1558,7 +1558,9 @@ fn finding_declared(d: &J, page_in: &J, reg: &J) -> Result<J, String> {
             return Ok(none("a fact the case needs is not the page's"));
         }
     }
-    let facts = put(c.g("facts"))?;
+    // a select a case's fact filters by (a total over select:ranked) written as its codes, as declared_j's facts are, so the
+    // core recomputes it over those rows
+    let facts = codes_in(&put(c.g("facts"))?, &got);
     let reads = match c.get("reads") {
         Some(r) => {
             let times = sub(r.g("times"), view)?;
@@ -5791,15 +5793,27 @@ mod tests {
                     said["finding"]["headline"]["title"], "所列{drawn}国合计{total}",
                     "{recipe} {unit}"
                 );
+                // the total's filter is the ranked places' codes, and the core recomputes it from the rows: 340 + 84 + 41
                 let total = &said["facts"]["total"];
                 assert_eq!(
                     (
                         total["table"].as_str(),
                         total["time"].as_str(),
-                        total["filter"]["country"].as_str()
+                        &total["filter"]["country"]
                     ),
-                    (Some("pop"), Some("2025"), Some("select:ranked")),
+                    (
+                        Some("pop"),
+                        Some("2025"),
+                        &serde_json::json!(["USA", "DEU", "CAN"])
+                    ),
                     "{recipe} {unit}: {total}"
+                );
+                let rows: Vec<J> = pi(true).g("rows").arr().to_vec();
+                let facts = J::from_value(&said["facts"]);
+                assert_eq!(
+                    core::fact_value(&facts, &rows, "total").unwrap(),
+                    465.0,
+                    "{recipe} {unit}"
                 );
                 let plain = finding_declared(&d, &pi(false), &reg).unwrap().to_value();
                 assert!(plain["facts"].get("total").is_none(), "{recipe} {unit}");
