@@ -346,6 +346,11 @@ pub fn asks_lowest(question: &str) -> bool {
     )
 }
 
+/// Whether the question asks for the total of its places (合计, 总共: the relation Magnitude, its focus Total), by its words.
+pub fn asks_total(question: &str) -> bool {
+    relation(question) == Rel::Magnitude
+}
+
 /// What the sentence asserts, by the question's words, within the relation `rel`; `first_place` is the first place word,
 /// the one a deviation or a position is of.
 pub fn focus(question: &str, rel: Rel, first_place: Option<&str>) -> Focus {
@@ -821,6 +826,25 @@ mod tests {
             "东盟各国人均 GDP 排名",
         ] {
             assert!(!asks_lowest(q), "{q}");
+        }
+    }
+
+    /// A question asks for the total when its relation is Magnitude (合计, 总共; sentences written for the test): not when it
+    /// asks a ranking, the lowest or a change.
+    #[test]
+    fn a_question_asks_for_the_total_by_its_relation() {
+        for q in [
+            "海合会六国 GDP 合计是多少？",
+            "七国集团最近一年的人口合计是多少？",
+        ] {
+            assert!(asks_total(q), "{q}");
+        }
+        for q in [
+            "2024 年欧盟哪个国家的失业率最低？",
+            "东盟各国人均 GDP 排名",
+            "2015 年到 2024 年哪国失业率降得最多？",
+        ] {
+            assert!(!asks_total(q), "{q}");
         }
     }
 

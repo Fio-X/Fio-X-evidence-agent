@@ -2474,7 +2474,7 @@ fn page_input(
     };
     let mut p = json!({"recipe": recipe.name, "order": recipe.layers,
         "shape": {"main": shape.main, "place": shape.place, "year": shape.year, "unit": shape.unit, "fmt": shape.unit.to_lowercase(),
-            "suffix": next_pack::unit_number_suffix(&shape.unit).map(suffix), "countries": shape.countries},
+            "suffix": next_pack::unit_number_suffix(&shape.unit).map(suffix), "rule": next_pack::unit_rule(&shape.unit), "countries": shape.countries},
         "picks": {"rules": recipe.picks, "ranked": picks.ranked, "marks": picks.marks, "t0": picks.t0, "t1": picks.t1},
         "rows": main, "name_kind": scheme, "sum_rows": sums, "outside": shape.outside, "top": next_params::NARROW_TOP,
         "short": next_pack::unit_short(&shape.unit), "line": next_pack::unit_line_form(&shape.unit), "composition": shape.composition.as_ref().map(|c| json!({"dim": c.dim, "total": c.total, "groups": c.groups,
@@ -3424,6 +3424,16 @@ fn recipe_request(
     // (requires $picks.asked_low), so the title starts from the place the question asks about
     if let Some(p) = page_in.as_mut().filter(|_| catalogue.asks_lowest(question)) {
         p["picks"]["asked_low"] = json!(true);
+    }
+    // a question that asks for the total of its places, over a unit that adds up (the knowledge group's unit rule) on a page
+    // the program did not narrow: a run fact a finding's case reads (requires $picks.asked_total), so the title says the
+    // total of the places drawn, never a total over a rate or over places the page left out
+    if let Some(p) = page_in.as_mut().filter(|_| {
+        !scoped
+            && catalogue.asks_total(question)
+            && catalogue.unit_additive(&shape.unit) == Some(true)
+    }) {
+        p["picks"]["asked_total"] = json!(true);
     }
     // a page over blocks: every block's rows beside the main's; a block answers a quantity of the question's record
     // (answers_asked) and is headed by its table's reviewed Chinese name, printed marked with its name row as the map's key

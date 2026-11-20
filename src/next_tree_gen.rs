@@ -527,7 +527,8 @@ fn dec_of(layer: &str, rule: &J, page_in: &J, got: &Got, scaled: bool) -> Result
     Ok((held_decimals(page_in.g("rows").arr(), rule.g("rows"), got)? + moved).min(cap))
 }
 
-/// declares.fmt_change, rule points_if_percent: a change printed in points when the unit prints as the rule's percent sign
+/// declares.fmt_change, rule points_if_percent: a change printed in the format by_rule names for the unit's rule (the page
+/// input's shape.rule, the unit table's), else in points when the unit prints as the rule's percent sign
 /// (its points key, suffix and at most max_dec decimals), else in the unit; its decimals by its dec_rule. (key, format)
 fn change_fmt(layer: &str, fc: &J, page_in: &J, got: &Got) -> Result<(String, J), String> {
     if fc.g("rule").s() != Some("points_if_percent") {
@@ -536,10 +537,16 @@ fn change_fmt(layer: &str, fc: &J, page_in: &J, got: &Got) -> Result<(String, J)
             fc.g("rule").repr()
         ));
     }
-    let side = if page_in.g("shape").g("suffix") == fc.g("percent") {
-        fc.g("points")
-    } else {
-        fc.g("else")
+    // a unit whose rule the declaration names a format for (by_rule, e.g. an index's change in points) prints in it first
+    let ruled = page_in
+        .g("shape")
+        .g("rule")
+        .s()
+        .and_then(|r| fc.g("by_rule").get(r));
+    let side = match ruled {
+        Some(r) => r,
+        None if page_in.g("shape").g("suffix") == fc.g("percent") => fc.g("points"),
+        None => fc.g("else"),
     };
     let scaled = side.g("suffix") == page_in.g("shape").g("suffix");
     let mut dec = dec_of(layer, fc.g("dec_rule"), page_in, got, scaled)?;
@@ -1322,10 +1329,16 @@ fn finding_declared(d: &J, page_in: &J, reg: &J) -> Result<J, String> {
     // the format a change prints in: the registry's by the unit's short form (a gap of percentages in points)
     let mut view = page_in.clone();
     if let Some(cf) = d.get("change_fmt") {
-        let pick = if page_in.g("short").s() == cf.g("short").s() {
-            cf.g("then")
-        } else {
-            cf.g("else")
+        // the unit's rule first (by_rule: the key its page's fmt_change gives that rule), then the short form
+        let ruled = page_in
+            .g("shape")
+            .g("rule")
+            .s()
+            .and_then(|r| cf.g("by_rule").get(r));
+        let pick = match ruled {
+            Some(k) => k,
+            None if page_in.g("short").s() == cf.g("short").s() => cf.g("then"),
+            None => cf.g("else"),
         };
         // a key or a page input path ($shape.fmt: a level's own format, a column's gap in its unit)
         view.set("fmt", J::obj_of(vec![("change", sub(pick, page_in)?)]));
@@ -4728,6 +4741,76 @@ mod tests {
             .contains("no short unit"));
     }
 
+    /// A one-line page's change in the unit table's rule (shape.rule, by_rule): an index's change prints in points (" 点",
+    /// sm5 over CLV_I20), a percentage's in percentage points as before, any other unit's (a count, sm2) in the unit's own
+    /// format as before; the line's change format and the finding's lead fact name the same key.
+    #[test]
+    fn next_tree_gen_one_line_prints_an_index_change_in_points() {
+        let mut pi = read("q1-gen.json").g("page_in").clone();
+        let ranked: Vec<String> = pi.g("picks").g("ranked").arr().iter().map(st).collect();
+        let mut rows = Vec::new();
+        for (k, c) in ranked.iter().take(1).enumerate() {
+            for y in 2021..=2025 {
+                let v = format!("{:.2}", 100.0 + 10.0 * k as f64 + 3.51 * (y - 2021) as f64);
+                rows.push(J::from_value(&serde_json::json!({"src": format!("series:sdg/{c}:{y}:OBS_VALUE"), "table": "sdg",
+                    "dims": {"freq": "A", "unit": "PC", "geo": c}, "time": y.to_string(), "value": v})));
+            }
+        }
+        pi.set("rows", J::Arr(rows));
+        pi.set("recipe", J::str("one_line"));
+        assert!(pi.set_path(&["picks", "t0"].map(String::from), J::str("2021")));
+        assert!(pi.set_path(&["shape", "t0"].map(String::from), J::str("2021")));
+        assert!(pi.set_path(
+            &["picks", "ranked"].map(String::from),
+            J::Arr(vec![J::str(&ranked[0])])
+        ));
+        let reg = core::load_registry(&core::bindings());
+        let d = declares(
+            &reg,
+            FINDING,
+            &J::from_value(&serde_json::json!({"recipe": "one_line"})),
+        )
+        .unwrap()
+        .clone();
+        for (rule, short, suffix, key, printed) in [
+            (Some("index_base"), "指数(2020=100)", "", "idx", " 点"),
+            (Some("pct_family"), "%", "%", "pp", " 个百分点"),
+            (Some("count"), "数量", "", "pc", ""),
+            (None, "%", "%", "pp", " 个百分点"),
+        ] {
+            let mut p = pi.clone();
+            p.set("short", J::str(short));
+            assert!(p.set_path(&["shape", "suffix"].map(String::from), J::str(suffix)));
+            match rule {
+                Some(r) => assert!(p.set_path(&["shape", "rule"].map(String::from), J::str(r))),
+                None => {
+                    let mut shape = p.g("shape").clone();
+                    shape.remove("rule");
+                    p.set("shape", shape);
+                }
+            }
+            let out = declared_j("line", &p, &reg).unwrap();
+            let f = out.g("fmts").g(key);
+            assert_eq!(
+                st(f.g("suffix")),
+                printed,
+                "{rule:?}: {}",
+                out.g("fmts").repr()
+            );
+            if key == "idx" {
+                assert!(f.g("dec").num().is_some_and(|d| d <= 2.0), "{}", f.repr());
+            }
+            p.set("fill", J::from_value(&serde_json::json!({"facts": ["drawn"], "fmts": out.g("fmts").to_value(), "named": [ranked[0]]})));
+            let found = finding_declared(&d, &p, &reg).unwrap();
+            assert_eq!(
+                st(found.g("facts").g("lead").g("fmt")),
+                key,
+                "{rule:?}: {}",
+                found.repr()
+            );
+        }
+    }
+
     /// The rank lines over a many-block page's blocks (block_ranks): each ranked place's position among the ranked places in
     /// every block's table at its year (facts_each_block, `{b}` the block's number), each block's rows of them drawn, and
     /// the leaf's columns a block each (its head the block's name, its ranks the facts as printed) over the places' codes.
@@ -5665,6 +5748,65 @@ mod tests {
             for (asked, set) in [(false, false), (true, true)] {
                 let high = said(asked, "2", "USD", set);
                 assert_eq!(high["subject"], "SGP", "{recipe} asked {asked} set {set}");
+            }
+        }
+    }
+
+    /// A question that asks for the total of its places over a unit that adds up (picks.asked_total, set by the flow only on
+    /// a page it did not narrow): the column and ranked bars pages' finding says the total of the places drawn (its own
+    /// words, said), the total a fact over the ranked places at the year (the core recomputes it from the rows), and the
+    /// highest after it; not asked, the level finding from the highest as before. Two data shapes: a count and an amount.
+    #[test]
+    fn next_tree_gen_a_question_asking_the_total_says_the_total_of_the_places_drawn() {
+        let (reg, _) = core::registry_in_force();
+        for recipe in ["column", "ranked_bars"] {
+            let d = declares(
+                &reg,
+                FINDING,
+                &J::from_value(&serde_json::json!({"recipe": recipe})),
+            )
+            .unwrap()
+            .clone();
+            for (unit, fmt) in [("NR", "nr"), ("USD", "usd")] {
+                let row = |p: &str, v: &str| serde_json::json!({"src": format!("series:pop/{p}:2025:OBS_VALUE"), "table": "pop", "dims": {"country": p}, "time": "2025", "value": v});
+                let pi = |total: bool| {
+                    let mut v = serde_json::json!({"recipe": recipe,
+                        "shape": {"main": "pop", "place": "country", "year": "2025", "unit": unit, "fmt": fmt, "countries": ["CAN", "DEU", "USA"]},
+                        "picks": {"rules": ["ranked"], "ranked": ["USA", "DEU", "CAN"], "marks": [], "t0": "", "t1": ""},
+                        "rows": [row("USA", "340"), row("DEU", "84"), row("CAN", "41")], "short": "数量",
+                        "fill": {"facts": ["drawn", "hi", "lo", "gap", "times"], "fmts": {fmt: {"dec": 0}}, "named": ["CAN", "DEU", "USA"]}});
+                    if total {
+                        v["picks"]["asked_total"] = serde_json::json!(true);
+                    }
+                    J::from_value(&v)
+                };
+                let said = finding_declared(&d, &pi(true), &reg).unwrap().to_value();
+                assert_eq!(said["subject"], "USA", "{recipe} {unit}");
+                assert_eq!(
+                    said["finding"]["dek"],
+                    "{lead1.t}，所列{drawn}国合计{total}，{name.USA}最高，为{hi}",
+                    "{recipe} {unit}"
+                );
+                assert_eq!(
+                    said["finding"]["headline"]["title"], "所列{drawn}国合计{total}",
+                    "{recipe} {unit}"
+                );
+                let total = &said["facts"]["total"];
+                assert_eq!(
+                    (
+                        total["table"].as_str(),
+                        total["time"].as_str(),
+                        total["filter"]["country"].as_str()
+                    ),
+                    (Some("pop"), Some("2025"), Some("select:ranked")),
+                    "{recipe} {unit}: {total}"
+                );
+                let plain = finding_declared(&d, &pi(false), &reg).unwrap().to_value();
+                assert!(plain["facts"].get("total").is_none(), "{recipe} {unit}");
+                assert!(
+                    !plain["finding"]["dek"].as_str().unwrap().contains("合计"),
+                    "{recipe} {unit}"
+                );
             }
         }
     }

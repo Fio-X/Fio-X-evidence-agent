@@ -139,6 +139,18 @@ pub(crate) fn unit_number_suffix(code: &str) -> Option<&'static str> {
     )
 }
 
+/// The unit table's rule of a unit code (its third column: index_base, count, pct_family, ...), the key a node's fmt_change
+/// may name a format by (by_rule); None where the table has no row or the row no rule.
+pub(crate) fn unit_rule(code: &str) -> Option<&'static str> {
+    UNIT_SHORT_ZH.lines().skip(1).find_map(|line| {
+        let mut p = line.trim_end_matches('\r').split('\t');
+        (p.next() == Some(code))
+            .then(|| p.nth(1))
+            .flatten()
+            .filter(|s| !s.is_empty())
+    })
+}
+
 /// The magnitudes a page may print an amount at, largest first (owner 11-06 22:02: one magnitude for the whole page, chosen
 /// by its largest number): the code suffix of the unit table's row that names it, the least value that takes it, and the
 /// factor its numbers print at. A unit with no such row prints as the data gives it.

@@ -3193,6 +3193,11 @@ pub trait Catalogue: Sync {
     fn asks_lowest(&self, _question_zh: &str) -> bool {
         false
     }
+    /// Whether the Chinese question asks for the total of its places (the knowledge group's reading of its words, through
+    /// its door), a run fact a page's finding may read; false when this catalogue reads none.
+    fn asks_total(&self, _question_zh: &str) -> bool {
+        false
+    }
     /// The whole class of question the knowledge group refuses from its words before any search (scope-refusal-zh.json, user
     /// 11-08 item 1); None when no class takes it.
     fn scope_refused(
@@ -3762,6 +3767,7 @@ pub(crate) fn knowledge_call<'a>(
         Ok(Reply::Iso3 { iso3, missing }) => json!({"iso3": iso3, "missing": missing}),
         Ok(Reply::RankAsked(asked)) => json!({"rank_asked": asked}),
         Ok(Reply::AsksLowest(low)) => json!({"asks_lowest": low}),
+        Ok(Reply::AsksTotal(total)) => json!({"asks_total": total}),
         Ok(Reply::ScopeRefused(refused)) => json!({"scope_refused": refused}),
         Ok(Reply::SplitAsk(ask)) => json!({"shape_ask": ask}),
         Ok(Reply::AnswerPlan(Ok(plan))) => json!({"plan": plan}),
@@ -4409,6 +4415,16 @@ impl Catalogue for GroupCatalogue {
         match self.call("asks_lowest", json!({"question": question_zh}), request) {
             next_knowledge::Reply::AsksLowest(low) => low,
             _ => unreachable!("the knowledge group answered asks_lowest with another reply"),
+        }
+    }
+
+    fn asks_total(&self, question_zh: &str) -> bool {
+        let request = next_knowledge::Request::AsksTotal {
+            question: question_zh,
+        };
+        match self.call("asks_total", json!({"question": question_zh}), request) {
+            next_knowledge::Reply::AsksTotal(total) => total,
+            _ => unreachable!("the knowledge group answered asks_total with another reply"),
         }
     }
 
