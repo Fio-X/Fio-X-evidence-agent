@@ -20,7 +20,7 @@ MOCK = ROOT / "scripts/mock_pi.py"
 def relay_url() -> str:
     """The relay address the program recognises, read from the one constant in src/config.rs that keeps it."""
     text = (ROOT / "src" / "config.rs").read_text(encoding="utf-8")
-    match = re.search(r'LEGACY_RELAY: LegacyRelay = LegacyRelay \{.*?url: "([^"]+)"', text, re.S)
+    match = re.search(r'LEGACY_RELAY: LegacyRelay = LegacyRelay \{.*?\n\s+url: "([^"]+)"', text, re.S)
     assert match, "the relay address constant was not found in src/config.rs"
     return match.group(1)
 
