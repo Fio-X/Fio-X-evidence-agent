@@ -1110,6 +1110,24 @@ impl PiConfig {
             };
             cmd.arg("--provider").arg(pi_provider);
             cmd.env("NEWSROOM_ACTIVE_PROVIDER", pi_provider);
+            if !rust && crate::config::is_relay_provider(&provider) {
+                // The Pi child reads the relay's key and address under whichever name its models configuration was written with, so
+                // whichever name is set here (the current one wins) is copied onto both name sets, in the child's environment only:
+                // never into an argument, a log or an error. A key or address given to this config explicitly is set below and wins.
+                for names in [
+                    crate::config::relay_key_names(),
+                    crate::config::relay_base_url_names(),
+                ] {
+                    let value = names
+                        .iter()
+                        .find_map(|name| std::env::var(name).ok().filter(|v| !v.is_empty()));
+                    if let Some(value) = value {
+                        for name in names {
+                            cmd.env(name, &value);
+                        }
+                    }
+                }
+            }
             if let Some(api_key) = self
                 .api_key
                 .as_deref()
@@ -2418,6 +2436,31 @@ impl PiConfig {
         base_url: Option<&str>,
         agent: &str,
     ) -> (String, String) {
+        let command = Self::provider_command_for_test(provider, base_url, agent);
+        let std_command = command.as_std();
+        let args: Vec<String> = std_command
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        let at = args
+            .iter()
+            .position(|a| a == "--provider")
+            .expect("the child gets a --provider argument");
+        let active = std_command
+            .get_envs()
+            .find(|(name, _)| *name == "NEWSROOM_ACTIVE_PROVIDER")
+            .and_then(|(_, value)| value)
+            .map(|v| v.to_string_lossy().into_owned())
+            .expect("the child gets NEWSROOM_ACTIVE_PROVIDER");
+        (args[at + 1].clone(), active)
+    }
+
+    /// The child command for a provider and address on the route named by `agent`; no key is given to the config.
+    pub(crate) fn provider_command_for_test(
+        provider: Option<&str>,
+        base_url: Option<&str>,
+        agent: &str,
+    ) -> Command {
         let config = PiConfig {
             binary: "pi".into(),
             provider: provider.map(str::to_string),
@@ -2441,22 +2484,7 @@ impl PiConfig {
             Some(value) => std::env::set_var(crate::agent_loop::AGENT_ENV, value),
             None => std::env::remove_var(crate::agent_loop::AGENT_ENV),
         }
-        let std_command = command.as_std();
-        let args: Vec<String> = std_command
-            .get_args()
-            .map(|a| a.to_string_lossy().into_owned())
-            .collect();
-        let at = args
-            .iter()
-            .position(|a| a == "--provider")
-            .expect("the child gets a --provider argument");
-        let active = std_command
-            .get_envs()
-            .find(|(name, _)| *name == "NEWSROOM_ACTIVE_PROVIDER")
-            .and_then(|(_, value)| value)
-            .map(|v| v.to_string_lossy().into_owned())
-            .expect("the child gets NEWSROOM_ACTIVE_PROVIDER");
-        (args[at + 1].clone(), active)
+        command
     }
 
     pub(crate) fn pi_command(&self) -> Command {
@@ -3976,6 +4004,70 @@ mod tests {
             let (arg, _) = PiConfig::provider_args_for_test(Some("anthropic"), None, agent);
             assert_eq!(arg, "anthropic");
         }
+    }
+
+    /// The value a command sets for one variable (None: not set, or removed), found by name.
+    fn set_value(command: &Command, name: &str) -> Option<String> {
+        command
+            .as_std()
+            .get_envs()
+            .find(|(n, _)| *n == name)
+            .and_then(|(_, v)| v)
+            .map(|v| v.to_string_lossy().into_owned())
+    }
+
+    #[test]
+    fn the_pi_child_gets_the_relay_key_and_address_under_both_name_sets() {
+        let _guard = EnvGuard::new();
+        let keys = crate::config::relay_key_names();
+        let bases = crate::config::relay_base_url_names();
+        let all: Vec<&str> = keys.iter().chain(bases.iter()).copied().collect();
+        let before: Vec<_> = all
+            .iter()
+            .chain(["OPENAI_API_KEY"].iter())
+            .map(|n| (*n, std::env::var_os(n)))
+            .collect();
+        let restore = |before: &Vec<(&str, Option<std::ffi::OsString>)>| {
+            for (name, value) in before {
+                match value {
+                    Some(v) => std::env::set_var(name, v),
+                    None => std::env::remove_var(name),
+                }
+            }
+        };
+        let clear = || {
+            for name in all.iter().chain(["OPENAI_API_KEY"].iter()) {
+                std::env::remove_var(name);
+            }
+        };
+        // dummy values, compared inside the test and never printed
+        let (key_value, base_value) = ("dummy-key-0001-not-real", "https://dummy-base.invalid");
+        for set_names in [0usize, 1] {
+            clear();
+            std::env::set_var(keys[set_names], key_value);
+            std::env::set_var(bases[set_names], base_value);
+            let relay = PiConfig::provider_command_for_test(Some("relay"), None, "pi");
+            for name in keys {
+                assert!(set_value(&relay, name).as_deref() == Some(key_value));
+            }
+            for name in bases {
+                assert!(set_value(&relay, name).as_deref() == Some(base_value));
+            }
+            // only the relay: another provider's child gets no relay names, and the Rust child has them stripped
+            let other = PiConfig::provider_command_for_test(Some("anthropic"), None, "pi");
+            let rust = PiConfig::provider_command_for_test(Some("relay"), None, "rust");
+            for name in &all {
+                assert!(set_value(&other, name).is_none());
+                assert!(set_value(&rust, name).is_none());
+            }
+        }
+        // both sets present with different values: the current name wins and the legacy name carries its value
+        clear();
+        std::env::set_var(keys[0], key_value);
+        std::env::set_var(keys[1], "dummy-key-0002-not-real");
+        let relay = PiConfig::provider_command_for_test(Some("relay"), None, "pi");
+        assert!(set_value(&relay, keys[1]).as_deref() == Some(key_value));
+        restore(&before);
     }
 
     #[test]
