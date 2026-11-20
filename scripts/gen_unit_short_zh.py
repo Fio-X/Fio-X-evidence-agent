@@ -99,7 +99,12 @@ def read_label(label):
     low = lab.lower()
     if low.startswith(CHAIN_LINKED):
         rest = low[len(CHAIN_LINKED):]
-        return ("%", "pct_change", "no", "%") if re.match(CHANGE, rest) else None
+        if re.match(CHANGE, rest):
+            return "%", "pct_change", "no", "%"
+        # a chain-linked volume index ("Chain linked volumes, index 2020=100") is an index of its base year, written as
+        # I90 is (owner 11-20 17:3x: the recommended form); a chain-linked amount still gets no row
+        m = re.fullmatch(r"index,? \(?(\d{4})=100\)?" + QUALIFIER, rest)
+        return (f"指数({m.group(1)}=100)", "index_base", "no", "") if m else None
     low = low.removeprefix(CURRENT_PRICES)
     m = re.fullmatch(r"(?:annual average |quarterly |monthly )?(?:volume |price |harmonized consumer price )?index,? "
                      r"\(?(\d{4})=100\)?" + QUALIFIER, low)

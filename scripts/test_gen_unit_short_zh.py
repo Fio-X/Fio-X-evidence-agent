@@ -66,7 +66,7 @@ for label in [
 check(gen.read_label("Percentage of EU27 (from 2020) total")[1] == "pct_family", "a share from 2020 stays a share")
 
 # 2b. a price-basis prefix (national accounts): current prices leave the amount as it is; chain linked volumes are read
-# only for a rate of change, whose basis the rest of the label states.
+# for a rate of change, whose basis the rest of the label states, and for an index of one base year.
 check(gen.read_label("Current prices, euro per capita")[0] == "欧元/人", "current prices, euro per capita")
 check(gen.read_label("Current prices, purchasing power standard (PPS, EU27 from 2020) per capita")[0] == "购买力标准/人",
       "PPS per capita at current prices")
@@ -76,11 +76,17 @@ check(gen.read_label("Chain linked volumes, percentage change compared to same p
 check(gen.basis_of("Chain linked volumes, percentage change compared to same period in previous year") == "同比",
       "a chain-linked rate of change keeps its basis")
 check(gen.is_change("Chain linked volumes, percentage change on previous period"), "a chain-linked change is a change")
-# must-fail: an annualized change, a chain-linked level (no sum, its own reference year) or index is not read
+# a chain-linked volume index is an index of its base year, written as I90 is (owner 11-20 17:3x)
+check(gen.read_label("Chain linked volumes, index 2020=100") == ("指数(2020=100)", "index_base", "no", ""),
+      "a chain-linked volume index keeps its base year")
+check(gen.read_label("Chain linked volumes, index 2005=100")[0] == "指数(2005=100)", "another base year")
+# must-fail: an annualized change or a chain-linked level (no sum, its own reference year) is not read, nor an index
+# whose base is not one year
 for label in [
     "Chain linked volumes, annualized percentage change on previous period",
     "Chain linked volumes (2010), million euro",
-    "Chain linked volumes, index 2020=100",
+    "Chain linked volumes, index 2020",
+    "Chain linked volumes, index 2010-2020=100",
     "Chain linked volumes, previous year, million euro",
 ]:
     check(gen.read_label(label) is None, f"not read: {label!r}")

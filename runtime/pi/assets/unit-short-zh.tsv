@@ -231,6 +231,10 @@ SC100	分（满分100）	score	no	分	reviewed	Score, 0-100 scale
 SCORE	分	score	no	分	reviewed	Score	
 BIRTH_W	个/妇女	per_capita	no	个/妇女	reviewed	Births per woman	
 BN_EUR	十亿欧元	amount	yes	十亿欧元	generated	Billion euro	
+CLV_I05	指数(2005=100)	index_base	no		generated	Chain linked volumes, index 2005=100	
+CLV_I10	指数(2010=100)	index_base	no		generated	Chain linked volumes, index 2010=100	
+CLV_I15	指数(2015=100)	index_base	no		generated	Chain linked volumes, index 2015=100	
+CLV_I20	指数(2020=100)	index_base	no		generated	Chain linked volumes, index 2020=100	
 CLV_PCH_PRE	%	pct_change	no	%	generated	Chain linked volumes, percentage change on previous period	%（较上期）
 CLV_PCH_PRE_HAB	%	pct_change	no	%	generated	Chain linked volumes, percentage change on previous period, per capita	%（较上期）
 CLV_PCH_SM	%	pct_change	no	%	generated	Chain linked volumes, percentage change compared to same period in previous year	%（同比）
