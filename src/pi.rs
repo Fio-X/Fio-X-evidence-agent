@@ -15,6 +15,51 @@ use tokio::time::Instant;
 
 use crate::tool_registry::{tools_for_profile, DEFAULT_TOOL_PROFILE};
 
+// The relay's names as the agent group spells them. The system group keeps its own copy in config.rs (the groups do not share these
+// items); a test keeps the two equal field by field.
+pub(crate) const RELAY_PROVIDER: &str = "relay";
+const RELAY_KEY: &str = "NEWSROOM_RELAY_API_KEY";
+const RELAY_BASE_URL: &str = "NEWSROOM_RELAY_BASE_URL";
+
+pub(crate) struct LegacyRelay {
+    pub(crate) provider: &'static str,
+    key: &'static str,
+    base_url: &'static str,
+    pub(crate) url: &'static str,
+}
+
+// legacy alias, kept so existing local setups keep working: the provider id, the two variables and the public address the relay was
+// first configured under. Each still resolves to the relay provider.
+pub(crate) const LEGACY_RELAY: LegacyRelay = LegacyRelay {
+    provider: "dragoncode",
+    key: "DRAGONCODE_API_KEY",
+    base_url: "DRAGONCODE_BASE_URL",
+    url: "https://dragoncode.codes",
+};
+
+/// The relay provider's id as the agent spells it: the legacy id becomes `relay`, anything else stays as given.
+fn canonical_provider(provider: &str) -> &str {
+    if provider == LEGACY_RELAY.provider {
+        RELAY_PROVIDER
+    } else {
+        provider
+    }
+}
+
+/// True for the relay's own id and for its legacy alias.
+pub(crate) fn is_relay_provider(provider: &str) -> bool {
+    canonical_provider(provider) == RELAY_PROVIDER
+}
+
+/// The key and address names the relay can arrive under, current names first, then the legacy ones.
+fn relay_key_names() -> [&'static str; 2] {
+    [RELAY_KEY, LEGACY_RELAY.key]
+}
+
+fn relay_base_url_names() -> [&'static str; 2] {
+    [RELAY_BASE_URL, LEGACY_RELAY.base_url]
+}
+
 #[derive(Debug, Clone)]
 pub struct PiConfig {
     pub binary: PathBuf,
@@ -1018,8 +1063,7 @@ impl PiConfig {
 
     /// True when the address is the relay's public address (the one `config::LEGACY_RELAY` keeps), exactly, not a subdomain or a longer name.
     fn relay_endpoint(value: &str) -> bool {
-        Self::address_host(value)
-            .eq_ignore_ascii_case(Self::address_host(crate::config::LEGACY_RELAY.url))
+        Self::address_host(value).eq_ignore_ascii_case(Self::address_host(LEGACY_RELAY.url))
     }
 
     fn normalize_provider_with_base(
@@ -1030,7 +1074,7 @@ impl PiConfig {
         let relay_base = configured_base_url
             .map(str::to_owned)
             .or_else(|| {
-                crate::config::relay_base_url_names()
+                relay_base_url_names()
                     .iter()
                     .find_map(|name| std::env::var(name).ok())
             })
@@ -1038,9 +1082,9 @@ impl PiConfig {
         if provider.eq_ignore_ascii_case("openai")
             && relay_base.as_deref().is_some_and(Self::relay_endpoint)
         {
-            Some(crate::config::RELAY_PROVIDER.to_string())
+            Some(RELAY_PROVIDER.to_string())
         } else {
-            Some(crate::config::canonical_provider(provider).to_string())
+            Some(canonical_provider(provider).to_string())
         }
     }
 
@@ -1091,10 +1135,7 @@ impl PiConfig {
 
         if let Some(provider) = self.effective_provider() {
             if self.provider.as_deref() != Some(provider.as_str())
-                && !self
-                    .provider
-                    .as_deref()
-                    .is_some_and(crate::config::is_relay_provider)
+                && !self.provider.as_deref().is_some_and(is_relay_provider)
             {
                 eprintln!(
                     "[agent] normalized Pi provider to relay for the relay address (Anthropic Messages route)"
@@ -1103,21 +1144,18 @@ impl PiConfig {
             // The Pi child gets the relay under its legacy id on every path that resolves to the relay (the legacy id typed, the relay
             // address behind an OpenAI-style provider, a saved login, the interactive default): a local Pi models configuration defines
             // only that id. The Rust child keeps the canonical id.
-            let pi_provider = if !rust && crate::config::is_relay_provider(&provider) {
-                crate::config::LEGACY_RELAY.provider
+            let pi_provider = if !rust && is_relay_provider(&provider) {
+                LEGACY_RELAY.provider
             } else {
                 provider.as_str()
             };
             cmd.arg("--provider").arg(pi_provider);
             cmd.env("NEWSROOM_ACTIVE_PROVIDER", pi_provider);
-            if !rust && crate::config::is_relay_provider(&provider) {
+            if !rust && is_relay_provider(&provider) {
                 // The Pi child reads the relay's key and address under whichever name its models configuration was written with, so
                 // whichever name is set here (the current one wins) is copied onto both name sets, in the child's environment only:
                 // never into an argument, a log or an error. A key or address given to this config explicitly is set below and wins.
-                for names in [
-                    crate::config::relay_key_names(),
-                    crate::config::relay_base_url_names(),
-                ] {
+                for names in [relay_key_names(), relay_base_url_names()] {
                     let value = names
                         .iter()
                         .find_map(|name| std::env::var(name).ok().filter(|v| !v.is_empty()));
@@ -1133,11 +1171,11 @@ impl PiConfig {
                 .as_deref()
                 .filter(|value| !value.is_empty() && !rust)
             {
-                let relay_keys = crate::config::relay_key_names();
+                let relay_keys = relay_key_names();
                 let key_names: &[&str] = match provider.as_str() {
                     "anthropic" => &["ANTHROPIC_API_KEY"],
                     "openai" => &["OPENAI_API_KEY"],
-                    p if crate::config::is_relay_provider(p) => &relay_keys,
+                    p if is_relay_provider(p) => &relay_keys,
                     _ => &["NEWSROOM_API_KEY"],
                 };
                 for key_name in key_names {
@@ -1149,20 +1187,20 @@ impl PiConfig {
                 .as_deref()
                 .filter(|value| !value.is_empty() && !rust)
             {
-                let relay_bases = crate::config::relay_base_url_names();
+                let relay_bases = relay_base_url_names();
                 let base_names: &[&str] = match provider.as_str() {
                     "anthropic" => &["ANTHROPIC_BASE_URL"],
                     "openai" => &["OPENAI_BASE_URL"],
-                    p if crate::config::is_relay_provider(p) => &relay_bases,
+                    p if is_relay_provider(p) => &relay_bases,
                     _ => &["NEWSROOM_BASE_URL"],
                 };
                 for base_name in base_names {
                     cmd.env(base_name, base_url);
                 }
             }
-            if crate::config::is_relay_provider(&provider)
+            if is_relay_provider(&provider)
                 && !rust
-                && crate::config::relay_key_names()
+                && relay_key_names()
                     .iter()
                     .all(|name| std::env::var(name).is_err())
             {
@@ -1170,7 +1208,7 @@ impl PiConfig {
                     // The existing external .env uses the OpenAI-compatible name
                     // for the relay key. Pass it only to the child process;
                     // never write it to the worktree or a command-line argument.
-                    for name in crate::config::relay_key_names() {
+                    for name in relay_key_names() {
                         cmd.env(name, &key);
                     }
                 }
@@ -1368,7 +1406,7 @@ impl PiConfig {
         let provider = self
             .effective_provider()
             .unwrap_or_else(|| "anthropic".to_string());
-        let relay = crate::config::is_relay_provider(&provider);
+        let relay = is_relay_provider(&provider);
         if provider != "anthropic" && !relay {
             bail!("the Rust agent speaks only the Anthropic Messages route (provider anthropic or relay), not {provider}");
         }
@@ -1378,7 +1416,7 @@ impl PiConfig {
             .filter(|v| !v.is_empty())
             .or_else(|| {
                 if relay {
-                    crate::config::relay_key_names()
+                    relay_key_names()
                         .iter()
                         .find_map(|name| present(name))
                         .or_else(|| present("OPENAI_API_KEY"))
@@ -1394,11 +1432,11 @@ impl PiConfig {
             .filter(|v| !v.is_empty())
             .or_else(|| {
                 if relay {
-                    crate::config::relay_base_url_names()
+                    relay_base_url_names()
                         .iter()
                         .find_map(|name| present(name))
                         .or_else(|| present("OPENAI_BASE_URL"))
-                        .or_else(|| Some(crate::config::LEGACY_RELAY.url.to_string()))
+                        .or_else(|| Some(LEGACY_RELAY.url.to_string()))
                 } else {
                     present("ANTHROPIC_BASE_URL")
                         .or_else(|| Some("https://api.anthropic.com".to_string()))
@@ -3951,9 +3989,43 @@ mod tests {
         }
     }
 
+    /// The agent group's copy of the relay's names equals the system group's, field by field.
+    #[test]
+    fn the_agent_copy_of_the_relay_names_equals_the_system_copy() {
+        use crate::config as system;
+        assert_eq!(RELAY_PROVIDER, system::RELAY_PROVIDER);
+        assert_eq!(RELAY_KEY, system::RELAY_KEY);
+        assert_eq!(RELAY_BASE_URL, system::RELAY_BASE_URL);
+        assert_eq!(LEGACY_RELAY.provider, system::LEGACY_RELAY.provider);
+        assert_eq!(LEGACY_RELAY.key, system::LEGACY_RELAY.key);
+        assert_eq!(LEGACY_RELAY.base_url, system::LEGACY_RELAY.base_url);
+        assert_eq!(LEGACY_RELAY.url, system::LEGACY_RELAY.url);
+        assert_eq!(relay_key_names(), system::relay_key_names());
+        assert_eq!(relay_base_url_names(), system::relay_base_url_names());
+        for provider in [
+            "relay",
+            LEGACY_RELAY.provider,
+            "anthropic",
+            "openai",
+            "Relay",
+            "",
+        ] {
+            assert_eq!(
+                is_relay_provider(provider),
+                system::is_relay_provider(provider),
+                "{provider:?}"
+            );
+            assert_eq!(
+                canonical_provider(provider),
+                system::canonical_provider(provider),
+                "{provider:?}"
+            );
+        }
+    }
+
     #[test]
     fn relay_endpoint_matching_is_exact() {
-        let url = crate::config::LEGACY_RELAY.url;
+        let url = LEGACY_RELAY.url;
         assert!(PiConfig::relay_endpoint(url));
         assert!(PiConfig::relay_endpoint(&format!("{url}/v1")));
         assert!(!PiConfig::relay_endpoint(
@@ -3965,8 +4037,8 @@ mod tests {
     #[test]
     fn the_pi_child_gets_the_legacy_relay_id_on_every_path_that_resolves_to_the_relay() {
         let _guard = EnvGuard::new();
-        let legacy = crate::config::LEGACY_RELAY.provider;
-        let url = crate::config::LEGACY_RELAY.url;
+        let legacy = LEGACY_RELAY.provider;
+        let url = LEGACY_RELAY.url;
         for (what, provider, base) in [
             (
                 "the relay address behind an OpenAI-style provider",
@@ -4019,8 +4091,8 @@ mod tests {
     #[test]
     fn the_pi_child_gets_the_relay_key_and_address_under_both_name_sets() {
         let _guard = EnvGuard::new();
-        let keys = crate::config::relay_key_names();
-        let bases = crate::config::relay_base_url_names();
+        let keys = relay_key_names();
+        let bases = relay_base_url_names();
         let all: Vec<&str> = keys.iter().chain(bases.iter()).copied().collect();
         let before: Vec<_> = all
             .iter()
@@ -4072,7 +4144,7 @@ mod tests {
 
     #[test]
     fn the_legacy_relay_id_normalizes_to_the_relay_provider() {
-        let legacy = crate::config::LEGACY_RELAY.provider;
+        let legacy = LEGACY_RELAY.provider;
         assert_eq!(
             PiConfig::normalize_provider_with_base(Some(legacy), None).as_deref(),
             Some("relay")
@@ -4649,7 +4721,7 @@ mod tests {
         let mut relay = gate_a_config();
         relay.provider = Some("openai".into());
         relay.api_key = None;
-        relay.base_url = Some(crate::config::LEGACY_RELAY.url.into());
+        relay.base_url = Some(LEGACY_RELAY.url.into());
         let handed = relay
             .resolve_handoff(
                 |n| (n == "OPENAI_API_KEY").then(|| GATE_A_KEY.to_string()),

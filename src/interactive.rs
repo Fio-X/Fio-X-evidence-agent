@@ -252,7 +252,7 @@ fn default_pi_args(force: Force) -> PiArgs {
             .unwrap_or_else(|| PathBuf::from("pi")),
         provider: Some(
             env::var("NEWSROOM_PI_PROVIDER")
-                .unwrap_or_else(|_| crate::config::RELAY_PROVIDER.to_string()),
+                .unwrap_or_else(|_| crate::pi::RELAY_PROVIDER.to_string()),
         ),
         model: Some(
             env::var("NEWSROOM_PI_MODEL").unwrap_or_else(|_| "claude-sonnet-4-6".to_string()),
@@ -379,11 +379,11 @@ mod tests {
             Some(value) => env::set_var("NEWSROOM_PI_PROVIDER", value),
             None => env::remove_var("NEWSROOM_PI_PROVIDER"),
         }
-        assert_eq!(provider.as_deref(), Some(crate::config::RELAY_PROVIDER));
+        assert_eq!(provider.as_deref(), Some(crate::pi::RELAY_PROVIDER));
         let (arg, active) =
             crate::pi::PiConfig::provider_args_for_test(provider.as_deref(), None, "pi");
-        assert_eq!(arg, crate::config::LEGACY_RELAY.provider);
-        assert_eq!(active, crate::config::LEGACY_RELAY.provider);
+        assert_eq!(arg, crate::pi::LEGACY_RELAY.provider);
+        assert_eq!(active, crate::pi::LEGACY_RELAY.provider);
     }
 
     #[test]
