@@ -348,6 +348,8 @@ fn the_verify_child_does_not_inherit_key_like_names() {
             ("NEWSROOM_MODEL_TOKEN", "dummy-not-a-key"),
             ("PROXY_PASSWORD", "dummy-not-a-key"),
             ("NEWSROOM_DUCKDB_BIN", "/dummy/duckdb"),
+            ("NEWSROOM_VERIFY_STRICT_REFS", "1"),
+            ("NEWSROOM_VERIFY_LEAKY_API_KEY", "dummy-not-a-key"),
             ("PJ004_NOT_ALLOWED", "x"),
         ],
     );
@@ -364,6 +366,7 @@ fn the_verify_child_does_not_inherit_key_like_names() {
         "NEWSROOM_MODEL_TOKEN",
         "PROXY_PASSWORD",
         "PJ004_NOT_ALLOWED",
+        "NEWSROOM_VERIFY_LEAKY_API_KEY",
     ] {
         assert!(
             !names.contains(&hidden),
@@ -371,7 +374,7 @@ fn the_verify_child_does_not_inherit_key_like_names() {
         );
     }
     // the allow list still gets through, so `news` finds its programs
-    for kept in ["PATH", "NEWSROOM_DUCKDB_BIN"] {
+    for kept in ["PATH", "NEWSROOM_DUCKDB_BIN", "NEWSROOM_VERIFY_STRICT_REFS"] {
         assert!(
             names.contains(&kept),
             "{kept} did not reach the child: {seen}"

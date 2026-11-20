@@ -19,10 +19,10 @@ use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-/// The only environment names the `news verify` child gets, copied from this server's own environment when set. Everything else is
-/// dropped (`env_clear`), so a model key or endpoint that the host or the user's shell put into the server's environment never reaches
-/// the child through inheritance. Verifying needs no model key. `NEWSROOM_DUCKDB_BIN` is how `news verify --recompute` is told which
-/// DuckDB to start (it is `news`'s own switch, read by its command line); without it the child looks `duckdb` up on PATH.
+/// The environment names the `news verify` child gets, copied from this server's own environment when set. Everything else is dropped
+/// (`env_clear`), so a model key or endpoint that the host or the user's shell put into the server's environment never reaches the
+/// child through inheritance. Verifying needs no model key. `NEWSROOM_DUCKDB_BIN` is how `news verify --recompute` is told which
+/// DuckDB to start (`news`'s own switch); without it the child looks `duckdb` up on PATH.
 const CHILD_ENV: &[&str] = &[
     "PATH",
     "HOME",
@@ -31,6 +31,31 @@ const CHILD_ENV: &[&str] = &[
     "LC_ALL",
     "NEWSROOM_DUCKDB_BIN",
 ];
+
+/// Names with this prefix are `news verify`'s own opt-in stricter checks (`NEWSROOM_VERIFY_STRICT_REFS=1` and the like). They follow, so
+/// a verdict here is not looser than the same `news verify` from a shell; a new one follows without a change here.
+const VERIFY_SWITCH_PREFIX: &str = "NEWSROOM_VERIFY_";
+
+/// A name that carries a credential word is never passed on, even under the verify prefix.
+fn key_like(name: &str) -> bool {
+    let upper = name.to_ascii_uppercase();
+    ["KEY", "SECRET", "TOKEN", "PASSWORD", "PASSWD", "CREDENTIAL"]
+        .iter()
+        .any(|word| upper.contains(word))
+}
+
+/// The (name, value) pairs of `vars` the verify child may have: the allow list, and the verify switches that are not key-like.
+fn child_env(
+    vars: impl Iterator<Item = (std::ffi::OsString, std::ffi::OsString)>,
+) -> Vec<(String, std::ffi::OsString)> {
+    vars.filter_map(|(name, value)| {
+        let name = name.into_string().ok()?;
+        let wanted = CHILD_ENV.contains(&name.as_str())
+            || (name.starts_with(VERIFY_SWITCH_PREFIX) && !key_like(&name));
+        wanted.then_some((name, value))
+    })
+    .collect()
+}
 
 /// One verification (integrity, and the SQL recompute when asked) is far shorter than this; past it the child is killed.
 const VERIFY_LIMIT: Duration = Duration::from_secs(300);
@@ -76,11 +101,7 @@ impl Pj004 {
             command.arg("--recompute");
         }
         command.env_clear();
-        for name in CHILD_ENV {
-            if let Some(value) = std::env::var_os(name) {
-                command.env(name, value);
-            }
-        }
+        command.envs(child_env(std::env::vars_os()));
         command.kill_on_drop(true);
         let output = match tokio::time::timeout(VERIFY_LIMIT, command.output()).await {
             Err(_) => {
@@ -282,6 +303,38 @@ mod tests {
         assert!(relay(None, "", "", root, "r")
             .unwrap_err()
             .contains("a signal"));
+    }
+
+    #[test]
+    fn the_verify_child_gets_the_allow_list_and_the_verify_switches_but_no_key_like_name() {
+        let vars = [
+            ("PATH", "/bin"),
+            ("ANTHROPIC_API_KEY", "x"),
+            ("NEWSROOM_DUCKDB_BIN", "/d"),
+            ("NEWSROOM_VERIFY_STRICT_REFS", "1"),
+            ("NEWSROOM_VERIFY_FUTURE_SWITCH", "1"),
+            ("NEWSROOM_VERIFY_API_KEY", "x"),
+            ("NEWSROOM_MODEL", "x"),
+        ]
+        .map(|(name, value)| {
+            (
+                std::ffi::OsString::from(name),
+                std::ffi::OsString::from(value),
+            )
+        });
+        let names: Vec<String> = child_env(vars.into_iter())
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect();
+        assert_eq!(
+            names,
+            [
+                "PATH",
+                "NEWSROOM_DUCKDB_BIN",
+                "NEWSROOM_VERIFY_STRICT_REFS",
+                "NEWSROOM_VERIFY_FUTURE_SWITCH"
+            ]
+        );
     }
 
     #[test]
