@@ -568,7 +568,7 @@ const RELATIONS: [(&str, &[&str]); 3] = [
 
 /// The change a note states of one series between two of its periods (data-cmp="change", design-1119-notes-relations 2.2,
 /// sm2's one line), and the word-table keys whose words state it by its direction: kept apart from RELATIONS, whose words
-/// an h1 may not hold bare (a title like 人口增长率 holds 增长 and states no change).
+/// an h1 may not hold bare (a title like "population growth rate" holds the word for growth and states no change).
 const CHANGE: &str = "change";
 const CHANGE_WORDS: [(&str, &[&str]); 2] =
     [("up", &["line.note.up"]), ("down", &["line.note.down"])];
@@ -3709,7 +3709,7 @@ mod tests {
         let ok = |spec: &Spec, facts: &[Fact], html: &str| {
             check_relations(html, &BTreeMap::new(), spec, facts, &[])
         };
-        // a fall (Shrank: the earlier less the later, printed positive) from its earlier period, said down; the h1's 增长
+        // a fall (Shrank: the earlier less the later, printed positive) from its earlier period, said down; the h1's growth word
         // (a growth rate's name) is no relation word
         let (spec, facts) = change_request("minus", false, false, 1.0);
         assert_eq!(
@@ -3787,7 +3787,7 @@ mod tests {
         let html = change_note("IN", "up", "2000").replace(" data-a=\"fact:lead.n\"", "");
         let (spec, facts) = change_request("minus", true, false, 1.0);
         assert!(refused(&spec, &facts, &html), "no data-a");
-        // 增长 marked as a change outside a note, unmarked in an h1, is still no relation word the h1 is refused for
+        // the growth word marked as a change outside a note, unmarked in an h1, is still no relation word the h1 is refused for
         assert!(!relation_words("next")
             .iter()
             .any(|w| change_words("up").iter().flatten().any(|p| p == w)));

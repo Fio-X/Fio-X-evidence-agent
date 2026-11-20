@@ -1661,7 +1661,7 @@ fn finding_declared(d: &J, page_in: &J, reg: &J) -> Result<J, String> {
     let ratio_holds = ratio_holds
         && !((c.g("headline_needs_other_above_0").truthy() || by_subject)
             && crate::next_ledger::ratio_free_unit(&st(view.g("shape").g("unit"))));
-    // nor where the times print as 1.0 at their format's decimals: "是最低者韩国的1.0倍" (e8, n45, 11-16) states no gap; the
+    // nor where the times print as 1.0 at their format's decimals: "1.0 times the lowest, South Korea" (e8, n45, 11-16) states no gap; the
     // larger of the subject and the other over the smaller, as the highest's times and the lowest's alike divide
     let needs_times = c
         .g("headline_needs_facts")
@@ -4708,7 +4708,7 @@ mod tests {
         );
         assert_eq!(out.g("unit_drawn"), &J::Bool(true));
         // a rate of change's unit row prints its registered line form (the comparison basis, unit_line_form), never the
-        // bare short form the check refuses (sm5: CLV_PCH_PRE, "%" against "%（较上期）"); the change's format stays the short's
+        // bare short form the check refuses (sm5: CLV_PCH_PRE, "%" against "% (on the previous period)"); the change's format stays the short's
         let mut rate = pi.clone();
         rate.set("line", J::str("%（较上期）"));
         let out = declared_j("line", &rate, &reg).unwrap();
@@ -5669,7 +5669,7 @@ mod tests {
         }
     }
 
-    /// A level headline whose times print as 1.0 (e8, n45: "是最低者韩国的1.0倍") says the finding without them, from the
+    /// A level headline whose times print as 1.0 (e8, n45: "1.0 times the lowest, South Korea") says the finding without them, from the
     /// highest and from the lowest, in two data shapes (dollars, percentages), plain and narrowed; times that print above
     /// 1.0 stay. The decimals are the registry's (formats.times.dec).
     #[test]

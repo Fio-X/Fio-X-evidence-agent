@@ -6754,7 +6754,7 @@ fn shared_blocks(
     }
 }
 
-/// The table a plan whose blocks share one quantity (由总到分) reads, of `items` (the offers, best first; `id` their table):
+/// The table a plan whose blocks share one quantity (whole to parts) reads, of `items` (the offers, best first; `id` their table):
 /// the first the family holds whose registry splits it into parts (next_params::grouped_dim: the blocks draw a whole's parts
 /// and their flows), else the first the family holds; None when it holds none. q3's power mix (11-17) took nrg_ind_pehnf,
 /// a prefix match of nrg_ind_peh offered above nrg_bal_peh, and had no parts to draw.
@@ -10760,7 +10760,7 @@ mod tests {
         assert_eq!(shared_blocks(None, false), Vec::new());
     }
 
-    /// A shared table (由总到分) is the first offer of the family that splits into parts, else its first offer: q3's power mix
+    /// A shared table (whole to parts) is the first offer of the family that splits into parts, else its first offer: q3's power mix
     /// takes nrg_bal_peh over nrg_ind_pehnf (offered above it, held by nrg_ind_peh's prefix, no parts); an energy balance
     /// keeps its first offer; a family whose offers have no parts keeps its first.
     #[test]
