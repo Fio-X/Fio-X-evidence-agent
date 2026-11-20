@@ -32,7 +32,13 @@ struct Host {
 
 impl Host {
     fn start(runs: &Path, news: &Path) -> Host {
+        Host::start_with_env(runs, news, &[])
+    }
+
+    /// The server process gets `env` on top of this test's own environment.
+    fn start_with_env(runs: &Path, news: &Path, env: &[(&str, &str)]) -> Host {
         let mut child = Command::new(env!("CARGO_BIN_EXE_pj004-mcp"))
+            .envs(env.iter().copied())
             .arg("--runs")
             .arg(runs)
             .arg("--news")
@@ -317,6 +323,61 @@ fn verify_that_ends_before_a_verdict_or_contradicts_its_exit_code_is_a_tool_erro
         assert!(
             result.get("structuredContent").is_none() || result["structuredContent"].is_null(),
             "{name}: {result}"
+        );
+    }
+}
+
+/// Same rule as the product's own children (scripts/test_child_env_no_keys.py): the `news verify` child gets an allow list, not the
+/// server's environment. The fake `news` reports the names it can see.
+#[test]
+fn the_verify_child_does_not_inherit_key_like_names() {
+    let temp = tempfile::tempdir().unwrap();
+    let runs = temp.path().join("runs");
+    std::fs::create_dir_all(runs.join("r")).unwrap();
+    let news = fake_news(
+        temp.path(),
+        "env-news",
+        "printf '{\"passed\":true,\"checks\":0,\"errors\":[],\"env\":\"'; env | cut -d= -f1 | sort | tr '\\n' ' '; printf '\"}\\n'",
+    );
+    let mut host = Host::start_with_env(
+        &runs,
+        &news,
+        &[
+            ("ANTHROPIC_API_KEY", "dummy-not-a-key"),
+            ("OPENAI_API_KEY", "dummy-not-a-key"),
+            ("NEWSROOM_MODEL_TOKEN", "dummy-not-a-key"),
+            ("PROXY_PASSWORD", "dummy-not-a-key"),
+            ("NEWSROOM_DUCKDB_BIN", "/dummy/duckdb"),
+            ("NEWSROOM_VERIFY_STRICT_REFS", "1"),
+            ("NEWSROOM_VERIFY_LEAKY_API_KEY", "dummy-not-a-key"),
+            ("PJ004_NOT_ALLOWED", "x"),
+        ],
+    );
+    host.initialize();
+    let result = host.verify("r");
+    assert_ne!(result["isError"], json!(true), "{result}");
+    let seen = result["structuredContent"]["env"]
+        .as_str()
+        .unwrap_or_else(|| panic!("{result}"));
+    let names: Vec<&str> = seen.split_whitespace().collect();
+    for hidden in [
+        "ANTHROPIC_API_KEY",
+        "OPENAI_API_KEY",
+        "NEWSROOM_MODEL_TOKEN",
+        "PROXY_PASSWORD",
+        "PJ004_NOT_ALLOWED",
+        "NEWSROOM_VERIFY_LEAKY_API_KEY",
+    ] {
+        assert!(
+            !names.contains(&hidden),
+            "{hidden} reached the child: {seen}"
+        );
+    }
+    // the allow list still gets through, so `news` finds its programs
+    for kept in ["PATH", "NEWSROOM_DUCKDB_BIN", "NEWSROOM_VERIFY_STRICT_REFS"] {
+        assert!(
+            names.contains(&kept),
+            "{kept} did not reach the child: {seen}"
         );
     }
 }
