@@ -120,7 +120,9 @@ pub fn is_relay_provider(provider: &str) -> bool {
     canonical_provider(provider) == RELAY_PROVIDER
 }
 
-/// Every key and address name the relay can arrive under, current names first, then the legacy ones.
+/// Every key and address name the relay can arrive under, current names first, then the legacy ones. The key list is read only by tests
+/// now (the agent group keeps its own copy); the address list is read by the saved-login step.
+#[cfg(test)]
 pub fn relay_key_names() -> [&'static str; 2] {
     [RELAY_KEY, LEGACY_RELAY.key]
 }
