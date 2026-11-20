@@ -19,6 +19,19 @@ use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+/// The only environment names the `news verify` child gets, copied from this server's own environment when set. Everything else is
+/// dropped (`env_clear`), so a model key or endpoint that the host or the user's shell put into the server's environment never reaches
+/// the child through inheritance. Verifying needs no model key. `NEWSROOM_DUCKDB_BIN` is how `news verify --recompute` is told which
+/// DuckDB to start (it is `news`'s own switch, read by its command line); without it the child looks `duckdb` up on PATH.
+const CHILD_ENV: &[&str] = &[
+    "PATH",
+    "HOME",
+    "TMPDIR",
+    "LANG",
+    "LC_ALL",
+    "NEWSROOM_DUCKDB_BIN",
+];
+
 /// One verification (integrity, and the SQL recompute when asked) is far shorter than this; past it the child is killed.
 const VERIFY_LIMIT: Duration = Duration::from_secs(300);
 
@@ -61,6 +74,12 @@ impl Pj004 {
         command.arg("verify").arg(&dir).arg("--json");
         if params.recompute {
             command.arg("--recompute");
+        }
+        command.env_clear();
+        for name in CHILD_ENV {
+            if let Some(value) = std::env::var_os(name) {
+                command.env(name, value);
+            }
         }
         command.kill_on_drop(true);
         let output = match tokio::time::timeout(VERIFY_LIMIT, command.output()).await {
