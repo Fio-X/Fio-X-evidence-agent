@@ -5790,7 +5790,7 @@ mod tests {
                     "{recipe} {unit}"
                 );
                 assert_eq!(
-                    said["finding"]["headline"]["title"], "所列{drawn}国合计{total}",
+                    said["finding"]["headline"]["title"], "所列{drawn}国合计达{total}",
                     "{recipe} {unit}"
                 );
                 // the total's filter is the ranked places' codes, and the core recomputes it from the rows: 340 + 84 + 41
