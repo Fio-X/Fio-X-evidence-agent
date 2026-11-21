@@ -289,9 +289,9 @@ EN.POP.EL5M.RU.ZS	Rural population living in areas where elevation is below 5 me
 EN.POP.EL5M.UR.ZS	Urban population living in areas where elevation is below 5 meters (% of total population)	PC_POP	Percentage of total population	share	pct_total_population
 EN.POP.EL5M.ZS	Population living in areas where elevation is below 5 meters (% of total population)	PC_POP	Percentage of total population	share	pct_total_population
 EN.POP.SLUM.UR.ZS	Population living in slums (% of urban population)	PC	Percentage	share	pct_of_part_of_whole
-EN.URB.LCTY	Population in largest city	NR	Number	count	name_pop_group
+EN.URB.LCTY	Population in largest city	PER	Person	count	name_pop_group
 EN.URB.LCTY.UR.ZS	Population in the largest city (% of urban population)	PC	Percentage	share	pct_of_part_of_whole
-EN.URB.MCTY	Population in urban agglomerations of more than 1 million	NR	Number	count	name_pop_group
+EN.URB.MCTY	Population in urban agglomerations of more than 1 million	PER	Person	count	name_pop_group
 EN.URB.MCTY.TL.ZS	Population in urban agglomerations of more than 1 million (% of total population)	PC_POP	Percentage of total population	share	pct_total_population
 ER.FSH.AQUA.MT	Aquaculture production (metric tons)	T	Tonne	level	metric_tons
 ER.FSH.CAPT.MT	Capture fisheries production (metric tons)	T	Tonne	level	metric_tons
@@ -1329,11 +1329,11 @@ SP.M18.2024.FE.ZS	Women who were first married by age 18 (% of women ages 20-24)
 SP.MTR.1519.ZS	Teenage mothers (% of women ages 15-19 who have had children or are currently pregnant)	PC	Percentage	share	pct_of_part_of_whole
 SP.POP.0004.FE.5Y	Population ages 00-04, female (% of female population)	PC	Percentage	share	pct_of_part_of_whole
 SP.POP.0004.MA.5Y	Population ages 00-04, male (% of male population)	PC	Percentage	share	pct_of_part_of_whole
-SP.POP.0014.FE.IN	Population ages 0-14, female	NR	Number	count	name_population_ages
+SP.POP.0014.FE.IN	Population ages 0-14, female	PER	Person	count	name_population_ages
 SP.POP.0014.FE.ZS	Population ages 0-14, female (% of female population)	PC	Percentage	share	pct_of_part_of_whole
-SP.POP.0014.MA.IN	Population ages 0-14, male	NR	Number	count	name_population_ages
+SP.POP.0014.MA.IN	Population ages 0-14, male	PER	Person	count	name_population_ages
 SP.POP.0014.MA.ZS	Population ages 0-14, male (% of male population)	PC	Percentage	share	pct_of_part_of_whole
-SP.POP.0014.TO	Population ages 0-14, total	NR	Number	count	name_population_ages
+SP.POP.0014.TO	Population ages 0-14, total	PER	Person	count	name_population_ages
 SP.POP.0014.TO.ZS	Population ages 0-14 (% of total population)	PC_POP	Percentage of total population	share	pct_total_population
 SP.POP.0509.FE.5Y	Population ages 05-09, female (% of female population)	PC	Percentage	share	pct_of_part_of_whole
 SP.POP.0509.MA.5Y	Population ages 05-09, male (% of male population)	PC	Percentage	share	pct_of_part_of_whole
@@ -1341,11 +1341,11 @@ SP.POP.1014.FE.5Y	Population ages 10-14, female (% of female population)	PC	Perc
 SP.POP.1014.MA.5Y	Population ages 10-14, male (% of male population)	PC	Percentage	share	pct_of_part_of_whole
 SP.POP.1519.FE.5Y	Population ages 15-19, female (% of female population)	PC	Percentage	share	pct_of_part_of_whole
 SP.POP.1519.MA.5Y	Population ages 15-19, male (% of male population)	PC	Percentage	share	pct_of_part_of_whole
-SP.POP.1564.FE.IN	Population ages 15-64, female	NR	Number	count	name_population_ages
+SP.POP.1564.FE.IN	Population ages 15-64, female	PER	Person	count	name_population_ages
 SP.POP.1564.FE.ZS	Population ages 15-64, female (% of female population)	PC	Percentage	share	pct_of_part_of_whole
-SP.POP.1564.MA.IN	Population ages 15-64, male	NR	Number	count	name_population_ages
+SP.POP.1564.MA.IN	Population ages 15-64, male	PER	Person	count	name_population_ages
 SP.POP.1564.MA.ZS	Population ages 15-64, male (% of male population)	PC	Percentage	share	pct_of_part_of_whole
-SP.POP.1564.TO	Population ages 15-64, total	NR	Number	count	name_population_ages
+SP.POP.1564.TO	Population ages 15-64, total	PER	Person	count	name_population_ages
 SP.POP.1564.TO.ZS	Population ages 15-64 (% of total population)	PC_POP	Percentage of total population	share	pct_total_population
 SP.POP.2024.FE.5Y	Population ages 20-24, female (% of female population)	PC	Percentage	share	pct_of_part_of_whole
 SP.POP.2024.MA.5Y	Population ages 20-24, male (% of male population)	PC	Percentage	share	pct_of_part_of_whole
@@ -1367,11 +1367,11 @@ SP.POP.6064.FE.5Y	Population ages 60-64, female (% of female population)	PC	Perc
 SP.POP.6064.MA.5Y	Population ages 60-64, male (% of male population)	PC	Percentage	share	pct_of_part_of_whole
 SP.POP.6569.FE.5Y	Population ages 65-69, female (% of female population)	PC	Percentage	share	pct_of_part_of_whole
 SP.POP.6569.MA.5Y	Population ages 65-69, male (% of male population)	PC	Percentage	share	pct_of_part_of_whole
-SP.POP.65UP.FE.IN	Population ages 65 and above, female	NR	Number	count	name_population_ages
+SP.POP.65UP.FE.IN	Population ages 65 and above, female	PER	Person	count	name_population_ages
 SP.POP.65UP.FE.ZS	Population ages 65 and above, female (% of female population)	PC	Percentage	share	pct_of_part_of_whole
-SP.POP.65UP.MA.IN	Population ages 65 and above, male	NR	Number	count	name_population_ages
+SP.POP.65UP.MA.IN	Population ages 65 and above, male	PER	Person	count	name_population_ages
 SP.POP.65UP.MA.ZS	Population ages 65 and above, male (% of male population)	PC	Percentage	share	pct_of_part_of_whole
-SP.POP.65UP.TO	Population ages 65 and above, total	NR	Number	count	name_population_ages
+SP.POP.65UP.TO	Population ages 65 and above, total	PER	Person	count	name_population_ages
 SP.POP.65UP.TO.ZS	Population ages 65 and above (% of total population)	PC_POP	Percentage of total population	share	pct_total_population
 SP.POP.7074.FE.5Y	Population ages 70-74, female (% of female population)	PC	Percentage	share	pct_of_part_of_whole
 SP.POP.7074.MA.5Y	Population ages 70-74, male (% of male population)	PC	Percentage	share	pct_of_part_of_whole
@@ -1386,10 +1386,10 @@ SP.POP.DPND.YG	Age dependency ratio, young (% of working-age population)	PC	Perc
 SP.POP.GROW	Population growth (annual %)	PCH_PRE	Percentage change on previous period	change	annual_growth
 SP.POP.SCIE.RD.P6	Researchers in R&D (per million people)	P_MHAB	Per million inhabitants	rate	per_million_people
 SP.POP.TECH.RD.P6	Technicians in R&D (per million people)	P_MHAB	Per million inhabitants	rate	per_million_people
-SP.POP.TOTL	Population, total	NR	Number	count	name_population_ages
-SP.POP.TOTL.FE.IN	Population, female	NR	Number	count	name_population_ages
+SP.POP.TOTL	Population, total	PER	Person	count	name_population_ages
+SP.POP.TOTL.FE.IN	Population, female	PER	Person	count	name_population_ages
 SP.POP.TOTL.FE.ZS	Population, female (% of total population)	PC_POP	Percentage of total population	share	pct_total_population
-SP.POP.TOTL.MA.IN	Population, male	NR	Number	count	name_population_ages
+SP.POP.TOTL.MA.IN	Population, male	PER	Person	count	name_population_ages
 SP.POP.TOTL.MA.ZS	Population, male (% of total population)	PC_POP	Percentage of total population	share	pct_total_population
 SP.REG.BRTH.FE.ZS	Completeness of birth registration, female (%)	PC	Percentage		pct_plain
 SP.REG.BRTH.MA.ZS	Completeness of birth registration, male (%)	PC	Percentage		pct_plain
@@ -1397,11 +1397,11 @@ SP.REG.BRTH.RU.ZS	Completeness of birth registration, rural (%)	PC	Percentage		p
 SP.REG.BRTH.UR.ZS	Completeness of birth registration, urban (%)	PC	Percentage		pct_plain
 SP.REG.BRTH.ZS	Completeness of birth registration (%)	PC	Percentage		pct_plain
 SP.REG.DTHS.ZS	Completeness of death registration with cause-of-death information (%)	PC	Percentage		pct_plain
-SP.RUR.TOTL	Rural population	NR	Number	count	name_pop_group
+SP.RUR.TOTL	Rural population	PER	Person	count	name_pop_group
 SP.RUR.TOTL.ZG	Rural population growth (annual %)	PCH_PRE	Percentage change on previous period	change	annual_growth
 SP.RUR.TOTL.ZS	Rural population (% of total population)	PC_POP	Percentage of total population	share	pct_total_population
 SP.URB.GROW	Urban population growth (annual %)	PCH_PRE	Percentage change on previous period	change	annual_growth
-SP.URB.TOTL	Urban population	NR	Number	count	name_pop_group
+SP.URB.TOTL	Urban population	PER	Person	count	name_pop_group
 SP.URB.TOTL.IN.ZS	Urban population (% of total population)	PC_POP	Percentage of total population	share	pct_total_population
 SP.UWT.TFRT	Unmet need for contraception (% of married women ages 15-49)	PC	Percentage	share	pct_of_part_of_whole
 ST.INT.ARVL	International tourism, number of arrivals	NR	Number	count	name_number_of
