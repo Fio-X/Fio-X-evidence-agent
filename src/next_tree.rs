@@ -979,10 +979,18 @@ fn place_count(chars: &[char], held: &[bool], places: Option<usize>) -> Vec<bool
     free
 }
 
+/// The bind a node names the select it draws its items for by (a place each, node-bindings.json: binds.ranked): the places
+/// such a node draws count among the page's places (places_drawn). The flow's count of a fill (next_run places_drawn) reads
+/// the same bind where the fill keeps it, its leaf spec's hero data (FILL_DRAWS_ITEMS_FOR, a JSON pointer ending in it).
+pub const DRAWS_ITEMS_FOR: &str = "ranked";
+pub const FILL_DRAWS_ITEMS_FOR: &str = "/knobs/spec/hero/data/ranked";
+
 /// The number of distinct places a page draws: the codes of the place_dims of number-free-words.json across the rows of
-/// its record's drawn entries (each a row of `rows` by its src), as next_run counts them on the fill. None when no drawn
-/// row holds a place.
-fn places_drawn(page: &J, rows: &[J]) -> Option<usize> {
+/// its record's drawn entries (each a row of `rows` by its src), and the places a node draws its items for (its
+/// DRAWS_ITEMS_FOR select, as the core recomputed it in `got`: a change page's bars draw each place's change and print no
+/// row of their own, 11-22), each a place code of a row of `rows`; as next_run counts them on the fill. None when no
+/// place is drawn.
+fn places_drawn(page: &J, rows: &[J], got: &Got) -> Option<usize> {
     let srcs: BTreeSet<String> = page
         .g("record")
         .g("drawn")
@@ -991,15 +999,29 @@ fn places_drawn(page: &J, rows: &[J]) -> Option<usize> {
         .map(|d| st(d.g("src")))
         .collect();
     let dims: Vec<String> = free_words().g("place_dims").arr().iter().map(st).collect();
-    let codes: BTreeSet<String> = rows
+    let places = |r: &J| {
+        dims.iter()
+            .filter_map(|d| r.g("dims").g(d).s().map(str::to_string))
+            .collect::<Vec<_>>()
+    };
+    let mut codes: BTreeSet<String> = rows
         .iter()
         .filter(|r| srcs.contains(&st(r.g("src"))))
-        .flat_map(|r| {
-            dims.iter()
-                .filter_map(|d| r.g("dims").g(d).s().map(str::to_string))
-                .collect::<Vec<_>>()
-        })
+        .flat_map(places)
         .collect();
+    let of_rows: BTreeSet<String> = rows.iter().flat_map(places).collect();
+    for (_, v) in walk(page.g("body"), "$") {
+        let Some(sid) = ref_id(v.g("binds").g(DRAWS_ITEMS_FOR)) else {
+            continue;
+        };
+        codes.extend(
+            got.get(&sid)
+                .map(|c| c.arr().iter().map(st).collect::<Vec<_>>())
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|c| of_rows.contains(c)),
+        );
+    }
     (!codes.is_empty()).then_some(codes.len())
 }
 
@@ -3805,7 +3827,7 @@ fn digit_runs(s: &str) -> BTreeSet<String> {
 
 /// The page's own words (validate.words_lint): its title, dek, kicker and finding hold no worded number; a quote is a digit
 /// string of the request. A node's lines are said only here (C3 refuses them for the core's own words).
-fn words_lint(page: &J, errs: &mut Vec<String>) {
+fn words_lint(page: &J, got: &Got, errs: &mut Vec<String>) {
     let req = page.get("request");
     if let Some(req) = req {
         if sha256_hex(&st(req.g("text"))) != st(req.g("sha256")) {
@@ -3813,7 +3835,7 @@ fn words_lint(page: &J, errs: &mut Vec<String>) {
         }
     }
     // a count of the places the page draws (四国 on a page of four) is the data's own count (user 11-07)
-    let places = places_drawn(page, page.g("facts").g("rows").arr());
+    let places = places_drawn(page, page.g("facts").g("rows").arr(), got);
     for (path, v) in walk(page, "$") {
         if v.g("kind").s() != Some("Text") {
             continue;
@@ -4229,7 +4251,7 @@ fn part_a(page: &J, inp: &J, reg: &J) -> (Vec<String>, Got, Option<J>) {
     }
     let (bad, got, rpage) = recheck(&page);
     let mut lerrs = lint(&page, &got, rpage.as_ref());
-    words_lint(&page, &mut lerrs);
+    words_lint(&page, &got, &mut lerrs);
     shared_lint(&page, &got, &mut lerrs);
     lerrs.extend(tree_colour_problems(&page, palettes()));
     if page.has("fragment") {
@@ -8675,7 +8697,7 @@ pub fn content_problems(
         }
     }
     // a count of the places the page draws (四国 on a page of four) is the data's own count (user 11-07)
-    let places = places_drawn(spec, inp.g("rows").arr());
+    let places = places_drawn(spec, inp.g("rows").arr(), &got);
     for (path, v) in walk(spec, "$") {
         let rs = if v.g("kind").s() == Some("Text") {
             v.g("runs")
@@ -12667,8 +12689,12 @@ mod tests {
         let reg = reg_of(&env);
         let inp = env.g("input");
         let ext: Vec<String> = env.g("external").arr().iter().map(st).collect();
+        let got = content_problems(inp.g("page_spec"), inp, &ext, &reg)
+            .1
+            .unwrap()
+            .got;
         assert_eq!(
-            places_drawn(inp.g("page_spec"), inp.g("rows").arr()),
+            places_drawn(inp.g("page_spec"), inp.g("rows").arr(), &got),
             Some(4)
         );
         let with_kicker = |w: &str| {
@@ -12725,9 +12751,14 @@ mod tests {
                 "{w} {places:?}"
             );
         }
+        // the flow reads the same bind of the fill (next_run places_drawn)
+        assert_eq!(
+            FILL_DRAWS_ITEMS_FOR.rsplit('/').next(),
+            Some(DRAWS_ITEMS_FOR)
+        );
         // a page with no drawn record knows no count
         let bare = J::obj_of(vec![("kind", J::str("Page"))]);
-        assert_eq!(places_drawn(&bare, inp.g("rows").arr()), None);
+        assert_eq!(places_drawn(&bare, inp.g("rows").arr(), &Got::new()), None);
     }
 
     /// q1 (pos-q1-b) through the core with `overlay`: the bars' SVG and record, or every failure line.

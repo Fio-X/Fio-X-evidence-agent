@@ -2901,8 +2901,10 @@ fn measures_a_change(table: &Prepared, catalogue: &dyn Catalogue) -> bool {
 }
 
 /// The number of distinct places a page's fill draws: the codes of the place dimensions (next_flow::place_dims) across the
-/// rows its layers print a value of (`drawn`, each a row of `rows` by its src), as the core counts them on the page tree
-/// (next_tree places_drawn). None when no drawn row holds a place.
+/// rows its layers print a value of (`drawn`, each a row of `rows` by its src), and the places a layer draws its items for
+/// (next_tree::FILL_DRAWS_ITEMS_FOR: a change page's bars draw each place's change and print no row of their own,
+/// 11-22), each a place code of a row of `rows`; as the core counts them on the page tree (next_tree places_drawn). None
+/// when no place is drawn.
 fn places_drawn(fill: &Value) -> Option<usize> {
     let srcs: BTreeSet<&str> = fill["drawn"]
         .as_array()?
@@ -2910,12 +2912,27 @@ fn places_drawn(fill: &Value) -> Option<usize> {
         .filter_map(|d| d["src"].as_str())
         .collect();
     let dims = crate::next_flow::place_dims();
-    let codes: BTreeSet<&str> = fill["rows"]
-        .as_array()?
+    let rows = fill["rows"].as_array()?;
+    let places = |r: &'_ Value| -> Vec<String> {
+        dims.iter()
+            .filter_map(|d| r["dims"][d.as_str()].as_str().map(str::to_string))
+            .collect()
+    };
+    let mut codes: BTreeSet<String> = rows
         .iter()
         .filter(|r| r["src"].as_str().is_some_and(|s| srcs.contains(s)))
-        .flat_map(|r| dims.iter().filter_map(|d| r["dims"][d.as_str()].as_str()))
+        .flat_map(places)
         .collect();
+    let of_rows: BTreeSet<String> = rows.iter().flat_map(places).collect();
+    codes.extend(
+        fill.pointer(crate::next_tree::FILL_DRAWS_ITEMS_FOR)
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|c| c.as_str())
+            .filter(|c| of_rows.contains(*c))
+            .map(str::to_string),
+    );
     (!codes.is_empty()).then_some(codes.len())
 }
 
@@ -13562,6 +13579,44 @@ mod tests {
         }
     }
 
+    /// A change page's bars print each place's change and no row of their own, so no drawn row holds a place: the count
+    /// of places it draws is the places its bars draw, on the text step (places_drawn) and in the core's words check
+    /// alike. q1's four places pass a four-country kicker and refuse a three-country one; the same table less FR, three
+    /// places, passes the three-country kicker and refuses the four-country one.
+    #[test]
+    fn a_change_page_s_kicker_counts_the_places_its_bars_draw() {
+        let four = q1_ten_years();
+        let three: Vec<Value> = four
+            .iter()
+            .filter(|r| r["dims"]["geo"] != "FR")
+            .cloned()
+            .collect();
+        let runtime = Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime");
+        for (main, n, good, bad) in [
+            (four, 4, "四国对比", "三国对比"),
+            (three, 3, "三国对比", "四国对比"),
+        ] {
+            let change = recipe("change");
+            let shape = shape_of(&change.eats, &[("sdg", &main[..])], &Hubs).unwrap();
+            let picks = picks_of(&change.picks, &shape, &main, &[]).unwrap();
+            let fill = fill_undrawn(change, &shape, &picks, &main);
+            assert!(fill["drawn"].as_array().unwrap().is_empty(), "{n}");
+            assert_eq!(places_drawn(&fill), Some(n));
+            for (kicker, passes) in [(good, true), (bad, false)] {
+                let mut f = fill.clone();
+                page_words(&mut f, ("标题", "导语", kicker));
+                let calls = std::sync::Mutex::new(Vec::new());
+                let got = draw_nodes(&mut f, &change.external, &calls, &runtime);
+                if passes {
+                    got.unwrap_or_else(|e| panic!("{n} places, {kicker}: {e}"));
+                } else {
+                    let e = got.expect_err(kicker);
+                    assert!(e.contains("C3 $.texts.kicker"), "{n} places, {kicker}: {e}");
+                }
+            }
+        }
+    }
+
     /// The q5-shaped change page (a World Bank share by iso3 country, CHN, IND, USA), the second shape beside q1's Eurostat
     /// one: the title's headline names the finding's place, the dek's subject and the accent's; each note compares its place
     /// with its neighbour in the ranking by a gap the ledger computes from the rows (CHN 3.75 above IND's 1, USA's 0.5 below
@@ -16382,6 +16437,10 @@ mod tests {
             None
         );
         assert_eq!(places_drawn(&json!({"knobs": {}})), None);
+        // with no drawn row, the places the hero's ranked names (a change page's bars), each a place of a row; a code no row
+        // holds counts no place
+        let ranked = json!({"rows": fill["rows"], "drawn": [], "knobs": {"spec": {"hero": {"data": {"ranked": ["DE", "FR", "XX"]}}}}});
+        assert_eq!(places_drawn(&ranked), Some(2));
         let mut drafts = q1_drafts();
         drafts.places_drawn = places_drawn(&fill);
         let Ask::Text { places, .. } = drafts.ask(Vec::new()) else {

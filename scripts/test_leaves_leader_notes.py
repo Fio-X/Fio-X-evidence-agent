@@ -913,6 +913,13 @@ class ColumnMap(unittest.TestCase):
         got = child(column_lines({"bubbles": dict(items=ITEMS, ext=EXT), "leader_notes": dict(D, ext=[-20, 30, 40, 70])})[:1])[0]
         self.assertEqual(got["refused"], ["size: column: the leader notes and the bubbles name two extents; the map panel has one frame"])
 
+    def test_the_room_over_the_first_bar_is_the_core_s(self):
+        # 11-22: the leaf lays its no-map bars picture from top + NOTE_HEAD, the core its rows frame from top + y0 (node-bindings
+        # bars_rows.above.h, on a page with notes and no circles): one number, or the notes point off their bars
+        with open(os.path.join(HERE, "..", "runtime", "page_tree", "node-bindings.json"), encoding="utf-8") as f:
+            above = json.load(f)["frames"]["bars_rows"]["above"]
+        self.assertEqual((above["leaves"], above["unless"], above["h"]), ("leader_notes", "bubbles", run.NOTE_HEAD))
+
     def test_with_no_map_the_notes_point_at_their_bars_printed_values_in_the_bars_picture(self):
         # v5 item 2 (11-13): the column recipe has no map (its circles drew the bars' own values at their year); its notes stand
         # in the bars' picture, under or beside the bars, off every name, bar and value, each leader ending just past its
