@@ -2475,7 +2475,7 @@ fn page_input(
     let mut p = json!({"recipe": recipe.name, "order": recipe.layers,
         "shape": {"main": shape.main, "place": shape.place, "year": shape.year, "unit": shape.unit, "fmt": shape.unit.to_lowercase(),
             "suffix": next_pack::unit_number_suffix(&shape.unit).map(suffix), "rule": next_pack::unit_rule(&shape.unit), "countries": shape.countries},
-        "picks": {"rules": recipe.picks, "ranked": picks.ranked, "marks": picks.marks, "t0": picks.t0, "t1": picks.t1},
+        "picks": {"rules": recipe.picks, "ranked": picks.ranked, "marks": picks.marks, "t0": picks.t0, "t1": picks.t1, "cut": false},
         "rows": main, "name_kind": scheme, "sum_rows": sums, "outside": shape.outside, "top": next_params::NARROW_TOP,
         "short": next_pack::unit_short(&shape.unit), "line": next_pack::unit_line_form(&shape.unit), "composition": shape.composition.as_ref().map(|c| json!({"dim": c.dim, "total": c.total, "groups": c.groups,
             "first_group": c.groups.first().map(|g| &g.0), "first_codes": c.groups.first().map(|g| &g.1)}))});
@@ -3492,6 +3492,8 @@ fn recipe_request(
             p["picks"]["ranked"] = json!(picks.ranked);
             p["picks"]["marks"] = json!(picks.marks);
             p["picks"][if low { "asked_last_n" } else { "asked_first_n" }] = json!(n);
+            // the notes then say the drawn set as a narrowed page's do (所选最高者): its ends are no longer the ranking's
+            p["picks"]["cut"] = json!(true);
             if let Some(b) = basis.as_mut() {
                 b.line = b.line_drawn.clone();
             }
@@ -14371,6 +14373,16 @@ mod tests {
                 assert!(
                     plain.contains("画出 3 国"),
                     "{at}: the line says the places drawn"
+                );
+                // a column's notes say the drawn set (所选最高者), not the ranking's ends the page no longer draws (the
+                // ranked bars have no notes)
+                assert!(
+                    name != "column" || plain.contains("所选"),
+                    "{at}: the notes say the drawn set"
+                );
+                assert!(
+                    !plain.contains("比最高者") && !plain.contains("最高者是它的"),
+                    "{at}: {plain}"
                 );
                 // must fail: a drawn place passed off as cut (it is drawn), and a member never ranked passed off as cut
                 let mut drawn_cut = spec.clone();
