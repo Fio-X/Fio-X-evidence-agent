@@ -11,7 +11,8 @@
    "foot": 4,
    "left": {"text": "label", "gap": 12},
    "right": {"text": "value_text", "gap": 8},
-   "beside": {"leaves": "bubbles", "w": 560, "gap": 40}
+   "beside": {"leaves": "bubbles", "w": 560, "gap": 40},
+   "above": {"leaves": "leader_notes", "unless": "bubbles", "h": 24}
   }
  },
  "picks": {

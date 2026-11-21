@@ -169,6 +169,11 @@ def bubble_key(f, occ):
 # at their own year, so the column recipe has none): px, about two note lines; the notes may stand anywhere in the bars'
 # picture off every name, bar and value (column.cl_bars_placed claims them), the band keeps room for the longest bar's.
 NOTE_BAND = 56
+# The room over the bars the same page gives its notes (the rows frame's y0, node-bindings.json bars_rows.above): px, one note
+# line at the largest note_size (22: its box 4 to 30 px, 1 px off the first bar's). Each row walls the picture off from its name to
+# its value, so the first bar's end is reached only past the second's value: when the two bars all but tie (11-22: 78.02 and 77.85
+# of ten, 24.33 and 24.24 of three), its value runs to the right edge as well and the first bar's note found no free place.
+NOTE_HEAD = 24
 
 
 def bar_notes(f, occ):
@@ -298,7 +303,8 @@ class Panel:
                 p.f.sized(*main_size(p.f, MAIN[p.node]))
             # the room under the map the bubbles' key may stand in (bubbles.key_room); the map's svg grows into it only when the key does
             if p.f.mv: p.f.H = max(p.f.H, p.f.mv.H + bubbles.key_room(p.f))
-            elif MAIN[p.node] == "bars" and "leader_notes" in (h.get("leaves") or {}): p.f.bh += NOTE_BAND; p.f.H = max(p.f.H, p.f.bh)
+            elif MAIN[p.node] == "bars" and "leader_notes" in (h.get("leaves") or {}):
+                p.f.top += NOTE_HEAD; p.f.bh += NOTE_HEAD + NOTE_BAND; p.f.H = max(p.f.H, p.f.bh)  # the core lays the rows from top + y0
             return
         if k.get("shapes") is None: raise FX.Refused(f"the {p.node} page's request gives no shapes")
         if p.node == "scmp":

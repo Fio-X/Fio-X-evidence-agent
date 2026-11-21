@@ -3931,30 +3931,35 @@ fn checks_of(page_in: &J, reg: &J, body: &[J], external: &[String], unit: &J) ->
 }
 
 /// The knobs a node laid out in a rows frame carries: where the frame starts across the page, after a panel the registry
-/// says stands beside it when the fill draws that panel (frames.<f>.beside: the leaves it is, its width and the gap).
+/// says stands beside it when the fill draws that panel (frames.<f>.beside: the leaves it is, its width and the gap); and,
+/// when the fill draws the leaves the registry says stand above it and not those of its `unless` (frames.<f>.above: the
+/// column page's notes at the bars, with no map beside them), the room over its first row (y0, its h).
 fn frame_knobs(layer: &str, reg: &J, fill: &J) -> Option<J> {
     let fr = reg.g("frames").g(&st(reg.g("nodes").g(layer).g("frame")));
     if fr.g("kind").s() != Some("rows") {
         return None;
     }
+    let leaves = fill.g("knobs").g("spec").g("hero").g("leaves");
+    let has = |p: &J, k: &str| p.g(k).s().is_some_and(|l| leaves.has(l));
     let beside = fr.g("beside");
-    let drawn = beside
-        .g("leaves")
-        .s()
-        .is_some_and(|l| fill.g("knobs").g("spec").g("hero").g("leaves").has(l));
-    let x0 = if drawn {
+    let x0 = if has(beside, "leaves") {
         beside.g("w").num().unwrap_or(0.0) + beside.g("gap").num().unwrap_or(0.0)
     } else {
         0.0
     };
-    Some(J::obj_of(vec![(
-        "x0",
-        if x0.fract() == 0.0 {
-            J::Int(x0 as i64)
+    let px = |v: f64| {
+        if v.fract() == 0.0 {
+            J::Int(v as i64)
         } else {
-            J::Num(x0)
-        },
-    )]))
+            J::Num(v)
+        }
+    };
+    let mut knobs = vec![("x0", px(x0))];
+    let above = fr.g("above");
+    if has(above, "leaves") && !has(above, "unless") {
+        knobs.push(("y0", px(above.g("h").num().unwrap_or(0.0))));
+    }
+    Some(J::obj_of(knobs))
 }
 
 /// The fill's rows in the order the page input holds them (R10 holds the tree's rows to it): the fill keeps each layer's

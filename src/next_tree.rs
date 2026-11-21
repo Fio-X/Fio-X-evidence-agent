@@ -7917,6 +7917,8 @@ fn rows_frame(fr: &J, n: &J, meta: &Meta, size: f64, values: &[f64]) -> Result<(
     };
     let (lw, vw) = (widest("left")?, widest("right")?);
     let x0 = n.g("knobs").get("x0").cloned().unwrap_or(J::Int(0));
+    // the room over the first row the frame's `above` panel takes (frame_knobs y0; none without it)
+    let y0 = n.g("knobs").get("y0").cloned().unwrap_or(J::Int(0));
     let num = |v: &J, what: &str| {
         v.num()
             .ok_or_else(|| format!("rows frame: {what} is no number"))
@@ -7924,7 +7926,7 @@ fn rows_frame(fr: &J, n: &J, meta: &Meta, size: f64, values: &[f64]) -> Result<(
     let (w, x, top, row) = (
         num(fr.g("w"), "w")?,
         num(&x0, "x0")?,
-        num(fr.g("top"), "top")?,
+        num(fr.g("top"), "top")? + num(&y0, "y0")?,
         num(fr.g("row"), "row")?,
     );
     let count = n.g("items").arr().len() as f64;
@@ -7945,7 +7947,14 @@ fn rows_frame(fr: &J, n: &J, meta: &Meta, size: f64, values: &[f64]) -> Result<(
         ("lw", J::Num(lw)),
         ("vw", J::Num(vw)),
         ("bw", J::Num(whole)),
-        ("top", fr.g("top").clone()),
+        (
+            "top",
+            if y0.num() == Some(0.0) {
+                fr.g("top").clone()
+            } else {
+                J::Num(top)
+            },
+        ),
         ("row", fr.g("row").clone()),
         ("inset", fr.g("inset").clone()),
     ]);
