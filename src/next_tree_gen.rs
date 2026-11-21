@@ -5897,6 +5897,18 @@ mod tests {
                     ),
                     "{at}"
                 );
+                // the finding reads every ranked place's row at the year (pool, over ranked_all), so the request keeps the
+                // rows of the places the page leaves out, which the whole-page check holds the cut against (cut_said)
+                for said in [&top, &low] {
+                    let mut pooled: Vec<String> = said["facts"]["pool"]["filter"][place]
+                        .as_array()
+                        .unwrap_or_else(|| panic!("{at}: no pool filter in {}", said["facts"]))
+                        .iter()
+                        .map(|c| c.as_str().unwrap().to_string())
+                        .collect();
+                    pooled.sort();
+                    assert_eq!(pooled, sorted, "{at}");
+                }
                 // the neighbour's gap is recomputed from the rows: 90 - 70 at the top, 30 - 10 at the bottom
                 let r: Vec<J> = rows.iter().map(J::from_value).collect();
                 for (said, want) in [(&top, 20.0), (&low, 20.0)] {
