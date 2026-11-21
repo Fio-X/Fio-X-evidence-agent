@@ -156,6 +156,9 @@ pub enum Request<'a> {
     AsksLowest { question: &'a str },
     /// Whether the Chinese question asks for the total of its places (answer_plan::asks_total), read by rule from its words.
     AsksTotal { question: &'a str },
+    /// The first n at one end the Chinese question asks for, with whether it is the low end (answer_plan::asks_top), read by
+    /// rule from its words.
+    AsksTop { question: &'a str },
     /// The whole class of question the new route cannot answer, read by rule from its words (scope-refusal-zh.json); None
     /// when no class takes it. `this_year` is the program's clock year (a later four-digit year is a forecast).
     ScopeRefused { question: &'a str, this_year: i32 },
@@ -304,6 +307,7 @@ pub enum Reply<'a> {
     RankAsked(Option<RankAsked>),
     AsksLowest(bool),
     AsksTotal(bool),
+    AsksTop(Option<(usize, bool)>),
     ScopeRefused(Option<crate::l5geo::ScopeRefusal>),
     SplitAsk(crate::answer_plan::SplitAsk),
     AnswerPlan(Result<crate::answer_plan::Plan, String>),
@@ -388,6 +392,7 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
         Request::AsksTotal { question } => {
             Reply::AsksTotal(crate::answer_plan::asks_total(question))
         }
+        Request::AsksTop { question } => Reply::AsksTop(crate::answer_plan::asks_top(question)),
         Request::ScopeRefused {
             question,
             this_year,

@@ -3435,6 +3435,17 @@ fn recipe_request(
     }) {
         p["picks"]["asked_total"] = json!(true);
     }
+    // a question that asks for the first n at one end (the knowledge group's reading of its words: 最高的三个, 倒数后五) on a
+    // group's page the program did not narrow, n at least 2 and below the places ranked: a run fact a finding's case may read
+    // (requires $picks.asked_top); a page over named places ranks only those and keeps none
+    if let Some((p, (n, low))) = page_in.as_mut().zip(
+        (!scoped && basis.is_some())
+            .then(|| catalogue.asks_top(question))
+            .flatten()
+            .filter(|(n, _)| (2..picks.ranked.len()).contains(n)),
+    ) {
+        p["picks"]["asked_top"] = json!({"n": n, "low": low});
+    }
     // a page over blocks: every block's rows beside the main's; a block answers a quantity of the question's record
     // (answers_asked) and is headed by its table's reviewed Chinese name, printed marked with its name row as the map's key
     // is (below); a block with none of either is not this shape and the many-block page stays as it was
