@@ -2178,10 +2178,21 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
         let codes = got.get(&sid).cloned().unwrap_or(J::Arr(vec![]));
         let by = st(over.g("by"));
         // the rows of the select at its time (rows_of_select), or at its time and the time its change runs from
+        // rows_of_root: the rows of the root rank's codes at its time (a page drawing the first n of a ranking reads every
+        // ranked place's row, which the members it leaves out are held against); the select's own on a page that cuts none
+        let all = got
+            .get(&st(root.g("id")))
+            .cloned()
+            .unwrap_or(J::Arr(vec![]));
         let rows_by = |rule: &J| -> Result<Vec<J>, String> {
+            let codes = if rule.s() == Some("rows_of_root") {
+                &all
+            } else {
+                &codes
+            };
             let times: Vec<&J> = match rule.s() {
                 None => return Ok(vec![]),
-                Some("rows_of_select") => vec![over.g("time")],
+                Some("rows_of_select" | "rows_of_root") => vec![over.g("time")],
                 Some("rows_of_select_both_ends") => {
                     vec![over.g("time"), core::change_from(root).unwrap_or(&J::Null)]
                 }

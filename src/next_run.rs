@@ -13788,6 +13788,9 @@ mod tests {
         ) -> Result<Vec<Value>, String> {
             Fetched(self.0.clone(), "").series_rows(table, csv)
         }
+        fn asks_top(&self, question_zh: &str) -> Option<(usize, bool)> {
+            crate::answer_plan::asks_top(question_zh)
+        }
     }
 
     /// A change page's (or a column page's) rows of sdg_07_40 over `places` at `years`, a value each.
@@ -14245,6 +14248,16 @@ mod tests {
         main: Vec<Value>,
         asked: Value,
     ) -> (Result<Value, (&'static str, String)>, Vec<Value>) {
+        group_request_by(question, main, asked, ("change", "dumbbell"))
+    }
+
+    /// group_request_asked by a recipe (`name`), the charts step having drawn `chart`.
+    fn group_request_by(
+        question: &str,
+        main: Vec<Value>,
+        asked: Value,
+        (name, chart): (&str, &str),
+    ) -> (Result<Value, (&'static str, String)>, Vec<Value>) {
         let run = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(run.path().join("shadow")).unwrap();
         std::fs::write(run.path().join("claims.jsonl"), "").unwrap();
@@ -14272,8 +14285,8 @@ mod tests {
         let fill = recipe_request(
             run.path(),
             &[prepared],
-            &["dumbbell"],
-            recipe("change"),
+            &[chart],
+            recipe(name),
             &cat,
             (question, ("标题", "导语", "栏目"), &places),
             (&calls, None),
@@ -14284,18 +14297,123 @@ mod tests {
 
     /// A group's fill laid out where leaf_page lays the external layers out, by the repository's own nodes (whole paths: the
     /// child runs in its own folder), then drawn, published and read back.
-    fn group_published(mut fill: Value, at: &str) -> PublishedPage {
+    fn group_published(fill: Value, at: &str) -> PublishedPage {
+        group_published_by(fill, "change", at)
+    }
+
+    /// group_published by a recipe (`name`).
+    fn group_published_by(mut fill: Value, name: &str, at: &str) -> PublishedPage {
         let calls = std::sync::Mutex::new(Vec::new());
         fill["knobs"]["shapes"] = json!(Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("runtime/pi/assets/naturalearth-admin0-50m.geojson"));
         draw_nodes(
             &mut fill,
-            &recipe("change").external,
+            &recipe(name).external,
             &calls,
             &Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime"),
         )
-        .unwrap();
-        published("change", fill, at)
+        .unwrap_or_else(|e| panic!("{at}: draw: {e}"));
+        published(name, fill, at)
+    }
+
+    /// A group's page asking for the first or the last n (owner 11-21 12:07, ask item 9: cut to those n), end to end over a
+    /// run folder: recipe_request ranks the BRICS members (Ethiopia with no row), draws only the n (column and ranked bars,
+    /// first and last), keeps every ranked member's row in its request, says the places-drawn line naming Ethiopia, and
+    /// writes the members left out; the page is drawn, published and passes the whole-page check. The same page with a
+    /// member left out that has a better value than one drawn, or one with no row, fails it.
+    #[test]
+    fn a_group_page_asking_the_first_n_draws_only_them_and_holds_the_rest_against_them() {
+        let brics = ["BR", "RU", "IN", "CN", "ZA", "EG", "IR", "AE", "ID"];
+        for (name, chart) in [
+            ("column", "horizontal_bar"),
+            ("ranked_bars", "horizontal_bar"),
+        ] {
+            for (question, low) in [
+                ("2025 年金砖国家失业率最高的三个是谁？", false),
+                ("2025 年金砖国家失业率最低的三个是谁？", true),
+            ] {
+                let at = format!("{name} {question}");
+                let main = group_rows(&brics, &["2016", "2025"]);
+                let (fill, _) = group_request_by(question, main, json!([]), (name, chart));
+                let fill = fill.unwrap_or_else(|e| panic!("{at}: {e:?}"));
+                let page_in = &fill["page_in"];
+                assert_eq!(
+                    page_in["picks"]["ranked"].as_array().unwrap().len(),
+                    3,
+                    "{at}"
+                );
+                let key = if low { "asked_last_n" } else { "asked_first_n" };
+                assert_eq!(page_in["picks"][key], json!(3), "{at}");
+                let basis = &fill["knobs"]["spec"]["basis"];
+                assert_eq!(basis["missing"], json!(["ET"]), "{at}");
+                assert_eq!(basis["cut"]["codes"].as_array().unwrap().len(), 6, "{at}");
+                assert_eq!(basis["cut"]["low"], json!(low), "{at}");
+                // every ranked member's row at the year is in the request, the cut ones among them
+                let kept: BTreeSet<&str> = fill["rows"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter(|r| r["time"] == "2025")
+                    .filter_map(|r| r["dims"]["geo"].as_str())
+                    .collect();
+                assert_eq!(kept.len(), 9, "{at}: {kept:?}");
+                let (html, ledger, refs, spec, rows, facts) =
+                    group_published_by(fill.clone(), name, &at);
+                let fails = |s: &crate::next_facts::Spec| {
+                    crate::next_leaf::check_leaf_page(&html, &ledger, &refs, s, &rows, &facts)
+                };
+                assert_eq!(fails(&spec), Vec::<String>::new(), "{at}");
+                assert_eq!(ledger[&format!("fact:{DRAWN}.n")], "3", "{at}");
+                let plain: String = html
+                    .split('<')
+                    .map(|p| p.split_once('>').map_or(p, |(_, t)| t))
+                    .collect();
+                assert!(
+                    plain.contains("画出 3 国"),
+                    "{at}: the line says the places drawn"
+                );
+                // must fail: a drawn place passed off as cut (it is drawn), and a member never ranked passed off as cut
+                let mut drawn_cut = spec.clone();
+                let first = page_in["picks"]["ranked"][0].as_str().unwrap().to_string();
+                drawn_cut
+                    .basis
+                    .as_mut()
+                    .unwrap()
+                    .cut
+                    .as_mut()
+                    .unwrap()
+                    .codes
+                    .push(first);
+                assert!(
+                    fails(&drawn_cut).iter().any(|f| f.contains("and draws it")),
+                    "{at}: {:?}",
+                    fails(&drawn_cut)
+                );
+                let mut no_row = spec.clone();
+                no_row
+                    .basis
+                    .as_mut()
+                    .unwrap()
+                    .cut
+                    .as_mut()
+                    .unwrap()
+                    .codes
+                    .push("ET".into());
+                assert!(
+                    !fails(&no_row).is_empty(),
+                    "{at}: a member with no row passed off as cut"
+                );
+                // must fail: the cut said the other end (a better value left out)
+                let mut flipped = spec.clone();
+                let c = flipped.basis.as_mut().unwrap().cut.as_mut().unwrap();
+                c.low = !c.low;
+                assert!(
+                    fails(&flipped).iter().any(|f| f.contains("leaves out")),
+                    "{at}: {:?}",
+                    fails(&flipped)
+                );
+            }
+        }
     }
 
     /// With the main chosen, the search step's record of the quantities asked keeps only those the knowledge group still
