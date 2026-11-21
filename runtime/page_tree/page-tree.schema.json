@@ -1637,6 +1637,13 @@
         }
        ]
       },
+      "end": {
+       "description": "Which end of the source the n are taken from: first (the default) or last, kept in the source's order.",
+       "enum": [
+        "first",
+        "last"
+       ]
+      },
       "result": {
        "$ref": "#/$defs/Codes"
       },

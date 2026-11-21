@@ -1849,11 +1849,11 @@ fn cannot_take(s: &J) -> Option<String> {
     let at = s.g("at").s().unwrap_or("");
     if matches!(t.g("by").s(), Some("printed" | "value"))
         && t.g("outcome").s() == Some("silence")
-        && matches!(at, "first" | "last" | "second")
+        && matches!(at, "first" | "last" | "second" | "before_last")
     {
         return None;
     }
-    Some(format!("tie {} at {at} (only by code, or by printed or value with silence at first, second or last)", t.repr()))
+    Some(format!("tie {} at {at} (only by code, or by printed or value with silence at first, second, before_last or last)", t.repr()))
 }
 
 /// The value a take's code is ordered by: the root rank's key of it, as the rank computes it. Its rows under the rank's over
@@ -2998,7 +2998,19 @@ fn recheck_one(
             let n = int_or_knob(s.g("n"))?;
             let from = st(s.g("from"));
             let src = got.get(&from).ok_or_else(|| format!("'{from}'"))?;
-            let have = J::Arr(src.arr().iter().take(n.max(0) as usize).cloned().collect());
+            // end "last": the last n, in the order the source holds them (the bottom n of a ranking, lowest last)
+            let all = src.arr();
+            let n = (n.max(0) as usize).min(all.len());
+            let skip = match s.g("end").s() {
+                None | Some("first") => 0,
+                Some("last") => all.len() - n,
+                Some(other) => {
+                    return Err(format!(
+                        "select {id} (top_n): end '{other}'; e.g. first|last"
+                    ))
+                }
+            };
+            let have = J::Arr(all.iter().skip(skip).take(n).cloned().collect());
             same(bad, format!("select {id} (top_n)"), s.g("result"), &have);
             got.insert(id.into(), have);
         }
@@ -13753,8 +13765,12 @@ mod tests {
 
     /// A page of selects over rows and formats, recomputed by the core: each select's result.
     fn selects_over(rows: Vec<J>, sels: &[&str], fmts: &str) -> Got {
+        recheck(&page_over(rows, sels, fmts)).1
+    }
+
+    fn page_over(rows: Vec<J>, sels: &[&str], fmts: &str) -> J {
         let items: Vec<J> = sels.iter().map(|s| parse(s).unwrap()).collect();
-        let page = J::obj_of(vec![
+        J::obj_of(vec![
             ("kind", J::str("Page")),
             (
                 "selects",
@@ -13774,8 +13790,7 @@ mod tests {
                 "checks",
                 J::obj_of(vec![("kind", J::str("Checks")), ("items", J::Arr(vec![]))]),
             ),
-        ]);
-        recheck(&page).1
+        ])
     }
 
     fn a_row(code: &str, dim: Option<(&str, &str)>, t: &str, v: &str) -> J {
@@ -13792,6 +13807,62 @@ mod tests {
     /// A change rank: two places at one level and two changes (and two changes alike at two levels); a part_share rank: two
     /// places at one total and two shares (and two shares alike at two totals). The take's tie (printed, silence) decides on
     /// the key: the same level never silences two changes, the same change at two levels does; likewise totals and shares.
+    /// top_n takes the first n of an ordered select, or with end "last" the last n in the source's order (the bottom n of
+    /// a ranking, lowest last); an end it does not know refuses, and n past the source takes all of it.
+    #[test]
+    fn top_n_takes_the_first_or_the_last_n_in_order() {
+        let rows: Vec<J> = [("A", "40"), ("B", "30"), ("C", "20"), ("D", "10")]
+            .iter()
+            .map(|(c, v)| a_row(c, None, "2024", v))
+            .collect();
+        let rank = r#"{"id": "r", "kind": "rank", "over": {"table": "t", "by": "geo", "time": "2024"}, "key": "value", "order": "desc"}"#;
+        let codes = |got: &Got, id: &str| -> Vec<String> {
+            got[id]
+                .arr()
+                .iter()
+                .map(|c| c.s().unwrap_or("").to_string())
+                .collect()
+        };
+        for (sel, want) in [
+            (
+                r#"{"id": "k", "kind": "top_n", "from": "r", "n": 2}"#,
+                vec!["A", "B"],
+            ),
+            (
+                r#"{"id": "k", "kind": "top_n", "from": "r", "n": 2, "end": "first"}"#,
+                vec!["A", "B"],
+            ),
+            (
+                r#"{"id": "k", "kind": "top_n", "from": "r", "n": 3, "end": "last"}"#,
+                vec!["B", "C", "D"],
+            ),
+            (
+                r#"{"id": "k", "kind": "top_n", "from": "r", "n": 9, "end": "last"}"#,
+                vec!["A", "B", "C", "D"],
+            ),
+        ] {
+            assert_eq!(
+                codes(&selects_over(rows.clone(), &[rank, sel], "{}"), "k"),
+                want,
+                "{sel}"
+            );
+        }
+        let odd = r#"{"id": "k", "kind": "top_n", "from": "r", "n": 2, "end": "middle"}"#;
+        let (bad, _, _) = recheck(&page_over(rows.clone(), &[rank, odd], "{}"));
+        assert!(bad.iter().any(|b| b.contains("end 'middle'")), "{bad:?}");
+        // the one before last, silent when it prints as a place beside it does (C and D both 20), else that place
+        let before = r#"{"id": "k", "kind": "take", "from": "r", "at": "before_last", "tie": {"by": "printed", "outcome": "silence", "dec": 0}}"#;
+        assert_eq!(
+            selects_over(rows.clone(), &[rank, before], "{}")["k"],
+            J::str("C")
+        );
+        let tied: Vec<J> = [("A", "40"), ("B", "30"), ("C", "20"), ("D", "20")]
+            .iter()
+            .map(|(c, v)| a_row(c, None, "2024", v))
+            .collect();
+        assert_eq!(selects_over(tied, &[rank, before], "{}")["k"], J::Null);
+    }
+
     #[test]
     fn take_value_is_the_root_rank_s_key_and_the_tie_reads_it() {
         // change: A and B both 50 at 2024, up 40 and 20; C and D both up 25, at 25 and 45

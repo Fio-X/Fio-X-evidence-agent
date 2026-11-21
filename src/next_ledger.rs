@@ -2600,8 +2600,13 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
         &["leaf::places_answered", "leaf::entry_places"],
     ),
     // a page for a country group says the member basis its request keeps (knowledge group words), year and count from its
-    // entries, the count at that year and over the members only
-    ("leaf.member_basis", "", &["leaf::basis_said"]),
+    // entries, the count at that year and over the members only; a member left out for asking the first or the last n held
+    // to a value no better than any drawn (cut_said)
+    (
+        "leaf.member_basis",
+        "",
+        &["leaf::basis_said", "leaf::cut_said"],
+    ),
     // the group command (next_visual.rs): each external layer prints the geometry the core placed
     (
         "visual.drawn_check",

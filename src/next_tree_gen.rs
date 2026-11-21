@@ -22,7 +22,7 @@ use serde_json::Value;
 use std::collections::BTreeSet;
 
 /// The page input paths a declaration template may read (`$shape.main`, ...); nothing else is substituted.
-const PAGE_IN_PATHS: [&str; 36] = [
+const PAGE_IN_PATHS: [&str; 38] = [
     "shape.scale",
     "shape.main",
     "shape.source",
@@ -40,6 +40,8 @@ const PAGE_IN_PATHS: [&str; 36] = [
     "picks.t1",
     "picks.top",
     "picks.focus",
+    "picks.asked_first_n",
+    "picks.asked_last_n",
     "fill.accent",
     "fmt.change",
     "shape.members",
@@ -1724,7 +1726,7 @@ fn finding_declared(d: &J, page_in: &J, reg: &J) -> Result<J, String> {
 
 /// The mean a note compares with ("图中平均", the leader notes' mean_n, or mean_n0 and mean_n1 at a change's two ends: a
 /// count of the places averaged) is over exactly the places the page draws, at each end: the places its averaged rows hold at their time are as many as the page's drawn
-/// count (its `drawn` fact, a plain count over the rows the page keeps), else the page stops. A page with no such mean
+/// count (its `drawn` fact, a count over the rows the page keeps, of the places it names when it has a filter), else the page stops. A page with no such mean
 /// passes.
 fn mean_recheck(fill: &J) -> Result<(), String> {
     let facts = fill.g("knobs").g("spec").g("facts");
@@ -1758,11 +1760,10 @@ fn mean_recheck(fill: &J) -> Result<(), String> {
     let drawn = facts.g("drawn");
     let shown = places(drawn).len();
     for (key, q) in counts {
-        if drawn.g("op").s() != Some("n")
-            || drawn.get("filter").is_some()
-            || q.g("op").s() != Some("n")
-        {
-            return Err(format!("node leader_notes: the mean's count {key} and the page's drawn count must both be plain counts"));
+        // the drawn count may name the places it counts (a page drawing the first n of a ranking counts select:ranked's
+        // codes, not every row it keeps); the mean is still held to exactly as many places as it counts
+        if drawn.g("op").s() != Some("n") || q.g("op").s() != Some("n") {
+            return Err(format!("node leader_notes: the mean's count {key} and the page's drawn count must both be counts"));
         }
         let averaged = places(q).len();
         if averaged != shown {
@@ -5821,6 +5822,91 @@ mod tests {
                     !plain["finding"]["dek"].as_str().unwrap().contains("合计"),
                     "{recipe} {unit}"
                 );
+            }
+        }
+    }
+
+    /// A question asking for the first or the last n (picks.asked_first_n or asked_last_n, set by the flow only when it cuts
+    /// the page to those n): the column and ranked bars rank the whole set (ranked_all) and draw its first or last n (the
+    /// core's top_n), and the finding says the end the question asks for against its neighbour inside the n (the second,
+    /// or the one before last), never against the other end of a ranking it no longer draws. Two data shapes: a World Bank
+    /// count over iso3 countries, a Eurostat percentage over geo.
+    #[test]
+    fn next_tree_gen_a_question_asking_the_first_n_says_its_end_against_its_neighbour() {
+        let (reg, _) = core::registry_in_force();
+        for recipe in ["column", "ranked_bars"] {
+            let d = declares(
+                &reg,
+                FINDING,
+                &J::from_value(&serde_json::json!({"recipe": recipe})),
+            )
+            .unwrap()
+            .clone();
+            for (unit, fmt, place, codes) in [
+                ("NR", "nr", "country", ["USA", "DEU", "FRA", "ITA", "CAN"]),
+                ("PC", "pc", "geo", ["ES", "GR", "IT", "FR", "DE"]),
+            ] {
+                let vals = ["90", "70", "50", "30", "10"];
+                let row = |p: &str, v: &str| serde_json::json!({"src": format!("series:t/{p}:2024:OBS_VALUE"), "table": "t", "dims": {place: p}, "time": "2024", "value": v});
+                let rows: Vec<serde_json::Value> =
+                    codes.iter().zip(vals).map(|(c, v)| row(c, v)).collect();
+                let mut sorted = codes.to_vec();
+                sorted.sort();
+                let pi = |low: bool| {
+                    let (rule, key, kept) = if low {
+                        ("ranked_bottom", "asked_last_n", &codes[2..])
+                    } else {
+                        ("ranked_top", "asked_first_n", &codes[..3])
+                    };
+                    let mut v = serde_json::json!({"recipe": recipe,
+                        "shape": {"main": "t", "place": place, "year": "2024", "unit": unit, "fmt": fmt, "countries": sorted},
+                        "picks": {"rules": ["ranked_all", rule], "ranked": kept, "marks": [], "t0": "", "t1": ""},
+                        "rows": rows, "short": "数量",
+                        "fill": {"facts": ["drawn", "hi", "lo", "gap", "times"], "fmts": {fmt: {"dec": 0}}, "named": sorted}});
+                    v["picks"][key] = serde_json::json!(3);
+                    J::from_value(&v)
+                };
+                let top = finding_declared(&d, &pi(false), &reg).unwrap().to_value();
+                let at = format!("{recipe} {unit}");
+                assert_eq!(top["subject"], codes[0], "{at}");
+                assert_eq!(
+                    top["finding"]["dek"],
+                    format!("{{lead1.t}}，{{name.{}}}最高，为{{lead1}}，比第二位的{{name.{}}}高{{next_gap}}", codes[0], codes[1]),
+                    "{at}"
+                );
+                assert_eq!(
+                    top["finding"]["headline"]["title"],
+                    format!(
+                        "{{name.{}}}居首，是第二位{{name.{}}}的{{next_times}}",
+                        codes[0], codes[1]
+                    ),
+                    "{at}"
+                );
+                let low = finding_declared(&d, &pi(true), &reg).unwrap().to_value();
+                assert_eq!(low["subject"], codes[4], "{at}");
+                assert_eq!(
+                    low["finding"]["dek"],
+                    format!("{{lead1.t}}，{{name.{}}}最低，为{{lead1}}，比倒数第二的{{name.{}}}低{{next_gap}}", codes[4], codes[3]),
+                    "{at}"
+                );
+                assert_eq!(
+                    low["finding"]["headline"]["title"],
+                    format!(
+                        "{{name.{}}}垫底，倒数第二的{{name.{}}}是它的{{next_times}}",
+                        codes[4], codes[3]
+                    ),
+                    "{at}"
+                );
+                // the neighbour's gap is recomputed from the rows: 90 - 70 at the top, 30 - 10 at the bottom
+                let r: Vec<J> = rows.iter().map(J::from_value).collect();
+                for (said, want) in [(&top, 20.0), (&low, 20.0)] {
+                    let facts = J::from_value(&said["facts"]);
+                    assert_eq!(
+                        core::fact_value(&facts, &r, "next_gap").unwrap(),
+                        want,
+                        "{at}"
+                    );
+                }
             }
         }
     }

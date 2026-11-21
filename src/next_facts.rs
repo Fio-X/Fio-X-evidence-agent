@@ -164,6 +164,18 @@ pub struct Basis {
     /// Why a stored request's basis could not be read; a page with one never passes (no check skipped).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unread: Option<String>,
+    /// The members a page asking for the first n at one end leaves out (the flow writes them): each must be a member with
+    /// one row of the basis table at `year` whose value is no better than any drawn (no higher than the lowest drawn, or
+    /// for the last n no lower than the highest), which the whole-page check recomputes from the request's rows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cut: Option<BasisCut>,
+}
+
+/// The members a page leaves out for asking the first or the last n, and which end it asks.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct BasisCut {
+    pub codes: Vec<String>,
+    pub low: bool,
 }
 
 /// A place a group's page left out, and why.
