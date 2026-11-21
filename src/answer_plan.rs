@@ -271,41 +271,68 @@ fn plain(question: &str) -> String {
     q
 }
 
-/// The first count after 前 or 后 (前五, 前 3), as in a top or bottom n.
-fn count_after(q: &str, mark: char) -> Option<usize> {
-    let chars: Vec<char> = q.chars().collect();
+/// The count a question's characters spell from `at` on (3, 十二, 两): its digits or its Chinese numerals up to 九十九,
+/// with the number of characters it took; None when no count starts there.
+fn count_at(chars: &[char], at: usize) -> Option<(usize, usize)> {
     let digit = |c: char| {
         "零一二三四五六七八九"
             .find(c)
             .map(|i| i / 3)
             .or((c == '两').then_some(2))
     };
-    for (i, c) in chars.iter().enumerate() {
-        if *c != mark {
-            continue;
-        }
-        let rest: String = chars[i + 1..]
-            .iter()
-            .take_while(|c| c.is_ascii_digit() || "一二两三四五六七八九十".contains(**c))
-            .collect();
-        if rest.is_empty() {
-            continue;
-        }
-        if let Ok(n) = rest.parse::<usize>() {
-            return Some(n);
-        }
-        let r: Vec<char> = rest.chars().collect();
-        let n = match r.as_slice() {
-            ['十'] => Some(10),
-            [a] => digit(*a),
-            ['十', b] => digit(*b).map(|b| 10 + b),
-            _ => None,
-        };
-        if n.is_some() {
-            return n;
-        }
+    let rest: String = chars
+        .get(at..)?
+        .iter()
+        .take_while(|c| c.is_ascii_digit() || "一二两三四五六七八九十".contains(**c))
+        .collect();
+    let len = rest.chars().count();
+    if len == 0 {
+        return None;
     }
-    None
+    if let Ok(n) = rest.parse::<usize>() {
+        return Some((n, len));
+    }
+    let r: Vec<char> = rest.chars().collect();
+    match r.as_slice() {
+        ['十'] => Some(10),
+        [a] => digit(*a),
+        ['十', b] => digit(*b).map(|b| 10 + b),
+        [a, '十'] => digit(*a).map(|a| a * 10),
+        [a, '十', b] => digit(*a).zip(digit(*b)).map(|(a, b)| a * 10 + b),
+        _ => None,
+    }
+    .map(|n| (n, len))
+}
+
+/// The first count after 前 or 后 (前五, 前 3), as in a top or bottom n.
+fn count_after(q: &str, mark: char) -> Option<usize> {
+    let chars: Vec<char> = q.chars().collect();
+    chars
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| **c == mark)
+        .find_map(|(i, _)| count_at(&chars, i + 1).map(|(n, _)| n))
+}
+
+/// The count right after a highest or lowest word, with a counter after it (最高的三个, 最低的五个, 最慢的 3 个): the
+/// first n at one end, and whether it is the low end. A count without a counter ("最高的 2023 年") is not one.
+fn count_after_extreme(q: &str) -> Option<(usize, bool)> {
+    let chars: Vec<char> = q.chars().collect();
+    let ends = MAX_ZH
+        .iter()
+        .map(|w| (w, false))
+        .chain(MIN_ZH.iter().map(|w| (w, true)));
+    ends.filter_map(|(w, low)| {
+        q.find(w)
+            .map(|b| (q[..b].chars().count() + w.chars().count(), low))
+    })
+    .find_map(|(at, low)| {
+        let at = at + usize::from(chars.get(at) == Some(&'的'));
+        let (n, len) = count_at(&chars, at)?;
+        "个名位国家"
+            .contains(*chars.get(at + len)?)
+            .then_some((n, low))
+    })
 }
 
 /// The relation a question asks, by its words, in a fixed order: a line or catching up first, then a flow, the parts of a
@@ -344,6 +371,16 @@ pub fn asks_lowest(question: &str) -> bool {
         focus(question, relation(question), None),
         Focus::Min | Focus::Bottom(_)
     )
+}
+
+/// The first n at one end a question asks for (前三, 最高的五个, 倒数后三, 最低的五个), by its words: the focus of its
+/// relation is Top(n) or Bottom(n), with whether it is the low end. Anything else (the highest one, both ends, a change): None.
+pub fn asks_top(question: &str) -> Option<(usize, bool)> {
+    match focus(question, relation(question), None) {
+        Focus::Top(n) => Some((n, false)),
+        Focus::Bottom(n) => Some((n, true)),
+        _ => None,
+    }
 }
 
 /// Whether the question asks for the total of its places (合计, 总共: the relation Magnitude, its focus Total), by its words.
@@ -386,6 +423,12 @@ pub fn focus(question: &str, rel: Rel, first_place: Option<&str>) -> Focus {
                 count_after(&q, '后').filter(|_| q.contains("排名后") || q.contains("倒数"))
             {
                 Focus::Bottom(n)
+            } else if let Some((n, low)) = count_after_extreme(&q) {
+                if low {
+                    Focus::Bottom(n)
+                } else {
+                    Focus::Top(n)
+                }
             } else if max && min || q.contains("高低") && !max && !min {
                 Focus::MaxMin
             } else if min {
@@ -827,6 +870,46 @@ mod tests {
         ] {
             assert!(!asks_lowest(q), "{q}");
         }
+    }
+
+    /// A question asks for the first n at one end by 前n, 倒数后n, or a highest or lowest word with a count and a counter
+    /// after it (sentences written for the test, in the bank's wordings): not for the highest or lowest one, both ends, a
+    /// year after the word, or a change.
+    #[test]
+    fn a_question_asks_for_the_first_n_at_one_end() {
+        for (q, want) in [
+            ("2024 年，经合组织国家里失业率最高的三个是谁？", (3, false)),
+            (
+                "二十国集团里，2023 年每百人移动电话签约数最高的五个是谁？",
+                (5, false),
+            ),
+            (
+                "东盟十国 2024 年的实际经济增长率，最慢的三个是谁？",
+                (3, true),
+            ),
+            (
+                "2023 年欧盟各国人均 GDP（按购买力标准）最低的五个是谁？",
+                (5, true),
+            ),
+            ("2024 年欧盟各国高等教育学历的比例，前五是谁？", (5, false)),
+            ("人均 GDP 排名倒数后五的国家是哪些？", (5, true)),
+            ("欧盟失业率最高的 12 个国家", (12, false)),
+            ("欧盟失业率最高的十二个国家", (12, false)),
+        ] {
+            assert_eq!(asks_top(q), Some(want), "{q}");
+        }
+        for q in [
+            "2024 年欧盟哪个国家的失业率最高？",
+            "欧盟各国失业率谁最高谁最低？",
+            "失业率最高的 2023 年是哪年？",
+            "2015 年到 2023 年，欧盟各国温室气体排放降幅最大的五个是谁？",
+            "东盟各国人均 GDP 排名",
+        ] {
+            assert_eq!(asks_top(q), None, "{q}");
+        }
+        assert!(asks_lowest(
+            "东盟十国 2024 年的实际经济增长率，最慢的三个是谁？"
+        ));
     }
 
     /// A question asks for the total when its relation is Magnitude (合计, 总共; sentences written for the test): not when it

@@ -2475,7 +2475,7 @@ fn page_input(
     let mut p = json!({"recipe": recipe.name, "order": recipe.layers,
         "shape": {"main": shape.main, "place": shape.place, "year": shape.year, "unit": shape.unit, "fmt": shape.unit.to_lowercase(),
             "suffix": next_pack::unit_number_suffix(&shape.unit).map(suffix), "rule": next_pack::unit_rule(&shape.unit), "countries": shape.countries},
-        "picks": {"rules": recipe.picks, "ranked": picks.ranked, "marks": picks.marks, "t0": picks.t0, "t1": picks.t1},
+        "picks": {"rules": recipe.picks, "ranked": picks.ranked, "marks": picks.marks, "t0": picks.t0, "t1": picks.t1, "cut": false},
         "rows": main, "name_kind": scheme, "sum_rows": sums, "outside": shape.outside, "top": next_params::NARROW_TOP,
         "short": next_pack::unit_short(&shape.unit), "line": next_pack::unit_line_form(&shape.unit), "composition": shape.composition.as_ref().map(|c| json!({"dim": c.dim, "total": c.total, "groups": c.groups,
             "first_group": c.groups.first().map(|g| &g.0), "first_codes": c.groups.first().map(|g| &g.1)}))});
@@ -3435,6 +3435,71 @@ fn recipe_request(
     }) {
         p["picks"]["asked_total"] = json!(true);
     }
+    // a question that asks for the first n at one end (the knowledge group's reading of its words: 最高的三个, 倒数后五), on
+    // a ranking page the program did not narrow over no country the question names on its own, n at least 2 and below the
+    // places ranked, the n-th apart from the next: the page draws only those n (the core's top_n over the whole ranking,
+    // picks.asked_first_n or asked_last_n for a finding's case), a group's line says the places drawn, and the members left
+    // out go to the whole-page check (basis.cut), which verifies each has a value no better than any drawn
+    let mut cut: Option<(Vec<String>, bool)> = None;
+    let ranks = recipe.picks.iter().any(|r| r == "ranked");
+    let named = places
+        .iter()
+        .any(|p| matches!(p, crate::l5geo::Place::Country(_)));
+    let line_holds = basis
+        .as_ref()
+        .map_or(!named, |b| b.line_drawn.is_some() && b.named.is_empty());
+    let asked = (!scoped && ranks && line_holds)
+        .then(|| catalogue.asks_top(question))
+        .flatten()
+        .filter(|(n, _)| (2..picks.ranked.len()).contains(n));
+    if let (Some(p), Some((n, low))) = (page_in.as_mut(), asked) {
+        let len = picks.ranked.len();
+        let values: BTreeMap<String, f64> = values_at(&shape, &main_rows, &shape.year)
+            .map_err(shape_err)?
+            .into_iter()
+            .map(|(v, c)| (c, v))
+            .collect();
+        let value = |i: usize| values.get(&picks.ranked[i]).copied();
+        let (edge, next) = if low {
+            (len - n, len - n - 1)
+        } else {
+            (n - 1, n)
+        };
+        if value(edge) != value(next) {
+            let kept: Vec<String> = if low {
+                picks.ranked[len - n..].to_vec()
+            } else {
+                picks.ranked[..n].to_vec()
+            };
+            let left: Vec<String> = picks
+                .ranked
+                .iter()
+                .filter(|c| !kept.contains(c))
+                .cloned()
+                .collect();
+            let rules: Vec<&str> = recipe
+                .picks
+                .iter()
+                .flat_map(|r| match r.as_str() {
+                    "ranked" if low => vec!["ranked_all", "ranked_bottom"],
+                    "ranked" => vec!["ranked_all", "ranked_top"],
+                    other => vec![other],
+                })
+                .collect();
+            picks.ranked = kept;
+            picks.marks.retain(|m| picks.ranked.contains(m));
+            p["picks"]["rules"] = json!(rules);
+            p["picks"]["ranked"] = json!(picks.ranked);
+            p["picks"]["marks"] = json!(picks.marks);
+            p["picks"][if low { "asked_last_n" } else { "asked_first_n" }] = json!(n);
+            // the notes then say the drawn set as a narrowed page's do (所选最高者): its ends are no longer the ranking's
+            p["picks"]["cut"] = json!(true);
+            if let Some(b) = basis.as_mut() {
+                b.line = b.line_drawn.clone();
+            }
+            cut = Some((left, low));
+        }
+    }
     // a page over blocks: every block's rows beside the main's; a block answers a quantity of the question's record
     // (answers_asked) and is headed by its table's reviewed Chinese name, printed marked with its name row as the map's key
     // is (below); a block with none of either is not this shape and the many-block page stays as it was
@@ -3525,6 +3590,9 @@ fn recipe_request(
         // members without data: the full file may hold them, so the page stops rather than say so (review 11-08)
         members_beside_set(scoped, &b.missing).map_err(|why| ("fill", why))?;
         said_basis(&mut fill, &shape, b, catalogue).map_err(|why| ("fill", why))?;
+        if let Some((codes, low)) = &cut {
+            fill["knobs"]["spec"]["basis"]["cut"] = json!({"codes": codes, "low": low});
+        }
     }
     // each country the question names on its own: printed from its rows, or named on the unit line as having no data
     // (a recipe whose page cannot say so is not this shape, and the next one is tried)
@@ -9738,6 +9806,12 @@ mod tests {
         )
         .unwrap();
         without_the_map(&mut rust);
+        // the declared count of the places drawn names them (the ranked codes, 11-21: a page drawing the first n of a ranking
+        // counts only those n); the frozen rust fill counted every row it kept, the same places here
+        let place = rust["knobs"]["spec"]["facts"]["drawn"]["by"].clone();
+        if let Some(place) = place.as_str() {
+            rust["knobs"]["spec"]["facts"]["drawn"]["filter"] = json!({ place: picks.ranked });
+        }
         let page_in = page_input(&external, &shape, &picks, (&main, &[]));
         let calls = std::sync::Mutex::new(Vec::new());
         let asked = Asked {
@@ -12353,9 +12427,10 @@ mod tests {
                 "vs_mean"
             ]
         );
+        // the count names the ranked places it counts (a page drawing the first n of a ranking counts those n)
         assert_eq!(
             spec["facts"]["drawn"],
-            json!({"op": "n", "by": "geo", "table": "sdg", "time": "2025", "fmt": "n"})
+            json!({"op": "n", "by": "geo", "table": "sdg", "time": "2025", "filter": {"geo": ["SE", "DE", "FR", "BE"]}, "fmt": "n"})
         );
         // the dek's finding: the highest place against the lowest, on the extremes the notes declare, each place a name
         // placeholder the labels name, the year the period of its own fact lead1 (the highest's value at the year)
@@ -13715,6 +13790,9 @@ mod tests {
         ) -> Result<Vec<Value>, String> {
             Fetched(self.0.clone(), "").series_rows(table, csv)
         }
+        fn asks_top(&self, question_zh: &str) -> Option<(usize, bool)> {
+            crate::answer_plan::asks_top(question_zh)
+        }
     }
 
     /// A change page's (or a column page's) rows of sdg_07_40 over `places` at `years`, a value each.
@@ -14172,6 +14250,16 @@ mod tests {
         main: Vec<Value>,
         asked: Value,
     ) -> (Result<Value, (&'static str, String)>, Vec<Value>) {
+        group_request_by(question, main, asked, ("change", "dumbbell"))
+    }
+
+    /// group_request_asked by a recipe (`name`), the charts step having drawn `chart`.
+    fn group_request_by(
+        question: &str,
+        main: Vec<Value>,
+        asked: Value,
+        (name, chart): (&str, &str),
+    ) -> (Result<Value, (&'static str, String)>, Vec<Value>) {
         let run = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(run.path().join("shadow")).unwrap();
         std::fs::write(run.path().join("claims.jsonl"), "").unwrap();
@@ -14199,8 +14287,8 @@ mod tests {
         let fill = recipe_request(
             run.path(),
             &[prepared],
-            &["dumbbell"],
-            recipe("change"),
+            &[chart],
+            recipe(name),
             &cat,
             (question, ("标题", "导语", "栏目"), &places),
             (&calls, None),
@@ -14211,18 +14299,133 @@ mod tests {
 
     /// A group's fill laid out where leaf_page lays the external layers out, by the repository's own nodes (whole paths: the
     /// child runs in its own folder), then drawn, published and read back.
-    fn group_published(mut fill: Value, at: &str) -> PublishedPage {
+    fn group_published(fill: Value, at: &str) -> PublishedPage {
+        group_published_by(fill, "change", at)
+    }
+
+    /// group_published by a recipe (`name`).
+    fn group_published_by(mut fill: Value, name: &str, at: &str) -> PublishedPage {
         let calls = std::sync::Mutex::new(Vec::new());
         fill["knobs"]["shapes"] = json!(Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("runtime/pi/assets/naturalearth-admin0-50m.geojson"));
         draw_nodes(
             &mut fill,
-            &recipe("change").external,
+            &recipe(name).external,
             &calls,
             &Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime"),
         )
-        .unwrap();
-        published("change", fill, at)
+        .unwrap_or_else(|e| panic!("{at}: draw: {e}"));
+        published(name, fill, at)
+    }
+
+    /// A group's page asking for the first or the last n (owner 11-21 12:07, ask item 9: cut to those n), end to end over a
+    /// run folder: recipe_request ranks the BRICS members (Ethiopia with no row), draws only the n (column and ranked bars,
+    /// first and last), keeps every ranked member's row in its request, says the places-drawn line naming Ethiopia, and
+    /// writes the members left out; the page is drawn, published and passes the whole-page check. The same page with a
+    /// member left out that has a better value than one drawn, or one with no row, fails it.
+    #[test]
+    fn a_group_page_asking_the_first_n_draws_only_them_and_holds_the_rest_against_them() {
+        let brics = ["BR", "RU", "IN", "CN", "ZA", "EG", "IR", "AE", "ID"];
+        for (name, chart) in [
+            ("column", "horizontal_bar"),
+            ("ranked_bars", "horizontal_bar"),
+        ] {
+            for (question, low) in [
+                ("2025 年金砖国家失业率最高的三个是谁？", false),
+                ("2025 年金砖国家失业率最低的三个是谁？", true),
+            ] {
+                let at = format!("{name} {question}");
+                let main = group_rows(&brics, &["2016", "2025"]);
+                let (fill, _) = group_request_by(question, main, json!([]), (name, chart));
+                let fill = fill.unwrap_or_else(|e| panic!("{at}: {e:?}"));
+                let page_in = &fill["page_in"];
+                assert_eq!(
+                    page_in["picks"]["ranked"].as_array().unwrap().len(),
+                    3,
+                    "{at}"
+                );
+                let key = if low { "asked_last_n" } else { "asked_first_n" };
+                assert_eq!(page_in["picks"][key], json!(3), "{at}");
+                let basis = &fill["knobs"]["spec"]["basis"];
+                assert_eq!(basis["missing"], json!(["ET"]), "{at}");
+                assert_eq!(basis["cut"]["codes"].as_array().unwrap().len(), 6, "{at}");
+                assert_eq!(basis["cut"]["low"], json!(low), "{at}");
+                // every ranked member's row at the year is in the request, the cut ones among them
+                let kept: BTreeSet<&str> = fill["rows"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter(|r| r["time"] == "2025")
+                    .filter_map(|r| r["dims"]["geo"].as_str())
+                    .collect();
+                assert_eq!(kept.len(), 9, "{at}: {kept:?}");
+                let (html, ledger, refs, spec, rows, facts) =
+                    group_published_by(fill.clone(), name, &at);
+                let fails = |s: &crate::next_facts::Spec| {
+                    crate::next_leaf::check_leaf_page(&html, &ledger, &refs, s, &rows, &facts)
+                };
+                assert_eq!(fails(&spec), Vec::<String>::new(), "{at}");
+                assert_eq!(ledger[&format!("fact:{DRAWN}.n")], "3", "{at}");
+                let plain: String = html
+                    .split('<')
+                    .map(|p| p.split_once('>').map_or(p, |(_, t)| t))
+                    .collect();
+                assert!(
+                    plain.contains("画出 3 国"),
+                    "{at}: the line says the places drawn"
+                );
+                // a column's notes say the drawn set (所选最高者), not the ranking's ends the page no longer draws (the
+                // ranked bars have no notes)
+                assert!(
+                    name != "column" || plain.contains("所选"),
+                    "{at}: the notes say the drawn set"
+                );
+                assert!(
+                    !plain.contains("比最高者") && !plain.contains("最高者是它的"),
+                    "{at}: {plain}"
+                );
+                // must fail: a drawn place passed off as cut (it is drawn), and a member never ranked passed off as cut
+                let mut drawn_cut = spec.clone();
+                let first = page_in["picks"]["ranked"][0].as_str().unwrap().to_string();
+                drawn_cut
+                    .basis
+                    .as_mut()
+                    .unwrap()
+                    .cut
+                    .as_mut()
+                    .unwrap()
+                    .codes
+                    .push(first);
+                assert!(
+                    fails(&drawn_cut).iter().any(|f| f.contains("and draws it")),
+                    "{at}: {:?}",
+                    fails(&drawn_cut)
+                );
+                let mut no_row = spec.clone();
+                no_row
+                    .basis
+                    .as_mut()
+                    .unwrap()
+                    .cut
+                    .as_mut()
+                    .unwrap()
+                    .codes
+                    .push("ET".into());
+                assert!(
+                    !fails(&no_row).is_empty(),
+                    "{at}: a member with no row passed off as cut"
+                );
+                // must fail: the cut said the other end (a better value left out)
+                let mut flipped = spec.clone();
+                let c = flipped.basis.as_mut().unwrap().cut.as_mut().unwrap();
+                c.low = !c.low;
+                assert!(
+                    fails(&flipped).iter().any(|f| f.contains("leaves out")),
+                    "{at}: {:?}",
+                    fails(&flipped)
+                );
+            }
+        }
     }
 
     /// With the main chosen, the search step's record of the quantities asked keeps only those the knowledge group still
@@ -18829,9 +19032,10 @@ mod tests {
         );
     }
 
-    /// The set's count the page prints ({drawn}, counted over the rows the page keeps) is the places the finding compares:
-    /// a narrowed column page whose table holds an aggregate row (EU27_2020) beside its 4 places keeps 4 and draws; the
-    /// aggregate's row kept on the page counts 5 places for 4 compared, and the draw recheck stops the page.
+    /// The set's count the page prints ({drawn}, counted over the rows the page keeps of the ranked places) is the places the
+    /// finding compares: a narrowed column page whose table holds an aggregate row (EU27_2020) beside its 4 places keeps 4
+    /// and draws; the aggregate's row kept on the page is no ranked place, so the count stays 4 and the page draws. A count
+    /// that names a fifth place counts 5 for 4 compared, and the draw recheck stops the page.
     #[test]
     fn a_set_count_that_counts_an_aggregate_row_is_refused_at_draw() {
         let column = recipe("column");
@@ -18861,6 +19065,10 @@ mod tests {
             .unwrap()
             .clone();
         counted["rows"].as_array_mut().unwrap().push(aggregate);
+        let calls = std::sync::Mutex::new(Vec::new());
+        draw_nodes(&mut counted.clone(), &column.external, &calls, &runtime).unwrap();
+        let filter = &mut counted["knobs"]["spec"]["facts"]["drawn"]["filter"]["geo"];
+        filter.as_array_mut().unwrap().push(json!("EU27_2020"));
         let calls = std::sync::Mutex::new(Vec::new());
         let why = draw_nodes(&mut counted, &column.external, &calls, &runtime).unwrap_err();
         assert!(why.starts_with("node finding: the set's count drawn counts 5 places over the page's rows, the finding compares 4"), "{why}");

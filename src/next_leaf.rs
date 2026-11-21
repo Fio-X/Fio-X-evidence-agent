@@ -1916,6 +1916,75 @@ pub fn check_leaf_page(
     off
 }
 
+/// The members a page leaves out for asking the first or the last n (basis.cut), held against the request's rows: each a
+/// member, not drawn, with one row of the basis table at its year, and a value no better than any drawn place's (for the
+/// first n no higher than the lowest drawn, for the last n no lower than the highest drawn). A drawn place with no such row
+/// leaves nothing to hold the cut against, and is said.
+fn cut_said(
+    b: &crate::next_facts::Basis,
+    cut: &crate::next_facts::BasisCut,
+    drawn: &[String],
+    by: &str,
+    rows: &[Row],
+) -> Vec<String> {
+    let mut off = Vec::new();
+    let value = |code: &String| -> Result<f64, String> {
+        let at: Vec<f64> = rows
+            .iter()
+            .filter(|r| r.table == b.table && r.time == b.year && r.dims.get(by) == Some(code))
+            .map(|r| r.value)
+            .collect();
+        match at.as_slice() {
+            [v] => Ok(*v),
+            _ => Err(format!(
+                "basis: {code} has {} rows of {} at {}, so the cut cannot be held against it",
+                at.len(),
+                b.table,
+                b.year
+            )),
+        }
+    };
+    if cut.codes.is_empty() {
+        off.push("basis: the page cuts no member and says it draws only some".to_string());
+    }
+    let mut bound: Option<f64> = None;
+    for code in drawn {
+        match value(code) {
+            Ok(v) => {
+                bound = Some(match bound {
+                    None => v,
+                    Some(x) if cut.low => x.max(v),
+                    Some(x) => x.min(v),
+                })
+            }
+            Err(why) => off.push(why),
+        }
+    }
+    for code in &cut.codes {
+        if !b.members.contains(code) {
+            off.push(format!(
+                "basis: the page leaves out {code}, no member in {}",
+                b.year
+            ));
+        }
+        if drawn.contains(code) {
+            off.push(format!("basis: the page leaves out {code} and draws it"));
+        }
+        match (value(code), bound) {
+            (Ok(v), Some(x)) if cut.low && v < x => off.push(format!(
+                "basis: the page leaves out {code} at {v}, below the highest drawn {x}, asking the last n"
+            )),
+            (Ok(v), Some(x)) if !cut.low && v > x => off.push(format!(
+                "basis: the page leaves out {code} at {v}, above the lowest drawn {x}, asking the first n"
+            )),
+            (Ok(_), Some(_)) => {}
+            (Ok(_), None) => off.push(format!("basis: the page leaves out {code} and draws no value to hold it against")),
+            (Err(why), _) => off.push(why),
+        }
+    }
+    off
+}
+
 /// A page for a country group whose request keeps a member basis (spec.basis, the knowledge group's words) is held to it:
 /// its count fact counts at the basis year, only members and the places the question names beside them, and the members
 /// it does not count are exactly the ones the basis names as having no data, which the line must name; the page's text
@@ -2001,11 +2070,26 @@ fn basis_said(
                     b.year
                 ));
             }
-            let lacking: std::collections::BTreeSet<&String> =
-                b.members.iter().filter(|m| !codes.contains(m)).collect();
+            // a member the page leaves out for asking the first or the last n is no member it must name as with no data:
+            // the cut is verified on its own (cut_said), each such member's value against the drawn ones
+            let cut: Vec<&String> = b.cut.iter().flat_map(|c| &c.codes).collect();
+            let lacking: std::collections::BTreeSet<&String> = b
+                .members
+                .iter()
+                .filter(|m| !codes.contains(m) && !cut.contains(m))
+                .collect();
             let said: std::collections::BTreeSet<&String> = b.missing.iter().collect();
             if lacking != said {
                 off.push(format!("basis: the members of {} the page does not draw are {lacking:?}, it names {said:?} as with no data", b.year));
+            }
+            if let Some(c) = &b.cut {
+                let by = b
+                    .count
+                    .as_ref()
+                    .and_then(|k| spec.facts.iter().find(|(x, _)| x == k))
+                    .and_then(|(_, q)| q["by"].as_str())
+                    .unwrap_or_default();
+                off.extend(cut_said(b, c, codes, by, rows));
             }
         }
         None if b.count.is_none() && (b.words.is_some() || !b.missing.is_empty()) => {
@@ -3468,6 +3552,84 @@ mod tests {
         println!("findings {}", off.len());
         for f in off {
             println!("finding {f}");
+        }
+    }
+
+    /// The members a page leaves out for the first or the last n (basis.cut) hold only when each is a member, not drawn,
+    /// with one row at the basis year whose value is no better than any drawn: for the first n no higher than the lowest
+    /// drawn (a tie allowed), for the last n no lower than the highest drawn. Two place dimensions (iso3 country, geo).
+    #[test]
+    fn a_cut_member_holds_only_with_a_value_no_better_than_any_drawn() {
+        for dim in ["country", "geo"] {
+            let rows: Vec<Row> = [("A", 9.0), ("B", 7.0), ("C", 5.0), ("D", 3.0), ("E", 3.0)]
+                .iter()
+                .map(|(c, v)| place_row(dim, c, "2024", *v))
+                .collect();
+            let basis = |cut: &[&str], low: bool| crate::next_facts::Basis {
+                year: "2024".into(),
+                table: "t".into(),
+                members: ["A", "B", "C", "D", "E"].map(String::from).to_vec(),
+                cut: Some(crate::next_facts::BasisCut {
+                    codes: cut.iter().map(|c| c.to_string()).collect(),
+                    low,
+                }),
+                ..Default::default()
+            };
+            let said = |drawn: &[&str], cut: &[&str], low: bool| {
+                let b = basis(cut, low);
+                let drawn: Vec<String> = drawn.iter().map(|c| c.to_string()).collect();
+                cut_said(&b, b.cut.as_ref().unwrap(), &drawn, dim, &rows)
+            };
+            // the first two, the last two: the cut is no better (D and E tie at 3, and a tie holds)
+            assert_eq!(
+                said(&["A", "B"], &["C", "D", "E"], false),
+                Vec::<String>::new(),
+                "{dim}"
+            );
+            assert_eq!(
+                said(&["D", "E"], &["A", "B", "C"], true),
+                Vec::<String>::new(),
+                "{dim}"
+            );
+            assert_eq!(
+                said(&["A", "B", "C", "D"], &["E"], false),
+                Vec::<String>::new(),
+                "{dim}"
+            );
+            // a cut member better than a drawn one, from either end
+            let top = said(&["A", "C"], &["B", "D", "E"], false);
+            assert!(
+                top.iter().any(|w| w.contains("leaves out B at 7")),
+                "{dim}: {top:?}"
+            );
+            let low = said(&["C", "D"], &["A", "B", "E"], true);
+            assert!(
+                low.iter().any(|w| w.contains("leaves out E at 3")),
+                "{dim}: {low:?}"
+            );
+            let low = said(&["B", "D"], &["A", "C", "E"], true);
+            assert!(
+                low.iter().any(|w| w.contains("leaves out C at 5")),
+                "{dim}: {low:?}"
+            );
+            // no member, drawn as well, no row, and an empty cut
+            let odd = said(&["A", "B"], &["Z", "B"], false);
+            for want in [
+                "leaves out Z, no member",
+                "leaves out B and draws it",
+                "Z has 0 rows",
+            ] {
+                assert!(
+                    odd.iter().any(|w| w.contains(want)),
+                    "{dim}: {want} in {odd:?}"
+                );
+            }
+            assert!(
+                said(&["A"], &[], false)
+                    .iter()
+                    .any(|w| w.contains("cuts no member")),
+                "{dim}"
+            );
         }
     }
 

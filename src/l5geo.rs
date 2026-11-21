@@ -774,6 +774,10 @@ pub struct GroupBasis {
     #[serde(default)]
     pub unfetched: Vec<String>,
     pub line: Option<String>,
+    /// The line a page that draws only some of the members with data says instead (its "places drawn" variant, the members
+    /// with no data named as `line` names them): a page asking for the first n at one end; None where the basis has none.
+    #[serde(default)]
+    pub line_drawn: Option<String>,
     pub join: String,
     pub missing_join: String,
     /// The basis is said only on a page of whole years (the EU's members', union_basis: its line prints the page's year):
@@ -2552,6 +2556,7 @@ impl Catalog {
             }
         };
         let mut lines = Vec::new();
+        let mut lines_drawn = Vec::new();
         // the page's own years, whether or not the question names any: a question asking 2015 to 2025 spans them too
         let changes = t0.is_some_and(|t0| {
             t0 < t1
@@ -2572,9 +2577,12 @@ impl Catalog {
                 .collect();
             let line = pick(&words.countries_only, &words.countries_only_drawn);
             lines.push(line.replace("{others}", &others.join(&words.others_join)));
+            let part = format!("{}{tail}", words.countries_only_drawn);
+            lines_drawn.push(part.replace("{others}", &others.join(&words.others_join)));
         } else {
             // every group page says the year of its member list (owner 11-16 08:4x item 1)
             lines.push(pick(&words.members_of_year, &words.members_of_year_drawn));
+            lines_drawn.push(format!("{}{tail}", words.members_of_year_drawn));
         }
         Some(GroupBasis {
             group: id.clone(),
@@ -2586,6 +2594,7 @@ impl Catalog {
             missing,
             unfetched,
             line: lines.pop(),
+            line_drawn: lines_drawn.pop(),
             join: words.line_join.clone(),
             missing_join: words.missing_join.clone(),
             whole_years_only: false,
@@ -2688,6 +2697,7 @@ impl Catalog {
             missing,
             unfetched: Vec::new(),
             line: Some(words.union_missing.clone()),
+            line_drawn: None,
             join: words.line_join.clone(),
             missing_join: words.missing_join.clone(),
             whole_years_only: true,
