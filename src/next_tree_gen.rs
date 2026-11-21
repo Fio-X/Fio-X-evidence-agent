@@ -5228,15 +5228,22 @@ mod tests {
                 .filter(|l| leaf_stops(l, &page_in, &fill, &reg).is_none())
                 .cloned()
                 .collect();
-            // the column recipe has had no map since v5 item 2 (11-13): the circles the prototype asked on its pages are not asked
-            let mapless = st(c.g("recipe")) == "column";
-            let want: Vec<String> = c
+            // the column recipe has had no map since v5 item 2 (11-13), the change recipe none since 11-22: the circles the
+            // prototype asked on their pages are not asked
+            let mapless = matches!(st(c.g("recipe")).as_str(), "column" | "change");
+            let mut want: Vec<String> = c
                 .g("asked")
                 .arr()
                 .iter()
                 .map(st)
                 .filter(|l| !(mapless && l == "bubbles"))
                 .collect();
+            // 11-22: the change recipe has no map, so its bars keep no stop of the map's (one_ext, view_ext) and are asked on
+            // the map's two stops as change_bars' and the column page's are (P8, P9: the column cases ask the bars); the leaf
+            // still stops at its panel there, before the bars are drawn
+            if st(c.g("recipe")) == "change" && matches!(st(c.g("id")).as_str(), "P8" | "P9") {
+                want = vec!["bars".to_string()];
+            }
             if asked != want {
                 off.push(format!(
                     "{} {}: asked {asked:?}, the prototype {want:?}",
@@ -5245,13 +5252,11 @@ mod tests {
                 ));
             }
         }
-        // P6 and B2 take one entry out of the ledger, which the flow prints from the facts it declares (unreachable, design
-        // 11.2): the generator sees the declared family, so it asks; the leaf still stops on the missing entry as before, at
-        // its panel (P6) or in the circles' input half, which runs before their placed geometry is read (B2)
-        let ledger_only = [
-            "P6 change: asked [\"bubbles\", \"bars\"], the prototype []",
-            "B2 change: asked [\"bubbles\", \"bars\"], the prototype [\"bars\"]",
-        ];
+        // P6 takes one entry out of the ledger, which the flow prints from the facts it declares (unreachable, design 11.2):
+        // the generator sees the declared family, so it asks; the leaf still stops on the missing entry as before, at its
+        // panel. (B2's stop stood in the circles' input half; the change page draws no circles since 11-22, so its bars are
+        // asked as the prototype asked them.)
+        let ledger_only = ["P6 change: asked [\"bars\"], the prototype []"];
         assert_eq!(off, ledger_only, "{off:#?}");
         // a panel stop: draw asks nothing, not even the ground, and leaves each layer to its leaf rule
         let p3 = fx

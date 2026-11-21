@@ -2300,8 +2300,6 @@
   {
    "name": "change",
    "layers": [
-    "bubbles",
-    "bubble_key",
     "bars",
     "leader_notes"
    ],
@@ -2328,12 +2326,10 @@
    "main": "bars",
    "relation": "Change",
    "external": [
-    "bubbles",
     "bars",
     "leader_notes"
    ],
    "points": [
-    "bubbles",
     "leader_notes"
    ],
    "short_notes": [

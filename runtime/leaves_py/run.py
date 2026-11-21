@@ -241,7 +241,7 @@ def bubbles_placed(f, occ, g):
 
 # The layers a leaf draws from the geometry the core placed and checked (knobs.placed[layer], src/next_tree.rs node_draw),
 # by layer: the ones a page recipe may bind external. The bars draw level or change bars by the panel's measure.
-PLACED_LAYERS = dict(bars=lambda f, occ, g: column.cl_change_bars_placed(f, g) if f.change else column.cl_bars_placed(f, occ, g),
+PLACED_LAYERS = dict(bars=lambda f, occ, g: column.cl_change_bars_placed(f, occ, g) if f.change else column.cl_bars_placed(f, occ, g),
                      bubbles=bubbles_placed)
 # What a layer drawn from placed geometry reads of its own input (P4a-2): run before refusing a missing geometry, so a
 # layer whose input is off refuses in its own words, as before it was external. The bars read the panel's (ColumnFrame).

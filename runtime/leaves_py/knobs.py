@@ -69,9 +69,10 @@ RECIPES = [
     dict(name="one_line", layers=["line"], eats=["annual", "one_freq", "years_2", "one_country", "one_unit", "last_year", "two_ends"],
          charts=["line"], picks=["changed"], exposes=[], main="line", relation="Change"),
     # two ends of a ten-year table: each place's change from t0 to t1 as signed bars (bars.measure change, set by layer 1),
-    # the map its level at t1; a table of one year has no two ends and goes on to column. It answers the Change relation
-    # (relation): a table step that kept another relation for the main table (a ranking of the last year) goes on to column
-    dict(name="change", layers=["bubbles", "bars", "leader_notes"],
+    # and their notes, no map (11-22: readers took a map of the level at t1 for the change); a table of one year has no two
+    # ends and goes on to column. It answers the Change relation (relation): a table step that kept another relation for the
+    # main table (a ranking of the last year) goes on to column
+    dict(name="change", layers=["bars", "leader_notes"],
          eats=["annual", "years_2", "one_place", "one_unit", "last_year", "two_ends"],
          charts=["choropleth", "horizontal_bar", "dumbbell", "line"], picks=["changed", "claim_marks"], exposes=[], strip=True,
          main="bars", relation="Change"),

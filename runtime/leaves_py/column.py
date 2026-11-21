@@ -133,24 +133,12 @@ def cl_bars_placed(f, occ, placed):
             ax = (placed.get("axis") or {}).get("x")
             z = ax if isinstance(ax, (int, float)) else zero_x(f, items)
             o.append(f'<line x1="{z:.1f}" x2="{z:.1f}" y1="{f.top}" y2="{f.top + f.rh * len(items)}" stroke="var(--t-sec)" stroke-width="0.8"/>')
-            if getattr(f, "mv", False) is None:  # no map: the notes stand in the bars' picture, off the axis too (bake's line check)
-                y1 = f.top + f.rh * len(items); steps = max(2, math.ceil((y1 - f.top) / 4))
-                occ.add_line([(z, f.top + (y1 - f.top) * j / steps) for j in range(steps + 1)], "bars", "axis")
+            axis_room(f, occ, z, len(items))
         k, (lab, val) = it.get("code"), texts
         hi = k in f.marks
         end = ' text-anchor="end"' if val.get("anchor") == "end" else ""  # a bar below 0: its value left of its end, as placed
         ink, weight = ("var(--t-title)", 700) if hi else ("var(--t-body)", 400)
-        if getattr(f, "mv", False) is None:  # a column panel with no map beside the bars: the notes stand in the bars' picture (run.bar_notes), off every name, bar and value,
-            # each pointing at the outer end of its place's printed value
-            nw, vw = prod.tw(prod.NAME(k), f.size), prod.tw(FX.text(val["src"]), f.size) * 1.06 + 2
-            half = f.size * 0.6
-            occ.add((lab["x"] - nw - 1, lab["y"] - half, lab["x"] + 1, lab["y"] + half), "bars")
-            occ.add((m["x"], m["y"], m["x"] + m["w"], m["y"] + m["h"]), "bars")
-            vx = (val["x"] - vw, val["x"]) if end else (val["x"], val["x"] + vw)
-            occ.add((vx[0], val["y"] - half, vx[1], val["y"] + half), "bars")
-            # just past the value, inside the picture (the longest bar's value ends at its edge: the point then stands in the
-            # value's own box, which the note's leader may end in)
-            f.bar_ends[k] = (max(vx[0] - 5, 1) if end else min(vx[1] + 5, f.x0 + f.bw - 1), val["y"])
+        row_room(f, occ, k, lab, m, val, bool(end))
         o.append(f'<text x="{lab["x"]:.1f}" y="{lab["y"]:.1f}" text-anchor="end" dominant-baseline="middle" font-size="{f.size}" fill="{ink}" font-weight="{weight}">{prod.named(k)}</text>'
                  f'<rect x="{m["x"]:.1f}" y="{m["y"]:.1f}" width="{m["w"]:.1f}" height="{m["h"]}" fill="{FOCUS if k in f.focus else NOTED if k in f.noted else "var(--bar)"}"/>'
                  f'<text x="{val["x"]:.1f}" y="{val["y"]:.1f}"{end} dominant-baseline="middle" font-size="{f.size}" fill="{ink if hi else "var(--t-sec)"}" font-weight="{weight}">{FX.entry(val["src"], "tspan", None)}</text>')
@@ -166,17 +154,45 @@ def zero_x(f, items):
     m = items[0]["mark"]; return m["x"] + m["w"]
 
 
-def cl_change_bars_placed(f, placed):
+def axis_room(f, occ, z, n):
+    """No map beside the bars (f.mv None): the notes stand in the bars' picture (run.bar_notes), off the zero line too (bake's
+    line check), which this claims in the occupancy table."""
+    if getattr(f, "mv", False) is None:
+        y1 = f.top + f.rh * n; steps = max(2, math.ceil((y1 - f.top) / 4))
+        occ.add_line([(z, f.top + (y1 - f.top) * j / steps) for j in range(steps + 1)], "bars", "axis")
+
+
+def row_room(f, occ, k, lab, m, val, end):
+    """No map beside the bars (f.mv None): one row's name, bar and printed value claimed in the occupancy table, so the notes
+    stand off every one of them (run.bar_notes), and the row's end (f.bar_ends) the note's leader points at: just past the
+    outer end of the printed value, on the side the value stands (end: anchored at its end, left of a bar below 0), inside
+    the picture (the longest bar's value ends at its edge: the point then stands in the value's own box, which the note's
+    leader may end in) and off the row's name (11-22: a fall's value printed up to its name, its point then stands in the
+    value's box too, its dot clear of the name)."""
+    if getattr(f, "mv", False) is not None: return
+    nw, vw = prod.tw(prod.NAME(k), f.size), prod.tw(FX.text(val["src"]), f.size) * 1.06 + 2
+    half = f.size * 0.6
+    occ.add((lab["x"] - nw - 1, lab["y"] - half, lab["x"] + 1, lab["y"] + half), "bars")
+    occ.add((m["x"], m["y"], m["x"] + m["w"], m["y"] + m["h"]), "bars")
+    vx = (val["x"] - vw, val["x"]) if end else (val["x"], val["x"] + vw)
+    occ.add((vx[0], val["y"] - half, vx[1], val["y"] + half), "bars")
+    f.bar_ends[k] = (max(vx[0] - 5, 1, lab["x"] + 5) if end else min(vx[1] + 5, f.x0 + f.bw - 1), val["y"])
+
+
+def cl_change_bars_placed(f, occ, placed):
     """The change bars where the core placed them (knobs.placed.bars: the external bars node's reply, every number checked by
     the core, K2 and K11): the zero line at the core's axis, one item per ranked place in the core's order, its bar (mark x,
     y, w, h) and its texts (the name, then the value with its src, each at its x, y with its anchor). Printed in
-    cl_change_bars's own words, number for number; the colours by the place and its change's sign as there."""
+    cl_change_bars's own words, number for number; the colours by the place and its change's sign as there. With no map
+    (11-22: the change recipe draws none) each row is claimed and its value's outer end kept for the notes, as cl_bars_placed
+    does (row_room): a rise's at the right of its value, a fall's at the left."""
     items = placed.get("items") if isinstance(placed, dict) else None
     if not items or not isinstance((placed.get("axis") or {}).get("x"), (int, float)): raise FX.Refused("bars: the placed geometry holds no item or no axis")
     vals = dict(f.vals)
     if [it.get("code") for it in items] != [k for k, _ in f.vals]: raise FX.Refused("bars: the placed items are not the ranked places")
-    z = placed["axis"]["x"]
+    z = placed["axis"]["x"]; f.bar_ends = {}
     o = [f'<line x1="{z:.1f}" x2="{z:.1f}" y1="{f.top}" y2="{f.top + f.rh * len(items)}" stroke="var(--t-sec)" stroke-width="0.8"/>']
+    axis_room(f, occ, z, len(items))
     for i, it in enumerate(items):
         m, texts = it.get("mark") or {}, it.get("texts") or []
         if not all(isinstance(m.get(k), (int, float)) for k in ("x", "y", "w", "h")):
@@ -184,6 +200,7 @@ def cl_change_bars_placed(f, placed):
         if [t.get("name") for t in texts] != ["label", "value_text"] or not isinstance(texts[1].get("src"), str):
             raise FX.Refused(f"bars: placed item {i} has not the name and the value (with its src) as its texts")
         k, (lab, val), v = it["code"], texts, vals[it["code"]]
+        row_room(f, occ, k, lab, m, val, val.get("anchor") == "end")
         hi_ = k in f.marks
         ink, weight = ("var(--t-title)", 700) if hi_ else ("var(--t-body)", 400)
         o.append(f'<text x="{lab["x"]:.1f}" y="{lab["y"]:.1f}" text-anchor="end" dominant-baseline="middle" font-size="{f.size}" fill="{ink}" font-weight="{weight}">{prod.named(k)}</text>'

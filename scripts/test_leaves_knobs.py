@@ -81,8 +81,8 @@ class Registry(unittest.TestCase):
         for name, ls in layers.items():
             if "bubbles" in ls: self.assertEqual(ls[ls.index("bubbles") + 1], "bubble_key", name)
             else: self.assertNotIn("bubble_key", ls, name)
-        # the column page has no map since v5 item 2 (11-13): no circles, no key
-        self.assertEqual((layers["column"], layers["change"]), (["bars", "leader_notes"], ["bubbles", "bubble_key", "bars", "leader_notes"]))
+        # the column page has no map since v5 item 2 (11-13), the change page none since 11-22: no circles, no key
+        self.assertEqual((layers["column"], layers["change"]), (["bars", "leader_notes"], ["bars", "leader_notes"]))
         self.assertEqual((layers["scmp"], layers["ring"]), (["map", "strip", "bignums", "notes"], ["map", "ring", "callouts", "legend", "inset"]))
         self.assertEqual(t["nodes"]["bubble_key"]["eats"], t["nodes"]["bubbles"]["eats"])
         self.assertEqual([k["name"] for k in t["nodes"]["bubble_key"]["knobs"]], ["size", "count", "width"])
@@ -107,9 +107,10 @@ class Registry(unittest.TestCase):
                          dict(scmp="Flow", ring="Flow", composition_steps="Composition", composition="Composition", one_line="Change",
                               change="Change", change_bars="Change", column="Ranking", ranked_bars="Ranking", flow="Flow",
                               block_ranks="Ranking"))
-        # change stands on map points; change_bars, tried after it, draws the same bars with no layer on the map
+        # change's notes stand on map points (its circles too until 11-22); change_bars, tried after it, draws the same bars
+        # with no layer on the map
         by = {r["name"]: r for r in t["recipes"]}
-        self.assertEqual(by["change"]["points"], ["bubbles", "leader_notes"])
+        self.assertEqual(by["change"]["points"], ["leader_notes"])
         self.assertNotIn("points", by["change_bars"])
         self.assertEqual((by["change_bars"]["eats"], by["change_bars"]["picks"]), (by["change"]["eats"], by["change"]["picks"]))
         names = [r["name"] for r in t["recipes"]]

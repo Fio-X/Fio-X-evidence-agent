@@ -10061,8 +10061,10 @@ mod tests {
     /// their change page declaration: both ends read, the change in percentage points, the measure the page's lead reads)
     /// merge into the q1 ten-year change fill exactly as the rust bubbles_fill and change_bars_fill did
     /// (scripts/fixtures/p4a2/change-rust-fill.json, frozen from them before they were deleted): equal key by key, no key
-    /// more, the circles asked first as the recipe draws them. A ranked place with no map point stops the fill as the rust
-    /// circles did, before any node is asked (F1).
+    /// more. Since 11-22 the change recipe draws no map: the frozen fill is compared less its circles (their leaf data,
+    /// their level fact val, their place in the order with their key, their drawn rows), the rest key by key as before. A
+    /// ranked place with no map point stops the fill as the rust circles did, before any node is asked (F1): the notes
+    /// still stand on map points.
     #[test]
     fn declare_equals_rust_fill_on_a_change_page() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -10071,16 +10073,31 @@ mod tests {
                 .unwrap(),
         )
         .unwrap();
+        // the frozen fill less its circles (11-22: the change page has no map), nothing else taken out
+        rust["knobs"]["spec"]["hero"]["leaves"]
+            .as_object_mut()
+            .unwrap()
+            .remove("bubbles")
+            .expect("the frozen fill's circles");
+        rust["knobs"]["spec"]["facts"]
+            .as_object_mut()
+            .unwrap()
+            .remove("val")
+            .expect("the frozen circles' level fact");
+        rust["order"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|l| l != "bubbles" && l != "bubble_key");
+        rust["drawn"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|d| d["layer"] != "bubbles");
         let change = recipe("change");
         assert_eq!(
             (change.external.clone(), change.points.clone()),
             (
-                vec![
-                    "bubbles".to_string(),
-                    "bars".to_string(),
-                    "leader_notes".to_string()
-                ],
-                vec!["bubbles".to_string(), "leader_notes".to_string()]
+                vec!["bars".to_string(), "leader_notes".to_string()],
+                vec!["leader_notes".to_string()]
             )
         );
         let main = q1_ten_years();
@@ -10129,6 +10146,16 @@ mod tests {
             rust["knobs"]["spec"]["facts"],
             rust["knobs"]["spec"]["fmts"],
         ) = (json!(facts), json!(fmts));
+        // the same rows, row for row: the frozen fill took the circles' t1 rows first, the bars alone read each place's two
+        // ends together (11-22), so the rows are compared in one order (by src)
+        let by_src = |v: &mut Value| {
+            v.as_array_mut()
+                .unwrap()
+                .sort_by(|a, b| a["src"].as_str().cmp(&b["src"].as_str()))
+        };
+        by_src(&mut rust["rows"]);
+        let mut fill = fill;
+        by_src(&mut fill["rows"]);
         let mut differs = Vec::new();
         fill_diff(&rust, &fill, "fill", &mut differs);
         assert!(
@@ -10141,16 +10168,9 @@ mod tests {
             .filter(|e| e["request"] == "node_declare")
             .map(|e| e["node"].as_str())
             .collect();
-        assert_eq!(
-            asked,
-            [
-                Some("bubbles"),
-                Some("bars"),
-                Some("leader_notes"),
-                Some("finding")
-            ]
-        );
-        // F1: a ranked place the map point table has no point for (an aggregate) stops the fill, no node asked
+        assert_eq!(asked, [Some("bars"), Some("leader_notes"), Some("finding")]);
+        // F1: a ranked place the map point table has no point for (an aggregate) stops the fill before the notes, the layer
+        // on map points, are asked; since 11-22 the bars, drawn first and on no map point, are declared before that stop
         let mut picks = picks;
         picks.ranked.push("EU27_2020".into());
         let calls = std::sync::Mutex::new(Vec::new());
@@ -10173,7 +10193,13 @@ mod tests {
             why.starts_with("not this shape: ") && why.contains("EU27_2020"),
             "{why}"
         );
-        assert!(calls.into_inner().unwrap().is_empty());
+        let calls = calls.into_inner().unwrap();
+        let asked: Vec<Option<&str>> = calls
+            .iter()
+            .filter(|e| e["request"] == "node_declare")
+            .map(|e| e["node"].as_str())
+            .collect();
+        assert_eq!((asked, calls.len()), (vec![Some("bars")], 1), "{calls:#?}");
     }
 
     /// S3 (P4a): the q1 column page with its bars bound external over the production bindings, the whole path: fill_of
@@ -12990,8 +13016,8 @@ mod tests {
 
     /// M8 (P4a-2): a change page whose largest change is 0 and the rest fall ends where and in the words it ended before its
     /// bars were external: the leaf prints that 0's value past the bars' right edge and layer 1 stops the page on it. The
-    /// generator leaves the bars to their leaf (leaf_draws), the circles laid out by their node; the page drawn with no
-    /// layer bound external (as before P4a-2) stops in the same words.
+    /// generator leaves the bars to their leaf (leaf_draws) (and asks no circles: the change page has no map since 11-22);
+    /// the page drawn with no layer bound external (as before P4a-2) stops in the same words.
     #[test]
     fn a_change_page_whose_largest_change_is_0_stops_where_the_leaf_stopped() {
         // SE, BE and DE fall, FR flat: the largest change is 0, its value printed past the bars' right edge
@@ -13022,12 +13048,12 @@ mod tests {
             false,
         )
         .unwrap();
-        // the generator asked the circles' node and left the bars to their leaf, to stop there
+        // the generator left the bars to their leaf, to stop there; no circles are asked (no map since 11-22)
         assert_eq!(
             fill["knobs"]["placed"]["bars"],
             json!({"leaf_stop": "zero_end_past_frame"})
         );
-        assert!(fill["knobs"]["placed"]["bubbles"]["order"].is_array());
+        assert!(fill["knobs"]["placed"].get("bubbles").is_none());
         let dek = dek_finding(&fill).unwrap().0;
         page_words(&mut fill, ("标题", &dek, "栏目"));
         fill["knobs"]["shapes"] = json!("runtime/pi/assets/naturalearth-admin0-50m.geojson");
@@ -13232,14 +13258,10 @@ mod tests {
                 );
             }
         }
-        // only the bubbles print a row's own value; the bars and notes print changes
+        // no layer prints a row's own value: the bars and notes print changes (the circles that printed the level at 2024
+        // are gone with the map, 11-22)
         let drawn = fill["drawn"].as_array().unwrap().clone();
-        assert!(
-            drawn
-                .iter()
-                .all(|d| d["layer"] == "bubbles" && d["time"] == "2024"),
-            "{drawn:?}"
-        );
+        assert!(drawn.is_empty(), "{drawn:?}");
 
         // the page's words as the text step leaves them when the model keeps the drafts: the finding, its name's placeholder
         // kept for the leaf, which prints the name marked with its name row
@@ -13389,6 +13411,155 @@ mod tests {
             "{:?}",
             checks[2]
         );
+    }
+
+    /// 11-22: the change page has no map, so its notes stand in the bars' picture, each leader ending just past its place's
+    /// printed change on the side the value stands (a rise's right of its value, a fall's left), as the level bars' notes do.
+    /// On two data shapes, q1's (rises and a fall) and the same with every place rising: the page publishes with no note
+    /// dropped, one leader end per note, each at its own bar's value.
+    #[test]
+    fn a_change_page_s_notes_point_at_their_bars_values_on_two_shapes() {
+        let mixed = q1_ten_years();
+        let mut rising = q1_ten_years();
+        rising
+            .iter_mut()
+            .find(|r| r["dims"]["geo"] == "FR" && r["time"] == "2024")
+            .unwrap()["value"] = json!("17.25");
+        // the numbers of an svg attribute after `key="` in `s`
+        let attr = |s: &str, key: &str| -> Option<f64> {
+            let at = s.find(&format!(" {key}=\""))? + key.len() + 3;
+            s[at..].split('"').next()?.parse().ok()
+        };
+        for (shape_name, main, falls) in [("mixed", mixed, 1), ("rising", rising, 0)] {
+            let change = recipe("change");
+            let shape = shape_of(&change.eats, &[("sdg", &main[..])], &Hubs).unwrap();
+            let picks = picks_of(&change.picks, &shape, &main, &[]).unwrap();
+            let mut fill = test_fill(
+                change,
+                &shape,
+                &picks,
+                (&main, &[]),
+                &Hubs,
+                ("标题", "导语"),
+                false,
+            )
+            .unwrap();
+            let noted: Vec<String> = fill["knobs"]["spec"]["hero"]["leaves"]["leader_notes"]
+                ["notes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|n| n["name"].as_str().unwrap().to_string())
+                .collect();
+            assert_eq!(noted.len(), 2, "{shape_name}");
+            let dek = dek_finding(&fill).unwrap().0;
+            page_words(&mut fill, ("标题", &dek, "栏目"));
+            fill["knobs"]["shapes"] = json!("runtime/pi/assets/naturalearth-admin0-50m.geojson");
+            fill["knobs"]["spec"]["kicker"] = json!("栏目");
+            fill["knobs"]["spec"]["source"] = json!("来源");
+            let order: Vec<String> = fill["order"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|l| l.as_str().map(str::to_string))
+                .collect();
+            assert_eq!(order, ["bars", "leader_notes"], "{shape_name}");
+            let calls = std::sync::Mutex::new(Vec::new());
+            let request = crate::next_visual::Request::LeafFill {
+                recipe: "change",
+                rows: fill["rows"].as_array().unwrap(),
+                knobs: &fill["knobs"],
+                order: &order,
+                runtime: Path::new("runtime"),
+            };
+            let page = match crate::next_flow::visual_call(&calls, "leaf_fill", request) {
+                Ok(crate::next_visual::Reply::Filled(page)) => page,
+                Ok(_) => panic!("{shape_name}: not a filled page"),
+                Err(e) => panic!("{shape_name}: leaf fill: {e}"),
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let bundle = {
+                let _command = crate::group_guard::command_for_test("investigate");
+                crate::artifact::InvestigationBundle::create(dir.path(), "leaf page").unwrap()
+            };
+            let _command = crate::group_guard::command_for_test("investigate");
+            let _doors = crate::group_guard::doors_for_test(true);
+            let bake =
+                crate::next_leaf::Runner::python(Path::new("fixtures/next_leaf/bake_twin.py"));
+            let mut qa =
+                crate::next_leaf::Runner::python(Path::new("fixtures/next_visual/qa_twin.py"));
+            qa.args.push("pass".into());
+            let leaf = crate::next_visual::LeafPage {
+                draw: &page.draw,
+                bake: &bake,
+                w: page.w,
+                h: page.h,
+                frame: page.frame.clone(),
+                layers: &page.layers,
+                ledger: &page.ledger,
+                refs: &page.refs,
+                facts: (&page.spec, &page.rows, &page.facts),
+                strip: None,
+            };
+            let plan = json!({"kind": "leaf_plan", "recipe": "change"});
+            let published = crate::next_flow::publish_leaf_page(
+                &calls,
+                &bundle.dir,
+                "change",
+                (&leaf, &plan),
+                &qa,
+            )
+            .unwrap_or_else(|e| panic!("{shape_name}: {e}"));
+            assert!(
+                published.dropped.is_empty(),
+                "{shape_name}: {:?}",
+                published.dropped
+            );
+            let html = std::fs::read_to_string(bundle.dir.join(&published.html_ref)).unwrap();
+            assert!(!html.contains(r#"class="cmap""#), "{shape_name}: no map");
+            let notes = html
+                .split(r#"<g data-layer="leader_notes">"#)
+                .nth(1)
+                .unwrap_or_else(|| panic!("{shape_name}: no notes layer"));
+            // the leader ends: one dot per note
+            let ends: Vec<(f64, f64)> = notes
+                .split("<circle")
+                .skip(1)
+                .filter(|c| c.contains(r#"r="2.5""#))
+                .map(|c| (attr(c, "cx").unwrap(), attr(c, "cy").unwrap()))
+                .collect();
+            assert_eq!(ends.len(), noted.len(), "{shape_name}: {ends:?}");
+            let mut seen_falls = 0;
+            for code in &noted {
+                // the place's printed change: its text's x, y and anchor
+                let at = html
+                    .find(&format!(r#"<tspan data-src="fact:chg.{code}""#))
+                    .unwrap_or_else(|| panic!("{shape_name}: no value of {code}"));
+                let text = &html[html[..at].rfind("<text").unwrap()..at];
+                let (x, y) = (attr(text, "x").unwrap(), attr(text, "y").unwrap());
+                let fall = text.contains(r#"text-anchor="end""#);
+                seen_falls += usize::from(fall);
+                let end = ends
+                    .iter()
+                    .find(|e| (e.1 - y).abs() <= 1.0)
+                    .unwrap_or_else(|| {
+                        panic!("{shape_name}: no leader ends at {code}'s row ({y}): {ends:?}")
+                    });
+                assert!(
+                    if fall { end.0 < x } else { end.0 > x },
+                    "{shape_name}: {code}'s leader ends at {end:?}, its value at {x} ({})",
+                    if fall {
+                        "a fall: left of it"
+                    } else {
+                        "a rise: right of it"
+                    }
+                );
+            }
+            assert_eq!(
+                seen_falls, falls,
+                "{shape_name}: the falls the notes point at"
+            );
+        }
     }
 
     /// The q5-shaped change page (a World Bank share by iso3 country, CHN, IND, USA), the second shape beside q1's Eurostat

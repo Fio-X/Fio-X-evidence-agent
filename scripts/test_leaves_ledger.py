@@ -357,7 +357,8 @@ class Column(unittest.TestCase):
         bars' page did not move when the frame stopped requiring them. Since B3 (11-04) the column page's style carries the
         noted grey's legend swatch rule, the only bytes that moved: without that rule the page is the one it was. Since review
         11-08 (SCMP P25) the legend line and both its rules are gone: the sha256s below are the pages without them (a page
-        holds no "ak" class), the rest as before."""
+        holds no "ak" class), the rest as before. Since 11-22 the change page draws no map: its unit line names the two ends
+        (column.span_years) where it named the bars' years and the map's, the only bytes that moved on it."""
         def sha(lines, names, drop=""):
             got = child(lines)[1:]
             self.assertFalse([g for g in got if "refused" in g], got)
@@ -370,7 +371,7 @@ class Column(unittest.TestCase):
         # every page compared byte for byte (user 11-08: the sha256s re-taken from the pages as they are now), and none holds the
         # legend line or its rules
         for lines, names, want in ((column_request(), ["bignums", "bars"], "7fa9a0cb359730981de3ad58d834d9ec9222264a5ace23d43709d5bbb57fcc39"),
-                                   (change_request(), ["bars"], "ada3c647c65d177e4ac322538541fbb132e0bfa55c4f3eb05aa38ade6e7146ff")):
+                                   (change_request(), ["bars"], "414b67d4fccdc0b9bb8e408d5e85c35cd026c3c5647c303e0f44424fd7a9bfa1")):
             self.assertEqual(sha(lines, names), want, names)
             got = child(lines)[1:]
             html = child(lines + [json.dumps({"phase": "page", "layers": {n: g.get("svg") or g.get("html") for n, g in zip(names, got)}})])[-1]["html"]
