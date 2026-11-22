@@ -3501,6 +3501,12 @@ pub trait Catalogue: Sync {
     fn members(&self, _aggregate: &str) -> Result<Vec<String>, String> {
         Err("this catalogue opens no reference lists".into())
     }
+    /// The target rows the knowledge group's targets registry holds for a main table (each {src "target:<id>", main, table,
+    /// dims, time, value}, read back like any row): what a story page runs against (has_target). None for a catalogue that
+    /// opens no targets registry.
+    fn targets(&self, _main: &str) -> Vec<Value> {
+        Vec::new()
+    }
     /// The `GROUP_CALL_EVENT`s of the group calls made since the last take; none for a catalogue that calls no group.
     fn take_calls(&self) -> Vec<Value> {
         Vec::new()
@@ -3931,6 +3937,7 @@ pub(crate) fn visual_call<'a>(
             width,
             runtime,
         } => format!("{kind} {tables:?} {width} {}", runtime.display()),
+        Request::Story { request, runtime } => format!("{kind} {request} {}", runtime.display()),
         Request::NodeDeclare { layer, page_in } => format!("{kind} {layer} {page_in}"),
         Request::NodeDraw {
             fill,
@@ -3996,6 +4003,7 @@ pub(crate) fn visual_call<'a>(
         ),
         Ok(Reply::NodeDeclared(declared)) => format!("{declared:?}"),
         Ok(Reply::NodesDrawn(drawn)) => format!("{drawn:?}"),
+        Ok(Reply::Story(reply)) => reply.to_string(),
     };
     let mut event = json!({"group": "visual", "request": kind,
         "request_sha256": crate::hash::sha256_bytes(asked.as_bytes()),

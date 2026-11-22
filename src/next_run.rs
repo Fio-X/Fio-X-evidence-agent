@@ -1223,7 +1223,7 @@ const SHAPE_CONDITIONS: &[(&str, Condition)] = &[
     ("monthly_companion", monthly_companion),
     ("last_year", last_year),
     ("two_ends", two_ends),
-    ("has_target", has_target),
+    (HAS_TARGET, has_target),
     ("official_flow", official_flow),
     (COMPOSITION, composition_groups),
     ("one_whole", one_whole),
@@ -3475,10 +3475,25 @@ fn recipe_request(
             .map_err(shape_err)?,
         false => Vec::new(),
     };
+    // a recipe that runs against a target (has_target): the knowledge group's target rows for the main, by their table, after
+    // every other table, read like any table's rows
+    let target_rows: BTreeMap<String, Vec<Value>> = match recipe.eats.iter().any(|e| e == HAS_TARGET) {
+        true => catalogue
+            .targets(&main.id)
+            .into_iter()
+            .fold(BTreeMap::new(), |mut by, r| {
+                by.entry(r["table"].as_str().unwrap_or_default().to_string())
+                    .or_insert_with(Vec::new)
+                    .push(r);
+                by
+            }),
+        false => BTreeMap::new(),
+    };
     let shape_over = |main_rows: &[Value]| {
         let mut tables: Vec<(&str, &[Value])> = vec![(main.id.as_str(), main_rows)];
         tables.extend(companion.map(|(id, _)| (id.as_str(), &comp_rows[..])));
         tables.extend(block_rows.iter().map(|(id, rows)| (*id, &rows[..])));
+        tables.extend(target_rows.iter().map(|(id, rows)| (id.as_str(), &rows[..])));
         shape_of(&recipe.eats, &tables, catalogue).map_err(shape_err)
     };
     let mut shape = shape_over(&main_rows)?;
@@ -3821,7 +3836,88 @@ fn recipe_request(
         1 => json!(lines[0]),
         _ => json!(lines),
     };
+    if let Some(target) = &shape.target {
+        fill[STORY_IN] = story_input(&shape, target, (&main_rows, &target_rows), &title, catalogue)
+            .map_err(|why| ("fill", why))?;
+    }
     Ok(fill)
+}
+
+/// The key of a fill's story input (story_input), which the findings step (story_findings) reads and takes out.
+const STORY_IN: &str = "story_in";
+
+/// The shape condition of a page that runs against a target (knobs.json recipes[].eats).
+const HAS_TARGET: &str = "has_target";
+
+/// How many findings the model is shown at most: a story's thesis block lists two to four (thesis_claims.py).
+const STORY_SHOWN: usize = 4;
+
+/// What the findings child reads for a page that runs against a target (has_target): the main table, its place dimension,
+/// the target's place as the whole and the other places as its members, the dimensions held at one code, the target row
+/// (its table, its own dimensions and year), the rows (the main's and the target's), the formats its facts print in (the
+/// unit's, at the decimals the main's values hold; a year; a ratio at one decimal), the measure's reviewed name and the
+/// unit's short form, and the places' reviewed names. No number here prints: the child's facts are computed by layer 1.
+fn story_input(
+    shape: &Shape,
+    (table, place, year): &(String, String, String),
+    (main_rows, targets): (&[Value], &BTreeMap<String, Vec<Value>>),
+    measure: &str,
+    catalogue: &dyn Catalogue,
+) -> Result<Value, String> {
+    let target = targets
+        .get(table)
+        .into_iter()
+        .flatten()
+        .filter(|r| r["time"].as_str() == Some(year) && r["dims"][&shape.place].as_str() == Some(place))
+        .collect::<Vec<_>>();
+    let [target] = target.as_slice() else {
+        return Err(format!(
+            "story: {} target rows of {table} at {place} {year}, not one",
+            target.len()
+        ));
+    };
+    let fixed: Map<String, Value> = shape
+        .dims
+        .iter()
+        .filter(|(d, codes)| **d != shape.place && codes.len() == 1)
+        .filter_map(|(d, codes)| Some((d.clone(), json!(codes.iter().next()?))))
+        .collect();
+    let members: Vec<String> = shape
+        .dims
+        .get(&shape.place)
+        .into_iter()
+        .flatten()
+        .filter(|c| *c != place && shape.countries.contains(c))
+        .cloned()
+        .collect();
+    let short = next_pack::unit_short(&shape.unit)
+        .ok_or_else(|| format!("story: unit {} has no short form", shape.unit))?;
+    let dec = main_rows
+        .iter()
+        .filter_map(|r| r["value"].as_str())
+        .map(|v| v.split_once('.').map_or(0, |(_, d)| d.len()))
+        .max()
+        .unwrap_or(0)
+        .min(2);
+    let value = shape.unit.to_lowercase();
+    let fmt_defs = json!({
+        value.clone(): {"scale": shape.scale.unwrap_or(1.0), "dec": dec,
+            "suffix": next_pack::unit_number_suffix(&shape.unit).map(suffix).unwrap_or_default()},
+        "story_year": {"scale": 1, "dec": 0, "suffix": ""},
+        "story_times": {"scale": 1, "dec": 1, "suffix": ""},
+    });
+    let named: Vec<String> = members.iter().cloned().chain([place.clone()]).collect();
+    let zh = leaf_labels(&[], &named, catalogue)?;
+    let rows: Vec<Value> = main_rows.iter().cloned().chain([(*target).clone()]).collect();
+    Ok(json!({
+        "main": {"table": shape.main, "by": shape.place, "whole": place, "members": members, "filter": fixed},
+        "target": {"table": table, "filter": target["dims"], "time": year},
+        "rows": rows,
+        "fmts": {"value": value, "year": "story_year", "times": "story_times"},
+        "fmt_defs": fmt_defs,
+        "words": {"measure": measure, "unit": short},
+        "zh": zh,
+    }))
 }
 
 /// The countries the question names on their own (the knowledge group's places, countries only), each as the page's rows
@@ -4823,6 +4919,115 @@ fn recipes_tried(
     catalogue.recipes().iter().filter(move |r| {
         r.eats.iter().any(|e| e == "blocks") == of_blocks && (many || !r.blocks_only)
     })
+}
+
+/// The event of a story page's findings step: the candidates the findings child gave (id, angle, layer, score and why) and
+/// the ones it left out with why, the ids the page tells in order, and whether the model picked them or the program took
+/// every one (fewer than CLAIMS_MIN stood).
+pub const STORY_FINDINGS_EVENT: &str = "next_story_findings";
+
+/// The findings step of a page that runs against a target (owner 11-22 19:0x, the sample's story put into the program): the
+/// visual group's findings child scores the findings the page's rows hold; the model picks, the one that answers the
+/// question first, CLAIMS_MIN or more of the best STORY_SHOWN by number only (fewer standing, the program takes every one);
+/// the child composes the picks into the page's facts, sections and each section's leaf data, which go into the fill beside
+/// its own (a fact or format of the same key declared another way stops the page). Every number is a fact layer 1 computes
+/// again from the rows; the child's own values only rank the findings. Err stops the page at the fill.
+async fn story_findings(
+    recorder: &mut Recorder<'_>,
+    model: &mut (dyn Asker + '_),
+    question: &str,
+    fill: &mut Value,
+    calls: &std::sync::Mutex<Vec<Value>>,
+    cancel: &AtomicBool,
+) -> Result<(), Stop> {
+    use crate::next_visual::{Reply, Request};
+    let Some(input) = fill.as_object_mut().and_then(|f| f.remove(STORY_IN)) else {
+        return Ok(());
+    };
+    let runtime = recorder.run_dir().join("runtime");
+    let child = |request: &Value| -> Result<Value, Stop> {
+        match crate::next_flow::visual_call(calls, "story", Request::Story { request, runtime: &runtime }) {
+            Ok(Reply::Story(reply)) => Ok(reply),
+            Ok(_) => unreachable!("the visual group answered story with another reply"),
+            Err(why) => Err(stop("fill", format!("story findings: {why}"))),
+        }
+    };
+    let mut asked = input.clone();
+    asked["mode"] = json!("candidates");
+    let found = child(&asked)?;
+    let candidates: Vec<&Value> = found["candidates"].as_array().into_iter().flatten().take(STORY_SHOWN).collect();
+    let ids: Vec<String> = candidates
+        .iter()
+        .filter_map(|c| c["id"].as_str().map(str::to_string))
+        .collect();
+    if ids.len() < 2 || ids.len() != candidates.len() {
+        recorder.program_event(STORY_FINDINGS_EVENT, json!({"found": found, "picks": [], "by": "none"}))?;
+        return Err(stop(
+            "fill",
+            format!("story findings: {} finding(s) stand; a story tells two at least", ids.len()),
+        ));
+    }
+    let (picks, by): (Vec<String>, &str) = if ids.len() < crate::next_flow::CLAIMS_MIN {
+        (ids.clone(), "program")
+    } else {
+        let mut lines = vec![
+            format!("Question: {question}"),
+            "Findings the page's rows hold, worked out and scored by the program, best first:".to_string(),
+        ];
+        for (i, c) in candidates.iter().enumerate() {
+            lines.push(format!("{}. {}", i + 1, c["summary"].as_str().unwrap_or_default()));
+        }
+        lines.push(format!(
+            "Pick the findings the page should tell, the one that answers the question first: pick must list {} to {} different finding numbers.",
+            crate::next_flow::CLAIMS_MIN,
+            ids.len()
+        ));
+        let ask = Ask::Claims {
+            groups: vec![ids.len()],
+            relations: 1,
+        };
+        let picked = match recorder.ask_step(model, &ask, &lines.join("\n"), cancel).await? {
+            (_, Choice::Claims { picks, .. }) => picks,
+            (_, other) => unreachable!("the findings step was answered with {other:?}"),
+        };
+        (picked.iter().map(|p| ids[p - 1].clone()).collect(), "model")
+    };
+    recorder.program_event(STORY_FINDINGS_EVENT, json!({"found": found, "picks": picks, "by": by}))?;
+    let mut asked = input.clone();
+    asked["mode"] = json!("compose");
+    asked["picks"] = json!(picks);
+    let page = child(&asked)?;
+    let off = |why: String| stop("fill", format!("story findings: {why}"));
+    merge_into(&mut fill["knobs"], &page["knobs"], "knobs").map_err(off)?;
+    let rows = fill["rows"].as_array_mut().ok_or_else(|| off("the fill's rows are no list".into()))?;
+    for r in page["rows"].as_array().into_iter().flatten() {
+        if !rows.iter().any(|x| x["src"] == r["src"]) {
+            rows.push(r.clone());
+        }
+    }
+    Ok(())
+}
+
+/// `from` merged into `into`: an object key by key, a key `into` lacks (or holds as null) taken, a key both hold the same kept,
+/// an object in both merged the same way; any other key both hold refuses, named by its path from `at`. Nothing is overwritten.
+fn merge_into(into: &mut Value, from: &Value, at: &str) -> Result<(), String> {
+    match (into, from) {
+        (Value::Object(a), Value::Object(b)) => {
+            for (k, v) in b {
+                match a.get_mut(k) {
+                    None | Some(Value::Null) => {
+                        a.insert(k.clone(), v.clone());
+                    }
+                    Some(was) if was == v => {}
+                    Some(was) if was.is_object() && v.is_object() => merge_into(was, v, &format!("{at}.{k}"))?,
+                    Some(_) => return Err(format!("{at}.{k} is held another way")),
+                }
+            }
+            Ok(())
+        }
+        (into, from) if *into == *from => Ok(()),
+        _ => Err(format!("{at} is held another way")),
+    }
 }
 
 /// The recipe a page takes, its fill, and each recipe tried before it as "recipe: why it was passed over".
@@ -6125,7 +6330,7 @@ pub(crate) async fn page_of_block(
     // that names a change. A pick that stopped stops the run after the text step, as before.
     // block 0 is the page over the blocks (pages_of): only a recipe that eats blocks draws it; the recipes passed over
     // before the picked one go on the ring event with why (a stopped pick's why already names each)
-    let (picked, passed_over) = match leaf_request(
+    let (mut picked, passed_over) = match leaf_request(
         recorder.run_dir(),
         prepared,
         &drawn,
@@ -6137,6 +6342,16 @@ pub(crate) async fn page_of_block(
         Ok((recipe, fill, passed)) => (Ok((recipe, fill)), passed),
         Err(stopped) => (Err(stopped), Vec::new()),
     };
+    // a page that runs against a target tells the findings the model picks of the program's (story_findings), before the
+    // text step words the page
+    if let Ok((_, fill)) = picked.as_mut() {
+        if let Err(stopped) = story_findings(recorder, model, question, fill, &calls, cancel).await {
+            if recorder.resume_under_last_accepted() {
+                record_page_calls(recorder, catalogue, calls)?;
+            }
+            return Err(stopped);
+        }
+    }
     // the page over the blocks is extra: when no recipe can draw it, it stops here, before the text step asks the model
     // anything (review 11-16: a page left out must not cost a model call)
     if block == 0 {
@@ -9959,6 +10174,83 @@ mod tests {
         let (first, all) = first_shape(&[(id, &wb[..])], &WbRanked(Vec::new()));
         assert_eq!(first, Some("one_line"), "{all:?}");
         assert!(all.iter().find(|(n, _)| *n == "page_story").unwrap().1.is_err());
+    }
+
+    /// Owner 11-22 19:0x (the sample's story put into the program): what a story page's findings step hands the findings child
+    /// (story_input) is read from the shape, and every fact the child declares for the picks is one layer 1 computes from the
+    /// rows (next_facts), its axis ticks the ones the leaf names. Two data shapes: a share over eight places and the whole with
+    /// the law's target above every pace (the path finds even the best year short), and the same table with a target the
+    /// past pace already reaches (no gap, the path says which pace gets there).
+    #[test]
+    fn a_story_pages_findings_are_facts_layer_1_computes_from_the_rows() {
+        let years: Vec<String> = (2005..=2024).map(|y| y.to_string()).collect();
+        let years: Vec<&str> = years.iter().map(String::as_str).collect();
+        let places = ["DE", "FR", "IT", "PL", "SE", "FI", "MT", "LU", "EU27_2020"];
+        let mut rows = ring_rows("ren", &[("freq", "A"), ("unit", "PC")], ("geo", &places), &years);
+        let pace = |g: &str| match g {
+            "MT" | "LU" => -0.05,
+            "SE" => 0.9,
+            "EU27_2020" => 0.75,
+            _ => 0.5,
+        };
+        for r in rows.iter_mut() {
+            let g = r["dims"]["geo"].as_str().unwrap().to_string();
+            let y: f64 = r["time"].as_str().unwrap().parse().unwrap();
+            let start = match g.as_str() {
+                "EU27_2020" => 10.0,
+                _ => 5.0 + 4.0 * places.iter().position(|p| *p == g).unwrap() as f64,
+            };
+            // the whole's best single year (2020) stands out, as the sample's does
+            let jump = if g == "EU27_2020" && y >= 2020.0 { 1.5 } else { 0.0 };
+            r["value"] = json!(format!("{:.1}", start + pace(&g) * (y - 2005.0) + jump));
+        }
+        let child = crate::next_leaf::Runner::python(
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime/leaves_py/findings.py"),
+        );
+        let story = recipe("page_story");
+        for (goal, short) in [("60", true), ("35", false)] {
+            let target = json!({"src": "target:ren-EU27_2020-2030", "main": "ren", "table": "target_ren",
+                "dims": {"geo": "EU27_2020"}, "time": "2030", "value": goal});
+            let targets: BTreeMap<String, Vec<Value>> = [("target_ren".to_string(), vec![target.clone()])].into();
+            let with = [target];
+            let shape = shape_of(&story.eats, &[("ren", &rows[..]), ("target_ren", &with[..])], &Scoped(true)).unwrap();
+            let at = shape.target.clone().unwrap();
+            assert_eq!(at, ("target_ren".into(), "EU27_2020".into(), "2030".into()));
+            let input = story_input(&shape, &at, (&rows, &targets), "可再生能源占比", &Scoped(true)).unwrap();
+            assert_eq!(input["main"]["whole"], "EU27_2020");
+            assert_eq!(input["main"]["filter"], json!({"freq": "A", "unit": "PC"}));
+            assert!(!input["main"]["members"].as_array().unwrap().iter().any(|m| m == "EU27_2020"));
+            assert_eq!(input["target"]["filter"], json!({"geo": "EU27_2020"}));
+            assert_eq!(input["fmt_defs"]["pc"]["dec"], 1);
+            let mut asked = input.clone();
+            asked["mode"] = json!("candidates");
+            let found = crate::next_leaf::story(&child, &asked).unwrap();
+            let ids: Vec<&str> = found["candidates"].as_array().unwrap().iter().filter_map(|c| c["id"].as_str()).collect();
+            assert!(ids.contains(&"path") && ids.contains(&"spread"), "{found}");
+            let picks: Vec<&str> = ["path", "need", "spread"].into_iter().filter(|p| ids.contains(p)).collect();
+            asked["mode"] = json!("compose");
+            asked["picks"] = json!(picks);
+            let page = crate::next_leaf::story(&child, &asked).unwrap();
+            let request = json!({"knobs": page["knobs"], "rows": page["rows"]});
+            let (spec, read, _) = crate::next_facts::stored_request(&request);
+            let facts: BTreeMap<String, crate::next_facts::Fact> = crate::next_facts::compute(&spec, &read)
+                .unwrap_or_else(|e| panic!("goal {goal}: {e}"))
+                .into_iter()
+                .map(|f| (f.key.clone(), f))
+                .collect();
+            assert_eq!(facts["best"].t.as_deref(), Some("2020"));
+            assert_eq!(facts["p_best"].v < facts["goal"].v, short, "goal {goal}");
+            assert_eq!(facts.contains_key("gap"), short);
+            // every tick the path's leaf names is one next_facts gives its axis fact
+            let leaves = &page["knobs"]["spec"]["hero"]["leaves"];
+            for (layer, axis) in [("target_path", "path_top"), ("gap_axis", "need_top")] {
+                let named = leaves[layer]["axis"]["ticks"].as_array().unwrap().len();
+                assert_eq!(crate::next_facts::ticks(&facts[axis], &input["fmt_defs"]).unwrap().len(), named, "{layer}");
+            }
+            let layers: Vec<&str> = page["knobs"]["spec"]["sections"].as_array().unwrap().iter().filter_map(|s| s["layer"].as_str()).collect();
+            assert_eq!(layers.first(), Some(&"thesis_claims"));
+            assert_eq!(layers.last(), Some(&"risk_notes"));
+        }
     }
 
     /// naming Germany beside the EU (places_zh 德国, 欧盟) still scopes the page by EU27_2020 alone. With no reviewed name

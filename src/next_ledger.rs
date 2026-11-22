@@ -2584,6 +2584,8 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     // an illustration strip is line art in the page's colours only, as wide as asked
     ("leaf.strip", "", &["leaf::strip_faults", "leaf::strip"]),
     ("leaf.hero", "", &["leaf::hero_faults", "leaf::hero"]),
+    // the story findings child answers in time and does not refuse; what it declares is checked as any fact (next_facts)
+    ("leaf.story", "", &["leaf::story"]),
     // the bake changes no text and no mark of the page
     ("leaf.bake_keeps_text", "", &["leaf::bake", "leaf::read"]),
     // the whole page as written: no placeholder left, no month read from two periods, the ready script Rust's alone

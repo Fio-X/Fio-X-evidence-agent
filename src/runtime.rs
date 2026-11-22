@@ -674,6 +674,10 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
             include_str!("../runtime/leaves_py/story.py"),
         ),
         (
+            runtime_dir.join("leaves_py/findings.py"),
+            include_str!("../runtime/leaves_py/findings.py"),
+        ),
+        (
             runtime_dir.join("leaves_py/sketch.py"),
             include_str!("../runtime/leaves_py/sketch.py"),
         ),

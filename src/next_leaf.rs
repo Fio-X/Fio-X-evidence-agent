@@ -1882,6 +1882,24 @@ pub fn hero(runner: &Runner, request: &Value) -> Result<Strip, HeroMiss> {
     })
 }
 
+/// How long the story findings child may take for one request (it works over the request's rows only).
+pub const STORY_DEADLINE: Duration = Duration::from_secs(30);
+
+/// One request to the story findings child (runtime/leaves_py/findings.py) through one child started by `runner`: its reply
+/// (the candidates, or the composed page). Err when the child cannot start, gives no reply in time or refuses.
+pub fn story(runner: &Runner, request: &Value) -> Result<Value, String> {
+    let (child, mut stdin, rx) = start(runner)?;
+    let reply = ask(&mut stdin, &rx, "findings", request, STORY_DEADLINE);
+    drop(stdin);
+    stop(child);
+    let reply = reply?;
+    let refused = strs(&reply, "refused");
+    if !refused.is_empty() {
+        return Err(refused.join("\n"));
+    }
+    Ok(reply)
+}
+
 /// Every way an opening picture is more than shapes and paint: it holds only the elements `g`, `path`, `image`, `defs`,
 /// `linearGradient`, `stop` and `mask`, each with the attributes of its kind and values of its kind (colours as hex, `none` or
 /// a `url(#id)` of an id the picture defines; numbers; a path's d of path characters; an image's href a png or jpeg data

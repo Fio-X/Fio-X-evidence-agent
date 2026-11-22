@@ -40,11 +40,12 @@ Request (one JSON line on stdin, one reply line on stdout; mode "candidates"):
    "fmts": {"value": fmt, "year": fmt, "times": fmt},           # the spec's format names for a value, a year, a ratio
    "fmt_defs": {fmt: {"scale", "dec", "suffix"}},               # those formats (an axis's ticks are worked out as next_facts does)
    "words": {"measure": words, "unit": words},                 # the measure's name and its unit (no digit)
-   "chain": [{"table", "filter": {dim: code}, "words": {"measure", "unit"}, "fmt"?: fmt, "kind"?: "flow"|"stock"}]?}
+   "chain": [{"table", "filter": {dim: code}, "words": {"measure", "unit"}, "fmt"?: fmt, "kind"?: "flow"|"stock"}]?,
+   "zh": {code: name}?}                                          # the places' reviewed names (compose hands them on)
                                                                  # companion tables (knowledge group's chain_companions), their
                                                                  # place and years the main's; "fmt" defaults to the value format
-Reply: {"candidates": [{"id", "angle", "layer", "score", "why", "line"}...], "dropped": [{"angle", "why"}]}, best first;
-"line" is the one-line English summary the model reads (no number of its own: a finding is picked by its number in the list).
+Reply: {"candidates": [{"id", "angle", "layer", "score", "why", "summary"}...], "dropped": [{"angle", "why"}]}, best first;
+"summary" is the one-line English summary the model reads (no number of its own: a finding is picked by its number in the list).
 
 Request (mode "compose"): the same fields and "picks": [candidate id, ...] (the model's, first the answer); reply:
   {"facts": {key: query}, "sections": [section], "leaves": {layer: hero.data}} — what the flow writes into knobs.spec
@@ -321,7 +322,7 @@ def angle_path(q):
             "claim": {"num": "fact:p_best", "head": title}, "notes": ["scenario"], "last": "now",
             "score": round(size * surprise * sturdy, 4),
             "why": {"size": round(size, 3), "surprise": surprise, "sturdy": round(sturdy, 3)},
-            "line": "even the best single year's rise repeated every year falls short of the target" if short else
+            "summary": "even the best single year's rise repeated every year falls short of the target" if short else
                     "the target year under three paces: which pace gets there"}, None
 
 
@@ -360,7 +361,7 @@ def angle_need(q):
             "claim": {"num": "fact:need_x", "head": title}, "notes": ["scenario"], "last": "now",
             "score": round(size * surprise * sturdy, 4),
             "why": {"size": round(size, 3), "surprise": surprise, "sturdy": round(sturdy, 3), "ratio": round(ratio, 3)},
-            "line": "the pace a year the target needs, against the past average pace"}, None
+            "summary": "the pace a year the target needs, against the past average pace"}, None
 
 
 def common_ends(q):
@@ -415,7 +416,7 @@ def angle_spread(q):
             "data": data, "claim": {"num": f"fact:{key}", "head": title}, "notes": [], "members": True, "last": "y1",
             "score": round(size * surprise * sturdy, 4),
             "why": {"size": round(size, 3), "surprise": surprise, "sturdy": round(sturdy, 3), "caught_up": caught},
-            "line": "the lowest at the start caught up with the highest" if caught else "the lowest at the start did not catch up"}, None
+            "summary": "the lowest at the start caught up with the highest" if caught else "the lowest at the start did not catch up"}, None
 
 
 def angle_ends(q):
@@ -441,7 +442,7 @@ def angle_ends(q):
             "claim": {"num": "fact:hi_lo", "head": title}, "notes": [], "members": True, "last": "hi",
             "score": round(size * surprise * sturdy, 4),
             "why": {"size": round(size, 3), "surprise": surprise, "sturdy": round(sturdy, 3), "ratio": round(ratio, 3)},
-            "line": "the highest member over the lowest at the last year"}, None
+            "summary": "the highest member over the lowest at the last year"}, None
 
 
 def chain_series(q, item):
@@ -524,7 +525,7 @@ def angle_chain(q):
             "data": data, "claim": {"num": "fact:m_step", "head": title}, "notes": [], "last": "c1_last",
             "score": round(size * surprise * sturdy, 4),
             "why": {"size": round(size, 3), "surprise": round(surprise, 3), "sturdy": round(sturdy, 3), "band": band, "moved": moved},
-            "line": "companion series side by side around the one year the whole moved most"}, None
+            "summary": "companion series side by side around the one year the whole moved most"}, None
 
 
 ANGLES = [angle_path, angle_need, angle_spread, angle_ends, angle_chain]
@@ -583,13 +584,23 @@ def compose(r):
     return {"facts": facts, "sections": sections, "leaves": leaves}
 
 
+def as_fill(r, page):
+    """The composed page as the part of a fill it adds (the flow merges it in, a key held another way refusing): the spec's
+    facts, formats, sections and leaf data, the places' names and the members, and the rows the facts read."""
+    m = r.get("main") or {}
+    return {"knobs": {"spec": {"facts": page["facts"], "fmts": r.get("fmt_defs") or {}, "sections": page["sections"],
+                               "hero": {"leaves": page["leaves"]}},
+                      "labels": r.get("zh") or {}, "members": m.get("members") or []},
+            "rows": r.get("rows") or []}
+
+
 def answer(r):
     """One request's reply: the candidates, or the composed page; a refusal says why."""
     try:
         if r.get("mode") == "compose":
-            return compose(r)
+            return as_fill(r, compose(r))
         _, cands, dropped = candidates(r)
-        return {"candidates": [{k: c[k] for k in ("id", "angle", "layer", "score", "why", "line")} for c in cands],
+        return {"candidates": [{k: c[k] for k in ("id", "angle", "layer", "score", "why", "summary")} for c in cands],
                 "dropped": dropped}
     except Refused as e:
         return {"refused": [str(e)]}

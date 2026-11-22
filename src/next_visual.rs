@@ -115,6 +115,10 @@ pub enum Request<'a> {
         width: f64,
         runtime: &'a Path,
     },
+    /// The story findings over a story page's rows (the findings child under `runtime`, runtime/leaves_py/findings.py): with
+    /// mode "candidates" the scored findings, best first, with the ones left out and why; with mode "compose" and the picks,
+    /// the page's facts (declarations layer 1 computes and checks), sections and each section's leaf data. Nothing is written.
+    Story { request: &'a Value, runtime: &'a Path },
     /// What the flow's fill takes from a layer its recipe binds external (next_tree_gen::declare, P4a): the rows it draws,
     /// the facts and the format it declares and its hero data, from the registry's declaration over the flow's page input
     /// (plain data: shape, picks, rows), every select recomputed by the core.
@@ -868,6 +872,8 @@ pub enum Reply<'a> {
         instead: Option<Strip>,
         note: String,
     },
+    /// The story findings child's reply, as it gave it (the candidates, or the composed page).
+    Story(Value),
     /// What the flow's fill takes from an external layer, derived by the generator (drawn rows, facts, formats, hero data).
     NodeDeclared(Box<crate::next_tree_gen::NodeDeclared>),
     /// The external layers' checked geometry by layer, and per layer the child's and the core's milliseconds.
@@ -989,6 +995,10 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
             }
         }
         Request::Recipes => Reply::Recipes(&leaves().recipes),
+        Request::Story { request, runtime } => Reply::Story(crate::next_leaf::story(
+            &Runner::python(&runtime.join("leaves_py/findings.py")),
+            request,
+        )?),
         Request::Stack { title, pages } => Reply::Stacked(stack_html(title, pages)),
         Request::RecipeLayers { recipe } => Reply::Layers(recipe_layers(recipe)),
         Request::LeafRecheck {
