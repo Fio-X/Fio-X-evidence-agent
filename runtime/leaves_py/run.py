@@ -251,7 +251,9 @@ KINDS = dict(ring=(scmp.RING_LAYERS, scmp.RING_SVG), **{k: ({**column.COLUMN_LAY
              page_story=({**{n: LEAF_LAYERS[n] for n in story.STORY_LAYERS},
                           # the text blocks at the page's width (story.FIXED over the request's style)
                           "thesis_claims": leaf(thesis_claims.Frame, thesis_claims.cl_thesis_claims, "thesis_claims", fixed=story.FIXED),
-                          "risk_notes": leaf(risk_notes.Frame, risk_notes.cl_risk_notes, "risk_notes", fixed=story.FIXED)},
+                          "risk_notes": leaf(risk_notes.Frame, risk_notes.cl_risk_notes, "risk_notes", fixed=story.FIXED),
+                          # the rank bar draws the row its data names in the accent (story.rank_style)
+                          "rankbar": leaf(rankbar.Frame, rankbar.cl_rankbar, "rankbar", by_hero=story.rank_style)},
                          list(story.STORY_LAYERS)))
 
 

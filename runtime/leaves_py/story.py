@@ -29,13 +29,20 @@ from words import word
 
 NODE = "page_story"
 # the leaves a story section may draw (run.py builds the recipe's layers from these), and those that are text blocks, not charts
-STORY_LAYERS = ["thesis_claims", "gap_axis", "event_chain", "target_path", "winners_losers", "pair_bars", "risk_notes"]
+STORY_LAYERS = ["thesis_claims", "gap_axis", "event_chain", "target_path", "winners_losers", "pair_bars", "rankbar", "risk_notes"]
 TEXT_BLOCKS = ("thesis_claims", "risk_notes")
 CODE = re.compile(r"[a-z][a-z0-9_]{0,31}")
 PAGE_W = 1140
 # the two text blocks run the page's whole width (their own default is a column; the page puts them under the header and
 # above the sources, where a column leaves the right of the page empty): the leaf's width knob, set here over the request's
 FIXED = {n: {"width": PAGE_W} for n in TEXT_BLOCKS}
+
+
+def rank_style(h):
+    """The rank bar's knob the data names: leaves.rankbar.highlight is the code of the row drawn in the accent (the whole's, or
+    the highest member's when the page has no whole); the leaf's own data shape has no such key and ignores it."""
+    code = ((h.get("leaves") or {}).get("rankbar") or {}).get("highlight")
+    return {"rankbar": {"highlight_row": code}} if isinstance(code, str) and code else {}
 
 
 class Frame:

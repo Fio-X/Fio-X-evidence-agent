@@ -64,6 +64,10 @@ def first_number(rows, *prefer):
     raise AssertionError(f"none of {prefer} in the ledger")
 
 
+# the leaves this test gives data to: every story leaf but the rank bar (scripts/test_story_findings.py draws that one)
+DRAWN = [n for n in story.STORY_LAYERS if n in LEAVES_DATA]
+
+
 def fresh():
     """The story's sections as a request lists them (titles are words; request() appends each one's ledger number)."""
     return [
@@ -97,7 +101,7 @@ def request(title_of=None, sections=None, kickers=None):
             "hero": {"data": {}, "leaves": json.loads(json.dumps(LEAVES_DATA)), "style": {}}}
     knobs = {"spec": spec, "labels": names, "segs": segs}
     line = lambda **kv: json.dumps({"node": "page_story", "panel": {"w": 1140, "h": 0, "frame": None}, "rows": rows, "knobs": knobs, **kv}, ensure_ascii=False)
-    return [line(phase="size")] + [line(layer=n) for n in story.STORY_LAYERS], spec_sections
+    return [line(phase="size")] + [line(layer=n) for n in DRAWN], spec_sections
 
 
 def rows_text(rows, src):
@@ -117,7 +121,7 @@ def page(**kw):
     size, pics = got[0], got[1:]
     bad = [p for p in [size] + pics if "refused" in p or "error" in p]
     if bad: return None, [bad[0].get("refused") or bad[0]]
-    layers = {n: p.get("svg") or p.get("html") for n, p in zip(story.STORY_LAYERS, pics)}
+    layers = {n: p.get("svg") or p.get("html") for n, p in zip(DRAWN, pics)}
     if edit: edit(layers)
     last = child(lines + [json.dumps({"phase": "page", "layers": layers, "sizes": {}}, ensure_ascii=False)])[-1]
     return last.get("html"), last.get("refused")
@@ -162,7 +166,7 @@ class Story(unittest.TestCase):
         wide = [json.dumps({**(d := json.loads(l)), "knobs": {**d["knobs"], "spec": {**d["knobs"]["spec"], "hero": {
             **d["knobs"]["spec"]["hero"], "style": {"thesis_claims": {"width": 500}}}}}}, ensure_ascii=False) for l in lines]
         got = child(wide)
-        layers = {n: g.get("svg") for n, g in zip(story.STORY_LAYERS, got[1:])}
+        layers = {n: g.get("svg") for n, g in zip(DRAWN, got[1:])}
         last = child(wide + [json.dumps({"phase": "page", "layers": layers, "sizes": {}}, ensure_ascii=False)])[-1]
         self.assertIn("html", last, last)
         self.assertRegex(last["html"], rf'<svg class="thesis_claims" viewBox="0 0 {story.PAGE_W} ')

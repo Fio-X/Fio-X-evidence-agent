@@ -14,6 +14,11 @@ and who fell), each one section with one story leaf (a leaf stands at most once 
   * spread (winners_losers): the members that rose and those that fell between the first and the last year, and whether
                               the lowest at the start caught up with the highest (group_change), when both columns hold one.
   * ends   (pair_bars):      the highest and the lowest member at the last year side by side, the first over the second.
+  * rank   (rankbar):        every member's value at the last year from the highest down, the whole among them (its row the
+                              page's accent) and where it stands, "position" among the members and itself; with no whole the
+                              highest and the lowest; the share column is each row's difference from the whole (or from the
+                              highest). The leaf draws no reference line: a target the request holds is said in the text only.
+                              Needs five members at least with a value in a year they all share (the latest such year).
   * chain  (event_chain):    the companion tables' series side by side on the years they and the whole share (a panel
                               each, the page's measure not one of them), the one year the whole moved most shaded across
                               them: what moved around that year, told in order and never as a cause; needs the request's
@@ -77,9 +82,10 @@ CHAIN_MIN, CHAIN_MAX = 2, 5   # the tables a chain holds
 CHAIN_YEARS = 4      # years in a row every chain table and the whole share, at least
 MIN_YEARS = 6        # a pace needs this many years of the whole at least
 RECENT = 5           # the recent pace runs over the last five years
-TOP_K = 5            # the model is shown the five best
+TOP_K = 6            # the candidates the child gives (one a finding: there are six angles; the flow shows the model its best few)
 GROUP_K = 3          # the lowest and the highest three at the start (spread)
 ROWS_MAX = 5         # rows a winners/losers column shows
+RANK_MIN, RANK_MAX = 5, 40   # members a ranking needs at least, and shows at most
 
 
 class Refused(Exception):
@@ -550,7 +556,57 @@ def angle_chain(q):
             "summary": "companion series side by side, the one year they together moved most shaded"}, None
 
 
-ANGLES = [angle_path, angle_need, angle_spread, angle_ends, angle_chain]
+def angle_rank(q):
+    members = {c: s for c, s in q.panel.items()}
+    if len(members) < RANK_MIN: return None, f"fewer than {RANK_MIN} members"
+    if len(members) > RANK_MAX: return None, f"more than {RANK_MAX} members (a ranking of them would not fit one picture)"
+    years = set.intersection(*(set(s) for s in members.values()), *([set(q.wseries)] if q.wseries else []))
+    if not years: return None, "no year in which every member (and the whole) has a value"
+    y = max(years)
+    at = {c: s[y][0] for c, s in members.items()}
+    if any(v < 0 for v in at.values()): return None, "a value below 0 (a bar cannot be drawn)"
+    hi = max(at, key=lambda c: (at[c], c))
+    lo = min(at, key=lambda c: (at[c], c))
+    if at[hi] == at[lo]: return None, "every member holds the same value"
+    key = lambda c: f"r_{c.lower()}"
+    ref_code = q.whole if q.wseries else hi          # the row the share column is measured from
+    f, rows = {}, []
+    codes = sorted(members) + ([q.whole] if q.wseries else [])
+    for c in codes:
+        f[key(c)] = q.value(c, y)
+    for c in codes:
+        f[f"g_{c.lower()}"] = {"op": "minus", "a": key(c), "b": key(ref_code), "fmt": q.fmts["value"]}
+        rows.append({"code": c, "value": (q.wseries[y] if c == q.whole else members[c][y])[1], "value_text": f"fact:{key(c)}",
+                     "share_text": f"fact:g_{c.lower()}"})
+    sturdy = clamp(len(members) / 20)
+    size = clamp((at[hi] - at[lo]) / at[hi])
+    g = q.goal()
+    if q.wseries:
+        f["pos"] = {"op": "position", "table": q.table, "filter": q.fixed, "by": q.by, "code": q.whole, "time": y, "fmt": "n"}
+        n_above = sum(1 for v in at.values() if v > q.wseries[y][0])
+        frac = n_above / len(members)                   # 0 = the whole above every member, 1 = below every member
+        surprise = clamp(0.3 + 0.7 * abs(frac - 0.5) * 2)
+        title = T("story.rank.title", w=q.whole, hi=hi, lo=lo, y=key(hi), pos="pos")
+        text = T("story.rank.text_goal" if g else "story.rank.text", w=q.whole, hi=hi, lo=lo, y=key(hi), rhi=key(hi), rlo=key(lo), rw=key(q.whole), pos="pos")
+        claim = {"num": "fact:pos", "head": T("story.rank.claim", w=q.whole)}
+        head, why_line = ST("story.rank.gap_head"), "every member's value at the last year, highest first, and where the whole stands"
+        why = {"size": round(size, 3), "surprise": round(surprise, 3), "sturdy": round(sturdy, 3), "above_whole": n_above}
+    else:
+        surprise = 0.5
+        title = T("story.rank.title_top", hi=hi, lo=lo, rhi=key(hi), rlo=key(lo))
+        text = T("story.rank.text_top", hi=hi, lo=lo, y=key(hi))
+        claim = {"num": f"fact:{key(hi)}", "head": T("story.rank.claim_top", hi=hi)}
+        head, why_line = ST("story.rank.gap_top_head"), "every member's value at the last year, highest first"
+        why = {"size": round(size, 3), "surprise": surprise, "sturdy": round(sturdy, 3)}
+    if g: f["goal"] = g[2]
+    data = {"title": SW(q.words["measure"]), "unit": SW(q.words["unit"]), "share_head": head, "name_kind": "place", "rows": rows,
+            "highlight": q.whole if q.wseries else hi}   # the code of the row the page draws in the accent (story.rank_style reads it)
+    return {"angle": "rank", "layer": "rankbar", "kicker": T("story.rank.kicker"), "title": title, "text": text, "facts": f, "data": data,
+            "claim": claim, "notes": [], "members": True, "last": key(hi),
+            "score": round(size * surprise * sturdy, 4), "why": why, "summary": why_line}, None
+
+
+ANGLES = [angle_path, angle_need, angle_spread, angle_ends, angle_rank, angle_chain]
 
 
 def candidates(r):
