@@ -4008,8 +4008,15 @@ const STORY_IN: &str = "story_in";
 /// The shape condition of a page that runs against a target (knobs.json recipes[].eats).
 const HAS_TARGET: &str = "has_target";
 
-/// How many findings the model is shown at most: a story's thesis block lists two to four (thesis_claims.py).
-const STORY_SHOWN: usize = 4;
+/// How many findings the model is shown at most: every one the findings child gives (its TOP_K, one per angle). The
+/// child's score does not read the question, so a cut by score alone can hide the finding the question asks for (st1, 11-23:
+/// the whole's path to its target ranked sixth of seven under a four-finding cut); the model reads the question and picks.
+/// It still picks only two to four (the thesis block lists that many, thesis_claims.py): STORY_TOLD.
+const STORY_SHOWN: usize = 8;
+
+/// How many findings a story tells at most (the thesis block's two to four, thesis_claims.py). The claims step lets the model
+/// list up to CLAIMS_MAX, first the one that answers the question; the story keeps its first STORY_TOLD, in its order.
+const STORY_TOLD: usize = 4;
 
 /// What the findings child reads for a page that runs against a target (has_target): the main table, its place dimension,
 /// the target's place as the whole and the other places as its members, the dimensions held at one code, the target row
@@ -5209,7 +5216,7 @@ async fn story_findings(
             (_, Choice::Claims { picks, .. }) => picks,
             (_, other) => unreachable!("the findings step was answered with {other:?}"),
         };
-        (picked.iter().map(|p| ids[p - 1].clone()).collect(), "model")
+        (picked.iter().take(STORY_TOLD).map(|p| ids[p - 1].clone()).collect(), "model")
     };
     recorder.program_event(STORY_FINDINGS_EVENT, json!({"found": found, "picks": picks, "by": by}))?;
     let mut asked = input.clone();
@@ -10736,7 +10743,7 @@ mod tests {
         let mut asked = input.clone();
         asked["mode"] = json!("candidates");
         let found = crate::next_leaf::story(&child, &asked).unwrap();
-        let ids: Vec<Value> = found["candidates"].as_array().unwrap().iter().take(STORY_SHOWN).map(|c| c["id"].clone()).collect();
+        let ids: Vec<Value> = found["candidates"].as_array().unwrap().iter().take(STORY_TOLD).map(|c| c["id"].clone()).collect();
         asked["mode"] = json!("compose");
         asked["picks"] = json!(ids);
         let page = crate::next_leaf::story(&child, &asked).unwrap();
