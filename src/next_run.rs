@@ -3857,6 +3857,24 @@ fn recipe_request(
             .unwrap_or_default();
         lines.push(source_line(meta.worldbank, &meta.id, &title, &[]));
     }
+    // a page that runs against a target names the law it is set in, last (the knowledge group's source line, which ends with
+    // the clause): the clause is the target table's id, so the footer marks it as a ref and takes its digits, no other
+    if let Some((table, place, year)) = &shape.target {
+        let row = target_rows.get(table).into_iter().flatten().find(|r| {
+            r["time"].as_str() == Some(year) && r["dims"][&shape.place].as_str() == Some(place)
+        });
+        let (Some(line), Some(clause)) = (
+            row.and_then(|r| r["source_line"].as_str()),
+            row.and_then(|r| r["source_ref"].as_str()),
+        ) else {
+            return Err((
+                "fill",
+                format!("the target row of {table} at {place} {year} names no source line and clause"),
+            ));
+        };
+        lines.push(line.to_string());
+        fill["knobs"]["spec"]["tables"][table.as_str()] = json!({"id": clause});
+    }
     fill["knobs"]["spec"]["source"] = match lines.len() {
         1 => json!(lines[0]),
         _ => json!(lines),
