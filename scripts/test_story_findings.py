@@ -285,6 +285,8 @@ class Findings(unittest.TestCase):
                                                                        capture_output=True, text=True, timeout=120, check=True).stdout.splitlines()]
             got = run_child(lines)
             self.assertFalse([g for g in got if "refused" in g or "error" in g], got)
+            # layer 1 takes a size only when both sides are above 0 (next_leaf: "the panel w h is no size", st1 11-23)
+            self.assertTrue(got[0]["w"] > 0 and got[0]["h"] > 0, got[0])
             last = run_child(lines + [json.dumps({"phase": "page", "layers": {n: g.get("svg") or g.get("html") for n, g in zip(layers, got[1:])}, "sizes": {}}, ensure_ascii=False)])[-1]
             self.assertIn("html", last, last)
             # a number a title prints through a program operator is the ledger's bare number

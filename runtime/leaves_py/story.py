@@ -59,10 +59,16 @@ def rank_style(h):
     return {"rankbar": {"highlight_row": code}} if isinstance(code, str) and code else {}
 
 
+# The panel a story page tells layer 1 at the size phase: the page's width, and as its height the tallest box one section's
+# picture may take (each section draws in its own box, the page itself is as long as its sections; layer 1 checks every
+# text of a layer inside w x SECTION_MAX_H, and a size of 0 is no panel).
+SECTION_MAX_H = 3 * PAGE_W
+
+
 class Frame:
     """What a story page's layers read: the hero (leaves and styles); the page itself has no picture of its own."""
     def __init__(f, c, spec):
-        f.c, f.spec, f.h, f.W, f.H = c, spec, spec["hero"], PAGE_W, 0
+        f.c, f.spec, f.h, f.W, f.H = c, spec, spec["hero"], PAGE_W, SECTION_MAX_H
 
 
 def sections(spec):
