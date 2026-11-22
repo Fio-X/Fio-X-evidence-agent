@@ -4830,6 +4830,52 @@ mod tests {
         }
     }
 
+    /// A change page's change in a unit that counts (the unit table's count and persons rules: passengers carried, n20 and
+    /// t3) prints as a whole number, its bars' and its notes' alike, though the data's values hold decimals; any other
+    /// unit's change keeps the decimals its rows hold (at most COLUMN_DEC), a percentage's in percentage points as before.
+    #[test]
+    fn next_tree_gen_change_prints_a_count_change_whole() {
+        let mut pi = read("q1-gen.json").g("page_in").clone();
+        let ranked: Vec<String> = pi.g("picks").g("ranked").arr().iter().map(st).collect();
+        let mut rows = Vec::new();
+        for (k, c) in ranked.iter().enumerate() {
+            for y in ["2021", "2025"] {
+                let up = 1.0e7 * (4 - k) as f64 + 0.37;
+                let v = format!("{:.2}", 1.0e8 + if y == "2025" { up } else { 0.8 });
+                rows.push(J::from_value(&serde_json::json!({"src": format!("series:sdg/{c}:{y}:OBS_VALUE"), "table": "sdg",
+                    "dims": {"freq": "A", "unit": "PC", "geo": c}, "time": y, "value": v})));
+            }
+        }
+        pi.set("rows", J::Arr(rows));
+        pi.set("recipe", J::str("change"));
+        assert!(pi.set_path(&["picks", "t0"].map(String::from), J::str("2021")));
+        assert!(pi.set_path(&["shape", "t0"].map(String::from), J::str("2021")));
+        let reg = core::load_registry(&core::bindings());
+        for (rule, short, suffix, key, dec) in [
+            (Some("count"), "数量", "", "chg", 0.0),
+            (Some("persons"), "人", "人", "chg", 0.0),
+            (Some("amount"), "美元", " 美元", "chg", 2.0),
+            (Some("pct_family"), "%", "%", "pp", 1.0),
+        ] {
+            let mut p = pi.clone();
+            p.set("short", J::str(short));
+            assert!(p.set_path(&["shape", "suffix"].map(String::from), J::str(suffix)));
+            if let Some(r) = rule {
+                assert!(p.set_path(&["shape", "rule"].map(String::from), J::str(r)));
+            }
+            for layer in ["bars", "leader_notes"] {
+                let out = declared_j(layer, &p, &reg).unwrap();
+                let f = out.g("fmts").g(key);
+                assert_eq!(
+                    f.g("dec").num(),
+                    Some(dec),
+                    "{rule:?} {layer}: {}",
+                    out.g("fmts").repr()
+                );
+            }
+        }
+    }
+
     /// The rank lines over a many-block page's blocks (block_ranks): each ranked place's position among the ranked places in
     /// every block's table at its year (facts_each_block, `{b}` the block's number), each block's rows of them drawn, and
     /// the leaf's columns a block each (its head the block's name, its ranks the facts as printed) over the places' codes.
