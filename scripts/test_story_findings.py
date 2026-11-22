@@ -393,6 +393,8 @@ class Findings(unittest.TestCase):
         bare = re.sub(r"<[^>]+>", "", re.sub(r"<(span|tspan)[^>]*data-src=[^>]*>[^<]*</\1>", "", big))
         self.assertFalse(re.search(r"[0-9]", bare), bare)
         self.assertEqual(len(re.findall(r'class="bn"', big)), 3)
+        self.assertIn('style="width:1140px;grid-template-columns:repeat(3,1fr)', big)  # the three numbers span the page
+        self.assertIn("font-size:58px", big)  # the page title's size
         self.assertIn('class="bns"', last["html"])
         self.assertLess(last["html"].index('data-id="bignums"'), last["html"].index('data-id="thesis"'))
         return composed, facts, big, last["html"]

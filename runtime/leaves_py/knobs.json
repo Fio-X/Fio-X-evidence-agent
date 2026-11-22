@@ -163,9 +163,9 @@
      "name": "width",
      "default": 560,
      "min": 240,
-     "max": 720,
+     "max": 1140,
      "step": 10,
-     "what": "width of the big numbers' box beside the title"
+     "what": "width of the big numbers' box beside the title (a story page spans its page)"
     },
     {
      "name": "cols",
@@ -1950,11 +1950,11 @@
     },
     {
      "name": "cols",
-     "default": 4,
-     "min": 2,
+     "default": 0,
+     "min": 0,
      "max": 6,
      "step": 1,
-     "what": "cells in a row"
+     "what": "cells in a row; 0 = the count 3 to 6 that leaves the fewest empty places in the last row (4 on a tie)"
     },
     {
      "name": "plot_h",
