@@ -654,6 +654,10 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
             include_str!("../runtime/leaves_py/event_chain.py"),
         ),
         (
+            runtime_dir.join("leaves_py/small_multiples.py"),
+            include_str!("../runtime/leaves_py/small_multiples.py"),
+        ),
+        (
             runtime_dir.join("leaves_py/target_path.py"),
             include_str!("../runtime/leaves_py/target_path.py"),
         ),
