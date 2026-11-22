@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "note": "The legal targets of the knowledge group, as data: each a number a binding EU act sets for the Union as a whole, with the Eurostat slice that measures it and the source it was read from. A page may print a target only as the registry gives it: the program checks, from the stored excerpt of the act (target-sources/), that the quoted sentence is in the excerpt, that the value phrase is in the sentence, that the number and the year in the sentence are the entry's, and that at_least/at_most match the words before the number; an entry that fails stops the registry. document_sha256 is the hash of the full act as fetched (the full file is not kept in the repository); excerpt_sha256 is the hash of the stored excerpt and is checked. slices: the tables whose rows a target is read against (dims = the table's dimensions fixed to the measure, geo and time excluded). value is the number as the act prints it, decimal point instead of the act's decimal comma. Read by next_targets.rs only.",
+ "note": "The legal targets of the knowledge group, as data: each a number a binding EU act sets for the Union as a whole, with the Eurostat slice that measures it and the source it was read from. A page may print a target only as the registry gives it: the program checks, from the stored excerpt of the act (target-sources/), that the quoted sentence is in the excerpt, that the value phrase is in the sentence, that the number and the year in the sentence are the entry's, and that at_least/at_most match the words before the number; an entry that fails stops the registry. document_sha256 is the hash of the full act as fetched (the full file is not kept in the repository); excerpt_sha256 is the hash of the stored excerpt and is checked. slices: the tables whose rows a target is read against (dims = the table's dimensions fixed to the measure, geo and time excluded). value is the number as the act prints it, decimal point instead of the act's decimal comma. Read by next_targets.rs only. publisher_zh, source_zh, source_ref: the target's source as a page footer prints it (publisher_zh + space + source_zh, the line next_targets gives as source_line). source_zh is the word for the act and then source_ref, the act and clause numbers; source_ref is the only place a digit stands, and it ends the line, so the leaf footer marks it as one reference (a spec table id) and the page check takes it like a table id. New Chinese wording: owner review before it is printed.",
  "targets": [
   {
    "id": "eu-renewables-2030",
@@ -28,6 +28,9 @@
    "value": "42.5",
    "unit": "PC",
    "unit_label": "% of gross final energy consumption",
+   "publisher_zh": "欧盟",
+   "source_zh": "指令 (EU) 2018/2001 第 3 条第 1 款（经指令 (EU) 2023/2413 修订）",
+   "source_ref": "(EU) 2018/2001 第 3 条第 1 款（经指令 (EU) 2023/2413 修订）",
    "type": "at_least",
    "source": {
     "act": "Directive (EU) 2023/2413 amending Directive (EU) 2018/2001",
@@ -59,6 +62,9 @@
    "value": "763",
    "unit": "MTOE",
    "unit_label": "million tonnes of oil equivalent",
+   "publisher_zh": "欧盟",
+   "source_zh": "指令 (EU) 2023/1791 第 4 条第 1 款",
+   "source_ref": "(EU) 2023/1791 第 4 条第 1 款",
    "type": "at_most",
    "source": {
     "act": "Directive (EU) 2023/1791 (Energy Efficiency Directive, recast)",
