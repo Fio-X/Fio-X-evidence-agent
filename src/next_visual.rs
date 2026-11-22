@@ -7,7 +7,7 @@
 
 use crate::next_facts::{compute, leaf_ledger, leaf_refs, stored_request, Fact, Row, Spec};
 use crate::next_leaf::{
-    bake_leaf_page, draw_page_given, leaves, Layer, Recipe, Record, Runner, Strip,
+    bake_leaf_page, draw_page_given, hero, leaves, HeroMiss, Layer, Recipe, Record, Runner, Strip,
 };
 use crate::next_ledger::{check_numbers, dropped_entry, name_src, point_entry};
 use crate::next_nodes::{Kind, Style};
@@ -105,6 +105,16 @@ pub enum Request<'a> {
         width: f64,
         runtime: &'a Path,
     },
+    /// The opening illustration for a page of these tables (its refs), `width` wide: the first piece set that names one of them
+    /// and holds a `hero` block gives the semantic tags of its parts, which the hero child (runtime/illus_hero/run_hero.py:
+    /// Blender's scene, then the painting) draws in the set's ground and accent. Blender or a package missing, or a child that
+    /// takes longer than the deadline, leaves the hero out and the page's strip (IllusStrip's own answer) stands in for it, with
+    /// the reason in the note. A request the child refuses is an error. Nothing is written.
+    IllusHero {
+        tables: &'a [String],
+        width: f64,
+        runtime: &'a Path,
+    },
     /// What the flow's fill takes from a layer its recipe binds external (next_tree_gen::declare, P4a): the rows it draws,
     /// the facts and the format it declares and its hero data, from the registry's declaration over the flow's page input
     /// (plain data: shape, picks, rows), every select recomputed by the core.
@@ -132,14 +142,8 @@ const PAGE_TOKENS: &str = include_str!("../runtime/leaves_py/tokens.css");
 const STRIP_INK: &str = "--t-title";
 const STRIP_SECOND: &str = "--t-sec";
 
-/// The strip of a page of `tables` and why: none when no piece set names one of them; Err when the set does not parse, the
-/// palette lacks a colour, or the strip is refused or not taken.
-fn illus_strip(
-    tables: &[String],
-    width: f64,
-    runtime: &Path,
-) -> Result<(Option<Strip>, String), String> {
-    let mut picked = None;
+/// The first piece set of PIECE_SETS that names one of `tables`; none when no set does.
+fn pick_set(tables: &[String]) -> Result<Option<Value>, String> {
     for text in PIECE_SETS {
         let set: Value = serde_json::from_str(text)
             .map_err(|e| format!("illus: a piece set does not parse: {e}"))?;
@@ -149,11 +153,20 @@ fn illus_strip(
             .flatten()
             .any(|t| t.as_str().is_some_and(|t| tables.iter().any(|x| x == t)));
         if named {
-            picked = Some(set);
-            break;
+            return Ok(Some(set));
         }
     }
-    let Some(set) = picked else {
+    Ok(None)
+}
+
+/// The strip of a page of `tables` and why: none when no piece set names one of them; Err when the set does not parse, the
+/// palette lacks a colour, or the strip is refused or not taken.
+fn illus_strip(
+    tables: &[String],
+    width: f64,
+    runtime: &Path,
+) -> Result<(Option<Strip>, String), String> {
+    let Some(set) = pick_set(tables)? else {
         return Ok((
             None,
             format!("illus: no piece set illustrates {}", tables.join(", ")),
@@ -181,6 +194,63 @@ fn illus_strip(
         strip.dropped.join("; ")
     );
     Ok((Some(strip), note))
+}
+
+/// The opening illustration of a page of `tables` (Request::IllusHero): (the hero, the strip standing in for it, why). The hero
+/// is drawn from the semantic tags the set's `hero` block gives the tables (the union over the tables it names), its hero
+/// part, ground and accent; when the child cannot make it here the strip of the same tables stands in, and the note says why.
+fn illus_hero(
+    tables: &[String],
+    width: f64,
+    runtime: &Path,
+) -> Result<(Option<Strip>, Option<Strip>, String), String> {
+    let Some(set) = pick_set(tables)? else {
+        return Ok((
+            None,
+            None,
+            format!("illus: no piece set illustrates {}", tables.join(", ")),
+        ));
+    };
+    let name = set["set"].as_str().unwrap_or_default().to_string();
+    let block = &set["hero"];
+    let mut tags: Vec<String> = Vec::new();
+    for t in tables {
+        for tag in block["tables"][t.as_str()].as_array().into_iter().flatten() {
+            if let Some(tag) = tag.as_str().filter(|x| !tags.iter().any(|y| y == x)) {
+                tags.push(tag.to_string());
+            }
+        }
+    }
+    let fall_back = |why: String| -> Result<(Option<Strip>, Option<Strip>, String), String> {
+        let (strip, note) = illus_strip(tables, width, runtime)?;
+        Ok((
+            None,
+            strip,
+            format!("illus_hero: {why}; the strip stands in: {note}"),
+        ))
+    };
+    if tags.is_empty() {
+        return fall_back(format!(
+            "the {name} set gives no hero parts to these tables"
+        ));
+    }
+    let request = json!({"tags": tags, "hero": block["hero"], "width": width, "ground": block["ground"], "accent": block["accent"]});
+    let runner = Runner::python(&runtime.join("illus_hero/run_hero.py"));
+    match hero(&runner, &request) {
+        Ok(h) => {
+            let note = format!(
+                "illus_hero: {name} {} drawn {}x{} in {} ms, parts {}",
+                block["hero"].as_str().unwrap_or(""),
+                h.w,
+                h.h,
+                h.ms,
+                tags.join(",")
+            );
+            Ok((Some(h), None, note))
+        }
+        Err(HeroMiss::Unavailable(why)) => fall_back(why),
+        Err(HeroMiss::Refused(why)) => Err(format!("illus_hero: {why}")),
+    }
 }
 
 /// The vendored Natural Earth admin-0 attributes (scripts/build_ne_attributes.mjs): each country's label point
@@ -792,6 +862,12 @@ pub enum Reply<'a> {
     Rechecked(Vec<String>),
     /// The page's illustration strip, none when no piece set names its tables, and what was drawn or why none.
     Strip { strip: Option<Strip>, note: String },
+    /// The page's opening illustration, the strip that stands in for it when it could not be made, and what was drawn or why not.
+    Opening {
+        drawn: Option<Strip>,
+        instead: Option<Strip>,
+        note: String,
+    },
     /// What the flow's fill takes from an external layer, derived by the generator (drawn rows, facts, formats, hero data).
     NodeDeclared(Box<crate::next_tree_gen::NodeDeclared>),
     /// The external layers' checked geometry by layer, and per layer the child's and the core's milliseconds.
@@ -1012,6 +1088,18 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
         } => {
             let (strip, note) = illus_strip(tables, width, runtime)?;
             Reply::Strip { strip, note }
+        }
+        Request::IllusHero {
+            tables,
+            width,
+            runtime,
+        } => {
+            let (drawn, instead, note) = illus_hero(tables, width, runtime)?;
+            Reply::Opening {
+                drawn,
+                instead,
+                note,
+            }
         }
         Request::NodeDeclare { layer, page_in } => {
             Reply::NodeDeclared(Box::new(crate::next_tree_gen::declare(layer, page_in)?))
@@ -1382,6 +1470,66 @@ mod tests {
         assert_eq!(
             knob("rings", "years"),
             Err("knob: the leaf registry has no node rings".to_string())
+        );
+    }
+
+    fn hero_for(tables: &[&str], runtime: &Path) -> (Option<Strip>, Option<Strip>, String) {
+        let tables: Vec<String> = tables.iter().map(|t| t.to_string()).collect();
+        match call(Request::IllusHero {
+            tables: &tables,
+            width: 1140.0,
+            runtime,
+        }) {
+            Ok(Reply::Opening {
+                drawn,
+                instead,
+                note,
+            }) => (drawn, instead, note),
+            Ok(_) => panic!("illus_hero answered with another reply"),
+            Err(e) => panic!("illus_hero: {e}"),
+        }
+    }
+
+    /// No piece set for the tables: no hero and no strip. A set that gives the tables hero parts but a run folder with no hero
+    /// child (a machine that cannot draw one): the strip of the same tables stands in, and the note says why.
+    #[test]
+    fn a_hero_the_machine_cannot_draw_falls_back_to_the_strip() {
+        let none = hero_for(&["sdg"], Path::new("runtime"));
+        assert_eq!(
+            (none.0, none.1, none.2.as_str()),
+            (None, None, "illus: no piece set illustrates sdg")
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let js = dir.path().join("leaves_js");
+        std::fs::create_dir_all(&js).unwrap();
+        for f in std::fs::read_dir("runtime/leaves_js").unwrap() {
+            let f = f.unwrap();
+            std::fs::copy(f.path(), js.join(f.file_name())).unwrap();
+        }
+        let (hero, strip, note) = hero_for(&["nrg_ind_ren"], dir.path());
+        assert!(hero.is_none(), "{note}");
+        let strip = strip.expect("the strip stands in");
+        assert_eq!((strip.w, strip.h), (1140.0, 225.0));
+        assert!(note.starts_with("illus_hero: "), "{note}");
+        assert!(
+            note.contains("the strip stands in: illus: energy drawn 1140x225"),
+            "{note}"
+        );
+    }
+
+    /// With Blender installed and a python3 that has the painting's packages, the energy tables get a drawn hero and no strip;
+    /// the picture is as wide as asked and a hero's shapes only. Run with `-- --ignored` on such a machine.
+    #[test]
+    #[ignore = "needs Blender and numpy, scipy, shapely, pillow, contourpy for python3"]
+    fn a_hero_is_drawn_for_the_energy_tables() {
+        let (hero, strip, note) = hero_for(&["nrg_ind_ren"], Path::new("runtime"));
+        let hero = hero.unwrap_or_else(|| panic!("no hero: {note}"));
+        assert!(strip.is_none());
+        assert_eq!(hero.w, 1140.0);
+        assert!(crate::next_leaf::hero_faults(&hero.svg).is_empty());
+        assert!(
+            note.starts_with("illus_hero: energy wind drawn 1140x"),
+            "{note}"
         );
     }
 }

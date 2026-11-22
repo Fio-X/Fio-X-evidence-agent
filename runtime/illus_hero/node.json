@@ -1,0 +1,734 @@
+{
+ "node": "illustration_hero",
+ "version": 1,
+ "doc": "Registry of the illustration node. Everything the runner needs about parts, layout and knobs is here as data; run_node.py only interprets it. Positions are scene units (world.py frame), x mirrored when reading_order is right_to_left.",
+ "parts": [
+  {
+   "id": "terrain",
+   "fn": "terrain",
+   "file": "parts.py",
+   "tags": [],
+   "group": "terrain",
+   "knobs": {
+    "relief": {
+     "default": 1.0,
+     "min": 0.3,
+     "max": 1.5,
+     "where": "composition"
+    }
+   },
+   "note": "heightfield from world.py (ridge, mountains, valley, levelled solar field); always present"
+  },
+  {
+   "id": "wind_turbine",
+   "fn": "wind_turbine",
+   "file": "parts.py",
+   "tags": [
+    "wind"
+   ],
+   "group": "wind",
+   "role": "background",
+   "knobs": {
+    "height": {
+     "default": 30,
+     "min": 20,
+     "max": 60
+    },
+    "blade_len": {
+     "default": 16.5,
+     "min": 8,
+     "max": 36
+    },
+    "rotor_deg": {
+     "default": 0,
+     "min": 0,
+     "max": 119
+    },
+    "yaw": {
+     "default": 0,
+     "min": -45,
+     "max": 45
+    }
+   }
+  },
+  {
+   "id": "hero_turbine",
+   "fn": "hero_turbine",
+   "file": "parts.py",
+   "tags": [
+    "wind"
+   ],
+   "group": "hero_body+hero_blade",
+   "role": "hero",
+   "knobs": {
+    "height": {
+     "default": 46,
+     "min": 30,
+     "max": 70
+    },
+    "blade_len": {
+     "default": 41,
+     "min": 20,
+     "max": 60
+    },
+    "rotor_deg": {
+     "default": 40,
+     "min": 0,
+     "max": 119
+    },
+    "yaw": {
+     "default": -12,
+     "min": -45,
+     "max": 45
+    },
+    "chord_k": {
+     "default": 3.0,
+     "min": 1.5,
+     "max": 4.5
+    }
+   }
+  },
+  {
+   "id": "arch_dam",
+   "fn": "arch_dam",
+   "file": "parts.py",
+   "tags": [
+    "hydro"
+   ],
+   "group": "hydro+spill",
+   "role": "background",
+   "knobs": {
+    "height": {
+     "default": 30,
+     "min": 15,
+     "max": 45
+    },
+    "width": {
+     "default": 76,
+     "min": 40,
+     "max": 110
+    },
+    "arc_deg": {
+     "default": 70,
+     "min": 30,
+     "max": 110
+    }
+   }
+  },
+  {
+   "id": "reservoir",
+   "fn": "reservoir",
+   "file": "parts.py",
+   "tags": [
+    "hydro"
+   ],
+   "group": "water",
+   "role": "background",
+   "knobs": {
+    "level": {
+     "default": 46,
+     "min": 20,
+     "max": 70
+    }
+   }
+  },
+  {
+   "id": "solar_array",
+   "fn": "solar_array",
+   "file": "parts.py",
+   "tags": [
+    "solar"
+   ],
+   "group": "solar+shadow",
+   "role": "background",
+   "knobs": {
+    "rows": {
+     "default": 4,
+     "min": 1,
+     "max": 8
+    },
+    "cols": {
+     "default": 9,
+     "min": 2,
+     "max": 16
+    },
+    "tilt": {
+     "default": 28,
+     "min": 10,
+     "max": 45
+    },
+    "scale": {
+     "default": 3.0,
+     "min": 1.0,
+     "max": 4.0
+    }
+   }
+  },
+  {
+   "id": "pylon",
+   "fn": "pylon",
+   "file": "parts.py",
+   "tags": [
+    "grid"
+   ],
+   "group": "pylon",
+   "role": "background",
+   "knobs": {
+    "height": {
+     "default": 34,
+     "min": 20,
+     "max": 50
+    },
+    "yaw": {
+     "default": 10,
+     "min": -45,
+     "max": 45
+    }
+   }
+  },
+  {
+   "id": "wires",
+   "fn": "wires",
+   "file": "parts.py",
+   "tags": [
+    "grid"
+   ],
+   "group": "pylon",
+   "role": "background",
+   "knobs": {
+    "sag": {
+     "default": 2.2,
+     "min": 0.5,
+     "max": 5
+    }
+   }
+  },
+  {
+   "id": "coal_plant",
+   "fn": "coal_plant",
+   "file": "parts.py",
+   "tags": [
+    "coal"
+   ],
+   "group": "coal",
+   "role": "background",
+   "knobs": {
+    "towers": {
+     "default": 2,
+     "min": 1,
+     "max": 4
+    },
+    "chimney_h": {
+     "default": 44,
+     "min": 25,
+     "max": 70
+    },
+    "scale": {
+     "default": 0.85,
+     "min": 0.5,
+     "max": 1.4
+    },
+    "yaw": {
+     "default": -8,
+     "min": -45,
+     "max": 45
+    }
+   }
+  },
+  {
+   "id": "gas_pipe",
+   "fn": "gas_pipe",
+   "file": "parts.py",
+   "tags": [
+    "gas"
+   ],
+   "group": "coal",
+   "role": "background",
+   "knobs": {
+    "x0": {
+     "default": -146,
+     "min": -190,
+     "max": 190
+    },
+    "x1": {
+     "default": -62,
+     "min": -190,
+     "max": 190
+    },
+    "supports": {
+     "default": 12,
+     "min": 4,
+     "max": 30
+    },
+    "valves": {
+     "default": [
+      0.42
+     ],
+     "note": "fractions along the pipe"
+    }
+   }
+  },
+  {
+   "id": "gas_valve_hero",
+   "fn": "gas_valve_hero",
+   "file": "parts.py",
+   "tags": [
+    "gas"
+   ],
+   "group": "hero_body+hero_blade",
+   "role": "hero",
+   "knobs": {
+    "length": {
+     "default": 100,
+     "min": 60,
+     "max": 180
+    },
+    "r": {
+     "default": 3.2,
+     "min": 2,
+     "max": 12
+    },
+    "lift": {
+     "default": 4.0,
+     "min": 2,
+     "max": 16
+    },
+    "valve_at": {
+     "default": 0.55,
+     "min": 0.2,
+     "max": 0.8
+    },
+    "yaw": {
+     "default": 0,
+     "min": -45,
+     "max": 45
+    },
+    "tilt": {
+     "default": 58,
+     "min": 20,
+     "max": 85
+    }
+   }
+  }
+ ],
+ "heroes": {
+  "wind": {
+   "part": "hero_turbine",
+   "needs_tag": "wind",
+   "at": [
+    14,
+    -30
+   ],
+   "dz": -0.3,
+   "scale_args": [
+    "height",
+    "blade_len"
+   ],
+   "yaw_arg": "yaw",
+   "focus_local": [
+    "0",
+    "-4.1",
+    "height+0.6"
+   ],
+   "focus_note": "hub; expressions over the hero's final arguments; the radial dry-brush strokes of the accent part start here",
+   "camera": {
+    "loc": [
+     6,
+     -112,
+     50
+    ],
+    "target": [
+     -4,
+     150,
+     18
+    ],
+    "lens": 30
+   }
+  },
+  "gas": {
+   "part": "gas_valve_hero",
+   "needs_tag": "gas",
+   "at": [
+    14,
+    -30
+   ],
+   "dz": 0.0,
+   "scale_args": [
+    "length",
+    "r",
+    "lift"
+   ],
+   "yaw_arg": "yaw",
+   "focus_local": [
+    "(valve_at-0.5)*length",
+    "0",
+    "lift+4.8*r"
+   ],
+   "args": {
+    "length": 118,
+    "r": 3.8,
+    "lift": 4.5,
+    "valve_at": 0.5,
+    "yaw": -6,
+    "tilt": 58
+   },
+   "camera": {
+    "loc": [
+     6,
+     -104,
+     22
+    ],
+    "target": [
+     -4,
+     150,
+     14
+    ],
+    "lens": 30
+   },
+   "focus_note": "centre of the valve wheel"
+  }
+ },
+ "slots": {
+  "hydro": [
+   {
+    "part": "reservoir",
+    "kind": "reservoir",
+    "args": {
+     "level": 46,
+     "x0": -190,
+     "x1": 120,
+     "y0": 203,
+     "y1": 336
+    }
+   },
+   {
+    "part": "arch_dam",
+    "kind": "dam",
+    "args": {
+     "height": 30,
+     "width": 76
+    }
+   }
+  ],
+  "solar": [
+   {
+    "part": "solar_array",
+    "kind": "at_ground",
+    "fn": "solar_array",
+    "at": [
+     -78,
+     16
+    ],
+    "dz": 0.0,
+    "args": {
+     "rows": 4,
+     "cols": 9,
+     "tilt": 28,
+     "scale": 3.0
+    }
+   }
+  ],
+  "wind": [
+   {
+    "part": "wind_turbine",
+    "kind": "at_ground",
+    "fn": "wind_turbine",
+    "at": [
+     -34,
+     100
+    ],
+    "dz": -0.5,
+    "args": {
+     "height": 30,
+     "blade_len": 16.5,
+     "rotor_deg": 0,
+     "yaw": 14
+    }
+   },
+   {
+    "part": "wind_turbine",
+    "kind": "at_ground",
+    "fn": "wind_turbine",
+    "at": [
+     -12,
+     112
+    ],
+    "dz": -0.5,
+    "args": {
+     "height": 28,
+     "blade_len": 15.4,
+     "rotor_deg": 40,
+     "yaw": 6
+    }
+   },
+   {
+    "part": "wind_turbine",
+    "kind": "at_ground",
+    "fn": "wind_turbine",
+    "at": [
+     10,
+     98
+    ],
+    "dz": -0.5,
+    "args": {
+     "height": 32,
+     "blade_len": 17.6,
+     "rotor_deg": 80,
+     "yaw": -4
+    }
+   },
+   {
+    "part": "wind_turbine",
+    "kind": "at_ground",
+    "fn": "wind_turbine",
+    "at": [
+     32,
+     118
+    ],
+    "dz": -0.5,
+    "args": {
+     "height": 27,
+     "blade_len": 14.85,
+     "rotor_deg": 20,
+     "yaw": 8
+    }
+   }
+  ],
+  "coal": [
+   {
+    "part": "coal_plant",
+    "kind": "coal",
+    "fn": "coal_plant",
+    "args": {
+     "cx": -90,
+     "cy": 134,
+     "towers": 2,
+     "chimney_h": 44,
+     "yaw": -8,
+     "scale": 0.85
+    }
+   }
+  ],
+  "gas": [
+   {
+    "part": "gas_pipe",
+    "kind": "gas_pipe",
+    "args": {
+     "x0": -146,
+     "y0": 118,
+     "x1": -62,
+     "y1": 112
+    }
+   }
+  ],
+  "grid": [
+   {
+    "part": "pylon",
+    "kind": "pylon",
+    "fn": "pylon",
+    "at": [
+     -74,
+     126
+    ],
+    "args": {
+     "height": 30,
+     "yaw": 12
+    }
+   },
+   {
+    "part": "pylon",
+    "kind": "pylon",
+    "fn": "pylon",
+    "at": [
+     -46,
+     150
+    ],
+    "args": {
+     "height": 32,
+     "yaw": 14
+    }
+   },
+   {
+    "part": "pylon",
+    "kind": "pylon",
+    "fn": "pylon",
+    "at": [
+     -6,
+     170
+    ],
+    "args": {
+     "height": 32,
+     "yaw": 10
+    }
+   },
+   {
+    "part": "pylon",
+    "kind": "pylon",
+    "fn": "pylon",
+    "at": [
+     46,
+     128
+    ],
+    "args": {
+     "height": 36,
+     "yaw": 12
+    }
+   },
+   {
+    "part": "pylon",
+    "kind": "pylon",
+    "fn": "pylon",
+    "at": [
+     104,
+     84
+    ],
+    "args": {
+     "height": 40,
+     "yaw": 10
+    }
+   },
+   {
+    "part": "pylon",
+    "kind": "pylon",
+    "fn": "pylon",
+    "at": [
+     152,
+     40
+    ],
+    "args": {
+     "height": 44,
+     "yaw": 8
+    }
+   }
+  ]
+ },
+ "palettes": {
+  "warm": {
+   "dark": [
+    86,
+    48,
+    38
+   ],
+   "mid": [
+    132,
+    80,
+    60
+   ],
+   "light": [
+    168,
+    110,
+    84
+   ],
+   "line": [
+    48,
+    26,
+    20
+   ]
+  },
+  "cool": {
+   "dark": [
+    36,
+    54,
+    68
+   ],
+   "mid": [
+    62,
+    88,
+    104
+   ],
+   "light": [
+    98,
+    126,
+    140
+   ],
+   "line": [
+    14,
+    26,
+    36
+   ]
+  }
+ },
+ "composition_knobs": {
+  "hero": {
+   "values": [
+    "wind",
+    "gas"
+   ],
+   "default": "wind",
+   "note": "hero subject; must be one of the input tags"
+  },
+  "focus_scale": {
+   "default": 1.0,
+   "min": 0.7,
+   "max": 1.3,
+   "note": "multiplies the hero's size arguments (scale_args); the measured result is hero_bbox_area_pct"
+  },
+  "reading_order": {
+   "values": [
+    "left_to_right",
+    "right_to_left"
+   ],
+   "default": "left_to_right",
+   "note": "right_to_left mirrors the world: old plant on the right, the line of sight runs leftwards"
+  },
+  "relief": {
+   "default": 1.0,
+   "min": 0.3,
+   "max": 1.5,
+   "note": "terrain height multiplier (flatter for a pipeline story)"
+  },
+  "ground": {
+   "values": [
+    "warm",
+    "cool",
+    "<{dark,mid,light,line} as [r,g,b]>"
+   ],
+   "default": "warm"
+  },
+  "accent": {
+   "default": "#1a9a6c",
+   "note": "any hex; the accent part (blades / valve wheel) is painted in a 5-step ramp generated from it. By convention green is kept for renewable equipment"
+  },
+  "smoke": {
+   "default": true,
+   "note": "one pale grey wisp from the first coal chimney, the only grey block"
+  },
+  "seed": {
+   "default": 21
+  }
+ },
+ "input": {
+  "schema": {
+   "tags": [
+    "subset of: wind, solar, hydro, coal, gas, grid"
+   ],
+   "ground": "name or colours",
+   "accent": "hex",
+   "composition": "any of the composition_knobs",
+   "parts": "optional {part_id: {knob: value}} overrides, clamped to the ranges above"
+  },
+  "render": {
+   "w": 2880,
+   "h": 1120,
+   "view_w": 1440,
+   "view_h": 560
+  }
+ },
+ "output": {
+  "files": [
+   "hero.svg (1440x560 viewBox, paper and paint grain embedded as raster, ink and paint planes vector)",
+   "hero.png (2880x1120, Chrome screenshot of the svg)",
+   "result.json"
+  ],
+  "measures": [
+   "palette",
+   "line_w_pct",
+   "edge_grey",
+   "texture_all",
+   "ground_cover",
+   "tones",
+   "hero_bbox_area_pct"
+  ],
+  "note": "the six measures of measure.py (palette, line width, edge transition, texture, white, hatch spread) are all written; hero_bbox_area_pct is the share of the frame"
+ }
+}

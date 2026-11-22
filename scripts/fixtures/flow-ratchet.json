@@ -1,5 +1,5 @@
 {
-  "measured_at": "29e66772d8288c6ad19ef78c7b18662e35d1a214",
+  "measured_at": "bb2dac267a0da69e105cad0886b6061d503de598",
   "rules": "scripts/test_group_flow_ratchet.mjs header; totals and per_file may only go down; kind_names only grow, by --lower",
   "totals": {
     "new": {
@@ -43,12 +43,14 @@
     "dotgrid": "P0a word list",
     "dumbbell": "src/next_run.rs templates",
     "edge": "knobs.json nodes",
+    "eventchain": "knobs.json nodes",
     "events": "knobs.json nodes",
     "flow": "knobs.json groups",
     "flowlines": "runtime/nodes run.mjs NODES",
     "flowmap": "knobs.json nodes",
     "flows": "knobs.json nodes",
     "frame": "knobs.json nodes",
+    "gapaxis": "knobs.json nodes",
     "header": "next_render.rs NodeInfo",
     "heatmap": "shape_registry.rs template",
     "hero": "next_render.rs NodeInfo",
@@ -66,6 +68,7 @@
     "names": "knobs.json nodes",
     "notes": "knobs.json nodes",
     "oneline": "knobs.json groups",
+    "pairbars": "knobs.json nodes",
     "profile": "knobs.json nodes",
     "prose": "next_render.rs NodeInfo",
     "rankbar": "knobs.json nodes",
@@ -73,6 +76,7 @@
     "ranking": "shape_registry.rs Relation",
     "ranklines": "knobs.json nodes",
     "ring": "knobs.json nodes",
+    "risknotes": "knobs.json nodes",
     "routenames": "knobs.json nodes",
     "routes": "knobs.json nodes",
     "sankey": "knobs.json nodes",
@@ -85,12 +89,15 @@
     "stackedbar100": "src/next_run.rs templates",
     "step": "knobs.json nodes",
     "strip": "knobs.json nodes",
+    "targetpath": "knobs.json nodes",
     "text": "knobs.json nodes",
+    "thesisclaims": "knobs.json nodes",
     "timeline": "knobs.json nodes",
     "treemap": "P0a word list",
     "valuelabels": "next_render.rs NodeInfo",
     "waffle": "knobs.json nodes",
-    "waterfall": "knobs.json nodes"
+    "waterfall": "knobs.json nodes",
+    "winnerslosers": "knobs.json nodes"
   },
   "per_file": {
     "runtime/pi/assets/estat-narrow.json": {

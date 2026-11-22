@@ -48,6 +48,13 @@ import dumbbell
 import waterfall
 import waffle
 import stacked_area
+import gap_axis
+import winners_losers
+import event_chain
+import target_path
+import pair_bars
+import thesis_claims
+import risk_notes
 import section_head
 import wbkit
 from words import word
@@ -205,11 +212,25 @@ LEAF_LAYERS = dict(section_head=leaf(section_head.Frame, section_head.cl_section
                    dumbbell=leaf(dumbbell.Frame, dumbbell.cl_dumbbell, "dumbbell"),
                    waterfall=leaf(waterfall.Frame, waterfall.cl_waterfall, "waterfall"),
                    waffle=leaf(waffle.Frame, waffle.cl_waffle, "waffle"),
-                   stacked_area=leaf(stacked_area.Frame, stacked_area.cl_stacked_area, "stacked_area"))
+                   stacked_area=leaf(stacked_area.Frame, stacked_area.cl_stacked_area, "stacked_area"),
+                   gap_axis=leaf(gap_axis.Frame, gap_axis.cl_gap_axis, "gap_axis"),
+                   winners_losers=leaf(winners_losers.Frame, winners_losers.cl_winners_losers, "winners_losers"),
+                   event_chain=leaf(event_chain.Frame, event_chain.cl_event_chain, "event_chain"),
+                   target_path=leaf(target_path.Frame, target_path.cl_target_path, "target_path"),
+                   pair_bars=leaf(pair_bars.Frame, pair_bars.cl_pair_bars, "pair_bars"),
+                   thesis_claims=leaf(thesis_claims.Frame, thesis_claims.cl_thesis_claims, "thesis_claims"),
+                   risk_notes=leaf(risk_notes.Frame, risk_notes.cl_risk_notes, "risk_notes"))
 LEAF_SVG = (section_head.SECTION_HEAD_SVG + rankbar.RANKBAR_SVG + bubbles.BUBBLES_SVG + leader_notes.LEADER_NOTES_SVG + sankey.SANKEY_SVG
             + stacked100.STACKED100_SVG + line_leaf.LINE_SVG + rank_lines.RANK_LINES_SVG
             + dumbbell.DUMBBELL_SVG + waterfall.WATERFALL_SVG + waffle.WAFFLE_SVG
-            + stacked_area.STACKED_AREA_SVG)
+            + stacked_area.STACKED_AREA_SVG
+            + gap_axis.GAP_AXIS_SVG
+            + winners_losers.WINNERS_LOSERS_SVG
+            + event_chain.EVENT_CHAIN_SVG
+            + target_path.TARGET_PATH_SVG
+            + pair_bars.PAIR_BARS_SVG
+            + thesis_claims.THESIS_CLAIMS_SVG
+            + risk_notes.RISK_NOTES_SVG)
 
 
 # The page recipes this child draws: each one's layers (name -> (draw, reserve)) and which of them are svg.
