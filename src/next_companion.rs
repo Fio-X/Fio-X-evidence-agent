@@ -573,14 +573,30 @@ const MIN_CHAIN_YEARS: usize = 3;
 /// The event chains (topic-chains.json), compiled in so a broken file fails its test, not a run.
 const TOPIC_CHAINS: &str = include_str!("../runtime/pi/assets/topic-chains.json");
 
+/// How a link's numbers are drawn: a quantity over a period is a flow (bars), a level or a rate at a point in time a stock
+/// (a line); prices are stocks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+pub enum LinkKind {
+    #[serde(rename = "flow")]
+    Flow,
+    #[serde(rename = "stock")]
+    Stock,
+}
+
 /// One link of a chain: a Eurostat table with the slice the page reads of it.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Link {
     pub table: String,
     /// What the link is about (gas, price, solar, grid, emissions): a semantic tag, never printed.
     pub tag: String,
+    pub kind: LinkKind,
+    /// The short Chinese name of what the link measures, its partner and basis said, with no number in it.
+    pub measure_zh: String,
     /// Dimension -> the codes the page takes of it (time and geo come from the page).
     pub slice: BTreeMap<String, Vec<String>>,
+    /// The dimensions fixed to one code (each also a one-code dimension of `slice`): the link is one series.
+    pub filter: BTreeMap<String, String>,
     /// The place the link takes in the chain, in English.
     pub position: String,
 }
@@ -624,7 +640,10 @@ pub struct ChainCompanion {
     pub id: String,
     pub tag: String,
     pub position: String,
+    pub kind: LinkKind,
+    pub measure_zh: String,
     pub slice: BTreeMap<String, Vec<String>>,
+    pub filter: BTreeMap<String, String>,
     pub overlap: ChainOverlap,
     pub axis: Axis,
 }
@@ -698,7 +717,10 @@ pub fn chain_companions(
             id: link.table.clone(),
             tag: link.tag.clone(),
             position: link.position.clone(),
+            kind: link.kind,
+            measure_zh: link.measure_zh.clone(),
             slice: link.slice.clone(),
+            filter: link.filter.clone(),
             axis: axis(main, &link.table, &main_rows, &theirs),
             overlap,
         });
@@ -1633,6 +1655,75 @@ mod tests {
         assert!(family_holds("renewable_share", "EG.FEC.RNEW.ZS@2"));
     }
 
+    /// The file's own text, not the typed structs: a link that lacks a field fails here by name, where serde alone would
+    /// stop the whole registry at the first read.
+    #[test]
+    fn every_link_of_both_chains_says_its_kind_name_and_filter() {
+        let file: serde_json::Value = serde_json::from_str(TOPIC_CHAINS).unwrap();
+        let listed = file["chains"].as_array().unwrap();
+        assert_eq!(listed.len(), 2);
+        for c in listed {
+            for l in c["links"].as_array().unwrap() {
+                for key in [
+                    "table",
+                    "tag",
+                    "kind",
+                    "measure_zh",
+                    "slice",
+                    "filter",
+                    "position",
+                ] {
+                    assert!(!l[key].is_null(), "{} lacks {key}", l["table"]);
+                }
+                assert!(
+                    matches!(l["kind"].as_str(), Some("flow" | "stock")),
+                    "{}",
+                    l["table"]
+                );
+            }
+        }
+        // The energy chain's first link is the gas the grid leans on: a flow of all partners together, never one partner.
+        let gas = &chains()[0].links[0];
+        assert_eq!(
+            (gas.kind, gas.filter["partner"].as_str()),
+            (LinkKind::Flow, "TOTAL")
+        );
+        // Prices and rates are lines, quantities per period are bars.
+        let kind = |t: &str| {
+            chains()
+                .iter()
+                .flat_map(|c| &c.links)
+                .find(|l| l.table == t)
+                .unwrap()
+                .kind
+        };
+        assert_eq!(kind("nrg_pc_204"), LinkKind::Stock);
+        assert_eq!(kind("nrg_cb_pem"), LinkKind::Flow);
+        assert_eq!(kind("nama_10_gdp"), LinkKind::Stock);
+    }
+
+    /// A chain link keeps what the page needs to draw and name it: kind, Chinese name and fixed dimensions come out of
+    /// chain_companions with the link.
+    #[test]
+    fn chain_companions_carry_kind_name_and_filter_of_the_link() {
+        let index = chain_index(&[]);
+        let rows = fetched(vec![
+            ("sdg_07_40", grid(&PLACES, 2018..=2022)),
+            ("nrg_ti_gas", grid(&PLACES, 2018..=2022)),
+            ("une_rt_a", grid(&PLACES, 2018..=2022)),
+            ("lfsi_emp_a", grid(&PLACES, 2018..=2022)),
+        ]);
+        let (found, _) = chain_companions(&index, "sdg_07_40", &["sdg_07_40"], &rows);
+        let gas = &found[0];
+        assert_eq!(gas.kind, LinkKind::Flow);
+        assert_eq!(gas.measure_zh, "从所有伙伴进口的天然气");
+        assert_eq!(gas.filter["partner"], "TOTAL");
+        assert_eq!(gas.filter["siec"], "G3000");
+        let (found, _) = chain_companions(&index, "une_rt_a", &["une_rt_a"], &rows);
+        assert_eq!(found[0].kind, LinkKind::Stock);
+        assert_eq!(found[0].filter["indic_em"], "EMP_LFS");
+    }
+
     #[test]
     fn the_new_drop_reason_has_its_fixed_name() {
         assert_eq!(
@@ -1661,6 +1752,32 @@ mod tests {
                     "{} is not a Eurostat table",
                     l.table
                 );
+                // The page name says what is measured, in Chinese and without a number (a digit would be a number the
+                // ledger does not hold); the filter is exactly the slice's one-code dimensions.
+                assert!(
+                    l.measure_zh
+                        .chars()
+                        .any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c)),
+                    "{} measure_zh is not Chinese",
+                    l.table
+                );
+                assert!(
+                    !l.measure_zh.chars().any(|c| c.is_numeric()),
+                    "{} measure_zh holds a number",
+                    l.table
+                );
+                let single: BTreeMap<String, String> = l
+                    .slice
+                    .iter()
+                    .filter(|(_, v)| v.len() == 1)
+                    .map(|(k, v)| (k.clone(), v[0].clone()))
+                    .collect();
+                assert_eq!(
+                    single, l.filter,
+                    "{} filter is not its one-code dimensions",
+                    l.table
+                );
+                assert!(!l.filter.is_empty(), "{} fixes no dimension", l.table);
                 assert!(
                     !family_holds(&c.main_family, &l.table),
                     "{} would be a main of its own chain",
