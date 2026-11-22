@@ -19,9 +19,14 @@ import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "runtime", "leaves_py"))
+sys.path.insert(0, HERE)  # a sibling test (python -I leaves the script's folder off the path)
 import findings as FN  # noqa: E402
+import geo  # noqa: E402
 import run  # noqa: E402
 import wbkit as K  # noqa: E402
+
+SHAPES = os.path.join(HERE, "..", "runtime", "pi", "assets", "naturalearth-admin0-50m.geojson")
+geo.NE = SHAPES  # the map leaf reads the countries' outlines from the request's shapes file
 
 FMT_DEFS = {"x": {"scale": 1, "dec": 1, "suffix": ""}, "yr": {"scale": 1, "dec": 0, "suffix": ""},
             "times": {"scale": 1, "dec": 1, "suffix": ""}}
@@ -183,7 +188,7 @@ class Findings(unittest.TestCase):
     def test_eu_all_angles_and_best_year_short(self):
         req, names = eu_request()
         _, cands, dropped = FN.candidates(req)
-        self.assertEqual([d["angle"] for d in dropped], ["chain"])  # the request carries no chain
+        self.assertEqual([d["angle"] for d in dropped], ["map", "chain"])  # the request carries no chain and no points
         self.assertEqual(sorted(c["id"] for c in cands), ["ends", "members", "need", "path", "rank", "spread"])
         self.assertEqual([c["score"] for c in cands], sorted((c["score"] for c in cands), reverse=True))
         path = next(c for c in cands if c["id"] == "path")
@@ -198,7 +203,7 @@ class Findings(unittest.TestCase):
     def test_wb_no_target_drops_path_and_need(self):
         req, names = wb_request()
         _, cands, dropped = FN.candidates(req)
-        self.assertEqual({d["angle"]: d["why"] for d in dropped}, {"path": "no target row", "need": "no target row", "chain": "the request's chain holds fewer than 2 tables"})
+        self.assertEqual({d["angle"]: d["why"] for d in dropped}, {"path": "no target row", "need": "no target row", "map": "the request gives no points for the members", "chain": "the request's chain holds fewer than 2 tables"})
         self.assertEqual(sorted(c["id"] for c in cands), ["ends", "members", "rank", "spread"])
         composed, facts, drawn = draw_all(self, req, names, ["ends", "spread"])
         self.assertEqual(composed["leaves"]["pair_bars"]["places"], ["USA", "IND"])
@@ -211,7 +216,7 @@ class Findings(unittest.TestCase):
     def test_chain_three_tables_around_the_year_the_whole_moved_most(self):
         req, names = eu_chain_request()
         _, cands, dropped = FN.candidates(req)
-        self.assertEqual(dropped, [])
+        self.assertEqual(dropped, [{"angle": "map", "why": "the request gives no points for the members"}])
         chain = next(c for c in cands if c["id"] == "chain")
         self.assertEqual((chain["layer"], chain["why"]["band"]), ("event_chain", "2022"))
         self.assertTrue(0 < chain["score"] <= 1)
@@ -365,22 +370,24 @@ class Findings(unittest.TestCase):
 
     # ---------------------------------------------------------------- the header: three big numbers above the thesis
 
-    def _page(self, req, names, picks):
-        """The composed page drawn by the real child: (composed, facts, {layer: its svg or html}, the page's html)."""
+    def _page(self, req, names, picks, style=None):
+        """The composed page drawn by the real child: (composed, facts, {layer: its svg or html}, the page's html); `style` is hero.style
+        (the page layout's knobs)."""
         import json, subprocess
         composed = FN.compose({**req, "picks": picks})
         rows, facts = ledger(req, composed, names)
         spec = {"title": "t", "kicker": "k", "dek": "d", "source": "s", "refs": [], "facts": composed["facts"], "sections": composed["sections"],
                 "tables": {t: {"id": t} for t in sorted({r["table"] for r in req["rows"]})}, "fmts": {**FMT_DEFS, "n": {"scale": 1, "dec": 0, "suffix": ""}, "time": {}},
-                "hero": {"data": {}, "leaves": composed["leaves"]}}
+                "hero": {"data": {}, "leaves": composed["leaves"], "style": style or {}}}
         line = lambda **kv: json.dumps({"node": "page_story", "panel": {"w": 1140, "h": 0, "frame": None}, "rows": rows,
-                                        "knobs": {"spec": spec, "labels": names}, **kv}, ensure_ascii=False)
+                                        "knobs": {"spec": spec, "labels": names, "shapes": SHAPES}, **kv}, ensure_ascii=False)
         layers = [x["layer"] for x in composed["sections"]]
         lines = [line(phase="size")] + [line(layer=n) for n in layers]
         go = lambda ls: [json.loads(x) for x in subprocess.run([sys.executable, "-I", "-B", run.__file__], input="\n".join(ls) + "\n",
                                                                capture_output=True, text=True, timeout=120, check=True).stdout.splitlines()]
         got = go(lines)
         self.assertFalse([g for g in got if "refused" in g or "error" in g], got)
+        self.assertTrue(got[0]["w"] > 0 and got[0]["h"] > 0, got[0])  # the size phase tells layer 1 a panel it can take
         bodies = {n: g.get("svg") or g.get("html") for n, g in zip(layers, got[1:])}
         last = go(lines + [json.dumps({"phase": "page", "layers": bodies, "sizes": {}}, ensure_ascii=False)])[-1]
         self.assertFalse(last.get("refused"), last)
@@ -515,6 +522,94 @@ class Findings(unittest.TestCase):
         last = {c: next(r["value"] for r in rows if r["dims"].get("geo") == c and r["time"] == "2024") for c in members}
         order = sorted(members, key=lambda c: (-last[c], c))
         self.assertEqual(sorted(cells), sorted(order[:6] + order[-6:]))
+
+    # ---------------------------------------------------------------- the map angle and the page's layout
+
+    def _points(self, codes, eu=True):
+        import test_leaves_member_map as MM
+        return {c: list(geo.PT[c]) for c in codes} if eu else MM.attribute_points(codes)
+
+    def _wb8(self):
+        req, names = wb_request()
+        rows = list(req["rows"])
+        for c, (a, p_) in {"JPN": (9.0, -0.1), "AUS": (16.0, -0.2)}.items():
+            rows += [{**row(req["main"]["table"], {}, "country", c, y, a + p_ * (y - 2010)), "value": f"{a + p_ * (y - 2010):.2f}"} for y in range(2010, 2023)]
+        names = {**names, "JPN": "日本", "AUS": "澳大利亚"}
+        return {**req, "rows": rows, "points": self._points(list(names), eu=False)}, names
+
+    def test_map_eu_nine_members_filled_and_called_out(self):
+        req, names = eu_request()
+        req = {**req, "points": self._points(EU_MEMBERS)}
+        _, cands, dropped = FN.candidates(req)
+        mp = next(c for c in cands if c["id"] == "map")
+        self.assertEqual(mp["layer"], "member_map"); self.assertEqual(mp["why"]["higher"], "east")  # the higher shares lie east in this shape: SE, FI, PL
+        composed, facts, bodies, page_html = self._page(req, names, ["map", "path"])
+        svg = bodies["member_map"]
+        self.assertEqual(len(re.findall(r'<path [^>]*data-step=', svg)), 9)
+        self.assertEqual(len(re.findall(r'data-part="leader"', svg)), 6)
+        title = next(x for x in composed["sections"] if x["id"] == "map")["title"]
+        self.assertIn("东边的偏高", title); self.assertIn("{mp_se}", title)
+        self.assertEqual(len([k for k in composed["facts"] if k.startswith("mp_")]), 6)  # the highest and the lowest three
+        bare = re.sub(r"<[^>]+>", "", re.sub(r"<(span|tspan)[^>]*data-src=[^>]*>[^<]*</\1>", "", svg))
+        self.assertFalse(re.search(r"[0-9]", bare), bare)
+        self.assertIn('data-module-id="map"', page_html)
+
+    def test_map_eight_economies_on_the_world(self):
+        req, names = self._wb8()
+        mp = next(c for c in FN.candidates(req)[1] if c["id"] == "map")
+        composed, facts, bodies, page_html = self._page(req, names, ["map", "spread"])
+        svg = bodies["member_map"]
+        self.assertEqual(len(re.findall(r'<path [^>]*data-step=', svg)), 8)
+        self.assertEqual(len(composed["leaves"]["member_map"]["cells"]), 8)
+        for key in ("mp_usa", "mp_ind"): self.assertIn(key, composed["facts"])
+        self.assertIn("map", [x["id"] for x in composed["sections"]]); self.assertGreater(mp["score"], 0)
+
+    def test_map_needs_points_for_eight_members_and_a_difference(self):
+        req, _ = eu_request()
+        why = lambda r: {d["angle"]: d["why"] for d in FN.candidates(r)[2]}.get("map")
+        self.assertEqual(why(req), "the request gives no points for the members")
+        seven = {c: list(geo.PT[c]) for c in list(EU_MEMBERS)[:7]}
+        self.assertEqual(why({**req, "points": seven}), "fewer than 8 members with a point")
+        flat = {**req, "points": self._points(EU_MEMBERS), "rows": [dict(r, value=5.0) if r["dims"].get("geo") in EU_MEMBERS else r for r in req["rows"]]}
+        self.assertEqual(why(flat), "every member holds the same value")
+
+    def test_map_title_says_which_side_is_higher(self):
+        req, _ = eu_request()
+        pts = self._points(EU_MEMBERS)
+        east = {c: 10.0 + 2 * pts[c][0] for c in EU_MEMBERS}  # the value follows the longitude
+        rows = [dict(r, value=round(east[r["dims"]["geo"]], 3)) if r["dims"].get("geo") in EU_MEMBERS else r for r in req["rows"]]
+        composed = FN.compose({**req, "rows": rows, "points": pts, "picks": ["map", "path"]})
+        self.assertIn("东边的偏高", next(x for x in composed["sections"] if x["id"] == "map")["title"])
+        west = {c: 10.0 - 2 * pts[c][0] for c in EU_MEMBERS}
+        rows = [dict(r, value=round(west[r["dims"]["geo"]], 3)) if r["dims"].get("geo") in EU_MEMBERS else r for r in req["rows"]]
+        composed = FN.compose({**req, "rows": rows, "points": pts, "picks": ["map", "path"]})
+        self.assertIn("西边的偏高", next(x for x in composed["sections"] if x["id"] == "map")["title"])
+
+    def test_layout_side_stack_pair_and_the_knobs(self):
+        import re as _re
+        lay_of = lambda html: dict(_re.findall(r'data-id="([a-z_]+)" data-layout="([a-z]+)"', html))
+        widths = lambda html: {m.group(1): int(m.group(2)) for m in _re.finditer(r'data-module-id="([a-z_]+)" data-layer="[a-z_]+"><svg[^>]*width="(\d+)"', html)}
+        req, names = eu_chain_request()
+        req["chain"] = [req["chain"][0], req["chain"][2]]
+        _, _, _, page_html = self._page(req, names, ["path", "chain", "members", "spread"])
+        lay = dict(_re.findall(r'data-id="([a-z_]+)" data-layout="([a-z]+)"', page_html))
+        self.assertEqual(lay, {"bignums": "bare", "thesis": "bare", "path": "side", "chain": "stack", "members": "side", "spread": "side", "notes": "bare"})
+        self.assertEqual(widths(page_html), {"path": 716, "chain": 1140, "members": 716, "spread": 716})  # 1140 - 36 - 388
+        self.assertIn('style="--tw:388px;--gut:36px"', page_html)
+        # two paired pictures share a row, half the page less half the gutter each
+        wreq, wnames = wb_request()
+        _, _, _, page_html = self._page(wreq, wnames, ["ends", "rank", "members", "spread"])
+        self.assertEqual(len(_re.findall(r'<div class="pair"><section class="sec" data-id="(?:ends|rank)" data-layout="pair">.*?</section><section class="sec" data-id="(?:ends|rank)" data-layout="pair">', page_html, _re.S)), 1)
+        self.assertEqual({k: v for k, v in widths(page_html).items() if k in ("ends", "rank")}, {"ends": 552, "rank": 552})
+        # the knobs: stack puts every picture across the page, pair off keeps the two apart, a share moves the words' column
+        _, _, _, stacked = self._page(wreq, wnames, ["ends", "rank", "members", "spread"], style={"story_layout": {"layout": "stack"}})
+        self.assertEqual(set(_re.findall(r'data-id="[a-z_]+" data-layout="([a-z]+)"', stacked)), {"bare", "stack"})
+        self.assertEqual(set(widths(stacked).values()), {1140})
+        _, _, _, apart = self._page(wreq, wnames, ["ends", "rank", "members", "spread"], style={"story_layout": {"pair": "off", "text_share": 0.4}})
+        self.assertNotIn('class="pair"', apart)
+        self.assertEqual(widths(apart)["ends"], 1140 - round(1140 * 0.4) - 36)  # pair off: the ends go beside their words
+        self.assertIn("--tw:456px", apart)
+        self.assertEqual(lay_of(apart)["spread"], "stack")  # the winners and losers need 680 px: beside a wider words' column they go across the page
 
     def test_rank_needs_five_members(self):
         req, _ = wb_request()

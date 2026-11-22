@@ -25,11 +25,12 @@ import re
 import facts as FX
 import prod
 import scmp
+import wbkit as K
 from words import word
 
 NODE = "page_story"
 # the leaves a story section may draw (run.py builds the recipe's layers from these), and those that are text blocks, not charts
-STORY_LAYERS = ["bignums", "thesis_claims", "gap_axis", "event_chain", "target_path", "winners_losers", "pair_bars", "rankbar", "small_multiples", "risk_notes"]
+STORY_LAYERS = ["bignums", "thesis_claims", "gap_axis", "event_chain", "target_path", "winners_losers", "pair_bars", "rankbar", "small_multiples", "member_map", "risk_notes"]
 TEXT_BLOCKS = ("thesis_claims", "risk_notes")
 # the layer that is html, not svg: the header's big numbers (column.cl_bignums), a row over the thesis
 HTML_BLOCKS = ("bignums",)
@@ -60,6 +61,60 @@ def rank_style(h):
     the highest member's when the page has no whole); the leaf's own data shape has no such key and ignores it."""
     code = ((h.get("leaves") or {}).get("rankbar") or {}).get("highlight")
     return {"rankbar": {"highlight_row": code}} if isinstance(code, str) and code else {}
+
+
+# How the titled sections sit on the page (the node story_layout's knobs, read from hero.style.story_layout): "side" puts a section's words in
+# a column beside its picture (text_share of the page's width, the picture the rest less the gutter), "stack" puts the words over a picture
+# as wide as the page; with pair on, two titled sections that follow each other and whose leaves PLACE calls "pair" share one row, each
+# the words over its picture, half the page less half the gutter wide.
+LAYOUT = "story_layout"
+prod.KNOBS[LAYOUT] = dict(
+    layout=("side", ("side", "stack"), "titled sections: words beside the picture, or over it"),
+    text_share=(0.34, (0.25, 0.5, 0.01), "share of the page's width the words' column takes beside a picture"),
+    gutter=(36, (16, 64, 2), "space between the words and the picture, or between two paired pictures, in px"),
+    pair=("on", ("on", "off"), "two narrow pictures in a row"))
+# What each leaf's picture takes when it sits on a titled section: beside its words ("side"), paired with a neighbour that is also
+# "pair" ("pair"), or across the page ("stack": the picture needs the page's width, e.g. panels linked left to right).
+PLACE = {"target_path": "side", "small_multiples": "side", "member_map": "side", "gap_axis": "stack", "event_chain": "stack",
+         "winners_losers": "side", "pair_bars": "pair", "rankbar": "pair"}
+
+
+# The narrowest picture (px) each leaf draws without refusing; a place that would be narrower falls back (pair to side, side to stack).
+NEEDS = {"winners_losers": 680, "target_path": 560, "small_multiples": 520, "member_map": 480, "pair_bars": 500, "rankbar": 480}
+
+
+def layout_knobs(h):
+    k = lambda n: K.knob(h, LAYOUT, n)
+    return dict(layout=k("layout"), share=k("text_share"), gutter=k("gutter"), pair=k("pair") == "on")
+
+
+def plan(spec):
+    """The rows of the page: [("bare", [index]), ("side"|"stack", [index]), ("pair", [index, index])] in order, and each titled
+    section's picture width in px: ({index: width}, rows). A bare block (no title) is its own row at the page's width."""
+    secs = sections(spec); kn = layout_knobs(spec["hero"])
+    text_w = round(PAGE_W * kn["share"]); side_w = PAGE_W - text_w - kn["gutter"]; half_w = (PAGE_W - kn["gutter"]) // 2
+    rows, width, i = [], {}, 0
+    def mode(s):
+        m = "stack" if kn["layout"] == "stack" else PLACE.get(s[2], "stack")
+        if m == "pair" and half_w < NEEDS.get(s[2], 0): m = "side"
+        if m == "side" and side_w < NEEDS.get(s[2], 0): m = "stack"
+        return m
+    while i < len(secs):
+        s = secs[i]
+        if s[4] is None: rows.append(("bare", [s[0]])); width[s[0]] = PAGE_W; i += 1; continue
+        m = mode(s)
+        nxt = secs[i + 1] if i + 1 < len(secs) else None
+        if m == "pair" and kn["pair"] and nxt is not None and nxt[4] is not None and mode(nxt) == "pair":
+            rows.append(("pair", [s[0], nxt[0]])); width[s[0]] = width[nxt[0]] = half_w; i += 2; continue
+        if m == "pair": m = "side" if side_w >= NEEDS.get(s[2], 0) else "stack"
+        rows.append((m, [s[0]])); width[s[0]] = side_w if m == "side" else PAGE_W; i += 1
+    return width, rows, dict(kn, text_w=text_w)
+
+
+def width_of(f):
+    """The picture width each titled section's leaf draws at, as a style over the leaf's width knob ({layer: {"width": px}}); run.leaf's by_page."""
+    width, _, _ = plan(f.spec)
+    return {s[2]: {"width": width[s[0]]} for s in sections(f.spec) if s[4] is not None}
 
 
 # The panel a story page tells layer 1 at the size phase: the page's width, and as its height the tallest box one section's
@@ -139,13 +194,14 @@ def story_page(panel, got, sizes, placeholders, drew):
             off.append(f"page: {n} comes with no size [w, h]")
     if off: return {"refused": off}
     page_kick = str(spec.get("kicker") or "").strip()
-    body, marks = [], []
+    body, marks, parts = [], [], {}
+    _, rows, kn = plan(spec)
     for i, sid, layer, kicker, title, text in secs:
         svg = got[layer]
         if layer in HTML_BLOCKS:  # html, not a picture: placed as it is (a bare block; its numbers are ledger entries)
             if title is not None: return {"refused": [f"page: section {i + 1} ({sid}) draws html and cannot carry a title"]}
             marks += printed(svg)
-            body.append(f'<section class="sec" data-id="{sid}">{svg}</section>')
+            parts[i] = (sid, "", svg)
             continue
         fig = f'<div class="blk" data-layer="{layer}">{root(svg, layer, drew.get(layer))}</div>' if layer in TEXT_BLOCKS else None
         head = ""
@@ -165,7 +221,11 @@ def story_page(panel, got, sizes, placeholders, drew):
             desc = re.sub(r'<span data-src="name:[^"]*">([^<]*)</span>', r"\1", t_html) if title is not None else html.escape(label)  # markup: its numbers keep their marks
             fig = chart(svg, layer, drew.get(layer), sid, label, desc)
         marks += printed(svg)
-        body.append(f'<section class="sec" data-id="{sid}">{head}{fig}</section>')
+        parts[i] = (sid, head, fig)
+    sec = lambda i, how: f'<section class="sec" data-id="{parts[i][0]}" data-layout="{how}">{parts[i][1]}{parts[i][2]}</section>'
+    for how, ids in rows:
+        if how == "pair": body.append('<div class="pair">' + "".join(sec(i, "pair") for i in ids) + "</div>")
+        else: body.append(sec(ids[0], how))
     by = {}
     for s, t in marks: by.setdefault(s, set()).add(t)
     twice = sorted(s for s, ts in by.items() if len(ts) > 1)
@@ -180,7 +240,7 @@ def story_page(panel, got, sizes, placeholders, drew):
         import column
         strip = column.strip_shell(got["illus_strip"], *sizes["illus_strip"])
     head = scmp.page_head(c, spec, wide=True)
-    page = scmp.shell(c, spec, opening + head + '<div class="story">' + "".join(body) + "</div>" + strip, CSS)
+    page = scmp.shell(c, spec, opening + head + f'<div class="story" style="--tw:{kn["text_w"]}px;--gut:{kn["gutter"]}px">' + "".join(body) + "</div>" + strip, CSS)
     left = placeholders(page)
     return {"refused": [f"page: the page still holds the placeholder {k}" for k in left]} if left else {"html": page}
 
@@ -192,4 +252,9 @@ CSS = (".opening{width:1140px;margin:0 0 18px}.opening svg{display:block}"
        ".story .kick{display:inline-block;min-width:30px;padding:0 10px;box-sizing:border-box;height:28px;line-height:28px;border-radius:14px;"
        "background:var(--t-title);color:#fff;font:700 12px/28px var(--sans);letter-spacing:.1em;margin-bottom:10px}"
        ".story h2{margin:0 0 8px;font:700 24px/1.4 var(--serif);color:var(--t-title)}.story .col p{margin:0;font:400 16px/1.8 var(--sans);color:var(--t-body)}"
-       ".story .fig svg,.story .blk svg{display:block;max-width:100%;height:auto}.story .sec:first-child{margin-top:20px}")
+       ".story .fig svg,.story .blk svg{display:block;max-width:100%;height:auto}.story .sec:first-child{margin-top:20px}"
+       # a section with its words beside its picture, and two sections in a row
+       ".story .sec[data-layout=side]{display:grid;grid-template-columns:var(--tw) 1fr;column-gap:var(--gut);align-items:start}"
+       ".story .sec[data-layout=side] .col{max-width:none;margin:0}"
+       ".story .pair{display:grid;grid-template-columns:1fr 1fr;column-gap:var(--gut);margin:54px 0 0;align-items:start}"
+       ".story .pair .sec{margin:0;min-width:0}.story .pair .col{max-width:none}")
