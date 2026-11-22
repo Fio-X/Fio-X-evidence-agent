@@ -72,7 +72,11 @@ prod.KNOBS[LAYOUT] = dict(
     layout=("side", ("side", "stack"), "titled sections: words beside the picture, or over it"),
     text_share=(0.34, (0.25, 0.5, 0.01), "share of the page's width the words' column takes beside a picture"),
     gutter=(36, (16, 64, 2), "space between the words and the picture, or between two paired pictures, in px"),
-    pair=("on", ("on", "off"), "two narrow pictures in a row"))
+    pair=("on", ("on", "off"), "two narrow pictures in a row"),
+    notes=(2, (0, 3, 1), "short notes beside a chart's words: a bold number and what it is, a leader towards the picture"),
+    note_size=(14, (12, 16, 2), "a note's words in px (its number 2 px larger)"),
+    lead=(28, (12, 80, 4), "a note's leader towards the picture, in px"),
+    legend=("on", ("on", "off"), "the 'how to read this page' block under the thesis"))
 # What each leaf's picture takes when it sits on a titled section: beside its words ("side"), paired with a neighbour that is also
 # "pair" ("pair"), or across the page ("stack": the picture needs the page's width, e.g. panels linked left to right).
 PLACE = {"target_path": "side", "small_multiples": "side", "member_map": "side", "gap_axis": "stack", "event_chain": "stack",
@@ -85,7 +89,8 @@ NEEDS = {"winners_losers": 680, "target_path": 560, "small_multiples": 520, "mem
 
 def layout_knobs(h):
     k = lambda n: K.knob(h, LAYOUT, n)
-    return dict(layout=k("layout"), share=k("text_share"), gutter=k("gutter"), pair=k("pair") == "on")
+    return dict(layout=k("layout"), share=k("text_share"), gutter=k("gutter"), pair=k("pair") == "on", notes=k("notes"), note_size=k("note_size"),
+                lead=k("lead"), legend=k("legend") == "on")
 
 
 def plan(spec):
@@ -115,6 +120,45 @@ def width_of(f):
     """The picture width each titled section's leaf draws at, as a style over the leaf's width knob ({layer: {"width": px}}); run.leaf's by_page."""
     width, _, _ = plan(f.spec)
     return {s[2]: {"width": width[s[0]]} for s in sections(f.spec) if s[4] is not None}
+
+
+def seg_html(sg, what):
+    """A note's segments as html: words escaped, a number a ledger entry marked with its src, a name marked with its name row, a word of the table."""
+    out = []
+    for x in sg:
+        if not isinstance(x, dict) or sum(k in x for k in ("w", "src", "word", "name")) != 1: raise FX.Refused(f"page: {what} holds a segment that is not one of w, src, word, name")
+        if "w" in x:
+            if FX.digit(x["w"]): raise FX.Refused(f"page: {what}: the words {x['w']!r} hold a digit; a number must come as a ledger entry")
+            out.append(html.escape(x["w"], quote=False))
+        elif "src" in x: out.append(FX.entry(x["src"], "span", None))
+        elif "name" in x: out.append(f'<span data-src="{html.escape(K.name_row(x["name"], x.get("kind", "place")))}">{html.escape(prod.NAME(x["name"]))}</span>')
+        else: out.append(html.escape(word(x["word"]), quote=False))
+    return "".join(out)
+
+
+def notes_html(spec, layer, kn):
+    """The short notes of a section (hero.leaves.<layer>.notes: [{"num": ledger src, "text": segs}], the first knob `notes` of them) as a list:
+    a bold number and the words that say what it is. The number is a ledger entry holding a digit."""
+    got = ((spec["hero"].get("leaves") or {}).get(layer) or {}).get("notes") or []
+    if not isinstance(got, list): raise FX.Refused(f"page: {layer}'s notes are no list")
+    items = []
+    for j, n in enumerate(got[:int(kn["notes"])]):
+        if not isinstance(n, dict) or not isinstance(n.get("num"), str) or not isinstance(n.get("text"), list): raise FX.Refused(f"page: {layer}'s note {j + 1} is no {{num, text}}")
+        if not FX.digit(FX.text(n["num"])): raise FX.Refused(f"page: {layer}'s note {j + 1} number {n['num']} prints no digit")
+        items.append(f'<li class="note"><b class="n">{FX.entry(n["num"], "span", None)}</b><span class="nt">{seg_html(n["text"], f"{layer}'s note {j + 1}")}</span></li>')
+    return f'<ul class="notes" style="--lead:{kn["lead"]}px;--ns:{kn["note_size"]}px">{"".join(items)}</ul>' if items else ""
+
+
+# What the page's picture kinds need explained: (swatch, word) a layer adds to the legend block under the thesis; the accent line is always there.
+LEGEND = {"target_path": ("dash", "story.legend.path"), "event_chain": ("band", "story.legend.chain"), "small_multiples": ("pale", "story.legend.members"),
+          "member_map": ("ramp", "story.legend.map"), "rankbar": ("accent", "story.legend.rank")}
+
+
+def legend_html(layers):
+    """The 'how to read this page' block: the accent line, then a line for each picture kind on the page that needs one (no number in it)."""
+    rows = [("accent", "story.legend.accent")] + [LEGEND[n] for n in layers if n in LEGEND]
+    items = "".join(f'<li><span class="sw {sw}"></span><span>{html.escape(word(w), quote=False)}</span></li>' for sw, w in rows)
+    return f'<section class="sec" data-id="legend" data-layout="bare"><div class="legend"><b>{html.escape(word("story.legend.title"), quote=False)}</b><ul>{items}</ul></div></section>'
 
 
 # The panel a story page tells layer 1 at the size phase: the page's width, and as its height the tallest box one section's
@@ -204,7 +248,7 @@ def story_page(panel, got, sizes, placeholders, drew):
             parts[i] = (sid, "", svg)
             continue
         fig = f'<div class="blk" data-layer="{layer}">{root(svg, layer, drew.get(layer))}</div>' if layer in TEXT_BLOCKS else None
-        head = ""
+        head, note_list = "", ""
         if title is not None:
             t_html = FX.worded(spec, c.F, f"sections.{i}.title", title)
             if not number_entries(t_html):
@@ -213,19 +257,28 @@ def story_page(panel, got, sizes, placeholders, drew):
                 return {"refused": [f"page: section {i + 1} ({sid}) has a kicker with a digit or a placeholder: {kicker!r}"]}
             x_html = FX.worded(spec, c.F, f"sections.{i}.text", text) if text is not None else ""
             marks += printed(t_html) + printed(x_html)
-            head = (f'<div class="col">{f"<div class=kick>{prod.esc(kicker)}</div>" if kicker else ""}<h2 data-section="{sid}">{t_html}</h2>'
-                    f'{f"<p>{x_html}</p>" if x_html else ""}</div>')
+            head = (f'{f"<div class=kick>{prod.esc(kicker)}</div>" if kicker else ""}<h2 data-section="{sid}">{t_html}</h2>'
+                    f'{f"<p>{x_html}</p>" if x_html else ""}')
+            note_list = notes_html(spec, layer, kn)
+            marks += printed(note_list)
         if fig is None:
             label = (kicker or "").strip() or page_kick
             if not label: return {"refused": [f"page: section {i + 1} ({sid}) has no kicker and the page none to name its chart"]}
             desc = re.sub(r'<span data-src="name:[^"]*">([^<]*)</span>', r"\1", t_html) if title is not None else html.escape(label)  # markup: its numbers keep their marks
             fig = chart(svg, layer, drew.get(layer), sid, label, desc)
         marks += printed(svg)
-        parts[i] = (sid, head, fig)
-    sec = lambda i, how: f'<section class="sec" data-id="{parts[i][0]}" data-layout="{how}">{parts[i][1]}{parts[i][2]}</section>'
+        parts[i] = (sid, head, fig, note_list)
+    def sec(i, how):
+        sid, head, fig, *rest = parts[i]; note_list = rest[0] if rest else ""
+        if how == "bare" or not head: top = ""
+        elif how == "stack": top = f'<div class="top"><div class="col">{head}</div>{note_list}</div>'  # the words and the notes over a picture as wide as the page
+        else: top = f'<div class="col">{head}{note_list}</div>'
+        return f'<section class="sec" data-id="{sid}" data-layout="{how}">{top}{fig}</section>'
+    layer_of = {s[0]: s[2] for s in secs}
     for how, ids in rows:
         if how == "pair": body.append('<div class="pair">' + "".join(sec(i, "pair") for i in ids) + "</div>")
         else: body.append(sec(ids[0], how))
+        if kn["legend"] and any(layer_of[i] == "thesis_claims" for i in ids): body.append(legend_html([layer_of[i] for i in layer_of]))
     by = {}
     for s, t in marks: by.setdefault(s, set()).add(t)
     twice = sorted(s for s, ts in by.items() if len(ts) > 1)
@@ -257,4 +310,20 @@ CSS = (".opening{width:1140px;margin:0 0 18px}.opening svg{display:block}"
        ".story .sec[data-layout=side]{display:grid;grid-template-columns:var(--tw) 1fr;column-gap:var(--gut);align-items:start}"
        ".story .sec[data-layout=side] .col{max-width:none;margin:0}"
        ".story .pair{display:grid;grid-template-columns:1fr 1fr;column-gap:var(--gut);margin:54px 0 0;align-items:start}"
-       ".story .pair .sec{margin:0;min-width:0}.story .pair .col{max-width:none}")
+       ".story .pair .sec{margin:0;min-width:0}.story .pair .col{max-width:none}"
+       # the short notes: a card with a bold number and its words; beside a picture a leader runs from the card towards it
+       ".story .notes{list-style:none;margin:20px 0 0;padding:0;display:grid;gap:12px}"
+       ".story .note{position:relative;display:flex;align-items:baseline;gap:12px;padding:10px 14px;background:color-mix(in srgb,var(--t-title) 6%,transparent);"
+       "border-left:3px solid var(--accent);font:400 var(--ns)/1.5 var(--sans);color:var(--t-body)}"
+       ".story .note .n{font:700 calc(var(--ns) + 2px)/1.2 var(--serif);color:var(--accent);flex:none}"
+       ".story .sec[data-layout=side] .note::after{content:\"\";position:absolute;left:100%;top:50%;width:var(--lead);height:1px;background:var(--t-title)}"
+       ".story .sec[data-layout=side] .note::before{content:\"\";position:absolute;left:calc(100% + var(--lead));top:calc(50% - 2px);width:5px;height:5px;border-radius:50%;background:var(--t-title)}"
+       ".story .top{display:grid;grid-template-columns:640px 1fr;column-gap:var(--gut);align-items:start;margin:0 0 22px}.story .top .col{margin:0}.story .top .notes{margin:0}"
+       # the legend block under the thesis
+       ".story .legend{display:flex;align-items:baseline;gap:28px;flex-wrap:wrap;padding:14px 18px;background:color-mix(in srgb,var(--t-title) 5%,transparent);"
+       "font:400 12px/1.6 var(--sans);color:var(--t-body)}.story .legend b{font:700 14px var(--sans);color:var(--t-title)}"
+       ".story .legend ul{list-style:none;margin:0;padding:0;display:flex;gap:26px;flex-wrap:wrap}.story .legend li{display:flex;align-items:center;gap:8px}"
+       ".story .sw{display:inline-block;width:26px;height:10px;flex:none}.story .sw.accent{background:var(--accent)}"
+       ".story .sw.dash{height:0;border-top:2px dashed var(--t-sec)}.story .sw.pale{height:3px;background:var(--t-sec);opacity:.55}"
+       ".story .sw.band{background:var(--empty);border:1px solid var(--t-sec)}"
+       ".story .sw.ramp{background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 10%,#eeeeec),var(--accent))}")

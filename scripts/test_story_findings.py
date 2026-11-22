@@ -150,7 +150,8 @@ def ledger(req, composed, names):
         d = {"n": {"scale": 1, "dec": 0, "suffix": ""}, **FMT_DEFS, **req.get("chain_fmts", {})}[f["fmt"]]
         rows.append({"src": f"fact:{k}", "text": f"{f['v'] * d['scale']:,.{d['dec']}f}{d['suffix']}"})
         rows.append({"src": f"fact:{k}.n", "text": f"{f['v'] * d['scale']:,.{d['dec']}f}"})  # the bare number a placeholder prints
-        if "t" in f: rows.append({"src": f"fact:{k}.t.y", "text": f["t"]})
+        # a year entry for what the first layer gives one: a value read at one year, and what carries its own year (the best step's, a line's)
+        if "t" in f and composed["facts"][k].get("op", "value") in ("value", "step_max", "line_at"): rows.append({"src": f"fact:{k}.t.y", "text": f["t"]})
         if composed["facts"][k].get("axis"):
             rows += [{"src": f"fact:{k}.tick{i}", "text": f"{v:,.{d['dec']}f}"} for i, v in enumerate(FN.ticks(f["v"], d), 1)]
     for t in sorted({(r["table"], r["time"]) for r in req["rows"]}):
@@ -593,7 +594,7 @@ class Findings(unittest.TestCase):
         req["chain"] = [req["chain"][0], req["chain"][2]]
         _, _, _, page_html = self._page(req, names, ["path", "chain", "members", "spread"])
         lay = dict(_re.findall(r'data-id="([a-z_]+)" data-layout="([a-z]+)"', page_html))
-        self.assertEqual(lay, {"bignums": "bare", "thesis": "bare", "path": "side", "chain": "stack", "members": "side", "spread": "side", "notes": "bare"})
+        self.assertEqual(lay, {"bignums": "bare", "thesis": "bare", "legend": "bare", "path": "side", "chain": "stack", "members": "side", "spread": "side", "notes": "bare"})
         self.assertEqual(widths(page_html), {"path": 716, "chain": 1140, "members": 716, "spread": 716})  # 1140 - 36 - 388
         self.assertIn('style="--tw:388px;--gut:36px"', page_html)
         # two paired pictures share a row, half the page less half the gutter each
@@ -610,6 +611,45 @@ class Findings(unittest.TestCase):
         self.assertEqual(widths(apart)["ends"], 1140 - round(1140 * 0.4) - 36)  # pair off: the ends go beside their words
         self.assertIn("--tw:456px", apart)
         self.assertEqual(lay_of(apart)["spread"], "stack")  # the winners and losers need 680 px: beside a wider words' column they go across the page
+
+    # ---------------------------------------------------------------- the short notes and the legend
+
+    def test_notes_are_the_sections_own_facts_two_a_chart_by_default(self):
+        import re as _re
+        req, names = eu_chain_request()
+        req["chain"] = [req["chain"][0], req["chain"][2]]
+        req["points"] = self._points(EU_MEMBERS)
+        picks = ["path", "chain", "map", "members"]
+        composed, facts, bodies, page_html = self._page(req, names, picks)
+        sect = lambda sid: _re.search(rf'<section class="sec" data-id="{sid}" .*?</section>', page_html, _re.S).group(0)
+        for sid in ("path", "chain", "map", "members"):
+            notes = _re.findall(r'<li class="note"><b class="n"><span data-src="(fact:[a-z0-9_]+)">', sect(sid))
+            self.assertEqual(len(notes), 2, sid)  # the knob's default
+            data = composed["leaves"][{"path": "target_path", "chain": "event_chain", "map": "member_map", "members": "small_multiples"}[sid]]
+            self.assertEqual(notes, [n["num"] for n in data["notes"][:2]], sid)
+            for n in data["notes"]: self.assertIn(n["num"][5:], composed["facts"], (sid, n))  # a fact the page declares (the section's angle's)
+        bare = _re.sub(r"<[^>]+>", "", _re.sub(r"<(span|tspan)[^>]*data-src=[^>]*>[^<]*</\1>", "", "".join(_re.findall(r'<ul class="notes".*?</ul>', page_html, _re.S))))
+        self.assertFalse(_re.search(r"[0-9]", bare), bare)
+        # the knobs: none, three, the leader and the size
+        _, _, _, none = self._page(req, names, picks, style={"story_layout": {"notes": 0}})
+        self.assertNotIn('class="notes"', none)
+        _, _, _, three = self._page(req, names, picks, style={"story_layout": {"notes": 3, "lead": 48, "note_size": 16}})
+        self.assertEqual(len(_re.findall(r'<li class="note">', three)), 3 + 3 + 2 + 3)  # the map has two notes only
+        self.assertIn("--lead:48px;--ns:16px", three)
+        self.assertGreater(len(_re.findall(r'<li class="note">', three)), len(_re.findall(r'<li class="note">', page_html)))
+
+    def test_the_legend_follows_the_pictures_on_the_page(self):
+        import re as _re
+        req, names = eu_chain_request()
+        req["chain"] = [req["chain"][0], req["chain"][2]]
+        req["points"] = self._points(EU_MEMBERS)
+        _, _, _, page_html = self._page(req, names, ["path", "chain", "map", "members"])
+        leg = _re.search(r'<div class="legend">.*?</div></section>', page_html, _re.S).group(0)
+        self.assertEqual(_re.findall(r'<span class="sw ([a-z]+)">', leg), ["accent", "dash", "band", "ramp", "pale"])  # in the pictures' order
+        self.assertLess(page_html.index('data-id="thesis"'), page_html.index('data-id="legend"')); self.assertLess(page_html.index('data-id="legend"'), page_html.index('data-id="path"'))
+        self.assertFalse(_re.search(r"[0-9]", _re.sub(r"<[^>]+>", "", leg)))
+        _, _, _, off = self._page(req, names, ["path", "chain", "map", "members"], style={"story_layout": {"legend": "off"}})
+        self.assertNotIn('data-id="legend"', off)
 
     def test_rank_needs_five_members(self):
         req, _ = wb_request()
