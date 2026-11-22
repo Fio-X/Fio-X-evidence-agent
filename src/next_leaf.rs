@@ -129,6 +129,9 @@ pub struct Recipe {
     pub window: Vec<String>,
     pub same_measure: Vec<(String, String)>,
     pub strip: bool,
+    /// The page places an opening picture over its header (knobs.json recipes[].opening, run.OPENING_SLOT): the flow asks the
+    /// visual group's IllusHero for it, the strip standing in when it cannot be made.
+    pub opening: bool,
     /// The recipe's layers it binds external (knobs.json recipes[].external, which knobs.py writes from the page tree core's
     /// bindings; none written is rust): the flow
     /// asks the visual group's NodeDeclare and NodeDraw for them instead of a rust fill.
@@ -279,6 +282,12 @@ pub fn leaves() -> &'static Leaves {
                     v => v
                         .as_bool()
                         .expect("knobs.json: a recipe's strip is true or false"),
+                },
+                opening: match &r["opening"] {
+                    Value::Null => false,
+                    v => v
+                        .as_bool()
+                        .expect("knobs.json: a recipe's opening is true or false"),
                 },
                 external: words(&r["external"]),
                 points: words(&r["points"]),

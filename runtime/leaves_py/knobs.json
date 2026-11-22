@@ -2832,6 +2832,7 @@
    "picks": [],
    "exposes": [],
    "strip": true,
+   "opening": true,
    "relation": "Change"
   },
   {

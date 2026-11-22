@@ -315,6 +315,9 @@ pub struct LeafPage<'a> {
     pub facts: (&'a Spec, &'a [Row], &'a [Fact]),
     /// The page's illustration strip (Request::IllusStrip), placed by the page as its layer illus_strip; none, no strip.
     pub strip: Option<&'a Strip>,
+    /// The page's opening picture (Request::IllusHero), placed by the page as its layer illus_hero over its header; none, no
+    /// opening picture (a recipe with an opening slot then places the strip that stood in for it, if any).
+    pub hero: Option<&'a Strip>,
 }
 
 /// A leaf page drawn and baked: the baked page, the one the browser check and the manifest are to name, the leaf child's
@@ -920,8 +923,12 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
             Reply::Page(page)
         }
         Request::LeafPage { page } => {
-            let given: Vec<(&str, &Strip)> =
-                page.strip.map(|s| ("illus_strip", s)).into_iter().collect();
+            let given: Vec<(&str, &Strip)> = page
+                .strip
+                .map(|s| ("illus_strip", s))
+                .into_iter()
+                .chain(page.hero.map(|h| ("illus_hero", h)))
+                .collect();
             let (panel, html, records) = draw_page_given(
                 page.draw,
                 page.w,

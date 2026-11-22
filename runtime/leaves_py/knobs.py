@@ -76,7 +76,7 @@ RECIPES = [
     # titles and texts are the request's (spec.sections), so the page is tried first for a request that carries a target (has_target:
     # a row the page runs to), before the one-line page of the same table. Layers print from the sections the flow writes
     dict(name="page_story", layers=list(story.STORY_LAYERS), eats=["annual", "years_2", "one_place", "one_unit", "last_year", "two_ends", "has_target"],
-         charts=[], picks=[], exposes=[], strip=True, relation="Change"),
+         charts=[], picks=[], exposes=[], strip=True, opening=True, relation="Change"),
     # one country over the years (a table whose one place holds every row, the shape's two ends: one_country, two_ends): its line
     # from the earlier end to the later, its highest point the axis; the dek its own rise or fall between the two ends (owner
     # 11-14 16:0x item 2's line leaf; round 16: v3, r2v14, r2v17, r2v18 asked one place's change and had no page)
@@ -292,6 +292,8 @@ def recipes(nodes, groups):
                 raise SystemExit(f"{r['name']}: same_measure {pair!r}; a pair is two of its own layers")
         if r.get("strip", False) not in (True, False) or r.get("strip", False) != (r["name"] in run.STRIP_SLOT):
             raise SystemExit(f"{r['name']}: strip {r.get('strip')!r}; its page {'places' if r['name'] in run.STRIP_SLOT else 'has no slot for'} the strip (run.STRIP_SLOT)")
+        if r.get("opening", False) not in (True, False) or r.get("opening", False) != (r["name"] in run.OPENING_SLOT):
+            raise SystemExit(f"{r['name']}: opening {r.get('opening')!r}; its page {'places' if r['name'] in run.OPENING_SLOT else 'has no slot for'} an opening picture (run.OPENING_SLOT)")
         if r.get("main") != run.MAIN.get(r["name"]) or ("main" in r and r["main"] not in r["layers"]):
             raise SystemExit(f"{r['name']}: main {r.get('main')!r}; its page's main layer is {run.MAIN.get(r['name'])!r} (run.MAIN), one of its layers")
         out.append(r)

@@ -1789,6 +1789,18 @@ fn has_target(s: &mut Shape, tables: &[(&str, &[Value])], _: &dyn Catalogue) -> 
             if !is_year(t) || t.parse::<i32>().is_ok_and(|y| y <= last) || !places.contains(geo) {
                 continue;
             }
+            // the target is set on a slice of the main (review 11-22: the share of renewables overall, not in transport): the
+            // main must hold each of the slice's dimensions at that one code alone, or it measures something else
+            let on_slice = r["slice"].as_object().is_some_and(|slice| {
+                slice.iter().all(|(d, c)| {
+                    s.dims.get(d).is_some_and(|held| {
+                        held.len() == 1 && c.as_str().is_some_and(|c| held.contains(c))
+                    })
+                })
+            });
+            if !on_slice {
+                continue;
+            }
             if best.as_ref().is_none_or(|(_, _, b)| t > b.as_str()) {
                 best = Some((id.to_string(), geo.to_string(), t.to_string()));
             }
@@ -4574,7 +4586,44 @@ fn leaf_page(
     else {
         unreachable!("the visual group answered leaf_fill with another reply")
     };
-    let (strip, strip_ask) = page_strip(calls, picked, &page.refs, page.w, &runtime);
+    // a page with an opening slot asks for its opening picture (IllusHero); when it cannot be made here the visual group
+    // answers with the strip instead, owed as page_strip's; a refusal or a failed call owes the strip and gives none, so the
+    // page check strip_placed fails it, its event saying why
+    let (strip, hero, strip_ask) = match picked.opening {
+        true => match crate::next_flow::visual_call(
+            calls,
+            "illus_hero",
+            Request::IllusHero {
+                tables: &page.refs,
+                width: page.w,
+                runtime: &runtime,
+            },
+        ) {
+            Ok(Reply::Opening { drawn, instead, .. }) => {
+                let given = instead.is_some();
+                let ask = StripAsk {
+                    slot: true,
+                    asked: given,
+                    given,
+                };
+                (instead, drawn, ask)
+            }
+            Ok(_) => unreachable!("the visual group answered illus_hero with another reply"),
+            Err(_) => (
+                None,
+                None,
+                StripAsk {
+                    slot: true,
+                    asked: true,
+                    given: false,
+                },
+            ),
+        },
+        false => {
+            let (strip, ask) = page_strip(calls, picked, &page.refs, page.w, &runtime);
+            (strip, None, ask)
+        }
+    };
     let leaf = LeafPage {
         draw: &page.draw,
         bake: &page.bake,
@@ -4586,6 +4635,7 @@ fn leaf_page(
         refs: &page.refs,
         facts: (&page.spec, &page.rows, &page.facts),
         strip: strip.as_ref(),
+        hero: hero.as_ref(),
     };
     // a later block's page is published beside the first under its own folder (next_gate::block_dir)
     let dir = crate::next_gate::block_dir(recipe, block);
@@ -10140,7 +10190,7 @@ mod tests {
             r["value"] = json!("20");
         }
         let target = |main_id: &str, geo: &str, t: &str| {
-            json!({"src": format!("target:{main_id}-{geo}-{t}"), "main": main_id, "dims": {"geo": geo}, "time": t, "value": "42.5"})
+            json!({"src": format!("target:{main_id}-{geo}-{t}"), "main": main_id, "dims": {"geo": geo}, "slice": {"unit": "PC"}, "time": t, "value": "42.5"})
         };
         let eats: Vec<String> = ["annual", "one_place", "last_year", "two_ends", "has_target"].map(String::from).to_vec();
         let ok = vec![
@@ -10253,7 +10303,7 @@ mod tests {
         for r in eu.iter_mut() {
             r["value"] = json!("20");
         }
-        let target = json!({"src": "target:ren-EU27_2020-2030", "main": "ren", "dims": {"geo": "EU27_2020"}, "time": "2030", "value": "42.5"});
+        let target = json!({"src": "target:ren-EU27_2020-2030", "main": "ren", "dims": {"geo": "EU27_2020"}, "slice": {"unit": "PC"}, "time": "2030", "value": "42.5"});
         let with = [target];
         let (first, all) = first_shape(&[("ren", &eu[..]), ("targets", &with[..])], &Scoped(true));
         assert_eq!(first, Some("page_story"), "{all:?}");
@@ -10262,9 +10312,26 @@ mod tests {
         let why = all.iter().find(|(n, _)| *n == "page_story").unwrap().1.clone().unwrap_err();
         assert!(why.contains("no target row after 2024"), "{why}");
         // a target for another table does not make the main a story
-        let other = [json!({"src": "target:x-EU27_2020-2030", "main": "x", "dims": {"geo": "EU27_2020"}, "time": "2030", "value": "42.5"})];
+        let other = [json!({"src": "target:x-EU27_2020-2030", "main": "x", "dims": {"geo": "EU27_2020"}, "slice": {"unit": "PC"}, "time": "2030", "value": "42.5"})];
         let (first, _) = first_shape(&[("ren", &eu[..]), ("targets", &other[..])], &Scoped(true));
         assert_ne!(first, Some("page_story"));
+        // review 11-22: a target set on another slice of the table (renewables overall, the main renewables in transport),
+        // or a main holding more than one code of a slice's dimension, takes no target
+        for (slice, why) in [(json!({"unit": "PC", "nrg_bal": "REN"}), "nrg_bal absent"), (json!({"unit": "KTOE"}), "other unit")] {
+            let t = [json!({"src": "target:ren-EU27_2020-2030", "main": "ren", "dims": {"geo": "EU27_2020"}, "slice": slice, "time": "2030", "value": "42.5"})];
+            let (first, _) = first_shape(&[("ren", &eu[..]), ("targets", &t[..])], &Scoped(true));
+            assert_ne!(first, Some("page_story"), "{why}");
+        }
+        let mut two = eu.clone();
+        two.extend(eu.iter().map(|r| {
+            let mut r = r.clone();
+            r["dims"]["unit"] = json!("KTOE");
+            r["src"] = json!(format!("{}k", r["src"].as_str().unwrap()));
+            r
+        }));
+        let t = [json!({"src": "target:ren-EU27_2020-2030", "main": "ren", "dims": {"geo": "EU27_2020"}, "slice": {"unit": "PC"}, "time": "2030", "value": "42.5"})];
+        let (first, _) = first_shape(&[("ren", &two[..]), ("targets", &t[..])], &Scoped(true));
+        assert_ne!(first, Some("page_story"), "two units");
 
         let id = "NY.GDP.PCAP.CD@2";
         let wb: Vec<Value> = ["2000", "2005", "2010", "2015", "2020", "2022"]
@@ -10308,9 +10375,12 @@ mod tests {
             &Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime/leaves_py/findings.py"),
         );
         let story = recipe("page_story");
+        // the story page places an opening picture over its header (IllusHero, the strip standing in); no other page does
+        assert!(story.opening && story.strip);
+        assert!(Hubs.recipes().iter().filter(|r| r.opening).count() == 1);
         for (goal, short) in [("60", true), ("35", false)] {
             let target = json!({"src": "target:ren-EU27_2020-2030", "main": "ren", "table": "target_ren",
-                "dims": {"geo": "EU27_2020"}, "time": "2030", "value": goal});
+                "dims": {"geo": "EU27_2020"}, "slice": {"freq": "A", "unit": "PC"}, "time": "2030", "value": goal});
             let targets: BTreeMap<String, Vec<Value>> = [("target_ren".to_string(), vec![target.clone()])].into();
             let with = [target];
             let shape = shape_of(&story.eats, &[("ren", &rows[..]), ("target_ren", &with[..])], &Scoped(true)).unwrap();
@@ -12221,6 +12291,7 @@ mod tests {
             refs: &page.refs,
             facts: (&page.spec, &page.rows, &page.facts),
             strip: None,
+            hero: None,
         };
         let plan = json!({"kind": "leaf_plan", "recipe": "column"});
         let published =
@@ -12286,6 +12357,7 @@ mod tests {
             refs: &page.refs,
             facts: (&page.spec, &page.rows, &page.facts),
             strip: None,
+            hero: None,
         };
         let plan = json!({"kind": "leaf_plan", "recipe": name});
         let published =
@@ -13265,6 +13337,7 @@ mod tests {
             refs: &page.refs,
             facts: (&page.spec, &page.rows, &page.facts),
             strip: None,
+            hero: None,
         };
         let plan = json!({"kind": "leaf_plan", "recipe": "column"});
         let published =
@@ -13432,6 +13505,7 @@ mod tests {
             refs: &page.refs,
             facts: (&page.spec, &page.rows, &page.facts),
             strip: Some(&strip),
+            hero: None,
         };
         let plan = json!({"kind": "leaf_plan", "recipe": "column"});
         let published =
@@ -14183,6 +14257,7 @@ mod tests {
                 refs: &page.refs,
                 facts: (&page.spec, &page.rows, &page.facts),
                 strip: None,
+                hero: None,
             };
             let plan = json!({"kind": "leaf_plan", "recipe": "change"});
             crate::next_flow::publish_leaf_page(&calls, &bundle.dir, "change", (&leaf, &plan), &qa)
@@ -14431,6 +14506,7 @@ mod tests {
             refs: &page.refs,
             facts: (&page.spec, &page.rows, &page.facts),
             strip: None,
+            hero: None,
         };
         let plan = json!({"kind": "leaf_plan", "recipe": "change"});
         let published =
@@ -14585,6 +14661,7 @@ mod tests {
                 refs: &page.refs,
                 facts: (&page.spec, &page.rows, &page.facts),
                 strip: None,
+                hero: None,
             };
             let plan = json!({"kind": "leaf_plan", "recipe": "change"});
             let published = crate::next_flow::publish_leaf_page(
@@ -14998,6 +15075,7 @@ mod tests {
             refs: &page.refs,
             facts: (&page.spec, &page.rows, &page.facts),
             strip: None,
+            hero: None,
         };
         let plan = json!({"kind": "leaf_plan", "recipe": "change"});
         let published =
@@ -15157,6 +15235,7 @@ mod tests {
             refs: &page.refs,
             facts: (&page.spec, &page.rows, &page.facts),
             strip: None,
+            hero: None,
         };
         let plan = json!({"kind": "leaf_plan", "recipe": name});
         let published =
@@ -16350,6 +16429,7 @@ mod tests {
                 refs: &page.refs,
                 facts: (&page.spec, &page.rows, &page.facts),
                 strip: None,
+                hero: None,
             };
             let plan = json!({"kind": "leaf_plan", "recipe": "change"});
             let published = crate::next_flow::publish_leaf_page(
@@ -16522,6 +16602,7 @@ mod tests {
                 refs: &page.refs,
                 facts: (&page.spec, &page.rows, &page.facts),
                 strip: None,
+                hero: None,
             };
             let plan = json!({"kind": "leaf_plan", "recipe": name});
             let published = crate::next_flow::publish_leaf_page(
@@ -18404,6 +18485,7 @@ mod tests {
             refs: &page.refs,
             facts: (&page.spec, &page.rows, &page.facts),
             strip: None,
+            hero: None,
         };
         let plan = json!({"kind": "leaf_plan", "recipe": "flow"});
         let published =
@@ -18757,6 +18839,7 @@ mod tests {
             window: r.window.clone(),
             same_measure: r.same_measure.clone(),
             strip: r.strip,
+            opening: r.opening,
             external: r.external.clone(),
             points: r.points.clone(),
             short_notes: r.short_notes.clone(),
@@ -18894,6 +18977,7 @@ mod tests {
             refs: &page.refs,
             facts: (&page.spec, &page.rows, &page.facts),
             strip: None,
+            hero: None,
         };
         let started = std::time::Instant::now();
         match crate::next_flow::visual_call(
@@ -19024,6 +19108,7 @@ mod tests {
             refs: &page.refs,
             facts: (&page.spec, &page.rows, &page.facts),
             strip: None,
+            hero: None,
         };
         let started = std::time::Instant::now();
         match crate::next_flow::visual_call(
@@ -19156,6 +19241,7 @@ mod tests {
             refs: &page.refs,
             facts: (&page.spec, &page.rows, &page.facts),
             strip: None,
+            hero: None,
         };
         let started = std::time::Instant::now();
         match crate::next_flow::visual_call(

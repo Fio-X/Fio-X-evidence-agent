@@ -238,6 +238,7 @@ LEAF_SVG = (section_head.SECTION_HEAD_SVG + rankbar.RANKBAR_SVG + bubbles.BUBBLE
 # The page recipes whose page places the illustration strip layer 1 gives it (column_page; the ring and scmp pages have no
 # slot and refuse one): knobs.py declares the slot on exactly these recipes, which layer 1 asks a strip for.
 STRIP_SLOT = ("column", "change", "ranked_bars", "change_bars", "page_story")
+OPENING_SLOT = ("page_story",)  # the pages that place an opening picture over their header (illus_hero; story.py)
 # The main layer of each page recipe the column frame draws, the picture the page is built around (column_page; knobs.py
 # copies it into the recipe as `main`): the bars, or a chart leaf of LEAF_LAYERS in their place, across the page.
 MAIN = dict(column="bars", change="bars", flow="sankey", composition_steps="waterfall", composition="stacked100", one_line="line", ranked_bars="bars", change_bars="bars", block_ranks="rank_lines")

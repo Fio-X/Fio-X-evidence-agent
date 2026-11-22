@@ -13638,6 +13638,7 @@ mod tests {
             refs: &[],
             facts: (&spec, &[], &[]),
             strip: None,
+            hero: None,
         };
         let plan = json!({"kind": "leaf_plan", "recipe": "column"});
         publish_leaf_page(

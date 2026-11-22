@@ -106,13 +106,16 @@ pub fn target_rows(main: &str) -> Result<Vec<Value>, String> {
 fn rows_of(targets: &[Target], main: &str) -> Vec<Value> {
     let mut rows = Vec::new();
     for t in targets {
-        for _ in t.slices.iter().filter(|s| s.dataset == main) {
+        for slice in t.slices.iter().filter(|s| s.dataset == main) {
             rows.push(json!({
                 "src": format!("target:{}", t.id),
                 "main": main,
                 "table": format!("target_{}", main),
-                // The place only: the flow group matches a target to the main by this place, the slice is the registry's.
+                // The place only: the flow group matches a target to the main by this place.
                 "dims": {"geo": t.geo},
+                // The slice of the main the target is set on (review 11-22): a main fixed at any other code of these
+                // dimensions, or holding more than one, measures something else and takes no target (has_target).
+                "slice": slice.dims,
                 "time": t.year.to_string(),
                 "value": t.value,
             }));
@@ -376,6 +379,7 @@ mod tests {
             vec![json!({
                 "src": "target:t", "main": "nrg_ind_ren", "table": "target_nrg_ind_ren",
                 "dims": {"geo": "EU27_2020"},
+                "slice": {"freq": "A", "nrg_bal": "REN", "unit": "PC"},
                 "time": "2030", "value": "42.5"
             })]
         );
