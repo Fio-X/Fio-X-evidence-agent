@@ -5899,6 +5899,82 @@ mod tests {
     /// or the one before last), never against the other end of a ranking it no longer draws. Two data shapes: a World Bank
     /// count over iso3 countries, a Eurostat percentage over geo.
     #[test]
+    fn next_tree_gen_a_question_naming_the_second_place_says_the_gap_to_it() {
+        // a question that compares its end with the second place (picks.asked_second, asked_second_low) on a page the
+        // program did not cut: every place drawn, the dek says the end against its neighbour (90 - 70, 30 - 10), never
+        // against the other end, in the words the first-n page says it with
+        let (reg, _) = core::registry_in_force();
+        for recipe in ["column", "ranked_bars"] {
+            let d = declares(
+                &reg,
+                FINDING,
+                &J::from_value(&serde_json::json!({"recipe": recipe})),
+            )
+            .unwrap()
+            .clone();
+            let codes = ["USA", "DEU", "FRA", "ITA", "CAN"];
+            let vals = ["90", "70", "50", "30", "10"];
+            let row = |p: &str, v: &str| serde_json::json!({"src": format!("series:t/{p}:2024:OBS_VALUE"), "table": "t", "dims": {"country": p}, "time": "2024", "value": v});
+            let rows: Vec<serde_json::Value> =
+                codes.iter().zip(vals).map(|(c, v)| row(c, v)).collect();
+            let mut sorted = codes.to_vec();
+            sorted.sort();
+            let pi = |key: &str| {
+                let mut v = serde_json::json!({"recipe": recipe,
+                    "shape": {"main": "t", "place": "country", "year": "2024", "unit": "PC", "fmt": "pc", "countries": sorted},
+                    "picks": {"rules": ["ranked"], "ranked": codes, "marks": [], "t0": "", "t1": ""},
+                    "rows": rows, "short": "%",
+                    "fill": {"facts": ["drawn", "hi", "lo", "gap", "times"], "fmts": {"pc": {"dec": 0}}, "named": sorted}});
+                if !key.is_empty() {
+                    v["picks"][key] = serde_json::json!(true);
+                }
+                J::from_value(&v)
+            };
+            let at = recipe;
+            let top = finding_declared(&d, &pi("asked_second"), &reg)
+                .unwrap()
+                .to_value();
+            assert_eq!(top["subject"], "USA", "{at}");
+            assert_eq!(
+                top["finding"]["dek"],
+                "{lead1.t}，{name.USA}最高，为{lead1}，比第二位的{name.DEU}高{next_gap}",
+                "{at}"
+            );
+            let low = finding_declared(&d, &pi("asked_second_low"), &reg)
+                .unwrap()
+                .to_value();
+            assert_eq!(low["subject"], "CAN", "{at}");
+            assert_eq!(
+                low["finding"]["dek"],
+                "{lead1.t}，{name.CAN}最低，为{lead1}，比倒数第二的{name.ITA}低{next_gap}",
+                "{at}"
+            );
+            let r: Vec<J> = rows.iter().map(J::from_value).collect();
+            for said in [&top, &low] {
+                assert!(
+                    said["facts"].get("pool").is_none(),
+                    "{at}: an uncut page reads no pool"
+                );
+                let facts = J::from_value(&said["facts"]);
+                assert_eq!(
+                    core::fact_value(&facts, &r, "next_gap").unwrap(),
+                    20.0,
+                    "{at}"
+                );
+            }
+            // with neither pick the page says its top against its bottom, as before
+            let plain = finding_declared(&d, &pi(""), &reg).unwrap().to_value();
+            assert!(
+                plain["finding"]["dek"]
+                    .as_str()
+                    .is_some_and(|t| t.contains("比最低的{name.CAN}")),
+                "{at}: {}",
+                plain["finding"]["dek"]
+            );
+        }
+    }
+
+    #[test]
     fn next_tree_gen_a_question_asking_the_first_n_says_its_end_against_its_neighbour() {
         let (reg, _) = core::registry_in_force();
         for recipe in ["column", "ranked_bars"] {

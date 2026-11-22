@@ -3203,6 +3203,11 @@ pub trait Catalogue: Sync {
     fn asks_top(&self, _question_zh: &str) -> Option<(usize, bool)> {
         None
     }
+    /// The second place the Chinese question compares its end with, the top's (false) or the bottom's (true) (the
+    /// knowledge group's reading of its words, through its door); None when this catalogue reads none.
+    fn asks_second(&self, _question_zh: &str) -> Option<bool> {
+        None
+    }
     /// The whole class of question the knowledge group refuses from its words before any search (scope-refusal-zh.json, user
     /// 11-08 item 1); None when no class takes it.
     fn scope_refused(
@@ -3775,6 +3780,9 @@ pub(crate) fn knowledge_call<'a>(
         Ok(Reply::AsksTotal(total)) => json!({"asks_total": total}),
         Ok(Reply::AsksTop(top)) => {
             json!({"asks_top": top.map(|(n, low)| json!({"n": n, "low": low}))})
+        }
+        Ok(Reply::AsksSecond(second)) => {
+            json!({"asks_second": second.map(|low| json!({"low": low}))})
         }
         Ok(Reply::ScopeRefused(refused)) => json!({"scope_refused": refused}),
         Ok(Reply::SplitAsk(ask)) => json!({"shape_ask": ask}),
@@ -4443,6 +4451,16 @@ impl Catalogue for GroupCatalogue {
         match self.call("asks_top", json!({"question": question_zh}), request) {
             next_knowledge::Reply::AsksTop(top) => top,
             _ => unreachable!("the knowledge group answered asks_top with another reply"),
+        }
+    }
+
+    fn asks_second(&self, question_zh: &str) -> Option<bool> {
+        let request = next_knowledge::Request::AsksSecond {
+            question: question_zh,
+        };
+        match self.call("asks_second", json!({"question": question_zh}), request) {
+            next_knowledge::Reply::AsksSecond(second) => second,
+            _ => unreachable!("the knowledge group answered asks_second with another reply"),
         }
     }
 

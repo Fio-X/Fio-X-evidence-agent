@@ -3452,6 +3452,20 @@ fn recipe_request(
     }) {
         p["picks"]["asked_total"] = json!(true);
     }
+    // a question that compares its end with the second place (the knowledge group's reading of its words), on a ranking
+    // page the program did not narrow (a narrowed page's finding says its end against the second already): a run fact a
+    // finding's case reads (requires $picks.asked_second at the top, $picks.asked_second_low at the bottom), so the dek
+    // says the gap to that second place, not to the other end
+    if let Some(p) = page_in
+        .as_mut()
+        .filter(|_| !scoped && recipe.picks.iter().any(|r| r == "ranked"))
+    {
+        match catalogue.asks_second(question) {
+            Some(false) => p["picks"]["asked_second"] = json!(true),
+            Some(true) => p["picks"]["asked_second_low"] = json!(true),
+            None => {}
+        }
+    }
     // a question that asks for the first n at one end (the knowledge group's reading of its words: 最高的三个, 倒数后五), on
     // a ranking page the program did not narrow over no country the question names on its own, n at least 2 and below the
     // places ranked, the n-th apart from the next: the page draws only those n (the core's top_n over the whole ranking,
