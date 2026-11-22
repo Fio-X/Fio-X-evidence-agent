@@ -9,7 +9,8 @@ Every printed number is a ledger entry printed with FX.entry; every word comes w
 hero.data (the data shape this leaf eats; run.py leaf): {
   "title": segs, "unit": segs,                      # the unit is written once, in the head
   "axis": {"ticks": [ledger src, ...],              # ascending, each printed text a number; the axis runs first..last tick
-           "scale": number},                        # a printed number is its raw value times scale (its format's)
+           "scale": number,                         # a printed number is its raw value times scale (its format's)
+           "from_zero": bool?},                     # true: the axis runs from 0 to the furthest point (layer 1's ticks)
   "now": {"text": ledger src, "at": series src?,    # where the subject is: its value as printed; its place from the cell
           "label": segs},                           # when "at" is given, else from the printed number
   "marks": [{"text": ledger src, "label": segs}],   # each projected pace's value at the target period (layer 1's facts)
@@ -80,6 +81,15 @@ class Frame:
             if f.ticks and raw <= f.ticks[-1][0]: raise Refused(f"gap_axis: the ticks are not ascending at {src}")
             f.ticks.append((raw, K.ent(src)))
         f.lo, f.hi = f.ticks[0][0], f.ticks[-1][0]
+        if axis.get("from_zero") is True:
+            # layer 1's ticks (next_facts::ticks) leave 0 out and stop at or under the fact they run to: the axis then runs
+            # from 0 to the furthest point drawn, its labels at the ticks only
+            f.lo = 0.0
+            pts = [d.get("now"), d.get("target")] + list(d.get("marks") or [])
+            vals = [K.val(p["at"]) if p.get("at") is not None else number(p["text"], scale, "a point's value")
+                    for p in pts if isinstance(p, dict) and p.get("text")]
+            if any(v < 0 for v in vals): raise Refused("gap_axis: an axis from 0 holds a point below 0")
+            f.hi = max([f.hi] + vals)
 
         def point(p, what):
             if not isinstance(p, dict) or not p.get("text"): raise Refused(f"gap_axis: {what} names no text (the ledger entry its value prints from)")
