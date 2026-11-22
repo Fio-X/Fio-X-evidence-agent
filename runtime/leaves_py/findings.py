@@ -19,6 +19,12 @@ and who fell), each one section with one story leaf (a leaf stands at most once 
                               highest and the lowest; the share column is each row's difference from the whole (or from the
                               highest). The leaf draws no reference line: a target the request holds is said in the text only.
                               Needs five members at least with a value in a year they all share (the latest such year).
+  * members (small_multiples): one small line chart a member on one shared axis over the years every member has (at least
+                              SM_YEARS), the whole as a pale line behind them and a target within reach as a dashed level;
+                              the two members whose change over the span stands furthest apart in the accent; with more than
+                              SM_MAX members the SM_MAX / 2 highest and lowest at the last year. Needs SM_MIN members at least.
+                              Score: size = how far the best member's change is from the worst's over the picture's range of
+                              values; surprise = the share of members moving against the majority; sturdy = years and members.
   * chain  (event_chain):    the companion tables' series side by side on the years they and the whole share (a panel
                               each, the page's measure not one of them), the one year the whole moved most shaded across
                               them: what moved around that year, told in order and never as a cause; needs the request's
@@ -82,9 +88,10 @@ CHAIN_MIN, CHAIN_MAX = 2, 5   # the tables a chain holds
 CHAIN_YEARS = 4      # years in a row every chain table and the whole share, at least
 MIN_YEARS = 6        # a pace needs this many years of the whole at least
 RECENT = 5           # the recent pace runs over the last five years
-TOP_K = 6            # the candidates the child gives (one a finding: there are six angles; the flow shows the model its best few)
+TOP_K = 7            # the candidates the child gives (one a finding: there are seven angles; the flow shows the model its best few)
 GROUP_K = 3          # the lowest and the highest three at the start (spread)
 ROWS_MAX = 5         # rows a winners/losers column shows
+SM_MIN, SM_MAX, SM_YEARS = 6, 12, 5   # members a small-multiples grid needs at least and shows at most; years in a row they share
 RANK_MIN, RANK_MAX = 5, 40   # members a ranking needs at least, and shows at most
 
 
@@ -606,7 +613,67 @@ def angle_rank(q):
             "score": round(size * surprise * sturdy, 4), "why": why, "summary": why_line}, None
 
 
-ANGLES = [angle_path, angle_need, angle_spread, angle_ends, angle_rank, angle_chain]
+def angle_members(q):
+    members = dict(q.panel)
+    if len(members) < SM_MIN: return None, f"fewer than {SM_MIN} members"
+    common = set.intersection(*(set(s_) for s_ in members.values()))
+    ys = run_years({y: 1 for y in sorted(common)}) if common else []
+    if len(ys) < SM_YEARS: return None, f"the members share fewer than {SM_YEARS} years in a row"
+    y0, y1 = ys[0], ys[-1]
+    if len(members) > SM_MAX:  # the highest and the lowest at the last year
+        order = sorted(members, key=lambda c: (-members[c][y1][0], c))
+        keep = set(order[:SM_MAX // 2] + order[-(SM_MAX // 2):])
+        members = {c: s_ for c, s_ in members.items() if c in keep}
+    ch = {c: s_[y1][0] - s_[y0][0] for c, s_ in members.items()}
+    hi = max(ch, key=lambda c: (ch[c], c))
+    lo = min(ch, key=lambda c: (ch[c], c))
+    if ch[hi] <= ch[lo]: return None, "every member changed alike"
+    if ch[hi] == 0 or ch[lo] == 0: return None, "a member that stands furthest out did not move"
+    allv = [s_[y][0] for s_ in members.values() for y in ys]
+    span = max(allv) - min(allv)
+    if span <= 0: return None, "every value is the same"
+    key = lambda c: f"sm_{c.lower()}"
+    f = {}
+    for c in members:
+        f[key(c)] = q.value(c, y1)
+    for c in (hi, lo):
+        f[f"sm0_{c.lower()}"] = q.value(c, y0)
+    def d(c, up):  # the change, the larger value less the smaller
+        a, b = (key(c), f"sm0_{c.lower()}") if up else (f"sm0_{c.lower()}", key(c))
+        return {"op": "minus", "a": a, "b": b, "fmt": q.change}
+    f["dhi"], f["dlo"] = d(hi, ch[hi] > 0), d(lo, ch[lo] > 0)
+    if ch[hi] > 0 and ch[lo] < 0: tk = "story.sm.title_split"
+    elif ch[lo] > 0: tk = "story.sm.title_up"
+    else: tk = "story.sm.title_down"
+    hot = key(hi)
+    bind = dict(hi=hi, lo=lo, y0=f"sm0_{hi.lower()}", y1=hot)
+    ref = None
+    if q.wseries and all(y in q.wseries for y in ys):
+        ref = {"code": q.whole, "points": [q.wseries[y][1] for y in ys], "label": ST("story.sm.ref", w=q.whole)}
+    g = q.goal()
+    target = None
+    if g and 0 < g[0] <= 1.5 * max(allv):
+        f["goal"] = g[2]
+        target = {"text": "fact:goal", "scale": float(q.defs[q.fmts["value"]].get("scale", 1)), "label": ST("story.sm.target")}
+    data = {"title": SW(q.words["measure"]), "unit": SW(q.words["unit"]), "name_kind": "place",
+            "cells": [{"code": c, "points": [members[c][y][1] for y in ys], "last_text": f"fact:{key(c)}"} for c in sorted(members)],
+            "periods": [f"period:{q.table}:{y0}", f"period:{q.table}:{y1}"], "accent": [hi, lo], "footnote": ST("story.sm.foot")}
+    if ref: data["ref"] = ref
+    if target: data["target"] = target
+    ups = sum(1 for v in ch.values() if v > 0); downs = sum(1 for v in ch.values() if v < 0)
+    minority = min(ups, downs) / len(ch)
+    size = clamp((ch[hi] - ch[lo]) / span)
+    surprise = clamp(0.3 + 1.4 * minority)
+    sturdy = clamp(len(ys) / 10) * clamp(len(members) / 8)
+    return {"angle": "members", "layer": "small_multiples", "kicker": T("story.sm.kicker"), "title": T(tk, **bind),
+            "text": T("story.sm.text_ref" if ref else "story.sm.text", w=q.whole, y1=hot), "facts": f, "data": data,
+            "claim": {"num": "fact:dhi", "head": T("story.sm.claim")}, "notes": [], "members": True, "last": hot,
+            "score": round(size * surprise * sturdy, 4),
+            "why": {"size": round(size, 3), "surprise": round(surprise, 3), "sturdy": round(sturdy, 3), "rising": ups, "falling": downs},
+            "summary": "one small chart a member on a shared axis: the member that moved most each way"}, None
+
+
+ANGLES = [angle_path, angle_need, angle_spread, angle_ends, angle_rank, angle_members, angle_chain]
 
 
 # ---------------------------------------------------------------- the header's big numbers

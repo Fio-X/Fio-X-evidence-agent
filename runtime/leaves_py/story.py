@@ -29,7 +29,7 @@ from words import word
 
 NODE = "page_story"
 # the leaves a story section may draw (run.py builds the recipe's layers from these), and those that are text blocks, not charts
-STORY_LAYERS = ["bignums", "thesis_claims", "gap_axis", "event_chain", "target_path", "winners_losers", "pair_bars", "rankbar", "risk_notes"]
+STORY_LAYERS = ["bignums", "thesis_claims", "gap_axis", "event_chain", "target_path", "winners_losers", "pair_bars", "rankbar", "small_multiples", "risk_notes"]
 TEXT_BLOCKS = ("thesis_claims", "risk_notes")
 # the layer that is html, not svg: the header's big numbers (column.cl_bignums), a row over the thesis
 HTML_BLOCKS = ("bignums",)

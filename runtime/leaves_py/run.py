@@ -56,6 +56,7 @@ import target_path
 import pair_bars
 import thesis_claims
 import risk_notes
+import small_multiples
 import section_head
 import wbkit
 from words import word
@@ -220,7 +221,8 @@ LEAF_LAYERS = dict(section_head=leaf(section_head.Frame, section_head.cl_section
                    target_path=leaf(target_path.Frame, target_path.cl_target_path, "target_path"),
                    pair_bars=leaf(pair_bars.Frame, pair_bars.cl_pair_bars, "pair_bars"),
                    thesis_claims=leaf(thesis_claims.Frame, thesis_claims.cl_thesis_claims, "thesis_claims"),
-                   risk_notes=leaf(risk_notes.Frame, risk_notes.cl_risk_notes, "risk_notes"))
+                   risk_notes=leaf(risk_notes.Frame, risk_notes.cl_risk_notes, "risk_notes"),
+                   small_multiples=leaf(small_multiples.Frame, small_multiples.cl_small_multiples, "small_multiples"))
 LEAF_SVG = (section_head.SECTION_HEAD_SVG + rankbar.RANKBAR_SVG + bubbles.BUBBLES_SVG + leader_notes.LEADER_NOTES_SVG + sankey.SANKEY_SVG
             + stacked100.STACKED100_SVG + line_leaf.LINE_SVG + rank_lines.RANK_LINES_SVG
             + dumbbell.DUMBBELL_SVG + waterfall.WATERFALL_SVG + waffle.WAFFLE_SVG
@@ -231,7 +233,8 @@ LEAF_SVG = (section_head.SECTION_HEAD_SVG + rankbar.RANKBAR_SVG + bubbles.BUBBLE
             + target_path.TARGET_PATH_SVG
             + pair_bars.PAIR_BARS_SVG
             + thesis_claims.THESIS_CLAIMS_SVG
-            + risk_notes.RISK_NOTES_SVG)
+            + risk_notes.RISK_NOTES_SVG
+            + small_multiples.SMALL_MULTIPLES_SVG)
 
 
 # The page recipes this child draws: each one's layers (name -> (draw, reserve)) and which of them are svg.

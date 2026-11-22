@@ -184,7 +184,7 @@ class Findings(unittest.TestCase):
         req, names = eu_request()
         _, cands, dropped = FN.candidates(req)
         self.assertEqual([d["angle"] for d in dropped], ["chain"])  # the request carries no chain
-        self.assertEqual(sorted(c["id"] for c in cands), ["ends", "need", "path", "rank", "spread"])
+        self.assertEqual(sorted(c["id"] for c in cands), ["ends", "members", "need", "path", "rank", "spread"])
         self.assertEqual([c["score"] for c in cands], sorted((c["score"] for c in cands), reverse=True))
         path = next(c for c in cands if c["id"] == "path")
         self.assertEqual(path["title"][0], ("w", "就算每年都像 "))  # even the best year falls short of 42.5
@@ -199,7 +199,7 @@ class Findings(unittest.TestCase):
         req, names = wb_request()
         _, cands, dropped = FN.candidates(req)
         self.assertEqual({d["angle"]: d["why"] for d in dropped}, {"path": "no target row", "need": "no target row", "chain": "the request's chain holds fewer than 2 tables"})
-        self.assertEqual(sorted(c["id"] for c in cands), ["ends", "rank", "spread"])
+        self.assertEqual(sorted(c["id"] for c in cands), ["ends", "members", "rank", "spread"])
         composed, facts, drawn = draw_all(self, req, names, ["ends", "spread"])
         self.assertEqual(composed["leaves"]["pair_bars"]["places"], ["USA", "IND"])
         self.assertAlmostEqual(facts["hi_lo"]["v"], (17.0 - 0.3 * 12) / (1.4 + 0.06 * 12), places=2)
@@ -363,8 +363,8 @@ class Findings(unittest.TestCase):
 
     # ---------------------------------------------------------------- the header: three big numbers above the thesis
 
-    def _header_page(self, req, names, picks):
-        """The composed page's header drawn by the real child: (composed, facts, the bignums html, the whole page's html)."""
+    def _page(self, req, names, picks):
+        """The composed page drawn by the real child: (composed, facts, {layer: its svg or html}, the page's html)."""
         import json, subprocess
         composed = FN.compose({**req, "picks": picks})
         rows, facts = ledger(req, composed, names)
@@ -379,9 +379,16 @@ class Findings(unittest.TestCase):
                                                                capture_output=True, text=True, timeout=120, check=True).stdout.splitlines()]
         got = go(lines)
         self.assertFalse([g for g in got if "refused" in g or "error" in g], got)
-        big = got[1]["html"]
-        last = go(lines + [json.dumps({"phase": "page", "layers": {n: g.get("svg") or g.get("html") for n, g in zip(layers, got[1:])}, "sizes": {}}, ensure_ascii=False)])[-1]
+        bodies = {n: g.get("svg") or g.get("html") for n, g in zip(layers, got[1:])}
+        last = go(lines + [json.dumps({"phase": "page", "layers": bodies, "sizes": {}}, ensure_ascii=False)])[-1]
         self.assertFalse(last.get("refused"), last)
+        return composed, facts, bodies, last["html"]
+
+    def _header_page(self, req, names, picks):
+        """The composed page's header drawn by the real child: (composed, facts, the bignums html, the whole page's html)."""
+        composed, facts, bodies, page_html = self._page(req, names, picks)
+        big = bodies["bignums"]
+        last = {"html": page_html}
         # every digit of the header sits in a marked ledger run, each item's number in a data-src mark of its own fact
         bare = re.sub(r"<[^>]+>", "", re.sub(r"<(span|tspan)[^>]*data-src=[^>]*>[^<]*</\1>", "", big))
         self.assertFalse(re.search(r"[0-9]", bare), bare)
@@ -429,6 +436,82 @@ class Findings(unittest.TestCase):
         one = {**req, "rows": [r for r in req["rows"] if r["dims"].get("geo") == "SE"], "main": {**req["main"], "whole": None, "members": ["SE"]}}
         self.assertIsNone(FN.header(FN.Req({**one, "picks": []})))
 
+    # ---------------------------------------------------------------- the members angle: one small chart a member
+
+    def _members_page(self, req, names, picks):
+        """The page with the members section drawn by the real child; every digit of the grid in a marked ledger run."""
+        composed, facts, bodies, page_html = self._page(req, names, picks)
+        svg = bodies["small_multiples"]
+        bare = re.sub(r"<[^>]+>", "", re.sub(r"<(span|tspan)[^>]*data-src=[^>]*>[^<]*</\1>", "", svg))
+        self.assertFalse(re.search(r"[0-9]", bare), bare)
+        self.assertIn('data-module-id="members"', page_html)
+        self.assertRegex(page_html, r'<svg[^>]*pub-chart[^>]*aria-describedby="desc-members"')
+        return composed, facts, svg, page_html
+
+    def test_members_eu_nine_cells_with_the_whole_and_the_target(self):
+        req, names = eu_request()
+        composed, facts, svg, page_html = self._members_page(req, names, ["members", "path"])
+        data = composed["leaves"]["small_multiples"]
+        self.assertEqual(sorted(c["code"] for c in data["cells"]), sorted(EU_MEMBERS))
+        self.assertEqual(data["accent"], ["SE", "MT"])  # the biggest rise and the one that fell
+        self.assertEqual(data["ref"]["code"], "EU27_2020"); self.assertEqual(data["target"]["text"], "fact:goal")
+        self.assertEqual(len(re.findall(r"<polyline [^>]*data-code=", svg)), 9)
+        self.assertEqual(len(re.findall(r'data-part="ref"', svg)), 9)
+        self.assertEqual(len(re.findall(r'data-part="target"', svg)), 9)
+        # the title: the best member's rise and the worst's fall, each the larger value less the smaller (above 0)
+        title = next(x for x in composed["sections"] if x["id"] == "members")["title"]
+        self.assertIn("{dhi}", title); self.assertIn("{dlo}", title); self.assertIn("却降了", title)
+        se = EU_MEMBERS["SE"]; mt = EU_MEMBERS["MT"]
+        self.assertAlmostEqual(facts["dhi"]["v"], facts["sm_se"]["v"] - facts["sm0_se"]["v"], places=6)
+        self.assertAlmostEqual(facts["dlo"]["v"], facts["sm0_mt"]["v"] - facts["sm_mt"]["v"], places=6)
+        self.assertGreater(facts["dhi"]["v"], 0); self.assertGreater(facts["dlo"]["v"], 0)
+        # the members' last values are facts, drawn by the cells
+        for c in EU_MEMBERS: self.assertIn(f'data-src="fact:sm_{c.lower()}"', svg)
+
+    def test_members_wb_six_economies_no_whole_no_target(self):
+        req, names = wb_request()
+        composed, facts, svg, _ = self._members_page(req, names, ["members", "spread"])
+        data = composed["leaves"]["small_multiples"]
+        self.assertEqual(len(data["cells"]), 6)
+        self.assertNotIn("ref", data); self.assertNotIn("target", data)
+        self.assertEqual(data["accent"], ["CHN", "USA"])
+        self.assertNotIn("data-part=\"ref\"", svg); self.assertNotIn("data-part=\"target\"", svg)
+        self.assertNotIn("goal", facts)
+
+    def test_members_title_words_follow_the_signs(self):
+        req, names = eu_request()
+        up = [dict(r, value=round(r["value"] + 0.4 * (int(r["time"]) - 2005), 3)) if r["dims"].get("geo") in ("MT", "LU") else r for r in req["rows"]]
+        composed = FN.compose({**req, "rows": up, "picks": ["members", "path"]})
+        self.assertIn("只涨了", next(x for x in composed["sections"] if x["id"] == "members")["title"])
+        down = [dict(r, value=round(r["value"] - 1.0 * (int(r["time"]) - 2005), 3)) if r["dims"].get("geo") != "EU27_2020" else r for r in req["rows"]]
+        composed = FN.compose({**req, "rows": down, "picks": ["members", "path"]})
+        self.assertIn("只降了", next(x for x in composed["sections"] if x["id"] == "members")["title"])
+
+    def test_members_needs_six_members_and_five_years_and_a_difference(self):
+        req, _ = wb_request()
+        why = lambda r: {d["angle"]: d["why"] for d in FN.candidates(r)[2]}.get("members")
+        few = {**req, "rows": [r for r in req["rows"] if r["dims"]["country"] in ("USA", "DEU", "CHN", "IND", "BRA")], "main": {**req["main"], "members": None}}
+        self.assertEqual(why(few), "fewer than 6 members")
+        short = {**req, "rows": [r for r in req["rows"] if int(r["time"]) >= 2019]}
+        self.assertEqual(why(short), "the members share fewer than 5 years in a row")
+        same = {**req, "rows": [dict(r, value=f"{5 + 0.1 * (int(r['time']) - 2010):.2f}") for r in req["rows"]]}
+        self.assertEqual(why(same), "every member changed alike")
+
+    def test_members_more_than_twelve_keep_the_highest_and_the_lowest_at_the_last_year(self):
+        req, names = eu_request()
+        t = req["main"]["table"]
+        rows = list(req["rows"]); members = list(req["main"]["members"])
+        for i in range(8):
+            c = f"X{i}"; members.append(c)
+            rows += [row(t, {"nrg_bal": "REN"}, "geo", c, y, 3.0 + 3.0 * i + 0.05 * i * (y - 2005)) for y in range(2005, 2025)]
+        big = {**req, "rows": rows, "main": {**req["main"], "members": members}}
+        composed = FN.compose({**big, "picks": ["members", "path"]})
+        cells = [c["code"] for c in composed["leaves"]["small_multiples"]["cells"]]
+        self.assertEqual(len(cells), 12)
+        last = {c: next(r["value"] for r in rows if r["dims"].get("geo") == c and r["time"] == "2024") for c in members}
+        order = sorted(members, key=lambda c: (-last[c], c))
+        self.assertEqual(sorted(cells), sorted(order[:6] + order[-6:]))
+
     def test_rank_needs_five_members(self):
         req, _ = wb_request()
         few = {**req, "rows": [r for r in req["rows"] if r["dims"]["country"] in ("USA", "DEU", "CHN", "IND")], "main": {**req["main"], "members": None}}
@@ -475,7 +558,7 @@ class Findings(unittest.TestCase):
         got = subprocess.run([sys.executable, "-I", "-B", FN.__file__], input=lines, capture_output=True, text=True, timeout=60)
         out = [json.loads(x) for x in got.stdout.splitlines()]
         self.assertEqual(len(out), 3)
-        self.assertEqual(sorted(c["id"] for c in out[0]["candidates"]), ["ends", "need", "path", "rank", "spread"])
+        self.assertEqual(sorted(c["id"] for c in out[0]["candidates"]), ["ends", "members", "need", "path", "rank", "spread"])
         self.assertIn("not JSON", out[1]["refused"][0])
         self.assertEqual([s["layer"] for s in out[2]["knobs"]["spec"]["sections"]], ["bignums", "thesis_claims", "target_path", "gap_axis", "risk_notes"])
         self.assertEqual(sorted(out[2]["knobs"]["spec"]["hero"]["leaves"]), ["bignums", "gap_axis", "risk_notes", "target_path", "thesis_claims"])
