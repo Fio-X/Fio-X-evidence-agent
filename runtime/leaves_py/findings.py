@@ -20,17 +20,26 @@ and who fell), each one section with one story leaf (a leaf stands at most once 
                               "chain" (two to five tables) and a whole.
 Chain rules. Years: the longest run of consecutive years, ending at the last, that every chain table and the whole have
 (at least CHAIN_YEARS). A chain table is read at the dims its "filter" names (one row a year, else the angle is dropped).
-Panel kind: the item's "kind" ("flow" = bars, "stock" = line) when it gives one, else bars when every value is 0 or above
-and the run has at most BAR_MAX years (a few yearly amounts), else a line; a line is drawn from 0 when its values are all
-0 or above and its lowest is at most half its highest (a series that swings from near nothing), else on its own range.
-Band: the one year, inside the run and not its first, where the whole's step from the year before is largest in size (the
-earlier year if two tie); it is shaded in every panel and named in the key. Its size is the step over the whole's range on
-the run; its title prints that step (the larger of the two values less the smaller, so it is above 0). The link under each
-band between two panels is one neutral word of the table ("then"), never a claim of cause.
+Panel kind: the item's "kind" ("flow" = bars, "stock" = line) when it gives one, else bars when every value of the run is 0
+or above (a flow's values are amounts, never below 0), whatever the number of years, else a line; a flow with a value below 0
+is a line. A line is drawn from 0 when its values are all 0 or above and its lowest is at most half its highest (a series
+that swings from near nothing), else on its own range.
+Formats: an item's "fmt" (a format of the request's fmt_defs) when it gives one; else the child names one by the series'
+size, the largest value of the run (1000 or more: no decimal place, 10 or more: one, under 10: two), as "<table>_d0",
+"<table>_d1" or "<table>_d2", which the request defines in "chain_fmts" ({name: {"scale", "dec", "suffix"}}, the flow writes the
+three of each chain table with that table's unit suffix); a name chain_fmts lacks refuses the angle. The whole's change in
+the title keeps the page's value format.
+Band: the one year, inside the run and not its first, where the sum over the chain tables of the step from the year before
+(in size), each step over that table's own range on the run (its highest less its lowest), is largest (the earlier year if two
+tie): the year the tables together moved most, whichever of them it was; a table that does not move at all adds nothing. It is
+shaded in every panel and named in the key; the title prints the whole's own change that year (the larger of the whole's two
+values less the smaller, above 0 whichever way it moved: a figure the page's rows give, the title not saying it moved most).
+The link under each band between two panels is one neutral word of the table ("then"), never a claim of cause.
 Score = size x surprise x sturdiness, each 0..1: size how far the finding's number is from the plain reading (the gap
 left, the ratio), surprise whether it goes against the obvious (even the best year falls short; the low ones did not catch
-up; for the chain, how many of the companion series move most in the band year or the two after it), sturdiness how many years
-and members (panels) it stands on. The page takes the model's three picks of the top five.
+up; for the chain, how many of the companion series have their own biggest step in the band year or the year after it),
+sturdiness how many years and members (panels) it stands on. The chain's size is its band's summed steps over the number of
+tables (each table at most 1: all of them at their own biggest step that year). The page takes the model's three picks of the top five.
 
 Request (one JSON line on stdin, one reply line on stdout; mode "candidates"):
   {"mode": "candidates",
@@ -40,9 +49,10 @@ Request (one JSON line on stdin, one reply line on stdout; mode "candidates"):
    "fmts": {"value": fmt, "year": fmt, "times": fmt},           # the spec's format names for a value, a year, a ratio
    "fmt_defs": {fmt: {"scale", "dec", "suffix"}},               # those formats (an axis's ticks are worked out as next_facts does)
    "words": {"measure": words, "unit": words},                 # the measure's name and its unit (no digit)
-   "chain": [{"table", "filter": {dim: code}, "words": {"measure", "unit"}, "fmt"?: fmt, "kind"?: "flow"|"stock"}]?}
+   "chain": [{"table", "filter": {dim: code}, "words": {"measure", "unit"}, "fmt"?: fmt, "kind"?: "flow"|"stock"}]?,
                                                                  # companion tables (knowledge group's chain_companions), their
-                                                                 # place and years the main's; "fmt" defaults to the value format
+                                                                 # place and years the main's; "fmt" absent: taken by size (below)
+   "chain_fmts": {"<table>_d0|d1|d2": {"scale", "dec", "suffix"}}?}   # the formats a chain item with no "fmt" takes by size
 Reply: {"candidates": [{"id", "angle", "layer", "score", "why", "summary"}...], "dropped": [{"angle", "why"}]}, best first;
 "summary" is the one-line English summary the model reads (no number of its own: a finding is picked by its number in the list).
 
@@ -64,7 +74,6 @@ import words as WD  # noqa: E402
 THESIS, NOTES = "thesis_claims", "risk_notes"
 CHAIN_MIN, CHAIN_MAX = 2, 5   # the tables a chain holds
 CHAIN_YEARS = 4      # years in a row every chain table and the whole share, at least
-BAR_MAX = 8          # a chain table of this many years or fewer, all 0 or above, is drawn in bars
 MIN_YEARS = 6        # a pace needs this many years of the whole at least
 RECENT = 5           # the recent pace runs over the last five years
 TOP_K = 5            # the model is shown the five best
@@ -216,7 +225,7 @@ class Req:
         q.members = [c for c in (m.get("members") or codes_of(q.rows, q.table, q.by, q.fixed)) if c != q.whole]
         q.target = r.get("target")
         q.fmts = r.get("fmts") or {}
-        q.defs = r.get("fmt_defs") or {}
+        q.defs = {**(r.get("fmt_defs") or {}), **(r.get("chain_fmts") or {})}
         for k in ("value", "year", "times"):
             if not q.fmts.get(k): raise Refused(f"findings: the request gives no {k} format")
         q.words = r.get("words") or {}
@@ -461,7 +470,7 @@ def angle_chain(q):
     ch = q.chain
     if not isinstance(ch, list) or len(ch) < CHAIN_MIN: return None, f"the request's chain holds fewer than {CHAIN_MIN} tables"
     if len(ch) > CHAIN_MAX: raise Refused(f"the chain holds more than {CHAIN_MAX} tables")
-    if not q.whole or not q.wseries: return None, "no whole to date the event by"
+    if not q.whole or not q.wseries: return None, "no whole to print its change by"
     items, tables = [], []
     for i, it in enumerate(ch):
         if not isinstance(it, dict) or not it.get("table") or not isinstance(it.get("filter"), dict) or not it["filter"]:
@@ -470,8 +479,8 @@ def angle_chain(q):
         for k in ("measure", "unit"):
             if not w.get(k): raise Refused(f"chain table {i + 1} gives no {k} words")
             if any(ch_.isdigit() for ch_ in w[k]): raise Refused(f"chain table {i + 1}'s {k} words hold a digit")
-        fmt = it.get("fmt") or q.fmts["value"]
-        if fmt not in q.defs: raise Refused(f"chain table {i + 1} names the format {fmt}, which the request does not define")
+        fmt = it.get("fmt")
+        if fmt is not None and fmt not in q.defs: raise Refused(f"chain table {i + 1} names the format {fmt}, which the request does not define")
         if it.get("kind") not in (None, "flow", "stock"): raise Refused(f"chain table {i + 1}'s kind is neither flow nor stock")
         key = (it["table"], tuple(sorted(it["filter"].items())))
         if key in tables: raise Refused(f"the chain names {it['table']} at the same filter twice")
@@ -482,30 +491,37 @@ def angle_chain(q):
     ys = run_years({y: 1 for y in sorted(common)}) if common else []
     if len(ys) < CHAIN_YEARS: return None, f"the chain tables and the whole share fewer than {CHAIN_YEARS} years in a row"
     first, last = ys[0], ys[-1]
-    whole = [q.wseries[y][0] for y in ys]
-    steps = {ys[i]: whole[i] - whole[i - 1] for i in range(1, len(ys))}
-    band = max(steps, key=lambda y: (abs(steps[y]), -int(y)))
+    vals_of = [[it["series"][y][0] for y in ys] for it in items]
+    ranges = [max(v) - min(v) for v in vals_of]
+    if not any(ranges): return None, "no chain table moves over the shared years"
+    # each year's summed steps, every table's step over its own range (a table that does not move adds nothing)
+    moved_by = {ys[j]: sum(abs(v[j] - v[j - 1]) / rg for v, rg in zip(vals_of, ranges) if rg) for j in range(1, len(ys))}
+    band = max(moved_by, key=lambda y: (moved_by[y], -int(y)))
     prev = str(int(band) - 1)
-    span = max(whole) - min(whole)
-    if span <= 0 or steps[band] == 0: return None, "the whole does not move over the shared years"
+    step = q.wseries[band][0] - q.wseries[prev][0]
     # the larger of the whole's two values less the smaller, above 0 whichever way it moved
-    hi_y, lo_y = (band, prev) if steps[band] > 0 else (prev, band)
+    hi_y, lo_y = (band, prev) if step >= 0 else (prev, band)
     f = {"m_hi": q.value(q.whole, hi_y), "m_lo": q.value(q.whole, lo_y), "band_y": q.value(q.whole, band),
          "m_step": {"op": "minus", "a": "m_hi", "b": "m_lo", "fmt": q.fmts["value"]}}
     panels, moved = [], 0
     for i, it in enumerate(items):
         code, s = f"c{i + 1}", it["series"]
-        vals = [s[y][0] for y in ys]
+        vals = vals_of[i]
         k = it.get("kind")
-        if k is None: k = "flow" if min(vals) >= 0 and len(ys) <= BAR_MAX else "stock"
+        if k is None: k = "flow" if min(vals) >= 0 else "stock"
         kind = "bar" if k == "flow" and min(vals) >= 0 else "line"
         zero = kind == "bar" or (min(vals) >= 0 and min(vals) <= max(vals) / 2)
         filt = it["filter"]
-        f[f"{code}_first"] = {"table": it["table"], "filter": filt, "time": first, "fmt": it["fmt"]}
-        f[f"{code}_last"] = {"table": it["table"], "filter": filt, "time": last, "fmt": it["fmt"]}
+        fmt = it.get("fmt")
+        if fmt is None:
+            top = max(abs(v) for v in vals)
+            fmt = f"{it['table']}_d{0 if top >= 1000 else 1 if top >= 10 else 2}"
+            if fmt not in q.defs: raise Refused(f"chain table {i + 1} takes the format {fmt} by its size, and the request's chain_fmts does not define it")
+        f[f"{code}_first"] = {"table": it["table"], "filter": filt, "time": first, "fmt": fmt}
+        f[f"{code}_last"] = {"table": it["table"], "filter": filt, "time": last, "fmt": fmt}
         pstep = {ys[j]: abs(vals[j] - vals[j - 1]) for j in range(1, len(ys))}
-        big = max(pstep, key=lambda y: (pstep[y], -int(y)))
-        moved += int(band) <= int(big) <= int(band) + 2
+        big = max(pstep, key=lambda y: (pstep[y], -int(y))) if ranges[i] else None
+        moved += big is not None and int(band) <= int(big) <= int(band) + 1
         p = {"code": code, "title": SW(it["words"]["measure"]), "unit": SW(it["words"]["unit"]), "kind": kind, "zero": zero,
              "points": [s[y][1] for y in ys], "first_text": f"fact:{code}_first", "last_text": f"fact:{code}_last",
              "periods": [f"period:{it['table']}:{first}", f"period:{it['table']}:{last}"]}
@@ -516,7 +532,7 @@ def angle_chain(q):
             "footnote": ST("story.chain.foot")}
     title = W(q.words["measure"]) + T("story.chain.title")
     text = T("story.chain.text")
-    size = clamp(abs(steps[band]) / span)
+    size = clamp(moved_by[band] / len(items))
     share = moved / len(items)
     surprise = clamp(0.3 + 0.7 * share)
     sturdy = clamp(len(ys) / 10) * clamp(len(items) / 4)
@@ -524,7 +540,7 @@ def angle_chain(q):
             "data": data, "claim": {"num": "fact:m_step", "head": title}, "notes": [], "last": "c1_last",
             "score": round(size * surprise * sturdy, 4),
             "why": {"size": round(size, 3), "surprise": round(surprise, 3), "sturdy": round(sturdy, 3), "band": band, "moved": moved},
-            "summary": "companion series side by side around the one year the whole moved most"}, None
+            "summary": "companion series side by side, the one year they together moved most shaded"}, None
 
 
 ANGLES = [angle_path, angle_need, angle_spread, angle_ends, angle_chain]

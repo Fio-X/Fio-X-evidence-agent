@@ -68,7 +68,9 @@ def eu_chain_request():
         rows += [{"src": f"series:{table}/{'.'.join(dims.values())}:{y}:OBS_VALUE", "table": table, "dims": dims, "time": str(y), "value": v}
                  for y, v in zip(ys, vals)]
         chain.append({"table": table, "filter": dims, "words": {"measure": words[0], "unit": words[1]}, **({"kind": kind} if kind else {})})
-    return {**req, "rows": rows, "chain": chain}, names
+    # the formats a chain item with no "fmt" takes by size: three a table, the unit suffix the flow gives (none here)
+    fmts = {f"{c['table']}_d{d}": {"scale": 1, "dec": d, "suffix": ""} for c in chain for d in (0, 1, 2)}
+    return {**req, "rows": rows, "chain": chain, "chain_fmts": fmts}, names
 
 
 def wb_request():
@@ -134,8 +136,9 @@ def ledger(req, composed, names):
     members = req["main"].get("members") or sorted({r["dims"][req["main"]["by"]] for r in rows if r["table"] == req["main"]["table"]})
     facts = compute(composed["facts"], rows, members)
     for k, f in facts.items():
-        d = FMT_DEFS[f["fmt"]]
+        d = {**FMT_DEFS, **req.get("chain_fmts", {})}[f["fmt"]]
         rows.append({"src": f"fact:{k}", "text": f"{f['v'] * d['scale']:,.{d['dec']}f}{d['suffix']}"})
+        rows.append({"src": f"fact:{k}.n", "text": f"{f['v'] * d['scale']:,.{d['dec']}f}"})  # the bare number a placeholder prints
         if "t" in f: rows.append({"src": f"fact:{k}.t.y", "text": f["t"]})
         if composed["facts"][k].get("axis"):
             rows += [{"src": f"fact:{k}.tick{i}", "text": f"{v:,.{d['dec']}f}"} for i, v in enumerate(FN.ticks(f["v"], d), 1)]
@@ -203,7 +206,7 @@ class Findings(unittest.TestCase):
         _, cands, dropped = FN.candidates(req)
         self.assertEqual(dropped, [])
         chain = next(c for c in cands if c["id"] == "chain")
-        self.assertEqual((chain["layer"], chain["why"]["band"]), ("event_chain", "2020"))
+        self.assertEqual((chain["layer"], chain["why"]["band"]), ("event_chain", "2022"))
         self.assertTrue(0 < chain["score"] <= 1)
         composed, facts, drawn = draw_all(self, req, names, ["path", "chain"])
         self.assertEqual([s["layer"] for s in composed["sections"]], ["thesis_claims", "target_path", "event_chain", "risk_notes"])
@@ -211,10 +214,14 @@ class Findings(unittest.TestCase):
         self.assertEqual([(p["code"], p["kind"], p["zero"], "link" in p) for p in data["panels"]],
                          [("c1", "bar", True, True), ("c2", "line", False, True), ("c3", "bar", True, False)])
         self.assertEqual([len(p["points"]) for p in data["panels"]], [6, 6, 6])
-        self.assertEqual((data["band"]["from"], data["band"]["to"]), ("2020", "2020"))
-        # the title's number is the whole's step in 2020, the larger value less the smaller (19.9 -> 22.0)
-        self.assertAlmostEqual(facts["m_step"]["v"], 22.0 - 19.9, places=6)
-        self.assertEqual(facts["band_y"]["t"], "2020")
+        self.assertEqual((data["band"]["from"], data["band"]["to"]), ("2022", "2022"))
+        # the band is the year the tables together moved most, each step over its own range (2022: the gas, the price and the
+        # panels' sum 1.43 against 0.69 in 2023); the title's number is the whole's own change that year, the larger value
+        # less the smaller (21.9 -> 23.0), not the year the whole moved most (2020)
+        self.assertAlmostEqual(facts["m_step"]["v"], 23.0 - 21.9, places=6)
+        self.assertEqual(facts["band_y"]["t"], "2022")
+        # the formats are taken by size: 1000 or more none, 10 or more one decimal place, under 10 two
+        self.assertEqual([facts[f"c{i}_first"]["fmt"] for i in (1, 2, 3)], ["nrg_ti_gas_d1", "nrg_pc_204_d2", "nrg_inf_epcrw_d1"])
         self.assertEqual((facts["c1_first"]["t"], facts["c1_last"]["t"]), ("2019", "2024"))
         title = composed["sections"][2]["title"]
         self.assertIn("{m_step}", title); self.assertIn("{band_y.t}", title)
@@ -229,7 +236,7 @@ class Findings(unittest.TestCase):
         why = lambda r: {d["angle"]: d["why"] for d in FN.candidates(r)[2]}.get("chain")
         self.assertEqual(why({**req, "chain": req["chain"][:1]}), "the request's chain holds fewer than 2 tables")
         self.assertEqual(why({k: v for k, v in req.items() if k != "chain"}), "the request's chain holds fewer than 2 tables")
-        self.assertEqual(why({**req, "main": {**req["main"], "whole": None}}), "no whole to date the event by")
+        self.assertEqual(why({**req, "main": {**req["main"], "whole": None}}), "no whole to print its change by")
         # a companion that shares too few years with the whole
         short = [dict(c) for c in req["chain"]]
         short[0] = dict(short[0], filter={"partner": "NO"})
@@ -246,6 +253,72 @@ class Findings(unittest.TestCase):
         down = [dict(r, value=r["value"] - 100) if r["table"] == "nrg_ti_gas" else r for r in req["rows"]]
         panels = FN.compose({**req, "rows": down, "picks": ["path", "chain"]})["leaves"]["event_chain"]["panels"]
         self.assertEqual((panels[0]["kind"], panels[0]["zero"]), ("line", False))
+
+    def test_the_leaf_child_reads_the_program_operators_from_the_ledger(self):
+        """A page_story request whose spec.facts holds per_year, line_at, step_max, reach_year, group_change and times is drawn by
+        the real child: it reads those facts' values and periods from the request's ledger (layer 1 is the only one to work them
+        out) and never stops at an operator it does not know. With no ledger it refuses, naming the operator; a page of the old
+        operators is worked out here as before."""
+        import json, subprocess
+        import facts as FX
+        for build, picks in ((eu_chain_request, ["path", "need", "spread", "chain"]), (eu_request, ["path", "need", "spread"])):
+            req, names = build()
+            composed = FN.compose({**req, "picks": picks})
+            ops = {q.get("op") for q in composed["facts"].values()}
+            self.assertTrue({"per_year", "line_at", "step_max", "group_change", "times"} <= ops, ops)
+            rows, facts = ledger(req, composed, names)
+            spec = {"title": "t", "kicker": "k", "dek": "d", "source": "s", "refs": [], "facts": composed["facts"], "sections": composed["sections"],
+                    "tables": {t: {"id": t} for t in sorted({r["table"] for r in req["rows"]})}, "fmts": {**FMT_DEFS, "time": {}},
+                    "hero": {"data": {}, "leaves": composed["leaves"]}}
+            line = lambda **kv: json.dumps({"node": "page_story", "panel": {"w": 1140, "h": 0, "frame": None}, "rows": rows,
+                                            "knobs": {"spec": spec, "labels": names}, **kv}, ensure_ascii=False)
+            layers = [s_["layer"] for s_ in composed["sections"]]
+            lines = [line(phase="size")] + [line(layer=n) for n in layers]
+            run_child = lambda ls: [json.loads(x) for x in subprocess.run([sys.executable, "-I", "-B", run.__file__], input="\n".join(ls) + "\n",
+                                                                       capture_output=True, text=True, timeout=120, check=True).stdout.splitlines()]
+            got = run_child(lines)
+            self.assertFalse([g for g in got if "refused" in g or "error" in g], got)
+            last = run_child(lines + [json.dumps({"phase": "page", "layers": {n: g["svg"] for n, g in zip(layers, got[1:])}, "sizes": {}}, ensure_ascii=False)])[-1]
+            self.assertIn("html", last, last)
+            # a number a title prints through a program operator is the ledger's bare number
+            self.assertIn(rows[[r["src"] for r in rows].index("fact:past.n")]["text"], last["html"])
+        # facts.compute: no ledger -> refused, naming the operator; a ledger -> the ledger's value and period
+        spec = {"facts": {"a": {"op": "per_year", "a": "x", "b": "y", "fmt": "x"}}}
+        FX.LEDGER = None
+        with self.assertRaisesRegex(FX.Refused, "per_year"):
+            FX.compute(spec, {})
+        FX.LEDGER = {"fact:a.n": "1,234.5", "fact:a.t.y": "2030"}
+        try:
+            self.assertEqual(FX.compute(spec, {})["a"], {"v": 1234.5, "fmt": "x", "src": "ledger(a)", "t": "2030"})
+            FX.LEDGER = {}
+            with self.assertRaisesRegex(FX.Refused, "not in the request's ledger"):
+                FX.compute(spec, {})
+        finally:
+            FX.LEDGER = None
+
+    def test_chain_formats_and_the_band_follow_the_rules(self):
+        req, _ = eu_chain_request()
+        fmts = lambda r: [FN.compose({**r, "picks": ["path", "chain"]})["facts"][f"c{i}_first"]["fmt"] for i in (1, 2, 3)]
+        big = [dict(r, value=r["value"] * 100) if r["table"] == "nrg_ti_gas" else r for r in req["rows"]]
+        self.assertEqual(fmts({**req, "rows": big})[0], "nrg_ti_gas_d0")          # 16 600 and more: no decimal place
+        # an item's own fmt wins over the size rule; a fmt the request does not define refuses the angle
+        own = [dict(req["chain"][0], fmt="x")] + req["chain"][1:]
+        self.assertEqual(fmts({**req, "chain": own})[0], "x")
+        why = lambda r: {d["angle"]: d["why"] for d in FN.candidates(r)[2]}.get("chain")
+        self.assertRegex(why({k: v for k, v in req.items() if k != "chain_fmts"}), "chain_fmts does not define")
+        self.assertIsNone(why({k: v for k, v in req.items() if k != "chain_fmts"} | {"chain": [dict(c, fmt="x") for c in req["chain"]]}))
+        # a flow is bars at any number of years (the old cap of eight years is gone); a stock stays a line
+        twelve = [r for r in req["rows"] if r["table"] not in ("nrg_ti_gas", "nrg_inf_epcrw", "nrg_pc_204")]
+        for table, dims, base in (("nrg_ti_gas", {"partner": "RU"}, 100), ("nrg_inf_epcrw", {"tech": "PV"}, 20), ("nrg_pc_204", {"price": "HH"}, 0.2)):
+            twelve += [{"src": f"series:{table}/{'.'.join(dims.values())}:{y}:OBS_VALUE", "table": table, "dims": dims, "time": str(y),
+                        "value": base + base * ((y * 7) % 11) / 10} for y in range(2013, 2025)]
+        panels = FN.compose({**req, "rows": twelve, "picks": ["path", "chain"]})["leaves"]["event_chain"]["panels"]
+        self.assertEqual([(len(p["points"]), p["kind"]) for p in panels], [(12, "bar"), (12, "line"), (12, "bar")])
+        # the band is the year of the largest summed steps over each table's range: a table that does not move adds nothing
+        still = [dict(r, value=7.0) if r["table"] == "nrg_inf_epcrw" else r for r in req["rows"]]
+        self.assertEqual(next(c for c in FN.candidates({**req, "rows": still})[1] if c["id"] == "chain")["why"]["band"], "2022")
+        allstill = [dict(r, value=7.0) if r["table"] in ("nrg_inf_epcrw", "nrg_ti_gas", "nrg_pc_204") else r for r in req["rows"]]
+        self.assertEqual(why({**req, "rows": allstill}), "no chain table moves over the shared years")
 
     def test_refusals(self):
         req, _ = eu_request()
