@@ -689,6 +689,22 @@ def hooked(hero, c, spec, hooks=HOOKS):
     return hero
 
 
+def story_size(panel, layers):
+    """A story page's panel is the page itself: each section's leaf drawn once to measure it (as a column page's main leaf is, main_size),
+    the page laid out (story.layout: every section's box on the page), and the panel told as wide as the page and as high as the layout.
+    A leaf that refuses is left to refuse on its own layer line, and no layout is made."""
+    story.PAGE_LAYOUT = None
+    spec = panel.f.spec; drew, html_h = {}, {}
+    for _, _, layer, *_ in story.sections(spec):
+        try: out = layers[layer][0](panel.f, prod.Occ())
+        except FX.Refused: DROPPED.clear(); return {"w": panel.f.W, "h": story.SECTION_MAX_H}
+        DROPPED.clear()
+        if layer in story.HTML_BLOCKS: html_h[layer] = story.bignums_height(out)
+        else: drew[layer] = DREW[layer]
+    story.PAGE_LAYOUT = story.layout(spec, panel.c, drew, html_h)
+    return {"w": panel.f.W, "h": story.PAGE_LAYOUT["H"]}
+
+
 def main():
     panel, off, node = None, None, None
     for line in sys.stdin:
@@ -709,7 +725,12 @@ def main():
             except FX.Refused as e: off = e  # the frame lays the map out to find its empty corner: every layer of the panel refuses
             except Exception as e: off = FX.Refused(f"the panel failed: {type(e).__name__} {e}")  # said, not a child that exits
         name = req.get("layer")
-        if req.get("phase") == "size": out = {"refused": [f"size: {off}"]} if off else {"w": panel.f.W, "h": panel.f.H}
+        if req.get("phase") == "size":
+            if off: out = {"refused": [f"size: {off}"]}
+            elif node == "page_story":
+                try: out = story_size(panel, layers)
+                except FX.Refused as e: out = {"refused": [f"size: {e}"]}
+            else: out = {"w": panel.f.W, "h": panel.f.H}
         elif req.get("phase") == "page":
             global CLAIM_WORDS
             CLAIM_WORDS = req.get("claim_words")
@@ -732,11 +753,17 @@ def main():
                 out = {"svg" if name in svgs else "html": s}
                 if DROPPED: out["dropped"] = list(DROPPED)
                 out.update(SCALE)
+                ph = None
+                if name in svgs and node == "page_story" and story.PAGE_LAYOUT:  # the layer's svg stands where its picture is on the page: the layout's translate
+                    sec = {l: i for i, _, l, *_ in story.sections(panel.f.spec)}.get(name)
+                    if sec is not None:
+                        b = story.PAGE_LAYOUT["boxes"][sec]; ph = (round(b["x"] + b["fx"], 1), round(b["y"] + b["fy"], 1))
+                        out["svg"] = s = f'<g transform="translate({ph[0]},{ph[1]})">{s}</g>'
                 if name in svgs:  # what it drew, read back as layer 1 reads it, for its checks
                     out["texts"], bad = drawn(s)
                     # a story leaf's words with no ledger entry, drawn over the picture as html: told to layer 1 in the texts' own terms
                     # (the picture's pixels, the baseline), so it checks them for overlap and out-of-panel as it does the texts
-                    if name in OVER: out["words"] = [dict(text=w["text"], x=w["x"], y=w["y"], size=w["size"], anchor=w["anchor"], baseline="", rot=0.0) for w in OVER[name]]
+                    if name in OVER: out["words"] = [dict(text=w["text"], x=w["x"] + (ph or (0, 0))[0], y=w["y"] + (ph or (0, 0))[1], size=w["size"], anchor=w["anchor"], baseline="", rot=0.0) for w in OVER[name]]
                     if bad: out = {"refused": [f"{name}: {b}" for b in bad]}
                 if name == "map": out["sub"] = panel.f.mapout  # the map's own layers, for the layer-by-layer parity check
             except FX.Refused as e: out = {"refused": [f"{name}: {e}"]}

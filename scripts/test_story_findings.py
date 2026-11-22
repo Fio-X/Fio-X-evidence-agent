@@ -390,6 +390,7 @@ class Findings(unittest.TestCase):
         self.assertFalse([g for g in got if "refused" in g or "error" in g], got)
         self.assertTrue(got[0]["w"] > 0 and got[0]["h"] > 0, got[0])  # the size phase tells layer 1 a panel it can take
         bodies = {n: g.get("svg") or g.get("html") for n, g in zip(layers, got[1:])}
+        self.size, self.replies = got[0], dict(zip(layers, got[1:]))
         self.words = {n: g["words"] for n, g in zip(layers, got[1:]) if "words" in g}  # what each story layer tells layer 1 of its overlay words
         # the first layer takes a text of an svg only with a src: every <text> of every svg layer has one (a word with no ledger entry is html over the picture)
         for n, g in zip(layers, got[1:]):
@@ -596,25 +597,27 @@ class Findings(unittest.TestCase):
     def test_layout_side_stack_pair_and_the_knobs(self):
         import re as _re
         lay_of = lambda html: dict(_re.findall(r'data-id="([a-z_]+)" data-layout="([a-z]+)"', html))
-        widths = lambda html: {m.group(1): int(m.group(2)) for m in _re.finditer(r'data-module-id="([a-z_]+)" data-layer="[a-z_]+"><svg[^>]*width="(\d+)"', html)}
+        widths = lambda html: {m.group(1): int(m.group(2)) for m in _re.finditer(r'data-module-id="([a-z_]+)" data-layer="[a-z_]+"(?: style="[^"]*")?><svg[^>]*width="(\d+)"', html)}
         req, names = eu_chain_request()
         req["chain"] = [req["chain"][0], req["chain"][2]]
         _, _, _, page_html = self._page(req, names, ["path", "chain", "members", "spread"])
         lay = dict(_re.findall(r'data-id="([a-z_]+)" data-layout="([a-z]+)"', page_html))
         self.assertEqual(lay, {"bignums": "bare", "thesis": "bare", "legend": "bare", "path": "side", "chain": "stack", "members": "side", "spread": "side", "notes": "bare"})
         self.assertEqual(widths(page_html), {"path": 716, "chain": 1140, "members": 716, "spread": 716})  # 1140 - 36 - 388
-        self.assertIn('style="--tw:388px;--gut:36px"', page_html)
+        self.assertIn('style="--tw:388px;--gut:36px;height:', page_html)
         # two paired pictures share a row, half the page less half the gutter each
         wreq, wnames = wb_request()
         _, _, _, page_html = self._page(wreq, wnames, ["ends", "rank", "members", "spread"])
-        self.assertEqual(len(_re.findall(r'<div class="pair"><section class="sec" data-id="(?:ends|rank)" data-layout="pair">.*?</section><section class="sec" data-id="(?:ends|rank)" data-layout="pair">', page_html, _re.S)), 1)
+        pair = {m[0]: (float(m[1]), float(m[2]), float(m[3])) for m in _re.findall(r'data-id="(ends|rank)" data-layout="pair" style="left:([\d.]+)px;top:([\d.]+)px;width:([\d.]+)px', page_html)}
+        self.assertEqual(sorted(pair), ["ends", "rank"]); self.assertEqual(pair["ends"][0], 0); self.assertEqual(pair["rank"][0], 552 + 36)  # one row: the same top, the second a half and a gutter along
+        self.assertEqual(pair["ends"][1], pair["rank"][1])
         self.assertEqual({k: v for k, v in widths(page_html).items() if k in ("ends", "rank")}, {"ends": 552, "rank": 552})
         # the knobs: stack puts every picture across the page, pair off keeps the two apart, a share moves the words' column
         _, _, _, stacked = self._page(wreq, wnames, ["ends", "rank", "members", "spread"], style={"story_layout": {"layout": "stack"}})
         self.assertEqual(set(_re.findall(r'data-id="[a-z_]+" data-layout="([a-z]+)"', stacked)), {"bare", "stack"})
         self.assertEqual(set(widths(stacked).values()), {1140})
         _, _, _, apart = self._page(wreq, wnames, ["ends", "rank", "members", "spread"], style={"story_layout": {"pair": "off", "text_share": 0.4}})
-        self.assertNotIn('class="pair"', apart)
+        self.assertEqual(lay_of(apart)["ends"], "side")
         self.assertEqual(widths(apart)["ends"], 1140 - round(1140 * 0.4) - 36)  # pair off: the ends go beside their words
         self.assertIn("--tw:456px", apart)
         self.assertEqual(lay_of(apart)["spread"], "stack")  # the winners and losers need 680 px: beside a wider words' column they go across the page
@@ -689,12 +692,64 @@ class Findings(unittest.TestCase):
             self.assertFalse(_re.search(r"[0-9]", w["text"]), w)
             self.assertTrue(w["size"] > 0 and w["x"] >= 0 and w["y"] > 0, w)
         placed = _re.findall(r'<span style="left:([\d.]+)px;top:([-\d.]+)px;font-size:([\d.]+)px;[^>]*>([^<]*)</span>', page_html)
-        as_page = lambda w: (f'{w["x"]:.1f}', f'{w["y"] - w["size"] * 0.88:.1f}', f'{w["size"]:g}', w["text"])
-        self.assertEqual(sorted(as_page(w) for w in told), sorted(placed))  # one to one with what the page puts over the pictures
+        # layer 1 is told the words at the page's coordinates (the layer's translate); the page puts them in the picture's own pixels
+        at = {n: tuple(float(v) for v in _re.match(r'<g transform="translate\(([-\d.]+),([-\d.]+)\)">', bodies[n]).groups()) for n in self.words}
+        as_page = lambda n, w: (f'{w["x"] - at[n][0]:.1f}', f'{w["y"] - at[n][1] - w["size"] * 0.88:.1f}', f'{w["size"]:g}', w["text"])
+        self.assertEqual(sorted(as_page(n, w) for n, ws in self.words.items() for w in ws), sorted(placed))  # one to one with what the page puts over the pictures
         # the svgs themselves say no such word, and no <text> of theirs stands in for one
         for n, ws in self.words.items():
             left = {x["text"] for x in run.drawn(bodies[n])[0]}
             self.assertFalse(left & {w["text"] for w in ws}, n)
+
+    def _layout_checked(self, page_html):
+        """The size phase's layout, read back off the page and the replies: sections in disjoint boxes inside the page, each picture where its
+        layer's translate puts it (the layer 1's coordinates), every text and word of every layer on the page and none over another."""
+        import re as _re
+        W, H = self.size["w"], self.size["h"]
+        self.assertEqual(W, 1140); self.assertEqual(_re.search(r'class="story" style="[^"]*;height:([\d.]+)px', page_html)[1], f"{H:g}")
+        boxes = {m[0]: tuple(float(v) for v in m[1:]) for m in _re.findall(r'<section class="sec" data-id="([a-z_]+)" data-layout="[a-z]+" style="left:([\d.]+)px;top:([\d.]+)px;width:([\d.]+)px;height:([\d.]+)px"', page_html)}
+        self.assertGreaterEqual(len(boxes), 6)
+        rect = lambda b: (b[0], b[1], b[0] + b[2], b[1] + b[3])
+        hit = lambda a, b: a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
+        ids = sorted(boxes)
+        for i, a in enumerate(ids):
+            self.assertTrue(rect(boxes[a])[2] <= W + 0.01 and rect(boxes[a])[3] <= H + 0.01, (a, boxes[a], W, H))
+            for b in ids[i + 1:]: self.assertFalse(hit(rect(boxes[a]), rect(boxes[b])), (a, b, boxes[a], boxes[b]))
+        placed = 0
+        for chunk in page_html.split('<section class="sec" data-id="')[1:]:
+            sid = chunk[:chunk.index('"')]
+            m = _re.search(r'data-layer="([a-z_]+)" style="left:([\d.]+)px;top:([\d.]+)px"><svg[^>]*width="([\d.]+)" height="([\d.]+)"', chunk)
+            if not m: continue
+            layer, fx, fy, w, h = m[1], float(m[2]), float(m[3]), float(m[4]), float(m[5])
+            x0, y0 = boxes[sid][0] + fx, boxes[sid][1] + fy
+            t = _re.match(r'<g transform="translate\(([-\d.]+),([-\d.]+)\)">', self.replies[layer]["svg"])
+            self.assertEqual((float(t[1]), float(t[2])), (round(x0, 1), round(y0, 1)), layer)  # the layer reports where the page puts its picture
+            self.assertTrue(fx + w <= boxes[sid][2] + 0.01 and fy + h <= boxes[sid][3] + 0.01, (sid, fx, fy, w, h, boxes[sid]))  # the picture is inside its box
+            placed += 1
+        self.assertGreaterEqual(placed, 4)
+        # every text and word of every layer lies on the page and over no other: layer 1's rules, over the page
+        items = []
+        for n, g in self.replies.items():
+            for t in (g.get("texts") or []) + (g.get("words") or []):
+                sz = t["size"]; tw_ = K.tw(t["text"], sz); x = t["x"] - (tw_ if t["anchor"] == "end" else tw_ / 2 if t["anchor"] == "middle" else 0)
+                items.append((n, t["text"], (x, t["y"] - sz * 0.8, x + tw_, t["y"] + sz * 0.25)))
+        self.assertGreater(len(items), 40)
+        for n, tx, b in items: self.assertTrue(-1 <= b[0] and b[2] <= W + 1 and -1 <= b[1] and b[3] <= H + 1, (n, tx, b))
+        for i, (n1, t1, b1) in enumerate(items):
+            for n2, t2, b2 in items[i + 1:]:
+                if n1 != n2: self.assertFalse(hit(b1, b2), f"{n1} {t1!r} over {n2} {t2!r}")
+
+    def test_the_layout_is_the_page_each_layer_reports_in_its_place(self):
+        """Two data shapes: the EU chain page (side, stack, bare) and the world page (a pair row)."""
+        req, names = eu_chain_request()
+        req["chain"] = [req["chain"][0], req["chain"][2]]
+        req["points"] = self._points(EU_MEMBERS)
+        _, _, _, page_html = self._page(req, names, ["path", "chain", "map", "members"])
+        self._layout_checked(page_html)
+        wreq, wnames = self._wb8()
+        _, _, _, page_html = self._page(wreq, wnames, ["map", "ends", "rank", "spread"])
+        self.assertIn('data-layout="pair"', page_html)
+        self._layout_checked(page_html)
 
     def test_rank_needs_five_members(self):
         req, _ = wb_request()
