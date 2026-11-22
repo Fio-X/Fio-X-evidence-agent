@@ -14,9 +14,23 @@ and who fell), each one section with one story leaf (a leaf stands at most once 
   * spread (winners_losers): the members that rose and those that fell between the first and the last year, and whether
                               the lowest at the start caught up with the highest (group_change), when both columns hold one.
   * ends   (pair_bars):      the highest and the lowest member at the last year side by side, the first over the second.
+  * chain  (event_chain):    the companion tables' series side by side on the years they and the whole share (a panel
+                              each, the page's measure not one of them), the one year the whole moved most shaded across
+                              them: what moved around that year, told in order and never as a cause; needs the request's
+                              "chain" (two to five tables) and a whole.
+Chain rules. Years: the longest run of consecutive years, ending at the last, that every chain table and the whole have
+(at least CHAIN_YEARS). A chain table is read at the dims its "filter" names (one row a year, else the angle is dropped).
+Panel kind: the item's "kind" ("flow" = bars, "stock" = line) when it gives one, else bars when every value is 0 or above
+and the run has at most BAR_MAX years (a few yearly amounts), else a line; a line is drawn from 0 when its values are all
+0 or above and its lowest is at most half its highest (a series that swings from near nothing), else on its own range.
+Band: the one year, inside the run and not its first, where the whole's step from the year before is largest in size (the
+earlier year if two tie); it is shaded in every panel and named in the key. Its size is the step over the whole's range on
+the run; its title prints that step (the larger of the two values less the smaller, so it is above 0). The link under each
+band between two panels is one neutral word of the table ("then"), never a claim of cause.
 Score = size x surprise x sturdiness, each 0..1: size how far the finding's number is from the plain reading (the gap
 left, the ratio), surprise whether it goes against the obvious (even the best year falls short; the low ones did not catch
-up), sturdiness how many years and members it stands on. The page takes the model's three picks of the top five.
+up; for the chain, how many of the companion series move most in the band year or the two after it), sturdiness how many years
+and members (panels) it stands on. The page takes the model's three picks of the top five.
 
 Request (one JSON line on stdin, one reply line on stdout; mode "candidates"):
   {"mode": "candidates",
@@ -25,7 +39,10 @@ Request (one JSON line on stdin, one reply line on stdout; mode "candidates"):
    "target": {"table", "filter": {dim: code}, "time": year}?,   # the whole's target row (knowledge group, I8)
    "fmts": {"value": fmt, "year": fmt, "times": fmt},           # the spec's format names for a value, a year, a ratio
    "fmt_defs": {fmt: {"scale", "dec", "suffix"}},               # those formats (an axis's ticks are worked out as next_facts does)
-   "words": {"measure": words, "unit": words}}                  # the measure's name and its unit (no digit)
+   "words": {"measure": words, "unit": words},                 # the measure's name and its unit (no digit)
+   "chain": [{"table", "filter": {dim: code}, "words": {"measure", "unit"}, "fmt"?: fmt, "kind"?: "flow"|"stock"}]?}
+                                                                 # companion tables (knowledge group's chain_companions), their
+                                                                 # place and years the main's; "fmt" defaults to the value format
 Reply: {"candidates": [{"id", "angle", "layer", "score", "why", "line"}...], "dropped": [{"angle", "why"}]}, best first;
 "line" is the one-line English summary the model reads (no number of its own: a finding is picked by its number in the list).
 
@@ -45,6 +62,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # run as a child
 import words as WD  # noqa: E402
 
 THESIS, NOTES = "thesis_claims", "risk_notes"
+CHAIN_MIN, CHAIN_MAX = 2, 5   # the tables a chain holds
+CHAIN_YEARS = 4      # years in a row every chain table and the whole share, at least
+BAR_MAX = 8          # a chain table of this many years or fewer, all 0 or above, is drawn in bars
 MIN_YEARS = 6        # a pace needs this many years of the whole at least
 RECENT = 5           # the recent pace runs over the last five years
 TOP_K = 5            # the model is shown the five best
@@ -203,6 +223,7 @@ class Req:
         for k in ("measure", "unit"):
             if not q.words.get(k): raise Refused(f"findings: the request gives no {k} words")
             if any(ch.isdigit() for ch in q.words[k]): raise Refused(f"findings: the {k} words hold a digit")
+        q.chain = r.get("chain")
         q.panel = {c: series(q.rows, q.table, q.by, c, q.fixed) for c in q.members}
         q.panel = {c: s for c, s in q.panel.items() if s}
         q.wseries = series(q.rows, q.table, q.by, q.whole, q.fixed) if q.whole else {}
@@ -423,7 +444,90 @@ def angle_ends(q):
             "line": "the highest member over the lowest at the last year"}, None
 
 
-ANGLES = [angle_path, angle_need, angle_spread, angle_ends]
+def chain_series(q, item):
+    """{year: (value, src)} of one chain table at the dims its filter names, one row a year; two rows at a year refuse."""
+    out = {}
+    for r in q.rows:
+        d = r.get("dims") or {}
+        if r.get("table") != item["table"] or any(d.get(k) != v for k, v in item["filter"].items()): continue
+        t, v = str(r.get("time")), number(r.get("value"))
+        if not (len(t) == 4 and t.isdigit() and v is not None): continue
+        if t in out: raise Refused(f"the chain table {item['table']} has two rows at {t} at that filter")
+        out[t] = (v, r["src"])
+    return dict(sorted(out.items()))
+
+
+def angle_chain(q):
+    ch = q.chain
+    if not isinstance(ch, list) or len(ch) < CHAIN_MIN: return None, f"the request's chain holds fewer than {CHAIN_MIN} tables"
+    if len(ch) > CHAIN_MAX: raise Refused(f"the chain holds more than {CHAIN_MAX} tables")
+    if not q.whole or not q.wseries: return None, "no whole to date the event by"
+    items, tables = [], []
+    for i, it in enumerate(ch):
+        if not isinstance(it, dict) or not it.get("table") or not isinstance(it.get("filter"), dict) or not it["filter"]:
+            raise Refused(f"chain table {i + 1} names no table or filter")
+        w = it.get("words") or {}
+        for k in ("measure", "unit"):
+            if not w.get(k): raise Refused(f"chain table {i + 1} gives no {k} words")
+            if any(ch_.isdigit() for ch_ in w[k]): raise Refused(f"chain table {i + 1}'s {k} words hold a digit")
+        fmt = it.get("fmt") or q.fmts["value"]
+        if fmt not in q.defs: raise Refused(f"chain table {i + 1} names the format {fmt}, which the request does not define")
+        if it.get("kind") not in (None, "flow", "stock"): raise Refused(f"chain table {i + 1}'s kind is neither flow nor stock")
+        key = (it["table"], tuple(sorted(it["filter"].items())))
+        if key in tables: raise Refused(f"the chain names {it['table']} at the same filter twice")
+        tables.append(key)
+        items.append(dict(it, fmt=fmt, series=chain_series(q, it)))
+    common = set(q.wseries)
+    for it in items: common &= set(it["series"])
+    ys = run_years({y: 1 for y in sorted(common)}) if common else []
+    if len(ys) < CHAIN_YEARS: return None, f"the chain tables and the whole share fewer than {CHAIN_YEARS} years in a row"
+    first, last = ys[0], ys[-1]
+    whole = [q.wseries[y][0] for y in ys]
+    steps = {ys[i]: whole[i] - whole[i - 1] for i in range(1, len(ys))}
+    band = max(steps, key=lambda y: (abs(steps[y]), -int(y)))
+    prev = str(int(band) - 1)
+    span = max(whole) - min(whole)
+    if span <= 0 or steps[band] == 0: return None, "the whole does not move over the shared years"
+    # the larger of the whole's two values less the smaller, above 0 whichever way it moved
+    hi_y, lo_y = (band, prev) if steps[band] > 0 else (prev, band)
+    f = {"m_hi": q.value(q.whole, hi_y), "m_lo": q.value(q.whole, lo_y), "band_y": q.value(q.whole, band),
+         "m_step": {"op": "minus", "a": "m_hi", "b": "m_lo", "fmt": q.fmts["value"]}}
+    panels, moved = [], 0
+    for i, it in enumerate(items):
+        code, s = f"c{i + 1}", it["series"]
+        vals = [s[y][0] for y in ys]
+        k = it.get("kind")
+        if k is None: k = "flow" if min(vals) >= 0 and len(ys) <= BAR_MAX else "stock"
+        kind = "bar" if k == "flow" and min(vals) >= 0 else "line"
+        zero = kind == "bar" or (min(vals) >= 0 and min(vals) <= max(vals) / 2)
+        filt = it["filter"]
+        f[f"{code}_first"] = {"table": it["table"], "filter": filt, "time": first, "fmt": it["fmt"]}
+        f[f"{code}_last"] = {"table": it["table"], "filter": filt, "time": last, "fmt": it["fmt"]}
+        pstep = {ys[j]: abs(vals[j] - vals[j - 1]) for j in range(1, len(ys))}
+        big = max(pstep, key=lambda y: (pstep[y], -int(y)))
+        moved += int(band) <= int(big) <= int(band) + 2
+        p = {"code": code, "title": SW(it["words"]["measure"]), "unit": SW(it["words"]["unit"]), "kind": kind, "zero": zero,
+             "points": [s[y][1] for y in ys], "first_text": f"fact:{code}_first", "last_text": f"fact:{code}_last",
+             "periods": [f"period:{it['table']}:{first}", f"period:{it['table']}:{last}"]}
+        if i < len(items) - 1: p["link"] = ST("story.chain.link")
+        panels.append(p)
+    data = {"title": SW(q.words["measure"]), "panels": panels,
+            "band": {"from": band, "to": band, "label": ST("story.chain.band", y="band_y")},
+            "footnote": ST("story.chain.foot")}
+    title = W(q.words["measure"]) + T("story.chain.title")
+    text = T("story.chain.text")
+    size = clamp(abs(steps[band]) / span)
+    share = moved / len(items)
+    surprise = clamp(0.3 + 0.7 * share)
+    sturdy = clamp(len(ys) / 10) * clamp(len(items) / 4)
+    return {"angle": "chain", "layer": "event_chain", "kicker": T("story.chain.kicker"), "title": title, "text": text, "facts": f,
+            "data": data, "claim": {"num": "fact:m_step", "head": title}, "notes": [], "last": "c1_last",
+            "score": round(size * surprise * sturdy, 4),
+            "why": {"size": round(size, 3), "surprise": round(surprise, 3), "sturdy": round(sturdy, 3), "band": band, "moved": moved},
+            "line": "companion series side by side around the one year the whole moved most"}, None
+
+
+ANGLES = [angle_path, angle_need, angle_spread, angle_ends, angle_chain]
 
 
 def candidates(r):
