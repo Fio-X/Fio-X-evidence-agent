@@ -2007,6 +2007,7 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
             "facts::read_entry",
             "facts::reads_back",
             "facts::leaf_ledger",
+            "facts::value_year",
             "facts::who",
             "facts::text",
             "facts::scaled",

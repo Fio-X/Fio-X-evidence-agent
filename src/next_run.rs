@@ -10622,6 +10622,24 @@ mod tests {
                 .into_iter()
                 .map(|f| (f.key.clone(), f))
                 .collect();
+            // st1 11-23: the header's big numbers print each one's year from the request's ledger
+            let all: Vec<crate::next_facts::Fact> = facts.values().cloned().collect();
+            let ledger = crate::next_facts::leaf_ledger(&spec, &read, &all).unwrap();
+            // every fact or period entry the child's sections and leaves name is one the ledger holds (a value the program
+            // reads at a year has no .t.y of its own: its year is its table's period entry)
+            fn named(v: &Value, out: &mut Vec<String>) {
+                match v {
+                    Value::String(s) if s.starts_with("fact:") || s.starts_with("period:") => out.push(s.clone()),
+                    Value::Array(a) => a.iter().for_each(|x| named(x, out)),
+                    Value::Object(o) => o.values().for_each(|x| named(x, out)),
+                    _ => {}
+                }
+            }
+            let mut srcs = Vec::new();
+            named(&page["knobs"]["spec"]["sections"], &mut srcs);
+            named(&page["knobs"]["spec"]["hero"], &mut srcs);
+            let missing: Vec<&String> = srcs.iter().filter(|s| !ledger.contains_key(s.as_str())).collect();
+            assert!(missing.is_empty(), "goal {goal}: not in the ledger {missing:?}");
             assert_eq!(facts["best"].t.as_deref(), Some("2020"));
             assert_eq!((facts["best"].fmt.as_str(), facts["p_best"].fmt.as_str()), ("story_delta", "pc"));
             assert_eq!(facts["p_best"].v < facts["goal"].v, short, "goal {goal}");

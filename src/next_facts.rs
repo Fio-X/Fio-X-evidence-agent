@@ -1801,6 +1801,24 @@ pub fn date_parts(row: &Row, column: &str) -> Result<[Num; 3], String> {
     Ok([part(0..4, "y")?, part(5..7, "m")?, part(8..10, "d")?])
 }
 
+/// The year a value fact (op value, no period of its own) reads at: the four-digit year every row it reads holds, None when
+/// it reads none, the rows hold two years, or a time that is no year.
+fn value_year(f: &Fact, rows: &[Row]) -> Option<String> {
+    if f.op != "value" || f.reads.is_empty() {
+        return None;
+    }
+    let years: BTreeSet<&str> = rows
+        .iter()
+        .filter(|r| f.reads.contains(&r.src))
+        .map(|r| r.time.get(..4).unwrap_or(""))
+        .collect();
+    let read = rows.iter().filter(|r| f.reads.contains(&r.src)).count();
+    match years.into_iter().collect::<Vec<_>>()[..] {
+        [y] if read == f.reads.len() && y.len() == 4 && y.bytes().all(|b| b.is_ascii_digit()) => Some(y.to_string()),
+        _ => None,
+    }
+}
+
 /// Every entry a leaf may print, src to text: per fact its text, its bare number, its display part when it has one
 /// (display) and its period's parts (`.t.y`, then
 /// `.t.m` or `.t.h`, whichever the period has); per series table its years, months and half years; per record row its date's parts
@@ -1863,6 +1881,9 @@ pub fn leaf_ledger(
             {
                 out.insert(n.src, n.text);
             }
+        } else if let Some(y) = value_year(f, rows) {
+            // a value read at one year (op value): its year is the year of the rows it reads, one year for all of them
+            out.insert(format!("fact:{}.t.y", f.key), y);
         }
     }
     // a group page's member-list year, when it is not the data year (four digits, or the request is off)
@@ -2225,7 +2246,15 @@ pub fn recheck(
             "r" => display(f, &spec.fmts)
                 .and_then(|n| n.ok_or_else(|| format!("{key} has no display part"))),
             "t" => num(f, &spec.fmts, Part::Period),
-            "t.y" => num(f, &spec.fmts, Part::Year),
+            "t.y" => match value_year(f, rows) {
+                // a value read at one year: the year of the rows it reads (leaf_ledger)
+                Some(y) if f.t.is_none() => Ok(Num {
+                    src: src.clone(),
+                    value: y.parse().unwrap_or(f64::NAN),
+                    text: y,
+                }),
+                _ => num(f, &spec.fmts, Part::Year),
+            },
             "t.m" => num(f, &spec.fmts, Part::Month),
             "t.h" => num(f, &spec.fmts, Part::Half),
             t if t.starts_with("tick") => ticks(f, &spec.fmts).and_then(|ts| {
@@ -3012,6 +3041,37 @@ mod tests {
     }
 
     /// A leaf that writes the words gets bare numbers only: a share without "%", a period as its year and month (or half),
+    /// st1 11-23: a value read at one year has the year of the rows it reads as its .t.y entry (a series row, a target row
+    /// of the legal-targets registry); a value over rows of two years, a row it names that is not there, or a half-year
+    /// period's own years elsewhere give none.
+    #[test]
+    fn a_value_read_at_a_year_has_that_year_as_an_entry() {
+        let row = |src: &str, time: &str| Row {
+            src: src.into(),
+            table: "t".into(),
+            dims: BTreeMap::new(),
+            time: time.into(),
+            value: 1.0,
+        };
+        let rows = [row("series:t/EU:2024:OBS_VALUE", "2024"), row("target:eu-2030", "2030"), row("series:t/DE:2023:OBS_VALUE", "2023")];
+        let value = |reads: &[&str]| Fact {
+            key: "now".into(),
+            op: "value".into(),
+            v: 1.0,
+            t: None,
+            n: None,
+            who: Vec::new(),
+            fmt: "pc".into(),
+            reads: reads.iter().map(|r| r.to_string()).collect(),
+            exact: None,
+        };
+        assert_eq!(value_year(&value(&["series:t/EU:2024:OBS_VALUE"]), &rows).as_deref(), Some("2024"));
+        assert_eq!(value_year(&value(&["target:eu-2030"]), &rows).as_deref(), Some("2030"));
+        assert_eq!(value_year(&value(&["series:t/EU:2024:OBS_VALUE", "series:t/DE:2023:OBS_VALUE"]), &rows), None);
+        assert_eq!(value_year(&value(&["series:t/FR:2024:OBS_VALUE"]), &rows), None);
+        assert_eq!(value_year(&Fact { op: "minus".into(), ..value(&["series:t/EU:2024:OBS_VALUE"]) }, &rows), None);
+    }
+
     /// each rechecked from the rows; a part the period lacks is no entry.
     #[test]
     fn bare_shares_and_period_parts_are_entries_rechecked_from_the_rows() {
