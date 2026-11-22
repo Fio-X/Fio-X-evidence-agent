@@ -1921,6 +1921,97 @@
    "reserve": false,
    "knobs": []
   },
+  "small_multiples": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "size",
+     "default": 12,
+     "min": 11,
+     "max": 16,
+     "step": 0.5,
+     "what": "label size px (11 is the page floor)"
+    },
+    {
+     "name": "title_size",
+     "default": 16,
+     "min": 12,
+     "max": 22,
+     "step": 1,
+     "what": "chart name size px"
+    },
+    {
+     "name": "width",
+     "default": 1140,
+     "min": 480,
+     "max": 1400,
+     "step": 10,
+     "what": "picture width in px"
+    },
+    {
+     "name": "cols",
+     "default": 4,
+     "min": 2,
+     "max": 6,
+     "step": 1,
+     "what": "cells in a row"
+    },
+    {
+     "name": "plot_h",
+     "default": 64,
+     "min": 40,
+     "max": 160,
+     "step": 4,
+     "what": "a cell's plot height in px"
+    },
+    {
+     "name": "max_cells",
+     "default": 12,
+     "min": 6,
+     "max": 12,
+     "step": 1,
+     "what": "cells drawn, the first of the order"
+    },
+    {
+     "name": "sort",
+     "default": "value",
+     "options": [
+      "value",
+      "change",
+      "given"
+     ],
+     "what": "cell order: the last value high to low, the change over the span, or as given"
+    },
+    {
+     "name": "line_w",
+     "default": 1.8,
+     "min": 1,
+     "max": 3.5,
+     "step": 0.1,
+     "what": "a cell's line width in px"
+    },
+    {
+     "name": "gap",
+     "default": 22,
+     "min": 10,
+     "max": 48,
+     "step": 2,
+     "what": "space between two cells in px"
+    },
+    {
+     "name": "min_cell",
+     "default": 150,
+     "min": 110,
+     "max": 300,
+     "step": 10,
+     "what": "the narrowest cell drawn; a narrower board refuses"
+    }
+   ],
+   "eats": [
+    "annual",
+    "one_unit"
+   ]
+  },
   "stack_area": {
    "reserve": false,
    "knobs": []
@@ -2484,7 +2575,8 @@
    "target_path",
    "pair_bars",
    "thesis_claims",
-   "risk_notes"
+   "risk_notes",
+   "small_multiples"
   ],
   "change": [
    "bignums",
@@ -2508,7 +2600,8 @@
    "target_path",
    "pair_bars",
    "thesis_claims",
-   "risk_notes"
+   "risk_notes",
+   "small_multiples"
   ],
   "flow": [
    "bignums",
@@ -2532,7 +2625,8 @@
    "target_path",
    "pair_bars",
    "thesis_claims",
-   "risk_notes"
+   "risk_notes",
+   "small_multiples"
   ],
   "composition": [
    "bignums",
@@ -2556,7 +2650,8 @@
    "target_path",
    "pair_bars",
    "thesis_claims",
-   "risk_notes"
+   "risk_notes",
+   "small_multiples"
   ],
   "ranked_bars": [
    "bignums",
@@ -2580,7 +2675,8 @@
    "target_path",
    "pair_bars",
    "thesis_claims",
-   "risk_notes"
+   "risk_notes",
+   "small_multiples"
   ],
   "change_bars": [
    "bignums",
@@ -2604,7 +2700,8 @@
    "target_path",
    "pair_bars",
    "thesis_claims",
-   "risk_notes"
+   "risk_notes",
+   "small_multiples"
   ],
   "block_ranks": [
    "bignums",
@@ -2628,7 +2725,8 @@
    "target_path",
    "pair_bars",
    "thesis_claims",
-   "risk_notes"
+   "risk_notes",
+   "small_multiples"
   ],
   "composition_steps": [
    "bignums",
@@ -2652,7 +2750,8 @@
    "target_path",
    "pair_bars",
    "thesis_claims",
-   "risk_notes"
+   "risk_notes",
+   "small_multiples"
   ],
   "one_line": [
    "bignums",
@@ -2676,7 +2775,8 @@
    "target_path",
    "pair_bars",
    "thesis_claims",
-   "risk_notes"
+   "risk_notes",
+   "small_multiples"
   ],
   "page_story": [
    "thesis_claims",
@@ -2686,6 +2786,7 @@
    "winners_losers",
    "pair_bars",
    "rankbar",
+   "small_multiples",
    "risk_notes",
    "bignums"
   ],
@@ -2821,6 +2922,7 @@
     "winners_losers",
     "pair_bars",
     "rankbar",
+    "small_multiples",
     "risk_notes"
    ],
    "eats": [

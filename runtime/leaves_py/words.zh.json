@@ -151,5 +151,15 @@
 "story.big.fell": "{year} 至 {to} 年降了",
 "story.big.ratio": "最高的{name}是最低的几倍",
 "story.big.hi": "{year} 年最高：{name}",
-"story.big.lo": "{year} 年最低：{name}"
+"story.big.lo": "{year} 年最低：{name}",
+"story.sm.kicker": "成员走势",
+"story.sm.title_split": "{y:y0}至{y:y1}，{n:hi}涨了 {f:dhi}，{n:lo}却降了 {f:dlo}",
+"story.sm.title_up": "{y:y0}至{y:y1}，{n:hi}涨了 {f:dhi}，{n:lo}只涨了 {f:dlo}",
+"story.sm.title_down": "{y:y0}至{y:y1}，{n:lo}降了 {f:dlo}，{n:hi}只降了 {f:dhi}",
+"story.sm.text": "每格是一个成员的走势，各格共用同一条纵轴，按{y:y1}的值从高到低排开。",
+"story.sm.text_ref": "每格是一个成员的走势，各格共用同一条纵轴，按{y:y1}的值从高到低排开，淡线是{n:w}。",
+"story.sm.claim": "走势最好的成员的变化",
+"story.sm.ref": "{n:w}（淡线）",
+"story.sm.target": "目标 {f:goal}",
+"story.sm.foot": "各格共用同一条纵轴"
 }
