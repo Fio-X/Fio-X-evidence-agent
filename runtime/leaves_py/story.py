@@ -17,7 +17,7 @@ Page checks made here (each refuses the page naming the section):
    or a name alone is no number), so no section is headed by words alone;
  * one fact, one writing: a ledger entry printed more than once on the page prints the same text every time;
  * every section's layer is drawn, none twice, none that is no story leaf; every picture drawn is placed.
-A picture that is a chart (every leaf but the two text blocks) is its own module of the browser check (pub-visual, data-module-id the
+A section that draws the header's big numbers (layer bignums, html) is a bare block placed as it is. A picture that is a chart (every leaf but the text blocks) is its own module of the browser check (pub-visual, data-module-id the
 section's id, its svg the pub-chart named by the section's kicker and described by its title read aloud)."""
 import html
 import re
@@ -29,13 +29,27 @@ from words import word
 
 NODE = "page_story"
 # the leaves a story section may draw (run.py builds the recipe's layers from these), and those that are text blocks, not charts
-STORY_LAYERS = ["thesis_claims", "gap_axis", "event_chain", "target_path", "winners_losers", "pair_bars", "rankbar", "risk_notes"]
+STORY_LAYERS = ["bignums", "thesis_claims", "gap_axis", "event_chain", "target_path", "winners_losers", "pair_bars", "rankbar", "risk_notes"]
 TEXT_BLOCKS = ("thesis_claims", "risk_notes")
+# the layer that is html, not svg: the header's big numbers (column.cl_bignums), a row over the thesis
+HTML_BLOCKS = ("bignums",)
+SVG_LAYERS = [n for n in STORY_LAYERS if n not in HTML_BLOCKS]
 CODE = re.compile(r"[a-z][a-z0-9_]{0,31}")
 PAGE_W = 1140
 # the two text blocks run the page's whole width (their own default is a column; the page puts them under the header and
 # above the sources, where a column leaves the right of the page empty): the leaf's width knob, set here over the request's
-FIXED = {n: {"width": PAGE_W} for n in TEXT_BLOCKS}
+FIXED = {**{n: {"width": PAGE_W} for n in TEXT_BLOCKS}, "bignums": {"cols": 3, "width": 720, "size": 44}}
+
+
+def cl_bignums(f, occ):
+    """The header's big numbers: column.cl_bignums over the story's leaves.bignums ({"bignums": [{fact, label}]}), three to a row in
+    a box 720 px wide (FIXED over the request's style)."""
+    import column
+    d = (f.h.get("leaves") or {}).get("bignums")
+    if d is None: raise FX.Refused("the hero names no leaves.bignums")
+    st = dict(f.h.get("style") or {})
+    st["bignums"] = {**st.get("bignums", {}), **FIXED["bignums"]}
+    return column.cl_bignums(type("BigFrame", (), {"d": d, "c": f.c, "h": {**f.h, "style": st}})(), occ)
 
 
 def rank_style(h):
@@ -119,6 +133,11 @@ def story_page(panel, got, sizes, placeholders, drew):
     body, marks = [], []
     for i, sid, layer, kicker, title, text in secs:
         svg = got[layer]
+        if layer in HTML_BLOCKS:  # html, not a picture: placed as it is (a bare block; its numbers are ledger entries)
+            if title is not None: return {"refused": [f"page: section {i + 1} ({sid}) draws html and cannot carry a title"]}
+            marks += printed(svg)
+            body.append(f'<section class="sec" data-id="{sid}">{svg}</section>')
+            continue
         fig = f'<div class="blk" data-layer="{layer}">{root(svg, layer, drew.get(layer))}</div>' if layer in TEXT_BLOCKS else None
         head = ""
         if title is not None:

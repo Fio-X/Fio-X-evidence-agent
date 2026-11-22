@@ -161,6 +161,7 @@ def draw_all(test, req, names, picks):
     K.setup(rows, names, run.tables)
     drawn = {}
     for layer, data in composed["leaves"].items():
+        if layer == "bignums": continue  # html, drawn by the page child (test_header_*)
         mod = __import__(layer)
         svg = mod.draw({"data": data, "style": {layer: {}}})
         svg = svg[0] if isinstance(svg, tuple) else svg
@@ -191,7 +192,7 @@ class Findings(unittest.TestCase):
         self.assertLess(facts["p_best"]["v"], facts["goal"]["v"])
         self.assertEqual(facts["best"]["t"], "2020")
         self.assertEqual([s["layer"] for s in composed["sections"]],
-                         ["thesis_claims", "target_path", "gap_axis", "winners_losers", "risk_notes"])
+                         ["bignums", "thesis_claims", "target_path", "gap_axis", "winners_losers", "risk_notes"])
         self.assertEqual(set(drawn), {"thesis_claims", "target_path", "gap_axis", "winners_losers", "risk_notes"})
 
     def test_wb_no_target_drops_path_and_need(self):
@@ -215,7 +216,7 @@ class Findings(unittest.TestCase):
         self.assertEqual((chain["layer"], chain["why"]["band"]), ("event_chain", "2022"))
         self.assertTrue(0 < chain["score"] <= 1)
         composed, facts, drawn = draw_all(self, req, names, ["path", "chain"])
-        self.assertEqual([s["layer"] for s in composed["sections"]], ["thesis_claims", "target_path", "event_chain", "risk_notes"])
+        self.assertEqual([s["layer"] for s in composed["sections"]], ["bignums", "thesis_claims", "target_path", "event_chain", "risk_notes"])
         data = composed["leaves"]["event_chain"]
         self.assertEqual([(p["code"], p["kind"], p["zero"], "link" in p) for p in data["panels"]],
                          [("c1", "bar", True, True), ("c2", "line", False, True), ("c3", "bar", True, False)])
@@ -229,7 +230,7 @@ class Findings(unittest.TestCase):
         # the formats are taken by size: 1000 or more none, 10 or more one decimal place, under 10 two
         self.assertEqual([facts[f"c{i}_first"]["fmt"] for i in (1, 2, 3)], ["nrg_ti_gas_d1", "nrg_pc_204_d2", "nrg_inf_epcrw_d1"])
         self.assertEqual((facts["c1_first"]["t"], facts["c1_last"]["t"]), ("2019", "2024"))
-        title = composed["sections"][2]["title"]
+        title = composed["sections"][3]["title"]
         self.assertIn("{m_step}", title); self.assertIn("{band_y.t}", title)
         self.assertEqual(title.count("{"), 2)
         # one chart per leaf: the panels' words come from the request, the file writes no word of its own
@@ -284,7 +285,7 @@ class Findings(unittest.TestCase):
                                                                        capture_output=True, text=True, timeout=120, check=True).stdout.splitlines()]
             got = run_child(lines)
             self.assertFalse([g for g in got if "refused" in g or "error" in g], got)
-            last = run_child(lines + [json.dumps({"phase": "page", "layers": {n: g["svg"] for n, g in zip(layers, got[1:])}, "sizes": {}}, ensure_ascii=False)])[-1]
+            last = run_child(lines + [json.dumps({"phase": "page", "layers": {n: g.get("svg") or g.get("html") for n, g in zip(layers, got[1:])}, "sizes": {}}, ensure_ascii=False)])[-1]
             self.assertIn("html", last, last)
             # a number a title prints through a program operator is the ledger's bare number
             self.assertIn(rows[[r["src"] for r in rows].index("fact:past.n")]["text"], last["html"])
@@ -360,6 +361,74 @@ class Findings(unittest.TestCase):
         self.assertTrue(all(facts[f"g_{c.lower()}"]["v"] <= 0 for c in WB))
         self.assertEqual(composed["leaves"]["rankbar"]["share_head"], FN.ST("story.rank.gap_top_head"))
 
+    # ---------------------------------------------------------------- the header: three big numbers above the thesis
+
+    def _header_page(self, req, names, picks):
+        """The composed page's header drawn by the real child: (composed, facts, the bignums html, the whole page's html)."""
+        import json, subprocess
+        composed = FN.compose({**req, "picks": picks})
+        rows, facts = ledger(req, composed, names)
+        spec = {"title": "t", "kicker": "k", "dek": "d", "source": "s", "refs": [], "facts": composed["facts"], "sections": composed["sections"],
+                "tables": {t: {"id": t} for t in sorted({r["table"] for r in req["rows"]})}, "fmts": {**FMT_DEFS, "n": {"scale": 1, "dec": 0, "suffix": ""}, "time": {}},
+                "hero": {"data": {}, "leaves": composed["leaves"]}}
+        line = lambda **kv: json.dumps({"node": "page_story", "panel": {"w": 1140, "h": 0, "frame": None}, "rows": rows,
+                                        "knobs": {"spec": spec, "labels": names}, **kv}, ensure_ascii=False)
+        layers = [x["layer"] for x in composed["sections"]]
+        lines = [line(phase="size")] + [line(layer=n) for n in layers]
+        go = lambda ls: [json.loads(x) for x in subprocess.run([sys.executable, "-I", "-B", run.__file__], input="\n".join(ls) + "\n",
+                                                               capture_output=True, text=True, timeout=120, check=True).stdout.splitlines()]
+        got = go(lines)
+        self.assertFalse([g for g in got if "refused" in g or "error" in g], got)
+        big = got[1]["html"]
+        last = go(lines + [json.dumps({"phase": "page", "layers": {n: g.get("svg") or g.get("html") for n, g in zip(layers, got[1:])}, "sizes": {}}, ensure_ascii=False)])[-1]
+        self.assertFalse(last.get("refused"), last)
+        # every digit of the header sits in a marked ledger run, each item's number in a data-src mark of its own fact
+        bare = re.sub(r"<[^>]+>", "", re.sub(r"<(span|tspan)[^>]*data-src=[^>]*>[^<]*</\1>", "", big))
+        self.assertFalse(re.search(r"[0-9]", bare), bare)
+        self.assertEqual(len(re.findall(r'class="bn"', big)), 3)
+        self.assertIn('class="bns"', last["html"])
+        self.assertLess(last["html"].index('data-id="bignums"'), last["html"].index('data-id="thesis"'))
+        return composed, facts, big, last["html"]
+
+    def test_header_with_a_target_is_now_gap_and_the_fastest_pace_at_the_target_year(self):
+        req, names = eu_request()
+        composed, facts, big, _ = self._header_page(req, names, ["path", "need"])
+        items = composed["leaves"]["bignums"]["bignums"]
+        self.assertEqual([i["fact"] for i in items], ["b_now", "b_gap", "b_end"])
+        self.assertEqual(composed["sections"][0], {"id": "bignums", "layer": "bignums"})
+        self.assertAlmostEqual(facts["b_now"]["v"], 24.6); self.assertEqual(facts["b_now"]["t"], "2024")
+        self.assertAlmostEqual(facts["b_gap"]["v"], 42.5 - 24.6, places=6)
+        self.assertAlmostEqual(facts["b_end"]["v"], 24.6 + facts["b_best"]["v"] * (2030 - 2024), places=6)  # the best year's pace carried on
+        for k in ("b_now", "b_gap", "b_end"): self.assertIn(f'data-src="fact:{k}', big)
+
+    def test_header_of_a_whole_with_no_target_is_now_change_and_member_ratio(self):
+        req, names = eu_request()
+        req = {k: v for k, v in req.items() if k != "target"}
+        composed, facts, big, _ = self._header_page(req, names, ["spread", "ends"])
+        items = composed["leaves"]["bignums"]["bignums"]
+        self.assertEqual([i["fact"] for i in items], ["b_now", "b_change", "b_ratio"])
+        self.assertEqual(items[1]["label"]["word"], "story.big.rose")
+        self.assertAlmostEqual(facts["b_change"]["v"], 24.6 - 10.2, places=6)  # the larger value less the smaller
+        self.assertAlmostEqual(facts["b_ratio"]["v"], facts["b_hi"]["v"] / facts["b_lo"]["v"], places=6)
+        self.assertEqual(items[2]["label"]["name"], "SE")  # the highest member
+
+    def test_header_of_six_economies_with_no_whole_is_highest_lowest_and_their_ratio(self):
+        req, names = wb_request()
+        composed, facts, big, _ = self._header_page(req, names, ["spread", "ends"])
+        items = composed["leaves"]["bignums"]["bignums"]
+        self.assertEqual([(i["fact"], i["label"].get("name")) for i in items], [("b_hi", "USA"), ("b_lo", "IND"), ("b_ratio", "USA")])
+        self.assertAlmostEqual(facts["b_hi"]["v"], 13.4); self.assertAlmostEqual(facts["b_lo"]["v"], 2.12)
+        self.assertNotIn("goal", facts)
+
+    def test_header_falls_back_to_a_fall_and_is_left_out_with_under_two_numbers(self):
+        req, names = eu_request()
+        req = {k: v for k, v in req.items() if k != "target"}
+        down = [dict(r, value=round(60 - r["value"], 3)) if r["dims"].get("geo") == "EU27_2020" else r for r in req["rows"]]
+        composed = FN.compose({**req, "rows": down, "picks": ["spread", "ends"]})
+        self.assertEqual(composed["leaves"]["bignums"]["bignums"][1]["label"]["word"], "story.big.fell")
+        one = {**req, "rows": [r for r in req["rows"] if r["dims"].get("geo") == "SE"], "main": {**req["main"], "whole": None, "members": ["SE"]}}
+        self.assertIsNone(FN.header(FN.Req({**one, "picks": []})))
+
     def test_rank_needs_five_members(self):
         req, _ = wb_request()
         few = {**req, "rows": [r for r in req["rows"] if r["dims"]["country"] in ("USA", "DEU", "CHN", "IND")], "main": {**req["main"], "members": None}}
@@ -385,7 +454,7 @@ class Findings(unittest.TestCase):
         rank = got[1 + layers.index("rankbar")]["svg"]
         accents = re.findall(r'<rect [^>]*fill="var\(--accent\)"', rank)
         self.assertEqual(len(accents), 1)  # one accent bar: the whole's; the others grey
-        last = go(lines + [json.dumps({"phase": "page", "layers": {n: g["svg"] for n, g in zip(layers, got[1:])}, "sizes": {}}, ensure_ascii=False)])[-1]
+        last = go(lines + [json.dumps({"phase": "page", "layers": {n: g.get("svg") or g.get("html") for n, g in zip(layers, got[1:])}, "sizes": {}}, ensure_ascii=False)])[-1]
         self.assertIn("html", last, last)
 
     def test_refusals(self):
@@ -408,8 +477,8 @@ class Findings(unittest.TestCase):
         self.assertEqual(len(out), 3)
         self.assertEqual(sorted(c["id"] for c in out[0]["candidates"]), ["ends", "need", "path", "rank", "spread"])
         self.assertIn("not JSON", out[1]["refused"][0])
-        self.assertEqual([s["layer"] for s in out[2]["knobs"]["spec"]["sections"]], ["thesis_claims", "target_path", "gap_axis", "risk_notes"])
-        self.assertEqual(sorted(out[2]["knobs"]["spec"]["hero"]["leaves"]), ["gap_axis", "risk_notes", "target_path", "thesis_claims"])
+        self.assertEqual([s["layer"] for s in out[2]["knobs"]["spec"]["sections"]], ["bignums", "thesis_claims", "target_path", "gap_axis", "risk_notes"])
+        self.assertEqual(sorted(out[2]["knobs"]["spec"]["hero"]["leaves"]), ["bignums", "gap_axis", "risk_notes", "target_path", "thesis_claims"])
         # the child gives the spec's facts, sections and leaf data only: rows, formats and names are layer 1's
         self.assertEqual(list(out[2]), ["knobs"])
         self.assertEqual(list(out[2]["knobs"]), ["spec"])

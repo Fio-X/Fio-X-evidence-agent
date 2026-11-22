@@ -248,13 +248,13 @@ COLUMN_KINDS = tuple(MAIN)
 KINDS = dict(ring=(scmp.RING_LAYERS, scmp.RING_SVG), **{k: ({**column.COLUMN_LAYERS, **LEAF_LAYERS}, column.COLUMN_SVG + LEAF_SVG) for k in COLUMN_KINDS},
              scmp=(scmp.SCMP_LAYERS, scmp.SCMP_SVG),
              # a story page: its sections' leaves (story.py), each a layer of the recipe
-             page_story=({**{n: LEAF_LAYERS[n] for n in story.STORY_LAYERS},
+             page_story=({**{n: LEAF_LAYERS[n] for n in story.SVG_LAYERS}, "bignums": (story.cl_bignums, None),
                           # the text blocks at the page's width (story.FIXED over the request's style)
                           "thesis_claims": leaf(thesis_claims.Frame, thesis_claims.cl_thesis_claims, "thesis_claims", fixed=story.FIXED),
                           "risk_notes": leaf(risk_notes.Frame, risk_notes.cl_risk_notes, "risk_notes", fixed=story.FIXED),
                           # the rank bar draws the row its data names in the accent (story.rank_style)
                           "rankbar": leaf(rankbar.Frame, rankbar.cl_rankbar, "rankbar", by_hero=story.rank_style)},
-                         list(story.STORY_LAYERS)))
+                         list(story.SVG_LAYERS)))
 
 
 def bubbles_frame(f):
