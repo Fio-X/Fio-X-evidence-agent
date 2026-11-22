@@ -23,9 +23,7 @@ Refuses: fewer than four cells, a cell twice, a code that is no code, a point of
 cells in one country), no Natural Earth file, a value that is no series cell, a call-out with no value text, ends that are no
 ledger entries or are not the lowest and the highest called-out values' texts of a member, a call-out column too full for the
 picture's height, a digit in a literal word, a text that leaves the picture or overlaps another, a board too narrow (under 480 px)."""
-import json
 import math
-import os
 
 import wbkit as K  # the shared drawing kit; run.py's folder is on the path (a node reads no file: one import, no path set-up)
 
@@ -39,17 +37,12 @@ prod.KNOBS[NODE] = dict(
     width=(1140, (480, 1400, 10), "picture width in px"), margin=(150, (100, 260, 10), "width of each call-out column in px"),
     simplify=(2, (1, 8, 1), "keep every n-th point of a coastline"), line_h=(40, (30, 70, 2), "distance between two call-outs in px"),
     max_h=(0.6, (0.3, 1.0, 0.05), "the map's tallest height as a share of the picture's width"))
-_cache = {}
-
-
 def features():
-    """The Natural Earth features the request names (geo.NE), read once."""
+    """The Natural Earth features the request names (geo.NE), read by geo's own reader (the one file read of the map code)."""
     import geo as G
-    shp = G.NE
-    if not shp or not os.path.exists(shp): raise Refused("member_map: the request names no Natural Earth file")
-    if _cache.get("path") != shp:
-        with open(shp, encoding="utf-8") as fh: _cache.update(path=shp, f=json.load(fh)["features"])
-    return _cache["f"]
+    if not G.NE: raise Refused("member_map: the request names no Natural Earth file")
+    try: return G.features()[0]
+    except OSError: raise Refused("member_map: the request names no Natural Earth file")
 
 
 def polys(g):
