@@ -24256,15 +24256,12 @@ for line in sys.stdin:
                 .ok_or_else(|| format!("leader notes: no word for the change of {code}"))?;
             let own = json!({"at": points[code.as_str()], "name": code, "text": [{"word": word}],
                 "value_text": format!("fact:{}.{code}", CHANGE_FAMILIES[2])});
-            // the first's neighbour is the second ranked, the last's the one before it, never the first itself
+            // the first's neighbour is the second ranked, the last's the one before it (of two places, the first: each of the
+            // two notes then compares with the other, so the last has a comparison where it had only its own change)
             let (vs_word, key) = OLD_CHANGE_VS[usize::from(!most)];
             let neighbour = match most {
                 true => ranked.get(1),
-                false => ranked
-                    .len()
-                    .checked_sub(2)
-                    .filter(|i| *i > 0)
-                    .and_then(|i| ranked.get(i)),
+                false => ranked.len().checked_sub(2).and_then(|i| ranked.get(i)),
             };
             let Some(other) = neighbour else {
                 notes.push(own);
@@ -24656,6 +24653,28 @@ for line in sys.stdin:
                 None,
             ),
             (
+                "fall tie c",
+                "change",
+                ten(&span(&[
+                    ("SE", "20", "25"),
+                    ("BE", "7", "6"),
+                    ("DE", "9", "8"),
+                ])),
+                false,
+                None,
+            ),
+            (
+                "rise tie c",
+                "change",
+                ten(&span(&[
+                    ("SE", "1", "9"),
+                    ("BE", "1", "2"),
+                    ("DE", "1", "2"),
+                ])),
+                false,
+                None,
+            ),
+            (
                 "all rise a",
                 "change",
                 ten(&span(&[
@@ -24718,6 +24737,7 @@ for line in sys.stdin:
             ),
         ];
         let mut seen = BTreeSet::new();
+        let mut of_two = BTreeSet::new();
         for (label, name, main, scoped, names) in cases {
             let named = names.map(Named);
             let cat: &dyn Catalogue = match &named {
@@ -24807,7 +24827,18 @@ for line in sys.stdin:
                     .filter_map(|t| t["word"].as_str())
                     .collect();
                 seen.insert(words.join("+"));
+                if label.starts_with("rank of two") {
+                    of_two.insert(words.join("+"));
+                }
             }
+        }
+        // a page of two places: the last end compares with the first (before, it printed its own change alone)
+        for want in [
+            "column.note.rise_most+column.note.vs_next",
+            "column.note.rise_least+column.note.vs_prev",
+            "column.note.fall_most+column.note.vs_prev",
+        ] {
+            assert!(of_two.contains(want), "no page of two reaches {want}: {of_two:?}");
         }
         for want in [
             "column.note.rise_most+column.note.vs_next",
