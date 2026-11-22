@@ -419,7 +419,15 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
         Request::ScopeRefused {
             question,
             this_year,
-        } => Reply::ScopeRefused(crate::l5geo::scope_refused_zh(question, this_year)),
+        } => {
+            // a registry that cannot be read holds no year: every future year refuses as before
+            let years: Vec<i32> = crate::next_targets::targets()
+                .map(|ts| ts.iter().map(|t| t.year).collect())
+                .unwrap_or_default();
+            Reply::ScopeRefused(crate::l5geo::scope_refused_targets_zh(
+                question, this_year, &years,
+            ))
+        }
         Request::SplitAsk {
             catalogue,
             question,

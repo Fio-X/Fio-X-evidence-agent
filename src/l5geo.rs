@@ -1201,6 +1201,11 @@ pub struct ScopeRefusal {
     pub class: String,
     pub reason_zh: String,
     pub hit: String,
+    /// Some(year) when the one thing refused is a future year the legal-targets registry holds a target for (owner
+    /// 11-22 23:59, 放行目标年): the refusal is held, not lifted. The flow lets the question on to the page step and stops
+    /// with this same refusal unless the picked page runs against that year's target.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_year: Option<i32>,
 }
 
 #[derive(Deserialize)]
@@ -1368,6 +1373,18 @@ fn names_measure_after_place(left: &str, m: &str) -> bool {
 /// forecasts, places below a country, two measures' relation, derived ratios, quarters and months, opinions); None for a
 /// question none of them takes. `this_year` is the program's clock year: a four-digit year after it is a forecast.
 pub fn scope_refused_zh(question_zh: &str, this_year: i32) -> Option<ScopeRefusal> {
+    scope_refused_targets_zh(question_zh, this_year, &[])
+}
+
+/// scope_refused_zh, where a future year that is one of `target_years` (the years the legal-targets registry holds a target
+/// for) is held instead of refused: every other class and word still refuses first, a second future year refuses, and
+/// the held refusal comes back with target_year set for the flow to settle at the page step.
+pub fn scope_refused_targets_zh(
+    question_zh: &str,
+    this_year: i32,
+    target_years: &[i32],
+) -> Option<ScopeRefusal> {
+    let mut held: Option<ScopeRefusal> = None;
     let plain: String = question_zh.chars().filter(|c| !c.is_whitespace()).collect();
     for c in scope_classes() {
         let mut q = plain.clone();
@@ -1380,6 +1397,7 @@ pub fn scope_refused_zh(question_zh: &str, this_year: i32) -> Option<ScopeRefusa
                 class: c.id.clone(),
                 reason_zh: c.reason_zh.clone(),
                 hit,
+                target_year: None,
             })
         };
         // a word starting with 年 (年后) right after a four-digit year before this one asks from that past year on (2008年以后)
@@ -1482,12 +1500,23 @@ pub fn scope_refused_zh(question_zh: &str, this_year: i32) -> Option<ScopeRefusa
                     && bounded
                     && run.parse::<i32>().is_ok_and(|y| y > this_year)
                 {
-                    return refuse(format!("{run}年"));
+                    let year = run.parse::<i32>().ok();
+                    let target = year.filter(|y| target_years.contains(y));
+                    match (&held, target) {
+                        (None, Some(_)) => {
+                            held = refuse(format!("{run}年")).map(|r| ScopeRefusal {
+                                target_year: target,
+                                ..r
+                            });
+                        }
+                        (Some(h), Some(_)) if h.target_year == target => {}
+                        _ => return refuse(format!("{run}年")),
+                    }
                 }
             }
         }
     }
-    None
+    held
 }
 
 /// One quantity the Chinese question asks for, judged by the program from the question alone (never from the model).
@@ -3866,7 +3895,9 @@ mod tests {
                 {"iso2Code": "IN", "name": "印度"}, {"iso2Code": "GU", "name": "关岛"}, {"iso2Code": "S1", "name": "小国"},
                 {"iso2Code": "JP", "name": "日本"}, {"iso2Code": "US", "name": "美国"}
             ]]),
-            nuts: "\u{feff}CNTR_CODE,NUTS_ID\r\nMT,MT00\r\nEL,EL30\r\nDE,DE1\r\nFR,FR1\r\nFI,FI1\r\n".into(),
+            nuts:
+                "\u{feff}CNTR_CODE,NUTS_ID\r\nMT,MT00\r\nEL,EL30\r\nDE,DE1\r\nFR,FR1\r\nFI,FI1\r\n"
+                    .into(),
         }
     }
 
@@ -7871,6 +7902,41 @@ mod tests {
         // the clock decides a forecast: 2027 is one in 2026, not in 2027
         assert!(scope_refused_zh("2027 年德国的人口是多少？", 2026).is_some());
         assert_eq!(scope_refused_zh("2027 年德国的人口是多少？", 2027), None);
+    }
+
+    /// Owner 11-22 23:59 (放行目标年): a future year that is a registered target year is held, with the year, for the page
+    /// step to settle; every other future year, a second future year, and a forecast word still refuse outright.
+    #[test]
+    fn a_target_year_is_held_not_let_through() {
+        let held = |q: &str| scope_refused_targets_zh(q, 2026, &[2030, 2050]);
+        for (q, year) in [
+            (
+                "欧盟可再生能源占比这些年怎么变的，离 2030 年目标还有多远",
+                2030,
+            ),
+            ("欧盟温室气体排放离2050年的目标还差多少？", 2050),
+            ("2030年欧盟可再生能源目标完成了多少？2030年还差多少？", 2030),
+        ] {
+            let r = held(q).unwrap_or_else(|| panic!("{q} let through"));
+            assert_eq!(
+                (r.class.as_str(), r.target_year),
+                ("forecast", Some(year)),
+                "{q}"
+            );
+        }
+        for q in [
+            "欧盟可再生能源占比离 2035 年目标还有多远",
+            "2030年和2050年欧盟排放目标各差多少？",
+            "预计 2030 年欧盟可再生能源占比是多少？",
+            "2030年欧盟失业率和通胀率谁高？",
+        ] {
+            let r = held(q).unwrap_or_else(|| panic!("{q} let through"));
+            assert_eq!(r.target_year, None, "{q}: {r:?}");
+        }
+        // no registry, nothing held: the same question is refused as before
+        let q = "欧盟可再生能源占比这些年怎么变的，离 2030 年目标还有多远";
+        assert_eq!(scope_refused_zh(q, 2026).map(|r| r.target_year), Some(None));
+        assert_eq!(held("2024年欧盟可再生能源占比是多少？"), None);
     }
 
     /// User 11-08 item 1's merge condition, run by hand: SCOPE_DEVSET names a JSON list of {id, question, scope} (scope "in"

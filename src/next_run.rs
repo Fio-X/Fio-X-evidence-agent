@@ -5016,6 +5016,19 @@ fn recipes_tried(
 /// every one (fewer than CLAIMS_MIN stood).
 pub const STORY_FINDINGS_EVENT: &str = "next_story_findings";
 
+/// A refusal the search step held for a target year (scope_refused's target_year, owner 11-22 23:59) settled at the page
+/// step: Ok when nothing is held or the picked fill runs against that very year's target (its findings input names it);
+/// any other fill, or none, stops with the held refusal's own words. A refusal held for no year is the search step's.
+fn held_settled(held: Option<&crate::l5geo::ScopeRefusal>, fill: Option<&Value>) -> Result<(), Stop> {
+    let Some((r, year)) = held.and_then(|r| r.target_year.map(|y| (r, y.to_string()))) else {
+        return Ok(());
+    };
+    match fill.and_then(|f| f[STORY_IN]["target"]["time"].as_str()) == Some(year.as_str()) {
+        true => Ok(()),
+        false => Err(crate::next_flow::scope_stop(r)),
+    }
+}
+
 /// The findings step of a page that runs against a target (owner 11-22 19:0x, the sample's story put into the program): the
 /// visual group's findings child scores the findings the page's rows hold; the model picks, the one that answers the
 /// question first, CLAIMS_MIN or more of the best STORY_SHOWN by number only (fewer standing, the program takes every one);
@@ -6453,6 +6466,15 @@ pub(crate) async fn page_of_block(
         Ok((recipe, fill, passed)) => (Ok((recipe, fill)), passed),
         Err(stopped) => (Err(stopped), Vec::new()),
     };
+    // a question that asks a future year a target is set for was held, not let through, at the search step (owner 11-22
+    // 23:59): only a page that runs against that year's target answers it; any other page, or none, stops with the search
+    // step's own refusal
+    let this_year = chrono::Datelike::year(&chrono::Local::now());
+    let held = catalogue.scope_refused(question, this_year);
+    if let Err(stopped) = held_settled(held.as_ref(), picked.as_ref().ok().map(|(_, fill)| fill)) {
+        record_page_calls(recorder, catalogue, calls)?;
+        return Err(stopped);
+    }
     // a page that runs against a target tells the findings the model picks of the program's (story_findings), before the
     // text step words the page
     if let Ok((_, fill)) = picked.as_mut() {
@@ -10405,6 +10427,23 @@ mod tests {
             let at = shape.target.clone().unwrap();
             assert_eq!(at, ("target_ren".into(), "EU27_2020".into(), "2030".into()));
             let input = story_input(&shape, &at, (&rows, &targets), "可再生能源占比").unwrap();
+            // owner 11-22 23:59: a forecast held for the target year 2030 is settled by this page and by no other; held for
+            // another year, or with no page picked, it stops with the refusal's own words
+            let held = |year| crate::l5geo::ScopeRefusal {
+                class: "forecast".into(),
+                reason_zh: "将来".into(),
+                hit: format!("{year}年"),
+                target_year: Some(year),
+            };
+            let story_fill = json!({STORY_IN: input.clone()});
+            assert!(held_settled(Some(&held(2030)), Some(&story_fill)).is_ok());
+            assert!(held_settled(None, Some(&json!({}))).is_ok());
+            for (r, fill) in [(held(2050), Some(&story_fill)), (held(2030), None), (held(2030), Some(&rows[0]))] {
+                match held_settled(Some(&r), fill) {
+                    Err(Stop::NoTable(why)) => assert!(why.contains("out of scope (forecast"), "{why}"),
+                    other => panic!("{other:?}"),
+                }
+            }
             // the places the page names are the shape's members (fill_of names them): every place, the whole among them
             assert_eq!(shape.members.len(), places.len());
             assert_eq!(input["main"]["whole"], "EU27_2020");
@@ -10502,6 +10541,14 @@ mod tests {
         );
         assert_eq!(fill["knobs"]["labels"]["EU27_2020"], "名EU27_2020");
         assert_eq!(spec["title"], "标题");
+        // owner 11-22 23:59: a ranking page never settles a forecast held for a target year
+        let held = crate::l5geo::ScopeRefusal {
+            class: "forecast".into(),
+            reason_zh: "将来".into(),
+            hit: "2030年".into(),
+            target_year: Some(2030),
+        };
+        assert!(matches!(held_settled(Some(&held), Some(&fill)), Err(Stop::NoTable(_))));
         let unnamed = test_fill(
             column,
             &shape,

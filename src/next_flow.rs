@@ -4011,7 +4011,9 @@ pub(crate) fn visual_call<'a>(
         "reply_sha256": crate::hash::sha256_bytes(kept.as_bytes()), "ms": ms, "ok": reply.is_ok()});
     // the strip is the page's only piece that may be left off: what was drawn, or why none, is kept in its own words
     match &reply {
-        Ok(Reply::Strip { note, .. }) | Ok(Reply::Opening { note, .. }) => event["note"] = json!(note),
+        Ok(Reply::Strip { note, .. }) | Ok(Reply::Opening { note, .. }) => {
+            event["note"] = json!(note)
+        }
         Err(why) if kind == "illus_strip" || kind == "illus_hero" => event["note"] = json!(why),
         _ => {}
     }
@@ -4763,6 +4765,15 @@ impl Catalogue for GroupCatalogue {
 }
 
 /// Records the group calls the catalogue made since the last time, each as a program event under the current step.
+/// The stop of a question refused for its whole class (scope_refused): the same words at the search step and, for a
+/// refusal held for a target year, at the page step.
+pub fn scope_stop(r: &crate::l5geo::ScopeRefusal) -> Stop {
+    Stop::NoTable(format!(
+        "the question is out of scope ({}, \"{}\"): {}",
+        r.class, r.hit, r.reason_zh
+    ))
+}
+
 pub fn record_group_calls(
     recorder: &mut Recorder<'_>,
     catalogue: &dyn Catalogue,
@@ -6128,11 +6139,10 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
         let refused =
             catalogue.scope_refused(question, chrono::Datelike::year(&chrono::Local::now()));
         record_group_calls(recorder, catalogue)?;
-        if let Some(r) = refused {
-            return Err(Stop::NoTable(format!(
-                "the question is out of scope ({}, \"{}\"): {}",
-                r.class, r.hit, r.reason_zh
-            )));
+        // a refusal held for a target year goes on to the page step, which stops with it unless the page runs against
+        // that year's target (crate::next_run::page_of_block, owner 11-22 23:59)
+        if let Some(r) = refused.filter(|r| r.target_year.is_none()) {
+            return Err(scope_stop(&r));
         }
     }
     let plan = if steps.is_empty() {
@@ -10902,6 +10912,7 @@ mod tests {
                     class: "cause".into(),
                     reason_zh: "原因".into(),
                     hit: "为什么".into(),
+                    target_year: None,
                 })
             }
         }
