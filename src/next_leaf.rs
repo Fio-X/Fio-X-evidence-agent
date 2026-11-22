@@ -3452,8 +3452,9 @@ mod tests {
         // sankey over the flow page's frame (11: its highlight a list of codes, its finding auto or none), and the 100% stacked
         // bars (9: its highlight a list of codes), the line leaf (8: its highlight one code), the rank lines (10: its highlight
         // one code), the dumbbell (7: its highlight one code), the waterfall (7: its highlight one code), the waffle (7: its
-        // highlight one code), and the stacked area last (5: its highlight one code)
-        assert_eq!((t.nodes.len(), knobs), (42, 203));
+        // highlight one code), the stacked area (5: its highlight one code), and the page-story leaves last (gap axis 7, winners and
+        // losers 6, event chain 9, target path 7, pair bars 8, thesis claims 9, risk notes 6)
+        assert_eq!((t.nodes.len(), knobs), (49, 255));
         let reserve: Vec<_> = t
             .nodes
             .iter()
@@ -3517,7 +3518,14 @@ mod tests {
                 "dumbbell",
                 "waterfall",
                 "waffle",
-                "stacked_area"
+                "stacked_area",
+                "gap_axis",
+                "winners_losers",
+                "event_chain",
+                "target_path",
+                "pair_bars",
+                "thesis_claims",
+                "risk_notes"
             ]
         );
         // a change page is a column page whose bars are the places' change (bars.measure); a flow page one whose main layer

@@ -642,6 +642,34 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
             include_str!("../runtime/leaves_py/stacked_area.py"),
         ),
         (
+            runtime_dir.join("leaves_py/gap_axis.py"),
+            include_str!("../runtime/leaves_py/gap_axis.py"),
+        ),
+        (
+            runtime_dir.join("leaves_py/winners_losers.py"),
+            include_str!("../runtime/leaves_py/winners_losers.py"),
+        ),
+        (
+            runtime_dir.join("leaves_py/event_chain.py"),
+            include_str!("../runtime/leaves_py/event_chain.py"),
+        ),
+        (
+            runtime_dir.join("leaves_py/target_path.py"),
+            include_str!("../runtime/leaves_py/target_path.py"),
+        ),
+        (
+            runtime_dir.join("leaves_py/pair_bars.py"),
+            include_str!("../runtime/leaves_py/pair_bars.py"),
+        ),
+        (
+            runtime_dir.join("leaves_py/thesis_claims.py"),
+            include_str!("../runtime/leaves_py/thesis_claims.py"),
+        ),
+        (
+            runtime_dir.join("leaves_py/risk_notes.py"),
+            include_str!("../runtime/leaves_py/risk_notes.py"),
+        ),
+        (
             runtime_dir.join("leaves_py/sketch.py"),
             include_str!("../runtime/leaves_py/sketch.py"),
         ),

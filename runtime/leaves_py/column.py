@@ -68,6 +68,8 @@ class ColumnFrame:
         f.vw = max(prod.tw(FX.text(val_src(d, k, f.change)), f.size) for k, _ in f.vals) + 8  # room after the longest bar for its value
         f.top = K("top")
         f.bh = f.top + f.rh * len(f.vals) + 4
+        f.extra = bar_extras(d, f)
+        if f.extra: f.bh += f.size * EXTRA_ROOM  # the line under the bars the reference labels and the projection key stand on
         f.H = max(f.bh, mv.H if mv else 0)
 
     def sized(f, w, h):
@@ -142,6 +144,7 @@ def cl_bars_placed(f, occ, placed):
         o.append(f'<text x="{lab["x"]:.1f}" y="{lab["y"]:.1f}" text-anchor="end" dominant-baseline="middle" font-size="{f.size}" fill="{ink}" font-weight="{weight}">{prod.named(k)}</text>'
                  f'<rect x="{m["x"]:.1f}" y="{m["y"]:.1f}" width="{m["w"]:.1f}" height="{m["h"]}" fill="{FOCUS if k in f.focus else NOTED if k in f.noted else "var(--bar)"}"/>'
                  f'<text x="{val["x"]:.1f}" y="{val["y"]:.1f}"{end} dominant-baseline="middle" font-size="{f.size}" fill="{ink if hi else "var(--t-sec)"}" font-weight="{weight}">{FX.entry(val["src"], "tspan", None)}</text>')
+    if getattr(f, "extra", None): o.append(cl_bar_extras(f, occ, items, z))
     return "".join(o)
 
 
@@ -206,7 +209,128 @@ def cl_change_bars_placed(f, occ, placed):
         o.append(f'<text x="{lab["x"]:.1f}" y="{lab["y"]:.1f}" text-anchor="end" dominant-baseline="middle" font-size="{f.size}" fill="{ink}" font-weight="{weight}">{prod.named(k)}</text>'
                  f'<rect x="{m["x"]:.1f}" y="{m["y"]:.1f}" width="{m["w"]:.1f}" height="{m["h"]}" fill="{FOCUS if k in f.focus else NOTED if k in f.noted else RISE if v > 0 else FALL if v < 0 else "var(--bar)"}"/>'
                  f'<text x="{val["x"]:.1f}" y="{val["y"]:.1f}" text-anchor="{val["anchor"]}" dominant-baseline="middle" font-size="{f.size}" fill="{ink if hi_ else "var(--t-sec)"}" font-weight="{weight}">{FX.entry(val["src"], "tspan", None)}</text>')
+    if getattr(f, "extra", None): o.append(cl_bar_extras(f, occ, items, z))
     return "".join(o)
+
+
+# Optional marks over the placed bars (both off unless hero.data names them; a page without them is drawn byte for byte as
+# before): reference lines across the bars at values the ledger gives (hero.data.refs, at most MAX_REFS: a reference
+# such as the whole's level, a target), each labelled under the bars with its words and its entry; and a short projection
+# tick across a row's bar at a value the ledger gives that row (hero.data.proj), with one key under the bars. The positions
+# are the bars' own scale (a placed bar's width over its value); the entries are printed (a reference's) or only placed
+# (a tick's, marked on the tick with its src); the words come with the request as segs (wbkit.segs).
+#   hero.data.refs: [{"src": ledger src (a bare number), "label": segs, "scale": number? (1), "solid": bool?}]
+#   hero.data.proj: {"of": {code: ledger src (a bare number)}, "label": segs, "scale": number? (1)}
+MAX_REFS, EXTRA_ROOM = 2, 2.0  # the reference lines at most; the room under the bars for their labels, in label sizes
+
+
+def _num(src, scale, what):
+    """A ledger entry's bare number over its scale (as line.py reads a tick); an entry that is no number refuses."""
+    if isinstance(scale, bool) or not isinstance(scale, (int, float)) or not scale > 0: raise FX.Refused(f"bars: the {what} scale {scale!r} is no number above 0")
+    t = FX.text(src)
+    try: return float(t.replace(",", "")) / scale
+    except ValueError: raise FX.Refused(f"bars: the {what} entry {t!r} ({src}) is no bare number")
+
+
+def bar_extras(d, f):
+    """The reference lines and projection ticks hero.data names, read and checked ({"refs": [(value, src, label, solid)],
+    "proj": ({code: (value, src)}, label)}), or None when it names neither (the bars as before)."""
+    refs, proj = d.get("refs"), d.get("proj")
+    if refs is None and proj is None: return None
+    import wbkit  # the segs reader (a leaf module; imported here, so a page without the marks imports nothing new)
+    out = {"refs": [], "proj": None}
+    if refs is not None:
+        if not isinstance(refs, list) or not 1 <= len(refs) <= MAX_REFS: raise FX.Refused(f"bars: refs is {refs!r}; one to {MAX_REFS} reference lines")
+        for i, r in enumerate(refs):
+            if not isinstance(r, dict) or not isinstance(r.get("src"), str): raise FX.Refused(f"bars: reference {i + 1} names no ledger entry")
+            wbkit.segs(r.get("label"), f"reference {i + 1} label")
+            out["refs"].append((_num(r["src"], r.get("scale", 1), f"reference {i + 1}"), r["src"], r["label"], bool(r.get("solid"))))
+    if proj is not None:
+        of = proj.get("of") if isinstance(proj, dict) else None
+        if not isinstance(of, dict) or not of: raise FX.Refused("bars: proj names no row's projection (proj.of {code: ledger src})")
+        off = sorted(set(of) - set(d.get("ranked") or []))
+        if off: raise FX.Refused(f"bars: proj names {off}, no place the page ranks")
+        wbkit.segs(proj.get("label"), "projection key")
+        out["proj"] = ({k: (_num(s, proj.get("scale", 1), f"projection of {k}"), s) for k, s in of.items()}, proj["label"])
+    return out
+
+
+def cl_bar_extras(f, occ, items, z):
+    """The reference lines and the projection ticks over the placed bars (bar_extras), and their labels on the line under
+    the bars. A line or a tick stands where its value lies on the bars' scale (z the zero line, a placed bar's width over its
+    value the px per unit). A reference line runs from the first row's top to the last row's bottom, broken wherever a name
+    or a value stands across it (no text on a line); its label (its words, then its entry) is centred under it, or ends at
+    the picture's edge. A tick spans its row's bar; one that would fall on its row's name or value refuses (the value stands
+    where the core placed it: it is not moved). The key (a tick and its words) ends at the picture's right edge. A value off
+    the bars' span, or two labels over each other, refuses. With no map beside the bars every line, tick and label is
+    claimed in the occupancy table, so the notes keep off them."""
+    import wbkit
+    ex, size, n = f.extra, f.size, len(items)
+    vals = dict(f.vals)
+    unit = next((it["mark"]["w"] / abs(vals[it["code"]]) for it in items if vals.get(it["code"])), None)
+    if not unit: raise FX.Refused("bars: no bar has a value off 0 to scale the reference lines by")
+    left, right = f.x0 + f.lw, f.x0 + f.bw - 1
+
+    def at(v, what):
+        x = z + v * unit
+        if not left <= x <= right: raise FX.Refused(f"bars: the {what} lies off the bars' span")
+        return x
+    half = size * 0.6
+    boxes = []  # (x0, y0, x1, y1, code) of every name and value the bars print
+    for it in items:
+        lab, val = it["texts"]
+        nw, vw = prod.tw(prod.NAME(it["code"]), size), prod.tw(FX.text(val["src"]), size) * 1.06 + 2
+        boxes.append((lab["x"] - nw - 1, lab["y"] - half, lab["x"] + 1, lab["y"] + half, it["code"]))
+        vx = (val["x"] - vw, val["x"]) if val.get("anchor") == "end" else (val["x"], val["x"] + vw)
+        boxes.append((vx[0], val["y"] - half, vx[1], val["y"] + half, it["code"]))
+    y0, y1 = f.top, f.top + f.rh * n
+    free = getattr(f, "mv", False) is None
+    o = []
+    B = wbkit.Boxes(f.x0 + f.bw, f.bh)
+    base = y1 + size * 1.3  # the labels' baseline, on the line under the bars
+    for i, (v, src, label, solid) in enumerate(ex["refs"]):
+        x = at(v, f"reference {i + 1} ({FX.text(src)})")
+        cuts = sorted((b[1] - 2, b[3] + 2) for b in boxes if b[0] - 2 <= x <= b[2] + 2)
+        ys, a = [], y0
+        for c0, c1 in cuts:
+            if c0 > a: ys.append((a, c0))
+            a = max(a, c1)
+        if y1 > a: ys.append((a, y1))
+        dash = "" if solid else ' stroke-dasharray="4 3"'
+        for a, b in ys:
+            if b - a < 2: continue
+            o.append(f'<line x1="{x:.1f}" x2="{x:.1f}" y1="{a:.1f}" y2="{b:.1f}" stroke="var(--t-title)" stroke-width="{1.8 if solid else 1.2}"{dash} data-src="{html.escape(src)}"/>')
+            if free: occ.add_line([(x, a + (b - a) * j / max(2, math.ceil((b - a) / 4))) for j in range(max(2, math.ceil((b - a) / 4)) + 1)], "bars", f"ref{i + 1}")
+        segs = list(label) + [{"w": " "}, {"src": src}]
+        w = prod.tw(wbkit.plain(segs, f"reference {i + 1} label"), size)
+        anchor, lx = ("middle", x) if f.x0 + w / 2 + 2 <= x <= f.x0 + f.bw - w / 2 - 2 else (("start", f.x0 + 2) if x < f.x0 + f.bw / 2 else ("end", f.x0 + f.bw - 2))
+        o.append(_shifted(wbkit.words(B, segs, f"reference {i + 1} label", lx, base, size, "var(--t-title)", anchor=anchor,
+                                      weight=700 if solid else 400)[0], B, f.x0, occ if free else None))
+    if ex["proj"]:
+        of, label = ex["proj"]
+        for it in items:
+            if it["code"] not in of: continue
+            v, src = of[it["code"]]
+            x, m = at(v, f"projection of {it['code']} ({FX.text(src)})"), it["mark"]
+            hit = [b for b in boxes if b[4] == it["code"] and b[0] - 2 <= x <= b[2] + 2]
+            if hit: raise FX.Refused(f"bars: the projection of {it['code']} ({FX.text(src)}) falls on its row's name or value, which stand where the core placed them")
+            o.append(f'<line x1="{x:.1f}" x2="{x:.1f}" y1="{m["y"] - 3:.1f}" y2="{m["y"] + m["h"] + 3:.1f}" stroke="var(--t-title)" stroke-width="2.4" data-src="{html.escape(src)}"/>')
+            if free: occ.add_line([(x, m["y"] - 3 + (m["h"] + 6) * j / 4) for j in range(5)], "bars", f"proj {it['code']}")
+        w = prod.tw(wbkit.plain(label, "projection key"), size)
+        kx = f.x0 + f.bw - 2 - w
+        o.append(_shifted(wbkit.words(B, label, "projection key", kx, base, size, "var(--t-sec)")[0], B, f.x0, occ if free else None))
+        o.append(f'<line x1="{kx - 8:.1f}" x2="{kx - 8:.1f}" y1="{base - size * 0.85:.1f}" y2="{base + size * 0.2:.1f}" stroke="var(--t-title)" stroke-width="2.4"/>')
+        B.add(kx - 10, base - size * 0.85, kx - 6, base + size * 0.2, "projection key tick")
+    return "".join(o)
+
+
+def _shifted(svg, B, x0, occ):
+    """A label wbkit.words drew (its box the last in B): inside the bars' picture (which starts at x0) and, with no map, claimed in
+    the occupancy table."""
+    b = B.b[-1][0]
+    if b[0] < x0 - 0.5: raise FX.Refused(f"bars: {B.b[-1][1]} leaves the bars' picture")
+    if occ is not None: occ.add(b, "bars")
+    return svg
 
 
 # A bar of the page's focus (focus): the accent, which marks nothing else on the page; its label names it. A
