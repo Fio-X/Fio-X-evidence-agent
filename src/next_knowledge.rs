@@ -243,6 +243,9 @@ pub enum Request<'a> {
         refs: &'a OpenedRefs,
         aggregate: &'a str,
     },
+    /// The target rows the legal-targets registry (next_targets) holds for a main table, each {src "target:<id>", main, table,
+    /// dims (geo only), time, value}; empty for a main no target is read against. Err when the registry fails its checks.
+    Targets { main: &'a str },
     /// Which of these codes name a country (classify's country_code: ISO 3166-1 alpha-2, Eurostat's EL and UK included), in
     /// the order asked; a total, an aggregate or a rest (TOTAL, EU27_2020, AFR_OTH) is none.
     Countries {
@@ -310,6 +313,8 @@ pub enum Reply<'a> {
     Members(Vec<String>),
     /// The codes asked that name a country, in the order asked.
     Countries(Vec<String>),
+    /// The target rows of a main table (Request::Targets).
+    Targets(Vec<Value>),
     Table(Option<TableMeta>),
     Places(Vec<Place>),
     RankAsked(Option<RankAsked>),
@@ -536,6 +541,7 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
                 .cloned()
                 .ok_or_else(|| format!("the member list has no aggregate {aggregate}"))?,
         ),
+        Request::Targets { main } => Reply::Targets(crate::next_targets::target_rows(main)?),
         Request::Countries { refs, codes } => Reply::Countries(
             codes
                 .iter()

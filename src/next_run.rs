@@ -10147,6 +10147,63 @@ mod tests {
         assert!(e.contains("no target row after 2024"), "{e}");
     }
 
+    /// I8: the EU renewable-share main reaches a target through the knowledge group's own command (the call GroupCatalogue's
+    /// `targets` makes), the registry's row is the table has_target reads, and the shape ends with that target, its place and
+    /// its year; a main with no target (a gas table) gets no row and the shape fails by name. The call leaves its event.
+    #[test]
+    fn the_registrys_target_row_reaches_a_renewable_main_s_shape() {
+        let calls = std::sync::Mutex::new(Vec::new());
+        let rows_for = |main: &str| match crate::next_flow::knowledge_call(
+            &calls,
+            "targets",
+            json!({"main": main}),
+            crate::next_knowledge::Request::Targets { main },
+        )
+        .unwrap()
+        {
+            crate::next_knowledge::Reply::Targets(rows) => rows,
+            _ => panic!("another reply"),
+        };
+        let eats: Vec<String> = ["annual", "one_place", "last_year", "two_ends", "has_target"]
+            .map(String::from)
+            .to_vec();
+        for main_id in ["nrg_ind_ren", "sdg_07_40"] {
+            let main = ring_rows(
+                main_id,
+                &[("freq", "A"), ("nrg_bal", "REN"), ("unit", "PC")],
+                ("geo", &["DE", "FR", "EU27_2020"]),
+                &["2005", "2023"],
+            );
+            let target = rows_for(main_id);
+            assert_eq!(target.len(), 1, "{main_id}");
+            let by_table = target[0]["table"].as_str().unwrap().to_string();
+            assert_eq!(by_table, format!("target_{main_id}"));
+            let shape = shape_of(
+                &eats,
+                &[(main_id, &main[..]), (by_table.as_str(), &target[..])],
+                &Scoped(true),
+            )
+            .unwrap();
+            assert_eq!(
+                shape.target,
+                Some((by_table, "EU27_2020".to_string(), "2030".to_string()))
+            );
+        }
+        // A table no target is read against: no rows, so no shape with a target.
+        let gas = ring_rows(
+            "nrg_ti_gas",
+            &[("siec", "G3000"), ("unit", "MIO_M3")],
+            ("geo", &["DE", "FR", "EU27_2020"]),
+            &["2005", "2023"],
+        );
+        assert!(rows_for("nrg_ti_gas").is_empty());
+        let e = shape_of(&eats, &[("nrg_ti_gas", &gas[..])], &Scoped(true)).unwrap_err();
+        assert!(e.contains("no target row"), "{e}");
+        let events = calls.lock().unwrap();
+        assert_eq!(events.len(), 3);
+        assert!(events.iter().all(|e| e["group"] == "knowledge" && e["request"] == "targets" && e["ok"] == true));
+    }
+
     /// The first recipe, in registry order, whose conditions the tables meet (what the pick tries one after the other), with
     /// every recipe's verdict beside it.
     fn first_shape<'a>(
