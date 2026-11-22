@@ -4933,6 +4933,11 @@ fn reason(called: &Called) -> String {
 /// The waits before the second and the third fetch of one request when the source did not answer (source_unreachable); with the
 /// first fetch that is the source circuit's own limit of 3 (evidence_gate.mjs createSourceAccessCircuit), which stays as it is.
 pub const FETCH_RETRY_WAITS_MS: [u64; 2] = [2_000, 4_000];
+/// The waits when the source answered with a server error (HTTP 500 to 599, read from "returned HTTP <code>"): Eurostat's short
+/// outages (11-22 23:38: three 500s in 9 s, the same request answered minutes later; 8 of 3087 stand-in runs, always in windows of
+/// minutes) outlast the default waits. A connection error, a timeout, a 429 and the rest keep FETCH_RETRY_WAITS_MS. The source
+/// circuit's limit of 3 fetches is the same either way.
+pub const SERVER_ERROR_WAITS_MS: [u64; 2] = [10_000, 20_000];
 /// The event of one more fetch of the same request: the try it starts, the dataset, the last failure (addresses removed) and the wait.
 pub const FETCH_RETRY_EVENT: &str = "next_fetch_retry";
 /// The event of a fetch that held no row in the years asked and was moved back by newsroom_data_prepare (its details.years_back): the
@@ -5132,6 +5137,32 @@ pub const COMPANION_FETCH_LIMIT: Duration = Duration::from_secs(10);
 /// The whole companion stage may take this long: a candidate it has no time left for is not fetched.
 pub const COMPANION_STAGE_LIMIT: Duration = Duration::from_secs(20);
 
+/// The HTTP status a failure text names ("returned HTTP 503 (1/3)"), none when it names no status (a timeout, a connection error).
+fn http_status_of(text: &str) -> Option<u16> {
+    text.split("returned HTTP ")
+        .nth(1)
+        .and_then(|rest| rest.get(..3))
+        .and_then(|code| code.parse::<u16>().ok())
+}
+
+/// The wait before fetch number `tries + 1` after `called` failed, and what it was read from: the server-error waits for a
+/// SOURCE_ACCESS_FAILED that names an HTTP 5xx status, the default waits for any other failure. None when the table has no
+/// wait left for that try (the circuit's third fetch was the last).
+fn retry_wait(called: &Called, tries: usize) -> Option<(u64, Option<u16>)> {
+    let text = words_of(called);
+    let server = text
+        .contains("SOURCE_ACCESS_FAILED")
+        .then(|| http_status_of(&text))
+        .flatten()
+        .filter(|code| (500..600).contains(code));
+    let waits = if server.is_some() {
+        &SERVER_ERROR_WAITS_MS
+    } else {
+        &FETCH_RETRY_WAITS_MS
+    };
+    waits.get(tries - 1).map(|&wait| (wait, server))
+}
+
 /// Whether a failed fetch is the source not answering, and whether one more fetch may help. The words are the source circuit's
 /// (evidence_gate.mjs; shared vocabulary): a timeout, a connection that failed, HTTP 429 or 5xx may pass; any other HTTP status is the
 /// source's answer, and a host the circuit blocked or marked unreachable is not tried again in this run.
@@ -5146,12 +5177,7 @@ fn source_unreachable(called: &Called) -> Option<bool> {
     if !text.contains("SOURCE_ACCESS_FAILED") {
         return None;
     }
-    let status = text
-        .split("returned HTTP ")
-        .nth(1)
-        .and_then(|rest| rest.get(..3))
-        .and_then(|code| code.parse::<u16>().ok());
-    match status {
+    match http_status_of(&text) {
         Some(code) if code != 429 && code < 500 => None,
         _ => Some(!text.contains("This host will not be tried again in this run.")),
     }
@@ -5192,8 +5218,7 @@ async fn prepare_fetch<R: ToolRunner + Send + ?Sized>(
         } else {
             break;
         };
-        let Some(&wait) = FETCH_RETRY_WAITS_MS
-            .get(tries - 1)
+        let Some((wait, server_status)) = retry_wait(&called, tries)
             .filter(|_| again && !cancel.load(std::sync::atomic::Ordering::Relaxed))
         else {
             return Err(Stop::SourceUnreachable {
@@ -5205,7 +5230,9 @@ async fn prepare_fetch<R: ToolRunner + Send + ?Sized>(
         tries += 1;
         recorder.program_event(
             FETCH_RETRY_EVENT,
-            json!({"dataset": dataset, "try": tries, "after": reason(&called), "waited_ms": wait}),
+            // `server_status` is the 5xx the longer wait was read from; null for a wait of FETCH_RETRY_WAITS_MS
+            json!({"dataset": dataset, "try": tries, "after": reason(&called), "waited_ms": wait,
+                "server_status": server_status}),
         )?;
         tokio::time::sleep(std::time::Duration::from_millis(wait)).await;
         called = recorder
@@ -9965,7 +9992,7 @@ mod tests {
         assert!(of_type(&drove.events, YEARS_BACK_EVENT).is_empty());
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn a_source_that_does_not_answer_is_fetched_again_twice_then_stops_as_unreachable() {
         let _command = crate::group_guard::command_for_test("investigate");
         let failed = |why: &str| json!({"mode": "failed", "text": format!("Data preparation failed: SOURCE_ACCESS_FAILED: network evidence fetch {why}. Do not substitute synthetic data; try a bounded alternative source.")});
@@ -10105,6 +10132,100 @@ mod tests {
             );
             assert_eq!(drove.tools.args.len(), fetches);
         }
+    }
+
+    /// I17: a server error (HTTP 5xx) waits 10 s then 20 s before the next fetch, any other failure 2 s then 4 s, and the
+    /// circuit's three fetches are the same either way. The clock is paused, so the time is read off it, never slept.
+    #[tokio::test(start_paused = true)]
+    async fn a_server_error_waits_longer_than_other_failures_and_the_event_says_why() {
+        let _command = crate::group_guard::command_for_test("investigate");
+        let failed = |why: &str| json!({"mode": "failed", "text": format!("Data preparation failed: SOURCE_ACCESS_FAILED: network evidence fetch {why}. Do not substitute synthetic data; try a bounded alternative source.")});
+        let fetch = |details: Vec<Value>| {
+            drive(
+                &[],
+                vec![
+                    search_reply(),
+                    call("toolu_r", json!({"step": "table", "pick": [4]})),
+                ],
+                details,
+                offers(),
+            )
+        };
+        let waits = |drove: &Drove| {
+            of_type(&drove.events, FETCH_RETRY_EVENT)
+                .iter()
+                .map(|e| (e["waited_ms"].clone(), e["server_status"].clone()))
+                .collect::<Vec<_>>()
+        };
+        let timed = |details: Vec<Value>| async {
+            let began = tokio::time::Instant::now();
+            let drove = fetch(details).await;
+            (drove, began.elapsed())
+        };
+        let secs = std::time::Duration::from_secs;
+        // 1. a 500 and then the source answers: one retry after 10 s, the status in the event
+        let (drove, took) =
+            timed(vec![failed("returned HTTP 500 (1/3)"), json!({"mode": "no_candidates"})]).await;
+        assert!(matches!(drove.result, Err(Stop::TooFewClaims { .. })), "{:?}", drove.result);
+        assert_eq!(drove.tools.args.len(), 2);
+        assert_eq!(waits(&drove), [(json!(10_000), json!(500))]);
+        assert_eq!(took, secs(10));
+        // 2. a server error on every fetch: three fetches (the circuit's limit), waits 10 s and 20 s, then the stop
+        let (drove, took) = timed(vec![
+            failed("returned HTTP 500 (1/3)"),
+            failed("returned HTTP 502 (2/3)"),
+            failed("returned HTTP 503 (3/3)"),
+        ])
+        .await;
+        assert!(
+            matches!(&drove.result, Err(Stop::SourceUnreachable { tries: 3, .. })),
+            "{:?}",
+            drove.result
+        );
+        assert_eq!(drove.tools.args.len(), 3);
+        assert_eq!(
+            waits(&drove),
+            [(json!(10_000), json!(500)), (json!(20_000), json!(502))]
+        );
+        assert_eq!(took, secs(30));
+        // 3. a connection error, a timeout and a 429 keep 2 s and 4 s, with no server status in the event
+        for first in [
+            "could not connect to the source",
+            "timed out or was cancelled (1/3)",
+            "returned HTTP 429 (1/3)",
+        ] {
+            let (drove, took) = timed(vec![
+                failed(first),
+                failed("timed out or was cancelled (2/3)"),
+                failed("timed out or was cancelled (3/3)"),
+            ])
+            .await;
+            assert!(
+                matches!(&drove.result, Err(Stop::SourceUnreachable { tries: 3, .. })),
+                "{first}: {:?}",
+                drove.result
+            );
+            assert_eq!(waits(&drove), [(json!(2_000), Value::Null), (json!(4_000), Value::Null)]);
+            assert_eq!(took, secs(6), "{first}");
+        }
+        // 4. each wait follows the failure before it: a 503, then a timeout, then the source answers
+        let (drove, took) = timed(vec![
+            failed("returned HTTP 503 (1/3)"),
+            failed("timed out or was cancelled (2/3)"),
+            json!({"mode": "no_candidates"}),
+        ])
+        .await;
+        assert_eq!(drove.tools.args.len(), 3);
+        assert_eq!(
+            waits(&drove),
+            [(json!(10_000), json!(503)), (json!(4_000), Value::Null)]
+        );
+        assert_eq!(took, secs(14));
+        // 5. an answer that is not a server error (404) is not retried at all, and a 4xx is not read as one
+        let (drove, took) = timed(vec![failed("returned HTTP 404 (1/3)")]).await;
+        assert!(waits(&drove).is_empty() && took == secs(0));
+        assert_eq!(http_status_of("returned HTTP 404 (1/3)"), Some(404));
+        assert_eq!(http_status_of("timed out or was cancelled (1/3)"), None);
     }
 
     struct Drove {
