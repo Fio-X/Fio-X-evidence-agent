@@ -734,6 +734,9 @@ def main():
                 out.update(SCALE)
                 if name in svgs:  # what it drew, read back as layer 1 reads it, for its checks
                     out["texts"], bad = drawn(s)
+                    # a story leaf's words with no ledger entry, drawn over the picture as html: told to layer 1 in the texts' own terms
+                    # (the picture's pixels, the baseline), so it checks them for overlap and out-of-panel as it does the texts
+                    if name in OVER: out["words"] = [dict(text=w["text"], x=w["x"], y=w["y"], size=w["size"], anchor=w["anchor"], baseline="", rot=0.0) for w in OVER[name]]
                     if bad: out = {"refused": [f"{name}: {b}" for b in bad]}
                 if name == "map": out["sub"] = panel.f.mapout  # the map's own layers, for the layer-by-layer parity check
             except FX.Refused as e: out = {"refused": [f"{name}: {e}"]}

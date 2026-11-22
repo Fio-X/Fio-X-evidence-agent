@@ -390,6 +390,7 @@ class Findings(unittest.TestCase):
         self.assertFalse([g for g in got if "refused" in g or "error" in g], got)
         self.assertTrue(got[0]["w"] > 0 and got[0]["h"] > 0, got[0])  # the size phase tells layer 1 a panel it can take
         bodies = {n: g.get("svg") or g.get("html") for n, g in zip(layers, got[1:])}
+        self.words = {n: g["words"] for n, g in zip(layers, got[1:]) if "words" in g}  # what each story layer tells layer 1 of its overlay words
         # the first layer takes a text of an svg only with a src: every <text> of every svg layer has one (a word with no ledger entry is html over the picture)
         for n, g in zip(layers, got[1:]):
             if g.get("svg"):
@@ -671,6 +672,29 @@ class Findings(unittest.TestCase):
         for n, body in bodies.items():  # none of those words is left in an svg
             if n != "bignums": self.assertNotIn(">随后<", body)
         self.assertIsNone(K.OVERLAY)  # the diversion is the story leaves' own: outside a story leaf's draw every text is a <text>
+
+    def test_the_overlay_words_are_told_to_layer_1_as_the_page_lays_them(self):
+        """Each story svg layer's reply holds `words`: the very lines the page puts over the picture (same place, size, text), none with a
+        digit, in the texts' own terms; a layer that draws none says none."""
+        import re as _re
+        req, names = eu_chain_request()
+        req["chain"] = [req["chain"][0], req["chain"][2]]
+        req["points"] = self._points(EU_MEMBERS)
+        composed, _, bodies, page_html = self._page(req, names, ["path", "chain", "map", "members"])
+        told = [w for ws in self.words.values() for w in ws]
+        self.assertGreater(len(told), 10)
+        self.assertTrue(set(self.words) >= {"event_chain", "target_path"}, set(self.words))
+        for w in told:
+            self.assertEqual(set(w), {"text", "x", "y", "size", "anchor", "baseline", "rot"})
+            self.assertFalse(_re.search(r"[0-9]", w["text"]), w)
+            self.assertTrue(w["size"] > 0 and w["x"] >= 0 and w["y"] > 0, w)
+        placed = _re.findall(r'<span style="left:([\d.]+)px;top:([-\d.]+)px;font-size:([\d.]+)px;[^>]*>([^<]*)</span>', page_html)
+        as_page = lambda w: (f'{w["x"]:.1f}', f'{w["y"] - w["size"] * 0.88:.1f}', f'{w["size"]:g}', w["text"])
+        self.assertEqual(sorted(as_page(w) for w in told), sorted(placed))  # one to one with what the page puts over the pictures
+        # the svgs themselves say no such word, and no <text> of theirs stands in for one
+        for n, ws in self.words.items():
+            left = {x["text"] for x in run.drawn(bodies[n])[0]}
+            self.assertFalse(left & {w["text"] for w in ws}, n)
 
     def test_rank_needs_five_members(self):
         req, _ = wb_request()
