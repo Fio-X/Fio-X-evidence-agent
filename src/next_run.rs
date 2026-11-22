@@ -12539,7 +12539,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             yfill[HEADLINE],
-            json!({"title": "{name.SE}最高", "scoped": "{name.SE}居首"})
+            json!({"title": "{name.SE}居首，为{hi}", "scoped": "{name.SE}居首"})
         );
         assert_eq!(
             spec["facts"]["lead1"],

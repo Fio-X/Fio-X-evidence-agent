@@ -5810,7 +5810,7 @@ mod tests {
                 let plain = said(true, last, unit, false);
                 assert_eq!(plain["subject"], "KHM", "{recipe} {last} {unit}");
                 assert_eq!(
-                    plain["finding"]["headline"]["title"], "{name.KHM}最低",
+                    plain["finding"]["headline"]["title"], "{name.KHM}垫底，为{lo}",
                     "{recipe} {last} {unit}"
                 );
             }
@@ -6137,12 +6137,12 @@ mod tests {
             // 90 over 88 prints 1.0: the plain headline, from the highest and from the lowest
             assert_eq!(
                 title(&said(false, vals[2], false)),
-                "{name.SGP}最高",
+                "{name.SGP}居首，为{hi}",
                 "{unit}"
             );
             assert_eq!(
                 title(&said(true, vals[2], false)),
-                "{name.KHM}最低",
+                "{name.KHM}垫底，为{lo}",
                 "{unit}"
             );
             // 90 over 85 prints 1.1: the times stay
