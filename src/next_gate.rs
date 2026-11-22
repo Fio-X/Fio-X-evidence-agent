@@ -208,6 +208,10 @@ pub fn unanswered_modes(question: &str, layers: &[String]) -> Vec<&'static str> 
         .collect()
 }
 
+/// The table a target row names: this and its main table, as the knowledge group's targets registry writes it (a test holds
+/// the two the same).
+const TARGET_TABLE: &str = "target_";
+
 /// The knowledge group's fetches as events.jsonl records them: a program-run (auto) DATA_PREPARE_TOOL call that ended
 /// without error and names its provider, a dataset, its file and that file's sha256. A Eurostat dataset is its table (an id
 /// ending "@2" is none); a World Bank indicator is the table "<indicator>@2" (an indicator with an "@" is none). Any other
@@ -251,6 +255,48 @@ fn reread_gaps(root: &Path, rows: &[Row], fetched: &[Fetch]) -> Vec<String> {
     let mut read: BTreeMap<String, Row> = BTreeMap::new();
     let tables: BTreeSet<&str> = rows.iter().map(|r| r.table.as_str()).collect();
     for table in tables {
+        // a target row is no fetch: the knowledge group reads it again from the legal-targets registry (next_targets), whose
+        // entries are checked against the stored excerpts of the acts before any row is given out
+        if let Some(main) = table.strip_prefix(TARGET_TABLE) {
+            let request = crate::next_knowledge::Request::Targets { main };
+            match knowledge_call(&calls, "targets", json!({"main": main}), request) {
+                Ok(crate::next_knowledge::Reply::Targets(found)) => {
+                    if found.is_empty() {
+                        off.push(format!(
+                            "no registered target of {main} to read {table}'s rows again from"
+                        ));
+                    }
+                    for t in found {
+                        // the registry gives the value as the act prints it (text, a decimal point), as the flow reads it
+                        let value = t["value"]
+                            .as_f64()
+                            .or_else(|| t["value"].as_str()?.trim().parse::<f64>().ok());
+                        let again = match serde_json::from_value::<Row>(json!({
+                            "src": t["src"], "table": t["table"], "dims": t["dims"], "time": t["time"], "value": value,
+                        })) {
+                            Ok(row) => row,
+                            Err(e) => {
+                                off.push(format!("{table}: a target row the knowledge group read is not a row: {e}"));
+                                continue;
+                            }
+                        };
+                        match read.get(&again.src) {
+                            Some(first) if *first != again => off.push(format!(
+                                "{} is read two ways from the targets registry",
+                                again.src
+                            )),
+                            Some(_) => {}
+                            None => {
+                                read.insert(again.src.clone(), again);
+                            }
+                        }
+                    }
+                }
+                Ok(_) => unreachable!("the knowledge group answered targets with another reply"),
+                Err(e) => off.push(format!("{table}: the targets registry: {e}")),
+            }
+            continue;
+        }
         let files: Vec<&Fetch> = fetched.iter().filter(|f| f.table == table).collect();
         if files.is_empty() {
             off.push(format!(
@@ -718,6 +764,55 @@ mod tests {
         assert!(reread_gaps(dir.path(), &[row(44.2)], &other)
             .iter()
             .any(|g| g.contains("not the bytes")));
+    }
+
+    /// A target row is read again from the legal-targets registry, not from a fetch: the registry's row passes, the same
+    /// source at another value or another year is a finding, and a target table of a main no target is set on has no row.
+    #[test]
+    fn reread_gaps_holds_a_target_row_to_the_registry() {
+        let dir = tempfile::tempdir().unwrap();
+        let reg = crate::next_targets::target_rows("nrg_ind_ren").unwrap();
+        let t = &reg[0];
+        let row = |time: &str, value: f64| Row {
+            src: t["src"].as_str().unwrap().into(),
+            table: "target_nrg_ind_ren".into(),
+            dims: [(
+                "geo".to_string(),
+                t["dims"]["geo"].as_str().unwrap().to_string(),
+            )]
+            .into(),
+            time: time.into(),
+            value,
+        };
+        assert_eq!(t["table"], format!("{TARGET_TABLE}nrg_ind_ren"));
+        let (year, value) = (
+            t["time"].as_str().unwrap(),
+            t["value"].as_str().unwrap().parse::<f64>().unwrap(),
+        );
+        let gaps = reread_gaps(dir.path(), &[row(year, value)], &[]);
+        assert!(gaps.is_empty(), "{gaps:?}");
+        assert_eq!(
+            reread_gaps(dir.path(), &[row(year, value + 1.0)], &[]),
+            [format!(
+                "{}: not as its fetched file holds it",
+                t["src"].as_str().unwrap()
+            )]
+        );
+        assert_eq!(reread_gaps(dir.path(), &[row("2040", value)], &[]).len(), 1);
+        let mut none = row(year, value);
+        none.table = "target_une_rt_a".into();
+        none.src = "target:none".into();
+        let gaps = reread_gaps(dir.path(), &[none], &[]);
+        assert!(
+            gaps.iter()
+                .any(|g| g.starts_with("no registered target of une_rt_a")),
+            "{gaps:?}"
+        );
+        assert!(
+            gaps.iter()
+                .any(|g| g == "target:none: no recorded fetch holds it"),
+            "{gaps:?}"
+        );
     }
 
     /// A World Bank fetch as the knowledge group records it, the file written under its sha256 in `root`: the events.jsonl
