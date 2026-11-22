@@ -18,7 +18,7 @@ Score = size x surprise x sturdiness, each 0..1: size how far the finding's numb
 left, the ratio), surprise whether it goes against the obvious (even the best year falls short; the low ones did not catch
 up), sturdiness how many years and members it stands on. The page takes the model's three picks of the top five.
 
-Request (stdin JSON, mode "candidates"):
+Request (one JSON line on stdin, one reply line on stdout; mode "candidates"):
   {"mode": "candidates",
    "rows": [{"src", "table", "dims", "time", "value"}],        # the request's rows (next_facts Row)
    "main": {"table", "by": dim, "whole": code?, "members": [code]?, "filter": {dim: code}?},
@@ -37,10 +37,12 @@ Request (mode "compose"): the same fields and "picks": [candidate id, ...] (the 
   with the risk notes (risk_notes: each scenario named as one, the last year read)."""
 import json
 import math
+import os
 import re
 import sys
 
-import words as WD
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # run as a child with -I: its folder holds the word table
+import words as WD  # noqa: E402
 
 THESIS, NOTES = "thesis_claims", "risk_notes"
 MIN_YEARS = 6        # a pace needs this many years of the whole at least
@@ -64,9 +66,21 @@ def series(rows, table, by, code, fixed):
         d = r.get("dims") or {}
         if d.get(by) != code or any(d.get(k) != v for k, v in (fixed or {}).items()): continue
         t = str(r.get("time"))
-        if len(t) == 4 and t.isdigit() and isinstance(r.get("value"), (int, float)) and math.isfinite(r["value"]):
-            out[t] = (float(r["value"]), r["src"])
+        v = number(r.get("value"))
+        if len(t) == 4 and t.isdigit() and v is not None:
+            out[t] = (v, r["src"])
     return dict(sorted(out.items()))
+
+
+def number(v):
+    """A row's value as a float: the knowledge group gives it as the source's decimal text, a test as a number; None when
+    it is neither or not finite."""
+    if isinstance(v, bool): return None
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return None
+    return x if math.isfinite(x) else None
 
 
 def codes_of(rows, table, by, fixed):
@@ -205,8 +219,8 @@ class Req:
         if not t: return None
         hits = [r for r in q.rows if r.get("table") == t.get("table") and str(r.get("time")) == str(t.get("time"))
                 and all((r.get("dims") or {}).get(k) == v for k, v in (t.get("filter") or {}).items())]
-        if len(hits) != 1: return None
-        return float(hits[0]["value"]), str(t["time"]), {"table": t["table"], "filter": dict(t.get("filter") or {}),
+        if len(hits) != 1 or number(hits[0].get("value")) is None: return None
+        return number(hits[0]["value"]), str(t["time"]), {"table": t["table"], "filter": dict(t.get("filter") or {}),
                                                           "time": str(t["time"]), "fmt": q.fmts["value"]}
 
 
@@ -249,9 +263,9 @@ def angle_path(q):
          "p_past": {"op": "line_at", "start": "now", "rate": "past", "at": gy, "fmt": q.fmts["value"]},
          "p_recent": {"op": "line_at", "start": "now", "rate": "recent", "at": gy, "fmt": q.fmts["value"]},
          "p_best": {"op": "line_at", "start": "now", "rate": "best", "at": gy, "fmt": q.fmts["value"]}}
-    # the axis runs to the highest value drawn, a declared fact already
+    # the axis runs to the highest value drawn: a fact of its own key (another finding may declare the same fact with no axis)
     top_key = max(["goal", "p_best", "p_recent", "p_past"], key=lambda k: gv if k == "goal" else runs[k])
-    f[top_key] = {**f[top_key], "axis": True}
+    f["path_top"] = {**f[top_key], "axis": True}
     short = runs["p_best"] < gv
     if short:
         title = T("story.path.short")
@@ -275,7 +289,7 @@ def angle_path(q):
             "runs": [{"text": "fact:p_best", "label": ST("story.run.best")},
                      {"text": "fact:p_recent", "label": ST("story.run.recent")},
                      {"text": "fact:p_past", "label": ST("story.run.past")}],
-            "axis": {"ticks": [f"fact:{top_key}.tick{i}" for i in range(1, len(tk) + 1)], "scale": float(q.defs.get(q.fmts["value"], {}).get("scale", 1))},
+            "axis": {"ticks": [f"fact:path_top.tick{i}" for i in range(1, len(tk) + 1)], "scale": float(q.defs.get(q.fmts["value"], {}).get("scale", 1))},
             "periods": [f"period:{q.table}:{y}" for y in ys],
             "footnote": ST("story.path.foot")}
     if short:
@@ -302,7 +316,7 @@ def angle_need(q):
     if past <= 0: return None, "the past pace is not above 0"
     need = (gv - now) / (int(gy) - int(last))
     ratio = need / past
-    f = {"now": q.value(q.whole, last), "first": q.value(q.whole, first), "goal": {**gq, "axis": True},
+    f = {"now": q.value(q.whole, last), "first": q.value(q.whole, first), "goal": gq, "need_top": {**gq, "axis": True},
          "past": {"op": "per_year", "a": "now", "b": "first", "fmt": q.fmts["value"]},
          "need": {"op": "per_year", "a": "goal", "b": "now", "fmt": q.fmts["value"]},
          "need_x": {"op": "times", "a": "need", "b": "past", "fmt": q.fmts["times"]},
@@ -311,7 +325,7 @@ def angle_need(q):
     title, text = T("story.need.title"), T("story.need.text")
     tk = ticks(gv, q.defs.get(q.fmts["value"], {}))
     data = {"title": SW(q.words["measure"]), "unit": SW(q.words["unit"]),
-            "axis": {"ticks": [f"fact:goal.tick{i}" for i in range(1, len(tk) + 1)], "scale": float(q.defs.get(q.fmts["value"], {}).get("scale", 1)), "from_zero": True},
+            "axis": {"ticks": [f"fact:need_top.tick{i}" for i in range(1, len(tk) + 1)], "scale": float(q.defs.get(q.fmts["value"], {}).get("scale", 1)), "from_zero": True},
             "now": {"text": "fact:now", "at": q.wseries[last][1], "label": ST("story.now")},
             "marks": [{"text": "fact:p_past", "label": ST("story.run.past")}],
             "target": {"text": "fact:goal", "label": ST("story.target_year")},
@@ -465,18 +479,29 @@ def compose(r):
     return {"facts": facts, "sections": sections, "leaves": leaves}
 
 
-def main():
-    r = json.load(sys.stdin)
+def answer(r):
+    """One request's reply: the candidates, or the composed page; a refusal says why."""
     try:
         if r.get("mode") == "compose":
-            out = compose(r)
-        else:
-            _, cands, dropped = candidates(r)
-            out = {"candidates": [{k: c[k] for k in ("id", "angle", "layer", "score", "why", "line")} for c in cands],
-                   "dropped": dropped}
+            return compose(r)
+        _, cands, dropped = candidates(r)
+        return {"candidates": [{k: c[k] for k in ("id", "angle", "layer", "score", "why", "line")} for c in cands],
+                "dropped": dropped}
     except Refused as e:
-        out = {"refused": str(e)}
-    json.dump(out, sys.stdout, ensure_ascii=False)
+        return {"refused": [str(e)]}
+
+
+def main():
+    """One JSON request a line on stdin, one JSON reply a line on stdout (next_leaf's child protocol)."""
+    for line in sys.stdin:
+        if not line.strip(): continue
+        try:
+            r = json.loads(line)
+        except ValueError as e:
+            out = {"refused": [f"findings: the request is not JSON: {e}"]}
+        else:
+            out = answer(r) if isinstance(r, dict) else {"refused": ["findings: the request is no object"]}
+        sys.stdout.write(json.dumps(out, ensure_ascii=False) + "\n"); sys.stdout.flush()
 
 
 if __name__ == "__main__":

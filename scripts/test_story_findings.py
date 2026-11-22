@@ -54,7 +54,9 @@ def eu_request():
 
 def wb_request():
     t = "EN.GHG.CO2.PC.CE.AR5"
-    rows = [row(t, {}, "country", c, y, a + p * (y - 2010)) for c, (a, p) in WB.items() for y in range(2010, 2023)]
+    # the knowledge group gives a value as the source's decimal text: this shape's rows hold it so
+    rows = [{**row(t, {}, "country", c, y, a + p * (y - 2010)), "value": f"{a + p * (y - 2010):.2f}"} for c, (a, p) in WB.items()
+            for y in range(2010, 2023)]
     return {"rows": rows, "main": {"table": t, "by": "country"}, "fmts": FMTS, "fmt_defs": FMT_DEFS,
             "words": {"measure": "人均二氧化碳排放", "unit": "吨／人"}}, WB_NAMES
 
@@ -63,6 +65,7 @@ def wb_request():
 
 def compute(facts, rows, members):
     out = {}
+    rows = [{**r, "value": float(r["value"])} for r in rows]
 
     def sel(q):
         return [r for r in rows if r["table"] == q["table"] and all(r["dims"].get(k) == (v if isinstance(v, str) else r["dims"].get(k))
@@ -185,6 +188,18 @@ class Findings(unittest.TestCase):
             FN.candidates({**req, "fmts": {"value": "x", "year": "yr"}})
         with self.assertRaisesRegex(FN.Refused, "digit"):
             FN.candidates({**req, "words": {"measure": "前20国", "unit": "%"}})
+
+    def test_child_protocol(self):
+        """A line in, a line out, as next_leaf's child protocol asks: two requests, two replies, a bad line refused."""
+        import json, subprocess
+        req, _ = eu_request()
+        lines = json.dumps(req) + "\nnot json\n" + json.dumps({**req, "mode": "compose", "picks": ["path", "need"]}) + "\n"
+        got = subprocess.run([sys.executable, "-I", "-B", FN.__file__], input=lines, capture_output=True, text=True, timeout=60)
+        out = [json.loads(x) for x in got.stdout.splitlines()]
+        self.assertEqual(len(out), 3)
+        self.assertEqual(sorted(c["id"] for c in out[0]["candidates"]), ["ends", "need", "path", "spread"])
+        self.assertIn("not JSON", out[1]["refused"][0])
+        self.assertEqual([s["layer"] for s in out[2]["sections"]], ["thesis_claims", "target_path", "gap_axis", "risk_notes"])
 
     def test_ticks_as_next_facts(self):
         # next_facts ticks_step_in_the_printed_unit's cases: a top of 42.5 at one place steps by 10; 2 at no place by 1
