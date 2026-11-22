@@ -1501,7 +1501,7 @@ mod tests {
             // Three places with exactly three shared years each (2020-2022); the rest of its years fall outside the main's.
             ("nrg_inf_epcrw", grid(&["AT", "DE", "FR"], 2020..=2025)),
             // Two of the main's four places only.
-            ("nrg_cb_pem", grid(&["AT", "DE"], 2018..=2022)),
+            ("nrg_bal_peh", grid(&["AT", "DE"], 2018..=2022)),
             // env_air_gge: no rows (fetch failed).
         ]);
         let (found, dropped) = chain_companions(&index, "sdg_07_40", &["sdg_07_40"], &rows);
@@ -1529,9 +1529,9 @@ mod tests {
         assert_eq!(
             dropped,
             vec![
-                ("nrg_pc_204".to_string(), DropWhy::ChainOverlap),
-                ("nrg_cb_pem".to_string(), DropWhy::ChainOverlap),
+                ("nrg_bal_peh".to_string(), DropWhy::ChainOverlap),
                 ("env_air_gge".to_string(), DropWhy::Empty),
+                ("nrg_pc_204".to_string(), DropWhy::ChainOverlap),
             ]
         );
     }
@@ -1608,13 +1608,13 @@ mod tests {
     }
 
     /// B1 (11-23): a story page fetches the links that are one series a place and year, in the chain's order: the energy
-    /// chain's gas, price and emissions (solar and the grid mix keep two fuels or more), the labour chain's three; none for a
-    /// main no chain holds, and never the main itself.
+    /// chain's five (solar capacity and generation one fuel each since 11-23, the half-year price last), the labour chain's
+    /// three; none for a main no chain holds, and never the main itself.
     #[test]
     fn a_story_page_fetches_the_one_series_links_of_its_chain() {
         let index = chain_index(&[]);
         let tables = |main: &str| -> Vec<String> { chain_links(&index, main).into_iter().map(|l| l.table).collect() };
-        assert_eq!(tables("sdg_07_40"), ["nrg_ti_gas", "nrg_pc_204", "env_air_gge"]);
+        assert_eq!(tables("sdg_07_40"), ["nrg_ti_gas", "nrg_inf_epcrw", "nrg_bal_peh", "env_air_gge", "nrg_pc_204"]);
         assert_eq!(tables("une_rt_a"), ["lfsi_emp_a", "nama_10_gdp", "ilc_peps01n"]);
         assert!(tables("demo_pjan").is_empty());
         assert!(chains().iter().flat_map(|c| &c.links).all(|l| crate::next_pack::unit_short(&l.unit).is_some()));
@@ -1634,16 +1634,16 @@ mod tests {
         let (found, dropped) = chain_companions(&index, "sdg_07_40", &["sdg_07_40"], &all());
         assert_eq!(
             ids(&found),
-            vec!["nrg_ti_gas", "nrg_pc_204", "nrg_inf_epcrw", "nrg_cb_pem"]
+            vec!["nrg_ti_gas", "nrg_inf_epcrw", "nrg_bal_peh", "env_air_gge"]
         );
-        assert_eq!(dropped, vec![("env_air_gge".to_string(), DropWhy::Cut)]);
+        assert_eq!(dropped, vec![("nrg_pc_204".to_string(), DropWhy::Cut)]);
         // The main and two of its own companions: room for three (6 - 3).
         let (found, dropped) =
             chain_companions(&index, "sdg_07_40", &["sdg_07_40", "a", "b"], &all());
         assert_eq!(found.len(), 3);
         assert_eq!(
             dropped.iter().map(|d| d.0.as_str()).collect::<Vec<_>>(),
-            vec!["nrg_cb_pem", "env_air_gge"]
+            vec!["env_air_gge", "nrg_pc_204"]
         );
         assert!(dropped.iter().all(|d| d.1 == DropWhy::Cut));
         // A page already at six tables has no room; an empty `on_page` is read as the main alone.
@@ -1670,7 +1670,7 @@ mod tests {
             chain_companions(&index, "sdg_07_40", &["sdg_07_40", "nrg_ti_gas"], &rows);
         assert_eq!(
             ids(&found),
-            vec!["nrg_inf_epcrw", "nrg_cb_pem", "env_air_gge"]
+            vec!["nrg_inf_epcrw", "nrg_bal_peh", "env_air_gge"]
         );
         assert!(dropped.is_empty());
     }
@@ -1733,7 +1733,7 @@ mod tests {
                 .kind
         };
         assert_eq!(kind("nrg_pc_204"), LinkKind::Stock);
-        assert_eq!(kind("nrg_cb_pem"), LinkKind::Flow);
+        assert_eq!(kind("nrg_bal_peh"), LinkKind::Flow);
         assert_eq!(kind("nama_10_gdp"), LinkKind::Stock);
     }
 

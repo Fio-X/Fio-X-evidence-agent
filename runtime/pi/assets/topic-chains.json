@@ -17,34 +17,24 @@
      "position": "Where the gas the grid leans on comes from: natural gas imports, so the share of renewables is read against the fuel it replaces."
     },
     {
-     "table": "nrg_pc_204",
-     "tag": "price",
-     "kind": "stock",
-     "measure_zh": "居民用电的含税价格（中等年用电量档）",
-     "unit": "EUR_KWH",
-     "slice": {"nrg_cons": ["KWH2500-4999"], "unit": ["KWH"], "tax": ["I_TAX"], "currency": ["EUR"], "siec": ["E7000"]},
-     "filter": {"nrg_cons": "KWH2500-4999", "unit": "KWH", "tax": "I_TAX", "currency": "EUR", "siec": "E7000"},
-     "position": "What a household pays for electricity once gas and renewables meet in the grid: the price of a typical annual consumption band, taxes included."
-    },
-    {
      "table": "nrg_inf_epcrw",
      "tag": "solar",
      "kind": "stock",
-     "measure_zh": "光伏和风电的装机容量",
+     "measure_zh": "光伏发电装机容量",
      "unit": "MW",
-     "slice": {"unit": ["MW"], "siec": ["RA420", "RA300"], "plant_tec": ["CAP_NET_ELC"]},
-     "filter": {"unit": "MW", "plant_tec": "CAP_NET_ELC"},
-     "position": "The capacity that carries the shift: installed solar photovoltaic and wind power."
+     "slice": {"unit": ["MW"], "siec": ["RA420"], "plant_tec": ["CAP_NET_ELC"]},
+     "filter": {"unit": "MW", "siec": "RA420", "plant_tec": "CAP_NET_ELC"},
+     "position": "The capacity that carries the shift: installed solar photovoltaic power."
     },
     {
-     "table": "nrg_cb_pem",
-     "tag": "grid",
+     "table": "nrg_bal_peh",
+     "tag": "generation",
      "kind": "flow",
-     "measure_zh": "各类电源的发电量",
+     "measure_zh": "光伏发电量",
      "unit": "GWH",
-     "slice": {"siec": ["TOTAL", "C0000", "G3000", "RA420", "RA300", "RA000", "N9000", "RA100"], "unit": ["GWH"]},
-     "filter": {"unit": "GWH"},
-     "position": "What the grid actually generated, by fuel: where the installed capacity turns into electricity."
+     "slice": {"nrg_bal": ["GEP"], "siec": ["RA420"], "unit": ["GWH"]},
+     "filter": {"nrg_bal": "GEP", "siec": "RA420", "unit": "GWH"},
+     "position": "What the installed capacity puts into the grid: gross electricity generated from solar photovoltaics in a year."
     },
     {
      "table": "env_air_gge",
@@ -55,6 +45,16 @@
      "slice": {"airpol": ["GHG"], "unit": ["MIO_T"], "src_crf": ["CRF1A1A"]},
      "filter": {"airpol": "GHG", "unit": "MIO_T", "src_crf": "CRF1A1A"},
      "position": "The end of the chain: greenhouse gas emissions of public electricity and heat production."
+    },
+    {
+     "table": "nrg_pc_204",
+     "tag": "price",
+     "kind": "stock",
+     "measure_zh": "居民用电的含税价格（中等年用电量档）",
+     "unit": "EUR_KWH",
+     "slice": {"nrg_cons": ["KWH2500-4999"], "unit": ["KWH"], "tax": ["I_TAX"], "currency": ["EUR"], "siec": ["E7000"]},
+     "filter": {"nrg_cons": "KWH2500-4999", "unit": "KWH", "tax": "I_TAX", "currency": "EUR", "siec": "E7000"},
+     "position": "What a household pays for electricity once gas and renewables meet in the grid: the price of a typical annual consumption band, taxes included."
     }
    ]
   },
