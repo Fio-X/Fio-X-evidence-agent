@@ -116,6 +116,12 @@ def compute(facts, rows, members):
         elif op in ("minus", "times"):
             a, b = get(q["a"]), get(q["b"])
             f.update(v=a["v"] - b["v"] if op == "minus" else a["v"] / b["v"])
+        elif op == "position":
+            rs = sel(q)
+            at = {}
+            for r in rs:
+                if r["time"] == q["time"]: at[r["dims"][q["by"]]] = at.get(r["dims"][q["by"]], 0) + r["value"]
+            f.update(v=1 + sum(1 for v in at.values() if v > at[q["code"]]))
         elif op == "group_change":
             rs = sel(q)
             val = lambda c, t: sum(r["value"] for r in rs if r["dims"][q["by"]] == c and r["time"] == t)
@@ -136,7 +142,7 @@ def ledger(req, composed, names):
     members = req["main"].get("members") or sorted({r["dims"][req["main"]["by"]] for r in rows if r["table"] == req["main"]["table"]})
     facts = compute(composed["facts"], rows, members)
     for k, f in facts.items():
-        d = {**FMT_DEFS, **req.get("chain_fmts", {})}[f["fmt"]]
+        d = {"n": {"scale": 1, "dec": 0, "suffix": ""}, **FMT_DEFS, **req.get("chain_fmts", {})}[f["fmt"]]
         rows.append({"src": f"fact:{k}", "text": f"{f['v'] * d['scale']:,.{d['dec']}f}{d['suffix']}"})
         rows.append({"src": f"fact:{k}.n", "text": f"{f['v'] * d['scale']:,.{d['dec']}f}"})  # the bare number a placeholder prints
         if "t" in f: rows.append({"src": f"fact:{k}.t.y", "text": f["t"]})
@@ -177,7 +183,7 @@ class Findings(unittest.TestCase):
         req, names = eu_request()
         _, cands, dropped = FN.candidates(req)
         self.assertEqual([d["angle"] for d in dropped], ["chain"])  # the request carries no chain
-        self.assertEqual(sorted(c["id"] for c in cands), ["ends", "need", "path", "spread"])
+        self.assertEqual(sorted(c["id"] for c in cands), ["ends", "need", "path", "rank", "spread"])
         self.assertEqual([c["score"] for c in cands], sorted((c["score"] for c in cands), reverse=True))
         path = next(c for c in cands if c["id"] == "path")
         self.assertEqual(path["title"][0], ("w", "就算每年都像 "))  # even the best year falls short of 42.5
@@ -192,7 +198,7 @@ class Findings(unittest.TestCase):
         req, names = wb_request()
         _, cands, dropped = FN.candidates(req)
         self.assertEqual({d["angle"]: d["why"] for d in dropped}, {"path": "no target row", "need": "no target row", "chain": "the request's chain holds fewer than 2 tables"})
-        self.assertEqual(sorted(c["id"] for c in cands), ["ends", "spread"])
+        self.assertEqual(sorted(c["id"] for c in cands), ["ends", "rank", "spread"])
         composed, facts, drawn = draw_all(self, req, names, ["ends", "spread"])
         self.assertEqual(composed["leaves"]["pair_bars"]["places"], ["USA", "IND"])
         self.assertAlmostEqual(facts["hi_lo"]["v"], (17.0 - 0.3 * 12) / (1.4 + 0.06 * 12), places=2)
@@ -320,6 +326,68 @@ class Findings(unittest.TestCase):
         allstill = [dict(r, value=7.0) if r["table"] in ("nrg_inf_epcrw", "nrg_ti_gas", "nrg_pc_204") else r for r in req["rows"]]
         self.assertEqual(why({**req, "rows": allstill}), "no chain table moves over the shared years")
 
+    def test_rank_with_the_whole_among_the_members(self):
+        req, names = eu_request()
+        _, cands, _ = FN.candidates(req)
+        rank = next(c for c in cands if c["id"] == "rank")
+        self.assertEqual(rank["layer"], "rankbar")
+        composed, facts, drawn = draw_all(self, req, names, ["rank", "path", "spread"])
+        data = composed["leaves"]["rankbar"]
+        # the nine members and the whole, each row a fact of its own; the accent row is the whole's
+        self.assertEqual(len(data["rows"]), 10)
+        self.assertEqual(data["highlight"], "EU27_2020")
+        self.assertEqual({r["code"] for r in data["rows"]}, set(EU_MEMBERS) | {"EU27_2020"})
+        last = {c: a + p * 19 + 0.3 * math.sin(2024) for c, (a, p) in EU_MEMBERS.items()}
+        above = sum(1 for v in last.values() if v > EU_WHOLE[-1])
+        self.assertEqual(facts["pos"]["v"], 1 + above)  # position among the members and the whole itself
+        self.assertAlmostEqual(facts["g_se"]["v"], facts["r_se"]["v"] - facts["r_eu27_2020"]["v"], places=6)
+        self.assertAlmostEqual(facts["g_eu27_2020"]["v"], 0.0)
+        self.assertIn("goal", facts)  # the target is said in the text (the leaf draws no line), a fact of the page
+        sec = next(s_ for s_ in composed["sections"] if s_["layer"] == "rankbar")
+        self.assertIn("{pos}", sec["title"]); self.assertIn("{goal}", sec["text"])
+        self.assertEqual(sec["title"].count("{"), 5)  # whole, year, number, highest, lowest: every number a fact
+        # the rows drawn from the highest down
+        svg = drawn["rankbar"][0] if isinstance(drawn["rankbar"], tuple) else drawn["rankbar"]
+        self.assertGreater(len(re.findall("<rect", svg)), 9)
+
+    def test_rank_without_a_whole_ranks_the_members_from_the_highest(self):
+        req, names = wb_request()
+        composed, facts, drawn = draw_all(self, req, names, ["rank", "ends"])
+        data = composed["leaves"]["rankbar"]
+        self.assertEqual((len(data["rows"]), data["highlight"]), (6, "USA"))
+        self.assertNotIn("pos", facts)
+        self.assertAlmostEqual(facts["g_usa"]["v"], 0.0)  # measured from the highest
+        self.assertTrue(all(facts[f"g_{c.lower()}"]["v"] <= 0 for c in WB))
+        self.assertEqual(composed["leaves"]["rankbar"]["share_head"], FN.ST("story.rank.gap_top_head"))
+
+    def test_rank_needs_five_members(self):
+        req, _ = wb_request()
+        few = {**req, "rows": [r for r in req["rows"] if r["dims"]["country"] in ("USA", "DEU", "CHN", "IND")], "main": {**req["main"], "members": None}}
+        self.assertEqual({d["angle"]: d["why"] for d in FN.candidates(few)[2]}["rank"], "fewer than 5 members")
+
+    def test_rank_page_draws_the_whole_in_the_accent(self):
+        """Through the real child: the rank bar's accent row is the one its data names (story.rank_style)."""
+        import json, subprocess
+        req, names = eu_request()
+        composed = FN.compose({**req, "picks": ["rank", "path"]})
+        rows, facts = ledger(req, composed, names)
+        spec = {"title": "t", "kicker": "k", "dek": "d", "source": "s", "refs": [], "facts": composed["facts"], "sections": composed["sections"],
+                "tables": {t: {"id": t} for t in sorted({r["table"] for r in req["rows"]})}, "fmts": {**FMT_DEFS, "n": {"scale": 1, "dec": 0, "suffix": ""}, "time": {}},
+                "hero": {"data": {}, "leaves": composed["leaves"]}}
+        line = lambda **kv: json.dumps({"node": "page_story", "panel": {"w": 1140, "h": 0, "frame": None}, "rows": rows,
+                                        "knobs": {"spec": spec, "labels": names}, **kv}, ensure_ascii=False)
+        layers = [x["layer"] for x in composed["sections"]]
+        lines = [line(phase="size")] + [line(layer=n) for n in layers]
+        go = lambda ls: [json.loads(x) for x in subprocess.run([sys.executable, "-I", "-B", run.__file__], input="\n".join(ls) + "\n",
+                                                               capture_output=True, text=True, timeout=120, check=True).stdout.splitlines()]
+        got = go(lines)
+        self.assertFalse([g for g in got if "refused" in g or "error" in g], got)
+        rank = got[1 + layers.index("rankbar")]["svg"]
+        accents = re.findall(r'<rect [^>]*fill="var\(--accent\)"', rank)
+        self.assertEqual(len(accents), 1)  # one accent bar: the whole's; the others grey
+        last = go(lines + [json.dumps({"phase": "page", "layers": {n: g["svg"] for n, g in zip(layers, got[1:])}, "sizes": {}}, ensure_ascii=False)])[-1]
+        self.assertIn("html", last, last)
+
     def test_refusals(self):
         req, _ = eu_request()
         for picks, why in ((["path", "nope"], "not a candidate"), (["path", "path"], "picked twice"), (["path"], "two to four")):
@@ -338,7 +406,7 @@ class Findings(unittest.TestCase):
         got = subprocess.run([sys.executable, "-I", "-B", FN.__file__], input=lines, capture_output=True, text=True, timeout=60)
         out = [json.loads(x) for x in got.stdout.splitlines()]
         self.assertEqual(len(out), 3)
-        self.assertEqual(sorted(c["id"] for c in out[0]["candidates"]), ["ends", "need", "path", "spread"])
+        self.assertEqual(sorted(c["id"] for c in out[0]["candidates"]), ["ends", "need", "path", "rank", "spread"])
         self.assertIn("not JSON", out[1]["refused"][0])
         self.assertEqual([s["layer"] for s in out[2]["knobs"]["spec"]["sections"]], ["thesis_claims", "target_path", "gap_axis", "risk_notes"])
         self.assertEqual(sorted(out[2]["knobs"]["spec"]["hero"]["leaves"]), ["gap_axis", "risk_notes", "target_path", "thesis_claims"])

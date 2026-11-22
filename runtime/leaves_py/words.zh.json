@@ -133,5 +133,15 @@
  "story.spread.claim_low": "起点最低几地的平均涨幅",
  "story.spread.claim_top": "起点最高几地的平均涨幅",
  "story.ends.claim": "{n:a}是{n:b}的几倍",
- "story.chain.claim": "几个数合起来动得最大那一年，整体的变化"
+ "story.chain.claim": "几个数合起来动得最大那一年，整体的变化",
+"story.rank.kicker": "名次",
+"story.rank.title": "{n:w}在 {y:y}排第 {f:pos}，{n:hi}最高、{n:lo}最低",
+"story.rank.text": "{y:y}，各方的值从高到低排开：{n:hi}最高，{f:rhi}；{n:lo}最低，{f:rlo}；{n:w}是 {f:rw}，排第 {f:pos}。右边一列是各方与{n:w}的差。",
+"story.rank.text_goal": "{y:y}，各方的值从高到低排开：{n:hi}最高，{f:rhi}；{n:lo}最低，{f:rlo}；{n:w}是 {f:rw}，排第 {f:pos}，目标是 {f:goal}。右边一列是各方与{n:w}的差。",
+"story.rank.claim": "{n:w}在各方中的名次",
+"story.rank.gap_head": "与整体的差",
+"story.rank.title_top": "{n:hi}最高，{f:rhi}；{n:lo}最低，{f:rlo}",
+"story.rank.text_top": "{y:y}，各方的值从高到低排开，右边一列是各方与最高的{n:hi}的差。",
+"story.rank.claim_top": "{n:hi}的值最高",
+"story.rank.gap_top_head": "与最高的差"
 }
