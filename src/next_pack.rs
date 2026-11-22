@@ -553,6 +553,9 @@ mod tests {
         }
         // The two World Bank bench measures (q4, q5).
         assert_eq!(unit_short_zh("TCO2E_HAB"), Some("吨二氧化碳当量/人"));
+        // an installed electric capacity (nrg_inf_epcrw's only unit) has its row: a page with no row for its unit stops
+        assert_eq!(unit_short_zh("MW"), Some("兆瓦"));
+        assert_eq!(unit_short_zh("GW"), Some("吉瓦"));
         assert_eq!(unit_short_zh("PC_POP"), Some("%"));
         // of the World Bank rate bases the owner approved (11-14 15:2x), the one whose Chinese form the number check lets
         // through (owner 11-14 20:2x): the indicator's row names the code, the code its form

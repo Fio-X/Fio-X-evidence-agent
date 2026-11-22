@@ -5684,6 +5684,10 @@ mod tests {
             // imports said alone are all goods and services, not energy (a page said the energy half went unanswered)
             ("香港、新加坡、韩国、日本、中国、泰国 2023 年进口占 GDP 的比重，前三是哪些？", vec![]),
             ("各国天然气进口来源", vec!["energy_imports"]),
+            // the household electricity price and the installed generating capacity (the I6 tables nrg_pc_204, nrg_inf_epcrw)
+            ("欧盟各国居民电价", vec!["electricity_price"]),
+            ("德国和法国的电价与碳排放", vec!["co2", "electricity_price"]),
+            ("欧盟各国风电装机容量", vec!["installed_capacity"]),
             ("今天天气如何", vec![]),
         ] {
             assert_eq!(ids(q), want, "{q}");
@@ -6414,6 +6418,65 @@ mod tests {
             serde_json::to_value(got).unwrap(),
             serde_json::to_value(all).unwrap()
         );
+    }
+
+    /// The I6 tables sit among their neighbours in a toy catalogue (the catalogue itself holds all six; the families file
+    /// names which hold what): a question asking for gas imports sees nrg_ti_gas among the top five, offered as the
+    /// energy-imports quantity's table, whatever else the energy folder lists.
+    #[test]
+    fn a_gas_import_question_sees_the_gas_import_table_in_its_top_five() {
+        let toc = "\"title\"\t\"code\"\t\"type\"\n\"Database by themes\"\t\"data\"\t\"folder\"\n\
+                   \"    Energy\"\t\"nrg\"\t\"folder\"\n\
+                   \"        Natural gas imports - annual data\"\t\"nrg_ti_gas\"\t\"table\"\n\
+                   \"        Oil and petroleum products imports - annual data\"\t\"nrg_ti_oil\"\t\"table\"\n\
+                   \"        Natural gas exports - annual data\"\t\"nrg_te_gas\"\t\"table\"\n\
+                   \"        Energy imports dependency\"\t\"nrg_ind_id\"\t\"table\"\n\
+                   \"        Electricity prices for household consumers - bi-annual data\"\t\"nrg_pc_204\"\t\"table\"\n\
+                   \"        Renewables and wastes' electricity production capacities\"\t\"nrg_inf_epcrw\"\t\"table\"\n\
+                   \"        Net electricity generation by type of fuel - monthly data\"\t\"nrg_cb_pem\"\t\"table\"\n";
+        let geo: &[(&str, &[&str])] = &[("geo", &["EU27_2020", "DE"]), ("unit", &["MIO_M3"])];
+        let annual: &[(&str, &[&str])] = &[("time", &["2024", "1990"])];
+        let mut metabase = String::new();
+        for table in [
+            "nrg_ti_gas",
+            "nrg_ti_oil",
+            "nrg_te_gas",
+            "nrg_ind_id",
+            "nrg_pc_204",
+            "nrg_inf_epcrw",
+            "nrg_cb_pem",
+        ] {
+            for (dim, codes) in geo.iter().chain(annual) {
+                for code in *codes {
+                    metabase.push_str(&format!("{table}\t{dim}\t{code}\n"));
+                }
+            }
+        }
+        let geo_cl = "EU27_2020\tEuropean Union - 27 countries (from 2020)\r\nDE\tGermany\r\n";
+        let unit_cl = "MIO_M3\tMillion cubic metres\r\n";
+        let c = Catalog::from_raw(&Raw {
+            toc: toc.into(),
+            metabase,
+            cl: vec![
+                ("geo".into(), geo_cl.into()),
+                ("unit".into(), unit_cl.into()),
+            ],
+            wb_indicators: json!([{}, []]),
+            wb_countries: json!([{}, []]),
+            wb_countries_zh: json!([{}, []]),
+            nuts: "\u{feff}CNTR_CODE,NUTS_ID\r\n".into(),
+        });
+        let q = "欧盟各国天然气进口来源";
+        let t = texts(&["natural gas imports"]);
+        let got = c.top5(q, &t, false, None, None);
+        assert!(
+            ids(&got.candidates).contains(&"nrg_ti_gas"),
+            "{:?}",
+            ids(&got.candidates)
+        );
+        assert_eq!(got.asked.len(), 1);
+        assert_eq!(got.asked[0].id, "energy_imports");
+        assert!(got.asked[0].offered.iter().any(|id| id == "nrg_ti_gas"));
     }
 
     #[test]

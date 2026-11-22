@@ -1251,7 +1251,7 @@ mod tests {
         );
     }
 
-    /// sdg_07_40, the 73 tables reviewed on 2026-10-31 and nrg_ind_id (2026-11-10) have the names the owner reviewed; a table the file does not list
+    /// sdg_07_40, the 73 tables reviewed on 2026-10-31 and nrg_ind_id (2026-11-10) and the three event-chain tables (2026-11-22) have the names the owner reviewed; a table the file does not list
     /// has none (its English title stays), and an id is matched exactly. Ten reviewed names hold a digit: they are listed as
     /// reviewed, and the source line still prints none of them (next_run source_line, its digit check).
     #[test]
@@ -1274,7 +1274,7 @@ mod tests {
             .filter(|(_, zh)| zh.chars().any(char::is_numeric))
             .map(|(id, _)| id.as_str())
             .collect();
-        assert_eq!((names.len(), digits.len()), (78, 10), "{digits:?}");
+        assert_eq!((names.len(), digits.len()), (81, 10), "{digits:?}");
         let file: Value = serde_json::from_str(TABLE_NAMES).unwrap();
         let dated = |d: &str| {
             file["tables"]
@@ -1292,6 +1292,18 @@ mod tests {
                 dated("2026-11-16")
             ),
             (1, 73, 3)
+        );
+        // the three tables of the event-chain sample, reviewed 11-22 (owner 19:29: 家庭用户电价（半年度）; 温室气体排放（按来源部门）;
+        // 可再生能源和废弃物发电装机容量)
+        assert_eq!(dated("2026-11-22"), 3);
+        assert_eq!(zh("nrg_pc_204").as_deref(), Some("家庭用户电价（半年度）"));
+        assert_eq!(
+            zh("env_air_gge").as_deref(),
+            Some("温室气体排放（按来源部门）")
+        );
+        assert_eq!(
+            zh("nrg_inf_epcrw").as_deref(),
+            Some("可再生能源和废弃物发电装机容量")
         );
         assert_eq!(zh("SP.POP.TOTL@2").as_deref(), Some("人口，总数"));
     }
