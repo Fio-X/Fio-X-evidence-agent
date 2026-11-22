@@ -816,6 +816,9 @@ fn svg_markup(svg: &str) -> Option<String> {
     None
 }
 
+/// The src a word laid over a layer's picture as html takes in the checks (take's `words`): never a ledger entry's.
+pub const WORDS_OVER: &str = "~words";
+
 /// Reads one reply into the panel, or the reasons it was refused. Only the first layer (the base) may fix the frame.
 fn take(
     panel: &mut Panel,
@@ -860,25 +863,37 @@ fn take(
         return Err(vec![format!("{layer}: an svg layer {why}")]);
     }
     let mut bad = Vec::new();
-    let texts: Vec<Text> = reported
-        .iter()
-        .map(|t| {
-            let s = |k: &str| t[k].as_str().unwrap_or("").to_string();
-            let n = |k: &str| t[k].as_f64().unwrap_or(f64::NAN);
-            let (x, y, size) = (n("x"), n("y"), n("size"));
-            if !(size.is_finite() && size > 0.0) {
-                bad.push(format!("{layer}: {:?} has no size", s("text")));
-            }
-            Text {
-                src: s("src"),
-                text: s("text"),
-                layer: layer.to_string(),
-                bx: text_box(x, y, size, &s("anchor"), &s("baseline"), &s("text")),
-                rot: t["rot"].as_f64().unwrap_or(0.0),
-                at: (x, y),
-            }
-        })
+    let as_text = |t: &Value, src: Option<&str>, bad: &mut Vec<String>| {
+        let s = |k: &str| t[k].as_str().unwrap_or("").to_string();
+        let n = |k: &str| t[k].as_f64().unwrap_or(f64::NAN);
+        let (x, y, size) = (n("x"), n("y"), n("size"));
+        if !(size.is_finite() && size > 0.0) {
+            bad.push(format!("{layer}: {:?} has no size", s("text")));
+        }
+        Text {
+            src: src.map_or_else(|| s("src"), str::to_string),
+            text: s("text"),
+            layer: layer.to_string(),
+            bx: text_box(x, y, size, &s("anchor"), &s("baseline"), &s("text")),
+            rot: t["rot"].as_f64().unwrap_or(0.0),
+            at: (x, y),
+        }
+    };
+    // the words a story layer lays over its picture as html (WORDS_OVER): no ledger entry, so no src of their own, but
+    // placed, sized and checked here as its svg texts are (inside the panel, over no other text or line); a digit among
+    // them, an empty one or an svg text claiming to be one refuses (a number is printed only marked)
+    let words: Vec<Text> = reply["words"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|t| as_text(t, Some(WORDS_OVER), &mut bad))
         .collect();
+    for t in &words {
+        if t.text.trim().is_empty() || t.text.chars().any(char::is_numeric) {
+            bad.push(format!("{layer}: the word laid over {:?} is empty or holds a digit", t.text));
+        }
+    }
+    let texts: Vec<Text> = reported.iter().map(|t| as_text(t, None, &mut bad)).collect();
     // The texts reported are the texts drawn: a <text> left out of the report would escape the checks below.
     let mut drawn = drawn_texts(svg);
     let mut said: Vec<(String, String)> = texts
@@ -892,6 +907,10 @@ fn take(
             "{layer}: the svg draws texts {drawn:?} but reports {said:?}"
         ));
     }
+    if texts.iter().any(|t| t.src == WORDS_OVER) {
+        bad.push(format!("{layer}: an svg text names itself a word laid over the picture"));
+    }
+    let texts: Vec<Text> = texts.into_iter().chain(words).collect();
     let lines: Vec<Vec<(f64, f64)>> = reply["lines"]
         .as_array()
         .map(|ls| {
@@ -3305,6 +3324,15 @@ mod tests {
         }
     }
 
+    /// st1 11-23: a word a story layer lays over its picture as html, inside the panel and over nothing, is taken.
+    #[test]
+    fn a_word_laid_over_a_picture_that_fits_is_taken() {
+        for done in both(&[layer("echo", "notes", json!({"words": [text("", 10.0, 30.0)]}))]) {
+            let (panel, _) = done.unwrap();
+            assert!(panel.texts.iter().any(|t| t.src == WORDS_OVER && t.text == "德国"));
+        }
+    }
+
     #[test]
     fn a_text_out_of_the_panel_on_a_line_over_a_text_with_no_src_or_no_place_is_refused() {
         let no_size = json!({"src": "name:x/DE", "text": "德国", "x": 10, "y": 30, "size": 0});
@@ -3315,6 +3343,13 @@ mod tests {
                 "outside the panel",
             ),
             (json!({"texts": [text("", 10.0, 30.0)]}), "has no src"),
+            // the words a story layer lays over its picture as html are checked as its texts are, with no src and no digit
+            (json!({"words": [text("", 890.0, 30.0)]}), "outside the panel"),
+            (json!({"words": [text("", 10.0, 54.0)]}), "sits on a line of base"),
+            (json!({"texts": [text("name:x/DE", 100.0, 30.0)], "words": [text("", 110.0, 32.0)]}), "overlaps"),
+            (json!({"words": [json!({"text": "2030 年", "x": 10, "y": 30, "size": 12})]}), "holds a digit"),
+            (json!({"words": [json!({"text": " ", "x": 10, "y": 30, "size": 12})]}), "is empty"),
+            (json!({"texts": [text(WORDS_OVER, 10.0, 30.0)]}), "names itself a word laid over"),
             (
                 json!({"texts": [text("name:x/DE", 10.0, 54.0)]}),
                 "sits on a line of base",

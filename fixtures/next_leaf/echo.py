@@ -48,5 +48,6 @@ for line in sys.stdin:
             "svg": f'<g data-layer="{req["layer"]}">{seen}{occ}{k.get("extra_svg", texts)}</g>',
             "texts": k.get("texts", []), "lines": k.get("lines", [])}
         out.update(frame=k.get("frame"), refused=k.get("refused", []), dropped=k.get("dropped", []))
+        if "words" in k: out["words"] = k["words"]  # the words laid over the picture as html (next_leaf WORDS_OVER)
     sys.stdout.write(json.dumps(out, ensure_ascii=False) + "\n")
     sys.stdout.flush()

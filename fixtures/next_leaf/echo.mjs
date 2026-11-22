@@ -51,6 +51,6 @@ rl.on("line", (line) => {
     ? { html: k.html, texts: k.texts || [] }
     : { svg: `<g data-layer="${req.layer}">${seen}${occ}${k.extra_svg || texts}</g>`, texts: k.texts || [], lines: k.lines || [] };
   process.stdout.write(
-    JSON.stringify({ ...reply, frame: k.frame || null, refused: k.refused || [], dropped: k.dropped || [] }) + "\n",
+    JSON.stringify({ ...reply, frame: k.frame || null, refused: k.refused || [], dropped: k.dropped || [], ...(k.words ? { words: k.words } : {}) }) + "\n",
   );
 });
