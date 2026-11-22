@@ -2583,7 +2583,6 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     ),
     // an illustration strip is line art in the page's colours only, as wide as asked
     ("leaf.strip", "", &["leaf::strip_faults", "leaf::strip"]),
-    // the opening picture is a drawn scene in the page's own palette (colour allowed), sized as asked, with no text, link or script
     ("leaf.hero", "", &["leaf::hero_faults", "leaf::hero"]),
     // the bake changes no text and no mark of the page
     ("leaf.bake_keeps_text", "", &["leaf::bake", "leaf::read"]),
@@ -2637,8 +2636,7 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
     ),
     // the strip's piece set in the page palette's colours
     ("visual.strip_palette", "", &["visual::illus_strip"]),
-    // the opening picture's request: a set picked from the page's own topic tags, its answer a drawing or the strip instead
-    ("visual.hero", "", &["visual::illus_hero", "visual::pick_set"]),
+    ("visual.hero_pieces", "", &["visual::illus_hero", "visual::pick_set"]),
     // the map label points the binary embeds: each on the globe, else the table is refused
     ("visual.label_points", "", &["visual::label_points"]),
     // a fill of a registered recipe: no stray knob, every named row a name row with a text, every map point a table's
