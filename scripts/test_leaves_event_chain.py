@@ -132,6 +132,33 @@ class Picture(unittest.TestCase):
         ys = [float(p.split(",")[1]) for p in re.search(r'<polyline points="([^"]+)"[^>]*data-code="PRICE"', svg).group(1).split()]
         self.assertGreater(max(ys) - min(ys), 60)  # the price's small rise fills most of the plot's height
 
+    def test_the_first_and_last_values_keep_off_the_line(self):
+        """A value printed beside its point stands above it, or under it where the line (or a taller bar) runs through the
+        room above (or higher where neither side is free): no 1 px sample of a line sits inside a first or last value's box, in the
+        two shapes and in a panel that climbs steeply from its first point, whose first value then goes higher than the usual 7 px."""
+        rows, ys = [], [str(y) for y in range(2015, 2023)]
+        steep = [panel(rows, "t", "STEEP", ys, [10, 55, 70, 80, 88, 94, 98, 100], lambda v: f"{v:.0f}", "line", "a steep climb", "u", zero=True),
+                 panel(rows, "t", "FLAT", ys, [5, 6, 5, 6, 5, 6, 5, 6], lambda v: f"{v:.0f}", "line", "a flat one", "u", zero=False)]
+        out = dict(self.out, steep=draw(dict(panels=steep), rows, {}))
+        for name, (svg, _, _) in out.items():
+            texts, bad = run.drawn(svg)
+            self.assertEqual(bad, [], name)
+            lines = {m.group(2): [tuple(map(float, q.split(","))) for q in m.group(1).split()]
+                     for m in re.finditer(r'<polyline points="([^"]+)"[^>]*data-code="([^"]+)"', svg)}
+            boxes = [(t["x"] - K.tw(t["text"], t["size"]) / 2, t["y"] - t["size"] * 0.8, t["x"] + K.tw(t["text"], t["size"]) / 2, t["y"] + t["size"] * 0.25, t)
+                     for t in texts if t["src"] and re.search(r"_(first|last)$", t["src"])]
+            self.assertTrue(boxes, name)
+            for x0, y0, x1, y1, t in boxes:
+                for pts in lines.values():
+                    for (xa, ya), (xb, yb) in zip(pts, pts[1:]):
+                        m = max(1, int(abs(xb - xa)))
+                        hit = [k for k in range(m + 1) if x0 <= xa + (xb - xa) * k / m <= x1 and y0 - 1.5 <= ya + (yb - ya) * k / m <= y1 + 1.5]
+                        self.assertEqual(hit, [], f"{name}: {t['src']} sits on a line")
+        svg = out["steep"][0]
+        first = re.search(r'<polyline points="([0-9.]+),([0-9.]+) ', svg)
+        t = next(t for t in run.drawn(svg)[0] if t["src"] == "fact:steep_first")
+        self.assertLess(t["y"], float(first.group(2)) - 7)  # the line climbs from this point to the baseline's side: no room under it, so higher than the usual 7 px above
+
     def test_its_rules(self):
         rows, data, names = SHAPES["eu"]
         d = json.loads(json.dumps(data))

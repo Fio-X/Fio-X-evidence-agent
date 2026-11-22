@@ -1,6 +1,6 @@
 """event_chain layer: a chain of events told as small panels linked left to right, in line.py's layer style: each panel one
 measure's series (a line or bars) on the same span of periods, its name and unit over it, its first and last value
-printed above their points (the last bold), its first and last period under it; between two neighbouring panels a grey
+printed beside their points (the last bold; above, or under a point, or higher, where the line or a taller bar runs through the room above), its first and last period under it; between two neighbouring panels a grey
 chevron band, and under the gap the link's words (what led from one to the next); the chosen period (the event) shaded in
 every panel, named once in a key over the panels. One accent: the highlighted panel's series; the others in ink grey.
 Each panel has its own value scale (from 0 unless the request says not); the panels share the time scale so the shaded
@@ -161,11 +161,32 @@ def cl_event_chain(f, occ):
                      f'stroke-linecap="round" data-code="{esc(p["code"])}"/>')
             for t, v, _ in (p["pts"][0], p["pts"][-1]):
                 o.append(f'<circle cx="{f.x(i, t):.1f}" cy="{yv(v):.1f}" r="3" fill="{ink}" data-code="{esc(p["code"])}"/>')
-        # the first and last value above their points, kept inside the panel
+        # the first and last value beside their points, kept inside the panel: above the point, or under it when the line (or a taller
+        # bar) runs through the room above (the side the series leaves free; both taken, the one it covers less, its halo over the rest)
+        pxy = [(f.x(i, t), yv(v)) for t, v, _ in p["pts"]]
+        bw = (f.x(i, f.step) - f.x(i, 0)) * 0.56
+
+        def covered(x0_, y0_, x1_, y1_):
+            """How many 1 px samples of the series (its line, or its bars) the box holds."""
+            if p["kind"] == "bar":
+                return sum(100 for x, y in pxy if x - bw / 2 < x1_ and x + bw / 2 > x0_ and y < y1_ and bottom > y0_)
+            n = 0
+            for (xa, ya), (xb, yb) in zip(pxy, pxy[1:]):
+                m = max(1, int(abs(xb - xa)))
+                n += sum(1 for k in range(m + 1) if x0_ <= xa + (xb - xa) * k / m <= x1_ and y0_ - 1.5 <= ya + (yb - ya) * k / m <= y1_ + 1.5)
+            return n
+
         for (t, v, _), src, wt, side in ((p["pts"][0], p["first_text"], 400, "first"), (p["pts"][-1], p["last_text"], 700, "last")):
             text = FX.text(src); w = tw(text, size)
             xx = min(max(f.x(i, t), x0 + w / 2), x0 + f.pw - w / 2)
-            o.append(K.txt(B, xx, yv(v) - 7, size, "var(--t-title)" if wt == 700 else "var(--t-body)", FX.entry(src, "tspan", None), w,
+            spots = [yv(v) - 7]
+            if yv(v) + 7 + size * 1.05 <= bottom - 2: spots.append(yv(v) + 7 + size * 0.8)  # under the point, clear of the baseline
+            # higher up, in the room over the plot, where neither side of the point is free (a line climbing steeply from it)
+            spots += [yv(v) - 7 - j * size * 0.5 for j in range(1, 8) if yv(v) - 7 - j * size * 0.5 - size * 0.8 >= top - size * 1.5]
+            ty = min(spots, key=lambda yy: (covered(xx - w / 2, yy - size * 0.8, xx + w / 2, yy + size * 0.25) > 0, spots.index(yy)))  # the first free
+            if covered(xx - w / 2, ty - size * 0.8, xx + w / 2, ty + size * 0.25):  # none free: the one it covers least, its halo over the rest
+                ty = min(spots, key=lambda yy: (covered(xx - w / 2, yy - size * 0.8, xx + w / 2, yy + size * 0.25), spots.index(yy)))
+            o.append(K.txt(B, xx, ty, size, "var(--t-title)" if wt == 700 else "var(--t-body)", FX.entry(src, "tspan", None), w,
                            anchor="middle", weight=wt, tag=f"panel {p['code']} {side} value",
                            style=' stroke="var(--bg)" stroke-width="4" paint-order="stroke"'))  # a halo where the line runs by
         # the first and last period under the baseline

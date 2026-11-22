@@ -103,11 +103,34 @@ def ordered(facts):
     return out
 
 
+# Operators the program's layer 1 alone works out (next_facts): a leaf page's request carries each one's text in its ledger
+# (fact:<k>, its bare number fact:<k>.n and, where it has a period, fact:<k>.t.y), and this child reads them from there. With no
+# ledger (a page made from files) the child has no way to work them out and refuses, naming the operator.
+PROGRAM_OPS = ("per_year", "cagr", "line_at", "reach_year", "step_max", "first_above", "spread", "group_change")
+
+
+def from_ledger(key, q):
+    """A fact of an operator the program alone works out, as the ledger holds it: its format, its bare number as a float
+    (the printed one, rounded as printed) and its period; a ledger without its number refuses."""
+    if LEDGER is None:
+        raise Refused(f"fact {key}: the operator {q.get('op')} is worked out by the program, and this request has no ledger to read it from")
+    n = text(f"fact:{key}.n")
+    try:
+        v = float(n.replace(",", ""))
+    except ValueError:
+        raise Refused(f"fact {key}: the ledger's number {n!r} is no number")
+    out = {"v": v, "fmt": q.get("fmt", "pct"), "src": f"ledger({key})"}
+    if f"fact:{key}.t.y" in LEDGER: out["t"] = text(f"fact:{key}.t.y")
+    return out
+
+
 def compute(spec, T):
     F = {}
     for key in ordered(spec["facts"]):
         q = spec["facts"][key]
         op = q.get("op", "value")
+        if op in PROGRAM_OPS:
+            F[key] = from_ledger(key, q); continue
         if op in DERIVED:
             a, b = F[q["a"]]["v"], F[q["b"]]["v"]
             v = {"share": a / b, "change": a / b - 1, "times": a / b, "minus": a - b, "plus": a + b}[op]

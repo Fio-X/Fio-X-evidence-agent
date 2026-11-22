@@ -33,6 +33,9 @@ STORY_LAYERS = ["thesis_claims", "gap_axis", "event_chain", "target_path", "winn
 TEXT_BLOCKS = ("thesis_claims", "risk_notes")
 CODE = re.compile(r"[a-z][a-z0-9_]{0,31}")
 PAGE_W = 1140
+# the two text blocks run the page's whole width (their own default is a column; the page puts them under the header and
+# above the sources, where a column leaves the right of the page empty): the leaf's width knob, set here over the request's
+FIXED = {n: {"width": PAGE_W} for n in TEXT_BLOCKS}
 
 
 class Frame:
