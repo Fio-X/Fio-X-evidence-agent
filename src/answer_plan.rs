@@ -396,6 +396,14 @@ pub fn asks_fall(question: &str) -> bool {
     relation(question) == Rel::Change && any(&q, &DOWN_ZH) && !any(&q, &UP_ZH)
 }
 
+/// Whether the question asks where one place stands in its ranking (排第几, 排在, 位置): the focus of its relation is Position.
+pub fn asks_position(question: &str) -> bool {
+    matches!(
+        focus(question, relation(question), None),
+        Focus::Position(_)
+    )
+}
+
 /// Whether the question asks for the total of its places (合计, 总共: the relation Magnitude, its focus Total), by its words.
 pub fn asks_total(question: &str) -> bool {
     relation(question) == Rel::Magnitude
@@ -961,6 +969,28 @@ mod tests {
             "2015 年到 2024 年哪国失业率降得最多？",
         ] {
             assert!(!asks_total(q), "{q}");
+        }
+    }
+
+    /// A question that asks where one place stands in its ranking (排第几) is read as such; the highest, a first n, a
+    /// change, a total, or a ranking with no place asked is not.
+    #[test]
+    fn a_question_asking_where_a_place_stands_is_read_from_its_words() {
+        for q in [
+            "2024 年人口最多的十个国家里，某国排第几？",
+            "欧盟各国失业率，某国排第几？",
+            "东盟各国人均 GDP，某国排在第几位？",
+        ] {
+            assert!(asks_position(q), "{q}");
+        }
+        for q in [
+            "2024 年人口最多的十个国家是哪些？",
+            "欧盟各国失业率谁最高？",
+            "东盟各国人均 GDP 最高的三个是谁？",
+            "2015 年到 2024 年哪国失业率降得最多？",
+            "东盟各国人口合计多少？",
+        ] {
+            assert!(!asks_position(q), "{q}");
         }
     }
 

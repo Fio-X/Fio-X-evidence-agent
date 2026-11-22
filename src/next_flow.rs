@@ -3253,6 +3253,11 @@ pub trait Catalogue: Sync {
     fn asks_fall(&self, _question_zh: &str) -> bool {
         false
     }
+    /// Whether the Chinese question asks where one place stands in its ranking (the knowledge group's reading of its
+    /// words, through its door); false when this catalogue reads none.
+    fn asks_position(&self, _question_zh: &str) -> bool {
+        false
+    }
     /// The whole class of question the knowledge group refuses from its words before any search (scope-refusal-zh.json, user
     /// 11-08 item 1); None when no class takes it.
     fn scope_refused(
@@ -3830,6 +3835,7 @@ pub(crate) fn knowledge_call<'a>(
             json!({"asks_second": second.map(|low| json!({"low": low}))})
         }
         Ok(Reply::AsksFall(fall)) => json!({"asks_fall": fall}),
+        Ok(Reply::AsksPosition(position)) => json!({"asks_position": position}),
         Ok(Reply::ScopeRefused(refused)) => json!({"scope_refused": refused}),
         Ok(Reply::SplitAsk(ask)) => json!({"shape_ask": ask}),
         Ok(Reply::AnswerPlan(Ok(plan))) => json!({"plan": plan}),
@@ -4517,6 +4523,16 @@ impl Catalogue for GroupCatalogue {
         match self.call("asks_fall", json!({"question": question_zh}), request) {
             next_knowledge::Reply::AsksFall(fall) => fall,
             _ => unreachable!("the knowledge group answered asks_fall with another reply"),
+        }
+    }
+
+    fn asks_position(&self, question_zh: &str) -> bool {
+        let request = next_knowledge::Request::AsksPosition {
+            question: question_zh,
+        };
+        match self.call("asks_position", json!({"question": question_zh}), request) {
+            next_knowledge::Reply::AsksPosition(position) => position,
+            _ => unreachable!("the knowledge group answered asks_position with another reply"),
         }
     }
 

@@ -164,6 +164,9 @@ pub enum Request<'a> {
     AsksSecond { question: &'a str },
     /// Whether the Chinese question asks how its places fell (answer_plan::asks_fall), read by rule from its words.
     AsksFall { question: &'a str },
+    /// Whether the Chinese question asks where one place stands in its ranking (answer_plan::asks_position), read by rule
+    /// from its words.
+    AsksPosition { question: &'a str },
     /// The whole class of question the new route cannot answer, read by rule from its words (scope-refusal-zh.json); None
     /// when no class takes it. `this_year` is the program's clock year (a later four-digit year is a forecast).
     ScopeRefused { question: &'a str, this_year: i32 },
@@ -315,6 +318,7 @@ pub enum Reply<'a> {
     AsksTop(Option<(usize, bool)>),
     AsksSecond(Option<bool>),
     AsksFall(bool),
+    AsksPosition(bool),
     ScopeRefused(Option<crate::l5geo::ScopeRefusal>),
     SplitAsk(crate::answer_plan::SplitAsk),
     AnswerPlan(Result<crate::answer_plan::Plan, String>),
@@ -404,6 +408,9 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
             Reply::AsksSecond(crate::answer_plan::asks_second(question))
         }
         Request::AsksFall { question } => Reply::AsksFall(crate::answer_plan::asks_fall(question)),
+        Request::AsksPosition { question } => {
+            Reply::AsksPosition(crate::answer_plan::asks_position(question))
+        }
         Request::ScopeRefused {
             question,
             this_year,

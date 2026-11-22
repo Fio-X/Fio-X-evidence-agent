@@ -3489,18 +3489,24 @@ mod tests {
             assert_eq!(ten.args["narrow"]["n"], 10, "{years:?}");
             assert_eq!(ten.event["narrow"]["asked"]["n"], 10);
             let span = |f: &Filled| {
-                f.args["years"]["end"].as_i64().unwrap() - f.args["years"]["start"].as_i64().unwrap() + 1
+                f.args["years"]["end"].as_i64().unwrap()
+                    - f.args["years"]["start"].as_i64().unwrap()
+                    + 1
             };
             let default_years = narrow(&five, &[]);
             assert_eq!(span(&default_years), if years.is_none() { 10 } else { 1 });
             assert_eq!(span(&ten), if years.is_none() { 8 } else { 1 }, "{years:?}");
             // the rows hold what is kept times the years
             assert!(
-                ten.args["narrow"]["n"].as_u64().unwrap() * span(&ten) as u64 <= MAX_CHART_ROWS as u64
+                ten.args["narrow"]["n"].as_u64().unwrap() * span(&ten) as u64
+                    <= MAX_CHART_ROWS as u64
             );
             // a count past the chart's rows is held to them
             let huge = narrow(&ranked("SP.POP.TOTL", Some(500), years), &[]);
-            assert!(huge.args["narrow"]["n"].as_u64().unwrap() * span(&huge) as u64 <= MAX_CHART_ROWS as u64);
+            assert!(
+                huge.args["narrow"]["n"].as_u64().unwrap() * span(&huge) as u64
+                    <= MAX_CHART_ROWS as u64
+            );
             assert_eq!(huge.event["narrow"]["asked"]["n"], 500);
             // no count written (q4): the cap
             let some = narrow(&ranked("SP.POP.TOTL", None, years), &[]);

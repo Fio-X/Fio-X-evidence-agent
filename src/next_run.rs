@@ -2107,6 +2107,33 @@ fn ring_picks(
     })
 }
 
+/// The one ranked place whose name the question writes, none when it writes none or two (a name inside a longer one of
+/// them, 印度 in 印度尼西亚, is not the question's own).
+fn place_asked_about(
+    question: &str,
+    ranked: &[String],
+    catalogue: &dyn Catalogue,
+) -> Option<String> {
+    let names = leaf_labels(&[], ranked, catalogue).ok()?;
+    let hits: Vec<(&String, &String)> = ranked
+        .iter()
+        .filter_map(|c| names.get(c).map(|n| (c, n)))
+        .filter(|(_, n)| !n.is_empty() && question.contains(n.as_str()))
+        .collect();
+    let own: Vec<&(&String, &String)> = hits
+        .iter()
+        .filter(|(_, n)| {
+            !hits
+                .iter()
+                .any(|(_, m)| m.len() > n.len() && m.contains(n.as_str()))
+        })
+        .collect();
+    match own.as_slice() {
+        [(code, _)] => Some((*code).clone()),
+        _ => None,
+    }
+}
+
 /// What the program picks for a page over its shape and the picked claims (PICK_RULES, in the recipe's order); a field no
 /// rule of the recipe sets stays empty.
 #[derive(Debug, Default)]
@@ -3430,6 +3457,18 @@ fn recipe_request(
         focus.filter(|c| picks.focus.is_empty() && picks.ranked.iter().any(|r| r == c))
     {
         picks.focus = code.to_string();
+    }
+    // a question that asks where one place stands (the knowledge group's reading of its words) and names one place the page
+    // ranks: that place is the page's focus, so its finding says the place it holds (the Position case, a number from the
+    // ledger) and its page marks it; a leader as the focus gives the level finding as before
+    if picks.focus.is_empty()
+        && focus.is_none()
+        && recipe.picks.iter().any(|r| r == "ranked")
+        && catalogue.asks_position(question)
+    {
+        if let Some(code) = place_asked_about(question, &picks.ranked, catalogue) {
+            picks.focus = code;
+        }
     }
     on_the_map(recipe, &picks.ranked, catalogue)?;
     // read from the main's narrow record, as the charts step reads the page's scope (narrowed), never from the tool's details
@@ -14240,6 +14279,9 @@ mod tests {
         fn asks_top(&self, question_zh: &str) -> Option<(usize, bool)> {
             crate::answer_plan::asks_top(question_zh)
         }
+        fn asks_position(&self, question_zh: &str) -> bool {
+            crate::answer_plan::asks_position(question_zh)
+        }
     }
 
     /// A change page's (or a column page's) rows of sdg_07_40 over `places` at `years`, a value each.
@@ -14763,6 +14805,73 @@ mod tests {
         )
         .unwrap_or_else(|e| panic!("{at}: draw: {e}"));
         published(name, fill, at)
+    }
+
+    /// A question that asks where one place stands ("排第几") and names one place the page ranks makes that place the
+    /// page's focus (picks.focus: the Position finding says the place it holds, the page marks it), on both ranking
+    /// recipes; a question naming no ranked place or two of them, or one that does not ask a place, sets none; the
+    /// leader named stays the leader (the level finding).
+    #[test]
+    fn a_question_asking_where_a_named_place_stands_makes_it_the_focus() {
+        let brics = ["BR", "RU", "IN", "CN", "ZA"];
+        for (name, chart) in [
+            ("column", "horizontal_bar"),
+            ("ranked_bars", "horizontal_bar"),
+        ] {
+            let ask = |q: &str| {
+                let main = group_rows(&brics, &["2025"]);
+                let (fill, _) = group_request_by(q, main, json!([]), (name, chart));
+                fill.unwrap_or_else(|e| panic!("{name} {q}: {e:?}"))["page_in"]["picks"].clone()
+            };
+            let plain = ask("2025 年金砖国家失业率谁最高？");
+            assert!(plain.get("focus").is_none(), "{name}: {plain}");
+            let ranked: Vec<String> = plain["ranked"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|c| c.as_str().unwrap().to_string())
+                .collect();
+            let zh =
+                |code: &str| Hubs.zh_names("country", &[code.to_string()]).unwrap()[code].clone();
+            let (leader, third) = (&ranked[0], &ranked[2]);
+            // a place that is not the leader: the focus
+            let at = ask(&format!("2025 年金砖国家失业率，{}排第几？", zh(third)));
+            assert_eq!(at["focus"], json!(third), "{name}");
+            // its page is drawn and published, passes the whole-page check, and says the place the focus holds
+            let q = format!("2025 年金砖国家失业率，{}排第几？", zh(third));
+            let (fill, _) =
+                group_request_by(&q, group_rows(&brics, &["2025"]), json!([]), (name, chart));
+            let fill = fill.unwrap_or_else(|e| panic!("{name}: {e:?}"));
+            let (html, ledger, refs, spec, rows, facts) =
+                group_published_by(fill, name, &format!("{name} focus"));
+            assert_eq!(
+                crate::next_leaf::check_leaf_page(&html, &ledger, &refs, &spec, &rows, &facts),
+                Vec::<String>::new(),
+                "{name}"
+            );
+            // the finding's own facts carry the place: its position among the places drawn, computed from the rows
+            // (the ranked bars page has no finding of its own, so it holds none)
+            assert!(
+                name == "ranked_bars"
+                    || spec.facts.iter().any(|(k, v)| k == "pos1"
+                        && v["op"] == "position"
+                        && v["code"] == json!(third)),
+                "{name}: the page holds the place's position fact"
+            );
+            // the leader named: the focus is the leader
+            let at = ask(&format!("2025 年金砖国家失业率，{}排第几？", zh(leader)));
+            assert_eq!(at["focus"], json!(leader), "{name}");
+            // two places named: none to say the place of
+            let two = ask(&format!(
+                "2025 年金砖国家失业率，{}和{}各排第几？",
+                zh(&ranked[1]),
+                zh(third)
+            ));
+            assert!(two.get("focus").is_none(), "{name}: {two}");
+            // the same place named in a question that does not ask a place: none
+            let other = ask(&format!("2025 年金砖国家失业率，{}怎么样？", zh(third)));
+            assert!(other.get("focus").is_none(), "{name}: {other}");
+        }
     }
 
     /// A group's page asking for the first or the last n (owner 11-21 12:07, ask item 9: cut to those n), end to end over a
@@ -24838,7 +24947,10 @@ for line in sys.stdin:
             "column.note.rise_least+column.note.vs_prev",
             "column.note.fall_most+column.note.vs_prev",
         ] {
-            assert!(of_two.contains(want), "no page of two reaches {want}: {of_two:?}");
+            assert!(
+                of_two.contains(want),
+                "no page of two reaches {want}: {of_two:?}"
+            );
         }
         for want in [
             "column.note.rise_most+column.note.vs_next",
