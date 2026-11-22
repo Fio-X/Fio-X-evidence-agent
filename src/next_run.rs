@@ -5206,7 +5206,7 @@ async fn story_findings(
         lines.push(format!(
             "Pick the findings the page should tell, the one that answers the question first: pick must list {} to {} different finding numbers.",
             crate::next_flow::CLAIMS_MIN,
-            ids.len()
+            ids.len().min(crate::next_flow::CLAIMS_MAX)
         ));
         let ask = Ask::Claims {
             groups: vec![ids.len()],
