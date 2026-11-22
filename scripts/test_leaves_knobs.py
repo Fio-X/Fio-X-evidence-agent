@@ -37,7 +37,7 @@ class Registry(unittest.TestCase):
 
     def test_a_recipe_holds_what_its_nodes_eat_and_exposes_only_real_knobs(self):
         t = knobs.table()
-        self.assertEqual([r["name"] for r in t["recipes"]], ["scmp", "ring", "composition_steps", "composition", "one_line", "change", "change_bars", "column", "ranked_bars", "flow", "block_ranks"])
+        self.assertEqual([r["name"] for r in t["recipes"]], ["scmp", "ring", "composition_steps", "composition", "page_story", "one_line", "change", "change_bars", "column", "ranked_bars", "flow", "block_ranks"])
         ring = next(r for r in knobs.RECIPES if r["name"] == "ring")
         for bad in [dict(ring, eats=["annual"]), dict(ring, layers=["map", "pie"]), dict(ring, exposes=["ring.glow"]),
                     dict(ring, same_measure=[["map", "pie"]]), dict(ring, same_measure=[["map", "map"]])]:
@@ -47,7 +47,7 @@ class Registry(unittest.TestCase):
     def test_a_column_frame_recipe_declares_its_pages_main_layer(self):
         t = knobs.table()
         self.assertEqual({r["name"]: r.get("main") for r in t["recipes"]},
-                         dict(scmp=None, ring=None, composition_steps="waterfall", composition="stacked100", one_line="line", change="bars", change_bars="bars", column="bars", ranked_bars="bars", flow="sankey", block_ranks="rank_lines"))
+                         dict(scmp=None, ring=None, composition_steps="waterfall", composition="stacked100", page_story=None, one_line="line", change="bars", change_bars="bars", column="bars", ranked_bars="bars", flow="sankey", block_ranks="rank_lines"))
         self.assertEqual(knobs.run.MAIN, dict(column="bars", change="bars", flow="sankey", composition_steps="waterfall", composition="stacked100", one_line="line", ranked_bars="bars",
                                               change_bars="bars", block_ranks="rank_lines"))
         flow = next(r for r in knobs.RECIPES if r["name"] == "flow")
@@ -95,7 +95,7 @@ class Registry(unittest.TestCase):
         t = knobs.table()
         for r in t["recipes"]:
             knobs.none_left(r)
-            print("recipe", r["name"], "external", r["external"], "prints only", [l for l in r["layers"] if l not in r["external"]])
+            print("recipe", r["name"], "external", r.get("external", []), "prints only", [l for l in r["layers"] if l not in r.get("external", [])])
         scmp = next(r for r in t["recipes"] if r["name"] == "scmp")
         with self.assertRaises(SystemExit) as e:
             knobs.none_left(dict(scmp, external=["strip", "bignums", "notes"]))
@@ -104,7 +104,7 @@ class Registry(unittest.TestCase):
     def test_every_recipe_answers_one_relation_and_no_recipe_stands_on_map_points(self):
         t = knobs.table()
         self.assertEqual({r["name"]: r["relation"] for r in t["recipes"]},
-                         dict(scmp="Flow", ring="Flow", composition_steps="Composition", composition="Composition", one_line="Change",
+                         dict(scmp="Flow", ring="Flow", composition_steps="Composition", composition="Composition", page_story="Change", one_line="Change",
                               change="Change", change_bars="Change", column="Ranking", ranked_bars="Ranking", flow="Flow",
                               block_ranks="Ranking"))
         # the column and change notes stand at the bars (11-22), so no recipe asks for map points and an aggregate with none

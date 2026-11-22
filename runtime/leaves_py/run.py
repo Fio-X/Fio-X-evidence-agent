@@ -42,6 +42,7 @@ import rankbar
 import sankey
 import scmp
 import stacked100
+import story
 import line as line_leaf  # main() reads stdin into `line`
 import rank_lines
 import dumbbell
@@ -236,7 +237,7 @@ LEAF_SVG = (section_head.SECTION_HEAD_SVG + rankbar.RANKBAR_SVG + bubbles.BUBBLE
 # The page recipes this child draws: each one's layers (name -> (draw, reserve)) and which of them are svg.
 # The page recipes whose page places the illustration strip layer 1 gives it (column_page; the ring and scmp pages have no
 # slot and refuse one): knobs.py declares the slot on exactly these recipes, which layer 1 asks a strip for.
-STRIP_SLOT = ("column", "change", "ranked_bars", "change_bars")
+STRIP_SLOT = ("column", "change", "ranked_bars", "change_bars", "page_story")
 # The main layer of each page recipe the column frame draws, the picture the page is built around (column_page; knobs.py
 # copies it into the recipe as `main`): the bars, or a chart leaf of LEAF_LAYERS in their place, across the page.
 MAIN = dict(column="bars", change="bars", flow="sankey", composition_steps="waterfall", composition="stacked100", one_line="line", ranked_bars="bars", change_bars="bars", block_ranks="rank_lines")
@@ -244,7 +245,9 @@ MAIN = dict(column="bars", change="bars", flow="sankey", composition_steps="wate
 # (a sankey across the page, its main).
 COLUMN_KINDS = tuple(MAIN)
 KINDS = dict(ring=(scmp.RING_LAYERS, scmp.RING_SVG), **{k: ({**column.COLUMN_LAYERS, **LEAF_LAYERS}, column.COLUMN_SVG + LEAF_SVG) for k in COLUMN_KINDS},
-             scmp=(scmp.SCMP_LAYERS, scmp.SCMP_SVG))
+             scmp=(scmp.SCMP_LAYERS, scmp.SCMP_SVG),
+             # a story page: its sections' leaves (story.py), each a layer of the recipe
+             page_story=({n: LEAF_LAYERS[n] for n in story.STORY_LAYERS}, list(story.STORY_LAYERS)))
 
 
 def bubbles_frame(f):
@@ -317,6 +320,8 @@ class Panel:
         spec["fmts"]["bcm0"] = {"scale": 0.01, "dec": 0}  # as scmp.page sets it
         c = prod.Ctx(spec); h = spec["hero"]
         p.c, p.spec, p.occ = c, spec, prod.Occ()
+        if p.node == "page_story":
+            p.f = story.Frame(c, spec); return
         if p.node in COLUMN_KINDS:
             p.f = column.ColumnFrame(c, h, map_view(h), MAIN[p.node])
             if MAIN[p.node] != "bars":
@@ -436,6 +441,7 @@ def page(panel, got, sizes=None):
     page as column_page lays it out, with the pieces another child drew (`sizes`, layer -> [w, h]) among its layers."""
     if panel.node in COLUMN_KINDS: return column_page(panel, got, sizes or {})
     if panel.node == "scmp": return scmp_page(panel, got)
+    if panel.node == "page_story": return story.story_page(panel, got, sizes or {}, placeholders, DREW)
     f, spec = panel.f, panel.spec; tin = bool(f.h.get("_title"))
     # the events layer only for a page with sourced events (a ring of a table's months alone has none to hang)
     pic = [n for n in scmp.RING_SVG if not (n == "inset" and tin) and (n != "events" or spec.get("events"))]

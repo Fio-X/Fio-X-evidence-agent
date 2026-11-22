@@ -3494,6 +3494,7 @@ mod tests {
                 "flow",
                 "map",
                 "one_line",
+                "page_story",
                 "ranked_bars",
                 "ring",
                 "scmp"

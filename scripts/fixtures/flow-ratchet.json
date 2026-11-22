@@ -1,5 +1,5 @@
 {
-  "measured_at": "bb2dac267a0da69e105cad0886b6061d503de598",
+  "measured_at": "4426b711027a832f9fee748d055a07b23051e2cb",
   "rules": "scripts/test_group_flow_ratchet.mjs header; totals and per_file may only go down; kind_names only grow, by --lower",
   "totals": {
     "new": {
@@ -68,6 +68,7 @@
     "names": "knobs.json nodes",
     "notes": "knobs.json nodes",
     "oneline": "knobs.json groups",
+    "pagestory": "knobs.json groups",
     "pairbars": "knobs.json nodes",
     "profile": "knobs.json nodes",
     "prose": "next_render.rs NodeInfo",
