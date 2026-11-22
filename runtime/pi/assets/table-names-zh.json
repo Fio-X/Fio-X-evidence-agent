@@ -473,6 +473,24 @@
    "zh": "城镇人口（占总人口比例）",
    "zh_source": "reviewed",
    "reviewed": "2026-11-16"
+  },
+  {
+   "id": "nrg_pc_204",
+   "zh": "家庭用户电价（半年度）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-11-22"
+  },
+  {
+   "id": "env_air_gge",
+   "zh": "温室气体排放（按来源部门）",
+   "zh_source": "reviewed",
+   "reviewed": "2026-11-22"
+  },
+  {
+   "id": "nrg_inf_epcrw",
+   "zh": "可再生能源和废弃物发电装机容量",
+   "zh_source": "reviewed",
+   "reviewed": "2026-11-22"
   }
  ]
 }

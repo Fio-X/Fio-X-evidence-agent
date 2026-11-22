@@ -252,6 +252,7 @@ EUR_HAB	欧元/人	per_capita	no	欧元/人	generated	Euro per inhabitant
 EUR_KG	欧元/千克	price	no	欧元/千克	generated	Euro per kilogram	
 EUR_KWH	欧元/千瓦时	price	no	欧元/千瓦时	generated	Euro per kilowatt-hour	
 EUR_T	欧元/吨	price	no	欧元/吨	generated	Euro per tonne	
+GW	吉瓦	amount	yes	吉瓦	generated	Gigawatt	
 HICP2015	指数(2015=100)	index_base	no		generated	Harmonized consumer price index, 2015=100	
 HICP2025	指数(2025=100)	index_base	no		generated	Harmonized consumer price index, 2025=100	
 I10_A_AVG	指数(2010=100)	index_base	no		generated	Annual average index, 2010=100	
@@ -266,6 +267,7 @@ I25_Q	指数(2025=100)	index_base	no		generated	Quarterly index, 2025=100
 KG	千克	amount	yes	千克	generated	Kilogram	
 KG_HAB	千克/人	per_capita	no	千克/人	generated	Kilograms per capita	
 KM2_HAB	平方公里/人	per_capita	no	平方公里/人	generated	Square kilometres per capita	
+KW	千瓦	amount	yes	千瓦	generated	Kilowatt	
 M3_HAB	立方米/人	per_capita	no	立方米/人	generated	Cubic metres per inhabitant	
 MEUR_HAB	百万欧元/人	per_capita	no	百万欧元/人	generated	Million euro per inhabitant	
 MIO_EUR	百万欧元	amount	yes	百万欧元	generated	Million euro	
@@ -275,6 +277,7 @@ MIO_PPS	百万购买力标准	amount	yes	百万购买力标准	generated	Million
 MIO_PPS_EU27_2020	百万购买力标准	amount	yes	百万购买力标准	generated	Million purchasing power standards (PPS, EU27 from 2020)	
 MIO_T	百万吨	amount	yes	百万吨	generated	Million tonnes	
 MTOE	百万吨油当量	amount	yes	百万吨油当量	generated	Million tonnes of oil equivalent	
+MW	兆瓦	amount	yes	兆瓦	generated	Megawatt	
 NR	数量	count	yes		generated	Number	
 PCH_1990	%	pct_change	no	%	generated	Percentage change from 1990	%（较1990年）
 PCH_1Y	%	pct_change	no	%	generated	Percentage change (t/t-1)	%（较上期）
