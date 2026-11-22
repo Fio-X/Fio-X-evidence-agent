@@ -31,7 +31,7 @@ from words import word
 NODE = "page_story"
 # the leaves a story section may draw (run.py builds the recipe's layers from these), and those that are text blocks, not charts
 STORY_LAYERS = ["bignums", "thesis_claims", "gap_axis", "event_chain", "target_path", "winners_losers", "pair_bars", "rankbar", "small_multiples", "member_map", "risk_notes"]
-TEXT_BLOCKS = ("thesis_claims", "risk_notes")
+TEXT_BLOCKS = {"thesis_claims": "story.claims.label", "risk_notes": "story.notes.title"}  # a block of words drawn as svg, and the word that names it for a screen reader
 # the layer that is html, not svg: the header's big numbers (column.cl_bignums), a row over the thesis
 HTML_BLOCKS = ("bignums",)
 SVG_LAYERS = [n for n in STORY_LAYERS if n not in HTML_BLOCKS]
@@ -320,6 +320,16 @@ def printed(markup):
     return [(html.unescape(a), html.unescape(b)) for a, b in re.findall(r'<(?:span|b|tspan)\b[^>]*data-src="([^"]*)"[^>]*>([^<]*)</', markup)]
 
 
+def text_desc(svg):
+    """A block of svg words as one line of markup for its described-by text: each drawn <text> in order, a marked tspan kept as a
+    span with its mark, every other tag dropped."""
+    lines = []
+    for t in re.findall(r"<text\b[^>]*>(.*?)</text>", svg, re.S):
+        t = re.sub(r'<tspan\b[^>]*?data-src="([^"]*)"[^>]*>([^<]*)</tspan>', r'<span data-src="\1">\2</span>', t)
+        lines.append(re.sub(r"<(?!/?span\b)[^>]*>", "", t).strip())
+    return " ".join(l for l in lines if l)
+
+
 def number_entries(markup):
     """The entries that are numbers the data give: a fact, series or record entry whose text holds a digit (a year, a name or a
     unit alone is not one)."""
@@ -389,7 +399,11 @@ def story_page(panel, got, sizes, placeholders, drew, over=None):
             parts[i] = (sid, "", svg)
             continue
         words_over = overlay((over or {}).get(layer), drew.get(layer)) if (over or {}).get(layer) else ""
-        fig = f'<div class="blk" data-layer="{layer}"{pos}>{root(svg, layer, drew.get(layer), "", origin)}{words_over}</div>' if layer in TEXT_BLOCKS else None
+        if layer in TEXT_BLOCKS:  # a block of words drawn as a picture: named by its registered word and described by its own texts, marks kept
+            alt = f' aria-label="{html.escape(word(TEXT_BLOCKS[layer]))}" aria-describedby="desc-{sid}"'
+            fig = (f'<div class="blk" data-layer="{layer}"{pos}>{root(svg, layer, drew.get(layer), alt, origin)}{words_over}'
+                   f'<p id="desc-{sid}" hidden>{text_desc(svg)}</p></div>')
+        else: fig = None
         head, note_list = "", ""
         if title is not None:
             pc = PAGE_LAYOUT["pieces"][i]; t_html, x_html = pc["t_html"], pc["x_html"]

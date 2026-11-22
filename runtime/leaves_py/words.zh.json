@@ -118,6 +118,7 @@
  "story.ends.kicker": "两端",
  "story.ends.title": "{n:a}是{n:b}的 {f:hi_lo} 倍",
  "story.ends.text": "{y:hi}，{n:a}是 {f:hi}，{n:b}只有 {f:lo}。",
+ "story.claims.label": "这一页的要点",
  "story.notes.title": "怎么读这一页",
  "story.notes.scenario": "直线外推是情景，不是预测：假设每年涨得一样多",
  "story.notes.last": "数据到 {y:last}为止",

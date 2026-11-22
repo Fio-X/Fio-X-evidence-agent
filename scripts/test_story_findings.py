@@ -734,6 +734,12 @@ class Findings(unittest.TestCase):
             for g in self.replies.values():
                 if g.get("svg"): rest = rest.replace(g["svg"], "")
             self.assertNotRegex(_re.sub(r"^<svg[^>]*>", "", rest), r"<(text|line|path|rect|circle)\b")
+        for a in _re.findall(r'<svg\b[^>]*role="img"[^>]*>', page_html):  # every picture is named and described (the completion gate's text check)
+            self.assertRegex(a, r'aria-label="[^"]+"', a)
+            sid = _re.search(r'aria-describedby="([^"]+)"', a)
+            self.assertTrue(sid, a)
+            desc = _re.search(r'<p id="%s" hidden>(.*?)</p>' % _re.escape(sid[1]), page_html, _re.S)
+            self.assertTrue(desc and _re.sub(r"<[^>]*>", "", desc[1]).strip(), a)
         # every text and word of every layer lies on the page and over no other: layer 1's rules, over the page
         items = []
         for n, g in self.replies.items():
