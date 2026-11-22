@@ -101,17 +101,19 @@ class Registry(unittest.TestCase):
             knobs.none_left(dict(scmp, external=["strip", "bignums", "notes"]))
         self.assertIn("layers ['map'] are neither bound external", str(e.exception))
 
-    def test_every_recipe_answers_one_relation_and_a_change_without_map_points_has_its_own(self):
+    def test_every_recipe_answers_one_relation_and_no_recipe_stands_on_map_points(self):
         t = knobs.table()
         self.assertEqual({r["name"]: r["relation"] for r in t["recipes"]},
                          dict(scmp="Flow", ring="Flow", composition_steps="Composition", composition="Composition", one_line="Change",
                               change="Change", change_bars="Change", column="Ranking", ranked_bars="Ranking", flow="Flow",
                               block_ranks="Ranking"))
-        # change's notes stand on map points (its circles too until 11-22); change_bars, tried after it, draws the same bars
-        # with no layer on the map
+        # the column and change notes stand at the bars (11-22), so no recipe asks for map points and an aggregate with none
+        # stays on those pages; change_bars and ranked_bars, tried after them, eat and pick the same and are reached by none
         by = {r["name"]: r for r in t["recipes"]}
-        self.assertEqual(by["change"]["points"], ["leader_notes"])
-        self.assertNotIn("points", by["change_bars"])
+        self.assertEqual([r["name"] for r in t["recipes"] if "points" in r], [])
+        for name in ("column", "change"):
+            self.assertIn("leader_notes", by[name]["external"])
+        self.assertEqual((by["ranked_bars"]["eats"], by["ranked_bars"]["picks"]), (by["column"]["eats"], by["column"]["picks"]))
         self.assertEqual((by["change_bars"]["eats"], by["change_bars"]["picks"]), (by["change"]["eats"], by["change"]["picks"]))
         names = [r["name"] for r in t["recipes"]]
         self.assertEqual(names.index("change_bars"), names.index("change") + 1)

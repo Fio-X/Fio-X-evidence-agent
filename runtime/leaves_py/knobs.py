@@ -76,10 +76,9 @@ RECIPES = [
          eats=["annual", "years_2", "one_place", "one_unit", "last_year", "two_ends"],
          charts=["choropleth", "horizontal_bar", "dumbbell", "line"], picks=["changed", "claim_marks"], exposes=[], strip=True,
          main="bars", relation="Change"),
-    # the same two ends when a place has no map point (an aggregate: World Bank's regions and the world, the EU; owner
-    # 11-19 23:1x): each place's change as signed bars alone, no map, no circles; change, whose circles and notes stand on map
-    # points, is not that shape (the flow asks for the points before it fills), as column goes on to ranked_bars. No notes
-    # yet: the change page's notes point at a map
+    # the same two ends as signed bars alone, no notes (owner 11-19 23:1x, for a place with no map point: an aggregate,
+    # World Bank's regions and the world, the EU). Since change's notes stand at its bars (11-22), change takes those
+    # places too and comes first, so no page reaches this recipe; it stays registered, a fallback
     dict(name="change_bars", layers=["bars"], eats=["annual", "years_2", "one_place", "one_unit", "last_year", "two_ends"],
          charts=["horizontal_bar", "dumbbell", "line"], picks=["changed", "claim_marks"], exposes=[], strip=True, main="bars",
          relation="Change"),
@@ -88,9 +87,9 @@ RECIPES = [
     dict(name="column", layers=["bars", "leader_notes"], eats=["one_freq", "one_place", "one_unit", "last_year"],
          charts=["choropleth", "horizontal_bar"], picks=["ranked", "claim_marks"], exposes=[], strip=True, main="bars",
          relation="Ranking"),
-    # the same period across places when a place has no map point (an aggregate the question names beside countries, the
-    # EU): the bars alone, no map; column, whose circles and notes stand on map points, is not that shape (the flow asks
-    # for the points before it fills). No notes yet: the column page's notes point at a map, as flow's
+    # the same period across places as the bars alone, no notes (for a place with no map point: an aggregate the question
+    # names beside countries, the EU). Since column's notes stand at its bars (11-22), column takes those places too and
+    # comes first, so no page reaches this recipe; it stays registered, a fallback
     dict(name="ranked_bars", layers=["bars"], eats=["one_freq", "one_place", "one_unit", "last_year"],
          charts=["horizontal_bar"], picks=["ranked", "claim_marks"], exposes=[], strip=True, main="bars", relation="Ranking"),
     # a flow between two dimensions of one table (the registry's official pair, one unit) as a sankey across the column

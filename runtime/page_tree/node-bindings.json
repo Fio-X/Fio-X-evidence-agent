@@ -1110,10 +1110,8 @@
    "binding": "external",
    "geometry": "leaf",
    "runner": "leaves_py/leader_notes.py",
-   "frame": "map_view",
    "declares_by_recipe": {
     "column": {
-     "values": {"ext": {"rule": "extent", "frame": "map_view", "circles": "bubbles", "dec_max": 2}},
      "fmt": {
       "scale": "$shape.scale",
       "suffix": "$shape.suffix",
@@ -1219,16 +1217,13 @@
       "key": "leader_notes",
       "items_as": "notes",
       "items": {
-       "at": "at",
        "name": "code",
        "text": "note.text",
        "value_text": "note.value_text?"
-      },
-      "ext": "$value.ext"
+      }
      }
     },
     "change": {
-     "values": {"ext": {"rule": "extent", "frame": "map_view", "circles": "bubbles", "dec_max": 2}},
      "fmt": {
       "scale": "$shape.scale",
       "suffix": "$shape.suffix",
@@ -1347,21 +1342,16 @@
       "key": "leader_notes",
       "items_as": "notes",
       "items": {
-       "at": "at",
        "name": "code",
        "text": "note.text",
        "value_text": "note.value_text?"
-      },
-      "ext": "$value.ext"
+      }
      }
     }
    },
    "items": {
     "for_each": "spec",
     "fields": {
-     "at": {
-      "kind": "point_of_code"
-     },
      "note": {
       "kind": "first_holding",
       "by": "end"

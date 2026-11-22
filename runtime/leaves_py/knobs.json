@@ -2329,9 +2329,6 @@
     "bars",
     "leader_notes"
    ],
-   "points": [
-    "leader_notes"
-   ],
    "short_notes": [
     {
      "layer": "leader_notes",
@@ -2395,9 +2392,6 @@
    "relation": "Ranking",
    "external": [
     "bars",
-    "leader_notes"
-   ],
-   "points": [
     "leader_notes"
    ],
    "short_notes": [

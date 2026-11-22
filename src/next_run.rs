@@ -2962,8 +2962,9 @@ const POINTS: (&str, &str) = ("pp", " 个百分点");
 
 /// A recipe whose layers stand on map points (its `points`) eats only places the map point table holds: Err "not this shape"
 /// when a ranked place has none (an aggregate the question names beside countries, the EU), so the next recipe is tried
-/// (the bars alone); any other refusal of the points (a table not the pinned one, a group call that failed) stops the page
-/// as it did at the fill. A recipe with no layer on the map eats any place.
+/// (no recipe has such a layer since 11-22: the column and change notes stand at the bars); any other refusal of the
+/// points (a table not the pinned one, a group call that failed) stops the page as it did at the fill. A recipe with no
+/// layer on the map eats any place.
 fn on_the_map(
     recipe: &Recipe,
     ranked: &[String],
@@ -3083,6 +3084,10 @@ fn fill_of(
             if let (true, Some(p)) = (recipe.points.contains(layer), page_in.as_mut()) {
                 let points = map_points(&filling, &mut out).map_err(no)?;
                 p["points"] = json!({"table": POINT_TABLE, "sha256": crate::next_flow::NE_POINTS_SHA256, "at": points});
+            }
+            // a layer that prints short notes (knobs.py SHORT_NOTES), on or off a map, is declared over two run facts
+            let notes = recipe.short_notes.iter().any(|(l, _)| l == layer);
+            if let (true, Some(p)) = (notes, page_in.as_mut()) {
                 // the ranked places' reviewed names, as the leaf is handed them below (leaf_labels): a run fact a layer's
                 // conditions may measure (a note's width), which the core rechecks against the tree's name rows
                 p["names"] = json!(leaf_labels(&[], &picks.ranked, catalogue).map_err(no)?);
@@ -8865,10 +8870,10 @@ mod tests {
         }
     }
 
-    /// P6 step 8: the q1 column page's tree holds the circles' extent the visual group declares, the one their leaf data and
-    /// the notes' hold (rule extent over the page input in both, next_tree_gen with_values), and the flow hands in none: an
-    /// extent set on the page input changes nothing, a moved map point moves the tree's extent (and it is no longer the
-    /// leaf's). The column recipe has had no map since v5 item 2 (11-13); the rule is the change recipe's circles' still, so
+    /// P6 step 8: the q1 column page's tree holds the circles' extent the visual group declares, the one their leaf data
+    /// holds (rule extent over the page input, next_tree_gen with_values; the notes name none since 11-22, at the bars), and
+    /// the flow hands in none: an extent set on the page input changes nothing, a moved map point moves the tree's extent
+    /// (and it is no longer the leaf's). The column recipe has had no map since v5 item 2 (11-13); the rule is the change recipe's circles' still, so
     /// the q1 page is laid out here with the circles it had (the bindings and the recipe's layers as before).
     #[test]
     fn the_trees_extent_is_the_leaf_data_s_and_the_flow_hands_in_none() {
@@ -8885,7 +8890,7 @@ mod tests {
                 "leader_notes".into(),
             ],
             external: vec!["bars".into(), "bubbles".into(), "leader_notes".into()],
-            points: vec!["bubbles".into(), "leader_notes".into()],
+            points: vec!["bubbles".into()],
             ..recipe_like(column)
         };
         let (_, fill, _) = q1_fills_as(&overlay, with_map);
@@ -8908,7 +8913,8 @@ mod tests {
         let leaves = &fill["knobs"]["spec"]["hero"]["leaves"];
         let leaf = leaves["bubbles"]["ext"].clone();
         assert_eq!(leaf.as_array().map(Vec::len), Some(4));
-        assert_eq!(leaves["leader_notes"]["ext"], leaf);
+        // the notes stand at the bars (11-22): they name no extent of their own
+        assert!(leaves["leader_notes"].get("ext").is_none());
         assert_eq!(tree_ext(&page_in), vec![leaf.clone()]);
         let mut handed = page_in.clone();
         handed["page"] = json!({"ext": [0.0, 0.0, 1.0, 1.0]});
@@ -9883,6 +9889,33 @@ mod tests {
             .as_array_mut()
             .unwrap()
             .retain(|l| l != "bubbles" && l != "bubble_key");
+        notes_off_the_map(rust);
+    }
+
+    /// The frozen fill less the map points its notes stood on: the notes stand at the bars since 11-22 (an aggregate with no
+    /// map point gets them too), so the points kept with the request, the notes' extent and each note's point go.
+    fn notes_off_the_map(rust: &mut Value) {
+        rust["knobs"]
+            .as_object_mut()
+            .unwrap()
+            .remove("points")
+            .expect("the frozen fill's map points");
+        notes_at_the_bars(&mut rust["knobs"]["spec"]["hero"]["leaves"]["leader_notes"]);
+    }
+
+    /// Frozen leader notes less their extent and each note's map point (the notes stand at the bars since 11-22).
+    fn notes_at_the_bars(notes: &mut Value) {
+        notes
+            .as_object_mut()
+            .unwrap()
+            .remove("ext")
+            .expect("the frozen notes' extent");
+        for n in notes["notes"].as_array_mut().unwrap() {
+            n.as_object_mut()
+                .unwrap()
+                .remove("at")
+                .expect("a frozen note's point");
+        }
     }
 
     /// The frozen fill's facts and formats with what the generator raised so the page's printed differences agree
@@ -10022,8 +10055,8 @@ mod tests {
             .unwrap()
             .remove("page_in")
             .expect("the page input kept for draw_nodes");
-        // the circles were declared over the map points the flow keeps (knobs.points), their extent the visual group's
-        assert_eq!(page_in["points"], fill["knobs"]["points"]);
+        // no layer stands on a map point (the notes stand at the bars): the flow reads and keeps none
+        assert!(page_in.get("points").is_none() && fill["knobs"].get("points").is_none());
         assert!(
             page_in.get("page").is_none(),
             "the extent is the visual group's (rule extent), not handed in"
@@ -10093,9 +10126,9 @@ mod tests {
     /// merge into the q1 ten-year change fill exactly as the rust bubbles_fill and change_bars_fill did
     /// (scripts/fixtures/p4a2/change-rust-fill.json, frozen from them before they were deleted): equal key by key, no key
     /// more. Since 11-22 the change recipe draws no map: the frozen fill is compared less its circles (their leaf data,
-    /// their level fact val, their place in the order with their key, their drawn rows), the rest key by key as before. A
-    /// ranked place with no map point stops the fill as the rust circles did, before any node is asked (F1): the notes
-    /// still stand on map points.
+    /// their level fact val, their place in the order with their key, their drawn rows) and the map points its notes stood
+    /// on, the rest key by key as before. A ranked place with no map point no longer stops the fill (F1): the notes stand
+    /// at the bars.
     #[test]
     fn declare_equals_rust_fill_on_a_change_page() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -10123,13 +10156,11 @@ mod tests {
             .as_array_mut()
             .unwrap()
             .retain(|d| d["layer"] != "bubbles");
+        notes_off_the_map(&mut rust);
         let change = recipe("change");
         assert_eq!(
             (change.external.clone(), change.points.clone()),
-            (
-                vec!["bars".to_string(), "leader_notes".to_string()],
-                vec!["leader_notes".to_string()]
-            )
+            (vec!["bars".to_string(), "leader_notes".to_string()], vec![])
         );
         let main = q1_ten_years();
         let shape = shape_of(&change.eats, &[("sdg", &main[..])], &Hubs).unwrap();
@@ -10200,8 +10231,8 @@ mod tests {
             .map(|e| e["node"].as_str())
             .collect();
         assert_eq!(asked, [Some("bars"), Some("leader_notes"), Some("finding")]);
-        // F1: a ranked place the map point table has no point for (an aggregate) stops the fill before the notes, the layer
-        // on map points, are asked; since 11-22 the bars, drawn first and on no map point, are declared before that stop
+        // F1: a ranked place the map point table has no point for (an aggregate) no longer stops the fill (11-22: the notes
+        // stand at the bars, no layer on a map point): the bars, the notes and the finding are each declared
         let mut picks = picks;
         picks.ranked.push("EU27_2020".into());
         let calls = std::sync::Mutex::new(Vec::new());
@@ -10209,7 +10240,7 @@ mod tests {
             calls: &calls,
             page_in: Some(&page_in),
         };
-        let why = fill_of(
+        fill_of(
             change,
             &shape,
             &picks,
@@ -10219,18 +10250,18 @@ mod tests {
             false,
             Some(&asked),
         )
-        .unwrap_err();
-        assert!(
-            why.starts_with("not this shape: ") && why.contains("EU27_2020"),
-            "{why}"
-        );
+        .unwrap_or_else(|e| panic!("an aggregate ranked: {e}"));
         let calls = calls.into_inner().unwrap();
         let asked: Vec<Option<&str>> = calls
             .iter()
             .filter(|e| e["request"] == "node_declare")
             .map(|e| e["node"].as_str())
             .collect();
-        assert_eq!((asked, calls.len()), (vec![Some("bars")], 1), "{calls:#?}");
+        assert_eq!(
+            asked,
+            [Some("bars"), Some("leader_notes"), Some("finding")],
+            "{calls:#?}"
+        );
     }
 
     /// S3 (P4a): the q1 column page with its bars bound external over the production bindings, the whole path: fill_of
@@ -10668,59 +10699,54 @@ mod tests {
     /// The column recipe takes one frequency throughout (one_freq): years, half years (2026-S1) or months (2026-09), kept as
     /// the shape's freq; a quarterly main or one that mixes is not this shape, named. Every other recipe still asks for
     /// annual, so a half-yearly main reaches column alone.
-    /// A place the map has no point for (the EU named beside countries) is not the column page's shape, whose circles and
-    /// notes stand on map points, and goes to the bars alone (ranked_bars), on a World Bank page (iso3: EUU) as on a Eurostat
-    /// one (EU27_2020); countries alone stay on the column page.
+    /// A place the map has no point for (the EU named beside countries) is the column page's shape as countries are (11-22:
+    /// its notes stand at the bars, no layer on a map point), on a World Bank page (iso3: EUU) as on a Eurostat one
+    /// (EU27_2020). The bars alone (ranked_bars) eat, pick and answer as column does, take no chart it does not, and are
+    /// tried after it, so no page reaches them: they stay registered, a fallback.
     #[test]
-    fn a_place_off_the_map_goes_to_the_bars_alone() {
+    fn a_place_off_the_map_stays_on_the_column_page() {
         let s = |c: &[&str]| c.iter().map(|x| x.to_string()).collect::<Vec<_>>();
         let (column, bars) = (recipe("column"), recipe("ranked_bars"));
-        assert!(!column.points.is_empty() && bars.points.is_empty() && bars.layers == ["bars"]);
-        for (ranked, off) in [
-            (s(&["USA", "EUU", "CHN"]), "EUU"),
-            (s(&["US", "EU27_2020", "CN"]), "EU27_2020"),
+        assert!(column.points.is_empty() && column.layers.iter().any(|l| l == "leader_notes"));
+        assert_eq!(
+            (&bars.eats, &bars.picks, &bars.relation),
+            (&column.eats, &column.picks, &column.relation)
+        );
+        assert!(bars.charts.iter().all(|c| column.charts.contains(c)));
+        for ranked in [
+            s(&["USA", "EUU", "CHN"]),
+            s(&["US", "EU27_2020", "CN"]),
+            s(&["USA", "CHN"]),
+            s(&["US", "DE", "CN"]),
         ] {
-            let (stage, why) = on_the_map(column, &ranked, &Hubs).unwrap_err();
-            assert!(
-                stage == "shape" && why.starts_with("not this shape: ") && why.contains(off),
-                "{why}"
-            );
-            assert_eq!(on_the_map(bars, &ranked, &Hubs), Ok(()));
-        }
-        for ranked in [s(&["USA", "CHN"]), s(&["US", "DE", "CN"])] {
             assert_eq!(on_the_map(column, &ranked, &Hubs), Ok(()), "{ranked:?}");
         }
         let names: Vec<&str> = Hubs.recipes().iter().map(|r| r.name.as_str()).collect();
         let at = |n: &str| names.iter().position(|x| *x == n).unwrap();
         assert!(
             at("column") < at("ranked_bars"),
-            "the bars alone are tried after the column page"
+            "the column page is tried first"
         );
     }
 
     /// The same for a change (owner 11-19 23:1x): a place the map has no point for (World Bank's regions and the world, the
-    /// EU) is not the change page's shape, whose circles and notes stand on map points, and goes to the change bars alone
-    /// (change_bars: the change page's bars, its eats and picks, no layer on the map), which answers Change as the change
-    /// page does and is tried right after it; countries alone stay on the change page.
+    /// EU) is the change page's shape (11-22: its notes stand at the bars). The change bars alone (change_bars) eat, pick and
+    /// answer as change does, take no chart it does not, and are tried right after it, so no page reaches them.
     #[test]
-    fn a_change_with_a_place_off_the_map_goes_to_the_change_bars_alone() {
+    fn a_change_with_a_place_off_the_map_stays_on_the_change_page() {
         let s = |c: &[&str]| c.iter().map(|x| x.to_string()).collect::<Vec<_>>();
         let (change, bars) = (recipe("change"), recipe("change_bars"));
-        assert!(!change.points.is_empty() && bars.points.is_empty() && bars.layers == ["bars"]);
-        assert_eq!((&bars.eats, &bars.picks), (&change.eats, &change.picks));
-        assert_eq!(bars.relation.as_deref(), Some("Change"));
-        for (ranked, off) in [
-            (s(&["WLD", "SSF", "SAS"]), "WLD"),
-            (s(&["DE", "EU27_2020", "FR"]), "EU27_2020"),
+        assert!(change.points.is_empty() && change.layers.iter().any(|l| l == "leader_notes"));
+        assert_eq!(
+            (&bars.eats, &bars.picks, &bars.relation),
+            (&change.eats, &change.picks, &change.relation)
+        );
+        assert!(bars.charts.iter().all(|c| change.charts.contains(c)));
+        for ranked in [
+            s(&["WLD", "SSF", "SAS"]),
+            s(&["DE", "EU27_2020", "FR"]),
+            s(&["USA", "CHN"]),
         ] {
-            let (stage, why) = on_the_map(change, &ranked, &Hubs).unwrap_err();
-            assert!(
-                stage == "shape" && why.starts_with("not this shape: ") && why.contains(off),
-                "{why}"
-            );
-            assert_eq!(on_the_map(bars, &ranked, &Hubs), Ok(()));
-        }
-        for ranked in [s(&["USA", "CHN"]), s(&["SE", "DE", "FR"])] {
             assert_eq!(on_the_map(change, &ranked, &Hubs), Ok(()), "{ranked:?}");
         }
         let names: Vec<&str> = Hubs.recipes().iter().map(|r| r.name.as_str()).collect();
@@ -10728,17 +10754,161 @@ mod tests {
         assert_eq!(at("change_bars"), at("change") + 1);
     }
 
+    /// 11-22, end to end on two data shapes: a ranking of one year and a change over two whose places hold an aggregate with
+    /// no map point (the EU beside four countries, at the top end so a note names it) are a column and a change page with
+    /// notes, as countries alone are. No map point is asked (the catalogue would panic), each note names a ranked place and
+    /// holds no point, the page input carries the ranked places' names (the EU's among them), and the real leaf child draws
+    /// the notes at the bars; the page is published (the whole-page check passes) and checked clean.
+    #[test]
+    fn an_aggregate_page_is_a_column_or_change_page_with_notes() {
+        struct Aggregates;
+        impl Catalogue for Aggregates {
+            fn top5(
+                &self,
+                _: &str,
+                _: &[String],
+                _: bool,
+                _: Option<i32>,
+                _: Option<i32>,
+            ) -> crate::l5geo::Ranking {
+                unreachable!()
+            }
+            fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
+                unreachable!()
+            }
+            fn source(&self) -> &Value {
+                &Value::Null
+            }
+            // the aggregate is kept among the places, as a question naming it beside countries keeps it
+            fn countries(&self, codes: &[String]) -> Result<Vec<String>, String> {
+                Ok(codes.to_vec())
+            }
+            fn zh_names(
+                &self,
+                scheme: &str,
+                codes: &[String],
+            ) -> Result<BTreeMap<String, String>, Vec<String>> {
+                Hubs.zh_names(scheme, codes)
+            }
+            fn members(&self, aggregate: &str) -> Result<Vec<String>, String> {
+                Hubs.members(aggregate)
+            }
+            fn place_points(&self, codes: &[String]) -> Result<BTreeMap<String, [f64; 2]>, String> {
+                panic!("a map point asked for {codes:?}")
+            }
+        }
+        let places = ["EU27_2020", "DE", "FR", "IT", "SE"];
+        let value = |code: &str, t: &str| {
+            let (base, delta) = match code {
+                "EU27_2020" => (30.0, 9.5),
+                "DE" => (25.0, 3.0),
+                "FR" => (20.0, 1.0),
+                "IT" => (15.0, -2.0),
+                _ => (10.0, -4.5),
+            };
+            format!("{:.1}", if t == "2024" { base + delta } else { base })
+        };
+        for (name, years) in [("column", &["2024"][..]), ("change", &["2015", "2024"][..])] {
+            let r = recipe(name);
+            let mut main = ring_rows(
+                "sdg_07_40",
+                &[("freq", "A"), ("unit", "PC")],
+                ("geo", &places),
+                years,
+            );
+            for row in main.iter_mut() {
+                let v = value(
+                    row["dims"]["geo"].as_str().unwrap(),
+                    row["time"].as_str().unwrap(),
+                );
+                row["value"] = json!(v);
+            }
+            let shape = shape_of(&r.eats, &[("sdg_07_40", &main[..])], &Aggregates)
+                .unwrap_or_else(|e| panic!("{name}: {e}"));
+            let picks = picks_of(&r.picks, &shape, &main, &[]).unwrap();
+            assert_eq!(
+                picks.ranked.first().map(String::as_str),
+                Some("EU27_2020"),
+                "{name}"
+            );
+            assert_eq!(on_the_map(r, &picks.ranked, &Aggregates), Ok(()), "{name}");
+            let mut fill = test_fill(
+                r,
+                &shape,
+                &picks,
+                (&main, &[]),
+                &Aggregates,
+                ("标题", "导语"),
+                false,
+            )
+            .unwrap_or_else(|e| panic!("{name}: {e}"));
+            assert!(
+                fill["order"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&json!("leader_notes")),
+                "{name}"
+            );
+            assert!(
+                fill["knobs"].get("points").is_none(),
+                "{name}: no map point kept"
+            );
+            assert_eq!(
+                fill["page_in"]["names"]["EU27_2020"], "名EU27_2020",
+                "{name}: the notes' names"
+            );
+            assert_eq!(fill["page_in"]["scoped"], json!(false), "{name}");
+            let notes = fill["knobs"]["spec"]["hero"]["leaves"]["leader_notes"].clone();
+            assert!(notes.get("ext").is_none(), "{name}: {notes}");
+            let named: Vec<&str> = notes["notes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|n| {
+                    assert!(n.get("at").is_none(), "{name}: {n}");
+                    n["name"].as_str().unwrap()
+                })
+                .collect();
+            assert!(named.contains(&"EU27_2020"), "{name}: {named:?}");
+            assert!(
+                named.iter().all(|c| picks.ranked.iter().any(|r| r == c)),
+                "{name}"
+            );
+            let dek = dek_finding(&fill).map_or_else(|| "导语".to_string(), |d| d.0);
+            page_words(&mut fill, ("标题", &dek, "栏目"));
+            let (html, ledger, refs, spec, rows, facts) = published_page(name, fill);
+            assert_eq!(
+                crate::next_leaf::check_leaf_page(&html, &ledger, &refs, &spec, &rows, &facts),
+                Vec::<String>::new(),
+                "{name}"
+            );
+            assert!(
+                html.contains(r#"data-layer="leader_notes""#),
+                "{name}: the notes drawn"
+            );
+            assert!(
+                html.contains(r#"<span data-src="name:zh_names:iso3:EU27_2020">"#)
+                    || html.contains("名EU27_2020"),
+                "{name}: the EU named"
+            );
+        }
+    }
+
     /// on_the_map tells "try the next recipe" from "stop the page" by the refusal's words alone, so the words (NO_POINT),
     /// the place that writes them (next_flow place_points_reply, reached here through the catalogue's own place_points and
     /// the two groups' doors) and that reading are held together: a reworded refusal fails here instead of quietly turning
-    /// the EU page from the bars alone into a stopped page. A refusal that only quotes the words, or any other, stops.
+    /// the EU page from the next recipe into a stopped page. A refusal that only quotes the words, or any other, stops. No
+    /// recipe stands a layer on a map point since 11-22, so the column page with its circles is the one that does here.
     #[test]
     fn the_no_point_words_tie_the_map_refusal_to_the_recipe_switch() {
         assert_eq!(
             crate::next_flow::NO_POINT,
             "the map point table has no point for"
         );
-        let column = recipe("column");
+        let column = &Recipe {
+            points: vec!["bubbles".into()],
+            ..recipe("column").clone()
+        };
         for code in ["EUU", "EU27_2020"] {
             let why = Hubs.place_points(&[code.to_string()]).unwrap_err();
             assert_eq!(
@@ -12555,37 +12725,16 @@ mod tests {
             spec["fmts"]["pp"],
             json!({"scale": 1, "dec": 1, "suffix": " 个百分点"})
         );
-        // no circles; the notes' extent is still the visual group's over each ranked country's Natural Earth label point, the
-        // points' box MAP_PAD past it (a box this small holds every label at that), the pinned table named (the leaf points
-        // them at the bars, by name)
+        // no circles, and no map point read or kept: the notes stand at the bars (the leaf points them there, by name), with
+        // no extent and no point of their own (11-22)
         assert!(spec["hero"]["leaves"].get("bubbles").is_none());
         let notes = &spec["hero"]["leaves"]["leader_notes"];
-        let ext = notes["ext"]
+        assert!(notes.get("ext").is_none() && fill["knobs"].get("points").is_none());
+        assert!(notes["notes"]
             .as_array()
             .unwrap()
             .iter()
-            .map(|v| v.as_f64().unwrap())
-            .collect::<Vec<_>>();
-        let lon: Vec<f64> = fill["knobs"]["points"]["at"]
-            .as_object()
-            .unwrap()
-            .values()
-            .map(|p| p[0].as_f64().unwrap())
-            .collect();
-        assert_eq!(
-            ext[0],
-            lon.iter().copied().fold(f64::INFINITY, f64::min) - MAP_PAD
-        );
-        // each point kept with the request, with the pinned table it was read from
-        assert_eq!(
-            fill["knobs"]["points"]["sha256"],
-            crate::next_flow::NE_POINTS_SHA256
-        );
-        assert_eq!(
-            fill["knobs"]["points"]["at"]["DE"],
-            json!([9.678348, 50.961733])
-        );
-        assert_eq!(fill["knobs"]["points"]["at"].as_object().unwrap().len(), 4);
+            .all(|n| n.get("at").is_none()));
         // the two notes: the highest (SE) how far above the mean of the places drawn (form A), the lowest (BE) the times
         let said: Vec<(&str, &str, &str)> = notes["notes"]
             .as_array()
@@ -24560,8 +24709,10 @@ for line in sys.stdin:
             old_leader_notes_fill(&filling, &mut old, scoped)
                 .unwrap_or_else(|e| panic!("{label}: the rust notes: {e}"));
             let spec = &fill["knobs"]["spec"];
+            let mut want = old.hero["leaves"]["leader_notes"].clone();
+            notes_at_the_bars(&mut want);
             assert_eq!(
-                spec["hero"]["leaves"]["leader_notes"], old.hero["leaves"]["leader_notes"],
+                spec["hero"]["leaves"]["leader_notes"], want,
                 "{label}: the notes"
             );
             let (old_facts, old_fmts, _) = with_printed_raise(
