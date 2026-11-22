@@ -1,5 +1,6 @@
 """target_path layer: the path so far and where each pace carried on would land, in line.py's layer style: the subject's
-past series as one line in the accent (its first and last value printed above their points), from its last point a
+past series as one line in the accent (its first and last value printed by their points, above where nothing passes, else at
+the nearest place clear of every line: value_spot), from its last point a
 dotted ink line to the target and one dashed grey line per projected pace, each straight to the target period; the
 target a hollow dot in ink; right of the target period a column of labels (the target's and each pace's value and words,
 spread so none overlaps another, a leader to one moved off its point) and a bracket from the target to the pace nearest
@@ -33,6 +34,7 @@ period that is not after the last point, a value text that is no number, no tick
 that is no number, a period entry no point has, a gap_label where a run reaches the target, labels that cannot all fit
 the plot's height, a digit in a literal word, a text that leaves the picture or overlaps another, a board too narrow (plot
 under 240 px)."""
+import math
 import re
 
 import wbkit as K  # the shared drawing kit; run.py's folder is on the path (a node reads no file: one import, no path set-up)
@@ -70,6 +72,42 @@ def inline(B, ps, x, y, size, fill, anchor="start", weight=400, tag="text", styl
 
 
 HALO = ' stroke="var(--bg)" stroke-width="4" paint-order="stroke"'
+
+def crosses(box, pts, half):
+    """A stroke (the polyline `pts`, half its width `half`) comes within the box (x0, y0, x1, y1): sampled along each segment as
+    the page's text-on-line check samples it (1.5 px steps)."""
+    x0, y0, x1, y1 = box[0] - half, box[1] - half, box[2] + half, box[3] + half
+    for (ax, ay), (bx, by) in zip(pts, pts[1:]):
+        n = max(1, int(max(abs(bx - ax), abs(by - ay)) / 1.5))
+        for i in range(n + 1):
+            x, y = ax + (bx - ax) * i / n, ay + (by - ay) * i / n
+            if x0 < x < x1 and y0 < y < y1: return True
+    return False
+
+
+def value_spot(B, px, py, w, size, lo, hi, vlo, vhi, hard, soft):
+    """Where the value printed by the point (px, py) stands: (centre x, baseline) of the nearest place to the point whose box
+    is clear of every stroke in `hard` (the past line, the dotted and the dashed lines, the hairlines, the axis, the target's
+    ring) and, where one is, of `soft` too (dots) and over no text already in B. The first try is centred just above the point;
+    then a grid of places within 85 px of the point, nearest first (above before below, centred before aside), inside the plot,
+    then out over the ticks' column as far as the picture's edge; always within the heights vlo to vhi (the plot's). None clear of the hard ones: the first try."""
+    box = lambda bx, yb: (bx, yb - size * 0.95, bx + w, yb + size * 0.3)
+    def free(bx, yb):
+        x0, y0, x1, y1 = bx - 2, yb - size * 0.8 - 2, bx + w + 2, yb + size * 0.25 + 2
+        return not any(x0 < a[2] and a[0] < x1 and y0 < a[3] and a[1] < y1 for a, _ in B.b)
+    first = (min(max(px - w / 2, lo), hi - w), py - 10)
+    for room in (lo, 4):
+        left = lambda bx: min(max(bx, room), hi - w)
+        near = []
+        for yb in range(int(py) - 90, int(py) + 110, 2):
+            for bx in range(int(px - w - 80), int(px + 81), 4):
+                bx = left(bx); x0, y0, x1, y1 = box(bx, yb)
+                d = math.hypot(max(x0 - px, 0, px - x1), max(y0 - py, 0, py - y1))
+                if 5.5 <= d <= 85 and vlo <= y0 and y1 <= vhi: near.append((d + (3 if yb > py else 0) + abs(bx + w / 2 - px) * 0.01, bx, yb))
+        for strokes in (hard + soft, hard):
+            for bx, yb in ([first] if room == lo else []) + [(bx, yb) for _, bx, yb in sorted(near)]:
+                if free(bx, yb) and not any(crosses(box(bx, yb), pts, half) for pts, half in strokes): return bx + w / 2, yb
+    return first[0] + w / 2, first[1]
 
 
 class Frame:
@@ -184,13 +222,20 @@ def cl_target_path(f, occ):
     pts = " ".join(f"{f.x(t):.1f},{yv(v):.1f}" for t, v, _ in f.pts)
     o.append(f'<polyline points="{pts}" fill="none" stroke="var(--accent)" stroke-width="{f.k("line_w")}" stroke-linejoin="round" '
              f'stroke-linecap="round" data-code="{esc(f.code)}"/>')
-    # the past line's first and last value, above their points
+    # the past line's first and last value, by their points: a place clear of every line (value_spot)
+    hard = [([(f.x(t), yv(v)) for t, v, _ in f.pts], f.k("line_w") / 2), ([(f.x(lt), yv(lv)), (gx, yv(f.target["v"]))], 0.6),
+            ([(f.x0, bottom), (f.x1, bottom)], 0.4)]
+    hard += [([(f.x(lt), yv(lv)), (gx, yv(r["v"]))], (f.k("run_w") + 0.4 * i) / 2) for i, r in enumerate(f.runs)]
+    ty = yv(f.target["v"])
+    hard.append(([(gx + 7.2 * math.cos(a / 8 * math.pi), ty + 7.2 * math.sin(a / 8 * math.pi)) for a in range(17)], 0.5))
+    hard += [([(f.x0, yv(raw)), (f.x1, yv(raw))], 0.3) for raw, _ in f.ticks]  # the page's line check counts a hairline too
+    soft = [([(cx - 5, cy), (cx + 5, cy)], 5) for cx, cy in [(gx, yv(r["v"])) for r in f.runs] + [(f.x(t), yv(v)) for t, v, _ in (f.pts[0], f.pts[-1])]]
     for (t, v, _), src, wt in ((f.pts[0], f.start, 400), (f.pts[-1], f.end, 700)):
         x, y = f.x(t), yv(v)
         o.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4.5" fill="var(--accent)" data-code="{esc(f.code)}"/>')
         text = FX.text(src); w = tw(text, es)
-        xx = min(max(x, f.x0 + w / 2), f.x1 - w / 2)
-        o.append(K.txt(B, xx, y - 10, es, "var(--t-title)", FX.entry(src, "tspan", None), w, anchor="middle", weight=wt,
+        xx, yy = value_spot(B, x, y, w, es, f.x0, f.x1, top - es * 1.2, bottom, hard, soft)
+        o.append(K.txt(B, xx, yy, es, "var(--t-title)", FX.entry(src, "tspan", None), w, anchor="middle", weight=wt,
                        tag=f"value {text}", style=HALO))
     o.append(f'<circle cx="{gx:.1f}" cy="{yv(f.target["v"]):.1f}" r="6" fill="var(--bg)" stroke="var(--t-title)" stroke-width="2.4" data-part="target"/>')
     # the label column right of the target period, spread so none overlaps another

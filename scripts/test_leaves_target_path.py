@@ -64,7 +64,29 @@ def wb():
                  ("2035", 4.0), [0, 2, 4, 6, 8, 10], "人均排放离目标多远", "吨二氧化碳／人", "差 ")
 
 
+def up_low():  # a low start far under a target far above: the past line climbs and every pace fans out from the last point
+    return shape("nrg_ind_ren", "EU27_2020", {"geo": "EU27_2020"}, [str(y) for y in range(2015, 2025)], [3.1, 3.6, 4.4, 5.1, 5.3, 6.4, 7.4, 8.2, 8.8, 9.6],
+                 lambda v: f"{v:.1f}%", [(21.0, "最快的一年"), (15.5, "照近五年速度"), (12.0, "照过去平均速度")],
+                 ("2035", 60.0), [10, 20, 30, 40, 50, 60], "照现在的速度到不了目标", "占最终能源消费的百分比", "还差 ")
+
+
+def reaches():  # the fastest pace passes the target: no gap, no bracket
+    rows, data = shape("nrg_ind_ren", "EU27_2020", {"geo": "EU27_2020"}, [str(y) for y in range(2012, 2025)],
+                       [18.0, 18.4, 19.1, 19.6, 20.2, 21.0, 21.5, 22.4, 23.1, 24.2, 25.0, 25.6, 26.2],
+                       lambda v: f"{v:.1f}%", [(41.0, "最快的一年"), (33.0, "照近五年速度")], ("2030", 36.0), [10, 20, 30, 40], "最快的速度到得了", "占最终能源消费的百分比", "")
+    data.pop("gap_label")
+    return rows, data
+
+
+def falls():  # a high start falling toward a target under it: the paces and the dotted line fan downward
+    return shape("EN.GHG.CO2.PC.CE.AR5", "DEU", {"country": "DEU"}, [str(y) for y in range(2008, 2023)],
+                 [41.0, 39.5, 38.0, 37.2, 35.8, 34.1, 33.4, 31.9, 31.0, 29.2, 27.6, 27.0, 26.1, 25.4, 24.8],
+                 lambda v: f"{v:.1f}", [(15.0, "照近五年降速"), (19.5, "照长期平均降速")], ("2035", 8.0), [10, 20, 30, 40, 50], "离目标多远", "吨二氧化碳／人", "差 ")
+
+
 SHAPES = {"eu": eu(), "wb": wb()}
+# the shapes the value labels are held to as well (a start label and an end label stand clear of every line)
+EXTRA = {"up_low": up_low(), "reaches": reaches(), "falls": falls()}
 
 
 def draw(data, rows, **style):
@@ -129,6 +151,38 @@ class Picture(unittest.TestCase):
             ends = [float(v) for v in re.findall(r'<circle cx="[^"]+" cy="([^"]+)"[^>]*data-part="run-end"', svg)]
             self.assertEqual(float(m.group(1)), ty, name)
             self.assertEqual(float(m.group(2)), min(ends, key=lambda y: abs(y - ty)), name)
+
+    def test_the_first_and_last_value_stand_clear_of_every_line(self):
+        """The page's text-on-line check (bake.py) refuses a text a line passes through: the two values by the past line's ends
+        are boxes none of the polyline, the dotted and the dashed lines, the hairlines, the axis or the target's ring crosses,
+        on every shape and at three picture widths (the story puts this chart in a 716 px column)."""
+        def seen(svg):
+            segs = []
+            for m in re.finditer(r'<line x1="([^"]+)" y1="([^"]+)" x2="([^"]+)" y2="([^"]+)"', svg):
+                a = [float(v) for v in m.groups()]; segs.append(((a[0], a[1]), (a[2], a[3])))
+            pts = [tuple(float(v) for v in p.split(",")) for p in re.search(r'<polyline points="([^"]+)"', svg).group(1).split()]
+            segs += list(zip(pts, pts[1:]))
+            cx, cy = (float(v) for v in re.search(r'<circle cx="([^"]+)" cy="([^"]+)"[^>]*data-part="target"', svg).groups())
+            segs += [((cx - 7, cy - 7), (cx + 7, cy - 7)), ((cx + 7, cy - 7), (cx + 7, cy + 7)), ((cx + 7, cy + 7), (cx - 7, cy + 7)), ((cx - 7, cy + 7), (cx - 7, cy - 7))]
+            return segs
+        for name, (rows, data) in {**SHAPES, **EXTRA}.items():
+            for width in (1140, 716, 552):
+                svg, _, _ = draw(data, rows, width=width)
+                segs = seen(svg)
+                values = re.findall(r'<text x="([^"]+)" y="([^"]+)" font-size="14" text-anchor="middle"[^>]*stroke="var\(--bg\)"[^>]*>(.*?)</text>', svg)
+                self.assertEqual(len(values), 2, (name, width))
+                for x, y, inner in values:
+                    w = K.tw(re.sub(r"<[^>]+>", "", inner), 14)
+                    x0, x1, y0, y1 = float(x) - w / 2, float(x) + w / 2, float(y) - 13, float(y) + 4
+                    for (ax, ay), (bx, by) in segs:
+                        n = max(1, int(max(abs(bx - ax), abs(by - ay))))
+                        for i in range(n + 1):
+                            px, py = ax + (bx - ax) * i / n, ay + (by - ay) * i / n
+                            self.assertFalse(x0 < px < x1 and y0 < py < y1, f"{name} {width}: a line passes through {re.sub('<[^>]+>', '', inner)} at {px:.0f},{py:.0f}")
+
+    def test_the_extra_shapes_draw_every_digit_as_a_marked_ledger_run(self):
+        for name, (rows, data) in EXTRA.items():
+            self.assertEqual(check_svg(draw(data, rows)[0]), [], name)
 
     def test_its_rules(self):
         rows, data = SHAPES["eu"]

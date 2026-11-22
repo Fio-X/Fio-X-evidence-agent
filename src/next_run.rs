@@ -10717,6 +10717,17 @@ mod tests {
     /// sourced and inside their panels. The gate the story leaves are held to; the python tests do not run layer 1's checks.
     #[test]
     fn a_story_page_is_drawn_by_the_real_child_and_published() {
+        story_page_through_the_gate(None);
+    }
+
+    /// st1 11-23 run 3: the model picked need, path, rank and ends; the target path's first time on a page. The same page checks.
+    #[test]
+    fn a_story_page_with_the_path_picked_is_drawn_by_the_real_child_and_published() {
+        story_page_through_the_gate(Some(&["need", "path", "rank", "ends"]));
+    }
+
+    /// The page of the two tests above: `told` are the findings the model picked, none: the first STORY_TOLD candidates.
+    fn story_page_through_the_gate(told: Option<&[&str]>) {
         let years: Vec<String> = (2005..=2024).map(|y| y.to_string()).collect();
         let years: Vec<&str> = years.iter().map(String::as_str).collect();
         let places = ["DE", "FR", "IT", "PL", "SE", "FI", "MT", "LU", "EU27_2020"];
@@ -10743,7 +10754,14 @@ mod tests {
         let mut asked = input.clone();
         asked["mode"] = json!("candidates");
         let found = crate::next_leaf::story(&child, &asked).unwrap();
-        let ids: Vec<Value> = found["candidates"].as_array().unwrap().iter().take(STORY_TOLD).map(|c| c["id"].clone()).collect();
+        let ids: Vec<Value> = match told {
+            Some(p) => {
+                let have: Vec<&str> = found["candidates"].as_array().unwrap().iter().filter_map(|c| c["id"].as_str()).collect();
+                assert!(p.iter().all(|id| have.contains(id)), "the candidates {have:?} lack one of {p:?}");
+                p.iter().map(|id| json!(id)).collect()
+            }
+            None => found["candidates"].as_array().unwrap().iter().take(STORY_TOLD).map(|c| c["id"].clone()).collect(),
+        };
         asked["mode"] = json!("compose");
         asked["picks"] = json!(ids);
         let page = crate::next_leaf::story(&child, &asked).unwrap();
@@ -10753,6 +10771,9 @@ mod tests {
         story_page(&mut fill, &input, &page).unwrap();
         let (html, ..) = published("page_story", fill, "story page");
         assert!(html.contains("thesis_claims"), "the thesis is on the page");
+        for id in told.unwrap_or(&[]) {
+            assert!(html.contains(&format!("data-module-id=\"{id}\"")) || html.contains(&format!("desc-{id}")), "{id} is on the page");
+        }
     }
 
     /// naming Germany beside the EU (places_zh 德国, 欧盟) still scopes the page by EU27_2020 alone. With no reviewed name
