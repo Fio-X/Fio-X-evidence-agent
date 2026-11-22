@@ -893,6 +893,21 @@ fn measure_families() -> &'static [Family] {
     })
 }
 
+/// Whether `id` is a registered measure family.
+pub fn family_exists(id: &str) -> bool {
+    measure_families().iter().any(|f| f.id == id)
+}
+
+/// Whether the table `table` (a World Bank id with or without "@2") holds the quantity of the measure family `family`
+/// (measure-families.json): its id starts with one of the family's table prefixes. False for a family the file lacks.
+pub fn family_holds(family: &str, table: &str) -> bool {
+    let table = table.split('@').next().unwrap_or(table);
+    measure_families()
+        .iter()
+        .find(|f| f.id == family)
+        .is_some_and(|f| f.tables.iter().any(|p| table.starts_with(p.as_str())))
+}
+
 /// measure-families.json's denominator words: a family word between an opening word (占) and the nearest closing word
 /// (比重, 比例, ...) at most `max_chars` characters on is that share's whole, not a quantity the question asks for.
 #[derive(Clone, Debug, Deserialize)]

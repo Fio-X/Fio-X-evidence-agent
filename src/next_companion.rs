@@ -5,7 +5,8 @@
 //! The index is built once from the catalogue's original files (`Raw`); `companions` is pure: the caller passes the rows
 //! it fetched for the main table and for each candidate, so a candidate that failed to fetch is simply not offered.
 
-use crate::l5geo::{time_freq, toks, wb_unit, Raw};
+use crate::l5geo::{family_exists, family_holds, time_freq, toks, wb_unit, Raw};
+use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// How many companions one page takes, a by-month twin besides: the twin shows the shape inside the year and takes its own
@@ -90,6 +91,9 @@ pub enum DropWhy {
     /// Kept by overlap, but cut by the number of companions a page takes.
     #[serde(rename = "no_room")]
     Cut,
+    /// A chain link (I7) whose rows share too few places, or too few years, with the main's.
+    #[serde(rename = "no_chain_overlap")]
+    ChainOverlap,
 }
 
 /// How the companion's numbers may sit next to the main's.
@@ -349,6 +353,11 @@ impl CompanionIndex {
         self.quantity.get(id)
     }
 
+    /// Whether the catalogue's TOC lists the Eurostat table `id`.
+    pub fn has_table(&self, id: &str) -> bool {
+        self.folder.contains_key(id)
+    }
+
     /// How much of its title the candidate shares with the main's, idf-weighted (Dice); None when either title is not in the
     /// index (World Bank ids), which neither filters nor ranks.
     pub fn topic(&self, main: &str, other: &str) -> Option<f64> {
@@ -539,6 +548,162 @@ pub fn companions(
             .then(a.id.cmp(&b.id))
     });
     let room = MAX_COMPANIONS + usize::from(found.first().is_some_and(|c| c.grain.is_some()));
+    dropped.extend(
+        found
+            .drain(found.len().min(room)..)
+            .map(|c| (c.id, DropWhy::Cut)),
+    );
+    (found, dropped)
+}
+
+/// The most chain links (I7) a story page takes beside its main table and that table's own companions.
+pub const MAX_CHAIN_COMPANIONS: usize = 4;
+
+/// The most tables a story page holds: its main table, the main's own companions and the chain's links together.
+pub const MAX_STORY_TABLES: usize = 6;
+
+/// A chain link stays only when this many places (countries or aggregates) of the main's have rows in it for
+/// `MIN_CHAIN_YEARS` of the main's years each; a main with fewer places than this (a page about the EU alone) asks for
+/// all it has.
+const MIN_CHAIN_PLACES: usize = 3;
+
+/// The years a chain link's rows must share with the main's, place by place.
+const MIN_CHAIN_YEARS: usize = 3;
+
+/// The event chains (topic-chains.json), compiled in so a broken file fails its test, not a run.
+const TOPIC_CHAINS: &str = include_str!("../runtime/pi/assets/topic-chains.json");
+
+/// One link of a chain: a Eurostat table with the slice the page reads of it.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct Link {
+    pub table: String,
+    /// What the link is about (gas, price, solar, grid, emissions): a semantic tag, never printed.
+    pub tag: String,
+    /// Dimension -> the codes the page takes of it (time and geo come from the page).
+    pub slice: BTreeMap<String, Vec<String>>,
+    /// The place the link takes in the chain, in English.
+    pub position: String,
+}
+
+/// An event chain: after a main quantity (a family of measure-families.json), these links in this order.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct Chain {
+    pub id: String,
+    pub main_family: String,
+    pub links: Vec<Link>,
+}
+
+/// The chains, read once.
+pub fn chains() -> &'static [Chain] {
+    static CHAINS: std::sync::OnceLock<Vec<Chain>> = std::sync::OnceLock::new();
+    CHAINS.get_or_init(|| {
+        #[derive(Deserialize)]
+        struct File {
+            chains: Vec<Chain>,
+        }
+        serde_json::from_str::<File>(TOPIC_CHAINS)
+            .expect("topic-chains.json lists chains")
+            .chains
+    })
+}
+
+/// What a chain link shares with the main table.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ChainOverlap {
+    /// Places (countries or aggregates) with rows in both tables in at least `MIN_CHAIN_YEARS` of the same years.
+    pub places: usize,
+    /// The distinct years those places share.
+    pub years: usize,
+    pub first: i32,
+    pub last: i32,
+}
+
+/// One chain link offered to the page.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ChainCompanion {
+    pub id: String,
+    pub tag: String,
+    pub position: String,
+    pub slice: BTreeMap<String, Vec<String>>,
+    pub overlap: ChainOverlap,
+    pub axis: Axis,
+}
+
+/// What a link's rows share with the main's: places of the main's that have `MIN_CHAIN_YEARS` or more of their (place, year)
+/// in the link's rows, counted when there are `MIN_CHAIN_PLACES` of them (all the main has when it has fewer). Aggregates
+/// count as places, so a main about the EU alone is chained to links about the EU. None when the share is too thin.
+pub fn chain_overlap(main: &[Row], link: &[Row]) -> Option<ChainOverlap> {
+    let mine: BTreeSet<_> = main.iter().map(place_year).collect();
+    let main_places: BTreeSet<_> = main
+        .iter()
+        .map(|r| (r.via.as_deref(), r.geo.as_str()))
+        .collect();
+    let mut years_of: BTreeMap<(Option<&str>, &str), BTreeSet<i32>> = BTreeMap::new();
+    for r in link.iter().filter(|r| mine.contains(&place_year(r))) {
+        years_of
+            .entry((r.via.as_deref(), r.geo.as_str()))
+            .or_default()
+            .insert(r.year);
+    }
+    years_of.retain(|_, years| years.len() >= MIN_CHAIN_YEARS);
+    if years_of.is_empty() || years_of.len() < MIN_CHAIN_PLACES.min(main_places.len()) {
+        return None;
+    }
+    let years: BTreeSet<i32> = years_of.values().flatten().copied().collect();
+    Some(ChainOverlap {
+        places: years_of.len(),
+        years: years.len(),
+        first: *years.first()?,
+        last: *years.last()?,
+    })
+}
+
+/// The links of the main table's chain a story page may take, in the chain's order (I7). The chain is the first whose main
+/// family holds `main` (l5geo's `family_holds`); `on_page` lists the tables the page already has, the main among them: a
+/// link that is one of them is skipped, and the page takes at most `MAX_CHAIN_COMPANIONS` links and `MAX_STORY_TABLES`
+/// tables in all. A link the catalogue does not list is no candidate. `rows` gives the fetched rows of a table, None when its
+/// fetch failed, timed out or came back empty: such a link is dropped (no_rows), never read as no overlap; one whose rows
+/// share too little with the main's is dropped too (no_chain_overlap); one the room does not hold is dropped last (no_room).
+/// With no rows for the main nothing is offered. The main's own companions are not touched here (`companions`).
+pub fn chain_companions(
+    index: &CompanionIndex,
+    main: &str,
+    on_page: &[&str],
+    rows: &dyn Fn(&str) -> Option<Vec<Row>>,
+) -> (Vec<ChainCompanion>, Vec<(String, DropWhy)>) {
+    let Some(chain) = chains().iter().find(|c| family_holds(&c.main_family, main)) else {
+        return (Vec::new(), Vec::new());
+    };
+    let Some(main_rows) = rows(main) else {
+        return (Vec::new(), Vec::new());
+    };
+    let mut dropped = Vec::new();
+    let mut found = Vec::new();
+    for link in &chain.links {
+        if link.table == main
+            || on_page.contains(&link.table.as_str())
+            || !index.has_table(&link.table)
+        {
+            continue;
+        }
+        let Some(theirs) = rows(&link.table) else {
+            dropped.push((link.table.clone(), DropWhy::Empty));
+            continue;
+        };
+        let Some(overlap) = chain_overlap(&main_rows, &theirs) else {
+            dropped.push((link.table.clone(), DropWhy::ChainOverlap));
+            continue;
+        };
+        found.push(ChainCompanion {
+            id: link.table.clone(),
+            tag: link.tag.clone(),
+            position: link.position.clone(),
+            slice: link.slice.clone(),
+            axis: axis(main, &link.table, &main_rows, &theirs),
+            overlap,
+        });
+    }
+    let room = MAX_CHAIN_COMPANIONS.min(MAX_STORY_TABLES.saturating_sub(on_page.len().max(1)));
     dropped.extend(
         found
             .drain(found.len().min(room)..)
@@ -1234,6 +1399,275 @@ mod tests {
                 t.elapsed(),
                 c.iter().take(4).collect::<Vec<_>>()
             );
+        }
+    }
+
+    // ---- Event chains (I7): fake rows for both chains. ----
+
+    /// A catalogue listing the mains and every chain link, each as a table in one folder.
+    fn chain_index(skip: &[&str]) -> CompanionIndex {
+        let mut toc = String::from(
+            "\"title\"\t\"code\"\t\"type\"\n\"Database by themes\"\t\"data\"\t\"folder\"\n\"    Energy\"\t\"nrg\"\t\"folder\"\n",
+        );
+        let mut ids: Vec<String> = vec!["sdg_07_40".into(), "une_rt_a".into()];
+        ids.extend(
+            chains()
+                .iter()
+                .flat_map(|c| c.links.iter().map(|l| l.table.clone())),
+        );
+        for id in ids.iter().filter(|i| !skip.contains(&i.as_str())) {
+            toc.push_str(&format!("\"        Title of {id}\"\t\"{id}\"\t\"table\"\n"));
+        }
+        let mut r = raw();
+        r.toc = toc;
+        r.metabase = String::new();
+        CompanionIndex::from_raw(&r)
+    }
+
+    /// Rows for each place and each year; EU27_2020 is an aggregate, the rest countries.
+    fn grid(geos: &[&str], years: std::ops::RangeInclusive<i32>) -> Vec<Row> {
+        geos.iter()
+            .flat_map(|g| years.clone().map(move |y| row(g, y, *g != "EU27_2020")))
+            .collect()
+    }
+
+    const PLACES: [&str; 4] = ["AT", "DE", "FR", "EU27_2020"];
+
+    fn fetched(tables: Vec<(&str, Vec<Row>)>) -> impl Fn(&str) -> Option<Vec<Row>> {
+        let map: BTreeMap<String, Vec<Row>> = tables
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v))
+            .collect();
+        move |id| map.get(id).cloned()
+    }
+
+    fn ids(found: &[ChainCompanion]) -> Vec<&str> {
+        found.iter().map(|c| c.id.as_str()).collect()
+    }
+
+    #[test]
+    fn energy_chain_keeps_links_that_share_places_and_years_in_chain_order() {
+        let index = chain_index(&[]);
+        let rows = fetched(vec![
+            ("sdg_07_40", grid(&PLACES, 2018..=2022)),
+            // Shares all four places and five years.
+            ("nrg_ti_gas", grid(&PLACES, 2018..=2022)),
+            // One place only, and two years only: too thin on both counts.
+            ("nrg_pc_204", grid(&["AT"], 2018..=2019)),
+            // Three places with exactly three shared years each (2020-2022); the rest of its years fall outside the main's.
+            ("nrg_inf_epcrw", grid(&["AT", "DE", "FR"], 2020..=2025)),
+            // Two of the main's four places only.
+            ("nrg_cb_pem", grid(&["AT", "DE"], 2018..=2022)),
+            // env_air_gge: no rows (fetch failed).
+        ]);
+        let (found, dropped) = chain_companions(&index, "sdg_07_40", &["sdg_07_40"], &rows);
+        assert_eq!(ids(&found), vec!["nrg_ti_gas", "nrg_inf_epcrw"]);
+        assert_eq!(found[0].tag, "gas");
+        assert_eq!(
+            found[0].overlap,
+            ChainOverlap {
+                places: 4,
+                years: 5,
+                first: 2018,
+                last: 2022
+            }
+        );
+        assert_eq!(
+            found[1].overlap,
+            ChainOverlap {
+                places: 3,
+                years: 3,
+                first: 2020,
+                last: 2022
+            }
+        );
+        assert_eq!(found[0].axis, Axis::Same);
+        assert_eq!(
+            dropped,
+            vec![
+                ("nrg_pc_204".to_string(), DropWhy::ChainOverlap),
+                ("nrg_cb_pem".to_string(), DropWhy::ChainOverlap),
+                ("env_air_gge".to_string(), DropWhy::Empty),
+            ]
+        );
+    }
+
+    #[test]
+    fn labour_chain_is_a_second_topic_with_its_own_links() {
+        let index = chain_index(&[]);
+        let rows = fetched(vec![
+            ("une_rt_a", grid(&["AT", "DE", "FR"], 2015..=2022)),
+            ("lfsi_emp_a", grid(&["AT", "DE", "FR"], 2010..=2022)),
+            ("nama_10_gdp", grid(&["AT", "DE", "FR", "IT"], 2020..=2023)),
+            // Years never meet the main's.
+            ("ilc_peps01n", grid(&["AT", "DE", "FR"], 2000..=2010)),
+        ]);
+        let (found, dropped) = chain_companions(&index, "une_rt_a", &["une_rt_a"], &rows);
+        assert_eq!(ids(&found), vec!["lfsi_emp_a", "nama_10_gdp"]);
+        assert_eq!(
+            found[1].overlap.places, 3,
+            "IT is not a place of the main's"
+        );
+        assert_eq!(
+            dropped,
+            vec![("ilc_peps01n".to_string(), DropWhy::ChainOverlap)]
+        );
+        // The energy links are not offered to a labour main, nor the labour links to an energy one.
+        let (energy, _) = chain_companions(&index, "sdg_07_40", &["sdg_07_40"], &fetched(vec![]));
+        assert!(energy.is_empty());
+    }
+
+    #[test]
+    fn a_place_counts_only_with_three_shared_years() {
+        let main = grid(&PLACES, 2018..=2022);
+        // Three places with three shared years, one with two: kept, three places counted.
+        let mut link = grid(&["AT", "DE", "FR"], 2020..=2022);
+        link.extend(grid(&["EU27_2020"], 2021..=2022));
+        let o = chain_overlap(&main, &link).expect("three places share three years");
+        assert_eq!((o.places, o.years, o.first, o.last), (3, 3, 2020, 2022));
+        // Only two places with three years, the others with two: dropped.
+        let mut thin = grid(&["AT", "DE"], 2020..=2022);
+        thin.extend(grid(&["FR", "EU27_2020"], 2021..=2022));
+        assert_eq!(chain_overlap(&main, &thin), None);
+        // No rows at all.
+        assert_eq!(chain_overlap(&main, &[]), None);
+    }
+
+    #[test]
+    fn a_main_about_one_place_asks_for_one_shared_place() {
+        let main = grid(&["EU27_2020"], 2015..=2022);
+        let link = grid(&["EU27_2020"], 2016..=2020);
+        let o = chain_overlap(&main, &link).expect("the one place is shared");
+        assert_eq!((o.places, o.years), (1, 5));
+        // A link about other places shares nothing with it.
+        assert_eq!(
+            chain_overlap(&main, &grid(&["AT", "DE", "FR"], 2015..=2022)),
+            None
+        );
+        // A main of two places asks for two.
+        let two = grid(&["AT", "DE"], 2015..=2022);
+        assert!(chain_overlap(&two, &grid(&["AT", "DE", "FR"], 2015..=2022)).is_some());
+        assert_eq!(chain_overlap(&two, &grid(&["AT"], 2015..=2022)), None);
+    }
+
+    #[test]
+    fn rows_placed_another_way_do_not_meet() {
+        let main = grid(&PLACES, 2018..=2022);
+        let hub: Vec<Row> = grid(&PLACES, 2018..=2022)
+            .into_iter()
+            .map(|r| Row {
+                via: Some("partner".into()),
+                ..r
+            })
+            .collect();
+        assert_eq!(chain_overlap(&main, &hub), None);
+    }
+
+    #[test]
+    fn the_chain_is_capped_at_four_links_and_six_tables() {
+        let index = chain_index(&[]);
+        let all = || {
+            let mut t = vec![("sdg_07_40", grid(&PLACES, 2018..=2022))];
+            for l in &chains()[0].links {
+                t.push((l.table.as_str(), grid(&PLACES, 2018..=2022)));
+            }
+            fetched(t)
+        };
+        // The main alone on the page: four of the five links, the last one cut.
+        let (found, dropped) = chain_companions(&index, "sdg_07_40", &["sdg_07_40"], &all());
+        assert_eq!(
+            ids(&found),
+            vec!["nrg_ti_gas", "nrg_pc_204", "nrg_inf_epcrw", "nrg_cb_pem"]
+        );
+        assert_eq!(dropped, vec![("env_air_gge".to_string(), DropWhy::Cut)]);
+        // The main and two of its own companions: room for three (6 - 3).
+        let (found, dropped) =
+            chain_companions(&index, "sdg_07_40", &["sdg_07_40", "a", "b"], &all());
+        assert_eq!(found.len(), 3);
+        assert_eq!(
+            dropped.iter().map(|d| d.0.as_str()).collect::<Vec<_>>(),
+            vec!["nrg_cb_pem", "env_air_gge"]
+        );
+        assert!(dropped.iter().all(|d| d.1 == DropWhy::Cut));
+        // A page already at six tables has no room; an empty `on_page` is read as the main alone.
+        let six = ["sdg_07_40", "a", "b", "c", "d", "e"];
+        assert!(chain_companions(&index, "sdg_07_40", &six, &all())
+            .0
+            .is_empty());
+        assert_eq!(
+            chain_companions(&index, "sdg_07_40", &[], &all()).0.len(),
+            4
+        );
+    }
+
+    #[test]
+    fn links_already_on_the_page_or_missing_from_the_catalogue_are_skipped() {
+        let index = chain_index(&["nrg_pc_204"]);
+        let mut t = vec![("sdg_07_40", grid(&PLACES, 2018..=2022))];
+        for l in &chains()[0].links {
+            t.push((l.table.as_str(), grid(&PLACES, 2018..=2022)));
+        }
+        let rows = fetched(t);
+        // nrg_ti_gas is the page's own table already; nrg_pc_204 is not in the catalogue: neither is dropped with a reason.
+        let (found, dropped) =
+            chain_companions(&index, "sdg_07_40", &["sdg_07_40", "nrg_ti_gas"], &rows);
+        assert_eq!(
+            ids(&found),
+            vec!["nrg_inf_epcrw", "nrg_cb_pem", "env_air_gge"]
+        );
+        assert!(dropped.is_empty());
+    }
+
+    #[test]
+    fn no_main_rows_or_no_chain_offers_nothing() {
+        let index = chain_index(&[]);
+        let rows = fetched(vec![("nrg_ti_gas", grid(&PLACES, 2018..=2022))]);
+        // The main's fetch failed.
+        let (found, dropped) = chain_companions(&index, "sdg_07_40", &["sdg_07_40"], &rows);
+        assert!(found.is_empty() && dropped.is_empty());
+        // A main no chain starts from.
+        let rows = fetched(vec![("gas_a", grid(&PLACES, 2018..=2022))]);
+        let (found, dropped) = chain_companions(&index, "gas_a", &["gas_a"], &rows);
+        assert!(found.is_empty() && dropped.is_empty());
+        // A World Bank main of the family: its id ends in @2 and still finds its chain.
+        assert!(family_holds("renewable_share", "EG.FEC.RNEW.ZS@2"));
+    }
+
+    #[test]
+    fn the_new_drop_reason_has_its_fixed_name() {
+        assert_eq!(
+            serde_json::to_value(DropWhy::ChainOverlap).unwrap(),
+            json!("no_chain_overlap")
+        );
+    }
+
+    #[test]
+    fn topic_chains_file_is_sound() {
+        let mut seen = BTreeSet::new();
+        assert!(chains().len() >= 2, "two chains of different topics");
+        for c in chains() {
+            assert!(family_exists(&c.main_family), "{} has no family", c.id);
+            assert!(c.links.len() >= 3, "{} is a chain of links", c.id);
+            for l in &c.links {
+                assert!(!l.tag.is_empty() && !l.position.is_empty(), "{}", l.table);
+                assert!(!l.slice.is_empty(), "{} has no slice", l.table);
+                assert!(
+                    l.slice.values().all(|codes| !codes.is_empty()),
+                    "{} has an empty dimension",
+                    l.table
+                );
+                assert!(
+                    !l.table.contains('@'),
+                    "{} is not a Eurostat table",
+                    l.table
+                );
+                assert!(
+                    !family_holds(&c.main_family, &l.table),
+                    "{} would be a main of its own chain",
+                    l.table
+                );
+                assert!(seen.insert(l.table.clone()), "{} is in two chains", l.table);
+            }
         }
     }
 }
