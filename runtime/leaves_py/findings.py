@@ -25,6 +25,13 @@ and who fell), each one section with one story leaf (a leaf stands at most once 
                               SM_MAX members the SM_MAX / 2 highest and lowest at the last year. Needs SM_MIN members at least.
                               Score: size = how far the best member's change is from the worst's over the picture's range of
                               values; surprise = the share of members moving against the majority; sturdy = years and members.
+  * map    (member_map):     the members' values at the last year they share, each member's country filled by its value on
+                              a map (five steps), the highest and the lowest MAP_CALL called out; the title names the highest
+                              and the lowest and, when the east or the north (or the west, the south) holds the higher values
+                              clearly, says so. Needs the request's "points" ({code: [lon, lat]}, a point inside each member's
+                              country, which layer 1 reads from the attributes table) for MAP_MIN members at least. Score: size
+                              = the values' range over the highest; surprise = how far the two halves of the members, split at the
+                              median longitude or latitude, differ in mean over the range; sturdy = members.
   * chain  (event_chain):    the companion tables' series side by side on the years they and the whole share (a panel
                               each, the page's measure not one of them), the one year the whole moved most shaded across
                               them: what moved around that year, told in order and never as a cause; needs the request's
@@ -61,6 +68,7 @@ Request (one JSON line on stdin, one reply line on stdout; mode "candidates"):
             "delta": fmt?},                                     # and a difference or pace (a share's in points; value if none)
    "fmt_defs": {fmt: {"scale", "dec", "suffix"}},               # those formats (an axis's ticks are worked out as next_facts does)
    "words": {"measure": words, "unit": words},                 # the measure's name and its unit (no digit)
+   "points": {code: [lon, lat]}?,                              # a point inside each member's country (the map angle's)
    "chain": [{"table", "filter": {dim: code}, "words": {"measure", "unit"}, "fmt"?: fmt, "kind"?: "flow"|"stock"}]?,
                                                                  # companion tables (knowledge group's chain_companions), their
                                                                  # place and years the main's; "fmt" absent: taken by size (below)
@@ -88,9 +96,10 @@ CHAIN_MIN, CHAIN_MAX = 2, 5   # the tables a chain holds
 CHAIN_YEARS = 4      # years in a row every chain table and the whole share, at least
 MIN_YEARS = 6        # a pace needs this many years of the whole at least
 RECENT = 5           # the recent pace runs over the last five years
-TOP_K = 7            # the candidates the child gives (one a finding: there are seven angles; the flow shows the model its best few)
+TOP_K = 8            # the candidates the child gives (one a finding: there are eight angles; the flow shows the model its best few)
 GROUP_K = 3          # the lowest and the highest three at the start (spread)
 ROWS_MAX = 5         # rows a winners/losers column shows
+MAP_MIN, MAP_CALL = 8, 3   # members with a point a map needs at least; the highest and the lowest this many are called out
 SM_MIN, SM_MAX, SM_YEARS = 6, 12, 5   # members a small-multiples grid needs at least and shows at most; years in a row they share
 RANK_MIN, RANK_MAX = 5, 40   # members a ranking needs at least, and shows at most
 
@@ -253,6 +262,8 @@ class Req:
             if not q.words.get(k): raise Refused(f"findings: the request gives no {k} words")
             if any(ch.isdigit() for ch in q.words[k]): raise Refused(f"findings: the {k} words hold a digit")
         q.chain = r.get("chain")
+        pts = r.get("points") or {}
+        q.points = {c: tuple(v) for c, v in pts.items() if isinstance(v, (list, tuple)) and len(v) == 2 and all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in v)} if isinstance(pts, dict) else {}
         q.panel = {c: series(q.rows, q.table, q.by, c, q.fixed) for c in q.members}
         q.panel = {c: s for c, s in q.panel.items() if s}
         q.wseries = series(q.rows, q.table, q.by, q.whole, q.fixed) if q.whole else {}
@@ -673,7 +684,45 @@ def angle_members(q):
             "summary": "one small chart a member on a shared axis: the member that moved most each way"}, None
 
 
-ANGLES = [angle_path, angle_need, angle_spread, angle_ends, angle_rank, angle_members, angle_chain]
+def angle_map(q):
+    if not q.points: return None, "the request gives no points for the members"
+    members = {c: s_ for c, s_ in q.panel.items() if c in q.points}
+    if len(members) < MAP_MIN: return None, f"fewer than {MAP_MIN} members with a point"
+    years = set.intersection(*(set(s_) for s_ in members.values()))
+    if not years: return None, "no year in which every member with a point has a value"
+    y = max(years)
+    at = {c: s_[y][0] for c, s_ in members.items()}
+    hi = max(at, key=lambda c: (at[c], c)); lo = min(at, key=lambda c: (at[c], c))
+    if at[hi] <= at[lo]: return None, "every member holds the same value"
+    rng = at[hi] - at[lo]
+    # the halves of the members at the median longitude and at the median latitude: the larger gap in means, and which side is higher
+    best = (0.0, None)
+    for axis, east in ((0, "east"), (1, "north")):
+        order = sorted(at, key=lambda c: (q.points[c][axis], c)); half = len(order) // 2
+        a, b = order[:half], order[-half:]
+        gap = sum(at[c] for c in b) / len(b) - sum(at[c] for c in a) / len(a)
+        if abs(gap) > abs(best[0]): best = (gap, east if gap > 0 else ("west" if axis == 0 else "south"))
+    gradient = clamp(abs(best[0]) / rng)
+    key = lambda c: f"mp_{c.lower()}"
+    ranked = sorted(at, key=lambda c: (-at[c], c))
+    called = ranked[:MAP_CALL] + ranked[-MAP_CALL:]
+    f = {key(c): q.value(c, y) for c in called}
+    tk = "story.map.title_" + (best[1] if gradient >= 0.2 else "plain")
+    data = {"title": SW(q.words["measure"]), "unit": SW(q.words["unit"]), "name_kind": "place",
+            "cells": [dict({"code": c, "at": list(q.points[c]), "value": members[c][y][1]}, **({"text": f"fact:{key(c)}"} if c in called else {})) for c in sorted(members)],
+            "ends": {"lo": f"fact:{key(lo)}", "hi": f"fact:{key(hi)}"}, "footnote": ST("story.map.foot")}
+    size = clamp(rng / max(abs(at[hi]), 1e-9))
+    surprise = clamp(0.3 + 0.7 * gradient)
+    sturdy = clamp(len(members) / 20)
+    return {"angle": "map", "layer": "member_map", "kicker": T("story.map.kicker"), "title": T(tk, hi=hi, lo=lo, mhi=key(hi), mlo=key(lo), y1=key(hi)),
+            "text": T("story.map.text", y1=key(hi)), "facts": f, "data": data,
+            "claim": {"num": f"fact:{key(hi)}", "head": T("story.map.claim")}, "notes": [], "members": True, "last": key(hi),
+            "score": round(size * surprise * sturdy, 4),
+            "why": {"size": round(size, 3), "surprise": round(surprise, 3), "sturdy": round(sturdy, 3), "gradient": round(gradient, 3), "higher": best[1]},
+            "summary": "the members' values on a map, filled by value: where the high ones lie"}, None
+
+
+ANGLES = [angle_path, angle_need, angle_spread, angle_ends, angle_rank, angle_members, angle_map, angle_chain]
 
 
 # ---------------------------------------------------------------- the header's big numbers

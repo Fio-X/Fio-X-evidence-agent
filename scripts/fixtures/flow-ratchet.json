@@ -1,5 +1,5 @@
 {
-  "measured_at": "45095a81c7c5d39c5448898978b6444f6b0d2470",
+  "measured_at": "730efbc3684fa55512162dec1b418f3df78e8eb7",
   "rules": "scripts/test_group_flow_ratchet.mjs header; totals and per_file may only go down; kind_names only grow, by --lower",
   "totals": {
     "new": {
@@ -64,6 +64,7 @@
     "legend": "knobs.json nodes",
     "line": "src/next_run.rs templates",
     "map": "knobs.json nodes",
+    "membermap": "knobs.json nodes",
     "minimaps": "knobs.json nodes",
     "names": "knobs.json nodes",
     "notes": "knobs.json nodes",
@@ -90,6 +91,7 @@
     "stackedarea": "knobs.json nodes",
     "stackedbar100": "src/next_run.rs templates",
     "step": "knobs.json nodes",
+    "storylayout": "knobs.json nodes",
     "strip": "knobs.json nodes",
     "targetpath": "knobs.json nodes",
     "text": "knobs.json nodes",

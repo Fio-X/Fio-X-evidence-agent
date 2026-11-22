@@ -1195,6 +1195,71 @@
     "one_unit"
    ]
   },
+  "member_map": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "size",
+     "default": 12,
+     "min": 11,
+     "max": 16,
+     "step": 0.5,
+     "what": "label size px (11 is the page floor)"
+    },
+    {
+     "name": "title_size",
+     "default": 16,
+     "min": 12,
+     "max": 22,
+     "step": 1,
+     "what": "chart name size px"
+    },
+    {
+     "name": "width",
+     "default": 1140,
+     "min": 480,
+     "max": 1400,
+     "step": 10,
+     "what": "picture width in px"
+    },
+    {
+     "name": "margin",
+     "default": 150,
+     "min": 100,
+     "max": 260,
+     "step": 10,
+     "what": "width of each call-out column in px"
+    },
+    {
+     "name": "simplify",
+     "default": 2,
+     "min": 1,
+     "max": 8,
+     "step": 1,
+     "what": "keep every n-th point of a coastline"
+    },
+    {
+     "name": "line_h",
+     "default": 40,
+     "min": 30,
+     "max": 70,
+     "step": 2,
+     "what": "distance between two call-outs in px"
+    },
+    {
+     "name": "max_h",
+     "default": 0.6,
+     "min": 0.3,
+     "max": 1.0,
+     "step": 0.05,
+     "what": "the map's tallest height as a share of the picture's width"
+    }
+   ],
+   "eats": [
+    "annual",
+    "one_unit"
+   ]
+  },
   "minimaps": {
    "reserve": false,
    "knobs": []
@@ -2149,6 +2214,45 @@
    "reserve": false,
    "knobs": []
   },
+  "story_layout": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "layout",
+     "default": "side",
+     "options": [
+      "side",
+      "stack"
+     ],
+     "what": "titled sections: words beside the picture, or over it"
+    },
+    {
+     "name": "text_share",
+     "default": 0.34,
+     "min": 0.25,
+     "max": 0.5,
+     "step": 0.01,
+     "what": "share of the page's width the words' column takes beside a picture"
+    },
+    {
+     "name": "gutter",
+     "default": 36,
+     "min": 16,
+     "max": 64,
+     "step": 2,
+     "what": "space between the words and the picture, or between two paired pictures, in px"
+    },
+    {
+     "name": "pair",
+     "default": "on",
+     "options": [
+      "on",
+      "off"
+     ],
+     "what": "two narrow pictures in a row"
+    }
+   ]
+  },
   "strip": {
    "reserve": false,
    "knobs": [
@@ -2576,7 +2680,8 @@
    "pair_bars",
    "thesis_claims",
    "risk_notes",
-   "small_multiples"
+   "small_multiples",
+   "member_map"
   ],
   "change": [
    "bignums",
@@ -2601,7 +2706,8 @@
    "pair_bars",
    "thesis_claims",
    "risk_notes",
-   "small_multiples"
+   "small_multiples",
+   "member_map"
   ],
   "flow": [
    "bignums",
@@ -2626,7 +2732,8 @@
    "pair_bars",
    "thesis_claims",
    "risk_notes",
-   "small_multiples"
+   "small_multiples",
+   "member_map"
   ],
   "composition": [
    "bignums",
@@ -2651,7 +2758,8 @@
    "pair_bars",
    "thesis_claims",
    "risk_notes",
-   "small_multiples"
+   "small_multiples",
+   "member_map"
   ],
   "ranked_bars": [
    "bignums",
@@ -2676,7 +2784,8 @@
    "pair_bars",
    "thesis_claims",
    "risk_notes",
-   "small_multiples"
+   "small_multiples",
+   "member_map"
   ],
   "change_bars": [
    "bignums",
@@ -2701,7 +2810,8 @@
    "pair_bars",
    "thesis_claims",
    "risk_notes",
-   "small_multiples"
+   "small_multiples",
+   "member_map"
   ],
   "block_ranks": [
    "bignums",
@@ -2726,7 +2836,8 @@
    "pair_bars",
    "thesis_claims",
    "risk_notes",
-   "small_multiples"
+   "small_multiples",
+   "member_map"
   ],
   "composition_steps": [
    "bignums",
@@ -2751,7 +2862,8 @@
    "pair_bars",
    "thesis_claims",
    "risk_notes",
-   "small_multiples"
+   "small_multiples",
+   "member_map"
   ],
   "one_line": [
    "bignums",
@@ -2776,7 +2888,8 @@
    "pair_bars",
    "thesis_claims",
    "risk_notes",
-   "small_multiples"
+   "small_multiples",
+   "member_map"
   ],
   "page_story": [
    "thesis_claims",
@@ -2787,6 +2900,7 @@
    "pair_bars",
    "rankbar",
    "small_multiples",
+   "member_map",
    "risk_notes",
    "bignums"
   ],
@@ -2923,6 +3037,7 @@
     "pair_bars",
     "rankbar",
     "small_multiples",
+    "member_map",
     "risk_notes"
    ],
    "eats": [

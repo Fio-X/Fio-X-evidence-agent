@@ -161,5 +161,14 @@
 "story.sm.claim": "走势最好的成员的变化",
 "story.sm.ref": "{n:w}（淡线）",
 "story.sm.target": "目标 {f:goal}",
-"story.sm.foot": "各格共用同一条纵轴"
+"story.sm.foot": "各格共用同一条纵轴",
+"story.map.kicker": "分布",
+"story.map.title_plain": "{y:y1}，{n:hi}最高，{f:mhi}；{n:lo}最低，{f:mlo}",
+"story.map.title_east": "{y:y1}，{n:hi}最高，{f:mhi}；{n:lo}最低，{f:mlo}；东边的偏高",
+"story.map.title_west": "{y:y1}，{n:hi}最高，{f:mhi}；{n:lo}最低，{f:mlo}；西边的偏高",
+"story.map.title_north": "{y:y1}，{n:hi}最高，{f:mhi}；{n:lo}最低，{f:mlo}；北边的偏高",
+"story.map.title_south": "{y:y1}，{n:hi}最高，{f:mhi}；{n:lo}最低，{f:mlo}；南边的偏高",
+"story.map.text": "地图上每个成员按{y:y1}的值涂色，颜色越深值越大；两侧标出最高和最低的几个。",
+"story.map.claim": "地图上最高的成员的值",
+"story.map.foot": "颜色分五档，图例两端是最低和最高的值"
 }

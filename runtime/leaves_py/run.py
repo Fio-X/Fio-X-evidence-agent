@@ -57,6 +57,7 @@ import pair_bars
 import thesis_claims
 import risk_notes
 import small_multiples
+import member_map
 import section_head
 import wbkit
 from words import word
@@ -101,14 +102,14 @@ FOUND = {}
 CLAIM_WORDS = None
 
 
-def leaf_frame(Frame, f, key, fixed=None, by_hero=None):
+def leaf_frame(Frame, f, key, fixed=None, by_hero=None, by_page=None):
     """A chart leaf's own Frame over the hero's leaves.<key> (refusing a hero that names none), with the hero's style
     (`fixed` over it, then `by_hero`'s), and the series values read from the request's tables (wbkit.read_values)."""
     d = (f.h.get("leaves") or {}).get(key)
     if d is None: raise FX.Refused(f"the hero names no leaves.{key}")
     wbkit.read_values()
     st = dict(f.h.get("style", {}))
-    for node, kv in [*(fixed or {}).items(), *(by_hero(f.h) if by_hero else {}).items()]: st[node] = {**st.get(node, {}), **kv}
+    for node, kv in [*(fixed or {}).items(), *(by_hero(f.h) if by_hero else {}).items(), *(by_page(f) if by_page else {}).items()]: st[node] = {**st.get(node, {}), **kv}
     return Frame({"data": d, "style": st})
 
 
@@ -123,7 +124,7 @@ def leaf_records(fr, key):
                      r_min_lifted=len(fr.r_min_codes), r_min_codes=list(fr.r_min_codes))
 
 
-def leaf(Frame, cl, key, fixed=None, by_hero=None):
+def leaf(Frame, cl, key, fixed=None, by_hero=None, by_page=None):
     """A chart leaf (wbkit's style) as a layer of a recipe's frame: its own Frame over the hero's leaves.<key> as its data,
     with the hero's style (`fixed`, {node: {knob: value}}, over it: what the recipe's layout sets; then `by_hero`'s, the knobs
     the program reads off the hero itself, as the page's focus), and the series values read from the request's tables
@@ -131,7 +132,7 @@ def leaf(Frame, cl, key, fixed=None, by_hero=None):
     not place (its Frame.dropped, (id, why) each) does not stop the layer: it goes back in DROPPED, even when that is all it
     was given (the layer is drawn empty, and the page still goes out with every dropped item in its ledger)."""
     def draw(f, occ):
-        fr = leaf_frame(Frame, f, key, fixed, by_hero); out = cl(fr, occ)
+        fr = leaf_frame(Frame, f, key, fixed, by_hero, by_page); out = cl(fr, occ)
         leaf_records(fr, key)
         return out
     return draw, None
@@ -222,7 +223,8 @@ LEAF_LAYERS = dict(section_head=leaf(section_head.Frame, section_head.cl_section
                    pair_bars=leaf(pair_bars.Frame, pair_bars.cl_pair_bars, "pair_bars"),
                    thesis_claims=leaf(thesis_claims.Frame, thesis_claims.cl_thesis_claims, "thesis_claims"),
                    risk_notes=leaf(risk_notes.Frame, risk_notes.cl_risk_notes, "risk_notes"),
-                   small_multiples=leaf(small_multiples.Frame, small_multiples.cl_small_multiples, "small_multiples"))
+                   small_multiples=leaf(small_multiples.Frame, small_multiples.cl_small_multiples, "small_multiples"),
+                   member_map=leaf(member_map.Frame, member_map.cl_member_map, "member_map"))
 LEAF_SVG = (section_head.SECTION_HEAD_SVG + rankbar.RANKBAR_SVG + bubbles.BUBBLES_SVG + leader_notes.LEADER_NOTES_SVG + sankey.SANKEY_SVG
             + stacked100.STACKED100_SVG + line_leaf.LINE_SVG + rank_lines.RANK_LINES_SVG
             + dumbbell.DUMBBELL_SVG + waterfall.WATERFALL_SVG + waffle.WAFFLE_SVG
@@ -234,7 +236,8 @@ LEAF_SVG = (section_head.SECTION_HEAD_SVG + rankbar.RANKBAR_SVG + bubbles.BUBBLE
             + pair_bars.PAIR_BARS_SVG
             + thesis_claims.THESIS_CLAIMS_SVG
             + risk_notes.RISK_NOTES_SVG
-            + small_multiples.SMALL_MULTIPLES_SVG)
+            + small_multiples.SMALL_MULTIPLES_SVG
+            + member_map.MEMBER_MAP_SVG)
 
 
 # The page recipes this child draws: each one's layers (name -> (draw, reserve)) and which of them are svg.
@@ -248,18 +251,21 @@ MAIN = dict(column="bars", change="bars", flow="sankey", composition_steps="wate
 # The recipes a column page draws: column, change (its bars the places' change between two years, bars.measure), and flow
 # (a sankey across the page, its main).
 COLUMN_KINDS = tuple(MAIN)
+# The leaves a story page's sections draw (story.STORY_LAYERS), as (Frame, layer function) pairs; rankbar apart (it also reads the hero).
+STORY_SRC = dict(thesis_claims=(thesis_claims.Frame, thesis_claims.cl_thesis_claims), risk_notes=(risk_notes.Frame, risk_notes.cl_risk_notes),
+                 gap_axis=(gap_axis.Frame, gap_axis.cl_gap_axis), event_chain=(event_chain.Frame, event_chain.cl_event_chain),
+                 target_path=(target_path.Frame, target_path.cl_target_path), winners_losers=(winners_losers.Frame, winners_losers.cl_winners_losers),
+                 pair_bars=(pair_bars.Frame, pair_bars.cl_pair_bars), small_multiples=(small_multiples.Frame, small_multiples.cl_small_multiples),
+                 member_map=(member_map.Frame, member_map.cl_member_map))
 KINDS = dict(ring=(scmp.RING_LAYERS, scmp.RING_SVG), **{k: ({**column.COLUMN_LAYERS, **LEAF_LAYERS}, column.COLUMN_SVG + LEAF_SVG) for k in COLUMN_KINDS},
              scmp=(scmp.SCMP_LAYERS, scmp.SCMP_SVG),
              # a story page: its sections' leaves (story.py), each a layer of the recipe
              page_story=({**{n: LEAF_LAYERS[n] for n in story.SVG_LAYERS}, "bignums": (story.cl_bignums, None),
-                          # the text blocks at the page's width (story.FIXED over the request's style)
-                          "thesis_claims": leaf(thesis_claims.Frame, thesis_claims.cl_thesis_claims, "thesis_claims", fixed=story.FIXED),
-                          "risk_notes": leaf(risk_notes.Frame, risk_notes.cl_risk_notes, "risk_notes", fixed=story.FIXED),
-                          # the leaves whose sizes the page's type scale sets (story.FIXED)
-                          "winners_losers": leaf(winners_losers.Frame, winners_losers.cl_winners_losers, "winners_losers", fixed=story.FIXED),
-                          "pair_bars": leaf(pair_bars.Frame, pair_bars.cl_pair_bars, "pair_bars", fixed=story.FIXED),
+                          # every leaf over the page's own settings: story.FIXED (the type scale, the text blocks' width) and, for a titled section,
+                          # the picture width its place on the page gives (story.width_of)
+                          **{n: leaf(*STORY_SRC[n], n, fixed=story.FIXED, by_page=story.width_of) for n in STORY_SRC},
                           # the rank bar draws the row its data names in the accent (story.rank_style)
-                          "rankbar": leaf(rankbar.Frame, rankbar.cl_rankbar, "rankbar", fixed=story.FIXED, by_hero=story.rank_style)},
+                          "rankbar": leaf(rankbar.Frame, rankbar.cl_rankbar, "rankbar", fixed=story.FIXED, by_hero=story.rank_style, by_page=story.width_of)},
                          list(story.SVG_LAYERS)))
 
 
