@@ -10484,7 +10484,8 @@ mod tests {
                 assert_eq!(crate::next_facts::ticks(&facts[axis], &input["fmt_defs"]).unwrap().len(), named, "{layer}");
             }
             let layers: Vec<&str> = page["knobs"]["spec"]["sections"].as_array().unwrap().iter().filter_map(|s| s["layer"].as_str()).collect();
-            assert_eq!(layers.first(), Some(&"thesis_claims"));
+            // the header's three big numbers open the story, the thesis right after (76 11-23)
+            assert_eq!(layers.get(..2), Some(&["bignums", "thesis_claims"][..]));
             assert_eq!(layers.last(), Some(&"risk_notes"));
             // review 11-22: the child gives facts, sections and leaf data only; rows, formats or any other key it adds refuse,
             // and a fact the fill holds another way is never overwritten
