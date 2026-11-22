@@ -207,6 +207,10 @@
   "runtime/leaves_py/gap_axis.py": {
    "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1
   },
+  "runtime/leaves_py/member_map.py": {
+   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1,
+   "imports geo (runtime/leaves_py/geo.py), which breaks the rule": 1
+  },
   "runtime/leaves_py/pair_bars.py": {
    "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1
   },
