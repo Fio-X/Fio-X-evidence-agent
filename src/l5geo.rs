@@ -2031,7 +2031,7 @@ impl Catalog {
             }
         }
 
-        // Europe = the World Bank's "Europe & Central Asia" plus every country of the NUTS 2024 table
+        // the countries of the World Bank list
         let countries: HashSet<String> = wb
             .iter()
             .map(|x| field(x, &["iso2Code"]).to_string())
@@ -2059,11 +2059,10 @@ impl Catalog {
                 wb_places.push((id.to_string(), id.to_string()));
             }
         }
-        let mut europe: HashSet<String> = wb
-            .iter()
-            .filter(|x| field(x, &["region", "value"]).trim() == "Europe & Central Asia")
-            .map(|x| field(x, &["iso2Code"]).to_string())
-            .collect();
+        // Europe is the NUTS 2024 table's countries, the ones Eurostat reports as a rule; the World Bank's "Europe &
+        // Central Asia" also holds Belarus, Russia and Central Asia, whose names a Eurostat table may list in its geo with
+        // no row of recent years (n39: demo_gind lists BY and RU and returned Poland only), so a question naming them is
+        // beyond Europe and a World Bank table answers it
         let nuts = raw.nuts.strip_prefix('\u{feff}').unwrap_or(&raw.nuts);
         let regional: HashSet<String> = nuts
             .lines()
@@ -2072,7 +2071,9 @@ impl Catalog {
                 estat_iso(line.trim_end_matches('\r').split(',').next().unwrap_or("")).to_string()
             })
             .collect();
-        europe.extend(regional.iter().cloned());
+        // the United Kingdom left the NUTS table in 2020 and Eurostat tables still hold its rows up to then (NUTS 2016)
+        let mut europe = regional.clone();
+        europe.insert("GB".to_string());
 
         let mut zh: Vec<(String, String)> = Vec::new();
         let mut put = |name: &str, code: &str| match zh.iter_mut().find(|(n, _)| n == name) {
@@ -3850,7 +3851,7 @@ mod tests {
                 {"iso2Code": "IN", "name": "印度"}, {"iso2Code": "GU", "name": "关岛"}, {"iso2Code": "S1", "name": "小国"},
                 {"iso2Code": "JP", "name": "日本"}, {"iso2Code": "US", "name": "美国"}
             ]]),
-            nuts: "\u{feff}CNTR_CODE,NUTS_ID\r\nMT,MT00\r\nEL,EL30\r\nDE,DE1\r\n".into(),
+            nuts: "\u{feff}CNTR_CODE,NUTS_ID\r\nMT,MT00\r\nEL,EL30\r\nDE,DE1\r\nFR,FR1\r\nFI,FI1\r\n".into(),
         }
     }
 
@@ -4343,6 +4344,8 @@ mod tests {
         let list = raw.wb_countries[1].as_array_mut().unwrap();
         for (c, id) in more {
             list.push(json!({"id": id, "iso2Code": c, "name": format!("Land {c}"), "region": {"value": "Europe & Central Asia"}}));
+            let nuts = if c == "GR" { "EL" } else { c };
+            raw.nuts.push_str(&format!("{nuts},{nuts}0\r\n"));
         }
         raw.wb_countries_zh[1]
             .as_array_mut()
@@ -4969,6 +4972,28 @@ mod tests {
             Scope::Beyond,
             "aggregates are not places"
         );
+    }
+
+    /// n39: a country of the World Bank's "Europe & Central Asia" outside the NUTS table (Belarus, Kazakhstan) is beyond
+    /// Europe, so a Eurostat table that lists it in its geo with no recent rows no longer answers the question; a NUTS
+    /// country stays European whatever its World Bank region (France in it, Malta not).
+    #[test]
+    fn a_country_outside_the_nuts_table_is_beyond_europe() {
+        let mut raw = small_raw();
+        for (c, id, zh) in [("BY", "BLR", "白俄罗斯"), ("KZ", "KAZ", "哈萨克斯坦")] {
+            raw.wb_countries[1].as_array_mut().unwrap().push(
+                json!({"id": id, "iso2Code": c, "name": format!("Land {c}"), "region": {"value": "Europe & Central Asia"}}),
+            );
+            raw.wb_countries_zh[1]
+                .as_array_mut()
+                .unwrap()
+                .push(json!({"iso2Code": c, "name": zh}));
+        }
+        let c = Catalog::from_raw(&raw);
+        assert_eq!(c.scope("白俄罗斯和德国的人口变化").0, Scope::Beyond);
+        assert_eq!(c.scope("哈萨克斯坦人口").0, Scope::Beyond);
+        assert_eq!(c.scope("法国和德国的人口变化").0, Scope::Europe);
+        assert_eq!(c.scope("马耳他和法国人口").0, Scope::Europe);
     }
 
     /// The five questions of review seg3-l5geo-v1: a place name read across a word boundary must not decide the scope.
