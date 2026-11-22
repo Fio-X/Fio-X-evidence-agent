@@ -236,6 +236,12 @@ def ST(key, **bind):
     return segs(T(key, **bind))
 
 
+def note(key, word, **bind):
+    """One short note over a section's picture: a number (the fact `key`, the section's own) and the words that say what it is (a
+    word-table template of the section's own facts and names, never a number of its own)."""
+    return {"num": f"fact:{key}", "text": ST(word, **bind)}
+
+
 def clamp(x):
     return max(0.0, min(1.0, x))
 
@@ -359,6 +365,7 @@ def angle_path(q):
     sturdy = clamp(len(ys) / 15)
     return {"angle": "path", "layer": "target_path", "kicker": T("story.path.kicker"), "title": title, "text": text, "facts": f, "data": data,
             "claim": {"num": "fact:p_best", "head": T("story.path.claim")}, "notes": ["scenario"], "last": "now",
+            "anns": [note("best", "story.note.path.best", y="best"), note("past", "story.note.path.past"), note("recent", "story.note.path.recent")],
             "score": round(size * surprise * sturdy, 4),
             "why": {"size": round(size, 3), "surprise": surprise, "sturdy": round(sturdy, 3)},
             "summary": "even the best single year's rise repeated every year falls short of the target" if short else
@@ -398,6 +405,7 @@ def angle_need(q):
     sturdy = clamp(len(ys) / 15)
     return {"angle": "need", "layer": "gap_axis", "kicker": T("story.need.kicker"), "title": title, "text": text, "facts": f, "data": data,
             "claim": {"num": "fact:need_x", "head": T("story.need.claim")}, "notes": ["scenario"], "last": "now",
+            "anns": [note("need", "story.note.need.need", y="goal"), note("past", "story.note.need.past"), note("need_x", "story.note.need.x")],
             "score": round(size * surprise * sturdy, 4),
             "why": {"size": round(size, 3), "surprise": surprise, "sturdy": round(sturdy, 3), "ratio": round(ratio, 3)},
             "summary": "the pace a year the target needs, against the past average pace"}, None
@@ -452,6 +460,8 @@ def angle_spread(q):
     sturdy = clamp(len(q.panel) / 20) * clamp((int(y1) - int(y0)) / 10)
     key = "lowg" if caught else "topg"
     return {"angle": "spread", "layer": "winners_losers", "kicker": T("story.spread.kicker"), "title": title, "text": text, "facts": f,
+            "anns": [note("lowg", "story.note.spread.low"), note("topg", "story.note.spread.top"),
+                     note(f"d_{up[0].lower()}", "story.note.spread.rise", c=up[0])],
             "data": data, "claim": {"num": f"fact:{key}", "head": T("story.spread.claim_low" if caught else "story.spread.claim_top")}, "notes": [], "members": True, "last": "y1",
             "score": round(size * surprise * sturdy, 4),
             "why": {"size": round(size, 3), "surprise": surprise, "sturdy": round(sturdy, 3), "caught_up": caught},
@@ -479,6 +489,7 @@ def angle_ends(q):
     sturdy = clamp(len(at) / 20)
     return {"angle": "ends", "layer": "pair_bars", "kicker": T("story.ends.kicker"), "title": title, "text": text, "facts": f, "data": data,
             "claim": {"num": "fact:hi_lo", "head": T("story.ends.claim", a=hi, b=lo)}, "notes": [], "members": True, "last": "hi",
+            "anns": [note("hi_lo", "story.note.ends.ratio"), note("hi", "story.note.ends.hi", a=hi), note("lo", "story.note.ends.lo", b=lo)],
             "score": round(size * surprise * sturdy, 4),
             "why": {"size": round(size, 3), "surprise": surprise, "sturdy": round(sturdy, 3), "ratio": round(ratio, 3)},
             "summary": "the highest member over the lowest at the last year"}, None
@@ -569,6 +580,9 @@ def angle_chain(q):
     sturdy = clamp(len(ys) / 10) * clamp(len(items) / 4)
     return {"angle": "chain", "layer": "event_chain", "kicker": T("story.chain.kicker"), "title": title, "text": text, "facts": f,
             "data": data, "claim": {"num": "fact:m_step", "head": T("story.chain.claim")}, "notes": [], "last": "c1_last",
+            "anns": [note("m_step", "story.note.chain.step", y="band_y"),
+                     {"num": "fact:c1_last", "text": SW(items[0]["words"]["measure"]) + ST("story.note.chain.last")},
+                     {"num": f"fact:c{len(items)}_last", "text": SW(items[-1]["words"]["measure"]) + ST("story.note.chain.last")}],
             "score": round(size * surprise * sturdy, 4),
             "why": {"size": round(size, 3), "surprise": round(surprise, 3), "sturdy": round(sturdy, 3), "band": band, "moved": moved},
             "summary": "companion series side by side, the one year they together moved most shaded"}, None
@@ -621,6 +635,7 @@ def angle_rank(q):
             "highlight": q.whole if q.wseries else hi}   # the code of the row the page draws in the accent (story.rank_style reads it)
     return {"angle": "rank", "layer": "rankbar", "kicker": T("story.rank.kicker"), "title": title, "text": text, "facts": f, "data": data,
             "claim": claim, "notes": [], "members": True, "last": key(hi),
+            "anns": ([note("pos", "story.note.rank.pos", w=q.whole)] if q.wseries else []) + [note(key(hi), "story.note.rank.hi", hi=hi), note(key(lo), "story.note.rank.lo", lo=lo)],
             "score": round(size * surprise * sturdy, 4), "why": why, "summary": why_line}, None
 
 
@@ -679,6 +694,7 @@ def angle_members(q):
     return {"angle": "members", "layer": "small_multiples", "kicker": T("story.sm.kicker"), "title": T(tk, **bind),
             "text": T("story.sm.text_ref" if ref else "story.sm.text", w=q.whole, y1=hot), "facts": f, "data": data,
             "claim": {"num": "fact:dhi", "head": T("story.sm.claim")}, "notes": [], "members": True, "last": hot,
+            "anns": [note("dhi", "story.note.members.best", hi=hi), note("dlo", "story.note.members.worst", lo=lo), note(hot, "story.note.members.last", hi=hi)],
             "score": round(size * surprise * sturdy, 4),
             "why": {"size": round(size, 3), "surprise": round(surprise, 3), "sturdy": round(sturdy, 3), "rising": ups, "falling": downs},
             "summary": "one small chart a member on a shared axis: the member that moved most each way"}, None
@@ -717,6 +733,7 @@ def angle_map(q):
     return {"angle": "map", "layer": "member_map", "kicker": T("story.map.kicker"), "title": T(tk, hi=hi, lo=lo, mhi=key(hi), mlo=key(lo), y1=key(hi)),
             "text": T("story.map.text", y1=key(hi)), "facts": f, "data": data,
             "claim": {"num": f"fact:{key(hi)}", "head": T("story.map.claim")}, "notes": [], "members": True, "last": key(hi),
+            "anns": [note(key(hi), "story.note.map.hi", hi=hi), note(key(lo), "story.note.map.lo", lo=lo)],
             "score": round(size * surprise * sturdy, 4),
             "why": {"size": round(size, 3), "surprise": round(surprise, 3), "sturdy": round(sturdy, 3), "gradient": round(gradient, 3), "higher": best[1]},
             "summary": "the members' values on a map, filled by value: where the high ones lie"}, None
@@ -820,7 +837,7 @@ def compose(r):
             if k in facts and facts[k] != v:
                 raise Refused(f"findings: the fact {k} is declared two ways by two findings")
             facts[k] = v
-        leaves[c["layer"]] = c["data"]
+        leaves[c["layer"]] = {**c["data"], "notes": c["anns"]} if c.get("anns") else c["data"]  # the notes are the story's (story.py reads them; the leaf ignores them)
     first = chosen[0]
     leaves[THESIS] = {"answer": segs(first["title"]),
                       "claims": [{"num": c["claim"]["num"], "head": segs(c["claim"]["head"]), "section": segs(c["kicker"])}

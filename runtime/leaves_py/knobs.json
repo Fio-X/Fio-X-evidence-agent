@@ -2250,6 +2250,39 @@
       "off"
      ],
      "what": "two narrow pictures in a row"
+    },
+    {
+     "name": "notes",
+     "default": 2,
+     "min": 0,
+     "max": 3,
+     "step": 1,
+     "what": "short notes beside a chart's words: a bold number and what it is, a leader towards the picture"
+    },
+    {
+     "name": "note_size",
+     "default": 14,
+     "min": 12,
+     "max": 16,
+     "step": 2,
+     "what": "a note's words in px (its number 2 px larger)"
+    },
+    {
+     "name": "lead",
+     "default": 28,
+     "min": 12,
+     "max": 80,
+     "step": 4,
+     "what": "a note's leader towards the picture, in px"
+    },
+    {
+     "name": "legend",
+     "default": "on",
+     "options": [
+      "on",
+      "off"
+     ],
+     "what": "the 'how to read this page' block under the thesis"
     }
    ]
   },

@@ -146,7 +146,7 @@ class Story(unittest.TestCase):
 
     def test_sections_in_the_requests_order(self):
         ids = re.findall(r'<section class="sec" data-id="([a-z_]+)"', self.html)
-        self.assertEqual(ids, ["thesis", "axis", "chain", "path", "shift", "pairs", "notes"])
+        self.assertEqual(ids, ["thesis", "legend", "axis", "chain", "path", "shift", "pairs", "notes"])
         self.assertEqual(len(re.findall(r"<h2 data-section=", self.html)), 4)
 
     def test_each_chart_is_a_module_named_and_described(self):
