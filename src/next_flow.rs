@@ -266,6 +266,9 @@ pub enum Ask {
         members: Vec<String>,
         /// The `members` the question does not write.
         unasked: Vec<String>,
+        /// The question's own terms with a numeral that name no number (Drafts::terms): the fields and the names may keep
+        /// them as written, and the ask says so (terms_rule); the checks are as for any other wording.
+        terms: Vec<String>,
     },
     /// The image review of the published page's screenshot: each of VISION_QUESTIONS answered yes or no, with a one-line
     /// reason for a no. Advice only: the answer is recorded, it never stops a run and never verifies a page.
@@ -885,16 +888,17 @@ impl Ask {
                 titles,
                 members,
                 unasked,
+                terms,
                 ..
             } => {
                 json!({"type": "object", "additionalProperties": false, "required": ["step", "text", "names"],
                 "properties": {"step": step,
                     "text": {"type": "object", "additionalProperties": false,
                         "properties": fields.keys().map(|k| (k.clone(), json!({"type": "string"}))).collect::<Map<_, _>>(),
-                        "description": format!("field number -> revised wording; leave a field out to keep the draft; keep every {{placeholder}}; {}; {NUMBER_WORD_RULE}{}{}{}{}{}{}", typed_rule(numbers), period_rule(periods), change_rule(changes), level_rule(levels), scope_rule(scoped), title_rule(titles), member_rule(unasked, titles, members))},
+                        "description": format!("field number -> revised wording; leave a field out to keep the draft; keep every {{placeholder}}; {}; {NUMBER_WORD_RULE}{}{}{}{}{}{}{}", typed_rule(numbers), period_rule(periods), change_rule(changes), level_rule(levels), scope_rule(scoped), title_rule(titles), member_rule(unasked, titles, members), terms_rule(terms))},
                     "names": {"type": "object", "additionalProperties": false, "required": slots,
                         "properties": slots.iter().map(|k| (k.clone(), json!({"type": "string"}))).collect::<Map<_, _>>(),
-                        "description": format!("untranslated slot number -> Chinese name, at most {NAME_MAX_CHARS} characters, no number; {NUMBER_WORD_RULE}")}}})
+                        "description": format!("untranslated slot number -> Chinese name, at most {NAME_MAX_CHARS} characters, no number; {NUMBER_WORD_RULE}{}", terms_rule(terms))}}})
             }
             Ask::Vision => {
                 json!({"type": "object", "additionalProperties": false, "required": ["step", "answers"],
@@ -1331,6 +1335,7 @@ impl Ask {
                 places,
                 members,
                 unasked,
+                ..
             } => {
                 let text = strings(&map["text"])
                     .ok_or_else(|| self.refuse("text must map field numbers to wording"))?;
@@ -2356,6 +2361,41 @@ pub fn finding_word(revised: &str, draft: &str) -> Option<&'static str> {
 }
 
 /// MEMBER_RULE with the names it holds for, and TITLE_FINDING_RULE with the title field; empty when the ask knows no names.
+/// The question's own terms that hold a numeral and name no number (Ask::Text terms), said so the model keeps them rather than
+/// drop them for the number rules (dev n15 五岁以下, e11 PM2.5, n10 每百人: the names lost the term the question asked);
+/// empty when the question writes none.
+fn terms_rule(terms: &[String]) -> String {
+    if terms.is_empty() {
+        return String::new();
+    }
+    format!(
+        "; the question's own terms {} name no number: keep them as written where they belong",
+        terms.join(", ")
+    )
+}
+
+/// The runs of `text` that number_free_text blanks (an age band, a rate's base, a coded name such as PM2.5), each once, in
+/// the order the text writes them: the terms with a numeral that name no number.
+pub fn number_free_terms(text: &str) -> Vec<String> {
+    let blank: Vec<char> = number_free_text(text).chars().collect();
+    let mut out: Vec<String> = Vec::new();
+    let mut run = String::new();
+    for (c, b) in text.chars().zip(blank) {
+        if b == ' ' && c != ' ' {
+            run.push(c);
+        } else if !run.is_empty() {
+            let t = std::mem::take(&mut run);
+            if !out.contains(&t) {
+                out.push(t);
+            }
+        }
+    }
+    if !run.is_empty() && !out.contains(&run) {
+        out.push(run);
+    }
+    out
+}
+
 fn member_rule(unasked: &[String], titles: &[String], members: &[String]) -> String {
     let mut rule = String::new();
     if !unasked.is_empty() {
@@ -7300,6 +7340,7 @@ mod tests {
             places: None,
             members: Vec::new(),
             unasked: Vec::new(),
+            terms: Vec::new(),
         }
     }
 
@@ -8117,6 +8158,7 @@ mod tests {
             places: None,
             members: Vec::new(),
             unasked: Vec::new(),
+            terms: Vec::new(),
         };
         let answer = |t: &str| json!({"step": "text", "text": {"1": t}, "names": {}});
         let monthly = ask(&["2026-08"]);
@@ -8177,6 +8219,7 @@ mod tests {
             places: None,
             members: Vec::new(),
             unasked: Vec::new(),
+            terms: Vec::new(),
         };
         let answer = |n: &str, t: &str| json!({"step": "text", "text": {n: t}, "names": {}});
         let refused = ask(&["1"]).check(&answer("1", "哪国最高")).unwrap_err();
@@ -8250,6 +8293,7 @@ mod tests {
             places: None,
             members: Vec::new(),
             unasked: Vec::new(),
+            terms: Vec::new(),
         };
         let answer = |t: &str| json!({"step": "text", "text": {"1": t}, "names": {}});
         for (title, word) in [
@@ -8353,6 +8397,7 @@ mod tests {
             places: None,
             members: Vec::new(),
             unasked: Vec::new(),
+            terms: Vec::new(),
         };
         let answer = |n: &str, t: &str| json!({"step": "text", "text": {n: t}, "names": {}});
         let both = ask(&["1", "2"]);
@@ -8425,6 +8470,7 @@ mod tests {
             places: None,
             members: Vec::new(),
             unasked: Vec::new(),
+            terms: Vec::new(),
         };
         let answer = |n: &str, t: &str| json!({"step": "text", "text": {n: t}, "names": {}});
         let titled = ask(&["1"], &[], &[]);
@@ -8721,6 +8767,60 @@ mod tests {
         }
     }
 
+    /// Dev n15 (五岁以下), e11 (PM2.5) and n10 (每百人), rounds 17-19: the stand-ins left the term the question asked out of the
+    /// chart names, reading "no number" as barring it. The question's own number-free terms are named on the text ask (the
+    /// fields' and the names' descriptions), and a name that keeps one passes the checks as before; a question with none
+    /// adds nothing.
+    #[test]
+    fn the_text_ask_names_the_question_s_own_number_free_terms() {
+        assert_eq!(
+            number_free_terms("2023 年各国五岁以下儿童死亡率排名"),
+            vec!["五岁以下".to_string()]
+        );
+        assert_eq!(
+            number_free_terms("2010 年以来，中国、印度、印尼、泰国的 PM2.5 年均浓度各降了多少？"),
+            vec!["PM2.5".to_string()]
+        );
+        assert_eq!(
+            number_free_terms("二十国集团里，2023 年每百人移动电话签约数最高的五个是谁？"),
+            vec!["每百人".to_string()]
+        );
+        assert!(number_free_terms("欧盟各国失业率最新排名").is_empty());
+        let ask = |terms: Vec<String>| Ask::Text {
+            fields: BTreeMap::from([("1".to_string(), "{first.name}最高".to_string())]),
+            slots: vec!["s1".to_string()],
+            numbers: Vec::new(),
+            periods: Vec::new(),
+            changes: Vec::new(),
+            levels: Vec::new(),
+            scoped: Vec::new(),
+            titles: Vec::new(),
+            mark: String::new(),
+            places: None,
+            members: Vec::new(),
+            unasked: Vec::new(),
+            terms,
+        };
+        let with = ask(vec!["五岁以下".to_string()]);
+        let schema = with.schema();
+        for key in ["text", "names"] {
+            let said = schema["properties"][key]["description"].as_str().unwrap();
+            assert!(
+                said.contains("the question's own terms 五岁以下 name no number"),
+                "{key}: {said}"
+            );
+        }
+        let without = ask(Vec::new()).schema();
+        assert!(!without["properties"]["names"]["description"]
+            .as_str()
+            .unwrap()
+            .contains("own terms"));
+        // the checks are as before: the term passes in a name, a bare age does not
+        let named = |n: &str| json!({"step": "text", "text": {}, "names": {"s1": n}});
+        assert!(with.check(&named("五岁以下儿童死亡率")).is_ok());
+        assert!(with.check(&named("五岁儿童死亡率")).is_err());
+    }
+
     /// User 11-07: a count of places (三国, 两国, 四个经济体, 5个国家) is a number, allowed on the text step only when it is the
     /// number of places the page draws; at any other count, or an unknown one, it is refused as before, and a numeral that
     /// counts no place stays a number.
@@ -8739,6 +8839,7 @@ mod tests {
             places,
             members: Vec::new(),
             unasked: Vec::new(),
+            terms: Vec::new(),
         };
         let said = |text: &str| json!({"step": "text", "text": {"1": text}, "names": {}});
         for (text, n) in [
@@ -8810,6 +8911,7 @@ mod tests {
             places: None,
             members: Vec::new(),
             unasked: Vec::new(),
+            terms: Vec::new(),
         };
         let good = json!({"step": "text", "text": json!({"1": "{first.name}居首"}).to_string(), "names": json!({"s1": "占比"}).to_string()});
         assert_eq!(text.decode(&good).1, vec!["text", "names"]);
@@ -14428,6 +14530,7 @@ mod tests {
                 .filter(|m| !question.contains(**m))
                 .map(|m| m.to_string())
                 .collect(),
+            terms: Vec::new(),
         };
         let answer = |n: &str, t: &str| json!({"step": "text", "text": {n: t}, "names": {}});
         // the composition (q3): parts and places, none of them written by the question

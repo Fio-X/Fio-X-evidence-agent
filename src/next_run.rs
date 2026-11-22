@@ -5062,6 +5062,7 @@ pub async fn reword(
         places,
         members,
         unasked,
+        terms,
         ..
     } = &ask
     else {
@@ -5125,6 +5126,7 @@ pub async fn reword(
                 places: *places,
                 members: members.clone(),
                 unasked: unasked.clone(),
+                terms: terms.clone(),
             };
             let mut kept = BTreeMap::new();
             let mut given = Map::new();
@@ -5149,6 +5151,7 @@ pub async fn reword(
                         places: None,
                         members: Vec::new(),
                         unasked: Vec::new(),
+                        terms: Vec::new(),
                     };
                     let alone = json!({"step": "text", "text": {}, "names": {id.as_str(): name}});
                     if !given.contains_key(id)
@@ -8146,6 +8149,7 @@ mod tests {
             places_drawn: None,
             members: Vec::new(),
             unasked: Vec::new(),
+            terms: Vec::new(),
         }
     }
 

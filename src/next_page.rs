@@ -142,6 +142,9 @@ pub struct Drafts {
     /// reworded title that names one with a standing word (Ask::Text members). Empty when the run does not know them.
     pub members: Vec<String>,
     pub unasked: Vec<String>,
+    /// The terms the question writes with a numeral that name no number (next_flow::number_free_text: an age band, a rate's
+    /// base, a coded name such as PM2.5): the text step tells the model it may keep them as written (Ask::Text terms).
+    pub terms: Vec<String>,
 }
 
 /// The one placeholder of a claim template that holds its number: not a time column, not the chart's category column.
@@ -260,6 +263,7 @@ pub fn draft_for(
         places_drawn: None,
         members: Vec::new(),
         unasked: Vec::new(),
+        terms: Vec::new(),
     }
 }
 
@@ -367,6 +371,7 @@ impl Drafts {
             .cloned()
             .collect();
         self.members = names.into_iter().collect();
+        self.terms = crate::next_flow::number_free_terms(question);
         self
     }
 
@@ -432,6 +437,7 @@ impl Drafts {
             places: self.places_drawn,
             members: self.members.clone(),
             unasked: self.unasked.clone(),
+            terms: self.terms.clone(),
         }
     }
 
