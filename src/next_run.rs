@@ -2107,29 +2107,41 @@ fn ring_picks(
     })
 }
 
-/// The one ranked place whose name the question writes, none when it writes none or two (a name inside a longer one of
-/// them, 印度 in 印度尼西亚, is not the question's own).
+/// The one ranked place among the countries the knowledge group reads in the question (Place::Country, an iso2 code),
+/// compared by code, never by a name two name tables or a word like 发展中国家 may spell alike: a Eurostat table's code is
+/// the iso code turned into Eurostat's where they differ (next_params::ESTAT_ISO: GR is EL), a World Bank table's the code
+/// its place list gives that iso2. None when none of them or more than one is a place the page ranks.
 fn place_asked_about(
-    question: &str,
+    places: &[crate::l5geo::Place],
     ranked: &[String],
-    catalogue: &dyn Catalogue,
+    table: Option<&crate::l5geo::TableMeta>,
 ) -> Option<String> {
-    let names = leaf_labels(&[], ranked, catalogue).ok()?;
-    let hits: Vec<(&String, &String)> = ranked
-        .iter()
-        .filter_map(|c| names.get(c).map(|n| (c, n)))
-        .filter(|(_, n)| !n.is_empty() && question.contains(n.as_str()))
-        .collect();
-    let own: Vec<&(&String, &String)> = hits
-        .iter()
-        .filter(|(_, n)| {
-            !hits
+    let mut hit: Vec<&String> = Vec::new();
+    for place in places {
+        let crate::l5geo::Place::Country(iso) = place else {
+            continue;
+        };
+        let estat = next_params::ESTAT_ISO
+            .iter()
+            .find(|(_, i)| *i == iso.as_str())
+            .map_or(iso.as_str(), |(e, _)| *e);
+        let worldbank = table.filter(|t| t.worldbank).into_iter().flat_map(|t| {
+            t.places
                 .iter()
-                .any(|(_, m)| m.len() > n.len() && m.contains(n.as_str()))
-        })
-        .collect();
-    match own.as_slice() {
-        [(code, _)] => Some((*code).clone()),
+                .filter(|(i, _)| i == iso)
+                .map(|(_, code)| code.as_str())
+        });
+        let code = std::iter::once(estat)
+            .chain(worldbank)
+            .find_map(|c| ranked.iter().find(|r| r.as_str() == c));
+        if let Some(c) = code {
+            if !hit.contains(&c) {
+                hit.push(c);
+            }
+        }
+    }
+    match hit.as_slice() {
+        [one] => Some((*one).clone()),
         _ => None,
     }
 }
@@ -3466,7 +3478,9 @@ fn recipe_request(
         && recipe.picks.iter().any(|r| r == "ranked")
         && catalogue.asks_position(question)
     {
-        if let Some(code) = place_asked_about(question, &picks.ranked, catalogue) {
+        if let Some(code) =
+            place_asked_about(places, &picks.ranked, catalogue.table(&main.id).as_ref())
+        {
             picks.focus = code;
         }
     }
@@ -14813,7 +14827,8 @@ mod tests {
     /// leader named stays the leader (the level finding).
     #[test]
     fn a_question_asking_where_a_named_place_stands_makes_it_the_focus() {
-        let brics = ["BR", "RU", "IN", "CN", "ZA"];
+        // places the knowledge group names by their Chinese names (the l5geo test world's), read by code
+        let brics = ["CN", "IN", "ZA", "JP", "US"];
         for (name, chart) in [
             ("column", "horizontal_bar"),
             ("ranked_bars", "horizontal_bar"),
@@ -14823,7 +14838,7 @@ mod tests {
                 let (fill, _) = group_request_by(q, main, json!([]), (name, chart));
                 fill.unwrap_or_else(|e| panic!("{name} {q}: {e:?}"))["page_in"]["picks"].clone()
             };
-            let plain = ask("2025 年金砖国家失业率谁最高？");
+            let plain = ask("2025 年各国失业率谁最高？");
             assert!(plain.get("focus").is_none(), "{name}: {plain}");
             let ranked: Vec<String> = plain["ranked"]
                 .as_array()
@@ -14831,14 +14846,17 @@ mod tests {
                 .iter()
                 .map(|c| c.as_str().unwrap().to_string())
                 .collect();
-            let zh =
-                |code: &str| Hubs.zh_names("country", &[code.to_string()]).unwrap()[code].clone();
+            let zh = |code: &str| {
+                ["中国", "印度", "南非", "日本", "美国"]
+                    [brics.iter().position(|c| *c == code).unwrap()]
+                .to_string()
+            };
             let (leader, third) = (&ranked[0], &ranked[2]);
             // a place that is not the leader: the focus
-            let at = ask(&format!("2025 年金砖国家失业率，{}排第几？", zh(third)));
+            let at = ask(&format!("2025 年各国失业率，{}排第几？", zh(third)));
             assert_eq!(at["focus"], json!(third), "{name}");
             // its page is drawn and published, passes the whole-page check, and says the place the focus holds
-            let q = format!("2025 年金砖国家失业率，{}排第几？", zh(third));
+            let q = format!("2025 年各国失业率，{}排第几？", zh(third));
             let (fill, _) =
                 group_request_by(&q, group_rows(&brics, &["2025"]), json!([]), (name, chart));
             let fill = fill.unwrap_or_else(|e| panic!("{name}: {e:?}"));
@@ -14859,17 +14877,20 @@ mod tests {
                 "{name}: the page holds the place's position fact"
             );
             // the leader named: the focus is the leader
-            let at = ask(&format!("2025 年金砖国家失业率，{}排第几？", zh(leader)));
+            let at = ask(&format!("2025 年各国失业率，{}排第几？", zh(leader)));
             assert_eq!(at["focus"], json!(leader), "{name}");
+            // a word that holds a country's name (发展中国家 holds 中国) is no place: the named one is the focus
+            let word = ask(&format!("2025 年发展中国家的失业率，{}排第几？", zh(third)));
+            assert_eq!(word["focus"], json!(third), "{name}: {word}");
             // two places named: none to say the place of
             let two = ask(&format!(
-                "2025 年金砖国家失业率，{}和{}各排第几？",
+                "2025 年各国失业率，{}和{}各排第几？",
                 zh(&ranked[1]),
                 zh(third)
             ));
             assert!(two.get("focus").is_none(), "{name}: {two}");
             // the same place named in a question that does not ask a place: none
-            let other = ask(&format!("2025 年金砖国家失业率，{}怎么样？", zh(third)));
+            let other = ask(&format!("2025 年各国失业率，{}怎么样？", zh(third)));
             assert!(other.get("focus").is_none(), "{name}: {other}");
         }
     }
@@ -14915,7 +14936,7 @@ mod tests {
                 end_year: None,
                 places: WB_RANKED
                     .iter()
-                    .map(|(c, _)| (c[..2].to_string(), c.to_string()))
+                    .map(|(c, i, _)| (i.to_string(), c.to_string()))
                     .collect(),
                 place_members: Vec::new(),
                 freqs: Vec::new(),
@@ -14935,15 +14956,15 @@ mod tests {
     }
 
     /// The most populous economies at 2024 as the World Bank gives them (iso3 codes), largest first.
-    const WB_RANKED: [(&str, &str); 8] = [
-        ("IND", "1450935791"),
-        ("CHN", "1408975000"),
-        ("USA", "340003797"),
-        ("IDN", "283487931"),
-        ("PAK", "251269164"),
-        ("NGA", "232679478"),
-        ("BRA", "211998573"),
-        ("BGD", "173562364"),
+    const WB_RANKED: [(&str, &str, &str); 8] = [
+        ("IND", "IN", "1450935791"),
+        ("CHN", "CN", "1408975000"),
+        ("USA", "US", "340003797"),
+        ("IDN", "ID", "283487931"),
+        ("PAK", "PK", "251269164"),
+        ("NGA", "NG", "232679478"),
+        ("BRA", "BR", "211998573"),
+        ("BGD", "BD", "173562364"),
     ];
 
     /// The same ask on a World Bank page (iso3 codes, a World Bank table's shape): the named economy that is not the
@@ -14954,12 +14975,13 @@ mod tests {
         let id = "SP.POP.TOTL@2";
         let rows: Vec<Value> = WB_RANKED
             .iter()
-            .map(|(c, v)| {
+            .map(|(c, _, v)| {
                 json!({"src": format!("series:{id}/{c}:2024:value"), "table": id,
                     "dims": {"country": c}, "time": "2024", "value": v})
             })
             .collect();
-        let ask = |q: &str| {
+        let country = |iso: &str| crate::l5geo::Place::Country(iso.to_string());
+        let ask = |q: &str, named: &[&str]| {
             let run = tempfile::tempdir().unwrap();
             std::fs::create_dir_all(run.path().join("shadow")).unwrap();
             std::fs::write(run.path().join("claims.jsonl"), "").unwrap();
@@ -14983,7 +15005,8 @@ mod tests {
             };
             let calls = std::sync::Mutex::new(Vec::new());
             let cat = WbRanked(rows.clone());
-            let places = cat.places(q);
+            // the countries the knowledge group reads in the question, by iso2 code
+            let places: Vec<crate::l5geo::Place> = named.iter().map(|i| country(i)).collect();
             recipe_request(
                 run.path(),
                 &[prepared],
@@ -14995,17 +15018,31 @@ mod tests {
             )
             .unwrap_or_else(|e| panic!("{q}: {e:?}"))
         };
-        let plain = ask("2024 年人口最多的十个国家是哪些？");
+        let plain = ask("2024 年人口最多的十个国家是哪些？", &[]);
         assert!(plain["page_in"]["picks"].get("focus").is_none());
         assert_eq!(plain["page_in"]["picks"]["ranked"][0], json!("IND"));
-        let nga = ask("2024 年人口最多的十个国家里，名NGA排第几？");
+        let nga = ask("2024 年人口最多的十个国家里，尼日利亚排第几？", &["NG"]);
         assert_eq!(nga["page_in"]["picks"]["focus"], json!("NGA"));
-        let lead = ask("2024 年人口最多的十个国家里，名IND排第几？");
+        let lead = ask("2024 年人口最多的十个国家里，印度排第几？", &["IN"]);
         assert_eq!(lead["page_in"]["picks"]["focus"], json!("IND"));
-        let two = ask("2024 年人口最多的十个国家里，名NGA和名BRA各排第几？");
+        let two = ask(
+            "2024 年人口最多的十个国家里，尼日利亚和巴西各排第几？",
+            &["NG", "BR"],
+        );
         assert!(two["page_in"]["picks"].get("focus").is_none());
-        let asked_not = ask("2024 年人口最多的十个国家里，名NGA怎么样？");
+        let asked_not = ask("2024 年人口最多的十个国家里，尼日利亚怎么样？", &["NG"]);
         assert!(asked_not["page_in"]["picks"].get("focus").is_none());
+        // a name inside another word (发展中国家 holds 中国) is no place the knowledge group read: only India is named
+        let word = ask("2024 年发展中国家里，印度排第几？", &["IN"]);
+        assert_eq!(word["page_in"]["picks"]["focus"], json!("IND"));
+        // a named country the page does not rank (Japan) is none; one ranked and one not is the ranked one
+        let off = ask("2024 年人口最多的十个国家里，日本排第几？", &["JP"]);
+        assert!(off["page_in"]["picks"].get("focus").is_none());
+        let mixed = ask(
+            "2024 年人口最多的十个国家里，日本和尼日利亚各排第几？",
+            &["JP", "NG"],
+        );
+        assert_eq!(mixed["page_in"]["picks"]["focus"], json!("NGA"));
         // its page is drawn and published, passes the whole-page check, and holds the place's position fact (6th)
         let (html, ledger, refs, spec, rows_back, facts) =
             group_published_by(nga, "column", "wb focus");
