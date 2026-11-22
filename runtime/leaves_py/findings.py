@@ -609,6 +609,65 @@ def angle_rank(q):
 ANGLES = [angle_path, angle_need, angle_spread, angle_ends, angle_rank, angle_chain]
 
 
+# ---------------------------------------------------------------- the header's big numbers
+
+BIG = "bignums"
+
+
+def header(q):
+    """The three big numbers above the thesis, as ({fact key: query}, [bignums item]) or None when the rows give fewer than two.
+    Each is a fact this declares (keys b_*, and goal where the page runs to a target), each label a word-table key whose fills
+    are a place's code or a ledger entry, so no number and no word is written here:
+      with a whole and a target the whole can reach: the whole's last value, what is left to the target, and the value the
+        best single year's pace reaches at the target year (the path angle's three numbers);
+      with a whole and no such target: its last value, its change from the first to the last year (the larger value less the
+        smaller, the word saying rose or fell), and the highest member's value over the lowest's at the last year they share;
+      with no whole: the highest member's value, the lowest member's, and the first over the second."""
+    items, f = [], {}
+    when = lambda key: {"src": f"fact:{key}.t.y"}
+    if q.wseries and len(run_years(q.wseries)) >= 2:
+        ys = run_years(q.wseries)
+        first, last = ys[0], ys[-1]
+        before, now = q.wseries[first][0], q.wseries[last][0]
+        f["b_now"] = q.value(q.whole, last)
+        items.append({"fact": "b_now", "label": {"word": "story.big.now", "name": q.whole, "year": when("b_now")}})
+        g, best = q.goal(), 0
+        if g and len(ys) >= MIN_YEARS and int(g[1]) > int(last) and g[0] > now:
+            best = paces(q.wseries)[3]
+        if best > 0:
+            f["goal"] = g[2]
+            f["b_gap"] = {"op": "minus", "a": "goal", "b": "b_now", "fmt": q.fmts["value"]}
+            f["b_best"] = {"op": "step_max", "table": q.table, "filter": q.filt(q.whole), "from": first, "to": last, "fmt": q.fmts["value"]}
+            f["b_end"] = {"op": "line_at", "start": "b_now", "rate": "b_best", "at": g[1], "fmt": q.fmts["value"]}
+            items.append({"fact": "b_gap", "label": {"word": "story.big.gap", "year": when("goal")}})
+            items.append({"fact": "b_end", "label": {"word": "story.big.best", "year": when("goal")}})
+        else:
+            f["b_first"] = q.value(q.whole, first)
+            up = now >= before
+            f["b_change"] = {"op": "minus", "a": "b_now" if up else "b_first", "b": "b_first" if up else "b_now", "fmt": q.fmts["value"]}
+            items.append({"fact": "b_change", "label": {"word": "story.big.rose" if up else "story.big.fell",
+                                                        "year": when("b_first"), "to": when("b_now")}})
+    ends = common_ends(q)
+    if len(items) < 3 and ends:
+        y1 = ends[1]
+        at = {c: s_[y1][0] for c, s_ in q.panel.items() if y1 in s_}
+        if len(at) >= 2:
+            hi = max(at, key=lambda c: (at[c], c)); lo = min(at, key=lambda c: (at[c], c))
+            f["b_hi"], f["b_lo"] = q.value(hi, y1), q.value(lo, y1)
+            if not q.wseries:
+                items.append({"fact": "b_hi", "label": {"word": "story.big.hi", "name": hi, "year": when("b_hi")}})
+                items.append({"fact": "b_lo", "label": {"word": "story.big.lo", "name": lo, "year": when("b_lo")}})
+            if at[lo] > 0 and at[hi] > at[lo]:
+                f["b_ratio"] = {"op": "times", "a": "b_hi", "b": "b_lo", "fmt": q.fmts["times"]}
+                items.append({"fact": "b_ratio", "label": {"word": "story.big.ratio", "name": hi}})
+    items = items[:3]
+    if len(items) < 2: return None
+    # only the facts an item prints and those they read stay declared
+    reads = {"b_gap": ["goal", "b_now"], "b_end": ["b_now", "b_best", "goal"], "b_change": ["b_now", "b_first"], "b_ratio": ["b_hi", "b_lo"]}
+    keep = {k for x in items for k in [x["fact"], *reads.get(x["fact"], [])]}
+    return {k: v for k, v in f.items() if k in keep}, items
+
+
 def candidates(r):
     q = Req(r)
     out, dropped = [], []
@@ -650,6 +709,13 @@ def compose(r):
     leaves[THESIS] = {"answer": segs(first["title"]),
                       "claims": [{"num": c["claim"]["num"], "head": segs(c["claim"]["head"]), "section": segs(c["kicker"])}
                                  for c in chosen]}
+    big = header(q)
+    if big:  # the header's three numbers, a row over the thesis
+        for k, v in big[0].items():
+            if k in facts and facts[k] != v: raise Refused(f"findings: the fact {k} is declared two ways by two findings")
+            facts[k] = v
+        leaves[BIG] = {"bignums": big[1]}
+        sections.append({"id": "bignums", "layer": BIG})
     sections.append({"id": "thesis", "layer": THESIS})
     for c in chosen:
         sections.append({"id": c["id"], "layer": c["layer"], "kicker": wording(c["kicker"]), "title": wording(c["title"]),

@@ -2686,7 +2686,8 @@
    "winners_losers",
    "pair_bars",
    "rankbar",
-   "risk_notes"
+   "risk_notes",
+   "bignums"
   ],
   "scmp": [
    "map",
@@ -2812,6 +2813,7 @@
   {
    "name": "page_story",
    "layers": [
+    "bignums",
     "thesis_claims",
     "gap_axis",
     "event_chain",

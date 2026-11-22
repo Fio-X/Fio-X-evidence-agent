@@ -143,5 +143,13 @@
 "story.rank.title_top": "{n:hi}最高，{f:rhi}；{n:lo}最低，{f:rlo}",
 "story.rank.text_top": "{y:y}，各方的值从高到低排开，右边一列是各方与最高的{n:hi}的差。",
 "story.rank.claim_top": "{n:hi}的值最高",
-"story.rank.gap_top_head": "与最高的差"
+"story.rank.gap_top_head": "与最高的差",
+"story.big.now": "{year} 年{name}的值",
+"story.big.gap": "离 {year} 年的目标还差",
+"story.big.best": "照最快一年的速度，{year} 年能到",
+"story.big.rose": "{year} 至 {to} 年涨了",
+"story.big.fell": "{year} 至 {to} 年降了",
+"story.big.ratio": "最高的{name}是最低的几倍",
+"story.big.hi": "{year} 年最高：{name}",
+"story.big.lo": "{year} 年最低：{name}"
 }
