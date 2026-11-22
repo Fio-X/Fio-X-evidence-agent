@@ -73,6 +73,13 @@ pub struct Target {
     pub value: String,
     pub unit: String,
     pub unit_label: String,
+    /// Who sets the target, as a page footer names a publisher (欧盟), no digit in it.
+    pub publisher_zh: String,
+    /// The act and its clause as a footer prints them: the word for the act, a space, then `source_ref`.
+    pub source_zh: String,
+    /// The act and clause numbers, the one place a digit stands in the footer line (they are what the leaf footer marks as a
+    /// reference); it ends `source_zh`.
+    pub source_ref: String,
     #[serde(rename = "type")]
     pub kind: Kind,
     pub source: Source,
@@ -97,6 +104,14 @@ pub fn targets() -> Result<&'static [Target], String> {
     .map_err(|e| e.clone())
 }
 
+impl Target {
+    /// The line a page footer prints for this target's source: the publisher, then the act and its clause. It ends with
+    /// `source_ref`, so a footer that is given `source_ref` as a reference id (as a table id is) marks every digit of it.
+    pub fn source_line(&self) -> String {
+        format!("{} {}", self.publisher_zh, self.source_zh)
+    }
+}
+
 /// The target rows of the registry for `main`, one for each target that has a slice on that table; empty for a main no
 /// target is read against. Err when the registry fails its checks (a target is never offered from a registry that does).
 pub fn target_rows(main: &str) -> Result<Vec<Value>, String> {
@@ -116,6 +131,10 @@ fn rows_of(targets: &[Target], main: &str) -> Vec<Value> {
                 // The slice of the main the target is set on (review 11-22): a main fixed at any other code of these
                 // dimensions, or holding more than one, measures something else and takes no target (has_target).
                 "slice": slice.dims,
+                // What the footer prints for the target's source, and the part of it that holds the digits (the reference
+                // the footer marks, as it marks a table id).
+                "source_line": t.source_line(),
+                "source_ref": t.source_ref,
                 "time": t.year.to_string(),
                 "value": t.value,
             }));
@@ -196,6 +215,40 @@ pub fn verify_entry(t: &Target, text: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// The digit runs of a text, each as the digits it is made of.
+fn digit_runs(text: &str) -> Vec<String> {
+    text.split(|c: char| !c.is_numeric())
+        .filter(|r| !r.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+/// Checks the source a footer prints for an entry: the publisher and the word for the act carry no digit, the line ends with
+/// `source_ref` (the one reference the footer marks, so a character after it must not run into it), the reference neither
+/// begins nor ends with a space, and every number in it is one the entry's own act or clause names (source.act, source.clause).
+pub fn verify_source_line(t: &Target) -> Result<(), String> {
+    let at = |why: &str| format!("target {}: {why}", t.id);
+    let line = t.source_line();
+    let r = t.source_ref.as_str();
+    if t.publisher_zh.trim().is_empty() || t.source_zh.trim().is_empty() || r.is_empty() {
+        return Err(at("the source line is not given"));
+    }
+    if r.trim() != r || !line.ends_with(r) {
+        return Err(at("the source line does not end with its reference"));
+    }
+    let wording = line.strip_suffix(r).unwrap_or_default();
+    if wording.chars().any(char::is_numeric) {
+        return Err(at("a digit stands outside the source reference"));
+    }
+    let named = digit_runs(&format!("{} {}", t.source.act, t.source.clause));
+    if let Some(run) = digit_runs(r).into_iter().find(|run| !named.contains(run)) {
+        return Err(at(&format!(
+            "the source reference holds {run}, which the entry's act and clause do not name"
+        )));
+    }
+    Ok(())
+}
+
 /// Checks every entry: unique ids, a place and a slice, the excerpt there and its hash the entry's, and the sentence in it.
 pub fn check_registry(
     targets: &[Target],
@@ -232,6 +285,7 @@ pub fn check_registry(
                 t.id
             ));
         }
+        verify_source_line(t)?;
         verify_entry(t, text)?;
     }
     Ok(())
@@ -249,8 +303,9 @@ mod tests {
             "id": "t", "title": "T",
             "slices": [{"dataset": "nrg_ind_ren", "dims": {"freq": "A", "nrg_bal": "REN", "unit": "PC"}}],
             "geo": "EU27_2020", "year": 2030, "value": "42.5", "unit": "PC", "unit_label": "%", "type": "at_least",
+            "publisher_zh": "欧盟", "source_zh": "指令 (EU) 2018/2001 第 3 条第 1 款", "source_ref": "(EU) 2018/2001 第 3 条第 1 款",
             "source": {
-                "act": "A", "clause": "C", "url": "u", "fetched_at": "f", "document_sha256": "d",
+                "act": "Directive (EU) 2018/2001", "clause": "Article 3(1)", "url": "u", "fetched_at": "f", "document_sha256": "d",
                 "excerpt": "act.txt", "excerpt_sha256": "h",
                 "quote": "Member States shall collectively ensure that the share of energy from renewable sources in the Union’s gross final consumption of energy in 2030 is at least 42,5 %.",
                 "value_phrase": "at least 42,5 %"
@@ -380,11 +435,49 @@ mod tests {
                 "src": "target:t", "main": "nrg_ind_ren", "table": "target_nrg_ind_ren",
                 "dims": {"geo": "EU27_2020"},
                 "slice": {"freq": "A", "nrg_bal": "REN", "unit": "PC"},
+                "source_line": "欧盟 指令 (EU) 2018/2001 第 3 条第 1 款",
+                "source_ref": "(EU) 2018/2001 第 3 条第 1 款",
                 "time": "2030", "value": "42.5"
             })]
         );
         // A main with no slice of the target gets nothing; two slices give two rows only for their own table.
         assert!(rows_of(std::slice::from_ref(&t), "nrg_ti_gas").is_empty());
+    }
+
+    #[test]
+    fn the_footer_line_is_the_publisher_the_act_and_its_reference() {
+        let t = entry();
+        assert_eq!(t.source_line(), "欧盟 指令 (EU) 2018/2001 第 3 条第 1 款");
+        assert_eq!(verify_source_line(&t), Ok(()));
+        // The row carries both the line and the reference the footer marks.
+        let rows = rows_of(std::slice::from_ref(&t), "nrg_ind_ren");
+        assert_eq!(
+            rows[0]["source_line"],
+            "欧盟 指令 (EU) 2018/2001 第 3 条第 1 款"
+        );
+        assert_eq!(rows[0]["source_ref"], "(EU) 2018/2001 第 3 条第 1 款");
+    }
+
+    #[test]
+    fn a_source_line_with_a_digit_outside_its_reference_or_a_number_the_entry_lacks_fails() {
+        // A digit in the publisher or in the act's word is outside the reference.
+        let t = with(|t| t.publisher_zh = "欧盟2".into());
+        assert!(verify_source_line(&t).unwrap_err().contains("outside"));
+        let t = with(|t| t.source_zh = "第2版指令 (EU) 2018/2001 第 3 条第 1 款".into());
+        assert!(verify_source_line(&t).unwrap_err().contains("outside"));
+        // The line must end with the reference, which must not carry spaces at its edges.
+        let t = with(|t| t.source_zh = format!("{}，现行", t.source_zh));
+        assert!(verify_source_line(&t).unwrap_err().contains("end"));
+        let t = with(|t| t.source_ref = " (EU) 2018/2001 第 3 条第 1 款".into());
+        assert!(verify_source_line(&t).is_err());
+        // A number the act or clause of the entry does not name (Article 4 for a clause that says 3).
+        let t = with(|t| {
+            t.source_zh = "指令 (EU) 2018/2001 第 4 条第 1 款".into();
+            t.source_ref = "(EU) 2018/2001 第 4 条第 1 款".into();
+        });
+        assert!(verify_source_line(&t).unwrap_err().contains("holds 4"));
+        // No source given at all.
+        assert!(verify_source_line(&with(|t| t.source_ref.clear())).is_err());
     }
 
     // ---- The shipped registry ----
@@ -398,6 +491,15 @@ mod tests {
             |t| t.geo == "EU27_2020" && t.source.url.starts_with("https://eur-lex.europa.eu/")
         ));
         assert!(all.iter().all(|t| t.source.document_sha256.len() == 64));
+        // Each target's footer line: the publisher, the word for the act, then the act and clause numbers.
+        let lines: Vec<String> = all.iter().map(|t| t.source_line()).collect();
+        assert_eq!(
+            lines,
+            vec![
+                "欧盟 指令 (EU) 2018/2001 第 3 条第 1 款（经指令 (EU) 2023/2413 修订）",
+                "欧盟 指令 (EU) 2023/1791 第 4 条第 1 款"
+            ]
+        );
     }
 
     #[test]
