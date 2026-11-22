@@ -239,8 +239,16 @@ def lay(sg, size, max_w):
     return lines
 
 
+# A story page's leaves draw their words that carry no ledger entry (no number, no name: a heading, a unit, a caption) as html over the
+# picture, not as <text>: the first layer takes a text of an svg only with a src. While such a leaf draws, OVERLAY is a list and `words`
+# puts each such line in it ({x, y (the baseline), size, fill, anchor, weight, italic, serif, text}); the story page places them over the
+# picture (story.overlay). Their boxes are checked in B as ever. None: every text is a <text> of the svg.
+OVERLAY = None
+
+
 def words(B, v, what, x, y, size, fill, anchor="start", weight=400, serif=False, italic=False, max_w=None, line_h=None, max_lines=1):
-    """The words as one <text>. Returns (svg, box of the first line, line count); every line's box is checked in B; over max_lines refuses."""
+    """The words as one <text>. Returns (svg, box of the first line, line count); every line's box is checked in B; over max_lines refuses.
+    Words with no ledger entry in them go to OVERLAY instead when it is a list (the svg returned is then empty)."""
     sg = segs(v, what)
     lines = lay(sg, size, max_w if max_w else 10 ** 6)
     if len(lines) > max_lines: raise Refused(f"{what} takes {len(lines)} lines at this size, {max_lines} allowed")
@@ -251,9 +259,13 @@ def words(B, v, what, x, y, size, fill, anchor="start", weight=400, serif=False,
         b = (x0, y + i * lh - size * 0.8, x0 + w, y + i * lh + size * 0.25)
         B.add(b[0], b[1], b[2], b[3], what + (f" line {i + 1}" if i else ""))
         first = first or b
+        if OVERLAY is not None and not any(s for _, s in sg):
+            OVERLAY.append(dict(x=x, y=y + i * lh, size=size, fill=fill, anchor=anchor, weight=weight, italic=italic, serif=serif, text="".join(t for t, _ in ln).rstrip()))
+            continue
         body.append(f'<tspan x="{x:.1f}" y="{y + i * lh:.1f}">' + "".join(FX.entry(s, "tspan", None) if s else esc(t) for t, s in ln) + "</tspan>")
     st = ' font-style="italic"' if italic else ""
     ff = f' font-family="{SERIF}"' if serif else ""
+    if not body: return "", first, len(lines)
     return (f'<text x="{x:.1f}" y="{y:.1f}" font-size="{size}" text-anchor="{anchor}" fill="{fill}" font-weight="{weight}"{st}{ff}>{"".join(body)}</text>', first, len(lines))
 
 

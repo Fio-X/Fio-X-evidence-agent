@@ -102,6 +102,9 @@ FOUND = {}
 CLAIM_WORDS = None
 
 
+OVER = {}  # {layer: the words a story leaf drew over its picture}, read by story.story_page
+
+
 def leaf_frame(Frame, f, key, fixed=None, by_hero=None, by_page=None):
     """A chart leaf's own Frame over the hero's leaves.<key> (refusing a hero that names none), with the hero's style
     (`fixed` over it, then `by_hero`'s), and the series values read from the request's tables (wbkit.read_values)."""
@@ -124,7 +127,7 @@ def leaf_records(fr, key):
                      r_min_lifted=len(fr.r_min_codes), r_min_codes=list(fr.r_min_codes))
 
 
-def leaf(Frame, cl, key, fixed=None, by_hero=None, by_page=None):
+def leaf(Frame, cl, key, fixed=None, by_hero=None, by_page=None, overlay=False):
     """A chart leaf (wbkit's style) as a layer of a recipe's frame: its own Frame over the hero's leaves.<key> as its data,
     with the hero's style (`fixed`, {node: {knob: value}}, over it: what the recipe's layout sets; then `by_hero`'s, the knobs
     the program reads off the hero itself, as the page's focus), and the series values read from the request's tables
@@ -132,7 +135,11 @@ def leaf(Frame, cl, key, fixed=None, by_hero=None, by_page=None):
     not place (its Frame.dropped, (id, why) each) does not stop the layer: it goes back in DROPPED, even when that is all it
     was given (the layer is drawn empty, and the page still goes out with every dropped item in its ledger)."""
     def draw(f, occ):
-        fr = leaf_frame(Frame, f, key, fixed, by_hero, by_page); out = cl(fr, occ)
+        fr = leaf_frame(Frame, f, key, fixed, by_hero, by_page)
+        if overlay: wbkit.OVERLAY = []   # a story page's leaf: its words with no ledger entry go over the picture as html (wbkit.OVERLAY)
+        try: out = cl(fr, occ)
+        finally:
+            if overlay: OVER[key], wbkit.OVERLAY = wbkit.OVERLAY, None
         leaf_records(fr, key)
         return out
     return draw, None
@@ -263,9 +270,9 @@ KINDS = dict(ring=(scmp.RING_LAYERS, scmp.RING_SVG), **{k: ({**column.COLUMN_LAY
              page_story=({**{n: LEAF_LAYERS[n] for n in story.SVG_LAYERS}, "bignums": (story.cl_bignums, None),
                           # every leaf over the page's own settings: story.FIXED (the type scale, the text blocks' width) and, for a titled section,
                           # the picture width its place on the page gives (story.width_of)
-                          **{n: leaf(*STORY_SRC[n], n, fixed=story.FIXED, by_page=story.width_of) for n in STORY_SRC},
+                          **{n: leaf(*STORY_SRC[n], n, fixed=story.FIXED, by_page=story.width_of, overlay=True) for n in STORY_SRC},
                           # the rank bar draws the row its data names in the accent (story.rank_style)
-                          "rankbar": leaf(rankbar.Frame, rankbar.cl_rankbar, "rankbar", fixed=story.FIXED, by_hero=story.rank_style, by_page=story.width_of)},
+                          "rankbar": leaf(rankbar.Frame, rankbar.cl_rankbar, "rankbar", fixed=story.FIXED, by_hero=story.rank_style, by_page=story.width_of, overlay=True)},
                          list(story.SVG_LAYERS)))
 
 
@@ -460,7 +467,7 @@ def page(panel, got, sizes=None):
     page as column_page lays it out, with the pieces another child drew (`sizes`, layer -> [w, h]) among its layers."""
     if panel.node in COLUMN_KINDS: return column_page(panel, got, sizes or {})
     if panel.node == "scmp": return scmp_page(panel, got)
-    if panel.node == "page_story": return story.story_page(panel, got, sizes or {}, placeholders, DREW)
+    if panel.node == "page_story": return story.story_page(panel, got, sizes or {}, placeholders, DREW, OVER)
     f, spec = panel.f, panel.spec; tin = bool(f.h.get("_title"))
     # the events layer only for a page with sourced events (a ring of a table's months alone has none to hang)
     pic = [n for n in scmp.RING_SVG if not (n == "inset" and tin) and (n != "events" or spec.get("events"))]
@@ -727,6 +734,9 @@ def main():
                 out.update(SCALE)
                 if name in svgs:  # what it drew, read back as layer 1 reads it, for its checks
                     out["texts"], bad = drawn(s)
+                    # a story leaf's words with no ledger entry, drawn over the picture as html: told to layer 1 in the texts' own terms
+                    # (the picture's pixels, the baseline), so it checks them for overlap and out-of-panel as it does the texts
+                    if name in OVER: out["words"] = [dict(text=w["text"], x=w["x"], y=w["y"], size=w["size"], anchor=w["anchor"], baseline="", rot=0.0) for w in OVER[name]]
                     if bad: out = {"refused": [f"{name}: {b}" for b in bad]}
                 if name == "map": out["sub"] = panel.f.mapout  # the map's own layers, for the layer-by-layer parity check
             except FX.Refused as e: out = {"refused": [f"{name}: {e}"]}

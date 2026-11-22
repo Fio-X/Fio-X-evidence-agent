@@ -216,14 +216,28 @@ def root(body, layer, size, extra=""):
     return f'<svg class="{layer}" viewBox="0 0 {w:g} {h:.0f}" width="{w:g}" height="{h:.0f}" role="img"{extra}>{body}</svg>'
 
 
-def chart(body, layer, size, sid, label, desc):
+def overlay(items, size):
+    """The words a leaf drew with no ledger entry (wbkit.OVERLAY), as html over its picture: each line absolutely placed at its baseline, in the
+    picture's own pixels (the picture is shown at its drawn size). Empty when the leaf drew none."""
+    if not items: return ""
+    w, h = size
+    out = []
+    for t in items:
+        tf = {"start": "", "middle": "transform:translateX(-50%);", "end": "transform:translateX(-100%);"}[t["anchor"]]
+        font = f'font-family:{K.SERIF};' if t["serif"] else ""
+        out.append(f'<span style="left:{t["x"]:.1f}px;top:{t["y"] - t["size"] * 0.88:.1f}px;font-size:{t["size"]}px;color:{t["fill"]};font-weight:{t["weight"]};'
+                   f'{"font-style:italic;" if t["italic"] else ""}{font}{tf}">{html.escape(t["text"], quote=False)}</span>')
+    return f'<div class="ov" style="width:{w:g}px;height:{h:.0f}px">{"".join(out)}</div>'
+
+
+def chart(body, layer, size, sid, label, desc, over=""):
     """A section's picture as its own module of the browser check: the svg named by `label`, described by the hidden `desc` (markup)."""
     svg = root(body, layer, size, f' aria-label="{html.escape(label)}" aria-describedby="desc-{sid}" tabindex="0"').replace(f'class="{layer}"', f'class="{layer} pub-chart"', 1)
     return (f'<div class="fig pub-visual" data-module-id="{sid}" data-layer="{layer}">{svg}'
-            f'<p id="desc-{sid}" hidden>{desc}</p></div>')
+            f'{over}<p id="desc-{sid}" hidden>{desc}</p></div>')
 
 
-def story_page(panel, got, sizes, placeholders, drew):
+def story_page(panel, got, sizes, placeholders, drew, over=None):
     """The page around the layers the panel drew (`got`, layer -> svg), as the module docstring says; {"html"} or {"refused": [...]}."""
     c, spec, f = panel.c, panel.spec, panel.f
     secs = sections(spec)
@@ -247,7 +261,8 @@ def story_page(panel, got, sizes, placeholders, drew):
             marks += printed(svg)
             parts[i] = (sid, "", svg)
             continue
-        fig = f'<div class="blk" data-layer="{layer}">{root(svg, layer, drew.get(layer))}</div>' if layer in TEXT_BLOCKS else None
+        words_over = overlay((over or {}).get(layer), drew.get(layer)) if (over or {}).get(layer) else ""
+        fig = f'<div class="blk" data-layer="{layer}">{root(svg, layer, drew.get(layer))}{words_over}</div>' if layer in TEXT_BLOCKS else None
         head, note_list = "", ""
         if title is not None:
             t_html = FX.worded(spec, c.F, f"sections.{i}.title", title)
@@ -265,7 +280,7 @@ def story_page(panel, got, sizes, placeholders, drew):
             label = (kicker or "").strip() or page_kick
             if not label: return {"refused": [f"page: section {i + 1} ({sid}) has no kicker and the page none to name its chart"]}
             desc = re.sub(r'<span data-src="name:[^"]*">([^<]*)</span>', r"\1", t_html) if title is not None else html.escape(label)  # markup: its numbers keep their marks
-            fig = chart(svg, layer, drew.get(layer), sid, label, desc)
+            fig = chart(svg, layer, drew.get(layer), sid, label, desc, words_over)
         marks += printed(svg)
         parts[i] = (sid, head, fig, note_list)
     def sec(i, how):
@@ -306,6 +321,9 @@ CSS = (".opening{width:1140px;margin:0 0 18px}.opening svg{display:block}"
        "background:var(--t-title);color:#fff;font:700 12px/28px var(--sans);letter-spacing:.1em;margin-bottom:10px}"
        ".story h2{margin:0 0 8px;font:700 24px/1.4 var(--serif);color:var(--t-title)}.story .col p{margin:0;font:400 16px/1.8 var(--sans);color:var(--t-body)}"
        ".story .fig svg,.story .blk svg{display:block;max-width:100%;height:auto}.story .sec:first-child{margin-top:20px}"
+       # the words a leaf draws with no ledger entry stand over its picture as html, each at its baseline in the picture's pixels
+       ".story .fig,.story .blk{position:relative}.story .ov{position:absolute;left:0;top:0;pointer-events:none}"
+       ".story .ov span{position:absolute;white-space:nowrap;line-height:1;font-family:var(--sans)}"
        # a section with its words beside its picture, and two sections in a row
        ".story .sec[data-layout=side]{display:grid;grid-template-columns:var(--tw) 1fr;column-gap:var(--gut);align-items:start}"
        ".story .sec[data-layout=side] .col{max-width:none;margin:0}"
