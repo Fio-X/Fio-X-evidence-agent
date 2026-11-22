@@ -417,6 +417,85 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
             strip_dir.display()
         )
     })?;
+    // The opening illustration's child (next_leaf::hero): its registry, scene, painting and parts, and the paper and brush textures.
+    let hero_dir = runtime_dir.join("illus_hero");
+    crate::group_guard::create_dir_all(artifact_dir, &hero_dir).with_context(|| {
+        format!(
+            "failed to create hero runtime directory: {}",
+            hero_dir.display()
+        )
+    })?;
+    crate::group_guard::create_dir_all(artifact_dir, &runtime_dir.join("illus_hero/assets"))
+        .with_context(|| {
+            format!(
+                "failed to create hero textures directory: {}",
+                hero_dir.display()
+            )
+        })?;
+    for (path, text) in [
+        (
+            runtime_dir.join("illus_hero/node.json"),
+            include_str!("../runtime/illus_hero/node.json"),
+        ),
+        (
+            runtime_dir.join("illus_hero/run_hero.py"),
+            include_str!("../runtime/illus_hero/run_hero.py"),
+        ),
+        (
+            runtime_dir.join("illus_hero/scene_node.py"),
+            include_str!("../runtime/illus_hero/scene_node.py"),
+        ),
+        (
+            runtime_dir.join("illus_hero/hero_node.py"),
+            include_str!("../runtime/illus_hero/hero_node.py"),
+        ),
+        (
+            runtime_dir.join("illus_hero/hero_base.py"),
+            include_str!("../runtime/illus_hero/hero_base.py"),
+        ),
+        (
+            runtime_dir.join("illus_hero/brush.py"),
+            include_str!("../runtime/illus_hero/brush.py"),
+        ),
+        (
+            runtime_dir.join("illus_hero/mesh.py"),
+            include_str!("../runtime/illus_hero/mesh.py"),
+        ),
+        (
+            runtime_dir.join("illus_hero/parts.py"),
+            include_str!("../runtime/illus_hero/parts.py"),
+        ),
+        (
+            runtime_dir.join("illus_hero/world.py"),
+            include_str!("../runtime/illus_hero/world.py"),
+        ),
+    ] {
+        write_if_changed(artifact_dir, &path, text)?;
+    }
+    for (path, bytes) in [
+        (
+            runtime_dir.join("illus_hero/assets/brush.jpg"),
+            include_bytes!("../runtime/illus_hero/assets/brush.jpg") as &[u8],
+        ),
+        (
+            runtime_dir.join("illus_hero/assets/crumple.jpg"),
+            include_bytes!("../runtime/illus_hero/assets/crumple.jpg") as &[u8],
+        ),
+        (
+            runtime_dir.join("illus_hero/assets/tooth.jpg"),
+            include_bytes!("../runtime/illus_hero/assets/tooth.jpg") as &[u8],
+        ),
+        (
+            runtime_dir.join("illus_hero/assets/wash.jpg"),
+            include_bytes!("../runtime/illus_hero/assets/wash.jpg") as &[u8],
+        ),
+    ] {
+        if fs::read(&path).ok().as_deref() != Some(bytes) {
+            crate::group_guard::write(artifact_dir, &path, bytes).with_context(|| {
+                format!("failed to materialize runtime file: {}", path.display())
+            })?;
+        }
+    }
     for (path, text) in [
         (
             runtime_dir.join("leaves_js/illus_strip.cjs"),

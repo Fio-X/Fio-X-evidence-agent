@@ -3926,6 +3926,11 @@ pub(crate) fn visual_call<'a>(
             width,
             runtime,
         } => format!("{kind} {tables:?} {width} {}", runtime.display()),
+        Request::IllusHero {
+            tables,
+            width,
+            runtime,
+        } => format!("{kind} {tables:?} {width} {}", runtime.display()),
         Request::NodeDeclare { layer, page_in } => format!("{kind} {layer} {page_in}"),
         Request::NodeDraw {
             fill,
@@ -3980,6 +3985,15 @@ pub(crate) fn visual_call<'a>(
         Ok(Reply::Strip { strip, note }) => {
             format!("{} {note}", strip.as_ref().map_or("", |s| s.svg.as_str()))
         }
+        Ok(Reply::Opening {
+            drawn,
+            instead,
+            note,
+        }) => format!(
+            "{} {} {note}",
+            drawn.as_ref().map_or("", |s| s.svg.as_str()),
+            instead.as_ref().map_or("", |s| s.svg.as_str())
+        ),
         Ok(Reply::NodeDeclared(declared)) => format!("{declared:?}"),
         Ok(Reply::NodesDrawn(drawn)) => format!("{drawn:?}"),
     };
@@ -3988,8 +4002,8 @@ pub(crate) fn visual_call<'a>(
         "reply_sha256": crate::hash::sha256_bytes(kept.as_bytes()), "ms": ms, "ok": reply.is_ok()});
     // the strip is the page's only piece that may be left off: what was drawn, or why none, is kept in its own words
     match &reply {
-        Ok(Reply::Strip { note, .. }) => event["note"] = json!(note),
-        Err(why) if kind == "illus_strip" => event["note"] = json!(why),
+        Ok(Reply::Strip { note, .. }) | Ok(Reply::Opening { note, .. }) => event["note"] = json!(note),
+        Err(why) if kind == "illus_strip" || kind == "illus_hero" => event["note"] = json!(why),
         _ => {}
     }
     // an external node's call: which node, the child's and the core's milliseconds, and how many failure lines stopped it

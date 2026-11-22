@@ -1822,6 +1822,255 @@ pub fn strip_faults(svg: &str, colours: &[&str]) -> Vec<String> {
     off
 }
 
+/// How long the opening illustration's child may take: Blender draws the scene, the painting follows.
+pub const HERO_DEADLINE: Duration = Duration::from_secs(60);
+
+/// The most bytes a hero picture may be (it holds its paper and paint rasters inline).
+pub const HERO_MAX_BYTES: usize = 4 * 1024 * 1024;
+
+/// Why no hero came back: the child could not make it here (Blender or a package missing, too slow, a broken child), which
+/// the caller answers with the strip; or it refused the request or gave a picture the page may not hold, which is a fault of
+/// the request's own data and stops.
+#[derive(Clone, Debug, PartialEq)]
+pub enum HeroMiss {
+    Unavailable(String),
+    Refused(String),
+}
+
+/// The opening picture one request draws, through one child started by `runner` (runtime/illus_hero/run_hero.py): taken only
+/// as wide as asked and when `hero_faults` finds nothing on it. The picture's markup comes back as the strip's does (no outer
+/// svg, its size, what was left out).
+pub fn hero(runner: &Runner, request: &Value) -> Result<Strip, HeroMiss> {
+    let started = Instant::now();
+    let (child, mut stdin, rx) = start(runner).map_err(HeroMiss::Unavailable)?;
+    let reply = ask(&mut stdin, &rx, "hero", request, HERO_DEADLINE);
+    drop(stdin);
+    stop(child);
+    let reply = reply.map_err(HeroMiss::Unavailable)?;
+    if let Some(why) = reply["unavailable"].as_str() {
+        return Err(HeroMiss::Unavailable(why.to_string()));
+    }
+    let refused = strs(&reply, "refused");
+    if !refused.is_empty() {
+        return Err(HeroMiss::Refused(refused.join("\n")));
+    }
+    let (Some(svg), Some(w), Some(h)) = (
+        reply["svg"].as_str(),
+        reply["w"].as_f64(),
+        reply["h"].as_f64(),
+    ) else {
+        return Err(HeroMiss::Refused(
+            "hero: the reply has no svg, w or h".into(),
+        ));
+    };
+    let mut off = hero_faults(svg);
+    if Some(w) != request["width"].as_f64() || !(h > 0.0 && h.is_finite()) {
+        off.push(format!(
+            "hero: drawn {w}x{h}, asked {} wide",
+            request["width"]
+        ));
+    }
+    if !off.is_empty() {
+        return Err(HeroMiss::Refused(off.join("\n")));
+    }
+    Ok(Strip {
+        svg: svg.to_string(),
+        w,
+        h,
+        dropped: strs(&reply, "dropped"),
+        ms: started.elapsed().as_millis(),
+    })
+}
+
+/// Every way an opening picture is more than shapes and paint: it holds only the elements `g`, `path`, `image`, `defs`,
+/// `linearGradient`, `stop` and `mask`, each with the attributes of its kind and values of its kind (colours as hex, `none` or
+/// a `url(#id)` of an id the picture defines; numbers; a path's d of path characters; an image's href a png or jpeg data
+/// URL), balanced, with nothing between the tags but white space: no text, no other element, no link, script, style, event
+/// attribute or outside reference. A picture prints no number and no word.
+pub fn hero_faults(svg: &str) -> Vec<String> {
+    let num = |s: &str| s.parse::<f64>().is_ok_and(f64::is_finite);
+    let hex = |s: &str| {
+        s.len() == 7 && s.starts_with('#') && s[1..].chars().all(|c| c.is_ascii_hexdigit())
+    };
+    let id = |s: &str| {
+        !s.is_empty()
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    };
+    let transform = |v: &str| {
+        // translate(x,y) and scale(k), in that order, either one
+        let mut rest = v;
+        let mut ok = false;
+        if let Some(r) = rest.strip_prefix("translate(") {
+            let Some((xy, r)) = r.split_once(')') else {
+                return false;
+            };
+            let at: Vec<&str> = xy.split(',').collect();
+            if at.len() != 2 || !at.iter().all(|s| num(s)) {
+                return false;
+            }
+            rest = r.trim_start();
+            ok = true;
+        }
+        if let Some(r) = rest.strip_prefix("scale(") {
+            let Some((k, r)) = r.split_once(')') else {
+                return false;
+            };
+            return num(k) && r.is_empty();
+        }
+        ok && rest.is_empty()
+    };
+    let mut off = Vec::new();
+    if svg.len() > HERO_MAX_BYTES {
+        off.push(format!(
+            "hero: {} bytes, over the {HERO_MAX_BYTES} a hero may be",
+            svg.len()
+        ));
+    }
+    let (mut stack, mut rest) = (Vec::<String>::new(), svg);
+    let (mut defined, mut used) = (Vec::<String>::new(), Vec::<String>::new());
+    while !rest.is_empty() && off.is_empty() {
+        let lt = rest.find('<').unwrap_or(rest.len());
+        if !rest[..lt].trim().is_empty() {
+            off.push(format!(
+                "hero: text {:?} between the tags",
+                &rest[..lt.min(40)]
+            ));
+            break;
+        }
+        rest = &rest[lt..];
+        if rest.is_empty() {
+            break;
+        }
+        let Some(gt) = rest.find('>') else {
+            off.push("hero: a tag is not closed".into());
+            break;
+        };
+        let tag = &rest[1..gt];
+        rest = &rest[gt + 1..];
+        if let Some(name) = tag.strip_prefix('/') {
+            if stack.pop().as_deref() != Some(name) {
+                off.push(format!("hero: a </{name}> closes nothing open"));
+                break;
+            }
+            continue;
+        }
+        let (body, closed) = match tag.strip_suffix('/') {
+            Some(t) => (t, true),
+            None => (tag, false),
+        };
+        let name = body.split(' ').next().unwrap_or("");
+        let allowed: &[&str] = match (name, closed) {
+            ("g", false) => &[
+                "fill",
+                "stroke",
+                "stroke-width",
+                "stroke-linejoin",
+                "opacity",
+                "transform",
+                "mask",
+            ],
+            ("path", true) => &[
+                "d",
+                "fill",
+                "stroke",
+                "stroke-width",
+                "stroke-linejoin",
+                "opacity",
+                "transform",
+                "mask",
+            ],
+            ("image", true) => &["href", "width", "height", "preserveAspectRatio"],
+            ("defs", false) => &[],
+            ("linearGradient", false) => &["id", "x1", "y1", "x2", "y2"],
+            ("stop", true) => &["offset", "stop-color", "stop-opacity"],
+            ("mask", false) => &["id", "maskUnits", "x", "y", "width", "height"],
+            _ => {
+                off.push(format!(
+                    "hero: <{name}{}> is no element a hero draws; e.g. <path .../>",
+                    if closed { "/" } else { "" }
+                ));
+                break;
+            }
+        };
+        let mut a = body[name.len()..].trim();
+        while !a.is_empty() {
+            let Some((key, after)) = a.split_once("=\"") else {
+                off.push(format!(
+                    "hero: <{name}> has an attribute that is not key=\"value\": {:?}",
+                    &a[..a.len().min(40)]
+                ));
+                break;
+            };
+            let Some((value, after)) = after.split_once('"') else {
+                off.push(format!("hero: <{name}> {key} is not closed"));
+                break;
+            };
+            let paint = |v: &str, used: &mut Vec<String>| {
+                if v == "none" || hex(v) {
+                    return true;
+                }
+                match v.strip_prefix("url(#").and_then(|r| r.strip_suffix(')')) {
+                    Some(i) if id(i) => {
+                        used.push(i.to_string());
+                        true
+                    }
+                    _ => false,
+                }
+            };
+            let ok = allowed.contains(&key)
+                && match key {
+                    "d" => value
+                        .chars()
+                        .all(|c| c.is_ascii_digit() || " ,.-eEMCLQTZHVmclqtzhv".contains(c)),
+                    "fill" | "stroke" | "stop-color" => paint(value, &mut used),
+                    "mask" => value.starts_with("url(#") && paint(value, &mut used),
+                    "stroke-width" | "x1" | "y1" | "x2" | "y2" | "x" | "y" | "width" | "height"
+                    | "offset" | "opacity" | "stop-opacity" => num(value),
+                    "stroke-linejoin" => value == "round",
+                    "transform" => transform(value),
+                    "id" => {
+                        defined.push(value.to_string());
+                        id(value)
+                    }
+                    "maskUnits" => value == "userSpaceOnUse",
+                    "preserveAspectRatio" => value == "none",
+                    "href" => value
+                        .strip_prefix("data:image/png;base64,")
+                        .or_else(|| value.strip_prefix("data:image/jpeg;base64,"))
+                        .is_some_and(|b| {
+                            !b.is_empty()
+                                && b.chars()
+                                    .all(|c| c.is_ascii_alphanumeric() || "+/=".contains(c))
+                        }),
+                    _ => false,
+                };
+            if !ok {
+                let shown: String = value.chars().take(40).collect();
+                off.push(format!(
+                    "hero: <{name} {key}={shown:?}> is not drawn by a hero"
+                ));
+                break;
+            }
+            a = after.trim_start();
+        }
+        if !closed {
+            stack.push(name.to_string());
+        }
+    }
+    if off.is_empty() && !stack.is_empty() {
+        off.push(format!("hero: {} element(s) not closed", stack.len()));
+    }
+    if off.is_empty() {
+        if let Some(i) = used.iter().find(|i| !defined.contains(i)) {
+            off.push(format!(
+                "hero: url(#{i}) names an id the picture does not define"
+            ));
+        }
+    }
+    off
+}
+
 /// Every `{key}` placeholder left anywhere on a page, its scripts and styles included (a script may build one at run time,
 /// which only the baked page shows). A `${...}` refuses too: after the bake the page's one script is READY_JS, which has
 /// none, so nothing here is skipped (run.py's pre-bake scan still passes a layout script's `${...}`).
@@ -2409,6 +2658,104 @@ mod tests {
         assert!(refused("<g>").contains("not closed"));
         assert!(refused("<rect/>").contains("<rect> is no element"));
         assert!(refused("<script/>").contains("<script> is no element"));
+    }
+
+    /// A hero is taken as shapes and paint only: groups, paths, images of png or jpeg data, masks and gradients with values of
+    /// their kind pass; text, another element, a script, an outside link, an event attribute, an odd transform, a colour name,
+    /// an unclosed element or an id nobody defines each refuse, naming what.
+    #[test]
+    fn a_hero_is_only_shapes_and_paint() {
+        let ok = concat!(
+            r##"<defs><linearGradient id="wash" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a86e54" stop-opacity="0.34"/></linearGradient>"##,
+            r##"<mask id="dry_h" maskUnits="userSpaceOnUse" x="0" y="0" width="1440" height="560"><image href="data:image/png;base64,iVBORw0KGgo=" width="1440" height="560" preserveAspectRatio="none"/></mask></defs>"##,
+            r##"<g transform="scale(0.79167)"><image href="data:image/jpeg;base64,/9j/4AAQ+Q==" width="1440" height="560" preserveAspectRatio="none"/>"##,
+            r##"<g fill="url(#wash)"><path d="M0 1L2.5 -3e-1 4 5Z"/></g><g fill="none" stroke="#301a14" stroke-width="1.4" stroke-linejoin="round" opacity="0.8">"##,
+            r##"<path d="M1.5,2 L3,4" transform="translate(-2.0,1.5)" fill="#14100e" mask="url(#dry_h)" opacity="0.4"/></g></g>"##,
+        );
+        assert_eq!(hero_faults(ok), Vec::<String>::new());
+        let refused = |svg: &str| {
+            let off = hero_faults(svg);
+            assert!(!off.is_empty(), "{svg} passed");
+            off[0].clone()
+        };
+        assert!(refused(&format!("{ok}<text>3</text>")).contains("<text> is no element"));
+        assert!(refused(&format!("{ok} 44 ")).contains("text \" 44 \" between the tags"));
+        assert!(refused(r##"<path d="M0 0" fill="red"/>"##).contains("fill"));
+        assert!(refused(r##"<path d="M0 0" onclick="x()"/>"##).contains("onclick"));
+        assert!(refused(r##"<path d="alert(1)"/>"##).contains("d="));
+        assert!(
+            refused(r##"<image href="https://x.test/a.png" width="1" height="1"/>"##)
+                .contains("href")
+        );
+        assert!(refused(
+            r##"<image href="data:image/svg+xml;base64,AAAA" width="1" height="1"/>"##
+        )
+        .contains("href"));
+        assert!(refused(r##"<g transform="rotate(4)"></g>"##).contains("transform"));
+        assert!(refused(r##"<g fill="url(#nowhere)"></g>"##).contains("does not define"));
+        assert!(refused(r##"<g mask="x"></g>"##).contains("mask"));
+        assert!(refused("<g>").contains("not closed"));
+        assert!(refused("</g>").contains("closes nothing"));
+        for el in [
+            "<rect/>",
+            "<script/>",
+            "<use href=\"#a\"/>",
+            "<foreignObject>",
+            "<style>",
+        ] {
+            assert!(refused(el).contains("is no element"), "{el}");
+        }
+        let big = format!(
+            r##"<path d="M0 0" stroke="#000000"/>{}"##,
+            " ".repeat(HERO_MAX_BYTES)
+        );
+        assert!(refused(&big).contains("bytes, over"));
+    }
+
+    /// A hero child answers `unavailable` (the caller falls back), `refused` (an error), or a picture, which is taken only as
+    /// wide as asked and when it holds nothing a hero may not.
+    #[test]
+    fn a_hero_child_is_unavailable_refused_or_drawn() {
+        let child = |reply: &str| Runner {
+            program: "python3".into(),
+            args: vec![
+                "-I".into(),
+                "-B".into(),
+                "-c".into(),
+                format!("import sys; sys.stdin.readline(); print({reply:?})"),
+            ],
+        };
+        let ask = json!({"tags": ["wind"], "hero": "wind", "width": 1140.0});
+        let svg = r##"<g transform=\"scale(0.79167)\"><path d=\"M0 0 L1 1\" stroke=\"#301a14\" stroke-width=\"1\"/></g>"##;
+        let drawn = format!(r#"{{"svg": "{svg}", "w": 1140.0, "h": 443.33, "dropped": []}}"#);
+        let got = hero(&child(&drawn), &ask).unwrap();
+        assert_eq!((got.w, got.h), (1140.0, 443.33));
+        assert_eq!(
+            hero(
+                &child(r#"{"unavailable": "Blender is not installed"}"#),
+                &ask
+            ),
+            Err(HeroMiss::Unavailable("Blender is not installed".into()))
+        );
+        assert_eq!(
+            hero(&child(r#"{"refused": ["tags: unknown"]}"#), &ask),
+            Err(HeroMiss::Refused("tags: unknown".into()))
+        );
+        let narrow = drawn.replace("1140.0", "900.0");
+        assert!(
+            matches!(hero(&child(&narrow), &ask), Err(HeroMiss::Refused(w)) if w.contains("asked"))
+        );
+        let texty = drawn.replace("<g ", "<text>1</text><g ");
+        assert!(
+            matches!(hero(&child(&texty), &ask), Err(HeroMiss::Refused(w)) if w.contains("<text>"))
+        );
+        let missing = Runner {
+            program: "no-such-hero-runner".into(),
+            args: vec![],
+        };
+        assert!(
+            matches!(hero(&missing, &ask), Err(HeroMiss::Unavailable(w)) if w.contains("did not start"))
+        );
     }
 
     const LAID: &str =

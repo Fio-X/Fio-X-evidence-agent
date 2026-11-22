@@ -69,7 +69,7 @@ const commandNames = (() => {
   // Bare `news` (the interactive launcher) has no enum variant; it is registered as a command of the agent group (K213).
   return [...block.matchAll(/^    ([A-Z][A-Za-z0-9]*)\(/gm)].map((m) => m[1].replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase()).concat("interactive");
 })();
-const trackedFiles = spawnSync("git", ["-C", ROOT, "ls-files", "--cached", "--others", "--exclude-standard", "src", "runtime/pi", "runtime/leaves_js", "runtime/nodes", "runtime/page_tree", "runtime/leaves_py/*.py", "runtime/leaves_py/*.js"], { encoding: "utf8" }).stdout.split("\n").filter(Boolean);
+const trackedFiles = spawnSync("git", ["-C", ROOT, "ls-files", "--cached", "--others", "--exclude-standard", "src", "runtime/pi", "runtime/leaves_js", "runtime/illus_hero", "runtime/nodes", "runtime/page_tree", "runtime/leaves_py/*.py", "runtime/leaves_py/*.js"], { encoding: "utf8" }).stdout.split("\n").filter(Boolean);
 assert.ok(commandNames.length >= 7 && trackedFiles.length > 100, "found the commands and the tracked files");
 
 // ---- tools, under every profile, switches off and on ----------------------------------------------------------------------------

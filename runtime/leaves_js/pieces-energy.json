@@ -23,5 +23,10 @@
   {"name": "stroke_wave", "default": 1.0, "min": 0.5, "max": 3, "step": 0.1, "what": "water and steam stroke (px)"},
   {"name": "min_feature", "default": 3, "min": 2, "max": 6, "step": 1, "what": "a closed shape or line smaller than this (px, as drawn) is left out and reported"},
   {"name": "marker", "default": 0, "min": 0, "max": 1, "step": 1, "what": "1 draws each cell's circled number (strokes, no text), 0 none; off until a legend on the page refers to the numbers through the ledger"}
- ]
+ ],
+ "hero": {
+  "what": "the opening picture of a page of these tables: Blender's low-poly scene painted by runtime/illus_hero (its parts, layout and ranges are data in its node.json); `tables` gives each table the semantic tags of the parts drawn, `hero` the part in the foreground, `ground` the paper (warm or cool), `accent` the one accent colour (green marks renewable equipment)",
+  "tables": {"nrg_ind_ren": ["wind", "solar", "hydro", "coal", "grid"], "sdg_07_40": ["wind", "solar", "hydro", "grid"]},
+  "hero": "wind", "ground": "warm", "accent": "#1a9a6c"
+ }
 }
