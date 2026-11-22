@@ -3800,7 +3800,7 @@ fn recipe_request(
     if let Some(a) = asked_of {
         fill["knobs"]["spec"]["asked"] = a;
     }
-    if recipe.layers.iter().any(|l| l == "map" || l == "bubbles") {
+    if recipe.layers.iter().any(|l| l == "map" || l == "bubbles" || l == "member_map") {
         fill["knobs"]["shapes"] = json!(run_dir.join(RING_SHAPES));
     }
     let meta = catalogue
@@ -3899,6 +3899,17 @@ fn recipe_request(
         let mut input = story_input(&shape, target, (&main_rows, &target_rows), &title)
             .map_err(|why| ("fill", why))?;
         with_chain(&mut input, chain);
+        // a point inside each member's country (the knowledge group's iso3, the visual group's pinned label points), for the
+        // findings' map angle; a member with no point leaves the map out, never a point guessed
+        let members: Vec<String> = input["main"]["members"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|m| m.as_str().map(str::to_string))
+            .collect();
+        if let Ok(points) = catalogue.place_points(&members) {
+            input["points"] = json!(points);
+        }
         fill[STORY_IN] = input;
     }
     Ok(fill)
@@ -10597,6 +10608,11 @@ mod tests {
             assert_eq!(input["main"]["whole"], "EU27_2020");
             assert_eq!(input["main"]["filter"], json!({"freq": "A", "unit": "PC"}));
             assert!(!input["main"]["members"].as_array().unwrap().iter().any(|m| m == "EU27_2020"));
+            // the members' map points, as recipe_request gives the findings' map angle: one inside each member's country
+            let members: Vec<String> = input["main"]["members"].as_array().unwrap().iter().map(|m| m.as_str().unwrap().to_string()).collect();
+            let points = Scoped(true).place_points(&members).unwrap();
+            assert_eq!(points.len(), members.len());
+            assert!(points["DE"][0] > 5.0 && points["DE"][0] < 15.0 && points["DE"][1] > 47.0 && points["DE"][1] < 55.0, "{points:?}");
             assert_eq!(input["target"]["filter"], json!({"geo": "EU27_2020"}));
             assert_eq!(input["fmt_defs"]["pc"]["dec"], 1);
             // a pace or a difference of a share prints in percentage points
