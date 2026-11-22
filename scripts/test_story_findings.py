@@ -3,6 +3,9 @@
     pace: all four angles stand, the path finds even the best year short;
   - a World Bank shape: six economies' tonnes per head 2010-2022 (iso3 codes, no whole, no target): the path and the need
     are dropped with why, the spread and the ends stand.
+  - the chain angle (event_chain): the EU shape with three companion tables (a flow in bars, a price level in a line, a second
+    flow) shares six years with the whole and the year the whole moved most (2020) is shaded across them; with one companion
+    table, none, or no whole the angle is dropped with its why (a chain needs two tables and a whole).
 Then each shape's picks are composed and every layer drawn by its own leaf over a ledger this test works out the way
 next_facts does for the ops the node declares (value, per_year, line_at, step_max, reach_year, minus, times, group_change),
 so a declared key the leaf reads and the facts lack, or a data shape the leaf refuses, fails here. Also: a pick that is no
@@ -50,6 +53,22 @@ def eu_request():
                                    "members": [c for c in EU_MEMBERS]},
             "target": {"table": "targets", "filter": {"geo": "EU27_2020", "target": "res_share"}, "time": "2030"},
             "fmts": FMTS, "fmt_defs": FMT_DEFS, "words": {"measure": "可再生能源占比", "unit": "占最终能源消费的百分比"}}, EU_NAMES
+
+
+def eu_chain_request():
+    """The EU shape with three companion tables over 2019-2024 (the whole's biggest step is 2020: 19.9 -> 22.0)."""
+    req, names = eu_request()
+    ys = range(2019, 2025)
+    rows = list(req["rows"])
+    chain = []
+    for table, dims, vals, words, kind in (
+            ("nrg_ti_gas", {"partner": "RU"}, [166, 152, 150, 80, 43, 52], ("来自俄罗斯的天然气进口", "十亿立方米／年"), None),
+            ("nrg_pc_204", {"price": "HH"}, [0.216, 0.213, 0.237, 0.284, 0.289, 0.288], ("家庭电价", "欧元／千瓦时"), "stock"),
+            ("nrg_inf_epcrw", {"tech": "PV"}, [16, 19, 28, 40, 56, 65], ("光伏新增装机", "吉瓦／年"), None)):
+        rows += [{"src": f"series:{table}/{'.'.join(dims.values())}:{y}:OBS_VALUE", "table": table, "dims": dims, "time": str(y), "value": v}
+                 for y, v in zip(ys, vals)]
+        chain.append({"table": table, "filter": dims, "words": {"measure": words[0], "unit": words[1]}, **({"kind": kind} if kind else {})})
+    return {**req, "rows": rows, "chain": chain}, names
 
 
 def wb_request():
@@ -154,7 +173,7 @@ class Findings(unittest.TestCase):
     def test_eu_all_angles_and_best_year_short(self):
         req, names = eu_request()
         _, cands, dropped = FN.candidates(req)
-        self.assertEqual(dropped, [])
+        self.assertEqual([d["angle"] for d in dropped], ["chain"])  # the request carries no chain
         self.assertEqual(sorted(c["id"] for c in cands), ["ends", "need", "path", "spread"])
         self.assertEqual([c["score"] for c in cands], sorted((c["score"] for c in cands), reverse=True))
         path = next(c for c in cands if c["id"] == "path")
@@ -169,7 +188,7 @@ class Findings(unittest.TestCase):
     def test_wb_no_target_drops_path_and_need(self):
         req, names = wb_request()
         _, cands, dropped = FN.candidates(req)
-        self.assertEqual({d["angle"]: d["why"] for d in dropped}, {"path": "no target row", "need": "no target row"})
+        self.assertEqual({d["angle"]: d["why"] for d in dropped}, {"path": "no target row", "need": "no target row", "chain": "the request's chain holds fewer than 2 tables"})
         self.assertEqual(sorted(c["id"] for c in cands), ["ends", "spread"])
         composed, facts, drawn = draw_all(self, req, names, ["ends", "spread"])
         self.assertEqual(composed["leaves"]["pair_bars"]["places"], ["USA", "IND"])
@@ -178,6 +197,55 @@ class Findings(unittest.TestCase):
         wl = composed["leaves"]["winners_losers"]
         self.assertEqual({r["label"][0]["name"] for r in wl["down"]["rows"]}, {"USA", "DEU", "ZAF"})
         self.assertNotIn("scenario", str(composed["leaves"].get("risk_notes")))
+
+    def test_chain_three_tables_around_the_year_the_whole_moved_most(self):
+        req, names = eu_chain_request()
+        _, cands, dropped = FN.candidates(req)
+        self.assertEqual(dropped, [])
+        chain = next(c for c in cands if c["id"] == "chain")
+        self.assertEqual((chain["layer"], chain["why"]["band"]), ("event_chain", "2020"))
+        self.assertTrue(0 < chain["score"] <= 1)
+        composed, facts, drawn = draw_all(self, req, names, ["path", "chain"])
+        self.assertEqual([s["layer"] for s in composed["sections"]], ["thesis_claims", "target_path", "event_chain", "risk_notes"])
+        data = composed["leaves"]["event_chain"]
+        self.assertEqual([(p["code"], p["kind"], p["zero"], "link" in p) for p in data["panels"]],
+                         [("c1", "bar", True, True), ("c2", "line", False, True), ("c3", "bar", True, False)])
+        self.assertEqual([len(p["points"]) for p in data["panels"]], [6, 6, 6])
+        self.assertEqual((data["band"]["from"], data["band"]["to"]), ("2020", "2020"))
+        # the title's number is the whole's step in 2020, the larger value less the smaller (19.9 -> 22.0)
+        self.assertAlmostEqual(facts["m_step"]["v"], 22.0 - 19.9, places=6)
+        self.assertEqual(facts["band_y"]["t"], "2020")
+        self.assertEqual((facts["c1_first"]["t"], facts["c1_last"]["t"]), ("2019", "2024"))
+        title = composed["sections"][2]["title"]
+        self.assertIn("{m_step}", title); self.assertIn("{band_y.t}", title)
+        self.assertEqual(title.count("{"), 2)
+        # one chart per leaf: the panels' words come from the request, the file writes no word of its own
+        self.assertEqual("".join(x["w"] for x in data["panels"][0]["title"]), "来自俄罗斯的天然气进口")
+        with self.assertRaisesRegex(FN.Refused, "chain"):
+            FN.compose({**req, "chain": req["chain"][:1], "picks": ["path", "chain"]})
+
+    def test_chain_dropped_when_it_cannot_be_told(self):
+        req, _ = eu_chain_request()
+        why = lambda r: {d["angle"]: d["why"] for d in FN.candidates(r)[2]}.get("chain")
+        self.assertEqual(why({**req, "chain": req["chain"][:1]}), "the request's chain holds fewer than 2 tables")
+        self.assertEqual(why({k: v for k, v in req.items() if k != "chain"}), "the request's chain holds fewer than 2 tables")
+        self.assertEqual(why({**req, "main": {**req["main"], "whole": None}}), "no whole to date the event by")
+        # a companion that shares too few years with the whole
+        short = [dict(c) for c in req["chain"]]
+        short[0] = dict(short[0], filter={"partner": "NO"})
+        extra = [row("nrg_ti_gas", {"partner": "NO"}, "x", "a", y, 5.0) for y in (2023, 2024)]
+        for r in extra: r["dims"] = {"partner": "NO"}
+        self.assertRegex(why({**req, "chain": short, "rows": req["rows"] + extra}), "fewer than 4 years in a row")
+        # two rows at one year at the filter are ambiguous, not summed
+        dup = [dict(r, src=r["src"] + ":dup") for r in req["rows"] if r["table"] == "nrg_ti_gas" and r["time"] == "2021"]
+        self.assertRegex(why({**req, "rows": req["rows"] + dup}), "two rows at 2021")
+        bad = [dict(req["chain"][0], words={"measure": "俄气 2021", "unit": "x"}), req["chain"][1]]
+        self.assertRegex(why({**req, "chain": bad}), "hold a digit")
+        # an item's own kind overrides the default rule, and a flow with a value below 0 cannot be bars: a line on its own range
+        self.assertIsNone(why({**req, "chain": [dict(req["chain"][0], kind="flow"), req["chain"][1]]}))
+        down = [dict(r, value=r["value"] - 100) if r["table"] == "nrg_ti_gas" else r for r in req["rows"]]
+        panels = FN.compose({**req, "rows": down, "picks": ["path", "chain"]})["leaves"]["event_chain"]["panels"]
+        self.assertEqual((panels[0]["kind"], panels[0]["zero"]), ("line", False))
 
     def test_refusals(self):
         req, _ = eu_request()

@@ -120,5 +120,11 @@
  "story.ends.text": "{y:hi} 年，{n:a}是 {f:hi}，{n:b}只有 {f:lo}。",
  "story.notes.title": "怎么读这一页",
  "story.notes.scenario": "直线外推是情景，不是预测：假设每年涨得一样多",
- "story.notes.last": "数据到 {y:last} 年为止"
+ "story.notes.last": "数据到 {y:last} 年为止",
+"story.chain.kicker": "一连串的数",
+"story.chain.title": "在 {y:band_y} 年变得最多，一年变了 {f:m_step}",
+"story.chain.text": "把几个相关的数放在同一段年份里并排看，{y:c1_first}–{y:c1_last} 年。阴影是它变得最多的那一年。图里只排先后，不说谁带动了谁。",
+"story.chain.band": "{y:band_y} 年：变得最多",
+"story.chain.link": "随后",
+"story.chain.foot": "图中只呈现时间上的先后，不代表每一环都由上一环单独造成"
 }
