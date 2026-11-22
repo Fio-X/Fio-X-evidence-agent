@@ -10671,6 +10671,50 @@ mod tests {
         }
     }
 
+    /// st1 11-23: a story page as the flow builds it (the fill, the findings child's candidates and composition over the
+    /// rows, story_page) is drawn by the real leaf child and published through the whole-page check, every layer's texts
+    /// sourced and inside their panels. The gate the story leaves are held to; the python tests do not run layer 1's checks.
+    #[test]
+    #[ignore = "the story leaves draw word-only svg texts layer 1 refuses (no src); held until the leaves source them (I22)"]
+    fn a_story_page_is_drawn_by_the_real_child_and_published() {
+        let years: Vec<String> = (2005..=2024).map(|y| y.to_string()).collect();
+        let years: Vec<&str> = years.iter().map(String::as_str).collect();
+        let places = ["DE", "FR", "IT", "PL", "SE", "FI", "MT", "LU", "EU27_2020"];
+        let mut rows = ring_rows("ren", &[("freq", "A"), ("unit", "PC")], ("geo", &places), &years);
+        for r in rows.iter_mut() {
+            let g = r["dims"]["geo"].as_str().unwrap().to_string();
+            let y: f64 = r["time"].as_str().unwrap().parse().unwrap();
+            let k = places.iter().position(|p| *p == g).unwrap() as f64;
+            let pace = if g == "MT" || g == "LU" { -0.05 } else { 0.4 + k / 20.0 };
+            r["value"] = json!(format!("{:.1}", 5.0 + 4.0 * k + pace * (y - 2005.0)));
+        }
+        let story = recipe("page_story");
+        let target = json!({"src": "target:ren-EU27_2020-2030", "main": "ren", "table": "target_ren",
+            "dims": {"geo": "EU27_2020"}, "slice": {"freq": "A", "unit": "PC"}, "time": "2030", "value": "60"});
+        let targets: BTreeMap<String, Vec<Value>> = [("target_ren".to_string(), vec![target.clone()])].into();
+        let with = [target];
+        let shape = shape_of(&story.eats, &[("ren", &rows[..]), ("target_ren", &with[..])], &Scoped(true)).unwrap();
+        let picks = picks_of(&story.picks, &shape, &rows, &[]).unwrap();
+        let mut fill = test_fill(story, &shape, &picks, (&rows, &[]), &Scoped(true), ("标题", "导语"), false).unwrap();
+        let input = story_input(&shape, shape.target.as_ref().unwrap(), (&rows, &targets), "可再生能源占比").unwrap();
+        let child = crate::next_leaf::Runner::python(
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime/leaves_py/findings.py"),
+        );
+        let mut asked = input.clone();
+        asked["mode"] = json!("candidates");
+        let found = crate::next_leaf::story(&child, &asked).unwrap();
+        let ids: Vec<Value> = found["candidates"].as_array().unwrap().iter().take(STORY_SHOWN).map(|c| c["id"].clone()).collect();
+        asked["mode"] = json!("compose");
+        asked["picks"] = json!(ids);
+        let page = crate::next_leaf::story(&child, &asked).unwrap();
+        fill.as_object_mut().unwrap().remove(STORY_IN);
+        // the target's table names its law's clause in the footer, as recipe_request sets it
+        fill["knobs"]["spec"]["tables"]["target_ren"] = json!({"id": "target_ren"});
+        story_page(&mut fill, &input, &page).unwrap();
+        let (html, ..) = published("page_story", fill, "story page");
+        assert!(html.contains("thesis_claims"), "the thesis is on the page");
+    }
+
     /// naming Germany beside the EU (places_zh 德国, 欧盟) still scopes the page by EU27_2020 alone. With no reviewed name
     /// for the aggregate there is no scope at all, never a raw word.
     #[test]
