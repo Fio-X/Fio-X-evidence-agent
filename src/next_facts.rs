@@ -345,7 +345,47 @@ fn exact_values(facts: &mut [Fact], rows: &[Row]) {
                         _ => None,
                     }
                 }
-                "count" | "n" | "position" | "zeros" | "unrowed" | "excluded" | "reach_year"
+                // the year from the exact start, rate and target: the first whole number of years at or over the gap; it
+                // takes the place of the float year (review 11-22: a float quotient can put a year too many)
+                "reach_year" if f.reads.len() == 3 && f.n.is_some() => {
+                    match (of(&f.reads[0]), of(&f.reads[1]), of(&f.reads[2])) {
+                        (Some(s), Some(r), Some(t)) => {
+                            let start_year = f.v as i128 - f.n.unwrap_or(0) as i128;
+                            let k = t.sub(s).and_then(|gap| {
+                                if gap.n <= 0 {
+                                    Some(0)
+                                } else if r.n > 0 {
+                                    gap.div(r).map(|q| q.n.div_euclid(q.d) + i128::from(q.n.rem_euclid(q.d) != 0))
+                                } else {
+                                    None
+                                }
+                            });
+                            k.map(|k| {
+                                f.v = (start_year + k) as f64;
+                                f.n = Some(k as usize);
+                                Exact::int(start_year + k)
+                            })
+                        }
+                        _ => None,
+                    }
+                }
+                "step_max" if f.t.is_some() => {
+                    let later = f.t.clone().unwrap_or_default();
+                    let at = |later_side: bool| {
+                        let picked: Vec<String> = f
+                            .reads
+                            .iter()
+                            .filter(|s| rows.iter().any(|r| &r.src == *s && (r.time == later) == later_side))
+                            .cloned()
+                            .collect();
+                        sum(&picked)
+                    };
+                    match (at(true), at(false)) {
+                        (Some(a), Some(b)) => a.sub(b),
+                        _ => None,
+                    }
+                }
+                "count" | "n" | "position" | "zeros" | "unrowed" | "excluded"
                     if f.v.fract() == 0.0 =>
                 {
                     Some(Exact::int(f.v as i128))
@@ -979,7 +1019,15 @@ fn of_facts_over_years(
             let k = if s >= t {
                 0
             } else if r > 0.0 {
-                ((t - s) / r).ceil() as i64
+                let q = (t - s) / r;
+                // checked before the cast, so a huge quotient cannot wrap past the limit
+                if !q.is_finite() || q > (2100 - ys) as f64 {
+                    return Err(format!("{key}: the target is reached only past 2100"));
+                }
+                // a quotient a float puts a hair over a whole number (0.3 / 0.1) is that number; exact_values works the
+                // year out again from the exact values and its year wins
+                let whole = q.round();
+                (if (q - whole).abs() <= 1e-9 * whole.abs().max(1.0) { whole } else { q.ceil() }) as i64
             } else {
                 return Err(format!("{key}: at a rate of {r} a year the start never reaches the target"));
             };
@@ -1043,10 +1091,34 @@ fn over_periods(
         "step_max" => {
             let picked = select(key, rows, q)?;
             let ser = window(period_totals(key, &picked)?)?;
-            // a step is one year to the next: a gap of years in the rows is no step
-            let next_year = |a: &str, b: &str| match (a.parse::<i32>(), b.parse::<i32>()) {
-                (Ok(x), Ok(y)) if a.len() == 4 && b.len() == 4 => y == x + 1,
-                _ => true,
+            // a step is one period to the next (a year, YYYY-MM, YYYY-Qn, YYYY-Sn): a gap in the rows is no step, and a
+            // period written any other way is no step either (review 11-22)
+            let next_year = |a: &str, b: &str| {
+                let parts = |p: &str| -> Option<(i32, char, i32)> {
+                    let y = p.get(0..4)?.parse::<i32>().ok()?;
+                    match p.len() {
+                        4 => Some((y, 'Y', 0)),
+                        7 if &p[4..5] == "-" && p[5..].bytes().all(|b| b.is_ascii_digit()) => Some((y, 'M', p[5..].parse().ok()?)),
+                        7 if &p[4..6] == "-Q" => Some((y, 'Q', p[6..].parse().ok()?)),
+                        7 if &p[4..6] == "-S" => Some((y, 'S', p[6..].parse().ok()?)),
+                        _ => None,
+                    }
+                };
+                let per = |c: char| match c {
+                    'Y' => 1,
+                    'M' => 12,
+                    'Q' => 4,
+                    _ => 2,
+                };
+                match (parts(a), parts(b)) {
+                    (Some((ya, ca, pa)), Some((yb, cb, pb))) if ca == cb => {
+                        let n = per(ca);
+                        let ia = ya * n + if ca == 'Y' { 0 } else { pa - 1 };
+                        let ib = yb * n + if cb == 'Y' { 0 } else { pb - 1 };
+                        ib == ia + 1
+                    }
+                    _ => false,
+                }
             };
             let best = ser
                 .windows(2)
@@ -2439,6 +2511,27 @@ mod tests {
         assert_eq!(text(&f["best"], &json!({}), false).unwrap(), "2.1");
         assert_eq!(f["best"].reads, ["series:r/EU:2019:v", "series:r/EU:2020:v"]);
         assert_eq!((f["when"].v, f["when"].n), (2033.0, Some(9)));
+        assert_eq!(f["when"].exact, Some(Exact::int(2033)));
+        assert_eq!(f["best"].exact, Exact::new(21, 10));
+        // a gap the rate covers exactly is that many years, not one more (review 11-22: 0.3 / 0.1 is 3.0000000000000004)
+        let edge = [row("r", "EU", "2020", 0.6), row("r", "EU", "2021", 0.7), row("t", "EU", "2030", 1.0)];
+        let e = by_key(
+            &spec(
+                json!({
+                    "now": {"table": "r", "time": "2021", "fmt": "x"},
+                    "goal": {"table": "t", "time": "2030", "fmt": "x"},
+                    "step": {"op": "step_max", "table": "r", "fmt": "x"},
+                    "when": {"op": "reach_year", "start": "now", "rate": "step", "target": "goal", "fmt": "n"},
+                }),
+                None,
+            ),
+            &edge,
+        );
+        assert_eq!((e["when"].v, e["when"].n), (2024.0, Some(3)));
+        // a month missing between two rows is no step
+        let months = [row("m", "EU", "2024-01", 1.0), row("m", "EU", "2024-03", 9.0), row("m", "EU", "2024-04", 10.0)];
+        let m = by_key(&spec(json!({"s": {"op": "step_max", "table": "m", "fmt": "x"}}), None), &months);
+        assert_eq!((m["s"].t.as_deref(), m["s"].v), (Some("2024-04"), 1.0));
         assert_eq!(text(&f["grow"], &json!({}), false).unwrap(), "5%");
         let refused = |patch: Value, why: &str| {
             let mut q = base.clone();
