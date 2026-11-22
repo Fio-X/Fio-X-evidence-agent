@@ -10959,6 +10959,102 @@ mod tests {
         }
     }
 
+    /// v8 (rounds 17-18): a column page of ten members whose first two bars all but tie (the first bar's end was reached only
+    /// past the second bar's value, so its note found no free place and the page stopped at notes_dropped). Drawn by the
+    /// real leaf child on two data shapes (a Eurostat-coded page and a World Bank iso3 page), both its notes are laid and
+    /// nothing is dropped.
+    #[test]
+    fn a_column_page_whose_first_two_bars_all_but_tie_keeps_both_its_notes() {
+        // Eurostat-coded rows
+        let codes = ["CN", "IN", "ZA", "JP", "US", "DE", "FR", "BR", "RU", "TR"];
+        let life = [
+            78.02, 77.85, 74.53, 74.37, 73.44, 72.53, 72.40, 72.24, 71.93, 67.80,
+        ];
+        let mut main = group_rows(&codes, &["2025"]);
+        for (row, v) in main.iter_mut().zip(life) {
+            row["value"] = json!(format!("{v:.2}"));
+        }
+        let (fill, _) = group_request_by(
+            "2025 年各国人均预期寿命谁最长？",
+            main,
+            json!([]),
+            ("column", "horizontal_bar"),
+        );
+        let fill = fill.unwrap_or_else(|e| panic!("eurostat: {e:?}"));
+        let notes = fill["knobs"]["spec"]["hero"]["leaves"]["leader_notes"]["notes"]
+            .as_array()
+            .map_or(0, Vec::len);
+        assert_eq!(notes, 2, "the page declares its first and last note");
+        let (html, ..) = group_published_by(fill, "column", "eurostat near tie");
+        assert!(html.contains(r#"data-layer="leader_notes""#));
+        LAST_DROPPED.with(|d| assert!(d.borrow().is_empty(), "eurostat: dropped {:?}", d.borrow()));
+        // World Bank rows (iso3), the same two bars all but tied
+        let id = "SP.DYN.LE00.IN@2";
+        let tied = [
+            ("CHN", "78.02"),
+            ("IND", "77.85"),
+            ("USA", "74.53"),
+            ("IDN", "74.37"),
+            ("PAK", "73.44"),
+            ("NGA", "72.53"),
+            ("BRA", "72.40"),
+            ("BGD", "67.80"),
+        ];
+        let rows: Vec<Value> = tied
+            .iter()
+            .map(|(c, v)| {
+                json!({"src": format!("series:{id}/{c}:2024:value"), "table": id,
+                    "dims": {"country": c}, "time": "2024", "value": v})
+            })
+            .collect();
+        let run = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(run.path().join("shadow")).unwrap();
+        std::fs::write(run.path().join("claims.jsonl"), "").unwrap();
+        std::fs::write(
+            run.path().join("shadow/candidate_sheet-s1.json"),
+            json!({"candidates": []}).to_string(),
+        )
+        .unwrap();
+        std::fs::write(run.path().join("le.csv"), "").unwrap();
+        let prepared = Prepared {
+            id: id.into(),
+            title: String::new(),
+            file: "le.csv".into(),
+            args: Map::new(),
+            sheet: "s1".into(),
+            claims: Vec::new(),
+            places_zh: Vec::new(),
+            companions: Vec::new(),
+            asked: json!([]),
+            relation: None,
+        };
+        let calls = std::sync::Mutex::new(Vec::new());
+        let cat = WbRanked(rows);
+        let fill = recipe_request(
+            run.path(),
+            &[prepared],
+            &["horizontal_bar"],
+            recipe("column"),
+            &cat,
+            (
+                "2024 年各国人均预期寿命谁最长？",
+                ("标题", "导语", "栏目"),
+                &[],
+            ),
+            (&calls, None),
+        )
+        .unwrap_or_else(|e| panic!("world bank: {e:?}"));
+        let (html, ..) = group_published_by(fill, "column", "wb near tie");
+        assert!(html.contains(r#"data-layer="leader_notes""#));
+        LAST_DROPPED.with(|d| {
+            assert!(
+                d.borrow().is_empty(),
+                "world bank: dropped {:?}",
+                d.borrow()
+            )
+        });
+    }
+
     /// A World Bank change page over three regions (aggregates, iso3 codes with no map point): the change page, not the
     /// bars alone, so its notes stand at the bars; the first one compares (with the mean of the places drawn or with the
     /// second) and the last, in the same words, with the one before it, on a rise and on a fall.
@@ -14458,6 +14554,11 @@ mod tests {
 
     /// A fill drawn by the real leaf child, baked, checked by the twins and published, then read back: the page and its
     /// request's ledger, refs, spec, rows and facts.
+    thread_local! {
+        /// The notes the last page `published` laid out dropped, as the publication lists them.
+        static LAST_DROPPED: std::cell::RefCell<Vec<(String, String)>> = const { std::cell::RefCell::new(Vec::new()) };
+    }
+
     fn published(name: &str, mut fill: Value, at: &str) -> PublishedPage {
         fill["knobs"]["shapes"] = json!("runtime/pi/assets/naturalearth-admin0-50m.geojson");
         fill["knobs"]["spec"]["kicker"] = json!("栏目");
@@ -14507,6 +14608,7 @@ mod tests {
         let published =
             crate::next_flow::publish_leaf_page(&calls, &bundle.dir, name, (&leaf, &plan), &qa)
                 .unwrap_or_else(|e| panic!("{at}: publish: {e}"));
+        LAST_DROPPED.with(|d| *d.borrow_mut() = published.dropped.clone());
         let html = std::fs::read_to_string(bundle.dir.join(&published.html_ref)).unwrap();
         let text = std::fs::read_to_string(
             bundle
