@@ -1116,6 +1116,22 @@
    "group": "knowledge",
    "note": "New route, data side: the companion tables a page adds to its main table (same catalogue folder or indicator family, kept only when the fetched rows overlap at country level). Pure; reads the catalogue's original files through l5geo's Raw. Ownership only; no cross-group call is allowed by this row."
   },
+  "src/next_targets.rs": {
+   "group": "knowledge",
+   "note": "New route, data side: the legal targets a story page runs against (EU acts' numbers for the Union as a whole), read from targets.json and checked against the stored excerpt of the act before any row is given out; the rows come out in the flow group's target-row format. Pure; the registry and excerpts are compiled in. Ownership only; no cross-group call is allowed by this row."
+  },
+  "runtime/pi/assets/targets.json": {
+   "group": "knowledge",
+   "note": "New route: the legal targets (id, the Eurostat slices that measure them, geo, year, value as the act prints it, type, and the source with its quoted sentence and hashes). Catalogue data read by next_targets.rs (include_str); an entry the act's excerpt does not back stops the registry. Ownership only; no cross-group call is allowed by this row."
+  },
+  "runtime/pi/assets/target-sources/32023L2413.txt": {
+   "group": "knowledge",
+   "note": "New route: the stored excerpt of Directive (EU) 2023/2413 (Article 3(1) of Directive 2018/2001 as replaced), the text targets.json's 2030 renewable share is checked against; its hash is in the entry. Ownership only; no cross-group call is allowed by this row."
+  },
+  "runtime/pi/assets/target-sources/32023L1791.txt": {
+   "group": "knowledge",
+   "note": "New route: the stored excerpt of Directive (EU) 2023/1791 (Article 4(1) and its primary-energy sentence), the text targets.json's 2030 final energy consumption ceiling is checked against; its hash is in the entry. Ownership only; no cross-group call is allowed by this row."
+  },
   "src/classify.rs": {
    "group": "knowledge",
    "note": "New route, data side: the role of every dimension of a table and the class of every code (totals believed only when the data adds up). Pure. Ownership only; no cross-group call is allowed by this row."

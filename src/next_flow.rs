@@ -3812,6 +3812,7 @@ pub(crate) fn knowledge_call<'a>(
         Ok(Reply::Names(names)) => json!(names),
         Ok(Reply::Members(members)) => json!({"members": members}),
         Ok(Reply::Countries(countries)) => json!({"countries": countries}),
+        Ok(Reply::Targets(rows)) => json!({"targets": rows}),
         Ok(Reply::Table(meta)) => json!(meta.as_ref().map(
             |m| json!({"id": m.id, "worldbank": m.worldbank, "dims": m.dims,
             "end_year": m.end_year, "places": m.places})
@@ -4315,6 +4316,20 @@ impl Catalogue for GroupCatalogue {
         )? {
             next_knowledge::Reply::Members(found) => Ok(found),
             _ => unreachable!("the knowledge group answered members with another reply"),
+        }
+    }
+
+    fn targets(&self, main: &str) -> Vec<Value> {
+        // A registry that fails its checks offers no target: the page then runs without one (its test names the entry).
+        match knowledge_call(
+            &self.calls,
+            "targets",
+            json!({"main": main}),
+            next_knowledge::Request::Targets { main },
+        ) {
+            Ok(next_knowledge::Reply::Targets(rows)) => rows,
+            Ok(_) => unreachable!("the knowledge group answered targets with another reply"),
+            Err(_) => Vec::new(),
         }
     }
 
