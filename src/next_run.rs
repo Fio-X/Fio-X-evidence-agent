@@ -5245,6 +5245,22 @@ fn story_page(fill: &mut Value, input: &Value, page: &Value) -> Result<(), Strin
             rows.push(r.clone());
         }
     }
+    // the page draws the leaves its sections name, in the recipe's order, and no other: a section naming a layer the recipe
+    // does not list refuses
+    let named: Vec<&str> = fill["knobs"]["spec"]["sections"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|s| s["layer"].as_str())
+        .collect();
+    if let Some(order) = fill["order"].as_array() {
+        let listed: Vec<&str> = order.iter().filter_map(Value::as_str).collect();
+        if let Some(l) = named.iter().find(|l| !listed.contains(l)) {
+            return Err(format!("a section names the layer {l}, which the page's recipe does not list"));
+        }
+        let kept: Vec<Value> = listed.iter().filter(|l| named.contains(l)).map(|l| json!(l)).collect();
+        fill["order"] = Value::Array(kept);
+    }
     Ok(())
 }
 
@@ -10691,7 +10707,7 @@ mod tests {
     /// rows, story_page) is drawn by the real leaf child and published through the whole-page check, every layer's texts
     /// sourced and inside their panels. The gate the story leaves are held to; the python tests do not run layer 1's checks.
     #[test]
-    #[ignore = "layer 1 checks every layer on one panel, and the story sections each report from their own origin; held until the story lays its page out first (I24)"]
+    #[ignore = "the story page wraps its layers' svg: the whole-page check finds them not byte for byte; held until story_page places each layer as drawn (I26)"]
     fn a_story_page_is_drawn_by_the_real_child_and_published() {
         let years: Vec<String> = (2005..=2024).map(|y| y.to_string()).collect();
         let years: Vec<&str> = years.iter().map(String::as_str).collect();
