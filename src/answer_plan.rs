@@ -243,15 +243,9 @@ const CHANGE_ZH: [&str; 16] = [
 const LOCATION_ZH: [&str; 3] = ["地图", "地理分布", "分布在哪"];
 const DISTRIBUTION_ZH: [&str; 2] = ["分布", "差异多大"];
 /// The second place at the top or at the bottom a question compares with (asks_second).
-const SECOND_HIGH_ZH: [&str; 7] = [
-    "第二高",
-    "第二多",
-    "第二大",
-    "第二快",
-    "第二名",
-    "第二位",
-    "次高",
-];
+const SECOND_HIGH_ZH: [&str; 5] = ["第二高", "第二多", "第二大", "第二快", "次高"];
+/// A second place named with no end: the end the question asks about (the bottom's when it asks for the lowest).
+const SECOND_ANY_ZH: [&str; 2] = ["第二名", "第二位"];
 const SECOND_LOW_ZH: [&str; 5] = ["倒数第二", "第二低", "第二少", "第二小", "次低"];
 const MAX_ZH: [&str; 10] = [
     "最高", "最多", "最大", "最快", "最长", "最贵", "最富", "领先", "居首", "第一",
@@ -400,7 +394,8 @@ pub fn asks_total(question: &str) -> bool {
 }
 
 /// The second place a question compares its end with, by its words (SECOND_HIGH_ZH: the top's; SECOND_LOW_ZH: the
-/// bottom's): Some(false) at the top, Some(true) at the bottom. None when it names no second place, or when it asks for
+/// bottom's; SECOND_ANY_ZH: the end the question asks about, the bottom's when it asks for the lowest, asks_lowest):
+/// Some(false) at the top, Some(true) at the bottom. None when it names no second place, or when it asks for
 /// the first n at one end (asks_top: that page draws only those n and says its end against its neighbour).
 pub fn asks_second(question: &str) -> Option<bool> {
     if asks_top(question).is_some() {
@@ -411,6 +406,8 @@ pub fn asks_second(question: &str) -> Option<bool> {
         Some(true)
     } else if any(&q, &SECOND_HIGH_ZH) {
         Some(false)
+    } else if any(&q, &SECOND_ANY_ZH) {
+        Some(asks_lowest(question))
     } else {
         None
     }
@@ -967,6 +964,7 @@ mod tests {
             ("2023 年东盟谁的出口额最高？比第二高的多多少？", false),
             ("北欧五国里人均 GDP 第二名是谁，和第一差多少？", false),
             ("欧盟哪国失业率最低？比倒数第二的低多少？", true),
+            ("2024 年欧盟哪国失业率最低？第二名是谁？", true),
         ] {
             assert_eq!(asks_second(q), Some(low), "{q}");
         }
