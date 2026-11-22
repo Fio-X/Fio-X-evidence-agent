@@ -773,7 +773,7 @@ class Findings(unittest.TestCase):
             sid = _re.search(r'aria-describedby="([^"]+)"', a)
             self.assertTrue(sid, a)
             desc = _re.search(r'<p id="%s" hidden>(.*?)</p>' % _re.escape(sid[1]), page_html, _re.S)
-            self.assertTrue(desc and _re.sub(r"<[^>]*>", "", desc[1]).strip(), a)
+            self.assertTrue(desc and desc[1].split("<", 1)[0].strip(), a)  # as the completion gate reads it: the words before the first tag
         # every text and word of every layer lies on the page and over no other: layer 1's rules, over the page
         items = []
         for n, g in self.replies.items():

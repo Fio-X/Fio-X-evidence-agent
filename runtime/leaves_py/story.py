@@ -403,7 +403,7 @@ def story_page(panel, got, sizes, placeholders, drew, over=None):
         if layer in TEXT_BLOCKS:  # a block of words drawn as a picture: named by its registered word and described by its own texts, marks kept
             alt = f' aria-label="{html.escape(word(TEXT_BLOCKS[layer]))}" aria-describedby="desc-{sid}"'
             fig = (f'<div class="blk" data-layer="{layer}"{pos}>{root(svg, layer, drew.get(layer), alt, origin)}{words_over}'
-                   f'<p id="desc-{sid}" hidden>{text_desc(svg)}</p></div>')
+                   f'<p id="desc-{sid}" hidden>{html.escape(word(TEXT_BLOCKS[layer]), quote=False)}{html.escape(word("story.lead.join"), quote=False)}{text_desc(svg)}</p></div>')  # opens with its name: a reader hears what the block is before its numbers
         else: fig = None
         head, note_list = "", ""
         if title is not None:
@@ -418,7 +418,8 @@ def story_page(panel, got, sizes, placeholders, drew, over=None):
         if fig is None:
             label = (kicker or "").strip() or page_kick
             if not label: return {"refused": [f"page: section {i + 1} ({sid}) has no kicker and the page none to name its chart"]}
-            desc = re.sub(r'<span data-src="name:[^"]*">([^<0-9]*)</span>', r"\1", t_html) if title is not None else html.escape(label)  # markup: its numbers keep their marks, and so does a name with a digit in it (a code)
+            desc = re.sub(r'<span data-src="name:[^"]*">([^<0-9]*)</span>', r"\1", t_html) if title is not None else ""  # markup: its numbers keep their marks, and so does a name with a digit in it (a code)
+            desc = html.escape(label, quote=False) + (html.escape(word("story.lead.join"), quote=False) + desc if desc else "")  # it opens with the chart's name, words before any mark
             fig = chart(svg, layer, drew.get(layer), sid, label, desc, words_over, pos, origin)
         marks += printed(svg)
         parts[i] = (sid, head, fig, note_list)
