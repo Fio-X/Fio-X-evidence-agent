@@ -1658,14 +1658,26 @@ fn row_value(r: &Value) -> Option<f64> {
 /// holds. 100 would take the period the most countries hold (a tie to the later), which may be an old one.
 const LATEST_PERIOD_PCT: usize = 80;
 
-/// The last year any of the place's countries has a value at. On a half-yearly or monthly main (one_freq) the latest period
-/// at which at least LATEST_PERIOD_PCT percent as many of them have a value as at the period the most have one at:
-/// countries report a month or a half year at different times, and the latest period alone may hold a few of them. Each
-/// later period passed over is kept with the countries the page's period holds and it misses (Shape::passed), for the run's
-/// record; a missing value is never filled in.
+/// How many of the best year's countries, in percent, a later year of an annual main must hold a value for to be the page's
+/// year (last_year): a latest year that only a few of them have reported yet (dev g10, rounds 17-18: the G7's research
+/// spending at 2024 held Canada alone, a one-bar page that answered for none of the others) gives way to the latest year
+/// at least half as many hold. Lower than LATEST_PERIOD_PCT: a year that most report keeps the page at it, as before.
+const LATEST_YEAR_PCT: usize = 50;
+
+/// The latest year at which at least LATEST_YEAR_PCT percent as many of the place's countries have a value as at the year
+/// the most have one at (an annual main; the year any of them has one at, when it holds that many). On a half-yearly or
+/// monthly main (one_freq) the latest period at which at least LATEST_PERIOD_PCT percent as many of them have a value as at
+/// the period the most have one at: countries report a month or a half year at different times, and the latest period
+/// alone may hold a few of them. Each later year or period passed over is kept with the countries the page's holds and it
+/// misses (Shape::passed), for the run's record; a missing value is never filled in.
 fn last_year(s: &mut Shape, tables: &[(&str, &[Value])], _: &dyn Catalogue) -> Result<(), String> {
     let rows = tables[0].1;
-    if matches!(s.freq.as_str(), "S" | "M") {
+    let pct = if matches!(s.freq.as_str(), "S" | "M") {
+        LATEST_PERIOD_PCT
+    } else {
+        LATEST_YEAR_PCT
+    };
+    {
         let mut held: BTreeMap<&str, BTreeSet<String>> = BTreeMap::new();
         for r in rows.iter().filter(|r| row_value(r).is_some()) {
             if let (Some(t), Some(c)) = (
@@ -1685,7 +1697,7 @@ fn last_year(s: &mut Shape, tables: &[(&str, &[Value])], _: &dyn Catalogue) -> R
         let (period, at) = held
             .iter()
             .rev()
-            .find(|(_, there)| there.len() * 100 >= best * LATEST_PERIOD_PCT)
+            .find(|(_, there)| there.len() * 100 >= best * pct)
             .expect("the best period holds its own count");
         s.passed = held
             .range::<str, _>((
@@ -1695,20 +1707,7 @@ fn last_year(s: &mut Shape, tables: &[(&str, &[Value])], _: &dyn Catalogue) -> R
             .map(|(t, there)| (t.to_string(), at.difference(there).cloned().collect()))
             .collect();
         s.year = period.to_string();
-        return Ok(());
     }
-    let year = rows
-        .iter()
-        .filter(|r| {
-            r["dims"][&s.place]
-                .as_str()
-                .is_some_and(|c| s.countries.iter().any(|k| k == c))
-                && row_value(r).is_some()
-        })
-        .filter_map(|r| r["time"].as_str())
-        .max()
-        .ok_or_else(|| format!("main {} has no country value", s.main))?;
-    s.year = year.to_string();
     Ok(())
 }
 
@@ -3267,8 +3266,9 @@ fn fill_of(
             .collect();
         let from = shape.years.first().cloned().unwrap_or_default();
         fill["ends"] = json!({"t0": shape.t0, "t1": shape.year, "rule": "two_ends", "fetched_from": from, "later": later});
-    } else if matches!(shape.freq.as_str(), "S" | "M") {
-        // a half-yearly or monthly page's one period (last_year), and each later period passed over with the countries it misses
+    } else if matches!(shape.freq.as_str(), "S" | "M") || !shape.passed.is_empty() {
+        // a half-yearly or monthly page's one period (last_year), or an annual page's year when a later one held too few of its
+        // countries, and each later period passed over with the countries it misses
         let later: Vec<Value> = shape
             .passed
             .iter()
@@ -11234,7 +11234,23 @@ mod tests {
             vec![("2026-09".to_string(), places[14..].to_vec())]
         );
         assert_eq!(LATEST_PERIOD_PCT, 80);
-        // an annual main: its last year, whatever the count, and no record
+        // an annual main: its last year when at least half as many hold it as the best year (three of four), else the latest
+        // year that many hold, the later one recorded with the countries it misses (dev g10: one of seven)
+        assert_eq!(LATEST_YEAR_PCT, 50);
+        let mut most = ring_rows(
+            "sdg",
+            &[("freq", "A"), ("unit", "PC")],
+            ("geo", &["SE", "BE", "DE", "FR"]),
+            &["2024"],
+        );
+        most.extend(ring_rows(
+            "sdg",
+            &[("freq", "A"), ("unit", "PC")],
+            ("geo", &["SE", "BE", "DE"]),
+            &["2025"],
+        ));
+        let shape = shape_of(&column.eats, &[("sdg", &most[..])], &Hubs).unwrap();
+        assert_eq!((shape.year.as_str(), shape.passed.len()), ("2025", 0));
         let mut annual = ring_rows(
             "sdg",
             &[("freq", "A"), ("unit", "PC")],
@@ -11248,13 +11264,43 @@ mod tests {
             &["2025"],
         ));
         let shape = shape_of(&column.eats, &[("sdg", &annual[..])], &Hubs).unwrap();
-        assert_eq!((shape.year.as_str(), shape.passed.len()), ("2025", 0));
+        assert_eq!(shape.year, "2024", "one of four at 2025 is 25%");
+        assert_eq!(
+            shape.passed,
+            vec![(
+                "2025".to_string(),
+                vec!["BE".to_string(), "DE".into(), "FR".into()]
+            )]
+        );
         let picks = picks_of(&column.picks, &shape, &annual, &[]).unwrap();
-        assert!(test_fill(
+        let ends = test_fill(
             column,
             &shape,
             &picks,
             (&annual, &[]),
+            &Hubs,
+            ("标题", "导语"),
+            false,
+        )
+        .unwrap()["ends"]
+            .clone();
+        assert_eq!(ends["t1"], "2024");
+        assert_eq!(ends["later"][0]["period"], "2025");
+        assert_eq!(ends["later"][0]["missing"], json!(["BE", "DE", "FR"]));
+        // a year most hold keeps no record, as before
+        let picks = picks_of(
+            &column.picks,
+            &shape_of(&column.eats, &[("sdg", &most[..])], &Hubs).unwrap(),
+            &most,
+            &[],
+        )
+        .unwrap();
+        let shape = shape_of(&column.eats, &[("sdg", &most[..])], &Hubs).unwrap();
+        assert!(test_fill(
+            column,
+            &shape,
+            &picks,
+            (&most, &[]),
             &Hubs,
             ("标题", "导语"),
             false
