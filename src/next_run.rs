@@ -1190,6 +1190,8 @@ struct Shape {
     /// A page over a many-block page's blocks (blocks): each table, the main first, with its place dimension and its year
     /// ({table, by, year}), as one_freq, one_place and last_year read it alone.
     blocks: Vec<Value>,
+    /// The target a story page runs against (has_target): the targets table, its place and its year.
+    target: Option<(String, String, String)>,
 }
 
 /// What composition_groups reads: the grouped dimension, its total code and the groups' input codes (next_params::group_inputs).
@@ -1221,6 +1223,7 @@ const SHAPE_CONDITIONS: &[(&str, Condition)] = &[
     ("monthly_companion", monthly_companion),
     ("last_year", last_year),
     ("two_ends", two_ends),
+    ("has_target", has_target),
     ("official_flow", official_flow),
     (COMPOSITION, composition_groups),
     ("one_whole", one_whole),
@@ -1756,6 +1759,47 @@ fn two_ends(s: &mut Shape, tables: &[(&str, &[Value])], _: &dyn Catalogue) -> Re
         )
     })?;
     (s.t0, s.later) = (t0, later);
+    Ok(())
+}
+
+/// A target row for the main (has_target, owner 11-22: a page's story runs against the target the law sets): a table
+/// whose rows the knowledge group gave from its targets registry (src `target:<id>`, its `main` naming the main table),
+/// at a place the main holds and a year after the page's last; the latest such year wins. Err when none is handed in.
+fn has_target(s: &mut Shape, tables: &[(&str, &[Value])], _: &dyn Catalogue) -> Result<(), String> {
+    let last: i32 = s
+        .year
+        .parse()
+        .map_err(|_| format!("main {} has no last year before its target", s.main))?;
+    let places: BTreeSet<&str> = s
+        .countries
+        .iter()
+        .map(String::as_str)
+        .chain((!s.hub.is_empty()).then_some(s.hub.as_str()))
+        .chain(s.dims.get(&s.place).into_iter().flatten().map(String::as_str))
+        .collect();
+    let mut best: Option<(String, String, String)> = None;
+    for (id, rows) in &tables[1..] {
+        for r in rows.iter().filter(|r| {
+            r["src"].as_str().is_some_and(|s| s.starts_with("target:"))
+                && r["main"].as_str() == Some(s.main.as_str())
+        }) {
+            let (Some(t), Some(geo)) = (r["time"].as_str(), r["dims"][&s.place].as_str()) else {
+                continue;
+            };
+            if !is_year(t) || t.parse::<i32>().is_ok_and(|y| y <= last) || !places.contains(geo) {
+                continue;
+            }
+            if best.as_ref().is_none_or(|(_, _, b)| t > b.as_str()) {
+                best = Some((id.to_string(), geo.to_string(), t.to_string()));
+            }
+        }
+    }
+    s.target = Some(best.ok_or_else(|| {
+        format!(
+            "main {} has no target row after {last} at a place it holds",
+            s.main
+        )
+    })?);
     Ok(())
 }
 
@@ -9823,6 +9867,40 @@ mod tests {
 
     /// The unit line's scope is the data's aggregate that holds every place drawn (EU27_2020; the euro area misses IT), named
     /// only through the name table and counted by the drawn fact: nothing the question says is printed, so a question
+    /// Owner 11-22 (a story page runs against the target the law sets): has_target takes the latest target row the
+    /// knowledge group handed in for this main, at a place the main holds and after its last year; a target for another
+    /// table, for a place the main lacks, or at or before the last year does not count, and with none the shape fails.
+    #[test]
+    fn a_target_counts_only_for_this_main_at_a_held_place_after_the_last_year() {
+        let mut main = ring_rows(
+            "ren",
+            &[("freq", "A"), ("unit", "PC")],
+            ("geo", &["DE", "FR", "EU27_2020"]),
+            &["2005", "2024"],
+        );
+        for r in main.iter_mut() {
+            r["value"] = json!("20");
+        }
+        let target = |main_id: &str, geo: &str, t: &str| {
+            json!({"src": format!("target:{main_id}-{geo}-{t}"), "main": main_id, "dims": {"geo": geo}, "time": t, "value": "42.5"})
+        };
+        let eats: Vec<String> = ["annual", "one_place", "last_year", "two_ends", "has_target"].map(String::from).to_vec();
+        let ok = vec![
+            target("ren", "EU27_2020", "2030"),
+            target("ren", "EU27_2020", "2040"),
+            target("other", "EU27_2020", "2050"),
+            target("ren", "US", "2060"),
+        ];
+        let shape = shape_of(&eats, &[("ren", &main[..]), ("targets", &ok[..])], &Scoped(true)).unwrap();
+        assert_eq!(
+            shape.target,
+            Some(("targets".to_string(), "EU27_2020".to_string(), "2040".to_string()))
+        );
+        let none = vec![target("ren", "EU27_2020", "2024"), target("other", "EU27_2020", "2030")];
+        let e = shape_of(&eats, &[("ren", &main[..]), ("targets", &none[..])], &Scoped(true)).unwrap_err();
+        assert!(e.contains("no target row after 2024"), "{e}");
+    }
+
     /// naming Germany beside the EU (places_zh 德国, 欧盟) still scopes the page by EU27_2020 alone. With no reviewed name
     /// for the aggregate there is no scope at all, never a raw word.
     #[test]
