@@ -28,3 +28,5 @@ libc = "0.2"
 
 [dev-dependencies]
 tempfile = "3.14"
+# the paused clock (start_paused) the retry waits are tested on, so a wait of seconds takes none
+tokio = { version = "1.0", features = ["test-util"] }
