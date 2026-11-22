@@ -158,7 +158,7 @@ class Story(unittest.TestCase):
 
     def test_the_text_blocks_run_the_pages_whole_width(self):
         for layer in ("thesis_claims", "risk_notes"):
-            m = re.search(rf'<svg class="{layer}" viewBox="0 0 ([0-9.]+) ', self.html)
+            m = re.search(rf'<svg class="{layer}" viewBox="[-0-9.]+ [-0-9.]+ ([0-9.]+) ', self.html)
             self.assertIsNotNone(m, layer)
             self.assertEqual(float(m.group(1)), story.PAGE_W, layer)
         # the request's own width knob does not narrow them (the page's width is set over the request's style)
@@ -169,7 +169,7 @@ class Story(unittest.TestCase):
         layers = {n: g.get("svg") for n, g in zip(DRAWN, got[1:])}
         last = child(wide + [json.dumps({"phase": "page", "layers": layers, "sizes": {}}, ensure_ascii=False)])[-1]
         self.assertIn("html", last, last)
-        self.assertRegex(last["html"], rf'<svg class="thesis_claims" viewBox="0 0 {story.PAGE_W} ')
+        self.assertRegex(last["html"], rf'<svg class="thesis_claims" viewBox="[-0-9.]+ [-0-9.]+ {story.PAGE_W} ')
 
     def test_every_titled_section_prints_a_ledger_number(self):
         for h2 in re.findall(r"<h2 data-section=\"[a-z_]+\">(.*?)</h2>", self.html):

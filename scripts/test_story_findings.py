@@ -727,6 +727,13 @@ class Findings(unittest.TestCase):
             self.assertTrue(fx + w <= boxes[sid][2] + 0.01 and fy + h <= boxes[sid][3] + 0.01, (sid, fx, fy, w, h, boxes[sid]))  # the picture is inside its box
             placed += 1
         self.assertGreaterEqual(placed, 4)
+        for n, g in self.replies.items():  # the page holds each drawn svg byte for byte, once (the page check's rule), and draws nothing of its own in its svgs
+            if g.get("svg"): self.assertEqual(page_html.count(g["svg"]), 1, n)
+        for svg in _re.findall(r'<svg class="[a-z_]+[ "].*?</svg>', page_html, _re.S):
+            rest = svg
+            for g in self.replies.values():
+                if g.get("svg"): rest = rest.replace(g["svg"], "")
+            self.assertNotRegex(_re.sub(r"^<svg[^>]*>", "", rest), r"<(text|line|path|rect|circle)\b")
         # every text and word of every layer lies on the page and over no other: layer 1's rules, over the page
         items = []
         for n, g in self.replies.items():

@@ -10707,7 +10707,6 @@ mod tests {
     /// rows, story_page) is drawn by the real leaf child and published through the whole-page check, every layer's texts
     /// sourced and inside their panels. The gate the story leaves are held to; the python tests do not run layer 1's checks.
     #[test]
-    #[ignore = "the story page wraps its layers' svg: the whole-page check finds them not byte for byte; held until story_page places each layer as drawn (I26)"]
     fn a_story_page_is_drawn_by_the_real_child_and_published() {
         let years: Vec<String> = (2005..=2024).map(|y| y.to_string()).collect();
         let years: Vec<&str> = years.iter().map(String::as_str).collect();

@@ -326,11 +326,12 @@ def number_entries(markup):
     return [(s, t) for s, t in printed(markup) if s.split(":", 1)[0] in ("fact", "series", "record") and FX.digit(t)]
 
 
-def root(body, layer, size, extra=""):
-    """A leaf's drawn body in its own svg root (class the layer, its drawn size from the panel's record `size`, (w, h))."""
+def root(body, layer, size, extra="", origin=(0.0, 0.0)):
+    """A leaf's drawn svg, byte for byte as it was drawn, in its own svg root (class the layer, its drawn size from the panel's record `size`, (w, h)).
+    The drawn svg stands at the page's coordinates (the layout's translate), so the root's viewBox starts at that place: the picture shows from there."""
     w, h = size if isinstance(size, (tuple, list)) and len(size) == 2 else (None, None)
     if not (isinstance(w, (int, float)) and isinstance(h, (int, float)) and w > 0 and h > 0): raise FX.Refused(f"story: the layer {layer} has no drawn size")
-    return f'<svg class="{layer}" viewBox="0 0 {w:g} {h:.0f}" width="{w:g}" height="{h:.0f}" role="img"{extra}>{body}</svg>'
+    return f'<svg class="{layer}" viewBox="{origin[0]:g} {origin[1]:g} {w:g} {h:.0f}" width="{w:g}" height="{h:.0f}" role="img"{extra}>{body}</svg>'
 
 
 def overlay(items, size):
@@ -347,9 +348,9 @@ def overlay(items, size):
     return f'<div class="ov" style="width:{w:g}px;height:{h:.0f}px">{"".join(out)}</div>'
 
 
-def chart(body, layer, size, sid, label, desc, over="", pos=""):
+def chart(body, layer, size, sid, label, desc, over="", pos="", origin=(0.0, 0.0)):
     """A section's picture as its own module of the browser check: the svg named by `label`, described by the hidden `desc` (markup)."""
-    svg = root(body, layer, size, f' aria-label="{html.escape(label)}" aria-describedby="desc-{sid}" tabindex="0"').replace(f'class="{layer}"', f'class="{layer} pub-chart"', 1)
+    svg = root(body, layer, size, f' aria-label="{html.escape(label)}" aria-describedby="desc-{sid}" tabindex="0"', origin).replace(f'class="{layer}"', f'class="{layer} pub-chart"', 1)
     return (f'<div class="fig pub-visual" data-module-id="{sid}" data-layer="{layer}"{pos}>{svg}'
             f'{over}<p id="desc-{sid}" hidden>{desc}</p></div>')
 
@@ -374,13 +375,13 @@ def story_page(panel, got, sizes, placeholders, drew, over=None):
     _, rows, kn = plan(spec)
     boxes = PAGE_LAYOUT["boxes"]
     for i, sid, layer, kicker, title, text in secs:
-        svg, box = got[layer], boxes[i]
+        svg, box, origin = got[layer], boxes[i], (0.0, 0.0)
         if layer not in HTML_BLOCKS:  # the layer's svg stands in its box as the size phase's layout put it (run.py wraps it in that translate)
             m = re.fullmatch(r'<g transform="translate\(([-\d.]+),([-\d.]+)\)">(.*)</g>', svg, re.S)
             at = (box["x"] + box["fx"], box["y"] + box["fy"])
             if not m or (float(m[1]), float(m[2])) != (round(at[0], 1), round(at[1], 1)): return {"refused": [f"page: the layer {layer} stands at {m and m[1:3]}, not where the layout puts it {at}"]}
             if tuple(drew.get(layer) or ()) != tuple(PAGE_LAYOUT["drew"][layer]): return {"refused": [f"page: the layer {layer} drew {drew.get(layer)}, not the size the layout counted {PAGE_LAYOUT['drew'][layer]}"]}
-            svg = m[3]
+            origin = (float(m[1]), float(m[2]))   # the layer's svg goes on the page as it is drawn, translate and all (the page holds each layer byte for byte)
         pos = f' style="left:{box["fx"]:g}px;top:{box["fy"]:g}px"'
         if layer in HTML_BLOCKS:  # html, not a picture: placed as it is (a bare block; its numbers are ledger entries)
             if title is not None: return {"refused": [f"page: section {i + 1} ({sid}) draws html and cannot carry a title"]}
@@ -388,7 +389,7 @@ def story_page(panel, got, sizes, placeholders, drew, over=None):
             parts[i] = (sid, "", svg)
             continue
         words_over = overlay((over or {}).get(layer), drew.get(layer)) if (over or {}).get(layer) else ""
-        fig = f'<div class="blk" data-layer="{layer}"{pos}>{root(svg, layer, drew.get(layer))}{words_over}</div>' if layer in TEXT_BLOCKS else None
+        fig = f'<div class="blk" data-layer="{layer}"{pos}>{root(svg, layer, drew.get(layer), "", origin)}{words_over}</div>' if layer in TEXT_BLOCKS else None
         head, note_list = "", ""
         if title is not None:
             pc = PAGE_LAYOUT["pieces"][i]; t_html, x_html = pc["t_html"], pc["x_html"]
@@ -402,8 +403,8 @@ def story_page(panel, got, sizes, placeholders, drew, over=None):
         if fig is None:
             label = (kicker or "").strip() or page_kick
             if not label: return {"refused": [f"page: section {i + 1} ({sid}) has no kicker and the page none to name its chart"]}
-            desc = re.sub(r'<span data-src="name:[^"]*">([^<]*)</span>', r"\1", t_html) if title is not None else html.escape(label)  # markup: its numbers keep their marks
-            fig = chart(svg, layer, drew.get(layer), sid, label, desc, words_over, pos)
+            desc = re.sub(r'<span data-src="name:[^"]*">([^<0-9]*)</span>', r"\1", t_html) if title is not None else html.escape(label)  # markup: its numbers keep their marks, and so does a name with a digit in it (a code)
+            fig = chart(svg, layer, drew.get(layer), sid, label, desc, words_over, pos, origin)
         marks += printed(svg)
         parts[i] = (sid, head, fig, note_list)
     def sec(i, how):
