@@ -22,6 +22,13 @@ const LAMBDA: f64 = 0.5;
 /// A Eurostat table with fewer non-European countries than this covers only Europe (geo-filter plan).
 const WORLD_MIN: usize = 10;
 const TOP: usize = 5;
+/// A Eurostat table whose data ends more than this many years before the catalogue's usual last year (`usual_end`) is
+/// stale for a question that asks the latest (dev r2, rounds 17-19: two tables that end in 2019 kept the live household
+/// table out of the five offered).
+const STALE_YEARS: i32 = 5;
+/// What a stale table loses from its combined score (its title score over the best one's, plus LAMBDA times the same for
+/// member labels): a freshness prior, as search engines weigh recency, that a much better match still outranks.
+const STALE_PENALTY: f64 = 0.3;
 const STOP: &str = "a an and the of in by to for from per on at as or with all each its is are be how what which over";
 /// Search-text tokens (as `toks` cuts them) that name the question's places as a whole, the union, its member states, the
 /// countries, rather than what is measured. The places are read from the Chinese question (scope, places_zh) and filter
@@ -479,6 +486,8 @@ pub struct Catalog {
     metabase: String,
     labels: BTreeMap<String, Vec<(String, String)>>,
     end_year: HashMap<String, i32>,
+    /// The last data year most Eurostat tables share (the mode of `end_year`): what a stale table is measured against.
+    usual_end: Option<i32>,
     wb_places: Vec<(String, String)>,
     /// dim -> its place-valued members outside geo and time (`place_members` in from_raw).
     place_members: HashMap<String, HashSet<String>>,
@@ -784,6 +793,18 @@ pub struct GroupBasis {
     /// a page of half years or months goes without it and is drawn as before (the flow's basis_of).
     #[serde(default)]
     pub whole_years_only: bool,
+}
+
+/// The last data year most tables share (the mode of their end years; the later one on a tie); None with no end year.
+fn usual_end(end_year: &HashMap<String, i32>) -> Option<i32> {
+    let mut count: HashMap<i32, usize> = HashMap::new();
+    for &y in end_year.values() {
+        *count.entry(y).or_insert(0) += 1;
+    }
+    count
+        .into_iter()
+        .max_by_key(|&(y, n)| (n, y))
+        .map(|(y, _)| y)
 }
 
 /// The code a group word stands for in the Chinese name list: this prefix and the group id.
@@ -2310,6 +2331,7 @@ impl Catalog {
             groups,
             metabase: raw.metabase.clone(),
             labels,
+            usual_end: usual_end(&end_year),
             end_year,
             wb_places,
             place_members,
@@ -3059,6 +3081,30 @@ impl Catalog {
         out
     }
 
+    /// `ranked` with each stale table (a Eurostat table whose data ends more than STALE_YEARS before `usual_end`) less
+    /// STALE_PENALTY, sorted again as rank_reaching sorts; a table with no end year (World Bank) is never stale.
+    fn fresh_first(&self, mut ranked: Vec<Candidate>) -> Vec<Candidate> {
+        let Some(usual) = self.usual_end else {
+            return ranked;
+        };
+        for c in &mut ranked {
+            if self
+                .end_year
+                .get(&c.id)
+                .is_some_and(|&end| end < usual - STALE_YEARS)
+            {
+                c.score -= STALE_PENALTY;
+            }
+        }
+        ranked.sort_by(|a, b| {
+            b.score
+                .total_cmp(&a.score)
+                .then(b.s.total_cmp(&a.s))
+                .then_with(|| a.id.cmp(&b.id))
+        });
+        ranked
+    }
+
     /// The full order for a question: scope from the Chinese question, ranking from the English search texts. No
     /// ranking when the question is uncovered.
     pub fn rank(&self, question_zh: &str, texts: &[String]) -> Ranking {
@@ -3075,7 +3121,14 @@ impl Catalog {
         let candidates = if uncovered.is_some() || unread.is_some() {
             Vec::new()
         } else {
-            self.lift_asked(self.rank_reaching(texts, scope, &far), &asked, scope, &far)
+            let ranked = self.rank_reaching(texts, scope, &far);
+            // a question that names no year it ends at asks the latest
+            let ranked = if matches!(question_span(question_zh), None | Some((_, None))) {
+                self.fresh_first(ranked)
+            } else {
+                ranked
+            };
+            self.lift_asked(ranked, &asked, scope, &far)
         };
         Ranking {
             scope,
@@ -7462,6 +7515,46 @@ mod tests {
         assert_eq!(at("12个"), Some((12, 2)));
         assert_eq!(at("0个"), None);
         assert_eq!(at("个"), None);
+    }
+
+    /// Dev r2 (rounds 17-19): a table whose data ends in 2019 outranked the live one for a question asking the latest. With
+    /// most tables ending in 2025, a table ending before 2020 loses STALE_PENALTY when the question names no year it ends
+    /// at, and keeps its score when it names one (the years it asks decide, not the catalogue's last year): of two titles
+    /// that match nearly alike, the shorter, stale one leads for past years and the live one for the latest.
+    #[test]
+    fn a_stale_table_loses_ground_only_when_the_question_asks_the_latest() {
+        let mut raw = small_raw();
+        let row = |title: &str, code: &str, end: &str| {
+            format!("\"        {title}\"\t\"{code}\"\t\"table\"\t\"\"\t\"\"\t\"2002\"\t\"{end}\"\n")
+        };
+        raw.toc = format!(
+            "\"title\"\t\"code\"\t\"type\"\n\"Database by themes\"\t\"data\"\t\"folder\"\n\"    Society\"\t\"isoc\"\t\"folder\"\n{}{}{}{}",
+            row("Households - internet access", "old_access", "2019"),
+            row("Households - level of internet access", "live_access", "2025"),
+            row("Enterprises - internet access", "firm_access", "2025"),
+            row("Individuals - devices used", "devices", "2025"),
+        );
+        let c = Catalog::from_raw(&raw);
+        assert_eq!(c.usual_end, Some(2025));
+        let texts = ["households internet access".to_string()];
+        let score = |q: &str, id: &str| {
+            let r = c.rank(q, &texts);
+            let at = r.candidates.iter().position(|x| x.id == id).unwrap();
+            (at, r.candidates[at].score)
+        };
+        let latest = "欧盟各国家庭互联网普及率";
+        let past = "2010 年到 2015 年欧盟各国家庭互联网普及率";
+        let (old_latest, old_past) = (score(latest, "old_access"), score(past, "old_access"));
+        assert!((old_past.1 - old_latest.1 - STALE_PENALTY).abs() < 1e-9);
+        assert_eq!(score(latest, "live_access").1, score(past, "live_access").1);
+        assert_eq!(
+            old_past.0, 0,
+            "the closer title leads when the question asks past years"
+        );
+        assert!(
+            score(latest, "live_access").0 < old_latest.0,
+            "the live table leads when the question asks the latest"
+        );
     }
 
     /// Dev-set search replay: each row of R2_CASES (qid, question, search texts joined by " | ", wanted ids joined by
