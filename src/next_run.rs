@@ -14874,6 +14874,162 @@ mod tests {
         }
     }
 
+    /// A World Bank ranking page (rows by iso3 code, the registered population unit) over the economies a question asks the
+    /// place in, as the open-ranking pages of "the ten most populous, where does one rank" are shaped.
+    struct WbRanked(Vec<Value>);
+    impl Catalogue for WbRanked {
+        fn top5(
+            &self,
+            q: &str,
+            t: &[String],
+            m: bool,
+            y: Option<i32>,
+            y0: Option<i32>,
+        ) -> crate::l5geo::Ranking {
+            Hubs.top5(q, t, m, y, y0)
+        }
+        fn places_outside(&self, q: &str, t: &[String]) -> Vec<String> {
+            Hubs.places_outside(q, t)
+        }
+        fn source(&self) -> &Value {
+            &Value::Null
+        }
+        fn countries(&self, codes: &[String]) -> Result<Vec<String>, String> {
+            Hubs.countries(codes)
+        }
+        fn zh_names(
+            &self,
+            kind: &str,
+            codes: &[String],
+        ) -> Result<BTreeMap<String, String>, Vec<String>> {
+            Hubs.zh_names(kind, codes)
+        }
+        fn members(&self, aggregate: &str) -> Result<Vec<String>, String> {
+            Hubs.members(aggregate)
+        }
+        fn table(&self, id: &str) -> Option<crate::l5geo::TableMeta> {
+            Some(crate::l5geo::TableMeta {
+                id: id.into(),
+                worldbank: true,
+                dims: Vec::new(),
+                end_year: None,
+                places: WB_RANKED
+                    .iter()
+                    .map(|(c, _)| (c[..2].to_string(), c.to_string()))
+                    .collect(),
+                place_members: Vec::new(),
+                freqs: Vec::new(),
+                unit: Some(crate::l5geo::Unit {
+                    code: "PER".into(),
+                    label: String::new(),
+                    kind: Some("amount"),
+                }),
+            })
+        }
+        fn series_rows(&self, _: &crate::l5geo::TableMeta, _: &str) -> Result<Vec<Value>, String> {
+            Ok(self.0.clone())
+        }
+        fn asks_position(&self, question_zh: &str) -> bool {
+            crate::answer_plan::asks_position(question_zh)
+        }
+    }
+
+    /// The most populous economies at 2024 as the World Bank gives them (iso3 codes), largest first.
+    const WB_RANKED: [(&str, &str); 8] = [
+        ("IND", "1450935791"),
+        ("CHN", "1408975000"),
+        ("USA", "340003797"),
+        ("IDN", "283487931"),
+        ("PAK", "251269164"),
+        ("NGA", "232679478"),
+        ("BRA", "211998573"),
+        ("BGD", "173562364"),
+    ];
+
+    /// The same ask on a World Bank page (iso3 codes, a World Bank table's shape): the named economy that is not the
+    /// leader becomes the focus and the page says the place from its position fact; the leader named, two named, and a
+    /// question that does not ask a place set none or the leader.
+    #[test]
+    fn a_world_bank_ranking_page_takes_the_named_economy_as_its_focus() {
+        let id = "SP.POP.TOTL@2";
+        let rows: Vec<Value> = WB_RANKED
+            .iter()
+            .map(|(c, v)| {
+                json!({"src": format!("series:{id}/{c}:2024:value"), "table": id,
+                    "dims": {"country": c}, "time": "2024", "value": v})
+            })
+            .collect();
+        let ask = |q: &str| {
+            let run = tempfile::tempdir().unwrap();
+            std::fs::create_dir_all(run.path().join("shadow")).unwrap();
+            std::fs::write(run.path().join("claims.jsonl"), "").unwrap();
+            std::fs::write(
+                run.path().join("shadow/candidate_sheet-s1.json"),
+                json!({"candidates": []}).to_string(),
+            )
+            .unwrap();
+            std::fs::write(run.path().join("pop.csv"), "").unwrap();
+            let prepared = Prepared {
+                id: id.into(),
+                title: String::new(),
+                file: "pop.csv".into(),
+                args: Map::new(),
+                sheet: "s1".into(),
+                claims: Vec::new(),
+                places_zh: Vec::new(),
+                companions: Vec::new(),
+                asked: json!([]),
+                relation: None,
+            };
+            let calls = std::sync::Mutex::new(Vec::new());
+            let cat = WbRanked(rows.clone());
+            let places = cat.places(q);
+            recipe_request(
+                run.path(),
+                &[prepared],
+                &["horizontal_bar"],
+                recipe("column"),
+                &cat,
+                (q, ("标题", "导语", "栏目"), &places),
+                (&calls, None),
+            )
+            .unwrap_or_else(|e| panic!("{q}: {e:?}"))
+        };
+        let plain = ask("2024 年人口最多的十个国家是哪些？");
+        assert!(plain["page_in"]["picks"].get("focus").is_none());
+        assert_eq!(plain["page_in"]["picks"]["ranked"][0], json!("IND"));
+        let nga = ask("2024 年人口最多的十个国家里，名NGA排第几？");
+        assert_eq!(nga["page_in"]["picks"]["focus"], json!("NGA"));
+        let lead = ask("2024 年人口最多的十个国家里，名IND排第几？");
+        assert_eq!(lead["page_in"]["picks"]["focus"], json!("IND"));
+        let two = ask("2024 年人口最多的十个国家里，名NGA和名BRA各排第几？");
+        assert!(two["page_in"]["picks"].get("focus").is_none());
+        let asked_not = ask("2024 年人口最多的十个国家里，名NGA怎么样？");
+        assert!(asked_not["page_in"]["picks"].get("focus").is_none());
+        // its page is drawn and published, passes the whole-page check, and holds the place's position fact (6th)
+        let (html, ledger, refs, spec, rows_back, facts) =
+            group_published_by(nga, "column", "wb focus");
+        assert_eq!(
+            crate::next_leaf::check_leaf_page(&html, &ledger, &refs, &spec, &rows_back, &facts),
+            Vec::<String>::new()
+        );
+        let pos = spec
+            .facts
+            .iter()
+            .find(|(k, _)| k == "pos1")
+            .map(|(_, v)| v.clone())
+            .expect("the page holds the position fact");
+        assert_eq!(
+            (pos["op"].clone(), pos["code"].clone()),
+            (json!("position"), json!("NGA"))
+        );
+        let at = facts
+            .iter()
+            .find(|f| f.key == "pos1")
+            .expect("pos1 computed");
+        assert_eq!(at.v, 6.0);
+    }
+
     /// A group's page asking for the first or the last n (owner 11-21 12:07, ask item 9: cut to those n), end to end over a
     /// run folder: recipe_request ranks the BRICS members (Ethiopia with no row), draws only the n (column and ranked bars,
     /// first and last), keeps every ranked member's row in its request, says the places-drawn line naming Ethiopia, and
