@@ -371,7 +371,7 @@ prod.KNOBS["bars"] = dict(row=(24, (16, 40, 1), "row height of one bar"), size=(
 prod.KNOBS["bignums"] = dict(size=(36, (28, 64, 2), "number size in px"), label_lines=(2, (1, 3, 1), "lines a label may take; more refuses"),
                              align=("left", ("left", "center"), "alignment of the numbers"),
                              min=(22, (14, 40, 2), "smallest number size a cell may shrink to before its unit wraps"),
-                             width=(560, (240, 720, 10), "width of the big numbers' box beside the title"),
+                             width=(560, (240, 1140, 10), "width of the big numbers' box beside the title (a story page spans its page)"),
                              cols=(2, (1, 3, 1), "cells in a row"))
 BN_PAD, BN_GAP = 22, 24  # the box's left padding (after its rule) and the gap between two cells, as CSS sets them
 

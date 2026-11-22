@@ -40,7 +40,7 @@ NODE = "small_multiples"
 CELLS_MIN = 4
 prod.KNOBS[NODE] = dict(
     size=(12, (11, 16, 0.5), "label size px (11 is the page floor)"), title_size=(16, (12, 22, 1), "chart name size px"),
-    width=(1140, (480, 1400, 10), "picture width in px"), cols=(4, (2, 6, 1), "cells in a row"),
+    width=(1140, (480, 1400, 10), "picture width in px"), cols=(0, (0, 6, 1), "cells in a row; 0 = the count 3 to 6 that leaves the fewest empty places in the last row (4 on a tie)"),
     plot_h=(64, (40, 160, 4), "a cell's plot height in px"), max_cells=(12, (6, 12, 1), "cells drawn, the first of the order"),
     sort=("value", ("value", "change", "given"), "cell order: the last value high to low, the change over the span, or as given"),
     line_w=(1.8, (1, 3.5, 0.1), "a cell's line width in px"), gap=(22, (10, 48, 2), "space between two cells in px"),
@@ -57,6 +57,13 @@ def series_of(src_list, what):
         if out and t <= out[-1][0]: raise Refused(f"small_multiples: {what}'s points are not in period order at {per}")
         seen.add(per); out.append((t, v, per))
     return out
+
+
+def auto_cols(n, W, gap, min_cell):
+    """The cells in a row (3 to 6, as many as keep each cell min_cell wide) that leave the fewest empty places in the last row; a tie
+    takes the count nearest 4; none wide enough: the narrowest board's count, which the width check then refuses."""
+    ok = [c for c in range(3, 7) if (W - 16 - (c - 1) * gap) / c >= min_cell and c <= max(n, 3)] or [3]
+    return min(ok, key=lambda c: (-n % c if n >= c else c, abs(c - 4)))
 
 
 class Frame:
@@ -121,7 +128,7 @@ class Frame:
         f.base = 0.0 if zero else f.lo_v - 0.1 * ((f.hi_v - f.lo_v) or abs(f.lo_v) or 1)
         if f.hi_v <= f.base: f.hi_v = f.base + 1
         n = len(f.cells)
-        f.cols = min(int(k("cols")), n)
+        f.cols = min(int(k("cols")), n) if k("cols") else auto_cols(n, f.W, k("gap"), k("min_cell"))
         f.cw = (f.W - 16 - (f.cols - 1) * k("gap")) / f.cols
         if f.cw < k("min_cell"): raise Refused(f"small_multiples: the board is too narrow for {f.cols} cells in a row (a cell under {k('min_cell')} px)")
         f.H = 0

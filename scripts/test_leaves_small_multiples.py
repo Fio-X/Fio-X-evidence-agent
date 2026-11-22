@@ -181,6 +181,21 @@ class Picture(unittest.TestCase):
         self.assertIn('data-src="fact:goal"', svg)
 
 
+class Columns(unittest.TestCase):
+    def test_auto_columns_leave_the_last_row_full_or_nearly(self):
+        got = {n: small_multiples.auto_cols(n, 1140, 22, 150) for n in (4, 5, 6, 7, 8, 9, 10, 11, 12)}
+        self.assertEqual(got, {4: 4, 5: 5, 6: 3, 7: 4, 8: 4, 9: 3, 10: 5, 11: 4, 12: 4})
+        # a narrow board takes the counts it can: 4 cells of 150 px or more need 700 px
+        self.assertEqual(small_multiples.auto_cols(9, 600, 22, 150), 3)
+        self.assertEqual(small_multiples.auto_cols(12, 600, 22, 150), 3)
+
+    def test_the_default_is_auto_and_a_given_count_is_kept(self):
+        rows, data, names = eu()
+        K.setup(rows, names, run.tables)
+        self.assertEqual(small_multiples.Frame({"data": data, "style": {}}).cols, 3)  # nine cells: three rows of three
+        self.assertEqual(small_multiples.Frame({"data": data, "style": {"small_multiples": {"cols": 4}}}).cols, 4)
+
+
 class Rules(unittest.TestCase):
     def refuse(self, want, edit=None, **style):
         rows, data, names = eu()

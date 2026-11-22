@@ -38,7 +38,10 @@ CODE = re.compile(r"[a-z][a-z0-9_]{0,31}")
 PAGE_W = 1140
 # the two text blocks run the page's whole width (their own default is a column; the page puts them under the header and
 # above the sources, where a column leaves the right of the page empty): the leaf's width knob, set here over the request's
-FIXED = {**{n: {"width": PAGE_W} for n in TEXT_BLOCKS}, "bignums": {"cols": 3, "width": 720, "size": 44}}
+# The page's type scale (12, 14, 16 and 24 px, the numbers 58, the page title's): its leaves' label, head and value sizes, so no leaf adds a tier of its own.
+FIXED = {**{n: {"width": PAGE_W} for n in TEXT_BLOCKS}, "bignums": {"cols": 3, "width": PAGE_W, "size": 58},
+         "thesis_claims": {"width": PAGE_W, "size": 14, "num_size": 24}, "risk_notes": {"width": PAGE_W, "size": 14, "title_size": 16},
+         "winners_losers": {"size": 12, "value_size": 16}, "rankbar": {"size": 14}, "pair_bars": {"size": 12, "head_size": 14, "width": PAGE_W}}
 
 
 def cl_bignums(f, occ):
@@ -187,6 +190,6 @@ def story_page(panel, got, sizes, placeholders, drew):
 CSS = (".opening{width:1140px;margin:0 0 18px}.opening svg{display:block}"
        ".story{width:1140px}.story .sec{margin:54px 0 0}.story .col{max-width:640px;margin:0 0 22px}"
        ".story .kick{display:inline-block;min-width:30px;padding:0 10px;box-sizing:border-box;height:28px;line-height:28px;border-radius:14px;"
-       "background:var(--t-title);color:#fff;font:700 13px/28px var(--sans);letter-spacing:.1em;margin-bottom:10px}"
+       "background:var(--t-title);color:#fff;font:700 12px/28px var(--sans);letter-spacing:.1em;margin-bottom:10px}"
        ".story h2{margin:0 0 8px;font:700 24px/1.4 var(--serif);color:var(--t-title)}.story .col p{margin:0;font:400 16px/1.8 var(--sans);color:var(--t-body)}"
        ".story .fig svg,.story .blk svg{display:block;max-width:100%;height:auto}.story .sec:first-child{margin-top:20px}")
