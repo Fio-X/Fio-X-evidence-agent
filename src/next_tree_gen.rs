@@ -4876,6 +4876,83 @@ mod tests {
         }
     }
 
+    /// A question asking how its places fell (picks.asked_fall, the knowledge group's reading of 各降了多少; dev e11, rounds
+    /// 17-19) on a change page: the title leads with the largest fall whenever a fall is drawn, though the rises tie or
+    /// outnumber the falls (as without the pick, which leads with the largest rise then); with no fall drawn it leads with the
+    /// rise as before. Two data shapes: two rises and two falls, three rises and one fall.
+    #[test]
+    fn next_tree_gen_a_question_asking_the_falls_leads_with_the_largest_fall() {
+        let base = read("q1-gen.json").g("page_in").clone();
+        let codes: Vec<String> = base
+            .g("picks")
+            .g("ranked")
+            .arr()
+            .iter()
+            .take(4)
+            .map(st)
+            .collect();
+        let reg = core::load_registry(&core::bindings());
+        let d = declares(
+            &reg,
+            FINDING,
+            &J::from_value(&serde_json::json!({"recipe": "change"})),
+        )
+        .unwrap()
+        .clone();
+        for (changes, asked, want) in [
+            ([30.0, 10.0, -5.0, -40.0], false, 0),
+            ([30.0, 10.0, -5.0, -40.0], true, 3),
+            ([30.0, 20.0, 10.0, -40.0], true, 3),
+            ([30.0, 20.0, 10.0, 5.0], true, 0),
+        ] {
+            let mut rows = Vec::new();
+            for (c, ch) in codes.iter().zip(changes) {
+                for (y, v) in [("2021", 100.0), ("2025", 100.0 + ch)] {
+                    rows.push(serde_json::json!({"src": format!("series:sdg/{c}:{y}:OBS_VALUE"), "table": "sdg",
+                        "dims": {"freq": "A", "unit": "PC", "geo": c}, "time": y, "value": format!("{v:.1}")}));
+                }
+            }
+            let mut pi = base.clone();
+            pi.set("rows", J::from_value(&serde_json::json!(rows)));
+            pi.set("recipe", J::str("change"));
+            pi.set("short", J::str("数量"));
+            for (path, v) in [
+                (&["picks", "ranked"][..], serde_json::json!(codes)),
+                (
+                    &["picks", "rules"][..],
+                    serde_json::json!(["changed", "claim_marks"]),
+                ),
+                (&["picks", "t0"][..], serde_json::json!("2021")),
+                (&["shape", "t0"][..], serde_json::json!("2021")),
+            ] {
+                assert!(pi.set_path(
+                    &path.iter().map(|k| k.to_string()).collect::<Vec<_>>(),
+                    J::from_value(&v)
+                ));
+            }
+            pi.set(
+                "fill",
+                J::from_value(&serde_json::json!({"facts": ["chg", "drawn"], "named": codes})),
+            );
+            if asked {
+                assert!(pi.set_path(&["picks", "asked_fall"].map(String::from), J::Bool(true)));
+            }
+            let said = finding_declared(&d, &pi, &reg).unwrap().to_value();
+            let at = format!("{changes:?} asked_fall {asked}");
+            assert_eq!(said["subject"], codes[want].as_str(), "{at}: {said}");
+            let word = if changes[want] < 0.0 {
+                "降幅最大"
+            } else {
+                "增幅最大"
+            };
+            assert_eq!(
+                said["finding"]["headline"]["title"],
+                format!("{{name.{}}}{word}", codes[want]),
+                "{at}"
+            );
+        }
+    }
+
     /// The rank lines over a many-block page's blocks (block_ranks): each ranked place's position among the ranked places in
     /// every block's table at its year (facts_each_block, `{b}` the block's number), each block's rows of them drawn, and
     /// the leaf's columns a block each (its head the block's name, its ranks the facts as printed) over the places' codes.

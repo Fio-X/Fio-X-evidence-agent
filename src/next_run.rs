@@ -3447,6 +3447,14 @@ fn recipe_request(
     if let Some(p) = page_in.as_mut().filter(|_| catalogue.asks_lowest(question)) {
         p["picks"]["asked_low"] = json!(true);
     }
+    // a question that asks how its places fell (the knowledge group's reading of its words), on a change page: a run fact a
+    // finding's case reads (requires $picks.asked_fall), so the title starts from the largest fall when one is drawn
+    if let Some(p) = page_in
+        .as_mut()
+        .filter(|_| recipe.picks.iter().any(|r| r == "changed") && catalogue.asks_fall(question))
+    {
+        p["picks"]["asked_fall"] = json!(true);
+    }
     // a question that asks for the total of its places, over a unit that adds up (the unit table's additive column) on a page
     // the program did not narrow: a run fact a finding's case reads (requires $picks.asked_total), so the title says the
     // total of the places drawn, never a total over a rate or over places the page left out

@@ -388,6 +388,14 @@ pub fn asks_top(question: &str) -> Option<(usize, bool)> {
     }
 }
 
+/// Whether the question asks how its places fell (各降了多少, 降得最多, 减少了多少): a change asked (its relation Change) with a
+/// falling word (DOWN_ZH) and no rising word (UP_ZH), by its words. A change page leads with the largest fall then, not with a
+/// rise that ties or outnumbers the falls (dev e11, rounds 17-19: 各降了多少 over two rises and two falls led with a rise).
+pub fn asks_fall(question: &str) -> bool {
+    let q = plain(question);
+    relation(question) == Rel::Change && any(&q, &DOWN_ZH) && !any(&q, &UP_ZH)
+}
+
 /// Whether the question asks for the total of its places (合计, 总共: the relation Magnitude, its focus Total), by its words.
 pub fn asks_total(question: &str) -> bool {
     relation(question) == Rel::Magnitude
@@ -953,6 +961,29 @@ mod tests {
             "2015 年到 2024 年哪国失业率降得最多？",
         ] {
             assert!(!asks_total(q), "{q}");
+        }
+    }
+
+    /// A change asked with a falling word and no rising word asks how its places fell (dev e11 over rounds 17-19, n38, vc5);
+    /// a rise, both ways, a level, or a falling word inside a measure's name (降水) is not.
+    #[test]
+    fn a_question_asking_how_places_fell_is_read_from_its_words() {
+        for q in [
+            "2010 年以来，中国、印度、印尼、泰国的 PM2.5 年均浓度各降了多少？",
+            "2000 年到 2023 年，撒哈拉以南非洲、南亚、中东和北非的总和生育率各降了多少？",
+            "2015 年到 2023 年，欧盟各国温室气体排放降幅最大的五个是谁？",
+            "2015 年到 2024 年哪国失业率降得最多？",
+        ] {
+            assert!(asks_fall(q), "{q}");
+        }
+        for q in [
+            "2010 年到 2020 年各国人口各增长了多少？",
+            "2010 年到 2024 年各国房价的涨跌",
+            "撒哈拉以南非洲、南亚、东亚，2000 年到 2023 年能用上电的人口比例各怎么变？",
+            "欧盟各国失业率最新排名",
+            "2024 年欧盟各国年降水量最多的是哪国？",
+        ] {
+            assert!(!asks_fall(q), "{q}");
         }
     }
 

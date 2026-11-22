@@ -542,6 +542,33 @@
       {
        "if": {
         "key_of": "ranked",
+        "at": "last",
+        "below": 0
+       },
+       "requires": ["$picks.asked_fall"],
+       "finding": "Fall",
+       "subject": "fall",
+       "named": [
+        "{code}"
+       ],
+       "facts": {
+        "lead0": {"op": "last", "table": "$shape.main", "filter": {"$shape.place": "{code}"}, "from": "$shape.t0", "to": "$shape.t0", "fmt": "$shape.fmt"},
+        "lead1": {"op": "last", "table": "$shape.main", "filter": {"$shape.place": "{code}"}, "from": "$shape.year", "to": "$shape.year", "fmt": "$shape.fmt"},
+        "lead": {"op": "minus", "a": "lead0", "b": "lead1", "fmt": "$fmt.change"}
+       },
+       "reads": {
+        "times": ["$shape.t0", "$shape.year"]
+       },
+       "words": {
+        "{name}": "{name.{code}}",
+        "{value}": "{lead}",
+        "{y0}": "{lead0.t}",
+        "{y1}": "{lead1.t}"
+       }
+      },
+      {
+       "if": {
+        "key_of": "ranked",
         "at": "first",
         "above": 0,
         "not_outnumbered": true
