@@ -3338,6 +3338,24 @@ pub trait Catalogue: Sync {
     ) {
         (Vec::new(), Vec::new())
     }
+    /// The links of the main's event chain a story page fetches (the knowledge group's chain_links); none when this
+    /// catalogue reads no chain.
+    fn chain_links(&self, _main: &str) -> Vec<next_knowledge::ChainLink> {
+        Vec::new()
+    }
+    /// The chain links kept from the fetched rows of the main and of each fetched link, the page holding `on_page`, and
+    /// each link not kept with why (the knowledge group's chain_companions).
+    fn chain_companions(
+        &self,
+        _main: &str,
+        _on_page: &[&str],
+        _rows: &BTreeMap<String, Vec<next_knowledge::CompanionRow>>,
+    ) -> (
+        Vec<next_knowledge::ChainCompanion>,
+        Vec<(String, next_knowledge::DropWhy)>,
+    ) {
+        (Vec::new(), Vec::new())
+    }
     /// Whether a table is a hub table (the knowledge group's hub_origin, through its door): `dims` holds each dimension's
     /// codes, `countries` and `aggregates` what Countries and Members say of them.
     fn hub_origin(
@@ -3863,6 +3881,9 @@ pub(crate) fn knowledge_call<'a>(
         Ok(Reply::Companions(found, dropped)) => json!({"kept": format!("{found:?}"),
             "dropped": dropped.iter().map(|(t, why)| json!({"table": t, "why": why})).collect::<Vec<_>>()}),
         Ok(Reply::HubOrigin(found)) => json!(format!("{found:?}")),
+        Ok(Reply::ChainLinks(links)) => json!(links.iter().map(|l| &l.table).collect::<Vec<_>>()),
+        Ok(Reply::ChainCompanions(found, dropped)) => json!({"kept": found.iter().map(|c| &c.id).collect::<Vec<_>>(),
+            "dropped": dropped.iter().map(|(t, why)| json!({"table": t, "why": why})).collect::<Vec<_>>()}),
     };
     let request = json!({"request": kind, "args": args});
     let event = json!({"group": "knowledge", "request": kind,
@@ -4364,6 +4385,43 @@ impl Catalogue for GroupCatalogue {
         }
     }
 
+    fn chain_links(&self, main: &str) -> Vec<next_knowledge::ChainLink> {
+        let request = next_knowledge::Request::ChainLinks {
+            catalogue: &self.opened,
+            main,
+        };
+        match self.call("chain_links", json!({"main": main}), request) {
+            next_knowledge::Reply::ChainLinks(links) => links,
+            _ => unreachable!("the knowledge group answered chain_links with another reply"),
+        }
+    }
+
+    fn chain_companions(
+        &self,
+        main: &str,
+        on_page: &[&str],
+        rows: &BTreeMap<String, Vec<next_knowledge::CompanionRow>>,
+    ) -> (
+        Vec<next_knowledge::ChainCompanion>,
+        Vec<(String, next_knowledge::DropWhy)>,
+    ) {
+        let request = next_knowledge::Request::ChainCompanions {
+            catalogue: &self.opened,
+            main,
+            on_page,
+            rows,
+        };
+        let counts: BTreeMap<&String, usize> = rows.iter().map(|(id, r)| (id, r.len())).collect();
+        match self.call(
+            "chain_companions",
+            json!({"main": main, "on_page": on_page, "rows": counts}),
+            request,
+        ) {
+            next_knowledge::Reply::ChainCompanions(found, dropped) => (found, dropped),
+            _ => unreachable!("the knowledge group answered chain_companions with another reply"),
+        }
+    }
+
     fn top5(
         &self,
         question_zh: &str,
@@ -4852,6 +4910,17 @@ pub struct Prepared {
     /// The data relation the table step kept for the main table (table_relation): on the main table only, None on every
     /// other and when the answer gave none or it was dropped. The page step passes over a recipe that answers another.
     pub relation: Option<Relation>,
+    /// The links of the main's event chain fetched and kept (chain_tables), in the chain's order: on the main table only,
+    /// empty on every other and when no chain holds the main. Only a story page reads them.
+    pub chain: Vec<ChainFetched>,
+}
+
+/// One event-chain link a story page may read (chain_tables): the knowledge group's link as kept and its fetched file
+/// under the run folder.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ChainFetched {
+    pub link: next_knowledge::ChainCompanion,
+    pub file: String,
 }
 
 /// The spec step that fetches this catalogue table: same dataset, and for a World Bank id the indicator before "@2".
@@ -5618,6 +5687,140 @@ async fn companion_tables<R: ToolRunner + Send + ?Sized>(
         .collect())
 }
 
+/// The event of the chain stage (chain_tables): the main, each link fetched with its outcome and seconds, the links kept and
+/// the ones dropped with why.
+pub const CHAIN_EVENT: &str = "next_chain";
+
+/// The links of the main's event chain (the knowledge group's chain_links), fetched at the main's places and years and the
+/// link's own slice, one after another inside COMPANION_STAGE_LIMIT, each inside COMPANION_FETCH_LIMIT; the knowledge
+/// group keeps the ones whose rows share enough places and years with the main's (chain_companions). A link that is not
+/// fetched, or not kept, is left off with why in CHAIN_EVENT; the page goes on without it. Empty when no chain holds the
+/// main.
+#[allow(clippy::too_many_arguments)]
+async fn chain_tables<R: ToolRunner + Send + ?Sized>(
+    recorder: &mut Recorder<'_>,
+    tools: &mut R,
+    catalogue: &dyn Catalogue,
+    main: &str,
+    main_args: &Map<String, Value>,
+    main_file: &str,
+    on_page: &[&str],
+    cancel: &AtomicBool,
+) -> Result<Vec<ChainFetched>, Stop> {
+    let links = catalogue.chain_links(main);
+    record_group_calls(recorder, catalogue)?;
+    if links.is_empty() {
+        return Ok(Vec::new());
+    }
+    let began = Instant::now();
+    let run_dir = recorder.run_dir.clone();
+    let read_rows = |id: &str, file: &str| -> Result<Vec<next_knowledge::CompanionRow>, String> {
+        let table = catalogue
+            .table(id)
+            .ok_or_else(|| "not in the catalogue".to_string())?;
+        let csv = std::fs::read_to_string(run_dir.join(file))
+            .map_err(|e| format!("the fetched file cannot be read: {e}"))?;
+        catalogue.companion_rows(&table, &csv)
+    };
+    let mut rows = BTreeMap::new();
+    let mut files = BTreeMap::new();
+    let mut entries = Vec::new();
+    match read_rows(main, main_file) {
+        Ok(found) => {
+            rows.insert(main.to_string(), found);
+        }
+        Err(why) => entries.push(json!({"table": main, "outcome": format!("main rows unread: {why}")})),
+    }
+    record_group_calls(recorder, catalogue)?;
+    let links = if rows.contains_key(main) { links } else { Vec::new() };
+    for link in &links {
+        let started = Instant::now();
+        let limit = COMPANION_FETCH_LIMIT.min(COMPANION_STAGE_LIMIT.saturating_sub(began.elapsed()));
+        let outcome: Result<(), String> = match catalogue.table(&link.table) {
+            _ if limit.is_zero() => Err("the chain stage is out of time".into()),
+            None => Err("not in the catalogue".into()),
+            Some(meta) => match chain_args(main_args, &meta, &link.slice) {
+                None => Err("cannot be fixed to the main's places".into()),
+                Some(args) => {
+                    let (called, stopped) =
+                        timed_prepare(recorder, tools, catalogue, Value::Object(args), cancel, limit).await?;
+                    record_group_calls(recorder, catalogue)?;
+                    let file = called
+                        .details
+                        .as_ref()
+                        .and_then(|d| d["filePath"].as_str())
+                        .map(String::from);
+                    match (stopped, mode_of(&called).as_str(), file) {
+                        (true, _, _) => Err(format!("stopped at {} s", limit.as_secs_f64())),
+                        (false, "candidates", Some(file)) => {
+                            let found = read_rows(&link.table, &file);
+                            record_group_calls(recorder, catalogue)?;
+                            found.map(|found| {
+                                rows.insert(link.table.clone(), found);
+                                files.insert(link.table.clone(), file);
+                            })
+                        }
+                        (false, mode, _) => Err(format!("mode {mode}: {}", reason(&called))),
+                    }
+                }
+            },
+        };
+        entries.push(json!({"table": link.table, "seconds": started.elapsed().as_secs_f64(),
+            "outcome": outcome.err().unwrap_or_else(|| "fetched".into())}));
+    }
+    let (kept, dropped) = catalogue.chain_companions(main, on_page, &rows);
+    record_group_calls(recorder, catalogue)?;
+    recorder.program_event(
+        CHAIN_EVENT,
+        json!({"main": main, "tables": entries,
+            "kept": kept.iter().map(|c| json!({"table": c.id, "overlap": {"places": c.overlap.places,
+                "years": c.overlap.years, "first": c.overlap.first, "last": c.overlap.last}})).collect::<Vec<_>>(),
+            "dropped": dropped.iter().map(|(t, why)| json!({"table": t, "why": why})).collect::<Vec<_>>(),
+            "seconds": began.elapsed().as_secs_f64()}),
+    )?;
+    Ok(kept
+        .into_iter()
+        .filter_map(|link| {
+            let file = files.remove(&link.id)?;
+            Some(ChainFetched { link, file })
+        })
+        .collect())
+}
+
+/// The fetch of one chain link: its table at the main's places (the main's place filter, each code the table holds) and
+/// years, and every dimension of the link's slice at its codes. None when the table holds none of the main's places.
+fn chain_args(
+    main: &Map<String, Value>,
+    table: &TableMeta,
+    slice: &BTreeMap<String, Vec<String>>,
+) -> Option<Map<String, Value>> {
+    let mut args = Map::new();
+    args.insert("dataset".into(), json!(table.id));
+    let place = main
+        .get("filters")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .find(|f| f["dimension"] == next_params::GEO_DIM)?;
+    let (_, codes) = table.dims.iter().find(|(d, _)| d == next_params::GEO_DIM)?;
+    let mut places: Vec<String> = Vec::new();
+    for code in place["values"].as_array().into_iter().flatten().filter_map(Value::as_str) {
+        if let Some(own) = own_code(next_params::GEO_DIM, code, codes).filter(|c| !places.contains(c)) {
+            places.push(own);
+        }
+    }
+    if places.is_empty() {
+        return None;
+    }
+    let mut filters = vec![json!({"dimension": next_params::GEO_DIM, "values": places})];
+    filters.extend(slice.iter().map(|(dim, codes)| json!({"dimension": dim, "values": codes})));
+    args.insert("filters".into(), Value::Array(filters));
+    if let Some(years) = main.get("years") {
+        args.insert("years".into(), years.clone());
+    }
+    Some(args)
+}
+
 /// The mode newsroom_data_prepare returned, or "error" for an error result.
 fn mode_of(called: &Called) -> String {
     if called.is_error {
@@ -6135,10 +6338,12 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
     // a whole class the new route cannot answer, read by the knowledge group from the question's words (user 11-08 item 1):
     // stopped before the catalogue is searched, nothing searched or fetched; the group's call is recorded under the search
     // answer, as every group call follows a model answer (the program never calls on its own, Stop::NoModelParent)
+    let mut held_for = None;
     if steps.is_empty() {
         let refused =
             catalogue.scope_refused(question, chrono::Datelike::year(&chrono::Local::now()));
         record_group_calls(recorder, catalogue)?;
+        held_for = refused.as_ref().and_then(|r| r.target_year);
         // a refusal held for a target year goes on to the page step, which stops with it unless the page runs against
         // that year's target (crate::next_run::page_of_block, owner 11-22 23:59)
         if let Some(r) = refused.filter(|r| r.target_year.is_none()) {
@@ -6295,6 +6500,7 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
         if let Some(d) = d.as_mut() {
             d.window = ring_window(d, i + 1, &places, this_year, catalogue);
             d.named_years = next_params::question_years(question, this_year);
+            d.with_whole = held_for.is_some();
             d.ranked = rank_asked.clone();
         }
     }
@@ -6724,6 +6930,7 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
     }
     let mut companion_titles = BTreeMap::new();
     let mut companion_files = Vec::new();
+    let mut chain_files = Vec::new();
     if let (Some((main, main_args, _, _)), Some(file)) = (tables.first().cloned(), main_file) {
         let room = PAGE_TABLES_MAX.saturating_sub(tables.len());
         let found = companion_tables(
@@ -6745,6 +6952,9 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
             companion_files.push((kept.id.clone(), kept.file));
             tables.push((kept.id, kept.args, kept.sheet, kept.candidates));
         }
+        // the main's event chain, for a story page: read by the page step only, never offered as claims
+        let on_page: Vec<&str> = tables.iter().map(|(id, _, _, _)| id.as_str()).collect();
+        chain_files = chain_tables(recorder, tools, catalogue, &main, &main_args, &file, &on_page, cancel).await?;
     }
     let mut lines = vec![format!("Question: {question}")];
     let mut n = 0;
@@ -6853,6 +7063,11 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
             },
             companions: if prepared.is_empty() {
                 std::mem::take(&mut companion_files)
+            } else {
+                Vec::new()
+            },
+            chain: if prepared.is_empty() {
+                std::mem::take(&mut chain_files)
             } else {
                 Vec::new()
             },

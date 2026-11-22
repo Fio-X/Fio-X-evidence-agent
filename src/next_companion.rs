@@ -6,7 +6,7 @@
 //! it fetched for the main table and for each candidate, so a candidate that failed to fetch is simply not offered.
 
 use crate::l5geo::{family_exists, family_holds, time_freq, toks, wb_unit, Raw};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// How many companions one page takes, a by-month twin besides: the twin shows the shape inside the year and takes its own
@@ -575,7 +575,7 @@ const TOPIC_CHAINS: &str = include_str!("../runtime/pi/assets/topic-chains.json"
 
 /// How a link's numbers are drawn: a quantity over a period is a flow (bars), a level or a rate at a point in time a stock
 /// (a line); prices are stocks.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub enum LinkKind {
     #[serde(rename = "flow")]
     Flow,
@@ -593,6 +593,8 @@ pub struct Link {
     pub kind: LinkKind,
     /// The short Chinese name of what the link measures, its partner and basis said, with no number in it.
     pub measure_zh: String,
+    /// The unit-short-zh.tsv code the link's numbers print in.
+    pub unit: String,
     /// Dimension -> the codes the page takes of it (time and geo come from the page).
     pub slice: BTreeMap<String, Vec<String>>,
     /// The dimensions fixed to one code (each also a one-code dimension of `slice`): the link is one series.
@@ -642,6 +644,7 @@ pub struct ChainCompanion {
     pub position: String,
     pub kind: LinkKind,
     pub measure_zh: String,
+    pub unit: String,
     pub slice: BTreeMap<String, Vec<String>>,
     pub filter: BTreeMap<String, String>,
     pub overlap: ChainOverlap,
@@ -719,6 +722,7 @@ pub fn chain_companions(
             position: link.position.clone(),
             kind: link.kind,
             measure_zh: link.measure_zh.clone(),
+            unit: link.unit.clone(),
             slice: link.slice.clone(),
             filter: link.filter.clone(),
             axis: axis(main, &link.table, &main_rows, &theirs),
@@ -732,6 +736,24 @@ pub fn chain_companions(
             .map(|c| (c.id, DropWhy::Cut)),
     );
     (found, dropped)
+}
+
+/// The links of the main table's chain a story page fetches (the chain whose main family holds `main`, in its order): the
+/// ones the catalogue lists, other than the main, that are one series a place and year (every dimension of the slice at one
+/// code, so the page reads one line of each). Empty when no chain holds the main.
+pub fn chain_links(index: &CompanionIndex, main: &str) -> Vec<Link> {
+    chains()
+        .iter()
+        .find(|c| family_holds(&c.main_family, main))
+        .map(|c| {
+            c.links
+                .iter()
+                .filter(|l| l.table != main && index.has_table(&l.table))
+                .filter(|l| l.slice.values().all(|codes| codes.len() == 1))
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// A row's place, as placed (its `via`), and year: what the overlap matches on.
@@ -1583,6 +1605,19 @@ mod tests {
             })
             .collect();
         assert_eq!(chain_overlap(&main, &hub), None);
+    }
+
+    /// B1 (11-23): a story page fetches the links that are one series a place and year, in the chain's order: the energy
+    /// chain's gas, price and emissions (solar and the grid mix keep two fuels or more), the labour chain's three; none for a
+    /// main no chain holds, and never the main itself.
+    #[test]
+    fn a_story_page_fetches_the_one_series_links_of_its_chain() {
+        let index = chain_index(&[]);
+        let tables = |main: &str| -> Vec<String> { chain_links(&index, main).into_iter().map(|l| l.table).collect() };
+        assert_eq!(tables("sdg_07_40"), ["nrg_ti_gas", "nrg_pc_204", "env_air_gge"]);
+        assert_eq!(tables("une_rt_a"), ["lfsi_emp_a", "nama_10_gdp", "ilc_peps01n"]);
+        assert!(tables("demo_pjan").is_empty());
+        assert!(chains().iter().flat_map(|c| &c.links).all(|l| crate::next_pack::unit_short(&l.unit).is_some()));
     }
 
     #[test]

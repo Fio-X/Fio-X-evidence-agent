@@ -565,6 +565,10 @@ pub struct Draft {
     /// Set by the flow before the pick: the years the question names (question_years), which an annual table's fetch takes
     /// before the program's own last ten years.
     pub named_years: Option<NamedYears>,
+    /// Set by the flow before the pick for a question held for a target year (the scope check's target_year, owner 11-22
+    /// 23:59): the target is set for the region as a whole, so a region's members are fetched with the region's own
+    /// aggregate (EU_AGGREGATE) when the table holds it. False for every other question.
+    pub with_whole: bool,
     /// Set by the flow before the pick: the ranking the question asks for in place of named places (the knowledge group's
     /// rank_asked). With `places_open` and a wb-rank-by.json option ranked by its reference, the program keeps that option's
     /// economies and the count the question writes (ranked_option): "t<n>.places" is not asked.
@@ -621,6 +625,11 @@ pub fn question_years(question: &str, this_year: i32) -> Option<NamedYears> {
     }
     years.dedup();
     let last = last_years(&chars);
+    // years all after this one (a target's year, "离 2030 年目标") name no years a table holds: no window of the
+    // question's, the program's own (owner 11-22 23:59: only a target year gets this far, the scope check refuses others)
+    if years.iter().all(|y| y.0 > this_year) {
+        years.clear();
+    }
     if let (Some(a), Some(b)) = (
         years.iter().map(|y| y.0).min(),
         years.iter().map(|y| y.0).max(),
@@ -1082,6 +1091,7 @@ pub fn draft(table: TableMeta, texts: &[String], places: &[Place]) -> Draft {
         named_open,
         window: None,
         named_years: None,
+        with_whole: false,
         ranked: None,
         kept: Vec::new(),
     }
@@ -1484,7 +1494,10 @@ pub fn fill(
                 // A table of the EU as a whole (geo EU27_2020 only, the trade tables): the region is that one code.
                 vec![EU_AGGREGATE.to_string()]
             } else if region {
-                keep(&mut EU27.iter().copied())
+                let whole = [EU_AGGREGATE].into_iter().filter(|c| draft.with_whole && held(c));
+                let mut members = keep(&mut EU27.iter().copied());
+                members.extend(whole.map(str::to_string));
+                members
             } else if breakdown.is_some() {
                 geo.iter()
                     .map(|(c, _)| c)
@@ -3058,6 +3071,28 @@ mod tests {
             (&json!("annual"), &json!(ANNUAL_YEARS))
         );
         assert_eq!(filled.event["open"], Value::Null);
+        // owner 11-22 23:59: a question held for a target year (set for the EU as a whole) fetches the members and the
+        // aggregate, at the program's own years: the target's year names no window
+        let whole = Draft {
+            with_whole: true,
+            named_years: question_years("欧盟可再生能源占比这些年怎么变的，离 2030 年目标还有多远", 2026),
+            ..draft.clone()
+        };
+        assert_eq!(whole.named_years, None);
+        let filled = fill(&whole, 1, &picks(&[("t1.breakdown", 1), ("t1.nrg_bal", 1)]), &[Place::Region], 2026).unwrap();
+        assert_eq!(filter(&filled, "geo").unwrap(), ["BE", "DE", "EL", "EU27_2020"]);
+        assert_eq!(filled.args["years"], json!({"start": 2015, "end": 2024}));
+    }
+
+    /// Owner 11-22 23:59: years after this one alone name no window (a target's year); beside a past year they still end a
+    /// span, which the fill keeps to the table's last year.
+    #[test]
+    fn a_future_year_alone_names_no_years() {
+        for q in ["离 2030 年目标还有多远", "2030年和2050年的目标"] {
+            assert_eq!(question_years(q, 2026), None, "{q}");
+        }
+        assert_eq!(question_years("近十年的变化，离 2030 年目标还有多远", 2026), Some(NamedYears::Last(10)));
+        assert_eq!(question_years("2015 年以来离 2030 年目标还差多少", 2026), Some(NamedYears::Span(2015, 2030)));
     }
 
     #[test]

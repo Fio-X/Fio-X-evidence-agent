@@ -13,6 +13,8 @@ pub type CompanionCandidate = crate::next_companion::Candidate;
 pub type CompanionRow = crate::next_companion::Row;
 pub type Companion = crate::next_companion::Companion;
 pub type DropWhy = crate::next_companion::DropWhy;
+pub type ChainLink = crate::next_companion::Link;
+pub type ChainCompanion = crate::next_companion::ChainCompanion;
 
 /// A hub table, as hub_origin finds it: its one geo code (an aggregate with members) and the dimension holding its countries.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -294,6 +296,16 @@ pub enum Request<'a> {
         main: &'a str,
         rows: &'a BTreeMap<String, Vec<CompanionRow>>,
     },
+    /// The links of the main's event chain a story page fetches (next_companion::chain_links), in the chain's order.
+    ChainLinks { catalogue: &'a Opened, main: &'a str },
+    /// The chain links kept (next_companion::chain_companions): `rows` holds the fetched rows of the main and of each link
+    /// fetched, `on_page` the tables the page already has; each link not kept comes back with why.
+    ChainCompanions {
+        catalogue: &'a Opened,
+        main: &'a str,
+        on_page: &'a [&'a str],
+        rows: &'a BTreeMap<String, Vec<CompanionRow>>,
+    },
     /// One run of `DATA_PREPARE_TOOL` on the host the caller lends, with these arguments (a fetch, or the picks to register).
     DataPrepare {
         host: crate::next_flow::HostRun<'a>,
@@ -355,6 +367,8 @@ pub enum Reply<'a> {
     Rows(Vec<CompanionRow>),
     SeriesRows(Vec<Value>),
     Companions(Vec<Companion>, Vec<(String, DropWhy)>),
+    ChainLinks(Vec<ChainLink>),
+    ChainCompanions(Vec<ChainCompanion>, Vec<(String, DropWhy)>),
     HubOrigin(Result<HubOrigin, HubMiss>),
     Run(crate::next_flow::ToolFuture<'a>),
 }
@@ -587,6 +601,21 @@ pub fn call(request: Request<'_>) -> Result<Reply<'_>, String> {
                 rows.get(id).cloned()
             });
             Reply::Companions(kept, dropped)
+        }
+        Request::ChainLinks { catalogue, main } => {
+            Reply::ChainLinks(next_companion::chain_links(&catalogue.companions, main))
+        }
+        Request::ChainCompanions {
+            catalogue,
+            main,
+            on_page,
+            rows,
+        } => {
+            let (kept, dropped) =
+                next_companion::chain_companions(&catalogue.companions, main, on_page, &|id| {
+                    rows.get(id).cloned()
+                });
+            Reply::ChainCompanions(kept, dropped)
         }
         Request::HubOrigin {
             dims,

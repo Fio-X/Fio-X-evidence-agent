@@ -3857,6 +3857,22 @@ fn recipe_request(
             .unwrap_or_default();
         lines.push(source_line(meta.worldbank, &meta.id, &title, &[]));
     }
+    // a page that runs against a target reads the main's event chain (chain_input), each link it reads named in the footer
+    // after the main's, as a block's table is
+    let chain = match &shape.target {
+        Some((_, whole, _)) => chain_input(run_dir, catalogue, &main.chain, &shape.place, whole),
+        None => ChainIn::default(),
+    };
+    for id in &chain.tables {
+        let meta = catalogue
+            .table(id)
+            .ok_or_else(|| ("fill", format!("the catalogue lists no {id}")))?;
+        let title = catalogue
+            .table_zh(&meta.id)
+            .map_err(|why| ("fill", why))?
+            .unwrap_or_default();
+        lines.push(source_line(meta.worldbank, &meta.id, &title, &[]));
+    }
     // a page that runs against a target names the law it is set in, last (the knowledge group's source line, which ends with
     // the clause): the clause is the target table's id, so the footer marks it as a ref and takes its digits, no other
     if let Some((table, place, year)) = &shape.target {
@@ -3880,10 +3896,99 @@ fn recipe_request(
         _ => json!(lines),
     };
     if let Some(target) = &shape.target {
-        fill[STORY_IN] = story_input(&shape, target, (&main_rows, &target_rows), &title)
+        let mut input = story_input(&shape, target, (&main_rows, &target_rows), &title)
             .map_err(|why| ("fill", why))?;
+        with_chain(&mut input, chain);
+        fill[STORY_IN] = input;
     }
     Ok(fill)
+}
+
+/// What a story page's findings read of the main's event chain (chain_input): the chain tables (findings.py's chain), their
+/// rows, their formats (chain_fmts) and the tables read, in the chain's order.
+#[derive(Default)]
+struct ChainIn {
+    items: Vec<Value>,
+    rows: Vec<Value>,
+    fmts: Map<String, Value>,
+    tables: Vec<String>,
+}
+
+/// The event chain of a story page (the findings child's chain, findings.py): each kept link (Prepared::chain) whose rows
+/// at the whole's place and the link's filter are one value a year, as a chain table with that filter (the whole's place
+/// added), its reviewed measure name, its unit's short form and its kind; its rows there join the page's, and it takes three
+/// formats (its unit's suffix at 0, 1 and 2 decimals, `<table>_d0|d1|d2`). A link whose file cannot be read, whose unit has
+/// no short form, or whose rows there are not one a year (a half-year price, two fuels) is left out, never guessed; the
+/// findings child drops the chain itself when fewer than two tables stand.
+fn chain_input(
+    run_dir: &Path,
+    catalogue: &dyn Catalogue,
+    chain: &[crate::next_flow::ChainFetched],
+    place_dim: &str,
+    whole: &str,
+) -> ChainIn {
+    let mut out = ChainIn::default();
+    for c in chain {
+        if let Ok(rows) = fetched_rows(run_dir, catalogue, &c.link.id, &c.file) {
+            chain_add(&mut out, &c.link, rows, place_dim, whole);
+        }
+    }
+    out
+}
+
+/// A story input (story_input) with the page's chain (chain_input): the chain tables, their formats (in chain_fmts for the
+/// findings child and among the formats the fill takes, story_page) and their rows after the page's. Unchanged when no link
+/// stood.
+fn with_chain(input: &mut Value, chain: ChainIn) {
+    if chain.items.is_empty() {
+        return;
+    }
+    input["chain"] = json!(chain.items);
+    if let Some(defs) = input["fmt_defs"].as_object_mut() {
+        defs.extend(chain.fmts.clone());
+    }
+    input["chain_fmts"] = Value::Object(chain.fmts);
+    if let Some(rows) = input["rows"].as_array_mut() {
+        rows.extend(chain.rows);
+    }
+}
+
+/// One link into a story page's chain (chain_input) from its fetched rows; left out as chain_input says.
+fn chain_add(
+    out: &mut ChainIn,
+    link: &crate::next_knowledge::ChainCompanion,
+    rows: Vec<Value>,
+    place_dim: &str,
+    whole: &str,
+) {
+    {
+        let Some(short) = next_pack::unit_short(&link.unit) else {
+            return;
+        };
+        let mut filter: Map<String, Value> = link.filter.iter().map(|(d, v)| (d.clone(), json!(v))).collect();
+        filter.insert(place_dim.to_string(), json!(whole));
+        let held: Vec<Value> = rows
+            .into_iter()
+            .filter(|r| filter.iter().all(|(d, v)| r["dims"][d.as_str()] == *v))
+            .collect();
+        let years: Vec<&str> = held.iter().filter_map(|r| r["time"].as_str()).collect();
+        let yearly = years.iter().all(|t| t.len() == 4 && t.bytes().all(|b| b.is_ascii_digit()));
+        let once = years.iter().collect::<BTreeSet<_>>().len() == years.len();
+        if held.is_empty() || !yearly || !once {
+            return;
+        }
+        let end = next_pack::unit_number_suffix(&link.unit).map(suffix).unwrap_or_default();
+        for dec in 0..3 {
+            out.fmts.insert(
+                format!("{}_d{dec}", link.id),
+                json!({"scale": 1, "dec": dec, "suffix": end}),
+            );
+        }
+        out.items.push(json!({"table": link.id, "filter": filter,
+            "words": {"measure": link.measure_zh, "unit": short}, "kind": link.kind}));
+        out.rows.extend(held);
+        out.tables.push(link.id.clone());
+    }
 }
 
 /// The key of a fill's story input (story_input), which the findings step (story_findings) reads and takes out.
@@ -8751,6 +8856,7 @@ mod tests {
                     claims: details["claims"].as_array().cloned().unwrap_or_default(),
                     places_zh: Vec::new(),
                     companions: Vec::new(),
+                    chain: Vec::new(),
                     asked: json!([]),
                     relation: None,
                 };
@@ -10435,6 +10541,48 @@ mod tests {
                 hit: format!("{year}年"),
                 target_year: Some(year),
             };
+            // the main's event chain (chain_input), two shapes of link left out: a half-year price and two fuels a year
+            let mut input = input;
+            let chain_years: Vec<String> = (2010..=2024).map(|y| y.to_string()).collect();
+            let chain_years: Vec<&str> = chain_years.iter().map(String::as_str).collect();
+            let link = |id: &str, unit: &str, filter: &[(&str, &str)]| crate::next_knowledge::ChainCompanion {
+                id: id.into(),
+                tag: id.into(),
+                position: String::new(),
+                kind: crate::next_companion::LinkKind::Flow,
+                measure_zh: "测量".into(),
+                unit: unit.into(),
+                slice: BTreeMap::new(),
+                filter: filter.iter().map(|(d, c)| (d.to_string(), c.to_string())).collect(),
+                overlap: crate::next_companion::ChainOverlap { places: 3, years: 10, first: 2010, last: 2024 },
+                axis: crate::next_companion::Axis::Own,
+            };
+            let valued = |mut rows: Vec<Value>, at: f64| {
+                for (i, r) in rows.iter_mut().enumerate() {
+                    // a step at 2020 in each series, the band the chain finds
+                    let y: f64 = r["time"].as_str().unwrap()[..4].parse().unwrap();
+                    r["value"] = json!(format!("{:.0}", at + if y >= 2020.0 { at / 3.0 } else { i as f64 % 2.0 }));
+                }
+                rows
+            };
+            let gas = [("siec", "G3000"), ("unit", "MIO_M3")];
+            let air = [("airpol", "GHG"), ("unit", "MIO_T")];
+            let mut chain = ChainIn::default();
+            let geos = ["EU27_2020", "DE"];
+            chain_add(&mut chain, &link("gas_t", "MIO_M3", &gas), valued(ring_rows("gas_t", &gas, ("geo", &geos), &chain_years), 300000.0), "geo", "EU27_2020");
+            let half: Vec<&str> = ["2020-S1", "2020-S2", "2021-S1"].into();
+            chain_add(&mut chain, &link("price_t", "EUR_KWH", &[("unit", "KWH")]), ring_rows("price_t", &[("unit", "KWH")], ("geo", &geos), &half), "geo", "EU27_2020");
+            let mut two = ring_rows("solar_t", &[("unit", "MW"), ("siec", "RA420")], ("geo", &geos), &chain_years);
+            two.extend(ring_rows("solar_t", &[("unit", "MW"), ("siec", "RA300")], ("geo", &geos), &chain_years));
+            chain_add(&mut chain, &link("solar_t", "MW", &[("unit", "MW")]), two, "geo", "EU27_2020");
+            chain_add(&mut chain, &link("air_t", "MIO_T", &air), valued(ring_rows("air_t", &air, ("geo", &geos), &chain_years), 2000.0), "geo", "EU27_2020");
+            assert_eq!(chain.tables, ["gas_t", "air_t"]);
+            assert_eq!(chain.items[0]["filter"], json!({"siec": "G3000", "unit": "MIO_M3", "geo": "EU27_2020"}));
+            assert_eq!(chain.items[0]["words"], json!({"measure": "测量", "unit": "百万立方米"}));
+            assert_eq!(chain.rows.len(), 2 * chain_years.len(), "the whole's rows only");
+            with_chain(&mut input, chain);
+            assert_eq!(input["fmt_defs"]["gas_t_d0"]["suffix"], " 百万立方米");
+            let input = input;
             let story_fill = json!({STORY_IN: input.clone()});
             assert!(held_settled(Some(&held(2030)), Some(&story_fill)).is_ok());
             assert!(held_settled(None, Some(&json!({}))).is_ok());
@@ -10458,7 +10606,8 @@ mod tests {
             let found = crate::next_leaf::story(&child, &asked).unwrap();
             let ids: Vec<&str> = found["candidates"].as_array().unwrap().iter().filter_map(|c| c["id"].as_str()).collect();
             assert!(ids.contains(&"path") && ids.contains(&"spread"), "{found}");
-            let picks: Vec<&str> = ["path", "need", "spread"].into_iter().filter(|p| ids.contains(p)).collect();
+            assert!(ids.contains(&"chain"), "{found}");
+            let picks: Vec<&str> = ["path", "need", "chain"].into_iter().filter(|p| ids.contains(p)).collect();
             asked["mode"] = json!("compose");
             asked["picks"] = json!(picks);
             let page = crate::next_leaf::story(&child, &asked).unwrap();
@@ -11147,6 +11296,7 @@ mod tests {
             claims: Vec::new(),
             places_zh: Vec::new(),
             companions: Vec::new(),
+            chain: Vec::new(),
             asked: json!([]),
             relation: None,
         };
@@ -11237,6 +11387,7 @@ mod tests {
             claims: picked["claims"].as_array().unwrap().clone(),
             places_zh: Vec::new(),
             companions: Vec::new(),
+            chain: Vec::new(),
             asked: json!([]),
             relation: None,
         };
@@ -11714,6 +11865,7 @@ mod tests {
             claims: Vec::new(),
             places_zh: Vec::new(),
             companions: Vec::new(),
+            chain: Vec::new(),
             asked: json!([]),
             relation: None,
         };
@@ -15726,6 +15878,7 @@ mod tests {
             claims: Vec::new(),
             places_zh: Vec::new(),
             companions: Vec::new(),
+            chain: Vec::new(),
             asked,
             relation: None,
         };
@@ -15945,6 +16098,7 @@ mod tests {
                 claims: Vec::new(),
                 places_zh: Vec::new(),
                 companions: Vec::new(),
+                chain: Vec::new(),
                 asked: json!([]),
                 relation: None,
             };
@@ -16777,6 +16931,7 @@ mod tests {
             claims: vec![json!({"candidate": "c1", "claim_id": "k1"})],
             places_zh: Vec::new(),
             companions: Vec::new(),
+            chain: Vec::new(),
             asked: json!([]),
             relation: None,
         };
@@ -16840,6 +16995,7 @@ mod tests {
             claims: Vec::new(),
             places_zh: Vec::new(),
             companions: Vec::new(),
+            chain: Vec::new(),
             asked: json!([]),
             relation: None,
         };
@@ -18867,6 +19023,7 @@ mod tests {
             claims: Vec::new(),
             places_zh: Vec::new(),
             companions: Vec::new(),
+            chain: Vec::new(),
             asked: json!([]),
             relation: None,
         };
@@ -19699,6 +19856,7 @@ mod tests {
                 claims: registered,
                 places_zh: Vec::new(),
                 companions: Vec::new(),
+                chain: Vec::new(),
                 asked: json!([]),
                 relation: None,
             },
@@ -20045,6 +20203,7 @@ mod tests {
             claims: Vec::new(),
             places_zh: Vec::new(),
             companions: Vec::new(),
+            chain: Vec::new(),
             asked: json!([]),
             relation: None,
         };
@@ -20113,6 +20272,7 @@ mod tests {
             claims: Vec::new(),
             places_zh: Vec::new(),
             companions: Vec::new(),
+            chain: Vec::new(),
             asked: json!([]),
             relation: None,
         };
@@ -20147,6 +20307,7 @@ mod tests {
             claims: Vec::new(),
             places_zh: Vec::new(),
             companions: Vec::new(),
+            chain: Vec::new(),
             asked: json!([]),
             relation: None,
         };
@@ -20227,6 +20388,7 @@ mod tests {
             claims: Vec::new(),
             places_zh: Vec::new(),
             companions: Vec::new(),
+            chain: Vec::new(),
             asked: json!([]),
             relation: None,
         };
@@ -20477,6 +20639,7 @@ mod tests {
             claims: Vec::new(),
             places_zh: Vec::new(),
             companions: Vec::new(),
+            chain: Vec::new(),
             asked: json!([]),
             relation: None,
         };
@@ -20521,6 +20684,7 @@ mod tests {
             claims: Vec::new(),
             places_zh: Vec::new(),
             companions: Vec::new(),
+            chain: Vec::new(),
             asked: json!([]),
             relation: None,
         };
@@ -21885,6 +22049,7 @@ mod tests {
             claims,
             places_zh: Vec::new(),
             companions: Vec::new(),
+            chain: Vec::new(),
             asked: json!([]),
             relation,
         };
@@ -27455,6 +27620,7 @@ for line in sys.stdin:
                 claims: vec![json!({"candidate": "k1", "claim_id": "c4"})],
                 places_zh: Vec::new(),
                 companions: vec![("impm".into(), "impm.csv".into())],
+                chain: Vec::new(),
                 asked: json!([]),
                 relation: None,
             };
@@ -27505,6 +27671,7 @@ for line in sys.stdin:
                 claims: Vec::new(),
                 places_zh: Vec::new(),
                 companions: Vec::new(),
+                chain: Vec::new(),
                 asked: json!([]),
                 relation,
             };
@@ -27575,6 +27742,7 @@ for line in sys.stdin:
             claims: Vec::new(),
             places_zh: Vec::new(),
             companions: Vec::new(),
+            chain: Vec::new(),
             asked: json!([]),
             relation: Some(Relation::Change),
         };
@@ -29408,6 +29576,7 @@ for line in sys.stdin:
             claims: vec![json!({"candidate": "k1", "claim_id": "c4"})],
             places_zh: Vec::new(),
             companions: vec![("impm".into(), "impm.csv".into())],
+            chain: Vec::new(),
             asked: json!([]),
             relation: None,
         };
