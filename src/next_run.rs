@@ -2891,8 +2891,12 @@ fn page_lead(fill: Option<&Value>, charts: &[Chart]) -> Option<(Relation, View)>
 /// name passed every check).
 fn page_words(fill: &mut Value, (title, dek, kicker): (&str, &str, &str)) {
     let spec = &mut fill["knobs"]["spec"];
-    spec["title"] = json!(title);
-    spec["dek"] = json!(dek);
+    // a story page (its spec lists sections, story_page) keeps the headline and dek its lead finding wrote: the page's title
+    // is that conclusion, not the text step's draft
+    if !spec["sections"].is_array() {
+        spec["title"] = json!(title);
+        spec["dek"] = json!(dek);
+    }
     spec["kicker"] = json!(kicker);
 }
 
@@ -5243,7 +5247,18 @@ fn story_page(fill: &mut Value, input: &Value, page: &Value) -> Result<(), Strin
     only(page, &["knobs"], "reply")?;
     only(&page["knobs"], &["spec"], "knobs")?;
     only(&page["knobs"]["spec"], &crate::next_leaf::STORY_TAKEN, "knobs.spec")?;
-    merge_into(&mut fill["knobs"]["spec"], &page["knobs"]["spec"], "knobs.spec")?;
+    // the headline words are the findings' own (the lead's conclusion and text, the first finding the model picked): they
+    // replace the draft the fill was picked with (and page_words keeps them over the text step's), the rest merges
+    let mut given = page["knobs"]["spec"].clone();
+    for key in crate::next_leaf::STORY_WORDS {
+        if let Some(words) = given.as_object_mut().and_then(|o| o.remove(key)) {
+            if !words.as_str().is_some_and(|w| !w.trim().is_empty()) {
+                return Err(format!("the child gave knobs.spec.{key}, which is no wording"));
+            }
+            fill["knobs"]["spec"][key] = words;
+        }
+    }
+    merge_into(&mut fill["knobs"]["spec"], &given, "knobs.spec")?;
     merge_into(&mut fill["knobs"]["spec"], &json!({"fmts": input["fmt_defs"]}), "knobs.spec")?;
     merge_into(&mut fill["knobs"], &json!({"members": input["main"]["members"]}), "knobs")?;
     let rows = fill["rows"].as_array_mut().ok_or("the fill's rows are no list")?;
@@ -10695,6 +10710,36 @@ mod tests {
             // the header's three big numbers open the story, the thesis right after (76 11-23)
             assert_eq!(layers.get(..2), Some(&["bignums", "thesis_claims"][..]));
             assert_eq!(layers.last(), Some(&"risk_notes"));
+            // I28: the lead finding's conclusion is the page's headline and its text the dek, written over the draft the fill
+            // held and kept by page_words over the text step's (the kicker is the text step's); each number in them is a fact
+            // the page declares, and no section prints the headline's sentence again
+            let mut drafted = json!({"knobs": {"spec": {"title": "draft", "dek": "draft", "kicker": "k", "facts": {}, "hero": {}}}, "rows": []});
+            story_page(&mut drafted, &input, &page).unwrap();
+            let words = |f: &Value, k: &str| f["knobs"]["spec"][k].as_str().unwrap().to_string();
+            let (title, dek) = (words(&drafted, "title"), words(&drafted, "dek"));
+            assert_eq!(title, page["knobs"]["spec"]["title"].as_str().unwrap(), "goal {goal}");
+            assert_eq!(dek, page["knobs"]["spec"]["dek"].as_str().unwrap(), "goal {goal}");
+            page_words(&mut drafted, ("text step title", "text step dek", "text step kicker"));
+            assert_eq!((words(&drafted, "title"), words(&drafted, "dek")), (title.clone(), dek.clone()), "goal {goal}");
+            assert_eq!(words(&drafted, "kicker"), "text step kicker");
+            let facts_declared = page["knobs"]["spec"]["facts"].as_object().unwrap();
+            for (what, text) in [("title", &title), ("dek", &dek)] {
+                assert!(text.contains('{'), "goal {goal}: the {what} prints no number: {text}");
+                for ph in text.split('{').skip(1).filter_map(|t| t.split_once('}')).map(|(k, _)| k) {
+                    let key = ph.split('.').next().unwrap();
+                    assert!(key == "name" || facts_declared.contains_key(key), "goal {goal}: the {what}'s {{{ph}}} is no fact");
+                }
+            }
+            for sec in page["knobs"]["spec"]["sections"].as_array().unwrap() {
+                for part in ["title", "text"] {
+                    assert!(sec[part].as_str() != Some(title.as_str()) && sec[part].as_str() != Some(dek.as_str()), "goal {goal}: {} {part} repeats the headline", sec["id"]);
+                }
+            }
+            // a headline that is no wording refuses
+            let mut f = json!({"knobs": {"spec": {"facts": {}, "hero": {}}}, "rows": []});
+            let mut empty = page.clone();
+            empty["knobs"]["spec"]["title"] = json!("  ");
+            assert!(story_page(&mut f, &input, &empty).unwrap_err().contains("knobs.spec.title"), "goal {goal}");
             // review 11-22: the child gives facts, sections and leaf data only; rows, formats or any other key it adds refuse,
             // and a fact the fill holds another way is never overwritten
             for (bad, why) in [

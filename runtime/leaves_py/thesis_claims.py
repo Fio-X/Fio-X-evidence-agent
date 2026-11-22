@@ -5,7 +5,7 @@ it points to at the right of that line in the secondary ink, its body under the 
 entry printed with FX.entry; every word comes in the request as segs (the leaf holds no word of its own).
 
 hero.data (the data shape this leaf eats; on a column frame page, the hero's leaves.thesis_claims, run.py leaf): {
-  "answer": segs,                                   # the page's answer, one or two lines (knob answer_lines)
+  "answer": segs?,                                  # the page's answer, one or two lines (knob answer_lines); none when the page's headline says it
   "claims": [{"num": ledger src,                    # the claim's number, printed big (layer 1's fact)
               "head": segs,                         # its lead, bold, one line (two with knob head_lines)
               "body": segs?,                        # what it says, up to knob body_lines lines; its numbers ledger srcs
@@ -18,7 +18,7 @@ needs new wording: the see-word before a section's kicker and the kickers themse
 Placement stacks by construction: the answer, then each claim's block under the one before (the number's column at the
 left, the lead and the body in a column right of it, the section at the right of the lead's line), each block as tall as
 its taller side; every text box is checked in wbkit.Boxes (outside the picture or over another refuses).
-Refuses: no answer, fewer than two or more than four claims, a claim with no number, lead or section, a number the
+Refuses: fewer than two or more than four claims, a claim with no number, lead or section, a number the
 ledger lacks or that holds no digit, a digit in a literal word, an answer, lead or body longer than its knob's lines, a
 text that leaves the picture or overlaps another, a board too narrow (the text column under 240 px)."""
 
@@ -42,8 +42,7 @@ class Frame:
     def __init__(f, h):
         d = h["data"]; k = lambda n: K.knob(h, NODE, n)
         f.d, f.k, f.size, f.W = d, k, k("size"), k("width")
-        if not d.get("answer"): raise Refused("thesis_claims: the spec holds no answer")
-        K.segs(d["answer"], "answer")
+        if d.get("answer"): K.segs(d["answer"], "answer")   # a page whose headline is its answer (the story) gives none
         claims = d.get("claims")
         if not isinstance(claims, list) or not 2 <= len(claims) <= 4:
             raise Refused(f"thesis_claims: {len(claims) if isinstance(claims, list) else claims!r} claims; two to four are drawn")
@@ -67,10 +66,13 @@ def cl_thesis_claims(f, occ):
     B = K.Boxes(W, 10 ** 6); o = []
     asz = f.k("answer_size")
     y = asz + 4
-    svg, _, n = K.words(B, d["answer"], "answer", 8, y, asz, "var(--t-title)", weight=700, serif=True, max_w=W - 16,
-                        line_h=asz * 1.35, max_lines=f.k("answer_lines"))
-    o.append(svg)
-    y += asz * 1.35 * (n - 1) + asz * 0.25
+    if d.get("answer"):
+        svg, _, n = K.words(B, d["answer"], "answer", 8, y, asz, "var(--t-title)", weight=700, serif=True, max_w=W - 16,
+                            line_h=asz * 1.35, max_lines=f.k("answer_lines"))
+        o.append(svg)
+        y += asz * 1.35 * (n - 1) + asz * 0.25
+    else:
+        y = 0
     pad, nsz, ssz = f.k("pad"), f.k("num_size"), f.k("section_size")
     for i, c in enumerate(f.claims):
         top = y + pad

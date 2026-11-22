@@ -280,7 +280,7 @@ class Findings(unittest.TestCase):
             ops = {q.get("op") for q in composed["facts"].values()}
             self.assertTrue({"per_year", "line_at", "step_max", "group_change", "times"} <= ops, ops)
             rows, facts = ledger(req, composed, names)
-            spec = {"title": "t", "kicker": "k", "dek": "d", "source": "s", "refs": [], "facts": composed["facts"], "sections": composed["sections"],
+            spec = {"title": composed["title"], "kicker": "k", "dek": composed["dek"], "source": "s", "refs": [], "facts": composed["facts"], "sections": composed["sections"],
                     "tables": {t: {"id": t} for t in sorted({r["table"] for r in req["rows"]})}, "fmts": {**FMT_DEFS, "time": {}},
                     "hero": {"data": {}, "leaves": composed["leaves"]}}
             line = lambda **kv: json.dumps({"node": "page_story", "panel": {"w": 1140, "h": 0, "frame": None}, "rows": rows,
@@ -340,7 +340,7 @@ class Findings(unittest.TestCase):
         _, cands, _ = FN.candidates(req)
         rank = next(c for c in cands if c["id"] == "rank")
         self.assertEqual(rank["layer"], "rankbar")
-        composed, facts, drawn = draw_all(self, req, names, ["rank", "path", "spread"])
+        composed, facts, drawn = draw_all(self, req, names, ["path", "rank", "spread"])
         data = composed["leaves"]["rankbar"]
         # the nine members and the whole, each row a fact of its own; the accent row is the whole's
         self.assertEqual(len(data["rows"]), 10)
@@ -377,7 +377,7 @@ class Findings(unittest.TestCase):
         import json, subprocess
         composed = FN.compose({**req, "picks": picks})
         rows, facts = ledger(req, composed, names)
-        spec = {"title": "t", "kicker": "k", "dek": "d", "source": "s", "refs": [], "facts": composed["facts"], "sections": composed["sections"],
+        spec = {"title": composed["title"], "kicker": "k", "dek": composed["dek"], "source": "s", "refs": [], "facts": composed["facts"], "sections": composed["sections"],
                 "tables": {t: {"id": t} for t in sorted({r["table"] for r in req["rows"]})}, "fmts": {**FMT_DEFS, "n": {"scale": 1, "dec": 0, "suffix": ""}, "time": {}},
                 "hero": {"data": {}, "leaves": composed["leaves"], "style": style or {}}}
         line = lambda **kv: json.dumps({"node": "page_story", "panel": {"w": 1140, "h": 0, "frame": None}, "rows": rows,
@@ -401,6 +401,40 @@ class Findings(unittest.TestCase):
         last = go(lines + [json.dumps({"phase": "page", "layers": bodies, "sizes": {}}, ensure_ascii=False)])[-1]
         self.assertFalse(last.get("refused"), last)
         return composed, facts, bodies, last["html"]
+
+    def _once(self, page_html):
+        """The page's headline is a conclusion printed once: the h1 holds a marked ledger number, fits the headline's 100 characters, and
+        no sentence of the page's words (cut at the full stop, 8 characters or more) stands twice, the h1's included."""
+        h1 = re.search(r"<h1>(.*?)</h1>", page_html, re.S)[1]
+        self.assertRegex(h1, r'data-src="fact:', "the headline prints no number of the ledger")
+        flat = lambda x: re.sub(r"<[^>]+>", "", x)
+        self.assertLessEqual(len(flat(h1)), 100)
+        body = flat(re.sub(r"<(style|footer)\b.*?</\1>", "", page_html, flags=re.S))
+        sentences = [x.strip() for x in re.split(r"[。\n]", body) if len(x.strip()) >= 8]
+        twice = sorted({x for x in sentences if sentences.count(x) > 1})
+        self.assertEqual(twice, [], "a sentence stands twice on the page")
+        self.assertEqual(body.count(flat(h1)), 1, "the headline is printed again on the page")
+        return flat(h1)
+
+    def test_the_headline_is_the_lead_finding_once(self):
+        """Two shapes of the lead: the best year falls short of the target (path 'short', need first or second), and the recent pace (target 30) or only the best year (33) gets there. The lead's conclusion is the page's h1 and its text the dek; the thesis block holds the claims alone and the lead's
+        section is headed by its claim and number, so neither prints the headline's sentence again."""
+        for target, picks, words in ((42.5, ["need", "path", "spread"], "每年得涨"), (42.5, ["path", "need"], "也只到"), (30.0, ["path", "spread"], "年能到"), (33.0, ["path", "spread"], "年才到目标")):
+            req, names = eu_request()
+            req["rows"] = [dict(r, value=target) if r["table"] == "targets" else r for r in req["rows"]]
+            composed, facts, bodies, page_html = self._page(req, names, picks)
+            h1 = self._once(page_html)
+            self.assertIn(words, h1)
+            lead = composed["sections"][2]
+            self.assertEqual(lead["id"], picks[0])
+            self.assertNotIn("text", lead)                      # the dek says it
+            self.assertNotEqual(lead["title"], composed["title"])
+            self.assertIn("：", lead["title"]); self.assertRegex(lead["title"], r"\{[a-z_0-9]+\}$")  # the claim's words, then its number
+            self.assertNotIn("answer", composed["leaves"]["thesis_claims"])
+            dek = re.search(r'<p class="dek">(.*?)</p>', page_html, re.S)[1]
+            self.assertIn("data-src", dek)
+            for other in composed["sections"][3:]:
+                if other.get("title"): self.assertNotIn(other["title"], composed["title"])
 
     def _header_page(self, req, names, picks):
         """The composed page's header drawn by the real child: (composed, facts, the bignums html, the whole page's html)."""
@@ -470,7 +504,7 @@ class Findings(unittest.TestCase):
 
     def test_members_eu_nine_cells_with_the_whole_and_the_target(self):
         req, names = eu_request()
-        composed, facts, svg, page_html = self._members_page(req, names, ["members", "path"])
+        composed, facts, svg, page_html = self._members_page(req, names, ["path", "members"])
         data = composed["leaves"]["small_multiples"]
         self.assertEqual(sorted(c["code"] for c in data["cells"]), sorted(EU_MEMBERS))
         self.assertEqual(data["accent"], ["SE", "MT"])  # the biggest rise and the one that fell
@@ -501,10 +535,10 @@ class Findings(unittest.TestCase):
     def test_members_title_words_follow_the_signs(self):
         req, names = eu_request()
         up = [dict(r, value=round(r["value"] + 0.4 * (int(r["time"]) - 2005), 3)) if r["dims"].get("geo") in ("MT", "LU") else r for r in req["rows"]]
-        composed = FN.compose({**req, "rows": up, "picks": ["members", "path"]})
+        composed = FN.compose({**req, "rows": up, "picks": ["path", "members"]})
         self.assertIn("只涨了", next(x for x in composed["sections"] if x["id"] == "members")["title"])
         down = [dict(r, value=round(r["value"] - 1.0 * (int(r["time"]) - 2005), 3)) if r["dims"].get("geo") != "EU27_2020" else r for r in req["rows"]]
-        composed = FN.compose({**req, "rows": down, "picks": ["members", "path"]})
+        composed = FN.compose({**req, "rows": down, "picks": ["path", "members"]})
         self.assertIn("只降了", next(x for x in composed["sections"] if x["id"] == "members")["title"])
 
     def test_members_needs_six_members_and_five_years_and_a_difference(self):
@@ -525,7 +559,7 @@ class Findings(unittest.TestCase):
             c = f"X{i}"; members.append(c)
             rows += [row(t, {"nrg_bal": "REN"}, "geo", c, y, 3.0 + 3.0 * i + 0.05 * i * (y - 2005)) for y in range(2005, 2025)]
         big = {**req, "rows": rows, "main": {**req["main"], "members": members}}
-        composed = FN.compose({**big, "picks": ["members", "path"]})
+        composed = FN.compose({**big, "picks": ["path", "members"]})
         cells = [c["code"] for c in composed["leaves"]["small_multiples"]["cells"]]
         self.assertEqual(len(cells), 12)
         last = {c: next(r["value"] for r in rows if r["dims"].get("geo") == c and r["time"] == "2024") for c in members}
@@ -552,7 +586,7 @@ class Findings(unittest.TestCase):
         _, cands, dropped = FN.candidates(req)
         mp = next(c for c in cands if c["id"] == "map")
         self.assertEqual(mp["layer"], "member_map"); self.assertEqual(mp["why"]["higher"], "east")  # the higher shares lie east in this shape: SE, FI, PL
-        composed, facts, bodies, page_html = self._page(req, names, ["map", "path"])
+        composed, facts, bodies, page_html = self._page(req, names, ["path", "map"])
         svg = bodies["member_map"]
         self.assertEqual(len(re.findall(r'<path [^>]*data-step=', svg)), 9)
         self.assertEqual(len(re.findall(r'data-part="leader"', svg)), 6)
@@ -587,11 +621,11 @@ class Findings(unittest.TestCase):
         pts = self._points(EU_MEMBERS)
         east = {c: 10.0 + 2 * pts[c][0] for c in EU_MEMBERS}  # the value follows the longitude
         rows = [dict(r, value=round(east[r["dims"]["geo"]], 3)) if r["dims"].get("geo") in EU_MEMBERS else r for r in req["rows"]]
-        composed = FN.compose({**req, "rows": rows, "points": pts, "picks": ["map", "path"]})
+        composed = FN.compose({**req, "rows": rows, "points": pts, "picks": ["path", "map"]})
         self.assertIn("东边的偏高", next(x for x in composed["sections"] if x["id"] == "map")["title"])
         west = {c: 10.0 - 2 * pts[c][0] for c in EU_MEMBERS}
         rows = [dict(r, value=round(west[r["dims"]["geo"]], 3)) if r["dims"].get("geo") in EU_MEMBERS else r for r in req["rows"]]
-        composed = FN.compose({**req, "rows": rows, "points": pts, "picks": ["map", "path"]})
+        composed = FN.compose({**req, "rows": rows, "points": pts, "picks": ["path", "map"]})
         self.assertIn("西边的偏高", next(x for x in composed["sections"] if x["id"] == "map")["title"])
 
     def test_layout_side_stack_pair_and_the_knobs(self):
@@ -775,7 +809,7 @@ class Findings(unittest.TestCase):
         req, names = eu_request()
         composed = FN.compose({**req, "picks": ["rank", "path"]})
         rows, facts = ledger(req, composed, names)
-        spec = {"title": "t", "kicker": "k", "dek": "d", "source": "s", "refs": [], "facts": composed["facts"], "sections": composed["sections"],
+        spec = {"title": composed["title"], "kicker": "k", "dek": composed["dek"], "source": "s", "refs": [], "facts": composed["facts"], "sections": composed["sections"],
                 "tables": {t: {"id": t} for t in sorted({r["table"] for r in req["rows"]})}, "fmts": {**FMT_DEFS, "n": {"scale": 1, "dec": 0, "suffix": ""}, "time": {}},
                 "hero": {"data": {}, "leaves": composed["leaves"]}}
         line = lambda **kv: json.dumps({"node": "page_story", "panel": {"w": 1140, "h": 0, "frame": None}, "rows": rows,
@@ -814,10 +848,10 @@ class Findings(unittest.TestCase):
         self.assertIn("not JSON", out[1]["refused"][0])
         self.assertEqual([s["layer"] for s in out[2]["knobs"]["spec"]["sections"]], ["bignums", "thesis_claims", "target_path", "gap_axis", "risk_notes"])
         self.assertEqual(sorted(out[2]["knobs"]["spec"]["hero"]["leaves"]), ["bignums", "gap_axis", "risk_notes", "target_path", "thesis_claims"])
-        # the child gives the spec's facts, sections and leaf data only: rows, formats and names are layer 1's
+        # the child gives the spec's facts, sections, leaf data and headline words only: rows, formats and names are layer 1's
         self.assertEqual(list(out[2]), ["knobs"])
         self.assertEqual(list(out[2]["knobs"]), ["spec"])
-        self.assertEqual(sorted(out[2]["knobs"]["spec"]), ["facts", "hero", "sections"])
+        self.assertEqual(sorted(out[2]["knobs"]["spec"]), ["dek", "facts", "hero", "sections", "title"])
 
     def test_differences_and_paces_take_the_delta_format(self):
         """A pace, a step or a gap of a share prints in its own format (points), a level or a projection in the value's."""

@@ -115,7 +115,12 @@ class Picture(unittest.TestCase):
             with self.assertRaises(Refused) as e:
                 draw(hero(data, **style), ledger)
             return str(e.exception)
-        self.assertIn("no answer", refused({**d, "answer": []}))
+        # a page whose headline is its answer gives none: the claims alone, from the top, and shorter than with one
+        bare = {k: v for k, v in d.items() if k != "answer"}
+        svg, w, h = draw(hero(bare))
+        self.assertEqual(check_svg(svg), [])
+        self.assertLess(h, draw(hero(d))[2])
+        self.assertEqual(draw(hero({**d, "answer": []}))[2], h)
         self.assertIn("two to four", refused({**d, "claims": d["claims"][:1]}))
         self.assertIn("two to four", refused({**d, "claims": d["claims"] * 2}))
         for key in ("num", "head", "section"):

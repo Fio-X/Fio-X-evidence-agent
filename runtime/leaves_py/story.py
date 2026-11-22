@@ -16,6 +16,7 @@ Page checks made here (each refuses the page naming the section):
  * the title test: every titled section's title prints at least one number from the ledger (a fact, series or record entry; a year
    or a name alone is no number), so no section is headed by words alone;
  * one fact, one writing: a ledger entry printed more than once on the page prints the same text every time;
+ * one headline, once: the page's title and dek (the lead finding's conclusion and text) are no section's title or text again;
  * every section's layer is drawn, none twice, none that is no story leaf; every picture drawn is placed.
 A section that draws the header's big numbers (layer bignums, html) is a bare block placed as it is. A picture that is a chart (every leaf but the text blocks) is its own module of the browser check (pub-visual, data-module-id the
 section's id, its svg the pub-chart named by the section's kicker and described by its title read aloud)."""
@@ -435,6 +436,13 @@ def story_page(panel, got, sizes, placeholders, drew, over=None):
     for s, t in marks: by.setdefault(s, set()).add(t)
     twice = sorted(s for s, ts in by.items() if len(ts) > 1)
     if twice: return {"refused": [f"page: one fact, one writing: {twice[0]} prints {sorted(by[twice[0]])} on this page"]}
+    # one headline, once: the page's title and dek print no sentence a titled section prints again as its title or text
+    heads = {"title": plain(FX.placed(c.t(spec["title"]))), "dek": plain(FX.placed(FX.worded(spec, c.F, "dek", spec["dek"])))}
+    for i, sid, *_ in secs:
+        pc = (PAGE_LAYOUT["pieces"] or {}).get(i)
+        for part, words in heads.items():
+            again = [k for k in ("title", "text") if pc and words.strip() and pc[k].strip() == words.strip()]
+            if again: return {"refused": [f"page: one headline, once: the page's {part} is printed again as the {again[0]} of section {i + 1} ({sid}): {words!r}"]}
     opening = ""
     if "illus_hero" in got:
         w, h = sizes["illus_hero"]

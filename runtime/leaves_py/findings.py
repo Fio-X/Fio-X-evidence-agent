@@ -839,8 +839,9 @@ def compose(r):
             facts[k] = v
         leaves[c["layer"]] = {**c["data"], "notes": c["anns"]} if c.get("anns") else c["data"]  # the notes are the story's (story.py reads them; the leaf ignores them)
     first = chosen[0]
-    leaves[THESIS] = {"answer": segs(first["title"]),
-                      "claims": [{"num": c["claim"]["num"], "head": segs(c["claim"]["head"]), "section": segs(c["kicker"])}
+    # the page's headline is the lead finding's conclusion and its dek the lead's text, each printed once: the thesis block holds
+    # the claims alone, and the lead's own section is headed by its claim (the words, then its number) with no text of its own
+    leaves[THESIS] = {"claims": [{"num": c["claim"]["num"], "head": segs(c["claim"]["head"]), "section": segs(c["kicker"])}
                                  for c in chosen]}
     big = header(q)
     if big:  # the header's three numbers, a row over the thesis
@@ -851,20 +852,27 @@ def compose(r):
         sections.append({"id": "bignums", "layer": BIG})
     sections.append({"id": "thesis", "layer": THESIS})
     for c in chosen:
-        sections.append({"id": c["id"], "layer": c["layer"], "kicker": wording(c["kicker"]), "title": wording(c["title"]),
-                         "text": wording(c["text"])})
+        if c is first:
+            num = c["claim"]["num"]
+            if not num.startswith("fact:"): raise Refused(f"findings: the lead finding's claim number {num!r} is no fact")
+            lead = [*c["claim"]["head"], ("w", WD.WORDS["story.lead.join"]), ("f", num[len("fact:"):])]
+            sections.append({"id": c["id"], "layer": c["layer"], "kicker": wording(c["kicker"]), "title": wording(lead)})
+        else:
+            sections.append({"id": c["id"], "layer": c["layer"], "kicker": wording(c["kicker"]), "title": wording(c["title"]),
+                             "text": wording(c["text"])})
     items = [ST("story.notes.scenario")] if any("scenario" in c["notes"] for c in chosen) else []
     last = max(chosen, key=lambda c: c["facts"][c["last"]]["time"])["last"]
     items.append(ST("story.notes.last", last=last))
     leaves[NOTES] = {"title": ST("story.notes.title"), "items": items}
     sections.append({"id": "notes", "layer": NOTES})
-    return {"facts": facts, "sections": sections, "leaves": leaves}
+    return {"facts": facts, "sections": sections, "leaves": leaves, "title": wording(first["title"]), "dek": wording(first["text"])}
 
 
 def as_fill(page):
     """The composed page as the part of a fill it adds: the spec's facts, sections and leaf data, and nothing else (the flow
     refuses any other key: the rows, the formats and the names are layer 1's, next_run story_page)."""
-    return {"knobs": {"spec": {"facts": page["facts"], "sections": page["sections"], "hero": {"leaves": page["leaves"]}}}}
+    return {"knobs": {"spec": {"facts": page["facts"], "sections": page["sections"], "hero": {"leaves": page["leaves"]},
+                               "title": page["title"], "dek": page["dek"]}}}
 
 
 def answer(r):

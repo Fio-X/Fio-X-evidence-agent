@@ -80,7 +80,7 @@ def fresh():
         {"id": "notes", "layer": "risk_notes"}]
 
 
-def request(title_of=None, sections=None, kickers=None):
+def request(title_of=None, sections=None, kickers=None, edit_leaves=None, title=None):
     """The story request's lines (size, each layer) and the page line's pieces; `title_of` overrides a section's title."""
     rows, names = merged()
     f = lambda *p: first_number(rows, *p)
@@ -96,9 +96,11 @@ def request(title_of=None, sections=None, kickers=None):
         s["title"] += txt
         segs[f"sections.{i}.title"] = [{"w": s["title"][:-len(txt)]}, {"src": src}]
     dek = "可再生能源占比 " + rows_text(rows, f("fact:ren_eu_2024"))
-    spec = {"title": "新能源在顶替旧能源，但还差很远", "kicker": "能源观察", "dek": dek, "source": "欧盟统计局", "refs": [],
+    leaves = json.loads(json.dumps(LEAVES_DATA))
+    if edit_leaves: edit_leaves(leaves)
+    spec = {"title": title or "新能源在顶替旧能源，但还差很远", "kicker": "能源观察", "dek": dek, "source": "欧盟统计局", "refs": [],
             "tables": {}, "facts": {}, "fmts": {"time": {}}, "sections": spec_sections,
-            "hero": {"data": {}, "leaves": json.loads(json.dumps(LEAVES_DATA)), "style": {}}}
+            "hero": {"data": {}, "leaves": leaves, "style": {}}}
     knobs = {"spec": spec, "labels": names, "segs": segs}
     line = lambda **kv: json.dumps({"node": "page_story", "panel": {"w": 1140, "h": 0, "frame": None}, "rows": rows, "knobs": knobs, **kv}, ensure_ascii=False)
     return [line(phase="size")] + [line(layer=n) for n in DRAWN], spec_sections
@@ -203,6 +205,31 @@ class Story(unittest.TestCase):
         s = cp(); s[0]["kicker"] = "只有题"; refused(s, "no title")
         refused([], "no sections")
         s = cp()[:-1]; refused(s, "no layer the story lists")  # the notes leaf is drawn but no section places it
+
+    def test_a_thesis_with_no_answer_draws_the_claims_alone(self):
+        """The headline says the answer once (findings.py): the thesis leaf is given the claims alone and the page is drawn the same."""
+        def no_answer(leaves): leaves["thesis_claims"].pop("answer")
+        html, why = page(edit_leaves=no_answer)
+        self.assertTrue(html, why)
+        self.assertIn('<svg class="thesis_claims"', html)
+        h1 = re.search(r"<h1>(.*?)</h1>", html, re.S)[1]
+        self.assertEqual(re.sub(r"<[^>]+>", "", html).count(re.sub(r"<[^>]+>", "", h1)), 1)   # the headline stands once
+        dek = re.search(r'<p class="dek">(.*?)</p>', html, re.S)[1]
+        self.assertIn('data-src="fact:', dek)   # the dek's number is a ledger run
+
+    def test_one_headline_once(self):
+        """A section whose title or text is the page's headline again refuses, naming the section (each sentence of the page stands once)."""
+        head = "新能源在顶替旧能源，但还差很远"
+        s = fresh(); s[4]["text"] = head
+        html, why = page(sections=s)
+        self.assertIsNone(html)
+        self.assertIn("one headline, once", str(why)); self.assertIn("section 5", str(why)); self.assertIn("text", str(why))
+        # and the same the other way: a section's text the page's title
+        s = fresh(); s[5]["text"] = "同一年的两端。"
+        html, why = page(sections=s, title="同一年的两端。")
+        self.assertIsNone(html); self.assertIn("page's title", str(why))
+        html, why = page()
+        self.assertTrue(html, why)
 
     def test_the_recipe_wants_a_target(self):
         with open(os.path.join(LEAVES, "knobs.json"), encoding="utf-8") as f: rec = {r["name"]: r for r in json.load(f)["recipes"]}["page_story"]

@@ -1911,8 +1911,11 @@ pub fn hero(runner: &Runner, request: &Value) -> Result<Strip, HeroMiss> {
 }
 
 /// The keys under knobs.spec a story findings child's composed page may give (its facts, its sections, its leaf data in the
-/// hero); any other key of its reply is layer 1's and refused (next_run story_page).
-pub const STORY_TAKEN: [&str; 3] = ["facts", "sections", "hero"];
+/// hero, and the page's headline words: the lead finding's conclusion as the title and its text as the dek, each a wording
+/// whose numbers are placeholders of its facts); any other key of its reply is layer 1's and refused (next_run story_page).
+pub const STORY_TAKEN: [&str; 5] = ["facts", "sections", "hero", "title", "dek"];
+/// The headline words among STORY_TAKEN: written over the fill's draft (the text step's, the picked recipe's), never merged.
+pub const STORY_WORDS: [&str; 2] = ["title", "dek"];
 
 /// How long the story findings child may take for one request (it works over the request's rows only).
 pub const STORY_DEADLINE: Duration = Duration::from_secs(30);
