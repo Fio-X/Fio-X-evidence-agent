@@ -10959,6 +10959,150 @@ mod tests {
         }
     }
 
+    /// A World Bank change page over three regions (aggregates, iso3 codes with no map point): the change page, not the
+    /// bars alone, so its notes stand at the bars; the first one compares (with the mean of the places drawn or with the
+    /// second) and the last, in the same words, with the one before it, on a rise and on a fall.
+    #[test]
+    fn a_three_region_world_bank_change_page_notes_compare_its_ends() {
+        let id = "SH.H2O.SMDW.ZS@2";
+        const REGIONS: [(&str, &str); 3] = [("SAS", "8S"), ("SSF", "ZF"), ("LCN", "ZJ")];
+        struct Regions;
+        impl Catalogue for Regions {
+            fn top5(
+                &self,
+                _: &str,
+                _: &[String],
+                _: bool,
+                _: Option<i32>,
+                _: Option<i32>,
+            ) -> crate::l5geo::Ranking {
+                unreachable!()
+            }
+            fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
+                unreachable!()
+            }
+            fn source(&self) -> &Value {
+                &Value::Null
+            }
+            fn countries(&self, codes: &[String]) -> Result<Vec<String>, String> {
+                Ok(codes.to_vec())
+            }
+            fn zh_names(
+                &self,
+                scheme: &str,
+                codes: &[String],
+            ) -> Result<BTreeMap<String, String>, Vec<String>> {
+                Hubs.zh_names(scheme, codes)
+            }
+            fn members(&self, aggregate: &str) -> Result<Vec<String>, String> {
+                Hubs.members(aggregate)
+            }
+            fn place_points(&self, codes: &[String]) -> Result<BTreeMap<String, [f64; 2]>, String> {
+                panic!("a map point asked for {codes:?}")
+            }
+            fn table(&self, id: &str) -> Option<crate::l5geo::TableMeta> {
+                Some(crate::l5geo::TableMeta {
+                    id: id.into(),
+                    worldbank: true,
+                    dims: Vec::new(),
+                    end_year: None,
+                    places: REGIONS
+                        .iter()
+                        .map(|(c, i)| (i.to_string(), c.to_string()))
+                        .collect(),
+                    place_members: Vec::new(),
+                    freqs: Vec::new(),
+                    unit: Some(crate::l5geo::Unit {
+                        code: "PC_POP".into(),
+                        label: String::new(),
+                        kind: Some("rate"),
+                    }),
+                })
+            }
+        }
+        // a rise (the shares of the population with safe water) and a fall (a rate per thousand), three regions each
+        for (label, start, end) in [
+            (
+                "rise",
+                [("SAS", 50.0), ("SSF", 20.0), ("LCN", 60.0)],
+                [("SAS", 83.3), ("SSF", 33.6), ("LCN", 68.1)],
+            ),
+            (
+                "fall",
+                [("SAS", 90.0), ("SSF", 100.0), ("LCN", 40.0)],
+                [("SAS", 60.5), ("SSF", 59.3), ("LCN", 15.1)],
+            ),
+        ] {
+            let r = recipe("change");
+            let mut main = Vec::new();
+            for (code, _) in REGIONS {
+                for (t, vals) in [("2000", start), ("2022", end)] {
+                    let v = vals.iter().find(|(c, _)| *c == code).unwrap().1;
+                    main.push(
+                        json!({"src": format!("series:{id}/{code}:{t}:value"), "table": id,
+                        "dims": {"country": code}, "time": t, "value": format!("{v:.1}")}),
+                    );
+                }
+            }
+            let shape = shape_of(&r.eats, &[(id, &main[..])], &Regions)
+                .unwrap_or_else(|e| panic!("{label}: {e}"));
+            let picks = picks_of(&r.picks, &shape, &main, &[]).unwrap();
+            assert_eq!(picks.ranked.len(), 3, "{label}");
+            assert_eq!(on_the_map(r, &picks.ranked, &Regions), Ok(()), "{label}");
+            let fill = test_fill(
+                r,
+                &shape,
+                &picks,
+                (&main, &[]),
+                &Regions,
+                ("标题", "导语"),
+                false,
+            )
+            .unwrap_or_else(|e| panic!("{label}: {e}"));
+            let notes = fill["knobs"]["spec"]["hero"]["leaves"]["leader_notes"]["notes"]
+                .as_array()
+                .unwrap_or_else(|| panic!("{label}: no notes"))
+                .clone();
+            let said: Vec<(String, Vec<String>)> = notes
+                .iter()
+                .map(|n| {
+                    (
+                        n["name"].as_str().unwrap().to_string(),
+                        n["text"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .filter_map(|t| t["word"].as_str().map(String::from))
+                            .collect(),
+                    )
+                })
+                .collect();
+            // the first end's note and the last's, as the cases pick them: the mean for a leader of three, the one before the last
+            let want: [&[&str]; 2] = if label == "rise" {
+                [
+                    &["column.note.rise_most", "column.note.vs_mean_after"],
+                    &["column.note.rise_least", "column.note.vs_prev"],
+                ]
+            } else {
+                [
+                    &["column.note.fall_least", "column.note.vs_next"],
+                    &["column.note.fall_most", "column.note.vs_prev"],
+                ]
+            };
+            for ((_, words), want) in said.iter().zip(want) {
+                assert_eq!(words, want, "{label}");
+            }
+            assert_eq!(said.len(), 2, "{label}: {said:?}");
+            // each end's note carries a comparison word beside its own change, not its own change alone
+            for (code, words) in &said {
+                assert!(
+                    words.iter().any(|w| w.contains("vs_")),
+                    "{label}: the note of {code} compares nothing: {words:?}"
+                );
+            }
+        }
+    }
+
     /// on_the_map tells "try the next recipe" from "stop the page" by the refusal's words alone, so the words (NO_POINT),
     /// the place that writes them (next_flow place_points_reply, reached here through the catalogue's own place_points and
     /// the two groups' doors) and that reading are held together: a reworded refusal fails here instead of quietly turning
