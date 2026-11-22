@@ -274,6 +274,18 @@ class Findings(unittest.TestCase):
         self.assertEqual(list(out[2]["knobs"]), ["spec"])
         self.assertEqual(sorted(out[2]["knobs"]["spec"]), ["facts", "hero", "sections"])
 
+    def test_differences_and_paces_take_the_delta_format(self):
+        """A pace, a step or a gap of a share prints in its own format (points), a level or a projection in the value's."""
+        req, _ = eu_request()
+        defs = {**FMT_DEFS, "pp": {"scale": 1, "dec": 1, "suffix": " pp"}}
+        page = FN.compose({**req, "fmts": {**FMTS, "delta": "pp"}, "fmt_defs": defs, "picks": ["path", "need", "spread"]})
+        fmt = {k: q["fmt"] for k, q in page["facts"].items()}
+        self.assertEqual({k for k, f in fmt.items() if f == "pp"} >= {"past", "recent", "best", "need", "gap_now", "lowg", "topg"}, True)
+        self.assertEqual((fmt["now"], fmt["p_best"], fmt["goal"], fmt["need_x"]), ("x", "x", "x", "times"))
+        # a year in a wording is {k.t} (it prints its own year word), in a segment the bare year then the table's year word
+        self.assertNotIn("} 年", "".join(s.get("title", "") + s.get("text", "") for s in page["sections"]))
+        self.assertIn({"word": "story.year"}, page["leaves"]["target_path"]["runs"][0]["label"])
+
     def test_ticks_as_next_facts(self):
         # next_facts ticks_step_in_the_printed_unit's cases: a top of 42.5 at one place steps by 10; 2 at no place by 1
         self.assertEqual(FN.ticks(42.5, {"dec": 1}), [10.0, 20.0, 30.0, 40.0])

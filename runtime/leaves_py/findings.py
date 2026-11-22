@@ -37,7 +37,8 @@ Request (one JSON line on stdin, one reply line on stdout; mode "candidates"):
    "rows": [{"src", "table", "dims", "time", "value"}],        # the request's rows (next_facts Row)
    "main": {"table", "by": dim, "whole": code?, "members": [code]?, "filter": {dim: code}?},
    "target": {"table", "filter": {dim: code}, "time": year}?,   # the whole's target row (knowledge group, I8)
-   "fmts": {"value": fmt, "year": fmt, "times": fmt},           # the spec's format names for a value, a year, a ratio
+   "fmts": {"value": fmt, "year": fmt, "times": fmt,            # the spec's format names for a value, a year, a ratio,
+            "delta": fmt?},                                     # and a difference or pace (a share's in points; value if none)
    "fmt_defs": {fmt: {"scale", "dec", "suffix"}},               # those formats (an axis's ticks are worked out as next_facts does)
    "words": {"measure": words, "unit": words},                 # the measure's name and its unit (no digit)
    "chain": [{"table", "filter": {dim: code}, "words": {"measure", "unit"}, "fmt"?: fmt, "kind"?: "flow"|"stock"}]?}
@@ -148,7 +149,8 @@ def ticks(top_value, fmt_def):
 # ---------------------------------------------------------------- wording: one template, two spellings
 
 def wording(parts):
-    """A template as a wording (story.py's titles and texts): ("w", words), ("f", key), ("y", key), ("n", code)."""
+    """A template as a wording (story.py's titles and texts): ("w", words), ("f", key), ("y", key: its year with the year word,
+    as {key.t} prints it), ("n", code)."""
     out = []
     for kind, v in parts:
         out.append({"w": v, "f": "{%s}" % v, "y": "{%s.t}" % v, "n": "{name.%s}" % v}[kind])
@@ -159,7 +161,10 @@ def segs(parts):
     """The same template as a leaf's segments (wbkit.segs)."""
     out = []
     for kind, v in parts:
-        out.append({"w": {"w": v}, "f": {"src": f"fact:{v}"}, "y": {"src": f"fact:{v}.t.y"}, "n": {"name": v}}[kind])
+        if kind == "y":  # the year's entry prints the bare year; the year word follows it, as {k.t} prints it in a wording
+            out += [{"src": f"fact:{v}.t.y"}, {"word": "story.year"}]
+            continue
+        out.append({"w": {"w": v}, "f": {"src": f"fact:{v}"}, "n": {"name": v}}[kind])
     return out
 
 
@@ -219,6 +224,8 @@ class Req:
         q.defs = r.get("fmt_defs") or {}
         for k in ("value", "year", "times"):
             if not q.fmts.get(k): raise Refused(f"findings: the request gives no {k} format")
+        # a difference or a pace of the measure (a share's in percentage points): its own format when the request gives one
+        q.change = q.fmts.get("delta") or q.fmts["value"]
         q.words = r.get("words") or {}
         for k in ("measure", "unit"):
             if not q.words.get(k): raise Refused(f"findings: the request gives no {k} words")
@@ -278,9 +285,9 @@ def angle_path(q):
     top = max([gv] + list(runs.values()))
     f = {"now": q.value(q.whole, last), "first": q.value(q.whole, first), "rec0": q.value(q.whole, str(int(last) - RECENT)),
          "goal": gq,
-         "past": {"op": "per_year", "a": "now", "b": "first", "fmt": q.fmts["value"]},
-         "recent": {"op": "per_year", "a": "now", "b": "rec0", "fmt": q.fmts["value"]},
-         "best": {"op": "step_max", "table": q.table, "filter": q.filt(q.whole), "from": first, "to": last, "fmt": q.fmts["value"]},
+         "past": {"op": "per_year", "a": "now", "b": "first", "fmt": q.change},
+         "recent": {"op": "per_year", "a": "now", "b": "rec0", "fmt": q.change},
+         "best": {"op": "step_max", "table": q.table, "filter": q.filt(q.whole), "from": first, "to": last, "fmt": q.change},
          "p_past": {"op": "line_at", "start": "now", "rate": "past", "at": gy, "fmt": q.fmts["value"]},
          "p_recent": {"op": "line_at", "start": "now", "rate": "recent", "at": gy, "fmt": q.fmts["value"]},
          "p_best": {"op": "line_at", "start": "now", "rate": "best", "at": gy, "fmt": q.fmts["value"]}}
@@ -314,11 +321,11 @@ def angle_path(q):
             "periods": [f"period:{q.table}:{y}" for y in ys],
             "footnote": ST("story.path.foot")}
     if short:
-        f["gap"] = {"op": "minus", "a": "goal", "b": "p_best", "fmt": q.fmts["value"]}
+        f["gap"] = {"op": "minus", "a": "goal", "b": "p_best", "fmt": q.change}
         data["gap_label"] = ST("story.gap", g="gap")
     sturdy = clamp(len(ys) / 15)
     return {"angle": "path", "layer": "target_path", "kicker": T("story.path.kicker"), "title": title, "text": text, "facts": f, "data": data,
-            "claim": {"num": "fact:p_best", "head": title}, "notes": ["scenario"], "last": "now",
+            "claim": {"num": "fact:p_best", "head": T("story.path.claim")}, "notes": ["scenario"], "last": "now",
             "score": round(size * surprise * sturdy, 4),
             "why": {"size": round(size, 3), "surprise": surprise, "sturdy": round(sturdy, 3)},
             "summary": "even the best single year's rise repeated every year falls short of the target" if short else
@@ -338,11 +345,11 @@ def angle_need(q):
     need = (gv - now) / (int(gy) - int(last))
     ratio = need / past
     f = {"now": q.value(q.whole, last), "first": q.value(q.whole, first), "goal": gq, "need_top": {**gq, "axis": True},
-         "past": {"op": "per_year", "a": "now", "b": "first", "fmt": q.fmts["value"]},
-         "need": {"op": "per_year", "a": "goal", "b": "now", "fmt": q.fmts["value"]},
+         "past": {"op": "per_year", "a": "now", "b": "first", "fmt": q.change},
+         "need": {"op": "per_year", "a": "goal", "b": "now", "fmt": q.change},
          "need_x": {"op": "times", "a": "need", "b": "past", "fmt": q.fmts["times"]},
          "p_past": {"op": "line_at", "start": "now", "rate": "past", "at": gy, "fmt": q.fmts["value"]},
-         "gap_now": {"op": "minus", "a": "goal", "b": "now", "fmt": q.fmts["value"]}}
+         "gap_now": {"op": "minus", "a": "goal", "b": "now", "fmt": q.change}}
     title, text = T("story.need.title"), T("story.need.text")
     tk = ticks(gv, q.defs.get(q.fmts["value"], {}))
     data = {"title": SW(q.words["measure"]), "unit": SW(q.words["unit"]),
@@ -357,7 +364,7 @@ def angle_need(q):
     surprise = 1.0 if need > best else 0.6
     sturdy = clamp(len(ys) / 15)
     return {"angle": "need", "layer": "gap_axis", "kicker": T("story.need.kicker"), "title": title, "text": text, "facts": f, "data": data,
-            "claim": {"num": "fact:need_x", "head": title}, "notes": ["scenario"], "last": "now",
+            "claim": {"num": "fact:need_x", "head": T("story.need.claim")}, "notes": ["scenario"], "last": "now",
             "score": round(size * surprise * sturdy, 4),
             "why": {"size": round(size, 3), "surprise": surprise, "sturdy": round(sturdy, 3), "ratio": round(ratio, 3)},
             "summary": "the pace a year the target needs, against the past average pace"}, None
@@ -387,9 +394,9 @@ def angle_spread(q):
     caught = low_ch > top_ch
     members = sorted(q.panel)
     f = {"lowg": {"op": "group_change", "table": q.table, "filter": q.fixed, "by": q.by, "from": y0, "to": y1, "part": "bottom",
-                  "k": GROUP_K, "fmt": q.fmts["value"]},
+                  "k": GROUP_K, "fmt": q.change},
          "topg": {"op": "group_change", "table": q.table, "filter": q.fixed, "by": q.by, "from": y0, "to": y1, "part": "top",
-                  "k": GROUP_K, "fmt": q.fmts["value"]},
+                  "k": GROUP_K, "fmt": q.change},
          "y0": q.value(members[0], y0), "y1": q.value(members[0], y1)}
     rows = {}
     for side, cs in (("up", up), ("down", down)):
@@ -397,7 +404,7 @@ def angle_spread(q):
         for c in cs:
             a, b, d = f"a_{c.lower()}", f"b_{c.lower()}", f"d_{c.lower()}"
             f[a], f[b] = q.value(c, y0), q.value(c, y1)
-            f[d] = {"op": "minus", "a": b, "b": a, "fmt": q.fmts["value"]}
+            f[d] = {"op": "minus", "a": b, "b": a, "fmt": q.change}
             rows[side].append({"label": [{"name": c}], "a": f"fact:{a}", "b": f"fact:{b}", "change": [{"src": f"fact:{d}"}]})
     # the groups are named, never counted in words: a count would be a number no fact prints
     title = T("story.spread.caught" if caught else "story.spread.not")
@@ -412,7 +419,7 @@ def angle_spread(q):
     sturdy = clamp(len(q.panel) / 20) * clamp((int(y1) - int(y0)) / 10)
     key = "lowg" if caught else "topg"
     return {"angle": "spread", "layer": "winners_losers", "kicker": T("story.spread.kicker"), "title": title, "text": text, "facts": f,
-            "data": data, "claim": {"num": f"fact:{key}", "head": title}, "notes": [], "members": True, "last": "y1",
+            "data": data, "claim": {"num": f"fact:{key}", "head": T("story.spread.claim_low" if caught else "story.spread.claim_top")}, "notes": [], "members": True, "last": "y1",
             "score": round(size * surprise * sturdy, 4),
             "why": {"size": round(size, 3), "surprise": surprise, "sturdy": round(sturdy, 3), "caught_up": caught},
             "summary": "the lowest at the start caught up with the highest" if caught else "the lowest at the start did not catch up"}, None
@@ -438,7 +445,7 @@ def angle_ends(q):
     surprise = 0.5
     sturdy = clamp(len(at) / 20)
     return {"angle": "ends", "layer": "pair_bars", "kicker": T("story.ends.kicker"), "title": title, "text": text, "facts": f, "data": data,
-            "claim": {"num": "fact:hi_lo", "head": title}, "notes": [], "members": True, "last": "hi",
+            "claim": {"num": "fact:hi_lo", "head": T("story.ends.claim", a=hi, b=lo)}, "notes": [], "members": True, "last": "hi",
             "score": round(size * surprise * sturdy, 4),
             "why": {"size": round(size, 3), "surprise": surprise, "sturdy": round(sturdy, 3), "ratio": round(ratio, 3)},
             "summary": "the highest member over the lowest at the last year"}, None
@@ -491,7 +498,7 @@ def angle_chain(q):
     # the larger of the whole's two values less the smaller, above 0 whichever way it moved
     hi_y, lo_y = (band, prev) if steps[band] > 0 else (prev, band)
     f = {"m_hi": q.value(q.whole, hi_y), "m_lo": q.value(q.whole, lo_y), "band_y": q.value(q.whole, band),
-         "m_step": {"op": "minus", "a": "m_hi", "b": "m_lo", "fmt": q.fmts["value"]}}
+         "m_step": {"op": "minus", "a": "m_hi", "b": "m_lo", "fmt": q.change}}
     panels, moved = [], 0
     for i, it in enumerate(items):
         code, s = f"c{i + 1}", it["series"]
@@ -521,7 +528,7 @@ def angle_chain(q):
     surprise = clamp(0.3 + 0.7 * share)
     sturdy = clamp(len(ys) / 10) * clamp(len(items) / 4)
     return {"angle": "chain", "layer": "event_chain", "kicker": T("story.chain.kicker"), "title": title, "text": text, "facts": f,
-            "data": data, "claim": {"num": "fact:m_step", "head": title}, "notes": [], "last": "c1_last",
+            "data": data, "claim": {"num": "fact:m_step", "head": T("story.chain.claim")}, "notes": [], "last": "c1_last",
             "score": round(size * surprise * sturdy, 4),
             "why": {"size": round(size, 3), "surprise": round(surprise, 3), "sturdy": round(sturdy, 3), "band": band, "moved": moved},
             "summary": "companion series side by side around the one year the whole moved most"}, None

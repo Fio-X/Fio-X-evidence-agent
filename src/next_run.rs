@@ -3905,17 +3905,29 @@ fn story_input(
         .collect();
     let short = next_pack::unit_short(&shape.unit)
         .ok_or_else(|| format!("story: unit {} has no short form", shape.unit))?;
-    let dec = main_rows
+    // the decimals the main's values hold, at most one (two when every value is under 10): a story's numbers are read, not
+    // looked up (the sample page prints a share at one place)
+    let values: Vec<&str> = main_rows.iter().filter_map(|r| r["value"].as_str()).collect();
+    let small = values
         .iter()
-        .filter_map(|r| r["value"].as_str())
+        .all(|v| v.parse::<f64>().is_ok_and(|x| x.abs() < 10.0));
+    let dec = values
+        .iter()
         .map(|v| v.split_once('.').map_or(0, |(_, d)| d.len()))
         .max()
         .unwrap_or(0)
-        .min(2);
+        .min(if small { 2 } else { 1 });
     let value = shape.unit.to_lowercase();
+    let unit_suffix = next_pack::unit_number_suffix(&shape.unit).map(suffix).unwrap_or_default();
+    // a difference or a pace of a percent is in percentage points (POINTS), of any other unit in the unit itself
+    let change_suffix = match unit_suffix.as_str() {
+        "%" => POINTS.1.to_string(),
+        _ => unit_suffix.clone(),
+    };
+    let scale = shape.scale.unwrap_or(1.0);
     let fmt_defs = json!({
-        value.clone(): {"scale": shape.scale.unwrap_or(1.0), "dec": dec,
-            "suffix": next_pack::unit_number_suffix(&shape.unit).map(suffix).unwrap_or_default()},
+        value.clone(): {"scale": scale, "dec": dec, "suffix": unit_suffix},
+        "story_delta": {"scale": scale, "dec": dec, "suffix": change_suffix},
         "story_year": {"scale": 1, "dec": 0, "suffix": ""},
         "story_times": {"scale": 1, "dec": 1, "suffix": ""},
     });
@@ -3924,7 +3936,7 @@ fn story_input(
         "main": {"table": shape.main, "by": shape.place, "whole": place, "members": members, "filter": fixed},
         "target": {"table": table, "filter": target["dims"], "time": year},
         "rows": rows,
-        "fmts": {"value": value, "year": "story_year", "times": "story_times"},
+        "fmts": {"value": value, "delta": "story_delta", "year": "story_year", "times": "story_times"},
         "fmt_defs": fmt_defs,
         "words": {"measure": measure, "unit": short},
     }))
@@ -10312,6 +10324,8 @@ mod tests {
             assert!(!input["main"]["members"].as_array().unwrap().iter().any(|m| m == "EU27_2020"));
             assert_eq!(input["target"]["filter"], json!({"geo": "EU27_2020"}));
             assert_eq!(input["fmt_defs"]["pc"]["dec"], 1);
+            // a pace or a difference of a share prints in percentage points
+            assert_eq!(input["fmt_defs"]["story_delta"]["suffix"], POINTS.1);
             let mut asked = input.clone();
             asked["mode"] = json!("candidates");
             let found = crate::next_leaf::story(&child, &asked).unwrap();
@@ -10333,6 +10347,7 @@ mod tests {
                 .map(|f| (f.key.clone(), f))
                 .collect();
             assert_eq!(facts["best"].t.as_deref(), Some("2020"));
+            assert_eq!((facts["best"].fmt.as_str(), facts["p_best"].fmt.as_str()), ("story_delta", "pc"));
             assert_eq!(facts["p_best"].v < facts["goal"].v, short, "goal {goal}");
             assert_eq!(facts.contains_key("gap"), short);
             // every tick the path's leaf names is one next_facts gives its axis fact
