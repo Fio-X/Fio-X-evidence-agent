@@ -1794,12 +1794,25 @@ fn has_target(s: &mut Shape, tables: &[(&str, &[Value])], _: &dyn Catalogue) -> 
             }
         }
     }
-    s.target = Some(best.ok_or_else(|| {
+    let best = best.ok_or_else(|| {
         format!(
             "main {} has no target row after {last} at a place it holds",
             s.main
         )
-    })?);
+    })?;
+    // the places a story page names, each by its reviewed name (fill_of names shape.members): the main's places that are
+    // countries, and the target's place, the whole; a hub's members stay the hub's
+    if s.hub.is_empty() && s.members.is_empty() {
+        s.members = s
+            .dims
+            .get(&s.place)
+            .into_iter()
+            .flatten()
+            .filter(|c| **c == best.1 || s.countries.contains(c))
+            .cloned()
+            .collect();
+    }
+    s.target = Some(best);
     Ok(())
 }
 
@@ -3837,7 +3850,7 @@ fn recipe_request(
         _ => json!(lines),
     };
     if let Some(target) = &shape.target {
-        fill[STORY_IN] = story_input(&shape, target, (&main_rows, &target_rows), &title, catalogue)
+        fill[STORY_IN] = story_input(&shape, target, (&main_rows, &target_rows), &title)
             .map_err(|why| ("fill", why))?;
     }
     Ok(fill)
@@ -3856,13 +3869,13 @@ const STORY_SHOWN: usize = 4;
 /// the target's place as the whole and the other places as its members, the dimensions held at one code, the target row
 /// (its table, its own dimensions and year), the rows (the main's and the target's), the formats its facts print in (the
 /// unit's, at the decimals the main's values hold; a year; a ratio at one decimal), the measure's reviewed name and the
-/// unit's short form, and the places' reviewed names. No number here prints: the child's facts are computed by layer 1.
+/// unit's short form. No number here prints: the child's facts are computed by layer 1, over these rows and formats, which
+/// the fill takes from here, never from the child (story_page).
 fn story_input(
     shape: &Shape,
     (table, place, year): &(String, String, String),
     (main_rows, targets): (&[Value], &BTreeMap<String, Vec<Value>>),
     measure: &str,
-    catalogue: &dyn Catalogue,
 ) -> Result<Value, String> {
     let target = targets
         .get(table)
@@ -3906,8 +3919,6 @@ fn story_input(
         "story_year": {"scale": 1, "dec": 0, "suffix": ""},
         "story_times": {"scale": 1, "dec": 1, "suffix": ""},
     });
-    let named: Vec<String> = members.iter().cloned().chain([place.clone()]).collect();
-    let zh = leaf_labels(&[], &named, catalogue)?;
     let rows: Vec<Value> = main_rows.iter().cloned().chain([(*target).clone()]).collect();
     Ok(json!({
         "main": {"table": shape.main, "by": shape.place, "whole": place, "members": members, "filter": fixed},
@@ -3916,7 +3927,6 @@ fn story_input(
         "fmts": {"value": value, "year": "story_year", "times": "story_times"},
         "fmt_defs": fmt_defs,
         "words": {"measure": measure, "unit": short},
-        "zh": zh,
     }))
 }
 
@@ -4997,10 +5007,31 @@ async fn story_findings(
     asked["mode"] = json!("compose");
     asked["picks"] = json!(picks);
     let page = child(&asked)?;
-    let off = |why: String| stop("fill", format!("story findings: {why}"));
-    merge_into(&mut fill["knobs"], &page["knobs"], "knobs").map_err(off)?;
-    let rows = fill["rows"].as_array_mut().ok_or_else(|| off("the fill's rows are no list".into()))?;
-    for r in page["rows"].as_array().into_iter().flatten() {
+    story_page(fill, &input, &page).map_err(|why| stop("fill", format!("story findings: {why}")))
+}
+
+/// What the findings child may add to a fill (review 11-22: rows, formats and names are layer 1's): the page's facts (declared
+/// queries, computed by layer 1), its sections and its leaf data, under knobs.spec and nothing else; a reply with any other
+/// key refuses. The rows the facts read and their formats are the flow's own story input (the knowledge group's rows), the
+/// members its places; nothing the fill holds is overwritten (merge_into).
+fn story_page(fill: &mut Value, input: &Value, page: &Value) -> Result<(), String> {
+    let only = |v: &Value, keys: &[&str], at: &str| -> Result<(), String> {
+        match v.as_object() {
+            Some(o) => match o.keys().find(|k| !keys.contains(&k.as_str())) {
+                Some(k) => Err(format!("the child gave {at}.{k}, which is layer 1's or no part of a fill")),
+                None => Ok(()),
+            },
+            None => Err(format!("the child gave no object as {at}")),
+        }
+    };
+    only(page, &["knobs"], "reply")?;
+    only(&page["knobs"], &["spec"], "knobs")?;
+    only(&page["knobs"]["spec"], &crate::next_leaf::STORY_TAKEN, "knobs.spec")?;
+    merge_into(&mut fill["knobs"]["spec"], &page["knobs"]["spec"], "knobs.spec")?;
+    merge_into(&mut fill["knobs"]["spec"], &json!({"fmts": input["fmt_defs"]}), "knobs.spec")?;
+    merge_into(&mut fill["knobs"], &json!({"members": input["main"]["members"]}), "knobs")?;
+    let rows = fill["rows"].as_array_mut().ok_or("the fill's rows are no list")?;
+    for r in input["rows"].as_array().into_iter().flatten() {
         if !rows.iter().any(|x| x["src"] == r["src"]) {
             rows.push(r.clone());
         }
@@ -10216,7 +10247,9 @@ mod tests {
             let shape = shape_of(&story.eats, &[("ren", &rows[..]), ("target_ren", &with[..])], &Scoped(true)).unwrap();
             let at = shape.target.clone().unwrap();
             assert_eq!(at, ("target_ren".into(), "EU27_2020".into(), "2030".into()));
-            let input = story_input(&shape, &at, (&rows, &targets), "可再生能源占比", &Scoped(true)).unwrap();
+            let input = story_input(&shape, &at, (&rows, &targets), "可再生能源占比").unwrap();
+            // the places the page names are the shape's members (fill_of names them): every place, the whole among them
+            assert_eq!(shape.members.len(), places.len());
             assert_eq!(input["main"]["whole"], "EU27_2020");
             assert_eq!(input["main"]["filter"], json!({"freq": "A", "unit": "PC"}));
             assert!(!input["main"]["members"].as_array().unwrap().iter().any(|m| m == "EU27_2020"));
@@ -10231,7 +10264,11 @@ mod tests {
             asked["mode"] = json!("compose");
             asked["picks"] = json!(picks);
             let page = crate::next_leaf::story(&child, &asked).unwrap();
-            let request = json!({"knobs": page["knobs"], "rows": page["rows"]});
+            // the fill as story_page leaves it over a fill that holds none of it yet
+            let mut fill = json!({"knobs": {"spec": {"facts": {}, "fmts": {"time": {}}, "hero": {}}}, "rows": []});
+            story_page(&mut fill, &input, &page).unwrap();
+            assert_eq!(fill["rows"], input["rows"]);
+            let request = fill.clone();
             let (spec, read, _) = crate::next_facts::stored_request(&request);
             let facts: BTreeMap<String, crate::next_facts::Fact> = crate::next_facts::compute(&spec, &read)
                 .unwrap_or_else(|e| panic!("goal {goal}: {e}"))
@@ -10250,6 +10287,20 @@ mod tests {
             let layers: Vec<&str> = page["knobs"]["spec"]["sections"].as_array().unwrap().iter().filter_map(|s| s["layer"].as_str()).collect();
             assert_eq!(layers.first(), Some(&"thesis_claims"));
             assert_eq!(layers.last(), Some(&"risk_notes"));
+            // review 11-22: the child gives facts, sections and leaf data only; rows, formats or any other key it adds refuse,
+            // and a fact the fill holds another way is never overwritten
+            for (bad, why) in [
+                (json!({"knobs": page["knobs"], "rows": [{"src": "target:x", "value": "99"}]}), "reply.rows"),
+                (json!({"knobs": {"spec": page["knobs"]["spec"], "labels": {"DE": "x"}}}), "knobs.labels"),
+                (json!({"knobs": {"spec": {"fmts": {"pc": {"scale": 100}}}}}), "knobs.spec.fmts"),
+            ] {
+                let mut f = json!({"knobs": {"spec": {"facts": {}, "hero": {}}}, "rows": []});
+                let got = story_page(&mut f, &input, &bad).unwrap_err();
+                assert!(got.contains(why), "{got}");
+            }
+            let mut f = json!({"knobs": {"spec": {"facts": {"goal": {"table": "x"}}, "hero": {}}}, "rows": []});
+            let got = story_page(&mut f, &input, &page).unwrap_err();
+            assert!(got.contains("knobs.spec.facts.goal"), "{got}");
         }
     }
 

@@ -1882,6 +1882,10 @@ pub fn hero(runner: &Runner, request: &Value) -> Result<Strip, HeroMiss> {
     })
 }
 
+/// The keys under knobs.spec a story findings child's composed page may give (its facts, its sections, its leaf data in the
+/// hero); any other key of its reply is layer 1's and refused (next_run story_page).
+pub const STORY_TAKEN: [&str; 3] = ["facts", "sections", "hero"];
+
 /// How long the story findings child may take for one request (it works over the request's rows only).
 pub const STORY_DEADLINE: Duration = Duration::from_secs(30);
 

@@ -269,8 +269,10 @@ class Findings(unittest.TestCase):
         self.assertIn("not JSON", out[1]["refused"][0])
         self.assertEqual([s["layer"] for s in out[2]["knobs"]["spec"]["sections"]], ["thesis_claims", "target_path", "gap_axis", "risk_notes"])
         self.assertEqual(sorted(out[2]["knobs"]["spec"]["hero"]["leaves"]), ["gap_axis", "risk_notes", "target_path", "thesis_claims"])
-        self.assertEqual(out[2]["knobs"]["spec"]["fmts"], FMT_DEFS)
-        self.assertEqual(len(out[2]["rows"]), len(req["rows"]))
+        # the child gives the spec's facts, sections and leaf data only: rows, formats and names are layer 1's
+        self.assertEqual(list(out[2]), ["knobs"])
+        self.assertEqual(list(out[2]["knobs"]), ["spec"])
+        self.assertEqual(sorted(out[2]["knobs"]["spec"]), ["facts", "hero", "sections"])
 
     def test_ticks_as_next_facts(self):
         # next_facts ticks_step_in_the_printed_unit's cases: a top of 42.5 at one place steps by 10; 2 at no place by 1

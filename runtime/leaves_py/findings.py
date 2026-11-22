@@ -40,8 +40,7 @@ Request (one JSON line on stdin, one reply line on stdout; mode "candidates"):
    "fmts": {"value": fmt, "year": fmt, "times": fmt},           # the spec's format names for a value, a year, a ratio
    "fmt_defs": {fmt: {"scale", "dec", "suffix"}},               # those formats (an axis's ticks are worked out as next_facts does)
    "words": {"measure": words, "unit": words},                 # the measure's name and its unit (no digit)
-   "chain": [{"table", "filter": {dim: code}, "words": {"measure", "unit"}, "fmt"?: fmt, "kind"?: "flow"|"stock"}]?,
-   "zh": {code: name}?}                                          # the places' reviewed names (compose hands them on)
+   "chain": [{"table", "filter": {dim: code}, "words": {"measure", "unit"}, "fmt"?: fmt, "kind"?: "flow"|"stock"}]?}
                                                                  # companion tables (knowledge group's chain_companions), their
                                                                  # place and years the main's; "fmt" defaults to the value format
 Reply: {"candidates": [{"id", "angle", "layer", "score", "why", "summary"}...], "dropped": [{"angle", "why"}]}, best first;
@@ -584,21 +583,17 @@ def compose(r):
     return {"facts": facts, "sections": sections, "leaves": leaves}
 
 
-def as_fill(r, page):
-    """The composed page as the part of a fill it adds (the flow merges it in, a key held another way refusing): the spec's
-    facts, formats, sections and leaf data, the places' names and the members, and the rows the facts read."""
-    m = r.get("main") or {}
-    return {"knobs": {"spec": {"facts": page["facts"], "fmts": r.get("fmt_defs") or {}, "sections": page["sections"],
-                               "hero": {"leaves": page["leaves"]}},
-                      "labels": r.get("zh") or {}, "members": m.get("members") or []},
-            "rows": r.get("rows") or []}
+def as_fill(page):
+    """The composed page as the part of a fill it adds: the spec's facts, sections and leaf data, and nothing else (the flow
+    refuses any other key: the rows, the formats and the names are layer 1's, next_run story_page)."""
+    return {"knobs": {"spec": {"facts": page["facts"], "sections": page["sections"], "hero": {"leaves": page["leaves"]}}}}
 
 
 def answer(r):
     """One request's reply: the candidates, or the composed page; a refusal says why."""
     try:
         if r.get("mode") == "compose":
-            return as_fill(r, compose(r))
+            return as_fill(compose(r))
         _, cands, dropped = candidates(r)
         return {"candidates": [{k: c[k] for k in ("id", "angle", "layer", "score", "why", "summary")} for c in cands],
                 "dropped": dropped}
