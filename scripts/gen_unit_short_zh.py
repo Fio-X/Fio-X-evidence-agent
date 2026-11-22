@@ -40,6 +40,8 @@ NOUN = {
     "hectares": "公顷", "hectare": "公顷", "square kilometres": "平方公里", "square kilometre": "平方公里",
     "kilowatt-hours": "千瓦时", "kilowatt-hour": "千瓦时", "gigawatt-hours": "吉瓦时", "gigawatt-hour": "吉瓦时",
     "terajoules": "太焦", "terajoule": "太焦", "cubic metres": "立方米", "kilograms": "千克", "kilogram": "千克",
+    # an installed electric capacity (a power, which adds across countries as an amount does)
+    "kilowatt": "千瓦", "megawatt": "兆瓦", "gigawatt": "吉瓦",
     "enterprises": "家企业", "households": "户",
     # the purchasing power standard (Eurostat's artificial currency, one PPS buying the same in every country); the EU27
     # aggregate it is set against is the standard's own definition, not part of the form
