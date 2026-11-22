@@ -32,6 +32,7 @@ import target_path
 import pair_bars
 import thesis_claims
 import risk_notes
+import story
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "knobs.json")
 PAGE_OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "page_knobs.json")
@@ -70,6 +71,12 @@ RECIPES = [
          picks=[], exposes=[], main="waterfall", blocks_only=True, relation="Composition"),
     dict(name="composition", layers=["stacked100"], eats=["annual", "one_unit", "composition_groups"], charts=[], picks=[],
          exposes=[], main="stacked100", relation="Composition"),
+    # a long page of sections (the sample page's shape: an opening picture, the thesis, the one-axis answer, sections each with its
+    # kicker, conclusion title, text and one picture, the notes under it): the leaves are story.STORY_LAYERS and the sections, their
+    # titles and texts are the request's (spec.sections), so the page is tried first for a request that carries a target (has_target:
+    # a row the page runs to), before the one-line page of the same table. Layers print from the sections the flow writes
+    dict(name="page_story", layers=list(story.STORY_LAYERS), eats=["annual", "years_2", "one_place", "one_unit", "last_year", "two_ends", "has_target"],
+         charts=[], picks=[], exposes=[], strip=True, relation="Change"),
     # one country over the years (a table whose one place holds every row, the shape's two ends: one_country, two_ends): its line
     # from the earlier end to the later, its highest point the axis; the dek its own rise or fall between the two ends (owner
     # 11-14 16:0x item 2's line leaf; round 16: v3, r2v14, r2v17, r2v18 asked one place's change and had no page)
@@ -141,7 +148,7 @@ WITH = dict(bubbles=["bubble_key"])
 # them from the geometry the core checked (run.py placed_layer). Every other layer of a recipe prints only from what the
 # others put (PRINTS_ONLY); the flow fills none itself (P6), so a layer that is neither refuses here. Data, not a switch.
 # The layers that put nothing into a page's request: each prints from what the recipe's other layers put.
-PRINTS_ONLY = ["callouts", "legend", "inset", "bubble_key"]
+PRINTS_ONLY = ["callouts", "legend", "inset", "bubble_key", *story.STORY_LAYERS]   # story: its sections are the request's (spec.sections)
 BINDINGS_OF_CORE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page_tree", "node-bindings.json")
 # What a shape condition reads that an earlier one writes (src/next_run.rs): each list is one need, met by any condition in
 # it standing before. A recipe that names the condition names one of each need first, or the condition can only refuse.
@@ -205,7 +212,7 @@ def table():
     groups = dict(map=list(prod.MAP_ORDER), ring=list(scmp.RING_LAYERS), charts=list(prod.CHARTS), column=list(columns),
                   change=list(run.KINDS["change"][0]), flow=list(run.KINDS["flow"][0]), composition=list(run.KINDS["composition"][0]),
                   ranked_bars=list(run.KINDS["ranked_bars"][0]), change_bars=list(run.KINDS["change_bars"][0]), block_ranks=list(run.KINDS["block_ranks"][0]),
-                  composition_steps=list(run.KINDS["composition_steps"][0]), one_line=list(run.KINDS["one_line"][0]),
+                  composition_steps=list(run.KINDS["composition_steps"][0]), one_line=list(run.KINDS["one_line"][0]), page_story=list(run.KINDS["page_story"][0]),
                   scmp=list(scmp.SCMP_LAYERS))
     reserve = {}
     for reg in (prod.MAP_LAYERS, scmp.RING_LAYERS, columns, scmp.SCMP_LAYERS):

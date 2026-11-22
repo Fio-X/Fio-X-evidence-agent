@@ -9901,6 +9901,66 @@ mod tests {
         assert!(e.contains("no target row after 2024"), "{e}");
     }
 
+    /// The first recipe, in registry order, whose conditions the tables meet (what the pick tries one after the other), with
+    /// every recipe's verdict beside it.
+    fn first_shape<'a>(
+        tables: &[(&str, &[Value])],
+        catalogue: &dyn Catalogue,
+    ) -> (Option<&'a str>, Vec<(&'a str, Result<(), String>)>) {
+        let all: Vec<(&str, Result<(), String>)> = Hubs
+            .recipes()
+            .iter()
+            .map(|r| {
+                (
+                    r.name.as_str(),
+                    shape_of(&r.eats, tables, catalogue).map(|_| ()),
+                )
+            })
+            .collect();
+        (all.iter().find(|(_, v)| v.is_ok()).map(|(n, _)| *n), all)
+    }
+
+    /// The story page is tried before the one-line page and is chosen only for a request that carries a target row (has_target
+    /// after the page's last year, at a held place), in both data shapes: a Eurostat table across places over twenty years with
+    /// the law's target at 2030 is the story page, the same table with no target row is not (it says so), and a World Bank
+    /// table of one economy over the years, which has no target to hand in and no places to compare, is the one-line page, the
+    /// story page refused.
+    #[test]
+    fn the_story_page_is_chosen_only_for_a_request_with_a_target_row() {
+        let years: Vec<String> = (2005..=2024).map(|y| y.to_string()).collect();
+        let years: Vec<&str> = years.iter().map(String::as_str).collect();
+        let mut eu = ring_rows(
+            "ren",
+            &[("freq", "A"), ("unit", "PC")],
+            ("geo", &["DE", "FR", "EU27_2020"]),
+            &years,
+        );
+        for r in eu.iter_mut() {
+            r["value"] = json!("20");
+        }
+        let target = json!({"src": "target:ren-EU27_2020-2030", "main": "ren", "dims": {"geo": "EU27_2020"}, "time": "2030", "value": "42.5"});
+        let with = [target];
+        let (first, all) = first_shape(&[("ren", &eu[..]), ("targets", &with[..])], &Scoped(true));
+        assert_eq!(first, Some("page_story"), "{all:?}");
+        let (first, all) = first_shape(&[("ren", &eu[..])], &Scoped(true));
+        assert_ne!(first, Some("page_story"), "{all:?}");
+        let why = all.iter().find(|(n, _)| *n == "page_story").unwrap().1.clone().unwrap_err();
+        assert!(why.contains("no target row after 2024"), "{why}");
+        // a target for another table does not make the main a story
+        let other = [json!({"src": "target:x-EU27_2020-2030", "main": "x", "dims": {"geo": "EU27_2020"}, "time": "2030", "value": "42.5"})];
+        let (first, _) = first_shape(&[("ren", &eu[..]), ("targets", &other[..])], &Scoped(true));
+        assert_ne!(first, Some("page_story"));
+
+        let id = "NY.GDP.PCAP.CD@2";
+        let wb: Vec<Value> = ["2000", "2005", "2010", "2015", "2020", "2022"]
+            .iter()
+            .map(|t| json!({"src": format!("series:{id}/IND:{t}:value"), "table": id, "dims": {"country": "IND"}, "time": t, "value": "1000"}))
+            .collect();
+        let (first, all) = first_shape(&[(id, &wb[..])], &WbRanked(Vec::new()));
+        assert_eq!(first, Some("one_line"), "{all:?}");
+        assert!(all.iter().find(|(n, _)| *n == "page_story").unwrap().1.is_err());
+    }
+
     /// naming Germany beside the EU (places_zh 德国, 欧盟) still scopes the page by EU27_2020 alone. With no reviewed name
     /// for the aggregate there is no scope at all, never a raw word.
     #[test]
@@ -12992,6 +13052,7 @@ mod tests {
                 "ring",
                 "composition_steps",
                 "composition",
+                "page_story",
                 "one_line",
                 "change",
                 "change_bars",
@@ -17465,6 +17526,7 @@ mod tests {
                 ("ring", Err("not this shape: main spans one year (2025)".to_string())),
                 ("composition_steps", Err("not this shape: main migr asks no grouped total alone".to_string())),
                 ("composition", Err("not this shape: main migr asks no grouped total alone".to_string())),
+                ("page_story", Err("not this shape: main spans one year (2025)".to_string())),
                 ("one_line", Err("not this shape: main spans one year (2025)".to_string())),
                 ("change", Err("not this shape: main spans one year (2025)".to_string())),
                 ("change_bars", Err("not this shape: main spans one year (2025)".to_string())),
@@ -22626,6 +22688,7 @@ for line in sys.stdin:
                 ("ring", false),
                 ("composition_steps", false),
                 ("composition", false),
+                ("page_story", true),
                 ("one_line", false),
                 ("change", true),
                 ("change_bars", true),
@@ -22844,6 +22907,7 @@ for line in sys.stdin:
                 ("ring", vec![]),
                 ("composition_steps", vec![]),
                 ("composition", vec![]),
+                ("page_story", vec![]),
                 ("one_line", vec![]),
                 ("change", vec![]),
                 ("change_bars", vec![]),

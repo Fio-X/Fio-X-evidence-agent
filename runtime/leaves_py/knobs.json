@@ -2678,6 +2678,15 @@
    "thesis_claims",
    "risk_notes"
   ],
+  "page_story": [
+   "thesis_claims",
+   "gap_axis",
+   "event_chain",
+   "target_path",
+   "winners_losers",
+   "pair_bars",
+   "risk_notes"
+  ],
   "scmp": [
    "map",
    "strip",
@@ -2798,6 +2807,32 @@
    "external": [
     "stacked100"
    ]
+  },
+  {
+   "name": "page_story",
+   "layers": [
+    "thesis_claims",
+    "gap_axis",
+    "event_chain",
+    "target_path",
+    "winners_losers",
+    "pair_bars",
+    "risk_notes"
+   ],
+   "eats": [
+    "annual",
+    "years_2",
+    "one_place",
+    "one_unit",
+    "last_year",
+    "two_ends",
+    "has_target"
+   ],
+   "charts": [],
+   "picks": [],
+   "exposes": [],
+   "strip": true,
+   "relation": "Change"
   },
   {
    "name": "one_line",
