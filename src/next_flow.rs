@@ -6952,9 +6952,14 @@ pub async fn prepare_planned<R: ToolRunner + Send + ?Sized>(
             companion_files.push((kept.id.clone(), kept.file));
             tables.push((kept.id, kept.args, kept.sheet, kept.candidates));
         }
-        // the main's event chain, for a story page: read by the page step only, never offered as claims
-        let on_page: Vec<&str> = tables.iter().map(|(id, _, _, _)| id.as_str()).collect();
-        chain_files = chain_tables(recorder, tools, catalogue, &main, &main_args, &file, &on_page, cancel).await?;
+        // the main's event chain, for a story page: read by the page step only, never offered as claims; fetched only for a
+        // question held for a target year, the one a story page answers (review 11-23: any other question would pay its
+        // fetches and never read them)
+        if held_for.is_some() {
+            let on_page: Vec<&str> = tables.iter().map(|(id, _, _, _)| id.as_str()).collect();
+            chain_files =
+                chain_tables(recorder, tools, catalogue, &main, &main_args, &file, &on_page, cancel).await?;
+        }
     }
     let mut lines = vec![format!("Question: {question}")];
     let mut n = 0;
