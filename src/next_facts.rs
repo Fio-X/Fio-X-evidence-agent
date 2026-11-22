@@ -337,7 +337,15 @@ fn exact_values(facts: &mut [Fact], rows: &[Row]) {
                 "mean" if !f.reads.is_empty() => {
                     sum(&f.reads).and_then(|s| s.div(Exact::int(f.reads.len() as i128)))
                 }
-                "count" | "n" | "position" | "zeros" | "unrowed" | "excluded"
+                "per_year" | "line_at" if f.reads.len() == 2 && f.n.is_some() => {
+                    let years = Exact::int(f.n.unwrap_or(1) as i128);
+                    match (of(&f.reads[0]), of(&f.reads[1])) {
+                        (Some(a), Some(b)) if f.op == "per_year" => a.sub(b).and_then(|d| d.div(years)),
+                        (Some(a), Some(b)) => b.mul(years).and_then(|d| a.add(d)),
+                        _ => None,
+                    }
+                }
+                "count" | "n" | "position" | "zeros" | "unrowed" | "excluded" | "reach_year"
                     if f.v.fract() == 0.0 =>
                 {
                     Some(Exact::int(f.v as i128))
@@ -541,6 +549,12 @@ fn one(
             format!("{FACT_SRC}{}", q["b"].as_str().unwrap_or_default()),
         ];
         return Ok(f);
+    }
+    if matches!(op, "per_year" | "cagr" | "line_at" | "reach_year") {
+        return of_facts_over_years(key, q, op, f, queries, spec, rows, done, open);
+    }
+    if matches!(op, "step_max" | "first_above" | "spread" | "group_change") {
+        return over_periods(key, q, op, f, spec, rows);
     }
     if op == "count" {
         let members = members(key, spec)?;
@@ -872,6 +886,264 @@ fn one(
             }
             f.v = sum(key, &at)?;
             f.reads = at.iter().map(|r| r.src.clone()).collect();
+        }
+        _ => return Err(format!("{key}: {op} is not an op")),
+    }
+    Ok(f)
+}
+
+/// The year of a fact that reads one period: its query's `time` as four digits. A fact with no such time has no year, so
+/// a rate over it is refused, never assumed.
+fn year_of(key: &str, k: &str, queries: &BTreeMap<&str, &Value>) -> Result<i32, String> {
+    let q = queries
+        .get(k)
+        .ok_or_else(|| format!("{key}: {k} is not a declared fact"))?;
+    let t = q["time"]
+        .as_str()
+        .ok_or_else(|| format!("{key}: {k} reads no one time, so it has no year"))?;
+    if t.len() != 4 || !t.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(format!("{key}: the time of {k} ({t}) is not a year"));
+    }
+    t.parse::<i32>()
+        .map_err(|_| format!("{key}: the time of {k} ({t}) is not a year"))
+}
+
+/// Facts over years (owner 11-22: a story is computed and simulated, each scenario named as one), each from facts the
+/// page declares, their years from those facts' own times, never typed in:
+/// - per_year: (a - b) over the years between them, a after b;
+/// - cagr: (a / b) to the power 1 over those years, less 1, both above 0;
+/// - line_at: `start` carried at the `rate` a year from its year to the year `at` (a straight line, a scenario);
+/// - reach_year: the first whole year `start` carried at `rate` a year is at or above `target`; refused when the rate
+///   is not above 0 or the year is past 2100.
+/// Each names what it read in `reads`; `n` holds the years a rate or a line spans.
+#[allow(clippy::too_many_arguments)]
+fn of_facts_over_years(
+    key: &str,
+    q: &Value,
+    op: &str,
+    mut f: Fact,
+    queries: &BTreeMap<&str, &Value>,
+    spec: &Spec,
+    rows: &[Row],
+    done: &mut BTreeMap<String, Result<Fact, String>>,
+    open: &mut BTreeSet<String>,
+) -> Result<Fact, String> {
+    let mut side = |s: &str| -> Result<(String, f64), String> {
+        let k = q[s]
+            .as_str()
+            .ok_or_else(|| format!("{key}: {op} names no fact as {s}"))?;
+        let other = fact(k, queries, spec, rows, done, open)
+            .map_err(|e| format!("{key}: {s} {k} fails ({e})"))?;
+        Ok((k.to_string(), other.v))
+    };
+    f.fmt = word(key, &q["fmt"], "fmt")?;
+    match op {
+        "per_year" | "cagr" => {
+            let ((ka, a), (kb, b)) = (side("a")?, side("b")?);
+            let (ya, yb) = (year_of(key, &ka, queries)?, year_of(key, &kb, queries)?);
+            if ya <= yb {
+                return Err(format!("{key}: {op} needs a ({ya}) after b ({yb})"));
+            }
+            let years = (ya - yb) as f64;
+            f.v = if op == "per_year" {
+                (a - b) / years
+            } else {
+                if a <= 0.0 || b <= 0.0 {
+                    return Err(format!("{key}: cagr needs both values above 0"));
+                }
+                (a / b).powf(1.0 / years) - 1.0
+            };
+            f.n = Some((ya - yb) as usize);
+            f.reads = vec![format!("{FACT_SRC}{ka}"), format!("{FACT_SRC}{kb}")];
+        }
+        "line_at" => {
+            let ((ks, s), (kr, r)) = (side("start")?, side("rate")?);
+            let ys = year_of(key, &ks, queries)?;
+            let at = word(key, &q["at"], "at")?;
+            let ya = at
+                .parse::<i32>()
+                .ok()
+                .filter(|_| at.len() == 4)
+                .ok_or_else(|| format!("{key}: at ({at}) is not a year"))?;
+            if ya <= ys {
+                return Err(format!("{key}: line_at needs at ({ya}) after the start ({ys})"));
+            }
+            f.v = s + r * (ya - ys) as f64;
+            f.n = Some((ya - ys) as usize);
+            f.t = Some(at);
+            f.reads = vec![format!("{FACT_SRC}{ks}"), format!("{FACT_SRC}{kr}")];
+        }
+        _ => {
+            let ((ks, s), (kr, r), (kt, t)) = (side("start")?, side("rate")?, side("target")?);
+            let ys = year_of(key, &ks, queries)?;
+            let k = if s >= t {
+                0
+            } else if r > 0.0 {
+                ((t - s) / r).ceil() as i64
+            } else {
+                return Err(format!("{key}: at a rate of {r} a year the start never reaches the target"));
+            };
+            let y = ys as i64 + k;
+            if y > 2100 {
+                return Err(format!("{key}: the target is reached only in {y}, past 2100"));
+            }
+            f.v = y as f64;
+            f.n = Some(k as usize);
+            f.reads = vec![
+                format!("{FACT_SRC}{ks}"),
+                format!("{FACT_SRC}{kr}"),
+                format!("{FACT_SRC}{kt}"),
+            ];
+        }
+    }
+    Ok(f)
+}
+
+/// Each period's total over rows, in time order (a period's string order is its time order: years, YYYY-MM, YYYY-S1).
+fn period_totals(key: &str, picked: &[&Row]) -> Result<Vec<(String, f64)>, String> {
+    let mut ser: BTreeMap<String, f64> = BTreeMap::new();
+    for r in picked {
+        *ser.entry(r.time.clone()).or_insert(0.0) += finite(key, r)?;
+    }
+    Ok(ser.into_iter().collect())
+}
+
+/// Facts over the periods of rows (owner 11-22), each read back from the rows it names:
+/// - step_max: the largest rise from one period to the next within `from`..`to` (years only when one apart); `t` is the
+///   later period;
+/// - first_above: the first period within `from`..`to` where the rows of query `a` total more than those of query `b`
+///   (each a table and filter); `v` is a's total there; refused when no period has both or a never passes b;
+/// - spread: the population standard deviation of the members' values (codes of `by`) at `time`, every member read;
+/// - group_change: the members ranked by value at `from` (highest first), the `part` ("top" or "bottom") `k` of them,
+///   and the mean of each one's value at `to` less its value at `from`; `who` names them.
+fn over_periods(
+    key: &str,
+    q: &Value,
+    op: &str,
+    mut f: Fact,
+    spec: &Spec,
+    rows: &[Row],
+) -> Result<Fact, String> {
+    f.fmt = word(key, &q["fmt"], "fmt")?;
+    let window = |ser: Vec<(String, f64)>| -> Result<Vec<(String, f64)>, String> {
+        let from = match &q["from"] {
+            Value::Null => String::new(),
+            v => word(key, v, "from")?,
+        };
+        let to = match &q["to"] {
+            Value::Null => None,
+            v => Some(word(key, v, "to")?),
+        };
+        Ok(ser
+            .into_iter()
+            .filter(|(t, _)| *t >= from && to.as_ref().is_none_or(|to| t <= to))
+            .collect())
+    };
+    match op {
+        "step_max" => {
+            let picked = select(key, rows, q)?;
+            let ser = window(period_totals(key, &picked)?)?;
+            // a step is one year to the next: a gap of years in the rows is no step
+            let next_year = |a: &str, b: &str| match (a.parse::<i32>(), b.parse::<i32>()) {
+                (Ok(x), Ok(y)) if a.len() == 4 && b.len() == 4 => y == x + 1,
+                _ => true,
+            };
+            let best = ser
+                .windows(2)
+                .filter(|w| next_year(&w[0].0, &w[1].0))
+                .map(|w| (w[1].0.clone(), w[0].0.clone(), w[1].1 - w[0].1))
+                .fold(None::<(String, String, f64)>, |b, s| match b {
+                    Some(b) if b.2 >= s.2 => Some(b),
+                    _ => Some(s),
+                })
+                .ok_or_else(|| format!("{key}: step_max needs two periods"))?;
+            f.v = best.2;
+            f.reads = picked
+                .iter()
+                .filter(|r| r.time == best.0 || r.time == best.1)
+                .map(|r| r.src.clone())
+                .collect();
+            f.t = Some(best.0);
+        }
+        "first_above" => {
+            let (qa, qb) = (&q["a"], &q["b"]);
+            let (pa, pb) = (select(key, rows, qa)?, select(key, rows, qb)?);
+            let sa = window(period_totals(key, &pa)?)?;
+            let sb: BTreeMap<String, f64> = period_totals(key, &pb)?.into_iter().collect();
+            let hit = sa
+                .iter()
+                .find(|(t, v)| sb.get(t).is_some_and(|w| v > w))
+                .cloned()
+                .ok_or_else(|| format!("{key}: a never totals more than b in the window"))?;
+            f.v = hit.1;
+            f.reads = pa
+                .iter()
+                .chain(pb.iter())
+                .filter(|r| r.time == hit.0)
+                .map(|r| r.src.clone())
+                .collect();
+            f.t = Some(hit.0);
+        }
+        "spread" | "group_change" => {
+            let members = members(key, spec)?;
+            let by = word(key, &q["by"], "by")?;
+            let picked = select(key, rows, q)?;
+            let at = |time: &str, reads: &mut Vec<String>| -> Result<BTreeMap<String, f64>, String> {
+                let mut m = BTreeMap::new();
+                for r in picked.iter().filter(|r| r.time == time) {
+                    let code = r
+                        .dims
+                        .get(&by)
+                        .ok_or_else(|| format!("{key}: the row {} has no {by}", r.src))?;
+                    if members.contains(code) {
+                        *m.entry(code.clone()).or_insert(0.0) += finite(key, r)?;
+                        reads.push(r.src.clone());
+                    }
+                }
+                let gone: Vec<&str> = members
+                    .iter()
+                    .filter(|g| !m.contains_key(*g))
+                    .map(String::as_str)
+                    .collect();
+                if gone.is_empty() {
+                    Ok(m)
+                } else {
+                    Err(format!("{key}: no row at {time} for {}", gone.join(", ")))
+                }
+            };
+            if op == "spread" {
+                let time = word(key, &q["time"], "time")?;
+                let m = at(&time, &mut f.reads)?;
+                let n = m.len() as f64;
+                let mean = m.values().sum::<f64>() / n;
+                f.v = (m.values().map(|v| (v - mean).powi(2)).sum::<f64>() / n).sqrt();
+                f.n = Some(m.len());
+            } else {
+                let (from, to) = (word(key, &q["from"], "from")?, word(key, &q["to"], "to")?);
+                let part = word(key, &q["part"], "part")?;
+                let k = q["k"]
+                    .as_u64()
+                    .filter(|k| *k > 0)
+                    .ok_or_else(|| format!("{key}: group_change has no whole number above 0 as k"))?
+                    as usize;
+                let (a, b) = (at(&from, &mut f.reads)?, at(&to, &mut f.reads)?);
+                if k > a.len() {
+                    return Err(format!("{key}: k ({k}) is more than the {} members", a.len()));
+                }
+                // highest first; a tie keeps code order (BTreeMap order), stable
+                let mut ranked: Vec<(&String, f64)> = a.iter().map(|(c, v)| (c, *v)).collect();
+                ranked.sort_by(|x, y| y.1.partial_cmp(&x.1).unwrap_or(std::cmp::Ordering::Equal));
+                let group: Vec<&String> = match part.as_str() {
+                    "top" => ranked.iter().take(k).map(|(c, _)| *c).collect(),
+                    "bottom" => ranked.iter().rev().take(k).map(|(c, _)| *c).collect(),
+                    _ => return Err(format!("{key}: part ({part}) is not top or bottom")),
+                };
+                f.v = group.iter().map(|c| b[*c] - a[*c]).sum::<f64>() / k as f64;
+                f.n = Some(k);
+                let mut who: Vec<String> = group.into_iter().cloned().collect();
+                who.sort();
+                f.who = who;
+            }
         }
         _ => return Err(format!("{key}: {op} is not an op")),
     }
@@ -2123,6 +2395,104 @@ mod tests {
             asked_places: None,
             basis: None,
         }
+    }
+
+    fn by_key(s: &Spec, rows: &[Row]) -> BTreeMap<String, Fact> {
+        compute(s, rows)
+            .unwrap()
+            .into_iter()
+            .map(|f| (f.key.clone(), f))
+            .collect()
+    }
+
+    /// Owner 11-22 (a story is computed and simulated): a rate a year takes its years from its operands' own times, a
+    /// straight line carries a start at a rate to a year, the year a target is reached is the first whole year at or
+    /// above it, and the largest one-year rise names its year. Each is worked out from the rows and refused when a year
+    /// is missing, the order is wrong or the target is never reached.
+    #[test]
+    fn rates_lines_and_target_years_take_their_years_from_the_facts() {
+        let rows = [
+            row("r", "EU", "2005", 10.2),
+            row("r", "EU", "2019", 19.9),
+            row("r", "EU", "2020", 22.0),
+            row("r", "EU", "2024", 25.2),
+            row("t", "EU", "2030", 42.5),
+        ];
+        let base = json!({
+            "now": {"table": "r", "time": "2024", "fmt": "x"},
+            "was": {"table": "r", "time": "2005", "fmt": "x"},
+            "goal": {"table": "t", "time": "2030", "fmt": "x"},
+            "past": {"op": "per_year", "a": "now", "b": "was", "fmt": "x"},
+            "line": {"op": "line_at", "start": "now", "rate": "past", "at": "2030", "fmt": "x"},
+            "best": {"op": "step_max", "table": "r", "fmt": "x"},
+            "when": {"op": "reach_year", "start": "now", "rate": "best", "target": "goal", "fmt": "n"},
+            "grow": {"op": "cagr", "a": "now", "b": "was", "fmt": "pct"},
+        });
+        let f = by_key(&spec(base.clone(), None), &rows);
+        assert_eq!(f["past"].n, Some(19));
+        assert!((f["past"].v - 15.0 / 19.0).abs() < 1e-12);
+        assert_eq!(text(&f["past"], &json!({}), false).unwrap(), "0.8");
+        assert_eq!(text(&f["line"], &json!({}), false).unwrap(), "29.9");
+        assert_eq!(f["line"].t.as_deref(), Some("2030"));
+        assert_eq!(f["line"].reads, ["fact:now", "fact:past"]);
+        assert_eq!(f["best"].t.as_deref(), Some("2020"));
+        assert_eq!(text(&f["best"], &json!({}), false).unwrap(), "2.1");
+        assert_eq!(f["best"].reads, ["series:r/EU:2019:v", "series:r/EU:2020:v"]);
+        assert_eq!((f["when"].v, f["when"].n), (2033.0, Some(9)));
+        assert_eq!(text(&f["grow"], &json!({}), false).unwrap(), "5%");
+        let refused = |patch: Value, why: &str| {
+            let mut q = base.clone();
+            for (k, v) in patch.as_object().unwrap() {
+                q[k] = v.clone();
+            }
+            let e = compute(&spec(q, None), &rows).unwrap_err();
+            assert!(e.contains(why), "{e}");
+        };
+        refused(json!({"past": {"op": "per_year", "a": "was", "b": "now", "fmt": "x"}}), "after b");
+        refused(json!({"past": {"op": "per_year", "a": "best", "b": "was", "fmt": "x"}}), "no one time");
+        refused(json!({"line": {"op": "line_at", "start": "now", "rate": "past", "at": "2020", "fmt": "x"}}), "after the start");
+        refused(
+            json!({"best": {"op": "minus", "a": "was", "b": "now", "fmt": "x"}}),
+            "never reaches",
+        );
+    }
+
+    /// Owner 11-22: the first period one series passes another, how far the members spread at a time, and the mean change
+    /// of the members that stood highest (or lowest) at the start, every member read and none skipped.
+    #[test]
+    fn crossings_spreads_and_group_changes_read_every_member() {
+        let mut rows = vec![];
+        for (g, a, b) in [("A", 40.0, 60.0), ("B", 30.0, 35.0), ("C", 10.0, 30.0), ("D", 2.0, 6.0)] {
+            rows.push(row("r", g, "2005", a));
+            rows.push(row("r", g, "2024", b));
+        }
+        for (t, w, c) in [("2018", 10.0, 20.0), ("2019", 12.0, 15.0), ("2020", 14.0, 12.0), ("2021", 13.0, 14.0)] {
+            rows.push(row("w", "EU", t, w));
+            rows.push(row("c", "EU", t, c));
+        }
+        let members: &[&str] = &["A", "B", "C", "D"];
+        let s = spec(
+            json!({
+                "cross": {"op": "first_above", "a": {"table": "w"}, "b": {"table": "c"}, "fmt": "x"},
+                "sd": {"op": "spread", "table": "r", "by": "geo", "time": "2024", "fmt": "x"},
+                "lo": {"op": "group_change", "table": "r", "by": "geo", "from": "2005", "to": "2024", "part": "bottom", "k": 2, "fmt": "x"},
+                "hi": {"op": "group_change", "table": "r", "by": "geo", "from": "2005", "to": "2024", "part": "top", "k": 2, "fmt": "x"},
+            }),
+            Some(members),
+        );
+        let f = by_key(&s, &rows);
+        assert_eq!((f["cross"].t.as_deref(), f["cross"].v), (Some("2020"), 14.0));
+        assert_eq!(f["cross"].reads, ["series:w/EU:2020:v", "series:c/EU:2020:v"]);
+        let mean = (60.0 + 35.0 + 30.0 + 6.0) / 4.0;
+        let sd = ([60.0, 35.0, 30.0, 6.0f64].iter().map(|v| (v - mean).powi(2)).sum::<f64>() / 4.0).sqrt();
+        assert!((f["sd"].v - sd).abs() < 1e-12);
+        assert_eq!(f["sd"].reads.len(), 4);
+        assert_eq!((f["lo"].v, f["lo"].who.clone()), (12.0, vec!["C".to_string(), "D".to_string()]));
+        assert_eq!((f["hi"].v, f["hi"].who.clone()), (12.5, vec!["A".to_string(), "B".to_string()]));
+        // a member with no row is not skipped
+        rows.retain(|r| !(r.dims["geo"] == "D" && r.time == "2024"));
+        let e = compute(&s, &rows).unwrap_err();
+        assert!(e.contains("no row at 2024 for D"), "{e}");
     }
 
     #[test]
