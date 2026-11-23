@@ -10713,10 +10713,13 @@ mod tests {
             // I28: the lead finding's conclusion is the page's headline and its text the dek, written over the draft the fill
             // held and kept by page_words over the text step's (the kicker is the text step's); each number in them is a fact
             // the page declares, and no section prints the headline's sentence again
-            let mut drafted = json!({"knobs": {"spec": {"title": "draft", "dek": "draft", "kicker": "k", "facts": {}, "hero": {}}}, "rows": []});
+            let mut drafted = json!({"knobs": {"spec": {"title": "draft", "dek": "draft", "end": "draft", "kicker": "k", "facts": {}, "hero": {}}}, "rows": []});
             story_page(&mut drafted, &input, &page).unwrap();
             let words = |f: &Value, k: &str| f["knobs"]["spec"][k].as_str().unwrap().to_string();
             let (title, dek) = (words(&drafted, "title"), words(&drafted, "dek"));
+            // the arc's closing line replaces a draft the same way (I34), and prints no sentence the headline or dek printed
+            assert_eq!(words(&drafted, "end"), page["knobs"]["spec"]["end"].as_str().unwrap(), "goal {goal}");
+            assert!(!words(&drafted, "end").is_empty() && words(&drafted, "end") != title && words(&drafted, "end") != dek);
             assert_eq!(title, page["knobs"]["spec"]["title"].as_str().unwrap(), "goal {goal}");
             assert_eq!(dek, page["knobs"]["spec"]["dek"].as_str().unwrap(), "goal {goal}");
             page_words(&mut drafted, ("text step title", "text step dek", "text step kicker"));
