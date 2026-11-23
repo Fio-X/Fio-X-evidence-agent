@@ -2639,6 +2639,72 @@ fn page_input(
     p
 }
 
+/// The page input's external coordinates, each from the main's own table and basis and each present only when its rows are
+/// there, so a declared fact reads it like any row (never cross-table, nothing estimated): `shape.whole`, the aggregate the
+/// page's scope is (scope_of: a place code that is no country whose members hold every ranked place) when the main holds a
+/// value of it at the page's year and, on a page with two ends, at its earlier end; `shape.prev`, the year before an annual
+/// page's year when every ranked place has a value there; `shape.target`, the target the knowledge group registers for the
+/// main (`targets`, its rows), chosen by has_target's own rule (a held place, after the page's year, on the main's slice),
+/// with its one row appended to the input's rows. An absent coordinate is no key at all.
+fn external_coords(
+    p: &mut Value,
+    shape: &Shape,
+    picks: &Picks,
+    (main, targets): (&[Value], &[Value]),
+    catalogue: &dyn Catalogue,
+) {
+    let held = |code: &str, t: &str| {
+        main.iter()
+            .any(|r| r["time"] == t && r["dims"][&shape.place] == code && row_value(r).is_some())
+    };
+    let ends = [shape.year.as_str(), shape.t0.as_str()];
+    if let Some(whole) = scope_of(shape, picks, catalogue)
+        .filter(|w| ends.iter().all(|t| t.is_empty() || held(w, t)))
+    {
+        p["shape"]["whole"] = json!(whole);
+    }
+    if let Some(prev) = shape
+        .year
+        .parse::<i32>()
+        .ok()
+        .filter(|_| is_year(&shape.year))
+        .map(|y| (y - 1).to_string())
+        .filter(|t| !picks.ranked.is_empty() && picks.ranked.iter().all(|c| held(c, t)))
+    {
+        p["shape"]["prev"] = json!(prev);
+    }
+    // has_target's rule over the main and the registry's rows by their table, on a shape of the page's own places and year
+    let mut by: BTreeMap<String, Vec<Value>> = BTreeMap::new();
+    for r in targets {
+        by.entry(r["table"].as_str().unwrap_or_default().to_string())
+            .or_default()
+            .push(r.clone());
+    }
+    let mut tables: Vec<(&str, &[Value])> = vec![(shape.main.as_str(), main)];
+    tables.extend(by.iter().map(|(id, rows)| (id.as_str(), &rows[..])));
+    let mut s = Shape {
+        main: shape.main.clone(),
+        dims: shape.dims.clone(),
+        place: shape.place.clone(),
+        countries: shape.countries.clone(),
+        hub: shape.hub.clone(),
+        year: shape.year.clone(),
+        ..Shape::default()
+    };
+    let Some((table, place, time)) = has_target(&mut s, &tables, catalogue).ok().and(s.target)
+    else {
+        return;
+    };
+    let rows: Vec<&Value> = by[&table]
+        .iter()
+        .filter(|r| r["time"] == time.as_str() && r["dims"][&shape.place] == place.as_str())
+        .collect();
+    if let ([row], Some(all)) = (rows.as_slice(), p["rows"].as_array_mut()) {
+        all.push((*row).clone());
+        p["shape"]["target"] = json!({"table": table, "time": time, "place": place});
+    }
+}
+
 /// The recipe's external layers laid out over the finished fill (its words in): the visual group's NodeDraw writes the page
 /// tree from the fill and the page input (kept in the fill by recipe_request), asks each layer's node and checks its
 /// geometry, and the checked geometry goes to the leaves as knobs.placed. A page with no external layer asks nothing.
@@ -3580,6 +3646,15 @@ fn recipe_request(
     // a narrowed main's set (its record's scope words and members) goes in as given, for the finding's words
     let mut page_in = (!recipe.external.is_empty())
         .then(|| page_input(recipe, &shape, &picks, (&main_rows, &comp_rows)));
+    // the whole, the year before and the registered target, each from the main's table when its rows hold it (the target
+    // rows read for has_target when the recipe read them, else the knowledge group's for the main)
+    if let Some(p) = page_in.as_mut() {
+        let targets: Vec<Value> = match target_rows.is_empty() {
+            true => catalogue.targets(&main.id),
+            false => target_rows.values().flatten().cloned().collect(),
+        };
+        external_coords(p, &shape, &picks, (&main_rows, &targets), catalogue);
+    }
     if let (Some(p), Some(set)) = (page_in.as_mut(), set) {
         p["set"] = set;
     }
@@ -29884,6 +29959,150 @@ for line in sys.stdin:
             let n = assert_map_page(recipe_name, &fill, &old, &short);
             let rows = old.drawn.iter().filter(|(l, _)| l == "map").count();
             println!("P6REQ map {recipe_name} gas facts {n} (finding's among them) rows {rows} equal: top {:?} focus {} hub {}", old.data["top"], old.data["focus"], old.data["hub_name"]);
+        }
+    }
+
+    /// I36: a page input's external coordinates in the Eurostat shape (geo members beside the EU's own row EU27_2020, annual
+    /// years). The whole's row is never a place the column or change page ranks or counts; shape.whole is the EU when its row
+    /// has a value at the page's year (and at the earlier end of a page with two ends), shape.prev the year before when every
+    /// ranked member has a value there, shape.target the registered target with its one row appended to the rows; each is
+    /// absent, as no key, when its rows are not there.
+    #[test]
+    fn a_page_input_carries_the_whole_the_year_before_and_the_target_only_when_rows_hold_them() {
+        let mut main = ring_rows(
+            "ren",
+            &[("freq", "A"), ("unit", "PC")],
+            ("geo", &["DE", "FR", "IT", "EU27_2020"]),
+            &["2016", "2023", "2024"],
+        );
+        for (i, r) in main.iter_mut().enumerate() {
+            r["value"] = json!(format!("{}", 10 + i));
+        }
+        let target = json!({"src": "target:ren-EU27_2020-2030", "main": "ren", "table": "targets_ren", "dims": {"geo": "EU27_2020"},
+            "slice": {"unit": "PC"}, "time": "2030", "value": "42.5"});
+        let other = json!({"src": "target:gas-EU27_2020-2030", "main": "gas", "table": "targets_gas", "dims": {"geo": "EU27_2020"},
+            "time": "2030", "value": "1"});
+        let coords = |name: &str, main: &[Value], targets: &[Value]| -> Value {
+            let r = recipe(name);
+            let shape = shape_of(&r.eats, &[("ren", main)], &Scoped(true)).unwrap();
+            let picks = picks_of(&r.picks, &shape, main, &[]).unwrap();
+            assert_eq!(shape.countries, ["DE", "FR", "IT"], "{name}");
+            assert!(!picks.ranked.iter().any(|c| c == "EU27_2020"), "{name}");
+            assert_eq!(picks.ranked.len(), 3, "{name}");
+            let mut p = page_input(r, &shape, &picks, (main, &[]));
+            assert_eq!(p["shape"]["countries"], json!(["DE", "FR", "IT"]));
+            external_coords(&mut p, &shape, &picks, (main, targets), &Scoped(true));
+            p
+        };
+        for name in ["column", "change", "ranked_bars", "change_bars"] {
+            let p = coords(name, &main, &[target.clone(), other.clone()]);
+            assert_eq!(p["shape"]["whole"], "EU27_2020", "{name}");
+            assert_eq!(p["shape"]["prev"], "2023", "{name}");
+            assert_eq!(
+                p["shape"]["target"],
+                json!({"table": "targets_ren", "time": "2030", "place": "EU27_2020"}),
+                "{name}"
+            );
+            let rows = p["rows"].as_array().unwrap();
+            assert_eq!(rows.len(), main.len() + 1, "{name}");
+            assert_eq!(rows.last().unwrap()["src"], "target:ren-EU27_2020-2030");
+            // no target registered for this main: no key and no row added
+            let p = coords(name, &main, &[other.clone()]);
+            assert!(p["shape"].get("target").is_none(), "{name}");
+            assert_eq!(p["rows"].as_array().unwrap().len(), main.len(), "{name}");
+        }
+        // the whole with no value at the page's year: no whole
+        let mut gap = main.clone();
+        gap.retain(|r| !(r["dims"]["geo"] == "EU27_2020" && r["time"] == "2024"));
+        let p = coords("column", &gap, &[]);
+        assert!(p["shape"].get("whole").is_none());
+        assert_eq!(p["shape"]["prev"], "2023");
+        // the whole missing at the earlier end of a change page only: the change page has no whole, the column page has one
+        let mut early = main.clone();
+        early.retain(|r| !(r["dims"]["geo"] == "EU27_2020" && r["time"] == "2016"));
+        assert!(coords("change", &early, &[])["shape"]
+            .get("whole")
+            .is_none());
+        assert_eq!(coords("column", &early, &[])["shape"]["whole"], "EU27_2020");
+        // a ranked member with no value the year before: no prev
+        let mut no_prev = main.clone();
+        no_prev.retain(|r| !(r["dims"]["geo"] == "FR" && r["time"] == "2023"));
+        let p = coords("column", &no_prev, &[]);
+        assert!(p["shape"].get("prev").is_none());
+        assert_eq!(p["shape"]["whole"], "EU27_2020");
+        // members alone (the ordinary fetch): no whole, the year before still there
+        let mut members = main.clone();
+        members.retain(|r| r["dims"]["geo"] != "EU27_2020");
+        let p = coords("column", &members, &[target.clone()]);
+        assert!(p["shape"].get("whole").is_none());
+        assert!(p["shape"].get("target").is_none());
+        assert_eq!(p["shape"]["prev"], "2023");
+    }
+
+    /// I36 in the World Bank shape (iso3 places, the world aggregate WLD beside them): WLD is never a ranked place, and is the
+    /// page's whole when the knowledge group's member list holds every ranked economy under it; with no member list for it
+    /// (WbTable) the page has no whole. A World Bank main has no registered target here, so no target key.
+    #[test]
+    fn a_world_bank_page_input_takes_wld_as_the_whole_only_through_its_member_list() {
+        struct World;
+        impl Catalogue for World {
+            fn top5(
+                &self,
+                _: &str,
+                _: &[String],
+                _: bool,
+                _: Option<i32>,
+                _: Option<i32>,
+            ) -> crate::l5geo::Ranking {
+                unreachable!()
+            }
+            fn places_outside(&self, _: &str, _: &[String]) -> Vec<String> {
+                unreachable!()
+            }
+            fn source(&self) -> &Value {
+                &Value::Null
+            }
+            fn table(&self, id: &str) -> Option<crate::l5geo::TableMeta> {
+                WbTable {
+                    unit: Some("TCO2E_HAB"),
+                    listed: true,
+                }
+                .table(id)
+            }
+            fn members(&self, aggregate: &str) -> Result<Vec<String>, String> {
+                match aggregate {
+                    "WLD" => Ok(["CHN", "IND", "USA"].map(String::from).to_vec()),
+                    _ => Err(format!("the member list has no aggregate {aggregate}")),
+                }
+            }
+        }
+        let id = "EN.GHG.CO2.PC.CE.AR5@2";
+        let mut rows = Vec::new();
+        for (place, v) in [("USA", 13.8), ("CHN", 9.2), ("IND", 2.1), ("WLD", 4.7)] {
+            for (t, d) in [("2023", 0.1), ("2024", 0.0)] {
+                rows.push(json!({"src": format!("series:{id}/{place}:{t}:value"), "table": id, "dims": {"country": place},
+                    "time": t, "value": format!("{}", v + d)}));
+            }
+        }
+        let wb = WbTable {
+            unit: Some("TCO2E_HAB"),
+            listed: true,
+        };
+        for (catalogue, whole) in [
+            (&World as &dyn Catalogue, Some("WLD")),
+            (&wb as &dyn Catalogue, None),
+        ] {
+            let r = recipe("column");
+            let shape = shape_of(&r.eats, &[(id, &rows[..])], catalogue).unwrap();
+            assert_eq!(shape.countries, ["CHN", "IND", "USA"]);
+            let picks = picks_of(&r.picks, &shape, &rows, &[]).unwrap();
+            assert_eq!(picks.ranked, ["USA", "CHN", "IND"]);
+            let mut p = page_input(r, &shape, &picks, (&rows, &[]));
+            external_coords(&mut p, &shape, &picks, (&rows, &[]), catalogue);
+            assert_eq!(p["shape"].get("whole").and_then(Value::as_str), whole);
+            assert_eq!(p["shape"]["prev"], "2023");
+            assert!(p["shape"].get("target").is_none());
+            assert_eq!(p["name_kind"], "iso3");
         }
     }
 }
