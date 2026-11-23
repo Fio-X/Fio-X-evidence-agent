@@ -455,6 +455,72 @@
    ],
    "eats": []
   },
+  "change_dots": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "size",
+     "default": 12,
+     "min": 11,
+     "max": 16,
+     "step": 0.5,
+     "what": "label size px (11 is the page floor)"
+    },
+    {
+     "name": "title_size",
+     "default": 16,
+     "min": 12,
+     "max": 22,
+     "step": 1,
+     "what": "chart name size px"
+    },
+    {
+     "name": "width",
+     "default": 1140,
+     "min": 480,
+     "max": 1400,
+     "step": 10,
+     "what": "picture width in px"
+    },
+    {
+     "name": "row",
+     "default": 22,
+     "min": 18,
+     "max": 48,
+     "step": 1,
+     "what": "distance between two rows in px"
+    },
+    {
+     "name": "dot_r",
+     "default": 4.5,
+     "min": 3,
+     "max": 8,
+     "step": 0.5,
+     "what": "dot radius px"
+    },
+    {
+     "name": "line_w",
+     "default": 3,
+     "min": 1.5,
+     "max": 6,
+     "step": 0.5,
+     "what": "connector width px"
+    },
+    {
+     "name": "sort",
+     "default": "change",
+     "options": [
+      "change",
+      "given"
+     ],
+     "what": "row order: the change from the start to the end, largest rise first, or as given"
+    }
+   ],
+   "eats": [
+    "annual",
+    "one_unit"
+   ]
+  },
   "cities": {
    "reserve": false,
    "knobs": [
@@ -1506,6 +1572,71 @@
     "one_place"
    ]
   },
+  "rank_slope": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "size",
+     "default": 12,
+     "min": 11,
+     "max": 16,
+     "step": 0.5,
+     "what": "label size px (11 is the page floor)"
+    },
+    {
+     "name": "title_size",
+     "default": 16,
+     "min": 12,
+     "max": 22,
+     "step": 1,
+     "what": "chart name size px"
+    },
+    {
+     "name": "width",
+     "default": 1140,
+     "min": 480,
+     "max": 1400,
+     "step": 10,
+     "what": "picture width in px"
+    },
+    {
+     "name": "row",
+     "default": 20,
+     "min": 16,
+     "max": 40,
+     "step": 1,
+     "what": "distance between two rows in px"
+    },
+    {
+     "name": "dot_r",
+     "default": 3,
+     "min": 2,
+     "max": 6,
+     "step": 0.5,
+     "what": "dot radius px"
+    },
+    {
+     "name": "line_w",
+     "default": 1.2,
+     "min": 0.8,
+     "max": 3,
+     "step": 0.1,
+     "what": "a plain line's width in px"
+    },
+    {
+     "name": "mark_w",
+     "default": 2.6,
+     "min": 1.5,
+     "max": 5,
+     "step": 0.1,
+     "what": "an accent line's width in px"
+    }
+   ],
+   "eats": [
+    "annual",
+    "one_unit"
+   ]
+  },
   "rankbar": {
    "reserve": false,
    "knobs": [
@@ -2481,6 +2612,63 @@
    ],
    "eats": []
   },
+  "tile_map": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "size",
+     "default": 12,
+     "min": 11,
+     "max": 16,
+     "step": 0.5,
+     "what": "label size px (11 is the page floor)"
+    },
+    {
+     "name": "title_size",
+     "default": 16,
+     "min": 12,
+     "max": 22,
+     "step": 1,
+     "what": "chart name size px"
+    },
+    {
+     "name": "width",
+     "default": 1140,
+     "min": 300,
+     "max": 1400,
+     "step": 10,
+     "what": "picture width in px"
+    },
+    {
+     "name": "gap",
+     "default": 3,
+     "min": 1,
+     "max": 8,
+     "step": 1,
+     "what": "space between two tiles in px"
+    },
+    {
+     "name": "tile_h",
+     "default": 44,
+     "min": 36,
+     "max": 80,
+     "step": 2,
+     "what": "a tile's height in px"
+    },
+    {
+     "name": "max_w",
+     "default": 84,
+     "min": 60,
+     "max": 200,
+     "step": 2,
+     "what": "the widest a tile is drawn in px"
+    }
+   ],
+   "eats": [
+    "annual",
+    "one_unit"
+   ]
+  },
   "timeline": {
    "reserve": false,
    "knobs": []
@@ -2730,7 +2918,10 @@
    "thesis_claims",
    "risk_notes",
    "small_multiples",
-   "member_map"
+   "member_map",
+   "change_dots",
+   "rank_slope",
+   "tile_map"
   ],
   "change": [
    "bignums",
@@ -2756,7 +2947,10 @@
    "thesis_claims",
    "risk_notes",
    "small_multiples",
-   "member_map"
+   "member_map",
+   "change_dots",
+   "rank_slope",
+   "tile_map"
   ],
   "flow": [
    "bignums",
@@ -2782,7 +2976,10 @@
    "thesis_claims",
    "risk_notes",
    "small_multiples",
-   "member_map"
+   "member_map",
+   "change_dots",
+   "rank_slope",
+   "tile_map"
   ],
   "composition": [
    "bignums",
@@ -2808,7 +3005,10 @@
    "thesis_claims",
    "risk_notes",
    "small_multiples",
-   "member_map"
+   "member_map",
+   "change_dots",
+   "rank_slope",
+   "tile_map"
   ],
   "ranked_bars": [
    "bignums",
@@ -2834,7 +3034,10 @@
    "thesis_claims",
    "risk_notes",
    "small_multiples",
-   "member_map"
+   "member_map",
+   "change_dots",
+   "rank_slope",
+   "tile_map"
   ],
   "change_bars": [
    "bignums",
@@ -2860,7 +3063,10 @@
    "thesis_claims",
    "risk_notes",
    "small_multiples",
-   "member_map"
+   "member_map",
+   "change_dots",
+   "rank_slope",
+   "tile_map"
   ],
   "block_ranks": [
    "bignums",
@@ -2886,7 +3092,10 @@
    "thesis_claims",
    "risk_notes",
    "small_multiples",
-   "member_map"
+   "member_map",
+   "change_dots",
+   "rank_slope",
+   "tile_map"
   ],
   "composition_steps": [
    "bignums",
@@ -2912,7 +3121,10 @@
    "thesis_claims",
    "risk_notes",
    "small_multiples",
-   "member_map"
+   "member_map",
+   "change_dots",
+   "rank_slope",
+   "tile_map"
   ],
   "one_line": [
    "bignums",
@@ -2938,7 +3150,10 @@
    "thesis_claims",
    "risk_notes",
    "small_multiples",
-   "member_map"
+   "member_map",
+   "change_dots",
+   "rank_slope",
+   "tile_map"
   ],
   "page_story": [
    "thesis_claims",
@@ -2950,6 +3165,9 @@
    "rankbar",
    "small_multiples",
    "member_map",
+   "change_dots",
+   "rank_slope",
+   "tile_map",
    "risk_notes",
    "bignums"
   ],
@@ -3087,6 +3305,9 @@
     "rankbar",
     "small_multiples",
     "member_map",
+    "change_dots",
+    "rank_slope",
+    "tile_map",
     "risk_notes"
    ],
    "eats": [

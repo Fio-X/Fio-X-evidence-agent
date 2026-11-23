@@ -87,6 +87,50 @@ def wb_request():
             "words": {"measure": "人均二氧化碳排放", "unit": "吨／人"}}, WB_NAMES
 
 
+# ---------------------------------------------------------------- the three data-representation angles (movers, overtake, tiles)
+
+EU27 = {  # test-only: a share in percent at 2005 and at 2024 (a bumpy path between), not data
+    "SE": (40.5, 66.0), "LV": (32.3, 43.0), "FI": (28.9, 52.0), "AT": (24.0, 40.0), "PT": (19.5, 35.0), "DK": (16.0, 45.0), "EE": (17.5, 41.0),
+    "LT": (17.0, 31.0), "HR": (23.0, 31.0), "SI": (16.0, 26.0), "RO": (17.0, 24.0), "ES": (8.0, 25.0), "FR": (9.5, 24.0), "EL": (7.0, 24.0),
+    "BG": (9.5, 20.0), "DE": (7.0, 22.0), "IT": (7.5, 20.0), "SK": (6.0, 17.0), "PL": (7.0, 17.0), "CZ": (6.0, 18.0), "HU": (6.5, 16.0),
+    "BE": (2.5, 14.0), "IE": (3.0, 17.0), "CY": (3.0, 20.0), "LU": (1.5, 12.0), "MT": (0.2, 15.0), "NL": (2.5, 17.0)}
+EU27_NAMES = {"EU27_2020": "欧盟", "SE": "瑞典", "LV": "拉脱维亚", "FI": "芬兰", "AT": "奥地利", "PT": "葡萄牙", "DK": "丹麦", "EE": "爱沙尼亚", "LT": "立陶宛",
+              "HR": "克罗地亚", "SI": "斯洛文尼亚", "RO": "罗马尼亚", "ES": "西班牙", "FR": "法国", "EL": "希腊", "BG": "保加利亚", "DE": "德国", "IT": "意大利",
+              "SK": "斯洛伐克", "PL": "波兰", "CZ": "捷克", "HU": "匈牙利", "BE": "比利时", "IE": "爱尔兰", "CY": "塞浦路斯", "LU": "卢森堡", "MT": "马耳他", "NL": "荷兰"}
+WB12 = {"USA": (19.5, 14.0), "DEU": (10.1, 7.6), "CHN": (5.0, 8.0), "IND": (1.1, 2.0), "BRA": (1.9, 2.3), "ZAF": (8.0, 6.7), "JPN": (9.8, 8.0),
+        "AUS": (18.0, 14.5), "CAN": (17.5, 14.0), "FRA": (6.4, 4.4), "GBR": (8.8, 4.5), "IDN": (1.4, 2.8)}
+WB12_NAMES = {"USA": "美国", "DEU": "德国", "CHN": "中国", "IND": "印度", "BRA": "巴西", "ZAF": "南非", "JPN": "日本", "AUS": "澳大利亚", "CAN": "加拿大",
+              "FRA": "法国", "GBR": "英国", "IDN": "印度尼西亚"}
+
+
+def eu27_request(members=None):
+    """Twenty-seven members and the whole, 2005-2024, with the whole's target and the members' points."""
+    import test_leaves_member_map as MM
+    members = members or EU27
+    t, fixed = "nrg_ind_ren", {"nrg_bal": "REN"}
+    rows = [row(t, fixed, "geo", "EU27_2020", 2005 + i, 10.2 + (24.6 - 10.2) * i / 19) for i in range(20)]
+    for c, (a, b) in members.items():
+        rows += [row(t, fixed, "geo", c, y, a + (b - a) * (y - 2005) / 19 + 0.6 * math.sin((y - 2005) * 1.7 + len(c) * ord(c[0]))) for y in range(2005, 2025)]
+    rows.append({"src": "target:eu_res_2030", "table": "targets", "dims": {"geo": "EU27_2020", "target": "res_share"}, "time": "2030", "value": 42.5})
+    return {"rows": rows, "main": {"table": t, "by": "geo", "whole": "EU27_2020", "filter": fixed, "members": list(members)},
+            "target": {"table": "targets", "filter": {"geo": "EU27_2020", "target": "res_share"}, "time": "2030"},
+            "fmts": FMTS, "fmt_defs": FMT_DEFS, "words": {"measure": "可再生能源占比", "unit": "占最终能源消费的百分比"},
+            "points": {c: list(geo.PT[c]) if c in geo.PT else [0.0, 0.0] for c in members}}, EU27_NAMES
+
+
+def wb12_request():
+    """Twelve economies, 2010-2022, no whole and no target, with the economies' points."""
+    import test_leaves_member_map as MM
+    t = "EN.GHG.CO2.PC.CE.AR5"
+    rows = []
+    for c, (a, b) in WB12.items():
+        for y in range(2010, 2023):
+            v = a + (b - a) * (y - 2010) / 12 + 0.15 * math.sin((y - 2010) * 2.1 + ord(c[1]))
+            rows.append({**row(t, {}, "country", c, y, v), "value": f"{v:.2f}"})
+    return {"rows": rows, "main": {"table": t, "by": "country"}, "fmts": FMTS, "fmt_defs": FMT_DEFS,
+            "words": {"measure": "人均二氧化碳排放", "unit": "吨／人"}, "points": MM.attribute_points(list(WB12))}, WB12_NAMES
+
+
 # ---------------------------------------------------------------- facts as next_facts works them out (the ops used here)
 
 def compute(facts, rows, members):
@@ -189,8 +233,8 @@ class Findings(unittest.TestCase):
     def test_eu_all_angles_and_best_year_short(self):
         req, names = eu_request()
         _, cands, dropped = FN.candidates(req)
-        self.assertEqual([d["angle"] for d in dropped], ["map", "chain"])  # the request carries no chain and no points
-        self.assertEqual(sorted(c["id"] for c in cands), ["ends", "members", "need", "path", "rank", "spread"])
+        self.assertEqual([d["angle"] for d in dropped], ["map", "tiles", "chain"])  # the request carries no chain and no points
+        self.assertEqual(sorted(c["id"] for c in cands), ["ends", "members", "movers", "need", "overtake", "path", "rank", "spread"])
         self.assertEqual([c["score"] for c in cands], sorted((c["score"] for c in cands), reverse=True))
         path = next(c for c in cands if c["id"] == "path")
         self.assertEqual(path["title"][0], ("w", "就算每年都像 "))  # even the best year falls short of 42.5
@@ -204,8 +248,8 @@ class Findings(unittest.TestCase):
     def test_wb_no_target_drops_path_and_need(self):
         req, names = wb_request()
         _, cands, dropped = FN.candidates(req)
-        self.assertEqual({d["angle"]: d["why"] for d in dropped}, {"path": "no target row", "need": "no target row", "map": "the request gives no points for the members", "chain": "the request's chain holds fewer than 2 tables"})
-        self.assertEqual(sorted(c["id"] for c in cands), ["ends", "members", "rank", "spread"])
+        self.assertEqual({d["angle"]: d["why"] for d in dropped}, {"path": "no target row", "need": "no target row", "map": "the request gives no points for the members", "tiles": "the request gives no points for the members", "chain": "the request's chain holds fewer than 2 tables"})
+        self.assertEqual(sorted(c["id"] for c in cands), ["ends", "members", "movers", "overtake", "rank", "spread"])
         composed, facts, drawn = draw_all(self, req, names, ["ends", "spread"])
         self.assertEqual(composed["leaves"]["pair_bars"]["places"], ["USA", "IND"])
         self.assertAlmostEqual(facts["hi_lo"]["v"], (17.0 - 0.3 * 12) / (1.4 + 0.06 * 12), places=2)
@@ -217,7 +261,7 @@ class Findings(unittest.TestCase):
     def test_chain_three_tables_around_the_year_the_whole_moved_most(self):
         req, names = eu_chain_request()
         _, cands, dropped = FN.candidates(req)
-        self.assertEqual(dropped, [{"angle": "map", "why": "the request gives no points for the members"}])
+        self.assertEqual(dropped, [{"angle": "map", "why": "the request gives no points for the members"}, {"angle": "tiles", "why": "the request gives no points for the members"}])
         chain = next(c for c in cands if c["id"] == "chain")
         self.assertEqual((chain["layer"], chain["why"]["band"]), ("event_chain", "2022"))
         self.assertTrue(0 < chain["score"] <= 1)
@@ -930,7 +974,7 @@ class Findings(unittest.TestCase):
         got = subprocess.run([sys.executable, "-I", "-B", FN.__file__], input=lines, capture_output=True, text=True, timeout=60)
         out = [json.loads(x) for x in got.stdout.splitlines()]
         self.assertEqual(len(out), 3)
-        self.assertEqual(sorted(c["id"] for c in out[0]["candidates"]), ["ends", "members", "need", "path", "rank", "spread"])
+        self.assertEqual(sorted(c["id"] for c in out[0]["candidates"]), ["ends", "members", "movers", "need", "overtake", "path", "rank", "spread"])
         self.assertIn("not JSON", out[1]["refused"][0])
         self.assertEqual([s["layer"] for s in out[2]["knobs"]["spec"]["sections"]], ["bignums", "thesis_claims", "target_path", "gap_axis", "risk_notes"])
         self.assertEqual(sorted(out[2]["knobs"]["spec"]["hero"]["leaves"]), ["bignums", "gap_axis", "risk_notes", "target_path", "thesis_claims"])
@@ -955,6 +999,181 @@ class Findings(unittest.TestCase):
         # next_facts ticks_step_in_the_printed_unit's cases: a top of 42.5 at one place steps by 10; 2 at no place by 1
         self.assertEqual(FN.ticks(42.5, {"dec": 1}), [10.0, 20.0, 30.0, 40.0])
         self.assertEqual(FN.ticks(2, {"dec": 0}), [1.0, 2.0])
+
+    # ---------------------------------------------------------------- the three data-representation angles
+
+    NEW = {"movers": "change_dots", "overtake": "rank_slope", "tiles": "tile_map"}
+
+    def test_the_three_new_angles_stand_on_two_shapes_and_say_why(self):
+        for name, mk in (("eu27", eu27_request), ("wb12", wb12_request)):
+            req, _ = mk()
+            _, cands, dropped = FN.candidates(req)
+            by = {c["id"]: c for c in cands}
+            for aid, layer in self.NEW.items():
+                self.assertIn(aid, by, (name, aid, dropped))
+                self.assertEqual(by[aid]["layer"], layer)
+                self.assertTrue(0 < by[aid]["score"] <= 1, (name, aid))
+                self.assertGreaterEqual(len(by[aid]["why"]), 3)
+            self.assertEqual([c["score"] for c in cands], sorted((c["score"] for c in cands), reverse=True))
+            self.assertLessEqual(len(cands), FN.TOP_K)
+        # every angle names its own leaf: a page tells each at most once
+        _, cands, _ = FN.candidates(eu27_request()[0])
+        self.assertEqual(len({c["layer"] for c in cands}), len(cands))
+
+    def test_movers_the_rows_the_accent_the_whole_and_the_notes(self):
+        req, names = eu27_request()
+        _, cands, _ = FN.candidates(req)
+        mv = next(c for c in cands if c["id"] == "movers")
+        ch = {c: b - a for c, (a, b) in ((c, (self._at(req, c, "2005"), self._at(req, c, "2024"))) for c in EU27)}
+        big = max(ch, key=lambda c: (abs(ch[c]), c))
+        self.assertEqual(mv["why"]["biggest"], big)
+        data = mv["data"]
+        self.assertEqual(data["accent"][0], big)
+        self.assertEqual(data["ref"], "EU27_2020")
+        codes = [r["code"] for r in data["rows"]]
+        self.assertEqual(len(codes), FN.DOTS_MAX + 1)   # the 16 largest rises and falls, then the whole
+        order = sorted(ch, key=lambda c: (-ch[c], c))
+        self.assertEqual(codes[:-1], order[:8] + order[-8:])
+        self.assertIn("omit", data)
+        # nine members are all drawn and no line says some are left out
+        small, _ = eu_request()
+        s2 = next(c for c in FN.candidates(small)[1] if c["id"] == "movers")
+        self.assertNotIn("omit", s2["data"]); self.assertEqual(len(s2["data"]["rows"]), 10)
+        # the notes: the far end of the order and the whole's change, neither printed by the title
+        self.assertEqual([n["num"] for n in mv["anns"]], ["fact:mv_do", "fact:mv_dw"])
+        composed, facts, drawn = draw_all(self, req, names, ["movers", "tiles"])
+        self.assertAlmostEqual(facts["mv_dw"]["v"], 24.6 - 10.2, places=2)
+        self.assertGreater(facts["mv_do"]["v"], 0)
+        # the rows keep the order of the change in the picture, the whole among them
+        got = re.findall(r'<line [^>]*data-code="([A-Z0-9_]+)"', drawn["change_dots"])
+        chw = {**ch, "EU27_2020": 24.6 - 10.2}
+        self.assertEqual(got, sorted(got, key=lambda c: (-chw[c], c)))
+
+    def _at(self, req, code, year):
+        return next(float(r["value"]) for r in req["rows"] if r["dims"].get(req["main"]["by"]) == code and r["time"] == year and r["table"] == req["main"]["table"])
+
+    def test_movers_without_a_whole_names_the_member_that_led_at_the_start(self):
+        req, names = wb12_request()
+        mv = next(c for c in FN.candidates(req)[1] if c["id"] == "movers")
+        self.assertNotIn("ref", mv["data"])
+        lead = max(WB12, key=lambda c: (self._at(req, c, "2010"), c))
+        notes = [n["num"] for n in mv["anns"]]
+        self.assertEqual(notes[0], "fact:mv_do")
+        if lead not in mv["data"]["accent"]: self.assertEqual(notes, ["fact:mv_do", "fact:mv_dl"])
+        composed, facts, drawn = draw_all(self, req, names, ["movers", "overtake"])
+        self.assertTrue(all(v["v"] > 0 for k, v in facts.items() if k in ("mv_do", "mv_dl")))
+        self.assertIn("降", FN.WD.WORDS["story.note.mv.down_most"])
+
+    def test_movers_is_dropped_with_its_why(self):
+        req, _ = eu27_request()
+        why = lambda r: {d["angle"]: d["why"] for d in FN.candidates(r)[2]}.get("movers")
+        few = {c: EU27[c] for c in list(EU27)[:5]}
+        self.assertEqual(why(eu27_request(few)[0]), "fewer than 6 members")
+        flat = {**req, "rows": [dict(r, value=5.0) if r["dims"].get("geo") in EU27 else r for r in req["rows"]]}
+        self.assertIsNotNone(why(flat))
+        still = eu27_request()[0]
+        first = {r["dims"]["geo"]: r["value"] for r in still["rows"] if r["time"] == "2005" and r["table"] == "nrg_ind_ren"}
+        still["rows"] = [dict(r, value=first[r["dims"]["geo"]]) if r["time"] == "2024" and r["table"] == "nrg_ind_ren" else r for r in still["rows"]]
+        self.assertEqual(why(still), "no member moved")
+
+    def test_overtake_ranks_are_the_tables_own_and_the_riser_passed_the_named_place(self):
+        req, names = eu27_request()
+        _, cands, _ = FN.candidates(req)
+        ot = next(c for c in cands if c["id"] == "overtake")
+        at0 = {c: self._at(req, c, "2005") for c in [*EU27, "EU27_2020"]}
+        at1 = {c: self._at(req, c, "2024") for c in at0}
+        rank = lambda v: {c: 1 + sum(1 for w in v.values() if w > v[c]) for c in v}
+        r0, r1 = rank(at0), rank(at1)
+        up, dn = ot["why"]["riser"], ot["why"]["faller"]
+        self.assertEqual(ot["why"]["rose"], max(r0[c] - r1[c] for c in r0))
+        self.assertEqual((r0[up] - r1[up], r1[dn] - r0[dn]), (ot["why"]["rose"], ot["why"]["fell"]))
+        self.assertEqual(len(ot["data"]["rows"]), 28)
+        composed, facts, drawn = draw_all(self, req, names, ["overtake", "tiles"])
+        for c in at0:   # the printed ranks are the ledger's, which next_facts' position works out over every place of the table
+            self.assertEqual(facts[f"ot_a_{c.lower()}"]["v"], r0[c], c); self.assertEqual(facts[f"ot_b_{c.lower()}"]["v"], r1[c], c)
+        self.assertEqual(facts["ot_rise"]["v"], ot["why"]["rose"]); self.assertEqual(facts["ot_fall"]["v"], ot["why"]["fell"])
+        title = composed["sections"][2]["title"]   # bignums, thesis, then the lead's own section
+        over = re.search(r"\{name\.([A-Z0-9_]+)\}", ot["title"] and FN.wording(ot["title"]).split("超过了")[1]).group(1)
+        self.assertTrue(at0[over] > at0[up] and at1[over] < at1[up], "the riser passed the place the title names")
+        self.assertEqual(ot["data"]["accent"], [up, dn]); self.assertEqual(ot["data"]["ref"], "EU27_2020")
+
+    def test_overtake_is_dropped_with_its_why(self):
+        why = lambda r: {d["angle"]: d["why"] for d in FN.candidates(r)[2]}.get("overtake")
+        req, _ = eu27_request()
+        extra = {**req, "rows": req["rows"] + [row("nrg_ind_ren", {"nrg_bal": "REN"}, "geo", "NO", y, 70.0 + y - 2005) for y in range(2005, 2025)]}
+        self.assertEqual(why(extra), "the table holds places the page does not name (a rank among them could not be printed)")
+        # the same order at both years: nobody rose two ranks
+        order = {c: (50.0 - i, 50.0 - i + 5.0) for i, c in enumerate(list(EU27)[:8])}
+        self.assertEqual(why(eu27_request(order)[0]), "no place rose two ranks or more")
+        few = {c: EU27[c] for c in list(EU27)[:3]}
+        self.assertEqual(why(eu27_request(few)[0]), "fewer than 6 or more than 30 places")
+        gap = eu27_request()[0]   # the whole has no value at the last year the members share
+        gap["rows"] = [r for r in gap["rows"] if not (r["dims"].get("geo") == "EU27_2020" and r["time"] == "2024")]
+        self.assertEqual(why(gap), "a place lacks a value at the first or the last year")
+
+    def test_tiles_beat_the_map_in_a_crowd_and_lose_to_it_among_few(self):
+        eu, _ = eu27_request(); wb, _ = wb12_request()
+        score = lambda r, a: next(c for c in FN.candidates(r)[1] if c["id"] == a)
+        t27, m27 = score(eu, "tiles"), score(eu, "map")
+        self.assertGreater(t27["score"], m27["score"])
+        self.assertEqual(t27["why"]["crowd"], 1.0)
+        t12, m12 = score(wb, "tiles"), score(wb, "map")
+        self.assertLess(t12["score"], m12["score"])
+        self.assertAlmostEqual(t12["why"]["crowd"], 0.25, places=3)
+        # the same size, surprise and sturdiness: only the crowd tells them apart
+        for k in ("size", "surprise", "sturdy", "gradient", "higher"): self.assertEqual(t27["why"][k], m27["why"][k], k)
+
+    def test_tiles_are_dropped_with_their_why(self):
+        why = lambda r: {d["angle"]: d["why"] for d in FN.candidates(r)[2]}.get("tiles")
+        eu, _ = eu27_request()
+        nopt = {k: v for k, v in eu.items() if k != "points"}
+        self.assertEqual(why(nopt), "the request gives no points for the members")
+        self.assertEqual(why({**eu, "points": {c: eu["points"][c] for c in list(EU27)[:9]}}), "fewer than 10 members with a point")
+        same = {**eu, "points": {c: eu["points"]["SE"] for c in EU27}}
+        self.assertEqual(why(same), "two members share one point")
+        flat = {**eu, "rows": [dict(r, value=5.0) if r["dims"].get("geo") in EU27 else r for r in eu["rows"]]}
+        self.assertEqual(why(flat), "every member holds the same value")
+        many = {f"X{i:02d}": (5.0 + i, 9.0 + i * 1.3) for i in range(41)}
+        big = eu27_request(many)[0]
+        big["points"] = {c: [-10.0 + i * 0.9, 36.0 + (i % 7) * 4.0] for i, c in enumerate(many)}
+        self.assertEqual(why(big), "more than 40 members (the tiles would not fit one picture)")
+
+    def test_the_three_new_charts_make_a_page_on_two_shapes(self):
+        for mk in (eu27_request, wb12_request):
+            req, names = mk()
+            composed, facts, bodies, page_html = self._page(req, names, ["movers", "overtake", "tiles"])
+            self.assertEqual([x["layer"] for x in composed["sections"]], ["bignums", "thesis_claims", "change_dots", "rank_slope", "tile_map", "risk_notes"])
+            for sid in ("movers", "overtake", "tiles"): self.assertIn(f'data-module-id="{sid}"', page_html)
+            for layer in ("change_dots", "rank_slope", "tile_map"):
+                self.assertTrue(bodies[layer].startswith("<g transform="), layer)   # a picture the page places at its own position
+            self._once(page_html)
+            # each section's notes: two, the section's own facts
+            for sid, layer in self.NEW.items():
+                sec = re.search(rf'<section class="sec" data-id="{sid}" .*?</section>', page_html, re.S).group(0)
+                n_notes = len(re.findall(r'<li class="note">', sec))   # two by default; with no whole the tiles have one and the movers one unless the member that led is neither end
+                self.assertEqual(n_notes, 2 if mk is eu27_request else {"movers": 1, "overtake": 2, "tiles": 1}[sid], (sid, mk.__name__))
+            self.assertIn('data-legend="story"', page_html)
+            self.assertIn(FN.WD.WORDS["story.legend.map"], page_html)   # the tile map's colours are the map's: one legend line
+
+    def test_a_rank_slope_that_prints_another_rank_than_its_cells_give_is_refused_by_the_child(self):
+        req, names = wb12_request()
+        def edit(composed):
+            rows = composed["leaves"]["rank_slope"]["rows"]
+            rows[0]["a_rank"], rows[1]["a_rank"] = rows[1]["a_rank"], rows[0]["a_rank"]
+        bad = self._page(req, names, ["overtake", "movers"], edit=edit, refused=True)
+        self.assertTrue(bad and "is not the rank its cell gives" in str(bad[0]), bad)
+
+    def test_tiles_title_says_which_side_is_higher(self):
+        req, _ = eu27_request()
+        pts = req["points"]
+        for axis, expect in ((0, "东边的偏高"), (1, "北边的偏高")):
+            val = {c: 10.0 + 2 * pts[c][axis] for c in EU27}
+            rows = [dict(r, value=round(val[r["dims"]["geo"]], 3)) if r["dims"].get("geo") in EU27 else r for r in req["rows"]]
+            composed = FN.compose({**req, "rows": rows, "picks": ["path", "tiles"]})
+            self.assertIn(expect, next(x for x in composed["sections"] if x["id"] == "tiles")["title"])
+        val = {c: 10.0 - 2 * pts[c][0] for c in EU27}
+        rows = [dict(r, value=round(val[r["dims"]["geo"]], 3)) if r["dims"].get("geo") in EU27 else r for r in req["rows"]]
+        self.assertIn("西边的偏高", next(x for x in FN.compose({**req, "rows": rows, "picks": ["path", "tiles"]})["sections"] if x["id"] == "tiles")["title"])
 
 
 if __name__ == "__main__":

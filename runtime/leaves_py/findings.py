@@ -32,6 +32,24 @@ and who fell), each one section with one story leaf (a leaf stands at most once 
                               country, which layer 1 reads from the attributes table) for MAP_MIN members at least. Score: size
                               = the values' range over the highest; surprise = how far the two halves of the members, split at the
                               median longitude or latitude, differ in mean over the range; sturdy = members.
+  * movers   (change_dots):  every member's value at the first and the last year they share as two dots on a row joined by a line,
+                              the rows from the largest rise to the largest fall (with more than DOTS_MAX members the largest
+                              rises and falls only), the whole as a bold row: who moved most. Needs DOTS_MIN members at least.
+                              Score: size = how far the rows' changes stand apart over the span of the values drawn; surprise =
+                              how far down the start order the biggest mover began (a late starter that moved most is news);
+                              sturdy = members and years.
+  * overtake (rank_slope):   every place's rank at the first and the last year as two columns joined by a line (a slope chart),
+                              the places that rose most and fell most in the accent, the one the riser passed named: who
+                              overtook whom. Ranks are the table's own (position facts over every place of the table), so it
+                              needs the rows to hold the members and the whole and no other place, each with both years, between
+                              SLOPE_MIN and SLOPE_MAX of them, and at least one place that rose two ranks. Score: size = the share
+                              of pairs of places whose order flipped, over a quarter; surprise = the biggest riser's jump over a
+                              third of the places; sturdy = places and years.
+  * tiles    (tile_map):     the map angle's data (the request's "points", TILE_MIN members at least) drawn as one tile a member
+                              on a grid that keeps the directions (a tile as big as any other: no small member vanishes), each
+                              tile printing the member's name and value; the title says which side holds the higher values like
+                              the map's. Score: the map's, times 0.8 to 1.2 by how many members there are (a crowd of small
+                              members is what a map hides: 8 members 0.8, 24 or more 1.2).
   * chain  (event_chain):    the companion tables' series side by side on the years they and the whole share (a panel
                               each, the page's measure not one of them), the one year the whole moved most shaded across
                               them: what moved around that year, told in order and never as a cause; needs the request's
@@ -96,12 +114,15 @@ CHAIN_MIN, CHAIN_MAX = 2, 5   # the tables a chain holds
 CHAIN_YEARS = 4      # years in a row every chain table and the whole share, at least
 MIN_YEARS = 6        # a pace needs this many years of the whole at least
 RECENT = 5           # the recent pace runs over the last five years
-TOP_K = 8            # the candidates the child gives (one a finding: there are eight angles; the flow shows the model its best few)
+TOP_K = 11           # the candidates the child gives (one a finding: there are eleven angles; the flow shows the model its best few)
 GROUP_K = 3          # the lowest and the highest three at the start (spread)
 ROWS_MAX = 5         # rows a winners/losers column shows
 MAP_MIN, MAP_CALL = 8, 3   # members with a point a map needs at least; the highest and the lowest this many are called out
 SM_MIN, SM_MAX, SM_YEARS = 6, 12, 5   # members a small-multiples grid needs at least and shows at most; years in a row they share
 RANK_MIN, RANK_MAX = 5, 40   # members a ranking needs at least, and shows at most
+DOTS_MIN, DOTS_MAX = 6, 16   # members a change-dots picture needs at least; with more it keeps the DOTS_MAX / 2 largest rises and the DOTS_MAX / 2 largest falls
+SLOPE_MIN, SLOPE_MAX = 6, 30   # places a rank slope needs at least, and draws at most (the whole among them)
+TILE_MIN, TILE_MAX = 10, 40   # members with a point a tile map needs at least, and draws at most
 
 
 class Refused(Exception):
@@ -721,12 +742,7 @@ def angle_map(q):
     if at[hi] <= at[lo]: return None, "every member holds the same value"
     rng = at[hi] - at[lo]
     # the halves of the members at the median longitude and at the median latitude: the larger gap in means, and which side is higher
-    best = (0.0, None)
-    for axis, east in ((0, "east"), (1, "north")):
-        order = sorted(at, key=lambda c: (q.points[c][axis], c)); half = len(order) // 2
-        a, b = order[:half], order[-half:]
-        gap = sum(at[c] for c in b) / len(b) - sum(at[c] for c in a) / len(a)
-        if abs(gap) > abs(best[0]): best = (gap, east if gap > 0 else ("west" if axis == 0 else "south"))
+    best = halves(q, at)
     gradient = clamp(abs(best[0]) / rng)
     key = lambda c: f"mp_{c.lower()}"
     ranked = sorted(at, key=lambda c: (-at[c], c))
@@ -750,7 +766,162 @@ def angle_map(q):
             "summary": "the members' values on a map, filled by value: where the high ones lie"}, None
 
 
-ANGLES = [angle_path, angle_need, angle_spread, angle_ends, angle_rank, angle_members, angle_map, angle_chain]
+def halves(q, at):
+    """(gap, side) of the members' values split at the median longitude and at the median latitude: the larger gap in the means of the
+    upper half less the lower, and which side is higher ("east", "west", "north", "south"); (0.0, None) when the values do not differ."""
+    best = (0.0, None)
+    for axis, east in ((0, "east"), (1, "north")):
+        order = sorted(at, key=lambda c: (q.points[c][axis], c)); half = len(order) // 2
+        a, b = order[:half], order[-half:]
+        gap = sum(at[c] for c in b) / len(b) - sum(at[c] for c in a) / len(a)
+        if abs(gap) > abs(best[0]): best = (gap, east if gap > 0 else ("west" if axis == 0 else "south"))
+    return best
+
+
+def angle_movers(q):
+    ends = common_ends(q)
+    if not ends: return None, "fewer than two members with two common years"
+    y0, y1 = ends
+    if len(q.panel) < DOTS_MIN: return None, f"fewer than {DOTS_MIN} members"
+    ch = {c: s[y1][0] - s[y0][0] for c, s in q.panel.items()}
+    big = max(ch, key=lambda c: (abs(ch[c]), c))
+    if ch[big] == 0: return None, "no member moved"
+    other = min(ch, key=lambda c: (ch[c], c)) if ch[big] > 0 else max(ch, key=lambda c: (ch[c], c))   # the far end of the order
+    if other == big: return None, "every member changed alike"
+    if ch[other] == 0: return None, "the member at the other end did not move"
+    order = sorted(ch, key=lambda c: (-ch[c], c))
+    kept = order if len(order) <= DOTS_MAX else order[:DOTS_MAX // 2] + order[-(DOTS_MAX // 2):]
+    whole = q.whole if q.wseries and y0 in q.wseries and y1 in q.wseries else None
+    key0, key1 = (lambda c: f"mv_a_{c.lower()}"), (lambda c: f"mv_b_{c.lower()}")
+    f, rows, vals = {}, [], []
+    for c in kept + ([whole] if whole else []):
+        s_ = q.wseries if c == whole else q.panel[c]
+        f[key0(c)], f[key1(c)] = q.value(c, y0), q.value(c, y1)
+        rows.append({"code": c, "a": s_[y0][1], "b": s_[y1][1], "a_text": f"fact:{key0(c)}", "b_text": f"fact:{key1(c)}"})
+        vals += [s_[y0][0], s_[y1][0]]
+    span = max(vals) - min(vals)
+    if span <= 0: return None, "every value is the same"
+    def amount(code, name):  # a change as its size, the larger value less the smaller (the words say which way it went); True when it rose
+        up = (q.wseries if code == whole else q.panel[code])[y1][0] > (q.wseries if code == whole else q.panel[code])[y0][0]
+        f[name] = {"op": "minus", "a": key1(code) if up else key0(code), "b": key0(code) if up else key1(code), "fmt": q.change}
+        return up
+    other_up = amount(other, "mv_do")
+    kind = {(True, True): "up_least", (True, False): "down_most", (False, False): "down_least", (False, True): "up_most"}[(ch[big] > 0, other_up)]
+    anns = [note("mv_do", f"story.note.mv.{kind}", c=other)]
+    if whole:
+        anns.append(note("mv_dw", "story.note.mv.whole_up" if amount(whole, "mv_dw") else "story.note.mv.whole_down", w=whole))
+    else:
+        lead = max(q.panel, key=lambda c: (q.panel[c][y0][0], c))
+        if lead in kept and lead not in (big, other) and ch[lead] != 0:
+            anns.append(note("mv_dl", "story.note.mv.lead_up" if amount(lead, "mv_dl") else "story.note.mv.lead_down", c=lead))
+    data = {"title": SW(q.words["measure"]), "unit": SW(q.words["unit"]), "name_kind": "place", "rows": rows,
+            "periods": [f"period:{q.table}:{y0}", f"period:{q.table}:{y1}"], "accent": [big, other], "footnote": ST("story.mv.foot", y0=key0(big), y1=key1(big))}
+    if whole: data["ref"] = whole
+    if len(kept) < len(order): data["omit"] = ST("story.mv.omit")
+    start_pos = sorted(q.panel, key=lambda c: (-q.panel[c][y0][0], c)).index(big) / max(len(q.panel) - 1, 1)   # 0 = the biggest mover began highest
+    size = clamp((max(ch.values()) - min(ch.values())) / span)
+    surprise = clamp(0.3 + 0.7 * start_pos)
+    sturdy = clamp(len(q.panel) / 12) * clamp((int(y1) - int(y0)) / 8)
+    return {"angle": "movers", "layer": "change_dots", "kicker": T("story.mv.kicker"),
+            "title": T("story.mv.title", big=big, y0=key0(big), y1=key1(big), abig=key0(big), bbig=key1(big)),
+            "text": T("story.mv.text_ref" if whole else "story.mv.text", w=whole, y0=key0(big), y1=key1(big)), "facts": f, "data": data,
+            "claim": {"num": f"fact:{key1(big)}", "head": T("story.mv.claim", big=big)}, "notes": [], "members": True, "last": key1(big),
+            "anns": anns, "score": round(size * surprise * sturdy, 4),
+            "why": {"size": round(size, 3), "surprise": round(surprise, 3), "sturdy": round(sturdy, 3), "biggest": big, "started_at": round(start_pos, 3)},
+            "summary": "every member's first and last value as two dots on a row, from the largest rise to the largest fall: who moved most"}, None
+
+
+def angle_overtake(q):
+    ends = common_ends(q)
+    if not ends: return None, "fewer than two members with two common years"
+    y0, y1 = ends
+    pool = codes_of(q.rows, q.table, q.by, q.fixed)
+    want = sorted(set(q.panel) | ({q.whole} if q.wseries else set()))
+    if sorted(pool) != want: return None, "the table holds places the page does not name (a rank among them could not be printed)"
+    if not SLOPE_MIN <= len(pool) <= SLOPE_MAX: return None, f"fewer than {SLOPE_MIN} or more than {SLOPE_MAX} places"
+    ser = {c: (q.wseries if c == q.whole else q.panel[c]) for c in pool}
+    if any(y0 not in s_ or y1 not in s_ for s_ in ser.values()): return None, "a place lacks a value at the first or the last year"
+    v0, v1 = {c: ser[c][y0][0] for c in pool}, {c: ser[c][y1][0] for c in pool}
+    rank = lambda v: {c: 1 + sum(1 for w in v.values() if w > v[c]) for c in v}
+    r0, r1 = rank(v0), rank(v1)
+    jump = {c: r0[c] - r1[c] for c in pool}      # above 0: rose
+    up = max(jump, key=lambda c: (jump[c], -r1[c], c))
+    dn = min(jump, key=lambda c: (jump[c], c))
+    if jump[up] < 2: return None, "no place rose two ranks or more"
+    if jump[dn] >= 0: return None, "no place fell"
+    passed = [c for c in pool if v0[c] > v0[up] and v1[c] < v1[up]]
+    if not passed: return None, "the riser passed no one (its rank rose through the others' falls alone)"
+    over = min(passed, key=lambda c: (r0[c], c))   # the highest-ranked place at the start that it passed
+    codes = sorted(pool)
+    cross = sum(1 for i, a in enumerate(codes) for b in codes[i + 1:] if (v0[a] - v0[b]) * (v1[a] - v1[b]) < 0)
+    pairs = len(pool) * (len(pool) - 1) / 2
+    ka, kb = (lambda c: f"ot_a_{c.lower()}"), (lambda c: f"ot_b_{c.lower()}")
+    pos = lambda c, y: {"op": "position", "table": q.table, "filter": q.fixed, "by": q.by, "code": c, "time": y, "fmt": "n"}
+    f, rows = {}, []
+    for c in pool:
+        f[ka(c)], f[kb(c)] = pos(c, y0), pos(c, y1)
+        rows.append({"code": c, "a": ser[c][y0][1], "b": ser[c][y1][1], "a_rank": f"fact:{ka(c)}", "b_rank": f"fact:{kb(c)}"})
+    f["ot_y0"], f["ot_y1"] = q.value(up, y0), q.value(up, y1)   # the two years the title and the key name
+    f["ot_rise"] = {"op": "minus", "a": ka(up), "b": kb(up), "fmt": "n"}
+    f["ot_fall"] = {"op": "minus", "a": kb(dn), "b": ka(dn), "fmt": "n"}
+    data = {"title": SW(q.words["measure"]), "unit": SW(q.words["unit"]), "name_kind": "place", "rows": rows,
+            "periods": [f"period:{q.table}:{y0}", f"period:{q.table}:{y1}"], "accent": [up, dn], "footnote": ST("story.ot.foot")}
+    if q.wseries: data["ref"] = q.whole
+    size = clamp(cross / pairs * 4)
+    surprise = clamp(0.3 + 0.7 * jump[up] / (len(pool) / 3))
+    sturdy = clamp(len(pool) / 16) * clamp((int(y1) - int(y0)) / 8)
+    return {"angle": "overtake", "layer": "rank_slope", "kicker": T("story.ot.kicker"),
+            "title": T("story.ot.title", up=up, over=over, y0="ot_y0", y1="ot_y1", u0=ka(up), u1=kb(up)),
+            "text": T("story.ot.text_ref" if q.wseries else "story.ot.text", w=q.whole, y0="ot_y0", y1="ot_y1"), "facts": f, "data": data,
+            "claim": {"num": "fact:ot_rise", "head": T("story.ot.claim", up=up)}, "notes": [], "members": True, "last": "ot_y1",
+            "anns": [note("ot_fall", "story.note.ot.fall", c=dn), note("ot_rise", "story.note.ot.rise", c=up)],
+            "score": round(size * surprise * sturdy, 4),
+            "why": {"size": round(size, 3), "surprise": round(surprise, 3), "sturdy": round(sturdy, 3), "crossings": cross, "pairs": int(pairs),
+                    "riser": up, "rose": jump[up], "faller": dn, "fell": -jump[dn]},
+            "summary": "every place's rank at the first and the last year, joined: who rose, who fell, whom the riser passed"}, None
+
+
+def angle_tiles(q):
+    if not q.points: return None, "the request gives no points for the members"
+    members = {c: s_ for c, s_ in q.panel.items() if c in q.points}
+    if len(members) < TILE_MIN: return None, f"fewer than {TILE_MIN} members with a point"
+    if len(members) > TILE_MAX: return None, f"more than {TILE_MAX} members (the tiles would not fit one picture)"
+    years = set.intersection(*(set(s_) for s_ in members.values()))
+    if not years: return None, "no year in which every member with a point has a value"
+    if len({tuple(q.points[c]) for c in members}) < len(members): return None, "two members share one point"
+    y = max(years)
+    at = {c: s_[y][0] for c, s_ in members.items()}
+    hi = max(at, key=lambda c: (at[c], c)); lo = min(at, key=lambda c: (at[c], c))
+    if at[hi] <= at[lo]: return None, "every member holds the same value"
+    rng = at[hi] - at[lo]
+    gap, side = halves(q, at)
+    gradient = clamp(abs(gap) / rng)
+    key = lambda c: f"tl_{c.lower()}"
+    f = {key(c): q.value(c, y) for c in members}
+    f["trange"] = {"op": "minus", "a": key(hi), "b": key(lo), "fmt": q.change}
+    tk = "story.tl.title_" + (side if gradient >= 0.2 else "plain")
+    data = {"title": SW(q.words["measure"]), "unit": SW(q.words["unit"]), "name_kind": "place",
+            "cells": [{"code": c, "at": list(q.points[c]), "value": members[c][y][1], "text": f"fact:{key(c)}"} for c in sorted(members)],
+            "ends": {"lo": f"fact:{key(lo)}", "hi": f"fact:{key(hi)}"}, "footnote": ST("story.tl.foot")}
+    anns = [note("trange", "story.note.tl.range", hi=hi, lo=lo)]
+    if q.whole and y in q.wseries:
+        f["tl_whole"] = q.value(q.whole, y)
+        anns.append(note("tl_whole", "story.note.tl.whole", w=q.whole))
+    n = len(members)
+    crowd = clamp((n - 8) / 16)      # a crowd of members is what a map hides; 8 members 0, 24 or more 1
+    size = clamp(rng / max(abs(at[hi]), 1e-9))
+    surprise = clamp(0.3 + 0.7 * gradient)
+    sturdy = clamp(n / 20)
+    return {"angle": "tiles", "layer": "tile_map", "kicker": T("story.tl.kicker"), "title": T(tk, hi=hi, lo=lo, thi=key(hi), tlo=key(lo), y1=key(hi)),
+            "text": T("story.tl.text", y1=key(hi)), "facts": f, "data": data,
+            "claim": {"num": f"fact:{key(hi)}", "head": T("story.tl.claim")}, "notes": [], "members": True, "last": key(hi),
+            "anns": anns, "score": round(size * surprise * sturdy * (0.8 + 0.4 * crowd), 4),
+            "why": {"size": round(size, 3), "surprise": round(surprise, 3), "sturdy": round(sturdy, 3), "gradient": round(gradient, 3), "higher": side,
+                    "crowd": round(crowd, 3)},
+            "summary": "the members as equal tiles laid by direction, filled by value: which side holds the high ones"}, None
+
+
+ANGLES = [angle_path, angle_need, angle_spread, angle_ends, angle_rank, angle_members, angle_map, angle_movers, angle_overtake, angle_tiles, angle_chain]
 
 
 # ---------------------------------------------------------------- the header's big numbers
