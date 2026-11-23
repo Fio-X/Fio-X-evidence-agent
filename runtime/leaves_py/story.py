@@ -31,7 +31,7 @@ from words import word
 
 NODE = "page_story"
 # the leaves a story section may draw (run.py builds the recipe's layers from these), and those that are text blocks, not charts
-STORY_LAYERS = ["bignums", "thesis_claims", "gap_axis", "event_chain", "target_path", "winners_losers", "pair_bars", "rankbar", "small_multiples", "member_map", "change_dots", "rank_slope", "tile_map", "unit_grid", "risk_notes"]
+STORY_LAYERS = ["bignums", "thesis_claims", "gap_axis", "event_chain", "target_path", "winners_losers", "pair_bars", "rankbar", "small_multiples", "member_map", "change_dots", "rank_slope", "tile_map", "unit_grid", "glyph_row", "risk_notes"]
 TEXT_BLOCKS = {"thesis_claims": "story.claims.label", "risk_notes": "story.notes.title"}  # a block of words drawn as svg, and the word that names it for a screen reader
 # the layer that is html, not svg: the header's big numbers (column.cl_bignums), a row over the thesis
 HTML_BLOCKS = ("bignums",)
@@ -80,12 +80,12 @@ prod.KNOBS[LAYOUT] = dict(
     legend=("on", ("on", "off"), "the 'how to read this page' block under the thesis"))
 # What each leaf's picture takes when it sits on a titled section: beside its words ("side"), paired with a neighbour that is also
 # "pair" ("pair"), or across the page ("stack": the picture needs the page's width, e.g. panels linked left to right).
-PLACE = {"target_path": "side", "small_multiples": "side", "member_map": "side", "change_dots": "side", "rank_slope": "side", "tile_map": "side", "unit_grid": "side", "gap_axis": "stack", "event_chain": "stack",
+PLACE = {"target_path": "side", "small_multiples": "side", "member_map": "side", "change_dots": "side", "rank_slope": "side", "tile_map": "side", "unit_grid": "side", "glyph_row": "side", "gap_axis": "stack", "event_chain": "stack",
          "winners_losers": "side", "pair_bars": "pair", "rankbar": "pair"}
 
 
 # The narrowest picture (px) each leaf draws without refusing; a place that would be narrower falls back (pair to side, side to stack).
-NEEDS = {"winners_losers": 680, "target_path": 560, "small_multiples": 520, "member_map": 480, "change_dots": 560, "rank_slope": 520, "tile_map": 420, "unit_grid": 500, "pair_bars": 500, "rankbar": 480}
+NEEDS = {"winners_losers": 680, "target_path": 560, "small_multiples": 520, "member_map": 480, "change_dots": 560, "rank_slope": 520, "tile_map": 420, "unit_grid": 500, "glyph_row": 420, "pair_bars": 500, "rankbar": 480}
 
 
 def layout_knobs(h):
@@ -160,7 +160,7 @@ def notes_html(spec, layer, kn):
 # What the page's picture kinds need explained: (swatch, word) a layer adds to the legend block under the thesis; the accent line is always there.
 LEGEND = {"target_path": ("dash", "story.legend.path"), "event_chain": ("band", "story.legend.chain"), "small_multiples": ("pale", "story.legend.members"),
           "member_map": ("ramp", "story.legend.map"), "tile_map": ("ramp", "story.legend.map"), "rankbar": ("accent", "story.legend.rank"),
-          "unit_grid": ("accent", "grid.legend")}
+          "unit_grid": ("accent", "grid.legend"), "glyph_row": ("area", "glyph.legend")}
 
 
 def legend_rows(layers):
@@ -506,4 +506,5 @@ CSS = (".opening{width:1140px;margin:0 0 18px}.opening svg{display:block}"
        ".story .sw{display:inline-block;width:26px;height:10px;flex:none}.story .sw.accent{background:var(--accent)}"
        ".story .sw.dash{height:0;border-top:2px dashed var(--t-sec)}.story .sw.pale{height:3px;background:var(--t-sec);opacity:.55}"
        ".story .sw.band{background:var(--empty);border:1px solid var(--t-sec)}"
-       ".story .sw.ramp{background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 10%,#eeeeec),var(--accent))}")
+       ".story .sw.ramp{background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 10%,#eeeeec),var(--accent))}"
+       ".story .sw.area{width:14px;height:14px;border-radius:50%;background:var(--bar)}")

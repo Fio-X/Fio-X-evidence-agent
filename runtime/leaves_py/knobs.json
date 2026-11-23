@@ -946,6 +946,88 @@
     "one_unit"
    ]
   },
+  "glyph_row": {
+   "reserve": false,
+   "knobs": [
+    {
+     "name": "size",
+     "default": 12,
+     "min": 11,
+     "max": 16,
+     "step": 0.5,
+     "what": "label size px (11 is the page floor)"
+    },
+    {
+     "name": "title_size",
+     "default": 16,
+     "min": 12,
+     "max": 22,
+     "step": 1,
+     "what": "chart name size px"
+    },
+    {
+     "name": "width",
+     "default": 1140,
+     "min": 360,
+     "max": 1400,
+     "step": 10,
+     "what": "picture width in px"
+    },
+    {
+     "name": "shape",
+     "default": "circle",
+     "options": [
+      "circle",
+      "semicircle"
+     ],
+     "what": "the glyph: a circle, or a half disc standing on the base line"
+    },
+    {
+     "name": "max_d",
+     "default": 110,
+     "min": 40,
+     "max": 220,
+     "step": 2,
+     "what": "diameter px of the largest glyph (the largest value, or the reference when it is larger)"
+    },
+    {
+     "name": "accent_one",
+     "default": "",
+     "codes": true,
+     "what": "the one glyph in the accent: empty = the data's accent; max, min, none, or an item's code"
+    },
+    {
+     "name": "value_inside",
+     "default": "auto",
+     "options": [
+      "auto",
+      "inside",
+      "below"
+     ],
+     "what": "where a value prints: inside when it fits else below, always inside (refuses), always below"
+    },
+    {
+     "name": "gap",
+     "default": 16,
+     "min": 6,
+     "max": 48,
+     "step": 1,
+     "what": "space px between two glyphs' slots"
+    },
+    {
+     "name": "sort",
+     "default": "given",
+     "options": [
+      "given",
+      "value"
+     ],
+     "what": "item order: as given, or by value with the largest first"
+    }
+   ],
+   "eats": [
+    "one_unit"
+   ]
+  },
   "illus": {
    "reserve": false,
    "knobs": []
@@ -3025,7 +3107,8 @@
    "change_dots",
    "rank_slope",
    "tile_map",
-   "unit_grid"
+   "unit_grid",
+   "glyph_row"
   ],
   "change": [
    "bignums",
@@ -3055,7 +3138,8 @@
    "change_dots",
    "rank_slope",
    "tile_map",
-   "unit_grid"
+   "unit_grid",
+   "glyph_row"
   ],
   "flow": [
    "bignums",
@@ -3085,7 +3169,8 @@
    "change_dots",
    "rank_slope",
    "tile_map",
-   "unit_grid"
+   "unit_grid",
+   "glyph_row"
   ],
   "composition": [
    "bignums",
@@ -3115,7 +3200,8 @@
    "change_dots",
    "rank_slope",
    "tile_map",
-   "unit_grid"
+   "unit_grid",
+   "glyph_row"
   ],
   "ranked_bars": [
    "bignums",
@@ -3145,7 +3231,8 @@
    "change_dots",
    "rank_slope",
    "tile_map",
-   "unit_grid"
+   "unit_grid",
+   "glyph_row"
   ],
   "change_bars": [
    "bignums",
@@ -3175,7 +3262,8 @@
    "change_dots",
    "rank_slope",
    "tile_map",
-   "unit_grid"
+   "unit_grid",
+   "glyph_row"
   ],
   "block_ranks": [
    "bignums",
@@ -3205,7 +3293,8 @@
    "change_dots",
    "rank_slope",
    "tile_map",
-   "unit_grid"
+   "unit_grid",
+   "glyph_row"
   ],
   "composition_steps": [
    "bignums",
@@ -3235,7 +3324,8 @@
    "change_dots",
    "rank_slope",
    "tile_map",
-   "unit_grid"
+   "unit_grid",
+   "glyph_row"
   ],
   "one_line": [
    "bignums",
@@ -3265,7 +3355,8 @@
    "change_dots",
    "rank_slope",
    "tile_map",
-   "unit_grid"
+   "unit_grid",
+   "glyph_row"
   ],
   "page_story": [
    "thesis_claims",
@@ -3281,6 +3372,7 @@
    "rank_slope",
    "tile_map",
    "unit_grid",
+   "glyph_row",
    "risk_notes",
    "bignums"
   ],
@@ -3422,6 +3514,7 @@
     "rank_slope",
     "tile_map",
     "unit_grid",
+    "glyph_row",
     "risk_notes"
    ],
    "eats": [

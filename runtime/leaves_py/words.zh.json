@@ -238,5 +238,6 @@
 "story.tl.claim": "方块图上最高的成员的值",
 "story.tl.foot": "方块的位置大致照地理方位，颜色分五档，图例两端是最低和最高的值",
 "story.note.tl.range": "最高的{n:hi}比最低的{n:lo}多",
-"story.note.tl.whole": "{n:w}整体的值"
+"story.note.tl.whole": "{n:w}整体的值",
+"glyph.legend": "圆（或半圆）的面积与数值成正比，越大值越大"
 }
