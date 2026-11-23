@@ -2699,6 +2699,10 @@ fn external_coords(
         .iter()
         .filter(|r| r["time"] == time.as_str() && r["dims"][&shape.place] == place.as_str())
         .collect();
+    // a flow page's shape.target is its target dimension (page_input): it keeps that, and no target row
+    if p["shape"].get("target").is_some() {
+        return;
+    }
     if let ([row], Some(all)) = (rows.as_slice(), p["rows"].as_array_mut()) {
         all.push((*row).clone());
         p["shape"]["target"] = json!({"table": table, "time": time, "place": place});
@@ -3280,7 +3284,18 @@ fn fill_of(
     // the page's scope (the aggregate the drawn places are members of, from the data) is named from the name table like
     // any place; with no reviewed name for it, or no count of the places drawn, the unit line names no scope
     let scope = scope_of(shape, picks, catalogue);
-    let named: Vec<String> = shape.members.iter().cloned().chain(scope.clone()).collect();
+    // the whole and the target's place the page input holds (external_coords), which a note may name, are named alike
+    let coords = page_in.iter().flat_map(|p| {
+        [&p["shape"]["whole"], &p["shape"]["target"]["place"]]
+            .map(|c| c.as_str().map(str::to_string))
+    });
+    let named: Vec<String> = shape
+        .members
+        .iter()
+        .cloned()
+        .chain(scope.clone())
+        .chain(coords.flatten())
+        .collect();
     let mut labels = leaf_labels(&out.rows, &named, catalogue)?;
     // the names a node gave for codes that are no place (a flow's fuels and sectors), by the knowledge group's name table
     for (code, zh) in &out.labels {
@@ -30104,5 +30119,105 @@ for line in sys.stdin:
             assert!(p["shape"].get("target").is_none());
             assert_eq!(p["name_kind"], "iso3");
         }
+    }
+
+
+    /// I36, declared only (the frozen rust notes never had them, so the parity tests' page inputs carry no coordinate and
+    /// these candidates are left out there): on EU rows with the whole, the column page's ends compare with the whole; with
+    /// the whole missing at the year and a registered target, with the target, its year printed from the target fact's own
+    /// period entry; with neither, with the year before. Every row a chosen note's facts read is a row of the page, and the
+    /// whole and the target's place are named.
+    #[test]
+    fn column_notes_compare_with_the_whole_the_target_and_the_year_before_when_the_input_holds_them() {
+        let value = |g: &str, t: &str| match (g, t) {
+            ("DE", "2024") => "30",
+            ("DE", _) => "28",
+            ("FR", "2024") => "20",
+            ("FR", _) => "21",
+            ("IT", "2024") => "10",
+            ("IT", _) => "9",
+            (_, "2024") => "18",
+            _ => "17",
+        };
+        let mut main = ring_rows(
+            "ren",
+            &[("freq", "A"), ("unit", "PC")],
+            ("geo", &["DE", "FR", "IT", "EU27_2020"]),
+            &["2023", "2024"],
+        );
+        for r in main.iter_mut() {
+            let v = value(r["dims"]["geo"].as_str().unwrap(), r["time"].as_str().unwrap());
+            r["value"] = json!(v);
+        }
+        let target = json!({"src": "target:ren-EU27_2020-2030", "main": "ren", "table": "targets_ren", "dims": {"geo": "EU27_2020"},
+            "slice": {"unit": "PC"}, "time": "2030", "value": "42.5"});
+        let notes_of = |label: &str, main: &[Value], targets: &[Value]| -> (Vec<String>, Value) {
+            let r = recipe("column");
+            let shape = shape_of(&r.eats, &[("ren", main)], &Scoped(true)).unwrap();
+            let picks = picks_of(&r.picks, &shape, main, &[]).unwrap();
+            let mut page_in = page_input(r, &shape, &picks, (main, &[]));
+            external_coords(&mut page_in, &shape, &picks, (main, targets), &Scoped(true));
+            let calls = std::sync::Mutex::new(Vec::new());
+            let asked = Asked {
+                calls: &calls,
+                page_in: Some(&page_in),
+            };
+            let fill = fill_of(r, &shape, &picks, (main, &[]), &Scoped(true), ("标题", "导语"), false, Some(&asked))
+                .unwrap_or_else(|e| panic!("{label}: {e}"));
+            let words: Vec<String> = fill["knobs"]["spec"]["hero"]["leaves"]["leader_notes"]["notes"]
+                .as_array()
+                .unwrap_or_else(|| panic!("{label}: no notes"))
+                .iter()
+                .map(|n| {
+                    n["text"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|t| match (t["word"].as_str(), t["name"].as_str(), t["src"].as_str()) {
+                            (Some(w), ..) => w.to_string(),
+                            (_, Some(n), _) => format!("name:{n}"),
+                            (_, _, Some(s)) => s.to_string(),
+                            _ => String::new(),
+                        })
+                        .collect::<Vec<_>>()
+                        .join("+")
+                })
+                .collect();
+            (words, fill)
+        };
+        let srcs = |fill: &Value| -> Vec<String> {
+            fill["rows"].as_array().unwrap().iter().map(|r| r["src"].as_str().unwrap().to_string()).collect()
+        };
+        // the whole at the page's year: the top above it, the bottom below it
+        let (words, fill) = notes_of("whole", &main, &[]);
+        assert_eq!(
+            words,
+            ["column.note.whole_above+name:EU27_2020", "column.note.whole_below+name:EU27_2020"],
+            "whole"
+        );
+        assert!(srcs(&fill).contains(&"series:ren/EU27_2020:2024:OBS_VALUE".to_string()));
+        assert_eq!(fill["knobs"]["labels"]["EU27_2020"], "名EU27_2020");
+        // no whole at the year, a registered target: both ends below it, the year from the target fact's period entry
+        let mut no_whole = main.clone();
+        no_whole.retain(|r| !(r["dims"]["geo"] == "EU27_2020" && r["time"] == "2024"));
+        let (words, fill) = notes_of("target", &no_whole, std::slice::from_ref(&target));
+        let want = "column.note.whole_below+name:EU27_2020+fact:target_v.t.y+story.year+story.target";
+        assert_eq!(words, [want, want], "target");
+        assert!(srcs(&fill).contains(&"target:ren-EU27_2020-2030".to_string()));
+        assert_eq!(fill["knobs"]["labels"]["EU27_2020"], "名EU27_2020");
+        let (spec, read, _) = crate::next_facts::stored_request(&fill);
+        let facts = crate::next_facts::compute(&spec, &read).unwrap();
+        let ledger = crate::next_facts::leaf_ledger(&spec, &read, &facts).unwrap();
+        assert_eq!(ledger.get("fact:target_v.t.y").map(String::as_str), Some("2030"));
+        // members alone: the year before
+        let mut members = main.clone();
+        members.retain(|r| r["dims"]["geo"] != "EU27_2020");
+        let (words, fill) = notes_of("prev", &members, &[]);
+        assert_eq!(
+            words,
+            ["column.note.whole_above+column.note.last_year_name", "column.note.whole_above+column.note.last_year_name"],
+            "prev"
+        );
+        assert!(srcs(&fill).contains(&"series:ren/DE:2023:OBS_VALUE".to_string()));
     }
 }

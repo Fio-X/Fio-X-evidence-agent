@@ -22,7 +22,7 @@ use serde_json::Value;
 use std::collections::BTreeSet;
 
 /// The page input paths a declaration template may read (`$shape.main`, ...); nothing else is substituted.
-const PAGE_IN_PATHS: [&str; 38] = [
+const PAGE_IN_PATHS: [&str; 43] = [
     "shape.scale",
     "shape.main",
     "shape.source",
@@ -61,7 +61,52 @@ const PAGE_IN_PATHS: [&str; 38] = [
     "block.by",
     "block.year",
     "block.src",
+    "shape.whole",
+    "shape.prev",
+    "shape.target.table",
+    "shape.target.time",
+    "shape.target.place",
 ];
+
+/// The page input's coordinates only some pages have (next_run external_coords: the whole, the year before, the registered
+/// target): a first_holding candidate that reads one the page input lacks is left out of the list, never refused; any other
+/// path the page input lacks still refuses (sub).
+const OPTIONAL_PATHS: [&str; 5] = [
+    "shape.whole",
+    "shape.prev",
+    "shape.target.table",
+    "shape.target.time",
+    "shape.target.place",
+];
+
+/// Whether a template reads an optional page input path (OPTIONAL_PATHS) the page input lacks, as a string or a key.
+fn reads_absent(v: &J, page_in: &J) -> bool {
+    let absent = |s: &str| {
+        s.strip_prefix('$').is_some_and(|p| {
+            OPTIONAL_PATHS.contains(&p) && p.split('.').try_fold(page_in, |x, k| x.get(k)).is_none()
+        })
+    };
+    match v {
+        J::Str(s) => absent(s),
+        J::Arr(a) => a.iter().any(|x| reads_absent(x, page_in)),
+        J::Obj(m) => m.iter().any(|(k, x)| absent(k) || reads_absent(x, page_in)),
+        _ => false,
+    }
+}
+
+/// A first_holding candidate list (a list, or lists by key) less each candidate that reads an optional path the page input
+/// lacks (reads_absent).
+fn present_candidates(c: &J, page_in: &J) -> J {
+    match c {
+        J::Arr(a) => J::Arr(a.iter().filter(|x| !reads_absent(x, page_in)).cloned().collect()),
+        J::Obj(m) => J::Obj(
+            m.iter()
+                .map(|(k, x)| (k.clone(), present_candidates(x, page_in)))
+                .collect(),
+        ),
+        x => x.clone(),
+    }
+}
 
 /// A template with every `$path` (a string value or an object key) read from the page input by PAGE_IN_PATHS.
 fn sub(v: &J, page_in: &J) -> Result<J, String> {
@@ -287,10 +332,8 @@ fn node_of(
     let has_items = entry.has("items");
     // a first_holding field's candidates are the declaration's, over the page input, each chosen code a literal code
     if let Some(c) = d.get("candidates") {
-        let c = codes_in(
-            &sub(c, facts.and_then(|f| f.get("in")).unwrap_or(page_in))?,
-            got,
-        );
+        let view = facts.and_then(|f| f.get("in")).unwrap_or(page_in);
+        let c = codes_in(&sub(&present_candidates(c, view), view)?, got);
         let with = |fd: &J| {
             let mut fd = fd.clone();
             if fd.g("kind").s() == Some("first_holding") {
@@ -2071,7 +2114,10 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
         ("in", facts_in.clone()),
     ]);
     let n = node_of(layer, page_in, reg, (&got, &sels), None, None, Some(&held))?;
-    // the facts of each item's chosen candidate (a first_holding field's): one key two items declare apart refuses
+    // the facts of each item's chosen candidate (a first_holding field's): one key two items declare apart refuses; the
+    // input rows each reads are kept as read rows (a note against the whole, the year before or the target reads rows no
+    // select draws), so the page holds every row its facts read
+    let mut chosen_reads: Vec<J> = Vec::new();
     for it in n.g("items").arr() {
         for (_, v) in it.obj() {
             for (k, q) in v.g("facts").obj() {
@@ -2079,6 +2125,11 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
                     return Err(format!("{layer}: fact {k} is declared two ways"));
                 }
                 facts.set(k, q.clone());
+                for r in core::fact_rows(&core::resolved(q, &got)?, page_in.g("rows").arr()) {
+                    if !chosen_reads.contains(r) {
+                        chosen_reads.push(r.clone());
+                    }
+                }
             }
         }
     }
@@ -2218,6 +2269,12 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
     } else {
         (Vec::new(), Vec::new())
     };
+    let mut reads = reads;
+    for r in chosen_reads {
+        if !drawn.contains(&r) && !reads.contains(&r) {
+            reads.push(r);
+        }
+    }
     let mut data = J::Obj(vec![]);
     for (k, v) in n.g("binds").obj() {
         let x = match v {
@@ -6455,5 +6512,26 @@ mod tests {
             runs_of("5岁以下儿童").arr()[0].dump(),
             J::obj_of(vec![("term", J::str("5岁以下"))]).dump()
         );
+    }
+
+
+    /// A first_holding candidate that reads an optional coordinate the page input lacks (shape.whole, a key or a value) is
+    /// left out of its list, by key or alone; one whose coordinate is there stays, and an absent path that is not optional
+    /// still refuses the template.
+    #[test]
+    fn a_candidate_reading_an_absent_coordinate_is_left_out_and_any_other_absent_path_refuses() {
+        let p = |t: &str| core::parse(t).unwrap();
+        let cands = p(r#"{"hi": [{"text": [{"name": "$shape.whole"}]}, {"facts": {"x": {"filter": {"$shape.place": "{code}"}, "time": "$shape.prev"}}}, {"text": []}],
+            "lo": [{"when": [{"table": "$shape.target.table"}]}, {"text": []}]}"#);
+        let bare = p(r#"{"shape": {"place": "geo"}}"#);
+        let kept = present_candidates(&cands, &bare);
+        assert_eq!(kept.g("hi").arr().len(), 1);
+        assert_eq!(kept.g("lo").arr().len(), 1);
+        let full = p(r#"{"shape": {"place": "geo", "whole": "EU27_2020", "prev": "2023", "target": {"table": "t", "time": "2030", "place": "EU27_2020"}}}"#);
+        assert_eq!(present_candidates(&cands, &full), cands);
+        assert!(sub(&p(r#"{"a": "$shape.whole"}"#), &full).is_ok());
+        let e = sub(&p(r#"{"a": "$shape.hub"}"#), &bare).unwrap_err();
+        assert!(e.contains("the page input has no hub"), "{e}");
+        assert!(present_candidates(&p(r#"[{"a": "$shape.hub"}]"#), &bare).arr().len() == 1);
     }
 }
