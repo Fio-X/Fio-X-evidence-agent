@@ -1355,15 +1355,7 @@ fn shape_for(
         ));
     }
     let held = s.dims.get(&s.place).cloned().unwrap_or_default();
-    s.whole = held
-        .iter()
-        .filter(|c| !s.countries.contains(c))
-        .filter_map(|c| {
-            let members = catalogue.members(c).ok()?;
-            s.countries.iter().all(|m| members.contains(m)).then(|| (members.len(), c.clone()))
-        })
-        .min()
-        .map(|(_, c)| c);
+    s.whole = smallest_whole(&held, &s.countries, &s.countries, catalogue);
     if s.hub.is_empty() && s.members.is_empty() {
         s.members = held
             .into_iter()
@@ -3536,18 +3528,23 @@ fn scope_of(shape: &Shape, picks: &Picks, catalogue: &dyn Catalogue) -> Option<S
     if picks.ranked.is_empty() {
         return None;
     }
-    shape
-        .dims
-        .get(&shape.place)?
-        .iter()
-        .filter(|c| !shape.countries.contains(c))
+    smallest_whole(shape.dims.get(&shape.place)?, &shape.countries, &picks.ranked, catalogue)
+}
+
+/// The one rule that picks a page's whole (the short notes' scope and the story page's whole alike): among the main's places
+/// that are no country of the page, the one with the fewest members whose members hold every place in `need` (the ranked places
+/// for the notes, the page's countries for the story page). None when no place does.
+fn smallest_whole(
+    held: &BTreeSet<String>,
+    countries: &[String],
+    need: &[String],
+    catalogue: &dyn Catalogue,
+) -> Option<String> {
+    held.iter()
+        .filter(|c| !countries.contains(c))
         .filter_map(|c| {
             let members = catalogue.members(c).ok()?;
-            picks
-                .ranked
-                .iter()
-                .all(|r| members.contains(r))
-                .then(|| (members.len(), c.clone()))
+            need.iter().all(|r| members.contains(r)).then(|| (members.len(), c.clone()))
         })
         .min()
         .map(|(_, c)| c)
