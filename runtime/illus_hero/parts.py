@@ -351,7 +351,7 @@ def plinth(height=10.0, width=24.0, depth=16.0, yaw=0.0, name="plinth"):
 # Each takes size (1.0 = about 26 scene units tall) and lit; a lit unit is group "lit" (painted in the accent), an unlit one group "thing"
 # (a pale body under its ink, like the background turbines). They sit on the ground at their local origin.
 
-def _grp(lit): return "lit" if lit else "thing"
+def _grp(lit): return "lit" if lit else "thing"     # lit2 / thing2 ... : the further rows of a flat-painted crowd (figure_unit)
 
 
 def _ball(m, c, r, n=8, rings=4, flat=1.0):
@@ -382,17 +382,19 @@ def stack_unit(size=1.0, lit=False, name="stack"):
     return out
 
 
-def figure_unit(size=1.0, lit=False, name="figure"):
-    """A stick person with shoulders (people), as the strip's people are drawn: a round head, a tapering torso, two arms and two legs of
-    plain bars. An unlit person stands with the arms down; a lit one raises both arms (so the two read apart without the accent)."""
-    H = 28.0 * size; m = Mesh(name, _grp(lit)); r = 0.045 * H
-    _ball(m, (0, 0, 0.90 * H), 0.095 * H)
-    m.merge(loft([[(sx * 0.10 * H, sy * 0.07 * H, 0.38 * H) for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))],
-                  [(sx * 0.17 * H, sy * 0.08 * H, 0.76 * H) for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))]]))
+def figure_unit(size=1.0, lit=False, name="figure", depth=0):
+    """A pictogram person in the Isotype manner (people): evenly proportioned, a round head one sixth of the height, no neck, shoulders
+    wider than the hips, two arms hanging free of the torso, two legs; a front view whose silhouette is the picture (no face, no pose:
+    lit and unlit differ in colour only). Every curved part is round (8 to 10 sides) so that Blender's pen draws the outline and no
+    crease inside it. `depth` 0..2 is the row the figure stands in: its group is lit / thing, lit2 / thing2, lit3 / thing3, so the
+    painting can lay the rows back to front with a gap between them."""
+    H = 28.0 * size; g = _grp(lit) + ("" if depth == 0 else str(depth + 1)); m = Mesh(name, g)
+    _ball(m, (0, 0, 0.915 * H), 0.082 * H, n=10, rings=4)
+    ring = lambda w, d, z, n=10: [(0.5 * w * math.cos(2 * math.pi * i / n), 0.5 * d * math.sin(2 * math.pi * i / n), z) for i in range(n)]
+    m.merge(loft([ring(0.22 * H, 0.11 * H, 0.45 * H), ring(0.27 * H, 0.12 * H, 0.60 * H), ring(0.30 * H, 0.12 * H, 0.80 * H), ring(0.24 * H, 0.10 * H, 0.84 * H)]))
     for sx in (-1, 1):
-        hand = (sx * 0.34 * H, 0, 0.98 * H) if lit else (sx * 0.24 * H, 0, 0.42 * H)
-        m.merge(tube((sx * 0.17 * H, 0, 0.72 * H), hand, r=r, n=6))
-        m.merge(tube((sx * 0.06 * H, 0, 0.40 * H), (sx * 0.10 * H, 0, 0.0), r=r * 1.1, n=6))
+        m.merge(tube((sx * 0.205 * H, 0, 0.78 * H), (sx * 0.215 * H, 0, 0.46 * H), r=0.03 * H, n=8))        # an arm, a gap away from the torso
+        m.merge(tube((sx * 0.065 * H, 0, 0.47 * H), (sx * 0.07 * H, 0, 0.0), r=0.052 * H, n=8))             # a leg
     return [m]
 
 

@@ -2669,9 +2669,17 @@
    },
    "people": {
     "unit": "figure_unit",
-    "accent": "#d08a1e",
+    "accent": "#b8433a",
     "relief": 0.3,
-    "filler": []
+    "filler": [],
+    "figure_style": {
+     "default": "flat",
+     "values": [
+      "flat",
+      "line"
+     ],
+     "doc": "How the crowd is painted. flat: Isotype-like pictograms, one flat pale grey for the unlit and the accent for the lit, no outline, no shading; line: the same figures as hand-drawn outlines (the pen of the page-bottom strip), the lit ones filled in the accent. The request's people_style overrides the default; both are painted from the same fact-bound items."
+    }
    },
    "trade": {
     "unit": "container_unit",
@@ -2942,7 +2950,8 @@
     "k": 1.0,
     "tally_k": 1.0,
     "groups_k": 1.0,
-    "row_k": 1.0
+    "row_k": 1.0,
+    "depth_groups": true
    },
    "container_unit": {
     "mark_z": 22,

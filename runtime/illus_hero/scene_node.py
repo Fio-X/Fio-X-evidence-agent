@@ -13,7 +13,8 @@ CFG = json.load(open(sys.argv[sys.argv.index("--") + 1]))
 RW, RH = CFG["w"], CFG["h"]; OUT = CFG["out"]; os.makedirs(OUT, exist_ok=True)
 GROUP_ID = {"coal": (0.7, 0.35, 0.0), "hero_body": (1.0, 1.0, 0.0), "hero_blade": (0.0, 1.0, 0.2), "shadow": (0.35, 0.35, 0.35), "terrain": (0.62, 0.62, 0.62), "water": (0.0, 0.0, 1.0),
             "spill": (0.0, 0.8, 1.0), "pylon": (1.0, 0.0, 0.0), "wind": (0.0, 1.0, 0.0), "solar": (0.0, 1.0, 0.5), "hydro": (0.5, 1.0, 0.0), "track": (0.45, 0.0, 0.85),
-            "thing": (0.0, 0.6, 0.6), "lit": (1.0, 0.5, 0.0)}   # thing: a topic unit (a pale body under its ink); lit: a unit the data marks (accent)
+            "thing": (0.0, 0.6, 0.6), "lit": (1.0, 0.5, 0.0),
+            "thing2": (0.8, 0.2, 0.5), "lit2": (0.3, 0.8, 0.3), "thing3": (0.2, 0.2, 0.7), "lit3": (0.9, 0.7, 0.7)}   # thing: a topic unit (a pale body under its ink); lit: a unit the data marks (accent)
 MX = -1.0 if CFG.get("mirror") else 1.0          # reading order: mirror the whole world left-right
 RELIEF = CFG.get("relief", 1.0)                   # terrain height multiplier
 HT = lambda x, y: RELIEF * Wd.height(MX * x, y)   # ground height in (mirrored) scene coordinates

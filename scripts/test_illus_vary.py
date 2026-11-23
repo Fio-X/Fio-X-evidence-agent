@@ -242,14 +242,46 @@ class EnergyObjects(unittest.TestCase):
 
 
 class Figures(unittest.TestCase):
-    def test_a_person_is_a_stick_figure_whose_lit_one_raises_the_arms(self):
+    def test_a_person_is_a_pictogram_silhouette_the_same_lit_or_not(self):
         import parts as P
         on, off = P.figure_unit(size=1.0, lit=True)[0], P.figure_unit(size=1.0, lit=False)[0]
-        self.assertEqual((on.group, off.group), ("lit", "thing"))
-        top = lambda m: max(v[2] for v in m.v)
-        self.assertGreater(top(on), top(off) - 1e-9); self.assertGreater(on.bounds()[0][1] - on.bounds()[0][0], off.bounds()[0][1] - off.bounds()[0][0], "arms up are wider than arms down")
-        self.assertLess(on.bounds()[1][1] - on.bounds()[1][0], 0.3 * 28, "a flat pictogram, not a pin")
-        self.assertGreater(len(on.v), 80, "head, torso, two arms, two legs")
+        self.assertEqual((on.group, off.group), ("lit", "thing")); self.assertEqual(on.v, off.v, "lit and unlit differ in colour only, not in pose")
+        (x0, x1), (y0, y1), (z0, z1) = on.bounds(); H = 28.0
+        self.assertAlmostEqual(z1 - z0, H, delta=0.06 * H)                     # the whole height
+        self.assertLess(x1 - x0, 0.5 * H); self.assertGreater(x1 - x0, 0.3 * H)  # shoulders, evenly proportioned, not a pin and not a star
+        self.assertLess(y1 - y0, 0.2 * H, "a front view: nothing deep")
+        head = [v for v in on.v if v[2] > 0.84 * H]; hx = max(v[0] for v in head) - min(v[0] for v in head)
+        self.assertAlmostEqual(hx / (z1 - z0), 1 / 6, delta=0.02)               # the head is about a sixth of the height
+        self.assertGreater(len(on.v), 120, "head, torso, two arms, two legs")
+
+    def test_a_crowd_row_has_its_own_paint_group(self):
+        import parts as P
+        self.assertEqual([P.figure_unit(lit=l, depth=d)[0].group for d in (0, 1, 2) for l in (False, True)], ["thing", "lit", "thing2", "lit2", "thing3", "lit3"])
+        src = open(os.path.join(HERO, "scene_node.py")).read()
+        for g in ("thing2", "lit2", "thing3", "lit3"): self.assertIn(f'"{g}": (', src)
+        s, *_ = R.resolve(req("pop_tally")); depths = sorted({i["args"]["depth"] for i in s["items"] if "lit" in i.get("args", {})})
+        self.assertEqual(depths, [0, 1, 2], "each row of the grid is a group")
+
+    def test_both_styles_paint_the_same_facts(self):
+        a, b = R.resolve(req("pop_tally"))[0], R.resolve(req("pop_tally", people_style="line"))[0]
+        self.assertEqual((a["figure_style"], b["figure_style"]), ("flat", "line")); self.assertEqual(a["items"], b["items"], "one fact-bound item list")
+        self.assertEqual(a["composition"]["lit"], b["composition"]["lit"]); self.assertEqual(a["composition"]["lit"], 9)
+        self.assertIsNone(a["shadow"]); self.assertIsNone(b["shadow"])
+        with self.assertRaisesRegex(R.Refused, "people_style 'glossy'"): R.resolve(req("pop_tally", people_style="glossy"))
+        with self.assertRaisesRegex(R.Refused, "draws no people"): R.resolve(req("em_tally", people_style="flat"))
+        bad = json.loads(json.dumps(req("pop_tally"))); bad["subject"]["declared"]["count"] = 8
+        for st in ("flat", "line"):
+            with self.assertRaisesRegex(R.Refused, "declared.count 8 is not the 9"): R.resolve({**bad, "people_style": st})
+        self.assertIsNone(R.resolve(req("em_tally"))[0].get("figure_style")); self.assertIsNotNone(R.resolve(req("em_tally"))[0]["shadow"])
+
+    def test_a_lit_person_is_told_from_an_unlit_one_in_greyscale(self):
+        acc = R.resolve(req("pop_tally"))[2]; y = lambda c: (0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]) / 255
+        rgb = tuple(int(acc[i:i + 2], 16) for i in (1, 3, 5))
+        for arc in R.REG["stories"]["arc_grounds"].values():
+            for pal in arc.values():
+                grey = tuple(l + (w - l) * 0.72 for l, w in zip(pal["light"], (250, 248, 244)))   # hero_node.flat_figures' grey
+                self.assertGreater(y(grey) - y(rgb), 0.35, (pal, acc))
+        self.assertNotEqual(acc.lower(), "#d08a1e", "not the gold of the first pins")
 
 
 class Compositions(unittest.TestCase):

@@ -196,11 +196,12 @@ def lit_codes(subject):
     return lit
 
 
-def unit_item(fn, x, y, size, lit, mark=None, dz=-0.3, kk="row_k"):
+def unit_item(fn, x, y, size, lit, mark=None, dz=-0.3, kk="row_k", depth=None):
     """One unit on the ground: its part, place and size (the unit's own footprint factor k applied), lit or not; the mark is the leader
     line over the boundary unit, as high as that unit is tall."""
     u = TOPICS["units"][fn]; size = size * u["k"] * u[kk]
     it = {"part": fn, "kind": "at_ground", "fn": fn, "at": [round(x, 2), round(y, 2)], "dz": dz, "args": {"size": round(size, 3), "lit": bool(lit)}}
+    if depth is not None and u.get("depth_groups"): it["args"]["depth"] = min(int(depth), 2)      # the row a crowd figure stands in (its paint group)
     if mark: it["mark"] = {"z": f"{u['mark_z'] * size:.1f}", "rise": TOPICS["layout"]["mark_rise"]}; it["hero"] = True
     return it
 
@@ -213,7 +214,7 @@ def grid(units, ordered, lit, x0, x1, y0, size_of, dz=-0.3, mark_last=True, rows
     nl = sum(1 for m in ordered if m["code"] in lit)
     for i, m in enumerate(ordered):
         r, c = divmod(i, cols); on = m["code"] in lit; fn = units[i % len(units)]
-        items.append(unit_item(fn, left + step * (c + 0.5) + step * 0.34 * (r % 3), y0 + L["row_dy"] * r, size * (1.0 if on else L["unlit_k"]), on, mark=mark_last and on and i == nl - 1, dz=dz, kk=kk))
+        items.append(unit_item(fn, left + step * (c + 0.5) + step * 0.34 * (r % 3), y0 + L["row_dy"] * r, size * (1.0 if on else L["unlit_k"]), on, mark=mark_last and on and i == nl - 1, dz=dz, kk=kk, depth=r))
     return items, rows, cols
 
 
@@ -353,14 +354,19 @@ def compose_subject(inp):
         pal = g
     acc = inp.get("accent", sc["accent"])
     if not (isinstance(acc, str) and len(acc) == 7 and acc[0] == "#" and all(ch in "0123456789abcdefABCDEF" for ch in acc[1:])): refuse("accent must be #rrggbb")
+    fs = None
+    if "figure_style" in sc:
+        fs = inp.get("people_style", sc["figure_style"]["default"])
+        if fs not in sc["figure_style"]["values"]: refuse(f"people_style {fs!r} is none of {'|'.join(sc['figure_style']['values'])}")
+    elif "people_style" in inp: refuse(f"people_style: the {topic} topic draws no people")
     cam = copy.deepcopy(TOPICS["cameras"].get(kind, TOPICS["cameras"]["default"])); mirror = c["reading_order"] == "right_to_left"
     for it in items:
         if "mark" in it: it["mark"] = {"at": list(it["at"]), "z": float(it["mark"]["z"]), "rise": it["mark"]["rise"]}
     if mirror:
         items = [mirror_item(i) for i in items]; cam["loc"][0] = -cam["loc"][0]; cam["target"][0] = -cam["target"][0]
     r = REG["input"]["render"]
-    scene = dict(w=r["w"], h=r["h"], mirror=mirror, relief=c["relief"], items=items, shadow=REG["contact_shadow"], camera=cam, hero=dict(at=[0, 0], yaw=0.0, focus_local=[0, 0, 0]),
-                 scene=f"{topic}.{kind}", composition=dict(scene=f"{topic}.{kind}", **comp))
+    scene = dict(w=r["w"], h=r["h"], mirror=mirror, relief=c["relief"], items=items, shadow=None if fs else REG["contact_shadow"], camera=cam, hero=dict(at=[0, 0], yaw=0.0, focus_local=[0, 0, 0]),
+                 scene=f"{topic}.{kind}", composition=dict(scene=f"{topic}.{kind}", **({"figure_style": fs} if fs else {}), **comp), figure_style=fs)
     return scene, pal, acc, c
 
 
@@ -393,7 +399,7 @@ def build(inp, work):
     scene, pal, acc, c = resolve(inp)
     blender = blender_path(); check_packages()
     scene["out"] = work; scene_path = os.path.join(work, "scene.json"); json.dump(scene, open(scene_path, "w"))
-    post_path = os.path.join(work, "post.json"); json.dump(dict(out=work, palette=pal, accent=acc, smoke=c["smoke"], seed=c["seed"], raster_scale=1), open(post_path, "w"))
+    post_path = os.path.join(work, "post.json"); json.dump(dict(out=work, palette=pal, accent=acc, smoke=c["smoke"], seed=c["seed"], raster_scale=1, figure_style=scene.get("figure_style")), open(post_path, "w"))
     secs = {}
     secs["blender"] = run([blender, "-b", "-P", os.path.join(HERE, "scene_node.py"), "--", scene_path], BLENDER_DEADLINE)
     left = TOTAL_DEADLINE - (time.time() - t0)

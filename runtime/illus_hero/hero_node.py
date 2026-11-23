@@ -209,6 +209,25 @@ def leader_marks(line, acc):
     return out
 
 
+FS = CFG.get("figure_style")      # None | "flat" | "line": the people topic's pictogram painting (flat_figures / line_figures)
+
+
+def flat_figures(lab, idx, pal, acc, style):
+    """The crowd as a pictogram, rows back to front: an unlit person one flat pale grey, a lit one the accent (a flat colour: no gradient, no
+    shading, no grain). "flat": nothing else, the rows parted by a hairline of the ground's own tone; "line": the unlit ones are hand-drawn outlines
+    only (the pen strokes of the picture, a faint paper fill under them), the lit ones the accent filled and outlined, the pen of the page-bottom strip."""
+    grey = mix(pal["light"], (250, 248, 244), 0.72); out = []; halo = hexc(pal["mid"])
+    for d in (2, 1, 0):
+        for base, col, op in (("thing", grey, 1.0 if style == "flat" else 0.28), ("lit", acc, 1.0)):
+            i = idx(base + ("" if d == 0 else str(d + 1)))
+            if i is None: continue
+            ps = [pd(p, (0, 0), 0.0) for p in polys(to_geom(ndi.binary_opening(lab == i, iterations=1), 0.8, 30))]
+            if not ps: continue
+            hl = f' stroke="{halo}" stroke-width="1.6" stroke-linejoin="round"' if style == "flat" else ""
+            out.append(f'<path d="{"".join(ps)}" fill="{hexc(col)}" opacity="{op}"{hl}/>')
+    return out
+
+
 def build():
     pal = {k: tuple(v) for k, v in CFG["palette"].items()}; line = hexc(pal["line"]); IN = H2.IN
     names, lab = H2.load_labels(); idx = lambda n: names.index(n) if n in names else None
@@ -218,7 +237,7 @@ def build():
     layers = [f'<defs><linearGradient id="wash" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="{hexc(pal["light"])}" stop-opacity="0.34"/><stop offset="0.75" stop-color="{hexc(pal["light"])}" stop-opacity="0"/></linearGradient></defs>',
               f'<image href="data:image/jpeg;base64,{gj}" width="{W}" height="{H}" preserveAspectRatio="none"/>']
     body = []   # the background turbines and plants get a pale body under their ink, so they read as things, not as wires
-    for g in ("wind", "coal", "thing"):
+    for g in (("wind", "coal", "thing", "thing2", "thing3") if not FS else ("wind", "coal")):
         if idx(g) is None: continue
         body += [f'<path d="{pd(p, (0, 0), 0.8)}"/>' for p in polys(to_geom(ndi.binary_opening(lab == idx(g), iterations=1), 1.0, 30))]
     wash = []
@@ -241,10 +260,11 @@ def build():
     HUB = json.load(open(os.path.join(IN, "hub.json"))); hero = []
     if idx("hero_body") is not None: hero += paint3(lab == idx("hero_body"), shade, BODY)
     if idx("hero_blade") is not None and (lab == idx("hero_blade")).any(): hero += paint_blades(lab == idx("hero_blade"), shade, (HUB["x"] * W / HUB["w"], HUB["y"] * H / HUB["h"]), pal)
-    if idx("lit") is not None: hero += paint3(lab == idx("lit"), shade, BLADE)    # the units the data marks: the accent ramp
+    if FS: hero += flat_figures(lab, idx, pal, BLADE["base"], FS)
+    elif idx("lit") is not None: hero += paint3(lab == idx("lit"), shade, BLADE)    # the units the data marks: the accent ramp
     layers += hero
-    hm = (lab == idx("hero_body")) | (lab == idx("hero_blade")) | (lab == idx("lit"))
-    layers.append(f'<image href="data:image/png;base64,{grain_layer(ndi.binary_dilation(hm, iterations=2), tooth, crumple, pal)}" width="{W}" height="{H}" preserveAspectRatio="none"/>')
+    hm = (lab == idx("hero_body")) | (lab == idx("hero_blade")) | (lab == idx("lit")) | (lab == idx("lit2")) | (lab == idx("lit3"))
+    if not FS: layers.append(f'<image href="data:image/png;base64,{grain_layer(ndi.binary_dilation(hm, iterations=2), tooth, crumple, pal)}" width="{W}" height="{H}" preserveAspectRatio="none"/>')
     G = {"hero_out": [], "hero_in": [], "bg_far": [], "bg_near": [], "coal": []}; DIRS = {"h": [], "v": [], "d": []}
     widths = {"hero_out": [], "hero_in": [], "bg": [], "coal": []}
     for s in S["strokes"]:
@@ -260,8 +280,9 @@ def build():
             if ls == "hero_in": G[ls].append(pth); continue
             dx, dy = xy[-1][0] - xy[0][0], xy[-1][1] - xy[0][1]; n = math.hypot(dx, dy) or 1
             DIRS["h" if abs(dx) / n > 0.8 else "v" if abs(dy) / n > 0.8 else "d"].append(pth)
+        elif FS == "flat" and ls == "bg": continue      # a flat pictogram has no outline
         else:   # background and coal plant: one pass, 0.9-1.5 px, same strength
-            near, far = H2.WID["bg"]; w = (near + (far - near) * t) * np.clip(1 + 0.2 * BR.smooth_noise(rng, len(pts), 3), 0.8, 1.2); widths["bg"] += list(w)
+            near, far = H2.WID["bg"]; w = (near + (far - near) * t) * np.clip(1 + 0.2 * BR.smooth_noise(rng, len(pts), 3), 0.8, 1.2) * (1.5 if FS == "line" and ls == "bg" else 1.0); widths["bg"] += list(w)
             pth = ink_stroke(xy, w, 0.9, 14, 22)
             if not pth: continue
             G["coal" if ls == "coal" else ("bg_far" if t.mean() > 0.5 else "bg_near")].append(pth)
