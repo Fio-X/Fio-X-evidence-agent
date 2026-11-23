@@ -520,7 +520,7 @@ def angle_spread(q):
             a, b, d = f"a_{c.lower()}", f"b_{c.lower()}", f"d_{c.lower()}"
             f[a], f[b] = q.value(c, y0), q.value(c, y1)
             f[d] = {"op": "minus", "a": b, "b": a, "fmt": q.change}
-            rows[side].append({"label": [{"name": c}], "a": f"fact:{a}", "b": f"fact:{b}", "change": [{"src": f"fact:{d}"}]})
+            rows[side].append({"label": [{"name": c}], "a": cell_src(q, a, q.fmts["value"]), "b": cell_src(q, b, q.fmts["value"]), "change": [{"src": f"fact:{d}"}]})
     # the groups are named, never counted in words: a count would be a number no fact prints
     title = T("story.spread.caught" if caught else "story.spread.not")
     text = T("story.spread.text", low=sorted(low), top=sorted(top))
@@ -1051,6 +1051,14 @@ def printed(q, x, fmt):
     return round(x * float(d.get("scale", 1)), int(d.get("dec", 0)))
 
 
+def cell_src(q, key, fmt):
+    """The ledger entry a winners_losers row's before/after cell prints: the fact itself when its format puts at most a percent sign
+    after the number, else the fact's bare number (fact:<key>.n): that leaf reads a plain number there, and the words that carry the
+    unit (a pace's "个百分点") stay in the sentences and the change cell, which print the fact in its own format."""
+    suffix = (q.defs.get(fmt, {}).get("suffix") or "").strip()
+    return f"fact:{key}" if suffix in ("", "%") else f"fact:{key}.n"
+
+
 def pace_split(q, ys, m):
     """(from, to, event or None) of the pace's two windows over the years ys and the mean m: the first request event whose years
     lie inside and leave PACE_WIN years on each side, else the shared split year with the largest difference of the two paces
@@ -1098,7 +1106,7 @@ def angle_pace(q):
     if a_ == b_: f["pc_mb"] = f["pc_ma"]
     cols = {"up": [], "down": []}
     if printed(q, pa, q.change) != printed(q, pb, q.change):   # the mean's own row, in its column
-        cols["up" if up else "down"].append({"label": ST("story.ref.mean"), "a": "fact:pc_a", "b": "fact:pc_b",
+        cols["up" if up else "down"].append({"label": ST("story.ref.mean"), "a": cell_src(q, "pc_a", q.change), "b": cell_src(q, "pc_b", q.change),
                                              "change": [{"src": "fact:pc_d"}]})
     for col, cs in (("up", sorted(fast, key=lambda c: (-dch[c], c))), ("down", sorted(slow, key=lambda c: (dch[c], c)))):
         for c in cs:
@@ -1110,7 +1118,7 @@ def angle_pace(q):
             f[f"pa_{k}"] = {"op": "per_year", "a": f"pv_{k}_{a_}", "b": f"pv_{k}_{y0}", "fmt": q.change}
             f[f"pb_{k}"] = {"op": "per_year", "a": f"pv_{k}_{y1}", "b": f"pv_{k}_{b_}", "fmt": q.change}
             f[f"pd_{k}"] = {"op": "minus", "a": f"pb_{k}", "b": f"pa_{k}", "fmt": q.change}
-            cols[col].append({"label": [{"name": c}], "a": f"fact:pa_{k}", "b": f"fact:pb_{k}", "change": [{"src": f"fact:pd_{k}"}]})
+            cols[col].append({"label": [{"name": c}], "a": cell_src(q, f"pa_{k}", q.change), "b": cell_src(q, f"pb_{k}", q.change), "change": [{"src": f"fact:pd_{k}"}]})
     rows_ok = bool(cols["up"] and cols["down"])   # the members' rows stand only when both columns hold one (the leaf refuses an empty one)
     # the pair of glyphs: an area holds no value below 0, the larger prints above 0, the smaller at least six px across (or a point at 0)
     pa_p, pb_p = printed(q, pa, q.change), printed(q, pb, q.change)
@@ -1191,7 +1199,7 @@ def angle_groups(q):
         f[f"gd_{gid.lower()}"] = {"op": "minus", "a": gk(gid), "b": "gp_all", "fmt": q.change}
         col = "up" if gm[gid] > allm else "down"
         if len(cols[col]) < ROWS_MAX:
-            cols[col].append({"label": SW(kept[gid][0]), "a": "fact:gp_all", "b": f"fact:{gk(gid)}", "change": [{"src": f"fact:gd_{gid.lower()}"}]})
+            cols[col].append({"label": SW(kept[gid][0]), "a": cell_src(q, "gp_all", q.fmts["value"]), "b": cell_src(q, gk(gid), q.fmts["value"]), "change": [{"src": f"fact:gd_{gid.lower()}"}]})
     rows_ok = bool(cols["up"] and cols["down"])
     names = {"hi": kept[hi][0], "lo": kept[lo][0], "wide": kept[wide][0]}
     bind = dict(names, ghi=gk(hi), glo=gk(lo), whi=whi, wlo=wlo, vhi="gp_vhi", vlo="gp_vlo")

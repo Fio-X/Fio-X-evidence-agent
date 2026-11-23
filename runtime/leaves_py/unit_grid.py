@@ -223,6 +223,12 @@ def cl_unit_grid(f, occ):
         share = min(max(r["v"] / f.ref, 0.0), 1.0) if f.mode == "fill" else None
         o.append(glyph(f, x, gy, s, r["lit"], r["code"], share))
     # names: every glyph's under it, or the lit ones' (one that would meet the name before it in its row drops to a second line on a leader)
+    last, first_line = {}, {}
+    for i, r in enumerate(f.rows):
+        if f.names == "lit" and not r["lit"]: continue
+        row = i // f.cols
+        w = tw(r["name"][1], size); x0 = min(max(8 + (i % f.cols) * f.pitch + s / 2 - w / 2, 0.0), W - w)
+        if f.names != "lit" or row not in last or x0 >= last[row] + 6: first_line.setdefault(row, []).append((x0, x0 + w)); last[row] = x0 + w
     last = {}
     for i, r in enumerate(f.rows):
         if f.names == "lit" and not r["lit"]: continue
@@ -233,7 +239,11 @@ def cl_unit_grid(f, occ):
         if f.names == "lit" and row in last and x0 < last[row] + 6: line = 1
         ny = gy + s + size * 1.1 + line * size * 1.35
         hot = r["lit"] and f.k("accent_when") == "flag"
-        if line: o.append(f'<line x1="{cx:.1f}" y1="{gy + s + 2:.1f}" x2="{cx:.1f}" y2="{ny - size * 0.85:.1f}" stroke="var(--t-sec)" stroke-width="0.6"/>')
+        if line:
+            # the leader falls through the first line of names: it must meet none of them, and it stops clear of its own name's box
+            # (a Chinese face's text box rises above the baseline by more than 0.85 of its size, so a leader to the cap line touches it)
+            if any(a - 1 <= cx <= b + 1 for a, b in first_line[row]): raise Refused(f"unit_grid: the leader of {nm!r} overlaps a name on the first line of its row (text overlap); fewer columns or show_names all")
+            o.append(f'<line x1="{cx:.1f}" y1="{gy + s + 2:.1f}" x2="{cx:.1f}" y2="{ny - size * 1.3:.1f}" stroke="var(--t-sec)" stroke-width="0.6"/>')
         o.append(K.txt(B, x0 + w / 2, ny, size, "var(--accent)" if hot else "var(--t-body)", nm_svg, w, anchor="middle", weight=700 if r["lit"] else 400, tag=f"name {r['code']}"))
         if not line: last[row] = x0 + w
     y = top + math.ceil(len(f.rows) / f.cols) * pitch_y - gap + size * 0.8   # the grid's foot (its last names), then a gap

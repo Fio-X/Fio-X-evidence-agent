@@ -21,6 +21,7 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "runtime", "leaves_py"))
 sys.path.insert(0, HERE)  # a sibling test (python -I leaves the script's folder off the path)
+import bake  # noqa: E402
 import findings as FN  # noqa: E402
 import geo  # noqa: E402
 import run  # noqa: E402
@@ -198,7 +199,7 @@ def ledger(req, composed, names):
     members = req["main"].get("members") or sorted({r["dims"][req["main"]["by"]] for r in rows if r["table"] == req["main"]["table"]})
     facts = compute(composed["facts"], rows, members)
     for k, f in facts.items():
-        d = {"n": {"scale": 1, "dec": 0, "suffix": ""}, **FMT_DEFS, **req.get("chain_fmts", {})}[f["fmt"]]
+        d = {"n": {"scale": 1, "dec": 0, "suffix": ""}, **FMT_DEFS, **req.get("fmt_defs", {}), **req.get("chain_fmts", {})}[f["fmt"]]
         rows.append({"src": f"fact:{k}", "text": f"{f['v'] * d['scale']:,.{d['dec']}f}{d['suffix']}"})
         rows.append({"src": f"fact:{k}.n", "text": f"{f['v'] * d['scale']:,.{d['dec']}f}"})  # the bare number a placeholder prints
         # a year entry for what the first layer gives one: a value read at one year, and what carries its own year (the best step's, a line's)
@@ -1369,6 +1370,11 @@ def wb24_request(question=""):
             "words": {"measure": "人均二氧化碳排放", "unit": "吨／人"}, "groups": m49_groups(list(WB24)), "question": question}, names
 
 
+WB24_NAMES = {"USA": "美国", "CAN": "加拿大", "MEX": "墨西哥", "BRA": "巴西", "ARG": "阿根廷", "CHL": "智利", "COL": "哥伦比亚", "PER": "秘鲁",
+              "DEU": "德国", "FRA": "法国", "NLD": "荷兰", "BEL": "比利时", "CHE": "瑞士", "AUT": "奥地利", "CHN": "中国", "JPN": "日本", "KOR": "韩国",
+              "MNG": "蒙古", "IND": "印度", "PAK": "巴基斯坦", "BGD": "孟加拉国", "LKA": "斯里兰卡", "NGA": "尼日利亚", "GHA": "加纳"}
+
+
 def words_of(composed):
     """Every literal word a composed page holds (titles, texts, leaf segments)."""
     return json.dumps(composed, ensure_ascii=False)
@@ -1569,6 +1575,70 @@ class PaceAndGroups(unittest.TestCase):
                     if s_.get("title"): self.assertIn(f'data-module-id="{s_["id"]}"', page_html, (mk.__name__, lead, s_["id"]))
                 seen |= set(layers)
         self.assertTrue({"glyph_row", "dot_strip", "unit_grid"} <= seen, seen)
+
+    # ---------------------------------------------------------------- the page as baked: every lead angle, both shapes, a delta format with unit words
+
+    @staticmethod
+    def with_delta(req, level_words=False):
+        """The request with a difference format whose unit is words after the number (the way the real runs' fmts print a pace:
+        "0.7 个百分点"): a pace and a change print with the unit, a cell of a winners_losers row must still be a plain number."""
+        defs = {**req["fmt_defs"], "dlt": {"scale": 1, "dec": 1, "suffix": " 个百分点"}}
+        if level_words: defs[req["fmts"]["value"]] = {**defs[req["fmts"]["value"]], "suffix": " 吨"}   # the level's own format with unit words too
+        return {**req, "fmts": {**req["fmts"], "delta": "dlt"}, "fmt_defs": defs}
+
+    def baked(self, req, names, picks, what):
+        """The picks' page drawn by the real page child, then laid out and checked in Chrome (the bake's layout checks): none may find a
+        text on a line, over another text or off the page."""
+        if not bake.chrome(): self.skipTest("no Chrome or Chromium to lay the page out in")
+        composed, facts, bodies, page_html = Findings._page(self, req, names, picks)
+        got = bake.bake({"html": page_html, "ready": "", "width": 1140})
+        self.assertNotIn("error", got, (what, picks, got.get("error")))
+        return composed
+
+    def test_the_baked_page_of_every_angle_on_three_shapes_and_the_failed_runs_picks(self):
+        """Each lead angle (with a second pick) on an EU shape of 27 members with the whole and the target, the same with no whole, and a
+        World Bank shape of 24 economies, each also with a delta format that carries unit words, is drawn by the page child and baked. The
+        picks of the two failed stand-in runs ride along: need, rank, movers, overtake (the unit grid's leader through its row of names)
+        and movers, overtake, pace, rank (a pace's cells as a plain number)."""
+        shapes = (("eu27 whole", lambda: eu27_plain(whole=True)), ("eu27", eu27_plain), ("wb24", wb24_request))
+        layers = set()
+        for name, mk in shapes:
+            for delta in (False, True):   # the test formats; a delta format that carries unit words
+                req, names = mk()
+                if mk is wb24_request: names = WB24_NAMES   # the page names the economies in words (the rank's label column is sized for them)
+                if delta: req = self.with_delta(req)
+                ids = {c["id"] for c in FN.candidates(req)[1]}
+                runs = [[lead, "rank" if lead != "rank" else "groups"] for lead in self.LEADS + ("need", "path", "ends", "map") if lead in ids]
+                runs += [p for p in (["need", "rank", "movers", "overtake"], ["movers", "overtake", "pace", "rank"], ["pace", "groups", "movers"]) if set(p) <= ids]
+                self.assertGreaterEqual(len(runs), 6, (name, ids))
+                for picks in runs:
+                    layers |= {s_["layer"] for s_ in self.baked(req, names, picks, f"{name} delta={delta}")["sections"]}
+        self.assertTrue({"winners_losers", "unit_grid", "glyph_row", "dot_strip"} <= layers, layers)
+
+    def test_a_winners_losers_row_prints_a_plain_number_whatever_the_format_says(self):
+        """The pace, groups and spread rows hand winners_losers cells that are plain numbers when the format carries unit words; the
+        sentences (the rows' title) and the change cell keep the unit."""
+        for mk in (eu27_plain, wb24_request):
+            req, names = mk()
+            req = self.with_delta(req, level_words=True)
+            seen = set()
+            for angle in ("pace", "groups", "spread"):
+                cand = next((c for c in FN.candidates(req)[1] if c["id"] == angle), None)
+                if not cand: continue
+                wl = []
+                def find(x):   # every winners_losers data the candidate holds (its leaf, a second section, the fallback)
+                    if isinstance(x, dict):
+                        if isinstance(x.get("up"), dict) and isinstance(x.get("down"), dict) and "rows" in x["up"]: wl.append(x)
+                        else: [find(v) for v in x.values()]
+                    elif isinstance(x, list): [find(v) for v in x]
+                find(cand)
+                for d in wl:
+                    for r in d["up"]["rows"] + d["down"]["rows"]:
+                        for k in ("a", "b"): self.assertTrue(r[k].endswith(".n"), (mk.__name__, angle, r))
+                        self.assertFalse(r["change"][0]["src"].endswith(".n"))
+                        seen.add(angle)
+            self.assertIn("pace", seen, mk.__name__)
+            self.assertIn("groups", seen, mk.__name__)
 
     def test_two_picks_on_one_leaf_keep_the_first_and_the_arcs(self):
         req, _ = eu27_plain()
