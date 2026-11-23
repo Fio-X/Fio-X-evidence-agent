@@ -372,7 +372,8 @@ prod.KNOBS["bignums"] = dict(size=(36, (28, 64, 2), "number size in px"), label_
                              align=("left", ("left", "center"), "alignment of the numbers"),
                              min=(22, (14, 40, 2), "smallest number size a cell may shrink to before its unit wraps"),
                              width=(560, (240, 1140, 10), "width of the big numbers' box beside the title (a story page spans its page)"),
-                             cols=(2, (1, 3, 1), "cells in a row"))
+                             cols=(2, (1, 3, 1), "cells in a row"),
+                             accent_n=(1, (0, 3, 1), "how many of the numbers, from the first, are in the accent; the others are in ink (one focal point)"))
 BN_PAD, BN_GAP = 22, 24  # the box's left padding (after its rule) and the gap between two cells, as CSS sets them
 
 
@@ -445,9 +446,9 @@ def cl_bignums(f, occ):
     cols = min(K("cols"), len(cells)); cell = (K("width") - BN_PAD - (cols - 1) * BN_GAP) / cols
     st = f' style="width:{K("width")}px;grid-template-columns:repeat({cols},1fr);text-align:{K("align")}"'
     out = []
-    for k, lab in cells:
+    for n, (k, lab) in enumerate(cells):
         v = c.t("{" + k + "}"); size, wraps = bignum_fit(html.unescape(re.sub(r"<[^>]+>", "", v)), cell, K)
-        out.append(f'<div class="bn"><div class="bv" style="font-size:{size}px;line-height:1.2{";white-space:normal" if wraps else ""}">{v}</div><div class="bl">{lab}</div></div>')
+        out.append(f'<div class="bn"{" data-hot" if n < K("accent_n") else ""}><div class="bv" style="font-size:{size}px;line-height:1.2{";white-space:normal" if wraps else ""}">{v}</div><div class="bl">{lab}</div></div>')
     return f'<div class="bns"{st}>' + "".join(out) + "</div>"
 
 

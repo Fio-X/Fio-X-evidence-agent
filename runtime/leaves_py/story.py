@@ -283,7 +283,7 @@ def bignums_height(markup):
     """The header's big numbers (column.cl_bignums' html): a row of cells, each its number's line at the size it was fitted to and its label's lines."""
     w = int(re.search(r"width:(\d+)px", markup)[1]); cols = int(re.search(r"repeat\((\d+),1fr\)", markup)[1]); cell = (w - 22 - (cols - 1) * 24) / cols
     heights = []
-    for m in re.finditer(r'<div class="bn"><div class="bv" style="font-size:(\d+)px[^"]*">.*?</div><div class="bl">(.*?)</div></div>', markup):
+    for m in re.finditer(r'<div class="bn"(?: data-hot)?><div class="bv" style="font-size:(\d+)px[^"]*">.*?</div><div class="bl">(.*?)</div></div>', markup):
         heights.append(int(m[1]) * 1.2 + count_lines(plain(m[2]), 12, cell) * 17)
     rows = [heights[i:i + cols] for i in range(0, len(heights), cols)]
     return sum(max(r) for r in rows) + 18 * (len(rows) - 1)
@@ -520,8 +520,8 @@ CSS = (".opening{width:1140px;margin:0 0 18px}.opening svg{display:block}.openin
        # the short notes: a card with a bold number and its words; beside a picture a leader runs from the card towards it
        ".story .notes{list-style:none;margin:20px 0 0;padding:0;display:grid;gap:12px}"
        ".story .note{position:relative;display:flex;align-items:baseline;gap:12px;padding:10px 14px;background:color-mix(in srgb,var(--t-title) 6%,transparent);"
-       "border-left:3px solid var(--accent);font:400 var(--ns)/1.5 var(--sans);color:var(--t-body)}"
-       ".story .note .n{font:700 calc(var(--ns) + 2px)/1.2 var(--serif);color:color-mix(in srgb,var(--accent) 85%,#000);flex:none}"  # the accent a shade darker: 5.3:1 on the card's tint (the accent itself 4.1:1, under the 4.5 floor at this size)
+       "border-left:3px solid var(--t-sec);font:400 var(--ns)/1.5 var(--sans);color:var(--t-body)}"
+       ".story .note .n{font:700 calc(var(--ns) + 2px)/1.2 var(--serif);color:var(--t-title);flex:none}"  # ink, not the accent: the accent is for the one mark the page is about, and the page has one focal point (11-24)
        ".story .sec[data-layout=side] .note::after{content:\"\";position:absolute;left:100%;top:50%;width:var(--lead);height:1px;background:var(--t-title)}"
        ".story .sec[data-layout=side] .note::before{content:\"\";position:absolute;left:calc(100% + var(--lead));top:calc(50% - 2px);width:5px;height:5px;border-radius:50%;background:var(--t-title)}"
        ".story .top{position:absolute;left:0;top:0;width:100%;display:grid;grid-template-columns:640px 1fr;column-gap:var(--gut);align-items:start}.story .top .col{position:static}.story .top .notes{margin:0}"

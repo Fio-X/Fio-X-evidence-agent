@@ -359,7 +359,10 @@ class Column(unittest.TestCase):
         11-08 (SCMP P25) the legend line and both its rules are gone: the sha256s below are the pages without them (a page
         holds no "ak" class), the rest as before. Since 11-22 the change page draws no map: its unit line names the two ends
         (column.span_years) where it named the bars' years and the map's, the only bytes that moved on it. Since 11-22 the
-        title rule carries text-wrap: pretty (a wrapped title leaves no lone character), the only bytes that moved on both."""
+        title rule carries text-wrap: pretty (a wrapped title leaves no lone character), the only bytes that moved on both.
+        Since 11-24 only the first big number is in the accent (knob bignums.accent_n, default 1): the css gains one rule
+        (.bn[data-hot] .bv b.n) and the first cell carries data-hot, the only bytes that moved on the column page (on the change
+        page, which has no big numbers, the css rule is the only change)."""
         def sha(lines, names, drop=""):
             got = child(lines)[1:]
             self.assertFalse([g for g in got if "refused" in g], got)
@@ -371,8 +374,8 @@ class Column(unittest.TestCase):
             return hashlib.sha256(html.encode("utf-8")).hexdigest()
         # every page compared byte for byte (user 11-08: the sha256s re-taken from the pages as they are now), and none holds the
         # legend line or its rules
-        for lines, names, want in ((column_request(), ["bignums", "bars"], "6547226d74f2fec90a55a75a10fdc87adf8a3fcf8e474f7b36bc34895cd7aba4"),
-                                   (change_request(), ["bars"], "2b745b55b02a3d7229d075129491c614fcc48eb014e990eb1adfaa20dac5ad2f")):
+        for lines, names, want in ((column_request(), ["bignums", "bars"], "8a7e2862797e01496dd8656064d487191efa3d38859410eea8a0199c5599f9dc"),
+                                   (change_request(), ["bars"], "6caadf0083020e19825084eca9a8005342564fe8a12c2c7346287b25702e8b61")):
             self.assertEqual(sha(lines, names), want, names)
             got = child(lines)[1:]
             html = child(lines + [json.dumps({"phase": "page", "layers": {n: g.get("svg") or g.get("html") for n, g in zip(names, got)}})])[-1]["html"]

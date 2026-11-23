@@ -435,7 +435,7 @@ h.style.height=H+'px';svg.setAttribute('height',H);svg.setAttribute('viewBox',`0
 def page(spec, wrap=False, out=None):
     spec["fmts"]["bcm0"] = {"scale": 0.01, "dec": 0}
     c = prod.Ctx(spec)
-    nums = "".join(f'<div class="bn"><div class="bv">{c.t(b["v"])}</div><div class="bl">{c.t(b["l"])}</div></div>' for b in spec.get("bignums", []))
+    nums = "".join(f'<div class="bn" data-hot><div class="bv">{c.t(b["v"])}</div><div class="bl">{c.t(b["l"])}</div></div>' for b in spec.get("bignums", []))
     sec = lambda m, W: (f'<div class="sh"><span class="no">{m["name"]}</span>{c.t(m["h"])}</div>' if m.get("h") else "") + prod.CHARTS[m["data"]["chart"]](c, {"events": spec.get("events"), **m["data"]}, W)
     top = f'<section class="tl">{sec(spec["top"], 1140)}</section>' if spec.get("top") else ""
     band = f'<section class="band">{sec(spec["band"], 1140)}</section>' if spec.get("band") else ""
@@ -535,7 +535,7 @@ CSS = """body{background:var(--bg)}
 .hh h1{font:900 58px/70px var(--serif);color:var(--t-title);margin:6px 0 12px;text-spacing-trim:trim-start;text-wrap:pretty}.hh h1 b.n{color:var(--accent)}.hh h1 .nb{white-space:nowrap}
 .hh .dek{font:400 16px/27px var(--serif);color:var(--t-dek);max-width:720px;margin:0}
 .bns{display:grid;grid-template-columns:1fr 1fr;gap:18px 24px;border-left:1px solid var(--t-sec);padding-left:22px}
-.bv{font:300 46px/52px var(--serif);color:var(--t-title);white-space:nowrap}.bv small{font-size:18px;margin-left:4px}.bv b.n{font-weight:300;color:var(--accent)}
+.bv{font:300 46px/52px var(--serif);color:var(--t-title);white-space:nowrap}.bv small{font-size:18px;margin-left:4px}.bv b.n{font-weight:300;color:var(--t-title)}.bn[data-hot] .bv b.n{color:var(--accent)}
 .bl{font:400 12px/17px var(--sans);color:var(--t-sec)}.bl b.n{color:var(--t-sec);font-weight:400}.bns .bl span{color:var(--t-title)}
 .hh.lb{grid-template-columns:1fr auto}
 .hero{position:relative;width:1140px;margin:8px 0 30px}.hu{position:absolute;left:0;top:0;width:240px;z-index:2;font:400 12px/17px var(--sans);color:var(--t-sec);padding-bottom:10px}.hero .map{position:absolute;top:0}

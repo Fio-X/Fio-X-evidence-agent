@@ -93,8 +93,10 @@ class Picture(unittest.TestCase):
         svg, w, h = draw(hero(EU_DATA))
         keep("thesis_eu.svg", svg, w, h)
         self.assertEqual(check_svg(svg), [])
-        # one accent only: the three numbers
-        self.assertEqual(svg.count("var(--accent)"), 3)
+        # one focal point: only the first claim's number is in the accent (knob accent_n, default 1); the others are in ink
+        self.assertEqual(svg.count("var(--accent)"), 1)
+        self.assertEqual(draw(hero(EU_DATA, accent_n=0))[0].count("var(--accent)"), 0)
+        self.assertEqual(draw(hero(EU_DATA, accent_n=3))[0].count("var(--accent)"), 3)
         nums = [ys(svg, c["num"]) for c in EU_DATA["claims"]]
         self.assertEqual(nums, sorted(nums))
         self.assertGreater(min(b - a for a, b in zip(nums, nums[1:])), 15 * 1.5 * 2)  # each block holds its lead and its body
@@ -105,7 +107,7 @@ class Picture(unittest.TestCase):
         svg, w, h = draw(hero(WB_DATA, width=640), WB_LEDGER)
         keep("thesis_wb.svg", svg, w, h)
         self.assertEqual(check_svg(svg), [])
-        self.assertEqual(svg.count("var(--accent)"), 2)
+        self.assertEqual(svg.count("var(--accent)"), 1)
         self.assertLess(h, draw(hero(EU_DATA, width=640))[2])
 
     def test_its_rules(self):

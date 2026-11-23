@@ -35,7 +35,8 @@ prod.KNOBS[NODE] = dict(
     answer_lines=(2, (1, 3, 1), "lines the answer may take; more refuses"),
     head_lines=(1, (1, 2, 1), "lines a lead may take; more refuses"),
     body_lines=(3, (1, 5, 1), "lines a body may take; more refuses"),
-    pad=(14, (6, 28, 1), "space above and below a claim's texts, inside its block, in px"))
+    pad=(14, (6, 28, 1), "space above and below a claim's texts, inside its block, in px"),
+    accent_n=(1, (0, 4, 1), "how many claims, from the first, have their number in the accent; the others are in ink (one focal point)"))
 
 
 class Frame:
@@ -80,7 +81,7 @@ def cl_thesis_claims(f, occ):
         # the number at the left, its cap height in the block's first line
         n_svg, n_txt = c["num"]
         ny = top + pad + nsz * 0.8
-        o.append(K.txt(B, 8, ny, nsz, "var(--accent)", n_svg, tw(n_txt, nsz), weight=700, tag=f"claim {i + 1} number")
+        o.append(K.txt(B, 8, ny, nsz, "var(--accent)" if i < f.k("accent_n") else "var(--t-title)", n_svg, tw(n_txt, nsz), weight=700, tag=f"claim {i + 1} number")
                  .replace("<text ", f'<text font-family="{K.SERIF}" ', 1))
         # the section it points to, right on the lead's first line; the lead in the room left of it
         hy = top + pad + size * 0.9
