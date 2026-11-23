@@ -161,7 +161,7 @@ class ColumnLeafLayers(unittest.TestCase):
     def test_a_leaf_layer_draws_from_the_heros_leaves_entry(self):
         K.setup(ROWS, LABELS, run.tables)
         layers, svgs = run.KINDS["column"]
-        self.assertEqual(list(layers), ["bignums", "bars", "section_head", "rankbar", "bubbles", "bubble_key", "leader_notes", "sankey", "stacked100", "line", "rank_lines", "dumbbell", "waterfall", "waffle", "stacked_area", "gap_axis", "winners_losers", "event_chain", "target_path", "pair_bars", "thesis_claims", "risk_notes", "small_multiples", "member_map", "change_dots", "rank_slope", "tile_map", "glyph_row", "dot_strip"])
+        self.assertEqual(list(layers), ["bignums", "bars", "section_head", "rankbar", "bubbles", "bubble_key", "leader_notes", "sankey", "stacked100", "line", "rank_lines", "dumbbell", "waterfall", "waffle", "stacked_area", "gap_axis", "winners_losers", "event_chain", "target_path", "pair_bars", "thesis_claims", "risk_notes", "small_multiples", "member_map", "change_dots", "rank_slope", "tile_map", "unit_grid", "glyph_row", "dot_strip"])
         self.assertTrue({"bars", "section_head", "rankbar", "bubbles", "bubble_key", "leader_notes"} <= set(svgs))
         draw_, reserve = layers["rankbar"]
         self.assertIsNone(reserve)
