@@ -146,7 +146,10 @@ pub enum Request<'a> {
 
 /// The illustration piece sets the second layer describes (runtime/leaves_js/pieces-<set>.json: its pieces, knobs and the
 /// tables it illustrates), in the order a page's tables are matched against them.
-const PIECE_SETS: &[&str] = &[include_str!("../runtime/leaves_js/pieces-energy.json")];
+const PIECE_SETS: &[&str] = &[
+    include_str!("../runtime/leaves_js/pieces-energy.json"),
+    include_str!("../runtime/leaves_js/pieces-people.json"),
+];
 
 /// The leaf pages' palette (scmp.shell puts it on every page): a strip strokes in its ink and second pen by name, so the page
 /// colours it and no second copy of a colour is kept. The second pen (the request's "accent", each piece's one marked part)
