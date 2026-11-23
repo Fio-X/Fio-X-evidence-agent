@@ -139,6 +139,39 @@ class Picture(unittest.TestCase):
         self.assertLess(last_plain, first_accent)   # drawn first: the plain lines
 
 
+def dense(n, y0, y1, accent, ref=None):
+    """n places with distinct values at both periods whose order differs (test-only values): more rows than the dense line."""
+    vals = {f"P{i:02d}": (100.0 - i * 3.1, 50.0 + ((i * 7) % n) * 2.3) for i in range(n)}
+    return build("t", vals, {c: f"地{c[1:]}" for c in vals}, y0, y1, accent, ref), vals
+
+
+class DenseChart(unittest.TestCase):
+    """More than DENSE rows: names for the marked rows and the top and the bottom of each column only; the other lines faint."""
+    CASES = {"twenty-seven": (27, "2005", "2024", ["P05", "P20"], "P13"), "twenty": (20, "2010", "2022", ["P03"], None)}
+
+    def test_the_middle_lines_fade_and_only_the_marked_and_the_column_ends_are_named(self):
+        for name, (n, y0, y1, acc, ref) in self.CASES.items():
+            shape, vals = dense(n, y0, y1, acc, ref)
+            svg = draw(shape)[0]
+            self.assertEqual(check_svg(svg), [], name)
+            r0, r1 = ranks(vals, 0), ranks(vals, 1)
+            want = set(acc) | ({ref} if ref else set()) | {c for c in vals if r0[c] in (1, n) or r1[c] in (1, n)}
+            named = {m.group(1) for m in re.finditer(r'data-src="fact:ot_[ab]_(p\d\d)"', svg)}
+            self.assertEqual({c.lower() for c in want}, named, name)
+            self.assertLess(len(named), n, name)
+            for c in vals:
+                op = float(re.search(rf'<line [^>]*stroke-opacity="([0-9.]+)"[^>]*data-code="{c}"', svg).group(1))
+                if c in want: self.assertGreaterEqual(op, 0.6, (name, c))
+                else: self.assertLessEqual(op, 0.2, (name, c))
+            for c in acc: self.assertRegex(svg, rf'<line [^>]*stroke="var\(--accent\)"[^>]*data-code="{c}"')
+
+    def test_a_chart_at_the_line_keeps_every_name(self):
+        shape, vals = dense(15, "2005", "2024", ["P02"])
+        svg = draw(shape)[0]
+        self.assertEqual(len(set(re.findall(r'data-src="fact:ot_a_(p\d\d)"', svg))), 15)
+        self.assertNotIn('stroke-opacity="0.18"', svg)
+
+
 class Rules(unittest.TestCase):
     def refuse(self, want, edit=None, **style):
         rows, data, names = eu()

@@ -34,6 +34,7 @@ FX, prod, Refused, esc, tw = K.FX, K.prod, K.Refused, K.esc, K.tw
 
 NODE = "rank_slope"
 ROWS_MIN = 4
+DENSE = 15   # more rows than this: only the marked rows and the two ends of each column keep a label, the other lines are faint
 prod.KNOBS[NODE] = dict(
     size=(12, (11, 16, 0.5), "label size px (11 is the page floor)"), title_size=(16, (12, 22, 1), "chart name size px"),
     width=(1140, (480, 1400, 10), "picture width in px"), row=(20, (16, 40, 1), "distance between two rows in px"),
@@ -95,7 +96,11 @@ class Frame:
         for key, vkey, slot in (("ra", "va", "sa"), ("rb", "vb", "sb")):
             for i, r in enumerate(sorted(f.rows, key=lambda r: (-r[vkey], r["code"]))): r[slot] = i
         size = f.size
-        f.lw = max(tw(r["name"][1], size) + tw(t, size) + 6 for r in f.rows for t in (r["at"][1], r["bt"][1]))   # a label: rank, a space, the name
+        n = len(f.rows)
+        f.dense = n > DENSE
+        for r in f.rows:   # a dense chart names only what the data marks and the top and the bottom of either column
+            r["lab"] = (not f.dense) or r["code"] in f.acc or r["code"] == f.ref or r["sa"] in (0, n - 1) or r["sb"] in (0, n - 1)
+        f.lw = max(tw(r["name"][1], size) + tw(t, size) + 6 for r in f.rows if r["lab"] for t in (r["at"][1], r["bt"][1]))   # a label: rank, a space, the name
         f.x0 = 8 + f.lw + 10 + k("dot_r")
         f.x1 = f.W - 8 - f.lw - 10 - k("dot_r")
         if f.x1 - f.x0 < 120: raise Refused("rank_slope: the board is too narrow for the labels and the lines (plot under 120 px)")
@@ -118,12 +123,16 @@ def cl_rank_slope(f, occ):
         hot, whole = r["code"] in f.acc, r["code"] == f.ref
         ya, yb = yo(r["sa"]), yo(r["sb"])
         ink = "var(--accent)" if hot else "var(--t-title)" if whole else "var(--t-sec)"
+        faint = f.dense and not (hot or whole or r["lab"])   # a middle line of a dense chart: a faint grey stroke
+        op = 1 if hot or whole else 0.18 if faint else 0.6
+        dim = ' fill-opacity="0.3"' if faint else ""
         o.append(f'<line x1="{f.x0:.1f}" y1="{ya:.1f}" x2="{f.x1:.1f}" y2="{yb:.1f}" stroke="{ink}" '
-                 f'stroke-width="{f.k("mark_w") if hot or whole else f.k("line_w")}" stroke-opacity="{1 if hot or whole else 0.6}" stroke-linecap="round" '
+                 f'stroke-width="{f.k("mark_w") if hot or whole else f.k("line_w")}" stroke-opacity="{op}" stroke-linecap="round" '
                  f'data-code="{esc(r["code"])}"/>')
-        o.append(f'<circle cx="{f.x0:.1f}" cy="{ya:.1f}" r="{r0}" fill="{ink}" data-code="{esc(r["code"])}"/>')
-        o.append(f'<circle cx="{f.x1:.1f}" cy="{yb:.1f}" r="{r0}" fill="{ink}" data-code="{esc(r["code"])}"/>')
+        o.append(f'<circle cx="{f.x0:.1f}" cy="{ya:.1f}" r="{r0}" fill="{ink}"{dim} data-code="{esc(r["code"])}"/>')
+        o.append(f'<circle cx="{f.x1:.1f}" cy="{yb:.1f}" r="{r0}" fill="{ink}"{dim} data-code="{esc(r["code"])}"/>')
     for r in f.rows:
+        if not r["lab"]: continue
         hot, whole = r["code"] in f.acc, r["code"] == f.ref
         fill = "var(--accent)" if hot else "var(--t-title)" if whole else "var(--t-body)"
         wt = 700 if hot or whole else 400
