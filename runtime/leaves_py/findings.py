@@ -1054,7 +1054,7 @@ def printed(q, x, fmt):
 def cell_src(q, key, fmt):
     """The ledger entry a winners_losers row's before/after cell prints: the fact itself when its format puts at most a percent sign
     after the number, else the fact's bare number (fact:<key>.n): that leaf reads a plain number there, and the words that carry the
-    unit (a pace's "个百分点") stay in the sentences and the change cell, which print the fact in its own format."""
+    unit (a pace's unit word) stay in the sentences and the change cell, which print the fact in its own format."""
     suffix = (q.defs.get(fmt, {}).get("suffix") or "").strip()
     return f"fact:{key}" if suffix in ("", "%") else f"fact:{key}.n"
 
