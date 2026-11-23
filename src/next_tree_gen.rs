@@ -151,6 +151,15 @@ fn sub(v: &J, page_in: &J) -> Result<J, String> {
     })
 }
 
+/// Whether a page input path (`$shape.whole`) is there and not empty: a path the page input lacks, or one that is no `$path`,
+/// is not held.
+fn path_held(path: &J, page_in: &J) -> bool {
+    st(path)
+        .strip_prefix('$')
+        .and_then(|p| p.split('.').try_fold(page_in, |x, k| x.get(k)))
+        .is_some_and(J::truthy)
+}
+
 /// The page's selects: the shape's countries and each pick rule the recipe names, as the registry's select declaration
 /// (`picks`), with the results given rather than computed (the claims' marks). A pick rule with no declaration refuses:
 /// the core could not recompute it.
@@ -1956,6 +1965,11 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
     // the layer's own selects (declares.selects), each only where its conditions hold over the page's selects
     let mut own = Vec::new();
     for s in d.g("selects").arr() {
+        // a select made only when a page input value is there and not empty (when_held: its path, as the finding's selects
+        // read it); the path is read before anything of the select is, so a page without it never reads it
+        if s.get("when_held").is_some_and(|p| !path_held(p, page_in)) {
+            continue;
+        }
         if core::conditions_hold(s.g("when"), &plain_holding(&got, page_in))? {
             // a given select's result is the flow's pick, as a pick rule's (selects_of)
             if let (Some("given"), Some(g)) = (s.g("kind").s(), s.get("given")) {
@@ -1965,7 +1979,7 @@ fn declared_j(layer: &str, page_in: &J, reg: &J) -> Result<J, String> {
                 &J::Obj(
                     s.obj()
                         .iter()
-                        .filter(|(k, _)| k != "when" && k != "given")
+                        .filter(|(k, _)| k != "when" && k != "given" && k != "when_held")
                         .cloned()
                         .collect(),
                 ),
@@ -6514,6 +6528,18 @@ mod tests {
         );
     }
 
+
+    /// A select with a when_held path is made only when the page input holds that path and it is not empty; a page without it
+    /// never reads the path (the whole's select on a page with no whole).
+    #[test]
+    fn a_path_is_held_only_when_the_page_input_has_it_and_it_is_not_empty() {
+        let p = |t: &str| core::parse(t).unwrap();
+        let page = p(r#"{"shape": {"place": "geo", "whole": "EU27_2020", "prev": ""}}"#);
+        assert!(path_held(&J::str("$shape.whole"), &page));
+        assert!(!path_held(&J::str("$shape.prev"), &page), "an empty value is not held");
+        assert!(!path_held(&J::str("$shape.target.place"), &page), "an absent path is not held");
+        assert!(!path_held(&J::str("shape.whole"), &page), "a text that is no $path is not held");
+    }
 
     /// A first_holding candidate that reads an optional coordinate the page input lacks (shape.whole, a key or a value) is
     /// left out of its list, by key or alone; one whose coordinate is there stays, and an absent path that is not optional
