@@ -61,6 +61,7 @@ import member_map
 import change_dots
 import rank_slope
 import tile_map
+import glyph_row
 import section_head
 import wbkit
 from words import word
@@ -237,7 +238,8 @@ LEAF_LAYERS = dict(section_head=leaf(section_head.Frame, section_head.cl_section
                    member_map=leaf(member_map.Frame, member_map.cl_member_map, "member_map"),
                    change_dots=leaf(change_dots.Frame, change_dots.cl_change_dots, "change_dots"),
                    rank_slope=leaf(rank_slope.Frame, rank_slope.cl_rank_slope, "rank_slope"),
-                   tile_map=leaf(tile_map.Frame, tile_map.cl_tile_map, "tile_map"))
+                   tile_map=leaf(tile_map.Frame, tile_map.cl_tile_map, "tile_map"),
+                   glyph_row=leaf(glyph_row.Frame, glyph_row.cl_glyph_row, "glyph_row"))
 LEAF_SVG = (section_head.SECTION_HEAD_SVG + rankbar.RANKBAR_SVG + bubbles.BUBBLES_SVG + leader_notes.LEADER_NOTES_SVG + sankey.SANKEY_SVG
             + stacked100.STACKED100_SVG + line_leaf.LINE_SVG + rank_lines.RANK_LINES_SVG
             + dumbbell.DUMBBELL_SVG + waterfall.WATERFALL_SVG + waffle.WAFFLE_SVG
@@ -253,7 +255,8 @@ LEAF_SVG = (section_head.SECTION_HEAD_SVG + rankbar.RANKBAR_SVG + bubbles.BUBBLE
             + member_map.MEMBER_MAP_SVG
             + change_dots.CHANGE_DOTS_SVG
             + rank_slope.RANK_SLOPE_SVG
-            + tile_map.TILE_MAP_SVG)
+            + tile_map.TILE_MAP_SVG
+            + glyph_row.GLYPH_ROW_SVG)
 
 
 # The page recipes this child draws: each one's layers (name -> (draw, reserve)) and which of them are svg.
@@ -273,7 +276,8 @@ STORY_SRC = dict(thesis_claims=(thesis_claims.Frame, thesis_claims.cl_thesis_cla
                  target_path=(target_path.Frame, target_path.cl_target_path), winners_losers=(winners_losers.Frame, winners_losers.cl_winners_losers),
                  pair_bars=(pair_bars.Frame, pair_bars.cl_pair_bars), small_multiples=(small_multiples.Frame, small_multiples.cl_small_multiples),
                  member_map=(member_map.Frame, member_map.cl_member_map), change_dots=(change_dots.Frame, change_dots.cl_change_dots),
-                 rank_slope=(rank_slope.Frame, rank_slope.cl_rank_slope), tile_map=(tile_map.Frame, tile_map.cl_tile_map))
+                 rank_slope=(rank_slope.Frame, rank_slope.cl_rank_slope), tile_map=(tile_map.Frame, tile_map.cl_tile_map),
+                 glyph_row=(glyph_row.Frame, glyph_row.cl_glyph_row))
 KINDS = dict(ring=(scmp.RING_LAYERS, scmp.RING_SVG), **{k: ({**column.COLUMN_LAYERS, **LEAF_LAYERS}, column.COLUMN_SVG + LEAF_SVG) for k in COLUMN_KINDS},
              scmp=(scmp.SCMP_LAYERS, scmp.SCMP_SVG),
              # a story page: its sections' leaves (story.py), each a layer of the recipe
