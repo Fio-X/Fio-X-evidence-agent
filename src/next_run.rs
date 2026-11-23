@@ -30264,6 +30264,10 @@ for line in sys.stdin:
             let lines = spec["source"].as_array().unwrap_or_else(|| panic!("{name}: the footer is one line: {}", spec["source"]));
             assert_eq!(lines.last().unwrap(), "欧盟法规第三条", "{name}: the law's line is last");
             assert_eq!(spec["tables"]["targets_ren"], json!({"id": "2023/2413"}), "{name}");
+            // the notes over the whole and the target are drawn: their facts name codes a select holds (the page that held
+            // the whole once stopped in draw_nodes, "fact filter geo=EU27_2020: no select holds the code")
+            let (html, ..) = group_published_by(fill.clone(), name, "whole and target notes");
+            assert!(html.contains(r#"data-layer="leader_notes""#), "{name}");
             // no target registered: the table's own line, no law line, no clause table
             REGISTERED_TARGETS.with(|t| t.borrow_mut().clear());
             let (fill, _) = group_request_by("各国可再生能源占比", main(), json!([]), (name, chart));
