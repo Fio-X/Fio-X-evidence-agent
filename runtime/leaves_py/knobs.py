@@ -39,6 +39,7 @@ import rank_slope
 import tile_map
 import unit_grid
 import glyph_row
+import dot_strip
 import story
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "knobs.json")
@@ -139,7 +140,7 @@ EATS = dict(map=["hub_origin", "one_unit"], ring=["monthly_companion"], callouts
             dumbbell=["annual", "years_2", "one_place", "one_unit", "two_ends"],
             waterfall=["annual", "one_unit", "composition_groups"],
             waffle=["annual", "one_unit", "composition_groups"], stacked_area=["one_freq", "one_unit", "composition_groups"],
-            gap_axis=["annual", "one_unit"], winners_losers=["one_unit"], event_chain=[], target_path=["annual", "one_unit"], pair_bars=["one_unit"], thesis_claims=[], risk_notes=[], small_multiples=["annual", "one_unit"], member_map=["annual", "one_unit"], change_dots=["annual", "one_unit"], rank_slope=["annual", "one_unit"], tile_map=["annual", "one_unit"], unit_grid=["annual", "one_unit"], glyph_row=["one_unit"])
+            gap_axis=["annual", "one_unit"], winners_losers=["one_unit"], event_chain=[], target_path=["annual", "one_unit"], pair_bars=["one_unit"], thesis_claims=[], risk_notes=[], small_multiples=["annual", "one_unit"], member_map=["annual", "one_unit"], change_dots=["annual", "one_unit"], rank_slope=["annual", "one_unit"], tile_map=["annual", "one_unit"], unit_grid=["annual", "one_unit"], glyph_row=["one_unit"], dot_strip=["annual", "one_unit"])
 # The nodes whose dropped items are short notes (a note with no free place, beside the picture, not a mark of it): a page
 # goes on without some of them, each kept in its ledger, when no more than a third of the layer's notes are dropped and none
 # is the note of a place its headline names (user 11-05 10:2x (b)); a dropped item of any other node (a label on the main
