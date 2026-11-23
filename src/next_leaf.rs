@@ -2987,6 +2987,32 @@ mod tests {
         assert!(raw.iter().any(|f| f.contains("2021")), "{raw:?}");
     }
 
+    /// st4 11-23: the type check scrolls a text into view before it reads what is under the text's centre, and a centre in the
+    /// window's last pixel row (an earlier text's scroll left it there) read nothing (elementsFromPoint gives none there): the
+    /// text was counted unmeasured. The page's script, at load, puts text A's centre at `a` (a whole number less half the
+    /// window: the check's scroll to A's centre lands on a whole pixel) below the window and text B's at `a + innerHeight / 2 -
+    /// 0.1`, so once A is scrolled to the window's middle B's centre is 0.1 px above the window's bottom edge. With the 2 px
+    /// margin B is scrolled into view too and both are measured, dark on the page's white.
+    #[test]
+    fn the_bake_measures_a_text_whose_centre_falls_in_the_windows_last_row() {
+        let real = Runner::python(Path::new("runtime/leaves_py/bake.py"));
+        let text = |id: &str, words: &str| {
+            format!("<div id=\"{id}\" style=\"position:absolute;left:100px;top:0px;font-size:16px;line-height:20px;color:#222\">{words}</div>")
+        };
+        let page = format!(
+            "<!doctype html><meta charset=\"utf-8\"><body style=\"margin:0\"><div class=\"pg\" style=\"position:relative;height:6000px\">{}{}</div>\
+             <script>(()=>{{const ih=innerHeight;\
+             const mid=(e)=>{{const g=document.createRange();g.selectNodeContents(e.firstChild);const r=g.getBoundingClientRect();return r.top+r.height/2+scrollY;}};\
+             const put=(id,want)=>{{const e=document.getElementById(id);e.style.top=(parseFloat(e.style.top)+want-mid(e))+'px';}};\
+             const a=Math.max(1000,ih+200)+ih/2-Math.floor(ih/2);put('a',a);put('b',a+ih/2-0.1);}})()</script></body>",
+            text("a", "甲地的文字"),
+            text("b", "乙地的文字")
+        );
+        let baked = bake(&real, &page, "", 1440).unwrap();
+        let typed = baked.type_measured.as_ref().expect("the bake's type");
+        assert_eq!((&typed["texts"], &typed["unmeasured"]), (&json!(2), &json!(0)), "{typed}");
+    }
+
     #[test]
     fn the_bake_refuses_a_text_over_a_text_out_of_its_svg_or_over_a_note_and_passes_a_clean_page() {
         let real = Runner::python(Path::new("runtime/leaves_py/bake.py"));
