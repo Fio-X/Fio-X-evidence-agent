@@ -21,7 +21,8 @@ hero.data (the data shape this leaf eats; on a column frame page, the hero's lea
 segs: as wbkit.segs reads them; series src: a cell of the request's rows (geometry only); ledger src: a row {"src", "text"}.
 needs I4 facts: ratio_<part>_<a>_<b> (the first place's value over the second's, per row: the leaf computes no ratio).
 needs new wording: the times word after a ratio and every row's name come from the request (ratio_unit, label).
-Placement keeps texts off the bars by construction: the row names in a column left of the tracks, the place names over
+Placement keeps texts off the bars by construction: the row names in a column left of the tracks (or, where that column
+would leave a track under 120 px, each row's name on its own line or two over its tracks), the place names over
 their columns, each value wholly inside its track (after its bar) or wholly inside its bar, the ratios in a column right
 of the tracks; every text box is checked in wbkit.Boxes (outside the picture or over another refuses).
 Refuses: not two distinct places, no rows, a row twice, a row whose cell the request lacks or whose cells are not both at
@@ -103,6 +104,13 @@ class Frame:
         f.ratio_w = f.ratio_w + 14 if f.ratio_w else 0
         f.x0 = 8 + f.label_w
         f.track = (f.W - 8 - f.x0 - k("gap") - f.ratio_w) / 2
+        # row names too long to stand left of the tracks (a measure's whole name on a half-width board): each row's name takes
+        # its own line (two at most) over its tracks, which then start at the board's left
+        f.stack = f.track < 120
+        if f.stack:
+            f.x0 = 8
+            f.track = (f.W - 16 - k("gap") - f.ratio_w) / 2
+            f.label_lines = [len(K.lay(K.segs(r["label"], f"row {r['code']} label"), size, f.W - 16)) for r in f.rows]
         if f.track < 120: raise Refused("pair_bars: the board is too narrow for the names, two tracks and the ratios (a track under 120 px)")
         f.xs = (f.x0, f.x0 + f.track + k("gap"))
         f.H = 0
@@ -123,10 +131,15 @@ def cl_pair_bars(f, occ):
         o.append(K.txt(B, x, y, hs, "var(--t-title)", nm_svg, tw(nm, hs), weight=700, tag=f"place {p['code']}"))
     top = y + hs * 0.6
     pitch = f.k("row")
+    lh = size * 1.3   # a stacked row name's line
     for i, r in enumerate(f.rows):
+        if f.stack:   # the row's name on its own lines over its tracks
+            o.append(K.words(B, r["label"], f"label {r['code']}", 8, top + pitch * i + size, size, "var(--t-body)", max_w=W - 16, max_lines=2)[0])
+            top += f.label_lines[i] * lh
         ty = top + pitch * i + (pitch - bh) / 2
         base = ty + bh * 0.5 + size * 0.35
-        o.append(K.words(B, r["label"], f"label {r['code']}", f.x0 - 14, base, size, "var(--t-body)", anchor="end")[0])
+        if not f.stack:
+            o.append(K.words(B, r["label"], f"label {r['code']}", f.x0 - 14, base, size, "var(--t-body)", anchor="end")[0])
         for x, v, (v_svg, v_txt), side in zip(f.xs, (r["a"], r["b"]), (r["at"], r["bt"]), "ab"):
             fw = f.track * v / f.full
             vw = tw(v_txt, size)
