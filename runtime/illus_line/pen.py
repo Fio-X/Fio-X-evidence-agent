@@ -1,8 +1,13 @@
 """The pen of the line hero (pure Python, no numpy): wobbly ink strokes with a tapering width, a pale paper fill, light hatching.
 Same language as the hero's brush (runtime/illus_hero/brush.py: stroke, ring_strokes, hatch) and the page-bottom strip's rough hand,
 written without numpy so it runs in the plain interpreter. Seeded: the same seed draws the same picture. All numbers come from line.json (pen)."""
+import json
 import math
+import os
 import random
+
+COL = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "line.json")))["colour"]
+ACC = "acc"          # the fill name of the accent: the lit units' bodies and the mark
 
 
 def _f(v): return f"{v:.1f}"
@@ -57,7 +62,7 @@ class Pen:
     def line(self, pts, w, alpha=1.0, amp=None):
         p = self.wobble(pts, amp)
         d = self.ink_path(p, w)
-        return f'<path d="{d}" fill="{self.ink}"{"" if alpha >= 1 else f" fill-opacity=\"{alpha:.2f}\""}/>' if d else ""
+        return f'<path d="{d}" fill="{self.ink}"{"" if alpha >= 1 else f" opacity=\"{alpha:.2f}\""}/>' if d else ""
 
     def ring(self, pts, w):
         """A closed outline drawn as one stroke that overshoots its start, and a fainter second pass from another corner."""
@@ -71,8 +76,16 @@ class Pen:
         return "".join(out)
 
     def fill_path(self, pts, fill, shift=(0.0, 0.0)):
+        """A closed pale or accent shape. fill: ACC (the page accent) or a tint name of line.json (the page paper under it, the ink over it at the
+        tint's opacity), so the colours are the page's variables and nothing behind shows through."""
         p = self.wobble(pts + [pts[0]], self.P["wobble"] * 0.8)
-        return f'<path d="M{"L".join(f"{_f(x + shift[0])},{_f(y + shift[1])}" for x, y in p)}Z" fill="{fill}"/>'
+        return self.paint("M" + "L".join(f"{_f(x + shift[0])},{_f(y + shift[1])}" for x, y in p) + "Z", fill)
+
+    def paint(self, d, fill):
+        if fill == ACC: return f'<path d="{d}" fill="{COL["accent"]}"/>'
+        if fill == "ink": return f'<path d="{d}" fill="{self.ink}"/>'
+        a = COL["tint"][fill]
+        return f'<path d="{d}" fill="{COL["bg"]}"/>' + (f'<path d="{d}" fill="{self.ink}" opacity="{a:.2f}"/>' if a > 0 else "")
 
     def hatch(self, poly, angle, gap, w, alpha):
         """Parallel strokes clipped to a convex polygon, each a little off in length, angle and gap."""

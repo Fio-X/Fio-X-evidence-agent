@@ -21,7 +21,7 @@ COL = REG["colour"]
 def _resolve(r):
     sys.path.insert(0, os.path.join(HERE, "..", "illus_hero"))
     import run_hero as R
-    return R.resolve(r)
+    return R.resolve(r, renderer="line")
 
 
 def catmull(pts, n=8):
@@ -35,11 +35,11 @@ def catmull(pts, n=8):
 
 def hills(parts, seed):
     G = REG["ground"]; ink = COL["ink"]
-    for name, fill, hatch in (("ridge", COL["hill"], True), ("ridge2", COL["paper"], False)):
+    for name, fill, hatch in (("ridge", "hill", True), ("ridge2", "paper", False)):
         pn = PN.Pen(seed + (1 if hatch else 2), REG["pen"], ink)
         pts = catmull([(x * CW, y * CH) for x, y in G[name]])
         poly = pts + [(CW, CH), (0, CH)]
-        parts.append(f'<path d="M{"L".join(f"{x:.1f},{y:.1f}" for x, y in poly)}Z" fill="{fill}"/>')
+        parts.append(pn.paint(f'M{"L".join(f"{x:.1f},{y:.1f}" for x, y in poly)}Z', fill))
         parts.append(pn.line(pts, 1.5, 0.8, amp=1.0))
         if hatch:      # light slanted ticks under the ridge, longer where the ground is higher
             x = 14.0
@@ -57,10 +57,15 @@ def ground_line(parts, pn, x0, x1, y, depth_k=1.0, ticks=True):
             x += G["tick_gap"] * (1 + pn.r.uniform(-0.3, 0.3))
 
 
-def draw_unit(it, cx, gy, h, lit, acc, seed, idx):
+def woh_of(fn, kind):
+    """The unit's width over its height in a layout: its own, or the one the registry gives for that layout (a dam in a ranking is a narrower cut)."""
+    S = REG["units"][fn]; return S.get(f"{kind}_w_over_h", S["w_over_h"])
+
+
+def draw_unit(it, cx, gy, h, lit, acc, seed, idx, kind=None):
     S = REG["units"][it["fn"]]
     pn = PN.Pen(seed * 131 + idx, REG["pen"], COL["ink"])
-    u = UN.U(pn, REG, cx, gy, h, lit, acc, idx)
+    u = UN.U(pn, REG, cx, gy, h, lit, acc, idx, woh_of(it["fn"], kind))
     UN.DRAW[it["fn"]](u, S)
     return u
 
@@ -76,14 +81,14 @@ def omission(parts, pn, cx, gy, hmax):
     O = REG["omission"]; y = gy - hmax * O["y"]
     for k in (-1, 0, 1):
         p = [(cx + k * O["r"] * O["gap"] + O["r"] * math.cos(2 * math.pi * j / 10), y + O["r"] * math.sin(2 * math.pi * j / 10)) for j in range(10)]
-        parts.append(pn.fill_path(p, COL["ink"])); parts.append(pn.ring(p, 1.2))
+        parts.append(pn.fill_path(p, "ink")); parts.append(pn.ring(p, 1.2))
 
 
 def flag(parts, pn, x, gy, acc_unused=None):
     F = REG["kinds"]["path"]; h = F["flag_h"] * CH
     parts.append(pn.line([(x, gy), (x, gy - h)], 2.2, 1.0, amp=0.5))
     p = [(x, gy - h), (x + 0.34 * h, gy - h * 0.9), (x + 0.30 * h, gy - h * 0.8), (x + 0.36 * h, gy - h * 0.7), (x, gy - h * 0.62)]
-    parts.append(pn.fill_path(p, COL["unit_paper"])); parts.append(pn.ring(p, 1.8))
+    parts.append(pn.fill_path(p, "unit")); parts.append(pn.ring(p, 1.8))
     parts.append(pn.line([(x - 12, gy), (x + 12, gy)], 2.0, 1.0, amp=0.2))
 
 
@@ -94,7 +99,7 @@ def place_single(units, kind, composition, gy):
     mx = {}
     for i in units: mx[i["fn"]] = max(mx.get(i["fn"], 0), i["args"]["size"])
     rel = [i["args"]["size"] / mx[i["fn"]] for i in units]
-    woh = [REG["units"][i["fn"]]["w_over_h"] for i in units]
+    woh = [woh_of(i["fn"], kind) for i in units]
     slot = K.get("slot", 0) if composition.get("omitted") else 0
     H = (x1 - x0 - slot) / sum(w * r * (1 + K["gap"]) for w, r in zip(woh, rel))
     H = min(H, K["top_frac"] * CH, gy - 36)
@@ -133,14 +138,13 @@ def place_rows(units, kind, gy_front_k):
     return out
 
 
-def draw(resolved, seed=7, paper=True):
+def draw(resolved, seed=7, annotate=False):
     t0 = time.time()
     if isinstance(resolved, dict): resolved = _resolve(resolved)
-    scene, pal, acc, c = resolved
+    scene, pal, _, c = resolved; acc = PN.ACC          # the lit units take the page accent whatever hex the 3D path was given
     comp = scene["composition"]; kind = scene["scene"].split(".")[1]
     items = scene["items"]; units = [i for i in items if i.get("fn") in UN.DRAW]
     parts = []
-    if paper: parts.append(f'<rect width="{CW}" height="{CH}" fill="{COL["paper"]}"/>')
     hills(parts, seed)
     placed = []          # (item, cx, gy, h, row)
     gen = PN.Pen(seed + 3, REG["pen"], COL["ink"]); omitted_at = None; flag_x = None
@@ -172,7 +176,7 @@ def draw(resolved, seed=7, paper=True):
                 pn = PN.Pen(seed + 40 + side, REG["pen"], COL["ink"]); t = K["slab_thick"]
                 top = [(xl + sk, yb), (xr - sk, yb), (xr, yf), (xl, yf)]
                 front = [(xl, yf), (xr, yf), (xr, yf + t), (xl, yf + t)]
-                parts.append(pn.fill_path(top, COL["hill"])); parts.append(pn.fill_path(front, COL["unit_paper"]))
+                parts.append(pn.fill_path(top, "hill")); parts.append(pn.fill_path(front, "unit"))
                 parts.append(pn.ring(top, 1.6)); parts.append(pn.ring(front, 1.4)); parts.append(pn.hatch(front, 60, 5, 0.8, 0.5))
         else:
             for ri in sorted({p[4] for p in placed}, reverse=True):
@@ -183,8 +187,8 @@ def draw(resolved, seed=7, paper=True):
     marks = []
     for n, k in enumerate(order):
         it, cx, gy, h, ri = placed[k]; lit = bool(it["args"]["lit"])
-        u = draw_unit(it, cx, gy, h, lit, acc, seed, n)
-        parts.append(f'<g class="unit {"lit" if lit else "plain"}" data-fn="{it["fn"]}">' + "".join(u.parts) + "</g>")
+        u = draw_unit(it, cx, gy, h, lit, acc, seed, n, kind)
+        parts.append((f'<g class="unit {"lit" if lit else "plain"}" data-fn="{it["fn"]}">' if annotate else "<g>") + "".join(u.parts) + "</g>")
         out_units.append(dict(fn=it["fn"], lit=lit, row=ri, bbox=[round(v, 1) for v in u.box], ground=round(gy, 1), h=round(h, 1)))
         if "mark" in it: marks.append((cx, u.box[1]))
     for cx, top in marks: mark(parts, PN.Pen(seed + 9, REG["pen"], COL["ink"]), cx, top, acc)

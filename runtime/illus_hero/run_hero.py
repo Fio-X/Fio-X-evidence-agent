@@ -114,8 +114,8 @@ def mark_of(it, args):
     return {"at": list(at), "z": float(eval(str(m["z"]), {"__builtins__": {}}, dict(args))), "rise": m["rise"]}
 
 
-def resolve(inp):
-    if inp.get("subject") is not None: return compose_subject(inp)
+def resolve(inp, renderer="3d"):
+    if inp.get("subject") is not None: return compose_subject(inp, renderer)
     tags, c, pal, acc, over = validate(inp)
     name, sc, _ = pick_scene(inp, tags)
     pal = ground_palette(inp, c, pal, sc)
@@ -236,13 +236,13 @@ def grid(units, ordered, lit, x0, x1, y0, size_of, dz=-0.3, mark_last=True, rows
 def order_members(ms, lit): return sorted(ms, key=lambda m: (m["code"] not in lit, -m["value"], m["code"]))   # the lit ones first, so the count reads as a run
 
 
-def layout_tally(units, subject, topic):
+def layout_tally(units, subject, topic, renderer="3d"):
     L = TOPICS["layout"]; ms = members_of(subject); lit = lit_codes(subject)
     items, rows, cols = grid(units, order_members(ms, lit), lit, *L["x"], L["y0"], lambda step: min(max(step / 22.0, L["min_size"]), L["max_size"]), camera=TOPICS["cameras"]["tally"])
     return items, dict(layout=f"tally-{rows}x{cols}", objects=len(ms), lit=len(lit), omitted=0)
 
 
-def layout_groups(units, subject, topic):
+def layout_groups(units, subject, topic, renderer="3d"):
     """Two groups side by side, each on its own slab, each its own members and its own lit count (the same rule over each group's rows,
     each declared count recomputed and refused like the single tally's); the groups' names are the caller's data, echoed back."""
     L = TOPICS["layout"]; G = L["groups"]; gs = subject.get("groups")
@@ -266,7 +266,7 @@ def layout_groups(units, subject, topic):
     return items, dict(layout="groups-" + "+".join(f"{o['lit']}of{o['total']}" for o in out), objects=sum(o["total"] for o in out), lit=sum(o["lit"] for o in out), groups=out, omitted=0)
 
 
-def layout_pair(units, subject, topic=None):
+def layout_pair(units, subject, topic=None, renderer="3d"):
     unit = units[0]
     L = TOPICS["layout"]["pair"]; ms = members_of(subject); val = {m["code"]: m["value"] for m in ms}
     order = sorted(val, key=lambda c: (-val[c], c)); hi, lo = order[0], order[-1]
@@ -301,15 +301,15 @@ def row_slots(U, ratios, x0, x1, cap, floor, gap_after=None, gap_w=0.0):
     return sizes, xs, gc
 
 
-def layout_rank(units, subject, topic=None):
+def layout_rank(units, subject, topic=None, renderer="3d"):
     """The members by value, each unit as large as its value (against the highest); a unit that is wide shows only the ends of the ranking
-    (rank_max of them: the top and the bottom half), and the place where the middle is left out holds the omission mark; `omitted` is the
+    (rank_ends of them for the renderer: the head and the tail), and the place where the middle is left out holds the omission mark; `omitted` is the
     number of members the request had and the picture does not draw (the page prints its own caption from it)."""
     unit = units[0]
     L = TOPICS["layout"]["rank"]; ms = members_of(subject); val = {m["code"]: m["value"] for m in ms}
     order = sorted(val, key=lambda c: (-val[c], c))
-    U = TOPICS["units"][unit]; mx = U.get("rank_max", L["max"]); cut = None
-    if len(order) > mx: cut = mx // 2; order = order[:cut] + order[-(mx - mx // 2):]
+    U = TOPICS["units"][unit]; head, tail = U.get("rank_ends", L["ends"])[renderer]; cut = None
+    if len(order) > head + tail: cut = head; order = order[:head] + order[-tail:]
     omitted = len(ms) - len(order); top = val[order[0]]
     if top <= 0: refuse("subject: a ranking needs a highest above 0")
     x0, x1 = L.get("x", TOPICS["layout"]["x"]); O = TOPICS["omitted"]
@@ -322,7 +322,7 @@ def layout_rank(units, subject, topic=None):
     return items, dict(layout=f"rank-{len(order)}", objects=len(order), lit=1, omitted=omitted)
 
 
-def layout_path(units, subject, topic=None):
+def layout_path(units, subject, topic=None, renderer="3d"):
     unit = units[0]
     L = TOPICS["layout"]["path"]; p = subject.get("path") or {}
     a, b, c = (number(p.get(k), f"subject.path.{k}") for k in ("from", "now", "goal"))
@@ -336,7 +336,7 @@ def layout_path(units, subject, topic=None):
     return items, dict(layout=f"path-{passed}of{k}", objects=k, lit=passed, omitted=0)
 
 
-def layout_series(units, subject, topic=None):
+def layout_series(units, subject, topic=None, renderer="3d"):
     unit = units[0]
     """The years in order, each unit as tall as its year's value; the years from the split year on are lit (the declared count is refused
     when it is not the number of those years)."""
@@ -375,7 +375,7 @@ def pick_units(topic, family, sub, kind):
     return [ob["measure"][key]]
 
 
-def compose_subject(inp):
+def compose_subject(inp, renderer="3d"):
     """(scene, ground, accent, composition knobs) of a request with a subject: the topic (family), the layout (the lead angle's kind),
     the units placed from the finding's rows. Same signature of a composition (scene id, objects, lit, layout) for the same input."""
     sub = inp["subject"]
@@ -385,7 +385,7 @@ def compose_subject(inp):
     if "groups" in sub and kind in ("tally", "pair"): kind = "groups"      # a finding about groups draws the groups
     if kind not in LAYOUTS: refuse(f"subject: the layout {kind!r} (lead {lead!r}) is none of {'|'.join(LAYOUTS)}")
     units = pick_units(topic, inp.get("family"), sub, kind)
-    items, comp = LAYOUTS[kind](units, sub, topic); comp["units"] = sorted({i["fn"] for i in items if i.get("fn", "") in units})
+    items, comp = LAYOUTS[kind](units, sub, topic, renderer); comp["units"] = sorted({i["fn"] for i in items if i.get("fn", "") in units})
     items += [{"part": f["fn"], "kind": "at_ground", "fn": f["fn"], "at": list(f["at"]), "dz": -0.3, "args": dict(f.get("args", {}))} for f in sc["filler"]]
     ck = REG["composition_knobs"]; comp_in = dict(inp.get("composition", {}))
     for k in comp_in:
@@ -460,13 +460,40 @@ def build(inp, work):
     return out, float(width), h, secs, scene["scene"], scene.get("composition")
 
 
+def renderer_of(inp):
+    """The drawing a request gets by default: the registry's scenes.<topic>.renderer of the request's topic (line or 3d); a request without a subject
+    (the tags-and-hero scene) is the 3D path's own."""
+    if inp.get("subject") is None: return "3d"
+    return TOPICS["scenes"][topic_of(inp.get("family"))]["renderer"]
+
+
+def build_line(inp):
+    """The same reply the 3D path gives, drawn by runtime/illus_line (pure SVG in the page's colour variables, no Blender). The composition is
+    resolve's own (renderer 'line': the ranking's head and tail of the registry); a request the line drawing cannot draw is refused, never sent to 3D."""
+    t0 = time.time(); width = inp.get("width")
+    if isinstance(width, float) and width.is_integer(): width = int(width)
+    if isinstance(width, bool) or not isinstance(width, int) or not WIDTH[0] <= width <= WIDTH[1]: refuse(f"width: {width!r} is not a whole number on {WIDTH[0]}..{WIDTH[1]}")
+    resolved = resolve(inp, renderer="line")
+    sys.path.insert(0, os.path.join(HERE, "..", "illus_line"))
+    import draw as LD
+    kind = resolved[0]["scene"].split(".")[1]
+    if kind not in LD.REG["kinds"]: refuse(f"line: the {kind!r} layout is not drawn by the line renderer")
+    miss = sorted({i["fn"] for i in resolved[0]["items"] if "lit" in i.get("args", {}) and i["fn"] not in LD.UN.DRAW})
+    if miss: refuse(f"line: no line drawing for {', '.join(miss)}")
+    d = LD.draw(resolved)
+    k = width / float(LD.CW); h = round(LD.CH * k, 2)
+    return f'<g transform="scale({k:.5f})">{d["inner"]}</g>', float(width), h, {"line": d["seconds"], "total": round(time.time() - t0, 2)}, d["scene"], d["composition"]
+
+
 def serve():
     line = sys.stdin.readline()
     try:
         inp = json.loads(line)
         if not isinstance(inp, dict): raise Refused("the request is not an object")
-        with tempfile.TemporaryDirectory(prefix="illus-hero-") as work:
-            svg, w, h, secs, name, comp = build(inp, work)
+        if renderer_of(inp) == "line": svg, w, h, secs, name, comp = build_line(inp)
+        else:
+            with tempfile.TemporaryDirectory(prefix="illus-hero-") as work:
+                svg, w, h, secs, name, comp = build(inp, work)
         reply = {"svg": svg, "w": w, "h": h, "dropped": [], "scene": name, "seconds": secs, **({"composition": comp, "omitted": comp.get("omitted", 0), "omitted_label_key": TOPICS["omitted"]["label_key"]} if comp else {})}
     except Refused as e: reply = {"refused": [str(e)]}
     except Unavailable as e: reply = {"unavailable": str(e)}

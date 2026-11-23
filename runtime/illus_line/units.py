@@ -1,17 +1,18 @@
 """The five unit pictograms of the line hero: wind turbine, dam (a cross-section: lake, stepped wall with a crest road, spill, pool), solar panel,
 pylon and biomass pile. Each is drawn in the unit's own coordinates (x right, y up, both in fractions of its height h, the origin on the ground at
-the unit's centre) from the proportions of line.json. A lit unit takes the accent as its body fill, an unlit one the pale paper; the lines are the ink
+the unit's centre) from the proportions of line.json. A lit unit takes the page accent as its body fill (the one accent colour), an unlit one the pale paper; the lines are the ink
 either way. Every point that is drawn also widens the unit's bounding box, so the geometry the tests read is the drawn geometry."""
 import math
 
 
 class U:
     """One unit being drawn: the pen, the place (cx, gy: the ground point in pixels), the height in pixels, lit or not."""
-    def __init__(self, pen, reg, cx, gy, h, lit, acc, seed_i):
+    def __init__(self, pen, reg, cx, gy, h, lit, acc, seed_i, woh=None, fn=None):
+        self.woh = woh
         self.pen = pen; self.reg = reg; self.cx = cx; self.gy = gy; self.h = h; self.lit = lit; self.acc = acc; self.i = seed_i
         self.parts = []; self.box = [1e9, 1e9, -1e9, -1e9]
         lo, hi, k = reg["pen"]["main"]; self.w = min(max(h * k, lo), hi); self.wd = self.w * reg["pen"]["detail"]
-        self.paper = reg["colour"]["unit_paper"]; self.shift = reg["colour"]["fill_shift"] if lit else (0.0, 0.0)
+        self.paper = "unit"; self.shift = reg["colour"]["fill_shift"] if lit else (0.0, 0.0)
 
     def P(self, x, y): return (self.cx + x * self.h, self.gy - y * self.h)
     def pts(self, fr): return [self.P(x, y) for x, y in fr]
@@ -131,7 +132,7 @@ def biomass(u, S):
 def dam(u, S):
     """A cross-section of a concrete dam seen from the side: the lake on the left (hatched water, wave lines on its surface), the wall with a sloped back face,
     block joints and a road with a railing and a lamp along its crest, water leaping over the crest in arcs into a pool on the right. The wall is the lit body."""
-    x_l = -0.5 * u.reg["units"]["dam_unit"]["w_over_h"]; x_r = -x_l; W = x_r - x_l
+    x_l = -0.5 * (u.woh or S["w_over_h"]); x_r = -x_l; W = x_r - x_l
     up = x_l + S["lake"] * W; base = S["wall_base"] * W; cw = S["crest_w"] * W
     ch = S["crest_h"]; wl = S["water_level"]
     u.stroke([(x_l, wl + 0.08), (x_l + 0.05, wl + 0.05), (x_l + 0.10, wl + 0.01), (x_l + 0.20, 0.45), (up - 0.16, 0.14), (up, 0.0)], u.wd, amp=0.4)
