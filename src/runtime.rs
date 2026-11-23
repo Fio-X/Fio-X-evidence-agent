@@ -662,6 +662,18 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
             include_str!("../runtime/leaves_py/member_map.py"),
         ),
         (
+            runtime_dir.join("leaves_py/change_dots.py"),
+            include_str!("../runtime/leaves_py/change_dots.py"),
+        ),
+        (
+            runtime_dir.join("leaves_py/rank_slope.py"),
+            include_str!("../runtime/leaves_py/rank_slope.py"),
+        ),
+        (
+            runtime_dir.join("leaves_py/tile_map.py"),
+            include_str!("../runtime/leaves_py/tile_map.py"),
+        ),
+        (
             runtime_dir.join("leaves_py/target_path.py"),
             include_str!("../runtime/leaves_py/target_path.py"),
         ),

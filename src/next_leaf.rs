@@ -3522,8 +3522,8 @@ mod tests {
         // bars (9: its highlight a list of codes), the line leaf (8: its highlight one code), the rank lines (10: its highlight
         // one code), the dumbbell (7: its highlight one code), the waterfall (7: its highlight one code), the waffle (7: its
         // highlight one code), the stacked area (5: its highlight one code), and the page-story leaves last (gap axis 7, winners and
-        // losers 6, event chain 9, target path 7, pair bars 8, thesis claims 9, risk notes 6, small multiples 10, member map and the story layout 15 between them)
-        assert_eq!((t.nodes.len(), knobs), (52, 282));
+        // losers 6, event chain 9, target path 7, pair bars 8, thesis claims 9, risk notes 6, small multiples 10, member map and the story layout 15 between them, change dots 7, rank slope 7 and tile map 6 last)
+        assert_eq!((t.nodes.len(), knobs), (55, 302));
         let reserve: Vec<_> = t
             .nodes
             .iter()
@@ -3597,7 +3597,10 @@ mod tests {
                 "thesis_claims",
                 "risk_notes",
                 "small_multiples",
-                "member_map"
+                "member_map",
+                "change_dots",
+                "rank_slope",
+                "tile_map"
             ]
         );
         // a change page is a column page whose bars are the places' change (bars.measure); a flow page one whose main layer

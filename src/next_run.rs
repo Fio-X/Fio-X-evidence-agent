@@ -10762,26 +10762,36 @@ mod tests {
     /// sourced and inside their panels. The gate the story leaves are held to; the python tests do not run layer 1's checks.
     #[test]
     fn a_story_page_is_drawn_by_the_real_child_and_published() {
-        story_page_through_the_gate(None);
+        story_page_through_the_gate(None, false);
     }
 
     /// st1 11-23 run 3: the model picked need, path, rank and ends; the target path's first time on a page. The same page checks.
     #[test]
     fn a_story_page_with_the_path_picked_is_drawn_by_the_real_child_and_published() {
-        story_page_through_the_gate(Some(&["need", "path", "rank", "ends"]));
+        story_page_through_the_gate(Some(&["need", "path", "rank", "ends"]), false);
     }
 
-    /// The page of the two tests above: `told` are the findings the model picked, none: the first STORY_TOLD candidates.
-    fn story_page_through_the_gate(told: Option<&[&str]>) {
+    /// I33: the dumbbell, the rank slope and the tile map (movers, overtake, tiles), each leaf's first time through the gate, on a
+    /// shape of twelve members and the whole (the tile map wants ten members with a point). The same page checks.
+    #[test]
+    fn a_story_page_with_the_three_new_charts_picked_is_drawn_by_the_real_child_and_published() {
+        story_page_through_the_gate(Some(&["movers", "overtake", "tiles"]), true);
+    }
+
+    /// The page of the tests above: `told` are the findings the model picked, none: the first STORY_TOLD candidates; `wide` adds four
+    /// members to the shape's eight (twelve and the whole).
+    fn story_page_through_the_gate(told: Option<&[&str]>, wide: bool) {
         let years: Vec<String> = (2005..=2024).map(|y| y.to_string()).collect();
         let years: Vec<&str> = years.iter().map(String::as_str).collect();
-        let places = ["DE", "FR", "IT", "PL", "SE", "FI", "MT", "LU", "EU27_2020"];
-        let mut rows = ring_rows("ren", &[("freq", "A"), ("unit", "PC")], ("geo", &places), &years);
+        let narrow = ["DE", "FR", "IT", "PL", "SE", "FI", "MT", "LU", "EU27_2020"];
+        let wider = ["DE", "FR", "IT", "PL", "SE", "FI", "MT", "LU", "ES", "NL", "AT", "BE", "EU27_2020"];
+        let places: &[&str] = if wide { &wider } else { &narrow };
+        let mut rows = ring_rows("ren", &[("freq", "A"), ("unit", "PC")], ("geo", places), &years);
         for r in rows.iter_mut() {
             let g = r["dims"]["geo"].as_str().unwrap().to_string();
             let y: f64 = r["time"].as_str().unwrap().parse().unwrap();
             let k = places.iter().position(|p| *p == g).unwrap() as f64;
-            let pace = if g == "MT" || g == "LU" { -0.05 } else { 0.4 + k / 20.0 };
+            let pace = if g == "MT" || g == "LU" { -0.05 } else if wide { 0.2 + (k * 3.0) % 5.0 / 2.0 } else { 0.4 + k / 20.0 };   // wide: paces that make the places swap
             r["value"] = json!(format!("{:.1}", 5.0 + 4.0 * k + pace * (y - 2005.0)));
         }
         let story = recipe("page_story");

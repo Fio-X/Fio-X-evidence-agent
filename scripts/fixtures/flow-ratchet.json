@@ -1,5 +1,5 @@
 {
-  "measured_at": "730efbc3684fa55512162dec1b418f3df78e8eb7",
+  "measured_at": "91f9523691fd17167fddb1c1c09423036ff9c657",
   "rules": "scripts/test_group_flow_ratchet.mjs header; totals and per_file may only go down; kind_names only grow, by --lower",
   "totals": {
     "new": {
@@ -12,7 +12,7 @@
       "nodes": 0,
       "ops": 0,
       "copy": 224,
-      "kinds": 420
+      "kinds": 429
     }
   },
   "scanned": {
@@ -32,6 +32,7 @@
     "callouts": "knobs.json nodes",
     "change": "knobs.json groups",
     "changebars": "P0a word list",
+    "changedots": "knobs.json nodes",
     "charts": "knobs.json groups",
     "choropleth": "src/next_run.rs templates",
     "cities": "knobs.json nodes",
@@ -77,6 +78,7 @@
     "rankedbars": "knobs.json groups",
     "ranking": "shape_registry.rs Relation",
     "ranklines": "knobs.json nodes",
+    "rankslope": "knobs.json nodes",
     "ring": "knobs.json nodes",
     "risknotes": "knobs.json nodes",
     "routenames": "knobs.json nodes",
@@ -96,6 +98,7 @@
     "targetpath": "knobs.json nodes",
     "text": "knobs.json nodes",
     "thesisclaims": "knobs.json nodes",
+    "tilemap": "knobs.json nodes",
     "timeline": "knobs.json nodes",
     "treemap": "P0a word list",
     "valuelabels": "next_render.rs NodeInfo",
@@ -119,7 +122,7 @@
     },
     "runtime/pi/newsroom.ts": {
       "copy": 15,
-      "kinds": 248
+      "kinds": 257
     },
     "runtime/pi/tool_chain.mjs": {
       "kinds": 1

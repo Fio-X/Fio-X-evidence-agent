@@ -148,6 +148,9 @@
    "imports risk_notes (runtime/leaves_py/risk_notes.py), which breaks the rule": 1,
    "imports small_multiples (runtime/leaves_py/small_multiples.py), which breaks the rule": 1,
    "imports member_map (runtime/leaves_py/member_map.py), which breaks the rule": 1,
+   "imports change_dots (runtime/leaves_py/change_dots.py), which breaks the rule": 1,
+   "imports rank_slope (runtime/leaves_py/rank_slope.py), which breaks the rule": 1,
+   "imports tile_map (runtime/leaves_py/tile_map.py), which breaks the rule": 1,
    "imports section_head (runtime/leaves_py/section_head.py), which breaks the rule": 1,
    "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1,
    "imports words (runtime/leaves_py/words.py), which breaks the rule": 1
@@ -211,7 +214,13 @@
    "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1,
    "imports geo (runtime/leaves_py/geo.py), which breaks the rule": 1
   },
+  "runtime/leaves_py/change_dots.py": {
+   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1
+  },
   "runtime/leaves_py/pair_bars.py": {
+   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1
+  },
+  "runtime/leaves_py/rank_slope.py": {
    "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1
   },
   "runtime/leaves_py/risk_notes.py": {
@@ -233,6 +242,9 @@
    "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1
   },
   "runtime/leaves_py/thesis_claims.py": {
+   "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1
+  },
+  "runtime/leaves_py/tile_map.py": {
    "imports wbkit (runtime/leaves_py/wbkit.py), which breaks the rule": 1
   },
   "runtime/leaves_py/winners_losers.py": {
