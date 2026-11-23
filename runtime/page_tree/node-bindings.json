@@ -54,6 +54,7 @@
  },
  "recipes": {"column": ["bars", "leader_notes"], "change": ["bars", "leader_notes"], "composition": ["stacked100"], "scmp": ["map", "strip", "bignums", "notes"], "ring": ["map", "ring"], "flow": ["sankey"], "ranked_bars": ["bars"], "change_bars": ["bars"], "block_ranks": ["rank_lines"], "composition_steps": ["waterfall"], "one_line": ["line"]},
  "main_chart": {"column": "bars", "change": "bars", "composition": "stacked100", "scmp": "map", "ring": "ring", "flow": "sankey", "ranked_bars": "bars", "change_bars": "bars", "block_ranks": "rank_lines", "composition_steps": "waterfall", "one_line": "line"},
+ "leaf_recipes": {"page_story": {"not_main": ["bignums", "thesis_claims", "risk_notes"], "references": {"event_chain": {"word": "story.legend.chain", "within": "story"}}}},
  "nodes": {
   "bars": {
    "binding": "external",

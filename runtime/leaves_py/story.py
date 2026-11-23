@@ -169,8 +169,8 @@ def legend_rows(layers):
 def legend_html(layers, box=None):
     """The 'how to read this page' block: the accent line, then a line for each picture kind on the page that needs one (no number in it);
     `box` is the layout's (x, y, w, h) of it."""
-    items = "".join(f'<li><span class="sw {sw}"></span><span>{html.escape(word(w), quote=False)}</span></li>' for sw, w in legend_rows(layers))
-    return f'<section class="sec" data-id="legend" data-layout="bare"{place(box)}><div class="legend"><b>{html.escape(word("story.legend.title"), quote=False)}</b><ul>{items}</ul></div></section>'
+    items = "".join(f'<li><span class="sw {sw}"></span><span data-word="{w}">{html.escape(word(w), quote=False)}</span></li>' for sw, w in legend_rows(layers))
+    return f'<section class="sec" data-id="legend" data-layout="bare"{place(box)}><div class="legend" data-legend="story"><b>{html.escape(word("story.legend.title"), quote=False)}</b><ul>{items}</ul></div></section>'
 
 
 def place(box):

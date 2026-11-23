@@ -2182,6 +2182,7 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
         &[
             "tree::recipe_roles",
             "tree::reference_legend_gaps",
+            "tree::leaf_recipe_gaps",
             "tree::reference_legend",
             "tree::element_at",
             "tree::pieces",

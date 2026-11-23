@@ -774,7 +774,7 @@ class Findings(unittest.TestCase):
         req["chain"] = [req["chain"][0], req["chain"][2]]
         req["points"] = self._points(EU_MEMBERS)
         _, _, _, page_html = self._page(req, names, ["path", "chain", "map", "members"])
-        leg = _re.search(r'<div class="legend">.*?</div></section>', page_html, _re.S).group(0)
+        leg = _re.search(r'<div class="legend"[^>]*>.*?</div></section>', page_html, _re.S).group(0)
         self.assertEqual(_re.findall(r'<span class="sw ([a-z]+)">', leg), ["accent", "dash", "band", "ramp", "pale"])  # in the pictures' order
         self.assertLess(page_html.index('data-id="thesis"'), page_html.index('data-id="legend"')); self.assertLess(page_html.index('data-id="legend"'), page_html.index('data-id="path"'))
         self.assertFalse(_re.search(r"[0-9]", _re.sub(r"<[^>]+>", "", leg)))

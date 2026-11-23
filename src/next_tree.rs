@@ -2584,6 +2584,9 @@ pub(crate) fn reference_legend_gaps(
     if !reg.has("main_chart") {
         return Vec::new();
     }
+    if let Some(entry) = reg.g("leaf_recipes").get(recipe) {
+        return leaf_recipe_gaps(entry, recipe, html);
+    }
     let refs = match recipe_roles(reg, recipe) {
         Err(e) => return vec![format!("roles: {e}")],
         Ok((_, refs)) => refs,
@@ -2600,6 +2603,88 @@ pub(crate) fn reference_legend_gaps(
             units,
             drawn,
         ));
+    }
+    out
+}
+
+/// A recipe drawn by leaves alone, never through the page tree (the registry's leaf_recipes; owner 11-23 10:25, ask 11):
+/// its layers are the leaf registry's (next_leaf leaves().recipes), its main chart any layer of them the page draws that is
+/// neither a block of words (`not_main`) nor a reference, and the page must draw one; each reference the page draws (a layer
+/// that draws another quantity than the headline's, as the event chain draws its companions) prints its legend line: an
+/// element marked `data-word="<word>"` inside the legend marked `data-legend="<within>"`, whose text is the word table's
+/// word exactly (a leaf recipe's reference word holds no placeholder). A reference the page does not draw owes no line. A
+/// recipe the leaf registry does not hold, or a registry entry that cannot be read, is a gap.
+fn leaf_recipe_gaps(entry: &J, recipe: &str, html: &str) -> Vec<String> {
+    let Some(registered) = crate::next_leaf::leaves()
+        .recipes
+        .iter()
+        .find(|r| r.name == recipe)
+    else {
+        return vec![format!("roles: recipe {recipe} is listed as drawn by leaves alone, and the leaf registry holds no such recipe")];
+    };
+    let drawn = |layer: &str| html.contains(&format!("data-layer=\"{layer}\""));
+    let not_main: Vec<String> = entry.g("not_main").arr().iter().map(st).collect();
+    let refs = entry.g("references").obj();
+    let mut out = Vec::new();
+    let mains: Vec<&String> = registered
+        .layers
+        .iter()
+        .filter(|l| !not_main.contains(l) && !refs.iter().any(|(r, _)| r == *l))
+        .collect();
+    if !mains.iter().any(|l| drawn(l)) {
+        out.push(format!(
+            "roles: recipe {recipe}: the page draws none of its main charts {mains:?}"
+        ));
+    }
+    for (layer, legend) in refs {
+        if !registered.layers.contains(layer) {
+            out.push(format!(
+                "roles: recipe {recipe}: its reference {layer} is no layer of it"
+            ));
+            continue;
+        }
+        if !drawn(layer) {
+            continue;
+        }
+        let (word, within) = (st(legend.g("word")), st(legend.g("within")));
+        let Some(text) = crate::next_ledger::word_table()
+            .get(&word)
+            .and_then(serde_json::Value::as_str)
+        else {
+            out.push(format!("roles: recipe {recipe}: reference {layer}'s legend word {word} is not in the word table"));
+            continue;
+        };
+        if text.contains('{') || within.is_empty() {
+            out.push(format!("roles: recipe {recipe}: reference {layer}'s legend {word} in {within:?} is no fixed line in a named legend"));
+            continue;
+        }
+        let line = html
+            .match_indices(&format!("data-legend=\"{within}\""))
+            .find_map(|(at, _)| {
+                let (_, body, close) = element_at(html, html[..at].rfind('<')?)?;
+                let mark = html[body..close].find(&format!("data-word=\"{word}\""))? + body;
+                let (_, lb, lc) = element_at(html, html[..mark].rfind('<')?)?;
+                let mut text = String::new();
+                let mut inside = false;
+                for c in html[lb..lc].chars() {
+                    match c {
+                        '<' => inside = true,
+                        '>' => inside = false,
+                        c if !inside => text.push(c),
+                        _ => {}
+                    }
+                }
+                Some(
+                    text.replace("&amp;", "&")
+                        .replace("&lt;", "<")
+                        .replace("&gt;", ">"),
+                )
+            });
+        match line {
+            Some(t) if t.trim() == text => {}
+            Some(t) => out.push(format!("roles: {layer} is drawn as a reference and its legend line {word} reads {t:?}, not the word")),
+            None => out.push(format!("roles: {layer} is drawn as a reference and its legend data-legend={within} prints no line data-word={word}")),
+        }
     }
     out
 }
@@ -5605,7 +5690,7 @@ pub fn load_registry(overlay: &J) -> J {
         reg.set("picks", picks.clone());
     }
     // each recipe's layers and main chart, which the roles' checks read (recipe_roles)
-    for k in ["recipes", "main_chart"] {
+    for k in ["recipes", "main_chart", "leaf_recipes"] {
         if let Some(v) = overlay.get(k) {
             reg.set(k, v.clone());
         }
@@ -10613,6 +10698,54 @@ mod tests {
     /// the four the leaf's run.py MAIN names agree with it (column, change, flow, composition); scmp takes the map (the
     /// flowmap of the headline's year, the strip under it the month profile) and ring the ring (it wraps the page, the
     /// map inside it is the locator of each source's volume; owner 11-03 15:0x).
+    /// Owner 11-23 10:25 (ask 11): page_story alone is listed as drawn by leaves alone; its page passes the roles check when
+    /// it draws a main layer, and prints the event chain's legend line when it draws the chain; any other recipe the registry
+    /// lists no layers of still refuses.
+    #[test]
+    fn a_leaf_recipe_is_held_to_its_main_and_its_references_legend() {
+        let (reg, _) = registry_in_force();
+        let listed: Vec<&String> = reg.g("leaf_recipes").obj().iter().map(|(k, _)| k).collect();
+        assert_eq!(listed, ["page_story"]);
+        let word = crate::next_ledger::word_table()["story.legend.chain"]
+            .as_str()
+            .unwrap();
+        let legend = |line: &str| {
+            format!(
+                r#"<div class="legend" data-legend="story"><ul><li><span data-word="story.legend.chain">{line}</span></li></ul></div>"#
+            )
+        };
+        let rank = r#"<div data-layer="rankbar"></div>"#;
+        let chain = r#"<div data-layer="event_chain"></div>"#;
+        assert_eq!(
+            reference_legend_gaps(&reg, "page_story", rank, &[], None),
+            Vec::<String>::new()
+        );
+        let with_chain = format!("{rank}{chain}{}", legend(word));
+        assert_eq!(
+            reference_legend_gaps(&reg, "page_story", &with_chain, &[], None),
+            Vec::<String>::new()
+        );
+        let no_line = format!("{rank}{chain}");
+        assert!(
+            reference_legend_gaps(&reg, "page_story", &no_line, &[], None)[0]
+                .contains("prints no line")
+        );
+        let other = format!("{rank}{chain}{}", legend("别的话"));
+        assert!(
+            reference_legend_gaps(&reg, "page_story", &other, &[], None)[0]
+                .contains("not the word")
+        );
+        let only_words = r#"<div data-layer="thesis_claims"></div>"#;
+        assert!(
+            reference_legend_gaps(&reg, "page_story", only_words, &[], None)[0]
+                .contains("draws none of its main charts")
+        );
+        assert!(
+            reference_legend_gaps(&reg, "no_such_recipe", rank, &[], None)[0]
+                .contains("the registry lists no layers")
+        );
+    }
+
     #[test]
     fn every_recipe_names_its_main_chart_and_the_leafs_main_agrees() {
         let (reg, _) = registry_in_force();
