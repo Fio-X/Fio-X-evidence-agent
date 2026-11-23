@@ -427,6 +427,8 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
     })?;
     crate::group_guard::create_dir_all(artifact_dir, &runtime_dir.join("illus_hero/line"))
         .with_context(|| "failed to create the line drawing runtime directory".to_string())?;
+    crate::group_guard::create_dir_all(artifact_dir, &runtime_dir.join("illus_hero/people"))
+        .with_context(|| "failed to create the people drawing runtime directory".to_string())?;
     crate::group_guard::create_dir_all(artifact_dir, &runtime_dir.join("illus_hero/assets"))
         .with_context(|| {
             format!(
@@ -491,6 +493,15 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
         (
             runtime_dir.join("illus_hero/line/line.json"),
             include_str!("../runtime/illus_hero/line/line.json"),
+        ),
+        // the people drawing the hero child imports for a topic whose renderer is "people" (run_hero.py)
+        (
+            runtime_dir.join("illus_hero/people/draw.py"),
+            include_str!("../runtime/illus_hero/people/draw.py"),
+        ),
+        (
+            runtime_dir.join("illus_hero/people/people.json"),
+            include_str!("../runtime/illus_hero/people/people.json"),
         ),
     ] {
         write_if_changed(artifact_dir, &path, text)?;

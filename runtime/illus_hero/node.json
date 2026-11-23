@@ -2476,7 +2476,7 @@
    "series": "happened",
    "groups": "lagging"
   },
-  "renderer_doc": "Which drawing a topic gets by default (scenes.<topic>.renderer, data, no switch): line = runtime/illus_line (hand-drawn pure SVG, page colours only: the ink var(--t-title), the accent var(--accent), the page paper var(--bg)); 3d = the Blender path. A topic is `line` only where illus_line draws all of its units; run_hero never falls back from line to 3d, a request the line drawing cannot draw is refused. rank_ends (per unit, else layout.rank.ends): how many of the top and of the bottom a ranking draws, per renderer ([head, tail]); the members between are left out (omitted) and marked.",
+  "renderer_doc": "Which drawing a topic gets by default (scenes.<topic>.renderer, data, no switch): line = runtime/illus_line (hand-drawn pure SVG, page colours only: the ink var(--t-title), the accent var(--accent), the page paper var(--bg)); 3d = the Blender path. A topic is `line` only where illus_line draws all of its units; run_hero never falls back from line to 3d, a request the line drawing cannot draw is refused. rank_ends (per unit, else layout.rank.ends): how many of the top and of the bottom a ranking draws, per renderer ([head, tail]); the members between are left out (omitted) and marked. people = runtime/illus_hero/people (real flat-colour people drawings baked into people.json, one figure per unit, a lit one in the page's palette, an unlit one in pale greys; the layouts path, series, rank and tally; any other layout is `unavailable`, the page's strip stands in). A topic takes it by its scenes.<topic>.renderer = people; none does by default.",
   "kinds_doc": "angle_kinds maps the lead angle to the layout; an angle that is not listed, or a subject without the rows its layout needs, is refused (a picture that shows no value is the page's strip, not this). groups: two side-by-side panels (a subject with groups), each its own members and lit count.",
   "layout": {
    "x": [
@@ -2504,7 +2504,7 @@
     "back_floor": 0.2
    },
    "rank": {
-    "ends": {"3d": [7, 7], "line": [5, 5]},
+    "ends": {"3d": [7, 7], "line": [5, 5], "people": [5, 5]},
     "size": 1.7,
     "floor": 0.3,
     "y": 46,
@@ -2958,7 +2958,7 @@
     "row_k": 1.0,
     "body_w": 36.0,
     "gap": 0.12,
-    "rank_ends": {"3d": [3, 3], "line": [5, 5]},
+    "rank_ends": {"3d": [3, 3], "line": [5, 5], "people": [5, 5]},
     "camera": "raised"
    },
    "pylon_unit": {
@@ -2997,7 +2997,7 @@
     "stagger": 0.5,
     "stagger_rows": 2,
     "gap": 0.5,
-    "rank_ends": {"3d": [5, 5], "line": [5, 5]},
+    "rank_ends": {"3d": [5, 5], "line": [5, 5], "people": [5, 5]},
     "persp_rows": true
    },
    "container_unit": {

@@ -499,12 +499,31 @@ def build_line(inp):
     return f'<g transform="scale({k:.5f})">{inner}</g>', float(width), h, {"line": d["seconds"], "total": round(time.time() - t0, 2)}, d["scene"], d["composition"]
 
 
+def build_people(inp):
+    """The same reply the line path gives, drawn by runtime/illus_hero/people: the composition is resolve's own (renderer 'people'); a layout the
+    people drawing does not place is `unavailable` (the page's strip stands in), a wrong request is refused. Colours: the page's own tokens
+    (accent, bar, title ink) resolved to hex here, the lit figures' primary is the topic's accent from the registry."""
+    t0 = time.time(); width = inp.get("width")
+    if isinstance(width, float) and width.is_integer(): width = int(width)
+    if isinstance(width, bool) or not isinstance(width, int) or not WIDTH[0] <= width <= WIDTH[1]: refuse(f"width: {width!r} is not a whole number on {WIDTH[0]}..{WIDTH[1]}")
+    resolved = resolve(inp, renderer="people")
+    sys.path.insert(0, os.path.join(HERE, "people"))
+    import draw as PD
+    kind = resolved[0]["scene"].split(".")[1]
+    if kind not in PD.KINDS: raise Unavailable(f"people: the {kind!r} layout is not drawn by the people renderer")      # the page's strip stands in
+    topic = topic_of(inp.get("family")); primary = TOPICS["scenes"][topic]["accent"]
+    d = PD.draw(resolved, page_colours(["--accent", "--bar", "--t-title"]), primary)
+    k = width / float(PD.CW); h = round(d["h"] * k, 2)
+    return f'<g transform="scale({k:.5f})">{d["inner"]}</g>', float(width), h, {"people": d["seconds"], "total": round(time.time() - t0, 2)}, d["scene"], d["composition"]
+
+
 def serve():
     line = sys.stdin.readline()
     try:
         inp = json.loads(line)
         if not isinstance(inp, dict): raise Refused("the request is not an object")
         if renderer_of(inp) == "line": svg, w, h, secs, name, comp = build_line(inp)
+        elif renderer_of(inp) == "people": svg, w, h, secs, name, comp = build_people(inp)
         else:
             with tempfile.TemporaryDirectory(prefix="illus-hero-") as work:
                 svg, w, h, secs, name, comp = build(inp, work)

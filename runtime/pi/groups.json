@@ -1374,6 +1374,11 @@
     "note": "Created by runtime.rs materialize_extension (group_guard create_dir_all) to hold the hand-drawn line drawing the opening illustration child imports: a folder of the run bundle, no content of its own."
    },
    {
+    "kind": "run_record",
+    "exact": "runtime/illus_hero/people/",
+    "note": "Created by runtime.rs materialize_extension (group_guard create_dir_all) to hold the people drawing the opening illustration child imports: a folder of the run bundle, no content of its own."
+   },
+   {
     "kind": "materialized_runtime",
     "exact": "runtime/process.mjs",
     "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
@@ -2092,6 +2097,21 @@
     "kind": "materialized_runtime",
     "exact": "runtime/illus_hero/line/line.json",
     "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/): the opening illustration child, its hand-drawn line drawing's registry. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/people",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/): the opening illustration child, its people drawing (each file in it has its own exact row). Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/people/draw.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/): the opening illustration child, its people drawing. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illus_hero/people/people.json",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/illus_hero/): the opening illustration child, its people drawing's registry, with the baked figure shapes. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
    },
    {
     "kind": "materialized_runtime",
