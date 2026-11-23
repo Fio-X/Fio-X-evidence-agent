@@ -2700,6 +2700,8 @@ pub const CHECK_REGISTRY: &[(&str, &str, &[&str])] = &[
 #[allow(dead_code)] // read by its test and by scripts/reuse_rate.py
 pub const CHECK_HELPERS: &[&str] = &[
     "tree_gen::page_scale",
+    "tree_gen::code_ok",
+    "tree_gen::tree_tables",
     "ledger::name_src",
     "ledger::point_entry",
     "ledger::dropped_entry",
